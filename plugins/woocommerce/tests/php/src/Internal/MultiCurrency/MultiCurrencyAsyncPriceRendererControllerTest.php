@@ -6,8 +6,8 @@ namespace Automattic\WooCommerce\Tests\Internal\MultiCurrency;
 use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyAsyncPriceRendererController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyDisplayService;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRequestContext;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\DisplayService;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\RequestContext;
 use WC_Unit_Test_Case;
 
 /**
@@ -553,10 +553,10 @@ class MultiCurrencyAsyncPriceRendererControllerTest extends WC_Unit_Test_Case {
 	 * Create a frontend projection service test double.
 	 *
 	 * @param bool $cache_optimized_mode Whether cache-optimized mode is active.
-	 * @return MultiCurrencyDisplayService
+	 * @return DisplayService
 	 */
-	private function create_display_service( bool $cache_optimized_mode ): MultiCurrencyDisplayService {
-		return new class( $cache_optimized_mode ) extends MultiCurrencyDisplayService {
+	private function create_display_service( bool $cache_optimized_mode ): DisplayService {
+		return new class( $cache_optimized_mode ) extends DisplayService {
 			/**
 			 * Whether cache-optimized mode is active.
 			 *
@@ -590,10 +590,10 @@ class MultiCurrencyAsyncPriceRendererControllerTest extends WC_Unit_Test_Case {
 	 * @param bool $frontend_request  Whether this is a frontend request.
 	 * @param bool $store_api_request Whether this is a Store API request.
 	 * @param bool $admin_api_request Whether this is an admin API request.
-	 * @return MultiCurrencyRequestContext
+	 * @return RequestContext
 	 */
-	private function create_request_context( bool $frontend_request, bool $store_api_request, bool $admin_api_request ): MultiCurrencyRequestContext {
-		return new class( $frontend_request, $store_api_request, $admin_api_request ) extends MultiCurrencyRequestContext {
+	private function create_request_context( bool $frontend_request, bool $store_api_request, bool $admin_api_request ): RequestContext {
+		return new class( $frontend_request, $store_api_request, $admin_api_request ) extends RequestContext {
 			/**
 			 * Whether this is a frontend request.
 			 *

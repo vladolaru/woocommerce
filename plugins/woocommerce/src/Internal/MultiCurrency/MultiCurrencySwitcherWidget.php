@@ -7,8 +7,8 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\MultiCurrency;
 
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencySwitcherRenderer;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRequestContext;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\SwitcherRenderer;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\RequestContext;
 
 /**
  * The currency switcher widget: a select of the enabled currencies, with optional symbols and flags.
@@ -21,9 +21,9 @@ class MultiCurrencySwitcherWidget extends \WC_Widget {
 	/**
 	 * Switcher renderer.
 	 *
-	 * @var MultiCurrencySwitcherRenderer
+	 * @var SwitcherRenderer
 	 */
-	private MultiCurrencySwitcherRenderer $switcher_renderer;
+	private SwitcherRenderer $switcher_renderer;
 
 	/**
 	 * Compatibility controller.
@@ -35,11 +35,11 @@ class MultiCurrencySwitcherWidget extends \WC_Widget {
 	/**
 	 * Constructor.
 	 *
-	 * @param MultiCurrencySwitcherRenderer        $switcher_renderer Switcher renderer.
+	 * @param SwitcherRenderer                     $switcher_renderer Switcher renderer.
 	 * @param MultiCurrencyCompatibilityController $compatibility_controller    Compatibility controller.
 	 */
 	public function __construct(
-		MultiCurrencySwitcherRenderer $switcher_renderer,
+		SwitcherRenderer $switcher_renderer,
 		MultiCurrencyCompatibilityController $compatibility_controller
 	) {
 		$this->switcher_renderer        = $switcher_renderer;
@@ -82,7 +82,7 @@ class MultiCurrencySwitcherWidget extends \WC_Widget {
 		$markup = $this->switcher_renderer->get_widget_markup(
 			is_array( $instance ) ? $instance : array(),
 			is_array( $args ) ? $args : array(),
-			MultiCurrencyRequestContext::get_current_query_args(),
+			RequestContext::get_current_query_args(),
 			$this->compatibility_controller->should_disable_currency_switching()
 		);
 

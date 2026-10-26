@@ -8,8 +8,8 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\MultiCurrency;
 
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRequestContext;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\RequestContext;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilder;
 
 /**
  * Keeps WooCommerce FedEx Shipping's rate calculations in the store currency: product prices are not converted and the
@@ -73,8 +73,8 @@ class MultiCurrencyFedExCompatibilityController implements RegisterHooksInterfac
 			return;
 		}
 
-		add_filter( MultiCurrencyStateBuilder::FILTER_PREFIX . 'should_convert_product_price', array( $this, 'should_convert_product_price' ) );
-		add_filter( MultiCurrencyStateBuilder::FILTER_PREFIX . 'should_return_store_currency', array( $this, 'should_return_store_currency' ) );
+		add_filter( StateBuilder::FILTER_PREFIX . 'should_convert_product_price', array( $this, 'should_convert_product_price' ) );
+		add_filter( StateBuilder::FILTER_PREFIX . 'should_return_store_currency', array( $this, 'should_return_store_currency' ) );
 	}
 
 	/**
@@ -84,7 +84,7 @@ class MultiCurrencyFedExCompatibilityController implements RegisterHooksInterfac
 	 * @return bool
 	 */
 	public function should_convert_product_price( bool $should_convert ): bool {
-		return $should_convert && ! MultiCurrencyRequestContext::is_call_in_backtrace( self::FEDEX_SHIPPING_CALLS );
+		return $should_convert && ! RequestContext::is_call_in_backtrace( self::FEDEX_SHIPPING_CALLS );
 	}
 
 	/**
@@ -94,7 +94,7 @@ class MultiCurrencyFedExCompatibilityController implements RegisterHooksInterfac
 	 * @return bool
 	 */
 	public function should_return_store_currency( bool $should_return ): bool {
-		return $should_return || MultiCurrencyRequestContext::is_call_in_backtrace( self::FEDEX_SHIPPING_CALLS );
+		return $should_return || RequestContext::is_call_in_backtrace( self::FEDEX_SHIPPING_CALLS );
 	}
 
 	/**

@@ -8,12 +8,12 @@ use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFeatureController
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFrontendCurrenciesController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyState;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyDisplayService;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyGeolocationService;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyLocalizationService;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyOrderContextService;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRequestContext;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\DisplayService;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\GeolocationService;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\LocalizationService;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\OrderContextService;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\RequestContext;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilder;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsTransportLog;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
@@ -333,14 +333,14 @@ class StripeBillingEventHandlerTest extends WC_Unit_Test_Case {
 		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 		$this->assertTrue( wc_get_container()->get( MultiCurrencyRuntimeArbiter::class )->is_builtin_owner() );
 
-		$localization = wc_get_container()->get( MultiCurrencyLocalizationService::class );
+		$localization = wc_get_container()->get( LocalizationService::class );
 		$usd          = new MultiCurrencyCurrency( $localization, 'USD', 1.0, true );
 		$enabled      = array(
 			'USD'          => $usd,
 			$selected_code => new MultiCurrencyCurrency( $localization, $selected_code, 0.8, false ),
 		);
 		$state        = new MultiCurrencyState( $enabled, $enabled, $usd, $enabled[ $selected_code ] );
-		$builder      = new class( $state ) extends MultiCurrencyStateBuilder {
+		$builder      = new class( $state ) extends StateBuilder {
 			/** @var MultiCurrencyState */
 			private MultiCurrencyState $state;
 
@@ -364,9 +364,9 @@ class StripeBillingEventHandlerTest extends WC_Unit_Test_Case {
 			wc_get_container()->get( MultiCurrencyRuntimeArbiter::class ),
 			ServiceFactories::with(
 				$this,
-				array( 'create_display_service' => new MultiCurrencyDisplayService( $builder, $localization, new MultiCurrencyGeolocationService( $localization, static fn() => 'US' ) ) )
+				array( 'create_display_service' => new DisplayService( $builder, $localization, new GeolocationService( $localization, static fn() => 'US' ) ) )
 			),
-			new class() extends MultiCurrencyRequestContext {
+			new class() extends RequestContext {
 				/**
 				 * The webhook request registers the frontend price hooks.
 				 *
@@ -376,7 +376,7 @@ class StripeBillingEventHandlerTest extends WC_Unit_Test_Case {
 					return true;
 				}
 			},
-			wc_get_container()->get( MultiCurrencyOrderContextService::class )
+			wc_get_container()->get( OrderContextService::class )
 		);
 		wc_get_container()->replace( MultiCurrencyFrontendCurrenciesController::class, $controller );
 		$controller->register();

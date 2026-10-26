@@ -10,7 +10,7 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 use Automattic\WooCommerce\Admin\Notes\DataStore as NotesDataStore;
 use Automattic\WooCommerce\Admin\Notes\Note;
 use Automattic\WooCommerce\Admin\Notes\Notes;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyExplicitPriceFormatter;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\ExplicitPriceFormatter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
@@ -160,10 +160,10 @@ class WooPaymentsLoanApprovedNote implements RegisterHooksInterface {
 			sprintf(
 				/* translators: %1$s: total amount lent to the merchant formatted in the account currency, %2$s: WooPayments */
 				__( 'Congratulations! Your capital loan has been approved and %1$s was deposited into the bank account linked to %2$s. You\'ll automatically repay the loan, plus a flat fee, through a fixed percentage of each %2$s transaction.', 'woocommerce' ),
-				MultiCurrencyExplicitPriceFormatter::get_explicit_price_with_currency(
+				ExplicitPriceFormatter::get_explicit_price_with_currency(
 					$price,
 					$currency,
-					MultiCurrencyExplicitPriceFormatter::should_output_explicit_admin_price()
+					ExplicitPriceFormatter::should_output_explicit_admin_price()
 				),
 				'WooPayments'
 			)

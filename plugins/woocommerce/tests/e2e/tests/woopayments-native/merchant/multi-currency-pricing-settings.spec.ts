@@ -24,7 +24,7 @@ test.use( { storageState: ADMIN_STATE_PATH } );
  * readonly fixture's seeded 0.8 manual rate (`envs/woopayments-native/seed-readonly.sh`),
  * which the retained `switcher:830` smoke reads directly from the live store.
  * The PHPUnit/Jest EUR-conversion owners (MultiCurrencyFrontendPricesControllerTest,
- * MultiCurrencyPriceCalculatorTest, MultiCurrencyLocalizationServiceTest) prove the
+ * PriceCalculatorTest, LocalizationServiceTest) prove the
  * same conversion mechanism against their own isolated fixtures and never read this
  * option. No test here reads, writes, or removes it either. Every rate below is a
  * run-set manual rate on a run-added currency, so no fixture value is duplicated or
@@ -46,7 +46,7 @@ const SETTINGS_PAGE_PATH =
 // each storefront assertion is a full formatted-text match instead of the
 // original suite's locale-blind parseFloat.
 //
-// MultiCurrencyFrontendPricesControllerTest and MultiCurrencyPriceCalculatorTest
+// MultiCurrencyFrontendPricesControllerTest and PriceCalculatorTest
 // already prove the same rate-and-charm conversion mechanism against their own
 // isolated fixtures (neither reads the readonly fixture's seeded EUR rate; only
 // the retained switcher:830 smoke does); every rate set here is a different,
@@ -458,7 +458,7 @@ test(
 			// smallest increment — so the modal-driven amount is
 			// ceil(1234.56 × 150.1) = ceil(185307.456) = 185308. The
 			// round-to-zero-decimals calculation leaf (185307) is pinned at the
-			// lower layer instead (MultiCurrencyPriceCalculator staged test).
+			// lower layer instead (PriceCalculator staged test).
 			await saveModalConfiguration( dialog, {
 				manualRate: '150.1',
 				priceRoundingValue: '1',

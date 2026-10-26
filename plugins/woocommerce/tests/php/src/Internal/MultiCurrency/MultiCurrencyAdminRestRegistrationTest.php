@@ -11,9 +11,9 @@ use Automattic\WooCommerce\Internal\DependencyManagement\RuntimeContainer;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyBootstrap;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRestController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyDisplayService;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilderFactory;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyUsageDetector;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\DisplayService;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilderFactory;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\UsageDetector;
 use WC_REST_Unit_Test_Case;
 
 /**
@@ -39,7 +39,7 @@ class MultiCurrencyAdminRestRegistrationTest extends WC_REST_Unit_Test_Case {
 		$bootstrap               = new MultiCurrencyBootstrap( static fn(): array => array() );
 		update_option( 'woocommerce_currency', 'USD' );
 		update_option( 'wcpay_multi_currency_enabled_currencies', $configured ? array( 'EUR' ) : array() );
-		set_transient( MultiCurrencyUsageDetector::HAS_MC_ORDERS_TRANSIENT, $historical, HOUR_IN_SECONDS );
+		set_transient( UsageDetector::HAS_MC_ORDERS_TRANSIENT, $historical, HOUR_IN_SECONDS );
 		set_current_screen( 'edit-page' );
 
 		try {
@@ -58,7 +58,7 @@ class MultiCurrencyAdminRestRegistrationTest extends WC_REST_Unit_Test_Case {
 			remove_action( 'rest_api_init', array( $controller, 'handle_rest_api_init' ) );
 			update_option( 'woocommerce_currency', $previous_store_currency );
 			delete_option( 'wcpay_multi_currency_enabled_currencies' );
-			delete_transient( MultiCurrencyUsageDetector::HAS_MC_ORDERS_TRANSIENT );
+			delete_transient( UsageDetector::HAS_MC_ORDERS_TRANSIENT );
 			// phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- Restoring the screen snapshot taken above.
 			$current_screen = $previous_screen;
 		}
@@ -136,7 +136,7 @@ class MultiCurrencyAdminRestRegistrationTest extends WC_REST_Unit_Test_Case {
 	 * @return MultiCurrencyRestController
 	 */
 	private function create_rest_controller( MultiCurrencyRuntimeArbiter $arbiter ): MultiCurrencyRestController {
-		$display_service = $this->getMockBuilder( MultiCurrencyDisplayService::class )
+		$display_service = $this->getMockBuilder( DisplayService::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'is_cache_optimized_mode' ) )
 			->getMock();
@@ -145,7 +145,7 @@ class MultiCurrencyAdminRestRegistrationTest extends WC_REST_Unit_Test_Case {
 		$controller = new MultiCurrencyRestController();
 		$controller->init(
 			$arbiter,
-			wc_get_container()->get( MultiCurrencyStateBuilderFactory::class ),
+			wc_get_container()->get( StateBuilderFactory::class ),
 			ServiceFactories::with( $this, array( 'create_display_service' => $display_service ) )
 		);
 
@@ -194,8 +194,8 @@ class MultiCurrencyAdminRestRegistrationTest extends WC_REST_Unit_Test_Case {
 					return $this->arbiter;
 				}
 
-				if ( MultiCurrencyUsageDetector::class === $class_name ) {
-					return new MultiCurrencyUsageDetector();
+				if ( UsageDetector::class === $class_name ) {
+					return new UsageDetector();
 				}
 
 				if ( MultiCurrencyRestController::class === $class_name ) {

@@ -7,10 +7,10 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\MultiCurrency;
 
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyServiceFactory;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencySwitcherRenderer;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\ServiceFactory;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\SwitcherRenderer;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRequestContext;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\RequestContext;
 
 /**
  * Registers the `woocommerce-payments/multi-currency-switcher` block, with its editor script and the server-side render
@@ -53,16 +53,16 @@ class MultiCurrencySwitcherBlockController implements RegisterHooksInterface {
 	/**
 	 * Multi-Currency service factory.
 	 *
-	 * @var MultiCurrencyServiceFactory
+	 * @var ServiceFactory
 	 */
-	private MultiCurrencyServiceFactory $service_factory;
+	private ServiceFactory $service_factory;
 
 	/**
 	 * Switcher renderer, built on first use.
 	 *
-	 * @var MultiCurrencySwitcherRenderer|null
+	 * @var SwitcherRenderer|null
 	 */
-	private ?MultiCurrencySwitcherRenderer $switcher_renderer = null;
+	private ?SwitcherRenderer $switcher_renderer = null;
 
 	/**
 	 * Initialize the class instance.
@@ -71,12 +71,12 @@ class MultiCurrencySwitcherBlockController implements RegisterHooksInterface {
 	 *
 	 * @param MultiCurrencyRuntimeArbiter          $arbiter                  Runtime owner arbiter.
 	 * @param MultiCurrencyCompatibilityController $compatibility_controller Compatibility controller.
-	 * @param MultiCurrencyServiceFactory          $service_factory          Multi-Currency service factory.
+	 * @param ServiceFactory                       $service_factory          Multi-Currency service factory.
 	 */
 	final public function init(
 		MultiCurrencyRuntimeArbiter $arbiter,
 		MultiCurrencyCompatibilityController $compatibility_controller,
-		MultiCurrencyServiceFactory $service_factory
+		ServiceFactory $service_factory
 	): void {
 		$this->arbiter                  = $arbiter;
 		$this->compatibility_controller = $compatibility_controller;
@@ -185,7 +185,7 @@ class MultiCurrencySwitcherBlockController implements RegisterHooksInterface {
 	public function render_block_widget( $block_attributes ): string {
 		return $this->get_switcher_renderer()->get_block_markup(
 			is_array( $block_attributes ) ? $block_attributes : array(),
-			MultiCurrencyRequestContext::get_current_query_args(),
+			RequestContext::get_current_query_args(),
 			$this->compatibility_controller->should_disable_currency_switching()
 		);
 	}
@@ -239,9 +239,9 @@ class MultiCurrencySwitcherBlockController implements RegisterHooksInterface {
 	/**
 	 * Get the switcher renderer.
 	 *
-	 * @return MultiCurrencySwitcherRenderer
+	 * @return SwitcherRenderer
 	 */
-	private function get_switcher_renderer(): MultiCurrencySwitcherRenderer {
+	private function get_switcher_renderer(): SwitcherRenderer {
 		if ( null === $this->switcher_renderer ) {
 			$this->switcher_renderer = $this->service_factory->create_switcher_renderer();
 		}

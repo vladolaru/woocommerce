@@ -9,9 +9,9 @@ namespace Automattic\WooCommerce\Internal\MultiCurrency\Shadow;
 
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyLocalizationInterface;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyPriceCalculator;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyPriceConverter;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilderFactory;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\PriceCalculator;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\PriceConverter;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilderFactory;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use WC_Abstract_Order;
@@ -58,9 +58,9 @@ class MultiCurrencyShadowMode implements RegisterHooksInterface {
 	 * @var string[]
 	 */
 	private const MULTI_CURRENCY_META_KEYS = array(
-		MultiCurrencyPriceConverter::META_KEY_ORDER_EXCHANGE_RATE,
-		MultiCurrencyPriceConverter::META_KEY_ORDER_DEFAULT_CURRENCY,
-		MultiCurrencyPriceConverter::META_KEY_STRIPE_EXCHANGE_RATE,
+		PriceConverter::META_KEY_ORDER_EXCHANGE_RATE,
+		PriceConverter::META_KEY_ORDER_DEFAULT_CURRENCY,
+		PriceConverter::META_KEY_STRIPE_EXCHANGE_RATE,
 	);
 
 	/**
@@ -73,16 +73,16 @@ class MultiCurrencyShadowMode implements RegisterHooksInterface {
 	/**
 	 * State builder factory.
 	 *
-	 * @var MultiCurrencyStateBuilderFactory
+	 * @var StateBuilderFactory
 	 */
-	private MultiCurrencyStateBuilderFactory $state_builder_factory;
+	private StateBuilderFactory $state_builder_factory;
 
 	/**
 	 * Native price/meta projection service.
 	 *
-	 * @var MultiCurrencyPriceConverter|null
+	 * @var PriceConverter|null
 	 */
-	private ?MultiCurrencyPriceConverter $projection_service = null;
+	private ?PriceConverter $projection_service = null;
 
 	/**
 	 * Multi-currency surface differ.
@@ -103,12 +103,12 @@ class MultiCurrencyShadowMode implements RegisterHooksInterface {
 	 *
 	 * @internal
 	 *
-	 * @param MultiCurrencyRuntimeArbiter      $arbiter               Runtime owner arbiter.
-	 * @param MultiCurrencySurfaceDiffer       $differ                Multi-currency surface differ.
-	 * @param LegacyProxy                      $legacy_proxy          Legacy proxy.
-	 * @param MultiCurrencyStateBuilderFactory $state_builder_factory State builder factory.
+	 * @param MultiCurrencyRuntimeArbiter $arbiter               Runtime owner arbiter.
+	 * @param MultiCurrencySurfaceDiffer  $differ                Multi-currency surface differ.
+	 * @param LegacyProxy                 $legacy_proxy          Legacy proxy.
+	 * @param StateBuilderFactory         $state_builder_factory State builder factory.
 	 */
-	final public function init( MultiCurrencyRuntimeArbiter $arbiter, MultiCurrencySurfaceDiffer $differ, LegacyProxy $legacy_proxy, MultiCurrencyStateBuilderFactory $state_builder_factory ): void {
+	final public function init( MultiCurrencyRuntimeArbiter $arbiter, MultiCurrencySurfaceDiffer $differ, LegacyProxy $legacy_proxy, StateBuilderFactory $state_builder_factory ): void {
 		$this->arbiter               = $arbiter;
 		$this->differ                = $differ;
 		$this->legacy_proxy          = $legacy_proxy;
@@ -121,9 +121,9 @@ class MultiCurrencyShadowMode implements RegisterHooksInterface {
 	 * @internal Used by tests and future explicit bootstrap definitions. Production
 	 * code lazily builds the default read-only projection graph.
 	 *
-	 * @param MultiCurrencyPriceConverter $projection_service Native price/meta projection service.
+	 * @param PriceConverter $projection_service Native price/meta projection service.
 	 */
-	public function set_projection_service( MultiCurrencyPriceConverter $projection_service ): void {
+	public function set_projection_service( PriceConverter $projection_service ): void {
 		$this->projection_service = $projection_service;
 	}
 
@@ -299,14 +299,14 @@ class MultiCurrencyShadowMode implements RegisterHooksInterface {
 	/**
 	 * Get the native projection service.
 	 *
-	 * @return MultiCurrencyPriceConverter
+	 * @return PriceConverter
 	 */
-	private function get_projection_service(): MultiCurrencyPriceConverter {
+	private function get_projection_service(): PriceConverter {
 		if ( null === $this->projection_service ) {
 			$localization_service     = $this->create_read_only_localization_service();
-			$this->projection_service = new MultiCurrencyPriceConverter(
+			$this->projection_service = new PriceConverter(
 				$this->state_builder_factory->create_separate( $localization_service ),
-				new MultiCurrencyPriceCalculator( $localization_service )
+				new PriceCalculator( $localization_service )
 			);
 		}
 

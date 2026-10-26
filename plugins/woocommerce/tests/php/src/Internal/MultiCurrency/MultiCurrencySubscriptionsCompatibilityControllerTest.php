@@ -9,11 +9,11 @@ use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyState;
 use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyLocalizationInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFrontendPricesController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencySubscriptionsCompatibilityController;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilderFactory;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyPriceConverter;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyServiceFactory;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRequestContext;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilder;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilderFactory;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\PriceConverter;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\ServiceFactory;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\RequestContext;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use WC_Unit_Test_Case;
 
@@ -241,7 +241,7 @@ class MultiCurrencySubscriptionsCompatibilityControllerTest extends WC_Unit_Test
 		$sut->set_subscription_cart_item( 'renewal', $this->create_subscription( 'GBP' ) );
 		$sut->register();
 
-		$selected = wc_get_container()->get( MultiCurrencyStateBuilderFactory::class )->get_state_builder()->build()->get_selected_currency();
+		$selected = wc_get_container()->get( StateBuilderFactory::class )->get_state_builder()->build()->get_selected_currency();
 
 		$this->assertSame( array( 'GBP', 0.73 ), array( $selected->get_code(), $selected->get_rate() ) );
 	}
@@ -497,8 +497,8 @@ class MultiCurrencySubscriptionsCompatibilityControllerTest extends WC_Unit_Test
 			$sut->init(
 				$this->create_arbiter( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN ),
 				new LegacyProxy(),
-				wc_get_container()->get( MultiCurrencyStateBuilderFactory::class ),
-				wc_get_container()->get( MultiCurrencyServiceFactory::class )
+				wc_get_container()->get( StateBuilderFactory::class ),
+				wc_get_container()->get( ServiceFactory::class )
 			);
 
 			return CallStack::run( array( 'WC_Cart_Totals->calculate_item_totals' ), static fn() => array_map( static fn( $product ) => $sut->should_convert_product_price( true, $product ), $products ) );
@@ -1019,7 +1019,7 @@ class MultiCurrencySubscriptionsCompatibilityControllerTest extends WC_Unit_Test
 		$frontend_prices->init(
 			$this->create_arbiter( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN ),
 			ServiceFactories::with( $this, array( 'create_price_converter' => $this->create_price_converter( $rate ) ) ),
-			new class() extends MultiCurrencyRequestContext {
+			new class() extends RequestContext {
 				/**
 				 * Register the storefront hooks.
 				 *
@@ -1294,10 +1294,10 @@ class MultiCurrencySubscriptionsCompatibilityControllerTest extends WC_Unit_Test
 	 * Create a deterministic state builder.
 	 *
 	 * @param bool $has_additional_currencies_enabled Whether additional currencies are enabled.
-	 * @return MultiCurrencyStateBuilder
+	 * @return StateBuilder
 	 */
-	private function create_state_builder( bool $has_additional_currencies_enabled ): MultiCurrencyStateBuilder {
-		return new class( $has_additional_currencies_enabled, $this->create_localization() ) extends MultiCurrencyStateBuilder {
+	private function create_state_builder( bool $has_additional_currencies_enabled ): StateBuilder {
+		return new class( $has_additional_currencies_enabled, $this->create_localization() ) extends StateBuilder {
 			/**
 			 * Whether additional currencies are enabled.
 			 *
@@ -1345,10 +1345,10 @@ class MultiCurrencySubscriptionsCompatibilityControllerTest extends WC_Unit_Test
 	 * Create a deterministic price projection service.
 	 *
 	 * @param float $rate Rate it converts by.
-	 * @return MultiCurrencyPriceConverter
+	 * @return PriceConverter
 	 */
-	private function create_price_converter( float $rate = 2.0 ): MultiCurrencyPriceConverter {
-		return new class( $rate ) extends MultiCurrencyPriceConverter {
+	private function create_price_converter( float $rate = 2.0 ): PriceConverter {
+		return new class( $rate ) extends PriceConverter {
 			/**
 			 * Rate it converts by.
 			 *

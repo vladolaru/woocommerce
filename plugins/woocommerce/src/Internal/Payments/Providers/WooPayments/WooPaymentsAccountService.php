@@ -8,7 +8,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Admin\Features\PaymentGatewaySuggestions\DefaultPaymentGateways;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyLocalizationService;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\LocalizationService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
@@ -623,7 +623,7 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	 * @return string
 	 */
 	public function get_account_domestic_currency(): string {
-		$country_locale_data = wc_get_container()->get( MultiCurrencyLocalizationService::class )->get_country_locale_data( $this->get_account_country_or_us() );
+		$country_locale_data = wc_get_container()->get( LocalizationService::class )->get_country_locale_data( $this->get_account_country_or_us() );
 		$currency_code       = $country_locale_data['currency_code'] ?? null;
 
 		if ( ! is_string( $currency_code ) || '' === $currency_code ) {

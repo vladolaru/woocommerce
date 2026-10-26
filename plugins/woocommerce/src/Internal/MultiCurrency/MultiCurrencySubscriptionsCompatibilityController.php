@@ -7,14 +7,14 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\MultiCurrency;
 
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyPriceConverter;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyServiceFactory;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilderFactory;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\PriceConverter;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\ServiceFactory;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilder;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilderFactory;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use Automattic\Jetpack\Constants;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRequestContext;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\RequestContext;
 
 /**
  * Keeps WooCommerce Subscriptions renewal, resubscribe and switch carts in the subscription's currency, converting only
@@ -128,16 +128,16 @@ class MultiCurrencySubscriptionsCompatibilityController implements RegisterHooks
 	/**
 	 * Price converter, built on first use.
 	 *
-	 * @var MultiCurrencyPriceConverter|null
+	 * @var PriceConverter|null
 	 */
-	private ?MultiCurrencyPriceConverter $price_converter = null;
+	private ?PriceConverter $price_converter = null;
 
 	/**
 	 * State builder.
 	 *
-	 * @var MultiCurrencyStateBuilder|null
+	 * @var StateBuilder|null
 	 */
-	private ?MultiCurrencyStateBuilder $state_builder = null;
+	private ?StateBuilder $state_builder = null;
 
 	/**
 	 * Previously observed subscription switch cart item key.
@@ -174,28 +174,28 @@ class MultiCurrencySubscriptionsCompatibilityController implements RegisterHooks
 	/**
 	 * State builder factory.
 	 *
-	 * @var MultiCurrencyStateBuilderFactory
+	 * @var StateBuilderFactory
 	 */
-	private MultiCurrencyStateBuilderFactory $state_builder_factory;
+	private StateBuilderFactory $state_builder_factory;
 
 	/**
 	 * Multi-Currency service factory.
 	 *
-	 * @var MultiCurrencyServiceFactory
+	 * @var ServiceFactory
 	 */
-	private MultiCurrencyServiceFactory $service_factory;
+	private ServiceFactory $service_factory;
 
 	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
 	 *
-	 * @param MultiCurrencyRuntimeArbiter      $arbiter               Runtime owner arbiter.
-	 * @param LegacyProxy                      $legacy_proxy          Proxy for global function calls.
-	 * @param MultiCurrencyStateBuilderFactory $state_builder_factory State builder factory.
-	 * @param MultiCurrencyServiceFactory      $service_factory       Multi-Currency service factory.
+	 * @param MultiCurrencyRuntimeArbiter $arbiter               Runtime owner arbiter.
+	 * @param LegacyProxy                 $legacy_proxy          Proxy for global function calls.
+	 * @param StateBuilderFactory         $state_builder_factory State builder factory.
+	 * @param ServiceFactory              $service_factory       Multi-Currency service factory.
 	 */
-	final public function init( MultiCurrencyRuntimeArbiter $arbiter, LegacyProxy $legacy_proxy, MultiCurrencyStateBuilderFactory $state_builder_factory, MultiCurrencyServiceFactory $service_factory ): void {
+	final public function init( MultiCurrencyRuntimeArbiter $arbiter, LegacyProxy $legacy_proxy, StateBuilderFactory $state_builder_factory, ServiceFactory $service_factory ): void {
 		$this->arbiter               = $arbiter;
 		$this->legacy_proxy          = $legacy_proxy;
 		$this->state_builder_factory = $state_builder_factory;
@@ -240,10 +240,10 @@ class MultiCurrencySubscriptionsCompatibilityController implements RegisterHooks
 			return;
 		}
 
-		add_filter( MultiCurrencyStateBuilder::FILTER_PREFIX . 'override_selected_currency', array( $this, 'override_selected_currency' ), 50 );
-		add_filter( MultiCurrencyStateBuilder::FILTER_PREFIX . 'should_disable_currency_switching', array( $this, 'should_disable_currency_switching' ), 50 );
-		add_filter( MultiCurrencyStateBuilder::FILTER_PREFIX . 'should_convert_product_price', array( $this, 'should_convert_product_price' ), 50, 2 );
-		add_filter( MultiCurrencyStateBuilder::FILTER_PREFIX . 'should_convert_coupon_amount', array( $this, 'should_convert_coupon_amount' ), 50, 2 );
+		add_filter( StateBuilder::FILTER_PREFIX . 'override_selected_currency', array( $this, 'override_selected_currency' ), 50 );
+		add_filter( StateBuilder::FILTER_PREFIX . 'should_disable_currency_switching', array( $this, 'should_disable_currency_switching' ), 50 );
+		add_filter( StateBuilder::FILTER_PREFIX . 'should_convert_product_price', array( $this, 'should_convert_product_price' ), 50, 2 );
+		add_filter( StateBuilder::FILTER_PREFIX . 'should_convert_coupon_amount', array( $this, 'should_convert_coupon_amount' ), 50, 2 );
 		add_filter( 'woocommerce_coupon_get_minimum_amount', array( $this, 'get_subscription_session_coupon_spend_limit' ), 100, 2 );
 		add_filter( 'woocommerce_coupon_get_maximum_amount', array( $this, 'get_subscription_session_coupon_spend_limit' ), 100, 2 );
 		add_filter( 'woocommerce_subscriptions_product_price', array( $this, 'get_subscription_product_price' ), 50, 2 );
@@ -309,7 +309,7 @@ class MultiCurrencySubscriptionsCompatibilityController implements RegisterHooks
 	 * @return string
 	 */
 	private function mark_order_currency( string $currency_code ): string {
-		MultiCurrencyStateBuilder::set_order_currency_override( $currency_code );
+		StateBuilder::set_order_currency_override( $currency_code );
 
 		return $currency_code;
 	}
@@ -365,13 +365,13 @@ class MultiCurrencySubscriptionsCompatibilityController implements RegisterHooks
 		// cart converts while Subscriptions sets it up, so the shopper lands at checkout with the converted price. Other
 		// products in a resubscribe cart convert.
 		$has_renewal = null !== $this->get_subscription_type_from_cart( 'renewal' );
-		if ( $has_renewal && MultiCurrencyRequestContext::is_call_in_backtrace( self::RENEWAL_SETUP_CALLS ) ) {
+		if ( $has_renewal && RequestContext::is_call_in_backtrace( self::RENEWAL_SETUP_CALLS ) ) {
 			return true;
 		}
 
 		return ! (
 			( $has_renewal || $this->is_resubscribed_product( $product ) )
-			&& MultiCurrencyRequestContext::is_call_in_backtrace( self::PRODUCT_PRICE_CALCULATION_CALLS )
+			&& RequestContext::is_call_in_backtrace( self::PRODUCT_PRICE_CALCULATION_CALLS )
 		);
 	}
 
@@ -397,8 +397,8 @@ class MultiCurrencySubscriptionsCompatibilityController implements RegisterHooks
 		// In a renewal cart a recurring coupon already holds its converted amount when applied; an early renewal's setup reads the original amount.
 		return ! (
 			null !== $this->get_subscription_type_from_cart( 'renewal' )
-			&& ! MultiCurrencyRequestContext::is_call_in_backtrace( self::EARLY_RENEWAL_SETUP_CALLS )
-			&& MultiCurrencyRequestContext::is_call_in_backtrace( self::APPLY_COUPON_CALLS )
+			&& ! RequestContext::is_call_in_backtrace( self::EARLY_RENEWAL_SETUP_CALLS )
+			&& RequestContext::is_call_in_backtrace( self::APPLY_COUPON_CALLS )
 			&& in_array( $discount_type, self::SUBSCRIPTION_RECURRING_COUPON_TYPES, true )
 		);
 	}
@@ -452,7 +452,7 @@ class MultiCurrencySubscriptionsCompatibilityController implements RegisterHooks
 		if (
 			! $product instanceof \WC_Product
 			|| ! $this->get_price_converter()->should_convert_between_selected_and_default_currency()
-			|| ! MultiCurrencyRequestContext::is_call_in_backtrace( self::SUBSCRIPTION_PRODUCT_ACTIVE_PRICE_CALLS )
+			|| ! RequestContext::is_call_in_backtrace( self::SUBSCRIPTION_PRODUCT_ACTIVE_PRICE_CALLS )
 		) {
 			return $price;
 		}
@@ -480,7 +480,7 @@ class MultiCurrencySubscriptionsCompatibilityController implements RegisterHooks
 				&& $this->get_product_id( $product ) === $this->get_cart_item_product_id( $cart_item )
 				&& $this->has_rewritten_subscription_signup_fee( $product )
 				&& (
-					MultiCurrencyRequestContext::is_call_in_backtrace( self::SUBSCRIPTION_PRICE_SETUP_CALLS )
+					RequestContext::is_call_in_backtrace( self::SUBSCRIPTION_PRICE_SETUP_CALLS )
 					|| $this->is_subscription_switch_proration_context( $this->switch_cart_item, $previous_switch_cart_item )
 					|| $this->has_changed_subscription_signup_fee_meta( $product, $this->switch_cart_item, $previous_switch_cart_item )
 				)
@@ -506,8 +506,8 @@ class MultiCurrencySubscriptionsCompatibilityController implements RegisterHooks
 	public function maybe_set_current_my_account_subscription( $subscription_details, $subscription ): array {
 		if (
 			(
-				MultiCurrencyRequestContext::is_call_in_backtrace( self::MY_ACCOUNT_SUBSCRIPTIONS_TEMPLATE_CALLS )
-				|| MultiCurrencyRequestContext::is_call_in_backtrace( self::FORMATTED_SUBSCRIPTION_TOTAL_CALLS )
+				RequestContext::is_call_in_backtrace( self::MY_ACCOUNT_SUBSCRIPTIONS_TEMPLATE_CALLS )
+				|| RequestContext::is_call_in_backtrace( self::FORMATTED_SUBSCRIPTION_TOTAL_CALLS )
 			)
 			&& null !== $this->get_subscription_currency( $subscription )
 		) {
@@ -725,9 +725,9 @@ class MultiCurrencySubscriptionsCompatibilityController implements RegisterHooks
 	private function is_subscription_switch_proration_context( string $current_switch_cart_item, string $previous_switch_cart_item ): bool {
 		return '' !== $current_switch_cart_item
 			&& $current_switch_cart_item === $previous_switch_cart_item
-			&& MultiCurrencyRequestContext::is_call_in_backtrace( self::SUBSCRIPTION_PRODUCT_SIGNUP_FEE_CALLS )
-			&& MultiCurrencyRequestContext::is_call_in_backtrace( self::CART_CALCULATE_TOTALS_CALLS )
-			&& ! MultiCurrencyRequestContext::is_call_in_backtrace( self::SWITCH_APPORTION_SIGNUP_FEE_CALLS );
+			&& RequestContext::is_call_in_backtrace( self::SUBSCRIPTION_PRODUCT_SIGNUP_FEE_CALLS )
+			&& RequestContext::is_call_in_backtrace( self::CART_CALCULATE_TOTALS_CALLS )
+			&& ! RequestContext::is_call_in_backtrace( self::SWITCH_APPORTION_SIGNUP_FEE_CALLS );
 	}
 
 	/**
@@ -905,9 +905,9 @@ class MultiCurrencySubscriptionsCompatibilityController implements RegisterHooks
 	/**
 	 * Get the price converter.
 	 *
-	 * @return MultiCurrencyPriceConverter
+	 * @return PriceConverter
 	 */
-	private function get_price_converter(): MultiCurrencyPriceConverter {
+	private function get_price_converter(): PriceConverter {
 		if ( null === $this->price_converter ) {
 			$this->price_converter = $this->service_factory->create_price_converter();
 		}
@@ -918,9 +918,9 @@ class MultiCurrencySubscriptionsCompatibilityController implements RegisterHooks
 	/**
 	 * Get the state builder.
 	 *
-	 * @return MultiCurrencyStateBuilder
+	 * @return StateBuilder
 	 */
-	private function get_state_builder(): MultiCurrencyStateBuilder {
+	private function get_state_builder(): StateBuilder {
 		if ( null === $this->state_builder ) {
 			$this->state_builder = $this->state_builder_factory->get_state_builder();
 		}

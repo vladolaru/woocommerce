@@ -7,7 +7,7 @@ use ActionScheduler_Store;
 use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\CurrencyRateProviderInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyCacheInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFeatureController;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRateService;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\RateService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\WooPaymentsStripeBillingModule;
@@ -716,7 +716,7 @@ class WooPaymentsStoreSetupReportControllerTest extends WC_Unit_Test_Case {
 		$provider->method( 'get_id' )->willReturn( 'test-outage' );
 		$provider->method( 'is_available' )->willReturn( false );
 
-		wc_get_container()->get( MultiCurrencyRateService::class )->set_provider( $provider );
+		wc_get_container()->get( RateService::class )->set_provider( $provider );
 	}
 
 	/**

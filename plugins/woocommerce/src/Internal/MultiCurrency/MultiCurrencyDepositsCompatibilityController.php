@@ -8,11 +8,11 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\MultiCurrency;
 
 use Automattic\WooCommerce\Internal\MultiCurrency\Compat\WooPaymentsExtensionMultiCurrencyFacadeLoader;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyPriceConverter;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyServiceFactory;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\PriceConverter;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\ServiceFactory;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRequestContext;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\RequestContext;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilder;
 
 /**
  * Converts WooCommerce Deposits amounts to the selected currency for Deposits versions before 2.0.1, which do not convert
@@ -41,16 +41,16 @@ class MultiCurrencyDepositsCompatibilityController implements RegisterHooksInter
 	/**
 	 * Multi-Currency service factory.
 	 *
-	 * @var MultiCurrencyServiceFactory
+	 * @var ServiceFactory
 	 */
-	private MultiCurrencyServiceFactory $service_factory;
+	private ServiceFactory $service_factory;
 
 	/**
 	 * Price converter, built on first use.
 	 *
-	 * @var MultiCurrencyPriceConverter|null
+	 * @var PriceConverter|null
 	 */
-	private ?MultiCurrencyPriceConverter $price_converter = null;
+	private ?PriceConverter $price_converter = null;
 
 	/**
 	 * Initialize the class instance.
@@ -58,9 +58,9 @@ class MultiCurrencyDepositsCompatibilityController implements RegisterHooksInter
 	 * @internal
 	 *
 	 * @param MultiCurrencyRuntimeArbiter $arbiter         Runtime owner arbiter.
-	 * @param MultiCurrencyServiceFactory $service_factory Multi-Currency service factory.
+	 * @param ServiceFactory              $service_factory Multi-Currency service factory.
 	 */
-	final public function init( MultiCurrencyRuntimeArbiter $arbiter, MultiCurrencyServiceFactory $service_factory ): void {
+	final public function init( MultiCurrencyRuntimeArbiter $arbiter, ServiceFactory $service_factory ): void {
 		$this->arbiter         = $arbiter;
 		$this->service_factory = $service_factory;
 	}
@@ -101,7 +101,7 @@ class MultiCurrencyDepositsCompatibilityController implements RegisterHooksInter
 
 		add_filter( 'woocommerce_get_cart_contents', array( $this, 'modify_cart_item_deposit_amounts' ) );
 		add_filter( 'woocommerce_product_get__wc_deposit_amount', array( $this, 'modify_cart_item_deposit_amount_meta' ), 10, 2 );
-		add_filter( MultiCurrencyStateBuilder::FILTER_PREFIX . 'should_convert_product_price', array( $this, 'maybe_convert_product_prices_for_deposits' ), 10, 2 );
+		add_filter( StateBuilder::FILTER_PREFIX . 'should_convert_product_price', array( $this, 'maybe_convert_product_prices_for_deposits' ), 10, 2 );
 		add_action( 'woocommerce_deposits_create_order', array( $this, 'modify_order_currency' ) );
 	}
 
@@ -138,7 +138,7 @@ class MultiCurrencyDepositsCompatibilityController implements RegisterHooksInter
 	public function modify_cart_item_deposit_amount_meta( $amount, $product ) {
 		if (
 			'percent' !== $this->get_product_deposit_type( $product )
-			|| ! MultiCurrencyRequestContext::is_call_in_backtrace( self::DEPOSITS_FORM_OUTPUT_CALLS )
+			|| ! RequestContext::is_call_in_backtrace( self::DEPOSITS_FORM_OUTPUT_CALLS )
 		) {
 			return $amount;
 		}
@@ -159,7 +159,7 @@ class MultiCurrencyDepositsCompatibilityController implements RegisterHooksInter
 		}
 
 		return 'plan' !== $this->get_product_deposit_type( $product )
-			|| ! MultiCurrencyRequestContext::is_call_in_backtrace( self::CART_TOTALS_CALLS );
+			|| ! RequestContext::is_call_in_backtrace( self::CART_TOTALS_CALLS );
 	}
 
 	/**
@@ -248,9 +248,9 @@ class MultiCurrencyDepositsCompatibilityController implements RegisterHooksInter
 	/**
 	 * Get the price converter.
 	 *
-	 * @return MultiCurrencyPriceConverter
+	 * @return PriceConverter
 	 */
-	private function get_price_converter(): MultiCurrencyPriceConverter {
+	private function get_price_converter(): PriceConverter {
 		if ( null === $this->price_converter ) {
 			$this->price_converter = $this->service_factory->create_price_converter();
 		}

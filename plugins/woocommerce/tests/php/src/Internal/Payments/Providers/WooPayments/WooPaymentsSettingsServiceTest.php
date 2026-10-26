@@ -31,7 +31,7 @@ use Automattic\WooCommerce\Internal\Features\FeaturesController;
 use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\CurrencyRateProviderInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyCacheInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFeatureController;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRateService;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\RateService;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use WC_Unit_Test_Case;
 use WP_Error;
@@ -2747,7 +2747,7 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 			update_option( MultiCurrencyCacheInterface::CURRENCIES_KEY, $rates_cache, false );
 		}
 		if ( 'provider' === $rate_source ) {
-			wc_get_container()->get( MultiCurrencyRateService::class )->set_provider( $this->create_usd_rate_provider( (float) $rate ) );
+			wc_get_container()->get( RateService::class )->set_provider( $this->create_usd_rate_provider( (float) $rate ) );
 		}
 		$expected_standard                      = $this->get_standard_fraud_ruleset_fixture();
 		$expected_standard[2]['check']['value'] = $expected;

@@ -7,7 +7,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyCompatibilityCont
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencySwitcherWidget;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencySwitcherWidgetController;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencySwitcherRenderer;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\SwitcherRenderer;
 use WC_Unit_Test_Case;
 
 /**
@@ -256,7 +256,7 @@ class MultiCurrencySwitcherWidgetControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Should clean the output buffer when widget rendering throws.
 	 */
 	public function test_cleans_output_buffer_when_widget_rendering_throws(): void {
-		$switcher_renderer = new class() extends MultiCurrencySwitcherRenderer {
+		$switcher_renderer = new class() extends SwitcherRenderer {
 			/**
 			 * Constructor.
 			 */
@@ -389,13 +389,13 @@ class MultiCurrencySwitcherWidgetControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * Create a switcher widget controller.
 	 *
-	 * @param string                        $owner      Runtime owner.
-	 * @param MultiCurrencySwitcherRenderer $switcher_renderer Projection service.
+	 * @param string           $owner      Runtime owner.
+	 * @param SwitcherRenderer $switcher_renderer Projection service.
 	 * @return MultiCurrencySwitcherWidgetController
 	 */
 	private function create_controller(
 		string $owner,
-		?MultiCurrencySwitcherRenderer $switcher_renderer = null
+		?SwitcherRenderer $switcher_renderer = null
 	): MultiCurrencySwitcherWidgetController {
 		$controller = new MultiCurrencySwitcherWidgetController();
 		$controller->init(
@@ -410,12 +410,12 @@ class MultiCurrencySwitcherWidgetControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * Create a switcher widget.
 	 *
-	 * @param MultiCurrencySwitcherRenderer|null $switcher_renderer          Projection service.
-	 * @param bool                               $switching_disabled Whether switching is disabled.
+	 * @param SwitcherRenderer|null $switcher_renderer          Projection service.
+	 * @param bool                  $switching_disabled Whether switching is disabled.
 	 * @return MultiCurrencySwitcherWidget
 	 */
 	private function create_widget(
-		?MultiCurrencySwitcherRenderer $switcher_renderer = null,
+		?SwitcherRenderer $switcher_renderer = null,
 		bool $switching_disabled = false
 	): MultiCurrencySwitcherWidget {
 		return new MultiCurrencySwitcherWidget(
@@ -506,10 +506,10 @@ class MultiCurrencySwitcherWidgetControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * Create a switcher projection service test double.
 	 *
-	 * @return MultiCurrencySwitcherRenderer
+	 * @return SwitcherRenderer
 	 */
-	private function create_switcher_renderer(): MultiCurrencySwitcherRenderer {
-		return new class() extends MultiCurrencySwitcherRenderer {
+	private function create_switcher_renderer(): SwitcherRenderer {
+		return new class() extends SwitcherRenderer {
 			/**
 			 * Last widget instance settings.
 			 *

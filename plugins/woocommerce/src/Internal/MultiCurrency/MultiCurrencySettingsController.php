@@ -9,7 +9,7 @@ namespace Automattic\WooCommerce\Internal\MultiCurrency;
 
 use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Internal\Admin\WCAdminAssets;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyCacheRenderingService;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\CacheRenderingService;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 
@@ -52,9 +52,9 @@ class MultiCurrencySettingsController implements RegisterHooksInterface {
 	/**
 	 * Cache rendering service.
 	 *
-	 * @var MultiCurrencyCacheRenderingService
+	 * @var CacheRenderingService
 	 */
-	private MultiCurrencyCacheRenderingService $cache_rendering_service;
+	private CacheRenderingService $cache_rendering_service;
 
 	/**
 	 * Proxy for the emoji script printer and the asset-file checks.
@@ -68,11 +68,11 @@ class MultiCurrencySettingsController implements RegisterHooksInterface {
 	 *
 	 * @internal
 	 *
-	 * @param MultiCurrencyRuntimeArbiter        $arbiter                 Runtime owner arbiter.
-	 * @param LegacyProxy                        $legacy_proxy            Proxy for the emoji script printer and the asset-file checks.
-	 * @param MultiCurrencyCacheRenderingService $cache_rendering_service Cache rendering service.
+	 * @param MultiCurrencyRuntimeArbiter $arbiter                 Runtime owner arbiter.
+	 * @param LegacyProxy                 $legacy_proxy            Proxy for the emoji script printer and the asset-file checks.
+	 * @param CacheRenderingService       $cache_rendering_service Cache rendering service.
 	 */
-	final public function init( MultiCurrencyRuntimeArbiter $arbiter, LegacyProxy $legacy_proxy, MultiCurrencyCacheRenderingService $cache_rendering_service ): void {
+	final public function init( MultiCurrencyRuntimeArbiter $arbiter, LegacyProxy $legacy_proxy, CacheRenderingService $cache_rendering_service ): void {
 		$this->arbiter                 = $arbiter;
 		$this->legacy_proxy            = $legacy_proxy;
 		$this->cache_rendering_service = $cache_rendering_service;

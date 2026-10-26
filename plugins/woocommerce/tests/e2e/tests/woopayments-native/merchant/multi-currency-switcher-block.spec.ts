@@ -13,7 +13,7 @@ test.use( { storageState: ADMIN_STATE_PATH } );
  * Three provider-free contracts against the Core-owned currency switcher block
  * (`woocommerce-payments/multi-currency-switcher`), registered server-side by
  * MultiCurrencySwitcherBlockController and rendered by
- * MultiCurrencySwitcherRenderer:
+ * SwitcherRenderer:
  *
  * - the merchant can configure the block's presentation choices and they
  *   persist;
@@ -36,7 +36,7 @@ test.use( { storageState: ADMIN_STATE_PATH } );
  * Run-owned state is limited to posts this spec creates and force-deletes.
  *
  * Deliberately NOT claimed here (they belong to MultiCurrencyFrontendPricesControllerTest
- * and MultiCurrencyPriceCalculatorTest): that switching converts prices on the
+ * and PriceCalculatorTest): that switching converts prices on the
  * product, cart, and checkout surfaces. Row :61's own packet also puts
  * currency selection and repricing outside its scope, so the publish row
  * proves the published control renders and offers the enabled set, not that
@@ -94,7 +94,7 @@ const CONFIGURED_PRESENTATION = {
 	fontLineHeight: 2,
 } as const;
 
-// The US regional-indicator pair MultiCurrencySwitcherRenderer
+// The US regional-indicator pair SwitcherRenderer
 // derives for the USD store default.
 const USD_FLAG = '\u{1F1FA}\u{1F1F8}';
 
@@ -212,7 +212,7 @@ async function getStoreCurrencies(
  *
  * The switcher projection returns empty markup unless the store has an
  * additional enabled currency
- * (`MultiCurrencySwitcherRenderer::get_block_markup` →
+ * (`SwitcherRenderer::get_block_markup` →
  * `MultiCurrencyState::has_additional_currencies_enabled`), so on a
  * single-currency store every assertion below would be about an absent
  * control. That must fail loudly here, before any post is created, rather
@@ -921,7 +921,7 @@ test(
 			// honoured — which is what this row's residual risk asks for
 			// ("validate switch behavior, not visibility alone"). Price
 			// conversion is deliberately not claimed here; MultiCurrencyFrontendPricesControllerTest
-			// and MultiCurrencyPriceCalculatorTest own that assertion.
+			// and PriceCalculatorTest own that assertion.
 			await switcher.focus();
 			await expect( switcher ).toBeFocused();
 			await switcher.selectOption( additionalCode );

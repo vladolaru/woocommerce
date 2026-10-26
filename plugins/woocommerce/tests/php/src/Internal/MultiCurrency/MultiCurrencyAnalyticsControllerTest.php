@@ -9,14 +9,14 @@ use Automattic\WooCommerce\Internal\Admin\WCAdminAssets;
 use Automattic\WooCommerce\Internal\DataStores\Orders\CustomOrdersTableController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyAnalyticsController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyAnalyticsService;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyDatabaseCache;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyLocalizationService;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyServiceFactory;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRequestContext;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyAnalyticsSqlFilters;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyUsageDetector;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\AnalyticsService;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\DatabaseCache;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\LocalizationService;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\ServiceFactory;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\RequestContext;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\AnalyticsSqlFilters;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilder;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\UsageDetector;
 use WC_Unit_Test_Case;
 use Automattic\WooCommerce\Tests\Internal\MultiCurrency\RateServices;
 
@@ -209,7 +209,7 @@ class MultiCurrencyAnalyticsControllerTest extends WC_Unit_Test_Case {
 	 */
 	public function test_registers_sql_hooks_only_for_rest_requests_with_multi_currency_orders(): void {
 		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, true );
-		set_transient( MultiCurrencyUsageDetector::HAS_MC_ORDERS_TRANSIENT, '1', HOUR_IN_SECONDS );
+		set_transient( UsageDetector::HAS_MC_ORDERS_TRANSIENT, '1', HOUR_IN_SECONDS );
 
 		$sut->register();
 
@@ -225,14 +225,14 @@ class MultiCurrencyAnalyticsControllerTest extends WC_Unit_Test_Case {
 		global $wpdb;
 
 		add_filter( 'pre_option_' . CustomOrdersTableController::CUSTOM_ORDERS_TABLE_USAGE_ENABLED_OPTION, static fn(): string => 'no' );
-		$detector = new MultiCurrencyUsageDetector();
+		$detector = new UsageDetector();
 		$sut      = new MultiCurrencyAnalyticsController();
 		$sut->init(
 			$this->create_arbiter( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN ),
-			wc_get_container()->get( MultiCurrencyServiceFactory::class ),
+			wc_get_container()->get( ServiceFactory::class ),
 			$detector,
 			$this->create_request_context( true ),
-			wc_get_container()->get( MultiCurrencyAnalyticsSqlFilters::class )
+			wc_get_container()->get( AnalyticsSqlFilters::class )
 		);
 		$original_postmeta = $wpdb->postmeta;
 		$suppress_errors   = $wpdb->suppress_errors( true );
@@ -254,7 +254,7 @@ class MultiCurrencyAnalyticsControllerTest extends WC_Unit_Test_Case {
 	 */
 	public function test_registers_selected_currency_sql_hooks_for_rest_requests_with_multi_currency_orders(): void {
 		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, true );
-		set_transient( MultiCurrencyUsageDetector::HAS_MC_ORDERS_TRANSIENT, '1', HOUR_IN_SECONDS );
+		set_transient( UsageDetector::HAS_MC_ORDERS_TRANSIENT, '1', HOUR_IN_SECONDS );
 		$_GET['currency'] = 'EUR';
 
 		$sut->register();
@@ -268,7 +268,7 @@ class MultiCurrencyAnalyticsControllerTest extends WC_Unit_Test_Case {
 	 */
 	public function test_register_does_not_resolve_default_currency_for_selected_currency_sql_hooks(): void {
 		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, true );
-		set_transient( MultiCurrencyUsageDetector::HAS_MC_ORDERS_TRANSIENT, '1', HOUR_IN_SECONDS );
+		set_transient( UsageDetector::HAS_MC_ORDERS_TRANSIENT, '1', HOUR_IN_SECONDS );
 		$_GET['currency'] = 'EUR';
 		add_filter(
 			'woocommerce_currency',
@@ -338,7 +338,7 @@ class MultiCurrencyAnalyticsControllerTest extends WC_Unit_Test_Case {
 		$order->update_meta_data( '_wcpay_multi_currency_order_exchange_rate', 2 );
 		$order->update_meta_data( '_wcpay_multi_currency_order_default_currency', 'USD' );
 		$order->save();
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, false, new MultiCurrencyAnalyticsService( $this->create_state_builder() ) );
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, false, new AnalyticsService( $this->create_state_builder() ) );
 
 		$result = $sut->convert_order_stats_data(
 			array(
@@ -364,7 +364,7 @@ class MultiCurrencyAnalyticsControllerTest extends WC_Unit_Test_Case {
 		$refund->set_currency( 'EUR' );
 		$refund->update_meta_data( '_wcpay_multi_currency_order_exchange_rate', 2 );
 		$refund->update_meta_data( '_wcpay_multi_currency_order_default_currency', 'USD' );
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, false, new MultiCurrencyAnalyticsService( $this->create_state_builder() ) );
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, false, new AnalyticsService( $this->create_state_builder() ) );
 
 		$result = $sut->convert_order_stats_data(
 			array(
@@ -623,19 +623,19 @@ class MultiCurrencyAnalyticsControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * Create an analytics controller.
 	 *
-	 * @param string                             $owner                     Runtime owner.
-	 * @param bool|null                          $rest_request Whether the request is a WooCommerce REST request; null reads the real request.
-	 * @param MultiCurrencyAnalyticsService|null $analytics_service Analytics projection service; the factory's by default.
+	 * @param string                $owner                     Runtime owner.
+	 * @param bool|null             $rest_request Whether the request is a WooCommerce REST request; null reads the real request.
+	 * @param AnalyticsService|null $analytics_service Analytics projection service; the factory's by default.
 	 * @return MultiCurrencyAnalyticsController
 	 */
-	private function create_controller( string $owner, ?bool $rest_request = false, ?MultiCurrencyAnalyticsService $analytics_service = null ): MultiCurrencyAnalyticsController {
+	private function create_controller( string $owner, ?bool $rest_request = false, ?AnalyticsService $analytics_service = null ): MultiCurrencyAnalyticsController {
 		$controller = new MultiCurrencyAnalyticsController();
 		$controller->init(
 			$this->create_arbiter( $owner ),
 			ServiceFactories::with( $this, array( 'create_analytics_service' => $analytics_service ) ),
-			new MultiCurrencyUsageDetector(),
-			null === $rest_request ? wc_get_container()->get( MultiCurrencyRequestContext::class ) : $this->create_request_context( $rest_request ),
-			wc_get_container()->get( MultiCurrencyAnalyticsSqlFilters::class )
+			new UsageDetector(),
+			null === $rest_request ? wc_get_container()->get( RequestContext::class ) : $this->create_request_context( $rest_request ),
+			wc_get_container()->get( AnalyticsSqlFilters::class )
 		);
 
 		return $controller;
@@ -645,10 +645,10 @@ class MultiCurrencyAnalyticsControllerTest extends WC_Unit_Test_Case {
 	 * Create a request context that answers whether the request is a WooCommerce REST request.
 	 *
 	 * @param bool $rest_request Whether the request is a WooCommerce REST request.
-	 * @return MultiCurrencyRequestContext
+	 * @return RequestContext
 	 */
-	private function create_request_context( bool $rest_request ): MultiCurrencyRequestContext {
-		return new class( $rest_request ) extends MultiCurrencyRequestContext {
+	private function create_request_context( bool $rest_request ): RequestContext {
+		return new class( $rest_request ) extends RequestContext {
 			/**
 			 * Whether the request is a WooCommerce REST request.
 			 *
@@ -689,10 +689,10 @@ class MultiCurrencyAnalyticsControllerTest extends WC_Unit_Test_Case {
 		$controller = new MultiCurrencyAnalyticsController();
 		$controller->init(
 			$this->create_arbiter( $owner ),
-			wc_get_container()->get( MultiCurrencyServiceFactory::class ),
-			new MultiCurrencyUsageDetector(),
+			wc_get_container()->get( ServiceFactory::class ),
+			new UsageDetector(),
 			$this->create_request_context( true ),
-			wc_get_container()->get( MultiCurrencyAnalyticsSqlFilters::class )
+			wc_get_container()->get( AnalyticsSqlFilters::class )
 		);
 
 		return $controller;
@@ -701,15 +701,15 @@ class MultiCurrencyAnalyticsControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * Create a state builder.
 	 *
-	 * @return MultiCurrencyStateBuilder
+	 * @return StateBuilder
 	 */
-	private function create_state_builder(): MultiCurrencyStateBuilder {
-		$localization_service = new MultiCurrencyLocalizationService();
+	private function create_state_builder(): StateBuilder {
+		$localization_service = new LocalizationService();
 
-		return new MultiCurrencyStateBuilder(
+		return new StateBuilder(
 			$localization_service,
 			RateServices::with(),
-			new MultiCurrencyDatabaseCache()
+			new DatabaseCache()
 		);
 	}
 

@@ -10,7 +10,7 @@ namespace Automattic\WooCommerce\Internal\MultiCurrency;
 use Automattic\WooCommerce\Container;
 use Automattic\WooCommerce\Internal\DependencyManagement\RuntimeContainer;
 use Automattic\WooCommerce\Internal\Features\FeaturesController;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyUsageDetector;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\UsageDetector;
 use Automattic\WooCommerce\Internal\MultiCurrency\Shadow\MultiCurrencyShadowMode;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Automattic\WooCommerce\Internal\Utilities\RequestTypeUtil;
@@ -334,7 +334,7 @@ final class MultiCurrencyBootstrap {
 			return;
 		}
 
-		$usage = $this->usage ?? $this->get_usage_from_order_history( $container->get( MultiCurrencyUsageDetector::class ) );
+		$usage = $this->usage ?? $this->get_usage_from_order_history( $container->get( UsageDetector::class ) );
 		$cron  = $this->get_classes_for_usage( $usage, RequestTypeUtil::CRON );
 		if ( empty( $cron ) ) {
 			return;
@@ -451,8 +451,8 @@ final class MultiCurrencyBootstrap {
 	 * @return array<int,class-string> Class names in registration order.
 	 */
 	private function get_module_classes_for_request( $container, string $request_type ): array {
-		/** Resolve persisted Multi-Currency usage. @var MultiCurrencyUsageDetector $usage_detector */
-		$usage_detector = $container->get( MultiCurrencyUsageDetector::class );
+		/** Resolve persisted Multi-Currency usage. @var UsageDetector $usage_detector */
+		$usage_detector = $container->get( UsageDetector::class );
 		if ( $usage_detector->has_configured_additional_currencies() ) {
 			$this->usage = 'configured';
 			return $this->get_classes_for_usage( 'configured', $request_type );
@@ -472,7 +472,7 @@ final class MultiCurrencyBootstrap {
 	/**
 	 * Get how far a store without additional currencies uses Multi-Currency, from its order history.
 	 *
-	 * @param MultiCurrencyUsageDetector $usage_detector Persisted usage detector.
+	 * @param UsageDetector $usage_detector Persisted usage detector.
 	 * @return string Usage: historical or empty.
 	 */
 	private function get_usage_from_order_history( $usage_detector ): string {

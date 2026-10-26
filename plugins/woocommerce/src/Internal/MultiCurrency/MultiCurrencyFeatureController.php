@@ -9,8 +9,8 @@ namespace Automattic\WooCommerce\Internal\MultiCurrency;
 
 use Automattic\WooCommerce\Enums\FeaturePluginCompatibility;
 use Automattic\WooCommerce\Internal\Features\FeaturesController;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyUsageDetector;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilder;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\UsageDetector;
 
 /**
  * Declares the Multi-currency feature, asks for confirmation before it is turned off while currencies or
@@ -57,9 +57,9 @@ class MultiCurrencyFeatureController {
 	/**
 	 * Persisted Multi-Currency usage detector.
 	 *
-	 * @var MultiCurrencyUsageDetector
+	 * @var UsageDetector
 	 */
-	private MultiCurrencyUsageDetector $usage_detector;
+	private UsageDetector $usage_detector;
 
 	/**
 	 * Multi-Currency runtime owner arbiter.
@@ -73,10 +73,10 @@ class MultiCurrencyFeatureController {
 	 *
 	 * @internal
 	 *
-	 * @param MultiCurrencyUsageDetector  $usage_detector  Persisted usage detector.
+	 * @param UsageDetector               $usage_detector  Persisted usage detector.
 	 * @param MultiCurrencyRuntimeArbiter $runtime_arbiter Multi-Currency runtime owner arbiter.
 	 */
-	final public function init( MultiCurrencyUsageDetector $usage_detector, MultiCurrencyRuntimeArbiter $runtime_arbiter ): void {
+	final public function init( UsageDetector $usage_detector, MultiCurrencyRuntimeArbiter $runtime_arbiter ): void {
 		$this->usage_detector  = $usage_detector;
 		$this->runtime_arbiter = $runtime_arbiter;
 	}
@@ -210,7 +210,7 @@ class MultiCurrencyFeatureController {
 	 * @return bool
 	 */
 	private static function has_stored_multi_currency_setup(): bool {
-		$enabled_currencies = get_option( MultiCurrencyStateBuilder::ENABLED_CURRENCIES_OPTION, array() );
+		$enabled_currencies = get_option( StateBuilder::ENABLED_CURRENCIES_OPTION, array() );
 		$has_prior_use      = ( is_array( $enabled_currencies ) && ! empty( $enabled_currencies ) )
 			|| filter_var( get_option( self::SETUP_COMPLETED_OPTION, false ), FILTER_VALIDATE_BOOLEAN );
 

@@ -5,9 +5,9 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\M
 
 use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyAccountInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyCacheInterface;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyDatabaseCache;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyLocalizationService;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\DatabaseCache;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\LocalizationService;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilder;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsCurrencyRateProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsNativeApiClientAdapter;
@@ -70,7 +70,7 @@ class WooPaymentsNativeApiClientAdapterTest extends WC_Unit_Test_Case {
 		$adapter = new WooPaymentsNativeApiClientAdapter();
 		$adapter->init( new FailingRatesNativeApiClient() );
 		$provider = new WooPaymentsCurrencyRateProvider( new ConnectedMultiCurrencyAccount(), $adapter );
-		$builder  = new MultiCurrencyStateBuilder( new MultiCurrencyLocalizationService(), RateServices::with( $provider ), new MultiCurrencyDatabaseCache() );
+		$builder  = new StateBuilder( new LocalizationService(), RateServices::with( $provider ), new DatabaseCache() );
 
 		$enabled = $builder->build()->get_enabled_currencies();
 		$stored  = get_option( MultiCurrencyCacheInterface::CURRENCIES_KEY );

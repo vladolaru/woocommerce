@@ -7,9 +7,9 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\MultiCurrency;
 
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyPriceConverter;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyServiceFactory;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRequestContext;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\PriceConverter;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\ServiceFactory;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\RequestContext;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 
 /**
@@ -35,23 +35,23 @@ class MultiCurrencyFrontendPricesController implements RegisterHooksInterface {
 	/**
 	 * Multi-Currency service factory.
 	 *
-	 * @var MultiCurrencyServiceFactory
+	 * @var ServiceFactory
 	 */
-	private MultiCurrencyServiceFactory $service_factory;
+	private ServiceFactory $service_factory;
 
 	/**
 	 * Price converter, built on first use.
 	 *
-	 * @var MultiCurrencyPriceConverter|null
+	 * @var PriceConverter|null
 	 */
-	private ?MultiCurrencyPriceConverter $price_converter = null;
+	private ?PriceConverter $price_converter = null;
 
 	/**
 	 * Request context.
 	 *
-	 * @var MultiCurrencyRequestContext
+	 * @var RequestContext
 	 */
-	private MultiCurrencyRequestContext $request_context;
+	private RequestContext $request_context;
 
 	/**
 	 * The flat-rate method whose cost arguments were last converted to the store currency.
@@ -68,13 +68,13 @@ class MultiCurrencyFrontendPricesController implements RegisterHooksInterface {
 	 * @internal
 	 *
 	 * @param MultiCurrencyRuntimeArbiter $arbiter         Runtime owner arbiter.
-	 * @param MultiCurrencyServiceFactory $service_factory Multi-Currency service factory.
-	 * @param MultiCurrencyRequestContext $request_context Request context.
+	 * @param ServiceFactory              $service_factory Multi-Currency service factory.
+	 * @param RequestContext              $request_context Request context.
 	 */
 	final public function init(
 		MultiCurrencyRuntimeArbiter $arbiter,
-		MultiCurrencyServiceFactory $service_factory,
-		MultiCurrencyRequestContext $request_context
+		ServiceFactory $service_factory,
+		RequestContext $request_context
 	): void {
 		$this->arbiter         = $arbiter;
 		$this->service_factory = $service_factory;
@@ -407,9 +407,9 @@ class MultiCurrencyFrontendPricesController implements RegisterHooksInterface {
 	/**
 	 * Get the price converter.
 	 *
-	 * @return MultiCurrencyPriceConverter
+	 * @return PriceConverter
 	 */
-	private function get_price_converter(): MultiCurrencyPriceConverter {
+	private function get_price_converter(): PriceConverter {
 		if ( null === $this->price_converter ) {
 			$this->price_converter = $this->service_factory->create_price_converter();
 		}

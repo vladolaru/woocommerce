@@ -261,7 +261,7 @@ describe( 'MultiCurrencyAsyncPriceRenderer', () => {
 		}
 	);
 
-	// The same cases as MultiCurrencyPriceCalculatorTest::rendered_price_provider(), from the same canonical strings, so the price
+	// The same cases as PriceCalculatorTest::rendered_price_provider(), from the same canonical strings, so the price
 	// shown and the price the server charges agree.
 	test.each( [
 		[

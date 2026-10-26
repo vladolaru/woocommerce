@@ -9,7 +9,7 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin;
 
 use Automattic\Jetpack\Identity_Crisis;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyExplicitPriceFormatter;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\ExplicitPriceFormatter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAdminMenuBadgeService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsApplePayDomainService;
@@ -170,7 +170,7 @@ class WooPaymentsAdminSharedSettings implements RegisterHooksInterface {
 		// Client 11.1.0 `class-wc-payments-admin.php:1021` localizes this for the transactions list's Subscription # column.
 		$settings['woopaymentsSettings']['isSubscriptionsActive'] = $this->is_subscriptions_plugin_active();
 		// Client 11.1.0 `class-wc-payments-admin.php:1040` localizes this for `formatExplicitCurrency()`.
-		$settings['woopaymentsSettings']['shouldUseExplicitPrice'] = MultiCurrencyExplicitPriceFormatter::should_output_explicit_admin_price();
+		$settings['woopaymentsSettings']['shouldUseExplicitPrice'] = ExplicitPriceFormatter::should_output_explicit_admin_price();
 		// Client 11.1.0 `class-wc-payments-admin.php:1007,1023,1047` localizes these for `formatCurrency()`: the store country, the
 		// zero-decimal currencies and each country's currency format.
 		$settings['woopaymentsSettings']['storeCountry']          = WC()->countries->get_base_country();

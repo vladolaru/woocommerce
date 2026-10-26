@@ -11,11 +11,11 @@ use Automattic\WooCommerce\Admin\PageController;
 use Automattic\WooCommerce\Blocks\Assets\AssetDataRegistry;
 use Automattic\WooCommerce\Blocks\Package;
 use Automattic\WooCommerce\Internal\Admin\WCAdminAssets;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyAnalyticsService;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyAnalyticsSqlFilters;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRequestContext;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyServiceFactory;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyUsageDetector;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\AnalyticsService;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\AnalyticsSqlFilters;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\RequestContext;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\ServiceFactory;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\UsageDetector;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Automattic\WooCommerce\Utilities\OrderUtil;
 
@@ -47,55 +47,55 @@ class MultiCurrencyAnalyticsController implements RegisterHooksInterface {
 	/**
 	 * Multi-Currency service factory.
 	 *
-	 * @var MultiCurrencyServiceFactory
+	 * @var ServiceFactory
 	 */
-	private MultiCurrencyServiceFactory $service_factory;
+	private ServiceFactory $service_factory;
 
 	/**
 	 * Request context.
 	 *
-	 * @var MultiCurrencyRequestContext
+	 * @var RequestContext
 	 */
-	private MultiCurrencyRequestContext $request_context;
+	private RequestContext $request_context;
 
 	/**
 	 * Persisted Multi-Currency usage detector.
 	 *
-	 * @var MultiCurrencyUsageDetector
+	 * @var UsageDetector
 	 */
-	private MultiCurrencyUsageDetector $usage_detector;
+	private UsageDetector $usage_detector;
 
 	/**
 	 * Analytics service, built on first use.
 	 *
-	 * @var MultiCurrencyAnalyticsService|null
+	 * @var AnalyticsService|null
 	 */
-	private ?MultiCurrencyAnalyticsService $analytics_service = null;
+	private ?AnalyticsService $analytics_service = null;
 
 	/**
 	 * Analytics SQL filters.
 	 *
-	 * @var MultiCurrencyAnalyticsSqlFilters
+	 * @var AnalyticsSqlFilters
 	 */
-	private MultiCurrencyAnalyticsSqlFilters $analytics_sql_filters;
+	private AnalyticsSqlFilters $analytics_sql_filters;
 
 	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
 	 *
-	 * @param MultiCurrencyRuntimeArbiter      $arbiter                Runtime owner arbiter.
-	 * @param MultiCurrencyServiceFactory      $service_factory        Multi-Currency service factory.
-	 * @param MultiCurrencyUsageDetector       $usage_detector         Persisted usage detector.
-	 * @param MultiCurrencyRequestContext      $request_context        Request context.
-	 * @param MultiCurrencyAnalyticsSqlFilters $analytics_sql_filters Analytics SQL filters.
+	 * @param MultiCurrencyRuntimeArbiter $arbiter                Runtime owner arbiter.
+	 * @param ServiceFactory              $service_factory        Multi-Currency service factory.
+	 * @param UsageDetector               $usage_detector         Persisted usage detector.
+	 * @param RequestContext              $request_context        Request context.
+	 * @param AnalyticsSqlFilters         $analytics_sql_filters Analytics SQL filters.
 	 */
 	final public function init(
 		MultiCurrencyRuntimeArbiter $arbiter,
-		MultiCurrencyServiceFactory $service_factory,
-		MultiCurrencyUsageDetector $usage_detector,
-		MultiCurrencyRequestContext $request_context,
-		MultiCurrencyAnalyticsSqlFilters $analytics_sql_filters
+		ServiceFactory $service_factory,
+		UsageDetector $usage_detector,
+		RequestContext $request_context,
+		AnalyticsSqlFilters $analytics_sql_filters
 	): void {
 		$this->arbiter               = $arbiter;
 		$this->service_factory       = $service_factory;
@@ -307,9 +307,9 @@ class MultiCurrencyAnalyticsController implements RegisterHooksInterface {
 	/**
 	 * Get the Analytics service.
 	 *
-	 * @return MultiCurrencyAnalyticsService
+	 * @return AnalyticsService
 	 */
-	private function get_analytics_service(): MultiCurrencyAnalyticsService {
+	private function get_analytics_service(): AnalyticsService {
 		if ( null === $this->analytics_service ) {
 			$this->analytics_service = $this->service_factory->create_analytics_service();
 		}

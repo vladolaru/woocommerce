@@ -8,7 +8,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRateService;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\RateService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\WooPaymentsDebugTools;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsHttpClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsCutoverPreflightService;
@@ -683,7 +683,7 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 	 */
 	private function is_rate_provider_available(): bool {
 		try {
-			$rate_service = wc_get_container()->get( MultiCurrencyRateService::class );
+			$rate_service = wc_get_container()->get( RateService::class );
 
 			return WooPaymentsCurrencyRateProvider::PROVIDER_ID === $rate_service->get_automatic_rate_source_id() && $rate_service->has_available_provider();
 		} catch ( Throwable $exception ) {

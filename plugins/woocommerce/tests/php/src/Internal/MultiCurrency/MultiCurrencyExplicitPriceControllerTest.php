@@ -6,9 +6,9 @@ namespace Automattic\WooCommerce\Tests\Internal\MultiCurrency;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyExplicitPriceController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyState;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilderFactory;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyUsageDetector;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilder;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilderFactory;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\UsageDetector;
 use WC_Unit_Test_Case;
 
 /**
@@ -95,13 +95,13 @@ class MultiCurrencyExplicitPriceControllerTest extends WC_Unit_Test_Case {
 	 */
 	public function test_does_not_build_state_without_additional_enabled_currencies(): void {
 		delete_option( 'wcpay_multi_currency_enabled_currencies' );
-		$factory = $this->getMockBuilder( MultiCurrencyStateBuilderFactory::class )
+		$factory = $this->getMockBuilder( StateBuilderFactory::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'get_state_builder' ) )
 			->getMock();
 		$factory->expects( $this->never() )->method( 'get_state_builder' );
 		$sut = new MultiCurrencyExplicitPriceController();
-		$sut->init( $this->create_arbiter( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN ), $factory, new MultiCurrencyUsageDetector() );
+		$sut->init( $this->create_arbiter( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN ), $factory, new UsageDetector() );
 
 		$this->assertSame( '$10.00', $sut->get_explicit_price( '$10.00' ) );
 	}
@@ -238,7 +238,7 @@ class MultiCurrencyExplicitPriceControllerTest extends WC_Unit_Test_Case {
 		$controller->init(
 			$this->create_arbiter( $owner ),
 			$this->create_state_builder_factory( $has_additional_currencies_enabled ),
-			new MultiCurrencyUsageDetector()
+			new UsageDetector()
 		);
 
 		return $controller;
@@ -248,19 +248,19 @@ class MultiCurrencyExplicitPriceControllerTest extends WC_Unit_Test_Case {
 	 * Create a state builder factory.
 	 *
 	 * @param bool $has_additional_currencies_enabled Whether state has additional enabled currencies.
-	 * @return MultiCurrencyStateBuilderFactory
+	 * @return StateBuilderFactory
 	 */
-	private function create_state_builder_factory( bool $has_additional_currencies_enabled ): MultiCurrencyStateBuilderFactory {
+	private function create_state_builder_factory( bool $has_additional_currencies_enabled ): StateBuilderFactory {
 		$state = $this->createMock( MultiCurrencyState::class );
 		$state->method( 'has_additional_currencies_enabled' )->willReturn( $has_additional_currencies_enabled );
 
-		$builder = $this->getMockBuilder( MultiCurrencyStateBuilder::class )
+		$builder = $this->getMockBuilder( StateBuilder::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'build' ) )
 			->getMock();
 		$builder->method( 'build' )->willReturn( $state );
 
-		$factory = $this->getMockBuilder( MultiCurrencyStateBuilderFactory::class )
+		$factory = $this->getMockBuilder( StateBuilderFactory::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'get_state_builder' ) )
 			->getMock();

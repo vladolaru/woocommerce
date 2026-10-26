@@ -5,10 +5,10 @@ namespace Automattic\WooCommerce\Tests\Internal\MultiCurrency\Shadow;
 
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyCacheInterface;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyLocalizationService;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyPriceConverter;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilderFactory;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\LocalizationService;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\PriceConverter;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilderFactory;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilder;
 use Automattic\WooCommerce\Internal\MultiCurrency\Shadow\MultiCurrencyShadowComparison;
 use Automattic\WooCommerce\Internal\MultiCurrency\Shadow\MultiCurrencyShadowMode;
 use Automattic\WooCommerce\Internal\MultiCurrency\Shadow\MultiCurrencySurfaceDiffer;
@@ -33,7 +33,7 @@ class MultiCurrencyShadowModeTest extends WC_Unit_Test_Case {
 	/**
 	 * Fake price projection service.
 	 *
-	 * @var MultiCurrencyPriceConverter
+	 * @var PriceConverter
 	 */
 	private $projection_service;
 
@@ -51,7 +51,7 @@ class MultiCurrencyShadowModeTest extends WC_Unit_Test_Case {
 		parent::setUp();
 
 		$this->original_currency  = get_option( 'woocommerce_currency', 'USD' );
-		$this->projection_service = new class() extends MultiCurrencyPriceConverter {
+		$this->projection_service = new class() extends PriceConverter {
 			/**
 			 * Order meta candidates.
 			 *
@@ -97,7 +97,7 @@ class MultiCurrencyShadowModeTest extends WC_Unit_Test_Case {
 			wc_get_container()->get( MultiCurrencyRuntimeArbiter::class ),
 			new MultiCurrencySurfaceDiffer(),
 			wc_get_container()->get( LegacyProxy::class ),
-			wc_get_container()->get( MultiCurrencyStateBuilderFactory::class )
+			wc_get_container()->get( StateBuilderFactory::class )
 		);
 		$this->sut->set_projection_service( $this->projection_service );
 
@@ -218,8 +218,8 @@ class MultiCurrencyShadowModeTest extends WC_Unit_Test_Case {
 			delete_option( $option_key );
 		}
 
-		delete_transient( MultiCurrencyLocalizationService::CURRENCY_FORMAT_TRANSIENT );
-		delete_transient( MultiCurrencyLocalizationService::LOCALE_INFO_TRANSIENT );
+		delete_transient( LocalizationService::CURRENCY_FORMAT_TRANSIENT );
+		delete_transient( LocalizationService::LOCALE_INFO_TRANSIENT );
 	}
 
 	/**
@@ -281,28 +281,28 @@ class MultiCurrencyShadowModeTest extends WC_Unit_Test_Case {
 		$logger = $this->fake_logger();
 
 		$this->projection_service->order_meta_candidates = array(
-			MultiCurrencyPriceConverter::META_KEY_ORDER_EXCHANGE_RATE    => 0.82,
-			MultiCurrencyPriceConverter::META_KEY_ORDER_DEFAULT_CURRENCY => 'USD',
+			PriceConverter::META_KEY_ORDER_EXCHANGE_RATE => 0.82,
+			PriceConverter::META_KEY_ORDER_DEFAULT_CURRENCY => 'USD',
 		);
 
 		$order = wc_create_order();
 		$order->set_currency( 'GBP' );
-		$order->update_meta_data( MultiCurrencyPriceConverter::META_KEY_ORDER_EXCHANGE_RATE, '0.81' );
-		$order->update_meta_data( MultiCurrencyPriceConverter::META_KEY_ORDER_DEFAULT_CURRENCY, 'USD' );
+		$order->update_meta_data( PriceConverter::META_KEY_ORDER_EXCHANGE_RATE, '0.81' );
+		$order->update_meta_data( PriceConverter::META_KEY_ORDER_DEFAULT_CURRENCY, 'USD' );
 		$order->save();
 
-		$before = wc_get_order( $order->get_id() )->get_meta( MultiCurrencyPriceConverter::META_KEY_ORDER_EXCHANGE_RATE, true );
+		$before = wc_get_order( $order->get_id() )->get_meta( PriceConverter::META_KEY_ORDER_EXCHANGE_RATE, true );
 
 		$comparison = $this->sut->record_order_shadow( wc_get_order( $order->get_id() ), 'unit_test' );
-		$after      = wc_get_order( $order->get_id() )->get_meta( MultiCurrencyPriceConverter::META_KEY_ORDER_EXCHANGE_RATE, true );
+		$after      = wc_get_order( $order->get_id() )->get_meta( PriceConverter::META_KEY_ORDER_EXCHANGE_RATE, true );
 
 		$this->assertInstanceOf( MultiCurrencyShadowComparison::class, $comparison );
 		$this->assertSame( 'order', $comparison->get_subject_type() );
 		$this->assertSame( $order->get_id(), $comparison->get_subject_id() );
 		$this->assertSame( $before, $after );
-		$this->assertSame( '0.82', $comparison->get_native_computed()['meta'][ MultiCurrencyPriceConverter::META_KEY_ORDER_EXCHANGE_RATE ] );
-		$this->assertSame( '0.81', $comparison->get_actual()['meta'][ MultiCurrencyPriceConverter::META_KEY_ORDER_EXCHANGE_RATE ] );
-		$this->assertArrayHasKey( 'meta.' . MultiCurrencyPriceConverter::META_KEY_ORDER_EXCHANGE_RATE, $comparison->get_diff() );
+		$this->assertSame( '0.82', $comparison->get_native_computed()['meta'][ PriceConverter::META_KEY_ORDER_EXCHANGE_RATE ] );
+		$this->assertSame( '0.81', $comparison->get_actual()['meta'][ PriceConverter::META_KEY_ORDER_EXCHANGE_RATE ] );
+		$this->assertArrayHasKey( 'meta.' . PriceConverter::META_KEY_ORDER_EXCHANGE_RATE, $comparison->get_diff() );
 		$this->assertCount( 1, $logger->entries );
 		$this->assertSame( MultiCurrencyShadowMode::LOG_SOURCE, $logger->entries[0]['context']['source'] );
 
@@ -337,7 +337,7 @@ class MultiCurrencyShadowModeTest extends WC_Unit_Test_Case {
 			 * @return string|null
 			 */
 			public function get( string $key ) {
-				if ( MultiCurrencyStateBuilder::CURRENCY_STORAGE_KEY === $key ) {
+				if ( StateBuilder::CURRENCY_STORAGE_KEY === $key ) {
 					return 'GBP';
 				}
 
@@ -364,8 +364,8 @@ class MultiCurrencyShadowModeTest extends WC_Unit_Test_Case {
 
 		$order = wc_create_order();
 		$order->set_currency( 'GBP' );
-		$order->update_meta_data( MultiCurrencyPriceConverter::META_KEY_ORDER_EXCHANGE_RATE, '0.82' );
-		$order->update_meta_data( MultiCurrencyPriceConverter::META_KEY_ORDER_DEFAULT_CURRENCY, 'USD' );
+		$order->update_meta_data( PriceConverter::META_KEY_ORDER_EXCHANGE_RATE, '0.82' );
+		$order->update_meta_data( PriceConverter::META_KEY_ORDER_DEFAULT_CURRENCY, 'USD' );
 		$order->save();
 
 		$sut = wc_get_container()->get( MultiCurrencyShadowMode::class );
@@ -381,8 +381,8 @@ class MultiCurrencyShadowModeTest extends WC_Unit_Test_Case {
 		$this->assertSame( array(), $comparison->get_diff() );
 		$this->assertSame( 0, $session->writes );
 		$this->assertFalse( get_option( MultiCurrencyCacheInterface::CURRENCIES_KEY, false ) );
-		$this->assertFalse( get_transient( MultiCurrencyLocalizationService::CURRENCY_FORMAT_TRANSIENT ) );
-		$this->assertFalse( get_transient( MultiCurrencyLocalizationService::LOCALE_INFO_TRANSIENT ) );
+		$this->assertFalse( get_transient( LocalizationService::CURRENCY_FORMAT_TRANSIENT ) );
+		$this->assertFalse( get_transient( LocalizationService::LOCALE_INFO_TRANSIENT ) );
 		$this->assertCount( 1, $logger->entries );
 	}
 
@@ -393,8 +393,8 @@ class MultiCurrencyShadowModeTest extends WC_Unit_Test_Case {
 		$logger = $this->fake_logger();
 
 		$this->projection_service->refund_meta_candidates = array(
-			MultiCurrencyPriceConverter::META_KEY_ORDER_EXCHANGE_RATE    => '0.82',
-			MultiCurrencyPriceConverter::META_KEY_ORDER_DEFAULT_CURRENCY => 'USD',
+			PriceConverter::META_KEY_ORDER_EXCHANGE_RATE => '0.82',
+			PriceConverter::META_KEY_ORDER_DEFAULT_CURRENCY => 'USD',
 		);
 
 		$order = wc_create_order();
@@ -410,22 +410,22 @@ class MultiCurrencyShadowModeTest extends WC_Unit_Test_Case {
 		);
 		$this->assertInstanceOf( WC_Order_Refund::class, $refund );
 
-		$refund->update_meta_data( MultiCurrencyPriceConverter::META_KEY_ORDER_EXCHANGE_RATE, '0.81' );
-		$refund->update_meta_data( MultiCurrencyPriceConverter::META_KEY_ORDER_DEFAULT_CURRENCY, 'USD' );
+		$refund->update_meta_data( PriceConverter::META_KEY_ORDER_EXCHANGE_RATE, '0.81' );
+		$refund->update_meta_data( PriceConverter::META_KEY_ORDER_DEFAULT_CURRENCY, 'USD' );
 		$refund->save();
 
-		$before = wc_get_order( $refund->get_id() )->get_meta( MultiCurrencyPriceConverter::META_KEY_ORDER_EXCHANGE_RATE, true );
+		$before = wc_get_order( $refund->get_id() )->get_meta( PriceConverter::META_KEY_ORDER_EXCHANGE_RATE, true );
 
 		$comparison = $this->sut->record_refund_shadow( wc_get_order( $order->get_id() ), wc_get_order( $refund->get_id() ), 'unit_test' );
-		$after      = wc_get_order( $refund->get_id() )->get_meta( MultiCurrencyPriceConverter::META_KEY_ORDER_EXCHANGE_RATE, true );
+		$after      = wc_get_order( $refund->get_id() )->get_meta( PriceConverter::META_KEY_ORDER_EXCHANGE_RATE, true );
 
 		$this->assertInstanceOf( MultiCurrencyShadowComparison::class, $comparison );
 		$this->assertSame( 'refund', $comparison->get_subject_type() );
 		$this->assertSame( $refund->get_id(), $comparison->get_subject_id() );
 		$this->assertSame( $before, $after );
-		$this->assertSame( '0.82', $comparison->get_native_computed()['meta'][ MultiCurrencyPriceConverter::META_KEY_ORDER_EXCHANGE_RATE ] );
-		$this->assertSame( '0.81', $comparison->get_actual()['meta'][ MultiCurrencyPriceConverter::META_KEY_ORDER_EXCHANGE_RATE ] );
-		$this->assertArrayHasKey( 'meta.' . MultiCurrencyPriceConverter::META_KEY_ORDER_EXCHANGE_RATE, $comparison->get_diff() );
+		$this->assertSame( '0.82', $comparison->get_native_computed()['meta'][ PriceConverter::META_KEY_ORDER_EXCHANGE_RATE ] );
+		$this->assertSame( '0.81', $comparison->get_actual()['meta'][ PriceConverter::META_KEY_ORDER_EXCHANGE_RATE ] );
+		$this->assertArrayHasKey( 'meta.' . PriceConverter::META_KEY_ORDER_EXCHANGE_RATE, $comparison->get_diff() );
 		$this->assertCount( 1, $logger->entries );
 		$this->assertSame( MultiCurrencyShadowMode::LOG_SOURCE, $logger->entries[0]['context']['source'] );
 	}
@@ -439,14 +439,14 @@ class MultiCurrencyShadowModeTest extends WC_Unit_Test_Case {
 		$logger = $this->fake_logger();
 
 		$this->projection_service->order_meta_candidates = array(
-			MultiCurrencyPriceConverter::META_KEY_ORDER_EXCHANGE_RATE    => '0.81',
-			MultiCurrencyPriceConverter::META_KEY_ORDER_DEFAULT_CURRENCY => 'USD',
+			PriceConverter::META_KEY_ORDER_EXCHANGE_RATE => '0.81',
+			PriceConverter::META_KEY_ORDER_DEFAULT_CURRENCY => 'USD',
 		);
 
 		$order = wc_create_order();
 		$order->set_currency( 'GBP' );
-		$order->update_meta_data( MultiCurrencyPriceConverter::META_KEY_ORDER_EXCHANGE_RATE, '0.81' );
-		$order->update_meta_data( MultiCurrencyPriceConverter::META_KEY_ORDER_DEFAULT_CURRENCY, 'USD' );
+		$order->update_meta_data( PriceConverter::META_KEY_ORDER_EXCHANGE_RATE, '0.81' );
+		$order->update_meta_data( PriceConverter::META_KEY_ORDER_DEFAULT_CURRENCY, 'USD' );
 		$order->save();
 
 		$this->sut->record_order_shadow( wc_get_order( $order->get_id() ), 'unit_test' );
@@ -454,7 +454,7 @@ class MultiCurrencyShadowModeTest extends WC_Unit_Test_Case {
 		$payload = json_decode( $logger->entries[0]['message'], true );
 
 		$this->assertIsArray( $payload );
-		$this->assertSame( '0.81', $payload['actual']['meta'][ MultiCurrencyPriceConverter::META_KEY_ORDER_EXCHANGE_RATE ] );
-		$this->assertSame( '0.81', $payload['native_computed']['meta'][ MultiCurrencyPriceConverter::META_KEY_ORDER_EXCHANGE_RATE ] );
+		$this->assertSame( '0.81', $payload['actual']['meta'][ PriceConverter::META_KEY_ORDER_EXCHANGE_RATE ] );
+		$this->assertSame( '0.81', $payload['native_computed']['meta'][ PriceConverter::META_KEY_ORDER_EXCHANGE_RATE ] );
 	}
 }

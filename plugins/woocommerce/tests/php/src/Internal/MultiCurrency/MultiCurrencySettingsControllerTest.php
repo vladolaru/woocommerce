@@ -7,7 +7,7 @@ use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencySettingsController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencySettingsPage;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyCacheRenderingService;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\CacheRenderingService;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use WC_Unit_Test_Case;
 
@@ -83,7 +83,7 @@ class MultiCurrencySettingsControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Should run cache auto-detection only for an authorized core admin request.
 	 */
 	public function test_runs_cache_auto_detection_only_for_an_authorized_core_admin_request(): void {
-		$service = $this->getMockBuilder( MultiCurrencyCacheRenderingService::class )
+		$service = $this->getMockBuilder( CacheRenderingService::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'maybe_auto_enable_cache_rendering_mode' ) )
 			->getMock();
@@ -111,7 +111,7 @@ class MultiCurrencySettingsControllerTest extends WC_Unit_Test_Case {
 	 */
 	public function test_does_not_run_cache_auto_detection_outside_an_authorized_admin_request( string $role, string $label, bool $is_admin ): void {
 		unset( $label );
-		$service = $this->getMockBuilder( MultiCurrencyCacheRenderingService::class )
+		$service = $this->getMockBuilder( CacheRenderingService::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'maybe_auto_enable_cache_rendering_mode' ) )
 			->getMock();
@@ -402,7 +402,7 @@ class MultiCurrencySettingsControllerTest extends WC_Unit_Test_Case {
 		$controller->init(
 			$this->create_arbiter( $owner ),
 			wc_get_container()->get( LegacyProxy::class ),
-			$options['cache_rendering_service'] ?? wc_get_container()->get( MultiCurrencyCacheRenderingService::class )
+			$options['cache_rendering_service'] ?? wc_get_container()->get( CacheRenderingService::class )
 		);
 
 		return $controller;

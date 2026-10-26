@@ -9,7 +9,7 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCu
 
 use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyAccountInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyApiClientInterface;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRateService;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\RateService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
@@ -47,9 +47,9 @@ class WooPaymentsMultiCurrencyController implements RegisterHooksInterface {
 	/**
 	 * Multi-Currency rate service.
 	 *
-	 * @var MultiCurrencyRateService
+	 * @var RateService
 	 */
-	private MultiCurrencyRateService $rate_service;
+	private RateService $rate_service;
 
 	/**
 	 * Initialize the controller.
@@ -59,13 +59,13 @@ class WooPaymentsMultiCurrencyController implements RegisterHooksInterface {
 	 * @param WooPaymentsRuntimeArbiter         $arbiter                   Runtime ownership arbiter.
 	 * @param WooPaymentsLegacyAccountAdapter   $legacy_account_adapter    Adapter over the WooPayments extension's account service.
 	 * @param WooPaymentsLegacyApiClientAdapter $legacy_api_client_adapter Adapter over the WooPayments extension's API client.
-	 * @param MultiCurrencyRateService          $rate_service              Multi-Currency rate service.
+	 * @param RateService                       $rate_service              Multi-Currency rate service.
 	 */
 	final public function init(
 		WooPaymentsRuntimeArbiter $arbiter,
 		WooPaymentsLegacyAccountAdapter $legacy_account_adapter,
 		WooPaymentsLegacyApiClientAdapter $legacy_api_client_adapter,
-		MultiCurrencyRateService $rate_service
+		RateService $rate_service
 	): void {
 		$this->arbiter                   = $arbiter;
 		$this->legacy_account_adapter    = $legacy_account_adapter;

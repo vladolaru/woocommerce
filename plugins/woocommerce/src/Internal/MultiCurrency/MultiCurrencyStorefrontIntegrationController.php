@@ -7,12 +7,12 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\MultiCurrency;
 
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyServiceFactory;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilderFactory;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencySwitcherRenderer;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\ServiceFactory;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilder;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilderFactory;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\SwitcherRenderer;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRequestContext;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\RequestContext;
 
 /**
  * Shows the currency switcher in the Storefront theme's breadcrumb, with its inline CSS, when Storefront is active,
@@ -45,23 +45,23 @@ class MultiCurrencyStorefrontIntegrationController implements RegisterHooksInter
 	/**
 	 * State builder.
 	 *
-	 * @var MultiCurrencyStateBuilder|null
+	 * @var StateBuilder|null
 	 */
-	private ?MultiCurrencyStateBuilder $state_builder = null;
+	private ?StateBuilder $state_builder = null;
 
 	/**
 	 * State builder factory.
 	 *
-	 * @var MultiCurrencyStateBuilderFactory
+	 * @var StateBuilderFactory
 	 */
-	private MultiCurrencyStateBuilderFactory $state_builder_factory;
+	private StateBuilderFactory $state_builder_factory;
 
 	/**
 	 * Multi-Currency service factory.
 	 *
-	 * @var MultiCurrencyServiceFactory
+	 * @var ServiceFactory
 	 */
-	private MultiCurrencyServiceFactory $service_factory;
+	private ServiceFactory $service_factory;
 
 	/**
 	 * Compatibility controller.
@@ -73,9 +73,9 @@ class MultiCurrencyStorefrontIntegrationController implements RegisterHooksInter
 	/**
 	 * Switcher renderer, built on first use.
 	 *
-	 * @var MultiCurrencySwitcherRenderer|null
+	 * @var SwitcherRenderer|null
 	 */
-	private ?MultiCurrencySwitcherRenderer $switcher_renderer = null;
+	private ?SwitcherRenderer $switcher_renderer = null;
 
 	/**
 	 * Initialize the class instance.
@@ -83,14 +83,14 @@ class MultiCurrencyStorefrontIntegrationController implements RegisterHooksInter
 	 * @internal
 	 *
 	 * @param MultiCurrencyRuntimeArbiter          $arbiter                  Runtime owner arbiter.
-	 * @param MultiCurrencyStateBuilderFactory     $state_builder_factory    State builder factory.
-	 * @param MultiCurrencyServiceFactory          $service_factory          Multi-Currency service factory.
+	 * @param StateBuilderFactory                  $state_builder_factory    State builder factory.
+	 * @param ServiceFactory                       $service_factory          Multi-Currency service factory.
 	 * @param MultiCurrencyCompatibilityController $compatibility_controller Compatibility controller.
 	 */
 	final public function init(
 		MultiCurrencyRuntimeArbiter $arbiter,
-		MultiCurrencyStateBuilderFactory $state_builder_factory,
-		MultiCurrencyServiceFactory $service_factory,
+		StateBuilderFactory $state_builder_factory,
+		ServiceFactory $service_factory,
 		MultiCurrencyCompatibilityController $compatibility_controller
 	): void {
 		$this->arbiter                  = $arbiter;
@@ -154,7 +154,7 @@ class MultiCurrencyStorefrontIntegrationController implements RegisterHooksInter
 		 *
 		 * @since 11.0.0
 		 */
-		$instance = apply_filters( MultiCurrencyStateBuilder::FILTER_PREFIX . 'storefront_widget_instance', $instance );
+		$instance = apply_filters( StateBuilder::FILTER_PREFIX . 'storefront_widget_instance', $instance );
 		$instance = is_array( $instance ) ? $instance : array();
 
 		$default_args = array(
@@ -168,13 +168,13 @@ class MultiCurrencyStorefrontIntegrationController implements RegisterHooksInter
 		 *
 		 * @since 11.0.0
 		 */
-		$args = apply_filters( MultiCurrencyStateBuilder::FILTER_PREFIX . 'storefront_widget_args', $default_args );
+		$args = apply_filters( StateBuilder::FILTER_PREFIX . 'storefront_widget_args', $default_args );
 		$args = is_array( $args ) ? $args : $default_args;
 
 		$widget_markup = $this->get_switcher_renderer()->get_widget_markup(
 			$instance,
 			$args,
-			MultiCurrencyRequestContext::get_current_query_args(),
+			RequestContext::get_current_query_args(),
 			$this->compatibility_controller->should_disable_currency_switching()
 		);
 
@@ -200,7 +200,7 @@ class MultiCurrencyStorefrontIntegrationController implements RegisterHooksInter
 		 *
 		 * @since 11.0.0
 		 */
-		$css = apply_filters( MultiCurrencyStateBuilder::FILTER_PREFIX . 'storefront_widget_css', self::WIDGET_CSS );
+		$css = apply_filters( StateBuilder::FILTER_PREFIX . 'storefront_widget_css', self::WIDGET_CSS );
 		if ( ! is_string( $css ) ) {
 			return;
 		}
@@ -211,9 +211,9 @@ class MultiCurrencyStorefrontIntegrationController implements RegisterHooksInter
 	/**
 	 * Get the state builder.
 	 *
-	 * @return MultiCurrencyStateBuilder
+	 * @return StateBuilder
 	 */
-	private function get_state_builder(): MultiCurrencyStateBuilder {
+	private function get_state_builder(): StateBuilder {
 		if ( null === $this->state_builder ) {
 			$this->state_builder = $this->state_builder_factory->get_state_builder();
 		}
@@ -224,9 +224,9 @@ class MultiCurrencyStorefrontIntegrationController implements RegisterHooksInter
 	/**
 	 * Get the switcher renderer.
 	 *
-	 * @return MultiCurrencySwitcherRenderer
+	 * @return SwitcherRenderer
 	 */
-	private function get_switcher_renderer(): MultiCurrencySwitcherRenderer {
+	private function get_switcher_renderer(): SwitcherRenderer {
 		if ( null === $this->switcher_renderer ) {
 			$this->switcher_renderer = $this->service_factory->create_switcher_renderer();
 		}
@@ -240,7 +240,7 @@ class MultiCurrencyStorefrontIntegrationController implements RegisterHooksInter
 	 * @return bool
 	 */
 	private function is_using_storefront_switcher(): bool {
-		return 'yes' === get_option( MultiCurrencyStateBuilder::OPTION_PREFIX . '_enable_storefront_switcher', 'no' );
+		return 'yes' === get_option( StateBuilder::OPTION_PREFIX . '_enable_storefront_switcher', 'no' );
 	}
 
 	/**
@@ -249,7 +249,7 @@ class MultiCurrencyStorefrontIntegrationController implements RegisterHooksInter
 	 * @return bool|null The previewed choice, or null outside a preview that sets one.
 	 */
 	private function get_simulated_storefront_switcher_choice(): ?bool {
-		$query_args    = MultiCurrencyRequestContext::get_current_query_args();
+		$query_args    = RequestContext::get_current_query_args();
 		$is_simulation = filter_var( $query_args['is_mc_onboarding_simulation'] ?? false, FILTER_VALIDATE_BOOLEAN );
 
 		if ( ! $is_simulation || ! array_key_exists( 'enable_storefront_switcher', $query_args ) ) {

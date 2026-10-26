@@ -6,10 +6,10 @@ namespace Automattic\WooCommerce\Tests\Internal\MultiCurrency;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyCompatibilityController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencySelectedCurrencyController;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyGeolocationService;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRequestContext;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyServiceFactory;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencySelectedCurrencyPersistenceService;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\GeolocationService;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\RequestContext;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\ServiceFactory;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\SelectedCurrencyPersistenceService;
 use WC_Session;
 use WC_Unit_Test_Case;
 
@@ -219,7 +219,7 @@ class MultiCurrencySelectedCurrencyControllerTest extends WC_Unit_Test_Case {
 		WC()->session = new \WC_Mock_Session_Handler();
 		WC()->session->set( 'wcpay_currency', 'EUR' );
 		$customer_id = self::factory()->user->create( array( 'role' => 'customer' ) );
-		$service     = wc_get_container()->get( MultiCurrencyServiceFactory::class )->create_selected_currency_persistence_service();
+		$service     = wc_get_container()->get( ServiceFactory::class )->create_selected_currency_persistence_service();
 		$sut         = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $service, $this->create_request_context( true, false ) );
 
 		$sut->handle_woocommerce_created_customer( $customer_id );
@@ -612,7 +612,7 @@ class MultiCurrencySelectedCurrencyControllerTest extends WC_Unit_Test_Case {
 		if ( $session_loaded ) {
 			WC()->initialize_session();
 		}
-		$service = wc_get_container()->get( MultiCurrencyServiceFactory::class )->create_selected_currency_persistence_service();
+		$service = wc_get_container()->get( ServiceFactory::class )->create_selected_currency_persistence_service();
 		$sut     = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $service, $this->create_request_context( true, true ), $this->create_geolocation_service( 'CAD' ) );
 
 		$sut->handle_init();
@@ -1033,17 +1033,17 @@ class MultiCurrencySelectedCurrencyControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * Create a selected currency controller with a static runtime owner.
 	 *
-	 * @param string                                          $owner           Runtime owner.
-	 * @param MultiCurrencySelectedCurrencyPersistenceService $service Persistence service.
-	 * @param MultiCurrencyRequestContext|null                $request_context Request context.
-	 * @param MultiCurrencyGeolocationService|null            $geolocation Geolocation service; the factory's by default.
+	 * @param string                             $owner           Runtime owner.
+	 * @param SelectedCurrencyPersistenceService $service Persistence service.
+	 * @param RequestContext|null                $request_context Request context.
+	 * @param GeolocationService|null            $geolocation Geolocation service; the factory's by default.
 	 * @return MultiCurrencySelectedCurrencyController
 	 */
 	private function create_controller(
 		string $owner,
-		MultiCurrencySelectedCurrencyPersistenceService $service,
-		?MultiCurrencyRequestContext $request_context = null,
-		?MultiCurrencyGeolocationService $geolocation = null
+		SelectedCurrencyPersistenceService $service,
+		?RequestContext $request_context = null,
+		?GeolocationService $geolocation = null
 	): MultiCurrencySelectedCurrencyController {
 		$controller = new MultiCurrencySelectedCurrencyController();
 		$controller->init(
@@ -1056,7 +1056,7 @@ class MultiCurrencySelectedCurrencyControllerTest extends WC_Unit_Test_Case {
 				)
 			),
 			wc_get_container()->get( MultiCurrencyCompatibilityController::class ),
-			$request_context ?? wc_get_container()->get( MultiCurrencyRequestContext::class )
+			$request_context ?? wc_get_container()->get( RequestContext::class )
 		);
 
 		return $controller;
@@ -1113,15 +1113,15 @@ class MultiCurrencySelectedCurrencyControllerTest extends WC_Unit_Test_Case {
 	 * @param string   $selected_code             Selected currency code.
 	 * @param bool     $has_stored_currency       Whether a stored currency exists.
 	 * @param string[] $enabled_currency_codes    Enabled currency codes.
-	 * @return MultiCurrencySelectedCurrencyPersistenceService&object{updated_currencies: string[], persist_flags: bool[], new_customer_ids: int[], state_reset_calls: int}
+	 * @return SelectedCurrencyPersistenceService&object{updated_currencies: string[], persist_flags: bool[], new_customer_ids: int[], state_reset_calls: int}
 	 */
 	private function create_persistence_service(
 		bool $has_additional_currencies = true,
 		string $selected_code = 'USD',
 		bool $has_stored_currency = false,
 		array $enabled_currency_codes = array( 'USD', 'GBP', 'JPY', 'EUR', 'CAD' )
-	): MultiCurrencySelectedCurrencyPersistenceService {
-		return new class( $has_additional_currencies, $selected_code, $has_stored_currency, $enabled_currency_codes ) extends MultiCurrencySelectedCurrencyPersistenceService {
+	): SelectedCurrencyPersistenceService {
+		return new class( $has_additional_currencies, $selected_code, $has_stored_currency, $enabled_currency_codes ) extends SelectedCurrencyPersistenceService {
 			/**
 			 * Updated currencies.
 			 *
@@ -1301,10 +1301,10 @@ class MultiCurrencySelectedCurrencyControllerTest extends WC_Unit_Test_Case {
 	 *
 	 * @param string|null $currency_code Currency code to return.
 	 * @param string      $country_code  Country code to return.
-	 * @return MultiCurrencyGeolocationService
+	 * @return GeolocationService
 	 */
-	private function create_geolocation_service( ?string $currency_code, string $country_code = 'CA' ): MultiCurrencyGeolocationService {
-		return new class( $currency_code, $country_code ) extends MultiCurrencyGeolocationService {
+	private function create_geolocation_service( ?string $currency_code, string $country_code = 'CA' ): GeolocationService {
+		return new class( $currency_code, $country_code ) extends GeolocationService {
 			/**
 			 * Currency code to return.
 			 *
@@ -1400,10 +1400,10 @@ class MultiCurrencySelectedCurrencyControllerTest extends WC_Unit_Test_Case {
 	 *
 	 * @param bool $should_register_entry_hooks Whether selected-currency entry hooks should register.
 	 * @param bool $is_store_api_request        Whether this is a Store API request.
-	 * @return MultiCurrencyRequestContext
+	 * @return RequestContext
 	 */
-	private function create_request_context( bool $should_register_entry_hooks, bool $is_store_api_request = false ): MultiCurrencyRequestContext {
-		return new class( $should_register_entry_hooks, $is_store_api_request ) extends MultiCurrencyRequestContext {
+	private function create_request_context( bool $should_register_entry_hooks, bool $is_store_api_request = false ): RequestContext {
+		return new class( $should_register_entry_hooks, $is_store_api_request ) extends RequestContext {
 			/**
 			 * Whether selected-currency entry hooks should register.
 			 *

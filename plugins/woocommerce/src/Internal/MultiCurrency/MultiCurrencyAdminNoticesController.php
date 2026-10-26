@@ -8,10 +8,10 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\MultiCurrency;
 
 use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyCacheInterface;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRateService;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\RateService;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilder;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStoreCurrencyLifecycleService;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\StoreCurrencyLifecycleService;
 
 /**
  * Shows store managers the Multi-Currency admin notices and handles their dismiss link: the currencies left on manual
@@ -41,9 +41,9 @@ class MultiCurrencyAdminNoticesController implements RegisterHooksInterface {
 	/**
 	 * Rate service holding the automatic-rate provider.
 	 *
-	 * @var MultiCurrencyRateService
+	 * @var RateService
 	 */
-	private MultiCurrencyRateService $rate_service;
+	private RateService $rate_service;
 
 	/**
 	 * Initialize the class instance.
@@ -51,9 +51,9 @@ class MultiCurrencyAdminNoticesController implements RegisterHooksInterface {
 	 * @internal
 	 *
 	 * @param MultiCurrencyRuntimeArbiter $arbiter      Runtime owner arbiter.
-	 * @param MultiCurrencyRateService    $rate_service Rate service holding the automatic-rate provider.
+	 * @param RateService                 $rate_service Rate service holding the automatic-rate provider.
 	 */
-	final public function init( MultiCurrencyRuntimeArbiter $arbiter, MultiCurrencyRateService $rate_service ): void {
+	final public function init( MultiCurrencyRuntimeArbiter $arbiter, RateService $rate_service ): void {
 		$this->arbiter      = $arbiter;
 		$this->rate_service = $rate_service;
 	}
@@ -82,7 +82,7 @@ class MultiCurrencyAdminNoticesController implements RegisterHooksInterface {
 
 		$notices = array_filter(
 			array(
-				$this->get_manual_rate_notice( get_option( MultiCurrencyStoreCurrencyLifecycleService::NOTICE_OPTION, false ) ),
+				$this->get_manual_rate_notice( get_option( StoreCurrencyLifecycleService::NOTICE_OPTION, false ) ),
 				$this->get_rate_provider_unavailable_notice(),
 			)
 		);
@@ -114,7 +114,7 @@ class MultiCurrencyAdminNoticesController implements RegisterHooksInterface {
 		}
 
 		if ( self::CURRENCY_CHANGED_NOTICE_KEY === $notice_key ) {
-			update_option( MultiCurrencyStoreCurrencyLifecycleService::NOTICE_OPTION, self::NOTICE_OPTION_HIDDEN_VALUE );
+			update_option( StoreCurrencyLifecycleService::NOTICE_OPTION, self::NOTICE_OPTION_HIDDEN_VALUE );
 		}
 	}
 
@@ -256,7 +256,7 @@ class MultiCurrencyAdminNoticesController implements RegisterHooksInterface {
 			return false;
 		}
 
-		$enabled_currencies = get_option( MultiCurrencyStateBuilder::ENABLED_CURRENCIES_OPTION, array() );
+		$enabled_currencies = get_option( StateBuilder::ENABLED_CURRENCIES_OPTION, array() );
 		if ( ! is_array( $enabled_currencies ) || array() === $enabled_currencies ) {
 			return false;
 		}

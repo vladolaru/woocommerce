@@ -8,10 +8,10 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\MultiCurrency;
 
 use Automattic\Jetpack\Constants;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyDisplayService;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyOrderContextService;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyServiceFactory;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRequestContext;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\DisplayService;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\OrderContextService;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\ServiceFactory;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\RequestContext;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 
 /**
@@ -32,30 +32,30 @@ class MultiCurrencyFrontendCurrenciesController implements RegisterHooksInterfac
 	/**
 	 * Multi-Currency service factory.
 	 *
-	 * @var MultiCurrencyServiceFactory
+	 * @var ServiceFactory
 	 */
-	private MultiCurrencyServiceFactory $service_factory;
+	private ServiceFactory $service_factory;
 
 	/**
 	 * Display service, built on first use.
 	 *
-	 * @var MultiCurrencyDisplayService|null
+	 * @var DisplayService|null
 	 */
-	private ?MultiCurrencyDisplayService $display_service = null;
+	private ?DisplayService $display_service = null;
 
 	/**
 	 * Request context.
 	 *
-	 * @var MultiCurrencyRequestContext
+	 * @var RequestContext
 	 */
-	private MultiCurrencyRequestContext $request_context;
+	private RequestContext $request_context;
 
 	/**
 	 * Order context service.
 	 *
-	 * @var MultiCurrencyOrderContextService
+	 * @var OrderContextService
 	 */
-	private MultiCurrencyOrderContextService $order_context_service;
+	private OrderContextService $order_context_service;
 
 	/**
 	 * Order currency override for order-context formatting.
@@ -76,16 +76,16 @@ class MultiCurrencyFrontendCurrenciesController implements RegisterHooksInterfac
 	 *
 	 * @internal
 	 *
-	 * @param MultiCurrencyRuntimeArbiter      $arbiter               Runtime owner arbiter.
-	 * @param MultiCurrencyServiceFactory      $service_factory       Multi-Currency service factory.
-	 * @param MultiCurrencyRequestContext      $request_context       Request context.
-	 * @param MultiCurrencyOrderContextService $order_context_service Order context service.
+	 * @param MultiCurrencyRuntimeArbiter $arbiter               Runtime owner arbiter.
+	 * @param ServiceFactory              $service_factory       Multi-Currency service factory.
+	 * @param RequestContext              $request_context       Request context.
+	 * @param OrderContextService         $order_context_service Order context service.
 	 */
 	final public function init(
 		MultiCurrencyRuntimeArbiter $arbiter,
-		MultiCurrencyServiceFactory $service_factory,
-		MultiCurrencyRequestContext $request_context,
-		MultiCurrencyOrderContextService $order_context_service
+		ServiceFactory $service_factory,
+		RequestContext $request_context,
+		OrderContextService $order_context_service
 	): void {
 		$this->arbiter               = $arbiter;
 		$this->service_factory       = $service_factory;
@@ -356,9 +356,9 @@ class MultiCurrencyFrontendCurrenciesController implements RegisterHooksInterfac
 	/**
 	 * Get the display service.
 	 *
-	 * @return MultiCurrencyDisplayService
+	 * @return DisplayService
 	 */
-	private function get_display_service(): MultiCurrencyDisplayService {
+	private function get_display_service(): DisplayService {
 		if ( null === $this->display_service ) {
 			$this->display_service = $this->service_factory->create_display_service();
 		}

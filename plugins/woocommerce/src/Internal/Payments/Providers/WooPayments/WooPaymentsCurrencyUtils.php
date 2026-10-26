@@ -9,8 +9,8 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFrontendCurrenciesController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyExplicitPriceFormatter;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyLocalizationService;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\ExplicitPriceFormatter;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\LocalizationService;
 use WC_Order;
 
 /**
@@ -166,10 +166,10 @@ final class WooPaymentsCurrencyUtils {
 		$currency        = strtoupper( '' !== $currency ? $currency : $order->get_currency() );
 		$formatted_price = self::format_price_in_currency( $amount, $currency );
 
-		return MultiCurrencyExplicitPriceFormatter::get_explicit_price_with_currency(
+		return ExplicitPriceFormatter::get_explicit_price_with_currency(
 			$formatted_price,
 			strtoupper( $order->get_currency() ),
-			MultiCurrencyExplicitPriceFormatter::should_output_explicit_admin_price()
+			ExplicitPriceFormatter::should_output_explicit_admin_price()
 		);
 	}
 
@@ -257,7 +257,7 @@ final class WooPaymentsCurrencyUtils {
 		);
 
 		$args = array();
-		foreach ( wc_get_container()->get( MultiCurrencyLocalizationService::class )->get_currency_format( $currency ) as $key => $format ) {
+		foreach ( wc_get_container()->get( LocalizationService::class )->get_currency_format( $currency ) as $key => $format ) {
 			switch ( $key ) {
 				case 'thousand_sep':
 					$args['thousand_separator'] = $format;

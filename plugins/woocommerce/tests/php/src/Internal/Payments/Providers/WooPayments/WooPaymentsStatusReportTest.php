@@ -5,7 +5,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\CurrencyRateProviderInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFeatureController;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRateService;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\RateService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
@@ -482,7 +482,7 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 		$provider = $this->createMock( CurrencyRateProviderInterface::class );
 		$provider->method( 'get_id' )->willReturn( $provider_id );
 		$provider->method( 'is_available' )->willReturn( $available );
-		wc_get_container()->get( MultiCurrencyRateService::class )->set_provider( $provider );
+		wc_get_container()->get( RateService::class )->set_provider( $provider );
 
 		try {
 			$data = $this->get_sut()->get_status_data();

@@ -7,7 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyExplicitPriceFormatter;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\ExplicitPriceFormatter;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use WC_Order;
 
@@ -119,7 +119,7 @@ class WooPaymentsOrderStatusChangeConfirmation {
 			'test_mode'                 => WooPaymentsOrderMode::TEST === $order->get_meta( '_wcpay_mode', true ),
 			'disable_manual_refunds'    => 'failed' !== $order->get_meta( '_wcpay_refund_status', true ),
 			// Client 11.1.0 localizes `shouldUseExplicitPrice` for the disputed order notice's amount (admin/class-wc-payments-admin.php:1040).
-			'should_use_explicit_price' => MultiCurrencyExplicitPriceFormatter::should_output_explicit_admin_price(),
+			'should_use_explicit_price' => ExplicitPriceFormatter::should_output_explicit_admin_price(),
 		);
 	}
 

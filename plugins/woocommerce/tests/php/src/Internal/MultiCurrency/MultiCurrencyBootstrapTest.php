@@ -20,13 +20,13 @@ use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyState;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencySubscriptionsCompatibilityController;
 use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\CurrencyRateProviderInterface;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRateService;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyServiceFactory;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\RateService;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\ServiceFactory;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyPriceConverter;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilderFactory;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyUsageDetector;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\PriceConverter;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilder;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilderFactory;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\UsageDetector;
 use Automattic\WooCommerce\Internal\MultiCurrency\Shadow\MultiCurrencyShadowMode;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
@@ -138,7 +138,7 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 					wc_create_order()->get_currency(),
 					$product->get_price(),
 					false !== has_filter( 'woocommerce_currency' ),
-					false !== has_action( 'updated_option', array( wc_get_container()->get( MultiCurrencyStateBuilderFactory::class ), 'handle_option_change' ) ),
+					false !== has_action( 'updated_option', array( wc_get_container()->get( StateBuilderFactory::class ), 'handle_option_change' ) ),
 					$total,
 				)
 			);
@@ -659,7 +659,7 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 		$this->assertSame( 0, $resolver_calls );
 		$this->assertSame( array( MultiCurrencyExplicitPriceController::class ), $container->registered );
 		$this->assertSame( 100, has_filter( 'woocommerce_cart_total', array( $controller, 'get_explicit_price' ) ) );
-		$this->assertNotContains( 'Automattic\\WooCommerce\\Internal\\MultiCurrency\\Services\\MultiCurrencyStateBuilderFactory', $container->resolved );
+		$this->assertNotContains( 'Automattic\\WooCommerce\\Internal\\MultiCurrency\\Services\\StateBuilderFactory', $container->resolved );
 	}
 
 	/**
@@ -910,9 +910,9 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 		update_option( 'woocommerce_currency', 'USD' );
 		$order = WC_Helper_Order::create_order();
 		$order->set_currency( 'EUR' );
-		$order->update_meta_data( MultiCurrencyPriceConverter::META_KEY_ORDER_EXCHANGE_RATE, '0.5' );
-		$order->update_meta_data( MultiCurrencyPriceConverter::META_KEY_ORDER_DEFAULT_CURRENCY, 'USD' );
-		$order->update_meta_data( MultiCurrencyPriceConverter::META_KEY_STRIPE_EXCHANGE_RATE, '0.49' );
+		$order->update_meta_data( PriceConverter::META_KEY_ORDER_EXCHANGE_RATE, '0.5' );
+		$order->update_meta_data( PriceConverter::META_KEY_ORDER_DEFAULT_CURRENCY, 'USD' );
+		$order->update_meta_data( PriceConverter::META_KEY_STRIPE_EXCHANGE_RATE, '0.49' );
 		$order->save();
 		$this->enable_core_multi_currency( $configured );
 		$sut = new MultiCurrencyBootstrap( static fn(): array => array() );
@@ -937,9 +937,9 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 		);
 
 		$refund = wc_get_order( $refund_id );
-		$this->assertSame( '0.5', $refund->get_meta( MultiCurrencyPriceConverter::META_KEY_ORDER_EXCHANGE_RATE ) );
-		$this->assertSame( 'USD', $refund->get_meta( MultiCurrencyPriceConverter::META_KEY_ORDER_DEFAULT_CURRENCY ) );
-		$this->assertSame( '0.49', $refund->get_meta( MultiCurrencyPriceConverter::META_KEY_STRIPE_EXCHANGE_RATE ) );
+		$this->assertSame( '0.5', $refund->get_meta( PriceConverter::META_KEY_ORDER_EXCHANGE_RATE ) );
+		$this->assertSame( 'USD', $refund->get_meta( PriceConverter::META_KEY_ORDER_DEFAULT_CURRENCY ) );
+		$this->assertSame( '0.49', $refund->get_meta( PriceConverter::META_KEY_STRIPE_EXCHANGE_RATE ) );
 	}
 
 	/** @return array<string,array{string,bool,string}> */
@@ -1005,8 +1005,8 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 		update_option( 'woocommerce_currency', 'USD' );
 		$order = WC_Helper_Order::create_order();
 		$order->set_currency( 'EUR' );
-		$order->update_meta_data( MultiCurrencyPriceConverter::META_KEY_ORDER_EXCHANGE_RATE, '0.5' );
-		$order->update_meta_data( MultiCurrencyPriceConverter::META_KEY_ORDER_DEFAULT_CURRENCY, 'USD' );
+		$order->update_meta_data( PriceConverter::META_KEY_ORDER_EXCHANGE_RATE, '0.5' );
+		$order->update_meta_data( PriceConverter::META_KEY_ORDER_DEFAULT_CURRENCY, 'USD' );
 		$order->save();
 		$order_id  = $order->get_id();
 		$net_total = static function () use ( $wpdb, $order_id ): float {
@@ -1031,8 +1031,8 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 		add_filter( 'pre_http_request', static fn() => new \WP_Error( 'blocked', 'Outbound HTTP is blocked in this test.' ) );
 		update_option( 'woocommerce_currency', 'USD' );
 		$order = WC_Helper_Order::create_order();
-		$order->update_meta_data( MultiCurrencyPriceConverter::META_KEY_ORDER_EXCHANGE_RATE, '0.5' );
-		$order->update_meta_data( MultiCurrencyPriceConverter::META_KEY_ORDER_DEFAULT_CURRENCY, 'USD' );
+		$order->update_meta_data( PriceConverter::META_KEY_ORDER_EXCHANGE_RATE, '0.5' );
+		$order->update_meta_data( PriceConverter::META_KEY_ORDER_DEFAULT_CURRENCY, 'USD' );
 		$order->save();
 		$this->enable_core_multi_currency( true );
 		$sut       = new MultiCurrencyBootstrap( static fn(): array => array() );
@@ -1053,8 +1053,8 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 		);
 		$refund = wc_get_order( $refund_id );
 
-		$this->assertSame( '', $refund->get_meta( MultiCurrencyPriceConverter::META_KEY_ORDER_EXCHANGE_RATE ) );
-		$this->assertSame( '', $refund->get_meta( MultiCurrencyPriceConverter::META_KEY_ORDER_DEFAULT_CURRENCY ) );
+		$this->assertSame( '', $refund->get_meta( PriceConverter::META_KEY_ORDER_EXCHANGE_RATE ) );
+		$this->assertSame( '', $refund->get_meta( PriceConverter::META_KEY_ORDER_DEFAULT_CURRENCY ) );
 	}
 
 	/** @testdox Adds no order listeners when the plugin or nobody owns Multi-Currency. */
@@ -1085,8 +1085,8 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 		update_option( 'woocommerce_currency', 'USD' );
 		$order = WC_Helper_Order::create_order();
 		$order->set_currency( 'EUR' );
-		$order->update_meta_data( MultiCurrencyPriceConverter::META_KEY_ORDER_EXCHANGE_RATE, '0.5' );
-		$order->update_meta_data( MultiCurrencyPriceConverter::META_KEY_ORDER_DEFAULT_CURRENCY, 'USD' );
+		$order->update_meta_data( PriceConverter::META_KEY_ORDER_EXCHANGE_RATE, '0.5' );
+		$order->update_meta_data( PriceConverter::META_KEY_ORDER_DEFAULT_CURRENCY, 'USD' );
 		$order->save();
 		$order_id  = $order->get_id();
 		$net_total = static function () use ( $wpdb, $order_id ): float {
@@ -1096,7 +1096,7 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 		$unconverted = $net_total();
 		$this->assertGreaterThan( 0.0, $unconverted, 'The order must have an Analytics row before the case.' );
 		update_option( 'wcpay_multi_currency_enabled_currencies', $configured ? array( 'USD', 'EUR' ) : array() );
-		delete_transient( MultiCurrencyUsageDetector::HAS_MC_ORDERS_TRANSIENT );
+		delete_transient( UsageDetector::HAS_MC_ORDERS_TRANSIENT );
 		update_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
 		update_option( 'active_plugins', array_values( array_diff( (array) get_option( 'active_plugins', array() ), array( WooPaymentsRuntimeArbiter::PLUGIN_FILE ) ) ) );
 		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
@@ -1212,7 +1212,7 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 
 				/** Set the provider, as a payments provider's Multi-Currency classes do. */
 				public function register(): void {
-					wc_get_container()->get( MultiCurrencyRateService::class )->set_provider( $this->provider );
+					wc_get_container()->get( RateService::class )->set_provider( $this->provider );
 				}
 			}
 		);
@@ -1234,8 +1234,8 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 		$controller->init(
 			wc_get_container()->get( MultiCurrencyRuntimeArbiter::class ),
 			new LegacyProxy(),
-			wc_get_container()->get( MultiCurrencyStateBuilderFactory::class ),
-			wc_get_container()->get( MultiCurrencyServiceFactory::class )
+			wc_get_container()->get( StateBuilderFactory::class ),
+			wc_get_container()->get( ServiceFactory::class )
 		);
 		wc_get_container()->replace( MultiCurrencySubscriptionsCompatibilityController::class, $controller );
 
@@ -1317,7 +1317,7 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 	 */
 	private function enable_core_multi_currency( bool $configured ): void {
 		update_option( 'wcpay_multi_currency_enabled_currencies', $configured ? array( 'USD', 'EUR' ) : array() );
-		delete_transient( MultiCurrencyUsageDetector::HAS_MC_ORDERS_TRANSIENT );
+		delete_transient( UsageDetector::HAS_MC_ORDERS_TRANSIENT );
 		update_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
 		update_option( 'active_plugins', array_values( array_diff( (array) get_option( 'active_plugins', array() ), array( WooPaymentsRuntimeArbiter::PLUGIN_FILE ) ) ) );
 		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
@@ -1457,7 +1457,7 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 					return $this->arbiter;
 				}
 
-				if ( MultiCurrencyUsageDetector::class === $class_name ) {
+				if ( UsageDetector::class === $class_name ) {
 					$configured                                = $this->configured;
 					$historical                                = $this->historical;
 					$container                                 = $this;
@@ -1552,12 +1552,12 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 		update_option( 'wcpay_multi_currency_enabled_currencies', $has_additional_currencies_enabled ? array( 'USD', 'EUR' ) : array() );
 		$state = $this->createMock( MultiCurrencyState::class );
 		$state->method( 'has_additional_currencies_enabled' )->willReturn( $has_additional_currencies_enabled );
-		$builder = $this->getMockBuilder( MultiCurrencyStateBuilder::class )
+		$builder = $this->getMockBuilder( StateBuilder::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'build' ) )
 			->getMock();
 		$builder->method( 'build' )->willReturn( $state );
-		$factory = $this->getMockBuilder( MultiCurrencyStateBuilderFactory::class )
+		$factory = $this->getMockBuilder( StateBuilderFactory::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'get_state_builder' ) )
 			->getMock();
@@ -1571,7 +1571,7 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 				}
 			},
 			$factory,
-			new MultiCurrencyUsageDetector()
+			new UsageDetector()
 		);
 
 		return $controller;

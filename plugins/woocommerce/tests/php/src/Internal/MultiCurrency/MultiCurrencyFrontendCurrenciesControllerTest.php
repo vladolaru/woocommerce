@@ -7,10 +7,10 @@ use Automattic\WooCommerce\Caches\OrderCache;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFrontendCurrenciesController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFrontendPricesController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyDisplayService;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyOrderContextService;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyServiceFactory;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRequestContext;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\DisplayService;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\OrderContextService;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\ServiceFactory;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\RequestContext;
 use WC_Unit_Test_Case;
 
 /**
@@ -163,7 +163,7 @@ class MultiCurrencyFrontendCurrenciesControllerTest extends WC_Unit_Test_Case {
 	 */
 	public function test_currency_conversion_is_reentry_safe(): void {
 		update_option( 'woocommerce_currency', 'USD' );
-		$service = new class() extends MultiCurrencyDisplayService {
+		$service = new class() extends DisplayService {
 			/**
 			 * Number of projection calls.
 			 *
@@ -466,10 +466,10 @@ class MultiCurrencyFrontendCurrenciesControllerTest extends WC_Unit_Test_Case {
 
 		$arbiter = $this->create_arbiter( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
 		$prices  = new MultiCurrencyFrontendPricesController();
-		$prices->init( $arbiter, wc_get_container()->get( MultiCurrencyServiceFactory::class ), wc_get_container()->get( MultiCurrencyRequestContext::class ) );
+		$prices->init( $arbiter, wc_get_container()->get( ServiceFactory::class ), wc_get_container()->get( RequestContext::class ) );
 		$prices->register();
 		$sut = new MultiCurrencyFrontendCurrenciesController();
-		$sut->init( $arbiter, wc_get_container()->get( MultiCurrencyServiceFactory::class ), wc_get_container()->get( MultiCurrencyRequestContext::class ), wc_get_container()->get( MultiCurrencyOrderContextService::class ) );
+		$sut->init( $arbiter, wc_get_container()->get( ServiceFactory::class ), wc_get_container()->get( RequestContext::class ), wc_get_container()->get( OrderContextService::class ) );
 		$sut->register();
 
 		$shipping_method = new \WC_Shipping_Flat_Rate( 0 );
@@ -487,24 +487,24 @@ class MultiCurrencyFrontendCurrenciesControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * Create a frontend currencies controller with a static runtime owner.
 	 *
-	 * @param string                                $owner                 Runtime owner.
-	 * @param MultiCurrencyRequestContext|null      $request_context       Request context.
-	 * @param MultiCurrencyOrderContextService|null $order_context_service Order context service.
-	 * @param MultiCurrencyDisplayService|null      $display_service Frontend projection service; the fixture's by default.
+	 * @param string                   $owner                 Runtime owner.
+	 * @param RequestContext|null      $request_context       Request context.
+	 * @param OrderContextService|null $order_context_service Order context service.
+	 * @param DisplayService|null      $display_service Frontend projection service; the fixture's by default.
 	 * @return MultiCurrencyFrontendCurrenciesController
 	 */
 	private function create_controller(
 		string $owner,
-		?MultiCurrencyRequestContext $request_context = null,
-		?MultiCurrencyOrderContextService $order_context_service = null,
-		?MultiCurrencyDisplayService $display_service = null
+		?RequestContext $request_context = null,
+		?OrderContextService $order_context_service = null,
+		?DisplayService $display_service = null
 	): MultiCurrencyFrontendCurrenciesController {
 		$controller = new MultiCurrencyFrontendCurrenciesController();
 		$controller->init(
 			$this->create_arbiter( $owner ),
 			ServiceFactories::with( $this, array( 'create_display_service' => $display_service ?? $this->create_display_service() ) ),
-			$request_context ?? wc_get_container()->get( MultiCurrencyRequestContext::class ),
-			$order_context_service ?? wc_get_container()->get( MultiCurrencyOrderContextService::class )
+			$request_context ?? wc_get_container()->get( RequestContext::class ),
+			$order_context_service ?? wc_get_container()->get( OrderContextService::class )
 		);
 
 		return $controller;
@@ -535,10 +535,10 @@ class MultiCurrencyFrontendCurrenciesControllerTest extends WC_Unit_Test_Case {
 	 * Create a deterministic order context service.
 	 *
 	 * @param bool $should_use_order_currency Whether order currency should be used.
-	 * @return MultiCurrencyOrderContextService
+	 * @return OrderContextService
 	 */
-	private function create_order_context_service( bool $should_use_order_currency ): MultiCurrencyOrderContextService {
-		return new class( $should_use_order_currency ) extends MultiCurrencyOrderContextService {
+	private function create_order_context_service( bool $should_use_order_currency ): OrderContextService {
+		return new class( $should_use_order_currency ) extends OrderContextService {
 			/**
 			 * Whether order currency should be used.
 			 *
@@ -613,10 +613,10 @@ class MultiCurrencyFrontendCurrenciesControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * Create a deterministic frontend projection service.
 	 *
-	 * @return MultiCurrencyDisplayService
+	 * @return DisplayService
 	 */
-	private function create_display_service(): MultiCurrencyDisplayService {
-		return new class() extends MultiCurrencyDisplayService {
+	private function create_display_service(): DisplayService {
+		return new class() extends DisplayService {
 			/**
 			 * Constructor.
 			 */
@@ -703,10 +703,10 @@ class MultiCurrencyFrontendCurrenciesControllerTest extends WC_Unit_Test_Case {
 	 * Create a request context test double.
 	 *
 	 * @param bool $should_register_frontend_hooks Whether frontend hooks should register.
-	 * @return MultiCurrencyRequestContext
+	 * @return RequestContext
 	 */
-	private function create_request_context( bool $should_register_frontend_hooks ): MultiCurrencyRequestContext {
-		return new class( $should_register_frontend_hooks ) extends MultiCurrencyRequestContext {
+	private function create_request_context( bool $should_register_frontend_hooks ): RequestContext {
+		return new class( $should_register_frontend_hooks ) extends RequestContext {
 			/**
 			 * Whether frontend hooks should register.
 			 *

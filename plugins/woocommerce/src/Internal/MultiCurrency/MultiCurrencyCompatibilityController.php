@@ -8,12 +8,12 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\MultiCurrency;
 
 use Automattic\WooCommerce\Internal\Admin\Notes\NewSalesRecord;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyPriceConverter;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilderFactory;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\PriceConverter;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilder;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilderFactory;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Automattic\Jetpack\Constants;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRequestContext;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\RequestContext;
 
 /**
  * Answers the compatibility questions other Multi-Currency classes ask through the `wcpay_multi_currency_*` filters.
@@ -43,26 +43,26 @@ class MultiCurrencyCompatibilityController implements RegisterHooksInterface {
 	/**
 	 * State builder factory.
 	 *
-	 * @var MultiCurrencyStateBuilderFactory
+	 * @var StateBuilderFactory
 	 */
-	private MultiCurrencyStateBuilderFactory $state_builder_factory;
+	private StateBuilderFactory $state_builder_factory;
 
 	/**
 	 * State builder.
 	 *
-	 * @var MultiCurrencyStateBuilder|null
+	 * @var StateBuilder|null
 	 */
-	private ?MultiCurrencyStateBuilder $state_builder = null;
+	private ?StateBuilder $state_builder = null;
 
 	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
 	 *
-	 * @param MultiCurrencyRuntimeArbiter      $arbiter               Runtime owner arbiter.
-	 * @param MultiCurrencyStateBuilderFactory $state_builder_factory State builder factory.
+	 * @param MultiCurrencyRuntimeArbiter $arbiter               Runtime owner arbiter.
+	 * @param StateBuilderFactory         $state_builder_factory State builder factory.
 	 */
-	final public function init( MultiCurrencyRuntimeArbiter $arbiter, MultiCurrencyStateBuilderFactory $state_builder_factory ): void {
+	final public function init( MultiCurrencyRuntimeArbiter $arbiter, StateBuilderFactory $state_builder_factory ): void {
 		$this->arbiter               = $arbiter;
 		$this->state_builder_factory = $state_builder_factory;
 	}
@@ -93,7 +93,7 @@ class MultiCurrencyCompatibilityController implements RegisterHooksInterface {
 		 *
 		 * @since 11.0.0
 		 */
-		return apply_filters( MultiCurrencyStateBuilder::FILTER_PREFIX . 'override_selected_currency', false );
+		return apply_filters( StateBuilder::FILTER_PREFIX . 'override_selected_currency', false );
 	}
 
 	/**
@@ -104,8 +104,8 @@ class MultiCurrencyCompatibilityController implements RegisterHooksInterface {
 	public function should_disable_currency_switching(): bool {
 		$should_disable = array_key_exists( 'pay_for_order', $_GET ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only compatibility flag matching WooPayments behavior.
 
-		if ( has_filter( MultiCurrencyStateBuilder::FILTER_PREFIX . 'should_hide_widgets' ) ) {
-			wc_deprecated_hook( MultiCurrencyStateBuilder::FILTER_PREFIX . 'should_hide_widgets', '6.5.0', MultiCurrencyStateBuilder::FILTER_PREFIX . 'should_disable_currency_switching' );
+		if ( has_filter( StateBuilder::FILTER_PREFIX . 'should_hide_widgets' ) ) {
+			wc_deprecated_hook( StateBuilder::FILTER_PREFIX . 'should_hide_widgets', '6.5.0', StateBuilder::FILTER_PREFIX . 'should_disable_currency_switching' );
 			/**
 			 * Filters whether currency switching is disabled, under the deprecated name of the filter below.
 			 *
@@ -113,7 +113,7 @@ class MultiCurrencyCompatibilityController implements RegisterHooksInterface {
 			 *
 			 * @since 11.0.0
 			 */
-			$should_disable = (bool) apply_filters( MultiCurrencyStateBuilder::FILTER_PREFIX . 'should_hide_widgets', $should_disable );
+			$should_disable = (bool) apply_filters( StateBuilder::FILTER_PREFIX . 'should_hide_widgets', $should_disable );
 		}
 
 		/**
@@ -123,7 +123,7 @@ class MultiCurrencyCompatibilityController implements RegisterHooksInterface {
 		 *
 		 * @since 11.0.0
 		 */
-		return (bool) apply_filters( MultiCurrencyStateBuilder::FILTER_PREFIX . 'should_disable_currency_switching', $should_disable );
+		return (bool) apply_filters( StateBuilder::FILTER_PREFIX . 'should_disable_currency_switching', $should_disable );
 	}
 
 	/**
@@ -145,7 +145,7 @@ class MultiCurrencyCompatibilityController implements RegisterHooksInterface {
 		 *
 		 * @since 11.0.0
 		 */
-		return (bool) apply_filters( MultiCurrencyStateBuilder::FILTER_PREFIX . 'should_convert_coupon_amount', true, $coupon );
+		return (bool) apply_filters( StateBuilder::FILTER_PREFIX . 'should_convert_coupon_amount', true, $coupon );
 	}
 
 	/**
@@ -167,7 +167,7 @@ class MultiCurrencyCompatibilityController implements RegisterHooksInterface {
 		 *
 		 * @since 11.0.0
 		 */
-		return (bool) apply_filters( MultiCurrencyStateBuilder::FILTER_PREFIX . 'should_convert_product_price', true, $product );
+		return (bool) apply_filters( StateBuilder::FILTER_PREFIX . 'should_convert_product_price', true, $product );
 	}
 
 	/**
@@ -183,7 +183,7 @@ class MultiCurrencyCompatibilityController implements RegisterHooksInterface {
 		 *
 		 * @since 11.0.0
 		 */
-		return (bool) apply_filters( MultiCurrencyStateBuilder::FILTER_PREFIX . 'should_return_store_currency', false );
+		return (bool) apply_filters( StateBuilder::FILTER_PREFIX . 'should_return_store_currency', false );
 	}
 
 	/**
@@ -212,7 +212,7 @@ class MultiCurrencyCompatibilityController implements RegisterHooksInterface {
 		if (
 			! is_array( $results )
 			|| ( is_array( $query_vars ) && 'shop_order_refund' === ( $query_vars['type'] ?? null ) )
-			|| ! MultiCurrencyRequestContext::is_call_in_backtrace( self::NEW_SALES_RECORD_BACKTRACE_CALLS )
+			|| ! RequestContext::is_call_in_backtrace( self::NEW_SALES_RECORD_BACKTRACE_CALLS )
 		) {
 			return $results;
 		}
@@ -224,12 +224,12 @@ class MultiCurrencyCompatibilityController implements RegisterHooksInterface {
 				continue;
 			}
 
-			$exchange_rate = $order->get_meta( MultiCurrencyPriceConverter::META_KEY_ORDER_EXCHANGE_RATE, true );
+			$exchange_rate = $order->get_meta( PriceConverter::META_KEY_ORDER_EXCHANGE_RATE, true );
 			if (
 				$default_currency_code === $order->get_currency() ||
 				! is_numeric( $exchange_rate ) ||
 				0 >= (float) $exchange_rate ||
-				$order->get_meta( MultiCurrencyPriceConverter::META_KEY_ORDER_DEFAULT_CURRENCY, true ) !== $default_currency_code
+				$order->get_meta( PriceConverter::META_KEY_ORDER_DEFAULT_CURRENCY, true ) !== $default_currency_code
 			) {
 				continue;
 			}
@@ -245,9 +245,9 @@ class MultiCurrencyCompatibilityController implements RegisterHooksInterface {
 	/**
 	 * Get the state builder.
 	 *
-	 * @return MultiCurrencyStateBuilder
+	 * @return StateBuilder
 	 */
-	private function get_state_builder(): MultiCurrencyStateBuilder {
+	private function get_state_builder(): StateBuilder {
 		if ( null === $this->state_builder ) {
 			$this->state_builder = $this->state_builder_factory->get_state_builder();
 		}

@@ -16,13 +16,13 @@ use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencySelectedCurrencyController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyState;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyStorefrontIntegrationController;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyDisplayService;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyGeolocationService;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyLocalizationService;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRequestContext;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\DisplayService;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\GeolocationService;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\LocalizationService;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\RequestContext;
 use Automattic\WooCommerce\Tests\Internal\MultiCurrency\ServiceFactories;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencySelectedCurrencyPersistenceService;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\SelectedCurrencyPersistenceService;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilder;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsTransportLog;
 use Automattic\WooCommerce\Internal\Payments\TransientRowLock;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
@@ -973,10 +973,10 @@ class WooPaymentsHookArityContractTest extends WC_Unit_Test_Case {
 	 * Build a minimal native multi-currency fixture (a default and a selected currency) for the
 	 * multi-currency probe groups, the way the retired harness's `$build_native_mc_fixture` did.
 	 *
-	 * @return array{builder:MultiCurrencyStateBuilder,geolocation:MultiCurrencyGeolocationService,localization:MultiCurrencyLocalizationService,state:MultiCurrencyState}
+	 * @return array{builder:StateBuilder,geolocation:GeolocationService,localization:LocalizationService,state:MultiCurrencyState}
 	 */
 	private function build_multi_currency_fixture(): array {
-		$localization  = wc_get_container()->get( MultiCurrencyLocalizationService::class );
+		$localization  = wc_get_container()->get( LocalizationService::class );
 		$default_code  = strtoupper( (string) get_woocommerce_currency() );
 		$selected_code = 'EUR' === $default_code ? 'USD' : 'EUR';
 		$country_code  = 'EUR' === $selected_code ? 'DE' : 'US';
@@ -988,10 +988,10 @@ class WooPaymentsHookArityContractTest extends WC_Unit_Test_Case {
 		);
 		$state         = new MultiCurrencyState( $currencies, $currencies, $default, $selected );
 
-		$builder = $this->createStub( MultiCurrencyStateBuilder::class );
+		$builder = $this->createStub( StateBuilder::class );
 		$builder->method( 'build' )->willReturn( $state );
 
-		$geolocation = $this->createStub( MultiCurrencyGeolocationService::class );
+		$geolocation = $this->createStub( GeolocationService::class );
 		$geolocation->method( 'get_currency_by_customer_location' )->willReturn( $selected_code );
 		$geolocation->method( 'get_country_by_customer_location' )->willReturn( $country_code );
 
@@ -1019,7 +1019,7 @@ class WooPaymentsHookArityContractTest extends WC_Unit_Test_Case {
 	private function probe_mc_notice(): void {
 		$fixture     = $this->build_multi_currency_fixture();
 		$controller  = new MultiCurrencySelectedCurrencyController();
-		$persistence = new MultiCurrencySelectedCurrencyPersistenceService( $fixture['builder'] );
+		$persistence = new SelectedCurrencyPersistenceService( $fixture['builder'] );
 		$controller->init(
 			wc_get_container()->get( MultiCurrencyRuntimeArbiter::class ),
 			ServiceFactories::with(
@@ -1030,7 +1030,7 @@ class WooPaymentsHookArityContractTest extends WC_Unit_Test_Case {
 				)
 			),
 			wc_get_container()->get( MultiCurrencyCompatibilityController::class ),
-			wc_get_container()->get( MultiCurrencyRequestContext::class )
+			wc_get_container()->get( RequestContext::class )
 		);
 		$controller->handle_wp_footer();
 	}
@@ -1040,7 +1040,7 @@ class WooPaymentsHookArityContractTest extends WC_Unit_Test_Case {
 	 */
 	private function probe_mc_frontend(): void {
 		$fixture = $this->build_multi_currency_fixture();
-		$service = new MultiCurrencyDisplayService( $fixture['builder'], $fixture['localization'], $fixture['geolocation'] );
+		$service = new DisplayService( $fixture['builder'], $fixture['localization'], $fixture['geolocation'] );
 		$service->get_public_config();
 	}
 
@@ -1098,7 +1098,7 @@ class WooPaymentsHookArityContractTest extends WC_Unit_Test_Case {
 	 * reader, probed for USD (the fixture's concrete `wcpay_usd_format` sample).
 	 */
 	private function probe_mc_localization(): void {
-		$service = wc_get_container()->get( MultiCurrencyLocalizationService::class );
+		$service = wc_get_container()->get( LocalizationService::class );
 		$service->get_currency_format( 'USD' );
 	}
 }

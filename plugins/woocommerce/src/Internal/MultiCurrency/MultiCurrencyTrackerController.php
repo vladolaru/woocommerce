@@ -7,8 +7,8 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\MultiCurrency;
 
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyServiceFactory;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyTrackerDataBuilder;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\ServiceFactory;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\TrackerDataBuilder;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Automattic\WooCommerce\Utilities\OrderUtil;
 
@@ -32,16 +32,16 @@ class MultiCurrencyTrackerController implements RegisterHooksInterface {
 	/**
 	 * Tracker data builder, built on first use.
 	 *
-	 * @var MultiCurrencyTrackerDataBuilder|null
+	 * @var TrackerDataBuilder|null
 	 */
-	private ?MultiCurrencyTrackerDataBuilder $tracker_data_builder = null;
+	private ?TrackerDataBuilder $tracker_data_builder = null;
 
 	/**
 	 * Multi-Currency service factory.
 	 *
-	 * @var MultiCurrencyServiceFactory
+	 * @var ServiceFactory
 	 */
-	private MultiCurrencyServiceFactory $service_factory;
+	private ServiceFactory $service_factory;
 
 	/**
 	 * Initialize the class instance.
@@ -49,9 +49,9 @@ class MultiCurrencyTrackerController implements RegisterHooksInterface {
 	 * @internal
 	 *
 	 * @param MultiCurrencyRuntimeArbiter $arbiter         Runtime owner arbiter.
-	 * @param MultiCurrencyServiceFactory $service_factory Multi-Currency service factory.
+	 * @param ServiceFactory              $service_factory Multi-Currency service factory.
 	 */
-	final public function init( MultiCurrencyRuntimeArbiter $arbiter, MultiCurrencyServiceFactory $service_factory ): void {
+	final public function init( MultiCurrencyRuntimeArbiter $arbiter, ServiceFactory $service_factory ): void {
 		$this->arbiter         = $arbiter;
 		$this->service_factory = $service_factory;
 	}
@@ -82,9 +82,9 @@ class MultiCurrencyTrackerController implements RegisterHooksInterface {
 	/**
 	 * Get the tracker data builder.
 	 *
-	 * @return MultiCurrencyTrackerDataBuilder
+	 * @return TrackerDataBuilder
 	 */
-	private function get_tracker_data_builder(): MultiCurrencyTrackerDataBuilder {
+	private function get_tracker_data_builder(): TrackerDataBuilder {
 		if ( null === $this->tracker_data_builder ) {
 			$this->tracker_data_builder = $this->service_factory->create_tracker_data_builder();
 		}

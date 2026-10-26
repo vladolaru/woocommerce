@@ -8,15 +8,15 @@ use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyCurrency;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRestController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyState;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyDatabaseCache;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyCacheRenderingService;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyCachingEnvironment;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyDisplayService;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRateService;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyServiceFactory;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencySettingsCurrencyCatalog;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilderFactory;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\DatabaseCache;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\CacheRenderingService;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\CachingEnvironment;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\DisplayService;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\RateService;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\ServiceFactory;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\SettingsCurrencyCatalog;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilder;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilderFactory;
 use WC_Unit_Test_Case;
 use WP_Error;
 use WP_REST_Request;
@@ -95,11 +95,11 @@ class MultiCurrencyRestControllerTest extends WC_Unit_Test_Case {
 		$controller = new MultiCurrencyRestController();
 		$controller->init(
 			$this->create_arbiter( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN ),
-			wc_get_container()->get( MultiCurrencyStateBuilderFactory::class ),
-			wc_get_container()->get( MultiCurrencyServiceFactory::class )
+			wc_get_container()->get( StateBuilderFactory::class ),
+			wc_get_container()->get( ServiceFactory::class )
 		);
 		if ( null !== $available ) {
-			wc_get_container()->get( MultiCurrencyRateService::class )->set_provider( $this->create_rate_provider( $available, array( 'GBP', 'EUR' ) ) );
+			wc_get_container()->get( RateService::class )->set_provider( $this->create_rate_provider( $available, array( 'GBP', 'EUR' ) ) );
 		}
 
 		try {
@@ -631,7 +631,7 @@ class MultiCurrencyRestControllerTest extends WC_Unit_Test_Case {
 	 */
 	public function test_returns_cache_recommendation_state_and_persists_an_explicit_dismissal(): void {
 		update_option( 'wcpay_multi_currency_rendering_mode', 'speed' );
-		$cache_rendering_service = $this->getMockBuilder( MultiCurrencyCacheRenderingService::class )
+		$cache_rendering_service = $this->getMockBuilder( CacheRenderingService::class )
 			->onlyMethods( array( 'maybe_auto_enable_cache_rendering_mode' ) )
 			->getMock();
 		$cache_rendering_service->expects( $this->never() )->method( 'maybe_auto_enable_cache_rendering_mode' );
@@ -649,19 +649,19 @@ class MultiCurrencyRestControllerTest extends WC_Unit_Test_Case {
 		$request->set_param( 'wcpay_multi_currency_cache_recommendation_dismissed', 'yes' );
 
 		$get_data = $sut->get_settings()->get_data();
-		$this->assertFalse( get_option( MultiCurrencyCacheRenderingService::AUTODETECT_DONE_OPTION ) );
+		$this->assertFalse( get_option( CacheRenderingService::AUTODETECT_DONE_OPTION ) );
 		$update_data = $sut->update_settings( $request )->get_data();
 
 		$this->assertTrue( $get_data['should_recommend_cache_mode'] );
 		$this->assertFalse( $get_data['cache_recommendation_dismissed'] );
-		$this->assertSame( 'yes', get_option( MultiCurrencyCacheRenderingService::DISMISSED_OPTION ) );
+		$this->assertSame( 'yes', get_option( CacheRenderingService::DISMISSED_OPTION ) );
 		$this->assertTrue( $update_data['cache_recommendation_dismissed'] );
 		$this->assertFalse( $update_data['should_recommend_cache_mode'] );
 
 		$request->set_param( 'wcpay_multi_currency_cache_recommendation_dismissed', 'no' );
 		$restored_data = $sut->update_settings( $request )->get_data();
 
-		$this->assertSame( 'no', get_option( MultiCurrencyCacheRenderingService::DISMISSED_OPTION ) );
+		$this->assertSame( 'no', get_option( CacheRenderingService::DISMISSED_OPTION ) );
 		$this->assertFalse( $restored_data['cache_recommendation_dismissed'] );
 		$this->assertTrue( $restored_data['should_recommend_cache_mode'] );
 	}
@@ -719,20 +719,20 @@ class MultiCurrencyRestControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * Create a REST controller.
 	 *
-	 * @param string                                  $owner                   Runtime owner.
-	 * @param MultiCurrencyStateBuilder|null          $state_builder           State builder.
-	 * @param bool                                    $cache_optimized_mode    Whether cache mode is active.
-	 * @param bool|null                               $provider_available      Whether a registered provider is available.
-	 * @param MultiCurrencyCacheRenderingService|null $cache_rendering_service Cache rendering service.
-	 * @param string[]                                $supported_currencies    Currencies the provider supports; empty means all.
+	 * @param string                     $owner                   Runtime owner.
+	 * @param StateBuilder|null          $state_builder           State builder.
+	 * @param bool                       $cache_optimized_mode    Whether cache mode is active.
+	 * @param bool|null                  $provider_available      Whether a registered provider is available.
+	 * @param CacheRenderingService|null $cache_rendering_service Cache rendering service.
+	 * @param string[]                   $supported_currencies    Currencies the provider supports; empty means all.
 	 * @return MultiCurrencyRestController
 	 */
 	private function create_controller(
 		string $owner = MultiCurrencyRuntimeArbiter::OWNER_BUILTIN,
-		?MultiCurrencyStateBuilder $state_builder = null,
+		?StateBuilder $state_builder = null,
 		bool $cache_optimized_mode = true,
 		?bool $provider_available = null,
-		?MultiCurrencyCacheRenderingService $cache_rendering_service = null,
+		?CacheRenderingService $cache_rendering_service = null,
 		array $supported_currencies = array()
 	): MultiCurrencyRestController {
 		$state_builder = $state_builder ?? $this->create_state_builder();
@@ -758,10 +758,10 @@ class MultiCurrencyRestControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * Create an active deterministic cache environment.
 	 *
-	 * @return MultiCurrencyCachingEnvironment
+	 * @return CachingEnvironment
 	 */
-	private function create_active_caching_environment(): MultiCurrencyCachingEnvironment {
-		return new class() extends MultiCurrencyCachingEnvironment {
+	private function create_active_caching_environment(): CachingEnvironment {
+		return new class() extends CachingEnvironment {
 			/**
 			 * Tell whether a constant is defined.
 			 *
@@ -777,13 +777,13 @@ class MultiCurrencyRestControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * Create a static settings catalog for the controller.
 	 *
-	 * @param MultiCurrencyStateBuilder $state_builder      State builder.
-	 * @param bool|null                 $provider_available Whether a registered provider is available.
-	 * @param string[]                  $supported_currencies Currencies the provider supports; empty means all.
-	 * @return MultiCurrencySettingsCurrencyCatalog
+	 * @param StateBuilder $state_builder      State builder.
+	 * @param bool|null    $provider_available Whether a registered provider is available.
+	 * @param string[]     $supported_currencies Currencies the provider supports; empty means all.
+	 * @return SettingsCurrencyCatalog
 	 */
-	private function create_settings_currency_catalog( MultiCurrencyStateBuilder $state_builder, ?bool $provider_available, array $supported_currencies = array() ): MultiCurrencySettingsCurrencyCatalog {
-		return new MultiCurrencySettingsCurrencyCatalog(
+	private function create_settings_currency_catalog( StateBuilder $state_builder, ?bool $provider_available, array $supported_currencies = array() ): SettingsCurrencyCatalog {
+		return new SettingsCurrencyCatalog(
 			$this->create_localization_service(),
 			$state_builder,
 			RateServices::with( null === $provider_available ? null : $this->create_rate_provider( $provider_available, $supported_currencies ) )
@@ -902,12 +902,12 @@ class MultiCurrencyRestControllerTest extends WC_Unit_Test_Case {
 	 *
 	 * @param string[] $available_codes Available currency codes.
 	 * @param string[] $enabled_codes   Enabled currency codes.
-	 * @return MultiCurrencyStateBuilder
+	 * @return StateBuilder
 	 */
 	private function create_state_builder(
 		array $available_codes = array( 'USD', 'EUR', 'GBP' ),
 		array $enabled_codes = array( 'USD', 'EUR' )
-	): MultiCurrencyStateBuilder {
+	): StateBuilder {
 		$localization = $this->create_localization_service();
 		$available    = array();
 
@@ -922,7 +922,7 @@ class MultiCurrencyRestControllerTest extends WC_Unit_Test_Case {
 
 		$state = new MultiCurrencyState( $available, $enabled, $available['USD'], $enabled['EUR'] ?? $available['USD'] );
 
-		return new class( $state ) extends MultiCurrencyStateBuilder {
+		return new class( $state ) extends StateBuilder {
 			/**
 			 * State snapshot.
 			 *
@@ -960,17 +960,17 @@ class MultiCurrencyRestControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * Create a real state builder backed by genuine collaborators.
 	 *
-	 * Unlike create_state_builder(), this returns a production MultiCurrencyStateBuilder
+	 * Unlike create_state_builder(), this returns a production StateBuilder
 	 * whose build() reads the real enabled-currencies option and memoizes the result, so
 	 * the controller's reset() call site is exercised end-to-end.
 	 *
-	 * @return MultiCurrencyStateBuilder
+	 * @return StateBuilder
 	 */
-	private function create_real_state_builder(): MultiCurrencyStateBuilder {
-		return new MultiCurrencyStateBuilder(
+	private function create_real_state_builder(): StateBuilder {
+		return new StateBuilder(
 			$this->create_localization_service(),
 			RateServices::with(),
-			new MultiCurrencyDatabaseCache()
+			new DatabaseCache()
 		);
 	}
 
@@ -978,10 +978,10 @@ class MultiCurrencyRestControllerTest extends WC_Unit_Test_Case {
 	 * Create a frontend projection service test double.
 	 *
 	 * @param bool $cache_optimized_mode Whether cache mode is active.
-	 * @return MultiCurrencyDisplayService
+	 * @return DisplayService
 	 */
-	private function create_display_service( bool $cache_optimized_mode ): MultiCurrencyDisplayService {
-		return new class( $cache_optimized_mode ) extends MultiCurrencyDisplayService {
+	private function create_display_service( bool $cache_optimized_mode ): DisplayService {
+		return new class( $cache_optimized_mode ) extends DisplayService {
 			/**
 			 * Whether cache mode is active.
 			 *

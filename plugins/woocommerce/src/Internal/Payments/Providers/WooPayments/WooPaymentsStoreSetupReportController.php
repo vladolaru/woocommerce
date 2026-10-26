@@ -9,8 +9,8 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFeatureController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilderFactory;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilder;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilderFactory;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
@@ -147,7 +147,7 @@ class WooPaymentsStoreSetupReportController implements RegisterHooksInterface {
 			return;
 		}
 
-		$state_builder = wc_get_container()->get( MultiCurrencyStateBuilderFactory::class )->get_state_builder();
+		$state_builder = wc_get_container()->get( StateBuilderFactory::class )->get_state_builder();
 		$state         = $state_builder->build();
 		$available     = $state->get_available_currencies();
 		$enabled       = $state->get_enabled_currencies();
@@ -163,7 +163,7 @@ class WooPaymentsStoreSetupReportController implements RegisterHooksInterface {
 			return;
 		}
 
-		update_option( MultiCurrencyStateBuilder::ENABLED_CURRENCIES_OPTION, array_values( array_unique( array_merge( array_keys( $enabled ), $missing_codes ) ) ) );
+		update_option( StateBuilder::ENABLED_CURRENCIES_OPTION, array_values( array_unique( array_merge( array_keys( $enabled ), $missing_codes ) ) ) );
 		$state_builder->reset();
 	}
 

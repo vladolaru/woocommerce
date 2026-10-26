@@ -9,7 +9,7 @@ namespace Automattic\WooCommerce\Internal\MultiCurrency;
 
 use Automattic\WooCommerce\Admin\Notes\Note;
 use Automattic\WooCommerce\Admin\Notes\Notes;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRateService;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\RateService;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 
 /**
@@ -39,9 +39,9 @@ class MultiCurrencyAdminNoteController implements RegisterHooksInterface {
 	/**
 	 * Rate service holding the automatic-rate provider.
 	 *
-	 * @var MultiCurrencyRateService
+	 * @var RateService
 	 */
-	private MultiCurrencyRateService $rate_service;
+	private RateService $rate_service;
 
 	/**
 	 * Initialize the class instance.
@@ -49,9 +49,9 @@ class MultiCurrencyAdminNoteController implements RegisterHooksInterface {
 	 * @internal
 	 *
 	 * @param MultiCurrencyRuntimeArbiter $arbiter      Runtime owner arbiter.
-	 * @param MultiCurrencyRateService    $rate_service Rate service holding the automatic-rate provider.
+	 * @param RateService                 $rate_service Rate service holding the automatic-rate provider.
 	 */
-	final public function init( MultiCurrencyRuntimeArbiter $arbiter, MultiCurrencyRateService $rate_service ): void {
+	final public function init( MultiCurrencyRuntimeArbiter $arbiter, RateService $rate_service ): void {
 		$this->arbiter      = $arbiter;
 		$this->rate_service = $rate_service;
 	}

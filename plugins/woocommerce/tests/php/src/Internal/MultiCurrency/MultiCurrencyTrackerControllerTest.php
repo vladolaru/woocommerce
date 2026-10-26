@@ -6,7 +6,7 @@ namespace Automattic\WooCommerce\Tests\Internal\MultiCurrency;
 use Automattic\WooCommerce\Internal\DataStores\Orders\CustomOrdersTableController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyTrackerController;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyTrackerDataBuilder;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\TrackerDataBuilder;
 use WC_Unit_Test_Case;
 
 /**
@@ -83,13 +83,13 @@ class MultiCurrencyTrackerControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * Create a tracking controller.
 	 *
-	 * @param string                               $owner              Runtime owner.
-	 * @param MultiCurrencyTrackerDataBuilder|null $tracker_data_builder Projection service.
+	 * @param string                  $owner              Runtime owner.
+	 * @param TrackerDataBuilder|null $tracker_data_builder Projection service.
 	 * @return MultiCurrencyTrackerController
 	 */
 	private function create_controller(
 		string $owner,
-		?MultiCurrencyTrackerDataBuilder $tracker_data_builder = null
+		?TrackerDataBuilder $tracker_data_builder = null
 	): MultiCurrencyTrackerController {
 		$controller = new MultiCurrencyTrackerController();
 		$controller->init(
@@ -103,10 +103,10 @@ class MultiCurrencyTrackerControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * Create a projection service test double.
 	 *
-	 * @return MultiCurrencyTrackerDataBuilder&object{last_data: array<string,mixed>, last_is_hpos_enabled: bool|null}
+	 * @return TrackerDataBuilder&object{last_data: array<string,mixed>, last_is_hpos_enabled: bool|null}
 	 */
-	private function create_tracker_data_builder(): MultiCurrencyTrackerDataBuilder {
-		return new class() extends MultiCurrencyTrackerDataBuilder {
+	private function create_tracker_data_builder(): TrackerDataBuilder {
+		return new class() extends TrackerDataBuilder {
 			/**
 			 * Last tracker data received by the projection.
 			 *

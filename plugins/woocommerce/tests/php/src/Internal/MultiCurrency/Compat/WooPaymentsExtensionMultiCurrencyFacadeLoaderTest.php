@@ -9,10 +9,10 @@ use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyCurrency;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyDepositsCompatibilityController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyState;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyPriceConverter;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyServiceFactory;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilderFactory;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\PriceConverter;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\ServiceFactory;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilder;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilderFactory;
 use Automattic\WooCommerce\Tests\Internal\MultiCurrency\ServiceFactories;
 use WC_Unit_Test_Case;
 
@@ -38,7 +38,7 @@ class WooPaymentsExtensionMultiCurrencyFacadeLoaderTest extends WC_Unit_Test_Cas
 	 * @preserveGlobalState disabled
 	 */
 	public function test_core_owned_facade_preserves_grounded_extension_calls(): void {
-		$failing_price_converter = $this->createMock( MultiCurrencyPriceConverter::class );
+		$failing_price_converter = $this->createMock( PriceConverter::class );
 		$failing_price_converter->method( 'get_price' )->willThrowException( new \RuntimeException( 'Projection failed.' ) );
 		$loader   = $this->create_loader( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $failing_price_converter );
 		$consumer = new MultiCurrencyFacadeConsumerFixture();
@@ -133,13 +133,13 @@ class WooPaymentsExtensionMultiCurrencyFacadeLoaderTest extends WC_Unit_Test_Cas
 		add_filter(
 			'wcpay_multi_currency_override_selected_currency',
 			static function () {
-				MultiCurrencyStateBuilder::set_order_currency_override( 'GBP' );
+				StateBuilder::set_order_currency_override( 'GBP' );
 
 				return 'GBP';
 			}
 		);
-		$state_builder = wc_get_container()->get( MultiCurrencyStateBuilderFactory::class )->get_state_builder();
-		$this->create_loader( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, wc_get_container()->get( MultiCurrencyServiceFactory::class )->create_price_converter(), $state_builder );
+		$state_builder = wc_get_container()->get( StateBuilderFactory::class )->get_state_builder();
+		$this->create_loader( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, wc_get_container()->get( ServiceFactory::class )->create_price_converter(), $state_builder );
 		$this->setExpectedDeprecated( 'WCPay\\MultiCurrency\\MultiCurrency::instance' );
 		$this->setExpectedDeprecated( 'WCPay\\MultiCurrency\\MultiCurrency::get_selected_currency' );
 		$this->setExpectedDeprecated( 'WCPay\\MultiCurrency\\MultiCurrency::get_default_currency' );
@@ -174,19 +174,19 @@ class WooPaymentsExtensionMultiCurrencyFacadeLoaderTest extends WC_Unit_Test_Cas
 	 * The facade reads the container's loader, and the loader reads its factories from the container on first use, so
 	 * the container hands out a fresh runtime loader and factories that return the given services.
 	 *
-	 * @param string                         $owner              Runtime owner.
-	 * @param MultiCurrencyPriceConverter    $price_converter Price projection service.
-	 * @param MultiCurrencyStateBuilder|null $state_builder      State builder; the request's shared builder by default.
+	 * @param string            $owner              Runtime owner.
+	 * @param PriceConverter    $price_converter Price projection service.
+	 * @param StateBuilder|null $state_builder      State builder; the request's shared builder by default.
 	 * @return WooPaymentsExtensionMultiCurrencyFacadeLoader
 	 */
-	private function create_loader( string $owner, MultiCurrencyPriceConverter $price_converter, ?MultiCurrencyStateBuilder $state_builder = null ): WooPaymentsExtensionMultiCurrencyFacadeLoader {
+	private function create_loader( string $owner, PriceConverter $price_converter, ?StateBuilder $state_builder = null ): WooPaymentsExtensionMultiCurrencyFacadeLoader {
 		$declaration_loader = new WooPaymentsExtensionMultiCurrencyFacadeLoader();
 		$declaration_loader->init( $this->create_arbiter( $owner ) );
 		$declaration_loader->register();
 
-		wc_get_container()->replace( MultiCurrencyServiceFactory::class, ServiceFactories::with( $this, array( 'create_price_converter' => $price_converter ) ) );
+		wc_get_container()->replace( ServiceFactory::class, ServiceFactories::with( $this, array( 'create_price_converter' => $price_converter ) ) );
 		if ( null !== $state_builder ) {
-			wc_get_container()->replace( MultiCurrencyStateBuilderFactory::class, ServiceFactories::state_builder( $this, $state_builder ) );
+			wc_get_container()->replace( StateBuilderFactory::class, ServiceFactories::state_builder( $this, $state_builder ) );
 		}
 		$runtime_loader = new WooPaymentsExtensionMultiCurrencyFacadeLoader();
 		$runtime_loader->init( wc_get_container()->get( MultiCurrencyRuntimeArbiter::class ) );
@@ -231,10 +231,10 @@ class WooPaymentsExtensionMultiCurrencyFacadeLoaderTest extends WC_Unit_Test_Cas
 	 *
 	 * @param float $price_rate           Product price conversion rate.
 	 * @param float $raw_conversion_value Raw conversion result.
-	 * @return MultiCurrencyPriceConverter
+	 * @return PriceConverter
 	 */
-	private function create_recording_price_converter( float $price_rate, float $raw_conversion_value = 0.0 ): MultiCurrencyPriceConverter {
-		$service = $this->createMock( MultiCurrencyPriceConverter::class );
+	private function create_recording_price_converter( float $price_rate, float $raw_conversion_value = 0.0 ): PriceConverter {
+		$service = $this->createMock( PriceConverter::class );
 		$service->method( 'get_price' )->willReturnCallback(
 			static function ( $amount, string $type ) use ( $price_rate ): float {
 				return 'product' === $type ? (float) $amount * $price_rate : (float) $amount;
@@ -281,10 +281,10 @@ class WooPaymentsExtensionMultiCurrencyFacadeLoaderTest extends WC_Unit_Test_Cas
 	 * Create a state builder test double.
 	 *
 	 * @param MultiCurrencyState $state State snapshot.
-	 * @return MultiCurrencyStateBuilder
+	 * @return StateBuilder
 	 */
-	private function create_state_builder( MultiCurrencyState $state ): MultiCurrencyStateBuilder {
-		return new class( $state ) extends MultiCurrencyStateBuilder {
+	private function create_state_builder( MultiCurrencyState $state ): StateBuilder {
+		return new class( $state ) extends StateBuilder {
 			/** @var MultiCurrencyState */
 			private MultiCurrencyState $state;
 

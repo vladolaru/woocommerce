@@ -7,10 +7,10 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\MultiCurrency;
 
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilderFactory;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilder;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilderFactory;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRequestContext;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\RequestContext;
 
 /**
  * Converts the money side of WooCommerce Points and Rewards' earn and redeem ratios to the selected currency outside
@@ -35,26 +35,26 @@ class MultiCurrencyPointsRewardsCompatibilityController implements RegisterHooks
 	/**
 	 * State builder factory.
 	 *
-	 * @var MultiCurrencyStateBuilderFactory
+	 * @var StateBuilderFactory
 	 */
-	private MultiCurrencyStateBuilderFactory $state_builder_factory;
+	private StateBuilderFactory $state_builder_factory;
 
 	/**
 	 * State builder.
 	 *
-	 * @var MultiCurrencyStateBuilder|null
+	 * @var StateBuilder|null
 	 */
-	private ?MultiCurrencyStateBuilder $state_builder = null;
+	private ?StateBuilder $state_builder = null;
 
 	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
 	 *
-	 * @param MultiCurrencyRuntimeArbiter      $arbiter               Runtime owner arbiter.
-	 * @param MultiCurrencyStateBuilderFactory $state_builder_factory State builder factory.
+	 * @param MultiCurrencyRuntimeArbiter $arbiter               Runtime owner arbiter.
+	 * @param StateBuilderFactory         $state_builder_factory State builder factory.
 	 */
-	final public function init( MultiCurrencyRuntimeArbiter $arbiter, MultiCurrencyStateBuilderFactory $state_builder_factory ): void {
+	final public function init( MultiCurrencyRuntimeArbiter $arbiter, StateBuilderFactory $state_builder_factory ): void {
 		$this->arbiter               = $arbiter;
 		$this->state_builder_factory = $state_builder_factory;
 	}
@@ -104,7 +104,7 @@ class MultiCurrencyPointsRewardsCompatibilityController implements RegisterHooks
 
 		if (
 			$selected_currency->get_code() === $default_currency->get_code()
-			|| MultiCurrencyRequestContext::is_call_in_backtrace( self::POINTS_REWARDS_DISCOUNT_DATA_CALLS )
+			|| RequestContext::is_call_in_backtrace( self::POINTS_REWARDS_DISCOUNT_DATA_CALLS )
 		) {
 			return $ratio;
 		}
@@ -129,9 +129,9 @@ class MultiCurrencyPointsRewardsCompatibilityController implements RegisterHooks
 	/**
 	 * Get the state builder.
 	 *
-	 * @return MultiCurrencyStateBuilder
+	 * @return StateBuilder
 	 */
-	private function get_state_builder(): MultiCurrencyStateBuilder {
+	private function get_state_builder(): StateBuilder {
 		if ( null === $this->state_builder ) {
 			$this->state_builder = $this->state_builder_factory->get_state_builder();
 		}

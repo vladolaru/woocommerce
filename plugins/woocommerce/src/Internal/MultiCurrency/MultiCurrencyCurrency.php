@@ -8,7 +8,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\MultiCurrency;
 
 use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyLocalizationInterface;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencySwitcherRenderer;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\SwitcherRenderer;
 
 /**
  * A Multi-Currency currency: its code, rate, rounding and charm, and its JSON form.
@@ -263,7 +263,7 @@ class MultiCurrencyCurrency implements \JsonSerializable {
 	 * @return string
 	 */
 	public function get_flag(): string {
-		return MultiCurrencySwitcherRenderer::get_flag_by_currency( $this->code );
+		return SwitcherRenderer::get_flag_by_currency( $this->code );
 	}
 
 	/**

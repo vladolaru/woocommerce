@@ -10,7 +10,7 @@ import '../index';
 
 const settings: Record< string, unknown > = {
 	// Shapes the server registers: label and code of each currency customers ordered in (client 11.1.0
-	// includes/multi-currency/Analytics.php:125-154), and symbols by code (MultiCurrencyAnalyticsService::get_currency_symbols()).
+	// includes/multi-currency/Analytics.php:125-154), and symbols by code (AnalyticsService::get_currency_symbols()).
 	customerCurrencies: [
 		{ label: 'US dollar', value: 'USD' },
 		{ label: 'Euro', value: 'EUR' },

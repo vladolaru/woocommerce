@@ -7,8 +7,8 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\MultiCurrency;
 
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyServiceFactory;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencySwitcherRenderer;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\ServiceFactory;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\SwitcherRenderer;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 
 /**
@@ -36,9 +36,9 @@ class MultiCurrencySwitcherWidgetController implements RegisterHooksInterface {
 	/**
 	 * Switcher renderer, built on first use.
 	 *
-	 * @var MultiCurrencySwitcherRenderer|null
+	 * @var SwitcherRenderer|null
 	 */
-	private ?MultiCurrencySwitcherRenderer $switcher_renderer = null;
+	private ?SwitcherRenderer $switcher_renderer = null;
 
 	/**
 	 * Registered widget instance.
@@ -50,9 +50,9 @@ class MultiCurrencySwitcherWidgetController implements RegisterHooksInterface {
 	/**
 	 * Multi-Currency service factory.
 	 *
-	 * @var MultiCurrencyServiceFactory
+	 * @var ServiceFactory
 	 */
-	private MultiCurrencyServiceFactory $service_factory;
+	private ServiceFactory $service_factory;
 
 	/**
 	 * Initialize the class instance.
@@ -61,12 +61,12 @@ class MultiCurrencySwitcherWidgetController implements RegisterHooksInterface {
 	 *
 	 * @param MultiCurrencyRuntimeArbiter          $arbiter                  Runtime owner arbiter.
 	 * @param MultiCurrencyCompatibilityController $compatibility_controller Compatibility controller.
-	 * @param MultiCurrencyServiceFactory          $service_factory          Multi-Currency service factory.
+	 * @param ServiceFactory                       $service_factory          Multi-Currency service factory.
 	 */
 	final public function init(
 		MultiCurrencyRuntimeArbiter $arbiter,
 		MultiCurrencyCompatibilityController $compatibility_controller,
-		MultiCurrencyServiceFactory $service_factory
+		ServiceFactory $service_factory
 	): void {
 		$this->arbiter                  = $arbiter;
 		$this->compatibility_controller = $compatibility_controller;
@@ -168,9 +168,9 @@ class MultiCurrencySwitcherWidgetController implements RegisterHooksInterface {
 	/**
 	 * Get the switcher renderer.
 	 *
-	 * @return MultiCurrencySwitcherRenderer
+	 * @return SwitcherRenderer
 	 */
-	private function get_switcher_renderer(): MultiCurrencySwitcherRenderer {
+	private function get_switcher_renderer(): SwitcherRenderer {
 		if ( null === $this->switcher_renderer ) {
 			$this->switcher_renderer = $this->service_factory->create_switcher_renderer();
 		}

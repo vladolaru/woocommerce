@@ -6,10 +6,10 @@ namespace Automattic\WooCommerce\Tests\Internal\MultiCurrency;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFrontendCurrenciesController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFrontendPricesController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyPriceConverter;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyServiceFactory;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyOrderContextService;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRequestContext;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\PriceConverter;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\ServiceFactory;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\OrderContextService;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\RequestContext;
 use WC_Unit_Test_Case;
 use WP_REST_Request;
 use WP_REST_Response;
@@ -179,8 +179,8 @@ class MultiCurrencyFrontendPricesControllerTest extends WC_Unit_Test_Case {
 		$sut = new MultiCurrencyFrontendPricesController();
 		$sut->init(
 			$this->create_arbiter( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN ),
-			wc_get_container()->get( MultiCurrencyServiceFactory::class ),
-			wc_get_container()->get( MultiCurrencyRequestContext::class )
+			wc_get_container()->get( ServiceFactory::class ),
+			wc_get_container()->get( RequestContext::class )
 		);
 		$sut->register();
 
@@ -468,8 +468,8 @@ class MultiCurrencyFrontendPricesControllerTest extends WC_Unit_Test_Case {
 		$sut = new MultiCurrencyFrontendPricesController();
 		$sut->init(
 			$this->create_arbiter( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN ),
-			wc_get_container()->get( MultiCurrencyServiceFactory::class ),
-			wc_get_container()->get( MultiCurrencyRequestContext::class )
+			wc_get_container()->get( ServiceFactory::class ),
+			wc_get_container()->get( RequestContext::class )
 		);
 		$sut->register();
 
@@ -661,8 +661,8 @@ class MultiCurrencyFrontendPricesControllerTest extends WC_Unit_Test_Case {
 		$sut = new MultiCurrencyFrontendPricesController();
 		$sut->init(
 			$this->create_arbiter( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN ),
-			wc_get_container()->get( MultiCurrencyServiceFactory::class ),
-			wc_get_container()->get( MultiCurrencyRequestContext::class )
+			wc_get_container()->get( ServiceFactory::class ),
+			wc_get_container()->get( RequestContext::class )
 		);
 		$order = wc_create_order();
 		$order->set_currency( $order_currency );
@@ -674,7 +674,7 @@ class MultiCurrencyFrontendPricesControllerTest extends WC_Unit_Test_Case {
 		$this->assertSame( $rate, $order->get_meta( '_wcpay_multi_currency_order_exchange_rate', true ) );
 		$this->assertSame( $store_currency, $order->get_meta( '_wcpay_multi_currency_order_default_currency', true ) );
 
-		$stats = wc_get_container()->get( MultiCurrencyServiceFactory::class )->create_analytics_service()->convert_order_stats_data(
+		$stats = wc_get_container()->get( ServiceFactory::class )->create_analytics_service()->convert_order_stats_data(
 			array(
 				'net_total'      => $net_total,
 				'shipping_total' => $shipping_total,
@@ -822,21 +822,21 @@ class MultiCurrencyFrontendPricesControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * Create a frontend prices controller with a static runtime owner.
 	 *
-	 * @param string                           $owner                  Runtime owner.
-	 * @param bool                             $should_convert_queries Whether query price filters should project.
-	 * @param MultiCurrencyRequestContext|null $request_context Request context.
+	 * @param string              $owner                  Runtime owner.
+	 * @param bool                $should_convert_queries Whether query price filters should project.
+	 * @param RequestContext|null $request_context Request context.
 	 * @return MultiCurrencyFrontendPricesController
 	 */
 	private function create_controller(
 		string $owner,
 		bool $should_convert_queries = true,
-		?MultiCurrencyRequestContext $request_context = null
+		?RequestContext $request_context = null
 	): MultiCurrencyFrontendPricesController {
 		$controller = new MultiCurrencyFrontendPricesController();
 		$controller->init(
 			$this->create_arbiter( $owner ),
 			ServiceFactories::with( $this, array( 'create_price_converter' => $this->create_price_converter( $should_convert_queries ) ) ),
-			$request_context ?? wc_get_container()->get( MultiCurrencyRequestContext::class )
+			$request_context ?? wc_get_container()->get( RequestContext::class )
 		);
 
 		return $controller;
@@ -890,10 +890,10 @@ class MultiCurrencyFrontendPricesControllerTest extends WC_Unit_Test_Case {
 	 * Create a deterministic price projection service.
 	 *
 	 * @param bool $should_convert_queries Whether query price filters should project.
-	 * @return MultiCurrencyPriceConverter
+	 * @return PriceConverter
 	 */
-	private function create_price_converter( bool $should_convert_queries ): MultiCurrencyPriceConverter {
-		return new class( $should_convert_queries ) extends MultiCurrencyPriceConverter {
+	private function create_price_converter( bool $should_convert_queries ): PriceConverter {
+		return new class( $should_convert_queries ) extends PriceConverter {
 			/**
 			 * Whether query price filters should project.
 			 *
@@ -989,10 +989,10 @@ class MultiCurrencyFrontendPricesControllerTest extends WC_Unit_Test_Case {
 	 * Create a request context test double.
 	 *
 	 * @param bool $should_register_frontend_hooks Whether frontend hooks should register.
-	 * @return MultiCurrencyRequestContext
+	 * @return RequestContext
 	 */
-	private function create_request_context( bool $should_register_frontend_hooks ): MultiCurrencyRequestContext {
-		return new class( $should_register_frontend_hooks ) extends MultiCurrencyRequestContext {
+	private function create_request_context( bool $should_register_frontend_hooks ): RequestContext {
+		return new class( $should_register_frontend_hooks ) extends RequestContext {
 			/**
 			 * Whether frontend hooks should register.
 			 *
@@ -1029,7 +1029,7 @@ class MultiCurrencyFrontendPricesControllerTest extends WC_Unit_Test_Case {
 		$arbiter    = $this->create_arbiter( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
 		$currencies = new MultiCurrencyFrontendCurrenciesController();
 		foreach ( array( new MultiCurrencyFrontendPricesController(), $currencies ) as $controller ) {
-			$controller->init( $arbiter, wc_get_container()->get( MultiCurrencyServiceFactory::class ), wc_get_container()->get( MultiCurrencyRequestContext::class ), wc_get_container()->get( MultiCurrencyOrderContextService::class ) );
+			$controller->init( $arbiter, wc_get_container()->get( ServiceFactory::class ), wc_get_container()->get( RequestContext::class ), wc_get_container()->get( OrderContextService::class ) );
 			$controller->register();
 		}
 

@@ -8,7 +8,7 @@ declare( strict_types = 1 );
 namespace WCPay\MultiCurrency;
 
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyCompatibilityController;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilder;
 
 /**
  * Stands in for the WooPayments extension's Multi-Currency compatibility class, which `MultiCurrency::get_compatibility()`
@@ -129,7 +129,7 @@ class Compatibility {
 		 * @param bool  $should_convert  Whether the shipping amount should be converted.
 		 * @param mixed $shipping_method Shipping method object.
 		 */
-		return (bool) apply_filters( MultiCurrencyStateBuilder::FILTER_PREFIX . 'should_convert_shipping_amount', true, $shipping_method );
+		return (bool) apply_filters( StateBuilder::FILTER_PREFIX . 'should_convert_shipping_amount', true, $shipping_method );
 	}
 
 	/**

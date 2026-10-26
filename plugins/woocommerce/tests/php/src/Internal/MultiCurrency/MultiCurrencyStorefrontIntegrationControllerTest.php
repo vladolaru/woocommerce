@@ -9,8 +9,8 @@ use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyCurrency;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyState;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyStorefrontIntegrationController;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencySwitcherRenderer;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilder;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\SwitcherRenderer;
 use WC_Unit_Test_Case;
 
 /**
@@ -364,12 +364,12 @@ class MultiCurrencyStorefrontIntegrationControllerTest extends WC_Unit_Test_Case
 	/**
 	 * Create a Storefront integration controller.
 	 *
-	 * @param string                             $owner                  Runtime owner.
-	 * @param int                                $enabled_currency_count Enabled currency count.
-	 * @param string                             $stylesheet             Theme stylesheet.
-	 * @param string                             $template               Theme template.
-	 * @param MultiCurrencySwitcherRenderer|null $switcher_service       Switcher service.
-	 * @param MultiCurrencyStateBuilder|null     $state_builder          State builder; one with the enabled currency count by default.
+	 * @param string                $owner                  Runtime owner.
+	 * @param int                   $enabled_currency_count Enabled currency count.
+	 * @param string                $stylesheet             Theme stylesheet.
+	 * @param string                $template               Theme template.
+	 * @param SwitcherRenderer|null $switcher_service       Switcher service.
+	 * @param StateBuilder|null     $state_builder          State builder; one with the enabled currency count by default.
 	 * @return MultiCurrencyStorefrontIntegrationController
 	 */
 	private function create_controller(
@@ -377,8 +377,8 @@ class MultiCurrencyStorefrontIntegrationControllerTest extends WC_Unit_Test_Case
 		int $enabled_currency_count = 2,
 		string $stylesheet = 'storefront',
 		string $template = 'storefront',
-		?MultiCurrencySwitcherRenderer $switcher_service = null,
-		?MultiCurrencyStateBuilder $state_builder = null
+		?SwitcherRenderer $switcher_service = null,
+		?StateBuilder $state_builder = null
 	): MultiCurrencyStorefrontIntegrationController {
 		$controller = new MultiCurrencyStorefrontIntegrationController();
 		$controller->init(
@@ -463,12 +463,12 @@ class MultiCurrencyStorefrontIntegrationControllerTest extends WC_Unit_Test_Case
 	 * Create a state builder test double.
 	 *
 	 * @param int $enabled_currency_count Enabled currency count.
-	 * @return MultiCurrencyStateBuilder&object{builds: int}
+	 * @return StateBuilder&object{builds: int}
 	 */
-	private function create_state_builder( int $enabled_currency_count ): MultiCurrencyStateBuilder {
+	private function create_state_builder( int $enabled_currency_count ): StateBuilder {
 		$state = $this->create_state( $enabled_currency_count );
 
-		return new class( $state ) extends MultiCurrencyStateBuilder {
+		return new class( $state ) extends StateBuilder {
 			/**
 			 * Number of build() calls.
 			 *
@@ -558,10 +558,10 @@ class MultiCurrencyStorefrontIntegrationControllerTest extends WC_Unit_Test_Case
 	 * Create a switcher projection service test double.
 	 *
 	 * @param string $markup Markup to return.
-	 * @return MultiCurrencySwitcherRenderer&object{last_instance: array<string,mixed>, last_args: array<string,mixed>, last_query_args: array<string,mixed>, last_switching_disabled: bool}
+	 * @return SwitcherRenderer&object{last_instance: array<string,mixed>, last_args: array<string,mixed>, last_query_args: array<string,mixed>, last_switching_disabled: bool}
 	 */
-	private function create_switcher_service( string $markup ): MultiCurrencySwitcherRenderer {
-		return new class( $markup ) extends MultiCurrencySwitcherRenderer {
+	private function create_switcher_service( string $markup ): SwitcherRenderer {
+		return new class( $markup ) extends SwitcherRenderer {
 			/**
 			 * Last widget instance.
 			 *

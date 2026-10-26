@@ -9,10 +9,10 @@ namespace Automattic\WooCommerce\Internal\MultiCurrency;
 
 use Automattic\WooCommerce\Internal\MultiCurrency\Exceptions\InvalidCurrencyException;
 use Automattic\WooCommerce\Internal\MultiCurrency\Exceptions\InvalidCurrencyRateException;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyPriceConverter;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyServiceFactory;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilderFactory;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\PriceConverter;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\ServiceFactory;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilder;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilderFactory;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 
 /**
@@ -38,41 +38,41 @@ class MultiCurrencyNameYourPriceCompatibilityController implements RegisterHooks
 	/**
 	 * Price converter, built on first use.
 	 *
-	 * @var MultiCurrencyPriceConverter|null
+	 * @var PriceConverter|null
 	 */
-	private ?MultiCurrencyPriceConverter $price_converter = null;
+	private ?PriceConverter $price_converter = null;
 
 	/**
 	 * State builder.
 	 *
-	 * @var MultiCurrencyStateBuilder|null
+	 * @var StateBuilder|null
 	 */
-	private ?MultiCurrencyStateBuilder $state_builder = null;
+	private ?StateBuilder $state_builder = null;
 
 	/**
 	 * State builder factory.
 	 *
-	 * @var MultiCurrencyStateBuilderFactory
+	 * @var StateBuilderFactory
 	 */
-	private MultiCurrencyStateBuilderFactory $state_builder_factory;
+	private StateBuilderFactory $state_builder_factory;
 
 	/**
 	 * Multi-Currency service factory.
 	 *
-	 * @var MultiCurrencyServiceFactory
+	 * @var ServiceFactory
 	 */
-	private MultiCurrencyServiceFactory $service_factory;
+	private ServiceFactory $service_factory;
 
 	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
 	 *
-	 * @param MultiCurrencyRuntimeArbiter      $arbiter               Runtime owner arbiter.
-	 * @param MultiCurrencyStateBuilderFactory $state_builder_factory State builder factory.
-	 * @param MultiCurrencyServiceFactory      $service_factory       Multi-Currency service factory.
+	 * @param MultiCurrencyRuntimeArbiter $arbiter               Runtime owner arbiter.
+	 * @param StateBuilderFactory         $state_builder_factory State builder factory.
+	 * @param ServiceFactory              $service_factory       Multi-Currency service factory.
 	 */
-	final public function init( MultiCurrencyRuntimeArbiter $arbiter, MultiCurrencyStateBuilderFactory $state_builder_factory, MultiCurrencyServiceFactory $service_factory ): void {
+	final public function init( MultiCurrencyRuntimeArbiter $arbiter, StateBuilderFactory $state_builder_factory, ServiceFactory $service_factory ): void {
 		$this->arbiter               = $arbiter;
 		$this->state_builder_factory = $state_builder_factory;
 		$this->service_factory       = $service_factory;
@@ -110,7 +110,7 @@ class MultiCurrencyNameYourPriceCompatibilityController implements RegisterHooks
 		add_filter( 'woocommerce_add_cart_item_data', array( $this, 'add_initial_currency' ), 20, 3 );
 		add_filter( 'woocommerce_get_cart_item_from_session', array( $this, 'convert_cart_currency' ), 20, 2 );
 		add_filter( 'woocommerce_pre_remove_cart_item_from_session', array( $this, 'remove_unconvertible_cart_item' ), 10, 4 );
-		add_filter( MultiCurrencyStateBuilder::FILTER_PREFIX . 'should_convert_product_price', array( $this, 'should_convert_product_price' ), 50, 2 );
+		add_filter( StateBuilder::FILTER_PREFIX . 'should_convert_product_price', array( $this, 'should_convert_product_price' ), 50, 2 );
 		add_filter( 'wc_nyp_edit_in_cart_args', array( $this, 'edit_in_cart_args' ), 10, 2 );
 		add_filter( 'wc_nyp_get_initial_price', array( $this, 'get_initial_price' ), 10, 3 );
 	}
@@ -394,9 +394,9 @@ class MultiCurrencyNameYourPriceCompatibilityController implements RegisterHooks
 	/**
 	 * Get the price converter.
 	 *
-	 * @return MultiCurrencyPriceConverter
+	 * @return PriceConverter
 	 */
-	private function get_price_converter(): MultiCurrencyPriceConverter {
+	private function get_price_converter(): PriceConverter {
 		if ( null === $this->price_converter ) {
 			$this->price_converter = $this->service_factory->create_price_converter();
 		}
@@ -407,9 +407,9 @@ class MultiCurrencyNameYourPriceCompatibilityController implements RegisterHooks
 	/**
 	 * Get the state builder.
 	 *
-	 * @return MultiCurrencyStateBuilder
+	 * @return StateBuilder
 	 */
-	private function get_state_builder(): MultiCurrencyStateBuilder {
+	private function get_state_builder(): StateBuilder {
 		if ( null === $this->state_builder ) {
 			$this->state_builder = $this->state_builder_factory->get_state_builder();
 		}

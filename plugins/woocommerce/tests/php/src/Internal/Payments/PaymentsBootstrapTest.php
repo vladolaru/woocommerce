@@ -14,7 +14,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFeatureController
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFrontendPricesController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRestController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyUsageDetector;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\UsageDetector;
 use Automattic\WooCommerce\Internal\Payments\PaymentsBootstrap;
 use Automattic\WooCommerce\Internal\Payments\ProviderGatewaysController;
 use Automattic\WooCommerce\Internal\Payments\RefundRowCapture;
@@ -612,7 +612,7 @@ class PaymentsBootstrapTest extends WC_Unit_Test_Case {
 
 				$this->resolved[] = $class_name;
 				$this->events[]   = 'get:' . $class_name;
-				if ( MultiCurrencyUsageDetector::class === $class_name ) {
+				if ( UsageDetector::class === $class_name ) {
 					return new class( $this->configured, $this->historical ) {
 						/** @var bool */
 						private $configured;

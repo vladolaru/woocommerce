@@ -7,8 +7,8 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\MultiCurrency;
 
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyServiceFactory;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStoreCurrencyLifecycleService;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\ServiceFactory;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\StoreCurrencyLifecycleService;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 
 /**
@@ -30,16 +30,16 @@ class MultiCurrencyStoreCurrencyLifecycleController implements RegisterHooksInte
 	/**
 	 * Multi-Currency service factory.
 	 *
-	 * @var MultiCurrencyServiceFactory
+	 * @var ServiceFactory
 	 */
-	private MultiCurrencyServiceFactory $service_factory;
+	private ServiceFactory $service_factory;
 
 	/**
 	 * Store-currency lifecycle service.
 	 *
-	 * @var MultiCurrencyStoreCurrencyLifecycleService|null
+	 * @var StoreCurrencyLifecycleService|null
 	 */
-	private ?MultiCurrencyStoreCurrencyLifecycleService $lifecycle_service = null;
+	private ?StoreCurrencyLifecycleService $lifecycle_service = null;
 
 	/**
 	 * Initialize the class instance.
@@ -47,9 +47,9 @@ class MultiCurrencyStoreCurrencyLifecycleController implements RegisterHooksInte
 	 * @internal
 	 *
 	 * @param MultiCurrencyRuntimeArbiter $arbiter         Runtime owner arbiter.
-	 * @param MultiCurrencyServiceFactory $service_factory Multi-Currency service factory.
+	 * @param ServiceFactory              $service_factory Multi-Currency service factory.
 	 */
-	final public function init( MultiCurrencyRuntimeArbiter $arbiter, MultiCurrencyServiceFactory $service_factory ): void {
+	final public function init( MultiCurrencyRuntimeArbiter $arbiter, ServiceFactory $service_factory ): void {
 		$this->arbiter         = $arbiter;
 		$this->service_factory = $service_factory;
 	}
@@ -77,9 +77,9 @@ class MultiCurrencyStoreCurrencyLifecycleController implements RegisterHooksInte
 	/**
 	 * Get the lifecycle service.
 	 *
-	 * @return MultiCurrencyStoreCurrencyLifecycleService
+	 * @return StoreCurrencyLifecycleService
 	 */
-	private function get_lifecycle_service(): MultiCurrencyStoreCurrencyLifecycleService {
+	private function get_lifecycle_service(): StoreCurrencyLifecycleService {
 		if ( null === $this->lifecycle_service ) {
 			$this->lifecycle_service = $this->service_factory->create_store_currency_lifecycle_service();
 		}

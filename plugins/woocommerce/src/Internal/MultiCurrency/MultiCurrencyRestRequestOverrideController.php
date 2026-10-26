@@ -7,9 +7,9 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\MultiCurrency;
 
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRequestContext;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\RequestContext;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilder;
 
 /**
  * Sets the currency of a REST request outside the Store API: the `currency` query argument when one is given, otherwise
@@ -32,9 +32,9 @@ class MultiCurrencyRestRequestOverrideController implements RegisterHooksInterfa
 	/**
 	 * Request context.
 	 *
-	 * @var MultiCurrencyRequestContext
+	 * @var RequestContext
 	 */
-	private MultiCurrencyRequestContext $request_context;
+	private RequestContext $request_context;
 
 	/**
 	 * Initialize the class instance.
@@ -42,9 +42,9 @@ class MultiCurrencyRestRequestOverrideController implements RegisterHooksInterfa
 	 * @internal
 	 *
 	 * @param MultiCurrencyRuntimeArbiter $arbiter         Runtime owner arbiter.
-	 * @param MultiCurrencyRequestContext $request_context Request context.
+	 * @param RequestContext              $request_context Request context.
 	 */
-	final public function init( MultiCurrencyRuntimeArbiter $arbiter, MultiCurrencyRequestContext $request_context ): void {
+	final public function init( MultiCurrencyRuntimeArbiter $arbiter, RequestContext $request_context ): void {
 		$this->arbiter         = $arbiter;
 		$this->request_context = $request_context;
 	}
@@ -58,13 +58,13 @@ class MultiCurrencyRestRequestOverrideController implements RegisterHooksInterfa
 		}
 
 		if ( isset( $_GET['currency'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended
-			add_filter( MultiCurrencyStateBuilder::FILTER_OVERRIDE_SELECTED_CURRENCY, array( $this, 'get_currency_from_query_param' ) );
+			add_filter( StateBuilder::FILTER_OVERRIDE_SELECTED_CURRENCY, array( $this, 'get_currency_from_query_param' ) );
 			return;
 		}
 
 		add_filter( self::FILTER_SHOULD_RETURN_STORE_CURRENCY, '__return_true' );
 		add_filter( MultiCurrencyFrontendPricesController::FILTER_SHOULD_CONVERT_PRODUCT_PRICE, '__return_false' );
-		add_filter( MultiCurrencyStateBuilder::FILTER_OVERRIDE_SELECTED_CURRENCY, array( $this, 'get_store_currency_code' ) );
+		add_filter( StateBuilder::FILTER_OVERRIDE_SELECTED_CURRENCY, array( $this, 'get_store_currency_code' ) );
 	}
 
 	/**

@@ -7,12 +7,12 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\MultiCurrency;
 
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyDisplayService;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyPriceConverter;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyServiceFactory;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\DisplayService;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\PriceConverter;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\ServiceFactory;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRequestContext;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\RequestContext;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilder;
 
 /**
  * Converts WooCommerce Bookings costs, and the prices its cost Ajax formats, to the selected currency.
@@ -44,23 +44,23 @@ class MultiCurrencyBookingsCompatibilityController implements RegisterHooksInter
 	/**
 	 * Multi-Currency service factory.
 	 *
-	 * @var MultiCurrencyServiceFactory
+	 * @var ServiceFactory
 	 */
-	private MultiCurrencyServiceFactory $service_factory;
+	private ServiceFactory $service_factory;
 
 	/**
 	 * Price converter, built on first use.
 	 *
-	 * @var MultiCurrencyPriceConverter|null
+	 * @var PriceConverter|null
 	 */
-	private ?MultiCurrencyPriceConverter $price_converter = null;
+	private ?PriceConverter $price_converter = null;
 
 	/**
 	 * Display service, built on first use.
 	 *
-	 * @var MultiCurrencyDisplayService|null
+	 * @var DisplayService|null
 	 */
-	private ?MultiCurrencyDisplayService $display_service = null;
+	private ?DisplayService $display_service = null;
 
 	/**
 	 * Initialize the class instance.
@@ -68,9 +68,9 @@ class MultiCurrencyBookingsCompatibilityController implements RegisterHooksInter
 	 * @internal
 	 *
 	 * @param MultiCurrencyRuntimeArbiter $arbiter         Runtime owner arbiter.
-	 * @param MultiCurrencyServiceFactory $service_factory Multi-Currency service factory.
+	 * @param ServiceFactory              $service_factory Multi-Currency service factory.
 	 */
-	final public function init( MultiCurrencyRuntimeArbiter $arbiter, MultiCurrencyServiceFactory $service_factory ): void {
+	final public function init( MultiCurrencyRuntimeArbiter $arbiter, ServiceFactory $service_factory ): void {
 		$this->arbiter         = $arbiter;
 		$this->service_factory = $service_factory;
 	}
@@ -115,7 +115,7 @@ class MultiCurrencyBookingsCompatibilityController implements RegisterHooksInter
 		add_filter( 'woocommerce_product_booking_person_type_get_cost', array( $this, 'get_price' ), 50 );
 		add_filter( 'woocommerce_product_get_resource_base_costs', array( $this, 'get_resource_prices' ), 50 );
 		add_filter( 'woocommerce_product_get_resource_block_costs', array( $this, 'get_resource_prices' ), 50 );
-		add_filter( MultiCurrencyStateBuilder::FILTER_PREFIX . 'should_convert_product_price', array( $this, 'should_convert_product_price' ), 50, 2 );
+		add_filter( StateBuilder::FILTER_PREFIX . 'should_convert_product_price', array( $this, 'should_convert_product_price' ), 50, 2 );
 		add_filter( 'woocommerce_bookings_process_cost_rules_cost', array( $this, 'get_price' ), 50 );
 		add_filter( 'woocommerce_bookings_process_cost_rules_base_cost', array( $this, 'get_price' ), 50 );
 		add_action( 'wp_ajax_wc_bookings_calculate_costs', array( $this, 'add_wc_price_args_filter_for_ajax' ), 9 );
@@ -129,7 +129,7 @@ class MultiCurrencyBookingsCompatibilityController implements RegisterHooksInter
 	 * @return mixed
 	 */
 	public function adjust_amount_for_calculated_booking_cost( $costs ) {
-		if ( MultiCurrencyRequestContext::is_call_in_backtrace( self::CART_ADD_TO_CART_CALLS ) ) {
+		if ( RequestContext::is_call_in_backtrace( self::CART_ADD_TO_CART_CALLS ) ) {
 			return $costs;
 		}
 
@@ -146,8 +146,8 @@ class MultiCurrencyBookingsCompatibilityController implements RegisterHooksInter
 		if (
 			! $price
 			|| (
-				MultiCurrencyRequestContext::is_call_in_backtrace( self::CART_ADD_TO_CART_CALLS )
-				&& MultiCurrencyRequestContext::is_call_in_backtrace( self::BOOKINGS_COST_CALCULATION_CALLS )
+				RequestContext::is_call_in_backtrace( self::CART_ADD_TO_CART_CALLS )
+				&& RequestContext::is_call_in_backtrace( self::BOOKINGS_COST_CALCULATION_CALLS )
 			)
 		) {
 			return $price;
@@ -155,7 +155,7 @@ class MultiCurrencyBookingsCompatibilityController implements RegisterHooksInter
 
 		return $this->get_price_converter()->get_price(
 			$price,
-			MultiCurrencyRequestContext::is_call_in_backtrace( self::BOOKING_PRICE_HTML_CALLS ) ? 'product' : 'exchange_rate'
+			RequestContext::is_call_in_backtrace( self::BOOKING_PRICE_HTML_CALLS ) ? 'product' : 'exchange_rate'
 		);
 	}
 
@@ -189,7 +189,7 @@ class MultiCurrencyBookingsCompatibilityController implements RegisterHooksInter
 			return $should_convert;
 		}
 
-		return ! MultiCurrencyRequestContext::is_call_in_backtrace( self::BOOKING_PRICE_HTML_CALLS );
+		return ! RequestContext::is_call_in_backtrace( self::BOOKING_PRICE_HTML_CALLS );
 	}
 
 	/**
@@ -232,9 +232,9 @@ class MultiCurrencyBookingsCompatibilityController implements RegisterHooksInter
 	/**
 	 * Get the price converter.
 	 *
-	 * @return MultiCurrencyPriceConverter
+	 * @return PriceConverter
 	 */
-	private function get_price_converter(): MultiCurrencyPriceConverter {
+	private function get_price_converter(): PriceConverter {
 		if ( null === $this->price_converter ) {
 			$this->price_converter = $this->service_factory->create_price_converter();
 		}
@@ -245,9 +245,9 @@ class MultiCurrencyBookingsCompatibilityController implements RegisterHooksInter
 	/**
 	 * Get the display service.
 	 *
-	 * @return MultiCurrencyDisplayService
+	 * @return DisplayService
 	 */
-	private function get_display_service(): MultiCurrencyDisplayService {
+	private function get_display_service(): DisplayService {
 		if ( null === $this->display_service ) {
 			$this->display_service = $this->service_factory->create_display_service();
 		}

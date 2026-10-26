@@ -10,8 +10,8 @@ use Automattic\WooCommerce\Internal\Features\FeaturesController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFeatureController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyCacheInterface;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyUsageDetector;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilder;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\UsageDetector;
 use WC_Unit_Test_Case;
 
 /**
@@ -41,10 +41,10 @@ class MultiCurrencyFeatureControllerTest extends WC_Unit_Test_Case {
 		delete_option( '_wcpay_feature_customer_multi_currency' );
 		delete_option( 'wcpay_multi_currency_setup_completed' );
 		delete_option( MultiCurrencyFeatureController::LAST_PAYMENTS_OWNER_OPTION );
-		delete_transient( MultiCurrencyUsageDetector::HAS_MC_ORDERS_TRANSIENT );
+		delete_transient( UsageDetector::HAS_MC_ORDERS_TRANSIENT );
 		$this->previous_user_id = get_current_user_id();
 		$this->sut              = new MultiCurrencyFeatureController();
-		$this->sut->init( new MultiCurrencyUsageDetector(), $this->create_runtime_arbiter( false ) );
+		$this->sut->init( new UsageDetector(), $this->create_runtime_arbiter( false ) );
 	}
 
 	/**
@@ -56,7 +56,7 @@ class MultiCurrencyFeatureControllerTest extends WC_Unit_Test_Case {
 		delete_option( '_wcpay_feature_customer_multi_currency' );
 		delete_option( 'wcpay_multi_currency_setup_completed' );
 		delete_option( MultiCurrencyFeatureController::LAST_PAYMENTS_OWNER_OPTION );
-		delete_transient( MultiCurrencyUsageDetector::HAS_MC_ORDERS_TRANSIENT );
+		delete_transient( UsageDetector::HAS_MC_ORDERS_TRANSIENT );
 		wp_set_current_user( $this->previous_user_id );
 		$_GET = array();
 		parent::tear_down();
@@ -176,7 +176,7 @@ class MultiCurrencyFeatureControllerTest extends WC_Unit_Test_Case {
 	 * @param bool $hidden           Whether the row is hidden.
 	 */
 	public function test_feature_row_is_hidden_only_while_the_extension_is_active( bool $extension_active, bool $hidden ): void {
-		$this->sut->init( new MultiCurrencyUsageDetector(), $this->create_runtime_arbiter( $extension_active ) );
+		$this->sut->init( new UsageDetector(), $this->create_runtime_arbiter( $extension_active ) );
 		$features_controller = $this->createMock( FeaturesController::class );
 		$features_controller
 			->expects( $this->once() )
@@ -276,7 +276,7 @@ class MultiCurrencyFeatureControllerTest extends WC_Unit_Test_Case {
 	 */
 	public function test_get_feature_setting_disables_no_for_historical_orders(): void {
 		update_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
-		set_transient( MultiCurrencyUsageDetector::HAS_MC_ORDERS_TRANSIENT, '1', HOUR_IN_SECONDS );
+		set_transient( UsageDetector::HAS_MC_ORDERS_TRANSIENT, '1', HOUR_IN_SECONDS );
 
 		$this->assertSame( array( 'no' ), $this->sut->get_feature_setting()['disabled']() );
 	}
@@ -288,11 +288,11 @@ class MultiCurrencyFeatureControllerTest extends WC_Unit_Test_Case {
 		update_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
 		$order_id = $this->factory->post->create( array( 'post_type' => 'shop_order' ) );
 		add_post_meta( $order_id, '_wcpay_multi_currency_order_exchange_rate', '0.9' );
-		$detector = new MultiCurrencyUsageDetector();
+		$detector = new UsageDetector();
 		add_filter( 'pre_option_' . CustomOrdersTableController::CUSTOM_ORDERS_TABLE_USAGE_ENABLED_OPTION, static fn(): string => 'no' );
 		$this->sut = new MultiCurrencyFeatureController();
 		$this->sut->init( $detector, $this->create_runtime_arbiter( false ) );
-		delete_transient( MultiCurrencyUsageDetector::HAS_MC_ORDERS_TRANSIENT );
+		delete_transient( UsageDetector::HAS_MC_ORDERS_TRANSIENT );
 
 		$this->assertSame( array( 'no' ), $this->sut->get_feature_setting()['disabled']() );
 	}
@@ -312,11 +312,11 @@ class MultiCurrencyFeatureControllerTest extends WC_Unit_Test_Case {
 				)
 			)
 		);
-		$detector = new MultiCurrencyUsageDetector();
+		$detector = new UsageDetector();
 		add_filter( 'pre_option_' . CustomOrdersTableController::CUSTOM_ORDERS_TABLE_USAGE_ENABLED_OPTION, static fn(): string => 'yes' );
 		$this->sut = new MultiCurrencyFeatureController();
 		$this->sut->init( $detector, $this->create_runtime_arbiter( false ) );
-		delete_transient( MultiCurrencyUsageDetector::HAS_MC_ORDERS_TRANSIENT );
+		delete_transient( UsageDetector::HAS_MC_ORDERS_TRANSIENT );
 
 		$this->assertSame( array( 'no' ), $this->sut->get_feature_setting()['disabled']() );
 	}
@@ -328,7 +328,7 @@ class MultiCurrencyFeatureControllerTest extends WC_Unit_Test_Case {
 		global $wpdb;
 
 		update_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
-		$detector = new MultiCurrencyUsageDetector();
+		$detector = new UsageDetector();
 		add_filter( 'pre_option_' . CustomOrdersTableController::CUSTOM_ORDERS_TABLE_USAGE_ENABLED_OPTION, static fn(): string => 'no' );
 		$this->sut = new MultiCurrencyFeatureController();
 		$this->sut->init( $detector, $this->create_runtime_arbiter( false ) );
@@ -395,7 +395,7 @@ class MultiCurrencyFeatureControllerTest extends WC_Unit_Test_Case {
 			'errored' => false,
 		);
 		update_option( MultiCurrencyCacheInterface::CURRENCIES_KEY, $cached_currencies );
-		update_user_meta( $user_id, MultiCurrencyStateBuilder::CURRENCY_STORAGE_KEY, 'EUR' );
+		update_user_meta( $user_id, StateBuilder::CURRENCY_STORAGE_KEY, 'EUR' );
 		update_option( 'wcpay_multi_currency_store_currency', 'USD' );
 		update_option( 'wcpay_multi_currency_exchange_rate_eur', 'automatic' );
 		update_option( 'wcpay_multi_currency_manual_rate_eur', '0.9' );
@@ -445,7 +445,7 @@ class MultiCurrencyFeatureControllerTest extends WC_Unit_Test_Case {
 		$this->assertSame( array( 'EUR' ), get_option( 'wcpay_multi_currency_enabled_currencies' ) );
 		$this->assertSame( array( 12 => 'EUR' ), get_option( 'wcpay_multi_currency_stored_customer_currencies' ) );
 		$this->assertSame( $cached_currencies, get_option( MultiCurrencyCacheInterface::CURRENCIES_KEY ) );
-		$this->assertSame( 'EUR', get_user_meta( $user_id, MultiCurrencyStateBuilder::CURRENCY_STORAGE_KEY, true ) );
+		$this->assertSame( 'EUR', get_user_meta( $user_id, StateBuilder::CURRENCY_STORAGE_KEY, true ) );
 		$this->assertSame( 'USD', get_option( 'wcpay_multi_currency_store_currency' ) );
 		$this->assertSame( 'automatic', get_option( 'wcpay_multi_currency_exchange_rate_eur' ) );
 		$this->assertSame( '0.9', get_option( 'wcpay_multi_currency_manual_rate_eur' ) );

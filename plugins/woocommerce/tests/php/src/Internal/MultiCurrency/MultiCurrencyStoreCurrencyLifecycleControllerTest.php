@@ -5,7 +5,7 @@ namespace Automattic\WooCommerce\Tests\Internal\MultiCurrency;
 
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyStoreCurrencyLifecycleController;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStoreCurrencyLifecycleService;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\StoreCurrencyLifecycleService;
 use WC_Unit_Test_Case;
 
 /**
@@ -73,13 +73,13 @@ class MultiCurrencyStoreCurrencyLifecycleControllerTest extends WC_Unit_Test_Cas
 	/**
 	 * Create a store currency lifecycle controller.
 	 *
-	 * @param string                                     $owner   Runtime owner.
-	 * @param MultiCurrencyStoreCurrencyLifecycleService $service Lifecycle service.
+	 * @param string                        $owner   Runtime owner.
+	 * @param StoreCurrencyLifecycleService $service Lifecycle service.
 	 * @return MultiCurrencyStoreCurrencyLifecycleController
 	 */
 	private function create_controller(
 		string $owner,
-		MultiCurrencyStoreCurrencyLifecycleService $service
+		StoreCurrencyLifecycleService $service
 	): MultiCurrencyStoreCurrencyLifecycleController {
 		$controller = new MultiCurrencyStoreCurrencyLifecycleController();
 		$controller->init(
@@ -93,10 +93,10 @@ class MultiCurrencyStoreCurrencyLifecycleControllerTest extends WC_Unit_Test_Cas
 	/**
 	 * Create a lifecycle service test double.
 	 *
-	 * @return MultiCurrencyStoreCurrencyLifecycleService
+	 * @return StoreCurrencyLifecycleService
 	 */
-	private function create_lifecycle_service(): MultiCurrencyStoreCurrencyLifecycleService {
-		return new class() extends MultiCurrencyStoreCurrencyLifecycleService {
+	private function create_lifecycle_service(): StoreCurrencyLifecycleService {
+		return new class() extends StoreCurrencyLifecycleService {
 			/**
 			 * Call count.
 			 *

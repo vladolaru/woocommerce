@@ -5,7 +5,7 @@ namespace Automattic\WooCommerce\Tests\Internal\MultiCurrency;
 
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRestRequestOverrideController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRequestContext;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\RequestContext;
 use WC_Unit_Test_Case;
 
 /**
@@ -219,10 +219,10 @@ class MultiCurrencyRestRequestOverrideControllerTest extends WC_Unit_Test_Case {
 	 * Create a request context test double.
 	 *
 	 * @param bool $should_register_request_overrides Whether REST overrides should register.
-	 * @return MultiCurrencyRequestContext
+	 * @return RequestContext
 	 */
-	private function create_request_context( bool $should_register_request_overrides ): MultiCurrencyRequestContext {
-		return new class( $should_register_request_overrides ) extends MultiCurrencyRequestContext {
+	private function create_request_context( bool $should_register_request_overrides ): RequestContext {
+		return new class( $should_register_request_overrides ) extends RequestContext {
 			/**
 			 * Whether REST overrides should register.
 			 *

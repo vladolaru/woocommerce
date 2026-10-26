@@ -8,11 +8,11 @@ use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyBookingsCompatibi
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyCurrency;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyState;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyDisplayService;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyGeolocationService;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyPriceCalculator;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyPriceConverter;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\DisplayService;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\GeolocationService;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\PriceCalculator;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\PriceConverter;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilder;
 use WC_Unit_Test_Case;
 
 /**
@@ -410,29 +410,29 @@ class MultiCurrencyBookingsCompatibilityControllerTest extends WC_Unit_Test_Case
 	/**
 	 * Create a price projection service.
 	 *
-	 * @return MultiCurrencyPriceConverter
+	 * @return PriceConverter
 	 */
-	private function create_price_converter(): MultiCurrencyPriceConverter {
+	private function create_price_converter(): PriceConverter {
 		$localization = $this->create_localization();
 
-		return new MultiCurrencyPriceConverter(
+		return new PriceConverter(
 			$this->create_state_builder( $this->create_state() ),
-			new MultiCurrencyPriceCalculator( $localization )
+			new PriceCalculator( $localization )
 		);
 	}
 
 	/**
 	 * Create a frontend projection service.
 	 *
-	 * @return MultiCurrencyDisplayService
+	 * @return DisplayService
 	 */
-	private function create_display_service(): MultiCurrencyDisplayService {
+	private function create_display_service(): DisplayService {
 		$localization = $this->create_localization();
 
-		return new MultiCurrencyDisplayService(
+		return new DisplayService(
 			$this->create_state_builder( $this->create_state() ),
 			$localization,
-			new MultiCurrencyGeolocationService( $localization )
+			new GeolocationService( $localization )
 		);
 	}
 
@@ -440,10 +440,10 @@ class MultiCurrencyBookingsCompatibilityControllerTest extends WC_Unit_Test_Case
 	 * Create a state builder test double.
 	 *
 	 * @param MultiCurrencyState $state Multi-currency state.
-	 * @return MultiCurrencyStateBuilder
+	 * @return StateBuilder
 	 */
-	private function create_state_builder( MultiCurrencyState $state ): MultiCurrencyStateBuilder {
-		return new class( $state ) extends MultiCurrencyStateBuilder {
+	private function create_state_builder( MultiCurrencyState $state ): StateBuilder {
+		return new class( $state ) extends StateBuilder {
 			/**
 			 * Multi-currency state.
 			 *

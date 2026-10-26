@@ -17,12 +17,12 @@ use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRestController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencySettingsController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyState;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencySwitcherWidgetController;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyCacheRenderingService;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyDatabaseCache;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyDisplayService;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyServiceFactory;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilderFactory;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\CacheRenderingService;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\DatabaseCache;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\DisplayService;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\ServiceFactory;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilder;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilderFactory;
 
 // phpcs:disable SlevomatCodingStandard.Files.TypeNameMatchesFileName.NoMatchBetweenTypeNameAndFileName -- The WooPayments extension's file and class casing are the compatibility contract.
 /**
@@ -42,63 +42,63 @@ class MultiCurrency {
 	 *
 	 * @deprecated 11.0.0 No public replacement.
 	 */
-	const CURRENCY_SESSION_KEY = MultiCurrencyStateBuilder::CURRENCY_STORAGE_KEY;
+	const CURRENCY_SESSION_KEY = StateBuilder::CURRENCY_STORAGE_KEY;
 
 	/**
 	 * User meta key holding the customer's selected currency. Removed in WooCommerce 12.0.0.
 	 *
 	 * @deprecated 11.0.0 No public replacement.
 	 */
-	const CURRENCY_META_KEY = MultiCurrencyStateBuilder::CURRENCY_STORAGE_KEY;
+	const CURRENCY_META_KEY = StateBuilder::CURRENCY_STORAGE_KEY;
 
 	/**
 	 * Prefix of the Multi-Currency hook names. Removed in WooCommerce 12.0.0.
 	 *
 	 * @deprecated 11.0.0 No public replacement.
 	 */
-	const FILTER_PREFIX = MultiCurrencyStateBuilder::FILTER_PREFIX;
+	const FILTER_PREFIX = StateBuilder::FILTER_PREFIX;
 
 	/**
 	 * Option holding the currencies customers have ordered in. Removed in WooCommerce 12.0.0.
 	 *
 	 * @deprecated 11.0.0 No public replacement.
 	 */
-	const CUSTOMER_CURRENCIES_KEY = MultiCurrencyStateBuilder::CUSTOMER_CURRENCIES_KEY;
+	const CUSTOMER_CURRENCIES_KEY = StateBuilder::CUSTOMER_CURRENCIES_KEY;
 
 	/**
 	 * Rendering mode that converts prices on the server. Removed in WooCommerce 12.0.0.
 	 *
 	 * @deprecated 11.0.0 No public replacement.
 	 */
-	const RENDERING_MODE_SPEED = MultiCurrencyDisplayService::RENDERING_MODE_SPEED;
+	const RENDERING_MODE_SPEED = DisplayService::RENDERING_MODE_SPEED;
 
 	/**
 	 * Rendering mode that converts prices in the browser, for cached pages. Removed in WooCommerce 12.0.0.
 	 *
 	 * @deprecated 11.0.0 No public replacement.
 	 */
-	const RENDERING_MODE_CACHE = MultiCurrencyDisplayService::RENDERING_MODE_CACHE;
+	const RENDERING_MODE_CACHE = DisplayService::RENDERING_MODE_CACHE;
 
 	/**
 	 * Option holding the rendering mode. Removed in WooCommerce 12.0.0.
 	 *
 	 * @deprecated 11.0.0 No public replacement.
 	 */
-	const RENDERING_MODE_OPTION = MultiCurrencyDisplayService::RENDERING_MODE_OPTION;
+	const RENDERING_MODE_OPTION = DisplayService::RENDERING_MODE_OPTION;
 
 	/**
 	 * Option set once the page-cache detection has run. Removed in WooCommerce 12.0.0.
 	 *
 	 * @deprecated 11.0.0 No public replacement.
 	 */
-	const CACHE_AUTODETECT_DONE_OPTION = MultiCurrencyCacheRenderingService::AUTODETECT_DONE_OPTION;
+	const CACHE_AUTODETECT_DONE_OPTION = CacheRenderingService::AUTODETECT_DONE_OPTION;
 
 	/**
 	 * Option set when the merchant dismissed the cache-mode recommendation. Removed in WooCommerce 12.0.0.
 	 *
 	 * @deprecated 11.0.0 No public replacement.
 	 */
-	const CACHE_RECOMMENDATION_DISMISSED_OPTION = MultiCurrencyCacheRenderingService::DISMISSED_OPTION;
+	const CACHE_RECOMMENDATION_DISMISSED_OPTION = CacheRenderingService::DISMISSED_OPTION;
 
 	/**
 	 * Request-local facade instance.
@@ -363,7 +363,7 @@ class MultiCurrency {
 	public function get_rendering_mode(): string {
 		_deprecated_function( 'WCPay\\MultiCurrency\\MultiCurrency::get_rendering_mode', '11.0.0', '' );
 
-		return (string) get_option( MultiCurrencyDisplayService::RENDERING_MODE_OPTION, MultiCurrencyDisplayService::RENDERING_MODE_SPEED );
+		return (string) get_option( DisplayService::RENDERING_MODE_OPTION, DisplayService::RENDERING_MODE_SPEED );
 	}
 
 	/**
@@ -395,7 +395,7 @@ class MultiCurrency {
 	public function is_using_auto_currency_switching(): bool {
 		_deprecated_function( 'WCPay\\MultiCurrency\\MultiCurrency::is_using_auto_currency_switching', '11.0.0', '' );
 
-		return 'yes' === get_option( MultiCurrencyStateBuilder::OPTION_PREFIX . '_enable_auto_currency', 'no' );
+		return 'yes' === get_option( StateBuilder::OPTION_PREFIX . '_enable_auto_currency', 'no' );
 	}
 
 	/**
@@ -411,7 +411,7 @@ class MultiCurrency {
 	public function is_using_storefront_switcher(): bool {
 		_deprecated_function( 'WCPay\\MultiCurrency\\MultiCurrency::is_using_storefront_switcher', '11.0.0', '' );
 
-		return 'yes' === get_option( MultiCurrencyStateBuilder::OPTION_PREFIX . '_enable_storefront_switcher', 'no' );
+		return 'yes' === get_option( StateBuilder::OPTION_PREFIX . '_enable_storefront_switcher', 'no' );
 	}
 
 	/**
@@ -453,7 +453,7 @@ class MultiCurrency {
 		 *
 		 * @since 11.0.0
 		 */
-		return apply_filters( MultiCurrencyDisplayService::APPLY_CHARM_PRODUCTS_HOOK, true );
+		return apply_filters( DisplayService::APPLY_CHARM_PRODUCTS_HOOK, true );
 	}
 
 	/**
@@ -488,7 +488,7 @@ class MultiCurrency {
 		_deprecated_function( 'WCPay\\MultiCurrency\\MultiCurrency::get_cached_currencies', '11.0.0', '' );
 
 		$this->get_state();
-		$cached = ( new MultiCurrencyDatabaseCache() )->get( MultiCurrencyCacheInterface::CURRENCIES_KEY, true );
+		$cached = ( new DatabaseCache() )->get( MultiCurrencyCacheInterface::CURRENCIES_KEY, true );
 
 		return is_array( $cached ) ? $cached : null;
 	}
@@ -588,25 +588,25 @@ class MultiCurrency {
 	 * @return MultiCurrencyState
 	 */
 	private function get_state(): MultiCurrencyState {
-		return wc_get_container()->get( MultiCurrencyStateBuilderFactory::class )->get_state_builder()->build();
+		return wc_get_container()->get( StateBuilderFactory::class )->get_state_builder()->build();
 	}
 
 	/**
 	 * Get a display service over the request's state.
 	 *
-	 * @return MultiCurrencyDisplayService
+	 * @return DisplayService
 	 */
-	private function get_display_service(): MultiCurrencyDisplayService {
+	private function get_display_service(): DisplayService {
 		return $this->get_service_factory()->create_display_service();
 	}
 
 	/**
 	 * Get the Multi-Currency service factory.
 	 *
-	 * @return MultiCurrencyServiceFactory
+	 * @return ServiceFactory
 	 */
-	private function get_service_factory(): MultiCurrencyServiceFactory {
-		return wc_get_container()->get( MultiCurrencyServiceFactory::class );
+	private function get_service_factory(): ServiceFactory {
+		return wc_get_container()->get( ServiceFactory::class );
 	}
 
 	/**

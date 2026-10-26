@@ -7,7 +7,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\CurrencyRateProvide
 use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyCacheInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyAdminNoticesController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRateService;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\RateService;
 use WC_Unit_Test_Case;
 
 /**
@@ -373,11 +373,11 @@ class MultiCurrencyAdminNoticesControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * Create an admin notices controller.
 	 *
-	 * @param string                        $owner        Runtime owner.
-	 * @param MultiCurrencyRateService|null $rate_service Rate service, or null for one without a provider.
+	 * @param string           $owner        Runtime owner.
+	 * @param RateService|null $rate_service Rate service, or null for one without a provider.
 	 * @return MultiCurrencyAdminNoticesController
 	 */
-	private function create_controller( string $owner, ?MultiCurrencyRateService $rate_service = null ): MultiCurrencyAdminNoticesController {
+	private function create_controller( string $owner, ?RateService $rate_service = null ): MultiCurrencyAdminNoticesController {
 		$controller = new MultiCurrencyAdminNoticesController();
 		$controller->init( $this->create_arbiter( $owner ), $rate_service ?? RateServices::with() );
 

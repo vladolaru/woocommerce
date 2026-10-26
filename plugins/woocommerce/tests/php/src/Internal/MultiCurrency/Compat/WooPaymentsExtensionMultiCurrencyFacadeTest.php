@@ -13,9 +13,9 @@ use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFeatureController
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRestController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencySwitcherWidgetController;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyLocalizationService;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyServiceFactory;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilderFactory;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\LocalizationService;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\ServiceFactory;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilderFactory;
 use WC_Unit_Test_Case;
 
 require_once __DIR__ . '/Fixtures/multi-currency-facade-plugin-callers.inc';
@@ -122,7 +122,7 @@ class WooPaymentsExtensionMultiCurrencyFacadeTest extends WC_Unit_Test_Case {
 	public function test_currency_reads_answer_with_the_module_state(): void {
 		$this->declare_facade();
 		$facade = $this->get_facade();
-		$state  = wc_get_container()->get( MultiCurrencyStateBuilderFactory::class )->get_state_builder()->build();
+		$state  = wc_get_container()->get( StateBuilderFactory::class )->get_state_builder()->build();
 		$this->expect_facade_deprecations(
 			'get_enabled_currencies',
 			'get_available_currencies',
@@ -213,7 +213,7 @@ class WooPaymentsExtensionMultiCurrencyFacadeTest extends WC_Unit_Test_Case {
 		$this->assertArrayNotHasKey( 'is_cache_optimized_feature_enabled', $rest_settings, 'Precondition: the module has no cache-optimized feature flag.' );
 		// The extension's flag defaults on (client 11.1.0 `includes/class-wc-payments-features.php:418-420`).
 		$this->assertSame( array_merge( $rest_settings, array( 'is_cache_optimized_feature_enabled' => true ) ), $facade->get_settings(), 'get_settings' );
-		$this->assertSame( wc_get_container()->get( MultiCurrencyServiceFactory::class )->create_display_service()->get_public_config(), $facade->get_public_config(), 'get_public_config' );
+		$this->assertSame( wc_get_container()->get( ServiceFactory::class )->create_display_service()->get_public_config(), $facade->get_public_config(), 'get_public_config' );
 		$this->assertSame( array( 'USD', 'EUR', 'GBP' ), array_keys( $facade->get_public_config()['currencies'] ), 'get_public_config currencies' );
 
 		$this->assertSame( 'speed', $facade->get_rendering_mode(), 'get_rendering_mode' );
@@ -417,7 +417,7 @@ class WooPaymentsExtensionMultiCurrencyFacadeTest extends WC_Unit_Test_Case {
 		$this->assertSame( 0.0, $eur->get_charm(), 'get_charm' );
 		$this->assertSame( '1.00', $eur->get_rounding(), 'get_rounding' );
 		$this->assertSame( '&euro;', $eur->get_symbol(), 'get_symbol' );
-		$this->assertSame( ( new MultiCurrencyLocalizationService() )->get_currency_format( 'EUR' )['currency_pos'], $eur->get_symbol_position(), 'get_symbol_position' );
+		$this->assertSame( ( new LocalizationService() )->get_currency_format( 'EUR' )['currency_pos'], $eur->get_symbol_position(), 'get_symbol_position' );
 		$this->assertFalse( $eur->get_is_zero_decimal(), 'get_is_zero_decimal' );
 		$this->assertNull( $eur->get_last_updated(), 'get_last_updated' );
 		$this->assertSame( '🇪🇺', $eur->jsonSerialize()['flag'], 'jsonSerialize' );

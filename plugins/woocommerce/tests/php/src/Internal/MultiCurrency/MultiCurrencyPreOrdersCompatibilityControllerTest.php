@@ -8,9 +8,9 @@ use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyCurrency;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyPreOrdersCompatibilityController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyState;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyPriceCalculator;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyPriceConverter;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\PriceCalculator;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\PriceConverter;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilder;
 use WC_Unit_Test_Case;
 
 /**
@@ -237,14 +237,14 @@ class MultiCurrencyPreOrdersCompatibilityControllerTest extends WC_Unit_Test_Cas
 	/**
 	 * Create a price projection service.
 	 *
-	 * @return MultiCurrencyPriceConverter
+	 * @return PriceConverter
 	 */
-	private function create_price_converter(): MultiCurrencyPriceConverter {
+	private function create_price_converter(): PriceConverter {
 		$localization = $this->create_localization();
 
-		return new MultiCurrencyPriceConverter(
+		return new PriceConverter(
 			$this->create_state_builder( $this->create_state() ),
-			new MultiCurrencyPriceCalculator( $localization )
+			new PriceCalculator( $localization )
 		);
 	}
 
@@ -252,10 +252,10 @@ class MultiCurrencyPreOrdersCompatibilityControllerTest extends WC_Unit_Test_Cas
 	 * Create a state builder test double.
 	 *
 	 * @param MultiCurrencyState $state Multi-currency state.
-	 * @return MultiCurrencyStateBuilder
+	 * @return StateBuilder
 	 */
-	private function create_state_builder( MultiCurrencyState $state ): MultiCurrencyStateBuilder {
-		return new class( $state ) extends MultiCurrencyStateBuilder {
+	private function create_state_builder( MultiCurrencyState $state ): StateBuilder {
+		return new class( $state ) extends StateBuilder {
 			/**
 			 * Multi-currency state.
 			 *

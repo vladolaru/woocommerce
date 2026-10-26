@@ -7,9 +7,9 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\MultiCurrency;
 
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyExplicitPriceFormatter;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilderFactory;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyUsageDetector;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\ExplicitPriceFormatter;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilderFactory;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\UsageDetector;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 
 /**
@@ -30,27 +30,27 @@ class MultiCurrencyExplicitPriceController implements RegisterHooksInterface {
 	/**
 	 * State builder factory.
 	 *
-	 * @var MultiCurrencyStateBuilderFactory
+	 * @var StateBuilderFactory
 	 */
-	private MultiCurrencyStateBuilderFactory $state_builder_factory;
+	private StateBuilderFactory $state_builder_factory;
 
 	/**
 	 * Persisted usage detector, read before any state is built.
 	 *
-	 * @var MultiCurrencyUsageDetector
+	 * @var UsageDetector
 	 */
-	private MultiCurrencyUsageDetector $usage_detector;
+	private UsageDetector $usage_detector;
 
 	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
 	 *
-	 * @param MultiCurrencyRuntimeArbiter      $arbiter               Runtime owner arbiter.
-	 * @param MultiCurrencyStateBuilderFactory $state_builder_factory State builder factory.
-	 * @param MultiCurrencyUsageDetector       $usage_detector        Persisted usage detector.
+	 * @param MultiCurrencyRuntimeArbiter $arbiter               Runtime owner arbiter.
+	 * @param StateBuilderFactory         $state_builder_factory State builder factory.
+	 * @param UsageDetector               $usage_detector        Persisted usage detector.
 	 */
-	final public function init( MultiCurrencyRuntimeArbiter $arbiter, MultiCurrencyStateBuilderFactory $state_builder_factory, MultiCurrencyUsageDetector $usage_detector ): void {
+	final public function init( MultiCurrencyRuntimeArbiter $arbiter, StateBuilderFactory $state_builder_factory, UsageDetector $usage_detector ): void {
 		$this->arbiter               = $arbiter;
 		$this->state_builder_factory = $state_builder_factory;
 		$this->usage_detector        = $usage_detector;
@@ -80,7 +80,7 @@ class MultiCurrencyExplicitPriceController implements RegisterHooksInterface {
 	 * @return string
 	 */
 	public function get_explicit_price( string $price, ?\WC_Abstract_Order $order = null ): string {
-		return MultiCurrencyExplicitPriceFormatter::get_explicit_price(
+		return ExplicitPriceFormatter::get_explicit_price(
 			$price,
 			$order,
 			$this->should_output_explicit_price(),
@@ -123,7 +123,7 @@ class MultiCurrencyExplicitPriceController implements RegisterHooksInterface {
 	 * @return array<string,mixed>
 	 */
 	public function get_explicit_price_args( array $args ): array {
-		return MultiCurrencyExplicitPriceFormatter::get_explicit_price_args(
+		return ExplicitPriceFormatter::get_explicit_price_args(
 			$args,
 			$this->should_output_explicit_price()
 		);
@@ -141,6 +141,6 @@ class MultiCurrencyExplicitPriceController implements RegisterHooksInterface {
 			$default = $this->state_builder_factory->get_state_builder()->build()->has_additional_currencies_enabled();
 		}
 
-		return MultiCurrencyExplicitPriceFormatter::should_output_explicit_price( $default );
+		return ExplicitPriceFormatter::should_output_explicit_price( $default );
 	}
 }

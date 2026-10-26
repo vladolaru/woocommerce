@@ -7,13 +7,13 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\MultiCurrency;
 
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyDisplayService;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyGeolocationService;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRequestContext;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyServiceFactory;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencySelectedCurrencyPersistenceService;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\DisplayService;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\GeolocationService;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\RequestContext;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\ServiceFactory;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\SelectedCurrencyPersistenceService;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilder;
 
 /**
  * Sets the shopper's selected currency from the URL, geolocation, the My Account field or checkout, and runs the settings
@@ -41,23 +41,23 @@ class MultiCurrencySelectedCurrencyController implements RegisterHooksInterface 
 	/**
 	 * Selected currency persistence service.
 	 *
-	 * @var MultiCurrencySelectedCurrencyPersistenceService|null
+	 * @var SelectedCurrencyPersistenceService|null
 	 */
-	private ?MultiCurrencySelectedCurrencyPersistenceService $persistence_service = null;
+	private ?SelectedCurrencyPersistenceService $persistence_service = null;
 
 	/**
 	 * Request context.
 	 *
-	 * @var MultiCurrencyRequestContext
+	 * @var RequestContext
 	 */
-	private MultiCurrencyRequestContext $request_context;
+	private RequestContext $request_context;
 
 	/**
 	 * Geolocation service.
 	 *
-	 * @var MultiCurrencyGeolocationService|null
+	 * @var GeolocationService|null
 	 */
-	private ?MultiCurrencyGeolocationService $geolocation_service = null;
+	private ?GeolocationService $geolocation_service = null;
 
 	/**
 	 * Whether selected-currency state is ready to read from the WooCommerce session.
@@ -76,9 +76,9 @@ class MultiCurrencySelectedCurrencyController implements RegisterHooksInterface 
 	/**
 	 * Multi-Currency service factory.
 	 *
-	 * @var MultiCurrencyServiceFactory
+	 * @var ServiceFactory
 	 */
-	private MultiCurrencyServiceFactory $service_factory;
+	private ServiceFactory $service_factory;
 
 	/**
 	 * Compatibility controller.
@@ -93,11 +93,11 @@ class MultiCurrencySelectedCurrencyController implements RegisterHooksInterface 
 	 * @internal
 	 *
 	 * @param MultiCurrencyRuntimeArbiter          $arbiter                  Runtime owner arbiter.
-	 * @param MultiCurrencyServiceFactory          $service_factory          Multi-Currency service factory.
+	 * @param ServiceFactory                       $service_factory          Multi-Currency service factory.
 	 * @param MultiCurrencyCompatibilityController $compatibility_controller Compatibility controller.
-	 * @param MultiCurrencyRequestContext          $request_context          Request context.
+	 * @param RequestContext                       $request_context          Request context.
 	 */
-	final public function init( MultiCurrencyRuntimeArbiter $arbiter, MultiCurrencyServiceFactory $service_factory, MultiCurrencyCompatibilityController $compatibility_controller, MultiCurrencyRequestContext $request_context ): void {
+	final public function init( MultiCurrencyRuntimeArbiter $arbiter, ServiceFactory $service_factory, MultiCurrencyCompatibilityController $compatibility_controller, RequestContext $request_context ): void {
 		$this->arbiter                  = $arbiter;
 		$this->service_factory          = $service_factory;
 		$this->compatibility_controller = $compatibility_controller;
@@ -389,10 +389,10 @@ document.addEventListener( 'DOMContentLoaded', () => {
 				$data['meta_data'],
 				static function ( $meta ): bool {
 					if ( $meta instanceof \WC_Meta_Data ) {
-						return MultiCurrencyStateBuilder::CURRENCY_STORAGE_KEY !== $meta->key;
+						return StateBuilder::CURRENCY_STORAGE_KEY !== $meta->key;
 					}
 
-					return ! ( is_array( $meta ) && isset( $meta['key'] ) && MultiCurrencyStateBuilder::CURRENCY_STORAGE_KEY === $meta['key'] );
+					return ! ( is_array( $meta ) && isset( $meta['key'] ) && StateBuilder::CURRENCY_STORAGE_KEY === $meta['key'] );
 				}
 			)
 		);
@@ -473,9 +473,9 @@ document.addEventListener( 'DOMContentLoaded', () => {
 	/**
 	 * Get the persistence service.
 	 *
-	 * @return MultiCurrencySelectedCurrencyPersistenceService
+	 * @return SelectedCurrencyPersistenceService
 	 */
-	private function get_persistence_service(): MultiCurrencySelectedCurrencyPersistenceService {
+	private function get_persistence_service(): SelectedCurrencyPersistenceService {
 		if ( null === $this->persistence_service ) {
 			$this->persistence_service = $this->service_factory->create_selected_currency_persistence_service();
 		}
@@ -486,9 +486,9 @@ document.addEventListener( 'DOMContentLoaded', () => {
 	/**
 	 * Get the geolocation service.
 	 *
-	 * @return MultiCurrencyGeolocationService
+	 * @return GeolocationService
 	 */
-	private function get_geolocation_service(): MultiCurrencyGeolocationService {
+	private function get_geolocation_service(): GeolocationService {
 		if ( null === $this->geolocation_service ) {
 			$this->geolocation_service = $this->service_factory->create_geolocation_service();
 		}
@@ -532,7 +532,7 @@ document.addEventListener( 'DOMContentLoaded', () => {
 	 * @return bool
 	 */
 	private function is_using_auto_currency_switching(): bool {
-		return 'yes' === get_option( MultiCurrencyStateBuilder::OPTION_PREFIX . '_enable_auto_currency', 'no' );
+		return 'yes' === get_option( StateBuilder::OPTION_PREFIX . '_enable_auto_currency', 'no' );
 	}
 
 	/**
@@ -552,7 +552,7 @@ document.addEventListener( 'DOMContentLoaded', () => {
 	 * @return bool
 	 */
 	private function is_cache_optimized_mode(): bool {
-		return MultiCurrencyDisplayService::RENDERING_MODE_CACHE === get_option( MultiCurrencyDisplayService::RENDERING_MODE_OPTION, MultiCurrencyDisplayService::RENDERING_MODE_SPEED );
+		return DisplayService::RENDERING_MODE_CACHE === get_option( DisplayService::RENDERING_MODE_OPTION, DisplayService::RENDERING_MODE_SPEED );
 	}
 
 	/**

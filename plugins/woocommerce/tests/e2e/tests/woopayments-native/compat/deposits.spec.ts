@@ -151,7 +151,7 @@ try {
 	update_option( 'wcpay_multi_currency_exchange_rate_eur', 'manual' );
 	update_option( 'wcpay_multi_currency_manual_rate_eur', '0.8' );
 	add_filter( 'wcpay_multi_currency_override_selected_currency', static fn() => 'EUR', PHP_INT_MAX );
-	$state_builder = wc_get_container()->get( Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilderFactory::class )->get_state_builder();
+	$state_builder = wc_get_container()->get( Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilderFactory::class )->get_state_builder();
 	$state_builder->reset();
 
 	wc_load_cart();

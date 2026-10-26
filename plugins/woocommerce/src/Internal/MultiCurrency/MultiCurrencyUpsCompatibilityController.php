@@ -8,8 +8,8 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\MultiCurrency;
 
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRequestContext;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\RequestContext;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilder;
 
 /**
  * Keeps WooCommerce UPS Shipping's rate calculations in the store currency: the store currency is returned while UPS
@@ -70,7 +70,7 @@ class MultiCurrencyUpsCompatibilityController implements RegisterHooksInterface 
 			return;
 		}
 
-		add_filter( MultiCurrencyStateBuilder::FILTER_PREFIX . 'should_return_store_currency', array( $this, 'should_return_store_currency' ) );
+		add_filter( StateBuilder::FILTER_PREFIX . 'should_return_store_currency', array( $this, 'should_return_store_currency' ) );
 	}
 
 	/**
@@ -80,7 +80,7 @@ class MultiCurrencyUpsCompatibilityController implements RegisterHooksInterface 
 	 * @return bool
 	 */
 	public function should_return_store_currency( bool $should_return ): bool {
-		return $should_return || MultiCurrencyRequestContext::is_call_in_backtrace( self::UPS_SHIPPING_CALLS );
+		return $should_return || RequestContext::is_call_in_backtrace( self::UPS_SHIPPING_CALLS );
 	}
 
 	/**

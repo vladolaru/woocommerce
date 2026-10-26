@@ -8,11 +8,11 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\MultiCurrency;
 
 use Automattic\Jetpack\Constants;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyDisplayService;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyServiceFactory;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRequestContext;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\DisplayService;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\ServiceFactory;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\RequestContext;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilder;
 
 /**
  * Renders prices in the shopper's currency in the browser: in cache-optimized mode with automatic currency switching, a
@@ -40,23 +40,23 @@ class MultiCurrencyAsyncPriceRendererController implements RegisterHooksInterfac
 	/**
 	 * Multi-Currency service factory.
 	 *
-	 * @var MultiCurrencyServiceFactory
+	 * @var ServiceFactory
 	 */
-	private MultiCurrencyServiceFactory $service_factory;
+	private ServiceFactory $service_factory;
 
 	/**
 	 * Display service, built on first use.
 	 *
-	 * @var MultiCurrencyDisplayService|null
+	 * @var DisplayService|null
 	 */
-	private ?MultiCurrencyDisplayService $display_service = null;
+	private ?DisplayService $display_service = null;
 
 	/**
 	 * Request context.
 	 *
-	 * @var MultiCurrencyRequestContext
+	 * @var RequestContext
 	 */
-	private MultiCurrencyRequestContext $request_context;
+	private RequestContext $request_context;
 
 	/**
 	 * Initialize the class instance.
@@ -64,13 +64,13 @@ class MultiCurrencyAsyncPriceRendererController implements RegisterHooksInterfac
 	 * @internal
 	 *
 	 * @param MultiCurrencyRuntimeArbiter $arbiter         Runtime owner arbiter.
-	 * @param MultiCurrencyServiceFactory $service_factory Multi-Currency service factory.
-	 * @param MultiCurrencyRequestContext $request_context Request context.
+	 * @param ServiceFactory              $service_factory Multi-Currency service factory.
+	 * @param RequestContext              $request_context Request context.
 	 */
 	final public function init(
 		MultiCurrencyRuntimeArbiter $arbiter,
-		MultiCurrencyServiceFactory $service_factory,
-		MultiCurrencyRequestContext $request_context
+		ServiceFactory $service_factory,
+		RequestContext $request_context
 	): void {
 		$this->arbiter         = $arbiter;
 		$this->service_factory = $service_factory;
@@ -291,9 +291,9 @@ class MultiCurrencyAsyncPriceRendererController implements RegisterHooksInterfac
 	/**
 	 * Get the display service.
 	 *
-	 * @return MultiCurrencyDisplayService
+	 * @return DisplayService
 	 */
-	private function get_display_service(): MultiCurrencyDisplayService {
+	private function get_display_service(): DisplayService {
 		if ( null === $this->display_service ) {
 			$this->display_service = $this->service_factory->create_display_service();
 		}
@@ -321,7 +321,7 @@ class MultiCurrencyAsyncPriceRendererController implements RegisterHooksInterfac
 	 * @return bool
 	 */
 	private function is_using_auto_currency_switching(): bool {
-		return 'yes' === get_option( MultiCurrencyStateBuilder::OPTION_PREFIX . '_enable_auto_currency', 'no' );
+		return 'yes' === get_option( StateBuilder::OPTION_PREFIX . '_enable_auto_currency', 'no' );
 	}
 
 	/**

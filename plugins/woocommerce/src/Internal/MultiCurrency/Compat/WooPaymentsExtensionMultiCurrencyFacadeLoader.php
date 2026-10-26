@@ -8,8 +8,8 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\MultiCurrency\Compat;
 
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyPriceConverter;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyServiceFactory;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\PriceConverter;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\ServiceFactory;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 
 /**
@@ -34,9 +34,9 @@ class WooPaymentsExtensionMultiCurrencyFacadeLoader implements RegisterHooksInte
 	/**
 	 * Price converter, built on first use.
 	 *
-	 * @var MultiCurrencyPriceConverter|null
+	 * @var PriceConverter|null
 	 */
-	private ?MultiCurrencyPriceConverter $price_converter = null;
+	private ?PriceConverter $price_converter = null;
 
 	/**
 	 * Whether a facade call converted a product price during this request.
@@ -115,11 +115,11 @@ class WooPaymentsExtensionMultiCurrencyFacadeLoader implements RegisterHooksInte
 	/**
 	 * Get the price converter.
 	 *
-	 * @return MultiCurrencyPriceConverter
+	 * @return PriceConverter
 	 */
-	private function get_price_converter(): MultiCurrencyPriceConverter {
+	private function get_price_converter(): PriceConverter {
 		if ( null === $this->price_converter ) {
-			$this->price_converter = wc_get_container()->get( MultiCurrencyServiceFactory::class )->create_price_converter();
+			$this->price_converter = wc_get_container()->get( ServiceFactory::class )->create_price_converter();
 		}
 
 		return $this->price_converter;

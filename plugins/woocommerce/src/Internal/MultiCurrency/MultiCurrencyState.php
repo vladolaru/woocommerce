@@ -11,7 +11,7 @@ namespace Automattic\WooCommerce\Internal\MultiCurrency;
  * The request's Multi-Currency state: the available, enabled, default and selected currencies, and the currencies
  * customers have used.
  *
- * Read-only by contract: MultiCurrencyStateBuilder::build() memoizes a single
+ * Read-only by contract: StateBuilder::build() memoizes a single
  * instance per request and hands it to every caller. Callers MUST NOT mutate this
  * state or the MultiCurrencyCurrency objects it holds (the setters on those objects
  * exist only for the builder's own assembly). Mutating a returned currency corrupts
