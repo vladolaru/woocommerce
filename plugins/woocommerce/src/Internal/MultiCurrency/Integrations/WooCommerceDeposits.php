@@ -7,7 +7,6 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\MultiCurrency\Integrations;
 
-use Automattic\WooCommerce\Internal\MultiCurrency\Compat\WooPaymentsExtensionFacadeLoader;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\PriceConverter;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\ServiceFactory;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
@@ -113,10 +112,6 @@ class WooCommerceDeposits implements RegisterHooksInterface {
 	 * @return array<mixed>
 	 */
 	public function modify_cart_item_deposit_amounts( array $cart_contents ): array {
-		if ( wc_get_container()->get( WooPaymentsExtensionFacadeLoader::class )->did_convert_product_price() ) {
-			return $cart_contents;
-		}
-
 		foreach ( $cart_contents as $cart_item_key => $cart_item ) {
 			if ( is_array( $cart_item ) && ! empty( $cart_item['is_deposit'] ) && array_key_exists( 'deposit_amount', $cart_item ) ) {
 				$cart_contents[ $cart_item_key ]['deposit_amount'] = $this->get_price_converter()->get_price(

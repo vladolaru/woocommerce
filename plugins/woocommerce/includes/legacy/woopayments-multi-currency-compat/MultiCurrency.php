@@ -8,7 +8,6 @@ declare( strict_types = 1 );
 namespace WCPay\MultiCurrency;
 
 use Automattic\WooCommerce\Admin\Notes\Notes;
-use Automattic\WooCommerce\Internal\MultiCurrency\Compat\WooPaymentsExtensionFacadeLoader;
 use Automattic\WooCommerce\Internal\MultiCurrency\Exceptions\InvalidCurrencyException;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyAdminNoteController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyCurrency;
@@ -132,7 +131,7 @@ class MultiCurrency {
 	}
 
 	/**
-	 * Convert a price to the selected currency; a product price is recorded for the Deposits controller.
+	 * Convert a price to the selected currency.
 	 *
 	 * Removed in WooCommerce 12.0.0.
 	 *
@@ -146,7 +145,7 @@ class MultiCurrency {
 	public function get_price( $amount, string $type ): float {
 		_deprecated_function( 'WCPay\\MultiCurrency\\MultiCurrency::get_price', '11.0.0', '' );
 
-		return $this->get_loader()->get_price( $amount, $type );
+		return $this->get_service_factory()->create_price_converter()->get_price( $amount, $type );
 	}
 
 	/**
@@ -604,14 +603,5 @@ class MultiCurrency {
 	 */
 	private function get_service_factory(): ServiceFactory {
 		return wc_get_container()->get( ServiceFactory::class );
-	}
-
-	/**
-	 * Get the container-owned compatibility loader.
-	 *
-	 * @return WooPaymentsExtensionFacadeLoader
-	 */
-	private function get_loader(): WooPaymentsExtensionFacadeLoader {
-		return wc_get_container()->get( WooPaymentsExtensionFacadeLoader::class );
 	}
 }

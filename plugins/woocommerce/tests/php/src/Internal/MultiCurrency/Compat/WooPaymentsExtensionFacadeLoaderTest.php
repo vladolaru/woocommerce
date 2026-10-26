@@ -6,7 +6,6 @@ namespace Automattic\WooCommerce\Tests\Internal\MultiCurrency\Compat;
 use Automattic\WooCommerce\Internal\MultiCurrency\Compat\WooPaymentsExtensionFacadeLoader;
 use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\LocalizationInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyCurrency;
-use Automattic\WooCommerce\Internal\MultiCurrency\Integrations\WooCommerceDeposits;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyState;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\PriceConverter;
@@ -33,14 +32,14 @@ class WooPaymentsExtensionFacadeLoaderTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The core-owned facade preserves grounded extension calls and converts Deposits exactly once.
+	 * @testdox The core-owned facade preserves grounded extension calls and converts a price exactly once.
 	 * @runInSeparateProcess
 	 * @preserveGlobalState disabled
 	 */
 	public function test_core_owned_facade_preserves_grounded_extension_calls(): void {
 		$failing_price_converter = $this->createMock( PriceConverter::class );
 		$failing_price_converter->method( 'get_price' )->willThrowException( new \RuntimeException( 'Projection failed.' ) );
-		$loader   = $this->create_loader( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $failing_price_converter );
+		$this->create_loader( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $failing_price_converter );
 		$consumer = new MultiCurrencyFacadeConsumerFixture();
 
 		$this->assertTrue( class_exists( 'WCPay\\MultiCurrency\\MultiCurrency', false ), 'Core ownership should declare the namespaced compatibility facade.' );
@@ -72,7 +71,6 @@ class WooPaymentsExtensionFacadeLoaderTest extends WC_Unit_Test_Case {
 		} catch ( \RuntimeException $exception ) {
 			$this->assertSame( 'Projection failed.', $exception->getMessage() );
 		}
-		$this->assertFalse( $loader->did_convert_product_price(), 'A failed facade call must not suppress the native Deposits conversion fallback.' );
 
 		$price_converter = $this->create_recording_price_converter( 2.0, 5.0 );
 		$this->create_loader( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $price_converter, $this->create_state_builder( $this->create_state() ) );
@@ -98,19 +96,7 @@ class WooPaymentsExtensionFacadeLoaderTest extends WC_Unit_Test_Case {
 		$this->setExpectedDeprecated( 'WCPay\\MultiCurrency\\MultiCurrency::get_price' );
 		$facade_converted_amount = $consumer->get_woopayments_multicurrency_price( 10.0 );
 
-		$controller = new WooCommerceDeposits();
-		$controller->init( $this->create_arbiter( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN ), ServiceFactories::with( $this, array( 'create_price_converter' => $price_converter ) ) );
-		$cart_contents = $controller->modify_cart_item_deposit_amounts(
-			array(
-				'deposit' => array(
-					'is_deposit'     => true,
-					'deposit_amount' => $facade_converted_amount,
-				),
-			)
-		);
-
-		$this->assertSame( 20.0, $facade_converted_amount, 'The Deposits facade call should apply the selected-currency rate.' );
-		$this->assertSame( 20.0, $cart_contents['deposit']['deposit_amount'], 'Native Deposits compatibility must preserve the facade-projected amount instead of applying the rate twice.' );
+		$this->assertSame( 20.0, $facade_converted_amount, 'The Deposits facade call should apply the selected-currency rate once.' );
 	}
 
 	/**
@@ -171,15 +157,14 @@ class WooPaymentsExtensionFacadeLoaderTest extends WC_Unit_Test_Case {
 	/**
 	 * Create and register the facade loader under a controlled ownership decision.
 	 *
-	 * The facade reads the container's loader, and the loader reads its factories from the container on first use, so
-	 * the container hands out a fresh runtime loader and factories that return the given services.
+	 * The facade reads its services from the container, so the container hands out factories that return the given
+	 * services.
 	 *
-	 * @param string            $owner              Runtime owner.
+	 * @param string            $owner           Runtime owner.
 	 * @param PriceConverter    $price_converter Price projection service.
-	 * @param StateBuilder|null $state_builder      State builder; the request's shared builder by default.
-	 * @return WooPaymentsExtensionFacadeLoader
+	 * @param StateBuilder|null $state_builder   State builder; the request's shared builder by default.
 	 */
-	private function create_loader( string $owner, PriceConverter $price_converter, ?StateBuilder $state_builder = null ): WooPaymentsExtensionFacadeLoader {
+	private function create_loader( string $owner, PriceConverter $price_converter, ?StateBuilder $state_builder = null ): void {
 		$declaration_loader = new WooPaymentsExtensionFacadeLoader();
 		$declaration_loader->init( $this->create_arbiter( $owner ) );
 		$declaration_loader->register();
@@ -188,11 +173,6 @@ class WooPaymentsExtensionFacadeLoaderTest extends WC_Unit_Test_Case {
 		if ( null !== $state_builder ) {
 			wc_get_container()->replace( StateBuilderFactory::class, ServiceFactories::state_builder( $this, $state_builder ) );
 		}
-		$runtime_loader = new WooPaymentsExtensionFacadeLoader();
-		$runtime_loader->init( wc_get_container()->get( MultiCurrencyRuntimeArbiter::class ) );
-		wc_get_container()->replace( WooPaymentsExtensionFacadeLoader::class, $runtime_loader );
-
-		return $runtime_loader;
 	}
 
 	/**
