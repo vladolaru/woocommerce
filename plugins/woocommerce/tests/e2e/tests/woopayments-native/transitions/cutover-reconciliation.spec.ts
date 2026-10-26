@@ -975,7 +975,7 @@ test.describe( 'WooPayments transition: rollback round trip', () => {
 						await triggerActionSchedulerQueue( baseURL! );
 						const record = ( await readCutoverStatus( 0 ) ).record;
 						return record?.generation === reopened?.generation
-							? record?.state ?? null
+							? ( record?.state ?? null )
 							: null;
 					},
 					{ timeout: 3 * 60_000, intervals: [ 1000, 3000, 5000 ] }

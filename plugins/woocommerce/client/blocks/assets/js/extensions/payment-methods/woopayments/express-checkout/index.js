@@ -761,10 +761,10 @@ const getCartDisplayItems = ( cart ) => {
 		const lineTotals = item.totals || item.prices || {};
 		const amount = displayPriceIncludingTax
 			? parseMinorUnitAmount( lineTotals.line_subtotal ) +
-			  parseMinorUnitAmount( lineTotals.line_subtotal_tax )
+				parseMinorUnitAmount( lineTotals.line_subtotal_tax )
 			: parseMinorUnitAmount(
 					lineTotals.line_subtotal || item.prices?.price
-			  );
+				);
 
 		return {
 			amount: transformPrice( amount, lineTotals ),
@@ -858,7 +858,7 @@ const getCartShippingRates = ( cart ) => {
 		.map( ( rate ) => {
 			const amount = params?.checkout?.display_prices_with_tax
 				? parseMinorUnitAmount( rate.price ) +
-				  parseMinorUnitAmount( rate.taxes )
+					parseMinorUnitAmount( rate.taxes )
 				: parseMinorUnitAmount( rate.price );
 			const metaData = Array.isArray( rate.meta_data )
 				? rate.meta_data
@@ -929,8 +929,8 @@ const getCartCurrencyMismatch = ( expectedCurrency, cart ) => {
 
 	return Boolean(
 		expectedCurrency &&
-			updatedCurrency &&
-			expectedCurrency !== updatedCurrency
+		updatedCurrency &&
+		expectedCurrency !== updatedCurrency
 	);
 };
 
@@ -1342,7 +1342,7 @@ const ExpressCheckoutContent = ( {
 			const currentCart = getCurrentCart();
 			const shippingAddressRequired = Boolean(
 				shippingDataRef.current?.needsShipping ||
-					params?.checkout?.needs_shipping
+				params?.checkout?.needs_shipping
 			);
 			let shippingRates;
 
@@ -1526,10 +1526,10 @@ const ExpressCheckoutContent = ( {
 				const credentialResult = shouldUseConfirmationTokens()
 					? await stripeRef.current.createConfirmationToken( {
 							elements: elementsRef.current,
-					  } )
+						} )
 					: await stripeRef.current.createPaymentMethod( {
 							elements: elementsRef.current,
-					  } );
+						} );
 
 				if ( credentialResult?.error ) {
 					throw new Error( credentialResult.error.message );
@@ -1539,9 +1539,8 @@ const ExpressCheckoutContent = ( {
 					? credentialResult.confirmationToken.id
 					: credentialResult.paymentMethod.id;
 
-				const paymentMethodTypes = getPaymentMethodTypes(
-					getCurrentCart()
-				);
+				const paymentMethodTypes =
+					getPaymentMethodTypes( getCurrentCart() );
 				const orderNotes = getOrderNotes();
 				// Stripe provides no separate shipping phone, so the
 				// billing one is reused on the shipping address.
@@ -1555,7 +1554,7 @@ const ExpressCheckoutContent = ( {
 							...( walletBillingPhone
 								? { phone: walletBillingPhone }
 								: {} ),
-					  }
+						}
 					: shippingDataRef.current?.shippingAddress;
 				const response = await apiFetch( {
 					method: 'POST',
@@ -1572,7 +1571,7 @@ const ExpressCheckoutContent = ( {
 							? {
 									'X-WooPayments-Payment-Currency':
 										elementCurrency,
-							  }
+								}
 							: {} ),
 					},
 					data: {

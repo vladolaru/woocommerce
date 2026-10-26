@@ -83,8 +83,7 @@ test.describe( 'Platform events: fee breakdown envelope', () => {
 			const envelope = ( await getCharge( restApi, paid.chargeId ) )
 				.fee_breakdown_v1 as Json | undefined;
 			const net = ( envelope?.totals as Json | undefined )?.net as
-				| { amount?: unknown; currency?: unknown }
-				| undefined;
+				{ amount?: unknown; currency?: unknown } | undefined;
 			expect(
 				net?.amount,
 				"the platform's charge carries its fee breakdown envelope (WCPAY_FEE_BREAKDOWN_ENVELOPE_ENABLED on the local WPCOM)"

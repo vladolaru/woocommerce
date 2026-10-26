@@ -139,7 +139,7 @@ export const getWooPayAppearance = ( paymentSettings ) =>
 				paymentSettings.stylesCacheVersion,
 				document,
 				paymentSettings
-		  )
+			)
 		: null;
 
 /**

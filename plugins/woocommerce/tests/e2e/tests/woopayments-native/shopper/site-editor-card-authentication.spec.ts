@@ -122,8 +122,7 @@ async function expectFraudPreventionToken(
 		};
 		const settings = browserWindow.wcSettings?.paymentMethodData
 			?.woocommerce_payments as
-			| { fraudPreventionToken?: unknown }
-			| undefined;
+			{ fraudPreventionToken?: unknown } | undefined;
 		return (
 			browserWindow.wcpayFraudPreventionToken ??
 			settings?.fraudPreventionToken

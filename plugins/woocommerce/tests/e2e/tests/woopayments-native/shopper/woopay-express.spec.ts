@@ -555,7 +555,6 @@ test.describe( 'WooPayments native hosted WooPay express checkout', () => {
 					const deadline = Date.now() + 120_000;
 					renewed.related_orders.renewal.length === 0 &&
 					Date.now() < deadline;
-
 				) {
 					await delay( 3_000 );
 					renewed = await readSubscription();

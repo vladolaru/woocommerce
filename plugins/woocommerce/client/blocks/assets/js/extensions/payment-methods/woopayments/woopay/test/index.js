@@ -496,10 +496,10 @@ describe( 'wc-payment-method-woopayments-woopay', () => {
 									iv: 'iv',
 									hash: 'hash',
 								},
-						  }
+							}
 						: {
 								result: 'success',
-						  }
+							}
 				),
 			} )
 		);
@@ -752,7 +752,7 @@ describe( 'wc-payment-method-woopayments-woopay', () => {
 			url === '/?wc-ajax=wcpay_get_woopay_session'
 				? new Promise( ( resolve ) => {
 						resolveSession = resolve;
-				  } )
+					} )
 				: Promise.resolve( { json: () => Promise.resolve( {} ) } )
 		);
 
@@ -898,7 +898,7 @@ describe( 'wc-payment-method-woopayments-woopay', () => {
 				url === '/?wc-ajax=wcpay_init_woopay'
 					? new Promise( ( resolve ) => {
 							resolveInit = resolve;
-					  } )
+						} )
 					: Promise.resolve( { json: () => Promise.resolve( {} ) } )
 			);
 			await openOtpIframe();
@@ -1045,7 +1045,7 @@ describe( 'wc-payment-method-woopayments-woopay', () => {
 				url === '/?wc-ajax=wcpay_init_woopay'
 					? new Promise( ( resolve ) => {
 							resolveInit = resolve;
-					  } )
+						} )
 					: Promise.resolve( { json: () => Promise.resolve( {} ) } )
 			);
 			await openOtpIframe();
@@ -1246,10 +1246,10 @@ describe( 'wc-payment-method-woopayments-woopay', () => {
 							options?.body?.get?.( 'action' ) === 'get_identity'
 								? new Promise( ( resolve ) => {
 										answerIdentity = resolve;
-								  } )
+									} )
 								: Promise.resolve( {
 										json: () => Promise.resolve( {} ),
-								  } )
+									} )
 						);
 						registerWooPay();
 						const expressRegistration =
@@ -1428,10 +1428,10 @@ describe( 'wc-payment-method-woopayments-woopay', () => {
 					url === '/?wc-ajax=wcpay_init_woopay'
 						? new Promise( ( resolve, reject ) => {
 								rejectInit = reject;
-						  } )
+							} )
 						: Promise.resolve( {
 								json: () => Promise.resolve( {} ),
-						  } )
+							} )
 				);
 				const button = await openFromFocusedButton();
 				await sendWooPayMessage( {

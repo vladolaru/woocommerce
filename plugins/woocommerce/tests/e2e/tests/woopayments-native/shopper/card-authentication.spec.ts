@@ -184,7 +184,7 @@ async function pollFailedAuthenticationIntent(
 		status: String( intent.status ),
 		lastPaymentErrorCode:
 			typeof lastPaymentError === 'object' && lastPaymentError !== null
-				? ( lastPaymentError as { code?: unknown } ).code ?? null
+				? ( ( lastPaymentError as { code?: unknown } ).code ?? null )
 				: null,
 		chargeCount: chargeCount( intent ),
 	};

@@ -221,8 +221,7 @@ function expectFailedGraph(
 		'a failed attempt must carry no succeeded or captured charge'
 	).toBe( 0 );
 	const lastError = intent.last_payment_error as
-		| { code?: unknown; decline_code?: unknown }
-		| undefined;
+		{ code?: unknown; decline_code?: unknown } | undefined;
 	expect( lastError?.code ).toBe( 'card_declined' );
 	expect( lastError?.decline_code ).toBe( 'generic_decline' );
 }

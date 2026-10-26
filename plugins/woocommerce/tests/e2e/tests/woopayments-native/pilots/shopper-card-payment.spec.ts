@@ -425,7 +425,7 @@ test.describe( 'Client contract row 121: basic-card purchase, protection off', (
 					)
 						? params.get(
 								'wc-woocommerce_payments-new-payment-method'
-						  ) === 'true'
+							) === 'true'
 						: false;
 					tokenField =
 						params.get( 'wcpay-fraud-prevention-token' ) ?? '';

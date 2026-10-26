@@ -599,20 +599,17 @@ const handleAppearanceForFloatingLabel = (
 				appearance.rules[ '.Label--floating' ].lineHeight
 			);
 			const newLineHeight = Math.floor( lineHeight * scale );
-			appearance.rules[
-				'.Label--floating'
-			].lineHeight = `${ newLineHeight }px`;
-			appearance.rules[
-				'.Label--floating'
-			].fontSize = `${ newLineHeight }px`;
+			appearance.rules[ '.Label--floating' ].lineHeight =
+				`${ newLineHeight }px`;
+			appearance.rules[ '.Label--floating' ].fontSize =
+				`${ newLineHeight }px`;
 		}
 		delete appearance.rules[ '.Label--floating' ].transform;
 	}
 
 	if ( appearance.rules[ '.Input' ].paddingTop ) {
-		appearance.rules[
-			'.Input'
-		].paddingTop = `calc(${ appearance.rules[ '.Input' ].paddingTop } - ${ appearance.rules[ '.Label--floating' ].lineHeight } - 4px - 1px)`;
+		appearance.rules[ '.Input' ].paddingTop =
+			`calc(${ appearance.rules[ '.Input' ].paddingTop } - ${ appearance.rules[ '.Label--floating' ].lineHeight } - 4px - 1px)`;
 	}
 	if ( appearance.rules[ '.Input' ].paddingBottom ) {
 		const originalPaddingBottom = parseFloat(
@@ -870,7 +867,7 @@ export const getBlocksCheckoutAppearance = (
 const hasWooPayLinkRules = ( appearance ) =>
 	Boolean(
 		appearance?.rules?.[ '.Link' ]?.color &&
-			appearance?.rules?.[ '.Footer-link' ]?.color
+		appearance?.rules?.[ '.Footer-link' ]?.color
 	);
 
 export const ensureBlocksWooPayAppearance = (

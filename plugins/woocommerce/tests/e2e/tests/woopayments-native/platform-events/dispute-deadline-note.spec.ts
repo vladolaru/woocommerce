@@ -110,8 +110,7 @@ test.describe( 'Platform events: dispute deadline note', () => {
 				stripeDispute.balance_transaction ??
 					(
 						stripeDispute.balance_transactions as
-							| Array< { id?: unknown } >
-							| undefined
+							Array< { id?: unknown } > | undefined
 					 )?.[ 0 ]?.id ??
 					''
 			);

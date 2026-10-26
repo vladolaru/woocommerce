@@ -243,8 +243,7 @@ async function runHistoricalMoneyRecords(
 		// The REST mirror nests the intent's sole charge as a singular
 		// `charge` object (not Stripe's raw `charges.data[]` list).
 		const declinedChargeSummary = declinedIntent.charge as
-			| { id?: unknown }
-			| undefined;
+			{ id?: unknown } | undefined;
 		expect(
 			typeof declinedChargeSummary?.id === 'string',
 			'the declined intent must carry exactly one charge'
@@ -411,8 +410,7 @@ async function runHistoricalMoneyRecords(
 		const declinedPaymentMethodId = String(
 			(
 				declinedIntent.last_payment_error as
-					| { payment_method?: { id?: unknown } }
-					| undefined
+					{ payment_method?: { id?: unknown } } | undefined
 			 )?.payment_method?.id ??
 				declinedIntent.payment_method ??
 				''

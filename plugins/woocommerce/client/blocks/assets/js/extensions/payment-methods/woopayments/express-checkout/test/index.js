@@ -2383,7 +2383,7 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 									Promise.resolve( {
 										return_url: returnUrl,
 									} ),
-						  }
+							}
 						: { json: () => Promise.resolve( {} ) }
 				)
 			);

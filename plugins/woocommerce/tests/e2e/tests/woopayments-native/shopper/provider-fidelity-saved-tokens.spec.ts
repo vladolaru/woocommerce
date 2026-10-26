@@ -87,7 +87,7 @@ async function getSavedCardEvidence(
 			: {
 					token_id: String( usernameOrToken.tokenId ),
 					payment_method_id: usernameOrToken.paymentMethodId,
-			  };
+				};
 	const data = ( await restApi.get( SAVED_CARD_EVIDENCE_API, params ) )
 		.data as {
 		tokens?: Array< {
@@ -102,7 +102,7 @@ async function getSavedCardEvidence(
 				tokenId: token.token_id,
 				paymentMethodId: token.payment_method_id,
 				isDefault: token.is_default,
-		  } ) )
+			} ) )
 		: [];
 	return { tokens, providerCustomerId: data.provider_customer_id };
 }
@@ -311,12 +311,11 @@ test.describe( 'WooPayments native saved-token lifecycle fidelity', () => {
 				? await getProviderPaymentMethodIds(
 						restApi,
 						baselineProviderCustomerId
-				  )
+					)
 				: undefined;
 
 			let createdCard:
-				| { tokenId: number; paymentMethodId: string }
-				| undefined;
+				{ tokenId: number; paymentMethodId: string } | undefined;
 			let providerCustomerId = baselineProviderCustomerId;
 
 			try {

@@ -431,8 +431,7 @@ export async function expectSettledCardPayment(
 					if ( signature === previous ) {
 						const cardDetails = expected.card
 							? ( charge.payment_method_details as
-									| ChargeCardDetails
-									| undefined )
+									ChargeCardDetails | undefined )
 							: undefined;
 						expect( {
 							orderAmountMinor: amountMinorFromTotal(

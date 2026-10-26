@@ -88,10 +88,10 @@ const normalizeCardBrand = ( brand ) => brandAliases[ brand ] || brand;
 const isValidPreferredCard = ( card ) =>
 	Boolean(
 		card &&
-			typeof card.brand === 'string' &&
-			card.brand.length > 0 &&
-			typeof card.last4 === 'string' &&
-			/^\d{4}$/.test( card.last4 )
+		typeof card.brand === 'string' &&
+		card.brand.length > 0 &&
+		typeof card.last4 === 'string' &&
+		/^\d{4}$/.test( card.last4 )
 	);
 
 const isSamePreferredCard = ( firstCard, secondCard ) =>
@@ -414,9 +414,9 @@ const appendWooPayRequestValue = ( body, key, value ) => {
 const isValidWooPayMinimumSessionData = ( sessionData ) => {
 	return Boolean(
 		sessionData?.blog_id &&
-			sessionData?.data?.session &&
-			sessionData?.data?.iv &&
-			sessionData?.data?.hash
+		sessionData?.data?.session &&
+		sessionData?.data?.iv &&
+		sessionData?.data?.hash
 	);
 };
 
@@ -749,8 +749,8 @@ export const getWooPayExpressPaymentMethod = () => ( {
 	canMakePayment: () =>
 		Boolean(
 			settings.isCoreNativeCheckoutAvailable &&
-				settings.isWooPayEnabled &&
-				settings.shouldShowWooPayButton
+			settings.isWooPayEnabled &&
+			settings.shouldShowWooPayButton
 		),
 	ariaLabel: __( 'WooPay', 'woocommerce' ),
 	supports: {

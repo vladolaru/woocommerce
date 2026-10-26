@@ -204,7 +204,7 @@ const CardBrandIcons = ( { paymentSettings } ) => {
 									togglePopover();
 								}
 							},
-					  }
+						}
 					: {} ) }
 				data-testid="payment-methods-logos"
 			>
@@ -476,10 +476,10 @@ const handleConfirmationResponse = async (
 							confirmation_token: confirmation.confirmationToken,
 						},
 						redirect: 'if_required',
-				  } )
+					} )
 				: await stripeClient.handleNextAction( {
 						clientSecret: confirmation.clientSecret,
-				  } );
+					} );
 		} else {
 			result = await stripeClient.handleNextAction( {
 				clientSecret: confirmation.clientSecret,
@@ -538,7 +538,7 @@ const shouldUsePlatformStripeForCard = ( paymentSettings = defaultSettings ) =>
 const isLinkEnabled = ( paymentSettings = defaultSettings ) =>
 	Boolean(
 		paymentSettings.paymentMethodsConfig?.link !== undefined &&
-			paymentSettings.paymentMethodsConfig?.card !== undefined
+		paymentSettings.paymentMethodsConfig?.card !== undefined
 	);
 
 const createStripe = (
@@ -688,8 +688,8 @@ const getWooPayInitialPhone = () =>
 const shouldRenderWooPaySaveUser = ( paymentSettings = defaultSettings ) => {
 	return Boolean(
 		paymentSettings.isWooPayEnabled &&
-			paymentSettings.forceNetworkSavedCards &&
-			paymentSettings.woopaySessionNonce
+		paymentSettings.forceNetworkSavedCards &&
+		paymentSettings.woopaySessionNonce
 	);
 };
 

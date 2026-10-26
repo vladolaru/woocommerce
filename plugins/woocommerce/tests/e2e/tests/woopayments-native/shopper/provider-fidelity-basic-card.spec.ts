@@ -449,7 +449,7 @@ test.describe( 'WooPayments native basic card charge fidelity', () => {
 						)
 							? params.get(
 									'wc-woocommerce_payments-new-payment-method'
-							  ) === 'true'
+								) === 'true'
 							: false;
 						submittedToken = params.get(
 							'wcpay-fraud-prevention-token'
