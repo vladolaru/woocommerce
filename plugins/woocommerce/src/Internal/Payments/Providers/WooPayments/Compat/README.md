@@ -5,7 +5,7 @@ This folder holds what Woo extensions still expect from the WooPayments extensio
 ## What it holds
 
 - `WooPaymentsExtensionFacadeLoader` defines `WCPAY_VERSION_NUMBER` and declares the two facade classes on first use. It declares nothing in a recognized WooPayments activation request, and the extension's own classes win whenever it is active.
-- `WooPaymentsCompatClassAliases` declares two WooPayments extension class names as aliases of the classes that answer for them where those classes first reach a hook or WooCommerce Subscriptions: `WCPay\Constants\Payment_Type`, the third argument of `wcpay_metadata_from_order`, and `WC_Payments_Email_Failed_Authentication_Retry`, the retry email class WooCommerce Subscriptions instantiates by name. An autoloader that can load the extension's own class wins.
+- `ClassAliases` declares two WooPayments extension class names as aliases of the classes that answer for them where those classes first reach a hook or WooCommerce Subscriptions: `WCPay\Constants\Payment_Type`, the third argument of `wcpay_metadata_from_order`, and `WC_Payments_Email_Failed_Authentication_Retry`, the retry email class WooCommerce Subscriptions instantiates by name. An autoloader that can load the extension's own class wins.
 - The facade classes live in `includes/legacy/woopayments-compat/`, outside every tree Composer scans (see the placement rule).
 - The extension's request and response classes (`WCPay\Core\Server\*`) and `WC_Payment_Gateway_WCPay` are not declared: the built-in WooPayments passes its own request objects to the request filters and keeps the `woocommerce_payments` gateway ID.
 - The `WCPay\MultiCurrency` namespace lives in the [Multi-Currency compatibility boundary](../../../../MultiCurrency/Compat/README.md).
@@ -35,7 +35,7 @@ Remove these pieces together once supported extensions no longer depend on the W
 - This `Compat/` folder.
 - The facade files in `includes/legacy/woopayments-compat/`.
 - The one registration line, `WooPaymentsExtensionFacadeLoader::register()` in `includes/class-woocommerce.php`.
-- The two alias first-use sites, which call `WooPaymentsCompatClassAliases::register_compat_class_alias()`: `WooPaymentsIntentRequestBuilder::metadata_from_order()` and `Subscriptions/WooPaymentsFailedRenewalAuthenticationEmail::set_store_owner_custom_email()`. `git grep -n WooPaymentsCompatClassAliases -- src/Internal/Payments` lists them.
+- The two alias first-use sites, which call `ClassAliases::register_compat_class_alias()`: `WooPaymentsIntentRequestBuilder::metadata_from_order()` and `Subscriptions/WooPaymentsFailedRenewalAuthenticationEmail::set_store_owner_custom_email()`. `git grep -n ClassAliases -- src/Internal/Payments` lists them.
 - The tests in `tests/php/src/Internal/Payments/Providers/WooPayments/Compat/`, with their `.fixture` files.
 - This boundary's expected symbols and loader entries in `WooPaymentsExtensionFacadePlacementTest`, in the same removal commit.
 - The extension's order-note wordings, which the built-in WooPayments renders so notes the extension wrote are recognised: the `woocommerce-payments` wordings in `WooPaymentsOrderNoteService` with its `extension_wordings()`, `WooPaymentsOrderNoteWordingSnapshot` with the cutover job's `capture_note_wordings()` calls, and the snapshot's stored option, `woocommerce_woopayments_note_wordings`, which the removal release deletes.

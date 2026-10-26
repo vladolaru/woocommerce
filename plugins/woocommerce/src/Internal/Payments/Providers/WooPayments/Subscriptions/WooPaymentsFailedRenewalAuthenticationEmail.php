@@ -7,7 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Compat\WooPaymentsCompatClassAliases;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Compat\ClassAliases;
 use WC_Email;
 use WC_Order;
 
@@ -234,7 +234,7 @@ class WooPaymentsFailedRenewalAuthenticationEmail extends WC_Email {
 
 		if ( $this->is_current_order_id( absint( $order_id ) ) && '' !== (string) ( $rule_array['email_template_admin'] ?? '' ) ) {
 			// Subscriptions instantiates this class by its global name; make it resolvable.
-			WooPaymentsCompatClassAliases::register_compat_class_alias( WooPaymentsFailedAuthenticationRetryEmail::class );
+			ClassAliases::register_compat_class_alias( WooPaymentsFailedAuthenticationRetryEmail::class );
 			$rule_array['email_template_admin'] = 'WC_Payments_Email_Failed_Authentication_Retry';
 		}
 

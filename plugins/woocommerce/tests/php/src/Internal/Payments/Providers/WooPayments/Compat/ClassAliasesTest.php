@@ -3,7 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Compat;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Compat\WooPaymentsCompatClassAliases;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Compat\ClassAliases;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsFailedAuthenticationRetryEmail;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentType;
 use WC_Unit_Test_Case;
@@ -11,7 +11,7 @@ use WC_Unit_Test_Case;
 /**
  * Tests for the WooPayments extension class names declared as aliases of the native classes.
  */
-class WooPaymentsCompatClassAliasesTest extends WC_Unit_Test_Case {
+class ClassAliasesTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox The extension class name $alias answers for $original once $registered declares its names.
@@ -25,7 +25,7 @@ class WooPaymentsCompatClassAliasesTest extends WC_Unit_Test_Case {
 		// The retry email extends a WooCommerce email class, which loads with the mailer.
 		WC()->mailer();
 
-		WooPaymentsCompatClassAliases::register_compat_class_alias( $registered );
+		ClassAliases::register_compat_class_alias( $registered );
 
 		$this->assertTrue( class_exists( $alias, false ), $alias . ' should be declared without autoloading the extension.' );
 		$this->assertTrue( is_a( $original, $alias, true ), $original . ' should satisfy ' . $alias . '.' );
@@ -55,7 +55,7 @@ class WooPaymentsCompatClassAliasesTest extends WC_Unit_Test_Case {
 		spl_autoload_register( $loader );
 
 		try {
-			WooPaymentsCompatClassAliases::register_compat_class_alias( $registered );
+			ClassAliases::register_compat_class_alias( $registered );
 		} finally {
 			spl_autoload_unregister( $loader );
 		}

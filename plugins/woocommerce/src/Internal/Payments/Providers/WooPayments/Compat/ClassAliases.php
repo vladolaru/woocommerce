@@ -1,6 +1,6 @@
 <?php
 /**
- * WooPaymentsCompatClassAliases class file.
+ * ClassAliases class file.
  */
 
 declare( strict_types = 1 );
@@ -20,7 +20,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPa
  * @since 11.2.0
  * @internal
  */
-final class WooPaymentsCompatClassAliases {
+final class ClassAliases {
 
 	/**
 	 * Each class, with the WooPayments extension class name declared as its alias.
