@@ -3,7 +3,6 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\MultiCurrency\Services;
 
-use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\CacheInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\DatabaseCache;
 use WC_Unit_Test_Case;
 
@@ -17,7 +16,7 @@ class DatabaseCacheTest extends WC_Unit_Test_Case {
 	 *
 	 * @var string
 	 */
-	private string $cache_key = CacheInterface::CURRENCIES_KEY;
+	private string $cache_key = DatabaseCache::CURRENCIES_KEY;
 
 	/**
 	 * Clean up test cache state before each test.

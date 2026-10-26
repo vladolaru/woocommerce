@@ -8,7 +8,6 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\MultiCurrency\Services;
 
 use Automattic\WooCommerce\Internal\DataStores\Orders\OrdersTableDataStore;
-use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\CacheInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\LocalizationInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyCurrency;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyState;
@@ -54,9 +53,9 @@ class StateBuilder {
 	/**
 	 * Multi-currency cache.
 	 *
-	 * @var CacheInterface
+	 * @var DatabaseCache
 	 */
-	private CacheInterface $cache;
+	private DatabaseCache $cache;
 
 	/**
 	 * Memoized per-request state snapshot.
@@ -105,13 +104,13 @@ class StateBuilder {
 	 *
 	 * @param LocalizationInterface $localization_service Localization service.
 	 * @param RateService           $rate_service         Rate service.
-	 * @param CacheInterface        $cache                Multi-currency cache.
+	 * @param DatabaseCache         $cache                Multi-currency cache.
 	 * @param StateInvalidator|null $state_invalidator    Optional request-local invalidation coordinator.
 	 */
 	public function __construct(
 		LocalizationInterface $localization_service,
 		RateService $rate_service,
-		CacheInterface $cache,
+		DatabaseCache $cache,
 		?StateInvalidator $state_invalidator = null
 	) {
 		$this->localization_service = $localization_service;
@@ -365,13 +364,13 @@ class StateBuilder {
 		}
 
 		if ( ! $this->rate_service->has_available_provider() ) {
-			$cache_data = $this->cache->get( CacheInterface::CURRENCIES_KEY, true );
+			$cache_data = $this->cache->get( DatabaseCache::CURRENCIES_KEY, true );
 
 			return is_array( $cache_data ) ? $cache_data : null;
 		}
 
 		$cache_data = $this->cache->get_or_add(
-			CacheInterface::CURRENCIES_KEY,
+			DatabaseCache::CURRENCIES_KEY,
 			function () use ( $default_code ) {
 				$rates = $this->rate_service->get_rates( $default_code );
 				if ( null === $rates ) {

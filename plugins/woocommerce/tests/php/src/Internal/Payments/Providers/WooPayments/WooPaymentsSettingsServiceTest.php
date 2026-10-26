@@ -3,6 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\DatabaseCache;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\NoticeService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\MerchantRestController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\OverviewService;
@@ -29,7 +30,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGa
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\StripeBillingModule;
 use Automattic\WooCommerce\Internal\Features\FeaturesController;
 use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\CurrencyRateProviderInterface;
-use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\CacheInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFeatureController;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\RateService;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
@@ -2744,7 +2744,7 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 				'errored'            => false,
 				'consecutive_errors' => 0,
 			);
-			update_option( CacheInterface::CURRENCIES_KEY, $rates_cache, false );
+			update_option( DatabaseCache::CURRENCIES_KEY, $rates_cache, false );
 		}
 		if ( 'provider' === $rate_source ) {
 			wc_get_container()->get( RateService::class )->set_provider( $this->create_usd_rate_provider( (float) $rate ) );
@@ -2776,7 +2776,7 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 			delete_option( 'wcpay_multi_currency_enabled_currencies' );
 			delete_option( 'wcpay_multi_currency_exchange_rate_usd' );
 			delete_option( 'wcpay_multi_currency_manual_rate_usd' );
-			delete_option( CacheInterface::CURRENCIES_KEY );
+			delete_option( DatabaseCache::CURRENCIES_KEY );
 			delete_option( 'wcpay_multi_currency_store_currency' );
 		}
 	}

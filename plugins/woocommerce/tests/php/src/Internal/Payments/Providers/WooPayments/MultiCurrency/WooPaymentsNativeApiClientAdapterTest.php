@@ -4,7 +4,6 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\MultiCurrency;
 
 use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyAccountInterface;
-use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\CacheInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\DatabaseCache;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\LocalizationService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilder;
@@ -55,7 +54,7 @@ class WooPaymentsNativeApiClientAdapterTest extends WC_Unit_Test_Case {
 		// A good fetch two days ago, past the storefront's 12-hour lifetime. Shape: the client's cache entry around its generator's result
 		// (client 11.1.0 `includes/class-database-cache.php:364-382`, `includes/multi-currency/MultiCurrency.php:504-508`).
 		update_option(
-			CacheInterface::CURRENCIES_KEY,
+			DatabaseCache::CURRENCIES_KEY,
 			array(
 				'data'               => array(
 					'currencies' => array( 'GBP' => 0.82 ),
@@ -73,7 +72,7 @@ class WooPaymentsNativeApiClientAdapterTest extends WC_Unit_Test_Case {
 		$builder  = new StateBuilder( new LocalizationService(), RateServices::with( $provider ), new DatabaseCache() );
 
 		$enabled = $builder->build()->get_enabled_currencies();
-		$stored  = get_option( CacheInterface::CURRENCIES_KEY );
+		$stored  = get_option( DatabaseCache::CURRENCIES_KEY );
 
 		$this->assertSame( array( 'USD', 'GBP' ), array_keys( $enabled ) );
 		$this->assertSame( 0.82, $enabled['GBP']->get_rate() );

@@ -7,8 +7,6 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\MultiCurrency\Services;
 
-use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\CacheInterface;
-
 /**
  * Stores Multi-Currency cache entries, the rates among them, in options with expiry and retry after errors.
  *
@@ -17,7 +15,10 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\CacheInterface;
  * @since 11.0.0
  * @internal
  */
-class DatabaseCache implements CacheInterface {
+class DatabaseCache {
+
+	/** Option holding the cached rates. */
+	public const CURRENCIES_KEY = 'wcpay_multi_currency_cached_currencies';
 
 	/**
 	 * Request context used for TTL resolution.

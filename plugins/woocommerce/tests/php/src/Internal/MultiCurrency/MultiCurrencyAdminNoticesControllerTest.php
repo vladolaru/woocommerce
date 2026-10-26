@@ -4,9 +4,9 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\MultiCurrency;
 
 use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\CurrencyRateProviderInterface;
-use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\CacheInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyAdminNoticesController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\DatabaseCache;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\RateService;
 use WC_Unit_Test_Case;
 
@@ -40,7 +40,7 @@ class MultiCurrencyAdminNoticesControllerTest extends WC_Unit_Test_Case {
 		delete_option( '_wcpay_feature_customer_multi_currency' );
 		delete_option( 'wcpay_multi_currency_enabled_currencies' );
 		delete_option( 'wcpay_multi_currency_exchange_rate_gbp' );
-		delete_option( CacheInterface::CURRENCIES_KEY );
+		delete_option( DatabaseCache::CURRENCIES_KEY );
 		unset( $_GET[ self::CANONICAL_NOTICE_QUERY ], $_GET[ self::EXTENSION_NOTICE_QUERY ], $_GET[ self::CANONICAL_NONCE_QUERY ], $_GET[ self::EXTENSION_NONCE_QUERY ] );
 		wp_set_current_user( 0 );
 
@@ -394,7 +394,7 @@ class MultiCurrencyAdminNoticesControllerTest extends WC_Unit_Test_Case {
 		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'GBP' ) );
 		update_option( 'wcpay_multi_currency_exchange_rate_gbp', $rate_type );
 		update_option(
-			CacheInterface::CURRENCIES_KEY,
+			DatabaseCache::CURRENCIES_KEY,
 			array(
 				'data'               => array(
 					'currencies' => array(

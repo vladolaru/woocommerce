@@ -4,7 +4,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\MultiCurrency\Shadow;
 
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
-use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\CacheInterface;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\DatabaseCache;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\LocalizationService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\PriceConverter;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilderFactory;
@@ -212,7 +212,7 @@ class MultiCurrencyShadowModeTest extends WC_Unit_Test_Case {
 				'wcpay_multi_currency_price_rounding_gbp',
 				'wcpay_multi_currency_price_charm_gbp',
 				'wcpay_multi_currency_stored_customer_currencies',
-				CacheInterface::CURRENCIES_KEY,
+				DatabaseCache::CURRENCIES_KEY,
 			) as $option_key
 		) {
 			delete_option( $option_key );
@@ -380,7 +380,7 @@ class MultiCurrencyShadowModeTest extends WC_Unit_Test_Case {
 		$this->assertInstanceOf( MultiCurrencyShadowComparison::class, $comparison );
 		$this->assertSame( array(), $comparison->get_diff() );
 		$this->assertSame( 0, $session->writes );
-		$this->assertFalse( get_option( CacheInterface::CURRENCIES_KEY, false ) );
+		$this->assertFalse( get_option( DatabaseCache::CURRENCIES_KEY, false ) );
 		$this->assertFalse( get_transient( LocalizationService::CURRENCY_FORMAT_TRANSIENT ) );
 		$this->assertFalse( get_transient( LocalizationService::LOCALE_INFO_TRANSIENT ) );
 		$this->assertCount( 1, $logger->entries );

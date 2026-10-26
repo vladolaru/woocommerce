@@ -7,7 +7,6 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\MultiCurrency\Services;
 
-use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\CacheInterface;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 
 /**
@@ -32,9 +31,9 @@ class StoreCurrencyLifecycleService {
 	/**
 	 * Multi-currency cache.
 	 *
-	 * @var CacheInterface
+	 * @var DatabaseCache
 	 */
-	private CacheInterface $cache;
+	private DatabaseCache $cache;
 
 	/**
 	 * State builder.
@@ -46,10 +45,10 @@ class StoreCurrencyLifecycleService {
 	/**
 	 * Constructor.
 	 *
-	 * @param CacheInterface $cache         Multi-currency cache.
-	 * @param StateBuilder   $state_builder State builder.
+	 * @param DatabaseCache $cache         Multi-currency cache.
+	 * @param StateBuilder  $state_builder State builder.
 	 */
-	public function __construct( CacheInterface $cache, StateBuilder $state_builder ) {
+	public function __construct( DatabaseCache $cache, StateBuilder $state_builder ) {
 		$this->cache         = $cache;
 		$this->state_builder = $state_builder;
 	}
@@ -79,7 +78,7 @@ class StoreCurrencyLifecycleService {
 		}
 
 		update_option( self::STORE_CURRENCY_OPTION, $store_currency );
-		$this->cache->delete( CacheInterface::CURRENCIES_KEY );
+		$this->cache->delete( DatabaseCache::CURRENCIES_KEY );
 		$this->update_manual_rate_currencies_notice_option();
 
 		return true;

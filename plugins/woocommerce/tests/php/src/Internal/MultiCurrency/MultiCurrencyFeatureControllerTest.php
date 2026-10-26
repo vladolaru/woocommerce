@@ -9,7 +9,7 @@ use Automattic\WooCommerce\Internal\DataStores\Orders\OrdersTableDataStoreMeta;
 use Automattic\WooCommerce\Internal\Features\FeaturesController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFeatureController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
-use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\CacheInterface;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\DatabaseCache;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilder;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\UsageDetector;
 use WC_Unit_Test_Case;
@@ -394,7 +394,7 @@ class MultiCurrencyFeatureControllerTest extends WC_Unit_Test_Case {
 			'fetched' => 1234567890,
 			'errored' => false,
 		);
-		update_option( CacheInterface::CURRENCIES_KEY, $cached_currencies );
+		update_option( DatabaseCache::CURRENCIES_KEY, $cached_currencies );
 		update_user_meta( $user_id, StateBuilder::CURRENCY_STORAGE_KEY, 'EUR' );
 		update_option( 'wcpay_multi_currency_store_currency', 'USD' );
 		update_option( 'wcpay_multi_currency_exchange_rate_eur', 'automatic' );
@@ -444,7 +444,7 @@ class MultiCurrencyFeatureControllerTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'no', get_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION ) );
 		$this->assertSame( array( 'EUR' ), get_option( 'wcpay_multi_currency_enabled_currencies' ) );
 		$this->assertSame( array( 12 => 'EUR' ), get_option( 'wcpay_multi_currency_stored_customer_currencies' ) );
-		$this->assertSame( $cached_currencies, get_option( CacheInterface::CURRENCIES_KEY ) );
+		$this->assertSame( $cached_currencies, get_option( DatabaseCache::CURRENCIES_KEY ) );
 		$this->assertSame( 'EUR', get_user_meta( $user_id, StateBuilder::CURRENCY_STORAGE_KEY, true ) );
 		$this->assertSame( 'USD', get_option( 'wcpay_multi_currency_store_currency' ) );
 		$this->assertSame( 'automatic', get_option( 'wcpay_multi_currency_exchange_rate_eur' ) );

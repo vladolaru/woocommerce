@@ -7,7 +7,6 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\CacheInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\DatabaseCache;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilder;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilderFactory;
@@ -392,7 +391,7 @@ class WooPaymentsFraudRulesetService {
 				// With Multi-Currency off no rate provider runs, so an automatic rate is the one the rates cache still holds.
 				$usd_rate = isset( $enabled_currencies['USD'] )
 					? $enabled_currencies['USD']->get_rate()
-					: (float) ( ( new DatabaseCache() )->get( CacheInterface::CURRENCIES_KEY, true )['currencies']['USD'] ?? 0 );
+					: (float) ( ( new DatabaseCache() )->get( DatabaseCache::CURRENCIES_KEY, true )['currencies']['USD'] ?? 0 );
 			}
 			if ( $usd_rate <= 0 ) {
 				return '100000|usd';
