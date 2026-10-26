@@ -389,7 +389,7 @@ export const buildOverviewTasks = ( {
 			} ),
 		buildDisputeTask( disputes ),
 		// No go-live task: client 11.1.0 `overview/index.js:105` calls getTasks() without showGoLiveTask, so the
-		// task shows only on WC Home (`WooPaymentsGoLiveTask` and `woopayments/home-tasks/go-live-task.tsx`).
+		// task shows only on WC Home (`GoLiveTask` and `woopayments/home-tasks/go-live-task.tsx`).
 	]
 		.filter( ( task ): task is WooPaymentsOverviewTask => !! task )
 		.sort( compareTasks );

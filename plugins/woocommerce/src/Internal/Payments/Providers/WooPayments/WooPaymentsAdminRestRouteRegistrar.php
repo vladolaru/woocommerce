@@ -8,7 +8,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Container;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\WooPaymentsMerchantRestController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\MerchantRestController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Onboarding\WooPaymentsAccountSessionRestController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsWebhookRestController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPaySessionController;
@@ -90,7 +90,7 @@ final class WooPaymentsAdminRestRouteRegistrar implements RegisterHooksInterface
 	 */
 	public static function get_connected_controller_roots(): array {
 		return array(
-			WooPaymentsMerchantRestController::class,
+			MerchantRestController::class,
 			WooPaymentsWebhookRestController::class,
 			WooPaymentsTerminalPaymentsRestController::class,
 			WooPaymentsCardReadersRestController::class,

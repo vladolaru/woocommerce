@@ -14,7 +14,7 @@ use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExtensionRuntime;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\WooPaymentsAdminNoticeService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\NoticeService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentsSettingsAdapter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGateway;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
@@ -128,7 +128,7 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 			),
 			'_links'  => array(),
 		);
-		$service = $this->createMock( WooPaymentsAdminNoticeService::class );
+		$service = $this->createMock( NoticeService::class );
 		$service->expects( $this->exactly( 2 ) )->method( 'refresh_notice_for_current_user' )->willReturnOnConsecutiveCalls( null, $notice );
 		$this->set_notice_service_resolver( static fn() => $service );
 
@@ -161,7 +161,7 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 				'account_connected' => true,
 			)
 		);
-		$service = $this->createMock( WooPaymentsAdminNoticeService::class );
+		$service = $this->createMock( NoticeService::class );
 		$service->expects( $this->exactly( $notice_reads ) )->method( 'refresh_notice_for_current_user' )->willReturn( array( 'id' => 'test_to_live' ) );
 		$this->set_notice_service_resolver( static fn() => $service );
 
@@ -194,7 +194,7 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 		);
 		$account = $this->createMock( WooPaymentsAccountService::class );
 		$account->method( 'has_working_account' )->willReturn( false );
-		$service = new WooPaymentsAdminNoticeService( static fn(): int => 1700000000 );
+		$service = new NoticeService( static fn(): int => 1700000000 );
 		$service->init( $account, wc_get_container()->get( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter::class ) );
 		$this->set_notice_service_resolver( static fn() => $service );
 

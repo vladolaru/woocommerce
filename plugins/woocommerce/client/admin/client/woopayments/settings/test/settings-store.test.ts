@@ -149,7 +149,7 @@ describe( 'WooPayments settings store', () => {
 		const statuses = {
 			card_payments: { status: 'active', requirements: [] },
 		};
-		// Core answers the save with the settings themselves (`WooPaymentsMerchantRestController::update_settings()`).
+		// Core answers the save with the settings themselves (`MerchantRestController::update_settings()`).
 		store.apiFetch.mockResolvedValueOnce( {
 			payment_method_statuses: statuses,
 		} );
@@ -273,7 +273,7 @@ describe( 'WooPayments settings store', () => {
 		const store = await setupStore();
 		await loadSettings( store, { is_multi_currency_enabled: true } );
 		store.dispatch().updateIsMultiCurrencyEnabled( false );
-		// The settings route's refused-untick body (`WooPaymentsMerchantRestController::update_settings()`).
+		// The settings route's refused-untick body (`MerchantRestController::update_settings()`).
 		const disableUrl =
 			'http://example.org/wp-admin/admin.php?page=wc-settings&tab=advanced&section=features&multi_currency=0&_feature_nonce=abc';
 		store.apiFetch.mockRejectedValueOnce( {

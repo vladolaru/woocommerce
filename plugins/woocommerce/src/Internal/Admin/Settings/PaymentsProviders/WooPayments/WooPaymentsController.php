@@ -4,7 +4,7 @@ declare( strict_types=1 );
 namespace Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments;
 
 use Automattic\WooCommerce\Internal\Admin\Settings\Payments;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\WooPaymentsOnboardingRedirect;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\OnboardingRedirect;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentsSettingsAdapter;
 
 defined( 'ABSPATH' ) || exit;
@@ -86,7 +86,7 @@ class WooPaymentsController {
 	 */
 	public function maybe_redirect_to_onboarding(): void {
 		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only redirect for the WooPayments admin routes.
-		if ( '' === WooPaymentsOnboardingRedirect::get_guarded_path( $_GET ) ) {
+		if ( '' === OnboardingRedirect::get_guarded_path( $_GET ) ) {
 			return;
 		}
 

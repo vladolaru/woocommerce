@@ -9,7 +9,7 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\RateService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\WooPaymentsDebugTools;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\DebugTools;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsHttpClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsCutoverPreflightService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsCutoverStateStore;
@@ -616,7 +616,7 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 	 * @return mixed
 	 */
 	public function add_debug_tools( $tools ) {
-		return wc_get_container()->get( WooPaymentsDebugTools::class )->add_debug_tools( $tools );
+		return wc_get_container()->get( DebugTools::class )->add_debug_tools( $tools );
 	}
 
 	/**

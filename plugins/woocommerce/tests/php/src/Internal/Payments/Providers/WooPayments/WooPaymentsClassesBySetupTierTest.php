@@ -7,11 +7,11 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\WooPaymentsAdminNavigationController;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\WooPaymentsAdminSharedSettings;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\WooPaymentsMerchantRestController;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\WooPaymentsHomeTasks;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\WooPaymentsUserPreferenceFields;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\NavigationController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\SharedSettings;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\MerchantRestController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\HomeTasks;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\UserPreferenceFields;
 use Automattic\WooCommerce\Internal\Payments\ProviderGatewaysController;
 use Automattic\WooCommerce\Internal\Payments\PaymentGatewayProviderInterface;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
@@ -155,8 +155,8 @@ class WooPaymentsClassesBySetupTierTest extends WC_Unit_Test_Case {
 	 */
 	public function connected_admin_and_rest_roots_provider(): array {
 		return array(
-			'The hidden column preferences' => array( WooPaymentsUserPreferenceFields::class ),
-			'The Home tasks'                => array( WooPaymentsHomeTasks::class ),
+			'The hidden column preferences' => array( UserPreferenceFields::class ),
+			'The Home tasks'                => array( HomeTasks::class ),
 		);
 	}
 
@@ -272,15 +272,15 @@ class WooPaymentsClassesBySetupTierTest extends WC_Unit_Test_Case {
 	public function test_provider_matrix_tiers_merchant_rest_routes(): void {
 		$matrix = WooPaymentsProvider::get_classes_by_setup_tier();
 
-		$this->assertNotContains( WooPaymentsMerchantRestController::class, $matrix[ WooPaymentsSetupTier::AVAILABLE ]['admin'] );
+		$this->assertNotContains( MerchantRestController::class, $matrix[ WooPaymentsSetupTier::AVAILABLE ]['admin'] );
 		$this->assertNotContains( WooPaymentsAdminRestRouteRegistrar::class, $matrix[ WooPaymentsSetupTier::AVAILABLE ]['admin'] );
-		$this->assertNotContains( WooPaymentsMerchantRestController::class, $matrix[ WooPaymentsSetupTier::AVAILABLE ]['rest'] ?? array() );
-		$this->assertContains( WooPaymentsMerchantRestController::class, $matrix[ WooPaymentsSetupTier::CONNECTED ]['rest'] );
-		$this->assertNotContains( WooPaymentsMerchantRestController::class, $matrix[ WooPaymentsSetupTier::CONNECTED ]['admin'] );
+		$this->assertNotContains( MerchantRestController::class, $matrix[ WooPaymentsSetupTier::AVAILABLE ]['rest'] ?? array() );
+		$this->assertContains( MerchantRestController::class, $matrix[ WooPaymentsSetupTier::CONNECTED ]['rest'] );
+		$this->assertNotContains( MerchantRestController::class, $matrix[ WooPaymentsSetupTier::CONNECTED ]['admin'] );
 		$this->assertContains( WooPaymentsAdminRestRouteRegistrar::class, $matrix[ WooPaymentsSetupTier::CONNECTED ]['admin'] );
 		$this->assertNotContains( WooPaymentsAdminRestRouteRegistrar::class, $matrix[ WooPaymentsSetupTier::CONNECTED ]['rest'] );
-		$this->assertContains( WooPaymentsMerchantRestController::class, $matrix[ WooPaymentsSetupTier::ACTIVE ]['rest'] );
-		$this->assertNotContains( WooPaymentsMerchantRestController::class, $matrix[ WooPaymentsSetupTier::ACTIVE ]['admin'] );
+		$this->assertContains( MerchantRestController::class, $matrix[ WooPaymentsSetupTier::ACTIVE ]['rest'] );
+		$this->assertNotContains( MerchantRestController::class, $matrix[ WooPaymentsSetupTier::ACTIVE ]['admin'] );
 		$this->assertContains( WooPaymentsAdminRestRouteRegistrar::class, $matrix[ WooPaymentsSetupTier::ACTIVE ]['admin'] );
 		$this->assertNotContains( WooPaymentsAdminRestRouteRegistrar::class, $matrix[ WooPaymentsSetupTier::ACTIVE ]['rest'] );
 	}
@@ -290,8 +290,8 @@ class WooPaymentsClassesBySetupTierTest extends WC_Unit_Test_Case {
 		foreach ( WooPaymentsProvider::get_classes_by_setup_tier() as $state => $request_groups ) {
 			foreach ( $request_groups as $request_type => $roots ) {
 				$expected   = 'admin' === $request_type && in_array( $state, array( WooPaymentsSetupTier::CONNECTED, WooPaymentsSetupTier::ACTIVE ), true );
-				$navigation = array_search( WooPaymentsAdminNavigationController::class, $roots, true );
-				$preload    = array_search( WooPaymentsAdminSharedSettings::class, $roots, true );
+				$navigation = array_search( NavigationController::class, $roots, true );
+				$preload    = array_search( SharedSettings::class, $roots, true );
 
 				$this->assertSame( $expected, false !== $navigation, "$state $request_type navigation" );
 				$this->assertSame( $expected, false !== $preload, "$state $request_type shared settings" );

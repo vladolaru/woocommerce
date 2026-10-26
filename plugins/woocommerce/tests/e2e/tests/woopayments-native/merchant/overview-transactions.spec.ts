@@ -78,7 +78,7 @@ function requireBaseUrl( baseURL: string | undefined ): string {
 /**
  * The store's own Payments admin menu: the top-level item plus the native
  * WooPayments routes registered under it by
- * WooPaymentsAdminNavigationController. Every navigation below starts here
+ * NavigationController. Every navigation below starts here
  * rather than from a hard-coded route, so route discovery is part of what these
  * contracts prove.
  */

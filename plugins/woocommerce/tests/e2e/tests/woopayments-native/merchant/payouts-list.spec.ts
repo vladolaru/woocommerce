@@ -86,7 +86,7 @@ function requireBaseUrl( baseURL: string | undefined ): string {
 /**
  * The store's own Payments admin menu: the top-level item plus the native
  * WooPayments routes registered under it by
- * WooPaymentsAdminNavigationController.
+ * NavigationController.
  */
 function paymentsMenu( page: Page ): Locator {
 	return page.locator( '#adminmenu > li' ).filter( {

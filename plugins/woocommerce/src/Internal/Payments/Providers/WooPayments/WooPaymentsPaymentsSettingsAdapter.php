@@ -10,8 +10,8 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\PaymentGateway;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsService;
 use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\WooPaymentsAdminNoticeService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\WooPaymentsOnboardingRedirect;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\NoticeService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\OnboardingRedirect;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Onboarding\WooPaymentsOnboardingService;
 use Exception;
@@ -384,7 +384,7 @@ class WooPaymentsPaymentsSettingsAdapter {
 	 * @return void
 	 */
 	public function maybe_redirect_to_onboarding(): void {
-		wc_get_container()->get( WooPaymentsOnboardingRedirect::class )->maybe_redirect();
+		wc_get_container()->get( OnboardingRedirect::class )->maybe_redirect();
 	}
 
 	/**
@@ -406,7 +406,7 @@ class WooPaymentsPaymentsSettingsAdapter {
 	 * @return array<string,mixed>|null
 	 */
 	public function refresh_settings_notice_for_current_user(): ?array {
-		return wc_get_container()->get( WooPaymentsAdminNoticeService::class )->refresh_notice_for_current_user();
+		return wc_get_container()->get( NoticeService::class )->refresh_notice_for_current_user();
 	}
 
 	/**

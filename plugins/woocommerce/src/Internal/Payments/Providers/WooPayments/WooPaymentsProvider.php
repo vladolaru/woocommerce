@@ -13,14 +13,14 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPa
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsCutoverReconciliationJob;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionsController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\WooPaymentsStripeBillingModule;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\WooPaymentsAdminNavigationController;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\WooPaymentsAdminNoticesPassthrough;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\WooPaymentsAdminSharedSettings;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\NavigationController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\NoticesPassthrough;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\SharedSettings;
 use Automattic\WooCommerce\Internal\Payments\PaymentOperationContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\PaymentProcessingService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\WooPaymentsAdminLinkController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\LinkController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsMultiCurrencyPaymentMethodsMap;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsMultiCurrencyController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodDefinition;
@@ -35,10 +35,10 @@ use Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabularyInterf
 use Automattic\WooCommerce\Internal\Payments\ProviderPostLifecycleEffectApplierInterface;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayPreflightGuard;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPaySessionController;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\WooPaymentsAdminNotesController;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\WooPaymentsCurrencyComplianceNotice;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\WooPaymentsUserPreferenceFields;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\WooPaymentsHomeTasks;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\NotesController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\CurrencyComplianceNotice;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\UserPreferenceFields;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\HomeTasks;
 use Automattic\WooCommerce\Internal\Utilities\RequestTypeUtil;
 
 /**
@@ -135,12 +135,12 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 		$connected_rest_controllers = WooPaymentsAdminRestRouteRegistrar::get_connected_controller_roots();
 		$connected_admin            = array(
 			...$cutover_admin,
-			WooPaymentsAdminNavigationController::class,
-			WooPaymentsAdminSharedSettings::class,
+			NavigationController::class,
+			SharedSettings::class,
 			WooPaymentsAdminRestRouteRegistrar::class,
 			WooPaymentsAccountService::class,
 			WooPaymentsWebhookReliabilityService::class,
-			WooPaymentsAdminLinkController::class,
+			LinkController::class,
 			WooPaymentsCustomerService::class,
 			WooPaymentsOrderFraudMetaBox::class,
 			WooPaymentsOrderAdminActionsController::class,
@@ -148,16 +148,16 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 			WooPaymentsWooPayOrderStatusSync::class,
 			WooPaymentsWooPayExtensionSync::class,
 			WooPaymentsApplePayDomainService::class,
-			WooPaymentsCurrencyComplianceNotice::class,
-			WooPaymentsAdminNoticesPassthrough::class,
+			CurrencyComplianceNotice::class,
+			NoticesPassthrough::class,
 			WooPaymentsFraudOrderTrackingService::class,
 			WooPaymentsStoreSetupReportController::class,
 			WooPaymentsAccountMilestonesController::class,
 			WooPaymentsFeeDetailsNoteController::class,
 			WooPaymentsTestModeOrderEmailService::class,
-			WooPaymentsUserPreferenceFields::class,
-			WooPaymentsHomeTasks::class,
-			WooPaymentsAdminNotesController::class,
+			UserPreferenceFields::class,
+			HomeTasks::class,
+			NotesController::class,
 			WooPaymentsLoanApprovedNote::class,
 		);
 		$connected_ajax             = array(
@@ -195,8 +195,8 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 				WooPaymentsAccountMilestonesController::class,
 				WooPaymentsFeeDetailsNoteController::class,
 				WooPaymentsTestModeOrderEmailService::class,
-				WooPaymentsUserPreferenceFields::class,
-				WooPaymentsHomeTasks::class,
+				UserPreferenceFields::class,
+				HomeTasks::class,
 				WooPaymentsLoanApprovedNote::class,
 			)
 		);

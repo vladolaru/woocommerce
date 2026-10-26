@@ -3499,7 +3499,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	 * @testdox The gated transport log keeps only the host of a dashboard login link, and the caller still gets the whole link.
 	 *
 	 * The answer is Stripe's documented Login Link object (https://docs.stripe.com/api/accounts/login_link/create), which
-	 * the platform's accounts/login_links route returns; WooPaymentsAdminLinkController::handle_login_request() reaches this call.
+	 * the platform's accounts/login_links route returns; LinkController::handle_login_request() reaches this call.
 	 */
 	public function test_transport_log_keeps_only_the_host_of_a_login_link(): void {
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => 'yes' ) );

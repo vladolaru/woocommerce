@@ -45,7 +45,7 @@ const isWooPaymentsAdminEvent = (
 };
 
 // The platform's hosting provider for the site, from the tracking info core preloads with the WooPayments settings
-// (`WooPaymentsAdminSharedSettings`), as client 11.1.0 adds `wcpaySettings.trackingInfo?.hosting_provider` to every admin
+// (`SharedSettings`), as client 11.1.0 adds `wcpaySettings.trackingInfo?.hosting_provider` to every admin
 // event (`client/tracks/index.ts:44`).
 const getPreloadedHostingProvider = () => {
 	const hostingProvider = (
@@ -112,7 +112,7 @@ export const registerPaymentsRuntimeTracksProperty = () => {
 
 /**
  * Register the filter on a Payments settings page only when core preloaded `woopaymentsSettings`, which it does only
- * while native owns the runtime (`WooPaymentsAdminSharedSettings::preload_shared_settings()`). A native route
+ * while native owns the runtime (`SharedSettings::preload_shared_settings()`). A native route
  * reached on a plugin-owned store has no preload.
  */
 export const registerPaymentsRuntimeTracksPropertyWhenPreloaded = () => {

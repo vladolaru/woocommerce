@@ -7,7 +7,7 @@ use Automattic\WooCommerce\Enums\OrderStatus;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDatabaseCache;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\WooPaymentsAdminNoticeService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\NoticeService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsActionSchedulerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIppReceiptEmail;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountMilestonesController;
@@ -382,7 +382,7 @@ class WooPaymentsAccountMilestonesControllerTest extends WC_Unit_Test_Case {
 			true
 		);
 		$scheduled_before = as_next_scheduled_action( 'wcpay_post_kyc_activation_email_send', array( 7 ), 'woocommerce-payments' );
-		$notice_service   = new WooPaymentsAdminNoticeService( static fn(): int => 1700000000 );
+		$notice_service   = new NoticeService( static fn(): int => 1700000000 );
 		$notice_service->init( $this->createMock( WooPaymentsAccountService::class ), wc_get_container()->get( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter::class ) );
 
 		$this->assertTrue( $notice_service->record_action( 'post_kyc_activation', 'dismiss', 7 ) );

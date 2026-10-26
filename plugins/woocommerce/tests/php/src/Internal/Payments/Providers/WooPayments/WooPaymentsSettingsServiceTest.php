@@ -3,9 +3,9 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\WooPaymentsAdminNoticeService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\WooPaymentsMerchantRestController;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\WooPaymentsOverviewService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\NoticeService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\MerchantRestController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\OverviewService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsApplePayDomainService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPmPromotionsService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDatabaseCache;
@@ -3740,14 +3740,14 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 			->onlyMethods( array( 'is_builtin_owner' ) )
 			->getMock();
 		$arbiter->method( 'is_builtin_owner' )->willReturn( true );
-		$controller = new WooPaymentsMerchantRestController();
+		$controller = new MerchantRestController();
 		$controller->init(
 			$this->sut,
 			$arbiter,
 			$this->createMock( WooPaymentsPmPromotionsService::class ),
-			$this->createMock( WooPaymentsOverviewService::class ),
+			$this->createMock( OverviewService::class ),
 			$this->createMock( WooPaymentsAccountService::class ),
-			$this->createMock( WooPaymentsAdminNoticeService::class ),
+			$this->createMock( NoticeService::class ),
 			$this->createMock( WooPaymentsApplePayDomainService::class ),
 			$this->createMock( WooPaymentsApiClient::class )
 		);

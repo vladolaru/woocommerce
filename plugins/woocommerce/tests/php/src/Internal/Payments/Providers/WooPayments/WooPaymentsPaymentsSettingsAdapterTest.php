@@ -7,7 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\WooPaymentsOnboardingRedirect;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\OnboardingRedirect;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Onboarding\WooPaymentsOnboardingService;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\PaymentGateway;
@@ -16,7 +16,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFe
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\WooPaymentsAdminNoticeService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\NoticeService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExtensionRuntime;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentsSettingsAdapter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
@@ -519,9 +519,9 @@ class WooPaymentsPaymentsSettingsAdapterTest extends WC_Unit_Test_Case {
 	 * @testdox The onboarding redirect request reaches the container's onboarding redirect.
 	 */
 	public function test_onboarding_redirect_request_reaches_the_onboarding_redirect(): void {
-		$redirect = $this->createMock( WooPaymentsOnboardingRedirect::class );
+		$redirect = $this->createMock( OnboardingRedirect::class );
 		$redirect->expects( $this->once() )->method( 'maybe_redirect' );
-		wc_get_container()->replace( WooPaymentsOnboardingRedirect::class, $redirect );
+		wc_get_container()->replace( OnboardingRedirect::class, $redirect );
 
 		$this->adapter->maybe_redirect_to_onboarding();
 	}
@@ -531,9 +531,9 @@ class WooPaymentsPaymentsSettingsAdapterTest extends WC_Unit_Test_Case {
 	 */
 	public function test_settings_notice_comes_from_the_notice_service(): void {
 		$notice  = array( 'id' => 'test_to_live' );
-		$service = $this->createMock( WooPaymentsAdminNoticeService::class );
+		$service = $this->createMock( NoticeService::class );
 		$service->expects( $this->once() )->method( 'refresh_notice_for_current_user' )->willReturn( $notice );
-		wc_get_container()->replace( WooPaymentsAdminNoticeService::class, $service );
+		wc_get_container()->replace( NoticeService::class, $service );
 
 		$this->assertSame( $notice, $this->adapter->refresh_settings_notice_for_current_user() );
 	}

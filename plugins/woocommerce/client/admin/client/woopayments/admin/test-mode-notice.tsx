@@ -110,7 +110,7 @@ export const WooPaymentsTestModeNotice = ( {
 	currentPage: WooPaymentsTestModeNoticePage;
 	isDetailsView?: boolean;
 } ) => {
-	// Preloaded by WooPaymentsAdminSharedSettings::preload_shared_settings(), as the client reads
+	// Preloaded by SharedSettings::preload_shared_settings(), as the client reads
 	// `wcpaySettings.testMode` / `devMode`: no request of its own.
 	const settings = getWooPaymentsSettingsBootstrap();
 

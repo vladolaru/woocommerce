@@ -6,7 +6,7 @@ import { useUserPreferences } from '@woocommerce/data';
 
 /**
  * The client's user meta keys for hidden list columns, registered in PHP by
- * WooPaymentsUserPreferenceFields like WC_Payments::add_user_data_fields().
+ * UserPreferenceFields like WC_Payments::add_user_data_fields().
  */
 export type WooPaymentsHiddenColumnsKey =
 	| 'wc_payments_transactions_hidden_columns'

@@ -12,7 +12,7 @@ import { createRecordedOverviewShell } from './helpers/overview-shell';
 
 jest.mock( '@woocommerce/tracks', () => ( { recordEvent: jest.fn() } ) );
 
-// The nonce-protected `wcpay-login` link the Overview shell returns (`WooPaymentsOverviewService::get_dashboard_login_url()`).
+// The nonce-protected `wcpay-login` link the Overview shell returns (`OverviewService::get_dashboard_login_url()`).
 const ACCOUNT_LINK =
 	'http://example.com/wp-admin/admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Foverview&wcpay-login=1&_wpnonce=abc123';
 

@@ -48,7 +48,7 @@ const hasWooPaymentsGoLiveTask = () => {
 	);
 };
 
-// The PHP task `WooPaymentsGoLiveTask` decides visibility; its fill loads only when the task is listed.
+// The PHP task `GoLiveTask` decides visibility; its fill loads only when the task is listed.
 const possiblyImportWooPaymentsGoLiveTask = () => {
 	const importGoLiveTask = () =>
 		void import(

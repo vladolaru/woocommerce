@@ -16,7 +16,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAc
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsClientVersion;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsCutoverPreflightService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsCutoverStateStore;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\WooPaymentsDebugTools;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\DebugTools;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsStatusReport;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsWebhookReliabilityService;
 use Automattic\WooCommerce\Testing\Tools\TestingContainer;
@@ -91,7 +91,7 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 		$on_use  = $this->get_container_requests_during( fn() => $sut->add_debug_tools( array() ) );
 
 		$this->assertSame( array(), $on_init, 'The report must not ask the container for a collaborator when it is initialized.' );
-		$this->assertContains( WooPaymentsDebugTools::class, $on_use, 'The report must ask the container for the debug tools when they are first needed.' );
+		$this->assertContains( DebugTools::class, $on_use, 'The report must ask the container for the debug tools when they are first needed.' );
 	}
 
 	/**

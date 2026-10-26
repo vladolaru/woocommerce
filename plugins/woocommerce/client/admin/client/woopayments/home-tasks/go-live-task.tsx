@@ -15,7 +15,7 @@ import { registerPaymentsRuntimeTracksProperty } from '~/woopayments/tracks-runt
 // PHP lists this task, and so loads this chunk, only while native owns the runtime.
 registerPaymentsRuntimeTracksProperty();
 
-// The PHP task `WooPaymentsGoLiveTask` decides visibility and copy; this fill only handles the click.
+// The PHP task `GoLiveTask` decides visibility and copy; this fill only handles the click.
 const GO_LIVE_TASK_ID = 'go-live-payments';
 const MODAL_CONTAINER_ID = 'wcpay-golivemodal-container';
 
