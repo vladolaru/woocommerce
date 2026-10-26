@@ -7,7 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\PaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 
 /**
@@ -39,9 +39,9 @@ final class WooPaymentsGatewaySettingsSynchronizer implements RegisterHooksInter
 	/**
 	 * Payment method registry.
 	 *
-	 * @var WooPaymentsPaymentMethodRegistry
+	 * @var PaymentMethodRegistry
 	 */
-	private WooPaymentsPaymentMethodRegistry $registry;
+	private PaymentMethodRegistry $registry;
 
 	/**
 	 * Setup tier store.
@@ -64,12 +64,12 @@ final class WooPaymentsGatewaySettingsSynchronizer implements RegisterHooksInter
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsAccountService        $account_service Account service.
-	 * @param WooPaymentsPaymentMethodRegistry $registry        Payment method registry.
-	 * @param WooPaymentsSetupTier|null        $setup_tier      Optional setup tier store.
-	 * @param WooPaymentsRuntimeArbiter|null   $runtime_arbiter Optional payments runtime arbiter.
+	 * @param WooPaymentsAccountService      $account_service Account service.
+	 * @param PaymentMethodRegistry          $registry        Payment method registry.
+	 * @param WooPaymentsSetupTier|null      $setup_tier      Optional setup tier store.
+	 * @param WooPaymentsRuntimeArbiter|null $runtime_arbiter Optional payments runtime arbiter.
 	 */
-	final public function init( WooPaymentsAccountService $account_service, WooPaymentsPaymentMethodRegistry $registry, ?WooPaymentsSetupTier $setup_tier = null, ?WooPaymentsRuntimeArbiter $runtime_arbiter = null ): void { // phpcs:ignore Generic.CodeAnalysis.UnnecessaryFinalModifier.Found -- Required by WooCommerce injection method rules.
+	final public function init( WooPaymentsAccountService $account_service, PaymentMethodRegistry $registry, ?WooPaymentsSetupTier $setup_tier = null, ?WooPaymentsRuntimeArbiter $runtime_arbiter = null ): void { // phpcs:ignore Generic.CodeAnalysis.UnnecessaryFinalModifier.Found -- Required by WooCommerce injection method rules.
 		$this->account_service = $account_service;
 		$this->registry        = $registry;
 		$this->setup_tier      = $setup_tier;
@@ -289,8 +289,8 @@ final class WooPaymentsGatewaySettingsSynchronizer implements RegisterHooksInter
 			}
 
 			$previous                 = $this->normalize_string_list( $settings[ $setting_key ] );
-			$filtered                 = array_values( array_diff( $previous, WooPaymentsPaymentMethodRegistry::DISCONTINUED_PAYMENT_METHOD_IDS ) );
-			$removed                  = array_merge( $removed, array_intersect( $previous, WooPaymentsPaymentMethodRegistry::DISCONTINUED_PAYMENT_METHOD_IDS ) );
+			$filtered                 = array_values( array_diff( $previous, PaymentMethodRegistry::DISCONTINUED_PAYMENT_METHOD_IDS ) );
+			$removed                  = array_merge( $removed, array_intersect( $previous, PaymentMethodRegistry::DISCONTINUED_PAYMENT_METHOD_IDS ) );
 			$settings[ $setting_key ] = $filtered;
 		}
 
@@ -311,7 +311,7 @@ final class WooPaymentsGatewaySettingsSynchronizer implements RegisterHooksInter
 		$enabled_method_ids = is_array( $settings['upe_enabled_payment_method_ids'] ?? null )
 			? $this->normalize_string_list( $settings['upe_enabled_payment_method_ids'] )
 			: array();
-		$method_ids         = WooPaymentsPaymentMethodRegistry::DISCONTINUED_PAYMENT_METHOD_IDS;
+		$method_ids         = PaymentMethodRegistry::DISCONTINUED_PAYMENT_METHOD_IDS;
 
 		foreach ( $this->registry->get_registered( $this->account_service ) as $definition ) {
 			if (
@@ -330,7 +330,7 @@ final class WooPaymentsGatewaySettingsSynchronizer implements RegisterHooksInter
 		foreach ( array_values( array_unique( $method_ids ) ) as $method_id ) {
 			$option_name       = self::get_split_option_name( $method_id );
 			$existing          = get_option( $option_name, $missing_marker );
-			$should_be_enabled = in_array( $method_id, $enabled_method_ids, true ) && ! in_array( $method_id, WooPaymentsPaymentMethodRegistry::DISCONTINUED_PAYMENT_METHOD_IDS, true );
+			$should_be_enabled = in_array( $method_id, $enabled_method_ids, true ) && ! in_array( $method_id, PaymentMethodRegistry::DISCONTINUED_PAYMENT_METHOD_IDS, true );
 
 			if ( $missing_marker === $existing && ! $should_be_enabled ) {
 				continue;

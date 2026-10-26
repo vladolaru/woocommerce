@@ -10,7 +10,7 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 use Automattic\WooCommerce\Internal\Payments\PaymentOperationContext;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Compat\ClassAliases;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\PaymentMethodRegistry;
 use WC_Order;
 
 /**
@@ -78,9 +78,9 @@ class WooPaymentsIntentRequestBuilder {
 	/**
 	 * WooPayments payment method registry.
 	 *
-	 * @var WooPaymentsPaymentMethodRegistry
+	 * @var PaymentMethodRegistry
 	 */
-	private WooPaymentsPaymentMethodRegistry $payment_method_registry;
+	private PaymentMethodRegistry $payment_method_registry;
 
 	/**
 	 * Level 3 data service.
@@ -94,17 +94,17 @@ class WooPaymentsIntentRequestBuilder {
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsAccountService        $account_service         Account service.
-	 * @param WooPaymentsOrderDataService      $order_data_service      Order data service.
-	 * @param WooPaymentsTokenService          $token_service           Token service.
-	 * @param WooPaymentsPaymentMethodRegistry $payment_method_registry Payment method registry.
-	 * @param WooPaymentsLevel3Service|null    $level3_service          Level 3 data service.
+	 * @param WooPaymentsAccountService     $account_service         Account service.
+	 * @param WooPaymentsOrderDataService   $order_data_service      Order data service.
+	 * @param WooPaymentsTokenService       $token_service           Token service.
+	 * @param PaymentMethodRegistry         $payment_method_registry Payment method registry.
+	 * @param WooPaymentsLevel3Service|null $level3_service          Level 3 data service.
 	 */
 	final public function init(
 		WooPaymentsAccountService $account_service,
 		WooPaymentsOrderDataService $order_data_service,
 		WooPaymentsTokenService $token_service,
-		WooPaymentsPaymentMethodRegistry $payment_method_registry,
+		PaymentMethodRegistry $payment_method_registry,
 		?WooPaymentsLevel3Service $level3_service = null
 	): void {
 		$this->account_service         = $account_service;
@@ -689,7 +689,7 @@ class WooPaymentsIntentRequestBuilder {
 			}
 
 			$definition = $this->payment_method_registry->get( $payment_method_type );
-			if ( null === $definition || ! in_array( WooPaymentsPaymentMethodRegistry::CAPTURE_LATER, $definition->get_capabilities(), true ) ) {
+			if ( null === $definition || ! in_array( PaymentMethodRegistry::CAPTURE_LATER, $definition->get_capabilities(), true ) ) {
 				return false;
 			}
 		}

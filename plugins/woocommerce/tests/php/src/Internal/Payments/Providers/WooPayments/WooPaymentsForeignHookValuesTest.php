@@ -4,7 +4,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\PaymentProcessingService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\PaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsActionSchedulerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeeDetailsNoteController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
@@ -117,7 +117,7 @@ class WooPaymentsForeignHookValuesTest extends WC_Unit_Test_Case {
 			case 'woocommerce_get_customer_payment_tokens':
 			case 'woocommerce_payment_methods_list_item':
 				$token_service = new WooPaymentsTokenService();
-				$token_service->init( $container->get( WooPaymentsPaymentMethodDetailsService::class ), $container->get( Client::class ), $container->get( WooPaymentsCustomerService::class ), $container->get( WooPaymentsAccountService::class ), $container->get( WooPaymentsOrderDataService::class ), $container->get( WooPaymentsPaymentMethodRegistry::class ) );
+				$token_service->init( $container->get( WooPaymentsPaymentMethodDetailsService::class ), $container->get( Client::class ), $container->get( WooPaymentsCustomerService::class ), $container->get( WooPaymentsAccountService::class ), $container->get( WooPaymentsOrderDataService::class ), $container->get( PaymentMethodRegistry::class ) );
 				$token_service->register();
 				break;
 			case 'woocommerce_address_providers':

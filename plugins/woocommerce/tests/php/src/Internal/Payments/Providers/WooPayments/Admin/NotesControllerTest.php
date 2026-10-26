@@ -5,7 +5,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\A
 
 use Automattic\WooCommerce\Admin\Notes\Note;
 use Automattic\WooCommerce\Admin\Notes\Notes;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\PaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\NotesController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCanceledAuthorizationFeeRemediationService;
@@ -399,7 +399,7 @@ class NotesControllerTest extends WC_Unit_Test_Case {
 		$account_service->method( 'get_account_country' )->willReturn( (string) ( $account_data['country'] ?? '' ) );
 
 		$link_note = new SetUpLinkNote();
-		$link_note->init( $account_service, new WooPaymentsPaymentMethodRegistry() );
+		$link_note->init( $account_service, new PaymentMethodRegistry() );
 
 		$remediation_service            = new WooPaymentsCanceledAuthorizationFeeRemediationService();
 		$canceled_auth_remediation_note = new CanceledAuthRemediationNote();

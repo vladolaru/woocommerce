@@ -38,7 +38,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIn
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffectApplier;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDataService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderSuccessPage;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\PaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionAdminPaymentMethodHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
@@ -185,7 +185,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 * @param string               $expected_title Expected gateway title.
 	 */
 	public function test_gateway_titles_follow_account_country_branding( array $account_data, ?string $store_country, string $expected_title ): void {
-		$definition = ( new WooPaymentsPaymentMethodRegistry() )->get( 'afterpay_clearpay' );
+		$definition = ( new PaymentMethodRegistry() )->get( 'afterpay_clearpay' );
 		$this->assertNotNull( $definition );
 		if ( null !== $store_country ) {
 			update_option( 'woocommerce_default_country', $store_country );
@@ -292,7 +292,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		bool $expected
 	): void {
 		$this->activate_builtin_tier();
-		$definition = ( new WooPaymentsPaymentMethodRegistry() )->get( $payment_method_id );
+		$definition = ( new PaymentMethodRegistry() )->get( $payment_method_id );
 		$this->assertNotNull( $definition );
 
 		$account_data = array(
@@ -352,7 +352,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 */
 	public function test_split_gateway_availability_follows_payment_method_definition(): void {
 		$this->activate_builtin_tier();
-		$definition = ( new WooPaymentsPaymentMethodRegistry() )->get( 'bancontact' );
+		$definition = ( new PaymentMethodRegistry() )->get( 'bancontact' );
 		$this->assertNotNull( $definition );
 
 		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
@@ -431,7 +431,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		add_filter( 'pre_option_woocommerce_currency', $currency_filter );
 
 		try {
-			$gateway = new WooPaymentsGateway( ( new WooPaymentsPaymentMethodRegistry() )->get( 'bancontact' ) );
+			$gateway = new WooPaymentsGateway( ( new PaymentMethodRegistry() )->get( 'bancontact' ) );
 			$gateway->init( new RecordingPaymentProcessingService(), $this->create_processing_ready_provider(), null, null, $account_service );
 			$card_gateway = new WooPaymentsGateway();
 			$card_gateway->init( new RecordingPaymentProcessingService(), $this->create_processing_ready_provider(), null, null, $account_service );
@@ -525,7 +525,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		try {
 			$card_gateway = new WooPaymentsGateway();
 			$card_gateway->init( new RecordingPaymentProcessingService(), $provider, $assets, null, $account_service );
-			$ideal_gateway = new WooPaymentsGateway( ( new WooPaymentsPaymentMethodRegistry() )->get( 'ideal' ) );
+			$ideal_gateway = new WooPaymentsGateway( ( new PaymentMethodRegistry() )->get( 'ideal' ) );
 			$ideal_gateway->init( new RecordingPaymentProcessingService(), $provider, $assets, null, $account_service );
 			WC()->payment_gateways()->payment_gateways = array(
 				$card_gateway->id  => $card_gateway,
@@ -607,7 +607,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 * @testdox Should give a reusable split gateway with no saved cards setting of its own neither tokenization nor adding payment methods.
 	 */
 	public function test_reusable_split_gateway_without_its_own_saved_cards_claims_no_tokenization(): void {
-		$definition = ( new WooPaymentsPaymentMethodRegistry() )->get( 'apple_pay' );
+		$definition = ( new PaymentMethodRegistry() )->get( 'apple_pay' );
 		$this->assertNotNull( $definition );
 		$apple_pay_settings = static fn(): array => array( 'enabled' => 'yes' );
 		add_filter( 'pre_option_woocommerce_woocommerce_payments_apple_pay_settings', $apple_pay_settings );
@@ -639,7 +639,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 */
 	public function test_p24_gateway_availability_follows_woopayments_extension_currencies_and_shopper_country(): void {
 		$this->activate_builtin_tier();
-		$definition = ( new WooPaymentsPaymentMethodRegistry() )->get( 'p24' );
+		$definition = ( new PaymentMethodRegistry() )->get( 'p24' );
 		$this->assertNotNull( $definition );
 
 		$settings_filter = static function (): array {
@@ -694,7 +694,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		string $account_default_currency = 'usd'
 	): void {
 		$this->activate_builtin_tier();
-		$definition = ( new WooPaymentsPaymentMethodRegistry() )->get( $payment_method_id );
+		$definition = ( new PaymentMethodRegistry() )->get( $payment_method_id );
 		$this->assertNotNull( $definition );
 
 		$settings_filter = static function (): array {
@@ -799,7 +799,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		add_filter( 'pre_option__wcpay_feature_dynamic_checkout_place_order_button', $feature_filter );
 
 		try {
-			$definition = ( new WooPaymentsPaymentMethodRegistry() )->get( $payment_method_id );
+			$definition = ( new PaymentMethodRegistry() )->get( $payment_method_id );
 			$this->assertNotNull( $definition );
 			$gateway = new WooPaymentsGateway( $definition );
 			$gateway->init( new RecordingPaymentProcessingService(), $this->create_processing_ready_provider(), null, null, $account_service );
@@ -905,7 +905,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 * @testdox Should hide a split gateway when its gateway setting is disabled.
 	 */
 	public function test_split_gateway_availability_requires_enabled_setting(): void {
-		$definition = ( new WooPaymentsPaymentMethodRegistry() )->get( 'bancontact' );
+		$definition = ( new PaymentMethodRegistry() )->get( 'bancontact' );
 		$this->assertNotNull( $definition );
 
 		$settings_filter = static function (): array {
@@ -932,7 +932,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 * @testdox Should hide split gateways when the canonical WooPayments gateway is disabled.
 	 */
 	public function test_split_gateway_availability_requires_master_gateway(): void {
-		$definition = ( new WooPaymentsPaymentMethodRegistry() )->get( 'bancontact' );
+		$definition = ( new PaymentMethodRegistry() )->get( 'bancontact' );
 		$this->assertNotNull( $definition );
 
 		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
@@ -1095,7 +1095,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 * @testdox Should hide an internal payment method that is not placed as a checkout gateway.
 	 */
 	public function test_gateway_availability_requires_checkout_gateway_placement(): void {
-		$definition = ( new WooPaymentsPaymentMethodRegistry() )->get( 'link' );
+		$definition = ( new PaymentMethodRegistry() )->get( 'link' );
 		$this->assertNotNull( $definition );
 
 		$settings_filter = static function (): array {
@@ -1126,7 +1126,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 */
 	public function test_express_gateway_availability_requires_payment_method_list_placement(): void {
 		$this->activate_builtin_tier();
-		$definition = ( new WooPaymentsPaymentMethodRegistry() )->get( 'apple_pay' );
+		$definition = ( new PaymentMethodRegistry() )->get( 'apple_pay' );
 		$this->assertNotNull( $definition );
 
 		$canonical_settings = array(
@@ -1196,7 +1196,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 */
 	public function test_express_gateways_are_unavailable_in_admin_regardless_of_placement(): void {
 		$this->activate_builtin_tier();
-		$registry           = new WooPaymentsPaymentMethodRegistry();
+		$registry           = new PaymentMethodRegistry();
 		$canonical_settings = array(
 			'express_checkout_in_payment_methods' => 'no',
 			'upe_enabled_payment_method_ids'      => array( 'card', 'klarna', 'amazon_pay' ),
@@ -1290,7 +1290,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 */
 	public function test_split_gateway_availability_respects_definition_amount_limits(): void {
 		$this->activate_builtin_tier();
-		$definition = ( new WooPaymentsPaymentMethodRegistry() )->get( 'affirm' );
+		$definition = ( new PaymentMethodRegistry() )->get( 'affirm' );
 		$this->assertNotNull( $definition );
 
 		$settings_filter = static function (): array {
@@ -1331,7 +1331,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 */
 	public function test_gateway_availability_requires_https_only_in_live_mode(): void {
 		$this->activate_builtin_tier();
-		$definition = ( new WooPaymentsPaymentMethodRegistry() )->get( 'bancontact' );
+		$definition = ( new PaymentMethodRegistry() )->get( 'bancontact' );
 		$this->assertNotNull( $definition );
 
 		$is_test_mode    = false;
@@ -1390,7 +1390,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 */
 	public function test_bnpl_order_pay_availability_validates_address_and_affirm_name(): void {
 		$this->activate_builtin_tier();
-		$registry            = new WooPaymentsPaymentMethodRegistry();
+		$registry            = new PaymentMethodRegistry();
 		$affirm_definition   = $registry->get( 'affirm' );
 		$afterpay_definition = $registry->get( 'afterpay_clearpay' );
 		$this->assertNotNull( $affirm_definition );
@@ -1558,7 +1558,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 * @testdox Split gateways advertise subscription support.
 	 */
 	public function test_split_gateway_subscription_support_is_independent_from_hook_ownership(): void {
-		$definition = ( new WooPaymentsPaymentMethodRegistry() )->get( 'bancontact' );
+		$definition = ( new PaymentMethodRegistry() )->get( 'bancontact' );
 		$this->assertNotNull( $definition );
 
 		$gateway = new class( $definition ) extends WooPaymentsGateway {
@@ -1775,7 +1775,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			->with( 'pm_sepa', $user_id )
 			->willReturn( $token );
 
-		$definition = ( new WooPaymentsPaymentMethodRegistry() )->get( 'sepa_debit' );
+		$definition = ( new PaymentMethodRegistry() )->get( 'sepa_debit' );
 		$this->assertNotNull( $definition );
 
 		$gateway = new WooPaymentsGateway( $definition );
@@ -2649,7 +2649,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$order      = $this->create_order();
 		$service    = new RecordingPaymentProcessingService();
 		$session    = $this->create_session();
-		$definition = null === $payment_method_id ? null : ( new WooPaymentsPaymentMethodRegistry() )->get( $payment_method_id );
+		$definition = null === $payment_method_id ? null : ( new PaymentMethodRegistry() )->get( $payment_method_id );
 		if ( null !== $payment_method_id ) {
 			$this->assertNotNull( $definition );
 		}
@@ -2834,7 +2834,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 * @param string      $gateway_id        Expected gateway ID of the checkout.
 	 */
 	public function test_process_payment_admits_valid_fraud_token_on_split_redirect_gateways( ?string $payment_method_id, string $gateway_id ): void {
-		$definition = null === $payment_method_id ? null : ( new WooPaymentsPaymentMethodRegistry() )->get( $payment_method_id );
+		$definition = null === $payment_method_id ? null : ( new PaymentMethodRegistry() )->get( $payment_method_id );
 		$this->assertSame( null === $payment_method_id, null === $definition );
 
 		$order   = $this->create_order();
@@ -4424,7 +4424,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			WooPaymentsOrderEffectPlan::for_payment_intent( $intent, false )
 		);
 
-		$gateway = new WooPaymentsGateway( ( new WooPaymentsPaymentMethodRegistry() )->get( $payment_method ) );
+		$gateway = new WooPaymentsGateway( ( new PaymentMethodRegistry() )->get( $payment_method ) );
 		$gateway->init(
 			$service,
 			new WooPaymentsProvider(),
@@ -5594,7 +5594,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 * @testdox A split gateway renders its payment fields with the card gateway's supports, as the WooPayments extension's one checkout does.
 	 */
 	public function test_split_gateway_payment_fields_use_the_card_gateway_supports(): void {
-		$registry          = new WooPaymentsPaymentMethodRegistry();
+		$registry          = new PaymentMethodRegistry();
 		$card_gateway      = new WooPaymentsGateway( $registry->get( 'card' ) );
 		$received_supports = null;
 		$assets            = $this->create_checkout_assets_double(
@@ -5903,7 +5903,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			$this->with_gateway_settings(
 				array( 'saved_cards' => $saved_cards ),
 				function () use ( $assets, $provider, $payment_method_id, &$output ): void {
-					$gateway = new WooPaymentsGateway( ( new WooPaymentsPaymentMethodRegistry() )->get( $payment_method_id ) );
+					$gateway = new WooPaymentsGateway( ( new PaymentMethodRegistry() )->get( $payment_method_id ) );
 					$gateway->init( new RecordingPaymentProcessingService(), $provider, $assets );
 					$this->assertTrue( $gateway->supports( PaymentGatewayFeature::TOKENIZATION ), 'The filter makes the gateway claim tokenization.' );
 
@@ -5926,7 +5926,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 * @testdox Should turn the express gateways off in the block editor before the Checkout block lists enabled gateways.
 	 */
 	public function test_block_editor_turns_express_gateways_off(): void {
-		$registry = new WooPaymentsPaymentMethodRegistry();
+		$registry = new PaymentMethodRegistry();
 		$gateways = array();
 		foreach ( array( 'card', 'apple_pay', 'klarna' ) as $payment_method_id ) {
 			$gateway          = new WooPaymentsGateway( $registry->get( $payment_method_id ) );
@@ -6058,7 +6058,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$GLOBALS['wcpay_test_cart_contains_subscription'] = false;
 		$assets = $this->createMock( WooPaymentsCheckoutAssets::class );
 		$assets->method( 'should_use_stripe_platform_on_checkout_page' )->willReturn( $platform );
-		$gateway = new WooPaymentsGateway( ( new WooPaymentsPaymentMethodRegistry() )->get( $payment_method ) );
+		$gateway = new WooPaymentsGateway( ( new PaymentMethodRegistry() )->get( $payment_method ) );
 		$gateway->init( new RecordingPaymentProcessingService(), new WooPaymentsProvider(), $assets );
 
 		ob_start();
@@ -6422,11 +6422,11 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			$container->get( WooPaymentsOrderDataService::class ),
 			$container->get( WooPaymentsAccountService::class ),
 			$container->get( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService::class ),
-			$container->get( WooPaymentsPaymentMethodRegistry::class ),
+			$container->get( PaymentMethodRegistry::class ),
 			$container->get( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsActionSchedulerService::class )
 		);
 		$provider = new WooPaymentsProvider();
-		$provider->init( $payment_operations, $container->get( Client::class ), $container->get( WooPaymentsAccountService::class ), new WooPaymentsPaymentMethodRegistry(), $applier );
+		$provider->init( $payment_operations, $container->get( Client::class ), $container->get( WooPaymentsAccountService::class ), new PaymentMethodRegistry(), $applier );
 
 		return $provider;
 	}
@@ -7025,7 +7025,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		wc_get_container()->replace( WooPaymentsAccountService::class, $account_service );
 		wc_get_container()->reset_all_resolved();
 
-		$gateway = new WooPaymentsGateway( null === $payment_method_id ? null : ( new WooPaymentsPaymentMethodRegistry() )->get( $payment_method_id ) );
+		$gateway = new WooPaymentsGateway( null === $payment_method_id ? null : ( new PaymentMethodRegistry() )->get( $payment_method_id ) );
 
 		$this->assertSame( $expected, $gateway->{$title_method}() );
 		$this->assertSame( $expected, $gateway->{$title_method}() );
@@ -7115,7 +7115,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 * @testdox Checkout provider data should carry the WooPay save-user opt-in and fire the save action.
 	 */
 	public function test_checkout_provider_data_carries_woopay_save_user_opt_in(): void {
-		$registry = new WooPaymentsPaymentMethodRegistry();
+		$registry = new PaymentMethodRegistry();
 
 		$action_fired = 0;
 		add_action(
@@ -7190,7 +7190,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 * @param bool                 $expected          Expected platform flag.
 	 */
 	public function test_checkout_provider_data_limits_the_platform_payment_method_flag( string $payment_method_id, array $post, bool $expected ): void {
-		$registry      = new WooPaymentsPaymentMethodRegistry();
+		$registry      = new PaymentMethodRegistry();
 		$original_post = $_POST; // phpcs:ignore WordPress.Security.NonceVerification.Missing -- Saved to restore the fixture.
 
 		try {
@@ -7232,7 +7232,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 * @param bool   $wallet            Whether the method is a payment-list wallet.
 	 */
 	public function test_only_payment_list_wallets_use_custom_place_order_button( string $payment_method_id, bool $wallet ): void {
-		$sut = new WooPaymentsGateway( ( new WooPaymentsPaymentMethodRegistry() )->get( $payment_method_id ) );
+		$sut = new WooPaymentsGateway( ( new PaymentMethodRegistry() )->get( $payment_method_id ) );
 
 		$this->assertSame( $wallet, $sut->has_custom_place_order_button );
 		$this->assertSame( ! $wallet, $sut->has_fields );
@@ -7462,7 +7462,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 * @testdox Should render country-aware definition branding for a classic split gateway.
 	 */
 	public function test_classic_split_gateway_icon_uses_country_aware_definition_branding(): void {
-		$registry        = new WooPaymentsPaymentMethodRegistry();
+		$registry        = new PaymentMethodRegistry();
 		$sut             = new WooPaymentsGateway( $registry->get( 'afterpay_clearpay' ) );
 		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
 			->disableOriginalConstructor()
@@ -7649,7 +7649,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			$container->get( WooPaymentsCustomerService::class ),
 			$container->get( WooPaymentsAccountService::class ),
 			$container->get( WooPaymentsOrderDataService::class ),
-			$container->get( WooPaymentsPaymentMethodRegistry::class )
+			$container->get( PaymentMethodRegistry::class )
 		);
 
 		return $token_service;

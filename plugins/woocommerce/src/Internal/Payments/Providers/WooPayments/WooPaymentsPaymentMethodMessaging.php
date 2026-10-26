@@ -7,8 +7,8 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodDefinition;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\PaymentMethodDefinition;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\PaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Automattic\Jetpack\Constants;
 use WC_AJAX;
@@ -45,9 +45,9 @@ class WooPaymentsPaymentMethodMessaging implements RegisterHooksInterface {
 	/**
 	 * WooPayments payment method definition registry.
 	 *
-	 * @var WooPaymentsPaymentMethodRegistry
+	 * @var PaymentMethodRegistry
 	 */
-	private WooPaymentsPaymentMethodRegistry $payment_method_registry;
+	private PaymentMethodRegistry $payment_method_registry;
 
 	/**
 	 * Shared frontend styles service.
@@ -76,12 +76,12 @@ class WooPaymentsPaymentMethodMessaging implements RegisterHooksInterface {
 	 * @internal
 	 *
 	 * @param WooPaymentsAccountService             $account_service         WooPayments account service.
-	 * @param WooPaymentsPaymentMethodRegistry      $payment_method_registry WooPayments payment method registry.
+	 * @param PaymentMethodRegistry                 $payment_method_registry WooPayments payment method registry.
 	 * @param WooPaymentsFrontendStylesService|null $frontend_styles_service Optional shared frontend styles service.
 	 */
 	final public function init(
 		WooPaymentsAccountService $account_service,
-		WooPaymentsPaymentMethodRegistry $payment_method_registry,
+		PaymentMethodRegistry $payment_method_registry,
 		?WooPaymentsFrontendStylesService $frontend_styles_service = null
 	): void {
 		$this->account_service         = $account_service;
@@ -512,7 +512,7 @@ class WooPaymentsPaymentMethodMessaging implements RegisterHooksInterface {
 
 		foreach ( $enabled_payment_methods as $payment_method_id ) {
 			$definition = $this->payment_method_registry->get( $payment_method_id );
-			if ( ! $definition instanceof WooPaymentsPaymentMethodDefinition ) {
+			if ( ! $definition instanceof PaymentMethodDefinition ) {
 				continue;
 			}
 
@@ -543,7 +543,7 @@ class WooPaymentsPaymentMethodMessaging implements RegisterHooksInterface {
 	private function is_any_bnpl_supporting_country( array $enabled_methods, string $country, string $currency ): bool {
 		foreach ( $enabled_methods as $method ) {
 			$definition = $this->payment_method_registry->get( $method );
-			if ( ! $definition instanceof WooPaymentsPaymentMethodDefinition ) {
+			if ( ! $definition instanceof PaymentMethodDefinition ) {
 				continue;
 			}
 
@@ -568,7 +568,7 @@ class WooPaymentsPaymentMethodMessaging implements RegisterHooksInterface {
 	private function is_any_bnpl_method_available( array $enabled_methods, string $country, string $currency, float $price ): bool {
 		foreach ( $enabled_methods as $method ) {
 			$definition = $this->payment_method_registry->get( $method );
-			if ( ! $definition instanceof WooPaymentsPaymentMethodDefinition ) {
+			if ( ! $definition instanceof PaymentMethodDefinition ) {
 				continue;
 			}
 

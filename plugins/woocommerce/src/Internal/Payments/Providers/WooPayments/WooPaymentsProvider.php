@@ -23,8 +23,8 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\LinkController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\PaymentMethodsMap;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\MultiCurrencyController;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodDefinition;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\PaymentMethodDefinition;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\PaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsWebhookReliabilityService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayExtensionSync;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayOrderStatusSync;
@@ -74,9 +74,9 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 	/**
 	 * WooPayments payment method definition registry.
 	 *
-	 * @var WooPaymentsPaymentMethodRegistry
+	 * @var PaymentMethodRegistry
 	 */
-	private WooPaymentsPaymentMethodRegistry $payment_method_registry;
+	private PaymentMethodRegistry $payment_method_registry;
 
 	/**
 	 * This request's payment gateways, keyed by payment method ID.
@@ -100,14 +100,14 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 	 * @param WooPaymentsPaymentOperationService $payment_operations      WooPayments payment operation service.
 	 * @param Client                             $api_client              WooPayments API client.
 	 * @param WooPaymentsAccountService          $account_service         WooPayments account service.
-	 * @param WooPaymentsPaymentMethodRegistry   $payment_method_registry Payment method registry.
+	 * @param PaymentMethodRegistry              $payment_method_registry Payment method registry.
 	 * @param WooPaymentsOrderEffectApplier      $order_effect_applier    Order effect applier.
 	 */
 	final public function init(
 		WooPaymentsPaymentOperationService $payment_operations,
 		Client $api_client,
 		WooPaymentsAccountService $account_service,
-		WooPaymentsPaymentMethodRegistry $payment_method_registry,
+		PaymentMethodRegistry $payment_method_registry,
 		WooPaymentsOrderEffectApplier $order_effect_applier
 	): void {
 		$this->payment_operations      = $payment_operations;
@@ -672,7 +672,7 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 			// Prime caches to reduce future queries.
 			wp_prime_option_caches(
 				array_map(
-					static function ( WooPaymentsPaymentMethodDefinition $definition ): string {
+					static function ( PaymentMethodDefinition $definition ): string {
 						$payment_method_id = $definition->get_id();
 
 						return sprintf( 'woocommerce_%s_settings', 'card' === $payment_method_id ? WooPaymentsPersistenceVocabulary::GATEWAY_ID : WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . $payment_method_id );

@@ -4,7 +4,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGateway;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\PaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderStatusChangeConfirmation;
 use WC_Install;
 use WC_Order;
@@ -416,7 +416,7 @@ class WooPaymentsOrderStatusChangeConfirmationTest extends WC_Unit_Test_Case {
 	 * @return WooPaymentsGateway
 	 */
 	private function create_woopayments_gateway(): WooPaymentsGateway {
-		return new WooPaymentsGateway( ( new WooPaymentsPaymentMethodRegistry() )->get( 'card' ) );
+		return new WooPaymentsGateway( ( new PaymentMethodRegistry() )->get( 'card' ) );
 	}
 
 	/**

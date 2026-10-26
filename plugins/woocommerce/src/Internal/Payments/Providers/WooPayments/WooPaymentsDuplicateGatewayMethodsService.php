@@ -7,7 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\PaymentMethodRegistry;
 use Throwable;
 
 /**
@@ -211,7 +211,7 @@ class WooPaymentsDuplicateGatewayMethodsService {
 		if ( 0 === strpos( $gateway_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX ) ) {
 			$payment_method_id = substr( $gateway_id, strlen( WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX ) );
 
-			return in_array( $payment_method_id, WooPaymentsPaymentMethodRegistry::SETTINGS_PAYMENT_METHOD_IDS, true ) ? $payment_method_id : '';
+			return in_array( $payment_method_id, PaymentMethodRegistry::SETTINGS_PAYMENT_METHOD_IDS, true ) ? $payment_method_id : '';
 		}
 
 		if ( in_array( $gateway_id, self::DUPLICATE_CARD_GATEWAY_IDS, true ) ) {
@@ -305,7 +305,7 @@ class WooPaymentsDuplicateGatewayMethodsService {
 				continue;
 			}
 
-			if ( $supported_methods_only && ! in_array( $payment_method_id, WooPaymentsPaymentMethodRegistry::SETTINGS_PAYMENT_METHOD_IDS, true ) ) {
+			if ( $supported_methods_only && ! in_array( $payment_method_id, PaymentMethodRegistry::SETTINGS_PAYMENT_METHOD_IDS, true ) ) {
 				continue;
 			}
 

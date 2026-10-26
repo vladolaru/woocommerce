@@ -3,7 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\PaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDatabaseCache;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
@@ -2381,7 +2381,7 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 			wc_get_container()->get( WooPaymentsCustomerService::class ),
 			wc_get_container()->get( WooPaymentsAccountService::class ),
 			wc_get_container()->get( WooPaymentsOrderDataService::class ),
-			wc_get_container()->get( WooPaymentsPaymentMethodRegistry::class )
+			wc_get_container()->get( PaymentMethodRegistry::class )
 		);
 		$this->created_services[] = $sut;
 		$logger                   = RecordingWcLogger::install();
@@ -2440,7 +2440,7 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 		};
 
 		$sut = new WooPaymentsTokenService();
-		$sut->init( $details_service, $api_client ?? wc_get_container()->get( Client::class ), $customer_service ?? wc_get_container()->get( WooPaymentsCustomerService::class ), $account_service ?? wc_get_container()->get( WooPaymentsAccountService::class ), wc_get_container()->get( WooPaymentsOrderDataService::class ), wc_get_container()->get( WooPaymentsPaymentMethodRegistry::class ) );
+		$sut->init( $details_service, $api_client ?? wc_get_container()->get( Client::class ), $customer_service ?? wc_get_container()->get( WooPaymentsCustomerService::class ), $account_service ?? wc_get_container()->get( WooPaymentsAccountService::class ), wc_get_container()->get( WooPaymentsOrderDataService::class ), wc_get_container()->get( PaymentMethodRegistry::class ) );
 		if ( $register ) {
 			$sut->register();
 		}

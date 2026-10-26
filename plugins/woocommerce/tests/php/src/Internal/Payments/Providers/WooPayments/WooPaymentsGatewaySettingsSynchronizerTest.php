@@ -3,7 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\PaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGatewaySettingsSynchronizer;
 use WC_Unit_Test_Case;
@@ -349,7 +349,7 @@ class WooPaymentsGatewaySettingsSynchronizerTest extends WC_Unit_Test_Case {
 	 */
 	private function create_synchronizer(): WooPaymentsGatewaySettingsSynchronizer {
 		$synchronizer = new WooPaymentsGatewaySettingsSynchronizer();
-		$synchronizer->init( wc_get_container()->get( WooPaymentsAccountService::class ), wc_get_container()->get( WooPaymentsPaymentMethodRegistry::class ) );
+		$synchronizer->init( wc_get_container()->get( WooPaymentsAccountService::class ), wc_get_container()->get( PaymentMethodRegistry::class ) );
 
 		return $synchronizer;
 	}

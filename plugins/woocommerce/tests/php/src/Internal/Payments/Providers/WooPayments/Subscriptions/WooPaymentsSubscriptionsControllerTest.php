@@ -13,7 +13,7 @@ use Automattic\WooCommerce\Internal\Payments\ProviderInterface;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGateway;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\PaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\WooPaymentsStripeBillingModule;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionAdminPaymentMethodHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionsController;
@@ -200,7 +200,7 @@ class WooPaymentsSubscriptionsControllerTest extends WC_Unit_Test_Case {
 	public function test_gateway_renewal_methods_forward_to_the_controller(): void {
 		$controller = $this->install_spy_controller();
 		$card       = new WooPaymentsGateway();
-		$split      = new WooPaymentsGateway( ( new WooPaymentsPaymentMethodRegistry() )->get( 'sepa_debit' ) );
+		$split      = new WooPaymentsGateway( ( new PaymentMethodRegistry() )->get( 'sepa_debit' ) );
 		$order      = new WC_Order();
 		$order->save();
 
@@ -1397,7 +1397,7 @@ class WooPaymentsSubscriptionsControllerTest extends WC_Unit_Test_Case {
 			new StaticWooPaymentsRuntimeArbiter( true )
 		);
 		$token_service = new WooPaymentsTokenService();
-		$token_service->init( $details_service, wc_get_container()->get( Client::class ), wc_get_container()->get( WooPaymentsCustomerService::class ), wc_get_container()->get( WooPaymentsAccountService::class ), wc_get_container()->get( WooPaymentsOrderDataService::class ), wc_get_container()->get( WooPaymentsPaymentMethodRegistry::class ) );
+		$token_service->init( $details_service, wc_get_container()->get( Client::class ), wc_get_container()->get( WooPaymentsCustomerService::class ), wc_get_container()->get( WooPaymentsAccountService::class ), wc_get_container()->get( WooPaymentsOrderDataService::class ), wc_get_container()->get( PaymentMethodRegistry::class ) );
 
 		return $token_service;
 	}
@@ -1798,7 +1798,7 @@ class WooPaymentsSubscriptionsControllerTest extends WC_Unit_Test_Case {
 			$container->get( WooPaymentsCustomerService::class ),
 			$container->get( WooPaymentsAccountService::class ),
 			$container->get( WooPaymentsOrderDataService::class ),
-			$container->get( WooPaymentsPaymentMethodRegistry::class )
+			$container->get( PaymentMethodRegistry::class )
 		);
 
 		return $token_service;

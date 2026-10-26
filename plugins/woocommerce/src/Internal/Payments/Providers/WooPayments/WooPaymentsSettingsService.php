@@ -12,7 +12,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFeatureController
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\PaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\WooPaymentsStripeBillingModule;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionMethodPolicy;
 use WP_Error;
@@ -164,9 +164,9 @@ class WooPaymentsSettingsService {
 	/**
 	 * Payment method definition registry.
 	 *
-	 * @var WooPaymentsPaymentMethodRegistry
+	 * @var PaymentMethodRegistry
 	 */
-	private WooPaymentsPaymentMethodRegistry $payment_method_registry;
+	private PaymentMethodRegistry $payment_method_registry;
 
 	/**
 	 * Stripe Billing module.
@@ -212,7 +212,7 @@ class WooPaymentsSettingsService {
 	 * @param Client                                    $api_client                        WooPayments API client.
 	 * @param WooPaymentsPmPromotionsService            $pm_promotions_service             PM promotions service.
 	 * @param WooPaymentsGatewaySettingsSynchronizer    $gateway_settings_synchronizer     Gateway settings synchronizer.
-	 * @param WooPaymentsPaymentMethodRegistry          $payment_method_registry           Payment method registry.
+	 * @param PaymentMethodRegistry                     $payment_method_registry           Payment method registry.
 	 * @param WooPaymentsStripeBillingModule            $stripe_billing_module             Stripe Billing module.
 	 * @param WooPaymentsFraudRulesetService            $fraud_ruleset_service             Fraud ruleset service.
 	 * @param WooPaymentsDuplicateGatewayMethodsService $duplicate_gateway_methods_service Duplicate gateway methods service.
@@ -222,7 +222,7 @@ class WooPaymentsSettingsService {
 	 * @param WooPaymentsLogger                         $logger                            WooPayments logger.
 	 * @param WooPaymentsStoreSetupReportController     $store_setup_report_controller     Store setup report controller.
 	 */
-	final public function init( WooPaymentsAccountService $account_service, Client $api_client, WooPaymentsPmPromotionsService $pm_promotions_service, WooPaymentsGatewaySettingsSynchronizer $gateway_settings_synchronizer, WooPaymentsPaymentMethodRegistry $payment_method_registry, WooPaymentsStripeBillingModule $stripe_billing_module, WooPaymentsFraudRulesetService $fraud_ruleset_service, WooPaymentsDuplicateGatewayMethodsService $duplicate_gateway_methods_service, WooPaymentsWooPayEligibility $woopay_eligibility, WooPaymentsWooPayAppearanceStore $appearance_store, WooPaymentsFrontendTrackingController $frontend_tracking_controller, WooPaymentsLogger $logger, WooPaymentsStoreSetupReportController $store_setup_report_controller ): void {
+	final public function init( WooPaymentsAccountService $account_service, Client $api_client, WooPaymentsPmPromotionsService $pm_promotions_service, WooPaymentsGatewaySettingsSynchronizer $gateway_settings_synchronizer, PaymentMethodRegistry $payment_method_registry, WooPaymentsStripeBillingModule $stripe_billing_module, WooPaymentsFraudRulesetService $fraud_ruleset_service, WooPaymentsDuplicateGatewayMethodsService $duplicate_gateway_methods_service, WooPaymentsWooPayEligibility $woopay_eligibility, WooPaymentsWooPayAppearanceStore $appearance_store, WooPaymentsFrontendTrackingController $frontend_tracking_controller, WooPaymentsLogger $logger, WooPaymentsStoreSetupReportController $store_setup_report_controller ): void {
 		$this->account_service                   = $account_service;
 		$this->api_client                        = $api_client;
 		$this->pm_promotions_service             = $pm_promotions_service;
@@ -652,7 +652,7 @@ class WooPaymentsSettingsService {
 
 		$requested_payment_method_ids = $this->sanitize_payment_method_ids(
 			is_array( $params['enabled_payment_method_ids'] ) ? $params['enabled_payment_method_ids'] : array(),
-			WooPaymentsPaymentMethodRegistry::SETTINGS_PAYMENT_METHOD_IDS
+			PaymentMethodRegistry::SETTINGS_PAYMENT_METHOD_IDS
 		);
 		if ( $this->is_manual_capture_enabled_after_update( $params, $settings ) ) {
 			$requested_payment_method_ids = $this->filter_manual_capture_payment_method_ids( $requested_payment_method_ids );
@@ -751,7 +751,7 @@ class WooPaymentsSettingsService {
 
 		return array_values(
 			array_filter(
-				$this->sanitize_payment_method_ids( $available_ids, WooPaymentsPaymentMethodRegistry::SETTINGS_PAYMENT_METHOD_IDS ),
+				$this->sanitize_payment_method_ids( $available_ids, PaymentMethodRegistry::SETTINGS_PAYMENT_METHOD_IDS ),
 				fn( string $payment_method_id ): bool => $this->is_listable_payment_method( $payment_method_id )
 			)
 		);
@@ -783,7 +783,7 @@ class WooPaymentsSettingsService {
 		$account_fees = array();
 
 		foreach ( $fees as $payment_method_id => $fee_structure ) {
-			if ( ! is_string( $payment_method_id ) || ! in_array( $payment_method_id, WooPaymentsPaymentMethodRegistry::SETTINGS_PAYMENT_METHOD_IDS, true ) || ! is_array( $fee_structure ) ) {
+			if ( ! is_string( $payment_method_id ) || ! in_array( $payment_method_id, PaymentMethodRegistry::SETTINGS_PAYMENT_METHOD_IDS, true ) || ! is_array( $fee_structure ) ) {
 				continue;
 			}
 

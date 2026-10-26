@@ -3,7 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\PaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDatabaseCache;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGatewaySettingsSynchronizer;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPmPromotionsService;
@@ -52,7 +52,7 @@ class WooPaymentsPmPromotionsServiceTest extends WC_Unit_Test_Case {
 			$this->api_client,
 			$this->account_service,
 			wc_get_container()->get( WooPaymentsGatewaySettingsSynchronizer::class ),
-			wc_get_container()->get( WooPaymentsPaymentMethodRegistry::class )
+			wc_get_container()->get( PaymentMethodRegistry::class )
 		);
 
 		$user_id = $this->factory->user->create( array( 'role' => 'administrator' ) );

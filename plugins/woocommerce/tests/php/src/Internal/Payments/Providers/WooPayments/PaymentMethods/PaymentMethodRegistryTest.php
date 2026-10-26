@@ -3,14 +3,14 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\PaymentMethods;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\PaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use WC_Unit_Test_Case;
 
 /**
  * Tests for the native WooPayments payment method definition registry.
  */
-class WooPaymentsPaymentMethodRegistryTest extends WC_Unit_Test_Case {
+class PaymentMethodRegistryTest extends WC_Unit_Test_Case {
 
 	private const EXPECTED_DEFINITION_IDS = array(
 		'card',
@@ -43,9 +43,9 @@ class WooPaymentsPaymentMethodRegistryTest extends WC_Unit_Test_Case {
 	/**
 	 * The System Under Test.
 	 *
-	 * @var WooPaymentsPaymentMethodRegistry
+	 * @var PaymentMethodRegistry
 	 */
-	private WooPaymentsPaymentMethodRegistry $registry;
+	private PaymentMethodRegistry $registry;
 
 	/**
 	 * Set up test fixtures.
@@ -54,7 +54,7 @@ class WooPaymentsPaymentMethodRegistryTest extends WC_Unit_Test_Case {
 		parent::setUp();
 
 		$this->original_currency = get_option( 'woocommerce_currency', null );
-		$this->registry          = new WooPaymentsPaymentMethodRegistry();
+		$this->registry          = new PaymentMethodRegistry();
 	}
 
 	/**
@@ -80,7 +80,7 @@ class WooPaymentsPaymentMethodRegistryTest extends WC_Unit_Test_Case {
 		foreach ( array( 'giropay', 'sofort' ) as $payment_method_id ) {
 			$this->assertNull( $this->registry->get( $payment_method_id ), "{$payment_method_id} is discontinued and should have no definition." );
 		}
-		foreach ( WooPaymentsPaymentMethodRegistry::DISCONTINUED_PAYMENT_METHOD_IDS as $payment_method_id ) {
+		foreach ( PaymentMethodRegistry::DISCONTINUED_PAYMENT_METHOD_IDS as $payment_method_id ) {
 			$this->assertNull( $this->registry->get( $payment_method_id ), "{$payment_method_id} is listed as discontinued, so cutover removes it from settings; it must have no definition." );
 		}
 		$this->assertNull( $this->registry->get( 'jcb' ), 'The standalone extension has no JCB payment method definition.' );
@@ -92,7 +92,7 @@ class WooPaymentsPaymentMethodRegistryTest extends WC_Unit_Test_Case {
 	public function test_settings_payment_method_ids(): void {
 		$this->assertSame(
 			array( 'alipay', 'amazon_pay', 'apple_pay', 'au_becs_debit', 'bancontact', 'card', 'eps', 'google_pay', 'grabpay', 'ideal', 'jcb', 'klarna', 'link', 'multibanco', 'p24', 'sepa_debit', 'wechat_pay', 'affirm', 'afterpay_clearpay' ),
-			WooPaymentsPaymentMethodRegistry::SETTINGS_PAYMENT_METHOD_IDS
+			PaymentMethodRegistry::SETTINGS_PAYMENT_METHOD_IDS
 		);
 	}
 
@@ -194,7 +194,7 @@ class WooPaymentsPaymentMethodRegistryTest extends WC_Unit_Test_Case {
 		add_filter( 'gettext', $filter, 10, 3 );
 
 		try {
-			foreach ( ( new WooPaymentsPaymentMethodRegistry() )->get_registered( $this->create_account_service() ) as $id => $definition ) {
+			foreach ( ( new PaymentMethodRegistry() )->get_registered( $this->create_account_service() ) as $id => $definition ) {
 				foreach ( array( null, 'US', 'GB' ) as $country ) {
 					$this->assertStringStartsWith( 'T:', $definition->get_title( $country ), "Untranslated title for {$id} ({$country})" );
 					$this->assertStringStartsWith( 'T:', $definition->get_description( $country ), "Untranslated description for {$id} ({$country})" );

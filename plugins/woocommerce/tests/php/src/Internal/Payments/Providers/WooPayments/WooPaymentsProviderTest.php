@@ -4,7 +4,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Enums\PaymentGatewayFeature;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\PaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\PaymentLifecycleEvent;
 use Automattic\WooCommerce\Internal\Payments\PaymentOperationContext;
@@ -126,7 +126,7 @@ class WooPaymentsProviderTest extends WC_Unit_Test_Case {
 			);
 
 		$provider = new WooPaymentsProvider();
-		$provider->init( $payment_operations, $api_client, $account_service, new WooPaymentsPaymentMethodRegistry(), $effect_applier );
+		$provider->init( $payment_operations, $api_client, $account_service, new PaymentMethodRegistry(), $effect_applier );
 
 		$this->assertInstanceOf( ProviderOperationEffectApplierInterface::class, $provider );
 		$this->assertInstanceOf( ProviderPostLifecycleEffectApplierInterface::class, $provider );
@@ -205,7 +205,7 @@ class WooPaymentsProviderTest extends WC_Unit_Test_Case {
 			$this->createMock( WooPaymentsPaymentOperationService::class ),
 			$this->createMock( Client::class ),
 			$this->createMock( WooPaymentsAccountService::class ),
-			new WooPaymentsPaymentMethodRegistry(),
+			new PaymentMethodRegistry(),
 			$effect_applier
 		);
 		if ( $note_before ) {
@@ -267,7 +267,7 @@ class WooPaymentsProviderTest extends WC_Unit_Test_Case {
 			$this->createMock( WooPaymentsPaymentOperationService::class ),
 			$this->createMock( Client::class ),
 			$this->createMock( WooPaymentsAccountService::class ),
-			new WooPaymentsPaymentMethodRegistry(),
+			new PaymentMethodRegistry(),
 			$effect_applier
 		);
 		$refuse_identity_meta = static function ( $check, $object_id, $meta_key ) {
@@ -519,7 +519,7 @@ class WooPaymentsProviderTest extends WC_Unit_Test_Case {
 			);
 
 		$provider = new WooPaymentsProvider();
-		$provider->init( $payment_operations, $api_client, $account_service, new WooPaymentsPaymentMethodRegistry(), wc_get_container()->get( WooPaymentsOrderEffectApplier::class ) );
+		$provider->init( $payment_operations, $api_client, $account_service, new PaymentMethodRegistry(), wc_get_container()->get( WooPaymentsOrderEffectApplier::class ) );
 
 		return $provider;
 	}
@@ -572,7 +572,7 @@ class WooPaymentsProviderTest extends WC_Unit_Test_Case {
 		}
 
 		$provider = new WooPaymentsProvider();
-		$provider->init( $payment_operations, $api_client, $account_service, new WooPaymentsPaymentMethodRegistry(), wc_get_container()->get( WooPaymentsOrderEffectApplier::class ) );
+		$provider->init( $payment_operations, $api_client, $account_service, new PaymentMethodRegistry(), wc_get_container()->get( WooPaymentsOrderEffectApplier::class ) );
 
 		$this->assertSame( $expected, $provider->can_process_payments() );
 	}
@@ -598,7 +598,7 @@ class WooPaymentsProviderTest extends WC_Unit_Test_Case {
 			->method( 'can_process_payments' );
 
 		$provider = new WooPaymentsProvider();
-		$provider->init( $payment_operations, $api_client, $account_service, new WooPaymentsPaymentMethodRegistry(), wc_get_container()->get( WooPaymentsOrderEffectApplier::class ) );
+		$provider->init( $payment_operations, $api_client, $account_service, new PaymentMethodRegistry(), wc_get_container()->get( WooPaymentsOrderEffectApplier::class ) );
 
 		$this->assertTrue( $provider->can_manage_onboarding() );
 	}

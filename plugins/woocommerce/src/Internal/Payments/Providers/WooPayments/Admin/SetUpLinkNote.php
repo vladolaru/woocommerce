@@ -10,7 +10,7 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin;
 use Automattic\WooCommerce\Admin\Notes\DataStore as NotesDataStore;
 use Automattic\WooCommerce\Admin\Notes\Note;
 use Automattic\WooCommerce\Admin\Notes\Notes;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\PaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 
 /**
@@ -51,19 +51,19 @@ class SetUpLinkNote {
 	/**
 	 * Payment method definition registry.
 	 *
-	 * @var WooPaymentsPaymentMethodRegistry
+	 * @var PaymentMethodRegistry
 	 */
-	private WooPaymentsPaymentMethodRegistry $payment_method_registry;
+	private PaymentMethodRegistry $payment_method_registry;
 
 	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsAccountService        $account_service         WooPayments account service.
-	 * @param WooPaymentsPaymentMethodRegistry $payment_method_registry Payment method definition registry.
+	 * @param WooPaymentsAccountService $account_service         WooPayments account service.
+	 * @param PaymentMethodRegistry     $payment_method_registry Payment method definition registry.
 	 */
-	final public function init( WooPaymentsAccountService $account_service, WooPaymentsPaymentMethodRegistry $payment_method_registry ): void {
+	final public function init( WooPaymentsAccountService $account_service, PaymentMethodRegistry $payment_method_registry ): void {
 		$this->account_service         = $account_service;
 		$this->payment_method_registry = $payment_method_registry;
 	}

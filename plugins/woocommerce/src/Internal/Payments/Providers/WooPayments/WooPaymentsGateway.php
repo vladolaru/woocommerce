@@ -17,8 +17,8 @@ use Automattic\WooCommerce\Internal\Payments\PaymentProcessingService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Onboarding\OnboardingService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodDefinition;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\PaymentMethodDefinition;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\PaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\WooPaymentsStripeBillingModule;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionAdminPaymentMethodHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionMethodPolicy;
@@ -179,9 +179,9 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 	/**
 	 * WooPayments payment method definition backing this gateway instance.
 	 *
-	 * @var WooPaymentsPaymentMethodDefinition
+	 * @var PaymentMethodDefinition
 	 */
-	private WooPaymentsPaymentMethodDefinition $payment_method_definition;
+	private PaymentMethodDefinition $payment_method_definition;
 
 	/**
 	 * Country-branded checkout title, resolved lazily.
@@ -228,9 +228,9 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 	/**
 	 * Constructor.
 	 *
-	 * @param WooPaymentsPaymentMethodDefinition|null $payment_method_definition Optional payment method definition.
+	 * @param PaymentMethodDefinition|null $payment_method_definition Optional payment method definition.
 	 */
-	public function __construct( ?WooPaymentsPaymentMethodDefinition $payment_method_definition = null ) {
+	public function __construct( ?PaymentMethodDefinition $payment_method_definition = null ) {
 		$this->payment_method_definition = $payment_method_definition ?? $this->get_default_payment_method_definition();
 		$payment_method_id               = $this->payment_method_definition->get_id();
 
@@ -499,9 +499,9 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 	/**
 	 * Get the payment method definition backing this gateway.
 	 *
-	 * @return WooPaymentsPaymentMethodDefinition
+	 * @return PaymentMethodDefinition
 	 */
-	public function get_payment_method_definition(): WooPaymentsPaymentMethodDefinition {
+	public function get_payment_method_definition(): PaymentMethodDefinition {
 		return $this->payment_method_definition;
 	}
 
@@ -591,7 +591,7 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 	 */
 	private function is_currency_valid( string $currency, string $account_country ): bool {
 		if (
-			$this->payment_method_supports( WooPaymentsPaymentMethodRegistry::DOMESTIC_TRANSACTIONS_ONLY )
+			$this->payment_method_supports( PaymentMethodRegistry::DOMESTIC_TRANSACTIONS_ONLY )
 			&& strtolower( $currency ) !== $this->get_account_domestic_currency()
 		) {
 			return false;
@@ -1727,11 +1727,11 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 	/**
 	 * Get the default card payment method definition.
 	 *
-	 * @return WooPaymentsPaymentMethodDefinition
+	 * @return PaymentMethodDefinition
 	 * @throws \RuntimeException When the registry does not contain the card definition.
 	 */
-	private function get_default_payment_method_definition(): WooPaymentsPaymentMethodDefinition {
-		$definition = ( new WooPaymentsPaymentMethodRegistry() )->get( 'card' );
+	private function get_default_payment_method_definition(): PaymentMethodDefinition {
+		$definition = ( new PaymentMethodRegistry() )->get( 'card' );
 
 		if ( null === $definition ) {
 			throw new \RuntimeException( 'The WooPayments card payment method definition is missing.' );

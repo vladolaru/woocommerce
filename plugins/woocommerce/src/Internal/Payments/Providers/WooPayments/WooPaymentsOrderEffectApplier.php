@@ -11,7 +11,7 @@ use Automattic\WooCommerce\Enums\OrderStatus;
 use Automattic\WooCommerce\Internal\Payments\PaymentOperationContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentLifecycleEvent;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\PaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\WooPaymentsLinkToken;
 use Throwable;
 use WC_Order;
@@ -58,9 +58,9 @@ class WooPaymentsOrderEffectApplier {
 	/**
 	 * WooPayments payment method registry.
 	 *
-	 * @var WooPaymentsPaymentMethodRegistry
+	 * @var PaymentMethodRegistry
 	 */
-	private WooPaymentsPaymentMethodRegistry $payment_method_registry;
+	private PaymentMethodRegistry $payment_method_registry;
 
 	/**
 	 * Action Scheduler service.
@@ -78,7 +78,7 @@ class WooPaymentsOrderEffectApplier {
 	 * @param WooPaymentsOrderDataService       $order_data_service WooPayments order data service.
 	 * @param WooPaymentsAccountService         $account_service    WooPayments account service.
 	 * @param WooPaymentsOrderNoteService       $note_service       WooPayments order note service.
-	 * @param WooPaymentsPaymentMethodRegistry  $payment_method_registry Payment method registry.
+	 * @param PaymentMethodRegistry             $payment_method_registry Payment method registry.
 	 * @param WooPaymentsActionSchedulerService $action_scheduler  Action Scheduler service.
 	 */
 	final public function init(
@@ -86,7 +86,7 @@ class WooPaymentsOrderEffectApplier {
 		WooPaymentsOrderDataService $order_data_service,
 		WooPaymentsAccountService $account_service,
 		WooPaymentsOrderNoteService $note_service,
-		WooPaymentsPaymentMethodRegistry $payment_method_registry,
+		PaymentMethodRegistry $payment_method_registry,
 		WooPaymentsActionSchedulerService $action_scheduler
 	): void {
 		$this->token_service           = $token_service;

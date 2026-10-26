@@ -5,7 +5,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\PaymentProcessingService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGateway;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\PaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Tests\Internal\Payments\RecordingPaymentProcessingService;
 use WC_Order;
@@ -106,7 +106,7 @@ class WooPaymentsGatewayRenewalEntryPointsTest extends WC_Unit_Test_Case {
 	 * @testdox A renewal through a split payment method gateway charges under that gateway's own ID.
 	 */
 	public function test_renewal_through_a_split_gateway_charges_under_its_own_id(): void {
-		$definition = ( new WooPaymentsPaymentMethodRegistry() )->get( 'sepa_debit' );
+		$definition = ( new PaymentMethodRegistry() )->get( 'sepa_debit' );
 		$this->assertNotNull( $definition );
 		$gateway = new WooPaymentsGateway( $definition );
 		$order   = $this->create_order_paid_with( $gateway->id );

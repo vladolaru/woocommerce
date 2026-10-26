@@ -1,6 +1,6 @@
 <?php
 /**
- * WooPaymentsPaymentMethodDefinition class file.
+ * PaymentMethodDefinition class file.
  */
 
 declare( strict_types = 1 );
@@ -13,7 +13,7 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Payment
  * @since 11.0.0
  * @internal
  */
-final class WooPaymentsPaymentMethodDefinition {
+final class PaymentMethodDefinition {
 
 	private const COUNTRY_MODE_STATIC = 'static';
 
@@ -104,7 +104,7 @@ final class WooPaymentsPaymentMethodDefinition {
 	 * @return string
 	 */
 	public function get_title( ?string $account_country = null ): string {
-		return WooPaymentsPaymentMethodRegistry::translate_catalog_string(
+		return PaymentMethodRegistry::translate_catalog_string(
 			$this->get_country_specific_string( 'title', 'titles_by_country', $account_country )
 		);
 	}
@@ -116,7 +116,7 @@ final class WooPaymentsPaymentMethodDefinition {
 	 * @return string
 	 */
 	public function get_description( ?string $account_country = null ): string {
-		return WooPaymentsPaymentMethodRegistry::translate_catalog_string(
+		return PaymentMethodRegistry::translate_catalog_string(
 			$this->get_country_specific_string( 'description', 'descriptions_by_country', $account_country )
 		);
 	}

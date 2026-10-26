@@ -17,7 +17,7 @@ use Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabularyInterf
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\TransportLog;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\PaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsActionSchedulerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
@@ -374,7 +374,7 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 				throw WooPaymentsRedirectReturnControllerTest::make_provider_error();
 			}
 		};
-		$token_service->init( $this->createMock( WooPaymentsPaymentMethodDetailsService::class ), wc_get_container()->get( Client::class ), wc_get_container()->get( WooPaymentsCustomerService::class ), wc_get_container()->get( WooPaymentsAccountService::class ), wc_get_container()->get( WooPaymentsOrderDataService::class ), wc_get_container()->get( WooPaymentsPaymentMethodRegistry::class ) );
+		$token_service->init( $this->createMock( WooPaymentsPaymentMethodDetailsService::class ), wc_get_container()->get( Client::class ), wc_get_container()->get( WooPaymentsCustomerService::class ), wc_get_container()->get( WooPaymentsAccountService::class ), wc_get_container()->get( WooPaymentsOrderDataService::class ), wc_get_container()->get( PaymentMethodRegistry::class ) );
 		$logger = new RedirectReturnRecordingLogger();
 		add_filter( 'woocommerce_logging_class', static fn() => $logger );
 		$this->sut = $this->create_controller( true, $this->create_confirmation_service( $api_client, $token_service ), $api_client );
@@ -2376,7 +2376,7 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 			new WooPaymentsOrderDataService(),
 			$account_service,
 			wc_get_container()->get( WooPaymentsOrderNoteService::class ),
-			new WooPaymentsPaymentMethodRegistry(),
+			new PaymentMethodRegistry(),
 			wc_get_container()->get( WooPaymentsActionSchedulerService::class )
 		);
 
@@ -2429,7 +2429,7 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 			}
 		};
 		$token_service   = new WooPaymentsTokenService();
-		$token_service->init( $details_service, wc_get_container()->get( Client::class ), wc_get_container()->get( WooPaymentsCustomerService::class ), wc_get_container()->get( WooPaymentsAccountService::class ), wc_get_container()->get( WooPaymentsOrderDataService::class ), wc_get_container()->get( WooPaymentsPaymentMethodRegistry::class ) );
+		$token_service->init( $details_service, wc_get_container()->get( Client::class ), wc_get_container()->get( WooPaymentsCustomerService::class ), wc_get_container()->get( WooPaymentsAccountService::class ), wc_get_container()->get( WooPaymentsOrderDataService::class ), wc_get_container()->get( PaymentMethodRegistry::class ) );
 
 		return $token_service;
 	}

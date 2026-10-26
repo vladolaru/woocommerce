@@ -43,7 +43,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFr
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFraudService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSessionService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentMethodDetailsService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\PaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\WooPaymentsLinkToken;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\WooPaymentsSepaToken;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentOperationService;
@@ -3904,7 +3904,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 			$this->create_account_service( false ),
 			new WooPaymentsOrderDataService(),
 			$this->createStub( WooPaymentsTokenService::class ),
-			new WooPaymentsPaymentMethodRegistry()
+			new PaymentMethodRegistry()
 		);
 		$request = $request_builder->charge_request_data(
 			PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . 'sepa_debit', 'pm_sepa' ),
@@ -4795,7 +4795,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		$customer_service = $this->getMockBuilder( WooPaymentsCustomerService::class )->disableOriginalConstructor()->onlyMethods( array( 'get_or_create_customer_id_for_order' ) )->getMock();
 		$customer_service->method( 'get_or_create_customer_id_for_order' )->willReturn( 'cus_afterpay' );
 		$provider   = $this->create_provider_over_fake_transport( $http_client, $account_service, $customer_service );
-		$definition = ( new WooPaymentsPaymentMethodRegistry() )->get( 'afterpay_clearpay' );
+		$definition = ( new PaymentMethodRegistry() )->get( 'afterpay_clearpay' );
 		$this->assertNotNull( $definition );
 		$gateway = new WooPaymentsGateway( $definition );
 		$gateway->init( wc_get_container()->get( PaymentProcessingService::class ), $provider );
@@ -8200,7 +8200,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 			}
 		};
 		$provider->before_refund = $before_refund;
-		$provider->init( $this->create_operation_service( $api_client, null, null, $account_service ), $api_client, $account_service, new WooPaymentsPaymentMethodRegistry(), wc_get_container()->get( WooPaymentsOrderEffectApplier::class ) );
+		$provider->init( $this->create_operation_service( $api_client, null, null, $account_service ), $api_client, $account_service, new PaymentMethodRegistry(), wc_get_container()->get( WooPaymentsOrderEffectApplier::class ) );
 
 		return $provider;
 	}
@@ -8857,7 +8857,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 			wc_get_container()->get( WooPaymentsOrderDataService::class ),
 			$account_service,
 			wc_get_container()->get( WooPaymentsOrderNoteService::class ),
-			new WooPaymentsPaymentMethodRegistry(),
+			new PaymentMethodRegistry(),
 			wc_get_container()->get( WooPaymentsActionSchedulerService::class )
 		);
 		$provider = $this->create_provider_over_fake_transport( $http_client, $account_service, $customer_service, $token_service, $order_effect_applier );
@@ -9063,7 +9063,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 			$payment_operations,
 			$api_client,
 			$account_service,
-			new WooPaymentsPaymentMethodRegistry(),
+			new PaymentMethodRegistry(),
 			$order_effect_applier ?? wc_get_container()->get( WooPaymentsOrderEffectApplier::class )
 		);
 
@@ -10231,7 +10231,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		$account_service    = $account_service ?? $this->create_account_service( false );
 		$order_data_service = $order_data_service ?? new WooPaymentsOrderDataService();
 		$request_builder    = new WooPaymentsIntentRequestBuilder();
-		$request_builder->init( $account_service, $order_data_service, $token_service, new WooPaymentsPaymentMethodRegistry() );
+		$request_builder->init( $account_service, $order_data_service, $token_service, new PaymentMethodRegistry() );
 
 		if ( null === $fraud_ruleset_service ) {
 			$fraud_ruleset_service = $this->getMockBuilder( WooPaymentsFraudRulesetService::class )
@@ -10489,7 +10489,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		$duplicate_gateway_methods_service = new WooPaymentsDuplicateGatewayMethodsService();
 		$duplicate_gateway_methods_service->init( $account_service, wc_get_container()->get( WooPaymentsLogger::class ) );
 		$settings_service = new WooPaymentsSettingsService();
-		$settings_service->init( $account_service, $api_client, new RecordingPmPromotionsService(), wc_get_container()->get( WooPaymentsGatewaySettingsSynchronizer::class ), new WooPaymentsPaymentMethodRegistry(), wc_get_container()->get( WooPaymentsStripeBillingModule::class ), $fraud_ruleset_service, $duplicate_gateway_methods_service, $this->create_woopay_eligibility( $account_service ), new RecordingWooPayAppearanceStore( new RecordingWooPaySessionService() ), wc_get_container()->get( WooPaymentsFrontendTrackingController::class ), wc_get_container()->get( WooPaymentsLogger::class ), new RecordingStoreSetupReportController() );
+		$settings_service->init( $account_service, $api_client, new RecordingPmPromotionsService(), wc_get_container()->get( WooPaymentsGatewaySettingsSynchronizer::class ), new PaymentMethodRegistry(), wc_get_container()->get( WooPaymentsStripeBillingModule::class ), $fraud_ruleset_service, $duplicate_gateway_methods_service, $this->create_woopay_eligibility( $account_service ), new RecordingWooPayAppearanceStore( new RecordingWooPaySessionService() ), wc_get_container()->get( WooPaymentsFrontendTrackingController::class ), wc_get_container()->get( WooPaymentsLogger::class ), new RecordingStoreSetupReportController() );
 
 		return array( $settings_service, $fraud_ruleset_service );
 	}
@@ -10577,7 +10577,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		};
 
 		$token_service = new WooPaymentsTokenService();
-		$token_service->init( $details_service, wc_get_container()->get( Client::class ), wc_get_container()->get( WooPaymentsCustomerService::class ), wc_get_container()->get( WooPaymentsAccountService::class ), wc_get_container()->get( WooPaymentsOrderDataService::class ), wc_get_container()->get( WooPaymentsPaymentMethodRegistry::class ) );
+		$token_service->init( $details_service, wc_get_container()->get( Client::class ), wc_get_container()->get( WooPaymentsCustomerService::class ), wc_get_container()->get( WooPaymentsAccountService::class ), wc_get_container()->get( WooPaymentsOrderDataService::class ), wc_get_container()->get( PaymentMethodRegistry::class ) );
 
 		return $token_service;
 	}

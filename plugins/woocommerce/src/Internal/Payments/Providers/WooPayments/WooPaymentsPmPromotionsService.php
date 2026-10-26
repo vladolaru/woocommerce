@@ -9,7 +9,7 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\PaymentMethodRegistry;
 
 /**
  * Fetches the platform's payment method promotions for the settings page, keeps the ones the merchant can still use,
@@ -63,9 +63,9 @@ class WooPaymentsPmPromotionsService {
 	/**
 	 * Payment method registry.
 	 *
-	 * @var WooPaymentsPaymentMethodRegistry
+	 * @var PaymentMethodRegistry
 	 */
-	private WooPaymentsPaymentMethodRegistry $payment_method_registry;
+	private PaymentMethodRegistry $payment_method_registry;
 
 	/**
 	 * Memoized raw promotions.
@@ -89,9 +89,9 @@ class WooPaymentsPmPromotionsService {
 	 * @param Client                                 $api_client                    WooPayments API client.
 	 * @param WooPaymentsAccountService              $account_service               WooPayments account service.
 	 * @param WooPaymentsGatewaySettingsSynchronizer $gateway_settings_synchronizer Gateway settings writer.
-	 * @param WooPaymentsPaymentMethodRegistry       $payment_method_registry       Payment method registry.
+	 * @param PaymentMethodRegistry                  $payment_method_registry       Payment method registry.
 	 */
-	final public function init( Client $api_client, WooPaymentsAccountService $account_service, WooPaymentsGatewaySettingsSynchronizer $gateway_settings_synchronizer, WooPaymentsPaymentMethodRegistry $payment_method_registry ): void {
+	final public function init( Client $api_client, WooPaymentsAccountService $account_service, WooPaymentsGatewaySettingsSynchronizer $gateway_settings_synchronizer, PaymentMethodRegistry $payment_method_registry ): void {
 		$this->api_client                    = $api_client;
 		$this->account_service               = $account_service;
 		$this->gateway_settings_synchronizer = $gateway_settings_synchronizer;
@@ -753,7 +753,7 @@ class WooPaymentsPmPromotionsService {
 	 * @return string[]
 	 */
 	private function sanitize_payment_method_ids( array $payment_method_ids ): array {
-		$supported = WooPaymentsPaymentMethodRegistry::SETTINGS_PAYMENT_METHOD_IDS;
+		$supported = PaymentMethodRegistry::SETTINGS_PAYMENT_METHOD_IDS;
 		$sanitized = array();
 
 		foreach ( $payment_method_ids as $payment_method_id ) {

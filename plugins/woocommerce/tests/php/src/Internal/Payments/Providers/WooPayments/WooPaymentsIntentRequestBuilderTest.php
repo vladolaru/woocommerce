@@ -7,8 +7,8 @@ use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\PaymentOperationContext;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodDefinition;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\PaymentMethodDefinition;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\PaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentRequestBuilder;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsClientVersion;
@@ -197,7 +197,7 @@ class WooPaymentsIntentRequestBuilderTest extends WC_Unit_Test_Case {
 			$account_service,
 			new WooPaymentsOrderDataService(),
 			$this->createStub( WooPaymentsTokenService::class ),
-			new WooPaymentsPaymentMethodRegistry()
+			new PaymentMethodRegistry()
 		);
 
 		$request = $request_builder->charge_request_data(
@@ -252,7 +252,7 @@ class WooPaymentsIntentRequestBuilderTest extends WC_Unit_Test_Case {
 			$account_service,
 			new WooPaymentsOrderDataService(),
 			$this->createStub( WooPaymentsTokenService::class ),
-			new WooPaymentsPaymentMethodRegistry()
+			new PaymentMethodRegistry()
 		);
 
 		$request = $request_builder->charge_request_data(
@@ -295,7 +295,7 @@ class WooPaymentsIntentRequestBuilderTest extends WC_Unit_Test_Case {
 		}
 		$order->save();
 		$request_builder = new WooPaymentsIntentRequestBuilder();
-		$request_builder->init( $this->createStub( WooPaymentsAccountService::class ), new WooPaymentsOrderDataService(), $this->createStub( WooPaymentsTokenService::class ), new WooPaymentsPaymentMethodRegistry() );
+		$request_builder->init( $this->createStub( WooPaymentsAccountService::class ), new WooPaymentsOrderDataService(), $this->createStub( WooPaymentsTokenService::class ), new PaymentMethodRegistry() );
 		$context = PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . 'afterpay_clearpay', 'pm_afterpay' );
 
 		if ( null === $expected ) {
@@ -405,7 +405,7 @@ class WooPaymentsIntentRequestBuilderTest extends WC_Unit_Test_Case {
 			$account_service,
 			new WooPaymentsOrderDataService(),
 			$this->createStub( WooPaymentsTokenService::class ),
-			new WooPaymentsPaymentMethodRegistry()
+			new PaymentMethodRegistry()
 		);
 
 		return $request_builder->charge_request_data(
@@ -487,7 +487,7 @@ class WooPaymentsIntentRequestBuilderTest extends WC_Unit_Test_Case {
 			$account_service,
 			new WooPaymentsOrderDataService(),
 			$this->createStub( WooPaymentsTokenService::class ),
-			new WooPaymentsPaymentMethodRegistry(),
+			new PaymentMethodRegistry(),
 			$level3_service
 		);
 
@@ -588,7 +588,7 @@ class WooPaymentsIntentRequestBuilderTest extends WC_Unit_Test_Case {
 			$account_service,
 			new WooPaymentsOrderDataService(),
 			$this->createStub( WooPaymentsTokenService::class ),
-			new WooPaymentsPaymentMethodRegistry()
+			new PaymentMethodRegistry()
 		);
 
 		$request = $request_builder->charge_request_data(
@@ -634,7 +634,7 @@ class WooPaymentsIntentRequestBuilderTest extends WC_Unit_Test_Case {
 			$account_service,
 			new WooPaymentsOrderDataService(),
 			$this->createStub( WooPaymentsTokenService::class ),
-			new WooPaymentsPaymentMethodRegistry()
+			new PaymentMethodRegistry()
 		);
 
 		$provider_data = array( 'save_payment_method_to_platform' => true );
@@ -707,7 +707,7 @@ class WooPaymentsIntentRequestBuilderTest extends WC_Unit_Test_Case {
 			$account_service,
 			new WooPaymentsOrderDataService(),
 			$this->createStub( WooPaymentsTokenService::class ),
-			new WooPaymentsPaymentMethodRegistry()
+			new PaymentMethodRegistry()
 		);
 		$calls = array();
 		add_filter(
@@ -770,7 +770,7 @@ class WooPaymentsIntentRequestBuilderTest extends WC_Unit_Test_Case {
 			$account_service,
 			new WooPaymentsOrderDataService(),
 			$this->createStub( WooPaymentsTokenService::class ),
-			new WooPaymentsPaymentMethodRegistry()
+			new PaymentMethodRegistry()
 		);
 
 		$request = $request_builder->charge_request_data(
@@ -826,7 +826,7 @@ class WooPaymentsIntentRequestBuilderTest extends WC_Unit_Test_Case {
 			$account_service,
 			new WooPaymentsOrderDataService(),
 			$token_service,
-			new WooPaymentsPaymentMethodRegistry()
+			new PaymentMethodRegistry()
 		);
 		wp_set_current_user( $shopper_id );
 
@@ -873,7 +873,7 @@ class WooPaymentsIntentRequestBuilderTest extends WC_Unit_Test_Case {
 			$account_service,
 			new WooPaymentsOrderDataService(),
 			$this->createStub( WooPaymentsTokenService::class ),
-			new WooPaymentsPaymentMethodRegistry()
+			new PaymentMethodRegistry()
 		);
 
 		$request = $request_builder->charge_request_data(
@@ -916,7 +916,7 @@ class WooPaymentsIntentRequestBuilderTest extends WC_Unit_Test_Case {
 			$account_service,
 			new WooPaymentsOrderDataService(),
 			$this->createStub( WooPaymentsTokenService::class ),
-			new WooPaymentsPaymentMethodRegistry()
+			new PaymentMethodRegistry()
 		);
 
 		$request = $request_builder->charge_request_data(
@@ -959,7 +959,7 @@ class WooPaymentsIntentRequestBuilderTest extends WC_Unit_Test_Case {
 			$account_service,
 			new WooPaymentsOrderDataService(),
 			$this->createStub( WooPaymentsTokenService::class ),
-			new WooPaymentsPaymentMethodRegistry()
+			new PaymentMethodRegistry()
 		);
 
 		$renewal_request = $request_builder->charge_request_data(
@@ -1103,7 +1103,7 @@ class WooPaymentsIntentRequestBuilderTest extends WC_Unit_Test_Case {
 	 * @param string              $expected_capture Expected capture_method.
 	 */
 	public function test_charge_asks_for_manual_capture_only_when_every_declared_method_can_capture_later( string $gateway_id, array $provider_data, array $enabled_methods, string $manual_capture, array $expected_types, string $expected_capture ): void {
-		$request = $this->build_capture_request( $gateway_id, $provider_data, $enabled_methods, $manual_capture, new WooPaymentsPaymentMethodRegistry() );
+		$request = $this->build_capture_request( $gateway_id, $provider_data, $enabled_methods, $manual_capture, new PaymentMethodRegistry() );
 
 		$this->assertSame( $expected_types, $request['payment_method_types'] );
 		$this->assertSame( $expected_capture, $request['capture_method'] );
@@ -1122,7 +1122,7 @@ class WooPaymentsIntentRequestBuilderTest extends WC_Unit_Test_Case {
 	 * @param string            $expected_capture  Expected capture_method.
 	 */
 	public function test_charge_capture_method_follows_the_registry_capability( string $payment_method_id, array $expected_types, string $expected_capture ): void {
-		$registry   = new class( $payment_method_id ) extends WooPaymentsPaymentMethodRegistry {
+		$registry   = new class( $payment_method_id ) extends PaymentMethodRegistry {
 			/**
 			 * Payment method whose capture-later capability is flipped.
 			 *
@@ -1143,9 +1143,9 @@ class WooPaymentsIntentRequestBuilderTest extends WC_Unit_Test_Case {
 			 * Return the real definition, with the capture-later capability added to or removed from the flipped method.
 			 *
 			 * @param string $payment_method_id Payment method ID.
-			 * @return WooPaymentsPaymentMethodDefinition|null
+			 * @return PaymentMethodDefinition|null
 			 */
-			public function get( string $payment_method_id ): ?WooPaymentsPaymentMethodDefinition {
+			public function get( string $payment_method_id ): ?PaymentMethodDefinition {
 				$definition = parent::get( $payment_method_id );
 				if ( null === $definition || $this->flipped !== $payment_method_id ) {
 					return $definition;
@@ -1156,7 +1156,7 @@ class WooPaymentsIntentRequestBuilderTest extends WC_Unit_Test_Case {
 					? array_values( array_diff( $capabilities, array( self::CAPTURE_LATER ) ) )
 					: array_merge( $capabilities, array( self::CAPTURE_LATER ) );
 
-				return new WooPaymentsPaymentMethodDefinition(
+				return new PaymentMethodDefinition(
 					array(
 						'id'                         => $definition->get_id(),
 						'stripe_payment_method_type' => $definition->get_stripe_payment_method_type(),
@@ -1176,14 +1176,14 @@ class WooPaymentsIntentRequestBuilderTest extends WC_Unit_Test_Case {
 	/**
 	 * Build a USD checkout charge request for a US account with the given gateway settings and registry.
 	 *
-	 * @param string                           $gateway_id      Checkout gateway ID.
-	 * @param array<string,mixed>              $provider_data   Checkout provider data.
-	 * @param array<int,string>                $enabled_methods Enabled payment method IDs.
-	 * @param string                           $manual_capture  The manual capture setting.
-	 * @param WooPaymentsPaymentMethodRegistry $registry        Payment method registry.
+	 * @param string                $gateway_id      Checkout gateway ID.
+	 * @param array<string,mixed>   $provider_data   Checkout provider data.
+	 * @param array<int,string>     $enabled_methods Enabled payment method IDs.
+	 * @param string                $manual_capture  The manual capture setting.
+	 * @param PaymentMethodRegistry $registry        Payment method registry.
 	 * @return array<string,mixed>
 	 */
-	private function build_capture_request( string $gateway_id, array $provider_data, array $enabled_methods, string $manual_capture, WooPaymentsPaymentMethodRegistry $registry ): array {
+	private function build_capture_request( string $gateway_id, array $provider_data, array $enabled_methods, string $manual_capture, PaymentMethodRegistry $registry ): array {
 		$order = wc_create_order();
 		$order->set_currency( 'USD' );
 		$order->set_total( '30.00' );
@@ -1284,7 +1284,7 @@ class WooPaymentsIntentRequestBuilderTest extends WC_Unit_Test_Case {
 			$account_service,
 			new WooPaymentsOrderDataService(),
 			$this->createStub( WooPaymentsTokenService::class ),
-			new WooPaymentsPaymentMethodRegistry()
+			new PaymentMethodRegistry()
 		);
 
 		return $request_builder->charge_request_data(
@@ -1314,7 +1314,7 @@ class WooPaymentsIntentRequestBuilderTest extends WC_Unit_Test_Case {
 			$account_service,
 			new WooPaymentsOrderDataService(),
 			$this->createStub( WooPaymentsTokenService::class ),
-			new WooPaymentsPaymentMethodRegistry()
+			new PaymentMethodRegistry()
 		);
 
 		return $request_builder->charge_request_data(

@@ -10,8 +10,8 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Enums\PaymentGatewayFeature;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionMethodPolicy;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodDefinition;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\PaymentMethodDefinition;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\PaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPaySessionService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayEligibility;
 
@@ -262,9 +262,9 @@ class WooPaymentsCheckoutAssets {
 	/**
 	 * WooPayments payment method definition registry.
 	 *
-	 * @var WooPaymentsPaymentMethodRegistry
+	 * @var PaymentMethodRegistry
 	 */
-	private WooPaymentsPaymentMethodRegistry $payment_method_registry;
+	private PaymentMethodRegistry $payment_method_registry;
 
 	/**
 	 * Express checkout service.
@@ -302,7 +302,7 @@ class WooPaymentsCheckoutAssets {
 	 * @param WooPaymentsWooPayEligibility           $woopay_eligibility           WooPay eligibility rules.
 	 * @param WooPaymentsFrontendStylesService       $frontend_styles_service      Shared frontend styles service.
 	 * @param WooPaymentsFrontendTrackingController  $frontend_tracking_controller Frontend tracking controller.
-	 * @param WooPaymentsPaymentMethodRegistry       $payment_method_registry      Payment method registry.
+	 * @param PaymentMethodRegistry                  $payment_method_registry      Payment method registry.
 	 * @param WooPaymentsFraudPreventionService|null $fraud_prevention_service  Optional fraud-prevention service.
 	 * @param WooPaymentsCustomerService|null        $customer_service          Optional WooPayments customer service.
 	 */
@@ -312,7 +312,7 @@ class WooPaymentsCheckoutAssets {
 		WooPaymentsWooPayEligibility $woopay_eligibility,
 		WooPaymentsFrontendStylesService $frontend_styles_service,
 		WooPaymentsFrontendTrackingController $frontend_tracking_controller,
-		WooPaymentsPaymentMethodRegistry $payment_method_registry,
+		PaymentMethodRegistry $payment_method_registry,
 		?WooPaymentsFraudPreventionService $fraud_prevention_service = null,
 		?WooPaymentsCustomerService $customer_service = null
 	): void {
@@ -356,11 +356,11 @@ class WooPaymentsCheckoutAssets {
 	/**
 	 * Get the classic checkout JS config.
 	 *
-	 * @param string[]                                $supports                  Card gateway support features, sent as `features`.
-	 * @param WooPaymentsPaymentMethodDefinition|null $payment_method_definition Optional payment method definition.
+	 * @param string[]                     $supports                  Card gateway support features, sent as `features`.
+	 * @param PaymentMethodDefinition|null $payment_method_definition Optional payment method definition.
 	 * @return array<string,mixed>
 	 */
-	public function get_payment_fields_js_config( array $supports, ?WooPaymentsPaymentMethodDefinition $payment_method_definition = null ): array {
+	public function get_payment_fields_js_config( array $supports, ?PaymentMethodDefinition $payment_method_definition = null ): array {
 		return $this->complete_payment_fields_js_config( $this->get_payment_fields_js_config_base( $supports ), $payment_method_definition );
 	}
 
@@ -468,11 +468,11 @@ class WooPaymentsCheckoutAssets {
 	 * Add the gateway-specific keys to a config base and apply the config filter.
 	 *
 	 * @param array{config:array<string,mixed>,saved_cards_enabled:bool,currency:string} $base                      Config base.
-	 * @param WooPaymentsPaymentMethodDefinition|null                                    $payment_method_definition Optional payment method definition.
+	 * @param PaymentMethodDefinition|null                                               $payment_method_definition Optional payment method definition.
 	 * @param bool                                                                       $for_blocks                Whether to leave out the keys only the classic checkout uses.
 	 * @return array<string,mixed>
 	 */
-	private function complete_payment_fields_js_config( array $base, ?WooPaymentsPaymentMethodDefinition $payment_method_definition, bool $for_blocks = false ): array {
+	private function complete_payment_fields_js_config( array $base, ?PaymentMethodDefinition $payment_method_definition, bool $for_blocks = false ): array {
 		$config = $base['config'];
 		if ( ! $for_blocks ) {
 			$config['paymentListWalletsConfig'] = $this->get_payment_list_wallets_config( $base['saved_cards_enabled'], $payment_method_definition, $base['currency'] );
@@ -502,11 +502,11 @@ class WooPaymentsCheckoutAssets {
 	 *
 	 * The gateway prints this config in its payment form. The config base is built once per request for the same inputs.
 	 *
-	 * @param string[]                                $supports                  Card gateway support features.
-	 * @param WooPaymentsPaymentMethodDefinition|null $payment_method_definition Optional payment method definition.
+	 * @param string[]                     $supports                  Card gateway support features.
+	 * @param PaymentMethodDefinition|null $payment_method_definition Optional payment method definition.
 	 * @return array<string,mixed>
 	 */
-	public function enqueue_classic_checkout_assets_for_fields( array $supports, ?WooPaymentsPaymentMethodDefinition $payment_method_definition = null ): array {
+	public function enqueue_classic_checkout_assets_for_fields( array $supports, ?PaymentMethodDefinition $payment_method_definition = null ): array {
 		$config = $this->complete_payment_fields_js_config( $this->get_payment_list_config_base( $supports ), $payment_method_definition );
 		$this->enqueue_classic_checkout_assets( $config, $supports );
 
@@ -560,13 +560,13 @@ class WooPaymentsCheckoutAssets {
 	 * The Blocks integration registers one payment method per split gateway and passes them one holder, so the
 	 * gateway-independent base is built once per page and each gateway adds only its own keys.
 	 *
-	 * @param string[]                                $supports                  Card gateway support features, shared by every Blocks method.
-	 * @param WooPaymentsPaymentMethodDefinition|null $payment_method_definition Optional payment method definition.
-	 * @param \ArrayObject|null                       $shared                    Holder that lets split gateways share one config base (client 11.1.0 registers one Blocks method).
+	 * @param string[]                     $supports                  Card gateway support features, shared by every Blocks method.
+	 * @param PaymentMethodDefinition|null $payment_method_definition Optional payment method definition.
+	 * @param \ArrayObject|null            $shared                    Holder that lets split gateways share one config base (client 11.1.0 registers one Blocks method).
 	 * @phpstan-param \ArrayObject<string,mixed>|null $shared
 	 * @return array<string,mixed>
 	 */
-	public function get_blocks_payment_method_data( array $supports, ?WooPaymentsPaymentMethodDefinition $payment_method_definition = null, ?\ArrayObject $shared = null ): array {
+	public function get_blocks_payment_method_data( array $supports, ?PaymentMethodDefinition $payment_method_definition = null, ?\ArrayObject $shared = null ): array {
 		if ( null !== $shared && ! isset( $shared['base'] ) ) {
 			$shared['base'] = $this->get_blocks_payment_fields_js_config_base( $supports );
 		}
@@ -932,10 +932,10 @@ class WooPaymentsCheckoutAssets {
 	/**
 	 * Get the WooPayments gateway ID for a payment method definition.
 	 *
-	 * @param WooPaymentsPaymentMethodDefinition|null $payment_method_definition Optional payment method definition.
+	 * @param PaymentMethodDefinition|null $payment_method_definition Optional payment method definition.
 	 * @return string
 	 */
-	private function get_gateway_id_for_payment_method_definition( ?WooPaymentsPaymentMethodDefinition $payment_method_definition = null ): string {
+	private function get_gateway_id_for_payment_method_definition( ?PaymentMethodDefinition $payment_method_definition = null ): string {
 		if ( null === $payment_method_definition || 'card' === $payment_method_definition->get_id() ) {
 			return WooPaymentsPersistenceVocabulary::GATEWAY_ID;
 		}
@@ -958,12 +958,12 @@ class WooPaymentsCheckoutAssets {
 	/**
 	 * Get payment method config for one split gateway or the shared card surface.
 	 *
-	 * @param bool                                    $saved_cards_enabled       Whether saved cards are enabled.
-	 * @param WooPaymentsPaymentMethodDefinition|null $payment_method_definition Payment method definition.
-	 * @param string                                  $currency                  Checkout or order-pay currency.
+	 * @param bool                         $saved_cards_enabled       Whether saved cards are enabled.
+	 * @param PaymentMethodDefinition|null $payment_method_definition Payment method definition.
+	 * @param string                       $currency                  Checkout or order-pay currency.
 	 * @return array<string,array<string,mixed>>
 	 */
-	private function get_payment_methods_config( bool $saved_cards_enabled, ?WooPaymentsPaymentMethodDefinition $payment_method_definition, string $currency ): array {
+	private function get_payment_methods_config( bool $saved_cards_enabled, ?PaymentMethodDefinition $payment_method_definition, string $currency ): array {
 		if ( null !== $payment_method_definition && 'card' !== $payment_method_definition->get_id() ) {
 			return array(
 				$payment_method_definition->get_id() => $this->get_payment_method_config( $payment_method_definition, $saved_cards_enabled ),
@@ -1004,12 +1004,12 @@ class WooPaymentsCheckoutAssets {
 	/**
 	 * Get custom-button wallet config for express methods placed in the payment-method list.
 	 *
-	 * @param bool                                    $saved_cards_enabled       Whether saved cards are enabled.
-	 * @param WooPaymentsPaymentMethodDefinition|null $payment_method_definition Payment method definition.
-	 * @param string                                  $currency                  Checkout or order-pay currency.
+	 * @param bool                         $saved_cards_enabled       Whether saved cards are enabled.
+	 * @param PaymentMethodDefinition|null $payment_method_definition Payment method definition.
+	 * @param string                       $currency                  Checkout or order-pay currency.
 	 * @return array<string,array<string,mixed>>
 	 */
-	private function get_payment_list_wallets_config( bool $saved_cards_enabled, ?WooPaymentsPaymentMethodDefinition $payment_method_definition, string $currency ): array {
+	private function get_payment_list_wallets_config( bool $saved_cards_enabled, ?PaymentMethodDefinition $payment_method_definition, string $currency ): array {
 		if (
 			( null !== $payment_method_definition && 'card' !== $payment_method_definition->get_id() )
 			|| ! $this->is_express_checkout_in_payment_methods_enabled()
@@ -1038,11 +1038,11 @@ class WooPaymentsCheckoutAssets {
 	/**
 	 * Build shopper configuration for one payment method definition.
 	 *
-	 * @param WooPaymentsPaymentMethodDefinition $definition          Payment method definition.
-	 * @param bool                               $saved_cards_enabled Whether saved cards are enabled.
+	 * @param PaymentMethodDefinition $definition          Payment method definition.
+	 * @param bool                    $saved_cards_enabled Whether saved cards are enabled.
 	 * @return array<string,mixed>
 	 */
-	private function get_payment_method_config( WooPaymentsPaymentMethodDefinition $definition, bool $saved_cards_enabled ): array {
+	private function get_payment_method_config( PaymentMethodDefinition $definition, bool $saved_cards_enabled ): array {
 		$is_reusable     = $this->payment_method_definition_supports( $definition, self::PAYMENT_METHOD_CAPABILITY_TOKENIZATION );
 		$account_country = $this->get_account_service()->get_account_country_or_us();
 
@@ -1219,11 +1219,11 @@ class WooPaymentsCheckoutAssets {
 	/**
 	 * Get the Stripe payment method types for a payment method definition.
 	 *
-	 * @param WooPaymentsPaymentMethodDefinition|null $payment_method_definition Optional payment method definition.
-	 * @param array<string,array<string,mixed>>       $payment_methods_config    Payment method configuration.
+	 * @param PaymentMethodDefinition|null      $payment_method_definition Optional payment method definition.
+	 * @param array<string,array<string,mixed>> $payment_methods_config    Payment method configuration.
 	 * @return string[]
 	 */
-	private function get_payment_method_types_for_definition( ?WooPaymentsPaymentMethodDefinition $payment_method_definition, array $payment_methods_config ): array {
+	private function get_payment_method_types_for_definition( ?PaymentMethodDefinition $payment_method_definition, array $payment_methods_config ): array {
 		if ( null === $payment_method_definition || 'card' === $payment_method_definition->get_id() ) {
 			return isset( $payment_methods_config['link'] ) ? array( 'card', 'link' ) : array( 'card' );
 		}
@@ -1234,10 +1234,10 @@ class WooPaymentsCheckoutAssets {
 	/**
 	 * Get the Blocks payment method title.
 	 *
-	 * @param WooPaymentsPaymentMethodDefinition|null $payment_method_definition Optional payment method definition.
+	 * @param PaymentMethodDefinition|null $payment_method_definition Optional payment method definition.
 	 * @return string
 	 */
-	private function get_blocks_payment_method_title( ?WooPaymentsPaymentMethodDefinition $payment_method_definition = null ): string {
+	private function get_blocks_payment_method_title( ?PaymentMethodDefinition $payment_method_definition = null ): string {
 		if ( null === $payment_method_definition || 'card' === $payment_method_definition->get_id() ) {
 			return __( 'Card', 'woocommerce' );
 		}
@@ -1248,10 +1248,10 @@ class WooPaymentsCheckoutAssets {
 	/**
 	 * Get the Blocks payment method description.
 	 *
-	 * @param WooPaymentsPaymentMethodDefinition|null $payment_method_definition Optional payment method definition.
+	 * @param PaymentMethodDefinition|null $payment_method_definition Optional payment method definition.
 	 * @return string
 	 */
-	private function get_blocks_payment_method_description( ?WooPaymentsPaymentMethodDefinition $payment_method_definition = null ): string {
+	private function get_blocks_payment_method_description( ?PaymentMethodDefinition $payment_method_definition = null ): string {
 		if ( null === $payment_method_definition || 'card' === $payment_method_definition->get_id() ) {
 			return __( 'Pay securely using WooPayments.', 'woocommerce' );
 		}
@@ -1262,11 +1262,11 @@ class WooPaymentsCheckoutAssets {
 	/**
 	 * Tell whether a payment method definition supports a capability.
 	 *
-	 * @param WooPaymentsPaymentMethodDefinition $payment_method_definition Payment method definition.
-	 * @param string                             $capability                Capability name.
+	 * @param PaymentMethodDefinition $payment_method_definition Payment method definition.
+	 * @param string                  $capability                Capability name.
 	 * @return bool
 	 */
-	private function payment_method_definition_supports( WooPaymentsPaymentMethodDefinition $payment_method_definition, string $capability ): bool {
+	private function payment_method_definition_supports( PaymentMethodDefinition $payment_method_definition, string $capability ): bool {
 		return in_array( $capability, $payment_method_definition->get_capabilities(), true );
 	}
 

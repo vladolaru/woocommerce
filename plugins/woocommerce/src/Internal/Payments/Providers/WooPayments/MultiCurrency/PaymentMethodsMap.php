@@ -9,8 +9,8 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCu
 
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencySettingsController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodDefinition;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\PaymentMethodDefinition;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\PaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 
@@ -131,7 +131,7 @@ class PaymentMethodsMap implements RegisterHooksInterface {
 
 		foreach ( $this->get_currency_dependent_definitions() as $definition ) {
 			$payment_method_id = $definition->get_id();
-			$currencies        = in_array( WooPaymentsPaymentMethodRegistry::DOMESTIC_TRANSACTIONS_ONLY, $definition->get_capabilities(), true )
+			$currencies        = in_array( PaymentMethodRegistry::DOMESTIC_TRANSACTIONS_ONLY, $definition->get_capabilities(), true )
 				? array( $account_service->get_account_domestic_currency() )
 				: $definition->get_supported_currencies( $country );
 
@@ -146,7 +146,7 @@ class PaymentMethodsMap implements RegisterHooksInterface {
 	/**
 	 * Get the definitions of the registered methods that are enabled, other than card, card_present and link, in display order.
 	 *
-	 * @return WooPaymentsPaymentMethodDefinition[]
+	 * @return PaymentMethodDefinition[]
 	 */
 	private function get_currency_dependent_definitions(): array {
 		$enabled_ids = $this->get_account_service()->get_gateway_setting( 'upe_enabled_payment_method_ids', array() );
@@ -157,8 +157,8 @@ class PaymentMethodsMap implements RegisterHooksInterface {
 
 		return array_values(
 			array_filter(
-				wc_get_container()->get( WooPaymentsPaymentMethodRegistry::class )->get_registered( $this->get_account_service() ),
-				static function ( WooPaymentsPaymentMethodDefinition $definition ) use ( $enabled_ids ): bool {
+				wc_get_container()->get( PaymentMethodRegistry::class )->get_registered( $this->get_account_service() ),
+				static function ( PaymentMethodDefinition $definition ) use ( $enabled_ids ): bool {
 					return in_array( $definition->get_id(), $enabled_ids, true )
 						&& ! in_array( $definition->get_id(), self::METHODS_WITHOUT_CURRENCY_NEEDS, true );
 				}

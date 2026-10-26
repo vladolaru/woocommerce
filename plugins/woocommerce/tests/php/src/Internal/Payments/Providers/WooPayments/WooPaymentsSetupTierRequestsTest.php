@@ -13,7 +13,7 @@ use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyBootstrap;
 use Automattic\WooCommerce\Internal\Payments\PaymentsBootstrap;
 use Automattic\WooCommerce\Internal\Utilities\RequestTypeUtil;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\PaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffectApplier;
 use Automattic\WooCommerce\Internal\Payments\RefundRowCapture;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
@@ -122,7 +122,7 @@ class WooPaymentsSetupTierRequestsTest extends WC_Unit_Test_Case {
 			wc_get_container()->get( WooPaymentsPaymentOperationService::class ),
 			wc_get_container()->get( Client::class ),
 			wc_get_container()->get( WooPaymentsAccountService::class ),
-			new WooPaymentsPaymentMethodRegistry(),
+			new PaymentMethodRegistry(),
 			wc_get_container()->get( WooPaymentsOrderEffectApplier::class )
 		);
 		wc_get_container()->replace( WooPaymentsProvider::class, $provider );
@@ -182,7 +182,7 @@ class WooPaymentsSetupTierRequestsTest extends WC_Unit_Test_Case {
 			)
 		);
 		$provider = new WooPaymentsProvider();
-		$provider->init( wc_get_container()->get( WooPaymentsPaymentOperationService::class ), $api_client, $account_service, new WooPaymentsPaymentMethodRegistry(), wc_get_container()->get( WooPaymentsOrderEffectApplier::class ) );
+		$provider->init( wc_get_container()->get( WooPaymentsPaymentOperationService::class ), $api_client, $account_service, new PaymentMethodRegistry(), wc_get_container()->get( WooPaymentsOrderEffectApplier::class ) );
 		wc_get_container()->replace( WooPaymentsProvider::class, $provider );
 
 		$this->run_bootstrap( '__return_false' );

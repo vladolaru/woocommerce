@@ -7,7 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\PaymentMethodRegistry;
 
 /**
  * Provider-owned helpers for WooPayments Express Checkout Stripe payment method types.
@@ -440,9 +440,9 @@ class WooPaymentsExpressPaymentMethodTypes {
 	/**
 	 * Get the payment method registry. This class is static and has no init(), so it reads the registry from the container.
 	 *
-	 * @return WooPaymentsPaymentMethodRegistry
+	 * @return PaymentMethodRegistry
 	 */
-	private static function get_payment_method_registry(): WooPaymentsPaymentMethodRegistry {
-		return wc_get_container()->get( WooPaymentsPaymentMethodRegistry::class );
+	private static function get_payment_method_registry(): PaymentMethodRegistry {
+		return wc_get_container()->get( PaymentMethodRegistry::class );
 	}
 }

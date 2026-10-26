@@ -6,7 +6,7 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin;
 use Automattic\WooCommerce\Internal\RestApiControllerBase;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\PaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsApplePayDomainService;
@@ -386,7 +386,7 @@ class MerchantRestController extends RestApiControllerBase {
 	 * @return array<string,array<string,mixed>>
 	 */
 	private function get_settings_update_args(): array {
-		$payment_method_ids = WooPaymentsPaymentMethodRegistry::SETTINGS_PAYMENT_METHOD_IDS;
+		$payment_method_ids = PaymentMethodRegistry::SETTINGS_PAYMENT_METHOD_IDS;
 		$express_method_ids = WooPaymentsSettingsService::get_express_checkout_method_ids();
 		$args               = array(
 			'enabled_payment_method_ids'           => $this->get_string_array_arg( $payment_method_ids ),

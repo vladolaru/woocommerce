@@ -6,7 +6,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 use Automattic\WooCommerce\Admin\Features\PaymentGatewaySuggestions\DefaultPaymentGateways;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\PaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDatabaseCache;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSettingsDefaults;
@@ -1056,7 +1056,7 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 
 		update_option( 'wcpay_account_data', array( 'data' => $this->get_valid_live_account_payload() ) );
 		$sut      = $this->create_service();
-		$registry = new WooPaymentsPaymentMethodRegistry();
+		$registry = new PaymentMethodRegistry();
 
 		// Before capabilities are reported, the methods backed by card payments stay active and the others do not.
 		$expectations = array(

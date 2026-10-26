@@ -9,7 +9,7 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\PaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Throwable;
 use WC_Order;
@@ -61,33 +61,33 @@ class WooPaymentsCheckoutAjaxController implements RegisterHooksInterface {
 	/**
 	 * WooPayments payment method definition registry.
 	 *
-	 * @var WooPaymentsPaymentMethodRegistry
+	 * @var PaymentMethodRegistry
 	 */
-	private WooPaymentsPaymentMethodRegistry $payment_method_registry;
+	private PaymentMethodRegistry $payment_method_registry;
 
 	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsRuntimeArbiter             $arbiter                     Runtime owner arbiter.
-	 * @param Client                                $api_client                  WooPayments API client.
-	 * @param WooPaymentsCustomerService            $customer_service            WooPayments customer service.
-	 * @param WooPaymentsIntentConfirmationService  $intent_confirmation_service Intent confirmation service.
-	 * @param WooPaymentsPaymentMethodRegistry|null $payment_method_registry     Optional payment method registry.
+	 * @param WooPaymentsRuntimeArbiter            $arbiter                     Runtime owner arbiter.
+	 * @param Client                               $api_client                  WooPayments API client.
+	 * @param WooPaymentsCustomerService           $customer_service            WooPayments customer service.
+	 * @param WooPaymentsIntentConfirmationService $intent_confirmation_service Intent confirmation service.
+	 * @param PaymentMethodRegistry|null           $payment_method_registry     Optional payment method registry.
 	 */
 	final public function init(
 		WooPaymentsRuntimeArbiter $arbiter,
 		Client $api_client,
 		WooPaymentsCustomerService $customer_service,
 		WooPaymentsIntentConfirmationService $intent_confirmation_service,
-		?WooPaymentsPaymentMethodRegistry $payment_method_registry = null
+		?PaymentMethodRegistry $payment_method_registry = null
 	): void {
 		$this->arbiter                     = $arbiter;
 		$this->api_client                  = $api_client;
 		$this->customer_service            = $customer_service;
 		$this->intent_confirmation_service = $intent_confirmation_service;
-		$this->payment_method_registry     = $payment_method_registry ?? new WooPaymentsPaymentMethodRegistry();
+		$this->payment_method_registry     = $payment_method_registry ?? new PaymentMethodRegistry();
 	}
 
 	/**

@@ -14,7 +14,7 @@ use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments
 use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\PaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountMilestonesController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDatabaseCache;
@@ -70,9 +70,9 @@ class OnboardingService {
 	/**
 	 * The WooPayments payment method registry.
 	 *
-	 * @var WooPaymentsPaymentMethodRegistry
+	 * @var PaymentMethodRegistry
 	 */
-	private WooPaymentsPaymentMethodRegistry $payment_method_registry;
+	private PaymentMethodRegistry $payment_method_registry;
 
 	/**
 	 * Initialize the class instance.
@@ -81,10 +81,10 @@ class OnboardingService {
 	 *
 	 * @internal
 	 *
-	 * @param LegacyProxy                      $proxy                   The LegacyProxy instance.
-	 * @param WooPaymentsPaymentMethodRegistry $payment_method_registry The WooPayments payment method registry.
+	 * @param LegacyProxy           $proxy                   The LegacyProxy instance.
+	 * @param PaymentMethodRegistry $payment_method_registry The WooPayments payment method registry.
 	 */
-	final public function init( LegacyProxy $proxy, WooPaymentsPaymentMethodRegistry $payment_method_registry ): void {
+	final public function init( LegacyProxy $proxy, PaymentMethodRegistry $payment_method_registry ): void {
 		$this->proxy                   = $proxy;
 		$this->payment_method_registry = $payment_method_registry;
 	}

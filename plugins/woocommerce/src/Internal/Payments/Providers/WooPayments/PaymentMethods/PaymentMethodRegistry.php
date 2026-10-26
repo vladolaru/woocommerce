@@ -1,6 +1,6 @@
 <?php
 /**
- * WooPaymentsPaymentMethodRegistry class file.
+ * PaymentMethodRegistry class file.
  */
 
 declare( strict_types = 1 );
@@ -15,7 +15,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAc
  * @since 11.0.0
  * @internal
  */
-class WooPaymentsPaymentMethodRegistry {
+class PaymentMethodRegistry {
 
 	private const REFUNDS = 'refunds';
 
@@ -74,7 +74,7 @@ class WooPaymentsPaymentMethodRegistry {
 	/**
 	 * Payment method definitions keyed by payment method ID.
 	 *
-	 * @var array<string,WooPaymentsPaymentMethodDefinition>
+	 * @var array<string,PaymentMethodDefinition>
 	 */
 	private array $definitions = array();
 
@@ -85,7 +85,7 @@ class WooPaymentsPaymentMethodRegistry {
 	 * decides only which of these methods the account is offered (get_available_payment_method_ids_for_account()).
 	 *
 	 * @param WooPaymentsAccountService $account_service WooPayments account service.
-	 * @return array<string,WooPaymentsPaymentMethodDefinition>
+	 * @return array<string,PaymentMethodDefinition>
 	 */
 	public function get_registered( WooPaymentsAccountService $account_service ): array {
 		$this->initialize_definitions();
@@ -204,9 +204,9 @@ class WooPaymentsPaymentMethodRegistry {
 	 * Get a definition by payment method ID.
 	 *
 	 * @param string $payment_method_id Payment method ID.
-	 * @return WooPaymentsPaymentMethodDefinition|null
+	 * @return PaymentMethodDefinition|null
 	 */
-	public function get( string $payment_method_id ): ?WooPaymentsPaymentMethodDefinition {
+	public function get( string $payment_method_id ): ?PaymentMethodDefinition {
 		$this->initialize_definitions();
 
 		$payment_method_id = strtolower( $payment_method_id );
@@ -223,7 +223,7 @@ class WooPaymentsPaymentMethodRegistry {
 		}
 
 		foreach ( $this->get_definition_configs() as $config ) {
-			$definition                                 = new WooPaymentsPaymentMethodDefinition( $config );
+			$definition                                 = new PaymentMethodDefinition( $config );
 			$this->definitions[ $definition->get_id() ] = $definition;
 		}
 	}

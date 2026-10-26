@@ -11,7 +11,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFeatureController
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilder;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilderFactory;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\PaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\WooPaymentsStripeBillingModule;
@@ -177,7 +177,7 @@ class WooPaymentsStoreSetupReportController implements RegisterHooksInterface {
 	private function get_enabled_payment_method_currency_codes(): array {
 		$enabled_ids = $this->account_service->get_gateway_setting( 'upe_enabled_payment_method_ids', array() );
 		$enabled_ids = is_array( $enabled_ids ) ? $enabled_ids : array();
-		$registered  = wc_get_container()->get( WooPaymentsPaymentMethodRegistry::class )->get_registered( $this->account_service );
+		$registered  = wc_get_container()->get( PaymentMethodRegistry::class )->get_registered( $this->account_service );
 		$country     = $this->account_service->get_account_country();
 		$codes       = array();
 
@@ -191,7 +191,7 @@ class WooPaymentsStoreSetupReportController implements RegisterHooksInterface {
 				continue;
 			}
 
-			if ( in_array( WooPaymentsPaymentMethodRegistry::DOMESTIC_TRANSACTIONS_ONLY, $definition->get_capabilities(), true ) ) {
+			if ( in_array( PaymentMethodRegistry::DOMESTIC_TRANSACTIONS_ONLY, $definition->get_capabilities(), true ) ) {
 				$codes[] = strtoupper( $this->account_service->get_account_domestic_currency() );
 				continue;
 			}
@@ -439,7 +439,7 @@ class WooPaymentsStoreSetupReportController implements RegisterHooksInterface {
 	 * @return string[]
 	 */
 	private function get_payment_methods_available(): array {
-		return $this->sanitize_string_list( wc_get_container()->get( WooPaymentsPaymentMethodRegistry::class )->get_available_payment_method_ids_for_account( $this->account_service ) );
+		return $this->sanitize_string_list( wc_get_container()->get( PaymentMethodRegistry::class )->get_available_payment_method_ids_for_account( $this->account_service ) );
 	}
 
 	/**

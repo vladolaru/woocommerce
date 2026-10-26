@@ -37,7 +37,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\GetPmProm
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\HttpClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionsController;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\PaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayEligibility;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayOrderStatusSync;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
@@ -658,7 +658,7 @@ class WooPaymentsHookArityContractTest extends WC_Unit_Test_Case {
 	 * Group `payment_method_availability` (1 hook): the account's available-payment-methods read.
 	 */
 	private function probe_payment_method_availability(): void {
-		$registry = wc_get_container()->get( WooPaymentsPaymentMethodRegistry::class );
+		$registry = wc_get_container()->get( PaymentMethodRegistry::class );
 		$registry->get_available_payment_method_ids_for_account( wc_get_container()->get( WooPaymentsAccountService::class ) );
 	}
 
@@ -677,7 +677,7 @@ class WooPaymentsHookArityContractTest extends WC_Unit_Test_Case {
 	private function probe_order_success_logos(): void {
 		$order      = new WC_Order();
 		$page       = wc_get_container()->get( WooPaymentsOrderSuccessPage::class );
-		$definition = wc_get_container()->get( WooPaymentsPaymentMethodRegistry::class )->get( 'ideal' );
+		$definition = wc_get_container()->get( PaymentMethodRegistry::class )->get( 'ideal' );
 
 		// A missing definition must fail this row, not silently skip it: a registry without it is
 		// exactly the regression this probe exists to catch.
