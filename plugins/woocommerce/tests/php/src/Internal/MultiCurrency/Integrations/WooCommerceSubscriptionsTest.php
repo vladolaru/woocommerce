@@ -831,7 +831,8 @@ class WooCommerceSubscriptionsTest extends WC_Unit_Test_Case {
 	 * `initial_cart` coupon holding the order's discount (`:1708-1852`). The session amounts were converted when they were stored,
 	 * and an order discount is already in the order's currency, so neither converts again. Amounts are from a recorded store run
 	 * at GBP 0.73: a 10.00 coupon stored as 7.30 with a 50.00 minimum stored as 36.45 (the 73.00 maximum is a synthetic value), and a
-	 * 5.00 manual discount. The fixture converts by doubling.
+	 * 5.00 manual discount. The fixture converts by doubling, which exceeds a 50.00/60.00 band's max/min ratio: rebuilding such a
+	 * coupon must keep its maximum.
 	 *
 	 * @dataProvider subscription_cart_coupons
 	 * @runInSeparateProcess
@@ -885,6 +886,10 @@ class WooCommerceSubscriptionsTest extends WC_Unit_Test_Case {
 			'minimum_amount' => '50.00',
 			'maximum_amount' => '60.00',
 		);
+		$tight_band   = array(
+			'minimum_amount' => '50.00',
+			'maximum_amount' => '60.00',
+		) + $stored;
 
 		return array(
 			'renewal, manual discount, stored'           => array( 'renewal', $setup, 'order', $order_amount + array( 'discount_type' => 'renewal_cart' ), '5.00', array( '0', '0' ) ),
@@ -894,6 +899,7 @@ class WooCommerceSubscriptionsTest extends WC_Unit_Test_Case {
 			'initial payment, stored coupon, applied'    => array( null, $apply, 'session', $stored, '7.30', array( '36.45', '73.00' ) ),
 			'renewal, stored non-recurring coupon, applied' => array( 'renewal', $apply, 'session', $stored, '7.30', array( '36.45', '73.00' ) ),
 			'renewal, stored renewal coupon, applied'    => array( 'renewal', $apply, 'session', array( 'discount_type' => 'renewal_fee' ) + $stored, '7.30', array( '36.45', '73.00' ) ),
+			'renewal, stored coupon above its max/min ratio, applied' => array( 'renewal', $apply, 'session', $tight_band, '7.30', array( '50.00', '60.00' ) ),
 			'renewal, stored coupon, order coupon line'  => array( 'renewal', array(), 'session', $stored, '7.30', array( '36.45', '73.00' ) ),
 			'renewal, database coupon, stored'           => array( 'renewal', $setup, 'database', $database, '20', array( '100', '120' ) ),
 			'initial payment, database coupon, stored'   => array( null, $setup, 'database', $database, '20', array( '100', '120' ) ),

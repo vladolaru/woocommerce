@@ -592,4 +592,55 @@ class WC_Coupon_Tests extends WC_Unit_Test_Case {
 		$this->assertSame( '50', $coupon->get_minimum_amount() );
 		$this->assertSame( '100', $coupon->get_maximum_amount() );
 	}
+
+	/**
+	 * @testdox The spend limit setters compare stored amounts, not ones an amount filter converted: $label.
+	 * @dataProvider provider_spend_limits_under_a_converting_filter
+	 *
+	 * @param string $label Case.
+	 * @param string $order 'min first', 'max first', or 'load' (saved, then read from the database).
+	 * @param float  $rate  Rate the getter filters multiply both amounts by.
+	 */
+	public function test_spend_limit_setters_compare_stored_amounts_under_a_converting_filter( string $label, string $order, float $rate ): void {
+		unset( $label );
+		$coupon = new WC_Coupon();
+		if ( 'load' === $order ) {
+			$coupon->set_props(
+				array(
+					'code'           => 'converted-spend-limits',
+					'minimum_amount' => '50',
+					'maximum_amount' => '60',
+				)
+			);
+			$coupon->save();
+		}
+		$convert = static fn( $amount ) => $amount ? (string) ( (float) $amount * $rate ) : $amount;
+		add_filter( 'woocommerce_coupon_get_minimum_amount', $convert );
+		add_filter( 'woocommerce_coupon_get_maximum_amount', $convert );
+
+		if ( 'load' === $order ) {
+			$coupon = new WC_Coupon( $coupon->get_id() );
+		} elseif ( 'min first' === $order ) {
+			$coupon->set_minimum_amount( '50' );
+			$coupon->set_maximum_amount( '60' );
+		} else {
+			$coupon->set_maximum_amount( '60' );
+			$coupon->set_minimum_amount( '50' );
+		}
+
+		$this->assertSame( array( '50', '60' ), array( $coupon->get_minimum_amount( 'edit' ), $coupon->get_maximum_amount( 'edit' ) ) );
+	}
+
+	/**
+	 * Orders of setting a 50 minimum and a 60 maximum, each with a rate that pushes the converted amount past the other.
+	 *
+	 * @return array<string,array{0:string,1:string,2:float}>
+	 */
+	public function provider_spend_limits_under_a_converting_filter(): array {
+		return array(
+			'minimum then maximum' => array( 'minimum then maximum, rate 2', 'min first', 2.0 ),
+			'maximum then minimum' => array( 'maximum then minimum, rate 0.5', 'max first', 0.5 ),
+			'loaded from database' => array( 'loaded from the database, rate 2', 'load', 2.0 ),
+		);
+	}
 }
