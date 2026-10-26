@@ -7,8 +7,8 @@
 		},
 		"blocks-express-checkout.js": {
 			"allow_new": true,
-			"raw_bytes": 26101,
-			"gzip_bytes": 8679
+			"raw_bytes": 26103,
+			"gzip_bytes": 8681
 		},
 		"multi-currency-analytics.js": {
 			"allow_missing": true
@@ -35,7 +35,7 @@
 			"gzip_growth_bytes": 2145
 		},
 		"admin-capital.js": {
-			"raw_bytes": 11013,
+			"raw_bytes": 11018,
 			"gzip_bytes": 3527
 		},
 		"admin-fraud-protection.js": {
@@ -51,8 +51,8 @@
 			"gzip_bytes": 9225
 		},
 		"admin-shared.css": {
-			"raw_bytes": 162886,
-			"gzip_bytes": 20422
+			"raw_bytes": 186606,
+			"gzip_bytes": 20973
 		},
 		"blocks-common.js": {
 			"allow_new": true,
