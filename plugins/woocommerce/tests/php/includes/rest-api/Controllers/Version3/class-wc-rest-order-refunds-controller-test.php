@@ -317,22 +317,27 @@ class WC_REST_Order_Refunds_Controller_Test extends WC_REST_Unit_Test_Case {
 	 * @testdox Explicit item refunds compare their line total with the refund amount in the order currency's decimals.
 	 *
 	 * Expected results are the comparison done in the order currency (USD, two decimals): 5.25 of line items is more than
-	 * an amount of 5, and 0.25 is more than 0. A store-currency order keeps the store's precision.
+	 * an amount of 5, and 0.25 is more than 0; a 10.50 line is refunded in full at 10.50. A store-currency order keeps
+	 * the store's precision, where that refund's total is stored as -11.
 	 *
 	 * @testWith ["JPY", 0, "USD", "5.25", "5", 400]
 	 *           ["JPY", 0, "USD", "0.25", "0", 400]
 	 *           ["JPY", 0, "USD", "5.25", "5.25", 201]
 	 *           ["USD", 0, "USD", "5.25", "5", 201]
+	 *           ["JPY", 0, "USD", "10.50", "10.50", 201, "10.50", "-10.50"]
+	 *           ["USD", 0, "USD", "10.50", "10.50", 201, "10.50", "-11"]
 	 *
 	 * @param string $store_currency  Store currency.
 	 * @param int    $store_decimals  Store price decimals.
 	 * @param string $order_currency  Order currency.
-	 * @param string $line_total      Requested refund_total of the 18.00 line.
+	 * @param string $line_total      Requested refund_total of the line.
 	 * @param string $amount          Requested refund amount.
 	 * @param int    $expected_status Expected response status.
+	 * @param string $original        Total of the order's one line.
+	 * @param string $expected_total  Expected total of the stored refund, or empty to skip the stored values.
 	 */
-	public function test_explicit_refund_compares_line_items_with_amount_in_order_currency_decimals( string $store_currency, int $store_decimals, string $order_currency, string $line_total, string $amount, int $expected_status ): void {
-		$order = $this->create_order_with_one_line_in_currency( $store_currency, $store_decimals, $order_currency );
+	public function test_explicit_refund_compares_line_items_with_amount_in_order_currency_decimals( string $store_currency, int $store_decimals, string $order_currency, string $line_total, string $amount, int $expected_status, string $original = '18', string $expected_total = '' ): void {
+		$order = $this->create_order_with_one_line_in_currency( $store_currency, $store_decimals, $order_currency, $original );
 
 		$response = $this->request_line_refund( $order, $line_total, $amount );
 
@@ -341,6 +346,11 @@ class WC_REST_Order_Refunds_Controller_Test extends WC_REST_Unit_Test_Case {
 			$this->assertSame( 'woocommerce_rest_invalid_refund_amount', $response->get_data()['code'] );
 		}
 		$this->assertCount( 400 === $expected_status ? 0 : 1, wc_get_order( $order->get_id() )->get_refunds() );
+		if ( '' !== $expected_total ) {
+			$refund = current( wc_get_order( $order->get_id() )->get_refunds() );
+			$this->assertSame( $amount, $refund->get_amount(), 'The refund should store the requested amount.' );
+			$this->assertSame( $expected_total, $refund->get_total(), 'The refund total should use the order currency precision.' );
+		}
 	}
 
 	/**
@@ -373,14 +383,15 @@ class WC_REST_Order_Refunds_Controller_Test extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * Create a processing order with one 18.00 line in the given currency, on a store with the given currency and decimals.
+	 * Create a processing order with one line in the given currency, on a store with the given currency and decimals.
 	 *
 	 * @param string $store_currency Store currency.
 	 * @param int    $store_decimals Store price decimals.
 	 * @param string $order_currency Order currency.
+	 * @param string $line_total     Total of the line, and of the order.
 	 * @return WC_Order
 	 */
-	private function create_order_with_one_line_in_currency( string $store_currency, int $store_decimals, string $order_currency ): WC_Order {
+	private function create_order_with_one_line_in_currency( string $store_currency, int $store_decimals, string $order_currency, string $line_total = '18' ): WC_Order {
 		update_option( 'woocommerce_currency', $store_currency );
 		update_option( 'woocommerce_price_num_decimals', $store_decimals );
 		wp_set_current_user( 1 );
@@ -391,13 +402,13 @@ class WC_REST_Order_Refunds_Controller_Test extends WC_REST_Unit_Test_Case {
 			array(
 				'name'     => 'Item',
 				'quantity' => 1,
-				'subtotal' => '18',
-				'total'    => '18',
+				'subtotal' => $line_total,
+				'total'    => $line_total,
 			)
 		);
 		$order->add_item( $item );
 		$order->set_currency( $order_currency );
-		$order->set_total( '18' );
+		$order->set_total( $line_total );
 		$order->set_status( OrderStatus::PROCESSING );
 		$order->save();
 

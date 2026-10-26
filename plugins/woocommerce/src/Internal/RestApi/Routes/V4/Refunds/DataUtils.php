@@ -84,7 +84,7 @@ class DataUtils {
 			if ( ! isset( $line_item['refund_tax'] ) && isset( $line_item['refund_total'] ) ) {
 				$original_item = $order->get_item( $line_item['line_item_id'] );
 				if ( $original_item instanceof WC_Order_Item_Product || $original_item instanceof WC_Order_Item_Shipping || $original_item instanceof WC_Order_Item_Fee ) {
-					$split = $this->split_inclusive_by_stored_ratio( (float) $line_item['refund_total'], $original_item, wc_get_price_decimals() );
+					$split = $this->split_inclusive_by_stored_ratio( (float) $line_item['refund_total'], $original_item, $this->get_order_price_decimals( $order ) );
 
 					// Leave a tax-free line untouched: refund_total stays the full
 					// (tax-exclusive == tax-inclusive) amount and no refund_tax is set.
@@ -141,6 +141,17 @@ class DataUtils {
 	 * @return float|null The refund amount, or null if it can't be calculated.
 	 */
 	public function calculate_refund_amount( array $line_items ): ?float {
+		return $this->sum_refund_amount( $line_items, wc_get_price_decimals() );
+	}
+
+	/**
+	 * Calculate the gross refund amount from line items (schema format), rounded to the given decimals.
+	 *
+	 * @param array $line_items     The line items to calculate the refund amount from.
+	 * @param int   $price_decimals Decimals to round the amount to.
+	 * @return float|null The refund amount, or null if it can't be calculated.
+	 */
+	private function sum_refund_amount( array $line_items, int $price_decimals ): ?float {
 		if ( empty( $line_items ) ) {
 			return null;
 		}
@@ -163,7 +174,7 @@ class DataUtils {
 			}
 		}
 
-		return (float) NumberUtil::round( $amount, wc_get_price_decimals() );
+		return (float) NumberUtil::round( $amount, $price_decimals );
 	}
 
 	/**
@@ -340,7 +351,7 @@ class DataUtils {
 			// validate_preview_line_items() exactly — a previewed amount that is
 			// accepted (or rejected) there behaves the same way here.
 			if ( isset( $line_item['refund_total'] ) ) {
-				$price_decimals    = wc_get_price_decimals();
+				$price_decimals    = $this->get_order_price_decimals( $order );
 				$signed_line_total = (float) $item->get_total() + (float) $item->get_total_tax();
 
 				// Reject a refund_total whose sign is opposite the line: you cannot refund
@@ -431,7 +442,7 @@ class DataUtils {
 							);
 						}
 
-						$price_decimals = wc_get_price_decimals();
+						$price_decimals = $this->get_order_price_decimals( $order );
 						$stored_tax     = (float) $item_taxes['total'][ $tax_id ];
 						$requested_tax  = (float) $tax_refund_total;
 
@@ -497,11 +508,10 @@ class DataUtils {
 	 * @param WC_Order_Item_Product|WC_Order_Item_Fee|WC_Order_Item_Shipping $item                  Original order item.
 	 * @param float                                                          $refund_total          Requested line item refund amount.
 	 * @param float                                                          $already_refunded_total Prior refunds for this item, including tax.
-	 * @param WC_Order|null                                                  $order                  Order of the item, whose currency sets the rounding precision. Null uses the store's price decimals, which the computed path has already rounded its input to.
 	 * @return true|WP_Error Validation result.
 	 */
-	public function validate_refund_line_total( $item, float $refund_total, float $already_refunded_total, ?WC_Order $order = null ) {
-		$price_decimals      = $order ? CurrencyUtil::get_price_decimals( $order->get_currency() ) : wc_get_price_decimals();
+	public function validate_refund_line_total( $item, float $refund_total, float $already_refunded_total ) {
+		$price_decimals      = $this->get_order_price_decimals( $item->get_order() );
 		$signed_line_total   = (float) $item->get_total() + (float) $item->get_total_tax();
 		$item_total_with_tax = abs( $signed_line_total );
 		$abs_refund_total    = NumberUtil::round( abs( $refund_total ), $price_decimals );
@@ -695,7 +705,7 @@ class DataUtils {
 			throw new \InvalidArgumentException( sprintf( 'Quantity must be >= 1, got %d.', (int) $quantity ) );
 		}
 
-		$price_decimals = wc_get_price_decimals();
+		$price_decimals = $this->get_order_price_decimals( $item->get_order() );
 
 		if ( $item instanceof WC_Order_Item_Product ) {
 			$original_qty = $item->get_quantity();
@@ -753,7 +763,7 @@ class DataUtils {
 	 */
 	private function compute_quantity_refund_total( $item, int $quantity, array $refund_data ): float {
 		$computed          = $this->compute_line_item_refund_total( $item, $quantity );
-		$price_decimals    = wc_get_price_decimals();
+		$price_decimals    = $this->get_order_price_decimals( $item->get_order() );
 		$signed_line_total = (float) $item->get_total() + (float) $item->get_total_tax();
 		$refunded_total    = abs( (float) ( $refund_data['totals'][ $item->get_id() ] ?? 0.0 ) );
 		$remaining_total   = NumberUtil::round( abs( $signed_line_total ) - $refunded_total, $price_decimals );
@@ -797,7 +807,7 @@ class DataUtils {
 	 * @return bool
 	 */
 	private function line_refund_history_matches_quantities( WC_Order_Item_Product $item, array $line_refunds ): bool {
-		$price_decimals = wc_get_price_decimals();
+		$price_decimals = $this->get_order_price_decimals( $item->get_order() );
 
 		foreach ( $line_refunds as $refund_line ) {
 			if ( $refund_line['qty'] <= 0 ) {
@@ -816,11 +826,10 @@ class DataUtils {
 	/**
 	 * Round every caller-supplied refund_total to currency precision.
 	 *
-	 * Applied at the entry of both the preview and create flows so a value the client
-	 * sends is validated, summed, split, and stored at the same precision. A previewed
-	 * amount therefore always matches the created refund to the cent. A missing or null
-	 * refund_total (the auto-compute form) is left untouched — those are computed later
-	 * and already rounded by {@see compute_line_item_refund_total()}.
+	 * The preview and create flows round at the order currency's decimals through
+	 * round_refund_totals(), so a value the client sends is validated, summed, split, and
+	 * stored at the same precision. A missing or null refund_total (the auto-compute form)
+	 * is left untouched.
 	 *
 	 * @param array $line_items Line items in schema format.
 	 * @return array Line items with numeric refund_total values rounded to wc_get_price_decimals().
@@ -828,7 +837,20 @@ class DataUtils {
 	 * @since 10.9.0
 	 */
 	public function normalize_refund_totals( array $line_items ): array {
-		$price_decimals = wc_get_price_decimals();
+		return $this->round_refund_totals( $line_items, wc_get_price_decimals() );
+	}
+
+	/**
+	 * Round every caller-supplied refund_total to the given decimals.
+	 *
+	 * Applied at the entry of both the preview and create flows, with the order currency's
+	 * decimals, so a previewed amount always matches the created refund to the cent.
+	 *
+	 * @param array $line_items     Line items in schema format.
+	 * @param int   $price_decimals Decimals to round to.
+	 * @return array Line items with numeric refund_total values rounded.
+	 */
+	private function round_refund_totals( array $line_items, int $price_decimals ): array {
 		foreach ( $line_items as $key => $line_item ) {
 			if ( isset( $line_item['refund_total'] ) && is_numeric( $line_item['refund_total'] ) ) {
 				$line_items[ $key ]['refund_total'] = NumberUtil::round( (float) $line_item['refund_total'], $price_decimals );
@@ -866,7 +888,7 @@ class DataUtils {
 		// Round caller-supplied amounts up front so explicit values are stored at the
 		// same precision the preview validated and showed. Computed values below are
 		// already rounded by compute_quantity_refund_total().
-		$line_items = $this->normalize_refund_totals( $line_items );
+		$line_items = $this->round_refund_totals( $line_items, $this->get_order_price_decimals( $order ) );
 
 		// Loaded lazily: only requests with at least one auto-computed line pay for
 		// the refund-history scan the remaining-amount cap needs.
@@ -942,7 +964,7 @@ class DataUtils {
 	 * @since 10.9.0
 	 */
 	public function build_refund_preview( WC_Order $order, array $line_items ): array {
-		$price_decimals = wc_get_price_decimals();
+		$price_decimals = $this->get_order_price_decimals( $order );
 		$refund_data    = $this->compute_refunded_quantities_and_totals( $order );
 		$sections       = array(
 			'products' => array(
@@ -1150,7 +1172,7 @@ class DataUtils {
 				);
 			}
 
-			$price_decimals    = wc_get_price_decimals();
+			$price_decimals    = $this->get_order_price_decimals( $order );
 			$signed_line_total = (float) $item->get_total() + (float) $item->get_total_tax();
 
 			// Validate an explicit refund_total. Mirrors validate_line_items() exactly (sign,
@@ -1292,7 +1314,7 @@ class DataUtils {
 		// Round caller-supplied refund_total values once, up front, so validation and
 		// the computed preview use the same precision the create flow stores. Reused
 		// for both validate and build below.
-		$line_items = $this->normalize_refund_totals( $line_items );
+		$line_items = $this->round_refund_totals( $line_items, $this->get_order_price_decimals( $order ) );
 
 		$validation_error = $this->validate_preview_line_items( $line_items, $order );
 
@@ -1350,7 +1372,7 @@ class DataUtils {
 				sprintf(
 					/* translators: 1: requested preview total including tax, 2: remaining refundable */
 					__( 'Requested refund preview (%1$s) exceeds the remaining refundable amount (%2$s).', 'woocommerce' ),
-					wc_format_decimal( $preview_total_with_tax, wc_get_price_decimals() ),
+					wc_format_decimal( $preview_total_with_tax, $this->get_order_price_decimals( $order ) ),
 					$preview['max_refundable']
 				),
 				array( 'status' => WP_Http::UNPROCESSABLE_ENTITY )
@@ -1425,10 +1447,11 @@ class DataUtils {
 		// (split_inclusive_by_stored_ratio(), the same method the preview uses). When
 		// the client supplies an explicit refund_tax breakdown, refund_total is the
 		// tax-exclusive subtotal and the tax is added on top (core Woo semantics).
-		// Either way calculate_refund_amount sums refund_total + refund_tax to the
+		// Either way sum_refund_amount() adds refund_total and refund_tax up to the
 		// gross line amount, so mixing the two forms across line items is well-defined.
+		$price_decimals      = $this->get_order_price_decimals( $order );
 		$internal_line_items = $this->convert_line_items_to_internal_format( $line_items, $order );
-		$calculated_total    = ! empty( $line_items ) ? $this->calculate_refund_amount( $line_items ) : 0;
+		$calculated_total    = ! empty( $line_items ) ? $this->sum_refund_amount( $line_items, $price_decimals ) : 0;
 
 		$amount = $has_amount_override ? $amount_override : $calculated_total;
 
@@ -1442,14 +1465,14 @@ class DataUtils {
 
 		// Prevent under-refunding: the amount cannot be less than the calculated line
 		// items total. Over-refunding is allowed for goodwill/compensation scenarios.
-		if ( $has_amount_override && $calculated_total > 0 && NumberUtil::round( (float) $amount, wc_get_price_decimals() ) < NumberUtil::round( $calculated_total, wc_get_price_decimals() ) ) {
+		if ( $has_amount_override && $calculated_total > 0 && NumberUtil::round( (float) $amount, $price_decimals ) < NumberUtil::round( $calculated_total, $price_decimals ) ) {
 			return new WP_Error(
 				'invalid_refund_amount',
 				sprintf(
 					/* translators: %1$s: refund amount, %2$s: calculated total from line items */
 					__( 'Refund amount (%1$s) cannot be less than the total of line items (%2$s).', 'woocommerce' ),
-					wc_format_decimal( $amount, wc_get_price_decimals() ),
-					wc_format_decimal( $calculated_total, wc_get_price_decimals() )
+					wc_format_decimal( $amount, $price_decimals ),
+					wc_format_decimal( $calculated_total, $price_decimals )
 				),
 				array( 'status' => WP_Http::BAD_REQUEST )
 			);
@@ -1460,14 +1483,14 @@ class DataUtils {
 		// 422 rather than relying on wc_create_refund's generic failure, mirroring the
 		// preview pipeline's preview_exceeds_max_refundable guard.
 		$remaining_refundable = (float) $order->get_remaining_refund_amount();
-		if ( NumberUtil::round( (float) $amount, wc_get_price_decimals() ) > NumberUtil::round( $remaining_refundable, wc_get_price_decimals() ) ) {
+		if ( NumberUtil::round( (float) $amount, $price_decimals ) > NumberUtil::round( $remaining_refundable, $price_decimals ) ) {
 			return new WP_Error(
 				'refund_exceeds_remaining',
 				sprintf(
 					/* translators: %1$s: requested refund amount, %2$s: remaining refundable amount */
 					__( 'Refund amount (%1$s) exceeds the remaining refundable amount (%2$s).', 'woocommerce' ),
-					wc_format_decimal( $amount, wc_get_price_decimals() ),
-					wc_format_decimal( $remaining_refundable, wc_get_price_decimals() )
+					wc_format_decimal( $amount, $price_decimals ),
+					wc_format_decimal( $remaining_refundable, $price_decimals )
 				),
 				array( 'status' => WP_Http::UNPROCESSABLE_ENTITY )
 			);
@@ -1609,5 +1632,17 @@ class DataUtils {
 			'tax_totals'   => $tax_totals,
 			'line_refunds' => $line_refunds,
 		);
+	}
+
+	/**
+	 * Get the decimals to round an order's refund amounts to.
+	 *
+	 * The order currency's decimals (see CurrencyUtil::get_price_decimals()), or the store's when there is no order.
+	 *
+	 * @param WC_Order|false|null $order The order being refunded.
+	 * @return int
+	 */
+	private function get_order_price_decimals( $order ): int {
+		return $order instanceof WC_Order ? CurrencyUtil::get_price_decimals( $order->get_currency() ) : wc_get_price_decimals();
 	}
 }

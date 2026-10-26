@@ -535,7 +535,7 @@ class WC_REST_Order_Refunds_Controller extends WC_REST_Order_Refunds_V2_Controll
 			if ( null === $refund_data ) {
 				$refund_data = $this->get_data_utils()->compute_refunded_quantities_and_totals( $order );
 			}
-			$validation_error = $this->get_data_utils()->validate_refund_line_total( $item, $gross_refund_total, (float) ( $refund_data['totals'][ $item_id ] ?? 0 ), $order );
+			$validation_error = $this->get_data_utils()->validate_refund_line_total( $item, $gross_refund_total, (float) ( $refund_data['totals'][ $item_id ] ?? 0 ) );
 			if ( is_wp_error( $validation_error ) ) {
 				return $this->prefix_error_code( $validation_error );
 			}

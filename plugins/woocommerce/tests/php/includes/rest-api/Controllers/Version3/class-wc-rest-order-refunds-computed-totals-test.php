@@ -1753,6 +1753,108 @@ class WC_REST_Order_Refunds_Computed_Totals_Test extends WC_REST_Unit_Test_Case 
 	}
 
 	/**
+	 * @testdox A compute_totals refund of an order in another currency is checked, recorded and refunded at that currency's decimals.
+	 *
+	 * Expected amounts are the requests in the order currency (USD, two decimals): 10.50 stays 10.50; the 0.25 left after
+	 * 17.75 of an 18.00 line can be refunded by amount or by quantity, and a 0.40 amount above it is refused; a 17.50 line
+	 * is refunded in full at 17.50, and a 10.50 line at 10.50; one of two 8.75 units is 8.75, also after the other unit was refunded at 8.50 (which
+	 * is not its unit price, so the last unit is not topped up to the 9.00 left); a taxed 55.25 splits into 50.23 and
+	 * 5.02 tax (10/110 of it); the 0.25 of tax left after 9.75 can be refunded. Store-currency orders keep the store's
+	 * precision: 10.50 is 11, also as the full refund of a 10.50 line, and 0.25 of tax rounds to a zero refund.
+	 *
+	 * @testWith ["JPY", 0, "USD", 18, 1, false, {}, {"refund_total": "10.50"}, {}, 201, 10.5]
+	 *           ["JPY", 0, "USD", 18, 1, false, {"qty": 0, "refund_total": "17.75"}, {"refund_total": "0.25"}, {}, 201, 0.25]
+	 *           ["JPY", 0, "USD", 18, 1, false, {"qty": 0, "refund_total": "17.75"}, {"quantity": 1}, {}, 201, 0.25]
+	 *           ["JPY", 0, "USD", 18, 1, false, {"qty": 0, "refund_total": "17.75"}, {"refund_total": "0.25"}, {"amount": "0.40"}, 422, "woocommerce_rest_refund_exceeds_remaining"]
+	 *           ["JPY", 0, "USD", 17.5, 1, false, {}, {"refund_total": "17.50"}, {}, 201, 17.5]
+	 *           ["JPY", 0, "USD", 8.75, 2, false, {}, {"quantity": 1}, {}, 201, 8.75]
+	 *           ["JPY", 0, "USD", 8.75, 2, false, {"qty": 1, "refund_total": "8.50"}, {"quantity": 1}, {}, 201, 8.75]
+	 *           ["JPY", 0, "USD", 100, 1, true, {}, {"refund_total": "55.25"}, {}, 201, 55.25]
+	 *           ["JPY", 0, "USD", 100, 1, true, {"qty": 0, "refund_total": "0", "refund_tax": "9.75"}, {"refund_total": "0", "refund_tax": "0.25"}, {}, 201, 0.25]
+	 *           ["JPY", 0, "USD", 10.5, 1, false, {}, {"refund_total": "10.50"}, {}, 201, 10.5]
+	 *           ["USD", 0, "USD", 18, 1, false, {}, {"refund_total": "10.50"}, {}, 201, 11]
+	 *           ["USD", 0, "USD", 10.5, 1, false, {}, {"refund_total": "10.50"}, {}, 201, 11]
+	 *           ["USD", 0, "USD", 100, 1, true, {"qty": 0, "refund_total": "0", "refund_tax": "9.75"}, {"refund_total": "0", "refund_tax": "0.25"}, {}, 400, "woocommerce_rest_invalid_refund_total"]
+	 *
+	 * @param string       $store_currency  Store currency.
+	 * @param int          $store_decimals  Store price decimals.
+	 * @param string       $order_currency  Order currency.
+	 * @param float        $unit_price      Net unit price of the order's one line.
+	 * @param int          $units           Units on the line.
+	 * @param bool         $taxed           Whether the line carries 10% tax on top.
+	 * @param array        $prior           A refund of the line made before the request (qty, refund_total, optional refund_tax), or none.
+	 * @param array        $line            Request fields of the line besides its id; a refund_tax is the amount for the line's one tax.
+	 * @param array        $extra           Other request fields.
+	 * @param int          $expected_status Expected response status.
+	 * @param float|string $expected        Expected refund amount, or the error code of a refused request.
+	 */
+	public function test_compute_totals_refund_uses_order_currency_decimals( string $store_currency, int $store_decimals, string $order_currency, float $unit_price, int $units, bool $taxed, array $prior, array $line, array $extra, int $expected_status, $expected ): void {
+		update_option( 'woocommerce_currency', $store_currency );
+		update_option( 'woocommerce_price_num_decimals', $store_decimals );
+		$tax_rate_id = $taxed ? $this->create_tax_rate( 10.0 ) : 0;
+		$order       = $taxed
+			? $this->create_order_with_product_and_tax( $unit_price, $units, $tax_rate_id, $unit_price * $units / 10 )
+			: $this->create_order_with_product( $unit_price, $units );
+		$item_id     = $this->get_first_line_item_id( $order );
+		$order->set_currency( $order_currency );
+		$order->save();
+
+		if ( $prior ) {
+			$prior_tax = (float) ( $prior['refund_tax'] ?? 0 );
+			$refund    = wc_create_refund(
+				array(
+					'order_id'   => $order->get_id(),
+					'amount'     => (string) ( (float) $prior['refund_total'] + $prior_tax ),
+					'line_items' => array(
+						$item_id => array(
+							'qty'          => $prior['qty'],
+							'refund_total' => $prior['refund_total'],
+							'refund_tax'   => $prior_tax ? array( $tax_rate_id => $prior_tax ) : array(),
+						),
+					),
+				)
+			);
+			$this->assertNotWPError( $refund );
+		}
+
+		if ( isset( $line['refund_tax'] ) ) {
+			$line['refund_tax'] = array(
+				array(
+					'id'           => $tax_rate_id,
+					'refund_total' => $line['refund_tax'],
+				),
+			);
+		}
+		$response = $this->do_create_request(
+			$order->get_id(),
+			array_merge(
+				array(
+					'compute_totals' => true,
+					'line_items'     => array( array_merge( array( 'id' => $item_id ), $line ) ),
+				),
+				$extra
+			)
+		);
+
+		$this->assertSame( $expected_status, $response->get_status() );
+		if ( is_string( $expected ) ) {
+			$this->assertSame( $expected, $response->get_data()['code'] );
+			return;
+		}
+
+		// wc_create_refund() asks the gateway for the refund's amount (wc_refund_payment( $order, $refund->get_amount() )).
+		$amount = (float) $expected;
+		$refund = wc_get_order( $response->get_data()['id'] );
+		$this->assertSame( $amount, (float) $refund->get_amount(), 'The refund should record and refund the requested amount.' );
+		$this->assertSame( -$amount, (float) $refund->get_total(), 'The refund total should match the amount.' );
+		$line_sum = 0.0;
+		foreach ( $refund->get_items() as $refund_item ) {
+			$line_sum += (float) $refund_item->get_total() + (float) $refund_item->get_total_tax();
+		}
+		$this->assertSame( -$amount, round( $line_sum, 2 ), 'The refund lines should add up to the amount.' );
+	}
+
+	/**
 	 * Create a completed order with a single product line item.
 	 *
 	 * @param float $unit_price Unit price.
