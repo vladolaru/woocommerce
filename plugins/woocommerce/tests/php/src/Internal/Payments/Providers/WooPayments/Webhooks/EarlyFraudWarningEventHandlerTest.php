@@ -841,6 +841,7 @@ class EarlyFraudWarningEventHandlerTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should mutate only the matching order on the current multisite blog.
 	 * @group multisite
+	 * @ddlInTransaction Per-blog isolation is the subject: the second blog needs WooCommerce's tables, and WC_Install::create_tables() runs ALTER TABLE.
 	 */
 	public function test_processing_is_isolated_to_the_current_multisite_blog(): void {
 		if ( ! is_multisite() ) {
@@ -875,6 +876,7 @@ class EarlyFraudWarningEventHandlerTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should preserve the calling multisite blog when processing and lock cleanup both throw.
 	 * @group multisite
+	 * @ddlInTransaction Per-blog isolation is the subject: the second blog needs WooCommerce's tables, and WC_Install::create_tables() runs ALTER TABLE.
 	 */
 	public function test_throwing_handler_and_lock_cleanup_preserve_the_current_multisite_blog(): void {
 		if ( ! is_multisite() ) {

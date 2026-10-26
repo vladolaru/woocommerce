@@ -53,6 +53,7 @@ class WooPaymentsMultisiteCheckoutIsolationTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Current-blog services should keep checkout identities isolated across blog switches.
 	 * @group multisite
+	 * @ddlInTransaction Per-blog isolation is the subject: the second blog needs WooCommerce's tables, and WC_Install::create_tables() runs ALTER TABLE.
 	 */
 	public function test_current_blog_services_keep_checkout_identities_isolated(): void {
 		if ( ! is_multisite() ) {
@@ -131,6 +132,7 @@ class WooPaymentsMultisiteCheckoutIsolationTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox One gateway instance should refresh site-derived checkout state after blog switches.
 	 * @group multisite
+	 * @ddlInTransaction Per-blog isolation is the subject: the second blog needs WooCommerce's tables, and WC_Install::create_tables() runs ALTER TABLE.
 	 */
 	public function test_one_gateway_instance_refreshes_site_derived_checkout_state_after_blog_switches(): void {
 		if ( ! is_multisite() ) {
@@ -271,6 +273,7 @@ class WooPaymentsMultisiteCheckoutIsolationTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox The built-in WooPayments should own and serve checkout on both a primary and a secondary site once each independently enables it.
 	 * @group multisite
+	 * @ddlInTransaction Per-blog isolation is the subject: the second blog needs WooCommerce's tables, and WC_Install::create_tables() runs ALTER TABLE.
 	 */
 	public function test_builtin_runtime_serves_both_sites_when_enabled_on_each(): void {
 		if ( ! is_multisite() ) {

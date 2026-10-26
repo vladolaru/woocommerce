@@ -887,6 +887,7 @@ class VerifiedEmailRestoreServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox An owner-loss drain affects only the current multisite blog.
 	 * @group multisite
+	 * @ddlInTransaction Per-blog isolation is the subject: the second blog needs WooCommerce's tables, and creating them runs CREATE, ALTER and DROP.
 	 */
 	public function test_owner_loss_drain_is_isolated_to_current_blog(): void {
 		$this->skipWithoutMultisite();
@@ -930,6 +931,7 @@ class VerifiedEmailRestoreServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox A deferred drain does not cross multisite blog context before order CRUD readiness.
 	 * @group multisite
+	 * @ddlInTransaction Per-blog isolation is the subject: the second blog needs WooCommerce's tables, and creating them runs CREATE, ALTER and DROP.
 	 */
 	public function test_deferred_drain_is_bound_to_its_originating_multisite_blog(): void {
 		global $wp_actions;

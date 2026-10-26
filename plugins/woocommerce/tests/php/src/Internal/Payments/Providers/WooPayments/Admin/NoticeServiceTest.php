@@ -1200,6 +1200,7 @@ class NoticeServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Post-KYC site state, order eligibility, and URLs stay blog-local while user actions remain network-global.
 	 * @group multisite
+	 * @ddlInTransaction Per-blog isolation is the subject: the second blog needs WooCommerce's tables, and WC_Install::create_tables() runs ALTER TABLE.
 	 */
 	public function test_post_kyc_state_is_isolated_by_blog_while_user_action_is_global(): void {
 		$this->skipWithoutMultisite();
@@ -1292,6 +1293,7 @@ class NoticeServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox One-and-done queries, transients and options stay on the current blog.
 	 * @group multisite
+	 * @ddlInTransaction Per-blog isolation is the subject: the second blog needs WooCommerce's tables, and WC_Install::create_tables() runs ALTER TABLE.
 	 */
 	public function test_one_and_done_state_and_queries_are_isolated_by_blog(): void {
 		$this->skipWithoutMultisite();
