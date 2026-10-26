@@ -1585,6 +1585,16 @@ class DataUtils {
 			}
 		};
 
+		// Core stores a refund line's total_tax rounded at the store's decimals (WC_Order_Item_Product::set_taxes()), so for an
+		// order whose currency has more decimals the refunded tax comes from the per-rate taxes the line keeps.
+		$read_per_rate_taxes = $this->get_order_price_decimals( $order ) !== wc_get_price_decimals();
+		$refunded_tax        = function ( $refunded_item ) use ( $read_per_rate_taxes ): float {
+			if ( ! $read_per_rate_taxes ) {
+				return (float) $refunded_item->get_total_tax();
+			}
+			return (float) array_sum( array_map( 'floatval', (array) ( $refunded_item->get_taxes()['total'] ?? array() ) ) );
+		};
+
 		foreach ( $order->get_refunds() as $refund ) {
 			/**
 			 * Refunded product line items.
@@ -1595,10 +1605,10 @@ class DataUtils {
 			foreach ( $refunded_line_items as $refunded_item ) {
 				$original_id                    = absint( $refunded_item->get_meta( '_refunded_item_id' ) );
 				$qtys[ $original_id ]           = ( $qtys[ $original_id ] ?? 0 ) + $refunded_item->get_quantity();
-				$totals[ $original_id ]         = ( $totals[ $original_id ] ?? 0.0 ) + ( (float) $refunded_item->get_total() + (float) $refunded_item->get_total_tax() ) * -1;
+				$totals[ $original_id ]         = ( $totals[ $original_id ] ?? 0.0 ) + ( (float) $refunded_item->get_total() + $refunded_tax( $refunded_item ) ) * -1;
 				$line_refunds[ $original_id ][] = array(
 					'qty'   => absint( $refunded_item->get_quantity() ),
-					'gross' => abs( (float) $refunded_item->get_total() + (float) $refunded_item->get_total_tax() ),
+					'gross' => abs( (float) $refunded_item->get_total() + $refunded_tax( $refunded_item ) ),
 				);
 				$add_refunded_taxes( $refunded_item, $original_id );
 			}
@@ -1610,7 +1620,7 @@ class DataUtils {
 			$refunded_fees = $refund->get_items( 'fee' );
 			foreach ( $refunded_fees as $refunded_item ) {
 				$original_id            = absint( $refunded_item->get_meta( '_refunded_item_id' ) );
-				$totals[ $original_id ] = ( $totals[ $original_id ] ?? 0.0 ) + ( (float) $refunded_item->get_total() + (float) $refunded_item->get_total_tax() ) * -1;
+				$totals[ $original_id ] = ( $totals[ $original_id ] ?? 0.0 ) + ( (float) $refunded_item->get_total() + $refunded_tax( $refunded_item ) ) * -1;
 				$add_refunded_taxes( $refunded_item, $original_id );
 			}
 			/**
@@ -1621,7 +1631,7 @@ class DataUtils {
 			$refunded_shipping = $refund->get_items( 'shipping' );
 			foreach ( $refunded_shipping as $refunded_item ) {
 				$original_id            = absint( $refunded_item->get_meta( '_refunded_item_id' ) );
-				$totals[ $original_id ] = ( $totals[ $original_id ] ?? 0.0 ) + ( (float) $refunded_item->get_total() + (float) $refunded_item->get_total_tax() ) * -1;
+				$totals[ $original_id ] = ( $totals[ $original_id ] ?? 0.0 ) + ( (float) $refunded_item->get_total() + $refunded_tax( $refunded_item ) ) * -1;
 				$add_refunded_taxes( $refunded_item, $original_id );
 			}
 		}
