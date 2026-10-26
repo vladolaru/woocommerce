@@ -9,7 +9,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\OnboardingRedirect;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Onboarding\WooPaymentsOnboardingService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Onboarding\OnboardingService;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\PaymentGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDatabaseCache;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
@@ -357,7 +357,7 @@ class WooPaymentsPaymentsSettingsAdapterTest extends WC_Unit_Test_Case {
 		$on_use  = $this->get_container_requests_during( fn() => $adapter->store_referral_code( 'partner-code' ) );
 
 		$this->assertSame( array(), $on_init, 'The adapter must not ask the container for a collaborator when it is initialized.' );
-		$this->assertContains( WooPaymentsOnboardingService::class, $on_use, 'The adapter must ask the container for the onboarding service when it first needs it.' );
+		$this->assertContains( OnboardingService::class, $on_use, 'The adapter must ask the container for the onboarding service when it first needs it.' );
 	}
 
 	/**
@@ -395,8 +395,8 @@ class WooPaymentsPaymentsSettingsAdapterTest extends WC_Unit_Test_Case {
 		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 		$this->provider->method( 'can_manage_onboarding' )->willReturn( $can_manage );
 		$this->set_adapter_api_client( $api_available );
-		$onboarding = $this->createMock( WooPaymentsOnboardingService::class );
-		wc_get_container()->replace( WooPaymentsOnboardingService::class, $onboarding );
+		$onboarding = $this->createMock( OnboardingService::class );
+		wc_get_container()->replace( OnboardingService::class, $onboarding );
 
 		$result = $this->adapter->get_builtin_onboarding();
 
@@ -477,9 +477,9 @@ class WooPaymentsPaymentsSettingsAdapterTest extends WC_Unit_Test_Case {
 		if ( $asked ) {
 			set_transient( WooPaymentsPaymentsSettingsAdapter::WOOPAY_ENABLED_BY_DEFAULT_TRANSIENT, true, DAY_IN_SECONDS );
 		}
-		$onboarding = $this->createMock( WooPaymentsOnboardingService::class );
+		$onboarding = $this->createMock( OnboardingService::class );
 		$onboarding->expects( $expect_activate ? $this->once() : $this->never() )->method( 'activate_woopay_enabled_by_default' );
-		wc_get_container()->replace( WooPaymentsOnboardingService::class, $onboarding );
+		wc_get_container()->replace( OnboardingService::class, $onboarding );
 		if ( $asked ) {
 			$this->set_adapter_api_client( true );
 		}

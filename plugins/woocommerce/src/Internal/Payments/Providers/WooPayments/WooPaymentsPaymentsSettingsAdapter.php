@@ -13,7 +13,7 @@ use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\NoticeService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\OnboardingRedirect;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Onboarding\WooPaymentsOnboardingService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Onboarding\OnboardingService;
 use Exception;
 use Throwable;
 use WC_Payment_Gateway;
@@ -79,9 +79,9 @@ class WooPaymentsPaymentsSettingsAdapter {
 	/**
 	 * The onboarding built into WooCommerce.
 	 *
-	 * @var WooPaymentsOnboardingService|null
+	 * @var OnboardingService|null
 	 */
-	private ?WooPaymentsOnboardingService $onboarding_service = null;
+	private ?OnboardingService $onboarding_service = null;
 
 	/**
 	 * Runtime ownership arbiter.
@@ -321,9 +321,9 @@ class WooPaymentsPaymentsSettingsAdapter {
 	 * It does while the platform connection is available, the WooPayments extension is not active and the built-in
 	 * WooPayments owns the store. Otherwise the WooPayments extension's onboarding routes answer.
 	 *
-	 * @return WooPaymentsOnboardingService|null
+	 * @return OnboardingService|null
 	 */
-	public function get_builtin_onboarding(): ?WooPaymentsOnboardingService {
+	public function get_builtin_onboarding(): ?OnboardingService {
 		if ( $this->get_api_client()->is_available() && ! $this->is_extension_active() && $this->is_builtin_onboarding_available() ) {
 			return $this->get_onboarding_service();
 		}
@@ -512,11 +512,11 @@ class WooPaymentsPaymentsSettingsAdapter {
 	/**
 	 * Get the onboarding built into WooCommerce.
 	 *
-	 * @return WooPaymentsOnboardingService
+	 * @return OnboardingService
 	 */
-	private function get_onboarding_service(): WooPaymentsOnboardingService {
+	private function get_onboarding_service(): OnboardingService {
 		if ( null === $this->onboarding_service ) {
-			$this->onboarding_service = wc_get_container()->get( WooPaymentsOnboardingService::class );
+			$this->onboarding_service = wc_get_container()->get( OnboardingService::class );
 		}
 
 		return $this->onboarding_service;

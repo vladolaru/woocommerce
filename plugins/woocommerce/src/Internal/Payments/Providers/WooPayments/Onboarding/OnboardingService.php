@@ -1,6 +1,6 @@
 <?php
 /**
- * WooPaymentsOnboardingService class file.
+ * OnboardingService class file.
  */
 
 declare( strict_types = 1 );
@@ -40,7 +40,7 @@ defined( 'ABSPATH' ) || exit;
  * @since 11.2.0
  * @internal
  */
-class WooPaymentsOnboardingService {
+class OnboardingService {
 
 	private const TEST_DRIVE_SETTINGS_FOR_LIVE_ACCOUNT_TRANSIENT = 'test_drive_account_settings_for_live_account';
 

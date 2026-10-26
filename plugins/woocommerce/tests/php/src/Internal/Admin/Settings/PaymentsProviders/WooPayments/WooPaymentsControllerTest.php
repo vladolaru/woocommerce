@@ -11,7 +11,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRu
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExtensionRuntime;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Onboarding\WooPaymentsOnboardingService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Onboarding\OnboardingService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentsSettingsAdapter;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
@@ -314,7 +314,7 @@ class WooPaymentsControllerTest extends WC_Unit_Test_Case {
 		$extension_runtime->method( 'is_loaded' )->willReturn( false );
 		$settings_adapter = $this->createMock( WooPaymentsPaymentsSettingsAdapter::class );
 		$settings_adapter->method( 'has_valid_account' )->willReturn( false );
-		$onboarding_service = new WooPaymentsOnboardingService();
+		$onboarding_service = new OnboardingService();
 		$onboarding_service->init( $this->createMock( LegacyProxy::class ), new WooPaymentsPaymentMethodRegistry() );
 		$settings_adapter->method( 'store_referral_code' )->willReturnCallback( array( $onboarding_service, 'store_referral_code' ) );
 

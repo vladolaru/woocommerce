@@ -20,7 +20,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOu
 use Automattic\WooCommerce\Internal\Payments\PaymentProcessingService;
 use Automattic\WooCommerce\Internal\Payments\ProviderInterface;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Onboarding\WooPaymentsOnboardingService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Onboarding\OnboardingService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDatabaseCache;
@@ -6169,9 +6169,9 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 				'priority' => 0,
 			),
 		);
-		$onboarding  = $this->createMock( WooPaymentsOnboardingService::class );
+		$onboarding  = $this->createMock( OnboardingService::class );
 		$onboarding->expects( $this->once() )->method( 'get_recommended_payment_methods' )->with( 'GB' )->willReturn( $recommended );
-		wc_get_container()->replace( WooPaymentsOnboardingService::class, $onboarding );
+		wc_get_container()->replace( OnboardingService::class, $onboarding );
 
 		$this->assertSame( $recommended, ( new WooPaymentsGateway() )->get_recommended_payment_methods( 'GB' ) );
 	}

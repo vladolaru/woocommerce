@@ -24,7 +24,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiExcept
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\FixedTrackingInfoService;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\ProviderTextLogAssertions;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\RecordingWcLogger;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Onboarding\WooPaymentsOnboardingService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Onboarding\OnboardingService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGatewaySettingsSynchronizer;
@@ -44,9 +44,9 @@ use WP_REST_Request;
  *
  * Most cases drive it through the Payments settings service and its REST routes, as the settings page does.
  *
- * @class WooPaymentsOnboardingService
+ * @class OnboardingService
  */
-class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
+class OnboardingServiceTest extends WC_Unit_Test_Case {
 
 	use ProviderTextLogAssertions;
 
@@ -105,9 +105,9 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * The onboarding service, for the tests that call it directly.
 	 *
-	 * @var WooPaymentsOnboardingService
+	 * @var OnboardingService
 	 */
-	protected WooPaymentsOnboardingService $onboarding_service;
+	protected OnboardingService $onboarding_service;
 
 
 	/**
@@ -251,7 +251,7 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 			),
 		);
 
-		$this->onboarding_service = new WooPaymentsOnboardingService();
+		$this->onboarding_service = new OnboardingService();
 		$this->onboarding_service->init( $this->mockable_proxy, new WooPaymentsPaymentMethodRegistry() );
 
 		$this->sut = new WooPaymentsService();
@@ -300,14 +300,14 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 	private function init_sut( PaymentsProviders $providers, LegacyProxy $proxy, WooPaymentsPaymentsSettingsAdapter $settings_adapter, WooPaymentsExtensionRuntime $extension_runtime, Client $api_client, WooPaymentsAccountService $account_service ): void {
 		$this->sut->init( $providers, $proxy );
 
-		$onboarding_service = new WooPaymentsOnboardingService();
+		$onboarding_service = new OnboardingService();
 		$onboarding_service->init( $proxy, new WooPaymentsPaymentMethodRegistry() );
 		$onboarding_collaborators = array(
 			'api_client'      => $api_client,
 			'account_service' => $account_service,
 		);
 		foreach ( $onboarding_collaborators as $property => $collaborator ) {
-			$reflection = new \ReflectionProperty( WooPaymentsOnboardingService::class, $property );
+			$reflection = new \ReflectionProperty( OnboardingService::class, $property );
 			$reflection->setAccessible( true );
 			$reflection->setValue( $onboarding_service, $collaborator );
 		}
@@ -3704,7 +3704,7 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 			'account_service' => $this->create_account_service(),
 		);
 		foreach ( $collaborators as $property => $collaborator ) {
-			$reflection = new \ReflectionProperty( WooPaymentsOnboardingService::class, $property );
+			$reflection = new \ReflectionProperty( OnboardingService::class, $property );
 			$reflection->setAccessible( true );
 			$reflection->setValue( $this->onboarding_service, $collaborator );
 		}

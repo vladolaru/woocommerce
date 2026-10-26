@@ -9,7 +9,7 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Container;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\MerchantRestController;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Onboarding\WooPaymentsAccountSessionRestController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Onboarding\AccountSessionRestController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsWebhookRestController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPaySessionController;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
@@ -95,7 +95,7 @@ final class WooPaymentsAdminRestRouteRegistrar implements RegisterHooksInterface
 			WooPaymentsTerminalPaymentsRestController::class,
 			WooPaymentsCardReadersRestController::class,
 			WooPaymentsTerminalLocationsRestController::class,
-			WooPaymentsAccountSessionRestController::class,
+			AccountSessionRestController::class,
 			WooPaymentsCustomersRestController::class,
 			WooPaymentsDepositsRestController::class,
 			WooPaymentsPaymentDetailsRestController::class,

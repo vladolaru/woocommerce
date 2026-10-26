@@ -11,7 +11,7 @@ use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Onboarding\WooPaymentsOnboardingSource;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Onboarding\OnboardingSource;
 
 defined( 'ABSPATH' ) || exit;
 
@@ -243,14 +243,14 @@ class OnboardingRedirect {
 
 		$query = array();
 		if ( self::PATH_OVERVIEW === $guarded_path ) {
-			$query['from']   = WooPaymentsOnboardingSource::FROM_OVERVIEW_PAGE;
-			$query['source'] = WooPaymentsOnboardingSource::get_source();
+			$query['from']   = OnboardingSource::FROM_OVERVIEW_PAGE;
+			$query['source'] = OnboardingSource::get_source();
 		} elseif ( self::PATH_SETTINGS === $guarded_path ) {
-			$query['from']   = WooPaymentsOnboardingSource::FROM_WCADMIN_PAYMENTS_SETTINGS;
-			$query['source'] = WooPaymentsOnboardingSource::SOURCE_WCADMIN_SETTINGS_PAGE;
+			$query['from']   = OnboardingSource::FROM_WCADMIN_PAYMENTS_SETTINGS;
+			$query['source'] = OnboardingSource::SOURCE_WCADMIN_SETTINGS_PAGE;
 		} elseif ( self::PATH_ONBOARDING === $guarded_path && self::PAYMENTS_ONBOARDING_PATH === $requested_path ) {
-			$query['from']   = WooPaymentsOnboardingSource::FROM_ONBOARDING_WIZARD;
-			$query['source'] = WooPaymentsOnboardingSource::get_source();
+			$query['from']   = OnboardingSource::FROM_ONBOARDING_WIZARD;
+			$query['source'] = OnboardingSource::get_source();
 		}
 
 		wp_safe_redirect( Utils::wc_payments_settings_url( self::PATH_ONBOARDING, $query ) );

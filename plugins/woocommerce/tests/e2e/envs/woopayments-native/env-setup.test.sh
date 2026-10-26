@@ -161,7 +161,7 @@ fi
 if grep -Eq 'wc woopayments status|/wc-native-payments-e2e/v1/status|option (add|update|delete) woocommerce_feature_woopayments_enabled' "$CLIENT_COMMAND_LOG"; then
 	fail 'Client readiness must not invoke native commands.'
 fi
-if grep -F "$CLIENT_STORE	" "$CLIENT_COMMAND_LOG" | grep -Eq 'WooPaymentsAccountSessionRestController|register_routes|account_routes_callback|has_action\( "rest_api_init"|has_filter\( "woocommerce_rest_api_get_rest_namespaces"'; then
+if grep -F "$CLIENT_STORE	" "$CLIENT_COMMAND_LOG" | grep -Eq 'AccountSessionRestController|register_routes|account_routes_callback|has_action\( "rest_api_init"|has_filter\( "woocommerce_rest_api_get_rest_namespaces"'; then
 	fail 'Client readiness must not contain native account route registration.'
 fi
 if ! grep -Fq "$CLIENT_STORE	docker compose exec -T -u www-data wordpress wp --user=1" "$CLIENT_COMMAND_LOG"; then
@@ -251,7 +251,7 @@ fi
 if ! grep -F "$NATIVE_STORE	" "$NATIVE_COMMAND_LOG" | grep -Fq '/wc-native-payments-e2e/v1/status'; then
 	fail 'Native readiness must collect the authenticated native runtime status route.'
 fi
-if ! grep -F "$NATIVE_STORE	" "$NATIVE_COMMAND_LOG" | grep -Fq '$account_session_rest_controller = wc_get_container()->get( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Onboarding\WooPaymentsAccountSessionRestController::class ); $account_routes_callback = array( $account_session_rest_controller, "handle_woocommerce_rest_api_get_rest_namespaces" ); $account_session_rest_controller->register(); if ( false === has_filter( "woocommerce_rest_api_get_rest_namespaces", $account_routes_callback ) ) { throw new RuntimeException( "WooPayments native account session routes were not registered." ); } $account_session_rest_controller->register_routes(); $request = new WP_REST_Request( "GET", "/wc/v3/payments/accounts" );'; then
+if ! grep -F "$NATIVE_STORE	" "$NATIVE_COMMAND_LOG" | grep -Fq '$account_session_rest_controller = wc_get_container()->get( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Onboarding\AccountSessionRestController::class ); $account_routes_callback = array( $account_session_rest_controller, "handle_woocommerce_rest_api_get_rest_namespaces" ); $account_session_rest_controller->register(); if ( false === has_filter( "woocommerce_rest_api_get_rest_namespaces", $account_routes_callback ) ) { throw new RuntimeException( "WooPayments native account session routes were not registered." ); } $account_session_rest_controller->register_routes(); $request = new WP_REST_Request( "GET", "/wc/v3/payments/accounts" );'; then
 	fail 'Native readiness must prove and register the account session route before dispatch.'
 fi
 if grep -Eq 'option (add|update|delete) woocommerce_feature_woopayments_enabled' "$NATIVE_COMMAND_LOG"; then

@@ -1,6 +1,6 @@
 <?php
 /**
- * WooPaymentsEmbeddedAccountSessionService class file.
+ * EmbeddedAccountSessionService class file.
  */
 
 declare( strict_types = 1 );
@@ -18,7 +18,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLo
  * @since 11.0.0
  * @internal
  */
-class WooPaymentsEmbeddedAccountSessionService {
+class EmbeddedAccountSessionService {
 
 	/**
 	 * WooPayments API client.

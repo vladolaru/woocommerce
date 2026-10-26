@@ -16,7 +16,7 @@ use Automattic\WooCommerce\Internal\Payments\PaymentOutcomeApplyException;
 use Automattic\WooCommerce\Internal\Payments\PaymentProcessingService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Onboarding\WooPaymentsOnboardingService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Onboarding\OnboardingService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodDefinition;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\WooPaymentsStripeBillingModule;
@@ -1721,7 +1721,7 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 	 */
 	public function get_recommended_payment_methods( string $country_code = '' ): array {
 		// Onboarding data: the built-in onboarding fetches and caches it.
-		return wc_get_container()->get( WooPaymentsOnboardingService::class )->get_recommended_payment_methods( $country_code );
+		return wc_get_container()->get( OnboardingService::class )->get_recommended_payment_methods( $country_code );
 	}
 
 	/**

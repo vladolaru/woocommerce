@@ -1,6 +1,6 @@
 <?php
 /**
- * WooPaymentsAccountSessionRestController class file.
+ * AccountSessionRestController class file.
  */
 
 declare( strict_types = 1 );
@@ -23,14 +23,14 @@ use WP_REST_Server;
  * @since 11.0.0
  * @internal
  */
-class WooPaymentsAccountSessionRestController extends RestApiControllerBase {
+class AccountSessionRestController extends RestApiControllerBase {
 
 	/**
 	 * Embedded account session service.
 	 *
-	 * @var WooPaymentsEmbeddedAccountSessionService
+	 * @var EmbeddedAccountSessionService
 	 */
-	private WooPaymentsEmbeddedAccountSessionService $session_service;
+	private EmbeddedAccountSessionService $session_service;
 
 	/**
 	 * WooPayments account service.
@@ -44,10 +44,10 @@ class WooPaymentsAccountSessionRestController extends RestApiControllerBase {
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsEmbeddedAccountSessionService $session_service Embedded account session service.
-	 * @param WooPaymentsAccountService                $account_service WooPayments account service.
+	 * @param EmbeddedAccountSessionService $session_service Embedded account session service.
+	 * @param WooPaymentsAccountService     $account_service WooPayments account service.
 	 */
-	final public function init( WooPaymentsEmbeddedAccountSessionService $session_service, WooPaymentsAccountService $account_service ): void {
+	final public function init( EmbeddedAccountSessionService $session_service, WooPaymentsAccountService $account_service ): void {
 		$this->session_service = $session_service;
 		$this->account_service = $account_service;
 	}

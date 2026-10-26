@@ -4,8 +4,8 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Onboarding;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Onboarding\WooPaymentsAccountSessionRestController;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Onboarding\WooPaymentsEmbeddedAccountSessionService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Onboarding\AccountSessionRestController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Onboarding\EmbeddedAccountSessionService;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\ProviderTextLogAssertions;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\RecordingWcLogger;
 use WC_REST_Unit_Test_Case;
@@ -14,25 +14,25 @@ use WP_REST_Response;
 use WP_REST_Server;
 
 /**
- * Tests for the WooPaymentsAccountSessionRestController class.
+ * Tests for the AccountSessionRestController class.
  */
-class WooPaymentsAccountSessionRestControllerTest extends WC_REST_Unit_Test_Case {
+class AccountSessionRestControllerTest extends WC_REST_Unit_Test_Case {
 
 	use ProviderTextLogAssertions;
 
 	/**
 	 * The System Under Test.
 	 *
-	 * @var WooPaymentsAccountSessionRestController
+	 * @var AccountSessionRestController
 	 */
-	private WooPaymentsAccountSessionRestController $sut;
+	private AccountSessionRestController $sut;
 
 	/**
 	 * Recording service.
 	 *
-	 * @var WooPaymentsEmbeddedAccountSessionService
+	 * @var EmbeddedAccountSessionService
 	 */
-	private WooPaymentsEmbeddedAccountSessionService $service;
+	private EmbeddedAccountSessionService $service;
 
 	/**
 	 * Recording account service.
@@ -69,7 +69,7 @@ class WooPaymentsAccountSessionRestControllerTest extends WC_REST_Unit_Test_Case
 	 */
 	public function test_registers_route_when_builtin_owns_runtime(): void {
 		// WooCommerce's REST server registers the routes of the instance the container holds.
-		wc_get_container()->replace( WooPaymentsAccountSessionRestController::class, $this->sut );
+		wc_get_container()->replace( AccountSessionRestController::class, $this->sut );
 		$this->sut->register();
 		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment
 		do_action( 'rest_api_init' );
@@ -270,10 +270,10 @@ class WooPaymentsAccountSessionRestControllerTest extends WC_REST_Unit_Test_Case
 	/**
 	 * Create a native account-session REST controller.
 	 *
-	 * @return WooPaymentsAccountSessionRestController
+	 * @return AccountSessionRestController
 	 */
-	private function create_controller(): WooPaymentsAccountSessionRestController {
-		$controller = new WooPaymentsAccountSessionRestController();
+	private function create_controller(): AccountSessionRestController {
+		$controller = new AccountSessionRestController();
 		$controller->init( $this->service, $this->account_service );
 
 		return $controller;
@@ -368,10 +368,10 @@ class WooPaymentsAccountSessionRestControllerTest extends WC_REST_Unit_Test_Case
 	/**
 	 * Create a recording service.
 	 *
-	 * @return WooPaymentsEmbeddedAccountSessionService
+	 * @return EmbeddedAccountSessionService
 	 */
-	private function create_service(): WooPaymentsEmbeddedAccountSessionService {
-		return new class() extends WooPaymentsEmbeddedAccountSessionService {
+	private function create_service(): EmbeddedAccountSessionService {
+		return new class() extends EmbeddedAccountSessionService {
 
 			/**
 			 * Last called method.

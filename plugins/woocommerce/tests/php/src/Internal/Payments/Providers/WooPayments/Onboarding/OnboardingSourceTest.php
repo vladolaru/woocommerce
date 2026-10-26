@@ -3,13 +3,13 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Onboarding;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Onboarding\WooPaymentsOnboardingSource;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Onboarding\OnboardingSource;
 use WC_Unit_Test_Case;
 
 /**
- * Tests for the WooPaymentsOnboardingSource class.
+ * Tests for the OnboardingSource class.
  */
-class WooPaymentsOnboardingSourceTest extends WC_Unit_Test_Case {
+class OnboardingSourceTest extends WC_Unit_Test_Case {
 
 	/**
 	 * Tear down test fixtures.
@@ -29,7 +29,7 @@ class WooPaymentsOnboardingSourceTest extends WC_Unit_Test_Case {
 	 * @param array<string,mixed> $get_params GET params.
 	 */
 	public function test_get_from_resolves_the_previous_step( string $expected, string $referer, array $get_params ): void {
-		$this->assertSame( $expected, WooPaymentsOnboardingSource::get_from( $referer, $get_params ) );
+		$this->assertSame( $expected, OnboardingSource::get_from( $referer, $get_params ) );
 	}
 
 	/**
@@ -191,17 +191,17 @@ class WooPaymentsOnboardingSourceTest extends WC_Unit_Test_Case {
 				array( 'wcpay-connect' => '1' ),
 			),
 			'Via the referer URL - built-in Overview page' => array(
-				WooPaymentsOnboardingSource::FROM_OVERVIEW_PAGE,
+				OnboardingSource::FROM_OVERVIEW_PAGE,
 				'/wp-admin/admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Foverview',
 				array(),
 			),
 			'Via the referer URL - built-in Payouts page'  => array(
-				WooPaymentsOnboardingSource::FROM_PAYOUTS,
+				OnboardingSource::FROM_PAYOUTS,
 				'/wp-admin/admin.php?page=wc-settings&tab=checkout&path=/woopayments/payouts',
 				array(),
 			),
 			'Via the referer URL - built-in settings page' => array(
-				WooPaymentsOnboardingSource::FROM_WCADMIN_PAYMENTS_SETTINGS,
+				OnboardingSource::FROM_WCADMIN_PAYMENTS_SETTINGS,
 				'/wp-admin/admin.php?page=wc-settings&tab=checkout&path=/woopayments/settings',
 				array(),
 			),
@@ -217,7 +217,7 @@ class WooPaymentsOnboardingSourceTest extends WC_Unit_Test_Case {
 	 * @param array<string,mixed> $get_params GET params.
 	 */
 	public function test_get_source_resolves_the_onboarding_source( string $expected, string $referer, array $get_params ): void {
-		$this->assertSame( $expected, WooPaymentsOnboardingSource::get_source( $referer, $get_params ) );
+		$this->assertSame( $expected, OnboardingSource::get_source( $referer, $get_params ) );
 	}
 
 	/**
@@ -377,7 +377,7 @@ class WooPaymentsOnboardingSourceTest extends WC_Unit_Test_Case {
 	 * @param string $referer  Native referer URL.
 	 */
 	public function test_get_source_maps_builtin_page_referers( string $expected, string $referer ): void {
-		$this->assertSame( $expected, WooPaymentsOnboardingSource::get_source( $referer, array() ) );
+		$this->assertSame( $expected, OnboardingSource::get_source( $referer, array() ) );
 	}
 
 	/**
@@ -412,11 +412,11 @@ class WooPaymentsOnboardingSourceTest extends WC_Unit_Test_Case {
 	public function test_get_source_reads_the_request_by_default(): void {
 		$_SERVER['HTTP_REFERER'] = admin_url( 'admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Fpayouts' );
 
-		$this->assertSame( 'wcpay-payouts-page', WooPaymentsOnboardingSource::get_source() );
+		$this->assertSame( 'wcpay-payouts-page', OnboardingSource::get_source() );
 
 		$_GET['source'] = 'wcpay-go-live-task';
 
-		$this->assertSame( 'wcpay-go-live-task', WooPaymentsOnboardingSource::get_source() );
+		$this->assertSame( 'wcpay-go-live-task', OnboardingSource::get_source() );
 	}
 
 	/**
@@ -425,6 +425,6 @@ class WooPaymentsOnboardingSourceTest extends WC_Unit_Test_Case {
 	public function test_get_source_is_unknown_without_a_referer(): void {
 		unset( $_SERVER['HTTP_REFERER'] );
 
-		$this->assertSame( 'unknown', WooPaymentsOnboardingSource::get_source() );
+		$this->assertSame( 'unknown', OnboardingSource::get_source() );
 	}
 }

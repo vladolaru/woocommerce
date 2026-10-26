@@ -1,6 +1,6 @@
 <?php
 /**
- * WooPaymentsOnboardingSource class file.
+ * OnboardingSource class file.
  */
 
 declare( strict_types = 1 );
@@ -21,7 +21,7 @@ defined( 'ABSPATH' ) || exit;
  * @since 11.2.0
  * @internal
  */
-final class WooPaymentsOnboardingSource {
+final class OnboardingSource {
 
 	public const SOURCE_WCADMIN_PAYMENT_TASK               = 'wcadmin-payment-task';
 	public const SOURCE_WCADMIN_SETTINGS_PAGE              = 'wcadmin-settings-page';

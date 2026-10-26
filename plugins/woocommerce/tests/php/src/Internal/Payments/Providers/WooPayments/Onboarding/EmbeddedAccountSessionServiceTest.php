@@ -5,21 +5,21 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\O
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Onboarding\WooPaymentsEmbeddedAccountSessionService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Onboarding\EmbeddedAccountSessionService;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\RecordingWcLogger;
 use WC_Unit_Test_Case;
 
 /**
- * Tests for the WooPaymentsEmbeddedAccountSessionService class.
+ * Tests for the EmbeddedAccountSessionService class.
  */
-class WooPaymentsEmbeddedAccountSessionServiceTest extends WC_Unit_Test_Case {
+class EmbeddedAccountSessionServiceTest extends WC_Unit_Test_Case {
 
 	/**
 	 * The System Under Test.
 	 *
-	 * @var WooPaymentsEmbeddedAccountSessionService
+	 * @var EmbeddedAccountSessionService
 	 */
-	private WooPaymentsEmbeddedAccountSessionService $sut;
+	private EmbeddedAccountSessionService $sut;
 
 	/**
 	 * Recording API client.
@@ -35,7 +35,7 @@ class WooPaymentsEmbeddedAccountSessionServiceTest extends WC_Unit_Test_Case {
 		parent::setUp();
 
 		$this->api_client = $this->create_api_client();
-		$this->sut        = new WooPaymentsEmbeddedAccountSessionService();
+		$this->sut        = new EmbeddedAccountSessionService();
 		$this->sut->init( $this->api_client );
 	}
 

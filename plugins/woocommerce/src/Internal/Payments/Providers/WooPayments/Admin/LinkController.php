@@ -10,8 +10,8 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin;
 use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Onboarding\WooPaymentsOnboardingService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Onboarding\WooPaymentsOnboardingSource;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Onboarding\OnboardingService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Onboarding\OnboardingSource;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCapitalRestController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentsSettingsAdapter;
@@ -168,8 +168,8 @@ class LinkController implements RegisterHooksInterface {
 		$mode             = sanitize_text_field( wp_unslash( $_GET['wcpay-mode'] ) );
 		$connection_error = ! empty( $_GET['wcpay-connection-error'] );
 		$params           = array(
-			'from'   => WooPaymentsOnboardingSource::get_from(),
-			'source' => WooPaymentsOnboardingSource::get_source(),
+			'from'   => OnboardingSource::get_from(),
+			'source' => OnboardingSource::get_source(),
 		);
 		// phpcs:enable WordPress.Security.NonceVerification.Recommended
 
@@ -179,9 +179,9 @@ class LinkController implements RegisterHooksInterface {
 
 		delete_transient( WooPaymentsAccountService::ONBOARDING_STATE_TRANSIENT );
 		$this->account_service->clear_cache();
-		wc_get_container()->get( WooPaymentsOnboardingService::class )->finish_hosted_kyc_connection( 'live' === $mode, ! $connection_error );
+		wc_get_container()->get( OnboardingService::class )->finish_hosted_kyc_connection( 'live' === $mode, ! $connection_error );
 
-		$params['from'] = WooPaymentsOnboardingSource::FROM_STRIPE;
+		$params['from'] = OnboardingSource::FROM_STRIPE;
 		if ( $connection_error ) {
 			// The merchant left KYC early: the account exists but is not valid yet.
 			$params['wcpay-connection-error'] = '1';

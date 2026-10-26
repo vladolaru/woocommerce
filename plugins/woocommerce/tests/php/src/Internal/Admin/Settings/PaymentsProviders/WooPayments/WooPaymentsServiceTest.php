@@ -16,7 +16,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSe
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException as WooPaymentsApiException;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Onboarding\WooPaymentsOnboardingService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Onboarding\OnboardingService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Onboarding\DelegatingPaymentsSettingsAdapter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
@@ -269,20 +269,20 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 	 * @param WooPaymentsExtensionRuntime        $extension_runtime  The extension runtime.
 	 * @param Client                             $api_client         The API client.
 	 * @param WooPaymentsAccountService          $account_service    The account service.
-	 * @param WooPaymentsOnboardingService       $onboarding_service The onboarding service, or null for one on the same doubles.
+	 * @param OnboardingService                  $onboarding_service The onboarding service, or null for one on the same doubles.
 	 */
-	private function init_sut( PaymentsProviders $providers, LegacyProxy $proxy, WooPaymentsPaymentsSettingsAdapter $settings_adapter, WooPaymentsExtensionRuntime $extension_runtime, Client $api_client, WooPaymentsAccountService $account_service, ?WooPaymentsOnboardingService $onboarding_service = null ): void {
+	private function init_sut( PaymentsProviders $providers, LegacyProxy $proxy, WooPaymentsPaymentsSettingsAdapter $settings_adapter, WooPaymentsExtensionRuntime $extension_runtime, Client $api_client, WooPaymentsAccountService $account_service, ?OnboardingService $onboarding_service = null ): void {
 		$this->sut->init( $providers, $proxy );
 
 		if ( null === $onboarding_service ) {
-			$onboarding_service = new WooPaymentsOnboardingService();
+			$onboarding_service = new OnboardingService();
 			$onboarding_service->init( $proxy, new WooPaymentsPaymentMethodRegistry() );
 			$onboarding_collaborators = array(
 				'api_client'      => $api_client,
 				'account_service' => $account_service,
 			);
 			foreach ( $onboarding_collaborators as $property => $collaborator ) {
-				$reflection = new \ReflectionProperty( WooPaymentsOnboardingService::class, $property );
+				$reflection = new \ReflectionProperty( OnboardingService::class, $property );
 				$reflection->setAccessible( true );
 				$reflection->setValue( $onboarding_service, $collaborator );
 			}
@@ -672,7 +672,7 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 		$adapter->method( 'has_live_account' )->willReturn( false );
 		$api_client = $this->getMockBuilder( Client::class )->disableOriginalConstructor()->onlyMethods( array( 'is_available' ) )->getMock();
 		$api_client->method( 'is_available' )->willReturn( true );
-		$onboarding = $this->createMock( WooPaymentsOnboardingService::class );
+		$onboarding = $this->createMock( OnboardingService::class );
 		$onboarding->expects( $this->once() )->method( 'disable_test_account' )->with( $is_test_drive )->willReturn( array( 'success' => true ) );
 		$this->init_sut( $this->mock_providers, $this->mockable_proxy, $adapter, $this->create_extension_runtime(), $api_client, $this->create_account_service(), $onboarding );
 
