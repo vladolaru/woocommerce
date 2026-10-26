@@ -1,6 +1,6 @@
 <?php
 /**
- * WooPaymentsResponse class file.
+ * Response class file.
  */
 
 declare( strict_types = 1 );
@@ -17,7 +17,7 @@ use BadMethodCallException;
  * @internal
  * @implements ArrayAccess<mixed,mixed>
  */
-class WooPaymentsResponse implements ArrayAccess {
+class Response implements ArrayAccess {
 
 	/**
 	 * Response data.

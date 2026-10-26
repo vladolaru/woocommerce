@@ -1,6 +1,6 @@
 <?php
 /**
- * WooPaymentsApiRequest class file.
+ * Request class file.
  */
 
 declare( strict_types = 1 );
@@ -13,7 +13,7 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api;
  * @since 11.0.0
  * @internal
  */
-class WooPaymentsApiRequest extends AbstractWooPaymentsApiRequest {
+class Request extends AbstractRequest {
 
 	/**
 	 * WooPayments API path.

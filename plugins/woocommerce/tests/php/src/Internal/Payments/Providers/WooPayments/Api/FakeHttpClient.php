@@ -3,12 +3,12 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Api;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsHttpClient;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\HttpClient;
 
 /**
  * Fake WooPayments HTTP client for provider transport tests.
  */
-class FakeWooPaymentsHttpClient extends WooPaymentsHttpClient {
+class FakeHttpClient extends HttpClient {
 
 	/**
 	 * Whether the site is connected.

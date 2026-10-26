@@ -7,10 +7,10 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsFraudOutcomeTransactionsListRequest;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsTransactionsListRequest;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\FraudOutcomeTransactionsListRequest;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\TransactionsListRequest;
 use Automattic\WooCommerce\Internal\RestApiControllerBase;
 use WP_Error;
 use WP_REST_Request;
@@ -31,9 +31,9 @@ class WooPaymentsTransactionsRestController extends RestApiControllerBase {
 	/**
 	 * WooPayments API client.
 	 *
-	 * @var WooPaymentsApiClient
+	 * @var Client
 	 */
-	private WooPaymentsApiClient $api_client;
+	private Client $api_client;
 
 	/**
 	 * Order details service.
@@ -47,10 +47,10 @@ class WooPaymentsTransactionsRestController extends RestApiControllerBase {
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsApiClient           $api_client    WooPayments API client.
+	 * @param Client                         $api_client    WooPayments API client.
 	 * @param WooPaymentsOrderDetailsService $order_service Order details service.
 	 */
-	final public function init( WooPaymentsApiClient $api_client, WooPaymentsOrderDetailsService $order_service ): void {
+	final public function init( Client $api_client, WooPaymentsOrderDetailsService $order_service ): void {
 		$this->api_client    = $api_client;
 		$this->order_service = $order_service;
 	}
@@ -106,7 +106,7 @@ class WooPaymentsTransactionsRestController extends RestApiControllerBase {
 					$this->api_client->get_transactions( $this->get_filtered_transactions_list_params( $request ) )
 				)
 			);
-		} catch ( WooPaymentsApiException $exception ) {
+		} catch ( ApiException $exception ) {
 			return $exception->to_wp_error();
 		}
 	}
@@ -126,7 +126,7 @@ class WooPaymentsTransactionsRestController extends RestApiControllerBase {
 					$this->get_optional_string_param( $request, 'deposit_id' )
 				)
 			);
-		} catch ( WooPaymentsApiException $exception ) {
+		} catch ( ApiException $exception ) {
 			return $exception->to_wp_error();
 		}
 	}
@@ -145,7 +145,7 @@ class WooPaymentsTransactionsRestController extends RestApiControllerBase {
 					$this->api_client->get_transaction( (string) $request->get_param( 'transaction_id' ) )
 				)
 			);
-		} catch ( WooPaymentsApiException $exception ) {
+		} catch ( ApiException $exception ) {
 			return $exception->to_wp_error();
 		}
 	}
@@ -160,7 +160,7 @@ class WooPaymentsTransactionsRestController extends RestApiControllerBase {
 	public function get_transactions_search_autocomplete( WP_REST_Request $request ) {
 		try {
 			return new WP_REST_Response( $this->api_client->get_transactions_search_autocomplete( (string) $request->get_param( 'search_term' ) ) );
-		} catch ( WooPaymentsApiException $exception ) {
+		} catch ( ApiException $exception ) {
 			return $exception->to_wp_error();
 		}
 	}
@@ -179,10 +179,10 @@ class WooPaymentsTransactionsRestController extends RestApiControllerBase {
 
 			return new WP_REST_Response(
 				array(
-					'data' => WooPaymentsFraudOutcomeTransactionsListRequest::paginate_transactions( $transactions, $params ),
+					'data' => FraudOutcomeTransactionsListRequest::paginate_transactions( $transactions, $params ),
 				)
 			);
-		} catch ( WooPaymentsApiException $exception ) {
+		} catch ( ApiException $exception ) {
 			return $exception->to_wp_error();
 		}
 	}
@@ -200,8 +200,8 @@ class WooPaymentsTransactionsRestController extends RestApiControllerBase {
 				$this->get_fraud_outcome_params( $request, 'wcpay_list_fraud_outcome_transactions_summary_request' )
 			);
 
-			return new WP_REST_Response( WooPaymentsFraudOutcomeTransactionsListRequest::summarize_transactions( $transactions ) );
-		} catch ( WooPaymentsApiException $exception ) {
+			return new WP_REST_Response( FraudOutcomeTransactionsListRequest::summarize_transactions( $transactions ) );
+		} catch ( ApiException $exception ) {
 			return $exception->to_wp_error();
 		}
 	}
@@ -219,8 +219,8 @@ class WooPaymentsTransactionsRestController extends RestApiControllerBase {
 			$transactions = $this->get_formatted_fraud_outcome_transactions( $params );
 			$search_term  = isset( $params['search_term'] ) && is_scalar( $params['search_term'] ) ? (string) $params['search_term'] : '';
 
-			return new WP_REST_Response( WooPaymentsFraudOutcomeTransactionsListRequest::get_search_autocomplete( $transactions, $search_term ) );
-		} catch ( WooPaymentsApiException $exception ) {
+			return new WP_REST_Response( FraudOutcomeTransactionsListRequest::get_search_autocomplete( $transactions, $search_term ) );
+		} catch ( ApiException $exception ) {
 			return $exception->to_wp_error();
 		}
 	}
@@ -241,7 +241,7 @@ class WooPaymentsTransactionsRestController extends RestApiControllerBase {
 					),
 				)
 			);
-		} catch ( WooPaymentsApiException $exception ) {
+		} catch ( ApiException $exception ) {
 			return $exception->to_wp_error();
 		}
 	}
@@ -256,7 +256,7 @@ class WooPaymentsTransactionsRestController extends RestApiControllerBase {
 	public function get_latest_fraud_outcome( WP_REST_Request $request ) {
 		try {
 			return new WP_REST_Response( $this->api_client->get_latest_fraud_outcome( (string) $request->get_param( 'id' ) ) );
-		} catch ( WooPaymentsApiException $exception ) {
+		} catch ( ApiException $exception ) {
 			return $exception->to_wp_error();
 		}
 	}
@@ -278,7 +278,7 @@ class WooPaymentsTransactionsRestController extends RestApiControllerBase {
 					$this->get_optional_string_param( $request, 'locale' )
 				)
 			);
-		} catch ( WooPaymentsApiException $exception ) {
+		} catch ( ApiException $exception ) {
 			return $exception->to_wp_error();
 		}
 	}
@@ -293,7 +293,7 @@ class WooPaymentsTransactionsRestController extends RestApiControllerBase {
 	public function get_export_url( WP_REST_Request $request ) {
 		try {
 			return new WP_REST_Response( $this->api_client->get_transactions_export_url( (string) $request->get_param( 'export_id' ) ) );
-		} catch ( WooPaymentsApiException $exception ) {
+		} catch ( ApiException $exception ) {
 			return $exception->to_wp_error();
 		}
 	}
@@ -333,10 +333,10 @@ class WooPaymentsTransactionsRestController extends RestApiControllerBase {
 	 * @param WP_REST_Request $request Request.
 	 * @phpstan-param WP_REST_Request<array<string,mixed>> $request
 	 * @return array<string,mixed>
-	 * @throws WooPaymentsApiException When a filter callback returns no request.
+	 * @throws ApiException When a filter callback returns no request.
 	 */
 	private function get_filtered_transactions_list_params( WP_REST_Request $request ): array {
-		$transactions_request = WooPaymentsTransactionsListRequest::from_rest_request( $request );
+		$transactions_request = TransactionsListRequest::from_rest_request( $request );
 
 		$filtered_request = $transactions_request->get_filtered_request();
 
@@ -352,7 +352,7 @@ class WooPaymentsTransactionsRestController extends RestApiControllerBase {
 	 * @return array<string,mixed>
 	 */
 	private function get_transactions_filters( WP_REST_Request $request ): array {
-		return $this->order_service->map_transaction_search_params( WooPaymentsTransactionsListRequest::filters_from_rest_request( $request ) );
+		return $this->order_service->map_transaction_search_params( TransactionsListRequest::filters_from_rest_request( $request ) );
 	}
 
 	/**
@@ -364,7 +364,7 @@ class WooPaymentsTransactionsRestController extends RestApiControllerBase {
 	 * @return array<int,array<string,mixed>>
 	 */
 	private function get_formatted_fraud_outcome_transactions( array $params ): array {
-		return WooPaymentsFraudOutcomeTransactionsListRequest::format_transactions(
+		return FraudOutcomeTransactionsListRequest::format_transactions(
 			$this->api_client->get_fraud_outcomes( $params ),
 			$params
 		);
@@ -377,10 +377,10 @@ class WooPaymentsTransactionsRestController extends RestApiControllerBase {
 	 * @param string          $hook    The request filter to fire.
 	 * @phpstan-param WP_REST_Request<array<string,mixed>> $request
 	 * @return array<string,mixed>
-	 * @throws WooPaymentsApiException When a filter callback returns no request.
+	 * @throws ApiException When a filter callback returns no request.
 	 */
 	private function get_fraud_outcome_params( WP_REST_Request $request, string $hook ): array {
-		$fraud_outcome_request = WooPaymentsFraudOutcomeTransactionsListRequest::from_rest_request( $request );
+		$fraud_outcome_request = FraudOutcomeTransactionsListRequest::from_rest_request( $request );
 		// A callback may send() the request it receives, which needs the hook it was filtered under.
 		$fraud_outcome_request->assign_hook( $hook );
 

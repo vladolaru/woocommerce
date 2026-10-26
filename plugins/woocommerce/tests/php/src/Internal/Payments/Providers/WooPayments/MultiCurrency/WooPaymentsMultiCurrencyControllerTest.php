@@ -4,7 +4,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\MultiCurrency;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsCurrencyRateProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsLegacyApiClientAdapter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsLegacyAccountAdapter;
@@ -373,10 +373,10 @@ class WooPaymentsMultiCurrencyControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * Create a recording native API-client test double.
 	 *
-	 * @return WooPaymentsApiClient
+	 * @return Client
 	 */
-	private function create_native_api_client(): WooPaymentsApiClient {
-		return new class() extends WooPaymentsApiClient {
+	private function create_native_api_client(): Client {
+		return new class() extends Client {
 			/**
 			 * Tell whether the transport is available.
 			 *

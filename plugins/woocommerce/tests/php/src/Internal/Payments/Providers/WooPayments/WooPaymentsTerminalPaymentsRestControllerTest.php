@@ -4,7 +4,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSessionService;
@@ -275,7 +275,7 @@ class WooPaymentsTerminalPaymentsRestControllerTest extends WC_REST_Unit_Test_Ca
 		$order->save();
 
 		$this->api_client->created_customer_id       = 'cus_recreated';
-		$this->api_client->update_customer_exception = new WooPaymentsApiException( 'No such customer', 'resource_missing', 404 );
+		$this->api_client->update_customer_exception = new ApiException( 'No such customer', 'resource_missing', 404 );
 
 		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/orders/' . $order->get_id() . '/create_customer' );
 		$request->set_param( 'order_id', $order->get_id() );
@@ -313,7 +313,7 @@ class WooPaymentsTerminalPaymentsRestControllerTest extends WC_REST_Unit_Test_Ca
 		$order->save();
 
 		$this->api_client->created_customer_id       = 'cus_recreated';
-		$this->api_client->update_customer_exception = new WooPaymentsApiException( "No such customer: '$order_customer_id'", 'resource_missing', 404 );
+		$this->api_client->update_customer_exception = new ApiException( "No such customer: '$order_customer_id'", 'resource_missing', 404 );
 
 		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/orders/' . $order->get_id() . '/create_customer' );
 		$request->set_param( 'order_id', $order->get_id() );
@@ -819,7 +819,7 @@ class WooPaymentsTerminalPaymentsRestControllerTest extends WC_REST_Unit_Test_Ca
 				'status' => 'requires_capture',
 			),
 		);
-		$this->api_client->captured_intention_exception     = new WooPaymentsApiException(
+		$this->api_client->captured_intention_exception     = new ApiException(
 			$provider_message,
 			'amount_too_small',
 			400,
@@ -875,7 +875,7 @@ class WooPaymentsTerminalPaymentsRestControllerTest extends WC_REST_Unit_Test_Ca
 				'status' => 'requires_capture',
 			),
 		);
-		$this->api_client->captured_intention_exception     = new WooPaymentsApiException( 'Declined <a href="https://evil.example">verify</a>.', 'wcpay_capture_error', 402 );
+		$this->api_client->captured_intention_exception     = new ApiException( 'Declined <a href="https://evil.example">verify</a>.', 'wcpay_capture_error', 402 );
 
 		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/orders/' . $order->get_id() . '/capture_terminal_payment' );
 		$request->set_param( 'order_id', $order->get_id() );
@@ -898,7 +898,7 @@ class WooPaymentsTerminalPaymentsRestControllerTest extends WC_REST_Unit_Test_Ca
 	public function test_precheck_fetch_failure_does_not_mark_the_order(): void {
 		$order = $this->create_order( 12.34, 'USD' );
 		$order->update_status( 'on-hold' );
-		$this->api_client->payment_intention_exception = new WooPaymentsApiException( 'Connection lost.', 'wcpay_fetch_error', 500 );
+		$this->api_client->payment_intention_exception = new ApiException( 'Connection lost.', 'wcpay_fetch_error', 500 );
 
 		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/orders/' . $order->get_id() . '/capture_terminal_payment' );
 		$request->set_param( 'order_id', $order->get_id() );
@@ -1029,7 +1029,7 @@ class WooPaymentsTerminalPaymentsRestControllerTest extends WC_REST_Unit_Test_Ca
 				'status' => 'canceled',
 			),
 		);
-		$this->api_client->captured_intention_exception     = new WooPaymentsApiException( 'Capture failed.', 'wcpay_capture_error', 402 );
+		$this->api_client->captured_intention_exception     = new ApiException( 'Capture failed.', 'wcpay_capture_error', 402 );
 
 		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/orders/' . $order->get_id() . '/capture_terminal_payment' );
 		$request->set_param( 'order_id', $order->get_id() );
@@ -1065,7 +1065,7 @@ class WooPaymentsTerminalPaymentsRestControllerTest extends WC_REST_Unit_Test_Ca
 			),
 		);
 		// The platform's capture error envelope: code, message and HTTP status (client class-wc-payments-api-client.php:2852-2871, :2906-2909).
-		$this->api_client->captured_intention_exception = new WooPaymentsApiException( 'The card was declined at capture.', 'card_declined', 402 );
+		$this->api_client->captured_intention_exception = new ApiException( 'The card was declined at capture.', 'card_declined', 402 );
 
 		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/orders/' . $order->get_id() . '/capture_terminal_payment' );
 		$request->set_param( 'order_id', $order->get_id() );
@@ -1087,11 +1087,11 @@ class WooPaymentsTerminalPaymentsRestControllerTest extends WC_REST_Unit_Test_Ca
 	 * @testdox Terminal capture answers the amount-too-small minimum as the machine-readable payload: $_dataName.
 	 * @dataProvider provide_amount_too_small_captures
 	 *
-	 * @param float                        $total             Order total.
-	 * @param array<string,mixed>|null     $captured_response Capture answer, or null when the capture throws.
-	 * @param WooPaymentsApiException|null $capture_exception Capture exception, or null when the capture answers.
+	 * @param float                    $total             Order total.
+	 * @param array<string,mixed>|null $captured_response Capture answer, or null when the capture throws.
+	 * @param ApiException|null        $capture_exception Capture exception, or null when the capture answers.
 	 */
-	public function test_capture_terminal_payment_answers_the_amount_too_small_minimum( float $total, ?array $captured_response, ?WooPaymentsApiException $capture_exception ): void {
+	public function test_capture_terminal_payment_answers_the_amount_too_small_minimum( float $total, ?array $captured_response, ?ApiException $capture_exception ): void {
 		$order                                        = $this->create_order( $total, 'USD' );
 		$this->api_client->payment_intention_response = array(
 			'id'       => 'pi_terminal',
@@ -1133,7 +1133,7 @@ class WooPaymentsTerminalPaymentsRestControllerTest extends WC_REST_Unit_Test_Ca
 	/**
 	 * Amount-too-small capture failures, answered or thrown.
 	 *
-	 * @return array<string,array{0:float,1:?array<string,mixed>,2:?WooPaymentsApiException}>
+	 * @return array<string,array{0:float,1:?array<string,mixed>,2:?ApiException}>
 	 */
 	public function provide_amount_too_small_captures(): array {
 		return array(
@@ -1154,7 +1154,7 @@ class WooPaymentsTerminalPaymentsRestControllerTest extends WC_REST_Unit_Test_Ca
 			'a thrown amount_too_small error'       => array(
 				0.30,
 				null,
-				new WooPaymentsApiException(
+				new ApiException(
 					'Amount must be at least $0.50 usd',
 					'amount_too_small',
 					400,
@@ -1401,7 +1401,7 @@ class WooPaymentsTerminalPaymentsRestControllerTest extends WC_REST_Unit_Test_Ca
 	public function test_prepare_terminal_payment_falls_back_to_the_woopayments_extension_error_code(): void {
 		$order = $this->create_order( 12.34, 'USD' );
 		// A platform error envelope without a code or HTTP status (client class-wc-rest-payments-orders-controller.php:346-353).
-		$this->api_client->prepare_terminal_payment_exception = new WooPaymentsApiException( 'Prepare failed.', '', 0 );
+		$this->api_client->prepare_terminal_payment_exception = new ApiException( 'Prepare failed.', '', 0 );
 
 		$response = $this->sut->prepare_terminal_payment( $this->make_prepare_request( $order ) );
 
@@ -1620,7 +1620,7 @@ class WooPaymentsTerminalPaymentsRestControllerTest extends WC_REST_Unit_Test_Ca
 		list( $order, $subscription_id ) = $this->set_up_in_person_subscription_purchase();
 		$this->replace_token_service( $this->never(), null );
 		// The platform's capture error envelope (client class-wc-payments-api-client.php:2852-2871, :2906-2909).
-		$this->api_client->captured_intention_exception = new WooPaymentsApiException( 'The card was declined at capture.', 'card_declined', 402 );
+		$this->api_client->captured_intention_exception = new ApiException( 'The card was declined at capture.', 'card_declined', 402 );
 
 		try {
 			$response = $this->sut->capture_terminal_payment( $this->make_capture_request( $order ) );
@@ -1717,7 +1717,7 @@ class WooPaymentsTerminalPaymentsRestControllerTest extends WC_REST_Unit_Test_Ca
 		// A decline at capture is an error answer, not a PaymentIntent: the platform's capture route returns Stripe's error
 		// body with its 4xx status (wpcom `wcpay/class-intentions-controller.php:522-537`, `wcpay/class-base-controller.php:476-491`),
 		// which the API client raises as an exception; the intent read after it still says requires_capture.
-		$this->api_client->captured_intention_exception = new WooPaymentsApiException( 'The card was declined at capture.', 'card_declined', 402 );
+		$this->api_client->captured_intention_exception = new ApiException( 'The card was declined at capture.', 'card_declined', 402 );
 		$wp_rest_server                                 = new WP_REST_Server();
 		$this->sut->register_routes();
 
@@ -1766,7 +1766,7 @@ class WooPaymentsTerminalPaymentsRestControllerTest extends WC_REST_Unit_Test_Ca
 			'metadata' => array( 'order_id' => (string) $order->get_id() ),
 		);
 		$this->api_client->payment_intention_response_queue = array( $read, array_merge( $read, array( 'status' => 'succeeded' ) ) );
-		$this->api_client->captured_intention_exception     = new WooPaymentsApiException( 'Request timed out.', 'wcpay_http_request_failed', 504 );
+		$this->api_client->captured_intention_exception     = new ApiException( 'Request timed out.', 'wcpay_http_request_failed', 504 );
 		$wp_rest_server                                     = new WP_REST_Server();
 		$this->sut->register_routes();
 
@@ -2126,7 +2126,7 @@ class WooPaymentsTerminalPaymentsRestControllerTest extends WC_REST_Unit_Test_Ca
 	/**
 	 * The mobile routes answer a failure as the extension's controllers do, so the apps read the same status and code.
 	 *
-	 * Faked failures are WooPaymentsApiException( message, code, status ), the shape the API client builds from a platform
+	 * Faked failures are ApiException( message, code, status ), the shape the API client builds from a platform
 	 * error body and its HTTP status; status 0 is the API client's encode failure (wcpay_client_unable_to_encode_json),
 	 * which carries no HTTP status. A status of 0 reaches the app as HTTP 200, because WordPress's status_header( 0 )
 	 * sends no status line; the answer's own status is asserted here.
@@ -2139,8 +2139,8 @@ class WooPaymentsTerminalPaymentsRestControllerTest extends WC_REST_Unit_Test_Ca
 	 * @param string $expected_code   Expected error code.
 	 */
 	public function test_mobile_route_failures_answer_as_the_extension_does( string $scenario, int $expected_status, string $expected_code ): void {
-		$encode_failure  = new WooPaymentsApiException( 'Unable to encode the WooPayments request body.', 'wcpay_client_unable_to_encode_json', 0 );
-		$refused_request = new WooPaymentsApiException( 'Invalid request.', 'invalid_request_error', 400 );
+		$encode_failure  = new ApiException( 'Unable to encode the WooPayments request body.', 'wcpay_client_unable_to_encode_json', 0 );
+		$refused_request = new ApiException( 'Invalid request.', 'invalid_request_error', 400 );
 		$order           = $this->create_order( 12.34, 'USD' );
 		$request         = new WP_REST_Request( 'POST', '/wc/v3/payments/test' );
 		$request->set_param( 'order_id', $order->get_id() );

@@ -4,7 +4,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExtensionRuntime;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentMethodDetailsService;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
@@ -92,7 +92,7 @@ class WooPaymentsPaymentMethodDetailsServiceTest extends WC_Unit_Test_Case {
 		$extension_runtime = new WooPaymentsExtensionRuntime();
 		$extension_runtime->init( wc_get_container()->get( LegacyProxy::class ) );
 
-		$client = new class( $details ) extends WooPaymentsApiClient {
+		$client = new class( $details ) extends Client {
 				/**
 				 * Details to return.
 				 *

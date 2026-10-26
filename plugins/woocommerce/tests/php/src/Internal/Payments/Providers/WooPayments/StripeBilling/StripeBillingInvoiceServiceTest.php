@@ -3,8 +3,8 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsTransportLog;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\TransportLog;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\StripeBillingApi;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\StripeBillingException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\StripeBillingInvoiceService;
@@ -15,7 +15,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
-use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Api\FakeWooPaymentsHttpClient;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Api\FakeHttpClient;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\SubscriptionDouble;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\WooCommerceSubscriptionsDoubles;
 use PHPUnit\Framework\MockObject\MockObject;
@@ -68,9 +68,9 @@ class StripeBillingInvoiceServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * Fake platform transport.
 	 *
-	 * @var FakeWooPaymentsHttpClient
+	 * @var FakeHttpClient
 	 */
-	private FakeWooPaymentsHttpClient $http_client;
+	private FakeHttpClient $http_client;
 
 	/**
 	 * Whether the Stripe Billing toggle is on.
@@ -93,7 +93,7 @@ class StripeBillingInvoiceServiceTest extends WC_Unit_Test_Case {
 		parent::setUp();
 		WooCommerceSubscriptionsDoubles::load();
 
-		$this->http_client          = new FakeWooPaymentsHttpClient();
+		$this->http_client          = new FakeHttpClient();
 		$this->http_client->blog_id = self::RECORDED_BLOG_ID;
 
 		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
@@ -104,8 +104,8 @@ class StripeBillingInvoiceServiceTest extends WC_Unit_Test_Case {
 		$account_service->method( 'is_test_mode_onboarding_enabled' )->willReturn( true );
 		$account_service->method( 'get_account_id' )->willReturn( self::RECORDED_ACCOUNT_ID );
 
-		$api_client = new WooPaymentsApiClient();
-		$api_client->init( $this->http_client, $account_service, wc_get_container()->get( WooPaymentsTransportLog::class ) );
+		$api_client = new Client();
+		$api_client->init( $this->http_client, $account_service, wc_get_container()->get( TransportLog::class ) );
 		$api = new StripeBillingApi();
 		$api->init( $api_client );
 		$logger = new WooPaymentsLogger();

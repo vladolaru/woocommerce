@@ -18,7 +18,7 @@
 			"recorded_at": "2026-09-25T22:15:38+00:00",
 			"context": "10.99 USD, automatic capture; returns requires_action with next_action use_stripe_sdk and no charge",
 			"request": {
-				"transport": "WooPaymentsApiClient::create_and_confirm_payment_intention",
+				"transport": "Client::create_and_confirm_payment_intention",
 				"method": "POST",
 				"path": "/sites/4/wcpay/intentions (wpcom/v2 via Jetpack blog token)",
 				"body": {
@@ -161,7 +161,7 @@
 			"recorded_at": "2026-09-25T22:17:06+00:00",
 			"context": "saved-PM variant: on-session 10.99 USD with a payment method already attached to the customer; NOT on the REC-SUB customer (see notes: no 3DS-required card is attached there and the platform has no attach route)",
 			"request": {
-				"transport": "WooPaymentsApiClient::create_and_confirm_payment_intention",
+				"transport": "Client::create_and_confirm_payment_intention",
 				"method": "POST",
 				"path": "/sites/4/wcpay/intentions (wpcom/v2 via Jetpack blog token)",
 				"body": {

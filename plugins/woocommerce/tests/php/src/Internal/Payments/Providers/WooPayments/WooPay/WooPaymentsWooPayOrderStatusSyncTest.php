@@ -3,8 +3,8 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\WooPay;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayOrderStatusSync;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayEligibility;
@@ -274,7 +274,7 @@ class WooPaymentsWooPayOrderStatusSyncTest extends WC_Unit_Test_Case {
 		$sync   = $this->create_sync( true, true );
 		$sync->register();
 		// The platform answers an update it cannot apply with Bad_Request_Exception, code wcpay_bad_request, status 400.
-		$this->api_client->update_woopay_exception = new WooPaymentsApiException( 'Error updating account. Webhook secret is empty.', 'wcpay_bad_request', 400 );
+		$this->api_client->update_woopay_exception = new ApiException( 'Error updating account. Webhook secret is empty.', 'wcpay_bad_request', 400 );
 
 		$this->run_admin_init_for( $sync );
 
@@ -336,7 +336,7 @@ class WooPaymentsWooPayOrderStatusSyncTest extends WC_Unit_Test_Case {
 		$sync->register();
 		do_action( 'woocommerce_payments_account_refreshed', array() );
 		// The platform answers an update it cannot apply with Bad_Request_Exception, code wcpay_bad_request, status 400.
-		$this->api_client->update_woopay_exception = new WooPaymentsApiException( 'Error updating account. Webhook secret is empty.', 'wcpay_bad_request', 400 );
+		$this->api_client->update_woopay_exception = new ApiException( 'Error updating account. Webhook secret is empty.', 'wcpay_bad_request', 400 );
 
 		$this->run_admin_init_for( $sync );
 
@@ -909,7 +909,7 @@ class WooPaymentsWooPayOrderStatusSyncTest extends WC_Unit_Test_Case {
 /**
  * Recording WooPay API client.
  */
-class StubWooPayApiClient extends WooPaymentsApiClient {
+class StubWooPayApiClient extends Client {
 	/**
 	 * Recorded update_woopay payloads.
 	 *
@@ -920,14 +920,14 @@ class StubWooPayApiClient extends WooPaymentsApiClient {
 	/**
 	 * Exception to throw from update_woopay, when configured.
 	 *
-	 * @var WooPaymentsApiException|null
+	 * @var ApiException|null
 	 */
-	public ?WooPaymentsApiException $update_woopay_exception = null;
+	public ?ApiException $update_woopay_exception = null;
 
 	public function update_woopay( array $data ): array {
 		$this->woopay_updates[] = $data;
 
-		if ( $this->update_woopay_exception instanceof WooPaymentsApiException ) {
+		if ( $this->update_woopay_exception instanceof ApiException ) {
 			throw $this->update_woopay_exception;
 		}
 

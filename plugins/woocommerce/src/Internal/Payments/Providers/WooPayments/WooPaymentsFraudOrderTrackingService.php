@@ -7,7 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionMethodPolicy;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use WC_Order;
@@ -57,9 +57,9 @@ class WooPaymentsFraudOrderTrackingService implements RegisterHooksInterface {
 	/**
 	 * WooPayments API client.
 	 *
-	 * @var WooPaymentsApiClient
+	 * @var Client
 	 */
-	private WooPaymentsApiClient $api_client;
+	private Client $api_client;
 
 	/**
 	 * WooPayments account service.
@@ -81,13 +81,13 @@ class WooPaymentsFraudOrderTrackingService implements RegisterHooksInterface {
 	 * @internal
 	 *
 	 * @param WooPaymentsActionSchedulerService $scheduler       Action Scheduler service.
-	 * @param WooPaymentsApiClient              $api_client      WooPayments API client.
+	 * @param Client                            $api_client      WooPayments API client.
 	 * @param WooPaymentsAccountService         $account_service WooPayments account service.
 	 * @param WooPaymentsFraudService           $fraud_service   WooPayments fraud service.
 	 */
 	final public function init(
 		WooPaymentsActionSchedulerService $scheduler,
-		WooPaymentsApiClient $api_client,
+		Client $api_client,
 		WooPaymentsAccountService $account_service,
 		WooPaymentsFraudService $fraud_service
 	): void {

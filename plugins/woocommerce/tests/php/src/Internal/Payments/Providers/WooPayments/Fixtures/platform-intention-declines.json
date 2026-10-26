@@ -13,7 +13,7 @@
 			"test_card": "4000000000000002",
 			"recorded_at": "2026-09-25T07:38:40+00:00",
 			"request": {
-				"transport": "WooPaymentsApiClient::create_and_confirm_payment_intention",
+				"transport": "Client::create_and_confirm_payment_intention",
 				"method": "POST",
 				"path": "/sites/4/wcpay/intentions (wpcom/v2 via Jetpack blog token)",
 				"idempotency_key": "fresh UUIDv4 per request",
@@ -382,7 +382,7 @@
 			"test_card": "4000000000000069",
 			"recorded_at": "2026-09-25T07:39:10+00:00",
 			"request": {
-				"transport": "WooPaymentsApiClient::create_and_confirm_payment_intention",
+				"transport": "Client::create_and_confirm_payment_intention",
 				"method": "POST",
 				"path": "/sites/4/wcpay/intentions (wpcom/v2 via Jetpack blog token)",
 				"idempotency_key": "fresh UUIDv4 per request",
@@ -755,7 +755,7 @@
 			"test_card": "4000000000009995",
 			"recorded_at": "2026-09-25T07:39:14+00:00",
 			"request": {
-				"transport": "WooPaymentsApiClient::create_and_confirm_payment_intention",
+				"transport": "Client::create_and_confirm_payment_intention",
 				"method": "POST",
 				"path": "/sites/4/wcpay/intentions (wpcom/v2 via Jetpack blog token)",
 				"idempotency_key": "fresh UUIDv4 per request",
@@ -1126,7 +1126,7 @@
 			"test_card": "4000000000000127",
 			"recorded_at": "2026-09-25T07:39:17+00:00",
 			"request": {
-				"transport": "WooPaymentsApiClient::create_and_confirm_payment_intention",
+				"transport": "Client::create_and_confirm_payment_intention",
 				"method": "POST",
 				"path": "/sites/4/wcpay/intentions (wpcom/v2 via Jetpack blog token)",
 				"idempotency_key": "fresh UUIDv4 per request",
@@ -1499,7 +1499,7 @@
 			"test_card": "4000000000000119",
 			"recorded_at": "2026-09-25T07:39:21+00:00",
 			"request": {
-				"transport": "WooPaymentsApiClient::create_and_confirm_payment_intention",
+				"transport": "Client::create_and_confirm_payment_intention",
 				"method": "POST",
 				"path": "/sites/4/wcpay/intentions (wpcom/v2 via Jetpack blog token)",
 				"idempotency_key": "fresh UUIDv4 per request",

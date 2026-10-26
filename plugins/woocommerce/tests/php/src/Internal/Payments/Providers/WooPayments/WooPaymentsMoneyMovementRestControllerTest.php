@@ -3,17 +3,17 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsTransportLog;
-use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Api\FakeWooPaymentsHttpClient;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsFraudOutcomeTransactionsListRequest;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\TransportLog;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Api\FakeHttpClient;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\FraudOutcomeTransactionsListRequest;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLevel3Service;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDataService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDetailsService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentDetailsRestController;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsTransactionsListRequest;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\TransactionsListRequest;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTransactionsRestController;
 use WC_Order;
 use WC_REST_Unit_Test_Case;
@@ -458,7 +458,7 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 	 */
 	public function test_payment_detail_create_intent_route_sends_a_fresh_idempotency_key_per_request(): void {
 		$order       = $this->create_order_for_generated_charge();
-		$http_client = new FakeWooPaymentsHttpClient();
+		$http_client = new FakeHttpClient();
 
 		// The same create answer, Stripe's PaymentIntent through the platform proxy (wpcom `wcpay/class-intentions-controller.php:389-487`),
 		// as the HTTP response the transport returns; fields the route does not read are left out.
@@ -480,8 +480,8 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 			->onlyMethods( array( 'is_test_mode_enabled' ) )
 			->getMock();
 		$account_service->method( 'is_test_mode_enabled' )->willReturn( true );
-		$api_client = new WooPaymentsApiClient();
-		$api_client->init( $http_client, $account_service, wc_get_container()->get( WooPaymentsTransportLog::class ) );
+		$api_client = new Client();
+		$api_client->init( $http_client, $account_service, wc_get_container()->get( TransportLog::class ) );
 		$controller = new WooPaymentsPaymentDetailsRestController();
 		$controller->init( $api_client, $this->create_order_service(), wc_get_container()->get( WooPaymentsAccountService::class ) );
 		$controller->register_routes();
@@ -515,7 +515,7 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 	 */
 	public function test_payment_detail_create_intent_route_answers_a_platform_failure_with_the_generic_error(): void {
 		$order                       = $this->create_order_for_generated_charge();
-		$this->api_client->exception = new WooPaymentsApiException( 'Your card was declined.', 'card_declined', 402 );
+		$this->api_client->exception = new ApiException( 'Your card was declined.', 'card_declined', 402 );
 		$logger                      = RecordingWcLogger::install();
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => 'yes' ) );
 		$this->create_payment_details_controller()->register_routes();
@@ -671,7 +671,7 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 	/**
 	 * The admin routes answer a platform failure with its status when it is a 4xx or 5xx, and 500 for anything else.
 	 *
-	 * Faked failures are WooPaymentsApiException( message, code, status ), the shape the API client builds from a platform
+	 * Faked failures are ApiException( message, code, status ), the shape the API client builds from a platform
 	 * error body and its HTTP status: an unreadable body keeps the answer's status, 200 included
 	 * (wcpay_unparseable_or_null_body), and an encode failure carries none (wcpay_client_unable_to_encode_json, status 0).
 	 *
@@ -692,7 +692,7 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 	 * @param string $expected_code   Expected answer code.
 	 */
 	public function test_admin_routes_answer_platform_failures_with_a_4xx_or_5xx( string $controller, string $path, string $code, int $platform_status, int $expected_status, string $expected_code ): void {
-		$this->api_client->exception = new WooPaymentsApiException( 'Platform failure.', $code, $platform_status );
+		$this->api_client->exception = new ApiException( 'Platform failure.', $code, $platform_status );
 		if ( 'transactions' === $controller ) {
 			$this->create_transactions_controller()->register_routes();
 		} else {
@@ -902,7 +902,7 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 
 		add_filter(
 			'wcpay_list_transactions_request',
-			static function ( WooPaymentsTransactionsListRequest $request ): WooPaymentsTransactionsListRequest {
+			static function ( TransactionsListRequest $request ): TransactionsListRequest {
 				$request->set_page_size( 50 );
 				$request->set_deposit_id( 'po_filtered' );
 				$request->set( 'extension_custom_param', 'transactions-custom' );
@@ -1308,7 +1308,7 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 		foreach ( array_keys( $hooks ) as $hook ) {
 			add_filter(
 				$hook,
-				static function ( WooPaymentsFraudOutcomeTransactionsListRequest $request ) use ( &$hooks_seen, $hook ): WooPaymentsFraudOutcomeTransactionsListRequest {
+				static function ( FraudOutcomeTransactionsListRequest $request ) use ( &$hooks_seen, $hook ): FraudOutcomeTransactionsListRequest {
 					$hooks_seen[] = $hook;
 					$request->set_page_size( 999 );
 					$request->set_search( array( 'Ada' ) );
@@ -1354,12 +1354,12 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 		$request->set_query_params( array( 'status' => 'review' ) );
 		$this->server->dispatch( $request );
 
-		$this->assertInstanceOf( WooPaymentsFraudOutcomeTransactionsListRequest::class, $filtered );
+		$this->assertInstanceOf( FraudOutcomeTransactionsListRequest::class, $filtered );
 		$this->assertSame( 'wcpay_list_fraud_outcome_transactions_request', $filtered->get_hook() );
 		$this->assertSame( 'fraud_outcomes/status/review', $filtered->get_api() );
 
 		$filtered->set_status( 'review/../../accounts' );
-		$this->expectException( WooPaymentsApiException::class );
+		$this->expectException( ApiException::class );
 		$filtered->get_api();
 	}
 

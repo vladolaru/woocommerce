@@ -5,7 +5,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\PaymentOperationContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentProcessingService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsEventIngestor;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
@@ -153,7 +153,7 @@ class WooPaymentsOrderNoteDedupeTest extends WC_Unit_Test_Case {
 	 */
 	private function replace_platform(): void {
 		$test = $this;
-		$api  = new class( $test ) extends WooPaymentsApiClient {
+		$api  = new class( $test ) extends Client {
 			/**
 			 * The test case holding the refund.
 			 *
@@ -194,7 +194,7 @@ class WooPaymentsOrderNoteDedupeTest extends WC_Unit_Test_Case {
 				return $this->test->get_reported_refund();
 			}
 		};
-		wc_get_container()->replace( WooPaymentsApiClient::class, $api );
+		wc_get_container()->replace( Client::class, $api );
 		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
 		$this->reset_container_resolutions();
 	}

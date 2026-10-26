@@ -8,7 +8,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRestController;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDocumentsRestController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
@@ -157,7 +157,7 @@ class WooPaymentsRestRoutesContractTest extends WC_REST_Unit_Test_Case {
 			->getMock();
 		$documents_account->method( 'is_documents_enabled' )->willReturn( true );
 		$documents = new WooPaymentsDocumentsRestController();
-		$documents->init( new WooPaymentsApiClient(), $documents_account );
+		$documents->init( new Client(), $documents_account );
 		wc_get_container()->replace( WooPaymentsDocumentsRestController::class, $documents );
 
 		foreach ( WooPaymentsAdminRestRouteRegistrar::get_connected_controller_roots() as $root ) {

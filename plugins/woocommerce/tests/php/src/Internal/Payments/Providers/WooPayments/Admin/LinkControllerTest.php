@@ -5,8 +5,8 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\A
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\NavigationController;
 use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\LinkController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCapitalRestController;
@@ -30,9 +30,9 @@ class LinkControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * Recording API client.
 	 *
-	 * @var WooPaymentsApiClient
+	 * @var Client
 	 */
-	private WooPaymentsApiClient $api_client;
+	private Client $api_client;
 
 	/**
 	 * Capital controller double.
@@ -207,7 +207,7 @@ class LinkControllerTest extends WC_Unit_Test_Case {
 	 */
 	public function test_login_link_failure_redirects_to_overview_error(): void {
 		$this->account_service->method( 'is_details_submitted' )->willReturn( true );
-		$this->api_client->login_exception = new WooPaymentsApiException( 'Login unavailable.', 'login_unavailable', 503 );
+		$this->api_client->login_exception = new ApiException( 'Login unavailable.', 'login_unavailable', 503 );
 		$this->set_login_request( wp_create_nonce( 'wcpay-login' ) );
 		add_filter( 'wp_redirect', array( $this, 'intercept_redirect' ) );
 
@@ -304,10 +304,10 @@ class LinkControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Link failures redirect to the overview error notice.
 	 * @dataProvider provider_failed_link_responses
 	 *
-	 * @param array<string,mixed>          $response  API response.
-	 * @param WooPaymentsApiException|null $exception Optional API exception.
+	 * @param array<string,mixed> $response  API response.
+	 * @param ApiException|null   $exception Optional API exception.
 	 */
-	public function test_redirects_to_overview_error_when_link_creation_fails( array $response, ?WooPaymentsApiException $exception ): void {
+	public function test_redirects_to_overview_error_when_link_creation_fails( array $response, ?ApiException $exception ): void {
 		$this->api_client->response  = $response;
 		$this->api_client->exception = $exception;
 		$_GET['wcpay-link-handler']  = '';
@@ -328,7 +328,7 @@ class LinkControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * Failed link responses.
 	 *
-	 * @return array<string,array{response:array<string,mixed>,exception:WooPaymentsApiException|null}>
+	 * @return array<string,array{response:array<string,mixed>,exception:ApiException|null}>
 	 */
 	public function provider_failed_link_responses(): array {
 		return array(
@@ -338,7 +338,7 @@ class LinkControllerTest extends WC_Unit_Test_Case {
 			),
 			'API exception' => array(
 				'response'  => array(),
-				'exception' => new WooPaymentsApiException( 'Link unavailable.', 'link_unavailable', 503 ),
+				'exception' => new ApiException( 'Link unavailable.', 'link_unavailable', 503 ),
 			),
 		);
 	}
@@ -778,16 +778,16 @@ class LinkControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * Create a recording API client.
 	 *
-	 * @return WooPaymentsApiClient
+	 * @return Client
 	 */
-	private function create_api_client(): WooPaymentsApiClient {
-		return new class() extends WooPaymentsApiClient {
+	private function create_api_client(): Client {
+		return new class() extends Client {
 
 			/** @var array<string,mixed> */
 			public array $response = array();
 
-			/** @var WooPaymentsApiException|null */
-			public ?WooPaymentsApiException $exception = null;
+			/** @var ApiException|null */
+			public ?ApiException $exception = null;
 
 			/** @var array<string,mixed> */
 			public array $last_args = array();
@@ -795,8 +795,8 @@ class LinkControllerTest extends WC_Unit_Test_Case {
 			/** @var array<string,mixed> */
 			public array $login_response = array();
 
-			/** @var WooPaymentsApiException|null */
-			public ?WooPaymentsApiException $login_exception = null;
+			/** @var ApiException|null */
+			public ?ApiException $login_exception = null;
 
 			/** @var string|null */
 			public ?string $login_redirect_url = null;
@@ -806,7 +806,7 @@ class LinkControllerTest extends WC_Unit_Test_Case {
 			 *
 			 * @param string $redirect_url Return URL.
 			 * @return array<string,mixed>
-			 * @throws WooPaymentsApiException When configured.
+			 * @throws ApiException When configured.
 			 */
 			public function create_login_link( string $redirect_url ): array {
 				$this->login_redirect_url = $redirect_url;
@@ -822,7 +822,7 @@ class LinkControllerTest extends WC_Unit_Test_Case {
 			 *
 			 * @param array<string,mixed> $args Account-link arguments.
 			 * @return array<string,mixed>
-			 * @throws WooPaymentsApiException When configured.
+			 * @throws ApiException When configured.
 			 */
 			public function create_account_link( array $args ): array {
 				$this->last_args = $args;

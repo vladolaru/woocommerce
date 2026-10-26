@@ -12,7 +12,7 @@ use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\ProviderOperationEffectApplierInterface;
 use Automattic\WooCommerce\Internal\Payments\ProviderPostLifecycleEffectApplierInterface;
 use Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabularyInterface;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsMultiCurrencyPaymentMethodsMap;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsMultiCurrencyController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGateway;
@@ -94,7 +94,7 @@ class WooPaymentsProviderTest extends WC_Unit_Test_Case {
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'finalize_charge_idempotency_key' ) )
 			->getMock();
-		$api_client         = $this->getMockBuilder( WooPaymentsApiClient::class )
+		$api_client         = $this->getMockBuilder( Client::class )
 			->disableOriginalConstructor()
 			->getMock();
 		$account_service    = $this->getMockBuilder( WooPaymentsAccountService::class )
@@ -203,7 +203,7 @@ class WooPaymentsProviderTest extends WC_Unit_Test_Case {
 		$provider = new WooPaymentsProvider();
 		$provider->init(
 			$this->createMock( WooPaymentsPaymentOperationService::class ),
-			$this->createMock( WooPaymentsApiClient::class ),
+			$this->createMock( Client::class ),
 			$this->createMock( WooPaymentsAccountService::class ),
 			new WooPaymentsPaymentMethodRegistry(),
 			$effect_applier
@@ -265,7 +265,7 @@ class WooPaymentsProviderTest extends WC_Unit_Test_Case {
 		$provider = new WooPaymentsProvider();
 		$provider->init(
 			$this->createMock( WooPaymentsPaymentOperationService::class ),
-			$this->createMock( WooPaymentsApiClient::class ),
+			$this->createMock( Client::class ),
 			$this->createMock( WooPaymentsAccountService::class ),
 			new WooPaymentsPaymentMethodRegistry(),
 			$effect_applier
@@ -505,7 +505,7 @@ class WooPaymentsProviderTest extends WC_Unit_Test_Case {
 		$payment_operations = $this->getMockBuilder( WooPaymentsPaymentOperationService::class )
 			->disableOriginalConstructor()
 			->getMock();
-		$api_client         = $this->getMockBuilder( WooPaymentsApiClient::class )
+		$api_client         = $this->getMockBuilder( Client::class )
 			->disableOriginalConstructor()
 			->getMock();
 		$account_service    = $this->getMockBuilder( WooPaymentsAccountService::class )
@@ -547,7 +547,7 @@ class WooPaymentsProviderTest extends WC_Unit_Test_Case {
 	 */
 	public function test_can_process_payments_requires_transport_and_account_readiness( bool $transport_available, bool $account_ready, bool $expected ): void {
 		$payment_operations = $this->createMock( WooPaymentsPaymentOperationService::class );
-		$api_client         = $this->getMockBuilder( WooPaymentsApiClient::class )
+		$api_client         = $this->getMockBuilder( Client::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'is_available' ) )
 			->getMock();
@@ -582,7 +582,7 @@ class WooPaymentsProviderTest extends WC_Unit_Test_Case {
 	 */
 	public function test_can_manage_onboarding_before_wpcom_transport_is_connected(): void {
 		$payment_operations = $this->createMock( WooPaymentsPaymentOperationService::class );
-		$api_client         = $this->getMockBuilder( WooPaymentsApiClient::class )
+		$api_client         = $this->getMockBuilder( Client::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'is_available' ) )
 			->getMock();

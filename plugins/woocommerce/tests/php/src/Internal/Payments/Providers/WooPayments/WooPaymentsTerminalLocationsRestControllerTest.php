@@ -3,7 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTerminalLocationsRestController;
 use WC_REST_Unit_Test_Case;
 use WP_Error;
@@ -267,7 +267,7 @@ class WooPaymentsTerminalLocationsRestControllerTest extends WC_REST_Unit_Test_C
 	/**
 	 * The mobile routes answer a failure as the extension's controllers do, so the apps read the same status and code.
 	 *
-	 * Faked failures are WooPaymentsApiException( message, code, status ), the shape the API client builds from a platform
+	 * Faked failures are ApiException( message, code, status ), the shape the API client builds from a platform
 	 * error body and its HTTP status; status 0 is the API client's encode failure (wcpay_client_unable_to_encode_json),
 	 * which carries no HTTP status. A status of 0 reaches the app as HTTP 200, because WordPress's status_header( 0 )
 	 * sends no status line; the answer's own status is asserted here.
@@ -280,8 +280,8 @@ class WooPaymentsTerminalLocationsRestControllerTest extends WC_REST_Unit_Test_C
 	 * @param string $expected_code   Expected error code.
 	 */
 	public function test_mobile_route_failures_answer_as_the_extension_does( string $scenario, int $expected_status, string $expected_code ): void {
-		$missing         = new WooPaymentsApiException( 'No such object.', 'resource_missing', 404 );
-		$refused_request = new WooPaymentsApiException( 'Invalid request.', 'invalid_request_error', 400 );
+		$missing         = new ApiException( 'No such object.', 'resource_missing', 404 );
+		$refused_request = new ApiException( 'Invalid request.', 'invalid_request_error', 400 );
 		$request         = new WP_REST_Request( 'POST', '/wc/v3/payments/test' );
 
 		switch ( $scenario ) {

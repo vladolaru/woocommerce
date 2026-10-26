@@ -1,6 +1,6 @@
 <?php
 /**
- * WooPaymentsReportingBalanceSummaryRequest class file.
+ * ReportingBalanceSummaryRequest class file.
  */
 
 declare( strict_types = 1 );
@@ -14,7 +14,7 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api;
  * @since 11.0.0
  * @internal
  */
-class WooPaymentsReportingBalanceSummaryRequest extends AbstractWooPaymentsApiRequest {
+class ReportingBalanceSummaryRequest extends AbstractRequest {
 	/**
 	 * WordPress filter applied when the request is sent.
 	 *
@@ -29,7 +29,7 @@ class WooPaymentsReportingBalanceSummaryRequest extends AbstractWooPaymentsApiRe
 	 *
 	 * @param array<string,mixed> $params Request params.
 	 * @return self
-	 * @throws WooPaymentsApiException When params are invalid.
+	 * @throws ApiException When params are invalid.
 	 */
 	public static function from_params( array $params ): self {
 		$request = new self();
@@ -62,7 +62,7 @@ class WooPaymentsReportingBalanceSummaryRequest extends AbstractWooPaymentsApiRe
 	 * Set the report period start date.
 	 *
 	 * @param string $date_start Report period start date.
-	 * @throws WooPaymentsApiException When the date is invalid.
+	 * @throws ApiException When the date is invalid.
 	 */
 	public function set_date_start( string $date_start ): void {
 		$this->validate_rest_date_time( $date_start, 'date_start' );
@@ -73,7 +73,7 @@ class WooPaymentsReportingBalanceSummaryRequest extends AbstractWooPaymentsApiRe
 	 * Set the report period end date.
 	 *
 	 * @param string $date_end Report period end date.
-	 * @throws WooPaymentsApiException When the date is invalid.
+	 * @throws ApiException When the date is invalid.
 	 */
 	public function set_date_end( string $date_end ): void {
 		$this->validate_rest_date_time( $date_end, 'date_end' );
@@ -84,12 +84,12 @@ class WooPaymentsReportingBalanceSummaryRequest extends AbstractWooPaymentsApiRe
 	 * Set the report currency.
 	 *
 	 * @param string $currency Report currency.
-	 * @throws WooPaymentsApiException When the currency is invalid.
+	 * @throws ApiException When the currency is invalid.
 	 */
 	public function set_currency( string $currency ): void {
 		$currency = strtolower( $currency );
 		if ( ! self::is_valid_currency_code( $currency ) ) {
-			throw new WooPaymentsApiException(
+			throw new ApiException(
 				sprintf(
 					// translators: %s: currency code.
 					esc_html__( '%s is not a valid currency code.', 'woocommerce' ),
@@ -128,14 +128,14 @@ class WooPaymentsReportingBalanceSummaryRequest extends AbstractWooPaymentsApiRe
 	 *
 	 * @param string $date  Date value.
 	 * @param string $field Field name.
-	 * @throws WooPaymentsApiException When the date is invalid.
+	 * @throws ApiException When the date is invalid.
 	 */
 	private function validate_rest_date_time( string $date, string $field ): void {
 		if ( false !== rest_parse_date( $date, true ) ) {
 			return;
 		}
 
-		throw new WooPaymentsApiException(
+		throw new ApiException(
 			sprintf(
 				// translators: %s: request field name.
 				esc_html__( '%s must be a valid date-time.', 'woocommerce' ),

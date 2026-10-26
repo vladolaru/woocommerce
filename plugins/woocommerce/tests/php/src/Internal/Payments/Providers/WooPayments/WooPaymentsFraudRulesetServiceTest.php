@@ -3,8 +3,8 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDatabaseCache;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFraudRulesetService;
@@ -37,10 +37,10 @@ class WooPaymentsFraudRulesetServiceTest extends WC_Unit_Test_Case {
 	public function setUp(): void {
 		parent::setUp();
 
-		$connected_api_client = $this->createMock( WooPaymentsApiClient::class );
+		$connected_api_client = $this->createMock( Client::class );
 		$connected_api_client->method( 'is_available' )->willReturn( true );
-		$connected_api_client->method( 'get_account' )->willThrowException( new WooPaymentsApiException( 'Unavailable.', 'wcpay_test_unavailable', 500 ) );
-		wc_get_container()->replace( WooPaymentsApiClient::class, $connected_api_client );
+		$connected_api_client->method( 'get_account' )->willThrowException( new ApiException( 'Unavailable.', 'wcpay_test_unavailable', 500 ) );
+		wc_get_container()->replace( Client::class, $connected_api_client );
 		$database_cache = new WooPaymentsDatabaseCache();
 		$database_cache->init( new LegacyProxy() );
 		$account_service = new WooPaymentsAccountService();
@@ -88,7 +88,7 @@ class WooPaymentsFraudRulesetServiceTest extends WC_Unit_Test_Case {
 		}
 		$this->api_client->latest_fraud_ruleset_response = $platform;
 		if ( null !== $failure_code ) {
-			$this->api_client->latest_fraud_ruleset_exception = new WooPaymentsApiException( 'Platform failure.', $failure_code, 'wcpay_fraud_ruleset_not_found' === $failure_code ? 404 : 500 );
+			$this->api_client->latest_fraud_ruleset_exception = new ApiException( 'Platform failure.', $failure_code, 'wcpay_fraud_ruleset_not_found' === $failure_code ? 404 : 500 );
 		}
 
 		$this->assertSame( $expected, $this->sut->is_fraud_rule_active( 'avs_verification' ) );

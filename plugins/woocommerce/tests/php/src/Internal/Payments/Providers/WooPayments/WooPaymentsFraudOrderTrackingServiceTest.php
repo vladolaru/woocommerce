@@ -3,7 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsActionSchedulerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
@@ -558,14 +558,14 @@ class WooPaymentsFraudOrderTrackingServiceTest extends WC_Unit_Test_Case {
 	 * Create an order-tracking service.
 	 *
 	 * @param WooPaymentsActionSchedulerService|null $scheduler       Scheduler service.
-	 * @param WooPaymentsApiClient|null              $api_client      API client.
+	 * @param Client|null                            $api_client      API client.
 	 * @param WooPaymentsAccountService|null         $account_service Account service.
 	 * @param WooPaymentsFraudService|null           $fraud_service   Fraud service.
 	 * @return WooPaymentsFraudOrderTrackingService
 	 */
 	private function create_service(
 		?WooPaymentsActionSchedulerService $scheduler = null,
-		?WooPaymentsApiClient $api_client = null,
+		?Client $api_client = null,
 		?WooPaymentsAccountService $account_service = null,
 		?WooPaymentsFraudService $fraud_service = null
 	): WooPaymentsFraudOrderTrackingService {
@@ -585,10 +585,10 @@ class WooPaymentsFraudOrderTrackingServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * Create a WooPayments API client mock.
 	 *
-	 * @return WooPaymentsApiClient
+	 * @return Client
 	 */
-	private function create_api_client(): WooPaymentsApiClient {
-		return $this->getMockBuilder( WooPaymentsApiClient::class )
+	private function create_api_client(): Client {
+		return $this->getMockBuilder( Client::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'track_order' ) )
 			->getMock();
@@ -659,7 +659,7 @@ class WooPaymentsFraudOrderTrackingServiceTest extends WC_Unit_Test_Case {
 		$session_service->method( 'get_sift_session_id' )->willReturn( 'sess_123' );
 
 		$fraud_service = new WooPaymentsFraudService();
-		$fraud_service->init( $account_service, $this->createMock( WooPaymentsCustomerService::class ), $session_service, $this->createMock( WooPaymentsApiClient::class ) );
+		$fraud_service->init( $account_service, $this->createMock( WooPaymentsCustomerService::class ), $session_service, $this->createMock( Client::class ) );
 
 		return $fraud_service;
 	}

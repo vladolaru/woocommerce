@@ -3,7 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 
 /**
  * Checks that a log line keeps platform, Stripe and transport text out, whatever a failure carried.
@@ -28,10 +28,10 @@ trait ProviderTextLogAssertions {
 	 * @param string $code         Envelope error.code.
 	 * @param int    $status       HTTP status.
 	 * @param string $decline_code Envelope error.decline_code.
-	 * @return WooPaymentsApiException
+	 * @return ApiException
 	 */
-	public static function make_provider_error( string $code = 'resource_missing', int $status = 404, string $decline_code = '' ): WooPaymentsApiException {
-		return new WooPaymentsApiException(
+	public static function make_provider_error( string $code = 'resource_missing', int $status = 404, string $decline_code = '' ): ApiException {
+		return new ApiException(
 			"Error: No such customer: 'cus_123'; ask shopper@example.com, see https://pay.example.test/r?key=sk_test_leak123",
 			$code,
 			$status,

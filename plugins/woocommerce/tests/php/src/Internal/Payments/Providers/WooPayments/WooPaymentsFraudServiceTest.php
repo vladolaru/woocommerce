@@ -3,15 +3,15 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsTransportLog;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\TransportLog;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDatabaseCache;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFraudService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSessionService;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
-use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Api\FakeWooPaymentsHttpClient;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Api\FakeHttpClient;
 use Automattic\WooCommerce\Admin\PageController;
 use WC_Unit_Test_Case;
 use WP_Error;
@@ -563,9 +563,9 @@ class WooPaymentsFraudServiceTest extends WC_Unit_Test_Case {
 	 * Arrange a shopper whose session cookie still carries the pre-login guest customer.
 	 *
 	 * @param array<string,mixed> $fraud_services Account fraud-services config.
-	 * @return FakeWooPaymentsHttpClient
+	 * @return FakeHttpClient
 	 */
-	private function arrange_just_logged_in_shopper( array $fraud_services ): FakeWooPaymentsHttpClient {
+	private function arrange_just_logged_in_shopper( array $fraud_services ): FakeHttpClient {
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
 		update_option( 'wcpay_session_store_id', 'store_abc' );
 		$this->seed_account_fraud_services( $fraud_services );
@@ -576,7 +576,7 @@ class WooPaymentsFraudServiceTest extends WC_Unit_Test_Case {
 		add_filter( 'woocommerce_session_handler', static fn() => FraudServiceLoggedInSessionHandler::class );
 		WC()->session = new FraudServiceLoggedInSessionHandler( 't_guest_before_login' );
 
-		$http_client           = new FakeWooPaymentsHttpClient();
+		$http_client           = new FakeHttpClient();
 		$http_client->response = array(
 			'response' => array( 'code' => 200 ),
 			'headers'  => array( 'content-type' => 'application/json' ),
@@ -589,20 +589,20 @@ class WooPaymentsFraudServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * Create the service under test with an API client on a fake transport.
 	 *
-	 * @param FakeWooPaymentsHttpClient $http_client Fake transport.
+	 * @param FakeHttpClient $http_client Fake transport.
 	 * @return WooPaymentsFraudService
 	 */
-	private function make_link_sut( FakeWooPaymentsHttpClient $http_client ): WooPaymentsFraudService {
-		$connected_api_client = $this->createMock( WooPaymentsApiClient::class );
+	private function make_link_sut( FakeHttpClient $http_client ): WooPaymentsFraudService {
+		$connected_api_client = $this->createMock( Client::class );
 		$connected_api_client->method( 'is_available' )->willReturn( true );
-		wc_get_container()->replace( WooPaymentsApiClient::class, $connected_api_client );
+		wc_get_container()->replace( Client::class, $connected_api_client );
 
 		$account_service = new WooPaymentsAccountService();
 		$database_cache  = new WooPaymentsDatabaseCache();
 		$database_cache->init( new LegacyProxy() );
 		$account_service->init( new LegacyProxy(), $database_cache );
-		$api_client = new WooPaymentsApiClient();
-		$api_client->init( $http_client, $account_service, wc_get_container()->get( WooPaymentsTransportLog::class ) );
+		$api_client = new Client();
+		$api_client->init( $http_client, $account_service, wc_get_container()->get( TransportLog::class ) );
 		$session_service  = new WooPaymentsSessionService();
 		$customer_service = new WooPaymentsCustomerService();
 		$customer_service->init( $api_client, $account_service, $session_service );
@@ -671,16 +671,16 @@ class WooPaymentsFraudServiceTest extends WC_Unit_Test_Case {
 	 */
 	private function make_sut(): WooPaymentsFraudService {
 		// A connected store: without a connection the account read returns no account, like the client.
-		$connected_api_client = $this->createMock( WooPaymentsApiClient::class );
+		$connected_api_client = $this->createMock( Client::class );
 		$connected_api_client->method( 'is_available' )->willReturn( true );
-		wc_get_container()->replace( WooPaymentsApiClient::class, $connected_api_client );
+		wc_get_container()->replace( Client::class, $connected_api_client );
 
 		$account_service = new WooPaymentsAccountService();
 		$database_cache  = new WooPaymentsDatabaseCache();
 		$database_cache->init( new LegacyProxy() );
 		$account_service->init( new LegacyProxy(), $database_cache );
 
-		$api_client = new WooPaymentsApiClient();
+		$api_client = new Client();
 
 		$customer_service = new WooPaymentsCustomerService();
 		$customer_service->init( $api_client, $account_service, new WooPaymentsSessionService() );

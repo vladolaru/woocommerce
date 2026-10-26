@@ -8,7 +8,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\CacheInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\DatabaseCache;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\LocalizationService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilder;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsCurrencyRateProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsNativeApiClientAdapter;
 use WC_Unit_Test_Case;
@@ -87,7 +87,7 @@ class WooPaymentsNativeApiClientAdapterTest extends WC_Unit_Test_Case {
 	/**
 	 * Recording native API-client test double.
 	 */
-class RecordingNativeApiClient extends WooPaymentsApiClient {
+class RecordingNativeApiClient extends Client {
 
 	/**
 	 * Whether the API client is available.
@@ -155,7 +155,7 @@ class RecordingNativeApiClient extends WooPaymentsApiClient {
 	/**
 	 * Throwing native API-client test double.
 	 */
-class ThrowingNativeApiClient extends WooPaymentsApiClient {
+class ThrowingNativeApiClient extends Client {
 
 	/**
 	 * Throw when checking availability.
@@ -186,7 +186,7 @@ class ThrowingNativeApiClient extends WooPaymentsApiClient {
 	/**
 	 * Native API-client test double that is reachable but fails every rate fetch.
 	 */
-class FailingRatesNativeApiClient extends WooPaymentsApiClient {
+class FailingRatesNativeApiClient extends Client {
 
 	/**
 	 * Report the transport as available.

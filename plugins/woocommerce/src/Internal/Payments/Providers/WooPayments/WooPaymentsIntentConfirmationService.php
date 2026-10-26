@@ -12,8 +12,8 @@ use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\PaymentOperationContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentLifecycleEvent;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionMethodPolicy;
 use Throwable;
 use WC_Order;
@@ -29,9 +29,9 @@ class WooPaymentsIntentConfirmationService {
 	/**
 	 * WooPayments API client.
 	 *
-	 * @var WooPaymentsApiClient
+	 * @var Client
 	 */
-	private WooPaymentsApiClient $api_client;
+	private Client $api_client;
 
 	/**
 	 * Fee details note controller, which applies the confirmed intent's payment lifecycle event.
@@ -66,14 +66,14 @@ class WooPaymentsIntentConfirmationService {
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsApiClient                $api_client                  WooPayments API client.
+	 * @param Client                              $api_client                  WooPayments API client.
 	 * @param WooPaymentsFeeDetailsNoteController $fee_details_note_controller Fee details note controller.
 	 * @param WooPaymentsTokenService             $token_service               WooPayments token service.
 	 * @param WooPaymentsAccountService           $account_service             WooPayments account service.
 	 * @param WooPaymentsOrderEffectApplier       $order_effect_applier        WooPayments order effect applier.
 	 */
 	final public function init(
-		WooPaymentsApiClient $api_client,
+		Client $api_client,
 		WooPaymentsFeeDetailsNoteController $fee_details_note_controller,
 		WooPaymentsTokenService $token_service,
 		WooPaymentsAccountService $account_service,
@@ -93,7 +93,7 @@ class WooPaymentsIntentConfirmationService {
 	 * @param string   $intent_id           PaymentIntent or SetupIntent ID.
 	 * @param bool     $save_payment_method Whether to persist the payment method.
 	 * @param bool     $is_payment_method_change Whether this confirms a subscription payment method change.
-	 * @throws WooPaymentsApiException When intent retrieval fails.
+	 * @throws ApiException When intent retrieval fails.
 	 * @throws WooPaymentsIntentConfirmationException When the intent cannot be authorized or a required token cannot be saved.
 	 * @throws Throwable When lifecycle, token, or payment-method effects fail.
 	 *

@@ -3,12 +3,12 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 use Automattic\WooCommerce\Internal\Payments\PaymentOperationContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\PaymentProcessingService;
 use Automattic\WooCommerce\Internal\Payments\ProviderInterface;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsAuthorizationsListRequest;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\AuthorizationsListRequest;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAuthorizationsRestController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use WC_Order;
@@ -170,7 +170,7 @@ class WooPaymentsAuthorizationsRestControllerTest extends WC_REST_Unit_Test_Case
 
 		add_filter(
 			'wcpay_list_authorizations_request',
-			static function ( WooPaymentsAuthorizationsListRequest $request ) use ( &$observed_request ): WooPaymentsAuthorizationsListRequest {
+			static function ( AuthorizationsListRequest $request ) use ( &$observed_request ): AuthorizationsListRequest {
 				$observed_request = $request;
 				$request->set_page_size( 50 );
 				$request->set_param( 'customer_email_is', 'ada@example.com' );
@@ -199,7 +199,7 @@ class WooPaymentsAuthorizationsRestControllerTest extends WC_REST_Unit_Test_Case
 		$response = $this->server->dispatch( $request );
 
 		$this->assertSame( 200, $response->get_status() );
-		$this->assertInstanceOf( WooPaymentsAuthorizationsListRequest::class, $observed_request );
+		$this->assertInstanceOf( AuthorizationsListRequest::class, $observed_request );
 		$this->assertSame( 'authorizations', $observed_request->get_api() );
 		$this->assertSame( 'get_authorizations', $this->api_client->last_call['method'] );
 		$this->assertSame(
@@ -422,7 +422,7 @@ class WooPaymentsAuthorizationsRestControllerTest extends WC_REST_Unit_Test_Case
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => 'yes' ) );
 		$this->create_authorizations_controller()->register_routes();
 		$order                       = $this->create_authorized_order( 'pi_auth' );
-		$this->api_client->exception = new WooPaymentsApiException( 'No such payment_intent.', 'resource_missing', 404 );
+		$this->api_client->exception = new ApiException( 'No such payment_intent.', 'resource_missing', 404 );
 
 		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/orders/' . $order->get_id() . '/' . $action . '_authorization' );
 		$request->set_body_params( array( 'payment_intent_id' => 'pi_auth' ) );
@@ -449,7 +449,7 @@ class WooPaymentsAuthorizationsRestControllerTest extends WC_REST_Unit_Test_Case
 	 */
 	public function test_authorization_detail_answers_a_4xx_or_5xx_status( string $code, int $platform_status, int $expected_status ): void {
 		$this->create_authorizations_controller()->register_routes();
-		$this->api_client->exception = new WooPaymentsApiException( 'Platform failure.', $code, $platform_status );
+		$this->api_client->exception = new ApiException( 'Platform failure.', $code, $platform_status );
 
 		$response = $this->server->dispatch( new WP_REST_Request( 'GET', '/wc/v3/payments/authorizations/pi_1' ) );
 

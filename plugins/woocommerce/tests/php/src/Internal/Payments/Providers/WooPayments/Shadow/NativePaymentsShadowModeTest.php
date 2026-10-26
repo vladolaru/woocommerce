@@ -6,7 +6,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\S
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabularyInterface;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDataService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
@@ -772,11 +772,11 @@ class NativePaymentsShadowModeTest extends WC_Unit_Test_Case {
 	/**
 	 * Create a shadow-mode instance with deterministic provider dependencies.
 	 *
-	 * @param WooPaymentsApiClient $api_client API client.
-	 * @param bool                 $test_mode  Whether the account is in test mode.
+	 * @param Client $api_client API client.
+	 * @param bool   $test_mode  Whether the account is in test mode.
 	 * @return NativePaymentsShadowMode
 	 */
-	private function create_shadow_mode( WooPaymentsApiClient $api_client, bool $test_mode = true ): NativePaymentsShadowMode {
+	private function create_shadow_mode( Client $api_client, bool $test_mode = true ): NativePaymentsShadowMode {
 		$sut = new NativePaymentsShadowMode();
 		$sut->init(
 			wc_get_container()->get( WooPaymentsRuntimeArbiter::class ),
@@ -815,10 +815,10 @@ class NativePaymentsShadowModeTest extends WC_Unit_Test_Case {
 	 * Create a recording WooPayments API client.
 	 *
 	 * @param array<string,mixed> $intent_response PaymentIntent response.
-	 * @return WooPaymentsApiClient
+	 * @return Client
 	 */
-	private function create_recording_api_client( array $intent_response ): WooPaymentsApiClient {
-		return new class( $intent_response ) extends WooPaymentsApiClient {
+	private function create_recording_api_client( array $intent_response ): Client {
+		return new class( $intent_response ) extends Client {
 			/**
 			 * Number of provider intent reads.
 			 *

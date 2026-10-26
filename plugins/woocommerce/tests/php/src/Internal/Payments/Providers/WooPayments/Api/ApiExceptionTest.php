@@ -3,13 +3,13 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Api;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 use WC_Unit_Test_Case;
 
 /**
- * Tests for the WooPaymentsApiException class.
+ * Tests for the ApiException class.
  */
-class WooPaymentsApiExceptionTest extends WC_Unit_Test_Case {
+class ApiExceptionTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Charge failure ambiguity should distinguish transport uncertainty from definitive provider responses.
@@ -21,7 +21,7 @@ class WooPaymentsApiExceptionTest extends WC_Unit_Test_Case {
 	 * @param bool   $expected Whether the failure is ambiguous.
 	 */
 	public function test_charge_failure_ambiguity( string $error_code, int $http_code, string $error_type, bool $expected ): void {
-		$exception = new WooPaymentsApiException( 'Request failed.', $error_code, $http_code, $error_type );
+		$exception = new ApiException( 'Request failed.', $error_code, $http_code, $error_type );
 
 		$this->assertSame( $expected, $exception->has_ambiguous_outcome(), 'Only a failure that may have charged should retain a charge idempotency key.' );
 	}
@@ -62,7 +62,7 @@ class WooPaymentsApiExceptionTest extends WC_Unit_Test_Case {
 	 * @param int    $expected_status Expected REST status.
 	 */
 	public function test_to_wp_error_answers_a_4xx_or_5xx_status( string $error_code, int $http_code, string $expected_code, int $expected_status ): void {
-		$error = ( new WooPaymentsApiException( 'Request failed.', $error_code, $http_code ) )->to_wp_error();
+		$error = ( new ApiException( 'Request failed.', $error_code, $http_code ) )->to_wp_error();
 
 		$this->assertSame( $expected_code, $error->get_error_code() );
 		$this->assertSame( 'Request failed.', $error->get_error_message() );
@@ -102,7 +102,7 @@ class WooPaymentsApiExceptionTest extends WC_Unit_Test_Case {
 	 * @param string $expected_message Expected REST error message.
 	 */
 	public function test_to_wp_error_without_status_keeps_the_code_and_message( string $error_code, int $http_code, string $expected_code, string $expected_message ): void {
-		$error = ( new WooPaymentsApiException( 'Request failed.', $error_code, $http_code ) )->to_wp_error_without_status();
+		$error = ( new ApiException( 'Request failed.', $error_code, $http_code ) )->to_wp_error_without_status();
 
 		$this->assertSame( $expected_code, $error->get_error_code() );
 		$this->assertSame( $expected_message, $error->get_error_message() );

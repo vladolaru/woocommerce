@@ -5,7 +5,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Orders;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExtensionRuntime;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentMethodDetailsService;
 use Automattic\WooCommerce\RestApi\UnitTests\Helpers\OrderHelper;
@@ -269,7 +269,7 @@ class PaymentInfoTest extends WC_Unit_Test_Case {
 		$arbiter->invalidate();
 		$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_NONE, $arbiter->get_runtime_owner() );
 
-		$api_client      = new class() extends WooPaymentsApiClient {
+		$api_client      = new class() extends Client {
 			/**
 			 * Payment method IDs the transport was asked for.
 			 *

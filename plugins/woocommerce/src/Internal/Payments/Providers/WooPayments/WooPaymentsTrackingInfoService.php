@@ -7,7 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 
 defined( 'ABSPATH' ) || exit;
 
@@ -25,9 +25,9 @@ class WooPaymentsTrackingInfoService {
 	/**
 	 * WooPayments API client.
 	 *
-	 * @var WooPaymentsApiClient
+	 * @var Client
 	 */
-	private WooPaymentsApiClient $api_client;
+	private Client $api_client;
 
 	/**
 	 * Database cache the tracking info is read through.
@@ -41,10 +41,10 @@ class WooPaymentsTrackingInfoService {
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsApiClient     $api_client     WooPayments API client.
+	 * @param Client                   $api_client     WooPayments API client.
 	 * @param WooPaymentsDatabaseCache $database_cache Database cache.
 	 */
-	final public function init( WooPaymentsApiClient $api_client, WooPaymentsDatabaseCache $database_cache ): void {
+	final public function init( Client $api_client, WooPaymentsDatabaseCache $database_cache ): void {
 		$this->api_client     = $api_client;
 		$this->database_cache = $database_cache;
 	}

@@ -7,9 +7,9 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsDisputesListRequest;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\DisputesListRequest;
 use Automattic\WooCommerce\Internal\RestApiControllerBase;
 use Throwable;
 use WP_Error;
@@ -29,9 +29,9 @@ class WooPaymentsDisputesRestController extends RestApiControllerBase {
 	/**
 	 * WooPayments API client.
 	 *
-	 * @var WooPaymentsApiClient
+	 * @var Client
 	 */
-	private WooPaymentsApiClient $api_client;
+	private Client $api_client;
 
 	/**
 	 * Order details service.
@@ -59,12 +59,12 @@ class WooPaymentsDisputesRestController extends RestApiControllerBase {
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsApiClient           $api_client     WooPayments API client.
+	 * @param Client                         $api_client     WooPayments API client.
 	 * @param WooPaymentsOrderDetailsService $order_service  Order details service.
 	 * @param WooPaymentsDatabaseCache       $database_cache Database cache.
 	 * @param WooPaymentsLogger              $logger         WooPayments logger.
 	 */
-	final public function init( WooPaymentsApiClient $api_client, WooPaymentsOrderDetailsService $order_service, WooPaymentsDatabaseCache $database_cache, WooPaymentsLogger $logger ): void {
+	final public function init( Client $api_client, WooPaymentsOrderDetailsService $order_service, WooPaymentsDatabaseCache $database_cache, WooPaymentsLogger $logger ): void {
 		$this->api_client     = $api_client;
 		$this->order_service  = $order_service;
 		$this->database_cache = $database_cache;
@@ -122,7 +122,7 @@ class WooPaymentsDisputesRestController extends RestApiControllerBase {
 					$this->api_client->get_disputes( $this->get_filtered_disputes_list_params( $request ) )
 				)
 			);
-		} catch ( WooPaymentsApiException $exception ) {
+		} catch ( ApiException $exception ) {
 			return $exception->to_wp_error();
 		}
 	}
@@ -137,7 +137,7 @@ class WooPaymentsDisputesRestController extends RestApiControllerBase {
 	public function get_disputes_summary( WP_REST_Request $request ) {
 		try {
 			return new WP_REST_Response( $this->api_client->get_disputes_summary( $this->get_disputes_filters( $request ) ) );
-		} catch ( WooPaymentsApiException $exception ) {
+		} catch ( ApiException $exception ) {
 			return $exception->to_wp_error();
 		}
 	}
@@ -156,7 +156,7 @@ class WooPaymentsDisputesRestController extends RestApiControllerBase {
 					$this->api_client->get_dispute( (string) $request->get_param( 'dispute_id' ) )
 				)
 			);
-		} catch ( WooPaymentsApiException $exception ) {
+		} catch ( ApiException $exception ) {
 			return $exception->to_wp_error();
 		}
 	}
@@ -191,7 +191,7 @@ class WooPaymentsDisputesRestController extends RestApiControllerBase {
 			$this->log_dispute_action( 'info', 'WooPayments dispute update completed.', $log_context );
 
 			return new WP_REST_Response( $this->enrich_dispute_response_after_completed_action( $response, $log_context ) );
-		} catch ( WooPaymentsApiException $exception ) {
+		} catch ( ApiException $exception ) {
 			$this->log_dispute_action(
 				'error',
 				'WooPayments dispute update failed.',
@@ -228,7 +228,7 @@ class WooPaymentsDisputesRestController extends RestApiControllerBase {
 			$this->log_dispute_action( 'info', 'WooPayments dispute close completed.', $log_context );
 
 			return new WP_REST_Response( $this->enrich_dispute_response_after_completed_action( $response, $log_context ) );
-		} catch ( WooPaymentsApiException $exception ) {
+		} catch ( ApiException $exception ) {
 			$this->log_dispute_action(
 				'error',
 				'WooPayments dispute close failed.',
@@ -261,7 +261,7 @@ class WooPaymentsDisputesRestController extends RestApiControllerBase {
 					$this->get_optional_string_param( $request, 'locale' )
 				)
 			);
-		} catch ( WooPaymentsApiException $exception ) {
+		} catch ( ApiException $exception ) {
 			return $exception->to_wp_error();
 		}
 	}
@@ -276,7 +276,7 @@ class WooPaymentsDisputesRestController extends RestApiControllerBase {
 	public function get_export_url( WP_REST_Request $request ) {
 		try {
 			return new WP_REST_Response( $this->api_client->get_disputes_export_url( (string) $request->get_param( 'export_id' ) ) );
-		} catch ( WooPaymentsApiException $exception ) {
+		} catch ( ApiException $exception ) {
 			return $exception->to_wp_error();
 		}
 	}
@@ -315,10 +315,10 @@ class WooPaymentsDisputesRestController extends RestApiControllerBase {
 	 * @param WP_REST_Request $request Request.
 	 * @phpstan-param WP_REST_Request<array<string,mixed>> $request
 	 * @return array<string,mixed>
-	 * @throws WooPaymentsApiException When a filter callback returns no request.
+	 * @throws ApiException When a filter callback returns no request.
 	 */
 	private function get_filtered_disputes_list_params( WP_REST_Request $request ): array {
-		$disputes_request = WooPaymentsDisputesListRequest::from_rest_request( $request );
+		$disputes_request = DisputesListRequest::from_rest_request( $request );
 
 		return $disputes_request->get_filtered_request()->get_params();
 	}

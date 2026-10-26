@@ -10,8 +10,8 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
 use Automattic\WooCommerce\Internal\Payments\PaymentLifecycleEvent;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 use Automattic\WooCommerce\Internal\RestApiControllerBase;
 use RuntimeException;
 use Throwable;
@@ -40,9 +40,9 @@ class WooPaymentsTerminalPaymentsRestController extends RestApiControllerBase {
 	/**
 	 * WooPayments API client.
 	 *
-	 * @var WooPaymentsApiClient
+	 * @var Client
 	 */
-	private WooPaymentsApiClient $api_client;
+	private Client $api_client;
 
 	/**
 	 * WooPayments account service.
@@ -77,13 +77,13 @@ class WooPaymentsTerminalPaymentsRestController extends RestApiControllerBase {
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsApiClient        $api_client         WooPayments API client.
+	 * @param Client                      $api_client         WooPayments API client.
 	 * @param WooPaymentsAccountService   $account_service    WooPayments account service.
 	 * @param WooPaymentsCustomerService  $customer_service   WooPayments customer service.
 	 * @param WooPaymentsOrderDataService $order_data_service WooPayments order data service.
 	 * @param WooPaymentsOrderNoteService $note_service       WooPayments order note service.
 	 */
-	final public function init( WooPaymentsApiClient $api_client, WooPaymentsAccountService $account_service, WooPaymentsCustomerService $customer_service, WooPaymentsOrderDataService $order_data_service, WooPaymentsOrderNoteService $note_service ): void {
+	final public function init( Client $api_client, WooPaymentsAccountService $account_service, WooPaymentsCustomerService $customer_service, WooPaymentsOrderDataService $order_data_service, WooPaymentsOrderNoteService $note_service ): void {
 		$this->api_client         = $api_client;
 		$this->account_service    = $account_service;
 		$this->customer_service   = $customer_service;
@@ -194,7 +194,7 @@ class WooPaymentsTerminalPaymentsRestController extends RestApiControllerBase {
 			$data['test_mode'] = $this->account_service->is_test_mode_enabled();
 
 			return new WP_REST_Response( $data );
-		} catch ( WooPaymentsApiException $exception ) {
+		} catch ( ApiException $exception ) {
 			return $exception->to_wp_error_without_status();
 		}
 	}
@@ -333,7 +333,7 @@ class WooPaymentsTerminalPaymentsRestController extends RestApiControllerBase {
 
 		try {
 			return new WP_REST_Response( $this->api_client->prepare_terminal_payment( $intent_id, $order->get_id() ) );
-		} catch ( WooPaymentsApiException $exception ) {
+		} catch ( ApiException $exception ) {
 			// The client's fallback code when the platform sends none (class-wc-rest-payments-orders-controller.php:346-353).
 			return new WP_Error(
 				'' !== $exception->get_error_code() ? $exception->get_error_code() : 'wcpay_prepare_terminal_payment_failed',
@@ -486,7 +486,7 @@ class WooPaymentsTerminalPaymentsRestController extends RestApiControllerBase {
 						// Order-derived metadata first; the intent's own metadata, which the app sent, wins.
 						array_merge( WooPaymentsIntentRequestBuilder::capture_metadata_from_order( $order ), $this->get_intent_metadata( $intent ) )
 					);
-			} catch ( WooPaymentsApiException $capture_exception ) {
+			} catch ( ApiException $capture_exception ) {
 				// Only a failed capture call marks the order; pre-check failures must not.
 				$result = $this->reconcile_failed_terminal_capture( $order, $intent_id, $this->get_capture_failure_note_message( $capture_exception ) );
 				if ( null === $result ) {
@@ -665,10 +665,10 @@ class WooPaymentsTerminalPaymentsRestController extends RestApiControllerBase {
 	 * Client 11.1.0 keeps the exception's HTTP status and code, escapes its message and, for amount_too_small, adds the
 	 * minimum amount the mobile app parses to prompt for a higher amount (class-wc-payment-gateway-wcpay.php:3991-4061).
 	 *
-	 * @param WooPaymentsApiException $exception Capture exception.
+	 * @param ApiException $exception Capture exception.
 	 * @return array<string,mixed>
 	 */
-	private function get_capture_exception_result( WooPaymentsApiException $exception ): array {
+	private function get_capture_exception_result( ApiException $exception ): array {
 		$result     = array(
 			'error_code' => $exception->get_error_code(),
 			'message'    => esc_html( $exception->getMessage() ),
@@ -864,10 +864,10 @@ class WooPaymentsTerminalPaymentsRestController extends RestApiControllerBase {
 	 *
 	 * An amount-too-small decline carries the platform's minimum, which is added to the message before the order note.
 	 *
-	 * @param WooPaymentsApiException $exception Capture exception.
+	 * @param ApiException $exception Capture exception.
 	 * @return string
 	 */
-	private function get_capture_failure_note_message( WooPaymentsApiException $exception ): string {
+	private function get_capture_failure_note_message( ApiException $exception ): string {
 		return WooPaymentsIntentCodec::with_minimum_capture_amount(
 			$exception->getMessage(),
 			WooPaymentsIntentCodec::amount_too_small_details( $exception->get_error_code(), $exception )
@@ -890,7 +890,7 @@ class WooPaymentsTerminalPaymentsRestController extends RestApiControllerBase {
 	private function reconcile_failed_terminal_capture( WC_Order $order, string $intent_id, string $message ): ?array {
 		try {
 			$intent = $this->api_client->get_payment_intention( $intent_id );
-		} catch ( WooPaymentsApiException $fetch_exception ) {
+		} catch ( ApiException $fetch_exception ) {
 			$this->record_failed_terminal_capture( $order, $intent_id, $message );
 
 			return null;

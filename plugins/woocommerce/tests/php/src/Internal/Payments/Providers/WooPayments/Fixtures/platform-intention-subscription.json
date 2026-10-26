@@ -17,7 +17,7 @@
 			"recorded_at": "2026-09-25T22:14:48+00:00",
 			"context": "step 1: 10.99 USD with setup_future_usage off_session and client signup metadata (payment_type recurring, subscription_payment initial); the returned payment_method pm_1UJhOFBzWlxcwgpPvcySvyc5 is attached to the customer",
 			"request": {
-				"transport": "WooPaymentsApiClient::create_and_confirm_payment_intention",
+				"transport": "Client::create_and_confirm_payment_intention",
 				"method": "POST",
 				"path": "/sites/4/wcpay/intentions (wpcom/v2 via Jetpack blog token)",
 				"body": {
@@ -293,7 +293,7 @@
 			"recorded_at": "2026-09-25T22:15:03+00:00",
 			"context": "step 2: off-session 10.99 USD on the step-1 customer and payment method (off_session true, subscription_payment renewal); no mandate and no payment_method_update_data sent (see notes)",
 			"request": {
-				"transport": "WooPaymentsApiClient::create_and_confirm_payment_intention",
+				"transport": "Client::create_and_confirm_payment_intention",
 				"method": "POST",
 				"path": "/sites/4/wcpay/intentions (wpcom/v2 via Jetpack blog token)",
 				"body": {

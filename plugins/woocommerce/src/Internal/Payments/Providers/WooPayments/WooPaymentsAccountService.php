@@ -9,8 +9,8 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Admin\Features\PaymentGatewaySuggestions\DefaultPaymentGateways;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\LocalizationService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 
@@ -304,7 +304,7 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 		try {
 			$this->legacy_proxy->call_function( 'delete_transient', self::ONBOARDING_DISABLED_TRANSIENT );
 			$account_data = $api_client->get_account( $this->get_woocommerce_store_id() );
-		} catch ( WooPaymentsApiException $e ) {
+		} catch ( ApiException $e ) {
 			if ( 'wcpay_account_not_found' === $e->get_error_code() ) {
 				$account_data = array();
 			} elseif ( 'wcpay_on_boarding_disabled' === $e->get_error_code() ) {
@@ -1349,10 +1349,10 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	 * The API client takes this service in its `init()` (test mode, the store ID, the account refresh after VAT details
 	 * are saved), so it is not injected here; it is resolved when a read checks the platform connection or fetches.
 	 *
-	 * @return WooPaymentsApiClient
+	 * @return Client
 	 */
-	protected function get_api_client(): WooPaymentsApiClient {
-		return wc_get_container()->get( WooPaymentsApiClient::class );
+	protected function get_api_client(): Client {
+		return wc_get_container()->get( Client::class );
 	}
 
 	/**

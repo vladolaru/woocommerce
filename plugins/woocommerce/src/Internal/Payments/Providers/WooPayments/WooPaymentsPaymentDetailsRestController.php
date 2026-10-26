@@ -7,8 +7,8 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 use Automattic\WooCommerce\Internal\RestApiControllerBase;
 use WC_Order;
 use WP_Error;
@@ -49,9 +49,9 @@ class WooPaymentsPaymentDetailsRestController extends RestApiControllerBase {
 	/**
 	 * WooPayments API client.
 	 *
-	 * @var WooPaymentsApiClient
+	 * @var Client
 	 */
-	private WooPaymentsApiClient $api_client;
+	private Client $api_client;
 
 	/**
 	 * Order details service.
@@ -72,11 +72,11 @@ class WooPaymentsPaymentDetailsRestController extends RestApiControllerBase {
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsApiClient           $api_client      WooPayments API client.
+	 * @param Client                         $api_client      WooPayments API client.
 	 * @param WooPaymentsOrderDetailsService $order_service   Order details service.
 	 * @param WooPaymentsAccountService      $account_service Account service.
 	 */
-	final public function init( WooPaymentsApiClient $api_client, WooPaymentsOrderDetailsService $order_service, WooPaymentsAccountService $account_service ): void {
+	final public function init( Client $api_client, WooPaymentsOrderDetailsService $order_service, WooPaymentsAccountService $account_service ): void {
 		$this->api_client      = $api_client;
 		$this->order_service   = $order_service;
 		$this->account_service = $account_service;
@@ -130,7 +130,7 @@ class WooPaymentsPaymentDetailsRestController extends RestApiControllerBase {
 					$this->api_client->get_charge( (string) $request->get_param( 'charge_id' ) )
 				)
 			);
-		} catch ( WooPaymentsApiException $exception ) {
+		} catch ( ApiException $exception ) {
 			// The client's own code, with no status (class-wc-rest-payments-charges-controller.php:62-63); the mobile apps read this route.
 			return new WP_Error( 'wcpay_get_charge', $exception->getMessage() );
 		}
@@ -170,7 +170,7 @@ class WooPaymentsPaymentDetailsRestController extends RestApiControllerBase {
 					$this->api_client->get_payment_intention( (string) $request->get_param( 'payment_intent_id' ) )
 				)
 			);
-		} catch ( WooPaymentsApiException $exception ) {
+		} catch ( ApiException $exception ) {
 			return $exception->to_wp_error();
 		}
 	}
@@ -227,7 +227,7 @@ class WooPaymentsPaymentDetailsRestController extends RestApiControllerBase {
 			$timeline     = $this->api_client->get_timeline( $intention_id );
 
 			return new WP_REST_Response( $this->add_manual_fraud_outcome_entry( $timeline, $intention_id ) );
-		} catch ( WooPaymentsApiException $exception ) {
+		} catch ( ApiException $exception ) {
 			return $exception->to_wp_error();
 		}
 	}
@@ -411,7 +411,7 @@ class WooPaymentsPaymentDetailsRestController extends RestApiControllerBase {
 	private function get_order_id_from_intention( string $intention_id ): int {
 		try {
 			$intention = $this->api_client->get_payment_intention( $intention_id );
-		} catch ( WooPaymentsApiException $exception ) {
+		} catch ( ApiException $exception ) {
 			return 0;
 		}
 
@@ -789,7 +789,7 @@ class WooPaymentsPaymentDetailsRestController extends RestApiControllerBase {
 			// No idempotency key is set, as in client 11.1.0 (`includes/admin/class-wc-rest-payments-refunds-controller.php:107-114`),
 			// so the transport mints a fresh one per request.
 			return new WP_REST_Response( $this->api_client->refund_charge( $charge_id, $amount, $reason, 'transaction_details_no_order', '' ) );
-		} catch ( WooPaymentsApiException $exception ) {
+		} catch ( ApiException $exception ) {
 			return new WP_Error(
 				'wcpay_refund_payment',
 				$exception->getMessage(),

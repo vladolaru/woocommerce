@@ -19,7 +19,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\SharedS
 use Automattic\WooCommerce\Internal\Payments\PaymentOperationContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\PaymentProcessingService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\LinkController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsMultiCurrencyPaymentMethodsMap;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsMultiCurrencyController;
@@ -60,9 +60,9 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 	/**
 	 * WooPayments API client.
 	 *
-	 * @var WooPaymentsApiClient
+	 * @var Client
 	 */
-	private WooPaymentsApiClient $api_client;
+	private Client $api_client;
 
 	/**
 	 * WooPayments account service.
@@ -98,14 +98,14 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 	 * @internal
 	 *
 	 * @param WooPaymentsPaymentOperationService $payment_operations      WooPayments payment operation service.
-	 * @param WooPaymentsApiClient               $api_client              WooPayments API client.
+	 * @param Client                             $api_client              WooPayments API client.
 	 * @param WooPaymentsAccountService          $account_service         WooPayments account service.
 	 * @param WooPaymentsPaymentMethodRegistry   $payment_method_registry Payment method registry.
 	 * @param WooPaymentsOrderEffectApplier      $order_effect_applier    Order effect applier.
 	 */
 	final public function init(
 		WooPaymentsPaymentOperationService $payment_operations,
-		WooPaymentsApiClient $api_client,
+		Client $api_client,
 		WooPaymentsAccountService $account_service,
 		WooPaymentsPaymentMethodRegistry $payment_method_registry,
 		WooPaymentsOrderEffectApplier $order_effect_applier

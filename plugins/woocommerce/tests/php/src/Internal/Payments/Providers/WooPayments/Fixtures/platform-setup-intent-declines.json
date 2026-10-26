@@ -13,7 +13,7 @@
 			"test_card": "4000000000000002",
 			"recorded_at": "2026-09-25T09:25:07+00:00",
 			"request": {
-				"transport": "WooPaymentsCheckoutAjaxController::get_create_setup_intent_response -> WooPaymentsApiClient::create_and_confirm_setup_intention",
+				"transport": "WooPaymentsCheckoutAjaxController::get_create_setup_intent_response -> Client::create_and_confirm_setup_intention",
 				"method": "POST",
 				"path": "/sites/4/wcpay/setup_intents (wpcom/v2 via Jetpack blog token)",
 				"idempotency_key": "add_payment_method_1_2bfbd3c136fc2e5728b7ce5d54ff860f (controller-derived: add_payment_method_<user_id>_md5(<payment method>))",
@@ -231,7 +231,7 @@
 			"test_card": "4000000000000127",
 			"recorded_at": "2026-09-25T09:25:20+00:00",
 			"request": {
-				"transport": "WooPaymentsCheckoutAjaxController::get_create_setup_intent_response -> WooPaymentsApiClient::create_and_confirm_setup_intention",
+				"transport": "WooPaymentsCheckoutAjaxController::get_create_setup_intent_response -> Client::create_and_confirm_setup_intention",
 				"method": "POST",
 				"path": "/sites/4/wcpay/setup_intents (wpcom/v2 via Jetpack blog token)",
 				"idempotency_key": "add_payment_method_1_9c107d5e484c5fc36b296cd56ae64175 (controller-derived: add_payment_method_<user_id>_md5(<payment method>))",
@@ -453,7 +453,7 @@
 			"test_card": "4000000000000069",
 			"recorded_at": "2026-09-25T09:25:23+00:00",
 			"request": {
-				"transport": "WooPaymentsCheckoutAjaxController::get_create_setup_intent_response -> WooPaymentsApiClient::create_and_confirm_setup_intention",
+				"transport": "WooPaymentsCheckoutAjaxController::get_create_setup_intent_response -> Client::create_and_confirm_setup_intention",
 				"method": "POST",
 				"path": "/sites/4/wcpay/setup_intents (wpcom/v2 via Jetpack blog token)",
 				"idempotency_key": "add_payment_method_1_f9a8a33533848e9498302d3d60fe8d64 (controller-derived: add_payment_method_<user_id>_md5(<payment method>))",
@@ -675,7 +675,7 @@
 			"test_card": "4000000000009995",
 			"recorded_at": "2026-09-25T09:25:27+00:00",
 			"request": {
-				"transport": "WooPaymentsCheckoutAjaxController::get_create_setup_intent_response -> WooPaymentsApiClient::create_and_confirm_setup_intention",
+				"transport": "WooPaymentsCheckoutAjaxController::get_create_setup_intent_response -> Client::create_and_confirm_setup_intention",
 				"method": "POST",
 				"path": "/sites/4/wcpay/setup_intents (wpcom/v2 via Jetpack blog token)",
 				"idempotency_key": "add_payment_method_1_4ed6364ab2f8b5e74731e2810df6b3a9 (controller-derived: add_payment_method_<user_id>_md5(<payment method>))",
@@ -895,7 +895,7 @@
 			"test_card": "4000000000000119",
 			"recorded_at": "2026-09-25T09:25:30+00:00",
 			"request": {
-				"transport": "WooPaymentsCheckoutAjaxController::get_create_setup_intent_response -> WooPaymentsApiClient::create_and_confirm_setup_intention",
+				"transport": "WooPaymentsCheckoutAjaxController::get_create_setup_intent_response -> Client::create_and_confirm_setup_intention",
 				"method": "POST",
 				"path": "/sites/4/wcpay/setup_intents (wpcom/v2 via Jetpack blog token)",
 				"idempotency_key": "add_payment_method_1_c30849a600e747f5d0093c1f986c92a2 (controller-derived: add_payment_method_<user_id>_md5(<payment method>))",

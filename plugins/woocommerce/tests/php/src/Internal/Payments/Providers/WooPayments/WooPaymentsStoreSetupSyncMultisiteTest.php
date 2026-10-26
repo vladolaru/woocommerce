@@ -3,7 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDuplicateGatewayMethodsService;
@@ -45,7 +45,7 @@ class WooPaymentsStoreSetupSyncMultisiteTest extends WC_Unit_Test_Case {
 		);
 
 		$snapshots  = array();
-		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
+		$api_client = $this->getMockBuilder( Client::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'is_available', 'send_store_setup' ) )
 			->getMock();

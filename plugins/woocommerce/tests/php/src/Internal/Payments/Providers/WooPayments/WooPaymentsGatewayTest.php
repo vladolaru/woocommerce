@@ -19,9 +19,9 @@ use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOutcomeMetadataMapper;
 use Automattic\WooCommerce\Internal\Payments\PaymentProcessingService;
 use Automattic\WooCommerce\Internal\Payments\ProviderInterface;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Onboarding\WooPaymentsOnboardingService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDatabaseCache;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCheckoutAssets;
@@ -51,14 +51,14 @@ use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeB
 use WC_Order;
 use WC_Payment_Token_CC;
 use WC_Unit_Test_Case;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsTransportLog;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\TransportLog;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\StripeBillingApi;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\WooPaymentsStripeBillingModule;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\WooPaymentsLinkToken;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\WooPaymentsSepaToken;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentMethodDetailsService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenClassMapController;
-use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Api\FakeWooPaymentsHttpClient;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Api\FakeHttpClient;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\SubscriptionDouble;
 use Automattic\WooCommerce\Tests\Internal\Payments\RecordingPaymentProcessingService;
 use WC_Payment_Token;
@@ -1701,7 +1701,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$recorded                    = $this->load_recorded_manual_3ds_entry( 'my_account_setup_intent_challenge_completed' );
 		$_POST['wcpay-setup-intent'] = $recorded['body']['id'];
 
-		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
+		$api_client = $this->getMockBuilder( Client::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'get_setup_intention' ) )
 			->getMock();
@@ -1742,7 +1742,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		wp_set_current_user( $user_id );
 		$_POST['wcpay-setup-intent'] = 'seti_sepa';
 
-		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
+		$api_client = $this->getMockBuilder( Client::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'get_setup_intention' ) )
 			->getMock();
@@ -1805,7 +1805,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$recorded                    = $this->load_recorded_manual_3ds_entry( 'my_account_setup_intent_challenge_failed' );
 		$_POST['wcpay-setup-intent'] = $recorded['body']['id'];
 
-		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
+		$api_client = $this->getMockBuilder( Client::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'get_setup_intention' ) )
 			->getMock();
@@ -1877,7 +1877,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		wp_set_current_user( $user_id );
 		$_POST['wcpay-setup-intent'] = 'seti_foreign';
 
-		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
+		$api_client = $this->getMockBuilder( Client::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'get_setup_intention' ) )
 			->getMock();
@@ -1947,16 +1947,16 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 *
 	 * @dataProvider add_payment_method_api_error_provider
 	 *
-	 * @param WooPaymentsApiException $exception Exception thrown by the setup intent lookup.
-	 * @param string                  $expected  Expected shopper notice.
+	 * @param ApiException $exception Exception thrown by the setup intent lookup.
+	 * @param string       $expected  Expected shopper notice.
 	 */
-	public function test_add_payment_method_filters_api_errors_like_the_woopayments_extension( WooPaymentsApiException $exception, string $expected ): void {
+	public function test_add_payment_method_filters_api_errors_like_the_woopayments_extension( ApiException $exception, string $expected ): void {
 		wc_clear_notices();
 		$user_id = self::factory()->user->create();
 		wp_set_current_user( $user_id );
 		$_POST['wcpay-setup-intent'] = 'seti_native';
 
-		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
+		$api_client = $this->getMockBuilder( Client::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'get_setup_intention' ) )
 			->getMock();
@@ -1977,7 +1977,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$user_id = self::factory()->user->create();
 		wp_set_current_user( $user_id );
 		$_POST['wcpay-setup-intent'] = 'seti_native';
-		$api_client                  = $this->getMockBuilder( WooPaymentsApiClient::class )
+		$api_client                  = $this->getMockBuilder( Client::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'get_setup_intention' ) )
 			->getMock();
@@ -1999,20 +1999,20 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	/**
 	 * API errors and the client's filtered message for each (utils.php:773-774, :795-796).
 	 *
-	 * @return array<string,array{0:WooPaymentsApiException,1:string}>
+	 * @return array<string,array{0:ApiException,1:string}>
 	 */
 	public function add_payment_method_api_error_provider(): array {
 		return array(
 			'typed non-card error'    => array(
-				new WooPaymentsApiException( 'No such setupintent', 'resource_missing', 404, 'invalid_request_error' ),
+				new ApiException( 'No such setupintent', 'resource_missing', 404, 'invalid_request_error' ),
 				"We're not able to process this request. Please refresh the page and try again.",
 			),
 			'transport failure'       => array(
-				new WooPaymentsApiException( 'Http request failed. Reason: timeout', 'wcpay_http_request_failed', 500 ),
+				new ApiException( 'Http request failed. Reason: timeout', 'wcpay_http_request_failed', 500 ),
 				'There was an error while processing this request. If you continue to see this notice, please contact the admin.',
 			),
 			'typeless platform error' => array(
-				new WooPaymentsApiException( 'The platform could not read this setup intent.', 'wcpay_setup_intent_unreadable', 400 ),
+				new ApiException( 'The platform could not read this setup intent.', 'wcpay_setup_intent_unreadable', 400 ),
 				'The platform could not read this setup intent.',
 			),
 		);
@@ -2038,7 +2038,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			$_POST['wcpay-setup-intent'] = 'seti_form';
 		}
 
-		$api_client    = $this->getMockBuilder( WooPaymentsApiClient::class )
+		$api_client    = $this->getMockBuilder( Client::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'get_setup_intention' ) )
 			->getMock();
@@ -2146,7 +2146,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$session = $this->create_session();
 		$session->set( WooPaymentsFraudPreventionService::TOKEN_NAME, 'valid-token' );
 
-		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
+		$api_client = $this->getMockBuilder( Client::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'get_setup_intention' ) )
 			->getMock();
@@ -2934,7 +2934,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$_POST['wcpay-payment-method']                          = 'pm_plugin_failed_recovery';
 		$_POST[ WooPaymentsFraudPreventionService::TOKEN_NAME ] = $fraud_prevention_token;
 
-		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
+		$api_client = $this->getMockBuilder( Client::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'get_payment_intention' ) )
 			->getMock();
@@ -3150,7 +3150,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		} else {
 			$order->update_meta_data( '_intent_id', 'pi_existing' );
 			$order->save();
-			$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
+			$api_client = $this->getMockBuilder( Client::class )
 				->disableOriginalConstructor()
 				->onlyMethods( array( 'get_payment_intention' ) )
 				->getMock();
@@ -3739,7 +3739,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$order->update_meta_data( '_intent_id', 'pi_existing' );
 		$order->save();
 		$session    = $this->create_session();
-		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
+		$api_client = $this->getMockBuilder( Client::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'get_payment_intention' ) )
 			->getMock();
@@ -3905,7 +3905,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$order->update_meta_data( '_intent_id', 'pi_existing' );
 		$order->save();
 		$session    = $this->create_session();
-		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
+		$api_client = $this->getMockBuilder( Client::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'get_payment_intention' ) )
 			->getMock();
@@ -4456,7 +4456,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$order->save();
 		$session->set( WooPaymentsDuplicatePaymentPreventionService::SESSION_KEY_PROCESSING_ORDER, $order->get_id() );
 
-		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
+		$api_client = $this->getMockBuilder( Client::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'get_payment_intention' ) )
 			->getMock();
@@ -6426,7 +6426,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			$container->get( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsActionSchedulerService::class )
 		);
 		$provider = new WooPaymentsProvider();
-		$provider->init( $payment_operations, $container->get( WooPaymentsApiClient::class ), $container->get( WooPaymentsAccountService::class ), new WooPaymentsPaymentMethodRegistry(), $applier );
+		$provider->init( $payment_operations, $container->get( Client::class ), $container->get( WooPaymentsAccountService::class ), new WooPaymentsPaymentMethodRegistry(), $applier );
 
 		return $provider;
 	}
@@ -6777,14 +6777,14 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	/**
 	 * Create a duplicate-payment prevention service.
 	 *
-	 * @param \WC_Session               $session    WooCommerce session test double.
-	 * @param WooPaymentsApiClient|null $api_client Optional API client.
+	 * @param \WC_Session $session    WooCommerce session test double.
+	 * @param Client|null $api_client Optional API client.
 	 * @return WooPaymentsDuplicatePaymentPreventionService
 	 */
-	private function create_duplicate_payment_prevention_service( \WC_Session $session, ?WooPaymentsApiClient $api_client = null ): WooPaymentsDuplicatePaymentPreventionService {
+	private function create_duplicate_payment_prevention_service( \WC_Session $session, ?Client $api_client = null ): WooPaymentsDuplicatePaymentPreventionService {
 		$service = new WooPaymentsDuplicatePaymentPreventionService( $session );
 		$service->init(
-			$api_client ?? $this->createStub( WooPaymentsApiClient::class ),
+			$api_client ?? $this->createStub( Client::class ),
 			wc_get_container()->get( OrderPaymentLifecycleService::class )
 		);
 
@@ -7645,7 +7645,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$token_service = new WooPaymentsTokenService();
 		$token_service->init(
 			$container->get( WooPaymentsPaymentMethodDetailsService::class ),
-			$container->get( WooPaymentsApiClient::class ),
+			$container->get( Client::class ),
 			$container->get( WooPaymentsCustomerService::class ),
 			$container->get( WooPaymentsAccountService::class ),
 			$container->get( WooPaymentsOrderDataService::class ),
@@ -7722,15 +7722,15 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 * Answer the Stripe Billing module's platform requests with a recorded response, on the account and blog it was recorded on.
 	 *
 	 * @param string $pair Entry name in `Fixtures/platform-stripe-billing-api.json`.
-	 * @return FakeWooPaymentsHttpClient
+	 * @return FakeHttpClient
 	 */
-	private function use_recorded_platform( string $pair ): FakeWooPaymentsHttpClient {
+	private function use_recorded_platform( string $pair ): FakeHttpClient {
 		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reading a local test fixture.
 		$recording = json_decode( (string) file_get_contents( __DIR__ . '/Fixtures/platform-stripe-billing-api.json' ), true );
 		$entries   = array_values( array_filter( array_merge( $recording['entries'], $recording['supporting_entries'] ?? array() ), static fn( array $entry ) => $pair === $entry['pair'] ) );
 		$this->assertNotEmpty( $entries, "Fixture entry $pair is missing." );
 
-		$http_client              = new FakeWooPaymentsHttpClient();
+		$http_client              = new FakeHttpClient();
 		$http_client->blog_id     = 4;
 		$http_client->responses[] = array(
 			'response' => array( 'code' => (int) $entries[0]['response']['http_status'] ),
@@ -7747,8 +7747,8 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$account_service->method( 'get_account_id' )->willReturn( 'acct_1TrY2nBzWlxcwgpP' );
 		$account_service->method( 'get_gateway_setting' )->willReturn( '' );
 
-		$api_client = new WooPaymentsApiClient();
-		$api_client->init( $http_client, $account_service, wc_get_container()->get( WooPaymentsTransportLog::class ) );
+		$api_client = new Client();
+		$api_client->init( $http_client, $account_service, wc_get_container()->get( TransportLog::class ) );
 		$api = new StripeBillingApi();
 		$api->init( $api_client );
 		wc_get_container()->replace( StripeBillingApi::class, $api );

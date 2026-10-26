@@ -3,8 +3,8 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDatabaseCache;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendTrackingController;
@@ -1432,7 +1432,7 @@ class WooPaymentsFrontendTrackingControllerTest extends WC_Unit_Test_Case {
 	 * @return WooPaymentsAccountService
 	 */
 	private function create_account_service_on_platform( array $account, string $error_code ): WooPaymentsAccountService {
-		$api_client = new class( $account, $error_code ) extends WooPaymentsApiClient {
+		$api_client = new class( $account, $error_code ) extends Client {
 			/**
 			 * Account the platform returns.
 			 *
@@ -1472,15 +1472,15 @@ class WooPaymentsFrontendTrackingControllerTest extends WC_Unit_Test_Case {
 			 *
 			 * @param string $woocommerce_store_id WooCommerce store ID.
 			 * @return array<string,mixed>
-			 * @throws WooPaymentsApiException When set to fail.
+			 * @throws ApiException When set to fail.
 			 */
 			public function get_account( string $woocommerce_store_id = '' ): array {
 				// Account-not-found becomes no account; a temporary failure becomes a failed read (`includes/class-wc-payments-account.php:2464-2477`, where onboarding-disabled also becomes no account).
 				if ( 'wcpay_account_not_found' === $this->error_code ) {
-					throw new WooPaymentsApiException( 'Account not found.', 'wcpay_account_not_found', 404 );
+					throw new ApiException( 'Account not found.', 'wcpay_account_not_found', 404 );
 				}
 				if ( '' !== $this->error_code ) {
-					throw new WooPaymentsApiException( 'Temporary failure.', 'wcpay_temporary_failure', 500 );
+					throw new ApiException( 'Temporary failure.', 'wcpay_temporary_failure', 500 );
 				}
 
 				return $this->account;
@@ -1491,25 +1491,25 @@ class WooPaymentsFrontendTrackingControllerTest extends WC_Unit_Test_Case {
 			/**
 			 * Fake platform transport.
 			 *
-			 * @var WooPaymentsApiClient
+			 * @var Client
 			 */
-			private WooPaymentsApiClient $api_client;
+			private Client $api_client;
 
 			/**
 			 * Constructor.
 			 *
-			 * @param WooPaymentsApiClient $api_client Fake platform transport.
+			 * @param Client $api_client Fake platform transport.
 			 */
-			public function __construct( WooPaymentsApiClient $api_client ) {
+			public function __construct( Client $api_client ) {
 				$this->api_client = $api_client;
 			}
 
 			/**
 			 * Get the fake platform transport.
 			 *
-			 * @return WooPaymentsApiClient
+			 * @return Client
 			 */
-			protected function get_api_client(): WooPaymentsApiClient {
+			protected function get_api_client(): Client {
 				return $this->api_client;
 			}
 		};

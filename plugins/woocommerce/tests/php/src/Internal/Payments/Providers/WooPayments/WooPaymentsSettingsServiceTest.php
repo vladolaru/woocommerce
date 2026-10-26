@@ -17,8 +17,8 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRu
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
 use Automattic\WooCommerce\Tests\Internal\Payments\RecordingPaymentProcessingService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLocaleUtils;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDuplicateGatewayMethodsService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFraudRulesetService;
@@ -1884,7 +1884,7 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_update_settings_surfaces_platform_param_for_inline_error_fields(): void {
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'account_statement_descriptor' => 'OLD STORE' ) );
-		$this->api_client->update_account_exception = new WooPaymentsApiException(
+		$this->api_client->update_account_exception = new ApiException(
 			'Error: Invalid statement descriptor.',
 			'invalid_request_error',
 			400,
@@ -1913,7 +1913,7 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_update_settings_marks_unmapped_platform_rejection_for_server_error_shape( array $error_data ): void {
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'account_business_name' => 'Old Name' ) );
-		$this->api_client->update_account_exception = new WooPaymentsApiException(
+		$this->api_client->update_account_exception = new ApiException(
 			'Error: The account update was rejected.',
 			'invalid_request_error',
 			400,
@@ -2153,7 +2153,7 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 			)
 		);
 		set_transient( 'wcpay_fraud_protection_settings', $ruleset, DAY_IN_SECONDS );
-		$this->api_client->save_fraud_ruleset_exception = new WooPaymentsApiException( 'Platform unavailable.', 'wcpay_server_error', 500 );
+		$this->api_client->save_fraud_ruleset_exception = new ApiException( 'Platform unavailable.', 'wcpay_server_error', 500 );
 
 		$result = $this->sut->update_settings(
 			array(
@@ -2321,7 +2321,7 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	public function test_get_settings_initializes_basic_fraud_ruleset_when_platform_ruleset_is_missing(): void {
 		$this->set_connected_account_data();
 		update_option( 'current_protection_level', 'advanced' );
-		$this->api_client->latest_fraud_ruleset_exception = new WooPaymentsApiException(
+		$this->api_client->latest_fraud_ruleset_exception = new ApiException(
 			'Ruleset not found.',
 			'wcpay_fraud_ruleset_not_found',
 			404
@@ -2359,7 +2359,7 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 				),
 			)
 		);
-		$this->api_client->latest_fraud_ruleset_exception = new WooPaymentsApiException(
+		$this->api_client->latest_fraud_ruleset_exception = new ApiException(
 			'Platform unavailable.',
 			'wcpay_server_error',
 			500
@@ -2384,11 +2384,11 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 		$this->set_connected_account_data();
 		self::enable_woopayments_debug_logging();
 		update_option( 'current_protection_level', 'advanced' );
-		$free_text_code = new WooPaymentsApiException( 'Error: x', 'https://pay.example.test/r?key=sk_test_leak123', 500 );
+		$free_text_code = new ApiException( 'Error: x', 'https://pay.example.test/r?key=sk_test_leak123', 500 );
 		if ( 'refresh' === $step ) {
 			$this->api_client->latest_fraud_ruleset_exception = $free_text_code;
 		} else {
-			$this->api_client->latest_fraud_ruleset_exception = new WooPaymentsApiException( 'Ruleset not found.', 'wcpay_fraud_ruleset_not_found', 404 );
+			$this->api_client->latest_fraud_ruleset_exception = new ApiException( 'Ruleset not found.', 'wcpay_fraud_ruleset_not_found', 404 );
 			$this->api_client->save_fraud_ruleset_exception   = $free_text_code;
 		}
 		$logger = RecordingWcLogger::install();
@@ -2449,7 +2449,7 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 		// The platform's ruleset read answers a ruleset_config envelope, or the wcpay_fraud_ruleset_not_found error when the
 		// account has none (the WooPayments extension includes/class-wc-payment-gateway-wcpay.php:3782-3795).
 		if ( in_array( $platform, array( 'wcpay_fraud_ruleset_not_found', 'wcpay_server_error' ), true ) ) {
-			$this->api_client->latest_fraud_ruleset_exception = new WooPaymentsApiException( 'Platform answer.', $platform, 'wcpay_server_error' === $platform ? 500 : 404 );
+			$this->api_client->latest_fraud_ruleset_exception = new ApiException( 'Platform answer.', $platform, 'wcpay_server_error' === $platform ? 500 : 404 );
 		} elseif ( null !== $platform ) {
 			$this->api_client->latest_fraud_ruleset_response = array( 'ruleset_config' => $this->get_fraud_ruleset_case_fixture( $platform ) );
 		}
@@ -2506,7 +2506,7 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 				'enable_logging' => 'no',
 			)
 		);
-		$this->api_client->latest_fraud_ruleset_exception = new WooPaymentsApiException( 'Platform unavailable.', 'wcpay_server_error', 500 );
+		$this->api_client->latest_fraud_ruleset_exception = new ApiException( 'Platform unavailable.', 'wcpay_server_error', 500 );
 
 		try {
 			$response = $this->post_settings(
@@ -2651,9 +2651,9 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 		update_option( 'woocommerce_woocommerce_payments_settings', array( $account_key => $stored_value ) );
 		update_option( 'wcpay_next_deposit_notice_dismissed', true );
 		if ( 'account' === $failing_call ) {
-			$this->api_client->update_account_exception = new WooPaymentsApiException( 'Error: The account update was rejected.', 'invalid_request_error', 400 );
+			$this->api_client->update_account_exception = new ApiException( 'Error: The account update was rejected.', 'invalid_request_error', 400 );
 		} else {
-			$this->api_client->save_fraud_ruleset_exception = new WooPaymentsApiException( 'Platform unavailable.', 'wcpay_server_error', 500 );
+			$this->api_client->save_fraud_ruleset_exception = new ApiException( 'Platform unavailable.', 'wcpay_server_error', 500 );
 		}
 
 		$result = $this->sut->update_settings(
@@ -3101,7 +3101,7 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 			)
 		);
 		update_option( 'current_protection_level', 'standard' );
-		$this->api_client->request_capability_exception = new WooPaymentsApiException( 'Platform unavailable.', 'wcpay_server_error', 500 );
+		$this->api_client->request_capability_exception = new ApiException( 'Platform unavailable.', 'wcpay_server_error', 500 );
 
 		$result = $this->sut->update_settings(
 			array(
@@ -3461,10 +3461,10 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	 * @return WooPaymentsAccountService
 	 */
 	private function create_account_service(): WooPaymentsAccountService {
-		$connected_api_client = $this->createMock( WooPaymentsApiClient::class );
+		$connected_api_client = $this->createMock( Client::class );
 		$connected_api_client->method( 'is_available' )->willReturn( true );
-		$connected_api_client->method( 'get_account' )->willThrowException( new WooPaymentsApiException( 'Unavailable.', 'wcpay_test_unavailable', 500 ) );
-		wc_get_container()->replace( WooPaymentsApiClient::class, $connected_api_client );
+		$connected_api_client->method( 'get_account' )->willThrowException( new ApiException( 'Unavailable.', 'wcpay_test_unavailable', 500 ) );
+		wc_get_container()->replace( Client::class, $connected_api_client );
 
 		$account_service = new WooPaymentsAccountService();
 		$database_cache  = new WooPaymentsDatabaseCache();
@@ -3749,7 +3749,7 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 			$this->createMock( WooPaymentsAccountService::class ),
 			$this->createMock( NoticeService::class ),
 			$this->createMock( WooPaymentsApplePayDomainService::class ),
-			$this->createMock( WooPaymentsApiClient::class )
+			$this->createMock( Client::class )
 		);
 		$server = $this->create_rest_server_with_routes(
 			array(

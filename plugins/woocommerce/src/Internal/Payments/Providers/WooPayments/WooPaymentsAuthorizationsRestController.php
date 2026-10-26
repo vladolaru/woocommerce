@@ -10,9 +10,9 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 use Automattic\WooCommerce\Internal\Payments\PaymentOperationContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\PaymentProcessingService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsAuthorizationsListRequest;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\AuthorizationsListRequest;
 use Automattic\WooCommerce\Internal\RestApiControllerBase;
 use Throwable;
 use WC_Order;
@@ -36,9 +36,9 @@ class WooPaymentsAuthorizationsRestController extends RestApiControllerBase {
 	/**
 	 * WooPayments API client.
 	 *
-	 * @var WooPaymentsApiClient
+	 * @var Client
 	 */
-	private WooPaymentsApiClient $api_client;
+	private Client $api_client;
 
 	/**
 	 * Payment processing service.
@@ -59,11 +59,11 @@ class WooPaymentsAuthorizationsRestController extends RestApiControllerBase {
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsApiClient     $api_client         WooPayments API client.
+	 * @param Client                   $api_client         WooPayments API client.
 	 * @param PaymentProcessingService $processing_service Payment processing service.
 	 * @param WooPaymentsProvider      $provider           WooPayments provider.
 	 */
-	final public function init( WooPaymentsApiClient $api_client, PaymentProcessingService $processing_service, WooPaymentsProvider $provider ): void {
+	final public function init( Client $api_client, PaymentProcessingService $processing_service, WooPaymentsProvider $provider ): void {
 		$this->api_client         = $api_client;
 		$this->processing_service = $processing_service;
 		$this->provider           = $provider;
@@ -108,7 +108,7 @@ class WooPaymentsAuthorizationsRestController extends RestApiControllerBase {
 	public function get_authorizations( WP_REST_Request $request ) {
 		try {
 			return new WP_REST_Response( $this->api_client->get_authorizations( $this->get_filtered_list_params( $request ), false ) );
-		} catch ( WooPaymentsApiException $exception ) {
+		} catch ( ApiException $exception ) {
 			return $exception->to_wp_error();
 		}
 	}
@@ -126,7 +126,7 @@ class WooPaymentsAuthorizationsRestController extends RestApiControllerBase {
 		try {
 			// The client asks for the store-wide totals: no query and no list filter (class-wc-rest-payments-authorizations-controller.php:88-92).
 			return new WP_REST_Response( $this->api_client->get_authorizations_summary() );
-		} catch ( WooPaymentsApiException $exception ) {
+		} catch ( ApiException $exception ) {
 			return $exception->to_wp_error();
 		}
 	}
@@ -141,7 +141,7 @@ class WooPaymentsAuthorizationsRestController extends RestApiControllerBase {
 	public function get_authorization( WP_REST_Request $request ) {
 		try {
 			return new WP_REST_Response( $this->api_client->get_authorization( (string) $request->get_param( 'payment_intent_id' ) ) );
-		} catch ( WooPaymentsApiException $exception ) {
+		} catch ( ApiException $exception ) {
 			return $exception->to_wp_error();
 		}
 	}
@@ -361,10 +361,10 @@ class WooPaymentsAuthorizationsRestController extends RestApiControllerBase {
 	 *
 	 * @param array<string,mixed> $params Request params.
 	 * @return array<string,mixed>
-	 * @throws WooPaymentsApiException When a filter callback returns no request.
+	 * @throws ApiException When a filter callback returns no request.
 	 */
 	private function apply_authorizations_request_filter( array $params ): array {
-		$request = WooPaymentsAuthorizationsListRequest::from_params( $params );
+		$request = AuthorizationsListRequest::from_params( $params );
 
 		return $request->get_filtered_request()->get_params();
 	}
@@ -386,7 +386,7 @@ class WooPaymentsAuthorizationsRestController extends RestApiControllerBase {
 	 * @param string   $payment_intent_id PaymentIntent ID.
 	 * @param string   $action            Action name.
 	 * @return array<string,mixed>|WP_Error
-	 * @throws WooPaymentsApiException When the intent read fails; the route's generic catch answers it, as the client's does (class-wc-rest-payments-orders-controller.php:389-391, :434-437).
+	 * @throws ApiException When the intent read fails; the route's generic catch answers it, as the client's does (class-wc-rest-payments-orders-controller.php:389-391, :434-437).
 	 */
 	private function validate_live_authorization_intent( WC_Order $order, string $payment_intent_id, string $action ) {
 		$intent = $this->api_client->get_payment_intention( $payment_intent_id );

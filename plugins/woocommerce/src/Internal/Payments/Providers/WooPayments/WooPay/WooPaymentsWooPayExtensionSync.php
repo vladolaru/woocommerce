@@ -7,7 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsActionSchedulerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
@@ -75,9 +75,9 @@ class WooPaymentsWooPayExtensionSync implements RegisterHooksInterface {
 	/**
 	 * WooPayments API client.
 	 *
-	 * @var WooPaymentsApiClient
+	 * @var Client
 	 */
-	private WooPaymentsApiClient $api_client;
+	private Client $api_client;
 
 	/**
 	 * WooPayments Action Scheduler service.
@@ -98,11 +98,11 @@ class WooPaymentsWooPayExtensionSync implements RegisterHooksInterface {
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsApiClient              $api_client       WooPayments API client.
+	 * @param Client                            $api_client       WooPayments API client.
 	 * @param WooPaymentsActionSchedulerService $action_scheduler WooPayments Action Scheduler service.
 	 * @param WooPaymentsLogger                 $logger           WooPayments logger.
 	 */
-	final public function init( WooPaymentsApiClient $api_client, WooPaymentsActionSchedulerService $action_scheduler, WooPaymentsLogger $logger ): void {
+	final public function init( Client $api_client, WooPaymentsActionSchedulerService $action_scheduler, WooPaymentsLogger $logger ): void {
 		$this->api_client       = $api_client;
 		$this->action_scheduler = $action_scheduler;
 		$this->logger           = $logger;

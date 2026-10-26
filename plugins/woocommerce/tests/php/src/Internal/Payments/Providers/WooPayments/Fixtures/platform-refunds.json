@@ -14,7 +14,7 @@
 			"setup": "fresh 10.99 USD card charge created the REC-3 way (create_and_confirm_payment_intention, pm_card_visa, no order): pi_3UJZZBBzWlxcwgpP0CDlkka0 / ch_3UJZZBBzWlxcwgpP0BZvfjOj, status succeeded",
 			"recorded_at": "2026-09-25T13:53:36+00:00",
 			"request": {
-				"transport": "WooPaymentsApiClient::refund_charge (source woocommerce_native)",
+				"transport": "Client::refund_charge (source woocommerce_native)",
 				"method": "POST",
 				"path": "/sites/4/wcpay/refunds (wpcom/v2 via Jetpack blog token)",
 				"idempotency_key": "fresh UUIDv4",
@@ -314,7 +314,7 @@
 			"setup": "REC-3 charge pi_3UJWs2BzWlxcwgpP10KzkjsT / ch_3UJWs2BzWlxcwgpP1y9vRrWr (12.34 EUR, settled 14.06 USD)",
 			"recorded_at": "2026-09-25T13:54:00+00:00",
 			"request": {
-				"transport": "WooPaymentsApiClient::refund_charge (source woocommerce_native)",
+				"transport": "Client::refund_charge (source woocommerce_native)",
 				"method": "POST",
 				"path": "/sites/4/wcpay/refunds (wpcom/v2 via Jetpack blog token)",
 				"idempotency_key": "fresh UUIDv4",
@@ -613,7 +613,7 @@
 			"setup": "existing :8889 order 4237 (Afterpay, 100.00 USD, processing, from the 2026-09-10 provider run): pi_3UDz8PBzWlxcwgpP18mLD3pm / py_3UDz8PBzWlxcwgpP1m07cdHy. Refunded through the client directly because wc_create_refund() from WP-CLI failed before any request (the order gateway is not registered in that context); no Woo refund was created",
 			"recorded_at": "2026-09-25T13:54:41+00:00",
 			"request": {
-				"transport": "WooPaymentsApiClient::refund_charge (source woocommerce_native)",
+				"transport": "Client::refund_charge (source woocommerce_native)",
 				"method": "POST",
 				"path": "/sites/4/wcpay/refunds (wpcom/v2 via Jetpack blog token)",
 				"idempotency_key": "fresh UUIDv4",

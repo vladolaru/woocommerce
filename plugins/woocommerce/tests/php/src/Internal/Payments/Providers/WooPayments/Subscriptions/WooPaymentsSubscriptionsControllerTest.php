@@ -10,8 +10,8 @@ use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\PaymentProcessingService;
 use Automattic\WooCommerce\Internal\Payments\PaymentsBootstrap;
 use Automattic\WooCommerce\Internal\Payments\ProviderInterface;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\WooPaymentsStripeBillingModule;
@@ -498,7 +498,7 @@ class WooPaymentsSubscriptionsControllerTest extends WC_Unit_Test_Case {
 		$order->update_meta_data( '_payment_method_id', 'pm_unusable_saved_method' );
 		$order->save();
 
-		$api_client       = new class() extends WooPaymentsApiClient {
+		$api_client       = new class() extends Client {
 			/**
 			 * Last API request.
 			 *
@@ -520,7 +520,7 @@ class WooPaymentsSubscriptionsControllerTest extends WC_Unit_Test_Case {
 			 *
 			 * @param array<string,mixed> $request_data Request data.
 			 * @param string              $idempotency_key Idempotency key.
-			 * @throws WooPaymentsApiException Always, to model the unusable saved method.
+			 * @throws ApiException Always, to model the unusable saved method.
 			 */
 			public function create_and_confirm_payment_intention( array $request_data, string $idempotency_key ): array {
 				unset( $idempotency_key );
@@ -528,7 +528,7 @@ class WooPaymentsSubscriptionsControllerTest extends WC_Unit_Test_Case {
 
 				// The platform's error code for a saved method that can no longer be charged, as the client's renewal tests
 				// raise it (client 11.1.0 `tests/unit/test-class-wc-payment-gateway-wcpay-subscriptions.php:700-704,740-767`).
-				throw new WooPaymentsApiException( 'Provider diagnostic for pm_unusable_saved_method.', 'payment_method_no_longer_available', 400, 'invalid_request_error', '', array(), 'pi_unusable_saved_method' );
+				throw new ApiException( 'Provider diagnostic for pm_unusable_saved_method.', 'payment_method_no_longer_available', 400, 'invalid_request_error', '', array(), 'pi_unusable_saved_method' );
 			}
 		};
 		$customer_service = $this->getMockBuilder( WooPaymentsCustomerService::class )
@@ -536,7 +536,7 @@ class WooPaymentsSubscriptionsControllerTest extends WC_Unit_Test_Case {
 			->onlyMethods( array( 'get_or_create_customer_id_for_order' ) )
 			->getMock();
 		$customer_service->method( 'get_or_create_customer_id_for_order' )->willReturn( 'cus_renewal' );
-		wc_get_container()->replace( WooPaymentsApiClient::class, $api_client );
+		wc_get_container()->replace( Client::class, $api_client );
 		wc_get_container()->replace( WooPaymentsCustomerService::class, $customer_service );
 		wc_get_container()->reset_all_resolved();
 
@@ -1363,7 +1363,7 @@ class WooPaymentsSubscriptionsControllerTest extends WC_Unit_Test_Case {
 		$details_service = new WooPaymentsPaymentMethodDetailsService();
 		$details_service->init(
 			$extension_runtime,
-			new class( $thrown ) extends WooPaymentsApiClient {
+			new class( $thrown ) extends Client {
 				/**
 				 * Throwable to throw.
 				 *
@@ -1397,7 +1397,7 @@ class WooPaymentsSubscriptionsControllerTest extends WC_Unit_Test_Case {
 			new StaticWooPaymentsRuntimeArbiter( true )
 		);
 		$token_service = new WooPaymentsTokenService();
-		$token_service->init( $details_service, wc_get_container()->get( WooPaymentsApiClient::class ), wc_get_container()->get( WooPaymentsCustomerService::class ), wc_get_container()->get( WooPaymentsAccountService::class ), wc_get_container()->get( WooPaymentsOrderDataService::class ), wc_get_container()->get( WooPaymentsPaymentMethodRegistry::class ) );
+		$token_service->init( $details_service, wc_get_container()->get( Client::class ), wc_get_container()->get( WooPaymentsCustomerService::class ), wc_get_container()->get( WooPaymentsAccountService::class ), wc_get_container()->get( WooPaymentsOrderDataService::class ), wc_get_container()->get( WooPaymentsPaymentMethodRegistry::class ) );
 
 		return $token_service;
 	}
@@ -1794,7 +1794,7 @@ class WooPaymentsSubscriptionsControllerTest extends WC_Unit_Test_Case {
 		$token_service = new WooPaymentsTokenService();
 		$token_service->init(
 			$container->get( WooPaymentsPaymentMethodDetailsService::class ),
-			$container->get( WooPaymentsApiClient::class ),
+			$container->get( Client::class ),
 			$container->get( WooPaymentsCustomerService::class ),
 			$container->get( WooPaymentsAccountService::class ),
 			$container->get( WooPaymentsOrderDataService::class ),

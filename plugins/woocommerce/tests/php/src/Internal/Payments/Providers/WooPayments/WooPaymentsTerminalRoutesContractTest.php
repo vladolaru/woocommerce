@@ -3,7 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAdminRestRouteRegistrar;
 use WC_Helper_Order;
 use WC_REST_Unit_Test_Case;
@@ -79,7 +79,7 @@ class WooPaymentsTerminalRoutesContractTest extends WC_REST_Unit_Test_Case {
 				return WooPaymentsTerminalRoutesContractTest::get_account();
 			}
 		};
-		wc_get_container()->replace( WooPaymentsApiClient::class, $this->api_client );
+		wc_get_container()->replace( Client::class, $this->api_client );
 		wc_get_container()->reset_all_resolved();
 
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );

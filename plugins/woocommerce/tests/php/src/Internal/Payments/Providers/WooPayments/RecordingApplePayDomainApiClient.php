@@ -3,13 +3,13 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 
 /**
  * Recording API client for Apple Pay domain registration tests.
  */
-class RecordingApplePayDomainApiClient extends WooPaymentsApiClient {
+class RecordingApplePayDomainApiClient extends Client {
 
 	/**
 	 * Registered domains.
@@ -34,16 +34,16 @@ class RecordingApplePayDomainApiClient extends WooPaymentsApiClient {
 	/**
 	 * Exception returned by register_apple_pay_domain().
 	 *
-	 * @var WooPaymentsApiException|null
+	 * @var ApiException|null
 	 */
-	public ?WooPaymentsApiException $exception = null;
+	public ?ApiException $exception = null;
 
 	/**
 	 * Register an Apple Pay domain.
 	 *
 	 * @param string $domain_name Domain name.
 	 * @return array<string,mixed>
-	 * @throws WooPaymentsApiException When configured to fail.
+	 * @throws ApiException When configured to fail.
 	 */
 	public function register_apple_pay_domain( string $domain_name ): array {
 		$this->registered_domains[] = $domain_name;

@@ -8,7 +8,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 
 /**
  * Maps a platform payment or setup intent to the payment outcome WooCommerce applies.
@@ -243,12 +243,12 @@ class WooPaymentsIntentCodec {
 	/**
 	 * Build a failed outcome from an explicit transport exception.
 	 *
-	 * @param string                  $operation           Operation name.
-	 * @param WooPaymentsApiException $exception           Platform transport exception.
-	 * @param string                  $provider_payment_id Provider payment ID.
+	 * @param string       $operation           Operation name.
+	 * @param ApiException $exception           Platform transport exception.
+	 * @param string       $provider_payment_id Provider payment ID.
 	 * @return PaymentOutcome
 	 */
-	public static function failed_transport_outcome( string $operation, WooPaymentsApiException $exception, string $provider_payment_id = '' ): PaymentOutcome {
+	public static function failed_transport_outcome( string $operation, ApiException $exception, string $provider_payment_id = '' ): PaymentOutcome {
 		$error_code = '' !== $exception->get_error_code() ? $exception->get_error_code() : 'wcpay_transport_failed';
 
 		if ( '' === $provider_payment_id ) {
@@ -279,11 +279,11 @@ class WooPaymentsIntentCodec {
 	/**
 	 * Get the minimum amount an amount_too_small platform error carries, as client 11.1.0's Amount_Too_Small_Exception exposes it (class-amount-too-small-exception.php:15).
 	 *
-	 * @param string                  $error_code Platform error code.
-	 * @param WooPaymentsApiException $exception  Platform error.
+	 * @param string       $error_code Platform error code.
+	 * @param ApiException $exception  Platform error.
 	 * @return array<string,int|string> minimum_amount and minimum_amount_currency, or empty for any other error.
 	 */
-	public static function amount_too_small_details( string $error_code, WooPaymentsApiException $exception ): array {
+	public static function amount_too_small_details( string $error_code, ApiException $exception ): array {
 		$error_data = $exception->get_error_data();
 		if ( 'amount_too_small' !== $error_code || ! isset( $error_data['minimum_amount'], $error_data['currency'] ) || ! is_numeric( $error_data['minimum_amount'] ) || ! is_string( $error_data['currency'] ) ) {
 			return array();
@@ -326,11 +326,11 @@ class WooPaymentsIntentCodec {
 	 * passes the transport's redacted capture message through, everything else
 	 * goes through the safe card-error mapping.
 	 *
-	 * @param string                  $error_code Provider error code.
-	 * @param WooPaymentsApiException $exception  Transport exception.
+	 * @param string       $error_code Provider error code.
+	 * @param ApiException $exception  Transport exception.
 	 * @return string
 	 */
-	private static function shopper_message_for_exception( string $error_code, WooPaymentsApiException $exception ): string {
+	private static function shopper_message_for_exception( string $error_code, ApiException $exception ): string {
 		$error_data = $exception->get_error_data();
 
 		if ( 'amount_too_small' === $error_code && isset( $error_data['minimum_amount'], $error_data['currency'] ) && is_numeric( $error_data['minimum_amount'] ) && is_string( $error_data['currency'] ) ) {

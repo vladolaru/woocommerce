@@ -13,7 +13,7 @@
 			"setup": "charge ch_3UOv4vBzWlxcwgpP0ALlMGAw (pi_3UOv4vBzWlxcwgpP096bz0cn, 43.21 USD, pm_card_visa, no order) refunded three times through refund_charge: 11.11 with metadata.refund_attempt equal to its Idempotency-Key 366fa04f-cf23-4be7-bab2-e622ae2696a5 and reason requested_by_customer; 7.77 without the marker and without a reason; 5.55 with metadata.refund_attempt equal to its Idempotency-Key 8dfc0ff3-4161-4bde-97c7-2e909facf280 and a free-text reason",
 			"recorded_at": "2026-10-10T07:53:02+00:00",
 			"request": {
-				"transport": "WooPaymentsApiClient::send_site_request( array( 'charge' => ..., 'limit' => ... ), 'refunds', 'GET' ), the request list_charge_refunds() sends",
+				"transport": "Client::send_site_request( array( 'charge' => ..., 'limit' => ... ), 'refunds', 'GET' ), the request list_charge_refunds() sends",
 				"method": "GET",
 				"path": "/sites/4/wcpay/refunds?test_mode=1&charge=ch_3UOv4vBzWlxcwgpP0ALlMGAw&limit=100 (wpcom/v2 via Jetpack blog token)",
 				"idempotency_key": null,
@@ -156,7 +156,7 @@
 			"setup": "charge ch_3UOv4vBzWlxcwgpP0ALlMGAw (pi_3UOv4vBzWlxcwgpP096bz0cn, 43.21 USD, pm_card_visa, no order) refunded three times through refund_charge: 11.11 with metadata.refund_attempt equal to its Idempotency-Key 366fa04f-cf23-4be7-bab2-e622ae2696a5 and reason requested_by_customer; 7.77 without the marker and without a reason; 5.55 with metadata.refund_attempt equal to its Idempotency-Key 8dfc0ff3-4161-4bde-97c7-2e909facf280 and a free-text reason; the same list read with limit 2",
 			"recorded_at": "2026-10-10T07:53:03+00:00",
 			"request": {
-				"transport": "WooPaymentsApiClient::send_site_request( array( 'charge' => ..., 'limit' => ... ), 'refunds', 'GET' ), the request list_charge_refunds() sends",
+				"transport": "Client::send_site_request( array( 'charge' => ..., 'limit' => ... ), 'refunds', 'GET' ), the request list_charge_refunds() sends",
 				"method": "GET",
 				"path": "/sites/4/wcpay/refunds?test_mode=1&charge=ch_3UOv4vBzWlxcwgpP0ALlMGAw&limit=2 (wpcom/v2 via Jetpack blog token)",
 				"idempotency_key": null,

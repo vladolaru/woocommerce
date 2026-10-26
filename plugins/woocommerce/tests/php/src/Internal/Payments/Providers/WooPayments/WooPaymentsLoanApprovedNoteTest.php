@@ -5,8 +5,8 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Admin\Notes\Note;
 use Automattic\WooCommerce\Admin\Notes\Notes;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLoanApprovedNote;
 use PHPUnit\Framework\MockObject\MockObject;
 use WC_Unit_Test_Case;
@@ -30,7 +30,7 @@ class WooPaymentsLoanApprovedNoteTest extends WC_Unit_Test_Case {
 	/**
 	 * API client mock.
 	 *
-	 * @var WooPaymentsApiClient&MockObject
+	 * @var Client&MockObject
 	 */
 	private $api_client;
 
@@ -41,7 +41,7 @@ class WooPaymentsLoanApprovedNoteTest extends WC_Unit_Test_Case {
 		parent::setUp();
 
 		$this->delete_notes();
-		$this->api_client = $this->createMock( WooPaymentsApiClient::class );
+		$this->api_client = $this->createMock( Client::class );
 		$this->sut        = $this->create_sut();
 	}
 
@@ -180,7 +180,7 @@ class WooPaymentsLoanApprovedNoteTest extends WC_Unit_Test_Case {
 		$this->api_client->method( 'get_capital_active_loan_summary' )->willReturn( $this->get_loan_summary( 100000, 1643889167, 'usd' ) );
 		$this->sut->handle_loan_approved_inbox_note( $this->get_active_loan_account() );
 
-		$api_client = $this->createMock( WooPaymentsApiClient::class );
+		$api_client = $this->createMock( Client::class );
 		$api_client->expects( $this->never() )->method( 'get_capital_active_loan_summary' );
 		$sut = new WooPaymentsLoanApprovedNote();
 		$sut->init( $api_client );
@@ -194,7 +194,7 @@ class WooPaymentsLoanApprovedNoteTest extends WC_Unit_Test_Case {
 	 * @testdox Adds no note when the loan summary request fails.
 	 */
 	public function test_adds_no_note_when_summary_request_fails(): void {
-		$this->api_client->method( 'get_capital_active_loan_summary' )->willThrowException( new WooPaymentsApiException( 'test_exception', 'test_exception', 400 ) );
+		$this->api_client->method( 'get_capital_active_loan_summary' )->willThrowException( new ApiException( 'test_exception', 'test_exception', 400 ) );
 
 		$this->sut->handle_loan_approved_inbox_note( $this->get_active_loan_account() );
 

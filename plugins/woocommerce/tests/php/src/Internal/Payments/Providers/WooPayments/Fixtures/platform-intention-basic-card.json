@@ -17,7 +17,7 @@
 			"recorded_at": "2026-09-25T22:14:36+00:00",
 			"context": "10.99 USD, automatic capture, no setup_future_usage, no order",
 			"request": {
-				"transport": "WooPaymentsApiClient::create_and_confirm_payment_intention",
+				"transport": "Client::create_and_confirm_payment_intention",
 				"method": "POST",
 				"path": "/sites/4/wcpay/intentions (wpcom/v2 via Jetpack blog token)",
 				"body": {

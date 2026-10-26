@@ -1,7 +1,7 @@
 {
 	"_meta": {
 		"recording": "F458 (b) and (c)",
-		"captured_via": "wcpay_api_request_response filter (raw transport response before native parsing), one request per entry, one transport attempt each (no retries: only WP_Error transport failures retry); metadata.refund_attempt added to the refund POSTs on wcpay_api_request_params; native_exception is what WooPaymentsApiClient threw for the answer",
+		"captured_via": "wcpay_api_request_response filter (raw transport response before native parsing), one request per entry, one transport attempt each (no retries: only WP_Error transport failures retry); metadata.refund_attempt added to the refund POSTs on wcpay_api_request_params; native_exception is what Client threw for the answer",
 		"sanitized": "client_secret, receipt_url, email-like keys, fingerprint and the shopper IP/UA keys replaced with REDACTED where present; response bodies are JSON-decoded and otherwise verbatim; raw_body is the error body exactly as received",
 		"source": "Local WPCOM (wpcom-local) Transact platform, blog 4, account acct_1TrY2nBzWlxcwgpP (default currency USD), Stripe test mode",
 		"store": "native WooCommerce :8889 (woocommerce-develop-2, branch exp/core-native-payments at c0f490f35e5, WooPayments plugin inactive, test mode), 2026-10-10",
@@ -13,7 +13,7 @@
 			"setup": "charge ch_3UOv4vBzWlxcwgpP0ALlMGAw (43.21 USD), already refunded 11.11, 7.77 and 5.55 (platform-refund-list.json); a 50.00 refund under a fresh key",
 			"recorded_at": "2026-10-10T07:53:20+00:00",
 			"request": {
-				"transport": "WooPaymentsApiClient::refund_charge (source woocommerce_native), metadata.refund_attempt equal to the Idempotency-Key",
+				"transport": "Client::refund_charge (source woocommerce_native), metadata.refund_attempt equal to the Idempotency-Key",
 				"method": "POST",
 				"path": "/sites/4/wcpay/refunds (wpcom/v2 via Jetpack blog token)",
 				"idempotency_key": "c39399f8-d4d6-4330-93ae-9bcd418aca9c",
@@ -58,7 +58,7 @@
 			"setup": "charge ch_3UOv4vBzWlxcwgpP0ALlMGAw (43.21 USD), already refunded 11.11, 7.77 and 5.55 (platform-refund-list.json); the refund_exceeds_charge request resent byte for byte under its key: Stripe replays the stored failure",
 			"recorded_at": "2026-10-10T07:53:23+00:00",
 			"request": {
-				"transport": "WooPaymentsApiClient::refund_charge (source woocommerce_native), metadata.refund_attempt equal to the Idempotency-Key",
+				"transport": "Client::refund_charge (source woocommerce_native), metadata.refund_attempt equal to the Idempotency-Key",
 				"method": "POST",
 				"path": "/sites/4/wcpay/refunds (wpcom/v2 via Jetpack blog token)",
 				"idempotency_key": "c39399f8-d4d6-4330-93ae-9bcd418aca9c",
@@ -103,7 +103,7 @@
 			"setup": "charge ch_3UOv4vBzWlxcwgpP0ALlMGAw (43.21 USD), already refunded 11.11, 7.77 and 5.55 (platform-refund-list.json); a 20.00 refund under a fresh key, more than the 18.78 left",
 			"recorded_at": "2026-10-10T07:53:44+00:00",
 			"request": {
-				"transport": "WooPaymentsApiClient::refund_charge (source woocommerce_native), metadata.refund_attempt equal to the Idempotency-Key",
+				"transport": "Client::refund_charge (source woocommerce_native), metadata.refund_attempt equal to the Idempotency-Key",
 				"method": "POST",
 				"path": "/sites/4/wcpay/refunds (wpcom/v2 via Jetpack blog token)",
 				"idempotency_key": "95608a10-8882-4d86-86cf-defb7ad91a32",
@@ -148,7 +148,7 @@
 			"setup": "charge ch_3UOv4vBzWlxcwgpP0ALlMGAw (43.21 USD), already refunded 11.11, 7.77 and 5.55 (platform-refund-list.json); the 5.55 refund's key 8dfc0ff3-4161-4bde-97c7-2e909facf280 with amount 6.00: Stripe's idempotency error, its message naming sha256(key), HTML-escaped",
 			"recorded_at": "2026-10-10T07:53:47+00:00",
 			"request": {
-				"transport": "WooPaymentsApiClient::refund_charge (source woocommerce_native), metadata.refund_attempt equal to the Idempotency-Key",
+				"transport": "Client::refund_charge (source woocommerce_native), metadata.refund_attempt equal to the Idempotency-Key",
 				"method": "POST",
 				"path": "/sites/4/wcpay/refunds (wpcom/v2 via Jetpack blog token)",
 				"idempotency_key": "8dfc0ff3-4161-4bde-97c7-2e909facf280",
@@ -193,7 +193,7 @@
 			"setup": "charge ch_3UOv4vBzWlxcwgpP0ALlMGAw (43.21 USD), already refunded 11.11, 7.77 and 5.55 (platform-refund-list.json); the 5.55 refund's request resent byte for byte under its key: Stripe replays the original refund, no new refund is created",
 			"recorded_at": "2026-10-10T07:53:50+00:00",
 			"request": {
-				"transport": "WooPaymentsApiClient::refund_charge (source woocommerce_native), metadata.refund_attempt equal to the Idempotency-Key",
+				"transport": "Client::refund_charge (source woocommerce_native), metadata.refund_attempt equal to the Idempotency-Key",
 				"method": "POST",
 				"path": "/sites/4/wcpay/refunds (wpcom/v2 via Jetpack blog token)",
 				"idempotency_key": "8dfc0ff3-4161-4bde-97c7-2e909facf280",
@@ -571,7 +571,7 @@
 			"setup": "charge ch_3UOv4vBzWlxcwgpP0ALlMGAw (43.21 USD), already refunded 11.11, 7.77 and 5.55 (platform-refund-list.json); the refund_exceeds_charge key with amount 1.00: the stored failure blocks the key, so the answer is the idempotency error",
 			"recorded_at": "2026-10-10T07:53:53+00:00",
 			"request": {
-				"transport": "WooPaymentsApiClient::refund_charge (source woocommerce_native), metadata.refund_attempt equal to the Idempotency-Key",
+				"transport": "Client::refund_charge (source woocommerce_native), metadata.refund_attempt equal to the Idempotency-Key",
 				"method": "POST",
 				"path": "/sites/4/wcpay/refunds (wpcom/v2 via Jetpack blog token)",
 				"idempotency_key": "c39399f8-d4d6-4330-93ae-9bcd418aca9c",

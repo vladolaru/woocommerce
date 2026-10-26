@@ -5,8 +5,8 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\A
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\MerchantRestController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\OverviewService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\NoticeService;
@@ -64,7 +64,7 @@ class MerchantRestControllerTest extends WC_Unit_Test_Case {
 	private $mock_account_service;
 
 	/**
-	 * @var MockObject|WooPaymentsApiClient
+	 * @var MockObject|Client
 	 */
 	private $mock_api_client;
 
@@ -125,7 +125,7 @@ class MerchantRestControllerTest extends WC_Unit_Test_Case {
 			->method( 'get_account_country' )
 			->willReturnCallback( fn() => $this->account_country );
 
-		$this->mock_api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
+		$this->mock_api_client = $this->getMockBuilder( Client::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'upload_file', 'get_file', 'get_file_contents' ) )
 			->getMock();
@@ -1116,7 +1116,7 @@ class MerchantRestControllerTest extends WC_Unit_Test_Case {
 		$this->mock_api_client
 			->expects( $this->once() )
 			->method( $api_method )
-			->willThrowException( new WooPaymentsApiException( 'Platform failure.', $code, $platform_status ) );
+			->willThrowException( new ApiException( 'Platform failure.', $code, $platform_status ) );
 
 		$response = $this->server->dispatch( new WP_REST_Request( $method, $path ) );
 
@@ -1127,7 +1127,7 @@ class MerchantRestControllerTest extends WC_Unit_Test_Case {
 
 	/**
 	 * Provide file route failures. Like the other admin routes, the routes keep a 400-599 status and answer 500 for any
-	 * other, as an unreadable 200 answer (WooPaymentsApiClient's wcpay_unparseable_or_null_body) or an upload whose body
+	 * other, as an unreadable 200 answer (Client's wcpay_unparseable_or_null_body) or an upload whose body
 	 * could not be encoded (status 0). With the status passed through, the logo upload read those as a success.
 	 * The failures are synthetic: each row builds the exception with an error code the API client or the platform uses.
 	 *
@@ -1198,7 +1198,7 @@ class MerchantRestControllerTest extends WC_Unit_Test_Case {
 			->expects( $this->once() )
 			->method( 'get_file' )
 			->with( 'file_missing', false )
-			->willThrowException( new WooPaymentsApiException( 'No such file.', 'resource_missing', WP_Http::INTERNAL_SERVER_ERROR ) );
+			->willThrowException( new ApiException( 'No such file.', 'resource_missing', WP_Http::INTERNAL_SERVER_ERROR ) );
 		$this->mock_api_client
 			->expects( $this->never() )
 			->method( 'get_file_contents' );
@@ -1229,7 +1229,7 @@ class MerchantRestControllerTest extends WC_Unit_Test_Case {
 			->expects( $this->once() )
 			->method( 'get_file_contents' )
 			->with( 'file_test_logo', false )
-			->willThrowException( new WooPaymentsApiException( 'Unable to retrieve file contents.', 'provider_timeout', WP_Http::BAD_GATEWAY ) );
+			->willThrowException( new ApiException( 'Unable to retrieve file contents.', 'provider_timeout', WP_Http::BAD_GATEWAY ) );
 
 		$request  = new WP_REST_Request( 'GET', '/wc/v3/payments/file/file_test_logo' );
 		$response = $this->server->dispatch( $request );

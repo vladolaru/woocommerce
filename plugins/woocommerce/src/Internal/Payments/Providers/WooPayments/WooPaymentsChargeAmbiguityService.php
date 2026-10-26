@@ -7,8 +7,8 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 use WC_Order;
 
 /**
@@ -73,9 +73,9 @@ class WooPaymentsChargeAmbiguityService {
 	/**
 	 * WooPayments API client.
 	 *
-	 * @var WooPaymentsApiClient
+	 * @var Client
 	 */
-	private WooPaymentsApiClient $api_client;
+	private Client $api_client;
 
 	/**
 	 * WooPayments logger.
@@ -89,10 +89,10 @@ class WooPaymentsChargeAmbiguityService {
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsApiClient $api_client WooPayments API client.
-	 * @param WooPaymentsLogger    $logger     WooPayments logger.
+	 * @param Client            $api_client WooPayments API client.
+	 * @param WooPaymentsLogger $logger     WooPayments logger.
 	 */
-	final public function init( WooPaymentsApiClient $api_client, WooPaymentsLogger $logger ): void {
+	final public function init( Client $api_client, WooPaymentsLogger $logger ): void {
 		$this->api_client = $api_client;
 		$this->logger     = $logger;
 	}
@@ -121,7 +121,7 @@ class WooPaymentsChargeAmbiguityService {
 
 		try {
 			$list = $this->api_client->list_payment_intentions( reset( $customer_ids ), self::LIST_LIMIT );
-		} catch ( WooPaymentsApiException $exception ) {
+		} catch ( ApiException $exception ) {
 			return $exception->has_ambiguous_outcome()
 				? self::lookup( self::LOOKUP_FAILED )
 				: $this->find_order_intents_created_around_failures( $order, $failed_at, $last_failed_at );
@@ -149,7 +149,7 @@ class WooPaymentsChargeAmbiguityService {
 		$created_since = $failed_at - self::ACCOUNT_LOOKBACK_SECONDS;
 		try {
 			$list = $this->api_client->list_payment_intentions_created_between( $created_since, $last_failed_at + self::ACCOUNT_LOOKAHEAD_SECONDS, self::LIST_LIMIT );
-		} catch ( WooPaymentsApiException $exception ) {
+		} catch ( ApiException $exception ) {
 			return self::lookup( $exception->has_ambiguous_outcome() ? self::LOOKUP_FAILED : self::LOOKUP_CANNOT_CHECK );
 		}
 

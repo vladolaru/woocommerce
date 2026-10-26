@@ -1,6 +1,6 @@
 <?php
 /**
- * WooPaymentsApiClient class file.
+ * Client class file.
  */
 
 declare( strict_types = 1 );
@@ -21,7 +21,7 @@ use WP_REST_Request;
  * @since 11.0.0
  * @internal
  */
-class WooPaymentsApiClient {
+class Client {
 
 	/**
 	 * Request timeout.
@@ -257,9 +257,9 @@ class WooPaymentsApiClient {
 	/**
 	 * HTTP client.
 	 *
-	 * @var WooPaymentsHttpClient
+	 * @var HttpClient
 	 */
-	private WooPaymentsHttpClient $http_client;
+	private HttpClient $http_client;
 
 	/**
 	 * WooPayments account service.
@@ -271,20 +271,20 @@ class WooPaymentsApiClient {
 	/**
 	 * Transport log.
 	 *
-	 * @var WooPaymentsTransportLog
+	 * @var TransportLog
 	 */
-	private WooPaymentsTransportLog $transport_log;
+	private TransportLog $transport_log;
 
 	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsHttpClient     $http_client     WordPress.com transport.
+	 * @param HttpClient                $http_client     WordPress.com transport.
 	 * @param WooPaymentsAccountService $account_service WooPayments account service.
-	 * @param WooPaymentsTransportLog   $transport_log   Transport log.
+	 * @param TransportLog              $transport_log   Transport log.
 	 */
-	final public function init( WooPaymentsHttpClient $http_client, WooPaymentsAccountService $account_service, WooPaymentsTransportLog $transport_log ): void {
+	final public function init( HttpClient $http_client, WooPaymentsAccountService $account_service, TransportLog $transport_log ): void {
 		$this->http_client     = $http_client;
 		$this->account_service = $account_service;
 		$this->transport_log   = $transport_log;
@@ -391,12 +391,12 @@ class WooPaymentsApiClient {
 	 * @param string              $customer_id   Customer ID.
 	 * @param array<string,mixed> $customer_data Customer update payload.
 	 * @return void
-	 * @throws WooPaymentsApiException When the customer ID is missing.
+	 * @throws ApiException When the customer ID is missing.
 	 */
 	public function update_customer( string $customer_id, array $customer_data = array() ): void {
 		if ( '' === trim( $customer_id ) ) {
 			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception message is internal application state, not HTML output.
-			throw new WooPaymentsApiException( __( 'Customer ID is required.', 'woocommerce' ), 'wcpay_mandatory_customer_id_missing', 400 );
+			throw new ApiException( __( 'Customer ID is required.', 'woocommerce' ), 'wcpay_mandatory_customer_id_missing', 400 );
 		}
 
 		$this->request( $customer_data, 'customers/' . $customer_id, 'POST' );
@@ -408,7 +408,7 @@ class WooPaymentsApiClient {
 	 * @param array<string,mixed> $request_data     Intent payload.
 	 * @param string              $idempotency_key  Caller-supplied idempotency key (minted per payment attempt).
 	 * @return array<string,mixed>
-	 * @throws WooPaymentsApiException When the request shape is invalid.
+	 * @throws ApiException When the request shape is invalid.
 	 */
 	public function create_and_confirm_payment_intention( array $request_data, string $idempotency_key ): array {
 		$has_payment_method     = isset( $request_data['payment_method'] ) && '' !== trim( (string) $request_data['payment_method'] );
@@ -416,7 +416,7 @@ class WooPaymentsApiClient {
 
 		if ( $has_payment_method === $has_confirmation_token ) {
 			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception message is internal application state, not HTML output.
-			throw new WooPaymentsApiException( __( 'A WooPayments charge requires exactly one payment credential.', 'woocommerce' ), 'wcpay_invalid_payment_credential', 400 );
+			throw new ApiException( __( 'A WooPayments charge requires exactly one payment credential.', 'woocommerce' ), 'wcpay_invalid_payment_credential', 400 );
 		}
 
 		$request_data['confirm']         = 'true';
@@ -432,7 +432,7 @@ class WooPaymentsApiClient {
 	 * @param array<string,mixed> $request_data    SetupIntent payload.
 	 * @param string              $idempotency_key Caller-supplied idempotency key.
 	 * @return array<string,mixed>
-	 * @throws WooPaymentsApiException When the request shape is invalid.
+	 * @throws ApiException When the request shape is invalid.
 	 */
 	public function create_and_confirm_setup_intention( array $request_data, string $idempotency_key ): array {
 		$has_payment_method     = isset( $request_data['payment_method'] ) && '' !== trim( (string) $request_data['payment_method'] );
@@ -440,7 +440,7 @@ class WooPaymentsApiClient {
 
 		if ( $has_payment_method === $has_confirmation_token ) {
 			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception message is internal application state, not HTML output.
-			throw new WooPaymentsApiException( __( 'A WooPayments setup intent requires exactly one payment credential.', 'woocommerce' ), 'wcpay_invalid_payment_credential', 400 );
+			throw new ApiException( __( 'A WooPayments setup intent requires exactly one payment credential.', 'woocommerce' ), 'wcpay_invalid_payment_credential', 400 );
 		}
 
 		$this->validate_setup_intent_payment_method_types( $request_data );
@@ -457,7 +457,7 @@ class WooPaymentsApiClient {
 	 * @param array<string,mixed> $request_data    SetupIntent payload.
 	 * @param string              $idempotency_key Optional idempotency key.
 	 * @return array<string,mixed>
-	 * @throws WooPaymentsApiException When the request fails.
+	 * @throws ApiException When the request fails.
 	 */
 	public function create_setup_intention( array $request_data, string $idempotency_key = '' ): array {
 		$this->validate_setup_intent_payment_method_types( $request_data );
@@ -476,14 +476,14 @@ class WooPaymentsApiClient {
 	 *
 	 * @param array<string,mixed> $request_data SetupIntent payload.
 	 * @return void
-	 * @throws WooPaymentsApiException When payment method types are missing or invalid.
+	 * @throws ApiException When payment method types are missing or invalid.
 	 */
 	private function validate_setup_intent_payment_method_types( array $request_data ): void {
 		$payment_method_types = $request_data['payment_method_types'] ?? null;
 
 		if ( ! is_array( $payment_method_types ) || empty( $payment_method_types ) ) {
 			// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception message is internal application state, not HTML output.
-			throw new WooPaymentsApiException(
+			throw new ApiException(
 				__( 'A WooPayments setup intent requires at least one payment method type.', 'woocommerce' ),
 				'wcpay_missing_payment_method_types',
 				400
@@ -494,7 +494,7 @@ class WooPaymentsApiClient {
 		foreach ( $payment_method_types as $payment_method_type ) {
 			if ( ! is_string( $payment_method_type ) || '' === trim( $payment_method_type ) ) {
 				// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception message is internal application state, not HTML output.
-				throw new WooPaymentsApiException(
+				throw new ApiException(
 					__( 'A WooPayments setup intent requires valid payment method types.', 'woocommerce' ),
 					'wcpay_invalid_payment_method_types',
 					400
@@ -525,7 +525,7 @@ class WooPaymentsApiClient {
 	 * @param string $customer_id Customer ID.
 	 * @param int    $limit       Most intents to return; Stripe allows up to 100.
 	 * @return array<string,mixed>
-	 * @throws WooPaymentsApiException When the customer ID is invalid or the request fails.
+	 * @throws ApiException When the customer ID is invalid or the request fails.
 	 */
 	public function list_payment_intentions( string $customer_id, int $limit = 100 ): array {
 		$this->validate_route_id( $customer_id, self::ROUTE_WORD_ID_PATTERN );
@@ -553,7 +553,7 @@ class WooPaymentsApiClient {
 	 * @param int $created_to   Unix time of the newest intent to list.
 	 * @param int $limit        Most intents to return; Stripe allows up to 100.
 	 * @return array<string,mixed>
-	 * @throws WooPaymentsApiException When the request fails.
+	 * @throws ApiException When the request fails.
 	 */
 	public function list_payment_intentions_created_between( int $created_from, int $created_to, int $limit = 100 ): array {
 		return $this->request(
@@ -581,7 +581,7 @@ class WooPaymentsApiClient {
 	 * @param string $charge_id Charge ID.
 	 * @param int    $limit     Most refunds to return; Stripe allows up to 100.
 	 * @return array<string,mixed>
-	 * @throws WooPaymentsApiException When the charge ID is invalid or the request fails.
+	 * @throws ApiException When the charge ID is invalid or the request fails.
 	 */
 	public function list_charge_refunds( string $charge_id, int $limit = 100 ): array {
 		$this->validate_route_id( $charge_id, self::ROUTE_WORD_ID_PATTERN );
@@ -653,7 +653,7 @@ class WooPaymentsApiClient {
 	 * @param string $type        Payment method type.
 	 * @param int    $limit       Result limit.
 	 * @return array<string,mixed>
-	 * @throws WooPaymentsApiException When the customer ID is invalid.
+	 * @throws ApiException When the customer ID is invalid.
 	 */
 	public function get_payment_methods( string $customer_id, string $type, int $limit = 100 ): array {
 		$this->validate_route_id( $customer_id, self::ROUTE_WORD_ID_PATTERN );
@@ -675,14 +675,14 @@ class WooPaymentsApiClient {
 	 * @param string                  $currency_from Source currency code.
 	 * @param array<int, string>|null $currencies_to Optional target currency codes.
 	 * @return array<string,mixed>
-	 * @throws WooPaymentsApiException When the source currency is missing.
+	 * @throws ApiException When the source currency is missing.
 	 *
 	 * @since 11.0.0
 	 */
 	public function get_currency_rates( string $currency_from, ?array $currencies_to = null ): array {
 		if ( empty( $currency_from ) ) {
 			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception message is internal application state, not HTML output.
-			throw new WooPaymentsApiException( __( 'Currency From parameter is required', 'woocommerce' ), 'wcpay_mandatory_currency_from_missing', 400 );
+			throw new ApiException( __( 'Currency From parameter is required', 'woocommerce' ), 'wcpay_mandatory_currency_from_missing', 400 );
 		}
 
 		$params = array(
@@ -702,7 +702,7 @@ class WooPaymentsApiClient {
 	 * @param string              $payment_method_id   Payment method ID.
 	 * @param array<string,mixed> $payment_method_data Payment method update payload.
 	 * @return array<string,mixed>
-	 * @throws WooPaymentsApiException When the route parameter is invalid.
+	 * @throws ApiException When the route parameter is invalid.
 	 */
 	public function update_payment_method( string $payment_method_id, array $payment_method_data = array() ): array {
 		$this->validate_route_id( $payment_method_id, self::ROUTE_ID_PATTERN );
@@ -715,7 +715,7 @@ class WooPaymentsApiClient {
 	 *
 	 * @param string $payment_method_id Payment method ID.
 	 * @return array<string,mixed>
-	 * @throws WooPaymentsApiException When the route parameter is invalid.
+	 * @throws ApiException When the route parameter is invalid.
 	 */
 	public function detach_payment_method( string $payment_method_id ): array {
 		$this->validate_route_id( $payment_method_id, self::ROUTE_ID_PATTERN );
@@ -731,10 +731,10 @@ class WooPaymentsApiClient {
 	 *
 	 * @param array<string,mixed> $store_context Store context parameters.
 	 * @return array{promotions:array<int|string,mixed>,cache_for:string}
-	 * @throws WooPaymentsApiException When the request fails.
+	 * @throws ApiException When the request fails.
 	 */
 	public function get_pm_promotions( array $store_context ): array {
-		$request  = WooPaymentsGetPmPromotionsRequest::from_store_context( $store_context );
+		$request  = GetPmPromotionsRequest::from_store_context( $store_context );
 		$response = $this->request_with_compat_request_filter(
 			$request,
 			'wcpay_get_pm_promotions_request',
@@ -749,7 +749,7 @@ class WooPaymentsApiClient {
 		// `includes/wc-payment-api/class-wc-payments-api-client.php:2826-2834`); only a 200 carries promotions.
 		if ( null === $body && false !== strpos( strtolower( is_array( $content_type ) ? implode( ',', $content_type ) : (string) $content_type ), 'application/json' ) ) {
 			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception message is internal application state, not HTML output.
-			throw new WooPaymentsApiException( __( 'Unable to decode response from WooPayments.', 'woocommerce' ), 'wcpay_unparseable_or_null_body', $response_code );
+			throw new ApiException( __( 'Unable to decode response from WooPayments.', 'woocommerce' ), 'wcpay_unparseable_or_null_body', $response_code );
 		}
 		if ( 200 !== $response_code ) {
 			$body = null;
@@ -767,11 +767,11 @@ class WooPaymentsApiClient {
 	 *
 	 * @param string $promotion_id Promotion ID.
 	 * @return array<string,mixed>
-	 * @throws WooPaymentsApiException When the promotion ID or request is invalid.
+	 * @throws ApiException When the promotion ID or request is invalid.
 	 */
 	public function activate_pm_promotion( string $promotion_id ): array {
 		$this->validate_route_id( $promotion_id, self::ROUTE_PM_PROMOTION_ID_PATTERN );
-		$request = WooPaymentsActivatePmPromotionRequest::from_id( $promotion_id );
+		$request = ActivatePmPromotionRequest::from_id( $promotion_id );
 
 		return $this->request_with_compat_request_filter(
 			$request,
@@ -784,7 +784,7 @@ class WooPaymentsApiClient {
 	 *
 	 * @param string $id Payment intent ID or order ID.
 	 * @return array<string,mixed>
-	 * @throws WooPaymentsApiException When the route parameter is invalid.
+	 * @throws ApiException When the route parameter is invalid.
 	 */
 	public function get_timeline( string $id ): array {
 		$this->validate_route_id( $id, self::ROUTE_ID_PATTERN );
@@ -928,7 +928,7 @@ class WooPaymentsApiClient {
 	 * @param string $intent_id Intent ID.
 	 * @param int    $order_id  Order ID.
 	 * @return array<string,mixed>
-	 * @throws WooPaymentsApiException When the route parameter is invalid.
+	 * @throws ApiException When the route parameter is invalid.
 	 */
 	public function prepare_terminal_payment( string $intent_id, int $order_id ): array {
 		$this->validate_route_id( $intent_id, self::ROUTE_ID_PATTERN );
@@ -1010,7 +1010,7 @@ class WooPaymentsApiClient {
 	 *
 	 * @param string $location_id Location ID.
 	 * @return array<string,mixed>
-	 * @throws WooPaymentsApiException When the route parameter is invalid.
+	 * @throws ApiException When the route parameter is invalid.
 	 */
 	public function get_terminal_location( string $location_id ): array {
 		$this->validate_route_id( $location_id, self::ROUTE_ID_PATTERN );
@@ -1025,12 +1025,12 @@ class WooPaymentsApiClient {
 	 * @param array<string,mixed> $address      Location address.
 	 * @param array<string,mixed> $metadata     Location metadata.
 	 * @return array<string,mixed>
-	 * @throws WooPaymentsApiException When the request is missing required address fields.
+	 * @throws ApiException When the request is missing required address fields.
 	 */
 	public function create_terminal_location( string $display_name, array $address, array $metadata = array() ): array {
 		if ( empty( $address['country'] ) || empty( $address['line1'] ) ) {
 			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception message is internal application state, not HTML output.
-			throw new WooPaymentsApiException( __( 'Address country and line1 are required.', 'woocommerce' ), 'wcpay_invalid_terminal_location_request', 400 );
+			throw new ApiException( __( 'Address country and line1 are required.', 'woocommerce' ), 'wcpay_invalid_terminal_location_request', 400 );
 		}
 
 		return $this->request(
@@ -1051,7 +1051,7 @@ class WooPaymentsApiClient {
 	 * @param string|null              $display_name Optional display name.
 	 * @param array<string,mixed>|null $address      Optional address.
 	 * @return array<string,mixed>
-	 * @throws WooPaymentsApiException When the route parameter is invalid.
+	 * @throws ApiException When the route parameter is invalid.
 	 */
 	public function update_terminal_location( string $location_id, ?string $display_name = null, ?array $address = null ): array {
 		$this->validate_route_id( $location_id, self::ROUTE_ID_PATTERN );
@@ -1073,7 +1073,7 @@ class WooPaymentsApiClient {
 	 *
 	 * @param string $location_id Location ID.
 	 * @return array<string,mixed>
-	 * @throws WooPaymentsApiException When the route parameter is invalid.
+	 * @throws ApiException When the route parameter is invalid.
 	 */
 	public function delete_terminal_location( string $location_id ): array {
 		$this->validate_route_id( $location_id, self::ROUTE_ID_PATTERN );
@@ -1086,7 +1086,7 @@ class WooPaymentsApiClient {
 	 *
 	 * @param string $charge_id Charge ID.
 	 * @return array<string,mixed>
-	 * @throws WooPaymentsApiException When the route parameter is invalid.
+	 * @throws ApiException When the route parameter is invalid.
 	 */
 	public function get_charge( string $charge_id ): array {
 		$this->validate_route_id( $charge_id, self::ROUTE_ID_PATTERN );
@@ -1099,7 +1099,7 @@ class WooPaymentsApiClient {
 	 *
 	 * @param string $dispute_id Dispute ID.
 	 * @return array<string,mixed>
-	 * @throws WooPaymentsApiException When the route parameter is invalid.
+	 * @throws ApiException When the route parameter is invalid.
 	 */
 	public function get_dispute_summary( string $dispute_id ): array {
 		$this->validate_route_id( $dispute_id, self::ROUTE_ID_PATTERN );
@@ -1112,7 +1112,7 @@ class WooPaymentsApiClient {
 	 *
 	 * @param string $transaction_id Transaction ID.
 	 * @return array<string,mixed>
-	 * @throws WooPaymentsApiException When the route parameter is invalid.
+	 * @throws ApiException When the route parameter is invalid.
 	 */
 	public function get_transaction( string $transaction_id ): array {
 		$this->validate_route_id( $transaction_id, self::ROUTE_ID_PATTERN );
@@ -1125,7 +1125,7 @@ class WooPaymentsApiClient {
 	 *
 	 * @param array<string,mixed> $query Query params.
 	 * @return array<string,mixed>
-	 * @throws WooPaymentsApiException When the request fails.
+	 * @throws ApiException When the request fails.
 	 */
 	public function get_transactions( array $query = array() ): array {
 		return $this->request( $query, self::TRANSACTIONS_API, 'GET' );
@@ -1136,11 +1136,11 @@ class WooPaymentsApiClient {
 	 *
 	 * @param array<string,mixed> $query Query params.
 	 * @return array<string,mixed>
-	 * @throws WooPaymentsApiException When the request fails.
+	 * @throws ApiException When the request fails.
 	 */
 	public function get_reporting_balance_summary( array $query = array() ): array {
 		return $this->request_with_compat_request_filter(
-			WooPaymentsReportingBalanceSummaryRequest::from_params(
+			ReportingBalanceSummaryRequest::from_params(
 				array_intersect_key(
 					$query,
 					array(
@@ -1160,7 +1160,7 @@ class WooPaymentsApiClient {
 	 * @param array<string,mixed> $filters    Summary filters.
 	 * @param string|null         $deposit_id Optional payout/deposit ID.
 	 * @return array<string,mixed>
-	 * @throws WooPaymentsApiException When the request fails.
+	 * @throws ApiException When the request fails.
 	 */
 	public function get_transactions_summary( array $filters = array(), ?string $deposit_id = null ): array {
 		if ( null !== $deposit_id && '' !== $deposit_id ) {
@@ -1175,7 +1175,7 @@ class WooPaymentsApiClient {
 	 *
 	 * @param array<string,mixed> $query Query params.
 	 * @return array<string,mixed>
-	 * @throws WooPaymentsApiException When the request fails.
+	 * @throws ApiException When the request fails.
 	 */
 	public function get_authorizations_summary( array $query = array() ): array {
 		return $this->request_with_compat_filter(
@@ -1192,7 +1192,7 @@ class WooPaymentsApiClient {
 	 * @param array<string,mixed> $query               Query params.
 	 * @param bool                $apply_compat_filter Whether to fire the WooPayments extension's request filter for this request.
 	 * @return array<string,mixed>
-	 * @throws WooPaymentsApiException When the request fails.
+	 * @throws ApiException When the request fails.
 	 */
 	public function get_authorizations( array $query = array(), bool $apply_compat_filter = true ): array {
 		if ( ! $apply_compat_filter ) {
@@ -1200,7 +1200,7 @@ class WooPaymentsApiClient {
 		}
 
 		return $this->request_with_compat_request_filter(
-			WooPaymentsAuthorizationsListRequest::from_params( $query ),
+			AuthorizationsListRequest::from_params( $query ),
 			'wcpay_list_authorizations_request'
 		);
 	}
@@ -1210,7 +1210,7 @@ class WooPaymentsApiClient {
 	 *
 	 * @param string $payment_intent_id Payment intent ID.
 	 * @return array<string,mixed>
-	 * @throws WooPaymentsApiException When the route parameter is invalid.
+	 * @throws ApiException When the route parameter is invalid.
 	 */
 	public function get_authorization( string $payment_intent_id ): array {
 		$this->validate_route_id( $payment_intent_id, self::ROUTE_ID_PATTERN );
@@ -1231,7 +1231,7 @@ class WooPaymentsApiClient {
 	 * @param string|null         $deposit_id Optional payout/deposit ID.
 	 * @param string|null         $locale     Site locale.
 	 * @return array<string,mixed>
-	 * @throws WooPaymentsApiException When the request fails.
+	 * @throws ApiException When the request fails.
 	 */
 	public function start_transactions_export( array $filters = array(), string $user_email = '', ?string $deposit_id = null, ?string $locale = null ): array {
 		if ( '' !== $user_email ) {
@@ -1254,7 +1254,7 @@ class WooPaymentsApiClient {
 	 *
 	 * @param string $export_id Export ID.
 	 * @return array<string,mixed>
-	 * @throws WooPaymentsApiException When the route parameter is invalid.
+	 * @throws ApiException When the route parameter is invalid.
 	 */
 	public function get_transactions_export_url( string $export_id ): array {
 		$this->validate_route_id( $export_id, self::ROUTE_EXPORT_ID_PATTERN );
@@ -1267,7 +1267,7 @@ class WooPaymentsApiClient {
 	 *
 	 * @param string $search_term Search term.
 	 * @return array<int,array<string,string>>
-	 * @throws WooPaymentsApiException When the request fails.
+	 * @throws ApiException When the request fails.
 	 */
 	public function get_transactions_search_autocomplete( string $search_term ): array {
 		$search_results = $this->request( array( 'search_term' => $search_term ), self::TRANSACTIONS_API . '/search', 'GET' );
@@ -1304,7 +1304,7 @@ class WooPaymentsApiClient {
 	 *
 	 * @param array<string,mixed> $query Query params.
 	 * @return array<string|int,mixed>
-	 * @throws WooPaymentsApiException When the fraud outcome status is invalid.
+	 * @throws ApiException When the fraud outcome status is invalid.
 	 */
 	public function get_fraud_outcomes( array $query = array() ): array {
 		$status = isset( $query['status'] ) && is_scalar( $query['status'] ) ? (string) $query['status'] : '';
@@ -1312,7 +1312,7 @@ class WooPaymentsApiClient {
 
 		if ( ! in_array( $status, array( 'allow', 'block', 'review' ), true ) ) {
 			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception message is internal application state, not HTML output.
-			throw new WooPaymentsApiException( __( 'Invalid fraud outcome status provided.', 'woocommerce' ), 'invalid_fraud_outcome_status', 400 );
+			throw new ApiException( __( 'Invalid fraud outcome status provided.', 'woocommerce' ), 'invalid_fraud_outcome_status', 400 );
 		}
 
 		return $this->request( $query, self::FRAUD_OUTCOMES_API . '/status/' . $status, 'GET' );
@@ -1323,7 +1323,7 @@ class WooPaymentsApiClient {
 	 *
 	 * @param string $id Payment intent ID.
 	 * @return array<string|int,mixed>
-	 * @throws WooPaymentsApiException When the route parameter is invalid.
+	 * @throws ApiException When the route parameter is invalid.
 	 */
 	public function get_latest_fraud_outcome( string $id ): array {
 		$this->validate_route_id( $id, self::ROUTE_WORD_ID_PATTERN );
@@ -1367,7 +1367,7 @@ class WooPaymentsApiClient {
 	 *
 	 * @param array<string,mixed> $filters Query filters.
 	 * @return array<string,mixed>
-	 * @throws WooPaymentsApiException When the request fails.
+	 * @throws ApiException When the request fails.
 	 */
 	public function get_disputes( array $filters = array() ): array {
 		return $this->request( $filters, self::DISPUTES_API, 'GET' );
@@ -1378,7 +1378,7 @@ class WooPaymentsApiClient {
 	 *
 	 * @param array<string,mixed> $filters Summary filters.
 	 * @return array<string,mixed>
-	 * @throws WooPaymentsApiException When the request fails.
+	 * @throws ApiException When the request fails.
 	 */
 	public function get_disputes_summary( array $filters = array() ): array {
 		return $this->request( $filters, self::DISPUTES_API . '/summary', 'GET' );
@@ -1388,7 +1388,7 @@ class WooPaymentsApiClient {
 	 * Retrieve dispute status counts used by admin menu badges.
 	 *
 	 * @return array<string,mixed>
-	 * @throws WooPaymentsApiException When the request fails.
+	 * @throws ApiException When the request fails.
 	 */
 	public function get_dispute_status_counts(): array {
 		return $this->request_with_compat_filter(
@@ -1404,7 +1404,7 @@ class WooPaymentsApiClient {
 	 *
 	 * @param string $dispute_id Dispute ID.
 	 * @return array<string,mixed>
-	 * @throws WooPaymentsApiException When the route parameter is invalid.
+	 * @throws ApiException When the route parameter is invalid.
 	 */
 	public function get_dispute( string $dispute_id ): array {
 		$this->validate_route_id( $dispute_id, self::ROUTE_ID_PATTERN );
@@ -1420,7 +1420,7 @@ class WooPaymentsApiClient {
 	 * @param bool                $submit     Whether to submit the evidence.
 	 * @param array<string,mixed> $metadata   Metadata payload.
 	 * @return array<string,mixed>
-	 * @throws WooPaymentsApiException When the route parameter is invalid.
+	 * @throws ApiException When the route parameter is invalid.
 	 */
 	public function update_dispute( string $dispute_id, array $evidence, bool $submit, array $metadata ): array {
 		$this->validate_route_id( $dispute_id, self::ROUTE_ID_PATTERN );
@@ -1451,7 +1451,7 @@ class WooPaymentsApiClient {
 	 *
 	 * @param string $dispute_id Dispute ID.
 	 * @return array<string,mixed>
-	 * @throws WooPaymentsApiException When the route parameter is invalid.
+	 * @throws ApiException When the route parameter is invalid.
 	 */
 	public function close_dispute( string $dispute_id ): array {
 		$this->validate_route_id( $dispute_id, self::ROUTE_ID_PATTERN );
@@ -1466,7 +1466,7 @@ class WooPaymentsApiClient {
 	 * @param string              $user_email User email for the export.
 	 * @param string|null         $locale     Site locale.
 	 * @return array<string,mixed>
-	 * @throws WooPaymentsApiException When the request fails.
+	 * @throws ApiException When the request fails.
 	 */
 	public function start_disputes_export( array $filters = array(), string $user_email = '', ?string $locale = null ): array {
 		if ( '' !== $user_email ) {
@@ -1485,7 +1485,7 @@ class WooPaymentsApiClient {
 	 *
 	 * @param string $export_id Export ID.
 	 * @return array<string,mixed>
-	 * @throws WooPaymentsApiException When the route parameter is invalid.
+	 * @throws ApiException When the route parameter is invalid.
 	 */
 	public function get_disputes_export_url( string $export_id ): array {
 		$this->validate_route_id( $export_id, self::ROUTE_EXPORT_ID_PATTERN );
@@ -1497,7 +1497,7 @@ class WooPaymentsApiClient {
 	 * Retrieve WooPayments payout overviews.
 	 *
 	 * @return array<string,mixed>
-	 * @throws WooPaymentsApiException When the request fails.
+	 * @throws ApiException When the request fails.
 	 */
 	public function get_deposits_overview(): array {
 		return $this->request( array(), self::DEPOSITS_API . '/overview-all', 'GET' );
@@ -1508,7 +1508,7 @@ class WooPaymentsApiClient {
 	 *
 	 * @param array<string,mixed> $query Query params.
 	 * @return array<string,mixed>
-	 * @throws WooPaymentsApiException When the request fails.
+	 * @throws ApiException When the request fails.
 	 */
 	public function get_deposits( array $query = array() ): array {
 		return $this->request( $query, self::DEPOSITS_API, 'GET' );
@@ -1519,7 +1519,7 @@ class WooPaymentsApiClient {
 	 *
 	 * @param array<string,mixed> $query Query params.
 	 * @return array<string,mixed>
-	 * @throws WooPaymentsApiException When the request fails.
+	 * @throws ApiException When the request fails.
 	 */
 	public function get_deposits_summary( array $query = array() ): array {
 		return $this->request( $query, self::DEPOSITS_API . '/summary', 'GET' );
@@ -1530,7 +1530,7 @@ class WooPaymentsApiClient {
 	 *
 	 * @param string $deposit_id Deposit ID.
 	 * @return array<string,mixed>
-	 * @throws WooPaymentsApiException When the route parameter is invalid.
+	 * @throws ApiException When the route parameter is invalid.
 	 */
 	public function get_deposit( string $deposit_id ): array {
 		$this->validate_route_id( $deposit_id, self::ROUTE_ID_PATTERN );
@@ -1545,7 +1545,7 @@ class WooPaymentsApiClient {
 	 * @param string              $user_email User email for the export.
 	 * @param string|null         $locale     Site locale.
 	 * @return array<string,mixed>
-	 * @throws WooPaymentsApiException When the request fails.
+	 * @throws ApiException When the request fails.
 	 */
 	public function start_deposits_export( array $filters = array(), string $user_email = '', ?string $locale = null ): array {
 		if ( '' !== $user_email ) {
@@ -1564,7 +1564,7 @@ class WooPaymentsApiClient {
 	 *
 	 * @param string $export_id Export ID.
 	 * @return array<string,mixed>
-	 * @throws WooPaymentsApiException When the route parameter is invalid.
+	 * @throws ApiException When the route parameter is invalid.
 	 */
 	public function get_payouts_export_url( string $export_id ): array {
 		$this->validate_route_id( $export_id, self::ROUTE_EXPORT_ID_PATTERN );
@@ -1578,7 +1578,7 @@ class WooPaymentsApiClient {
 	 * @param string $type     Payout type.
 	 * @param string $currency Payout currency.
 	 * @return array<string,mixed>
-	 * @throws WooPaymentsApiException When the request fails.
+	 * @throws ApiException When the request fails.
 	 */
 	public function manual_deposit( string $type, string $currency ): array {
 		return $this->request(
@@ -1596,7 +1596,7 @@ class WooPaymentsApiClient {
 	 *
 	 * @param array<string,mixed> $query Query params.
 	 * @return array<string,mixed>
-	 * @throws WooPaymentsApiException When the request fails.
+	 * @throws ApiException When the request fails.
 	 */
 	public function get_documents( array $query = array() ): array {
 		$query = array_intersect_key(
@@ -1617,7 +1617,7 @@ class WooPaymentsApiClient {
 		);
 
 		return $this->request_with_compat_request_filter(
-			WooPaymentsDocumentsListRequest::from_params( $query ),
+			DocumentsListRequest::from_params( $query ),
 			'wcpay_list_documents_request'
 		);
 	}
@@ -1627,7 +1627,7 @@ class WooPaymentsApiClient {
 	 *
 	 * @param array<string,mixed> $query Query filters.
 	 * @return array<string,mixed>
-	 * @throws WooPaymentsApiException When the request fails.
+	 * @throws ApiException When the request fails.
 	 */
 	public function get_documents_summary( array $query = array() ): array {
 		$query = array_intersect_key(
@@ -1650,7 +1650,7 @@ class WooPaymentsApiClient {
 	 *
 	 * @param string $document_id Document ID.
 	 * @return array<string,mixed>
-	 * @throws WooPaymentsApiException When the route parameter is invalid.
+	 * @throws ApiException When the route parameter is invalid.
 	 */
 	public function get_document( string $document_id ): array {
 		$this->validate_route_id( $document_id, self::ROUTE_ID_PATTERN );
@@ -1663,7 +1663,7 @@ class WooPaymentsApiClient {
 	 *
 	 * @param string $vat_number VAT number.
 	 * @return array<string,mixed>
-	 * @throws WooPaymentsApiException When the request fails.
+	 * @throws ApiException When the request fails.
 	 */
 	public function validate_vat( string $vat_number ): array {
 		return $this->request_with_compat_filter(
@@ -1681,7 +1681,7 @@ class WooPaymentsApiClient {
 	 * @param string      $name       Name.
 	 * @param string      $address    Address.
 	 * @return array<string,mixed>
-	 * @throws WooPaymentsApiException When the request fails.
+	 * @throws ApiException When the request fails.
 	 */
 	public function save_vat_details( ?string $vat_number, string $name, string $address ): array {
 		$params = array(
@@ -1703,7 +1703,7 @@ class WooPaymentsApiClient {
 	 * Retrieve the WooPayments Capital active loan summary.
 	 *
 	 * @return array<string,mixed>
-	 * @throws WooPaymentsApiException When the request fails.
+	 * @throws ApiException When the request fails.
 	 */
 	public function get_capital_active_loan_summary(): array {
 		return $this->request_with_compat_filter(
@@ -1718,7 +1718,7 @@ class WooPaymentsApiClient {
 	 * Retrieve WooPayments Capital loans.
 	 *
 	 * @return array<string,mixed>
-	 * @throws WooPaymentsApiException When the request fails.
+	 * @throws ApiException When the request fails.
 	 */
 	public function get_capital_loans(): array {
 		return $this->request_with_compat_filter(
@@ -1733,7 +1733,7 @@ class WooPaymentsApiClient {
 	 * Create a WooPayments embedded account session.
 	 *
 	 * @return array<string,mixed>
-	 * @throws WooPaymentsApiException When the request fails.
+	 * @throws ApiException When the request fails.
 	 */
 	public function create_embedded_account_session(): array {
 		return $this->request( array(), self::ACCOUNTS_API . '/embedded/session', 'POST', true, true );
@@ -1745,10 +1745,10 @@ class WooPaymentsApiClient {
 	 * @param string $return_url  URL to return to after viewing the offer.
 	 * @param string $refresh_url URL to use when the link expires or is invalid.
 	 * @return array<string,mixed>
-	 * @throws WooPaymentsApiException When the request fails.
+	 * @throws ApiException When the request fails.
 	 */
 	public function create_capital_link( string $return_url, string $refresh_url ): array {
-		$request = WooPaymentsGetAccountCapitalLinkRequest::from_urls( $return_url, $refresh_url );
+		$request = GetAccountCapitalLinkRequest::from_urls( $return_url, $refresh_url );
 
 		return $this->request_with_compat_request_filter(
 			$request,
@@ -1762,7 +1762,7 @@ class WooPaymentsApiClient {
 	 *
 	 * @param array<string,mixed> $args Account-link arguments.
 	 * @return array<string,mixed>
-	 * @throws WooPaymentsApiException When the request fails.
+	 * @throws ApiException When the request fails.
 	 */
 	public function create_account_link( array $args ): array {
 		return $this->request( $args, self::LINKS_API, 'POST', true, true );
@@ -1775,11 +1775,11 @@ class WooPaymentsApiClient {
 	 *
 	 * @param string $redirect_url URL to return to from the dashboard.
 	 * @return array<string,mixed>
-	 * @throws WooPaymentsApiException When the request fails.
+	 * @throws ApiException When the request fails.
 	 */
 	public function create_login_link( string $redirect_url ): array {
 		return $this->request_with_compat_request_filter(
-			WooPaymentsGetAccountLoginDataRequest::from_redirect_url(
+			GetAccountLoginDataRequest::from_redirect_url(
 				$redirect_url,
 				$this->account_service->is_test_mode_onboarding_enabled()
 			),
@@ -1796,7 +1796,7 @@ class WooPaymentsApiClient {
 	 * @param string $country_code Business location country code.
 	 * @param string $locale       User locale.
 	 * @return array<int,array<string,mixed>>
-	 * @throws WooPaymentsApiException When the public request fails.
+	 * @throws ApiException When the public request fails.
 	 */
 	public function get_recommended_payment_methods( string $country_code, string $locale = '' ): array {
 		$request_args = Jetpack_Connection_Client::validate_args_for_wpcom_json_api_request(
@@ -1839,7 +1839,7 @@ class WooPaymentsApiClient {
 
 		if ( is_wp_error( $response ) ) {
 			// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception message is internal application state, not HTML output.
-			throw new WooPaymentsApiException(
+			throw new ApiException(
 				sprintf(
 					/* translators: %1$s: original error message. */
 					__( 'Http request failed. Reason: %1$s', 'woocommerce' ),
@@ -2146,7 +2146,7 @@ class WooPaymentsApiClient {
 	 * @param WP_REST_Request $request Request object.
 	 * @phpstan-param WP_REST_Request<array<string,mixed>> $request
 	 * @return array<string,mixed>
-	 * @throws WooPaymentsApiException When the uploaded file is invalid or the request fails.
+	 * @throws ApiException When the uploaded file is invalid or the request fails.
 	 */
 	public function upload_file( WP_REST_Request $request ): array {
 		$file_params = $request->get_file_params();
@@ -2154,13 +2154,13 @@ class WooPaymentsApiClient {
 
 		if ( empty( $file ) || ! empty( $file['error'] ) ) {
 			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception message is internal application state, not HTML output.
-			throw new WooPaymentsApiException( __( 'Max file size exceeded.', 'woocommerce' ), 'wcpay_evidence_file_max_size', 400 );
+			throw new ApiException( __( 'Max file size exceeded.', 'woocommerce' ), 'wcpay_evidence_file_max_size', 400 );
 		}
 
 		$file_contents = file_get_contents( (string) ( $file['tmp_name'] ?? '' ) ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reading a local uploaded temp file.
 		if ( false === $file_contents ) {
 			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception message is internal application state, not HTML output.
-			throw new WooPaymentsApiException( __( 'Unable to read the uploaded file.', 'woocommerce' ), 'wcpay_evidence_file_read_error', 400 );
+			throw new ApiException( __( 'Unable to read the uploaded file.', 'woocommerce' ), 'wcpay_evidence_file_read_error', 400 );
 		}
 
 		try {
@@ -2175,9 +2175,9 @@ class WooPaymentsApiClient {
 				self::FILES_API,
 				'POST'
 			);
-		} catch ( WooPaymentsApiException $exception ) {
+		} catch ( ApiException $exception ) {
 			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception message is internal application state, not HTML output.
-			throw new WooPaymentsApiException( $exception->getMessage(), 'wcpay_evidence_file_upload_error', $exception->get_http_code() );
+			throw new ApiException( $exception->getMessage(), 'wcpay_evidence_file_upload_error', $exception->get_http_code() );
 		}
 	}
 
@@ -2187,7 +2187,7 @@ class WooPaymentsApiClient {
 	 * @param string $file_id    Provider file ID.
 	 * @param bool   $as_account Whether to fetch the file as the connected account.
 	 * @return array<string,mixed>
-	 * @throws WooPaymentsApiException When the request fails.
+	 * @throws ApiException When the request fails.
 	 */
 	public function get_file( string $file_id, bool $as_account = true ): array {
 		$this->validate_route_id( $file_id, self::ROUTE_ID_PATTERN );
@@ -2205,7 +2205,7 @@ class WooPaymentsApiClient {
 	 * @param string $file_id    Provider file ID.
 	 * @param bool   $as_account Whether to fetch the file as the connected account.
 	 * @return array<string,mixed>
-	 * @throws WooPaymentsApiException When the request fails.
+	 * @throws ApiException When the request fails.
 	 */
 	public function get_file_contents( string $file_id, bool $as_account = true ): array {
 		$this->validate_route_id( $file_id, self::ROUTE_ID_PATTERN );
@@ -2248,12 +2248,12 @@ class WooPaymentsApiClient {
 	 *
 	 * @param string $id      Route ID.
 	 * @param string $pattern One of the ROUTE_*_PATTERN constants.
-	 * @throws WooPaymentsApiException When the route parameter is invalid.
+	 * @throws ApiException When the route parameter is invalid.
 	 */
 	private function validate_route_id( string $id, string $pattern ): void {
 		if ( '' === $id || ! preg_match( $pattern, $id ) ) {
 			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception message is internal application state, not HTML output.
-			throw new WooPaymentsApiException( __( 'Route param validation failed.', 'woocommerce' ), 'wcpay_route_validation_failure', 400 );
+			throw new ApiException( __( 'Route param validation failed.', 'woocommerce' ), 'wcpay_route_validation_failure', 400 );
 		}
 	}
 
@@ -2383,7 +2383,7 @@ class WooPaymentsApiClient {
 	 * @param bool                    $return_raw_response Whether to return the raw transport response.
 	 * @param bool                    $use_v2_api Whether to use the Transact API root.
 	 * @return array<string,mixed>
-	 * @throws WooPaymentsApiException When the request fails.
+	 * @throws ApiException When the request fails.
 	 */
 	private function request( array $params, string $api, string $method, bool $is_site_scoped = true, bool $use_user_token = false, bool $blocking = true, bool $include_test_mode_param = true, bool $return_raw_response = false, bool $use_v2_api = false ): array {
 		$decoded_body = $this->request_decoded( $params, $api, $method, $is_site_scoped, $use_user_token, $blocking, $include_test_mode_param, $return_raw_response, $use_v2_api );
@@ -2404,12 +2404,12 @@ class WooPaymentsApiClient {
 	 * @param bool                    $return_raw_response Whether to return the raw transport response.
 	 * @param bool                    $use_v2_api Whether to use the Transact API root.
 	 * @return mixed Decoded body; the raw transport response when asked for; an empty array for a non-blocking request.
-	 * @throws WooPaymentsApiException When the request fails.
+	 * @throws ApiException When the request fails.
 	 */
 	private function request_decoded( array $params, string $api, string $method, bool $is_site_scoped = true, bool $use_user_token = false, bool $blocking = true, bool $include_test_mode_param = true, bool $return_raw_response = false, bool $use_v2_api = false ) {
 		if ( ! $this->is_available() ) {
 			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception message is internal application state, not HTML output.
-			throw new WooPaymentsApiException( __( 'Site is not connected to WordPress.com.', 'woocommerce' ), 'wcpay_wpcom_not_connected', 409 );
+			throw new ApiException( __( 'Site is not connected to WordPress.com.', 'woocommerce' ), 'wcpay_wpcom_not_connected', 409 );
 		}
 
 		if ( $include_test_mode_param ) {
@@ -2494,7 +2494,7 @@ class WooPaymentsApiClient {
 
 			if ( false === $body ) {
 				// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception message is internal application state, not HTML output.
-				throw new WooPaymentsApiException( __( 'Unable to encode the WooPayments request body.', 'woocommerce' ), 'wcpay_client_unable_to_encode_json' );
+				throw new ApiException( __( 'Unable to encode the WooPayments request body.', 'woocommerce' ), 'wcpay_client_unable_to_encode_json' );
 			}
 		}
 
@@ -2553,10 +2553,10 @@ class WooPaymentsApiClient {
 			// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception message is internal application state, not HTML output.
 			if ( 'wcpay_wpcom_not_connected' === $response->get_error_code() ) {
 				// Client 11.1.0 class-wc-payments-http.php:59-65 answers a lost connection with 409, as the pre-check above.
-				throw new WooPaymentsApiException( $response->get_error_message(), 'wcpay_wpcom_not_connected', 409 );
+				throw new ApiException( $response->get_error_message(), 'wcpay_wpcom_not_connected', 409 );
 			}
 
-			throw new WooPaymentsApiException(
+			throw new ApiException(
 				sprintf(
 					/* translators: %1$s: original error message. */
 					__( 'Http request failed. Reason: %1$s', 'woocommerce' ),
@@ -2591,7 +2591,7 @@ class WooPaymentsApiClient {
 
 		if ( null === $decoded_body && '' !== $response_body && $is_json ) {
 			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception message is internal application state, not HTML output.
-			throw new WooPaymentsApiException( __( 'Unable to decode response from WooPayments.', 'woocommerce' ), 'wcpay_unparseable_or_null_body', $response_code );
+			throw new ApiException( __( 'Unable to decode response from WooPayments.', 'woocommerce' ), 'wcpay_unparseable_or_null_body', $response_code );
 		}
 
 		if ( 400 <= $response_code ) {
@@ -2612,7 +2612,7 @@ class WooPaymentsApiClient {
 	 * @param string                  $api    API path below the site's WooPayments root.
 	 * @param string                  $method HTTP method.
 	 * @return mixed Decoded JSON body.
-	 * @throws WooPaymentsApiException When the request fails or the body cannot be decoded.
+	 * @throws ApiException When the request fails or the body cannot be decoded.
 	 */
 	public function send_site_request( array $params, string $api, string $method ) {
 		return $this->request_decoded( $params, $api, $method );
@@ -2623,18 +2623,18 @@ class WooPaymentsApiClient {
 	 *
 	 * @since 11.0.0
 	 *
-	 * @param AbstractWooPaymentsApiRequest $request Request object the extension's request filters receive.
+	 * @param AbstractRequest $request Request object the extension's request filters receive.
 	 * @return array<string,mixed>
-	 * @throws WooPaymentsApiException When the request has no hook or transport fails.
+	 * @throws ApiException When the request has no hook or transport fails.
 	 */
-	public function send_request( AbstractWooPaymentsApiRequest $request ): array {
+	public function send_request( AbstractRequest $request ): array {
 		$hook = $request->get_hook();
 
 		if ( '' === $hook ) {
 			// translators: %s: request class name.
 			$message = sprintf( __( 'WooPayments request %s must define a filter hook before send().', 'woocommerce' ), get_class( $request ) );
 			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception messages are not HTML output.
-			throw new WooPaymentsApiException( $message, 'wcpay_request_missing_hook', 500 );
+			throw new ApiException( $message, 'wcpay_request_missing_hook', 500 );
 		}
 
 		return $this->request_with_compat_request_filter( $request, $hook, false, true );
@@ -2648,10 +2648,10 @@ class WooPaymentsApiClient {
 	 * @param string                  $method HTTP method.
 	 * @param string                  $hook   The WooPayments extension's request filter name.
 	 * @return array<string,mixed>
-	 * @throws WooPaymentsApiException When the request fails.
+	 * @throws ApiException When the request fails.
 	 */
 	private function request_with_compat_filter( array $params, string $api, string $method, string $hook ): array {
-		$request = WooPaymentsApiRequest::create( $params, $api, $method );
+		$request = Request::create( $params, $api, $method );
 
 		return $this->request_with_compat_request_filter( $request, $hook );
 	}
@@ -2659,14 +2659,14 @@ class WooPaymentsApiClient {
 	/**
 	 * Send a concrete request after applying a WooPayments compat request-object filter.
 	 *
-	 * @param AbstractWooPaymentsApiRequest $request Request object the extension's request filters receive.
-	 * @param string                        $hook    The WooPayments extension's request filter name.
-	 * @param bool                          $include_test_mode_in_query Whether to add test mode to the API path query.
-	 * @param bool                          $honor_raw_response Whether to honor the request object's raw-response flag.
+	 * @param AbstractRequest $request Request object the extension's request filters receive.
+	 * @param string          $hook    The WooPayments extension's request filter name.
+	 * @param bool            $include_test_mode_in_query Whether to add test mode to the API path query.
+	 * @param bool            $honor_raw_response Whether to honor the request object's raw-response flag.
 	 * @return array<string,mixed>
-	 * @throws WooPaymentsApiException When the request fails.
+	 * @throws ApiException When the request fails.
 	 */
-	private function request_with_compat_request_filter( AbstractWooPaymentsApiRequest $request, string $hook, bool $include_test_mode_in_query = false, bool $honor_raw_response = false ): array {
+	private function request_with_compat_request_filter( AbstractRequest $request, string $hook, bool $include_test_mode_in_query = false, bool $honor_raw_response = false ): array {
 		$request->assign_hook( $hook );
 
 		$filtered_request = $request->get_filtered_request();
@@ -2744,7 +2744,7 @@ class WooPaymentsApiClient {
 	 *
 	 * @param array<string,mixed> $response_body Decoded response body.
 	 * @param int                 $response_code HTTP status code.
-	 * @throws WooPaymentsApiException Always.
+	 * @throws ApiException Always.
 	 */
 	private function throw_api_error( array $response_body, int $response_code ): void {
 		$error_code        = 'wcpay_client_error_code_missing';
@@ -2817,7 +2817,7 @@ class WooPaymentsApiClient {
 			: $error_message;
 
 		// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Provider error is transported as structured application data, not rendered HTML.
-		throw new WooPaymentsApiException(
+		throw new ApiException(
 			$message,
 			$error_code,
 			$response_code,

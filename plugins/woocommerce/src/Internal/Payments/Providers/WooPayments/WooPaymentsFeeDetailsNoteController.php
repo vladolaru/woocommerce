@@ -11,7 +11,7 @@ use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentNotes;
 use Automattic\WooCommerce\Internal\Payments\PaymentLifecycleEvent;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Throwable;
 use WC_Order;
@@ -44,9 +44,9 @@ class WooPaymentsFeeDetailsNoteController implements RegisterHooksInterface {
 	/**
 	 * WooPayments API client.
 	 *
-	 * @var WooPaymentsApiClient
+	 * @var Client
 	 */
-	private WooPaymentsApiClient $api_client;
+	private Client $api_client;
 
 	/**
 	 * WooPayments order data service.
@@ -107,11 +107,11 @@ class WooPaymentsFeeDetailsNoteController implements RegisterHooksInterface {
 	 * @param WooPaymentsPersistenceVocabulary  $vocabulary          WooPayments persistence vocabulary.
 	 * @param WooPaymentsActionSchedulerService $action_scheduler    Action scheduler service.
 	 * @param WooPaymentsAccountService         $account_service     Account service.
-	 * @param WooPaymentsApiClient              $api_client          WooPayments API client.
+	 * @param Client                            $api_client          WooPayments API client.
 	 * @param WooPaymentsOrderDataService       $order_data_service  WooPayments order data service.
 	 * @param WooPaymentsLogger                 $logger              WooPayments logger.
 	 */
-	final public function init( OrderPaymentLifecycleService $lifecycle_service, OrderPaymentNotes $order_payment_notes, WooPaymentsPersistenceVocabulary $vocabulary, WooPaymentsActionSchedulerService $action_scheduler, WooPaymentsAccountService $account_service, WooPaymentsApiClient $api_client, WooPaymentsOrderDataService $order_data_service, WooPaymentsLogger $logger ): void {
+	final public function init( OrderPaymentLifecycleService $lifecycle_service, OrderPaymentNotes $order_payment_notes, WooPaymentsPersistenceVocabulary $vocabulary, WooPaymentsActionSchedulerService $action_scheduler, WooPaymentsAccountService $account_service, Client $api_client, WooPaymentsOrderDataService $order_data_service, WooPaymentsLogger $logger ): void {
 		$this->api_client          = $api_client;
 		$this->order_data_service  = $order_data_service;
 		$this->logger              = $logger;

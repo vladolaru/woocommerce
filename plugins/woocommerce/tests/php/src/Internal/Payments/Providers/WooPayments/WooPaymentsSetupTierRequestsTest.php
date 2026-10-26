@@ -20,8 +20,8 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFe
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsHttpClient;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\HttpClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCanceledAuthorizationFeeRemediationService;
@@ -120,7 +120,7 @@ class WooPaymentsSetupTierRequestsTest extends WC_Unit_Test_Case {
 		$provider->method( 'can_process_payments' )->willReturn( true );
 		$provider->init(
 			wc_get_container()->get( WooPaymentsPaymentOperationService::class ),
-			wc_get_container()->get( WooPaymentsApiClient::class ),
+			wc_get_container()->get( Client::class ),
 			wc_get_container()->get( WooPaymentsAccountService::class ),
 			new WooPaymentsPaymentMethodRegistry(),
 			wc_get_container()->get( WooPaymentsOrderEffectApplier::class )
@@ -166,9 +166,9 @@ class WooPaymentsSetupTierRequestsTest extends WC_Unit_Test_Case {
 			)
 		);
 		// Only the WPCOM connection is stubbed; the account readiness comes from the real account service and cache.
-		$api_client = $this->createMock( WooPaymentsApiClient::class );
+		$api_client = $this->createMock( Client::class );
 		$api_client->method( 'is_available' )->willReturn( true );
-		wc_get_container()->replace( WooPaymentsApiClient::class, $api_client );
+		wc_get_container()->replace( Client::class, $api_client );
 		$account_service = wc_get_container()->get( WooPaymentsAccountService::class );
 		$account_service->cache_account_data(
 			array(
@@ -312,13 +312,13 @@ class WooPaymentsSetupTierRequestsTest extends WC_Unit_Test_Case {
 		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )->disableOriginalConstructor()->onlyMethods( $account_readers )->getMock();
 		$account_service->expects( $this->never() )->method( $this->anything() );
 		$account_service->init( $container->get( LegacyProxy::class ), $container->get( WooPaymentsDatabaseCache::class ) );
-		$http_client = $this->getMockBuilder( WooPaymentsHttpClient::class )->disableOriginalConstructor()->getMock();
+		$http_client = $this->getMockBuilder( HttpClient::class )->disableOriginalConstructor()->getMock();
 		$http_client->expects( $this->never() )->method( $this->anything() );
 		$jetpack_manager = $this->getMockBuilder( JetpackConnectionManager::class )->disableOriginalConstructor()->getMock();
 		$jetpack_manager->expects( $this->never() )->method( $this->anything() );
 		$container->reset_all_resolved();
 		$container->replace( WooPaymentsAccountService::class, $account_service );
-		$container->replace( WooPaymentsHttpClient::class, $http_client );
+		$container->replace( HttpClient::class, $http_client );
 		$account_option_reads = 0;
 		add_filter(
 			'pre_option_wcpay_account_data',
@@ -378,10 +378,10 @@ class WooPaymentsSetupTierRequestsTest extends WC_Unit_Test_Case {
 		$order->update_meta_data( '_payment_method_id', 'pm_test_cli' );
 		$order->save();
 		$this->arrange_builtin_owner( $tier );
-		$api_client = $this->createMock( WooPaymentsApiClient::class );
+		$api_client = $this->createMock( Client::class );
 		// Client 11.1.0 includes/class-wc-payments-action-scheduler-service.php:195-201 reads only 'result' === 'success' from this response.
 		$api_client->expects( $this->once() )->method( 'track_order' )->willReturn( array( 'result' => 'success' ) );
-		wc_get_container()->replace( WooPaymentsApiClient::class, $api_client );
+		wc_get_container()->replace( Client::class, $api_client );
 
 		$this->run_bootstrap( '__return_false' );
 		$action_id = as_enqueue_async_action( WooPaymentsFraudOrderTrackingService::TRACK_NEW_ORDER_ACTION, array( $order->get_id() ) );
@@ -434,9 +434,9 @@ class WooPaymentsSetupTierRequestsTest extends WC_Unit_Test_Case {
 	public function test_classic_toggle_keeps_the_tier_in_step_with_the_gateway(): void {
 		$this->arrange_builtin_owner( WooPaymentsSetupTier::CONNECTED );
 		// A connected store has an account that can take payments; without one the gateway needs setup and WooCommerce refuses the toggle, as for the client.
-		$api_client = $this->createMock( WooPaymentsApiClient::class );
+		$api_client = $this->createMock( Client::class );
 		$api_client->method( 'is_available' )->willReturn( true );
-		wc_get_container()->replace( WooPaymentsApiClient::class, $api_client );
+		wc_get_container()->replace( Client::class, $api_client );
 		wc_get_container()->get( WooPaymentsAccountService::class )->cache_account_data(
 			array(
 				'account_id'        => 'acct_test123',

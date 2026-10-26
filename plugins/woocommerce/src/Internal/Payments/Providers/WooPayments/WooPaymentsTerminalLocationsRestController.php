@@ -7,8 +7,8 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 use Automattic\WooCommerce\Internal\RestApiControllerBase;
 use WP_Error;
 use WP_REST_Request;
@@ -32,18 +32,18 @@ class WooPaymentsTerminalLocationsRestController extends RestApiControllerBase {
 	/**
 	 * WooPayments API client.
 	 *
-	 * @var WooPaymentsApiClient
+	 * @var Client
 	 */
-	private WooPaymentsApiClient $api_client;
+	private Client $api_client;
 
 	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsApiClient $api_client WooPayments API client.
+	 * @param Client $api_client WooPayments API client.
 	 */
-	final public function init( WooPaymentsApiClient $api_client ): void {
+	final public function init( Client $api_client ): void {
 		$this->api_client = $api_client;
 	}
 
@@ -171,7 +171,7 @@ class WooPaymentsTerminalLocationsRestController extends RestApiControllerBase {
 			delete_transient( self::STORE_LOCATIONS_TRANSIENT_KEY );
 
 			return new WP_REST_Response( $this->extract_location( $location ) );
-		} catch ( WooPaymentsApiException $exception ) {
+		} catch ( ApiException $exception ) {
 			if ( 'invalid_request_error' === $exception->get_error_code() ) {
 				return new WP_Error( 'store_address_is_incomplete', admin_url( 'admin.php?page=wc-settings&tab=general' ) );
 			}
@@ -192,7 +192,7 @@ class WooPaymentsTerminalLocationsRestController extends RestApiControllerBase {
 
 		try {
 			return new WP_REST_Response( array_map( array( $this, 'extract_location' ), $this->get_cached_terminal_locations() ) );
-		} catch ( WooPaymentsApiException $exception ) {
+		} catch ( ApiException $exception ) {
 			return $exception->to_wp_error_without_status();
 		}
 	}
@@ -218,7 +218,7 @@ class WooPaymentsTerminalLocationsRestController extends RestApiControllerBase {
 			delete_transient( self::STORE_LOCATIONS_TRANSIENT_KEY );
 
 			return new WP_REST_Response( $this->extract_location( $location ) );
-		} catch ( WooPaymentsApiException $exception ) {
+		} catch ( ApiException $exception ) {
 			return $exception->to_wp_error_without_status();
 		}
 	}
@@ -244,7 +244,7 @@ class WooPaymentsTerminalLocationsRestController extends RestApiControllerBase {
 			delete_transient( self::STORE_LOCATIONS_TRANSIENT_KEY );
 
 			return new WP_REST_Response( $this->extract_location( $location ) );
-		} catch ( WooPaymentsApiException $exception ) {
+		} catch ( ApiException $exception ) {
 			return $exception->to_wp_error_without_status();
 		}
 	}
@@ -269,7 +269,7 @@ class WooPaymentsTerminalLocationsRestController extends RestApiControllerBase {
 			delete_transient( self::STORE_LOCATIONS_TRANSIENT_KEY );
 
 			return new WP_REST_Response( $this->extract_location( $location ) );
-		} catch ( WooPaymentsApiException $exception ) {
+		} catch ( ApiException $exception ) {
 			return $exception->to_wp_error_without_status();
 		}
 	}
@@ -287,7 +287,7 @@ class WooPaymentsTerminalLocationsRestController extends RestApiControllerBase {
 			delete_transient( self::STORE_LOCATIONS_TRANSIENT_KEY );
 
 			return new WP_REST_Response( $result );
-		} catch ( WooPaymentsApiException $exception ) {
+		} catch ( ApiException $exception ) {
 			return $exception->to_wp_error_without_status();
 		}
 	}

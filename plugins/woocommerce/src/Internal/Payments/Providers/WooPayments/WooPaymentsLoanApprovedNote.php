@@ -11,8 +11,8 @@ use Automattic\WooCommerce\Admin\Notes\DataStore as NotesDataStore;
 use Automattic\WooCommerce\Admin\Notes\Note;
 use Automattic\WooCommerce\Admin\Notes\Notes;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\ExplicitPriceFormatter;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Throwable;
 
@@ -38,18 +38,18 @@ class WooPaymentsLoanApprovedNote implements RegisterHooksInterface {
 	/**
 	 * WooPayments API client.
 	 *
-	 * @var WooPaymentsApiClient
+	 * @var Client
 	 */
-	private WooPaymentsApiClient $api_client;
+	private Client $api_client;
 
 	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsApiClient $api_client WooPayments API client.
+	 * @param Client $api_client WooPayments API client.
 	 */
-	final public function init( WooPaymentsApiClient $api_client ): void {
+	final public function init( Client $api_client ): void {
 		$this->api_client = $api_client;
 	}
 
@@ -80,7 +80,7 @@ class WooPaymentsLoanApprovedNote implements RegisterHooksInterface {
 
 			try {
 				$loan_info = $this->api_client->get_capital_active_loan_summary();
-			} catch ( WooPaymentsApiException $exception ) {
+			} catch ( ApiException $exception ) {
 				return;
 			}
 

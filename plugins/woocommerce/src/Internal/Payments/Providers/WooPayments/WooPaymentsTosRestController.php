@@ -7,7 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\RestApiControllerBase;
 use Throwable;
 use WP_REST_Request;
@@ -36,9 +36,9 @@ class WooPaymentsTosRestController extends RestApiControllerBase {
 	/**
 	 * WooPayments API client.
 	 *
-	 * @var WooPaymentsApiClient
+	 * @var Client
 	 */
-	private WooPaymentsApiClient $api_client;
+	private Client $api_client;
 
 	/**
 	 * WooPayments account service.
@@ -52,10 +52,10 @@ class WooPaymentsTosRestController extends RestApiControllerBase {
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsApiClient      $api_client      WooPayments API client.
+	 * @param Client                    $api_client      WooPayments API client.
 	 * @param WooPaymentsAccountService $account_service WooPayments account service.
 	 */
-	final public function init( WooPaymentsApiClient $api_client, WooPaymentsAccountService $account_service ): void {
+	final public function init( Client $api_client, WooPaymentsAccountService $account_service ): void {
 		$this->api_client      = $api_client;
 		$this->account_service = $account_service;
 	}

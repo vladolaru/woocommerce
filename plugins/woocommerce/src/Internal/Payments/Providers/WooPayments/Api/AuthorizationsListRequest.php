@@ -1,6 +1,6 @@
 <?php
 /**
- * WooPaymentsAuthorizationsListRequest class file.
+ * AuthorizationsListRequest class file.
  */
 
 declare( strict_types = 1 );
@@ -13,7 +13,7 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api;
  * @since 11.0.0
  * @internal
  */
-class WooPaymentsAuthorizationsListRequest extends WooPaymentsPaginatedListRequest {
+class AuthorizationsListRequest extends PaginatedListRequest {
 	/**
 	 * WordPress filter applied when the request is sent.
 	 *

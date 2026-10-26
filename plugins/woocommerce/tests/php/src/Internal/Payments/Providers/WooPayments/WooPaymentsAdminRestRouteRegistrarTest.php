@@ -12,7 +12,7 @@ use Automattic\WooCommerce\Internal\DependencyManagement\RuntimeContainer;
 use Automattic\WooCommerce\Internal\Payments\PaymentsBootstrap;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAdminRestRouteRegistrar;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDetailsService;
@@ -116,7 +116,7 @@ class WooPaymentsAdminRestRouteRegistrarTest extends WC_REST_Unit_Test_Case {
 	 */
 	private function create_payment_details_controller(): WooPaymentsPaymentDetailsRestController {
 		$controller = new WooPaymentsPaymentDetailsRestController();
-		$controller->init( new WooPaymentsApiClient(), new WooPaymentsOrderDetailsService(), wc_get_container()->get( WooPaymentsAccountService::class ) );
+		$controller->init( new Client(), new WooPaymentsOrderDetailsService(), wc_get_container()->get( WooPaymentsAccountService::class ) );
 
 		return $controller;
 	}

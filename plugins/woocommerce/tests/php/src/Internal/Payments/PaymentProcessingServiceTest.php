@@ -10,7 +10,7 @@ use Automattic\WooCommerce\Internal\Payments\OrderPaymentNotes;
 use Automattic\WooCommerce\Internal\Payments\PaymentOperationContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentLifecycleEvent;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsTransportLog;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\TransportLog;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentCodec;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentRequestBuilder;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLevel3Service;
@@ -23,8 +23,8 @@ use Automattic\WooCommerce\Internal\Payments\ProviderOperationEffectApplierInter
 use Automattic\WooCommerce\Internal\Payments\ProviderOutcomeMetadataMapperInterface;
 use Automattic\WooCommerce\Internal\Payments\ProviderPostLifecycleEffectApplierInterface;
 use Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabularyInterface;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsHtmlUtils;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDatabaseCache;
@@ -42,7 +42,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPr
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentOperationService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
-use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Api\FakeWooPaymentsHttpClient;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Api\FakeHttpClient;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\RecordingWcLogger;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\SubscriptionRelationshipsProbe;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\WooCommerceSubscriptionsDoubles;
@@ -1072,7 +1072,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_process_checkout_keeps_declined_intent_off_the_transaction_id_when_failure_handling_throws(): void {
 		$order                  = $this->create_woopayments_order( '10.00' );
-		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client            = new FakeHttpClient();
 		$http_client->responses = array(
 			// Stripe's decline passed through by the platform, with the declined intent read from error.payment_intent.id
 			// by client 11.1.0 includes/wc-payment-api/class-wc-payments-api-client.php:2852-2871.
@@ -1143,7 +1143,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads a local test fixture.
 		$recording              = json_decode( (string) file_get_contents( __DIR__ . '/Providers/WooPayments/Fixtures/platform-setup-intent-declines.json' ), true );
 		$entry                  = current( array_filter( $recording['entries'], static fn( array $recorded ): bool => 'generic_decline' === $recorded['pair'] ) );
-		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client            = new FakeHttpClient();
 		$http_client->responses = array( $this->json_transport_response( (int) $entry['response']['http_status'], $entry['response']['body'] ) );
 
 		$outcome = $this->sut->process_checkout_outcome(
@@ -1216,7 +1216,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$order = $this->create_woopayments_order( '0.00' );
 		$order->set_status( 'on-hold' );
 		$order->save();
-		$http_client = new FakeWooPaymentsHttpClient();
+		$http_client = new FakeHttpClient();
 		add_filter(
 			'wcpay_metadata_from_order',
 			static function () {
@@ -1298,7 +1298,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 						'save_payment_method' => true,
 					)
 				),
-				$this->timeout_transport_provider( new FakeWooPaymentsHttpClient() )
+				$this->timeout_transport_provider( new FakeHttpClient() )
 			);
 
 			$failure_notes = array_values(
@@ -1353,7 +1353,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		if ( ! $is_renewal ) {
 			$payment_data['save_payment_method'] = 0.0 === (float) $total;
 		}
-		$http_client = new FakeWooPaymentsHttpClient();
+		$http_client = new FakeHttpClient();
 		// Shape: the platform's own failure as a WordPress REST error (code, message, data.status; WP_REST_Server::error_to_response()). Any request after the payment gets it.
 		$http_client->response = $this->json_transport_response( 500, array( 'code' => 'wcpay_server_error' ) );
 		// Shape: the intent the platform returns, reduced to the fields this path reads: a confirmed card PaymentIntent
@@ -1458,7 +1458,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$renewal->update_meta_data( '_stripe_customer_id', $renewal_customer_id );
 		$renewal->add_payment_token( $token );
 		$renewal->save();
-		$http_client = new FakeWooPaymentsHttpClient();
+		$http_client = new FakeHttpClient();
 		// Shape: Stripe's resource_missing error with its 404 (https://docs.stripe.com/error-codes/resource-missing), which the platform passes on, as WooPaymentsPaymentOperationServiceTest::stripe_no_such_customer() models it.
 		$http_client->responses = array(
 			$this->json_transport_response(
@@ -1564,7 +1564,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$renewal->update_meta_data( '_stripe_customer_id', 'cus_StripeGatewayLeftover' );
 		$renewal->add_payment_token( $token );
 		$renewal->save();
-		$http_client = new FakeWooPaymentsHttpClient();
+		$http_client = new FakeHttpClient();
 		// Shapes, in order: Stripe's resource_missing error with its 404 (https://docs.stripe.com/error-codes/resource-missing),
 		// as WooPaymentsPaymentOperationServiceTest::stripe_no_such_customer() models it; the platform's 502 when its own call to
 		// Stripe failed, as WooPaymentsPaymentOperationServiceTest::platform_bad_gateway() models it; the PaymentIntent the
@@ -1664,7 +1664,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$order = $this->create_woopayments_order( '10.00' );
 		$order->set_customer_id( $user_id );
 		$order->save();
-		$http_client = new FakeWooPaymentsHttpClient();
+		$http_client = new FakeHttpClient();
 		// Shapes, in order: the PaymentIntent the platform returns for a confirmed card charge
 		// (Fixtures/platform-intention-basic-card.json), reduced to the fields read; the platform's own failure as a WordPress
 		// REST error (code, message, data.status; WP_REST_Server::error_to_response()).
@@ -1739,7 +1739,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$order->save();
 		WC()->session->set( WooPaymentsCustomerService::CUSTOMER_ID_SESSION_KEY, 'cus_session' );
 		$expected_payment_method = $with_saved_card ? 'pm_shopper_saved' : 'pm_card_visa';
-		$http_client             = new FakeWooPaymentsHttpClient();
+		$http_client             = new FakeHttpClient();
 		// Shape: the platform's own failure as a WordPress REST error (code, message, data.status; WP_REST_Server::error_to_response()). Any request after the expected ones gets it.
 		$http_client->response = $this->json_transport_response( 500, array( 'code' => 'wcpay_server_error' ) );
 		// Shapes, in order: the PaymentIntent the platform returns for a confirmed card charge
@@ -1840,7 +1840,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$order       = $this->create_woopayments_order( '10.00' );
 		$order->set_customer_id( $order_has_user ? $owner_id : 0 );
 		$order->save();
-		$http_client = new FakeWooPaymentsHttpClient();
+		$http_client = new FakeHttpClient();
 		// Shape: the platform's own failure as a WordPress REST error (code, message, data.status; WP_REST_Server::error_to_response()). No request is expected.
 		$http_client->response = $this->json_transport_response( 500, array( 'code' => 'wcpay_server_error' ) );
 		$gateway               = new WooPaymentsGateway();
@@ -1903,7 +1903,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$order->set_billing_first_name( 'Ada' );
 		$order->set_billing_last_name( 'Lovelace' );
 		$order->save();
-		$http_client = new FakeWooPaymentsHttpClient();
+		$http_client = new FakeHttpClient();
 		// Shape: the platform's own failure as a WordPress REST error (code, message, data.status; WP_REST_Server::error_to_response()). Any request after the expected ones gets it.
 		$http_client->response = $this->json_transport_response( 500, array( 'code' => 'wcpay_server_error' ) );
 		// Shapes, in order: Stripe's resource_missing error with its 404 (https://docs.stripe.com/error-codes/resource-missing),
@@ -2807,7 +2807,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_process_checkout_pays_the_order_from_the_earlier_request_after_a_new_card_refusal( string $status, string $order_status ): void {
 		$order                  = $this->create_woopayments_order( '10.00' );
-		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client            = new FakeHttpClient();
 		$http_client->responses = array(
 			$this->json_transport_response(
 				502,
@@ -2880,7 +2880,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_process_checkout_charges_nothing_when_a_webhook_paid_the_order_between_submissions(): void {
 		$order                  = $this->create_woopayments_order( '10.00' );
-		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client            = new FakeHttpClient();
 		$http_client->responses = array(
 			$this->json_transport_response(
 				502,
@@ -2953,7 +2953,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 				),
 			)
 		);
-		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client            = new FakeHttpClient();
 		$http_client->responses = array(
 			$this->json_transport_response(
 				502,
@@ -4346,7 +4346,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$order->save();
 		$order->update_status( 'on-hold' );
 
-		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client            = new FakeHttpClient();
 		$http_client->responses = array(
 			$refusal,
 			// The re-fetch after a failed capture or cancel (client 11.1.0 includes/class-wc-payment-gateway-wcpay.php:4014, :4084);
@@ -4456,7 +4456,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$order->update_meta_data( '_wcpay_fraud_outcome_status', 'review' );
 		$order->update_meta_data( '_wcpay_fraud_meta_box_type', 'review' );
 		$order->save();
-		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client            = new FakeHttpClient();
 		$http_client->responses = array( $this->declined_capture_response( 'Your card was declined.' ), $this->still_capturable_intent_response() );
 
 		$outcome = $this->sut->capture( PaymentOperationContext::for_capture( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ), $this->timeout_transport_provider( $http_client ) );
@@ -4478,7 +4478,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_capture_refused_below_the_minimum_notes_the_minimum_amount(): void {
 		$order                  = $this->create_authorized_order_for_failed_operations();
-		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client            = new FakeHttpClient();
 		$http_client->responses = array(
 			$this->json_transport_response(
 				400,
@@ -4514,7 +4514,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_each_distinct_capture_or_cancel_failure_is_noted(): void {
 		$order                  = $this->create_authorized_order_for_failed_operations();
-		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client            = new FakeHttpClient();
 		$lock_timeout           = $this->json_transport_response(
 			429,
 			array(
@@ -4650,7 +4650,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$order->save();
 		$order->update_status( 'processing' );
 
-		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client            = new FakeHttpClient();
 		$http_client->responses = array_merge( $answers, $answers );
 		$provider               = $this->timeout_transport_provider( $http_client );
 		$fake_logger            = $this->create_fake_logger();
@@ -5488,7 +5488,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 			}
 		};
 		$token_service   = new WooPaymentsTokenService();
-		$token_service->init( $details_service, wc_get_container()->get( WooPaymentsApiClient::class ), wc_get_container()->get( WooPaymentsCustomerService::class ), wc_get_container()->get( WooPaymentsAccountService::class ), wc_get_container()->get( WooPaymentsOrderDataService::class ), wc_get_container()->get( WooPaymentsPaymentMethodRegistry::class ) );
+		$token_service->init( $details_service, wc_get_container()->get( Client::class ), wc_get_container()->get( WooPaymentsCustomerService::class ), wc_get_container()->get( WooPaymentsAccountService::class ), wc_get_container()->get( WooPaymentsOrderDataService::class ), wc_get_container()->get( WooPaymentsPaymentMethodRegistry::class ) );
 		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'get_account_country', 'get_mode' ) )
@@ -5505,7 +5505,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 			new WooPaymentsPaymentMethodRegistry(),
 			wc_get_container()->get( WooPaymentsActionSchedulerService::class )
 		);
-		$api_client       = new class() extends \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient {
+		$api_client       = new class() extends \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client {
 			/**
 			 * Tell the adapter its API transport is available for the SetupIntent.
 			 *
@@ -5633,7 +5633,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$provider           = new WooPaymentsProvider();
 		$provider->init(
 			$payment_operations,
-			wc_get_container()->get( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient::class ),
+			wc_get_container()->get( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client::class ),
 			wc_get_container()->get( WooPaymentsAccountService::class ),
 			new WooPaymentsPaymentMethodRegistry(),
 			wc_get_container()->get( WooPaymentsOrderEffectApplier::class )
@@ -5651,7 +5651,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	 * @return WooPaymentsProvider
 	 */
 	private function ambiguous_first_charge_provider( \ArrayObject $sent_keys ): WooPaymentsProvider {
-		$api_client      = new class( $sent_keys ) extends WooPaymentsApiClient {
+		$api_client      = new class( $sent_keys ) extends Client {
 			/**
 			 * Idempotency keys sent.
 			 *
@@ -5683,13 +5683,13 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 			 * @param array<string,mixed> $request_data    Request data.
 			 * @param string              $idempotency_key Idempotency key.
 			 * @return array<string,mixed>
-			 * @throws WooPaymentsApiException On the first charge.
+			 * @throws ApiException On the first charge.
 			 */
 			public function create_and_confirm_payment_intention( array $request_data, string $idempotency_key ): array {
 				unset( $request_data );
 				$this->sent_keys[] = $idempotency_key;
 				if ( 1 === count( $this->sent_keys ) ) {
-					throw new WooPaymentsApiException( 'Error: Upstream provider unavailable.', 'api_connection_error', 502, 'api_error' );
+					throw new ApiException( 'Error: Upstream provider unavailable.', 'api_connection_error', 502, 'api_error' );
 				}
 
 				return array(
@@ -5741,11 +5741,11 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * Build a real WooPayments provider on the real API client, with only the platform's HTTP answers faked.
 	 *
-	 * @param FakeWooPaymentsHttpClient $http_client       Platform answers, in order.
-	 * @param bool                      $real_customers    Whether the real customer service resolves customers over the same transport.
+	 * @param FakeHttpClient $http_client       Platform answers, in order.
+	 * @param bool           $real_customers    Whether the real customer service resolves customers over the same transport.
 	 * @return WooPaymentsProvider
 	 */
-	private function timeout_transport_provider( FakeWooPaymentsHttpClient $http_client, bool $real_customers = false ): WooPaymentsProvider {
+	private function timeout_transport_provider( FakeHttpClient $http_client, bool $real_customers = false ): WooPaymentsProvider {
 		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'get_account_country', 'get_mode', 'is_test_mode_enabled' ) )
@@ -5753,7 +5753,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$account_service->method( 'get_account_country' )->willReturn( 'US' );
 		$account_service->method( 'get_mode' )->willReturn( 'test' );
 		$account_service->method( 'is_test_mode_enabled' )->willReturn( true );
-		$api_client = new class() extends WooPaymentsApiClient {
+		$api_client = new class() extends Client {
 			/**
 			 * Skip the backoff between transport retries.
 			 *
@@ -5763,7 +5763,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 				unset( $backoff_microseconds );
 			}
 		};
-		$api_client->init( $http_client, $account_service, wc_get_container()->get( WooPaymentsTransportLog::class ) );
+		$api_client->init( $http_client, $account_service, wc_get_container()->get( TransportLog::class ) );
 		$customer_service = $this->getMockBuilder( WooPaymentsCustomerService::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'get_or_create_customer_id_for_order', 'get_or_create_customer_id_for_subscription_payment_method_change' ) )
@@ -5889,7 +5889,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$provider           = new WooPaymentsProvider();
 		$provider->init(
 			$payment_operations,
-			wc_get_container()->get( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient::class ),
+			wc_get_container()->get( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client::class ),
 			wc_get_container()->get( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService::class ),
 			new WooPaymentsPaymentMethodRegistry(),
 			wc_get_container()->get( WooPaymentsOrderEffectApplier::class )

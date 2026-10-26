@@ -8,7 +8,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling;
 
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionMethodPolicy;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCurrencyUtils;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
@@ -258,7 +258,7 @@ class StripeBillingSubscriptionService {
 
 		try {
 			return $this->api->get_subscription( $wcpay_subscription_id );
-		} catch ( WooPaymentsApiException $exception ) {
+		} catch ( ApiException $exception ) {
 			return null;
 		}
 	}
@@ -558,7 +558,7 @@ class StripeBillingSubscriptionService {
 
 		try {
 			$this->api->cancel_subscription( $wcpay_subscription_id );
-		} catch ( WooPaymentsApiException $exception ) {
+		} catch ( ApiException $exception ) {
 			// Client 11.1.0 logs this only when WooPayments logging is on (class-wc-payments-subscription-service.php:525-529); a
 			// cancellation that did not reach Stripe keeps billing, so this line is always written and the merchant gets a note.
 			$this->logger->log_throwable_always( 'There was a problem canceling the subscription on WooPayments server.', $exception, array( 'subscription_id' => $subscription->get_id() ) );
@@ -693,7 +693,7 @@ class StripeBillingSubscriptionService {
 	 *
 	 * @param mixed $subscription Subscription.
 	 * @param mixed $token        The new payment token.
-	 * @throws WooPaymentsApiException When the invoice cannot be charged.
+	 * @throws ApiException When the invoice cannot be charged.
 	 * @throws StripeBillingException When the platform refuses the charge for a reason the module handles.
 	 */
 	public function maybe_attempt_payment_for_subscription( $subscription, $token ): void {
@@ -1018,7 +1018,7 @@ class StripeBillingSubscriptionService {
 	 * @param bool     $keep_billing_dates Whether to backdate the start and anchor billing on the next payment, for a switch to WooPayments.
 	 * @return array<string,mixed>
 	 * @throws StripeBillingException When the product of a subscription item no longer exists.
-	 * @throws WooPaymentsApiException When a Stripe product cannot be created.
+	 * @throws ApiException When a Stripe product cannot be created.
 	 */
 	private function prepare_wcpay_subscription_data( string $wcpay_customer_id, WC_Order $subscription, bool $keep_billing_dates ): array {
 		$recurring_items = $this->get_recurring_item_data_for_subscription( $subscription );
@@ -1069,7 +1069,7 @@ class StripeBillingSubscriptionService {
 	 *
 	 * @param WC_Order $subscription Subscription.
 	 * @return array<int,array<string,mixed>>
-	 * @throws WooPaymentsApiException When a Stripe product cannot be created.
+	 * @throws ApiException When a Stripe product cannot be created.
 	 */
 	private function get_one_time_item_data_for_subscription( WC_Order $subscription ): array {
 		$data     = array();
@@ -1169,7 +1169,7 @@ class StripeBillingSubscriptionService {
 	 *
 	 * @param WC_Order $subscription Subscription.
 	 * @return string
-	 * @throws WooPaymentsApiException When the customer cannot be created.
+	 * @throws ApiException When the customer cannot be created.
 	 */
 	private function get_customer_id_for_subscription( WC_Order $subscription ): string {
 		if ( false === $subscription->get_user() ) {
@@ -1268,7 +1268,7 @@ class StripeBillingSubscriptionService {
 
 		try {
 			return $this->api->update_subscription( $wcpay_subscription_id, $data );
-		} catch ( WooPaymentsApiException $exception ) {
+		} catch ( ApiException $exception ) {
 			$this->logger->log_throwable_always( 'There was a problem updating the WooPayments subscription on server.', $exception, array( 'subscription_id' => $subscription->get_id() ) );
 			if ( '' !== $failure_note ) {
 				$subscription->add_order_note( $failure_note );

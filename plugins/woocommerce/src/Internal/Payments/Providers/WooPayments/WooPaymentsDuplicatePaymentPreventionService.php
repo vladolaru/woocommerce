@@ -11,7 +11,7 @@ use Automattic\WooCommerce\Enums\OrderStatus;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Automattic\WooCommerce\Utilities\OrderUtil;
 use Exception;
@@ -74,9 +74,9 @@ class WooPaymentsDuplicatePaymentPreventionService implements RegisterHooksInter
 	/**
 	 * WooPayments API client.
 	 *
-	 * @var WooPaymentsApiClient
+	 * @var Client
 	 */
-	private WooPaymentsApiClient $api_client;
+	private Client $api_client;
 
 	/**
 	 * Order payment lifecycle service.
@@ -106,12 +106,12 @@ class WooPaymentsDuplicatePaymentPreventionService implements RegisterHooksInter
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsApiClient                      $api_client                  WooPayments API client.
+	 * @param Client                                    $api_client                  WooPayments API client.
 	 * @param OrderPaymentLifecycleService              $lifecycle_service           Order payment lifecycle service.
 	 * @param WooPaymentsIntentConfirmationService|null $intent_confirmation_service Optional intent confirmation service.
 	 */
 	final public function init(
-		WooPaymentsApiClient $api_client,
+		Client $api_client,
 		OrderPaymentLifecycleService $lifecycle_service,
 		?WooPaymentsIntentConfirmationService $intent_confirmation_service = null
 	): void {
@@ -630,11 +630,11 @@ class WooPaymentsDuplicatePaymentPreventionService implements RegisterHooksInter
 	/**
 	 * Get the WooPayments API client.
 	 *
-	 * @return WooPaymentsApiClient
+	 * @return Client
 	 */
-	private function get_api_client(): WooPaymentsApiClient {
+	private function get_api_client(): Client {
 		if ( ! isset( $this->api_client ) ) {
-			$this->api_client = wc_get_container()->get( WooPaymentsApiClient::class );
+			$this->api_client = wc_get_container()->get( Client::class );
 		}
 
 		return $this->api_client;

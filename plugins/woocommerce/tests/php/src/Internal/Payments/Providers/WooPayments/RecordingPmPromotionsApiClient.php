@@ -3,12 +3,12 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 
 /**
  * Recording API client for promotion service tests.
  */
-class RecordingPmPromotionsApiClient extends WooPaymentsApiClient {
+class RecordingPmPromotionsApiClient extends Client {
 
 	/**
 	 * Promotions response.

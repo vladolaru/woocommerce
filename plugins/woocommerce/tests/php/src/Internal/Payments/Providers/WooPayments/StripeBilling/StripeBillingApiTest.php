@@ -3,13 +3,13 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsTransportLog;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\TransportLog;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\StripeBillingApi;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\StripeBillingException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
-use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Api\FakeWooPaymentsHttpClient;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Api\FakeHttpClient;
 use WC_Unit_Test_Case;
 
 /**
@@ -114,7 +114,7 @@ class StripeBillingApiTest extends WC_Unit_Test_Case {
 		try {
 			$sut->cancel_subscription( 'sub_1/../../accounts' );
 			$this->fail( 'An unsafe ID must be refused.' );
-		} catch ( WooPaymentsApiException $exception ) {
+		} catch ( ApiException $exception ) {
 			$this->assertSame( 'wcpay_route_validation_failure', $exception->get_error_code() );
 		}
 		$this->assertSame( 0, $http_client->request_count );
@@ -138,7 +138,7 @@ class StripeBillingApiTest extends WC_Unit_Test_Case {
 		try {
 			$sut->$method( $id, array( 'active' => 'false' ) );
 			$this->fail( 'The ID must be refused.' );
-		} catch ( WooPaymentsApiException $exception ) {
+		} catch ( ApiException $exception ) {
 			$this->assertSame( $error_code, $exception->get_error_code() );
 			$this->assertSame( $message, $exception->getMessage() );
 			$this->assertSame( 400, $exception->get_http_code() );
@@ -161,10 +161,10 @@ class StripeBillingApiTest extends WC_Unit_Test_Case {
 	 * Build the API over a fake transport that answers with the entry's recorded response.
 	 *
 	 * @param array<string,mixed> $entry Fixture entry.
-	 * @return array{0: StripeBillingApi, 1: FakeWooPaymentsHttpClient}
+	 * @return array{0: StripeBillingApi, 1: FakeHttpClient}
 	 */
 	private function make_sut( array $entry ): array {
-		$http_client           = new FakeWooPaymentsHttpClient();
+		$http_client           = new FakeHttpClient();
 		$http_client->blog_id  = self::RECORDED_BLOG_ID;
 		$http_client->response = array(
 			'response' => array( 'code' => (int) $entry['response']['http_status'] ),
@@ -179,8 +179,8 @@ class StripeBillingApiTest extends WC_Unit_Test_Case {
 		$account_service->method( 'is_test_mode_enabled' )->willReturn( true );
 		$account_service->method( 'is_test_mode_onboarding_enabled' )->willReturn( true );
 
-		$api_client = new WooPaymentsApiClient();
-		$api_client->init( $http_client, $account_service, wc_get_container()->get( WooPaymentsTransportLog::class ) );
+		$api_client = new Client();
+		$api_client->init( $http_client, $account_service, wc_get_container()->get( TransportLog::class ) );
 
 		$sut = new StripeBillingApi();
 		$sut->init( $api_client );

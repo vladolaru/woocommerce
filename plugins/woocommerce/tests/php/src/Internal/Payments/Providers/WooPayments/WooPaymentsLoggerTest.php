@@ -3,7 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDatabaseCache;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
@@ -149,7 +149,7 @@ class WooPaymentsLoggerTest extends WC_Unit_Test_Case {
 	 * @testdox A platform error is logged with its HTTP status and listed codes only, also when another throwable wraps it.
 	 */
 	public function test_failure_context_carries_only_listed_codes_of_a_platform_error(): void {
-		$declined = new WooPaymentsApiException( 'Error: Your card was declined.', 'card_declined', 402, 'card_error', 'insufficient_funds' );
+		$declined = new ApiException( 'Error: Your card was declined.', 'card_declined', 402, 'card_error', 'insufficient_funds' );
 		$wrapped  = new RuntimeException( 'Applying the outcome failed.', 0, $declined );
 
 		$context = WooPaymentsLogger::get_failure_context( $wrapped );
@@ -161,14 +161,14 @@ class WooPaymentsLoggerTest extends WC_Unit_Test_Case {
 
 		// An error envelope's code and decline code are free text to this store: client 11.1.0 copies error.code and
 		// error.decline_code as they are (class-wc-payments-api-client.php:2853, :2866, :2869).
-		$free_text = new WooPaymentsApiException( 'Error: x', 'https://pay.example.test/r?key=sk_test_leak123', 400, '', 'shopper@example.com' );
+		$free_text = new ApiException( 'Error: x', 'https://pay.example.test/r?key=sk_test_leak123', 400, '', 'shopper@example.com' );
 		$context   = WooPaymentsLogger::get_api_error_context( $free_text );
 		$this->assertSame( 'unknown_error', $context['error_code'] );
 		$this->assertSame( 'unknown_error', $context['decline_code'] );
 
-		// WooPaymentsApiClient::request_decoded() keeps a failed request's WP_Error code as transport_error_code; a
+		// Client::request_decoded() keeps a failed request's WP_Error code as transport_error_code; a
 		// pre_http_request callback can set any code there.
-		$transport = new WooPaymentsApiException( 'Http request failed. Reason: cURL error 6: Could not resolve host: pay.example.test', 'wcpay_http_request_failed', 500, '', '', array( 'transport_error_code' => 'http_request_failed' ) );
+		$transport = new ApiException( 'Http request failed. Reason: cURL error 6: Could not resolve host: pay.example.test', 'wcpay_http_request_failed', 500, '', '', array( 'transport_error_code' => 'http_request_failed' ) );
 		$this->assertSame(
 			array(
 				'http_status'          => 500,
@@ -177,7 +177,7 @@ class WooPaymentsLoggerTest extends WC_Unit_Test_Case {
 			),
 			WooPaymentsLogger::get_api_error_context( $transport )
 		);
-		$odd_transport = new WooPaymentsApiException( 'Http request failed.', 'wcpay_http_request_failed', 500, '', '', array( 'transport_error_code' => 'sk_test_leak123' ) );
+		$odd_transport = new ApiException( 'Http request failed.', 'wcpay_http_request_failed', 500, '', '', array( 'transport_error_code' => 'sk_test_leak123' ) );
 		$this->assertSame( 'unknown_error', WooPaymentsLogger::get_api_error_context( $odd_transport )['transport_error_code'] );
 
 		$this->assertSame( array(), WooPaymentsLogger::get_api_error_context( new RuntimeException( 'Order 7 could not be saved.' ) ) );

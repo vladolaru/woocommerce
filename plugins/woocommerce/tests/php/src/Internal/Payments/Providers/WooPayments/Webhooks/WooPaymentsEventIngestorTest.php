@@ -8,8 +8,8 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooP
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLockRefusedException;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountEventHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsEarlyFraudWarningEventHandler;
@@ -693,12 +693,12 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		$order->set_status( 'on-hold' );
 		$order->update_meta_data( '_charge_id', 'ch_3UJbTlBzWlxcwgpP0vNaexjT' );
 		$order->save();
-		$api_client = new class() extends WooPaymentsApiClient {
+		$api_client = new class() extends Client {
 			/**
 			 * Fail the summary fetch as the platform does.
 			 *
 			 * @param string $dispute_id Dispute ID.
-			 * @throws \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException Always.
+			 * @throws \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException Always.
 			 */
 			public function get_dispute_summary( string $dispute_id ): array {
 				unset( $dispute_id );
@@ -2352,18 +2352,18 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		$order->update_meta_data( '_intent_id', 'pi_expired_error' );
 		$order->save();
 
-		$api_client = new class() extends WooPaymentsApiClient {
+		$api_client = new class() extends Client {
 			// phpcs:disable Squiz.Commenting.FunctionComment.InvalidNoReturn -- This test double always throws.
 			/**
 			 * Fail the intent retrieval.
 			 *
 			 * @param string $intent_id Intent ID.
 			 * @return array<string,mixed>
-			 * @throws WooPaymentsApiException Always.
+			 * @throws ApiException Always.
 			 */
 			public function get_payment_intention( string $intent_id ): array {
 				unset( $intent_id );
-				throw new WooPaymentsApiException( 'boom', 'wcpay_server_error', 500 );
+				throw new ApiException( 'boom', 'wcpay_server_error', 500 );
 			}
 			// phpcs:enable Squiz.Commenting.FunctionComment.InvalidNoReturn
 		};
@@ -2386,10 +2386,10 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		$thrown = null;
 		try {
 			$sut->process( $event );
-		} catch ( WooPaymentsApiException $exception ) {
+		} catch ( ApiException $exception ) {
 			$thrown = $exception;
 		}
-		$this->assertInstanceOf( WooPaymentsApiException::class, $thrown );
+		$this->assertInstanceOf( ApiException::class, $thrown );
 
 		$order = wc_get_order( $order->get_id() );
 		$this->assertInstanceOf( WC_Order::class, $order );
@@ -2405,7 +2405,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	 */
 	private function create_charge_expired_ingestor( array $intent, ?array &$requested_intents = null ): WooPaymentsEventIngestor {
 		$requested_intents = array();
-		$api_client        = new class( $intent, $requested_intents ) extends WooPaymentsApiClient {
+		$api_client        = new class( $intent, $requested_intents ) extends Client {
 			/**
 			 * Intent fixture.
 			 *
@@ -3212,7 +3212,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 
 		return $this->create_ingestor(
 			wc_get_container()->get( OrderPaymentLifecycleService::class ),
-			new class() extends WooPaymentsApiClient {
+			new class() extends Client {
 				/**
 				 * Retrieve a WooPayments PaymentIntent.
 				 *
@@ -4295,7 +4295,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 			}
 		);
 		wc_get_container()->replace( OrderPaymentLock::class, $store );
-		$sut = $this->create_ingestor( wc_get_container()->get( OrderPaymentLifecycleService::class ), wc_get_container()->get( WooPaymentsApiClient::class ) );
+		$sut = $this->create_ingestor( wc_get_container()->get( OrderPaymentLifecycleService::class ), wc_get_container()->get( Client::class ) );
 
 		$sut->process( $this->create_payment_intent_event( 'payment_intent.succeeded', $order ) );
 
@@ -4576,8 +4576,8 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 
 		return $this->build_event_ingestor(
 			wc_get_container()->get( OrderPaymentLifecycleService::class ),
-			new class() extends WooPaymentsApiClient {},
-			$this->create_dispute_event_handler( new class() extends WooPaymentsApiClient {} ),
+			new class() extends Client {},
+			$this->create_dispute_event_handler( new class() extends Client {} ),
 			wc_get_container()->get( WooPaymentsRefundEventHandler::class ),
 			wc_get_container()->get( WooPaymentsAccountEventHandler::class ),
 			$notification_event_handler
@@ -4606,11 +4606,11 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	 * and the supplied API client.
 	 *
 	 * @param OrderPaymentLifecycleService                  $lifecycle_service Order lifecycle service.
-	 * @param WooPaymentsApiClient                          $api_client                       Native WooPayments API client.
+	 * @param Client                                        $api_client                       Native WooPayments API client.
 	 * @param WooPaymentsEarlyFraudWarningEventHandler|null $early_fraud_warning_event_handler Optional early fraud warning handler.
 	 * @return WooPaymentsEventIngestor
 	 */
-	private function create_ingestor( OrderPaymentLifecycleService $lifecycle_service, WooPaymentsApiClient $api_client, ?WooPaymentsEarlyFraudWarningEventHandler $early_fraud_warning_event_handler = null ): WooPaymentsEventIngestor {
+	private function create_ingestor( OrderPaymentLifecycleService $lifecycle_service, Client $api_client, ?WooPaymentsEarlyFraudWarningEventHandler $early_fraud_warning_event_handler = null ): WooPaymentsEventIngestor {
 		return $this->build_event_ingestor(
 			$lifecycle_service,
 			$api_client,
@@ -4715,7 +4715,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		$handler    = $this->create_recording_early_fraud_warning_handler( $sequence );
 		$sut        = $this->create_ingestor(
 			wc_get_container()->get( OrderPaymentLifecycleService::class ),
-			new class() extends WooPaymentsApiClient {},
+			new class() extends Client {},
 			$handler
 		);
 		$event      = $this->create_early_fraud_warning_event( $event_type );
@@ -4759,7 +4759,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
 		$sut        = $this->create_ingestor(
 			wc_get_container()->get( OrderPaymentLifecycleService::class ),
-			new class() extends WooPaymentsApiClient {}
+			new class() extends Client {}
 		);
 		$hook_calls = array();
 		add_action(
@@ -4875,8 +4875,8 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 			)
 		);
 		wc_get_container()->replace(
-			WooPaymentsApiClient::class,
-			new class() extends WooPaymentsApiClient {
+			Client::class,
+			new class() extends Client {
 				/**
 				 * Report the platform as connected, so the account service reads the cached account.
 				 *
@@ -5340,10 +5340,10 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	 * the fields they change, or a summary cut to the fields the lost-dispute refund reads: disputed_amount and currency.
 	 *
 	 * @param array<string,mixed> $summary Dispute summary.
-	 * @return WooPaymentsApiClient
+	 * @return Client
 	 */
-	private function create_dispute_summary_api_client( array $summary = array() ): WooPaymentsApiClient {
-		return new class( $summary ) extends WooPaymentsApiClient {
+	private function create_dispute_summary_api_client( array $summary = array() ): Client {
+		return new class( $summary ) extends Client {
 			/**
 			 * Dispute summary response.
 			 *

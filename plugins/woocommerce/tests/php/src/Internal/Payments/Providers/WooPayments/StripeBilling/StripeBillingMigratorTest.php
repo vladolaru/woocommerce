@@ -3,15 +3,15 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsTransportLog;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\TransportLog;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\StripeBillingApi;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\StripeBillingMigrator;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\StripeBillingSubscriptionService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
-use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Api\FakeWooPaymentsHttpClient;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Api\FakeHttpClient;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\ProviderTextLogAssertions;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\RecordingWcLogger;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\SubscriptionDouble;
@@ -254,7 +254,7 @@ class StripeBillingMigratorTest extends WC_Unit_Test_Case {
 	public function test_migration_log_leaves_out_a_mapped_platform_errors_text( string $failing_call, string $expected ): void {
 		$envelope            = $this->get_recorded_body( 'error_amount_too_small' );
 		$envelope['message'] = "No such customer: 'cus_123'; ask shopper@example.com, see https://pay.example.test/r?key=sk_test_leak123";
-		$http_client         = new FakeWooPaymentsHttpClient();
+		$http_client         = new FakeHttpClient();
 		if ( 'cancel_subscription' === $failing_call ) {
 			$http_client->responses[] = self::json_response( 200, $this->active_wcpay_subscription );
 		}
@@ -343,7 +343,7 @@ class StripeBillingMigratorTest extends WC_Unit_Test_Case {
 			$action_id,
 			array(
 				'type'    => E_ERROR,
-				'message' => 'Uncaught WooPaymentsApiException: Error: No such customer: shopper@example.com, see https://pay.example.test/r?key=sk_test_leak123',
+				'message' => 'Uncaught ApiException: Error: No such customer: shopper@example.com, see https://pay.example.test/r?key=sk_test_leak123',
 				'file'    => '/var/www/wp-content/plugins/woocommerce/src/Example.php',
 				'line'    => 12,
 			)
@@ -359,7 +359,7 @@ class StripeBillingMigratorTest extends WC_Unit_Test_Case {
 	public function test_retries_a_failed_migration(): void {
 		list( $sut, $api ) = $this->build_migrator();
 		$subscription      = $this->create_stripe_billed_subscription( self::MAIN_SUBSCRIPTION_ID );
-		$api->method( 'get_subscription' )->willThrowException( new WooPaymentsApiException( 'Error: The request timed out.', 'wcpay_http_request_failed', 500 ) );
+		$api->method( 'get_subscription' )->willThrowException( new ApiException( 'Error: The request timed out.', 'wcpay_http_request_failed', 500 ) );
 
 		$sut->migrate_wcpay_subscription( $subscription->get_id() );
 		$sut->migrate_wcpay_subscription( $subscription->get_id(), 6 );
@@ -463,16 +463,16 @@ class StripeBillingMigratorTest extends WC_Unit_Test_Case {
 	/**
 	 * Build the Stripe Billing platform calls over a recording transport, so a platform answer goes through the real mapping.
 	 *
-	 * @param FakeWooPaymentsHttpClient $http_client Recording transport.
+	 * @param FakeHttpClient $http_client Recording transport.
 	 */
-	private function build_migrator_over_the_platform( FakeWooPaymentsHttpClient $http_client ): void {
+	private function build_migrator_over_the_platform( FakeHttpClient $http_client ): void {
 		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'is_test_mode_enabled' ) )
 			->getMock();
 		$account_service->method( 'is_test_mode_enabled' )->willReturn( true );
-		$api_client = new WooPaymentsApiClient();
-		$api_client->init( $http_client, $account_service, wc_get_container()->get( WooPaymentsTransportLog::class ) );
+		$api_client = new Client();
+		$api_client->init( $http_client, $account_service, wc_get_container()->get( TransportLog::class ) );
 		$api = new StripeBillingApi();
 		$api->init( $api_client );
 		$this->reset_container_resolutions();

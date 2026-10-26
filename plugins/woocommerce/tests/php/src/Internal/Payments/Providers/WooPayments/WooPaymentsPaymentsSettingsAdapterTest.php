@@ -8,7 +8,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\OnboardingRedirect;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Onboarding\WooPaymentsOnboardingService;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\PaymentGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDatabaseCache;
@@ -287,9 +287,9 @@ class WooPaymentsPaymentsSettingsAdapterTest extends WC_Unit_Test_Case {
 			)
 		);
 		// A connected store: without a connection the account read returns no account, like the client.
-		$connected_api_client = $this->createMock( WooPaymentsApiClient::class );
+		$connected_api_client = $this->createMock( Client::class );
 		$connected_api_client->method( 'is_available' )->willReturn( true );
-		wc_get_container()->replace( WooPaymentsApiClient::class, $connected_api_client );
+		wc_get_container()->replace( Client::class, $connected_api_client );
 
 		self::assertTrue( $this->adapter->has_account( $this->payment_gateway_provider ) );
 		self::assertTrue( $this->adapter->has_valid_account( $this->payment_gateway_provider ) );
@@ -579,7 +579,7 @@ class WooPaymentsPaymentsSettingsAdapterTest extends WC_Unit_Test_Case {
 	 * @param bool $available Whether the platform connection is available.
 	 */
 	private function set_adapter_api_client( bool $available ): void {
-		$api_client = $this->createMock( WooPaymentsApiClient::class );
+		$api_client = $this->createMock( Client::class );
 		$api_client->method( 'is_available' )->willReturn( $available );
 		$this->set_adapter_property( 'api_client', $api_client );
 	}

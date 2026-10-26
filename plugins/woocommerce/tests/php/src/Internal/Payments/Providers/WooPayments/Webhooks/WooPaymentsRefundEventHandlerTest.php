@@ -17,7 +17,7 @@ use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\PaymentProcessingService;
 use Automattic\WooCommerce\Internal\Payments\RefundRowCapture;
 use Automattic\WooCommerce\Internal\Payments\ProviderOperationEffectApplierInterface;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsHtmlUtils;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffectApplier;
@@ -1733,8 +1733,8 @@ class WooPaymentsRefundEventHandlerTest extends WC_Unit_Test_Case {
 			)
 		);
 		wc_get_container()->replace(
-			WooPaymentsApiClient::class,
-			new class() extends WooPaymentsApiClient {
+			Client::class,
+			new class() extends Client {
 				/**
 				 * Report the platform as connected, so the account service reads the cached account.
 				 *

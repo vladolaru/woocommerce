@@ -23,43 +23,43 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Services\RequestContext;
 use Automattic\WooCommerce\Tests\Internal\MultiCurrency\ServiceFactories;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\SelectedCurrencyPersistenceService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilder;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsTransportLog;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\TransportLog;
 use Automattic\WooCommerce\Internal\Payments\TransientRowLock;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsActivatePmPromotionRequest;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiRequest;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsGetAccountCapitalLinkRequest;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsGetPmPromotionsRequest;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsHttpClient;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ActivatePmPromotionRequest;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Request;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\GetAccountCapitalLinkRequest;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\GetPmPromotionsRequest;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\HttpClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionsController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayEligibility;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayOrderStatusSync;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsAuthorizationsListRequest;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\AuthorizationsListRequest;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAuthorizationsRestController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCheckoutAssets;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDatabaseCache;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsDepositsListRequest;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\DepositsListRequest;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDepositsRestController;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsDisputesListRequest;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\DisputesListRequest;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDisputesRestController;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsDocumentsListRequest;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\DocumentsListRequest;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsEventIngestor;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExpressCheckoutService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsFraudOutcomeTransactionsListRequest;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\FraudOutcomeTransactionsListRequest;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendTrackingController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentRequestBuilder;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTerminalPaymentsRestController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderSuccessPage;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsTransactionsListRequest;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\TransactionsListRequest;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTransactionsRestController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPaySessionController;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Fixtures\RecordedPublicFraudServices;
@@ -112,7 +112,7 @@ class WooPaymentsHookArityContractTest extends WC_Unit_Test_Case {
 
 	/**
 	 * The `api`/`method` argument values `probe_api_transport()` drives, via
-	 * `WooPaymentsApiClient::get_disputes( array() )` (`self::DISPUTES_API = 'disputes'`, method
+	 * `Client::get_disputes( array() )` (`self::DISPUTES_API = 'disputes'`, method
 	 * `'GET'`). `wcpay_api_request_params` fires as `apply_filters( 'wcpay_api_request_params',
 	 * $params, $api, $method )`, so a same-type swap of `$api` and `$method` (both strings) passes a
 	 * type check but fails this exact-value one.
@@ -134,16 +134,16 @@ class WooPaymentsHookArityContractTest extends WC_Unit_Test_Case {
 	 * @var array<string,class-string>
 	 */
 	private const WOOPAYMENTS_EXTENSION_REQUEST_TYPES = array(
-		'WCPay\Core\Server\Request\Get_Request'           => WooPaymentsApiRequest::class, // class-get-request.php.
-		'WCPay\Core\Server\Request\Get_PM_Promotions'     => WooPaymentsGetPmPromotionsRequest::class, // class-get-pm-promotions.php.
-		'WCPay\Core\Server\Request\Activate_PM_Promotion' => WooPaymentsActivatePmPromotionRequest::class, // class-activate-pm-promotion.php.
-		'WCPay\Core\Server\Request\Get_Account_Capital_Link' => WooPaymentsGetAccountCapitalLinkRequest::class, // class-get-account-capital-link.php.
-		'WCPay\Core\Server\Request\List_Authorizations'   => WooPaymentsAuthorizationsListRequest::class, // class-list-authorizations.php.
-		'WCPay\Core\Server\Request\List_Deposits'         => WooPaymentsDepositsListRequest::class, // class-list-deposits.php.
-		'WCPay\Core\Server\Request\List_Disputes'         => WooPaymentsDisputesListRequest::class, // class-list-disputes.php.
-		'WCPay\Core\Server\Request\List_Documents'        => WooPaymentsDocumentsListRequest::class, // class-list-documents.php.
-		'WCPay\Core\Server\Request\List_Fraud_Outcome_Transactions' => WooPaymentsFraudOutcomeTransactionsListRequest::class, // class-list-fraud-outcome-transactions.php.
-		'WCPay\Core\Server\Request\List_Transactions'     => WooPaymentsTransactionsListRequest::class, // class-list-transactions.php.
+		'WCPay\Core\Server\Request\Get_Request'           => Request::class, // class-get-request.php.
+		'WCPay\Core\Server\Request\Get_PM_Promotions'     => GetPmPromotionsRequest::class, // class-get-pm-promotions.php.
+		'WCPay\Core\Server\Request\Activate_PM_Promotion' => ActivatePmPromotionRequest::class, // class-activate-pm-promotion.php.
+		'WCPay\Core\Server\Request\Get_Account_Capital_Link' => GetAccountCapitalLinkRequest::class, // class-get-account-capital-link.php.
+		'WCPay\Core\Server\Request\List_Authorizations'   => AuthorizationsListRequest::class, // class-list-authorizations.php.
+		'WCPay\Core\Server\Request\List_Deposits'         => DepositsListRequest::class, // class-list-deposits.php.
+		'WCPay\Core\Server\Request\List_Disputes'         => DisputesListRequest::class, // class-list-disputes.php.
+		'WCPay\Core\Server\Request\List_Documents'        => DocumentsListRequest::class, // class-list-documents.php.
+		'WCPay\Core\Server\Request\List_Fraud_Outcome_Transactions' => FraudOutcomeTransactionsListRequest::class, // class-list-fraud-outcome-transactions.php.
+		'WCPay\Core\Server\Request\List_Transactions'     => TransactionsListRequest::class, // class-list-transactions.php.
 	);
 
 	/**
@@ -170,9 +170,9 @@ class WooPaymentsHookArityContractTest extends WC_Unit_Test_Case {
 	 * Put native into the `active` state for the duration of one test (D9), and replace the WPCOM
 	 * transport with a connected, canned-response double so API-client probe groups reach their hook
 	 * instead of failing pre-flight on "site is not connected to WordPress.com" or making a real
-	 * network call. Every probed group that goes through `WooPaymentsApiClient` (directly or via a
+	 * network call. Every probed group that goes through `Client` (directly or via a
 	 * REST controller) resolves the client through the DI container, so replacing its
-	 * `WooPaymentsHttpClient` collaborator here covers all of them uniformly.
+	 * `HttpClient` collaborator here covers all of them uniformly.
 	 */
 	public function setUp(): void {
 		parent::setUp();
@@ -183,16 +183,16 @@ class WooPaymentsHookArityContractTest extends WC_Unit_Test_Case {
 		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 		wc_get_container()->get( WooPaymentsSetupTier::class )->invalidate();
 
-		wc_get_container()->replace( WooPaymentsHttpClient::class, $this->fake_http_client() );
+		wc_get_container()->replace( HttpClient::class, $this->fake_http_client() );
 		wc_get_container()->reset_all_resolved();
 	}
 
 	/**
-	 * A `WooPaymentsHttpClient` double reporting a connected site and returning a canned successful
+	 * A `HttpClient` double reporting a connected site and returning a canned successful
 	 * transport response for any request.
 	 */
-	private function fake_http_client(): WooPaymentsHttpClient {
-		return new class() extends WooPaymentsHttpClient {
+	private function fake_http_client(): HttpClient {
+		return new class() extends HttpClient {
 			/**
 			 * @return bool
 			 */
@@ -493,10 +493,10 @@ class WooPaymentsHookArityContractTest extends WC_Unit_Test_Case {
 
 	/**
 	 * Group `api_transport` (3 hooks): the API client's request-building and response-handling
-	 * surrounding path, via a disputes list call over the class-level `WooPaymentsHttpClient` double.
+	 * surrounding path, via a disputes list call over the class-level `HttpClient` double.
 	 */
 	private function probe_api_transport(): void {
-		$api_client = wc_get_container()->get( WooPaymentsApiClient::class );
+		$api_client = wc_get_container()->get( Client::class );
 		$this->run_ignoring_non_probe_errors( static fn() => $api_client->get_disputes( array() ) );
 	}
 
@@ -519,7 +519,7 @@ class WooPaymentsHookArityContractTest extends WC_Unit_Test_Case {
 	 * Group `api_promotions` (2 hooks): PM promotions API client calls.
 	 */
 	private function probe_api_promotions(): void {
-		$api_client = wc_get_container()->get( WooPaymentsApiClient::class );
+		$api_client = wc_get_container()->get( Client::class );
 
 		$this->run_ignoring_non_probe_errors(
 			static fn() => $api_client->get_pm_promotions(
@@ -537,7 +537,7 @@ class WooPaymentsHookArityContractTest extends WC_Unit_Test_Case {
 	 * client calls.
 	 */
 	private function probe_api_authorizations(): void {
-		$api_client = wc_get_container()->get( WooPaymentsApiClient::class );
+		$api_client = wc_get_container()->get( Client::class );
 
 		$this->run_ignoring_non_probe_errors( static fn() => $api_client->get_authorization( 'pi_hook_shape' ) );
 		$this->run_ignoring_non_probe_errors( static fn() => $api_client->get_authorizations_summary() );
@@ -547,7 +547,7 @@ class WooPaymentsHookArityContractTest extends WC_Unit_Test_Case {
 	 * Group `api_documents` (1 hook): documents list API client call.
 	 */
 	private function probe_api_documents(): void {
-		$api_client = wc_get_container()->get( WooPaymentsApiClient::class );
+		$api_client = wc_get_container()->get( Client::class );
 		$this->run_ignoring_non_probe_errors( static fn() => $api_client->get_documents( array( 'pagesize' => 1 ) ) );
 	}
 
@@ -555,7 +555,7 @@ class WooPaymentsHookArityContractTest extends WC_Unit_Test_Case {
 	 * Group `api_vat` (1 hook): VAT validation API client call.
 	 */
 	private function probe_api_vat(): void {
-		$api_client = wc_get_container()->get( WooPaymentsApiClient::class );
+		$api_client = wc_get_container()->get( Client::class );
 		$this->run_ignoring_non_probe_errors( static fn() => $api_client->validate_vat( 'EU123456789' ) );
 	}
 
@@ -563,7 +563,7 @@ class WooPaymentsHookArityContractTest extends WC_Unit_Test_Case {
 	 * Group `api_capital` (3 hooks): capital summary, loans and capital-link API client calls.
 	 */
 	private function probe_api_capital(): void {
-		$api_client = wc_get_container()->get( WooPaymentsApiClient::class );
+		$api_client = wc_get_container()->get( Client::class );
 
 		$this->run_ignoring_non_probe_errors( static fn() => $api_client->get_capital_active_loan_summary() );
 		$this->run_ignoring_non_probe_errors( static fn() => $api_client->get_capital_loans() );
@@ -574,13 +574,13 @@ class WooPaymentsHookArityContractTest extends WC_Unit_Test_Case {
 	 * Group `api_disputes` (1 hook): dispute status counts API client call.
 	 */
 	private function probe_api_disputes(): void {
-		$api_client = wc_get_container()->get( WooPaymentsApiClient::class );
+		$api_client = wc_get_container()->get( Client::class );
 		$this->run_ignoring_non_probe_errors( static fn() => $api_client->get_dispute_status_counts() );
 	}
 
 	/**
 	 * Run a probe callable, letting a `WooPaymentsHookArityProbeReached` propagate (that is the
-	 * success path) while swallowing any other exception the canned `WooPaymentsHttpClient` double's
+	 * success path) while swallowing any other exception the canned `HttpClient` double's
 	 * response provokes downstream of the probed hook (the probe only needs execution to reach the
 	 * hook, not to complete cleanly afterward).
 	 *
@@ -774,7 +774,7 @@ class WooPaymentsHookArityContractTest extends WC_Unit_Test_Case {
 		$token = new WC_Payment_Token_CC();
 		$token->set_token( 'pm_hook_shape' );
 
-		$api_client = $this->createStub( WooPaymentsApiClient::class );
+		$api_client = $this->createStub( Client::class );
 		$api_client->method( 'get_setup_intention' )->willReturn(
 			array(
 				'id'             => 'seti_hook_shape',
@@ -785,7 +785,7 @@ class WooPaymentsHookArityContractTest extends WC_Unit_Test_Case {
 		);
 		// `is_available()` (called by fraud-prevention gating ahead of the probed filter) is not
 		// stubbed, so it still needs its real collaborators initialized.
-		$api_client->init( $this->fake_http_client(), wc_get_container()->get( WooPaymentsAccountService::class ), wc_get_container()->get( WooPaymentsTransportLog::class ) );
+		$api_client->init( $this->fake_http_client(), wc_get_container()->get( WooPaymentsAccountService::class ), wc_get_container()->get( TransportLog::class ) );
 
 		$customer_service = $this->createStub( WooPaymentsCustomerService::class );
 		$customer_service->method( 'migrate_and_get_customer_id' )->willReturn( 'cus_hook_shape' );
@@ -793,7 +793,7 @@ class WooPaymentsHookArityContractTest extends WC_Unit_Test_Case {
 		$token_service = $this->createStub( WooPaymentsTokenService::class );
 		$token_service->method( 'get_or_create_token_for_user' )->willReturn( $token );
 
-		wc_get_container()->replace( WooPaymentsApiClient::class, $api_client );
+		wc_get_container()->replace( Client::class, $api_client );
 		wc_get_container()->replace( WooPaymentsCustomerService::class, $customer_service );
 		wc_get_container()->replace( WooPaymentsTokenService::class, $token_service );
 		wc_get_container()->reset_all_resolved();
@@ -905,7 +905,7 @@ class WooPaymentsHookArityContractTest extends WC_Unit_Test_Case {
 		$woopay_eligibility->method( 'is_woopay_enabled' )->willReturn( true );
 		$container = wc_get_container();
 		$sync      = new WooPaymentsWooPayOrderStatusSync();
-		$sync->init( $container->get( WooPaymentsRuntimeArbiter::class ), $woopay_eligibility, $container->get( WooPaymentsApiClient::class ), $container->get( TransientRowLock::class ), $container->get( WooPaymentsAccountService::class ) );
+		$sync->init( $container->get( WooPaymentsRuntimeArbiter::class ), $woopay_eligibility, $container->get( Client::class ), $container->get( TransientRowLock::class ), $container->get( WooPaymentsAccountService::class ) );
 		$sync->send_webhook( $order->get_id(), 'pending', 'processing' );
 	}
 
@@ -913,7 +913,7 @@ class WooPaymentsHookArityContractTest extends WC_Unit_Test_Case {
 	 * Group `onboarding` (1 hook): the account-onboarding-initialization API client call.
 	 */
 	private function probe_onboarding(): void {
-		$api_client = wc_get_container()->get( WooPaymentsApiClient::class );
+		$api_client = wc_get_container()->get( Client::class );
 		$this->run_ignoring_non_probe_errors( static fn() => $api_client->initialize_onboarding( false, 'http://localhost/hook-shape-return' ) );
 	}
 
@@ -924,11 +924,11 @@ class WooPaymentsHookArityContractTest extends WC_Unit_Test_Case {
 	 * payload is returned without a real network call.
 	 */
 	private function probe_account_refresh(): void {
-		$api_client = $this->createStub( WooPaymentsApiClient::class );
+		$api_client = $this->createStub( Client::class );
 		$api_client->method( 'is_available' )->willReturn( true );
 		$api_client->method( 'get_account' )->willReturn( array() );
 
-		wc_get_container()->replace( WooPaymentsApiClient::class, $api_client );
+		wc_get_container()->replace( Client::class, $api_client );
 		wc_get_container()->reset_all_resolved();
 
 		$service = wc_get_container()->get( WooPaymentsAccountService::class );

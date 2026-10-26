@@ -5,7 +5,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDuplicatePaymentPreventionService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeeDetailsNoteController;
@@ -198,7 +198,7 @@ class WooPaymentsDuplicatePaymentPreventionServiceTest extends WC_Unit_Test_Case
 	 * @testdox Should ignore orders without an attached PaymentIntent ID.
 	 */
 	public function test_check_payment_intent_attached_to_order_succeeded_ignores_missing_or_setup_intents(): void {
-		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
+		$api_client = $this->getMockBuilder( Client::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'get_payment_intention' ) )
 			->getMock();
@@ -219,7 +219,7 @@ class WooPaymentsDuplicatePaymentPreventionServiceTest extends WC_Unit_Test_Case
 	 */
 	public function test_attached_intent_fetch_failure_log_leaves_out_platform_text(): void {
 		self::enable_woopayments_debug_logging();
-		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
+		$api_client = $this->getMockBuilder( Client::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'get_payment_intention' ) )
 			->getMock();
@@ -248,7 +248,7 @@ class WooPaymentsDuplicatePaymentPreventionServiceTest extends WC_Unit_Test_Case
 		$order->save();
 		$session->set( WooPaymentsDuplicatePaymentPreventionService::SESSION_KEY_PROCESSING_ORDER, $order->get_id() );
 
-		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
+		$api_client = $this->getMockBuilder( Client::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'get_payment_intention' ) )
 			->getMock();
@@ -302,7 +302,7 @@ class WooPaymentsDuplicatePaymentPreventionServiceTest extends WC_Unit_Test_Case
 				),
 			),
 		);
-		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
+		$api_client = $this->getMockBuilder( Client::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'get_payment_intention' ) )
 			->getMock();
@@ -329,7 +329,7 @@ class WooPaymentsDuplicatePaymentPreventionServiceTest extends WC_Unit_Test_Case
 		$order = $this->create_order( 'hash', 'pending' );
 		$order->update_meta_data( '_intent_id', 'pi_existing' );
 		$order->save();
-		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
+		$api_client = $this->getMockBuilder( Client::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'get_payment_intention' ) )
 			->getMock();
@@ -387,7 +387,7 @@ class WooPaymentsDuplicatePaymentPreventionServiceTest extends WC_Unit_Test_Case
 		$order->update_meta_data( '_intent_id', 'pi_existing' );
 		$order->save();
 
-		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
+		$api_client = $this->getMockBuilder( Client::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'get_payment_intention' ) )
 			->getMock();
@@ -421,7 +421,7 @@ class WooPaymentsDuplicatePaymentPreventionServiceTest extends WC_Unit_Test_Case
 		$order->update_meta_data( '_intent_id', 'pi_existing' );
 		$order->save();
 
-		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
+		$api_client = $this->getMockBuilder( Client::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'get_payment_intention' ) )
 			->getMock();
@@ -471,7 +471,7 @@ class WooPaymentsDuplicatePaymentPreventionServiceTest extends WC_Unit_Test_Case
 		$intent                         = $this->create_intent_response( $order, $intent_status, 1200 );
 		$intent['metadata']['order_id'] = $use_current_order_id ? (string) $order->get_id() : (string) ( $order->get_id() + 1 );
 
-		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
+		$api_client = $this->getMockBuilder( Client::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'get_payment_intention' ) )
 			->getMock();
@@ -751,10 +751,10 @@ class WooPaymentsDuplicatePaymentPreventionServiceTest extends WC_Unit_Test_Case
 	 * An API client answering the attached-intent fetch, which must never charge.
 	 *
 	 * @param array<string,mixed> $intent Intent the fetch returns.
-	 * @return WooPaymentsApiClient
+	 * @return Client
 	 */
-	private function create_api_client_answering( array $intent ): WooPaymentsApiClient {
-		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
+	private function create_api_client_answering( array $intent ): Client {
+		$api_client = $this->getMockBuilder( Client::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'get_payment_intention', 'create_and_confirm_payment_intention' ) )
 			->getMock();
@@ -859,14 +859,14 @@ class WooPaymentsDuplicatePaymentPreventionServiceTest extends WC_Unit_Test_Case
 	 * Create a duplicate-payment prevention service.
 	 *
 	 * @param \WC_Session|null                         $session                     Optional WooCommerce session.
-	 * @param WooPaymentsApiClient|null                $api_client                  Optional API client.
+	 * @param Client|null                              $api_client                  Optional API client.
 	 * @param WooPaymentsFeeDetailsNoteController|null $fee_details_note_controller Optional Fee details note controller, which applies the lifecycle event.
 	 * @return WooPaymentsDuplicatePaymentPreventionService
 	 */
-	private function create_service( ?\WC_Session $session = null, ?WooPaymentsApiClient $api_client = null, ?WooPaymentsFeeDetailsNoteController $fee_details_note_controller = null ): WooPaymentsDuplicatePaymentPreventionService {
+	private function create_service( ?\WC_Session $session = null, ?Client $api_client = null, ?WooPaymentsFeeDetailsNoteController $fee_details_note_controller = null ): WooPaymentsDuplicatePaymentPreventionService {
 		$service = new WooPaymentsDuplicatePaymentPreventionService( $session ?? $this->create_session() );
 		$service->init(
-			$api_client ?? $this->createStub( WooPaymentsApiClient::class ),
+			$api_client ?? $this->createStub( Client::class ),
 			wc_get_container()->get( OrderPaymentLifecycleService::class ),
 			$this->create_intent_confirmation_service( $fee_details_note_controller )
 		);
@@ -883,7 +883,7 @@ class WooPaymentsDuplicatePaymentPreventionServiceTest extends WC_Unit_Test_Case
 	private function create_intent_confirmation_service( ?WooPaymentsFeeDetailsNoteController $fee_details_note_controller ): WooPaymentsIntentConfirmationService {
 		$service = new WooPaymentsIntentConfirmationService();
 		$service->init(
-			wc_get_container()->get( WooPaymentsApiClient::class ),
+			wc_get_container()->get( Client::class ),
 			$fee_details_note_controller ?? wc_get_container()->get( WooPaymentsFeeDetailsNoteController::class ),
 			wc_get_container()->get( WooPaymentsTokenService::class ),
 			wc_get_container()->get( WooPaymentsAccountService::class ),

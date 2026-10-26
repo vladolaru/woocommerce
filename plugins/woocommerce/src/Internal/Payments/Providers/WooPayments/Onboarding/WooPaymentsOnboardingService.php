@@ -12,8 +12,8 @@ use Automattic\WooCommerce\Admin\Notes\DataStore as NotesDataStore;
 use Automattic\WooCommerce\Admin\Notes\Note;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsService;
 use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountMilestonesController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
@@ -56,9 +56,9 @@ class WooPaymentsOnboardingService {
 	/**
 	 * The WooPayments API client.
 	 *
-	 * @var WooPaymentsApiClient|null
+	 * @var Client|null
 	 */
-	private ?WooPaymentsApiClient $api_client = null;
+	private ?Client $api_client = null;
 
 	/**
 	 * The WooPayments account service.
@@ -99,7 +99,7 @@ class WooPaymentsOnboardingService {
 	public function init_test_account( string $location, array $capabilities ) {
 		try {
 			return $this->init_test_drive_account( $location, $capabilities );
-		} catch ( WooPaymentsApiException $e ) {
+		} catch ( ApiException $e ) {
 			return $this->get_wp_error_from_api_exception( $e, esc_html__( 'An unexpected error happened while initializing the test account.', 'woocommerce' ) );
 		}
 	}
@@ -115,7 +115,7 @@ class WooPaymentsOnboardingService {
 	public function create_kyc_session( bool $is_dev_mode, array $self_assessment, array $capabilities ) {
 		try {
 			return $this->create_embedded_kyc_session( $is_dev_mode, $self_assessment, $capabilities );
-		} catch ( WooPaymentsApiException $e ) {
+		} catch ( ApiException $e ) {
 			return $this->get_wp_error_from_api_exception( $e, esc_html__( 'An unexpected error happened while creating the KYC session.', 'woocommerce' ) );
 		}
 	}
@@ -129,7 +129,7 @@ class WooPaymentsOnboardingService {
 	public function finish_kyc_session( string $source ) {
 		try {
 			return $this->finalize_embedded_kyc( $source );
-		} catch ( WooPaymentsApiException $e ) {
+		} catch ( ApiException $e ) {
 			return $this->get_wp_error_from_api_exception( $e, esc_html__( 'An unexpected error happened while finalizing the KYC session.', 'woocommerce' ) );
 		}
 	}
@@ -142,7 +142,7 @@ class WooPaymentsOnboardingService {
 	public function reset_onboarding() {
 		try {
 			return $this->delete_account( $this->is_onboarding_test_mode_enabled() );
-		} catch ( WooPaymentsApiException $e ) {
+		} catch ( ApiException $e ) {
 			return $this->get_wp_error_from_api_exception( $e, esc_html__( 'An unexpected error happened while resetting onboarding.', 'woocommerce' ) );
 		}
 	}
@@ -163,7 +163,7 @@ class WooPaymentsOnboardingService {
 			}
 
 			return $this->delete_account( $this->is_onboarding_test_mode_enabled() );
-		} catch ( WooPaymentsApiException $e ) {
+		} catch ( ApiException $e ) {
 			return $this->get_wp_error_from_api_exception( $e, esc_html__( 'An unexpected error happened while disabling the test account.', 'woocommerce' ) );
 		}
 	}
@@ -403,7 +403,7 @@ class WooPaymentsOnboardingService {
 	 *
 	 * @param string $source Onboarding source.
 	 * @return array
-	 * @throws WooPaymentsApiException When the platform did not finalize the session.
+	 * @throws ApiException When the platform did not finalize the session.
 	 */
 	private function finalize_embedded_kyc( string $source ): array {
 		$response = $this->get_api_client()->finalize_onboarding_embedded_kyc(
@@ -413,7 +413,7 @@ class WooPaymentsOnboardingService {
 		);
 
 		if ( empty( $response['success'] ) ) {
-			throw new WooPaymentsApiException( esc_html__( 'Failed to finalize onboarding session.', 'woocommerce' ), 'wcpay-onboarding-finalize-error', 400 );
+			throw new ApiException( esc_html__( 'Failed to finalize onboarding session.', 'woocommerce' ), 'wcpay-onboarding-finalize-error', 400 );
 		}
 
 		$mode    = isset( $response['mode'] ) && is_scalar( $response['mode'] ) ? (string) $response['mode'] : '';
@@ -749,14 +749,14 @@ class WooPaymentsOnboardingService {
 	 *
 	 * @param bool $test_mode Whether to delete a test-mode account.
 	 * @return array
-	 * @throws WooPaymentsApiException When account deletion fails.
+	 * @throws ApiException When account deletion fails.
 	 */
 	private function delete_account( bool $test_mode ): array {
 		$this->get_account_service()->overwrite_cache_with_no_account();
 
 		try {
 			$response = $this->get_api_client()->delete_account( $test_mode );
-		} catch ( WooPaymentsApiException $e ) {
+		} catch ( ApiException $e ) {
 			$this->get_account_service()->clear_cache();
 			throw $e;
 		}
@@ -785,11 +785,11 @@ class WooPaymentsOnboardingService {
 	/**
 	 * Get the WooPayments API client, resolved on first use.
 	 *
-	 * @return WooPaymentsApiClient
+	 * @return Client
 	 */
-	private function get_api_client(): WooPaymentsApiClient {
+	private function get_api_client(): Client {
 		if ( null === $this->api_client ) {
-			$this->api_client = wc_get_container()->get( WooPaymentsApiClient::class );
+			$this->api_client = wc_get_container()->get( Client::class );
 		}
 
 		return $this->api_client;
@@ -1234,11 +1234,11 @@ class WooPaymentsOnboardingService {
 	 * (client 11.1.0 `includes/admin/class-wc-rest-payments-onboarding-controller.php:370-385`), so callers
 	 * can tell non-recoverable errors from transient ones.
 	 *
-	 * @param WooPaymentsApiException $exception        API exception.
-	 * @param string                  $fallback_message Fallback error message.
+	 * @param ApiException $exception        API exception.
+	 * @param string       $fallback_message Fallback error message.
 	 * @return WP_Error
 	 */
-	private function get_wp_error_from_api_exception( WooPaymentsApiException $exception, string $fallback_message ): WP_Error {
+	private function get_wp_error_from_api_exception( ApiException $exception, string $fallback_message ): WP_Error {
 		$error_code    = $exception->get_error_code();
 		$error_message = $exception->getMessage();
 

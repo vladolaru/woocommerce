@@ -3,8 +3,8 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDatabaseCache;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDocumentsRestController;
@@ -359,7 +359,7 @@ class WooPaymentsDocumentsRestControllerTest extends WC_REST_Unit_Test_Case {
 	 */
 	public function test_get_document_failure_shows_the_document_error_page(): void {
 		// The platform's answer for a missing document (wpcom class-documents-controller.php:259-263), with markup a message could carry.
-		$this->api_client->exception = new WooPaymentsApiException( 'Document <b>not</b> found.', 'wcpay_document_not_found', 404 );
+		$this->api_client->exception = new ApiException( 'Document <b>not</b> found.', 'wcpay_document_not_found', 404 );
 		$request                     = new WP_REST_Request( 'GET', '/wc/v3/payments/documents/vat_invoice-123' );
 		$request->set_param( 'document_id', 'vat_invoice-123' );
 		$die = array();
@@ -549,7 +549,7 @@ class WooPaymentsDocumentsRestControllerTest extends WC_REST_Unit_Test_Case {
 	 * @param int    $expected_status Expected REST error status.
 	 */
 	public function test_api_exceptions_become_rest_errors( int $http_code, string $code, string $message, int $expected_status ): void {
-		$this->api_client->exception = new WooPaymentsApiException( $message, $code, $http_code );
+		$this->api_client->exception = new ApiException( $message, $code, $http_code );
 
 		$response = $this->sut->get_documents( new WP_REST_Request( 'GET', '/wc/v3/payments/documents' ) );
 
@@ -611,33 +611,33 @@ class WooPaymentsDocumentsRestControllerTest extends WC_REST_Unit_Test_Case {
 	/**
 	 * Create an account service that reads the account cache through the given platform client.
 	 *
-	 * @param WooPaymentsApiClient $platform Platform API client.
+	 * @param Client $platform Platform API client.
 	 * @return WooPaymentsAccountService
 	 */
-	private function create_account_service( WooPaymentsApiClient $platform ): WooPaymentsAccountService {
+	private function create_account_service( Client $platform ): WooPaymentsAccountService {
 		$account_service = new class( $platform ) extends WooPaymentsAccountService {
 			/**
 			 * Platform API client.
 			 *
-			 * @var WooPaymentsApiClient
+			 * @var Client
 			 */
-			private WooPaymentsApiClient $platform;
+			private Client $platform;
 
 			/**
 			 * Constructor.
 			 *
-			 * @param WooPaymentsApiClient $platform Platform API client.
+			 * @param Client $platform Platform API client.
 			 */
-			public function __construct( WooPaymentsApiClient $platform ) {
+			public function __construct( Client $platform ) {
 				$this->platform = $platform;
 			}
 
 			/**
 			 * Get the platform API client.
 			 *
-			 * @return WooPaymentsApiClient
+			 * @return Client
 			 */
-			protected function get_api_client(): WooPaymentsApiClient {
+			protected function get_api_client(): Client {
 				return $this->platform;
 			}
 		};
@@ -651,10 +651,10 @@ class WooPaymentsDocumentsRestControllerTest extends WC_REST_Unit_Test_Case {
 	/**
 	 * Create a platform API client whose connection starts unavailable.
 	 *
-	 * @return WooPaymentsApiClient
+	 * @return Client
 	 */
-	private function create_platform_api_client(): WooPaymentsApiClient {
-		return new class() extends WooPaymentsApiClient {
+	private function create_platform_api_client(): Client {
+		return new class() extends Client {
 			/**
 			 * Whether the platform connection reads as available.
 			 *

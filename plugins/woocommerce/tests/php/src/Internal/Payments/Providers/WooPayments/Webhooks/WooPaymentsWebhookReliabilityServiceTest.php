@@ -6,8 +6,8 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\W
 use ActionScheduler;
 use ActionScheduler_Store;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLockRefusedException;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsActionSchedulerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsEventIngestor;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\WooPaymentsStripeBillingModule;
@@ -126,7 +126,7 @@ class WooPaymentsWebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_fetch_after_a_failure_records_its_time(): void {
 		update_option( self::EXPECTED_LAST_FETCH_OPTION, 1700000000, false );
-		$client  = new class() extends WooPaymentsApiClient {
+		$client  = new class() extends Client {
 			/**
 			 * Calls made so far.
 			 *
@@ -138,12 +138,12 @@ class WooPaymentsWebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 			 * Fail on the first call, as during a platform outage, then answer with an empty page.
 			 *
 			 * @return array<string,mixed>
-			 * @throws WooPaymentsApiException On the first call.
+			 * @throws ApiException On the first call.
 			 */
 			public function get_failed_webhook_events(): array {
 				++$this->calls;
 				if ( 1 === $this->calls ) {
-					throw new WooPaymentsApiException( 'Service unavailable.', 'wcpay_server_error', 503 );
+					throw new ApiException( 'Service unavailable.', 'wcpay_server_error', 503 );
 				}
 
 				// Page shape of the platform's failed-events list (wpcom class-webhook-controller.php:346-357).
@@ -168,16 +168,16 @@ class WooPaymentsWebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_failed_fetch_does_not_record_a_fetch_time(): void {
 		update_option( self::EXPECTED_LAST_FETCH_OPTION, 1700000000, false );
-		$client  = new class() extends WooPaymentsApiClient {
+		$client  = new class() extends Client {
 			/**
 			 * Fail as the platform does when it cannot answer.
 			 *
 			 * @return array<string,mixed>
-			 * @throws WooPaymentsApiException Always, while the platform is down.
+			 * @throws ApiException Always, while the platform is down.
 			 */
 			public function get_failed_webhook_events(): array {
 				if ( 0 < time() ) {
-					throw new WooPaymentsApiException( 'Service unavailable.', 'wcpay_server_error', 503 );
+					throw new ApiException( 'Service unavailable.', 'wcpay_server_error', 503 );
 				}
 
 				return array();
@@ -240,12 +240,12 @@ class WooPaymentsWebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 	 *
 	 * @dataProvider provider_fetch_failures
 	 *
-	 * @param WooPaymentsApiException $failure         Error the API client throws.
-	 * @param int                     $expected_status Logged HTTP status.
-	 * @param string                  $expected_code   Logged error code.
+	 * @param ApiException $failure         Error the API client throws.
+	 * @param int          $expected_status Logged HTTP status.
+	 * @param string       $expected_code   Logged error code.
 	 */
-	public function test_fetch_failure_log_leaves_out_platform_text( WooPaymentsApiException $failure, int $expected_status, string $expected_code ): void {
-		$api_client = $this->createMock( WooPaymentsApiClient::class );
+	public function test_fetch_failure_log_leaves_out_platform_text( ApiException $failure, int $expected_status, string $expected_code ): void {
+		$api_client = $this->createMock( Client::class );
 		$api_client->method( 'get_failed_webhook_events' )->willThrowException( $failure );
 		$scheduler = new RecordingActionSchedulerService();
 		$service   = $this->create_service( $scheduler, $api_client, new RecordingEventIngestor() );
@@ -263,11 +263,11 @@ class WooPaymentsWebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * Platform errors the failed-events fetch can meet.
 	 *
-	 * @return array<string,array{0:WooPaymentsApiException,1:int,2:string}>
+	 * @return array<string,array{0:ApiException,1:int,2:string}>
 	 */
 	public function provider_fetch_failures(): array {
 		return array(
-			'server error'                => array( new WooPaymentsApiException( 'Remote fetch failed.', 'wcpay_failed_events_unavailable', 500 ), 500, 'unknown_error' ),
+			'server error'                => array( new ApiException( 'Remote fetch failed.', 'wcpay_failed_events_unavailable', 500 ), 500, 'unknown_error' ),
 			'error carrying shopper text' => array( self::make_provider_error(), 404, 'resource_missing' ),
 		);
 	}
@@ -773,7 +773,7 @@ class WooPaymentsWebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 		try {
 			$service->process_event( 'evt_exhausted' );
 			$this->fail( 'The last failure must still reach Action Scheduler.' );
-		} catch ( WooPaymentsApiException $exception ) {
+		} catch ( ApiException $exception ) {
 			// Only the platform error the ingestor threw: PHPUnit's own failure is a RuntimeException too.
 			unset( $exception );
 		}
@@ -1046,13 +1046,13 @@ class WooPaymentsWebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 	 * Create a reliability service with supplied collaborators.
 	 *
 	 * @param WooPaymentsActionSchedulerService $scheduler  Scheduler service.
-	 * @param WooPaymentsApiClient              $api_client API client that answers the failed-events fetch.
+	 * @param Client                            $api_client API client that answers the failed-events fetch.
 	 * @param WooPaymentsEventIngestor          $ingestor   Event ingestor.
 	 * @return WooPaymentsWebhookReliabilityService
 	 */
 	private function create_service(
 		WooPaymentsActionSchedulerService $scheduler,
-		WooPaymentsApiClient $api_client,
+		Client $api_client,
 		WooPaymentsEventIngestor $ingestor
 	): WooPaymentsWebhookReliabilityService {
 		$service = new WooPaymentsWebhookReliabilityService();

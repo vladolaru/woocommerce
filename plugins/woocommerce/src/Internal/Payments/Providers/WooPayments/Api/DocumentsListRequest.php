@@ -1,6 +1,6 @@
 <?php
 /**
- * WooPaymentsDocumentsListRequest class file.
+ * DocumentsListRequest class file.
  */
 
 declare( strict_types = 1 );
@@ -13,7 +13,7 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api;
  * @since 11.0.0
  * @internal
  */
-class WooPaymentsDocumentsListRequest extends WooPaymentsPaginatedListRequest {
+class DocumentsListRequest extends PaginatedListRequest {
 	/**
 	 * WordPress filter applied when the request is sent.
 	 *

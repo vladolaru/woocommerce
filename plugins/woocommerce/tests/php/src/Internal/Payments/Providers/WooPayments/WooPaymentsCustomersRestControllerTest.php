@@ -3,7 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomersRestController;
@@ -241,7 +241,7 @@ class WooPaymentsCustomersRestControllerTest extends WC_REST_Unit_Test_Case {
 	 * A platform error answers 403 with the success/data body, whatever the platform's status, as the extension's
 	 * wp_send_json_error( $message, 403 ) does (class-wc-rest-payments-customer-controller.php:78-83).
 	 *
-	 * The faked failures are WooPaymentsApiException( message, code, status ), the shape the API client builds from a
+	 * The faked failures are ApiException( message, code, status ), the shape the API client builds from a
 	 * platform error body and its HTTP status.
 	 *
 	 * @testdox Customer payment methods route answers a platform $platform_status error with 403 and the stripped message.
@@ -255,7 +255,7 @@ class WooPaymentsCustomersRestControllerTest extends WC_REST_Unit_Test_Case {
 		$this->account_service->gateway_settings = array(
 			'upe_enabled_payment_method_ids' => array( 'card' ),
 		);
-		$this->customer_service->exception       = new WooPaymentsApiException( 'Forbidden <b>secret</b>.', $platform_code, $platform_status );
+		$this->customer_service->exception       = new ApiException( 'Forbidden <b>secret</b>.', $platform_code, $platform_status );
 		$this->sut->register_routes();
 
 		$response = $this->server->dispatch( new WP_REST_Request( 'GET', '/wc/v3/payments/customers/cus_test/payment_methods' ) );
@@ -333,9 +333,9 @@ class WooPaymentsCustomersRestControllerTest extends WC_REST_Unit_Test_Case {
 			/**
 			 * Optional exception thrown by the next call.
 			 *
-			 * @var WooPaymentsApiException|null
+			 * @var ApiException|null
 			 */
-			public ?WooPaymentsApiException $exception = null;
+			public ?ApiException $exception = null;
 
 			/**
 			 * Retrieve payment methods for a customer.
@@ -343,7 +343,7 @@ class WooPaymentsCustomersRestControllerTest extends WC_REST_Unit_Test_Case {
 			 * @param string $customer_id Customer ID.
 			 * @param string $type        Payment method type.
 			 * @return array<int,array<string,mixed>>
-			 * @throws WooPaymentsApiException When configured.
+			 * @throws ApiException When configured.
 			 */
 			public function get_payment_methods_for_customer( string $customer_id, string $type = 'card' ): array {
 				$this->requests[] = array(

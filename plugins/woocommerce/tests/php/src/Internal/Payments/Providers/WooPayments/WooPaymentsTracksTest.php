@@ -3,7 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDatabaseCache;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTrackingInfoService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTracks;
@@ -126,7 +126,7 @@ class WooPaymentsTracksTest extends WC_Unit_Test_Case {
 	 */
 	public function test_cold_cache_fetches_the_tracking_info_only_where_the_extension_would( string $label, bool $connected, bool $ajax, int $platform_calls, ?string $hosting_provider ): void {
 		unset( $label );
-		$api_client = new class( $connected ) extends WooPaymentsApiClient {
+		$api_client = new class( $connected ) extends Client {
 			/**
 			 * Whether the site is connected.
 			 *

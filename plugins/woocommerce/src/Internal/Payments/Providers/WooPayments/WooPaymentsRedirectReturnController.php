@@ -11,8 +11,8 @@ use Automattic\WooCommerce\Enums\OrderStatus;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
 use Automattic\WooCommerce\Internal\Payments\PaymentLifecycleEvent;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Throwable;
 use WC_Order;
@@ -50,9 +50,9 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 	/**
 	 * WooPayments API client.
 	 *
-	 * @var WooPaymentsApiClient
+	 * @var Client
 	 */
-	private WooPaymentsApiClient $api_client;
+	private Client $api_client;
 
 	/**
 	 * WooPayments token service.
@@ -89,13 +89,13 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 	 *
 	 * @param WooPaymentsRuntimeArbiter            $arbiter                     Runtime owner arbiter.
 	 * @param WooPaymentsIntentConfirmationService $intent_confirmation_service Intent confirmation service.
-	 * @param WooPaymentsApiClient                 $api_client                  WooPayments API client.
+	 * @param Client                               $api_client                  WooPayments API client.
 	 * @param WooPaymentsTokenService              $token_service               WooPayments token service.
 	 * @param WooPaymentsCustomerService           $customer_service            WooPayments customer service.
 	 * @param OrderPaymentLifecycleService         $lifecycle_service           Payment lifecycle service.
 	 * @param WooPaymentsOrderNoteService          $note_service                WooPayments order note service.
 	 */
-	final public function init( WooPaymentsRuntimeArbiter $arbiter, WooPaymentsIntentConfirmationService $intent_confirmation_service, WooPaymentsApiClient $api_client, WooPaymentsTokenService $token_service, WooPaymentsCustomerService $customer_service, OrderPaymentLifecycleService $lifecycle_service, WooPaymentsOrderNoteService $note_service ): void {
+	final public function init( WooPaymentsRuntimeArbiter $arbiter, WooPaymentsIntentConfirmationService $intent_confirmation_service, Client $api_client, WooPaymentsTokenService $token_service, WooPaymentsCustomerService $customer_service, OrderPaymentLifecycleService $lifecycle_service, WooPaymentsOrderNoteService $note_service ): void {
 		$this->arbiter                     = $arbiter;
 		$this->intent_confirmation_service = $intent_confirmation_service;
 		$this->api_client                  = $api_client;
@@ -483,7 +483,7 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 	 * @return string
 	 */
 	private function get_shopper_message_for_error( Throwable $exception ): string {
-		if ( $exception instanceof WooPaymentsApiException ) {
+		if ( $exception instanceof ApiException ) {
 			return WooPaymentsErrorMessages::get_shopper_message( $exception->get_error_type(), $exception->get_error_code(), $exception->get_decline_code(), $exception->getMessage() );
 		}
 
@@ -543,7 +543,7 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 	 * @param Throwable $exception Fetch failure.
 	 */
 	private function log_fetch_error( WC_Order $order, string $intent_id, Throwable $exception ): void {
-		if ( $exception instanceof WooPaymentsApiException ) {
+		if ( $exception instanceof ApiException ) {
 			$this->log_return_error( $order, $exception );
 			return;
 		}

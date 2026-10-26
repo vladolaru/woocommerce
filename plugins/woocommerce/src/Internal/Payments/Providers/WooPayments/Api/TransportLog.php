@@ -1,6 +1,6 @@
 <?php
 /**
- * WooPaymentsTransportLog class file.
+ * TransportLog class file.
  */
 
 declare( strict_types = 1 );
@@ -22,7 +22,7 @@ defined( 'ABSPATH' ) || exit;
  * @since 11.2.0
  * @internal
  */
-class WooPaymentsTransportLog {
+class TransportLog {
 
 	/**
 	 * Common keys in API requests/responses that must be redacted before logging.

@@ -3,11 +3,11 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsTransportLog;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\TransportLog;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentDetailsRestController;
-use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Api\FakeWooPaymentsHttpClient;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Api\FakeHttpClient;
 use WC_REST_Unit_Test_Case;
 use WP_REST_Request;
 
@@ -26,9 +26,9 @@ class WooPaymentsPaymentDetailsOrderlessRefundTest extends WC_REST_Unit_Test_Cas
 	/**
 	 * Fake platform transport.
 	 *
-	 * @var FakeWooPaymentsHttpClient
+	 * @var FakeHttpClient
 	 */
-	private FakeWooPaymentsHttpClient $http_client;
+	private FakeHttpClient $http_client;
 
 	/**
 	 * Set up test fixtures.
@@ -36,12 +36,12 @@ class WooPaymentsPaymentDetailsOrderlessRefundTest extends WC_REST_Unit_Test_Cas
 	public function setUp(): void {
 		parent::setUp();
 
-		$this->http_client           = new FakeWooPaymentsHttpClient();
+		$this->http_client           = new FakeHttpClient();
 		$this->http_client->blog_id  = 4;
 		$this->http_client->response = $this->get_recorded_refund_response();
 
-		$api_client = new WooPaymentsApiClient();
-		$api_client->init( $this->http_client, $this->create_test_mode_account_service(), wc_get_container()->get( WooPaymentsTransportLog::class ) );
+		$api_client = new Client();
+		$api_client->init( $this->http_client, $this->create_test_mode_account_service(), wc_get_container()->get( TransportLog::class ) );
 
 		$sut = new WooPaymentsPaymentDetailsRestController();
 		$sut->init( $api_client, $this->create_order_service(), wc_get_container()->get( WooPaymentsAccountService::class ) );

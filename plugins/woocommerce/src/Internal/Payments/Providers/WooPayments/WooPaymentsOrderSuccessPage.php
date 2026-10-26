@@ -9,8 +9,8 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Enums\OrderStatus;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodDefinition;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
@@ -94,9 +94,9 @@ class WooPaymentsOrderSuccessPage implements RegisterHooksInterface {
 	/**
 	 * API client, for the live intent re-check.
 	 *
-	 * @var WooPaymentsApiClient|null
+	 * @var Client|null
 	 */
-	private ?WooPaymentsApiClient $api_client = null;
+	private ?Client $api_client = null;
 
 	/**
 	 * Whether the failed-order copy replaced the order-received text on this request.
@@ -113,9 +113,9 @@ class WooPaymentsOrderSuccessPage implements RegisterHooksInterface {
 	 * @param WooPaymentsPaymentMethodRegistry           $payment_method_registry Payment-method definition registry.
 	 * @param WooPaymentsAccountService                  $account_service              WooPayments account service.
 	 * @param WooPaymentsFrontendTrackingController|null $frontend_tracking_controller Optional frontend tracking controller.
-	 * @param WooPaymentsApiClient|null                  $api_client                   Optional API client for the redirect-method intent re-check.
+	 * @param Client|null                                $api_client                   Optional API client for the redirect-method intent re-check.
 	 */
-	final public function init( WooPaymentsPaymentMethodRegistry $payment_method_registry, WooPaymentsAccountService $account_service, ?WooPaymentsFrontendTrackingController $frontend_tracking_controller = null, ?WooPaymentsApiClient $api_client = null ): void {
+	final public function init( WooPaymentsPaymentMethodRegistry $payment_method_registry, WooPaymentsAccountService $account_service, ?WooPaymentsFrontendTrackingController $frontend_tracking_controller = null, ?Client $api_client = null ): void {
 		$this->payment_method_registry      = $payment_method_registry;
 		$this->account_service              = $account_service;
 		$this->frontend_tracking_controller = $frontend_tracking_controller;
@@ -245,7 +245,7 @@ class WooPaymentsOrderSuccessPage implements RegisterHooksInterface {
 
 				try {
 					$intent = $api_client->get_payment_intention( $intent_id );
-				} catch ( WooPaymentsApiException $exception ) {
+				} catch ( ApiException $exception ) {
 					return $text;
 				}
 

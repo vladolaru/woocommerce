@@ -7,7 +7,7 @@ use Automattic\WooCommerce\Internal\Payments\PaymentOperationContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentLifecycleEvent;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOutcomeMetadataMapper;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsActionSchedulerService;
@@ -1006,8 +1006,8 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 	 * a PHP Error, which fatals there, is written at error level whatever the setting (review 34 F3). Native leaves the
 	 * message out (a platform error's text can hold an email or a URL).
 	 *
-	 * @testWith ["WooPaymentsApiException", "yes", "info"]
-	 *           ["WooPaymentsApiException", "no", ""]
+	 * @testWith ["ApiException", "yes", "info"]
+	 *           ["ApiException", "no", ""]
 	 *           ["TypeError", "no", "error"]
 	 *
 	 * @param string $throwable_class Short name of the class thrown by the token save.
@@ -1025,7 +1025,7 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'get_or_create_token_for_user' ) )
 			->getMock();
-		$token_service->method( 'get_or_create_token_for_user' )->willThrowException( 'WooPaymentsApiException' === $throwable_class ? self::make_provider_error() : new $throwable_class( 'Token storage failed.' ) );
+		$token_service->method( 'get_or_create_token_for_user' )->willThrowException( 'ApiException' === $throwable_class ? self::make_provider_error() : new $throwable_class( 'Token storage failed.' ) );
 		$logger = RecordingWcLogger::install();
 
 		$this->create_applier( $token_service )->apply(
@@ -1273,7 +1273,7 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 			}
 		};
 		$token_service          = new WooPaymentsTokenService();
-		$token_service->init( $details_service, wc_get_container()->get( WooPaymentsApiClient::class ), wc_get_container()->get( WooPaymentsCustomerService::class ), wc_get_container()->get( WooPaymentsAccountService::class ), wc_get_container()->get( WooPaymentsOrderDataService::class ), wc_get_container()->get( WooPaymentsPaymentMethodRegistry::class ) );
+		$token_service->init( $details_service, wc_get_container()->get( Client::class ), wc_get_container()->get( WooPaymentsCustomerService::class ), wc_get_container()->get( WooPaymentsAccountService::class ), wc_get_container()->get( WooPaymentsOrderDataService::class ), wc_get_container()->get( WooPaymentsPaymentMethodRegistry::class ) );
 
 		$result = $this->create_applier( $token_service )->apply( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_card_identity' ), $outcome, $plan );
 		$order  = wc_get_order( $order->get_id() );
@@ -2086,7 +2086,7 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 		};
 
 		$token_service = new WooPaymentsTokenService();
-		$token_service->init( $details_service, wc_get_container()->get( WooPaymentsApiClient::class ), wc_get_container()->get( WooPaymentsCustomerService::class ), wc_get_container()->get( WooPaymentsAccountService::class ), wc_get_container()->get( WooPaymentsOrderDataService::class ), wc_get_container()->get( WooPaymentsPaymentMethodRegistry::class ) );
+		$token_service->init( $details_service, wc_get_container()->get( Client::class ), wc_get_container()->get( WooPaymentsCustomerService::class ), wc_get_container()->get( WooPaymentsAccountService::class ), wc_get_container()->get( WooPaymentsOrderDataService::class ), wc_get_container()->get( WooPaymentsPaymentMethodRegistry::class ) );
 
 		return $token_service;
 	}

@@ -8,7 +8,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling;
 
 use ActionScheduler_Store;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionMethodPolicy;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
@@ -461,7 +461,7 @@ class StripeBillingMigrator extends \WCS_Background_Repairer {
 
 		try {
 			$wcpay_subscription = $this->get_api()->get_subscription( $wcpay_subscription_id );
-		} catch ( WooPaymentsApiException | StripeBillingException $e ) {
+		} catch ( ApiException | StripeBillingException $e ) {
 			// StripeBillingApi maps some platform errors to a StripeBillingException that keeps the platform's message.
 			throw new RuntimeException( sprintf( '---- ERROR: Failed to fetch subscription #%1$d (%2$s) from Stripe. %3$s', $subscription->get_id(), $wcpay_subscription_id, $this->describe_failure( $e ) ) );
 		}
@@ -492,7 +492,7 @@ class StripeBillingMigrator extends \WCS_Background_Repairer {
 
 		try {
 			$wcpay_subscription = $this->get_api()->cancel_subscription( (string) $wcpay_subscription['id'] );
-		} catch ( WooPaymentsApiException | StripeBillingException $e ) {
+		} catch ( ApiException | StripeBillingException $e ) {
 			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- The message goes to the migration log, not to output.
 			throw new RuntimeException( sprintf( '---- ERROR: Failed to cancel the Stripe subscription (%1$s). %2$s', $wcpay_subscription['id'], $this->describe_failure( $e ) ) );
 		}

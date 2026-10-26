@@ -7,8 +7,8 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 
 /**
@@ -42,9 +42,9 @@ class WooPaymentsPmPromotionsService {
 	/**
 	 * WooPayments API client.
 	 *
-	 * @var WooPaymentsApiClient
+	 * @var Client
 	 */
-	private WooPaymentsApiClient $api_client;
+	private Client $api_client;
 
 	/**
 	 * WooPayments account service.
@@ -86,12 +86,12 @@ class WooPaymentsPmPromotionsService {
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsApiClient                   $api_client                    WooPayments API client.
+	 * @param Client                                 $api_client                    WooPayments API client.
 	 * @param WooPaymentsAccountService              $account_service               WooPayments account service.
 	 * @param WooPaymentsGatewaySettingsSynchronizer $gateway_settings_synchronizer Gateway settings writer.
 	 * @param WooPaymentsPaymentMethodRegistry       $payment_method_registry       Payment method registry.
 	 */
-	final public function init( WooPaymentsApiClient $api_client, WooPaymentsAccountService $account_service, WooPaymentsGatewaySettingsSynchronizer $gateway_settings_synchronizer, WooPaymentsPaymentMethodRegistry $payment_method_registry ): void {
+	final public function init( Client $api_client, WooPaymentsAccountService $account_service, WooPaymentsGatewaySettingsSynchronizer $gateway_settings_synchronizer, WooPaymentsPaymentMethodRegistry $payment_method_registry ): void {
 		$this->api_client                    = $api_client;
 		$this->account_service               = $account_service;
 		$this->gateway_settings_synchronizer = $gateway_settings_synchronizer;
@@ -320,7 +320,7 @@ class WooPaymentsPmPromotionsService {
 
 		try {
 			$response = $this->api_client->get_pm_promotions( $store_context );
-		} catch ( WooPaymentsApiException $e ) {
+		} catch ( ApiException $e ) {
 			set_transient(
 				self::PROMOTIONS_CACHE_KEY,
 				new \WP_Error( $e->get_error_code(), $e->getMessage(), $e->get_http_code() ),
@@ -627,7 +627,7 @@ class WooPaymentsPmPromotionsService {
 
 		try {
 			$this->api_client->activate_pm_promotion( $id );
-		} catch ( WooPaymentsApiException $e ) {
+		} catch ( ApiException $e ) {
 			$this->handle_promotion_activation_failure( $payment_method_id, $promotion, 'Platform error.', WooPaymentsLogger::get_failure_context( $e ) );
 			return false;
 		}

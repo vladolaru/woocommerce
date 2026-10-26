@@ -13,7 +13,7 @@
 			"recorded_at": "2026-09-25T13:55:37+00:00",
 			"context": "after R-a usd_card_full_refund_free_text_reason",
 			"request": {
-				"transport": "WooPaymentsApiClient::get_timeline",
+				"transport": "Client::get_timeline",
 				"method": "GET",
 				"path": "/sites/4/wcpay/timeline/pi_3UJZZBBzWlxcwgpP0CDlkka0 (wpcom/v2 via Jetpack blog token)",
 				"query": {
@@ -166,7 +166,7 @@
 			"recorded_at": "2026-09-25T13:55:40+00:00",
 			"context": "after R-a eur_card_full_refund",
 			"request": {
-				"transport": "WooPaymentsApiClient::get_timeline",
+				"transport": "Client::get_timeline",
 				"method": "GET",
 				"path": "/sites/4/wcpay/timeline/pi_3UJWs2BzWlxcwgpP10KzkjsT (wpcom/v2 via Jetpack blog token)",
 				"query": {

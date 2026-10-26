@@ -8,8 +8,8 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 use Automattic\WooCommerce\Internal\RestApiControllerBase;
 use WP_Error;
 use WP_REST_Request;
@@ -35,9 +35,9 @@ class WooPaymentsCapitalRestController extends RestApiControllerBase {
 	/**
 	 * WooPayments API client.
 	 *
-	 * @var WooPaymentsApiClient
+	 * @var Client
 	 */
-	private WooPaymentsApiClient $api_client;
+	private Client $api_client;
 
 	/**
 	 * Initialize the class instance.
@@ -45,9 +45,9 @@ class WooPaymentsCapitalRestController extends RestApiControllerBase {
 	 * @internal
 	 *
 	 * @param WooPaymentsRuntimeArbiter $arbiter    Runtime owner arbiter.
-	 * @param WooPaymentsApiClient      $api_client WooPayments API client.
+	 * @param Client                    $api_client WooPayments API client.
 	 */
-	final public function init( WooPaymentsRuntimeArbiter $arbiter, WooPaymentsApiClient $api_client ): void {
+	final public function init( WooPaymentsRuntimeArbiter $arbiter, Client $api_client ): void {
 		$this->arbiter    = $arbiter;
 		$this->api_client = $api_client;
 	}
@@ -91,7 +91,7 @@ class WooPaymentsCapitalRestController extends RestApiControllerBase {
 
 		try {
 			return new WP_REST_Response( $this->api_client->get_capital_active_loan_summary() );
-		} catch ( WooPaymentsApiException $exception ) {
+		} catch ( ApiException $exception ) {
 			return $exception->to_wp_error();
 		}
 	}
@@ -108,7 +108,7 @@ class WooPaymentsCapitalRestController extends RestApiControllerBase {
 
 		try {
 			return new WP_REST_Response( $this->api_client->get_capital_loans() );
-		} catch ( WooPaymentsApiException $exception ) {
+		} catch ( ApiException $exception ) {
 			return $exception->to_wp_error();
 		}
 	}
@@ -236,7 +236,7 @@ class WooPaymentsCapitalRestController extends RestApiControllerBase {
 				WooPaymentsTracks::record_wcadmin_event( 'wcpay_capital_view_offer_redirect' );
 				return $url;
 			}
-		} catch ( WooPaymentsApiException $exception ) {
+		} catch ( ApiException $exception ) {
 			wc_get_logger()->error(
 				'Failed to build Capital loan offer redirect URL.',
 				array_merge( WooPaymentsLogger::get_failure_context( $exception ), array( 'source' => WooPaymentsLogger::SOURCE ) )

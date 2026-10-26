@@ -9,8 +9,8 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeB
 
 use Automattic\WooCommerce\Enums\OrderStatus;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionMethodPolicy;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsPaymentIntentEventHandler;
@@ -57,9 +57,9 @@ class StripeBillingEventHandler {
 	/**
 	 * Platform API client, for the intent and charge reads.
 	 *
-	 * @var WooPaymentsApiClient
+	 * @var Client
 	 */
-	private WooPaymentsApiClient $api_client;
+	private Client $api_client;
 
 	/**
 	 * Payment intent event handler, which records a succeeded payment intent on its order.
@@ -96,13 +96,13 @@ class StripeBillingEventHandler {
 	 *
 	 * @param StripeBillingInvoiceService          $invoice_service              Invoice service.
 	 * @param StripeBillingSubscriptionService     $subscription_service         Subscription service.
-	 * @param WooPaymentsApiClient                 $api_client                   Platform API client.
+	 * @param Client                               $api_client                   Platform API client.
 	 * @param WooPaymentsPaymentIntentEventHandler $payment_intent_event_handler Payment intent event handler.
 	 * @param WooPaymentsAccountService            $account_service              Account service.
 	 * @param WooPaymentsLogger                    $logger                       Module logger.
 	 * @param OrderPaymentLifecycleService         $lifecycle_service            Payment lifecycle service.
 	 */
-	final public function init( StripeBillingInvoiceService $invoice_service, StripeBillingSubscriptionService $subscription_service, WooPaymentsApiClient $api_client, WooPaymentsPaymentIntentEventHandler $payment_intent_event_handler, WooPaymentsAccountService $account_service, WooPaymentsLogger $logger, OrderPaymentLifecycleService $lifecycle_service ): void {
+	final public function init( StripeBillingInvoiceService $invoice_service, StripeBillingSubscriptionService $subscription_service, Client $api_client, WooPaymentsPaymentIntentEventHandler $payment_intent_event_handler, WooPaymentsAccountService $account_service, WooPaymentsLogger $logger, OrderPaymentLifecycleService $lifecycle_service ): void {
 		$this->invoice_service              = $invoice_service;
 		$this->subscription_service         = $subscription_service;
 		$this->api_client                   = $api_client;
@@ -348,7 +348,7 @@ class StripeBillingEventHandler {
 		if ( isset( $event_object['charge'] ) && is_string( $event_object['charge'] ) ) {
 			try {
 				$charge = $this->api_client->get_charge( $event_object['charge'] );
-			} catch ( WooPaymentsApiException $exception ) {
+			} catch ( ApiException $exception ) {
 				// Client 11.1.0 appends the platform's message (class-wc-payments-subscriptions-event-handler.php:242); this line
 				// logs its status and code instead.
 				$this->logger->log_throwable( sprintf( 'Unable to retrieve charge data for invoice.payment_failed webhook. Charge ID: %s.', $event_object['charge'] ), $exception );
@@ -560,7 +560,7 @@ class StripeBillingEventHandler {
 	private function get_payment_intent( string $intent_id ): ?array {
 		try {
 			return $this->api_client->get_payment_intention( $intent_id );
-		} catch ( WooPaymentsApiException $exception ) {
+		} catch ( ApiException $exception ) {
 			return null;
 		}
 	}

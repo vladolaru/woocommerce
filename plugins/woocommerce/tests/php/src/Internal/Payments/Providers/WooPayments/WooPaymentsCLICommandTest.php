@@ -3,7 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFeatureController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
@@ -137,9 +137,9 @@ class WooPaymentsCLICommandTest extends WC_Unit_Test_Case {
 	 */
 	private function seed_connected_store(): void {
 		// A connected store: without a connection the account read returns no account, like the client (client 11.1.0 `includes/class-wc-payments-account.php:2441-2444`).
-		$connected_api_client = $this->createMock( WooPaymentsApiClient::class );
+		$connected_api_client = $this->createMock( Client::class );
 		$connected_api_client->method( 'is_available' )->willReturn( true );
-		wc_get_container()->replace( WooPaymentsApiClient::class, $connected_api_client );
+		wc_get_container()->replace( Client::class, $connected_api_client );
 		wc_get_container()->get( WooPaymentsAccountService::class )->clear_cache();
 		wc_get_container()->get( WooPaymentsAccountService::class )->cache_account_data(
 			array(

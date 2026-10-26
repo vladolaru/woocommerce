@@ -3,8 +3,8 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAddressProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDatabaseCache;
@@ -111,7 +111,7 @@ class WooPaymentsAddressProviderTest extends WC_Unit_Test_Case {
 	 * @testdox Should fetch the address service JWT from the API client.
 	 */
 	public function test_get_address_service_jwt_fetches_token_from_api_client(): void {
-		$api_client = new class() extends WooPaymentsApiClient {
+		$api_client = new class() extends Client {
 			/**
 			 * Number of token requests.
 			 *
@@ -142,11 +142,11 @@ class WooPaymentsAddressProviderTest extends WC_Unit_Test_Case {
 	 */
 	public function test_address_token_failure_log_leaves_out_platform_text(): void {
 		self::enable_woopayments_debug_logging();
-		$api_client = new class() extends WooPaymentsApiClient {
+		$api_client = new class() extends Client {
 			/**
 			 * Fail the token request as the platform does.
 			 *
-			 * @throws \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException Always.
+			 * @throws \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException Always.
 			 */
 			public function get_address_autocomplete_token(): array {
 				throw WooPaymentsAddressProviderTest::make_provider_error();
@@ -166,7 +166,7 @@ class WooPaymentsAddressProviderTest extends WC_Unit_Test_Case {
 	 * @testdox Should retain address JWT state and request a token when account refresh is indeterminate.
 	 */
 	public function test_get_jwt_retains_address_jwt_state_when_account_refresh_is_indeterminate(): void {
-		$account_api_client = new class() extends WooPaymentsApiClient {
+		$account_api_client = new class() extends Client {
 			/**
 			 * Number of account requests.
 			 *
@@ -188,13 +188,13 @@ class WooPaymentsAddressProviderTest extends WC_Unit_Test_Case {
 			 *
 			 * @param string $woocommerce_store_id WooCommerce store ID.
 			 * @return array<string,mixed>
-			 * @throws WooPaymentsApiException Always throws a transient failure.
+			 * @throws ApiException Always throws a transient failure.
 			 */
 			public function get_account( string $woocommerce_store_id = '' ): array {
 				++$this->request_count;
 
 				if ( 1 === $this->request_count ) {
-					throw new WooPaymentsApiException( 'Temporary failure.', 'wcpay_temporary_failure', 500 );
+					throw new ApiException( 'Temporary failure.', 'wcpay_temporary_failure', 500 );
 				}
 
 				return array();
@@ -204,25 +204,25 @@ class WooPaymentsAddressProviderTest extends WC_Unit_Test_Case {
 			/**
 			 * Fake native API client.
 			 *
-			 * @var WooPaymentsApiClient
+			 * @var Client
 			 */
-			private WooPaymentsApiClient $api_client;
+			private Client $api_client;
 
 			/**
 			 * Constructor.
 			 *
-			 * @param WooPaymentsApiClient $api_client Fake native API client.
+			 * @param Client $api_client Fake native API client.
 			 */
-			public function __construct( WooPaymentsApiClient $api_client ) {
+			public function __construct( Client $api_client ) {
 				$this->api_client = $api_client;
 			}
 
 			/**
 			 * Get the fake native API client.
 			 *
-			 * @return WooPaymentsApiClient
+			 * @return Client
 			 */
-			protected function get_api_client(): WooPaymentsApiClient {
+			protected function get_api_client(): Client {
 				return $this->api_client;
 			}
 		};
@@ -230,7 +230,7 @@ class WooPaymentsAddressProviderTest extends WC_Unit_Test_Case {
 		$database_cache->init( new LegacyProxy() );
 		$account_service->init( new LegacyProxy(), $database_cache );
 
-		$token_api_client = new class() extends WooPaymentsApiClient {
+		$token_api_client = new class() extends Client {
 			/**
 			 * Number of token requests.
 			 *
@@ -295,7 +295,7 @@ class WooPaymentsAddressProviderTest extends WC_Unit_Test_Case {
 	public function test_get_address_service_jwt_returns_error_when_account_is_not_connected(): void {
 		update_option( 'wcpay_address_autocomplete_jwt', 'cached-token' );
 
-		$api_client = new class() extends WooPaymentsApiClient {
+		$api_client = new class() extends Client {
 			/**
 			 * Number of token requests.
 			 *
@@ -340,11 +340,11 @@ class WooPaymentsAddressProviderTest extends WC_Unit_Test_Case {
 	/**
 	 * Create the System Under Test.
 	 *
-	 * @param bool                      $gateway_enabled      Whether the gateway is enabled.
-	 * @param bool                      $has_account          Whether the account is connected.
-	 * @param bool                      $account_rejected     Whether the account is rejected.
-	 * @param bool                      $account_under_review Whether the account is under review.
-	 * @param WooPaymentsApiClient|null $api_client           Optional API client.
+	 * @param bool        $gateway_enabled      Whether the gateway is enabled.
+	 * @param bool        $has_account          Whether the account is connected.
+	 * @param bool        $account_rejected     Whether the account is rejected.
+	 * @param bool        $account_under_review Whether the account is under review.
+	 * @param Client|null $api_client           Optional API client.
 	 * @return WooPaymentsAddressProvider
 	 */
 	private function create_provider(
@@ -352,7 +352,7 @@ class WooPaymentsAddressProviderTest extends WC_Unit_Test_Case {
 		bool $has_account,
 		bool $account_rejected,
 		bool $account_under_review,
-		?WooPaymentsApiClient $api_client = null
+		?Client $api_client = null
 	): WooPaymentsAddressProvider {
 		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
 			->disableOriginalConstructor()
@@ -365,7 +365,7 @@ class WooPaymentsAddressProviderTest extends WC_Unit_Test_Case {
 		$account_service->method( 'is_account_under_review' )->willReturn( $account_under_review );
 
 		if ( null === $api_client ) {
-			$api_client = new class() extends WooPaymentsApiClient {
+			$api_client = new class() extends Client {
 				/**
 				 * Get the address autocomplete token.
 				 *

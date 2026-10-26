@@ -6,7 +6,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\W
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFeatureController;
 use Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabularyInterface;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsEventOrderResolver;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsOtherChargeRecorder;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService;
@@ -15,7 +15,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRu
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLockRefusedException;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
 use Automattic\WooCommerce\Internal\Payments\RefundRowCapture;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDatabaseCache;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsDisputeEventHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
@@ -57,7 +57,7 @@ class WooPaymentsDisputeEventHandlerTest extends WC_Unit_Test_Case {
 		}
 		$this->sut = new WooPaymentsDisputeEventHandler();
 		$this->sut->init(
-			new class() extends WooPaymentsApiClient {},
+			new class() extends Client {},
 			wc_get_container()->get( WooPaymentsDatabaseCache::class ),
 			wc_get_container()->get( WooPaymentsOrderNoteService::class ),
 			wc_get_container()->get( OrderPaymentLock::class ),
@@ -523,7 +523,7 @@ class WooPaymentsDisputeEventHandlerTest extends WC_Unit_Test_Case {
 		wc_get_container()->replace( OrderPaymentLock::class, $store );
 		$handler = new WooPaymentsDisputeEventHandler();
 		$handler->init(
-			new class() extends WooPaymentsApiClient {},
+			new class() extends Client {},
 			wc_get_container()->get( WooPaymentsDatabaseCache::class ),
 			wc_get_container()->get( WooPaymentsOrderNoteService::class ),
 			wc_get_container()->get( OrderPaymentLock::class ),
@@ -595,17 +595,17 @@ class WooPaymentsDisputeEventHandlerTest extends WC_Unit_Test_Case {
 		$order->save();
 		$handler = new WooPaymentsDisputeEventHandler();
 		$handler->init(
-			new class() extends WooPaymentsApiClient {
+			new class() extends Client {
 				/**
 				 * Fail as the platform does when it cannot answer.
 				 *
 				 * @param string $dispute_id Dispute ID.
 				 * @return array<string,mixed>
-				 * @throws WooPaymentsApiException For every dispute ID the platform would look up.
+				 * @throws ApiException For every dispute ID the platform would look up.
 				 */
 				public function get_dispute_summary( string $dispute_id ): array {
 					if ( '' !== $dispute_id ) {
-						throw new WooPaymentsApiException( 'Service unavailable.', 'wcpay_server_error', 503 );
+						throw new ApiException( 'Service unavailable.', 'wcpay_server_error', 503 );
 					}
 
 					return array();
@@ -1055,7 +1055,7 @@ class WooPaymentsDisputeEventHandlerTest extends WC_Unit_Test_Case {
 		$order->save();
 		$handler = new WooPaymentsDisputeEventHandler();
 		$handler->init(
-			new class() extends WooPaymentsApiClient {
+			new class() extends Client {
 				/**
 				 * Answer with no summary, so the event's own amount is refunded.
 				 *
@@ -1117,7 +1117,7 @@ class WooPaymentsDisputeEventHandlerTest extends WC_Unit_Test_Case {
 		$fetched = array();
 		$handler = new WooPaymentsDisputeEventHandler();
 		$handler->init(
-			new class( $fetched ) extends WooPaymentsApiClient {
+			new class( $fetched ) extends Client {
 				/**
 				 * Dispute IDs the handler asked a summary for.
 				 *

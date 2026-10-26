@@ -3,8 +3,8 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSessionService;
@@ -791,7 +791,7 @@ class WooPaymentsCustomerServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_get_payment_methods_for_customer_returns_empty_for_missing_remote_customer(): void {
 		$api_client                            = $this->create_customer_api_client( array() );
-		$api_client->payment_methods_exception = new WooPaymentsApiException( 'Missing customer.', 'resource_missing', 404 );
+		$api_client->payment_methods_exception = new ApiException( 'Missing customer.', 'resource_missing', 404 );
 		$sut                                   = $this->create_sut( false, $api_client );
 
 		$result = $sut->get_payment_methods_for_customer( 'cus_missing', 'card' );
@@ -805,10 +805,10 @@ class WooPaymentsCustomerServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_get_payment_methods_for_customer_rethrows_unhandled_api_errors(): void {
 		$api_client                            = $this->create_customer_api_client( array() );
-		$api_client->payment_methods_exception = new WooPaymentsApiException( 'Forbidden.', 'wcpay_forbidden', 403 );
+		$api_client->payment_methods_exception = new ApiException( 'Forbidden.', 'wcpay_forbidden', 403 );
 		$sut                                   = $this->create_sut( false, $api_client );
 
-		$this->expectException( WooPaymentsApiException::class );
+		$this->expectException( ApiException::class );
 		$this->expectExceptionMessage( 'Forbidden.' );
 
 		$sut->get_payment_methods_for_customer( 'cus_test', 'card' );
@@ -870,13 +870,13 @@ class WooPaymentsCustomerServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * Create a customer service System Under Test.
 	 *
-	 * @param bool                 $test_mode       Whether test mode is enabled.
-	 * @param WooPaymentsApiClient $api_client      Native API client mock.
-	 * @param bool|null            $account_is_live    Account liveness: true live, false test, null unknown.
-	 * @param bool                 $has_account        Whether WooPayments has an account.
+	 * @param bool      $test_mode       Whether test mode is enabled.
+	 * @param Client    $api_client      Native API client mock.
+	 * @param bool|null $account_is_live    Account liveness: true live, false test, null unknown.
+	 * @param bool      $has_account        Whether WooPayments has an account.
 	 * @return WooPaymentsCustomerService
 	 */
-	private function create_sut( bool $test_mode, WooPaymentsApiClient $api_client, ?bool $account_is_live = null, bool $has_account = true ): WooPaymentsCustomerService {
+	private function create_sut( bool $test_mode, Client $api_client, ?bool $account_is_live = null, bool $has_account = true ): WooPaymentsCustomerService {
 		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'has_account', 'is_test_mode_enabled', 'get_account_is_live' ) )
@@ -896,10 +896,10 @@ class WooPaymentsCustomerServiceTest extends WC_Unit_Test_Case {
 	 * Create a concrete API-client double for customer creation.
 	 *
 	 * @param string[] $customer_ids Customer IDs to return in order.
-	 * @return WooPaymentsApiClient
+	 * @return Client
 	 */
-	private function create_customer_api_client( array $customer_ids ): WooPaymentsApiClient {
-		return new class( $customer_ids ) extends WooPaymentsApiClient {
+	private function create_customer_api_client( array $customer_ids ): Client {
+		return new class( $customer_ids ) extends Client {
 			/**
 			 * Customer IDs to return.
 			 *
@@ -938,9 +938,9 @@ class WooPaymentsCustomerServiceTest extends WC_Unit_Test_Case {
 			/**
 			 * Optional exception thrown by payment method list requests.
 			 *
-			 * @var WooPaymentsApiException|null
+			 * @var ApiException|null
 			 */
-			public ?WooPaymentsApiException $payment_methods_exception = null;
+			public ?ApiException $payment_methods_exception = null;
 
 			/**
 			 * Constructor.
@@ -983,7 +983,7 @@ class WooPaymentsCustomerServiceTest extends WC_Unit_Test_Case {
 			 * @param string $type        Payment method type.
 			 * @param int    $limit       Result limit.
 			 * @return array<string,mixed>
-			 * @throws WooPaymentsApiException When configured.
+			 * @throws ApiException When configured.
 			 */
 			public function get_payment_methods( string $customer_id, string $type, int $limit = 100 ): array {
 				$this->payment_methods_requests[] = array(

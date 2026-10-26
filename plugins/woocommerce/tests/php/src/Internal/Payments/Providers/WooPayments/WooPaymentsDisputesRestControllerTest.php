@@ -3,10 +3,10 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDatabaseCache;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsDisputesListRequest;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\DisputesListRequest;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDisputesRestController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDetailsService;
 use RuntimeException;
@@ -100,7 +100,7 @@ class WooPaymentsDisputesRestControllerTest extends WC_REST_Unit_Test_Case {
 		$this->create_disputes_controller()->register_routes();
 		add_filter(
 			'wcpay_list_disputes_request',
-			static function ( WooPaymentsDisputesListRequest $request ): WooPaymentsDisputesListRequest {
+			static function ( DisputesListRequest $request ): DisputesListRequest {
 				$request->set( 'extension_custom_param', 'disputes-custom' );
 
 				return $request;
@@ -464,7 +464,7 @@ class WooPaymentsDisputesRestControllerTest extends WC_REST_Unit_Test_Case {
 	public function test_dispute_close_keeps_stale_dispute_caches_when_platform_fails(): void {
 		$this->create_disputes_controller()->register_routes();
 		update_option( 'wcpay_dispute_status_counts_cache', array( 'data' => array( 'needs_response' => 1 ) ) );
-		$this->api_client->exception = new WooPaymentsApiException( 'Close failed.', 'close_failed', 400 );
+		$this->api_client->exception = new ApiException( 'Close failed.', 'close_failed', 400 );
 
 		$response = $this->server->dispatch( new WP_REST_Request( 'POST', '/wc/v3/payments/disputes/dp_test/close' ) );
 
@@ -617,7 +617,7 @@ class WooPaymentsDisputesRestControllerTest extends WC_REST_Unit_Test_Case {
 		$this->create_disputes_controller()->register_routes();
 		$logger = RecordingWcLogger::install();
 		// A platform error code is free text to this store; one the logger does not list is logged as unknown_error.
-		$this->api_client->exception = new WooPaymentsApiException( 'Ambiguous dispute failure.', 'https://pay.example.test/r?key=sk_test_leak123', 504 );
+		$this->api_client->exception = new ApiException( 'Ambiguous dispute failure.', 'https://pay.example.test/r?key=sk_test_leak123', 504 );
 
 		$response = $this->server->dispatch( new WP_REST_Request( 'POST', '/wc/v3/payments/disputes/dp_test/close' ) );
 
@@ -643,7 +643,7 @@ class WooPaymentsDisputesRestControllerTest extends WC_REST_Unit_Test_Case {
 	public function test_dispute_update_failure_logs_only_a_listed_code( string $code, string $expected ): void {
 		$this->create_disputes_controller()->register_routes();
 		$logger                      = RecordingWcLogger::install();
-		$this->api_client->exception = new WooPaymentsApiException( 'Ambiguous dispute failure.', $code, 504 );
+		$this->api_client->exception = new ApiException( 'Ambiguous dispute failure.', $code, 504 );
 
 		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/disputes/dp_test' );
 		$request->set_body_params( array( 'submit' => 'false' ) );
@@ -663,7 +663,7 @@ class WooPaymentsDisputesRestControllerTest extends WC_REST_Unit_Test_Case {
 	 */
 	public function test_api_exceptions_answer_a_4xx_or_5xx_status(): void {
 		$this->create_disputes_controller()->register_routes();
-		$this->api_client->exception = new WooPaymentsApiException( 'Platform failure.', 'resource_missing', 404 );
+		$this->api_client->exception = new ApiException( 'Platform failure.', 'resource_missing', 404 );
 
 		$response = $this->server->dispatch( new WP_REST_Request( 'GET', '/wc/v3/payments/disputes/dp_missing' ) );
 

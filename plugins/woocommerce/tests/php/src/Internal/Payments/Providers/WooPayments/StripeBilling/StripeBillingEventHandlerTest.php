@@ -14,7 +14,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Services\LocalizationService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\OrderContextService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\RequestContext;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilder;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsTransportLog;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\TransportLog;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLockRefusedException;
@@ -25,8 +25,8 @@ use Automattic\WooCommerce\RestApi\UnitTests\Helpers\OrderHelper;
 use Automattic\WooCommerce\Utilities\OrderUtil;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeeDetailsNoteController;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\StripeBillingApi;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\StripeBillingEventHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\StripeBillingInvoiceService;
@@ -38,7 +38,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCu
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsPaymentIntentEventHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Tests\Internal\MultiCurrency\ServiceFactories;
-use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Api\FakeWooPaymentsHttpClient;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Api\FakeHttpClient;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\ProviderTextLogAssertions;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\RecordingWcLogger;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\SubscriptionDouble;
@@ -105,9 +105,9 @@ class StripeBillingEventHandlerTest extends WC_Unit_Test_Case {
 	/**
 	 * Fake platform transport.
 	 *
-	 * @var FakeWooPaymentsHttpClient
+	 * @var FakeHttpClient
 	 */
-	private FakeWooPaymentsHttpClient $http_client;
+	private FakeHttpClient $http_client;
 
 	/**
 	 * Subscription service the module's status hooks call.
@@ -141,7 +141,7 @@ class StripeBillingEventHandlerTest extends WC_Unit_Test_Case {
 		WooCommerceSubscriptionsDoubles::activate_subscriptions_on_renewal_payment();
 		add_filter( 'wcpay_test_mode', '__return_true' );
 
-		$this->http_client          = new FakeWooPaymentsHttpClient();
+		$this->http_client          = new FakeHttpClient();
 		$this->http_client->blog_id = self::RECORDED_BLOG_ID;
 
 		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
@@ -153,8 +153,8 @@ class StripeBillingEventHandlerTest extends WC_Unit_Test_Case {
 		$account_service->method( 'get_account_id' )->willReturn( self::RECORDED_ACCOUNT_ID );
 		$account_service->method( 'get_gateway_setting' )->willReturnCallback( fn( string $key ) => 'enable_logging' === $key ? 'yes' : '' );
 
-		$api_client = new WooPaymentsApiClient();
-		$api_client->init( $this->http_client, $account_service, wc_get_container()->get( WooPaymentsTransportLog::class ) );
+		$api_client = new Client();
+		$api_client->init( $this->http_client, $account_service, wc_get_container()->get( TransportLog::class ) );
 		$api = new StripeBillingApi();
 		$api->init( $api_client );
 		$logger = new WooPaymentsLogger();
@@ -409,7 +409,7 @@ class StripeBillingEventHandlerTest extends WC_Unit_Test_Case {
 		try {
 			$this->sut->handle_event( $this->get_event( 'invoice_paid_renewal' ) );
 			$this->fail( 'The failed invoice update must fail the event.' );
-		} catch ( WooPaymentsApiException $exception ) {
+		} catch ( ApiException $exception ) {
 			$this->assertSame( 500, $exception->get_http_code(), 'A platform failure is passed on as is, so the event is retried.' );
 		}
 

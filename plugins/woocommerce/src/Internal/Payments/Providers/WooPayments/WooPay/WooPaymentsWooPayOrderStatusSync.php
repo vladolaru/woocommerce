@@ -11,8 +11,8 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAc
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 use Automattic\WooCommerce\Internal\Payments\TransientRowLock;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use WC_Order;
@@ -82,9 +82,9 @@ class WooPaymentsWooPayOrderStatusSync implements RegisterHooksInterface {
 	/**
 	 * WooPayments API client.
 	 *
-	 * @var WooPaymentsApiClient
+	 * @var Client
 	 */
-	private WooPaymentsApiClient $api_client;
+	private Client $api_client;
 
 	/**
 	 * Lock held in the database rows of a transient.
@@ -107,11 +107,11 @@ class WooPaymentsWooPayOrderStatusSync implements RegisterHooksInterface {
 	 *
 	 * @param WooPaymentsRuntimeArbiter    $arbiter            Runtime owner arbiter.
 	 * @param WooPaymentsWooPayEligibility $woopay_eligibility WooPay eligibility rules.
-	 * @param WooPaymentsApiClient         $api_client         WooPayments API client.
+	 * @param Client                       $api_client         WooPayments API client.
 	 * @param TransientRowLock             $row_lock           Lock held in the database rows of a transient.
 	 * @param WooPaymentsAccountService    $account_service    WooPayments account service.
 	 */
-	final public function init( WooPaymentsRuntimeArbiter $arbiter, WooPaymentsWooPayEligibility $woopay_eligibility, WooPaymentsApiClient $api_client, TransientRowLock $row_lock, WooPaymentsAccountService $account_service ): void {
+	final public function init( WooPaymentsRuntimeArbiter $arbiter, WooPaymentsWooPayEligibility $woopay_eligibility, Client $api_client, TransientRowLock $row_lock, WooPaymentsAccountService $account_service ): void {
 		$this->arbiter            = $arbiter;
 		$this->woopay_eligibility = $woopay_eligibility;
 		$this->api_client         = $api_client;
@@ -359,7 +359,7 @@ class WooPaymentsWooPayOrderStatusSync implements RegisterHooksInterface {
 
 		try {
 			$this->api_client->update_woopay( array( 'webhook_secret' => $webhook->get_secret() ) );
-		} catch ( WooPaymentsApiException $api_exception ) {
+		} catch ( ApiException $api_exception ) {
 			unset( $api_exception );
 			$this->delete_webhooks( array( $webhook->get_id() ) );
 			$this->log_reconciliation_error( 'Unable to register the WooPay order-status webhook secret with the platform.' );
@@ -386,7 +386,7 @@ class WooPaymentsWooPayOrderStatusSync implements RegisterHooksInterface {
 		$secret = wp_generate_password( 50, false );
 		try {
 			$this->api_client->update_woopay( array( 'webhook_secret' => $secret ) );
-		} catch ( WooPaymentsApiException $api_exception ) {
+		} catch ( ApiException $api_exception ) {
 			unset( $api_exception );
 			$this->log_reconciliation_error( 'Unable to rotate the WooPay order-status webhook secret with the platform.' );
 			return;

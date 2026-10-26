@@ -12,7 +12,7 @@ use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments
 use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\NoticeService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\OnboardingRedirect;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Onboarding\WooPaymentsOnboardingService;
 use Exception;
 use Throwable;
@@ -72,9 +72,9 @@ class WooPaymentsPaymentsSettingsAdapter {
 	/**
 	 * WooPayments API client.
 	 *
-	 * @var WooPaymentsApiClient|null
+	 * @var Client|null
 	 */
-	private ?WooPaymentsApiClient $api_client = null;
+	private ?Client $api_client = null;
 
 	/**
 	 * The onboarding built into WooCommerce.
@@ -499,11 +499,11 @@ class WooPaymentsPaymentsSettingsAdapter {
 	/**
 	 * Get the WooPayments API client.
 	 *
-	 * @return WooPaymentsApiClient
+	 * @return Client
 	 */
-	private function get_api_client(): WooPaymentsApiClient {
+	private function get_api_client(): Client {
 		if ( null === $this->api_client ) {
-			$this->api_client = wc_get_container()->get( WooPaymentsApiClient::class );
+			$this->api_client = wc_get_container()->get( Client::class );
 		}
 
 		return $this->api_client;

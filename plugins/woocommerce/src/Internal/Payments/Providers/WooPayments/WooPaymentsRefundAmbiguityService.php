@@ -8,8 +8,8 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\RefundRowCapture;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 use WC_Cache_Helper;
 use WC_Order;
 use WC_Order_Refund;
@@ -103,9 +103,9 @@ class WooPaymentsRefundAmbiguityService {
 	/**
 	 * WooPayments API client.
 	 *
-	 * @var WooPaymentsApiClient
+	 * @var Client
 	 */
-	private WooPaymentsApiClient $api_client;
+	private Client $api_client;
 
 	/**
 	 * WooPayments logger.
@@ -119,10 +119,10 @@ class WooPaymentsRefundAmbiguityService {
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsApiClient $api_client WooPayments API client.
-	 * @param WooPaymentsLogger    $logger     WooPayments logger.
+	 * @param Client            $api_client WooPayments API client.
+	 * @param WooPaymentsLogger $logger     WooPayments logger.
 	 */
-	final public function init( WooPaymentsApiClient $api_client, WooPaymentsLogger $logger ): void {
+	final public function init( Client $api_client, WooPaymentsLogger $logger ): void {
 		$this->api_client = $api_client;
 		$this->logger     = $logger;
 	}
@@ -155,7 +155,7 @@ class WooPaymentsRefundAmbiguityService {
 
 		try {
 			$list = $this->api_client->list_charge_refunds( $request['charge'], self::LIST_LIMIT );
-		} catch ( WooPaymentsApiException $exception ) {
+		} catch ( ApiException $exception ) {
 			return $this->refuse_check_failed( $order, $record, 'the charge\'s refunds could not be listed (' . $exception->get_error_code() . ')' );
 		}
 

@@ -17,7 +17,7 @@
 			"recorded_at": "2026-09-25T22:17:21+00:00",
 			"context": "My Account add-payment-method entry point as REC-2 (valid nonce, fraud prevention session present but disabled, rate limit clear); idempotency key is controller-derived add_payment_method_<user>_md5(<pm>)",
 			"request": {
-				"transport": "WooPaymentsCheckoutAjaxController::get_create_setup_intent_response -> WooPaymentsApiClient::create_and_confirm_setup_intention",
+				"transport": "WooPaymentsCheckoutAjaxController::get_create_setup_intent_response -> Client::create_and_confirm_setup_intention",
 				"method": "POST",
 				"path": "/sites/4/wcpay/setup_intents (wpcom/v2 via Jetpack blog token)",
 				"body": {

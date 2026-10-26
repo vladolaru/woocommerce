@@ -220,7 +220,7 @@ test.describe( 'WooPayments transition: plugin-era onboarding', () => {
 			).toBe( 'extension' );
 			expect(
 				await wpEvalJson< boolean >(
-					'return wc_get_container()->get( Automattic\\WooCommerce\\Internal\\Payments\\Providers\\WooPayments\\Api\\WooPaymentsApiClient::class )->is_available();'
+					'return wc_get_container()->get( Automattic\\WooCommerce\\Internal\\Payments\\Providers\\WooPayments\\Api\\Client::class )->is_available();'
 				),
 				'the native client must be available, or this case could not catch a native call'
 			).toBe( true );

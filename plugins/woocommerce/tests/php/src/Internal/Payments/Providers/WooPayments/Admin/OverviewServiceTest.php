@@ -5,8 +5,8 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\A
 
 use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\OverviewService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDatabaseCache;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
@@ -390,15 +390,15 @@ class OverviewServiceTest extends WC_Unit_Test_Case {
 		);
 		update_option( 'wcpay_onboarding_test_mode', 'yes' );
 		// A connected store whose account fetch fails, so the summary reads the seeded cache.
-		$connected_api_client = $this->createMock( WooPaymentsApiClient::class );
+		$connected_api_client = $this->createMock( Client::class );
 		$connected_api_client->method( 'is_available' )->willReturn( true );
-		$connected_api_client->method( 'get_account' )->willThrowException( new WooPaymentsApiException( 'Unavailable.', 'wcpay_test_unavailable', 500 ) );
-		wc_get_container()->replace( WooPaymentsApiClient::class, $connected_api_client );
+		$connected_api_client->method( 'get_account' )->willThrowException( new ApiException( 'Unavailable.', 'wcpay_test_unavailable', 500 ) );
+		wc_get_container()->replace( Client::class, $connected_api_client );
 
 		try {
 			$summary = $this->sut->get_account_summary();
 		} finally {
-			wc_get_container()->reset_replacement( WooPaymentsApiClient::class );
+			wc_get_container()->reset_replacement( Client::class );
 		}
 
 		$this->assertTrue( $summary['account']['connected'] );

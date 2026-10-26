@@ -14,8 +14,8 @@ use Automattic\WooCommerce\Internal\Payments\PaymentOperationContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcomeApplyException;
 use Automattic\WooCommerce\Internal\Payments\PaymentProcessingService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Onboarding\WooPaymentsOnboardingService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodDefinition;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
@@ -123,9 +123,9 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 	/**
 	 * WooPayments API client.
 	 *
-	 * @var WooPaymentsApiClient
+	 * @var Client
 	 */
-	private WooPaymentsApiClient $api_client;
+	private Client $api_client;
 
 	/**
 	 * WooPayments account service.
@@ -434,7 +434,7 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 	 * @param PaymentProcessingService                          $processing_service        Payment processing service.
 	 * @param WooPaymentsProvider                               $provider                  WooPayments provider.
 	 * @param WooPaymentsCheckoutAssets|null                    $checkout_assets           Optional checkout assets.
-	 * @param WooPaymentsApiClient|null                         $api_client                Optional API client.
+	 * @param Client|null                                       $api_client                Optional API client.
 	 * @param WooPaymentsAccountService|null                    $account_service           Optional account service.
 	 * @param WooPaymentsTokenService|null                      $token_service             Optional token service.
 	 * @param WooPaymentsCustomerService|null                   $customer_service          Optional customer service.
@@ -447,7 +447,7 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 		PaymentProcessingService $processing_service,
 		WooPaymentsProvider $provider,
 		?WooPaymentsCheckoutAssets $checkout_assets = null,
-		?WooPaymentsApiClient $api_client = null,
+		?Client $api_client = null,
 		?WooPaymentsAccountService $account_service = null,
 		?WooPaymentsTokenService $token_service = null,
 		?WooPaymentsCustomerService $customer_service = null,
@@ -903,7 +903,7 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 				 */
 				'redirect' => apply_filters( 'wcpay_get_add_payment_method_redirect_url', wc_get_endpoint_url( 'payment-methods' ) ),
 			);
-		} catch ( WooPaymentsApiException $exception ) {
+		} catch ( ApiException $exception ) {
 			// Client 11.1.0 gw:4471 logs this at info level, with the platform's message; this line logs its status and code instead.
 			$this->get_logger()->log_throwable( 'Error when adding payment method.', $exception, array(), 'info' );
 
@@ -1891,11 +1891,11 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 	/**
 	 * Get the WooPayments API client.
 	 *
-	 * @return WooPaymentsApiClient
+	 * @return Client
 	 */
-	private function get_api_client(): WooPaymentsApiClient {
+	private function get_api_client(): Client {
 		if ( ! isset( $this->api_client ) ) {
-			$this->api_client = wc_get_container()->get( WooPaymentsApiClient::class );
+			$this->api_client = wc_get_container()->get( Client::class );
 		}
 
 		return $this->api_client;

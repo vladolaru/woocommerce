@@ -3,13 +3,13 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Api;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsTransactionsListRequest;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\TransactionsListRequest;
 use WC_Unit_Test_Case;
 
 /**
- * Tests for the WooPaymentsTransactionsListRequest timezone-aware date formatting.
+ * Tests for the TransactionsListRequest timezone-aware date formatting.
  */
-class WooPaymentsTransactionsListRequestTest extends WC_Unit_Test_Case {
+class TransactionsListRequestTest extends WC_Unit_Test_Case {
 
 	/**
 	 * Original store timezone option.
@@ -44,10 +44,10 @@ class WooPaymentsTransactionsListRequestTest extends WC_Unit_Test_Case {
 		$date = '2026-06-01 12:00:00';
 
 		// A timezone matching the store yields no shift.
-		$this->assertSame( $date, WooPaymentsTransactionsListRequest::format_transaction_date_by_timezone( $date, 'UTC' ) );
+		$this->assertSame( $date, TransactionsListRequest::format_transaction_date_by_timezone( $date, 'UTC' ) );
 
 		// A different valid timezone shifts the date deterministically.
-		$this->assertSame( '2026-06-01 08:00:00', WooPaymentsTransactionsListRequest::format_transaction_date_by_timezone( $date, 'America/New_York' ) );
+		$this->assertSame( '2026-06-01 08:00:00', TransactionsListRequest::format_transaction_date_by_timezone( $date, 'America/New_York' ) );
 	}
 
 	/**
@@ -58,7 +58,7 @@ class WooPaymentsTransactionsListRequestTest extends WC_Unit_Test_Case {
 	public function test_format_transaction_date_leaves_unparseable_input_unchanged(): void {
 		update_option( 'timezone_string', 'America/New_York' );
 
-		$this->assertSame( '2026-06-01 12:00:00', WooPaymentsTransactionsListRequest::format_transaction_date_by_timezone( '2026-06-01 12:00:00', 'Not/AZone' ) );
-		$this->assertSame( 'not a date', WooPaymentsTransactionsListRequest::format_transaction_date_by_timezone( 'not a date', '+03:00' ) );
+		$this->assertSame( '2026-06-01 12:00:00', TransactionsListRequest::format_transaction_date_by_timezone( '2026-06-01 12:00:00', 'Not/AZone' ) );
+		$this->assertSame( 'not a date', TransactionsListRequest::format_transaction_date_by_timezone( 'not a date', '+03:00' ) );
 	}
 }

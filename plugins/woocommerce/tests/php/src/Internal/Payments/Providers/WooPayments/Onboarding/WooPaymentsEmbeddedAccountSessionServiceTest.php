@@ -3,8 +3,8 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Onboarding;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Onboarding\WooPaymentsEmbeddedAccountSessionService;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\RecordingWcLogger;
 use WC_Unit_Test_Case;
@@ -24,9 +24,9 @@ class WooPaymentsEmbeddedAccountSessionServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * Recording API client.
 	 *
-	 * @var WooPaymentsApiClient
+	 * @var Client
 	 */
-	private WooPaymentsApiClient $api_client;
+	private Client $api_client;
 
 	/**
 	 * Set up test fixtures.
@@ -87,7 +87,7 @@ class WooPaymentsEmbeddedAccountSessionServiceTest extends WC_Unit_Test_Case {
 	 * @testdox Should fail closed when the platform session request fails.
 	 */
 	public function test_create_session_returns_empty_array_when_api_request_fails(): void {
-		$this->api_client->exception = new WooPaymentsApiException( 'Disconnected.', 'wcpay_wpcom_not_connected', 409 );
+		$this->api_client->exception = new ApiException( 'Disconnected.', 'wcpay_wpcom_not_connected', 409 );
 		$logger                      = RecordingWcLogger::install();
 
 		$session = $this->sut->create_session();
@@ -139,10 +139,10 @@ class WooPaymentsEmbeddedAccountSessionServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * Create a recording API client.
 	 *
-	 * @return WooPaymentsApiClient
+	 * @return Client
 	 */
-	private function create_api_client(): WooPaymentsApiClient {
-		return new class() extends WooPaymentsApiClient {
+	private function create_api_client(): Client {
+		return new class() extends Client {
 
 			/**
 			 * Last called method.
@@ -161,15 +161,15 @@ class WooPaymentsEmbeddedAccountSessionServiceTest extends WC_Unit_Test_Case {
 			/**
 			 * Optional exception thrown by the next call.
 			 *
-			 * @var WooPaymentsApiException|null
+			 * @var ApiException|null
 			 */
-			public ?WooPaymentsApiException $exception = null;
+			public ?ApiException $exception = null;
 
 			/**
 			 * Create an embedded account session.
 			 *
 			 * @return array<string,mixed>
-			 * @throws WooPaymentsApiException When configured.
+			 * @throws ApiException When configured.
 			 */
 			public function create_embedded_account_session(): array {
 				$this->last_call = __FUNCTION__;

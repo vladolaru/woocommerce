@@ -10,7 +10,7 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\RateService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\DebugTools;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsHttpClient;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\HttpClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsCutoverPreflightService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsCutoverStateStore;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsCurrencyRateProvider;
@@ -362,7 +362,7 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 	 * @return array<int,array{export_label:string,label:string,help:string,value:string,warning:bool}>
 	 */
 	public function get_woopayments_status_rows(): array {
-		$http_client = wc_get_container()->get( WooPaymentsHttpClient::class );
+		$http_client = wc_get_container()->get( HttpClient::class );
 		$rows        = array(
 			$this->status_row(
 				'Version',

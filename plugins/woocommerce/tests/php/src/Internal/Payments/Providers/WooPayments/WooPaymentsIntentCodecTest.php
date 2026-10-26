@@ -4,7 +4,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentCodec;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentMappingContext;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOutcomeMetadataMapper;
@@ -358,7 +358,7 @@ class WooPaymentsIntentCodecTest extends WC_Unit_Test_Case {
 		// The platform's top-level amount_too_small envelope, mapped by the client to Amount_Too_Small_Exception (class-wc-payments-api-client.php:2845-2851).
 		$too_small = WooPaymentsIntentCodec::failed_transport_outcome(
 			'capture',
-			new WooPaymentsApiException(
+			new ApiException(
 				'Amount must be at least $0.50 usd',
 				'amount_too_small',
 				400,
@@ -370,7 +370,7 @@ class WooPaymentsIntentCodecTest extends WC_Unit_Test_Case {
 				)
 			)
 		);
-		$declined  = WooPaymentsIntentCodec::failed_transport_outcome( 'capture', new WooPaymentsApiException( 'Declined.', 'card_declined', 402 ) );
+		$declined  = WooPaymentsIntentCodec::failed_transport_outcome( 'capture', new ApiException( 'Declined.', 'card_declined', 402 ) );
 
 		$this->assertSame( 400, $too_small->get_data()['http_code'] );
 		$this->assertSame(
@@ -404,7 +404,7 @@ class WooPaymentsIntentCodecTest extends WC_Unit_Test_Case {
 	public function test_failed_transport_outcome_shopper_message( string $operation, string $message, string $error_code, int $http_code, string $error_type, string $decline_code, string $provider_payment_id, string $shopper_message ): void {
 		$outcome = WooPaymentsIntentCodec::failed_transport_outcome(
 			$operation,
-			new WooPaymentsApiException( $message, $error_code, $http_code, $error_type, $decline_code ),
+			new ApiException( $message, $error_code, $http_code, $error_type, $decline_code ),
 			$provider_payment_id
 		);
 
@@ -442,12 +442,12 @@ class WooPaymentsIntentCodecTest extends WC_Unit_Test_Case {
 	 *
 	 * @dataProvider provider_failed_transport_provider_payment_ids
 	 *
-	 * @param string                  $operation           Operation that failed.
-	 * @param WooPaymentsApiException $exception           Platform error, with the intent ID of its envelope.
-	 * @param string                  $provider_payment_id Explicit provider payment ID, '' for none (the default).
-	 * @param string                  $expected            Provider payment ID the outcome carries.
+	 * @param string       $operation           Operation that failed.
+	 * @param ApiException $exception           Platform error, with the intent ID of its envelope.
+	 * @param string       $provider_payment_id Explicit provider payment ID, '' for none (the default).
+	 * @param string       $expected            Provider payment ID the outcome carries.
 	 */
-	public function test_failed_transport_outcome_provider_payment_id( string $operation, WooPaymentsApiException $exception, string $provider_payment_id, string $expected ): void {
+	public function test_failed_transport_outcome_provider_payment_id( string $operation, ApiException $exception, string $provider_payment_id, string $expected ): void {
 		$sut = WooPaymentsIntentCodec::failed_transport_outcome( $operation, $exception, $provider_payment_id );
 
 		$this->assertSame( $expected, $sut->get_provider_payment_id(), 'A declined charge must keep its intent id so support can find the order from the transaction.' );
@@ -456,12 +456,12 @@ class WooPaymentsIntentCodecTest extends WC_Unit_Test_Case {
 	/**
 	 * Failed transport outcomes and the intent ID each keeps.
 	 *
-	 * @return array<string,array{0:string,1:WooPaymentsApiException,2:string,3:string}>
+	 * @return array<string,array{0:string,1:ApiException,2:string,3:string}>
 	 */
 	public function provider_failed_transport_provider_payment_ids(): array {
 		return array(
-			'envelope ID only'          => array( 'charge', new WooPaymentsApiException( 'Error: Your card was declined.', 'card_declined', 402, 'card_error', 'do_not_honor', array(), 'pi_declined_test' ), '', 'pi_declined_test' ),
-			'explicit ID over envelope' => array( 'capture', new WooPaymentsApiException( 'Error: boom.', 'processing_error', 402, '', '', array(), 'pi_envelope' ), 'pi_explicit', 'pi_explicit' ),
+			'envelope ID only'          => array( 'charge', new ApiException( 'Error: Your card was declined.', 'card_declined', 402, 'card_error', 'do_not_honor', array(), 'pi_declined_test' ), '', 'pi_declined_test' ),
+			'explicit ID over envelope' => array( 'capture', new ApiException( 'Error: boom.', 'processing_error', 402, '', '', array(), 'pi_envelope' ), 'pi_explicit', 'pi_explicit' ),
 		);
 	}
 
@@ -473,7 +473,7 @@ class WooPaymentsIntentCodecTest extends WC_Unit_Test_Case {
 
 		$sut = WooPaymentsIntentCodec::failed_transport_outcome(
 			'charge',
-			new WooPaymentsApiException(
+			new ApiException(
 				'Amount must be at least $0.50 usd',
 				'amount_too_small',
 				400,

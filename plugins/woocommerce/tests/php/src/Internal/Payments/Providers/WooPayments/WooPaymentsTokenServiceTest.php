@@ -6,7 +6,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDatabaseCache;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDataService;
@@ -451,7 +451,7 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 		$order->set_billing_country( 'US' );
 		$order->save();
 
-		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
+		$api_client = $this->getMockBuilder( Client::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'update_payment_method' ) )
 			->getMock();
@@ -488,7 +488,7 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 		$order->set_billing_email( 'ada@example.com' );
 		$order->set_billing_first_name( 'Ada' );
 		$order->save();
-		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
+		$api_client = $this->getMockBuilder( Client::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'update_payment_method' ) )
 			->getMock();
@@ -543,7 +543,7 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_detaches_the_provider_payment_method_when_a_reusable_token_is_deleted( string $payment_method_id, array $payment_method_details, callable $create_token ): void {
 		$user_id    = $this->factory()->user->create();
-		$api_client = new class() extends WooPaymentsApiClient {
+		$api_client = new class() extends Client {
 			/**
 			 * Detached payment method IDs.
 			 *
@@ -663,7 +663,7 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 	public function test_does_not_detach_live_payment_methods_from_non_production_admin_screens(): void {
 		$user_id           = $this->factory()->user->create();
 		$woopayments_token = $this->create_card_token( $user_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_live' );
-		$api_client        = new class() extends WooPaymentsApiClient {
+		$api_client        = new class() extends Client {
 			/**
 			 * Detached payment method IDs.
 			 *
@@ -852,7 +852,7 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 		wp_set_current_user( $user_id );
 		$stale_token = $this->create_card_token( $user_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_gone' );
 
-		$api_client = new class() extends WooPaymentsApiClient {
+		$api_client = new class() extends Client {
 			/**
 			 * Detached payment method IDs.
 			 *
@@ -891,7 +891,7 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 		$this->register_card_gateway_id();
 		$user_id    = $this->factory()->user->create();
 		$sepa_token = $this->create_sepa_token( $user_id, 'pm_disabled_sepa' );
-		$api_client = new class() extends WooPaymentsApiClient {
+		$api_client = new class() extends Client {
 			/**
 			 * Detached payment method IDs.
 			 *
@@ -1161,7 +1161,7 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 		$this->register_card_gateway_id();
 		$user_id    = $this->factory()->user->create();
 		$sepa_token = $this->create_sepa_token( $user_id, 'pm_detached_sepa' );
-		$api_client = new class() extends WooPaymentsApiClient {
+		$api_client = new class() extends Client {
 			/**
 			 * Detached payment method IDs.
 			 *
@@ -1350,12 +1350,12 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 	public function test_detach_failure_log_leaves_out_platform_text(): void {
 		self::enable_woopayments_debug_logging();
 		$user_id    = $this->factory()->user->create();
-		$api_client = new class() extends WooPaymentsApiClient {
+		$api_client = new class() extends Client {
 			/**
 			 * Fail the detach as the platform does.
 			 *
 			 * @param string $payment_method_id Payment method ID.
-			 * @throws \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException Always.
+			 * @throws \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException Always.
 			 */
 			public function detach_payment_method( string $payment_method_id ): array {
 				unset( $payment_method_id );
@@ -2090,7 +2090,7 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 		update_user_option( $user_id, WooPaymentsCustomerService::LIVE_CUSTOMER_ID_OPTION, 'cus_live' );
 		wp_set_current_user( $this->factory()->user->create( array( 'role' => 'administrator' ) ) );
 
-		$api_client = new class( $mode_customer_id, array( $this->card_payment_method( 'pm_plugin_first' ), $this->card_payment_method( 'pm_plugin_second' ) ) ) extends WooPaymentsApiClient {
+		$api_client = new class( $mode_customer_id, array( $this->card_payment_method( 'pm_plugin_first' ), $this->card_payment_method( 'pm_plugin_second' ) ) ) extends Client {
 			/**
 			 * Customer id that holds the cards.
 			 *
@@ -2132,9 +2132,9 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 		};
 
 		// A connected store: without a connection the account read returns no account, like the client.
-		$connected_api_client = $this->createMock( WooPaymentsApiClient::class );
+		$connected_api_client = $this->createMock( Client::class );
 		$connected_api_client->method( 'is_available' )->willReturn( true );
-		wc_get_container()->replace( WooPaymentsApiClient::class, $connected_api_client );
+		wc_get_container()->replace( Client::class, $connected_api_client );
 		$account_service = new WooPaymentsAccountService();
 		$database_cache  = new WooPaymentsDatabaseCache();
 		$database_cache->init( new LegacyProxy() );
@@ -2377,7 +2377,7 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 				}
 				// phpcs:enable Squiz.Commenting.FunctionComment.InvalidNoReturn
 			},
-			wc_get_container()->get( WooPaymentsApiClient::class ),
+			wc_get_container()->get( Client::class ),
 			wc_get_container()->get( WooPaymentsCustomerService::class ),
 			wc_get_container()->get( WooPaymentsAccountService::class ),
 			wc_get_container()->get( WooPaymentsOrderDataService::class ),
@@ -2404,13 +2404,13 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 	 * Create the system under test.
 	 *
 	 * @param array<string,array<string,mixed>> $payment_method_details Payment method details keyed by ID.
-	 * @param WooPaymentsApiClient|null         $api_client             Optional native API client.
+	 * @param Client|null                       $api_client             Optional native API client.
 	 * @param WooPaymentsCustomerService|null   $customer_service       Optional native customer service.
 	 * @param WooPaymentsAccountService|null    $account_service        Optional native account service.
 	 * @param bool                              $register               Whether to register its hooks, as the bootstrap does for a root.
 	 * @return WooPaymentsTokenService
 	 */
-	private function create_service( array $payment_method_details = array(), ?WooPaymentsApiClient $api_client = null, ?WooPaymentsCustomerService $customer_service = null, ?WooPaymentsAccountService $account_service = null, bool $register = true ): WooPaymentsTokenService {
+	private function create_service( array $payment_method_details = array(), ?Client $api_client = null, ?WooPaymentsCustomerService $customer_service = null, ?WooPaymentsAccountService $account_service = null, bool $register = true ): WooPaymentsTokenService {
 		$details_service = new class( $payment_method_details ) extends WooPaymentsPaymentMethodDetailsService {
 			/**
 			 * Payment method details keyed by ID.
@@ -2440,7 +2440,7 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 		};
 
 		$sut = new WooPaymentsTokenService();
-		$sut->init( $details_service, $api_client ?? wc_get_container()->get( WooPaymentsApiClient::class ), $customer_service ?? wc_get_container()->get( WooPaymentsCustomerService::class ), $account_service ?? wc_get_container()->get( WooPaymentsAccountService::class ), wc_get_container()->get( WooPaymentsOrderDataService::class ), wc_get_container()->get( WooPaymentsPaymentMethodRegistry::class ) );
+		$sut->init( $details_service, $api_client ?? wc_get_container()->get( Client::class ), $customer_service ?? wc_get_container()->get( WooPaymentsCustomerService::class ), $account_service ?? wc_get_container()->get( WooPaymentsAccountService::class ), wc_get_container()->get( WooPaymentsOrderDataService::class ), wc_get_container()->get( WooPaymentsPaymentMethodRegistry::class ) );
 		if ( $register ) {
 			$sut->register();
 		}

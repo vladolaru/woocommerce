@@ -12,8 +12,8 @@ use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilder;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilderFactory;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\WooPaymentsStripeBillingModule;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionMethodPolicy;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayEligibility;
@@ -58,9 +58,9 @@ class WooPaymentsStoreSetupReportController implements RegisterHooksInterface {
 	/**
 	 * WooPayments API client.
 	 *
-	 * @var WooPaymentsApiClient
+	 * @var Client
 	 */
-	private WooPaymentsApiClient $api_client;
+	private Client $api_client;
 
 	/**
 	 * WooPayments account service.
@@ -96,7 +96,7 @@ class WooPaymentsStoreSetupReportController implements RegisterHooksInterface {
 	 * @internal
 	 *
 	 * @param WooPaymentsActionSchedulerService         $scheduler                         Action Scheduler service.
-	 * @param WooPaymentsApiClient                      $api_client                        WooPayments API client.
+	 * @param Client                                    $api_client                        WooPayments API client.
 	 * @param WooPaymentsAccountService                 $account_service                   WooPayments account service.
 	 * @param WooPaymentsDuplicateGatewayMethodsService $duplicate_gateway_methods_service Duplicate gateway methods service.
 	 * @param WooPaymentsWooPayEligibility              $woopay_eligibility                WooPay eligibility rules.
@@ -104,7 +104,7 @@ class WooPaymentsStoreSetupReportController implements RegisterHooksInterface {
 	 */
 	final public function init(
 		WooPaymentsActionSchedulerService $scheduler,
-		WooPaymentsApiClient $api_client,
+		Client $api_client,
 		WooPaymentsAccountService $account_service,
 		WooPaymentsDuplicateGatewayMethodsService $duplicate_gateway_methods_service,
 		WooPaymentsWooPayEligibility $woopay_eligibility,
@@ -224,7 +224,7 @@ class WooPaymentsStoreSetupReportController implements RegisterHooksInterface {
 		try {
 			$this->api_client->update_account( array( 'locale' => is_string( $new_value ) && '' !== $new_value ? $new_value : 'en_US' ) );
 			$this->account_service->refresh_account_data();
-		} catch ( WooPaymentsApiException $exception ) {
+		} catch ( ApiException $exception ) {
 			$this->log_exception( 'Failed to propagate the site language to the WooPayments account locale.', $exception );
 		}
 	}
@@ -255,7 +255,7 @@ class WooPaymentsStoreSetupReportController implements RegisterHooksInterface {
 
 		try {
 			$this->api_client->update_account( array( 'business_url' => $business_url ) );
-		} catch ( WooPaymentsApiException $exception ) {
+		} catch ( ApiException $exception ) {
 			$this->log_exception( 'Failed to re-send the WooPayments business URL after the store went live.', $exception );
 		}
 	}

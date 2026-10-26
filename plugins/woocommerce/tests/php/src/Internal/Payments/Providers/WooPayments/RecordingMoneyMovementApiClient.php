@@ -3,20 +3,20 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 
 /**
  * Recording API client for native WooPayments money movement REST tests.
  */
-class RecordingMoneyMovementApiClient extends WooPaymentsApiClient {
+class RecordingMoneyMovementApiClient extends Client {
 
 	/**
 	 * Optional exception thrown by the next call.
 	 *
-	 * @var WooPaymentsApiException|null
+	 * @var ApiException|null
 	 */
-	public ?WooPaymentsApiException $exception = null;
+	public ?ApiException $exception = null;
 
 	/**
 	 * Recorded calls.
@@ -210,7 +210,7 @@ class RecordingMoneyMovementApiClient extends WooPaymentsApiClient {
 
 		$status = isset( $query['status'] ) && is_scalar( $query['status'] ) ? (string) $query['status'] : '';
 		if ( ! in_array( $status, array( 'allow', 'block', 'review' ), true ) ) {
-			throw new WooPaymentsApiException( 'Invalid fraud outcome status provided.', 'invalid_fraud_outcome_status', 400 );
+			throw new ApiException( 'Invalid fraud outcome status provided.', 'invalid_fraud_outcome_status', 400 );
 		}
 
 		return $this->response;
@@ -372,7 +372,7 @@ class RecordingMoneyMovementApiClient extends WooPaymentsApiClient {
 	 *
 	 * @param string              $method Method.
 	 * @param array<string,mixed> $data Data.
-	 * @throws WooPaymentsApiException When configured.
+	 * @throws ApiException When configured.
 	 */
 	private function record( string $method, array $data ): void {
 		$this->last_call = array_merge( array( 'method' => $method ), $data );

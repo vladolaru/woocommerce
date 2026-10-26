@@ -9,7 +9,7 @@ use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
 use Automattic\WooCommerce\Internal\Payments\PaymentOperationContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentLifecycleEvent;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsTransportLog;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\TransportLog;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentCodec;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOutcomeMetadataMapper;
@@ -17,8 +17,8 @@ use Automattic\WooCommerce\Internal\Payments\PaymentProcessingService;
 use Automattic\WooCommerce\Internal\Payments\ProviderGatewaysController;
 use Automattic\WooCommerce\Internal\Payments\RefundRowCapture;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGateway;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsActionSchedulerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsChargeAmbiguityService;
@@ -61,7 +61,7 @@ use Automattic\WooCommerce\Internal\DataStores\Orders\DataSynchronizer;
 use Automattic\WooCommerce\RestApi\UnitTests\Helpers\OrderHelper;
 use Automattic\WooCommerce\Tests\Internal\Payments\RecordingProvider;
 use Automattic\WooCommerce\Utilities\OrderUtil;
-use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Api\FakeWooPaymentsHttpClient;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Api\FakeHttpClient;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\WooCommerceSubscriptionsDoubles;
 use WC_Order;
 use WC_Order_Refund;
@@ -146,7 +146,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_charge_sends_a_positive_amount_payment_through_the_platform_api(): void {
 		$order            = $this->create_woopayments_order( '50.00' );
-		$api_client       = new class() extends WooPaymentsApiClient {
+		$api_client       = new class() extends Client {
 			/**
 			 * Create and confirm a payment intention.
 			 *
@@ -300,7 +300,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	public function test_charge_reuses_persisted_key_after_ambiguous_transport_failure(): void {
 		$order            = $this->create_woopayments_order();
 		$order_id         = $order->get_id();
-		$api_client       = new class( $order_id ) extends WooPaymentsApiClient {
+		$api_client       = new class( $order_id ) extends Client {
 			/** @var int */
 			private int $order_id;
 			/** @var string[] */
@@ -338,7 +338,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 					throw new \RuntimeException( 'Charge key was not persisted before dispatch.' );
 				}
 				if ( 1 === count( $this->keys ) ) {
-					throw new WooPaymentsApiException( 'Transport failed.', 'http_request_failed' );
+					throw new ApiException( 'Transport failed.', 'http_request_failed' );
 				}
 				return array(
 					'id'     => 'pi_reused',
@@ -366,7 +366,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_charge_retires_key_on_definitive_failure_without_lifecycle(): void {
 		$order            = $this->create_woopayments_order();
-		$api_client       = new class() extends WooPaymentsApiClient {
+		$api_client       = new class() extends Client {
 			/** @var string[] */
 			public array $keys = array();
 			/**
@@ -387,7 +387,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 			public function create_and_confirm_payment_intention( array $request_data, string $idempotency_key ): array {
 				$this->keys[] = $idempotency_key;
 				if ( 1 === count( $this->keys ) ) {
-					throw new WooPaymentsApiException( 'Declined.', 'card_declined', 402, 'card_error' );
+					throw new ApiException( 'Declined.', 'card_declined', 402, 'card_error' );
 				}
 				return array(
 					'id'     => 'pi_after_decline',
@@ -436,7 +436,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 			$order->update_meta_data( WooPaymentsPaymentOperationService::CHARGE_IDEMPOTENCY_KEY_META, 'key_kept' );
 			$order->save_meta_data();
 		}
-		$http_client           = new FakeWooPaymentsHttpClient();
+		$http_client           = new FakeHttpClient();
 		$http_client->response = array(
 			'response' => array( 'code' => 400 ),
 			'headers'  => array( 'content-type' => 'application/json; charset=UTF-8' ),
@@ -450,8 +450,8 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 			),
 		);
 		$account_service       = $this->create_account_service( false );
-		$api_client            = new WooPaymentsApiClient();
-		$api_client->init( $http_client, $account_service, wc_get_container()->get( WooPaymentsTransportLog::class ) );
+		$api_client            = new Client();
+		$api_client->init( $http_client, $account_service, wc_get_container()->get( TransportLog::class ) );
 		$customer_service = $this->getMockBuilder( WooPaymentsCustomerService::class )->disableOriginalConstructor()->onlyMethods( array( 'get_or_create_customer_id_for_order' ) )->getMock();
 		$customer_service->method( 'get_or_create_customer_id_for_order' )->willReturn( 'cus_conflict' );
 		$sut    = $this->create_operation_service( $api_client, $customer_service, null, $account_service );
@@ -494,7 +494,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_charge_keeps_its_key_when_the_failure_may_have_charged( string $failure ): void {
 		$order                  = $this->create_woopayments_order();
-		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client            = new FakeHttpClient();
 		$json                   = array( 'content-type' => 'application/json; charset=UTF-8' );
 		$first                  = 'a server error with a readable body' === $failure
 			? array(
@@ -543,7 +543,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 			)
 		);
 		$account_service        = $this->create_account_service( false );
-		$api_client             = new class() extends WooPaymentsApiClient {
+		$api_client             = new class() extends Client {
 			/**
 			 * Skip the backoff between transport retries.
 			 *
@@ -553,7 +553,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 				unset( $backoff_microseconds );
 			}
 		};
-		$api_client->init( $http_client, $account_service, wc_get_container()->get( WooPaymentsTransportLog::class ) );
+		$api_client->init( $http_client, $account_service, wc_get_container()->get( TransportLog::class ) );
 		$customer_service = $this->getMockBuilder( WooPaymentsCustomerService::class )->disableOriginalConstructor()->onlyMethods( array( 'get_or_create_customer_id_for_order' ) )->getMock();
 		$customer_service->method( 'get_or_create_customer_id_for_order' )->willReturn( 'cus_kept_key' );
 		$sut = $this->create_operation_service( $api_client, $customer_service, null, $account_service );
@@ -575,7 +575,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	public function test_charge_uses_a_different_order_key(): void {
 		$first_order      = $this->create_woopayments_order();
 		$second_order     = $this->create_woopayments_order();
-		$api_client       = new class() extends WooPaymentsApiClient {
+		$api_client       = new class() extends Client {
 			/** @var string[] */
 			public array $keys = array();
 			/**
@@ -627,7 +627,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		$order = $this->create_woopayments_order( $total );
 		$order->update_meta_data( WooPaymentsPaymentOperationService::CHARGE_IDEMPOTENCY_KEY_META, 'key_ambiguous_charge' );
 		$order->save_meta_data();
-		$api_client       = new class() extends WooPaymentsApiClient {
+		$api_client       = new class() extends Client {
 			/**
 			 * Tell whether the transport is available.
 			 *
@@ -644,10 +644,10 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 			 * @param array<string,mixed> $request_data Request data.
 			 * @param string              $idempotency_key Idempotency key.
 			 * @return array<string,mixed>
-			 * @throws WooPaymentsApiException Always.
+			 * @throws ApiException Always.
 			 */
 			public function create_and_confirm_setup_intention( array $request_data, string $idempotency_key ): array {
-				throw new WooPaymentsApiException( 'SetupIntent declined.', 'card_declined', 402, 'card_error' );
+				throw new ApiException( 'SetupIntent declined.', 'card_declined', 402, 'card_error' );
 			}
 
 			/**
@@ -700,7 +700,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_ambiguous_charge_failure_records_the_ambiguity_beside_the_unresolved_key(): void {
 		$order                  = $this->create_woopayments_order();
-		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client            = new FakeHttpClient();
 		$http_client->responses = array( self::platform_bad_gateway(), self::stripe_card_declined() );
 		$sut                    = $this->create_timeout_operation_service( $http_client, 'cus_sent' );
 
@@ -744,7 +744,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 			)
 		);
 		$order->save_meta_data();
-		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client            = new FakeHttpClient();
 		$http_client->responses = array( self::platform_bad_gateway(), self::platform_bad_gateway() );
 		$sut                    = $this->create_timeout_operation_service( $http_client, 'cus_b' );
 		$before                 = time();
@@ -783,7 +783,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 			)
 		);
 		$order->save_meta_data();
-		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client            = new FakeHttpClient();
 		$http_client->responses = array( self::platform_bad_gateway() );
 		$sut                    = $this->create_timeout_operation_service( $http_client, 'cus_a' );
 
@@ -931,7 +931,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 			$order->update_meta_data( WooPaymentsPaymentOperationService::CHARGE_AMBIGUITY_META, $record );
 		}
 		$order->save_meta_data();
-		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client            = new FakeHttpClient();
 		$http_client->responses = array( self::stripe_idempotency_error( $expected_key ) );
 		$sut                    = $this->create_timeout_operation_service( $http_client, 'cus_sent' );
 
@@ -971,7 +971,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_attempt_after_a_definitive_failure_does_not_look_up(): void {
 		$order                  = $this->create_woopayments_order();
-		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client            = new FakeHttpClient();
 		$http_client->responses = array( self::platform_bad_gateway(), self::stripe_card_declined(), self::stripe_idempotency_error( 'key_third' ) );
 		$sut                    = $this->create_timeout_operation_service( $http_client, 'cus_sent' );
 
@@ -1000,7 +1000,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => 'no' ) );
 		add_filter( 'wcpay_dev_mode', '__return_false' );
 		$order                  = $this->create_woopayments_order();
-		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client            = new FakeHttpClient();
 		$http_client->responses = array(
 			self::platform_bad_gateway(),
 			self::http_json(
@@ -1059,7 +1059,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => 'no' ) );
 		add_filter( 'wcpay_dev_mode', '__return_false' );
 		$order                  = $this->create_woopayments_order();
-		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client            = new FakeHttpClient();
 		$http_client->responses = array(
 			self::platform_bad_gateway(),
 			self::stripe_idempotency_error( 'key_first' ),
@@ -1099,7 +1099,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_earlier_payment_for_another_amount_refuses_and_keeps_the_key(): void {
 		$order                  = $this->create_woopayments_order();
-		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client            = new FakeHttpClient();
 		$http_client->responses = array(
 			self::platform_bad_gateway(),
 			self::stripe_idempotency_error( 'key_first' ),
@@ -1129,7 +1129,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_earlier_payment_in_another_currency_refuses_and_keeps_the_key(): void {
 		$order                  = $this->create_woopayments_order();
-		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client            = new FakeHttpClient();
 		$http_client->responses = array(
 			self::platform_bad_gateway(),
 			self::stripe_idempotency_error( 'key_first' ),
@@ -1167,7 +1167,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => 'no' ) );
 		add_filter( 'wcpay_dev_mode', '__return_false' );
 		$order                  = $this->create_woopayments_order();
-		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client            = new FakeHttpClient();
 		$http_client->responses = array(
 			self::platform_bad_gateway(),
 			self::stripe_idempotency_error( 'key_first' ),
@@ -1239,7 +1239,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_full_page_proves_no_intent_only_when_it_reaches_back_past_the_window( int $oldest_age, bool $proves_none ): void {
 		$order                  = $this->create_woopayments_order();
-		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client            = new FakeHttpClient();
 		$http_client->responses = array( self::platform_bad_gateway() );
 		$sut                    = $this->create_timeout_operation_service( $http_client, 'cus_sent' );
 		$this->charge_attempt( $sut, $order, 'pm_first', 'key_first' );
@@ -1311,7 +1311,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_earlier_intent_that_gave_its_money_back_does_not_pay_the_order( array $charge, bool $holds_money ): void {
 		$order                  = $this->create_woopayments_order();
-		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client            = new FakeHttpClient();
 		$http_client->responses = array(
 			self::platform_bad_gateway(),
 			self::stripe_idempotency_error( 'key_first' ),
@@ -1415,7 +1415,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 			)
 		);
 
-		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client            = new FakeHttpClient();
 		$http_client->responses = array(
 			self::platform_bad_gateway(),
 			self::stripe_idempotency_error( 'key_first' ),
@@ -1478,7 +1478,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => 'no' ) );
 		add_filter( 'wcpay_dev_mode', '__return_false' );
 		$order                  = $this->create_woopayments_order();
-		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client            = new FakeHttpClient();
 		$http_client->responses = array_merge(
 			array( self::platform_bad_gateway(), self::stripe_idempotency_error( 'key_first' ) ),
 			$lookup_responses,
@@ -1558,7 +1558,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_customer_list_refused_falls_back_to_the_account_list( callable $build_customer_answer ): void {
 		$order                  = $this->create_woopayments_order();
-		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client            = new FakeHttpClient();
 		$http_client->responses = array(
 			self::platform_bad_gateway(),
 			self::stripe_idempotency_error( 'key_first' ),
@@ -1627,7 +1627,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_complete_account_list_without_the_order_charges_the_new_card(): void {
 		$order                  = $this->create_woopayments_order();
-		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client            = new FakeHttpClient();
 		$http_client->responses = array(
 			self::platform_bad_gateway(),
 			self::stripe_idempotency_error( 'key_first' ),
@@ -1671,7 +1671,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		add_filter( 'wcpay_dev_mode', '__return_false' );
 		$account_answer         = $build_account_answer();
 		$order                  = $this->create_woopayments_order();
-		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client            = new FakeHttpClient();
 		$http_client->responses = array(
 			self::platform_bad_gateway(),
 			self::stripe_idempotency_error( 'key_first' ),
@@ -1759,7 +1759,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_platform_refusal_under_the_unresolved_key_keeps_key_and_record(): void {
 		$order                  = $this->create_woopayments_order();
-		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client            = new FakeHttpClient();
 		$http_client->responses = array(
 			self::platform_bad_gateway(),
 			self::http_json(
@@ -1803,7 +1803,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_missing_customer_under_the_unresolved_key_is_not_recreated_while_the_record_exists(): void {
 		$order                  = $this->create_woopayments_order();
-		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client            = new FakeHttpClient();
 		$http_client->responses = array(
 			self::platform_bad_gateway(),
 			self::http_json(
@@ -1836,7 +1836,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_platform_refusal_without_ambiguity_record_retires_the_key(): void {
 		$order                  = $this->create_woopayments_order();
-		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client            = new FakeHttpClient();
 		$http_client->responses = array(
 			self::http_json(
 				400,
@@ -1870,7 +1870,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_stripe_answer_under_the_unresolved_key_retires_only_a_settled_request( array $answer, bool $retires ): void {
 		$order                  = $this->create_woopayments_order();
-		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client            = new FakeHttpClient();
 		$http_client->responses = array( self::platform_bad_gateway(), $answer );
 		$sut                    = $this->create_timeout_operation_service( $http_client, 'cus_sent' );
 		$this->charge_attempt( $sut, $order, 'pm_first', 'key_first' );
@@ -1927,14 +1927,14 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * Build an adapter on the real API client, with only the platform's HTTP answers faked.
 	 *
-	 * @param FakeWooPaymentsHttpClient       $http_client      Platform answers.
+	 * @param FakeHttpClient                  $http_client      Platform answers.
 	 * @param string                          $customer_id      Customer the charges are sent with.
 	 * @param WooPaymentsCustomerService|null $customer_service Customer service to use instead of one that only returns the customer.
 	 * @return WooPaymentsPaymentOperationService
 	 */
-	private function create_timeout_operation_service( FakeWooPaymentsHttpClient $http_client, string $customer_id, ?WooPaymentsCustomerService $customer_service = null ): WooPaymentsPaymentOperationService {
+	private function create_timeout_operation_service( FakeHttpClient $http_client, string $customer_id, ?WooPaymentsCustomerService $customer_service = null ): WooPaymentsPaymentOperationService {
 		$account_service = $this->create_account_service( false );
-		$api_client      = new class() extends WooPaymentsApiClient {
+		$api_client      = new class() extends Client {
 			/**
 			 * Skip the backoff between transport retries.
 			 *
@@ -1944,7 +1944,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 				unset( $backoff_microseconds );
 			}
 		};
-		$api_client->init( $http_client, $account_service, wc_get_container()->get( WooPaymentsTransportLog::class ) );
+		$api_client->init( $http_client, $account_service, wc_get_container()->get( TransportLog::class ) );
 		if ( null === $customer_service ) {
 			$customer_service = $this->getMockBuilder( WooPaymentsCustomerService::class )->disableOriginalConstructor()->onlyMethods( array( 'get_or_create_customer_id_for_order' ) )->getMock();
 			$customer_service->method( 'get_or_create_customer_id_for_order' )->willReturn( $customer_id );
@@ -1976,10 +1976,10 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 * other request from the queue.
 	 *
 	 * @param array<string,array<string,mixed>> $routes Answers by path needle.
-	 * @return FakeWooPaymentsHttpClient
+	 * @return FakeHttpClient
 	 */
-	private static function create_routed_http_client( array $routes ): FakeWooPaymentsHttpClient {
-		$http_client         = new class() extends FakeWooPaymentsHttpClient {
+	private static function create_routed_http_client( array $routes ): FakeHttpClient {
+		$http_client         = new class() extends FakeHttpClient {
 			/**
 			 * Answers by path needle.
 			 *
@@ -2018,10 +2018,10 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * Get the platform requests as "METHOD path key", the path relative to the site's WooPayments root.
 	 *
-	 * @param FakeWooPaymentsHttpClient $http_client Recorded transport.
+	 * @param FakeHttpClient $http_client Recorded transport.
 	 * @return string[]
 	 */
-	private static function request_trail( FakeWooPaymentsHttpClient $http_client ): array {
+	private static function request_trail( FakeHttpClient $http_client ): array {
 		return array_map(
 			static fn( array $request ): string => trim( $request['method'] . ' ' . preg_replace( '#^/sites/\d+/wcpay/#', '', (string) $request['path'] ) . ' ' . ( $request['headers']['Idempotency-Key'] ?? '' ) ),
 			$http_client->requests
@@ -2331,7 +2331,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_charge_decline_without_card_error_writes_note_without_fraud_meta(): void {
 		$order      = $this->create_woopayments_order( '25.00' );
-		$api_client = new class() extends WooPaymentsApiClient {
+		$api_client = new class() extends Client {
 			// phpcs:disable Squiz.Commenting.FunctionComment.InvalidNoReturn -- Test double always throws.
 			/**
 			 * Create and confirm a payment intention.
@@ -2341,7 +2341,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 			 * @return array<string,mixed>
 			 */
 			public function create_and_confirm_payment_intention( array $request_data, string $idempotency_key ): array {
-				throw new WooPaymentsApiException( 'Error: Upstream provider unavailable.', 'api_connection_error', 502, 'api_error' );
+				throw new ApiException( 'Error: Upstream provider unavailable.', 'api_connection_error', 502, 'api_error' );
 			}
 			// phpcs:enable Squiz.Commenting.FunctionComment.InvalidNoReturn
 
@@ -2375,7 +2375,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_charge_blocked_by_fraud_rules_records_block_state(): void {
 		$order      = $this->create_woopayments_order( '25.00' );
-		$api_client = new class() extends WooPaymentsApiClient {
+		$api_client = new class() extends Client {
 			// phpcs:disable Squiz.Commenting.FunctionComment.InvalidNoReturn -- Test double always throws.
 			/**
 			 * Create and confirm a payment intention.
@@ -2385,7 +2385,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 			 * @return array<string,mixed>
 			 */
 			public function create_and_confirm_payment_intention( array $request_data, string $idempotency_key ): array {
-				throw new WooPaymentsApiException(
+				throw new ApiException(
 					'Error: Transaction blocked by fraud rules.',
 					'wcpay_blocked_by_fraud_rule',
 					402,
@@ -2438,7 +2438,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		set_transient( 'wcpay_fraud_protection_settings', array( array( 'key' => 'avs_verification' ) ), DAY_IN_SECONDS );
 
 		$make_api_client = function () {
-			return new class() extends WooPaymentsApiClient {
+			return new class() extends Client {
 				// phpcs:disable Squiz.Commenting.FunctionComment.InvalidNoReturn -- Test double always throws.
 				/**
 				 * Create and confirm a payment intention.
@@ -2448,7 +2448,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 				 * @return array<string,mixed>
 				 */
 				public function create_and_confirm_payment_intention( array $request_data, string $idempotency_key ): array {
-					throw new WooPaymentsApiException(
+					throw new ApiException(
 						'Error: Your postal code failed validation.',
 						'incorrect_zip',
 						402,
@@ -2536,11 +2536,11 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 				),
 			);
 		} else {
-			$fraud_api_client->latest_fraud_ruleset_exception = new WooPaymentsApiException( 'Platform unavailable.', 'wcpay_server_error', 500 );
+			$fraud_api_client->latest_fraud_ruleset_exception = new ApiException( 'Platform unavailable.', 'wcpay_server_error', 500 );
 		}
 		list( $settings_service, $fraud_ruleset_service ) = $this->create_fraud_reading_services( $fraud_api_client );
 
-		$charge_api_client = new class() extends WooPaymentsApiClient {
+		$charge_api_client = new class() extends Client {
 			// phpcs:disable Squiz.Commenting.FunctionComment.InvalidNoReturn -- Test double always throws.
 			/**
 			 * Create and confirm a payment intention.
@@ -2550,7 +2550,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 			 * @return array<string,mixed>
 			 */
 			public function create_and_confirm_payment_intention( array $request_data, string $idempotency_key ): array {
-				throw new WooPaymentsApiException( 'Error: Your postal code failed validation.', 'incorrect_zip', 402, 'card_error', '', array(), 'pi_avs_test' );
+				throw new ApiException( 'Error: Your postal code failed validation.', 'incorrect_zip', 402, 'card_error', '', array(), 'pi_avs_test' );
 			}
 			// phpcs:enable Squiz.Commenting.FunctionComment.InvalidNoReturn
 
@@ -2586,7 +2586,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_charge_flags_platform_created_payment_methods_for_wcpay(): void {
 		$order            = $this->create_woopayments_order( '50.00' );
-		$api_client       = new class() extends WooPaymentsApiClient {
+		$api_client       = new class() extends Client {
 			/**
 			 * Last request data.
 			 *
@@ -2796,7 +2796,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_charge_retries_after_missing_customer_by_recreating_customer(): void {
 		$order            = $this->create_woopayments_order();
-		$api_client       = new class() extends WooPaymentsApiClient {
+		$api_client       = new class() extends Client {
 			/**
 			 * Number of attempts.
 			 *
@@ -2836,7 +2836,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 						throw new \RuntimeException( 'First attempt must use the original customer.' );
 					}
 
-					throw new WooPaymentsApiException( 'No such customer: customer', 'resource_missing', 404 );
+					throw new ApiException( 'No such customer: customer', 'resource_missing', 404 );
 				}
 
 				if ( 'cus_recreated' !== $request_data['customer'] ) {
@@ -3141,7 +3141,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		$order->set_shipping_country( 'US' );
 		$order->save();
 
-		$api_client       = new class() extends WooPaymentsApiClient {
+		$api_client       = new class() extends Client {
 			/**
 			 * Last request data.
 			 *
@@ -3251,7 +3251,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_single_card_checkout_without_save_matches_11_1_request_shape(): void {
 		$order            = $this->create_woopayments_order( '10.99' );
-		$api_client       = new class() extends WooPaymentsApiClient {
+		$api_client       = new class() extends Client {
 			/**
 			 * Last request data.
 			 *
@@ -3351,7 +3351,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		};
 		add_filter( 'clean_url', $clean_url, 10, 2 );
 
-		$api_client       = new class( $provider_url ) extends WooPaymentsApiClient {
+		$api_client       = new class( $provider_url ) extends Client {
 			/**
 			 * Provider redirect URL.
 			 *
@@ -3436,15 +3436,15 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		$order                 = $this->create_woopayments_order();
 		$saved_token           = $this->create_card_token( $user_id, 'pm_saved' );
 		$recorded              = $this->load_recorded_intent_entry( 'platform-intention-3ds-requires-action.json', 'saved_payment_method_requires_action' );
-		$http_client           = new FakeWooPaymentsHttpClient();
+		$http_client           = new FakeHttpClient();
 		$http_client->response = array(
 			'response' => array( 'code' => $recorded['http_status'] ),
 			'headers'  => array( 'content-type' => $recorded['content_type'] ),
 			'body'     => wp_json_encode( $recorded['body'] ),
 		);
 		$account_service       = $this->create_account_service( false );
-		$api_client            = new WooPaymentsApiClient();
-		$api_client->init( $http_client, $account_service, wc_get_container()->get( WooPaymentsTransportLog::class ) );
+		$api_client            = new Client();
+		$api_client->init( $http_client, $account_service, wc_get_container()->get( TransportLog::class ) );
 		$customer_service = $this->getMockBuilder( WooPaymentsCustomerService::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'get_or_create_customer_id_for_order' ) )
@@ -3564,7 +3564,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 			);
 		}
 
-		$api_client       = new class() extends WooPaymentsApiClient {
+		$api_client       = new class() extends Client {
 			/** @var array<string,mixed> */
 			public array $last_request_data = array();
 
@@ -3677,7 +3677,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		$order                  = $this->create_woopayments_order();
 		$saved_token            = $this->create_card_token( $user_id, 'pm_saved' );
 		$metadata_payment_types = array();
-		$api_client             = new class() extends WooPaymentsApiClient {
+		$api_client             = new class() extends Client {
 			/**
 			 * Last request data.
 			 *
@@ -3793,7 +3793,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		$user_id          = self::factory()->user->create( array( 'role' => 'customer' ) );
 		$order            = $this->create_woopayments_order( '9.99' );
 		$saved_token      = $this->create_card_token( $user_id, 'pm_plugin_subscription' );
-		$api_client       = new class() extends WooPaymentsApiClient {
+		$api_client       = new class() extends Client {
 			/**
 			 * Last request data.
 			 *
@@ -3929,7 +3929,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		$user_id          = $this->factory()->user->create();
 		$order            = $this->create_woopayments_order( '0.00' );
 		$saved_token      = $this->create_link_token( $user_id, 'pm_link' );
-		$api_client       = new class() extends WooPaymentsApiClient {
+		$api_client       = new class() extends Client {
 			/** @var array<string,mixed> */
 			public array $last_request_data = array();
 
@@ -4048,7 +4048,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 				'message' => $message,
 			),
 		);
-		$api_client       = new class( $expected_result ) extends WooPaymentsApiClient {
+		$api_client       = new class( $expected_result ) extends Client {
 			/**
 			 * Provider result.
 			 *
@@ -4176,7 +4176,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		$user_id          = $this->factory()->user->create();
 		$order            = $this->create_woopayments_order();
 		$saved_token      = $this->create_sepa_token( $user_id, 'pm_sepa_saved' );
-		$api_client       = new class() extends WooPaymentsApiClient {
+		$api_client       = new class() extends Client {
 			/**
 			 * Last request data.
 			 *
@@ -4272,7 +4272,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	public function test_charge_plans_requested_token_persistence_without_writes(): void {
 		$user_id          = $this->factory()->user->create();
 		$order            = $this->create_woopayments_order();
-		$api_client       = new class() extends WooPaymentsApiClient {
+		$api_client       = new class() extends Client {
 			/**
 			 * Last request data.
 			 *
@@ -4368,7 +4368,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	public function test_recurring_charge_returns_provider_outcome_with_required_token_plan(): void {
 		$user_id          = $this->factory()->user->create();
 		$order            = $this->create_woopayments_order();
-		$api_client       = new class() extends WooPaymentsApiClient {
+		$api_client       = new class() extends Client {
 			/**
 			 * Tell whether the transport is available.
 			 *
@@ -4498,15 +4498,15 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 			$expected_message             = 'Error: ' . $sentinel;
 		}
 
-		$http_client           = new FakeWooPaymentsHttpClient();
+		$http_client           = new FakeHttpClient();
 		$http_client->response = array(
 			'response' => array( 'code' => $recorded['http_status'] ),
 			'headers'  => array( 'content-type' => 'application/json; charset=UTF-8' ),
 			'body'     => wp_json_encode( array( 'error' => $recorded['error'] ) ),
 		);
 
-		$api_client = new WooPaymentsApiClient();
-		$api_client->init( $http_client, $account_service, wc_get_container()->get( WooPaymentsTransportLog::class ) );
+		$api_client = new Client();
+		$api_client->init( $http_client, $account_service, wc_get_container()->get( TransportLog::class ) );
 		$customer_service = $this->getMockBuilder( WooPaymentsCustomerService::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'get_or_create_customer_id_for_order' ) )
@@ -4596,7 +4596,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 * and {@see \Automattic\WooCommerce\Tests\Internal\Payments\PaymentProcessingServiceTest::test_woopayments_card_decline_fails_order_with_intent_note_and_allow_meta}'s
 	 * hand-mirrored outcome — by running the recorded REC-1 decline envelope through the real
 	 * {@see PaymentProcessingService::process_checkout_outcome}, real {@see WooPaymentsProvider}, this adapter,
-	 * the real {@see WooPaymentsApiClient}, and the real {@see WooPaymentsOrderEffectApplier} against a
+	 * the real {@see Client}, and the real {@see WooPaymentsOrderEffectApplier} against a
 	 * FAKEHTTP transport (`Fixtures/platform-intention-declines.json`).
 	 *
 	 * @dataProvider recorded_checkout_decline_envelope_data
@@ -4609,7 +4609,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		$account_service = $this->create_account_service( false );
 		$recorded        = $this->load_recorded_decline_entry( $pair );
 
-		$http_client           = new FakeWooPaymentsHttpClient();
+		$http_client           = new FakeHttpClient();
 		$http_client->response = array(
 			'response' => array( 'code' => $recorded['http_status'] ),
 			'headers'  => array( 'content-type' => 'application/json; charset=UTF-8' ),
@@ -4685,9 +4685,9 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		$provider        = $this->create_provider_declining_checkout( $recorded, $account_service, $after_missing_customer );
 		$scheduler       = new RecordingActionSchedulerService();
 		$fraud_service   = new WooPaymentsFraudService();
-		$fraud_service->init( $account_service, $this->createMock( WooPaymentsCustomerService::class ), $this->createMock( WooPaymentsSessionService::class ), $this->createMock( WooPaymentsApiClient::class ) );
+		$fraud_service->init( $account_service, $this->createMock( WooPaymentsCustomerService::class ), $this->createMock( WooPaymentsSessionService::class ), $this->createMock( Client::class ) );
 		$tracking = new WooPaymentsFraudOrderTrackingService();
-		$tracking->init( $scheduler, $this->createMock( WooPaymentsApiClient::class ), $account_service, $fraud_service );
+		$tracking->init( $scheduler, $this->createMock( Client::class ), $account_service, $fraud_service );
 		add_action( 'woocommerce_update_order', array( $tracking, 'handle_woocommerce_update_order' ), 10, 2 );
 
 		wc_get_container()->get( PaymentProcessingService::class )->process_checkout_outcome(
@@ -4761,7 +4761,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 			'headers'  => array( 'content-type' => 'application/json; charset=UTF-8' ),
 			'body'     => wp_json_encode( array( 'error' => $recorded['error'] ) ),
 		);
-		$http_client = new FakeWooPaymentsHttpClient();
+		$http_client = new FakeHttpClient();
 		if ( $after_missing_customer ) {
 			$http_client->responses = array( self::stripe_no_such_customer(), $decline );
 		} else {
@@ -4790,7 +4790,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . 'afterpay_clearpay' );
 		$order->set_currency( 'USD' );
 		$order->save();
-		$http_client      = new FakeWooPaymentsHttpClient();
+		$http_client      = new FakeHttpClient();
 		$account_service  = $this->create_account_service( false );
 		$customer_service = $this->getMockBuilder( WooPaymentsCustomerService::class )->disableOriginalConstructor()->onlyMethods( array( 'get_or_create_customer_id_for_order' ) )->getMock();
 		$customer_service->method( 'get_or_create_customer_id_for_order' )->willReturn( 'cus_afterpay' );
@@ -4841,7 +4841,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 			'dispute'  => 'dp_1UJjK4BzWlxcwgpPDisputed',
 		);
 
-		$http_client              = new FakeWooPaymentsHttpClient();
+		$http_client              = new FakeHttpClient();
 		$http_client->responses[] = self::http_json( 200, $this->attached_intent_given_back( $order, $disputed_charge ) );
 		$gateway                  = $this->create_gateway_with_real_duplicate_guard( $http_client );
 
@@ -4918,7 +4918,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 			}
 		};
 
-		$http_client              = new FakeWooPaymentsHttpClient();
+		$http_client              = new FakeHttpClient();
 		$http_client->responses[] = self::http_json( 200, $this->attached_intent_given_back( $order, $disputed_charge ) );
 		$gateway                  = $this->create_gateway_with_real_duplicate_guard( $http_client, $failing_reads );
 		self::enable_woopayments_debug_logging();
@@ -4961,7 +4961,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 			'amount_refunded' => 1099,
 		);
 
-		$http_client              = new FakeWooPaymentsHttpClient();
+		$http_client              = new FakeHttpClient();
 		$http_client->responses[] = self::http_json( 200, $this->attached_intent_given_back( $order, $refunded_charge ) );
 		$http_client->responses[] = self::http_json( $new_charge['http_status'], $new_charge['body'] );
 		$gateway                  = $this->create_gateway_with_real_duplicate_guard( $http_client );
@@ -5035,17 +5035,17 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 * Build the card gateway with the real duplicate-payment guard, the real processing service and the real provider, all
 	 * sending their platform requests through one recording transport.
 	 *
-	 * @param FakeWooPaymentsHttpClient         $http_client     Recording transport.
+	 * @param FakeHttpClient                    $http_client     Recording transport.
 	 * @param OrderPaymentLifecycleService|null $guard_lifecycle The guard's lifecycle service; the container's when null.
 	 * @return WooPaymentsGateway
 	 */
-	private function create_gateway_with_real_duplicate_guard( FakeWooPaymentsHttpClient $http_client, ?OrderPaymentLifecycleService $guard_lifecycle = null ): WooPaymentsGateway {
+	private function create_gateway_with_real_duplicate_guard( FakeHttpClient $http_client, ?OrderPaymentLifecycleService $guard_lifecycle = null ): WooPaymentsGateway {
 		$account_service  = $this->create_account_service( false );
 		$customer_service = $this->getMockBuilder( WooPaymentsCustomerService::class )->disableOriginalConstructor()->onlyMethods( array( 'get_or_create_customer_id_for_order' ) )->getMock();
 		$customer_service->method( 'get_or_create_customer_id_for_order' )->willReturn( 'cus_UsIeTbmGHPc9jY' );
 		$provider   = $this->create_provider_over_fake_transport( $http_client, $account_service, $customer_service );
-		$api_client = new WooPaymentsApiClient();
-		$api_client->init( $http_client, $account_service, wc_get_container()->get( WooPaymentsTransportLog::class ) );
+		$api_client = new Client();
+		$api_client->init( $http_client, $account_service, wc_get_container()->get( TransportLog::class ) );
 		$guard = new WooPaymentsDuplicatePaymentPreventionService();
 		$guard->init(
 			$api_client,
@@ -5061,10 +5061,10 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * Get the platform requests as "METHOD path", the path relative to the site's WooPayments root, without its query.
 	 *
-	 * @param FakeWooPaymentsHttpClient $http_client Recording transport.
+	 * @param FakeHttpClient $http_client Recording transport.
 	 * @return string[]
 	 */
-	private static function platform_calls( FakeWooPaymentsHttpClient $http_client ): array {
+	private static function platform_calls( FakeHttpClient $http_client ): array {
 		return array_map(
 			static fn( array $request ): string => $request['method'] . ' ' . preg_replace( '#^/sites/\d+/wcpay/|\?.*$#', '', (string) $request['path'] ),
 			$http_client->requests
@@ -5097,15 +5097,15 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	public function test_charge_returns_display_effect_plan_without_mutating_order(): void {
 		$order                 = $this->create_woopayments_order();
 		$recorded              = $this->load_recorded_intent_entry( 'platform-intention-3ds-requires-action.json', 'new_card_requires_action' );
-		$http_client           = new FakeWooPaymentsHttpClient();
+		$http_client           = new FakeHttpClient();
 		$http_client->response = array(
 			'response' => array( 'code' => $recorded['http_status'] ),
 			'headers'  => array( 'content-type' => $recorded['content_type'] ),
 			'body'     => wp_json_encode( $recorded['body'] ),
 		);
 		$account_service       = $this->create_account_service( false );
-		$api_client            = new WooPaymentsApiClient();
-		$api_client->init( $http_client, $account_service, wc_get_container()->get( WooPaymentsTransportLog::class ) );
+		$api_client            = new Client();
+		$api_client->init( $http_client, $account_service, wc_get_container()->get( TransportLog::class ) );
 		$customer_service = $this->getMockBuilder( WooPaymentsCustomerService::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'get_or_create_customer_id_for_order' ) )
@@ -5208,7 +5208,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		$api_client = $this->create_woopay_intent_api_client(
 			array(),
 			array(),
-			new WooPaymentsApiException( "No such intent: '$intent_id'", 'resource_missing', 404, 'invalid_request_error' )
+			new ApiException( "No such intent: '$intent_id'", 'resource_missing', 404, 'invalid_request_error' )
 		);
 
 		$outcome = $this->charge_with_woopay_intent( $order, $api_client, $intent_id );
@@ -5320,7 +5320,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		$user_id          = $this->factory()->user->create();
 		$order            = $this->create_woopayments_order( '0.00' );
 		$saved_token      = $this->create_card_token( $user_id, 'pm_zero' );
-		$api_client       = new class() extends WooPaymentsApiClient {
+		$api_client       = new class() extends Client {
 			/** @var int */
 			public int $setup_intent_calls = 0;
 
@@ -5411,15 +5411,15 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		$user_id               = $this->factory()->user->create();
 		$order                 = $this->create_woopayments_order( '0.00' );
 		$recorded              = $this->load_recorded_intent_entry( 'platform-setup-intent-requires-action.json', 'setup_intent_requires_action' );
-		$http_client           = new FakeWooPaymentsHttpClient();
+		$http_client           = new FakeHttpClient();
 		$http_client->response = array(
 			'response' => array( 'code' => $recorded['http_status'] ),
 			'headers'  => array( 'content-type' => $recorded['content_type'] ),
 			'body'     => wp_json_encode( $recorded['body'] ),
 		);
 		$account_service       = $this->create_account_service( false );
-		$api_client            = new WooPaymentsApiClient();
-		$api_client->init( $http_client, $account_service, wc_get_container()->get( WooPaymentsTransportLog::class ) );
+		$api_client            = new Client();
+		$api_client->init( $http_client, $account_service, wc_get_container()->get( TransportLog::class ) );
 		$customer_service = $this->getMockBuilder( WooPaymentsCustomerService::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'get_or_create_customer_id_for_order' ) )
@@ -5454,7 +5454,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_zero_total_charge_flags_platform_created_payment_methods_for_wcpay(): void {
 		$order            = $this->create_woopayments_order( '0.00' );
-		$api_client       = new class() extends WooPaymentsApiClient {
+		$api_client       = new class() extends Client {
 			/**
 			 * Last request data.
 			 *
@@ -5525,7 +5525,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		$user_id          = $this->factory()->user->create();
 		$order            = $this->create_woopayments_order( '0.00' );
 		$subscription     = $this->create_woopayments_order( '10.00' );
-		$api_client       = new class() extends WooPaymentsApiClient {
+		$api_client       = new class() extends Client {
 			/**
 			 * Tell whether the transport is available.
 			 *
@@ -5618,7 +5618,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_refund_goes_through_the_platform_api(): void {
 		$order      = $this->create_woopayments_order();
-		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
+		$api_client = $this->getMockBuilder( Client::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'is_available', 'refund_charge' ) )
 			->getMock();
@@ -5661,7 +5661,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 * End to end through the production wiring: this test calls the real
 	 * {@see PaymentProcessingService::process_refund} directly (no gateway
 	 * boundary in between), which calls the real {@see WooPaymentsProvider},
-	 * this adapter, the real {@see WooPaymentsApiClient}, and the real
+	 * this adapter, the real {@see Client}, and the real
 	 * {@see WooPaymentsOrderEffectApplier} against a FAKEHTTP transport queued
 	 * with the exact refund response REC-5a R-a recorded from local WPCOM
 	 * (`Fixtures/platform-refunds.json`). The request body sent over that
@@ -5699,7 +5699,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		$this->assertInstanceOf( WC_Order_Refund::class, $refund );
 
 		$recorded              = $this->load_recorded_refund_entry( $pair );
-		$http_client           = new FakeWooPaymentsHttpClient();
+		$http_client           = new FakeHttpClient();
 		$http_client->response = array(
 			'response' => array( 'code' => $recorded['http_status'] ),
 			'headers'  => array( 'content-type' => $recorded['content_type'] ),
@@ -5762,7 +5762,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		$manual_refund->set_date_created( time() - DAY_IN_SECONDS );
 		$manual_refund->save();
 
-		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client            = new FakeHttpClient();
 		$http_client->responses = array(
 			$this->refund_transport_response(
 				array(
@@ -5818,7 +5818,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_refund_retry_after_an_ambiguous_answer_links_the_earlier_refund_without_a_second_request( array $answers, int $post_count ): void {
 		$order                  = $this->create_refund_hold_order();
-		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client            = new FakeHttpClient();
 		$http_client->responses = $answers;
 		$provider               = $this->create_refund_hold_provider( $http_client );
 
@@ -5865,7 +5865,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_refund_retry_inside_the_held_key_window_resends_the_earlier_request_under_its_key(): void {
 		$order                  = $this->create_refund_hold_order();
-		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client            = new FakeHttpClient();
 		$http_client->responses = array( self::stripe_api_error( 503 ) );
 		$provider               = $this->create_refund_hold_provider( $http_client );
 
@@ -5901,7 +5901,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		$order                  = $this->create_refund_hold_order();
 		$held_key               = 'link' === $branch ? self::F458_KEY_555 : 'key_f458_unlisted';
 		$listed                 = self::http_json( 200, $this->recorded_refund_list_with_marker( self::F458_REFUND_555, $held_key ) );
-		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client            = new FakeHttpClient();
 		$http_client->responses = 'link' === $branch
 			? array( $listed )
 			: array( self::http_json( 200, $this->recorded_refund_list() ), self::http_json( 200, $this->recorded_refund_answer( self::F458_REFUND_555, $held_key, 555 ) ) );
@@ -5952,7 +5952,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	public function test_refund_for_another_amount_inside_the_held_key_window_is_refused_as_settling(): void {
 		$order                  = $this->create_refund_hold_order();
 		$hold                   = $this->seed_refund_hold( $order, array( 'key' => 'key_f458_unlisted' ) );
-		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client            = new FakeHttpClient();
 		$http_client->responses = array( self::http_json( 200, $this->recorded_refund_list() ) );
 		$provider               = $this->create_refund_hold_provider( $http_client );
 
@@ -5980,7 +5980,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		$order->update_meta_data( '_wcpay_refund_status', 'successful' );
 		$order->save();
 		$hold                   = $this->seed_refund_hold( $order );
-		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client            = new FakeHttpClient();
 		$http_client->responses = array( $answer );
 		$provider               = $this->create_refund_hold_provider( $http_client );
 
@@ -6039,7 +6039,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 				'amount' => 1111,
 			)
 		);
-		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client            = new FakeHttpClient();
 		$http_client->responses = array( self::http_json( 200, $this->recorded_refund_list( 'list_limit_2_has_more' ) ) );
 		$provider               = $this->create_refund_hold_provider( $http_client );
 
@@ -6071,7 +6071,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		$setup( $this, $order );
 		$list                   = $this->recorded_refund_list();
 		$list['data'][0]        = array_merge( $list['data'][0], $first_refund );
-		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client            = new FakeHttpClient();
 		$http_client->responses = array(
 			self::http_json( 200, $list ),
 			self::http_json( 200, $this->recorded_refund_answer( 're_f458_fresh', 'key_f458_not_read', (int) round( $amount * 100 ) ) ),
@@ -6132,7 +6132,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_earlier_refund_for_another_amount_is_refused_until_a_call_for_its_amount_links_it(): void {
 		$order                  = $this->create_refund_hold_order();
-		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client            = new FakeHttpClient();
 		$http_client->responses = array(
 			self::http_json( 200, $this->recorded_refund_list() ),
 			self::http_json( 200, $this->recorded_refund_list() ),
@@ -6180,7 +6180,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	public function test_marker_match_decides_on_the_refunds_own_amount(): void {
 		$order = $this->create_refund_hold_order();
 		$this->seed_refund_hold( $order, array( 'amount' => 600 ) );
-		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client            = new FakeHttpClient();
 		$http_client->responses = array( self::http_json( 200, $this->recorded_refund_list() ) );
 		$provider               = $this->create_refund_hold_provider( $http_client );
 
@@ -6209,7 +6209,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 				'last_failed_at' => time() - 120,
 			)
 		);
-		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client            = new FakeHttpClient();
 		$http_client->responses = array(
 			self::http_json( 200, $this->recorded_refund_list() ),
 			self::http_json( 200, $this->recorded_refund_list() ),
@@ -6262,7 +6262,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 			)
 		);
 		$this->link_local_refund_row( $order, 5.55, self::F458_REFUND_555 );
-		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client            = new FakeHttpClient();
 		$http_client->responses = array(
 			self::http_json( 200, $this->recorded_refund_list() ),
 			self::http_json( 200, $this->recorded_refund_answer( 're_f458_after_f1', 'key_f458_not_read', 555 ) ),
@@ -6304,7 +6304,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 			)
 		);
 		$manual_row             = $this->create_refund_row( $order, 5.55, 'Recorded from the Stripe dashboard' );
-		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client            = new FakeHttpClient();
 		$http_client->responses = array(
 			self::http_json( 200, $this->recorded_refund_list() ),
 			self::http_json( 200, $this->recorded_refund_answer( 're_f458_second_555', 'key_f458_not_read', 555 ) ),
@@ -6354,7 +6354,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		$manual_row                = $this->create_refund_row( $order, 5.55, 'Recorded from the Stripe dashboard' );
 		$list                      = $this->recorded_refund_list();
 		$list['data'][0]['status'] = $status;
-		$http_client               = new FakeWooPaymentsHttpClient();
+		$http_client               = new FakeHttpClient();
 		$http_client->responses    = array(
 			self::http_json( 200, $list ),
 			self::http_json( 200, $this->recorded_refund_answer( 're_f458_after_d1', 'key_f458_not_read', 200 ) ),
@@ -6416,7 +6416,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 			$this->link_local_refund_row( $order, 5.55, self::F458_REFUND_555 );
 		}
 		$manual_row             = $this->create_refund_row( $order, 5.55, 'Recorded from the Stripe dashboard' );
-		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client            = new FakeHttpClient();
 		$http_client->responses = array( self::http_json( 200, $this->recorded_refund_answer( 're_f458_after_l1', 'key_f458_not_read', 200 ) ) );
 		$provider               = $this->create_refund_hold_provider( $http_client );
 
@@ -6457,7 +6457,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 			self::found_hold_record()
 		);
 		$this->link_local_refund_row( $order, 37.66, 're_f458_other_refund' );
-		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client            = new FakeHttpClient();
 		$http_client->responses = array( self::http_json( 200, $this->recorded_refund_list() ) );
 		$provider               = $this->create_refund_hold_provider( $http_client );
 
@@ -6485,7 +6485,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 				'last_failed_at' => time() - 200,
 			)
 		);
-		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client            = new FakeHttpClient();
 		$http_client->responses = array(
 			self::http_json( 200, $this->recorded_refund_list() ),
 			self::stripe_api_error( 503 ),
@@ -6549,7 +6549,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		}
 		$row->set_refunded_payment( $through_gateway );
 		$row->save();
-		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client            = new FakeHttpClient();
 		$http_client->responses = array( self::http_json( 200, $this->recorded_refund_list() ) );
 		$provider               = $this->create_refund_hold_provider( $http_client );
 
@@ -6593,7 +6593,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 			)
 		);
 		$manual_row             = $this->create_refund_row( $order, 5.55, 'Recorded from the Stripe dashboard' );
-		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client            = new FakeHttpClient();
 		$http_client->responses = array(
 			self::http_json( 200, $this->recorded_refund_list() ),
 			self::http_json( 200, $this->recorded_refund_answer( 're_f458_deliberate_555', 'key_f458_not_read', 555 ) ),
@@ -6627,7 +6627,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		$order = $this->create_refund_hold_order();
 		$this->seed_refund_hold( $order );
 		$manual_row             = $this->create_refund_row( $order, 5.55, 'Recorded from the Stripe dashboard' );
-		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client            = new FakeHttpClient();
 		$http_client->responses = array(
 			self::http_json( 200, $this->recorded_refund_list() ),
 			self::http_json( 200, $this->recorded_refund_answer( 're_f458_partial_200', 'key_f458_not_read', 200 ) ),
@@ -6662,7 +6662,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		$older->set_date_created( $failed_at + 10 );
 		$older->save();
 		$newer                  = $this->create_refund_row( $order, 5.55, 'Recorded again' );
-		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client            = new FakeHttpClient();
 		$http_client->responses = array(
 			self::http_json( 200, $this->recorded_refund_list() ),
 			self::http_json( 200, $this->recorded_refund_answer( 're_f458_after_two_rows', 'key_f458_not_read', 200 ) ),
@@ -6696,7 +6696,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		);
 		// A manual EUR 5.55 row is not a record of a USD 5.55 refund (Codex review 201 M4).
 		$manual_row             = $this->create_refund_row( $order, 5.55, 'Recorded locally' );
-		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client            = new FakeHttpClient();
 		$http_client->responses = array( self::http_json( 200, $this->recorded_refund_list() ) );
 		$provider               = $this->create_refund_hold_provider( $http_client );
 
@@ -6727,7 +6727,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 				)
 			)
 		);
-		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client            = new FakeHttpClient();
 		$http_client->responses = array( self::http_json( 200, $this->recorded_refund_list() ) );
 		$provider               = $this->create_refund_hold_provider( $http_client );
 		$logger                 = RecordingWcLogger::install();
@@ -6757,7 +6757,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 				)
 			)
 		);
-		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client            = new FakeHttpClient();
 		$http_client->responses = array( self::http_json( 200, $this->recorded_refund_list() ) );
 		$provider               = $this->create_refund_hold_provider( $http_client );
 
@@ -6777,7 +6777,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	public function test_definitive_refund_failure_holds_no_key(): void {
 		$order                  = $this->create_refund_hold_order();
 		$error                  = $this->load_recorded_refund_error( 'refund_exceeds_charge' );
-		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client            = new FakeHttpClient();
 		$http_client->responses = array(
 			array(
 				'response' => array( 'code' => $error['response']['http_status'] ),
@@ -6818,7 +6818,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 			$overrides['order_id'] = $this->create_woopayments_order()->get_id();
 		}
 		$this->seed_refund_hold( $order, $overrides );
-		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client            = new FakeHttpClient();
 		$http_client->responses = array( self::http_json( 200, $this->recorded_refund_answer( 're_f458_after_stale', 'key_f458_not_read', 555 ) ) );
 		$provider               = $this->create_refund_hold_provider( $http_client );
 
@@ -6861,7 +6861,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 				)
 			)
 		);
-		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client            = new FakeHttpClient();
 		$http_client->responses = array( self::http_json( 200, $this->recorded_refund_list() ) );
 		$provider               = $this->create_refund_hold_provider( $http_client );
 
@@ -6894,7 +6894,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 				),
 			)
 		);
-		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client            = new FakeHttpClient();
 		$http_client->responses = array(
 			self::http_json( 200, $this->recorded_refund_list() ),
 			self::http_json( 200, $this->recorded_refund_answer( 're_f458_retry_777', 'key_f458_unlisted', 777 ) ),
@@ -6915,7 +6915,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		$order = $this->create_refund_hold_order();
 		$this->link_local_refund_row( $order, 5.55, 're_f458_replayed' );
 		$this->seed_refund_hold( $order, array( 'key' => 'key_f458_unlisted' ) );
-		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client            = new FakeHttpClient();
 		$http_client->responses = array(
 			self::http_json( 200, $this->recorded_refund_list() ),
 			self::http_json( 200, $this->recorded_refund_answer( 're_f458_replayed', 'key_f458_unlisted', 555 ) ),
@@ -6946,7 +6946,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		$order->set_currency( 'EUR' );
 		$order->update_meta_data( '_charge_id', (string) $answer['charge'] );
 		$order->save();
-		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client            = new FakeHttpClient();
 		$http_client->responses = array( self::http_json( 200, $answer ) );
 		$provider               = $this->create_refund_hold_provider( $http_client );
 
@@ -6971,7 +6971,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		$this->seed_refund_hold( $order );
 		$list                      = $this->recorded_refund_list();
 		$list['data'][0]['status'] = 'requires_action';
-		$http_client               = new FakeWooPaymentsHttpClient();
+		$http_client               = new FakeHttpClient();
 		$http_client->responses    = array( self::http_json( 200, $list ) );
 		$provider                  = $this->create_refund_hold_provider( $http_client );
 
@@ -7007,7 +7007,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_interac_in_person_refund_links_the_refund_made_on_the_card_reader( bool $details_on_order, bool $newer_match, bool $older_recorded ): void {
 		$order       = $this->create_refund_hold_order();
-		$http_client = new FakeWooPaymentsHttpClient();
+		$http_client = new FakeHttpClient();
 		if ( $details_on_order ) {
 			$order->update_meta_data( '_wcpay_payment_method_details', (string) wp_json_encode( self::interac_present_details() ) );
 		} else {
@@ -7077,7 +7077,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		$order = $this->create_refund_hold_order();
 		$order->update_meta_data( '_wcpay_payment_method_details', (string) wp_json_encode( self::interac_present_details() ) );
 		$order->save();
-		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client            = new FakeHttpClient();
 		$http_client->responses = array( self::stripe_api_error( 404 ) );
 		$provider               = $this->create_refund_hold_provider( $http_client );
 
@@ -7116,7 +7116,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		}
 		$list                      = $this->recorded_refund_list();
 		$list['data'][1]['status'] = $listed_status;
-		$http_client               = new FakeWooPaymentsHttpClient();
+		$http_client               = new FakeHttpClient();
 		$http_client->responses    = array( self::http_json( 200, $list ) );
 		$provider                  = $this->create_refund_hold_provider( $http_client );
 
@@ -7160,7 +7160,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		$order = $this->create_refund_hold_order();
 		$order->update_meta_data( '_payment_method_id', 'pm_unknown_type' );
 		$order->save();
-		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client            = new FakeHttpClient();
 		$http_client->responses = array( self::stripe_api_error( 404 ), self::http_json( 200, $this->recorded_refund_answer( 're_after_type_fetch_failure', '', 300 ) ) );
 		$provider               = $this->create_refund_hold_provider( $http_client );
 
@@ -7224,7 +7224,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( self::F458_CHARGE, $loaded->get_meta( '_charge_id', true ), 'The waiting request has read the order meta.' );
 		$this->seed_refund_hold( $order );
 		$this->assertSame( '', $loaded->get_meta( WooPaymentsPaymentOperationService::REFUND_AMBIGUITY_META, true ), 'Its order object does not see the hold.' );
-		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client            = new FakeHttpClient();
 		$http_client->responses = array( self::http_json( 200, $this->recorded_refund_list() ) );
 		$provider               = $this->create_refund_hold_provider( $http_client );
 
@@ -7317,7 +7317,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		);
 		$own_row                = $this->create_refund_row( $order, 5.55, 'requested_by_customer' );
 		$other_row              = $this->create_refund_row( $order, 1.00, 'Another refund in flight' );
-		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client            = new FakeHttpClient();
 		$http_client->responses = array(
 			self::http_json( 200, $this->recorded_refund_list() ),
 			self::http_json( 200, $this->recorded_refund_answer( 're_f458_second_555_send', 'key_f458_not_read', 555 ) ),
@@ -7352,7 +7352,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 			)
 		);
 		$manual_row             = $this->create_refund_row( $order, 5.55, 'Recorded from the Stripe dashboard' );
-		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client            = new FakeHttpClient();
 		$http_client->responses = array( self::http_json( 200, $this->recorded_refund_list() ) );
 		$provider               = $this->create_refund_hold_provider( $http_client );
 
@@ -7383,7 +7383,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		$earlier_row = $this->create_refund_row( $order, 1.00, 'An earlier refund in this request' );
 		$manual_row  = $this->create_refund_row( $order, 5.55, 'Recorded from the Stripe dashboard' );
 		$this->create_refund_row( $order, 2.00, 'requested_by_customer' );
-		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client            = new FakeHttpClient();
 		$http_client->responses = array(
 			self::http_json( 200, $this->recorded_refund_list() ),
 			self::http_json( 200, $this->recorded_refund_answer( 're_f458_stale_key_200', 'key_f458_not_read', 200 ) ),
@@ -7417,7 +7417,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 			)
 		);
 		$manual_row             = null;
-		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client            = new FakeHttpClient();
 		$http_client->responses = array(
 			self::http_json( 200, $this->recorded_refund_list() ),
 			self::http_json( 200, $this->recorded_refund_answer( 're_f458_handoff_200', 'key_f458_not_read', 200 ) ),
@@ -7458,7 +7458,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		$order                  = $this->create_refund_hold_order();
 		$answer                 = $this->recorded_refund_answer( 're_f458_sync_' . $status, 'key_f458_not_read', 200 );
 		$answer['status']       = $status;
-		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client            = new FakeHttpClient();
 		$http_client->responses = array( self::http_json( 200, $answer ) );
 		$handed_over            = null;
 		$provider               = $this->create_refund_hold_provider(
@@ -7488,7 +7488,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	public function test_refund_failure_status_replaces_a_status_saved_during_the_call(): void {
 		$order                  = $this->create_refund_hold_order();
 		$error                  = $this->load_recorded_refund_error( 'refund_exceeds_charge' );
-		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client            = new FakeHttpClient();
 		$http_client->responses = array(
 			array(
 				'response' => array( 'code' => $error['response']['http_status'] ),
@@ -7531,7 +7531,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 			)
 		);
 		$in_flight              = $this->create_in_flight_gateway_row( $order, 5.55 );
-		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client            = new FakeHttpClient();
 		$http_client->responses = array(
 			self::http_json( 200, $this->recorded_refund_list() ),
 			self::http_json( 200, $this->recorded_refund_answer( 're_f458_r1b_again', 'key_f458_not_read', 555 ) ),
@@ -7603,7 +7603,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 				'last_failed_at' => time() - 1000,
 			)
 		);
-		$other_client            = new FakeWooPaymentsHttpClient();
+		$other_client            = new FakeHttpClient();
 		$other_client->responses = array(
 			self::http_json( 200, $this->recorded_refund_list() ),
 			self::http_json( 200, $this->recorded_refund_answer( 're_f458_first_save_200', 'key_f458_not_read', 200 ) ),
@@ -7619,7 +7619,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 			list( $other_result ) = $this->run_refund( $other_provider, $order, 2.00 );
 		};
 		add_action( $hook, $interleave );
-		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client            = new FakeHttpClient();
 		$http_client->responses = array(
 			self::http_json( 200, $this->recorded_refund_list() ),
 			self::http_json( 200, $this->recorded_refund_answer( 're_f458_first_save_555', 'key_f458_not_read', 555 ) ),
@@ -7660,7 +7660,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		$unmarked->set_total( -5.55 );
 		$unmarked->set_reason( 'Saved without wc_create_refund()' );
 		$unmarked->save();
-		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client            = new FakeHttpClient();
 		$http_client->responses = array(
 			self::http_json( 200, $this->recorded_refund_list() ),
 			self::http_json( 200, $this->recorded_refund_answer( 're_f458_unmarked_200', 'key_f458_not_read', 200 ) ),
@@ -7683,7 +7683,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_nested_manual_refund_keeps_the_gateway_refunds_own_row(): void {
 		$order                  = $this->create_refund_hold_order();
-		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client            = new FakeHttpClient();
 		$http_client->responses = array( self::http_json( 200, $this->recorded_refund_answer( 're_f458_nested_200', 'key_f458_not_read', 200 ) ) );
 		$handed_over            = null;
 		$provider               = $this->create_refund_hold_provider(
@@ -7724,7 +7724,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_inner_call_that_ends_unconsumed_leaves_the_outer_call_its_own_row( string $inner_kind ): void {
 		$order                  = $this->create_refund_hold_order();
-		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client            = new FakeHttpClient();
 		$http_client->responses = array( self::http_json( 200, $this->recorded_refund_answer( 're_f458_r2_outer_200', 'key_f458_not_read', 200 ) ) );
 		$handed_over            = null;
 		$provider               = $this->create_refund_hold_provider(
@@ -7808,7 +7808,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 			$order->save();
 		}
 		$gateway = new WooPaymentsGateway();
-		$gateway->init( wc_get_container()->get( PaymentProcessingService::class ), $this->create_refund_hold_provider( new FakeWooPaymentsHttpClient() ) );
+		$gateway->init( wc_get_container()->get( PaymentProcessingService::class ), $this->create_refund_hold_provider( new FakeHttpClient() ) );
 
 		$result = $gateway->process_refund( $order->get_id(), 2.00, 'requested_by_customer' );
 
@@ -7847,7 +7847,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 			self::found_hold_record()
 		);
 		$this->create_in_flight_gateway_row( $order, 40.00 );
-		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client            = new FakeHttpClient();
 		$http_client->responses = array( self::http_json( 200, $this->recorded_refund_list() ) );
 		$provider               = $this->create_refund_hold_provider( $http_client );
 
@@ -7880,7 +7880,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 			self::found_hold_record()
 		);
 		$create_row( $this, $order );
-		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client            = new FakeHttpClient();
 		$http_client->responses = array( self::http_json( 200, $this->recorded_refund_answer( 're_f458_after_backstop', 'key_f458_not_read', 200 ) ) );
 		$provider               = $this->create_refund_hold_provider( $http_client );
 		$logger                 = RecordingWcLogger::install();
@@ -7947,7 +7947,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 			)
 		);
 		$this->create_unmarked_row( $order, 40.00, time() - 2000 );
-		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client            = new FakeHttpClient();
 		$http_client->responses = array(
 			self::http_json( 200, $this->recorded_refund_list() ),
 			self::http_json( 200, $this->recorded_refund_answer( 're_f458_older_in_flight_200', 'key_f458_not_read', 200 ) ),
@@ -7994,7 +7994,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 			self::found_hold_record()
 		);
 		$this->link_local_refund_row( $order, 40.00, 're_f458_other_refund' );
-		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client            = new FakeHttpClient();
 		$http_client->responses = array( self::http_json( 200, $this->recorded_refund_list() ) );
 		$provider               = $this->create_refund_hold_provider( $http_client );
 
@@ -8024,7 +8024,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		);
 		$test        = $this;
 		$late_row    = null;
-		$http_client = new class() extends FakeWooPaymentsHttpClient {
+		$http_client = new class() extends FakeHttpClient {
 			/**
 			 * Called before each answer.
 			 *
@@ -8094,7 +8094,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 				'last_failed_at' => time() - 2 * DAY_IN_SECONDS,
 			)
 		);
-		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client            = new FakeHttpClient();
 		$http_client->responses = array( self::http_json( 200, $this->recorded_refund_list() ) );
 		$provider               = $this->create_refund_hold_provider( $http_client );
 
@@ -8123,7 +8123,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 			)
 		);
 		$manual_row             = $this->create_refund_row( $order, 5.55, 'Recorded from the Stripe dashboard' );
-		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client            = new FakeHttpClient();
 		$http_client->responses = array(
 			self::http_json( 200, $this->recorded_refund_list() ),
 			self::http_json( 200, $this->recorded_refund_answer( 're_f458_after_m5', 'key_f458_not_read', 200 ) ),
@@ -8158,13 +8158,13 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * Build the real provider over a fake transport, with no backoff between transport retries.
 	 *
-	 * @param FakeWooPaymentsHttpClient $http_client   Platform answers.
-	 * @param callable|null             $before_refund Called with the refund context when the runtime enters the provider.
+	 * @param FakeHttpClient $http_client   Platform answers.
+	 * @param callable|null  $before_refund Called with the refund context when the runtime enters the provider.
 	 * @return WooPaymentsProvider
 	 */
-	private function create_refund_hold_provider( FakeWooPaymentsHttpClient $http_client, ?callable $before_refund = null ): WooPaymentsProvider {
+	private function create_refund_hold_provider( FakeHttpClient $http_client, ?callable $before_refund = null ): WooPaymentsProvider {
 		$account_service = $this->create_account_service( true );
-		$api_client      = new class() extends WooPaymentsApiClient {
+		$api_client      = new class() extends Client {
 			/**
 			 * Skip the backoff between transport retries.
 			 *
@@ -8174,7 +8174,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 				unset( $backoff_microseconds );
 			}
 		};
-		$api_client->init( $http_client, $account_service, wc_get_container()->get( WooPaymentsTransportLog::class ) );
+		$api_client->init( $http_client, $account_service, wc_get_container()->get( TransportLog::class ) );
 
 		$provider                = new class() extends WooPaymentsProvider {
 			/**
@@ -8681,7 +8681,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 * order-completion half ({@see \Automattic\WooCommerce\Tests\Internal\Payments\PaymentProcessingServiceTest::test_process_checkout_completes_order_for_completed_outcome})
 	 * by running a real recorded PaymentIntent response through the full production stack:
 	 * {@see PaymentProcessingService::process_checkout_outcome} → the real {@see WooPaymentsProvider} → this
-	 * adapter → the real {@see WooPaymentsApiClient} → a FAKEHTTP transport queued with REC-BC
+	 * adapter → the real {@see Client} → a FAKEHTTP transport queued with REC-BC
 	 * (`Fixtures/platform-intention-basic-card.json`, USD, no currency conversion) and REC-3
 	 * (`Fixtures/platform-eur-charge.json`, EUR charge on a USD account), which also joins the
 	 * multi-currency settlement-meta path end to end for a real converted checkout. The order carries
@@ -8713,7 +8713,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		$order->save();
 
 		$recorded              = $this->load_recorded_intent_entry( $fixture, $pair );
-		$http_client           = new FakeWooPaymentsHttpClient();
+		$http_client           = new FakeHttpClient();
 		$http_client->response = array(
 			'response' => array( 'code' => $recorded['http_status'] ),
 			'headers'  => array( 'content-type' => $recorded['content_type'] ),
@@ -8819,7 +8819,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		$order->save();
 
 		$recorded              = $this->load_recorded_intent_entry( 'platform-intention-subscription.json', 'signup_initial_setup_future_usage' );
-		$http_client           = new FakeWooPaymentsHttpClient();
+		$http_client           = new FakeHttpClient();
 		$http_client->response = array(
 			'response' => array( 'code' => $recorded['http_status'] ),
 			'headers'  => array( 'content-type' => $recorded['content_type'] ),
@@ -8916,7 +8916,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		$order->save();
 
 		$recorded              = $this->load_recorded_intent_entry( 'platform-intention-subscription.json', 'renewal_off_session' );
-		$http_client           = new FakeWooPaymentsHttpClient();
+		$http_client           = new FakeHttpClient();
 		$http_client->response = array(
 			'response' => array( 'code' => $recorded['http_status'] ),
 			'headers'  => array( 'content-type' => $recorded['content_type'] ),
@@ -8995,7 +8995,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		$GLOBALS[ WooCommerceSubscriptionsDoubles::ORDER_SUBSCRIPTIONS ] = array( $order->get_id() => array( 'parent' => array( $subscription->get_id() ) ) );
 
 		$recorded              = $this->load_recorded_intent_entry( 'platform-intention-subscription.json', 'renewal_off_session' );
-		$http_client           = new FakeWooPaymentsHttpClient();
+		$http_client           = new FakeHttpClient();
 		$http_client->response = array(
 			'response' => array( 'code' => $recorded['http_status'] ),
 			'headers'  => array( 'content-type' => $recorded['content_type'] ),
@@ -9045,16 +9045,16 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 * remain in use, following the pattern
 	 * `PaymentProcessingServiceTest::review_payment_intent_provider` established.
 	 *
-	 * @param FakeWooPaymentsHttpClient          $http_client           Fake raw transport queued with a recorded response.
+	 * @param FakeHttpClient                     $http_client           Fake raw transport queued with a recorded response.
 	 * @param WooPaymentsAccountService          $account_service       WooPayments account service.
 	 * @param WooPaymentsCustomerService|null    $customer_service      Customer service; a bare mock (no configured methods) when omitted, matching the refund path's needs.
 	 * @param WooPaymentsTokenService|null       $token_service         Token service; the default fake-details token service when omitted.
 	 * @param WooPaymentsOrderEffectApplier|null $order_effect_applier  Order effect applier; the container's real singleton when omitted. Pass a locally built one wired to `$token_service` when a test needs its own fake payment-method details for token creation, since the container's singleton resolves its own token service independently of this method's `$token_service` argument.
 	 * @return WooPaymentsProvider
 	 */
-	private function create_provider_over_fake_transport( FakeWooPaymentsHttpClient $http_client, WooPaymentsAccountService $account_service, ?WooPaymentsCustomerService $customer_service = null, ?WooPaymentsTokenService $token_service = null, ?WooPaymentsOrderEffectApplier $order_effect_applier = null ): WooPaymentsProvider {
-		$api_client = new WooPaymentsApiClient();
-		$api_client->init( $http_client, $account_service, wc_get_container()->get( WooPaymentsTransportLog::class ) );
+	private function create_provider_over_fake_transport( FakeHttpClient $http_client, WooPaymentsAccountService $account_service, ?WooPaymentsCustomerService $customer_service = null, ?WooPaymentsTokenService $token_service = null, ?WooPaymentsOrderEffectApplier $order_effect_applier = null ): WooPaymentsProvider {
+		$api_client = new Client();
+		$api_client->init( $http_client, $account_service, wc_get_container()->get( TransportLog::class ) );
 
 		$payment_operations = $this->create_operation_service( $api_client, $customer_service, $token_service, $account_service );
 
@@ -9108,7 +9108,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		$this->assertInstanceOf( WC_Order_Refund::class, $refund );
 
 		$recorded              = $this->load_recorded_refund_entry( 'afterpay_clearpay_full_refund_pending' );
-		$http_client           = new FakeWooPaymentsHttpClient();
+		$http_client           = new FakeHttpClient();
 		$http_client->response = array(
 			'response' => array( 'code' => $recorded['http_status'] ),
 			'headers'  => array( 'content-type' => $recorded['content_type'] ),
@@ -9191,7 +9191,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_capture_sends_the_intent_and_amount_to_the_platform_api( string $transaction_id, array $meta, ?float $amount, string $intent_id, int $minor_amount ): void {
 		$order      = $this->create_woopayments_order( '10.00' );
-		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
+		$api_client = $this->getMockBuilder( Client::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'is_available', 'capture_intention' ) )
 			->getMock();
@@ -9255,7 +9255,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_capture_plan_writes_fee_meta_unless_the_status_change_captured( array $provider_data, bool $writes_fee_meta ): void {
 		$order      = $this->create_woopayments_order();
-		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
+		$api_client = $this->getMockBuilder( Client::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'is_available', 'capture_intention' ) )
 			->getMock();
@@ -9337,7 +9337,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		wc_get_container()->replace( WooPaymentsLevel3Service::class, $level3 );
 		$order->set_transaction_id( 'pi_capture_level3' );
 		$order->save();
-		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
+		$api_client = $this->getMockBuilder( Client::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'is_available', 'capture_intention' ) )
 			->getMock();
@@ -9378,7 +9378,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_capture_returns_fee_effect_plan_without_writing_notes(): void {
 		$order      = $this->create_woopayments_order( '50.00' );
-		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
+		$api_client = $this->getMockBuilder( Client::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'is_available', 'capture_intention' ) )
 			->getMock();
@@ -9478,7 +9478,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		$order->set_transaction_id( 'pi_capture_converted' );
 		$order->save();
 
-		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
+		$api_client = $this->getMockBuilder( Client::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'is_available', 'capture_intention' ) )
 			->getMock();
@@ -9544,7 +9544,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_failed_capture_returns_the_platform_error_without_order_meta_or_note(): void {
 		$order      = $this->create_woopayments_order();
-		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
+		$api_client = $this->getMockBuilder( Client::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'is_available', 'capture_intention' ) )
 			->getMock();
@@ -9599,7 +9599,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_cancel_exception_self_heals_when_intent_is_already_canceled(): void {
 		$order      = $this->create_woopayments_order();
-		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
+		$api_client = $this->getMockBuilder( Client::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'is_available', 'cancel_intention', 'get_payment_intention' ) )
 			->getMock();
@@ -9610,7 +9610,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		$api_client->method( 'is_available' )->willReturn( true );
 		$api_client->expects( $this->once() )
 			->method( 'cancel_intention' )
-			->willThrowException( new WooPaymentsApiException( 'Cancel failed.', 'wcpay_cancel_error', 402 ) );
+			->willThrowException( new ApiException( 'Cancel failed.', 'wcpay_cancel_error', 402 ) );
 		$api_client->expects( $this->once() )
 			->method( 'get_payment_intention' )
 			->with( 'pi_cancel_healed' )
@@ -9641,7 +9641,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_cancel_exception_stays_failed_when_intent_is_not_canceled(): void {
 		$order      = $this->create_woopayments_order();
-		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
+		$api_client = $this->getMockBuilder( Client::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'is_available', 'cancel_intention', 'get_payment_intention' ) )
 			->getMock();
@@ -9652,7 +9652,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		$api_client->method( 'is_available' )->willReturn( true );
 		$api_client->expects( $this->once() )
 			->method( 'cancel_intention' )
-			->willThrowException( new WooPaymentsApiException( 'Cancel failed.', 'wcpay_cancel_error', 402 ) );
+			->willThrowException( new ApiException( 'Cancel failed.', 'wcpay_cancel_error', 402 ) );
 		$api_client->expects( $this->once() )
 			->method( 'get_payment_intention' )
 			->with( 'pi_cancel_live' )
@@ -9678,7 +9678,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_cancel_exception_without_refetch_keeps_plain_failure(): void {
 		$order      = $this->create_woopayments_order();
-		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
+		$api_client = $this->getMockBuilder( Client::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'is_available', 'cancel_intention', 'get_payment_intention' ) )
 			->getMock();
@@ -9688,9 +9688,9 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 
 		$api_client->method( 'is_available' )->willReturn( true );
 		$api_client->method( 'cancel_intention' )
-			->willThrowException( new WooPaymentsApiException( 'Cancel failed.', 'wcpay_cancel_error', 402 ) );
+			->willThrowException( new ApiException( 'Cancel failed.', 'wcpay_cancel_error', 402 ) );
 		$api_client->method( 'get_payment_intention' )
-			->willThrowException( new WooPaymentsApiException( 'Fetch failed.', 'wcpay_fetch_error', 500 ) );
+			->willThrowException( new ApiException( 'Fetch failed.', 'wcpay_fetch_error', 500 ) );
 
 		$sut     = $this->create_operation_service( $api_client );
 		$outcome = $sut->cancel( PaymentOperationContext::for_cancel( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ), 'key_cancel' );
@@ -9720,7 +9720,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		$order->save();
 		$order->update_status( 'on-hold' );
 		$captured               = $this->load_recorded_intent_entry( 'platform-manual-capture.json', 'capture_full_amount' )['body'];
-		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client            = new FakeHttpClient();
 		$http_client->responses = array(
 			self::http_json(
 				400,
@@ -9764,7 +9764,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_capture_exception_detects_expired_authorization_via_refetch(): void {
 		$order      = $this->create_woopayments_order();
-		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
+		$api_client = $this->getMockBuilder( Client::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'is_available', 'capture_intention', 'get_payment_intention' ) )
 			->getMock();
@@ -9775,7 +9775,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		$api_client->method( 'is_available' )->willReturn( true );
 		$api_client->expects( $this->once() )
 			->method( 'capture_intention' )
-			->willThrowException( new WooPaymentsApiException( 'Capture failed.', 'wcpay_capture_error', 402 ) );
+			->willThrowException( new ApiException( 'Capture failed.', 'wcpay_capture_error', 402 ) );
 		$api_client->expects( $this->once() )
 			->method( 'get_payment_intention' )
 			->with( 'pi_expired' )
@@ -9811,7 +9811,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_capture_exception_keeps_plain_failure_effects( callable $refetch ): void {
 		$order      = $this->create_woopayments_order();
-		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
+		$api_client = $this->getMockBuilder( Client::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'is_available', 'capture_intention', 'get_payment_intention' ) )
 			->getMock();
@@ -9821,7 +9821,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 
 		$api_client->method( 'is_available' )->willReturn( true );
 		$api_client->method( 'capture_intention' )
-			->willThrowException( new WooPaymentsApiException( 'Capture failed.', 'wcpay_capture_error', 402 ) );
+			->willThrowException( new ApiException( 'Capture failed.', 'wcpay_capture_error', 402 ) );
 		$api_client->method( 'get_payment_intention' )->willReturnCallback( $refetch );
 
 		$sut     = $this->create_operation_service( $api_client );
@@ -9847,7 +9847,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		return array(
 			'itself fails'                      => array(
 				static function (): array {
-					throw new WooPaymentsApiException( 'Fetch failed.', 'wcpay_fetch_error', 500 );
+					throw new ApiException( 'Fetch failed.', 'wcpay_fetch_error', 500 );
 				},
 			),
 			'finds the intent still capturable' => array(
@@ -9872,7 +9872,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_cancel_sends_the_order_intent_to_the_platform_api( string $transaction_id, array $meta, string $intent_id, array $answer, ?string $charge_id ): void {
 		$order      = $this->create_woopayments_order();
-		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
+		$api_client = $this->getMockBuilder( Client::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'is_available', 'cancel_intention' ) )
 			->getMock();
@@ -9943,7 +9943,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_failed_cancel_retains_plan_without_success_effect_data(): void {
 		$order      = $this->create_woopayments_order();
-		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
+		$api_client = $this->getMockBuilder( Client::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'is_available', 'cancel_intention' ) )
 			->getMock();
@@ -10008,7 +10008,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_operations_fail_closed_without_a_charge_or_intent_id(): void {
 		$order      = $this->create_woopayments_order();
-		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
+		$api_client = $this->getMockBuilder( Client::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'is_available', 'refund_charge', 'capture_intention', 'cancel_intention' ) )
 			->getMock();
@@ -10034,12 +10034,12 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * Charge an order through native transport with a WooPay intent in the checkout context.
 	 *
-	 * @param WC_Order             $order            Order to charge.
-	 * @param WooPaymentsApiClient $api_client       Transport double.
-	 * @param string               $woopay_intent_id Intent id WooPay sent.
+	 * @param WC_Order $order            Order to charge.
+	 * @param Client   $api_client       Transport double.
+	 * @param string   $woopay_intent_id Intent id WooPay sent.
 	 * @return PaymentOutcome
 	 */
-	private function charge_with_woopay_intent( WC_Order $order, WooPaymentsApiClient $api_client, string $woopay_intent_id ): PaymentOutcome {
+	private function charge_with_woopay_intent( WC_Order $order, Client $api_client, string $woopay_intent_id ): PaymentOutcome {
 		$customer_service = $this->getMockBuilder( WooPaymentsCustomerService::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'get_or_create_customer_id_for_order' ) )
@@ -10066,13 +10066,13 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * Create a transport double that serves WooPay intents and counts intent creation.
 	 *
-	 * @param array<string,mixed>          $payment_intent PaymentIntent the read returns.
-	 * @param array<string,mixed>          $setup_intent   SetupIntent the read returns.
-	 * @param WooPaymentsApiException|null $read_failure   Failure every read throws instead.
-	 * @return WooPaymentsApiClient
+	 * @param array<string,mixed> $payment_intent PaymentIntent the read returns.
+	 * @param array<string,mixed> $setup_intent   SetupIntent the read returns.
+	 * @param ApiException|null   $read_failure   Failure every read throws instead.
+	 * @return Client
 	 */
-	private function create_woopay_intent_api_client( array $payment_intent, array $setup_intent = array(), ?WooPaymentsApiException $read_failure = null ): WooPaymentsApiClient {
-		return new class( $payment_intent, $setup_intent, $read_failure ) extends WooPaymentsApiClient {
+	private function create_woopay_intent_api_client( array $payment_intent, array $setup_intent = array(), ?ApiException $read_failure = null ): Client {
+		return new class( $payment_intent, $setup_intent, $read_failure ) extends Client {
 			/**
 			 * PaymentIntent ids read.
 			 *
@@ -10111,18 +10111,18 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 			/**
 			 * Failure every read throws.
 			 *
-			 * @var WooPaymentsApiException|null
+			 * @var ApiException|null
 			 */
-			private ?WooPaymentsApiException $read_failure;
+			private ?ApiException $read_failure;
 
 			/**
 			 * Constructor.
 			 *
-			 * @param array<string,mixed>          $payment_intent PaymentIntent the read returns.
-			 * @param array<string,mixed>          $setup_intent   SetupIntent the read returns.
-			 * @param WooPaymentsApiException|null $read_failure   Failure every read throws.
+			 * @param array<string,mixed> $payment_intent PaymentIntent the read returns.
+			 * @param array<string,mixed> $setup_intent   SetupIntent the read returns.
+			 * @param ApiException|null   $read_failure   Failure every read throws.
 			 */
-			public function __construct( array $payment_intent, array $setup_intent, ?WooPaymentsApiException $read_failure ) {
+			public function __construct( array $payment_intent, array $setup_intent, ?ApiException $read_failure ) {
 				$this->payment_intent = $payment_intent;
 				$this->setup_intent   = $setup_intent;
 				$this->read_failure   = $read_failure;
@@ -10142,7 +10142,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 			 *
 			 * @param string $intent_id PaymentIntent ID.
 			 * @return array<string,mixed>
-			 * @throws WooPaymentsApiException When the double is set to fail.
+			 * @throws ApiException When the double is set to fail.
 			 */
 			public function get_payment_intention( string $intent_id ): array {
 				$this->payment_intent_reads[] = $intent_id;
@@ -10158,7 +10158,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 			 *
 			 * @param string $setup_intent_id SetupIntent ID.
 			 * @return array<string,mixed>
-			 * @throws WooPaymentsApiException When the double is set to fail.
+			 * @throws ApiException When the double is set to fail.
 			 */
 			public function get_setup_intention( string $setup_intent_id ): array {
 				$this->setup_intent_reads[] = $setup_intent_id;
@@ -10208,7 +10208,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * Create the adapter, with an unavailable API client unless one is given.
 	 *
-	 * @param WooPaymentsApiClient|null           $api_client WooPayments API client.
+	 * @param Client|null                         $api_client WooPayments API client.
 	 * @param WooPaymentsCustomerService|null     $customer_service WooPayments customer service.
 	 * @param WooPaymentsTokenService|null        $token_service WooPayments token service.
 	 * @param WooPaymentsAccountService|null      $account_service WooPayments account service.
@@ -10216,8 +10216,8 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 * @param WooPaymentsFraudRulesetService|null $fraud_ruleset_service Fraud ruleset service.
 	 * @return WooPaymentsPaymentOperationService
 	 */
-	private function create_operation_service( ?WooPaymentsApiClient $api_client = null, ?WooPaymentsCustomerService $customer_service = null, ?WooPaymentsTokenService $token_service = null, ?WooPaymentsAccountService $account_service = null, ?WooPaymentsOrderDataService $order_data_service = null, ?WooPaymentsFraudRulesetService $fraud_ruleset_service = null ): WooPaymentsPaymentOperationService {
-		$api_client = $api_client ?? $this->getMockBuilder( WooPaymentsApiClient::class )
+	private function create_operation_service( ?Client $api_client = null, ?WooPaymentsCustomerService $customer_service = null, ?WooPaymentsTokenService $token_service = null, ?WooPaymentsAccountService $account_service = null, ?WooPaymentsOrderDataService $order_data_service = null, ?WooPaymentsFraudRulesetService $fraud_ruleset_service = null ): WooPaymentsPaymentOperationService {
+		$api_client = $api_client ?? $this->getMockBuilder( Client::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'is_available' ) )
 			->getMock();
@@ -10281,10 +10281,10 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * Create a real customer service backed by the recording native API client.
 	 *
-	 * @param WooPaymentsApiClient $api_client Recording native API client.
+	 * @param Client $api_client Recording native API client.
 	 * @return WooPaymentsCustomerService
 	 */
-	private function create_real_customer_service( WooPaymentsApiClient $api_client ): WooPaymentsCustomerService {
+	private function create_real_customer_service( Client $api_client ): WooPaymentsCustomerService {
 		$service = new WooPaymentsCustomerService();
 		$service->init( $api_client, $this->create_account_service( false ), new WooPaymentsSessionService() );
 
@@ -10295,10 +10295,10 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 * Create a native API client that records each PaymentIntent request and answers it with the given intent.
 	 *
 	 * @param array<string,mixed> $answer PaymentIntent every request returns.
-	 * @return WooPaymentsApiClient
+	 * @return Client
 	 */
-	private function create_answering_charge_api_client( array $answer ): WooPaymentsApiClient {
-		return new class( $answer ) extends WooPaymentsApiClient {
+	private function create_answering_charge_api_client( array $answer ): Client {
+		return new class( $answer ) extends Client {
 			/** @var array<int,array<string,mixed>> */
 			public array $requests = array();
 
@@ -10341,10 +10341,10 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 * Create a native API client that records customer and intent operations.
 	 *
 	 * @param bool $missing_customer_on_first_intent Whether the first intent should report a missing customer.
-	 * @return WooPaymentsApiClient
+	 * @return Client
 	 */
-	private function create_recording_customer_intent_api_client( bool $missing_customer_on_first_intent = false ): WooPaymentsApiClient {
-		return new class( $missing_customer_on_first_intent ) extends WooPaymentsApiClient {
+	private function create_recording_customer_intent_api_client( bool $missing_customer_on_first_intent = false ): Client {
+		return new class( $missing_customer_on_first_intent ) extends Client {
 			/** @var array<int,array{customer_id:string,customer_data:array<string,mixed>}> */
 			public array $updated_customers = array();
 
@@ -10412,7 +10412,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 					'idempotency_key' => $idempotency_key,
 				);
 				if ( $this->missing_customer_on_first_intent && 1 === count( $this->intent_requests ) ) {
-					throw new WooPaymentsApiException( 'No such customer.', 'resource_missing', 404 );
+					throw new ApiException( 'No such customer.', 'resource_missing', 404 );
 				}
 
 				return array(
@@ -10442,7 +10442,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 					'idempotency_key' => $idempotency_key,
 				);
 				if ( $this->missing_customer_on_first_intent && 1 === count( $this->intent_requests ) ) {
-					throw new WooPaymentsApiException( 'No such customer.', 'resource_missing', 404 );
+					throw new ApiException( 'No such customer.', 'resource_missing', 404 );
 				}
 
 				return array(
@@ -10475,10 +10475,10 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 				'errored' => false,
 			)
 		);
-		$connected_api_client = $this->createMock( WooPaymentsApiClient::class );
+		$connected_api_client = $this->createMock( Client::class );
 		$connected_api_client->method( 'is_available' )->willReturn( true );
-		$connected_api_client->method( 'get_account' )->willThrowException( new WooPaymentsApiException( 'Unavailable.', 'wcpay_test_unavailable', 500 ) );
-		wc_get_container()->replace( WooPaymentsApiClient::class, $connected_api_client );
+		$connected_api_client->method( 'get_account' )->willThrowException( new ApiException( 'Unavailable.', 'wcpay_test_unavailable', 500 ) );
+		wc_get_container()->replace( Client::class, $connected_api_client );
 		$database_cache = new WooPaymentsDatabaseCache();
 		$database_cache->init( new LegacyProxy() );
 		$account_service = new WooPaymentsAccountService();
@@ -10577,7 +10577,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		};
 
 		$token_service = new WooPaymentsTokenService();
-		$token_service->init( $details_service, wc_get_container()->get( WooPaymentsApiClient::class ), wc_get_container()->get( WooPaymentsCustomerService::class ), wc_get_container()->get( WooPaymentsAccountService::class ), wc_get_container()->get( WooPaymentsOrderDataService::class ), wc_get_container()->get( WooPaymentsPaymentMethodRegistry::class ) );
+		$token_service->init( $details_service, wc_get_container()->get( Client::class ), wc_get_container()->get( WooPaymentsCustomerService::class ), wc_get_container()->get( WooPaymentsAccountService::class ), wc_get_container()->get( WooPaymentsOrderDataService::class ), wc_get_container()->get( WooPaymentsPaymentMethodRegistry::class ) );
 
 		return $token_service;
 	}

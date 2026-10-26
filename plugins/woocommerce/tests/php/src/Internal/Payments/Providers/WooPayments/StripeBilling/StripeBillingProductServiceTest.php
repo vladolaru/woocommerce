@@ -3,13 +3,13 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsTransportLog;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\TransportLog;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\StripeBillingApi;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\StripeBillingProductService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
-use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Api\FakeWooPaymentsHttpClient;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Api\FakeHttpClient;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\ProviderTextLogAssertions;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\RecordingWcLogger;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\SubscriptionVariationProductDouble;
@@ -65,9 +65,9 @@ class StripeBillingProductServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * Fake platform transport.
 	 *
-	 * @var FakeWooPaymentsHttpClient
+	 * @var FakeHttpClient
 	 */
-	private FakeWooPaymentsHttpClient $http_client;
+	private FakeHttpClient $http_client;
 
 	/**
 	 * Whether the store is in test mode.
@@ -90,7 +90,7 @@ class StripeBillingProductServiceTest extends WC_Unit_Test_Case {
 		parent::setUp();
 		WooCommerceSubscriptionsDoubles::load();
 
-		$this->http_client          = new FakeWooPaymentsHttpClient();
+		$this->http_client          = new FakeHttpClient();
 		$this->http_client->blog_id = self::RECORDED_BLOG_ID;
 
 		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
@@ -102,8 +102,8 @@ class StripeBillingProductServiceTest extends WC_Unit_Test_Case {
 		$account_service->method( 'get_account_id' )->willReturn( self::RECORDED_ACCOUNT_ID );
 		$account_service->method( 'get_gateway_setting' )->willReturnCallback( fn( string $key ) => 'enable_logging' === $key && $this->logging ? 'yes' : null );
 
-		$api_client = new WooPaymentsApiClient();
-		$api_client->init( $this->http_client, $account_service, wc_get_container()->get( WooPaymentsTransportLog::class ) );
+		$api_client = new Client();
+		$api_client->init( $this->http_client, $account_service, wc_get_container()->get( TransportLog::class ) );
 		$api = new StripeBillingApi();
 		$api->init( $api_client );
 
@@ -200,7 +200,7 @@ class StripeBillingProductServiceTest extends WC_Unit_Test_Case {
 			case "fetching an item's unlinked Stripe product":
 				try {
 					$this->sut->get_or_create_wcpay_product_id_for_item( 'shipping' );
-				} catch ( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException $exception ) {
+				} catch ( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException $exception ) {
 					// The Stripe product the fetch falls back to creating fails too, and that failure is the caller's.
 					unset( $exception );
 				}

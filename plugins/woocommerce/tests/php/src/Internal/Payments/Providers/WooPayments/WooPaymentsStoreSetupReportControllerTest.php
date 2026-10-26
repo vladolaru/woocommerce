@@ -8,7 +8,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\CurrencyRateProvide
 use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\CacheInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFeatureController;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\RateService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\WooPaymentsStripeBillingModule;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayEligibility;
@@ -600,9 +600,9 @@ class WooPaymentsStoreSetupReportControllerTest extends WC_Unit_Test_Case {
 	 * Create an API client that records each account update it is asked to send.
 	 *
 	 * @param array<int,array<string,mixed>> $updates Receives each update body.
-	 * @return WooPaymentsApiClient
+	 * @return Client
 	 */
-	private function create_account_update_recorder( array &$updates ): WooPaymentsApiClient {
+	private function create_account_update_recorder( array &$updates ): Client {
 		$api_client = $this->create_api_client( array( 'update_account' ) );
 		$api_client->method( 'update_account' )->willReturnCallback(
 			static function ( array $body ) use ( &$updates ): array {
@@ -906,7 +906,7 @@ class WooPaymentsStoreSetupReportControllerTest extends WC_Unit_Test_Case {
 	 * Create a store setup report controller.
 	 *
 	 * @param WooPaymentsActionSchedulerService|null         $scheduler          Scheduler service.
-	 * @param WooPaymentsApiClient|null                      $api_client         API client.
+	 * @param Client|null                                    $api_client         API client.
 	 * @param WooPaymentsAccountService|null                 $account_service    Account service.
 	 * @param WooPaymentsWooPayEligibility|null              $woopay_eligibility WooPay eligibility rules, or the container's.
 	 * @param WooPaymentsDuplicateGatewayMethodsService|null $duplicate_gateway_methods_service Duplicate gateway methods service, or the container's.
@@ -914,7 +914,7 @@ class WooPaymentsStoreSetupReportControllerTest extends WC_Unit_Test_Case {
 	 */
 	private function create_service(
 		?WooPaymentsActionSchedulerService $scheduler = null,
-		?WooPaymentsApiClient $api_client = null,
+		?Client $api_client = null,
 		?WooPaymentsAccountService $account_service = null,
 		?WooPaymentsWooPayEligibility $woopay_eligibility = null,
 		?WooPaymentsDuplicateGatewayMethodsService $duplicate_gateway_methods_service = null
@@ -938,10 +938,10 @@ class WooPaymentsStoreSetupReportControllerTest extends WC_Unit_Test_Case {
 	 * Create a WooPayments API client mock.
 	 *
 	 * @param string[] $methods Mocked method names.
-	 * @return WooPaymentsApiClient
+	 * @return Client
 	 */
-	private function create_api_client( array $methods ): WooPaymentsApiClient {
-		$builder = $this->getMockBuilder( WooPaymentsApiClient::class )
+	private function create_api_client( array $methods ): Client {
+		$builder = $this->getMockBuilder( Client::class )
 			->disableOriginalConstructor();
 
 		if ( ! empty( $methods ) ) {

@@ -17,7 +17,7 @@
 			"recorded_at": "2026-09-25T22:15:14+00:00",
 			"context": "10.99 USD with capture_method manual; returns requires_capture",
 			"request": {
-				"transport": "WooPaymentsApiClient::create_and_confirm_payment_intention",
+				"transport": "Client::create_and_confirm_payment_intention",
 				"method": "POST",
 				"path": "/sites/4/wcpay/intentions (wpcom/v2 via Jetpack blog token)",
 				"body": {
@@ -262,7 +262,7 @@
 			"recorded_at": "2026-09-25T22:15:28+00:00",
 			"context": "POST intentions/{pi}/capture for the full 1099 with metadata {rec} and empty level3 (the adapter always sends level3)",
 			"request": {
-				"transport": "WooPaymentsApiClient::capture_intention",
+				"transport": "Client::capture_intention",
 				"method": "POST",
 				"path": "/sites/4/wcpay/intentions/pi_3UJhOgBzWlxcwgpP0AOgQE2z/capture (wpcom/v2 via Jetpack blog token)",
 				"body": {

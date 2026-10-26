@@ -7,7 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 use WC_Product;
@@ -130,7 +130,7 @@ class StripeBillingProductService {
 	 *
 	 * @param string $type Item type.
 	 * @return string Stripe product ID.
-	 * @throws WooPaymentsApiException When the Stripe product cannot be created.
+	 * @throws ApiException When the Stripe product cannot be created.
 	 */
 	public function get_or_create_wcpay_product_id_for_item( string $type ): string {
 		$type             = sanitize_key( str_replace( ' ', '_', trim( $type ) ) );
@@ -351,7 +351,7 @@ class StripeBillingProductService {
 	 *
 	 * @param string $type Sanitized item type.
 	 * @return string Stripe product ID.
-	 * @throws WooPaymentsApiException When the platform call fails.
+	 * @throws ApiException When the platform call fails.
 	 */
 	private function create_product_for_item_type( string $type ): string {
 		$wcpay_product    = $this->api->create_product(
@@ -437,7 +437,7 @@ class StripeBillingProductService {
 						'test_mode' => 'live' !== $environment,
 					)
 				);
-			} catch ( WooPaymentsApiException $exception ) {
+			} catch ( ApiException $exception ) {
 				$this->log( 'There was a problem archiving the ' . $environment . ' product in WooPayments.', $exception );
 			}
 		}
@@ -458,7 +458,7 @@ class StripeBillingProductService {
 						'test_mode' => 'live' !== $environment,
 					)
 				);
-			} catch ( WooPaymentsApiException $exception ) {
+			} catch ( ApiException $exception ) {
 				$this->log( 'There was a problem unarchiving the ' . $environment . ' product in WooPayments.', $exception );
 			}
 		}
@@ -486,7 +486,7 @@ class StripeBillingProductService {
 						'test_mode' => $test_mode,
 					)
 				);
-			} catch ( WooPaymentsApiException $exception ) {
+			} catch ( ApiException $exception ) {
 				$this->log( 'There was a problem archiving the ' . $environment . ' product price ID in WooPayments.', $exception );
 			}
 

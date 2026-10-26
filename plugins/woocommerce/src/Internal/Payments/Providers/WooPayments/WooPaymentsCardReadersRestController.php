@@ -7,8 +7,8 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 use Automattic\WooCommerce\Internal\RestApiControllerBase;
 use Throwable;
 use WC_Order;
@@ -34,9 +34,9 @@ class WooPaymentsCardReadersRestController extends RestApiControllerBase {
 	/**
 	 * WooPayments API client.
 	 *
-	 * @var WooPaymentsApiClient
+	 * @var Client
 	 */
-	private WooPaymentsApiClient $api_client;
+	private Client $api_client;
 
 	/**
 	 * WooPayments account service.
@@ -50,10 +50,10 @@ class WooPaymentsCardReadersRestController extends RestApiControllerBase {
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsApiClient      $api_client      WooPayments API client.
+	 * @param Client                    $api_client      WooPayments API client.
 	 * @param WooPaymentsAccountService $account_service WooPayments account service.
 	 */
-	final public function init( WooPaymentsApiClient $api_client, WooPaymentsAccountService $account_service ): void {
+	final public function init( Client $api_client, WooPaymentsAccountService $account_service ): void {
 		$this->api_client      = $api_client;
 		$this->account_service = $account_service;
 	}
@@ -171,7 +171,7 @@ class WooPaymentsCardReadersRestController extends RestApiControllerBase {
 			set_transient( self::STORE_READERS_TRANSIENT_KEY, $readers, self::READER_CACHE_TTL );
 
 			return new WP_REST_Response( $readers );
-		} catch ( WooPaymentsApiException $exception ) {
+		} catch ( ApiException $exception ) {
 			return $exception->to_wp_error_without_status();
 		}
 	}
@@ -203,7 +203,7 @@ class WooPaymentsCardReadersRestController extends RestApiControllerBase {
 			$this->account_service->refresh_account_data();
 
 			return new WP_REST_Response( $this->extract_reader( $reader ) );
-		} catch ( WooPaymentsApiException $exception ) {
+		} catch ( ApiException $exception ) {
 			// The client answers the platform's status, 0 included (class-wc-rest-payments-reader-controller.php:206-213).
 			return new WP_Error( $exception->get_error_code(), $exception->getMessage(), array( 'status' => $exception->get_http_code() ) );
 		}
@@ -233,7 +233,7 @@ class WooPaymentsCardReadersRestController extends RestApiControllerBase {
 					$transaction_id
 				)
 			);
-		} catch ( WooPaymentsApiException $exception ) {
+		} catch ( ApiException $exception ) {
 			// The client's own code, with no status (class-wc-rest-payments-reader-controller.php:165-167).
 			return new WP_Error( 'wcpay_get_summary', $exception->getMessage() );
 		}
@@ -294,7 +294,7 @@ class WooPaymentsCardReadersRestController extends RestApiControllerBase {
 			);
 		} catch ( Throwable $exception ) {
 			// The client answers a platform failure's status, 0 included (class-wc-rest-payments-reader-controller.php:316-318).
-			$status = $exception instanceof WooPaymentsApiException ? $exception->get_http_code() : 500;
+			$status = $exception instanceof ApiException ? $exception->get_http_code() : 500;
 
 			return new WP_Error( 'generate_print_receipt_error', $exception->getMessage(), array( 'status' => $status ) );
 		}

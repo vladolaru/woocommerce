@@ -4,7 +4,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\WooPay;
 
 use ActionScheduler_Store;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayExtensionSync;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsActionSchedulerService;
@@ -187,7 +187,7 @@ class WooPaymentsWooPayExtensionSyncTest extends WC_Unit_Test_Case {
 	 * @testdox A platform error fetching WooPay compatibility data is logged with its status and code, never its message.
 	 */
 	public function test_compatibility_fetch_failure_log_leaves_out_platform_text(): void {
-		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
+		$api_client = $this->getMockBuilder( Client::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'get_woopay_compatibility' ) )
 			->getMock();
@@ -257,7 +257,7 @@ class WooPaymentsWooPayExtensionSyncTest extends WC_Unit_Test_Case {
 	 * @return WooPaymentsWooPayExtensionSync
 	 */
 	private function create_sync( array $compatibility = array() ): WooPaymentsWooPayExtensionSync {
-		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
+		$api_client = $this->getMockBuilder( Client::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'get_woopay_compatibility' ) )
 			->getMock();

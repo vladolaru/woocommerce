@@ -7,7 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Throwable;
 
 defined( 'ABSPATH' ) || exit;
@@ -31,9 +31,9 @@ class WooPaymentsAdminMenuBadgeService {
 	/**
 	 * WooPayments API client.
 	 *
-	 * @var WooPaymentsApiClient
+	 * @var Client
 	 */
-	private WooPaymentsApiClient $api_client;
+	private Client $api_client;
 
 	/**
 	 * Database cache the counts are read through.
@@ -48,10 +48,10 @@ class WooPaymentsAdminMenuBadgeService {
 	 * @internal
 	 *
 	 * @param WooPaymentsAccountService $account_service WooPayments account service.
-	 * @param WooPaymentsApiClient      $api_client      WooPayments API client.
+	 * @param Client                    $api_client      WooPayments API client.
 	 * @param WooPaymentsDatabaseCache  $database_cache  Database cache.
 	 */
-	final public function init( WooPaymentsAccountService $account_service, WooPaymentsApiClient $api_client, WooPaymentsDatabaseCache $database_cache ): void {
+	final public function init( WooPaymentsAccountService $account_service, Client $api_client, WooPaymentsDatabaseCache $database_cache ): void {
 		$this->account_service = $account_service;
 		$this->api_client      = $api_client;
 		$this->database_cache  = $database_cache;

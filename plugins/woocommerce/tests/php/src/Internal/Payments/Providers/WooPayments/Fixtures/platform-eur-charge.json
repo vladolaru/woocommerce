@@ -13,7 +13,7 @@
 			"test_card": "4242424242424242",
 			"recorded_at": "2026-09-25T11:00:52+00:00",
 			"request": {
-				"transport": "WooPaymentsApiClient::create_and_confirm_payment_intention",
+				"transport": "Client::create_and_confirm_payment_intention",
 				"method": "POST",
 				"path": "/sites/4/wcpay/intentions (wpcom/v2 via Jetpack blog token)",
 				"idempotency_key": "fresh UUIDv4 per request",
@@ -287,7 +287,7 @@
 			"test_card": "4242424242424242",
 			"recorded_at": "2026-09-25T11:00:53+00:00",
 			"request": {
-				"transport": "WooPaymentsApiClient::get_charge (same route as client 11.1.0 Get_Charge: GET charges/{id}, no params)",
+				"transport": "Client::get_charge (same route as client 11.1.0 Get_Charge: GET charges/{id}, no params)",
 				"method": "GET",
 				"path": "/sites/4/wcpay/charges/ch_3UJWs2BzWlxcwgpP1y9vRrWr (wpcom/v2 via Jetpack blog token)",
 				"body": {

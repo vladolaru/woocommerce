@@ -3,7 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionAdminPaymentMethodHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\WooPaymentsAmazonPayToken;
@@ -252,7 +252,7 @@ class WooPaymentsDisabledMethodTokenSurfacesTest extends WC_Unit_Test_Case {
 		);
 
 		$service = new WooPaymentsTokenService();
-		$service->init( $this->createMock( WooPaymentsPaymentMethodDetailsService::class ), wc_get_container()->get( WooPaymentsApiClient::class ), $customer_service, $account_service, wc_get_container()->get( WooPaymentsOrderDataService::class ), wc_get_container()->get( WooPaymentsPaymentMethodRegistry::class ) );
+		$service->init( $this->createMock( WooPaymentsPaymentMethodDetailsService::class ), wc_get_container()->get( Client::class ), $customer_service, $account_service, wc_get_container()->get( WooPaymentsOrderDataService::class ), wc_get_container()->get( WooPaymentsPaymentMethodRegistry::class ) );
 		$service->register();
 		$this->services[] = $service;
 

@@ -9,7 +9,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Enums\OrderInternalStatus;
 use Automattic\WooCommerce\Enums\OrderStatus;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsTransportLog;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\TransportLog;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLevel3Service;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
@@ -19,7 +19,7 @@ use Automattic\WooCommerce\Internal\Payments\PaymentProcessingService;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsActionSchedulerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeeDetailsNoteController;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsChargeAmbiguityService;
@@ -37,7 +37,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRu
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsStatusChangeRetryListener;
 use Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabularyInterface;
-use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Api\FakeWooPaymentsHttpClient;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Api\FakeHttpClient;
 use Automattic\WooCommerce\Tests\Internal\Payments\RecordingProvider;
 use RuntimeException;
 use WC_Order;
@@ -641,7 +641,7 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 	 * by driving the real "Capture charge" order action through
 	 * {@see WooPaymentsOrderAdminActionsController}, {@see PaymentProcessingService::capture},
 	 * the real {@see WooPaymentsProvider}, {@see WooPaymentsPaymentOperationService} and
-	 * {@see WooPaymentsApiClient} over a fake transport queued with REC-CAP's recorded
+	 * {@see Client} over a fake transport queued with REC-CAP's recorded
 	 * `capture_full_amount` response (`Fixtures/platform-manual-capture.json`): a 10.99 USD
 	 * manual-capture authorization captured
 	 * for its full amount. Client parity: the capture note is the exact `was
@@ -668,7 +668,7 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 		$order = $this->create_recorded_manual_capture_order();
 
 		$recorded_capture      = $this->load_recorded_manual_capture_entry( 'capture_full_amount' );
-		$http_client           = new FakeWooPaymentsHttpClient();
+		$http_client           = new FakeHttpClient();
 		$http_client->response = array(
 			'response' => array( 'code' => $recorded_capture['http_status'] ),
 			'headers'  => array( 'content-type' => $recorded_capture['content_type'] ),
@@ -1448,10 +1448,10 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 	 * over a fake transport, the pattern used by
 	 * {@see \Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentOperationServiceTest::create_provider_over_fake_transport()}.
 	 *
-	 * @param FakeWooPaymentsHttpClient $http_client Fake transport queued with the recorded response(s).
+	 * @param FakeHttpClient $http_client Fake transport queued with the recorded response(s).
 	 * @return WooPaymentsProvider
 	 */
-	private function create_provider_over_fake_transport( FakeWooPaymentsHttpClient $http_client ): WooPaymentsProvider {
+	private function create_provider_over_fake_transport( FakeHttpClient $http_client ): WooPaymentsProvider {
 		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'is_test_mode_enabled', 'get_mode', 'get_gateway_setting', 'get_cached_account_data', 'get_account_default_currency', 'get_account_country' ) )
@@ -1465,8 +1465,8 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 		$account_service->method( 'get_account_default_currency' )->willReturn( 'usd' );
 		$account_service->method( 'get_account_country' )->willReturn( 'US' );
 
-		$api_client = new WooPaymentsApiClient();
-		$api_client->init( $http_client, $account_service, wc_get_container()->get( WooPaymentsTransportLog::class ) );
+		$api_client = new Client();
+		$api_client->init( $http_client, $account_service, wc_get_container()->get( TransportLog::class ) );
 
 		$payment_operations = new WooPaymentsPaymentOperationService();
 		$payment_operations->init(

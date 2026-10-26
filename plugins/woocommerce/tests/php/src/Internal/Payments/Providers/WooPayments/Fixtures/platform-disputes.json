@@ -14,7 +14,7 @@
 			"recorded_at": "2026-09-25T15:57:01+00:00",
 			"context": "standalone get_dispute() read before closing (the same GET update_dispute() performs first)",
 			"request": {
-				"transport": "WooPaymentsApiClient::get_dispute",
+				"transport": "Client::get_dispute",
 				"method": "GET",
 				"path": "/sites/4/wcpay/disputes/du_1UJbToBzWlxcwgpP9bUeBTQY (wpcom/v2 via Jetpack blog token)",
 				"query": {
@@ -261,7 +261,7 @@
 			"recorded_at": "2026-09-25T15:57:03+00:00",
 			"context": "close_dispute(): the wire body is only the test_mode param request() adds; the caller passes no fields",
 			"request": {
-				"transport": "WooPaymentsApiClient::close_dispute",
+				"transport": "Client::close_dispute",
 				"method": "POST",
 				"path": "/sites/4/wcpay/disputes/du_1UJbToBzWlxcwgpP9bUeBTQY/close (wpcom/v2 via Jetpack blog token)",
 				"idempotency_key": "none sent by the caller; request() adds a fresh UUIDv4 Idempotency-Key header (not in the body)",
@@ -507,7 +507,7 @@
 			"recorded_at": "2026-09-25T15:57:12+00:00",
 			"context": "first request of one update_dispute() call: GET the dispute (native checks reason noncompliant to add the Visa enhanced_evidence flag; reason here is fraudulent, so no flag)",
 			"request": {
-				"transport": "WooPaymentsApiClient::update_dispute (internal get_dispute)",
+				"transport": "Client::update_dispute (internal get_dispute)",
 				"method": "GET",
 				"path": "/sites/4/wcpay/disputes/du_1UJbTtBzWlxcwgpPSQwkqPRE (wpcom/v2 via Jetpack blog token)",
 				"query": {
@@ -754,7 +754,7 @@
 			"recorded_at": "2026-09-25T15:57:13+00:00",
 			"context": "second request of the same update_dispute() call: POST evidence with submit true (Stripe test text winning_evidence in uncategorized_text) and metadata __product_type",
 			"request": {
-				"transport": "WooPaymentsApiClient::update_dispute",
+				"transport": "Client::update_dispute",
 				"method": "POST",
 				"path": "/sites/4/wcpay/disputes/du_1UJbTtBzWlxcwgpPSQwkqPRE (wpcom/v2 via Jetpack blog token)",
 				"idempotency_key": "none sent by the caller; request() adds a fresh UUIDv4 Idempotency-Key header (not in the body)",
@@ -1009,7 +1009,7 @@
 			"recorded_at": "2026-09-25T15:57:21+00:00",
 			"context": "first request of one update_dispute() call: GET the dispute (native checks reason noncompliant to add the Visa enhanced_evidence flag; reason here is fraudulent, so no flag)",
 			"request": {
-				"transport": "WooPaymentsApiClient::update_dispute (internal get_dispute)",
+				"transport": "Client::update_dispute (internal get_dispute)",
 				"method": "GET",
 				"path": "/sites/4/wcpay/disputes/du_1UJbTzBzWlxcwgpPteZQ2zpe (wpcom/v2 via Jetpack blog token)",
 				"query": {
@@ -1256,7 +1256,7 @@
 			"recorded_at": "2026-09-25T15:57:22+00:00",
 			"context": "second request of the same update_dispute() call: POST evidence with submit true (Stripe test text losing_evidence in uncategorized_text) and metadata __product_type",
 			"request": {
-				"transport": "WooPaymentsApiClient::update_dispute",
+				"transport": "Client::update_dispute",
 				"method": "POST",
 				"path": "/sites/4/wcpay/disputes/du_1UJbTzBzWlxcwgpPteZQ2zpe (wpcom/v2 via Jetpack blog token)",
 				"idempotency_key": "none sent by the caller; request() adds a fresh UUIDv4 Idempotency-Key header (not in the body)",
@@ -1511,7 +1511,7 @@
 			"recorded_at": "2026-09-25T15:57:56+00:00",
 			"context": "optional R-e read: get_dispute_summary() after the dispute closed lost",
 			"request": {
-				"transport": "WooPaymentsApiClient::get_dispute_summary",
+				"transport": "Client::get_dispute_summary",
 				"method": "GET",
 				"path": "/sites/4/wcpay/disputes/du_1UJbToBzWlxcwgpP9bUeBTQY/summary (wpcom/v2 via Jetpack blog token)",
 				"query": {
@@ -1543,7 +1543,7 @@
 			"recorded_at": "2026-09-25T15:57:54+00:00",
 			"context": "get_dispute() after the platform forwarded charge.dispute.closed (final status and metadata)",
 			"request": {
-				"transport": "WooPaymentsApiClient::get_dispute",
+				"transport": "Client::get_dispute",
 				"method": "GET",
 				"path": "/sites/4/wcpay/disputes/du_1UJbToBzWlxcwgpP9bUeBTQY (wpcom/v2 via Jetpack blog token)",
 				"query": {
@@ -1793,7 +1793,7 @@
 			"recorded_at": "2026-09-25T15:57:55+00:00",
 			"context": "get_dispute() after the platform forwarded charge.dispute.closed (final status and metadata)",
 			"request": {
-				"transport": "WooPaymentsApiClient::get_dispute",
+				"transport": "Client::get_dispute",
 				"method": "GET",
 				"path": "/sites/4/wcpay/disputes/du_1UJbTtBzWlxcwgpPSQwkqPRE (wpcom/v2 via Jetpack blog token)",
 				"query": {
@@ -2067,7 +2067,7 @@
 			"recorded_at": "2026-09-25T15:57:55+00:00",
 			"context": "get_dispute() after the platform forwarded charge.dispute.closed (final status and metadata)",
 			"request": {
-				"transport": "WooPaymentsApiClient::get_dispute",
+				"transport": "Client::get_dispute",
 				"method": "GET",
 				"path": "/sites/4/wcpay/disputes/du_1UJbTzBzWlxcwgpPteZQ2zpe (wpcom/v2 via Jetpack blog token)",
 				"query": {

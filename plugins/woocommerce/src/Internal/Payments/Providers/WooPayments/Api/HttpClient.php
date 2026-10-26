@@ -1,6 +1,6 @@
 <?php
 /**
- * WooPaymentsHttpClient class file.
+ * HttpClient class file.
  */
 
 declare( strict_types = 1 );
@@ -17,7 +17,7 @@ use WP_Error;
  * @since 11.0.0
  * @internal
  */
-class WooPaymentsHttpClient {
+class HttpClient {
 
 	/**
 	 * Tell whether the site has a usable WPCOM/Jetpack connection.

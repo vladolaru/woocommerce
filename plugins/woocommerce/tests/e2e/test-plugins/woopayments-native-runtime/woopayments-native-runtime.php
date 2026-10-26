@@ -716,7 +716,7 @@ final class WooCommerce_WooPayments_Native_E2E_Runtime {
 			);
 		}
 
-		$api_client_class = 'Automattic\\WooCommerce\\Internal\\Payments\\Providers\\WooPayments\\Api\\WooPaymentsApiClient';
+		$api_client_class = 'Automattic\\WooCommerce\\Internal\\Payments\\Providers\\WooPayments\\Api\\Client';
 		if ( ! function_exists( 'wc_get_container' ) || ! class_exists( $api_client_class ) ) {
 			return new WP_Error(
 				'setup_intent_provider_unavailable',

@@ -6,8 +6,8 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDatabaseCache;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSellingLocationsFraudSync;
@@ -63,9 +63,9 @@ class WooPaymentsSellingLocationsFraudSyncTest extends WC_Unit_Test_Case {
 		update_option( 'current_protection_level', 'advanced' );
 		set_transient( 'wcpay_fraud_protection_settings', $this->get_advanced_ruleset( 'in', '' ), DAY_IN_SECONDS );
 
-		$account_api_client = $this->createMock( WooPaymentsApiClient::class );
+		$account_api_client = $this->createMock( Client::class );
 		$account_api_client->method( 'is_available' )->willReturn( true );
-		$account_api_client->method( 'get_account' )->willThrowException( new WooPaymentsApiException( 'Unavailable.', 'wcpay_test_unavailable', 500 ) );
+		$account_api_client->method( 'get_account' )->willThrowException( new ApiException( 'Unavailable.', 'wcpay_test_unavailable', 500 ) );
 		$this->use_fraud_ruleset_service( $account_api_client );
 
 		$this->sut = new WooPaymentsSellingLocationsFraudSync();
@@ -207,7 +207,7 @@ class WooPaymentsSellingLocationsFraudSyncTest extends WC_Unit_Test_Case {
 	 * @testdox Should keep the cached ruleset and finish shutdown when the platform refuses the save.
 	 */
 	public function test_failed_save_keeps_cached_ruleset(): void {
-		$this->api_client->save_fraud_ruleset_exception = new WooPaymentsApiException( 'Server error.', 'wcpay_server_error', 500 );
+		$this->api_client->save_fraud_ruleset_exception = new ApiException( 'Server error.', 'wcpay_server_error', 500 );
 		update_option( 'woocommerce_allowed_countries', 'specific' );
 
 		$this->sut->refresh_fraud_rules();
@@ -219,7 +219,7 @@ class WooPaymentsSellingLocationsFraudSyncTest extends WC_Unit_Test_Case {
 	 * @testdox Should not call the platform without a connected account.
 	 */
 	public function test_disconnected_store_makes_no_platform_call(): void {
-		$account_api_client = $this->createMock( WooPaymentsApiClient::class );
+		$account_api_client = $this->createMock( Client::class );
 		$account_api_client->method( 'is_available' )->willReturn( false );
 		$account_api_client->expects( $this->never() )->method( 'get_account' );
 		$this->use_fraud_ruleset_service( $account_api_client );
@@ -323,10 +323,10 @@ class WooPaymentsSellingLocationsFraudSyncTest extends WC_Unit_Test_Case {
 	/**
 	 * Build the fraud ruleset service the sync resolves, on an account service that reads through the given API client.
 	 *
-	 * @param WooPaymentsApiClient $account_api_client API client the account service uses.
+	 * @param Client $account_api_client API client the account service uses.
 	 */
-	private function use_fraud_ruleset_service( WooPaymentsApiClient $account_api_client ): void {
-		wc_get_container()->replace( WooPaymentsApiClient::class, $account_api_client );
+	private function use_fraud_ruleset_service( Client $account_api_client ): void {
+		wc_get_container()->replace( Client::class, $account_api_client );
 		$account_service = new WooPaymentsAccountService();
 		$database_cache  = new WooPaymentsDatabaseCache();
 		$database_cache->init( new LegacyProxy() );

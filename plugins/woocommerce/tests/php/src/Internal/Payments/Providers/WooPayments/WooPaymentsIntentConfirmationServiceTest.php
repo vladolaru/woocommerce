@@ -3,8 +3,8 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsTransportLog;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\TransportLog;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsActionSchedulerService;
@@ -17,7 +17,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOr
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentMethodDetailsService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
-use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Api\FakeWooPaymentsHttpClient;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Api\FakeHttpClient;
 use WC_Order;
 use WC_Unit_Test_Case;
 
@@ -38,15 +38,15 @@ class WooPaymentsIntentConfirmationServiceTest extends WC_Unit_Test_Case {
 		$order = $this->create_woopayments_order( '10.99' );
 
 		$recorded              = $this->load_recorded_manual_3ds_entry( 'classic_checkout_challenge_completed' );
-		$http_client           = new FakeWooPaymentsHttpClient();
+		$http_client           = new FakeHttpClient();
 		$http_client->response = array(
 			'response' => array( 'code' => 200 ),
 			'headers'  => array( 'content-type' => 'application/json; charset=UTF-8' ),
 			'body'     => wp_json_encode( $recorded['body'] ),
 		);
 		$account_service       = $this->create_account_service( false );
-		$api_client            = new WooPaymentsApiClient();
-		$api_client->init( $http_client, $account_service, wc_get_container()->get( WooPaymentsTransportLog::class ) );
+		$api_client            = new Client();
+		$api_client->init( $http_client, $account_service, wc_get_container()->get( TransportLog::class ) );
 		$sut = $this->create_intent_confirmation_service( $api_client, null, $account_service );
 
 		$sut->confirm_intent_for_order( $order, (string) $recorded['body']['id'], false );
@@ -82,15 +82,15 @@ class WooPaymentsIntentConfirmationServiceTest extends WC_Unit_Test_Case {
 		$order->save();
 
 		$recorded              = $this->load_recorded_manual_3ds_entry( 'classic_checkout_challenge_completed' );
-		$http_client           = new FakeWooPaymentsHttpClient();
+		$http_client           = new FakeHttpClient();
 		$http_client->response = array(
 			'response' => array( 'code' => 200 ),
 			'headers'  => array( 'content-type' => 'application/json; charset=UTF-8' ),
 			'body'     => wp_json_encode( $recorded['body'] ),
 		);
 		$account_service       = $this->create_account_service( false );
-		$api_client            = new WooPaymentsApiClient();
-		$api_client->init( $http_client, $account_service, wc_get_container()->get( WooPaymentsTransportLog::class ) );
+		$api_client            = new Client();
+		$api_client->init( $http_client, $account_service, wc_get_container()->get( TransportLog::class ) );
 		$sut = $this->create_intent_confirmation_service( $api_client, null, $account_service );
 
 		$sut->confirm_intent_for_order( $order, (string) $recorded['body']['id'], false, $is_payment_method_change );
@@ -116,7 +116,7 @@ class WooPaymentsIntentConfirmationServiceTest extends WC_Unit_Test_Case {
 		$intent             = $this->load_recorded_manual_3ds_entry( 'classic_checkout_challenge_completed' )['body'];
 		$intent['customer'] = true;
 		$token_service      = $this->create_token_service_with_saved_token_and_subscription( $subscription );
-		$sut                = $this->create_intent_confirmation_service( wc_get_container()->get( WooPaymentsApiClient::class ), $token_service, $this->create_account_service( false ) );
+		$sut                = $this->create_intent_confirmation_service( wc_get_container()->get( Client::class ), $token_service, $this->create_account_service( false ) );
 
 		$sut->confirm_fetched_intent_for_order( $order, $intent, true );
 
@@ -135,12 +135,12 @@ class WooPaymentsIntentConfirmationServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * Create the intent confirmation service with real collaborators over the given API client.
 	 *
-	 * @param WooPaymentsApiClient         $api_client      API client.
+	 * @param Client                       $api_client      API client.
 	 * @param WooPaymentsTokenService|null $token_service   Token service, or null for one whose details lookup finds nothing.
 	 * @param WooPaymentsAccountService    $account_service Account service.
 	 * @return WooPaymentsIntentConfirmationService
 	 */
-	private function create_intent_confirmation_service( WooPaymentsApiClient $api_client, ?WooPaymentsTokenService $token_service, WooPaymentsAccountService $account_service ): WooPaymentsIntentConfirmationService {
+	private function create_intent_confirmation_service( Client $api_client, ?WooPaymentsTokenService $token_service, WooPaymentsAccountService $account_service ): WooPaymentsIntentConfirmationService {
 		$token_service  = $token_service ?? $this->create_token_service();
 		$effect_applier = new WooPaymentsOrderEffectApplier();
 		$effect_applier->init(
@@ -171,7 +171,7 @@ class WooPaymentsIntentConfirmationServiceTest extends WC_Unit_Test_Case {
 	 */
 	private function create_token_service(): WooPaymentsTokenService {
 		$sut = new WooPaymentsTokenService();
-		$sut->init( $this->create_empty_details_service(), wc_get_container()->get( WooPaymentsApiClient::class ), wc_get_container()->get( WooPaymentsCustomerService::class ), wc_get_container()->get( WooPaymentsAccountService::class ), wc_get_container()->get( WooPaymentsOrderDataService::class ), wc_get_container()->get( WooPaymentsPaymentMethodRegistry::class ) );
+		$sut->init( $this->create_empty_details_service(), wc_get_container()->get( Client::class ), wc_get_container()->get( WooPaymentsCustomerService::class ), wc_get_container()->get( WooPaymentsAccountService::class ), wc_get_container()->get( WooPaymentsOrderDataService::class ), wc_get_container()->get( WooPaymentsPaymentMethodRegistry::class ) );
 
 		return $sut;
 	}
@@ -243,7 +243,7 @@ class WooPaymentsIntentConfirmationServiceTest extends WC_Unit_Test_Case {
 			}
 		};
 		$token_service->subscription = $subscription;
-		$token_service->init( $this->create_empty_details_service(), wc_get_container()->get( WooPaymentsApiClient::class ), wc_get_container()->get( WooPaymentsCustomerService::class ), wc_get_container()->get( WooPaymentsAccountService::class ), wc_get_container()->get( WooPaymentsOrderDataService::class ), wc_get_container()->get( WooPaymentsPaymentMethodRegistry::class ) );
+		$token_service->init( $this->create_empty_details_service(), wc_get_container()->get( Client::class ), wc_get_container()->get( WooPaymentsCustomerService::class ), wc_get_container()->get( WooPaymentsAccountService::class ), wc_get_container()->get( WooPaymentsOrderDataService::class ), wc_get_container()->get( WooPaymentsPaymentMethodRegistry::class ) );
 
 		return $token_service;
 	}

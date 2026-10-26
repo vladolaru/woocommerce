@@ -3,20 +3,20 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 
 /**
  * Recording API client for native WooPayments Reports REST tests.
  */
-class RecordingReportsApiClient extends WooPaymentsApiClient {
+class RecordingReportsApiClient extends Client {
 
 	/**
 	 * Optional exception thrown by the next call.
 	 *
-	 * @var WooPaymentsApiException|null
+	 * @var ApiException|null
 	 */
-	public ?WooPaymentsApiException $exception = null;
+	public ?ApiException $exception = null;
 
 	/**
 	 * Recorded last call.
@@ -134,7 +134,7 @@ class RecordingReportsApiClient extends WooPaymentsApiClient {
 	 *
 	 * @param string              $method Method.
 	 * @param array<string,mixed> $data   Call data.
-	 * @throws WooPaymentsApiException When configured.
+	 * @throws ApiException When configured.
 	 */
 	private function record( string $method, array $data ): void {
 		$this->last_call = array_merge( array( 'method' => $method ), $data );

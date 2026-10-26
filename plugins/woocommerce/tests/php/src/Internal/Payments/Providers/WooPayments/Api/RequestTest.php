@@ -3,43 +3,43 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Api;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\AbstractWooPaymentsApiRequest;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsActivatePmPromotionRequest;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiRequest;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsGetAccountCapitalLinkRequest;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsGetAccountLoginDataRequest;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsGetPmPromotionsRequest;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsTransportLog;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\AbstractRequest;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ActivatePmPromotionRequest;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Request;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\GetAccountCapitalLinkRequest;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\GetAccountLoginDataRequest;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\GetPmPromotionsRequest;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\TransportLog;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsAuthorizationsListRequest;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsDepositsListRequest;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsDisputesListRequest;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsDocumentsListRequest;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsFraudOutcomeTransactionsListRequest;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsReportingBalanceSummaryRequest;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsResponse;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsTransactionsListRequest;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\AuthorizationsListRequest;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\DepositsListRequest;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\DisputesListRequest;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\DocumentsListRequest;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\FraudOutcomeTransactionsListRequest;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ReportingBalanceSummaryRequest;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Response;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\TransactionsListRequest;
 use WC_Unit_Test_Case;
 
 /**
  * Tests for the WooPayments request objects and their send contracts.
  */
-class WooPaymentsApiRequestTest extends WC_Unit_Test_Case {
+class RequestTest extends WC_Unit_Test_Case {
 
 	/**
 	 * The original API client registered in the container.
 	 *
-	 * @var WooPaymentsApiClient
+	 * @var Client
 	 */
-	private WooPaymentsApiClient $original_api_client;
+	private Client $original_api_client;
 
 	/**
 	 * Fake provider transport.
 	 *
-	 * @var FakeWooPaymentsHttpClient
+	 * @var FakeHttpClient
 	 */
-	private FakeWooPaymentsHttpClient $http_client;
+	private FakeHttpClient $http_client;
 
 	/**
 	 * Set up test fixtures.
@@ -47,8 +47,8 @@ class WooPaymentsApiRequestTest extends WC_Unit_Test_Case {
 	public function setUp(): void {
 		parent::setUp();
 
-		$this->original_api_client   = wc_get_container()->get( WooPaymentsApiClient::class );
-		$this->http_client           = new FakeWooPaymentsHttpClient();
+		$this->original_api_client   = wc_get_container()->get( Client::class );
+		$this->http_client           = new FakeHttpClient();
 		$this->http_client->blog_id  = 123;
 		$this->http_client->response = array(
 			'response' => array( 'code' => 200 ),
@@ -61,9 +61,9 @@ class WooPaymentsApiRequestTest extends WC_Unit_Test_Case {
 			),
 		);
 
-		$api_client = new WooPaymentsApiClient();
-		$api_client->init( $this->http_client, $this->create_account_service(), wc_get_container()->get( WooPaymentsTransportLog::class ) );
-		wc_get_container()->replace( WooPaymentsApiClient::class, $api_client );
+		$api_client = new Client();
+		$api_client->init( $this->http_client, $this->create_account_service(), wc_get_container()->get( TransportLog::class ) );
+		wc_get_container()->replace( Client::class, $api_client );
 	}
 
 	/**
@@ -74,7 +74,7 @@ class WooPaymentsApiRequestTest extends WC_Unit_Test_Case {
 			remove_all_filters( $hook );
 		}
 
-		wc_get_container()->replace( WooPaymentsApiClient::class, $this->original_api_client );
+		wc_get_container()->replace( Client::class, $this->original_api_client );
 
 		parent::tearDown();
 	}
@@ -144,7 +144,7 @@ class WooPaymentsApiRequestTest extends WC_Unit_Test_Case {
 		$unexpected_calls = 0;
 		$request          = $this->create_request( $request_class, $api, $method );
 
-		if ( WooPaymentsFraudOutcomeTransactionsListRequest::class === $request_class ) {
+		if ( FraudOutcomeTransactionsListRequest::class === $request_class ) {
 			$this->http_client->response['body'] = wp_json_encode(
 				array(
 					array(
@@ -196,12 +196,12 @@ class WooPaymentsApiRequestTest extends WC_Unit_Test_Case {
 
 		$decoded_response = json_decode( (string) $this->http_client->response['body'], true );
 
-		if ( WooPaymentsApiRequest::class === $request_class || WooPaymentsReportingBalanceSummaryRequest::class === $request_class ) {
+		if ( Request::class === $request_class || ReportingBalanceSummaryRequest::class === $request_class ) {
 			$this->assertSame( $decoded_response, $result, 'Get_Request and reporting requests should retain their array formatter.' );
-		} elseif ( WooPaymentsFraudOutcomeTransactionsListRequest::class === $request_class ) {
+		} elseif ( FraudOutcomeTransactionsListRequest::class === $request_class ) {
 			$this->assertSame( array(), $result, 'Fraud-outcome requests should apply their custom array formatter.' );
 		} else {
-			$this->assertInstanceOf( WooPaymentsResponse::class, $result, 'Normally formatted requests should return the Response type.' );
+			$this->assertInstanceOf( Response::class, $result, 'Normally formatted requests should return the Response type.' );
 			$this->assertSame(
 				$returns_raw ? $this->http_client->response : $decoded_response,
 				$result->to_array(),
@@ -214,7 +214,7 @@ class WooPaymentsApiRequestTest extends WC_Unit_Test_Case {
 	 * @testdox The response is immutable ArrayAccess with an exact to_array view.
 	 */
 	public function test_response_array_access_and_to_array_contract(): void {
-		$response_class = WooPaymentsResponse::class;
+		$response_class = Response::class;
 		$data           = array( 'answer' => 42 );
 		$response       = new $response_class( $data );
 
@@ -231,7 +231,7 @@ class WooPaymentsApiRequestTest extends WC_Unit_Test_Case {
 	 * @param string $operation Mutation operation.
 	 */
 	public function test_response_is_immutable( string $operation ): void {
-		$response_class = WooPaymentsResponse::class;
+		$response_class = Response::class;
 		$response       = new $response_class( array( 'answer' => 42 ) );
 
 		$this->expectException( \Throwable::class );
@@ -247,11 +247,11 @@ class WooPaymentsApiRequestTest extends WC_Unit_Test_Case {
 	 * @testdox assign_hook keeps the untyped override contract.
 	 */
 	public function test_assign_hook_has_no_return_type_and_allows_an_untyped_override(): void {
-		$method = new \ReflectionMethod( AbstractWooPaymentsApiRequest::class, 'assign_hook' );
+		$method = new \ReflectionMethod( AbstractRequest::class, 'assign_hook' );
 
 		$this->assertFalse( $method->hasReturnType(), 'assign_hook() should not add a return type absent from the oracle.' );
 
-		$request = new class() extends AbstractWooPaymentsApiRequest {
+		$request = new class() extends AbstractRequest {
 			// phpcs:disable Generic.CodeAnalysis.UselessOverridingMethod.Found -- The untyped override is the compatibility behavior under test.
 			/**
 			 * Assign an operation-specific WordPress request filter.
@@ -296,18 +296,18 @@ class WooPaymentsApiRequestTest extends WC_Unit_Test_Case {
 	 */
 	public function concrete_request_provider(): array {
 		return array(
-			'authorizations list'       => array( WooPaymentsAuthorizationsListRequest::class ),
-			'deposits list'             => array( WooPaymentsDepositsListRequest::class ),
-			'disputes list'             => array( WooPaymentsDisputesListRequest::class ),
-			'documents list'            => array( WooPaymentsDocumentsListRequest::class ),
-			'fraud outcomes list'       => array( WooPaymentsFraudOutcomeTransactionsListRequest::class ),
-			'transactions list'         => array( WooPaymentsTransactionsListRequest::class ),
-			'reporting balance summary' => array( WooPaymentsReportingBalanceSummaryRequest::class ),
-			'generic get request'       => array( WooPaymentsApiRequest::class ),
-			'get PM promotions'         => array( WooPaymentsGetPmPromotionsRequest::class ),
-			'activate PM promotion'     => array( WooPaymentsActivatePmPromotionRequest::class ),
-			'get account capital link'  => array( WooPaymentsGetAccountCapitalLinkRequest::class ),
-			'get account login data'    => array( WooPaymentsGetAccountLoginDataRequest::class ),
+			'authorizations list'       => array( AuthorizationsListRequest::class ),
+			'deposits list'             => array( DepositsListRequest::class ),
+			'disputes list'             => array( DisputesListRequest::class ),
+			'documents list'            => array( DocumentsListRequest::class ),
+			'fraud outcomes list'       => array( FraudOutcomeTransactionsListRequest::class ),
+			'transactions list'         => array( TransactionsListRequest::class ),
+			'reporting balance summary' => array( ReportingBalanceSummaryRequest::class ),
+			'generic get request'       => array( Request::class ),
+			'get PM promotions'         => array( GetPmPromotionsRequest::class ),
+			'activate PM promotion'     => array( ActivatePmPromotionRequest::class ),
+			'get account capital link'  => array( GetAccountCapitalLinkRequest::class ),
+			'get account login data'    => array( GetAccountLoginDataRequest::class ),
 		);
 	}
 
@@ -333,7 +333,7 @@ class WooPaymentsApiRequestTest extends WC_Unit_Test_Case {
 	private function request_filter_contracts(): array {
 		return array(
 			'wcpay_list_authorizations_request'           => array(
-				'class'      => WooPaymentsAuthorizationsListRequest::class,
+				'class'      => AuthorizationsListRequest::class,
 				'api'        => 'authorizations',
 				'method'     => 'GET',
 				'raw'        => false,
@@ -341,7 +341,7 @@ class WooPaymentsApiRequestTest extends WC_Unit_Test_Case {
 				'dynamic'    => false,
 			),
 			'wcpay_list_deposits_request'                 => array(
-				'class'      => WooPaymentsDepositsListRequest::class,
+				'class'      => DepositsListRequest::class,
 				'api'        => 'deposits',
 				'method'     => 'GET',
 				'raw'        => false,
@@ -349,7 +349,7 @@ class WooPaymentsApiRequestTest extends WC_Unit_Test_Case {
 				'dynamic'    => false,
 			),
 			'wcpay_list_disputes_request'                 => array(
-				'class'      => WooPaymentsDisputesListRequest::class,
+				'class'      => DisputesListRequest::class,
 				'api'        => 'disputes',
 				'method'     => 'GET',
 				'raw'        => false,
@@ -357,7 +357,7 @@ class WooPaymentsApiRequestTest extends WC_Unit_Test_Case {
 				'dynamic'    => false,
 			),
 			'wcpay_list_documents_request'                => array(
-				'class'      => WooPaymentsDocumentsListRequest::class,
+				'class'      => DocumentsListRequest::class,
 				'api'        => 'documents',
 				'method'     => 'GET',
 				'raw'        => false,
@@ -365,7 +365,7 @@ class WooPaymentsApiRequestTest extends WC_Unit_Test_Case {
 				'dynamic'    => false,
 			),
 			'wcpay_list_fraud_outcome_transactions_request' => array(
-				'class'      => WooPaymentsFraudOutcomeTransactionsListRequest::class,
+				'class'      => FraudOutcomeTransactionsListRequest::class,
 				'api'        => 'fraud_outcomes/status/allow',
 				'method'     => 'GET',
 				'raw'        => false,
@@ -373,7 +373,7 @@ class WooPaymentsApiRequestTest extends WC_Unit_Test_Case {
 				'dynamic'    => true,
 			),
 			'wcpay_list_fraud_outcome_transactions_summary_request' => array(
-				'class'      => WooPaymentsFraudOutcomeTransactionsListRequest::class,
+				'class'      => FraudOutcomeTransactionsListRequest::class,
 				'api'        => 'fraud_outcomes/status/allow',
 				'method'     => 'GET',
 				'raw'        => false,
@@ -381,7 +381,7 @@ class WooPaymentsApiRequestTest extends WC_Unit_Test_Case {
 				'dynamic'    => true,
 			),
 			'wcpay_get_fraud_outcome_transactions_search_autocomplete_request' => array(
-				'class'      => WooPaymentsFraudOutcomeTransactionsListRequest::class,
+				'class'      => FraudOutcomeTransactionsListRequest::class,
 				'api'        => 'fraud_outcomes/status/allow',
 				'method'     => 'GET',
 				'raw'        => false,
@@ -389,7 +389,7 @@ class WooPaymentsApiRequestTest extends WC_Unit_Test_Case {
 				'dynamic'    => true,
 			),
 			'wcpay_get_fraud_outcome_transactions_export_request' => array(
-				'class'      => WooPaymentsFraudOutcomeTransactionsListRequest::class,
+				'class'      => FraudOutcomeTransactionsListRequest::class,
 				'api'        => 'fraud_outcomes/status/allow',
 				'method'     => 'GET',
 				'raw'        => false,
@@ -397,7 +397,7 @@ class WooPaymentsApiRequestTest extends WC_Unit_Test_Case {
 				'dynamic'    => true,
 			),
 			'wcpay_list_transactions_request'             => array(
-				'class'      => WooPaymentsTransactionsListRequest::class,
+				'class'      => TransactionsListRequest::class,
 				'api'        => 'transactions',
 				'method'     => 'GET',
 				'raw'        => false,
@@ -405,7 +405,7 @@ class WooPaymentsApiRequestTest extends WC_Unit_Test_Case {
 				'dynamic'    => false,
 			),
 			'wcpay_get_reporting_balance_summary_request' => array(
-				'class'      => WooPaymentsReportingBalanceSummaryRequest::class,
+				'class'      => ReportingBalanceSummaryRequest::class,
 				'api'        => 'reporting/balance_summary',
 				'method'     => 'GET',
 				'raw'        => false,
@@ -413,7 +413,7 @@ class WooPaymentsApiRequestTest extends WC_Unit_Test_Case {
 				'dynamic'    => false,
 			),
 			'wc_pay_get_authorizations_summary'           => array(
-				'class'      => WooPaymentsApiRequest::class,
+				'class'      => Request::class,
 				'api'        => 'authorizations/summary',
 				'method'     => 'GET',
 				'raw'        => false,
@@ -421,7 +421,7 @@ class WooPaymentsApiRequestTest extends WC_Unit_Test_Case {
 				'dynamic'    => true,
 			),
 			'wcpay_get_authorization_request'             => array(
-				'class'      => WooPaymentsApiRequest::class,
+				'class'      => Request::class,
 				'api'        => 'authorizations/pi_test',
 				'method'     => 'GET',
 				'raw'        => false,
@@ -429,7 +429,7 @@ class WooPaymentsApiRequestTest extends WC_Unit_Test_Case {
 				'dynamic'    => true,
 			),
 			'wcpay_get_dispute_status_counts'             => array(
-				'class'      => WooPaymentsApiRequest::class,
+				'class'      => Request::class,
 				'api'        => 'disputes/status_counts',
 				'method'     => 'GET',
 				'raw'        => false,
@@ -437,7 +437,7 @@ class WooPaymentsApiRequestTest extends WC_Unit_Test_Case {
 				'dynamic'    => true,
 			),
 			'wcpay_validate_vat_request'                  => array(
-				'class'      => WooPaymentsApiRequest::class,
+				'class'      => Request::class,
 				'api'        => 'vat/RO123',
 				'method'     => 'GET',
 				'raw'        => false,
@@ -445,7 +445,7 @@ class WooPaymentsApiRequestTest extends WC_Unit_Test_Case {
 				'dynamic'    => true,
 			),
 			'wcpay_get_active_loan_summary_request'       => array(
-				'class'      => WooPaymentsApiRequest::class,
+				'class'      => Request::class,
 				'api'        => 'capital/active_loan_summary',
 				'method'     => 'GET',
 				'raw'        => false,
@@ -453,7 +453,7 @@ class WooPaymentsApiRequestTest extends WC_Unit_Test_Case {
 				'dynamic'    => true,
 			),
 			'wcpay_get_loans_request'                     => array(
-				'class'      => WooPaymentsApiRequest::class,
+				'class'      => Request::class,
 				'api'        => 'capital/loans',
 				'method'     => 'GET',
 				'raw'        => false,
@@ -461,7 +461,7 @@ class WooPaymentsApiRequestTest extends WC_Unit_Test_Case {
 				'dynamic'    => true,
 			),
 			'wcpay_get_pm_promotions_request'             => array(
-				'class'      => WooPaymentsGetPmPromotionsRequest::class,
+				'class'      => GetPmPromotionsRequest::class,
 				'api'        => 'payment_method_promotions',
 				'method'     => 'GET',
 				'raw'        => true,
@@ -469,7 +469,7 @@ class WooPaymentsApiRequestTest extends WC_Unit_Test_Case {
 				'dynamic'    => false,
 			),
 			'wcpay_activate_pm_promotion_request'         => array(
-				'class'      => WooPaymentsActivatePmPromotionRequest::class,
+				'class'      => ActivatePmPromotionRequest::class,
 				'api'        => 'payment_method_promotions/promo_test/activate',
 				'method'     => 'POST',
 				'raw'        => false,
@@ -477,7 +477,7 @@ class WooPaymentsApiRequestTest extends WC_Unit_Test_Case {
 				'dynamic'    => false,
 			),
 			'wcpay_get_account_capital_link'              => array(
-				'class'      => WooPaymentsGetAccountCapitalLinkRequest::class,
+				'class'      => GetAccountCapitalLinkRequest::class,
 				'api'        => 'accounts/capital_links',
 				'method'     => 'POST',
 				'raw'        => false,
@@ -485,7 +485,7 @@ class WooPaymentsApiRequestTest extends WC_Unit_Test_Case {
 				'dynamic'    => false,
 			),
 			'wpcay_get_account_login_data'                => array(
-				'class'      => WooPaymentsGetAccountLoginDataRequest::class,
+				'class'      => GetAccountLoginDataRequest::class,
 				'api'        => 'accounts/login_links',
 				'method'     => 'POST',
 				'raw'        => false,
@@ -501,30 +501,30 @@ class WooPaymentsApiRequestTest extends WC_Unit_Test_Case {
 	 * @param class-string $request_class Request class.
 	 * @param string       $api Dynamic API path.
 	 * @param string       $method Dynamic HTTP method.
-	 * @return AbstractWooPaymentsApiRequest
+	 * @return AbstractRequest
 	 */
-	private function create_request( string $request_class, string $api = '', string $method = 'GET' ): AbstractWooPaymentsApiRequest {
+	private function create_request( string $request_class, string $api = '', string $method = 'GET' ): AbstractRequest {
 		switch ( $request_class ) {
-			case WooPaymentsApiRequest::class:
-				return WooPaymentsApiRequest::create( array(), '' !== $api ? $api : 'capital/loans', $method );
-			case WooPaymentsGetPmPromotionsRequest::class:
-				return WooPaymentsGetPmPromotionsRequest::from_store_context( array( 'locale' => 'en_US' ) );
-			case WooPaymentsActivatePmPromotionRequest::class:
-				return WooPaymentsActivatePmPromotionRequest::from_id( 'promo_test' );
-			case WooPaymentsGetAccountCapitalLinkRequest::class:
-				return WooPaymentsGetAccountCapitalLinkRequest::from_urls( 'https://example.test/return', 'https://example.test/refresh' );
-			case WooPaymentsGetAccountLoginDataRequest::class:
-				return WooPaymentsGetAccountLoginDataRequest::from_redirect_url( home_url( '/overview' ), false );
-			case WooPaymentsReportingBalanceSummaryRequest::class:
-				return WooPaymentsReportingBalanceSummaryRequest::from_params(
+			case Request::class:
+				return Request::create( array(), '' !== $api ? $api : 'capital/loans', $method );
+			case GetPmPromotionsRequest::class:
+				return GetPmPromotionsRequest::from_store_context( array( 'locale' => 'en_US' ) );
+			case ActivatePmPromotionRequest::class:
+				return ActivatePmPromotionRequest::from_id( 'promo_test' );
+			case GetAccountCapitalLinkRequest::class:
+				return GetAccountCapitalLinkRequest::from_urls( 'https://example.test/return', 'https://example.test/refresh' );
+			case GetAccountLoginDataRequest::class:
+				return GetAccountLoginDataRequest::from_redirect_url( home_url( '/overview' ), false );
+			case ReportingBalanceSummaryRequest::class:
+				return ReportingBalanceSummaryRequest::from_params(
 					array(
 						'date_start' => '2026-06-01T00:00:00Z',
 						'date_end'   => '2026-06-30T23:59:59Z',
 						'currency'   => 'usd',
 					)
 				);
-			case WooPaymentsFraudOutcomeTransactionsListRequest::class:
-				$request = new WooPaymentsFraudOutcomeTransactionsListRequest();
+			case FraudOutcomeTransactionsListRequest::class:
+				$request = new FraudOutcomeTransactionsListRequest();
 				$request->set_status( 'allow' );
 
 				return $request;

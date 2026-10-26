@@ -5,7 +5,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\A
 
 use Automattic\WooCommerce\Admin\Features\OnboardingTasks\TaskList;
 use Automattic\WooCommerce\Admin\Features\OnboardingTasks\TaskLists;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAdminMenuBadgeService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDatabaseCache;
@@ -28,7 +28,7 @@ class DisputesTaskTest extends WC_Unit_Test_Case {
 	/**
 	 * Fake platform API client.
 	 *
-	 * @var WooPaymentsApiClient
+	 * @var Client
 	 */
 	private $api_client;
 
@@ -419,10 +419,10 @@ class DisputesTaskTest extends WC_Unit_Test_Case {
 	/**
 	 * Create a fake API client that records dispute list requests.
 	 *
-	 * @return WooPaymentsApiClient
+	 * @return Client
 	 */
-	private function create_api_client(): WooPaymentsApiClient {
-		return new class() extends WooPaymentsApiClient {
+	private function create_api_client(): Client {
+		return new class() extends Client {
 			/**
 			 * Disputes the platform returns.
 			 *

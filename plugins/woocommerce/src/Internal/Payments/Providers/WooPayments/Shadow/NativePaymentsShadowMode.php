@@ -12,7 +12,7 @@ use Automattic\WooCommerce\Internal\DependencyManagement\RuntimeContainer;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabularyInterface;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentCodec;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentMappingContext;
@@ -94,9 +94,9 @@ class NativePaymentsShadowMode implements RegisterHooksInterface {
 	/**
 	 * WooPayments API client for read-only intent projection.
 	 *
-	 * @var WooPaymentsApiClient
+	 * @var Client
 	 */
-	private WooPaymentsApiClient $api_client;
+	private Client $api_client;
 
 	/**
 	 * WooPayments persistence profile.
@@ -127,7 +127,7 @@ class NativePaymentsShadowMode implements RegisterHooksInterface {
 	 * @param WooPaymentsRuntimeArbiter        $arbiter             Runtime owner arbiter.
 	 * @param PaymentSurfaceDiffer             $differ              Payment-surface differ.
 	 * @param LegacyProxy                      $legacy_proxy        Legacy proxy.
-	 * @param WooPaymentsApiClient             $api_client           WooPayments API client.
+	 * @param Client                           $api_client           WooPayments API client.
 	 * @param WooPaymentsPersistenceVocabulary $persistence_vocabulary  WooPayments persistence profile.
 	 * @param WooPaymentsAccountService        $account_service      WooPayments account service.
 	 * @param WooPaymentsOrderDataService      $order_data_service   WooPayments order data service.
@@ -136,7 +136,7 @@ class NativePaymentsShadowMode implements RegisterHooksInterface {
 		WooPaymentsRuntimeArbiter $arbiter,
 		PaymentSurfaceDiffer $differ,
 		LegacyProxy $legacy_proxy,
-		WooPaymentsApiClient $api_client,
+		Client $api_client,
 		WooPaymentsPersistenceVocabulary $persistence_vocabulary,
 		WooPaymentsAccountService $account_service,
 		WooPaymentsOrderDataService $order_data_service

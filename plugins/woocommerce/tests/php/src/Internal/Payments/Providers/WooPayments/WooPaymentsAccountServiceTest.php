@@ -4,8 +4,8 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Admin\Features\PaymentGatewaySuggestions\DefaultPaymentGateways;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDatabaseCache;
@@ -2288,10 +2288,10 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 	 * @param array<string,mixed> $account   Account to return.
 	 * @param bool                $fail      Whether every fetch fails.
 	 * @param bool                $available Whether the site has a platform connection.
-	 * @return WooPaymentsApiClient
+	 * @return Client
 	 */
-	private function create_account_api_client( array $account, bool $fail = false, bool $available = true ): WooPaymentsApiClient {
-		return new class( $account, $fail, $available ) extends WooPaymentsApiClient {
+	private function create_account_api_client( array $account, bool $fail = false, bool $available = true ): Client {
+		return new class( $account, $fail, $available ) extends Client {
 			/**
 			 * Number of account fetch attempts.
 			 *
@@ -2354,13 +2354,13 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 			 *
 			 * @param string $woocommerce_store_id WooCommerce store ID.
 			 * @return array<string,mixed>
-			 * @throws WooPaymentsApiException When set to fail.
+			 * @throws ApiException When set to fail.
 			 */
 			public function get_account( string $woocommerce_store_id = '' ): array {
 				++$this->calls;
 				$this->woocommerce_store_id = $woocommerce_store_id;
 				if ( $this->fail ) {
-					throw new WooPaymentsApiException( 'Temporary failure.', 'wcpay_temporary_failure', 500 );
+					throw new ApiException( 'Temporary failure.', 'wcpay_temporary_failure', 500 );
 				}
 
 				return $this->account;
@@ -2371,33 +2371,33 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * Create the service under test with a fake native API client.
 	 *
-	 * @param WooPaymentsApiClient $api_client Fake API client.
+	 * @param Client $api_client Fake API client.
 	 * @return WooPaymentsAccountService
 	 */
-	private function create_service_with_api_client( WooPaymentsApiClient $api_client ): WooPaymentsAccountService {
+	private function create_service_with_api_client( Client $api_client ): WooPaymentsAccountService {
 		$sut                  = new class( $api_client ) extends WooPaymentsAccountService {
 			/**
 			 * Fake native API client.
 			 *
-			 * @var WooPaymentsApiClient
+			 * @var Client
 			 */
-			private WooPaymentsApiClient $api_client;
+			private Client $api_client;
 
 			/**
 			 * Constructor.
 			 *
-			 * @param WooPaymentsApiClient $api_client Fake API client.
+			 * @param Client $api_client Fake API client.
 			 */
-			public function __construct( WooPaymentsApiClient $api_client ) {
+			public function __construct( Client $api_client ) {
 				$this->api_client = $api_client;
 			}
 
 			/**
 			 * Get the fake native API client.
 			 *
-			 * @return WooPaymentsApiClient
+			 * @return Client
 			 */
-			protected function get_api_client(): WooPaymentsApiClient {
+			protected function get_api_client(): Client {
 				return $this->api_client;
 			}
 		};
@@ -2415,10 +2415,10 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 	 * WordPress defines get_userdata() in pluggable.php only after plugins load. Until then Jetpack's connection-owner
 	 * check throws, so the API client reads as unavailable.
 	 *
-	 * @param WooPaymentsApiClient $api_client Fake API client that reads as unavailable.
+	 * @param Client $api_client Fake API client that reads as unavailable.
 	 * @return WooPaymentsAccountService
 	 */
-	private function create_service_while_plugins_load( WooPaymentsApiClient $api_client ): WooPaymentsAccountService {
+	private function create_service_while_plugins_load( Client $api_client ): WooPaymentsAccountService {
 		$this->register_legacy_proxy_function_mocks(
 			array(
 				'function_exists' => static fn( string $name ): bool => 'get_userdata' !== $name && function_exists( $name ),
@@ -2566,10 +2566,10 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 	 *
 	 * @param array<string,mixed>|null $fields_data Fields payload, or null to fail every fetch.
 	 * @param bool                     $available   Whether the site has a platform connection.
-	 * @return WooPaymentsApiClient
+	 * @return Client
 	 */
-	private function create_counting_fields_api_client( ?array $fields_data, bool $available = true ): WooPaymentsApiClient {
-		return new class( $fields_data, $available ) extends WooPaymentsApiClient {
+	private function create_counting_fields_api_client( ?array $fields_data, bool $available = true ): Client {
+		return new class( $fields_data, $available ) extends Client {
 			/**
 			 * Fields payload, or null to fail.
 			 *
@@ -2616,13 +2616,13 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 			 *
 			 * @param string $locale User locale.
 			 * @return array<string,mixed>
-			 * @throws WooPaymentsApiException When set to fail.
+			 * @throws ApiException When set to fail.
 			 */
 			public function get_onboarding_fields_data( string $locale = '' ): array {
 				unset( $locale );
 				++$this->calls;
 				if ( null === $this->fields_data ) {
-					throw new WooPaymentsApiException( 'Temporary failure.', 'wcpay_temporary_failure', 500 );
+					throw new ApiException( 'Temporary failure.', 'wcpay_temporary_failure', 500 );
 				}
 
 				return $this->fields_data;

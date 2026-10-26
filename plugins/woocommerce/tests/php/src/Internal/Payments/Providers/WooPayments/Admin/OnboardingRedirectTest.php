@@ -4,7 +4,7 @@ declare( strict_types=1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Admin;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\OnboardingRedirect;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
@@ -318,7 +318,7 @@ class OnboardingRedirectTest extends WC_Unit_Test_Case {
 		$_GET['page'] = 'wc-settings';
 		$_GET['tab']  = 'checkout';
 		$_GET['path'] = '/woopayments/transactions';
-		$api_client   = $this->createMock( WooPaymentsApiClient::class );
+		$api_client   = $this->createMock( Client::class );
 		$api_client->expects( $this->once() )->method( 'is_available' )->willReturn( true );
 		$redirect = $this->create_onboarding_redirect( $api_client, true, true );
 
@@ -387,13 +387,13 @@ class OnboardingRedirectTest extends WC_Unit_Test_Case {
 	/**
 	 * Create the shared onboarding redirect with test doubles.
 	 *
-	 * @param WooPaymentsApiClient $api_client      API client double.
-	 * @param bool                 $valid_account   Whether the account is valid for admin navigation.
-	 * @param bool                 $builtin_owner   Whether the built-in WooPayments owns the payments runtime.
-	 * @param bool                 $extension_owner Whether the WooPayments extension owns the payments runtime.
+	 * @param Client $api_client      API client double.
+	 * @param bool   $valid_account   Whether the account is valid for admin navigation.
+	 * @param bool   $builtin_owner   Whether the built-in WooPayments owns the payments runtime.
+	 * @param bool   $extension_owner Whether the WooPayments extension owns the payments runtime.
 	 * @return OnboardingRedirect
 	 */
-	private function create_onboarding_redirect( WooPaymentsApiClient $api_client, bool $valid_account, bool $builtin_owner, bool $extension_owner = false ): OnboardingRedirect {
+	private function create_onboarding_redirect( Client $api_client, bool $valid_account, bool $builtin_owner, bool $extension_owner = false ): OnboardingRedirect {
 		$arbiter = $this->createMock( WooPaymentsRuntimeArbiter::class );
 		$arbiter->method( 'is_builtin_owner' )->willReturn( $builtin_owner );
 		$arbiter->method( 'is_extension_owner' )->willReturn( $extension_owner );
@@ -416,7 +416,7 @@ class OnboardingRedirectTest extends WC_Unit_Test_Case {
 	 * @return OnboardingRedirect
 	 */
 	private function create_redirect( bool $connected, bool $valid_account, bool $builtin_owner = true, bool $extension_owner = false ): OnboardingRedirect {
-		$api_client = $this->createMock( WooPaymentsApiClient::class );
+		$api_client = $this->createMock( Client::class );
 		$api_client->method( 'is_available' )->willReturn( $connected );
 
 		return $this->create_onboarding_redirect( $api_client, $valid_account, $builtin_owner, $extension_owner );

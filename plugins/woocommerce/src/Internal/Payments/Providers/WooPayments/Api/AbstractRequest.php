@@ -1,6 +1,6 @@
 <?php
 /**
- * AbstractWooPaymentsApiRequest class file.
+ * AbstractRequest class file.
  */
 
 declare( strict_types = 1 );
@@ -16,7 +16,7 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api;
  * @since 11.2.0
  * @internal
  */
-abstract class AbstractWooPaymentsApiRequest {
+abstract class AbstractRequest {
 
 	protected const DEFAULT_PARAMS = array();
 
@@ -179,10 +179,10 @@ abstract class AbstractWooPaymentsApiRequest {
 	 *
 	 * @since 11.2.0
 	 *
-	 * @return AbstractWooPaymentsApiRequest
-	 * @throws WooPaymentsApiException When a callback returns something that is not a request.
+	 * @return AbstractRequest
+	 * @throws ApiException When a callback returns something that is not a request.
 	 */
-	final public function get_filtered_request(): AbstractWooPaymentsApiRequest {
+	final public function get_filtered_request(): AbstractRequest {
 		/**
 		 * Filters a WooPayments API request before it is sent to the platform.
 		 *
@@ -192,7 +192,7 @@ abstract class AbstractWooPaymentsApiRequest {
 		 *
 		 * @since 11.0.0
 		 *
-		 * @param AbstractWooPaymentsApiRequest $request Request about to be sent.
+		 * @param AbstractRequest $request Request about to be sent.
 		 */
 		$filtered_request = apply_filters( $this->hook, $this );
 
@@ -200,7 +200,7 @@ abstract class AbstractWooPaymentsApiRequest {
 			// translators: %s: WooPayments API request filter hook name.
 			$message = sprintf( __( 'Invalid WooPayments request returned by %s.', 'woocommerce' ), $this->hook );
 			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception messages are not HTML output.
-			throw new WooPaymentsApiException( $message, 'wcpay_invalid_filtered_request', 500 );
+			throw new ApiException( $message, 'wcpay_invalid_filtered_request', 500 );
 		}
 
 		return $filtered_request;
@@ -220,10 +220,10 @@ abstract class AbstractWooPaymentsApiRequest {
 	 * Wrap a transport response in a response object.
 	 *
 	 * @param array<mixed> $response Transport response.
-	 * @return WooPaymentsResponse
+	 * @return Response
 	 */
-	protected function format_default_response( $response ): WooPaymentsResponse {
-		return new WooPaymentsResponse( $response );
+	protected function format_default_response( $response ): Response {
+		return new Response( $response );
 	}
 
 	/**
@@ -236,7 +236,7 @@ abstract class AbstractWooPaymentsApiRequest {
 	 * @return mixed
 	 */
 	public function send() {
-		$api_client = wc_get_container()->get( WooPaymentsApiClient::class );
+		$api_client = wc_get_container()->get( Client::class );
 
 		return $this->format_response( $api_client->send_request( $this ) );
 	}

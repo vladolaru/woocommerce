@@ -4,8 +4,8 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDuplicatePaymentPreventionService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
@@ -706,7 +706,7 @@ class WooPaymentsOrderSuccessPageTest extends WC_Unit_Test_Case {
 	 * @testdox Should not fetch the intent for non-redirect, paid, foreign-gateway or wrong-key orders.
 	 */
 	public function test_keeps_order_received_text_outside_the_redirect_failure_case(): void {
-		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
+		$api_client = $this->getMockBuilder( Client::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'is_available', 'get_payment_intention' ) )
 			->getMock();
@@ -732,12 +732,12 @@ class WooPaymentsOrderSuccessPageTest extends WC_Unit_Test_Case {
 	 * @testdox Should keep the default copy when the live intent cannot be fetched.
 	 */
 	public function test_keeps_order_received_text_when_intent_fetch_fails(): void {
-		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
+		$api_client = $this->getMockBuilder( Client::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'is_available', 'get_payment_intention' ) )
 			->getMock();
 		$api_client->method( 'is_available' )->willReturn( true );
-		$api_client->method( 'get_payment_intention' )->willThrowException( new WooPaymentsApiException( 'Nope.', 'wcpay_error', 500 ) );
+		$api_client->method( 'get_payment_intention' )->willThrowException( new ApiException( 'Nope.', 'wcpay_error', 500 ) );
 		$page = $this->create_page( null, $api_client );
 		$this->create_thankyou_order( 'pending', WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . 'wechat_pay', 'pi_wechat' );
 
@@ -834,7 +834,7 @@ class WooPaymentsOrderSuccessPageTest extends WC_Unit_Test_Case {
 		// (includes/wc-payment-api/class-wc-payments-api-client.php:2405), and payment_intent_authentication_failure
 		// is one of its error codes (includes/class-wc-payments-utils.php:864).
 		wc_get_container()->replace(
-			WooPaymentsApiClient::class,
+			Client::class,
 			$this->create_api_client_mock(
 				array(
 					'status'             => 'requires_payment_method',
@@ -853,10 +853,10 @@ class WooPaymentsOrderSuccessPageTest extends WC_Unit_Test_Case {
 	 * Create an API client mock answering the intent fetch.
 	 *
 	 * @param array $intent Intent payload to return.
-	 * @return WooPaymentsApiClient
+	 * @return Client
 	 */
-	private function create_api_client_mock( array $intent ): WooPaymentsApiClient {
-		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
+	private function create_api_client_mock( array $intent ): Client {
+		$api_client = $this->getMockBuilder( Client::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'is_available', 'get_payment_intention' ) )
 			->getMock();
@@ -895,10 +895,10 @@ class WooPaymentsOrderSuccessPageTest extends WC_Unit_Test_Case {
 	 * Create an order-success page controller.
 	 *
 	 * @param WooPaymentsFrontendTrackingController|null $tracker    Optional tracking controller.
-	 * @param WooPaymentsApiClient|null                  $api_client Optional API client.
+	 * @param Client|null                                $api_client Optional API client.
 	 * @return WooPaymentsOrderSuccessPage
 	 */
-	private function create_page( ?WooPaymentsFrontendTrackingController $tracker = null, ?WooPaymentsApiClient $api_client = null ): WooPaymentsOrderSuccessPage {
+	private function create_page( ?WooPaymentsFrontendTrackingController $tracker = null, ?Client $api_client = null ): WooPaymentsOrderSuccessPage {
 		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'get_account_country' ) )

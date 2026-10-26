@@ -12,8 +12,8 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Services\DatabaseCache;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilder;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilderFactory;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\StoreCurrencyLifecycleService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 
 /**
  * Keeps the store's fraud protection ruleset in step with the platform.
@@ -39,9 +39,9 @@ class WooPaymentsFraudRulesetService {
 	/**
 	 * WooPayments API client.
 	 *
-	 * @var WooPaymentsApiClient
+	 * @var Client
 	 */
-	private WooPaymentsApiClient $api_client;
+	private Client $api_client;
 
 	/**
 	 * WooPayments logger.
@@ -63,10 +63,10 @@ class WooPaymentsFraudRulesetService {
 	 * @internal
 	 *
 	 * @param WooPaymentsAccountService $account_service WooPayments account service.
-	 * @param WooPaymentsApiClient      $api_client      WooPayments API client.
+	 * @param Client                    $api_client      WooPayments API client.
 	 * @param WooPaymentsLogger         $logger          WooPayments logger.
 	 */
-	final public function init( WooPaymentsAccountService $account_service, WooPaymentsApiClient $api_client, WooPaymentsLogger $logger ): void {
+	final public function init( WooPaymentsAccountService $account_service, Client $api_client, WooPaymentsLogger $logger ): void {
 		$this->account_service = $account_service;
 		$this->api_client      = $api_client;
 		$this->logger          = $logger;
@@ -81,7 +81,7 @@ class WooPaymentsFraudRulesetService {
 	 *
 	 * @param array<string,mixed> $params Settings request parameters.
 	 * @return void
-	 * @throws WooPaymentsApiException When the platform rejects the ruleset.
+	 * @throws ApiException When the platform rejects the ruleset.
 	 */
 	public function save_fraud_settings( array $params ): void {
 		$fraud_settings = $this->get_requested_fraud_settings( $params );
@@ -492,7 +492,7 @@ class WooPaymentsFraudRulesetService {
 		try {
 			$this->api_client->save_fraud_ruleset( $ruleset );
 			set_transient( 'wcpay_fraud_protection_settings', $ruleset, DAY_IN_SECONDS );
-		} catch ( WooPaymentsApiException $e ) {
+		} catch ( ApiException $e ) {
 			// The only caller runs at shutdown, after the response is sent, so a failure can only be logged.
 			$this->logger->log_always(
 				'WooPayments fraud ruleset update for new selling locations failed.',
@@ -540,7 +540,7 @@ class WooPaymentsFraudRulesetService {
 			} else {
 				$this->log_fraud_ruleset_refresh_warning( 'WooPayments fraud ruleset refresh returned an invalid ruleset.' );
 			}
-		} catch ( WooPaymentsApiException $e ) {
+		} catch ( ApiException $e ) {
 			if ( 'wcpay_fraud_ruleset_not_found' !== $e->get_error_code() ) {
 				$this->log_fraud_ruleset_refresh_warning(
 					'WooPayments fraud ruleset refresh failed.',
@@ -561,7 +561,7 @@ class WooPaymentsFraudRulesetService {
 				$this->api_client->save_fraud_ruleset( $basic_ruleset );
 				set_transient( 'wcpay_fraud_protection_settings', $basic_ruleset, DAY_IN_SECONDS );
 				update_option( 'current_protection_level', 'basic' );
-			} catch ( WooPaymentsApiException $save_exception ) {
+			} catch ( ApiException $save_exception ) {
 				$this->log_fraud_ruleset_refresh_warning(
 					'WooPayments fraud ruleset Basic initialization failed.',
 					array(

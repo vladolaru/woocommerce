@@ -7,8 +7,8 @@ use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentNotes;
 use Automattic\WooCommerce\Internal\Payments\PaymentLifecycleEvent;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsActionSchedulerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeeDetailsNoteController;
@@ -231,7 +231,7 @@ class WooPaymentsFeeDetailsNoteControllerTest extends WC_Unit_Test_Case {
 	 * @testdox The job's handler is registered.
 	 */
 	public function test_registers_the_job_handler(): void {
-		$owner             = $this->create_controller( $this->createMock( WooPaymentsApiClient::class ) );
+		$owner             = $this->create_controller( $this->createMock( Client::class ) );
 		$this->hook_owners = array( $owner );
 
 		$owner->register();
@@ -253,7 +253,7 @@ class WooPaymentsFeeDetailsNoteControllerTest extends WC_Unit_Test_Case {
 		$order->save();
 
 		$case       = CapturedEventFeeNotes::get( $name );
-		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )->disableOriginalConstructor()->onlyMethods( array( 'get_timeline' ) )->getMock();
+		$api_client = $this->getMockBuilder( Client::class )->disableOriginalConstructor()->onlyMethods( array( 'get_timeline' ) )->getMock();
 		$api_client->expects( $this->once() )
 			->method( 'get_timeline' )
 			->with( 'pi_123' )
@@ -311,7 +311,7 @@ class WooPaymentsFeeDetailsNoteControllerTest extends WC_Unit_Test_Case {
 		self::enable_woopayments_debug_logging();
 		$order = wc_create_order();
 		$order->save();
-		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )->disableOriginalConstructor()->onlyMethods( array( 'get_timeline' ) )->getMock();
+		$api_client = $this->getMockBuilder( Client::class )->disableOriginalConstructor()->onlyMethods( array( 'get_timeline' ) )->getMock();
 		$api_client->method( 'get_timeline' )->willReturn( $timeline );
 		$logger = RecordingWcLogger::install();
 
@@ -332,7 +332,7 @@ class WooPaymentsFeeDetailsNoteControllerTest extends WC_Unit_Test_Case {
 	public function test_unusable_timeline_writes_no_line_with_logging_off( array $timeline ): void {
 		$order = wc_create_order();
 		$order->save();
-		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )->disableOriginalConstructor()->onlyMethods( array( 'get_timeline' ) )->getMock();
+		$api_client = $this->getMockBuilder( Client::class )->disableOriginalConstructor()->onlyMethods( array( 'get_timeline' ) )->getMock();
 		$api_client->method( 'get_timeline' )->willReturn( $timeline );
 		$logger = RecordingWcLogger::install();
 
@@ -376,8 +376,8 @@ class WooPaymentsFeeDetailsNoteControllerTest extends WC_Unit_Test_Case {
 		}
 		$order = wc_create_order();
 		$order->save();
-		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )->disableOriginalConstructor()->onlyMethods( array( 'get_timeline' ) )->getMock();
-		$api_client->method( 'get_timeline' )->willThrowException( new WooPaymentsApiException( 'Invalid intent ID', 'wcpay_bad_request', 400 ) );
+		$api_client = $this->getMockBuilder( Client::class )->disableOriginalConstructor()->onlyMethods( array( 'get_timeline' ) )->getMock();
+		$api_client->method( 'get_timeline' )->willThrowException( new ApiException( 'Invalid intent ID', 'wcpay_bad_request', 400 ) );
 		$logger = RecordingWcLogger::install();
 
 		$this->create_controller( $api_client )->handle_wcpay_add_fee_breakdown_to_order_notes( $order->get_id(), 'seti_123', false );
@@ -399,7 +399,7 @@ class WooPaymentsFeeDetailsNoteControllerTest extends WC_Unit_Test_Case {
 		$this->assertInstanceOf( WC_Order::class, $order );
 		$order->save();
 
-		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )->disableOriginalConstructor()->onlyMethods( array( 'get_timeline' ) )->getMock();
+		$api_client = $this->getMockBuilder( Client::class )->disableOriginalConstructor()->onlyMethods( array( 'get_timeline' ) )->getMock();
 		$api_client->method( 'get_timeline' )->willThrowException( self::make_provider_error() );
 
 		$logger = RecordingWcLogger::install();
@@ -419,10 +419,10 @@ class WooPaymentsFeeDetailsNoteControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * Build a controller over a given platform API client.
 	 *
-	 * @param WooPaymentsApiClient $api_client Platform API client.
+	 * @param Client $api_client Platform API client.
 	 * @return WooPaymentsFeeDetailsNoteController
 	 */
-	private function create_controller( WooPaymentsApiClient $api_client ): WooPaymentsFeeDetailsNoteController {
+	private function create_controller( Client $api_client ): WooPaymentsFeeDetailsNoteController {
 		$container  = wc_get_container();
 		$controller = new WooPaymentsFeeDetailsNoteController();
 		$controller->init(

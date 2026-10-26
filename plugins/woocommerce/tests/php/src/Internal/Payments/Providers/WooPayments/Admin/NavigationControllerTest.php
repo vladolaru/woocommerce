@@ -12,7 +12,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRu
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAdminMenuBadgeService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use PHPUnit\Framework\MockObject\MockObject;
 use WC_Unit_Test_Case;
@@ -1445,7 +1445,7 @@ class NavigationControllerTest extends WC_Unit_Test_Case {
 
 		$account_service = $this->create_account_service( $account_state );
 		$badge_service   = $this->create_badge_service( $badge_counts );
-		$api_client      = $this->createMock( WooPaymentsApiClient::class );
+		$api_client      = $this->createMock( Client::class );
 		$api_client->method( 'is_available' )->willReturn( $connected );
 		$controller          = new NavigationController();
 		$onboarding_redirect = new OnboardingRedirect();
@@ -1470,10 +1470,10 @@ class NavigationControllerTest extends WC_Unit_Test_Case {
 			->getMock();
 		$arbiter->method( 'is_builtin_owner' )->willReturn( true );
 
-		$api_client = $this->createMock( WooPaymentsApiClient::class );
+		$api_client = $this->createMock( Client::class );
 		$api_client->method( 'is_available' )->willReturn( $connected );
 		// The account read needs the same connection: without one it returns no account, like the client.
-		wc_get_container()->replace( WooPaymentsApiClient::class, $api_client );
+		wc_get_container()->replace( Client::class, $api_client );
 
 		$controller          = new NavigationController();
 		$onboarding_redirect = new OnboardingRedirect();

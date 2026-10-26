@@ -7,8 +7,8 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 use Automattic\WooCommerce\Internal\RestApiControllerBase;
 use WP_Error;
 use WP_REST_Request;
@@ -59,9 +59,9 @@ class WooPaymentsDocumentsRestController extends RestApiControllerBase {
 	/**
 	 * WooPayments API client.
 	 *
-	 * @var WooPaymentsApiClient
+	 * @var Client
 	 */
-	private WooPaymentsApiClient $api_client;
+	private Client $api_client;
 
 	/**
 	 * WooPayments account service.
@@ -75,10 +75,10 @@ class WooPaymentsDocumentsRestController extends RestApiControllerBase {
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsApiClient      $api_client      WooPayments API client.
+	 * @param Client                    $api_client      WooPayments API client.
 	 * @param WooPaymentsAccountService $account_service WooPayments account service.
 	 */
-	final public function init( WooPaymentsApiClient $api_client, WooPaymentsAccountService $account_service ): void {
+	final public function init( Client $api_client, WooPaymentsAccountService $account_service ): void {
 		$this->api_client      = $api_client;
 		$this->account_service = $account_service;
 	}
@@ -161,7 +161,7 @@ class WooPaymentsDocumentsRestController extends RestApiControllerBase {
 	public function get_documents( WP_REST_Request $request ) {
 		try {
 			return new WP_REST_Response( $this->api_client->get_documents( $this->get_allowed_params( $request, self::LIST_QUERY_PARAMS ) ) );
-		} catch ( WooPaymentsApiException $exception ) {
+		} catch ( ApiException $exception ) {
 			return $exception->to_wp_error();
 		}
 	}
@@ -176,7 +176,7 @@ class WooPaymentsDocumentsRestController extends RestApiControllerBase {
 	public function get_documents_summary( WP_REST_Request $request ) {
 		try {
 			return new WP_REST_Response( $this->api_client->get_documents_summary( $this->get_allowed_params( $request, self::SUMMARY_QUERY_PARAMS ) ) );
-		} catch ( WooPaymentsApiException $exception ) {
+		} catch ( ApiException $exception ) {
 			return $exception->to_wp_error();
 		}
 	}
@@ -196,7 +196,7 @@ class WooPaymentsDocumentsRestController extends RestApiControllerBase {
 
 		try {
 			$raw_response = $this->api_client->get_document( $document_id );
-		} catch ( WooPaymentsApiException $exception ) {
+		} catch ( ApiException $exception ) {
 			// The merchant opened this URL in a browser window, so a failure answers an error page with the platform's status, not
 			// JSON (client 11.1.0 `includes/admin/class-wc-rest-payments-documents-controller.php:91-98`).
 			$message = sprintf(
@@ -281,7 +281,7 @@ class WooPaymentsDocumentsRestController extends RestApiControllerBase {
 	public function validate_vat( WP_REST_Request $request ) {
 		try {
 			return new WP_REST_Response( $this->api_client->validate_vat( sanitize_text_field( (string) $request->get_param( 'vat_number' ) ) ) );
-		} catch ( WooPaymentsApiException $exception ) {
+		} catch ( ApiException $exception ) {
 			return $exception->to_wp_error();
 		}
 	}
@@ -302,7 +302,7 @@ class WooPaymentsDocumentsRestController extends RestApiControllerBase {
 					(string) $request->get_param( 'address' )
 				)
 			);
-		} catch ( WooPaymentsApiException $exception ) {
+		} catch ( ApiException $exception ) {
 			return $exception->to_wp_error();
 		}
 	}

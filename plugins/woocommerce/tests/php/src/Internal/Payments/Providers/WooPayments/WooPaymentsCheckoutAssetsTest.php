@@ -13,7 +13,7 @@ use Automattic\WooCommerce\Internal\Payments\PaymentProcessingService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCheckoutAssets;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendStylesService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendTrackingController;
@@ -932,7 +932,7 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 
 		$account_service  = $this->create_account_service( true );
 		$customer_service = new WooPaymentsCustomerService();
-		$customer_service->init( $this->createStub( WooPaymentsApiClient::class ), $account_service, new WooPaymentsSessionService() );
+		$customer_service->init( $this->createStub( Client::class ), $account_service, new WooPaymentsSessionService() );
 
 		$assets = new WooPaymentsCheckoutAssets();
 		$assets->init(
@@ -2307,7 +2307,7 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 	 * @param WooPaymentsAccountService $account_service Account service (usually a mock) the fraud service should read.
 	 */
 	private function inject_fraud_service( WooPaymentsCheckoutAssets $assets, WooPaymentsAccountService $account_service ): void {
-		$api_client       = new WooPaymentsApiClient();
+		$api_client       = new Client();
 		$customer_service = new WooPaymentsCustomerService();
 		$customer_service->init( $api_client, $account_service, new WooPaymentsSessionService() );
 

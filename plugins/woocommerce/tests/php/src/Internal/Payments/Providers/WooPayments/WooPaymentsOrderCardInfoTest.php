@@ -5,8 +5,8 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Orders\PaymentInfo;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExtensionRuntime;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderCardInfo;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentMethodDetailsService;
@@ -143,7 +143,7 @@ class WooPaymentsOrderCardInfoTest extends WC_Unit_Test_Case {
 	 * @testdox A fetch that fails with a PHP Error still renders the order, with no card shown and no second fetch by core's fallback.
 	 */
 	public function test_card_info_survives_a_failing_fetch_without_a_second_one(): void {
-		$client = new class() extends WooPaymentsApiClient {
+		$client = new class() extends Client {
 			/**
 			 * Payment method IDs the test double was asked for.
 			 *
@@ -183,17 +183,17 @@ class WooPaymentsOrderCardInfoTest extends WC_Unit_Test_Case {
 	public function test_failed_fetch_writes_one_payment_info_line_with_logging_off(): void {
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => 'no' ) );
 		add_filter( 'wcpay_dev_mode', '__return_false' );
-		$client = new class() extends WooPaymentsApiClient {
+		$client = new class() extends Client {
 			/**
 			 * Fail as the platform does when it cannot answer.
 			 *
 			 * @param string $payment_method_id Payment method ID.
 			 * @return array<string,mixed>
-			 * @throws WooPaymentsApiException For every payment method ID.
+			 * @throws ApiException For every payment method ID.
 			 */
 			public function get_payment_method( string $payment_method_id ): array {
 				if ( '' !== $payment_method_id ) {
-					throw new WooPaymentsApiException( 'No such payment method: pm_gone', 'resource_missing', 404 );
+					throw new ApiException( 'No such payment method: pm_gone', 'resource_missing', 404 );
 				}
 
 				return array();
@@ -257,10 +257,10 @@ class WooPaymentsOrderCardInfoTest extends WC_Unit_Test_Case {
 	 * Build a native API client double that records the payment methods it is asked for.
 	 *
 	 * @param array<string,mixed> $details Details to return.
-	 * @return WooPaymentsApiClient
+	 * @return Client
 	 */
-	private function create_recording_payment_method_client( array $details ): WooPaymentsApiClient {
-		return new class( $details ) extends WooPaymentsApiClient {
+	private function create_recording_payment_method_client( array $details ): Client {
+		return new class( $details ) extends Client {
 			/**
 			 * Details to return.
 			 *
@@ -301,9 +301,9 @@ class WooPaymentsOrderCardInfoTest extends WC_Unit_Test_Case {
 	/**
 	 * Register the card info provider, with a details service on the given API client.
 	 *
-	 * @param WooPaymentsApiClient $client API client double.
+	 * @param Client $client API client double.
 	 */
-	private function register_card_info_service( WooPaymentsApiClient $client ): void {
+	private function register_card_info_service( Client $client ): void {
 		$this->register_legacy_proxy_function_mocks(
 			array(
 				'class_exists' => fn( $class_name ) => 'WC_Payments' !== ltrim( (string) $class_name, '\\' ) && class_exists( $class_name ),

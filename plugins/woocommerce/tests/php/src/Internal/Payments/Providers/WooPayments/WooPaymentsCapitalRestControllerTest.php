@@ -4,8 +4,8 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCapitalRestController;
 use WC_REST_Unit_Test_Case;
 use WP_REST_Request;
@@ -29,9 +29,9 @@ class WooPaymentsCapitalRestControllerTest extends WC_REST_Unit_Test_Case {
 	/**
 	 * Recording API client.
 	 *
-	 * @var WooPaymentsApiClient
+	 * @var Client
 	 */
-	private WooPaymentsApiClient $api_client;
+	private Client $api_client;
 
 	/**
 	 * Set up test fixtures.
@@ -228,7 +228,7 @@ class WooPaymentsCapitalRestControllerTest extends WC_REST_Unit_Test_Case {
 	 * @testdox Loan offer link lands on the overview error notice when the platform refuses the Capital link.
 	 */
 	public function test_loan_offer_query_arg_redirects_to_overview_error_when_platform_fails(): void {
-		$this->api_client->exception = new WooPaymentsApiException( 'No active offer.', 'wcpay_capital_offer_unavailable', 400 );
+		$this->api_client->exception = new ApiException( 'No active offer.', 'wcpay_capital_offer_unavailable', 400 );
 		$_GET['wcpay-loan-offer']    = '';
 
 		$location = rawurldecode( (string) $this->run_loan_offer_redirect() );
@@ -242,10 +242,10 @@ class WooPaymentsCapitalRestControllerTest extends WC_REST_Unit_Test_Case {
 	 * @testdox Loan offer route redirects to the overview error notice when $_dataName.
 	 * @dataProvider provide_capital_link_failures
 	 *
-	 * @param WooPaymentsApiException|null $exception     Platform failure, or null.
-	 * @param array<string,mixed>          $link_response Capital link answer when the platform answers.
+	 * @param ApiException|null   $exception     Platform failure, or null.
+	 * @param array<string,mixed> $link_response Capital link answer when the platform answers.
 	 */
-	public function test_loan_offer_route_redirects_to_overview_error_on_failure( ?WooPaymentsApiException $exception, array $link_response ): void {
+	public function test_loan_offer_route_redirects_to_overview_error_on_failure( ?ApiException $exception, array $link_response ): void {
 		$this->api_client->exception             = $exception;
 		$this->api_client->capital_link_response = $link_response;
 		$this->sut->register_routes();
@@ -262,11 +262,11 @@ class WooPaymentsCapitalRestControllerTest extends WC_REST_Unit_Test_Case {
 	/**
 	 * Provide the Capital link failures: exception, link answer.
 	 *
-	 * @return array<string,array{0:WooPaymentsApiException|null,1:array<string,mixed>}>
+	 * @return array<string,array{0:ApiException|null,1:array<string,mixed>}>
 	 */
 	public function provide_capital_link_failures(): array {
 		return array(
-			'the API request fails'    => array( new WooPaymentsApiException( 'Capital unavailable.', 'capital_unavailable', 503 ), array() ),
+			'the API request fails'    => array( new ApiException( 'Capital unavailable.', 'capital_unavailable', 503 ), array() ),
 			'the response omits a URL' => array( null, array( 'id' => 'link_without_url' ) ),
 		);
 	}
@@ -275,7 +275,7 @@ class WooPaymentsCapitalRestControllerTest extends WC_REST_Unit_Test_Case {
 	 * @testdox API exceptions preserve the Capital REST error envelope and include the upstream HTTP status.
 	 */
 	public function test_api_exceptions_preserve_error_envelope_with_status(): void {
-		$this->api_client->exception = new WooPaymentsApiException( 'Capital unavailable.', 'capital_unavailable', 503 );
+		$this->api_client->exception = new ApiException( 'Capital unavailable.', 'capital_unavailable', 503 );
 
 		$response = $this->sut->get_active_loan_summary( new WP_REST_Request( 'GET', '/wc/v3/payments/capital/active_loan_summary' ) );
 
@@ -298,7 +298,7 @@ class WooPaymentsCapitalRestControllerTest extends WC_REST_Unit_Test_Case {
 	 * @param int $platform_status Platform HTTP status.
 	 */
 	public function test_api_exceptions_without_http_code_default_to_server_error_status( int $platform_status ): void {
-		$this->api_client->exception = new WooPaymentsApiException( 'Capital unavailable.', 'capital_unavailable', $platform_status );
+		$this->api_client->exception = new ApiException( 'Capital unavailable.', 'capital_unavailable', $platform_status );
 
 		$response = $this->sut->get_loans( new WP_REST_Request( 'GET', '/wc/v3/payments/capital/loans' ) );
 
@@ -390,10 +390,10 @@ class WooPaymentsCapitalRestControllerTest extends WC_REST_Unit_Test_Case {
 	/**
 	 * Create a recording API client.
 	 *
-	 * @return WooPaymentsApiClient
+	 * @return Client
 	 */
-	private function create_api_client(): WooPaymentsApiClient {
-		return new class() extends WooPaymentsApiClient {
+	private function create_api_client(): Client {
+		return new class() extends Client {
 
 			/**
 			 * Last called method.
@@ -440,9 +440,9 @@ class WooPaymentsCapitalRestControllerTest extends WC_REST_Unit_Test_Case {
 			/**
 			 * Optional exception thrown by the next call.
 			 *
-			 * @var WooPaymentsApiException|null
+			 * @var ApiException|null
 			 */
-			public ?WooPaymentsApiException $exception = null;
+			public ?ApiException $exception = null;
 
 			/**
 			 * Get active loan summary.
@@ -487,7 +487,7 @@ class WooPaymentsCapitalRestControllerTest extends WC_REST_Unit_Test_Case {
 			/**
 			 * Throw configured exception.
 			 *
-			 * @throws WooPaymentsApiException When configured.
+			 * @throws ApiException When configured.
 			 */
 			private function throw_if_configured(): void {
 				if ( null !== $this->exception ) {

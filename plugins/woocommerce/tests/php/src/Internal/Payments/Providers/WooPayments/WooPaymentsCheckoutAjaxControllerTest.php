@@ -7,11 +7,11 @@ use Automattic\WooCommerce\Enums\OrderStatus;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsEventIngestor;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Fixtures\RecordedPlatformEvents;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsTransportLog;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\TransportLog;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDatabaseCache;
@@ -28,7 +28,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPa
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\WooPaymentsSepaToken;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenClassMapController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
-use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Api\FakeWooPaymentsHttpClient;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Api\FakeHttpClient;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\SubscriptionDouble;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\WooCommerceSubscriptionsDoubles;
 use WC_Order;
@@ -79,7 +79,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Should register AJAX callbacks even when transport readiness is still deferred.
 	 */
 	public function test_registers_callbacks_when_transport_is_unavailable_at_boot(): void {
-		$api_client = new class() extends WooPaymentsApiClient {
+		$api_client = new class() extends Client {
 			/**
 			 * Tell whether the transport is available.
 			 *
@@ -111,15 +111,15 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		$order->update_meta_data( '_intent_id', $recorded['body']['id'] );
 		$order->save();
 
-		$http_client           = new FakeWooPaymentsHttpClient();
+		$http_client           = new FakeHttpClient();
 		$http_client->response = array(
 			'response' => array( 'code' => 200 ),
 			'headers'  => array( 'content-type' => 'application/json; charset=UTF-8' ),
 			'body'     => wp_json_encode( $recorded['body'] ),
 		);
 		$account_service       = $this->create_account_service( false );
-		$api_client            = new WooPaymentsApiClient();
-		$api_client->init( $http_client, $account_service, wc_get_container()->get( WooPaymentsTransportLog::class ) );
+		$api_client            = new Client();
+		$api_client->init( $http_client, $account_service, wc_get_container()->get( TransportLog::class ) );
 		$sut      = $this->create_controller( $api_client, null, null, $account_service );
 		$response = $sut->confirm_order_payment(
 			array(
@@ -161,7 +161,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID . '_sepa_debit' );
 		$order->update_meta_data( '_intent_id', 'seti_sepa_title' );
 		$order->save();
-		$api_client      = new class() extends WooPaymentsApiClient {
+		$api_client      = new class() extends Client {
 			/**
 			 * Tell whether the transport is available.
 			 *
@@ -252,7 +252,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		WooCommerceSubscriptionsDoubles::load_order_subscriptions();
 		$GLOBALS['wcpay_test_order_subscription_relationships'] = array( $order->get_id() => array( 'renewal' => array( $subscription->get_id() ) ) );
 
-		$api_client           = new class() extends WooPaymentsApiClient {
+		$api_client           = new class() extends Client {
 			/**
 			 * Tell whether the transport is available.
 			 *
@@ -359,7 +359,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		$subscription->set_payment_method_title( 'Visa credit card' );
 		$subscription->save();
 		$details_reads  = new \ArrayObject( array( 0 ) );
-		$api_client     = new class() extends WooPaymentsApiClient {
+		$api_client     = new class() extends Client {
 			/**
 			 * Tell whether the transport is available.
 			 *
@@ -464,7 +464,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 			),
 		);
 		$details_reads  = new \ArrayObject( array( 0 ) );
-		$api_client     = new class() extends WooPaymentsApiClient {
+		$api_client     = new class() extends Client {
 			/**
 			 * Tell whether the transport is available.
 			 *
@@ -617,7 +617,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		$order->update_meta_data( '_intent_id', 'pi_runtime_conflict' );
 		$order->save();
 
-		$api_client                  = new class() extends WooPaymentsApiClient {
+		$api_client                  = new class() extends Client {
 			/**
 			 * Tell whether transport is available.
 			 *
@@ -672,7 +672,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		$order->update_meta_data( '_intent_id', 'pi_native' );
 		$order->save();
 
-		$api_client = new class() extends WooPaymentsApiClient {
+		$api_client = new class() extends Client {
 			/**
 			 * Tell whether the transport is available.
 			 *
@@ -780,7 +780,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		$order->update_meta_data( '_intent_id', 'pi_klarna' );
 		$order->save();
 
-		$api_client = new class() extends WooPaymentsApiClient {
+		$api_client = new class() extends Client {
 			/**
 			 * Tell whether the transport is available.
 			 *
@@ -853,7 +853,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		$order->update_meta_data( '_intent_id', 'pi_converted' );
 		$order->save();
 
-		$api_client = new class() extends WooPaymentsApiClient {
+		$api_client = new class() extends Client {
 			/**
 			 * Tell whether the transport is available.
 			 *
@@ -932,7 +932,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		$order->update_meta_data( '_intent_id', $stored_intent_id );
 		$order->save();
 
-		$api_client = new class() extends WooPaymentsApiClient {
+		$api_client = new class() extends Client {
 			/**
 			 * Tell whether the transport is available.
 			 *
@@ -1005,7 +1005,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		$order->update_meta_data( '_intent_id', 'seti_expected' );
 		$order->save();
 		wp_set_current_user( $logged_in ? $this->factory()->user->create() : 0 );
-		$api_client = new class() extends WooPaymentsApiClient {
+		$api_client = new class() extends Client {
 			/**
 			 * Tell whether the transport is available.
 			 *
@@ -1057,7 +1057,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		$order->update_meta_data( '_intent_id', 'seti_native' );
 		$order->save();
 
-		$api_client = new class() extends WooPaymentsApiClient {
+		$api_client = new class() extends Client {
 			/**
 			 * Tell whether the transport is available.
 			 *
@@ -1146,7 +1146,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		}
 		wp_set_current_user( $caller_id );
 
-		$api_client = new class() extends WooPaymentsApiClient {
+		$api_client = new class() extends Client {
 			/**
 			 * SetupIntent reads.
 			 *
@@ -1227,7 +1227,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		$order->update_meta_data( '_intent_id', 'seti_native' );
 		$order->save();
 
-		$api_client = new class() extends WooPaymentsApiClient {
+		$api_client = new class() extends Client {
 			/**
 			 * Tell whether the transport is available.
 			 *
@@ -1280,7 +1280,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		$order->update_meta_data( '_intent_id', 'pi_requires_action' );
 		$order->save();
 
-		$api_client = new class() extends WooPaymentsApiClient {
+		$api_client = new class() extends Client {
 			/**
 			 * Tell whether the transport is available.
 			 *
@@ -1520,7 +1520,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 	 * @return array<string,mixed>
 	 */
 	private function get_update_order_status_response_for_intent( WC_Order $order, array $intent, ?WooPaymentsFeeDetailsNoteController $fee_details_note_controller = null ): array {
-		$api_client = new class( $intent ) extends WooPaymentsApiClient {
+		$api_client = new class( $intent ) extends Client {
 			/**
 			 * PaymentIntent response.
 			 *
@@ -1622,15 +1622,15 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		$order->update_meta_data( '_intent_id', $recorded['body']['id'] );
 		$order->save();
 
-		$http_client           = new FakeWooPaymentsHttpClient();
+		$http_client           = new FakeHttpClient();
 		$http_client->response = array(
 			'response' => array( 'code' => 200 ),
 			'headers'  => array( 'content-type' => 'application/json; charset=UTF-8' ),
 			'body'     => wp_json_encode( $recorded['body'] ),
 		);
 		$account_service       = $this->create_account_service( false );
-		$api_client            = new WooPaymentsApiClient();
-		$api_client->init( $http_client, $account_service, wc_get_container()->get( WooPaymentsTransportLog::class ) );
+		$api_client            = new Client();
+		$api_client->init( $http_client, $account_service, wc_get_container()->get( TransportLog::class ) );
 		$sut      = $this->create_controller( $api_client, null, null, $account_service );
 		$response = $sut->confirm_order_payment(
 			array(
@@ -1828,10 +1828,10 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 	 *
 	 * @param array<string,mixed> $intent       PaymentIntent response.
 	 * @param callable|null       $during_fetch Runs while the intent is fetched.
-	 * @return WooPaymentsApiClient
+	 * @return Client
 	 */
-	private function create_api_client_running_during_fetch( array $intent, ?callable $during_fetch ): WooPaymentsApiClient {
-		return new class( $intent, $during_fetch ) extends WooPaymentsApiClient {
+	private function create_api_client_running_during_fetch( array $intent, ?callable $during_fetch ): Client {
+		return new class( $intent, $during_fetch ) extends Client {
 			/**
 			 * PaymentIntent response.
 			 *
@@ -1940,15 +1940,15 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		$order->update_meta_data( '_intent_id', $recorded['body']['id'] );
 		$order->save();
 
-		$http_client           = new FakeWooPaymentsHttpClient();
+		$http_client           = new FakeHttpClient();
 		$http_client->response = array(
 			'response' => array( 'code' => 200 ),
 			'headers'  => array( 'content-type' => 'application/json; charset=UTF-8' ),
 			'body'     => wp_json_encode( $recorded['body'] ),
 		);
 		$account_service       = $this->create_account_service( false );
-		$api_client            = new WooPaymentsApiClient();
-		$api_client->init( $http_client, $account_service, wc_get_container()->get( WooPaymentsTransportLog::class ) );
+		$api_client            = new Client();
+		$api_client->init( $http_client, $account_service, wc_get_container()->get( TransportLog::class ) );
 		$recorded_payment_method_id = (string) $recorded['body']['payment_method'];
 		$recorded_charge            = $recorded['body']['charges']['data'][0];
 		$token_service              = $this->create_token_service(
@@ -2094,15 +2094,15 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		$order->update_meta_data( '_intent_id', $intent['id'] );
 		$order->save();
 
-		$http_client           = new FakeWooPaymentsHttpClient();
+		$http_client           = new FakeHttpClient();
 		$http_client->response = array(
 			'response' => array( 'code' => 200 ),
 			'headers'  => array( 'content-type' => 'application/json; charset=UTF-8' ),
 			'body'     => wp_json_encode( $intent ),
 		);
 		$account_service       = $this->create_account_service( false );
-		$api_client            = new WooPaymentsApiClient();
-		$api_client->init( $http_client, $account_service, wc_get_container()->get( WooPaymentsTransportLog::class ) );
+		$api_client            = new Client();
+		$api_client->init( $http_client, $account_service, wc_get_container()->get( TransportLog::class ) );
 		$payment_method_id = (string) $intent['payment_method'];
 		$card              = $intent['charges']['data'][0]['payment_method_details']['card'];
 		$token_service     = $this->create_token_service(
@@ -2176,7 +2176,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		$order->update_meta_data( '_intent_id', 'pi_excluded_shape' );
 		$order->save();
 
-		$api_client              = new class( $charge ) extends WooPaymentsApiClient {
+		$api_client              = new class( $charge ) extends Client {
 			/**
 			 * Charge data returned with the PaymentIntent.
 			 *
@@ -2512,7 +2512,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		$order->update_meta_data( '_intent_id', 'pi_sepa' );
 		$order->save();
 
-		$api_client      = new class() extends WooPaymentsApiClient {
+		$api_client      = new class() extends Client {
 			/**
 			 * Tell whether the transport is available.
 			 *
@@ -2636,7 +2636,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 			$order->get_id() => array( 'renewal' => array( $subscription->get_id() ) ),
 		);
 
-		$api_client                      = new class() extends WooPaymentsApiClient {
+		$api_client                      = new class() extends Client {
 			/**
 			 * Tell whether the transport is available.
 			 *
@@ -2849,7 +2849,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		$order->update_meta_data( '_delayed_update_payment_method_all', WooPaymentsPersistenceVocabulary::GATEWAY_ID );
 		$order->save();
 
-		$api_client    = new class() extends WooPaymentsApiClient {
+		$api_client    = new class() extends Client {
 			/**
 			 * Tell whether the transport is available.
 			 *
@@ -2973,7 +2973,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		$switch_order->save();
 		$GLOBALS[ WooCommerceSubscriptionsDoubles::ORDER_SUBSCRIPTIONS ] = array( $switch_order->get_id() => array( 'switch' => array( $subscription->get_id() ) ) );
 
-		$api_client = new class() extends WooPaymentsApiClient {
+		$api_client = new class() extends Client {
 			/**
 			 * Intent IDs fetched as PaymentIntents.
 			 *
@@ -3104,7 +3104,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		$subscription->save();
 		$GLOBALS[ WooCommerceSubscriptionsDoubles::SUBSCRIPTION_IDS ] = array( $subscription->get_id() );
 
-		$api_client = new class() extends WooPaymentsApiClient {
+		$api_client = new class() extends Client {
 			/**
 			 * Tell whether the transport is available.
 			 *
@@ -3167,7 +3167,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		$order->update_meta_data( '_intent_id', 'pi_native' );
 		$order->save();
 
-		$api_client    = new class() extends WooPaymentsApiClient {
+		$api_client    = new class() extends Client {
 			/**
 			 * Tell whether the transport is available.
 			 *
@@ -3280,21 +3280,21 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 
 		if ( $use_recorded_envelope ) {
 			$recorded              = $this->load_recorded_intent_entry( 'platform-setup-intent-requires-action.json', 'setup_intent_requires_action' );
-			$http_client           = new FakeWooPaymentsHttpClient();
+			$http_client           = new FakeHttpClient();
 			$http_client->response = array(
 				'response' => array( 'code' => $recorded['http_status'] ),
 				'headers'  => array( 'content-type' => $recorded['content_type'] ),
 				'body'     => wp_json_encode( $recorded['body'] ),
 			);
-			$api_client            = new WooPaymentsApiClient();
-			$api_client->init( $http_client, $this->create_account_service( false ), wc_get_container()->get( WooPaymentsTransportLog::class ) );
+			$api_client            = new Client();
+			$api_client->init( $http_client, $this->create_account_service( false ), wc_get_container()->get( TransportLog::class ) );
 			$expected_data = array(
 				'id'            => (string) $recorded['body']['id'],
 				'status'        => (string) $recorded['body']['status'],
 				'client_secret' => (string) $recorded['body']['client_secret'],
 			);
 		} else {
-			$api_client    = new class() extends WooPaymentsApiClient {
+			$api_client    = new class() extends Client {
 				/**
 				 * Tell whether the transport is available.
 				 *
@@ -3402,15 +3402,15 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		$recorded = $this->load_recorded_setup_intent_decline_entry( $pair );
 		// The recorded platform text equals the English catalog, so replace it to prove the catalog, not the platform, supplies the message.
 		$recorded['error']['message'] = 'Platform decline text that must not reach the shopper.';
-		$http_client                  = new FakeWooPaymentsHttpClient();
+		$http_client                  = new FakeHttpClient();
 		$http_client->response        = array(
 			'response' => array( 'code' => $recorded['http_status'] ),
 			'headers'  => array( 'content-type' => 'application/json; charset=UTF-8' ),
 			'body'     => wp_json_encode( array( 'error' => $recorded['error'] ) ),
 		);
 		$account_service              = $this->create_account_service( false );
-		$api_client                   = new WooPaymentsApiClient();
-		$api_client->init( $http_client, $account_service, wc_get_container()->get( WooPaymentsTransportLog::class ) );
+		$api_client                   = new Client();
+		$api_client->init( $http_client, $account_service, wc_get_container()->get( TransportLog::class ) );
 
 		$customer_service = $this->getMockBuilder( WooPaymentsCustomerService::class )
 			->disableOriginalConstructor()
@@ -3493,7 +3493,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 	 * request body by fixture file and pair key.
 	 *
 	 * Shared by the T.3 Task 4 tests that feed a recorded envelope through the real
-	 * {@see WooPaymentsApiClient} over a {@see FakeWooPaymentsHttpClient}.
+	 * {@see Client} over a {@see FakeHttpClient}.
 	 *
 	 * @param string $fixture Fixture file name under `Fixtures/`.
 	 * @param string $pair    Fixture pair key.
@@ -3560,7 +3560,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 
 		\WC_Rate_Limiter::set_rate_limit( 'add_payment_method_' . $user_id, 20 );
 
-		$api_client = new class() extends WooPaymentsApiClient {
+		$api_client = new class() extends Client {
 			/**
 			 * SetupIntent creation requests this fake received.
 			 *
@@ -3624,7 +3624,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 	public function test_create_setup_intent_preserves_card_testing_prevention_message(): void {
 		$platform_message = "Error: We're not able to add this payment method. Please try again later.";
 		$response         = $this->get_create_setup_intent_api_error_response(
-			new WooPaymentsApiException(
+			new ApiException(
 				$platform_message,
 				'wcpay_card_testing_prevention',
 				400,
@@ -3643,7 +3643,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 	public function test_create_setup_intent_redacts_non_card_api_errors(): void {
 		$technical_message = 'Upstream socket credentials debug detail.';
 		$response          = $this->get_create_setup_intent_api_error_response(
-			new WooPaymentsApiException(
+			new ApiException(
 				$technical_message,
 				'api_connection_error',
 				503,
@@ -3672,7 +3672,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 	 */
 	public function test_create_setup_intent_answers_filtered_api_error_status( int $http_code, int $expected_status ): void {
 		$response = $this->get_create_setup_intent_api_error_response(
-			new WooPaymentsApiException( 'Error: Your card was declined.', 'card_declined', $http_code, 'card_error' )
+			new ApiException( 'Error: Your card was declined.', 'card_declined', $http_code, 'card_error' )
 		);
 
 		$this->assertFalse( $response['success'] );
@@ -3701,7 +3701,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 	public function test_create_setup_intent_rejects_invalid_nonce_with_400(): void {
 		wp_set_current_user( $this->factory()->user->create() );
 
-		$api_client = $this->createMock( WooPaymentsApiClient::class );
+		$api_client = $this->createMock( Client::class );
 		$api_client->method( 'is_available' )->willReturn( true );
 		$api_client->expects( $this->never() )->method( 'create_and_confirm_setup_intention' );
 
@@ -3732,7 +3732,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 			->getMock();
 		$customer_service->method( 'get_or_create_customer_id_for_user' )->willThrowException( new \RuntimeException( 'Customer store unavailable.' ) );
 
-		$api_client = $this->createMock( WooPaymentsApiClient::class );
+		$api_client = $this->createMock( Client::class );
 		$api_client->method( 'is_available' )->willReturn( true );
 
 		$sut      = $this->create_controller( $api_client, $customer_service );
@@ -3754,7 +3754,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		$user_id = $this->factory()->user->create();
 		wp_set_current_user( $user_id );
 
-		$api_client = new class() extends WooPaymentsApiClient {
+		$api_client = new class() extends Client {
 			/**
 			 * Last request data.
 			 *
@@ -3816,27 +3816,27 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * Get a setup-intent response for a native API failure.
 	 *
-	 * @param WooPaymentsApiException $exception API exception to throw.
+	 * @param ApiException $exception API exception to throw.
 	 * @return array<string,mixed>
 	 */
-	private function get_create_setup_intent_api_error_response( WooPaymentsApiException $exception ): array {
+	private function get_create_setup_intent_api_error_response( ApiException $exception ): array {
 		$user_id = $this->factory()->user->create();
 		wp_set_current_user( $user_id );
 
-		$api_client = new class( $exception ) extends WooPaymentsApiClient {
+		$api_client = new class( $exception ) extends Client {
 			/**
 			 * API exception to throw.
 			 *
-			 * @var WooPaymentsApiException
+			 * @var ApiException
 			 */
-			private WooPaymentsApiException $exception;
+			private ApiException $exception;
 
 			/**
 			 * Constructor.
 			 *
-			 * @param WooPaymentsApiException $exception API exception to throw.
+			 * @param ApiException $exception API exception to throw.
 			 */
-			public function __construct( WooPaymentsApiException $exception ) {
+			public function __construct( ApiException $exception ) {
 				$this->exception = $exception;
 			}
 
@@ -3855,7 +3855,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 			 *
 			 * @param array<string,mixed> $request_data    Request data.
 			 * @param string              $idempotency_key Idempotency key.
-			 * @throws WooPaymentsApiException Always.
+			 * @throws ApiException Always.
 			 */
 			public function create_and_confirm_setup_intention( array $request_data, string $idempotency_key ): array {
 				unset( $request_data, $idempotency_key );
@@ -3889,9 +3889,9 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		WC()->initialize_session();
 
 		// A connected store: without a connection the account read returns no account, like the client.
-		$connected_api_client = $this->createMock( WooPaymentsApiClient::class );
+		$connected_api_client = $this->createMock( Client::class );
 		$connected_api_client->method( 'is_available' )->willReturn( true );
-		wc_get_container()->replace( WooPaymentsApiClient::class, $connected_api_client );
+		wc_get_container()->replace( Client::class, $connected_api_client );
 		// Seed through the container's account service: it memoizes the account
 		// cache per instance, and the controller's fraud service reads through
 		// that same shared instance.
@@ -3903,7 +3903,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 			)
 		);
 
-		$api_client = new class() extends WooPaymentsApiClient {
+		$api_client = new class() extends Client {
 			/**
 			 * Tell whether the transport is available.
 			 *
@@ -3976,7 +3976,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		$user_id = $this->factory->user->create();
 		wp_set_current_user( $user_id );
 
-		$api_client = new class() extends WooPaymentsApiClient {
+		$api_client = new class() extends Client {
 			/**
 			 * Captured setup-intention payloads.
 			 *
@@ -4041,14 +4041,14 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * Create a checkout AJAX controller.
 	 *
-	 * @param WooPaymentsApiClient                     $api_client       API client.
+	 * @param Client                                   $api_client       API client.
 	 * @param WooPaymentsCustomerService|null          $customer_service Customer service.
 	 * @param WooPaymentsTokenService|null             $token_service    Token service.
 	 * @param WooPaymentsAccountService|null           $account_service  Account service.
 	 * @param WooPaymentsFeeDetailsNoteController|null $fee_details_note_controller Fee details note controller, which applies the lifecycle event.
 	 * @return WooPaymentsCheckoutAjaxController
 	 */
-	private function create_controller( WooPaymentsApiClient $api_client, ?WooPaymentsCustomerService $customer_service = null, ?WooPaymentsTokenService $token_service = null, ?WooPaymentsAccountService $account_service = null, ?WooPaymentsFeeDetailsNoteController $fee_details_note_controller = null ): WooPaymentsCheckoutAjaxController {
+	private function create_controller( Client $api_client, ?WooPaymentsCustomerService $customer_service = null, ?WooPaymentsTokenService $token_service = null, ?WooPaymentsAccountService $account_service = null, ?WooPaymentsFeeDetailsNoteController $fee_details_note_controller = null ): WooPaymentsCheckoutAjaxController {
 		$arbiter = $this->createMock( WooPaymentsRuntimeArbiter::class );
 		$arbiter->method( 'is_builtin_owner' )->willReturn( true );
 
@@ -4067,13 +4067,13 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * Create the intent confirmation service the order-status callback confirms through.
 	 *
-	 * @param WooPaymentsApiClient                     $api_client                  API client.
+	 * @param Client                                   $api_client                  API client.
 	 * @param WooPaymentsTokenService|null             $token_service               Token service.
 	 * @param WooPaymentsAccountService|null           $account_service             Account service.
 	 * @param WooPaymentsFeeDetailsNoteController|null $fee_details_note_controller Fee details note controller, which applies the lifecycle event.
 	 * @return WooPaymentsIntentConfirmationService
 	 */
-	private function create_intent_confirmation_service( WooPaymentsApiClient $api_client, ?WooPaymentsTokenService $token_service = null, ?WooPaymentsAccountService $account_service = null, ?WooPaymentsFeeDetailsNoteController $fee_details_note_controller = null ): WooPaymentsIntentConfirmationService {
+	private function create_intent_confirmation_service( Client $api_client, ?WooPaymentsTokenService $token_service = null, ?WooPaymentsAccountService $account_service = null, ?WooPaymentsFeeDetailsNoteController $fee_details_note_controller = null ): WooPaymentsIntentConfirmationService {
 		$token_service   = $token_service ?? $this->create_token_service();
 		$account_service = $account_service ?? $this->create_account_service( false );
 		$effect_applier  = new WooPaymentsOrderEffectApplier();
@@ -4175,7 +4175,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		};
 
 		$sut = new WooPaymentsTokenService();
-		$sut->init( $details_service, wc_get_container()->get( WooPaymentsApiClient::class ), wc_get_container()->get( WooPaymentsCustomerService::class ), $account_service ?? wc_get_container()->get( WooPaymentsAccountService::class ), wc_get_container()->get( WooPaymentsOrderDataService::class ), wc_get_container()->get( WooPaymentsPaymentMethodRegistry::class ) );
+		$sut->init( $details_service, wc_get_container()->get( Client::class ), wc_get_container()->get( WooPaymentsCustomerService::class ), $account_service ?? wc_get_container()->get( WooPaymentsAccountService::class ), wc_get_container()->get( WooPaymentsOrderDataService::class ), wc_get_container()->get( WooPaymentsPaymentMethodRegistry::class ) );
 
 		return $sut;
 	}

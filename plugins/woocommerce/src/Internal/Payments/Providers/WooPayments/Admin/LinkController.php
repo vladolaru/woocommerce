@@ -8,8 +8,8 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin;
 
 use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Onboarding\WooPaymentsOnboardingService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Onboarding\WooPaymentsOnboardingSource;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
@@ -32,9 +32,9 @@ class LinkController implements RegisterHooksInterface {
 	/**
 	 * WooPayments API client.
 	 *
-	 * @var WooPaymentsApiClient
+	 * @var Client
 	 */
-	private WooPaymentsApiClient $api_client;
+	private Client $api_client;
 
 	/**
 	 * WooPayments admin navigation, which resolves the `/payments/*` path links.
@@ -62,12 +62,12 @@ class LinkController implements RegisterHooksInterface {
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsApiClient             $api_client      WooPayments API client.
+	 * @param Client                           $api_client      WooPayments API client.
 	 * @param NavigationController             $navigation      WooPayments admin navigation.
 	 * @param WooPaymentsCapitalRestController $capital         Capital controller.
 	 * @param WooPaymentsAccountService        $account_service WooPayments account service.
 	 */
-	final public function init( WooPaymentsApiClient $api_client, NavigationController $navigation, WooPaymentsCapitalRestController $capital, WooPaymentsAccountService $account_service ): void {
+	final public function init( Client $api_client, NavigationController $navigation, WooPaymentsCapitalRestController $capital, WooPaymentsAccountService $account_service ): void {
 		$this->api_client      = $api_client;
 		$this->navigation      = $navigation;
 		$this->capital         = $capital;
@@ -261,7 +261,7 @@ class LinkController implements RegisterHooksInterface {
 			$this->account_service->clear_cache();
 			$login = $this->api_client->create_login_link( Utils::wc_payments_settings_url( WooPaymentsPaymentsSettingsAdapter::OVERVIEW_PATH ) );
 			$url   = isset( $login['url'] ) && is_string( $login['url'] ) ? $login['url'] : '';
-		} catch ( WooPaymentsApiException $exception ) {
+		} catch ( ApiException $exception ) {
 			unset( $exception );
 		}
 
@@ -292,7 +292,7 @@ class LinkController implements RegisterHooksInterface {
 				wp_safe_redirect( $url );
 				exit;
 			}
-		} catch ( WooPaymentsApiException $exception ) {
+		} catch ( ApiException $exception ) {
 			unset( $exception );
 		}
 

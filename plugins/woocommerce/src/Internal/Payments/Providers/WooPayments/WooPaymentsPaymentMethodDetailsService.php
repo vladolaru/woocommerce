@@ -7,7 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Exception;
 use Throwable;
 
@@ -30,9 +30,9 @@ class WooPaymentsPaymentMethodDetailsService {
 	/**
 	 * WooPayments API client.
 	 *
-	 * @var WooPaymentsApiClient
+	 * @var Client
 	 */
-	private WooPaymentsApiClient $api_client;
+	private Client $api_client;
 
 	/**
 	 * Runtime owner arbiter.
@@ -47,10 +47,10 @@ class WooPaymentsPaymentMethodDetailsService {
 	 * @internal
 	 *
 	 * @param WooPaymentsExtensionRuntime $extension_runtime The WooPaymentsExtensionRuntime instance.
-	 * @param WooPaymentsApiClient        $api_client     WooPayments API client.
+	 * @param Client                      $api_client     WooPayments API client.
 	 * @param WooPaymentsRuntimeArbiter   $arbiter        Runtime owner arbiter.
 	 */
-	final public function init( WooPaymentsExtensionRuntime $extension_runtime, WooPaymentsApiClient $api_client, WooPaymentsRuntimeArbiter $arbiter ): void {
+	final public function init( WooPaymentsExtensionRuntime $extension_runtime, Client $api_client, WooPaymentsRuntimeArbiter $arbiter ): void {
 		$this->extension_runtime = $extension_runtime;
 		$this->api_client        = $api_client;
 		$this->arbiter           = $arbiter;

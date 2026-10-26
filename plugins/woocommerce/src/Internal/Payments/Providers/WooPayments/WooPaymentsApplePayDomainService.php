@@ -7,8 +7,8 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Throwable;
 
@@ -49,9 +49,9 @@ class WooPaymentsApplePayDomainService implements RegisterHooksInterface {
 	/**
 	 * WooPayments API client.
 	 *
-	 * @var WooPaymentsApiClient
+	 * @var Client
 	 */
-	private WooPaymentsApiClient $api_client;
+	private Client $api_client;
 
 	/**
 	 * WooPayments account service.
@@ -86,12 +86,12 @@ class WooPaymentsApplePayDomainService implements RegisterHooksInterface {
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsApiClient                       $api_client      WooPayments API client.
+	 * @param Client                                     $api_client      WooPayments API client.
 	 * @param WooPaymentsAccountService                  $account_service WooPayments account service.
 	 * @param WooPaymentsFrontendTrackingController|null $frontend_tracking_controller Optional frontend tracking controller.
 	 */
 	final public function init(
-		WooPaymentsApiClient $api_client,
+		Client $api_client,
 		WooPaymentsAccountService $account_service,
 		?WooPaymentsFrontendTrackingController $frontend_tracking_controller = null
 	): void {
@@ -232,7 +232,7 @@ class WooPaymentsApplePayDomainService implements RegisterHooksInterface {
 
 			$error         = $this->get_registration_error_message( $response );
 			$error_context = $this->get_registration_failure_log_context( $response );
-		} catch ( WooPaymentsApiException $exception ) {
+		} catch ( ApiException $exception ) {
 			$error         = $exception->getMessage();
 			$error_context = array( 'reason' => self::FAILURE_PLATFORM_ERROR ) + WooPaymentsLogger::get_api_error_context( $exception );
 		}

@@ -7,7 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCurrencyUtils;
 
 defined( 'ABSPATH' ) || exit;
@@ -69,7 +69,7 @@ class StripeBillingMinimumAmountHandler {
 		if ( false === $minimum_amount ) {
 			try {
 				$minimum_amount = $this->api->get_currency_minimum_recurring_amount( $currency_code );
-			} catch ( WooPaymentsApiException $exception ) {
+			} catch ( ApiException $exception ) {
 				// Currency not supported or another platform error.
 				$minimum_amount = 0;
 			}

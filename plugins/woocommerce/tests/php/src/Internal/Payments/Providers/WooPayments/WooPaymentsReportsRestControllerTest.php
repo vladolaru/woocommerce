@@ -3,13 +3,13 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDetailsService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDataService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLevel3Service;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsReportsRestController;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsTransactionsListRequest;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\TransactionsListRequest;
 use WC_Order;
 use WC_REST_Unit_Test_Case;
 use WP_REST_Request;
@@ -250,7 +250,7 @@ class WooPaymentsReportsRestControllerTest extends WC_REST_Unit_Test_Case {
 		$this->create_controller( true )->register_routes();
 		add_filter(
 			'wcpay_list_transactions_request',
-			static function ( WooPaymentsTransactionsListRequest $request ): WooPaymentsTransactionsListRequest {
+			static function ( TransactionsListRequest $request ): TransactionsListRequest {
 				$request->set( 'extension_custom_param', 'fees-custom' );
 
 				return $request;
@@ -467,7 +467,7 @@ class WooPaymentsReportsRestControllerTest extends WC_REST_Unit_Test_Case {
 		$filter_calls = 0;
 		add_filter(
 			'wcpay_list_transactions_request',
-			static function ( WooPaymentsTransactionsListRequest $request ) use ( &$filter_calls ): WooPaymentsTransactionsListRequest {
+			static function ( TransactionsListRequest $request ) use ( &$filter_calls ): TransactionsListRequest {
 				++$filter_calls;
 				$request->set( 'extension_custom_param', 'report-transactions-custom' );
 
@@ -619,7 +619,7 @@ class WooPaymentsReportsRestControllerTest extends WC_REST_Unit_Test_Case {
 	 */
 	public function test_reports_routes_preserve_platform_exception_status(): void {
 		$this->create_controller( true )->register_routes();
-		$this->api_client->exception = new WooPaymentsApiException( 'Provider unavailable.', 'wcpay_provider_unavailable', 503 );
+		$this->api_client->exception = new ApiException( 'Provider unavailable.', 'wcpay_provider_unavailable', 503 );
 
 		$response = $this->server->dispatch( new WP_REST_Request( 'GET', '/wc/v3/payments/reports/fees' ) );
 

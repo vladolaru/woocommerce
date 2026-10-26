@@ -3,13 +3,13 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 
 /**
  * Recording API client for native mobile REST tests.
  */
-class RecordingTerminalApiClient extends WooPaymentsApiClient {
+class RecordingTerminalApiClient extends Client {
 	/**
 	 * Connection token response.
 	 *
@@ -41,7 +41,7 @@ class RecordingTerminalApiClient extends WooPaymentsApiClient {
 	/**
 	 * Exception thrown by register_terminal_reader when set.
 	 *
-	 * @var \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException|null
+	 * @var \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException|null
 	 */
 	public $register_reader_exception = null;
 
@@ -174,7 +174,7 @@ class RecordingTerminalApiClient extends WooPaymentsApiClient {
 	/**
 	 * Exception thrown by capture_intention when set.
 	 *
-	 * @var \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException|null
+	 * @var \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException|null
 	 */
 	public $captured_intention_exception = null;
 
@@ -272,14 +272,14 @@ class RecordingTerminalApiClient extends WooPaymentsApiClient {
 	/**
 	 * Optional update-customer exception.
 	 *
-	 * @var WooPaymentsApiException|null
+	 * @var ApiException|null
 	 */
-	public ?WooPaymentsApiException $update_customer_exception = null;
+	public ?ApiException $update_customer_exception = null;
 
 	/**
 	 * Platform failures by API client method name, thrown before the method answers.
 	 *
-	 * @var array<string,WooPaymentsApiException>
+	 * @var array<string,ApiException>
 	 */
 	public array $method_exceptions = array();
 
@@ -287,7 +287,7 @@ class RecordingTerminalApiClient extends WooPaymentsApiClient {
 	 * Throw the platform failure set for a method, if any.
 	 *
 	 * @param string $method API client method name.
-	 * @throws WooPaymentsApiException The failure set for the method.
+	 * @throws ApiException The failure set for the method.
 	 */
 	private function maybe_fail( string $method ): void {
 		if ( isset( $this->method_exceptions[ $method ] ) ) {
@@ -590,7 +590,7 @@ class RecordingTerminalApiClient extends WooPaymentsApiClient {
 			'customer_data' => $customer_data,
 		);
 
-		if ( $this->update_customer_exception instanceof WooPaymentsApiException ) {
+		if ( $this->update_customer_exception instanceof ApiException ) {
 			throw $this->update_customer_exception;
 		}
 	}

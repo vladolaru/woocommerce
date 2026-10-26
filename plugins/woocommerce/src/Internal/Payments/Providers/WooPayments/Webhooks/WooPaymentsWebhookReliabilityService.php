@@ -8,8 +8,8 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks;
 
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLockRefusedException;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsActionSchedulerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService;
@@ -90,9 +90,9 @@ class WooPaymentsWebhookReliabilityService implements RegisterHooksInterface {
 	/**
 	 * WooPayments API client.
 	 *
-	 * @var WooPaymentsApiClient
+	 * @var Client
 	 */
-	private WooPaymentsApiClient $api_client;
+	private Client $api_client;
 
 	/**
 	 * Event ingestor.
@@ -107,12 +107,12 @@ class WooPaymentsWebhookReliabilityService implements RegisterHooksInterface {
 	 * @internal
 	 *
 	 * @param WooPaymentsActionSchedulerService $scheduler      Action Scheduler service.
-	 * @param WooPaymentsApiClient              $api_client     WooPayments API client.
+	 * @param Client                            $api_client     WooPayments API client.
 	 * @param WooPaymentsEventIngestor          $event_ingestor Event ingestor.
 	 */
 	final public function init(
 		WooPaymentsActionSchedulerService $scheduler,
-		WooPaymentsApiClient $api_client,
+		Client $api_client,
 		WooPaymentsEventIngestor $event_ingestor
 	): void {
 		$this->scheduler      = $scheduler;
@@ -345,7 +345,7 @@ class WooPaymentsWebhookReliabilityService implements RegisterHooksInterface {
 	private function fetch_failed_events_page(): ?array {
 		try {
 			$events = $this->api_client->get_failed_webhook_events();
-		} catch ( WooPaymentsApiException $exception ) {
+		} catch ( ApiException $exception ) {
 			wc_get_logger()->error(
 				'Can not fetch failed events from the server.',
 				array_merge( WooPaymentsLogger::get_failure_context( $exception ), array( 'source' => WooPaymentsLogger::SOURCE ) )

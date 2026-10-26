@@ -1,6 +1,6 @@
 <?php
 /**
- * WooPaymentsGetAccountLoginDataRequest class file.
+ * GetAccountLoginDataRequest class file.
  */
 
 declare( strict_types = 1 );
@@ -16,7 +16,7 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api;
  * @since 11.2.0
  * @internal
  */
-class WooPaymentsGetAccountLoginDataRequest extends WooPaymentsApiRequest {
+class GetAccountLoginDataRequest extends Request {
 	/**
 	 * WordPress filter applied when the request is sent.
 	 *
@@ -32,7 +32,7 @@ class WooPaymentsGetAccountLoginDataRequest extends WooPaymentsApiRequest {
 	 * @param string $redirect_url URL to navigate back to from the dashboard.
 	 * @param bool   $test_mode    Whether the account is onboarding in test mode.
 	 * @return self
-	 * @throws WooPaymentsApiException When the redirect URL is not allowed.
+	 * @throws ApiException When the redirect URL is not allowed.
 	 */
 	public static function from_redirect_url( string $redirect_url, bool $test_mode ): self {
 		$request = new self();
@@ -48,12 +48,12 @@ class WooPaymentsGetAccountLoginDataRequest extends WooPaymentsApiRequest {
 	 * Set the redirect URL; only a URL in the allowed redirect hosts is accepted.
 	 *
 	 * @param string $redirect_url URL to navigate back to from the dashboard.
-	 * @throws WooPaymentsApiException When the redirect URL is not allowed.
+	 * @throws ApiException When the redirect URL is not allowed.
 	 */
 	public function set_redirect_url( string $redirect_url ): void {
 		$fallback_url = wp_generate_password( 12, false );
 		if ( hash_equals( $fallback_url, wp_validate_redirect( $redirect_url, $fallback_url ) ) ) {
-			throw new WooPaymentsApiException(
+			throw new ApiException(
 				sprintf(
 					// translators: %s: redirect URL.
 					esc_html__( '%s is not a valid redirect URL. Use a URL in the allowed_redirect_hosts filter.', 'woocommerce' ),

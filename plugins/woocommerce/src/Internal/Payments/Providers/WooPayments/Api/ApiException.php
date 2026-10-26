@@ -1,6 +1,6 @@
 <?php
 /**
- * WooPaymentsApiException class file.
+ * ApiException class file.
  */
 
 declare( strict_types = 1 );
@@ -17,7 +17,7 @@ use WP_Error;
  * @since 11.0.0
  * @internal
  */
-class WooPaymentsApiException extends RuntimeException {
+class ApiException extends RuntimeException {
 
 	/**
 	 * Provider error code.

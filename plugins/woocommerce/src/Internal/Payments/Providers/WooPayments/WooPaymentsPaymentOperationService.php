@@ -10,8 +10,8 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 use Automattic\WooCommerce\Internal\Payments\PaymentOperationContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentLifecycleEvent;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionMethodPolicy;
 use WC_Order;
 
@@ -79,9 +79,9 @@ class WooPaymentsPaymentOperationService {
 	/**
 	 * WooPayments API client.
 	 *
-	 * @var WooPaymentsApiClient
+	 * @var Client
 	 */
-	private WooPaymentsApiClient $api_client;
+	private Client $api_client;
 
 	/**
 	 * WooPayments customer service.
@@ -154,7 +154,7 @@ class WooPaymentsPaymentOperationService {
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsApiClient              $api_client               WooPayments API client.
+	 * @param Client                            $api_client               WooPayments API client.
 	 * @param WooPaymentsCustomerService        $customer_service         Customer service.
 	 * @param WooPaymentsIntentRequestBuilder   $request_builder          Request builder.
 	 * @param WooPaymentsAccountService         $account_service          Account service.
@@ -166,7 +166,7 @@ class WooPaymentsPaymentOperationService {
 	 * @param WooPaymentsLevel3Service          $level3_service           Level 3 data service.
 	 */
 	final public function init(
-		WooPaymentsApiClient $api_client,
+		Client $api_client,
 		WooPaymentsCustomerService $customer_service,
 		WooPaymentsIntentRequestBuilder $request_builder,
 		WooPaymentsAccountService $account_service,
@@ -205,7 +205,7 @@ class WooPaymentsPaymentOperationService {
 				$outcome = 0.0 < (float) $context->get_order()->get_total()
 					? $this->charge_order_total( $context, $idempotency_key )
 					: $this->set_up_payment_method_for_zero_total( $context, $idempotency_key );
-			} catch ( WooPaymentsApiException $exception ) {
+			} catch ( ApiException $exception ) {
 				$outcome = $this->failed_charge_outcome( $context->get_order(), $exception );
 			}
 
@@ -320,7 +320,7 @@ class WooPaymentsPaymentOperationService {
 
 			try {
 				$details = $this->api_client->get_payment_method( $payment_method_id );
-			} catch ( WooPaymentsApiException $exception ) {
+			} catch ( ApiException $exception ) {
 				$this->logger->log_throwable( 'Could not read the payment method type of a refunded WooPayments order.', $exception, array( 'order_id' => $order->get_id() ) );
 				return false;
 			}
@@ -344,7 +344,7 @@ class WooPaymentsPaymentOperationService {
 	private function link_card_reader_refund( WC_Order $order, array $request ): PaymentOutcome {
 		try {
 			$list = $this->api_client->list_charge_refunds( $request['charge'] );
-		} catch ( WooPaymentsApiException $exception ) {
+		} catch ( ApiException $exception ) {
 			return WooPaymentsIntentCodec::failed_transport_outcome( 'refund', $exception );
 		}
 
@@ -391,7 +391,7 @@ class WooPaymentsPaymentOperationService {
 	private function send_refund( WC_Order $order, array $request, string $key, bool $is_held_key_retry, int $own_row_id ): PaymentOutcome {
 		try {
 			$result = $this->api_client->refund_charge( $request['charge'], $request['amount'], $request['reason'], $request['source'], $key );
-		} catch ( WooPaymentsApiException $exception ) {
+		} catch ( ApiException $exception ) {
 			// A definitive answer leaves any kept record as it was: after a held-key retry, a 400 can be Stripe's refusal of a
 			// key still in use or the replay of a stored failure, neither of which settles the earlier attempt.
 			if ( $exception->has_ambiguous_outcome() ) {
@@ -463,7 +463,7 @@ class WooPaymentsPaymentOperationService {
 					$plan    = WooPaymentsOrderEffectPlan::for_capture( $result );
 
 					return $outcome->with_effect_plan( empty( $context->get_provider_data()[ self::PROVIDER_DATA_CAPTURE_ON_STATUS_CHANGE ] ) ? $plan : $plan->without_fee_meta() );
-				} catch ( WooPaymentsApiException $exception ) {
+				} catch ( ApiException $exception ) {
 					$outcome = WooPaymentsIntentCodec::failed_transport_outcome( 'capture', $exception, $intent_id );
 
 					// The site may have missed the charge.expired webhook, so a failed capture
@@ -509,7 +509,7 @@ class WooPaymentsPaymentOperationService {
 					$outcome = WooPaymentsIntentCodec::outcome_from_cancel_result( $result );
 
 					return $outcome->with_effect_plan( WooPaymentsOrderEffectPlan::for_cancel( $result ) );
-				} catch ( WooPaymentsApiException $exception ) {
+				} catch ( ApiException $exception ) {
 					// The provider may have canceled the intent already (an expired authorization
 					// whose charge.expired webhook was missed, or a cancel that completed despite
 					// the transport error): a re-fetched canceled intent is a completed cancel,
@@ -542,7 +542,7 @@ class WooPaymentsPaymentOperationService {
 	 * @param string                  $idempotency_key Key minted fresh for this payment attempt. A charge key already stored on
 	 *                                                 the order is sent instead until a definitive outcome retires it.
 	 * @return PaymentOutcome
-	 * @throws WooPaymentsApiException When the provider request fails.
+	 * @throws ApiException When the provider request fails.
 	 */
 	private function charge_order_total( PaymentOperationContext $context, string $idempotency_key ): PaymentOutcome {
 		$context            = $this->request_builder->with_saved_payment_token_method_type( $context );
@@ -619,7 +619,7 @@ class WooPaymentsPaymentOperationService {
 	 * @param array<string,mixed>     $request_data Charge request; its customer is replaced when the platform does not find it.
 	 * @param string                  $attempt_key  Key minted fresh for this payment attempt.
 	 * @return array<string,mixed>|PaymentOutcome The PaymentIntent response, or the outcome to return instead.
-	 * @throws WooPaymentsApiException When replacing a missing customer fails.
+	 * @throws ApiException When replacing a missing customer fails.
 	 */
 	private function send_charge_request( PaymentOperationContext $context, array &$request_data, string $attempt_key ) {
 		$order    = $context->get_order();
@@ -627,7 +627,7 @@ class WooPaymentsPaymentOperationService {
 
 		try {
 			return $this->api_client->create_and_confirm_payment_intention( $request_data, $sent_key );
-		} catch ( WooPaymentsApiException $exception ) {
+		} catch ( ApiException $exception ) {
 			$record = $this->get_charge_ambiguity_record( $order );
 			if ( null !== $record && $this->is_unresolved_key_refusal_after_ambiguity( $attempt_key, $sent_key, $exception, $context ) ) {
 				return $this->settle_earlier_charge( $context, $request_data, $attempt_key, $sent_key, $record );
@@ -655,7 +655,7 @@ class WooPaymentsPaymentOperationService {
 		$order->save_meta_data();
 		try {
 			return $this->api_client->create_and_confirm_payment_intention( $request_data, $recovery_key );
-		} catch ( WooPaymentsApiException $exception ) {
+		} catch ( ApiException $exception ) {
 			return $this->failed_charge_outcome( $order, $exception, true, $customer_id, self::is_scheduled_renewal( $context ), (string) ( $request_data['payment_method'] ?? '' ) );
 		}
 	}
@@ -671,11 +671,11 @@ class WooPaymentsPaymentOperationService {
 	 *
 	 * @param string                  $attempt_key Key minted fresh for this payment attempt.
 	 * @param string                  $sent_key    Key the request was sent with.
-	 * @param WooPaymentsApiException $exception   Provider request failure.
+	 * @param ApiException            $exception   Provider request failure.
 	 * @param PaymentOperationContext $context     Payment context.
 	 * @return bool
 	 */
-	private function is_unresolved_key_refusal_after_ambiguity( string $attempt_key, string $sent_key, WooPaymentsApiException $exception, PaymentOperationContext $context ): bool {
+	private function is_unresolved_key_refusal_after_ambiguity( string $attempt_key, string $sent_key, ApiException $exception, PaymentOperationContext $context ): bool {
 		return $attempt_key !== $sent_key
 			&& $this->is_idempotency_key_conflict( $exception )
 			&& ! $exception->has_ambiguous_outcome()
@@ -784,7 +784,7 @@ class WooPaymentsPaymentOperationService {
 	 * @param string                                                              $sent_key     Kept key Stripe refused.
 	 * @param array{customers:array<int,string>,failed_at:int,last_failed_at:int} $record       The order's ambiguity record, which the caller found.
 	 * @return array<string,mixed>|PaymentOutcome The new charge's PaymentIntent response, or the outcome to return instead.
-	 * @throws WooPaymentsApiException When recreating a missing customer for the new charge fails.
+	 * @throws ApiException When recreating a missing customer for the new charge fails.
 	 */
 	private function settle_earlier_charge( PaymentOperationContext $context, array &$request_data, string $attempt_key, string $sent_key, array $record ) {
 		$order  = $context->get_order();
@@ -956,10 +956,10 @@ class WooPaymentsPaymentOperationService {
 	/**
 	 * Tell whether the provider refused an idempotency key because the request differs from the one first sent with it.
 	 *
-	 * @param WooPaymentsApiException $exception Provider request failure.
+	 * @param ApiException $exception Provider request failure.
 	 * @return bool
 	 */
-	private function is_idempotency_key_conflict( WooPaymentsApiException $exception ): bool {
+	private function is_idempotency_key_conflict( ApiException $exception ): bool {
 		return 'idempotency_error' === $exception->get_error_type() || 'idempotency_error' === $exception->get_error_code();
 	}
 
@@ -972,12 +972,12 @@ class WooPaymentsPaymentOperationService {
 	 * parameter-validation 400 before its idempotency layer and stores neither (https://docs.stripe.com/error-low-level).
 	 * A scheduled renewal stays out of the lookup, so there only a platform refusal keeps the key.
 	 *
-	 * @param WC_Order                $order                Order being charged.
-	 * @param WooPaymentsApiException $exception            Definitive request failure.
-	 * @param bool                    $is_scheduled_renewal Whether the payment is a scheduled subscription renewal.
+	 * @param WC_Order     $order                Order being charged.
+	 * @param ApiException $exception            Definitive request failure.
+	 * @param bool         $is_scheduled_renewal Whether the payment is a scheduled subscription renewal.
 	 * @return bool
 	 */
-	private function is_unsettling_answer_under_unresolved_key( WC_Order $order, WooPaymentsApiException $exception, bool $is_scheduled_renewal ): bool {
+	private function is_unsettling_answer_under_unresolved_key( WC_Order $order, ApiException $exception, bool $is_scheduled_renewal ): bool {
 		if ( null === $this->get_charge_ambiguity_record( $order ) ) {
 			return false;
 		}
@@ -1108,15 +1108,15 @@ class WooPaymentsPaymentOperationService {
 	 * writes them before the charge (class-wc-payment-gateway-wcpay.php:1672-1677); Sift order tracking reads the payment method.
 	 * A SetupIntent request's are passed by failed_setup_intent_outcome().
 	 *
-	 * @param WC_Order                $order                       Order object.
-	 * @param WooPaymentsApiException $exception                   Transport exception.
-	 * @param bool                    $is_payment_intent_dispatch Whether the exception came from PaymentIntent dispatch.
-	 * @param string                  $customer_id                 Customer the PaymentIntent request was sent with.
-	 * @param bool                    $is_scheduled_renewal        Whether the payment is a scheduled subscription renewal.
-	 * @param string                  $payment_method_id           Payment method the PaymentIntent request was sent with, if any.
+	 * @param WC_Order     $order                       Order object.
+	 * @param ApiException $exception                   Transport exception.
+	 * @param bool         $is_payment_intent_dispatch Whether the exception came from PaymentIntent dispatch.
+	 * @param string       $customer_id                 Customer the PaymentIntent request was sent with.
+	 * @param bool         $is_scheduled_renewal        Whether the payment is a scheduled subscription renewal.
+	 * @param string       $payment_method_id           Payment method the PaymentIntent request was sent with, if any.
 	 * @return PaymentOutcome
 	 */
-	private function failed_charge_outcome( WC_Order $order, WooPaymentsApiException $exception, bool $is_payment_intent_dispatch = false, string $customer_id = '', bool $is_scheduled_renewal = false, string $payment_method_id = '' ): PaymentOutcome {
+	private function failed_charge_outcome( WC_Order $order, ApiException $exception, bool $is_payment_intent_dispatch = false, string $customer_id = '', bool $is_scheduled_renewal = false, string $payment_method_id = '' ): PaymentOutcome {
 		$outcome = WooPaymentsIntentCodec::failed_transport_outcome( 'charge', $exception );
 		$data    = $outcome->get_data();
 		if ( $is_payment_intent_dispatch && $exception->has_ambiguous_outcome() ) {
@@ -1168,11 +1168,11 @@ class WooPaymentsPaymentOperationService {
 	 * A subscription whose payment method is being changed keeps its own: the declined card never becomes its payment method.
 	 *
 	 * @param PaymentOperationContext $context      Payment context.
-	 * @param WooPaymentsApiException $exception    Transport exception.
+	 * @param ApiException            $exception    Transport exception.
 	 * @param array<string,mixed>     $request_data SetupIntent request that was sent.
 	 * @return PaymentOutcome
 	 */
-	private function failed_setup_intent_outcome( PaymentOperationContext $context, WooPaymentsApiException $exception, array $request_data ): PaymentOutcome {
+	private function failed_setup_intent_outcome( PaymentOperationContext $context, ApiException $exception, array $request_data ): PaymentOutcome {
 		$is_change = ! empty( $context->get_provider_data()[ WooPaymentsIntentRequestBuilder::PROVIDER_DATA_SUBSCRIPTION_PAYMENT_METHOD_CHANGE ] );
 
 		return $this->failed_charge_outcome(
@@ -1253,13 +1253,13 @@ class WooPaymentsPaymentOperationService {
 	 * the order keeps its status (the merchant decides whether to cancel), records the block state and the fired ruleset
 	 * results, and gets the blocked-payment note.
 	 *
-	 * @param WC_Order                $order     Order object.
-	 * @param WooPaymentsApiException $exception Transport exception.
-	 * @param PaymentOutcome          $outcome   Failed transport outcome.
-	 * @param array<string,mixed>     $data      Outcome data.
+	 * @param WC_Order            $order     Order object.
+	 * @param ApiException        $exception Transport exception.
+	 * @param PaymentOutcome      $outcome   Failed transport outcome.
+	 * @param array<string,mixed> $data      Outcome data.
 	 * @return PaymentOutcome
 	 */
-	private function fraud_blocked_charge_outcome( WC_Order $order, WooPaymentsApiException $exception, PaymentOutcome $outcome, array $data ): PaymentOutcome {
+	private function fraud_blocked_charge_outcome( WC_Order $order, ApiException $exception, PaymentOutcome $outcome, array $data ): PaymentOutcome {
 		$ruleset_results = array();
 		if ( 'wcpay_blocked_by_fraud_rule' === $exception->get_error_code() ) {
 			$error_data      = $exception->get_error_data();
@@ -1309,10 +1309,10 @@ class WooPaymentsPaymentOperationService {
 	/**
 	 * Tell whether a charge failure was blocked by fraud rules.
 	 *
-	 * @param WooPaymentsApiException $exception Transport exception.
+	 * @param ApiException $exception Transport exception.
 	 * @return bool
 	 */
-	private function is_blocked_by_fraud_rules( WooPaymentsApiException $exception ): bool {
+	private function is_blocked_by_fraud_rules( ApiException $exception ): bool {
 		if ( 'wcpay_blocked_by_fraud_rule' === $exception->get_error_code() ) {
 			return true;
 		}
@@ -1345,7 +1345,7 @@ class WooPaymentsPaymentOperationService {
 	 * burning another provider round trip.
 	 *
 	 * @param WC_Order $order Order object.
-	 * @throws WooPaymentsApiException When the order total is below the cached platform minimum.
+	 * @throws ApiException When the order total is below the cached platform minimum.
 	 */
 	private function assert_total_meets_cached_platform_minimum( WC_Order $order ): void {
 		$currency       = (string) $order->get_currency();
@@ -1360,7 +1360,7 @@ class WooPaymentsPaymentOperationService {
 		}
 
 		// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Message is rendered store copy, consumed as structured application data.
-		throw new WooPaymentsApiException(
+		throw new ApiException(
 			WooPaymentsErrorMessages::get_amount_too_small_message( $minimum_amount, $currency ),
 			'amount_too_small',
 			400,
@@ -1417,7 +1417,7 @@ class WooPaymentsPaymentOperationService {
 	 * @param PaymentOperationContext $context         Payment context.
 	 * @param string                  $idempotency_key Key minted fresh for this payment attempt.
 	 * @return PaymentOutcome
-	 * @throws WooPaymentsApiException When creating or replacing the customer, or reading a WooPay intent, fails.
+	 * @throws ApiException When creating or replacing the customer, or reading a WooPay intent, fails.
 	 */
 	private function set_up_payment_method_for_zero_total( PaymentOperationContext $context, string $idempotency_key ): PaymentOutcome {
 		$context            = $this->request_builder->with_saved_payment_token_method_type( $context );
@@ -1453,7 +1453,7 @@ class WooPaymentsPaymentOperationService {
 
 			try {
 				$result = $this->create_setup_intent( $request_data, $payment_credential, $idempotency_key );
-			} catch ( WooPaymentsApiException $exception ) {
+			} catch ( ApiException $exception ) {
 				if ( ! $this->is_missing_customer_exception( $exception ) ) {
 					return $this->failed_setup_intent_outcome( $context, $exception, $request_data );
 				}
@@ -1463,7 +1463,7 @@ class WooPaymentsPaymentOperationService {
 				// SetupIntent keys are not kept on the order, so only the key changes for the different body.
 				try {
 					$result = $this->create_setup_intent( $request_data, $payment_credential, self::get_customer_recovery_idempotency_key( $idempotency_key ) );
-				} catch ( WooPaymentsApiException $retry_exception ) {
+				} catch ( ApiException $retry_exception ) {
 					return $this->failed_setup_intent_outcome( $context, $retry_exception, $request_data );
 				}
 			}
@@ -1505,14 +1505,14 @@ class WooPaymentsPaymentOperationService {
 	 *
 	 * @param string $id Stripe object id.
 	 * @return void
-	 * @throws WooPaymentsApiException When the id is not a Stripe id.
+	 * @throws ApiException When the id is not a Stripe id.
 	 */
 	private function assert_valid_stripe_id( string $id ): void {
 		if ( preg_match( '/^[a-z]+_\w{1,250}$/', $id ) ) {
 			return;
 		}
 
-		throw new WooPaymentsApiException(
+		throw new ApiException(
 			esc_html(
 				sprintf(
 					/* translators: %s: a Stripe object id. */
@@ -1532,7 +1532,7 @@ class WooPaymentsPaymentOperationService {
 	 * @param WC_Order            $order             Order being paid.
 	 * @param bool                $is_payment_intent Whether the intent is a PaymentIntent rather than a SetupIntent.
 	 * @return void
-	 * @throws WooPaymentsApiException When the intent was confirmed for another order.
+	 * @throws ApiException When the intent was confirmed for another order.
 	 */
 	private function assert_woopay_intent_belongs_to_order( array $intent, WC_Order $order, bool $is_payment_intent ): void {
 		$metadata             = isset( $intent['metadata'] ) && is_array( $intent['metadata'] ) ? $intent['metadata'] : array();
@@ -1544,7 +1544,7 @@ class WooPaymentsPaymentOperationService {
 
 		// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped -- The message is structured data, worded and escaped as client 11.1.0's.
 		if ( $is_payment_intent ) {
-			throw new WooPaymentsApiException(
+			throw new ApiException(
 				sprintf(
 					/* translators: %1$s: order id recorded on the WooPay intent, %2$s: order id being paid. We do not need to translate WooPayMeta. */
 					esc_html( __( 'We\'re not able to process this payment. Please try again later. WooPayMeta: intent_meta_order_id: %1$s, order_id: %2$s', 'woocommerce' ) ),
@@ -1555,7 +1555,7 @@ class WooPaymentsPaymentOperationService {
 			);
 		}
 
-		throw new WooPaymentsApiException( __( 'We\'re not able to process this payment. Please try again later.', 'woocommerce' ), 'order_id_mismatch' );
+		throw new ApiException( __( 'We\'re not able to process this payment. Please try again later.', 'woocommerce' ), 'order_id_mismatch' );
 		// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 	}
 
@@ -1600,7 +1600,7 @@ class WooPaymentsPaymentOperationService {
 	 * @param string              $payment_credential Payment credential.
 	 * @param string              $idempotency_key    Idempotency key.
 	 * @return array<string,mixed>
-	 * @throws WooPaymentsApiException When the provider request fails.
+	 * @throws ApiException When the provider request fails.
 	 */
 	private function create_setup_intent( array $request_data, string $payment_credential, string $idempotency_key ): array {
 		return WooPaymentsIntentCodec::is_confirmation_token( $payment_credential )
@@ -1665,10 +1665,10 @@ class WooPaymentsPaymentOperationService {
 	/**
 	 * Tell whether an API exception reports a missing customer.
 	 *
-	 * @param WooPaymentsApiException $exception API exception.
+	 * @param ApiException $exception API exception.
 	 * @return bool
 	 */
-	private function is_missing_customer_exception( WooPaymentsApiException $exception ): bool {
+	private function is_missing_customer_exception( ApiException $exception ): bool {
 		return 'resource_missing' === $exception->get_error_code()
 			&& false !== strpos( strtolower( $exception->getMessage() ), 'customer' );
 	}
@@ -1734,7 +1734,7 @@ class WooPaymentsPaymentOperationService {
 	private function refetch_intent_after_failure( string $intent_id ): ?array {
 		try {
 			return $this->api_client->get_payment_intention( $intent_id );
-		} catch ( WooPaymentsApiException $fetch_exception ) {
+		} catch ( ApiException $fetch_exception ) {
 			return null;
 		}
 	}

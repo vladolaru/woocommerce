@@ -1,6 +1,6 @@
 <?php
 /**
- * WooPaymentsPaginatedListRequest class file.
+ * PaginatedListRequest class file.
  */
 
 declare( strict_types = 1 );
@@ -15,7 +15,7 @@ use WP_REST_Request;
  * @since 11.0.0
  * @internal
  */
-abstract class WooPaymentsPaginatedListRequest extends AbstractWooPaymentsApiRequest {
+abstract class PaginatedListRequest extends AbstractRequest {
 
 	protected const DEFAULT_PARAMS = array(
 		'page'      => 0,

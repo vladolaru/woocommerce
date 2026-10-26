@@ -3,13 +3,13 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 
 /**
  * Recording API client for native WooPayments settings tests.
  */
-class RecordingSettingsApiClient extends WooPaymentsApiClient {
+class RecordingSettingsApiClient extends Client {
 
 	/**
 	 * Last account settings payload.
@@ -35,30 +35,30 @@ class RecordingSettingsApiClient extends WooPaymentsApiClient {
 	/**
 	 * Latest fraud ruleset exception.
 	 *
-	 * @var WooPaymentsApiException|null
+	 * @var ApiException|null
 	 */
-	public ?WooPaymentsApiException $latest_fraud_ruleset_exception = null;
+	public ?ApiException $latest_fraud_ruleset_exception = null;
 
 	/**
 	 * Exception the fraud ruleset save throws, when set.
 	 *
-	 * @var WooPaymentsApiException|null
+	 * @var ApiException|null
 	 */
-	public ?WooPaymentsApiException $save_fraud_ruleset_exception = null;
+	public ?ApiException $save_fraud_ruleset_exception = null;
 
 	/**
 	 * Account update exception.
 	 *
-	 * @var WooPaymentsApiException|null
+	 * @var ApiException|null
 	 */
-	public ?WooPaymentsApiException $update_account_exception = null;
+	public ?ApiException $update_account_exception = null;
 
 	/**
 	 * Exception a capability request throws, when set.
 	 *
-	 * @var WooPaymentsApiException|null
+	 * @var ApiException|null
 	 */
-	public ?WooPaymentsApiException $request_capability_exception = null;
+	public ?ApiException $request_capability_exception = null;
 
 	/**
 	 * Fraud ruleset save count.
@@ -86,12 +86,12 @@ class RecordingSettingsApiClient extends WooPaymentsApiClient {
 	 *
 	 * @param array<string,mixed> $account_settings Account settings.
 	 * @return array<string,mixed>
-	 * @throws WooPaymentsApiException When the test fixture is configured to fail.
+	 * @throws ApiException When the test fixture is configured to fail.
 	 */
 	public function update_account( array $account_settings ): array {
 		$this->last_account_settings = $account_settings;
 
-		if ( $this->update_account_exception instanceof WooPaymentsApiException ) {
+		if ( $this->update_account_exception instanceof ApiException ) {
 			throw $this->update_account_exception;
 		}
 
@@ -104,7 +104,7 @@ class RecordingSettingsApiClient extends WooPaymentsApiClient {
 	 * @param string $capability_id Capability ID.
 	 * @param bool   $requested Whether the capability is requested.
 	 * @return array<string,mixed>
-	 * @throws WooPaymentsApiException When the test fixture is configured to fail.
+	 * @throws ApiException When the test fixture is configured to fail.
 	 */
 	public function request_capability( string $capability_id, bool $requested ): array {
 		$this->capability_requests[] = array(
@@ -112,7 +112,7 @@ class RecordingSettingsApiClient extends WooPaymentsApiClient {
 			'requested'     => $requested,
 		);
 
-		if ( $this->request_capability_exception instanceof WooPaymentsApiException ) {
+		if ( $this->request_capability_exception instanceof ApiException ) {
 			throw $this->request_capability_exception;
 		}
 
@@ -126,7 +126,7 @@ class RecordingSettingsApiClient extends WooPaymentsApiClient {
 	 * @return array<string,mixed>
 	 */
 	public function save_fraud_ruleset( array $ruleset_config ): array {
-		if ( $this->save_fraud_ruleset_exception instanceof WooPaymentsApiException ) {
+		if ( $this->save_fraud_ruleset_exception instanceof ApiException ) {
 			throw $this->save_fraud_ruleset_exception;
 		}
 
@@ -140,12 +140,12 @@ class RecordingSettingsApiClient extends WooPaymentsApiClient {
 	 * Get latest fraud ruleset.
 	 *
 	 * @return array<string,mixed>
-	 * @throws WooPaymentsApiException When the test fixture is configured to fail.
+	 * @throws ApiException When the test fixture is configured to fail.
 	 */
 	public function get_latest_fraud_ruleset(): array {
 		++$this->latest_fraud_ruleset_requests;
 
-		if ( $this->latest_fraud_ruleset_exception instanceof WooPaymentsApiException ) {
+		if ( $this->latest_fraud_ruleset_exception instanceof ApiException ) {
 			throw $this->latest_fraud_ruleset_exception;
 		}
 

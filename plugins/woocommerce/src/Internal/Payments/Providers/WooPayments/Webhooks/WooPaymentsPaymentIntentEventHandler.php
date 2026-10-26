@@ -12,7 +12,7 @@ use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLockRefusedException;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
 use Automattic\WooCommerce\Internal\Payments\PaymentLifecycleEvent;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionMethodPolicy;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAdminMenuBadgeService;
@@ -49,9 +49,9 @@ class WooPaymentsPaymentIntentEventHandler {
 	/**
 	 * WooPayments API client.
 	 *
-	 * @var WooPaymentsApiClient
+	 * @var Client
 	 */
-	private WooPaymentsApiClient $api_client;
+	private Client $api_client;
 
 	/**
 	 * WooPayments order data service.
@@ -122,7 +122,7 @@ class WooPaymentsPaymentIntentEventHandler {
 	 * @internal
 	 *
 	 * @param OrderPaymentLifecycleService        $lifecycle_service           Order lifecycle service.
-	 * @param WooPaymentsApiClient                $api_client                  WooPayments API client.
+	 * @param Client                              $api_client                  WooPayments API client.
 	 * @param WooPaymentsOrderDataService         $order_data_service          WooPayments order data service.
 	 * @param WooPaymentsAccountService           $account_service             WooPayments account service.
 	 * @param WooPaymentsOrderNoteService         $order_note_service          WooPayments order note service.
@@ -133,7 +133,7 @@ class WooPaymentsPaymentIntentEventHandler {
 	 * @param OrderPaymentLock                    $order_payment_lock          Order payment lock.
 	 * @param WooPaymentsPersistenceVocabulary    $persistence_vocabulary      WooPayments persistence vocabulary.
 	 */
-	final public function init( OrderPaymentLifecycleService $lifecycle_service, WooPaymentsApiClient $api_client, WooPaymentsOrderDataService $order_data_service, WooPaymentsAccountService $account_service, WooPaymentsOrderNoteService $order_note_service, WooPaymentsAdminMenuBadgeService $admin_menu_badge_service, WooPaymentsEventOrderResolver $event_order_resolver, WooPaymentsOtherChargeRecorder $other_charge_recorder, WooPaymentsFeeDetailsNoteController $fee_details_note_controller, OrderPaymentLock $order_payment_lock, WooPaymentsPersistenceVocabulary $persistence_vocabulary ): void {
+	final public function init( OrderPaymentLifecycleService $lifecycle_service, Client $api_client, WooPaymentsOrderDataService $order_data_service, WooPaymentsAccountService $account_service, WooPaymentsOrderNoteService $order_note_service, WooPaymentsAdminMenuBadgeService $admin_menu_badge_service, WooPaymentsEventOrderResolver $event_order_resolver, WooPaymentsOtherChargeRecorder $other_charge_recorder, WooPaymentsFeeDetailsNoteController $fee_details_note_controller, OrderPaymentLock $order_payment_lock, WooPaymentsPersistenceVocabulary $persistence_vocabulary ): void {
 		$this->lifecycle_service           = $lifecycle_service;
 		$this->api_client                  = $api_client;
 		$this->order_data_service          = $order_data_service;

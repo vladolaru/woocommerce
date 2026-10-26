@@ -10,8 +10,8 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 use Automattic\WooCommerce\Internal\Features\FeaturesController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFeatureController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\WooPaymentsStripeBillingModule;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionMethodPolicy;
@@ -122,9 +122,9 @@ class WooPaymentsSettingsService {
 	/**
 	 * WooPayments API client.
 	 *
-	 * @var WooPaymentsApiClient
+	 * @var Client
 	 */
-	private WooPaymentsApiClient $api_client;
+	private Client $api_client;
 
 	/**
 	 * WooPay eligibility rules.
@@ -209,7 +209,7 @@ class WooPaymentsSettingsService {
 	 * @internal
 	 *
 	 * @param WooPaymentsAccountService                 $account_service                   WooPayments account service.
-	 * @param WooPaymentsApiClient                      $api_client                        WooPayments API client.
+	 * @param Client                                    $api_client                        WooPayments API client.
 	 * @param WooPaymentsPmPromotionsService            $pm_promotions_service             PM promotions service.
 	 * @param WooPaymentsGatewaySettingsSynchronizer    $gateway_settings_synchronizer     Gateway settings synchronizer.
 	 * @param WooPaymentsPaymentMethodRegistry          $payment_method_registry           Payment method registry.
@@ -222,7 +222,7 @@ class WooPaymentsSettingsService {
 	 * @param WooPaymentsLogger                         $logger                            WooPayments logger.
 	 * @param WooPaymentsStoreSetupReportController     $store_setup_report_controller     Store setup report controller.
 	 */
-	final public function init( WooPaymentsAccountService $account_service, WooPaymentsApiClient $api_client, WooPaymentsPmPromotionsService $pm_promotions_service, WooPaymentsGatewaySettingsSynchronizer $gateway_settings_synchronizer, WooPaymentsPaymentMethodRegistry $payment_method_registry, WooPaymentsStripeBillingModule $stripe_billing_module, WooPaymentsFraudRulesetService $fraud_ruleset_service, WooPaymentsDuplicateGatewayMethodsService $duplicate_gateway_methods_service, WooPaymentsWooPayEligibility $woopay_eligibility, WooPaymentsWooPayAppearanceStore $appearance_store, WooPaymentsFrontendTrackingController $frontend_tracking_controller, WooPaymentsLogger $logger, WooPaymentsStoreSetupReportController $store_setup_report_controller ): void {
+	final public function init( WooPaymentsAccountService $account_service, Client $api_client, WooPaymentsPmPromotionsService $pm_promotions_service, WooPaymentsGatewaySettingsSynchronizer $gateway_settings_synchronizer, WooPaymentsPaymentMethodRegistry $payment_method_registry, WooPaymentsStripeBillingModule $stripe_billing_module, WooPaymentsFraudRulesetService $fraud_ruleset_service, WooPaymentsDuplicateGatewayMethodsService $duplicate_gateway_methods_service, WooPaymentsWooPayEligibility $woopay_eligibility, WooPaymentsWooPayAppearanceStore $appearance_store, WooPaymentsFrontendTrackingController $frontend_tracking_controller, WooPaymentsLogger $logger, WooPaymentsStoreSetupReportController $store_setup_report_controller ): void {
 		$this->account_service                   = $account_service;
 		$this->api_client                        = $api_client;
 		$this->pm_promotions_service             = $pm_promotions_service;
@@ -848,7 +848,7 @@ class WooPaymentsSettingsService {
 	private function update_provider_backed_settings( array $params, array $settings ): ?WP_Error {
 		try {
 			$this->fraud_ruleset_service->save_fraud_settings( $params );
-		} catch ( WooPaymentsApiException $e ) {
+		} catch ( ApiException $e ) {
 			return $this->api_exception_to_wp_error( $e );
 		}
 
@@ -882,7 +882,7 @@ class WooPaymentsSettingsService {
 				$this->api_client->update_account( $account_settings );
 				$this->account_service->refresh_account_data();
 			}
-		} catch ( WooPaymentsApiException $e ) {
+		} catch ( ApiException $e ) {
 			return $this->account_update_exception_to_wp_error( $e );
 		}
 
@@ -949,7 +949,7 @@ class WooPaymentsSettingsService {
 			if ( $cache_needs_refresh ) {
 				$this->account_service->refresh_account_data();
 			}
-		} catch ( WooPaymentsApiException $e ) {
+		} catch ( ApiException $e ) {
 			return $this->api_exception_to_wp_error( $e );
 		}
 
@@ -1009,10 +1009,10 @@ class WooPaymentsSettingsService {
 	 * Convert a platform error from the fraud ruleset save or a capability request to a REST error with the platform's
 	 * code, message and HTTP status.
 	 *
-	 * @param WooPaymentsApiException $exception API exception.
+	 * @param ApiException $exception API exception.
 	 * @return WP_Error
 	 */
-	private function api_exception_to_wp_error( WooPaymentsApiException $exception ): WP_Error {
+	private function api_exception_to_wp_error( ApiException $exception ): WP_Error {
 		return new WP_Error(
 			$exception->get_error_code(),
 			$exception->getMessage(),
@@ -1028,10 +1028,10 @@ class WooPaymentsSettingsService {
 	 * `woocommerce_woopayments_account_update_rejected` error (status 400) with the platform's message, which the merchant
 	 * controller answers as the `server_error` body the page shows as a notice.
 	 *
-	 * @param WooPaymentsApiException $exception API exception from the account update.
+	 * @param ApiException $exception API exception from the account update.
 	 * @return WP_Error
 	 */
-	private function account_update_exception_to_wp_error( WooPaymentsApiException $exception ): WP_Error {
+	private function account_update_exception_to_wp_error( ApiException $exception ): WP_Error {
 		$param       = $exception->get_error_data()['param'] ?? null;
 		$setting_key = is_string( $param ) && '' !== $param
 			? array_search( $param, self::ACCOUNT_SETTING_MAP, true )

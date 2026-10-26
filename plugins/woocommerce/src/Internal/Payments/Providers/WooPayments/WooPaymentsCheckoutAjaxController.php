@@ -7,8 +7,8 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Throwable;
@@ -33,9 +33,9 @@ class WooPaymentsCheckoutAjaxController implements RegisterHooksInterface {
 	/**
 	 * WooPayments API client.
 	 *
-	 * @var WooPaymentsApiClient
+	 * @var Client
 	 */
-	private WooPaymentsApiClient $api_client;
+	private Client $api_client;
 
 	/**
 	 * WooPayments customer service.
@@ -71,14 +71,14 @@ class WooPaymentsCheckoutAjaxController implements RegisterHooksInterface {
 	 * @internal
 	 *
 	 * @param WooPaymentsRuntimeArbiter             $arbiter                     Runtime owner arbiter.
-	 * @param WooPaymentsApiClient                  $api_client                  WooPayments API client.
+	 * @param Client                                $api_client                  WooPayments API client.
 	 * @param WooPaymentsCustomerService            $customer_service            WooPayments customer service.
 	 * @param WooPaymentsIntentConfirmationService  $intent_confirmation_service Intent confirmation service.
 	 * @param WooPaymentsPaymentMethodRegistry|null $payment_method_registry     Optional payment method registry.
 	 */
 	final public function init(
 		WooPaymentsRuntimeArbiter $arbiter,
-		WooPaymentsApiClient $api_client,
+		Client $api_client,
 		WooPaymentsCustomerService $customer_service,
 		WooPaymentsIntentConfirmationService $intent_confirmation_service,
 		?WooPaymentsPaymentMethodRegistry $payment_method_registry = null
@@ -185,7 +185,7 @@ class WooPaymentsCheckoutAjaxController implements RegisterHooksInterface {
 				'return_url'  => $is_subscription_payment_method_change ? $order->get_view_order_url() : $this->get_return_url( $order ),
 				'status_code' => 200,
 			);
-		} catch ( WooPaymentsApiException $exception ) {
+		} catch ( ApiException $exception ) {
 			return $this->error_response( $exception->getMessage(), 502 );
 		} catch ( WooPaymentsIntentConfirmationException $exception ) {
 			return $this->error_response( $exception->getMessage(), $exception->getCode() );
@@ -270,7 +270,7 @@ class WooPaymentsCheckoutAjaxController implements RegisterHooksInterface {
 				),
 				'status_code' => 200,
 			);
-		} catch ( WooPaymentsApiException $exception ) {
+		} catch ( ApiException $exception ) {
 			return $this->json_error_response(
 				WooPaymentsErrorMessages::get_shopper_message(
 					$exception->get_error_type(),

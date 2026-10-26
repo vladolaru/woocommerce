@@ -7,7 +7,7 @@ use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLockRefusedException;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountEventHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDatabaseCache;
@@ -573,8 +573,8 @@ class WooPaymentsWebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 		$controller = $this->create_controller_with_ingestor(
 			$this->build_event_ingestor(
 				wc_get_container()->get( OrderPaymentLifecycleService::class ),
-				new class() extends WooPaymentsApiClient {},
-				$this->create_dispute_event_handler( new class() extends WooPaymentsApiClient {} ),
+				new class() extends Client {},
+				$this->create_dispute_event_handler( new class() extends Client {} ),
 				wc_get_container()->get( WooPaymentsRefundEventHandler::class ),
 				$handler,
 				$this->create_notification_event_handler()

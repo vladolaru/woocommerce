@@ -1,6 +1,6 @@
 <?php
 /**
- * WooPaymentsFraudOutcomeTransactionsListRequest class file.
+ * FraudOutcomeTransactionsListRequest class file.
  */
 
 declare( strict_types = 1 );
@@ -20,7 +20,7 @@ use WP_REST_Request;
  * @since 11.0.0
  * @internal
  */
-class WooPaymentsFraudOutcomeTransactionsListRequest extends WooPaymentsPaginatedListRequest {
+class FraudOutcomeTransactionsListRequest extends PaginatedListRequest {
 
 	protected const DEFAULT_PARAMS = array(
 		'page'      => 1,
@@ -53,14 +53,14 @@ class WooPaymentsFraudOutcomeTransactionsListRequest extends WooPaymentsPaginate
 	 * Returns the request's API.
 	 *
 	 * @return string
-	 * @throws WooPaymentsApiException When the status is not allow, block or review.
+	 * @throws ApiException When the status is not allow, block or review.
 	 */
 	public function get_api(): string {
 		$status = $this->get_param( 'status' );
 		// The client refuses any other status before a request is built (class-list-fraud-outcome-transactions.php:40-45).
 		if ( ! in_array( $status, array( 'allow', 'block', 'review' ), true ) ) {
 			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception message is internal application state, not HTML output.
-			throw new WooPaymentsApiException( __( 'Invalid fraud outcome status provided.', 'woocommerce' ), 'invalid_fraud_outcome_status', 400 );
+			throw new ApiException( __( 'Invalid fraud outcome status provided.', 'woocommerce' ), 'invalid_fraud_outcome_status', 400 );
 		}
 
 		return 'fraud_outcomes/status/' . $status;

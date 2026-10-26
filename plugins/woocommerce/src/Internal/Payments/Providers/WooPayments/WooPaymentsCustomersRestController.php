@@ -7,7 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 use Automattic\WooCommerce\Internal\RestApiControllerBase;
 use WP_REST_Request;
 use WP_REST_Response;
@@ -91,7 +91,7 @@ class WooPaymentsCustomersRestController extends RestApiControllerBase {
 					$this->customer_service->get_payment_methods_for_customer( $customer_id, $type )
 				);
 			}
-		} catch ( WooPaymentsApiException $exception ) {
+		} catch ( ApiException $exception ) {
 			// The body and status the client's wp_send_json_error( $message, 403 ) sends, without its exit (class-wc-rest-payments-customer-controller.php:78-83).
 			return new WP_REST_Response(
 				array(

@@ -7,7 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\WooPaymentsAmazonPayToken;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\WooPaymentsLinkToken;
@@ -88,9 +88,9 @@ class WooPaymentsTokenService implements RegisterHooksInterface {
 	/**
 	 * WooPayments API client.
 	 *
-	 * @var WooPaymentsApiClient
+	 * @var Client
 	 */
-	private WooPaymentsApiClient $api_client;
+	private Client $api_client;
 
 	/**
 	 * Customer service.
@@ -129,13 +129,13 @@ class WooPaymentsTokenService implements RegisterHooksInterface {
 	 * (`class-wc-payments-token-service.php:49-52`): a dependency that cannot be built fails this service's resolution.
 	 *
 	 * @param WooPaymentsPaymentMethodDetailsService $payment_method_details_service Payment method details service.
-	 * @param WooPaymentsApiClient                   $api_client                     WooPayments API client.
+	 * @param Client                                 $api_client                     WooPayments API client.
 	 * @param WooPaymentsCustomerService             $customer_service               Customer service.
 	 * @param WooPaymentsAccountService              $account_service                Account service.
 	 * @param WooPaymentsOrderDataService            $order_data_service             Order data service.
 	 * @param WooPaymentsPaymentMethodRegistry       $payment_method_registry        Payment method registry.
 	 */
-	final public function init( WooPaymentsPaymentMethodDetailsService $payment_method_details_service, WooPaymentsApiClient $api_client, WooPaymentsCustomerService $customer_service, WooPaymentsAccountService $account_service, WooPaymentsOrderDataService $order_data_service, WooPaymentsPaymentMethodRegistry $payment_method_registry ): void {
+	final public function init( WooPaymentsPaymentMethodDetailsService $payment_method_details_service, Client $api_client, WooPaymentsCustomerService $customer_service, WooPaymentsAccountService $account_service, WooPaymentsOrderDataService $order_data_service, WooPaymentsPaymentMethodRegistry $payment_method_registry ): void {
 		$this->payment_method_details_service = $payment_method_details_service;
 		$this->api_client                     = $api_client;
 		$this->customer_service               = $customer_service;

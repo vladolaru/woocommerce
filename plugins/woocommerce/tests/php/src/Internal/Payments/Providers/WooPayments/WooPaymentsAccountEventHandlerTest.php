@@ -4,8 +4,8 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountEventHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsEventIngestor;
@@ -204,13 +204,13 @@ class WooPaymentsAccountEventHandlerTest extends WC_Unit_Test_Case {
 	/**
 	 * Create the account service of a connected store whose account fetch fails.
 	 *
-	 * Shape: a platform error answer to `GET accounts`, which the API client raises as a WooPaymentsApiException
+	 * Shape: a platform error answer to `GET accounts`, which the API client raises as a ApiException
 	 * with the answer's code and HTTP status.
 	 *
 	 * @return WooPaymentsAccountService
 	 */
 	private function create_account_service_with_failing_refresh(): WooPaymentsAccountService {
-		$api_client = new class() extends WooPaymentsApiClient {
+		$api_client = new class() extends Client {
 			/**
 			 * Tell whether the store has a platform connection.
 			 *
@@ -224,10 +224,10 @@ class WooPaymentsAccountEventHandlerTest extends WC_Unit_Test_Case {
 			 * Fail the account fetch.
 			 *
 			 * @param string $woocommerce_store_id WooCommerce store ID.
-			 * @throws WooPaymentsApiException Always.
+			 * @throws ApiException Always.
 			 */
 			public function get_account( string $woocommerce_store_id = '' ): array {
-				throw new WooPaymentsApiException( 'Internal server error.', 'wcpay_server_error', 500 );
+				throw new ApiException( 'Internal server error.', 'wcpay_server_error', 500 );
 			}
 		};
 
@@ -235,25 +235,25 @@ class WooPaymentsAccountEventHandlerTest extends WC_Unit_Test_Case {
 			/**
 			 * API client double.
 			 *
-			 * @var WooPaymentsApiClient
+			 * @var Client
 			 */
-			private WooPaymentsApiClient $api_client;
+			private Client $api_client;
 
 			/**
 			 * Constructor.
 			 *
-			 * @param WooPaymentsApiClient $api_client API client double.
+			 * @param Client $api_client API client double.
 			 */
-			public function __construct( WooPaymentsApiClient $api_client ) {
+			public function __construct( Client $api_client ) {
 				$this->api_client = $api_client;
 			}
 
 			/**
 			 * Get the API client double.
 			 *
-			 * @return WooPaymentsApiClient
+			 * @return Client
 			 */
-			protected function get_api_client(): WooPaymentsApiClient {
+			protected function get_api_client(): Client {
 				return $this->api_client;
 			}
 		};
@@ -279,8 +279,8 @@ class WooPaymentsAccountEventHandlerTest extends WC_Unit_Test_Case {
 
 		return $this->build_event_ingestor(
 			wc_get_container()->get( OrderPaymentLifecycleService::class ),
-			new class() extends WooPaymentsApiClient {},
-			$this->create_dispute_event_handler( new class() extends WooPaymentsApiClient {} ),
+			new class() extends Client {},
+			$this->create_dispute_event_handler( new class() extends Client {} ),
 			wc_get_container()->get( WooPaymentsRefundEventHandler::class ),
 			$account_event_handler,
 			$this->create_notification_event_handler()

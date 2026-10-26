@@ -15,7 +15,7 @@ use Automattic\Jetpack\Sync\JSON_Deflate_Array_Codec;
 use Automattic\Jetpack\Sync\Actions as Sync_Actions;
 use Automattic\Jetpack\Sync\Modules;
 use Automattic\Jetpack\Sync\Settings as Sync_Settings;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsHttpClient;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\HttpClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsConnectionFeatures;
 use WC_Unit_Test_Case;
 
@@ -203,7 +203,7 @@ class WooPaymentsConnectionFeaturesTest extends WC_Unit_Test_Case {
 			);
 		};
 		add_filter( 'pre_http_request', $answer, 10, 3 );
-		$http_client = new class() extends WooPaymentsHttpClient {
+		$http_client = new class() extends HttpClient {
 			/**
 			 * Treat the store as connected; signing reads the blog token itself.
 			 *

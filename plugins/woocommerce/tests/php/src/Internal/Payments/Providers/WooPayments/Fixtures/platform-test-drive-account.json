@@ -3,7 +3,7 @@
     "recording": "REC-T60-2",
     "source": "Local WPCOM (wpcom-local v0.36.0) WCPay server, blog 100000002, account acct_1UL3bQJQsm0lol5W, a test-drive (Custom) account created 2026-09-29 16:10:12Z through core's NOX \"Test payments\" onboarding, Stripe test mode",
     "store": "fresh native WooCommerce native8096.localhost:8096 (woocommerce-develop-2, branch exp/core-native-payments at 3694bea8e60, WooPayments plugin not installed)",
-    "captured_via": "WooPaymentsApiClient::get_account() (GET wcpay/accounts), parsed body, one request; the store account cache was unchanged by the read",
+    "captured_via": "Client::get_account() (GET wcpay/accounts), parsed body, one request; the store account cache was unchanged by the read",
     "sanitized": "string values holding an email address or a URL replaced with REDACTED at: email, communications_email, business_profile.url, business_profile.support_email, account_details.payout_status.popover.cta_link; everything else verbatim",
     "notes": "Task 6.0 F-T60-2: the full account record the client refetches after clearing its cache post test-drive init (class-wc-payments-onboarding-service.php:796). Session folder data/admin-ux-parity.md."
   },

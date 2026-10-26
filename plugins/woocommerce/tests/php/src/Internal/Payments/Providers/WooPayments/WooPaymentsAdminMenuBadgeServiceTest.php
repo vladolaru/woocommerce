@@ -3,7 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAdminMenuBadgeService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDatabaseCache;
@@ -183,12 +183,12 @@ class WooPaymentsAdminMenuBadgeServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * Create the service under test.
 	 *
-	 * @param WooPaymentsApiClient $api_client       API client fake.
-	 * @param bool                 $test_mode        Whether test mode is enabled.
-	 * @param string               $manual_capture   Manual capture setting.
+	 * @param Client $api_client       API client fake.
+	 * @param bool   $test_mode        Whether test mode is enabled.
+	 * @param string $manual_capture   Manual capture setting.
 	 * @return WooPaymentsAdminMenuBadgeService
 	 */
-	private function create_service( WooPaymentsApiClient $api_client, bool $test_mode = false, string $manual_capture = 'no' ): WooPaymentsAdminMenuBadgeService {
+	private function create_service( Client $api_client, bool $test_mode = false, string $manual_capture = 'no' ): WooPaymentsAdminMenuBadgeService {
 		$account_service = $this->create_account_service( $test_mode, $manual_capture );
 		$database_cache  = new WooPaymentsDatabaseCache();
 		$database_cache->init( new LegacyProxy() );
@@ -226,10 +226,10 @@ class WooPaymentsAdminMenuBadgeServiceTest extends WC_Unit_Test_Case {
 	 *
 	 * @param array<string,mixed> $dispute_status_counts Dispute status-count payload.
 	 * @param array<string,mixed> $authorization_summary Authorization summary payload.
-	 * @return WooPaymentsApiClient
+	 * @return Client
 	 */
-	private function create_api_client( array $dispute_status_counts = array(), array $authorization_summary = array() ): WooPaymentsApiClient {
-		return new class( $dispute_status_counts, $authorization_summary ) extends WooPaymentsApiClient {
+	private function create_api_client( array $dispute_status_counts = array(), array $authorization_summary = array() ): Client {
+		return new class( $dispute_status_counts, $authorization_summary ) extends Client {
 			/**
 			 * Dispute status-count payload.
 			 *

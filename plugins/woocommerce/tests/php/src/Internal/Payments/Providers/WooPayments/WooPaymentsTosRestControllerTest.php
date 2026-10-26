@@ -3,7 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTosRestController;
 use RuntimeException;
@@ -339,7 +339,7 @@ class WooPaymentsTosRestControllerTest extends WC_REST_Unit_Test_Case {
 	/**
 	 * Recording ToS API client.
 	 */
-class RecordingTosApiClient extends WooPaymentsApiClient {
+class RecordingTosApiClient extends Client {
 
 	/**
 	 * Recorded ToS agreement requests.

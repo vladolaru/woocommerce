@@ -7,8 +7,8 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use WC_Customer;
 use WC_Order;
@@ -45,9 +45,9 @@ class WooPaymentsCustomerService implements RegisterHooksInterface {
 	/**
 	 * WooPayments API client.
 	 *
-	 * @var WooPaymentsApiClient
+	 * @var Client
 	 */
-	private WooPaymentsApiClient $api_client;
+	private Client $api_client;
 
 	/**
 	 * WooPayments account service.
@@ -75,11 +75,11 @@ class WooPaymentsCustomerService implements RegisterHooksInterface {
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsApiClient      $api_client      WooPayments API client.
+	 * @param Client                    $api_client      WooPayments API client.
 	 * @param WooPaymentsAccountService $account_service WooPayments account service.
 	 * @param WooPaymentsSessionService $session_service WooPayments session service.
 	 */
-	final public function init( WooPaymentsApiClient $api_client, WooPaymentsAccountService $account_service, WooPaymentsSessionService $session_service ): void {
+	final public function init( Client $api_client, WooPaymentsAccountService $account_service, WooPaymentsSessionService $session_service ): void {
 		$this->api_client      = $api_client;
 		$this->account_service = $account_service;
 		$this->session_service = $session_service;
@@ -366,7 +366,7 @@ class WooPaymentsCustomerService implements RegisterHooksInterface {
 	 * @param string   $customer_id WooPayments customer ID.
 	 * @param WC_Order $order       Order being charged.
 	 * @return string Updated or replacement WooPayments customer ID.
-	 * @throws WooPaymentsApiException When updating the remote customer fails for reasons other than a missing customer.
+	 * @throws ApiException When updating the remote customer fails for reasons other than a missing customer.
 	 */
 	public function update_customer_for_order( string $customer_id, WC_Order $order ): string {
 		return $this->update_customer( $customer_id, $order, $this->get_order_user_id( $order ) );
@@ -381,7 +381,7 @@ class WooPaymentsCustomerService implements RegisterHooksInterface {
 	 * @param WC_Order $order       Order being charged.
 	 * @param int|null $user_id     User the customer belongs to, or null for a guest.
 	 * @return string Updated or replacement WooPayments customer ID.
-	 * @throws WooPaymentsApiException When updating the remote customer fails for reasons other than a missing customer.
+	 * @throws ApiException When updating the remote customer fails for reasons other than a missing customer.
 	 */
 	private function update_customer( string $customer_id, WC_Order $order, ?int $user_id ): string {
 		$customer_data = $this->map_customer_data( $order, $user_id );
@@ -390,7 +390,7 @@ class WooPaymentsCustomerService implements RegisterHooksInterface {
 			$this->api_client->update_customer( $customer_id, $customer_data );
 
 			return $customer_id;
-		} catch ( WooPaymentsApiException $exception ) {
+		} catch ( ApiException $exception ) {
 			if ( 'resource_missing' === $exception->get_error_code() ) {
 				return $this->replace_missing_customer_for_order( $order, $customer_id );
 			}
@@ -469,7 +469,7 @@ class WooPaymentsCustomerService implements RegisterHooksInterface {
 	 * @param string $customer_id WooPayments customer ID.
 	 * @param string $type        Payment method type.
 	 * @return array<int,array<string,mixed>>
-	 * @throws WooPaymentsApiException When the API request fails for reasons other than a missing customer.
+	 * @throws ApiException When the API request fails for reasons other than a missing customer.
 	 */
 	public function get_payment_methods_for_customer( string $customer_id, string $type = 'card' ): array {
 		if ( '' === $customer_id ) {
@@ -478,7 +478,7 @@ class WooPaymentsCustomerService implements RegisterHooksInterface {
 
 		try {
 			$response = $this->api_client->get_payment_methods( $customer_id, $type );
-		} catch ( WooPaymentsApiException $exception ) {
+		} catch ( ApiException $exception ) {
 			if ( 'resource_missing' === $exception->get_error_code() ) {
 				return array();
 			}

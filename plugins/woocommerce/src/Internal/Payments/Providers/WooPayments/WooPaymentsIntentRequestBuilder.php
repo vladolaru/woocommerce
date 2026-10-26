@@ -8,7 +8,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\PaymentOperationContext;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Compat\WooPaymentsCompatClassAliases;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 use WC_Order;
@@ -124,7 +124,7 @@ class WooPaymentsIntentRequestBuilder {
 	 * @param string                  $customer_id        Customer ID.
 	 * @param bool                    $is_recurring       Whether recurring handling is required.
 	 * @return array<string,mixed>
-	 * @throws WooPaymentsApiException When an Afterpay order has no usable shipping or billing address.
+	 * @throws ApiException When an Afterpay order has no usable shipping or billing address.
 	 */
 	public function charge_request_data( PaymentOperationContext $context, string $payment_credential, string $customer_id, bool $is_recurring ): array {
 		$order                = $context->get_order();
@@ -228,7 +228,7 @@ class WooPaymentsIntentRequestBuilder {
 	 *
 	 * @param WC_Order $order Order being charged.
 	 * @return array{name:string,address:array<string,mixed>}
-	 * @throws WooPaymentsApiException When neither address is usable for the country.
+	 * @throws ApiException When neither address is usable for the country.
 	 */
 	private function get_afterpay_shipping_data( WC_Order $order ): array {
 		$shipping_data = $this->order_data_service->get_shipping_data_from_order( $order );
@@ -248,7 +248,7 @@ class WooPaymentsIntentRequestBuilder {
 
 		// Thrown as the transport's exception, so the charge fails with this message as a refused request would; no
 		// request is sent.
-		throw new WooPaymentsApiException( esc_html__( 'A valid shipping address is required for Afterpay payments.', 'woocommerce' ), 'wcpay_invalid_address' );
+		throw new ApiException( esc_html__( 'A valid shipping address is required for Afterpay payments.', 'woocommerce' ), 'wcpay_invalid_address' );
 	}
 
 	/**

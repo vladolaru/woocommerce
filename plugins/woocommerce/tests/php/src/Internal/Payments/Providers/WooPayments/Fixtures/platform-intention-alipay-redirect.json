@@ -7,7 +7,7 @@
 		"source": "Local WPCOM (wpcom-local) Transact platform, blog 4, account acct_1TrY2nBzWlxcwgpP (default currency USD), Stripe test mode",
 		"store": "native WooCommerce :8889 (woocommerce-develop-2, branch exp/core-native-payments at 94738aeaf0, WooPayments plugin inactive, test mode, store currency USD)",
 		"produced_by": "one run of tests/e2e/tests/woopayments-native/shopper/provider-fidelity-redirect-methods.spec.ts:874 (Alipay classic checkout, hosted authorize followed, real return through WooPaymentsRedirectReturnController::handle_wp) through run-provider-families.sh, unmodified; 1 passed, quarantine 0, provider-write attempts 0",
-		"captured_via": "API-only GET of the resulting PaymentIntent through native WooPaymentsApiClient::get_payment_intention (the call WooPaymentsRedirectReturnController makes on return), raw body via the wcpay_api_request_response filter and sent params via wcpay_api_request_params at PHP_INT_MAX; one transport attempt, Idempotent-Replayed header empty, no retries",
+		"captured_via": "API-only GET of the resulting PaymentIntent through native Client::get_payment_intention (the call WooPaymentsRedirectReturnController makes on return), raw body via the wcpay_api_request_response filter and sent params via wcpay_api_request_params at PHP_INT_MAX; one transport attempt, Idempotent-Replayed header empty, no retries",
 		"sanitized": "client_secret, receipt_url, request_log_url, emails, order_key and fraud_prevention_data_shopper_ip_hash / _ua_hash / _ip_country replaced with REDACTED where non-null; response body JSON-decoded and otherwise verbatim (billing name, address and phone are the e2e fixture test data)",
 		"notes": "data/rec-t3-manual-recordings.md in the 2026-09-03-native-payments-program-orientation session folder"
 	},
@@ -31,7 +31,7 @@
 				"label": "native store state after the run, NOT an expectation source"
 			},
 			"request": {
-				"transport": "WooPaymentsApiClient::get_payment_intention",
+				"transport": "Client::get_payment_intention",
 				"method": "GET",
 				"path": "/sites/4/wcpay/intentions/pi_3UJjDMBzWlxcwgpP1fyiQTMm (wpcom/v2 via Jetpack blog token)",
 				"body": {

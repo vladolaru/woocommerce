@@ -14,8 +14,8 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDa
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGateway;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException as WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Onboarding\WooPaymentsOnboardingService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Onboarding\DelegatingPaymentsSettingsAdapter;
@@ -267,11 +267,11 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 	 * @param LegacyProxy                        $proxy              The legacy proxy.
 	 * @param WooPaymentsPaymentsSettingsAdapter $settings_adapter   The Payments settings adapter.
 	 * @param WooPaymentsExtensionRuntime        $extension_runtime  The extension runtime.
-	 * @param WooPaymentsApiClient               $api_client         The API client.
+	 * @param Client                             $api_client         The API client.
 	 * @param WooPaymentsAccountService          $account_service    The account service.
 	 * @param WooPaymentsOnboardingService       $onboarding_service The onboarding service, or null for one on the same doubles.
 	 */
-	private function init_sut( PaymentsProviders $providers, LegacyProxy $proxy, WooPaymentsPaymentsSettingsAdapter $settings_adapter, WooPaymentsExtensionRuntime $extension_runtime, WooPaymentsApiClient $api_client, WooPaymentsAccountService $account_service, ?WooPaymentsOnboardingService $onboarding_service = null ): void {
+	private function init_sut( PaymentsProviders $providers, LegacyProxy $proxy, WooPaymentsPaymentsSettingsAdapter $settings_adapter, WooPaymentsExtensionRuntime $extension_runtime, Client $api_client, WooPaymentsAccountService $account_service, ?WooPaymentsOnboardingService $onboarding_service = null ): void {
 		$this->sut->init( $providers, $proxy );
 
 		if ( null === $onboarding_service ) {
@@ -369,7 +369,7 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 				),
 			),
 		);
-		$api_client  = new class( $fields_data ) extends WooPaymentsApiClient {
+		$api_client  = new class( $fields_data ) extends Client {
 			/**
 			 * Native onboarding fields response.
 			 *
@@ -438,7 +438,7 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 	 * @testdox Built-in onboarding details should report the WooPayments extension's fields error when the fields cannot be fetched and nothing is cached.
 	 */
 	public function test_get_onboarding_details_reports_fields_error_when_builtin_fields_fetch_fails(): void {
-		$api_client = new class() extends WooPaymentsApiClient {
+		$api_client = new class() extends Client {
 			/**
 			 * Whether fields reads fail.
 			 *
@@ -503,7 +503,7 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 	public function test_get_onboarding_details_uses_woopayments_extension_fields_route_when_its_runtime_is_loaded(): void {
 		$location                             = 'US';
 		$woopayments_extension_business_types = $this->get_mock_onboarding_fields_business_types();
-		$api_client                           = new class() extends WooPaymentsApiClient {
+		$api_client                           = new class() extends Client {
 			/**
 			 * Number of native fields reads.
 			 *
@@ -670,7 +670,7 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 		$adapter->method( 'has_test_account' )->willReturn( $is_test_drive );
 		$adapter->method( 'has_sandbox_account' )->willReturn( ! $is_test_drive );
 		$adapter->method( 'has_live_account' )->willReturn( false );
-		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )->disableOriginalConstructor()->onlyMethods( array( 'is_available' ) )->getMock();
+		$api_client = $this->getMockBuilder( Client::class )->disableOriginalConstructor()->onlyMethods( array( 'is_available' ) )->getMock();
 		$api_client->method( 'is_available' )->willReturn( true );
 		$onboarding = $this->createMock( WooPaymentsOnboardingService::class );
 		$onboarding->expects( $this->once() )->method( 'disable_test_account' )->with( $is_test_drive )->willReturn( array( 'success' => true ) );
@@ -700,7 +700,7 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 	public function test_onboarding_test_account_init_uses_woopayments_extension_endpoint_when_builtin_onboarding_is_unavailable(): void {
 		$builtin_call_count             = 0;
 		$woopayments_extension_endpoint = null;
-		$api_client                     = new class( $builtin_call_count ) extends WooPaymentsApiClient {
+		$api_client                     = new class( $builtin_call_count ) extends Client {
 			/**
 			 * Built-in initialize call count.
 			 *
@@ -931,9 +931,9 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * Arrange a connected store with the WooPayments extension runtime absent, so onboarding details read the KYC fields through the built-in WooPayments.
 	 *
-	 * @param WooPaymentsApiClient $api_client Native API client.
+	 * @param Client $api_client Native API client.
 	 */
-	private function arrange_builtin_fields_onboarding( WooPaymentsApiClient $api_client ): void {
+	private function arrange_builtin_fields_onboarding( Client $api_client ): void {
 		$adapter = $this->create_unconnected_adapter( 'https://example.com/native-kyc' );
 		$this->mock_provider->method( 'is_onboarding_supported' )->willReturn( true );
 		$this->mock_provider->method( 'is_onboarding_started' )->willReturn( false );
@@ -1030,33 +1030,33 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * Create an account service that uses the given API client.
 	 *
-	 * @param WooPaymentsApiClient $api_client Native API client.
+	 * @param Client $api_client Native API client.
 	 * @return WooPaymentsAccountService
 	 */
-	private function create_account_service_with_api_client( WooPaymentsApiClient $api_client ): WooPaymentsAccountService {
+	private function create_account_service_with_api_client( Client $api_client ): WooPaymentsAccountService {
 		$account_service = new class( $api_client ) extends WooPaymentsAccountService {
 			/**
 			 * Native API client.
 			 *
-			 * @var WooPaymentsApiClient
+			 * @var Client
 			 */
-			private WooPaymentsApiClient $api_client;
+			private Client $api_client;
 
 			/**
 			 * Constructor.
 			 *
-			 * @param WooPaymentsApiClient $api_client Native API client.
+			 * @param Client $api_client Native API client.
 			 */
-			public function __construct( WooPaymentsApiClient $api_client ) {
+			public function __construct( Client $api_client ) {
 				$this->api_client = $api_client;
 			}
 
 			/**
 			 * Get the native API client.
 			 *
-			 * @return WooPaymentsApiClient
+			 * @return Client
 			 */
-			protected function get_api_client(): WooPaymentsApiClient {
+			protected function get_api_client(): Client {
 				return $this->api_client;
 			}
 		};
@@ -1096,10 +1096,10 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * Create an unavailable native API client.
 	 *
-	 * @return WooPaymentsApiClient
+	 * @return Client
 	 */
-	private function create_unavailable_api_client(): WooPaymentsApiClient {
-		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
+	private function create_unavailable_api_client(): Client {
+		$api_client = $this->getMockBuilder( Client::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'is_available' ) )
 			->getMock();
@@ -8393,7 +8393,7 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 				}
 			);
 		}
-		$api_client = new class( $error_code, $error_type ) extends WooPaymentsApiClient {
+		$api_client = new class( $error_code, $error_type ) extends Client {
 			/**
 			 * Platform error code.
 			 *
@@ -8476,7 +8476,7 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 				},
 			)
 		);
-		wc_get_container()->replace( WooPaymentsApiClient::class, $api_client );
+		wc_get_container()->replace( Client::class, $api_client );
 		$this->sut = new WooPaymentsService();
 		$this->init_sut( $this->mock_providers, $this->mockable_proxy, $adapter, $this->create_extension_runtime(), $api_client, $this->create_account_service() );
 

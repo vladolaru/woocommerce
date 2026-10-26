@@ -4,8 +4,8 @@ declare( strict_types=1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin;
 
 use Automattic\WooCommerce\Internal\RestApiControllerBase;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
@@ -119,9 +119,9 @@ class MerchantRestController extends RestApiControllerBase {
 	/**
 	 * WooPayments API client, for the settings file routes.
 	 *
-	 * @var WooPaymentsApiClient
+	 * @var Client
 	 */
-	private WooPaymentsApiClient $api_client;
+	private Client $api_client;
 
 	/**
 	 * Get the WooCommerce REST API namespace for the class.
@@ -209,11 +209,11 @@ class MerchantRestController extends RestApiControllerBase {
 	 * @param WooPaymentsAccountService        $account_service          Account service.
 	 * @param NoticeService                    $admin_notice_service     Current-user settings notice service.
 	 * @param WooPaymentsApplePayDomainService $apple_pay_domain_service Apple Pay domain service.
-	 * @param WooPaymentsApiClient             $api_client               WooPayments API client.
+	 * @param Client                           $api_client               WooPayments API client.
 	 *
 	 * @internal
 	 */
-	final public function init( WooPaymentsSettingsService $settings_service, WooPaymentsRuntimeArbiter $runtime_arbiter, WooPaymentsPmPromotionsService $pm_promotions_service, OverviewService $overview_service, WooPaymentsAccountService $account_service, NoticeService $admin_notice_service, WooPaymentsApplePayDomainService $apple_pay_domain_service, WooPaymentsApiClient $api_client ): void {
+	final public function init( WooPaymentsSettingsService $settings_service, WooPaymentsRuntimeArbiter $runtime_arbiter, WooPaymentsPmPromotionsService $pm_promotions_service, OverviewService $overview_service, WooPaymentsAccountService $account_service, NoticeService $admin_notice_service, WooPaymentsApplePayDomainService $apple_pay_domain_service, Client $api_client ): void {
 		$this->settings_service      = $settings_service;
 		$this->runtime_arbiter       = $runtime_arbiter;
 		$this->pm_promotions_service = $pm_promotions_service;
@@ -1033,7 +1033,7 @@ class MerchantRestController extends RestApiControllerBase {
 	protected function upload_settings_file( WP_REST_Request $request ) {
 		try {
 			return rest_ensure_response( $this->api_client->upload_file( $request ) );
-		} catch ( WooPaymentsApiException $exception ) {
+		} catch ( ApiException $exception ) {
 			return $exception->to_wp_error();
 		}
 	}
@@ -1048,7 +1048,7 @@ class MerchantRestController extends RestApiControllerBase {
 	protected function get_settings_file_details( WP_REST_Request $request ) {
 		try {
 			return rest_ensure_response( $this->api_client->get_file( (string) $request->get_param( 'file_id' ), (bool) $request->get_param( 'as_account' ) ) );
-		} catch ( WooPaymentsApiException $exception ) {
+		} catch ( ApiException $exception ) {
 			return $exception->to_wp_error();
 		}
 	}
@@ -1063,7 +1063,7 @@ class MerchantRestController extends RestApiControllerBase {
 	protected function get_settings_file_contents( WP_REST_Request $request ) {
 		try {
 			return rest_ensure_response( $this->api_client->get_file_contents( (string) $request->get_param( 'file_id' ), (bool) $request->get_param( 'as_account' ) ) );
-		} catch ( WooPaymentsApiException $exception ) {
+		} catch ( ApiException $exception ) {
 			return $exception->to_wp_error();
 		}
 	}
@@ -1083,7 +1083,7 @@ class MerchantRestController extends RestApiControllerBase {
 		if ( '' === $purpose ) {
 			try {
 				$file = $this->api_client->get_file( $file_id, $as_account );
-			} catch ( WooPaymentsApiException $exception ) {
+			} catch ( ApiException $exception ) {
 				return $this->get_file_error_response( $exception->to_wp_error() );
 			}
 
@@ -1108,7 +1108,7 @@ class MerchantRestController extends RestApiControllerBase {
 
 		try {
 			$contents = $this->api_client->get_file_contents( $file_id, $as_account );
-		} catch ( WooPaymentsApiException $exception ) {
+		} catch ( ApiException $exception ) {
 			return $this->get_file_error_response( $exception->to_wp_error() );
 		}
 

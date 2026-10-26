@@ -7,10 +7,10 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsReportingBalanceSummaryRequest;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsTransactionsListRequest;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ReportingBalanceSummaryRequest;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\TransactionsListRequest;
 use Automattic\WooCommerce\Internal\RestApiControllerBase;
 use WP_Error;
 use WP_REST_Request;
@@ -44,9 +44,9 @@ class WooPaymentsReportsRestController extends RestApiControllerBase {
 	/**
 	 * WooPayments API client.
 	 *
-	 * @var WooPaymentsApiClient
+	 * @var Client
 	 */
-	private WooPaymentsApiClient $api_client;
+	private Client $api_client;
 
 	/**
 	 * WooPayments account service.
@@ -67,12 +67,12 @@ class WooPaymentsReportsRestController extends RestApiControllerBase {
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsApiClient           $api_client      WooPayments API client.
+	 * @param Client                         $api_client      WooPayments API client.
 	 * @param WooPaymentsAccountService      $account_service WooPayments account service.
 	 * @param WooPaymentsOrderDetailsService $order_service  Order details service.
 	 */
 	final public function init(
-		WooPaymentsApiClient $api_client,
+		Client $api_client,
 		WooPaymentsAccountService $account_service,
 		WooPaymentsOrderDetailsService $order_service
 	): void {
@@ -135,7 +135,7 @@ class WooPaymentsReportsRestController extends RestApiControllerBase {
 					)
 				)
 			);
-		} catch ( WooPaymentsApiException $exception ) {
+		} catch ( ApiException $exception ) {
 			return $exception->to_wp_error();
 		}
 	}
@@ -150,7 +150,7 @@ class WooPaymentsReportsRestController extends RestApiControllerBase {
 	public function get_fees( WP_REST_Request $request ) {
 		try {
 			return new WP_REST_Response( $this->prepare_fees_rows( $this->extract_response_rows( $this->api_client->get_transactions( $this->get_filtered_fees_list_params( $request ) ) ) ) );
-		} catch ( WooPaymentsApiException $exception ) {
+		} catch ( ApiException $exception ) {
 			return $exception->to_wp_error();
 		}
 	}
@@ -169,7 +169,7 @@ class WooPaymentsReportsRestController extends RestApiControllerBase {
 			unset( $filters['deposit_id'] );
 
 			return new WP_REST_Response( $this->api_client->get_transactions_summary( $filters, $deposit_id ) );
-		} catch ( WooPaymentsApiException $exception ) {
+		} catch ( ApiException $exception ) {
 			return $exception->to_wp_error();
 		}
 	}
@@ -195,7 +195,7 @@ class WooPaymentsReportsRestController extends RestApiControllerBase {
 					$this->get_optional_string_param( $request, 'locale' )
 				)
 			);
-		} catch ( WooPaymentsApiException $exception ) {
+		} catch ( ApiException $exception ) {
 			return $exception->to_wp_error();
 		}
 	}
@@ -210,7 +210,7 @@ class WooPaymentsReportsRestController extends RestApiControllerBase {
 	public function get_export_url( WP_REST_Request $request ) {
 		try {
 			return new WP_REST_Response( $this->api_client->get_transactions_export_url( (string) $request->get_param( 'export_id' ) ) );
-		} catch ( WooPaymentsApiException $exception ) {
+		} catch ( ApiException $exception ) {
 			return $exception->to_wp_error();
 		}
 	}
@@ -229,7 +229,7 @@ class WooPaymentsReportsRestController extends RestApiControllerBase {
 					$this->extract_response_rows( $this->api_client->get_transactions( $this->get_report_transactions_list_params( $request ) ) )
 				)
 			);
-		} catch ( WooPaymentsApiException $exception ) {
+		} catch ( ApiException $exception ) {
 			return $exception->to_wp_error();
 		}
 	}
@@ -256,7 +256,7 @@ class WooPaymentsReportsRestController extends RestApiControllerBase {
 			);
 
 			return new WP_REST_Response( $rows[0] ?? array() );
-		} catch ( WooPaymentsApiException $exception ) {
+		} catch ( ApiException $exception ) {
 			return $exception->to_wp_error();
 		}
 	}
@@ -275,7 +275,7 @@ class WooPaymentsReportsRestController extends RestApiControllerBase {
 					$this->extract_response_rows( $this->api_client->get_authorizations( $this->get_report_authorizations_list_params( $request ) ) )
 				)
 			);
-		} catch ( WooPaymentsApiException $exception ) {
+		} catch ( ApiException $exception ) {
 			return $exception->to_wp_error();
 		}
 	}
@@ -301,7 +301,7 @@ class WooPaymentsReportsRestController extends RestApiControllerBase {
 			);
 
 			return new WP_REST_Response( $rows[0] ?? array() );
-		} catch ( WooPaymentsApiException $exception ) {
+		} catch ( ApiException $exception ) {
 			return $exception->to_wp_error();
 		}
 	}
@@ -460,7 +460,7 @@ class WooPaymentsReportsRestController extends RestApiControllerBase {
 					return strtolower( sanitize_text_field( (string) $currency ) );
 				},
 				'validate_callback' => static function ( $currency ) {
-					if ( WooPaymentsReportingBalanceSummaryRequest::is_valid_currency_code( $currency ) ) {
+					if ( ReportingBalanceSummaryRequest::is_valid_currency_code( $currency ) ) {
 						return true;
 					}
 
@@ -477,10 +477,10 @@ class WooPaymentsReportsRestController extends RestApiControllerBase {
 	 * @param WP_REST_Request $request Request.
 	 * @phpstan-param WP_REST_Request<array<string,mixed>> $request
 	 * @return array<string,mixed>
-	 * @throws WooPaymentsApiException When a filter callback returns no request.
+	 * @throws ApiException When a filter callback returns no request.
 	 */
 	private function get_filtered_fees_list_params( WP_REST_Request $request ): array {
-		$fees_request = new WooPaymentsTransactionsListRequest();
+		$fees_request = new TransactionsListRequest();
 		foreach ( $this->get_fees_list_params( $request ) as $key => $value ) {
 			$fees_request->set_param( $key, $value );
 		}
@@ -534,8 +534,8 @@ class WooPaymentsReportsRestController extends RestApiControllerBase {
 			'type_is_in'    => $type ?? self::DEFAULT_FEE_BEARING_TYPES,
 			'order_id_is'   => $this->get_optional_string_param( $request, 'order_id' ),
 			'deposit_id'    => $this->get_optional_string_param( $request, 'deposit_id' ),
-			'date_before'   => WooPaymentsTransactionsListRequest::format_transaction_date_by_timezone( $this->get_optional_string_param( $request, 'date_before' ), $user_timezone ),
-			'date_after'    => WooPaymentsTransactionsListRequest::format_transaction_date_by_timezone( $this->get_optional_string_param( $request, 'date_after' ), $user_timezone ),
+			'date_before'   => TransactionsListRequest::format_transaction_date_by_timezone( $this->get_optional_string_param( $request, 'date_before' ), $user_timezone ),
+			'date_after'    => TransactionsListRequest::format_transaction_date_by_timezone( $this->get_optional_string_param( $request, 'date_after' ), $user_timezone ),
 			'date_between'  => $date_between,
 			'match'         => $this->get_optional_string_param( $request, 'match' ),
 			'search'        => empty( $identifier_filters ) ? $search : null,
@@ -553,7 +553,7 @@ class WooPaymentsReportsRestController extends RestApiControllerBase {
 	 * @param WP_REST_Request $request Request.
 	 * @phpstan-param WP_REST_Request<array<string,mixed>> $request
 	 * @return array<string,mixed>
-	 * @throws WooPaymentsApiException When a filter callback returns no request.
+	 * @throws ApiException When a filter callback returns no request.
 	 */
 	private function get_report_transactions_list_params( WP_REST_Request $request ): array {
 		$user_timezone = $this->get_optional_string_param( $request, 'user_timezone' );
@@ -569,8 +569,8 @@ class WooPaymentsReportsRestController extends RestApiControllerBase {
 			'customer_email_is' => $this->get_optional_string_param( $request, 'customer_email' ),
 			'source_is'         => $this->get_optional_string_param( $request, 'payment_method_type' ),
 			'deposit_id'        => $this->get_optional_string_param( $request, 'deposit_id' ),
-			'date_before'       => WooPaymentsTransactionsListRequest::format_transaction_date_by_timezone( $this->get_optional_string_param( $request, 'date_before' ), $user_timezone ),
-			'date_after'        => WooPaymentsTransactionsListRequest::format_transaction_date_by_timezone( $this->get_optional_string_param( $request, 'date_after' ), $user_timezone ),
+			'date_before'       => TransactionsListRequest::format_transaction_date_by_timezone( $this->get_optional_string_param( $request, 'date_before' ), $user_timezone ),
+			'date_after'        => TransactionsListRequest::format_transaction_date_by_timezone( $this->get_optional_string_param( $request, 'date_after' ), $user_timezone ),
 			'date_between'      => $this->normalize_date_filters_by_timezone(
 				$this->normalize_string_list( $request->get_param( 'date_between' ) ),
 				$user_timezone
@@ -581,7 +581,7 @@ class WooPaymentsReportsRestController extends RestApiControllerBase {
 
 		$params = $this->filter_empty_params( $params );
 
-		$transactions_request = new WooPaymentsTransactionsListRequest();
+		$transactions_request = new TransactionsListRequest();
 		foreach ( $params as $key => $value ) {
 			$transactions_request->set_param( $key, $value );
 		}
@@ -622,12 +622,12 @@ class WooPaymentsReportsRestController extends RestApiControllerBase {
 			$params['to_date']   = $this->get_report_authorization_timestamp( $date_between[1] );
 		}
 
-		$date_before = WooPaymentsTransactionsListRequest::format_transaction_date_by_timezone( $this->get_optional_string_param( $request, 'date_before' ), $user_timezone );
+		$date_before = TransactionsListRequest::format_transaction_date_by_timezone( $this->get_optional_string_param( $request, 'date_before' ), $user_timezone );
 		if ( null !== $date_before ) {
 			$params['from_date'] = $this->get_report_authorization_timestamp( $date_before );
 		}
 
-		$date_after = WooPaymentsTransactionsListRequest::format_transaction_date_by_timezone( $this->get_optional_string_param( $request, 'date_after' ), $user_timezone );
+		$date_after = TransactionsListRequest::format_transaction_date_by_timezone( $this->get_optional_string_param( $request, 'date_after' ), $user_timezone );
 		if ( null !== $date_after ) {
 			$params['to_date'] = $this->get_report_authorization_timestamp( $date_after );
 		}
@@ -661,7 +661,7 @@ class WooPaymentsReportsRestController extends RestApiControllerBase {
 
 		return array_map(
 			function ( string $date ) use ( $user_timezone ): string {
-				return WooPaymentsTransactionsListRequest::format_transaction_date_by_timezone( $date, $user_timezone ) ?? $date;
+				return TransactionsListRequest::format_transaction_date_by_timezone( $date, $user_timezone ) ?? $date;
 			},
 			$dates
 		);

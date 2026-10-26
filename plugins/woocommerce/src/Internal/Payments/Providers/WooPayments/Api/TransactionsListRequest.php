@@ -1,6 +1,6 @@
 <?php
 /**
- * WooPaymentsTransactionsListRequest class file.
+ * TransactionsListRequest class file.
  */
 
 declare( strict_types = 1 );
@@ -20,7 +20,7 @@ use WP_REST_Request;
  * @since 11.0.0
  * @internal
  */
-class WooPaymentsTransactionsListRequest extends WooPaymentsPaginatedListRequest {
+class TransactionsListRequest extends PaginatedListRequest {
 	/**
 	 * WordPress filter applied when the request is sent.
 	 *

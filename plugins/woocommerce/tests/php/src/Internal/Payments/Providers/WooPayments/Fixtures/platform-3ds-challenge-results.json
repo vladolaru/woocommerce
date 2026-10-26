@@ -4,7 +4,7 @@
 		"source": "Local WPCOM (wpcom-local) Transact platform, blog 4, account acct_1TrY2nBzWlxcwgpP (default currency USD), Stripe test mode",
 		"store": "native WooCommerce :8889 (woocommerce-develop-2, branch exp/core-native-payments at 94738aeaf0, WooPayments plugin inactive, test mode, store currency USD)",
 		"produced_by": "one run per spec file through run-provider-families.sh, unmodified, with provider fixture approval orientation-2026-09-26-families-3ds (V333); ids read from the store orders and the platform request log; see each entry",
-		"captured_via": "API-only GET of each resulting PaymentIntent or SetupIntent through native WooPaymentsApiClient, raw body via the wcpay_api_request_response filter and sent params via wcpay_api_request_params at PHP_INT_MAX; one transport attempt each, Idempotent-Replayed header empty, no retries",
+		"captured_via": "API-only GET of each resulting PaymentIntent or SetupIntent through native Client, raw body via the wcpay_api_request_response filter and sent params via wcpay_api_request_params at PHP_INT_MAX; one transport attempt each, Idempotent-Replayed header empty, no retries",
 		"sanitized": "client_secret, receipt_url, request_log_url, emails, order_key and fraud_prevention_data_shopper_ip_hash / _ua_hash / _ip_country replaced with REDACTED where non-null; bodies JSON-decoded and otherwise verbatim (billing name, address and phone are e2e fixture test data)",
 		"notes": "data/rec-t3-manual-recordings.md in the 2026-09-03-native-payments-program-orientation session folder"
 	},
@@ -32,7 +32,7 @@
 				"label": "native store state after the run, NOT an expectation source"
 			},
 			"request": {
-				"transport": "WooPaymentsApiClient::get_payment_intention",
+				"transport": "Client::get_payment_intention",
 				"method": "GET",
 				"path": "/sites/4/wcpay/intentions/pi_3UJjK4BzWlxcwgpP0xWpBE77 (wpcom/v2 via Jetpack blog token)",
 				"body": {
@@ -412,7 +412,7 @@
 				"label": "native store state after the run, NOT an expectation source"
 			},
 			"request": {
-				"transport": "WooPaymentsApiClient::get_payment_intention",
+				"transport": "Client::get_payment_intention",
 				"method": "GET",
 				"path": "/sites/4/wcpay/intentions/pi_3UJjIkBzWlxcwgpP0bKa5m3p (wpcom/v2 via Jetpack blog token)",
 				"body": {
@@ -614,7 +614,7 @@
 				"label": "native store state after the run, NOT an expectation source"
 			},
 			"request": {
-				"transport": "WooPaymentsApiClient::get_payment_intention",
+				"transport": "Client::get_payment_intention",
 				"method": "GET",
 				"path": "/sites/4/wcpay/intentions/pi_3UJjIPBzWlxcwgpP0c8sklMo (wpcom/v2 via Jetpack blog token)",
 				"body": {
@@ -980,7 +980,7 @@
 				"label": "native store state after the run, NOT an expectation source"
 			},
 			"request": {
-				"transport": "WooPaymentsApiClient::get_setup_intention",
+				"transport": "Client::get_setup_intention",
 				"method": "GET",
 				"path": "/sites/4/wcpay/setup_intents/seti_1UJjLgBzWlxcwgpPWgcKyT4H (wpcom/v2 via Jetpack blog token)",
 				"body": {
@@ -1115,7 +1115,7 @@
 				"label": "native store state after the run, NOT an expectation source"
 			},
 			"request": {
-				"transport": "WooPaymentsApiClient::get_setup_intention",
+				"transport": "Client::get_setup_intention",
 				"method": "GET",
 				"path": "/sites/4/wcpay/setup_intents/seti_1UJjM6BzWlxcwgpPI7LOeDzi (wpcom/v2 via Jetpack blog token)",
 				"body": {

@@ -7,9 +7,9 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsDepositsListRequest;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\DepositsListRequest;
 use Automattic\WooCommerce\Internal\RestApiControllerBase;
 use WP_Error;
 use WP_REST_Request;
@@ -42,18 +42,18 @@ class WooPaymentsDepositsRestController extends RestApiControllerBase {
 	/**
 	 * WooPayments API client.
 	 *
-	 * @var WooPaymentsApiClient
+	 * @var Client
 	 */
-	private WooPaymentsApiClient $api_client;
+	private Client $api_client;
 
 	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsApiClient $api_client WooPayments API client.
+	 * @param Client $api_client WooPayments API client.
 	 */
-	final public function init( WooPaymentsApiClient $api_client ): void {
+	final public function init( Client $api_client ): void {
 		$this->api_client = $api_client;
 	}
 
@@ -159,7 +159,7 @@ class WooPaymentsDepositsRestController extends RestApiControllerBase {
 
 		try {
 			return new WP_REST_Response( $this->api_client->get_deposits_overview() );
-		} catch ( WooPaymentsApiException $exception ) {
+		} catch ( ApiException $exception ) {
 			return $exception->to_wp_error();
 		}
 	}
@@ -176,7 +176,7 @@ class WooPaymentsDepositsRestController extends RestApiControllerBase {
 			return new WP_REST_Response(
 				$this->api_client->get_deposits( $this->get_filtered_deposits_list_params( $request ) )
 			);
-		} catch ( WooPaymentsApiException $exception ) {
+		} catch ( ApiException $exception ) {
 			return $exception->to_wp_error();
 		}
 	}
@@ -193,7 +193,7 @@ class WooPaymentsDepositsRestController extends RestApiControllerBase {
 			return new WP_REST_Response(
 				$this->api_client->get_deposits_summary( $this->get_allowed_params( $request, self::SUMMARY_QUERY_PARAMS ) )
 			);
-		} catch ( WooPaymentsApiException $exception ) {
+		} catch ( ApiException $exception ) {
 			return $exception->to_wp_error();
 		}
 	}
@@ -208,7 +208,7 @@ class WooPaymentsDepositsRestController extends RestApiControllerBase {
 	public function get_deposit( WP_REST_Request $request ) {
 		try {
 			return new WP_REST_Response( $this->api_client->get_deposit( (string) $request->get_param( 'deposit_id' ) ) );
-		} catch ( WooPaymentsApiException $exception ) {
+		} catch ( ApiException $exception ) {
 			return $exception->to_wp_error();
 		}
 	}
@@ -229,7 +229,7 @@ class WooPaymentsDepositsRestController extends RestApiControllerBase {
 					$this->get_optional_string_param( $request, 'locale' )
 				)
 			);
-		} catch ( WooPaymentsApiException $exception ) {
+		} catch ( ApiException $exception ) {
 			return $exception->to_wp_error();
 		}
 	}
@@ -244,7 +244,7 @@ class WooPaymentsDepositsRestController extends RestApiControllerBase {
 	public function get_export_url( WP_REST_Request $request ) {
 		try {
 			return new WP_REST_Response( $this->api_client->get_payouts_export_url( (string) $request->get_param( 'export_id' ) ) );
-		} catch ( WooPaymentsApiException $exception ) {
+		} catch ( ApiException $exception ) {
 			return $exception->to_wp_error();
 		}
 	}
@@ -276,7 +276,7 @@ class WooPaymentsDepositsRestController extends RestApiControllerBase {
 			wc_get_logger()->info( 'Manual payout initiation completed.', $log_context );
 
 			return new WP_REST_Response( $response );
-		} catch ( WooPaymentsApiException $exception ) {
+		} catch ( ApiException $exception ) {
 			wc_get_logger()->error(
 				'Manual payout initiation failed.',
 				array_merge(
@@ -298,10 +298,10 @@ class WooPaymentsDepositsRestController extends RestApiControllerBase {
 	 * @param WP_REST_Request $request Request.
 	 * @phpstan-param WP_REST_Request<array<string,mixed>> $request
 	 * @return array<string,mixed>
-	 * @throws WooPaymentsApiException When a filter callback returns no request.
+	 * @throws ApiException When a filter callback returns no request.
 	 */
 	private function get_filtered_deposits_list_params( WP_REST_Request $request ): array {
-		$deposits_request = WooPaymentsDepositsListRequest::from_rest_request( $request );
+		$deposits_request = DepositsListRequest::from_rest_request( $request );
 
 		return $deposits_request->get_filtered_request()->get_params();
 	}

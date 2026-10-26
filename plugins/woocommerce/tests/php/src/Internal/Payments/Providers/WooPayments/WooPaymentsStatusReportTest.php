@@ -9,9 +9,9 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Services\RateService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsHttpClient;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\HttpClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsClientVersion;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsCutoverPreflightService;
@@ -67,8 +67,8 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 		delete_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION );
 		delete_option( self::EXPECTED_LAST_FETCH_OPTION );
 		delete_option( 'woocommerce_woocommerce_payments_version' );
-		wc_get_container()->reset_replacement( WooPaymentsApiClient::class );
-		wc_get_container()->reset_replacement( WooPaymentsHttpClient::class );
+		wc_get_container()->reset_replacement( Client::class );
+		wc_get_container()->reset_replacement( HttpClient::class );
 		delete_transient( 'wcpay_fraud_protection_settings' );
 		delete_option( 'current_protection_level' );
 		update_option( WooPaymentsCutoverStateStore::OPTION_NAME, WooPaymentsCutoverStateStore::ABSENT_RECORD, true );
@@ -341,9 +341,9 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 		$this->fake_plugin( false );
 		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
 		// A connected store: without a connection the account read returns no account, like the client.
-		$connected_api_client = $this->createMock( WooPaymentsApiClient::class );
+		$connected_api_client = $this->createMock( Client::class );
 		$connected_api_client->method( 'is_available' )->willReturn( true );
-		wc_get_container()->replace( WooPaymentsApiClient::class, $connected_api_client );
+		wc_get_container()->replace( Client::class, $connected_api_client );
 		$this->seed_connected_store();
 
 		$data = $this->get_sut()->get_status_data();
@@ -446,9 +446,9 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 		$this->fake_plugin( false );
 		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
 		// A connected store: without a connection the account read returns no account, like the client.
-		$connected_api_client = $this->createMock( WooPaymentsApiClient::class );
+		$connected_api_client = $this->createMock( Client::class );
 		$connected_api_client->method( 'is_available' )->willReturn( true );
-		wc_get_container()->replace( WooPaymentsApiClient::class, $connected_api_client );
+		wc_get_container()->replace( Client::class, $connected_api_client );
 		$this->seed_connected_store();
 		wc_get_container()->reset_all_resolved();
 
@@ -474,9 +474,9 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 		unset( $label );
 		$this->fake_plugin( false );
 		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
-		$connected_api_client = $this->createMock( WooPaymentsApiClient::class );
+		$connected_api_client = $this->createMock( Client::class );
 		$connected_api_client->method( 'is_available' )->willReturn( true );
-		wc_get_container()->replace( WooPaymentsApiClient::class, $connected_api_client );
+		wc_get_container()->replace( Client::class, $connected_api_client );
 		$this->seed_connected_store();
 		wc_get_container()->reset_all_resolved();
 		$provider = $this->createMock( CurrencyRateProviderInterface::class );
@@ -524,7 +524,7 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 		);
 		$fresh_account = array_merge( $old_account, array( 'payments_enabled' => false ) );
 		$api_client    = $this->create_account_api_client( $fresh_account, $fetch_fails, true );
-		wc_get_container()->replace( WooPaymentsApiClient::class, $api_client );
+		wc_get_container()->replace( Client::class, $api_client );
 		wp_set_current_user( self::factory()->user->create( array( 'role' => 'administrator' ) ) );
 		$this->fake_plugin( false );
 		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
@@ -565,7 +565,7 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 	 */
 	public function test_clear_account_cache_tool_skips_the_fetch_without_a_platform_connection(): void {
 		$api_client = $this->create_account_api_client( array( 'account_id' => 'acct_unused' ), false, false );
-		wc_get_container()->replace( WooPaymentsApiClient::class, $api_client );
+		wc_get_container()->replace( Client::class, $api_client );
 		wp_set_current_user( self::factory()->user->create( array( 'role' => 'administrator' ) ) );
 		$this->fake_plugin( false );
 		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
@@ -591,9 +591,9 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 		$this->fake_plugin( false );
 		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
 		// A connected store: without a connection the account read returns no account, like the client.
-		$connected_api_client = $this->createMock( WooPaymentsApiClient::class );
+		$connected_api_client = $this->createMock( Client::class );
 		$connected_api_client->method( 'is_available' )->willReturn( true );
-		wc_get_container()->replace( WooPaymentsApiClient::class, $connected_api_client );
+		wc_get_container()->replace( Client::class, $connected_api_client );
 		$this->seed_connected_store();
 
 		$info = $this->get_sut()->add_site_health_debug_info( array() );
@@ -788,10 +788,10 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 	 * @param string        $expected_value  Expected value of that row.
 	 */
 	public function test_status_report_flags_a_missing_wpcom_connection_or_account( bool $wpcom_connected, array $expected_labels, int $warning_row, string $expected_value ): void {
-		$http_client = $this->createMock( WooPaymentsHttpClient::class );
+		$http_client = $this->createMock( HttpClient::class );
 		$http_client->method( 'is_connected' )->willReturn( $wpcom_connected );
 		$http_client->method( 'get_blog_id' )->willReturn( 12345 );
-		wc_get_container()->replace( WooPaymentsHttpClient::class, $http_client );
+		wc_get_container()->replace( HttpClient::class, $http_client );
 		wc_get_container()->get( WooPaymentsAccountService::class )->clear_cache();
 
 		$rows = $this->get_sut()->get_woopayments_status_rows();
@@ -819,9 +819,9 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 	public function test_status_report_leaves_the_extension_section_to_the_extension_while_it_owns_payments(): void {
 		$this->fake_plugin( true );
 		$this->set_setup_tier( WooPaymentsSetupTier::AVAILABLE );
-		$api_client = $this->createMock( WooPaymentsApiClient::class );
+		$api_client = $this->createMock( Client::class );
 		$api_client->expects( $this->never() )->method( 'get_latest_fraud_ruleset' );
-		wc_get_container()->replace( WooPaymentsApiClient::class, $api_client );
+		wc_get_container()->replace( Client::class, $api_client );
 
 		ob_start();
 		$this->get_sut()->render_status_report_section();
@@ -864,13 +864,13 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 	private function render_report_for_connected_store( array $account_extra = array(), array $settings_extra = array(), string $protection_level = 'basic', array $fraud_ruleset = array(), array $options = array() ): string {
 		$this->fake_plugin( false );
 		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
-		$connected_api_client = $this->createMock( WooPaymentsApiClient::class );
+		$connected_api_client = $this->createMock( Client::class );
 		$connected_api_client->method( 'is_available' )->willReturn( true );
-		wc_get_container()->replace( WooPaymentsApiClient::class, $connected_api_client );
-		$http_client = $this->createMock( WooPaymentsHttpClient::class );
+		wc_get_container()->replace( Client::class, $connected_api_client );
+		$http_client = $this->createMock( HttpClient::class );
 		$http_client->method( 'is_connected' )->willReturn( true );
 		$http_client->method( 'get_blog_id' )->willReturn( 12345 );
-		wc_get_container()->replace( WooPaymentsHttpClient::class, $http_client );
+		wc_get_container()->replace( HttpClient::class, $http_client );
 		$this->seed_connected_store();
 		// Account fields per the platform account response the client reads (client 11.1.0 `includes/class-wc-payments-account.php:367-377`
 		// status flags, `:489-492` support phone, `:181-192` publishable keys, `includes/class-wc-payments-features.php:193-220` WooPay and
@@ -973,10 +973,10 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 	 * @param array<string,mixed> $account   Account to return.
 	 * @param bool                $fail      Whether every fetch fails.
 	 * @param bool                $available Whether the platform connection is available.
-	 * @return WooPaymentsApiClient
+	 * @return Client
 	 */
-	private function create_account_api_client( array $account, bool $fail, bool $available ): WooPaymentsApiClient {
-		return new class( $account, $fail, $available ) extends WooPaymentsApiClient {
+	private function create_account_api_client( array $account, bool $fail, bool $available ): Client {
+		return new class( $account, $fail, $available ) extends Client {
 			/**
 			 * Number of account fetches.
 			 *
@@ -1032,12 +1032,12 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 			 *
 			 * @param string $woocommerce_store_id WooCommerce store ID.
 			 * @return array<string,mixed>
-			 * @throws WooPaymentsApiException When set to fail.
+			 * @throws ApiException When set to fail.
 			 */
 			public function get_account( string $woocommerce_store_id = '' ): array {
 				++$this->calls;
 				if ( $this->fail ) {
-					throw new WooPaymentsApiException( 'Temporary failure.', 'wcpay_temporary_failure', 500 );
+					throw new ApiException( 'Temporary failure.', 'wcpay_temporary_failure', 500 );
 				}
 
 				return $this->account;

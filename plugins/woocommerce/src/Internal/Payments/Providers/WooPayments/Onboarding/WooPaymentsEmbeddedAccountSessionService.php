@@ -7,8 +7,8 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Onboarding;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 
 /**
@@ -23,18 +23,18 @@ class WooPaymentsEmbeddedAccountSessionService {
 	/**
 	 * WooPayments API client.
 	 *
-	 * @var WooPaymentsApiClient
+	 * @var Client
 	 */
-	private WooPaymentsApiClient $api_client;
+	private Client $api_client;
 
 	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsApiClient $api_client WooPayments API client.
+	 * @param Client $api_client WooPayments API client.
 	 */
-	final public function init( WooPaymentsApiClient $api_client ): void {
+	final public function init( Client $api_client ): void {
 		$this->api_client = $api_client;
 	}
 
@@ -48,7 +48,7 @@ class WooPaymentsEmbeddedAccountSessionService {
 		// since the merchant only sees the embedded component fail to load.
 		try {
 			$session = $this->api_client->create_embedded_account_session();
-		} catch ( WooPaymentsApiException $exception ) {
+		} catch ( ApiException $exception ) {
 			wc_get_container()->get( WooPaymentsLogger::class )->log_throwable_always( 'WooPayments could not create an embedded account session.', $exception );
 			return array();
 		}

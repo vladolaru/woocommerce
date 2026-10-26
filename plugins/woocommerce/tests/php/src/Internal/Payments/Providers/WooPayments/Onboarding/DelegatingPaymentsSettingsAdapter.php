@@ -4,7 +4,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Onboarding;
 
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\PaymentGateway;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Onboarding\WooPaymentsOnboardingService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExtensionRuntime;
@@ -35,12 +35,12 @@ class DelegatingPaymentsSettingsAdapter extends WooPaymentsPaymentsSettingsAdapt
 	 * Constructor.
 	 *
 	 * @param WooPaymentsPaymentsSettingsAdapter $inner             The test's adapter.
-	 * @param WooPaymentsApiClient               $api_client        The test's API client.
+	 * @param Client                             $api_client        The test's API client.
 	 * @param WooPaymentsExtensionRuntime        $extension_runtime The test's extension runtime.
 	 * @param WooPaymentsAccountService          $account_service   The test's account service.
 	 * @param WooPaymentsOnboardingService       $onboarding        The test's onboarding service.
 	 */
-	public function __construct( WooPaymentsPaymentsSettingsAdapter $inner, WooPaymentsApiClient $api_client, WooPaymentsExtensionRuntime $extension_runtime, WooPaymentsAccountService $account_service, WooPaymentsOnboardingService $onboarding ) {
+	public function __construct( WooPaymentsPaymentsSettingsAdapter $inner, Client $api_client, WooPaymentsExtensionRuntime $extension_runtime, WooPaymentsAccountService $account_service, WooPaymentsOnboardingService $onboarding ) {
 		$this->inner                  = $inner;
 		$this->test_extension_runtime = $extension_runtime;
 

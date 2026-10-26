@@ -7,7 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 use Exception;
 use Throwable;
 
@@ -46,7 +46,7 @@ class WooPaymentsLogger {
 	 *
 	 * A code reaches the log only from this list, because the platform's code field is free text to this store: an
 	 * error envelope could hold a URL, an email or a token there. The list is the codes this code base throws or acts
-	 * on: the transport's own codes (WooPaymentsApiClient, StripeBillingApi, the request classes), the codes the
+	 * on: the transport's own codes (Client, StripeBillingApi, the request classes), the codes the
 	 * provider branches on, Stripe's error types (`throw_api_error()` uses the type when the code is missing) and the
 	 * card errors and decline codes WooPaymentsErrorMessages::get_localized_messages() translates.
 	 */
@@ -121,7 +121,7 @@ class WooPaymentsLogger {
 
 	/**
 	 * WP_Error codes a failed request carries, from WordPress's HTTP API (`WP_Http::request()`) or from
-	 * WooPaymentsHttpClient, logged as they are.
+	 * HttpClient, logged as they are.
 	 */
 	private const LOGGABLE_TRANSPORT_ERROR_CODES = array( 'http_request_failed', 'http_request_not_executed', 'http_failure', 'wcpay_transport_invalid_response' );
 
@@ -280,10 +280,10 @@ class WooPaymentsLogger {
 	 */
 	public static function get_api_error_context( Throwable $throwable ): array {
 		$api_error = $throwable;
-		while ( null !== $api_error && ! $api_error instanceof WooPaymentsApiException ) {
+		while ( null !== $api_error && ! $api_error instanceof ApiException ) {
 			$api_error = $api_error->getPrevious();
 		}
-		if ( ! $api_error instanceof WooPaymentsApiException ) {
+		if ( ! $api_error instanceof ApiException ) {
 			return array();
 		}
 

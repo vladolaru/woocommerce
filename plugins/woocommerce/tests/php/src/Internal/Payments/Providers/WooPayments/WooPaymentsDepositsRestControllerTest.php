@@ -3,8 +3,8 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsDepositsListRequest;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\DepositsListRequest;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDepositsRestController;
 use WC_REST_Unit_Test_Case;
 use WP_REST_Request;
@@ -224,7 +224,7 @@ class WooPaymentsDepositsRestControllerTest extends WC_REST_Unit_Test_Case {
 
 			add_filter(
 				'wcpay_list_deposits_request',
-				static function ( WooPaymentsDepositsListRequest $request ) use ( &$observed_api, &$observed_page_size ): WooPaymentsDepositsListRequest {
+				static function ( DepositsListRequest $request ) use ( &$observed_api, &$observed_page_size ): DepositsListRequest {
 					$observed_api       = $request->get_api();
 					$observed_page_size = $request->get_param( 'pagesize' );
 					$request->set_page_size( 50 );
@@ -481,7 +481,7 @@ class WooPaymentsDepositsRestControllerTest extends WC_REST_Unit_Test_Case {
 		$this->sut->register_routes();
 		$logger = RecordingWcLogger::install();
 		// A platform error code is free text to this store; one the logger does not list is logged as unknown_error.
-		$this->api_client->exception = new WooPaymentsApiException( 'Ambiguous payout failure.', 'https://pay.example.test/r?key=sk_test_leak123', 504 );
+		$this->api_client->exception = new ApiException( 'Ambiguous payout failure.', 'https://pay.example.test/r?key=sk_test_leak123', 504 );
 
 		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/deposits' );
 		$request->set_body_params(
@@ -512,7 +512,7 @@ class WooPaymentsDepositsRestControllerTest extends WC_REST_Unit_Test_Case {
 	 */
 	public function test_api_exceptions_answer_a_4xx_or_5xx_status(): void {
 		$this->sut->register_routes();
-		$this->api_client->exception = new WooPaymentsApiException( 'Platform failure.', 'resource_missing', 404 );
+		$this->api_client->exception = new ApiException( 'Platform failure.', 'resource_missing', 404 );
 
 		$response = $this->server->dispatch( new WP_REST_Request( 'GET', '/wc/v3/payments/deposits/po_missing' ) );
 

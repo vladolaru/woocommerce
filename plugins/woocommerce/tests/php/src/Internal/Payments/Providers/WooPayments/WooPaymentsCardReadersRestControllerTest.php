@@ -3,7 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCardReadersRestController;
 use WC_Helper_Order;
@@ -107,14 +107,14 @@ class WooPaymentsCardReadersRestControllerTest extends WC_REST_Unit_Test_Case {
 	 * @testdox Reader registration refreshes the cached account data only when it succeeds ($scenario).
 	 * @dataProvider provide_reader_registration_outcomes
 	 *
-	 * @param string                       $scenario           Case.
-	 * @param string                       $registration_code  Registration code the app sends.
-	 * @param array<string,mixed>          $reader_response    Registered reader the platform answers.
-	 * @param WooPaymentsApiException|null $exception          Platform failure, or null when the registration succeeds.
-	 * @param string                       $expected_class     Class of the route's answer.
-	 * @param int                          $expected_refreshes Expected number of account-data refreshes.
+	 * @param string              $scenario           Case.
+	 * @param string              $registration_code  Registration code the app sends.
+	 * @param array<string,mixed> $reader_response    Registered reader the platform answers.
+	 * @param ApiException|null   $exception          Platform failure, or null when the registration succeeds.
+	 * @param string              $expected_class     Class of the route's answer.
+	 * @param int                 $expected_refreshes Expected number of account-data refreshes.
 	 */
-	public function test_reader_registration_refreshes_account_data_only_on_success( string $scenario, string $registration_code, array $reader_response, ?WooPaymentsApiException $exception, string $expected_class, int $expected_refreshes ): void {
+	public function test_reader_registration_refreshes_account_data_only_on_success( string $scenario, string $registration_code, array $reader_response, ?ApiException $exception, string $expected_class, int $expected_refreshes ): void {
 		unset( $scenario );
 		$this->api_client->terminal_reader_response  = $reader_response;
 		$this->api_client->register_reader_exception = $exception;
@@ -132,7 +132,7 @@ class WooPaymentsCardReadersRestControllerTest extends WC_REST_Unit_Test_Case {
 	/**
 	 * Provide reader registrations: case, registration code, platform reader, platform failure, answer class, refreshes.
 	 *
-	 * @return array<string,array{0:string,1:string,2:array<string,mixed>,3:WooPaymentsApiException|null,4:string,5:int}>
+	 * @return array<string,array{0:string,1:string,2:array<string,mixed>,3:ApiException|null,4:string,5:int}>
 	 */
 	public function provide_reader_registration_outcomes(): array {
 		return array(
@@ -156,7 +156,7 @@ class WooPaymentsCardReadersRestControllerTest extends WC_REST_Unit_Test_Case {
 				'failure',
 				'bad-code',
 				array(),
-				new WooPaymentsApiException( 'Bad code.', 'wcpay_invalid_registration_code', 400 ),
+				new ApiException( 'Bad code.', 'wcpay_invalid_registration_code', 400 ),
 				WP_Error::class,
 				0,
 			),
@@ -781,7 +781,7 @@ class WooPaymentsCardReadersRestControllerTest extends WC_REST_Unit_Test_Case {
 	/**
 	 * The mobile routes answer a failure as the extension's controllers do, so the apps read the same status and code.
 	 *
-	 * Faked failures are WooPaymentsApiException( message, code, status ), the shape the API client builds from a platform
+	 * Faked failures are ApiException( message, code, status ), the shape the API client builds from a platform
 	 * error body and its HTTP status; status 0 is the API client's encode failure (wcpay_client_unable_to_encode_json),
 	 * which carries no HTTP status. A status of 0 reaches the app as HTTP 200, because WordPress's status_header( 0 )
 	 * sends no status line; the answer's own status is asserted here.
@@ -794,8 +794,8 @@ class WooPaymentsCardReadersRestControllerTest extends WC_REST_Unit_Test_Case {
 	 * @param string $expected_code   Expected error code.
 	 */
 	public function test_mobile_route_failures_answer_as_the_extension_does( string $scenario, int $expected_status, string $expected_code ): void {
-		$encode_failure = new WooPaymentsApiException( 'Unable to encode the WooPayments request body.', 'wcpay_client_unable_to_encode_json', 0 );
-		$missing        = new WooPaymentsApiException( 'No such object.', 'resource_missing', 404 );
+		$encode_failure = new ApiException( 'Unable to encode the WooPayments request body.', 'wcpay_client_unable_to_encode_json', 0 );
+		$missing        = new ApiException( 'No such object.', 'resource_missing', 404 );
 		$request        = new WP_REST_Request( 'POST', '/wc/v3/payments/test' );
 
 		switch ( $scenario ) {

@@ -7,8 +7,8 @@ declare( strict_types=1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 use Automattic\WooCommerce\Admin\PageController;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 
@@ -71,9 +71,9 @@ class WooPaymentsFraudService implements RegisterHooksInterface {
 	/**
 	 * WooPayments API client.
 	 *
-	 * @var WooPaymentsApiClient
+	 * @var Client
 	 */
-	private WooPaymentsApiClient $api_client;
+	private Client $api_client;
 
 	/**
 	 * Initialize the service.
@@ -83,9 +83,9 @@ class WooPaymentsFraudService implements RegisterHooksInterface {
 	 * @param WooPaymentsAccountService  $account_service  Account service.
 	 * @param WooPaymentsCustomerService $customer_service Customer service.
 	 * @param WooPaymentsSessionService  $session_service  Session service.
-	 * @param WooPaymentsApiClient       $api_client       WooPayments API client.
+	 * @param Client                     $api_client       WooPayments API client.
 	 */
-	final public function init( WooPaymentsAccountService $account_service, WooPaymentsCustomerService $customer_service, WooPaymentsSessionService $session_service, WooPaymentsApiClient $api_client ): void {
+	final public function init( WooPaymentsAccountService $account_service, WooPaymentsCustomerService $customer_service, WooPaymentsSessionService $session_service, Client $api_client ): void {
 		$this->account_service  = $account_service;
 		$this->customer_service = $customer_service;
 		$this->session_service  = $session_service;
@@ -185,7 +185,7 @@ class WooPaymentsFraudService implements RegisterHooksInterface {
 
 		try {
 			$this->api_client->link_session_to_customer( $this->session_service->get_sift_session_id(), $customer_id );
-		} catch ( WooPaymentsApiException $exception ) {
+		} catch ( ApiException $exception ) {
 			// Client 11.1.0 logs this at info level only when WooPayments logging is on, with the platform's message
 			// (class-wc-payments-fraud-service.php:195); this line logs its status and code instead.
 			wc_get_container()->get( WooPaymentsLogger::class )->log_throwable( '[Tracking] Error when linking session with user.', $exception, array(), 'info' );

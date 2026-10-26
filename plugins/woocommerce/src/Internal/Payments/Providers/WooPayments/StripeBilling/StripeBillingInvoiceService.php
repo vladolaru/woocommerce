@@ -7,8 +7,8 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionsController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
@@ -48,9 +48,9 @@ class StripeBillingInvoiceService {
 	/**
 	 * Platform API client, for the charge read.
 	 *
-	 * @var WooPaymentsApiClient
+	 * @var Client
 	 */
-	private WooPaymentsApiClient $api_client;
+	private Client $api_client;
 
 	/**
 	 * Module root, the single reader of the Stripe Billing toggle.
@@ -72,11 +72,11 @@ class StripeBillingInvoiceService {
 	 * @internal
 	 *
 	 * @param StripeBillingApi               $api        Stripe Billing platform calls.
-	 * @param WooPaymentsApiClient           $api_client Platform API client.
+	 * @param Client                         $api_client Platform API client.
 	 * @param WooPaymentsStripeBillingModule $module     Module root.
 	 * @param WooPaymentsLogger              $logger     Module logger.
 	 */
-	final public function init( StripeBillingApi $api, WooPaymentsApiClient $api_client, WooPaymentsStripeBillingModule $module, WooPaymentsLogger $logger ): void {
+	final public function init( StripeBillingApi $api, Client $api_client, WooPaymentsStripeBillingModule $module, WooPaymentsLogger $logger ): void {
 		$this->api        = $api;
 		$this->api_client = $api_client;
 		$this->module     = $module;
@@ -167,7 +167,7 @@ class StripeBillingInvoiceService {
 	 * @internal
 	 *
 	 * @param mixed $order_id Order ID.
-	 * @throws WooPaymentsApiException When the platform refuses to mark the invoice paid for another reason than it being paid already.
+	 * @throws ApiException When the platform refuses to mark the invoice paid for another reason than it being paid already.
 	 */
 	public function maybe_record_invoice_payment( $order_id ): void {
 		if ( ! function_exists( 'wcs_get_subscriptions_for_order' ) ) {
@@ -191,7 +191,7 @@ class StripeBillingInvoiceService {
 
 			try {
 				$this->api->charge_invoice( $invoice_id, array( 'paid_out_of_band' => 'true' ) );
-			} catch ( WooPaymentsApiException $exception ) {
+			} catch ( ApiException $exception ) {
 				if ( WP_Http::BAD_REQUEST !== $exception->get_http_code() || false === stripos( $exception->getMessage(), 'invoice is already paid' ) ) {
 					throw $exception;
 				}
@@ -229,7 +229,7 @@ class StripeBillingInvoiceService {
 	 * @param array<int,mixed>               $wcpay_discount_data Invoice discount IDs.
 	 * @param WC_Order                       $subscription        Subscription.
 	 * @throws StripeBillingException When the invoice lacks an item of the subscription.
-	 * @throws WooPaymentsApiException When an update fails.
+	 * @throws ApiException When an update fails.
 	 */
 	public function update_wcpay_subscription_to_match( array $wcpay_item_data, array $wcpay_discount_data, WC_Order $subscription ): void {
 		foreach ( $this->get_repair_data_for_wcpay_items( $wcpay_item_data, $subscription ) as $id => $data ) {
@@ -279,7 +279,7 @@ class StripeBillingInvoiceService {
 	 *
 	 * @param string $invoice_id Invoice ID.
 	 * @return array<string,mixed> The invoice.
-	 * @throws WooPaymentsApiException When the request fails.
+	 * @throws ApiException When the request fails.
 	 */
 	public function record_subscription_payment_context( string $invoice_id ): array {
 		return $this->api->update_invoice(
@@ -295,7 +295,7 @@ class StripeBillingInvoiceService {
 	 *
 	 * @param array<string,mixed> $invoice Invoice.
 	 * @param WC_Order            $order   Order the invoice paid.
-	 * @throws WooPaymentsApiException When a request fails.
+	 * @throws ApiException When a request fails.
 	 */
 	public function update_transaction_details( array $invoice, WC_Order $order ): void {
 		if ( ! isset( $invoice['charge'] ) ) {
@@ -323,7 +323,7 @@ class StripeBillingInvoiceService {
 	 *
 	 * @param array<string,mixed> $invoice  Invoice.
 	 * @param int                 $order_id Order the invoice paid.
-	 * @throws WooPaymentsApiException When the request fails.
+	 * @throws ApiException When the request fails.
 	 */
 	public function update_charge_details( array $invoice, int $order_id ): void {
 		if ( ! isset( $invoice['charge'] ) ) {

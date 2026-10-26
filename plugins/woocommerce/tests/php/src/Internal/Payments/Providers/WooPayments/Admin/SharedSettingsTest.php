@@ -14,7 +14,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\Overvie
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAdminMenuBadgeService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsApplePayDomainService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDatabaseCache;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTrackingInfoService;
@@ -241,7 +241,7 @@ class SharedSettingsTest extends WC_Unit_Test_Case {
 			),
 			$query
 		);
-		$api_client = new class() extends WooPaymentsApiClient {
+		$api_client = new class() extends Client {
 			/**
 			 * Number of platform tracking info requests.
 			 *
@@ -1049,7 +1049,7 @@ class SharedSettingsTest extends WC_Unit_Test_Case {
 
 		$service = new WooPaymentsApplePayDomainService();
 		$service->init(
-			$this->createMock( WooPaymentsApiClient::class ),
+			$this->createMock( Client::class ),
 			$account_service
 		);
 
@@ -1141,7 +1141,7 @@ class SharedSettingsTest extends WC_Unit_Test_Case {
 
 		$account_service = $this->create_account_service( $account_state );
 		$badge_service   = $this->create_badge_service( $badge_counts );
-		$api_client      = $this->createMock( WooPaymentsApiClient::class );
+		$api_client      = $this->createMock( Client::class );
 		$api_client->method( 'is_available' )->willReturn( true );
 		$onboarding_redirect = new OnboardingRedirect();
 		$onboarding_redirect->init( $arbiter, $api_client, $account_service );

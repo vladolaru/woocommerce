@@ -20,7 +20,7 @@
 			"recorded_at": "2026-10-02T08:08:10+00:00",
 			"context": "GET products/{id} for the product created by create_product (product service existence check)",
 			"request": {
-				"transport": "WooPaymentsApiClient::request_list( $params, 'products/prod_VMl10VL0VK371N', 'GET' ) (recording stand-in for send_site_request(); same private request())",
+				"transport": "Client::request_list( $params, 'products/prod_VMl10VL0VK371N', 'GET' ) (recording stand-in for send_site_request(); same private request())",
 				"method": "GET",
 				"path": "/sites/4/wcpay/products/prod_VMl10VL0VK371N?test_mode=1 (wpcom/v2 via Jetpack blog token)",
 				"body": null,
@@ -42,7 +42,7 @@
 			"recorded_at": "2026-10-02T08:07:34+00:00",
 			"context": "client product service shape: name and description only (get_product_data); no price fields, so no wcpay_price_id comes back",
 			"request": {
-				"transport": "WooPaymentsApiClient::request_list( $params, 'products', 'POST' ) (recording stand-in for send_site_request(); same private request())",
+				"transport": "Client::request_list( $params, 'products', 'POST' ) (recording stand-in for send_site_request(); same private request())",
 				"method": "POST",
 				"path": "/sites/4/wcpay/products (wpcom/v2 via Jetpack blog token)",
 				"body": {
@@ -68,7 +68,7 @@
 			"recorded_at": "2026-10-02T08:08:11+00:00",
 			"context": "client update_products shape: name, description and test_mode in the params (request() would add test_mode anyway)",
 			"request": {
-				"transport": "WooPaymentsApiClient::request_list( $params, 'products/prod_VMl10VL0VK371N', 'POST' ) (recording stand-in for send_site_request(); same private request())",
+				"transport": "Client::request_list( $params, 'products/prod_VMl10VL0VK371N', 'POST' ) (recording stand-in for send_site_request(); same private request())",
 				"method": "POST",
 				"path": "/sites/4/wcpay/products/prod_VMl10VL0VK371N (wpcom/v2 via Jetpack blog token)",
 				"body": {
@@ -94,7 +94,7 @@
 			"recorded_at": "2026-10-02T08:08:12+00:00",
 			"context": "client archive_price shape: active 'false' plus test_mode; the price comes from a legacy price-bearing product (supporting_entries[0]); the client method returns nothing, the platform returns the Stripe price",
 			"request": {
-				"transport": "WooPaymentsApiClient::request_list( $params, 'products/prices/price_1UM1VFBzWlxcwgpPfqFOGkZ2', 'POST' ) (recording stand-in for send_site_request(); same private request())",
+				"transport": "Client::request_list( $params, 'products/prices/price_1UM1VFBzWlxcwgpPfqFOGkZ2', 'POST' ) (recording stand-in for send_site_request(); same private request())",
 				"method": "POST",
 				"path": "/sites/4/wcpay/products/prices/price_1UM1VFBzWlxcwgpPfqFOGkZ2 (wpcom/v2 via Jetpack blog token)",
 				"body": {
@@ -144,7 +144,7 @@
 			"recorded_at": "2026-10-02T08:08:32+00:00",
 			"context": "fetched right after create_subscription, status incomplete (payment_behavior default_incomplete set by the platform)",
 			"request": {
-				"transport": "WooPaymentsApiClient::request_list( $params, 'subscriptions/sub_1UM1VrBzWlxcwgpP6A3GwGLe', 'GET' ) (recording stand-in for send_site_request(); same private request())",
+				"transport": "Client::request_list( $params, 'subscriptions/sub_1UM1VrBzWlxcwgpP6A3GwGLe', 'GET' ) (recording stand-in for send_site_request(); same private request())",
 				"method": "GET",
 				"path": "/sites/4/wcpay/subscriptions/sub_1UM1VrBzWlxcwgpP6A3GwGLe?test_mode=1 (wpcom/v2 via Jetpack blog token)",
 				"body": null,
@@ -343,7 +343,7 @@
 			"recorded_at": "2026-10-02T08:08:14+00:00",
 			"context": "prepare_wcpay_subscription_data shape for one 24.90 USD monthly line item (price_data with product, unit_amount_decimal as a float, recurring) plus metadata.subscription_source woo_subscriptions, on the user 1 customer; the platform adds payment_behavior default_incomplete and proration_behavior none, so the subscription comes back incomplete with an open latest_invoice",
 			"request": {
-				"transport": "WooPaymentsApiClient::request_list( $params, 'subscriptions', 'POST' ) (recording stand-in for send_site_request(); same private request())",
+				"transport": "Client::request_list( $params, 'subscriptions', 'POST' ) (recording stand-in for send_site_request(); same private request())",
 				"method": "POST",
 				"path": "/sites/4/wcpay/subscriptions (wpcom/v2 via Jetpack blog token)",
 				"body": {
@@ -565,7 +565,7 @@
 			"recorded_at": "2026-10-02T08:09:00+00:00",
 			"context": "client update_wcpay_subscription_payment_method shape: default_payment_method only (user 1's saved card); the platform recomputes application_fee_percent from the card (5.1)",
 			"request": {
-				"transport": "WooPaymentsApiClient::request_list( $params, 'subscriptions/sub_1UM1VrBzWlxcwgpP6A3GwGLe', 'POST' ) (recording stand-in for send_site_request(); same private request())",
+				"transport": "Client::request_list( $params, 'subscriptions/sub_1UM1VrBzWlxcwgpP6A3GwGLe', 'POST' ) (recording stand-in for send_site_request(); same private request())",
 				"method": "POST",
 				"path": "/sites/4/wcpay/subscriptions/sub_1UM1VrBzWlxcwgpP6A3GwGLe (wpcom/v2 via Jetpack blog token)",
 				"body": {
@@ -767,7 +767,7 @@
 			"recorded_at": "2026-10-02T08:12:24+00:00",
 			"context": "DELETE subscriptions/{id} on the main-chain subscription after the other calls",
 			"request": {
-				"transport": "WooPaymentsApiClient::request_list( $params, 'subscriptions/sub_1UM1VrBzWlxcwgpP6A3GwGLe', 'DELETE' ) (recording stand-in for send_site_request(); same private request())",
+				"transport": "Client::request_list( $params, 'subscriptions/sub_1UM1VrBzWlxcwgpP6A3GwGLe', 'DELETE' ) (recording stand-in for send_site_request(); same private request())",
 				"method": "DELETE",
 				"path": "/sites/4/wcpay/subscriptions/sub_1UM1VrBzWlxcwgpP6A3GwGLe?test_mode=1 (wpcom/v2 via Jetpack blog token)",
 				"body": null,
@@ -966,7 +966,7 @@
 			"recorded_at": "2026-10-02T08:09:02+00:00",
 			"context": "client get_repair_data_for_wcpay_items shape: quantity 2 and price_data (currency kept from the Stripe item in lower case, 29.90 per unit); the platform adds proration_behavior none",
 			"request": {
-				"transport": "WooPaymentsApiClient::request_list( $params, 'subscriptions/items/si_VMl1spZLBBt5VE', 'POST' ) (recording stand-in for send_site_request(); same private request())",
+				"transport": "Client::request_list( $params, 'subscriptions/items/si_VMl1spZLBBt5VE', 'POST' ) (recording stand-in for send_site_request(); same private request())",
 				"method": "POST",
 				"path": "/sites/4/wcpay/subscriptions/items/si_VMl1spZLBBt5VE (wpcom/v2 via Jetpack blog token)",
 				"body": {
@@ -1063,7 +1063,7 @@
 			"recorded_at": "2026-10-02T08:08:37+00:00",
 			"context": "client maybe_record_invoice_payment shape: paid_out_of_band 'true' on the subscription_create invoice of the main chain; the invoice comes back paid with amount_paid 0 and paid_out_of_band true",
 			"request": {
-				"transport": "WooPaymentsApiClient::request_list( $params, 'invoices/in_1UM1VrBzWlxcwgpPgrIwNSlu/pay', 'POST' ) (recording stand-in for send_site_request(); same private request())",
+				"transport": "Client::request_list( $params, 'invoices/in_1UM1VrBzWlxcwgpPgrIwNSlu/pay', 'POST' ) (recording stand-in for send_site_request(); same private request())",
 				"method": "POST",
 				"path": "/sites/4/wcpay/invoices/in_1UM1VrBzWlxcwgpPgrIwNSlu/pay (wpcom/v2 via Jetpack blog token)",
 				"body": {
@@ -1336,7 +1336,7 @@
 			"recorded_at": "2026-10-02T08:12:11+00:00",
 			"context": "client record_subscription_payment_context shape: subscription_context stripe_billing on a renewal invoice (subscription_cycle, test-clock chain) that has a payment_intent; the platform GETs the invoice, then writes the context onto the invoice's payment intent metadata, and returns the invoice as fetched",
 			"request": {
-				"transport": "WooPaymentsApiClient::request_list( $params, 'invoices/in_1UM1XzBzWlxcwgpPNhLoAcln', 'POST' ) (recording stand-in for send_site_request(); same private request())",
+				"transport": "Client::request_list( $params, 'invoices/in_1UM1XzBzWlxcwgpPNhLoAcln', 'POST' ) (recording stand-in for send_site_request(); same private request())",
 				"method": "POST",
 				"path": "/sites/4/wcpay/invoices/in_1UM1XzBzWlxcwgpPNhLoAcln (wpcom/v2 via Jetpack blog token)",
 				"body": {
@@ -1591,7 +1591,7 @@
 			"recorded_at": "2026-10-02T08:08:13+00:00",
 			"context": "GET subscriptions/minimum_amount/usd; the body is a bare JSON integer (100 = 2 x the 50 sale minimum), not an object",
 			"request": {
-				"transport": "WooPaymentsApiClient::request_list( $params, 'subscriptions/minimum_amount/usd', 'GET' ) (recording stand-in for send_site_request(); same private request())",
+				"transport": "Client::request_list( $params, 'subscriptions/minimum_amount/usd', 'GET' ) (recording stand-in for send_site_request(); same private request())",
 				"method": "GET",
 				"path": "/sites/4/wcpay/subscriptions/minimum_amount/usd?test_mode=1 (wpcom/v2 via Jetpack blog token)",
 				"body": null,
@@ -1611,7 +1611,7 @@
 			"recorded_at": "2026-10-02T08:12:21+00:00",
 			"context": "client update_charge_details shape: metadata.order_id on the renewal charge; the platform returns its charges-cache record, not a Stripe charge",
 			"request": {
-				"transport": "WooPaymentsApiClient::request_list( $params, 'charges/ch_3UM1YABzWlxcwgpP0Fazmyr5', 'POST' ) (recording stand-in for send_site_request(); same private request())",
+				"transport": "Client::request_list( $params, 'charges/ch_3UM1YABzWlxcwgpP0Fazmyr5', 'POST' ) (recording stand-in for send_site_request(); same private request())",
 				"method": "POST",
 				"path": "/sites/4/wcpay/charges/ch_3UM1YABzWlxcwgpP0Fazmyr5 (wpcom/v2 via Jetpack blog token)",
 				"body": {
@@ -1661,7 +1661,7 @@
 			"recorded_at": "2026-10-02T08:12:23+00:00",
 			"context": "client update_transaction_details shape: billing first/last name, email, country on the renewal charge's balance transaction; the platform returns its transactions-cache record",
 			"request": {
-				"transport": "WooPaymentsApiClient::request_list( $params, 'transactions/txn_3UM1YABzWlxcwgpP0tCiQoKI', 'POST' ) (recording stand-in for send_site_request(); same private request())",
+				"transport": "Client::request_list( $params, 'transactions/txn_3UM1YABzWlxcwgpP0tCiQoKI', 'POST' ) (recording stand-in for send_site_request(); same private request())",
 				"method": "POST",
 				"path": "/sites/4/wcpay/transactions/txn_3UM1YABzWlxcwgpP0tCiQoKI (wpcom/v2 via Jetpack blog token)",
 				"body": {
@@ -1697,7 +1697,7 @@
 			"recorded_at": "2026-10-02T08:08:34+00:00",
 			"context": "create_subscription with a 0.75 USD monthly item: the platform creates the Stripe subscription, reads the upcoming invoice, finds 75 below the 100 recurring minimum, cancels the subscription and answers amount_too_small",
 			"request": {
-				"transport": "WooPaymentsApiClient::request_list( $params, 'subscriptions', 'POST' ) (recording stand-in for send_site_request(); same private request())",
+				"transport": "Client::request_list( $params, 'subscriptions', 'POST' ) (recording stand-in for send_site_request(); same private request())",
 				"method": "POST",
 				"path": "/sites/4/wcpay/subscriptions (wpcom/v2 via Jetpack blog token)",
 				"body": {
@@ -1745,7 +1745,7 @@
 				}
 			},
 			"native_exception": {
-				"class": "Automattic\\WooCommerce\\Internal\\Payments\\Providers\\WooPayments\\Api\\WooPaymentsApiException",
+				"class": "Automattic\\WooCommerce\\Internal\\Payments\\Providers\\WooPayments\\Api\\ApiException",
 				"message": "Requested amount is below the minimum for the currency.",
 				"code": "amount_too_small",
 				"http_code": 400
@@ -1757,7 +1757,7 @@
 			"recorded_at": "2026-10-02T08:08:33+00:00",
 			"context": "create_subscription in EUR for the user 1 customer, which already has an incomplete USD subscription; Stripe's invalid_request_error comes back in the platform's top-level code/message shape",
 			"request": {
-				"transport": "WooPaymentsApiClient::request_list( $params, 'subscriptions', 'POST' ) (recording stand-in for send_site_request(); same private request())",
+				"transport": "Client::request_list( $params, 'subscriptions', 'POST' ) (recording stand-in for send_site_request(); same private request())",
 				"method": "POST",
 				"path": "/sites/4/wcpay/subscriptions (wpcom/v2 via Jetpack blog token)",
 				"body": {
@@ -1799,7 +1799,7 @@
 				}
 			},
 			"native_exception": {
-				"class": "Automattic\\WooCommerce\\Internal\\Payments\\Providers\\WooPayments\\Api\\WooPaymentsApiException",
+				"class": "Automattic\\WooCommerce\\Internal\\Payments\\Providers\\WooPayments\\Api\\ApiException",
 				"message": "Error: You cannot combine currencies on a single customer. This customer has an active subscription, subscription schedule, discount, quote, or invoice item with currency usd.",
 				"code": "invalid_request_error",
 				"http_code": 400
@@ -1813,7 +1813,7 @@
 			"recorded_at": "2026-10-02T08:07:36+00:00",
 			"context": "supporting: the platform's legacy price-bearing product create (currency, interval, interval_count, unit_amount), used only to obtain a wcpay_price_id for update_price; client 11.1.0 no longer sends these fields",
 			"request": {
-				"transport": "WooPaymentsApiClient::request_list( $params, 'products', 'POST' ) (recording stand-in for send_site_request(); same private request())",
+				"transport": "Client::request_list( $params, 'products', 'POST' ) (recording stand-in for send_site_request(); same private request())",
 				"method": "POST",
 				"path": "/sites/4/wcpay/products (wpcom/v2 via Jetpack blog token)",
 				"body": {
@@ -1844,7 +1844,7 @@
 			"recorded_at": "2026-10-02T08:12:13+00:00",
 			"context": "supporting: GET charges/{id} for the renewal charge, the read update_transaction_details makes to find balance_transaction.id (balance_transaction is expanded)",
 			"request": {
-				"transport": "WooPaymentsApiClient::request_list( $params, 'charges/ch_3UM1YABzWlxcwgpP0Fazmyr5', 'GET' ) (recording stand-in for send_site_request(); same private request())",
+				"transport": "Client::request_list( $params, 'charges/ch_3UM1YABzWlxcwgpP0Fazmyr5', 'GET' ) (recording stand-in for send_site_request(); same private request())",
 				"method": "GET",
 				"path": "/sites/4/wcpay/charges/ch_3UM1YABzWlxcwgpP0Fazmyr5?test_mode=1 (wpcom/v2 via Jetpack blog token)",
 				"body": null,
@@ -2063,7 +2063,7 @@
 			"recorded_at": "2026-10-02T08:09:47+00:00",
 			"context": "supporting (spec section 10 item 3): create_subscription for a customer created directly at Stripe on the connected account and bound to test clock clock_1UM1X2BzWlxcwgpPRLlygxwI; accepted, test_clock echoed",
 			"request": {
-				"transport": "WooPaymentsApiClient::request_list( $params, 'subscriptions', 'POST' ) (recording stand-in for send_site_request(); same private request())",
+				"transport": "Client::request_list( $params, 'subscriptions', 'POST' ) (recording stand-in for send_site_request(); same private request())",
 				"method": "POST",
 				"path": "/sites/4/wcpay/subscriptions (wpcom/v2 via Jetpack blog token)",
 				"body": {

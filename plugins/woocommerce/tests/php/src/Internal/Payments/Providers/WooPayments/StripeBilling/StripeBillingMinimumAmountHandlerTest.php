@@ -3,7 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\StripeBillingApi;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\StripeBillingMinimumAmountHandler;
 use PHPUnit\Framework\MockObject\MockObject;
@@ -76,7 +76,7 @@ class StripeBillingMinimumAmountHandlerTest extends WC_Unit_Test_Case {
 	public function test_caches_no_minimum_when_the_platform_refuses(): void {
 		$this->api->expects( $this->once() )
 			->method( 'get_currency_minimum_recurring_amount' )
-			->willThrowException( new WooPaymentsApiException( 'Currency not supported.', 'invalid_request_error', 400 ) );
+			->willThrowException( new ApiException( 'Currency not supported.', 'invalid_request_error', 400 ) );
 
 		$this->assertSame( 0.0, $this->sut->get_minimum_recurring_amount( false, 'usd' ) );
 		$this->assertSame( 0.0, $this->sut->get_minimum_recurring_amount( false, 'usd' ) );

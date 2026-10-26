@@ -19,8 +19,8 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFe
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGateway;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\FixedTrackingInfoService;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\ProviderTextLogAssertions;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\RecordingWcLogger;
@@ -294,10 +294,10 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 	 * @param LegacyProxy                        $proxy             The legacy proxy.
 	 * @param WooPaymentsPaymentsSettingsAdapter $settings_adapter  The Payments settings adapter.
 	 * @param WooPaymentsExtensionRuntime        $extension_runtime The extension runtime.
-	 * @param WooPaymentsApiClient               $api_client        The API client.
+	 * @param Client                             $api_client        The API client.
 	 * @param WooPaymentsAccountService          $account_service   The account service.
 	 */
-	private function init_sut( PaymentsProviders $providers, LegacyProxy $proxy, WooPaymentsPaymentsSettingsAdapter $settings_adapter, WooPaymentsExtensionRuntime $extension_runtime, WooPaymentsApiClient $api_client, WooPaymentsAccountService $account_service ): void {
+	private function init_sut( PaymentsProviders $providers, LegacyProxy $proxy, WooPaymentsPaymentsSettingsAdapter $settings_adapter, WooPaymentsExtensionRuntime $extension_runtime, Client $api_client, WooPaymentsAccountService $account_service ): void {
 		$this->sut->init( $providers, $proxy );
 
 		$onboarding_service = new WooPaymentsOnboardingService();
@@ -1520,7 +1520,7 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 			$captured_call
 		);
 		// The account read needs the same connection: without one it returns no account, like the client.
-		wc_get_container()->replace( WooPaymentsApiClient::class, $api_client );
+		wc_get_container()->replace( Client::class, $api_client );
 		update_option(
 			'wcpay_account_data',
 			array(
@@ -1589,8 +1589,8 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 		$captured_call = array();
 		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads a local immutable test fixture.
 		$recorded_account = json_decode( (string) file_get_contents( __DIR__ . '/../Fixtures/platform-test-drive-account.json' ), true )['account'];
-		$read_failure     = $read_fails ? new WooPaymentsApiException( 'Internal server error.', 'wcpay_server_error', 500 ) : null;
-		$api_client       = new class( $captured_call, $recorded_account, $read_failure ) extends WooPaymentsApiClient {
+		$read_failure     = $read_fails ? new ApiException( 'Internal server error.', 'wcpay_server_error', 500 ) : null;
+		$api_client       = new class( $captured_call, $recorded_account, $read_failure ) extends Client {
 			/**
 			 * Captured onboarding init payload.
 			 *
@@ -1608,9 +1608,9 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 			/**
 			 * The failure the platform answers the account read with once the account exists, or null for the account.
 			 *
-			 * @var WooPaymentsApiException|null
+			 * @var ApiException|null
 			 */
-			private ?WooPaymentsApiException $read_failure;
+			private ?ApiException $read_failure;
 
 			/**
 			 * Whether the test-drive account exists on the platform.
@@ -1629,11 +1629,11 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 			/**
 			 * Constructor.
 			 *
-			 * @param array                        $captured_call    Captured onboarding init payload.
-			 * @param array<string,mixed>          $recorded_account The account the platform answers once the test-drive account exists.
-			 * @param WooPaymentsApiException|null $read_failure     The failure the platform answers the account read with, or null.
+			 * @param array               $captured_call    Captured onboarding init payload.
+			 * @param array<string,mixed> $recorded_account The account the platform answers once the test-drive account exists.
+			 * @param ApiException|null   $read_failure     The failure the platform answers the account read with, or null.
 			 */
-			public function __construct( array &$captured_call, array $recorded_account, ?WooPaymentsApiException $read_failure ) {
+			public function __construct( array &$captured_call, array $recorded_account, ?ApiException $read_failure ) {
 				$this->captured_call    = &$captured_call;
 				$this->recorded_account = $recorded_account;
 				$this->read_failure     = $read_failure;
@@ -1692,13 +1692,13 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 			 *
 			 * @param string $woocommerce_store_id WooCommerce store ID.
 			 * @return array<string,mixed>
-			 * @throws WooPaymentsApiException Before the test-drive account exists.
+			 * @throws ApiException Before the test-drive account exists.
 			 */
 			public function get_account( string $woocommerce_store_id = '' ): array {
 				unset( $woocommerce_store_id );
 				++$this->account_requests;
 				if ( ! $this->account_created ) {
-					throw new WooPaymentsApiException( 'Account not found.', 'wcpay_account_not_found', 404 );
+					throw new ApiException( 'Account not found.', 'wcpay_account_not_found', 404 );
 				}
 				if ( null !== $this->read_failure ) {
 					throw $this->read_failure;
@@ -1767,7 +1767,7 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 		);
 
 		// The account read needs the same connection: without one it returns no account, like the client.
-		wc_get_container()->replace( WooPaymentsApiClient::class, $api_client );
+		wc_get_container()->replace( Client::class, $api_client );
 		$this->sut = new WooPaymentsService();
 		$this->init_sut(
 			$this->mock_providers,
@@ -1830,7 +1830,7 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_disable_test_account_captures_test_drive_payment_methods_before_delete(): void {
 		$snapshot_at_delete = false;
-		$api_client         = new class( $snapshot_at_delete ) extends WooPaymentsApiClient {
+		$api_client         = new class( $snapshot_at_delete ) extends Client {
 			/**
 			 * Snapshot observed when account deletion begins.
 			 *
@@ -1936,7 +1936,7 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 	public function test_reset_onboarding_uses_the_api_client_and_overwrites_stale_account_cache(): void {
 		$deleted_test_mode = null;
 		$cache_at_delete   = null;
-		$api_client        = new class( $deleted_test_mode, $cache_at_delete ) extends WooPaymentsApiClient {
+		$api_client        = new class( $deleted_test_mode, $cache_at_delete ) extends Client {
 			/**
 			 * Captured deleted account mode.
 			 *
@@ -2205,10 +2205,10 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * Create an unavailable native API client.
 	 *
-	 * @return WooPaymentsApiClient
+	 * @return Client
 	 */
-	private function create_unavailable_api_client(): WooPaymentsApiClient {
-		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
+	private function create_unavailable_api_client(): Client {
+		$api_client = $this->getMockBuilder( Client::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'is_available' ) )
 			->getMock();
@@ -2336,10 +2336,10 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 	 *
 	 * @param array<string,mixed> $session       The platform's embedded KYC session answer.
 	 * @param array               $captured_call Receives the KYC session request payload.
-	 * @return WooPaymentsApiClient
+	 * @return Client
 	 */
-	private function arrange_embedded_kyc_session( array $session, array &$captured_call ): WooPaymentsApiClient {
-		$api_client = new class( $captured_call, $session ) extends WooPaymentsApiClient {
+	private function arrange_embedded_kyc_session( array $session, array &$captured_call ): Client {
+		$api_client = new class( $captured_call, $session ) extends Client {
 			/**
 			 * Captured KYC session request payload.
 			 *
@@ -2492,7 +2492,7 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 	 * @param array<string,mixed>                       $selected_methods  Persisted NOX payment-method selections.
 	 * @param array<string,mixed>|null                  $finalize_response Optional provider finalize response; defaults to a live-mode success.
 	 * @param array<string,mixed>                       $session_extras    Extra fields the platform adds to the embedded KYC session.
-	 * @return array{api_client:WooPaymentsApiClient,account_service:WooPaymentsAccountService}
+	 * @return array{api_client:Client,account_service:WooPaymentsAccountService}
 	 */
 	private function arrange_kyc_finalize(
 		array $account_responses,
@@ -2500,7 +2500,7 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 		?array $finalize_response = null,
 		array $session_extras = array()
 	): array {
-		$api_client      = new class( $account_responses, $finalize_response, $session_extras ) extends WooPaymentsApiClient {
+		$api_client      = new class( $account_responses, $finalize_response, $session_extras ) extends Client {
 			/**
 			 * Account refresh results in request order.
 			 *
@@ -2643,25 +2643,25 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 			/**
 			 * Native API client.
 			 *
-			 * @var WooPaymentsApiClient
+			 * @var Client
 			 */
-			private WooPaymentsApiClient $api_client;
+			private Client $api_client;
 
 			/**
 			 * Constructor.
 			 *
-			 * @param WooPaymentsApiClient $api_client Native API client.
+			 * @param Client $api_client Native API client.
 			 */
-			public function __construct( WooPaymentsApiClient $api_client ) {
+			public function __construct( Client $api_client ) {
 				$this->api_client = $api_client;
 			}
 
 			/**
 			 * Get the native API client used by account refreshes.
 			 *
-			 * @return WooPaymentsApiClient
+			 * @return Client
 			 */
-			protected function get_api_client(): WooPaymentsApiClient {
+			protected function get_api_client(): Client {
 				return $this->api_client;
 			}
 		};
@@ -2739,10 +2739,10 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 	 * @param array<string,mixed> $settings          Stored gateway settings.
 	 * @param string              $wallets_enabled   Stored Apple Pay and Google Pay gateway `enabled` value.
 	 * @param array<string,mixed> $platform_response Extra fields the platform adds to its session and test-drive responses.
-	 * @return array{server:\WP_REST_Server,api_client:WooPaymentsApiClient,recorder:object}
+	 * @return array{server:\WP_REST_Server,api_client:Client,recorder:object}
 	 */
 	private function arrange_nox_picks( array $picks, array $settings, string $wallets_enabled, array $platform_response = array() ): array {
-		$api_client = new class( $platform_response ) extends WooPaymentsApiClient {
+		$api_client = new class( $platform_response ) extends Client {
 			/**
 			 * Enabled payment method IDs stored when the platform was called.
 			 *
@@ -3148,12 +3148,12 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 	 * @param string $fallback      The message the action gives.
 	 */
 	public function test_platform_errors_become_wp_errors_with_the_action_message( string $method, array $args, string $platform_call, string $fallback ): void {
-		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
+		$api_client = $this->getMockBuilder( Client::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'is_available', $platform_call ) )
 			->getMock();
 		$api_client->method( 'is_available' )->willReturn( true );
-		$api_client->method( $platform_call )->willThrowException( new WooPaymentsApiException( '', 'wcpay_platform_error', 400, 'invalid_request_error' ) );
+		$api_client->method( $platform_call )->willThrowException( new ApiException( '', 'wcpay_platform_error', 400, 'invalid_request_error' ) );
 		$this->set_onboarding_collaborators( $api_client );
 
 		$result = $this->onboarding_service->{$method}( ...$args );
@@ -3175,7 +3175,7 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_reset_deletes_the_account_in_the_onboarding_mode( string $test_mode_option, bool $expected_test_mode ): void {
 		update_option( 'wcpay_onboarding_test_mode', $test_mode_option );
-		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
+		$api_client = $this->getMockBuilder( Client::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'is_available', 'delete_account' ) )
 			->getMock();
@@ -3200,7 +3200,7 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 	public function test_disable_test_account_saves_only_a_test_drive_account( bool $is_test_drive, bool $expected_test_mode ): void {
 		update_option( 'wcpay_onboarding_test_mode', 'no' );
 		update_option( WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION, array( 'upe_enabled_payment_method_ids' => array( 'card' ) ) );
-		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
+		$api_client = $this->getMockBuilder( Client::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'is_available', 'delete_account' ) )
 			->getMock();
@@ -3262,7 +3262,7 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 		$shopper_id = self::factory()->user->create( array( 'role' => 'customer' ) );
 		update_user_meta( $shopper_id, '_wcpay_payment_methods', array( 'cus_deleted' => array() ) );
 		update_option( 'wcpay_pm_cus_deleted', array( 'data' => array() ), false );
-		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
+		$api_client = $this->getMockBuilder( Client::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'is_available', 'delete_account' ) )
 			->getMock();
@@ -3511,7 +3511,7 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 			),
 			$this->current_time - 2 * DAY_IN_SECONDS
 		);
-		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
+		$api_client = $this->getMockBuilder( Client::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'get_recommended_payment_methods' ) )
 			->getMock();
@@ -3565,7 +3565,7 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_recommended_payment_methods_ignore_a_filtered_store_country_list(): void {
 		$this->seed_recommended_payment_methods_cache( null );
-		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
+		$api_client = $this->getMockBuilder( Client::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'get_recommended_payment_methods' ) )
 			->getMock();
@@ -3621,7 +3621,7 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 	public function test_recommended_payment_methods_fetch_log_leaves_out_platform_text(): void {
 		$this->seed_recommended_payment_methods_cache( null );
 		self::enable_woopayments_debug_logging();
-		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
+		$api_client = $this->getMockBuilder( Client::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'get_recommended_payment_methods' ) )
 			->getMock();
@@ -3641,10 +3641,10 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 	 *
 	 * @param int                            $calls  How many times the platform must be asked.
 	 * @param array<int,array<string,mixed>> $answer The platform's answer.
-	 * @return WooPaymentsApiClient&MockObject
+	 * @return Client&MockObject
 	 */
-	private function create_recommendations_api_client( int $calls, array $answer ): WooPaymentsApiClient {
-		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
+	private function create_recommendations_api_client( int $calls, array $answer ): Client {
+		$api_client = $this->getMockBuilder( Client::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'get_recommended_payment_methods' ) )
 			->getMock();
@@ -3696,9 +3696,9 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * Give the onboarding service an API client double and an account service on this test's proxy.
 	 *
-	 * @param WooPaymentsApiClient $api_client The API client double.
+	 * @param Client $api_client The API client double.
 	 */
-	private function set_onboarding_collaborators( WooPaymentsApiClient $api_client ): void {
+	private function set_onboarding_collaborators( Client $api_client ): void {
 		$collaborators = array(
 			'api_client'      => $api_client,
 			'account_service' => $this->create_account_service(),

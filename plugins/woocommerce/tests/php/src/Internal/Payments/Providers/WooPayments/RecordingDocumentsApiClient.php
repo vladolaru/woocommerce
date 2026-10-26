@@ -3,13 +3,13 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 
 /**
  * Recording API client for native WooPayments Documents REST tests.
  */
-class RecordingDocumentsApiClient extends WooPaymentsApiClient {
+class RecordingDocumentsApiClient extends Client {
 
 	/**
 	 * Last documents query.
@@ -101,9 +101,9 @@ class RecordingDocumentsApiClient extends WooPaymentsApiClient {
 	/**
 	 * Optional exception thrown by the next call.
 	 *
-	 * @var WooPaymentsApiException|null
+	 * @var ApiException|null
 	 */
-	public ?WooPaymentsApiException $exception = null;
+	public ?ApiException $exception = null;
 
 	/**
 	 * Get documents.
@@ -179,7 +179,7 @@ class RecordingDocumentsApiClient extends WooPaymentsApiClient {
 	/**
 	 * Throw configured API exception.
 	 *
-	 * @throws WooPaymentsApiException When configured for the test.
+	 * @throws ApiException When configured for the test.
 	 */
 	private function throw_if_configured(): void {
 		if ( null !== $this->exception ) {

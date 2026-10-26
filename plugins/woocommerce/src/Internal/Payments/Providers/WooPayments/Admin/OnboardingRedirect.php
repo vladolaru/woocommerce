@@ -9,7 +9,7 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin;
 
 use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Onboarding\WooPaymentsOnboardingSource;
 
@@ -79,9 +79,9 @@ class OnboardingRedirect {
 	/**
 	 * WooPayments API client.
 	 *
-	 * @var WooPaymentsApiClient
+	 * @var Client
 	 */
-	private WooPaymentsApiClient $api_client;
+	private Client $api_client;
 
 	/**
 	 * WooPayments account service.
@@ -103,10 +103,10 @@ class OnboardingRedirect {
 	 * @internal
 	 *
 	 * @param WooPaymentsRuntimeArbiter $arbiter         Runtime owner arbiter.
-	 * @param WooPaymentsApiClient      $api_client      WooPayments API client.
+	 * @param Client                    $api_client      WooPayments API client.
 	 * @param WooPaymentsAccountService $account_service WooPayments account service.
 	 */
-	final public function init( WooPaymentsRuntimeArbiter $arbiter, WooPaymentsApiClient $api_client, WooPaymentsAccountService $account_service ): void {
+	final public function init( WooPaymentsRuntimeArbiter $arbiter, Client $api_client, WooPaymentsAccountService $account_service ): void {
 		$this->arbiter         = $arbiter;
 		$this->api_client      = $api_client;
 		$this->account_service = $account_service;

@@ -9,7 +9,7 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover
 
 use Automattic\Jetpack\Connection\Manager as JetpackConnectionManager;
 use Automattic\WooCommerce\Internal\Jetpack\JetpackConnection;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsHttpClient;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\HttpClient;
 
 /**
  * Checks the WordPress.com connection the cutover needs: the site is connected and has a blog ID, and the connection
@@ -32,18 +32,18 @@ class WooPaymentsPlatformConnectionService {
 	/**
 	 * WooPayments HTTP client, which holds the connected blog ID.
 	 *
-	 * @var WooPaymentsHttpClient
+	 * @var HttpClient
 	 */
-	private WooPaymentsHttpClient $http_client;
+	private HttpClient $http_client;
 
 	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsHttpClient $http_client WooPayments HTTP client.
+	 * @param HttpClient $http_client WooPayments HTTP client.
 	 */
-	final public function init( WooPaymentsHttpClient $http_client ): void {
+	final public function init( HttpClient $http_client ): void {
 		$this->http_client = $http_client;
 	}
 

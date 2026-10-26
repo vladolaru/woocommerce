@@ -3,7 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDatabaseCache;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTrackingInfoService;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
@@ -29,9 +29,9 @@ class WooPaymentsTrackingInfoServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * Recording API client.
 	 *
-	 * @var WooPaymentsApiClient
+	 * @var Client
 	 */
-	private WooPaymentsApiClient $api_client;
+	private Client $api_client;
 
 	/**
 	 * Set up test fixtures.
@@ -39,7 +39,7 @@ class WooPaymentsTrackingInfoServiceTest extends WC_Unit_Test_Case {
 	public function setUp(): void {
 		parent::setUp();
 
-		$this->api_client = new class() extends WooPaymentsApiClient {
+		$this->api_client = new class() extends Client {
 
 			/** @var bool */
 			public bool $available = true;
