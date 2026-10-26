@@ -314,6 +314,123 @@ class WC_REST_Order_Refunds_Controller_Test extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Explicit item refunds compare their line total with the refund amount in the order currency's decimals.
+	 *
+	 * Expected results are the comparison done in the order currency (USD, two decimals): 5.25 of line items is more than
+	 * an amount of 5, and 0.25 is more than 0. A store-currency order keeps the store's precision.
+	 *
+	 * @testWith ["JPY", 0, "USD", "5.25", "5", 400]
+	 *           ["JPY", 0, "USD", "0.25", "0", 400]
+	 *           ["JPY", 0, "USD", "5.25", "5.25", 201]
+	 *           ["USD", 0, "USD", "5.25", "5", 201]
+	 *
+	 * @param string $store_currency  Store currency.
+	 * @param int    $store_decimals  Store price decimals.
+	 * @param string $order_currency  Order currency.
+	 * @param string $line_total      Requested refund_total of the 18.00 line.
+	 * @param string $amount          Requested refund amount.
+	 * @param int    $expected_status Expected response status.
+	 */
+	public function test_explicit_refund_compares_line_items_with_amount_in_order_currency_decimals( string $store_currency, int $store_decimals, string $order_currency, string $line_total, string $amount, int $expected_status ): void {
+		$order = $this->create_order_with_one_line_in_currency( $store_currency, $store_decimals, $order_currency );
+
+		$response = $this->request_line_refund( $order, $line_total, $amount );
+
+		$this->assertSame( $expected_status, $response->get_status() );
+		if ( 400 === $expected_status ) {
+			$this->assertSame( 'woocommerce_rest_invalid_refund_amount', $response->get_data()['code'] );
+		}
+		$this->assertCount( 400 === $expected_status ? 0 : 1, wc_get_order( $order->get_id() )->get_refunds() );
+	}
+
+	/**
+	 * @testdox Explicit item refunds check the line's remaining amount in the order currency's decimals.
+	 *
+	 * Expected results are the remaining amount in the order currency (USD, two decimals): after 17.75 of an 18.00 line,
+	 * 0.25 is left and can be refunded, and then nothing is left. A store-currency order keeps the store's precision,
+	 * where the 0.25 left rounds to 0.
+	 *
+	 * @testWith ["JPY", 0, "USD", [201, 201, 422]]
+	 *           ["USD", 0, "USD", [201, 422, 422]]
+	 *
+	 * @param string $store_currency    Store currency.
+	 * @param int    $store_decimals    Store price decimals.
+	 * @param string $order_currency    Order currency.
+	 * @param int[]  $expected_statuses Expected status of the 17.75, 0.25 and 0.25 refunds.
+	 */
+	public function test_explicit_refund_checks_line_remaining_in_order_currency_decimals( string $store_currency, int $store_decimals, string $order_currency, array $expected_statuses ): void {
+		$order = $this->create_order_with_one_line_in_currency( $store_currency, $store_decimals, $order_currency );
+
+		foreach ( array( '17.75', '0.25', '0.25' ) as $step => $line_total ) {
+			$response = $this->request_line_refund( $order, $line_total, $line_total );
+
+			$this->assertSame( $expected_statuses[ $step ], $response->get_status(), "Refund {$step} of {$line_total}." );
+			if ( 422 === $expected_statuses[ $step ] ) {
+				$this->assertSame( 'woocommerce_rest_line_item_already_refunded', $response->get_data()['code'] );
+			}
+		}
+		$this->assertCount( count( array_keys( $expected_statuses, 201, true ) ), wc_get_order( $order->get_id() )->get_refunds() );
+	}
+
+	/**
+	 * Create a processing order with one 18.00 line in the given currency, on a store with the given currency and decimals.
+	 *
+	 * @param string $store_currency Store currency.
+	 * @param int    $store_decimals Store price decimals.
+	 * @param string $order_currency Order currency.
+	 * @return WC_Order
+	 */
+	private function create_order_with_one_line_in_currency( string $store_currency, int $store_decimals, string $order_currency ): WC_Order {
+		update_option( 'woocommerce_currency', $store_currency );
+		update_option( 'woocommerce_price_num_decimals', $store_decimals );
+		wp_set_current_user( 1 );
+
+		$order = wc_create_order();
+		$item  = new WC_Order_Item_Product();
+		$item->set_props(
+			array(
+				'name'     => 'Item',
+				'quantity' => 1,
+				'subtotal' => '18',
+				'total'    => '18',
+			)
+		);
+		$order->add_item( $item );
+		$order->set_currency( $order_currency );
+		$order->set_total( '18' );
+		$order->set_status( OrderStatus::PROCESSING );
+		$order->save();
+
+		return $order;
+	}
+
+	/**
+	 * Request a V3 refund of the order's only line.
+	 *
+	 * @param WC_Order $order      Order.
+	 * @param string   $line_total Requested refund_total of the line.
+	 * @param string   $amount     Requested refund amount.
+	 * @return WP_REST_Response
+	 */
+	private function request_line_refund( WC_Order $order, string $line_total, string $amount ): WP_REST_Response {
+		$request = new WP_REST_Request( 'POST', '/wc/v3/orders/' . $order->get_id() . '/refunds' );
+		$request->set_body_params(
+			array(
+				'amount'     => $amount,
+				'api_refund' => false,
+				'line_items' => array(
+					array(
+						'id'           => current( $order->get_items() )->get_id(),
+						'refund_total' => $line_total,
+					),
+				),
+			)
+		);
+
+		return $this->server->dispatch( $request );
+	}
+
+	/**
 	 * @testdox Should report refunded_by as 0 when no user issued the refund.
 	 *
 	 * @see https://github.com/woocommerce/woocommerce/issues/36329

@@ -14,6 +14,7 @@ use Automattic\WooCommerce\Internal\RestApiParameterUtil;
 use Automattic\WooCommerce\Internal\CostOfGoodsSold\CogsAwareTrait;
 use Automattic\WooCommerce\Internal\RestApi\Routes\V4\Refunds\DataUtils;
 use Automattic\WooCommerce\Internal\RestApi\Routes\V4\Refunds\Schema\RefundPreviewSchema;
+use Automattic\WooCommerce\Internal\Utilities\CurrencyUtil;
 use Automattic\WooCommerce\Utilities\MetaDataUtil;
 use Automattic\WooCommerce\Utilities\NumberUtil;
 
@@ -484,7 +485,7 @@ class WC_REST_Order_Refunds_Controller extends WC_REST_Order_Refunds_V2_Controll
 		}
 
 		$line_total     = 0.0;
-		$price_decimals = wc_get_price_decimals();
+		$price_decimals = CurrencyUtil::get_price_decimals( $order->get_currency() );
 		$refund_data    = null;
 		foreach ( $line_items as $item_id => $line ) {
 			if ( ! is_array( $line ) || ( ! isset( $line['refund_total'] ) && empty( $line['refund_tax'] ) ) ) {
@@ -534,7 +535,7 @@ class WC_REST_Order_Refunds_Controller extends WC_REST_Order_Refunds_V2_Controll
 			if ( null === $refund_data ) {
 				$refund_data = $this->get_data_utils()->compute_refunded_quantities_and_totals( $order );
 			}
-			$validation_error = $this->get_data_utils()->validate_refund_line_total( $item, $gross_refund_total, (float) ( $refund_data['totals'][ $item_id ] ?? 0 ) );
+			$validation_error = $this->get_data_utils()->validate_refund_line_total( $item, $gross_refund_total, (float) ( $refund_data['totals'][ $item_id ] ?? 0 ), $order );
 			if ( is_wp_error( $validation_error ) ) {
 				return $this->prefix_error_code( $validation_error );
 			}

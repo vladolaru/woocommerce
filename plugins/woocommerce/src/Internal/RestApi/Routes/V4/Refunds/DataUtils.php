@@ -10,6 +10,7 @@ namespace Automattic\WooCommerce\Internal\RestApi\Routes\V4\Refunds;
 defined( 'ABSPATH' ) || exit;
 
 use Automattic\WooCommerce\Enums\OrderStatus;
+use Automattic\WooCommerce\Internal\Utilities\CurrencyUtil;
 use Automattic\WooCommerce\Utilities\NumberUtil;
 use WC_Order;
 use WC_Order_Item_Fee;
@@ -496,10 +497,11 @@ class DataUtils {
 	 * @param WC_Order_Item_Product|WC_Order_Item_Fee|WC_Order_Item_Shipping $item                  Original order item.
 	 * @param float                                                          $refund_total          Requested line item refund amount.
 	 * @param float                                                          $already_refunded_total Prior refunds for this item, including tax.
+	 * @param WC_Order|null                                                  $order                  Order of the item, whose currency sets the rounding precision. Null uses the store's price decimals, which the computed path has already rounded its input to.
 	 * @return true|WP_Error Validation result.
 	 */
-	public function validate_refund_line_total( $item, float $refund_total, float $already_refunded_total ) {
-		$price_decimals      = wc_get_price_decimals();
+	public function validate_refund_line_total( $item, float $refund_total, float $already_refunded_total, ?WC_Order $order = null ) {
+		$price_decimals      = $order ? CurrencyUtil::get_price_decimals( $order->get_currency() ) : wc_get_price_decimals();
 		$signed_line_total   = (float) $item->get_total() + (float) $item->get_total_tax();
 		$item_total_with_tax = abs( $signed_line_total );
 		$abs_refund_total    = NumberUtil::round( abs( $refund_total ), $price_decimals );
