@@ -46,7 +46,7 @@ class WooPaymentsLogger {
 	 *
 	 * A code reaches the log only from this list, because the platform's code field is free text to this store: an
 	 * error envelope could hold a URL, an email or a token there. The list is the codes this code base throws or acts
-	 * on: the transport's own codes (Client, StripeBillingApi, the request classes), the codes the
+	 * on: the transport's own codes (Api\Client, StripeBillingApi, the request classes), the codes the
 	 * provider branches on, Stripe's error types (`throw_api_error()` uses the type when the code is missing) and the
 	 * card errors and decline codes WooPaymentsErrorMessages::get_localized_messages() translates.
 	 */

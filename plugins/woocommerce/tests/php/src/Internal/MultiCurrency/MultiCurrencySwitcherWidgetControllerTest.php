@@ -400,7 +400,7 @@ class MultiCurrencySwitcherWidgetControllerTest extends WC_Unit_Test_Case {
 		$controller = new MultiCurrencySwitcherWidgetController();
 		$controller->init(
 			$this->create_arbiter( $owner ),
-			$this->create_compatibility_controller(),
+			$this->create_integrations_controller(),
 			ServiceFactories::with( $this, array( 'create_switcher_renderer' => $switcher_renderer ?? $this->create_switcher_renderer() ) )
 		);
 
@@ -420,7 +420,7 @@ class MultiCurrencySwitcherWidgetControllerTest extends WC_Unit_Test_Case {
 	): MultiCurrencySwitcherWidget {
 		return new MultiCurrencySwitcherWidget(
 			$switcher_renderer ?? $this->create_switcher_renderer(),
-			$this->create_compatibility_controller( $switching_disabled )
+			$this->create_integrations_controller( $switching_disabled )
 		);
 	}
 
@@ -469,12 +469,12 @@ class MultiCurrencySwitcherWidgetControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Create a compatibility controller test double.
+	 * Create an integrations controller test double.
 	 *
 	 * @param bool $switching_disabled Whether switching is disabled.
 	 * @return IntegrationsController
 	 */
-	private function create_compatibility_controller( bool $switching_disabled = false ): IntegrationsController {
+	private function create_integrations_controller( bool $switching_disabled = false ): IntegrationsController {
 		return new class( $switching_disabled ) extends IntegrationsController {
 			/**
 			 * Whether switching is disabled.

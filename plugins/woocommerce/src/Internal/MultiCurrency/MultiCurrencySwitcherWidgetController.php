@@ -28,11 +28,11 @@ class MultiCurrencySwitcherWidgetController implements RegisterHooksInterface {
 	private MultiCurrencyRuntimeArbiter $arbiter;
 
 	/**
-	 * Compatibility controller.
+	 * Integrations controller.
 	 *
 	 * @var IntegrationsController
 	 */
-	private IntegrationsController $compatibility_controller;
+	private IntegrationsController $integrations_controller;
 
 	/**
 	 * Switcher renderer, built on first use.
@@ -61,17 +61,17 @@ class MultiCurrencySwitcherWidgetController implements RegisterHooksInterface {
 	 * @internal
 	 *
 	 * @param MultiCurrencyRuntimeArbiter $arbiter                  Runtime owner arbiter.
-	 * @param IntegrationsController      $compatibility_controller Compatibility controller.
+	 * @param IntegrationsController      $integrations_controller Integrations controller.
 	 * @param ServiceFactory              $service_factory          Multi-Currency service factory.
 	 */
 	final public function init(
 		MultiCurrencyRuntimeArbiter $arbiter,
-		IntegrationsController $compatibility_controller,
+		IntegrationsController $integrations_controller,
 		ServiceFactory $service_factory
 	): void {
-		$this->arbiter                  = $arbiter;
-		$this->compatibility_controller = $compatibility_controller;
-		$this->service_factory          = $service_factory;
+		$this->arbiter                 = $arbiter;
+		$this->integrations_controller = $integrations_controller;
+		$this->service_factory         = $service_factory;
 	}
 
 	/**
@@ -97,7 +97,7 @@ class MultiCurrencySwitcherWidgetController implements RegisterHooksInterface {
 
 		$this->widget = new MultiCurrencySwitcherWidget(
 			$this->get_switcher_renderer(),
-			$this->compatibility_controller
+			$this->integrations_controller
 		);
 
 		register_widget( $this->widget );

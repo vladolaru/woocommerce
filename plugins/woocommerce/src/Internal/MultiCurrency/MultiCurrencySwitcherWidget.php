@@ -27,24 +27,24 @@ class MultiCurrencySwitcherWidget extends \WC_Widget {
 	private SwitcherRenderer $switcher_renderer;
 
 	/**
-	 * Compatibility controller.
+	 * Integrations controller.
 	 *
 	 * @var IntegrationsController
 	 */
-	private IntegrationsController $compatibility_controller;
+	private IntegrationsController $integrations_controller;
 
 	/**
 	 * Constructor.
 	 *
 	 * @param SwitcherRenderer       $switcher_renderer Switcher renderer.
-	 * @param IntegrationsController $compatibility_controller    Compatibility controller.
+	 * @param IntegrationsController $integrations_controller    Integrations controller.
 	 */
 	public function __construct(
 		SwitcherRenderer $switcher_renderer,
-		IntegrationsController $compatibility_controller
+		IntegrationsController $integrations_controller
 	) {
-		$this->switcher_renderer        = $switcher_renderer;
-		$this->compatibility_controller = $compatibility_controller;
+		$this->switcher_renderer       = $switcher_renderer;
+		$this->integrations_controller = $integrations_controller;
 
 		$this->widget_cssclass    = 'woocommerce widget_currency_switcher';
 		$this->widget_description = __( 'Let customers switch between enabled currencies.', 'woocommerce' );
@@ -84,7 +84,7 @@ class MultiCurrencySwitcherWidget extends \WC_Widget {
 			is_array( $instance ) ? $instance : array(),
 			is_array( $args ) ? $args : array(),
 			RequestContext::get_current_query_args(),
-			$this->compatibility_controller->should_disable_currency_switching()
+			$this->integrations_controller->should_disable_currency_switching()
 		);
 
 		echo $markup; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- The switcher renderer escapes the generated markup.

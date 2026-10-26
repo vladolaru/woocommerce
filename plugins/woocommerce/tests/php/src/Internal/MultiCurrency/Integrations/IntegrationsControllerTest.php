@@ -26,7 +26,7 @@ class IntegrationsControllerTest extends WC_Unit_Test_Case {
 	private const SALES_RECORD_CALL = NewSalesRecord::class . '::sum_sales_for_date';
 
 	/**
-	 * Hooks touched by the compatibility controller.
+	 * Hooks touched by the integrations controller.
 	 *
 	 * @var string[]
 	 */
@@ -232,7 +232,7 @@ class IntegrationsControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Create a compatibility controller with deterministic runtime context.
+	 * Create an integrations controller with deterministic runtime context.
 	 *
 	 * @param string $owner                 Runtime owner.
 	 * @param bool   $is_cron               Whether the request is cron.

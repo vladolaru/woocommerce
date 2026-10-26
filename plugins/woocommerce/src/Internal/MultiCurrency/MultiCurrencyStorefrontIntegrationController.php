@@ -65,11 +65,11 @@ class MultiCurrencyStorefrontIntegrationController implements RegisterHooksInter
 	private ServiceFactory $service_factory;
 
 	/**
-	 * Compatibility controller.
+	 * Integrations controller.
 	 *
 	 * @var IntegrationsController
 	 */
-	private IntegrationsController $compatibility_controller;
+	private IntegrationsController $integrations_controller;
 
 	/**
 	 * Switcher renderer, built on first use.
@@ -86,18 +86,18 @@ class MultiCurrencyStorefrontIntegrationController implements RegisterHooksInter
 	 * @param MultiCurrencyRuntimeArbiter $arbiter                  Runtime owner arbiter.
 	 * @param StateBuilderFactory         $state_builder_factory    State builder factory.
 	 * @param ServiceFactory              $service_factory          Multi-Currency service factory.
-	 * @param IntegrationsController      $compatibility_controller Compatibility controller.
+	 * @param IntegrationsController      $integrations_controller Integrations controller.
 	 */
 	final public function init(
 		MultiCurrencyRuntimeArbiter $arbiter,
 		StateBuilderFactory $state_builder_factory,
 		ServiceFactory $service_factory,
-		IntegrationsController $compatibility_controller
+		IntegrationsController $integrations_controller
 	): void {
-		$this->arbiter                  = $arbiter;
-		$this->state_builder_factory    = $state_builder_factory;
-		$this->service_factory          = $service_factory;
-		$this->compatibility_controller = $compatibility_controller;
+		$this->arbiter                 = $arbiter;
+		$this->state_builder_factory   = $state_builder_factory;
+		$this->service_factory         = $service_factory;
+		$this->integrations_controller = $integrations_controller;
 	}
 
 	/**
@@ -176,7 +176,7 @@ class MultiCurrencyStorefrontIntegrationController implements RegisterHooksInter
 			$instance,
 			$args,
 			RequestContext::get_current_query_args(),
-			$this->compatibility_controller->should_disable_currency_switching()
+			$this->integrations_controller->should_disable_currency_switching()
 		);
 
 		if ( ! isset( $defaults['wrap_before'] ) || ! is_string( $defaults['wrap_before'] ) ) {

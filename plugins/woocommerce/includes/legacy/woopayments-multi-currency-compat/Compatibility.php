@@ -149,7 +149,7 @@ class Compatibility {
 	}
 
 	/**
-	 * Get the module's compatibility controller.
+	 * Get the module's integrations controller.
 	 *
 	 * @return IntegrationsController
 	 */

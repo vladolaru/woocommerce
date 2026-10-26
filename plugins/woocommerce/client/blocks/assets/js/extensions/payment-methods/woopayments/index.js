@@ -1021,7 +1021,7 @@ const WooPaySaveUserSection = ( { paymentSettings } ) => {
 	}
 
 	// The former fallbacks for woopaySaveUserLabel and woopayPhoneLabel, which carried the same
-	// text (SessionService::get_woopay_frontend_config()); the Blocks data drops them.
+	// text (WooPay\SessionService::get_woopay_frontend_config()); the Blocks data drops them.
 	const saveUserLabel = __(
 		'Securely save my information for 1-click checkout',
 		'woocommerce'

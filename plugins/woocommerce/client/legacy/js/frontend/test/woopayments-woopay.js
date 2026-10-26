@@ -726,7 +726,7 @@ describe( 'WooPayments WooPay checkout', () => {
 		} );
 
 		test( 'renders WooPay save-my-info fields and posts the full number with the order', async () => {
-			// Localized by SessionController::get_classic_woopay_config(), the checkout page permalink.
+			// Localized by WooPay\SessionController::get_classic_woopay_config(), the checkout page permalink.
 			window.wcpay_core_woopay_config.woopaySourceUrl =
 				'https://example.test/checkout/';
 			window.history.pushState( {}, '', '/checkout/?utm_source=a-long-campaign' );

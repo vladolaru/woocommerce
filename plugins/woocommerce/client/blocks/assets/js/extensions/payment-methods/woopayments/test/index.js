@@ -1112,7 +1112,7 @@ describe( 'wc-payment-method-woopayments', () => {
 		const user = userEvent.setup();
 		const settings = jest.requireMock( '@woocommerce/settings' );
 		const defaultData = settings.getPaymentMethodData();
-		// Keys from SessionService::get_save_user_checkout_data().
+		// Keys from WooPay\SessionService::get_save_user_checkout_data().
 		settings.getPaymentMethodData.mockImplementation( () => ( {
 			...defaultData,
 			PRE_CHECK_SAVE_MY_INFO: false,

@@ -82,11 +82,11 @@ class MultiCurrencySelectedCurrencyController implements RegisterHooksInterface 
 	private ServiceFactory $service_factory;
 
 	/**
-	 * Compatibility controller.
+	 * Integrations controller.
 	 *
 	 * @var IntegrationsController
 	 */
-	private IntegrationsController $compatibility_controller;
+	private IntegrationsController $integrations_controller;
 
 	/**
 	 * Initialize the class instance.
@@ -95,14 +95,14 @@ class MultiCurrencySelectedCurrencyController implements RegisterHooksInterface 
 	 *
 	 * @param MultiCurrencyRuntimeArbiter $arbiter                  Runtime owner arbiter.
 	 * @param ServiceFactory              $service_factory          Multi-Currency service factory.
-	 * @param IntegrationsController      $compatibility_controller Compatibility controller.
+	 * @param IntegrationsController      $integrations_controller Integrations controller.
 	 * @param RequestContext              $request_context          Request context.
 	 */
-	final public function init( MultiCurrencyRuntimeArbiter $arbiter, ServiceFactory $service_factory, IntegrationsController $compatibility_controller, RequestContext $request_context ): void {
-		$this->arbiter                  = $arbiter;
-		$this->service_factory          = $service_factory;
-		$this->compatibility_controller = $compatibility_controller;
-		$this->request_context          = $request_context;
+	final public function init( MultiCurrencyRuntimeArbiter $arbiter, ServiceFactory $service_factory, IntegrationsController $integrations_controller, RequestContext $request_context ): void {
+		$this->arbiter                 = $arbiter;
+		$this->service_factory         = $service_factory;
+		$this->integrations_controller = $integrations_controller;
+		$this->request_context         = $request_context;
 	}
 
 	/**
@@ -190,7 +190,7 @@ class MultiCurrencySelectedCurrencyController implements RegisterHooksInterface 
 	public function handle_geolocation_init(): void {
 		if (
 			! $this->is_using_auto_currency_switching()
-			|| $this->compatibility_controller->should_disable_currency_switching()
+			|| $this->integrations_controller->should_disable_currency_switching()
 			|| $this->should_use_async_rendering()
 		) {
 			return;
