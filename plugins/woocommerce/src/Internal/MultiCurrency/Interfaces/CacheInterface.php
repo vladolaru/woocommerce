@@ -1,6 +1,6 @@
 <?php
 /**
- * MultiCurrencyCacheInterface interface file.
+ * CacheInterface interface file.
  */
 
 declare( strict_types = 1 );
@@ -13,7 +13,7 @@ namespace Automattic\WooCommerce\Internal\MultiCurrency\Interfaces;
  * @since 11.0.0
  * @internal
  */
-interface MultiCurrencyCacheInterface {
+interface CacheInterface {
 
 	const CURRENCIES_KEY = 'wcpay_multi_currency_cached_currencies';
 

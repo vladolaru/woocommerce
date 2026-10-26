@@ -4,7 +4,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\MultiCurrency\Services;
 
 use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\CurrencyRateProviderInterface;
-use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyLocalizationInterface;
+use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\LocalizationInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyCurrency;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyState;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\SettingsCurrencyCatalog;
@@ -292,10 +292,10 @@ class SettingsCurrencyCatalogTest extends WC_Unit_Test_Case {
 	/**
 	 * Create a localization boundary.
 	 *
-	 * @return MultiCurrencyLocalizationInterface
+	 * @return LocalizationInterface
 	 */
-	private function create_localization(): MultiCurrencyLocalizationInterface {
-		return new class() implements MultiCurrencyLocalizationInterface {
+	private function create_localization(): LocalizationInterface {
+		return new class() implements LocalizationInterface {
 			/**
 			 * @param string $currency_code Currency code.
 			 * @return array<string,mixed>

@@ -7,7 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\MultiCurrency\Services;
 
-use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyLocalizationInterface;
+use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\LocalizationInterface;
 
 /**
  * Gives each currency's format for the user's locale and each country's locale data, from WooCommerce's locale info.
@@ -15,7 +15,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyLocali
  * @since 11.0.0
  * @internal
  */
-class LocalizationService implements MultiCurrencyLocalizationInterface {
+class LocalizationService implements LocalizationInterface {
 
 	const CURRENCY_FORMAT_TRANSIENT = 'wcpay_currency_format';
 	const LOCALE_INFO_TRANSIENT     = 'wcpay_locale_info';

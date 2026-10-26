@@ -8,7 +8,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\MultiCurrency\Services;
 
 use Automattic\WooCommerce\Internal\MultiCurrency\Exceptions\InvalidCurrencyException;
-use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyLocalizationInterface;
+use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\LocalizationInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyCurrency;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyState;
 
@@ -36,9 +36,9 @@ class DisplayService {
 	/**
 	 * Localization service.
 	 *
-	 * @var MultiCurrencyLocalizationInterface
+	 * @var LocalizationInterface
 	 */
-	private MultiCurrencyLocalizationInterface $localization_service;
+	private LocalizationInterface $localization_service;
 
 	/**
 	 * Geolocation service.
@@ -50,13 +50,13 @@ class DisplayService {
 	/**
 	 * Constructor.
 	 *
-	 * @param StateBuilder                       $state_builder        State builder.
-	 * @param MultiCurrencyLocalizationInterface $localization_service Localization service.
-	 * @param GeolocationService                 $geolocation_service  Geolocation service.
+	 * @param StateBuilder          $state_builder        State builder.
+	 * @param LocalizationInterface $localization_service Localization service.
+	 * @param GeolocationService    $geolocation_service  Geolocation service.
 	 */
 	public function __construct(
 		StateBuilder $state_builder,
-		MultiCurrencyLocalizationInterface $localization_service,
+		LocalizationInterface $localization_service,
 		GeolocationService $geolocation_service
 	) {
 		$this->state_builder        = $state_builder;

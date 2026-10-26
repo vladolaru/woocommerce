@@ -3,7 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\MultiCurrency\Services;
 
-use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyCacheInterface;
+use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\CacheInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\DatabaseCache;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\LocalizationService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilder;
@@ -56,13 +56,13 @@ class StoreCurrencyLifecycleServiceTest extends WC_Unit_Test_Case {
 	 * @testdox Should seed missing store currency without clearing cache.
 	 */
 	public function test_seeds_missing_store_currency_without_clearing_cache(): void {
-		update_option( MultiCurrencyCacheInterface::CURRENCIES_KEY, array( 'data' => array() ), false );
+		update_option( CacheInterface::CURRENCIES_KEY, array( 'data' => array() ), false );
 
 		$changed = $this->create_service()->synchronize_store_currency();
 
 		$this->assertFalse( $changed );
 		$this->assertSame( 'USD', get_option( self::STORE_CURRENCY_OPTION ) );
-		$this->assertIsArray( get_option( MultiCurrencyCacheInterface::CURRENCIES_KEY ) );
+		$this->assertIsArray( get_option( CacheInterface::CURRENCIES_KEY ) );
 		$this->assertFalse( get_option( self::NOTICE_OPTION, false ) );
 	}
 
@@ -71,13 +71,13 @@ class StoreCurrencyLifecycleServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_keeps_options_when_store_currency_is_unchanged(): void {
 		update_option( self::STORE_CURRENCY_OPTION, 'USD' );
-		update_option( MultiCurrencyCacheInterface::CURRENCIES_KEY, array( 'data' => array() ), false );
+		update_option( CacheInterface::CURRENCIES_KEY, array( 'data' => array() ), false );
 
 		$changed = $this->create_service()->synchronize_store_currency();
 
 		$this->assertFalse( $changed );
 		$this->assertSame( 'USD', get_option( self::STORE_CURRENCY_OPTION ) );
-		$this->assertIsArray( get_option( MultiCurrencyCacheInterface::CURRENCIES_KEY ) );
+		$this->assertIsArray( get_option( CacheInterface::CURRENCIES_KEY ) );
 	}
 
 	/**
@@ -88,7 +88,7 @@ class StoreCurrencyLifecycleServiceTest extends WC_Unit_Test_Case {
 		$shopper_currency_filter = static fn(): string => 'GBP';
 
 		update_option( self::STORE_CURRENCY_OPTION, 'USD' );
-		update_option( MultiCurrencyCacheInterface::CURRENCIES_KEY, $cache_value, false );
+		update_option( CacheInterface::CURRENCIES_KEY, $cache_value, false );
 		add_filter( 'woocommerce_currency', $shopper_currency_filter, 900 );
 
 		try {
@@ -99,7 +99,7 @@ class StoreCurrencyLifecycleServiceTest extends WC_Unit_Test_Case {
 
 		$this->assertFalse( $changed );
 		$this->assertSame( 'USD', get_option( self::STORE_CURRENCY_OPTION ) );
-		$this->assertSame( $cache_value, get_option( MultiCurrencyCacheInterface::CURRENCIES_KEY ) );
+		$this->assertSame( $cache_value, get_option( CacheInterface::CURRENCIES_KEY ) );
 		$this->assertFalse( get_option( self::NOTICE_OPTION, false ) );
 	}
 
@@ -129,7 +129,7 @@ class StoreCurrencyLifecycleServiceTest extends WC_Unit_Test_Case {
 			delete_option( self::STORE_CURRENCY_OPTION );
 		}
 
-		update_option( MultiCurrencyCacheInterface::CURRENCIES_KEY, $cache_value, false );
+		update_option( CacheInterface::CURRENCIES_KEY, $cache_value, false );
 		update_option( self::NOTICE_OPTION, $notice_value, false );
 
 		$changed = $this->create_service()->synchronize_store_currency();
@@ -139,7 +139,7 @@ class StoreCurrencyLifecycleServiceTest extends WC_Unit_Test_Case {
 			$tracked_option_exists ? 'USD' : false,
 			get_option( self::STORE_CURRENCY_OPTION, false )
 		);
-		$this->assertSame( $cache_value, get_option( MultiCurrencyCacheInterface::CURRENCIES_KEY ) );
+		$this->assertSame( $cache_value, get_option( CacheInterface::CURRENCIES_KEY ) );
 		$this->assertSame( $notice_value, get_option( self::NOTICE_OPTION ) );
 	}
 
@@ -169,7 +169,7 @@ class StoreCurrencyLifecycleServiceTest extends WC_Unit_Test_Case {
 		try {
 			update_option( 'woocommerce_currency', self::CUSTOM_CURRENCY );
 			update_option( self::STORE_CURRENCY_OPTION, 'USD' );
-			update_option( MultiCurrencyCacheInterface::CURRENCIES_KEY, $this->get_currencies_cache_fixture(), false );
+			update_option( CacheInterface::CURRENCIES_KEY, $this->get_currencies_cache_fixture(), false );
 
 			$changed = $this->create_service()->synchronize_store_currency();
 		} finally {
@@ -178,7 +178,7 @@ class StoreCurrencyLifecycleServiceTest extends WC_Unit_Test_Case {
 
 		$this->assertTrue( $changed );
 		$this->assertSame( self::CUSTOM_CURRENCY, get_option( self::STORE_CURRENCY_OPTION ) );
-		$this->assertFalse( get_option( MultiCurrencyCacheInterface::CURRENCIES_KEY, false ) );
+		$this->assertFalse( get_option( CacheInterface::CURRENCIES_KEY, false ) );
 	}
 
 	/**
@@ -191,7 +191,7 @@ class StoreCurrencyLifecycleServiceTest extends WC_Unit_Test_Case {
 		$shopper_currency_filter = static fn(): string => self::CUSTOM_CURRENCY;
 
 		update_option( self::STORE_CURRENCY_OPTION, 'USD' );
-		update_option( MultiCurrencyCacheInterface::CURRENCIES_KEY, $cache_value, false );
+		update_option( CacheInterface::CURRENCIES_KEY, $cache_value, false );
 		update_option( self::NOTICE_OPTION, $notice_value, false );
 		$this->expose_fresh_woocommerce_currencies_to_service();
 		add_filter( 'woocommerce_currencies', $currencies_filter );
@@ -206,7 +206,7 @@ class StoreCurrencyLifecycleServiceTest extends WC_Unit_Test_Case {
 
 		$this->assertFalse( $changed );
 		$this->assertSame( 'USD', get_option( self::STORE_CURRENCY_OPTION ) );
-		$this->assertSame( $cache_value, get_option( MultiCurrencyCacheInterface::CURRENCIES_KEY ) );
+		$this->assertSame( $cache_value, get_option( CacheInterface::CURRENCIES_KEY ) );
 		$this->assertSame( $notice_value, get_option( self::NOTICE_OPTION ) );
 	}
 
@@ -221,13 +221,13 @@ class StoreCurrencyLifecycleServiceTest extends WC_Unit_Test_Case {
 		update_option( 'wcpay_multi_currency_manual_rate_cad', '1.47' );
 		update_option( 'wcpay_multi_currency_exchange_rate_gbp', 'manual' );
 		update_option( 'wcpay_multi_currency_manual_rate_gbp', '0.84' );
-		update_option( MultiCurrencyCacheInterface::CURRENCIES_KEY, array( 'data' => array() ), false );
+		update_option( CacheInterface::CURRENCIES_KEY, array( 'data' => array() ), false );
 
 		$changed = $this->create_service()->synchronize_store_currency();
 
 		$this->assertTrue( $changed );
 		$this->assertSame( 'EUR', get_option( self::STORE_CURRENCY_OPTION ) );
-		$this->assertFalse( get_option( MultiCurrencyCacheInterface::CURRENCIES_KEY, false ) );
+		$this->assertFalse( get_option( CacheInterface::CURRENCIES_KEY, false ) );
 		$this->assertSame( array( 'Canadian dollar', 'Pound sterling' ), get_option( self::NOTICE_OPTION ) );
 	}
 
@@ -254,13 +254,13 @@ class StoreCurrencyLifecycleServiceTest extends WC_Unit_Test_Case {
 
 		update_option( self::STORE_CURRENCY_OPTION, 'USD' );
 		update_option( 'woocommerce_currency', 'XYZ' );
-		update_option( MultiCurrencyCacheInterface::CURRENCIES_KEY, $cache_value, false );
+		update_option( CacheInterface::CURRENCIES_KEY, $cache_value, false );
 
 		$changed = $this->create_service()->synchronize_store_currency();
 
 		$this->assertFalse( $changed );
 		$this->assertSame( 'USD', get_option( self::STORE_CURRENCY_OPTION ) );
-		$this->assertSame( $cache_value, get_option( MultiCurrencyCacheInterface::CURRENCIES_KEY ) );
+		$this->assertSame( $cache_value, get_option( CacheInterface::CURRENCIES_KEY ) );
 	}
 
 	/**
@@ -339,7 +339,7 @@ class StoreCurrencyLifecycleServiceTest extends WC_Unit_Test_Case {
 				'wcpay_multi_currency_manual_rate_cad',
 				'wcpay_multi_currency_exchange_rate_gbp',
 				'wcpay_multi_currency_manual_rate_gbp',
-				MultiCurrencyCacheInterface::CURRENCIES_KEY,
+				CacheInterface::CURRENCIES_KEY,
 			) as $option_name
 		) {
 			delete_option( $option_name );

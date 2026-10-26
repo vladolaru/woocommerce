@@ -5,7 +5,7 @@ namespace Automattic\WooCommerce\Tests\Internal\MultiCurrency;
 
 use Automattic\WooCommerce\Caches\OrderCache;
 use Automattic\WooCommerce\Internal\Admin\Notes\NewSalesRecord;
-use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyLocalizationInterface;
+use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\LocalizationInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyCompatibilityController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyCurrency;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
@@ -342,17 +342,17 @@ class MultiCurrencyCompatibilityControllerTest extends WC_Unit_Test_Case {
 			/**
 			 * Localization service.
 			 *
-			 * @var MultiCurrencyLocalizationInterface
+			 * @var LocalizationInterface
 			 */
-			private MultiCurrencyLocalizationInterface $localization_service;
+			private LocalizationInterface $localization_service;
 
 			/**
 			 * Constructor.
 			 *
-			 * @param int                                $enabled_count         Enabled currency count.
-			 * @param MultiCurrencyLocalizationInterface $localization_service Localization service.
+			 * @param int                   $enabled_count         Enabled currency count.
+			 * @param LocalizationInterface $localization_service Localization service.
 			 */
-			public function __construct( int $enabled_count, MultiCurrencyLocalizationInterface $localization_service ) {
+			public function __construct( int $enabled_count, LocalizationInterface $localization_service ) {
 				$this->enabled_count        = $enabled_count;
 				$this->localization_service = $localization_service;
 			}
@@ -379,10 +379,10 @@ class MultiCurrencyCompatibilityControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * Create a localization service test double.
 	 *
-	 * @return MultiCurrencyLocalizationInterface
+	 * @return LocalizationInterface
 	 */
-	private function create_localization(): MultiCurrencyLocalizationInterface {
-		return new class() implements MultiCurrencyLocalizationInterface {
+	private function create_localization(): LocalizationInterface {
+		return new class() implements LocalizationInterface {
 			/**
 			 * Get a currency format.
 			 *

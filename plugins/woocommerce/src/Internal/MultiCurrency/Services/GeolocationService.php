@@ -7,7 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\MultiCurrency\Services;
 
-use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyLocalizationInterface;
+use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\LocalizationInterface;
 
 /**
  * Gives the customer's country, from WooCommerce IP geolocation or else the default customer location, and its currency.
@@ -20,9 +20,9 @@ class GeolocationService {
 	/**
 	 * Localization service.
 	 *
-	 * @var MultiCurrencyLocalizationInterface
+	 * @var LocalizationInterface
 	 */
-	private MultiCurrencyLocalizationInterface $localization_service;
+	private LocalizationInterface $localization_service;
 
 	/**
 	 * Country resolver.
@@ -34,10 +34,10 @@ class GeolocationService {
 	/**
 	 * Constructor.
 	 *
-	 * @param MultiCurrencyLocalizationInterface $localization_service Localization service.
-	 * @param callable|null                      $country_resolver     Optional country resolver for tests.
+	 * @param LocalizationInterface $localization_service Localization service.
+	 * @param callable|null         $country_resolver     Optional country resolver for tests.
 	 */
-	public function __construct( MultiCurrencyLocalizationInterface $localization_service, ?callable $country_resolver = null ) {
+	public function __construct( LocalizationInterface $localization_service, ?callable $country_resolver = null ) {
 		$this->localization_service = $localization_service;
 		$this->country_resolver     = $country_resolver;
 	}

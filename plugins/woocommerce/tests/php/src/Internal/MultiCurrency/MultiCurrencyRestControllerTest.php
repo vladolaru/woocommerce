@@ -3,7 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\MultiCurrency;
 
-use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyLocalizationInterface;
+use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\LocalizationInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyCurrency;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRestController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
@@ -1059,10 +1059,10 @@ class MultiCurrencyRestControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * Create a localization test double.
 	 *
-	 * @return MultiCurrencyLocalizationInterface
+	 * @return LocalizationInterface
 	 */
-	private function create_localization_service(): MultiCurrencyLocalizationInterface {
-		return new class() implements MultiCurrencyLocalizationInterface {
+	private function create_localization_service(): LocalizationInterface {
+		return new class() implements LocalizationInterface {
 			/**
 			 * Get a currency format.
 			 *

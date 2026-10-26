@@ -5,7 +5,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use ActionScheduler_Store;
 use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\CurrencyRateProviderInterface;
-use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyCacheInterface;
+use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\CacheInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFeatureController;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\RateService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
@@ -50,7 +50,7 @@ class WooPaymentsStoreSetupReportControllerTest extends WC_Unit_Test_Case {
 		delete_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION );
 		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 		delete_option( 'wcpay_multi_currency_enabled_currencies' );
-		delete_option( MultiCurrencyCacheInterface::CURRENCIES_KEY );
+		delete_option( CacheInterface::CURRENCIES_KEY );
 		wc_get_container()->reset_all_resolved();
 		if ( function_exists( 'as_unschedule_all_actions' ) ) {
 			as_unschedule_all_actions( WooPaymentsStoreSetupReportController::STORE_SETUP_SYNC_ACTION, null, WooPaymentsActionSchedulerService::GROUP_ID );
@@ -650,7 +650,7 @@ class WooPaymentsStoreSetupReportControllerTest extends WC_Unit_Test_Case {
 		}
 		$this->register_unavailable_rate_provider();
 		update_option(
-			MultiCurrencyCacheInterface::CURRENCIES_KEY,
+			CacheInterface::CURRENCIES_KEY,
 			array(
 				'data'               => array(
 					'currencies' => $rates,
@@ -725,7 +725,7 @@ class WooPaymentsStoreSetupReportControllerTest extends WC_Unit_Test_Case {
 	public function test_settings_save_does_not_touch_currencies_when_multi_currency_disabled(): void {
 		update_option( '_wcpay_feature_customer_multi_currency', '0' );
 		update_option(
-			MultiCurrencyCacheInterface::CURRENCIES_KEY,
+			CacheInterface::CURRENCIES_KEY,
 			array(
 				'data'               => array(
 					'currencies' => array( 'eur' => 0.9 ),

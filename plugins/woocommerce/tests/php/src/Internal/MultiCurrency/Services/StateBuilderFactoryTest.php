@@ -4,7 +4,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\MultiCurrency\Services;
 
 use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\CurrencyRateProviderInterface;
-use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyCacheInterface;
+use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\CacheInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyAsyncPriceRendererController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyCompatibilityController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFeatureController;
@@ -252,7 +252,7 @@ class StateBuilderFactoryTest extends WC_Unit_Test_Case {
 		// The client clears its rate cache before rebuilding after a store currency change (client 11.1.0 `MultiCurrency.php:321-331`);
 		// here another instance stores fresh rates in the shape DatabaseCache writes.
 		update_option(
-			MultiCurrencyCacheInterface::CURRENCIES_KEY,
+			CacheInterface::CURRENCIES_KEY,
 			array(
 				'data'               => array(
 					'currencies' => array( 'gbp' => 0.81 ),
@@ -545,7 +545,7 @@ class StateBuilderFactoryTest extends WC_Unit_Test_Case {
 				'wcpay_multi_currency_exchange_rate_gbp',
 				'wcpay_multi_currency_exchange_rate_eur',
 				'wcpay_multi_currency_manual_rate_gbp',
-				MultiCurrencyCacheInterface::CURRENCIES_KEY,
+				CacheInterface::CURRENCIES_KEY,
 			) as $option_key
 		) {
 			delete_option( $option_key );

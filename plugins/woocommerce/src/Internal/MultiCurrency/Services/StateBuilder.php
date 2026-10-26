@@ -8,8 +8,8 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\MultiCurrency\Services;
 
 use Automattic\WooCommerce\Internal\DataStores\Orders\OrdersTableDataStore;
-use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyCacheInterface;
-use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyLocalizationInterface;
+use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\CacheInterface;
+use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\LocalizationInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyCurrency;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyState;
 use Automattic\WooCommerce\Utilities\OrderUtil;
@@ -40,9 +40,9 @@ class StateBuilder {
 	/**
 	 * Localization service.
 	 *
-	 * @var MultiCurrencyLocalizationInterface
+	 * @var LocalizationInterface
 	 */
-	private MultiCurrencyLocalizationInterface $localization_service;
+	private LocalizationInterface $localization_service;
 
 	/**
 	 * Rate service.
@@ -54,9 +54,9 @@ class StateBuilder {
 	/**
 	 * Multi-currency cache.
 	 *
-	 * @var MultiCurrencyCacheInterface
+	 * @var CacheInterface
 	 */
-	private MultiCurrencyCacheInterface $cache;
+	private CacheInterface $cache;
 
 	/**
 	 * Memoized per-request state snapshot.
@@ -103,15 +103,15 @@ class StateBuilder {
 	/**
 	 * Constructor.
 	 *
-	 * @param MultiCurrencyLocalizationInterface $localization_service Localization service.
-	 * @param RateService                        $rate_service         Rate service.
-	 * @param MultiCurrencyCacheInterface        $cache                Multi-currency cache.
-	 * @param StateInvalidator|null              $state_invalidator    Optional request-local invalidation coordinator.
+	 * @param LocalizationInterface $localization_service Localization service.
+	 * @param RateService           $rate_service         Rate service.
+	 * @param CacheInterface        $cache                Multi-currency cache.
+	 * @param StateInvalidator|null $state_invalidator    Optional request-local invalidation coordinator.
 	 */
 	public function __construct(
-		MultiCurrencyLocalizationInterface $localization_service,
+		LocalizationInterface $localization_service,
 		RateService $rate_service,
-		MultiCurrencyCacheInterface $cache,
+		CacheInterface $cache,
 		?StateInvalidator $state_invalidator = null
 	) {
 		$this->localization_service = $localization_service;
@@ -365,13 +365,13 @@ class StateBuilder {
 		}
 
 		if ( ! $this->rate_service->has_available_provider() ) {
-			$cache_data = $this->cache->get( MultiCurrencyCacheInterface::CURRENCIES_KEY, true );
+			$cache_data = $this->cache->get( CacheInterface::CURRENCIES_KEY, true );
 
 			return is_array( $cache_data ) ? $cache_data : null;
 		}
 
 		$cache_data = $this->cache->get_or_add(
-			MultiCurrencyCacheInterface::CURRENCIES_KEY,
+			CacheInterface::CURRENCIES_KEY,
 			function () use ( $default_code ) {
 				$rates = $this->rate_service->get_rates( $default_code );
 				if ( null === $rates ) {

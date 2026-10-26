@@ -7,7 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\MultiCurrency\Services;
 
-use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyLocalizationInterface;
+use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\LocalizationInterface;
 
 /**
  * Builds the complete static currency catalog used by Multi-Currency settings.
@@ -23,9 +23,9 @@ final class SettingsCurrencyCatalog {
 	/**
 	 * Localization service.
 	 *
-	 * @var MultiCurrencyLocalizationInterface
+	 * @var LocalizationInterface
 	 */
-	private MultiCurrencyLocalizationInterface $localization_service;
+	private LocalizationInterface $localization_service;
 
 	/**
 	 * State builder.
@@ -44,11 +44,11 @@ final class SettingsCurrencyCatalog {
 	/**
 	 * Constructor.
 	 *
-	 * @param MultiCurrencyLocalizationInterface $localization_service Localization service.
-	 * @param StateBuilder                       $state_builder State builder.
-	 * @param RateService                        $rate_service Rate service.
+	 * @param LocalizationInterface $localization_service Localization service.
+	 * @param StateBuilder          $state_builder State builder.
+	 * @param RateService           $rate_service Rate service.
 	 */
-	public function __construct( MultiCurrencyLocalizationInterface $localization_service, StateBuilder $state_builder, RateService $rate_service ) {
+	public function __construct( LocalizationInterface $localization_service, StateBuilder $state_builder, RateService $rate_service ) {
 		$this->localization_service = $localization_service;
 		$this->state_builder        = $state_builder;
 		$this->rate_service         = $rate_service;

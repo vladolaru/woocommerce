@@ -7,7 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\MultiCurrency\Services;
 
-use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyLocalizationInterface;
+use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\LocalizationInterface;
 
 /**
  * Holds the request's shared Multi-Currency state builder, over the rate service that holds the automatic-rate provider.
@@ -89,10 +89,10 @@ class StateBuilderFactory {
 	 *
 	 * Only the Multi-Currency shadow comparison uses it, so that its reads write no locale transients.
 	 *
-	 * @param MultiCurrencyLocalizationInterface $localization_service Localization boundary.
+	 * @param LocalizationInterface $localization_service Localization boundary.
 	 * @return StateBuilder
 	 */
-	public function create_separate( MultiCurrencyLocalizationInterface $localization_service ): StateBuilder {
+	public function create_separate( LocalizationInterface $localization_service ): StateBuilder {
 		return $this->build_state_builder( $localization_service );
 	}
 
@@ -118,10 +118,10 @@ class StateBuilderFactory {
 	/**
 	 * Build a state builder over the given localization.
 	 *
-	 * @param MultiCurrencyLocalizationInterface $localization_service Localization boundary.
+	 * @param LocalizationInterface $localization_service Localization boundary.
 	 * @return StateBuilder
 	 */
-	private function build_state_builder( MultiCurrencyLocalizationInterface $localization_service ): StateBuilder {
+	private function build_state_builder( LocalizationInterface $localization_service ): StateBuilder {
 		return new StateBuilder(
 			$localization_service,
 			$this->rate_service,

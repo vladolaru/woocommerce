@@ -7,7 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\MultiCurrency;
 
-use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyLocalizationInterface;
+use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\LocalizationInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\SwitcherRenderer;
 
 /**
@@ -21,9 +21,9 @@ class MultiCurrencyCurrency implements \JsonSerializable {
 	/**
 	 * Localization service.
 	 *
-	 * @var MultiCurrencyLocalizationInterface
+	 * @var LocalizationInterface
 	 */
-	private MultiCurrencyLocalizationInterface $localization_service;
+	private LocalizationInterface $localization_service;
 
 	/**
 	 * Three-letter currency code.
@@ -84,14 +84,14 @@ class MultiCurrencyCurrency implements \JsonSerializable {
 	/**
 	 * Constructor.
 	 *
-	 * @param MultiCurrencyLocalizationInterface $localization_service Localization service.
-	 * @param string                             $code                 Three-letter currency code.
-	 * @param float                              $rate                 Conversion rate.
-	 * @param bool                               $is_default           Whether this is the default currency.
-	 * @param int|null                           $last_updated         Last successful rate update timestamp.
+	 * @param LocalizationInterface $localization_service Localization service.
+	 * @param string                $code                 Three-letter currency code.
+	 * @param float                 $rate                 Conversion rate.
+	 * @param bool                  $is_default           Whether this is the default currency.
+	 * @param int|null              $last_updated         Last successful rate update timestamp.
 	 */
 	public function __construct(
-		MultiCurrencyLocalizationInterface $localization_service,
+		LocalizationInterface $localization_service,
 		string $code,
 		float $rate = 1.0,
 		bool $is_default = false,

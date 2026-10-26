@@ -10,7 +10,7 @@ namespace WCPay\MultiCurrency;
 use Automattic\WooCommerce\Admin\Notes\Notes;
 use Automattic\WooCommerce\Internal\MultiCurrency\Compat\WooPaymentsExtensionMultiCurrencyFacadeLoader;
 use Automattic\WooCommerce\Internal\MultiCurrency\Exceptions\InvalidCurrencyException;
-use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyCacheInterface;
+use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\CacheInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyAdminNoteController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyCurrency;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRestController;
@@ -488,7 +488,7 @@ class MultiCurrency {
 		_deprecated_function( 'WCPay\\MultiCurrency\\MultiCurrency::get_cached_currencies', '11.0.0', '' );
 
 		$this->get_state();
-		$cached = ( new DatabaseCache() )->get( MultiCurrencyCacheInterface::CURRENCIES_KEY, true );
+		$cached = ( new DatabaseCache() )->get( CacheInterface::CURRENCIES_KEY, true );
 
 		return is_array( $cached ) ? $cached : null;
 	}

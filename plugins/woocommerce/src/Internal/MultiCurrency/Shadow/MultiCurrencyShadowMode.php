@@ -8,7 +8,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\MultiCurrency\Shadow;
 
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
-use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyLocalizationInterface;
+use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\LocalizationInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\PriceCalculator;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\PriceConverter;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilderFactory;
@@ -316,10 +316,10 @@ class MultiCurrencyShadowMode implements RegisterHooksInterface {
 	/**
 	 * Create a localization adapter that reads locale data without writing transients.
 	 *
-	 * @return MultiCurrencyLocalizationInterface
+	 * @return LocalizationInterface
 	 */
-	private function create_read_only_localization_service(): MultiCurrencyLocalizationInterface {
-		return new class() implements MultiCurrencyLocalizationInterface {
+	private function create_read_only_localization_service(): LocalizationInterface {
+		return new class() implements LocalizationInterface {
 			/**
 			 * Currency formatting map.
 			 *

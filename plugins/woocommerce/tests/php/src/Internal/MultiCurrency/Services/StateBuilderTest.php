@@ -3,9 +3,9 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\MultiCurrency\Services;
 
-use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyCacheInterface;
+use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\CacheInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\CurrencyRateProviderInterface;
-use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyLocalizationInterface;
+use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\LocalizationInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\DatabaseCache;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilder;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateInvalidator;
@@ -44,7 +44,7 @@ class StateBuilderTest extends WC_Unit_Test_Case {
 		'wcpay_multi_currency_price_rounding_jpy',
 		'wcpay_multi_currency_price_charm_jpy',
 		'wcpay_multi_currency_stored_customer_currencies',
-		MultiCurrencyCacheInterface::CURRENCIES_KEY,
+		CacheInterface::CURRENCIES_KEY,
 	);
 
 	/**
@@ -201,7 +201,7 @@ class StateBuilderTest extends WC_Unit_Test_Case {
 		update_option( 'wcpay_multi_currency_exchange_rate_gbp', 'automatic' );
 
 		$state  = $this->create_builder( $provider )->build();
-		$cached = get_option( MultiCurrencyCacheInterface::CURRENCIES_KEY );
+		$cached = get_option( CacheInterface::CURRENCIES_KEY );
 
 		$this->assertSame( array( 'USD', 'GBP' ), array_keys( $state->get_enabled_currencies() ) );
 		$this->assertSame( 0.82, $state->get_enabled_currencies()['GBP']->get_rate() );
@@ -269,7 +269,7 @@ class StateBuilderTest extends WC_Unit_Test_Case {
 		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'GBP' ) );
 		update_option( 'wcpay_multi_currency_exchange_rate_gbp', 'automatic' );
 		update_option(
-			MultiCurrencyCacheInterface::CURRENCIES_KEY,
+			CacheInterface::CURRENCIES_KEY,
 			array(
 				'data'               => array(
 					'currencies' => array(
@@ -299,7 +299,7 @@ class StateBuilderTest extends WC_Unit_Test_Case {
 		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'GBP' ) );
 		update_option( 'wcpay_multi_currency_exchange_rate_gbp', 'automatic' );
 		update_option(
-			MultiCurrencyCacheInterface::CURRENCIES_KEY,
+			CacheInterface::CURRENCIES_KEY,
 			array(
 				'data'               => array(
 					'currencies' => array( 'gbp' => 0.82 ),
@@ -561,7 +561,7 @@ class StateBuilderTest extends WC_Unit_Test_Case {
 		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'JPY' ) );
 		update_option( 'wcpay_multi_currency_exchange_rate_jpy', 'manual' );
 		update_option( 'wcpay_multi_currency_manual_rate_jpy', '150' );
-		update_option( MultiCurrencyCacheInterface::CURRENCIES_KEY, $this->disabled_override_currencies()['order currency, cached provider rate'][0][ MultiCurrencyCacheInterface::CURRENCIES_KEY ] );
+		update_option( CacheInterface::CURRENCIES_KEY, $this->disabled_override_currencies()['order currency, cached provider rate'][0][ CacheInterface::CURRENCIES_KEY ] );
 		add_filter(
 			'wcpay_multi_currency_override_selected_currency',
 			static function ( $selected_currency ) {
@@ -589,7 +589,7 @@ class StateBuilderTest extends WC_Unit_Test_Case {
 	 */
 	public function disabled_override_currencies(): array {
 		$cached_rates = array(
-			MultiCurrencyCacheInterface::CURRENCIES_KEY => array(
+			CacheInterface::CURRENCIES_KEY => array(
 				'data'               => array(
 					'currencies' => array(
 						'gbp' => 0.79,
@@ -759,10 +759,10 @@ class StateBuilderTest extends WC_Unit_Test_Case {
 	 * Create the state builder.
 	 *
 	 * @param CurrencyRateProviderInterface|null $provider Automatic-rate provider, or null for none.
-	 * @param MultiCurrencyCacheInterface|null   $cache    Multi-currency cache.
+	 * @param CacheInterface|null                $cache    Multi-currency cache.
 	 * @return StateBuilder
 	 */
-	private function create_builder( ?CurrencyRateProviderInterface $provider = null, ?MultiCurrencyCacheInterface $cache = null ): StateBuilder {
+	private function create_builder( ?CurrencyRateProviderInterface $provider = null, ?CacheInterface $cache = null ): StateBuilder {
 		return new StateBuilder(
 			$this->create_localization(),
 			RateServices::with( $provider ),
@@ -773,10 +773,10 @@ class StateBuilderTest extends WC_Unit_Test_Case {
 	/**
 	 * Create a cache double that counts get() calls.
 	 *
-	 * @return MultiCurrencyCacheInterface
+	 * @return CacheInterface
 	 */
-	private function create_counting_cache(): MultiCurrencyCacheInterface {
-		return new class() implements MultiCurrencyCacheInterface {
+	private function create_counting_cache(): CacheInterface {
+		return new class() implements CacheInterface {
 			/**
 			 * Number of get() calls.
 			 *
@@ -1043,10 +1043,10 @@ class StateBuilderTest extends WC_Unit_Test_Case {
 	/**
 	 * Create a localization test double.
 	 *
-	 * @return MultiCurrencyLocalizationInterface
+	 * @return LocalizationInterface
 	 */
-	private function create_localization(): MultiCurrencyLocalizationInterface {
-		return new class() implements MultiCurrencyLocalizationInterface {
+	private function create_localization(): LocalizationInterface {
+		return new class() implements LocalizationInterface {
 			/**
 			 * Get a currency format.
 			 *

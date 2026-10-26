@@ -7,7 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\MultiCurrency;
 
-use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyCacheInterface;
+use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\CacheInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\RateService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilder;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
@@ -286,7 +286,7 @@ class MultiCurrencyAdminNoticesController implements RegisterHooksInterface {
 	 * @return string
 	 */
 	private function get_rate_provider_last_updated_label(): string {
-		$cache_data = get_option( MultiCurrencyCacheInterface::CURRENCIES_KEY, array() );
+		$cache_data = get_option( CacheInterface::CURRENCIES_KEY, array() );
 		if ( is_array( $cache_data['data'] ?? null ) ) {
 			$cache_data = $cache_data['data'];
 		}

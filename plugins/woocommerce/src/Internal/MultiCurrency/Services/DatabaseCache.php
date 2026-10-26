@@ -7,7 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\MultiCurrency\Services;
 
-use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyCacheInterface;
+use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\CacheInterface;
 
 /**
  * Stores Multi-Currency cache entries, the rates among them, in options with expiry and retry after errors.
@@ -17,7 +17,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyCacheI
  * @since 11.0.0
  * @internal
  */
-class DatabaseCache implements MultiCurrencyCacheInterface {
+class DatabaseCache implements CacheInterface {
 
 	/**
 	 * Request context used for TTL resolution.

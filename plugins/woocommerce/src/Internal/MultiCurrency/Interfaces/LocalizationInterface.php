@@ -1,6 +1,6 @@
 <?php
 /**
- * MultiCurrencyLocalizationInterface interface file.
+ * LocalizationInterface interface file.
  */
 
 declare( strict_types = 1 );
@@ -13,7 +13,7 @@ namespace Automattic\WooCommerce\Internal\MultiCurrency\Interfaces;
  * @since 11.0.0
  * @internal
  */
-interface MultiCurrencyLocalizationInterface {
+interface LocalizationInterface {
 
 	/**
 	 * Get a currency format.

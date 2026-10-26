@@ -9,7 +9,7 @@ namespace Automattic\WooCommerce\Internal\MultiCurrency\Services;
 
 use Automattic\WooCommerce\Internal\MultiCurrency\Exceptions\InvalidCurrencyException;
 use Automattic\WooCommerce\Internal\MultiCurrency\Exceptions\InvalidCurrencyRateException;
-use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyLocalizationInterface;
+use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\LocalizationInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyCurrency;
 
 /**
@@ -23,16 +23,16 @@ class PriceCalculator {
 	/**
 	 * Localization service.
 	 *
-	 * @var MultiCurrencyLocalizationInterface
+	 * @var LocalizationInterface
 	 */
-	private MultiCurrencyLocalizationInterface $localization_service;
+	private LocalizationInterface $localization_service;
 
 	/**
 	 * Constructor.
 	 *
-	 * @param MultiCurrencyLocalizationInterface $localization_service Localization service.
+	 * @param LocalizationInterface $localization_service Localization service.
 	 */
-	public function __construct( MultiCurrencyLocalizationInterface $localization_service ) {
+	public function __construct( LocalizationInterface $localization_service ) {
 		$this->localization_service = $localization_service;
 	}
 

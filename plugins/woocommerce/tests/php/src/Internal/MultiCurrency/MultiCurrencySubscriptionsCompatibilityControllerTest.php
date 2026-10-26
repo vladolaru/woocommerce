@@ -6,7 +6,7 @@ namespace Automattic\WooCommerce\Tests\Internal\MultiCurrency;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyCurrency;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyState;
-use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyLocalizationInterface;
+use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\LocalizationInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFrontendPricesController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencySubscriptionsCompatibilityController;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilder;
@@ -1308,17 +1308,17 @@ class MultiCurrencySubscriptionsCompatibilityControllerTest extends WC_Unit_Test
 			/**
 			 * Localization service.
 			 *
-			 * @var MultiCurrencyLocalizationInterface
+			 * @var LocalizationInterface
 			 */
-			private MultiCurrencyLocalizationInterface $localization_service;
+			private LocalizationInterface $localization_service;
 
 			/**
 			 * Constructor.
 			 *
-			 * @param bool                               $has_additional_currencies_enabled Whether additional currencies are enabled.
-			 * @param MultiCurrencyLocalizationInterface $localization_service              Localization service.
+			 * @param bool                  $has_additional_currencies_enabled Whether additional currencies are enabled.
+			 * @param LocalizationInterface $localization_service              Localization service.
 			 */
-			public function __construct( bool $has_additional_currencies_enabled, MultiCurrencyLocalizationInterface $localization_service ) {
+			public function __construct( bool $has_additional_currencies_enabled, LocalizationInterface $localization_service ) {
 				$this->has_additional_currencies_enabled = $has_additional_currencies_enabled;
 				$this->localization_service              = $localization_service;
 			}
@@ -1392,10 +1392,10 @@ class MultiCurrencySubscriptionsCompatibilityControllerTest extends WC_Unit_Test
 	/**
 	 * Create a localization test double.
 	 *
-	 * @return MultiCurrencyLocalizationInterface
+	 * @return LocalizationInterface
 	 */
-	private function create_localization(): MultiCurrencyLocalizationInterface {
-		return new class() implements MultiCurrencyLocalizationInterface {
+	private function create_localization(): LocalizationInterface {
+		return new class() implements LocalizationInterface {
 			/**
 			 * Get a currency format.
 			 *
