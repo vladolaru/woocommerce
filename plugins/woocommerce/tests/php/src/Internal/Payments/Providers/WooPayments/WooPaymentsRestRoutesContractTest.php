@@ -14,7 +14,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDo
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\WooPaymentsStripeBillingModule;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\StripeBillingModule;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAdminRestRouteRegistrar;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsReportsRestController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPaySessionController;
@@ -166,7 +166,7 @@ class WooPaymentsRestRoutesContractTest extends WC_REST_Unit_Test_Case {
 		wc_get_container()->get( WooPaymentsWooPaySessionController::class )->register_routes();
 		wc_get_container()->get( MultiCurrencyRestController::class )->handle_rest_api_init();
 		wc_get_container()->get( WooPaymentsRestController::class )->register_routes();
-		wc_get_container()->get( WooPaymentsStripeBillingModule::class )->register_routes();
+		wc_get_container()->get( StripeBillingModule::class )->register_routes();
 	}
 
 	/**

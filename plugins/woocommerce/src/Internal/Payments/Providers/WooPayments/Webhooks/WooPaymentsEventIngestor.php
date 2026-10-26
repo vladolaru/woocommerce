@@ -9,7 +9,7 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhook
 
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLockRefusedException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\TransportLog;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\WooPaymentsStripeBillingModule;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\StripeBillingModule;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountEventHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
@@ -388,10 +388,10 @@ class WooPaymentsEventIngestor {
 	/**
 	 * Get the Stripe Billing module.
 	 *
-	 * @return WooPaymentsStripeBillingModule
+	 * @return StripeBillingModule
 	 */
-	private function get_stripe_billing_module(): WooPaymentsStripeBillingModule {
-		return wc_get_container()->get( WooPaymentsStripeBillingModule::class );
+	private function get_stripe_billing_module(): StripeBillingModule {
+		return wc_get_container()->get( StripeBillingModule::class );
 	}
 
 	/**

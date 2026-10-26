@@ -8,7 +8,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover;
 
 use Automattic\WooCommerce\Internal\DataStores\Orders\OrdersTableDataStore;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\WooPaymentsStripeBillingModule;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\StripeBillingModule;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionMethodPolicy;
 
 /**
@@ -59,7 +59,7 @@ class BundledSubscriptionsGuard {
 		}
 
 		$this->is_bundled_store[ $blog_id ] = ! WooPaymentsSubscriptionMethodPolicy::is_woocommerce_subscriptions_active()
-			&& ( '1' === get_option( WooPaymentsStripeBillingModule::BUNDLED_SUBSCRIPTIONS_FLAG_OPTION, '0' ) || $this->query_stripe_billed_subscription_exists() );
+			&& ( '1' === get_option( StripeBillingModule::BUNDLED_SUBSCRIPTIONS_FLAG_OPTION, '0' ) || $this->query_stripe_billed_subscription_exists() );
 
 		return $this->is_bundled_store[ $blog_id ];
 	}

@@ -55,9 +55,9 @@ class StripeBillingInvoiceService {
 	/**
 	 * Module root, the single reader of the Stripe Billing toggle.
 	 *
-	 * @var WooPaymentsStripeBillingModule
+	 * @var StripeBillingModule
 	 */
-	private WooPaymentsStripeBillingModule $module;
+	private StripeBillingModule $module;
 
 	/**
 	 * Module logger.
@@ -71,12 +71,12 @@ class StripeBillingInvoiceService {
 	 *
 	 * @internal
 	 *
-	 * @param StripeBillingApi               $api        Stripe Billing platform calls.
-	 * @param Client                         $api_client Platform API client.
-	 * @param WooPaymentsStripeBillingModule $module     Module root.
-	 * @param WooPaymentsLogger              $logger     Module logger.
+	 * @param StripeBillingApi    $api        Stripe Billing platform calls.
+	 * @param Client              $api_client Platform API client.
+	 * @param StripeBillingModule $module     Module root.
+	 * @param WooPaymentsLogger   $logger     Module logger.
 	 */
-	final public function init( StripeBillingApi $api, Client $api_client, WooPaymentsStripeBillingModule $module, WooPaymentsLogger $logger ): void {
+	final public function init( StripeBillingApi $api, Client $api_client, StripeBillingModule $module, WooPaymentsLogger $logger ): void {
 		$this->api        = $api;
 		$this->api_client = $api_client;
 		$this->module     = $module;

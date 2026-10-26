@@ -4,20 +4,20 @@ Stripe Billing lets a store with WooCommerce Subscriptions bill subscription ren
 
 ## Loading
 
-`WooPaymentsStripeBillingModule` is the root. The provider bootstrap registers it for connected and active stores on every request type. On `plugins_loaded` priority 11, when the built-in WooPayments owns payments:
+`StripeBillingModule` is the root. The provider bootstrap registers it for connected and active stores on every request type. On `plugins_loaded` priority 11, when the built-in WooPayments owns payments:
 
 - WooCommerce Subscriptions inactive: the module loads nothing.
 - WooCommerce Subscriptions active: the module loads, so subscriptions already billed at Stripe keep being served while the toggle is off.
 - Staging copy (as WooCommerce Subscriptions reports it): the module loads but attaches no hooks, so nothing changes at Stripe for the live store.
 - Toggle (`_wcpay_feature_stripe_billing`) on: new subscriptions also go to Stripe Billing.
 
-Hook callbacks resolve their service from the container only when the hook fires, so registering them constructs no service and runs no query. `WooPaymentsStripeBillingModule::attach_maintenance_hooks()` holds the hooks that serve existing Stripe Billing data whatever the toggle; `attach_engaged_hooks()` holds those that only run while it is on.
+Hook callbacks resolve their service from the container only when the hook fires, so registering them constructs no service and runs no query. `StripeBillingModule::attach_maintenance_hooks()` holds the hooks that serve existing Stripe Billing data whatever the toggle; `attach_engaged_hooks()` holds those that only run while it is on.
 
 The one exception is `StripeBillingMigrator`, built with `new` on every request once WooCommerce Subscriptions' `WCS_Background_Repairer` is known to exist, whatever the toggle, and never on a staging copy: it extends that class, which attaches its own Action Scheduler hooks in `init()`, so it cannot be resolved lazily or from the container. The module also registers the migration route `wc/v3/payments/settings/schedule-stripe-billing-migration` for every store where the built-in WooPayments owns payments, as client 11.1.0's settings controller does; it does nothing without the migrator. `php-stubs/wcs-background-repairer.php` declares the repairer classes for PHPStan only.
 
 ## Boundary
 
-Code outside this folder names only `WooPaymentsStripeBillingModule`, and only in these seams, each a one-line delegation that does nothing when the module is not loaded:
+Code outside this folder names only `StripeBillingModule`, and only in these seams, each a one-line delegation that does nothing when the module is not loaded:
 
 | Seam | File | What it does |
 |---|---|---|

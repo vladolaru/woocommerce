@@ -1,6 +1,6 @@
 <?php
 /**
- * WooPaymentsStripeBillingModule class file.
+ * StripeBillingModule class file.
  */
 
 declare( strict_types = 1 );
@@ -27,7 +27,7 @@ defined( 'ABSPATH' ) || exit;
  * @since 11.2.0
  * @internal
  */
-class WooPaymentsStripeBillingModule implements RegisterHooksInterface {
+class StripeBillingModule implements RegisterHooksInterface {
 
 	/**
 	 * Option that turns Stripe Billing on for new subscriptions (client 11.1.0 `WC_Payments_Features::STRIPE_BILLING_FLAG_NAME`).

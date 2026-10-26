@@ -13,7 +13,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\PaymentMethodRegistry;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\WooPaymentsStripeBillingModule;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\StripeBillingModule;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionMethodPolicy;
 use WP_Error;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayEligibility;
@@ -171,9 +171,9 @@ class WooPaymentsSettingsService {
 	/**
 	 * Stripe Billing module.
 	 *
-	 * @var WooPaymentsStripeBillingModule
+	 * @var StripeBillingModule
 	 */
-	private WooPaymentsStripeBillingModule $stripe_billing_module;
+	private StripeBillingModule $stripe_billing_module;
 
 	/**
 	 * Payment method promotions service.
@@ -213,7 +213,7 @@ class WooPaymentsSettingsService {
 	 * @param WooPaymentsPmPromotionsService            $pm_promotions_service             PM promotions service.
 	 * @param WooPaymentsGatewaySettingsSynchronizer    $gateway_settings_synchronizer     Gateway settings synchronizer.
 	 * @param PaymentMethodRegistry                     $payment_method_registry           Payment method registry.
-	 * @param WooPaymentsStripeBillingModule            $stripe_billing_module             Stripe Billing module.
+	 * @param StripeBillingModule                       $stripe_billing_module             Stripe Billing module.
 	 * @param WooPaymentsFraudRulesetService            $fraud_ruleset_service             Fraud ruleset service.
 	 * @param WooPaymentsDuplicateGatewayMethodsService $duplicate_gateway_methods_service Duplicate gateway methods service.
 	 * @param WooPaymentsWooPayEligibility              $woopay_eligibility                WooPay eligibility rules.
@@ -222,7 +222,7 @@ class WooPaymentsSettingsService {
 	 * @param WooPaymentsLogger                         $logger                            WooPayments logger.
 	 * @param WooPaymentsStoreSetupReportController     $store_setup_report_controller     Store setup report controller.
 	 */
-	final public function init( WooPaymentsAccountService $account_service, Client $api_client, WooPaymentsPmPromotionsService $pm_promotions_service, WooPaymentsGatewaySettingsSynchronizer $gateway_settings_synchronizer, PaymentMethodRegistry $payment_method_registry, WooPaymentsStripeBillingModule $stripe_billing_module, WooPaymentsFraudRulesetService $fraud_ruleset_service, WooPaymentsDuplicateGatewayMethodsService $duplicate_gateway_methods_service, WooPaymentsWooPayEligibility $woopay_eligibility, WooPaymentsWooPayAppearanceStore $appearance_store, WooPaymentsFrontendTrackingController $frontend_tracking_controller, WooPaymentsLogger $logger, WooPaymentsStoreSetupReportController $store_setup_report_controller ): void {
+	final public function init( WooPaymentsAccountService $account_service, Client $api_client, WooPaymentsPmPromotionsService $pm_promotions_service, WooPaymentsGatewaySettingsSynchronizer $gateway_settings_synchronizer, PaymentMethodRegistry $payment_method_registry, StripeBillingModule $stripe_billing_module, WooPaymentsFraudRulesetService $fraud_ruleset_service, WooPaymentsDuplicateGatewayMethodsService $duplicate_gateway_methods_service, WooPaymentsWooPayEligibility $woopay_eligibility, WooPaymentsWooPayAppearanceStore $appearance_store, WooPaymentsFrontendTrackingController $frontend_tracking_controller, WooPaymentsLogger $logger, WooPaymentsStoreSetupReportController $store_setup_report_controller ): void {
 		$this->account_service                   = $account_service;
 		$this->api_client                        = $api_client;
 		$this->pm_promotions_service             = $pm_promotions_service;

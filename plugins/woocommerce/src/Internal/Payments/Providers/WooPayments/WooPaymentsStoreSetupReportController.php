@@ -14,7 +14,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilderFactory;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\PaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\WooPaymentsStripeBillingModule;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\StripeBillingModule;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionMethodPolicy;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayEligibility;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
@@ -381,7 +381,7 @@ class WooPaymentsStoreSetupReportController implements RegisterHooksInterface {
 			),
 			// Whether Multi-Currency runs, as client 11.1.0 sends its own module's state (class-wc-payments-account.php:2976).
 			'multi_currency_enabled'                      => wc_get_container()->get( MultiCurrencyRuntimeArbiter::class )->is_builtin_owner(),
-			'stripe_billing_enabled'                      => wc_get_container()->get( WooPaymentsStripeBillingModule::class )->is_stripe_billing_enabled(),
+			'stripe_billing_enabled'                      => wc_get_container()->get( StripeBillingModule::class )->is_stripe_billing_enabled(),
 			// Client 11.1.0 sends its own version (class-wc-payments-account.php:2981): the version the user agent reports too.
 			'plugin'                                      => array(
 				'version'              => WooPaymentsClientVersion::VERSION,

@@ -53,7 +53,7 @@ use WC_Payment_Token_CC;
 use WC_Unit_Test_Case;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\TransportLog;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\StripeBillingApi;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\WooPaymentsStripeBillingModule;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\StripeBillingModule;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\WooPaymentsLinkToken;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\WooPaymentsSepaToken;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentMethodDetailsService;
@@ -7306,7 +7306,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 */
 	public function test_init_replaces_supports_settled_before_the_stripe_billing_module_loaded(): void {
 		$this->report_subscriptions_loaded();
-		update_option( WooPaymentsStripeBillingModule::TOGGLE_OPTION, '1' );
+		update_option( StripeBillingModule::TOGGLE_OPTION, '1' );
 		$gateway = new WooPaymentsGateway();
 		$this->assertContains( 'subscription_amount_changes', $gateway->supports, 'The fixture must build the gateway before the module loads.' );
 
@@ -7589,16 +7589,16 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 * Load WooCommerce Subscriptions and the Stripe Billing module with the given toggle, while native owns payments.
 	 *
 	 * @param string $toggle Stripe Billing toggle option value.
-	 * @return WooPaymentsStripeBillingModule
+	 * @return StripeBillingModule
 	 */
-	private function load_stripe_billing_module( string $toggle ): WooPaymentsStripeBillingModule {
+	private function load_stripe_billing_module( string $toggle ): StripeBillingModule {
 		$this->report_subscriptions_loaded();
 		WooCommerceSubscriptionsDoubles::load();
-		update_option( WooPaymentsStripeBillingModule::TOGGLE_OPTION, $toggle );
+		update_option( StripeBillingModule::TOGGLE_OPTION, $toggle );
 
-		$module = new WooPaymentsStripeBillingModule();
+		$module = new StripeBillingModule();
 		$module->register();
-		wc_get_container()->replace( WooPaymentsStripeBillingModule::class, $module );
+		wc_get_container()->replace( StripeBillingModule::class, $module );
 
 		return $module;
 	}

@@ -12,7 +12,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\DataM
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\PluginLifecycleListener;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\ReconciliationJob;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionsController;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\WooPaymentsStripeBillingModule;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\StripeBillingModule;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\NavigationController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\NoticesPassthrough;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\SharedSettings;
@@ -339,7 +339,7 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 				// Every request that can write a WooPayments log line numbers it under one request id, as client 11.1.0's logger
 				// context does on every request (`includes/class-wc-payments.php:552`, `src/Internal/LoggerContext.php:73-79`).
 				$matrix[ $state ][ $request ][] = WooPaymentsLogEntryFormat::class;
-				$matrix[ $state ][ $request ][] = WooPaymentsStripeBillingModule::class;
+				$matrix[ $state ][ $request ][] = StripeBillingModule::class;
 				$matrix[ $state ][ $request ][] = WooPaymentsTokenService::class;
 				// Saved SEPA, Link and Amazon Pay tokens load on any of these requests (renewals, admin subscription views);
 				// the client loads their token classes on every request (client 11.1.0 `includes/class-wc-payments.php:468,540-541`).

@@ -14,7 +14,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\PaymentMethodRegistry;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\WooPaymentsStripeBillingModule;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\StripeBillingModule;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionAdminPaymentMethodHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionsController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsEventIngestor;
@@ -127,7 +127,7 @@ class WooPaymentsSubscriptionsControllerTest extends WC_Unit_Test_Case {
 	public function test_attaching_the_renewal_handler_resolves_no_renewal_service(): void {
 		$this->load_subscriptions();
 		$this->arrange_ownership( false, true, WooPaymentsSetupTier::CONNECTED );
-		$renewal_services = array( PaymentProcessingService::class, WooPaymentsProvider::class, WooPaymentsTokenService::class, WooPaymentsStripeBillingModule::class, WooPaymentsAccountService::class, WooPaymentsLogger::class );
+		$renewal_services = array( PaymentProcessingService::class, WooPaymentsProvider::class, WooPaymentsTokenService::class, StripeBillingModule::class, WooPaymentsAccountService::class, WooPaymentsLogger::class );
 
 		// Attaching also registers the admin payment method handler, which needs the token service; what it resolves is allowed.
 		wc_get_container()->reset_all_resolved();
@@ -1912,16 +1912,16 @@ class WooPaymentsSubscriptionsControllerTest extends WC_Unit_Test_Case {
 	 * Load WooCommerce Subscriptions and the Stripe Billing module with the given toggle, while native owns payments.
 	 *
 	 * @param string $toggle Stripe Billing toggle option value.
-	 * @return WooPaymentsStripeBillingModule
+	 * @return StripeBillingModule
 	 */
-	private function load_stripe_billing_module( string $toggle ): WooPaymentsStripeBillingModule {
+	private function load_stripe_billing_module( string $toggle ): StripeBillingModule {
 		$this->report_subscriptions_loaded();
 		WooCommerceSubscriptionsDoubles::load();
-		update_option( WooPaymentsStripeBillingModule::TOGGLE_OPTION, $toggle );
+		update_option( StripeBillingModule::TOGGLE_OPTION, $toggle );
 
-		$module = new WooPaymentsStripeBillingModule();
+		$module = new StripeBillingModule();
 		$module->register();
-		wc_get_container()->replace( WooPaymentsStripeBillingModule::class, $module );
+		wc_get_container()->replace( StripeBillingModule::class, $module );
 
 		return $module;
 	}

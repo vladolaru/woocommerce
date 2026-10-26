@@ -12,7 +12,7 @@ use Automattic\WooCommerce\Internal\Payments\PaymentOperationContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcomeApplyException;
 use Automattic\WooCommerce\Internal\Payments\PaymentProcessingService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\WooPaymentsStripeBillingModule;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\StripeBillingModule;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCurrencyUtils;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
@@ -682,10 +682,10 @@ class WooPaymentsSubscriptionsController implements RegisterHooksInterface {
 	/**
 	 * Get the Stripe Billing module, which answers whether Stripe bills a subscription.
 	 *
-	 * @return WooPaymentsStripeBillingModule
+	 * @return StripeBillingModule
 	 */
-	private function get_stripe_billing_module(): WooPaymentsStripeBillingModule {
-		return wc_get_container()->get( WooPaymentsStripeBillingModule::class );
+	private function get_stripe_billing_module(): StripeBillingModule {
+		return wc_get_container()->get( StripeBillingModule::class );
 	}
 
 	/**

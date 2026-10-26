@@ -13,7 +13,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAc
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDatabaseCache;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\WooPaymentsStripeBillingModule;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\StripeBillingModule;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsEventIngestor;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsWebhookRestController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsWebhookReliabilityService;
@@ -867,13 +867,13 @@ class WooPaymentsWebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 	 * (`class-wc-rest-payments-webhook-controller.php:81-83`). The line names the event, as Stripe Billing money invariant 3 asks.
 	 */
 	public function test_invoice_event_refused_without_the_stripe_billing_module_logs_one_line(): void {
-		$module = $this->getMockBuilder( WooPaymentsStripeBillingModule::class )
+		$module = $this->getMockBuilder( StripeBillingModule::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'is_loaded', 'handle_invoice_event' ) )
 			->getMock();
 		$module->method( 'is_loaded' )->willReturn( false );
 		$module->expects( $this->never() )->method( 'handle_invoice_event' );
-		wc_get_container()->replace( WooPaymentsStripeBillingModule::class, $module );
+		wc_get_container()->replace( StripeBillingModule::class, $module );
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
 		$logger     = RecordingWcLogger::install();
 		$controller = new WooPaymentsWebhookRestController();

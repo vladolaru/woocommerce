@@ -10,7 +10,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFeatureController
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\RateService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\WooPaymentsStripeBillingModule;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\StripeBillingModule;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayEligibility;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsActionSchedulerService;
@@ -145,10 +145,10 @@ class WooPaymentsStoreSetupReportControllerTest extends WC_Unit_Test_Case {
 			)
 		);
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enabled' => 'yes' ) );
-		update_option( WooPaymentsStripeBillingModule::TOGGLE_OPTION, $toggle );
-		$module = new WooPaymentsStripeBillingModule();
+		update_option( StripeBillingModule::TOGGLE_OPTION, $toggle );
+		$module = new StripeBillingModule();
 		$module->register();
-		wc_get_container()->replace( WooPaymentsStripeBillingModule::class, $module );
+		wc_get_container()->replace( StripeBillingModule::class, $module );
 
 		$snapshots  = array();
 		$api_client = $this->create_api_client( array( 'is_available', 'send_store_setup' ) );

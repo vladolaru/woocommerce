@@ -13,7 +13,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiExcept
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountEventHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsEarlyFraudWarningEventHandler;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\WooPaymentsStripeBillingModule;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\StripeBillingModule;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsEventIngestor;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsEventOrderResolver;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIppReceiptEmail;
@@ -3202,13 +3202,13 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	 * @return WooPaymentsEventIngestor
 	 */
 	private function create_ingestor_without_the_stripe_billing_module(): WooPaymentsEventIngestor {
-		$module = $this->getMockBuilder( WooPaymentsStripeBillingModule::class )
+		$module = $this->getMockBuilder( StripeBillingModule::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'is_loaded', 'handle_invoice_event' ) )
 			->getMock();
 		$module->method( 'is_loaded' )->willReturn( false );
 		$module->expects( $this->never() )->method( 'handle_invoice_event' );
-		wc_get_container()->replace( WooPaymentsStripeBillingModule::class, $module );
+		wc_get_container()->replace( StripeBillingModule::class, $module );
 
 		return $this->create_ingestor(
 			wc_get_container()->get( OrderPaymentLifecycleService::class ),
@@ -3280,7 +3280,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	 * @testdox Succeeded and failed intents, refund and dispute events, and invoice.paid while Stripe Billing is loaded, are retried after a failure.
 	 */
 	public function test_retried_event_types(): void {
-		$module = $this->getMockBuilder( WooPaymentsStripeBillingModule::class )
+		$module = $this->getMockBuilder( StripeBillingModule::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'is_loaded' ) )
 			->getMock();
@@ -3290,7 +3290,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 				return $loaded;
 			}
 		);
-		wc_get_container()->replace( WooPaymentsStripeBillingModule::class, $module );
+		wc_get_container()->replace( StripeBillingModule::class, $module );
 
 		$retried = fn( string $type ): bool => $this->sut->is_retried_event( array( 'type' => $type ) );
 
@@ -3313,7 +3313,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	 */
 	public function test_invoice_events_go_to_the_stripe_billing_module_after_the_mode_check(): void {
 		$calls  = array();
-		$module = $this->getMockBuilder( WooPaymentsStripeBillingModule::class )
+		$module = $this->getMockBuilder( StripeBillingModule::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'is_loaded', 'handle_invoice_event' ) )
 			->getMock();
@@ -3323,7 +3323,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 				$calls[] = 'module ' . $event['id'];
 			}
 		);
-		wc_get_container()->replace( WooPaymentsStripeBillingModule::class, $module );
+		wc_get_container()->replace( StripeBillingModule::class, $module );
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
 		foreach ( array( 'before', 'after' ) as $moment ) {
 			add_action(

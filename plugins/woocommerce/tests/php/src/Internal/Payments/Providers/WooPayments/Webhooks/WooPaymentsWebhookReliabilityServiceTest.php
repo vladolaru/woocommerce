@@ -10,7 +10,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsActionSchedulerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsEventIngestor;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\WooPaymentsStripeBillingModule;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\StripeBillingModule;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsWebhookReliabilityService;
 use Automattic\WooCommerce\Tests\Internal\Payments\OrderPaymentLockTestTrait;
@@ -948,13 +948,13 @@ class WooPaymentsWebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 	 * @testdox Without the Stripe Billing module, a stored invoice event is refused with exactly one error line, from the job.
 	 */
 	public function test_invoice_event_refused_without_the_stripe_billing_module_logs_one_line(): void {
-		$module = $this->getMockBuilder( WooPaymentsStripeBillingModule::class )
+		$module = $this->getMockBuilder( StripeBillingModule::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'is_loaded', 'handle_invoice_event' ) )
 			->getMock();
 		$module->method( 'is_loaded' )->willReturn( false );
 		$module->expects( $this->never() )->method( 'handle_invoice_event' );
-		wc_get_container()->replace( WooPaymentsStripeBillingModule::class, $module );
+		wc_get_container()->replace( StripeBillingModule::class, $module );
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
 
 		$store     = new FailedEventTransients();

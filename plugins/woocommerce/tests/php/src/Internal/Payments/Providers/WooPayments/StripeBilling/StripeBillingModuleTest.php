@@ -3,7 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\WooPaymentsStripeBillingModule;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\StripeBillingModule;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentRequestBuilder;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\SubscriptionDouble;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\WooCommerceSubscriptionsDoubles;
@@ -16,7 +16,7 @@ use WC_Unit_Test_Case;
  * WooCommerce Subscriptions is made active through the legacy proxy's `class_exists`, which every test resets, so no
  * class is defined for later tests.
  */
-class WooPaymentsStripeBillingModuleTest extends WC_Unit_Test_Case {
+class StripeBillingModuleTest extends WC_Unit_Test_Case {
 
 	/**
 	 * Clear the registries the subscription doubles read, the staging flag and the admin screen.
@@ -39,12 +39,12 @@ class WooPaymentsStripeBillingModuleTest extends WC_Unit_Test_Case {
 	 * @testdox Turning the bundled subscriptions off stores the flag off.
 	 */
 	public function test_turning_bundled_subscriptions_off_stores_the_flag_off(): void {
-		update_option( WooPaymentsStripeBillingModule::BUNDLED_SUBSCRIPTIONS_FLAG_OPTION, '1' );
+		update_option( StripeBillingModule::BUNDLED_SUBSCRIPTIONS_FLAG_OPTION, '1' );
 
-		( new WooPaymentsStripeBillingModule() )->turn_off_bundled_subscriptions();
+		( new StripeBillingModule() )->turn_off_bundled_subscriptions();
 
-		$this->assertSame( '0', get_option( WooPaymentsStripeBillingModule::BUNDLED_SUBSCRIPTIONS_FLAG_OPTION ) );
-		$this->assertFalse( ( new WooPaymentsStripeBillingModule() )->is_bundled_subscriptions_flag_on() );
+		$this->assertSame( '0', get_option( StripeBillingModule::BUNDLED_SUBSCRIPTIONS_FLAG_OPTION ) );
+		$this->assertFalse( ( new StripeBillingModule() )->is_bundled_subscriptions_flag_on() );
 	}
 
 	/**
@@ -82,7 +82,7 @@ class WooPaymentsStripeBillingModuleTest extends WC_Unit_Test_Case {
 			}
 		}
 
-		$this->assertSame( $expected, ( new WooPaymentsStripeBillingModule() )->is_bundled_subscriptions_eligible() );
+		$this->assertSame( $expected, ( new StripeBillingModule() )->is_bundled_subscriptions_eligible() );
 		$this->assertFalse( has_filter( 'woocommerce_product_data_store_cpt_get_products_query' ), 'The product query filter is removed after the check.' );
 	}
 
@@ -101,14 +101,14 @@ class WooPaymentsStripeBillingModuleTest extends WC_Unit_Test_Case {
 		if ( $subscriptions ) {
 			$this->load_subscriptions();
 		}
-		update_option( WooPaymentsStripeBillingModule::TOGGLE_OPTION, $toggle );
+		update_option( StripeBillingModule::TOGGLE_OPTION, $toggle );
 
 		$sut = $this->register_module();
 
 		$this->assertSame( $loaded, $sut->is_loaded() );
 		$this->assertSame( $enabled, $sut->is_stripe_billing_enabled() );
 
-		update_option( WooPaymentsStripeBillingModule::TOGGLE_OPTION, '0' );
+		update_option( StripeBillingModule::TOGGLE_OPTION, '0' );
 		$this->assertFalse( $sut->is_stripe_billing_enabled(), 'Turning the toggle off must stop new Stripe Billing subscriptions in the same request.' );
 	}
 
@@ -130,7 +130,7 @@ class WooPaymentsStripeBillingModuleTest extends WC_Unit_Test_Case {
 	 */
 	public function test_duplicating_a_product_leaves_out_its_stripe_ids_and_hashes(): void {
 		$this->load_subscriptions();
-		update_option( WooPaymentsStripeBillingModule::TOGGLE_OPTION, '0' );
+		update_option( StripeBillingModule::TOGGLE_OPTION, '0' );
 		$this->register_module();
 
 		$stripe_meta = array(
@@ -192,7 +192,7 @@ class WooPaymentsStripeBillingModuleTest extends WC_Unit_Test_Case {
 		if ( $loaded ) {
 			$this->load_subscriptions();
 		}
-		update_option( WooPaymentsStripeBillingModule::TOGGLE_OPTION, '0' );
+		update_option( StripeBillingModule::TOGGLE_OPTION, '0' );
 		$this->register_module();
 		list( $subscription, $order ) = $this->create_stripe_billed_subscription_and_renewal();
 		$subscription->update_meta_data( '_wcpay_subscription_id', $wcpay_subscription_id );
@@ -215,7 +215,7 @@ class WooPaymentsStripeBillingModuleTest extends WC_Unit_Test_Case {
 	 */
 	public function test_gives_the_minimum_recurring_amount_only_while_the_toggle_is_on( string $toggle, $expected ): void {
 		$this->load_subscriptions();
-		update_option( WooPaymentsStripeBillingModule::TOGGLE_OPTION, $toggle );
+		update_option( StripeBillingModule::TOGGLE_OPTION, $toggle );
 		set_transient( 'WCPAY_SUBSCRIPTION_MINIMUM_RECURRING_AMOUNTS_USD', 100 );
 		$this->register_module();
 
@@ -232,7 +232,7 @@ class WooPaymentsStripeBillingModuleTest extends WC_Unit_Test_Case {
 	 */
 	public function test_runs_the_update_payment_method_flow_only_while_the_toggle_is_on( string $toggle, string $expected ): void {
 		$this->load_subscriptions();
-		update_option( WooPaymentsStripeBillingModule::TOGGLE_OPTION, $toggle );
+		update_option( StripeBillingModule::TOGGLE_OPTION, $toggle );
 		$this->register_module();
 		list( $subscription, $order ) = $this->create_stripe_billed_subscription_and_renewal();
 		$subscription->set_status( 'on-hold' );
@@ -257,7 +257,7 @@ class WooPaymentsStripeBillingModuleTest extends WC_Unit_Test_Case {
 	 */
 	public function test_answers_scheduled_payments_only_for_woopayments_subscriptions( string $toggle ): void {
 		$this->load_subscriptions();
-		update_option( WooPaymentsStripeBillingModule::TOGGLE_OPTION, $toggle );
+		update_option( StripeBillingModule::TOGGLE_OPTION, $toggle );
 		$this->register_module();
 		WooCommerceSubscriptionsDoubles::load();
 		$other_gateway = new SubscriptionDouble();
@@ -313,13 +313,13 @@ class WooPaymentsStripeBillingModuleTest extends WC_Unit_Test_Case {
 	public function test_turning_stripe_billing_off_starts_the_migration( bool $enabled ): void {
 		$this->load_subscriptions();
 		WooCommerceSubscriptionsDoubles::load_background_repairer();
-		update_option( WooPaymentsStripeBillingModule::TOGGLE_OPTION, $enabled ? '0' : '1' );
+		update_option( StripeBillingModule::TOGGLE_OPTION, $enabled ? '0' : '1' );
 		$this->create_stripe_billed_subscription_and_renewal();
 		$sut = $this->register_module();
 
 		$sut->set_stripe_billing_enabled( $enabled );
 
-		$this->assertSame( $enabled ? '1' : '0', get_option( WooPaymentsStripeBillingModule::TOGGLE_OPTION ) );
+		$this->assertSame( $enabled ? '1' : '0', get_option( StripeBillingModule::TOGGLE_OPTION ) );
 		$this->assertSame(
 			array(
 				'is_stripe_billing_enabled'         => $enabled,
@@ -420,10 +420,10 @@ class WooPaymentsStripeBillingModuleTest extends WC_Unit_Test_Case {
 	/**
 	 * Build and register the module.
 	 *
-	 * @return WooPaymentsStripeBillingModule
+	 * @return StripeBillingModule
 	 */
-	private function register_module(): WooPaymentsStripeBillingModule {
-		$sut = new WooPaymentsStripeBillingModule();
+	private function register_module(): StripeBillingModule {
+		$sut = new StripeBillingModule();
 		$sut->register();
 
 		return $sut;

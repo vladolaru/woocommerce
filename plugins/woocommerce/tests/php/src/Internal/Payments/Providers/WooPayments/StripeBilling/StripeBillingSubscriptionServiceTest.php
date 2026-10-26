@@ -10,7 +10,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\StripeBillingInvoiceService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\StripeBillingProductService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\StripeBillingSubscriptionService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\WooPaymentsStripeBillingModule;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\StripeBillingModule;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
@@ -126,7 +126,7 @@ class StripeBillingSubscriptionServiceTest extends WC_Unit_Test_Case {
 		$product_service = new StripeBillingProductService();
 		$product_service->init( $api, $account_service, $logger );
 
-		$module = $this->createMock( WooPaymentsStripeBillingModule::class );
+		$module = $this->createMock( StripeBillingModule::class );
 		$module->method( 'is_stripe_billing_enabled' )->willReturn( true );
 		$invoice_service = new StripeBillingInvoiceService();
 		$invoice_service->init( $api, $api_client, $module, $logger );
@@ -1210,7 +1210,7 @@ class StripeBillingSubscriptionServiceTest extends WC_Unit_Test_Case {
 		);
 		wc_get_container()->replace( StripeBillingSubscriptionService::class, $this->sut );
 
-		$module = new WooPaymentsStripeBillingModule();
+		$module = new StripeBillingModule();
 		$module->register();
 	}
 

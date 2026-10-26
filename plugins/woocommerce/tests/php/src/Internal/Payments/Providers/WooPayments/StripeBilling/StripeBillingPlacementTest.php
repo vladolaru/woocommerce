@@ -33,16 +33,16 @@ class StripeBillingPlacementTest extends WC_Unit_Test_Case {
 		$referencing = <<<'PHP'
 <?php
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\WooPaymentsStripeBillingModule;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\StripeBillingModule;
 PHP;
 		$relative    = <<<'PHP'
 <?php
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
-$module = wc_get_container()->get( StripeBilling\WooPaymentsStripeBillingModule::class );
+$module = wc_get_container()->get( StripeBilling\StripeBillingModule::class );
 PHP;
 		$commented   = <<<'PHP'
 <?php
-// See StripeBilling\WooPaymentsStripeBillingModule for the boundary.
+// See StripeBilling\StripeBillingModule for the boundary.
 /** Mirrors Providers\WooPayments\StripeBilling\StripeBillingApi. */
 $module = WooPaymentsStripeBillingModuleFactory::class;
 PHP;
