@@ -429,7 +429,7 @@
 					}
 				},
 				{
-					"name": "Core e2e tests - parallel (WooPayments on)",
+					"name": "Core e2e tests - parallel - PHP 8.3 (WooPayments on)",
 					"testType": "e2e",
 					"usesSharedPluginBuild": true,
 					"command": "test:e2e:core-parallel:woopayments-on",
@@ -452,7 +452,10 @@
 						"uninstall.php"
 					],
 					"testEnv": {
-						"start": "env:e2e --debug"
+						"start": "env:e2e --debug",
+						"config": {
+							"phpVersion": "8.3"
+						}
 					},
 					"events": [
 						"pull_request",
@@ -467,7 +470,7 @@
 					}
 				},
 				{
-					"name": "Core e2e tests - serial (WooPayments on)",
+					"name": "Core e2e tests - serial - PHP 8.3 (WooPayments on)",
 					"testType": "e2e",
 					"usesSharedPluginBuild": true,
 					"command": "test:e2e:core-serial:woopayments-on",
@@ -490,7 +493,10 @@
 						"uninstall.php"
 					],
 					"testEnv": {
-						"start": "env:e2e --debug"
+						"start": "env:e2e --debug",
+						"config": {
+							"phpVersion": "8.3"
+						}
 					},
 					"events": [
 						"pull_request",
@@ -974,7 +980,10 @@
 						"composer.lock",
 						"**/*.php",
 						".wp-env.test.json",
-						"phpunit.xml"
+						"phpunit.xml",
+						"client/blocks/assets/js/**/block.json",
+						"client/blocks/bin/copy-blocks-json.sh",
+						"tests/php/bin/run-phpunit.sh"
 					],
 					"testEnv": {
 						"start": "env:test --debug",
@@ -1001,7 +1010,9 @@
 						"**/*.php",
 						".wp-env.test.json",
 						"tests/php/multisite.xml",
-						"tests/php/bin/run-phpunit-multisite.sh"
+						"tests/php/bin/run-phpunit-multisite.sh",
+						"client/blocks/assets/js/**/block.json",
+						"client/blocks/bin/copy-blocks-json.sh"
 					],
 					"testEnv": {
 						"start": "env:test --debug",
