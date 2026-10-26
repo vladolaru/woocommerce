@@ -208,13 +208,26 @@ export const WooPaymentsDocumentsPage = () => {
 		DOCUMENT_FIELDS,
 		DOCUMENT_COLUMN_KEYS
 	);
-	const view = useMemo(
+	const queryView = useMemo(
 		() => ( {
 			...documentsQueryToDataViewsView( query ),
 			fields: visibleFields,
 		} ),
 		[ query, visibleFields ]
 	);
+	const canonicalViewKey = location.search || '';
+	const [ workingView, setWorkingView ] = useState< {
+		key: string;
+		view: WooPaymentsDocumentsDataView;
+	} | null >( null );
+	const view =
+		workingView?.key === canonicalViewKey ? workingView.view : queryView;
+
+	useEffect( () => {
+		setWorkingView( ( currentView ) =>
+			currentView?.key === canonicalViewKey ? currentView : null
+		);
+	}, [ canonicalViewKey ] );
 
 	const openDocument = useCallback(
 		( document: WooPaymentsDocument, target: '_blank' | '_self' ) => {
@@ -401,6 +414,10 @@ export const WooPaymentsDocumentsPage = () => {
 		);
 	const handleChangeView = ( nextView: WooPaymentsDocumentsDataView ) => {
 		saveFields( nextView.fields );
+		setWorkingView( {
+			key: canonicalViewKey,
+			view: nextView,
+		} );
 
 		// DataViews adds a filter without a value first; wait for the value.
 		if ( hasUnfinishedDataViewsFilter( nextView.filters ) ) {

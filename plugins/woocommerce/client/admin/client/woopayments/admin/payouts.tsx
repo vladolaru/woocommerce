@@ -206,13 +206,26 @@ export const WooPaymentsPayouts = () => {
 	);
 	const isAdvanced = showFilter === 'advanced';
 	const match = isAdvanced ? getListMatch( location.search ) : 'all';
-	const view = useMemo(
+	const queryView = useMemo(
 		() =>
 			moneyMovementQueryToDataViewsView( query, {
 				fields: visibleFields,
 			} ),
 		[ query, visibleFields ]
 	);
+	const canonicalViewKey = location.search;
+	const [ workingView, setWorkingView ] = useState< {
+		key: string;
+		view: WooPaymentsMoneyMovementDataView;
+	} | null >( null );
+	const view =
+		workingView?.key === canonicalViewKey ? workingView.view : queryView;
+
+	useEffect( () => {
+		setWorkingView( ( currentView ) =>
+			currentView?.key === canonicalViewKey ? currentView : null
+		);
+	}, [ canonicalViewKey ] );
 	const fields = useMemo(
 		() => [
 			{
@@ -402,6 +415,10 @@ export const WooPaymentsPayouts = () => {
 		);
 	const handleViewChange = ( nextView: WooPaymentsMoneyMovementDataView ) => {
 		saveFields( nextView.fields );
+		setWorkingView( {
+			key: canonicalViewKey,
+			view: nextView,
+		} );
 
 		// DataViews adds a filter without a value first; wait for the value.
 		if ( hasUnfinishedDataViewsFilter( nextView.filters ) ) {

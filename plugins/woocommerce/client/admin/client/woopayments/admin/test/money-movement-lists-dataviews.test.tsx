@@ -360,6 +360,9 @@ describe( 'WooPayments list load errors', () => {
 describe( 'WooPayments uncaptured list while a new page loads', () => {
 	beforeEach( () => {
 		setEmptyLists();
+		// The row is client 11.1.0's first mock authorization (`transactions/uncaptured/__tests__/index.test.tsx:95`)
+		// in its `Authorization` shape (`types/authorizations.d.ts:9-47`), without the customer fields.
+		// `total_count` 30 and the summary (30 × 1455) are synthetic: they give the list a second page of 25.
 		mocked( getWooPaymentsAuthorizations )
 			.mockResolvedValueOnce( {
 				data: [

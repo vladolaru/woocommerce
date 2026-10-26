@@ -329,7 +329,7 @@ export const WooPaymentsDisputesPage = () => {
 		() => getDisputesApiQuery( query, showFilter, match ),
 		[ query, showFilter, match ]
 	);
-	const view = useMemo(
+	const queryView = useMemo(
 		() =>
 			moneyMovementQueryToDataViewsView( query, {
 				fields: visibleFields,
@@ -337,6 +337,19 @@ export const WooPaymentsDisputesPage = () => {
 			} ),
 		[ query, visibleFields ]
 	);
+	const canonicalViewKey = location.search;
+	const [ workingView, setWorkingView ] = useState< {
+		key: string;
+		view: WooPaymentsMoneyMovementDataView;
+	} | null >( null );
+	const view =
+		workingView?.key === canonicalViewKey ? workingView.view : queryView;
+
+	useEffect( () => {
+		setWorkingView( ( currentView ) =>
+			currentView?.key === canonicalViewKey ? currentView : null
+		);
+	}, [ canonicalViewKey ] );
 	const fields = useMemo(
 		() => [
 			{
@@ -622,6 +635,10 @@ export const WooPaymentsDisputesPage = () => {
 
 	const handleViewChange = ( nextView: WooPaymentsMoneyMovementDataView ) => {
 		saveFields( nextView.fields );
+		setWorkingView( {
+			key: canonicalViewKey,
+			view: nextView,
+		} );
 
 		// DataViews adds a filter without a value first; wait for the value.
 		if ( hasUnfinishedDataViewsFilter( nextView.filters ) ) {
