@@ -344,6 +344,176 @@
       "count": 2
     }
   },
+  "client/woopayments/admin/capital/active-loan-summary.tsx": {
+    "@wordpress/use-recommended-components": {
+      "count": 3
+    }
+  },
+  "client/woopayments/admin/card-readers/page.tsx": {
+    "@wordpress/use-recommended-components": {
+      "count": 2
+    }
+  },
+  "client/woopayments/admin/documents/vat-modal.tsx": {
+    "@wordpress/use-recommended-components": {
+      "count": 1
+    }
+  },
+  "client/woopayments/admin/money-movement/dataviews.tsx": {
+    "@wordpress/use-recommended-components": {
+      "count": 3
+    }
+  },
+  "client/woopayments/admin/money-movement/dispute-evidence-form.tsx": {
+    "@wordpress/use-recommended-components": {
+      "count": 4
+    }
+  },
+  "client/woopayments/admin/money-movement/dispute-recommendations.tsx": {
+    "@wordpress/use-recommended-components": {
+      "count": 2
+    }
+  },
+  "client/woopayments/admin/money-movement/transaction-detail-sections.tsx": {
+    "@wordpress/use-recommended-components": {
+      "count": 5
+    }
+  },
+  "client/woopayments/admin/money-movement/transaction-details-page.tsx": {
+    "@wordpress/use-recommended-components": {
+      "count": 1
+    }
+  },
+  "client/woopayments/admin/money-movement/transaction-dispute-details.tsx": {
+    "@wordpress/use-recommended-components": {
+      "count": 3
+    }
+  },
+  "client/woopayments/admin/money-movement/transaction-timeline.tsx": {
+    "@wordpress/use-recommended-components": {
+      "count": 3
+    }
+  },
+  "client/woopayments/admin/money-movement/transactions-list-fields.tsx": {
+    "@wordpress/use-recommended-components": {
+      "count": 1
+    }
+  },
+  "client/woopayments/admin/money-movement/transactions-page.tsx": {
+    "@wordpress/use-recommended-components": {
+      "count": 1
+    }
+  },
+  "client/woopayments/admin/overview/components/account-balances-card.tsx": {
+    "@wordpress/use-recommended-components": {
+      "count": 4
+    }
+  },
+  "client/woopayments/admin/overview/components/account-details-card.tsx": {
+    "@wordpress/use-recommended-components": {
+      "count": 4
+    }
+  },
+  "client/woopayments/admin/overview/components/account-fees.tsx": {
+    "@wordpress/use-recommended-components": {
+      "count": 1
+    }
+  },
+  "client/woopayments/admin/overview/components/account-tools.tsx": {
+    "@wordpress/use-recommended-components": {
+      "count": 1
+    }
+  },
+  "client/woopayments/admin/overview/components/dispute-readiness-card.tsx": {
+    "@wordpress/use-recommended-components": {
+      "count": 3
+    }
+  },
+  "client/woopayments/admin/overview/components/overview-notices.tsx": {
+    "@wordpress/use-recommended-components": {
+      "count": 1
+    }
+  },
+  "client/woopayments/admin/overview/components/overview-task-list.tsx": {
+    "@wordpress/use-recommended-components": {
+      "count": 1
+    }
+  },
+  "client/woopayments/admin/overview/components/payout-schedule.tsx": {
+    "@wordpress/use-recommended-components": {
+      "count": 1
+    }
+  },
+  "client/woopayments/admin/overview/components/payouts-overview-card.tsx": {
+    "@wordpress/use-recommended-components": {
+      "count": 5
+    }
+  },
+  "client/woopayments/admin/overview/page.tsx": {
+    "@wordpress/use-recommended-components": {
+      "count": 2
+    }
+  },
+  "client/woopayments/admin/payout-details.tsx": {
+    "@wordpress/use-recommended-components": {
+      "count": 4
+    }
+  },
+  "client/woopayments/admin/payouts-notices.tsx": {
+    "@wordpress/use-recommended-components": {
+      "count": 1
+    }
+  },
+  "client/woopayments/admin/routes.tsx": {
+    "@wordpress/use-recommended-components": {
+      "count": 2
+    }
+  },
+  "client/woopayments/admin/test-mode-notice.tsx": {
+    "@wordpress/use-recommended-components": {
+      "count": 1
+    }
+  },
+  "client/woopayments/promotions/spotlight.tsx": {
+    "@wordpress/use-recommended-components": {
+      "count": 5
+    }
+  },
+  "client/woopayments/settings/express-checkout/woopay-settings.tsx": {
+    "@wordpress/use-recommended-components": {
+      "count": 1
+    }
+  },
+  "client/woopayments/settings/fraud-protection/advanced/index.tsx": {
+    "@wordpress/use-recommended-components": {
+      "count": 2
+    }
+  },
+  "client/woopayments/settings/payment-methods-list.tsx": {
+    "@wordpress/use-recommended-components": {
+      "count": 1
+    }
+  },
+  "client/woopayments/settings/payout-bank-account.tsx": {
+    "@wordpress/use-recommended-components": {
+      "count": 1
+    }
+  },
+  "client/woopayments/settings/settings-page.tsx": {
+    "@wordpress/use-recommended-components": {
+      "count": 1
+    }
+  },
+  "client/woopayments/settings/settings-shell.tsx": {
+    "@wordpress/use-recommended-components": {
+      "count": 1
+    }
+  },
+  "client/woopayments/settings/stripe-billing/stripe-billing-section.tsx": {
+    "@wordpress/use-recommended-components": {
+      "count": 1
+    }
+  },
   "client/wp-admin-scripts/email-editor-integration/reset-notification-email-content.tsx": {
     "@wordpress/use-recommended-components": {
       "count": 3
@@ -359,6 +529,26 @@
       "count": 1
     }
   },
+  "client/wp-admin-scripts/multi-currency-settings/app.tsx": {
+    "@wordpress/use-recommended-components": {
+      "count": 2
+    }
+  },
+  "client/wp-admin-scripts/multi-currency-settings/currency-settings-modal.tsx": {
+    "@wordpress/use-recommended-components": {
+      "count": 1
+    }
+  },
+  "client/wp-admin-scripts/multi-currency-settings/settings-section.tsx": {
+    "@wordpress/use-recommended-components": {
+      "count": 1
+    }
+  },
+  "client/wp-admin-scripts/multi-currency-settings/store-settings.tsx": {
+    "@wordpress/use-recommended-components": {
+      "count": 2
+    }
+  },
   "client/wp-admin-scripts/print-shipping-label-banner/shipping-banner/index.js": {
     "@wordpress/use-recommended-components": {
       "count": 1
@@ -367,6 +557,11 @@
   "client/wp-admin-scripts/woo-product-usage-notice/modal.js": {
     "@wordpress/use-recommended-components": {
       "count": 5
+    }
+  },
+  "client/wp-admin-scripts/woopayments-order-status-change/order-test-mode-notice.tsx": {
+    "@wordpress/use-recommended-components": {
+      "count": 1
     }
   }
 }
