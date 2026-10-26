@@ -2002,7 +2002,9 @@ class WC_REST_Order_Refunds_Computed_Totals_Test extends WC_REST_Unit_Test_Case 
 	 * taxes. Expected amounts are the line's own in the order currency (USD, two decimals): a 97.50 line with 9.75 tax
 	 * refunds 107.25 for its unit, or 97.50 after the 9.75 of tax was refunded; a 44.60 line with 4.46 tax closes at
 	 * 49.06 (explicit and preview), and one of its two units is 24.53; a 10.00 shipping line with 0.25 tax refunds 10.25; after 5.50 of an 11.00 shipping or
-	 * fee line (0.50 of it tax), 5.50 is left; three units of a 31.00 line refund 10.33, 10.33 and the 10.34 left.
+	 * fee line (0.50 of it tax), 5.50 is left; three units of a 31.00 line refund 10.33, 10.33 and the 10.34 left; a 10.07
+	 * line taxed on two rates (0.6042 and 0.15105, charged as 0.60 and 0.15) refunds 10.82, not 10.83; lines taxed
+	 * 4.874 or 4.875 on each of two rates (charged as 4.87 or 4.88 each) refund 107.22 for 97.48 and 107.26 for 97.50.
 	 * Store-currency controls keep the store's precision and today's results.
 	 *
 	 * @testWith ["JPY", 0, "USD", "line_item", 97.5, 1, 9.75, [], {"quantity": 1}, "create", "107.25"]
@@ -2023,6 +2025,10 @@ class WC_REST_Order_Refunds_Computed_Totals_Test extends WC_REST_Unit_Test_Case 
 	 *           ["USD", 0, "USD", "fee", 10, 1, 1, [{"refund_total": "5.50"}], {"quantity": 1}, "create", "5"]
 	 *           ["JPY", 0, "USD", "line_item", 30, 3, 1, [{"quantity": 1}, {"quantity": 1}], {"quantity": 1}, "create", "10.34"]
 	 *           ["USD", 0, "USD", "line_item", 30, 3, 1, [{"quantity": 1}, {"quantity": 1}], {"quantity": 1}, "create", "11"]
+	 *           ["JPY", 0, "USD", "line_item", 10.07, 1, [0.6042, 0.15105], [], {"quantity": 1}, "create", "10.82"]
+	 *           ["USD", 2, "USD", "line_item", 10.07, 1, [0.6042, 0.15105], [], {"quantity": 1}, "create", "10.82"]
+	 *           ["JPY", 0, "USD", "line_item", 97.48, 1, [4.874, 4.874], [], {"quantity": 1}, "create", "107.22"]
+	 *           ["JPY", 0, "USD", "line_item", 97.5, 1, [4.875, 4.875], [], {"quantity": 1}, "create", "107.26"]
 	 *
 	 * @param string $store_currency Store currency.
 	 * @param int    $store_decimals Store price decimals.
@@ -2030,19 +2036,27 @@ class WC_REST_Order_Refunds_Computed_Totals_Test extends WC_REST_Unit_Test_Case 
 	 * @param string $type           Type of the refunded line: line_item, shipping or fee.
 	 * @param float  $net            Net total of the refunded line.
 	 * @param int    $units          Units on the refunded line.
-	 * @param float  $tax            Tax of the refunded line, on one rate.
+	 * @param mixed  $tax            Tax of the refunded line on one rate, or a list of the taxes on two rates.
 	 * @param array  $prior          compute_totals refunds of the line made first, as request fields besides its id.
 	 * @param array  $line           Request fields of the line besides its id; a refund_tax is the amount for its one rate.
 	 * @param string $mode           create (compute_totals: its preview, the refund and the gateway amount), explicit (compute_totals off, amount = line gross) or preview.
 	 * @param string $expected       Expected refund amount, or the preview total.
 	 */
-	public function test_refund_engine_reads_line_taxes_at_their_per_rate_value( string $store_currency, int $store_decimals, string $order_currency, string $type, float $net, int $units, float $tax, array $prior, array $line, string $mode, string $expected ): void {
+	public function test_refund_engine_reads_line_taxes_at_their_per_rate_value( string $store_currency, int $store_decimals, string $order_currency, string $type, float $net, int $units, $tax, array $prior, array $line, string $mode, string $expected ): void {
 		update_option( 'woocommerce_currency', $store_currency );
 		update_option( 'woocommerce_price_num_decimals', $store_decimals );
+		// Per-line tax rounding (the default): each rate is charged rounded, which the two-rate row depends on.
+		update_option( 'woocommerce_tax_round_at_subtotal', 'no' );
 		$tax_rate_id = $this->create_tax_rate( 10.0 );
+		$rate_taxes  = is_array( $tax )
+			? array(
+				$tax_rate_id                  => $tax[0],
+				$this->create_tax_rate( 1.5 ) => $tax[1],
+			)
+			: array( $tax_rate_id => $tax );
 		$taxes       = array(
-			'total'    => array( $tax_rate_id => $tax ),
-			'subtotal' => array( $tax_rate_id => $tax ),
+			'total'    => $rate_taxes,
+			'subtotal' => $rate_taxes,
 		);
 
 		$order = wc_create_order();
@@ -2087,7 +2101,7 @@ class WC_REST_Order_Refunds_Computed_Totals_Test extends WC_REST_Unit_Test_Case 
 		);
 		$order->add_item( $other );
 		$order->set_currency( $order_currency );
-		$order->set_total( $net + $tax + 10 );
+		$order->set_total( $net + array_sum( $rate_taxes ) + 10 );
 		$order->set_status( OrderStatus::COMPLETED );
 		$order->save();
 		$item_id = $item->get_id();

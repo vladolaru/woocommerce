@@ -1652,7 +1652,7 @@ class DataUtils {
 	 *
 	 * Core stores a line's total_tax rounded at the store's decimals (WC_Order_Item_Product::set_taxes() and its fee and
 	 * shipping siblings, also on load), so for an order whose currency has more decimals the tax is the sum of the per-rate
-	 * taxes the line keeps. Otherwise it is the stored total_tax, as before.
+	 * taxes the line keeps, each rounded at the order's decimals as checkout charged it. Otherwise it is the stored total_tax.
 	 *
 	 * @param WC_Order_Item_Product|WC_Order_Item_Fee|WC_Order_Item_Shipping $item  An order line or a refund line.
 	 * @param WC_Order|false|null                                            $order The order the line, or its refund, belongs to.
@@ -1662,6 +1662,12 @@ class DataUtils {
 		if ( $this->get_order_price_decimals( $order ) === wc_get_price_decimals() ) {
 			return (float) $item->get_total() + (float) $item->get_total_tax();
 		}
-		return (float) $item->get_total() + (float) array_sum( array_map( 'floatval', (array) ( $item->get_taxes()['total'] ?? array() ) ) );
+		$taxes = array_map( 'floatval', (array) ( $item->get_taxes()['total'] ?? array() ) );
+		if ( 'yes' !== get_option( 'woocommerce_tax_round_at_subtotal' ) ) {
+			// Each rate is charged rounded, as set_taxes() rounds it, here at the order currency's decimals.
+			$decimals = $this->get_order_price_decimals( $order );
+			$taxes    = array_map( static fn( float $tax ): float => (float) wc_round_tax_total( $tax, $decimals ), $taxes );
+		}
+		return (float) $item->get_total() + (float) array_sum( $taxes );
 	}
 }
