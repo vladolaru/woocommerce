@@ -1769,8 +1769,8 @@ class WC_REST_Order_Refunds_Computed_Totals_Test extends WC_REST_Unit_Test_Case 
 	 *           ["JPY", 0, "USD", 17.5, 1, false, {}, {"refund_total": "17.50"}, {}, 201, 17.5]
 	 *           ["JPY", 0, "USD", 8.75, 2, false, {}, {"quantity": 1}, {}, 201, 8.75]
 	 *           ["JPY", 0, "USD", 8.75, 2, false, {"qty": 1, "refund_total": "8.50"}, {"quantity": 1}, {}, 201, 8.75]
-	 *           ["JPY", 0, "USD", 100, 1, true, {}, {"refund_total": "55.25"}, {}, 201, 55.25]
-	 *           ["JPY", 0, "USD", 100, 1, true, {"qty": 0, "refund_total": "0", "refund_tax": "9.75"}, {"refund_total": "0", "refund_tax": "0.25"}, {}, 201, 0.25]
+	 *           ["JPY", 0, "USD", 100, 1, true, {}, {"refund_total": "55.25"}, {}, 201, 55.25, [-50.23, -5.02]]
+	 *           ["JPY", 0, "USD", 100, 1, true, {"qty": 0, "refund_total": "0", "refund_tax": "9.75"}, {"refund_total": "0", "refund_tax": "0.25"}, {}, 201, 0.25, [0, -0.25]]
 	 *           ["JPY", 0, "USD", 10.5, 1, false, {}, {"refund_total": "10.50"}, {}, 201, 10.5]
 	 *           ["USD", 0, "USD", 18, 1, false, {}, {"refund_total": "10.50"}, {}, 201, 11]
 	 *           ["USD", 0, "USD", 10.5, 1, false, {}, {"refund_total": "10.50"}, {}, 201, 11]
@@ -1787,8 +1787,9 @@ class WC_REST_Order_Refunds_Computed_Totals_Test extends WC_REST_Unit_Test_Case 
 	 * @param array        $extra           Other request fields.
 	 * @param int          $expected_status Expected response status.
 	 * @param float|string $expected        Expected refund amount, or the error code of a refused request.
+	 * @param array|null   $expected_split  Expected net and tax parts of the refund lines, for a taxed line.
 	 */
-	public function test_compute_totals_refund_uses_order_currency_decimals( string $store_currency, int $store_decimals, string $order_currency, float $unit_price, int $units, bool $taxed, array $prior, array $line, array $extra, int $expected_status, $expected ): void {
+	public function test_compute_totals_refund_uses_order_currency_decimals( string $store_currency, int $store_decimals, string $order_currency, float $unit_price, int $units, bool $taxed, array $prior, array $line, array $extra, int $expected_status, $expected, ?array $expected_split = null ): void {
 		update_option( 'woocommerce_currency', $store_currency );
 		update_option( 'woocommerce_price_num_decimals', $store_decimals );
 		$tax_rate_id = $taxed ? $this->create_tax_rate( 10.0 ) : 0;
@@ -1847,11 +1848,19 @@ class WC_REST_Order_Refunds_Computed_Totals_Test extends WC_REST_Unit_Test_Case 
 		$refund = wc_get_order( $response->get_data()['id'] );
 		$this->assertSame( $amount, (float) $refund->get_amount(), 'The refund should record and refund the requested amount.' );
 		$this->assertSame( -$amount, (float) $refund->get_total(), 'The refund total should match the amount.' );
-		$line_sum = 0.0;
+		// The per-rate taxes are what the refund engine splits; the line's stored total_tax is rounded separately by
+		// WC_Order_Item_Product::set_taxes() at the store's decimals, which this change does not touch.
+		$net = 0.0;
+		$tax = 0.0;
 		foreach ( $refund->get_items() as $refund_item ) {
-			$line_sum += (float) $refund_item->get_total() + (float) $refund_item->get_total_tax();
+			$net += (float) $refund_item->get_total();
+			$tax += (float) array_sum( $refund_item->get_taxes()['total'] ?? array() );
 		}
-		$this->assertSame( -$amount, round( $line_sum, 2 ), 'The refund lines should add up to the amount.' );
+		$this->assertSame( -$amount, round( $net + $tax, 2 ), 'The refund lines and their taxes should add up to the amount.' );
+		if ( null !== $expected_split ) {
+			$this->assertSame( (float) $expected_split[0], round( $net, 2 ), 'The refund lines should hold the net part of the split.' );
+			$this->assertSame( (float) $expected_split[1], round( $tax, 2 ), 'The refund lines should hold the tax part of the split.' );
+		}
 	}
 
 	/**
