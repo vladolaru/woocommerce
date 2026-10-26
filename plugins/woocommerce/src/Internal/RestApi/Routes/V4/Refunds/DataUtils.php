@@ -1596,6 +1596,7 @@ class DataUtils {
 			if ( $foreign_decimals ) {
 				$raw_sum     = 0.0;
 				$rounded_sum = 0.0;
+				/** @var WC_Order_Item_Product|WC_Order_Item_Fee|WC_Order_Item_Shipping $refunded_item */
 				foreach ( $refund->get_items( array( 'line_item', 'fee', 'shipping' ) ) as $refunded_item ) {
 					$raw_sum     += $this->get_item_gross( $refunded_item, $order, true );
 					$rounded_sum += $this->get_item_gross( $refunded_item, $order );
