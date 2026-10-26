@@ -153,7 +153,9 @@ const PhoneNumberInput = ( {
 		initialSelectedItem: countryKey,
 		itemToString: ( item ) => countries[ item || '' ].name,
 		onSelectedItemChange: ( { selectedItem } ) => {
-			if ( selectedItem ) handleSelect( selectedItem );
+			if ( selectedItem ) {
+				handleSelect( selectedItem );
+			}
 		},
 		stateReducer: ( state, { changes } ) => {
 			if ( state.isOpen === true && changes.isOpen === false ) {

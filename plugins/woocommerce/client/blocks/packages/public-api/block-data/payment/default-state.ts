@@ -54,13 +54,12 @@ function getDefaultPaymentMethodData() {
 	const flatSavedPaymentMethods = Object.keys( savedPaymentMethods ).flatMap(
 		( type ) => savedPaymentMethods[ type ]
 	);
-	const matchingSavedPaymentMethods = flatSavedPaymentMethods.filter(
+	const gatewaySavedPaymentMethods = flatSavedPaymentMethods.filter(
 		( method ) => method.method.gateway === defaultPaymentMethod
 	);
 	const savedPaymentMethod =
-		matchingSavedPaymentMethods.find(
-			( method ) => method.is_default === true
-		) || matchingSavedPaymentMethods[ 0 ];
+		gatewaySavedPaymentMethods.find( ( method ) => method.is_default ) ||
+		gatewaySavedPaymentMethods[ 0 ];
 
 	// If a saved payment method is found that matches the default payment method,
 	// use it.
@@ -83,8 +82,7 @@ export interface PaymentState {
 	// Registered express payment methods are all express payment methods from the registry (before filtering).
 	registeredExpressPaymentMethods: PlainExpressPaymentMethods;
 	savedPaymentMethods:
-		| Record< string, SavedPaymentMethod[] >
-		| EmptyObjectType;
+		Record< string, SavedPaymentMethod[] > | EmptyObjectType;
 	paymentMethodData: Record< string, unknown >;
 	paymentResult: PaymentResult | null;
 	paymentMethodsInitialized: boolean;

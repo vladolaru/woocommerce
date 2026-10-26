@@ -25,14 +25,14 @@ describe( 'Search', () => {
 		).toBeInTheDocument();
 	} );
 
-	it( 'shows the free text search option', () => {
+	it( 'shows the free text search option', async () => {
 		const { getByRole, queryAllByRole } = render(
 			<Search type="products" allowFreeTextSearch />
 		);
-		userEvent.type( getByRole( 'combobox' ), 'Product Query' );
+		await userEvent.type( getByRole( 'combobox' ), 'Product Query' );
 		expect( queryAllByRole( 'option' ) ).toHaveLength( 1 );
 
-		userEvent.clear( getByRole( 'combobox' ) );
+		await userEvent.clear( getByRole( 'combobox' ) );
 		expect( queryAllByRole( 'option' ) ).toHaveLength( 0 );
 	} );
 
@@ -66,7 +66,7 @@ describe( 'Search', () => {
 					/>
 				);
 				// Emulate typing to render available options.
-				userEvent.type( getByRole( 'combobox' ), 'A' );
+				await userEvent.type( getByRole( 'combobox' ), 'A' );
 				// Wait for async options processing.
 				await waitFor( () => {
 					expect( queryAllByRole( 'option' ) ).toHaveLength( 3 );
@@ -94,7 +94,7 @@ describe( 'Search', () => {
 					/>
 				);
 				// Emulate typing to render available options.
-				userEvent.type( getByRole( 'combobox' ), 'A' );
+				await userEvent.type( getByRole( 'combobox' ), 'A' );
 				// Wait for async options processing.
 				await waitFor( () => {
 					expect( optionsSpy ).toHaveBeenCalledWith( 'A' );
@@ -126,7 +126,7 @@ describe( 'Search', () => {
 					/>
 				);
 				// Emulate typing to render available options.
-				userEvent.type( getByRole( 'combobox' ), 'A' );
+				await userEvent.type( getByRole( 'combobox' ), 'A' );
 				// Wait for async options processing.
 				await waitFor( () => {
 					expect( optionsSpy ).toHaveBeenCalledWith( 'A' );

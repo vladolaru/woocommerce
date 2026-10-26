@@ -142,7 +142,7 @@ export const WooPaymentsResetAccountModal = ( {
 									'woocommerce'
 								),
 								'WooPayments'
-						  )
+							)
 						: sprintf(
 								/* translators: %s: Provider name */
 								__(
@@ -150,7 +150,7 @@ export const WooPaymentsResetAccountModal = ( {
 									'woocommerce'
 								),
 								'WooPayments'
-						  ),
+							),
 					{
 						isDismissible: true,
 					}
@@ -178,7 +178,7 @@ export const WooPaymentsResetAccountModal = ( {
 						'woocommerce'
 					),
 					'WooPayments'
-			  )
+				)
 			: sprintf(
 					/* translators: %s: Provider name */
 					__(
@@ -186,7 +186,7 @@ export const WooPaymentsResetAccountModal = ( {
 						'woocommerce'
 					),
 					'WooPayments'
-			  );
+				);
 		if ( isEmbeddedResetFlow ) {
 			// If resetting the account from NOX, override the content.
 			content = sprintf(

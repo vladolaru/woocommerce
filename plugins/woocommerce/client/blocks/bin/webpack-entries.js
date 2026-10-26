@@ -279,7 +279,7 @@ const getBlockEntries = ( relativePath, blockEntries = blocks ) => {
 				const filePaths = glob.sync(
 					`./assets/js/blocks/${ config.customDir || blockCode }/` +
 						relativePath,
-					{ dotRelative: true }
+					{ dotRelative: true, posix: true }
 				);
 				if ( filePaths.length > 0 ) {
 					return [ blockCode, filePaths ];
@@ -346,6 +346,7 @@ const entries = {
 			'./packages/public-api/{price-format,blocks-components,blocks-checkout}/**/index.{t,j}s',
 			{
 				dotRelative: true,
+				posix: true,
 			}
 		),
 
@@ -354,7 +355,7 @@ const entries = {
 
 		// Blocks
 		'product-image-gallery':
-			'./assets/js/atomic/blocks/product-elements/product-image-gallery/index.ts',
+			'./assets/js/blocks/product-elements-blocks/product-image-gallery/index.ts',
 		'wc-payment-method-woopayments':
 			'./assets/js/extensions/payment-methods/woopayments/style.scss',
 		'wc-payment-method-woopayments-woopay':

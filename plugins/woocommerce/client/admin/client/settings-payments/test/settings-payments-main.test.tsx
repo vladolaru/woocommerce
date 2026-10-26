@@ -83,6 +83,7 @@ describe( 'SettingsPaymentsMain', () => {
 				[]
 			);
 		} );
+		delete window.wcSettings.admin.woocommerce_payments_nox_profile;
 	} );
 
 	it( 'does not replay a dismissed notice from cached providers after remount', async () => {
@@ -353,6 +354,27 @@ describe( 'SettingsPaymentsMain', () => {
 		expect( morePaymentOptionsLink.closest( 'a' ) ).toHaveAttribute(
 			'rel',
 			expect.stringContaining( 'noreferrer' )
+		);
+	} );
+
+	it( 'should filter the marketplace link by the selected business location', () => {
+		window.wcSettings.admin.woocommerce_payments_nox_profile = {
+			business_country_code: 'BR',
+		};
+
+		render(
+			<Router>
+				<SettingsPaymentsMain />
+			</Router>
+		);
+
+		expect(
+			screen.getByRole( 'link', {
+				name: 'More payment options (opens in a new tab)',
+			} )
+		).toHaveAttribute(
+			'href',
+			'https://woocommerce.com/product-category/woocommerce-extensions/payment-gateways/?utm_source=payments_recommendations&country=BR'
 		);
 	} );
 } );

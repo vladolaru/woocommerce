@@ -12,3 +12,7 @@ export const WC_SETTINGS_PAYMENTS_NAMESPACE = '/wc-admin/settings/payments';
 // The WooPayments settings page heading, rendered by the Payments settings shell and naming the page's section.
 export const WOOPAYMENTS_SETTINGS_HEADING_ID =
 	'woopayments-settings-page-heading';
+
+// The WooCommerce.com marketplace page the "More payment options" link points to.
+export const morePaymentOptionsBaseUrl =
+	'https://woocommerce.com/product-category/woocommerce-extensions/payment-gateways/?utm_source=payments_recommendations';
