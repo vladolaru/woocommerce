@@ -3,8 +3,12 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\MultiCurrency;
 
+use Automattic\WooCommerce\Admin\API\Reports\Cache as ReportsCache;
+use Automattic\WooCommerce\Admin\API\Reports\Orders\Stats\DataStore as OrdersStatsDataStore;
+use Automattic\WooCommerce\Admin\API\Reports\Taxes\DataStore as TaxesDataStore;
 use Automattic\WooCommerce\Blocks\Assets\AssetDataRegistry;
 use Automattic\WooCommerce\Blocks\Package;
+use Automattic\WooCommerce\Enums\OrderStatus;
 use Automattic\WooCommerce\Internal\Admin\WCAdminAssets;
 use Automattic\WooCommerce\Internal\DataStores\Orders\CustomOrdersTableController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyAnalyticsController;
@@ -379,6 +383,74 @@ class MultiCurrencyAnalyticsControllerTest extends WC_Unit_Test_Case {
 		$this->assertSame( -2.0, $result['shipping_total'] );
 		$this->assertSame( -1.0, $result['tax_total'] );
 		$this->assertSame( -8.0, $result['total_sales'] );
+	}
+
+	/**
+	 * @testdox Should report the Taxes report's taxable amounts in the store currency, as it does the tax.
+	 */
+	public function test_converts_taxes_report_taxable_amounts_to_the_store_currency(): void {
+		\WC_Helper_Reports::reset_stats_dbs();
+		update_option( 'woocommerce_calc_taxes', 'yes' );
+		update_option( 'woocommerce_tax_based_on', 'billing' );
+		update_option( 'woocommerce_shipping_tax_class', '' );
+		$rate_id = (int) \WC_Tax::_insert_tax_rate(
+			array(
+				'tax_rate_country'  => 'DE',
+				'tax_rate'          => '19',
+				'tax_rate_name'     => 'VAT',
+				'tax_rate_priority' => 1,
+				'tax_rate_shipping' => 1,
+				'tax_rate_order'    => 0,
+				'tax_rate_class'    => '',
+			)
+		);
+		set_transient( UsageDetector::HAS_MC_ORDERS_TRANSIENT, '1', HOUR_IN_SECONDS );
+		$this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, true )->register();
+
+		// One order in the store currency and one in EUR at 2 EUR to the dollar, each 2 x 100 product + 10 fee on the order side
+		// and 5 shipping. The expected amounts use the conversion the tax sums get (client 11.1.0 `includes/multi-currency/Analytics.php:667-671`).
+		foreach ( array( 'USD', 'EUR' ) as $currency ) {
+			$order = wc_create_order();
+			$order->set_currency( $currency );
+			$order->set_billing_country( 'DE' );
+			$order->set_shipping_country( 'DE' );
+			$order->add_product( \WC_Helper_Product::create_simple_product( true, array( 'regular_price' => '100' ) ), 2 );
+			$fee = new \WC_Order_Item_Fee();
+			$fee->set_name( 'Handling' );
+			$fee->set_total( '10' );
+			$fee->set_tax_status( 'taxable' );
+			$order->add_item( $fee );
+			$shipping = new \WC_Order_Item_Shipping();
+			$shipping->set_method_id( 'flat_rate' );
+			$shipping->set_total( '5' );
+			$order->add_item( $shipping );
+			$order->calculate_totals();
+			if ( 'EUR' === $currency ) {
+				$order->update_meta_data( '_wcpay_multi_currency_order_exchange_rate', 2 );
+				$order->update_meta_data( '_wcpay_multi_currency_order_default_currency', 'USD' );
+			}
+			$order->set_status( OrderStatus::COMPLETED );
+			$order->set_date_paid( time() );
+			$order->save();
+			OrdersStatsDataStore::sync_order( $order->get_id() );
+			TaxesDataStore::sync_order_taxes( $order->get_id() );
+		}
+		ReportsCache::invalidate();
+
+		$row = ( new TaxesDataStore() )->get_data(
+			array(
+				'after'    => gmdate( 'Y-m-d H:i:s', time() - DAY_IN_SECONDS ),
+				'before'   => gmdate( 'Y-m-d H:i:s', time() + DAY_IN_SECONDS ),
+				'taxes'    => array( $rate_id ),
+				'per_page' => 100,
+				'page'     => 1,
+			)
+		)->data[0];
+
+		// 215 USD plus 215 EUR at 2 EUR to the dollar (107.50 USD), split 210 + 105 order side and 5 + 2.50 shipping.
+		$this->assertSame( 322.5, $row['taxable_amount'] );
+		$this->assertSame( 315.0, $row['order_taxable_amount'] );
+		$this->assertSame( 7.5, $row['shipping_taxable_amount'] );
 	}
 
 	/**

@@ -248,9 +248,12 @@ class AnalyticsSqlFilters {
 				'product_gross_revenue' => $product_gross_revenue,
 			),
 			'taxes'      => array(
-				'SUM(total_tax)'    => 'SUM(' . $this->get_default_currency_conversion_expression( 'total_tax', $default_currency, $exchange_rate, $stripe_exchange_rate ) . ')',
-				'SUM(order_tax)'    => 'SUM(' . $this->get_default_currency_conversion_expression( 'order_tax', $default_currency, $exchange_rate, $stripe_exchange_rate ) . ')',
-				'SUM(shipping_tax)' => 'SUM(' . $this->get_default_currency_conversion_expression( 'shipping_tax', $default_currency, $exchange_rate, $stripe_exchange_rate ) . ')',
+				'SUM(total_tax)'               => 'SUM(' . $this->get_default_currency_conversion_expression( 'total_tax', $default_currency, $exchange_rate, $stripe_exchange_rate ) . ')',
+				'SUM(order_tax)'               => 'SUM(' . $this->get_default_currency_conversion_expression( 'order_tax', $default_currency, $exchange_rate, $stripe_exchange_rate ) . ')',
+				'SUM(shipping_tax)'            => 'SUM(' . $this->get_default_currency_conversion_expression( 'shipping_tax', $default_currency, $exchange_rate, $stripe_exchange_rate ) . ')',
+				'SUM(taxable_amount)'          => 'SUM(' . $this->get_default_currency_conversion_expression( 'taxable_amount', $default_currency, $exchange_rate, $stripe_exchange_rate ) . ')',
+				'SUM(order_taxable_amount)'    => 'SUM(' . $this->get_default_currency_conversion_expression( 'order_taxable_amount', $default_currency, $exchange_rate, $stripe_exchange_rate ) . ')',
+				'SUM(shipping_taxable_amount)' => 'SUM(' . $this->get_default_currency_conversion_expression( 'shipping_taxable_amount', $default_currency, $exchange_rate, $stripe_exchange_rate ) . ')',
 			),
 			'coupons'    => array(
 				'discount_amount' => $discount_amount,
