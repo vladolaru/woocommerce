@@ -2221,12 +2221,14 @@ class WC_REST_Order_Refunds_Computed_Totals_Test extends WC_REST_Unit_Test_Case 
 	 * refund of A sends 5.00 and an explicit tax of 0.054 (or 0.056) per rate, pays back 5.11 and stores those taxes as
 	 * sent. The next refund of A counts that refund at 5.108 (or 5.112), as the line's own taxes were charged at 0.54 (or
 	 * 0.56) each: one unit leaves 51.08 - 5.108 = 45.97, and a close of 51.12 - 5.112 = 46.01 is accepted. Store-currency
-	 * controls keep today's results, where core stores the refund taxes rounded: 45.98, and the 46.01 close refused.
+	 * controls keep today's results, where core stores the refund taxes rounded: 45.98, and the 46.01 close refused. When
+	 * the first refund overrides its amount (5.20) neither sum matches it, so its lines are read rounded: 45.98 is left.
 	 *
 	 * @testWith ["JPY", 0, "USD", 0.54, 8.92, "0.054", {"quantity": 1}, 201, "45.97"]
 	 *           ["USD", 2, "USD", 0.54, 8.92, "0.054", {"quantity": 1}, 201, "45.98"]
 	 *           ["JPY", 0, "USD", 0.56, 8.88, "0.056", {"refund_total": "46.01"}, 201, "46.01"]
 	 *           ["USD", 2, "USD", 0.56, 8.88, "0.056", {"refund_total": "46.01"}, 422, "woocommerce_rest_refund_total_exceeds_remaining"]
+	 *           ["JPY", 0, "USD", 0.54, 8.92, "0.054", {"quantity": 1}, 201, "45.98", "5.20"]
 	 *
 	 * @param string $store_currency  Store currency.
 	 * @param int    $store_decimals  Store price decimals.
@@ -2237,8 +2239,9 @@ class WC_REST_Order_Refunds_Computed_Totals_Test extends WC_REST_Unit_Test_Case 
 	 * @param array  $line            Fields of the second request's line besides its id.
 	 * @param int    $expected_status Expected status of the second refund.
 	 * @param string $expected        Expected preview total, refund amount and gateway amount, or the refusal's code.
+	 * @param string $first_amount    Amount the first refund overrides its lines with, or empty for none.
 	 */
-	public function test_explicit_tax_refund_is_counted_at_the_tax_it_paid_back( string $store_currency, int $store_decimals, string $order_currency, float $tax, float $other, string $refund_tax, array $line, int $expected_status, string $expected ): void {
+	public function test_explicit_tax_refund_is_counted_at_the_tax_it_paid_back( string $store_currency, int $store_decimals, string $order_currency, float $tax, float $other, string $refund_tax, array $line, int $expected_status, string $expected, string $first_amount = '' ): void {
 		update_option( 'woocommerce_currency', $store_currency );
 		update_option( 'woocommerce_price_num_decimals', $store_decimals );
 		// Per-line tax rounding (the default): each rate is charged rounded.
@@ -2315,9 +2318,10 @@ class WC_REST_Order_Refunds_Computed_Totals_Test extends WC_REST_Unit_Test_Case 
 			$order->set_status( OrderStatus::COMPLETED );
 			$order->save();
 
-			$first = $this->do_create_request(
+			$first_extra = '' !== $first_amount ? array( 'amount' => $first_amount ) : array();
+			$first       = $this->do_create_request(
 				$order->get_id(),
-				array(
+				$first_extra + array(
 					'compute_totals' => true,
 					'line_items'     => array(
 						array(
@@ -2338,7 +2342,7 @@ class WC_REST_Order_Refunds_Computed_Totals_Test extends WC_REST_Unit_Test_Case 
 				)
 			);
 			$this->assertSame( 201, $first->get_status(), 'The first refund should be created.' );
-			$this->assertSame( 5.11, (float) wc_get_order( $first->get_data()['id'] )->get_amount(), 'The first refund should pay back 5.11.' );
+			$this->assertSame( '' !== $first_amount ? (float) $first_amount : 5.11, (float) wc_get_order( $first->get_data()['id'] )->get_amount(), 'The first refund should pay back its amount.' );
 
 			$preview = new WP_REST_Request( 'POST', '/wc/v3/orders/' . $order->get_id() . '/refunds/preview' );
 			$preview->set_body_params( array( 'line_items' => array( array_merge( array( 'line_item_id' => $line_a->get_id() ), $line ) ) ) );
@@ -2367,6 +2371,166 @@ class WC_REST_Order_Refunds_Computed_Totals_Test extends WC_REST_Unit_Test_Case 
 			$this->assertSame( 201, $second->get_status(), 'The second refund should be created.' );
 			$this->assertSame( (float) $expected, (float) wc_get_order( $second->get_data()['id'] )->get_amount(), 'The second refund should record what is left of line A.' );
 			$this->assertSame( array( (float) $expected ), $gateway->refunded_amounts, 'The gateway should be asked for what is left of line A.' );
+		} finally {
+			$payment_gateway_registry->payment_gateways = $original_payment_gateways;
+		}
+	}
+
+	/**
+	 * @testdox A refund made on the order screen, with per-rate taxes at six decimals, is counted at what it paid.
+	 *
+	 * Line A is 3 units at 30.00 net with 1.011 tax on each of two rates (charged 1.01 each, gross 32.02), beside an
+	 * untaxed line B of 7.98; the order paid 40.00. The order screen refunds one unit of A with fields 10 and 0.337 per
+	 * rate (raw tax over quantity, at six decimals) and pays each field rounded: 10.68. The next two units of A leave
+	 * 32.02 - 10.68 = 21.34, not 21.35, and line B then closes at its 7.98. Store-currency control: the same results.
+	 *
+	 * @testWith ["JPY", 0, "USD"]
+	 *           ["USD", 2, "USD"]
+	 *
+	 * @param string $store_currency Store currency.
+	 * @param int    $store_decimals Store price decimals.
+	 * @param string $order_currency Order currency.
+	 */
+	public function test_order_screen_refund_is_counted_at_what_it_paid( string $store_currency, int $store_decimals, string $order_currency ): void {
+		update_option( 'woocommerce_currency', $store_currency );
+		update_option( 'woocommerce_price_num_decimals', $store_decimals );
+		// Per-line tax rounding (the default): each rate is charged rounded.
+		update_option( 'woocommerce_tax_round_at_subtotal', 'no' );
+		$rate_ids   = array( $this->create_tax_rate( 3.37 ), $this->create_tax_rate( 3.37 ) );
+		$rate_taxes = array_fill_keys( $rate_ids, 1.011 );
+
+		$gateway                   = new class() extends WC_Payment_Gateway {
+			/**
+			 * Amounts the refunds asked the gateway for.
+			 *
+			 * @var array<int, float>
+			 */
+			public array $refunded_amounts = array();
+
+			/**
+			 * Constructor.
+			 */
+			public function __construct() {
+				$this->id       = 'computed_totals_order_screen_gateway';
+				$this->supports = array( 'refunds' );
+			}
+
+			/**
+			 * Record the refund amount.
+			 *
+			 * @param int        $order_id Order ID.
+			 * @param float|null $amount   Refund amount.
+			 * @param string     $reason   Refund reason.
+			 * @return bool
+			 */
+			public function process_refund( $order_id, $amount = null, $reason = '' ) {
+				unset( $order_id, $reason ); // Avoid parameter not used PHPCS errors.
+				$this->refunded_amounts[] = (float) $amount;
+				return true;
+			}
+		};
+		$payment_gateway_registry  = WC_Payment_Gateways::instance();
+		$original_payment_gateways = $payment_gateway_registry->payment_gateways;
+
+		try {
+			$payment_gateway_registry->payment_gateways[] = $gateway;
+
+			$order  = wc_create_order();
+			$line_a = new WC_Order_Item_Product();
+			$line_a->set_props(
+				array(
+					'name'     => 'Line A',
+					'quantity' => 3,
+					'subtotal' => 30,
+					'total'    => 30,
+				)
+			);
+			$line_a->set_taxes(
+				array(
+					'total'    => $rate_taxes,
+					'subtotal' => $rate_taxes,
+				)
+			);
+			$order->add_item( $line_a );
+			$line_b = new WC_Order_Item_Product();
+			$line_b->set_props(
+				array(
+					'name'     => 'Line B',
+					'quantity' => 1,
+					'subtotal' => 7.98,
+					'total'    => 7.98,
+				)
+			);
+			$order->add_item( $line_b );
+			$order->set_currency( $order_currency );
+			$order->set_payment_method( $gateway->id );
+			$order->set_total( '40.00' );
+			$order->set_status( OrderStatus::COMPLETED );
+			$order->save();
+
+			// What WC_AJAX::refund_line_items() hands wc_create_refund() for the order screen's one-unit refund.
+			$screen_refund = wc_create_refund(
+				array(
+					'order_id'   => $order->get_id(),
+					'amount'     => '10.68',
+					'line_items' => array(
+						$line_a->get_id() => array(
+							'qty'          => 1,
+							'refund_total' => '10.000000',
+							'refund_tax'   => array_fill_keys( $rate_ids, '0.337000' ),
+						),
+					),
+				)
+			);
+			$this->assertNotWPError( $screen_refund );
+
+			$preview = new WP_REST_Request( 'POST', '/wc/v3/orders/' . $order->get_id() . '/refunds/preview' );
+			$preview->set_body_params(
+				array(
+					'line_items' => array(
+						array(
+							'line_item_id' => $line_a->get_id(),
+							'quantity'     => 2,
+						),
+					),
+				)
+			);
+			$preview_response = $this->server->dispatch( $preview );
+			$this->assertSame( 200, $preview_response->get_status() );
+			$this->assertSame( '21.34', $preview_response->get_data()['total'], 'The preview should show what is left of line A.' );
+
+			$close_a = $this->do_create_request(
+				$order->get_id(),
+				array(
+					'compute_totals' => true,
+					'api_refund'     => true,
+					'line_items'     => array(
+						array(
+							'id'       => $line_a->get_id(),
+							'quantity' => 2,
+						),
+					),
+				)
+			);
+			$this->assertSame( 201, $close_a->get_status(), 'The rest of line A should be refunded.' );
+			$this->assertSame( 21.34, (float) wc_get_order( $close_a->get_data()['id'] )->get_amount(), 'The refund should record what is left of line A.' );
+
+			$close_b = $this->do_create_request(
+				$order->get_id(),
+				array(
+					'compute_totals' => true,
+					'api_refund'     => true,
+					'line_items'     => array(
+						array(
+							'id'       => $line_b->get_id(),
+							'quantity' => 1,
+						),
+					),
+				)
+			);
+			$this->assertSame( 201, $close_b->get_status(), 'Line B should still be refundable in full.' );
+			$this->assertSame( 7.98, (float) wc_get_order( $close_b->get_data()['id'] )->get_amount() );
+			$this->assertSame( array( 21.34, 7.98 ), $gateway->refunded_amounts, 'The gateway should be asked for what is left of each line.' );
 		} finally {
 			$payment_gateway_registry->payment_gateways = $original_payment_gateways;
 		}

@@ -1585,7 +1585,25 @@ class DataUtils {
 			}
 		};
 
+		$order_decimals   = $this->get_order_price_decimals( $order );
+		$foreign_decimals = wc_get_price_decimals() !== $order_decimals;
+
 		foreach ( $order->get_refunds() as $refund ) {
+			// Writers store a refund's per-rate taxes differently: the order screen pays each rounded, the REST engine pays
+			// explicit sub-cent ones as sent and rounds only their sum. Read the refund's lines raw only when that is what
+			// adds up to the amount the refund paid; otherwise per-rate rounded, as the store's own read does.
+			$read_raw = false;
+			if ( $foreign_decimals ) {
+				$raw_sum     = 0.0;
+				$rounded_sum = 0.0;
+				foreach ( $refund->get_items( array( 'line_item', 'fee', 'shipping' ) ) as $refunded_item ) {
+					$raw_sum     += $this->get_item_gross( $refunded_item, $order, true );
+					$rounded_sum += $this->get_item_gross( $refunded_item, $order );
+				}
+				$paid     = NumberUtil::round( (float) $refund->get_amount(), $order_decimals );
+				$read_raw = NumberUtil::round( abs( $raw_sum ), $order_decimals ) === $paid && NumberUtil::round( abs( $rounded_sum ), $order_decimals ) !== $paid;
+			}
+
 			/**
 			 * Refunded product line items.
 			 *
@@ -1594,7 +1612,7 @@ class DataUtils {
 			$refunded_line_items = $refund->get_items( 'line_item' );
 			foreach ( $refunded_line_items as $refunded_item ) {
 				$original_id                    = absint( $refunded_item->get_meta( '_refunded_item_id' ) );
-				$refunded_gross                 = $this->get_item_gross( $refunded_item, $order );
+				$refunded_gross                 = $this->get_item_gross( $refunded_item, $order, $read_raw );
 				$qtys[ $original_id ]           = ( $qtys[ $original_id ] ?? 0 ) + $refunded_item->get_quantity();
 				$totals[ $original_id ]         = ( $totals[ $original_id ] ?? 0.0 ) + $refunded_gross * -1;
 				$line_refunds[ $original_id ][] = array(
@@ -1611,7 +1629,7 @@ class DataUtils {
 			$refunded_fees = $refund->get_items( 'fee' );
 			foreach ( $refunded_fees as $refunded_item ) {
 				$original_id            = absint( $refunded_item->get_meta( '_refunded_item_id' ) );
-				$totals[ $original_id ] = ( $totals[ $original_id ] ?? 0.0 ) + $this->get_item_gross( $refunded_item, $order ) * -1;
+				$totals[ $original_id ] = ( $totals[ $original_id ] ?? 0.0 ) + $this->get_item_gross( $refunded_item, $order, $read_raw ) * -1;
 				$add_refunded_taxes( $refunded_item, $original_id );
 			}
 			/**
@@ -1622,7 +1640,7 @@ class DataUtils {
 			$refunded_shipping = $refund->get_items( 'shipping' );
 			foreach ( $refunded_shipping as $refunded_item ) {
 				$original_id            = absint( $refunded_item->get_meta( '_refunded_item_id' ) );
-				$totals[ $original_id ] = ( $totals[ $original_id ] ?? 0.0 ) + $this->get_item_gross( $refunded_item, $order ) * -1;
+				$totals[ $original_id ] = ( $totals[ $original_id ] ?? 0.0 ) + $this->get_item_gross( $refunded_item, $order, $read_raw ) * -1;
 				$add_refunded_taxes( $refunded_item, $original_id );
 			}
 		}
@@ -1652,21 +1670,23 @@ class DataUtils {
 	 *
 	 * Core stores a line's total_tax rounded at the store's decimals (WC_Order_Item_Product::set_taxes() and its fee and
 	 * shipping siblings, also on load), so for an order whose currency has more decimals the tax is the sum of the per-rate
-	 * taxes the line keeps: rounded per rate at the order's decimals for a line of the order, as checkout charged it, and as
-	 * stored for a refund line. Otherwise it is the stored total_tax.
+	 * taxes the line keeps, rounded per rate at the order's decimals as checkout charged them. A refund line is read raw
+	 * instead when its refund paid the raw taxes. Otherwise it is the stored total_tax.
 	 *
-	 * @param WC_Order_Item_Product|WC_Order_Item_Fee|WC_Order_Item_Shipping $item  An order line or a refund line.
-	 * @param WC_Order|false|null                                            $order The order the line, or its refund, belongs to.
+	 * @param WC_Order_Item_Product|WC_Order_Item_Fee|WC_Order_Item_Shipping $item     An order line or a refund line.
+	 * @param WC_Order|false|null                                            $order    The order the line, or its refund, belongs to.
+	 * @param bool                                                           $read_raw Whether a refund line is read at its raw per-rate taxes.
 	 * @return float
 	 */
-	private function get_item_gross( $item, $order ): float {
+	private function get_item_gross( $item, $order, bool $read_raw = false ): float {
 		if ( $this->get_order_price_decimals( $order ) === wc_get_price_decimals() ) {
 			return (float) $item->get_total() + (float) $item->get_total_tax();
 		}
 		$taxes = array_map( 'floatval', (array) ( $item->get_taxes()['total'] ?? array() ) );
 		// A line of the order was charged each rate rounded, as set_taxes() rounds it, here at the order currency's decimals.
-		// A refund line belongs to the refund, and its taxes are what was paid back, explicit ones as sent, so they stay raw.
-		if ( 'yes' !== get_option( 'woocommerce_tax_round_at_subtotal' ) && $order instanceof WC_Order && $item->get_order_id() === $order->get_id() ) {
+		// A refund line is rounded the same way unless its refund paid the raw taxes.
+		$is_order_line = $order instanceof WC_Order && $item->get_order_id() === $order->get_id();
+		if ( 'yes' !== get_option( 'woocommerce_tax_round_at_subtotal' ) && ( $is_order_line || ! $read_raw ) ) {
 			$decimals = $this->get_order_price_decimals( $order );
 			$taxes    = array_map( static fn( float $tax ): float => (float) wc_round_tax_total( $tax, $decimals ), $taxes );
 		}
