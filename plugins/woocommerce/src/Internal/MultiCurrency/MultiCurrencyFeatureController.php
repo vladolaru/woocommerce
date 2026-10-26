@@ -294,7 +294,7 @@ class MultiCurrencyFeatureController {
 		}
 
 		try {
-			return $this->usage_detector->has_foreign_currency_orders();
+			return $this->usage_detector->has_multi_currency_orders();
 		} catch ( \RuntimeException $e ) {
 			return true;
 		}

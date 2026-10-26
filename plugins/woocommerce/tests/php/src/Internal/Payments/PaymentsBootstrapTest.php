@@ -637,7 +637,7 @@ class PaymentsBootstrapTest extends WC_Unit_Test_Case {
 						}
 
 						/** Return the historical-order signal. */
-						public function has_foreign_currency_orders(): bool {
+						public function has_multi_currency_orders(): bool {
 							return $this->historical;
 						}
 					};

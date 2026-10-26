@@ -1497,7 +1497,7 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 						}
 
 						/** Count and return the historical-order signal. @return bool Whether historical orders exist. */
-						public function has_foreign_currency_orders(): bool {
+						public function has_multi_currency_orders(): bool {
 							++$this->container->foreign_currency_order_checks;
 							if ( $this->throw_on_foreign_currency_order_detection ) {
 								throw new \RuntimeException( 'Historical order detection failed.' );

@@ -125,7 +125,7 @@ class MultiCurrencyAnalyticsController implements RegisterHooksInterface {
 		}
 
 		try {
-			if ( ! $this->usage_detector->has_foreign_currency_orders() ) {
+			if ( ! $this->usage_detector->has_multi_currency_orders() ) {
 				return;
 			}
 		} catch ( \RuntimeException $e ) {

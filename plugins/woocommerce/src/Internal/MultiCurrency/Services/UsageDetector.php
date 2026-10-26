@@ -25,7 +25,7 @@ final class UsageDetector {
 	 *
 	 * @var bool|null
 	 */
-	private ?bool $has_foreign_currency_orders_memo = null;
+	private ?bool $has_multi_currency_orders_memo = null;
 
 	/**
 	 * Tell whether non-default currencies are configured.
@@ -65,16 +65,16 @@ final class UsageDetector {
 	 * @return bool True when persisted Multi-Currency order data exists.
 	 * @throws \RuntimeException When the order metadata query fails.
 	 */
-	public function has_foreign_currency_orders( bool $fresh = false ): bool {
-		if ( ! $fresh && null !== $this->has_foreign_currency_orders_memo ) {
-			return $this->has_foreign_currency_orders_memo;
+	public function has_multi_currency_orders( bool $fresh = false ): bool {
+		if ( ! $fresh && null !== $this->has_multi_currency_orders_memo ) {
+			return $this->has_multi_currency_orders_memo;
 		}
 
 		// Only "yes" is cached, for an hour: a cached "no" would hide orders imported or created by any writer until it expired, while a
 		// stale "yes" after every such order is deleted only keeps Multi-Currency's history handling on a little longer, instead of
 		// a query on every REST request (client 11.1.0 `includes/multi-currency/Analytics.php:89`, `:565-590`).
 		if ( ! $fresh && '1' === get_transient( self::HAS_MC_ORDERS_TRANSIENT ) ) {
-			$this->has_foreign_currency_orders_memo = true;
+			$this->has_multi_currency_orders_memo = true;
 
 			return true;
 		}
@@ -105,11 +105,11 @@ final class UsageDetector {
 			throw new \RuntimeException( esc_html( $wpdb->last_error ) );
 		}
 
-		$this->has_foreign_currency_orders_memo = ( 1 === (int) $result );
-		if ( $this->has_foreign_currency_orders_memo ) {
+		$this->has_multi_currency_orders_memo = ( 1 === (int) $result );
+		if ( $this->has_multi_currency_orders_memo ) {
 			set_transient( self::HAS_MC_ORDERS_TRANSIENT, '1', HOUR_IN_SECONDS );
 		}
 
-		return $this->has_foreign_currency_orders_memo;
+		return $this->has_multi_currency_orders_memo;
 	}
 }

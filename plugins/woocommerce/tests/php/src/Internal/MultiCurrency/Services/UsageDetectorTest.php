@@ -79,14 +79,14 @@ class UsageDetectorTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should query posts order metadata when HPOS is disabled.
 	 */
-	public function test_has_foreign_currency_orders_queries_posts_table(): void {
+	public function test_has_multi_currency_orders_queries_posts_table(): void {
 		$queries      = array();
 		$query_filter = $this->add_existence_query_filter( $queries );
 		$detector     = new UsageDetector();
 		add_filter( 'pre_option_' . CustomOrdersTableController::CUSTOM_ORDERS_TABLE_USAGE_ENABLED_OPTION, static fn(): string => 'no' );
 
 		try {
-			$this->assertTrue( $detector->has_foreign_currency_orders() );
+			$this->assertTrue( $detector->has_multi_currency_orders() );
 			$this->assertStringContainsString( 'postmeta', $queries[0] );
 		} finally {
 			remove_filter( 'query', $query_filter );
@@ -96,14 +96,14 @@ class UsageDetectorTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should query HPOS order metadata when HPOS is enabled.
 	 */
-	public function test_has_foreign_currency_orders_queries_hpos_table(): void {
+	public function test_has_multi_currency_orders_queries_hpos_table(): void {
 		$queries      = array();
 		$query_filter = $this->add_existence_query_filter( $queries );
 		$detector     = new UsageDetector();
 		add_filter( 'pre_option_' . CustomOrdersTableController::CUSTOM_ORDERS_TABLE_USAGE_ENABLED_OPTION, static fn(): string => 'yes' );
 
 		try {
-			$this->assertTrue( $detector->has_foreign_currency_orders() );
+			$this->assertTrue( $detector->has_multi_currency_orders() );
 			$this->assertStringContainsString( 'wc_orders_meta', $queries[0] );
 		} finally {
 			remove_filter( 'query', $query_filter );
@@ -113,19 +113,19 @@ class UsageDetectorTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should detect persisted order metadata in posts storage.
 	 */
-	public function test_has_foreign_currency_orders_detects_real_posts_metadata(): void {
+	public function test_has_multi_currency_orders_detects_real_posts_metadata(): void {
 		$order_id = $this->factory->post->create( array( 'post_type' => 'shop_order' ) );
 		add_post_meta( $order_id, '_wcpay_multi_currency_order_exchange_rate', '0.9' );
 		$detector = new UsageDetector();
 		add_filter( 'pre_option_' . CustomOrdersTableController::CUSTOM_ORDERS_TABLE_USAGE_ENABLED_OPTION, static fn(): string => 'no' );
 
-		$this->assertTrue( $detector->has_foreign_currency_orders( true ) );
+		$this->assertTrue( $detector->has_multi_currency_orders( true ) );
 	}
 
 	/**
 	 * @testdox Should detect persisted order metadata in HPOS storage.
 	 */
-	public function test_has_foreign_currency_orders_detects_real_hpos_metadata(): void {
+	public function test_has_multi_currency_orders_detects_real_hpos_metadata(): void {
 		if ( ! OrderUtil::custom_orders_table_usage_is_enabled() ) {
 			$this->markTestSkipped( 'The real HPOS metadata test requires HPOS to be enabled.' );
 		}
@@ -143,30 +143,30 @@ class UsageDetectorTest extends WC_Unit_Test_Case {
 		$detector = new UsageDetector();
 		add_filter( 'pre_option_' . CustomOrdersTableController::CUSTOM_ORDERS_TABLE_USAGE_ENABLED_OPTION, static fn(): string => 'yes' );
 
-		$this->assertTrue( $detector->has_foreign_currency_orders( true ) );
+		$this->assertTrue( $detector->has_multi_currency_orders( true ) );
 	}
 
 	/**
 	 * @testdox Should reuse request and transient cache values unless a fresh check is requested.
 	 */
-	public function test_has_foreign_currency_orders_reuses_caches_and_fresh_bypasses_them(): void {
+	public function test_has_multi_currency_orders_reuses_caches_and_fresh_bypasses_them(): void {
 		$queries      = array();
 		$query_filter = $this->add_existence_query_filter( $queries );
 		$detector     = new UsageDetector();
 		add_filter( 'pre_option_' . CustomOrdersTableController::CUSTOM_ORDERS_TABLE_USAGE_ENABLED_OPTION, static fn(): string => 'no' );
 
 		try {
-			$this->assertTrue( $detector->has_foreign_currency_orders() );
-			$this->assertTrue( $detector->has_foreign_currency_orders() );
+			$this->assertTrue( $detector->has_multi_currency_orders() );
+			$this->assertTrue( $detector->has_multi_currency_orders() );
 			$this->assertSame( 1, count( $queries ), 'The request memo should avoid a second query.' );
 			$this->assertSame( '1', get_transient( UsageDetector::HAS_MC_ORDERS_TRANSIENT ) );
 
-			$this->assertTrue( $detector->has_foreign_currency_orders( true ) );
+			$this->assertTrue( $detector->has_multi_currency_orders( true ) );
 			$this->assertSame( 2, count( $queries ), 'A fresh check must bypass the request memo and transient.' );
 
 			$cached_detector = new UsageDetector();
 			add_filter( 'pre_option_' . CustomOrdersTableController::CUSTOM_ORDERS_TABLE_USAGE_ENABLED_OPTION, static fn(): string => 'no' );
-			$this->assertTrue( $cached_detector->has_foreign_currency_orders() );
+			$this->assertTrue( $cached_detector->has_multi_currency_orders() );
 			$this->assertSame( 2, count( $queries ), 'A new detector should reuse the one-hour transient.' );
 		} finally {
 			remove_filter( 'query', $query_filter );
@@ -176,7 +176,7 @@ class UsageDetectorTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should throw when the foreign order existence query fails.
 	 */
-	public function test_has_foreign_currency_orders_throws_for_database_errors(): void {
+	public function test_has_multi_currency_orders_throws_for_database_errors(): void {
 		global $wpdb;
 
 		$detector = new UsageDetector();
@@ -189,7 +189,7 @@ class UsageDetectorTest extends WC_Unit_Test_Case {
 		$this->expectExceptionMessage( 'missing_multi_currency_order_meta' );
 
 		try {
-			$detector->has_foreign_currency_orders();
+			$detector->has_multi_currency_orders();
 		} finally {
 			$wpdb->postmeta = $original_postmeta;
 			$wpdb->suppress_errors( $suppress_errors );

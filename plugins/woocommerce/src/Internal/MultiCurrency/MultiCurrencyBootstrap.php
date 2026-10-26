@@ -487,7 +487,7 @@ final class MultiCurrencyBootstrap {
 	 */
 	private function get_usage_from_order_history( $usage_detector ): string {
 		try {
-			return $usage_detector->has_foreign_currency_orders() ? 'historical' : 'empty';
+			return $usage_detector->has_multi_currency_orders() ? 'historical' : 'empty';
 		} catch ( \RuntimeException $error ) {
 			// Preserve recovery services when order history cannot be determined.
 			return 'historical';
