@@ -104,9 +104,7 @@ export type OptionalTextEvidenceField =
 	( typeof OPTIONAL_TEXT_EVIDENCE_FIELDS )[ number ];
 
 export type EvidenceField =
-	| DocumentEvidenceField
-	| ShippingEvidenceField
-	| OptionalTextEvidenceField;
+	DocumentEvidenceField | ShippingEvidenceField | OptionalTextEvidenceField;
 
 export type EvidenceFormState = {
 	reason?: string;
@@ -291,7 +289,7 @@ const getDuplicateDocuments = (
 							'woocommerce'
 						),
 					],
-			  ] )
+				] )
 			: buildRecommendedDocuments( [
 					[
 						'receipt',
@@ -308,7 +306,7 @@ const getDuplicateDocuments = (
 							'woocommerce'
 						),
 					],
-			  ] );
+				] );
 
 	if (
 		duplicateStatus === 'is_duplicate' &&

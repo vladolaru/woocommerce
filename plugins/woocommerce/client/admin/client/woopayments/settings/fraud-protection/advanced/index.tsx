@@ -270,21 +270,21 @@ const AllowedCountriesNotice = ( {
 			? __(
 					'Orders from outside of the following countries will be blocked by the filter:',
 					'woocommerce'
-			  )
+				)
 			: __(
 					'Orders from outside of the following countries will be screened by the filter:',
 					'woocommerce'
-			  );
+				);
 	} else {
 		message = shouldBlock
 			? __(
 					'Orders from the following countries will be blocked by the filter:',
 					'woocommerce'
-			  )
+				)
 			: __(
 					'Orders from the following countries will be screened by the filter:',
 					'woocommerce'
-			  );
+				);
 	}
 
 	return (

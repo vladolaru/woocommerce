@@ -125,9 +125,7 @@ const BannerNotice: React.FC< Props > = ( {
 
 	// Gridicons type their `size` prop narrower than `Icon` expects; they render the same.
 	const iconToDisplay = ( icon === true ? statusIconMap[ status ] : icon ) as
-		| ComponentProps< typeof Icon >[ 'icon' ]
-		| false
-		| undefined;
+		ComponentProps< typeof Icon >[ 'icon' ] | false | undefined;
 
 	const classes = clsx(
 		className,

@@ -282,8 +282,7 @@ const NonCardPaymentMethodSummary = ( {
 			? String( value )
 			: '';
 	const funding = details.funding as
-		| { card?: { brand?: string; last4?: string } }
-		| undefined;
+		{ card?: { brand?: string; last4?: string } } | undefined;
 	const fundingBrand = getText( funding?.card?.brand ).toLowerCase();
 	const brand =
 		getText( details.brand ) ||
@@ -686,7 +685,7 @@ const getDisputeSummaryStatus = (
 					/* translators: %s: dispute status, such as Response needed or Won. */
 					__( 'Disputed: %s', 'woocommerce' ),
 					disputeLabel
-			  ),
+				),
 		type: getDisputeStatusChipType( disputeStatus ),
 	};
 };
@@ -968,9 +967,9 @@ export const WooPaymentsPaymentSummarySection = ( {
 			: 0;
 	const refundedAmountLabel = disputeWithdrawnAmount
 		? /* translators: %s: formatted withdrawn amount. */
-		  __( 'Deducted: %s', 'woocommerce' )
+			__( 'Deducted: %s', 'woocommerce' )
 		: /* translators: %s: formatted withdrawn amount. */
-		  __( 'Refunded: %s', 'woocommerce' );
+			__( 'Refunded: %s', 'woocommerce' );
 	const status = hasDisplayValue( transaction.status )
 		? getPaymentSummaryStatus( transaction )
 		: null;
@@ -1249,11 +1248,11 @@ export const WooPaymentsMissingOrderNotice = ( {
 				? __(
 						'It has been refunded and is not a subject for disputes.',
 						'woocommerce'
-				  )
+					)
 				: __(
 						'Investigate this purchase and refund the transaction as needed.',
 						'woocommerce'
-				  ) }
+					) }
 		</WooPaymentsSummaryCardNotice>
 	);
 };
@@ -1397,7 +1396,7 @@ export const WooPaymentsPaymentMethodDetailsSection = ( {
 									field.format
 								),
 							},
-					  ]
+						]
 					: [];
 			} );
 
@@ -1482,7 +1481,7 @@ export const WooPaymentsPaymentMethodDetailsSection = ( {
 												?.address_postal_code_check
 										),
 									},
-							  ] ),
+								] ),
 					],
 				] }
 			/>

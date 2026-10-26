@@ -36,9 +36,8 @@ describe( 'registerWooPaymentsSettingsStore', () => {
 	} );
 
 	it( 'registers the settings store once and is idempotent', async () => {
-		const { registerWooPaymentsSettingsStore, STORE_NAME } = await import(
-			'../data/register'
-		);
+		const { registerWooPaymentsSettingsStore, STORE_NAME } =
+			await import( '../data/register' );
 
 		expect( select( STORE_NAME ) ).toBeUndefined();
 
@@ -50,9 +49,8 @@ describe( 'registerWooPaymentsSettingsStore', () => {
 	} );
 
 	it( 'does not clobber a pre-existing settings store with the same name', async () => {
-		const { registerWooPaymentsSettingsStore, STORE_NAME } = await import(
-			'../data/register'
-		);
+		const { registerWooPaymentsSettingsStore, STORE_NAME } =
+			await import( '../data/register' );
 		mockRegisteredStores[ STORE_NAME ] = {
 			getForeignMarker: () => 'plugin',
 		};

@@ -127,8 +127,7 @@ describe( 'RefundConfirmationModal', () => {
 
 	it( 'dispatches only one refund while the first request is pending', async () => {
 		let finishRefund:
-			| ( ( response: { success: boolean } ) => void )
-			| undefined;
+			( ( response: { success: boolean } ) => void ) | undefined;
 		mockApiFetch.mockImplementation(
 			() =>
 				new Promise( ( resolve ) => {

@@ -262,7 +262,7 @@ export const StripeBillingSection = () => {
 									'woocommerce'
 								),
 								'WooPayments'
-						  )
+							)
 						: sprintf(
 								/* translators: %s: WooPayments. */
 								__(
@@ -270,7 +270,7 @@ export const StripeBillingSection = () => {
 									'woocommerce'
 								),
 								'WooPayments'
-						  ),
+							),
 					STRIPE_BILLING_DOC_URL
 				) }
 				__nextHasNoMarginBottom

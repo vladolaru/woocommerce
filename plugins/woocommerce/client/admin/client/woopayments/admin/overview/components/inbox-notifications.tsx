@@ -78,17 +78,15 @@ const getInboxNote = ( note: WooPaymentsInboxNote ): InboxNote => ( {
 	content: note.content,
 	date_created: note.date_created,
 	date_created_gmt: note.date_created_gmt,
-	actions: ( note.actions ?? [] ).map(
-		( action ): InboxNoteAction => ( {
-			id: action.id,
-			url: action.url,
-			label: action.label,
-			primary: false,
-			actioned_text: action.actioned_text
-				? Boolean( action.actioned_text )
-				: undefined,
-		} )
-	),
+	actions: ( note.actions ?? [] ).map( ( action ): InboxNoteAction => ( {
+		id: action.id,
+		url: action.url,
+		label: action.label,
+		primary: false,
+		actioned_text: action.actioned_text
+			? Boolean( action.actioned_text )
+			: undefined,
+	} ) ),
 	is_deleted: note.is_deleted,
 	type: note.type,
 	is_read: note.is_read,

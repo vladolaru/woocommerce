@@ -39,7 +39,7 @@ const getLoanStatus = ( loan: WooPaymentsCapitalLoan ) =>
 				/* translators: %s: loan paid-off date. */
 				__( 'Paid off: %s', 'woocommerce' ),
 				formatSiteDateTime( loan.fully_paid_at, false )
-		  )
+			)
 		: __( 'Active', 'woocommerce' );
 
 const CapitalActiveLoanSummary = ( {
@@ -150,8 +150,7 @@ const LoanListSummary = ( { loans }: { loans: WooPaymentsCapitalLoan[] } ) => {
 const hasActiveLoan = () =>
 	(
 		getWooPaymentsSettingsBootstrap().accountLoans as
-			| { has_active_loan?: unknown }
-			| undefined
+			{ has_active_loan?: unknown } | undefined
 	 )?.has_active_loan === true;
 
 export const WooPaymentsCapitalPage = () => {

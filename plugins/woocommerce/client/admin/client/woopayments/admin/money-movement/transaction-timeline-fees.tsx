@@ -250,7 +250,7 @@ const composeFeeString = ( event: WooPaymentsTimelineEvent ) => {
 					/* translators: %s: formatted fee amount. */
 					__( 'Fee: %s', 'woocommerce' ),
 					formatMoney( fee, currency )
-			  );
+				);
 	}
 
 	const details = getTransactionDetails( event );
@@ -336,39 +336,42 @@ const getFeeHistoryLabel = (
 			}
 			return hasFixedRate
 				? /* translators: 1: fee percentage, 2: fixed fee. */
-				  __( 'Base fee: %1$s%% + %2$s', 'woocommerce' )
+					__( 'Base fee: %1$s%% + %2$s', 'woocommerce' )
 				: /* translators: %1$s: fee percentage. */
-				  __( 'Base fee: %1$s%%', 'woocommerce' );
+					__( 'Base fee: %1$s%%', 'woocommerce' );
 		case 'additional-international':
 			return hasFixedRate
 				? /* translators: 1: fee percentage, 2: fixed fee. */
-				  __( 'International card fee: %1$s%% + %2$s', 'woocommerce' )
+					__( 'International card fee: %1$s%% + %2$s', 'woocommerce' )
 				: /* translators: %1$s: fee percentage. */
-				  __( 'International card fee: %1$s%%', 'woocommerce' );
+					__( 'International card fee: %1$s%%', 'woocommerce' );
 		case 'additional-fx':
 			return hasFixedRate
 				? /* translators: 1: fee percentage, 2: fixed fee. */
-				  __( 'Currency conversion fee: %1$s%% + %2$s', 'woocommerce' )
+					__(
+						'Currency conversion fee: %1$s%% + %2$s',
+						'woocommerce'
+					)
 				: /* translators: %1$s: fee percentage. */
-				  __( 'Currency conversion fee: %1$s%%', 'woocommerce' );
+					__( 'Currency conversion fee: %1$s%%', 'woocommerce' );
 		case 'additional-wcpay-subscription':
 			return hasFixedRate
 				? /* translators: 1: fee percentage, 2: fixed fee. */
-				  __(
+					__(
 						'Subscription transaction fee: %1$s%% + %2$s',
 						'woocommerce'
-				  )
+					)
 				: /* translators: %1$s: fee percentage. */
-				  __( 'Subscription transaction fee: %1$s%%', 'woocommerce' );
+					__( 'Subscription transaction fee: %1$s%%', 'woocommerce' );
 		case 'additional-device':
 			return hasFixedRate
 				? /* translators: 1: fee percentage, 2: fixed fee. */
-				  __(
+					__(
 						'Tap to pay transaction fee: %1$s%% + %2$s',
 						'woocommerce'
-				  )
+					)
 				: /* translators: %1$s: fee percentage. */
-				  __( 'Tap to pay transaction fee: %1$s%%', 'woocommerce' );
+					__( 'Tap to pay transaction fee: %1$s%%', 'woocommerce' );
 		case 'discount':
 			return __( 'Discount', 'woocommerce' );
 		default:
@@ -491,7 +494,7 @@ const getLegacyNet = ( event: WooPaymentsTimelineEvent ) => {
 			: formatExplicitMoney(
 					captured - fee,
 					getString( details, 'store_currency' )
-			  );
+				);
 	}
 
 	const captured =
@@ -700,7 +703,7 @@ const composeCapturedBodyFromBreakdown = (
 				getString( fx, 'to_currency' ),
 				getNumber( fx, 'to_amount' ) ?? 0,
 				storeCurrency
-		  )
+			)
 		: undefined;
 	if ( fxLine ) {
 		lines.push( fxLine );
@@ -734,13 +737,13 @@ const composeCapturedBodyFromBreakdown = (
 						? `${ totalRateText }${ currencySuffix }`
 						: totalRateText,
 					feeAmountText
-			  )
+				)
 			: sprintf(
 					/* translators: 1: fee label, 2: fee amount. */
 					__( '%1$s: %2$s', 'woocommerce' ),
 					feeLabel,
 					feeAmountText
-			  )
+				)
 	);
 
 	const feeRows = rows.filter( ( row ) => row.kind !== 'tax' );
@@ -855,7 +858,7 @@ export const getCapturedDetails = ( event: WooPaymentsTimelineEvent ) => {
 					: formatExplicitMoney(
 							captureNetAmount,
 							getString( captureNet, 'currency' )
-					  ),
+						),
 			body: composeCapturedBodyFromBreakdown( event, breakdown ),
 		};
 	}
@@ -874,7 +877,7 @@ export const getCapturedDetails = ( event: WooPaymentsTimelineEvent ) => {
 						/* translators: %s: net payout amount. */
 						__( 'Net payout: %s', 'woocommerce' ),
 						net
-				  )
+					)
 				: undefined,
 		].filter( Boolean ) as ReactNode[],
 	};
@@ -894,5 +897,5 @@ export const getEnvelopeDepositImpact = ( event: WooPaymentsTimelineEvent ) => {
 		: {
 				amount: Math.abs( amount ),
 				currency: getString( net, 'currency' ),
-		  };
+			};
 };

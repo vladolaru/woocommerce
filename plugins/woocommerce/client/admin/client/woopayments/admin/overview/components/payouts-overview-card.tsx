@@ -73,7 +73,7 @@ const FailedPayoutNotice = ( { accountLink }: { accountLink?: string } ) => {
 		? addQueryArgs( accountLink, {
 				from: 'WCPAY_PAYOUTS',
 				source: 'wcpay-payout-failure-notice',
-		  } )
+			} )
 		: '';
 
 	return (

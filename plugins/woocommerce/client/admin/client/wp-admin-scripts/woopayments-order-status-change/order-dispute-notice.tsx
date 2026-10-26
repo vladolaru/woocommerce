@@ -95,7 +95,7 @@ const getDaysLeft = ( countdownDays: number ) =>
 					'woocommerce'
 				),
 				String( countdownDays )
-		  );
+			);
 
 const getDetailsUrl = ( chargeId: string ) =>
 	getSettingsPaymentsProviderRouteUrl(
@@ -199,7 +199,7 @@ const AwaitingResponseNotice = ( {
 						formattedAmount,
 						reason,
 						formattedDueBy
-				  )
+					)
 				: sprintf(
 						/* translators: 1: disputed amount, 2: dispute reason, 3: response due date. */
 						__(
@@ -209,7 +209,7 @@ const AwaitingResponseNotice = ( {
 						formattedAmount,
 						reason,
 						formattedDueBy
-				  );
+					);
 
 			return (
 				<Notice status={ status } isDismissible={ false }>
@@ -235,7 +235,7 @@ const AwaitingResponseNotice = ( {
 					),
 					formattedAmount,
 					reason
-			  )
+				)
 			: sprintf(
 					/* translators: 1: disputed amount, 2: dispute reason. */
 					__(
@@ -244,7 +244,7 @@ const AwaitingResponseNotice = ( {
 					),
 					formattedAmount,
 					reason
-			  );
+				);
 
 		return (
 			<Notice status={ status } isDismissible={ false }>
@@ -285,7 +285,7 @@ const AwaitingResponseNotice = ( {
 					false,
 					shouldUseExplicitPrice
 				)
-		  )
+			)
 		: sprintf(
 				/* translators: 1: dispute count, 2: combined disputed amount. */
 				__(
@@ -299,7 +299,7 @@ const AwaitingResponseNotice = ( {
 					false,
 					shouldUseExplicitPrice
 				)
-		  );
+			);
 
 	return (
 		<Notice status={ status } isDismissible={ false }>

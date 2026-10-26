@@ -630,7 +630,7 @@ export function MultiCurrencySettingsApp() {
 										'woocommerce'
 									),
 									filteredAvailableCurrencies.length
-							  )
+								)
 							: __( 'All currencies', 'woocommerce' ) }
 					</h3>
 					<div className="woocommerce-multi-currency-settings__currency-choices">

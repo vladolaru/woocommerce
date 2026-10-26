@@ -55,11 +55,11 @@ export const UpdateBusinessDetailsModal = ( {
 								'woocommerce'
 							),
 							formatRequirementDeadline( currentDeadline )
-					  )
+						)
 					: __(
 							'Payments and payouts are disabled for this account until missing information is updated. Please update the following information in the Stripe dashboard.',
 							'woocommerce'
-					  ) }
+						) }
 			</p>
 			{ errorMessages.length > 0 && (
 				<div className="woocommerce-woopayments-update-business-details-modal__errors">

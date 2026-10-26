@@ -98,11 +98,7 @@ type BalanceDateFilterValue =
 	  };
 
 type BalanceDatePreset =
-	| 'last_month'
-	| 'last_year'
-	| 'month_to_date'
-	| 'year_to_date'
-	| 'custom';
+	'last_month' | 'last_year' | 'month_to_date' | 'year_to_date' | 'custom';
 
 type DataViewsFilter = {
 	field: string;
@@ -1213,7 +1209,7 @@ const BalanceReport = ( { now }: { now: Date } ) => {
 												? exportError.message.slice(
 														0,
 														200
-												  )
+													)
 												: 'unknown',
 									}
 								);
@@ -1355,7 +1351,7 @@ const FeesReport = ( { now }: { now: Date } ) => {
 						now
 					),
 					now
-			  )
+				)
 			: 'custom';
 	}, [ now, view ] );
 
@@ -1462,11 +1458,11 @@ const FeesReport = ( { now }: { now: Date } ) => {
 				total_items: summary.count ?? fees.length,
 				has_filters: Boolean(
 					requestQuery.search ||
-						requestQuery.date_after ||
-						requestQuery.date_before ||
-						requestQuery.date_between ||
-						requestQuery.payment_method_type ||
-						requestQuery.type
+					requestQuery.date_after ||
+					requestQuery.date_before ||
+					requestQuery.date_between ||
+					requestQuery.payment_method_type ||
+					requestQuery.type
 				),
 			} );
 			speak(

@@ -126,7 +126,7 @@ export const WooPaymentsAdminNotices = ( {
 		notice._links.cta
 			? apiFetch( { url: notice._links.cta.href, method: 'POST' } ).catch(
 					() => undefined
-			  )
+				)
 			: Promise.resolve();
 
 	const postAction = async (

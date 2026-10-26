@@ -29,8 +29,7 @@ const acknowledgedPayloads = new WeakSet< object >();
 
 const getApplePayDomainErrorPayload = () => {
 	const value = getWooPaymentsSettingsBootstrap().applePayDomainError as
-		| Partial< ApplePayDomainError >
-		| undefined;
+		Partial< ApplePayDomainError > | undefined;
 
 	return value && typeof value.logsUrl === 'string' ? value : null;
 };
@@ -88,11 +87,11 @@ export const ApplePayDomainErrorNotice = () => {
 						? __(
 								'Apple Pay domain verification failed with the following error:',
 								'woocommerce'
-						  )
+							)
 						: __(
 								'Apple Pay domain verification failed.',
 								'woocommerce'
-						  ) }
+							) }
 				</span>{ ' ' }
 				<TextLink href={ LEARN_MORE_URL }>
 					{ __( 'Learn more', 'woocommerce' ) }

@@ -401,9 +401,9 @@ const getManualFraudOutcomeHeadline = ( event: WooPaymentsTimelineEvent ) => {
 	) {
 		const template = isBlock
 			? /* translators: %s: user name, <a>: link to the user. */
-			  __( 'Payment was blocked by <a>%s</a>', 'woocommerce' )
+				__( 'Payment was blocked by <a>%s</a>', 'woocommerce' )
 			: /* translators: %s: user name, <a>: link to the user. */
-			  __( 'Payment was approved by <a>%s</a>', 'woocommerce' );
+				__( 'Payment was approved by <a>%s</a>', 'woocommerce' );
 
 		return createInterpolateElement( sprintf( template, userName ), {
 			a: (
@@ -423,12 +423,12 @@ const getManualFraudOutcomeHeadline = ( event: WooPaymentsTimelineEvent ) => {
 					/* translators: %s: user display name. */
 					__( 'Payment was blocked by %s', 'woocommerce' ),
 					userName
-			  )
+				)
 			: sprintf(
 					/* translators: %s: user display name. */
 					__( 'Payment was approved by %s', 'woocommerce' ),
 					userName
-			  );
+				);
 	}
 
 	return isBlock
@@ -443,7 +443,7 @@ const createBodyLine = ( label: string, value: string ) =>
 				__( '%1$s: %2$s', 'woocommerce' ),
 				label,
 				value
-		  )
+			)
 		: null;
 
 // Client `getRefundFailureReason()`: the failure reasons the client puts into words.
@@ -464,7 +464,7 @@ const getRefundTrackingLine = ( event: WooPaymentsTimelineEvent ) => {
 				/* translators: %s: acquirer reference number. */
 				__( 'Acquirer Reference Number (ARN) %s', 'woocommerce' ),
 				arn
-		  )
+			)
 		: null;
 };
 
@@ -513,7 +513,7 @@ const getRefundBody = ( event: WooPaymentsTimelineEvent ) => {
 			? createBodyLine(
 					__( 'Reason', 'woocommerce' ),
 					refundReasonLabels[ reason ] ?? reason
-			  )
+				)
 			: null,
 	].filter( Boolean );
 };
@@ -556,7 +556,7 @@ const getDisputeDepositImpact = ( event: WooPaymentsTimelineEvent ) => {
 		: formatExplicitMoney(
 				Math.abs( amount ) + Math.abs( getNumber( event, 'fee' ) ?? 0 ),
 				getCurrency( event )
-		  );
+			);
 };
 
 const getDisputeLostHeadline = (
@@ -615,7 +615,7 @@ const getNetworkCostItem = (
 					/* translators: %s: formatted network cost amount. */
 					__( '%s in your account currency', 'woocommerce' ),
 					formattedAmount
-			  )
+				)
 			: formattedAmount,
 		'deducted',
 		[
@@ -623,7 +623,7 @@ const getNetworkCostItem = (
 				? __(
 						'Network costs associated with resolving Visa compliance disputes.',
 						'woocommerce'
-				  )
+					)
 				: __( 'Network cost for the dispute.', 'woocommerce' ),
 		]
 	);
@@ -684,7 +684,7 @@ const mapTimelineEvent = (
 								message,
 								timelineIcon( CheckmarkIcon, 'is-warning' )
 							),
-					  ]
+						]
 					: [] ),
 			];
 		}
@@ -694,9 +694,9 @@ const mapTimelineEvent = (
 			const message = createAmountMessage(
 				isExpired
 					? /* translators: %s: formatted amount. */
-					  __( 'Authorization for %s expired.', 'woocommerce' )
+						__( 'Authorization for %s expired.', 'woocommerce' )
 					: /* translators: %s: formatted amount. */
-					  __( 'Authorization for %s was voided.', 'woocommerce' ),
+						__( 'Authorization for %s was voided.', 'woocommerce' ),
 				event,
 				[ 'amount_authorized', 'amount' ],
 				true
@@ -719,9 +719,9 @@ const mapTimelineEvent = (
 									: timelineIcon(
 											CheckmarkIcon,
 											'is-warning'
-									  )
+										)
 							),
-					  ]
+						]
 					: [] ),
 			];
 		}
@@ -783,7 +783,7 @@ const mapTimelineEvent = (
 							: __(
 									'Payment was partially refunded.',
 									'woocommerce'
-							  ) ),
+								) ),
 					timelineIcon( CheckmarkIcon, 'is-success' ),
 					getRefundBody( event )
 				),
@@ -808,14 +808,14 @@ const mapTimelineEvent = (
 							),
 							formattedAmount,
 							reasonText
-					  )
+						)
 					: createAmountMessage(
 							/* translators: %s: formatted amount. */
 							__( 'A refund of %s failed.', 'woocommerce' ),
 							event,
 							[ 'amount_refunded', 'amount' ],
 							true
-					  ) || __( 'Refund failed.', 'woocommerce' );
+						) || __( 'Refund failed.', 'woocommerce' );
 
 			return [
 				mainItem(
@@ -829,7 +829,7 @@ const mapTimelineEvent = (
 							: createBodyLine(
 									__( 'Reason', 'woocommerce' ),
 									failureReason
-							  ),
+								),
 					].filter( Boolean )
 				),
 			];
@@ -863,7 +863,7 @@ const mapTimelineEvent = (
 									getCurrency( event )
 								),
 								failureMessage
-						  ),
+							),
 					timelineIcon( CrossIcon, 'is-error' )
 				),
 			];
@@ -876,7 +876,7 @@ const mapTimelineEvent = (
 							/* translators: %s: dispute reason. */
 							__( 'Payment disputed as %s.', 'woocommerce' ),
 							formatDisputeReasonLabel( reason )
-					  )
+						)
 					: __( 'Payment disputed', 'woocommerce' );
 			const amount = getNumber( event, 'amount' );
 			const fee = getNumber( event, 'fee' );
@@ -885,7 +885,7 @@ const mapTimelineEvent = (
 				? formatMoney(
 						getNumber( details, 'customer_amount' ) ?? 0,
 						getString( details, 'customer_currency' )
-				  )
+					)
 				: formatMoney( amount ?? 0, getCurrency( event ) );
 			const payoutLine =
 				amount === undefined
@@ -902,7 +902,7 @@ const mapTimelineEvent = (
 									'woocommerce'
 								),
 							]
-					  )
+						)
 					: payoutItem(
 							event,
 							date,
@@ -924,9 +924,9 @@ const mapTimelineEvent = (
 												fee,
 												getCurrency( event )
 											)
-									  ),
+										),
 							].filter( Boolean )
-					  );
+						);
 
 			return [
 				qualify(
@@ -988,7 +988,7 @@ const mapTimelineEvent = (
 									)
 								),
 							] ),
-					  ]
+						]
 					: [] ),
 				qualify(
 					mainItem(
@@ -1086,7 +1086,7 @@ const mapTimelineEvent = (
 										),
 									}
 								),
-						  ]
+							]
 						: []
 				),
 			];
@@ -1106,7 +1106,7 @@ const mapTimelineEvent = (
 						/* translators: %s: card network reported fraud reason. */
 						__( 'Reported reason: %s', 'woocommerce' ),
 						fraudTypeLabel
-				  )
+					)
 				: null;
 
 			if ( event.efw_actionable !== true ) {
@@ -1156,11 +1156,11 @@ const mapTimelineEvent = (
 								/>
 							),
 						}
-				  )
+					)
 				: __(
 						'Refunding this payment now can prevent a dispute.',
 						'woocommerce'
-				  );
+					);
 
 			return [
 				statusItem( date, __( 'Early fraud warning', 'woocommerce' ) ),

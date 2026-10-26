@@ -642,7 +642,7 @@ export const WooPaymentsTransactionsPage = () => {
 											'woocommerce'
 										),
 										orderId
-								  )
+									)
 								: sprintf(
 										/* translators: %s: order ID. */
 										__(
@@ -650,7 +650,7 @@ export const WooPaymentsTransactionsPage = () => {
 											'woocommerce'
 										),
 										orderId
-								  )
+									)
 						}
 					>
 						{ __( 'Capture', 'woocommerce' ) }
@@ -692,7 +692,7 @@ export const WooPaymentsTransactionsPage = () => {
 						label: __( 'authorization(s)', 'woocommerce' ),
 						value: String( summaryCount ),
 					},
-			  ]
+				]
 			: [];
 
 	if (

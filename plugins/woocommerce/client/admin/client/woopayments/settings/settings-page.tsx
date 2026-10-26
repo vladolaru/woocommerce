@@ -174,11 +174,7 @@ type StringSetting = [ string, StringSetter ];
 type StringArraySetting = [ string[], StringArraySetter ];
 type PayoutInterval = 'daily' | 'weekly' | 'monthly';
 type PayoutWeeklyAnchor =
-	| 'monday'
-	| 'tuesday'
-	| 'wednesday'
-	| 'thursday'
-	| 'friday';
+	'monday' | 'tuesday' | 'wednesday' | 'thursday' | 'friday';
 type PaymentMethodStatus = {
 	status?: string;
 	requirements?: unknown[];
@@ -186,9 +182,7 @@ type PaymentMethodStatus = {
 type AccountFees = Record< string, Record< string, unknown > | undefined >;
 type DuplicatePaymentMethodNotices = Record< string, string[] | undefined >;
 type CustomizableExpressCheckoutMethod =
-	| 'woopay'
-	| 'payment_request'
-	| 'amazon_pay';
+	'woopay' | 'payment_request' | 'amazon_pay';
 type ExpressCheckoutOverviewMethod = CustomizableExpressCheckoutMethod | 'link';
 type ExpressCheckoutOverviewItem = {
 	label: string;
@@ -345,7 +339,7 @@ const asPmPromotions = ( value: unknown ): PmPromotion[] =>
 					'payment_method' in promotion &&
 					'type' in promotion &&
 					'title' in promotion
-		  )
+			)
 		: [];
 
 const getSavingErrorDetailMessage = ( value: unknown, key: string ) => {
@@ -803,7 +797,7 @@ const GeneralSettingsSection = () => {
 													/>
 												),
 											}
-									  )
+										)
 									: createInterpolateElement(
 											__(
 												'Use <testCardHelpLink>test card numbers</testCardHelpLink> to simulate various transactions. <learnMoreLink>Learn more</learnMoreLink>',
@@ -823,14 +817,14 @@ const GeneralSettingsSection = () => {
 													/>
 												),
 											}
-									  )
+										)
 							}
 							label={
 								isDevModeEnabled
 									? __(
 											'Enable test mode (enabled by development mode)',
 											'woocommerce'
-									  )
+										)
 									: __( 'Enable test mode', 'woocommerce' )
 							}
 							onChange={ ( value ) => {
@@ -1133,7 +1127,7 @@ const ExpressCheckoutSettingsSection = () => {
 		? __(
 				'To enable Link by Stripe, you must first disable WooPay.',
 				'woocommerce'
-		  )
+			)
 		: '';
 
 	const expressRows: ExpressCheckoutOverviewRow[] = [];
@@ -1154,7 +1148,7 @@ const ExpressCheckoutSettingsSection = () => {
 						? __(
 								'Boost conversion and customer loyalty by offering a single click, secure way to pay.',
 								'woocommerce'
-						  )
+							)
 						: createInterpolateElement(
 								__(
 									'Boost conversion and customer loyalty by offering a single click, secure way to pay. In order to use <wooPayLink>WooPay</wooPayLink>, you must agree to our <termsLink>WooCommerce Terms of Service</termsLink> and <privacyLink>Privacy Policy</privacyLink>. <trackingLink>Click here</trackingLink> to learn more about the data you will be sharing and opt-out options.',
@@ -1174,7 +1168,7 @@ const ExpressCheckoutSettingsSection = () => {
 										'https://woocommerce.com/usage-tracking/'
 									),
 								}
-						  ),
+							),
 				},
 			],
 			notice: wooPayNotice,
@@ -1194,7 +1188,7 @@ const ExpressCheckoutSettingsSection = () => {
 					? __(
 							'Apple Pay is an easy and secure way for customers to pay on your store.',
 							'woocommerce'
-					  )
+						)
 					: createInterpolateElement(
 							__(
 								"Apple Pay is an easy and secure way for customers to pay on your store. By enabling this feature, you agree to <stripeLink>Stripe</stripeLink> and <appleLink>Apple</appleLink>'s terms of use.",
@@ -1208,7 +1202,7 @@ const ExpressCheckoutSettingsSection = () => {
 									'https://developer.apple.com/apple-pay/acceptable-use-guidelines-for-websites/'
 								),
 							}
-					  ),
+						),
 			},
 			{
 				label: __( 'Google Pay', 'woocommerce' ),
@@ -1217,7 +1211,7 @@ const ExpressCheckoutSettingsSection = () => {
 					? __(
 							'Offer customers a fast, secure checkout experience with Google Pay.',
 							'woocommerce'
-					  )
+						)
 					: createInterpolateElement(
 							__(
 								"Offer customers a fast, secure checkout experience with Google Pay. By enabling this feature, you agree to <stripeLink>Stripe</stripeLink>, and <googleLink>Google</googleLink>'s terms of use.",
@@ -1231,7 +1225,7 @@ const ExpressCheckoutSettingsSection = () => {
 									'https://androidpay.developers.google.com/terms/sellertos'
 								),
 							}
-					  ),
+						),
 			},
 		],
 		duplicatePaymentMethodId: 'apple_pay_google_pay',
@@ -1252,7 +1246,7 @@ const ExpressCheckoutSettingsSection = () => {
 						? __(
 								"Link autofills your customers' payment and shipping details to deliver an easy and seamless checkout experience.",
 								'woocommerce'
-						  )
+							)
 						: createInterpolateElement(
 								__(
 									"Link autofills your customers' payment and shipping details to deliver an easy and seamless checkout experience. By enabling this feature, you agree to the <termsLink>Link by Stripe terms</termsLink>, and <privacyLink>Privacy Policy</privacyLink>.",
@@ -1266,7 +1260,7 @@ const ExpressCheckoutSettingsSection = () => {
 										'https://link.com/privacy'
 									),
 								}
-						  ),
+							),
 				},
 			],
 			notice: linkNotice,
@@ -1299,7 +1293,7 @@ const ExpressCheckoutSettingsSection = () => {
 						? __(
 								'Offer customers a fast, secure checkout experience with Amazon Pay.',
 								'woocommerce'
-						  )
+							)
 						: createInterpolateElement(
 								__(
 									"Offer customers a fast, secure checkout experience with Amazon Pay. By activating this feature, you accept <stripeLink>Stripe</stripeLink> and <amazonLink>Amazon</amazonLink>'s terms of use.",
@@ -1313,7 +1307,7 @@ const ExpressCheckoutSettingsSection = () => {
 										'https://stripe.com/legal/amazon-pay'
 									),
 								}
-						  ),
+							),
 				},
 			],
 			notice: amazonPayAvailability.notice || '',
@@ -1521,7 +1515,7 @@ const TransactionsSettingsSection = ( {
 			? __(
 					'Support email cannot be empty once it has been set before, please specify.',
 					'woocommerce'
-			  )
+				)
 			: '' ) ||
 		( hasSupportEmailBlurred && supportEmailInvalidFormat
 			? __( 'Please enter a valid email address.', 'woocommerce' )
@@ -1532,7 +1526,7 @@ const TransactionsSettingsSection = ( {
 			? __(
 					'A support phone number is required. Please enter a valid phone number.',
 					'woocommerce'
-			  )
+				)
 			: '' );
 
 	const supportEmailValidationMessage =
@@ -2062,7 +2056,7 @@ const NotificationsSettingsSection = ( {
 			? __(
 					'Email addresses do not match. Please re-enter your email address.',
 					'woocommerce'
-			  )
+				)
 			: '';
 
 	let validationError: FieldValidationError | null = null;
@@ -2266,7 +2260,7 @@ const AdvancedSettingsSection = () => {
 							? __(
 									'Log error messages (defaulted on for test accounts)',
 									'woocommerce'
-							  )
+								)
 							: __( 'Log error messages', 'woocommerce' )
 					}
 					onChange={ ( value ) =>

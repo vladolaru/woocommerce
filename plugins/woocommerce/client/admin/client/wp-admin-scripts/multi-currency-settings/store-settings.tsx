@@ -188,7 +188,7 @@ export function StoreLevelSettings() {
 				? {
 						...settings,
 						...values,
-				  }
+					}
 				: settings
 		);
 	};

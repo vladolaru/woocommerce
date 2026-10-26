@@ -128,9 +128,7 @@ export const WooPaymentsListFilters = ( {
  * The client's "Show" choices: `all` is the default and stays out of the URL.
  */
 export type WooPaymentsListShowFilter =
-	| 'all'
-	| 'advanced'
-	| 'awaiting_response';
+	'all' | 'advanced' | 'awaiting_response';
 
 /**
  * Reads the list's `filter` argument; anything the list does not offer shows everything.

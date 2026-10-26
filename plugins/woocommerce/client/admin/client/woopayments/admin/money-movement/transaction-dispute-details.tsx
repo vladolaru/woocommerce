@@ -248,7 +248,7 @@ const getResolvedStatusDescription = (
 							),
 							submittedAt,
 							bankName
-					  )
+						)
 					: sprintf(
 							/* translators: %s: date the evidence was submitted. */
 							__(
@@ -256,7 +256,7 @@ const getResolvedStatusDescription = (
 								'woocommerce'
 							),
 							submittedAt
-					  ),
+						),
 				docUrl: PAYMENT_INQUIRIES_DOC_URL,
 				docLabel: __( 'Learn more.', 'woocommerce' ),
 			};
@@ -355,11 +355,11 @@ const LostDisputeDescription = ( {
 							'woocommerce'
 						),
 						formatExplicitCurrency( fee.amount, fee.currency )
-				  )
+					)
 				: __(
 						'The disputed amount has been returned to your customer.',
 						'woocommerce'
-				  ) }{ ' ' }
+					) }{ ' ' }
 			<ExternalLink
 				href={ fee ? DISPUTE_FEES_DOC_URL : DISPUTED_AMOUNTS_DOC_URL }
 			>
@@ -368,7 +368,7 @@ const LostDisputeDescription = ( {
 					: __(
 							'Learn more about disputed amounts.',
 							'woocommerce'
-					  ) }
+						) }
 			</ExternalLink>
 		</>
 	);
@@ -557,7 +557,7 @@ const getDisputeNoticeText = (
 					claim,
 					dueBy,
 					bankName
-			  )
+				)
 			: sprintf(
 					/* translators: 1: the cardholder's claim, 2: the deadline. */
 					__(
@@ -566,7 +566,7 @@ const getDisputeNoticeText = (
 					),
 					claim,
 					dueBy
-			  );
+				);
 	}
 
 	if ( dispute.reason === 'noncompliant' ) {
@@ -579,7 +579,7 @@ const getDisputeNoticeText = (
 					),
 					bankName,
 					dueBy
-			  )
+				)
 			: sprintf(
 					/* translators: %s: the deadline. */
 					__(
@@ -587,7 +587,7 @@ const getDisputeNoticeText = (
 						'woocommerce'
 					),
 					dueBy
-			  );
+				);
 	}
 
 	return bankName
@@ -600,7 +600,7 @@ const getDisputeNoticeText = (
 				claim,
 				dueBy,
 				bankName
-		  )
+			)
 		: sprintf(
 				/* translators: 1: the cardholder's claim, 2: the deadline. */
 				__(
@@ -609,7 +609,7 @@ const getDisputeNoticeText = (
 				),
 				claim,
 				dueBy
-		  );
+			);
 };
 
 // Client 11.1.0 `components/inline-notice`: the notice-outline gridicon, which takes a class name the shared typings omit.
@@ -885,7 +885,7 @@ const RespondToDisputeActions = ( {
 											disputeTracksProperties
 										);
 										onIssueRefund();
-								  }
+									}
 								: undefined
 						}
 					>
@@ -906,7 +906,7 @@ const RespondToDisputeActions = ( {
 											disputeTracksProperties
 										);
 										onAccept();
-								  }
+									}
 						}
 					>
 						{ __( 'Accept dispute', 'woocommerce' ) }
@@ -1033,7 +1033,7 @@ const ResolvedDisputeActions = ( {
 								: __(
 										'View submitted evidence',
 										'woocommerce'
-								  ) }
+									) }
 						</Button>
 					</FlexItem>
 				) }
@@ -1212,12 +1212,12 @@ export const WooPaymentsTransactionDisputeDetails = ( {
 													acceptFee.amount,
 													acceptFee.currency
 												)
-										  )
+											)
 										: /* translators: <em>: emphasis HTML element. */
-										  __(
+											__(
 												'Accepting the dispute marks it as <em>Lost</em>. The disputed amount will not be returned to you.',
 												'woocommerce'
-										  ),
+											),
 									{ em: <em /> }
 								) }
 							</span>

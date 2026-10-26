@@ -118,12 +118,12 @@ const buildUpdateBusinessDetailsTask = ( {
 					/* translators: %s: Payment provider name. */
 					__( 'Update %s business details', 'woocommerce' ),
 					'WooPayments'
-			  )
+				)
 			: sprintf(
 					/* translators: %s: Payment provider name. */
 					__( 'Finish setting up %s', 'woocommerce' ),
 					'WooPayments'
-			  ),
+				),
 		content,
 		actionLabel,
 		completed,
@@ -158,7 +158,7 @@ const buildUpdateBusinessDetailsTask = ( {
 		? addQueryArgs( accountLink, {
 				from: 'WCPAY_OVERVIEW',
 				source: 'wcpay-update-business-details-task',
-		  } )
+			} )
 		: '';
 
 	return {
@@ -246,12 +246,12 @@ const buildDisputeTask = (
 								'woocommerce'
 							),
 							amountFormatted
-					  )
+						)
 					: sprintf(
 							/* translators: %s: Disputed amount. */
 							__( 'Respond to a dispute for %s', 'woocommerce' ),
 							amountFormatted
-					  ),
+						),
 			content:
 				numDisputesDueWithin24h >= 1
 					? sprintf(
@@ -262,7 +262,7 @@ const buildDisputeTask = (
 								dueMoment.toISOString(),
 								undefined
 							)
-					  )
+						)
 					: sprintf(
 							/* translators: 1: Response deadline date in the site date format, 2: Time left, for example "2 days". */
 							__(
@@ -275,7 +275,7 @@ const buildDisputeTask = (
 								undefined
 							),
 							dueMoment.fromNow( true )
-					  ),
+						),
 			actionLabel: __( 'Respond now', 'woocommerce' ),
 			href: getSettingsPaymentsProviderRouteUrl(
 				`/woopayments/transactions/details?id=${ encodeURIComponent(
@@ -312,7 +312,7 @@ const buildDisputeTask = (
 						),
 						currencies[ 0 ]
 					)
-			  )
+				)
 			: sprintf(
 					/* translators: %d: Number of disputes. */
 					_n(
@@ -322,7 +322,7 @@ const buildDisputeTask = (
 						'woocommerce'
 					),
 					activeDisputeCount
-			  );
+				);
 
 	return {
 		key: `dispute-resolution-task-${ activeDisputes
@@ -339,7 +339,7 @@ const buildDisputeTask = (
 							'woocommerce'
 						),
 						numDisputesDueWithin24h
-				  )
+					)
 				: sprintf(
 						/* translators: %d: Number of disputes due within 7 days. */
 						__(
@@ -347,7 +347,7 @@ const buildDisputeTask = (
 							'woocommerce'
 						),
 						numDisputesDueWithin7Days
-				  ),
+					),
 		actionLabel: __( 'See disputes', 'woocommerce' ),
 		href: getSettingsPaymentsProviderRouteUrl(
 			'/woopayments/disputes?filter=awaiting_response'

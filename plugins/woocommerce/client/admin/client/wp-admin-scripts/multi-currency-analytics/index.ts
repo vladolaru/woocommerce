@@ -131,7 +131,7 @@ export const applyReportCurrencySymbol = (
 		? getSetting< Record< string, string > >(
 				'customerCurrencySymbols',
 				{}
-		  )[ currency ]
+			)[ currency ]
 		: undefined;
 
 	return symbol ? { ...config, symbol } : config;

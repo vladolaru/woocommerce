@@ -286,7 +286,7 @@ export function* saveSettings(): Generator<
 									url: error.disable_url,
 								},
 							],
-					  }
+						}
 					: undefined
 			);
 		}

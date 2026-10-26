@@ -69,7 +69,7 @@ const getSetupLiveUrl = ( setupUrl?: string, source = SETUP_LIVE_SOURCE ) =>
 		? addQueryArgs( setupUrl, {
 				source,
 				from: 'wcpay-setup-live-payments',
-		  } )
+			} )
 		: undefined;
 
 export const SetupLivePaymentsModal = ( {

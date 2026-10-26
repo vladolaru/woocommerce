@@ -288,7 +288,7 @@ export function CurrencySettingsModal( {
 				? {
 						...currentSettings,
 						...values,
-				  }
+					}
 				: currentSettings
 		);
 	};

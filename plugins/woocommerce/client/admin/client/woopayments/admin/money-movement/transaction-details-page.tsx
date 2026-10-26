@@ -78,11 +78,7 @@ import '../style.scss';
 
 type AuthorizationAction = 'capture' | 'cancel';
 type RefundReason =
-	| 'duplicate'
-	| 'fraudulent'
-	| 'requested_by_customer'
-	| 'other'
-	| null;
+	'duplicate' | 'fraudulent' | 'requested_by_customer' | 'other' | null;
 type PendingAuthorizationAction = {
 	action: AuthorizationAction;
 	paymentIntentId: string;
@@ -1319,7 +1315,7 @@ export const WooPaymentsTransactionDetailsPage = () => {
 																'woocommerce'
 															),
 															String( orderId )
-													  )
+														)
 													: undefined
 											}
 										>
@@ -1354,7 +1350,7 @@ export const WooPaymentsTransactionDetailsPage = () => {
 																'woocommerce'
 															),
 															String( orderId )
-													  )
+														)
 													: undefined
 											}
 										>
@@ -1433,7 +1429,7 @@ export const WooPaymentsTransactionDetailsPage = () => {
 																String(
 																	orderId
 																)
-														  )
+															)
 														: sprintf(
 																/* translators: %s: order ID. */
 																__(
@@ -1443,7 +1439,7 @@ export const WooPaymentsTransactionDetailsPage = () => {
 																String(
 																	orderId
 																)
-														  )
+															)
 												}
 											>
 												{ __(

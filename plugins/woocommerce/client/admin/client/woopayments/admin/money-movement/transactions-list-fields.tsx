@@ -480,7 +480,7 @@ export const getTransactionListFilterFields = (
 						loans,
 						[ 'is' ]
 					),
-			  ]
+				]
 			: [] ),
 		selectFilter(
 			'source_is',
@@ -539,7 +539,7 @@ export const getTransactionListFields = (
 				? {
 						operators: [ 'before', 'after', 'between' ] as const,
 						isPrimary: true,
-				  }
+					}
 				: ( false as const ),
 			getValue: ( { item }: FieldRenderProps ) =>
 				item.date || item.created || '',
@@ -732,7 +732,7 @@ export const getTransactionListFields = (
 							);
 						},
 					},
-			  ]
+				]
 			: [] ),
 		{
 			id: 'source',
@@ -829,7 +829,7 @@ export const getTransactionListFields = (
 								payoutStatusLabels[ item.deposit_status ] ) ||
 							'',
 					},
-			  ]
+				]
 			: [] ),
 	];
 

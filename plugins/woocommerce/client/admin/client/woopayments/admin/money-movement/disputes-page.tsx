@@ -252,7 +252,7 @@ export const getDisputeRespondBy = (
 									'woocommerce'
 								),
 								diffDays
-						  )
+							)
 				}
 			/>
 		);
@@ -388,7 +388,7 @@ export const WooPaymentsDisputesPage = () => {
 					? {
 							operators: [ 'is', 'isNot' ] as const,
 							isPrimary: true,
-					  }
+						}
 					: ( false as const ),
 				render: ( { item }: { item: WooPaymentsDisputeListRow } ) => (
 					<DisputeCell item={ item }>
@@ -491,7 +491,7 @@ export const WooPaymentsDisputesPage = () => {
 								'between',
 							] as const,
 							isPrimary: true,
-					  }
+						}
 					: ( false as const ),
 				render: ( { item }: { item: WooPaymentsDisputeListRow } ) => (
 					<DisputeCell item={ item }>
@@ -530,7 +530,7 @@ export const WooPaymentsDisputesPage = () => {
 								),
 								reasonLabel.toLowerCase(),
 								id
-						  )
+							)
 						: sprintf(
 								/* translators: 1: dispute reason, 2: dispute ID. */
 								__(
@@ -539,7 +539,7 @@ export const WooPaymentsDisputesPage = () => {
 								),
 								reasonLabel,
 								id
-						  );
+							);
 
 					// Client 11.1.0 `disputes/index.tsx:324-338`: a secondary "Respond" while a response
 					// is due and a tertiary "See details" otherwise.
@@ -715,7 +715,7 @@ export const WooPaymentsDisputesPage = () => {
 						),
 						value: formatCount( summaryCount ),
 					},
-			  ]
+				]
 			: [];
 	const currencyFilter =
 		typeof query.store_currency_is === 'string'

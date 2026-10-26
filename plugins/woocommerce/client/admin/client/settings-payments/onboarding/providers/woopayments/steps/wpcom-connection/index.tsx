@@ -61,11 +61,11 @@ export const JetpackStep: React.FC = () => {
 							? __(
 									'Your store is connected to WordPress.com, but the account that authorized it is no longer linked. Reconnect to restore WooPayments.',
 									'woocommerce'
-							  )
+								)
 							: __(
 									'You’ll be briefly redirected to connect your store to your WordPress.com account and unlock the full features and functionality of WooPayments',
 									'woocommerce'
-							  ) }
+								) }
 					</p>
 					<Button
 						variant="primary"

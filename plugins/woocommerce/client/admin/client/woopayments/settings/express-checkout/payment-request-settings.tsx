@@ -62,11 +62,11 @@ export const PaymentRequestSettings = () => {
 			? __(
 					'Apple Pay, Google Pay, and Amazon Pay will appear as options in the payment methods list instead of as separate express checkout buttons.',
 					'woocommerce'
-			  )
+				)
 			: __(
 					'Apple Pay and Google Pay will appear as options in the payment methods list instead of as separate express checkout buttons.',
 					'woocommerce'
-			  );
+				);
 
 	return (
 		<>

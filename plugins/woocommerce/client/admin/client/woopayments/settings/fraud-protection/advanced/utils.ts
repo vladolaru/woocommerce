@@ -187,12 +187,12 @@ const buildRuleset = (
 								key: Checks.CHECK_ITEM_COUNT,
 								operator: CheckOperators.OPERATOR_LT,
 								value: minItems,
-						  }
+							}
 						: {
 								key: Checks.CHECK_ITEM_COUNT,
 								operator: CheckOperators.OPERATOR_GT,
 								value: maxItems,
-						  };
+							};
 				}
 			}
 			break;
@@ -236,7 +236,7 @@ const buildRuleset = (
 									minAmount,
 									environment.storeCurrency
 								),
-						  }
+							}
 						: {
 								key: Checks.CHECK_ORDER_TOTAL,
 								operator: CheckOperators.OPERATOR_GT,
@@ -244,7 +244,7 @@ const buildRuleset = (
 									maxAmount,
 									environment.storeCurrency
 								),
-						  };
+							};
 				}
 			}
 			break;

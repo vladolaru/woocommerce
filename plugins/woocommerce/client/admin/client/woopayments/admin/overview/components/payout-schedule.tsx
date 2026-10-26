@@ -55,7 +55,7 @@ export const getPayoutScheduleText = (
 				? __(
 						'Available funds are automatically dispatched <strong>on the last day of every month</strong>.',
 						'woocommerce'
-				  )
+					)
 				: sprintf(
 						/* translators: %s: Day of the month. */
 						__(
@@ -63,7 +63,7 @@ export const getPayoutScheduleText = (
 							'woocommerce'
 						),
 						getMonthlyAnchorLabel( schedule.monthly_anchor )
-				  );
+					);
 	}
 
 	return message

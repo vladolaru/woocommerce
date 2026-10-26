@@ -274,16 +274,16 @@ export const documentsQueryToDataViewsView = (
 			result.push(
 				DATE_PARAM_OPERATORS[ param ]
 					? // The Date field with its rule, so the filter the merchant chose shows and edits again.
-					  {
+						{
 							field: 'date',
 							operator: DATE_PARAM_OPERATORS[ param ] as string,
 							value,
-					  }
+						}
 					: {
 							field: FILTER_PARAM_TO_FIELD[ param ] || param,
 							operator: getFilterOperator( param, value ),
 							value,
-					  }
+						}
 			);
 		}
 

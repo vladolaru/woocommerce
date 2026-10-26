@@ -155,7 +155,7 @@ export const WooPaymentsDisputeChallengePage = () => {
 						? __(
 								'Some saved evidence files could not be verified. They count toward the full 4.5 MB evidence limit until details can be loaded or the files are replaced.',
 								'woocommerce'
-						  )
+							)
 						: null
 				);
 			} catch {

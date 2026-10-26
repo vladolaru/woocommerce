@@ -47,7 +47,7 @@ jest.mock( '@wordpress/data', () => {
 				? {
 						createSuccessNotice: jest.fn(),
 						createErrorNotice: jest.fn(),
-				  }
+					}
 				: actual.dispatch( store ),
 	};
 } );

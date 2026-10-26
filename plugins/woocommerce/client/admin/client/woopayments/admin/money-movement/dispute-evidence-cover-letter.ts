@@ -917,7 +917,7 @@ export const generateDisputeCoverLetter = ( {
 			? `${ formatRefundAmount(
 					dispute.amount,
 					dispute.currency ?? ''
-			  ) } ${ dispute.currency?.toUpperCase() }`
+				) } ${ dispute.currency?.toUpperCase() }`
 			: __( '[Refund Amount]', 'woocommerce' ),
 		refundStatus,
 		duplicateStatus,

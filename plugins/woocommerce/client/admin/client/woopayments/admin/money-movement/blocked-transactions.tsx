@@ -116,7 +116,7 @@ const blockedSearchCompleter = {
 					label
 						.toLocaleLowerCase()
 						.includes( term.toLocaleLowerCase() )
-			  )
+				)
 			: options;
 	},
 	isDebounced: true,
@@ -174,8 +174,8 @@ export const WooPaymentsBlockedTransactions = () => {
 		{ sort: 'created', direction: 'desc', ...query },
 		{ fields: visibleFields }
 	);
-	const columnsToDisplay = COLUMNS.filter(
-		( { key } ) => view.fields?.includes( key )
+	const columnsToDisplay = COLUMNS.filter( ( { key } ) =>
+		view.fields?.includes( key )
 	);
 	const totalRows = summary?.count || 0;
 
@@ -368,7 +368,7 @@ export const WooPaymentsBlockedTransactions = () => {
 					label: __( 'transactions(s)', 'woocommerce' ),
 					value: String( totalRows ),
 				},
-		  ]
+			]
 		: [];
 
 	if ( summary && totalRows > 0 && summary.currencies?.length === 1 ) {

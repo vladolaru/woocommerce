@@ -218,7 +218,7 @@ const getEmailLink = (
 					disputeDate,
 					formatExplicitCurrency( dispute.amount, dispute.currency ),
 					chargeDate
-			  )
+				)
 			: sprintf(
 					/* translators: 1: dispute date, 2: disputed amount, 3: charge date. */
 					__(
@@ -228,16 +228,16 @@ const getEmailLink = (
 					disputeDate,
 					formatExplicitCurrency( dispute.amount, dispute.currency ),
 					chargeDate
-			  ),
+				),
 		isInquiry
 			? __(
 					'Alternatively, if this was a mistake, please contact your payment provider to resolve it. Thank you so much - we appreciate your business and look forward to working with you.',
 					'woocommerce'
-			  )
+				)
 			: __(
 					'Alternatively, if the dispute was a mistake, you can easily withdraw it by calling the number on the back of your card. Thank you so much - we appreciate your business and look forward to working with you.',
 					'woocommerce'
-			  ),
+				),
 	].join( '\n\n' );
 
 	return `mailto:${ customer.email }?subject=${ encodeURIComponent(
@@ -284,11 +284,11 @@ const getOutcomeText = ( bankName: string | undefined, isInquiry: boolean ) => {
 						'woocommerce'
 					),
 					bankName
-			  )
+				)
 			: __(
 					"<strong>The outcome of this inquiry will be determined by the cardholder's bank.</strong> WooPayments has no influence over the decision and is not liable for any chargebacks.",
 					'woocommerce'
-			  );
+				);
 	}
 
 	return bankName
@@ -299,11 +299,11 @@ const getOutcomeText = ( bankName: string | undefined, isInquiry: boolean ) => {
 					'woocommerce'
 				),
 				bankName
-		  )
+			)
 		: __(
 				"<strong>The outcome of this dispute will be determined by the cardholder's bank.</strong> WooPayments has no influence over the decision and is not liable for any chargebacks.",
 				'woocommerce'
-		  );
+			);
 };
 
 const StepsPanel = ( {
@@ -464,7 +464,7 @@ export const NotDefendableInquirySteps = ( props: StepsProps ) => {
 						? __(
 								"Reach out to the customer to check if they're returning the item(s).",
 								'woocommerce'
-						  )
+							)
 						: undefined
 				}
 			/>
@@ -476,11 +476,11 @@ export const NotDefendableInquirySteps = ( props: StepsProps ) => {
 						? __(
 								"Once you've received the item(s), refund the customer before the deadline to prevent this escalating to a dispute.",
 								'woocommerce'
-						  )
+							)
 						: __(
 								'If appropriate, issue a refund to resolve the inquiry before the deadline.',
 								'woocommerce'
-						  )
+							)
 				}
 			/>
 			{ isReturn && (

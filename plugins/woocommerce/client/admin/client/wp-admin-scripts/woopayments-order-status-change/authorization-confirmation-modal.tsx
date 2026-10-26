@@ -41,14 +41,14 @@ function getCopy( action: 'capture' | 'cancel' ) {
 				newOrderStatus: __( 'completed', 'woocommerce' ),
 				actionText: __( 'capture the payment', 'woocommerce' ),
 				actionAnchor: 'capturing-authorized-payments',
-		  }
+			}
 		: {
 				title: __( 'Cancel payment', 'woocommerce' ),
 				confirm: __( 'Cancel order and payment', 'woocommerce' ),
 				newOrderStatus: __( 'cancelled', 'woocommerce' ),
 				actionText: __( 'cancel the payment', 'woocommerce' ),
 				actionAnchor: 'cancelling-authorizations',
-		  };
+			};
 }
 
 /**

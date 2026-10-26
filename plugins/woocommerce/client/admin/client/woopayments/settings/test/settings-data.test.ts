@@ -195,9 +195,8 @@ describe( 'WooPayments settings data store', () => {
 	} );
 
 	it( 'updates dismissed duplicate notices in the settings store', async () => {
-		const { updateDismissedDuplicatePaymentMethodNotices } = await import(
-			'../data/actions'
-		);
+		const { updateDismissedDuplicatePaymentMethodNotices } =
+			await import( '../data/actions' );
 
 		expect(
 			updateDismissedDuplicatePaymentMethodNotices( {
@@ -215,9 +214,8 @@ describe( 'WooPayments settings data store', () => {
 
 	it( 'starts the Stripe Billing migration through the plugin route and tracks the request', async () => {
 		const { dispatch } = jest.requireMock( '@wordpress/data' );
-		const { submitStripeBillingSubscriptionMigration } = await import(
-			'../data/actions'
-		);
+		const { submitStripeBillingSubscriptionMigration } =
+			await import( '../data/actions' );
 		const action = submitStripeBillingSubscriptionMigration();
 
 		action.next();
@@ -244,9 +242,8 @@ describe( 'WooPayments settings data store', () => {
 
 	it( 'reports a failed Stripe Billing migration request and still finishes it', async () => {
 		const { dispatch } = jest.requireMock( '@wordpress/data' );
-		const { submitStripeBillingSubscriptionMigration } = await import(
-			'../data/actions'
-		);
+		const { submitStripeBillingSubscriptionMigration } =
+			await import( '../data/actions' );
 		const action = submitStripeBillingSubscriptionMigration();
 
 		action.next();
@@ -294,9 +291,8 @@ describe( 'WooPayments settings data store', () => {
 	} );
 
 	it( 'saves the Stripe Billing toggle under the plugin field name', async () => {
-		const { updateIsStripeBillingEnabled } = await import(
-			'../data/actions'
-		);
+		const { updateIsStripeBillingEnabled } =
+			await import( '../data/actions' );
 
 		expect( updateIsStripeBillingEnabled( false ) ).toEqual( {
 			type: 'SET_SETTINGS_VALUES',
@@ -335,9 +331,8 @@ describe( 'WooPayments settings data store', () => {
 			accountStatus: 'legacy-plugin-global',
 		};
 
-		const { getWooPaymentsSettingsBootstrap } = await import(
-			'../bootstrap'
-		);
+		const { getWooPaymentsSettingsBootstrap } =
+			await import( '../bootstrap' );
 
 		expect( getWooPaymentsSettingsBootstrap() ).toEqual( {
 			accountStatus: 'connected',

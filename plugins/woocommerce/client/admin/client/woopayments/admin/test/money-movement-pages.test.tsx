@@ -278,7 +278,7 @@ jest.mock( '@wordpress/dataviews/wp', () => ( {
 											...filter,
 											operator: 'between',
 											value: undefined,
-									  }
+										}
 									: filter
 							),
 						} )
@@ -318,7 +318,7 @@ jest.mock( '@wordpress/dataviews/wp', () => ( {
 												'2026-07-13',
 												'2026-07-20',
 											],
-									  }
+										}
 									: filter
 							),
 						} )
@@ -618,8 +618,8 @@ describe( 'WooPayments money movement pages', () => {
 		mockCreateErrorNotice.mockReset();
 		mockRecordEvent.mockReset();
 		mockHistoryPush.mockReset();
-		mockHistoryPush.mockImplementation(
-			( to: string ) => mockHistoryNavigate?.( to )
+		mockHistoryPush.mockImplementation( ( to: string ) =>
+			mockHistoryNavigate?.( to )
 		);
 	} );
 
@@ -1323,8 +1323,8 @@ describe( 'WooPayments money movement pages', () => {
 			expect(
 				screen
 					.getAllByRole( 'tab' )
-					.map(
-						( tab ) => tab.textContent?.replace( / \(.*\)$/, '' )
+					.map( ( tab ) =>
+						tab.textContent?.replace( / \(.*\)$/, '' )
 					)
 			).toEqual(
 				isShown
@@ -2634,7 +2634,7 @@ describe( 'WooPayments money movement pages', () => {
 									currency: 'usd',
 								},
 							],
-					  }
+						}
 			)
 		);
 		mockGetAuthorizationsSummary.mockImplementation(
@@ -2784,12 +2784,12 @@ describe( 'WooPayments money movement pages', () => {
 							new Error(
 								'Global authorization count unavailable.'
 							)
-					  )
+						)
 					: Promise.resolve( {
 							count: 1,
 							total: 5000,
 							currency: 'usd',
-					  } ),
+						} ),
 		} );
 
 		render(
@@ -3142,7 +3142,7 @@ describe( 'WooPayments money movement pages', () => {
 									data: [
 										authorizationRow( 'pi_page_two', 201 ),
 									],
-							  }
+								}
 							: {
 									data: [
 										authorizationRow(
@@ -3150,7 +3150,7 @@ describe( 'WooPayments money movement pages', () => {
 											202
 										),
 									],
-							  }
+								}
 					);
 				}
 

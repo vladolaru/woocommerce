@@ -11,11 +11,7 @@ import '../../../../settings-payments/components/status-badge/status-badge.scss'
 import './status-chip.scss';
 
 export type StatusChipType =
-	| 'success'
-	| 'warning'
-	| 'error'
-	| 'primary'
-	| 'info';
+	'success' | 'warning' | 'error' | 'primary' | 'info';
 
 /**
  * Maps a platform status colour to a chip type, as client 11.1.0 `components/account-details/utils.ts` `getChipTypeFromColor()` does.

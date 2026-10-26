@@ -324,7 +324,7 @@ export const WooPaymentsTransactionsList = (
 						),
 						value: formatCount( summaryCount ),
 					},
-			  ]
+				]
 			: [];
 
 	if ( summaryItems.length && showSummaryAmounts ) {
@@ -364,7 +364,7 @@ export const WooPaymentsTransactionsList = (
 					customerCurrencies,
 					sources,
 				} ),
-		  ]
+			]
 		: columns;
 	const searchValue = Array.isArray( query.search )
 		? query.search[ 0 ] || ''

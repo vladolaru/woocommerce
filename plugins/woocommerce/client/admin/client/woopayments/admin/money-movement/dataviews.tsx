@@ -74,7 +74,7 @@ export function WooPaymentsMoneyMovementDataViews<
 						),
 					},
 				},
-		  }
+			}
 		: view;
 	const headerContent =
 		title || toolbarActions ? (

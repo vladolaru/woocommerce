@@ -96,14 +96,14 @@ export const getChargeAmounts = (
 				fee: toNumber( balanceTransaction.fee ),
 				refunded: 0,
 				net: 0,
-		  }
+			}
 		: {
 				currency: charge.currency ?? '',
 				amount: toNumber( charge.amount ),
 				fee: toNumber( charge.application_fee_amount ),
 				refunded: 0,
 				net: 0,
-		  };
+			};
 
 	if ( toNumber( charge.amount_refunded ) > 0 ) {
 		balance.refunded -= sumOf(

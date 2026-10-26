@@ -314,7 +314,7 @@ const getFeesDateFilterFromParams = (
 					field: 'date',
 					operator: 'between',
 					value: [ between[ 0 ], between[ 1 ] ],
-			  };
+				};
 	}
 
 	const before = params.get( 'date_before' );

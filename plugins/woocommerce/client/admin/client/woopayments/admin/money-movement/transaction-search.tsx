@@ -112,11 +112,11 @@ export const WooPaymentsTransactionSearch = ( {
 					? __(
 							'Search by order number, subscription number, customer name, or billing email',
 							'woocommerce'
-					  )
+						)
 					: __(
 							'Search by order number, customer name, or billing email',
 							'woocommerce'
-					  )
+						)
 			}
 			selected={ selected }
 			showClearButton

@@ -38,7 +38,7 @@ jest.mock( '@wordpress/data', () => {
 							message: string,
 							options: unknown
 						) => mockCreateInfoNotice( message, options ),
-				  }
+					}
 				: actual.dispatch( store ),
 	};
 } );
@@ -175,8 +175,7 @@ describe( 'WooPaymentsDisputeDetailsRedirect', () => {
 
 	it( 'does not navigate when the dispute resolves after unmount', async () => {
 		let resolveDispute:
-			| ( ( dispute: WooPaymentsDispute ) => void )
-			| undefined;
+			( ( dispute: WooPaymentsDispute ) => void ) | undefined;
 		const disputePromise = new Promise< WooPaymentsDispute >(
 			( resolve ) => {
 				resolveDispute = resolve;

@@ -36,7 +36,7 @@ export const wasTextAddedToExistingNode = (
 			node.contains( record.target ) &&
 			( record.type === 'characterData'
 				? record.target.textContent?.includes( text )
-				: Array.from( record.addedNodes ).some(
-						( added ) => added.textContent?.includes( text )
-				  ) )
+				: Array.from( record.addedNodes ).some( ( added ) =>
+						added.textContent?.includes( text )
+					) )
 	);

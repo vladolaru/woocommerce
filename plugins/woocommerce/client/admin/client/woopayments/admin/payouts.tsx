@@ -242,7 +242,7 @@ export const WooPaymentsPayouts = () => {
 								'between',
 							] as const,
 							isPrimary: true,
-					  }
+						}
 					: ( false as const ),
 				render: ( { item }: { item: WooPaymentsDeposit } ) => (
 					<a
@@ -303,7 +303,7 @@ export const WooPaymentsPayouts = () => {
 					? {
 							operators: [ 'is', 'isNot' ] as const,
 							isPrimary: true,
-					  }
+						}
 					: ( false as const ),
 				// Client 11.1.0 `deposits/list/index.tsx:131` renders `DepositStatusChip`.
 				render: ( { item }: { item: WooPaymentsDeposit } ) => (
@@ -469,7 +469,7 @@ export const WooPaymentsPayouts = () => {
 						),
 						value: formatCount( summaryCount ),
 					},
-			  ]
+				]
 			: [];
 
 	if (

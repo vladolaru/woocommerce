@@ -4,11 +4,7 @@
 import type { ReactNode } from 'react';
 
 export type WooPaymentsDepositStatus =
-	| 'paid'
-	| 'pending'
-	| 'in_transit'
-	| 'canceled'
-	| 'failed';
+	'paid' | 'pending' | 'in_transit' | 'canceled' | 'failed';
 
 export interface WooPaymentsMoneyAmount {
 	amount: number;

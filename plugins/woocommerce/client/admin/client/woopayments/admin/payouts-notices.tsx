@@ -98,7 +98,7 @@ export const WooPaymentsPayoutsNotices = () => {
 		? addQueryArgs( accountStatus.account_link, {
 				from: 'WCPAY_PAYOUTS',
 				source: 'wcpay-payout-failure-notice',
-		  } )
+			} )
 		: '';
 
 	return (

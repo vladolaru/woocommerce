@@ -179,7 +179,7 @@ export const formatPayoutSiteDate = (
 				getDateSettings().formats.date,
 				date.toISOString(),
 				undefined
-		  )
+			)
 		: '-';
 };
 

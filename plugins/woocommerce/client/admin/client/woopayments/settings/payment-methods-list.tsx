@@ -382,12 +382,12 @@ const getCurrentBaseFee = (
 			percentage_rate:
 				typeof feeStructure?.base?.percentage_rate === 'number'
 					? feeStructure.base.percentage_rate *
-					  getDiscountMultiplier( feeStructure )
+						getDiscountMultiplier( feeStructure )
 					: undefined,
 			fixed_rate:
 				typeof feeStructure?.base?.fixed_rate === 'number'
 					? feeStructure.base.fixed_rate *
-					  getDiscountMultiplier( feeStructure )
+						getDiscountMultiplier( feeStructure )
 					: undefined,
 			currency: feeStructure?.base?.currency,
 		};
@@ -693,7 +693,7 @@ const FeeDetails = ( {
 						'woocommerce'
 					),
 					'WooPayments'
-			  )
+				)
 			: sprintf(
 					/* translators: %s: WooPayments */
 					__(
@@ -701,7 +701,7 @@ const FeeDetails = ( {
 						'woocommerce'
 					),
 					'WooPayments'
-			  ),
+				),
 		{
 			// The interpolated "Learn more" becomes the link text.
 			link: (
@@ -993,7 +993,7 @@ export const getPaymentMethodAvailability = (
 				? __(
 						'Your store must be live and fully functional before this payment method can be offered. Approval typically takes 2–3 days. Learn more',
 						'woocommerce'
-				  )
+					)
 				: undefined;
 
 			return {
@@ -1269,7 +1269,7 @@ const PaymentMethodRow = ( {
 				( promotion ) =>
 					promotion.payment_method === definition.id &&
 					promotion.type === 'badge'
-		  );
+			);
 	const restoreFocusToRow = () => {
 		const checkbox = rowRef.current?.querySelector< HTMLInputElement >(
 			'input[type="checkbox"]:not(:disabled)'

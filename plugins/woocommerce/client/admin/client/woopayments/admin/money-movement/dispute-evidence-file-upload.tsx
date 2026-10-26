@@ -73,7 +73,7 @@ export const DisputeEvidenceFileUpload = ( {
 				/* translators: %s: evidence file field label. */
 				__( 'Upload %s', 'woocommerce' ),
 				label.toLowerCase()
-		  );
+			);
 	const removeFieldLabel = labelAlreadyContainsUpload
 		? label.replace( /^upload\s+/i, '' )
 		: label;

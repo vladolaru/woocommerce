@@ -390,7 +390,7 @@ const getClientTransactionSourceIconUrl = ( source: string ) =>
 	CLIENT_TRANSACTION_SOURCE_ICONS[ source ]
 		? `${ WC_ASSET_URL || '' }images/payment-methods/${
 				CLIENT_TRANSACTION_SOURCE_ICONS[ source ]
-		  }`
+			}`
 		: undefined;
 
 /**
@@ -460,7 +460,7 @@ export const getTransactionListPaymentMethod = (
 					__( '%1$s %2$s', 'woocommerce' ),
 					sourceLabel,
 					bankLabel
-			  )
+				)
 			: sourceLabel;
 	}
 

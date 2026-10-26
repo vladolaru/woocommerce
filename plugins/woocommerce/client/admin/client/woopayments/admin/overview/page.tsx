@@ -349,7 +349,7 @@ export const WooPaymentsOverviewPage = () => {
 					showStripeBanner &&
 					( !! bannerLoadError || hasBannerFailed ),
 				onOpenUpdateBusinessDetails: setUpdateBusinessDetailsShell,
-		  } )
+			} )
 		: [];
 	// Client 11.1.0 `overview/index.js:117-118,140-144`.
 	const shouldShowConnectionSuccessModal =

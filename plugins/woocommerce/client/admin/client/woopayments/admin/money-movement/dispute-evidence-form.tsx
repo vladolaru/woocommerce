@@ -282,7 +282,7 @@ const CustomerDetails = ( { dispute }: { dispute: WooPaymentsDispute } ) => {
 					{ address.length
 						? address.map( ( line ) => (
 								<div key={ line }>{ line }</div>
-						  ) )
+							) )
 						: '-' }
 				</div>
 			) }
@@ -336,11 +336,11 @@ const getOutcomeNoticeText = (
 					'woocommerce'
 				),
 				bankName
-		  )
+			)
 		: __(
 				"<strong>The outcome of this dispute will be determined by the cardholder's bank.</strong> WooPayments has no influence over the decision and is not liable for any chargebacks.",
 				'woocommerce'
-		  );
+			);
 };
 
 // Client 11.1.0 new-evidence/index.tsx:473-479: the stepper labels.
@@ -497,7 +497,7 @@ export const DisputeEvidenceForm = ( {
 				? getRecommendedShippingDocumentFields(
 						dispute.reason,
 						productType
-				  )
+					)
 				: [],
 		[ dispute.reason, includeShippingStep, productType ]
 	);
@@ -1046,11 +1046,11 @@ export const DisputeEvidenceForm = ( {
 								? __(
 										'Your response has been submitted under Visa’s compliance process.',
 										'woocommerce'
-								  )
+									)
 								: __(
 										"Your evidence has been sent to the cardholder's bank for review.",
 										'woocommerce'
-								  ) }
+									) }
 						</p>
 						<h3>{ __( 'What’s next?', 'woocommerce' ) }</h3>
 						<ul>
@@ -1059,11 +1059,11 @@ export const DisputeEvidenceForm = ( {
 									? __(
 											'Visa will review your submission under its network rules and determine the outcome of the dispute.',
 											'woocommerce'
-									  )
+										)
 									: __(
 											'The cardholder’s bank will review your response. Please be patient — this usually takes a few weeks, but in some cases it can take up to 3 months.',
 											'woocommerce'
-									  ) }
+										) }
 							</li>
 							{ isVisaCompliance && (
 								<li>
@@ -1185,7 +1185,7 @@ export const DisputeEvidenceForm = ( {
 										'basics',
 										'shipping',
 										'review',
-								  ] as const )
+									] as const )
 								: ( [ 'basics', 'review' ] as const )
 							).map( ( step ) => ( {
 								key: step,
@@ -1207,7 +1207,7 @@ export const DisputeEvidenceForm = ( {
 										? __(
 												'Dispute information',
 												'woocommerce'
-										  )
+											)
 										: getStepLabel( currentStep ) }
 								</h2>
 								<p>
@@ -1215,7 +1215,7 @@ export const DisputeEvidenceForm = ( {
 										? __(
 												'Tell us about this compliance dispute and upload any relevant documents.',
 												'woocommerce'
-										  )
+											)
 										: getStepDescription( currentStep ) }
 								</p>
 							</div>
@@ -1498,10 +1498,10 @@ export const DisputeEvidenceForm = ( {
 																		evidence[
 																			field
 																		]
-																  )
+																	)
 																: evidence[
 																		field
-																  ]
+																	]
 														}
 														readOnly={ formLocked }
 														__next40pxDefaultSize

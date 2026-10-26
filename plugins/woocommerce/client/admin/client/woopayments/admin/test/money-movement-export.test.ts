@@ -30,7 +30,7 @@ jest.mock( '@wordpress/data', () => {
 							mockNotices.push( { status: 'success', content } ),
 						createErrorNotice: ( content: string ) =>
 							mockNotices.push( { status: 'error', content } ),
-				  }
+					}
 				: actual.dispatch( store ),
 	};
 } );

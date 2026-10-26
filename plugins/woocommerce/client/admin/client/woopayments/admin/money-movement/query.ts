@@ -526,7 +526,7 @@ export const parseMoneyMovementQuery = (
 		( isSortDirection( params.get( SORT_URL_PARAMS.direction ) )
 			? ( params.get(
 					SORT_URL_PARAMS.direction
-			  ) as WooPaymentsMoneyMovementSortDirection )
+				) as WooPaymentsMoneyMovementSortDirection )
 			: undefined ) ||
 		( isSortDirection( defaults.direction )
 			? defaults.direction

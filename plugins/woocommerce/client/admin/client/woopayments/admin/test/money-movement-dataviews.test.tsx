@@ -130,8 +130,7 @@ describe( 'WooPaymentsMoneyMovementDataViews', () => {
 			screen.queryByText( 'No data to display' )
 		).not.toBeInTheDocument();
 		const lastProps = mockDataViews.mock.lastCall?.[ 0 ] as
-			| { empty: ReactElement }
-			| undefined;
+			{ empty: ReactElement } | undefined;
 		expect( lastProps ).toBeDefined();
 		const { empty } = lastProps as { empty: ReactElement };
 		render( empty );

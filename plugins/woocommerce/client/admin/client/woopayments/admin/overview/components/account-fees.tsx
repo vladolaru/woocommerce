@@ -81,7 +81,7 @@ const getPaymentMethodName = ( paymentMethod: string ) => {
 				/* translators: %s: Payment method title. */
 				__( '%s transactions', 'woocommerce' ),
 				title
-		  )
+			)
 		: __( 'Unknown transactions', 'woocommerce' );
 };
 
@@ -116,20 +116,20 @@ const getFeeDescription = ( base: FeeRate, current: FeeRate ) => {
 				( base.percentage_rate ?? 0 ) * ( 1 - current.discount ),
 				( base.fixed_rate ?? 0 ) * ( 1 - current.discount ),
 				baseCurrency
-		  )
+			)
 		: formatFeeRate(
 				current.percentage_rate ?? 0,
 				current.fixed_rate ?? 0,
 				baseCurrency
-		  );
+			);
 	const discountLabel = current.discount
 		? ' ' +
-		  sprintf(
+			sprintf(
 				/* translators: 1: Percentage discount, 2: percent symbol. */
 				__( '(%1$s%2$s discount)', 'woocommerce' ),
 				formatFee( current.discount ),
 				'%'
-		  )
+			)
 		: '';
 
 	return createInterpolateElement(

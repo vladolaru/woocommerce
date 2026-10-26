@@ -330,7 +330,7 @@ export const WooPaymentsDocumentsPage = () => {
 					? {
 							operators: [ 'before', 'after', 'between' ],
 							isPrimary: true,
-					  }
+						}
 					: false,
 				// Client 11.1.0 `documents/list/index.tsx:205-208`: the site date format.
 				render: ( { item }: { item: WooPaymentsDocument } ) =>
@@ -416,7 +416,7 @@ export const WooPaymentsDocumentsPage = () => {
 				? {
 						...current,
 						hasSubmittedVatData: true,
-				  }
+					}
 				: current
 		);
 		setPendingDownload( ( current ) => {
@@ -506,7 +506,7 @@ export const WooPaymentsDocumentsPage = () => {
 								match: value === 'any' ? 'any' : undefined,
 							} )
 					),
-			  ]
+				]
 			: [] ),
 	];
 
@@ -536,7 +536,7 @@ export const WooPaymentsDocumentsPage = () => {
 									),
 									value: String( summaryCount ),
 								},
-						  ]
+							]
 				}
 				numericFields={ [ 'actions' ] }
 				total={ totalCount }

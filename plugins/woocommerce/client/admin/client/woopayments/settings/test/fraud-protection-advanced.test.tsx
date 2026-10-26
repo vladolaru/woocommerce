@@ -291,7 +291,7 @@ describe( 'fraud protection advanced ruleset utilities', () => {
 									operator: CheckOperators.OPERATOR_LT,
 									value: min,
 								},
-						  ]
+							]
 						: [] ),
 					...( max
 						? [
@@ -300,7 +300,7 @@ describe( 'fraud protection advanced ruleset utilities', () => {
 									operator: CheckOperators.OPERATOR_GT,
 									value: max,
 								},
-						  ]
+							]
 						: [] ),
 				],
 			},
@@ -464,7 +464,7 @@ describe( 'fraud protection advanced ruleset utilities', () => {
 								key: Checks.CHECK_ORDER_TOTAL,
 								operator: CheckOperators.OPERATOR_GT,
 								value: expectedMax,
-						  }
+							}
 				);
 			}
 		);

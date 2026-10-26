@@ -289,7 +289,7 @@ describe( 'WooPaymentsAdminNotices', () => {
 			return url === notice._links.dismiss.href
 				? new Promise( ( _resolve, reject ) => {
 						rejectRequest = reject;
-				  } )
+					} )
 				: Promise.resolve( { success: true } );
 		} );
 		const onDismiss = jest.fn();
@@ -360,8 +360,8 @@ describe( 'WooPaymentsAdminNotices', () => {
 			name: 'Dismiss WooPayments notice',
 		} );
 		await userEvent.click( dismiss );
-		await act(
-			async () => rejectRequest?.( new Error( 'Request failed' ) )
+		await act( async () =>
+			rejectRequest?.( new Error( 'Request failed' ) )
 		);
 		await waitFor( () =>
 			expect( mockCreateErrorNotice ).toHaveBeenCalledWith(
@@ -519,7 +519,7 @@ describe( 'WooPaymentsAdminNotices', () => {
 			return url === currentNotice._links.cta?.href
 				? new Promise( ( _resolve, reject ) => {
 						rejectRequest = reject;
-				  } )
+					} )
 				: Promise.resolve( { success: true } );
 		} );
 		const onDismiss = jest.fn();
@@ -626,7 +626,7 @@ describe( 'WooPaymentsAdminNotices', () => {
 			return url === oneAndDoneNotice._links.cta?.href
 				? new Promise( ( _resolve, reject ) => {
 						rejectRequest = reject;
-				  } )
+					} )
 				: Promise.resolve( { success: true } );
 		} );
 		const onDismiss = jest.fn();
@@ -683,8 +683,8 @@ describe( 'WooPaymentsAdminNotices', () => {
 		} );
 		await userEvent.click( liveModeButton );
 		expect( liveModeButton ).toHaveAttribute( 'aria-disabled', 'true' );
-		await act(
-			async () => rejectRequest?.( new Error( 'Request failed' ) )
+		await act( async () =>
+			rejectRequest?.( new Error( 'Request failed' ) )
 		);
 
 		await waitFor( () =>

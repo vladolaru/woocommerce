@@ -401,8 +401,7 @@ export interface WooPaymentsMoneyMovementQuery {
 	[ key: string ]: string | string[] | number | boolean | undefined;
 }
 
-export interface WooPaymentsAuthorizationQuery
-	extends WooPaymentsMoneyMovementQuery {
+export interface WooPaymentsAuthorizationQuery extends WooPaymentsMoneyMovementQuery {
 	order_id_is?: string | string[];
 	customer_email_is?: string | string[];
 	customer_country_is?: string | string[];

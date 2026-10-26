@@ -125,7 +125,7 @@ jest.mock( '@wordpress/data', () => {
 				? {
 						createErrorNotice: mockCreateErrorNotice,
 						createInfoNotice: mockCreateInfoNotice,
-				  }
+					}
 				: actualData.dispatch( storeName, ...args )
 		),
 	};
