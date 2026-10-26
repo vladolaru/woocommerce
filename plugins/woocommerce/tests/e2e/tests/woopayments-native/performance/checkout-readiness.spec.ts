@@ -164,7 +164,9 @@ async function createProduct(
 
 async function emptyCart( page: Page ): Promise< void > {
 	await page.goto( 'cart/' );
-	const emptyNotice = page.getByText( 'Your cart is currently empty!' );
+	const emptyNotice = page.getByRole( 'heading', {
+		name: 'Your cart is empty',
+	} );
 	const removeButtons = page.getByLabel( /Remove .* from cart/i );
 	// The cart block hydrates client-side; wait for one of its two terminal states before deciding, as the zero-total
 	// spec's resetCustomerCart() does.

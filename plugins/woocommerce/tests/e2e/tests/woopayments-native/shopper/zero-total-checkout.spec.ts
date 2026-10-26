@@ -142,7 +142,9 @@ async function logInAsCustomer( page: Page ): Promise< void > {
  */
 async function resetCustomerCart( page: Page ): Promise< void > {
 	await page.goto( 'cart/' );
-	const emptyNotice = page.getByText( 'Your cart is currently empty!' );
+	const emptyNotice = page.getByRole( 'heading', {
+		name: 'Your cart is empty',
+	} );
 	const removeButtons = page.getByRole( 'button', {
 		name: /^Remove .+ from cart$/,
 	} );
