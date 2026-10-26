@@ -82,8 +82,23 @@ class StripeBillingModuleTest extends WC_Unit_Test_Case {
 			}
 		}
 
+		$query_filters = $this->get_product_query_filters();
+
 		$this->assertSame( $expected, ( new StripeBillingModule() )->is_bundled_subscriptions_eligible() );
-		$this->assertFalse( has_filter( 'woocommerce_product_data_store_cpt_get_products_query' ), 'The product query filter is removed after the check.' );
+		$this->assertSame( $query_filters, $this->get_product_query_filters(), 'The product query filter is removed after the check.' );
+	}
+
+	/**
+	 * Callback IDs on the product data store's query filter, by priority. Other code keeps its own callbacks there for the
+	 * whole request (the abilities loader does), so the check compares the callbacks before and after.
+	 *
+	 * @return array<int,string[]>
+	 */
+	private function get_product_query_filters(): array {
+		global $wp_filter;
+		$hook = $wp_filter['woocommerce_product_data_store_cpt_get_products_query'] ?? null;
+
+		return $hook instanceof \WP_Hook ? array_map( 'array_keys', $hook->callbacks ) : array();
 	}
 
 	/**
