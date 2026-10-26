@@ -523,6 +523,8 @@ class StateBuilder {
 			/**
 			 * Filters a currency code that overrides the shopper's selected currency.
 			 *
+			 * WooCommerce's Subscriptions integration also calls set_order_currency_override() with the code it returns, so a subscription's currency holds after the merchant disables it.
+			 *
 			 * @param string|false $currency_code Override currency code, or false to use stored state.
 			 *
 			 * @since 11.0.0

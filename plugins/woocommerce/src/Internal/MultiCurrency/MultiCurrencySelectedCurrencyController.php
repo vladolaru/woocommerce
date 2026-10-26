@@ -28,6 +28,9 @@ class MultiCurrencySelectedCurrencyController implements RegisterHooksInterface 
 	private const FILTER_OVERRIDE_NOTICE_COUNTRY       = 'wcpay_multi_currency_override_notice_country';
 	private const FILTER_OVERRIDE_NOTICE_CURRENCY_NAME = 'wcpay_multi_currency_override_notice_currency_name';
 
+	/**
+	 * The settings preview's query parameter, under the extension's name so its preview links keep working.
+	 */
 	private const SIMULATION_FLAG = 'is_mc_onboarding_simulation';
 
 	private const ACCOUNT_CURRENCY_FIELD = 'wcpay_selected_currency';

@@ -481,7 +481,7 @@ class WooCommerceProductAddOns implements RegisterHooksInterface {
 	private function get_smart_coupons_credit_amount( array $cart_item ): ?float {
 		$credit_called = null;
 
-		// phpcs:ignore WordPress.Security.NonceVerification.Missing -- Reads third-party cart price fixture during Product Add-ons calculation.
+		// phpcs:ignore WordPress.Security.NonceVerification.Missing -- Reads the gift-credit amount Smart Coupons posts with the add-to-cart form; nothing is changed.
 		if ( isset( $_POST['credit_called'] ) ) {
 			// phpcs:ignore WordPress.Security.NonceVerification.Missing, WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- Sanitized recursively by wc_clean after wp_unslash.
 			$credit_called = wc_clean( wp_unslash( $_POST['credit_called'] ) );

@@ -29,8 +29,6 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilderFactory;
  * Stands in for the WooPayments extension's Multi-Currency class while WooCommerce runs Multi-Currency, so Woo
  * extensions that call it get WooCommerce's answer.
  *
- * Removed in WooCommerce 12.0.0.
- *
  * @since 11.0.0
  * @deprecated 11.0.0 No public replacement. Scheduled for removal in WooCommerce 12.0.0.
  */

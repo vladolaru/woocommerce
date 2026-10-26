@@ -14,7 +14,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilder;
  * Stands in for the WooPayments extension's Multi-Currency compatibility class, which `MultiCurrency::get_compatibility()`
  * returns, while WooCommerce runs Multi-Currency: its seven predicates answer by the module's rules.
  *
- * It does not extend the extension's `BaseCompatibility`. Removed in WooCommerce 12.0.0.
+ * It does not extend the extension's `BaseCompatibility`.
  *
  * @since 11.0.0
  * @deprecated 11.0.0 No public replacement. Scheduled for removal in WooCommerce 12.0.0.

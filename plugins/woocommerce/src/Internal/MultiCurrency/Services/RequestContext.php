@@ -207,7 +207,7 @@ class RequestContext {
 	}
 
 	/**
-	 * Get WooCommerce's Store API request result when available.
+	 * Return a fixed Store API answer; production returns null, so the request path decides.
 	 *
 	 * @return bool|null Store API result, or null when unavailable.
 	 */

@@ -194,6 +194,8 @@ class MultiCurrencySwitcherBlockController implements RegisterHooksInterface {
 	/**
 	 * Get the switcher block attributes and their defaults, which saved blocks rely on.
 	 *
+	 * Saved blocks store only attributes that differ from these defaults, so they stay as the extension registered them, styling included; dropping one changes how existing blocks render.
+	 *
 	 * @return array<string,array<string,mixed>>
 	 */
 	private static function get_block_attributes(): array {
