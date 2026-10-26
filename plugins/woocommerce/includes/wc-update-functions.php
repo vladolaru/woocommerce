@@ -3946,17 +3946,6 @@ function wc_update_11202_reset_refund_returning_customer_markers() {
 }
 
 /**
- * Seed the independent core multi-currency feature from prior WooPayments use.
- *
- * @since 11.2.0
- *
- * @return void
- */
-function wc_update_11204_seed_multi_currency_feature(): void {
-	MultiCurrencyFeatureController::seed_from_prior_use();
-}
-
-/**
  * Rewrite stored Back in Stock customer emails in canonical form (trimmed, lowercased).
  *
  * Lookups on `user_email` use plain SQL equality, so rows written before emails were
@@ -4255,4 +4244,15 @@ function wc_update_1140_re_enable_autoload_options(): void {
 			'woocommerce_logs_logging_enabled'            => true,
 		)
 	);
+}
+
+/**
+ * Seed the independent core multi-currency feature from prior WooPayments use.
+ *
+ * @since 11.2.0
+ *
+ * @return void
+ */
+function wc_update_1140_seed_multi_currency_feature(): void {
+	MultiCurrencyFeatureController::seed_from_prior_use();
 }

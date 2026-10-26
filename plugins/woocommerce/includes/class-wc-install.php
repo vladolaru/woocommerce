@@ -374,9 +374,7 @@ class WC_Install {
 		),
 		'11.4.0'   => array(
 			'wc_update_1140_re_enable_autoload_options',
-		),
-		'11.2.0-4' => array(
-			'wc_update_11204_seed_multi_currency_feature',
+			'wc_update_1140_seed_multi_currency_feature',
 		),
 	);
 
