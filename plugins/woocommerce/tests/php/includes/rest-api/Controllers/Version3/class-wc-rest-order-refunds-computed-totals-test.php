@@ -1996,6 +1996,211 @@ class WC_REST_Order_Refunds_Computed_Totals_Test extends WC_REST_Unit_Test_Case 
 	}
 
 	/**
+	 * @testdox The refund engine reads a line's tax, and its past refunds' tax, at the per-rate value in the order currency.
+	 *
+	 * Core stores a line's total_tax rounded at the store's decimals, also on load, while the line keeps its per-rate
+	 * taxes. Expected amounts are the line's own in the order currency (USD, two decimals): a 97.50 line with 9.75 tax
+	 * refunds 107.25 for its unit, or 97.50 after the 9.75 of tax was refunded; a 44.60 line with 4.46 tax closes at
+	 * 49.06 (explicit and preview), and one of its two units is 24.53; a 10.00 shipping line with 0.25 tax refunds 10.25; after 5.50 of an 11.00 shipping or
+	 * fee line (0.50 of it tax), 5.50 is left; three units of a 31.00 line refund 10.33, 10.33 and the 10.34 left.
+	 * Store-currency controls keep the store's precision and today's results.
+	 *
+	 * @testWith ["JPY", 0, "USD", "line_item", 97.5, 1, 9.75, [], {"quantity": 1}, "create", "107.25"]
+	 *           ["USD", 0, "USD", "line_item", 97.5, 1, 9.75, [], {"quantity": 1}, "create", "108"]
+	 *           ["JPY", 0, "USD", "line_item", 97.5, 1, 9.75, [{"refund_total": "0", "refund_tax": "9.75"}], {"quantity": 1}, "create", "97.50"]
+	 *           ["USD", 0, "USD", "line_item", 97.5, 1, 9.75, [{"refund_total": "0", "refund_tax": "9.75"}], {"quantity": 1}, "create", "98"]
+	 *           ["JPY", 0, "USD", "line_item", 44.6, 1, 4.46, [], {"refund_total": "44.60", "refund_tax": "4.46"}, "explicit", "49.06"]
+	 *           ["USD", 0, "USD", "line_item", 44.6, 1, 4.46, [], {"refund_total": "44.60", "refund_tax": "4.46"}, "explicit", "49.06"]
+	 *           ["JPY", 0, "USD", "line_item", 44.6, 2, 4.46, [], {"quantity": 1}, "create", "24.53"]
+	 *           ["USD", 0, "USD", "line_item", 44.6, 2, 4.46, [], {"quantity": 1}, "create", "24"]
+	 *           ["JPY", 0, "USD", "line_item", 44.6, 1, 4.46, [], {"refund_total": 49.06}, "preview", "49.06"]
+	 *           ["USD", 0, "USD", "line_item", 44.6, 1, 4.46, [], {"refund_total": 49.06}, "preview", "49"]
+	 *           ["JPY", 0, "USD", "shipping", 10, 1, 0.25, [], {"quantity": 1}, "create", "10.25"]
+	 *           ["USD", 0, "USD", "shipping", 10, 1, 0.25, [], {"quantity": 1}, "create", "10"]
+	 *           ["JPY", 0, "USD", "shipping", 10, 1, 1, [{"refund_total": "5.50"}], {"quantity": 1}, "create", "5.50"]
+	 *           ["USD", 0, "USD", "shipping", 10, 1, 1, [{"refund_total": "5.50"}], {"quantity": 1}, "create", "5"]
+	 *           ["JPY", 0, "USD", "fee", 10, 1, 1, [{"refund_total": "5.50"}], {"quantity": 1}, "create", "5.50"]
+	 *           ["USD", 0, "USD", "fee", 10, 1, 1, [{"refund_total": "5.50"}], {"quantity": 1}, "create", "5"]
+	 *           ["JPY", 0, "USD", "line_item", 30, 3, 1, [{"quantity": 1}, {"quantity": 1}], {"quantity": 1}, "create", "10.34"]
+	 *           ["USD", 0, "USD", "line_item", 30, 3, 1, [{"quantity": 1}, {"quantity": 1}], {"quantity": 1}, "create", "11"]
+	 *
+	 * @param string $store_currency Store currency.
+	 * @param int    $store_decimals Store price decimals.
+	 * @param string $order_currency Order currency.
+	 * @param string $type           Type of the refunded line: line_item, shipping or fee.
+	 * @param float  $net            Net total of the refunded line.
+	 * @param int    $units          Units on the refunded line.
+	 * @param float  $tax            Tax of the refunded line, on one rate.
+	 * @param array  $prior          compute_totals refunds of the line made first, as request fields besides its id.
+	 * @param array  $line           Request fields of the line besides its id; a refund_tax is the amount for its one rate.
+	 * @param string $mode           create (compute_totals: its preview, the refund and the gateway amount), explicit (compute_totals off, amount = line gross) or preview.
+	 * @param string $expected       Expected refund amount, or the preview total.
+	 */
+	public function test_refund_engine_reads_line_taxes_at_their_per_rate_value( string $store_currency, int $store_decimals, string $order_currency, string $type, float $net, int $units, float $tax, array $prior, array $line, string $mode, string $expected ): void {
+		update_option( 'woocommerce_currency', $store_currency );
+		update_option( 'woocommerce_price_num_decimals', $store_decimals );
+		$tax_rate_id = $this->create_tax_rate( 10.0 );
+		$taxes       = array(
+			'total'    => array( $tax_rate_id => $tax ),
+			'subtotal' => array( $tax_rate_id => $tax ),
+		);
+
+		$order = wc_create_order();
+		if ( 'shipping' === $type ) {
+			$item = new WC_Order_Item_Shipping();
+			$item->set_props(
+				array(
+					'method_title' => 'Flat rate',
+					'total'        => $net,
+				)
+			);
+		} elseif ( 'fee' === $type ) {
+			$item = new WC_Order_Item_Fee();
+			$item->set_props(
+				array(
+					'name'       => 'Handling',
+					'tax_status' => 'taxable',
+					'total'      => $net,
+				)
+			);
+		} else {
+			$item = new WC_Order_Item_Product();
+			$item->set_props(
+				array(
+					'name'     => 'Taxed item',
+					'quantity' => $units,
+					'subtotal' => $net,
+					'total'    => $net,
+				)
+			);
+		}
+		$item->set_taxes( $taxes );
+		$order->add_item( $item );
+		$other = new WC_Order_Item_Product();
+		$other->set_props(
+			array(
+				'name'     => 'Other item',
+				'quantity' => 1,
+				'subtotal' => 10,
+				'total'    => 10,
+			)
+		);
+		$order->add_item( $other );
+		$order->set_currency( $order_currency );
+		$order->set_total( $net + $tax + 10 );
+		$order->set_status( OrderStatus::COMPLETED );
+		$order->save();
+		$item_id = $item->get_id();
+
+		$with_id = static function ( array $fields, string $id_key ) use ( $item_id, $tax_rate_id ): array {
+			if ( isset( $fields['refund_tax'] ) ) {
+				$fields['refund_tax'] = array(
+					array(
+						'id'           => $tax_rate_id,
+						'refund_total' => $fields['refund_tax'],
+					),
+				);
+			}
+			return array_merge( array( $id_key => $item_id ), $fields );
+		};
+
+		foreach ( $prior as $prior_line ) {
+			$response = $this->do_create_request(
+				$order->get_id(),
+				array(
+					'compute_totals' => true,
+					'line_items'     => array( $with_id( $prior_line, 'id' ) ),
+				)
+			);
+			$this->assertSame( 201, $response->get_status(), 'An earlier refund should be created.' );
+		}
+
+		if ( 'preview' === $mode ) {
+			$response = $this->do_preview_request( $order->get_id(), array( $with_id( $line, 'line_item_id' ) ) );
+			$this->assertSame( 200, $response->get_status() );
+			$this->assertSame( $expected, $response->get_data()['total'] );
+			return;
+		}
+
+		$body = array( 'line_items' => array( $with_id( $line, 'id' ) ) );
+		if ( 'explicit' === $mode ) {
+			$body['amount'] = (string) ( (float) $line['refund_total'] + (float) ( $line['refund_tax'] ?? 0 ) );
+			$response       = $this->do_create_request( $order->get_id(), $body );
+			$this->assertSame( 201, $response->get_status() );
+			$this->assertSame( (float) $expected, (float) wc_get_order( $response->get_data()['id'] )->get_amount() );
+			return;
+		}
+
+		// A compute_totals refund: the preview of the same line, the refund and the amount the gateway is asked for agree.
+		$preview = $this->do_preview_request( $order->get_id(), array( $with_id( $line, 'line_item_id' ) ) );
+		$this->assertSame( 200, $preview->get_status() );
+		$this->assertSame( $expected, $preview->get_data()['total'], 'The preview should show the refund amount.' );
+
+		$gateway                   = new class() extends WC_Payment_Gateway {
+			/**
+			 * Amounts the refunds asked the gateway for.
+			 *
+			 * @var array<int, float>
+			 */
+			public array $refunded_amounts = array();
+
+			/**
+			 * Constructor.
+			 */
+			public function __construct() {
+				$this->id       = 'computed_totals_line_tax_gateway';
+				$this->supports = array( 'refunds' );
+			}
+
+			/**
+			 * Record the refund amount.
+			 *
+			 * @param int        $order_id Order ID.
+			 * @param float|null $amount   Refund amount.
+			 * @param string     $reason   Refund reason.
+			 * @return bool
+			 */
+			public function process_refund( $order_id, $amount = null, $reason = '' ) {
+				unset( $order_id, $reason ); // Avoid parameter not used PHPCS errors.
+				$this->refunded_amounts[] = (float) $amount;
+				return true;
+			}
+		};
+		$payment_gateway_registry  = WC_Payment_Gateways::instance();
+		$original_payment_gateways = $payment_gateway_registry->payment_gateways;
+		try {
+			$payment_gateway_registry->payment_gateways[] = $gateway;
+
+			$order = wc_get_order( $order->get_id() );
+			$order->set_payment_method( $gateway->id );
+			$order->save();
+
+			$body['compute_totals'] = true;
+			$body['api_refund']     = true;
+			$response               = $this->do_create_request( $order->get_id(), $body );
+
+			$this->assertSame( 201, $response->get_status() );
+			$this->assertSame( (float) $expected, (float) wc_get_order( $response->get_data()['id'] )->get_amount(), 'The refund should record the amount.' );
+			$this->assertSame( array( (float) $expected ), $gateway->refunded_amounts, 'The gateway should be asked for the amount.' );
+		} finally {
+			$payment_gateway_registry->payment_gateways = $original_payment_gateways;
+		}
+	}
+
+	/**
+	 * Send a refund preview request and return the response.
+	 *
+	 * @param int   $order_id   Order ID.
+	 * @param array $line_items Line items.
+	 * @return WP_REST_Response
+	 */
+	private function do_preview_request( int $order_id, array $line_items ): WP_REST_Response {
+		$request = new WP_REST_Request( 'POST', '/wc/v3/orders/' . $order_id . '/refunds/preview' );
+		$request->set_body_params( array( 'line_items' => $line_items ) );
+		return $this->server->dispatch( $request );
+	}
+
+	/**
 	 * Create a completed order with a single product line item.
 	 *
 	 * @param float $unit_price Unit price.

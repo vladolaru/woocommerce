@@ -512,7 +512,7 @@ class DataUtils {
 	 */
 	public function validate_refund_line_total( $item, float $refund_total, float $already_refunded_total ) {
 		$price_decimals      = $this->get_order_price_decimals( $item->get_order() );
-		$signed_line_total   = (float) $item->get_total() + (float) $item->get_total_tax();
+		$signed_line_total   = $this->get_item_gross( $item, $item->get_order() );
 		$item_total_with_tax = abs( $signed_line_total );
 		$abs_refund_total    = NumberUtil::round( abs( $refund_total ), $price_decimals );
 
@@ -716,11 +716,11 @@ class DataUtils {
 				);
 				return 0.0;
 			}
-			$unit_price_with_tax = ( (float) $item->get_total() + (float) $item->get_total_tax() ) / $original_qty;
+			$unit_price_with_tax = $this->get_item_gross( $item, $item->get_order() ) / $original_qty;
 			return NumberUtil::round( $unit_price_with_tax * $quantity, $price_decimals );
 		}
 
-		return NumberUtil::round( (float) $item->get_total() + (float) $item->get_total_tax(), $price_decimals );
+		return NumberUtil::round( $this->get_item_gross( $item, $item->get_order() ), $price_decimals );
 	}
 
 	/**
@@ -764,7 +764,7 @@ class DataUtils {
 	private function compute_quantity_refund_total( $item, int $quantity, array $refund_data ): float {
 		$computed          = $this->compute_line_item_refund_total( $item, $quantity );
 		$price_decimals    = $this->get_order_price_decimals( $item->get_order() );
-		$signed_line_total = (float) $item->get_total() + (float) $item->get_total_tax();
+		$signed_line_total = $this->get_item_gross( $item, $item->get_order() );
 		$refunded_total    = abs( (float) ( $refund_data['totals'][ $item->get_id() ] ?? 0.0 ) );
 		$remaining_total   = NumberUtil::round( abs( $signed_line_total ) - $refunded_total, $price_decimals );
 
@@ -1173,7 +1173,7 @@ class DataUtils {
 			}
 
 			$price_decimals    = $this->get_order_price_decimals( $order );
-			$signed_line_total = (float) $item->get_total() + (float) $item->get_total_tax();
+			$signed_line_total = $this->get_item_gross( $item, $order );
 
 			// Validate an explicit refund_total. Mirrors validate_line_items() exactly (sign,
 			// zero, and the three over-refund caps) so a previewed amount that is accepted or
@@ -1585,16 +1585,6 @@ class DataUtils {
 			}
 		};
 
-		// Core stores a refund line's total_tax rounded at the store's decimals (WC_Order_Item_Product::set_taxes()), so for an
-		// order whose currency has more decimals the refunded tax comes from the per-rate taxes the line keeps.
-		$read_per_rate_taxes = $this->get_order_price_decimals( $order ) !== wc_get_price_decimals();
-		$refunded_tax        = function ( $refunded_item ) use ( $read_per_rate_taxes ): float {
-			if ( ! $read_per_rate_taxes ) {
-				return (float) $refunded_item->get_total_tax();
-			}
-			return (float) array_sum( array_map( 'floatval', (array) ( $refunded_item->get_taxes()['total'] ?? array() ) ) );
-		};
-
 		foreach ( $order->get_refunds() as $refund ) {
 			/**
 			 * Refunded product line items.
@@ -1604,11 +1594,12 @@ class DataUtils {
 			$refunded_line_items = $refund->get_items( 'line_item' );
 			foreach ( $refunded_line_items as $refunded_item ) {
 				$original_id                    = absint( $refunded_item->get_meta( '_refunded_item_id' ) );
+				$refunded_gross                 = $this->get_item_gross( $refunded_item, $order );
 				$qtys[ $original_id ]           = ( $qtys[ $original_id ] ?? 0 ) + $refunded_item->get_quantity();
-				$totals[ $original_id ]         = ( $totals[ $original_id ] ?? 0.0 ) + ( (float) $refunded_item->get_total() + $refunded_tax( $refunded_item ) ) * -1;
+				$totals[ $original_id ]         = ( $totals[ $original_id ] ?? 0.0 ) + $refunded_gross * -1;
 				$line_refunds[ $original_id ][] = array(
 					'qty'   => absint( $refunded_item->get_quantity() ),
-					'gross' => abs( (float) $refunded_item->get_total() + $refunded_tax( $refunded_item ) ),
+					'gross' => abs( $refunded_gross ),
 				);
 				$add_refunded_taxes( $refunded_item, $original_id );
 			}
@@ -1620,7 +1611,7 @@ class DataUtils {
 			$refunded_fees = $refund->get_items( 'fee' );
 			foreach ( $refunded_fees as $refunded_item ) {
 				$original_id            = absint( $refunded_item->get_meta( '_refunded_item_id' ) );
-				$totals[ $original_id ] = ( $totals[ $original_id ] ?? 0.0 ) + ( (float) $refunded_item->get_total() + $refunded_tax( $refunded_item ) ) * -1;
+				$totals[ $original_id ] = ( $totals[ $original_id ] ?? 0.0 ) + $this->get_item_gross( $refunded_item, $order ) * -1;
 				$add_refunded_taxes( $refunded_item, $original_id );
 			}
 			/**
@@ -1631,7 +1622,7 @@ class DataUtils {
 			$refunded_shipping = $refund->get_items( 'shipping' );
 			foreach ( $refunded_shipping as $refunded_item ) {
 				$original_id            = absint( $refunded_item->get_meta( '_refunded_item_id' ) );
-				$totals[ $original_id ] = ( $totals[ $original_id ] ?? 0.0 ) + ( (float) $refunded_item->get_total() + $refunded_tax( $refunded_item ) ) * -1;
+				$totals[ $original_id ] = ( $totals[ $original_id ] ?? 0.0 ) + $this->get_item_gross( $refunded_item, $order ) * -1;
 				$add_refunded_taxes( $refunded_item, $original_id );
 			}
 		}
@@ -1654,5 +1645,23 @@ class DataUtils {
 	 */
 	private function get_order_price_decimals( $order ): int {
 		return $order instanceof WC_Order ? CurrencyUtil::get_price_decimals( $order->get_currency() ) : wc_get_price_decimals();
+	}
+
+	/**
+	 * Get a line's total plus its tax, the gross the refund caps and amounts are computed from.
+	 *
+	 * Core stores a line's total_tax rounded at the store's decimals (WC_Order_Item_Product::set_taxes() and its fee and
+	 * shipping siblings, also on load), so for an order whose currency has more decimals the tax is the sum of the per-rate
+	 * taxes the line keeps. Otherwise it is the stored total_tax, as before.
+	 *
+	 * @param WC_Order_Item_Product|WC_Order_Item_Fee|WC_Order_Item_Shipping $item  An order line or a refund line.
+	 * @param WC_Order|false|null                                            $order The order the line, or its refund, belongs to.
+	 * @return float
+	 */
+	private function get_item_gross( $item, $order ): float {
+		if ( $this->get_order_price_decimals( $order ) === wc_get_price_decimals() ) {
+			return (float) $item->get_total() + (float) $item->get_total_tax();
+		}
+		return (float) $item->get_total() + (float) array_sum( array_map( 'floatval', (array) ( $item->get_taxes()['total'] ?? array() ) ) );
 	}
 }
