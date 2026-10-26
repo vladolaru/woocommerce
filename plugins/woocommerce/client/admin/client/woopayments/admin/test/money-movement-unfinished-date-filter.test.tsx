@@ -103,6 +103,9 @@ beforeEach( () => {
 	} as typeof window.wcSettings;
 	shellHistory.push.mockClear();
 	shellHistory.replace.mockClear();
+	// Empty lists and summaries are deliberate sentinels: the rows only need each list to load.
+	// The summaries carry `count` alone, a partial shape (client 11.1.0 `types/disputes.d.ts:157-161`,
+	// `types/deposits.d.ts:44-48`; Documents reads its summary as returned, `data/documents/resolvers.js:41-76`).
 	mocked( getWooPaymentsDisputes ).mockResolvedValue( {
 		data: [],
 		total_count: 0,
@@ -113,6 +116,8 @@ beforeEach( () => {
 		total_count: 0,
 	} );
 	mocked( getWooPaymentsDepositsSummary ).mockResolvedValue( { count: 0 } );
+	// The native wrapper's `{ documents }` shape (`documents/data.ts:61-74`, from `SharedSettings.php:184-188`), whose
+	// flags mirror client 11.1.0 `includes/class-wc-payments-account.php:383-384`; `country` is left out on purpose.
 	mocked( getWooPaymentsDocumentsAccount ).mockResolvedValue( {
 		documents: { enabled: true, has_submitted_vat_data: true },
 	} );
