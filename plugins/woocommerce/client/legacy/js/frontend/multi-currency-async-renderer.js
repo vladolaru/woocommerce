@@ -194,7 +194,8 @@
 				}
 
 				var entry = JSON.parse( raw );
-				// The extension's renderer caches its config under the same key without rate_decimal; drop such a config so prices are computed on the server's digits.
+				// The extension's renderer caches its config under the same key without rate_decimal;
+				// drop such a config so prices are computed on the server's digits.
 				var currencies = ( entry.data && entry.data.currencies ) || {};
 				var hasDecimals = Object.keys( currencies ).every(
 					function ( code ) {
