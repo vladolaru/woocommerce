@@ -393,7 +393,7 @@ describe( 'WooPay email input (blocks)', () => {
 		fetchResponses[
 			`${ WOOPAY_HOST }/wp-json/platform-checkout/v1/user/exists?`
 		] = { body: { 'user-exists': false } };
-		// Native carries the flag in the Blocks payment settings (WooPaymentsWooPaySessionService::get_save_user_checkout_data()).
+		// Native carries the flag in the Blocks payment settings (SessionService::get_save_user_checkout_data()).
 		const input = await setup( { PRE_CHECK_SAVE_MY_INFO: true } );
 
 		await typeEmail( input, 'new@example.com' );

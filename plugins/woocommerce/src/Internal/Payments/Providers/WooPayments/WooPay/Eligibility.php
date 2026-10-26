@@ -1,6 +1,6 @@
 <?php
 /**
- * WooPaymentsWooPayEligibility class file.
+ * Eligibility class file.
  */
 
 declare( strict_types = 1 );
@@ -22,10 +22,10 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsEx
  * @since 11.2.0
  * @internal
  */
-class WooPaymentsWooPayEligibility {
+class Eligibility {
 
 	/**
-	 * Countries WooPay is available in, synced from the platform by WooPaymentsWooPayExtensionSync under the option name
+	 * Countries WooPay is available in, synced from the platform by ExtensionSync under the option name
 	 * the WooPayments extension also writes.
 	 */
 	private const AVAILABLE_COUNTRIES_OPTION = 'woocommerce_woocommerce_payments_woopay_available_countries';

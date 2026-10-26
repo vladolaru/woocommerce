@@ -1,6 +1,6 @@
 <?php
 /**
- * WooPaymentsWooPayThemeAppearance class file.
+ * ThemeAppearance class file.
  */
 
 declare( strict_types = 1 );
@@ -19,7 +19,7 @@ use WP_Block_Patterns_Registry;
  * @since 11.2.0
  * @internal
  */
-class WooPaymentsWooPayThemeAppearance {
+class ThemeAppearance {
 
 	/**
 	 * Font CDN hosts whose stylesheets WooPay may load.

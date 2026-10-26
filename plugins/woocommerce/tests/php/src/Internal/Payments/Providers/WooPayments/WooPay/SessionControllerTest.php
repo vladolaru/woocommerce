@@ -8,8 +8,8 @@ use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendStylesService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendTrackingController;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPaySessionController;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPaySessionService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\SessionController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\SessionService;
 use ReflectionClass;
 use WC_REST_Unit_Test_Case;
 use WPAjaxDieContinueException;
@@ -17,46 +17,46 @@ use WP_Error;
 use WP_REST_Request;
 use WP_REST_Response;
 use WP_REST_Server;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayEligibility;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayAppearanceStore;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayAdaptedExtensions;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayStoreApiRequestHandler;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayBlocksDataExtractor;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\Eligibility;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\AppearanceStore;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\AdaptedExtensions;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\StoreApiRequestHandler;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\BlocksDataExtractor;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 
 /**
- * Tests for the WooPaymentsWooPaySessionController class.
+ * Tests for the SessionController class.
  */
-class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
+class SessionControllerTest extends WC_REST_Unit_Test_Case {
 
 	/**
 	 * The System Under Test.
 	 *
-	 * @var WooPaymentsWooPaySessionController
+	 * @var SessionController
 	 */
 	private $sut;
 
 	/**
 	 * WooPay eligibility rules the controller under test reads.
 	 *
-	 * @var WooPaymentsWooPayEligibility|null
+	 * @var Eligibility|null
 	 */
-	private ?WooPaymentsWooPayEligibility $woopay_eligibility = null;
+	private ?Eligibility $woopay_eligibility = null;
 
 	/**
 	 * WooPay checkout appearance store the controller under test writes.
 	 *
-	 * @var WooPaymentsWooPayAppearanceStore|null
+	 * @var AppearanceStore|null
 	 */
-	private ?WooPaymentsWooPayAppearanceStore $appearance_store = null;
+	private ?AppearanceStore $appearance_store = null;
 
 	/**
 	 * Handler of WooPay's Store API requests the controller under test binds its hooks to.
 	 *
-	 * @var WooPaymentsWooPayStoreApiRequestHandler|null
+	 * @var StoreApiRequestHandler|null
 	 */
-	private ?WooPaymentsWooPayStoreApiRequestHandler $store_api_request_handler = null;
+	private ?StoreApiRequestHandler $store_api_request_handler = null;
 
 	/**
 	 * Set up test fixtures.
@@ -70,7 +70,7 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 	 * Tear down test fixtures.
 	 */
 	public function tearDown(): void {
-		if ( $this->sut instanceof WooPaymentsWooPaySessionController ) {
+		if ( $this->sut instanceof SessionController ) {
 			remove_action( 'rest_api_init', array( $this->sut, 'register_routes' ) );
 			foreach ( $this->get_expected_ajax_hooks() as $hook => $method ) {
 				remove_action( $hook, array( $this->sut, $method ) );
@@ -1639,21 +1639,21 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 	/**
 	 * Create the System Under Test.
 	 *
-	 * @param bool                                 $woopay_enabled Whether WooPay should be enabled.
-	 * @param WooPaymentsWooPaySessionService|null $service        Optional service double.
-	 * @return WooPaymentsWooPaySessionController
+	 * @param bool                $woopay_enabled Whether WooPay should be enabled.
+	 * @param SessionService|null $service        Optional service double.
+	 * @return SessionController
 	 */
-	private function create_controller( bool $woopay_enabled, ?WooPaymentsWooPaySessionService $service = null ): WooPaymentsWooPaySessionController {
+	private function create_controller( bool $woopay_enabled, ?SessionService $service = null ): SessionController {
 		$service = $service ?? new RecordingWooPaySessionService();
 		if ( $service instanceof RecordingWooPaySessionService ) {
 			$service->woopay_enabled  = $woopay_enabled;
 			$this->woopay_eligibility = new RecordingWooPayEligibility( $service );
 			$this->appearance_store   = new RecordingWooPayAppearanceStore( $service );
 		}
-		$this->store_api_request_handler = new WooPaymentsWooPayStoreApiRequestHandler();
-		$this->store_api_request_handler->init( $this->woopay_eligibility, new WooPaymentsWooPayAdaptedExtensions() );
+		$this->store_api_request_handler = new StoreApiRequestHandler();
+		$this->store_api_request_handler->init( $this->woopay_eligibility, new AdaptedExtensions() );
 
-		$controller = new WooPaymentsWooPaySessionController();
+		$controller = new SessionController();
 		$controller->init( $service, $this->woopay_eligibility, $this->appearance_store, $this->store_api_request_handler );
 
 		return $controller;
@@ -1663,9 +1663,9 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 	 * Create a real enabled session service for controller integration tests.
 	 *
 	 * @param bool $test_mode Whether the account reports test mode.
-	 * @return WooPaymentsWooPaySessionService
+	 * @return SessionService
 	 */
-	private function create_real_enabled_session_service( bool $test_mode = true ): WooPaymentsWooPaySessionService {
+	private function create_real_enabled_session_service( bool $test_mode = true ): SessionService {
 		$settings = array(
 			'enabled'                           => 'yes',
 			'platform_checkout'                 => 'yes',
@@ -1700,14 +1700,14 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 			->getMock();
 		$tracking_controller->method( 'is_woopay_event_tracking_enabled' )->willReturn( true );
 
-		$this->woopay_eligibility = new WooPaymentsWooPayEligibility();
+		$this->woopay_eligibility = new Eligibility();
 		$this->woopay_eligibility->init( $account_service );
 
-		$this->appearance_store = new WooPaymentsWooPayAppearanceStore();
+		$this->appearance_store = new AppearanceStore();
 		$this->appearance_store->init( new WooPaymentsFrontendStylesService() );
 
-		$service = new WooPaymentsWooPaySessionService();
-		$service->init( $account_service, $this->woopay_eligibility, $this->appearance_store, $tracking_controller, wc_get_container()->get( WooPaymentsWooPayBlocksDataExtractor::class ), new WooPaymentsWooPayAdaptedExtensions(), $this->createMock( WooPaymentsCustomerService::class ), wc_get_container()->get( WooPaymentsLogger::class ) );
+		$service = new SessionService();
+		$service->init( $account_service, $this->woopay_eligibility, $this->appearance_store, $tracking_controller, wc_get_container()->get( BlocksDataExtractor::class ), new AdaptedExtensions(), $this->createMock( WooPaymentsCustomerService::class ), wc_get_container()->get( WooPaymentsLogger::class ) );
 
 		return $service;
 	}

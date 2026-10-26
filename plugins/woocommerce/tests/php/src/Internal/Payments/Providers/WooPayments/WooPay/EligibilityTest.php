@@ -22,9 +22,9 @@ class FakeWooPaySubscriptionProduct extends \WC_Product_Simple {
 }
 
 /**
- * Tests for the WooPaymentsWooPayEligibility class.
+ * Tests for the Eligibility class.
  */
-class WooPaymentsWooPayEligibilityTest extends WC_Unit_Test_Case {
+class EligibilityTest extends WC_Unit_Test_Case {
 
 	use WooPayServicesFixture;
 

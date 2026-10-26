@@ -4,17 +4,17 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\WooPay;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendAssets;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayAdaptedExtensions;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPaySessionService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\AdaptedExtensions;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\SessionService;
 use WC_Unit_Test_Case;
 use WP_REST_Request;
 use WP_REST_Response;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Fixtures\LateLoadedSubscriptions;
 
 /**
- * Tests for the WooPaymentsWooPaySessionService class.
+ * Tests for the SessionService class.
  */
-class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
+class SessionServiceTest extends WC_Unit_Test_Case {
 
 	use WooPayServicesFixture;
 
@@ -22,8 +22,8 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 	 * @testdox Should build WooPay REST URLs from the default host.
 	 */
 	public function test_builds_woopay_rest_urls_from_default_host(): void {
-		$this->assertSame( 'https://pay.woo.com', WooPaymentsWooPaySessionService::get_woopay_url() );
-		$this->assertSame( 'https://pay.woo.com/wp-json/platform-checkout/v1/init', WooPaymentsWooPaySessionService::get_woopay_rest_url( 'init' ) );
+		$this->assertSame( 'https://pay.woo.com', SessionService::get_woopay_url() );
+		$this->assertSame( 'https://pay.woo.com/wp-json/platform-checkout/v1/init', SessionService::get_woopay_rest_url( 'init' ) );
 	}
 
 	/**
@@ -1396,7 +1396,7 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 		update_option( 'woopay_enabled_adapted_extensions', array( 'woocommerce-points-and-rewards' ) );
 		update_option( 'wc_points_rewards_redeem_points_ratio', '10:1' );
 
-		$adapted_extensions = new WooPaymentsWooPayAdaptedExtensions();
+		$adapted_extensions = new AdaptedExtensions();
 		$adapted_extensions->register( new FakeWooPayPointsRewardsBlocksIntegration() );
 
 		$sut     = $this->create_service( array(), array(), $adapted_extensions );
@@ -1430,7 +1430,7 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 	 * in the shape Affiliate for WooCommerce gets (includes/woopay/class-woopay-adapted-extensions.php:172-176).
 	 */
 	public function test_init_session_request_forwards_extension_data(): void {
-		$adapted_extensions = new class() extends WooPaymentsWooPayAdaptedExtensions {
+		$adapted_extensions = new class() extends AdaptedExtensions {
 			/**
 			 * Get the extension data of an active Affiliate for WooCommerce referral.
 			 *

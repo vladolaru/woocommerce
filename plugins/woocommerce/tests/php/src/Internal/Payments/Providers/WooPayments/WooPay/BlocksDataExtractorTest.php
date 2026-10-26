@@ -3,13 +3,13 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\WooPay;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayBlocksDataExtractor;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\BlocksDataExtractor;
 use WC_Unit_Test_Case;
 
 /**
- * Tests for the WooPaymentsWooPayBlocksDataExtractor class.
+ * Tests for the BlocksDataExtractor class.
  */
-class WooPaymentsWooPayBlocksDataExtractorTest extends WC_Unit_Test_Case {
+class BlocksDataExtractorTest extends WC_Unit_Test_Case {
 
 	/** Checkout field settings the Checkout block sidebar writes. */
 	private const FIELD_OPTIONS = array( 'woocommerce_checkout_company_field', 'woocommerce_checkout_address_2_field', 'woocommerce_checkout_phone_field' );
@@ -47,7 +47,7 @@ class WooPaymentsWooPayBlocksDataExtractorTest extends WC_Unit_Test_Case {
 	public function test_get_data_extracts_supported_checkout_block_script_data(): void {
 		$this->register_fake_mailchimp_blocks_integration();
 
-		$extractor = new WooPaymentsWooPayBlocksDataExtractor();
+		$extractor = new BlocksDataExtractor();
 
 		$this->assertSame(
 			array(
@@ -72,7 +72,7 @@ class WooPaymentsWooPayBlocksDataExtractorTest extends WC_Unit_Test_Case {
 		);
 		update_option( 'woocommerce_checkout_page_id', $page_id );
 
-		$extractor = new WooPaymentsWooPayBlocksDataExtractor();
+		$extractor = new BlocksDataExtractor();
 
 		$this->assertSame(
 			array(
@@ -110,7 +110,7 @@ class WooPaymentsWooPayBlocksDataExtractorTest extends WC_Unit_Test_Case {
 			update_option( $option, $value );
 		}
 
-		$status = ( new WooPaymentsWooPayBlocksDataExtractor() )->get_optional_fields_status();
+		$status = ( new BlocksDataExtractor() )->get_optional_fields_status();
 
 		$this->assertSame( $expected, array_intersect_key( $status, $expected ) );
 	}

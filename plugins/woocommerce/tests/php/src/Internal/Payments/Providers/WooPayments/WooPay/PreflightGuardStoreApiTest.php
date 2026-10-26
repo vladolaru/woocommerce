@@ -1,6 +1,6 @@
 <?php
 /**
- * WooPaymentsWooPayPreflightGuard tests through the Store API checkout routes.
+ * PreflightGuard tests through the Store API checkout routes.
  */
 
 declare( strict_types = 1 );
@@ -9,7 +9,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\W
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayPreflightGuard;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\PreflightGuard;
 use Automattic\WooCommerce\Tests\Internal\Payments\RecordingPaymentProcessingService;
 use WC_Coupon;
 use WC_Order;
@@ -20,7 +20,7 @@ use WP_REST_Request;
  * Dispatches WooPay preflight checkouts through the REST server, with the current user resolved the way WordPress resolves
  * it before any REST route runs, so the signed-request filter is set (or not) by WooPay's own signature check.
  */
-class WooPaymentsWooPayPreflightGuardStoreApiTest extends WC_Unit_Test_Case {
+class PreflightGuardStoreApiTest extends WC_Unit_Test_Case {
 
 	use WooPayServicesFixture {
 		setUp as fixture_set_up;
@@ -33,9 +33,9 @@ class WooPaymentsWooPayPreflightGuardStoreApiTest extends WC_Unit_Test_Case {
 	/**
 	 * Guard under test.
 	 *
-	 * @var WooPaymentsWooPayPreflightGuard
+	 * @var PreflightGuard
 	 */
-	private WooPaymentsWooPayPreflightGuard $guard;
+	private PreflightGuard $guard;
 
 	/**
 	 * Callback runs on the guarded hooks, by hook.
@@ -111,7 +111,7 @@ class WooPaymentsWooPayPreflightGuardStoreApiTest extends WC_Unit_Test_Case {
 		$this->gateways_before = WC()->payment_gateways()->payment_gateways;
 		WC()->payment_gateways()->payment_gateways['woocommerce_payments'] = $this->create_woopayments_gateway();
 		$this->initialize_store_api_server();
-		$this->guard = new WooPaymentsWooPayPreflightGuard();
+		$this->guard = new PreflightGuard();
 		$this->guard->register();
 		$this->add_callback( 'woocommerce_store_api_disable_nonce_check', '__return_true' );
 		$this->add_callback( 'woocommerce_available_payment_gateways', array( $this, 'offer_test_gateways' ), 20 );

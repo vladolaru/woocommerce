@@ -11,7 +11,7 @@ use Automattic\WooCommerce\Container;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\MerchantRestController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Onboarding\AccountSessionRestController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WebhookRestController;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPaySessionController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\SessionController;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 
 /**
@@ -123,7 +123,7 @@ final class WooPaymentsAdminRestRouteRegistrar implements RegisterHooksInterface
 
 		$roots = self::get_connected_controller_roots();
 		if ( WooPaymentsSetupTier::ACTIVE === $state ) {
-			$roots[] = WooPaymentsWooPaySessionController::class;
+			$roots[] = SessionController::class;
 		}
 
 		return $roots;

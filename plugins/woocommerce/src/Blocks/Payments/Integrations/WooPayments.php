@@ -11,7 +11,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsEx
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendAssets;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayEligibility;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\Eligibility;
 
 /**
  * WooPayments payment method integration.
@@ -93,9 +93,9 @@ final class WooPayments extends AbstractPaymentMethodType {
 	/**
 	 * WooPay eligibility rules.
 	 *
-	 * @var WooPaymentsWooPayEligibility
+	 * @var Eligibility
 	 */
-	private WooPaymentsWooPayEligibility $woopay_eligibility;
+	private Eligibility $woopay_eligibility;
 
 	/**
 	 * Express checkout service.
@@ -125,11 +125,11 @@ final class WooPayments extends AbstractPaymentMethodType {
 	 * @param WooPaymentsRuntimeArbiter         $arbiter                   Runtime owner arbiter.
 	 * @param WooPaymentsCheckoutAssets         $checkout_assets           Checkout scripts and their config.
 	 * @param WooPaymentsProvider               $provider                  Native WooPayments provider.
-	 * @param WooPaymentsWooPayEligibility      $woopay_eligibility        WooPay eligibility rules.
+	 * @param Eligibility                       $woopay_eligibility        WooPay eligibility rules.
 	 * @param WooPaymentsExpressCheckoutService $express_checkout_service  Express checkout service.
 	 * @param WooPaymentsGateway|null           $payment_gateway           Optional payment gateway instance.
 	 */
-	public function __construct( Api $asset_api, WooPaymentsRuntimeArbiter $arbiter, WooPaymentsCheckoutAssets $checkout_assets, WooPaymentsProvider $provider, WooPaymentsWooPayEligibility $woopay_eligibility, WooPaymentsExpressCheckoutService $express_checkout_service, ?WooPaymentsGateway $payment_gateway = null ) {
+	public function __construct( Api $asset_api, WooPaymentsRuntimeArbiter $arbiter, WooPaymentsCheckoutAssets $checkout_assets, WooPaymentsProvider $provider, Eligibility $woopay_eligibility, WooPaymentsExpressCheckoutService $express_checkout_service, ?WooPaymentsGateway $payment_gateway = null ) {
 		$this->asset_api                = $asset_api;
 		$this->arbiter                  = $arbiter;
 		$this->checkout_assets          = $checkout_assets;

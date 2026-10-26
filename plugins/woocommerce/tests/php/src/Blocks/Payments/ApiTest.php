@@ -23,7 +23,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSe
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCheckoutAssets;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExpressCheckoutService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayEligibility;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\Eligibility;
 use WC_Unit_Test_Case;
 
 /**
@@ -95,7 +95,7 @@ class ApiTest extends WC_Unit_Test_Case {
 			$this->createMock( WooPaymentsRuntimeArbiter::class ),
 			$this->createMock( WooPaymentsCheckoutAssets::class ),
 			$this->createMock( WooPaymentsProvider::class ),
-			$this->createMock( WooPaymentsWooPayEligibility::class ),
+			$this->createMock( Eligibility::class ),
 			$this->createMock( WooPaymentsExpressCheckoutService::class )
 		);
 		$this->state->write_tier( WooPaymentsSetupTier::ACTIVE );

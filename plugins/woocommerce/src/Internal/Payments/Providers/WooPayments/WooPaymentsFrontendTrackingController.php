@@ -18,7 +18,7 @@ use WP_Error;
 use WP_REST_Request;
 use WP_REST_Response;
 use WP_User;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayEligibility;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\Eligibility;
 
 /**
  * Records the WooPayments shopper Tracks events: the checkout funnel page views on every store, the WooPay events while
@@ -189,9 +189,9 @@ class WooPaymentsFrontendTrackingController implements RegisterHooksInterface {
 	/**
 	 * WooPay eligibility rules, looked up when a funnel event first needs them.
 	 *
-	 * @var WooPaymentsWooPayEligibility|null
+	 * @var Eligibility|null
 	 */
-	private ?WooPaymentsWooPayEligibility $woopay_eligibility = null;
+	private ?Eligibility $woopay_eligibility = null;
 
 	/**
 	 * Initialize the class instance.
@@ -954,11 +954,11 @@ class WooPaymentsFrontendTrackingController implements RegisterHooksInterface {
 	 * Get the WooPay eligibility rules, looked up on first use: only the funnel events read them, so a request that
 	 * records none builds nothing more.
 	 *
-	 * @return WooPaymentsWooPayEligibility
+	 * @return Eligibility
 	 */
-	private function get_woopay_eligibility(): WooPaymentsWooPayEligibility {
+	private function get_woopay_eligibility(): Eligibility {
 		if ( null === $this->woopay_eligibility ) {
-			$this->woopay_eligibility = wc_get_container()->get( WooPaymentsWooPayEligibility::class );
+			$this->woopay_eligibility = wc_get_container()->get( Eligibility::class );
 		}
 
 		return $this->woopay_eligibility;

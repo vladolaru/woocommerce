@@ -10,16 +10,16 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\W
 use Automattic\WooCommerce\Caches\OrderCache;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayVerifiedEmailRestoreService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\VerifiedEmailRestoreService;
 use Automattic\WooCommerce\RestApi\UnitTests\HPOSToggleTrait;
 use Automattic\WooCommerce\Utilities\OrderUtil;
 use WC_Order;
 use WC_Unit_Test_Case;
 
 /**
- * Tests for the WooPaymentsWooPayVerifiedEmailRestoreService class.
+ * Tests for the VerifiedEmailRestoreService class.
  */
-class WooPaymentsWooPayVerifiedEmailRestoreServiceTest extends WC_Unit_Test_Case {
+class VerifiedEmailRestoreServiceTest extends WC_Unit_Test_Case {
 
 	use HPOSToggleTrait;
 
@@ -32,7 +32,7 @@ class WooPaymentsWooPayVerifiedEmailRestoreServiceTest extends WC_Unit_Test_Case
 	/**
 	 * The System Under Test.
 	 *
-	 * @var WooPaymentsWooPayVerifiedEmailRestoreService|null
+	 * @var VerifiedEmailRestoreService|null
 	 */
 	private $sut;
 
@@ -142,7 +142,7 @@ class WooPaymentsWooPayVerifiedEmailRestoreServiceTest extends WC_Unit_Test_Case
 		$this->arbiter = wc_get_container()->get( WooPaymentsRuntimeArbiter::class );
 		$this->control_plugin_detection();
 		$this->arbiter->invalidate();
-		$this->sut = new WooPaymentsWooPayVerifiedEmailRestoreService();
+		$this->sut = new VerifiedEmailRestoreService();
 		$this->sut->init( $this->arbiter );
 	}
 
@@ -1233,7 +1233,7 @@ class WooPaymentsWooPayVerifiedEmailRestoreServiceTest extends WC_Unit_Test_Case
 	 * Remove every hook registered by the service.
 	 */
 	private function remove_service_hooks(): void {
-		if ( ! $this->sut instanceof WooPaymentsWooPayVerifiedEmailRestoreService ) {
+		if ( ! $this->sut instanceof VerifiedEmailRestoreService ) {
 			return;
 		}
 

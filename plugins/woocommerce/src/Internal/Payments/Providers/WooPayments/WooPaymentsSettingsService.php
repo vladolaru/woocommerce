@@ -16,8 +16,8 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethod
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\StripeBillingModule;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\SubscriptionMethodPolicy;
 use WP_Error;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayEligibility;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayAppearanceStore;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\Eligibility;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\AppearanceStore;
 
 /**
  * Builds the data the WooPayments settings page shows and saves the page's changes: account and fraud settings on the
@@ -129,16 +129,16 @@ class WooPaymentsSettingsService {
 	/**
 	 * WooPay eligibility rules.
 	 *
-	 * @var WooPaymentsWooPayEligibility
+	 * @var Eligibility
 	 */
-	private WooPaymentsWooPayEligibility $woopay_eligibility;
+	private Eligibility $woopay_eligibility;
 
 	/**
 	 * WooPay checkout appearance store.
 	 *
-	 * @var WooPaymentsWooPayAppearanceStore
+	 * @var AppearanceStore
 	 */
-	private WooPaymentsWooPayAppearanceStore $appearance_store;
+	private AppearanceStore $appearance_store;
 
 	/**
 	 * Frontend tracking controller.
@@ -216,13 +216,13 @@ class WooPaymentsSettingsService {
 	 * @param StripeBillingModule                       $stripe_billing_module             Stripe Billing module.
 	 * @param WooPaymentsFraudRulesetService            $fraud_ruleset_service             Fraud ruleset service.
 	 * @param WooPaymentsDuplicateGatewayMethodsService $duplicate_gateway_methods_service Duplicate gateway methods service.
-	 * @param WooPaymentsWooPayEligibility              $woopay_eligibility                WooPay eligibility rules.
-	 * @param WooPaymentsWooPayAppearanceStore          $appearance_store                  WooPay checkout appearance store.
+	 * @param Eligibility                               $woopay_eligibility                WooPay eligibility rules.
+	 * @param AppearanceStore                           $appearance_store                  WooPay checkout appearance store.
 	 * @param WooPaymentsFrontendTrackingController     $frontend_tracking_controller      Frontend tracking controller.
 	 * @param WooPaymentsLogger                         $logger                            WooPayments logger.
 	 * @param WooPaymentsStoreSetupReportController     $store_setup_report_controller     Store setup report controller.
 	 */
-	final public function init( WooPaymentsAccountService $account_service, Client $api_client, WooPaymentsPmPromotionsService $pm_promotions_service, WooPaymentsGatewaySettingsSynchronizer $gateway_settings_synchronizer, PaymentMethodRegistry $payment_method_registry, StripeBillingModule $stripe_billing_module, WooPaymentsFraudRulesetService $fraud_ruleset_service, WooPaymentsDuplicateGatewayMethodsService $duplicate_gateway_methods_service, WooPaymentsWooPayEligibility $woopay_eligibility, WooPaymentsWooPayAppearanceStore $appearance_store, WooPaymentsFrontendTrackingController $frontend_tracking_controller, WooPaymentsLogger $logger, WooPaymentsStoreSetupReportController $store_setup_report_controller ): void {
+	final public function init( WooPaymentsAccountService $account_service, Client $api_client, WooPaymentsPmPromotionsService $pm_promotions_service, WooPaymentsGatewaySettingsSynchronizer $gateway_settings_synchronizer, PaymentMethodRegistry $payment_method_registry, StripeBillingModule $stripe_billing_module, WooPaymentsFraudRulesetService $fraud_ruleset_service, WooPaymentsDuplicateGatewayMethodsService $duplicate_gateway_methods_service, Eligibility $woopay_eligibility, AppearanceStore $appearance_store, WooPaymentsFrontendTrackingController $frontend_tracking_controller, WooPaymentsLogger $logger, WooPaymentsStoreSetupReportController $store_setup_report_controller ): void {
 		$this->account_service                   = $account_service;
 		$this->api_client                        = $api_client;
 		$this->pm_promotions_service             = $pm_promotions_service;

@@ -37,7 +37,7 @@ use WC_Unit_Test_Case;
 use WP_Error;
 use WP_REST_Request;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\WooPay\RecordingWooPaySessionService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayEligibility;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\Eligibility;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\WooPay\RecordingWooPayAppearanceStore;
 
 /**
@@ -4036,10 +4036,10 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	 * Create the WooPay eligibility rules over an account service.
 	 *
 	 * @param WooPaymentsAccountService $account_service Account service.
-	 * @return WooPaymentsWooPayEligibility
+	 * @return Eligibility
 	 */
-	private function create_woopay_eligibility( WooPaymentsAccountService $account_service ): WooPaymentsWooPayEligibility {
-		$woopay_eligibility = new WooPaymentsWooPayEligibility();
+	private function create_woopay_eligibility( WooPaymentsAccountService $account_service ): Eligibility {
+		$woopay_eligibility = new Eligibility();
 		$woopay_eligibility->init( $account_service );
 
 		return $woopay_eligibility;

@@ -3,12 +3,12 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\WooPay;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayEligibility;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\Eligibility;
 
 /**
  * WooPay eligibility rules with controllable optional-extension predicates.
  */
-class TestableWooPayEligibility extends WooPaymentsWooPayEligibility {
+class TestableWooPayEligibility extends Eligibility {
 	/**
 	 * Whether a product is a pre-order charged upon release.
 	 *

@@ -1,6 +1,6 @@
 <?php
 /**
- * WooPaymentsWooPayVerifiedEmailRestoreService class file.
+ * VerifiedEmailRestoreService class file.
  */
 
 declare( strict_types = 1 );
@@ -27,7 +27,7 @@ defined( 'ABSPATH' ) || exit;
  * @since 11.2.0
  * @internal
  */
-class WooPaymentsWooPayVerifiedEmailRestoreService implements RegisterHooksInterface {
+class VerifiedEmailRestoreService implements RegisterHooksInterface {
 
 	/** Scheduled event that restores a detached order's customer ID. */
 	private const RESTORE_CUSTOMER_ID_HOOK = 'woopay_restore_order_customer_id';

@@ -3,13 +3,13 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\WooPay;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayEligibility;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\Eligibility;
 
 /**
  * Recording WooPay eligibility rules for controller tests: they answer from the flags the tests set on the recording
  * session service, so one double carries a test's WooPay state.
  */
-class RecordingWooPayEligibility extends WooPaymentsWooPayEligibility {
+class RecordingWooPayEligibility extends Eligibility {
 
 	/**
 	 * Recording session service whose flags these rules answer from.

@@ -1,6 +1,6 @@
 <?php
 /**
- * WooPaymentsWooPayAdaptedExtensions class file.
+ * AdaptedExtensions class file.
  */
 
 declare( strict_types = 1 );
@@ -20,7 +20,7 @@ use WP_User;
  * @since 11.0.0
  * @internal
  */
-class WooPaymentsWooPayAdaptedExtensions extends IntegrationRegistry {
+class AdaptedExtensions extends IntegrationRegistry {
 
 	private const ENABLED_ADAPTED_EXTENSIONS_OPTION = 'woopay_enabled_adapted_extensions';
 

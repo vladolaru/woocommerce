@@ -17,7 +17,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WebhookReliabilityService;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Throwable;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayEligibility;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\Eligibility;
 
 defined( 'ABSPATH' ) || exit;
 
@@ -424,7 +424,7 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 	 */
 	private function get_woopayments_account_status_rows( WooPaymentsGateway $gateway ): array {
 		$account_service       = $this->get_account_service();
-		$woopay_eligibility    = wc_get_container()->get( WooPaymentsWooPayEligibility::class );
+		$woopay_eligibility    = wc_get_container()->get( Eligibility::class );
 		$fraud_ruleset_service = wc_get_container()->get( WooPaymentsFraudRulesetService::class );
 		$needs_setup           = $gateway->needs_setup();
 		$dev_triggers          = $account_service->get_dev_mode_triggers();

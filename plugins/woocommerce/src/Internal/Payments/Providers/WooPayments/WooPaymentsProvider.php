@@ -26,15 +26,15 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\PaymentMethodDefinition;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\PaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WebhookReliabilityService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayExtensionSync;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayOrderStatusSync;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\ExtensionSync;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\OrderStatusSync;
 use Automattic\WooCommerce\Internal\Payments\ProviderInterface;
 use Automattic\WooCommerce\Internal\Payments\ProviderOperationEffectApplierInterface;
 use Automattic\WooCommerce\Internal\Payments\ProviderOutcomeMetadataMapperInterface;
 use Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabularyInterface;
 use Automattic\WooCommerce\Internal\Payments\ProviderPostLifecycleEffectApplierInterface;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayPreflightGuard;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPaySessionController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\PreflightGuard;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\SessionController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\NotesController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\CurrencyComplianceNotice;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\UserPreferenceFields;
@@ -145,8 +145,8 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 			WooPaymentsOrderFraudMetaBox::class,
 			WooPaymentsOrderAdminActionsController::class,
 			WooPaymentsOrderStatusChangeController::class,
-			WooPaymentsWooPayOrderStatusSync::class,
-			WooPaymentsWooPayExtensionSync::class,
+			OrderStatusSync::class,
+			ExtensionSync::class,
 			WooPaymentsApplePayDomainService::class,
 			CurrencyComplianceNotice::class,
 			NoticesPassthrough::class,
@@ -166,8 +166,8 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 			WooPaymentsCustomerService::class,
 			WooPaymentsOrderAdminActionsController::class,
 			WooPaymentsOrderStatusChangeController::class,
-			WooPaymentsWooPayOrderStatusSync::class,
-			WooPaymentsWooPayExtensionSync::class,
+			OrderStatusSync::class,
+			ExtensionSync::class,
 			WooPaymentsApplePayDomainService::class,
 			WooPaymentsFraudOrderTrackingService::class,
 			WooPaymentsStoreSetupReportController::class,
@@ -182,10 +182,10 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 				WebhookReliabilityService::class,
 				WooPaymentsCustomerService::class,
 				WooPaymentsOrderAdminActionsController::class,
-				WooPaymentsWooPayOrderStatusSync::class,
+				OrderStatusSync::class,
 				// Plugins are also (de)activated over REST (wp/v2/plugins); client 11.1.0 hooks the WooPay extension sync on every
 				// request (`includes/class-wc-payments.php:597`, `includes/woopay/class-woopay-scheduler.php:45-52`).
-				WooPaymentsWooPayExtensionSync::class,
+				ExtensionSync::class,
 				WooPaymentsApplePayDomainService::class,
 			),
 			$connected_rest_controllers,
@@ -208,8 +208,8 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 			WooPaymentsAccountMilestonesController::class,
 			WooPaymentsFeeDetailsNoteController::class,
 			WooPaymentsFraudOrderTrackingService::class,
-			WooPaymentsWooPayOrderStatusSync::class,
-			WooPaymentsWooPayExtensionSync::class,
+			OrderStatusSync::class,
+			ExtensionSync::class,
 			WooPaymentsApplePayDomainService::class,
 			WooPaymentsCanceledAuthorizationFeeRemediationService::class,
 			WooPaymentsOrderAdminActionsController::class,
@@ -254,9 +254,9 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 						WooPaymentsOrderAdminActionsController::class,
 						WooPaymentsOrderStatusChangeController::class,
 						WooPaymentsTokenizedCartSessionController::class,
-						WooPaymentsWooPaySessionController::class,
-						WooPaymentsWooPayOrderStatusSync::class,
-						WooPaymentsWooPayExtensionSync::class,
+						SessionController::class,
+						OrderStatusSync::class,
+						ExtensionSync::class,
 						WooPaymentsExpressCheckoutController::class,
 						// The Cart and Checkout blocks preload the Store API cart inside the page request (Blocks Cart.php:263),
 						// so the express checkout data it adds to that cart must exist there too; client 11.1.0 registers it on every request
@@ -282,7 +282,7 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 						WooPaymentsDuplicatePaymentPreventionService::class,
 						WooPaymentsCheckoutAjaxController::class,
 						WooPaymentsTokenizedCartSessionController::class,
-						WooPaymentsWooPaySessionController::class,
+						SessionController::class,
 						WooPaymentsExpressCheckoutController::class,
 						WooPaymentsPaymentMethodMessaging::class,
 						WooPaymentsFrontendTrackingController::class,
@@ -292,11 +292,11 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 					$gateway_prefix,
 					$connected_rest,
 					array(
-						WooPaymentsWooPayPreflightGuard::class,
+						PreflightGuard::class,
 						WooPaymentsAddressProvider::class,
 						WooPaymentsDuplicatePaymentPreventionService::class,
 						WooPaymentsTokenizedCartSessionController::class,
-						WooPaymentsWooPaySessionController::class,
+						SessionController::class,
 						WooPaymentsExpressCheckoutController::class,
 						WooPaymentsExpressCheckoutStoreApiExtension::class,
 						WooPaymentsExpressCheckoutCurrencyGuard::class,

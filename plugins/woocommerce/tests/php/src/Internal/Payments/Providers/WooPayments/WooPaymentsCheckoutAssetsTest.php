@@ -21,15 +21,15 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFr
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFraudService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSessionService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\PaymentMethodRegistry;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPaySessionService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\SessionService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExpressCheckoutService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\WooCommerceSubscriptionsDoubles;
 use WC_Unit_Test_Case;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayEligibility;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayAppearanceStore;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayAdaptedExtensions;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayBlocksDataExtractor;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\Eligibility;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\AppearanceStore;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\AdaptedExtensions;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\BlocksDataExtractor;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 
 /**
@@ -1722,12 +1722,12 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 		$database_cache       = new WooPaymentsDatabaseCache();
 		$database_cache->init( new LegacyProxy() );
 		$real_account_service->init( new LegacyProxy(), $database_cache );
-		$real_eligibility = new WooPaymentsWooPayEligibility();
+		$real_eligibility = new Eligibility();
 		$real_eligibility->init( $real_account_service );
-		$real_appearance_store = new WooPaymentsWooPayAppearanceStore();
+		$real_appearance_store = new AppearanceStore();
 		$real_appearance_store->init( new WooPaymentsFrontendStylesService() );
-		$real_woopay_service = new WooPaymentsWooPaySessionService();
-		$real_woopay_service->init( $real_account_service, $real_eligibility, $real_appearance_store, $this->create_frontend_tracking_controller(), wc_get_container()->get( WooPaymentsWooPayBlocksDataExtractor::class ), new WooPaymentsWooPayAdaptedExtensions(), $this->createMock( WooPaymentsCustomerService::class ), wc_get_container()->get( WooPaymentsLogger::class ) );
+		$real_woopay_service = new SessionService();
+		$real_woopay_service->init( $real_account_service, $real_eligibility, $real_appearance_store, $this->create_frontend_tracking_controller(), wc_get_container()->get( BlocksDataExtractor::class ), new AdaptedExtensions(), $this->createMock( WooPaymentsCustomerService::class ), wc_get_container()->get( WooPaymentsLogger::class ) );
 		$woopay_config = array_merge(
 			array_fill_keys( array_keys( $real_woopay_service->get_woopay_frontend_config( 'checkout' ) ), '' ),
 			array(
@@ -1737,7 +1737,7 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 			)
 		);
 
-		$woopay_service = $this->getMockBuilder( WooPaymentsWooPaySessionService::class )
+		$woopay_service = $this->getMockBuilder( SessionService::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'get_woopay_frontend_config', 'get_save_user_checkout_data' ) )
 			->getMock();
@@ -2493,10 +2493,10 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 	 * @param bool $enabled                 Whether WooPay is enabled.
 	 * @param bool $direct_checkout_enabled Whether WooPay direct checkout is enabled.
 	 * @param bool $uses_stripe_platform    Whether checkout uses the Stripe platform account for WooPay.
-	 * @return WooPaymentsWooPayEligibility|\PHPUnit\Framework\MockObject\MockObject
+	 * @return Eligibility|\PHPUnit\Framework\MockObject\MockObject
 	 */
 	private function create_woopay_eligibility( bool $enabled, bool $direct_checkout_enabled = false, bool $uses_stripe_platform = false ) {
-		$eligibility = $this->getMockBuilder( WooPaymentsWooPayEligibility::class )
+		$eligibility = $this->getMockBuilder( Eligibility::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'is_woopay_enabled', 'is_woopay_direct_checkout_enabled', 'should_use_stripe_platform_on_checkout_page' ) )
 			->getMock();
@@ -2514,10 +2514,10 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 	 * @param bool $enabled                 Whether WooPay is enabled.
 	 * @param bool $direct_checkout_enabled Whether WooPay direct checkout is enabled.
 	 * @param bool $uses_stripe_platform    Whether checkout uses the Stripe platform account for WooPay.
-	 * @return WooPaymentsWooPaySessionService|\PHPUnit\Framework\MockObject\MockObject
+	 * @return SessionService|\PHPUnit\Framework\MockObject\MockObject
 	 */
 	private function create_woopay_session_service( bool $enabled, bool $direct_checkout_enabled = false, bool $uses_stripe_platform = false ) {
-		$service = $this->getMockBuilder( WooPaymentsWooPaySessionService::class )
+		$service = $this->getMockBuilder( SessionService::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'get_woopay_frontend_config', 'get_save_user_checkout_data' ) )
 			->getMock();

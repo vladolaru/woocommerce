@@ -1,6 +1,6 @@
 <?php
 /**
- * WooPaymentsWooPaySessionController class file.
+ * SessionController class file.
  */
 
 declare( strict_types = 1 );
@@ -27,7 +27,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOr
  * @since 11.0.0
  * @internal
  */
-class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
+class SessionController implements RegisterHooksInterface {
 
 	private const NAMESPACE = 'payments/woopay';
 
@@ -38,30 +38,30 @@ class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
 	/**
 	 * WooPay session service.
 	 *
-	 * @var WooPaymentsWooPaySessionService
+	 * @var SessionService
 	 */
-	private WooPaymentsWooPaySessionService $session_service;
+	private SessionService $session_service;
 
 	/**
 	 * WooPay eligibility rules.
 	 *
-	 * @var WooPaymentsWooPayEligibility
+	 * @var Eligibility
 	 */
-	private WooPaymentsWooPayEligibility $woopay_eligibility;
+	private Eligibility $woopay_eligibility;
 
 	/**
 	 * WooPay checkout appearance store.
 	 *
-	 * @var WooPaymentsWooPayAppearanceStore
+	 * @var AppearanceStore
 	 */
-	private WooPaymentsWooPayAppearanceStore $appearance_store;
+	private AppearanceStore $appearance_store;
 
 	/**
 	 * Handler of WooPay's Store API requests.
 	 *
-	 * @var WooPaymentsWooPayStoreApiRequestHandler
+	 * @var StoreApiRequestHandler
 	 */
-	private WooPaymentsWooPayStoreApiRequestHandler $store_api_request_handler;
+	private StoreApiRequestHandler $store_api_request_handler;
 
 	/**
 	 * Whether WooPay frontend assets have already been localized and enqueued.
@@ -82,12 +82,12 @@ class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsWooPaySessionService         $session_service           WooPay session service.
-	 * @param WooPaymentsWooPayEligibility            $woopay_eligibility        WooPay eligibility rules.
-	 * @param WooPaymentsWooPayAppearanceStore        $appearance_store          WooPay checkout appearance store.
-	 * @param WooPaymentsWooPayStoreApiRequestHandler $store_api_request_handler Handler of WooPay's Store API requests.
+	 * @param SessionService         $session_service           WooPay session service.
+	 * @param Eligibility            $woopay_eligibility        WooPay eligibility rules.
+	 * @param AppearanceStore        $appearance_store          WooPay checkout appearance store.
+	 * @param StoreApiRequestHandler $store_api_request_handler Handler of WooPay's Store API requests.
 	 */
-	final public function init( WooPaymentsWooPaySessionService $session_service, WooPaymentsWooPayEligibility $woopay_eligibility, WooPaymentsWooPayAppearanceStore $appearance_store, WooPaymentsWooPayStoreApiRequestHandler $store_api_request_handler ): void {
+	final public function init( SessionService $session_service, Eligibility $woopay_eligibility, AppearanceStore $appearance_store, StoreApiRequestHandler $store_api_request_handler ): void {
 		$this->session_service           = $session_service;
 		$this->woopay_eligibility        = $woopay_eligibility;
 		$this->appearance_store          = $appearance_store;

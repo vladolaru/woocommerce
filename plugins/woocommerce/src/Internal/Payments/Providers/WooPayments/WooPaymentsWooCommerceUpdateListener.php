@@ -7,7 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayExtensionSync;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\ExtensionSync;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 
 /**
@@ -38,6 +38,6 @@ class WooPaymentsWooCommerceUpdateListener implements RegisterHooksInterface {
 		$container = wc_get_container();
 		$container->get( WooPaymentsAccountService::class )->clear_cache();
 		$container->get( WooPaymentsStoreSetupReportController::class )->queue_store_setup_sync();
-		$container->get( WooPaymentsWooPayExtensionSync::class )->remove_retired_validation_schedule();
+		$container->get( ExtensionSync::class )->remove_retired_validation_schedule();
 	}
 }

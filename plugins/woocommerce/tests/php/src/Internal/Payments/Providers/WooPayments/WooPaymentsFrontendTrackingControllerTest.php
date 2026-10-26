@@ -10,8 +10,8 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDa
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendTrackingController;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use WC_Unit_Test_Case;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayEligibility;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPaySessionService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\Eligibility;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\SessionService;
 
 /**
  * Tests for the WooPaymentsFrontendTrackingController class.
@@ -750,7 +750,7 @@ class WooPaymentsFrontendTrackingControllerTest extends WC_Unit_Test_Case {
 		);
 
 		$sut->init( $this->create_account_service( true ) );
-		wc_get_container()->replace( WooPaymentsWooPayEligibility::class, $this->create_woopay_eligibility( true ) );
+		wc_get_container()->replace( Eligibility::class, $this->create_woopay_eligibility( true ) );
 
 		try {
 			$sut->register();
@@ -811,7 +811,7 @@ class WooPaymentsFrontendTrackingControllerTest extends WC_Unit_Test_Case {
 			}
 		);
 		$sut->init( $this->create_account_service( true ) );
-		wc_get_container()->replace( WooPaymentsWooPayEligibility::class, $this->create_woopay_eligibility( true, true ) );
+		wc_get_container()->replace( Eligibility::class, $this->create_woopay_eligibility( true, true ) );
 
 		try {
 			$sut->register();
@@ -861,7 +861,7 @@ class WooPaymentsFrontendTrackingControllerTest extends WC_Unit_Test_Case {
 		add_filter( 'pre_http_request', $count_http );
 
 		$tracker = $this->create_controller();
-		wc_get_container()->replace( WooPaymentsWooPayEligibility::class, $this->create_woopay_eligibility( false ) );
+		wc_get_container()->replace( Eligibility::class, $this->create_woopay_eligibility( false ) );
 
 		try {
 			$tracker->register();
@@ -939,18 +939,18 @@ class WooPaymentsFrontendTrackingControllerTest extends WC_Unit_Test_Case {
 		wp_set_current_user( 0 );
 
 		$tracker = $this->create_controller();
-		$woopay  = $this->getMockBuilder( WooPaymentsWooPayEligibility::class )
+		$woopay  = $this->getMockBuilder( Eligibility::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'is_woopay_direct_checkout_enabled' ) )
 			->getMock();
 		$woopay->expects( $this->once() )->method( 'is_woopay_direct_checkout_enabled' )->willReturn( $direct_checkout_enabled );
-		wc_get_container()->replace( WooPaymentsWooPayEligibility::class, $woopay );
-		$session = $this->getMockBuilder( WooPaymentsWooPaySessionService::class )
+		wc_get_container()->replace( Eligibility::class, $woopay );
+		$session = $this->getMockBuilder( SessionService::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'get_woopay_frontend_config' ) )
 			->getMock();
 		$session->expects( $this->never() )->method( 'get_woopay_frontend_config' );
-		wc_get_container()->replace( WooPaymentsWooPaySessionService::class, $session );
+		wc_get_container()->replace( SessionService::class, $session );
 
 		try {
 			$tracker->register();
@@ -999,7 +999,7 @@ class WooPaymentsFrontendTrackingControllerTest extends WC_Unit_Test_Case {
 		);
 
 		$sut->init( $this->create_account_service( true ) );
-		wc_get_container()->replace( WooPaymentsWooPayEligibility::class, $this->create_woopay_eligibility( false ) );
+		wc_get_container()->replace( Eligibility::class, $this->create_woopay_eligibility( false ) );
 
 		$classic_order = wc_create_order();
 		$classic_order->set_payment_method( 'woocommerce_payments' );
@@ -1337,7 +1337,7 @@ class WooPaymentsFrontendTrackingControllerTest extends WC_Unit_Test_Case {
 		}
 		wp_set_current_user( 0 );
 		$sut = $this->create_controller( $this->create_account_service_on_platform( $this->get_partially_onboarded_account(), $error_code ) );
-		wc_get_container()->replace( WooPaymentsWooPayEligibility::class, $this->create_woopay_eligibility( false ) );
+		wc_get_container()->replace( Eligibility::class, $this->create_woopay_eligibility( false ) );
 		$order = wc_create_order();
 		$order->set_payment_method( 'woocommerce_payments' );
 		$order->set_payment_method_title( 'Card' );
@@ -1538,10 +1538,10 @@ class WooPaymentsFrontendTrackingControllerTest extends WC_Unit_Test_Case {
 	 *
 	 * @param bool $enabled                 Whether WooPay is enabled.
 	 * @param bool $direct_checkout_enabled Whether WooPay direct checkout is enabled.
-	 * @return WooPaymentsWooPayEligibility
+	 * @return Eligibility
 	 */
-	private function create_woopay_eligibility( bool $enabled, bool $direct_checkout_enabled = false ): WooPaymentsWooPayEligibility {
-		$service = $this->getMockBuilder( WooPaymentsWooPayEligibility::class )
+	private function create_woopay_eligibility( bool $enabled, bool $direct_checkout_enabled = false ): Eligibility {
+		$service = $this->getMockBuilder( Eligibility::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'is_woopay_enabled', 'is_woopay_direct_checkout_enabled' ) )
 			->getMock();

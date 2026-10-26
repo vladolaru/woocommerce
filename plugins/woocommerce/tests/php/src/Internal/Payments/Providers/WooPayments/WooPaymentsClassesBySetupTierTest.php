@@ -25,7 +25,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPr
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WebhookReliabilityService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsWooCommerceUpdateListener;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayPreflightGuard;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\PreflightGuard;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use WC_Unit_Test_Case;
 
@@ -219,7 +219,7 @@ class WooPaymentsClassesBySetupTierTest extends WC_Unit_Test_Case {
 		foreach (
 			array(
 				self::WCPAY . 'WooPaymentsOrderAdminActionsController',
-				self::WCPAY . 'WooPay\WooPaymentsWooPayOrderStatusSync',
+				self::WCPAY . 'WooPay\OrderStatusSync',
 				self::WCPAY . 'WooPaymentsApplePayDomainService',
 				self::WCPAY . 'WooPaymentsFraudOrderTrackingService',
 				self::WCPAY . 'WooPaymentsStoreSetupReportController',
@@ -259,11 +259,11 @@ class WooPaymentsClassesBySetupTierTest extends WC_Unit_Test_Case {
 		foreach ( $matrix as $state => $request_groups ) {
 			foreach ( $request_groups as $request_type => $roots ) {
 				if ( WooPaymentsSetupTier::ACTIVE === $state && 'rest' === $request_type ) {
-					$this->assertContains( WooPaymentsWooPayPreflightGuard::class, $roots );
+					$this->assertContains( PreflightGuard::class, $roots );
 					continue;
 				}
 
-				$this->assertNotContains( WooPaymentsWooPayPreflightGuard::class, $roots, $state . ' ' . $request_type . ' must not register the WooPay preflight guard.' );
+				$this->assertNotContains( PreflightGuard::class, $roots, $state . ' ' . $request_type . ' must not register the WooPay preflight guard.' );
 			}
 		}
 	}

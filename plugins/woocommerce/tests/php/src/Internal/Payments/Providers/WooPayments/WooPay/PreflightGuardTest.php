@@ -1,6 +1,6 @@
 <?php
 /**
- * WooPaymentsWooPayPreflightGuard tests.
+ * PreflightGuard tests.
  */
 
 declare( strict_types = 1 );
@@ -9,7 +9,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\W
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayPreflightGuard;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\PreflightGuard;
 use Automattic\WooCommerce\Tests\Internal\Payments\RecordingPaymentProcessingService;
 use WC_Coupon;
 use WC_Order;
@@ -17,9 +17,9 @@ use WC_Unit_Test_Case;
 use WP_REST_Request;
 
 /**
- * Tests for WooPaymentsWooPayPreflightGuard.
+ * Tests for PreflightGuard.
  */
-class WooPaymentsWooPayPreflightGuardTest extends WC_Unit_Test_Case {
+class PreflightGuardTest extends WC_Unit_Test_Case {
 
 	/** @var array<int,string> Hooks the preflight guard may change. */
 	private const GUARDED_HOOKS = array(
@@ -75,7 +75,7 @@ class WooPaymentsWooPayPreflightGuardTest extends WC_Unit_Test_Case {
 
 	/** @testdox Leaves checkout hooks unchanged for unrelated, malformed, and missing-marker requests. */
 	public function test_non_preflight_requests_leave_checkout_hooks_unchanged(): void {
-		$guard                = new WooPaymentsWooPayPreflightGuard();
+		$guard                = new PreflightGuard();
 		$action_counts        = array(
 			'meta'      => 0,
 			'processed' => 0,
@@ -197,7 +197,7 @@ class WooPaymentsWooPayPreflightGuardTest extends WC_Unit_Test_Case {
 
 	/** @testdox Suppresses checkout and coupon side effects for a signed WooPay preflight request naming the WooPayments gateway. */
 	public function test_preflight_request_suppresses_checkout_and_coupon_side_effects(): void {
-		$guard              = new WooPaymentsWooPayPreflightGuard();
+		$guard              = new PreflightGuard();
 		$order              = $this->create_order();
 		$coupon             = $this->create_coupon();
 		$action_counts      = array(
@@ -310,7 +310,7 @@ class WooPaymentsWooPayPreflightGuardTest extends WC_Unit_Test_Case {
 
 	/** @testdox Restores checkout hooks after a preflight request before the next checkout request. */
 	public function test_restores_checkout_hooks_after_preflight_request(): void {
-		$guard                = new WooPaymentsWooPayPreflightGuard();
+		$guard                = new PreflightGuard();
 		$order                = $this->create_order();
 		$coupon               = $this->create_coupon();
 		$action_counts        = array(

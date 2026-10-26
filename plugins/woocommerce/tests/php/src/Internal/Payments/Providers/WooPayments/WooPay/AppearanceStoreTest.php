@@ -6,9 +6,9 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\W
 use WC_Unit_Test_Case;
 
 /**
- * Tests for the WooPaymentsWooPayAppearanceStore class.
+ * Tests for the AppearanceStore class.
  */
-class WooPaymentsWooPayAppearanceStoreTest extends WC_Unit_Test_Case {
+class AppearanceStoreTest extends WC_Unit_Test_Case {
 
 	use WooPayServicesFixture;
 

@@ -1,6 +1,6 @@
 <?php
 /**
- * WooPaymentsWooPayBlocksDataExtractor class file.
+ * BlocksDataExtractor class file.
  */
 
 declare( strict_types = 1 );
@@ -24,7 +24,7 @@ use WP_Post;
  * @since 11.0.0
  * @internal
  */
-class WooPaymentsWooPayBlocksDataExtractor {
+class BlocksDataExtractor {
 
 	private const SUPPORTED_BLOCK_INTEGRATIONS = array(
 		'AutomateWoo\Blocks\Marketing_Optin_Block',

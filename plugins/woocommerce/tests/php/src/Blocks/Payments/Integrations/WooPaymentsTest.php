@@ -20,7 +20,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCh
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExpressCheckoutService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentOperationService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayEligibility;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\Eligibility;
 use WC_Unit_Test_Case;
 
 /**
@@ -705,7 +705,7 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 				return array( 'button_context' => $context );
 			}
 		);
-		$woopay = $this->getMockBuilder( WooPaymentsWooPayEligibility::class )
+		$woopay = $this->getMockBuilder( Eligibility::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'should_show_woopay_button' ) )
 			->getMock();
@@ -1131,10 +1131,10 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 	 * Create a WooPay eligibility mock.
 	 *
 	 * @param bool $should_show_button Whether the WooPay button should be available.
-	 * @return WooPaymentsWooPayEligibility
+	 * @return Eligibility
 	 */
-	private function create_woopay_eligibility( bool $should_show_button = false ): WooPaymentsWooPayEligibility {
-		$service = $this->getMockBuilder( WooPaymentsWooPayEligibility::class )
+	private function create_woopay_eligibility( bool $should_show_button = false ): Eligibility {
+		$service = $this->getMockBuilder( Eligibility::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'should_show_woopay_button' ) )
 			->getMock();

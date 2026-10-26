@@ -1,6 +1,6 @@
 <?php
 /**
- * WooPaymentsWooPayStoreApiRequestHandler class file.
+ * StoreApiRequestHandler class file.
  */
 
 declare( strict_types = 1 );
@@ -30,17 +30,17 @@ use WP_Error;
  * Client 11.1.0 keeps these hooks in `WooPay_Session` (includes/woopay/class-woopay-session.php:101-323, :1146) and the
  * draft reuse in `WC_Payments_WooPay_Direct_Checkout` (includes/class-wc-payments-woopay-direct-checkout.php:56-79).
  *
- * Its hooks are added by `WooPaymentsWooPaySessionController`: `register()` adds the Store API request hooks, including
+ * Its hooks are added by `SessionController`: `register()` adds the Store API request hooks, including
  * `determine_current_user` at priority 20 (client 11.1.0 `includes/woopay/class-woopay-session.php:58`), and
  * `register_woopay_hooks()` adds the draft order filter while WooPay direct checkout is enabled.
  *
  * @since 11.2.0
  * @internal
  */
-class WooPaymentsWooPayStoreApiRequestHandler {
+class StoreApiRequestHandler {
 
 	/**
-	 * Active extensions WooPay has adapted, synced from the platform by WooPaymentsWooPayExtensionSync.
+	 * Active extensions WooPay has adapted, synced from the platform by ExtensionSync.
 	 */
 	private const ENABLED_ADAPTED_EXTENSIONS_OPTION = 'woopay_enabled_adapted_extensions';
 	/**
@@ -52,7 +52,7 @@ class WooPaymentsWooPayStoreApiRequestHandler {
 	 */
 	private const MERCHANT_CUSTOMER_ID_META = 'woopay_merchant_customer_id';
 	/**
-	 * Scheduled event that restores a detached order's customer ID (WooPaymentsWooPayVerifiedEmailRestoreService); the
+	 * Scheduled event that restores a detached order's customer ID (VerifiedEmailRestoreService); the
 	 * WooPayments extension schedules the same event.
 	 */
 	private const RESTORE_CUSTOMER_ID_HOOK = 'woopay_restore_order_customer_id';
@@ -64,16 +64,16 @@ class WooPaymentsWooPayStoreApiRequestHandler {
 	/**
 	 * WooPay eligibility rules.
 	 *
-	 * @var WooPaymentsWooPayEligibility
+	 * @var Eligibility
 	 */
-	private WooPaymentsWooPayEligibility $woopay_eligibility;
+	private Eligibility $woopay_eligibility;
 
 	/**
 	 * WooPay adapted extensions registry.
 	 *
-	 * @var WooPaymentsWooPayAdaptedExtensions
+	 * @var AdaptedExtensions
 	 */
-	private WooPaymentsWooPayAdaptedExtensions $adapted_extensions;
+	private AdaptedExtensions $adapted_extensions;
 
 	/**
 	 * Order ID an in-flight WooPay Store API checkout is processing, for fatal capture.
@@ -93,10 +93,10 @@ class WooPaymentsWooPayStoreApiRequestHandler {
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsWooPayEligibility       $woopay_eligibility WooPay eligibility rules.
-	 * @param WooPaymentsWooPayAdaptedExtensions $adapted_extensions WooPay adapted extensions registry.
+	 * @param Eligibility       $woopay_eligibility WooPay eligibility rules.
+	 * @param AdaptedExtensions $adapted_extensions WooPay adapted extensions registry.
 	 */
-	final public function init( WooPaymentsWooPayEligibility $woopay_eligibility, WooPaymentsWooPayAdaptedExtensions $adapted_extensions ): void {
+	final public function init( Eligibility $woopay_eligibility, AdaptedExtensions $adapted_extensions ): void {
 		$this->woopay_eligibility = $woopay_eligibility;
 		$this->adapted_extensions = $adapted_extensions;
 	}

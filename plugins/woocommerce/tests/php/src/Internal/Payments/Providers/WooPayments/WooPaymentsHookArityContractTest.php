@@ -38,8 +38,8 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\HttpClien
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\SubscriptionsController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\PaymentMethodRegistry;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayEligibility;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayOrderStatusSync;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\Eligibility;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\OrderStatusSync;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\AuthorizationsListRequest;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAuthorizationsRestController;
@@ -61,7 +61,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOr
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\TransactionsListRequest;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTransactionsRestController;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPaySessionController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\SessionController;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Fixtures\RecordedPublicFraudServices;
 use ReflectionClass;
 use ReflectionMethod;
@@ -857,7 +857,7 @@ class WooPaymentsHookArityContractTest extends WC_Unit_Test_Case {
 	 * Group `woopay_signature` (1 hook): the WooPay session controller's request-signature check.
 	 */
 	private function probe_woopay_signature(): void {
-		$controller = wc_get_container()->get( WooPaymentsWooPaySessionController::class );
+		$controller = wc_get_container()->get( SessionController::class );
 
 		$auth_class = 'Automattic\\Jetpack\\Connection\\Rest_Authentication';
 		$restore    = null;
@@ -901,10 +901,10 @@ class WooPaymentsHookArityContractTest extends WC_Unit_Test_Case {
 		$order->save();
 
 		// The action fires only while WooPay is on.
-		$woopay_eligibility = $this->createStub( WooPaymentsWooPayEligibility::class );
+		$woopay_eligibility = $this->createStub( Eligibility::class );
 		$woopay_eligibility->method( 'is_woopay_enabled' )->willReturn( true );
 		$container = wc_get_container();
-		$sync      = new WooPaymentsWooPayOrderStatusSync();
+		$sync      = new OrderStatusSync();
 		$sync->init( $container->get( WooPaymentsRuntimeArbiter::class ), $woopay_eligibility, $container->get( Client::class ), $container->get( TransientRowLock::class ), $container->get( WooPaymentsAccountService::class ) );
 		$sync->send_webhook( $order->get_id(), 'pending', 'processing' );
 	}

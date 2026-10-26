@@ -1,6 +1,6 @@
 <?php
 /**
- * WooPaymentsWooPaySessionService class file.
+ * SessionService class file.
  */
 
 declare( strict_types = 1 );
@@ -33,7 +33,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsEx
  * @since 11.0.0
  * @internal
  */
-class WooPaymentsWooPaySessionService {
+class SessionService {
 
 	private const WOOPAY_SESSION_KEY = 'woopay-user-data';
 
@@ -58,16 +58,16 @@ class WooPaymentsWooPaySessionService {
 	/**
 	 * WooPay eligibility rules.
 	 *
-	 * @var WooPaymentsWooPayEligibility
+	 * @var Eligibility
 	 */
-	private WooPaymentsWooPayEligibility $woopay_eligibility;
+	private Eligibility $woopay_eligibility;
 
 	/**
 	 * WooPay checkout appearance store.
 	 *
-	 * @var WooPaymentsWooPayAppearanceStore
+	 * @var AppearanceStore
 	 */
-	private WooPaymentsWooPayAppearanceStore $appearance_store;
+	private AppearanceStore $appearance_store;
 
 	/**
 	 * Frontend tracking controller.
@@ -79,16 +79,16 @@ class WooPaymentsWooPaySessionService {
 	/**
 	 * WooPay blocks data extractor.
 	 *
-	 * @var WooPaymentsWooPayBlocksDataExtractor
+	 * @var BlocksDataExtractor
 	 */
-	private WooPaymentsWooPayBlocksDataExtractor $blocks_data_extractor;
+	private BlocksDataExtractor $blocks_data_extractor;
 
 	/**
 	 * WooPay adapted extensions registry.
 	 *
-	 * @var WooPaymentsWooPayAdaptedExtensions
+	 * @var AdaptedExtensions
 	 */
-	private WooPaymentsWooPayAdaptedExtensions $adapted_extensions;
+	private AdaptedExtensions $adapted_extensions;
 
 	/**
 	 * WooPayments customer service.
@@ -111,15 +111,15 @@ class WooPaymentsWooPaySessionService {
 	 * @internal
 	 *
 	 * @param WooPaymentsAccountService             $account_service              WooPayments account service.
-	 * @param WooPaymentsWooPayEligibility          $woopay_eligibility           WooPay eligibility rules.
-	 * @param WooPaymentsWooPayAppearanceStore      $appearance_store             WooPay checkout appearance store.
+	 * @param Eligibility                           $woopay_eligibility           WooPay eligibility rules.
+	 * @param AppearanceStore                       $appearance_store             WooPay checkout appearance store.
 	 * @param WooPaymentsFrontendTrackingController $frontend_tracking_controller Frontend tracking controller.
-	 * @param WooPaymentsWooPayBlocksDataExtractor  $blocks_data_extractor        WooPay blocks data extractor.
-	 * @param WooPaymentsWooPayAdaptedExtensions    $adapted_extensions           WooPay adapted extensions registry.
+	 * @param BlocksDataExtractor                   $blocks_data_extractor        WooPay blocks data extractor.
+	 * @param AdaptedExtensions                     $adapted_extensions           WooPay adapted extensions registry.
 	 * @param WooPaymentsCustomerService            $customer_service             WooPayments customer service.
 	 * @param WooPaymentsLogger                     $logger                       WooPayments logger.
 	 */
-	final public function init( WooPaymentsAccountService $account_service, WooPaymentsWooPayEligibility $woopay_eligibility, WooPaymentsWooPayAppearanceStore $appearance_store, WooPaymentsFrontendTrackingController $frontend_tracking_controller, WooPaymentsWooPayBlocksDataExtractor $blocks_data_extractor, WooPaymentsWooPayAdaptedExtensions $adapted_extensions, WooPaymentsCustomerService $customer_service, WooPaymentsLogger $logger ): void {
+	final public function init( WooPaymentsAccountService $account_service, Eligibility $woopay_eligibility, AppearanceStore $appearance_store, WooPaymentsFrontendTrackingController $frontend_tracking_controller, BlocksDataExtractor $blocks_data_extractor, AdaptedExtensions $adapted_extensions, WooPaymentsCustomerService $customer_service, WooPaymentsLogger $logger ): void {
 		$this->account_service              = $account_service;
 		$this->woopay_eligibility           = $woopay_eligibility;
 		$this->appearance_store             = $appearance_store;

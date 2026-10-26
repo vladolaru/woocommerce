@@ -429,7 +429,7 @@ final class WooCommerce {
 		// Registered on every request, since the extension's Multi-Currency class must answer on every request type while WooCommerce
 		// runs Multi-Currency and the loader decides at plugins_loaded; removed in WooCommerce 12.0.0 (MultiCurrency/Compat/README.md).
 		$container->get( Automattic\WooCommerce\Internal\MultiCurrency\Compat\WooPaymentsExtensionFacadeLoader::class )->register();
-		$container->get( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayVerifiedEmailRestoreService::class )->register();
+		$container->get( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\VerifiedEmailRestoreService::class )->register();
 		// The conversion of a network-wide activation of the WooPayments extension into per-site activations, offered on network
 		// admin and in a store site's refusal notice, and the check of a network-wide activation and the rollbacks it records.
 		// They run where no setup tier is active, so they are registered here and not in the tier matrix; Cutover/README.md

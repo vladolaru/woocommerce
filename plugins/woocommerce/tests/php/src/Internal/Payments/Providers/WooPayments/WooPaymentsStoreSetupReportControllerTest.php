@@ -11,7 +11,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Services\RateService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\StripeBillingModule;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayEligibility;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\Eligibility;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsActionSchedulerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsClientVersion;
@@ -450,11 +450,11 @@ class WooPaymentsStoreSetupReportControllerTest extends WC_Unit_Test_Case {
 	 *
 	 * @param array<string,mixed>                            $settings                          Gateway settings to store first.
 	 * @param WooPaymentsAccountService|null                 $account_service                   Account service, or the default double.
-	 * @param WooPaymentsWooPayEligibility|null              $woopay_eligibility                WooPay eligibility rules, or the container's.
+	 * @param Eligibility|null                               $woopay_eligibility                WooPay eligibility rules, or the container's.
 	 * @param WooPaymentsDuplicateGatewayMethodsService|null $duplicate_gateway_methods_service Duplicate gateway methods service, or the container's.
 	 * @return array<string,mixed>
 	 */
-	private function send_store_setup_snapshot( array $settings = array( 'enabled' => 'yes' ), ?WooPaymentsAccountService $account_service = null, ?WooPaymentsWooPayEligibility $woopay_eligibility = null, ?WooPaymentsDuplicateGatewayMethodsService $duplicate_gateway_methods_service = null ): array {
+	private function send_store_setup_snapshot( array $settings = array( 'enabled' => 'yes' ), ?WooPaymentsAccountService $account_service = null, ?Eligibility $woopay_eligibility = null, ?WooPaymentsDuplicateGatewayMethodsService $duplicate_gateway_methods_service = null ): array {
 		update_option( 'woocommerce_woocommerce_payments_settings', $settings );
 
 		$snapshots  = array();
@@ -908,7 +908,7 @@ class WooPaymentsStoreSetupReportControllerTest extends WC_Unit_Test_Case {
 	 * @param WooPaymentsActionSchedulerService|null         $scheduler          Scheduler service.
 	 * @param Client|null                                    $api_client         API client.
 	 * @param WooPaymentsAccountService|null                 $account_service    Account service.
-	 * @param WooPaymentsWooPayEligibility|null              $woopay_eligibility WooPay eligibility rules, or the container's.
+	 * @param Eligibility|null                               $woopay_eligibility WooPay eligibility rules, or the container's.
 	 * @param WooPaymentsDuplicateGatewayMethodsService|null $duplicate_gateway_methods_service Duplicate gateway methods service, or the container's.
 	 * @return WooPaymentsStoreSetupReportController
 	 */
@@ -916,7 +916,7 @@ class WooPaymentsStoreSetupReportControllerTest extends WC_Unit_Test_Case {
 		?WooPaymentsActionSchedulerService $scheduler = null,
 		?Client $api_client = null,
 		?WooPaymentsAccountService $account_service = null,
-		?WooPaymentsWooPayEligibility $woopay_eligibility = null,
+		?Eligibility $woopay_eligibility = null,
 		?WooPaymentsDuplicateGatewayMethodsService $duplicate_gateway_methods_service = null
 	): WooPaymentsStoreSetupReportController {
 		$service = new WooPaymentsStoreSetupReportController();
@@ -925,7 +925,7 @@ class WooPaymentsStoreSetupReportControllerTest extends WC_Unit_Test_Case {
 			$api_client ?? $this->create_api_client( array() ),
 			$account_service ?? $this->create_account_service(),
 			$duplicate_gateway_methods_service ?? wc_get_container()->get( WooPaymentsDuplicateGatewayMethodsService::class ),
-			$woopay_eligibility ?? wc_get_container()->get( WooPaymentsWooPayEligibility::class ),
+			$woopay_eligibility ?? wc_get_container()->get( Eligibility::class ),
 			wc_get_container()->get( WooPaymentsLogger::class )
 		);
 
@@ -1000,10 +1000,10 @@ class WooPaymentsStoreSetupReportControllerTest extends WC_Unit_Test_Case {
 	 * Create the WooPay eligibility rules over an account service.
 	 *
 	 * @param WooPaymentsAccountService $account_service Account service.
-	 * @return WooPaymentsWooPayEligibility
+	 * @return Eligibility
 	 */
-	private function create_woopay_eligibility( WooPaymentsAccountService $account_service ): WooPaymentsWooPayEligibility {
-		$woopay_eligibility = new WooPaymentsWooPayEligibility();
+	private function create_woopay_eligibility( WooPaymentsAccountService $account_service ): Eligibility {
+		$woopay_eligibility = new Eligibility();
 		$woopay_eligibility->init( $account_service );
 
 		return $woopay_eligibility;

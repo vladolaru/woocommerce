@@ -1,6 +1,6 @@
 <?php
 /**
- * WooPaymentsWooPayAppearanceStore class file.
+ * AppearanceStore class file.
  */
 
 declare( strict_types = 1 );
@@ -13,7 +13,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFr
  * Stores the WooPay checkout appearance and font rules that a merchant or a shopper page sends, after checking them
  * against the allowed rules, properties and font hosts, and stamps them with the frontend styles cache version so a
  * theme or style change discards them. On a block theme with nothing stored for the current version, it computes the
- * appearance from the theme's global styles (WooPaymentsWooPayThemeAppearance) and stores it.
+ * appearance from the theme's global styles (ThemeAppearance) and stores it.
  *
  * Client 11.1.0 keeps the stored appearance in `WC_Payments_Styles_Cache` (includes/class-wc-payments-styles-cache.php:69-88)
  * and checks the writes in `WooPay_Session` (includes/woopay/class-woopay-session.php:1209, :1262).
@@ -21,7 +21,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFr
  * @since 11.2.0
  * @internal
  */
-class WooPaymentsWooPayAppearanceStore {
+class AppearanceStore {
 
 	private const APPEARANCE_OPTION = 'wcpay_woopay_checkout_appearance';
 
@@ -35,9 +35,9 @@ class WooPaymentsWooPayAppearanceStore {
 	/**
 	 * Block-theme WooPay appearance calculator.
 	 *
-	 * @var WooPaymentsWooPayThemeAppearance|null
+	 * @var ThemeAppearance|null
 	 */
-	private ?WooPaymentsWooPayThemeAppearance $theme_appearance = null;
+	private ?ThemeAppearance $theme_appearance = null;
 
 	/**
 	 * Initialize the class instance.
@@ -127,11 +127,11 @@ class WooPaymentsWooPayAppearanceStore {
 	/**
 	 * Get the block-theme WooPay appearance calculator.
 	 *
-	 * @return WooPaymentsWooPayThemeAppearance
+	 * @return ThemeAppearance
 	 */
-	private function get_theme_appearance(): WooPaymentsWooPayThemeAppearance {
+	private function get_theme_appearance(): ThemeAppearance {
 		if ( null === $this->theme_appearance ) {
-			$this->theme_appearance = wc_get_container()->get( WooPaymentsWooPayThemeAppearance::class );
+			$this->theme_appearance = wc_get_container()->get( ThemeAppearance::class );
 		}
 
 		return $this->theme_appearance;

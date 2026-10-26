@@ -4517,7 +4517,7 @@ describe( 'WooPayments checkout', () => {
 			fetchResponses[
 				`${ WOOPAY_HOST }/wp-json/platform-checkout/v1/user/exists?`
 			] = { body: { 'user-exists': false } };
-			// Localized by WooPaymentsWooPaySessionController::get_classic_woopay_config() (get_save_user_checkout_data()).
+			// Localized by SessionController::get_classic_woopay_config() (get_save_user_checkout_data()).
 			window.wcpay_core_woopay_config = { PRE_CHECK_SAVE_MY_INFO: true };
 			const input = await setupWooPayEmailInput();
 

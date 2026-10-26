@@ -7,7 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayExtensionSync;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\ExtensionSync;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsStoreSetupReportController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsWooCommerceUpdateListener;
@@ -43,7 +43,7 @@ class WooPaymentsWooCommerceUpdateListenerTest extends WC_Unit_Test_Case {
 	/**
 	 * WooPay extension sync double.
 	 *
-	 * @var WooPaymentsWooPayExtensionSync&MockObject
+	 * @var ExtensionSync&MockObject
 	 */
 	private $woopay_extension_sync;
 
@@ -54,10 +54,10 @@ class WooPaymentsWooCommerceUpdateListenerTest extends WC_Unit_Test_Case {
 		parent::setUp();
 		$this->account_service       = $this->createMock( WooPaymentsAccountService::class );
 		$this->store_setup_report    = $this->createMock( WooPaymentsStoreSetupReportController::class );
-		$this->woopay_extension_sync = $this->createMock( WooPaymentsWooPayExtensionSync::class );
+		$this->woopay_extension_sync = $this->createMock( ExtensionSync::class );
 		wc_get_container()->replace( WooPaymentsAccountService::class, $this->account_service );
 		wc_get_container()->replace( WooPaymentsStoreSetupReportController::class, $this->store_setup_report );
-		wc_get_container()->replace( WooPaymentsWooPayExtensionSync::class, $this->woopay_extension_sync );
+		wc_get_container()->replace( ExtensionSync::class, $this->woopay_extension_sync );
 		$this->sut = new WooPaymentsWooCommerceUpdateListener();
 	}
 
@@ -68,7 +68,7 @@ class WooPaymentsWooCommerceUpdateListenerTest extends WC_Unit_Test_Case {
 		remove_action( 'woocommerce_updated', array( $this->sut, 'handle_woocommerce_updated' ) );
 		wc_get_container()->reset_replacement( WooPaymentsAccountService::class );
 		wc_get_container()->reset_replacement( WooPaymentsStoreSetupReportController::class );
-		wc_get_container()->reset_replacement( WooPaymentsWooPayExtensionSync::class );
+		wc_get_container()->reset_replacement( ExtensionSync::class );
 		parent::tearDown();
 	}
 

@@ -8,7 +8,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPaySessionController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\SessionController;
 
 /**
  * Adds the WooPayments express checkout buttons to the storefront, the WooPay button and the Stripe Express Checkout
@@ -40,9 +40,9 @@ class WooPaymentsExpressCheckoutController implements RegisterHooksInterface {
 	/**
 	 * WooPay controller, which supplies the WooPay button placeholder.
 	 *
-	 * @var WooPaymentsWooPaySessionController
+	 * @var SessionController
 	 */
-	private WooPaymentsWooPaySessionController $woopay_controller;
+	private SessionController $woopay_controller;
 
 	/**
 	 * Whether express checkout buttons have already rendered in this request.
@@ -56,11 +56,11 @@ class WooPaymentsExpressCheckoutController implements RegisterHooksInterface {
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsExpressCheckoutService  $express_checkout_service Express checkout service.
-	 * @param WooPaymentsFraudPreventionService  $fraud_prevention_service Fraud prevention service.
-	 * @param WooPaymentsWooPaySessionController $woopay_controller        WooPay controller.
+	 * @param WooPaymentsExpressCheckoutService $express_checkout_service Express checkout service.
+	 * @param WooPaymentsFraudPreventionService $fraud_prevention_service Fraud prevention service.
+	 * @param SessionController                 $woopay_controller        WooPay controller.
 	 */
-	final public function init( WooPaymentsExpressCheckoutService $express_checkout_service, WooPaymentsFraudPreventionService $fraud_prevention_service, WooPaymentsWooPaySessionController $woopay_controller ): void {
+	final public function init( WooPaymentsExpressCheckoutService $express_checkout_service, WooPaymentsFraudPreventionService $fraud_prevention_service, SessionController $woopay_controller ): void {
 		$this->express_checkout_service = $express_checkout_service;
 		$this->fraud_prevention_service = $fraud_prevention_service;
 		$this->woopay_controller        = $woopay_controller;
@@ -194,7 +194,7 @@ class WooPaymentsExpressCheckoutController implements RegisterHooksInterface {
 		$this->has_rendered_express_checkout_buttons = true;
 
 		echo '<div class="wcpay-express-checkout-wrapper">';
-		echo $woopay_button; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped when WooPaymentsWooPaySessionController builds it.
+		echo $woopay_button; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped when SessionController builds it.
 		if ( $show_element ) {
 			echo '<div id="wcpay-express-checkout-element"></div>';
 		}

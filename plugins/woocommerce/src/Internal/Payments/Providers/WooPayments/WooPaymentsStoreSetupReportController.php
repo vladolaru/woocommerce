@@ -16,7 +16,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\StripeBillingModule;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\SubscriptionMethodPolicy;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayEligibility;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\Eligibility;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Automattic\WooCommerce\Utilities\PluginUtil;
 use Throwable;
@@ -79,9 +79,9 @@ class WooPaymentsStoreSetupReportController implements RegisterHooksInterface {
 	/**
 	 * WooPay eligibility rules.
 	 *
-	 * @var WooPaymentsWooPayEligibility
+	 * @var Eligibility
 	 */
-	private WooPaymentsWooPayEligibility $woopay_eligibility;
+	private Eligibility $woopay_eligibility;
 
 	/**
 	 * WooPayments logger.
@@ -99,7 +99,7 @@ class WooPaymentsStoreSetupReportController implements RegisterHooksInterface {
 	 * @param Client                                    $api_client                        WooPayments API client.
 	 * @param WooPaymentsAccountService                 $account_service                   WooPayments account service.
 	 * @param WooPaymentsDuplicateGatewayMethodsService $duplicate_gateway_methods_service Duplicate gateway methods service.
-	 * @param WooPaymentsWooPayEligibility              $woopay_eligibility                WooPay eligibility rules.
+	 * @param Eligibility                               $woopay_eligibility                WooPay eligibility rules.
 	 * @param WooPaymentsLogger                         $logger                            WooPayments logger.
 	 */
 	final public function init(
@@ -107,7 +107,7 @@ class WooPaymentsStoreSetupReportController implements RegisterHooksInterface {
 		Client $api_client,
 		WooPaymentsAccountService $account_service,
 		WooPaymentsDuplicateGatewayMethodsService $duplicate_gateway_methods_service,
-		WooPaymentsWooPayEligibility $woopay_eligibility,
+		Eligibility $woopay_eligibility,
 		WooPaymentsLogger $logger
 	): void {
 		$this->scheduler                         = $scheduler;

@@ -3,13 +3,13 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\WooPay;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayAppearanceStore;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\AppearanceStore;
 
 /**
  * Recording WooPay appearance store: it records writes on, and answers from, the recording session service's
  * appearance fields, so one double carries a test's WooPay state.
  */
-class RecordingWooPayAppearanceStore extends WooPaymentsWooPayAppearanceStore {
+class RecordingWooPayAppearanceStore extends AppearanceStore {
 
 	/**
 	 * Recording session service whose appearance fields this store uses.

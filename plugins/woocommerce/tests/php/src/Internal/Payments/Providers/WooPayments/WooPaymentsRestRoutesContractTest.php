@@ -17,14 +17,14 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSe
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\StripeBillingModule;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAdminRestRouteRegistrar;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsReportsRestController;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPaySessionController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\SessionController;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsRestController;
 use Closure;
 use ReflectionFunction;
 use WC_REST_Unit_Test_Case;
 use WP_REST_Request;
 use WP_REST_Server;
-use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPaySessionControllerTest;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\WooPay\SessionControllerTest;
 
 /**
  * Pins the plugin 11.1.0 REST route and AJAX action surface (`woopayments-endpoints.json`)
@@ -163,7 +163,7 @@ class WooPaymentsRestRoutesContractTest extends WC_REST_Unit_Test_Case {
 		foreach ( WooPaymentsAdminRestRouteRegistrar::get_connected_controller_roots() as $root ) {
 			wc_get_container()->get( $root )->register_routes();
 		}
-		wc_get_container()->get( WooPaymentsWooPaySessionController::class )->register_routes();
+		wc_get_container()->get( SessionController::class )->register_routes();
 		wc_get_container()->get( MultiCurrencyRestController::class )->handle_rest_api_init();
 		wc_get_container()->get( WooPaymentsRestController::class )->register_routes();
 		wc_get_container()->get( StripeBillingModule::class )->register_routes();
@@ -258,7 +258,7 @@ class WooPaymentsRestRoutesContractTest extends WC_REST_Unit_Test_Case {
 	 * Subscriptions and Bookings availability) that a disconnected unit test cannot all satisfy
 	 * at once. A literal-name scan proves native names the same action, the way the plugin
 	 * extractor itself proves the plugin does; that native actually calls `add_action()` with the
-	 * exact callback is owned by each site's own class: `WooPaymentsWooPaySessionControllerTest`
+	 * exact callback is owned by each site's own class: `SessionControllerTest`
 	 * (10 WooPay actions), `WooPaymentsFrontendTrackingControllerTest` (4),
 	 * `WooPaymentsCheckoutAjaxControllerTest` (3), `WooPaymentsPaymentMethodMessagingTest` (2),
 	 * `SubscriptionAdminPaymentMethodHandlerTest` (1) and
@@ -293,7 +293,7 @@ class WooPaymentsRestRoutesContractTest extends WC_REST_Unit_Test_Case {
 	public function test_each_provider_route_keeps_its_handler_when_registered_with_all_woocommerce_routes(): void {
 		global $wp_rest_server;
 
-		$roots       = array_merge( WooPaymentsAdminRestRouteRegistrar::get_connected_controller_roots(), array( WooPaymentsWooPaySessionController::class ) );
+		$roots       = array_merge( WooPaymentsAdminRestRouteRegistrar::get_connected_controller_roots(), array( SessionController::class ) );
 		$controllers = array_map( static fn( string $root ) => wc_get_container()->get( $root ), $roots );
 		$previous    = $wp_rest_server;
 
@@ -386,7 +386,7 @@ class WooPaymentsRestRoutesContractTest extends WC_REST_Unit_Test_Case {
 	public function test_emptied_rest_namespaces_keep_only_the_webhook_and_woopay_session_routes(): void {
 		global $wp_rest_server;
 
-		$roots       = array_merge( WooPaymentsAdminRestRouteRegistrar::get_connected_controller_roots(), array( WooPaymentsWooPaySessionController::class ) );
+		$roots       = array_merge( WooPaymentsAdminRestRouteRegistrar::get_connected_controller_roots(), array( SessionController::class ) );
 		$controllers = array_map( static fn( string $root ) => wc_get_container()->get( $root ), $roots );
 		$previous    = $wp_rest_server;
 
@@ -503,7 +503,7 @@ class WooPaymentsRestRoutesContractTest extends WC_REST_Unit_Test_Case {
 	 *   `class-wc-rest-payments-reports-balance-controller.php:27-29` and its siblings). A
 	 *   disconnected unit test account cannot satisfy that gate, and forcing it here would test the
 	 *   gate instead of the capability.
-	 * - `WooPaymentsWooPaySessionController` is not a `manage_woocommerce` route at all, in the
+	 * - `SessionController` is not a `manage_woocommerce` route at all, in the
 	 *   plugin or natively: both require the WooPay-signed request instead
 	 *   (`class-wc-rest-woopay-session-controller.php:80-81`:
 	 *   `$this->is_request_from_woopay() && $this->has_valid_request_signature()`; the plugin
@@ -519,7 +519,7 @@ class WooPaymentsRestRoutesContractTest extends WC_REST_Unit_Test_Case {
 			return true;
 		}
 
-		if ( is_array( $callback ) && isset( $callback[0] ) && ( $callback[0] instanceof WooPaymentsReportsRestController || $callback[0] instanceof WooPaymentsWooPaySessionController ) ) {
+		if ( is_array( $callback ) && isset( $callback[0] ) && ( $callback[0] instanceof WooPaymentsReportsRestController || $callback[0] instanceof SessionController ) ) {
 			return true;
 		}
 

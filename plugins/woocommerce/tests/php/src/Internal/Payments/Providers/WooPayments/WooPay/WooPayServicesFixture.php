@@ -5,17 +5,17 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\W
 
 use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayAdaptedExtensions;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPaySessionController;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPaySessionService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\AdaptedExtensions;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\SessionController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\SessionService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendStylesService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendTrackingController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayAppearanceStore;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayStoreApiRequestHandler;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayBlocksDataExtractor;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\AppearanceStore;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\StoreApiRequestHandler;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\BlocksDataExtractor;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 
 /**
@@ -48,16 +48,16 @@ trait WooPayServicesFixture {
 	/**
 	 * WooPay checkout appearance store the last create_service() built.
 	 *
-	 * @var WooPaymentsWooPayAppearanceStore|null
+	 * @var AppearanceStore|null
 	 */
-	private ?WooPaymentsWooPayAppearanceStore $appearance_store = null;
+	private ?AppearanceStore $appearance_store = null;
 
 	/**
 	 * Handler of WooPay's Store API requests the last create_service() built.
 	 *
-	 * @var WooPaymentsWooPayStoreApiRequestHandler|null
+	 * @var StoreApiRequestHandler|null
 	 */
-	private ?WooPaymentsWooPayStoreApiRequestHandler $store_api_request_handler = null;
+	private ?StoreApiRequestHandler $store_api_request_handler = null;
 
 	/**
 	 * Set up test fixtures.
@@ -443,15 +443,15 @@ trait WooPayServicesFixture {
 	/**
 	 * Create the System Under Test.
 	 *
-	 * @param array<string,mixed>                     $settings           Gateway settings.
-	 * @param array<string,mixed>                     $account_data       Account data.
-	 * @param WooPaymentsWooPayAdaptedExtensions|null $adapted_extensions Adapted extensions registry.
-	 * @param callable(string):void|null              $event_recorder     Optional account-service event recorder.
-	 * @param WooPaymentsCustomerService|null         $customer_service   Optional customer service.
-	 * @param bool                                    $test_mode          Whether the account reports test mode.
-	 * @return WooPaymentsWooPaySessionService
+	 * @param array<string,mixed>             $settings           Gateway settings.
+	 * @param array<string,mixed>             $account_data       Account data.
+	 * @param AdaptedExtensions|null          $adapted_extensions Adapted extensions registry.
+	 * @param callable(string):void|null      $event_recorder     Optional account-service event recorder.
+	 * @param WooPaymentsCustomerService|null $customer_service   Optional customer service.
+	 * @param bool                            $test_mode          Whether the account reports test mode.
+	 * @return SessionService
 	 */
-	private function create_service( array $settings = array(), array $account_data = array(), ?WooPaymentsWooPayAdaptedExtensions $adapted_extensions = null, ?callable $event_recorder = null, ?WooPaymentsCustomerService $customer_service = null, bool $test_mode = true ): WooPaymentsWooPaySessionService {
+	private function create_service( array $settings = array(), array $account_data = array(), ?AdaptedExtensions $adapted_extensions = null, ?callable $event_recorder = null, ?WooPaymentsCustomerService $customer_service = null, bool $test_mode = true ): SessionService {
 		$settings = array_merge(
 			array(
 				'enabled'                              => 'yes',
@@ -527,15 +527,15 @@ trait WooPayServicesFixture {
 		$this->woopay_eligibility = new TestableWooPayEligibility();
 		$this->woopay_eligibility->init( $account_service );
 
-		$this->appearance_store = new WooPaymentsWooPayAppearanceStore();
+		$this->appearance_store = new AppearanceStore();
 		$this->appearance_store->init( new WooPaymentsFrontendStylesService() );
 
-		$adapted_extensions              = $adapted_extensions ?? new WooPaymentsWooPayAdaptedExtensions();
-		$this->store_api_request_handler = new WooPaymentsWooPayStoreApiRequestHandler();
+		$adapted_extensions              = $adapted_extensions ?? new AdaptedExtensions();
+		$this->store_api_request_handler = new StoreApiRequestHandler();
 		$this->store_api_request_handler->init( $this->woopay_eligibility, $adapted_extensions );
 
-		$sut = new WooPaymentsWooPaySessionService();
-		$sut->init( $account_service, $this->woopay_eligibility, $this->appearance_store, $tracking_controller, wc_get_container()->get( WooPaymentsWooPayBlocksDataExtractor::class ), $adapted_extensions, $customer_service ?? $this->create_customer_service_without_platform_customer(), wc_get_container()->get( WooPaymentsLogger::class ) );
+		$sut = new SessionService();
+		$sut->init( $account_service, $this->woopay_eligibility, $this->appearance_store, $tracking_controller, wc_get_container()->get( BlocksDataExtractor::class ), $adapted_extensions, $customer_service ?? $this->create_customer_service_without_platform_customer(), wc_get_container()->get( WooPaymentsLogger::class ) );
 
 		return $sut;
 	}
@@ -545,9 +545,9 @@ trait WooPayServicesFixture {
 	 *
 	 * @param array<string,mixed> $settings     Gateway settings.
 	 * @param array<string,mixed> $account_data Account data.
-	 * @return WooPaymentsWooPayAppearanceStore
+	 * @return AppearanceStore
 	 */
-	private function create_appearance_store( array $settings = array(), array $account_data = array() ): WooPaymentsWooPayAppearanceStore {
+	private function create_appearance_store( array $settings = array(), array $account_data = array() ): AppearanceStore {
 		$this->create_service( $settings, $account_data );
 
 		return $this->appearance_store;
@@ -556,12 +556,12 @@ trait WooPayServicesFixture {
 	/**
 	 * Create the handler of WooPay's Store API requests under test, as create_service() builds it.
 	 *
-	 * @param array<string,mixed>                     $settings           Gateway settings.
-	 * @param array<string,mixed>                     $account_data       Account data.
-	 * @param WooPaymentsWooPayAdaptedExtensions|null $adapted_extensions Adapted extensions registry.
-	 * @return WooPaymentsWooPayStoreApiRequestHandler
+	 * @param array<string,mixed>    $settings           Gateway settings.
+	 * @param array<string,mixed>    $account_data       Account data.
+	 * @param AdaptedExtensions|null $adapted_extensions Adapted extensions registry.
+	 * @return StoreApiRequestHandler
 	 */
-	private function create_handler( array $settings = array(), array $account_data = array(), ?WooPaymentsWooPayAdaptedExtensions $adapted_extensions = null ): WooPaymentsWooPayStoreApiRequestHandler {
+	private function create_handler( array $settings = array(), array $account_data = array(), ?AdaptedExtensions $adapted_extensions = null ): StoreApiRequestHandler {
 		$this->create_service( $settings, $account_data, $adapted_extensions );
 
 		return $this->store_api_request_handler;
@@ -570,15 +570,15 @@ trait WooPayServicesFixture {
 	/**
 	 * Create the WooPay eligibility rules under test, over the same account double create_service() builds.
 	 *
-	 * @param array<string,mixed>                     $settings           Gateway settings.
-	 * @param array<string,mixed>                     $account_data       Account data.
-	 * @param WooPaymentsWooPayAdaptedExtensions|null $adapted_extensions Adapted extensions registry.
-	 * @param callable(string):void|null              $event_recorder     Optional account-service event recorder.
-	 * @param WooPaymentsCustomerService|null         $customer_service   Optional customer service.
-	 * @param bool                                    $test_mode          Whether the account reports test mode.
+	 * @param array<string,mixed>             $settings           Gateway settings.
+	 * @param array<string,mixed>             $account_data       Account data.
+	 * @param AdaptedExtensions|null          $adapted_extensions Adapted extensions registry.
+	 * @param callable(string):void|null      $event_recorder     Optional account-service event recorder.
+	 * @param WooPaymentsCustomerService|null $customer_service   Optional customer service.
+	 * @param bool                            $test_mode          Whether the account reports test mode.
 	 * @return TestableWooPayEligibility
 	 */
-	private function create_eligibility( array $settings = array(), array $account_data = array(), ?WooPaymentsWooPayAdaptedExtensions $adapted_extensions = null, ?callable $event_recorder = null, ?WooPaymentsCustomerService $customer_service = null, bool $test_mode = true ): TestableWooPayEligibility {
+	private function create_eligibility( array $settings = array(), array $account_data = array(), ?AdaptedExtensions $adapted_extensions = null, ?callable $event_recorder = null, ?WooPaymentsCustomerService $customer_service = null, bool $test_mode = true ): TestableWooPayEligibility {
 		$this->create_service( $settings, $account_data, $adapted_extensions, $event_recorder, $customer_service, $test_mode );
 
 		return $this->woopay_eligibility;
@@ -587,11 +587,11 @@ trait WooPayServicesFixture {
 	/**
 	 * Register the WooPay session controller's hooks for the given service, as the native bootstrap does.
 	 *
-	 * @param WooPaymentsWooPaySessionService $service Session service.
-	 * @return WooPaymentsWooPaySessionController
+	 * @param SessionService $service Session service.
+	 * @return SessionController
 	 */
-	private function register_controller( WooPaymentsWooPaySessionService $service ): WooPaymentsWooPaySessionController {
-		$controller = new WooPaymentsWooPaySessionController();
+	private function register_controller( SessionService $service ): SessionController {
+		$controller = new SessionController();
 		$controller->init( $service, $this->woopay_eligibility, $this->appearance_store, $this->store_api_request_handler );
 		$controller->register();
 

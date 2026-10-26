@@ -1,6 +1,6 @@
 <?php
 /**
- * WooPaymentsWooPayOrderStatusSync class file.
+ * OrderStatusSync class file.
  */
 
 declare( strict_types = 1 );
@@ -28,7 +28,7 @@ use WC_Webhook;
  * @since 11.0.0
  * @internal
  */
-class WooPaymentsWooPayOrderStatusSync implements RegisterHooksInterface {
+class OrderStatusSync implements RegisterHooksInterface {
 
 	/**
 	 * Action fired when a WooPay order's status changes; the webhook's topic runs on it.
@@ -75,9 +75,9 @@ class WooPaymentsWooPayOrderStatusSync implements RegisterHooksInterface {
 	/**
 	 * WooPay eligibility rules.
 	 *
-	 * @var WooPaymentsWooPayEligibility
+	 * @var Eligibility
 	 */
-	private WooPaymentsWooPayEligibility $woopay_eligibility;
+	private Eligibility $woopay_eligibility;
 
 	/**
 	 * WooPayments API client.
@@ -105,13 +105,13 @@ class WooPaymentsWooPayOrderStatusSync implements RegisterHooksInterface {
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsRuntimeArbiter    $arbiter            Runtime owner arbiter.
-	 * @param WooPaymentsWooPayEligibility $woopay_eligibility WooPay eligibility rules.
-	 * @param Client                       $api_client         WooPayments API client.
-	 * @param TransientRowLock             $row_lock           Lock held in the database rows of a transient.
-	 * @param WooPaymentsAccountService    $account_service    WooPayments account service.
+	 * @param WooPaymentsRuntimeArbiter $arbiter            Runtime owner arbiter.
+	 * @param Eligibility               $woopay_eligibility WooPay eligibility rules.
+	 * @param Client                    $api_client         WooPayments API client.
+	 * @param TransientRowLock          $row_lock           Lock held in the database rows of a transient.
+	 * @param WooPaymentsAccountService $account_service    WooPayments account service.
 	 */
-	final public function init( WooPaymentsRuntimeArbiter $arbiter, WooPaymentsWooPayEligibility $woopay_eligibility, Client $api_client, TransientRowLock $row_lock, WooPaymentsAccountService $account_service ): void {
+	final public function init( WooPaymentsRuntimeArbiter $arbiter, Eligibility $woopay_eligibility, Client $api_client, TransientRowLock $row_lock, WooPaymentsAccountService $account_service ): void {
 		$this->arbiter            = $arbiter;
 		$this->woopay_eligibility = $woopay_eligibility;
 		$this->api_client         = $api_client;
@@ -266,7 +266,7 @@ class WooPaymentsWooPayOrderStatusSync implements RegisterHooksInterface {
 			return $payload;
 		}
 
-		$merchant_notification_url = WooPaymentsWooPaySessionService::get_woopay_rest_url( 'merchant-notification' );
+		$merchant_notification_url = SessionService::get_woopay_rest_url( 'merchant-notification' );
 		if ( 0 !== strpos( $webhook->get_delivery_url(), $merchant_notification_url ) ) {
 			return $payload;
 		}
@@ -348,7 +348,7 @@ class WooPaymentsWooPayOrderStatusSync implements RegisterHooksInterface {
 		$webhook->set_user_id( get_current_user_id() );
 		$webhook->set_topic( self::WEBHOOK_TOPIC );
 		$webhook->set_secret( wp_generate_password( 50, false ) );
-		$webhook->set_delivery_url( WooPaymentsWooPaySessionService::get_woopay_rest_url( 'merchant-notification' ) );
+		$webhook->set_delivery_url( SessionService::get_woopay_rest_url( 'merchant-notification' ) );
 		$webhook->set_status( 'active' );
 		$webhook->set_api_version( 'wp_api_v3' );
 
@@ -472,7 +472,7 @@ class WooPaymentsWooPayOrderStatusSync implements RegisterHooksInterface {
 				$wpdb->prepare(
 					"SELECT webhook_id FROM {$wpdb->prefix}wc_webhooks WHERE status = 'active' AND topic = %s AND delivery_url LIKE %s ORDER BY webhook_id",
 					self::WEBHOOK_TOPIC,
-					$wpdb->esc_like( WooPaymentsWooPaySessionService::get_woopay_rest_url( 'merchant-notification' ) ) . '%'
+					$wpdb->esc_like( SessionService::get_woopay_rest_url( 'merchant-notification' ) ) . '%'
 				)
 			)
 		);

@@ -1,6 +1,6 @@
 <?php
 /**
- * WooPaymentsWooPayPreflightGuard class file.
+ * PreflightGuard class file.
  */
 
 declare( strict_types = 1 );
@@ -19,7 +19,7 @@ use WP_REST_Request;
  * @since 11.2.0
  * @internal
  */
-class WooPaymentsWooPayPreflightGuard implements RegisterHooksInterface {
+class PreflightGuard implements RegisterHooksInterface {
 
 	/** Store API checkout and pay-for-order checkout routes, in any Store API namespace, as WooPay's own route list matches them. */
 	private const STORE_API_CHECKOUT_ROUTE_PATTERN = '@^/wc/store(/v[\d]+)?/checkout(/[\d]+)?$@';
@@ -159,7 +159,7 @@ class WooPaymentsWooPayPreflightGuard implements RegisterHooksInterface {
 	 * Check whether a Store API request is WooPay's preflight: it carries the exact marker, names the WooPayments gateway and
 	 * is signed by WooPay.
 	 *
-	 * The signature is the one WooPaymentsWooPayStoreApiRequestHandler checks while the current user is resolved, before any
+	 * The signature is the one StoreApiRequestHandler checks while the current user is resolved, before any
 	 * route runs; only a request that passed it sets the filter.
 	 *
 	 * @param WP_REST_Request $request The REST request.

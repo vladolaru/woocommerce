@@ -12,8 +12,8 @@ use Automattic\WooCommerce\Enums\PaymentGatewayFeature;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\SubscriptionMethodPolicy;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\PaymentMethodDefinition;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\PaymentMethodRegistry;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPaySessionService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayEligibility;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\SessionService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\Eligibility;
 
 /**
  * Registers the WooPayments checkout scripts and styles, and builds the payment fields config they read: the
@@ -227,16 +227,16 @@ class WooPaymentsCheckoutAssets {
 	/**
 	 * WooPay session service.
 	 *
-	 * @var WooPaymentsWooPaySessionService
+	 * @var SessionService
 	 */
-	private WooPaymentsWooPaySessionService $woopay_session_service;
+	private SessionService $woopay_session_service;
 
 	/**
 	 * WooPay eligibility rules.
 	 *
-	 * @var WooPaymentsWooPayEligibility
+	 * @var Eligibility
 	 */
-	private WooPaymentsWooPayEligibility $woopay_eligibility;
+	private Eligibility $woopay_eligibility;
 
 	/**
 	 * Shared frontend styles service.
@@ -298,8 +298,8 @@ class WooPaymentsCheckoutAssets {
 	 * @internal
 	 *
 	 * @param WooPaymentsAccountService              $account_service              WooPayments account service.
-	 * @param WooPaymentsWooPaySessionService        $woopay_session_service       WooPay session service.
-	 * @param WooPaymentsWooPayEligibility           $woopay_eligibility           WooPay eligibility rules.
+	 * @param SessionService                         $woopay_session_service       WooPay session service.
+	 * @param Eligibility                            $woopay_eligibility           WooPay eligibility rules.
 	 * @param WooPaymentsFrontendStylesService       $frontend_styles_service      Shared frontend styles service.
 	 * @param WooPaymentsFrontendTrackingController  $frontend_tracking_controller Frontend tracking controller.
 	 * @param PaymentMethodRegistry                  $payment_method_registry      Payment method registry.
@@ -308,8 +308,8 @@ class WooPaymentsCheckoutAssets {
 	 */
 	final public function init(
 		WooPaymentsAccountService $account_service,
-		WooPaymentsWooPaySessionService $woopay_session_service,
-		WooPaymentsWooPayEligibility $woopay_eligibility,
+		SessionService $woopay_session_service,
+		Eligibility $woopay_eligibility,
 		WooPaymentsFrontendStylesService $frontend_styles_service,
 		WooPaymentsFrontendTrackingController $frontend_tracking_controller,
 		PaymentMethodRegistry $payment_method_registry,
@@ -429,7 +429,7 @@ class WooPaymentsCheckoutAssets {
 			'platformTrackerNonce'                     => wp_create_nonce( 'platform_tracks_nonce' ),
 			'tracksUrl'                                => $this->get_frontend_tracking_controller()->get_tracks_rest_url(),
 			'tracksRestNonce'                          => wp_create_nonce( 'wp_rest' ),
-			'woopayHost'                               => WooPaymentsWooPaySessionService::get_woopay_url(),
+			'woopayHost'                               => SessionService::get_woopay_url(),
 			'accountIdForIntentConfirmation'           => $account_id_for_intent_confirmation,
 			'wcpayVersionNumber'                       => WooPaymentsClientVersion::VERSION,
 			'icon'                                     => '',
@@ -879,11 +879,11 @@ class WooPaymentsCheckoutAssets {
 	/**
 	 * Get the WooPay session service.
 	 *
-	 * @return WooPaymentsWooPaySessionService
+	 * @return SessionService
 	 */
-	private function get_woopay_session_service(): WooPaymentsWooPaySessionService {
+	private function get_woopay_session_service(): SessionService {
 		if ( ! isset( $this->woopay_session_service ) ) {
-			$this->woopay_session_service = wc_get_container()->get( WooPaymentsWooPaySessionService::class );
+			$this->woopay_session_service = wc_get_container()->get( SessionService::class );
 		}
 
 		return $this->woopay_session_service;
@@ -892,11 +892,11 @@ class WooPaymentsCheckoutAssets {
 	/**
 	 * Get the WooPay eligibility rules.
 	 *
-	 * @return WooPaymentsWooPayEligibility
+	 * @return Eligibility
 	 */
-	private function get_woopay_eligibility(): WooPaymentsWooPayEligibility {
+	private function get_woopay_eligibility(): Eligibility {
 		if ( ! isset( $this->woopay_eligibility ) ) {
-			$this->woopay_eligibility = wc_get_container()->get( WooPaymentsWooPayEligibility::class );
+			$this->woopay_eligibility = wc_get_container()->get( Eligibility::class );
 		}
 
 		return $this->woopay_eligibility;

@@ -7,14 +7,14 @@ use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Enums\OrderStatus;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayAdaptedExtensions;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\AdaptedExtensions;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use WC_Unit_Test_Case;
 
 /**
- * Tests for the WooPaymentsWooPayStoreApiRequestHandler class: WooPay's signed Store API requests and the order hooks they reach.
+ * Tests for the StoreApiRequestHandler class: WooPay's signed Store API requests and the order hooks they reach.
  */
-class WooPaymentsWooPayStoreApiRequestHandlerTest extends WC_Unit_Test_Case {
+class StoreApiRequestHandlerTest extends WC_Unit_Test_Case {
 
 	use WooPayServicesFixture;
 
@@ -337,7 +337,7 @@ class WooPaymentsWooPayStoreApiRequestHandlerTest extends WC_Unit_Test_Case {
 		$order = wc_create_order();
 		$order->save();
 
-		$adapted_extensions = $this->createMock( WooPaymentsWooPayAdaptedExtensions::class );
+		$adapted_extensions = $this->createMock( AdaptedExtensions::class );
 		$adapted_extensions->expects( $this->exactly( $expected_updates ) )
 			->method( 'update_order_extension_data' )
 			->with( $order->get_id() );

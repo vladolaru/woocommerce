@@ -3,14 +3,14 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\WooPay;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayThemeAppearance;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\ThemeAppearance;
 use WP_Theme_JSON_Data;
 use WC_Unit_Test_Case;
 
 /**
  * Tests for the WooPay appearance computed from the theme.
  */
-class WooPaymentsWooPayThemeAppearanceTest extends WC_Unit_Test_Case {
+class ThemeAppearanceTest extends WC_Unit_Test_Case {
 
 	/**
 	 * Style handles registered by a test.
@@ -90,7 +90,7 @@ class WooPaymentsWooPayThemeAppearanceTest extends WC_Unit_Test_Case {
 	public function test_font_rules_keep_only_https_allowlisted_hosts( string $src, bool $is_allowed ): void {
 		$this->register_style( 'test-font', $src );
 
-		$sources = array_column( ( new WooPaymentsWooPayThemeAppearance() )->get_font_rules_from_registered_styles(), 'cssSrc' );
+		$sources = array_column( ( new ThemeAppearance() )->get_font_rules_from_registered_styles(), 'cssSrc' );
 
 		$this->assertSame( $is_allowed, in_array( $src, $sources, true ) );
 	}
@@ -103,7 +103,7 @@ class WooPaymentsWooPayThemeAppearanceTest extends WC_Unit_Test_Case {
 			$this->register_style( 'test-font-' . $i, 'https://fonts.googleapis.com/css2?family=Font' . $i );
 		}
 
-		$this->assertCount( 10, ( new WooPaymentsWooPayThemeAppearance() )->get_font_rules_from_registered_styles() );
+		$this->assertCount( 10, ( new ThemeAppearance() )->get_font_rules_from_registered_styles() );
 	}
 
 	/**
@@ -198,6 +198,6 @@ class WooPaymentsWooPayThemeAppearanceTest extends WC_Unit_Test_Case {
 		add_filter( 'wp_theme_json_data_theme', array( $this, 'merge_theme_styles' ) );
 		wp_clean_theme_json_cache();
 
-		return ( new WooPaymentsWooPayThemeAppearance() )->compute_from_theme();
+		return ( new ThemeAppearance() )->compute_from_theme();
 	}
 }

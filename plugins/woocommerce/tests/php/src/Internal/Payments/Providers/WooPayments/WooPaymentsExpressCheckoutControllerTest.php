@@ -8,7 +8,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsEx
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExpressCheckoutService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendTrackingController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPaySessionController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\SessionController;
 use WC_Unit_Test_Case;
 
 /**
@@ -701,7 +701,7 @@ class WooPaymentsExpressCheckoutControllerTest extends WC_Unit_Test_Case {
 			$service->should_show_payment_request_button = $payment_request_on;
 		}
 
-		$woopay_controller = $this->createStub( WooPaymentsWooPaySessionController::class );
+		$woopay_controller = $this->createStub( SessionController::class );
 		$woopay_controller->method( 'get_express_checkout_button_html' )->willReturn( $woopay_button );
 
 		$controller = new WooPaymentsExpressCheckoutController();

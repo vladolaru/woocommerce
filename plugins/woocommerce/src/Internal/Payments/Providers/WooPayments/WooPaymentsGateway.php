@@ -24,7 +24,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\SubscriptionMethodPolicy;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\SubscriptionsController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\LinkToken;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPaySessionService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\SessionService;
 use Automattic\WooCommerce\Internal\Payments\RefundRowCapture;
 use Exception;
 use Throwable;
@@ -116,9 +116,9 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 	/**
 	 * WooPay session service.
 	 *
-	 * @var WooPaymentsWooPaySessionService
+	 * @var SessionService
 	 */
-	private WooPaymentsWooPaySessionService $woopay_session_service;
+	private SessionService $woopay_session_service;
 
 	/**
 	 * WooPayments API client.
@@ -1865,11 +1865,11 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 	/**
 	 * Get the WooPay session service.
 	 *
-	 * @return WooPaymentsWooPaySessionService
+	 * @return SessionService
 	 */
-	private function get_woopay_session_service(): WooPaymentsWooPaySessionService {
+	private function get_woopay_session_service(): SessionService {
 		if ( ! isset( $this->woopay_session_service ) ) {
-			$this->woopay_session_service = wc_get_container()->get( WooPaymentsWooPaySessionService::class );
+			$this->woopay_session_service = wc_get_container()->get( SessionService::class );
 		}
 
 		return $this->woopay_session_service;

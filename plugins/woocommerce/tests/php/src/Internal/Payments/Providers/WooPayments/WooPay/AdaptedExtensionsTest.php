@@ -3,13 +3,13 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\WooPay;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayAdaptedExtensions;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\AdaptedExtensions;
 use WC_Unit_Test_Case;
 
 /**
- * Tests for WooPaymentsWooPayAdaptedExtensions.
+ * Tests for AdaptedExtensions.
  */
-class WooPaymentsWooPayAdaptedExtensionsTest extends WC_Unit_Test_Case {
+class AdaptedExtensionsTest extends WC_Unit_Test_Case {
 
 	/**
 	 * Tear down.
@@ -36,7 +36,7 @@ class WooPaymentsWooPayAdaptedExtensionsTest extends WC_Unit_Test_Case {
 		$this->install_affiliate_for_woocommerce_double();
 		$_GET['affiliate'] = $parameter;
 
-		( new WooPaymentsWooPayAdaptedExtensions() )->update_order_extension_data( 1001 );
+		( new AdaptedExtensions() )->update_order_extension_data( 1001 );
 
 		$this->assertSame(
 			array(
@@ -69,7 +69,7 @@ class WooPaymentsWooPayAdaptedExtensionsTest extends WC_Unit_Test_Case {
 	public function test_update_order_extension_data_ignores_requests_without_affiliate(): void {
 		$this->install_affiliate_for_woocommerce_double();
 
-		( new WooPaymentsWooPayAdaptedExtensions() )->update_order_extension_data( 1001 );
+		( new AdaptedExtensions() )->update_order_extension_data( 1001 );
 
 		$this->assertSame( array(), FakeWooPayAffiliateApi::$conversions );
 	}
@@ -80,7 +80,7 @@ class WooPaymentsWooPayAdaptedExtensionsTest extends WC_Unit_Test_Case {
 	public function test_update_order_extension_data_ignores_affiliate_without_extension(): void {
 		$_GET['affiliate'] = '42';
 
-		( new WooPaymentsWooPayAdaptedExtensions() )->update_order_extension_data( 1001 );
+		( new AdaptedExtensions() )->update_order_extension_data( 1001 );
 
 		$this->assertSame( array(), FakeWooPayAffiliateApi::$conversions );
 	}

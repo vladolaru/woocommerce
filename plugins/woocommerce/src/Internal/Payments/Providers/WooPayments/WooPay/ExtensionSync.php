@@ -1,6 +1,6 @@
 <?php
 /**
- * WooPaymentsWooPayExtensionSync class file.
+ * ExtensionSync class file.
  */
 
 declare( strict_types = 1 );
@@ -21,7 +21,7 @@ use Throwable;
  * @since 11.0.0
  * @internal
  */
-class WooPaymentsWooPayExtensionSync implements RegisterHooksInterface {
+class ExtensionSync implements RegisterHooksInterface {
 
 	/**
 	 * Action Scheduler hook of the daily compatibility sync.

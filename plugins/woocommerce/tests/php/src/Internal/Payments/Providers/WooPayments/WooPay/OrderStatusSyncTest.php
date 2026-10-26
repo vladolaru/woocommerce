@@ -5,9 +5,9 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\W
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayOrderStatusSync;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\OrderStatusSync;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayEligibility;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\Eligibility;
 use Automattic\WooCommerce\Internal\Payments\TransientRowLock;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\RecordingWcLogger;
 use Automattic\WooCommerce\Tests\Internal\Payments\StaticWooPaymentsRuntimeArbiter;
@@ -17,9 +17,9 @@ use WC_Unit_Test_Case;
 use WC_Webhook;
 
 /**
- * Tests for the WooPaymentsWooPayOrderStatusSync class.
+ * Tests for the OrderStatusSync class.
  */
-class WooPaymentsWooPayOrderStatusSyncTest extends WC_Unit_Test_Case {
+class OrderStatusSyncTest extends WC_Unit_Test_Case {
 
 	private const WEBHOOK_NAME                 = 'WooPayments woopay order status sync';
 	private const WOOPAY_URL                   = 'https://pay.woo.com/wp-json/platform-checkout/v1/merchant-notification';
@@ -34,7 +34,7 @@ class WooPaymentsWooPayOrderStatusSyncTest extends WC_Unit_Test_Case {
 	/**
 	 * Created sync instances whose hooks must be removed after each test.
 	 *
-	 * @var WooPaymentsWooPayOrderStatusSync[]
+	 * @var OrderStatusSync[]
 	 */
 	private array $syncs = array();
 
@@ -719,17 +719,17 @@ class WooPaymentsWooPayOrderStatusSyncTest extends WC_Unit_Test_Case {
 	 * @param bool                $woopay_enabled Whether WooPay is on in the gateway settings.
 	 * @param string              $account_status Account status.
 	 * @param array<string,mixed> $account_data   Account data overrides.
-	 * @return WooPaymentsWooPayOrderStatusSync
+	 * @return OrderStatusSync
 	 */
-	private function create_sync( bool $builtin_owner, bool $woopay_enabled = true, string $account_status = '', array $account_data = array() ): WooPaymentsWooPayOrderStatusSync {
+	private function create_sync( bool $builtin_owner, bool $woopay_enabled = true, string $account_status = '', array $account_data = array() ): OrderStatusSync {
 		$this->account_service                         = new StubWooPayAccountService();
 		$this->account_service->woopay_enabled         = $woopay_enabled;
 		$this->account_service->account_status         = $account_status;
 		$this->account_service->account_data_overrides = $account_data;
-		$woopay_eligibility                            = new WooPaymentsWooPayEligibility();
+		$woopay_eligibility                            = new Eligibility();
 		$woopay_eligibility->init( $this->account_service );
 		$this->api_client = new StubWooPayApiClient();
-		$sync             = new WooPaymentsWooPayOrderStatusSync();
+		$sync             = new OrderStatusSync();
 		$sync->init( new StaticWooPaymentsRuntimeArbiter( $builtin_owner ), $woopay_eligibility, $this->api_client, new TransientRowLock(), $this->account_service );
 
 		$this->syncs[] = $sync;
@@ -875,9 +875,9 @@ class WooPaymentsWooPayOrderStatusSyncTest extends WC_Unit_Test_Case {
 	/**
 	 * Remove hooks registered by a sync instance.
 	 *
-	 * @param WooPaymentsWooPayOrderStatusSync $sync Sync instance.
+	 * @param OrderStatusSync $sync Sync instance.
 	 */
-	private function remove_sync_hooks( WooPaymentsWooPayOrderStatusSync $sync ): void {
+	private function remove_sync_hooks( OrderStatusSync $sync ): void {
 		remove_filter( 'woocommerce_valid_webhook_events', array( $sync, 'add_event' ) );
 		remove_filter( 'woocommerce_webhook_topic_hooks', array( $sync, 'add_topics' ), 20 );
 		remove_filter( 'woocommerce_webhook_payload', array( $sync, 'create_payload' ) );
@@ -890,9 +890,9 @@ class WooPaymentsWooPayOrderStatusSyncTest extends WC_Unit_Test_Case {
 	/**
 	 * Run only the admin_init callbacks the given sync registered.
 	 *
-	 * @param WooPaymentsWooPayOrderStatusSync $sync Sync instance.
+	 * @param OrderStatusSync $sync Sync instance.
 	 */
-	private function run_admin_init_for( WooPaymentsWooPayOrderStatusSync $sync ): void {
+	private function run_admin_init_for( OrderStatusSync $sync ): void {
 		global $wp_filter;
 		foreach ( $wp_filter['admin_init']->callbacks as $callbacks ) {
 			foreach ( $callbacks as $callback ) {

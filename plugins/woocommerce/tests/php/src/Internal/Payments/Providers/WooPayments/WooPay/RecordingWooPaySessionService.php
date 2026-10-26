@@ -4,13 +4,13 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\WooPay;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendAssets;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPaySessionService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\SessionService;
 use WP_REST_Request;
 
 /**
  * Recording WooPay session service for controller tests.
  */
-class RecordingWooPaySessionService extends WooPaymentsWooPaySessionService {
+class RecordingWooPaySessionService extends SessionService {
 
 	/**
 	 * Whether WooPay is enabled.

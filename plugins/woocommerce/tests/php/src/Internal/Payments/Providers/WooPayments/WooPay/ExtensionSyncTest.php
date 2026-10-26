@@ -6,23 +6,23 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\W
 use ActionScheduler_Store;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayExtensionSync;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\ExtensionSync;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsActionSchedulerService;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\ProviderTextLogAssertions;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\RecordingWcLogger;
 use WC_Unit_Test_Case;
 
 /**
- * Tests for the WooPaymentsWooPayExtensionSync class.
+ * Tests for the ExtensionSync class.
  */
-class WooPaymentsWooPayExtensionSyncTest extends WC_Unit_Test_Case {
+class ExtensionSyncTest extends WC_Unit_Test_Case {
 
 	use ProviderTextLogAssertions;
 
 	/**
 	 * Created sync instances whose hooks must be removed after each test.
 	 *
-	 * @var WooPaymentsWooPayExtensionSync[]
+	 * @var ExtensionSync[]
 	 */
 	private array $syncs = array();
 
@@ -192,7 +192,7 @@ class WooPaymentsWooPayExtensionSyncTest extends WC_Unit_Test_Case {
 			->onlyMethods( array( 'get_woopay_compatibility' ) )
 			->getMock();
 		$api_client->method( 'get_woopay_compatibility' )->willThrowException( self::make_provider_error() );
-		$sync = new WooPaymentsWooPayExtensionSync();
+		$sync = new ExtensionSync();
 		$sync->init( $api_client, wc_get_container()->get( WooPaymentsActionSchedulerService::class ), wc_get_container()->get( WooPaymentsLogger::class ) );
 		$logger = RecordingWcLogger::install();
 
@@ -254,9 +254,9 @@ class WooPaymentsWooPayExtensionSyncTest extends WC_Unit_Test_Case {
 	 * Create a sync instance.
 	 *
 	 * @param array<string,mixed> $compatibility Compatibility response, with the keys client 11.1.0 reads (includes/woopay/class-woopay-scheduler.php:82-87).
-	 * @return WooPaymentsWooPayExtensionSync
+	 * @return ExtensionSync
 	 */
-	private function create_sync( array $compatibility = array() ): WooPaymentsWooPayExtensionSync {
+	private function create_sync( array $compatibility = array() ): ExtensionSync {
 		$api_client = $this->getMockBuilder( Client::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'get_woopay_compatibility' ) )
@@ -264,7 +264,7 @@ class WooPaymentsWooPayExtensionSyncTest extends WC_Unit_Test_Case {
 		$api_client->method( 'get_woopay_compatibility' )
 			->willReturn( $compatibility );
 
-		$sync = new WooPaymentsWooPayExtensionSync();
+		$sync = new ExtensionSync();
 		$sync->init( $api_client, wc_get_container()->get( WooPaymentsActionSchedulerService::class ), wc_get_container()->get( WooPaymentsLogger::class ) );
 
 		$this->syncs[] = $sync;
@@ -275,9 +275,9 @@ class WooPaymentsWooPayExtensionSyncTest extends WC_Unit_Test_Case {
 	/**
 	 * Remove hooks registered by a sync instance.
 	 *
-	 * @param WooPaymentsWooPayExtensionSync $sync Sync instance.
+	 * @param ExtensionSync $sync Sync instance.
 	 */
-	private function remove_sync_hooks( WooPaymentsWooPayExtensionSync $sync ): void {
+	private function remove_sync_hooks( ExtensionSync $sync ): void {
 		remove_action( 'init', array( $sync, 'schedule' ) );
 		remove_action( 'action_scheduler_ensure_recurring_actions', array( $sync, 'schedule' ) );
 		remove_action( 'validate_woopay_compatibility', array( $sync, 'update_compatibility_and_maybe_show_incompatibility_warning' ) );
