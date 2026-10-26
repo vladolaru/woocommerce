@@ -8,8 +8,8 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountEventHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsEventIngestor;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsRefundEventHandler;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\EventIngestor;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\RefundEventHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDatabaseCache;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
@@ -269,9 +269,9 @@ class WooPaymentsAccountEventHandlerTest extends WC_Unit_Test_Case {
 	 *
 	 * @param WooPaymentsAccountService $account_service Account service mock.
 	 * @param WooPaymentsTokenService   $token_service   Token service mock.
-	 * @return WooPaymentsEventIngestor
+	 * @return EventIngestor
 	 */
-	private function create_ingestor_with_account_services( WooPaymentsAccountService $account_service, WooPaymentsTokenService $token_service ): WooPaymentsEventIngestor {
+	private function create_ingestor_with_account_services( WooPaymentsAccountService $account_service, WooPaymentsTokenService $token_service ): EventIngestor {
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
 
 		$account_event_handler = new WooPaymentsAccountEventHandler();
@@ -281,7 +281,7 @@ class WooPaymentsAccountEventHandlerTest extends WC_Unit_Test_Case {
 			wc_get_container()->get( OrderPaymentLifecycleService::class ),
 			new class() extends Client {},
 			$this->create_dispute_event_handler( new class() extends Client {} ),
-			wc_get_container()->get( WooPaymentsRefundEventHandler::class ),
+			wc_get_container()->get( RefundEventHandler::class ),
 			$account_event_handler,
 			$this->create_notification_event_handler()
 		);

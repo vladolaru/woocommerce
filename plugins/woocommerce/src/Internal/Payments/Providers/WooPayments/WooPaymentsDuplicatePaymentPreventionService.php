@@ -366,7 +366,7 @@ class WooPaymentsDuplicatePaymentPreventionService implements RegisterHooksInter
 	 *
 	 * Every submit for the order is refused while the dispute stands. Overlapping submits each loaded the order before this
 	 * runs, so the marker is read again from storage under the order payment lock, as the dispute webhook does for its note
-	 * (WooPaymentsDisputeEventHandler::process_dispute_created()). While another operation holds the lock, the next submit
+	 * (DisputeEventHandler::process_dispute_created()). While another operation holds the lock, the next submit
 	 * writes the note. A caller that already holds the lock and read the order under it writes on that order.
 	 *
 	 * @param WC_Order $order     Order being paid.

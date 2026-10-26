@@ -29,7 +29,7 @@ import {
  * provider's disputed-card fixture, `TEST_CARDS.dispute`: a captured charge
  * on it is disputed by the provider, asynchronously, as `fraudulent`. Every
  * native effect - the `on-hold` transition and the created note - is written
- * only when `WooPaymentsEventIngestor` ingests the matching provider event.
+ * only when `EventIngestor` ingests the matching provider event.
  * This case never returns early on a half-observed graph: a store whose
  * event listener is not delivering `charge.dispute.*` fails at the
  * convergence budget below with an explicit message.

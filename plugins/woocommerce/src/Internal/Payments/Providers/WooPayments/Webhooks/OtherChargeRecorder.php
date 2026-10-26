@@ -1,6 +1,6 @@
 <?php
 /**
- * WooPaymentsOtherChargeRecorder class file.
+ * OtherChargeRecorder class file.
  */
 
 declare( strict_types = 1 );
@@ -22,7 +22,7 @@ use WC_Order;
  * @since 11.2.0
  * @internal
  */
-class WooPaymentsOtherChargeRecorder {
+class OtherChargeRecorder {
 
 	/**
 	 * WooPayments order note service.

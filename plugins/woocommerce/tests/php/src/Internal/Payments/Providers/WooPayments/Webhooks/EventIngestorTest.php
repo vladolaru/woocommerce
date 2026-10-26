@@ -4,7 +4,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Webhooks;
 
 use Automattic\WooCommerce\Enums\OrderStatus;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsPaymentIntentEventHandler;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\PaymentIntentEventHandler;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLockRefusedException;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
@@ -12,14 +12,14 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountEventHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsEarlyFraudWarningEventHandler;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\EarlyFraudWarningEventHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\StripeBillingModule;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsEventIngestor;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsEventOrderResolver;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\EventIngestor;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\EventOrderResolver;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIppReceiptEmail;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsNotificationEventHandler;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsRefundEventHandler;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\RefundEventHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeeDetailsNoteController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService;
@@ -39,9 +39,9 @@ use WC_Order_Refund;
 use WC_Unit_Test_Case;
 
 /**
- * Tests for the WooPaymentsEventIngestor class.
+ * Tests for the EventIngestor class.
  */
-class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
+class EventIngestorTest extends WC_Unit_Test_Case {
 
 	use OrderPaymentLockTestTrait;
 
@@ -52,7 +52,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	/**
 	 * The System Under Test.
 	 *
-	 * @var WooPaymentsEventIngestor
+	 * @var EventIngestor
 	 */
 	private $sut;
 
@@ -102,7 +102,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 			'wcpay_multi_currency_exchange_rate_eur'  => get_option( 'wcpay_multi_currency_exchange_rate_eur', null ),
 			'wcpay_multi_currency_manual_rate_eur'    => get_option( 'wcpay_multi_currency_manual_rate_eur', null ),
 		);
-		$this->sut                             = wc_get_container()->get( WooPaymentsEventIngestor::class );
+		$this->sut                             = wc_get_container()->get( EventIngestor::class );
 		$this->last_refund_charge_id           = 'ch_123';
 	}
 
@@ -702,7 +702,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 			 */
 			public function get_dispute_summary( string $dispute_id ): array {
 				unset( $dispute_id );
-				throw WooPaymentsEventIngestorTest::make_provider_error();
+				throw EventIngestorTest::make_provider_error();
 			}
 		};
 
@@ -2401,9 +2401,9 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	 *
 	 * @param array<string,mixed>    $intent            Intent fixture merged over defaults.
 	 * @param array<int,string>|null $requested_intents Receives the requested intent IDs.
-	 * @return WooPaymentsEventIngestor
+	 * @return EventIngestor
 	 */
-	private function create_charge_expired_ingestor( array $intent, ?array &$requested_intents = null ): WooPaymentsEventIngestor {
+	private function create_charge_expired_ingestor( array $intent, ?array &$requested_intents = null ): EventIngestor {
 		$requested_intents = array();
 		$api_client        = new class( $intent, $requested_intents ) extends Client {
 			/**
@@ -3199,9 +3199,9 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	/**
 	 * Create an ingestor with the Stripe Billing module not loaded.
 	 *
-	 * @return WooPaymentsEventIngestor
+	 * @return EventIngestor
 	 */
-	private function create_ingestor_without_the_stripe_billing_module(): WooPaymentsEventIngestor {
+	private function create_ingestor_without_the_stripe_billing_module(): EventIngestor {
 		$module = $this->getMockBuilder( StripeBillingModule::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'is_loaded', 'handle_invoice_event' ) )
@@ -3726,7 +3726,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	 */
 	public function test_charge_refund_updated_succeeded_updates_matched_refund(): void {
 		// The recorded envelope carries the platform's own `livemode: false`; match it, or
-		// WooPaymentsEventIngestor::is_webhook_mode_mismatch() silently skips the event.
+		// EventIngestor::is_webhook_mode_mismatch() silently skips the event.
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
 		$envelope        = $this->load_recorded_refund_updated_event( 'afterpay_clearpay_refund_updated_succeeded' );
 		$recorded_refund = $envelope['data']['object'];
@@ -4270,7 +4270,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		);
 
 		$this->assertSame( '', wc_get_order( $order->get_id() )->get_meta( '_charge_id', true ) );
-		$this->assertNull( wc_get_container()->get( WooPaymentsEventOrderResolver::class )->find_order_by_charge_id( 'ch_unheld' ) );
+		$this->assertNull( wc_get_container()->get( EventOrderResolver::class )->find_order_by_charge_id( 'ch_unheld' ) );
 	}
 
 	/**
@@ -4399,7 +4399,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		$payment_completions = did_action( 'woocommerce_payment_complete' );
 		$event               = $this->create_payment_intent_event( 'payment_intent.succeeded', $order, $this->get_card_charge_overrides() );
 
-		wc_get_container()->get( WooPaymentsPaymentIntentEventHandler::class )->apply_succeeded_payment_intent( $stale, $event['data']['object'] );
+		wc_get_container()->get( PaymentIntentEventHandler::class )->apply_succeeded_payment_intent( $stale, $event['data']['object'] );
 
 		$order = wc_get_order( $order->get_id() );
 		$this->assertInstanceOf( WC_Order::class, $order );
@@ -4568,9 +4568,9 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	 * Build an ingestor with a specific notification event handler injected.
 	 *
 	 * @param WooPaymentsNotificationEventHandler $notification_event_handler Notification handler.
-	 * @return WooPaymentsEventIngestor
+	 * @return EventIngestor
 	 */
-	private function create_ingestor_with_notification_handler( WooPaymentsNotificationEventHandler $notification_event_handler ): WooPaymentsEventIngestor {
+	private function create_ingestor_with_notification_handler( WooPaymentsNotificationEventHandler $notification_event_handler ): EventIngestor {
 		// Match the test-mode notification events (livemode === false) so they are not skipped as a mode mismatch.
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
 
@@ -4578,7 +4578,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 			wc_get_container()->get( OrderPaymentLifecycleService::class ),
 			new class() extends Client {},
 			$this->create_dispute_event_handler( new class() extends Client {} ),
-			wc_get_container()->get( WooPaymentsRefundEventHandler::class ),
+			wc_get_container()->get( RefundEventHandler::class ),
 			wc_get_container()->get( WooPaymentsAccountEventHandler::class ),
 			$notification_event_handler
 		);
@@ -4605,17 +4605,17 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	 * Build an ingestor from the core collaborators, wiring its event handlers from the container
 	 * and the supplied API client.
 	 *
-	 * @param OrderPaymentLifecycleService                  $lifecycle_service Order lifecycle service.
-	 * @param Client                                        $api_client                       Native WooPayments API client.
-	 * @param WooPaymentsEarlyFraudWarningEventHandler|null $early_fraud_warning_event_handler Optional early fraud warning handler.
-	 * @return WooPaymentsEventIngestor
+	 * @param OrderPaymentLifecycleService       $lifecycle_service Order lifecycle service.
+	 * @param Client                             $api_client                       Native WooPayments API client.
+	 * @param EarlyFraudWarningEventHandler|null $early_fraud_warning_event_handler Optional early fraud warning handler.
+	 * @return EventIngestor
 	 */
-	private function create_ingestor( OrderPaymentLifecycleService $lifecycle_service, Client $api_client, ?WooPaymentsEarlyFraudWarningEventHandler $early_fraud_warning_event_handler = null ): WooPaymentsEventIngestor {
+	private function create_ingestor( OrderPaymentLifecycleService $lifecycle_service, Client $api_client, ?EarlyFraudWarningEventHandler $early_fraud_warning_event_handler = null ): EventIngestor {
 		return $this->build_event_ingestor(
 			$lifecycle_service,
 			$api_client,
 			$this->create_dispute_event_handler( $api_client ),
-			wc_get_container()->get( WooPaymentsRefundEventHandler::class ),
+			wc_get_container()->get( RefundEventHandler::class ),
 			wc_get_container()->get( WooPaymentsAccountEventHandler::class ),
 			$this->create_notification_event_handler(),
 			$early_fraud_warning_event_handler
@@ -4627,10 +4627,10 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	 *
 	 * @param string[] $sequence     Shared delivery sequence.
 	 * @param bool     $should_throw Whether processing should throw.
-	 * @return WooPaymentsEarlyFraudWarningEventHandler
+	 * @return EarlyFraudWarningEventHandler
 	 */
-	private function create_recording_early_fraud_warning_handler( array &$sequence, bool $should_throw = false ): WooPaymentsEarlyFraudWarningEventHandler {
-		$handler               = new class( $sequence ) extends WooPaymentsEarlyFraudWarningEventHandler {
+	private function create_recording_early_fraud_warning_handler( array &$sequence, bool $should_throw = false ): EarlyFraudWarningEventHandler {
+		$handler               = new class( $sequence ) extends EarlyFraudWarningEventHandler {
 			/**
 			 * Shared delivery sequence.
 			 *
@@ -5267,7 +5267,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 
 	/**
 	 * Load a REC-5a R-c recorded `charge.refund.updated` event envelope (the exact body
-	 * local WPCOM forwarded) by pair key, ready to pass straight to `WooPaymentsEventIngestor::process()`.
+	 * local WPCOM forwarded) by pair key, ready to pass straight to `EventIngestor::process()`.
 	 *
 	 * @param string $pair REC-5a R-c fixture pair key.
 	 * @return array<string,mixed>
@@ -5290,7 +5290,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 
 	/**
 	 * Load a REC-5b R-e recorded `charge.dispute.closed` event envelope (the exact body
-	 * local WPCOM forwarded) by pair key, ready to pass straight to `WooPaymentsEventIngestor::process()`.
+	 * local WPCOM forwarded) by pair key, ready to pass straight to `EventIngestor::process()`.
 	 *
 	 * @param string $pair REC-5b R-e fixture pair key.
 	 * @return array<string,mixed>

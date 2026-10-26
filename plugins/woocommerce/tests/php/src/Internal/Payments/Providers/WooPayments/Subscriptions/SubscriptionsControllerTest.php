@@ -17,7 +17,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethod
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\StripeBillingModule;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\SubscriptionAdminPaymentMethodHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\SubscriptionsController;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsEventIngestor;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\EventIngestor;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExtensionRuntime;
@@ -583,7 +583,7 @@ class SubscriptionsControllerTest extends WC_Unit_Test_Case {
 			// Synthetic event: a Stripe `payment_intent.payment_failed` body carrying the fields the client reads for it, the
 			// intent's metadata `order_id` and `order_key` (client 11.1.0 `includes/class-wc-payments-webhook-processing-service.php:972-986`)
 			// and `last_payment_error` with its code, message and payment method (`:446-449`, `:1037-1040`).
-			wc_get_container()->get( WooPaymentsEventIngestor::class )->process(
+			wc_get_container()->get( EventIngestor::class )->process(
 				array(
 					'id'   => 'evt_unusable_method_replay',
 					'type' => 'payment_intent.payment_failed',

@@ -6,7 +6,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 use Automattic\WooCommerce\Internal\Payments\PaymentOperationContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentProcessingService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsEventIngestor;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\EventIngestor;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
@@ -254,7 +254,7 @@ class WooPaymentsOrderNoteDedupeTest extends WC_Unit_Test_Case {
 	 * @param WC_Order $order Order.
 	 */
 	private function deliver_succeeded_webhook( WC_Order $order ): void {
-		wc_get_container()->get( WooPaymentsEventIngestor::class )->process(
+		wc_get_container()->get( EventIngestor::class )->process(
 			array(
 				'id'   => 'evt_pin_' . ( ++$this->webhook_deliveries ),
 				'type' => 'payment_intent.succeeded',

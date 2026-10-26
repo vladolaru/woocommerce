@@ -8,10 +8,10 @@ use Automattic\WooCommerce\Internal\DataStores\Orders\OrdersTableDataStore;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLockRefusedException;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsEventOrderResolver;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsOtherChargeRecorder;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\EventOrderResolver;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\OtherChargeRecorder;
 use Automattic\WooCommerce\Internal\Payments\TransientRowLock;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsEarlyFraudWarningEventHandler;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\EarlyFraudWarningEventHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Tests\Internal\Payments\OrderPaymentLockTestTrait;
@@ -22,9 +22,9 @@ use WC_Order;
 use WC_Unit_Test_Case;
 
 /**
- * Tests for the WooPaymentsEarlyFraudWarningEventHandler class.
+ * Tests for the EarlyFraudWarningEventHandler class.
  */
-class WooPaymentsEarlyFraudWarningEventHandlerTest extends WC_Unit_Test_Case {
+class EarlyFraudWarningEventHandlerTest extends WC_Unit_Test_Case {
 
 	use OrderPaymentLockTestTrait;
 
@@ -65,7 +65,7 @@ class WooPaymentsEarlyFraudWarningEventHandlerTest extends WC_Unit_Test_Case {
 	 * @testdox Should support only the two exact early fraud warning event types.
 	 */
 	public function test_supports_only_exact_early_fraud_warning_event_types(): void {
-		$handler = new WooPaymentsEarlyFraudWarningEventHandler();
+		$handler = new EarlyFraudWarningEventHandler();
 
 		$this->assertTrue( $handler->is_supported_event( 'radar.early_fraud_warning.created' ) );
 		$this->assertTrue( $handler->is_supported_event( 'radar.early_fraud_warning.updated' ) );
@@ -1138,17 +1138,17 @@ class WooPaymentsEarlyFraudWarningEventHandlerTest extends WC_Unit_Test_Case {
 	 * @param OrderPaymentLock|null                 $order_payment_lock     Order payment lock.
 	 * @param WooPaymentsPersistenceVocabulary|null $persistence_vocabulary WooPayments persistence vocabulary.
 	 * @param WooPaymentsOrderNoteService|null      $note_service           WooPayments note service.
-	 * @return WooPaymentsEarlyFraudWarningEventHandler
+	 * @return EarlyFraudWarningEventHandler
 	 */
-	private function create_handler( ?OrderPaymentLock $order_payment_lock = null, ?WooPaymentsPersistenceVocabulary $persistence_vocabulary = null, ?WooPaymentsOrderNoteService $note_service = null ): WooPaymentsEarlyFraudWarningEventHandler {
+	private function create_handler( ?OrderPaymentLock $order_payment_lock = null, ?WooPaymentsPersistenceVocabulary $persistence_vocabulary = null, ?WooPaymentsOrderNoteService $note_service = null ): EarlyFraudWarningEventHandler {
 		$container = wc_get_container();
-		$handler   = new WooPaymentsEarlyFraudWarningEventHandler();
+		$handler   = new EarlyFraudWarningEventHandler();
 		$handler->init(
 			$order_payment_lock ?? $container->get( OrderPaymentLock::class ),
 			$persistence_vocabulary ?? $container->get( WooPaymentsPersistenceVocabulary::class ),
 			$note_service ?? $container->get( WooPaymentsOrderNoteService::class ),
-			$container->get( WooPaymentsEventOrderResolver::class ),
-			$container->get( WooPaymentsOtherChargeRecorder::class )
+			$container->get( EventOrderResolver::class ),
+			$container->get( OtherChargeRecorder::class )
 		);
 
 		return $handler;

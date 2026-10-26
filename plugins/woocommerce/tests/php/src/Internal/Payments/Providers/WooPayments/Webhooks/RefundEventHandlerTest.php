@@ -6,7 +6,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\W
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFeatureController;
 use Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabularyInterface;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsEventOrderResolver;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\EventOrderResolver;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
@@ -23,8 +23,8 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsHt
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffectApplier;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffectPlan;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsRefundEventHandler;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsOtherChargeRecorder;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\RefundEventHandler;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\OtherChargeRecorder;
 use Automattic\WooCommerce\Tests\Internal\Payments\OrderPaymentLockWithClaimHook;
 use Automattic\WooCommerce\Tests\Internal\Payments\OrderPaymentLockTestTrait;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Fixtures\RecordedPlatformEvents;
@@ -36,9 +36,9 @@ use WC_Order_Refund;
 use WC_Unit_Test_Case;
 
 /**
- * Tests for the WooPaymentsRefundEventHandler class.
+ * Tests for the RefundEventHandler class.
  */
-class WooPaymentsRefundEventHandlerTest extends WC_Unit_Test_Case {
+class RefundEventHandlerTest extends WC_Unit_Test_Case {
 
 	use OrderPaymentLockTestTrait;
 
@@ -59,9 +59,9 @@ class WooPaymentsRefundEventHandlerTest extends WC_Unit_Test_Case {
 	/**
 	 * The System Under Test.
 	 *
-	 * @var WooPaymentsRefundEventHandler
+	 * @var RefundEventHandler
 	 */
-	private WooPaymentsRefundEventHandler $sut;
+	private RefundEventHandler $sut;
 
 	/**
 	 * Set up test fixtures.
@@ -75,7 +75,7 @@ class WooPaymentsRefundEventHandlerTest extends WC_Unit_Test_Case {
 			'wcpay_multi_currency_manual_rate_eur'    => get_option( 'wcpay_multi_currency_manual_rate_eur', null ),
 			'woocommerce_currency'                    => get_option( 'woocommerce_currency', null ),
 		);
-		$this->sut                             = wc_get_container()->get( WooPaymentsRefundEventHandler::class );
+		$this->sut                             = wc_get_container()->get( RefundEventHandler::class );
 	}
 
 	/**
@@ -877,7 +877,7 @@ class WooPaymentsRefundEventHandlerTest extends WC_Unit_Test_Case {
 		$order->set_total( '10.00' );
 		$order->save();
 		$store                    = $this->create_lock_that_saves_the_payment_on_claim( 'pi_late', 'ch_late', 'processing' );
-		$handler                  = new WooPaymentsRefundEventHandler();
+		$handler                  = new RefundEventHandler();
 		$charge                   = $this->get_successful_refund_charge();
 		$charge['id']             = 'ch_late';
 		$charge['payment_intent'] = 'pi_late';
@@ -885,7 +885,7 @@ class WooPaymentsRefundEventHandlerTest extends WC_Unit_Test_Case {
 			'order_id'  => (string) $order->get_id(),
 			'order_key' => $order->get_order_key(),
 		);
-		$handler->init( $store, new WooPaymentsPersistenceVocabulary(), wc_get_container()->get( WooPaymentsEventOrderResolver::class ), wc_get_container()->get( WooPaymentsOtherChargeRecorder::class ), wc_get_container()->get( WooPaymentsAccountService::class ) );
+		$handler->init( $store, new WooPaymentsPersistenceVocabulary(), wc_get_container()->get( EventOrderResolver::class ), wc_get_container()->get( OtherChargeRecorder::class ), wc_get_container()->get( WooPaymentsAccountService::class ) );
 
 		$handler->process( 'charge.refunded', $charge );
 
@@ -930,11 +930,11 @@ class WooPaymentsRefundEventHandlerTest extends WC_Unit_Test_Case {
 				return parent::add_note_once( $order, $note, $identity, $equivalent_notes, $before_add );
 			}
 		};
-		$recorder   = new WooPaymentsOtherChargeRecorder();
+		$recorder   = new OtherChargeRecorder();
 		$vocabulary = new WooPaymentsPersistenceVocabulary();
-		$handler    = new WooPaymentsRefundEventHandler();
+		$handler    = new RefundEventHandler();
 		$recorder->init( $notes );
-		$handler->init( wc_get_container()->get( OrderPaymentLock::class ), $vocabulary, wc_get_container()->get( WooPaymentsEventOrderResolver::class ), $recorder, wc_get_container()->get( WooPaymentsAccountService::class ) );
+		$handler->init( wc_get_container()->get( OrderPaymentLock::class ), $vocabulary, wc_get_container()->get( EventOrderResolver::class ), $recorder, wc_get_container()->get( WooPaymentsAccountService::class ) );
 		$charge                   = $this->get_successful_refund_charge();
 		$charge['id']             = 'ch_cod';
 		$charge['payment_intent'] = 'pi_cod';
@@ -1561,8 +1561,8 @@ class WooPaymentsRefundEventHandlerTest extends WC_Unit_Test_Case {
 				unset( $order, $vocabulary, $lock_token );
 			}
 		};
-		$handler = new WooPaymentsRefundEventHandler();
-		$handler->init( $store, new WooPaymentsPersistenceVocabulary(), wc_get_container()->get( WooPaymentsEventOrderResolver::class ), wc_get_container()->get( WooPaymentsOtherChargeRecorder::class ), wc_get_container()->get( WooPaymentsAccountService::class ) );
+		$handler = new RefundEventHandler();
+		$handler->init( $store, new WooPaymentsPersistenceVocabulary(), wc_get_container()->get( EventOrderResolver::class ), wc_get_container()->get( OtherChargeRecorder::class ), wc_get_container()->get( WooPaymentsAccountService::class ) );
 
 		$handler->process( 'charge.refunded', $this->get_successful_refund_charge() );
 
@@ -1712,7 +1712,7 @@ class WooPaymentsRefundEventHandlerTest extends WC_Unit_Test_Case {
 	/**
 	 * Cache a fresh live account with this country, readable through the account service while the platform is connected.
 	 *
-	 * The same account cache the ingestor test sets (WooPaymentsEventIngestorTest::set_woopayments_account_country()).
+	 * The same account cache the ingestor test sets (EventIngestorTest::set_woopayments_account_country()).
 	 *
 	 * @param string $country Account country.
 	 */

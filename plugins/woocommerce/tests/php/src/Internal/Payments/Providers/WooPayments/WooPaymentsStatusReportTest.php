@@ -18,7 +18,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\Prefl
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\StateStore;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\DebugTools;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsStatusReport;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsWebhookReliabilityService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WebhookReliabilityService;
 use Automattic\WooCommerce\Testing\Tools\TestingContainer;
 use WC_REST_System_Status_Tools_V2_Controller;
 use WC_Unit_Test_Case;
@@ -1060,8 +1060,8 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 	 * Seed a connected WooPayments store.
 	 */
 	private function seed_connected_store(): void {
-		$this->assertTrue( defined( WooPaymentsWebhookReliabilityService::class . '::LAST_FETCH_OPTION_KEY' ), 'Webhook reliability should expose its last-fetch option key.' );
-		$this->assertSame( self::EXPECTED_LAST_FETCH_OPTION, constant( WooPaymentsWebhookReliabilityService::class . '::LAST_FETCH_OPTION_KEY' ) );
+		$this->assertTrue( defined( WebhookReliabilityService::class . '::LAST_FETCH_OPTION_KEY' ), 'Webhook reliability should expose its last-fetch option key.' );
+		$this->assertSame( self::EXPECTED_LAST_FETCH_OPTION, constant( WebhookReliabilityService::class . '::LAST_FETCH_OPTION_KEY' ) );
 
 		wc_get_container()->get( WooPaymentsAccountService::class )->clear_cache();
 		wc_get_container()->get( WooPaymentsAccountService::class )->cache_account_data(

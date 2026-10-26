@@ -5,7 +5,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Enums\OrderStatus;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsEventIngestor;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\EventIngestor;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Fixtures\RecordedPlatformEvents;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\TransportLog;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
@@ -1721,7 +1721,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		$intent['metadata']['order_key'] = $order->get_order_key();
 		$webhook                         = RecordedPlatformEvents::body( 'platform-payment-intent-events.json', 'card_declined_failed' );
 		$webhook['data']['object']       = $intent;
-		$ingestor                        = wc_get_container()->get( WooPaymentsEventIngestor::class );
+		$ingestor                        = wc_get_container()->get( EventIngestor::class );
 
 		$api_client = $this->create_api_client_running_during_fetch( $intent, $webhook_first ? static fn() => $ingestor->process( $webhook ) : null );
 

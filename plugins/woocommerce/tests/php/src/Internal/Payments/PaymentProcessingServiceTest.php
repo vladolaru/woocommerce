@@ -2874,7 +2874,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	 *
 	 * The first submission's charge gets a 502, so the order keeps its key and the ambiguity record. The next submission
 	 * loads the order; before it claims the lock, the earlier request's `payment_intent.succeeded` arrives and the webhook
-	 * finds the order by its metadata alone (`WooPaymentsEventOrderResolver::find_order_for_intent_event()`), so the
+	 * finds the order by its metadata alone (`EventOrderResolver::find_order_for_intent_event()`), so the
 	 * order is paid. Under the lock the order is read again, found paid, and nothing is sent: no charge under the unresolved key
 	 * and no lookup.
 	 */
@@ -2897,7 +2897,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$this->assertInstanceOf( WC_Order::class, $resubmit );
 		$this->assertNotSame( '', $resubmit->get_meta( WooPaymentsPaymentOperationService::CHARGE_IDEMPOTENCY_KEY_META, true ) );
 
-		wc_get_container()->get( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsEventIngestor::class )->process(
+		wc_get_container()->get( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\EventIngestor::class )->process(
 			array(
 				'id'   => 'evt_paid_between_submissions',
 				'type' => 'payment_intent.succeeded',

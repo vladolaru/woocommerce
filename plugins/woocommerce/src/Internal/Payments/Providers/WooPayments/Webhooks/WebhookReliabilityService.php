@@ -1,6 +1,6 @@
 <?php
 /**
- * WooPaymentsWebhookReliabilityService class file.
+ * WebhookReliabilityService class file.
  */
 
 declare( strict_types = 1 );
@@ -22,7 +22,7 @@ use Automattic\WooCommerce\Internal\RegisterHooksInterface;
  * @since 11.0.0
  * @internal
  */
-class WooPaymentsWebhookReliabilityService implements RegisterHooksInterface {
+class WebhookReliabilityService implements RegisterHooksInterface {
 
 	/**
 	 * Account-data flag that indicates failed webhook events remain on the server.
@@ -97,9 +97,9 @@ class WooPaymentsWebhookReliabilityService implements RegisterHooksInterface {
 	/**
 	 * Event ingestor.
 	 *
-	 * @var WooPaymentsEventIngestor
+	 * @var EventIngestor
 	 */
-	private WooPaymentsEventIngestor $event_ingestor;
+	private EventIngestor $event_ingestor;
 
 	/**
 	 * Initialize the class instance.
@@ -108,12 +108,12 @@ class WooPaymentsWebhookReliabilityService implements RegisterHooksInterface {
 	 *
 	 * @param WooPaymentsActionSchedulerService $scheduler      Action Scheduler service.
 	 * @param Client                            $api_client     WooPayments API client.
-	 * @param WooPaymentsEventIngestor          $event_ingestor Event ingestor.
+	 * @param EventIngestor                     $event_ingestor Event ingestor.
 	 */
 	final public function init(
 		WooPaymentsActionSchedulerService $scheduler,
 		Client $api_client,
-		WooPaymentsEventIngestor $event_ingestor
+		EventIngestor $event_ingestor
 	): void {
 		$this->scheduler      = $scheduler;
 		$this->api_client     = $api_client;
@@ -227,7 +227,7 @@ class WooPaymentsWebhookReliabilityService implements RegisterHooksInterface {
 			// Client 11.1.0 `class-wc-payments-webhook-reliability-service.php:146-148`. Every refusal's reason is written by the
 			// store, except a Stripe Billing refusal that wraps a platform error: that one is logged by its codes instead.
 			wc_get_logger()->error(
-				sprintf( 'Failed processing event %1$s.%2$s', $event_id, WooPaymentsEventIngestor::get_refusal_reason_for_log( $exception ) ),
+				sprintf( 'Failed processing event %1$s.%2$s', $event_id, EventIngestor::get_refusal_reason_for_log( $exception ) ),
 				array_merge( WooPaymentsLogger::get_failure_context( $exception ), array( 'source' => WooPaymentsLogger::SOURCE ) )
 			);
 			return;
@@ -245,7 +245,7 @@ class WooPaymentsWebhookReliabilityService implements RegisterHooksInterface {
 	 * Tell whether a failed delivery is processed again later.
 	 *
 	 * Retried event types are, after any passing failure, and the types safe to apply late are when the order payment
-	 * lock refused them (WooPaymentsEventIngestor::is_retried_lock_refusal()). The retries run 1, 11 and 71 minutes after
+	 * lock refused them (EventIngestor::is_retried_lock_refusal()). The retries run 1, 11 and 71 minutes after
 	 * the processing job's first attempt, so the last two run after a lock left by a request that died has expired
 	 * (WooPaymentsPersistenceVocabulary::LOCK_TTL_SECONDS, five minutes).
 	 *

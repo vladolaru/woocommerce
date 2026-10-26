@@ -14,7 +14,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\HttpClien
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\PreflightService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\StateStore;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\CurrencyRateProvider;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsWebhookReliabilityService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WebhookReliabilityService;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Throwable;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayEligibility;
@@ -254,7 +254,7 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 				'rate_provider'           => CurrencyRateProvider::PROVIDER_ID,
 				'rate_provider_available' => $multi_currency_enabled && $this->is_rate_provider_available(),
 			),
-			'last_webhook_fetch'      => (int) get_option( WooPaymentsWebhookReliabilityService::LAST_FETCH_OPTION_KEY, 0 ),
+			'last_webhook_fetch'      => (int) get_option( WebhookReliabilityService::LAST_FETCH_OPTION_KEY, 0 ),
 		);
 	}
 

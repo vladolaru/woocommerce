@@ -8,7 +8,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabularyInterface;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsDisputeEventHandler;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\DisputeEventHandler;
 use WC_Order;
 
 /**
@@ -235,7 +235,7 @@ class WooPaymentsPersistenceVocabulary implements ProviderPersistenceVocabularyI
 	 * @since 11.2.0
 	 */
 	public function get_open_dispute_ids_meta_key(): string {
-		return WooPaymentsDisputeEventHandler::OPEN_DISPUTE_IDS_META_KEY;
+		return DisputeEventHandler::OPEN_DISPUTE_IDS_META_KEY;
 	}
 
 	/**

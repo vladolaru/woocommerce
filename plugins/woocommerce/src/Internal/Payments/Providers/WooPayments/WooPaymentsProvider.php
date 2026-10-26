@@ -25,7 +25,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\MultiCurrencyController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\PaymentMethodDefinition;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\PaymentMethodRegistry;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsWebhookReliabilityService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WebhookReliabilityService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayExtensionSync;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayOrderStatusSync;
 use Automattic\WooCommerce\Internal\Payments\ProviderInterface;
@@ -139,7 +139,7 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 			SharedSettings::class,
 			WooPaymentsAdminRestRouteRegistrar::class,
 			WooPaymentsAccountService::class,
-			WooPaymentsWebhookReliabilityService::class,
+			WebhookReliabilityService::class,
 			LinkController::class,
 			WooPaymentsCustomerService::class,
 			WooPaymentsOrderFraudMetaBox::class,
@@ -162,7 +162,7 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 		);
 		$connected_ajax             = array(
 			WooPaymentsAccountService::class,
-			WooPaymentsWebhookReliabilityService::class,
+			WebhookReliabilityService::class,
 			WooPaymentsCustomerService::class,
 			WooPaymentsOrderAdminActionsController::class,
 			WooPaymentsOrderStatusChangeController::class,
@@ -179,7 +179,7 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 		$connected_rest             = array_merge(
 			array(
 				WooPaymentsAccountService::class,
-				WooPaymentsWebhookReliabilityService::class,
+				WebhookReliabilityService::class,
 				WooPaymentsCustomerService::class,
 				WooPaymentsOrderAdminActionsController::class,
 				WooPaymentsWooPayOrderStatusSync::class,
@@ -203,7 +203,7 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 		$connected_cron             = array(
 			...$cutover_cron,
 			WooPaymentsAccountService::class,
-			WooPaymentsWebhookReliabilityService::class,
+			WebhookReliabilityService::class,
 			WooPaymentsStoreSetupReportController::class,
 			WooPaymentsAccountMilestonesController::class,
 			WooPaymentsFeeDetailsNoteController::class,
@@ -246,7 +246,7 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 					$gateway_prefix,
 					array(
 						WooPaymentsAccountService::class,
-						WooPaymentsWebhookReliabilityService::class,
+						WebhookReliabilityService::class,
 						WooPaymentsAddressProvider::class,
 						WooPaymentsCustomerService::class,
 						WooPaymentsDuplicatePaymentPreventionService::class,

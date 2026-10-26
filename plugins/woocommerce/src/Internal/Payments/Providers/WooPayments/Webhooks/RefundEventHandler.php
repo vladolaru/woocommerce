@@ -1,6 +1,6 @@
 <?php
 /**
- * WooPaymentsRefundEventHandler class file.
+ * RefundEventHandler class file.
  */
 
 declare( strict_types = 1 );
@@ -40,7 +40,7 @@ use WC_Order_Refund;
  * @since 11.0.0
  * @internal
  */
-class WooPaymentsRefundEventHandler {
+class RefundEventHandler {
 
 	/**
 	 * Account countries where Future Refunds or Disputes balance is not supported.
@@ -66,16 +66,16 @@ class WooPaymentsRefundEventHandler {
 	/**
 	 * Webhook event order resolver.
 	 *
-	 * @var WooPaymentsEventOrderResolver
+	 * @var EventOrderResolver
 	 */
-	private WooPaymentsEventOrderResolver $event_order_resolver;
+	private EventOrderResolver $event_order_resolver;
 
 	/**
 	 * Recorder of events on a charge that does not pay the order.
 	 *
-	 * @var WooPaymentsOtherChargeRecorder
+	 * @var OtherChargeRecorder
 	 */
-	private WooPaymentsOtherChargeRecorder $other_charge_recorder;
+	private OtherChargeRecorder $other_charge_recorder;
 
 	/**
 	 * WooPayments account service.
@@ -91,11 +91,11 @@ class WooPaymentsRefundEventHandler {
 	 *
 	 * @param OrderPaymentLock                 $order_payment_lock     Order payment lock.
 	 * @param WooPaymentsPersistenceVocabulary $persistence_vocabulary WooPayments persistence vocabulary.
-	 * @param WooPaymentsEventOrderResolver    $event_order_resolver   Webhook event order resolver.
-	 * @param WooPaymentsOtherChargeRecorder   $other_charge_recorder  Recorder of events on another charge.
+	 * @param EventOrderResolver               $event_order_resolver   Webhook event order resolver.
+	 * @param OtherChargeRecorder              $other_charge_recorder  Recorder of events on another charge.
 	 * @param WooPaymentsAccountService        $account_service        WooPayments account service.
 	 */
-	final public function init( OrderPaymentLock $order_payment_lock, WooPaymentsPersistenceVocabulary $persistence_vocabulary, WooPaymentsEventOrderResolver $event_order_resolver, WooPaymentsOtherChargeRecorder $other_charge_recorder, WooPaymentsAccountService $account_service ): void {
+	final public function init( OrderPaymentLock $order_payment_lock, WooPaymentsPersistenceVocabulary $persistence_vocabulary, EventOrderResolver $event_order_resolver, OtherChargeRecorder $other_charge_recorder, WooPaymentsAccountService $account_service ): void {
 		$this->order_payment_lock     = $order_payment_lock;
 		$this->persistence_vocabulary = $persistence_vocabulary;
 		$this->event_order_resolver   = $event_order_resolver;

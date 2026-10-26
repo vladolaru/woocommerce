@@ -1,6 +1,6 @@
 <?php
 /**
- * WooPaymentsEventOrderResolver class file.
+ * EventOrderResolver class file.
  */
 
 declare( strict_types = 1 );
@@ -20,7 +20,7 @@ use WC_Order;
  * @since 11.2.0
  * @internal
  */
-class WooPaymentsEventOrderResolver {
+class EventOrderResolver {
 
 	/**
 	 * Find the order whose `_charge_id` is the charge ID.

@@ -134,7 +134,7 @@ class WooPaymentsHookNamesContractTest extends WC_Unit_Test_Case {
 	 * to and the built-in enable filter the WooPayments feature replaced. Not plugin data, so not part of `woopayments-hooks.json`. The retired gate itself pinned per-hook *site counts*
 	 * (a `Counter`, `expected.total() == 25`), not arity; the arities below come from reading each
 	 * hook's fire site directly (`NativePaymentsShadowMode` and the
-	 * `WooPaymentsEventIngestor`/`WooPaymentsSettingsService`/
+	 * `EventIngestor`/`WooPaymentsSettingsService`/
 	 * `WooPaymentsTokenService`/`WooPaymentsGateway`/`WooPaymentsWooPaySessionService`/
 	 * `WooPaymentsExpressCheckoutService`/`CutoverController` sites the gate's `PROVIDER_HOOKS` names).
 	 *

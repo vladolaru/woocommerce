@@ -1,6 +1,6 @@
 <?php
 /**
- * WooPaymentsEventIngestor class file.
+ * EventIngestor class file.
  */
 
 declare( strict_types = 1 );
@@ -23,7 +23,7 @@ use Throwable;
  * @since 11.0.0
  * @internal
  */
-class WooPaymentsEventIngestor {
+class EventIngestor {
 
 	/**
 	 * Stripe Billing invoice event types.
@@ -92,16 +92,16 @@ class WooPaymentsEventIngestor {
 	/**
 	 * Dispute event handler.
 	 *
-	 * @var WooPaymentsDisputeEventHandler
+	 * @var DisputeEventHandler
 	 */
-	private WooPaymentsDisputeEventHandler $dispute_event_handler;
+	private DisputeEventHandler $dispute_event_handler;
 
 	/**
 	 * Refund event handler.
 	 *
-	 * @var WooPaymentsRefundEventHandler
+	 * @var RefundEventHandler
 	 */
-	private WooPaymentsRefundEventHandler $refund_event_handler;
+	private RefundEventHandler $refund_event_handler;
 
 	/**
 	 * Account event handler.
@@ -127,32 +127,32 @@ class WooPaymentsEventIngestor {
 	/**
 	 * WooPayments early fraud warning event handler.
 	 *
-	 * @var WooPaymentsEarlyFraudWarningEventHandler
+	 * @var EarlyFraudWarningEventHandler
 	 */
-	private WooPaymentsEarlyFraudWarningEventHandler $early_fraud_warning_event_handler;
+	private EarlyFraudWarningEventHandler $early_fraud_warning_event_handler;
 
 	/**
 	 * Payment intent and charge expiry event handler.
 	 *
-	 * @var WooPaymentsPaymentIntentEventHandler
+	 * @var PaymentIntentEventHandler
 	 */
-	private WooPaymentsPaymentIntentEventHandler $payment_intent_event_handler;
+	private PaymentIntentEventHandler $payment_intent_event_handler;
 
 	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
 	 *
-	 * @param TransportLog                             $transport_log                     Transport log.
-	 * @param WooPaymentsDisputeEventHandler           $dispute_event_handler             Dispute event handler.
-	 * @param WooPaymentsRefundEventHandler            $refund_event_handler              Refund event handler.
-	 * @param WooPaymentsAccountEventHandler           $account_event_handler             Account event handler.
-	 * @param WooPaymentsNotificationEventHandler      $notification_event_handler        Notification event handler.
-	 * @param WooPaymentsAccountService                $account_service                   WooPayments account service.
-	 * @param WooPaymentsEarlyFraudWarningEventHandler $early_fraud_warning_event_handler WooPayments early fraud warning event handler.
-	 * @param WooPaymentsPaymentIntentEventHandler     $payment_intent_event_handler      Payment intent and charge expiry event handler.
+	 * @param TransportLog                        $transport_log                     Transport log.
+	 * @param DisputeEventHandler                 $dispute_event_handler             Dispute event handler.
+	 * @param RefundEventHandler                  $refund_event_handler              Refund event handler.
+	 * @param WooPaymentsAccountEventHandler      $account_event_handler             Account event handler.
+	 * @param WooPaymentsNotificationEventHandler $notification_event_handler        Notification event handler.
+	 * @param WooPaymentsAccountService           $account_service                   WooPayments account service.
+	 * @param EarlyFraudWarningEventHandler       $early_fraud_warning_event_handler WooPayments early fraud warning event handler.
+	 * @param PaymentIntentEventHandler           $payment_intent_event_handler      Payment intent and charge expiry event handler.
 	 */
-	final public function init( TransportLog $transport_log, WooPaymentsDisputeEventHandler $dispute_event_handler, WooPaymentsRefundEventHandler $refund_event_handler, WooPaymentsAccountEventHandler $account_event_handler, WooPaymentsNotificationEventHandler $notification_event_handler, WooPaymentsAccountService $account_service, WooPaymentsEarlyFraudWarningEventHandler $early_fraud_warning_event_handler, WooPaymentsPaymentIntentEventHandler $payment_intent_event_handler ): void {
+	final public function init( TransportLog $transport_log, DisputeEventHandler $dispute_event_handler, RefundEventHandler $refund_event_handler, WooPaymentsAccountEventHandler $account_event_handler, WooPaymentsNotificationEventHandler $notification_event_handler, WooPaymentsAccountService $account_service, EarlyFraudWarningEventHandler $early_fraud_warning_event_handler, PaymentIntentEventHandler $payment_intent_event_handler ): void {
 		$this->transport_log                     = $transport_log;
 		$this->dispute_event_handler             = $dispute_event_handler;
 		$this->refund_event_handler              = $refund_event_handler;

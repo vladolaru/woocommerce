@@ -14,16 +14,16 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDa
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\StripeBillingModule;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsEventIngestor;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsWebhookRestController;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsWebhookReliabilityService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\EventIngestor;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WebhookRestController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WebhookReliabilityService;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Fixtures\RecordedPlatformEvents;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\ProviderTextLogAssertions;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\RecordingActionSchedulerService;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\RecordingWcLogger;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\WooPaymentsEventHandlerTestTrait;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsRefundEventHandler;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\RefundEventHandler;
 use InvalidArgumentException;
 use RuntimeException;
 use WC_Order;
@@ -33,9 +33,9 @@ use WP_REST_Response;
 use WP_REST_Server;
 
 /**
- * Tests for the WooPaymentsWebhookRestController class.
+ * Tests for the WebhookRestController class.
  */
-class WooPaymentsWebhookRestControllerTest extends WC_REST_Unit_Test_Case {
+class WebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 
 	use ProviderTextLogAssertions;
 	use WooPaymentsEventHandlerTestTrait;
@@ -50,14 +50,14 @@ class WooPaymentsWebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 	/**
 	 * Reliability service the controller hands failed pushes to.
 	 *
-	 * @var WooPaymentsWebhookReliabilityService
+	 * @var WebhookReliabilityService
 	 */
-	private WooPaymentsWebhookReliabilityService $reliability_service;
+	private WebhookReliabilityService $reliability_service;
 
 	/**
 	 * The System Under Test.
 	 *
-	 * @var WooPaymentsWebhookRestController
+	 * @var WebhookRestController
 	 */
 	private $sut;
 
@@ -66,7 +66,7 @@ class WooPaymentsWebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 	 */
 	public function setUp(): void {
 		parent::setUp();
-		$this->sut = wc_get_container()->get( WooPaymentsWebhookRestController::class );
+		$this->sut = wc_get_container()->get( WebhookRestController::class );
 		$this->remove_rest_hook();
 	}
 
@@ -130,7 +130,7 @@ class WooPaymentsWebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 	 */
 	public function test_success_response_matches_woopayments_envelope(): void {
 		$payload    = array( 'type' => 'customer.created' );
-		$ingestor   = new class() extends WooPaymentsEventIngestor {
+		$ingestor   = new class() extends EventIngestor {
 				/**
 				 * Processed payloads.
 				 *
@@ -163,7 +163,7 @@ class WooPaymentsWebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 	public function test_bad_payload_returns_bad_request_envelope(): void {
 		$logger     = new RecordingWcLogger();
 		$controller = $this->create_controller_with_ingestor(
-			new class() extends WooPaymentsEventIngestor {
+			new class() extends EventIngestor {
 				/**
 				 * Process a payload.
 				 *
@@ -191,7 +191,7 @@ class WooPaymentsWebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 	public function test_processing_exception_returns_error_envelope(): void {
 		$logger     = new RecordingWcLogger();
 		$controller = $this->create_controller_with_ingestor(
-			new class() extends WooPaymentsEventIngestor {
+			new class() extends EventIngestor {
 				/**
 				 * Process a payload.
 				 *
@@ -245,7 +245,7 @@ class WooPaymentsWebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 		$this->assertSame(
 			$kept ? array(
 				array(
-					'hook' => WooPaymentsWebhookReliabilityService::WEBHOOK_PROCESS_EVENT_ACTION,
+					'hook' => WebhookReliabilityService::WEBHOOK_PROCESS_EVENT_ACTION,
 					'args' => array( 'event_id' => 'evt_failed_push' ),
 				),
 			) : array(),
@@ -325,7 +325,7 @@ class WooPaymentsWebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 		$order->update_meta_data( '_charge_id', 'ch_route' );
 		$order->save();
 		$logger     = new RecordingWcLogger();
-		$controller = $this->create_controller_with_ingestor( wc_get_container()->get( WooPaymentsEventIngestor::class ), $logger );
+		$controller = $this->create_controller_with_ingestor( wc_get_container()->get( EventIngestor::class ), $logger );
 		$event      = array(
 			'id'   => 'evt_route',
 			'type' => $event_type,
@@ -340,7 +340,7 @@ class WooPaymentsWebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 		$this->assertSame(
 			$kept ? array(
 				array(
-					'hook' => WooPaymentsWebhookReliabilityService::WEBHOOK_PROCESS_EVENT_ACTION,
+					'hook' => WebhookReliabilityService::WEBHOOK_PROCESS_EVENT_ACTION,
 					'args' => array( 'event_id' => 'evt_route' ),
 				),
 			) : array(),
@@ -466,7 +466,7 @@ class WooPaymentsWebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 		$event                               = RecordedPlatformEvents::body( 'platform-charge-dispute-events.json', 'card_charge_refunded_in_full' );
 		$event['data']['object']['metadata'] = array_merge( $event['data']['object']['metadata'], $change_metadata( wc_create_order() ) );
 		$logger                              = new RecordingWcLogger();
-		$controller                          = $this->create_controller_with_ingestor( wc_get_container()->get( WooPaymentsEventIngestor::class ), $logger );
+		$controller                          = $this->create_controller_with_ingestor( wc_get_container()->get( EventIngestor::class ), $logger );
 
 		$response = $controller->handle_webhook( $this->create_post_request( $event ) );
 
@@ -476,7 +476,7 @@ class WooPaymentsWebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 		$this->assertSame(
 			$acknowledged ? array() : array(
 				array(
-					'hook' => WooPaymentsWebhookReliabilityService::WEBHOOK_PROCESS_EVENT_ACTION,
+					'hook' => WebhookReliabilityService::WEBHOOK_PROCESS_EVENT_ACTION,
 					'args' => array( 'event_id' => $event['id'] ),
 				),
 			),
@@ -575,7 +575,7 @@ class WooPaymentsWebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 				wc_get_container()->get( OrderPaymentLifecycleService::class ),
 				new class() extends Client {},
 				$this->create_dispute_event_handler( new class() extends Client {} ),
-				wc_get_container()->get( WooPaymentsRefundEventHandler::class ),
+				wc_get_container()->get( RefundEventHandler::class ),
 				$handler,
 				$this->create_notification_event_handler()
 			)
@@ -630,7 +630,7 @@ class WooPaymentsWebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 				}
 			);
 		}
-		$controller = $this->create_controller_with_ingestor( wc_get_container()->get( WooPaymentsEventIngestor::class ) );
+		$controller = $this->create_controller_with_ingestor( wc_get_container()->get( EventIngestor::class ) );
 		wp_set_current_user( $this->factory->user->create( array( 'role' => 'administrator' ) ) );
 		$wp_rest_server = new WP_REST_Server();
 		$controller->register_routes();
@@ -666,7 +666,7 @@ class WooPaymentsWebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 
 		// A test-mode store, so the test-mode event is not skipped as another mode's.
 		update_option( WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION, array( 'test_mode' => 'yes' ) );
-		$controller = $this->create_controller_with_ingestor( wc_get_container()->get( WooPaymentsEventIngestor::class ) );
+		$controller = $this->create_controller_with_ingestor( wc_get_container()->get( EventIngestor::class ) );
 		wp_set_current_user( $this->factory->user->create( array( 'role' => 'administrator' ) ) );
 		$wp_rest_server = new WP_REST_Server();
 		$controller->register_routes();
@@ -704,7 +704,7 @@ class WooPaymentsWebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 		$order->save();
 		$lock       = wc_get_container()->get( OrderPaymentLock::class );
 		$vocabulary = new WooPaymentsPersistenceVocabulary();
-		$controller = $this->create_controller_with_ingestor( wc_get_container()->get( WooPaymentsEventIngestor::class ) );
+		$controller = $this->create_controller_with_ingestor( wc_get_container()->get( EventIngestor::class ) );
 		$event      = array(
 			'id'   => 'evt_dispute_lock_retry',
 			'type' => 'charge.dispute.created',
@@ -733,7 +733,7 @@ class WooPaymentsWebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 		$this->assertSame(
 			array(
 				array(
-					'hook' => WooPaymentsWebhookReliabilityService::WEBHOOK_PROCESS_EVENT_ACTION,
+					'hook' => WebhookReliabilityService::WEBHOOK_PROCESS_EVENT_ACTION,
 					'args' => array( 'event_id' => 'evt_dispute_lock_retry' ),
 				),
 			),
@@ -776,7 +776,7 @@ class WooPaymentsWebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 		$order->save();
 		$lock       = wc_get_container()->get( OrderPaymentLock::class );
 		$vocabulary = new WooPaymentsPersistenceVocabulary();
-		$controller = $this->create_controller_with_ingestor( wc_get_container()->get( WooPaymentsEventIngestor::class ) );
+		$controller = $this->create_controller_with_ingestor( wc_get_container()->get( EventIngestor::class ) );
 		$event      = array(
 			'id'   => 'evt_funds_lock_retry',
 			'type' => 'charge.dispute.funds_withdrawn',
@@ -802,7 +802,7 @@ class WooPaymentsWebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 		$this->assertSame(
 			array(
 				array(
-					'hook' => WooPaymentsWebhookReliabilityService::WEBHOOK_PROCESS_EVENT_ACTION,
+					'hook' => WebhookReliabilityService::WEBHOOK_PROCESS_EVENT_ACTION,
 					'args' => array( 'event_id' => 'evt_funds_lock_retry' ),
 				),
 			),
@@ -876,10 +876,10 @@ class WooPaymentsWebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 		wc_get_container()->replace( StripeBillingModule::class, $module );
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
 		$logger     = RecordingWcLogger::install();
-		$controller = new WooPaymentsWebhookRestController();
+		$controller = new WebhookRestController();
 		$controller->init(
-			wc_get_container()->get( WooPaymentsEventIngestor::class ),
-			wc_get_container()->get( WooPaymentsWebhookReliabilityService::class )
+			wc_get_container()->get( EventIngestor::class ),
+			wc_get_container()->get( WebhookReliabilityService::class )
 		);
 
 		$response = $controller->handle_webhook(
@@ -981,17 +981,17 @@ class WooPaymentsWebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 	/**
 	 * Create a controller with a supplied ingestor.
 	 *
-	 * @param WooPaymentsEventIngestor $ingestor Ingestor test double.
-	 * @param RecordingWcLogger|null   $logger   Optional logger that wc_get_logger() returns for the rest of the test.
-	 * @return WooPaymentsWebhookRestController
+	 * @param EventIngestor          $ingestor Ingestor test double.
+	 * @param RecordingWcLogger|null $logger   Optional logger that wc_get_logger() returns for the rest of the test.
+	 * @return WebhookRestController
 	 */
-	private function create_controller_with_ingestor( WooPaymentsEventIngestor $ingestor, ?RecordingWcLogger $logger = null ): WooPaymentsWebhookRestController {
+	private function create_controller_with_ingestor( EventIngestor $ingestor, ?RecordingWcLogger $logger = null ): WebhookRestController {
 		if ( null !== $logger ) {
 			add_filter( 'woocommerce_logging_class', static fn() => $logger );
 		}
 
 		$this->scheduler           = new RecordingActionSchedulerService();
-		$reliability_service       = new WooPaymentsWebhookReliabilityService();
+		$reliability_service       = new WebhookReliabilityService();
 		$this->reliability_service = $reliability_service;
 		$reliability_service->init(
 			$this->scheduler,
@@ -999,7 +999,7 @@ class WooPaymentsWebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 			$ingestor
 		);
 
-		$controller = new WooPaymentsWebhookRestController();
+		$controller = new WebhookRestController();
 		$controller->init( $ingestor, $reliability_service );
 
 		return $controller;

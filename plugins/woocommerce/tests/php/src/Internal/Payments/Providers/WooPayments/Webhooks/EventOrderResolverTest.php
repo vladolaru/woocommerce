@@ -3,12 +3,12 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Webhooks;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsEventOrderResolver;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\EventOrderResolver;
 use WC_Order;
 use WC_Unit_Test_Case;
 
 /**
- * Tests for the WooPaymentsEventOrderResolver class.
+ * Tests for the EventOrderResolver class.
  *
  * Event objects carry the Stripe `metadata` the store attached at checkout: `order_id` and `order_key` on a
  * PaymentIntent and its charges (client 11.1.0 class-wc-payments-webhook-processing-service.php:968-1002;
@@ -20,21 +20,21 @@ use WC_Unit_Test_Case;
  * shape the recorded webhook carries (`Fixtures/platform-3ds-challenge-results.json:63-65`) and the client's succeeded handler reads
  * (:500-502), where the client's order lookup reads `charges[0]` (:984-986).
  */
-class WooPaymentsEventOrderResolverTest extends WC_Unit_Test_Case {
+class EventOrderResolverTest extends WC_Unit_Test_Case {
 
 	/**
 	 * The System Under Test.
 	 *
-	 * @var WooPaymentsEventOrderResolver
+	 * @var EventOrderResolver
 	 */
-	private WooPaymentsEventOrderResolver $sut;
+	private EventOrderResolver $sut;
 
 	/**
 	 * Set up test fixtures.
 	 */
 	public function setUp(): void {
 		parent::setUp();
-		$this->sut = new WooPaymentsEventOrderResolver();
+		$this->sut = new EventOrderResolver();
 	}
 
 	/**

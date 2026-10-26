@@ -3,12 +3,12 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Webhooks;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsEventIngestor;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\EventIngestor;
 
 /**
  * Recording ingestor test double.
  */
-class RecordingEventIngestor extends WooPaymentsEventIngestor {
+class RecordingEventIngestor extends EventIngestor {
 
 	/**
 	 * Processed events.

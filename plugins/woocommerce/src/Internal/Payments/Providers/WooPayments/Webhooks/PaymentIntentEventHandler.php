@@ -1,6 +1,6 @@
 <?php
 /**
- * WooPaymentsPaymentIntentEventHandler class file.
+ * PaymentIntentEventHandler class file.
  */
 
 declare( strict_types = 1 );
@@ -37,7 +37,7 @@ use WC_Payment_Token;
  * @since 11.2.0
  * @internal
  */
-class WooPaymentsPaymentIntentEventHandler {
+class PaymentIntentEventHandler {
 
 	/**
 	 * Order lifecycle service.
@@ -84,16 +84,16 @@ class WooPaymentsPaymentIntentEventHandler {
 	/**
 	 * Webhook event order resolver.
 	 *
-	 * @var WooPaymentsEventOrderResolver
+	 * @var EventOrderResolver
 	 */
-	private WooPaymentsEventOrderResolver $event_order_resolver;
+	private EventOrderResolver $event_order_resolver;
 
 	/**
 	 * Recorder of events on a charge that does not pay the order.
 	 *
-	 * @var WooPaymentsOtherChargeRecorder
+	 * @var OtherChargeRecorder
 	 */
-	private WooPaymentsOtherChargeRecorder $other_charge_recorder;
+	private OtherChargeRecorder $other_charge_recorder;
 
 	/**
 	 * Fee details note controller.
@@ -127,13 +127,13 @@ class WooPaymentsPaymentIntentEventHandler {
 	 * @param WooPaymentsAccountService           $account_service             WooPayments account service.
 	 * @param WooPaymentsOrderNoteService         $order_note_service          WooPayments order note service.
 	 * @param WooPaymentsAdminMenuBadgeService    $admin_menu_badge_service    WooPayments admin menu badge service.
-	 * @param WooPaymentsEventOrderResolver       $event_order_resolver        Webhook event order resolver.
-	 * @param WooPaymentsOtherChargeRecorder      $other_charge_recorder       Recorder of events on a charge that does not pay the order.
+	 * @param EventOrderResolver                  $event_order_resolver        Webhook event order resolver.
+	 * @param OtherChargeRecorder                 $other_charge_recorder       Recorder of events on a charge that does not pay the order.
 	 * @param WooPaymentsFeeDetailsNoteController $fee_details_note_controller Fee details note controller.
 	 * @param OrderPaymentLock                    $order_payment_lock          Order payment lock.
 	 * @param WooPaymentsPersistenceVocabulary    $persistence_vocabulary      WooPayments persistence vocabulary.
 	 */
-	final public function init( OrderPaymentLifecycleService $lifecycle_service, Client $api_client, WooPaymentsOrderDataService $order_data_service, WooPaymentsAccountService $account_service, WooPaymentsOrderNoteService $order_note_service, WooPaymentsAdminMenuBadgeService $admin_menu_badge_service, WooPaymentsEventOrderResolver $event_order_resolver, WooPaymentsOtherChargeRecorder $other_charge_recorder, WooPaymentsFeeDetailsNoteController $fee_details_note_controller, OrderPaymentLock $order_payment_lock, WooPaymentsPersistenceVocabulary $persistence_vocabulary ): void {
+	final public function init( OrderPaymentLifecycleService $lifecycle_service, Client $api_client, WooPaymentsOrderDataService $order_data_service, WooPaymentsAccountService $account_service, WooPaymentsOrderNoteService $order_note_service, WooPaymentsAdminMenuBadgeService $admin_menu_badge_service, EventOrderResolver $event_order_resolver, OtherChargeRecorder $other_charge_recorder, WooPaymentsFeeDetailsNoteController $fee_details_note_controller, OrderPaymentLock $order_payment_lock, WooPaymentsPersistenceVocabulary $persistence_vocabulary ): void {
 		$this->lifecycle_service           = $lifecycle_service;
 		$this->api_client                  = $api_client;
 		$this->order_data_service          = $order_data_service;

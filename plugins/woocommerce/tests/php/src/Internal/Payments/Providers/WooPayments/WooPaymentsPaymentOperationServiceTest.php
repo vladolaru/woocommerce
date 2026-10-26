@@ -37,8 +37,8 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOr
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentType;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsPaymentIntentEventHandler;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsRefundEventHandler;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\PaymentIntentEventHandler;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\RefundEventHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFraudOrderTrackingService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFraudService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSessionService;
@@ -4736,7 +4736,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 			$provider
 		);
 
-		wc_get_container()->get( WooPaymentsPaymentIntentEventHandler::class )->process( 'payment_intent.payment_failed', $intent );
+		wc_get_container()->get( PaymentIntentEventHandler::class )->process( 'payment_intent.payment_failed', $intent );
 
 		$order        = wc_get_order( $order->get_id() );
 		$failed_notes = array_filter(
@@ -9084,7 +9084,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 * exact `charge.refund.updated` succeeded body REC-5a R-c recorded for
 	 * that same refund (`Fixtures/platform-refund-updated-events.json`, pair
 	 * `afterpay_clearpay_refund_updated_succeeded`) through the real
-	 * {@see WooPaymentsRefundEventHandler}. Client parity: the pending and
+	 * {@see RefundEventHandler}. Client parity: the pending and
 	 * succeeded legs render distinct note text (`os:2633-2638`) and the
 	 * webhook leg's own note-once identity is distinct from the pending
 	 * leg's (`wh:355-359`), so the claim is two notes total, not one.
@@ -9132,7 +9132,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		$this->assertCount( 1, $this->notes_referencing( $order->get_id(), $refund_id ), 'The pending leg must journal exactly one note.' );
 
 		$recorded_event = $this->load_recorded_refund_updated_event( 'afterpay_clearpay_refund_updated_succeeded' );
-		wc_get_container()->get( WooPaymentsRefundEventHandler::class )->process( 'charge.refund.updated', $recorded_event );
+		wc_get_container()->get( RefundEventHandler::class )->process( 'charge.refund.updated', $recorded_event );
 
 		$order = wc_get_order( $order->get_id() );
 		$this->assertInstanceOf( WC_Order::class, $order );

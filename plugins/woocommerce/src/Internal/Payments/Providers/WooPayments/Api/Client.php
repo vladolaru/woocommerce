@@ -55,7 +55,7 @@ class Client {
 		// Create_And_Confirm_Intention and Create_Intention; terminal intents share the path. Read back by the kept charge
 		// key (the idempotency key) and WooPaymentsChargeAmbiguityService (customer, metadata.order_id and order_key).
 		'intentions'              => array( 'amount', 'currency', 'payment_method', 'confirmation_token', 'payment_method_update_data', 'return_url', 'customer', 'metadata.order_id', 'metadata.order_key', 'idempotency_key' ),
-		// Capture_Intention. The capture writes the metadata onto the intent, where WooPaymentsEventOrderResolver reads
+		// Capture_Intention. The capture writes the metadata onto the intent, where EventOrderResolver reads
 		// metadata.order_id and order_key.
 		'intentions/{id}/capture' => array( 'amount_to_capture', 'metadata.order_id', 'metadata.order_key', 'idempotency_key' ),
 		// Refund_Charge. Read back by WooPaymentsRefundAmbiguityService: the key, amount and metadata.refund_attempt.

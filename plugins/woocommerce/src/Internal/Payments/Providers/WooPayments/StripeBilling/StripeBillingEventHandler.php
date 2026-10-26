@@ -13,7 +13,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\SubscriptionMethodPolicy;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsPaymentIntentEventHandler;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\PaymentIntentEventHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use InvalidArgumentException;
@@ -64,9 +64,9 @@ class StripeBillingEventHandler {
 	/**
 	 * Payment intent event handler, which records a succeeded payment intent on its order.
 	 *
-	 * @var WooPaymentsPaymentIntentEventHandler
+	 * @var PaymentIntentEventHandler
 	 */
-	private WooPaymentsPaymentIntentEventHandler $payment_intent_event_handler;
+	private PaymentIntentEventHandler $payment_intent_event_handler;
 
 	/**
 	 * Account service, for the mode a renewal is recorded in.
@@ -94,15 +94,15 @@ class StripeBillingEventHandler {
 	 *
 	 * @internal
 	 *
-	 * @param StripeBillingInvoiceService          $invoice_service              Invoice service.
-	 * @param StripeBillingSubscriptionService     $subscription_service         Subscription service.
-	 * @param Client                               $api_client                   Platform API client.
-	 * @param WooPaymentsPaymentIntentEventHandler $payment_intent_event_handler Payment intent event handler.
-	 * @param WooPaymentsAccountService            $account_service              Account service.
-	 * @param WooPaymentsLogger                    $logger                       Module logger.
-	 * @param OrderPaymentLifecycleService         $lifecycle_service            Payment lifecycle service.
+	 * @param StripeBillingInvoiceService      $invoice_service              Invoice service.
+	 * @param StripeBillingSubscriptionService $subscription_service         Subscription service.
+	 * @param Client                           $api_client                   Platform API client.
+	 * @param PaymentIntentEventHandler        $payment_intent_event_handler Payment intent event handler.
+	 * @param WooPaymentsAccountService        $account_service              Account service.
+	 * @param WooPaymentsLogger                $logger                       Module logger.
+	 * @param OrderPaymentLifecycleService     $lifecycle_service            Payment lifecycle service.
 	 */
-	final public function init( StripeBillingInvoiceService $invoice_service, StripeBillingSubscriptionService $subscription_service, Client $api_client, WooPaymentsPaymentIntentEventHandler $payment_intent_event_handler, WooPaymentsAccountService $account_service, WooPaymentsLogger $logger, OrderPaymentLifecycleService $lifecycle_service ): void {
+	final public function init( StripeBillingInvoiceService $invoice_service, StripeBillingSubscriptionService $subscription_service, Client $api_client, PaymentIntentEventHandler $payment_intent_event_handler, WooPaymentsAccountService $account_service, WooPaymentsLogger $logger, OrderPaymentLifecycleService $lifecycle_service ): void {
 		$this->invoice_service              = $invoice_service;
 		$this->subscription_service         = $subscription_service;
 		$this->api_client                   = $api_client;

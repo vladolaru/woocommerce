@@ -1,6 +1,6 @@
 <?php
 /**
- * WooPaymentsWebhookRestController class file.
+ * WebhookRestController class file.
  */
 
 declare( strict_types = 1 );
@@ -21,31 +21,31 @@ use WP_REST_Server;
  * @since 11.0.0
  * @internal
  */
-class WooPaymentsWebhookRestController implements RegisterHooksInterface {
+class WebhookRestController implements RegisterHooksInterface {
 
 	/**
 	 * Event ingestor.
 	 *
-	 * @var WooPaymentsEventIngestor
+	 * @var EventIngestor
 	 */
-	private WooPaymentsEventIngestor $event_ingestor;
+	private EventIngestor $event_ingestor;
 
 	/**
 	 * Webhook reliability service, which retries events that fail to process.
 	 *
-	 * @var WooPaymentsWebhookReliabilityService
+	 * @var WebhookReliabilityService
 	 */
-	private WooPaymentsWebhookReliabilityService $reliability_service;
+	private WebhookReliabilityService $reliability_service;
 
 	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsEventIngestor             $event_ingestor      Event ingestor.
-	 * @param WooPaymentsWebhookReliabilityService $reliability_service Webhook reliability service.
+	 * @param EventIngestor             $event_ingestor      Event ingestor.
+	 * @param WebhookReliabilityService $reliability_service Webhook reliability service.
 	 */
-	final public function init( WooPaymentsEventIngestor $event_ingestor, WooPaymentsWebhookReliabilityService $reliability_service ): void {
+	final public function init( EventIngestor $event_ingestor, WebhookReliabilityService $reliability_service ): void {
 		$this->event_ingestor      = $event_ingestor;
 		$this->reliability_service = $reliability_service;
 	}
@@ -69,7 +69,7 @@ class WooPaymentsWebhookRestController implements RegisterHooksInterface {
 	 *
 	 * The platform pushes each event to this route as a Jetpack-signed request made as the connection
 	 * owner, so the request runs as an administrator. An event whose push fails in transport is kept
-	 * by the platform and pulled later by {@see WooPaymentsWebhookReliabilityService}. There is no
+	 * by the platform and pulled later by {@see WebhookReliabilityService}. There is no
 	 * shared webhook signing secret, so this route cannot verify a payload signature; the capability
 	 * check is the trust boundary, and loosening it would let unverified events in.
 	 */
@@ -139,7 +139,7 @@ class WooPaymentsWebhookRestController implements RegisterHooksInterface {
 			sprintf(
 				'' === $event_id ? 'Failed processing a WooPayments webhook event.%2$s' : 'Failed processing event %1$s.%2$s',
 				$event_id,
-				$refused ? WooPaymentsEventIngestor::get_refusal_reason_for_log( $exception ) : ''
+				$refused ? EventIngestor::get_refusal_reason_for_log( $exception ) : ''
 			),
 			array_merge( WooPaymentsLogger::get_failure_context( $exception ), array( 'source' => WooPaymentsLogger::SOURCE ) )
 		);

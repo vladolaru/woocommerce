@@ -23,7 +23,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\Plugi
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\ReconciliationJob;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsWebhookReliabilityService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WebhookReliabilityService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsWooCommerceUpdateListener;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayPreflightGuard;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
@@ -313,7 +313,7 @@ class WooPaymentsClassesBySetupTierTest extends WC_Unit_Test_Case {
 				}
 
 				$this->assertSame(
-					WooPaymentsWebhookReliabilityService::class,
+					WebhookReliabilityService::class,
 					$roots[ $account_index + 1 ] ?? null,
 					$state . ' ' . $request . ' must register webhook recovery immediately after the account refresh producer.'
 				);

@@ -51,7 +51,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDe
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\DisputesListRequest;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDisputesRestController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\DocumentsListRequest;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsEventIngestor;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\EventIngestor;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExpressCheckoutService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\FraudOutcomeTransactionsListRequest;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendTrackingController;
@@ -950,7 +950,7 @@ class WooPaymentsHookArityContractTest extends WC_Unit_Test_Case {
 			),
 		);
 
-		$ingestor = wc_get_container()->get( WooPaymentsEventIngestor::class );
+		$ingestor = wc_get_container()->get( EventIngestor::class );
 		$this->run_ignoring_non_probe_errors( static fn() => $ingestor->process( $event_body ) );
 	}
 

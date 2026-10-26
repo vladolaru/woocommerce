@@ -1,6 +1,6 @@
 <?php
 /**
- * WooPaymentsDisputeEventHandler class file.
+ * DisputeEventHandler class file.
  */
 
 declare( strict_types = 1 );
@@ -40,7 +40,7 @@ use WC_Order;
  * @since 11.0.0
  * @internal
  */
-class WooPaymentsDisputeEventHandler {
+class DisputeEventHandler {
 
 	/**
 	 * Meta key recording the charge's disputes that are still open.
@@ -102,16 +102,16 @@ class WooPaymentsDisputeEventHandler {
 	/**
 	 * Webhook event order resolver.
 	 *
-	 * @var WooPaymentsEventOrderResolver
+	 * @var EventOrderResolver
 	 */
-	private WooPaymentsEventOrderResolver $event_order_resolver;
+	private EventOrderResolver $event_order_resolver;
 
 	/**
 	 * Recorder of events on a charge that does not pay the order.
 	 *
-	 * @var WooPaymentsOtherChargeRecorder
+	 * @var OtherChargeRecorder
 	 */
-	private WooPaymentsOtherChargeRecorder $other_charge_recorder;
+	private OtherChargeRecorder $other_charge_recorder;
 
 	/**
 	 * Initialize the handler.
@@ -123,10 +123,10 @@ class WooPaymentsDisputeEventHandler {
 	 * @param WooPaymentsOrderNoteService      $order_note_service     WooPayments order note service.
 	 * @param OrderPaymentLock                 $order_payment_lock     Order payment lock.
 	 * @param WooPaymentsPersistenceVocabulary $persistence_vocabulary WooPayments persistence vocabulary.
-	 * @param WooPaymentsEventOrderResolver    $event_order_resolver   Webhook event order resolver.
-	 * @param WooPaymentsOtherChargeRecorder   $other_charge_recorder Recorder of events on another charge.
+	 * @param EventOrderResolver               $event_order_resolver   Webhook event order resolver.
+	 * @param OtherChargeRecorder              $other_charge_recorder Recorder of events on another charge.
 	 */
-	final public function init( Client $api_client, WooPaymentsDatabaseCache $database_cache, WooPaymentsOrderNoteService $order_note_service, OrderPaymentLock $order_payment_lock, WooPaymentsPersistenceVocabulary $persistence_vocabulary, WooPaymentsEventOrderResolver $event_order_resolver, WooPaymentsOtherChargeRecorder $other_charge_recorder ): void {
+	final public function init( Client $api_client, WooPaymentsDatabaseCache $database_cache, WooPaymentsOrderNoteService $order_note_service, OrderPaymentLock $order_payment_lock, WooPaymentsPersistenceVocabulary $persistence_vocabulary, EventOrderResolver $event_order_resolver, OtherChargeRecorder $other_charge_recorder ): void {
 		$this->api_client             = $api_client;
 		$this->database_cache         = $database_cache;
 		$this->order_note_service     = $order_note_service;

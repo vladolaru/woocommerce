@@ -11,7 +11,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFeatureController
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilder;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsNativeAccountAdapter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsNativeApiClientAdapter;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsWebhookReliabilityService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WebhookReliabilityService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountMilestonesController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsApplePayDomainService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCanceledAuthorizationFeeRemediationService;
@@ -92,8 +92,8 @@ class PreflightService {
 		WooPaymentsCanceledAuthorizationFeeRemediationService::ACTION_HOOK,
 		WooPaymentsCanceledAuthorizationFeeRemediationService::DRY_RUN_ACTION_HOOK,
 		WooPaymentsCanceledAuthorizationFeeRemediationService::CHECK_AFFECTED_ORDERS_HOOK,
-		WooPaymentsWebhookReliabilityService::WEBHOOK_FETCH_EVENTS_ACTION,
-		WooPaymentsWebhookReliabilityService::WEBHOOK_PROCESS_EVENT_ACTION,
+		WebhookReliabilityService::WEBHOOK_FETCH_EVENTS_ACTION,
+		WebhookReliabilityService::WEBHOOK_PROCESS_EVENT_ACTION,
 		// Stripe Billing migration off Stripe, continued by the built-in WooPayments' migrator after the switch.
 		'wcpay_schedule_subscription_migrations',
 		'wcpay_migrate_subscription',

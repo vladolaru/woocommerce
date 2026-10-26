@@ -11,7 +11,7 @@ use Automattic\WooCommerce\Enums\OrderStatus;
 use Automattic\WooCommerce\Internal\Payments\PaymentOperationContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\PaymentProcessingService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsWebhookReliabilityService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WebhookReliabilityService;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Throwable;
 use WC_Order;
@@ -348,7 +348,7 @@ class WooPaymentsOrderAdminActionsController implements RegisterHooksInterface {
 	 * @return bool False when no retry is left.
 	 */
 	private function schedule_retry( WC_Order $order, string $operation, int $retry ): bool {
-		$delays = WooPaymentsWebhookReliabilityService::RETRY_DELAYS_SECONDS;
+		$delays = WebhookReliabilityService::RETRY_DELAYS_SECONDS;
 		if ( ! isset( $delays[ $retry ] ) ) {
 			return false;
 		}

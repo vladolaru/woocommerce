@@ -6,7 +6,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 use Automattic\WooCommerce\Internal\Payments\PaymentOperationContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentProcessingService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsEventIngestor;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\EventIngestor;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCheckoutAjaxController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderAdminActionsController;
@@ -346,7 +346,7 @@ class WooPaymentsFeeDetailsJobSchedulingTest extends WC_Unit_Test_Case {
 	 * `livemode` and `account` are left out: the ingestor skips its mode check without `livemode`.
 	 */
 	private function deliver_succeeded_webhook(): void {
-		wc_get_container()->get( WooPaymentsEventIngestor::class )->process(
+		wc_get_container()->get( EventIngestor::class )->process(
 			array(
 				'id'   => 'evt_' . $this->intent['id'] . '_' . ( ++$this->webhook_deliveries ),
 				'type' => 'payment_intent.succeeded',

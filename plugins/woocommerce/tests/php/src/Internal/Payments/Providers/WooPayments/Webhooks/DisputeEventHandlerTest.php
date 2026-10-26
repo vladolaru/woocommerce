@@ -7,8 +7,8 @@ use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFeatureController;
 use Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabularyInterface;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsEventOrderResolver;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsOtherChargeRecorder;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\EventOrderResolver;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\OtherChargeRecorder;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
@@ -17,7 +17,7 @@ use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
 use Automattic\WooCommerce\Internal\Payments\RefundRowCapture;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDatabaseCache;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsDisputeEventHandler;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\DisputeEventHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Tests\Internal\Payments\OrderPaymentLockTestTrait;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\RecordingWcLogger;
@@ -26,16 +26,16 @@ use WC_Order;
 use WC_Unit_Test_Case;
 
 /**
- * Tests for the WooPaymentsDisputeEventHandler class.
+ * Tests for the DisputeEventHandler class.
  */
-class WooPaymentsDisputeEventHandlerTest extends WC_Unit_Test_Case {
+class DisputeEventHandlerTest extends WC_Unit_Test_Case {
 
 	use OrderPaymentLockTestTrait;
 
 	/**
 	 * The System Under Test.
 	 *
-	 * @var WooPaymentsDisputeEventHandler
+	 * @var DisputeEventHandler
 	 */
 	private $sut;
 
@@ -55,15 +55,15 @@ class WooPaymentsDisputeEventHandlerTest extends WC_Unit_Test_Case {
 		foreach ( array( 'woocommerce_currency', '_wcpay_feature_customer_multi_currency', 'wcpay_multi_currency_enabled_currencies', 'wcpay_multi_currency_exchange_rate_eur', 'wcpay_multi_currency_manual_rate_eur' ) as $option_name ) {
 			$this->original_options[ $option_name ] = get_option( $option_name, null );
 		}
-		$this->sut = new WooPaymentsDisputeEventHandler();
+		$this->sut = new DisputeEventHandler();
 		$this->sut->init(
 			new class() extends Client {},
 			wc_get_container()->get( WooPaymentsDatabaseCache::class ),
 			wc_get_container()->get( WooPaymentsOrderNoteService::class ),
 			wc_get_container()->get( OrderPaymentLock::class ),
 			wc_get_container()->get( WooPaymentsPersistenceVocabulary::class ),
-			wc_get_container()->get( WooPaymentsEventOrderResolver::class ),
-			wc_get_container()->get( WooPaymentsOtherChargeRecorder::class )
+			wc_get_container()->get( EventOrderResolver::class ),
+			wc_get_container()->get( OtherChargeRecorder::class )
 		);
 	}
 
@@ -396,7 +396,7 @@ class WooPaymentsDisputeEventHandlerTest extends WC_Unit_Test_Case {
 				$this->sut->process( 'charge.dispute.created', $event );
 				$this->fail( 'A dispute webhook must fail for retry while a lifecycle event holds the order payment lock.' );
 			} catch ( OrderPaymentLockRefusedException $exception ) {
-				// The reliability service retries this exception for every event type (WooPaymentsWebhookReliabilityServiceTest).
+				// The reliability service retries this exception for every event type (WebhookReliabilityServiceTest).
 				$this->assertSame( $order->get_id(), $exception->get_order_id() );
 			}
 		} finally {
@@ -521,15 +521,15 @@ class WooPaymentsDisputeEventHandlerTest extends WC_Unit_Test_Case {
 			}
 		};
 		wc_get_container()->replace( OrderPaymentLock::class, $store );
-		$handler = new WooPaymentsDisputeEventHandler();
+		$handler = new DisputeEventHandler();
 		$handler->init(
 			new class() extends Client {},
 			wc_get_container()->get( WooPaymentsDatabaseCache::class ),
 			wc_get_container()->get( WooPaymentsOrderNoteService::class ),
 			wc_get_container()->get( OrderPaymentLock::class ),
 			wc_get_container()->get( WooPaymentsPersistenceVocabulary::class ),
-			wc_get_container()->get( WooPaymentsEventOrderResolver::class ),
-			wc_get_container()->get( WooPaymentsOtherChargeRecorder::class )
+			wc_get_container()->get( EventOrderResolver::class ),
+			wc_get_container()->get( OtherChargeRecorder::class )
 		);
 
 		$handler->process(
@@ -593,7 +593,7 @@ class WooPaymentsDisputeEventHandlerTest extends WC_Unit_Test_Case {
 		$order->update_meta_data( '_charge_id', 'ch_partial_lost' );
 		$order->update_meta_data( '_wcpay_open_dispute_ids', array( 'dp_partial_lost' ) );
 		$order->save();
-		$handler = new WooPaymentsDisputeEventHandler();
+		$handler = new DisputeEventHandler();
 		$handler->init(
 			new class() extends Client {
 				/**
@@ -615,8 +615,8 @@ class WooPaymentsDisputeEventHandlerTest extends WC_Unit_Test_Case {
 			wc_get_container()->get( WooPaymentsOrderNoteService::class ),
 			wc_get_container()->get( OrderPaymentLock::class ),
 			wc_get_container()->get( WooPaymentsPersistenceVocabulary::class ),
-			wc_get_container()->get( WooPaymentsEventOrderResolver::class ),
-			wc_get_container()->get( WooPaymentsOtherChargeRecorder::class )
+			wc_get_container()->get( EventOrderResolver::class ),
+			wc_get_container()->get( OtherChargeRecorder::class )
 		);
 
 		// A Stripe Dispute object, the charge.dispute.closed event's data.object: amount and currency are the fields the
@@ -1053,7 +1053,7 @@ class WooPaymentsDisputeEventHandlerTest extends WC_Unit_Test_Case {
 		$order->update_meta_data( '_charge_id', 'ch_lost_retry' );
 		$order->update_meta_data( '_wcpay_open_dispute_ids', array( 'dp_lost_retry' ) );
 		$order->save();
-		$handler = new WooPaymentsDisputeEventHandler();
+		$handler = new DisputeEventHandler();
 		$handler->init(
 			new class() extends Client {
 				/**
@@ -1072,8 +1072,8 @@ class WooPaymentsDisputeEventHandlerTest extends WC_Unit_Test_Case {
 			wc_get_container()->get( WooPaymentsOrderNoteService::class ),
 			wc_get_container()->get( OrderPaymentLock::class ),
 			wc_get_container()->get( WooPaymentsPersistenceVocabulary::class ),
-			wc_get_container()->get( WooPaymentsEventOrderResolver::class ),
-			wc_get_container()->get( WooPaymentsOtherChargeRecorder::class )
+			wc_get_container()->get( EventOrderResolver::class ),
+			wc_get_container()->get( OtherChargeRecorder::class )
 		);
 		// A Stripe Dispute, as charge.dispute.closed carries it (https://docs.stripe.com/api/disputes/object): a lost dispute of
 		// 4.00 on a 10.00 order.
@@ -1115,7 +1115,7 @@ class WooPaymentsDisputeEventHandlerTest extends WC_Unit_Test_Case {
 	public function test_lost_dispute_on_another_charge_adds_no_refund(): void {
 		$order   = $this->create_order_paid_by_another_gateway( 'bacs', 'ch_bacs_lost' );
 		$fetched = array();
-		$handler = new WooPaymentsDisputeEventHandler();
+		$handler = new DisputeEventHandler();
 		$handler->init(
 			new class( $fetched ) extends Client {
 				/**
@@ -1150,8 +1150,8 @@ class WooPaymentsDisputeEventHandlerTest extends WC_Unit_Test_Case {
 			wc_get_container()->get( WooPaymentsOrderNoteService::class ),
 			wc_get_container()->get( OrderPaymentLock::class ),
 			wc_get_container()->get( WooPaymentsPersistenceVocabulary::class ),
-			wc_get_container()->get( WooPaymentsEventOrderResolver::class ),
-			wc_get_container()->get( WooPaymentsOtherChargeRecorder::class )
+			wc_get_container()->get( EventOrderResolver::class ),
+			wc_get_container()->get( OtherChargeRecorder::class )
 		);
 
 		$handler->process(

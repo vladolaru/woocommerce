@@ -35,7 +35,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\StripeBillingModule;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsPaymentIntentEventHandler;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\PaymentIntentEventHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Tests\Internal\MultiCurrency\ServiceFactories;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Api\FakeHttpClient;
@@ -173,7 +173,7 @@ class StripeBillingEventHandlerTest extends WC_Unit_Test_Case {
 		wc_get_container()->replace( StripeBillingSubscriptionService::class, $this->subscription_service );
 
 		$this->sut = new StripeBillingEventHandler();
-		$this->sut->init( $invoice_service, $this->subscription_service, $api_client, wc_get_container()->get( WooPaymentsPaymentIntentEventHandler::class ), $account_service, $logger, wc_get_container()->get( OrderPaymentLifecycleService::class ) );
+		$this->sut->init( $invoice_service, $this->subscription_service, $api_client, wc_get_container()->get( PaymentIntentEventHandler::class ), $account_service, $logger, wc_get_container()->get( OrderPaymentLifecycleService::class ) );
 
 		add_action( 'woocommerce_subscription_status_on-hold', array( $this->subscription_service, 'handle_subscription_status_on_hold' ) );
 		add_action( 'woocommerce_subscription_status_on-hold_to_active', array( $this->subscription_service, 'reactivate_subscription' ) );

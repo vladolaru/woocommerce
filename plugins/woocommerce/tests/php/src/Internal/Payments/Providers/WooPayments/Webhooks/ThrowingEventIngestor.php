@@ -3,13 +3,13 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Webhooks;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsEventIngestor;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\EventIngestor;
 use Throwable;
 
 /**
  * Event ingestor test double that always throws a preset exception.
  */
-class ThrowingEventIngestor extends WooPaymentsEventIngestor {
+class ThrowingEventIngestor extends EventIngestor {
 
 	/**
 	 * Exception to throw when processing.
