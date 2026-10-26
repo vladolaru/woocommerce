@@ -1,15 +1,16 @@
 <?php
 /**
- * MultiCurrencyFedExCompatibilityController class file.
+ * WooCommerceFedEx class file.
  */
 
 declare( strict_types = 1 );
 
-namespace Automattic\WooCommerce\Internal\MultiCurrency;
+namespace Automattic\WooCommerce\Internal\MultiCurrency\Integrations;
 
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\RequestContext;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilder;
+use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 
 /**
  * Keeps WooCommerce FedEx Shipping's rate calculations in the store currency: product prices are not converted and the
@@ -18,7 +19,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilder;
  * @since 11.0.0
  * @internal
  */
-class MultiCurrencyFedExCompatibilityController implements RegisterHooksInterface {
+class WooCommerceFedEx implements RegisterHooksInterface {
 
 	private const FEDEX_SHIPPING_CALLS = array(
 		'WC_Shipping_Fedex->set_settings',

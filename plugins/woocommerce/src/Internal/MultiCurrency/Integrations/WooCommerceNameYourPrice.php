@@ -1,11 +1,11 @@
 <?php
 /**
- * MultiCurrencyNameYourPriceCompatibilityController class file.
+ * WooCommerceNameYourPrice class file.
  */
 
 declare( strict_types = 1 );
 
-namespace Automattic\WooCommerce\Internal\MultiCurrency;
+namespace Automattic\WooCommerce\Internal\MultiCurrency\Integrations;
 
 use Automattic\WooCommerce\Internal\MultiCurrency\Exceptions\InvalidCurrencyException;
 use Automattic\WooCommerce\Internal\MultiCurrency\Exceptions\InvalidCurrencyRateException;
@@ -14,6 +14,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Services\ServiceFactory;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilder;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilderFactory;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
+use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 
 /**
  * Converts Name Your Price amounts between currencies: the minimum, maximum and suggested prices, and a cart item's entered
@@ -24,7 +25,7 @@ use Automattic\WooCommerce\Internal\RegisterHooksInterface;
  * @since 11.0.0
  * @internal
  */
-class MultiCurrencyNameYourPriceCompatibilityController implements RegisterHooksInterface {
+class WooCommerceNameYourPrice implements RegisterHooksInterface {
 
 	private const NYP_CURRENCY_META_KEY = '_wcpay_multi_currency_nyp_currency';
 

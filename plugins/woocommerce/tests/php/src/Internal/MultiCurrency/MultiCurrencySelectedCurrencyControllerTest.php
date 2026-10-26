@@ -3,7 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\MultiCurrency;
 
-use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyCompatibilityController;
+use Automattic\WooCommerce\Internal\MultiCurrency\Integrations\IntegrationsController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencySelectedCurrencyController;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\GeolocationService;
@@ -1055,7 +1055,7 @@ class MultiCurrencySelectedCurrencyControllerTest extends WC_Unit_Test_Case {
 					'create_geolocation_service' => $geolocation,
 				)
 			),
-			wc_get_container()->get( MultiCurrencyCompatibilityController::class ),
+			wc_get_container()->get( IntegrationsController::class ),
 			$request_context ?? wc_get_container()->get( RequestContext::class )
 		);
 

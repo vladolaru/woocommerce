@@ -7,7 +7,7 @@ use Automattic\WooCommerce\Admin\Notes\Note;
 use Automattic\WooCommerce\Admin\Notes\Notes;
 use Automattic\WooCommerce\Internal\MultiCurrency\Compat\WooPaymentsExtensionFacadeLoader;
 use Automattic\WooCommerce\Internal\MultiCurrency\Exceptions\InvalidCurrencyException;
-use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyCompatibilityController;
+use Automattic\WooCommerce\Internal\MultiCurrency\Integrations\IntegrationsController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyCurrency;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFeatureController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRestController;
@@ -87,7 +87,7 @@ class WooPaymentsExtensionMultiCurrencyFacadeTest extends WC_Unit_Test_Case {
 	public function test_advanced_dynamic_pricing_reaches_the_module_hook_through_the_prefix(): void {
 		$this->declare_facade();
 		$product    = \WC_Helper_Product::create_simple_product();
-		$controller = wc_get_container()->get( MultiCurrencyCompatibilityController::class );
+		$controller = wc_get_container()->get( IntegrationsController::class );
 		$this->assertTrue( $controller->should_convert_product_price( $product ), 'Precondition: the module converts the product price.' );
 
 		( new MultiCurrencyFacadePluginCallersFixture() )->adp_stop_product_price_conversion();

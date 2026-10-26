@@ -11,6 +11,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Services\ServiceFactory;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\SwitcherRenderer;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\RequestContext;
+use Automattic\WooCommerce\Internal\MultiCurrency\Integrations\IntegrationsController;
 
 /**
  * Registers the `woocommerce-payments/multi-currency-switcher` block, with its editor script and the server-side render
@@ -46,9 +47,9 @@ class MultiCurrencySwitcherBlockController implements RegisterHooksInterface {
 	/**
 	 * Compatibility controller.
 	 *
-	 * @var MultiCurrencyCompatibilityController
+	 * @var IntegrationsController
 	 */
-	private MultiCurrencyCompatibilityController $compatibility_controller;
+	private IntegrationsController $compatibility_controller;
 
 	/**
 	 * Multi-Currency service factory.
@@ -69,13 +70,13 @@ class MultiCurrencySwitcherBlockController implements RegisterHooksInterface {
 	 *
 	 * @internal
 	 *
-	 * @param MultiCurrencyRuntimeArbiter          $arbiter                  Runtime owner arbiter.
-	 * @param MultiCurrencyCompatibilityController $compatibility_controller Compatibility controller.
-	 * @param ServiceFactory                       $service_factory          Multi-Currency service factory.
+	 * @param MultiCurrencyRuntimeArbiter $arbiter                  Runtime owner arbiter.
+	 * @param IntegrationsController      $compatibility_controller Compatibility controller.
+	 * @param ServiceFactory              $service_factory          Multi-Currency service factory.
 	 */
 	final public function init(
 		MultiCurrencyRuntimeArbiter $arbiter,
-		MultiCurrencyCompatibilityController $compatibility_controller,
+		IntegrationsController $compatibility_controller,
 		ServiceFactory $service_factory
 	): void {
 		$this->arbiter                  = $arbiter;

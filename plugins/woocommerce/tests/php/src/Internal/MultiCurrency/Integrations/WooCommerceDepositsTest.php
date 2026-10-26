@@ -1,22 +1,26 @@
 <?php
 declare( strict_types = 1 );
 
-namespace Automattic\WooCommerce\Tests\Internal\MultiCurrency;
+namespace Automattic\WooCommerce\Tests\Internal\MultiCurrency\Integrations;
 
 use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\LocalizationInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyCurrency;
-use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyDepositsCompatibilityController;
+use Automattic\WooCommerce\Internal\MultiCurrency\Integrations\WooCommerceDeposits;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyState;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\PriceCalculator;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\PriceConverter;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilder;
 use WC_Unit_Test_Case;
+use Automattic\WooCommerce\Tests\Internal\MultiCurrency\CallStack;
+use Automattic\WooCommerce\Tests\Internal\MultiCurrency\RegisteredHooks;
+use Automattic\WooCommerce\Tests\Internal\MultiCurrency\RequestSignals;
+use Automattic\WooCommerce\Tests\Internal\MultiCurrency\ServiceFactories;
 
 /**
- * Tests for the MultiCurrencyDepositsCompatibilityController class.
+ * Tests for the WooCommerceDeposits class.
  */
-class MultiCurrencyDepositsCompatibilityControllerTest extends WC_Unit_Test_Case {
+class WooCommerceDepositsTest extends WC_Unit_Test_Case {
 
 	/**
 	 * Hooks touched by the Deposits compatibility controller.
@@ -264,9 +268,9 @@ class MultiCurrencyDepositsCompatibilityControllerTest extends WC_Unit_Test_Case
 	/**
 	 * Assert Deposits hooks are not registered for a controller.
 	 *
-	 * @param MultiCurrencyDepositsCompatibilityController $sut The controller.
+	 * @param WooCommerceDeposits $sut The controller.
 	 */
-	private function assert_deposits_hooks_not_registered( MultiCurrencyDepositsCompatibilityController $sut ): void {
+	private function assert_deposits_hooks_not_registered( WooCommerceDeposits $sut ): void {
 		$this->assertFalse( has_action( 'woocommerce_deposits_create_order', array( $sut, 'modify_order_currency' ) ) );
 		$this->assertFalse( has_filter( 'woocommerce_get_cart_contents', array( $sut, 'modify_cart_item_deposit_amounts' ) ) );
 		$this->assertFalse( has_filter( 'woocommerce_product_get__wc_deposit_amount', array( $sut, 'modify_cart_item_deposit_amount_meta' ) ) );
@@ -280,15 +284,15 @@ class MultiCurrencyDepositsCompatibilityControllerTest extends WC_Unit_Test_Case
 	 * @param bool        $deposits_available Whether Deposits runtime is available.
 	 * @param string|null $deposits_version   Deposits version.
 	 * @param bool        $plugins_loaded     Whether plugins have loaded.
-	 * @return MultiCurrencyDepositsCompatibilityController
+	 * @return WooCommerceDeposits
 	 */
 	private function create_controller(
 		string $owner = MultiCurrencyRuntimeArbiter::OWNER_BUILTIN,
 		bool $deposits_available = true,
 		?string $deposits_version = '2.0.0',
 		bool $plugins_loaded = true
-	): MultiCurrencyDepositsCompatibilityController {
-		$controller = new class( $deposits_available, $deposits_version, $plugins_loaded ) extends MultiCurrencyDepositsCompatibilityController {
+	): WooCommerceDeposits {
+		$controller = new class( $deposits_available, $deposits_version, $plugins_loaded ) extends WooCommerceDeposits {
 			/**
 			 * Whether Deposits runtime is available.
 			 *

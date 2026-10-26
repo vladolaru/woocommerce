@@ -1,14 +1,14 @@
 <?php
 declare( strict_types = 1 );
 
-namespace Automattic\WooCommerce\Tests\Internal\MultiCurrency;
+namespace Automattic\WooCommerce\Tests\Internal\MultiCurrency\Integrations;
 
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyCurrency;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyState;
 use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\LocalizationInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFrontendPricesController;
-use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencySubscriptionsCompatibilityController;
+use Automattic\WooCommerce\Internal\MultiCurrency\Integrations\WooCommerceSubscriptions;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilder;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilderFactory;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\PriceConverter;
@@ -16,11 +16,15 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Services\ServiceFactory;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\RequestContext;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use WC_Unit_Test_Case;
+use Automattic\WooCommerce\Tests\Internal\MultiCurrency\CallStack;
+use Automattic\WooCommerce\Tests\Internal\MultiCurrency\RegisteredHooks;
+use Automattic\WooCommerce\Tests\Internal\MultiCurrency\RequestSignals;
+use Automattic\WooCommerce\Tests\Internal\MultiCurrency\ServiceFactories;
 
 /**
- * Tests for the MultiCurrencySubscriptionsCompatibilityController class.
+ * Tests for the WooCommerceSubscriptions class.
  */
-class MultiCurrencySubscriptionsCompatibilityControllerTest extends WC_Unit_Test_Case {
+class WooCommerceSubscriptionsTest extends WC_Unit_Test_Case {
 
 	/**
 	 * Hooks touched by the subscriptions compatibility controller.
@@ -70,7 +74,7 @@ class MultiCurrencySubscriptionsCompatibilityControllerTest extends WC_Unit_Test
 	/**
 	 * Controllers that scheduled deferred plugin-loaded registration.
 	 *
-	 * @var MultiCurrencySubscriptionsCompatibilityController[]
+	 * @var WooCommerceSubscriptions[]
 	 */
 	private array $deferred_controllers = array();
 
@@ -493,7 +497,7 @@ class MultiCurrencySubscriptionsCompatibilityControllerTest extends WC_Unit_Test
 		);
 		$products      = array( $resubscribed, $variation, $other, $plain_line );
 		$decisions     = function () use ( $products ): array {
-			$sut = new MultiCurrencySubscriptionsCompatibilityController();
+			$sut = new WooCommerceSubscriptions();
 			$sut->init(
 				$this->create_arbiter( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN ),
 				new LegacyProxy(),
@@ -904,7 +908,7 @@ class MultiCurrencySubscriptionsCompatibilityControllerTest extends WC_Unit_Test
 	 * @testdox Should cache the cart subscription-type lookup per request until the cart changes.
 	 */
 	public function test_caches_cart_subscription_type_until_invalidated(): void {
-		$sut = new class() extends MultiCurrencySubscriptionsCompatibilityController {
+		$sut = new class() extends WooCommerceSubscriptions {
 			/**
 			 * Number of times the underlying cart/session resolver ran.
 			 *
@@ -985,9 +989,9 @@ class MultiCurrencySubscriptionsCompatibilityControllerTest extends WC_Unit_Test
 	/**
 	 * Assert subscription compatibility hooks are not registered for a controller.
 	 *
-	 * @param MultiCurrencySubscriptionsCompatibilityController $sut The controller.
+	 * @param WooCommerceSubscriptions $sut The controller.
 	 */
-	private function assert_subscription_hooks_not_registered( MultiCurrencySubscriptionsCompatibilityController $sut ): void {
+	private function assert_subscription_hooks_not_registered( WooCommerceSubscriptions $sut ): void {
 		$this->assertFalse( has_filter( 'wcpay_multi_currency_override_selected_currency', array( $sut, 'override_selected_currency' ) ) );
 		$this->assertFalse( has_filter( 'wcpay_multi_currency_should_disable_currency_switching', array( $sut, 'should_disable_currency_switching' ) ) );
 		$this->assertFalse( has_filter( 'wcpay_multi_currency_should_convert_product_price', array( $sut, 'should_convert_product_price' ) ) );
@@ -1092,7 +1096,7 @@ class MultiCurrencySubscriptionsCompatibilityControllerTest extends WC_Unit_Test
 	 * @param bool   $is_cron                 Whether this is a cron request.
 	 * @param bool   $has_additional_currencies_enabled Whether additional currencies are enabled.
 	 * @param float  $rate                    Rate the projection service converts by.
-	 * @return MultiCurrencySubscriptionsCompatibilityController
+	 * @return WooCommerceSubscriptions
 	 */
 	private function create_controller(
 		string $owner = MultiCurrencyRuntimeArbiter::OWNER_BUILTIN,
@@ -1101,8 +1105,8 @@ class MultiCurrencySubscriptionsCompatibilityControllerTest extends WC_Unit_Test
 		bool $is_cron = false,
 		bool $has_additional_currencies_enabled = true,
 		float $rate = 2.0
-	): MultiCurrencySubscriptionsCompatibilityController {
-		$controller = new class( $subscriptions_available, $is_admin, $is_cron ) extends MultiCurrencySubscriptionsCompatibilityController {
+	): WooCommerceSubscriptions {
+		$controller = new class( $subscriptions_available, $is_admin, $is_cron ) extends WooCommerceSubscriptions {
 			/**
 			 * Whether Subscriptions runtime is available.
 			 *

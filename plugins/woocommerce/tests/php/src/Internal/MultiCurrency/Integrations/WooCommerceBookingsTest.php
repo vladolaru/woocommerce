@@ -1,10 +1,10 @@
 <?php
 declare( strict_types = 1 );
 
-namespace Automattic\WooCommerce\Tests\Internal\MultiCurrency;
+namespace Automattic\WooCommerce\Tests\Internal\MultiCurrency\Integrations;
 
 use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\LocalizationInterface;
-use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyBookingsCompatibilityController;
+use Automattic\WooCommerce\Internal\MultiCurrency\Integrations\WooCommerceBookings;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyCurrency;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyState;
@@ -14,11 +14,15 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Services\PriceCalculator;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\PriceConverter;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilder;
 use WC_Unit_Test_Case;
+use Automattic\WooCommerce\Tests\Internal\MultiCurrency\CallStack;
+use Automattic\WooCommerce\Tests\Internal\MultiCurrency\RegisteredHooks;
+use Automattic\WooCommerce\Tests\Internal\MultiCurrency\RequestSignals;
+use Automattic\WooCommerce\Tests\Internal\MultiCurrency\ServiceFactories;
 
 /**
- * Tests for the MultiCurrencyBookingsCompatibilityController class.
+ * Tests for the WooCommerceBookings class.
  */
-class MultiCurrencyBookingsCompatibilityControllerTest extends WC_Unit_Test_Case {
+class WooCommerceBookingsTest extends WC_Unit_Test_Case {
 
 	/**
 	 * Hooks touched by the Bookings compatibility controller.
@@ -252,9 +256,9 @@ class MultiCurrencyBookingsCompatibilityControllerTest extends WC_Unit_Test_Case
 	/**
 	 * Assert Bookings hooks are not registered for a controller.
 	 *
-	 * @param MultiCurrencyBookingsCompatibilityController $sut The controller.
+	 * @param WooCommerceBookings $sut The controller.
 	 */
-	private function assert_bookings_hooks_not_registered( MultiCurrencyBookingsCompatibilityController $sut ): void {
+	private function assert_bookings_hooks_not_registered( WooCommerceBookings $sut ): void {
 		$this->assertFalse( has_filter( 'woocommerce_bookings_calculated_booking_cost', array( $sut, 'adjust_amount_for_calculated_booking_cost' ) ) );
 		$this->assertFalse( has_filter( 'wcpay_multi_currency_should_convert_product_price', array( $sut, 'should_convert_product_price' ) ) );
 		$this->assertFalse( has_action( 'wp_ajax_wc_bookings_calculate_costs', array( $sut, 'add_wc_price_args_filter_for_ajax' ) ) );
@@ -268,7 +272,7 @@ class MultiCurrencyBookingsCompatibilityControllerTest extends WC_Unit_Test_Case
 	 * @param bool   $is_admin           Whether this is an admin request.
 	 * @param bool   $is_ajax            Whether this is an Ajax request.
 	 * @param bool   $plugins_loaded     Whether plugins have loaded.
-	 * @return MultiCurrencyBookingsCompatibilityController
+	 * @return WooCommerceBookings
 	 */
 	private function create_controller(
 		string $owner = MultiCurrencyRuntimeArbiter::OWNER_BUILTIN,
@@ -276,8 +280,8 @@ class MultiCurrencyBookingsCompatibilityControllerTest extends WC_Unit_Test_Case
 		bool $is_admin = false,
 		bool $is_ajax = false,
 		bool $plugins_loaded = true
-	): MultiCurrencyBookingsCompatibilityController {
-		$controller = new class( $bookings_available, $is_admin, $is_ajax, $plugins_loaded ) extends MultiCurrencyBookingsCompatibilityController {
+	): WooCommerceBookings {
+		$controller = new class( $bookings_available, $is_admin, $is_ajax, $plugins_loaded ) extends WooCommerceBookings {
 			/**
 			 * Whether Bookings runtime is available.
 			 *

@@ -6,7 +6,7 @@ namespace Automattic\WooCommerce\Tests\Internal\MultiCurrency\Services;
 use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\CurrencyRateProviderInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\CacheInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyAsyncPriceRendererController;
-use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyCompatibilityController;
+use Automattic\WooCommerce\Internal\MultiCurrency\Integrations\IntegrationsController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFeatureController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFrontendCurrenciesController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFrontendPricesController;
@@ -453,7 +453,7 @@ class StateBuilderFactoryTest extends WC_Unit_Test_Case {
 		$controller->init(
 			$this->create_core_owning_arbiter(),
 			ServiceFactories::with( $this, array( 'create_selected_currency_persistence_service' => $persistence ) ),
-			wc_get_container()->get( MultiCurrencyCompatibilityController::class ),
+			wc_get_container()->get( IntegrationsController::class ),
 			$this->create_store_api_request_context()
 		);
 

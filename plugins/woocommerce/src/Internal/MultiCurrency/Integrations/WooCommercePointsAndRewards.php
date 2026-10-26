@@ -1,16 +1,17 @@
 <?php
 /**
- * MultiCurrencyPointsRewardsCompatibilityController class file.
+ * WooCommercePointsAndRewards class file.
  */
 
 declare( strict_types = 1 );
 
-namespace Automattic\WooCommerce\Internal\MultiCurrency;
+namespace Automattic\WooCommerce\Internal\MultiCurrency\Integrations;
 
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilder;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilderFactory;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\RequestContext;
+use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 
 /**
  * Converts the money side of WooCommerce Points and Rewards' earn and redeem ratios to the selected currency outside
@@ -19,7 +20,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Services\RequestContext;
  * @since 11.0.0
  * @internal
  */
-class MultiCurrencyPointsRewardsCompatibilityController implements RegisterHooksInterface {
+class WooCommercePointsAndRewards implements RegisterHooksInterface {
 
 	private const POINTS_REWARDS_DISCOUNT_DATA_CALLS = array(
 		'WC_Points_Rewards_Discount->get_discount_data',

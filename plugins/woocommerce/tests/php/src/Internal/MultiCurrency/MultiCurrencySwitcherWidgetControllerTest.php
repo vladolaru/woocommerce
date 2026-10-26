@@ -3,7 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\MultiCurrency;
 
-use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyCompatibilityController;
+use Automattic\WooCommerce\Internal\MultiCurrency\Integrations\IntegrationsController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencySwitcherWidget;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencySwitcherWidgetController;
@@ -472,10 +472,10 @@ class MultiCurrencySwitcherWidgetControllerTest extends WC_Unit_Test_Case {
 	 * Create a compatibility controller test double.
 	 *
 	 * @param bool $switching_disabled Whether switching is disabled.
-	 * @return MultiCurrencyCompatibilityController
+	 * @return IntegrationsController
 	 */
-	private function create_compatibility_controller( bool $switching_disabled = false ): MultiCurrencyCompatibilityController {
-		return new class( $switching_disabled ) extends MultiCurrencyCompatibilityController {
+	private function create_compatibility_controller( bool $switching_disabled = false ): IntegrationsController {
+		return new class( $switching_disabled ) extends IntegrationsController {
 			/**
 			 * Whether switching is disabled.
 			 *

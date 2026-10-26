@@ -1,22 +1,25 @@
 <?php
 declare( strict_types = 1 );
 
-namespace Automattic\WooCommerce\Tests\Internal\MultiCurrency;
+namespace Automattic\WooCommerce\Tests\Internal\MultiCurrency\Integrations;
 
 use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\LocalizationInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyCurrency;
-use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyPreOrdersCompatibilityController;
+use Automattic\WooCommerce\Internal\MultiCurrency\Integrations\WooCommercePreOrders;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyState;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\PriceCalculator;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\PriceConverter;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilder;
 use WC_Unit_Test_Case;
+use Automattic\WooCommerce\Tests\Internal\MultiCurrency\RegisteredHooks;
+use Automattic\WooCommerce\Tests\Internal\MultiCurrency\RequestSignals;
+use Automattic\WooCommerce\Tests\Internal\MultiCurrency\ServiceFactories;
 
 /**
- * Tests for the MultiCurrencyPreOrdersCompatibilityController class.
+ * Tests for the WooCommercePreOrders class.
  */
-class MultiCurrencyPreOrdersCompatibilityControllerTest extends WC_Unit_Test_Case {
+class WooCommercePreOrdersTest extends WC_Unit_Test_Case {
 
 	/**
 	 * Hooks touched by the Pre-Orders compatibility controller.
@@ -113,9 +116,9 @@ class MultiCurrencyPreOrdersCompatibilityControllerTest extends WC_Unit_Test_Cas
 	/**
 	 * Assert Pre-Orders hooks are not registered for a controller.
 	 *
-	 * @param MultiCurrencyPreOrdersCompatibilityController $sut The controller.
+	 * @param WooCommercePreOrders $sut The controller.
 	 */
-	private function assert_pre_orders_hooks_not_registered( MultiCurrencyPreOrdersCompatibilityController $sut ): void {
+	private function assert_pre_orders_hooks_not_registered( WooCommercePreOrders $sut ): void {
 		$this->assertFalse( has_filter( 'wc_pre_orders_fee', array( $sut, 'convert_pre_orders_fee' ) ) );
 	}
 
@@ -125,14 +128,14 @@ class MultiCurrencyPreOrdersCompatibilityControllerTest extends WC_Unit_Test_Cas
 	 * @param string $owner                Runtime owner.
 	 * @param bool   $pre_orders_available Whether Pre-Orders runtime is available.
 	 * @param bool   $plugins_loaded       Whether plugins have loaded.
-	 * @return MultiCurrencyPreOrdersCompatibilityController
+	 * @return WooCommercePreOrders
 	 */
 	private function create_controller(
 		string $owner = MultiCurrencyRuntimeArbiter::OWNER_BUILTIN,
 		bool $pre_orders_available = true,
 		bool $plugins_loaded = true
-	): MultiCurrencyPreOrdersCompatibilityController {
-		$controller = new class( $pre_orders_available, $plugins_loaded ) extends MultiCurrencyPreOrdersCompatibilityController {
+	): WooCommercePreOrders {
+		$controller = new class( $pre_orders_available, $plugins_loaded ) extends WooCommercePreOrders {
 			/**
 			 * Whether Pre-Orders runtime is available.
 			 *

@@ -1,16 +1,19 @@
 <?php
 declare( strict_types = 1 );
 
-namespace Automattic\WooCommerce\Tests\Internal\MultiCurrency;
+namespace Automattic\WooCommerce\Tests\Internal\MultiCurrency\Integrations;
 
-use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFedExCompatibilityController;
+use Automattic\WooCommerce\Internal\MultiCurrency\Integrations\WooCommerceFedEx;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use WC_Unit_Test_Case;
+use Automattic\WooCommerce\Tests\Internal\MultiCurrency\CallStack;
+use Automattic\WooCommerce\Tests\Internal\MultiCurrency\RegisteredHooks;
+use Automattic\WooCommerce\Tests\Internal\MultiCurrency\RequestSignals;
 
 /**
- * Tests for the MultiCurrencyFedExCompatibilityController class.
+ * Tests for the WooCommerceFedEx class.
  */
-class MultiCurrencyFedExCompatibilityControllerTest extends WC_Unit_Test_Case {
+class WooCommerceFedExTest extends WC_Unit_Test_Case {
 
 	/**
 	 * FedEx shipping calls that should force store-currency behavior.
@@ -136,9 +139,9 @@ class MultiCurrencyFedExCompatibilityControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * Assert FedEx hooks are not registered for a controller.
 	 *
-	 * @param MultiCurrencyFedExCompatibilityController $sut The controller.
+	 * @param WooCommerceFedEx $sut The controller.
 	 */
-	private function assert_fedex_hooks_not_registered( MultiCurrencyFedExCompatibilityController $sut ): void {
+	private function assert_fedex_hooks_not_registered( WooCommerceFedEx $sut ): void {
 		$this->assertFalse( has_filter( 'wcpay_multi_currency_should_convert_product_price', array( $sut, 'should_convert_product_price' ) ) );
 		$this->assertFalse( has_filter( 'wcpay_multi_currency_should_return_store_currency', array( $sut, 'should_return_store_currency' ) ) );
 	}
@@ -149,14 +152,14 @@ class MultiCurrencyFedExCompatibilityControllerTest extends WC_Unit_Test_Case {
 	 * @param string $owner          Runtime owner.
 	 * @param bool   $fedex_available Whether FedEx runtime is available.
 	 * @param bool   $plugins_loaded Whether plugins have loaded.
-	 * @return MultiCurrencyFedExCompatibilityController
+	 * @return WooCommerceFedEx
 	 */
 	private function create_controller(
 		string $owner = MultiCurrencyRuntimeArbiter::OWNER_BUILTIN,
 		bool $fedex_available = true,
 		bool $plugins_loaded = true
-	): MultiCurrencyFedExCompatibilityController {
-		$controller = new class( $fedex_available, $plugins_loaded ) extends MultiCurrencyFedExCompatibilityController {
+	): WooCommerceFedEx {
+		$controller = new class( $fedex_available, $plugins_loaded ) extends WooCommerceFedEx {
 			/**
 			 * Whether FedEx runtime is available.
 			 *

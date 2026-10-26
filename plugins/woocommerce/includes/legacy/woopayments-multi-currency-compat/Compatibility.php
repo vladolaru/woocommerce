@@ -7,7 +7,7 @@ declare( strict_types = 1 );
 
 namespace WCPay\MultiCurrency;
 
-use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyCompatibilityController;
+use Automattic\WooCommerce\Internal\MultiCurrency\Integrations\IntegrationsController;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilder;
 
 /**
@@ -151,9 +151,9 @@ class Compatibility {
 	/**
 	 * Get the module's compatibility controller.
 	 *
-	 * @return MultiCurrencyCompatibilityController
+	 * @return IntegrationsController
 	 */
-	private function get_controller(): MultiCurrencyCompatibilityController {
-		return wc_get_container()->get( MultiCurrencyCompatibilityController::class );
+	private function get_controller(): IntegrationsController {
+		return wc_get_container()->get( IntegrationsController::class );
 	}
 }

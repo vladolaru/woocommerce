@@ -1,11 +1,11 @@
 <?php
 /**
- * MultiCurrencyDepositsCompatibilityController class file.
+ * WooCommerceDeposits class file.
  */
 
 declare( strict_types = 1 );
 
-namespace Automattic\WooCommerce\Internal\MultiCurrency;
+namespace Automattic\WooCommerce\Internal\MultiCurrency\Integrations;
 
 use Automattic\WooCommerce\Internal\MultiCurrency\Compat\WooPaymentsExtensionFacadeLoader;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\PriceConverter;
@@ -13,6 +13,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Services\ServiceFactory;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\RequestContext;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilder;
+use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 
 /**
  * Converts WooCommerce Deposits amounts to the selected currency for Deposits versions before 2.0.1, which do not convert
@@ -21,7 +22,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilder;
  * @since 11.0.0
  * @internal
  */
-class MultiCurrencyDepositsCompatibilityController implements RegisterHooksInterface {
+class WooCommerceDeposits implements RegisterHooksInterface {
 
 	private const DEPOSITS_FORM_OUTPUT_CALLS = array(
 		'WC_Deposits_Cart_Manager->deposits_form_output',

@@ -14,6 +14,16 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Services\UsageDetector;
 use Automattic\WooCommerce\Internal\MultiCurrency\Shadow\MultiCurrencyShadowMode;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Automattic\WooCommerce\Internal\Utilities\RequestTypeUtil;
+use Automattic\WooCommerce\Internal\MultiCurrency\Integrations\IntegrationsController;
+use Automattic\WooCommerce\Internal\MultiCurrency\Integrations\WooCommerceBookings;
+use Automattic\WooCommerce\Internal\MultiCurrency\Integrations\WooCommerceDeposits;
+use Automattic\WooCommerce\Internal\MultiCurrency\Integrations\WooCommerceFedEx;
+use Automattic\WooCommerce\Internal\MultiCurrency\Integrations\WooCommerceNameYourPrice;
+use Automattic\WooCommerce\Internal\MultiCurrency\Integrations\WooCommercePointsAndRewards;
+use Automattic\WooCommerce\Internal\MultiCurrency\Integrations\WooCommercePreOrders;
+use Automattic\WooCommerce\Internal\MultiCurrency\Integrations\WooCommerceProductAddOns;
+use Automattic\WooCommerce\Internal\MultiCurrency\Integrations\WooCommerceSubscriptions;
+use Automattic\WooCommerce\Internal\MultiCurrency\Integrations\WooCommerceUPS;
 
 /**
  * Starts Multi-Currency for the request: syncs the payments owner and, while WooCommerce runs Multi-Currency, registers
@@ -84,16 +94,16 @@ final class MultiCurrencyBootstrap {
 
 	/** Extension compatibility classes. @var array<int,class-string> */
 	private const COMPAT = array(
-		MultiCurrencyCompatibilityController::class,
-		MultiCurrencyBookingsCompatibilityController::class,
-		MultiCurrencyDepositsCompatibilityController::class,
-		MultiCurrencyPreOrdersCompatibilityController::class,
-		MultiCurrencyUpsCompatibilityController::class,
-		MultiCurrencyFedExCompatibilityController::class,
-		MultiCurrencyPointsRewardsCompatibilityController::class,
-		MultiCurrencyNameYourPriceCompatibilityController::class,
-		MultiCurrencyProductAddOnsCompatibilityController::class,
-		MultiCurrencySubscriptionsCompatibilityController::class,
+		IntegrationsController::class,
+		WooCommerceBookings::class,
+		WooCommerceDeposits::class,
+		WooCommercePreOrders::class,
+		WooCommerceUPS::class,
+		WooCommerceFedEx::class,
+		WooCommercePointsAndRewards::class,
+		WooCommerceNameYourPrice::class,
+		WooCommerceProductAddOns::class,
+		WooCommerceSubscriptions::class,
 		MultiCurrencyExplicitPriceController::class,
 	);
 
@@ -121,7 +131,7 @@ final class MultiCurrencyBootstrap {
 	private const SUBSCRIPTION_CURRENCY = array(
 		MultiCurrencyFrontendCurrenciesController::class,
 		MultiCurrencyFrontendPricesController::class,
-		MultiCurrencySubscriptionsCompatibilityController::class,
+		WooCommerceSubscriptions::class,
 	);
 
 	/**
@@ -275,9 +285,9 @@ final class MultiCurrencyBootstrap {
 		/**
 		 * Multi-Currency Subscriptions compatibility controller.
 		 *
-		 * @var MultiCurrencySubscriptionsCompatibilityController $controller
+		 * @var WooCommerceSubscriptions $controller
 		 */
-		$controller = $container->get( MultiCurrencySubscriptionsCompatibilityController::class );
+		$controller = $container->get( WooCommerceSubscriptions::class );
 		// The cart changed: Subscriptions added an item, or WooCommerce loaded the cart from the session or restored an item.
 		if ( 'wp_loaded' !== current_action() ) {
 			$controller->clear_subscription_type_cache();

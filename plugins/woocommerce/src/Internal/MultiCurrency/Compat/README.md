@@ -31,7 +31,7 @@ The currencies these members return are the module's `MultiCurrencyCurrency` obj
 
 | Members | Answer |
 |---|---|
-| `override_selected_currency()`, `should_disable_currency_switching()`, `should_convert_coupon_amount( $coupon = null )`, `should_convert_product_price( $product = null )`, `should_return_store_currency()` | `MultiCurrencyCompatibilityController`, which has the same rules and filters. |
+| `override_selected_currency()`, `should_disable_currency_switching()`, `should_convert_coupon_amount( $coupon = null )`, `should_convert_product_price( $product = null )`, `should_return_store_currency()` | `IntegrationsController`, which has the same rules and filters. |
 | `should_convert_shipping_amount( $shipping_method = null )` | `true` without a method, else the module's `wcpay_multi_currency_should_convert_shipping_amount` filter with its `true` default. |
 | `should_hide_widgets()` | `should_disable_currency_switching()`, with the extension's own 6.5.0 deprecation notice. |
 
@@ -48,7 +48,7 @@ Every member emits a deprecation notice with the version 11.0.0 and no replaceme
 
 ## Deposits conversion provenance
 
-WooCommerce Deposits converts a fixed deposit through `get_price( ..., 'product' )` before the Deposits compatibility controller sees the cart item. The loader records that conversion for the current request. `MultiCurrencyDepositsCompatibilityController` leaves the incoming cart values alone when the record is set, so the selected currency's rate is applied once rather than twice. A conversion that throws records nothing, so the controller still converts the amount.
+WooCommerce Deposits converts a fixed deposit through `get_price( ..., 'product' )` before the Deposits compatibility controller sees the cart item. The loader records that conversion for the current request. `WooCommerceDeposits` leaves the incoming cart values alone when the record is set, so the selected currency's rate is applied once rather than twice. A conversion that throws records nothing, so the controller still converts the amount.
 
 ## Placement rule
 
@@ -60,7 +60,7 @@ Remove these pieces together once supported extensions no longer call the `WCPay
 
 - This `Compat/` folder and the facade files in `includes/legacy/woopayments-multi-currency-compat/`.
 - The one registration line, `WooPaymentsExtensionFacadeLoader::register()` in `includes/class-woocommerce.php`.
-- The `WooPaymentsExtensionFacadeLoader` import and the provenance check in `MultiCurrencyDepositsCompatibilityController`.
+- The `WooPaymentsExtensionFacadeLoader` import and the provenance check in `WooCommerceDeposits`.
 - The tests and their fixtures in `tests/php/src/Internal/MultiCurrency/Compat/`.
 - This boundary's expected symbols and loader entries in `WooPaymentsExtensionFacadePlacementTest`.
 - The `$apply_charm_pricing` argument of `PriceConverter::adjust_amount_for_selected_currency()` and `PriceCalculator::get_adjusted_amount()`, which only the facade passes as false.

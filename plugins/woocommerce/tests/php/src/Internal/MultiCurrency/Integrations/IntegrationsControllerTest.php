@@ -1,23 +1,26 @@
 <?php
 declare( strict_types = 1 );
 
-namespace Automattic\WooCommerce\Tests\Internal\MultiCurrency;
+namespace Automattic\WooCommerce\Tests\Internal\MultiCurrency\Integrations;
 
 use Automattic\WooCommerce\Caches\OrderCache;
 use Automattic\WooCommerce\Internal\Admin\Notes\NewSalesRecord;
 use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\LocalizationInterface;
-use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyCompatibilityController;
+use Automattic\WooCommerce\Internal\MultiCurrency\Integrations\IntegrationsController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyCurrency;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyState;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\PriceConverter;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilder;
 use WC_Unit_Test_Case;
+use Automattic\WooCommerce\Tests\Internal\MultiCurrency\CallStack;
+use Automattic\WooCommerce\Tests\Internal\MultiCurrency\RequestSignals;
+use Automattic\WooCommerce\Tests\Internal\MultiCurrency\ServiceFactories;
 
 /**
- * Tests for the MultiCurrencyCompatibilityController class.
+ * Tests for the IntegrationsController class.
  */
-class MultiCurrencyCompatibilityControllerTest extends WC_Unit_Test_Case {
+class IntegrationsControllerTest extends WC_Unit_Test_Case {
 
 	/** The WooCommerce Admin new sales record call the conversion runs inside. */
 	private const SALES_RECORD_CALL = NewSalesRecord::class . '::sum_sales_for_date';
@@ -179,7 +182,7 @@ class MultiCurrencyCompatibilityControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Should name only methods that exist on WooCommerce's new sales record note in the sales-record backtrace check.
 	 */
 	public function test_sales_record_backtrace_calls_name_existing_methods(): void {
-		$calls = ( new \ReflectionClass( MultiCurrencyCompatibilityController::class ) )->getConstant( 'NEW_SALES_RECORD_BACKTRACE_CALLS' );
+		$calls = ( new \ReflectionClass( IntegrationsController::class ) )->getConstant( 'NEW_SALES_RECORD_BACKTRACE_CALLS' );
 
 		$this->assertNotEmpty( $calls );
 		foreach ( $calls as $call ) {
@@ -234,14 +237,14 @@ class MultiCurrencyCompatibilityControllerTest extends WC_Unit_Test_Case {
 	 * @param string $owner                 Runtime owner.
 	 * @param bool   $is_cron               Whether the request is cron.
 	 * @param int    $enabled_count         Enabled currency count.
-	 * @return MultiCurrencyCompatibilityController
+	 * @return IntegrationsController
 	 */
 	private function create_controller(
 		string $owner,
 		bool $is_cron = false,
 		int $enabled_count = 2
-	): MultiCurrencyCompatibilityController {
-		$controller = new class( $is_cron ) extends MultiCurrencyCompatibilityController {
+	): IntegrationsController {
+		$controller = new class( $is_cron ) extends IntegrationsController {
 			/**
 			 * Whether the request is cron.
 			 *

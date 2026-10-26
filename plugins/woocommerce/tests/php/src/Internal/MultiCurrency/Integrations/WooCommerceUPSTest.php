@@ -1,16 +1,19 @@
 <?php
 declare( strict_types = 1 );
 
-namespace Automattic\WooCommerce\Tests\Internal\MultiCurrency;
+namespace Automattic\WooCommerce\Tests\Internal\MultiCurrency\Integrations;
 
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
-use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyUpsCompatibilityController;
+use Automattic\WooCommerce\Internal\MultiCurrency\Integrations\WooCommerceUPS;
 use WC_Unit_Test_Case;
+use Automattic\WooCommerce\Tests\Internal\MultiCurrency\CallStack;
+use Automattic\WooCommerce\Tests\Internal\MultiCurrency\RegisteredHooks;
+use Automattic\WooCommerce\Tests\Internal\MultiCurrency\RequestSignals;
 
 /**
- * Tests for the MultiCurrencyUpsCompatibilityController class.
+ * Tests for the WooCommerceUPS class.
  */
-class MultiCurrencyUpsCompatibilityControllerTest extends WC_Unit_Test_Case {
+class WooCommerceUPSTest extends WC_Unit_Test_Case {
 
 	/**
 	 * Hooks touched by the UPS compatibility controller.
@@ -99,9 +102,9 @@ class MultiCurrencyUpsCompatibilityControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * Assert UPS hooks are not registered for a controller.
 	 *
-	 * @param MultiCurrencyUpsCompatibilityController $sut The controller.
+	 * @param WooCommerceUPS $sut The controller.
 	 */
-	private function assert_ups_hooks_not_registered( MultiCurrencyUpsCompatibilityController $sut ): void {
+	private function assert_ups_hooks_not_registered( WooCommerceUPS $sut ): void {
 		$this->assertFalse( has_filter( 'wcpay_multi_currency_should_return_store_currency', array( $sut, 'should_return_store_currency' ) ) );
 	}
 
@@ -111,14 +114,14 @@ class MultiCurrencyUpsCompatibilityControllerTest extends WC_Unit_Test_Case {
 	 * @param string $owner          Runtime owner.
 	 * @param bool   $ups_available  Whether UPS runtime is available.
 	 * @param bool   $plugins_loaded Whether plugins have loaded.
-	 * @return MultiCurrencyUpsCompatibilityController
+	 * @return WooCommerceUPS
 	 */
 	private function create_controller(
 		string $owner = MultiCurrencyRuntimeArbiter::OWNER_BUILTIN,
 		bool $ups_available = true,
 		bool $plugins_loaded = true
-	): MultiCurrencyUpsCompatibilityController {
-		$controller = new class( $ups_available, $plugins_loaded ) extends MultiCurrencyUpsCompatibilityController {
+	): WooCommerceUPS {
+		$controller = new class( $ups_available, $plugins_loaded ) extends WooCommerceUPS {
 			/**
 			 * Whether UPS runtime is available.
 			 *

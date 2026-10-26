@@ -13,6 +13,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilderFactory;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\SwitcherRenderer;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\RequestContext;
+use Automattic\WooCommerce\Internal\MultiCurrency\Integrations\IntegrationsController;
 
 /**
  * Shows the currency switcher in the Storefront theme's breadcrumb, with its inline CSS, when Storefront is active,
@@ -66,9 +67,9 @@ class MultiCurrencyStorefrontIntegrationController implements RegisterHooksInter
 	/**
 	 * Compatibility controller.
 	 *
-	 * @var MultiCurrencyCompatibilityController
+	 * @var IntegrationsController
 	 */
-	private MultiCurrencyCompatibilityController $compatibility_controller;
+	private IntegrationsController $compatibility_controller;
 
 	/**
 	 * Switcher renderer, built on first use.
@@ -82,16 +83,16 @@ class MultiCurrencyStorefrontIntegrationController implements RegisterHooksInter
 	 *
 	 * @internal
 	 *
-	 * @param MultiCurrencyRuntimeArbiter          $arbiter                  Runtime owner arbiter.
-	 * @param StateBuilderFactory                  $state_builder_factory    State builder factory.
-	 * @param ServiceFactory                       $service_factory          Multi-Currency service factory.
-	 * @param MultiCurrencyCompatibilityController $compatibility_controller Compatibility controller.
+	 * @param MultiCurrencyRuntimeArbiter $arbiter                  Runtime owner arbiter.
+	 * @param StateBuilderFactory         $state_builder_factory    State builder factory.
+	 * @param ServiceFactory              $service_factory          Multi-Currency service factory.
+	 * @param IntegrationsController      $compatibility_controller Compatibility controller.
 	 */
 	final public function init(
 		MultiCurrencyRuntimeArbiter $arbiter,
 		StateBuilderFactory $state_builder_factory,
 		ServiceFactory $service_factory,
-		MultiCurrencyCompatibilityController $compatibility_controller
+		IntegrationsController $compatibility_controller
 	): void {
 		$this->arbiter                  = $arbiter;
 		$this->state_builder_factory    = $state_builder_factory;

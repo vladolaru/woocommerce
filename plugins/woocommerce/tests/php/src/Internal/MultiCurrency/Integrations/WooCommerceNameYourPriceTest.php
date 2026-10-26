@@ -1,12 +1,12 @@
 <?php
 declare( strict_types = 1 );
 
-namespace Automattic\WooCommerce\Tests\Internal\MultiCurrency;
+namespace Automattic\WooCommerce\Tests\Internal\MultiCurrency\Integrations;
 
 use Automattic\WooCommerce\Internal\MultiCurrency\Exceptions\InvalidCurrencyException;
 use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\LocalizationInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyCurrency;
-use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyNameYourPriceCompatibilityController;
+use Automattic\WooCommerce\Internal\MultiCurrency\Integrations\WooCommerceNameYourPrice;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyState;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\PriceCalculator;
@@ -14,11 +14,14 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Services\PriceConverter;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilder;
 use Automattic\WooCommerce\StoreApi\Utilities\CartController;
 use WC_Unit_Test_Case;
+use Automattic\WooCommerce\Tests\Internal\MultiCurrency\RegisteredHooks;
+use Automattic\WooCommerce\Tests\Internal\MultiCurrency\RequestSignals;
+use Automattic\WooCommerce\Tests\Internal\MultiCurrency\ServiceFactories;
 
 /**
- * Tests for the MultiCurrencyNameYourPriceCompatibilityController class.
+ * Tests for the WooCommerceNameYourPrice class.
  */
-class MultiCurrencyNameYourPriceCompatibilityControllerTest extends WC_Unit_Test_Case {
+class WooCommerceNameYourPriceTest extends WC_Unit_Test_Case {
 
 	/**
 	 * Hooks touched by the Name Your Price compatibility controller.
@@ -406,9 +409,9 @@ class MultiCurrencyNameYourPriceCompatibilityControllerTest extends WC_Unit_Test
 	/**
 	 * Assert Name Your Price hooks are not registered for a controller.
 	 *
-	 * @param MultiCurrencyNameYourPriceCompatibilityController $sut The controller.
+	 * @param WooCommerceNameYourPrice $sut The controller.
 	 */
-	private function assert_name_your_price_hooks_not_registered( MultiCurrencyNameYourPriceCompatibilityController $sut ): void {
+	private function assert_name_your_price_hooks_not_registered( WooCommerceNameYourPrice $sut ): void {
 		$this->assertFalse( has_filter( 'wc_nyp_raw_minimum_price', array( $sut, 'get_nyp_prices' ) ) );
 		$this->assertFalse( has_action( 'woocommerce_add_cart_item_data', array( $sut, 'add_initial_currency' ) ) );
 		$this->assertFalse( has_filter( 'woocommerce_get_cart_item_from_session', array( $sut, 'convert_cart_currency' ) ) );
@@ -422,15 +425,15 @@ class MultiCurrencyNameYourPriceCompatibilityControllerTest extends WC_Unit_Test
 	 * @param bool   $name_your_price_available          Whether Name Your Price runtime is available.
 	 * @param bool   $name_your_price_function_available Whether the Name Your Price function is available.
 	 * @param bool   $plugins_loaded                     Whether plugins have loaded.
-	 * @return MultiCurrencyNameYourPriceCompatibilityController
+	 * @return WooCommerceNameYourPrice
 	 */
 	private function create_controller(
 		string $owner = MultiCurrencyRuntimeArbiter::OWNER_BUILTIN,
 		bool $name_your_price_available = true,
 		bool $name_your_price_function_available = true,
 		bool $plugins_loaded = true
-	): MultiCurrencyNameYourPriceCompatibilityController {
-		$controller = new class( $name_your_price_available, $name_your_price_function_available, $plugins_loaded ) extends MultiCurrencyNameYourPriceCompatibilityController {
+	): WooCommerceNameYourPrice {
+		$controller = new class( $name_your_price_available, $name_your_price_function_available, $plugins_loaded ) extends WooCommerceNameYourPrice {
 			/**
 			 * Whether Name Your Price runtime is available.
 			 *

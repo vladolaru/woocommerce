@@ -4,7 +4,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\MultiCurrency;
 
 use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\LocalizationInterface;
-use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyCompatibilityController;
+use Automattic\WooCommerce\Internal\MultiCurrency\Integrations\IntegrationsController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyCurrency;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyState;
@@ -385,7 +385,7 @@ class MultiCurrencyStorefrontIntegrationControllerTest extends WC_Unit_Test_Case
 			$this->create_arbiter( $owner ),
 			ServiceFactories::state_builder( $this, $state_builder ?? $this->create_state_builder( $enabled_currency_count ) ),
 			ServiceFactories::with( $this, array( 'create_switcher_renderer' => $switcher_service ) ),
-			wc_get_container()->get( MultiCurrencyCompatibilityController::class )
+			wc_get_container()->get( IntegrationsController::class )
 		);
 		$this->use_theme( $stylesheet, $template );
 

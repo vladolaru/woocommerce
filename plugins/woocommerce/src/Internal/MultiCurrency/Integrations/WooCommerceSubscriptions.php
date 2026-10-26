@@ -1,11 +1,11 @@
 <?php
 /**
- * MultiCurrencySubscriptionsCompatibilityController class file.
+ * WooCommerceSubscriptions class file.
  */
 
 declare( strict_types = 1 );
 
-namespace Automattic\WooCommerce\Internal\MultiCurrency;
+namespace Automattic\WooCommerce\Internal\MultiCurrency\Integrations;
 
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\PriceConverter;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\ServiceFactory;
@@ -15,6 +15,7 @@ use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\RequestContext;
+use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 
 /**
  * Keeps WooCommerce Subscriptions renewal, resubscribe and switch carts in the subscription's currency, converting only
@@ -23,7 +24,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Services\RequestContext;
  * @since 11.0.0
  * @internal
  */
-class MultiCurrencySubscriptionsCompatibilityController implements RegisterHooksInterface {
+class WooCommerceSubscriptions implements RegisterHooksInterface {
 
 	private const SUBSCRIPTION_TYPES = array( 'renewal', 'resubscribe', 'switch' );
 

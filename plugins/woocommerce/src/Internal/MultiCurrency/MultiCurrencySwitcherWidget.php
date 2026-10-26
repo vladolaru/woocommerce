@@ -9,6 +9,7 @@ namespace Automattic\WooCommerce\Internal\MultiCurrency;
 
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\SwitcherRenderer;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\RequestContext;
+use Automattic\WooCommerce\Internal\MultiCurrency\Integrations\IntegrationsController;
 
 /**
  * The currency switcher widget: a select of the enabled currencies, with optional symbols and flags.
@@ -28,19 +29,19 @@ class MultiCurrencySwitcherWidget extends \WC_Widget {
 	/**
 	 * Compatibility controller.
 	 *
-	 * @var MultiCurrencyCompatibilityController
+	 * @var IntegrationsController
 	 */
-	private MultiCurrencyCompatibilityController $compatibility_controller;
+	private IntegrationsController $compatibility_controller;
 
 	/**
 	 * Constructor.
 	 *
-	 * @param SwitcherRenderer                     $switcher_renderer Switcher renderer.
-	 * @param MultiCurrencyCompatibilityController $compatibility_controller    Compatibility controller.
+	 * @param SwitcherRenderer       $switcher_renderer Switcher renderer.
+	 * @param IntegrationsController $compatibility_controller    Compatibility controller.
 	 */
 	public function __construct(
 		SwitcherRenderer $switcher_renderer,
-		MultiCurrencyCompatibilityController $compatibility_controller
+		IntegrationsController $compatibility_controller
 	) {
 		$this->switcher_renderer        = $switcher_renderer;
 		$this->compatibility_controller = $compatibility_controller;

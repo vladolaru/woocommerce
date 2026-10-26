@@ -1,22 +1,25 @@
 <?php
 declare( strict_types = 1 );
 
-namespace Automattic\WooCommerce\Tests\Internal\MultiCurrency;
+namespace Automattic\WooCommerce\Tests\Internal\MultiCurrency\Integrations;
 
 use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\LocalizationInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyCurrency;
-use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyProductAddOnsCompatibilityController;
+use Automattic\WooCommerce\Internal\MultiCurrency\Integrations\WooCommerceProductAddOns;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyState;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\PriceCalculator;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\PriceConverter;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilder;
 use WC_Unit_Test_Case;
+use Automattic\WooCommerce\Tests\Internal\MultiCurrency\RegisteredHooks;
+use Automattic\WooCommerce\Tests\Internal\MultiCurrency\RequestSignals;
+use Automattic\WooCommerce\Tests\Internal\MultiCurrency\ServiceFactories;
 
 /**
- * Tests for the MultiCurrencyProductAddOnsCompatibilityController class.
+ * Tests for the WooCommerceProductAddOns class.
  */
-class MultiCurrencyProductAddOnsCompatibilityControllerTest extends WC_Unit_Test_Case {
+class WooCommerceProductAddOnsTest extends WC_Unit_Test_Case {
 
 	/**
 	 * Hooks touched by the Product Add-ons compatibility controller.
@@ -479,9 +482,9 @@ class MultiCurrencyProductAddOnsCompatibilityControllerTest extends WC_Unit_Test
 	/**
 	 * Assert Product Add-ons hooks are not registered for a controller.
 	 *
-	 * @param MultiCurrencyProductAddOnsCompatibilityController $sut The controller.
+	 * @param WooCommerceProductAddOns $sut The controller.
 	 */
-	private function assert_product_addons_hooks_not_registered( MultiCurrencyProductAddOnsCompatibilityController $sut ): void {
+	private function assert_product_addons_hooks_not_registered( WooCommerceProductAddOns $sut ): void {
 		$this->assertFalse( has_filter( 'woocommerce_product_addons_option_price_raw', array( $sut, 'get_addons_price' ) ) );
 		$this->assertFalse( has_filter( 'woocommerce_product_addons_update_product_price', array( $sut, 'update_product_price' ) ) );
 		$this->assertFalse( has_filter( 'woocommerce_product_addons_ajax_get_product_price_including_tax', array( $sut, 'get_product_calculation_price' ) ) );
@@ -496,7 +499,7 @@ class MultiCurrencyProductAddOnsCompatibilityControllerTest extends WC_Unit_Test
 	 * @param bool   $is_admin                 Whether this is an admin request.
 	 * @param bool   $is_ajax                  Whether this is an Ajax request.
 	 * @param bool   $is_cron                  Whether this is a cron request.
-	 * @return MultiCurrencyProductAddOnsCompatibilityController
+	 * @return WooCommerceProductAddOns
 	 */
 	private function create_controller(
 		string $owner = MultiCurrencyRuntimeArbiter::OWNER_BUILTIN,
@@ -505,8 +508,8 @@ class MultiCurrencyProductAddOnsCompatibilityControllerTest extends WC_Unit_Test
 		bool $is_admin = false,
 		bool $is_ajax = false,
 		bool $is_cron = false
-	): MultiCurrencyProductAddOnsCompatibilityController {
-		$controller = new class( $product_addons_available, $plugins_loaded, $is_admin, $is_ajax, $is_cron ) extends MultiCurrencyProductAddOnsCompatibilityController {
+	): WooCommerceProductAddOns {
+		$controller = new class( $product_addons_available, $plugins_loaded, $is_admin, $is_ajax, $is_cron ) extends WooCommerceProductAddOns {
 			/**
 			 * Whether Product Add-ons runtime is available.
 			 *

@@ -1,15 +1,16 @@
 <?php
 /**
- * MultiCurrencyUpsCompatibilityController class file.
+ * WooCommerceUPS class file.
  */
 
 declare( strict_types = 1 );
 
-namespace Automattic\WooCommerce\Internal\MultiCurrency;
+namespace Automattic\WooCommerce\Internal\MultiCurrency\Integrations;
 
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\RequestContext;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilder;
+use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 
 /**
  * Keeps WooCommerce UPS Shipping's rate calculations in the store currency: the store currency is returned while UPS
@@ -18,7 +19,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilder;
  * @since 11.0.0
  * @internal
  */
-class MultiCurrencyUpsCompatibilityController implements RegisterHooksInterface {
+class WooCommerceUPS implements RegisterHooksInterface {
 
 	private const UPS_SHIPPING_CALLS = array(
 		'WC_Shipping_UPS->per_item_shipping',

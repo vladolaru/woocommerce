@@ -1,15 +1,16 @@
 <?php
 /**
- * MultiCurrencyPreOrdersCompatibilityController class file.
+ * WooCommercePreOrders class file.
  */
 
 declare( strict_types = 1 );
 
-namespace Automattic\WooCommerce\Internal\MultiCurrency;
+namespace Automattic\WooCommerce\Internal\MultiCurrency\Integrations;
 
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\PriceConverter;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\ServiceFactory;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
+use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 
 /**
  * Converts the WooCommerce Pre-Orders fee to the selected currency.
@@ -17,7 +18,7 @@ use Automattic\WooCommerce\Internal\RegisterHooksInterface;
  * @since 11.0.0
  * @internal
  */
-class MultiCurrencyPreOrdersCompatibilityController implements RegisterHooksInterface {
+class WooCommercePreOrders implements RegisterHooksInterface {
 
 	/**
 	 * Runtime owner arbiter.

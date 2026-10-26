@@ -1,20 +1,24 @@
 <?php
 declare( strict_types = 1 );
 
-namespace Automattic\WooCommerce\Tests\Internal\MultiCurrency;
+namespace Automattic\WooCommerce\Tests\Internal\MultiCurrency\Integrations;
 
 use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\LocalizationInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyCurrency;
-use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyPointsRewardsCompatibilityController;
+use Automattic\WooCommerce\Internal\MultiCurrency\Integrations\WooCommercePointsAndRewards;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyState;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilder;
 use WC_Unit_Test_Case;
+use Automattic\WooCommerce\Tests\Internal\MultiCurrency\CallStack;
+use Automattic\WooCommerce\Tests\Internal\MultiCurrency\RegisteredHooks;
+use Automattic\WooCommerce\Tests\Internal\MultiCurrency\RequestSignals;
+use Automattic\WooCommerce\Tests\Internal\MultiCurrency\ServiceFactories;
 
 /**
- * Tests for the MultiCurrencyPointsRewardsCompatibilityController class.
+ * Tests for the WooCommercePointsAndRewards class.
  */
-class MultiCurrencyPointsRewardsCompatibilityControllerTest extends WC_Unit_Test_Case {
+class WooCommercePointsAndRewardsTest extends WC_Unit_Test_Case {
 
 	/**
 	 * Hooks touched by the Points and Rewards compatibility controller.
@@ -126,9 +130,9 @@ class MultiCurrencyPointsRewardsCompatibilityControllerTest extends WC_Unit_Test
 	/**
 	 * Assert Points and Rewards hooks are not registered for a controller.
 	 *
-	 * @param MultiCurrencyPointsRewardsCompatibilityController $sut The controller.
+	 * @param WooCommercePointsAndRewards $sut The controller.
 	 */
-	private function assert_points_rewards_hooks_not_registered( MultiCurrencyPointsRewardsCompatibilityController $sut ): void {
+	private function assert_points_rewards_hooks_not_registered( WooCommercePointsAndRewards $sut ): void {
 		$this->assertFalse( has_filter( 'option_wc_points_rewards_earn_points_ratio', array( $sut, 'convert_points_ratio' ) ) );
 		$this->assertFalse( has_filter( 'option_wc_points_rewards_redeem_points_ratio', array( $sut, 'convert_points_ratio' ) ) );
 	}
@@ -141,7 +145,7 @@ class MultiCurrencyPointsRewardsCompatibilityControllerTest extends WC_Unit_Test
 	 * @param bool   $is_admin                 Whether this is an admin request.
 	 * @param bool   $plugins_loaded           Whether plugins have loaded.
 	 * @param bool   $selected_is_default      Whether the selected currency is the store currency.
-	 * @return MultiCurrencyPointsRewardsCompatibilityController
+	 * @return WooCommercePointsAndRewards
 	 */
 	private function create_controller(
 		string $owner = MultiCurrencyRuntimeArbiter::OWNER_BUILTIN,
@@ -149,8 +153,8 @@ class MultiCurrencyPointsRewardsCompatibilityControllerTest extends WC_Unit_Test
 		bool $is_admin = false,
 		bool $plugins_loaded = true,
 		bool $selected_is_default = false
-	): MultiCurrencyPointsRewardsCompatibilityController {
-		$controller = new class( $points_rewards_available, $is_admin, $plugins_loaded ) extends MultiCurrencyPointsRewardsCompatibilityController {
+	): WooCommercePointsAndRewards {
+		$controller = new class( $points_rewards_available, $is_admin, $plugins_loaded ) extends WooCommercePointsAndRewards {
 			/**
 			 * Whether Points and Rewards runtime is available.
 			 *

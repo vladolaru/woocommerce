@@ -18,7 +18,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyExplicitPriceCont
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFeatureController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyState;
-use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencySubscriptionsCompatibilityController;
+use Automattic\WooCommerce\Internal\MultiCurrency\Integrations\WooCommerceSubscriptions;
 use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\CurrencyRateProviderInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\RateService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\ServiceFactory;
@@ -43,16 +43,16 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 		'Automattic\\WooCommerce\\Internal\\MultiCurrency\\MultiCurrencyFrontendPricesController',
 		'Automattic\\WooCommerce\\Internal\\MultiCurrency\\MultiCurrencySelectedCurrencyController',
 		'Automattic\\WooCommerce\\Internal\\MultiCurrency\\MultiCurrencyAnalyticsController',
-		'Automattic\\WooCommerce\\Internal\\MultiCurrency\\MultiCurrencyCompatibilityController',
-		'Automattic\\WooCommerce\\Internal\\MultiCurrency\\MultiCurrencyBookingsCompatibilityController',
-		'Automattic\\WooCommerce\\Internal\\MultiCurrency\\MultiCurrencyDepositsCompatibilityController',
-		'Automattic\\WooCommerce\\Internal\\MultiCurrency\\MultiCurrencyPreOrdersCompatibilityController',
-		'Automattic\\WooCommerce\\Internal\\MultiCurrency\\MultiCurrencyUpsCompatibilityController',
-		'Automattic\\WooCommerce\\Internal\\MultiCurrency\\MultiCurrencyFedExCompatibilityController',
-		'Automattic\\WooCommerce\\Internal\\MultiCurrency\\MultiCurrencyPointsRewardsCompatibilityController',
-		'Automattic\\WooCommerce\\Internal\\MultiCurrency\\MultiCurrencyNameYourPriceCompatibilityController',
-		'Automattic\\WooCommerce\\Internal\\MultiCurrency\\MultiCurrencyProductAddOnsCompatibilityController',
-		'Automattic\\WooCommerce\\Internal\\MultiCurrency\\MultiCurrencySubscriptionsCompatibilityController',
+		'Automattic\\WooCommerce\\Internal\\MultiCurrency\\Integrations\\IntegrationsController',
+		'Automattic\\WooCommerce\\Internal\\MultiCurrency\\Integrations\\WooCommerceBookings',
+		'Automattic\\WooCommerce\\Internal\\MultiCurrency\\Integrations\\WooCommerceDeposits',
+		'Automattic\\WooCommerce\\Internal\\MultiCurrency\\Integrations\\WooCommercePreOrders',
+		'Automattic\\WooCommerce\\Internal\\MultiCurrency\\Integrations\\WooCommerceUPS',
+		'Automattic\\WooCommerce\\Internal\\MultiCurrency\\Integrations\\WooCommerceFedEx',
+		'Automattic\\WooCommerce\\Internal\\MultiCurrency\\Integrations\\WooCommercePointsAndRewards',
+		'Automattic\\WooCommerce\\Internal\\MultiCurrency\\Integrations\\WooCommerceNameYourPrice',
+		'Automattic\\WooCommerce\\Internal\\MultiCurrency\\Integrations\\WooCommerceProductAddOns',
+		'Automattic\\WooCommerce\\Internal\\MultiCurrency\\Integrations\\WooCommerceSubscriptions',
 		'Automattic\\WooCommerce\\Internal\\MultiCurrency\\MultiCurrencyExplicitPriceController',
 		'Automattic\\WooCommerce\\Internal\\MultiCurrency\\MultiCurrencySwitcherWidgetController',
 		'Automattic\\WooCommerce\\Internal\\MultiCurrency\\MultiCurrencySwitcherBlockController',
@@ -1174,9 +1174,9 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 	 *
 	 * @param array<string,mixed> $options  Options the store holds besides an enabled list without additional currencies.
 	 * @param string              $currency The subscription's currency.
-	 * @return MultiCurrencySubscriptionsCompatibilityController&object{cart_walks:int}
+	 * @return WooCommerceSubscriptions&object{cart_walks:int}
 	 */
-	private function arrange_single_currency_subscriptions_store( array $options, string $currency ): MultiCurrencySubscriptionsCompatibilityController {
+	private function arrange_single_currency_subscriptions_store( array $options, string $currency ): WooCommerceSubscriptions {
 		add_filter( 'pre_http_request', static fn() => new \WP_Error( 'blocked', 'Outbound HTTP is blocked in this test.' ) );
 		update_option( 'woocommerce_currency', 'USD' );
 		$this->enable_core_multi_currency( false );
@@ -1216,7 +1216,7 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 				}
 			}
 		);
-		$controller = new class() extends MultiCurrencySubscriptionsCompatibilityController {
+		$controller = new class() extends WooCommerceSubscriptions {
 			/** @var int Walks of the cart and session for one cart type. */
 			public int $cart_walks = 0;
 
@@ -1237,7 +1237,7 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 			wc_get_container()->get( StateBuilderFactory::class ),
 			wc_get_container()->get( ServiceFactory::class )
 		);
-		wc_get_container()->replace( MultiCurrencySubscriptionsCompatibilityController::class, $controller );
+		wc_get_container()->replace( WooCommerceSubscriptions::class, $controller );
 
 		return $controller;
 	}

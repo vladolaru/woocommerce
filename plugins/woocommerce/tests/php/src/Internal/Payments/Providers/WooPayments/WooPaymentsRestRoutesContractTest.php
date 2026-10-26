@@ -262,7 +262,7 @@ class WooPaymentsRestRoutesContractTest extends WC_REST_Unit_Test_Case {
 	 * (10 WooPay actions), `WooPaymentsFrontendTrackingControllerTest` (4),
 	 * `WooPaymentsCheckoutAjaxControllerTest` (3), `WooPaymentsPaymentMethodMessagingTest` (2),
 	 * `WooPaymentsSubscriptionAdminPaymentMethodHandlerTest` (1) and
-	 * `MultiCurrencyBookingsCompatibilityControllerTest` (2).
+	 * `WooCommerceBookingsTest` (2).
 	 */
 	public function test_builtin_names_every_woopayments_extension_ajax_action(): void {
 		$plugin_path = WC()->plugin_path();

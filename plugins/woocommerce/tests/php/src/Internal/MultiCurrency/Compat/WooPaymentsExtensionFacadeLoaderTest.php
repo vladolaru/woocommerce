@@ -6,7 +6,7 @@ namespace Automattic\WooCommerce\Tests\Internal\MultiCurrency\Compat;
 use Automattic\WooCommerce\Internal\MultiCurrency\Compat\WooPaymentsExtensionFacadeLoader;
 use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\LocalizationInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyCurrency;
-use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyDepositsCompatibilityController;
+use Automattic\WooCommerce\Internal\MultiCurrency\Integrations\WooCommerceDeposits;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyState;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\PriceConverter;
@@ -98,7 +98,7 @@ class WooPaymentsExtensionFacadeLoaderTest extends WC_Unit_Test_Case {
 		$this->setExpectedDeprecated( 'WCPay\\MultiCurrency\\MultiCurrency::get_price' );
 		$facade_converted_amount = $consumer->get_woopayments_multicurrency_price( 10.0 );
 
-		$controller = new MultiCurrencyDepositsCompatibilityController();
+		$controller = new WooCommerceDeposits();
 		$controller->init( $this->create_arbiter( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN ), ServiceFactories::with( $this, array( 'create_price_converter' => $price_converter ) ) );
 		$cart_contents = $controller->modify_cart_item_deposit_amounts(
 			array(

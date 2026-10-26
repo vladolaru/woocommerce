@@ -10,7 +10,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 use Automattic\WooCommerce\Internal\DataStores\Orders\CustomOrdersTableController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyAnalyticsController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyAsyncPriceRendererController;
-use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyCompatibilityController;
+use Automattic\WooCommerce\Internal\MultiCurrency\Integrations\IntegrationsController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyCurrency;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencySelectedCurrencyController;
@@ -1029,7 +1029,7 @@ class WooPaymentsHookArityContractTest extends WC_Unit_Test_Case {
 					'create_geolocation_service' => $fixture['geolocation'],
 				)
 			),
-			wc_get_container()->get( MultiCurrencyCompatibilityController::class ),
+			wc_get_container()->get( IntegrationsController::class ),
 			wc_get_container()->get( RequestContext::class )
 		);
 		$controller->handle_wp_footer();
@@ -1048,7 +1048,7 @@ class WooPaymentsHookArityContractTest extends WC_Unit_Test_Case {
 	 * Group `mc_state` (1 hook): the selected-currency override compatibility hook.
 	 */
 	private function probe_mc_state(): void {
-		$controller = wc_get_container()->get( MultiCurrencyCompatibilityController::class );
+		$controller = wc_get_container()->get( IntegrationsController::class );
 		$controller->override_selected_currency();
 	}
 
@@ -1056,7 +1056,7 @@ class WooPaymentsHookArityContractTest extends WC_Unit_Test_Case {
 	 * Group `mc_compatibility` (5 hooks): the extension-compatibility predicate hooks.
 	 */
 	private function probe_mc_compatibility(): void {
-		$controller = wc_get_container()->get( MultiCurrencyCompatibilityController::class );
+		$controller = wc_get_container()->get( IntegrationsController::class );
 		$product    = new WC_Product_Simple();
 		$coupon     = new WC_Coupon();
 

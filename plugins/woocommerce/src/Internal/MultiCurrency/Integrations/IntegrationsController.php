@@ -1,11 +1,11 @@
 <?php
 /**
- * MultiCurrencyCompatibilityController class file.
+ * IntegrationsController class file.
  */
 
 declare( strict_types = 1 );
 
-namespace Automattic\WooCommerce\Internal\MultiCurrency;
+namespace Automattic\WooCommerce\Internal\MultiCurrency\Integrations;
 
 use Automattic\WooCommerce\Internal\Admin\Notes\NewSalesRecord;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\PriceConverter;
@@ -14,6 +14,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilderFactory;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\RequestContext;
+use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 
 /**
  * Answers the compatibility questions other Multi-Currency classes ask through the `wcpay_multi_currency_*` filters.
@@ -21,7 +22,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Services\RequestContext;
  * @since 11.0.0
  * @internal
  */
-class MultiCurrencyCompatibilityController implements RegisterHooksInterface {
+class IntegrationsController implements RegisterHooksInterface {
 
 	/**
 	 * WooCommerce's best sales day note methods whose order totals are converted to the store currency. Client 11.1.0

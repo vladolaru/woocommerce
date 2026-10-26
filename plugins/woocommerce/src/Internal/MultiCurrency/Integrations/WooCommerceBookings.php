@@ -1,11 +1,11 @@
 <?php
 /**
- * MultiCurrencyBookingsCompatibilityController class file.
+ * WooCommerceBookings class file.
  */
 
 declare( strict_types = 1 );
 
-namespace Automattic\WooCommerce\Internal\MultiCurrency;
+namespace Automattic\WooCommerce\Internal\MultiCurrency\Integrations;
 
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\DisplayService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\PriceConverter;
@@ -13,6 +13,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Services\ServiceFactory;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\RequestContext;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilder;
+use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 
 /**
  * Converts WooCommerce Bookings costs, and the prices its cost Ajax formats, to the selected currency.
@@ -20,7 +21,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilder;
  * @since 11.0.0
  * @internal
  */
-class MultiCurrencyBookingsCompatibilityController implements RegisterHooksInterface {
+class WooCommerceBookings implements RegisterHooksInterface {
 
 	private const CART_ADD_TO_CART_CALLS = array(
 		'WC_Cart->add_to_cart',

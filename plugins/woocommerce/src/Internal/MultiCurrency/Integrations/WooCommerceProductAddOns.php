@@ -1,16 +1,17 @@
 <?php
 /**
- * MultiCurrencyProductAddOnsCompatibilityController class file.
+ * WooCommerceProductAddOns class file.
  */
 
 declare( strict_types = 1 );
 
-namespace Automattic\WooCommerce\Internal\MultiCurrency;
+namespace Automattic\WooCommerce\Internal\MultiCurrency\Integrations;
 
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\PriceConverter;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\ServiceFactory;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilder;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
+use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 
 /**
  * Converts WooCommerce Product Add-Ons prices to the selected currency, and marks a product whose add-ons already
@@ -19,7 +20,7 @@ use Automattic\WooCommerce\Internal\RegisterHooksInterface;
  * @since 11.0.0
  * @internal
  */
-class MultiCurrencyProductAddOnsCompatibilityController implements RegisterHooksInterface {
+class WooCommerceProductAddOns implements RegisterHooksInterface {
 
 	private const ADDONS_CONVERTED_META_KEY = '_wcpay_multi_currency_addons_converted';
 

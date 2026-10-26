@@ -14,6 +14,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Services\ServiceFactory;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\SelectedCurrencyPersistenceService;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilder;
+use Automattic\WooCommerce\Internal\MultiCurrency\Integrations\IntegrationsController;
 
 /**
  * Sets the shopper's selected currency from the URL, geolocation, the My Account field or checkout, and runs the settings
@@ -83,21 +84,21 @@ class MultiCurrencySelectedCurrencyController implements RegisterHooksInterface 
 	/**
 	 * Compatibility controller.
 	 *
-	 * @var MultiCurrencyCompatibilityController
+	 * @var IntegrationsController
 	 */
-	private MultiCurrencyCompatibilityController $compatibility_controller;
+	private IntegrationsController $compatibility_controller;
 
 	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
 	 *
-	 * @param MultiCurrencyRuntimeArbiter          $arbiter                  Runtime owner arbiter.
-	 * @param ServiceFactory                       $service_factory          Multi-Currency service factory.
-	 * @param MultiCurrencyCompatibilityController $compatibility_controller Compatibility controller.
-	 * @param RequestContext                       $request_context          Request context.
+	 * @param MultiCurrencyRuntimeArbiter $arbiter                  Runtime owner arbiter.
+	 * @param ServiceFactory              $service_factory          Multi-Currency service factory.
+	 * @param IntegrationsController      $compatibility_controller Compatibility controller.
+	 * @param RequestContext              $request_context          Request context.
 	 */
-	final public function init( MultiCurrencyRuntimeArbiter $arbiter, ServiceFactory $service_factory, MultiCurrencyCompatibilityController $compatibility_controller, RequestContext $request_context ): void {
+	final public function init( MultiCurrencyRuntimeArbiter $arbiter, ServiceFactory $service_factory, IntegrationsController $compatibility_controller, RequestContext $request_context ): void {
 		$this->arbiter                  = $arbiter;
 		$this->service_factory          = $service_factory;
 		$this->compatibility_controller = $compatibility_controller;
