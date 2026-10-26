@@ -23,9 +23,9 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRu
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsStatusChangeRetryListener;
 use Automattic\WooCommerce\Internal\Payments\PaymentGatewayProviderInterface;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsCutoverPluginLifecycleListener;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsCutoverReconciliationJob;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsCutoverDataMigration;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\PluginLifecycleListener;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\ReconciliationJob;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\DataMigration;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Shadow\NativePaymentsShadowMode;
 use WC_Unit_Test_Case;
@@ -181,14 +181,14 @@ class PaymentsBootstrapTest extends WC_Unit_Test_Case {
 	/** @return array<string,array{string,string,array<int,string>}> */
 	public static function page_request_cron_class_gaps(): array {
 		return array(
-			'available front' => array( WooPaymentsSetupTier::AVAILABLE, 'front', array( WooPaymentsCutoverReconciliationJob::class, WooPaymentsStatusChangeRetryListener::class ) ),
+			'available front' => array( WooPaymentsSetupTier::AVAILABLE, 'front', array( ReconciliationJob::class, WooPaymentsStatusChangeRetryListener::class ) ),
 			'available admin' => array( WooPaymentsSetupTier::AVAILABLE, 'admin', array( WooPaymentsStatusChangeRetryListener::class ) ),
 			'active front'    => array(
 				WooPaymentsSetupTier::ACTIVE,
 				'front',
 				array(
-					self::WCPAY . 'Cutover\\WooPaymentsCutoverDataMigration',
-					WooPaymentsCutoverReconciliationJob::class,
+					self::WCPAY . 'Cutover\\DataMigration',
+					ReconciliationJob::class,
 					self::WCPAY . 'WooPaymentsCanceledAuthorizationFeeRemediationService',
 					self::WCPAY . 'WooPaymentsLoanApprovedNote',
 					self::WCPAY . 'WooPaymentsGatewaySettingsSynchronizer',
@@ -234,7 +234,7 @@ class PaymentsBootstrapTest extends WC_Unit_Test_Case {
 		$sut->register( $container, 'front' );
 
 		// A plugin deactivated over XML-RPC (Jetpack remote management, a front request) must still start the switch.
-		$this->assertSame( $this->expected_events( array( WooPaymentsCutoverPluginLifecycleListener::class ) ), $container->events );
+		$this->assertSame( $this->expected_events( array( PluginLifecycleListener::class ) ), $container->events );
 		$this->assertNotContains( NativePaymentsShadowMode::class, $container->resolved );
 	}
 
@@ -257,7 +257,7 @@ class PaymentsBootstrapTest extends WC_Unit_Test_Case {
 	/** @testdox A stored disabled tier registers the available classes on a site the WooPayments extension owns, and nothing on the others. */
 	public function test_a_stored_disabled_tier_follows_the_owner(): void {
 		$owners = array(
-			WooPaymentsRuntimeArbiter::OWNER_EXTENSION => array( WooPaymentsCutoverPluginLifecycleListener::class ),
+			WooPaymentsRuntimeArbiter::OWNER_EXTENSION => array( PluginLifecycleListener::class ),
 			WooPaymentsRuntimeArbiter::OWNER_BUILTIN   => array(),
 			WooPaymentsRuntimeArbiter::OWNER_NONE      => array(),
 		);

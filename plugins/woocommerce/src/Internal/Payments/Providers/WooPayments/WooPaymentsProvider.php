@@ -7,10 +7,10 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsCutoverController;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsCutoverDataMigration;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsCutoverPluginLifecycleListener;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsCutoverReconciliationJob;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\CutoverController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\DataMigration;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\PluginLifecycleListener;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\ReconciliationJob;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionsController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\WooPaymentsStripeBillingModule;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\NavigationController;
@@ -128,9 +128,9 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 	public static function get_classes_by_setup_tier(): array {
 		// The cutover from the WooPayments extension adds these roots, and every row that needs one reads it from here.
 		// Cutover/README.md lists everything to remove with the Cutover folder.
-		$cutover_admin         = array( WooPaymentsCutoverController::class, WooPaymentsCutoverReconciliationJob::class );
-		$cutover_cron          = array( WooPaymentsCutoverReconciliationJob::class );
-		$cutover_every_request = array( WooPaymentsCutoverPluginLifecycleListener::class );
+		$cutover_admin         = array( CutoverController::class, ReconciliationJob::class );
+		$cutover_cron          = array( ReconciliationJob::class );
+		$cutover_every_request = array( PluginLifecycleListener::class );
 
 		$connected_rest_controllers = WooPaymentsAdminRestRouteRegistrar::get_connected_controller_roots();
 		$connected_admin            = array(
@@ -224,7 +224,7 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 			WooPaymentsOrderCardInfo::class,
 		);
 		$active_maintenance_prefix  = array_merge(
-			array( WooPaymentsCutoverDataMigration::class ),
+			array( DataMigration::class ),
 			$gateway_prefix
 		);
 

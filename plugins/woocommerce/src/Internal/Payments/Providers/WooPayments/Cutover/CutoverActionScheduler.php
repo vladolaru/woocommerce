@@ -1,6 +1,6 @@
 <?php
 /**
- * WooPaymentsCutoverActionScheduler class file.
+ * CutoverActionScheduler class file.
  */
 
 declare( strict_types = 1 );
@@ -15,7 +15,7 @@ defined( 'ABSPATH' ) || exit;
  * @since 11.2.0
  * @internal
  */
-class WooPaymentsCutoverActionScheduler {
+class CutoverActionScheduler {
 
 	/** Reconciliation action hook. */
 	public const ACTION_HOOK = 'woocommerce_woopayments_cutover_reconcile';

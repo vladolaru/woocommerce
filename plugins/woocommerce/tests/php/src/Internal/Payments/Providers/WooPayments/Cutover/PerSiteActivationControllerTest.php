@@ -1,6 +1,6 @@
 <?php
 /**
- * WooPaymentsPerSiteActivationController tests.
+ * PerSiteActivationController tests.
  */
 
 declare( strict_types = 1 );
@@ -8,14 +8,14 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Cutover;
 
 use Automattic\Jetpack\Constants;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsCutoverActionScheduler;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsCutoverController;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsCutoverDataMigration;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsCutoverPluginLifecycleListener;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsCutoverPreflightService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsCutoverReconciliationJob;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsCutoverStateStore;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsPerSiteActivationController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\CutoverActionScheduler;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\CutoverController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\DataMigration;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\PluginLifecycleListener;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\PreflightService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\ReconciliationJob;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\StateStore;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\PerSiteActivationController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
@@ -24,9 +24,9 @@ use Automattic\WooCommerce\Proxies\LegacyProxy;
 use WC_Unit_Test_Case;
 
 /**
- * Tests for WooPaymentsPerSiteActivationController.
+ * Tests for PerSiteActivationController.
  */
-class WooPaymentsPerSiteActivationControllerTest extends WC_Unit_Test_Case {
+class PerSiteActivationControllerTest extends WC_Unit_Test_Case {
 
 	/**
 	 * Option the WooPayments extension writes when it runs on a site.
@@ -107,9 +107,9 @@ class WooPaymentsPerSiteActivationControllerTest extends WC_Unit_Test_Case {
 		Constants::clear_single_constant( 'WC_ALLOW_MERGED_FEATURE_PLUGINS' );
 		if ( is_multisite() ) {
 			delete_site_option( 'active_sitewide_plugins' );
-			delete_site_transient( WooPaymentsPerSiteActivationController::FEATURE_SCAN_TRANSIENT );
+			delete_site_transient( PerSiteActivationController::FEATURE_SCAN_TRANSIENT );
 		}
-		unset( $_GET[ WooPaymentsPerSiteActivationController::QUERY_ACTION ], $_GET[ WooPaymentsPerSiteActivationController::NONCE_NAME ], $_GET[ WooPaymentsPerSiteActivationController::QUERY_DONE ], $_GET[ WooPaymentsPerSiteActivationController::QUERY_FAILED ], $_GET[ WooPaymentsPerSiteActivationController::QUERY_KEPT ], $_GET[ WooPaymentsPerSiteActivationController::QUERY_WITHOUT_WOOCOMMERCE ] );
+		unset( $_GET[ PerSiteActivationController::QUERY_ACTION ], $_GET[ PerSiteActivationController::NONCE_NAME ], $_GET[ PerSiteActivationController::QUERY_DONE ], $_GET[ PerSiteActivationController::QUERY_FAILED ], $_GET[ PerSiteActivationController::QUERY_KEPT ], $_GET[ PerSiteActivationController::QUERY_WITHOUT_WOOCOMMERCE ] );
 		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 		parent::tearDown();
 	}
@@ -186,8 +186,8 @@ class WooPaymentsPerSiteActivationControllerTest extends WC_Unit_Test_Case {
 		$this->assertSame( array( $other ), $result['failed'] );
 		$this->assertSame( array(), $this->deactivations, 'No network deactivation while a site failed.' );
 		$this->assertArrayHasKey( WooPaymentsRuntimeArbiter::PLUGIN_FILE, (array) get_site_option( 'active_sitewide_plugins', array() ) );
-		$_GET[ WooPaymentsPerSiteActivationController::QUERY_DONE ]   = '1';
-		$_GET[ WooPaymentsPerSiteActivationController::QUERY_FAILED ] = (string) $other;
+		$_GET[ PerSiteActivationController::QUERY_DONE ]   = '1';
+		$_GET[ PerSiteActivationController::QUERY_FAILED ] = (string) $other;
 		$notice = $this->render_notice( $this->create_sut() );
 		$this->assertStringContainsString( 'WooPayments could not be activated on these sites: ' . $this->get_site_label( $other ) . '. Activate WooPayments per site again to finish.', $notice );
 		$this->assertStringContainsString( 'Activate WooPayments per site</a>', $notice );
@@ -236,8 +236,8 @@ class WooPaymentsPerSiteActivationControllerTest extends WC_Unit_Test_Case {
 		} finally {
 			restore_current_blog();
 		}
-		$this->create_record( $switched, WooPaymentsCutoverStateStore::STATE_DONE, 'done', array() );
-		$this->create_record( $started, WooPaymentsCutoverStateStore::STATE_DEFERRED, 'deferred', array() );
+		$this->create_record( $switched, StateStore::STATE_DONE, 'done', array() );
+		$this->create_record( $started, StateStore::STATE_DEFERRED, 'deferred', array() );
 		$done_before    = $this->read_record( $switched );
 		$started_before = $this->read_record( $started );
 		$this->calls    = array();
@@ -266,8 +266,8 @@ class WooPaymentsPerSiteActivationControllerTest extends WC_Unit_Test_Case {
 		$this->assertSame( array( $fresh ), $result['kept'] );
 		$this->assertSame( array(), $result['failed'] );
 		$this->assertArrayNotHasKey( $fresh, $this->activations );
-		$_GET[ WooPaymentsPerSiteActivationController::QUERY_DONE ] = '1';
-		$_GET[ WooPaymentsPerSiteActivationController::QUERY_KEPT ] = (string) $fresh;
+		$_GET[ PerSiteActivationController::QUERY_DONE ] = '1';
+		$_GET[ PerSiteActivationController::QUERY_KEPT ] = (string) $fresh;
 		$notice = $this->render_notice( $this->create_sut() );
 		$this->assertStringContainsString( 'Kept WooPayments in WooCommerce: ' . $this->get_site_label( $fresh ) . '.', $notice );
 		$this->assertStringNotContainsString( 'could not be activated', $notice );
@@ -291,8 +291,8 @@ class WooPaymentsPerSiteActivationControllerTest extends WC_Unit_Test_Case {
 		$this->assertSame( array(), $result['failed'] );
 		$this->assertArrayNotHasKey( $blog, $this->activations );
 		$this->assertCount( 1, $this->deactivations );
-		$_GET[ WooPaymentsPerSiteActivationController::QUERY_DONE ]                = '1';
-		$_GET[ WooPaymentsPerSiteActivationController::QUERY_WITHOUT_WOOCOMMERCE ] = (string) $blog;
+		$_GET[ PerSiteActivationController::QUERY_DONE ]                = '1';
+		$_GET[ PerSiteActivationController::QUERY_WITHOUT_WOOCOMMERCE ] = (string) $blog;
 		$notice = $this->render_notice( $this->create_sut() );
 		$this->assertStringContainsString( 'Skipped, WooCommerce is not active: ' . $this->get_site_label( $blog ) . '.', $notice );
 		$this->assertStringNotContainsString( 'could not be activated', $notice );
@@ -310,7 +310,7 @@ class WooPaymentsPerSiteActivationControllerTest extends WC_Unit_Test_Case {
 	public function test_conversion_keeps_a_started_switch_without_a_token( string $state, bool $listener, bool $already_active ): void {
 		$this->skip_unless_multisite();
 		if ( $listener ) {
-			wc_get_container()->get( WooPaymentsCutoverPluginLifecycleListener::class )->register();
+			wc_get_container()->get( PluginLifecycleListener::class )->register();
 		}
 		$main    = get_current_blog_id();
 		$started = $this->create_site( 'started', true, true );
@@ -336,7 +336,7 @@ class WooPaymentsPerSiteActivationControllerTest extends WC_Unit_Test_Case {
 	 */
 	public function provider_started_switch_without_token(): array {
 		$rows = array();
-		foreach ( array( WooPaymentsCutoverStateStore::STATE_PENDING, WooPaymentsCutoverStateStore::STATE_RUNNING, WooPaymentsCutoverStateStore::STATE_DEFERRED ) as $state ) {
+		foreach ( array( StateStore::STATE_PENDING, StateStore::STATE_RUNNING, StateStore::STATE_DEFERRED ) as $state ) {
 			foreach ( array( true, false ) as $listener ) {
 				foreach ( array( false, true ) as $already_active ) {
 					$rows[ sprintf( '%s, listener %s, %s', $state, $listener ? 'loaded' : 'not loaded', $already_active ? 'already active' : 'activated' ) ] = array( $state, $listener, $already_active );
@@ -359,7 +359,7 @@ class WooPaymentsPerSiteActivationControllerTest extends WC_Unit_Test_Case {
 	public function test_conversion_rolls_back_a_switch_that_is_done_or_past_finalize( string $kind, bool $listener, bool $already_active ): void {
 		$this->skip_unless_multisite();
 		if ( $listener ) {
-			wc_get_container()->get( WooPaymentsCutoverPluginLifecycleListener::class )->register();
+			wc_get_container()->get( PluginLifecycleListener::class )->register();
 		}
 		$main     = get_current_blog_id();
 		$switched = $this->create_site( 'switched', true, true );
@@ -370,13 +370,13 @@ class WooPaymentsPerSiteActivationControllerTest extends WC_Unit_Test_Case {
 		}
 		$token = array( 'request_origin_token' => 'finalize-token' );
 		if ( 'done' === $kind ) {
-			$this->create_record( $switched, WooPaymentsCutoverStateStore::STATE_DONE, 'done', array() );
+			$this->create_record( $switched, StateStore::STATE_DONE, 'done', array() );
 		} elseif ( 'pending verification' === $kind ) {
-			$this->create_record( $switched, WooPaymentsCutoverStateStore::STATE_PENDING, 'verify_builtin_ownership', array(), $token );
+			$this->create_record( $switched, StateStore::STATE_PENDING, 'verify_builtin_ownership', array(), $token );
 		} elseif ( 'running verification' === $kind ) {
-			$this->create_record( $switched, WooPaymentsCutoverStateStore::STATE_RUNNING, 'verify_builtin_ownership', array(), array_merge( $token, $this->get_record_overrides( WooPaymentsCutoverStateStore::STATE_RUNNING ) ) );
+			$this->create_record( $switched, StateStore::STATE_RUNNING, 'verify_builtin_ownership', array(), array_merge( $token, $this->get_record_overrides( StateStore::STATE_RUNNING ) ) );
 		} else {
-			$this->create_record( $switched, WooPaymentsCutoverStateStore::STATE_DEFERRED, 'deferred', array( 'builtin_ownership_unverified' ), $token );
+			$this->create_record( $switched, StateStore::STATE_DEFERRED, 'deferred', array( 'builtin_ownership_unverified' ), $token );
 		}
 		$activated_hooks = array();
 		add_action(
@@ -397,7 +397,7 @@ class WooPaymentsPerSiteActivationControllerTest extends WC_Unit_Test_Case {
 		}
 		$record = $this->read_record( $switched );
 		$this->assertSame( 4, $record['generation'], 'One rollback generation, with or without the listener.' );
-		$this->assertSame( WooPaymentsCutoverStateStore::STATE_PENDING, $record['state'] );
+		$this->assertSame( StateStore::STATE_PENDING, $record['state'] );
 		$this->assertSame( 'awaiting_merchant_start', $record['current_step'] );
 	}
 
@@ -430,8 +430,8 @@ class WooPaymentsPerSiteActivationControllerTest extends WC_Unit_Test_Case {
 		$done = $this->create_site( 'done', true, true );
 		$past = $this->create_site( 'past-finalize', true, true );
 		$this->arrange_site( $main, false, true );
-		$this->create_record( $done, WooPaymentsCutoverStateStore::STATE_DONE, 'done', array() );
-		$this->create_record( $past, WooPaymentsCutoverStateStore::STATE_DEFERRED, 'deferred', array( 'builtin_ownership_unverified' ), array( 'request_origin_token' => 'finalize-token' ) );
+		$this->create_record( $done, StateStore::STATE_DONE, 'done', array() );
+		$this->create_record( $past, StateStore::STATE_DEFERRED, 'deferred', array( 'builtin_ownership_unverified' ), array( 'request_origin_token' => 'finalize-token' ) );
 		$this->activate_for_every_site( $plugin_file );
 
 		$this->fire_activated_plugin( true, $plugin_file );
@@ -440,7 +440,7 @@ class WooPaymentsPerSiteActivationControllerTest extends WC_Unit_Test_Case {
 		foreach ( array( $done, $past ) as $site_id ) {
 			$record = $this->read_record( $site_id );
 			$this->assertSame( 4, $record['generation'], 'One rollback generation.' );
-			$this->assertSame( WooPaymentsCutoverStateStore::STATE_PENDING, $record['state'] );
+			$this->assertSame( StateStore::STATE_PENDING, $record['state'] );
 			$this->assertSame( 'awaiting_merchant_start', $record['current_step'] );
 		}
 
@@ -473,13 +473,13 @@ class WooPaymentsPerSiteActivationControllerTest extends WC_Unit_Test_Case {
 		$switched = $this->create_site( 'switched', true, true );
 		$other    = $this->create_site( 'other', true, true );
 		$this->arrange_site( $main, false, true );
-		$this->create_record( $switched, WooPaymentsCutoverStateStore::STATE_DONE, 'done', array() );
+		$this->create_record( $switched, StateStore::STATE_DONE, 'done', array() );
 		if ( 'awaiting the merchant\'s start' === $kind ) {
-			$this->create_record( $other, WooPaymentsCutoverStateStore::STATE_PENDING, 'awaiting_merchant_start', array() );
+			$this->create_record( $other, StateStore::STATE_PENDING, 'awaiting_merchant_start', array() );
 		} elseif ( 'started before finalize' === $kind ) {
-			$this->create_record( $other, WooPaymentsCutoverStateStore::STATE_DEFERRED, 'deferred', array( 'plugin_active_sitewide' ) );
+			$this->create_record( $other, StateStore::STATE_DEFERRED, 'deferred', array( 'plugin_active_sitewide' ) );
 		} elseif ( 'deleted, with a completed switch' === $kind ) {
-			$this->create_record( $other, WooPaymentsCutoverStateStore::STATE_DONE, 'done', array() );
+			$this->create_record( $other, StateStore::STATE_DONE, 'done', array() );
 			update_blog_status( $other, 'deleted', '1' );
 		}
 		$before = $this->get_record_on( $other );
@@ -513,9 +513,9 @@ class WooPaymentsPerSiteActivationControllerTest extends WC_Unit_Test_Case {
 		$failing = $this->create_site( 'failing', true, true );
 		$next    = $this->create_site( 'next', true, true );
 		$this->arrange_site( $main, false, true );
-		$this->create_record( $failing, WooPaymentsCutoverStateStore::STATE_DONE, 'done', array() );
-		$this->create_record( $next, WooPaymentsCutoverStateStore::STATE_DONE, 'done', array() );
-		$job               = new class() extends WooPaymentsCutoverReconciliationJob {
+		$this->create_record( $failing, StateStore::STATE_DONE, 'done', array() );
+		$this->create_record( $next, StateStore::STATE_DONE, 'done', array() );
+		$job               = new class() extends ReconciliationJob {
 			/** @var int Site whose record read throws. */
 			public int $failing_site = 0;
 
@@ -532,15 +532,15 @@ class WooPaymentsPerSiteActivationControllerTest extends WC_Unit_Test_Case {
 			}
 		};
 		$job->failing_site = $failing;
-		$job->init( wc_get_container()->get( WooPaymentsRuntimeArbiter::class ), wc_get_container()->get( WooPaymentsCutoverStateStore::class ), wc_get_container()->get( WooPaymentsCutoverActionScheduler::class ), wc_get_container()->get( WooPaymentsCutoverPreflightService::class ), wc_get_container()->get( WooPaymentsCutoverDataMigration::class ), wc_get_container()->get( WooPaymentsAccountService::class ) );
-		$sut = new WooPaymentsPerSiteActivationController();
-		$sut->init( wc_get_container()->get( WooPaymentsRuntimeArbiter::class ), wc_get_container()->get( WooPaymentsCutoverPreflightService::class ), $job, wc_get_container()->get( LegacyProxy::class ), wc_get_container()->get( WooPaymentsSetupTier::class ) );
+		$job->init( wc_get_container()->get( WooPaymentsRuntimeArbiter::class ), wc_get_container()->get( StateStore::class ), wc_get_container()->get( CutoverActionScheduler::class ), wc_get_container()->get( PreflightService::class ), wc_get_container()->get( DataMigration::class ), wc_get_container()->get( WooPaymentsAccountService::class ) );
+		$sut = new PerSiteActivationController();
+		$sut->init( wc_get_container()->get( WooPaymentsRuntimeArbiter::class ), wc_get_container()->get( PreflightService::class ), $job, wc_get_container()->get( LegacyProxy::class ), wc_get_container()->get( WooPaymentsSetupTier::class ) );
 
 		$sut->record_network_activation_rollbacks();
 
 		$this->assertSame( $main, get_current_blog_id() );
 		$this->assertFalse( ms_is_switched(), 'No site switch is left open.' );
-		$this->assertSame( WooPaymentsCutoverStateStore::STATE_DONE, $this->read_record( $failing )['state'] );
+		$this->assertSame( StateStore::STATE_DONE, $this->read_record( $failing )['state'] );
 		$this->assertSame( 4, $this->read_record( $next )['generation'], 'The site after the failing one rolls back.' );
 	}
 
@@ -556,12 +556,12 @@ class WooPaymentsPerSiteActivationControllerTest extends WC_Unit_Test_Case {
 		$this->skip_unless_multisite();
 		$this->arrange_site( get_current_blog_id(), true, true );
 		$this->activate_for_every_site();
-		$_GET[ WooPaymentsPerSiteActivationController::QUERY_ACTION ] = WooPaymentsPerSiteActivationController::ACTION_CONVERT;
+		$_GET[ PerSiteActivationController::QUERY_ACTION ] = PerSiteActivationController::ACTION_CONVERT;
 		if ( 'valid' === $nonce ) {
 			wp_set_current_user( 1 );
-			$_GET[ WooPaymentsPerSiteActivationController::NONCE_NAME ] = wp_create_nonce( WooPaymentsPerSiteActivationController::NONCE_ACTION );
+			$_GET[ PerSiteActivationController::NONCE_NAME ] = wp_create_nonce( PerSiteActivationController::NONCE_ACTION );
 		} elseif ( '' !== $nonce ) {
-			$_GET[ WooPaymentsPerSiteActivationController::NONCE_NAME ] = $nonce;
+			$_GET[ PerSiteActivationController::NONCE_NAME ] = $nonce;
 		}
 		if ( ! $can_manage_network_plugins ) {
 			$this->mock_plugin_functions( false );
@@ -617,7 +617,7 @@ class WooPaymentsPerSiteActivationControllerTest extends WC_Unit_Test_Case {
 		$other = $this->create_site( 'other', false, true );
 		$this->arrange_site( $main, false, true );
 		$this->activate_for_every_site();
-		delete_site_transient( WooPaymentsPerSiteActivationController::FEATURE_SCAN_TRANSIENT );
+		delete_site_transient( PerSiteActivationController::FEATURE_SCAN_TRANSIENT );
 		$switches = 0;
 		add_action(
 			'switch_blog',
@@ -765,23 +765,23 @@ class WooPaymentsPerSiteActivationControllerTest extends WC_Unit_Test_Case {
 
 		switch_to_blog( $shop );
 		try {
-			$_GET[ WooPaymentsPerSiteActivationController::QUERY_ACTION ] = WooPaymentsPerSiteActivationController::ACTION_CONVERT;
-			$_GET[ WooPaymentsPerSiteActivationController::NONCE_NAME ]   = wp_create_nonce( WooPaymentsPerSiteActivationController::NONCE_ACTION );
+			$_GET[ PerSiteActivationController::QUERY_ACTION ] = PerSiteActivationController::ACTION_CONVERT;
+			$_GET[ PerSiteActivationController::NONCE_NAME ]   = wp_create_nonce( PerSiteActivationController::NONCE_ACTION );
 			try {
-				WooPaymentsPerSiteActivationController::handle_conversion_request();
+				PerSiteActivationController::handle_conversion_request();
 			} catch ( \LengthException $exited ) {
 				unset( $exited );
 			}
 			$shop_plugins = admin_url( 'plugins.php' );
 			$notice       = '';
 			if ( str_starts_with( $location, $shop_plugins . '?' ) ) {
-				unset( $_GET[ WooPaymentsPerSiteActivationController::QUERY_ACTION ], $_GET[ WooPaymentsPerSiteActivationController::NONCE_NAME ] );
+				unset( $_GET[ PerSiteActivationController::QUERY_ACTION ], $_GET[ PerSiteActivationController::NONCE_NAME ] );
 				wp_parse_str( (string) wp_parse_url( $location, PHP_URL_QUERY ), $query );
 				foreach ( $query as $key => $value ) {
 					$_GET[ $key ] = $value;
 				}
 				ob_start();
-				WooPaymentsPerSiteActivationController::handle_site_admin_notices();
+				PerSiteActivationController::handle_site_admin_notices();
 				$notice = (string) ob_get_clean();
 			}
 		} finally {
@@ -789,7 +789,7 @@ class WooPaymentsPerSiteActivationControllerTest extends WC_Unit_Test_Case {
 		}
 
 		$this->assertStringStartsWith( $shop_plugins . '?', $location, 'The result returns to the store site the conversion started from.' );
-		$this->assertStringContainsString( WooPaymentsPerSiteActivationController::QUERY_DONE . '=1', $location );
+		$this->assertStringContainsString( PerSiteActivationController::QUERY_DONE . '=1', $location );
 		$this->assertStringContainsString( 'WooPayments is now active on each site. Each site&#039;s administrators can start their switch.', $notice );
 	}
 
@@ -800,9 +800,9 @@ class WooPaymentsPerSiteActivationControllerTest extends WC_Unit_Test_Case {
 	public function test_store_site_offers_the_per_site_activation_without_woocommerce_on_the_main_site(): void {
 		$this->skip_unless_multisite();
 		$this->assertFalse( is_network_admin() );
-		$this->assertSame( 10, has_action( 'admin_init', array( WooPaymentsPerSiteActivationController::class, 'handle_conversion_request' ) ), 'The handler is hooked outside network admin.' );
-		$this->assertSame( 10, has_action( 'admin_notices', array( WooPaymentsPerSiteActivationController::class, 'handle_site_admin_notices' ) ), 'The site result notice is hooked outside network admin.' );
-		$this->assertSame( 10, has_action( 'activate_plugin', array( WooPaymentsPerSiteActivationController::class, 'handle_activate_plugin' ) ), 'The network activation check is hooked outside the setup tiers.' );
+		$this->assertSame( 10, has_action( 'admin_init', array( PerSiteActivationController::class, 'handle_conversion_request' ) ), 'The handler is hooked outside network admin.' );
+		$this->assertSame( 10, has_action( 'admin_notices', array( PerSiteActivationController::class, 'handle_site_admin_notices' ) ), 'The site result notice is hooked outside network admin.' );
+		$this->assertSame( 10, has_action( 'activate_plugin', array( PerSiteActivationController::class, 'handle_activate_plugin' ) ), 'The network activation check is hooked outside the setup tiers.' );
 		$main = get_current_blog_id();
 		$shop = $this->create_site( 'shop', true, true );
 		$this->arrange_site( $main, false, false );
@@ -814,7 +814,7 @@ class WooPaymentsPerSiteActivationControllerTest extends WC_Unit_Test_Case {
 		try {
 			wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 			ob_start();
-			wc_get_container()->get( WooPaymentsCutoverController::class )->output_admin_notices();
+			wc_get_container()->get( CutoverController::class )->output_admin_notices();
 			$notice       = (string) ob_get_clean();
 			$shop_plugins = admin_url( 'plugins.php' );
 		} finally {
@@ -825,7 +825,7 @@ class WooPaymentsPerSiteActivationControllerTest extends WC_Unit_Test_Case {
 		$this->assertSame( 1, preg_match( '/<a class="button button-primary" href="([^"]*)">Activate WooPayments per site<\/a>/', $notice, $matches ), 'The refusal offers the per-site activation.' );
 		$href = html_entity_decode( $matches[1] );
 		$this->assertStringStartsWith( $shop_plugins . '?', $href, 'The button posts to the store site itself.' );
-		$this->assertStringContainsString( WooPaymentsPerSiteActivationController::QUERY_ACTION . '=' . WooPaymentsPerSiteActivationController::ACTION_CONVERT, $href );
+		$this->assertStringContainsString( PerSiteActivationController::QUERY_ACTION . '=' . PerSiteActivationController::ACTION_CONVERT, $href );
 	}
 
 	/**
@@ -836,14 +836,14 @@ class WooPaymentsPerSiteActivationControllerTest extends WC_Unit_Test_Case {
 			$this->markTestSkipped( 'Test only runs on a single site.' );
 		}
 		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
-		$preflight = new class() extends WooPaymentsCutoverPreflightService {
+		$preflight = new class() extends PreflightService {
 			/** Claim the extension is active for every site. */
 			public function is_woopayments_network_active(): bool {
 				return true;
 			}
 		};
-		$sut       = new WooPaymentsPerSiteActivationController();
-		$sut->init( wc_get_container()->get( WooPaymentsRuntimeArbiter::class ), $preflight, wc_get_container()->get( WooPaymentsCutoverReconciliationJob::class ), wc_get_container()->get( LegacyProxy::class ), wc_get_container()->get( WooPaymentsSetupTier::class ) );
+		$sut       = new PerSiteActivationController();
+		$sut->init( wc_get_container()->get( WooPaymentsRuntimeArbiter::class ), $preflight, wc_get_container()->get( ReconciliationJob::class ), wc_get_container()->get( LegacyProxy::class ), wc_get_container()->get( WooPaymentsSetupTier::class ) );
 		$this->mock_plugin_functions();
 
 		$this->assertSame( '', $this->render_notice( $sut ) );
@@ -852,9 +852,9 @@ class WooPaymentsPerSiteActivationControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * Run the handler, expect it to stop through wp_die(), and assert it activated and deactivated nothing.
 	 *
-	 * @param WooPaymentsPerSiteActivationController $sut The controller.
+	 * @param PerSiteActivationController $sut The controller.
 	 */
-	private function assert_handler_stops_without_changes( WooPaymentsPerSiteActivationController $sut ): void {
+	private function assert_handler_stops_without_changes( PerSiteActivationController $sut ): void {
 		$this->stop_at_network_deactivation = true;
 		try {
 			$sut->handle_admin_init();
@@ -993,10 +993,10 @@ class WooPaymentsPerSiteActivationControllerTest extends WC_Unit_Test_Case {
 		switch_to_blog( $site_id );
 		try {
 			$this->assertTrue(
-				wc_get_container()->get( WooPaymentsCutoverStateStore::class )->create_record(
+				wc_get_container()->get( StateStore::class )->create_record(
 					array_merge(
 						array(
-							'schema_version'         => WooPaymentsCutoverStateStore::SCHEMA_VERSION,
+							'schema_version'         => StateStore::SCHEMA_VERSION,
 							'generation'             => 3,
 							'revision'               => 1,
 							'state'                  => $state,
@@ -1008,7 +1008,7 @@ class WooPaymentsPerSiteActivationControllerTest extends WC_Unit_Test_Case {
 							'step_log'               => array(),
 							'deferred_codes'         => $codes,
 							'informational_outcomes' => array(),
-							'next_attempt_at'        => WooPaymentsCutoverStateStore::STATE_DEFERRED === $state ? $now + HOUR_IN_SECONDS : null,
+							'next_attempt_at'        => StateStore::STATE_DEFERRED === $state ? $now + HOUR_IN_SECONDS : null,
 							'lease_token'            => null,
 							'lease_expires_at'       => null,
 							'request_origin_token'   => null,
@@ -1030,9 +1030,9 @@ class WooPaymentsPerSiteActivationControllerTest extends WC_Unit_Test_Case {
 	 */
 	private function get_record_step( string $state ): string {
 		return array(
-			WooPaymentsCutoverStateStore::STATE_PENDING  => 'queued',
-			WooPaymentsCutoverStateStore::STATE_RUNNING  => 'running',
-			WooPaymentsCutoverStateStore::STATE_DEFERRED => 'deferred',
+			StateStore::STATE_PENDING  => 'queued',
+			StateStore::STATE_RUNNING  => 'running',
+			StateStore::STATE_DEFERRED => 'deferred',
 		)[ $state ];
 	}
 
@@ -1043,7 +1043,7 @@ class WooPaymentsPerSiteActivationControllerTest extends WC_Unit_Test_Case {
 	 * @return array<string,mixed>
 	 */
 	private function get_record_overrides( string $state ): array {
-		return WooPaymentsCutoverStateStore::STATE_RUNNING === $state
+		return StateStore::STATE_RUNNING === $state
 			? array(
 				'lease_token'      => 'claim',
 				'lease_expires_at' => time() + HOUR_IN_SECONDS,
@@ -1060,7 +1060,7 @@ class WooPaymentsPerSiteActivationControllerTest extends WC_Unit_Test_Case {
 	private function schedule_next_attempt( int $site_id ): int {
 		switch_to_blog( $site_id );
 		try {
-			$action_id = wc_get_container()->get( WooPaymentsCutoverActionScheduler::class )->schedule( time() + HOUR_IN_SECONDS, 3, 2 );
+			$action_id = wc_get_container()->get( CutoverActionScheduler::class )->schedule( time() + HOUR_IN_SECONDS, 3, 2 );
 		} finally {
 			restore_current_blog();
 		}
@@ -1078,7 +1078,7 @@ class WooPaymentsPerSiteActivationControllerTest extends WC_Unit_Test_Case {
 	private function read_scheduled_action_id( int $site_id ): int {
 		switch_to_blog( $site_id );
 		try {
-			return wc_get_container()->get( WooPaymentsCutoverActionScheduler::class )->get_scheduled_action_id( 3, 2 );
+			return wc_get_container()->get( CutoverActionScheduler::class )->get_scheduled_action_id( 3, 2 );
 		} finally {
 			restore_current_blog();
 		}
@@ -1122,8 +1122,8 @@ class WooPaymentsPerSiteActivationControllerTest extends WC_Unit_Test_Case {
 	private function get_record_on( int $site_id ): ?array {
 		switch_to_blog( $site_id );
 		try {
-			wp_cache_delete( WooPaymentsCutoverStateStore::OPTION_NAME, 'options' );
-			return wc_get_container()->get( WooPaymentsCutoverStateStore::class )->get_record();
+			wp_cache_delete( StateStore::OPTION_NAME, 'options' );
+			return wc_get_container()->get( StateStore::class )->get_record();
 		} finally {
 			restore_current_blog();
 		}
@@ -1213,11 +1213,11 @@ class WooPaymentsPerSiteActivationControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * Create the system under test with the container's arbiter, preflight, job and legacy proxy.
 	 *
-	 * @return WooPaymentsPerSiteActivationController
+	 * @return PerSiteActivationController
 	 */
-	private function create_sut(): WooPaymentsPerSiteActivationController {
-		$sut = new WooPaymentsPerSiteActivationController();
-		$sut->init( wc_get_container()->get( WooPaymentsRuntimeArbiter::class ), wc_get_container()->get( WooPaymentsCutoverPreflightService::class ), wc_get_container()->get( WooPaymentsCutoverReconciliationJob::class ), wc_get_container()->get( LegacyProxy::class ), wc_get_container()->get( WooPaymentsSetupTier::class ) );
+	private function create_sut(): PerSiteActivationController {
+		$sut = new PerSiteActivationController();
+		$sut->init( wc_get_container()->get( WooPaymentsRuntimeArbiter::class ), wc_get_container()->get( PreflightService::class ), wc_get_container()->get( ReconciliationJob::class ), wc_get_container()->get( LegacyProxy::class ), wc_get_container()->get( WooPaymentsSetupTier::class ) );
 
 		return $sut;
 	}
@@ -1225,11 +1225,11 @@ class WooPaymentsPerSiteActivationControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * Render the network admin notice.
 	 *
-	 * @param WooPaymentsPerSiteActivationController $sut         The controller.
-	 * @param bool                                   $super_admin Whether the user may manage network plugins.
+	 * @param PerSiteActivationController $sut         The controller.
+	 * @param bool                        $super_admin Whether the user may manage network plugins.
 	 * @return string
 	 */
-	private function render_notice( WooPaymentsPerSiteActivationController $sut, bool $super_admin = true ): string {
+	private function render_notice( PerSiteActivationController $sut, bool $super_admin = true ): string {
 		$this->mock_plugin_functions( $super_admin );
 		ob_start();
 		$sut->output_network_admin_notice();

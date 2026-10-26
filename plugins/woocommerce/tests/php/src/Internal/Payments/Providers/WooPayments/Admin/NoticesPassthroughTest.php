@@ -6,8 +6,8 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\A
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\NoticesPassthrough;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyAdminNoticesController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\CurrencyComplianceNotice;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsCutoverController;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsCutoverStateStore;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\CutoverController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\StateStore;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
@@ -43,7 +43,7 @@ class NoticesPassthroughTest extends WC_Unit_Test_Case {
 	/**
 	 * Cutover notices callback owner (switch in progress, reconnect, completed).
 	 *
-	 * @var WooPaymentsCutoverController
+	 * @var CutoverController
 	 */
 	private $cutover_notices;
 
@@ -71,7 +71,7 @@ class NoticesPassthroughTest extends WC_Unit_Test_Case {
 		add_action( 'admin_notices', array( $this->currency_notice, 'display_not_supported_currency_notice' ), 9999 );
 		add_action( 'admin_notices', array( $this->currency_notice, 'display_isk_decimal_notice' ) );
 		add_action( 'admin_notices', array( $this->multi_currency_notices, 'handle_admin_notices' ) );
-		$this->cutover_notices = new WooPaymentsCutoverController();
+		$this->cutover_notices = new CutoverController();
 		add_action( 'admin_notices', array( $this->cutover_notices, 'output_admin_notices' ) );
 
 		$this->sut = new NoticesPassthrough();
@@ -154,7 +154,7 @@ class NoticesPassthroughTest extends WC_Unit_Test_Case {
 		unset( $label );
 		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
 		update_option( WooPaymentsSetupTier::OPTION_NAME, WooPaymentsSetupTier::ACTIVE );
-		update_option( WooPaymentsCutoverStateStore::OPTION_NAME, WooPaymentsCutoverStateStore::ABSENT_RECORD );
+		update_option( StateStore::OPTION_NAME, StateStore::ABSENT_RECORD );
 		if ( $extension_ran ) {
 			update_option( 'woocommerce_woocommerce_payments_version', '11.1.0' );
 		} else {

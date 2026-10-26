@@ -185,7 +185,7 @@ class WooPaymentsTestHelperTest extends WC_Unit_Test_Case {
 
 		$this->assertFalse(
 			has_action( 'admin_post_wc_native_payments_e2e_cutover' ),
-			'The cutover must run through WooPaymentsCutoverController, not a mu-plugin action.'
+			'The cutover must run through CutoverController, not a mu-plugin action.'
 		);
 	}
 

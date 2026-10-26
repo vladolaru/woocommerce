@@ -1,6 +1,6 @@
 <?php
 /**
- * WooPaymentsCutoverPreflightService tests.
+ * PreflightService tests.
  */
 
 declare( strict_types = 1 );
@@ -14,11 +14,11 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFe
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsNativeAccountAdapter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsNativeApiClientAdapter;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsBundledSubscriptionsGuard;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\BundledSubscriptionsGuard;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCanceledAuthorizationFeeRemediationService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsCutoverActionScheduler;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsCutoverPreflightService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsPlatformConnectionService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\CutoverActionScheduler;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\PreflightService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\PlatformConnectionService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use WC_Unit_Test_Case;
@@ -26,7 +26,7 @@ use WC_Unit_Test_Case;
 /**
  * Tests for the headless WooPayments cutover preflight service.
  */
-class WooPaymentsCutoverPreflightServiceTest extends WC_Unit_Test_Case {
+class PreflightServiceTest extends WC_Unit_Test_Case {
 
 	/**
 	 * Whether the provider can process payments.
@@ -103,7 +103,7 @@ class WooPaymentsCutoverPreflightServiceTest extends WC_Unit_Test_Case {
 	 * Tear down test fixtures.
 	 */
 	public function tearDown(): void {
-		as_unschedule_all_actions( WooPaymentsCutoverActionScheduler::ACTION_HOOK );
+		as_unschedule_all_actions( CutoverActionScheduler::ACTION_HOOK );
 		as_unschedule_all_actions( 'wcpay_preflight_service_test' );
 		as_unschedule_all_actions( 'woocommerce_woopayments_cutover_foreign_hook' );
 		foreach ( $this->scheduled_action_hooks as $hook_name ) {
@@ -193,17 +193,17 @@ class WooPaymentsCutoverPreflightServiceTest extends WC_Unit_Test_Case {
 	public function test_operational_action_discovery_excludes_only_cutover_actions_in_the_cutover_group(): void {
 		$cutover_action_id        = as_schedule_single_action(
 			time() + HOUR_IN_SECONDS,
-			WooPaymentsCutoverActionScheduler::ACTION_HOOK,
+			CutoverActionScheduler::ACTION_HOOK,
 			array(
 				'generation' => 1,
 				'attempt'    => 1,
 			),
-			WooPaymentsCutoverActionScheduler::ACTION_GROUP,
+			CutoverActionScheduler::ACTION_GROUP,
 			true
 		);
 		$same_hook_other_group_id = as_schedule_single_action(
 			time() + HOUR_IN_SECONDS,
-			WooPaymentsCutoverActionScheduler::ACTION_HOOK,
+			CutoverActionScheduler::ACTION_HOOK,
 			array(
 				'generation' => 2,
 				'attempt'    => 1,
@@ -211,8 +211,8 @@ class WooPaymentsCutoverPreflightServiceTest extends WC_Unit_Test_Case {
 			'other-group',
 			true
 		);
-		$foreign_hook_id          = as_schedule_single_action( time() + HOUR_IN_SECONDS, 'woocommerce_woopayments_cutover_foreign_hook', array(), WooPaymentsCutoverActionScheduler::ACTION_GROUP, true );
-		$other_action_id          = as_schedule_single_action( time() + HOUR_IN_SECONDS, 'wcpay_preflight_service_test', array(), WooPaymentsCutoverActionScheduler::ACTION_GROUP, true );
+		$foreign_hook_id          = as_schedule_single_action( time() + HOUR_IN_SECONDS, 'woocommerce_woopayments_cutover_foreign_hook', array(), CutoverActionScheduler::ACTION_GROUP, true );
+		$other_action_id          = as_schedule_single_action( time() + HOUR_IN_SECONDS, 'wcpay_preflight_service_test', array(), CutoverActionScheduler::ACTION_GROUP, true );
 
 		$this->assertIsInt( $cutover_action_id );
 		$this->assertIsInt( $same_hook_other_group_id );
@@ -220,7 +220,7 @@ class WooPaymentsCutoverPreflightServiceTest extends WC_Unit_Test_Case {
 		$this->assertIsInt( $other_action_id );
 		$actions = $this->create_sut()->get_queued_operational_actions();
 
-		$this->assertSame( array( WooPaymentsCutoverActionScheduler::ACTION_HOOK, 'woocommerce_woopayments_cutover_foreign_hook', 'wcpay_preflight_service_test' ), array_column( $actions, 'hook' ) );
+		$this->assertSame( array( CutoverActionScheduler::ACTION_HOOK, 'woocommerce_woopayments_cutover_foreign_hook', 'wcpay_preflight_service_test' ), array_column( $actions, 'hook' ) );
 		$this->assertSame( array( $same_hook_other_group_id, $foreign_hook_id, $other_action_id ), array_column( $actions, 'action_id' ) );
 	}
 
@@ -553,9 +553,9 @@ class WooPaymentsCutoverPreflightServiceTest extends WC_Unit_Test_Case {
 	 * Create a headless preflight service with deterministic provider seams.
 	 *
 	 * @param \wpdb|null $database Optional WordPress database connection.
-	 * @return WooPaymentsCutoverPreflightService
+	 * @return PreflightService
 	 */
-	private function create_sut( ?\wpdb $database = null ): WooPaymentsCutoverPreflightService {
+	private function create_sut( ?\wpdb $database = null ): PreflightService {
 		$provider = $this->getMockBuilder( WooPaymentsProvider::class )->disableOriginalConstructor()->onlyMethods( array( 'can_process_payments' ) )->getMock();
 		$provider->method( 'can_process_payments' )->willReturnCallback(
 			function (): bool {
@@ -573,7 +573,7 @@ class WooPaymentsCutoverPreflightServiceTest extends WC_Unit_Test_Case {
 				return $this->fee_remediation_status;
 			}
 		);
-		$platform_connection = $this->getMockBuilder( WooPaymentsPlatformConnectionService::class )->disableOriginalConstructor()->onlyMethods( array( 'get_preflight_failures' ) )->getMock();
+		$platform_connection = $this->getMockBuilder( PlatformConnectionService::class )->disableOriginalConstructor()->onlyMethods( array( 'get_preflight_failures' ) )->getMock();
 		$platform_connection->method( 'get_preflight_failures' )->willReturnCallback(
 			function (): array {
 				return $this->platform_failures;
@@ -588,7 +588,7 @@ class WooPaymentsCutoverPreflightServiceTest extends WC_Unit_Test_Case {
 				return $this->rate_api_client_connected;
 			}
 		);
-		$sut = null === $database ? new WooPaymentsCutoverPreflightService() : new class( $database ) extends WooPaymentsCutoverPreflightService {
+		$sut = null === $database ? new PreflightService() : new class( $database ) extends PreflightService {
 			/**
 			 * WordPress database connection.
 			 *
@@ -614,7 +614,7 @@ class WooPaymentsCutoverPreflightServiceTest extends WC_Unit_Test_Case {
 				return $this->database;
 			}
 		};
-		$this->init_preflight_service( $sut, wc_get_container()->get( WooPaymentsRuntimeArbiter::class ), wc_get_container()->get( LegacyProxy::class ), $provider, new WooPaymentsBundledSubscriptionsGuard(), $fee_remediation, $platform_connection, $rate_account, $rate_api_client );
+		$this->init_preflight_service( $sut, wc_get_container()->get( WooPaymentsRuntimeArbiter::class ), wc_get_container()->get( LegacyProxy::class ), $provider, new BundledSubscriptionsGuard(), $fee_remediation, $platform_connection, $rate_account, $rate_api_client );
 		return $sut;
 	}
 
@@ -796,17 +796,17 @@ class WooPaymentsCutoverPreflightServiceTest extends WC_Unit_Test_Case {
 	 *
 	 * The service resolves them when a preflight runs, so the test doubles are set on the instance after init.
 	 *
-	 * @param WooPaymentsCutoverPreflightService                    $service                     The preflight service.
+	 * @param PreflightService                                      $service                     The preflight service.
 	 * @param WooPaymentsRuntimeArbiter                             $arbiter                     The runtime arbiter.
 	 * @param LegacyProxy                                           $legacy_proxy                The legacy proxy.
 	 * @param WooPaymentsProvider                                   $provider                    The native provider.
-	 * @param WooPaymentsBundledSubscriptionsGuard                  $bundled_subscriptions_guard  The bundled subscriptions guard.
+	 * @param BundledSubscriptionsGuard                             $bundled_subscriptions_guard  The bundled subscriptions guard.
 	 * @param WooPaymentsCanceledAuthorizationFeeRemediationService $fee_remediation_service     The fee remediation owner.
-	 * @param WooPaymentsPlatformConnectionService                  $platform_connection_service The platform connection readiness service.
+	 * @param PlatformConnectionService                             $platform_connection_service The platform connection readiness service.
 	 * @param WooPaymentsNativeAccountAdapter                       $rate_account         The rate account boundary.
 	 * @param WooPaymentsNativeApiClientAdapter                     $rate_api_client      The rate API client boundary.
 	 */
-	private function init_preflight_service( WooPaymentsCutoverPreflightService $service, WooPaymentsRuntimeArbiter $arbiter, LegacyProxy $legacy_proxy, WooPaymentsProvider $provider, WooPaymentsBundledSubscriptionsGuard $bundled_subscriptions_guard, WooPaymentsCanceledAuthorizationFeeRemediationService $fee_remediation_service, WooPaymentsPlatformConnectionService $platform_connection_service, WooPaymentsNativeAccountAdapter $rate_account, WooPaymentsNativeApiClientAdapter $rate_api_client ): void {
+	private function init_preflight_service( PreflightService $service, WooPaymentsRuntimeArbiter $arbiter, LegacyProxy $legacy_proxy, WooPaymentsProvider $provider, BundledSubscriptionsGuard $bundled_subscriptions_guard, WooPaymentsCanceledAuthorizationFeeRemediationService $fee_remediation_service, PlatformConnectionService $platform_connection_service, WooPaymentsNativeAccountAdapter $rate_account, WooPaymentsNativeApiClientAdapter $rate_api_client ): void {
 		$service->init( $arbiter, $legacy_proxy );
 
 		$collaborators = array(
@@ -818,7 +818,7 @@ class WooPaymentsCutoverPreflightServiceTest extends WC_Unit_Test_Case {
 			'rate_api_client'             => $rate_api_client,
 		);
 		foreach ( $collaborators as $property => $collaborator ) {
-			$reflection = new \ReflectionProperty( WooPaymentsCutoverPreflightService::class, $property );
+			$reflection = new \ReflectionProperty( PreflightService::class, $property );
 			$reflection->setAccessible( true );
 			$reflection->setValue( $service, $collaborator );
 		}

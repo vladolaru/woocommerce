@@ -1,6 +1,6 @@
 <?php
 /**
- * WooPaymentsCutoverPreflightService class file.
+ * PreflightService class file.
  */
 
 declare( strict_types = 1 );
@@ -34,7 +34,7 @@ defined( 'ABSPATH' ) || exit;
  * @since 11.2.0
  * @internal
  */
-class WooPaymentsCutoverPreflightService {
+class PreflightService {
 
 	/**
 	 * Oldest WooPayments extension version the cutover switches from.
@@ -124,9 +124,9 @@ class WooPaymentsCutoverPreflightService {
 	/**
 	 * Bundled subscriptions guard.
 	 *
-	 * @var WooPaymentsBundledSubscriptionsGuard|null
+	 * @var BundledSubscriptionsGuard|null
 	 */
-	private ?WooPaymentsBundledSubscriptionsGuard $bundled_subscriptions_guard = null;
+	private ?BundledSubscriptionsGuard $bundled_subscriptions_guard = null;
 
 	/**
 	 * Fee remediation owner.
@@ -138,9 +138,9 @@ class WooPaymentsCutoverPreflightService {
 	/**
 	 * Platform connection readiness service.
 	 *
-	 * @var WooPaymentsPlatformConnectionService|null
+	 * @var PlatformConnectionService|null
 	 */
-	private ?WooPaymentsPlatformConnectionService $platform_connection_service = null;
+	private ?PlatformConnectionService $platform_connection_service = null;
 
 	/**
 	 * Rate account boundary.
@@ -467,10 +467,10 @@ class WooPaymentsCutoverPreflightService {
 	 * @return bool
 	 */
 	private function is_not_cutover_action( array $action ): bool {
-		if ( WooPaymentsCutoverActionScheduler::ACTION_GROUP !== $action['group'] ) {
+		if ( CutoverActionScheduler::ACTION_GROUP !== $action['group'] ) {
 			return true;
 		}
-		return WooPaymentsCutoverActionScheduler::ACTION_HOOK !== $action['hook'];
+		return CutoverActionScheduler::ACTION_HOOK !== $action['hook'];
 	}
 
 	/**
@@ -546,11 +546,11 @@ class WooPaymentsCutoverPreflightService {
 	/**
 	 * Get the bundled subscriptions guard, resolving it on first use.
 	 *
-	 * @return WooPaymentsBundledSubscriptionsGuard
+	 * @return BundledSubscriptionsGuard
 	 */
-	private function get_bundled_subscriptions_guard(): WooPaymentsBundledSubscriptionsGuard {
+	private function get_bundled_subscriptions_guard(): BundledSubscriptionsGuard {
 		if ( null === $this->bundled_subscriptions_guard ) {
-			$this->bundled_subscriptions_guard = wc_get_container()->get( WooPaymentsBundledSubscriptionsGuard::class );
+			$this->bundled_subscriptions_guard = wc_get_container()->get( BundledSubscriptionsGuard::class );
 		}
 
 		return $this->bundled_subscriptions_guard;
@@ -572,11 +572,11 @@ class WooPaymentsCutoverPreflightService {
 	/**
 	 * Get the platform connection readiness service, resolving it on first use.
 	 *
-	 * @return WooPaymentsPlatformConnectionService
+	 * @return PlatformConnectionService
 	 */
-	private function get_platform_connection_service(): WooPaymentsPlatformConnectionService {
+	private function get_platform_connection_service(): PlatformConnectionService {
 		if ( null === $this->platform_connection_service ) {
-			$this->platform_connection_service = wc_get_container()->get( WooPaymentsPlatformConnectionService::class );
+			$this->platform_connection_service = wc_get_container()->get( PlatformConnectionService::class );
 		}
 
 		return $this->platform_connection_service;

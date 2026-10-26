@@ -435,9 +435,9 @@ final class WooCommerce {
 		// They run where no setup tier is active, so they are registered here and not in the tier matrix; Cutover/README.md
 		// lists what to remove with the Cutover folder.
 		if ( is_multisite() ) {
-			Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsPerSiteActivationController::register_multisite_hooks();
+			Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\PerSiteActivationController::register_multisite_hooks();
 			if ( is_network_admin() ) {
-				$container->get( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsPerSiteActivationController::class )->register();
+				$container->get( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\PerSiteActivationController::class )->register();
 			}
 		}
 

@@ -14,8 +14,8 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiExcept
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\HttpClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsClientVersion;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsCutoverPreflightService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsCutoverStateStore;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\PreflightService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\StateStore;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\DebugTools;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsStatusReport;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsWebhookReliabilityService;
@@ -71,7 +71,7 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 		wc_get_container()->reset_replacement( HttpClient::class );
 		delete_transient( 'wcpay_fraud_protection_settings' );
 		delete_option( 'current_protection_level' );
-		update_option( WooPaymentsCutoverStateStore::OPTION_NAME, WooPaymentsCutoverStateStore::ABSENT_RECORD, true );
+		update_option( StateStore::OPTION_NAME, StateStore::ABSENT_RECORD, true );
 		update_option( WooPaymentsSetupTier::OPTION_NAME, WooPaymentsSetupTier::DISABLED, true );
 		wc_get_container()->get( WooPaymentsSetupTier::class )->invalidate();
 		$this->reset_legacy_proxy_mocks();
@@ -126,7 +126,7 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes', true );
 		$this->set_setup_tier( $state );
 		// WC_Install::create_options() seeds this autoloaded, so a dormant store reads it for free.
-		update_option( WooPaymentsCutoverStateStore::OPTION_NAME, WooPaymentsCutoverStateStore::ABSENT_RECORD, true );
+		update_option( StateStore::OPTION_NAME, StateStore::ABSENT_RECORD, true );
 		$sut = $this->get_sut();
 		$this->remove_status_hooks( $sut );
 		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->get_runtime_owner(); // Resolved at bootstrap, before register().
@@ -168,12 +168,12 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 		$this->set_setup_tier( $stored_tier );
 		if ( $cutover_record ) {
 			$this->assertTrue(
-				( new WooPaymentsCutoverStateStore() )->create_record(
+				( new StateStore() )->create_record(
 					array(
 						'schema_version'         => 1,
 						'generation'             => 1,
 						'revision'               => 1,
-						'state'                  => WooPaymentsCutoverStateStore::STATE_DEFERRED,
+						'state'                  => StateStore::STATE_DEFERRED,
 						'started_at'             => 1_700_000_000,
 						'updated_at'             => 1_700_000_100,
 						'attempt'                => 1,
@@ -220,7 +220,7 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes', true );
 		// The extension's version option is the evidence that it ran (WooPaymentsRuntimeArbiter::has_run_woopayments_extension()); the extension writes it in client 11.1.0 `includes/class-wc-payments.php:1579-1580`.
 		update_option( 'woocommerce_woocommerce_payments_version', '10.5.0', true );
-		update_option( WooPaymentsCutoverStateStore::OPTION_NAME, WooPaymentsCutoverStateStore::ABSENT_RECORD, true );
+		update_option( StateStore::OPTION_NAME, StateStore::ABSENT_RECORD, true );
 		$this->set_setup_tier( WooPaymentsSetupTier::DISABLED );
 		$sut = $this->get_sut();
 		$this->remove_status_hooks( $sut );
@@ -1106,7 +1106,7 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 			// The extension writes its version here (client 11.1.0 `includes/class-wc-payments.php:1579-1580`).
 			update_option( 'woocommerce_woocommerce_payments_version', '10.5.0', true );
 		}
-		update_option( WooPaymentsCutoverStateStore::OPTION_NAME, WooPaymentsCutoverStateStore::ABSENT_RECORD, true );
+		update_option( StateStore::OPTION_NAME, StateStore::ABSENT_RECORD, true );
 		$this->set_setup_tier( $tier );
 	}
 
@@ -1152,7 +1152,7 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 	 * Reset request-local cutover state between PHPUnit test methods.
 	 */
 	private function reset_cutover_preflight_memo(): void {
-		wc_get_container()->get( WooPaymentsCutoverPreflightService::class )->invalidate_current_blog_memoization();
+		wc_get_container()->get( PreflightService::class )->invalidate_current_blog_memoization();
 	}
 
 	/**

@@ -4,8 +4,8 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\Jetpack\Constants;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsCutoverController;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsCutoverPluginLifecycleListener;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\CutoverController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\PluginLifecycleListener;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
 use WC_Unit_Test_Case;
@@ -42,11 +42,11 @@ class WooPaymentsExtensionOwnedSetupTierSyncTest extends WC_Unit_Test_Case {
 		$this->register_payments_bootstrap_as( $request_type );
 
 		$this->assertSame( WooPaymentsSetupTier::AVAILABLE, wc_get_container()->get( WooPaymentsSetupTier::class )->get_effective_tier() );
-		$listener = wc_get_container()->get( WooPaymentsCutoverPluginLifecycleListener::class );
+		$listener = wc_get_container()->get( PluginLifecycleListener::class );
 		$this->assertNotFalse( has_action( 'activated_plugin', array( $listener, 'handle_plugin_activated' ) ), 'The extension activation reaches the switch.' );
 		$this->assertNotFalse( has_action( 'deactivated_plugin', array( $listener, 'handle_plugin_deactivated' ) ), 'A plugin deactivation reaches the switch.' );
 		if ( 'admin' === $request_type ) {
-			$this->assertNotFalse( has_action( 'admin_notices', array( wc_get_container()->get( WooPaymentsCutoverController::class ), 'output_admin_notices' ) ), 'The switch notice can show.' );
+			$this->assertNotFalse( has_action( 'admin_notices', array( wc_get_container()->get( CutoverController::class ), 'output_admin_notices' ) ), 'The switch notice can show.' );
 		}
 
 		update_option( 'wcpay_account_data', $this->account_cache( 'acct_first_write' ) );

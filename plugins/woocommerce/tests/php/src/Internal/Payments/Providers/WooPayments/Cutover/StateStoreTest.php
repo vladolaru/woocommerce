@@ -1,27 +1,27 @@
 <?php
 /**
- * WooPaymentsCutoverStateStore tests.
+ * StateStore tests.
  */
 
 declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Cutover;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsCutoverStateStore;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\StateStore;
 use InvalidArgumentException;
 use WC_Unit_Test_Case;
 
 /**
- * Tests for WooPaymentsCutoverStateStore.
+ * Tests for StateStore.
  */
-class WooPaymentsCutoverStateStoreTest extends WC_Unit_Test_Case {
+class StateStoreTest extends WC_Unit_Test_Case {
 
 	/**
 	 * The System Under Test.
 	 *
-	 * @var WooPaymentsCutoverStateStore|null
+	 * @var StateStore|null
 	 */
-	private ?WooPaymentsCutoverStateStore $sut = null;
+	private ?StateStore $sut = null;
 
 	/**
 	 * Set up test fixtures.
@@ -29,7 +29,7 @@ class WooPaymentsCutoverStateStoreTest extends WC_Unit_Test_Case {
 	public function setUp(): void {
 		parent::setUp();
 
-		$this->sut = new WooPaymentsCutoverStateStore();
+		$this->sut = new StateStore();
 		$this->cleanup_options();
 	}
 
@@ -37,7 +37,7 @@ class WooPaymentsCutoverStateStoreTest extends WC_Unit_Test_Case {
 	 * Tear down test fixtures.
 	 */
 	public function tearDown(): void {
-		if ( $this->sut instanceof WooPaymentsCutoverStateStore ) {
+		if ( $this->sut instanceof StateStore ) {
 			$this->cleanup_options();
 		}
 
@@ -54,7 +54,7 @@ class WooPaymentsCutoverStateStoreTest extends WC_Unit_Test_Case {
 		$this->assertTrue( $sut->create_record( $record ), 'A valid cutover record should persist.' );
 
 		$this->assertSame( $record, $sut->get_record(), 'The validated record should round-trip without changing its fields.' );
-		$this->assertArrayHasKey( WooPaymentsCutoverStateStore::OPTION_NAME, wp_load_alloptions( true ), 'The cutover state should be available through the per-site autoloaded option set.' );
+		$this->assertArrayHasKey( StateStore::OPTION_NAME, wp_load_alloptions( true ), 'The cutover state should be available through the per-site autoloaded option set.' );
 	}
 
 	/**
@@ -64,7 +64,7 @@ class WooPaymentsCutoverStateStoreTest extends WC_Unit_Test_Case {
 		global $wpdb;
 		$sut    = $this->sut;
 		$record = $this->valid_record();
-		add_option( WooPaymentsCutoverStateStore::OPTION_NAME, 'none', '', true ); // What WC_Install::create_options() seeds.
+		add_option( StateStore::OPTION_NAME, 'none', '', true ); // What WC_Install::create_options() seeds.
 		wp_load_alloptions( true );
 
 		$queries = $wpdb->num_queries;
@@ -74,7 +74,7 @@ class WooPaymentsCutoverStateStoreTest extends WC_Unit_Test_Case {
 
 		$this->assertTrue( $sut->create_record( $record ), 'The first record should replace the absent marker.' );
 		$this->assertSame( $record, $sut->get_record() );
-		$this->assertArrayHasKey( WooPaymentsCutoverStateStore::OPTION_NAME, wp_load_alloptions( true ) );
+		$this->assertArrayHasKey( StateStore::OPTION_NAME, wp_load_alloptions( true ) );
 	}
 
 	/**
@@ -86,11 +86,11 @@ class WooPaymentsCutoverStateStoreTest extends WC_Unit_Test_Case {
 		$winner              = $this->valid_record();
 		$loser               = $winner;
 		$loser['generation'] = $winner['generation'] + 1;
-		add_option( WooPaymentsCutoverStateStore::OPTION_NAME, 'none', '', true ); // What WC_Install::create_options() seeds.
+		add_option( StateStore::OPTION_NAME, 'none', '', true ); // What WC_Install::create_options() seeds.
 		$race = function ( $query ) use ( &$race, $wpdb, $winner ) {
-			if ( 0 === stripos( ltrim( $query ), 'UPDATE' ) && false !== strpos( $query, WooPaymentsCutoverStateStore::OPTION_NAME ) ) {
+			if ( 0 === stripos( ltrim( $query ), 'UPDATE' ) && false !== strpos( $query, StateStore::OPTION_NAME ) ) {
 				remove_filter( 'query', $race );
-				$wpdb->update( $wpdb->options, array( 'option_value' => maybe_serialize( $winner ) ), array( 'option_name' => WooPaymentsCutoverStateStore::OPTION_NAME ) );
+				$wpdb->update( $wpdb->options, array( 'option_value' => maybe_serialize( $winner ) ), array( 'option_name' => StateStore::OPTION_NAME ) );
 			}
 			return $query;
 		};
@@ -141,9 +141,9 @@ class WooPaymentsCutoverStateStoreTest extends WC_Unit_Test_Case {
 		try {
 			switch_to_blog( $blog_id );
 			$this->assert_first_save_after_a_missed_read_keeps_the_winner();
-			delete_option( WooPaymentsCutoverStateStore::OPTION_NAME );
+			delete_option( StateStore::OPTION_NAME );
 			$this->assertTrue( $this->sut->create_record( $this->valid_record() ), 'A sub-site without a row should still get its first record.' );
-			$this->assertArrayHasKey( WooPaymentsCutoverStateStore::OPTION_NAME, wp_load_alloptions( true ), 'The sub-site record should be autoloaded.' );
+			$this->assertArrayHasKey( StateStore::OPTION_NAME, wp_load_alloptions( true ), 'The sub-site record should be autoloaded.' );
 			restore_current_blog();
 			$this->assertNull( $this->sut->get_record(), 'The main site must not see the sub-site record.' );
 		} finally {
@@ -162,7 +162,7 @@ class WooPaymentsCutoverStateStoreTest extends WC_Unit_Test_Case {
 	private function assert_first_save_after_a_missed_read_keeps_the_winner( bool $same_record = false ): void {
 		global $wpdb;
 		$sut    = $this->sut;
-		$name   = WooPaymentsCutoverStateStore::OPTION_NAME;
+		$name   = StateStore::OPTION_NAME;
 		$winner = $this->valid_record();
 		$loser  = $winner;
 		if ( ! $same_record ) {
@@ -192,7 +192,7 @@ class WooPaymentsCutoverStateStoreTest extends WC_Unit_Test_Case {
 	public function test_create_options_seeds_the_cutover_marker_per_site(): void {
 		global $wpdb;
 		$this->skipWithoutMultisite();
-		$name    = WooPaymentsCutoverStateStore::OPTION_NAME;
+		$name    = StateStore::OPTION_NAME;
 		$record  = maybe_serialize( array( 'state' => 'pending' ) );
 		$blog_id = self::factory()->blog->create();
 		update_option( $name, 'none', true );
@@ -271,9 +271,9 @@ class WooPaymentsCutoverStateStoreTest extends WC_Unit_Test_Case {
 		$sut             = $this->sut;
 		$record          = $this->valid_record();
 		$record['state'] = $state;
-		if ( WooPaymentsCutoverStateStore::STATE_RUNNING === $state ) {
+		if ( StateStore::STATE_RUNNING === $state ) {
 			$record['lease_token']      = 'running-worker-token';
-			$record['lease_expires_at'] = $record['updated_at'] + WooPaymentsCutoverStateStore::WRITE_LOCK_TTL;
+			$record['lease_expires_at'] = $record['updated_at'] + StateStore::WRITE_LOCK_TTL;
 		}
 
 		$this->assertTrue( $sut->create_record( $record ) );
@@ -286,10 +286,10 @@ class WooPaymentsCutoverStateStoreTest extends WC_Unit_Test_Case {
 	public function test_get_record_rejects_malformed_persisted_data(): void {
 		$sut = $this->sut;
 		add_option(
-			WooPaymentsCutoverStateStore::OPTION_NAME,
+			StateStore::OPTION_NAME,
 			array(
-				'schema_version' => WooPaymentsCutoverStateStore::SCHEMA_VERSION,
-				'state'          => WooPaymentsCutoverStateStore::STATE_PENDING,
+				'schema_version' => StateStore::SCHEMA_VERSION,
+				'state'          => StateStore::STATE_PENDING,
 			),
 			'',
 			true
@@ -310,7 +310,7 @@ class WooPaymentsCutoverStateStoreTest extends WC_Unit_Test_Case {
 		$this->assertNotSame( '', $first_token, 'The lease token should identify its owner.' );
 		$this->assertNull( $sut->acquire_write_lock( $now + 1 ), 'A live lease should exclude a concurrent worker.' );
 
-		$recovered_token = $sut->acquire_write_lock( $now + WooPaymentsCutoverStateStore::WRITE_LOCK_TTL + 1 );
+		$recovered_token = $sut->acquire_write_lock( $now + StateStore::WRITE_LOCK_TTL + 1 );
 
 		$this->assertIsString( $recovered_token, 'A worker should recover an expired lease.' );
 		$this->assertNotSame( $first_token, $recovered_token, 'Recovery should create a new lease owner token.' );
@@ -323,10 +323,10 @@ class WooPaymentsCutoverStateStoreTest extends WC_Unit_Test_Case {
 		global $wpdb;
 		$sut   = $this->sut;
 		$now   = 1_700_000_000;
-		$name  = WooPaymentsCutoverStateStore::LEASE_OPTION_NAME;
+		$name  = StateStore::LEASE_OPTION_NAME;
 		$other = array(
 			'token'      => 'other-worker',
-			'expires_at' => $now + WooPaymentsCutoverStateStore::WRITE_LOCK_TTL,
+			'expires_at' => $now + StateStore::WRITE_LOCK_TTL,
 		);
 
 		$this->assertFalse( get_option( $name ) );
@@ -342,7 +342,7 @@ class WooPaymentsCutoverStateStoreTest extends WC_Unit_Test_Case {
 
 		$this->assertNull( $sut->acquire_write_lock( $now + 1 ), 'A live lease taken behind the missed read must exclude this worker.' );
 		$this->assertSame( maybe_serialize( $other ), $wpdb->get_var( $wpdb->prepare( "SELECT option_value FROM {$wpdb->options} WHERE option_name = %s", $name ) ), 'The other worker must keep its lease.' );
-		$this->assertIsString( $sut->acquire_write_lock( $now + WooPaymentsCutoverStateStore::WRITE_LOCK_TTL + 1 ), 'Once that lease expires, this worker can recover it.' );
+		$this->assertIsString( $sut->acquire_write_lock( $now + StateStore::WRITE_LOCK_TTL + 1 ), 'Once that lease expires, this worker can recover it.' );
 	}
 
 	/**
@@ -353,14 +353,14 @@ class WooPaymentsCutoverStateStoreTest extends WC_Unit_Test_Case {
 		$now         = 1_700_000_000;
 		$first_token = $sut->acquire_write_lock( $now );
 		$this->assertIsString( $first_token );
-		$second_token = $sut->acquire_write_lock( $now + WooPaymentsCutoverStateStore::WRITE_LOCK_TTL + 1 );
+		$second_token = $sut->acquire_write_lock( $now + StateStore::WRITE_LOCK_TTL + 1 );
 		$this->assertIsString( $second_token );
 
 		$sut->release_write_lock( $first_token );
 
-		$this->assertNull( $sut->acquire_write_lock( $now + WooPaymentsCutoverStateStore::WRITE_LOCK_TTL + 2 ), 'A stale release must leave the current lease intact.' );
+		$this->assertNull( $sut->acquire_write_lock( $now + StateStore::WRITE_LOCK_TTL + 2 ), 'A stale release must leave the current lease intact.' );
 		$sut->release_write_lock( $second_token );
-		$this->assertIsString( $sut->acquire_write_lock( $now + WooPaymentsCutoverStateStore::WRITE_LOCK_TTL + 2 ), 'The current owner should be able to release its lease.' );
+		$this->assertIsString( $sut->acquire_write_lock( $now + StateStore::WRITE_LOCK_TTL + 2 ), 'The current owner should be able to release its lease.' );
 	}
 
 	/**
@@ -373,15 +373,15 @@ class WooPaymentsCutoverStateStoreTest extends WC_Unit_Test_Case {
 
 		$claimed                     = $pending;
 		$claimed['revision']         = $pending['revision'] + 1;
-		$claimed['state']            = WooPaymentsCutoverStateStore::STATE_RUNNING;
+		$claimed['state']            = StateStore::STATE_RUNNING;
 		$claimed['attempt']          = $pending['attempt'] + 1;
 		$claimed['lease_token']      = 'worker-claim-token';
-		$claimed['lease_expires_at'] = $pending['updated_at'] + WooPaymentsCutoverStateStore::WRITE_LOCK_TTL;
+		$claimed['lease_expires_at'] = $pending['updated_at'] + StateStore::WRITE_LOCK_TTL;
 		$this->assertTrue( $sut->compare_and_set_record( $pending, $claimed ), 'The worker should atomically claim the expected pending revision.' );
 
 		$excluded                     = $claimed;
 		$excluded['revision']         = $claimed['revision'] + 1;
-		$excluded['state']            = WooPaymentsCutoverStateStore::STATE_EXCLUDED;
+		$excluded['state']            = StateStore::STATE_EXCLUDED;
 		$excluded['attempt']          = $claimed['attempt'] + 1;
 		$excluded['lease_token']      = null;
 		$excluded['lease_expires_at'] = null;
@@ -389,7 +389,7 @@ class WooPaymentsCutoverStateStoreTest extends WC_Unit_Test_Case {
 
 		$stale_completion                     = $claimed;
 		$stale_completion['revision']         = $claimed['revision'] + 1;
-		$stale_completion['state']            = WooPaymentsCutoverStateStore::STATE_DONE;
+		$stale_completion['state']            = StateStore::STATE_DONE;
 		$stale_completion['lease_token']      = null;
 		$stale_completion['lease_expires_at'] = null;
 		$this->assertFalse( $sut->compare_and_set_record( $claimed, $stale_completion ), 'The stale worker must not overwrite the fenced terminal state.' );
@@ -437,7 +437,7 @@ class WooPaymentsCutoverStateStoreTest extends WC_Unit_Test_Case {
 			'schema_version'         => 1,
 			'generation'             => 2,
 			'revision'               => 1,
-			'state'                  => WooPaymentsCutoverStateStore::STATE_DEFERRED,
+			'state'                  => StateStore::STATE_DEFERRED,
 			'started_at'             => 1_700_000_000,
 			'updated_at'             => 1_700_000_100,
 			'attempt'                => 3,
@@ -461,7 +461,7 @@ class WooPaymentsCutoverStateStoreTest extends WC_Unit_Test_Case {
 	 * Delete the store's site-local options.
 	 */
 	private function cleanup_options(): void {
-		delete_option( WooPaymentsCutoverStateStore::OPTION_NAME );
-		delete_option( WooPaymentsCutoverStateStore::LEASE_OPTION_NAME );
+		delete_option( StateStore::OPTION_NAME );
+		delete_option( StateStore::LEASE_OPTION_NAME );
 	}
 }

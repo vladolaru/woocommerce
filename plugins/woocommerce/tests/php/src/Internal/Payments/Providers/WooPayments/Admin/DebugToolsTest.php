@@ -7,7 +7,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\DebugTo
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCanceledAuthorizationFeeRemediationService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsCutoverStateStore;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\StateStore;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
 use WC_Unit_Test_Case;
@@ -43,7 +43,7 @@ class DebugToolsTest extends WC_Unit_Test_Case {
 		wc_get_container()->reset_replacement( WooPaymentsCanceledAuthorizationFeeRemediationService::class );
 		$this->reset_legacy_proxy_mocks();
 		delete_option( self::EXTENSION_VERSION_OPTION );
-		update_option( WooPaymentsCutoverStateStore::OPTION_NAME, WooPaymentsCutoverStateStore::ABSENT_RECORD, true );
+		update_option( StateStore::OPTION_NAME, StateStore::ABSENT_RECORD, true );
 		update_option( WooPaymentsSetupTier::OPTION_NAME, WooPaymentsSetupTier::DISABLED, true );
 		wc_get_container()->get( WooPaymentsSetupTier::class )->invalidate();
 		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
@@ -72,7 +72,7 @@ class DebugToolsTest extends WC_Unit_Test_Case {
 		update_option( WooPaymentsSetupTier::OPTION_NAME, $tier, true );
 		if ( $switched ) {
 			// The arbiter reads only the record's state, so a one-field record is enough for a completed switch.
-			update_option( WooPaymentsCutoverStateStore::OPTION_NAME, array( 'state' => WooPaymentsCutoverStateStore::STATE_DONE ), true );
+			update_option( StateStore::OPTION_NAME, array( 'state' => StateStore::STATE_DONE ), true );
 		}
 		wc_get_container()->get( WooPaymentsSetupTier::class )->invalidate();
 		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();

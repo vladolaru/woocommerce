@@ -9,9 +9,9 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsCutoverController;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsCutoverReconciliationJob;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsCutoverStateStore;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\CutoverController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\ReconciliationJob;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\StateStore;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
@@ -208,7 +208,7 @@ class WooPaymentsSetupTierTest extends WC_Unit_Test_Case {
 		foreach ( array( 'cron', 'cli' ) as $request_type ) {
 			$classes = $this->state->get_classes_for_request( $request_type );
 			$this->assertSame( $lists, in_array( WooPaymentsStatusChangeRetryListener::class, $classes, true ), $request_type );
-			$this->assertContains( WooPaymentsCutoverReconciliationJob::class, $classes, "$request_type keeps the cutover job." );
+			$this->assertContains( ReconciliationJob::class, $classes, "$request_type keeps the cutover job." );
 		}
 		foreach ( array( 'front', 'admin', 'ajax', 'rest' ) as $request_type ) {
 			$this->assertNotContains( WooPaymentsStatusChangeRetryListener::class, $this->state->get_classes_for_request( $request_type ), $request_type );
@@ -376,10 +376,10 @@ class WooPaymentsSetupTierTest extends WC_Unit_Test_Case {
 			delete_option( 'woocommerce_woocommerce_payments_version' );
 		}
 		if ( null === $record_state ) {
-			update_option( WooPaymentsCutoverStateStore::OPTION_NAME, WooPaymentsCutoverStateStore::ABSENT_RECORD );
+			update_option( StateStore::OPTION_NAME, StateStore::ABSENT_RECORD );
 		} else {
 			update_option(
-				WooPaymentsCutoverStateStore::OPTION_NAME,
+				StateStore::OPTION_NAME,
 				array(
 					'state'                => $record_state,
 					'request_origin_token' => $finalize_token ? 'finalize-request-token' : null,
@@ -397,7 +397,7 @@ class WooPaymentsSetupTierTest extends WC_Unit_Test_Case {
 		$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_NONE === $owner && 'yes' === $feature, $arbiter->is_awaiting_switch() );
 		$this->assertSame( $tier, $this->state->get_effective_tier() );
 		$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_BUILTIN === $owner, in_array( WooPaymentsProvider::class, $this->state->get_classes_for_request( 'front' ), true ), 'A WooPayments gateway at checkout only while the built-in owns payments.' );
-		$this->assertSame( WooPaymentsSetupTier::DISABLED !== $tier, in_array( WooPaymentsCutoverController::class, $this->state->get_classes_for_request( 'admin' ), true ), 'The switch controller loads in admin wherever a tier is on.' );
+		$this->assertSame( WooPaymentsSetupTier::DISABLED !== $tier, in_array( CutoverController::class, $this->state->get_classes_for_request( 'admin' ), true ), 'The switch controller loads in admin wherever a tier is on.' );
 		if ( WooPaymentsSetupTier::DISABLED === $tier ) {
 			foreach ( array( 'front', 'admin', 'ajax', 'rest' ) as $request_type ) {
 				$this->assertSame( array(), $this->state->get_classes_for_request( $request_type ), $request_type );
@@ -418,9 +418,9 @@ class WooPaymentsSetupTierTest extends WC_Unit_Test_Case {
 		$none      = WooPaymentsRuntimeArbiter::OWNER_NONE;
 		$builtin   = WooPaymentsRuntimeArbiter::OWNER_BUILTIN;
 		$extension = WooPaymentsRuntimeArbiter::OWNER_EXTENSION;
-		$pending   = WooPaymentsCutoverStateStore::STATE_PENDING;
-		$deferred  = WooPaymentsCutoverStateStore::STATE_DEFERRED;
-		$done      = WooPaymentsCutoverStateStore::STATE_DONE;
+		$pending   = StateStore::STATE_PENDING;
+		$deferred  = StateStore::STATE_DEFERRED;
+		$done      = StateStore::STATE_DONE;
 
 		return array(
 			'a store that never ran the extension'     => array( false, null, false, false, 'yes', $builtin, WooPaymentsSetupTier::ACTIVE ),
@@ -454,15 +454,15 @@ class WooPaymentsSetupTierTest extends WC_Unit_Test_Case {
 		if ( $extension_ran ) {
 			update_option( 'woocommerce_woocommerce_payments_version', '11.1.0' );
 			update_option(
-				WooPaymentsCutoverStateStore::OPTION_NAME,
+				StateStore::OPTION_NAME,
 				array(
-					'state'                => WooPaymentsCutoverStateStore::STATE_DONE,
+					'state'                => StateStore::STATE_DONE,
 					'request_origin_token' => null,
 				)
 			);
 		} else {
 			delete_option( 'woocommerce_woocommerce_payments_version' );
-			update_option( WooPaymentsCutoverStateStore::OPTION_NAME, WooPaymentsCutoverStateStore::ABSENT_RECORD );
+			update_option( StateStore::OPTION_NAME, StateStore::ABSENT_RECORD );
 		}
 		$arbiter = wc_get_container()->get( WooPaymentsRuntimeArbiter::class );
 		$arbiter->invalidate();
@@ -470,7 +470,7 @@ class WooPaymentsSetupTierTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_BUILTIN, $arbiter->get_runtime_owner() );
 		$this->assertSame( $tier, $this->state->get_effective_tier() );
-		$this->assertSame( $extension_ran, in_array( WooPaymentsCutoverReconciliationJob::class, $this->state->get_classes_for_request( 'cron' ), true ), 'The job loads where it can finish the tier.' );
+		$this->assertSame( $extension_ran, in_array( ReconciliationJob::class, $this->state->get_classes_for_request( 'cron' ), true ), 'The job loads where it can finish the tier.' );
 	}
 
 	/**

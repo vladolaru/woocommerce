@@ -1,19 +1,19 @@
 <?php
 /**
- * WooPaymentsBundledSubscriptionsGuard tests.
+ * BundledSubscriptionsGuard tests.
  */
 
 declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Cutover;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsBundledSubscriptionsGuard;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\BundledSubscriptionsGuard;
 use WC_Unit_Test_Case;
 
 /**
  * Tests for the WooPayments bundled subscriptions guard.
  */
-class WooPaymentsBundledSubscriptionsGuardTest extends WC_Unit_Test_Case {
+class BundledSubscriptionsGuardTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Bundled subscription markers block cutover when identifier placeholders are unavailable.
@@ -157,7 +157,7 @@ class WooPaymentsBundledSubscriptionsGuardTest extends WC_Unit_Test_Case {
 		update_post_meta( $subscription_id, '_wcpay_subscription_id', 'sub_1UM1VrBzWlxcwgpP6A3GwGLe' );
 		update_option( '_wcpay_feature_subscriptions', '1' );
 
-		$this->assertFalse( ( new WooPaymentsBundledSubscriptionsGuard() )->is_bundled_subscriptions_store() );
+		$this->assertFalse( ( new BundledSubscriptionsGuard() )->is_bundled_subscriptions_store() );
 	}
 
 	/**
@@ -173,17 +173,17 @@ class WooPaymentsBundledSubscriptionsGuardTest extends WC_Unit_Test_Case {
 		);
 		update_post_meta( $subscription_id, '_wcpay_subscription_id', 'sub_1UM1VrBzWlxcwgpP6A3GwGLe' );
 
-		$this->assertTrue( ( new WooPaymentsBundledSubscriptionsGuard() )->is_bundled_subscriptions_store() );
+		$this->assertTrue( ( new BundledSubscriptionsGuard() )->is_bundled_subscriptions_store() );
 	}
 
 	/**
 	 * Create a bundled subscriptions guard with a controlled database abstraction.
 	 *
 	 * @param \wpdb $database WordPress database access abstraction.
-	 * @return WooPaymentsBundledSubscriptionsGuard
+	 * @return BundledSubscriptionsGuard
 	 */
-	private function create_guard( \wpdb $database ): WooPaymentsBundledSubscriptionsGuard {
-		return new class( $database ) extends WooPaymentsBundledSubscriptionsGuard {
+	private function create_guard( \wpdb $database ): BundledSubscriptionsGuard {
+		return new class( $database ) extends BundledSubscriptionsGuard {
 			/**
 			 * WordPress database access abstraction.
 			 *

@@ -3,8 +3,8 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Cutover;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsCutoverDataMigration;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsCutoverPreflightService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\DataMigration;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\PreflightService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGatewaySettingsSynchronizer;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSettingsDefaults;
 use WC_Unit_Test_Case;
@@ -12,7 +12,7 @@ use WC_Unit_Test_Case;
 /**
  * Tests for the native WooPayments cutover normalization runner.
  */
-class WooPaymentsCutoverDataMigrationTest extends WC_Unit_Test_Case {
+class DataMigrationTest extends WC_Unit_Test_Case {
 
 	private const SETTINGS_OPTION = 'woocommerce_woocommerce_payments_settings';
 
@@ -63,7 +63,7 @@ class WooPaymentsCutoverDataMigrationTest extends WC_Unit_Test_Case {
 	/**
 	 * System under test.
 	 *
-	 * @var WooPaymentsCutoverDataMigration|null
+	 * @var DataMigration|null
 	 */
 	private $runner = null;
 
@@ -78,7 +78,7 @@ class WooPaymentsCutoverDataMigrationTest extends WC_Unit_Test_Case {
 	 * Tear down test fixtures.
 	 */
 	public function tearDown(): void {
-		if ( $this->runner instanceof WooPaymentsCutoverDataMigration ) {
+		if ( $this->runner instanceof DataMigration ) {
 			remove_action( 'init', array( $this->runner, 'maybe_run' ), 1 );
 		}
 
@@ -390,7 +390,7 @@ class WooPaymentsCutoverDataMigrationTest extends WC_Unit_Test_Case {
 	 * @testdox Cutover removes discontinued method IDs and projects canonical split gateway availability.
 	 */
 	public function test_run_projects_split_gateway_settings_and_removes_discontinued_methods(): void {
-		update_option( self::VERSION_OPTION, WooPaymentsCutoverPreflightService::MINIMUM_CUTOVER_PLUGIN_VERSION );
+		update_option( self::VERSION_OPTION, PreflightService::MINIMUM_CUTOVER_PLUGIN_VERSION );
 		update_option(
 			self::SETTINGS_OPTION,
 			array(
@@ -485,11 +485,11 @@ class WooPaymentsCutoverDataMigrationTest extends WC_Unit_Test_Case {
 	 */
 	public function test_retired_allowlists_stay_at_or_below_the_cutover_plugin_floor(): void {
 		$allowlists = array(
-			'RETIRED_OPTIONS'    => WooPaymentsCutoverDataMigration::RETIRED_OPTIONS,
-			'RETIRED_TRANSIENTS' => WooPaymentsCutoverDataMigration::RETIRED_TRANSIENTS,
+			'RETIRED_OPTIONS'    => DataMigration::RETIRED_OPTIONS,
+			'RETIRED_TRANSIENTS' => DataMigration::RETIRED_TRANSIENTS,
 		);
 		$floors     = array(
-			WooPaymentsCutoverPreflightService::MINIMUM_CUTOVER_PLUGIN_VERSION,
+			PreflightService::MINIMUM_CUTOVER_PLUGIN_VERSION,
 		);
 
 		foreach ( $allowlists as $allowlist_name => $allowlist ) {
@@ -533,7 +533,7 @@ class WooPaymentsCutoverDataMigrationTest extends WC_Unit_Test_Case {
 			$express_locations,
 			self::UNKNOWN_SETTINGS
 		);
-		update_option( self::VERSION_OPTION, WooPaymentsCutoverPreflightService::MINIMUM_CUTOVER_PLUGIN_VERSION );
+		update_option( self::VERSION_OPTION, PreflightService::MINIMUM_CUTOVER_PLUGIN_VERSION );
 		update_option( self::SETTINGS_OPTION, $settings );
 		foreach ( self::SPLIT_SETTINGS as $option_name => $split_settings ) {
 			update_option( $option_name, $split_settings );
@@ -569,18 +569,18 @@ class WooPaymentsCutoverDataMigrationTest extends WC_Unit_Test_Case {
 	 */
 	public function test_run_deletes_only_allowlisted_options_and_transients(): void {
 		$this->seed_extension_options();
-		foreach ( array_keys( WooPaymentsCutoverDataMigration::RETIRED_OPTIONS ) as $option_name ) {
+		foreach ( array_keys( DataMigration::RETIRED_OPTIONS ) as $option_name ) {
 			update_option( $option_name, '1' );
 		}
 		foreach ( self::EXTENSION_READ_OPTIONS as $option_name => $value ) {
 			update_option( $option_name, $value );
 		}
-		$transients = array_merge( WooPaymentsCutoverDataMigration::APPEARANCE_TRANSIENTS, array_keys( WooPaymentsCutoverDataMigration::RETIRED_TRANSIENTS ) );
+		$transients = array_merge( DataMigration::APPEARANCE_TRANSIENTS, array_keys( DataMigration::RETIRED_TRANSIENTS ) );
 		foreach ( $transients as $transient ) {
 			set_transient( $transient, 'stale', HOUR_IN_SECONDS );
 		}
 		set_transient( 'wcpay_fraud_protection_settings', array( 'kept' => true ), HOUR_IN_SECONDS );
-		$deletable = array_keys( WooPaymentsCutoverDataMigration::RETIRED_OPTIONS );
+		$deletable = array_keys( DataMigration::RETIRED_OPTIONS );
 		foreach ( $transients as $transient ) {
 			$deletable[] = '_transient_' . $transient;
 			$deletable[] = '_transient_timeout_' . $transient;
@@ -626,10 +626,10 @@ class WooPaymentsCutoverDataMigrationTest extends WC_Unit_Test_Case {
 	/**
 	 * Create the runner under test.
 	 *
-	 * @return WooPaymentsCutoverDataMigration
+	 * @return DataMigration
 	 */
-	private function create_runner(): WooPaymentsCutoverDataMigration {
-		$this->runner = new WooPaymentsCutoverDataMigration();
+	private function create_runner(): DataMigration {
+		$this->runner = new DataMigration();
 		$this->runner->init( wc_get_container()->get( WooPaymentsGatewaySettingsSynchronizer::class ) );
 
 		return $this->runner;
@@ -646,7 +646,7 @@ class WooPaymentsCutoverDataMigrationTest extends WC_Unit_Test_Case {
 	 * removes such methods), and Link next to WooPay (`platform_checkout` 'yes'), which the extension's settings endpoint accepts.
 	 */
 	private function seed_extension_options(): void {
-		update_option( self::VERSION_OPTION, WooPaymentsCutoverPreflightService::MINIMUM_CUTOVER_PLUGIN_VERSION );
+		update_option( self::VERSION_OPTION, PreflightService::MINIMUM_CUTOVER_PLUGIN_VERSION );
 		update_option(
 			self::SETTINGS_OPTION,
 			array(

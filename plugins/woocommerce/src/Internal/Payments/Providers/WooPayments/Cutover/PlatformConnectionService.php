@@ -1,6 +1,6 @@
 <?php
 /**
- * WooPaymentsPlatformConnectionService class file.
+ * PlatformConnectionService class file.
  */
 
 declare( strict_types = 1 );
@@ -18,7 +18,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\HttpClien
  * @since 11.0.0
  * @internal
  */
-class WooPaymentsPlatformConnectionService {
+class PlatformConnectionService {
 
 	/** The site has no working WordPress.com connection. */
 	public const FAILURE_CONNECTION_UNAVAILABLE = 'wpcom_connection_unavailable';

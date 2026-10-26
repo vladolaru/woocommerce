@@ -3,13 +3,13 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Cutover;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsCutoverActionScheduler;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsCutoverStateStore;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\CutoverActionScheduler;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\StateStore;
 
 /**
  * Recording cutover scheduler test double.
  */
-class RecordingWooPaymentsCutoverActionScheduler extends WooPaymentsCutoverActionScheduler {
+class RecordingCutoverActionScheduler extends CutoverActionScheduler {
 
 	/** @var int Number of explicit async dispatch requests. */
 	public int $dispatch_count = 0;
@@ -17,15 +17,15 @@ class RecordingWooPaymentsCutoverActionScheduler extends WooPaymentsCutoverActio
 	/** @var bool Whether dispatch observed a released state lease. */
 	public bool $dispatch_observed_released_lease = false;
 
-	/** @var WooPaymentsCutoverStateStore Cutover state store. */
-	private WooPaymentsCutoverStateStore $state_store;
+	/** @var StateStore Cutover state store. */
+	private StateStore $state_store;
 
 	/**
 	 * Initialize the recording scheduler.
 	 *
-	 * @param WooPaymentsCutoverStateStore $state_store Cutover state store.
+	 * @param StateStore $state_store Cutover state store.
 	 */
-	public function __construct( WooPaymentsCutoverStateStore $state_store ) {
+	public function __construct( StateStore $state_store ) {
 		$this->state_store = $state_store;
 	}
 

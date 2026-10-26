@@ -1,6 +1,6 @@
 <?php
 /**
- * WooPaymentsCutoverController tests.
+ * CutoverController tests.
  */
 
 declare( strict_types = 1 );
@@ -8,21 +8,21 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Cutover;
 
 use Automattic\Jetpack\Constants;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsCutoverStateStore;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsCutoverDataMigration;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsCutoverActionScheduler;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsPerSiteActivationController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\StateStore;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\DataMigration;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\CutoverActionScheduler;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\PerSiteActivationController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsNativeAccountAdapter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsNativeApiClientAdapter;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsBundledSubscriptionsGuard;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\BundledSubscriptionsGuard;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCanceledAuthorizationFeeRemediationService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsCutoverController;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsCutoverPreflightService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsCutoverReconciliationJob;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsPlatformConnectionService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\CutoverController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\PreflightService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\ReconciliationJob;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\PlatformConnectionService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use WC_Unit_Test_Case;
@@ -31,21 +31,21 @@ use WC_Payment_Token_CC;
 /**
  * Tests for the WooPayments native cutover controller.
  */
-class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
+class CutoverControllerTest extends WC_Unit_Test_Case {
 
 	/**
 	 * The System Under Test.
 	 *
-	 * @var WooPaymentsCutoverController
+	 * @var CutoverController
 	 */
-	private WooPaymentsCutoverController $sut;
+	private CutoverController $sut;
 
 	/**
 	 * The preflight service the controller under test reads.
 	 *
-	 * @var WooPaymentsCutoverPreflightService
+	 * @var PreflightService
 	 */
-	private WooPaymentsCutoverPreflightService $preflight_service;
+	private PreflightService $preflight_service;
 
 	/**
 	 * Native WooPayments provider mock.
@@ -64,9 +64,9 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * Platform connection readiness service mock.
 	 *
-	 * @var WooPaymentsPlatformConnectionService&\PHPUnit\Framework\MockObject\MockObject
+	 * @var PlatformConnectionService&\PHPUnit\Framework\MockObject\MockObject
 	 */
-	private WooPaymentsPlatformConnectionService $platform_connection_service;
+	private PlatformConnectionService $platform_connection_service;
 
 	/**
 	 * Native rate account boundary mock.
@@ -209,7 +209,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 				}
 			);
 
-		$this->platform_connection_service = $this->getMockBuilder( WooPaymentsPlatformConnectionService::class )
+		$this->platform_connection_service = $this->getMockBuilder( PlatformConnectionService::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'get_preflight_failures' ) )
 			->getMock();
@@ -246,11 +246,11 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		while ( function_exists( 'ms_is_switched' ) && ms_is_switched() ) {
 			restore_current_blog();
 		}
-		unset( $_GET[ WooPaymentsCutoverController::QUERY_ACTION ], $_GET[ WooPaymentsCutoverController::NONCE_NAME ], $_GET[ WooPaymentsCutoverController::QUERY_NOTICE ], $_GET['page'], $_GET['tab'] );
+		unset( $_GET[ CutoverController::QUERY_ACTION ], $_GET[ CutoverController::NONCE_NAME ], $_GET[ CutoverController::QUERY_NOTICE ], $_GET['page'], $_GET['tab'] );
 		delete_option( 'woocommerce_woocommerce_payments_settings' );
 		delete_option( 'woocommerce_woocommerce_payments_version' );
 
-		remove_all_filters( WooPaymentsCutoverController::FILTER_MANDATORY_CUTOVER_ENABLED );
+		remove_all_filters( CutoverController::FILTER_MANDATORY_CUTOVER_ENABLED );
 		remove_all_filters( 'wp_die_handler' );
 		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 		Constants::clear_single_constant( 'WC_ALLOW_MERGED_FEATURE_PLUGINS' );
@@ -284,7 +284,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		$this->fake_plugin_active( false, true );
 		$this->fake_current_user_caps( true );
 		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
-		$job = new class() extends WooPaymentsCutoverReconciliationJob {
+		$job = new class() extends ReconciliationJob {
 			/** @return array<string,mixed>|null */
 			public function refresh_notice_record(): ?array {
 				return null;
@@ -313,7 +313,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		$this->fake_plugin_active( false, true );
 		$this->fake_current_user_capabilities( $capabilities );
 		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
-		$job = new class() extends WooPaymentsCutoverReconciliationJob {
+		$job = new class() extends ReconciliationJob {
 			/** @return array<string,mixed>|null */
 			public function refresh_notice_record(): ?array {
 				return null;
@@ -336,8 +336,8 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		$href = html_entity_decode( $matches[1] );
 		$this->assertStringStartsWith( admin_url( 'plugins.php' ) . '?', $href, 'The button posts to this site.' );
 		wp_parse_str( (string) wp_parse_url( $href, PHP_URL_QUERY ), $query );
-		$this->assertSame( WooPaymentsPerSiteActivationController::ACTION_CONVERT, $query[ WooPaymentsPerSiteActivationController::QUERY_ACTION ] ?? null );
-		$this->assertSame( 1, wp_verify_nonce( $query[ WooPaymentsPerSiteActivationController::NONCE_NAME ] ?? '', WooPaymentsPerSiteActivationController::NONCE_ACTION ) );
+		$this->assertSame( PerSiteActivationController::ACTION_CONVERT, $query[ PerSiteActivationController::QUERY_ACTION ] ?? null );
+		$this->assertSame( 1, wp_verify_nonce( $query[ PerSiteActivationController::NONCE_NAME ] ?? '', PerSiteActivationController::NONCE_ACTION ) );
 	}
 
 	/**
@@ -365,13 +365,13 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		$this->fake_plugin_active( ! $sitewide_active, $sitewide_active );
 		$this->fake_current_user_caps( true );
 		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
-		$job = new class() extends WooPaymentsCutoverReconciliationJob {
+		$job = new class() extends ReconciliationJob {
 			/** @return array<string,mixed>|null */
 			public function refresh_notice_record(): ?array {
 				return array(
-					'state'          => WooPaymentsCutoverStateStore::STATE_DEFERRED,
+					'state'          => StateStore::STATE_DEFERRED,
 					'current_step'   => 'deferred',
-					'deferred_codes' => array( WooPaymentsCutoverReconciliationJob::CODE_PLUGIN_ACTIVE_SITEWIDE ),
+					'deferred_codes' => array( ReconciliationJob::CODE_PLUGIN_ACTIVE_SITEWIDE ),
 				);
 			}
 		};
@@ -394,7 +394,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		$this->fake_plugin_active();
 		$this->fake_current_user_caps( true );
 		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
-		$job = new class() extends WooPaymentsCutoverReconciliationJob {
+		$job = new class() extends ReconciliationJob {
 			/** @return array<string,mixed>|null */
 			public function refresh_notice_record(): ?array {
 				return null;
@@ -432,13 +432,13 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 			$notices = $this->render_admin_notices( $controller );
 			$this->assertStringContainsString( 'Start the switch', $notices );
 			$this->assertStringContainsString( 'Not now', $notices );
-			$this->follow_dismiss_link( $controller, $notices, WooPaymentsCutoverController::NOTICE_START_SWITCH );
+			$this->follow_dismiss_link( $controller, $notices, CutoverController::NOTICE_START_SWITCH );
 		} finally {
 			remove_filter( 'wp_redirect', '__return_empty_string' );
 		}
 
-		$this->assertSame( $now + 30 * DAY_IN_SECONDS, (int) get_option( WooPaymentsCutoverReconciliationJob::START_NOTICE_SNOOZED_UNTIL_OPTION ) );
-		unset( $_GET[ WooPaymentsCutoverController::QUERY_ACTION ], $_GET[ WooPaymentsCutoverController::NONCE_NAME ], $_GET[ WooPaymentsCutoverController::QUERY_NOTICE ] );
+		$this->assertSame( $now + 30 * DAY_IN_SECONDS, (int) get_option( ReconciliationJob::START_NOTICE_SNOOZED_UNTIL_OPTION ) );
+		unset( $_GET[ CutoverController::QUERY_ACTION ], $_GET[ CutoverController::NONCE_NAME ], $_GET[ CutoverController::QUERY_NOTICE ] );
 		$this->assertStringNotContainsString( 'Start the switch', $this->render_admin_notices( $controller ), 'Snoozed on other admin pages.' );
 
 		$_GET['page'] = 'wc-settings';
@@ -454,7 +454,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	public function test_snoozed_switch_notice_returns_after_30_days(): void {
 		$this->arrange_switch_offer( 'extension active' );
 		$now = 1800000000;
-		update_option( WooPaymentsCutoverReconciliationJob::START_NOTICE_SNOOZED_UNTIL_OPTION, $now + 30 * DAY_IN_SECONDS );
+		update_option( ReconciliationJob::START_NOTICE_SNOOZED_UNTIL_OPTION, $now + 30 * DAY_IN_SECONDS );
 		$this->register_legacy_proxy_function_mocks( array( 'time' => static fn() => $now + 31 * DAY_IN_SECONDS ) );
 
 		$notices = $this->render_admin_notices( $this->create_cutover_controller() );
@@ -516,8 +516,8 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	 */
 	public function provide_dismissable_notices(): array {
 		return array(
-			'completion notice' => array( WooPaymentsCutoverReconciliationJob::NOTICE_SUCCESS, 'WooPayments is now built into WooCommerce. Everything works as before.' ),
-			'reconnect notice'  => array( WooPaymentsCutoverReconciliationJob::NOTICE_RECONNECT, 'The connection owner is no longer available. Reconnect this site to continue the switch.' ),
+			'completion notice' => array( ReconciliationJob::NOTICE_SUCCESS, 'WooPayments is now built into WooCommerce. Everything works as before.' ),
+			'reconnect notice'  => array( ReconciliationJob::NOTICE_RECONNECT, 'The connection owner is no longer available. Reconnect this site to continue the switch.' ),
 		);
 	}
 
@@ -539,8 +539,8 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 			$this->assertStringNotContainsString( 'Start the switch', $notices );
 			$this->assertStringNotContainsString( 'button', $notices );
 
-			$this->follow_dismiss_link( $controller, $notices, WooPaymentsCutoverReconciliationJob::NOTICE_BUNDLED_EXCLUSION );
-			$this->assertSame( array( WooPaymentsCutoverReconciliationJob::NOTICE_BUNDLED_EXCLUSION ), $job->dismissed );
+			$this->follow_dismiss_link( $controller, $notices, ReconciliationJob::NOTICE_BUNDLED_EXCLUSION );
+			$this->assertSame( array( ReconciliationJob::NOTICE_BUNDLED_EXCLUSION ), $job->dismissed );
 			$this->assertSame( '', trim( $this->render_admin_notices( $controller ) ) );
 		} finally {
 			remove_filter( 'wp_redirect', '__return_empty_string' );
@@ -605,7 +605,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	 */
 	public function test_woocommerce_subscriptions_changes_forget_the_classification( string $plugin, string $change, bool $expected_cached ): void {
 		update_option(
-			WooPaymentsCutoverReconciliationJob::ADMIN_CLASSIFICATION_OPTION,
+			ReconciliationJob::ADMIN_CLASSIFICATION_OPTION,
 			array(
 				'key'        => 'none',
 				'present'    => true,
@@ -620,7 +620,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 			$controller->handle_plugin_deactivated( $plugin );
 		}
 
-		$this->assertSame( $expected_cached, is_array( get_option( WooPaymentsCutoverReconciliationJob::ADMIN_CLASSIFICATION_OPTION ) ) );
+		$this->assertSame( $expected_cached, is_array( get_option( ReconciliationJob::ADMIN_CLASSIFICATION_OPTION ) ) );
 	}
 
 	/**
@@ -657,11 +657,11 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	public function test_notice_dismissal_requires_a_valid_nonce( string $notice ): void {
 		$this->fake_plugin_active( false );
 		$this->fake_current_user_caps( true );
-		$job        = $this->create_dismissable_notice_job( $notice );
-		$controller = $this->create_cutover_controller( $job );
-		$_GET[ WooPaymentsCutoverController::QUERY_ACTION ] = WooPaymentsCutoverController::ACTION_DISMISS_NOTICE;
-		$_GET[ WooPaymentsCutoverController::QUERY_NOTICE ] = $notice;
-		$_GET[ WooPaymentsCutoverController::NONCE_NAME ]   = wp_create_nonce( WooPaymentsCutoverController::NONCE_ACTION );
+		$job                                     = $this->create_dismissable_notice_job( $notice );
+		$controller                              = $this->create_cutover_controller( $job );
+		$_GET[ CutoverController::QUERY_ACTION ] = CutoverController::ACTION_DISMISS_NOTICE;
+		$_GET[ CutoverController::QUERY_NOTICE ] = $notice;
+		$_GET[ CutoverController::NONCE_NAME ]   = wp_create_nonce( CutoverController::NONCE_ACTION );
 		$this->fake_wp_die_handler();
 
 		$this->expectException( WooPaymentsCutoverBlockedException::class );
@@ -679,11 +679,11 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		$this->fake_plugin_active();
 		$this->fake_current_user_caps( true );
 		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
-		$job = new class() extends WooPaymentsCutoverReconciliationJob {
+		$job = new class() extends ReconciliationJob {
 			/** @return array<string,mixed>|null */
 			public function refresh_notice_record(): ?array {
 				return array(
-					'state'                  => WooPaymentsCutoverStateStore::STATE_DEFERRED,
+					'state'                  => StateStore::STATE_DEFERRED,
 					'deferred_codes'         => array( 'wpcom_connection_unavailable', 'wpcom_blog_id_unavailable', 'wpcom_connection_owner_unavailable' ),
 					'informational_outcomes' => array( array( 'code' => 'reconnect_required' ) ),
 				);
@@ -722,7 +722,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 			10,
 			2
 		);
-		$job = new class( $installed_current ) extends WooPaymentsCutoverReconciliationJob {
+		$job = new class( $installed_current ) extends ReconciliationJob {
 			/** @var bool */
 			private bool $installed_current;
 
@@ -736,7 +736,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 			/** @return array<string,mixed>|null */
 			public function refresh_notice_record(): ?array {
 				return array(
-					'state'                  => WooPaymentsCutoverStateStore::STATE_DEFERRED,
+					'state'                  => StateStore::STATE_DEFERRED,
 					'deferred_codes'         => array( 'woopayments_plugin_version_unsupported' ),
 					'informational_outcomes' => array(),
 				);
@@ -782,18 +782,18 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		$this->fake_current_user_caps( true );
 		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
 		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
-		$job               = new class() extends WooPaymentsCutoverReconciliationJob {
+		$job               = new class() extends ReconciliationJob {
 			/** @return array<string,mixed>|null */
 			public function refresh_notice_record(): ?array {
 				return array(
-					'state'                  => WooPaymentsCutoverStateStore::STATE_DEFERRED,
+					'state'                  => StateStore::STATE_DEFERRED,
 					'deferred_codes'         => array( 'woopayments_plugin_version_unsupported' ),
 					'informational_outcomes' => array(),
 				);
 			}
 		};
 		$preflight_service = $this->create_preflight_service();
-		$job->init( wc_get_container()->get( WooPaymentsRuntimeArbiter::class ), wc_get_container()->get( WooPaymentsCutoverStateStore::class ), wc_get_container()->get( WooPaymentsCutoverActionScheduler::class ), $preflight_service, wc_get_container()->get( WooPaymentsCutoverDataMigration::class ), wc_get_container()->get( WooPaymentsAccountService::class ) );
+		$job->init( wc_get_container()->get( WooPaymentsRuntimeArbiter::class ), wc_get_container()->get( StateStore::class ), wc_get_container()->get( CutoverActionScheduler::class ), $preflight_service, wc_get_container()->get( DataMigration::class ), wc_get_container()->get( WooPaymentsAccountService::class ) );
 		$this->assertFalse( $job->is_installed_woopayments_plugin_version_supported(), 'With the extension inactive, no installed version can be read.' );
 
 		$notice = $this->render_admin_notices( $this->create_cutover_controller( $job, $preflight_service ) );
@@ -814,7 +814,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		$this->fake_plugin_active();
 		$this->fake_current_user_caps( true );
 		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
-		$job = new class( $state ) extends WooPaymentsCutoverReconciliationJob {
+		$job = new class( $state ) extends ReconciliationJob {
 			/** @var string */
 			private string $state;
 
@@ -848,11 +848,11 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		$this->fake_plugin_active();
 		$this->fake_current_user_caps( false );
 		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
-		$job = new class() extends WooPaymentsCutoverReconciliationJob {
+		$job = new class() extends ReconciliationJob {
 			/** @return array<string,mixed>|null */
 			public function refresh_notice_record(): ?array {
 				return array(
-					'state'        => WooPaymentsCutoverStateStore::STATE_PENDING,
+					'state'        => StateStore::STATE_PENDING,
 					'current_step' => 'awaiting_merchant_start',
 				);
 			}
@@ -872,7 +872,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		$this->fake_plugin_active( true, false, $renamed_plugin_file );
 		$this->fake_current_user_caps( true );
 		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
-		$job        = new class() extends WooPaymentsCutoverReconciliationJob {
+		$job        = new class() extends ReconciliationJob {
 			/** @var string[] */
 			public array $sources = array();
 
@@ -1112,7 +1112,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		} elseif ( 'job change' === $store ) {
 			delete_option( 'woocommerce_woocommerce_payments_version' );
 			$this->enable_builtin_runtime_owner();
-			$job        = new class() extends WooPaymentsCutoverReconciliationJob {
+			$job        = new class() extends ReconciliationJob {
 				/**
 				 * Return whether lifecycle work is job-owned.
 				 *
@@ -1162,7 +1162,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		$this->fake_plugin_active( 'site' === $scope, 'sitewide' === $scope );
 		$this->fake_current_user_capabilities( $capabilities );
 		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
-		$job        = new class() extends WooPaymentsCutoverReconciliationJob {
+		$job        = new class() extends ReconciliationJob {
 			/** @var string[] */
 			public array $sources = array();
 
@@ -1209,9 +1209,9 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		$this->fake_plugin_active();
 		$this->enable_ready_cutover();
 		if ( $mandatory ) {
-			add_filter( WooPaymentsCutoverController::FILTER_MANDATORY_CUTOVER_ENABLED, '__return_true' );
+			add_filter( CutoverController::FILTER_MANDATORY_CUTOVER_ENABLED, '__return_true' );
 		}
-		$job        = new class() extends WooPaymentsCutoverReconciliationJob {
+		$job        = new class() extends ReconciliationJob {
 			/** @var string[] */
 			public array $sources = array();
 
@@ -1245,13 +1245,13 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 				return true;
 			}
 		};
-		$preflight    = new class() extends WooPaymentsCutoverPreflightService {
+		$preflight    = new class() extends PreflightService {
 			/** The extension is active on this site only. */
 			public function is_woopayments_network_active(): bool {
 				return false;
 			}
 		};
-		$job          = new class() extends WooPaymentsCutoverReconciliationJob {
+		$job          = new class() extends ReconciliationJob {
 			/** @var int Number of controller enqueue requests. */
 			public int $enqueue_calls = 0;
 
@@ -1277,7 +1277,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 			->getMock();
 		$legacy_proxy->method( 'call_function' )->willReturn( true );
 		$legacy_proxy->expects( $this->exactly( 2 ) )->method( 'exit' );
-		$controller = new WooPaymentsCutoverController();
+		$controller = new CutoverController();
 		$controller->init( $arbiter, $legacy_proxy, $preflight, $job );
 		$redirects        = array();
 		$capture_redirect = static function ( string $location ) use ( &$redirects ): string {
@@ -1285,8 +1285,8 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 			return '';
 		};
 		add_filter( 'wp_redirect', $capture_redirect );
-		$_GET[ WooPaymentsCutoverController::QUERY_ACTION ] = WooPaymentsCutoverController::ACTION_START;
-		$_GET[ WooPaymentsCutoverController::NONCE_NAME ]   = wp_create_nonce( WooPaymentsCutoverController::NONCE_ACTION );
+		$_GET[ CutoverController::QUERY_ACTION ] = CutoverController::ACTION_START;
+		$_GET[ CutoverController::NONCE_NAME ]   = wp_create_nonce( CutoverController::NONCE_ACTION );
 
 		try {
 			$controller->handle_admin_init();
@@ -1315,7 +1315,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		$this->fake_current_user_caps( true );
 		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, $feature_on ? 'yes' : 'no' );
 		$this->fake_wp_die_handler();
-		$job        = new class() extends WooPaymentsCutoverReconciliationJob {
+		$job                                     = new class() extends ReconciliationJob {
 			/**
 			 * Queue nothing, as when another request holds the cutover lease or native payments is off.
 			 *
@@ -1326,10 +1326,10 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 				return false;
 			}
 		};
-		$controller = $this->create_cutover_controller( $job );
-		$_GET[ WooPaymentsCutoverController::QUERY_ACTION ] = WooPaymentsCutoverController::ACTION_START;
-		$_GET[ WooPaymentsCutoverController::NONCE_NAME ]   = wp_create_nonce( WooPaymentsCutoverController::NONCE_ACTION );
-		$logger = $this->createMock( \WC_Logger_Interface::class );
+		$controller                              = $this->create_cutover_controller( $job );
+		$_GET[ CutoverController::QUERY_ACTION ] = CutoverController::ACTION_START;
+		$_GET[ CutoverController::NONCE_NAME ]   = wp_create_nonce( CutoverController::NONCE_ACTION );
+		$logger                                  = $this->createMock( \WC_Logger_Interface::class );
 		$logger->expects( $feature_on ? $this->once() : $this->never() )
 			->method( 'error' )
 			->with( $this->stringContains( 'switch' ), array( 'source' => 'woopayments-cutover' ) );
@@ -1368,7 +1368,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	 */
 	public function test_invalid_cutover_action_nonce_dies_before_enqueue(): void {
 		$this->fake_wp_die_handler();
-		$job        = new class() extends WooPaymentsCutoverReconciliationJob {
+		$job                                     = new class() extends ReconciliationJob {
 			/** @var int Number of enqueue calls. */
 			public int $enqueue_calls = 0;
 
@@ -1383,9 +1383,9 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 				return true;
 			}
 		};
-		$controller = $this->create_cutover_controller( $job );
-		$_GET[ WooPaymentsCutoverController::QUERY_ACTION ] = WooPaymentsCutoverController::ACTION_START;
-		$_GET[ WooPaymentsCutoverController::NONCE_NAME ]   = 'invalid';
+		$controller                              = $this->create_cutover_controller( $job );
+		$_GET[ CutoverController::QUERY_ACTION ] = CutoverController::ACTION_START;
+		$_GET[ CutoverController::NONCE_NAME ]   = 'invalid';
 
 		$this->expectException( WooPaymentsCutoverBlockedException::class );
 		try {
@@ -1401,9 +1401,9 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	public function test_mandatory_auto_deactivation_allows_merged_feature_plugins_when_bypass_enabled(): void {
 		$this->fake_plugin_active();
 		$this->enable_ready_cutover();
-		add_filter( WooPaymentsCutoverController::FILTER_MANDATORY_CUTOVER_ENABLED, '__return_true' );
+		add_filter( CutoverController::FILTER_MANDATORY_CUTOVER_ENABLED, '__return_true' );
 		Constants::set_constant( 'WC_ALLOW_MERGED_FEATURE_PLUGINS', true );
-		$job        = new class() extends WooPaymentsCutoverReconciliationJob {
+		$job        = new class() extends ReconciliationJob {
 			/** @var int Number of enqueue calls. */
 			public int $enqueue_calls = 0;
 
@@ -1444,16 +1444,16 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * Create a preflight service wired to this test's dependencies.
 	 *
-	 * @return WooPaymentsCutoverPreflightService
+	 * @return PreflightService
 	 */
-	private function create_preflight_service(): WooPaymentsCutoverPreflightService {
-		$preflight_service = new WooPaymentsCutoverPreflightService();
+	private function create_preflight_service(): PreflightService {
+		$preflight_service = new PreflightService();
 		$this->init_preflight_service(
 			$preflight_service,
 			wc_get_container()->get( WooPaymentsRuntimeArbiter::class ),
 			wc_get_container()->get( LegacyProxy::class ),
 			$this->provider,
-			new WooPaymentsBundledSubscriptionsGuard(),
+			new BundledSubscriptionsGuard(),
 			$this->fee_remediation_service,
 			$this->platform_connection_service,
 			$this->rate_account,
@@ -1466,16 +1466,16 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * Create a cutover controller wired to this test's dependencies.
 	 *
-	 * @param WooPaymentsCutoverReconciliationJob|null $job               Optional reconciliation job.
-	 * @param WooPaymentsCutoverPreflightService|null  $preflight_service Optional preflight service; a new one by default.
-	 * @return WooPaymentsCutoverController
+	 * @param ReconciliationJob|null $job               Optional reconciliation job.
+	 * @param PreflightService|null  $preflight_service Optional preflight service; a new one by default.
+	 * @return CutoverController
 	 */
-	private function create_cutover_controller( ?WooPaymentsCutoverReconciliationJob $job = null, ?WooPaymentsCutoverPreflightService $preflight_service = null ): WooPaymentsCutoverController {
+	private function create_cutover_controller( ?ReconciliationJob $job = null, ?PreflightService $preflight_service = null ): CutoverController {
 		$arbiter           = wc_get_container()->get( WooPaymentsRuntimeArbiter::class );
 		$legacy_proxy      = wc_get_container()->get( LegacyProxy::class );
 		$preflight_service = $preflight_service ?? $this->create_preflight_service();
 
-		$job        = $job ?? new class() extends WooPaymentsCutoverReconciliationJob {
+		$job        = $job ?? new class() extends ReconciliationJob {
 			/** Return no durable state after notice classification. */
 			public function refresh_notice_record(): ?array {
 				return null;
@@ -1501,7 +1501,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 				return false;
 			}
 		};
-		$controller = new WooPaymentsCutoverController();
+		$controller = new CutoverController();
 		$controller->init( $arbiter, $legacy_proxy, $preflight_service, $job );
 
 		return $controller;
@@ -1510,16 +1510,16 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * Create a completed-cutover job double that records dismissals on its record.
 	 *
-	 * @return WooPaymentsCutoverReconciliationJob&object{dismissed: string[]}
+	 * @return ReconciliationJob&object{dismissed: string[]}
 	 */
-	private function create_completed_notice_job(): WooPaymentsCutoverReconciliationJob {
-		return new class() extends WooPaymentsCutoverReconciliationJob {
+	private function create_completed_notice_job(): ReconciliationJob {
+		return new class() extends ReconciliationJob {
 			/** @var string[] Dismissed notices, in order. */
 			public array $dismissed = array();
 
 			/** @var array<string,mixed> Completed record. */
 			private array $record = array(
-				'state'                  => WooPaymentsCutoverStateStore::STATE_DONE,
+				'state'                  => StateStore::STATE_DONE,
 				'informational_outcomes' => array(),
 			);
 
@@ -1547,23 +1547,23 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * Create the job double for a dismissable notice: a completed cutover, or a switch whose connection owner is gone.
 	 *
-	 * @param string $notice One of the WooPaymentsCutoverReconciliationJob::NOTICE_* constants.
-	 * @return WooPaymentsCutoverReconciliationJob&object{dismissed: string[]}
+	 * @param string $notice One of the ReconciliationJob::NOTICE_* constants.
+	 * @return ReconciliationJob&object{dismissed: string[]}
 	 */
-	private function create_dismissable_notice_job( string $notice ): WooPaymentsCutoverReconciliationJob {
-		if ( WooPaymentsCutoverReconciliationJob::NOTICE_SUCCESS === $notice ) {
+	private function create_dismissable_notice_job( string $notice ): ReconciliationJob {
+		if ( ReconciliationJob::NOTICE_SUCCESS === $notice ) {
 			return $this->create_completed_notice_job();
 		}
 
-		return new class() extends WooPaymentsCutoverReconciliationJob {
+		return new class() extends ReconciliationJob {
 			/** @var string[] Dismissed notices, in order. */
 			public array $dismissed = array();
 
 			/** @var array<string,mixed> Deferred record that needs a reconnect. */
 			private array $record = array(
-				'state'                  => WooPaymentsCutoverStateStore::STATE_DEFERRED,
+				'state'                  => StateStore::STATE_DEFERRED,
 				'current_step'           => 'deferred',
-				'deferred_codes'         => array( WooPaymentsPlatformConnectionService::FAILURE_CONNECTION_OWNER_UNAVAILABLE ),
+				'deferred_codes'         => array( PlatformConnectionService::FAILURE_CONNECTION_OWNER_UNAVAILABLE ),
 				'informational_outcomes' => array( array( 'code' => 'reconnect_required' ) ),
 			);
 
@@ -1592,10 +1592,10 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	 * Create a job whose record is excluded for the given code, recording dismissals the way the durable record does.
 	 *
 	 * @param string $code Exclusion code.
-	 * @return WooPaymentsCutoverReconciliationJob
+	 * @return ReconciliationJob
 	 */
-	private function create_excluded_notice_job( string $code ): WooPaymentsCutoverReconciliationJob {
-		return new class( $code ) extends WooPaymentsCutoverReconciliationJob {
+	private function create_excluded_notice_job( string $code ): ReconciliationJob {
+		return new class( $code ) extends ReconciliationJob {
 			/** @var string[] Dismissed notices, in order. */
 			public array $dismissed = array();
 
@@ -1607,7 +1607,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 			 */
 			public function __construct( string $code ) {
 				$this->record = array(
-					'state'                  => WooPaymentsCutoverStateStore::STATE_EXCLUDED,
+					'state'                  => StateStore::STATE_EXCLUDED,
 					'current_step'           => 'excluded',
 					'deferred_codes'         => array( $code ),
 					'informational_outcomes' => array(),
@@ -1651,12 +1651,12 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * Follow the dismiss link of one rendered completion notice.
 	 *
-	 * @param WooPaymentsCutoverController $controller Cutover controller.
-	 * @param string                       $notices    Rendered notice markup.
-	 * @param string                       $notice     Notice whose link to follow.
+	 * @param CutoverController $controller Cutover controller.
+	 * @param string            $notices    Rendered notice markup.
+	 * @param string            $notice     Notice whose link to follow.
 	 */
-	private function follow_dismiss_link( WooPaymentsCutoverController $controller, string $notices, string $notice ): void {
-		$this->assertSame( 1, preg_match( '/href="([^"]*' . preg_quote( WooPaymentsCutoverController::QUERY_NOTICE . '=' . $notice, '/' ) . '[^"]*)"/', $notices, $matches ), "The {$notice} notice should render a dismiss link." );
+	private function follow_dismiss_link( CutoverController $controller, string $notices, string $notice ): void {
+		$this->assertSame( 1, preg_match( '/href="([^"]*' . preg_quote( CutoverController::QUERY_NOTICE . '=' . $notice, '/' ) . '[^"]*)"/', $notices, $matches ), "The {$notice} notice should render a dismiss link." );
 		wp_parse_str( (string) wp_parse_url( html_entity_decode( $matches[1] ), PHP_URL_QUERY ), $query );
 		foreach ( $query as $key => $value ) {
 			$_GET[ $key ] = $value;
@@ -1674,7 +1674,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		$this->fake_plugin_active();
 		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
 		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
-		$job        = new class() extends WooPaymentsCutoverReconciliationJob {
+		$job        = new class() extends ReconciliationJob {
 			/** @var string[] */
 			public array $sources = array();
 
@@ -1718,10 +1718,10 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * Render admin notices for a cutover controller.
 	 *
-	 * @param WooPaymentsCutoverController $controller Cutover controller.
+	 * @param CutoverController $controller Cutover controller.
 	 * @return string Rendered notice markup.
 	 */
-	private function render_admin_notices( WooPaymentsCutoverController $controller ): string {
+	private function render_admin_notices( CutoverController $controller ): string {
 		ob_start();
 		$controller->output_admin_notices();
 		return (string) ob_get_clean();
@@ -1880,17 +1880,17 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	 *
 	 * The service resolves them when a preflight runs, so the test doubles are set on the instance after init.
 	 *
-	 * @param WooPaymentsCutoverPreflightService                    $service                     The preflight service.
+	 * @param PreflightService                                      $service                     The preflight service.
 	 * @param WooPaymentsRuntimeArbiter                             $arbiter                     The runtime arbiter.
 	 * @param LegacyProxy                                           $legacy_proxy                The legacy proxy.
 	 * @param WooPaymentsProvider                                   $provider                    The native provider.
-	 * @param WooPaymentsBundledSubscriptionsGuard                  $bundled_subscriptions_guard  The bundled subscriptions guard.
+	 * @param BundledSubscriptionsGuard                             $bundled_subscriptions_guard  The bundled subscriptions guard.
 	 * @param WooPaymentsCanceledAuthorizationFeeRemediationService $fee_remediation_service     The fee remediation owner.
-	 * @param WooPaymentsPlatformConnectionService                  $platform_connection_service The platform connection readiness service.
+	 * @param PlatformConnectionService                             $platform_connection_service The platform connection readiness service.
 	 * @param WooPaymentsNativeAccountAdapter                       $rate_account         The rate account boundary.
 	 * @param WooPaymentsNativeApiClientAdapter                     $rate_api_client      The rate API client boundary.
 	 */
-	private function init_preflight_service( WooPaymentsCutoverPreflightService $service, WooPaymentsRuntimeArbiter $arbiter, LegacyProxy $legacy_proxy, WooPaymentsProvider $provider, WooPaymentsBundledSubscriptionsGuard $bundled_subscriptions_guard, WooPaymentsCanceledAuthorizationFeeRemediationService $fee_remediation_service, WooPaymentsPlatformConnectionService $platform_connection_service, WooPaymentsNativeAccountAdapter $rate_account, WooPaymentsNativeApiClientAdapter $rate_api_client ): void {
+	private function init_preflight_service( PreflightService $service, WooPaymentsRuntimeArbiter $arbiter, LegacyProxy $legacy_proxy, WooPaymentsProvider $provider, BundledSubscriptionsGuard $bundled_subscriptions_guard, WooPaymentsCanceledAuthorizationFeeRemediationService $fee_remediation_service, PlatformConnectionService $platform_connection_service, WooPaymentsNativeAccountAdapter $rate_account, WooPaymentsNativeApiClientAdapter $rate_api_client ): void {
 		$service->init( $arbiter, $legacy_proxy );
 
 		$collaborators = array(
@@ -1902,7 +1902,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 			'rate_api_client'             => $rate_api_client,
 		);
 		foreach ( $collaborators as $property => $collaborator ) {
-			$reflection = new \ReflectionProperty( WooPaymentsCutoverPreflightService::class, $property );
+			$reflection = new \ReflectionProperty( PreflightService::class, $property );
 			$reflection->setAccessible( true );
 			$reflection->setValue( $service, $collaborator );
 		}

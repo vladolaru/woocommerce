@@ -1,6 +1,6 @@
 <?php
 /**
- * WooPaymentsPerSiteActivationController class file.
+ * PerSiteActivationController class file.
  */
 
 declare( strict_types = 1 );
@@ -31,7 +31,7 @@ defined( 'ABSPATH' ) || exit;
  * @since 11.2.0
  * @internal
  */
-class WooPaymentsPerSiteActivationController implements RegisterHooksInterface {
+class PerSiteActivationController implements RegisterHooksInterface {
 
 	/** Query argument that carries the action. */
 	public const QUERY_ACTION = 'wc_woopayments_per_site_activation';
@@ -73,16 +73,16 @@ class WooPaymentsPerSiteActivationController implements RegisterHooksInterface {
 	/**
 	 * Cutover preflight service.
 	 *
-	 * @var WooPaymentsCutoverPreflightService
+	 * @var PreflightService
 	 */
-	private WooPaymentsCutoverPreflightService $preflight_service;
+	private PreflightService $preflight_service;
 
 	/**
 	 * The switch's job, which records an activation's rollback on a site with a cutover record.
 	 *
-	 * @var WooPaymentsCutoverReconciliationJob
+	 * @var ReconciliationJob
 	 */
-	private WooPaymentsCutoverReconciliationJob $reconciliation_job;
+	private ReconciliationJob $reconciliation_job;
 
 	/**
 	 * Legacy proxy.
@@ -110,13 +110,13 @@ class WooPaymentsPerSiteActivationController implements RegisterHooksInterface {
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsRuntimeArbiter           $arbiter            Runtime owner arbiter.
-	 * @param WooPaymentsCutoverPreflightService  $preflight_service  Cutover preflight service.
-	 * @param WooPaymentsCutoverReconciliationJob $reconciliation_job The switch's job.
-	 * @param LegacyProxy                         $legacy_proxy       Legacy proxy.
-	 * @param WooPaymentsSetupTier                $setup_tier         Setup tier.
+	 * @param WooPaymentsRuntimeArbiter $arbiter            Runtime owner arbiter.
+	 * @param PreflightService          $preflight_service  Cutover preflight service.
+	 * @param ReconciliationJob         $reconciliation_job The switch's job.
+	 * @param LegacyProxy               $legacy_proxy       Legacy proxy.
+	 * @param WooPaymentsSetupTier      $setup_tier         Setup tier.
 	 */
-	final public function init( WooPaymentsRuntimeArbiter $arbiter, WooPaymentsCutoverPreflightService $preflight_service, WooPaymentsCutoverReconciliationJob $reconciliation_job, LegacyProxy $legacy_proxy, WooPaymentsSetupTier $setup_tier ): void {
+	final public function init( WooPaymentsRuntimeArbiter $arbiter, PreflightService $preflight_service, ReconciliationJob $reconciliation_job, LegacyProxy $legacy_proxy, WooPaymentsSetupTier $setup_tier ): void {
 		$this->arbiter            = $arbiter;
 		$this->preflight_service  = $preflight_service;
 		$this->reconciliation_job = $reconciliation_job;

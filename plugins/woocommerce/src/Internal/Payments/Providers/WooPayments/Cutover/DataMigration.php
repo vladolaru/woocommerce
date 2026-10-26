@@ -1,6 +1,6 @@
 <?php
 /**
- * WooPaymentsCutoverDataMigration class file.
+ * DataMigration class file.
  */
 
 declare( strict_types = 1 );
@@ -38,7 +38,7 @@ defined( 'ABSPATH' ) || exit;
  * @since 11.2.0
  * @internal
  */
-class WooPaymentsCutoverDataMigration implements RegisterHooksInterface {
+class DataMigration implements RegisterHooksInterface {
 
 	/**
 	 * Option holding the completed migration version. Its stored name keeps "normalization", so migrated stores do not migrate again.
@@ -54,7 +54,7 @@ class WooPaymentsCutoverDataMigration implements RegisterHooksInterface {
 	 * Options the migration deletes, with the extension version that stopped reading each.
 	 *
 	 * Re-activating the extension is the rollback lever, so the cutover deletes only options that the cutover floor
-	 * (WooPaymentsCutoverPreflightService::MINIMUM_CUTOVER_PLUGIN_VERSION) no longer reads; raising the floor is the only way
+	 * (PreflightService::MINIMUM_CUTOVER_PLUGIN_VERSION) no longer reads; raising the floor is the only way
 	 * to widen this list. Each version is the first extension release tag with no read outside its own migrations.
 	 *
 	 * The extension's own Erase_Deprecated_Flags_And_Options migration deletes the same list for installs older than 9.8.0.

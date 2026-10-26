@@ -136,7 +136,7 @@ class WooPaymentsHookNamesContractTest extends WC_Unit_Test_Case {
 	 * hook's fire site directly (`NativePaymentsShadowMode` and the
 	 * `WooPaymentsEventIngestor`/`WooPaymentsSettingsService`/
 	 * `WooPaymentsTokenService`/`WooPaymentsGateway`/`WooPaymentsWooPaySessionService`/
-	 * `WooPaymentsExpressCheckoutService`/`WooPaymentsCutoverController` sites the gate's `PROVIDER_HOOKS` names).
+	 * `WooPaymentsExpressCheckoutService`/`CutoverController` sites the gate's `PROVIDER_HOOKS` names).
 	 *
 	 * `woocommerce_native_payments_shadow_mode_enabled` fires from two sites at the same arity:
 	 * `NativePaymentsShadowMode::is_shadow_mode_enabled()` and `NativePaymentsShadowMode::register_when_enabled()`

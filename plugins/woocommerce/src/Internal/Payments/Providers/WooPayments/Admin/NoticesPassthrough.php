@@ -7,7 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsCutoverController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\CutoverController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 
@@ -33,7 +33,7 @@ class NoticesPassthrough implements RegisterHooksInterface {
 	 */
 	private const KEPT_NOTICE_CLASSES = array(
 		CurrencyComplianceNotice::class,
-		WooPaymentsCutoverController::class,
+		CutoverController::class,
 	);
 
 	/**
@@ -66,7 +66,7 @@ class NoticesPassthrough implements RegisterHooksInterface {
 		if ( $this->is_woopayments_route() ) {
 			$kept_classes = self::KEPT_NOTICE_CLASSES;
 		} elseif ( $this->is_payments_tab() && wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->is_awaiting_switch() ) {
-			$kept_classes = array( WooPaymentsCutoverController::class );
+			$kept_classes = array( CutoverController::class );
 		} else {
 			return;
 		}

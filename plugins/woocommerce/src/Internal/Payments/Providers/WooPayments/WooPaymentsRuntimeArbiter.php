@@ -7,7 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsCutoverStateStore;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\StateStore;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 
 /**
@@ -142,10 +142,10 @@ class WooPaymentsRuntimeArbiter {
 	 * @return bool
 	 */
 	private function has_switched_from_extension(): bool {
-		$record = get_option( WooPaymentsCutoverStateStore::OPTION_NAME, null );
+		$record = get_option( StateStore::OPTION_NAME, null );
 
 		return is_array( $record )
-			&& ( WooPaymentsCutoverStateStore::STATE_DONE === ( $record['state'] ?? null ) || null !== ( $record['request_origin_token'] ?? null ) );
+			&& ( StateStore::STATE_DONE === ( $record['state'] ?? null ) || null !== ( $record['request_origin_token'] ?? null ) );
 	}
 
 	/**

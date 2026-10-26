@@ -17,10 +17,10 @@ use Automattic\WooCommerce\Internal\Payments\PaymentGatewayProviderInterface;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsConnectionFeatures;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAdminRestRouteRegistrar;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsCutoverController;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsCutoverDataMigration;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsCutoverPluginLifecycleListener;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsCutoverReconciliationJob;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\CutoverController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\DataMigration;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\PluginLifecycleListener;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\ReconciliationJob;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsWebhookReliabilityService;
@@ -74,11 +74,11 @@ class WooPaymentsClassesBySetupTierTest extends WC_Unit_Test_Case {
 		// where Jetpack's remote plugin management runs.
 		foreach ( array( WooPaymentsSetupTier::AVAILABLE, WooPaymentsSetupTier::CONNECTED, WooPaymentsSetupTier::ACTIVE ) as $state ) {
 			foreach ( array( 'front', 'admin', 'ajax', 'rest', 'cron', 'cli' ) as $request ) {
-				$this->assertContains( WooPaymentsCutoverPluginLifecycleListener::class, ( $matrix[ $state ][ $request ] ?? array() ), "The $state $request request must load the plugin lifecycle listener." );
+				$this->assertContains( PluginLifecycleListener::class, ( $matrix[ $state ][ $request ] ?? array() ), "The $state $request request must load the plugin lifecycle listener." );
 			}
 			// The controller owns the admin notices and the click, so it stays on admin requests.
 			foreach ( array( 'ajax', 'rest', 'cron', 'cli' ) as $request ) {
-				$this->assertNotContains( WooPaymentsCutoverController::class, ( $matrix[ $state ][ $request ] ?? array() ), "The $state $request request must not resolve the cutover controller." );
+				$this->assertNotContains( CutoverController::class, ( $matrix[ $state ][ $request ] ?? array() ), "The $state $request request must not resolve the cutover controller." );
 			}
 		}
 	}
@@ -88,7 +88,7 @@ class WooPaymentsClassesBySetupTierTest extends WC_Unit_Test_Case {
 	 */
 	public function test_available_tier_loads_only_the_cutover_classes(): void {
 		$matrix  = WooPaymentsProvider::get_classes_by_setup_tier();
-		$allowed = array( WooPaymentsCutoverController::class, WooPaymentsCutoverReconciliationJob::class, WooPaymentsCutoverPluginLifecycleListener::class );
+		$allowed = array( CutoverController::class, ReconciliationJob::class, PluginLifecycleListener::class );
 
 		foreach ( $matrix[ WooPaymentsSetupTier::AVAILABLE ] as $request => $classes ) {
 			$this->assertSame( array(), array_values( array_diff( $classes, $allowed ) ), "A $request request of a store without an account must load no payment class." );
@@ -166,11 +166,11 @@ class WooPaymentsClassesBySetupTierTest extends WC_Unit_Test_Case {
 	public function test_active_provider_matrix_bounds_cutover_normalization_to_maintenance_roots(): void {
 		$active_roots = WooPaymentsProvider::get_classes_by_setup_tier()[ WooPaymentsSetupTier::ACTIVE ];
 
-		$this->assertNotContains( WooPaymentsCutoverDataMigration::class, $active_roots['front'], 'A shopper request must not run cutover normalization.' );
-		$this->assertNotContains( WooPaymentsCutoverDataMigration::class, $active_roots['ajax'], 'An AJAX shopper request must not run cutover normalization.' );
-		$this->assertNotContains( WooPaymentsCutoverDataMigration::class, $active_roots['rest'], 'A REST shopper request must not run cutover normalization.' );
-		$this->assertSame( WooPaymentsCutoverDataMigration::class, $active_roots['admin'][0], 'Admin cutover normalization must run before bounded native consumers.' );
-		$this->assertSame( WooPaymentsCutoverDataMigration::class, $active_roots['cron'][0], 'Cron cutover normalization must run before bounded native consumers.' );
+		$this->assertNotContains( DataMigration::class, $active_roots['front'], 'A shopper request must not run cutover normalization.' );
+		$this->assertNotContains( DataMigration::class, $active_roots['ajax'], 'An AJAX shopper request must not run cutover normalization.' );
+		$this->assertNotContains( DataMigration::class, $active_roots['rest'], 'A REST shopper request must not run cutover normalization.' );
+		$this->assertSame( DataMigration::class, $active_roots['admin'][0], 'Admin cutover normalization must run before bounded native consumers.' );
+		$this->assertSame( DataMigration::class, $active_roots['cron'][0], 'Cron cutover normalization must run before bounded native consumers.' );
 	}
 
 	/** @testdox Cutover reconciliation is registered only on admin and cron roots in every available setup tier. */
@@ -178,11 +178,11 @@ class WooPaymentsClassesBySetupTierTest extends WC_Unit_Test_Case {
 		$matrix = WooPaymentsProvider::get_classes_by_setup_tier();
 
 		foreach ( array( WooPaymentsSetupTier::AVAILABLE, WooPaymentsSetupTier::CONNECTED, WooPaymentsSetupTier::ACTIVE ) as $state ) {
-			$this->assertContains( WooPaymentsCutoverReconciliationJob::class, $matrix[ $state ]['admin'], $state . ' admin requests must register cutover reconciliation.' );
-			$this->assertContains( WooPaymentsCutoverReconciliationJob::class, $matrix[ $state ]['cron'], $state . ' cron requests must register cutover reconciliation.' );
+			$this->assertContains( ReconciliationJob::class, $matrix[ $state ]['admin'], $state . ' admin requests must register cutover reconciliation.' );
+			$this->assertContains( ReconciliationJob::class, $matrix[ $state ]['cron'], $state . ' cron requests must register cutover reconciliation.' );
 
 			foreach ( array( 'front', 'ajax', 'rest' ) as $request_type ) {
-				$this->assertNotContains( WooPaymentsCutoverReconciliationJob::class, $matrix[ $state ][ $request_type ] ?? array(), $state . ' ' . $request_type . ' requests must not pay cutover reconciliation cost.' );
+				$this->assertNotContains( ReconciliationJob::class, $matrix[ $state ][ $request_type ] ?? array(), $state . ' ' . $request_type . ' requests must not pay cutover reconciliation cost.' );
 			}
 		}
 	}

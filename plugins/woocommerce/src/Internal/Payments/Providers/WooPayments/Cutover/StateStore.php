@@ -1,6 +1,6 @@
 <?php
 /**
- * WooPaymentsCutoverStateStore class file.
+ * StateStore class file.
  */
 
 declare( strict_types = 1 );
@@ -20,7 +20,7 @@ defined( 'ABSPATH' ) || exit;
  * @since 11.2.0
  * @internal
  */
-class WooPaymentsCutoverStateStore {
+class StateStore {
 
 	/** State option name. */
 	public const OPTION_NAME = 'woocommerce_woopayments_cutover_state';

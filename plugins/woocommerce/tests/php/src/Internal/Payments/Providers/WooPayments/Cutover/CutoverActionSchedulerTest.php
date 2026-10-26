@@ -1,6 +1,6 @@
 <?php
 /**
- * WooPaymentsCutoverActionScheduler tests.
+ * CutoverActionScheduler tests.
  */
 
 declare( strict_types = 1 );
@@ -9,20 +9,20 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\C
 
 use ActionScheduler;
 use ActionScheduler_Store;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsCutoverActionScheduler;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\CutoverActionScheduler;
 use WC_Unit_Test_Case;
 
 /**
- * Tests for WooPaymentsCutoverActionScheduler.
+ * Tests for CutoverActionScheduler.
  */
-class WooPaymentsCutoverActionSchedulerTest extends WC_Unit_Test_Case {
+class CutoverActionSchedulerTest extends WC_Unit_Test_Case {
 
 	/**
 	 * The System Under Test.
 	 *
-	 * @var WooPaymentsCutoverActionScheduler|null
+	 * @var CutoverActionScheduler|null
 	 */
-	private ?WooPaymentsCutoverActionScheduler $sut = null;
+	private ?CutoverActionScheduler $sut = null;
 
 	/**
 	 * Set up test fixtures.
@@ -30,7 +30,7 @@ class WooPaymentsCutoverActionSchedulerTest extends WC_Unit_Test_Case {
 	public function setUp(): void {
 		parent::setUp();
 
-		$this->sut = new WooPaymentsCutoverActionScheduler();
+		$this->sut = new CutoverActionScheduler();
 		$this->cleanup_actions();
 	}
 
@@ -38,7 +38,7 @@ class WooPaymentsCutoverActionSchedulerTest extends WC_Unit_Test_Case {
 	 * Tear down test fixtures.
 	 */
 	public function tearDown(): void {
-		if ( $this->sut instanceof WooPaymentsCutoverActionScheduler ) {
+		if ( $this->sut instanceof CutoverActionScheduler ) {
 			$this->cleanup_actions();
 		}
 

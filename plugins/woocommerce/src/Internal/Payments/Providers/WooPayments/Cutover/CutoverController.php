@@ -1,6 +1,6 @@
 <?php
 /**
- * WooPaymentsCutoverController class file.
+ * CutoverController class file.
  */
 
 declare( strict_types = 1 );
@@ -23,7 +23,7 @@ defined( 'ABSPATH' ) || exit;
  * @since 11.2.0
  * @internal
  */
-class WooPaymentsCutoverController implements RegisterHooksInterface {
+class CutoverController implements RegisterHooksInterface {
 
 	/**
 	 * Query action value that starts the switch.
@@ -119,32 +119,32 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	/**
 	 * Cutover preflight service.
 	 *
-	 * @var WooPaymentsCutoverPreflightService
+	 * @var PreflightService
 	 */
-	private WooPaymentsCutoverPreflightService $preflight_service;
+	private PreflightService $preflight_service;
 
 	/**
 	 * Durable reconciliation workflow.
 	 *
-	 * @var WooPaymentsCutoverReconciliationJob
+	 * @var ReconciliationJob
 	 */
-	private WooPaymentsCutoverReconciliationJob $reconciliation_job;
+	private ReconciliationJob $reconciliation_job;
 
 	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsRuntimeArbiter           $arbiter          Runtime owner arbiter.
-	 * @param LegacyProxy                         $legacy_proxy     Legacy proxy.
-	 * @param WooPaymentsCutoverPreflightService  $preflight_service Cutover preflight service.
-	 * @param WooPaymentsCutoverReconciliationJob $reconciliation_job Durable reconciliation workflow.
+	 * @param WooPaymentsRuntimeArbiter $arbiter          Runtime owner arbiter.
+	 * @param LegacyProxy               $legacy_proxy     Legacy proxy.
+	 * @param PreflightService          $preflight_service Cutover preflight service.
+	 * @param ReconciliationJob         $reconciliation_job Durable reconciliation workflow.
 	 */
 	final public function init(
 		WooPaymentsRuntimeArbiter $arbiter,
 		LegacyProxy $legacy_proxy,
-		WooPaymentsCutoverPreflightService $preflight_service,
-		WooPaymentsCutoverReconciliationJob $reconciliation_job
+		PreflightService $preflight_service,
+		ReconciliationJob $reconciliation_job
 	): void {
 		$this->arbiter            = $arbiter;
 		$this->legacy_proxy       = $legacy_proxy;
@@ -155,7 +155,7 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	/**
 	 * Register the admin notice and click hooks.
 	 *
-	 * The plugin lifecycle hooks are registered by WooPaymentsCutoverPluginLifecycleListener, which loads on every request
+	 * The plugin lifecycle hooks are registered by PluginLifecycleListener, which loads on every request
 	 * class where a plugin can change and calls this controller's handlers.
 	 */
 	public function register() {
@@ -205,7 +205,7 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 
 		$notice = isset( $_GET[ self::QUERY_NOTICE ] ) ? sanitize_key( wp_unslash( $_GET[ self::QUERY_NOTICE ] ) ) : '';
 		if ( self::NOTICE_START_SWITCH === $notice ) {
-			update_option( WooPaymentsCutoverReconciliationJob::START_NOTICE_SNOOZED_UNTIL_OPTION, (int) $this->legacy_proxy->call_function( 'time' ) + self::START_NOTICE_SNOOZE );
+			update_option( ReconciliationJob::START_NOTICE_SNOOZED_UNTIL_OPTION, (int) $this->legacy_proxy->call_function( 'time' ) + self::START_NOTICE_SNOOZE );
 		} else {
 			$this->reconciliation_job->dismiss_notice( $notice );
 		}
@@ -227,7 +227,7 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	/**
 	 * Build the nonce-protected dismiss URL for a cutover notice, returning to the current page.
 	 *
-	 * @param string $notice One of the WooPaymentsCutoverReconciliationJob::NOTICE_* constants, or NOTICE_START_SWITCH.
+	 * @param string $notice One of the ReconciliationJob::NOTICE_* constants, or NOTICE_START_SWITCH.
 	 * @return string
 	 */
 	private function get_dismiss_notice_url( string $notice ): string {
@@ -245,7 +245,7 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	/**
 	 * Build the nonce-protected dismiss link for a cutover notice.
 	 *
-	 * @param string $notice One of the WooPaymentsCutoverReconciliationJob::NOTICE_* constants.
+	 * @param string $notice One of the ReconciliationJob::NOTICE_* constants.
 	 * @return string
 	 */
 	private function get_dismiss_notice_link( string $notice ): string {
@@ -279,7 +279,7 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 		if ( ! $this->arbiter->is_builtin_enabled() || ! $this->can_start_cutover() ) {
 			return false;
 		}
-		if ( $this->reconciliation_job->enqueue( WooPaymentsCutoverReconciliationJob::SOURCE_MERCHANT ) ) {
+		if ( $this->reconciliation_job->enqueue( ReconciliationJob::SOURCE_MERCHANT ) ) {
 			return true;
 		}
 
@@ -307,7 +307,7 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	/**
 	 * Open a new generation when activating the WooPayments extension again rolls back a completed cutover.
 	 *
-	 * An activation for every site of a multisite is recorded for each site by WooPaymentsPerSiteActivationController, which
+	 * An activation for every site of a multisite is recorded for each site by PerSiteActivationController, which
 	 * runs where no setup tier loads this controller. A switched site whose rollback was not recorded is reopened the next
 	 * time an admin page reads its record.
 	 *
@@ -340,7 +340,7 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	 * @param string $plugin Activated or deactivated plugin path.
 	 */
 	private function maybe_forget_admin_classification( string $plugin ): void {
-		if ( WooPaymentsBundledSubscriptionsGuard::SUBSCRIPTIONS_PLUGIN_FILE === basename( $plugin ) ) {
+		if ( BundledSubscriptionsGuard::SUBSCRIPTIONS_PLUGIN_FILE === basename( $plugin ) ) {
 			$this->reconciliation_job->forget_admin_classification();
 		}
 	}
@@ -383,7 +383,7 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 			return;
 		}
 
-		$this->reconciliation_job->enqueue( WooPaymentsCutoverReconciliationJob::SOURCE_MANDATORY );
+		$this->reconciliation_job->enqueue( ReconciliationJob::SOURCE_MANDATORY );
 	}
 
 	/**
@@ -509,7 +509,7 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	 * @return bool
 	 */
 	private function is_start_notice_snoozed(): bool {
-		return (int) get_option( WooPaymentsCutoverReconciliationJob::START_NOTICE_SNOOZED_UNTIL_OPTION, 0 ) > (int) $this->legacy_proxy->call_function( 'time' );
+		return (int) get_option( ReconciliationJob::START_NOTICE_SNOOZED_UNTIL_OPTION, 0 ) > (int) $this->legacy_proxy->call_function( 'time' );
 	}
 
 	/**
@@ -559,16 +559,16 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 				$this->output_start_notice();
 				return;
 			}
-			if ( in_array( $record['state'], array( WooPaymentsCutoverStateStore::STATE_PENDING, WooPaymentsCutoverStateStore::STATE_RUNNING, WooPaymentsCutoverStateStore::STATE_DEFERRED ), true ) ) {
+			if ( in_array( $record['state'], array( StateStore::STATE_PENDING, StateStore::STATE_RUNNING, StateStore::STATE_DEFERRED ), true ) ) {
 				echo '<div class="notice notice-info"><p>' . esc_html__( 'Switch in progress', 'woocommerce' ) . '</p></div>';
 				// A switch whose extension became active for every site after its start waits for the per-site activation, and stops saying so once it no longer is.
-				if ( WooPaymentsCutoverStateStore::STATE_DEFERRED === $record['state'] && $this->preflight_service->is_woopayments_network_active() && in_array( WooPaymentsCutoverReconciliationJob::CODE_PLUGIN_ACTIVE_SITEWIDE, (array) ( $record[ WooPaymentsCutoverStateStore::BLOCKING_CODES_KEY ] ?? array() ), true ) ) {
+				if ( StateStore::STATE_DEFERRED === $record['state'] && $this->preflight_service->is_woopayments_network_active() && in_array( ReconciliationJob::CODE_PLUGIN_ACTIVE_SITEWIDE, (array) ( $record[ StateStore::BLOCKING_CODES_KEY ] ?? array() ), true ) ) {
 					$this->output_sitewide_refusal_notice();
 				}
 				// The job could not bring the extension files up to the supported version, so retries alone never finish. An
 				// extension updated by hand clears it: its files carry the new version at once, and the version it records once
 				// it runs stays recorded after a deactivation, which leaves no active file to read.
-				if ( WooPaymentsCutoverStateStore::STATE_DEFERRED === $record['state'] && in_array( WooPaymentsCutoverPreflightService::FAILURE_PLUGIN_VERSION_UNSUPPORTED, (array) ( $record[ WooPaymentsCutoverStateStore::BLOCKING_CODES_KEY ] ?? array() ), true ) && ! $this->preflight_service->is_woopayments_plugin_version_supported() && ! $this->reconciliation_job->is_installed_woopayments_plugin_version_supported() ) {
+				if ( StateStore::STATE_DEFERRED === $record['state'] && in_array( PreflightService::FAILURE_PLUGIN_VERSION_UNSUPPORTED, (array) ( $record[ StateStore::BLOCKING_CODES_KEY ] ?? array() ), true ) && ! $this->preflight_service->is_woopayments_plugin_version_supported() && ! $this->reconciliation_job->is_installed_woopayments_plugin_version_supported() ) {
 					$this->output_extension_update_warning();
 				}
 				// Shown until dismissed; rendering claims nothing, since some screens hide notices.
@@ -577,15 +577,15 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 				}
 				return;
 			}
-			if ( WooPaymentsCutoverStateStore::STATE_EXCLUDED === $record['state'] ) {
+			if ( StateStore::STATE_EXCLUDED === $record['state'] ) {
 				if ( $this->reconciliation_job->is_bundled_exclusion_notice_due( $record ) ) {
 					$this->output_bundled_exclusion_notice();
 				}
 				return;
 			}
-			if ( WooPaymentsCutoverStateStore::STATE_DONE === $record['state'] && ! $this->arbiter->is_extension_owner() ) {
+			if ( StateStore::STATE_DONE === $record['state'] && ! $this->arbiter->is_extension_owner() ) {
 				// Shown until dismissed; rendering claims nothing, since some screens hide notices.
-				if ( $this->reconciliation_job->is_completion_notice_due( $record, WooPaymentsCutoverReconciliationJob::NOTICE_SUCCESS ) ) {
+				if ( $this->reconciliation_job->is_completion_notice_due( $record, ReconciliationJob::NOTICE_SUCCESS ) ) {
 					$this->output_success_notice();
 				}
 				return;
@@ -603,7 +603,7 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 		echo '<div class="notice notice-info"><p>' . esc_html__( 'WooPayments is now part of WooCommerce. This store can\'t switch yet because the WooPayments extension is active for every site of the network. A super admin first needs to activate WooPayments on each site instead.', 'woocommerce' ) . '</p>';
 		if ( $this->legacy_proxy->call_function( 'current_user_can', 'manage_network_plugins' ) ) {
 			echo '<p>';
-			WooPaymentsPerSiteActivationController::output_button();
+			PerSiteActivationController::output_button();
 			echo '</p>';
 		}
 		echo '</div>';
@@ -625,7 +625,7 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	private function output_reconnect_notice(): void {
 		?>
 		<div class="notice notice-info" style="position:relative;">
-			<?php echo $this->get_dismiss_notice_link( WooPaymentsCutoverReconciliationJob::NOTICE_RECONNECT ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped when built. ?>
+			<?php echo $this->get_dismiss_notice_link( ReconciliationJob::NOTICE_RECONNECT ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped when built. ?>
 			<p><?php esc_html_e( 'The connection owner is no longer available. Reconnect this site to continue the switch.', 'woocommerce' ); ?></p>
 		</div>
 		<?php
@@ -643,7 +643,7 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 			: __( 'Until then nothing changes and WooPayments keeps running from the WooPayments extension.', 'woocommerce' );
 		?>
 		<div class="notice notice-info" style="position:relative;">
-			<?php echo $this->get_dismiss_notice_link( WooPaymentsCutoverReconciliationJob::NOTICE_BUNDLED_EXCLUSION ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped when built. ?>
+			<?php echo $this->get_dismiss_notice_link( ReconciliationJob::NOTICE_BUNDLED_EXCLUSION ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped when built. ?>
 			<p><?php esc_html_e( "WooPayments is now part of WooCommerce, but this store can't switch yet. Its subscriptions are billed through Stripe Billing, which needs the Woo Subscriptions extension. Install and activate Woo Subscriptions to make the switch available.", 'woocommerce' ); ?> <?php echo esc_html( $last_sentence ); ?></p>
 		</div>
 		<?php
@@ -655,7 +655,7 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	private function output_success_notice(): void {
 		?>
 		<div class="notice notice-success" style="position:relative;">
-			<?php echo $this->get_dismiss_notice_link( WooPaymentsCutoverReconciliationJob::NOTICE_SUCCESS ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped when built. ?>
+			<?php echo $this->get_dismiss_notice_link( ReconciliationJob::NOTICE_SUCCESS ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped when built. ?>
 			<p><?php esc_html_e( 'WooPayments is now built into WooCommerce. Everything works as before.', 'woocommerce' ); ?></p>
 		</div>
 		<?php

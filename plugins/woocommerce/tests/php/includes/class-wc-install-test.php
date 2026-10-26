@@ -4,7 +4,7 @@ declare( strict_types = 1 );
 use Automattic\WooCommerce\Admin\Notes\Note;
 use Automattic\WooCommerce\Caches\ProductCountCache;
 use Automattic\WooCommerce\Enums\ProductStatus;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsCutoverStateStore;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\StateStore;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
 use Automattic\WooCommerce\RestApi\UnitTests\LoggerSpyTrait;
 
@@ -452,18 +452,18 @@ class WC_Install_Test extends \WC_Unit_Test_Case {
 	 */
 	public function test_create_options_seeds_the_absent_cutover_record(): void {
 		global $wpdb;
-		delete_option( WooPaymentsCutoverStateStore::OPTION_NAME );
+		delete_option( StateStore::OPTION_NAME );
 
 		try {
 			$this->invoke_create_options();
 			wp_load_alloptions( true );
 
 			$queries = $wpdb->num_queries;
-			$this->assertNull( ( new WooPaymentsCutoverStateStore() )->get_record() );
+			$this->assertNull( ( new StateStore() )->get_record() );
 			$this->assertSame( 0, $wpdb->num_queries - $queries, 'Reading the missing cutover record must not query the options table.' );
-			$this->assertSame( 'none', get_option( WooPaymentsCutoverStateStore::OPTION_NAME ) );
+			$this->assertSame( 'none', get_option( StateStore::OPTION_NAME ) );
 		} finally {
-			delete_option( WooPaymentsCutoverStateStore::OPTION_NAME );
+			delete_option( StateStore::OPTION_NAME );
 		}
 	}
 
@@ -472,16 +472,16 @@ class WC_Install_Test extends \WC_Unit_Test_Case {
 	 */
 	public function test_create_options_keeps_existing_woopayments_runtime_options(): void {
 		update_option( 'woocommerce_woopayments_setup_tier', 'active', true );
-		update_option( WooPaymentsCutoverStateStore::OPTION_NAME, array( 'state' => 'done' ), true );
+		update_option( StateStore::OPTION_NAME, array( 'state' => 'done' ), true );
 
 		try {
 			$this->invoke_create_options();
 
 			$this->assertSame( 'active', get_option( 'woocommerce_woopayments_setup_tier' ) );
-			$this->assertSame( array( 'state' => 'done' ), get_option( WooPaymentsCutoverStateStore::OPTION_NAME ) );
+			$this->assertSame( array( 'state' => 'done' ), get_option( StateStore::OPTION_NAME ) );
 		} finally {
 			delete_option( 'woocommerce_woopayments_setup_tier' );
-			delete_option( WooPaymentsCutoverStateStore::OPTION_NAME );
+			delete_option( StateStore::OPTION_NAME );
 		}
 	}
 
@@ -494,8 +494,8 @@ class WC_Install_Test extends \WC_Unit_Test_Case {
 	public function test_create_options_keeps_woopayments_values_written_after_a_missed_read(): void {
 		global $wpdb;
 		$written = array(
-			'woocommerce_woopayments_setup_tier'      => 'active',
-			WooPaymentsCutoverStateStore::OPTION_NAME => maybe_serialize(
+			'woocommerce_woopayments_setup_tier' => 'active',
+			StateStore::OPTION_NAME              => maybe_serialize(
 				array(
 					'state'      => 'pending',
 					'generation' => 1,

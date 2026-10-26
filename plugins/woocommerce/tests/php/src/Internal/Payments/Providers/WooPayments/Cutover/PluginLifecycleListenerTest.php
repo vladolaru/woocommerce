@@ -1,6 +1,6 @@
 <?php
 /**
- * WooPaymentsCutoverPluginLifecycleListenerTest class file.
+ * PluginLifecycleListenerTest class file.
  */
 
 declare( strict_types = 1 );
@@ -8,27 +8,27 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Cutover;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsCutoverController;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsCutoverPluginLifecycleListener;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\CutoverController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\PluginLifecycleListener;
 use PHPUnit\Framework\MockObject\MockObject;
 use WC_Unit_Test_Case;
 
 /**
  * Tests for the plugin lifecycle hooks the cutover listens to on every request class.
  */
-class WooPaymentsCutoverPluginLifecycleListenerTest extends WC_Unit_Test_Case {
+class PluginLifecycleListenerTest extends WC_Unit_Test_Case {
 
 	/**
 	 * System under test.
 	 *
-	 * @var WooPaymentsCutoverPluginLifecycleListener
+	 * @var PluginLifecycleListener
 	 */
-	private WooPaymentsCutoverPluginLifecycleListener $sut;
+	private PluginLifecycleListener $sut;
 
 	/**
 	 * Cutover controller double, resolved by the listener from the container.
 	 *
-	 * @var WooPaymentsCutoverController&MockObject
+	 * @var CutoverController&MockObject
 	 */
 	private $controller;
 
@@ -37,9 +37,9 @@ class WooPaymentsCutoverPluginLifecycleListenerTest extends WC_Unit_Test_Case {
 	 */
 	public function setUp(): void {
 		parent::setUp();
-		$this->controller = $this->createMock( WooPaymentsCutoverController::class );
-		wc_get_container()->replace( WooPaymentsCutoverController::class, $this->controller );
-		$this->sut = new WooPaymentsCutoverPluginLifecycleListener();
+		$this->controller = $this->createMock( CutoverController::class );
+		wc_get_container()->replace( CutoverController::class, $this->controller );
+		$this->sut = new PluginLifecycleListener();
 		$this->sut->register();
 	}
 
@@ -50,7 +50,7 @@ class WooPaymentsCutoverPluginLifecycleListenerTest extends WC_Unit_Test_Case {
 		remove_action( 'activate_plugin', array( $this->sut, 'guard_woopayments_activation' ) );
 		remove_action( 'activated_plugin', array( $this->sut, 'handle_plugin_activated' ), 10 );
 		remove_action( 'deactivated_plugin', array( $this->sut, 'handle_plugin_deactivated' ), 10 );
-		wc_get_container()->reset_replacement( WooPaymentsCutoverController::class );
+		wc_get_container()->reset_replacement( CutoverController::class );
 		parent::tearDown();
 	}
 

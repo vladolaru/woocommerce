@@ -1,6 +1,6 @@
 <?php
 /**
- * WooPaymentsCutoverPluginLifecycleListener class file.
+ * PluginLifecycleListener class file.
  */
 
 declare( strict_types = 1 );
@@ -21,7 +21,7 @@ use Automattic\WooCommerce\Internal\RegisterHooksInterface;
  * @since 11.2.0
  * @internal
  */
-class WooPaymentsCutoverPluginLifecycleListener implements RegisterHooksInterface {
+class PluginLifecycleListener implements RegisterHooksInterface {
 
 	/**
 	 * Register the plugin lifecycle hooks.
@@ -36,7 +36,7 @@ class WooPaymentsCutoverPluginLifecycleListener implements RegisterHooksInterfac
 	 * Refuse a WooPayments activation the cutover does not allow, from any plugin folder.
 	 *
 	 * The guard matches the arbiter's identity rule, the main file name in any folder, rather than the canonical
-	 * folder's own activation hook. A network-wide activation is checked site by site by WooPaymentsPerSiteActivationController.
+	 * folder's own activation hook. A network-wide activation is checked site by site by PerSiteActivationController.
 	 *
 	 * @internal
 	 *
@@ -78,9 +78,9 @@ class WooPaymentsCutoverPluginLifecycleListener implements RegisterHooksInterfac
 	/**
 	 * Get the cutover controller.
 	 *
-	 * @return WooPaymentsCutoverController
+	 * @return CutoverController
 	 */
-	private function get_controller(): WooPaymentsCutoverController {
-		return wc_get_container()->get( WooPaymentsCutoverController::class );
+	private function get_controller(): CutoverController {
+		return wc_get_container()->get( CutoverController::class );
 	}
 }

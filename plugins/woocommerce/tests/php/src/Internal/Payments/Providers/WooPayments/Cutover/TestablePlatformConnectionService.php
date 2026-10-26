@@ -1,6 +1,6 @@
 <?php
 /**
- * TestableWooPaymentsPlatformConnectionService class file.
+ * TestablePlatformConnectionService class file.
  */
 
 declare( strict_types = 1 );
@@ -8,12 +8,12 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Cutover;
 
 use Automattic\Jetpack\Connection\Manager as JetpackConnectionManager;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsPlatformConnectionService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\PlatformConnectionService;
 
 /**
  * Testable WooPayments platform connection service.
  */
-class TestableWooPaymentsPlatformConnectionService extends WooPaymentsPlatformConnectionService {
+class TestablePlatformConnectionService extends PlatformConnectionService {
 
 	/**
 	 * Jetpack connection manager.

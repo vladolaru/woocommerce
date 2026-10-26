@@ -1284,7 +1284,7 @@ class WC_Install {
 
 		// The built-in WooPayments reads its setup tier and cutover record on every request; autoloaded defaults keep dormant stores from querying missing options.
 		self::seed_autoloaded_option( 'woocommerce_woopayments_setup_tier', 'disabled' );
-		// The cutover record starts as the absent marker (WooPaymentsCutoverStateStore::ABSENT_RECORD), so the admin and cron requests that read it run no query. Cutover/README.md lists this seed with what goes with the Cutover folder.
+		// The cutover record starts as the absent marker (StateStore::ABSENT_RECORD), so the admin and cron requests that read it run no query. Cutover/README.md lists this seed with what goes with the Cutover folder.
 		self::seed_autoloaded_option( 'woocommerce_woopayments_cutover_state', 'none' );
 
 		if ( self::is_new_install() ) {

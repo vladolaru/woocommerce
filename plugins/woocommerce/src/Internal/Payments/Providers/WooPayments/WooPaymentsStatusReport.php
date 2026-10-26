@@ -11,8 +11,8 @@ use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\RateService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\DebugTools;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\HttpClient;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsCutoverPreflightService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsCutoverStateStore;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\PreflightService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\StateStore;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsCurrencyRateProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsWebhookReliabilityService;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
@@ -65,9 +65,9 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 	/**
 	 * Cutover preflight service.
 	 *
-	 * @var WooPaymentsCutoverPreflightService|null
+	 * @var PreflightService|null
 	 */
-	private ?WooPaymentsCutoverPreflightService $cutover_preflight_service = null;
+	private ?PreflightService $cutover_preflight_service = null;
 
 	/**
 	 * Setup tier.
@@ -79,9 +79,9 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 	/**
 	 * Cutover state store.
 	 *
-	 * @var WooPaymentsCutoverStateStore|null
+	 * @var StateStore|null
 	 */
-	private ?WooPaymentsCutoverStateStore $cutover_state_store = null;
+	private ?StateStore $cutover_state_store = null;
 
 	/**
 	 * Initialize the class instance.
@@ -865,11 +865,11 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 	/**
 	 * Get the cutover preflight service, resolving it on first use.
 	 *
-	 * @return WooPaymentsCutoverPreflightService
+	 * @return PreflightService
 	 */
-	private function get_cutover_preflight_service(): WooPaymentsCutoverPreflightService {
+	private function get_cutover_preflight_service(): PreflightService {
 		if ( null === $this->cutover_preflight_service ) {
-			$this->cutover_preflight_service = wc_get_container()->get( WooPaymentsCutoverPreflightService::class );
+			$this->cutover_preflight_service = wc_get_container()->get( PreflightService::class );
 		}
 
 		return $this->cutover_preflight_service;
@@ -878,11 +878,11 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 	/**
 	 * Get the cutover state store, resolving it on first use.
 	 *
-	 * @return WooPaymentsCutoverStateStore
+	 * @return StateStore
 	 */
-	private function get_cutover_state_store(): WooPaymentsCutoverStateStore {
+	private function get_cutover_state_store(): StateStore {
 		if ( null === $this->cutover_state_store ) {
-			$this->cutover_state_store = wc_get_container()->get( WooPaymentsCutoverStateStore::class );
+			$this->cutover_state_store = wc_get_container()->get( StateStore::class );
 		}
 
 		return $this->cutover_state_store;

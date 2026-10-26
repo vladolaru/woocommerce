@@ -1,6 +1,6 @@
 <?php
 /**
- * WooPaymentsPlatformConnectionService tests.
+ * PlatformConnectionService tests.
  */
 
 declare( strict_types = 1 );
@@ -9,14 +9,14 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\C
 
 use Automattic\Jetpack\Connection\Manager as JetpackConnectionManager;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\HttpClient;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsPlatformConnectionService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\PlatformConnectionService;
 use Jetpack_Options;
 use WC_Unit_Test_Case;
 
 /**
  * Tests for the WooPayments platform connection readiness service.
  */
-class WooPaymentsPlatformConnectionServiceTest extends WC_Unit_Test_Case {
+class PlatformConnectionServiceTest extends WC_Unit_Test_Case {
 
 	/**
 	 * Clear the connection state the real Jetpack connection manager keeps.
@@ -36,7 +36,7 @@ class WooPaymentsPlatformConnectionServiceTest extends WC_Unit_Test_Case {
 	 * @param array<string> $expected            Expected failure codes.
 	 */
 	public function test_get_preflight_failures( bool $is_connected, int $connection_owner_id, ?int $blog_id, array $expected ): void {
-		$sut          = new TestableWooPaymentsPlatformConnectionService();
+		$sut          = new TestablePlatformConnectionService();
 		$sut->manager = $this->create_connection_manager( $is_connected, $connection_owner_id );
 		$http_client  = $this->createMock( HttpClient::class );
 		$http_client->method( 'get_blog_id' )->willReturn( $blog_id );
@@ -169,10 +169,10 @@ class WooPaymentsPlatformConnectionServiceTest extends WC_Unit_Test_Case {
 	 * Create the service over a Jetpack connection manager and a WordPress.com blog ID.
 	 *
 	 * @param JetpackConnectionManager $manager Jetpack connection manager.
-	 * @return TestableWooPaymentsPlatformConnectionService
+	 * @return TestablePlatformConnectionService
 	 */
-	private function create_service( JetpackConnectionManager $manager ): TestableWooPaymentsPlatformConnectionService {
-		$sut          = new TestableWooPaymentsPlatformConnectionService();
+	private function create_service( JetpackConnectionManager $manager ): TestablePlatformConnectionService {
+		$sut          = new TestablePlatformConnectionService();
 		$sut->manager = $manager;
 		$http_client  = $this->createMock( HttpClient::class );
 		$http_client->method( 'get_blog_id' )->willReturn( 123 );

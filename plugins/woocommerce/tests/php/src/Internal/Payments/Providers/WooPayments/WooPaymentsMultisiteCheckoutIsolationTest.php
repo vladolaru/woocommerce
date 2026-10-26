@@ -13,7 +13,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGa
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsCutoverStateStore;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\StateStore;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
@@ -75,7 +75,7 @@ class WooPaymentsMultisiteCheckoutIsolationTest extends WC_Unit_Test_Case {
 			$customer_service = wc_get_container()->get( WooPaymentsCustomerService::class );
 			$token_service    = wc_get_container()->get( WooPaymentsTokenService::class );
 			$runtime_arbiter  = wc_get_container()->get( WooPaymentsRuntimeArbiter::class );
-			$cutover_store    = new WooPaymentsCutoverStateStore();
+			$cutover_store    = new StateStore();
 
 			$this->assert_site_fixture(
 				$primary,
@@ -468,7 +468,7 @@ class WooPaymentsMultisiteCheckoutIsolationTest extends WC_Unit_Test_Case {
 		);
 		update_user_option( $user_id, WooPaymentsCustomerService::LIVE_CUSTOMER_ID_OPTION, 'cus_' . $slug, false );
 
-		$cutover_store = new WooPaymentsCutoverStateStore();
+		$cutover_store = new StateStore();
 		$cutover_store->create_record( $this->valid_cutover_record( $generation ) );
 
 		$token_id = $this->create_card_token( $user_id, 'pm_' . $slug );
@@ -506,13 +506,13 @@ class WooPaymentsMultisiteCheckoutIsolationTest extends WC_Unit_Test_Case {
 	/**
 	 * Assert that shared services expose only the current site's fixture.
 	 *
-	 * @param array<string,mixed>          $fixture          Site fixture.
-	 * @param int                          $user_id          Network user ID.
-	 * @param WooPaymentsAccountService    $account_service Account service.
-	 * @param WooPaymentsCustomerService   $customer_service Customer service.
-	 * @param WooPaymentsTokenService      $token_service    Token service.
-	 * @param WooPaymentsRuntimeArbiter    $runtime_arbiter Runtime arbiter.
-	 * @param WooPaymentsCutoverStateStore $cutover_store Cutover state store.
+	 * @param array<string,mixed>        $fixture          Site fixture.
+	 * @param int                        $user_id          Network user ID.
+	 * @param WooPaymentsAccountService  $account_service Account service.
+	 * @param WooPaymentsCustomerService $customer_service Customer service.
+	 * @param WooPaymentsTokenService    $token_service    Token service.
+	 * @param WooPaymentsRuntimeArbiter  $runtime_arbiter Runtime arbiter.
+	 * @param StateStore                 $cutover_store Cutover state store.
 	 */
 	private function assert_site_fixture(
 		array $fixture,
@@ -521,7 +521,7 @@ class WooPaymentsMultisiteCheckoutIsolationTest extends WC_Unit_Test_Case {
 		WooPaymentsCustomerService $customer_service,
 		WooPaymentsTokenService $token_service,
 		WooPaymentsRuntimeArbiter $runtime_arbiter,
-		WooPaymentsCutoverStateStore $cutover_store
+		StateStore $cutover_store
 	): void {
 		$slug = $fixture['slug'];
 
@@ -543,10 +543,10 @@ class WooPaymentsMultisiteCheckoutIsolationTest extends WC_Unit_Test_Case {
 	 */
 	private function valid_cutover_record( int $generation ): array {
 		return array(
-			'schema_version'         => WooPaymentsCutoverStateStore::SCHEMA_VERSION,
+			'schema_version'         => StateStore::SCHEMA_VERSION,
 			'generation'             => $generation,
 			'revision'               => 1,
-			'state'                  => WooPaymentsCutoverStateStore::STATE_DEFERRED,
+			'state'                  => StateStore::STATE_DEFERRED,
 			'started_at'             => 1_700_000_000,
 			'updated_at'             => 1_700_000_100,
 			'attempt'                => 1,
@@ -573,8 +573,8 @@ class WooPaymentsMultisiteCheckoutIsolationTest extends WC_Unit_Test_Case {
 		delete_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION );
 		delete_option( 'woocommerce_woocommerce_payments_settings' );
 		delete_option( 'wcpay_account_data' );
-		delete_option( WooPaymentsCutoverStateStore::OPTION_NAME );
-		delete_option( WooPaymentsCutoverStateStore::LEASE_OPTION_NAME );
+		delete_option( StateStore::OPTION_NAME );
+		delete_option( StateStore::LEASE_OPTION_NAME );
 	}
 
 	/**

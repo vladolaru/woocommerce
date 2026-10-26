@@ -35,7 +35,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\WooPay
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentOperationService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsCutoverPluginLifecycleListener;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\PluginLifecycleListener;
 use WC_Order;
 use WC_Order_Refund;
 use WC_Payment_Tokens;
@@ -362,7 +362,7 @@ class WooPaymentsSetupTierRequestsTest extends WC_Unit_Test_Case {
 		$this->assertSame( 0, $account_option_reads, 'No class may read the stored account while plugins load.' );
 		$this->assertSame( 0, $jetpack_private_reads, 'No class may read the store\'s WordPress.com tokens while plugins load.' );
 		// The lifecycle listener loads on every tier and request type, so the boot registered the request's classes.
-		$this->assertSame( 10, has_action( 'activate_plugin', array( $container->get( WooPaymentsCutoverPluginLifecycleListener::class ), 'guard_woopayments_activation' ) ) );
+		$this->assertSame( 10, has_action( 'activate_plugin', array( $container->get( PluginLifecycleListener::class ), 'guard_woopayments_activation' ) ) );
 	}
 
 	/**
