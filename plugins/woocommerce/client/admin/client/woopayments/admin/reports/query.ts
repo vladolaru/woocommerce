@@ -133,6 +133,12 @@ const getDateFilterQuery = (
 		};
 	}
 
+	// DataViews commits a range with one bound empty while the merchant types the other (since 18.0.0,
+	// #81150); like DataViews' own `between`, it does not filter until both are set.
+	if ( operator === 'between' ) {
+		return {};
+	}
+
 	const date = getSingleString( value );
 
 	if ( ! date ) {

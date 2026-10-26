@@ -295,6 +295,25 @@ jest.mock( '@wordpress/dataviews/wp', () => ( {
 								filter.field === 'date'
 									? {
 											...filter,
+											operator: 'between',
+											value: [ '2026-07-13', '' ],
+										}
+									: filter
+							),
+						} )
+					}
+				>
+					Mock type only the Date range start
+				</button>
+				<button
+					type="button"
+					onClick={ () =>
+						onChangeView?.( {
+							...view,
+							filters: ( view.filters || [] ).map( ( filter ) =>
+								filter.field === 'date'
+									? {
+											...filter,
 											value: [
 												'2026-07-13',
 												'2026-07-20',
@@ -1720,61 +1739,80 @@ describe( 'WooPayments money movement pages', () => {
 		} );
 	} );
 
-	it( 'keeps the applied Date URL while a between range is incomplete and commits the complete range once', async () => {
-		mockGetTransactions.mockResolvedValue( { data: [], total_count: 0 } );
-		mockGetTransactionsSummary.mockResolvedValue( { count: 0, total: 0 } );
+	// DataViews leaves a new operator's value unset; since 18.0.0 (Gutenberg #81150) it also commits a
+	// range whose other bound is still empty while the merchant types.
+	it.each( [
+		[
+			'without a value',
+			'Mock change Date to between',
+			'[{"field":"date","operator":"between"}]',
+		],
+		[
+			'with only its start typed',
+			'Mock type only the Date range start',
+			'[{"field":"date","operator":"between","value":["2026-07-13",""]}]',
+		],
+	] )(
+		'keeps the applied Date URL while a between range is %s and commits the complete range once',
+		async ( _state, incompleteButton, incompleteFilters ) => {
+			mockGetTransactions.mockResolvedValue( {
+				data: [],
+				total_count: 0,
+			} );
+			mockGetTransactionsSummary.mockResolvedValue( {
+				count: 0,
+				total: 0,
+			} );
 
-		render(
-			<MemoryRouter
-				initialEntries={ [
-					'/woopayments/transactions?date_after=2026-07-13',
-				] }
-			>
-				<MoneyMovementRouterBridge />
-				<WooPaymentsTransactionsPage />
-			</MemoryRouter>
-		);
+			render(
+				<MemoryRouter
+					initialEntries={ [
+						'/woopayments/transactions?date_after=2026-07-13',
+					] }
+				>
+					<MoneyMovementRouterBridge />
+					<WooPaymentsTransactionsPage />
+				</MemoryRouter>
+			);
 
-		await screen.findByText( summaryItem( '0 transactions' ) );
-		mockHistoryPush.mockClear();
-		const initialRequestCount = mockGetTransactions.mock.calls.length;
+			await screen.findByText( summaryItem( '0 transactions' ) );
+			mockHistoryPush.mockClear();
+			const initialRequestCount = mockGetTransactions.mock.calls.length;
 
-		await userEvent.click(
-			screen.getByRole( 'button', {
-				name: 'Mock change Date to between',
-			} )
-		);
-		expect(
-			screen.getByTestId( 'money-movement-route' )
-		).toHaveTextContent( 'date_after=2026-07-13' );
-		expect(
-			screen.getByTestId( 'money-movement-dataviews' )
-		).toHaveAttribute(
-			'data-view-filters',
-			'[{"field":"date","operator":"between"}]'
-		);
-		expect( mockHistoryPush ).not.toHaveBeenCalled();
-		expect( mockGetTransactions ).toHaveBeenCalledTimes(
-			initialRequestCount
-		);
-
-		await userEvent.click(
-			screen.getByRole( 'button', { name: 'Mock complete Date range' } )
-		);
-		await waitFor( () => {
-			expect( mockHistoryPush ).toHaveBeenCalledTimes( 1 );
+			await userEvent.click(
+				screen.getByRole( 'button', { name: incompleteButton } )
+			);
 			expect(
 				screen.getByTestId( 'money-movement-route' )
-			).toHaveTextContent(
-				'date_between=2026-07-13&date_between=2026-07-20'
+			).toHaveTextContent( 'date_after=2026-07-13' );
+			expect(
+				screen.getByTestId( 'money-movement-dataviews' )
+			).toHaveAttribute( 'data-view-filters', incompleteFilters );
+			expect( mockHistoryPush ).not.toHaveBeenCalled();
+			expect( mockGetTransactions ).toHaveBeenCalledTimes(
+				initialRequestCount
 			);
-			expect( mockGetTransactions ).toHaveBeenLastCalledWith(
-				expect.objectContaining( {
-					date_between: [ '2026-07-13', '2026-07-20' ],
+
+			await userEvent.click(
+				screen.getByRole( 'button', {
+					name: 'Mock complete Date range',
 				} )
 			);
-		} );
-	} );
+			await waitFor( () => {
+				expect( mockHistoryPush ).toHaveBeenCalledTimes( 1 );
+				expect(
+					screen.getByTestId( 'money-movement-route' )
+				).toHaveTextContent(
+					'date_between=2026-07-13&date_between=2026-07-20'
+				);
+				expect( mockGetTransactions ).toHaveBeenLastCalledWith(
+					expect.objectContaining( {
+						date_between: [ '2026-07-13', '2026-07-20' ],
+					} )
+				);
+			} );
+		}
+	);
 
 	it( 'drops transaction filter drafts when routing to uncaptured state without crossing preferences or query contracts', async () => {
 		setMockUserPreferences( {

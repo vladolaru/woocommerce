@@ -42,6 +42,7 @@ import { formatSiteDateTime } from '../money-movement/utils';
 import { navigateToSettingsPaymentsProviderRoute } from '../utils';
 import { usePersistedHiddenFields } from '../money-movement/view-preferences';
 import { WooPaymentsMoneyMovementDataViews } from '../money-movement/dataviews';
+import { hasUnfinishedDataViewsFilter } from '../money-movement/query';
 import {
 	getListMatchFilter,
 	getListShowFilter,
@@ -402,9 +403,7 @@ export const WooPaymentsDocumentsPage = () => {
 		saveFields( nextView.fields );
 
 		// DataViews adds a filter without a value first; wait for the value.
-		if (
-			nextView.filters?.some( ( filter ) => filter.value === undefined )
-		) {
+		if ( hasUnfinishedDataViewsFilter( nextView.filters ) ) {
 			return;
 		}
 

@@ -31,6 +31,7 @@ import { DISPUTE_STATUS_LABELS } from './dispute-utils';
 import {
 	buildMoneyMovementRoutePath,
 	dataViewsViewToMoneyMovementQuery,
+	hasUnfinishedDataViewsFilter,
 	moneyMovementQueryToDataViewsView,
 	normalizeDateFiltersForApi,
 	parseMoneyMovementQuery,
@@ -623,9 +624,7 @@ export const WooPaymentsDisputesPage = () => {
 		saveFields( nextView.fields );
 
 		// DataViews adds a filter without a value first; wait for the value.
-		if (
-			nextView.filters?.some( ( filter ) => filter.value === undefined )
-		) {
+		if ( hasUnfinishedDataViewsFilter( nextView.filters ) ) {
 			return;
 		}
 

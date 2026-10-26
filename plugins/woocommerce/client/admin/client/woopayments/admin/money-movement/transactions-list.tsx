@@ -22,6 +22,7 @@ import type {
 } from './types';
 import {
 	dataViewsViewToMoneyMovementQuery,
+	hasUnfinishedDataViewsFilter,
 	moneyMovementQueryToDataViewsView,
 	parseMoneyMovementQuery,
 } from './query';
@@ -243,9 +244,7 @@ export const WooPaymentsTransactionsList = (
 			view: nextView,
 		} );
 
-		if (
-			nextView.filters?.some( ( filter ) => filter.value === undefined )
-		) {
+		if ( hasUnfinishedDataViewsFilter( nextView.filters ) ) {
 			return;
 		}
 

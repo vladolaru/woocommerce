@@ -704,6 +704,24 @@ export const moneyMovementQueryToDataViewsView = (
 	return view;
 };
 
+/**
+ * Whether a DataViews filter still waits for its value: just added, or a `between` range with one
+ * bound empty, which DataViews commits while the merchant types the other (since 18.0.0, #81150).
+ *
+ * @param filters The view's filters.
+ * @return Whether the view should wait before it changes the route.
+ */
+export const hasUnfinishedDataViewsFilter = (
+	filters: Array< { operator?: string; value?: unknown } > = []
+): boolean =>
+	filters.some(
+		( { operator, value } ) =>
+			value === undefined ||
+			( operator === 'between' &&
+				Array.isArray( value ) &&
+				value.some( ( bound ) => ! bound ) )
+	);
+
 export const dataViewsViewToMoneyMovementQuery = (
 	view: WooPaymentsMoneyMovementDataView,
 	currentQuery: WooPaymentsMoneyMovementQuery = {},

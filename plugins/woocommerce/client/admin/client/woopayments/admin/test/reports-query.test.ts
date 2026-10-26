@@ -127,6 +127,30 @@ describe( 'WooPayments Reports query helpers', () => {
 		}
 	);
 
+	// DataViews 18.0.0 (Gutenberg #81150) commits a typed range bound before the other is set.
+	it.each( [
+		[ 'start', [ '2026-06-01', '' ] ],
+		[ 'end', [ '', '2026-06-19' ] ],
+	] )(
+		'sends no date filter while a between range has only its %s',
+		( _, dates ) => {
+			const query = buildReportsFeesQueryFromView( {
+				type: 'table',
+				filters: [
+					{
+						field: 'date',
+						operator: 'between',
+						value: dates,
+					},
+				],
+			} );
+
+			expect( query ).not.toHaveProperty( 'date_between' );
+			expect( query ).not.toHaveProperty( 'date_before' );
+			expect( query ).not.toHaveProperty( 'date_after' );
+		}
+	);
+
 	it( 'normalizes a scalar type filter to the Reports array schema', () => {
 		expect(
 			buildReportsFeesQueryFromView( {
