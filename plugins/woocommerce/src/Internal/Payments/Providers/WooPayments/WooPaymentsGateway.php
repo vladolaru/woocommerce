@@ -375,10 +375,12 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 	 * leaves with the facades in WooCommerce 12.0.0.
 	 *
 	 * @since 11.2.0
+	 * @deprecated 11.2.0 Removed with the compatibility facades in WooCommerce 12.0.0. Use the gateway's enabled property or is_available().
 	 *
 	 * @return bool
 	 */
 	public function is_enabled() {
+		_deprecated_function( __METHOD__, '11.2.0', 'the gateway\'s enabled property or is_available()' );
 		return 'yes' === $this->get_option( 'enabled' );
 	}
 
