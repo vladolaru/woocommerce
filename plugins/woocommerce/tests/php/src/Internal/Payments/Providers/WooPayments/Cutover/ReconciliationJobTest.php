@@ -2654,6 +2654,40 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * Past finalize the extension is off and its classes never load again, so the holdback has nothing left to protect.
+	 *
+	 * @testdox A deferred claim past finalize whose re-run preflight finds a plugin that renews through the WooPayments extension goes on to the ownership check instead of retrying.
+	 */
+	public function test_extension_renewal_plugin_past_finalize_does_not_hold_the_switch_back(): void {
+		// A store that ran the extension, which finalize deactivated.
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
+		update_option( 'woocommerce_woocommerce_payments_version', '11.1.0' );
+		$sut = $this->create_job( true, $this->create_preflight_with_failures( array( PreflightService::FAILURE_EXTENSION_RENEWAL_PLUGIN_ACTIVE ) ), null, false, $this->create_noop_normalization() );
+		$this->assertTrue( $sut->enqueue( 'merchant' ) );
+		$queued = $this->state_store->get_record();
+		$this->assertIsArray( $queued );
+		$this->scheduler->cancel( $queued['generation'], 1 );
+		// The ownership check deferred after finalize, so the next attempt re-runs the reconcile.
+		$deferred                         = $queued;
+		$deferred['revision']             = $queued['revision'] + 1;
+		$deferred['state']                = StateStore::STATE_DEFERRED;
+		$deferred['attempt']              = 1;
+		$deferred['action_id']            = 0;
+		$deferred['current_step']         = 'deferred';
+		$deferred['deferred_codes']       = array( 'builtin_ownership_unverified' );
+		$deferred['next_attempt_at']      = time() - 1;
+		$deferred['request_origin_token'] = 'previous-finalize-token';
+		$this->assertTrue( $this->state_store->compare_and_set_record( $queued, $deferred ) );
+
+		$sut->handle_reconcile( $deferred['generation'], 2 );
+
+		$after = $this->state_store->get_record();
+		$this->assertIsArray( $after );
+		$this->assertSame( 'verify_builtin_ownership', $after['current_step'], 'Past finalize the plugin no longer holds the switch back.' );
+		$this->assertSame( array(), $after['deferred_codes'] );
+	}
+
+	/**
 	 * Jetpack reports a deleted connection owner, and an owner without a user token, as no owner, so the preflight of a
 	 * connected site records `wpcom_connection_owner_unavailable` alone (see PlatformConnectionServiceTest).
 	 *

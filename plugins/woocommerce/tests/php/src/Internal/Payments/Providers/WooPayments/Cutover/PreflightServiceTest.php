@@ -392,7 +392,19 @@ class PreflightServiceTest extends WC_Unit_Test_Case {
 			'none of them'                                 => array( array( 'woocommerce/woocommerce.php' ), array() ),
 			'the free YITH WooCommerce Subscription'       => array( array( 'yith-woocommerce-subscription/init.php' ), array() ),
 			'a folder that only starts with a listed slug' => array( array( 'yith-woocommerce-subscription-premium-addon/addon.php' ), array() ),
+			'a listed plugin as a single file'             => array( array( 'ultimate-payment-plans.php' ), array( 'ultimate-payment-plans' ) ),
 		);
+	}
+
+	/**
+	 * @testdox On a multisite, a plugin that renews through the extension holds the switch back when it is active for this site only.
+	 */
+	public function test_site_active_extension_renewal_plugin_holds_the_switch_back_on_a_multisite(): void {
+		$this->fake_active_plugins( array( 'order-subscriptions/order-subscriptions.php' ), array(), true );
+		$sut = $this->create_sut();
+
+		$this->assertSame( array( PreflightService::FAILURE_EXTENSION_RENEWAL_PLUGIN_ACTIVE ), $sut->get_failures() );
+		$this->assertSame( array( 'Order Subscriptions for WooCommerce' ), $sut->get_active_extension_renewal_plugin_names() );
 	}
 
 	/**
