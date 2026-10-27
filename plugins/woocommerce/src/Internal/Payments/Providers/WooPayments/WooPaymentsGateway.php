@@ -380,7 +380,7 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 	 * @return bool
 	 */
 	public function is_enabled() {
-		_deprecated_function( __METHOD__, '11.2.0', 'the gateway\'s enabled property or is_available()' );
+		wc_deprecated_function( __METHOD__, '11.2.0', 'the gateway\'s enabled property or is_available()' );
 		return 'yes' === $this->get_option( 'enabled' );
 	}
 
