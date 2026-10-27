@@ -2,7 +2,7 @@
 // handle for them. Sass inlines the stylesheet here, so it lands once in the
 // shared native WooPayments stylesheet with the pages that render DataViews.
 // With a `.css` extension Sass would leave a plain CSS `@import` instead.
-// stylelint-disable-next-line scss/at-import-partial-extension
+// stylelint-disable-next-line scss/load-partial-extension
 @import "@wordpress/dataviews/build-style/style";
 
 // Client 11.1.0 `TableCard`: one top row with the title, search, actions and then the column
