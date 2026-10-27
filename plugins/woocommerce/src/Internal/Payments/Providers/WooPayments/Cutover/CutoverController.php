@@ -525,7 +525,13 @@ class CutoverController implements RegisterHooksInterface {
 			// Payments settings keeps the switch notice, with no "Not now"; every other admin page honours the snooze.
 			$on_payments_settings = $this->is_payments_settings_request();
 			if ( ( $on_payments_settings || ! $this->is_start_notice_snoozed() ) && $this->reconciliation_job->can_offer_start() ) {
-				$this->output_start_switch_notice( ! $on_payments_settings );
+				// The preflight would hold the switch back, so the notice says why instead of offering it.
+				$plugin_names = $this->preflight_service->get_active_extension_renewal_plugin_names();
+				if ( array() !== $plugin_names ) {
+					$this->output_renewal_plugin_holdback_notice( $plugin_names, ! $on_payments_settings );
+				} else {
+					$this->output_start_switch_notice( ! $on_payments_settings );
+				}
 			}
 			return;
 		}
@@ -570,6 +576,13 @@ class CutoverController implements RegisterHooksInterface {
 				// it runs stays recorded after a deactivation, which leaves no active file to read.
 				if ( StateStore::STATE_DEFERRED === $record['state'] && in_array( PreflightService::FAILURE_PLUGIN_VERSION_UNSUPPORTED, (array) ( $record[ StateStore::BLOCKING_CODES_KEY ] ?? array() ), true ) && ! $this->preflight_service->is_woopayments_plugin_version_supported() && ! $this->reconciliation_job->is_installed_woopayments_plugin_version_supported() ) {
 					$this->output_extension_update_warning();
+				}
+				// A started switch held back by such a plugin retries, and stops saying so once the plugin is no longer active.
+				if ( StateStore::STATE_DEFERRED === $record['state'] && in_array( PreflightService::FAILURE_EXTENSION_RENEWAL_PLUGIN_ACTIVE, (array) ( $record[ StateStore::BLOCKING_CODES_KEY ] ?? array() ), true ) ) {
+					$plugin_names = $this->preflight_service->get_active_extension_renewal_plugin_names();
+					if ( array() !== $plugin_names ) {
+						$this->output_renewal_plugin_holdback_notice( $plugin_names, false );
+					}
 				}
 				// Shown until dismissed; rendering claims nothing, since some screens hide notices.
 				if ( $this->reconciliation_job->is_reconnect_notice_due( $record ) ) {
@@ -645,6 +658,42 @@ class CutoverController implements RegisterHooksInterface {
 		<div class="notice notice-info" style="position:relative;">
 			<?php echo $this->get_dismiss_notice_link( ReconciliationJob::NOTICE_BUNDLED_EXCLUSION ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped when built. ?>
 			<p><?php esc_html_e( "WooPayments is now part of WooCommerce, but this store can't switch yet. Its subscriptions are billed through Stripe Billing, which needs the Woo Subscriptions extension. Install and activate Woo Subscriptions to make the switch available.", 'woocommerce' ); ?> <?php echo esc_html( $last_sentence ); ?></p>
+		</div>
+		<?php
+	}
+
+	/**
+	 * Output the notice telling a store that the switch waits while a plugin charges renewals through the WooPayments extension.
+	 *
+	 * Its last sentence says what keeps payments running, as the bundled subscriptions notice does.
+	 *
+	 * @param string[] $plugin_names Names of the active plugins that hold the switch back.
+	 * @param bool     $can_snooze   Whether the notice offers "Not now", which hides the switch notice.
+	 */
+	private function output_renewal_plugin_holdback_notice( array $plugin_names, bool $can_snooze ): void {
+		$message = sprintf(
+			/* translators: %s: plugin name, or a list of plugin names. */
+			_n(
+				"WooPayments is now part of WooCommerce, but this store can't switch yet. %s charges renewals and scheduled payments through the WooPayments extension, so the switch waits while it is active.",
+				"WooPayments is now part of WooCommerce, but this store can't switch yet. %s charge renewals and scheduled payments through the WooPayments extension, so the switch waits while they are active.",
+				count( $plugin_names ),
+				'woocommerce'
+			),
+			wp_sprintf_l( '%l', $plugin_names )
+		);
+		$last_sentence = $this->arbiter->is_awaiting_switch()
+			? __( 'Until then, activate the WooPayments extension again to keep taking payments.', 'woocommerce' )
+			: __( 'Until then nothing changes and WooPayments keeps running from the WooPayments extension.', 'woocommerce' );
+		?>
+		<div class="notice notice-info">
+			<p><?php echo esc_html( $message . ' ' . $last_sentence ); ?></p>
+			<?php if ( $can_snooze ) : ?>
+				<p>
+					<a href="<?php echo esc_url( $this->get_dismiss_notice_url( self::NOTICE_START_SWITCH ) ); ?>">
+						<?php esc_html_e( 'Not now', 'woocommerce' ); ?>
+					</a>
+				</p>
+			<?php endif; ?>
 		</div>
 		<?php
 	}

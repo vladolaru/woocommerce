@@ -803,6 +803,97 @@ class CutoverControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox While a plugin that renews through the WooPayments extension is active, the switch notice names it and says why the store cannot switch instead of offering the switch ($_dataName).
+	 * @dataProvider provide_renewal_plugin_holdback_offers
+	 *
+	 * @param string      $store    "extension active" or "waiting for the switch".
+	 * @param string[]    $names    Names of the active plugins that hold the switch back.
+	 * @param string|null $expected The notice text, or null when the switch is offered.
+	 */
+	public function test_switch_offer_names_the_plugin_that_holds_it_back( string $store, array $names, ?string $expected ): void {
+		$this->arrange_switch_offer( $store );
+
+		$notices = $this->render_admin_notices( $this->create_cutover_controller( null, $this->create_preflight_with_renewal_plugins( $names ) ) );
+
+		if ( null === $expected ) {
+			$this->assertStringContainsString( 'Start the switch', $notices );
+			$this->assertStringNotContainsString( 'renewals and scheduled payments', $notices );
+			return;
+		}
+		$this->assertStringContainsString( esc_html( $expected ), $notices );
+		$this->assertStringNotContainsString( 'Start the switch', $notices, 'A held-back switch is not offered.' );
+		$this->assertStringContainsString( 'Not now', $notices, 'The notice can be hidden as the switch notice can.' );
+	}
+
+	/**
+	 * @return array<string,array{string,string[],string|null}>
+	 */
+	public function provide_renewal_plugin_holdback_offers(): array {
+		$waits = "WooPayments is now part of WooCommerce, but this store can't switch yet. YITH WooCommerce Subscription Premium charges renewals and scheduled payments through the WooPayments extension, so the switch waits while it is active.";
+		return array(
+			'extension active, one plugin'       => array( 'extension active', array( 'YITH WooCommerce Subscription Premium' ), $waits . ' Until then nothing changes and WooPayments keeps running from the WooPayments extension.' ),
+			'waiting for the switch, one plugin' => array( 'waiting for the switch', array( 'YITH WooCommerce Subscription Premium' ), $waits . ' Until then, activate the WooPayments extension again to keep taking payments.' ),
+			'extension active, two plugins'      => array( 'extension active', array( 'YITH WooCommerce Subscription Premium', 'Ultimate Payment Plans' ), "WooPayments is now part of WooCommerce, but this store can't switch yet. YITH WooCommerce Subscription Premium and Ultimate Payment Plans charge renewals and scheduled payments through the WooPayments extension, so the switch waits while they are active." ),
+			'extension active, no such plugin'   => array( 'extension active', array(), null ),
+		);
+	}
+
+	/**
+	 * @testdox A switch deferred by a plugin that renews through the WooPayments extension says why under Switch in progress while the plugin is active, and stops once it is not ($_dataName).
+	 * @dataProvider provide_deferred_renewal_plugin_holdbacks
+	 *
+	 * @param string   $code  The deferral code on the record.
+	 * @param string[] $names Names of the active plugins that hold the switch back.
+	 * @param bool     $shown Whether the notice says why.
+	 */
+	public function test_deferred_switch_names_the_plugin_that_holds_it_back( string $code, array $names, bool $shown ): void {
+		$this->fake_plugin_active();
+		$this->fake_current_user_caps( true );
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
+		$job = new class( $code ) extends ReconciliationJob {
+			/** @var string */
+			private string $code;
+
+			/**
+			 * @param string $code The deferral code on the record.
+			 */
+			public function __construct( string $code ) {
+				$this->code = $code;
+			}
+
+			/** @return array<string,mixed>|null */
+			public function refresh_notice_record(): ?array {
+				return array(
+					'state'                  => StateStore::STATE_DEFERRED,
+					'deferred_codes'         => array( $this->code ),
+					'informational_outcomes' => array(),
+				);
+			}
+		};
+
+		$notice = $this->render_admin_notices( $this->create_cutover_controller( $job, $this->create_preflight_with_renewal_plugins( $names ) ) );
+
+		$this->assertStringContainsString( 'Switch in progress', $notice );
+		if ( $shown ) {
+			$this->assertStringContainsString( esc_html( "WooPayments is now part of WooCommerce, but this store can't switch yet. Order Subscriptions for WooCommerce charges renewals and scheduled payments through the WooPayments extension, so the switch waits while it is active. Until then nothing changes and WooPayments keeps running from the WooPayments extension." ), $notice );
+			$this->assertStringNotContainsString( 'Not now', $notice );
+		} else {
+			$this->assertStringNotContainsString( 'renewals and scheduled payments', $notice );
+		}
+	}
+
+	/**
+	 * @return array<string,array{string,string[],bool}>
+	 */
+	public function provide_deferred_renewal_plugin_holdbacks(): array {
+		return array(
+			'held back, plugin active'         => array( PreflightService::FAILURE_EXTENSION_RENEWAL_PLUGIN_ACTIVE, array( 'Order Subscriptions for WooCommerce' ), true ),
+			'held back, plugin since inactive' => array( PreflightService::FAILURE_EXTENSION_RENEWAL_PLUGIN_ACTIVE, array(), false ),
+			'deferred for another reason'      => array( 'operational_queue_hooks_unhandled', array( 'Order Subscriptions for WooCommerce' ), false ),
+		);
+	}
+
+	/**
 	 * @testdox Active job states show only the switch-in-progress notice.
 	 * @testWith ["pending"]
 	 *           ["running"]
@@ -1444,10 +1535,11 @@ class CutoverControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * Create a preflight service wired to this test's dependencies.
 	 *
+	 * @param PreflightService|null $preflight_service Optional preflight double to wire; a new one by default.
 	 * @return PreflightService
 	 */
-	private function create_preflight_service(): PreflightService {
-		$preflight_service = new PreflightService();
+	private function create_preflight_service( ?PreflightService $preflight_service = null ): PreflightService {
+		$preflight_service = $preflight_service ?? new PreflightService();
 		$this->init_preflight_service(
 			$preflight_service,
 			wc_get_container()->get( WooPaymentsRuntimeArbiter::class ),
@@ -1461,6 +1553,33 @@ class CutoverControllerTest extends WC_Unit_Test_Case {
 		);
 
 		return $preflight_service;
+	}
+
+	/**
+	 * Create a preflight service whose active plugins that renew through the WooPayments extension have the given names.
+	 *
+	 * @param string[] $names Plugin names.
+	 * @return PreflightService
+	 */
+	private function create_preflight_with_renewal_plugins( array $names ): PreflightService {
+		return $this->create_preflight_service(
+			new class( $names ) extends PreflightService {
+				/** @var string[] */
+				private array $names;
+
+				/**
+				 * @param string[] $names Plugin names.
+				 */
+				public function __construct( array $names ) {
+					$this->names = $names;
+				}
+
+				/** @return string[] */
+				public function get_active_extension_renewal_plugin_names(): array {
+					return $this->names;
+				}
+			}
+		);
 	}
 
 	/**

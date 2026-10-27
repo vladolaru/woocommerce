@@ -2622,6 +2622,38 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A plugin that renews through the WooPayments extension holds the switch back with a retry, never an exclusion, and the attempt after its deactivation finalizes.
+	 */
+	public function test_extension_renewal_plugin_defers_the_switch_until_it_is_deactivated(): void {
+		$preflight = $this->create_preflight_with_failures( array( PreflightService::FAILURE_EXTENSION_RENEWAL_PLUGIN_ACTIVE ) );
+		$sut       = $this->create_job( true, $preflight, null, true, $this->create_noop_normalization() );
+		$this->assertTrue( $sut->enqueue( 'merchant' ) );
+		$pending = $this->state_store->get_record();
+		$this->assertIsArray( $pending );
+		$this->scheduler->cancel( $pending['generation'], 1 );
+		$sut->register();
+
+		$sut->handle_reconcile( $pending['generation'], 1 );
+
+		$held = $this->state_store->get_record();
+		$this->assertIsArray( $held );
+		$this->assertSame( StateStore::STATE_DEFERRED, $held['state'] );
+		$this->assertSame( array( PreflightService::FAILURE_EXTENSION_RENEWAL_PLUGIN_ACTIVE ), $held['deferred_codes'] );
+		$this->assertGreaterThan( 0, $this->scheduler->get_scheduled_action_id( $held['generation'], 2 ), 'The held-back switch is retried.' );
+
+		// The merchant deactivates the plugin, so the next preflight finds nothing.
+		$failures = new \ReflectionProperty( get_class( $preflight ), 'failures' );
+		$failures->setAccessible( true );
+		$failures->setValue( $preflight, array() );
+		$this->scheduler->cancel( $held['generation'], 2 );
+		$sut->handle_reconcile( $held['generation'], 2 );
+
+		$after = $this->state_store->get_record();
+		$this->assertIsArray( $after );
+		$this->assertSame( 'verify_builtin_ownership', $after['current_step'], 'The switch goes ahead once the plugin is inactive.' );
+	}
+
+	/**
 	 * Jetpack reports a deleted connection owner, and an owner without a user token, as no owner, so the preflight of a
 	 * connected site records `wpcom_connection_owner_unavailable` alone (see PlatformConnectionServiceTest).
 	 *
