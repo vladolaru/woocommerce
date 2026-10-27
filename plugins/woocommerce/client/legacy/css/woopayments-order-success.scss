@@ -143,7 +143,7 @@
 		height: 1.2em;
 		margin-inline-start: 5px;
 		background-color: currentcolor;
-		mask-image: url(../images/icons/copy.svg);
+		mask-image: url("../images/icons/copy.svg");
 		mask-position: center;
 		mask-repeat: no-repeat;
 		mask-size: contain;
@@ -151,7 +151,7 @@
 	}
 
 	.copied .copy-icon {
-		mask-image: url(../images/icons/check-green.svg);
+		mask-image: url("../images/icons/check-green.svg");
 	}
 
 	.print-btn,

@@ -186,7 +186,6 @@
 	}
 }
 
-/* stylelint-disable no-descending-specificity, selector-class-pattern */
 #payment .wc_payment_methods.payment_methods.methods + #wcpay-woopay-save-user,
 #wcpay-woopay-save-user + .place-order {
 	margin-top: 24px;
@@ -226,14 +225,13 @@
 		font: inherit;
 	}
 }
-/* stylelint-enable no-descending-specificity, selector-class-pattern */
 
 /* Express-button OTP iframe (the WooPayments plugin's checkout/woopay/style.scss);
 the script centers it with inline top/left on wide viewports. */
 .woopay-otp-iframe {
 	transition: inset-block-start 500ms;
 	inline-size: 100%;
-	block-size: 100dvh; /* stylelint-disable-line unit-no-unknown */
+	block-size: 100dvh;
 	position: fixed;
 	inset-block-start: 100%;
 	inset-inline-start: 0;
