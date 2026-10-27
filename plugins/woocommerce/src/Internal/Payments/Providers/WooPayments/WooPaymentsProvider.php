@@ -230,7 +230,8 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 
 		$matrix = array(
 			WooPaymentsSetupTier::AVAILABLE => array(
-				RequestTypeUtil::ADMIN => $cutover_admin,
+				// A store that can switch keeps the switch notice on the Payments pages, which strip other notices.
+				RequestTypeUtil::ADMIN => array( ...$cutover_admin, NoticesPassthrough::class ),
 				RequestTypeUtil::CRON  => $cutover_cron,
 			),
 			WooPaymentsSetupTier::CONNECTED => array(

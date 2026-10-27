@@ -8,6 +8,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\NavigationController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\NoticesPassthrough;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\SharedSettings;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\MerchantRestController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\HomeTasks;
@@ -84,11 +85,11 @@ class WooPaymentsClassesBySetupTierTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A store without an account, an extension-owned store included, loads only the cutover classes on every request.
+	 * @testdox A store without an account, an extension-owned store included, loads only the cutover classes and their notice passthrough.
 	 */
 	public function test_available_tier_loads_only_the_cutover_classes(): void {
 		$matrix  = WooPaymentsProvider::get_classes_by_setup_tier();
-		$allowed = array( CutoverController::class, ReconciliationJob::class, PluginLifecycleListener::class );
+		$allowed = array( CutoverController::class, ReconciliationJob::class, PluginLifecycleListener::class, NoticesPassthrough::class );
 
 		foreach ( $matrix[ WooPaymentsSetupTier::AVAILABLE ] as $request => $classes ) {
 			$this->assertSame( array(), array_values( array_diff( $classes, $allowed ) ), "A $request request of a store without an account must load no payment class." );
