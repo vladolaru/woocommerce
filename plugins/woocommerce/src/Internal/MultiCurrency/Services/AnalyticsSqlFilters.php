@@ -156,8 +156,8 @@ class AnalyticsSqlFilters {
 
 			$clauses[ $index ] = str_replace(
 				$variable,
-				$this->generate_case_when(
-					$stripe_exchange_rate,
+				$this->generate_rate_conversion(
+					$net_total,
 					"ROUND($net_total / $stripe_exchange_rate, $decimals)",
 					"ROUND($net_total * $exchange_rate, $decimals)"
 				) . $alias,
@@ -273,13 +273,29 @@ class AnalyticsSqlFilters {
 	private function get_default_currency_conversion_expression( string $field, string $default_currency, string $exchange_rate, string $stripe_exchange_rate ): string {
 		return $this->generate_case_when(
 			$default_currency,
-			$this->generate_case_when(
-				$stripe_exchange_rate,
+			$this->generate_rate_conversion(
+				$field,
 				"ROUND($field * {$stripe_exchange_rate}, 2)",
 				"ROUND($field * (1 / {$exchange_rate} ), 2)"
 			),
 			$field
 		);
+	}
+
+	/**
+	 * Build a CASE expression converting an amount with the first saved rate above zero, the processor's first; with neither,
+	 * the amount stays as recorded (client 11.2.0 `includes/multi-currency/Analytics.php:606-611`).
+	 *
+	 * @param string $amount              SQL amount.
+	 * @param string $processor_rate_then Conversion with the processor rate.
+	 * @param string $order_rate_then     Conversion with the order rate.
+	 * @return string
+	 */
+	private function generate_rate_conversion( string $amount, string $processor_rate_then, string $order_rate_then ): string {
+		$stripe_exchange_rate = 'wcpay_multicurrency_stripe_exchange_rate_meta.meta_value';
+		$exchange_rate        = 'wcpay_multicurrency_exchange_rate_meta.meta_value';
+
+		return "CASE WHEN {$stripe_exchange_rate} > 0 THEN {$processor_rate_then} WHEN {$exchange_rate} > 0 THEN {$order_rate_then} ELSE {$amount} END";
 	}
 
 	/**

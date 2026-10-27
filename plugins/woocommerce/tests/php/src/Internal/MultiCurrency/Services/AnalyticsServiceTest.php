@@ -5,9 +5,14 @@ namespace Automattic\WooCommerce\Tests\Internal\MultiCurrency\Services;
 
 use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\LocalizationInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyCurrency;
+use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFrontendCurrenciesController;
+use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyState;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\AnalyticsService;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\OrderContextService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\PriceConverter;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\RequestContext;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\ServiceFactory;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilder;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilderFactory;
 use WC_Unit_Test_Case;
@@ -102,6 +107,102 @@ class AnalyticsServiceTest extends WC_Unit_Test_Case {
 		$sut  = $this->create_service( $this->create_state() );
 
 		$this->assertSame( $args, $sut->convert_order_stats_data( $args, $order ) );
+	}
+
+	/**
+	 * @testdox Should fall back to the order rate when the processor rate cannot convert: $_dataName.
+	 *
+	 * Client 11.2.0 `tests/unit/multi-currency/test-class-analytics.php:226-255`: a GBP order at an order rate of 0.75 and a net
+	 * total of 36.00 converts to 48.00.
+	 *
+	 * @testWith [""]
+	 *           ["invalid"]
+	 *           ["0"]
+	 *           [-1]
+	 *           ["1e999"]
+	 *
+	 * @param mixed $processor_rate Saved processor rate.
+	 */
+	public function test_falls_back_to_the_order_rate_when_the_processor_rate_cannot_convert( $processor_rate ): void {
+		$result = $this->create_service( $this->create_state() )->convert_order_stats_data( $this->create_net_total_args( 36.0 ), $this->create_foreign_order( 0.75, $processor_rate ) );
+
+		$this->assertSame( 48.0, $result['net_total'] );
+		$this->assertSame( 48.0, $result['total_sales'] );
+	}
+
+	/**
+	 * @testdox Should leave the stats row as recorded and log the order when no saved rate can convert: $_dataName.
+	 *
+	 * Client 11.2.0 `tests/unit/multi-currency/test-class-analytics.php:257-283` and `includes/multi-currency/Analytics.php:217-222`.
+	 *
+	 * @testWith ["invalid", ""]
+	 *           [-1, ""]
+	 *           ["1e999", ""]
+	 *           ["1e-320", ""]
+	 *           ["invalid", "0"]
+	 *
+	 * @param mixed $order_rate     Saved order rate.
+	 * @param mixed $processor_rate Saved processor rate.
+	 */
+	public function test_leaves_the_stats_row_when_no_saved_rate_can_convert( $order_rate, $processor_rate ): void {
+		$logger = $this->capture_log();
+		$order  = $this->create_foreign_order( $order_rate, $processor_rate );
+		$args   = $this->create_net_total_args( 36.0 );
+
+		$this->assertSame( $args, $this->create_service( $this->create_state() )->convert_order_stats_data( $args, $order ) );
+		$this->assertSame(
+			array( array( 'error', sprintf( 'Multi-Currency Analytics: order %d has no valid saved exchange rate, its order stats were not converted.', $order->get_id() ), 'multi-currency' ) ),
+			$logger->entries
+		);
+	}
+
+	/**
+	 * @testdox Should use a valid processor rate as it is, without the order rate, and log nothing.
+	 *
+	 * Client 11.2.0 `tests/unit/multi-currency/test-class-analytics.php:285-294`.
+	 */
+	public function test_uses_a_valid_processor_rate_without_the_order_rate(): void {
+		$logger = $this->capture_log();
+
+		$result = $this->create_service( $this->create_state() )->convert_order_stats_data( $this->create_net_total_args( 36.0 ), $this->create_foreign_order( 'invalid', 41.90 / 36 ) );
+
+		$this->assertSame( 41.9, $result['total_sales'] );
+		$this->assertSame( array(), $logger->entries );
+	}
+
+	/**
+	 * @testdox Should round the Analytics import with the store's decimals while the shopper's currency has none: $expected.
+	 *
+	 * A PLN store with JPY selected on a storefront request, as an import run by ALTERNATE_WP_CRON is; an EUR order of 10.00
+	 * at an order rate of 0.23 is 43.478... PLN. Another plugin's decimals filter still applies.
+	 *
+	 * @testWith [null, 43.48]
+	 *           [3, 43.478]
+	 *
+	 * @param int|null $filtered_decimals Decimals another plugin's filter gives, or null for none.
+	 * @param float    $expected          Converted net total.
+	 */
+	public function test_rounds_the_import_with_the_store_decimals( ?int $filtered_decimals, float $expected ): void {
+		update_option( 'woocommerce_currency', 'PLN' );
+		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'PLN', 'JPY' ) );
+		update_option( 'wcpay_multi_currency_exchange_rate_jpy', 'manual' );
+		update_option( 'wcpay_multi_currency_manual_rate_jpy', '35' );
+		add_filter( 'wcpay_multi_currency_override_selected_currency', static fn() => 'JPY' );
+		if ( null !== $filtered_decimals ) {
+			add_filter( 'wc_get_price_decimals', static fn() => $filtered_decimals );
+		}
+		$this->register_frontend_currencies();
+		$this->assertSame( 0, wc_get_price_decimals(), 'Precondition: the storefront shows JPY, which has no decimals.' );
+		$state_builder = wc_get_container()->get( StateBuilderFactory::class )->get_state_builder();
+		$sut           = new AnalyticsService( $state_builder );
+		add_filter( 'woocommerce_analytics_update_order_stats_data', array( $sut, 'convert_order_stats_data' ), 10, 2 );
+		$order = $this->create_order( 'EUR', '0.23', 'PLN' );
+
+		/** This filter is documented in src/Admin/API/Reports/Orders/Stats/DataStore.php */
+		$result = apply_filters( 'woocommerce_analytics_update_order_stats_data', $this->create_net_total_args( 10.0 ), $order );
+
+		$this->assertSame( $expected, $result['net_total'] );
+		$this->assertSame( 0, wc_get_price_decimals(), 'The storefront still shows JPY after the import.' );
 	}
 
 	/**
@@ -205,6 +306,92 @@ class AnalyticsServiceTest extends WC_Unit_Test_Case {
 			'tax_total'      => 2.0,
 			'total_sales'    => 15.0,
 		);
+	}
+
+	/**
+	 * Create order stats args with only a net total.
+	 *
+	 * @param float $net_total Net total in the order currency.
+	 * @return array<string,float>
+	 */
+	private function create_net_total_args( float $net_total ): array {
+		return array(
+			'net_total'      => $net_total,
+			'shipping_total' => 0.0,
+			'tax_total'      => 0.0,
+			'total_sales'    => $net_total,
+		);
+	}
+
+	/**
+	 * Create a GBP order stamped for a USD store with the given saved rates, as order meta holds them.
+	 *
+	 * @param mixed $order_rate     Saved order rate.
+	 * @param mixed $processor_rate Saved processor rate.
+	 * @return \WC_Order
+	 */
+	private function create_foreign_order( $order_rate, $processor_rate ): \WC_Order {
+		$order = wc_create_order();
+		$order->set_currency( 'GBP' );
+		$order->update_meta_data( PriceConverter::META_KEY_ORDER_DEFAULT_CURRENCY, 'USD' );
+		$order->update_meta_data( PriceConverter::META_KEY_ORDER_EXCHANGE_RATE, $order_rate );
+		$order->update_meta_data( PriceConverter::META_KEY_STRIPE_EXCHANGE_RATE, $processor_rate );
+
+		return $order;
+	}
+
+	/**
+	 * Capture what WooCommerce logs for the rest of the test.
+	 *
+	 * @return \WC_Logger Logger whose `entries` hold each entry's level, message and source.
+	 */
+	private function capture_log(): \WC_Logger {
+		$logger = new class() extends \WC_Logger {
+			/**
+			 * Logged entries.
+			 *
+			 * @var array<int,array{string,string,string}>
+			 */
+			public array $entries = array();
+
+			/**
+			 * Record an entry.
+			 *
+			 * @param string              $level   Level.
+			 * @param string              $message Message.
+			 * @param array<string,mixed> $context Context.
+			 */
+			public function log( $level, $message, $context = array() ) {
+				$this->entries[] = array( $level, $message, (string) ( $context['source'] ?? '' ) );
+			}
+		};
+		add_filter( 'woocommerce_logging_class', static fn() => $logger );
+
+		return $logger;
+	}
+
+	/**
+	 * Register the storefront currency filters as a storefront request on a store where WooCommerce runs Multi-Currency does.
+	 */
+	private function register_frontend_currencies(): void {
+		$arbiter    = new class() extends MultiCurrencyRuntimeArbiter {
+			/**
+			 * Constructor.
+			 */
+			public function __construct() {}
+
+			/**
+			 * Tell whether WooCommerce runs Multi-Currency.
+			 *
+			 * @return bool
+			 */
+			public function is_builtin_owner(): bool {
+				return true;
+			}
+		};
+		$controller = new MultiCurrencyFrontendCurrenciesController();
+		$controller->init( $arbiter, wc_get_container()->get( ServiceFactory::class ), wc_get_container()->get( RequestContext::class ), wc_get_container()->get( OrderContextService::class ) );
+		$controller->register();
 	}
 
 	/**

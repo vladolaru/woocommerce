@@ -186,9 +186,57 @@ class AnalyticsSqlFiltersTest extends WC_Unit_Test_Case {
 			array( "$net_total," )
 		);
 
+		// The rates are chosen when above zero, else the amount is kept (client 11.2.0 #12114, `includes/multi-currency/Analytics.php:606-611`).
 		$this->assertSame(
-			"CASE WHEN wcpay_multicurrency_stripe_exchange_rate_meta.meta_value IS NOT NULL THEN ROUND($net_total / wcpay_multicurrency_stripe_exchange_rate_meta.meta_value, $decimals) ELSE ROUND($net_total * wcpay_multicurrency_exchange_rate_meta.meta_value, $decimals) END as net_total,",
+			"CASE WHEN wcpay_multicurrency_stripe_exchange_rate_meta.meta_value > 0 THEN ROUND($net_total / wcpay_multicurrency_stripe_exchange_rate_meta.meta_value, $decimals) WHEN wcpay_multicurrency_exchange_rate_meta.meta_value > 0 THEN ROUND($net_total * wcpay_multicurrency_exchange_rate_meta.meta_value, $decimals) ELSE $net_total END as net_total,",
 			$result[0]
+		);
+	}
+
+	/**
+	 * @testdox Should convert report figures with the first saved rate above zero, or keep them: $_dataName.
+	 *
+	 * Rows from client 11.2.0 `tests/unit/multi-currency/test-class-analytics.php:658-696`: a stored net total of 63.05 shown
+	 * in the order currency, and product revenue and a taxable amount of 54.13 shown in the store currency.
+	 *
+	 * @dataProvider report_rates_provider
+	 *
+	 * @param string $processor_rate Saved processor rate.
+	 * @param string $order_rate     Saved order rate.
+	 * @param float  $expected_order Net total in the order currency.
+	 * @param float  $expected_store Product revenue and taxable amount in the store currency.
+	 */
+	public function test_converts_report_figures_with_the_first_usable_saved_rate( string $processor_rate, string $order_rate, float $expected_order, float $expected_store ): void {
+		global $wpdb;
+
+		$sut       = new AnalyticsSqlFilters();
+		$net_total = "{$wpdb->prefix}wc_order_stats.net_total";
+		$columns   = array(
+			'wcpay_multicurrency_stripe_exchange_rate_meta.meta_value' => $wpdb->prepare( '%s', $processor_rate ),
+			'wcpay_multicurrency_exchange_rate_meta.meta_value'        => $wpdb->prepare( '%s', $order_rate ),
+			'wcpay_multicurrency_default_currency_meta.meta_value'     => "'USD'",
+		);
+
+		$order_sql   = strtr( $sut->extend_order_select_clauses( array( $net_total ) )[0], $columns + array( $net_total => '63.05' ) );
+		$product_sql = strtr( $sut->extend_select_clauses( array( 'product_net_revenue' ), 'products_subquery', false )[0], $columns + array( 'product_net_revenue' => '54.13' ) );
+		$taxable_sql = strtr( $sut->extend_select_clauses( array( 'SUM(taxable_amount)' ), 'taxes_subquery', false )[0], $columns + array( 'taxable_amount' => '54.13' ) );
+
+		// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Expressions built from literals above.
+		$this->assertEquals( $expected_order, $wpdb->get_var( "SELECT {$order_sql}" ), 'Orders report net total' );
+		$this->assertEquals( $expected_store, $wpdb->get_var( "SELECT {$product_sql}" ), 'Products report revenue' );
+		$this->assertEquals( $expected_store, $wpdb->get_var( "SELECT {$taxable_sql}" ), 'Taxes report taxable amount' );
+		// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+	}
+
+	/** @return array<string,array{string,string,float,float}> */
+	public static function report_rates_provider(): array {
+		return array(
+			'valid processor rate'    => array( '1.1648', '0.8585', 54.13, 63.05 ),
+			'negative processor rate' => array( '-1', '0.8585', 54.13, 63.05 ),
+			'zero processor rate'     => array( '0', '0.8585', 54.13, 63.05 ),
+			'text processor rate'     => array( 'invalid', '0.8585', 54.13, 63.05 ),
+			'empty processor rate'    => array( '', '0.8585', 54.13, 63.05 ),
+			'neither rate usable'     => array( '-1', 'invalid', 63.05, 54.13 ),
 		);
 	}
 }

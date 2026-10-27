@@ -168,6 +168,11 @@ class MultiCurrencyFrontendCurrenciesController implements RegisterHooksInterfac
 	 * @return int
 	 */
 	public function get_price_decimals( $decimals ): int {
+		// The Analytics import rounds amounts converted to the store currency, which keep the store's decimals.
+		if ( doing_filter( 'woocommerce_analytics_update_order_stats_data' ) ) {
+			return absint( $decimals );
+		}
+
 		$currency_decimals = $this->get_display_service()->get_price_decimals( absint( $decimals ), $this->order_currency );
 
 		// A flat-rate percent fee in store units keeps the store's decimals, or the shopper's currency's when it has more.

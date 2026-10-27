@@ -35,6 +35,9 @@ class AnalyticsService {
 	/**
 	 * Convert an order's Analytics stats row to the store currency, by the order's recorded exchange rate.
 	 *
+	 * The processor's rate is preferred, then the inverse of the order rate; with neither usable the row stays as recorded
+	 * (client 11.2.0 `includes/multi-currency/Analytics.php:201-230`).
+	 *
 	 * @param array<string,mixed> $args  Order stats args.
 	 * @param \WC_Abstract_Order  $order Order or refund.
 	 * @return array<string,mixed>
@@ -46,14 +49,22 @@ class AnalyticsService {
 			return $args;
 		}
 
-		$order_exchange_rate = (float) $order->get_meta( PriceConverter::META_KEY_ORDER_EXCHANGE_RATE, true );
-		if ( 0.0 >= $order_exchange_rate ) {
+		$exchange_rate = $this->get_valid_exchange_rate( $order->get_meta( PriceConverter::META_KEY_STRIPE_EXCHANGE_RATE, true ) );
+		if ( null === $exchange_rate ) {
+			$order_exchange_rate = $this->get_valid_exchange_rate( $order->get_meta( PriceConverter::META_KEY_ORDER_EXCHANGE_RATE, true ) );
+			$exchange_rate       = null === $order_exchange_rate ? null : $this->get_valid_exchange_rate( 1 / $order_exchange_rate );
+		}
+
+		if ( null === $exchange_rate ) {
+			wc_get_logger()->error(
+				sprintf( 'Multi-Currency Analytics: order %d has no valid saved exchange rate, its order stats were not converted.', $order->get_id() ),
+				array( 'source' => 'multi-currency' )
+			);
+
 			return $args;
 		}
 
-		$stripe_exchange_rate = $order->get_meta( PriceConverter::META_KEY_STRIPE_EXCHANGE_RATE, true );
-		$exchange_rate        = $stripe_exchange_rate ? (float) $stripe_exchange_rate : 1 / $order_exchange_rate;
-		$decimals             = wc_get_price_decimals();
+		$decimals = wc_get_price_decimals();
 
 		$args['net_total']      = round( $this->convert_amount( (float) $args['net_total'], $exchange_rate ), $decimals );
 		$args['shipping_total'] = round( $this->convert_amount( (float) $args['shipping_total'], $exchange_rate ), $decimals );
@@ -175,6 +186,22 @@ class AnalyticsService {
 		return $order->get_currency() !== $default_currency_code
 			&& (bool) $order->get_meta( PriceConverter::META_KEY_ORDER_EXCHANGE_RATE, true )
 			&& $order->get_meta( PriceConverter::META_KEY_ORDER_DEFAULT_CURRENCY, true ) === $default_currency_code;
+	}
+
+	/**
+	 * Get a saved exchange rate as a number when it can convert: numeric, finite and above zero.
+	 *
+	 * @param mixed $rate Saved exchange rate.
+	 * @return float|null
+	 */
+	private function get_valid_exchange_rate( $rate ): ?float {
+		if ( ! is_numeric( $rate ) ) {
+			return null;
+		}
+
+		$rate = (float) $rate;
+
+		return is_finite( $rate ) && 0 < $rate ? $rate : null;
 	}
 
 	/**
