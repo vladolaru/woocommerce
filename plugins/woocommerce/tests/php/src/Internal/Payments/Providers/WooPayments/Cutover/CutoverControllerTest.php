@@ -1512,6 +1512,14 @@ class CutoverControllerTest extends WC_Unit_Test_Case {
 			->getMock();
 		$legacy_proxy->method( 'call_function' )->willReturn( true );
 		$legacy_proxy->expects( $this->exactly( 2 ) )->method( 'exit' );
+		// No readable extension files, so the recorded version decides alone.
+		$preflight_proxy = $this->getMockBuilder( LegacyProxy::class )
+			->onlyMethods( array( 'call_function' ) )
+			->getMock();
+		$preflight_proxy->method( 'call_function' )->willReturnCallback(
+			static fn( string $function_name, ...$args ) => 'is_readable' === $function_name ? false : $function_name( ...$args )
+		);
+		$preflight->init( $arbiter, $preflight_proxy );
 		$controller = new CutoverController();
 		$controller->init( $arbiter, $legacy_proxy, $preflight, $job, $this->create_renewal_plugins( array() ) );
 		$redirects        = array();

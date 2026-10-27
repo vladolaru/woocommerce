@@ -174,6 +174,13 @@ class PreflightService {
 	private array $reconciliation_memo = array();
 
 	/**
+	 * Request-local header versions of the installed WooPayments extension, keyed by plugin file ('' when unreadable).
+	 *
+	 * @var array<string,string>
+	 */
+	private array $installed_plugin_versions = array();
+
+	/**
 	 * Initialize the service instance.
 	 *
 	 * The check collaborators are resolved when a preflight runs, so registering the cutover surfaces loads none of them.
@@ -194,6 +201,7 @@ class PreflightService {
 	public function invalidate_current_blog_memoization(): void {
 		$blog_id = get_current_blog_id();
 		unset( $this->reconciliation_memo[ $blog_id ] );
+		$this->installed_plugin_versions = array();
 	}
 
 	/**
@@ -397,7 +405,10 @@ class PreflightService {
 	}
 
 	/**
-	 * Tell whether the WooPayments extension version this store last ran supports the switch.
+	 * Tell whether the WooPayments extension supports the switch: the version this store last ran, and the installed files.
+	 *
+	 * A rollback runs the installed files, and an extension downgraded by hand never lowers the version it recorded, so the
+	 * lower of the two decides. Without readable files the recorded version decides alone.
 	 *
 	 * @since 11.2.0
 	 *
@@ -405,7 +416,48 @@ class PreflightService {
 	 */
 	public function is_woopayments_plugin_version_supported(): bool {
 		$version = get_option( WooPaymentsRuntimeArbiter::EXTENSION_VERSION_OPTION, '' );
-		return is_string( $version ) && 1 === preg_match( '/^\\d+(?:\\.\\d+){1,3}(?:[-+][0-9A-Za-z.-]+)?$/D', trim( $version ) ) && version_compare( trim( $version ), self::MINIMUM_CUTOVER_PLUGIN_VERSION, '>=' );
+		if ( ! is_string( $version ) || 1 !== preg_match( '/^\\d+(?:\\.\\d+){1,3}(?:[-+][0-9A-Za-z.-]+)?$/D', trim( $version ) ) || version_compare( trim( $version ), self::MINIMUM_CUTOVER_PLUGIN_VERSION, '<' ) ) {
+			return false;
+		}
+
+		$installed_version = $this->get_installed_woopayments_plugin_version();
+		return '' === $installed_version || version_compare( $installed_version, self::MINIMUM_CUTOVER_PLUGIN_VERSION, '>=' );
+	}
+
+	/**
+	 * Read the header version of the installed WooPayments extension: the active plugin file, or the standard one when the
+	 * extension is inactive. An inactive extension in another folder is not looked for, since that takes reading every
+	 * installed plugin's header.
+	 *
+	 * @return string Header version, or an empty string when the file cannot be read.
+	 */
+	private function get_installed_woopayments_plugin_version(): string {
+		$plugin_file = WooPaymentsRuntimeArbiter::PLUGIN_FILE;
+		$active      = (array) $this->legacy_proxy->call_function( 'get_option', 'active_plugins', array() );
+		// A single site has no network plugin list; reading it would query a missing option.
+		if ( $this->legacy_proxy->call_function( 'is_multisite' ) ) {
+			$active = array_merge( $active, array_keys( (array) $this->legacy_proxy->call_function( 'get_site_option', 'active_sitewide_plugins', array() ) ) );
+		}
+		// Matched by the main file name, as the runtime arbiter does, so no installed plugin's header is read to find it.
+		foreach ( $active as $active_file ) {
+			if ( is_string( $active_file ) && WooPaymentsRuntimeArbiter::is_woopayments_plugin_file( $active_file ) ) {
+				$plugin_file = $active_file;
+				break;
+			}
+		}
+		if ( ! array_key_exists( $plugin_file, $this->installed_plugin_versions ) ) {
+			// WordPress 6.8+ loads this file on every request (#62244); kept as WooCommerce's own pattern (see src/Admin/PluginsHelper.php).
+			if ( ! function_exists( 'get_plugin_data' ) ) {
+				require_once ABSPATH . 'wp-admin/includes/plugin.php';
+			}
+			$path    = WP_PLUGIN_DIR . '/' . $plugin_file;
+			$header  = $this->legacy_proxy->call_function( 'is_readable', $path ) ? $this->legacy_proxy->call_function( 'get_plugin_data', $path, false, false ) : array();
+			$version = is_array( $header ) && isset( $header['Version'] ) && is_scalar( $header['Version'] ) ? trim( (string) $header['Version'] ) : '';
+
+			$this->installed_plugin_versions[ $plugin_file ] = $version;
+		}
+
+		return $this->installed_plugin_versions[ $plugin_file ];
 	}
 
 	/**

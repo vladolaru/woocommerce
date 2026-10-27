@@ -149,6 +149,59 @@ class PreflightServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * A rollback runs the installed files, and WooPayments 10.5.1 installed over 11.2.0 keeps the recorded 11.2.0: it writes
+	 * the version only when its own is higher (client 10.5.1 includes/class-wc-payments.php:1509-1519).
+	 *
+	 * @testdox The lower of the recorded and the installed WooPayments versions decides the switch: $_dataName.
+	 * @dataProvider provide_recorded_and_installed_versions
+	 *
+	 * @param string               $recorded       Recorded extension version.
+	 * @param array<int,string>    $active_plugins The site's active plugin files.
+	 * @param array<string,string> $headers        Readable plugin files (relative to the plugins folder) and their header versions.
+	 * @param bool                 $supported      Whether the switch supports the store.
+	 */
+	public function test_the_lower_of_the_recorded_and_installed_versions_decides( string $recorded, array $active_plugins, array $headers, bool $supported ): void {
+		update_option( 'woocommerce_woocommerce_payments_version', $recorded );
+		$paths = array();
+		foreach ( $headers as $plugin_file => $header_version ) {
+			$paths[ WP_PLUGIN_DIR . '/' . $plugin_file ] = $header_version;
+		}
+		$this->register_legacy_proxy_function_mocks(
+			array(
+				'get_option'      => fn( $name, $default_value = false ) => 'active_plugins' === $name ? $active_plugins : get_option( $name, $default_value ),
+				'get_site_option' => fn( $name, $default_value = false ) => 'active_sitewide_plugins' === $name ? array() : get_site_option( $name, $default_value ),
+				'is_readable'     => fn( $path ) => array_key_exists( $path, $paths ),
+				'get_plugin_data' => fn( $path ) => array( 'Version' => $paths[ $path ] ?? '' ),
+			)
+		);
+
+		$this->assertSame( $supported, $this->create_sut()->is_woopayments_plugin_version_supported() );
+	}
+
+	/**
+	 * Recorded and installed WooPayments versions around the 10.6.0 floor.
+	 *
+	 * @return array<string,array{0:string,1:array<int,string>,2:array<string,string>,3:bool}>
+	 */
+	public function provide_recorded_and_installed_versions(): array {
+		$standard = WooPaymentsRuntimeArbiter::PLUGIN_FILE;
+		$renamed  = 'woopayments-renamed/woocommerce-payments.php';
+		// The active copy is older than a standard copy left in place.
+		$renamed_older = array(
+			$renamed  => '10.5.1',
+			$standard => '11.2.0',
+		);
+
+		return array(
+			'recorded 11.2.0, inactive files 10.5.1' => array( '11.2.0', array(), array( $standard => '10.5.1' ), false ),
+			'recorded 11.2.0, renamed files 10.5.1'  => array( '11.2.0', array( $renamed ), $renamed_older, false ),
+			'recorded 10.5.1, files 11.2.0'          => array( '10.5.1', array( $standard ), array( $standard => '11.2.0' ), false ),
+			'recorded 11.2.0, files 11.2.0'          => array( '11.2.0', array( $standard ), array( $standard => '11.2.0' ), true ),
+			'recorded 11.2.0, files absent'          => array( '11.2.0', array(), array(), true ),
+		);
+	}
+
+	/**
 	 * @testdox The induced reconciliation vocabulary is exactly the 11 conditions a store can reach.
 	 */
 	public function test_induced_reconciliation_vocabulary_is_exactly_the_eleven_reachable_conditions(): void {
