@@ -405,10 +405,11 @@ class PreflightService {
 	}
 
 	/**
-	 * Tell whether the WooPayments extension supports the switch: the version this store last ran, and the installed files.
+	 * Tell whether the WooPayments extension supports the switch: the version this store last ran, and the code a rollback
+	 * would run.
 	 *
-	 * A rollback runs the installed files, and an extension downgraded by hand never lowers the version it recorded, so the
-	 * lower of the two decides. Without readable files the recorded version decides alone.
+	 * An extension downgraded by hand never lowers the version it recorded, so the lower of the two decides. Without a
+	 * running version or readable files the recorded version decides alone.
 	 *
 	 * @since 11.2.0
 	 *
@@ -420,8 +421,27 @@ class PreflightService {
 			return false;
 		}
 
-		$installed_version = $this->get_installed_woopayments_plugin_version();
-		return '' === $installed_version || version_compare( $installed_version, self::MINIMUM_CUTOVER_PLUGIN_VERSION, '>=' );
+		$code_version = $this->get_woopayments_code_version();
+		return '' === $code_version || version_compare( $code_version, self::MINIMUM_CUTOVER_PLUGIN_VERSION, '>=' );
+	}
+
+	/**
+	 * Get the version of the WooPayments code a rollback would run. While the extension owns payments that is the version it
+	 * loaded, which a retry in the request that updated it also still runs; otherwise, or when the loaded extension declares
+	 * no version, the installed files' header.
+	 *
+	 * @return string The version, or an empty string when neither can be read.
+	 */
+	private function get_woopayments_code_version(): string {
+		// Only while the extension owns payments: the built-in WooPayments' compatibility facades define the constant too.
+		if ( $this->arbiter->is_extension_owner() && $this->legacy_proxy->call_function( 'defined', 'WCPAY_VERSION_NUMBER' ) ) {
+			$loaded_version = $this->legacy_proxy->call_function( 'constant', 'WCPAY_VERSION_NUMBER' );
+			if ( is_scalar( $loaded_version ) && '' !== trim( (string) $loaded_version ) ) {
+				return trim( (string) $loaded_version );
+			}
+		}
+
+		return $this->get_installed_woopayments_plugin_version();
 	}
 
 	/**
