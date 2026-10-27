@@ -1188,6 +1188,12 @@ test.describe( 'WooPayments transition: extension activation during an open cuto
 				'deactivate',
 				'woocommerce-payments',
 			] );
+			// A merchant deletes from Plugins after the deactivation's redirect,
+			// so a request runs in between. With the 11.2.0 extension, deleting
+			// in the very next request fatals on shutdown, on trunk too: the
+			// Jetpack autoloader still lists the deactivated plugin for one
+			// request and autoloads its Connection class after the delete.
+			expect( await readRuntimeOwner( restApi ) ).toBe( 'none' );
 			await wpCLI( [ 'wp', 'plugin', 'delete', 'woocommerce-payments' ] );
 			await expect
 				.poll( () => readRuntimeOwner( restApi ), { timeout: 60_000 } )
