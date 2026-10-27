@@ -188,6 +188,38 @@ class MultiCurrency {
 	}
 
 	/**
+	 * Get the currency the shopper or a compatibility rule selected, or null when nothing is.
+	 *
+	 * Removed in WooCommerce 12.0.0.
+	 *
+	 * @since 11.0.0
+	 * @deprecated 11.0.0 No public replacement.
+	 *
+	 * @return MultiCurrencyCurrency|null
+	 */
+	public function get_explicit_selected_currency(): ?MultiCurrencyCurrency {
+		_deprecated_function( 'WCPay\\MultiCurrency\\MultiCurrency::get_explicit_selected_currency', '11.0.0', '' );
+
+		return $this->get_state()->get_explicit_selected_currency();
+	}
+
+	/**
+	 * Tell whether Multi-Currency runs: always, since WooCommerce declares this class only while it runs Multi-Currency.
+	 *
+	 * Removed in WooCommerce 12.0.0.
+	 *
+	 * @since 11.0.0
+	 * @deprecated 11.0.0 No public replacement.
+	 *
+	 * @return bool
+	 */
+	public static function is_enabled(): bool {
+		_deprecated_function( 'WCPay\\MultiCurrency\\MultiCurrency::is_enabled', '11.0.0', '' );
+
+		return true;
+	}
+
+	/**
 	 * Get the compatibility facade, whose predicates answer the questions other plugins ask Multi-Currency.
 	 *
 	 * Removed in WooCommerce 12.0.0.

@@ -203,12 +203,14 @@ class StateBuilder {
 			}
 		}
 
+		// A stored code counts only with two or more enabled currencies: with one, nothing could have been selected
+		// (client 11.2.0 `includes/multi-currency/MultiCurrency.php:876-899`).
 		$stored_code = $this->get_stored_currency_code();
-		$stored      = $stored_code && isset( $enabled[ $stored_code ] ) ? $enabled[ $stored_code ] : $default;
+		$stored      = $stored_code && count( $enabled ) > 1 ? $enabled[ $stored_code ] ?? null : null;
 		// The override filter is asked on every read, as compatibility code changes it mid-request (client 11.1.0 `MultiCurrency.php:802-810`).
 		// An override marked as an existing order's currency, such as a subscription's, holds even after the merchant disabled
-		// that currency, as long as its rate is known; any other override that is not enabled gives the store currency.
-		$selected = function () use ( $default_code, $available, $enabled, $default, $stored ): MultiCurrencyCurrency {
+		// that currency, as long as its rate is known; any other override that is not enabled selects nothing.
+		$selected = function () use ( $default_code, $available, $enabled, $stored ): ?MultiCurrencyCurrency {
 			$is_order_currency = false;
 			$override_code     = self::get_override_currency_code( $is_order_currency );
 			if ( null === $override_code ) {
@@ -216,14 +218,14 @@ class StateBuilder {
 			}
 
 			if ( isset( $enabled[ $override_code ] ) || ! $is_order_currency ) {
-				return $enabled[ $override_code ] ?? $default;
+				return $enabled[ $override_code ] ?? null;
 			}
 
 			if ( ! array_key_exists( $override_code, $this->disabled_override_currencies ) ) {
 				$this->disabled_override_currencies[ $override_code ] = $this->create_disabled_currency( $default_code, $override_code, $available );
 			}
 
-			return $this->disabled_override_currencies[ $override_code ] ?? $default;
+			return $this->disabled_override_currencies[ $override_code ];
 		};
 
 		$this->cached_state            = new MultiCurrencyState( $available, $enabled, $default, $selected, fn(): array => $this->get_or_store_customer_currencies( array_keys( $available ) ) );
@@ -587,7 +589,7 @@ class StateBuilder {
 
 		$currencies = array( $store_currency->get_code() => $store_currency );
 		// The stored customer currencies are kept, so a status-change write does not drop them.
-		$this->cached_state            = new MultiCurrencyState( $currencies, $currencies, $store_currency, $store_currency, fn(): array => $this->get_or_store_customer_currencies( array() ) );
+		$this->cached_state            = new MultiCurrencyState( $currencies, $currencies, $store_currency, null, fn(): array => $this->get_or_store_customer_currencies( array() ) );
 		$this->cached_state_generation = $current_generation;
 
 		return $this->cached_state;

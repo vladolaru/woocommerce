@@ -44,9 +44,9 @@ class MultiCurrencyState {
 	private MultiCurrencyCurrency $default_currency;
 
 	/**
-	 * Selected currency, or a resolver asked on every read.
+	 * Currency the shopper or a compatibility rule selected, null for none, or a resolver asked on every read.
 	 *
-	 * @var MultiCurrencyCurrency|\Closure
+	 * @var MultiCurrencyCurrency|\Closure|null
 	 */
 	private $selected_currency;
 
@@ -63,8 +63,8 @@ class MultiCurrencyState {
 	 * @param array<string,MultiCurrencyCurrency> $available_currencies Available currencies.
 	 * @param array<string,MultiCurrencyCurrency> $enabled_currencies   Enabled currencies.
 	 * @param MultiCurrencyCurrency               $default_currency     Default currency.
-	 * @param MultiCurrencyCurrency|\Closure      $selected_currency    Selected currency, or a resolver asked on every read.
-	 * @phpstan-param MultiCurrencyCurrency|\Closure(): MultiCurrencyCurrency $selected_currency
+	 * @param MultiCurrencyCurrency|\Closure|null $selected_currency    Selected currency, null for none, or a resolver asked on every read.
+	 * @phpstan-param MultiCurrencyCurrency|null|\Closure(): (MultiCurrencyCurrency|null) $selected_currency
 	 * @param string[]|\Closure                   $customer_currencies Customer-used currency codes, or a loader returning them.
 	 */
 	public function __construct(
@@ -115,11 +115,21 @@ class MultiCurrencyState {
 	}
 
 	/**
-	 * Get selected currency.
+	 * Get the selected currency, or the default currency when nothing is selected.
 	 *
 	 * @return MultiCurrencyCurrency
 	 */
 	public function get_selected_currency(): MultiCurrencyCurrency {
+		return $this->get_explicit_selected_currency() ?? $this->default_currency;
+	}
+
+	/**
+	 * Get the currency the shopper or a compatibility rule selected, or null when nothing is, so other plugins' currency
+	 * filters are left alone.
+	 *
+	 * @return MultiCurrencyCurrency|null
+	 */
+	public function get_explicit_selected_currency(): ?MultiCurrencyCurrency {
 		return $this->selected_currency instanceof \Closure ? ( $this->selected_currency )() : $this->selected_currency;
 	}
 

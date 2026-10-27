@@ -187,6 +187,27 @@ class WooPaymentsExtensionMultiCurrencyFacadeTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox The facade says Multi-Currency runs and gives the shopper's own selection, or null while nothing is selected.
+	 *
+	 * Client 11.2.0 `includes/multi-currency/MultiCurrency.php:272-278,876-899`.
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_answers_whether_multi_currency_runs_and_the_explicit_selection(): void {
+		$this->declare_facade();
+		$facade = $this->get_facade();
+		$this->expect_facade_deprecations( 'is_enabled', 'get_explicit_selected_currency' );
+
+		$this->assertTrue( \WCPay\MultiCurrency\MultiCurrency::is_enabled() );
+		$this->assertNull( $facade->get_explicit_selected_currency(), 'Nothing is selected.' );
+
+		$customer_id = self::factory()->user->create();
+		update_user_meta( $customer_id, 'wcpay_currency', 'EUR' );
+		wp_set_current_user( $customer_id );
+		$this->assertSame( 'EUR', $facade->get_explicit_selected_currency()->get_code() );
+	}
+
+	/**
 	 * @testdox The facade's settings and display reads answer with the module's settings.
 	 * @runInSeparateProcess
 	 * @preserveGlobalState disabled
@@ -474,19 +495,21 @@ class WooPaymentsExtensionMultiCurrencyFacadeTest extends WC_Unit_Test_Case {
 			10,
 			3
 		);
-		$this->expect_facade_deprecations( 'get_price', 'get_raw_conversion', 'get_selected_currency', 'get_default_currency', 'get_enabled_currencies', 'get_compatibility', 'remove_woo_admin_notes' );
+		$this->expect_facade_deprecations( 'get_price', 'get_raw_conversion', 'get_selected_currency', 'get_explicit_selected_currency', 'get_default_currency', 'get_enabled_currencies', 'get_compatibility', 'remove_woo_admin_notes', 'is_enabled' );
 		$this->setExpectedDeprecated( 'WCPay\\MultiCurrency\\Compatibility::should_convert_shipping_amount' );
 
 		$facade = $this->get_facade();
 		$facade->get_price( 10.0, 'product' );
 		$facade->get_raw_conversion( 10.0, 'EUR' );
 		$facade->get_selected_currency();
+		$facade->get_explicit_selected_currency();
 		$facade->get_default_currency();
 		$facade->get_enabled_currencies();
 		$facade->get_compatibility()->should_convert_shipping_amount();
 		\WCPay\MultiCurrency\MultiCurrency::remove_woo_admin_notes();
+		\WCPay\MultiCurrency\MultiCurrency::is_enabled();
 
-		$this->assertCount( 9, $notices );
+		$this->assertCount( 11, $notices );
 		foreach ( $notices as $function_name => $notice ) {
 			$this->assertSame( array( '', '11.0.0' ), $notice, $function_name );
 		}

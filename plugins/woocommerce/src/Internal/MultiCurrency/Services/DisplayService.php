@@ -67,10 +67,14 @@ class DisplayService {
 	/**
 	 * Get the currency code for this request: the order's, the selected one, or the store currency when a filter asks.
 	 *
-	 * @param string|null $order_currency Optional order currency override.
+	 * With nothing selected, the code earlier `woocommerce_currency` filters gave is kept, so a third-party currency switcher
+	 * keeps working (client 11.2.0 `includes/multi-currency/FrontendCurrencies.php:208-229`).
+	 *
+	 * @param string|null $order_currency    Optional order currency override.
+	 * @param string|null $filtered_currency Code earlier `woocommerce_currency` filters gave.
 	 * @return string
 	 */
-	public function get_woocommerce_currency( ?string $order_currency = null ): string {
+	public function get_woocommerce_currency( ?string $order_currency = null, ?string $filtered_currency = null ): string {
 		$state = $this->state_builder->build();
 
 		/**
@@ -86,7 +90,16 @@ class DisplayService {
 			return $state->get_default_currency()->get_code();
 		}
 
-		return $this->get_currency_code( $state, $order_currency );
+		if ( is_string( $order_currency ) && '' !== $order_currency ) {
+			return strtoupper( $order_currency );
+		}
+
+		$selected = $state->get_explicit_selected_currency();
+		if ( null === $selected && is_string( $filtered_currency ) && '' !== $filtered_currency ) {
+			return $filtered_currency;
+		}
+
+		return ( $selected ?? $state->get_default_currency() )->get_code();
 	}
 
 	/**

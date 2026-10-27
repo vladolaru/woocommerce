@@ -142,7 +142,7 @@ class MultiCurrencyFrontendCurrenciesController implements RegisterHooksInterfac
 	}
 
 	/**
-	 * Get the currency code for this request: the order's or the selected currency.
+	 * Get the currency code for this request: the order's or the selected currency, else the code earlier filters gave.
 	 *
 	 * @param mixed $currency Existing currency.
 	 * @return string
@@ -155,7 +155,7 @@ class MultiCurrencyFrontendCurrenciesController implements RegisterHooksInterfac
 		$this->is_converting_woocommerce_currency = true;
 
 		try {
-			return $this->get_display_service()->get_woocommerce_currency( $this->order_currency );
+			return $this->get_display_service()->get_woocommerce_currency( $this->order_currency, is_string( $currency ) ? $currency : null );
 		} finally {
 			$this->is_converting_woocommerce_currency = false;
 		}

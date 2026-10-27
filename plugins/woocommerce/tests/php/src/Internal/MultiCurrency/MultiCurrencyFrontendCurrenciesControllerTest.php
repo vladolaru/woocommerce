@@ -11,6 +11,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Services\DisplayService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\OrderContextService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\ServiceFactory;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\RequestContext;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilder;
 use WC_Unit_Test_Case;
 
 /**
@@ -159,6 +160,93 @@ class MultiCurrencyFrontendCurrenciesControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should leave a third-party switcher's currency unless the shopper or a compatibility rule chose one: $expected.
+	 *
+	 * A USD store with EUR enabled; a third-party switcher answers the WooCommerce currency at priority 5. Expected values
+	 * from client 11.2.0 `tests/unit/multi-currency/test-class-frontend-currencies.php:109-176` and
+	 * `test-class-multi-currency.php:515-545,2156-2172`; the marked override is a subscription's currency the merchant disabled.
+	 *
+	 * @dataProvider third_party_switcher_provider
+	 *
+	 * @param string[]    $enabled          Enabled currency codes.
+	 * @param string|null $session_currency Currency stored in the shopper's session.
+	 * @param string|null $override         Selected-currency override code.
+	 * @param bool        $marked           Whether the override is marked as an order's currency.
+	 * @param bool        $store_currency   Whether the store-currency compatibility filter answers true.
+	 * @param string      $switcher         Currency the third-party switcher answers.
+	 * @param string      $expected         Currency WooCommerce gets.
+	 */
+	public function test_leaves_a_third_party_switcher_currency_when_nothing_is_selected( array $enabled, ?string $session_currency, ?string $override, bool $marked, bool $store_currency, string $switcher, string $expected ): void {
+		update_option( 'woocommerce_currency', 'USD' );
+		update_option( 'wcpay_multi_currency_enabled_currencies', $enabled );
+		update_option( 'wcpay_multi_currency_exchange_rate_eur', 'manual' );
+		update_option( 'wcpay_multi_currency_manual_rate_eur', '0.9' );
+		update_option( 'wcpay_multi_currency_exchange_rate_gbp', 'manual' );
+		update_option( 'wcpay_multi_currency_manual_rate_gbp', '0.8' );
+		if ( null !== $override ) {
+			add_filter(
+				'wcpay_multi_currency_override_selected_currency',
+				static function () use ( $override, $marked ) {
+					if ( $marked ) {
+						StateBuilder::set_order_currency_override( $override );
+					}
+
+					return $override;
+				}
+			);
+		}
+		if ( $store_currency ) {
+			add_filter( 'wcpay_multi_currency_should_return_store_currency', '__return_true' );
+		}
+		add_filter( 'woocommerce_currency', static fn() => $switcher, 5 );
+
+		$this->with_session_currency(
+			$session_currency,
+			function () use ( $expected ): void {
+				$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, null, null, wc_get_container()->get( ServiceFactory::class )->create_display_service() );
+				$sut->register();
+
+				$this->assertSame( $expected, get_woocommerce_currency() );
+			}
+		);
+	}
+
+	/** @return array<string,array{string[],?string,?string,bool,bool,string,string}> */
+	public static function third_party_switcher_provider(): array {
+		return array(
+			'nothing selected'                        => array( array( 'USD', 'EUR' ), null, null, false, false, 'GBP', 'GBP' ),
+			'session EUR'                             => array( array( 'USD', 'EUR' ), 'EUR', null, false, false, 'GBP', 'EUR' ),
+			'session USD, two currencies'             => array( array( 'USD', 'EUR' ), 'USD', null, false, false, 'GBP', 'USD' ),
+			'session EUR, only the store currency'    => array( array( 'USD' ), 'EUR', null, false, false, 'GBP', 'GBP' ),
+			'override not enabled, unmarked'          => array( array( 'USD', 'EUR' ), null, 'JPY', false, false, 'GBP', 'GBP' ),
+			'override not enabled, an order currency' => array( array( 'USD', 'EUR' ), null, 'GBP', true, false, 'EUR', 'GBP' ),
+			'store currency for a shipping rate'      => array( array( 'USD', 'EUR' ), null, null, false, true, 'GBP', 'USD' ),
+		);
+	}
+
+	/**
+	 * @testdox Should pass every currency a third-party switcher answers through while nothing is selected.
+	 *
+	 * Client 11.2.0 `tests/unit/multi-currency/test-class-frontend-currencies.php:154-163`.
+	 */
+	public function test_passes_each_third_party_currency_through_while_nothing_is_selected(): void {
+		update_option( 'woocommerce_currency', 'USD' );
+		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'USD', 'EUR' ) );
+		update_option( 'wcpay_multi_currency_exchange_rate_eur', 'manual' );
+		update_option( 'wcpay_multi_currency_manual_rate_eur', '0.9' );
+
+		$this->with_session_currency(
+			null,
+			function (): void {
+				$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, null, null, wc_get_container()->get( ServiceFactory::class )->create_display_service() );
+
+				$this->assertSame( 'GBP', $sut->get_woocommerce_currency( 'GBP' ) );
+				$this->assertSame( 'CAD', $sut->get_woocommerce_currency( 'CAD' ) );
+			}
+		);
+	}
+
+	/**
 	 * @testdox Should return the original store currency during currency projection re-entry.
 	 */
 	public function test_currency_conversion_is_reentry_safe(): void {
@@ -179,11 +267,12 @@ class MultiCurrencyFrontendCurrenciesControllerTest extends WC_Unit_Test_Case {
 			/**
 			 * Project the WooCommerce currency code.
 			 *
-			 * @param string|null $order_currency Optional order currency override.
+			 * @param string|null $order_currency    Optional order currency override.
+			 * @param string|null $filtered_currency Code earlier filters gave.
 			 * @return string
 			 */
-			public function get_woocommerce_currency( ?string $order_currency = null ): string {
-				unset( $order_currency );
+			public function get_woocommerce_currency( ?string $order_currency = null, ?string $filtered_currency = null ): string {
+				unset( $order_currency, $filtered_currency );
 
 				++$this->calls;
 
@@ -511,6 +600,27 @@ class MultiCurrencyFrontendCurrenciesControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * Run a callback with a fresh guest session holding the given selected currency.
+	 *
+	 * @param string|null $currency_code Currency stored in the session, or null for none.
+	 * @param callable    $callback      Callback to run.
+	 */
+	private function with_session_currency( ?string $currency_code, callable $callback ): void {
+		$previous_session = WC()->session;
+		WC()->session     = new \WC_Session_Handler();
+		WC()->session->init();
+		if ( null !== $currency_code ) {
+			WC()->session->set( StateBuilder::CURRENCY_STORAGE_KEY, $currency_code );
+		}
+
+		try {
+			$callback();
+		} finally {
+			WC()->session = $previous_session;
+		}
+	}
+
+	/**
 	 * Run a callback with temporary WordPress query vars.
 	 *
 	 * @param array<string, mixed> $query_vars Query vars.
@@ -625,10 +735,13 @@ class MultiCurrencyFrontendCurrenciesControllerTest extends WC_Unit_Test_Case {
 			/**
 			 * Project the WooCommerce currency code.
 			 *
-			 * @param string|null $order_currency Optional order currency override.
+			 * @param string|null $order_currency    Optional order currency override.
+			 * @param string|null $filtered_currency Code earlier filters gave.
 			 * @return string
 			 */
-			public function get_woocommerce_currency( ?string $order_currency = null ): string {
+			public function get_woocommerce_currency( ?string $order_currency = null, ?string $filtered_currency = null ): string {
+				unset( $filtered_currency );
+
 				return $order_currency ?? 'GBP';
 			}
 
