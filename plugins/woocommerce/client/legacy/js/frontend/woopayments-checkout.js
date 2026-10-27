@@ -2228,14 +2228,16 @@
 
 	// A Payment Element that failed to load is rebuilt when the shopper selects its method again, so the
 	// reselection retries the load, as rebuilding on every method switch used to. Client 11.1.0 never retries.
+	// Keyed on the selected input, not the current config, which falls back to card for other gateways. The old
+	// error leaves the gateway's box first; a new `loaderror` writes it back.
 	function resetFailedPaymentElement() {
-		setCurrentGatewayConfig();
+		var selectedGatewayId = getSelectedGatewayId() || gatewayId;
+		var failed = paymentElements[ selectedGatewayId ];
 
-		if (
-			paymentElements[ gatewayId ] &&
-			paymentElements[ gatewayId ].loadError
-		) {
-			resetStripePaymentElement( gatewayId );
+		if ( failed && failed.loadError ) {
+			failed.loadError = null;
+			showPaymentElementLoadError( failed );
+			resetStripePaymentElement( selectedGatewayId );
 		}
 	}
 

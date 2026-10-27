@@ -1247,6 +1247,34 @@ describe( 'WooPayments checkout', () => {
 		expect( klarna.mount ).toHaveBeenLastCalledWith(
 			getGatewayContainer( 'woocommerce_payments_klarna' )
 		);
+
+		// A later update that leaves the fragment alone keeps the moved elements where they are.
+		bodyEventHandlers.updated_checkout();
+
+		expect( card.unmount ).toHaveBeenCalledTimes( 1 );
+		expect( klarna.unmount ).toHaveBeenCalledTimes( 1 );
+		expect( mountPaymentElement ).toHaveBeenCalledTimes( 4 );
+	} );
+
+	test( 'gives the shared Stripe instance the Link beta when a non-card gateway mounts first', () => {
+		renderGatewayRows( [ 'klarna', 'card' ], 'card' );
+		localizeGatewayConfigs( [ 'klarna', 'card' ] );
+
+		require( '../woopayments-checkout' );
+
+		expect( createdPaymentElements[ 0 ].elementsOptions ).toMatchObject( {
+			paymentMethodTypes: [ 'klarna' ],
+		} );
+		expect( window.Stripe ).toHaveBeenCalledTimes( 1 );
+		expect( window.Stripe ).toHaveBeenCalledWith(
+			'pk_test',
+			expect.objectContaining( {
+				betas: [
+					'card_country_event_beta_1',
+					'link_autofill_modal_beta_1',
+				],
+			} )
+		);
 	} );
 
 	test( 'shows a load error in its own gateway box and still submits another gateway', async () => {
@@ -1295,6 +1323,13 @@ describe( 'WooPayments checkout', () => {
 		selectGateway( 'woocommerce_payments_klarna' );
 
 		expect( klarna.unmount ).toHaveBeenCalledTimes( 1 );
+		// The old error leaves Klarna's box once the rebuild starts; the rebuilt element loads.
+		expect(
+			getGatewayErrorBox( 'woocommerce_payments_klarna' ).textContent
+		).toBe( '' );
+		expect(
+			getGatewayErrorBox( 'woocommerce_payments_klarna' ).hidden
+		).toBe( true );
 		expect( createdPaymentElements ).toHaveLength( 3 );
 		const rebuilt = createdPaymentElements[ 2 ];
 		expect( rebuilt.elementsOptions.paymentMethodTypes ).toEqual( [
@@ -1311,6 +1346,60 @@ describe( 'WooPayments checkout', () => {
 
 		expect( rebuilt.group.submit ).toHaveBeenCalledTimes( 1 );
 		expect( klarna.group.submit ).not.toHaveBeenCalled();
+	} );
+
+	test( 'keeps a failed card element when the shopper selects a method that is not WooPayments', () => {
+		renderGatewayRows( [ 'card', 'klarna' ], 'card' );
+		localizeGatewayConfigs( [ 'card', 'klarna' ] );
+		document
+			.querySelector( '.payment_methods' )
+			.insertAdjacentHTML(
+				'beforeend',
+				'<li class="wc_payment_method payment_method_cod">' +
+					'<input id="payment_method_cod" type="radio" name="payment_method" value="cod" /></li>'
+			);
+		require( '../woopayments-checkout' );
+		const card = createdPaymentElements[ 0 ];
+		card.handlers.loaderror( {
+			error: { message: 'The payment form could not be loaded.' },
+		} );
+
+		// Cash on delivery has no WooPayments config; the card's failed element is not its to rebuild.
+		selectGateway( 'cod' );
+
+		expect( card.unmount ).not.toHaveBeenCalled();
+		expect( createdPaymentElements ).toHaveLength( 2 );
+		expect( getGatewayErrorBox( 'woocommerce_payments' ).textContent ).toBe(
+			'The payment form could not be loaded.'
+		);
+	} );
+
+	test( 'makes the selected gateway current again after mounting every gateway', () => {
+		renderGatewayRows( [ 'card', 'klarna' ], 'card' );
+		localizeGatewayConfigs( [ 'card', 'klarna' ] );
+		getGatewayRow( 'woocommerce_payments' )
+			.querySelector( '.wcpay-core-checkout-form' )
+			.insertAdjacentHTML(
+				'beforeend',
+				'<input id="wc-woocommerce_payments-new-payment-method" type="checkbox" />'
+			);
+		require( '../woopayments-checkout' );
+		// A checkout update runs the mount pass with nothing after it that resets the config (at page load the
+		// confirmation check does).
+		bodyEventHandlers.updated_checkout();
+
+		// Klarna mounted last; the card's save checkbox still updates the card element's terms.
+		const checkbox = document.getElementById(
+			'wc-woocommerce_payments-new-payment-method'
+		);
+		checkbox.checked = true;
+		checkbox.dispatchEvent(
+			new window.Event( 'change', { bubbles: true, cancelable: true } )
+		);
+
+		expect( updatePaymentElement ).toHaveBeenCalledWith( {
+			terms: { card: 'always' },
+		} );
 	} );
 
 	test( 'follows a Multi-Currency switch: kept elements move to the new rows, a newly offered method mounts in the new currency', () => {
