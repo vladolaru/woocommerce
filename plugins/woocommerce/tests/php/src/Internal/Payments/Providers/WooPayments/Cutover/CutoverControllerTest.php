@@ -10,6 +10,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\C
 use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\StateStore;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\DataMigration;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\ExtensionBoundRenewalPlugins;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\CutoverActionScheduler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\PerSiteActivationController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
@@ -813,7 +814,7 @@ class CutoverControllerTest extends WC_Unit_Test_Case {
 	public function test_switch_offer_names_the_plugin_that_holds_it_back( string $store, array $names, ?string $expected ): void {
 		$this->arrange_switch_offer( $store );
 
-		$notices = $this->render_admin_notices( $this->create_cutover_controller( null, $this->create_preflight_with_renewal_plugins( $names ) ) );
+		$notices = $this->render_admin_notices( $this->create_cutover_controller( null, null, $this->create_renewal_plugins( array_combine( $names, $names ) ) ) );
 
 		if ( null === $expected ) {
 			$this->assertStringContainsString( 'Start the switch', $notices );
@@ -871,7 +872,7 @@ class CutoverControllerTest extends WC_Unit_Test_Case {
 			}
 		};
 
-		$notice = $this->render_admin_notices( $this->create_cutover_controller( $job, $this->create_preflight_with_renewal_plugins( $names ) ) );
+		$notice = $this->render_admin_notices( $this->create_cutover_controller( $job, null, $this->create_renewal_plugins( array_combine( $names, $names ) ) ) );
 
 		$this->assertStringContainsString( 'Switch in progress', $notice );
 		if ( $shown ) {
@@ -891,6 +892,147 @@ class CutoverControllerTest extends WC_Unit_Test_Case {
 			'held back, plugin since inactive' => array( PreflightService::FAILURE_EXTENSION_RENEWAL_PLUGIN_ACTIVE, array(), false ),
 			'deferred for another reason'      => array( 'operational_queue_hooks_unhandled', array( 'Order Subscriptions for WooCommerce' ), false ),
 		);
+	}
+
+	/**
+	 * The listed plugins charge renewals or installments through the extension's own classes, which the built-in
+	 * WooPayments does not declare (Order Subscriptions 1.2.15 and Ultimate Payment Plans 4.5.0 build
+	 * WCPay\Payment_Information; YITH 4.26.3 class-ywsbs-wc-payments.php extends WC_Payment_Gateway_WCPay).
+	 *
+	 * @testdox On a store the built-in WooPayments owns, a warning names the active plugins whose renewals need the WooPayments extension ($_dataName).
+	 * @dataProvider provide_built_in_store_renewal_plugins
+	 *
+	 * @param array<string,string> $plugins  Active renewal plugin names by plugin file.
+	 * @param string|null          $expected The warning text, or null when there is none.
+	 */
+	public function test_built_in_store_names_the_active_renewal_plugins( array $plugins, ?string $expected ): void {
+		$this->arrange_builtin_store();
+
+		$notices = $this->render_admin_notices( $this->create_cutover_controller( null, null, $this->create_renewal_plugins( $plugins ) ) );
+
+		if ( null === $expected ) {
+			$this->assertStringNotContainsString( 'need the WooPayments extension', $notices );
+			return;
+		}
+		$this->assertStringContainsString( esc_html( $expected ), $notices );
+		$this->assertStringContainsString( CutoverController::QUERY_NOTICE . '=' . CutoverController::NOTICE_RENEWAL_PLUGINS, $notices, 'The warning can be dismissed.' );
+	}
+
+	/**
+	 * @return array<string,array{array<string,string>,string|null}>
+	 */
+	public function provide_built_in_store_renewal_plugins(): array {
+		return array(
+			'one plugin'  => array(
+				array( 'order-subscriptions/order-subscriptions.php' => 'Order Subscriptions for WooCommerce' ),
+				"Renewal and installment payments set up with Order Subscriptions for WooCommerce need the WooPayments extension. WooPayments is built into WooCommerce on this store, so it can't charge them.",
+			),
+			'two plugins' => array(
+				array(
+					'yith-woocommerce-subscription-premium/init.php' => 'YITH WooCommerce Subscription Premium',
+					'ultimate-payment-plans/ultimate-payment-plans.php' => 'Ultimate Payment Plans',
+				),
+				"Renewal and installment payments set up with YITH WooCommerce Subscription Premium and Ultimate Payment Plans need the WooPayments extension. WooPayments is built into WooCommerce on this store, so it can't charge them.",
+			),
+			'none active' => array( array(), null ),
+		);
+	}
+
+	/**
+	 * @testdox No renewal plugins warning shows on a store the built-in WooPayments does not own; the switch notice says why it waits instead ($store).
+	 * @testWith ["extension active"]
+	 *           ["waiting for the switch"]
+	 *
+	 * @param string $store Which store offers the switch.
+	 */
+	public function test_renewal_plugins_warning_shows_only_on_built_in_stores( string $store ): void {
+		$this->arrange_switch_offer( $store );
+
+		$notices = $this->render_admin_notices( $this->create_cutover_controller( null, null, $this->create_renewal_plugins( array( 'order-subscriptions/order-subscriptions.php' => 'Order Subscriptions for WooCommerce' ) ) ) );
+
+		$this->assertStringNotContainsString( 'need the WooPayments extension', $notices );
+		$this->assertStringContainsString( 'Order Subscriptions for WooCommerce charges renewals and scheduled payments', $notices, 'The switch notice names the plugin.' );
+	}
+
+	/**
+	 * @testdox The renewal plugins warning stays off Payments settings, which keep only the compliance and switch notices.
+	 */
+	public function test_renewal_plugins_warning_is_not_shown_on_payments_settings(): void {
+		$this->arrange_builtin_store();
+		$controller = $this->create_cutover_controller( null, null, $this->create_renewal_plugins( array( 'order-subscriptions/order-subscriptions.php' => 'Order Subscriptions for WooCommerce' ) ) );
+		$this->assertStringContainsString( 'need the WooPayments extension', $this->render_admin_notices( $controller ), 'Shown on other admin pages.' );
+
+		$_GET['page'] = 'wc-settings';
+		$_GET['tab']  = 'checkout';
+
+		$this->assertStringNotContainsString( 'need the WooPayments extension', $this->render_admin_notices( $controller ) );
+	}
+
+	/**
+	 * @testdox A dismissed renewal plugins warning stays hidden while the same plugins are active, in any order, shows again once the set of active renewal plugins changes, and is gone once none is active.
+	 */
+	public function test_dismissed_renewal_plugins_warning_shows_again_when_the_plugins_change(): void {
+		$this->arrange_builtin_store();
+		$renewal_plugins = $this->create_renewal_plugins(
+			array(
+				'ultimate-payment-plans/ultimate-payment-plans.php' => 'Ultimate Payment Plans',
+				'order-subscriptions/order-subscriptions.php'       => 'Order Subscriptions for WooCommerce',
+			)
+		);
+		$controller      = $this->create_cutover_controller( null, null, $renewal_plugins );
+		$this->register_exit_mock( static fn() => null );
+		add_filter( 'wp_redirect', '__return_empty_string' );
+
+		try {
+			$this->follow_dismiss_link( $controller, $this->render_admin_notices( $controller ), CutoverController::NOTICE_RENEWAL_PLUGINS );
+			unset( $_GET[ CutoverController::QUERY_ACTION ], $_GET[ CutoverController::NONCE_NAME ], $_GET[ CutoverController::QUERY_NOTICE ] );
+			$this->assertStringNotContainsString( 'need the WooPayments extension', $this->render_admin_notices( $controller ), 'Dismissed for the same plugins.' );
+
+			$renewal_plugins->plugins = array_reverse( $renewal_plugins->plugins, true );
+			$this->assertStringNotContainsString( 'need the WooPayments extension', $this->render_admin_notices( $controller ), 'The same plugins in another order.' );
+
+			unset( $renewal_plugins->plugins['order-subscriptions/order-subscriptions.php'] );
+			$this->assertStringContainsString( 'set up with Ultimate Payment Plans need the WooPayments extension', $this->render_admin_notices( $controller ), 'Shown again once a plugin is no longer active.' );
+
+			$this->follow_dismiss_link( $controller, $this->render_admin_notices( $controller ), CutoverController::NOTICE_RENEWAL_PLUGINS );
+			unset( $_GET[ CutoverController::QUERY_ACTION ], $_GET[ CutoverController::NONCE_NAME ], $_GET[ CutoverController::QUERY_NOTICE ] );
+			$renewal_plugins->plugins['deposit-and-partial-payment-plan/deposit-and-partial-payment-plan.php'] = 'Deposit and Partial Payment Plan';
+			$this->assertStringContainsString( 'set up with Ultimate Payment Plans and Deposit and Partial Payment Plan need the WooPayments extension', $this->render_admin_notices( $controller ), 'Shown again once another plugin is active.' );
+
+			$renewal_plugins->plugins = array();
+			$this->assertStringNotContainsString( 'need the WooPayments extension', $this->render_admin_notices( $controller ), 'Nothing to warn about once none is active.' );
+		} finally {
+			remove_filter( 'wp_redirect', '__return_empty_string' );
+		}
+	}
+
+	/**
+	 * @testdox A renewal plugins warning dismissed for a plugin shows again when the plugin is reactivated after an admin page was seen with none active, which deleted the dismissal.
+	 */
+	public function test_renewal_plugins_dismissal_is_deleted_once_none_is_active(): void {
+		$this->arrange_builtin_store();
+		$order_subscriptions = array( 'order-subscriptions/order-subscriptions.php' => 'Order Subscriptions for WooCommerce' );
+		$renewal_plugins     = $this->create_renewal_plugins( $order_subscriptions );
+		$controller          = $this->create_cutover_controller( null, null, $renewal_plugins );
+		$this->register_exit_mock( static fn() => null );
+		add_filter( 'wp_redirect', '__return_empty_string' );
+
+		try {
+			$this->follow_dismiss_link( $controller, $this->render_admin_notices( $controller ), CutoverController::NOTICE_RENEWAL_PLUGINS );
+		} finally {
+			remove_filter( 'wp_redirect', '__return_empty_string' );
+		}
+		unset( $_GET[ CutoverController::QUERY_ACTION ], $_GET[ CutoverController::NONCE_NAME ], $_GET[ CutoverController::QUERY_NOTICE ] );
+		$this->assertSame( array_keys( $order_subscriptions ), get_option( 'woocommerce_woopayments_renewal_plugins_notice_dismissed' ), 'The dismissal is kept for the plugin.' );
+
+		$renewal_plugins->plugins = array();
+		$this->render_admin_notices( $controller );
+
+		$this->assertFalse( get_option( 'woocommerce_woopayments_renewal_plugins_notice_dismissed' ), 'An admin page with no listed plugin active deletes the dismissal.' );
+
+		$renewal_plugins->plugins = $order_subscriptions;
+
+		$this->assertStringContainsString( 'set up with Order Subscriptions for WooCommerce need the WooPayments extension', $this->render_admin_notices( $controller ) );
 	}
 
 	/**
@@ -1369,7 +1511,7 @@ class CutoverControllerTest extends WC_Unit_Test_Case {
 		$legacy_proxy->method( 'call_function' )->willReturn( true );
 		$legacy_proxy->expects( $this->exactly( 2 ) )->method( 'exit' );
 		$controller = new CutoverController();
-		$controller->init( $arbiter, $legacy_proxy, $preflight, $job );
+		$controller->init( $arbiter, $legacy_proxy, $preflight, $job, $this->create_renewal_plugins( array() ) );
 		$redirects        = array();
 		$capture_redirect = static function ( string $location ) use ( &$redirects ): string {
 			$redirects[] = $location;
@@ -1556,40 +1698,44 @@ class CutoverControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Create a preflight service whose active plugins that renew through the WooPayments extension have the given names.
+	 * Create a renewal plugins double whose active plugins are the given ones, which a test may change between renders.
 	 *
-	 * @param string[] $names Plugin names.
-	 * @return PreflightService
+	 * @param array<string,string> $plugins Active plugin names by plugin file.
+	 * @return ExtensionBoundRenewalPlugins&object{plugins: array<string,string>}
 	 */
-	private function create_preflight_with_renewal_plugins( array $names ): PreflightService {
-		return $this->create_preflight_service(
-			new class( $names ) extends PreflightService {
-				/** @var string[] */
-				private array $names;
+	private function create_renewal_plugins( array $plugins ): ExtensionBoundRenewalPlugins {
+		return new class( $plugins ) extends ExtensionBoundRenewalPlugins {
+			/** @var array<string,string> Active plugin names by plugin file. */
+			public array $plugins;
 
-				/**
-				 * @param string[] $names Plugin names.
-				 */
-				public function __construct( array $names ) {
-					$this->names = $names;
-				}
-
-				/** @return string[] */
-				public function get_active_extension_renewal_plugin_names(): array {
-					return $this->names;
-				}
+			/**
+			 * @param array<string,string> $plugins Active plugin names by plugin file.
+			 */
+			public function __construct( array $plugins ) {
+				$this->plugins = $plugins;
 			}
-		);
+
+			/** @return string[] */
+			public function get_active_plugin_files(): array {
+				return array_keys( $this->plugins );
+			}
+
+			/** @return string[] */
+			public function get_active_plugin_names(): array {
+				return array_values( $this->plugins );
+			}
+		};
 	}
 
 	/**
 	 * Create a cutover controller wired to this test's dependencies.
 	 *
-	 * @param ReconciliationJob|null $job               Optional reconciliation job.
-	 * @param PreflightService|null  $preflight_service Optional preflight service; a new one by default.
+	 * @param ReconciliationJob|null            $job               Optional reconciliation job.
+	 * @param PreflightService|null             $preflight_service Optional preflight service; a new one by default.
+	 * @param ExtensionBoundRenewalPlugins|null $renewal_plugins   Optional renewal plugins; none active by default.
 	 * @return CutoverController
 	 */
-	private function create_cutover_controller( ?ReconciliationJob $job = null, ?PreflightService $preflight_service = null ): CutoverController {
+	private function create_cutover_controller( ?ReconciliationJob $job = null, ?PreflightService $preflight_service = null, ?ExtensionBoundRenewalPlugins $renewal_plugins = null ): CutoverController {
 		$arbiter           = wc_get_container()->get( WooPaymentsRuntimeArbiter::class );
 		$legacy_proxy      = wc_get_container()->get( LegacyProxy::class );
 		$preflight_service = $preflight_service ?? $this->create_preflight_service();
@@ -1621,7 +1767,7 @@ class CutoverControllerTest extends WC_Unit_Test_Case {
 			}
 		};
 		$controller = new CutoverController();
-		$controller->init( $arbiter, $legacy_proxy, $preflight_service, $job );
+		$controller->init( $arbiter, $legacy_proxy, $preflight_service, $job, $renewal_plugins ?? $this->create_renewal_plugins( array() ) );
 
 		return $controller;
 	}
@@ -1765,6 +1911,16 @@ class CutoverControllerTest extends WC_Unit_Test_Case {
 		$this->fake_current_user_caps( true );
 		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
 		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
+	}
+
+	/**
+	 * Arrange a store the built-in WooPayments owns because it never ran the extension, with a store manager signed in.
+	 */
+	private function arrange_builtin_store(): void {
+		delete_option( 'woocommerce_woocommerce_payments_version' );
+		$this->fake_plugin_active( false );
+		$this->fake_current_user_caps( true );
+		$this->enable_builtin_runtime_owner();
 	}
 
 	/**

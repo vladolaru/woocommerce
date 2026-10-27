@@ -20,6 +20,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\Cutov
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCanceledAuthorizationFeeRemediationService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\PreflightService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\DataMigration;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\ExtensionBoundRenewalPlugins;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGatewaySettingsSynchronizer;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteWordingSnapshot;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\ReconciliationJob;
@@ -903,7 +904,7 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 		$deactivations_before  = $deactivations;
 		$migration_runs_before = $migration_runs;
 		$controller            = new CutoverController();
-		$controller->init( wc_get_container()->get( WooPaymentsRuntimeArbiter::class ), wc_get_container()->get( LegacyProxy::class ), $preflight, $job_for_activation );
+		$controller->init( wc_get_container()->get( WooPaymentsRuntimeArbiter::class ), wc_get_container()->get( LegacyProxy::class ), $preflight, $job_for_activation, wc_get_container()->get( ExtensionBoundRenewalPlugins::class ) );
 
 		$controller->handle_plugin_activated( WooPaymentsRuntimeArbiter::PLUGIN_FILE, false );
 

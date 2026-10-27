@@ -71,19 +71,6 @@ class PreflightService {
 	/** A plugin that charges renewals through the WooPayments extension's own classes is active; the switch waits while it is. */
 	public const FAILURE_EXTENSION_RENEWAL_PLUGIN_ACTIVE = 'extension_renewal_plugin_active';
 
-	/**
-	 * Slugs of plugins whose WooPayments integration charges renewals or scheduled payments through the extension's own
-	 * classes, which the built-in WooPayments does not provide, so after a switch those charges never happen.
-	 *
-	 * @var string[]
-	 */
-	private const EXTENSION_RENEWAL_PLUGIN_SLUGS = array(
-		'yith-woocommerce-subscription-premium',
-		'order-subscriptions',
-		'ultimate-payment-plans',
-		'deposit-and-partial-payment-plan',
-	);
-
 	private const IDENTIFIER_PLACEHOLDERS_UNAVAILABLE_HOOK = 'woocommerce_woopayments_identifier_placeholders_unavailable';
 
 	private const OPERATIONAL_QUEUE_QUERY_FAILED_HOOK = 'woocommerce_woopayments_operational_queue_query_failed';
@@ -136,6 +123,13 @@ class PreflightService {
 	 * @var WooPaymentsProvider|null
 	 */
 	private ?WooPaymentsProvider $provider = null;
+
+	/**
+	 * Plugins that charge renewals through the WooPayments extension.
+	 *
+	 * @var ExtensionBoundRenewalPlugins|null
+	 */
+	private ?ExtensionBoundRenewalPlugins $renewal_plugins = null;
 
 	/**
 	 * Bundled subscriptions guard.
@@ -245,72 +239,11 @@ class PreflightService {
 		if ( $this->get_bundled_subscriptions_guard()->is_bundled_subscriptions_store() ) {
 			$failures[] = self::FAILURE_BUNDLED_SUBSCRIPTIONS;
 		}
-		if ( array() !== $this->get_active_extension_renewal_plugin_files() ) {
+		if ( array() !== $this->get_renewal_plugins()->get_active_plugin_files() ) {
 			$failures[] = self::FAILURE_EXTENSION_RENEWAL_PLUGIN_ACTIVE;
 		}
 
 		return self::normalize_string_list( $failures );
-	}
-
-	/**
-	 * Get the names of the active plugins that charge renewals through the WooPayments extension.
-	 *
-	 * It serves the switch notice only. Each name comes from the plugin header, or is the plugin's slug when the header
-	 * cannot be read.
-	 *
-	 * @internal
-	 *
-	 * @return string[]
-	 */
-	public function get_active_extension_renewal_plugin_names(): array {
-		$plugin_files = $this->get_active_extension_renewal_plugin_files();
-		if ( array() === $plugin_files ) {
-			return array();
-		}
-		// WordPress 6.8+ loads this file on every request (#62244); kept as WooCommerce's own pattern (see src/Admin/PluginsHelper.php).
-		if ( ! function_exists( 'get_plugins' ) ) {
-			require_once ABSPATH . 'wp-admin/includes/plugin.php';
-		}
-		$plugins = $this->legacy_proxy->call_function( 'get_plugins' );
-		$names   = array();
-		foreach ( $plugin_files as $plugin_file ) {
-			$name    = is_array( $plugins ) && isset( $plugins[ $plugin_file ]['Name'] ) && is_scalar( $plugins[ $plugin_file ]['Name'] ) ? trim( (string) $plugins[ $plugin_file ]['Name'] ) : '';
-			$names[] = '' !== $name ? $name : self::get_plugin_slug( $plugin_file );
-		}
-		return self::normalize_string_list( $names );
-	}
-
-	/**
-	 * Get the active plugin files, for this site or the whole network, whose slug is in EXTENSION_RENEWAL_PLUGIN_SLUGS.
-	 *
-	 * Their renewal paths depend on WooPayments extension APIs the built-in WooPayments does not provide, so they are found
-	 * by slug rather than by class.
-	 *
-	 * @return string[]
-	 */
-	private function get_active_extension_renewal_plugin_files(): array {
-		$plugin_files = (array) $this->legacy_proxy->call_function( 'get_option', 'active_plugins', array() );
-		if ( $this->legacy_proxy->call_function( 'is_multisite' ) ) {
-			$plugin_files = array_merge( $plugin_files, array_keys( (array) $this->legacy_proxy->call_function( 'get_site_option', 'active_sitewide_plugins', array() ) ) );
-		}
-		$matches = array();
-		foreach ( $plugin_files as $plugin_file ) {
-			if ( is_string( $plugin_file ) && in_array( self::get_plugin_slug( $plugin_file ), self::EXTENSION_RENEWAL_PLUGIN_SLUGS, true ) ) {
-				$matches[] = $plugin_file;
-			}
-		}
-		return self::normalize_string_list( $matches );
-	}
-
-	/**
-	 * Get a plugin's slug: its folder, or the file name for a plugin without one.
-	 *
-	 * @param string $plugin_file Plugin file relative to the plugins folder.
-	 * @return string
-	 */
-	private static function get_plugin_slug( string $plugin_file ): string {
-		$parts = explode( '/', $plugin_file, 2 );
-		return 2 === count( $parts ) ? $parts[0] : basename( $plugin_file, '.php' );
 	}
 
 	/**
@@ -621,6 +554,19 @@ class PreflightService {
 		}
 
 		return $this->provider;
+	}
+
+	/**
+	 * Get the plugins that charge renewals through the WooPayments extension, resolving them on first use.
+	 *
+	 * @return ExtensionBoundRenewalPlugins
+	 */
+	private function get_renewal_plugins(): ExtensionBoundRenewalPlugins {
+		if ( null === $this->renewal_plugins ) {
+			$this->renewal_plugins = wc_get_container()->get( ExtensionBoundRenewalPlugins::class );
+		}
+
+		return $this->renewal_plugins;
 	}
 
 	/**

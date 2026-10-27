@@ -360,77 +360,28 @@ class PreflightServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Each listed plugin charges renewals or scheduled payments through the extension's own classes (YITH 4.26.3
-	 * class-ywsbs-wc-payments.php extends WC_Payment_Gateway_WCPay; Order Subscriptions 1.2.15, Ultimate Payment Plans 4.5.0
-	 * and Deposit and Partial Payment Plan 1.0.4 build WCPay\Payment_Information), which the built-in WooPayments does not
-	 * declare. The free YITH WooCommerce Subscription has no WooPayments integration.
+	 * Which plugins count, and how they are found and named, is ExtensionBoundRenewalPluginsTest's.
 	 *
-	 * @testdox The switch is held back while a plugin that renews through the extension is active for the site: $_dataName.
-	 * @dataProvider provide_site_active_plugins
+	 * @testdox The switch is held back while a plugin that renews through the extension is active: $_dataName.
+	 * @dataProvider provide_renewal_plugin_holdbacks
 	 *
 	 * @param string[] $active_plugins Active plugin files of the site.
-	 * @param string[] $names          Names the merchant notice gives, empty when the switch is not held back.
+	 * @param bool     $held_back      Whether the switch is held back.
 	 */
-	public function test_extension_renewal_plugin_holds_the_switch_back( array $active_plugins, array $names ): void {
+	public function test_extension_renewal_plugin_holds_the_switch_back( array $active_plugins, bool $held_back ): void {
 		$this->fake_active_plugins( $active_plugins, array(), false );
-		$sut = $this->create_sut();
 
-		$this->assertSame( array() === $names ? array() : array( PreflightService::FAILURE_EXTENSION_RENEWAL_PLUGIN_ACTIVE ), $sut->get_failures() );
-		$this->assertSame( $names, $sut->get_active_extension_renewal_plugin_names() );
+		$this->assertSame( $held_back ? array( PreflightService::FAILURE_EXTENSION_RENEWAL_PLUGIN_ACTIVE ) : array(), $this->create_sut()->get_failures() );
 	}
 
 	/**
-	 * @return array<string,array{string[],string[]}>
+	 * @return array<string,array{string[],bool}>
 	 */
-	public function provide_site_active_plugins(): array {
+	public function provide_renewal_plugin_holdbacks(): array {
 		return array(
-			'YITH WooCommerce Subscription Premium'        => array( array( 'woocommerce/woocommerce.php', 'yith-woocommerce-subscription-premium/init.php' ), array( 'YITH WooCommerce Subscription Premium' ) ),
-			'Order Subscriptions for WooCommerce'          => array( array( 'order-subscriptions/order-subscriptions.php' ), array( 'Order Subscriptions for WooCommerce' ) ),
-			'Ultimate Payment Plans'                       => array( array( 'ultimate-payment-plans/ultimate-payment-plans.php' ), array( 'Ultimate Payment Plans' ) ),
-			'Deposit and Partial Payment Plan'             => array( array( 'deposit-and-partial-payment-plan/deposit-and-partial-payment-plan.php' ), array( 'Deposit and Partial Payment Plan' ) ),
-			'two of them'                                  => array( array( 'yith-woocommerce-subscription-premium/init.php', 'ultimate-payment-plans/ultimate-payment-plans.php' ), array( 'YITH WooCommerce Subscription Premium', 'Ultimate Payment Plans' ) ),
-			'none of them'                                 => array( array( 'woocommerce/woocommerce.php' ), array() ),
-			'the free YITH WooCommerce Subscription'       => array( array( 'yith-woocommerce-subscription/init.php' ), array() ),
-			'a folder that only starts with a listed slug' => array( array( 'yith-woocommerce-subscription-premium-addon/addon.php' ), array() ),
-			'a listed plugin as a single file'             => array( array( 'ultimate-payment-plans.php' ), array( 'ultimate-payment-plans' ) ),
+			'a listed plugin' => array( array( 'woocommerce/woocommerce.php', 'order-subscriptions/order-subscriptions.php' ), true ),
+			'none of them'    => array( array( 'woocommerce/woocommerce.php', 'yith-woocommerce-subscription/init.php' ), false ),
 		);
-	}
-
-	/**
-	 * @testdox On a multisite, a plugin that renews through the extension holds the switch back when it is active for this site only.
-	 */
-	public function test_site_active_extension_renewal_plugin_holds_the_switch_back_on_a_multisite(): void {
-		// An unrelated network-active plugin: the site's own list must still count beside a nonempty network list.
-		$this->fake_active_plugins( array( 'order-subscriptions/order-subscriptions.php' ), array( 'akismet/akismet.php' ), true );
-		$sut = $this->create_sut();
-
-		$this->assertSame( array( PreflightService::FAILURE_EXTENSION_RENEWAL_PLUGIN_ACTIVE ), $sut->get_failures() );
-		$this->assertSame( array( 'Order Subscriptions for WooCommerce' ), $sut->get_active_extension_renewal_plugin_names() );
-	}
-
-	/**
-	 * @testdox A plugin that renews through the extension holds the switch back when it is active for the whole network, and a single site ignores its network plugin list.
-	 */
-	public function test_network_active_extension_renewal_plugin_holds_the_switch_back_on_a_multisite_only(): void {
-		$this->fake_active_plugins( array(), array( 'yith-woocommerce-subscription-premium/init.php' ), true );
-		$sut = $this->create_sut();
-
-		$this->assertSame( array( PreflightService::FAILURE_EXTENSION_RENEWAL_PLUGIN_ACTIVE ), $sut->get_failures(), 'On a multisite the network plugin list counts.' );
-		$this->assertSame( array( 'YITH WooCommerce Subscription Premium' ), $sut->get_active_extension_renewal_plugin_names() );
-
-		$this->fake_active_plugins( array(), array( 'yith-woocommerce-subscription-premium/init.php' ), false );
-		$sut = $this->create_sut();
-
-		$this->assertSame( array(), $sut->get_failures(), 'A single site has no network plugin list.' );
-	}
-
-	/**
-	 * @testdox The merchant notice names a plugin whose header cannot be read by its slug.
-	 */
-	public function test_extension_renewal_plugin_without_a_readable_header_is_named_by_its_slug(): void {
-		$this->fake_active_plugins( array( 'order-subscriptions/order-subscriptions.php' ), array(), false, array() );
-
-		$this->assertSame( array( 'order-subscriptions' ), $this->create_sut()->get_active_extension_renewal_plugin_names() );
 	}
 
 	/**
@@ -694,30 +645,20 @@ class PreflightServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Control the site and network active plugin lists and the plugin headers WordPress reads.
+	 * Control the site and network active plugin lists.
 	 *
-	 * WordPress stores active_sitewide_plugins as a plugin-file => activation-timestamp map (wp-admin/includes/plugin.php:712-715),
-	 * and get_plugins() in the same file returns a plugin-file => header map whose Name is each plugin's "Plugin Name" header; the
-	 * four names are those headers in the plugins' current main files.
+	 * WordPress stores active_sitewide_plugins as a plugin-file => activation-timestamp map (wp-admin/includes/plugin.php:712-715).
 	 *
-	 * @param string[]                                $site_plugins    Active plugin files of the site.
-	 * @param string[]                                $network_plugins Plugin files active for the whole network.
-	 * @param bool                                    $is_multisite    Whether the install is a multisite.
-	 * @param array<string,array<string,string>>|null $headers     Plugin headers by file, or null for the listed plugins' headers.
+	 * @param string[] $site_plugins    Active plugin files of the site.
+	 * @param string[] $network_plugins Plugin files active for the whole network.
+	 * @param bool     $is_multisite    Whether the install is a multisite.
 	 */
-	private function fake_active_plugins( array $site_plugins, array $network_plugins, bool $is_multisite, ?array $headers = null ): void {
-		$headers = $headers ?? array(
-			'yith-woocommerce-subscription-premium/init.php' => array( 'Name' => 'YITH WooCommerce Subscription Premium' ),
-			'order-subscriptions/order-subscriptions.php' => array( 'Name' => 'Order Subscriptions for WooCommerce' ),
-			'ultimate-payment-plans/ultimate-payment-plans.php' => array( 'Name' => 'Ultimate Payment Plans' ),
-			'deposit-and-partial-payment-plan/deposit-and-partial-payment-plan.php' => array( 'Name' => 'Deposit and Partial Payment Plan' ),
-		);
+	private function fake_active_plugins( array $site_plugins, array $network_plugins, bool $is_multisite ): void {
 		$this->register_legacy_proxy_function_mocks(
 			array(
 				'get_option'      => fn( $name, $default_value = false ) => 'active_plugins' === $name ? $site_plugins : get_option( $name, $default_value ),
 				'get_site_option' => fn( $name, $default_value = false ) => 'active_sitewide_plugins' === $name ? array_fill_keys( $network_plugins, 1 ) : get_site_option( $name, $default_value ),
 				'is_multisite'    => fn() => $is_multisite,
-				'get_plugins'     => fn() => $headers,
 			)
 		);
 	}

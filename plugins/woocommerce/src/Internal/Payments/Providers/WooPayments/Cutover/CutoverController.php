@@ -18,6 +18,7 @@ defined( 'ABSPATH' ) || exit;
 /**
  * Shows the cutover notices, takes the merchant's start click and the notice dismissals, and applies the mandatory lever.
  *
+ * On a store the built-in WooPayments owns, it also names the active plugins whose renewals need the WooPayments extension.
  * The plugin lifecycle listener calls its activation and deactivation handlers.
  *
  * @since 11.2.0
@@ -68,7 +69,7 @@ class CutoverController implements RegisterHooksInterface {
 	public const QUERY_ACTION = 'wc_woopayments_cutover_action';
 
 	/**
-	 * Admin action that dismisses a cutover notice (completion, bundled exclusion or reconnect).
+	 * Admin action that dismisses a cutover notice (completion, bundled exclusion, reconnect or renewal plugins).
 	 *
 	 * @var string
 	 */
@@ -94,6 +95,23 @@ class CutoverController implements RegisterHooksInterface {
 	 * @var string
 	 */
 	public const NOTICE_START_SWITCH = 'start_switch';
+
+	/**
+	 * Notice key of the notice naming the active plugins whose renewals need the WooPayments extension.
+	 *
+	 * @var string
+	 */
+	public const NOTICE_RENEWAL_PLUGINS = 'renewal_plugins';
+
+	/**
+	 * Option holding the active renewal plugin files the renewal plugins notice was dismissed for.
+	 *
+	 * Autoloaded, so an admin request finds out whether it exists without a query. The notice deletes it once no listed
+	 * plugin is active; WooCommerce's uninstall deletes it with every `woocommerce_` option.
+	 *
+	 * @var string
+	 */
+	private const RENEWAL_PLUGINS_NOTICE_DISMISSED_OPTION = 'woocommerce_woopayments_renewal_plugins_notice_dismissed';
 
 	/**
 	 * Time "Not now" hides the switch notice outside Payments settings.
@@ -131,25 +149,35 @@ class CutoverController implements RegisterHooksInterface {
 	private ReconciliationJob $reconciliation_job;
 
 	/**
+	 * Plugins that charge renewals through the WooPayments extension.
+	 *
+	 * @var ExtensionBoundRenewalPlugins
+	 */
+	private ExtensionBoundRenewalPlugins $renewal_plugins;
+
+	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsRuntimeArbiter $arbiter          Runtime owner arbiter.
-	 * @param LegacyProxy               $legacy_proxy     Legacy proxy.
-	 * @param PreflightService          $preflight_service Cutover preflight service.
-	 * @param ReconciliationJob         $reconciliation_job Durable reconciliation workflow.
+	 * @param WooPaymentsRuntimeArbiter    $arbiter            Runtime owner arbiter.
+	 * @param LegacyProxy                  $legacy_proxy       Legacy proxy.
+	 * @param PreflightService             $preflight_service  Cutover preflight service.
+	 * @param ReconciliationJob            $reconciliation_job Durable reconciliation workflow.
+	 * @param ExtensionBoundRenewalPlugins $renewal_plugins    Plugins that charge renewals through the WooPayments extension.
 	 */
 	final public function init(
 		WooPaymentsRuntimeArbiter $arbiter,
 		LegacyProxy $legacy_proxy,
 		PreflightService $preflight_service,
-		ReconciliationJob $reconciliation_job
+		ReconciliationJob $reconciliation_job,
+		ExtensionBoundRenewalPlugins $renewal_plugins
 	): void {
 		$this->arbiter            = $arbiter;
 		$this->legacy_proxy       = $legacy_proxy;
 		$this->preflight_service  = $preflight_service;
 		$this->reconciliation_job = $reconciliation_job;
+		$this->renewal_plugins    = $renewal_plugins;
 	}
 
 	/**
@@ -192,7 +220,8 @@ class CutoverController implements RegisterHooksInterface {
 
 	/**
 	 * Persist a store manager's dismissal of a cutover notice, then return to the same page: the completion, bundled
-	 * exclusion or reconnect notice on the durable record, or "Not now" on the switch notice for 30 days.
+	 * exclusion or reconnect notice on the durable record, "Not now" on the switch notice for 30 days, or the renewal
+	 * plugins notice for the renewal plugins active now.
 	 */
 	private function dismiss_notice(): void {
 		$nonce = isset( $_GET[ self::NONCE_NAME ] ) ? sanitize_text_field( wp_unslash( $_GET[ self::NONCE_NAME ] ) ) : '';
@@ -206,6 +235,8 @@ class CutoverController implements RegisterHooksInterface {
 		$notice = isset( $_GET[ self::QUERY_NOTICE ] ) ? sanitize_key( wp_unslash( $_GET[ self::QUERY_NOTICE ] ) ) : '';
 		if ( self::NOTICE_START_SWITCH === $notice ) {
 			update_option( ReconciliationJob::START_NOTICE_SNOOZED_UNTIL_OPTION, (int) $this->legacy_proxy->call_function( 'time' ) + self::START_NOTICE_SNOOZE );
+		} elseif ( self::NOTICE_RENEWAL_PLUGINS === $notice ) {
+			update_option( self::RENEWAL_PLUGINS_NOTICE_DISMISSED_OPTION, $this->get_sorted_active_renewal_plugin_files(), true );
 		} else {
 			$this->reconciliation_job->dismiss_notice( $notice );
 		}
@@ -227,7 +258,7 @@ class CutoverController implements RegisterHooksInterface {
 	/**
 	 * Build the nonce-protected dismiss URL for a cutover notice, returning to the current page.
 	 *
-	 * @param string $notice One of the ReconciliationJob::NOTICE_* constants, or NOTICE_START_SWITCH.
+	 * @param string $notice One of the ReconciliationJob::NOTICE_* constants, NOTICE_START_SWITCH or NOTICE_RENEWAL_PLUGINS.
 	 * @return string
 	 */
 	private function get_dismiss_notice_url( string $notice ): string {
@@ -245,7 +276,7 @@ class CutoverController implements RegisterHooksInterface {
 	/**
 	 * Build the nonce-protected dismiss link for a cutover notice.
 	 *
-	 * @param string $notice One of the ReconciliationJob::NOTICE_* constants.
+	 * @param string $notice One of the ReconciliationJob::NOTICE_* constants, or NOTICE_RENEWAL_PLUGINS.
 	 * @return string
 	 */
 	private function get_dismiss_notice_link( string $notice ): string {
@@ -268,6 +299,7 @@ class CutoverController implements RegisterHooksInterface {
 		}
 
 		$this->output_cutover_notice();
+		$this->output_renewal_plugins_notice();
 	}
 
 	/**
@@ -526,7 +558,7 @@ class CutoverController implements RegisterHooksInterface {
 			$on_payments_settings = $this->is_payments_settings_request();
 			if ( ( $on_payments_settings || ! $this->is_start_notice_snoozed() ) && $this->reconciliation_job->can_offer_start() ) {
 				// The preflight would hold the switch back, so the notice says why instead of offering it.
-				$plugin_names = $this->preflight_service->get_active_extension_renewal_plugin_names();
+				$plugin_names = $this->renewal_plugins->get_active_plugin_names();
 				if ( array() !== $plugin_names ) {
 					$this->output_renewal_plugin_holdback_notice( $plugin_names, ! $on_payments_settings );
 				} else {
@@ -579,7 +611,7 @@ class CutoverController implements RegisterHooksInterface {
 				}
 				// A started switch held back by such a plugin retries, and stops saying so once the plugin is no longer active.
 				if ( StateStore::STATE_DEFERRED === $record['state'] && in_array( PreflightService::FAILURE_EXTENSION_RENEWAL_PLUGIN_ACTIVE, (array) ( $record[ StateStore::BLOCKING_CODES_KEY ] ?? array() ), true ) ) {
-					$plugin_names = $this->preflight_service->get_active_extension_renewal_plugin_names();
+					$plugin_names = $this->renewal_plugins->get_active_plugin_names();
 					if ( array() !== $plugin_names ) {
 						$this->output_renewal_plugin_holdback_notice( $plugin_names, false );
 					}
@@ -696,6 +728,53 @@ class CutoverController implements RegisterHooksInterface {
 			<?php endif; ?>
 		</div>
 		<?php
+	}
+
+	/**
+	 * On a store the built-in WooPayments owns, name the active plugins whose renewals need the WooPayments extension, until
+	 * dismissed for the same set of plugins. With none active, a dismissal no longer applies and is deleted, so the notice
+	 * shows again when one becomes active.
+	 *
+	 * Payments settings pages keep only the compliance and switch notices, so it is not shown there.
+	 */
+	private function output_renewal_plugins_notice(): void {
+		if ( ! $this->arbiter->is_builtin_owner() ) {
+			return;
+		}
+		$plugin_files = $this->get_sorted_active_renewal_plugin_files();
+		if ( array() === $plugin_files ) {
+			if ( array_key_exists( self::RENEWAL_PLUGINS_NOTICE_DISMISSED_OPTION, wp_load_alloptions() ) ) {
+				delete_option( self::RENEWAL_PLUGINS_NOTICE_DISMISSED_OPTION );
+			}
+			return;
+		}
+		if ( $this->is_payments_settings_request() || get_option( self::RENEWAL_PLUGINS_NOTICE_DISMISSED_OPTION, array() ) === $plugin_files ) {
+			return;
+		}
+
+		$message = sprintf(
+			/* translators: %s: plugin name, or a list of plugin names. */
+			__( "Renewal and installment payments set up with %s need the WooPayments extension. WooPayments is built into WooCommerce on this store, so it can't charge them.", 'woocommerce' ),
+			wp_sprintf_l( '%l', $this->renewal_plugins->get_active_plugin_names() )
+		);
+		?>
+		<div class="notice notice-warning" style="position:relative;">
+			<?php echo $this->get_dismiss_notice_link( self::NOTICE_RENEWAL_PLUGINS ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped when built. ?>
+			<p><?php echo esc_html( $message ); ?></p>
+		</div>
+		<?php
+	}
+
+	/**
+	 * Get the active renewal plugin files in a stable order, which the renewal plugins notice dismissal is kept for.
+	 *
+	 * @return string[]
+	 */
+	private function get_sorted_active_renewal_plugin_files(): array {
+		$plugin_files = $this->renewal_plugins->get_active_plugin_files();
+		sort( $plugin_files );
+
+		return $plugin_files;
 	}
 
 	/**

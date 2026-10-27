@@ -4,13 +4,14 @@ This folder moves a store from the WooPayments extension to the built-in WooPaym
 
 | Class | Does |
 |---|---|
-| `CutoverController` | Shows the notices, takes the start click and the dismissals, applies the mandatory lever. |
+| `CutoverController` | Shows the notices, takes the start click and the dismissals, applies the mandatory lever. On a store the built-in WooPayments owns, it names the active plugins whose renewals need the WooPayments extension. |
 | `PluginLifecycleListener` | Hears plugin activation and deactivation on every request type and hands them to the controller. |
 | `ReconciliationJob` | Runs a site's cutover and keeps the notice state. |
 | `StateStore` | Reads and validates the cutover record, provides atomic writes, and manages its write lock. |
 | `CutoverActionScheduler` | Holds the Action Scheduler identity of the job. |
 | `PreflightService` | Evaluates the conditions that block the cutover and manages the active extension. |
 | `DataMigration` | Migrates the extension's stored settings and options once per migration version. |
+| `ExtensionBoundRenewalPlugins` | Lists the plugins that charge renewals through the WooPayments extension's own classes, finds the active ones and names them; the preflight holds the switch back while one is active. |
 | `BundledSubscriptionsGuard` | Tells whether a store runs the bundled WooPayments subscriptions, which the cutover excludes. |
 | `PlatformConnectionService` | Checks the WordPress.com connection the cutover needs. |
 | `PerSiteActivationController` | Offers the network-wide to per-site activation conversion, checks network-wide activations of the extension and records each site's rollback after one. |
