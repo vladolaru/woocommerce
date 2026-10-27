@@ -18,6 +18,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\Bundl
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCanceledAuthorizationFeeRemediationService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\CutoverActionScheduler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\PreflightService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\StateStore;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\PlatformConnectionService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
@@ -175,8 +176,10 @@ class PreflightServiceTest extends WC_Unit_Test_Case {
 				'get_option'      => fn( $name, $default_value = false ) => 'active_plugins' === $name ? $active_plugins : get_option( $name, $default_value ),
 				'get_site_option' => fn( $name, $default_value = false ) => 'active_sitewide_plugins' === $name ? array() : get_site_option( $name, $default_value ),
 				'is_readable'     => fn( $path ) => array_key_exists( $path, $paths ),
+				// The header shape of WordPress get_plugin_data() (wp-admin/includes/plugin.php:74-120).
 				'get_plugin_data' => fn( $path ) => array( 'Version' => $paths[ $path ] ?? '' ),
-				// The active plugin list alone decides ownership; WCPAY_PLUGIN_FILE is not defined.
+				// The active plugin list alone decides ownership; WCPAY_PLUGIN_FILE is not defined. The extension defines
+				// WCPAY_VERSION_NUMBER from its own header when it loads (client 11.1.0 includes/class-wc-payments.php:349-353).
 				'defined'         => fn( $name ) => 'WCPAY_VERSION_NUMBER' === $name && null !== $loaded,
 				'constant'        => fn( $name ) => 'WCPAY_VERSION_NUMBER' === $name ? $loaded : null,
 			)
@@ -184,6 +187,33 @@ class PreflightServiceTest extends WC_Unit_Test_Case {
 		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 
 		$this->assertSame( $supported, $this->create_sut()->is_woopayments_plugin_version_supported() );
+	}
+
+	/**
+	 * Once the built-in WooPayments owns payments its compatibility facades define WCPAY_VERSION_NUMBER
+	 * (WooPaymentsExtensionFacadeLoader), so the constant must not stand in for the inactive extension files a rollback runs.
+	 *
+	 * @testdox A switched store checks the inactive extension files, not the facades' version constant.
+	 */
+	public function test_a_switched_store_checks_the_installed_files_not_the_facades_constant(): void {
+		update_option( 'woocommerce_woocommerce_payments_version', '11.2.0' );
+		update_option( StateStore::OPTION_NAME, array( 'state' => StateStore::STATE_DONE ) );
+		$standard_path = WP_PLUGIN_DIR . '/' . WooPaymentsRuntimeArbiter::PLUGIN_FILE;
+		$this->register_legacy_proxy_function_mocks(
+			array(
+				'get_option'      => fn( $name, $default_value = false ) => 'active_plugins' === $name ? array() : get_option( $name, $default_value ),
+				'get_site_option' => fn( $name, $default_value = false ) => 'active_sitewide_plugins' === $name ? array() : get_site_option( $name, $default_value ),
+				'is_readable'     => fn( $path ) => $standard_path === $path,
+				'get_plugin_data' => fn() => array( 'Version' => '10.5.1' ),
+				'defined'         => fn( $name ) => 'WCPAY_VERSION_NUMBER' === $name,
+				'constant'        => fn( $name ) => 'WCPAY_VERSION_NUMBER' === $name ? '11.2.0' : null,
+			)
+		);
+		$arbiter = wc_get_container()->get( WooPaymentsRuntimeArbiter::class );
+		$arbiter->invalidate();
+
+		$this->assertTrue( $arbiter->is_builtin_owner(), 'The switch is done, so the built-in WooPayments owns payments.' );
+		$this->assertFalse( $this->create_sut()->is_woopayments_plugin_version_supported() );
 	}
 
 	/**
@@ -209,7 +239,7 @@ class PreflightServiceTest extends WC_Unit_Test_Case {
 			'running 10.5.1, recorded and files 11.2.0'  => array( '11.2.0', array( $standard ), array( $standard => '11.2.0' ), '10.5.1', false ),
 			'running 11.2.0, files 10.5.1'               => array( '11.2.0', array( $standard ), array( $standard => '10.5.1' ), '11.2.0', true ),
 			'running, no version constant, files 10.5.1' => array( '11.2.0', array( $standard ), array( $standard => '10.5.1' ), null, false ),
-			'not running, facade 11.2.0, files 10.5.1'   => array( '11.2.0', array(), array( $standard => '10.5.1' ), '11.2.0', false ),
+			'waiting, constant 11.2.0, files 10.5.1'     => array( '11.2.0', array(), array( $standard => '10.5.1' ), '11.2.0', false ),
 		);
 	}
 
