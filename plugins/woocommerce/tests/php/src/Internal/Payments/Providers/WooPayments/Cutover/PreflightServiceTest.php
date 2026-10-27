@@ -144,6 +144,8 @@ class PreflightServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_the_switch_supports_woopayments_from_10_6_0( string $version, bool $supported ): void {
 		update_option( 'woocommerce_woocommerce_payments_version', $version );
+		// No installed extension files, so the row does not depend on a copy mounted in the test environment.
+		$this->register_legacy_proxy_function_mocks( array( 'is_readable' => fn() => false ) );
 
 		$this->assertSame( $supported, $this->create_sut()->is_woopayments_plugin_version_supported() );
 	}
