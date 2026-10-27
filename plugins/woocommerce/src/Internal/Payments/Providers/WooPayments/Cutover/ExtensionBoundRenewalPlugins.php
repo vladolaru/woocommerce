@@ -91,7 +91,8 @@ class ExtensionBoundRenewalPlugins {
 	/**
 	 * Get the names of the listed plugins that are active, for merchant messages.
 	 *
-	 * Each name comes from the plugin header, or is the plugin's slug when the header cannot be read.
+	 * Each name comes from the plugin's own header, or is the plugin's slug when the header cannot be read. Only the
+	 * listed plugins' main files are read, not every installed plugin's.
 	 *
 	 * @return string[]
 	 */
@@ -101,14 +102,15 @@ class ExtensionBoundRenewalPlugins {
 			return array();
 		}
 		// WordPress 6.8+ loads this file on every request (#62244); kept as WooCommerce's own pattern (see src/Admin/PluginsHelper.php).
-		if ( ! function_exists( 'get_plugins' ) ) {
+		if ( ! function_exists( 'get_plugin_data' ) ) {
 			require_once ABSPATH . 'wp-admin/includes/plugin.php';
 		}
-		$plugins = $this->legacy_proxy->call_function( 'get_plugins' );
-		$names   = array();
+		$names = array();
 		foreach ( $plugin_files as $plugin_file ) {
-			$name = is_array( $plugins ) && isset( $plugins[ $plugin_file ]['Name'] ) && is_scalar( $plugins[ $plugin_file ]['Name'] ) ? trim( (string) $plugins[ $plugin_file ]['Name'] ) : '';
-			$name = '' !== $name ? $name : self::get_plugin_slug( $plugin_file );
+			$path   = WP_PLUGIN_DIR . '/' . $plugin_file;
+			$header = $this->legacy_proxy->call_function( 'is_readable', $path ) ? $this->legacy_proxy->call_function( 'get_plugin_data', $path, false, false ) : array();
+			$name   = is_array( $header ) && isset( $header['Name'] ) && is_scalar( $header['Name'] ) ? trim( (string) $header['Name'] ) : '';
+			$name   = '' !== $name ? $name : self::get_plugin_slug( $plugin_file );
 			if ( ! in_array( $name, $names, true ) ) {
 				$names[] = $name;
 			}

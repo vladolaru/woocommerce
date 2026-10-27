@@ -368,6 +368,21 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 	}
 
 	/**
+	 * Tell whether the gateway is enabled, as the WooPayments extension's gateway does
+	 * (`WC_Payment_Gateway_WCPay::is_enabled()`, class-wc-payment-gateway-wcpay.php:4659).
+	 *
+	 * It exists for callers that reach this gateway through the `WC_Payments::get_gateway()` compatibility facade, and it
+	 * leaves with the facades in WooCommerce 12.0.0.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @return bool
+	 */
+	public function is_enabled() {
+		return 'yes' === $this->get_option( 'enabled' );
+	}
+
+	/**
 	 * Return the current user's saved tokens for the current blog.
 	 *
 	 * @since 11.2.0

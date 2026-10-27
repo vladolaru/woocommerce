@@ -996,6 +996,8 @@ class CutoverControllerTest extends WC_Unit_Test_Case {
 
 			$this->follow_dismiss_link( $controller, $this->render_admin_notices( $controller ), CutoverController::NOTICE_RENEWAL_PLUGINS );
 			unset( $_GET[ CutoverController::QUERY_ACTION ], $_GET[ CutoverController::NONCE_NAME ], $_GET[ CutoverController::QUERY_NOTICE ] );
+			$this->assertStringNotContainsString( 'need the WooPayments extension', $this->render_admin_notices( $controller ), 'Dismissed again for the smaller set.' );
+
 			$renewal_plugins->plugins['deposit-and-partial-payment-plan/deposit-and-partial-payment-plan.php'] = 'Deposit and Partial Payment Plan';
 			$this->assertStringContainsString( 'set up with Ultimate Payment Plans and Deposit and Partial Payment Plan need the WooPayments extension', $this->render_admin_notices( $controller ), 'Shown again once another plugin is active.' );
 

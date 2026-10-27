@@ -24,6 +24,13 @@ class ExtensionBoundRenewalPluginsTest extends WC_Unit_Test_Case {
 	private ExtensionBoundRenewalPlugins $sut;
 
 	/**
+	 * Plugin files whose headers the SUT read, in order.
+	 *
+	 * @var string[]
+	 */
+	private array $read_headers = array();
+
+	/**
 	 * Set up test fixtures.
 	 */
 	public function setUp(): void {
@@ -61,6 +68,7 @@ class ExtensionBoundRenewalPluginsTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( $files, $this->sut->get_active_plugin_files() );
 		$this->assertSame( $names, $this->sut->get_active_plugin_names() );
+		$this->assertSame( array(), array_diff( $this->read_headers, $files ), 'Only the listed plugins\' headers are read.' );
 	}
 
 	/**
@@ -123,19 +131,20 @@ class ExtensionBoundRenewalPluginsTest extends WC_Unit_Test_Case {
 		$this->fake_active_plugins( array( 'order-subscriptions/order-subscriptions.php' ), array(), false, array() );
 
 		$this->assertSame( array( 'order-subscriptions' ), $this->sut->get_active_plugin_names() );
+		$this->assertSame( array(), $this->read_headers, 'A header that cannot be read is not read.' );
 	}
 
 	/**
 	 * Control the site and network active plugin lists and the plugin headers WordPress reads.
 	 *
 	 * WordPress stores active_sitewide_plugins as a plugin-file => activation-timestamp map (wp-admin/includes/plugin.php:712-715),
-	 * and get_plugins() in the same file returns a plugin-file => header map whose Name is each plugin's "Plugin Name" header; the
-	 * four names are those headers in the plugins' current main files.
+	 * and get_plugin_data() in the same file returns a plugin's header, whose Name is its "Plugin Name" header; the four names
+	 * are those headers in the plugins' current main files. A file with no header here is not readable.
 	 *
 	 * @param array<int,mixed>                        $site_plugins    Active plugin entries of the site.
 	 * @param string[]                                $network_plugins Plugin files active for the whole network.
 	 * @param bool                                    $is_multisite    Whether the install is a multisite.
-	 * @param array<string,array<string,string>>|null $headers         Plugin headers by file, or null for the listed plugins' headers.
+	 * @param array<string,array<string,string>>|null $headers         Readable plugin headers by file, or null for the listed plugins' headers.
 	 */
 	private function fake_active_plugins( array $site_plugins, array $network_plugins, bool $is_multisite, ?array $headers = null ): void {
 		$headers = $headers ?? array(
@@ -149,7 +158,12 @@ class ExtensionBoundRenewalPluginsTest extends WC_Unit_Test_Case {
 				'get_option'      => fn( $name, $default_value = false ) => 'active_plugins' === $name ? $site_plugins : get_option( $name, $default_value ),
 				'get_site_option' => fn( $name, $default_value = false ) => 'active_sitewide_plugins' === $name ? array_fill_keys( $network_plugins, 1 ) : get_site_option( $name, $default_value ),
 				'is_multisite'    => fn() => $is_multisite,
-				'get_plugins'     => fn() => $headers,
+				'is_readable'     => fn( $path ) => isset( $headers[ substr( (string) $path, strlen( WP_PLUGIN_DIR . '/' ) ) ] ),
+				'get_plugin_data' => function ( $path ) use ( $headers ) {
+					$file                 = substr( (string) $path, strlen( WP_PLUGIN_DIR . '/' ) );
+					$this->read_headers[] = $file;
+					return $headers[ $file ] ?? array( 'Name' => '' );
+				},
 			)
 		);
 	}

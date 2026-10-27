@@ -173,6 +173,27 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * Plugins reach the gateway through the WooPayments extension's `WC_Payments::get_gateway()` and ask it `is_enabled()`
+	 * (Order Subscriptions 1.2.15 WooPaymentsIntegration.php:94, on every admin and storefront page while it is on); the
+	 * extension answers `'yes' === $this->get_option( 'enabled' )` (client 11.1.0 class-wc-payment-gateway-wcpay.php:4659).
+	 *
+	 * @testdox Should tell callers from the compatibility facade whether the gateway is enabled, as the WooPayments extension does: $enabled.
+	 * @testWith ["yes", true]
+	 *           ["no", false]
+	 *
+	 * @param string $enabled  The gateway's stored enabled setting.
+	 * @param bool   $expected Whether the gateway reports itself enabled.
+	 */
+	public function test_is_enabled_reads_the_enabled_setting( string $enabled, bool $expected ): void {
+		$this->with_gateway_settings(
+			array( 'enabled' => $enabled ),
+			function () use ( $expected ): void {
+				$this->assertSame( $expected, ( new WooPaymentsGateway() )->is_enabled() );
+			}
+		);
+	}
+
+	/**
 	 * @testdox Should brand the Afterpay gateway titles by account country like the WooPayments extension: $_dataName.
 	 *
 	 * With empty account data, while the platform connection is down, client 11.1.0 titles the gateway for US, not the

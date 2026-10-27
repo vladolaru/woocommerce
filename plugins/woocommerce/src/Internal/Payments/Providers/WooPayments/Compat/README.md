@@ -14,7 +14,7 @@ This folder holds what Woo extensions still expect from the WooPayments extensio
 
 | Symbol | Behavior | Known Woo-owned consumers |
 |---|---|---|
-| `WC_Payments` | Existence checks recognize the built-in WooPayments. `get_gateway()` returns the container's `WooPaymentsGateway`. `hide_gateways_on_settings_page()` does nothing, because there are no secondary gateway classes to hide. Both emit a deprecation notice. | WooCommerce Core Blueprint exporter, All Products for WooCommerce Subscriptions, AutomateWoo, WooCommerce PayPal Payments |
+| `WC_Payments` | Existence checks recognize the built-in WooPayments. `get_gateway()` returns the container's `WooPaymentsGateway`, whose `is_enabled()` answers like the extension gateway's for callers that ask it. `hide_gateways_on_settings_page()` does nothing, because there are no secondary gateway classes to hide. Both emit a deprecation notice. | WooCommerce Core Blueprint exporter, All Products for WooCommerce Subscriptions, AutomateWoo, WooCommerce PayPal Payments |
 | `WC_Payments_Features` | `is_wcpay_subscriptions_enabled()` returns `false` and emits a deprecation notice; the gateway's capabilities answer subscription support. | All Products for WooCommerce Subscriptions |
 | `WCPAY_VERSION_NUMBER` | Reports `WooPaymentsClientVersion::VERSION`, the extension version whose platform contract the built-in WooPayments implements. | All Products for WooCommerce Subscriptions |
 
@@ -36,6 +36,7 @@ Remove these pieces together once supported extensions no longer depend on the W
 - The facade files in `includes/legacy/woopayments-compat/`.
 - The one registration line, `WooPaymentsExtensionFacadeLoader::register()` in `includes/class-woocommerce.php`.
 - The two alias first-use sites, which call `ClassAliases::register_compat_class_alias()`: `WooPaymentsIntentRequestBuilder::metadata_from_order()` and `Subscriptions/FailedRenewalAuthenticationEmail::set_store_owner_custom_email()`. `git grep -n ClassAliases -- src/Internal/Payments` lists them.
+- `WooPaymentsGateway::is_enabled()`, which only callers reaching the gateway through `get_gateway()` use, with its test in `WooPaymentsGatewayTest`.
 - The tests in `tests/php/src/Internal/Payments/Providers/WooPayments/Compat/`, with their `.fixture` files.
 - This boundary's expected symbols and loader entries in `WooPaymentsExtensionFacadePlacementTest`, in the same removal commit.
 - The extension's order-note wordings, which the built-in WooPayments renders so notes the extension wrote are recognised: the `woocommerce-payments` wordings in `WooPaymentsOrderNoteService` with its `extension_wordings()`, `WooPaymentsOrderNoteWordingSnapshot` with the cutover job's `capture_note_wordings()` calls, and the snapshot's stored option, `woocommerce_woopayments_note_wordings`, which the removal release deletes.
