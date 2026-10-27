@@ -9,6 +9,7 @@ import { logIn, logInFromMyAccount } from '../../../utils/login';
 import { random } from '../../../utils/helpers';
 import { createClassicCheckoutPage } from '../../../utils/pages';
 import {
+	clickExtensionStripeSubmit,
 	expectSettledCardPayment,
 	fillCardDetails,
 	getPaymentIntent,
@@ -178,7 +179,10 @@ async function runHistoricalMoneyRecords(
 		};
 		page.on( 'request', onDeclineRequest );
 		try {
-			await page.getByRole( 'button', { name: /place order/i } ).click();
+			await clickExtensionStripeSubmit(
+				page,
+				page.getByRole( 'button', { name: /place order/i } )
+			);
 			const notice = page
 				.getByRole( 'alert' )
 				.filter( { hasText: DECLINE_NOTICE } );

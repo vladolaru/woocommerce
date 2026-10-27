@@ -208,6 +208,34 @@ export async function completeThreeDSChallenge(
 	} );
 }
 
+/**
+ * Clicks a button that submits through the WooPayments extension's card
+ * element, clicking once more when the first click sends no request to
+ * Stripe within 10 s. The extension exposes no ready signal for its element,
+ * and a click can send nothing while Stripe.js is still settling; native
+ * waits for its element instead. A second silent click fails here.
+ */
+export async function clickExtensionStripeSubmit(
+	page: Page,
+	button: Locator
+): Promise< void > {
+	const stripePost = () =>
+		page.waitForRequest(
+			( request ) =>
+				request.method() === 'POST' &&
+				request.url().startsWith( 'https://api.stripe.com/v1/' ),
+			{ timeout: 10_000 }
+		);
+	const firstPost = stripePost();
+	await button.click();
+	if ( await firstPost.then( () => true ).catch( () => false ) ) {
+		return;
+	}
+	const secondPost = stripePost();
+	await button.click();
+	await secondPost;
+}
+
 const ACCOUNTS_ROUTE = 'wc/v3/payments/accounts';
 const SETTINGS_ROUTE = 'wc/v3/payments/settings';
 
