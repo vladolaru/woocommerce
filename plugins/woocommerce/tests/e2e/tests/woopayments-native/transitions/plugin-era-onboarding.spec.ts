@@ -183,14 +183,14 @@ test.describe( 'WooPayments transition: plugin-era onboarding', () => {
 					'woopayments-e2e-transition',
 					'seed',
 					'historical-tokens',
-					'--version=11.1.0',
+					'--version=11.2.0',
 				] )
 			).stdout
 				.trim()
 				.split( '\n' )
 				.pop()!
 		);
-		expect( identity.plugin_version ).toBe( '11.1.0' );
+		expect( identity.plugin_version ).toBe( '11.2.0' );
 		expect( identity.plugin_active ).toBe( true );
 		expect( identity.is_live ).toBe( false );
 		expect( identity.native_state ).toBe( 'available' );

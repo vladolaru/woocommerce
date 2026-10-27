@@ -98,8 +98,8 @@ async function fillPluginOwnedCardDetails(
  * The transition `historical-tokens` row (T.4 Batch T rewrite, D6): a saved
  * card created by the real plugin before cutover stays the shopper's default
  * payment method, and pays, after native takes over. Seeded through the
- * transition-seed plugin's `historical-tokens` profile (11.1.0, the version
- * this row's own plan requires).
+ * transition-seed plugin's `historical-tokens` profile (11.2.0, the current
+ * extension release).
  */
 
 const CONTRACT_ID =
@@ -281,14 +281,14 @@ test.describe( 'WooPayments transition: historical tokens', () => {
 					'woopayments-e2e-transition',
 					'seed',
 					'historical-tokens',
-					'--version=11.1.0',
+					'--version=11.2.0',
 				] )
 			).stdout
 				.trim()
 				.split( '\n' )
 				.pop()!
 		);
-		expect( identity.plugin_version ).toBe( '11.1.0' );
+		expect( identity.plugin_version ).toBe( '11.2.0' );
 		expect( identity.plugin_active ).toBe( true );
 		expect( identity.is_live ).toBe( false );
 

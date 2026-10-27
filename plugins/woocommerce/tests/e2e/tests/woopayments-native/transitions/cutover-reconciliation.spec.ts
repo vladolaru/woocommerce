@@ -669,7 +669,7 @@ return $snapshot;
 `;
 
 /**
- * Seeds, with the 11.1.0 plugin active, the plugin-era records a rollback
+ * Seeds, with the 11.2.0 plugin active, the plugin-era records a rollback
  * must find again: two saved tokens, multi-currency settings and one
  * live-mode order. All are local rows written in the plugin's own shapes;
  * nothing reaches the provider.
@@ -677,7 +677,7 @@ return $snapshot;
 const ROLLBACK_SEED_PHP = String.raw`
 $customer = get_user_by( 'login', 'customer' );
 if ( ! $customer || ! class_exists( 'WC_Payment_Token_WCPay_SEPA' ) ) {
-	throw new RuntimeException( 'The 11.1.0 profile customer or the plugin token classes are missing.' );
+	throw new RuntimeException( 'The 11.2.0 profile customer or the plugin token classes are missing.' );
 }
 $card = new WC_Payment_Token_CC();
 $card->set_token( 'pm_rollback_fixture_card' );
@@ -796,7 +796,7 @@ test.describe( 'WooPayments transition: rollback round trip', () => {
 		process.env.E2E_WP_ENV_CONFIG ??=
 			'tests/e2e/test-plugins/woopayments-transition-seed/wp-env.json';
 		await wpCLI( [ 'wp', 'woopayments-e2e-transition', 'reset' ] );
-		// The 11.1.0 card-only profile.
+		// The 11.2.0 card-only profile.
 		const identity = JSON.parse(
 			(
 				await wpCLI( [
@@ -804,14 +804,14 @@ test.describe( 'WooPayments transition: rollback round trip', () => {
 					'woopayments-e2e-transition',
 					'seed',
 					'historical-tokens',
-					'--version=11.1.0',
+					'--version=11.2.0',
 				] )
 			).stdout
 				.trim()
 				.split( '\n' )
 				.pop()!
 		);
-		expect( identity.plugin_version ).toBe( '11.1.0' );
+		expect( identity.plugin_version ).toBe( '11.2.0' );
 		expect( identity.plugin_active ).toBe( true );
 		expect( identity.is_live ).toBe( false );
 		expect( identity.native_state ).toBe( 'available' );
@@ -1065,7 +1065,7 @@ test.describe( 'WooPayments transition: extension activation during an open cuto
 		process.env.E2E_WP_ENV_CONFIG ??=
 			'tests/e2e/test-plugins/woopayments-transition-seed/wp-env.json';
 		await wpCLI( [ 'wp', 'woopayments-e2e-transition', 'reset' ] );
-		// The 11.1.0 card-only profile, as the rollback round trip uses.
+		// The 11.2.0 card-only profile, as the rollback round trip uses.
 		const identity = JSON.parse(
 			(
 				await wpCLI( [
@@ -1073,14 +1073,14 @@ test.describe( 'WooPayments transition: extension activation during an open cuto
 					'woopayments-e2e-transition',
 					'seed',
 					'historical-tokens',
-					'--version=11.1.0',
+					'--version=11.2.0',
 				] )
 			).stdout
 				.trim()
 				.split( '\n' )
 				.pop()!
 		);
-		expect( identity.plugin_version ).toBe( '11.1.0' );
+		expect( identity.plugin_version ).toBe( '11.2.0' );
 		expect( identity.plugin_active ).toBe( true );
 		expect( identity.native_state ).toBe( 'available' );
 	} );
@@ -1151,7 +1151,7 @@ test.describe( 'WooPayments transition: extension activation during an open cuto
 	/**
 	 * The switch reads only what the extension stored, so a store
 	 * whose merchant deactivated and deleted the extension still switches. The
-	 * 11.1.0 extension registers no uninstall hook, so its options stay.
+	 * 11.2.0 extension registers no uninstall hook, so its options stay.
 	 */
 	test(
 		'the switch completes after the extension was deactivated and deleted from disk',

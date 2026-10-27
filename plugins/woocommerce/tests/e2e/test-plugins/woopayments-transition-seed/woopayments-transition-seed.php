@@ -31,6 +31,10 @@ final class WooPayments_Transition_Seed_CLI {
 			'url'    => 'https://github.com/Automattic/woocommerce-payments/releases/download/11.1.0/woocommerce-payments.zip',
 			'sha256' => 'd655a77f24f638a3a57edbfd192c6d9e1196970b23320d289a48fc443ca7ffb1',
 		),
+		'11.2.0' => array(
+			'url'    => 'https://github.com/Automattic/woocommerce-payments/releases/download/11.2.0/woocommerce-payments.zip',
+			'sha256' => '58ea000906c2fc6f40e9a79d5ea60ec3104ae6d5ddf4ae533c2162b3b5fe5f96',
+		),
 	);
 
 	/** Registers the command. */

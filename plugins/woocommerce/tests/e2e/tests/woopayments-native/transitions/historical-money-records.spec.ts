@@ -448,7 +448,7 @@ for ( const [ title, contractId, protectionOn ] of [
 						'woopayments-e2e-transition',
 						'seed',
 						'historical-money-records',
-						'--version=11.1.0',
+						'--version=11.2.0',
 						`--ctp=${ protectionOn ? 'on' : 'off' }`,
 					] )
 				).stdout
@@ -456,7 +456,7 @@ for ( const [ title, contractId, protectionOn ] of [
 					.split( '\n' )
 					.pop()!
 			);
-			expect( identity.plugin_version ).toBe( '11.1.0' );
+			expect( identity.plugin_version ).toBe( '11.2.0' );
 			expect( identity.plugin_active ).toBe( true );
 			expect( identity.is_live ).toBe( false );
 			// The seed does not own this profile's classic-checkout page
