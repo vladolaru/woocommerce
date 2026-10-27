@@ -266,6 +266,28 @@ test.describe( 'WooPayments transition: cutover reconciliation', () => {
 			validateCutoverActionURL( href, baseURL! );
 
 			await link.click( { timeout: 30_000 } );
+			// Below the 10.6.0 floor, the start updates the extension first, and
+			// the site answers 503 while the update runs (WordPress maintenance
+			// mode), so wait for the updated files before reading the notice.
+			await expect
+				.poll(
+					async () => {
+						const response = await page.request.get( 'wp-admin/' );
+						if ( response.status() !== 200 ) {
+							return false;
+						}
+						const { plugin_version: version } =
+							await readCutoverStatus( migratorActionId );
+						return (
+							version.localeCompare( '10.6.0', undefined, {
+								numeric: true,
+							} ) >= 0
+						);
+					},
+					{ timeout: 60_000, intervals: [ 1000, 2000, 5000 ] }
+				)
+				.toBe( true );
+			await page.goto( 'wp-admin/' );
 			await expect(
 				page.getByText( 'Switch in progress', { exact: true } )
 			).toBeVisible();
