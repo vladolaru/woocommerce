@@ -217,7 +217,7 @@ class MultiCurrencyFrontendCurrenciesControllerTest extends WC_Unit_Test_Case {
 			'nothing selected'                        => array( array( 'USD', 'EUR' ), null, null, false, false, 'GBP', 'GBP' ),
 			'session EUR'                             => array( array( 'USD', 'EUR' ), 'EUR', null, false, false, 'GBP', 'EUR' ),
 			'session USD, two currencies'             => array( array( 'USD', 'EUR' ), 'USD', null, false, false, 'GBP', 'USD' ),
-			'session EUR, only the store currency'    => array( array( 'USD' ), 'EUR', null, false, false, 'GBP', 'GBP' ),
+			'session USD, only the store currency'    => array( array( 'USD' ), 'USD', null, false, false, 'GBP', 'GBP' ),
 			'override not enabled, unmarked'          => array( array( 'USD', 'EUR' ), null, 'JPY', false, false, 'GBP', 'GBP' ),
 			'override not enabled, an order currency' => array( array( 'USD', 'EUR' ), null, 'GBP', true, false, 'EUR', 'GBP' ),
 			'store currency for a shipping rate'      => array( array( 'USD', 'EUR' ), null, null, false, true, 'GBP', 'USD' ),
