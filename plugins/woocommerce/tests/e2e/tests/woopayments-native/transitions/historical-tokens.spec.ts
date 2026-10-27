@@ -138,9 +138,27 @@ async function addPluginOwnedCard(
 	await page.getByRole( 'link', { name: /add payment method/i } ).click();
 	await expect( page.locator( ADD_FORM ) ).toBeVisible();
 	await fillPluginOwnedCardDetails( page, TEST_CARDS.basic );
-	await page
-		.getByRole( 'button', { name: 'Add payment method', exact: true } )
-		.click();
+	// The extension exposes no ready signal for its card element, and a click
+	// can send nothing to Stripe while Stripe.js is still settling. When the
+	// first click sends no Stripe request within 10 s, click once more.
+	const addButton = page.getByRole( 'button', {
+		name: 'Add payment method',
+		exact: true,
+	} );
+	const stripePost = () =>
+		page.waitForRequest(
+			( request ) =>
+				request.method() === 'POST' &&
+				request.url().startsWith( 'https://api.stripe.com/v1/' ),
+			{ timeout: 10_000 }
+		);
+	const firstPost = stripePost();
+	await addButton.click();
+	if ( ! ( await firstPost.then( () => true ).catch( () => false ) ) ) {
+		const secondPost = stripePost();
+		await addButton.click();
+		await secondPost;
+	}
 	await expect(
 		page.getByText( ADD_SUCCESS_NOTICE, { exact: true } )
 	).toBeVisible( { timeout: 45_000 } );
