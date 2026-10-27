@@ -52,15 +52,10 @@ export type PaymentsProviderIncentive = {
 };
 
 export type WooPaymentsAdminNoticeId =
-	| 'test_to_live'
-	| 'post_kyc_activation'
-	| 'one_and_done';
+	'test_to_live' | 'post_kyc_activation' | 'one_and_done';
 
 export type WooPaymentsAdminNoticeAction =
-	| 'shown'
-	| 'dismiss'
-	| 'snooze'
-	| 'cta';
+	'shown' | 'dismiss' | 'snooze' | 'cta';
 
 export type WooPaymentsAdminNotice = {
 	id: WooPaymentsAdminNoticeId;
