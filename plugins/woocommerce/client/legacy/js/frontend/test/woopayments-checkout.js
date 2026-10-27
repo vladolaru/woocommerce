@@ -517,10 +517,14 @@ describe( 'WooPayments checkout', () => {
 								// turn it off and fire `ready` themselves. The
 								// payment-list wallet's `expressCheckout`
 								// element is left alone: its `ready` handler
-								// decides whether the wallet is shown. Event
-								// names follow client 11.1.0
-								// client/checkout/blocks/payment-elements.js:108-120
-								// (onReady, onLoadError).
+								// decides whether the wallet is shown. The
+								// on( event, handler ) shape is the one
+								// client 11.1.0 classic uses in
+								// client/checkout/classic/payment-processing.js:368
+								// (upeElement.on( 'loaderror' )); client
+								// 11.1.0 Blocks takes the same events as the
+								// onReady and onLoadError props
+								// (client/checkout/blocks/payment-processor.js:295-296).
 								if (
 									event === 'ready' &&
 									paymentElementReportsReady &&

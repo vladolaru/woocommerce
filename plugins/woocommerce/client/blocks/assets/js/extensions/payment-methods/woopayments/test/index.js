@@ -186,7 +186,9 @@ const OriginalResizeObserver = window.ResizeObserver;
 // Payment Element double for tests that submit: the checkout waits for `ready` before it calls elements.submit(),
 // so the element reports ready as soon as the bundle subscribes to it. Firing `ready` synchronously on subscribe is
 // a test convenience, not Stripe behavior: Stripe emits it after the elements session loads. The `on( event, handler )`
-// shape is the one client 11.1.0 client/checkout/blocks/payment-elements.js:108-120 uses (onReady, onLoadError).
+// shape is Stripe's imperative element API, as client 11.1.0 classic uses it
+// (client/checkout/classic/payment-processing.js:368, `upeElement.on( 'loaderror' )`); client 11.1.0 Blocks takes the
+// same events as the PaymentElement props onReady and onLoadError (client/checkout/blocks/payment-processor.js:295-296).
 const fireReadyWhenSubscribed = ( event, handler ) => {
 	if ( event === 'ready' ) {
 		handler();
