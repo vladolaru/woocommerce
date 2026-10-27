@@ -184,7 +184,9 @@ const OriginalResizeObserver = window.ResizeObserver;
  */
 
 // Payment Element double for tests that submit: the checkout waits for `ready` before it calls elements.submit(),
-// so the element reports ready as soon as the bundle subscribes to it.
+// so the element reports ready as soon as the bundle subscribes to it. Firing `ready` synchronously on subscribe is
+// a test convenience, not Stripe behavior: Stripe emits it after the elements session loads. The `on( event, handler )`
+// shape is the one client 11.1.0 client/checkout/blocks/payment-elements.js:108-120 uses (onReady, onLoadError).
 const fireReadyWhenSubscribed = ( event, handler ) => {
 	if ( event === 'ready' ) {
 		handler();
@@ -2064,6 +2066,10 @@ describe( 'wc-payment-method-woopayments', () => {
 
 			// Stripe.js can leave elements.submit() pending forever when it is called before the Payment Element
 			// reports `ready`, so the double records the handlers and lets each test decide when `ready` fires.
+			// Shapes follow client 11.1.0: elements.submit() resolves to an object that may carry `error`
+			// (utils/validate-elements.js:8-12); createPaymentMethod( { elements, params } ) resolves to
+			// { paymentMethod: { id } } (blocks/payment-processor.js:177-182, :215); the element's ready and
+			// load-error events are onReady and onLoadError (blocks/payment-elements.js:108-120, payment-processor.js:295-296).
 			const renderCardWithUnreadyElement = async () => {
 				const handlers = {};
 				const submit = jest.fn().mockResolvedValue( {} );
@@ -2134,6 +2140,7 @@ describe( 'wc-payment-method-woopayments', () => {
 				await act( async () => {
 					await Promise.resolve();
 				} );
+				// Synthetic loaderror event: client 11.1.0 blocks/payment-elements.js:108-120 reads only event.error.message.
 				act( () => {
 					handlers.loaderror( {
 						error: {
@@ -2164,6 +2171,40 @@ describe( 'wc-payment-method-woopayments', () => {
 				);
 				expect( submit ).not.toHaveBeenCalled();
 				expect( createPaymentMethod ).not.toHaveBeenCalled();
+			} );
+
+			it( 'never submits for the expired attempt and submits once for the retry after a late ready', async () => {
+				const {
+					handlers,
+					runPaymentSetup,
+					submit,
+					createPaymentMethod,
+				} = await renderCardWithUnreadyElement();
+				jest.useFakeTimers();
+
+				const expiredAttempt = runPaymentSetup();
+				await act( async () => {
+					jest.advanceTimersByTime( 15000 );
+				} );
+				await expect( expiredAttempt ).resolves.toEqual(
+					invalidPaymentDetailsResponse
+				);
+
+				// Stripe finally reports ready after the shopper was already refused.
+				act( () => {
+					handlers.ready();
+				} );
+				await act( async () => {
+					await Promise.resolve();
+				} );
+
+				expect( submit ).not.toHaveBeenCalled();
+
+				await expect( runPaymentSetup() ).resolves.toMatchObject( {
+					type: 'success',
+				} );
+				expect( submit ).toHaveBeenCalledTimes( 1 );
+				expect( createPaymentMethod ).toHaveBeenCalledTimes( 1 );
 			} );
 		} );
 	} );

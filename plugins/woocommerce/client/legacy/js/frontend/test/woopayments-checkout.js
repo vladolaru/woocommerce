@@ -509,11 +509,22 @@ describe( 'WooPayments checkout', () => {
 								paymentElementHandlers[ event ] = handler;
 
 								// Checkout waits for `ready` before it
-								// submits; tests that exercise the wait turn
-								// this off and fire `ready` themselves.
+								// submits, so the payment element reports
+								// ready as soon as it is subscribed to. That
+								// is a test convenience, not Stripe behavior
+								// (Stripe emits `ready` after the elements
+								// session loads); tests that exercise the wait
+								// turn it off and fire `ready` themselves. The
+								// payment-list wallet's `expressCheckout`
+								// element is left alone: its `ready` handler
+								// decides whether the wallet is shown. Event
+								// names follow client 11.1.0
+								// client/checkout/blocks/payment-elements.js:108-120
+								// (onReady, onLoadError).
 								if (
 									event === 'ready' &&
-									paymentElementReportsReady
+									paymentElementReportsReady &&
+									type === 'payment'
 								) {
 									handler();
 								}
@@ -2739,6 +2750,9 @@ describe( 'WooPayments checkout', () => {
 		).toBe( false );
 		await flushPromises();
 
+		// Synthetic loaderror event: client 11.1.0 blocks/payment-elements.js:108-120 and blocks/payment-processor.js:295-296
+		// read only event.error.message; elements.submit() resolves to an object that may carry `error`
+		// (utils/validate-elements.js:8-12).
 		paymentElementHandlers.loaderror( {
 			error: { message: 'The payment form could not be loaded.' },
 		} );
@@ -2778,6 +2792,106 @@ describe( 'WooPayments checkout', () => {
 		).toBe( 'There was a problem processing the payment.' );
 		expectClassicCheckoutReleaseCount( 1 );
 		expectClassicCheckoutUiState( false );
+	} );
+
+	test( 'waits for the rebuilt element of a redirect method, not the previous element, after a method switch', async () => {
+		document.body.innerHTML =
+			'<form class="checkout">' +
+			'<ul class="payment_methods">' +
+			'<li class="wc_payment_method payment_method_woocommerce_payments">' +
+			'<input id="payment_method_woocommerce_payments" type="radio" name="payment_method" value="woocommerce_payments" checked />' +
+			'<div class="payment_box payment_method_woocommerce_payments">' +
+			'<div id="wcpay-core-payment-element"></div>' +
+			'</div>' +
+			'</li>' +
+			'<li class="wc_payment_method payment_method_woocommerce_payments_alipay">' +
+			'<input id="payment_method_woocommerce_payments_alipay" type="radio" ' +
+			'name="payment_method" value="woocommerce_payments_alipay" />' +
+			'<div class="payment_box payment_method_woocommerce_payments_alipay">' +
+			'<div id="wcpay-core-payment-element"></div>' +
+			'</div>' +
+			'</li>' +
+			'</ul>' +
+			'<button id="place_order" type="button">Place order</button>' +
+			'</form>';
+		window.wcpay_core_checkout_config_woocommerce_payments_alipay =
+			Object.assign( {}, window.wcpay_core_checkout_config, {
+				gatewayId: 'woocommerce_payments_alipay',
+				paymentMethodTypes: [ 'alipay' ],
+				paymentMethodsConfig: {
+					alipay: {
+						isReusable: false,
+					},
+				},
+			} );
+		paymentElementReportsReady = false;
+		require( '../woopayments-checkout' );
+		const cardElementHandlers = paymentElementHandlers;
+
+		// Native classic builds a new element when the shopper selects the redirect method; it is not ready yet.
+		paymentElementHandlers = {};
+		document.getElementById(
+			'payment_method_woocommerce_payments'
+		).checked = false;
+		document.getElementById(
+			'payment_method_woocommerce_payments_alipay'
+		).checked = true;
+		bodyEventHandlers.payment_method_selected();
+		const alipayElementHandlers = paymentElementHandlers;
+		expect( alipayElementHandlers.ready ).toEqual( expect.any( Function ) );
+		expect( alipayElementHandlers.ready ).not.toBe(
+			cardElementHandlers.ready
+		);
+
+		// The replaced card element reporting ready late must not release the redirect method's submit.
+		cardElementHandlers.ready();
+
+		expect(
+			checkoutFormEventHandlers.checkout_place_order_woocommerce_payments_alipay()
+		).toBe( false );
+		await flushPromises();
+		expect( submitElements ).not.toHaveBeenCalled();
+
+		alipayElementHandlers.ready();
+		await flushPromises();
+
+		expect( submitElements ).toHaveBeenCalledTimes( 1 );
+		expect( stripeMock.createPaymentMethod ).toHaveBeenCalledTimes( 1 );
+		delete window.wcpay_core_checkout_config_woocommerce_payments_alipay;
+	} );
+
+	test( 'never submits for the expired attempt and submits once for the retry after a late ready', async () => {
+		document
+			.querySelector( 'form.checkout' )
+			.insertAdjacentHTML(
+				'beforeend',
+				'<div class="wcpay-core-payment-errors" hidden></div>'
+			);
+		paymentElementReportsReady = false;
+		require( '../woopayments-checkout' );
+		jest.useFakeTimers();
+
+		expect(
+			checkoutFormEventHandlers.checkout_place_order_woocommerce_payments()
+		).toBe( false );
+		await jest.advanceTimersByTimeAsync( 15000 );
+		expectClassicCheckoutReleaseCount( 1 );
+
+		// Stripe finally reports ready after the shopper was already refused.
+		paymentElementHandlers.ready();
+		await jest.advanceTimersByTimeAsync( 0 );
+		expect( submitElements ).not.toHaveBeenCalled();
+
+		expect(
+			checkoutFormEventHandlers.checkout_place_order_woocommerce_payments()
+		).toBe( false );
+		await jest.advanceTimersByTimeAsync( 0 );
+
+		expect( submitElements ).toHaveBeenCalledTimes( 1 );
+		expect( stripeMock.createPaymentMethod ).toHaveBeenCalledTimes( 1 );
+		expect(
+			global.jQuery.checkoutFormResult.trigger
+		).toHaveBeenCalledWith( 'submit' );
 	} );
 
 	test( 'intercepts the WooCommerce form checkout event before creating a payment method', async () => {
