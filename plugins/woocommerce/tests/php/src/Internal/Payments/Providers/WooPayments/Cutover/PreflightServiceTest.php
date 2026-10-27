@@ -400,7 +400,8 @@ class PreflightServiceTest extends WC_Unit_Test_Case {
 	 * @testdox On a multisite, a plugin that renews through the extension holds the switch back when it is active for this site only.
 	 */
 	public function test_site_active_extension_renewal_plugin_holds_the_switch_back_on_a_multisite(): void {
-		$this->fake_active_plugins( array( 'order-subscriptions/order-subscriptions.php' ), array(), true );
+		// An unrelated network-active plugin: the site's own list must still count beside a nonempty network list.
+		$this->fake_active_plugins( array( 'order-subscriptions/order-subscriptions.php' ), array( 'akismet/akismet.php' ), true );
 		$sut = $this->create_sut();
 
 		$this->assertSame( array( PreflightService::FAILURE_EXTENSION_RENEWAL_PLUGIN_ACTIVE ), $sut->get_failures() );
@@ -695,7 +696,9 @@ class PreflightServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * Control the site and network active plugin lists and the plugin headers WordPress reads.
 	 *
-	 * WordPress stores active_sitewide_plugins as a plugin-file => activation-timestamp map (wp-admin/includes/plugin.php:712-715).
+	 * WordPress stores active_sitewide_plugins as a plugin-file => activation-timestamp map (wp-admin/includes/plugin.php:712-715),
+	 * and get_plugins() in the same file returns a plugin-file => header map whose Name is each plugin's "Plugin Name" header; the
+	 * four names are those headers in the plugins' current main files.
 	 *
 	 * @param string[]                                $site_plugins    Active plugin files of the site.
 	 * @param string[]                                $network_plugins Plugin files active for the whole network.

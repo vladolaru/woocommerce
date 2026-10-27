@@ -283,7 +283,8 @@ class PreflightService {
 	/**
 	 * Get the active plugin files, for this site or the whole network, whose slug is in EXTENSION_RENEWAL_PLUGIN_SLUGS.
 	 *
-	 * Their WooPayments code never loads without the extension, so they are found by slug rather than by class.
+	 * Their renewal paths depend on WooPayments extension APIs the built-in WooPayments does not provide, so they are found
+	 * by slug rather than by class.
 	 *
 	 * @return string[]
 	 */
