@@ -29,6 +29,12 @@
 	// it is set; without it a shopper whose payment form failed to load presses
 	// the button and gets no navigation, no message and no explanation.
 	var paymentElementLoadError = null;
+	// Settles when the mounted payment element reports `ready` (true) or
+	// `loaderror` (false). Stripe.js can leave `elements.submit()` pending
+	// forever when it is called before the element is ready, so submitting
+	// waits for this, for at most PAYMENT_ELEMENT_READY_TIMEOUT_MS.
+	var paymentElementReady = null;
+	var PAYMENT_ELEMENT_READY_TIMEOUT_MS = 15000;
 	var isWaitingForStripe = false;
 	var checkoutSubmitHandlerGatewayIds = {};
 	var deviceFingerprint = '';
@@ -2083,12 +2089,49 @@
 			return Promise.resolve( {} );
 		}
 
-		return elements.submit().then( function ( result ) {
-			if ( result && result.error ) {
-				return Promise.reject( result.error );
-			}
+		var submittedElements = elements;
 
-			return result || {};
+		return waitForPaymentElementReady().then( function () {
+			return submittedElements.submit().then( function ( result ) {
+				if ( result && result.error ) {
+					return Promise.reject( result.error );
+				}
+
+				return result || {};
+			} );
+		} );
+	}
+
+	// Resolves once the payment element is ready. Rejects with the element's
+	// load error, or with the generic payment error after the time limit.
+	function waitForPaymentElementReady() {
+		var ready = paymentElementReady;
+
+		if ( ! ready ) {
+			return Promise.resolve();
+		}
+
+		return new Promise( function ( resolve, reject ) {
+			var timer = window.setTimeout( function () {
+				reject( new Error( config.genericErrorMessage || '' ) );
+			}, PAYMENT_ELEMENT_READY_TIMEOUT_MS );
+
+			ready.then( function ( isReady ) {
+				window.clearTimeout( timer );
+
+				if ( isReady ) {
+					resolve();
+					return;
+				}
+
+				reject(
+					new Error(
+						paymentElementLoadError ||
+							config.genericErrorMessage ||
+							''
+					)
+				);
+			} );
 		} );
 	}
 
@@ -2166,6 +2209,7 @@
 		paymentElementContainer = null;
 		paymentElementGatewayId = null;
 		paymentElementLoadError = null;
+		paymentElementReady = null;
 	}
 
 	/**
@@ -2205,6 +2249,8 @@
 	}
 
 	function initializeStripeElement() {
+		var settlePaymentElementReady;
+
 		setCurrentGatewayConfig();
 		var container = getGatewayPaymentContainer( gatewayId );
 		hydrateCardBrandIcons();
@@ -2264,12 +2310,19 @@
 			getStripePaymentElementOptions()
 		);
 		paymentElementLoadError = null;
+		paymentElementReady = new Promise( function ( resolve ) {
+			settlePaymentElementReady = resolve;
+		} );
+		paymentElement.on( 'ready', function () {
+			settlePaymentElementReady( true );
+		} );
 		paymentElement.on( 'loaderror', function ( event ) {
 			paymentElementLoadError =
 				event && event.error && event.error.message
 					? event.error.message
 					: config.genericErrorMessage || '';
 			setError( paymentElementLoadError );
+			settlePaymentElementReady( false );
 		} );
 		initTokenizationForm();
 		paymentElement.mount( container );

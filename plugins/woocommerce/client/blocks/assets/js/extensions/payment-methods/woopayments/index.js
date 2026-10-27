@@ -333,6 +333,25 @@ const getErrorResponse = ( emitResponse, message ) => ( {
 	messageContext: emitResponse.noticeContexts.PAYMENTS,
 } );
 
+// Stripe.js can leave `elements.submit()` pending forever when it is called
+// before the Payment Element is ready, so submitting waits for `ready`, for at
+// most this long.
+const PAYMENT_ELEMENT_READY_TIMEOUT_MS = 15000;
+
+// Resolves true once the element is ready; false on a load error or timeout.
+const waitForPaymentElementReady = ( readyPromise ) =>
+	new Promise( ( resolve ) => {
+		const timer = setTimeout(
+			() => resolve( false ),
+			PAYMENT_ELEMENT_READY_TIMEOUT_MS
+		);
+
+		readyPromise.then( ( isReady ) => {
+			clearTimeout( timer );
+			resolve( isReady );
+		} );
+	} );
+
 const parseConfirmationRedirect = ( value ) => {
 	if ( typeof value === 'string' ) {
 		const match = value.match(
@@ -1333,6 +1352,8 @@ const WooPaymentsContent = ( {
 	);
 	const [ loadErrorMessage, setLoadErrorMessage ] = useState( '' );
 	const hasLoadError = useRef( false );
+	// Settles true on the Payment Element's `ready`, false on `loaderror`.
+	const paymentElementReady = useRef( null );
 	const [ showSkeleton, setShowSkeleton ] = useState( true );
 	// Unset until the first observation, so nothing is reserved before the width is known.
 	const [ cardRowCount, setCardRowCount ] = useState( null );
@@ -1486,11 +1507,17 @@ const WooPaymentsContent = ( {
 			'payment',
 			paymentElementOptions
 		);
-		paymentElement.current.on( 'ready', () => setIsStripeReady( true ) );
-		// Client 11.1.0 client/checkout/blocks/payment-processor.js:250-253, :296 and payment-elements.js:108-120.
-		paymentElement.current.on( 'loaderror', ( event ) => {
-			hasLoadError.current = true;
-			setLoadErrorMessage( event?.error?.message || '' );
+		paymentElementReady.current = new Promise( ( resolve ) => {
+			paymentElement.current.on( 'ready', () => {
+				setIsStripeReady( true );
+				resolve( true );
+			} );
+			// Client 11.1.0 client/checkout/blocks/payment-processor.js:250-253, :296 and payment-elements.js:108-120.
+			paymentElement.current.on( 'loaderror', ( event ) => {
+				hasLoadError.current = true;
+				setLoadErrorMessage( event?.error?.message || '' );
+				resolve( false );
+			} );
 		} );
 		paymentElement.current.mount( elementContainer.current );
 	}, [ isStripeLoaded, paymentSettings, shouldSavePayment ] );
@@ -1525,18 +1552,29 @@ const WooPaymentsContent = ( {
 
 			// Client 11.1.0 client/checkout/blocks/payment-processor.js:133-140 refuses a Payment Element that failed
 			// to load; one that never mounted (Stripe.js missing) has no payment method to submit either.
-			if (
-				hasLoadError.current ||
-				! stripe.current ||
-				! elements.current
-			) {
-				return getErrorResponse(
+			const getInvalidPaymentDetailsResponse = () =>
+				getErrorResponse(
 					emitResponseRef.current,
 					__(
 						'Invalid or missing payment details. Please ensure the provided payment method is correctly entered.',
 						'woocommerce'
 					)
 				);
+
+			if (
+				hasLoadError.current ||
+				! stripe.current ||
+				! elements.current
+			) {
+				return getInvalidPaymentDetailsResponse();
+			}
+
+			if (
+				! ( await waitForPaymentElementReady(
+					paymentElementReady.current
+				) )
+			) {
+				return getInvalidPaymentDetailsResponse();
 			}
 
 			if ( typeof elements.current.submit === 'function' ) {

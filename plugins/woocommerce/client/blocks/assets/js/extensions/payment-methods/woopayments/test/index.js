@@ -183,6 +183,14 @@ const OriginalResizeObserver = window.ResizeObserver;
  * @property {{ code: string, decline_code: string, message: string, type: string }} [error]         - Provider error.
  */
 
+// Payment Element double for tests that submit: the checkout waits for `ready` before it calls elements.submit(),
+// so the element reports ready as soon as the bundle subscribes to it.
+const fireReadyWhenSubscribed = ( event, handler ) => {
+	if ( event === 'ready' ) {
+		handler();
+	}
+};
+
 describe( 'wc-payment-method-woopayments', () => {
 	// The Blocks payment store selectors the bundle reads (wc/store/payment getActivePaymentMethod, getPaymentMethodData).
 	let activePaymentMethod;
@@ -254,7 +262,7 @@ describe( 'wc-payment-method-woopayments', () => {
 		const calls = [];
 		const elementsInstance = {
 			create: jest.fn( () => ( {
-				on: jest.fn(),
+				on: jest.fn( fireReadyWhenSubscribed ),
 				mount: jest.fn(),
 			} ) ),
 			submit: jest.fn( () => {
@@ -2045,6 +2053,119 @@ describe( 'wc-payment-method-woopayments', () => {
 			} );
 			expect( submit ).not.toHaveBeenCalled();
 		} );
+
+		describe( 'before the Payment Element is ready', () => {
+			const invalidPaymentDetailsResponse = {
+				type: 'error',
+				message:
+					'Invalid or missing payment details. Please ensure the provided payment method is correctly entered.',
+				messageContext: 'payments',
+			};
+
+			// Stripe.js can leave elements.submit() pending forever when it is called before the Payment Element
+			// reports `ready`, so the double records the handlers and lets each test decide when `ready` fires.
+			const renderCardWithUnreadyElement = async () => {
+				const handlers = {};
+				const submit = jest.fn().mockResolvedValue( {} );
+				const createPaymentMethod = jest.fn().mockResolvedValue( {
+					paymentMethod: { id: 'pm_123' },
+				} );
+				window.Stripe = jest.fn( () => ( {
+					elements: jest.fn( () => ( {
+						create: jest.fn( () => ( {
+							on: jest.fn( ( event, handler ) => {
+								handlers[ event ] = handler;
+							} ),
+							mount: jest.fn(),
+						} ) ),
+						submit,
+					} ) ),
+					createPaymentMethod,
+				} ) );
+
+				const runPaymentSetup = renderCardWithPaymentSetup();
+				await waitFor( () => {
+					expect( handlers.ready ).toEqual( expect.any( Function ) );
+				} );
+
+				return {
+					createPaymentMethod,
+					handlers,
+					runPaymentSetup,
+					submit,
+				};
+			};
+
+			it( 'submits the elements only after the Payment Element is ready', async () => {
+				const {
+					createPaymentMethod,
+					handlers,
+					runPaymentSetup,
+					submit,
+				} = await renderCardWithUnreadyElement();
+
+				const paymentSetup = runPaymentSetup();
+				await act( async () => {
+					await Promise.resolve();
+				} );
+
+				expect( submit ).not.toHaveBeenCalled();
+
+				act( () => {
+					handlers.ready();
+				} );
+
+				await expect( paymentSetup ).resolves.toMatchObject( {
+					type: 'success',
+				} );
+				expect( submit ).toHaveBeenCalledTimes( 1 );
+				expect( createPaymentMethod ).toHaveBeenCalledTimes( 1 );
+			} );
+
+			it( 'refuses without submitting when the Payment Element fails to load while waiting', async () => {
+				const {
+					handlers,
+					runPaymentSetup,
+					submit,
+					createPaymentMethod,
+				} = await renderCardWithUnreadyElement();
+
+				const paymentSetup = runPaymentSetup();
+				await act( async () => {
+					await Promise.resolve();
+				} );
+				act( () => {
+					handlers.loaderror( {
+						error: {
+							message: 'The payment form could not be loaded.',
+						},
+					} );
+				} );
+
+				await expect( paymentSetup ).resolves.toEqual(
+					invalidPaymentDetailsResponse
+				);
+				expect( submit ).not.toHaveBeenCalled();
+				expect( createPaymentMethod ).not.toHaveBeenCalled();
+			} );
+
+			it( 'refuses without submitting when the Payment Element is still not ready after the time limit', async () => {
+				const { runPaymentSetup, submit, createPaymentMethod } =
+					await renderCardWithUnreadyElement();
+				jest.useFakeTimers();
+
+				const paymentSetup = runPaymentSetup();
+				await act( async () => {
+					jest.advanceTimersByTime( 15000 );
+				} );
+
+				await expect( paymentSetup ).resolves.toEqual(
+					invalidPaymentDetailsResponse
+				);
+				expect( submit ).not.toHaveBeenCalled();
+				expect( createPaymentMethod ).not.toHaveBeenCalled();
+			} );
+		} );
 	} );
 
 	describe( 'reserved Payment Element space', () => {
@@ -2802,7 +2923,7 @@ describe( 'wc-payment-method-woopayments', () => {
 		window.Stripe = jest.fn( () => ( {
 			elements: jest.fn( () => ( {
 				create: jest.fn( () => ( {
-					on: jest.fn(),
+					on: jest.fn( fireReadyWhenSubscribed ),
 					mount: jest.fn(),
 				} ) ),
 			} ) ),
@@ -2859,7 +2980,7 @@ describe( 'wc-payment-method-woopayments', () => {
 		window.Stripe = jest.fn( () => ( {
 			elements: jest.fn( () => ( {
 				create: jest.fn( () => ( {
-					on: jest.fn(),
+					on: jest.fn( fireReadyWhenSubscribed ),
 					mount: jest.fn(),
 				} ) ),
 			} ) ),

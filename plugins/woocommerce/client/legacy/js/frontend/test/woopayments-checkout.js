@@ -12,6 +12,7 @@ describe( 'WooPayments checkout', () => {
 	let elementsMock;
 	let mountPaymentElement;
 	let paymentElementHandlers;
+	let paymentElementReportsReady;
 	let paymentElementOptions;
 	let stripeMock;
 	let stripeElementsOptions;
@@ -410,6 +411,7 @@ describe( 'WooPayments checkout', () => {
 		submitElements = jest.fn( () => Promise.resolve( {} ) );
 		mountPaymentElement = jest.fn();
 		paymentElementHandlers = {};
+		paymentElementReportsReady = true;
 		paymentElementOptions = null;
 		stripeElementsOptions = null;
 		unmountPaymentElement = jest.fn();
@@ -505,6 +507,16 @@ describe( 'WooPayments checkout', () => {
 							// for.
 							on: ( event, handler ) => {
 								paymentElementHandlers[ event ] = handler;
+
+								// Checkout waits for `ready` before it
+								// submits; tests that exercise the wait turn
+								// this off and fire `ready` themselves.
+								if (
+									event === 'ready' &&
+									paymentElementReportsReady
+								) {
+									handler();
+								}
 							},
 						};
 					} ),
@@ -2692,6 +2704,80 @@ describe( 'WooPayments checkout', () => {
 		expect(
 			document.querySelector( '.wcpay-core-payment-errors' ).textContent
 		).toBe( 'The payment form could not be loaded.' );
+	} );
+
+	test( 'submits Stripe Elements only after the payment element is ready', async () => {
+		paymentElementReportsReady = false;
+		require( '../woopayments-checkout' );
+
+		expect(
+			checkoutFormEventHandlers.checkout_place_order_woocommerce_payments()
+		).toBe( false );
+		await flushPromises();
+
+		expect( submitElements ).not.toHaveBeenCalled();
+
+		paymentElementHandlers.ready();
+		await flushPromises();
+
+		expect( submitElements ).toHaveBeenCalledTimes( 1 );
+		expect( stripeMock.createPaymentMethod ).toHaveBeenCalledTimes( 1 );
+	} );
+
+	test( 'refuses without submitting when the payment element fails to load while the checkout waits for it', async () => {
+		document
+			.querySelector( 'form.checkout' )
+			.insertAdjacentHTML(
+				'beforeend',
+				'<div class="wcpay-core-payment-errors" hidden></div>'
+			);
+		paymentElementReportsReady = false;
+		require( '../woopayments-checkout' );
+
+		expect(
+			checkoutFormEventHandlers.checkout_place_order_woocommerce_payments()
+		).toBe( false );
+		await flushPromises();
+
+		paymentElementHandlers.loaderror( {
+			error: { message: 'The payment form could not be loaded.' },
+		} );
+		await flushPromises();
+
+		expect( submitElements ).not.toHaveBeenCalled();
+		expect( stripeMock.createPaymentMethod ).not.toHaveBeenCalled();
+		expect(
+			document.querySelector( '.wcpay-core-payment-errors' ).textContent
+		).toBe( 'The payment form could not be loaded.' );
+		expectClassicCheckoutReleaseCount( 1 );
+		expectClassicCheckoutUiState( false );
+	} );
+
+	test( 'refuses without submitting and releases the form when the payment element is not ready in time', async () => {
+		document
+			.querySelector( 'form.checkout' )
+			.insertAdjacentHTML(
+				'beforeend',
+				'<div class="wcpay-core-payment-errors" hidden></div>'
+			);
+		window.wcpay_core_checkout_config.genericErrorMessage =
+			'There was a problem processing the payment.';
+		paymentElementReportsReady = false;
+		require( '../woopayments-checkout' );
+		jest.useFakeTimers();
+
+		expect(
+			checkoutFormEventHandlers.checkout_place_order_woocommerce_payments()
+		).toBe( false );
+		await jest.advanceTimersByTimeAsync( 15000 );
+
+		expect( submitElements ).not.toHaveBeenCalled();
+		expect( stripeMock.createPaymentMethod ).not.toHaveBeenCalled();
+		expect(
+			document.querySelector( '.wcpay-core-payment-errors' ).textContent
+		).toBe( 'There was a problem processing the payment.' );
+		expectClassicCheckoutReleaseCount( 1 );
+		expectClassicCheckoutUiState( false );
 	} );
 
 	test( 'intercepts the WooCommerce form checkout event before creating a payment method', async () => {
