@@ -3554,12 +3554,16 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 		$this->assertIsArray( $pending );
 		$this->scheduler->cancel( $pending['generation'], 1 );
 
+		$before = time();
 		$sut->handle_reconcile( $pending['generation'], 1 );
+		$after = time();
 
 		$deferred = $this->state_store->get_record();
 		$this->assertIsArray( $deferred );
 		$this->assertSame( StateStore::STATE_DEFERRED, $deferred['state'] );
 		$this->assertSame( array( 'woopayments_plugin_version_unsupported' ), $deferred['deferred_codes'] );
+		$this->assertGreaterThanOrEqual( $before + 15 * MINUTE_IN_SECONDS, $deferred['next_attempt_at'], 'An update that did not install a supported version keeps the retry cadence.' );
+		$this->assertLessThanOrEqual( $after + 15 * MINUTE_IN_SECONDS, $deferred['next_attempt_at'] );
 		$this->assertSame( 1, $job->get_metadata_refresh_count() );
 		$this->assertSame( array( 'woocommerce-payments/woocommerce-payments.php' ), $job->get_upgraded_plugin_files() );
 		$this->assertSame( array( true ), $job->get_lock_observations() );
@@ -3720,12 +3724,18 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 		$this->assertIsArray( $pending );
 		$this->scheduler->cancel( $pending['generation'], 1 );
 
+		$before = time();
 		$sut->handle_reconcile( $pending['generation'], 1 );
+		$after = time();
 
 		$first = $this->state_store->get_record();
 		$this->assertIsArray( $first );
 		$this->assertSame( StateStore::STATE_DEFERRED, $first['state'] );
 		$this->assertSame( array( 'woopayments_plugin_version_unsupported' ), $first['deferred_codes'] );
+		// One minute, not now: Action Scheduler would claim a due retry in this run, which still has the old extension loaded.
+		$this->assertGreaterThanOrEqual( $before + MINUTE_IN_SECONDS, $first['next_attempt_at'], 'The retry after a supported update comes a minute later.' );
+		$this->assertLessThanOrEqual( $after + MINUTE_IN_SECONDS, $first['next_attempt_at'] );
+		$this->assertSame( $first['action_id'], $this->scheduler->get_scheduled_action_id( $first['generation'], 2 ) );
 		$this->assertSame( array(), $job->get_errors(), 'A completed update that installed a supported version must not log an error.' );
 		$this->assertSame( 1, $job->get_metadata_refresh_count() );
 		$this->assertSame( array( 'woocommerce-payments/woocommerce-payments.php' ), $job->get_upgraded_plugin_files() );

@@ -98,6 +98,13 @@ class ReconciliationJob implements RegisterHooksInterface {
 	/** Fast retry delay during the first day. */
 	private const FAST_RETRY_DELAY = 15 * MINUTE_IN_SECONDS;
 
+	/**
+	 * Retry delay after the job updated the extension to a supported version, which it records on its next request.
+	 *
+	 * Not zero: Action Scheduler keeps claiming due actions in the same run, which still has the old extension loaded.
+	 */
+	private const UPDATED_PLUGIN_RETRY_DELAY = MINUTE_IN_SECONDS;
+
 	/** Age at which retries become daily. */
 	private const FAST_RETRY_WINDOW = DAY_IN_SECONDS;
 
@@ -644,13 +651,14 @@ class ReconciliationJob implements RegisterHooksInterface {
 	 * @param array<string,mixed> $expected_claim Exact running revision owned by this worker.
 	 * @param array<int,string>   $codes          Remaining condition codes.
 	 * @param array<int,mixed>    $outcomes       Informational outcomes to retain.
+	 * @param int|null            $retry_delay    Seconds until the next attempt, or null for the retry cadence.
 	 * @return bool True when the next attempt is scheduled.
 	 */
-	public function defer( array $expected_claim, array $codes, array $outcomes = array() ): bool {
+	public function defer( array $expected_claim, array $codes, array $outcomes = array(), ?int $retry_delay = null ): bool {
 		$now = time();
 		return $this->with_write_lock(
 			$now,
-			function () use ( $expected_claim, $now, $codes, $outcomes ): bool {
+			function () use ( $expected_claim, $now, $codes, $outcomes, $retry_delay ): bool {
 				$record = $this->state_store->get_record();
 				if (
 					! is_array( $record )
@@ -669,7 +677,7 @@ class ReconciliationJob implements RegisterHooksInterface {
 				$deferred['updated_at']                       = $now;
 				$deferred[ StateStore::BLOCKING_CODES_KEY ]   = $codes;
 				$deferred['informational_outcomes']           = $this->merge_information_outcomes( $record['informational_outcomes'], $outcomes );
-				$deferred['next_attempt_at']                  = $now + $this->get_retry_delay( $record, $now );
+				$deferred['next_attempt_at']                  = $now + ( $retry_delay ?? $this->get_retry_delay( $record, $now ) );
 				$deferred[ StateStore::CLAIM_TOKEN_KEY ]      = null;
 				$deferred[ StateStore::CLAIM_EXPIRES_AT_KEY ] = null;
 				$deferred                                     = $this->append_step( $deferred, self::STEP_DEFERRED, $now, array( 'codes' => $deferred[ StateStore::BLOCKING_CODES_KEY ] ) );
@@ -728,12 +736,13 @@ class ReconciliationJob implements RegisterHooksInterface {
 			$outcomes = array_merge( $outcomes, $this->get_adopted_queue_action_outcomes() );
 
 			// The extension records its new version only on its next request, so check the installed files instead.
-			if ( $plugin_update_succeeded && ! $this->is_installed_woopayments_plugin_version_supported() ) {
+			$plugin_updated_to_supported = $plugin_update_succeeded && $this->is_installed_woopayments_plugin_version_supported();
+			if ( $plugin_update_succeeded && ! $plugin_updated_to_supported ) {
 				$this->log_error( 'WooPayments cutover extension update completed without installing a supported version.' );
 			}
 
 			if ( array() !== $failures ) {
-				$this->defer( $claimed, $failures, $outcomes );
+				$this->defer( $claimed, $failures, $outcomes, $plugin_updated_to_supported ? self::UPDATED_PLUGIN_RETRY_DELAY : null );
 				return;
 			}
 
