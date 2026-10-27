@@ -6,6 +6,7 @@ describe( 'WooPayments checkout', () => {
 	let bodyEventHandlers;
 	let checkoutFormState;
 	let checkoutFormEventHandlers;
+	let createdPaymentElements;
 	let documentEventListeners;
 	let orderPayFormEventHandlers;
 	let orderPayFormState;
@@ -490,16 +491,33 @@ describe( 'WooPayments checkout', () => {
 		window.fetch = jest.fn().mockResolvedValue( {
 			json: jest.fn().mockResolvedValue( { success: true } ),
 		} );
+		createdPaymentElements = [];
 		stripeMock = {
 			elements: jest.fn( ( options ) => {
 				stripeElementsOptions = options;
-				elementsMock = {
-					submit: submitElements,
-					create: jest.fn( ( type, options ) => {
-						paymentElementOptions = options;
+				const group = {
+					// Each Elements group counts its own submits and reports them to the shared mock too.
+					submit: jest.fn( ( ...args ) => submitElements( ...args ) ),
+					create: jest.fn( ( type, elementOptions ) => {
+						paymentElementOptions = elementOptions;
+						// Every created element keeps its own handlers and mount/unmount mocks, which also report to
+						// the shared ones, so tests with several gateways can tell the elements apart.
+						const created = {
+							type,
+							elementsOptions: options,
+							group,
+							handlers: {},
+							mount: jest.fn( ( container ) =>
+								mountPaymentElement( container )
+							),
+							unmount: jest.fn( () => unmountPaymentElement() ),
+						};
+						if ( type === 'payment' ) {
+							createdPaymentElements.push( created );
+						}
 						return {
-							mount: mountPaymentElement,
-							unmount: unmountPaymentElement,
+							mount: created.mount,
+							unmount: created.unmount,
 							update: updatePaymentElement,
 							// Stripe payment elements emit `ready`,
 							// `loaderror` and friends; the double has to
@@ -507,6 +525,7 @@ describe( 'WooPayments checkout', () => {
 							// for.
 							on: ( event, handler ) => {
 								paymentElementHandlers[ event ] = handler;
+								created.handlers[ event ] = handler;
 
 								// Checkout waits for `ready` before it
 								// submits, so the payment element reports
@@ -536,6 +555,7 @@ describe( 'WooPayments checkout', () => {
 						};
 					} ),
 				};
+				elementsMock = group;
 				return elementsMock;
 			} ),
 			// Minimal Stripe.js result shapes, reduced to the ids the script reads, as client 11.1.0 does:
@@ -581,9 +601,11 @@ describe( 'WooPayments checkout', () => {
 		delete global.$;
 		delete window.jQuery;
 		delete window.$;
-		delete window.wcpay_core_checkout_config;
-		delete window.wcpay_core_checkout_config_woocommerce_payments_klarna;
-		delete window.wcpay_core_checkout_config_woocommerce_payments_ideal;
+		Object.keys( window )
+			.filter(
+				( key ) => key.indexOf( 'wcpay_core_checkout_config' ) === 0
+			)
+			.forEach( ( key ) => delete window[ key ] );
 		delete window.wcpayAppearance;
 		delete window.wc;
 		delete window.Stripe;
@@ -740,7 +762,15 @@ describe( 'WooPayments checkout', () => {
 				render: expect.any( Function ),
 			} )
 		);
-		expect( mountPaymentElement ).not.toHaveBeenCalled();
+		// The wallet rows mount no Payment Element; the card row mounts its own even while a wallet is selected, as
+		// client 11.1.0 mounts every method's element at render.
+		expect( mountPaymentElement ).toHaveBeenCalledTimes( 1 );
+		expect( mountPaymentElement ).toHaveBeenCalledWith(
+			document
+				.querySelector( 'input[value="woocommerce_payments"]' )
+				.closest( 'li' )
+				.querySelector( '#wcpay-core-payment-element' )
+		);
 	} );
 
 	test( 'keeps custom-button wallets out of the ordinary card Payment Element terms', () => {
@@ -811,7 +841,9 @@ describe( 'WooPayments checkout', () => {
 		const registrations = preparePaymentListWallets();
 
 		require( '../woopayments-checkout' );
+		// The card row's Payment Element was created at render; count the wallet's work only.
 		window.Stripe.mockClear();
+		stripeMock.elements.mockClear();
 		const container = document.createElement( 'div' );
 		const checkoutApi = { submit: jest.fn(), validate: jest.fn() };
 		await registrations.woocommerce_payments_apple_pay.render(
@@ -871,11 +903,12 @@ describe( 'WooPayments checkout', () => {
 
 	test( 'hides a payment-list wallet when its Express Checkout Element cannot initialize', () => {
 		const registrations = preparePaymentListWallets();
+
+		require( '../woopayments-checkout' );
+		// After the card row's Payment Element was created at render.
 		stripeMock.elements.mockImplementationOnce( () => {
 			throw new Error( 'Express Checkout unavailable' );
 		} );
-
-		require( '../woopayments-checkout' );
 
 		expect( () =>
 			registrations.woocommerce_payments_apple_pay.render(
@@ -1030,65 +1063,290 @@ describe( 'WooPayments checkout', () => {
 
 		require( '../woopayments-checkout' );
 
-		expect( mountPaymentElement ).not.toHaveBeenCalledWith( cardContainer );
+		// The card container holds the card's own element only: Affirm gets none.
+		expect( createdPaymentElements ).toHaveLength( 1 );
+		expect( createdPaymentElements[ 0 ].elementsOptions ).toMatchObject( {
+			paymentMethodTypes: [ 'card' ],
+		} );
+		expect( createdPaymentElements[ 0 ].mount ).toHaveBeenCalledWith(
+			cardContainer
+		);
+		expect(
+			checkoutFormEventHandlers.checkout_place_order_woocommerce_payments_affirm()
+		).toBe( true );
 	} );
 
-	test( 'remounts split gateway Stripe Elements when the shopper changes payment method', () => {
+	// Classic checkout rows as WooPaymentsGateway::render_payment_form() prints them: each WooPayments gateway's row
+	// holds its wrapper (with the gateway's config in data-wcpay-config), its Payment Element container and its error
+	// box. `overrides` stand for what update_order_review re-renders, such as a Multi-Currency switch.
+	function getGatewayConfig( type, overrides = {} ) {
+		if ( type === 'card' ) {
+			return Object.assign(
+				{},
+				window.wcpay_core_checkout_config,
+				overrides
+			);
+		}
+
+		return Object.assign(
+			{},
+			window.wcpay_core_checkout_config,
+			{
+				gatewayId: 'woocommerce_payments_' + type,
+				paymentMethodId: type,
+				paymentMethodTypes: [ type ],
+				paymentMethodsConfig: { [ type ]: { isReusable: false } },
+			},
+			overrides
+		);
+	}
+
+	function getGatewayId( type ) {
+		return type === 'card'
+			? 'woocommerce_payments'
+			: 'woocommerce_payments_' + type;
+	}
+
+	function renderGatewayRows( types, selectedType, overrides = {} ) {
 		document.body.innerHTML =
-			'<form class="checkout">' +
-			'<ul class="payment_methods">' +
-			'<li class="wc_payment_method payment_method_woocommerce_payments">' +
-			'<input id="payment_method_woocommerce_payments" type="radio" name="payment_method" value="woocommerce_payments" checked />' +
-			'<div class="payment_box payment_method_woocommerce_payments">' +
-			'<div id="wcpay-core-payment-element" data-gateway-marker="card"></div>' +
-			'</div>' +
-			'</li>' +
-			'<li class="wc_payment_method payment_method_woocommerce_payments_sepa_debit">' +
-			'<input id="payment_method_woocommerce_payments_sepa_debit" type="radio" ' +
-			'name="payment_method" value="woocommerce_payments_sepa_debit" />' +
-			'<div class="payment_box payment_method_woocommerce_payments_sepa_debit">' +
-			'<div id="wcpay-core-payment-element" data-gateway-marker="sepa"></div>' +
-			'</div>' +
-			'</li>' +
-			'</ul>' +
-			'<button id="place_order" type="button">Place order</button>' +
-			'</form>';
-		window.wcpay_core_checkout_config_woocommerce_payments_sepa_debit =
-			Object.assign( {}, window.wcpay_core_checkout_config, {
-				gatewayId: 'woocommerce_payments_sepa_debit',
-				paymentMethodTypes: [ 'sepa_debit' ],
-				paymentMethodsConfig: {
-					sepa_debit: {
-						isReusable: false,
-					},
-				},
+			'<form class="checkout"><ul class="payment_methods">' +
+			types
+				.map( ( type ) => {
+					const id = getGatewayId( type );
+					return (
+						`<li class="wc_payment_method payment_method_${ id }">` +
+						`<input id="payment_method_${ id }" type="radio" name="payment_method" value="${ id }"` +
+						( type === selectedType ? ' checked' : '' ) +
+						' />' +
+						`<div class="payment_box payment_method_${ id }">` +
+						'<div class="wcpay-core-checkout-form wcpay-upe-form">' +
+						'<fieldset class="wc-payment-form"><div id="wcpay-core-payment-element" ' +
+						'class="wcpay-core-payment-element wcpay-upe-element"></div></fieldset>' +
+						'<div class="woocommerce-error wcpay-core-payment-errors" role="alert" hidden></div>' +
+						'</div></div></li>'
+					);
+				} )
+				.join( '' ) +
+			'</ul><button id="place_order" type="button">Place order</button></form>';
+		types.forEach( ( type ) => {
+			getGatewayRow( getGatewayId( type ) )
+				.querySelector( '.wcpay-core-checkout-form' )
+				.setAttribute(
+					'data-wcpay-config',
+					JSON.stringify( getGatewayConfig( type, overrides ) )
+				);
+		} );
+	}
+
+	// The config objects the page localizes when it loads (WooPaymentsCheckoutAssets), one per split gateway.
+	function localizeGatewayConfigs( types ) {
+		types
+			.filter( ( type ) => type !== 'card' )
+			.forEach( ( type ) => {
+				window[ 'wcpay_core_checkout_config_' + getGatewayId( type ) ] =
+					getGatewayConfig( type );
 			} );
-		const cardContainer = document
-			.getElementById( 'payment_method_woocommerce_payments' )
-			.closest( 'li' )
-			.querySelector( '#wcpay-core-payment-element' );
-		const selectedContainer = document
-			.getElementById( 'payment_method_woocommerce_payments_sepa_debit' )
-			.closest( 'li' )
-			.querySelector( '#wcpay-core-payment-element' );
+	}
+
+	function getGatewayRow( id ) {
+		return document
+			.getElementById( 'payment_method_' + id )
+			.closest( 'li' );
+	}
+
+	function getGatewayContainer( id ) {
+		return getGatewayRow( id ).querySelector(
+			'#wcpay-core-payment-element'
+		);
+	}
+
+	function getGatewayErrorBox( id ) {
+		return getGatewayRow( id ).querySelector(
+			'.wcpay-core-payment-errors'
+		);
+	}
+
+	// What core's checkout.js does when the shopper picks another method.
+	function selectGateway( id ) {
+		document
+			.querySelectorAll( 'input[name="payment_method"]' )
+			.forEach( ( input ) => {
+				input.checked = input.value === id;
+			} );
+		bodyEventHandlers.payment_method_selected();
+	}
+
+	test( 'keeps every gateway Payment Element mounted across a method switch and submits the selected one', async () => {
+		renderGatewayRows( [ 'card', 'klarna' ], 'card' );
+		localizeGatewayConfigs( [ 'card', 'klarna' ] );
 
 		require( '../woopayments-checkout' );
-		document.getElementById(
-			'payment_method_woocommerce_payments'
-		).checked = false;
-		document.getElementById(
-			'payment_method_woocommerce_payments_sepa_debit'
-		).checked = true;
-		mountPaymentElement.mockClear();
-		unmountPaymentElement.mockClear();
-		bodyEventHandlers.payment_method_selected();
 
-		expect( unmountPaymentElement ).toHaveBeenCalledTimes( 1 );
-		expect( stripeElementsOptions ).toMatchObject( {
-			paymentMethodTypes: [ 'sepa_debit' ],
+		// One element per gateway at render, on one shared Stripe instance, each in its own row.
+		expect( createdPaymentElements ).toHaveLength( 2 );
+		const [ card, klarna ] = createdPaymentElements;
+		expect( window.Stripe ).toHaveBeenCalledTimes( 1 );
+		expect( card.elementsOptions.paymentMethodTypes ).toEqual( [
+			'card',
+			'link',
+		] );
+		expect( klarna.elementsOptions.paymentMethodTypes ).toEqual( [
+			'klarna',
+		] );
+		expect( card.mount ).toHaveBeenCalledWith(
+			getGatewayContainer( 'woocommerce_payments' )
+		);
+		expect( klarna.mount ).toHaveBeenCalledWith(
+			getGatewayContainer( 'woocommerce_payments_klarna' )
+		);
+
+		selectGateway( 'woocommerce_payments_klarna' );
+
+		// The switch keeps both elements: nothing is unmounted, created or mounted again.
+		expect( createdPaymentElements ).toHaveLength( 2 );
+		expect( unmountPaymentElement ).not.toHaveBeenCalled();
+		expect( mountPaymentElement ).toHaveBeenCalledTimes( 2 );
+
+		expect(
+			checkoutFormEventHandlers.checkout_place_order_woocommerce_payments_klarna()
+		).toBe( false );
+		await flushPromises();
+
+		expect( klarna.group.submit ).toHaveBeenCalledTimes( 1 );
+		expect( card.group.submit ).not.toHaveBeenCalled();
+		expect( stripeMock.createPaymentMethod ).toHaveBeenCalledWith(
+			expect.objectContaining( { elements: klarna.group } )
+		);
+		expect(
+			global.jQuery.checkoutFormResult.trigger
+		).toHaveBeenCalledWith( 'submit' );
+	} );
+
+	test( 'keeps the Payment Elements on updated_checkout and moves them into re-rendered containers', () => {
+		renderGatewayRows( [ 'card', 'klarna' ], 'card' );
+		localizeGatewayConfigs( [ 'card', 'klarna' ] );
+		require( '../woopayments-checkout' );
+		const [ card, klarna ] = createdPaymentElements;
+
+		// The fragment did not change, so the containers are the same ones.
+		bodyEventHandlers.updated_checkout();
+
+		expect( unmountPaymentElement ).not.toHaveBeenCalled();
+		expect( mountPaymentElement ).toHaveBeenCalledTimes( 2 );
+
+		// update_order_review replaced the payment fragment.
+		renderGatewayRows( [ 'card', 'klarna' ], 'card' );
+		bodyEventHandlers.updated_checkout();
+
+		expect( createdPaymentElements ).toHaveLength( 2 );
+		expect( card.unmount ).toHaveBeenCalledTimes( 1 );
+		expect( klarna.unmount ).toHaveBeenCalledTimes( 1 );
+		expect( card.mount ).toHaveBeenLastCalledWith(
+			getGatewayContainer( 'woocommerce_payments' )
+		);
+		expect( klarna.mount ).toHaveBeenLastCalledWith(
+			getGatewayContainer( 'woocommerce_payments_klarna' )
+		);
+	} );
+
+	test( 'shows a load error in its own gateway box and still submits another gateway', async () => {
+		renderGatewayRows( [ 'card', 'klarna' ], 'card' );
+		localizeGatewayConfigs( [ 'card', 'klarna' ] );
+		require( '../woopayments-checkout' );
+		const [ card, klarna ] = createdPaymentElements;
+
+		klarna.handlers.loaderror( {
+			error: { message: 'The payment form could not be loaded.' },
 		} );
-		expect( mountPaymentElement ).toHaveBeenCalledWith( selectedContainer );
-		expect( mountPaymentElement ).not.toHaveBeenCalledWith( cardContainer );
+
+		expect(
+			getGatewayErrorBox( 'woocommerce_payments_klarna' ).textContent
+		).toBe( 'The payment form could not be loaded.' );
+		expect(
+			getGatewayErrorBox( 'woocommerce_payments_klarna' ).hidden
+		).toBe( false );
+		expect( getGatewayErrorBox( 'woocommerce_payments' ).textContent ).toBe(
+			''
+		);
+
+		expect(
+			checkoutFormEventHandlers.checkout_place_order_woocommerce_payments()
+		).toBe( false );
+		await flushPromises();
+
+		expect( card.group.submit ).toHaveBeenCalledTimes( 1 );
+		expect( stripeMock.createPaymentMethod ).toHaveBeenCalledWith(
+			expect.objectContaining( { elements: card.group } )
+		);
+		expect(
+			global.jQuery.checkoutFormResult.trigger
+		).toHaveBeenCalledWith( 'submit' );
+	} );
+
+	test( 'rebuilds a Payment Element that failed to load when the shopper selects its method again', async () => {
+		renderGatewayRows( [ 'card', 'klarna' ], 'card' );
+		localizeGatewayConfigs( [ 'card', 'klarna' ] );
+		require( '../woopayments-checkout' );
+		const klarna = createdPaymentElements[ 1 ];
+		klarna.handlers.loaderror( {
+			error: { message: 'The payment form could not be loaded.' },
+		} );
+
+		selectGateway( 'woocommerce_payments_klarna' );
+
+		expect( klarna.unmount ).toHaveBeenCalledTimes( 1 );
+		expect( createdPaymentElements ).toHaveLength( 3 );
+		const rebuilt = createdPaymentElements[ 2 ];
+		expect( rebuilt.elementsOptions.paymentMethodTypes ).toEqual( [
+			'klarna',
+		] );
+		expect( rebuilt.mount ).toHaveBeenCalledWith(
+			getGatewayContainer( 'woocommerce_payments_klarna' )
+		);
+
+		expect(
+			checkoutFormEventHandlers.checkout_place_order_woocommerce_payments_klarna()
+		).toBe( false );
+		await flushPromises();
+
+		expect( rebuilt.group.submit ).toHaveBeenCalledTimes( 1 );
+		expect( klarna.group.submit ).not.toHaveBeenCalled();
+	} );
+
+	test( 'follows a Multi-Currency switch: kept elements move to the new rows, a newly offered method mounts in the new currency', () => {
+		renderGatewayRows( [ 'card', 'klarna' ], 'card' );
+		localizeGatewayConfigs( [ 'card', 'klarna' ] );
+		require( '../woopayments-checkout' );
+		const [ card, klarna ] = createdPaymentElements;
+
+		// The currency switch re-renders the payment fragment through update_order_review: the rows now carry EUR,
+		// Klarna is no longer offered and Bancontact is.
+		renderGatewayRows( [ 'card', 'bancontact' ], 'card', {
+			currency: 'EUR',
+			cartTotal: 4000,
+		} );
+		bodyEventHandlers.updated_checkout();
+
+		// The card element moves into its new row unchanged, as an element kept across updated_checkout does.
+		expect( card.unmount ).toHaveBeenCalledTimes( 1 );
+		expect( card.mount ).toHaveBeenLastCalledWith(
+			getGatewayContainer( 'woocommerce_payments' )
+		);
+		// Klarna's row is gone, so its element is torn down.
+		expect( klarna.unmount ).toHaveBeenCalledTimes( 1 );
+		expect( createdPaymentElements ).toHaveLength( 3 );
+		const bancontact = createdPaymentElements[ 2 ];
+		expect( bancontact.elementsOptions ).toMatchObject( {
+			amount: 4000,
+			currency: 'eur',
+			paymentMethodTypes: [ 'bancontact' ],
+		} );
+		expect( bancontact.mount ).toHaveBeenCalledWith(
+			getGatewayContainer( 'woocommerce_payments_bancontact' )
+		);
+		expect(
+			checkoutFormEventHandlers.checkout_place_order_woocommerce_payments_bancontact
+		).toEqual( expect.any( Function ) );
 	} );
 
 	test( 'starts core tokenization-form.js every time it mounts the Payment Element', () => {
@@ -2798,57 +3056,20 @@ describe( 'WooPayments checkout', () => {
 		expectClassicCheckoutUiState( false );
 	} );
 
-	test( 'waits for the rebuilt element of a redirect method, not the previous element, after a method switch', async () => {
-		document.body.innerHTML =
-			'<form class="checkout">' +
-			'<ul class="payment_methods">' +
-			'<li class="wc_payment_method payment_method_woocommerce_payments">' +
-			'<input id="payment_method_woocommerce_payments" type="radio" name="payment_method" value="woocommerce_payments" checked />' +
-			'<div class="payment_box payment_method_woocommerce_payments">' +
-			'<div id="wcpay-core-payment-element"></div>' +
-			'</div>' +
-			'</li>' +
-			'<li class="wc_payment_method payment_method_woocommerce_payments_alipay">' +
-			'<input id="payment_method_woocommerce_payments_alipay" type="radio" ' +
-			'name="payment_method" value="woocommerce_payments_alipay" />' +
-			'<div class="payment_box payment_method_woocommerce_payments_alipay">' +
-			'<div id="wcpay-core-payment-element"></div>' +
-			'</div>' +
-			'</li>' +
-			'</ul>' +
-			'<button id="place_order" type="button">Place order</button>' +
-			'</form>';
-		window.wcpay_core_checkout_config_woocommerce_payments_alipay =
-			Object.assign( {}, window.wcpay_core_checkout_config, {
-				gatewayId: 'woocommerce_payments_alipay',
-				paymentMethodTypes: [ 'alipay' ],
-				paymentMethodsConfig: {
-					alipay: {
-						isReusable: false,
-					},
-				},
-			} );
+	test( "waits for the selected redirect method's own element, kept from render, not another gateway's, after a switch", async () => {
+		renderGatewayRows( [ 'card', 'alipay' ], 'card' );
+		localizeGatewayConfigs( [ 'card', 'alipay' ] );
 		paymentElementReportsReady = false;
 		require( '../woopayments-checkout' );
-		const cardElementHandlers = paymentElementHandlers;
+		expect( createdPaymentElements ).toHaveLength( 2 );
+		const [ card, alipay ] = createdPaymentElements;
 
-		// Native classic builds a new element when the shopper selects the redirect method; it is not ready yet.
-		paymentElementHandlers = {};
-		document.getElementById(
-			'payment_method_woocommerce_payments'
-		).checked = false;
-		document.getElementById(
-			'payment_method_woocommerce_payments_alipay'
-		).checked = true;
-		bodyEventHandlers.payment_method_selected();
-		const alipayElementHandlers = paymentElementHandlers;
-		expect( alipayElementHandlers.ready ).toEqual( expect.any( Function ) );
-		expect( alipayElementHandlers.ready ).not.toBe(
-			cardElementHandlers.ready
-		);
+		// The switch keeps Alipay's element, created at render and still loading its session.
+		selectGateway( 'woocommerce_payments_alipay' );
+		expect( createdPaymentElements ).toHaveLength( 2 );
 
-		// The replaced card element reporting ready late must not release the redirect method's submit.
-		cardElementHandlers.ready();
+		// The card element reporting ready must not release the redirect method's submit.
+		card.handlers.ready();
 
 		expect(
 			checkoutFormEventHandlers.checkout_place_order_woocommerce_payments_alipay()
@@ -2856,12 +3077,11 @@ describe( 'WooPayments checkout', () => {
 		await flushPromises();
 		expect( submitElements ).not.toHaveBeenCalled();
 
-		alipayElementHandlers.ready();
+		alipay.handlers.ready();
 		await flushPromises();
 
-		expect( submitElements ).toHaveBeenCalledTimes( 1 );
+		expect( alipay.group.submit ).toHaveBeenCalledTimes( 1 );
 		expect( stripeMock.createPaymentMethod ).toHaveBeenCalledTimes( 1 );
-		delete window.wcpay_core_checkout_config_woocommerce_payments_alipay;
 	} );
 
 	test( 'never submits for the expired attempt and submits once for the retry after a late ready', async () => {

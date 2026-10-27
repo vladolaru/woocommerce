@@ -1,0 +1,4 @@
+Significance: patch
+Type: tweak
+
+Load every WooPayments payment method's form when the classic checkout opens, so switching methods no longer reloads it.

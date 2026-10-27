@@ -17,23 +17,23 @@
 	var PAYMENT_METHOD_ERROR_SENTINEL =
 		'woocommerce_payments_payment_method_error';
 	var gatewayId = config.gatewayId || defaultGatewayId;
-	var stripe = null;
-	var isPlatformStripe = false;
+	// One Stripe instance per account, shared by every Payment Element, as
+	// client 11.1.0 checkout/api/index.js:79-113 keeps one per account.
 	var accountStripe = null;
-	var elements = null;
-	var paymentElement = null;
-	var paymentElementGatewayId = null;
-	var paymentElementContainer = null;
-	// The `loaderror` the payment element reported, when it reported one. The
-	// WooPayments client plugin keeps the same flag and refuses to submit while
-	// it is set; without it a shopper whose payment form failed to load presses
-	// the button and gets no navigation, no message and no explanation.
-	var paymentElementLoadError = null;
-	// Settles when the mounted payment element reports `ready` (true) or
-	// `loaderror` (false). Stripe.js can leave `elements.submit()` pending
-	// forever when it is called before the element is ready, so submitting
-	// waits for this, for at most PAYMENT_ELEMENT_READY_TIMEOUT_MS.
-	var paymentElementReady = null;
+	var platformStripe = null;
+	// The Payment Element of each WooPayments gateway on the page, keyed by
+	// gateway ID, like client 11.1.0's gatewayUPEComponents
+	// (classic/payment-processing.js:40-49). Each entry holds the gateway's
+	// `stripe` instance, `isPlatformStripe`, its `elements` group, the
+	// `paymentElement`, the `container` it is mounted in, and:
+	// - `loadError`: the `loaderror` the element reported. The client refuses
+	//   to submit while it is set; without it a shopper whose payment form
+	//   failed to load presses the button and gets no message at all.
+	// - `ready`: settles when the element reports `ready` (true) or
+	//   `loaderror` (false). Stripe.js can leave `elements.submit()` pending
+	//   forever when it is called before the element is ready, so submitting
+	//   waits for this, for at most PAYMENT_ELEMENT_READY_TIMEOUT_MS.
+	var paymentElements = {};
 	var PAYMENT_ELEMENT_READY_TIMEOUT_MS = 15000;
 	var isWaitingForStripe = false;
 	var checkoutSubmitHandlerGatewayIds = {};
@@ -701,8 +701,9 @@
 			.catch( function () {} );
 	}
 
-	function isLinkEnabled() {
-		var paymentMethodsConfig = config.paymentMethodsConfig || {};
+	function isLinkEnabled( gatewayConfig ) {
+		var paymentMethodsConfig =
+			( gatewayConfig || config ).paymentMethodsConfig || {};
 
 		return (
 			paymentMethodsConfig.link !== undefined &&
@@ -712,10 +713,10 @@
 
 	// Betas the reference client requests on every connected-account
 	// Stripe instance; the Link autofill modal only works with Link on.
-	function getStripeBetas() {
+	function getStripeBetas( gatewayConfig ) {
 		var betas = [ 'card_country_event_beta_1' ];
 
-		if ( isLinkEnabled() ) {
+		if ( isLinkEnabled( gatewayConfig ) ) {
 			betas.push( 'link_autofill_modal_beta_1' );
 		}
 
@@ -732,22 +733,32 @@
 		return Boolean( methodConfig && methodConfig.forceNetworkSavedCards );
 	}
 
+	// The shared instance takes the Link beta from the card gateway's config, the one Link folds into, whichever
+	// gateway mounts first. Client 11.1.0 reads it from the page-wide config (classic/event-handlers.js:56-67).
 	function createAccountStripe() {
 		return window.Stripe( config.publishableKey, {
 			locale: config.locale || 'auto',
 			stripeAccount: config.accountId || undefined,
-			betas: getStripeBetas(),
+			betas: getStripeBetas(
+				getConfigForGateway( defaultGatewayId ) || config
+			),
 		} );
 	}
 
 	// Intent confirmation always runs on the connected account (client confirmIntent() uses getStripe( true )).
 	function getAccountStripe() {
-		if ( stripe && ! isPlatformStripe ) {
-			return stripe;
-		}
-
 		accountStripe = accountStripe || createAccountStripe();
 		return accountStripe;
+	}
+
+	// The platform instance has no connected account and no betas (client 11.1.0 api/index.js:88-95).
+	function getPlatformStripe() {
+		platformStripe =
+			platformStripe ||
+			window.Stripe( config.publishableKey, {
+				locale: config.locale || 'auto',
+			} );
+		return platformStripe;
 	}
 
 	function getStripePaymentMethodTypes() {
@@ -1270,16 +1281,18 @@
 	}
 
 	function updatePaymentElementTerms( event ) {
+		var component = paymentElements[ gatewayId ];
+
 		if (
 			! event.target ||
 			event.target.id !== 'wc-' + gatewayId + '-new-payment-method' ||
-			! paymentElement ||
-			typeof paymentElement.update !== 'function'
+			! component ||
+			typeof component.paymentElement.update !== 'function'
 		) {
 			return;
 		}
 
-		paymentElement.update( {
+		component.paymentElement.update( {
 			terms: getReusablePaymentMethodTerms(
 				event.target.checked ? 'always' : 'never'
 			),
@@ -1628,7 +1641,8 @@
 		);
 	}
 
-	function appendPaymentFields( form, paymentMethod, error ) {
+	// `component` is the Payment Element entry that created the payment method; express wallets pass none.
+	function appendPaymentFields( form, paymentMethod, error, component ) {
 		var paymentMethodValue = '';
 
 		if ( paymentMethod && paymentMethod.id ) {
@@ -1672,7 +1686,11 @@
 		ensureHiddenField(
 			form,
 			'wcpay-is-platform-payment-method',
-			( paymentMethod || error ) && isPlatformStripe ? 'true' : 'false'
+			( paymentMethod || error ) &&
+				component &&
+				component.isPlatformStripe
+				? 'true'
+				: 'false'
 		);
 	}
 
@@ -1700,6 +1718,9 @@
 	}
 
 	function confirmSetupIntentIfNeeded( setupIntent ) {
+		var component = paymentElements[ gatewayId ];
+		var setupStripe = component ? component.stripe : null;
+
 		if ( setupIntent && setupIntent.status === 'succeeded' ) {
 			return Promise.resolve( setupIntent );
 		}
@@ -1707,15 +1728,15 @@
 		if (
 			! setupIntent ||
 			! setupIntent.client_secret ||
-			! stripe ||
-			! stripe.confirmCardSetup
+			! setupStripe ||
+			! setupStripe.confirmCardSetup
 		) {
 			return Promise.reject(
 				new Error( config.confirmationErrorMessage || '' )
 			);
 		}
 
-		return stripe
+		return setupStripe
 			.confirmCardSetup( setupIntent.client_secret )
 			.then( function ( result ) {
 				if ( result.error ) {
@@ -2077,22 +2098,20 @@
 		sourceLogos.replaceWith( container );
 	}
 
-	function submitElements() {
+	function submitElements( component ) {
 		// A payment element that failed to load can never produce a payment
 		// method, and asking it for one leaves the shopper waiting on a
 		// promise that will not resolve. Answer with what it already reported.
-		if ( paymentElementLoadError ) {
-			return Promise.reject( new Error( paymentElementLoadError ) );
+		if ( component.loadError ) {
+			return Promise.reject( new Error( component.loadError ) );
 		}
 
-		if ( ! elements || ! elements.submit ) {
+		if ( ! component.elements.submit ) {
 			return Promise.resolve( {} );
 		}
 
-		var submittedElements = elements;
-
-		return waitForPaymentElementReady().then( function () {
-			return submittedElements.submit().then( function ( result ) {
+		return waitForPaymentElementReady( component ).then( function () {
+			return component.elements.submit().then( function ( result ) {
 				if ( result && result.error ) {
 					return Promise.reject( result.error );
 				}
@@ -2104,8 +2123,8 @@
 
 	// Resolves once the payment element is ready. Rejects with the element's
 	// load error, or with the generic payment error after the time limit.
-	function waitForPaymentElementReady() {
-		var ready = paymentElementReady;
+	function waitForPaymentElementReady( component ) {
+		var ready = component.ready;
 
 		if ( ! ready ) {
 			return Promise.resolve();
@@ -2126,9 +2145,7 @@
 
 				reject(
 					new Error(
-						paymentElementLoadError ||
-							config.genericErrorMessage ||
-							''
+						component.loadError || config.genericErrorMessage || ''
 					)
 				);
 			} );
@@ -2170,11 +2187,11 @@
 		return isAffirm && ! billingDetails.name;
 	}
 
-	function createPaymentMethod() {
-		return submitElements().then( function () {
+	function createPaymentMethod( component ) {
+		return submitElements( component ).then( function () {
 			var billingDetails = getCheckoutBillingDetails();
 			var request = {
-				elements: elements,
+				elements: component.elements,
 			};
 
 			if (
@@ -2193,23 +2210,53 @@
 				};
 			}
 
-			return stripe.createPaymentMethod( request );
+			return component.stripe.createPaymentMethod( request );
 		} );
 	}
 
-	function resetStripePaymentElement() {
-		if ( paymentElement && paymentElement.unmount ) {
-			paymentElement.unmount();
+	// Tears down one gateway's Payment Element: its container left the page, or it failed to load and the shopper
+	// selected its method again (resetFailedPaymentElement()). The shared Stripe instances stay.
+	function resetStripePaymentElement( paymentGatewayId ) {
+		var component = paymentElements[ paymentGatewayId ];
+
+		if ( component && component.paymentElement.unmount ) {
+			component.paymentElement.unmount();
 		}
 
-		stripe = null;
-		isPlatformStripe = false;
-		elements = null;
-		paymentElement = null;
-		paymentElementContainer = null;
-		paymentElementGatewayId = null;
-		paymentElementLoadError = null;
-		paymentElementReady = null;
+		delete paymentElements[ paymentGatewayId ];
+	}
+
+	// A Payment Element that failed to load is rebuilt when the shopper selects its method again, so the
+	// reselection retries the load, as rebuilding on every method switch used to. Client 11.1.0 never retries.
+	function resetFailedPaymentElement() {
+		setCurrentGatewayConfig();
+
+		if (
+			paymentElements[ gatewayId ] &&
+			paymentElements[ gatewayId ].loadError
+		) {
+			resetStripePaymentElement( gatewayId );
+		}
+	}
+
+	// A Payment Element shows its load error in its own gateway's box: every element mounts at render, so the one
+	// that failed may not be the selected method. Client 11.1.0 classic/payment-processing.js:368-386 also writes it
+	// into the failed element's own container.
+	function showPaymentElementLoadError( component ) {
+		var wrapper = component.container.closest
+			? component.container.closest( '.wcpay-core-checkout-form' )
+			: null;
+		var box = wrapper
+			? wrapper.querySelector( '.wcpay-core-payment-errors' )
+			: null;
+
+		if ( ! box ) {
+			setError( component.loadError );
+			return;
+		}
+
+		box.textContent = component.loadError || '';
+		box.hidden = ! component.loadError;
 	}
 
 	/**
@@ -2248,21 +2295,84 @@
 		} );
 	}
 
+	// The WooPayments gateways in the page's payment method list, in its order, or the current gateway when the page
+	// renders no list.
+	function getRenderedGatewayIds() {
+		var inputs = Array.prototype.slice.call(
+			document.querySelectorAll( 'input[name="payment_method"]' )
+		);
+
+		if ( ! inputs.length ) {
+			return [ gatewayId ];
+		}
+
+		return inputs
+			.map( function ( input ) {
+				return input.value;
+			} )
+			.filter( function ( paymentGatewayId ) {
+				return !! getConfigForGateway( paymentGatewayId );
+			} );
+	}
+
+	// The gateways that mount a Payment Element now, each with its container. Gateways rendered without their own
+	// list row can resolve to one shared container; it goes to the selected gateway, else to the first of them.
+	function getPaymentElementMounts( selectedGatewayId ) {
+		var mounts = [];
+
+		getRenderedGatewayIds().forEach( function ( paymentGatewayId ) {
+			var container;
+
+			setCurrentGatewayConfig( paymentGatewayId );
+			container = getGatewayPaymentContainer( gatewayId );
+			if (
+				container &&
+				! isPaymentListWalletGateway( gatewayId ) &&
+				config.isCoreNativeCheckoutAvailable &&
+				config.publishableKey
+			) {
+				mounts.push( { gatewayId: gatewayId, container: container } );
+			}
+		} );
+		setCurrentGatewayConfig( selectedGatewayId );
+
+		return mounts.filter( function ( mount ) {
+			var sharing = mounts.filter( function ( other ) {
+				return other.container === mount.container;
+			} );
+			var selected = sharing.filter( function ( other ) {
+				return other.gatewayId === selectedGatewayId;
+			} );
+
+			return mount === ( selected[ 0 ] || sharing[ 0 ] );
+		} );
+	}
+
+	// Client 11.1.0 mounts one Payment Element per WooPayments method when checkout renders
+	// (classic/event-handlers.js:415-429, payment-processing.js:258-387) and keeps them across method switches, so
+	// a method's element is usually ready before the shopper picks it. An element whose container is still on the
+	// page is kept; one whose container was re-rendered (updated_checkout) moves into the new one unchanged; one
+	// whose gateway no longer renders a container is torn down.
 	function initializeStripeElement() {
-		var settlePaymentElementReady;
+		var selectedGatewayId;
+		var mounts;
 
 		setCurrentGatewayConfig();
-		var container = getGatewayPaymentContainer( gatewayId );
+		selectedGatewayId = gatewayId;
 		hydrateCardBrandIcons();
-		if ( isPaymentListWalletGateway( gatewayId ) ) {
-			resetStripePaymentElement();
-			return;
-		}
-		if (
-			! container ||
-			! config.isCoreNativeCheckoutAvailable ||
-			! config.publishableKey
-		) {
+		mounts = getPaymentElementMounts( selectedGatewayId );
+
+		Object.keys( paymentElements ).forEach( function ( paymentGatewayId ) {
+			var isStillMounted = mounts.some( function ( mount ) {
+				return mount.gatewayId === paymentGatewayId;
+			} );
+
+			if ( ! isStillMounted ) {
+				resetStripePaymentElement( paymentGatewayId );
+			}
+		} );
+
+		if ( ! mounts.length ) {
 			return;
 		}
 
@@ -2282,56 +2392,71 @@
 			return;
 		}
 
-		if ( paymentElement && paymentElementGatewayId !== gatewayId ) {
-			resetStripePaymentElement();
-		}
+		mounts.forEach( function ( mount ) {
+			setCurrentGatewayConfig( mount.gatewayId );
+			mountPaymentElement( mount.gatewayId, mount.container );
+		} );
+		setCurrentGatewayConfig( selectedGatewayId );
+	}
 
-		if ( paymentElement ) {
-			if ( paymentElementContainer !== container ) {
-				if ( paymentElement.unmount ) {
-					paymentElement.unmount();
+	// Mounts the gateway's Payment Element, creating it on the first call. Reads the gateway's config, which the
+	// caller has made current.
+	function mountPaymentElement( paymentGatewayId, container ) {
+		var component = paymentElements[ paymentGatewayId ];
+		var settleReady;
+		var isPlatformStripe;
+		var elements;
+
+		if ( component ) {
+			if ( component.container !== container ) {
+				if ( component.paymentElement.unmount ) {
+					component.paymentElement.unmount();
 				}
 				initTokenizationForm();
-				paymentElement.mount( container );
-				paymentElementContainer = container;
+				component.paymentElement.mount( container );
+				component.container = container;
 			}
 			return;
 		}
 
 		isPlatformStripe = shouldUsePlatformStripe();
-		stripe = isPlatformStripe
-			? window.Stripe( config.publishableKey, {
-					locale: config.locale || 'auto',
-			  } )
-			: createAccountStripe();
-		elements = stripe.elements( getStripeElementsOptions() );
-		paymentElement = elements.create(
+		component = {
+			stripe: isPlatformStripe ? getPlatformStripe() : getAccountStripe(),
+			isPlatformStripe: isPlatformStripe,
+			elements: null,
+			paymentElement: null,
+			container: container,
+			loadError: null,
+			ready: new Promise( function ( resolve ) {
+				settleReady = resolve;
+			} ),
+		};
+		elements = component.stripe.elements( getStripeElementsOptions() );
+		component.elements = elements;
+		component.paymentElement = elements.create(
 			'payment',
 			getStripePaymentElementOptions()
 		);
-		paymentElementLoadError = null;
-		paymentElementReady = new Promise( function ( resolve ) {
-			settlePaymentElementReady = resolve;
+		component.paymentElement.on( 'ready', function () {
+			settleReady( true );
 		} );
-		paymentElement.on( 'ready', function () {
-			settlePaymentElementReady( true );
-		} );
-		paymentElement.on( 'loaderror', function ( event ) {
-			paymentElementLoadError =
+		component.paymentElement.on( 'loaderror', function ( event ) {
+			component.loadError =
 				event && event.error && event.error.message
 					? event.error.message
 					: config.genericErrorMessage || '';
-			setError( paymentElementLoadError );
-			settlePaymentElementReady( false );
+			showPaymentElementLoadError( component );
+			settleReady( false );
 		} );
+		paymentElements[ paymentGatewayId ] = component;
 		initTokenizationForm();
-		paymentElement.mount( container );
-		paymentElementContainer = container;
-		paymentElementGatewayId = gatewayId;
+		component.paymentElement.mount( container );
 	}
 
 	function createPaymentMethodAndSubmit( form ) {
-		if ( ! stripe || ! elements ) {
+		var component = paymentElements[ gatewayId ];
+
+		if ( ! component ) {
 			appendPaymentFields( form, null, null );
 			return true;
 		}
@@ -2348,12 +2473,12 @@
 		} );
 
 		function submitWithPaymentFields( paymentMethod, error ) {
-			appendPaymentFields( form, paymentMethod, error );
+			appendPaymentFields( form, paymentMethod, error, component );
 			isSubmittingWithPaymentMethod = true;
 			form.removeClass( 'processing' ).trigger( 'submit' );
 		}
 
-		createPaymentMethod()
+		createPaymentMethod( component )
 			.then( function ( result ) {
 				if ( result.error ) {
 					// Submit with the error sentinel so the server records a
@@ -2368,7 +2493,7 @@
 			} )
 			.catch( function ( error ) {
 				form.removeClass( 'processing' ).unblock();
-				appendPaymentFields( form, null, error );
+				appendPaymentFields( form, null, error, component );
 				setError( error && error.message ? error.message : '' );
 				$( document.body ).trigger( 'checkout_error', [
 					error && error.message ? error.message : '',
@@ -2416,11 +2541,13 @@
 	}
 
 	function createSetupIntentAndSubmit( formElement ) {
-		if ( ! stripe || ! elements ) {
+		var component = paymentElements[ gatewayId ];
+
+		if ( ! component ) {
 			return true;
 		}
 
-		createPaymentMethod()
+		createPaymentMethod( component )
 			.then( function ( result ) {
 				if ( result.error ) {
 					setError( result.error.message );
@@ -3701,8 +3828,10 @@
 		swapPaymentMethodIconsForTheme();
 	} );
 
+	// Switching methods keeps every mounted Payment Element; the pass only mounts what is missing.
 	$( document.body ).on( 'payment_method_selected', function () {
 		togglePaymentMethodsForBillingCountry();
+		resetFailedPaymentElement();
 		initializeStripeElement();
 		swapPaymentMethodIconsForTheme();
 	} );
