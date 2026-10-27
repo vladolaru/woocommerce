@@ -123,8 +123,9 @@ final class WooPaymentsSetupTier {
 			}
 
 			$classes = $this->classes_by_setup_tier[ $tier ][ $request_type ] ?? array();
-			// A store waiting for its switch keeps the switch notice on the WooPayments pages, which strip other notices.
-			if ( RequestTypeUtil::ADMIN === $request_type && self::AVAILABLE === $tier && $this->runtime_arbiter->is_awaiting_switch() ) {
+			// A store that can switch, on the extension or waiting for its switch, keeps the switch notice on the Payments pages,
+			// which strip other notices.
+			if ( RequestTypeUtil::ADMIN === $request_type && self::AVAILABLE === $tier ) {
 				$classes[] = NoticesPassthrough::class;
 			}
 		}

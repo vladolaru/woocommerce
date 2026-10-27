@@ -17,8 +17,8 @@ use Automattic\WooCommerce\Internal\RegisterHooksInterface;
  *
  * Core's Payments tab removes every non-core `admin_notices` callback (`WC_Settings_Payment_Gateways::suppress_admin_notices()`).
  * On the WooPayments routes, onboarding aside, this puts back the callbacks of the classes it names, as they were
- * registered. On a store waiting for its switch it also puts back the switch notice on the Payments tab itself, the one
- * offer of the switch there; every other Payments tab route keeps core's stripping.
+ * registered. On a store that can switch, still on the extension or waiting for its switch, it also puts back the switch
+ * notice on the Payments tab itself, the offer of the switch there; every other Payments tab route keeps core's stripping.
  *
  * @since 11.2.0
  * @internal
@@ -65,7 +65,7 @@ class NoticesPassthrough implements RegisterHooksInterface {
 		}
 		if ( $this->is_woopayments_route() ) {
 			$kept_classes = self::KEPT_NOTICE_CLASSES;
-		} elseif ( $this->is_payments_tab() && wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->is_awaiting_switch() ) {
+		} elseif ( $this->is_payments_tab() && $this->can_switch() ) {
 			$kept_classes = array( CutoverController::class );
 		} else {
 			return;
@@ -124,6 +124,18 @@ class NoticesPassthrough implements RegisterHooksInterface {
 		}
 
 		return false;
+	}
+
+	/**
+	 * Tell whether the store can switch to the built-in WooPayments: the extension owns payments, or nothing does because the
+	 * store waits for its switch.
+	 *
+	 * @return bool
+	 */
+	private function can_switch(): bool {
+		$arbiter = wc_get_container()->get( WooPaymentsRuntimeArbiter::class );
+
+		return $arbiter->is_extension_owner() || $arbiter->is_awaiting_switch();
 	}
 
 	/**

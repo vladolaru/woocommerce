@@ -140,17 +140,20 @@ class NoticesPassthroughTest extends WC_Unit_Test_Case {
 
 	/**
 	 * A store that ran the extension and deactivated it by hand has no WooPayments row on the Payments tab; the switch notice
-	 * is its one offer there (N-506 (a), N-507). The passthrough comes from the setup tier's admin class list, as in the
-	 * bootstrap, so the row fails if the waiting store stops loading it or the passthrough stops keeping the notice.
+	 * is its one offer there (N-506 (a), N-507). A store still on the extension sees the same offer there. The passthrough
+	 * comes from the setup tier's admin class list, as in the bootstrap, so a row fails if a store that can switch stops
+	 * loading it or the passthrough stops keeping the notice.
 	 *
-	 * @testdox On the Payments tab itself only the switch notice is kept, and only on a store waiting for its switch ($_dataName).
-	 * @testWith ["a store waiting for its switch", true]
-	 *           ["a store that never ran the extension", false]
+	 * @testdox On the Payments tab itself only the switch notice is kept, and only on a store that can switch ($_dataName).
+	 * @testWith ["a store waiting for its switch", true, false]
+	 *           ["a store on the extension", true, true]
+	 *           ["a store that never ran the extension", false, false]
 	 *
-	 * @param string $label         Case label.
-	 * @param bool   $extension_ran Whether the extension's version option is stored.
+	 * @param string $label            Case label.
+	 * @param bool   $extension_ran    Whether the extension's version option is stored.
+	 * @param bool   $extension_active Whether the extension is active.
 	 */
-	public function test_keeps_the_switch_notice_on_the_payments_tab_only_while_the_store_waits( string $label, bool $extension_ran ): void {
+	public function test_keeps_the_switch_notice_on_the_payments_tab_only_while_the_store_can_switch( string $label, bool $extension_ran, bool $extension_active ): void {
 		unset( $label );
 		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
 		update_option( WooPaymentsSetupTier::OPTION_NAME, WooPaymentsSetupTier::ACTIVE );
@@ -159,6 +162,9 @@ class NoticesPassthroughTest extends WC_Unit_Test_Case {
 			update_option( 'woocommerce_woocommerce_payments_version', '11.1.0' );
 		} else {
 			delete_option( 'woocommerce_woocommerce_payments_version' );
+		}
+		if ( $extension_active ) {
+			update_option( 'active_plugins', array( WooPaymentsRuntimeArbiter::PLUGIN_FILE ) );
 		}
 		$arbiter = wc_get_container()->get( WooPaymentsRuntimeArbiter::class );
 		$tier    = wc_get_container()->get( WooPaymentsSetupTier::class );

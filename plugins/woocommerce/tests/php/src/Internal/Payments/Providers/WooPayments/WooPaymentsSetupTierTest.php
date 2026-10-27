@@ -9,6 +9,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\NoticesPassthrough;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\CutoverController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\ReconciliationJob;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\StateStore;
@@ -398,6 +399,10 @@ class WooPaymentsSetupTierTest extends WC_Unit_Test_Case {
 		$this->assertSame( $tier, $this->state->get_effective_tier() );
 		$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_BUILTIN === $owner, in_array( WooPaymentsProvider::class, $this->state->get_classes_for_request( 'front' ), true ), 'A WooPayments gateway at checkout only while the built-in owns payments.' );
 		$this->assertSame( WooPaymentsSetupTier::DISABLED !== $tier, in_array( CutoverController::class, $this->state->get_classes_for_request( 'admin' ), true ), 'The switch controller loads in admin wherever a tier is on.' );
+		$this->assertSame( WooPaymentsSetupTier::DISABLED !== $tier, in_array( NoticesPassthrough::class, $this->state->get_classes_for_request( 'admin' ), true ), 'The Payments tab keeps the switch notice wherever a tier is on.' );
+		foreach ( array( 'front', 'ajax', 'rest', 'cron', 'cli' ) as $request_type ) {
+			$this->assertNotContains( NoticesPassthrough::class, $this->state->get_classes_for_request( $request_type ), $request_type );
+		}
 		if ( WooPaymentsSetupTier::DISABLED === $tier ) {
 			foreach ( array( 'front', 'admin', 'ajax', 'rest' ) as $request_type ) {
 				$this->assertSame( array(), $this->state->get_classes_for_request( $request_type ), $request_type );
