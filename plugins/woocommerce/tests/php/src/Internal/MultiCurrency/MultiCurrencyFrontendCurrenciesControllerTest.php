@@ -247,6 +247,25 @@ class MultiCurrencyFrontendCurrenciesControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should keep an order's currency over a third-party switcher's while nothing is selected.
+	 *
+	 * The order-received, view-order and order-pay pages format and pay in the order's currency.
+	 */
+	public function test_keeps_the_order_currency_over_a_third_party_switcher(): void {
+		update_option( 'woocommerce_currency', 'USD' );
+		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'USD', 'EUR' ) );
+
+		$this->with_session_currency(
+			null,
+			function (): void {
+				$display_service = wc_get_container()->get( ServiceFactory::class )->create_display_service();
+
+				$this->assertSame( 'JPY', $display_service->get_woocommerce_currency( 'JPY', 'GBP' ) );
+			}
+		);
+	}
+
+	/**
 	 * @testdox Should return the original store currency during currency projection re-entry.
 	 */
 	public function test_currency_conversion_is_reentry_safe(): void {
