@@ -180,7 +180,9 @@ class PriceConverter {
 	/**
 	 * Get the exchange-rate meta to save on an order in a currency other than the store currency.
 	 *
-	 * The selected currency's rate is stored as it is, unrounded: Analytics divides the order's amounts by it.
+	 * The rate is the selected currency's, or the order currency's own when it is enabled but not selected, as on a REST
+	 * order; it is stored as it is, unrounded: Analytics divides the order's amounts by it. An order in a third-party
+	 * switcher's currency gets none, since Multi-Currency did not convert it (client 11.2.0 `FrontendPrices.php:363-389`).
 	 *
 	 * @param string $order_currency Order currency code.
 	 * @return array<string,string>
@@ -188,19 +190,30 @@ class PriceConverter {
 	public function get_order_meta_candidates( string $order_currency ): array {
 		$state            = $this->state_builder->build();
 		$default_currency = $state->get_default_currency();
+		$order_currency   = strtoupper( $order_currency );
 
-		if ( $default_currency->get_code() === strtoupper( $order_currency ) ) {
+		if ( $default_currency->get_code() === $order_currency ) {
 			return array();
 		}
 
+		$currency = $state->get_selected_currency();
+		if ( $currency->get_code() !== $order_currency ) {
+			if ( strtoupper( get_woocommerce_currency() ) === $order_currency ) {
+				return array();
+			}
+
+			$currency = $state->get_enabled_currencies()[ $order_currency ] ?? $currency;
+		}
+
 		return array(
-			self::META_KEY_ORDER_EXCHANGE_RATE    => $state->get_selected_currency()->get_rate_decimal(),
+			self::META_KEY_ORDER_EXCHANGE_RATE    => $currency->get_rate_decimal(),
 			self::META_KEY_ORDER_DEFAULT_CURRENCY => $default_currency->get_code(),
 		);
 	}
 
 	/**
-	 * Get the exchange-rate meta a refund copies from its order.
+	 * Get the exchange-rate meta a refund copies from its order: none when the order has no order rate, since Multi-Currency
+	 * did not convert it (client 11.2.0 `includes/multi-currency/MultiCurrency.php:1139-1146`).
 	 *
 	 * @param \WC_Order $order Order.
 	 * @return array<string,mixed>
@@ -213,8 +226,13 @@ class PriceConverter {
 			return array();
 		}
 
+		$order_exchange_rate = $order->get_meta( self::META_KEY_ORDER_EXCHANGE_RATE, true );
+		if ( ! $order_exchange_rate ) {
+			return array();
+		}
+
 		$meta = array(
-			self::META_KEY_ORDER_EXCHANGE_RATE    => $order->get_meta( self::META_KEY_ORDER_EXCHANGE_RATE, true ),
+			self::META_KEY_ORDER_EXCHANGE_RATE    => $order_exchange_rate,
 			self::META_KEY_ORDER_DEFAULT_CURRENCY => $order->get_meta( self::META_KEY_ORDER_DEFAULT_CURRENCY, true ),
 		);
 

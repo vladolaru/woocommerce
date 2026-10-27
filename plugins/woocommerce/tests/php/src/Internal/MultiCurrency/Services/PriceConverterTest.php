@@ -113,27 +113,52 @@ class PriceConverterTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should project order exchange-rate meta for non-default orders.
+	 * @testdox Should give the exchange-rate meta of the order's currency, or none when Multi-Currency did not convert it: $_dataName.
+	 *
+	 * A USD store. Rows from client 11.2.0 `tests/unit/multi-currency/test-class-frontend-prices.php:398-490`; the REST rows
+	 * (selection forced to the store currency, WooCommerce reporting USD) stamp an enabled order currency's own rate.
+	 *
+	 * @dataProvider order_meta_provider
+	 *
+	 * @param string[]    $enabled              Enabled currencies besides USD: GBP at 0.82, EUR at 0.8, CAD at 1.25.
+	 * @param string      $selected_code        Selected currency.
+	 * @param string      $woocommerce_currency Currency WooCommerce reports, as a third-party switcher sets it.
+	 * @param string      $order_currency       Order currency.
+	 * @param string|null $expected_rate        Expected order rate with USD as the default currency, or null for no meta.
 	 */
-	public function test_returns_exchange_rate_meta_for_non_default_currency_orders(): void {
-		$sut = $this->create_service( $this->create_state( 'GBP' ) );
-
-		$this->assertSame(
-			array(
-				'_wcpay_multi_currency_order_exchange_rate'    => '0.82',
-				'_wcpay_multi_currency_order_default_currency' => 'USD',
-			),
-			$sut->get_order_meta_candidates( 'GBP' )
+	public function test_gives_the_order_exchange_rate_meta( array $enabled, string $selected_code, string $woocommerce_currency, string $order_currency, ?string $expected_rate ): void {
+		add_filter( 'woocommerce_currency', static fn() => $woocommerce_currency );
+		$rates      = array(
+			'GBP' => 0.82,
+			'EUR' => 0.8,
+			'CAD' => 1.25,
 		);
+		$usd        = $this->create_currency( 'USD', 1.0, true );
+		$currencies = array( 'USD' => $usd );
+		foreach ( $enabled as $code ) {
+			$currencies[ $code ] = $this->create_currency( $code, $rates[ $code ], false );
+		}
+		$sut = $this->create_service( new MultiCurrencyState( $currencies, $currencies, $usd, $currencies[ $selected_code ] ) );
+
+		$expected = null === $expected_rate ? array() : array(
+			'_wcpay_multi_currency_order_exchange_rate'    => $expected_rate,
+			'_wcpay_multi_currency_order_default_currency' => 'USD',
+		);
+		$this->assertSame( $expected, $sut->get_order_meta_candidates( $order_currency ) );
 	}
 
-	/**
-	 * @testdox Should not project order meta for default-currency orders.
-	 */
-	public function test_returns_no_order_meta_for_default_currency_orders(): void {
-		$sut = $this->create_service( $this->create_state( 'USD' ) );
-
-		$this->assertSame( array(), $sut->get_order_meta_candidates( 'USD' ) );
+	/** @return array<string,array{string[],string,string,string,?string}> */
+	public static function order_meta_provider(): array {
+		return array(
+			'store currency order'                         => array( array( 'GBP' ), 'USD', 'USD', 'USD', null ),
+			'switcher currency, enabled'                   => array( array( 'GBP' ), 'USD', 'GBP', 'GBP', null ),
+			'switcher currency, not enabled'               => array( array(), 'USD', 'GBP', 'GBP', null ),
+			'switcher currency over the selected GBP'      => array( array( 'GBP', 'EUR' ), 'GBP', 'EUR', 'EUR', null ),
+			'selected currency'                            => array( array( 'GBP', 'CAD' ), 'GBP', 'USD', 'GBP', '0.82' ),
+			'selected currency WooCommerce reports'        => array( array( 'GBP', 'EUR' ), 'EUR', 'EUR', 'EUR', '0.8' ),
+			'REST order in an enabled currency'            => array( array( 'EUR' ), 'USD', 'USD', 'EUR', '0.8' ),
+			'REST order in a currency that is not enabled' => array( array( 'EUR' ), 'USD', 'USD', 'GBP', '1' ),
+		);
 	}
 
 	/**
@@ -156,6 +181,21 @@ class PriceConverterTest extends WC_Unit_Test_Case {
 			),
 			$sut->get_refund_meta_candidates( $order )
 		);
+	}
+
+	/**
+	 * @testdox Should copy no exchange-rate meta to the refund of an order Multi-Currency did not convert.
+	 *
+	 * Client 11.2.0 `tests/unit/multi-currency/test-class-multi-currency.php:1209-1231`: the order keeps the processor rate of its charge.
+	 */
+	public function test_copies_no_refund_meta_from_an_order_without_an_order_rate(): void {
+		$order = wc_create_order();
+		$order->set_currency( 'EUR' );
+		$order->update_meta_data( '_wcpay_multi_currency_stripe_exchange_rate', '1.11718' );
+		$order->save();
+		$sut = $this->create_service( $this->create_state( 'USD' ) );
+
+		$this->assertSame( array(), $sut->get_refund_meta_candidates( $order ) );
 	}
 
 	/**
