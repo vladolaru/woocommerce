@@ -285,6 +285,8 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 						WooPaymentsTokenizedCartSessionController::class,
 						SessionController::class,
 						WooPaymentsExpressCheckoutController::class,
+						// The WooPay session request (wc-ajax=wcpay_get_woopay_session) preloads the Store API cart it sends WooPay.
+						WooPaymentsExpressCheckoutStoreApiExtension::class,
 						WooPaymentsPaymentMethodMessaging::class,
 						WooPaymentsFrontendTrackingController::class,
 					)

@@ -3,9 +3,16 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\WooPay;
 
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExpressCheckoutStoreApiExtension;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendAssets;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\AdaptedExtensions;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\SessionService;
+use Automattic\WooCommerce\Internal\Utilities\RequestTypeUtil;
+use Automattic\WooCommerce\StoreApi\Schemas\ExtendSchema;
+use Automattic\WooCommerce\StoreApi\Schemas\V1\CartSchema;
+use Automattic\WooCommerce\StoreApi\StoreApi;
 use WC_Unit_Test_Case;
 use WP_REST_Request;
 use WP_REST_Response;
@@ -355,6 +362,45 @@ class SessionServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( $product->get_id(), $preload['cart']['items'][0]['id'] );
 		$this->assertArrayHasKey( 'billing_address', $preload['checkout'] );
 		$this->assertArrayHasKey( 'order_id', $preload['checkout'] );
+	}
+
+	/**
+	 * The session is built in the wc-ajax request wcpay_get_woopay_session, so the cart it preloads carries only the Store
+	 * API extension data that request registers. Client 11.2.0 registers the wcpay cart data on every request
+	 * (class-wc-payments.php:697-709).
+	 *
+	 * @testdox Should preload the Store API cart with the wcpay extension data in an active store's AJAX request.
+	 */
+	public function test_ajax_session_preloads_the_cart_with_the_wcpay_extension_data(): void {
+		$extend_schema = StoreApi::container()->get( ExtendSchema::class );
+		$extend_data   = new \ReflectionProperty( ExtendSchema::class, 'extend_data' );
+		$extend_data->setAccessible( true );
+		$extend_data_before = $extend_data->getValue( $extend_schema );
+		unset( $extend_data_before[ CartSchema::IDENTIFIER ]['wcpay'] );
+		$extend_data->setValue( $extend_schema, $extend_data_before );
+		add_filter( 'wp_doing_ajax', '__return_true' );
+
+		try {
+			$request_classes = WooPaymentsProvider::get_classes_by_setup_tier()[ WooPaymentsSetupTier::ACTIVE ][ RequestTypeUtil::get_request_type( false ) ];
+			// WooCommerce registers the listed classes before woocommerce_blocks_loaded fires; in a test it has fired already.
+			if ( in_array( WooPaymentsExpressCheckoutStoreApiExtension::class, $request_classes, true ) ) {
+				wc_get_container()->get( WooPaymentsExpressCheckoutStoreApiExtension::class )->register_store_api_extension();
+			}
+
+			$product = \WC_Helper_Product::create_simple_product( true, array( 'virtual' => true ) );
+			wc_empty_cart();
+			WC()->cart->add_to_cart( $product->get_id(), 1 );
+
+			$preload = $this->create_service()->start_init_session_request( 'shopper@example.com' )['preloaded_requests'];
+		} finally {
+			remove_filter( 'wp_doing_ajax', '__return_true' );
+			$extend_data->setValue( $extend_schema, $extend_data_before );
+		}
+
+		$extensions = (array) ( $preload['cart']['extensions'] ?? array() );
+		$this->assertArrayHasKey( 'wcpay', $extensions );
+		$this->assertArrayHasKey( 'express_checkout_methods', (array) $extensions['wcpay'] );
+		$this->assertArrayHasKey( 'setup_future_usage', (array) $extensions['wcpay'] );
 	}
 
 	/**

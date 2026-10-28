@@ -233,12 +233,13 @@ class WooPaymentsClassesBySetupTierTest extends WC_Unit_Test_Case {
 		$this->assertContains( self::WCPAY . 'WooPaymentsFraudOrderTrackingService', $active_front, 'Active shopper order creation must retain tracking hooks.' );
 	}
 
-	/** @testdox Registers the express checkout Store API cart extension on active page requests, where the Cart and Checkout blocks preload the cart. */
+	/** @testdox Registers the express checkout Store API cart extension on active page, REST and AJAX requests, where the blocks and the WooPay session preload the cart. */
 	public function test_provider_matrix_registers_the_cart_extension_on_active_pages(): void {
 		$matrix = WooPaymentsProvider::get_classes_by_setup_tier();
 
 		$this->assertContains( self::WCPAY . 'WooPaymentsExpressCheckoutStoreApiExtension', $matrix[ WooPaymentsSetupTier::ACTIVE ]['front'] );
 		$this->assertContains( self::WCPAY . 'WooPaymentsExpressCheckoutStoreApiExtension', $matrix[ WooPaymentsSetupTier::ACTIVE ]['rest'] );
+		$this->assertContains( self::WCPAY . 'WooPaymentsExpressCheckoutStoreApiExtension', $matrix[ WooPaymentsSetupTier::ACTIVE ]['ajax'] );
 	}
 
 	/**
