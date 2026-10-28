@@ -5126,6 +5126,8 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		$this->assertArrayNotHasKey( PaymentOutcome::DATA_NOTE, $outcome->get_data() );
 		$this->assertArrayNotHasKey( PaymentOutcome::DATA_NOTE_TYPE, $outcome->get_data() );
 		$this->assertStringStartsWith( '#wcpay-confirm-pi:' . $order->get_id() . ':' . $recorded['body']['client_secret'] . ':', $outcome->get_redirect_url() );
+		$hash_parts = explode( ':', $outcome->get_redirect_url() );
+		$this->assertSame( 1, wp_verify_nonce( $hash_parts[3] ?? '', 'wcpay_update_order_status_nonce_' . $order->get_id() ), 'The hash nonce names this order, as client 11.2.0 mints it (class-wc-payment-gateway-wcpay.php:2119).' );
 		$this->assertSame( '', $order->get_meta( 'last4', true ) );
 		$this->assertSame( '', $order->get_meta( '_card_brand', true ) );
 		$this->assertSame( '', $order->get_meta( '_wcpay_payment_method_details', true ) );

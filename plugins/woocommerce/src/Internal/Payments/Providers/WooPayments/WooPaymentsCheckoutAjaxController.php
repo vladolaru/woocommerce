@@ -137,12 +137,13 @@ class WooPaymentsCheckoutAjaxController implements RegisterHooksInterface {
 			return $this->error_response( __( "We're not able to process this payment. Please try again later.", 'woocommerce' ), 409 );
 		}
 
-		if ( ! $this->is_nonce_valid( $request, 'wcpay_update_order_status_nonce' ) ) {
+		// The nonce names its order, so one minted for another order is refused (client 11.2.0 class-wc-payment-gateway-wcpay.php:4182-4198).
+		$order_id = absint( $request['order_id'] ?? 0 );
+		if ( ! $this->is_nonce_valid( $request, 'wcpay_update_order_status_nonce_' . $order_id ) ) {
 			return $this->error_response( __( "We're not able to process this payment. Please refresh the page and try again.", 'woocommerce' ), 403 );
 		}
 
-		$order_id = absint( $request['order_id'] ?? 0 );
-		$order    = wc_get_order( $order_id );
+		$order = wc_get_order( $order_id );
 		if ( ! $order instanceof WC_Order ) {
 			return $this->error_response( __( "We're not able to process this payment. Please try again later.", 'woocommerce' ), 404 );
 		}

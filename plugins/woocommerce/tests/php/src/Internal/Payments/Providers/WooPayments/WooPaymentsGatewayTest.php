@@ -6957,11 +6957,11 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		do_action( 'woocommerce_created_customer', $user_id, array(), false );
 		$next_request_cookie = $this->set_auth_cookie_as_checkout_does( $user_id );
 
-		$nonce = wp_create_nonce( 'wcpay_update_order_status_nonce' );
+		$nonce = wp_create_nonce( 'wcpay_update_order_status_nonce_42' );
 		// The shopper's next request, the order-status AJAX call, sends the new login cookie.
 		$_COOKIE[ LOGGED_IN_COOKIE ] = $next_request_cookie;
 
-		$this->assertSame( 1, wp_verify_nonce( $nonce, 'wcpay_update_order_status_nonce' ), 'The order-status AJAX call must accept the nonce the checkout response carried.' );
+		$this->assertSame( 1, wp_verify_nonce( $nonce, 'wcpay_update_order_status_nonce_42' ), 'The order-status AJAX call must accept the nonce the checkout response carried.' );
 	}
 
 	/**

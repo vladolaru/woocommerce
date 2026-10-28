@@ -1649,7 +1649,7 @@ class WooPaymentsPaymentOperationService {
 			$customer_action_redirect = WooPaymentsIntentCodec::confirmation_redirect_for(
 				$order->get_id(),
 				isset( $result['client_secret'] ) ? (string) $result['client_secret'] : '',
-				wp_create_nonce( 'wcpay_update_order_status_nonce' ),
+				wp_create_nonce( 'wcpay_update_order_status_nonce_' . $order->get_id() ),
 				$intent_type,
 				$confirmation_token
 			);

@@ -123,7 +123,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		$sut      = $this->create_controller( $api_client, null, null, $account_service );
 		$response = $sut->confirm_order_payment(
 			array(
-				'_ajax_nonce' => wp_create_nonce( 'wcpay_update_order_status_nonce' ),
+				'_ajax_nonce' => wp_create_nonce( 'wcpay_update_order_status_nonce_' . $order->get_id() ),
 				'order_id'    => $order->get_id(),
 				'intent_id'   => $recorded['body']['id'],
 			)
@@ -213,7 +213,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 
 		$response = $sut->confirm_order_payment(
 			array(
-				'_ajax_nonce' => wp_create_nonce( 'wcpay_update_order_status_nonce' ),
+				'_ajax_nonce' => wp_create_nonce( 'wcpay_update_order_status_nonce_' . $order->get_id() ),
 				'order_id'    => $order->get_id(),
 				'intent_id'   => 'seti_sepa_title',
 			)
@@ -318,7 +318,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		try {
 			$response = $sut->confirm_order_payment(
 				array(
-					'_ajax_nonce'                => wp_create_nonce( 'wcpay_update_order_status_nonce' ),
+					'_ajax_nonce'                => wp_create_nonce( 'wcpay_update_order_status_nonce_' . $order->get_id() ),
 					'order_id'                   => $order->get_id(),
 					'intent_id'                  => 'seti_card_identity',
 					'should_save_payment_method' => 'true',
@@ -397,7 +397,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		try {
 			$response = $sut->confirm_order_payment(
 				array(
-					'_ajax_nonce' => wp_create_nonce( 'wcpay_update_order_status_nonce' ),
+					'_ajax_nonce' => wp_create_nonce( 'wcpay_update_order_status_nonce_' . $order->get_id() ),
 					'order_id'    => $order->get_id(),
 					'intent_id'   => 'seti_saved_unavailable',
 				)
@@ -499,7 +499,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		$this->make_parent_order_of( $order, $subscription );
 		add_action( 'woocommerce_payment_complete', $observer, 1 );
 		$request = array(
-			'_ajax_nonce' => wp_create_nonce( 'wcpay_update_order_status_nonce' ),
+			'_ajax_nonce' => wp_create_nonce( 'wcpay_update_order_status_nonce_' . $order->get_id() ),
 			'order_id'    => $order->get_id(),
 			'intent_id'   => 'seti_callback_replay',
 		);
@@ -651,7 +651,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		$response = $this->create_controller( $api_client, null, null, null, $fee_details_note_controller )
 			->confirm_order_payment(
 				array(
-					'_ajax_nonce' => wp_create_nonce( 'wcpay_update_order_status_nonce' ),
+					'_ajax_nonce' => wp_create_nonce( 'wcpay_update_order_status_nonce_' . $order->get_id() ),
 					'order_id'    => $order->get_id(),
 					'intent_id'   => 'pi_runtime_conflict',
 				)
@@ -743,7 +743,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 
 		$response = $sut->confirm_order_payment(
 			array(
-				'_ajax_nonce' => wp_create_nonce( 'wcpay_update_order_status_nonce' ),
+				'_ajax_nonce' => wp_create_nonce( 'wcpay_update_order_status_nonce_' . $order->get_id() ),
 				'order_id'    => $order->get_id(),
 				'intent_id'   => 'pi_native',
 			)
@@ -828,7 +828,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 
 		$response = $sut->confirm_order_payment(
 			array(
-				'_ajax_nonce' => wp_create_nonce( 'wcpay_update_order_status_nonce' ),
+				'_ajax_nonce' => wp_create_nonce( 'wcpay_update_order_status_nonce_' . $order->get_id() ),
 				'order_id'    => $order->get_id(),
 				'intent_id'   => 'pi_klarna',
 			)
@@ -903,7 +903,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 
 		$response = $sut->confirm_order_payment(
 			array(
-				'_ajax_nonce' => wp_create_nonce( 'wcpay_update_order_status_nonce' ),
+				'_ajax_nonce' => wp_create_nonce( 'wcpay_update_order_status_nonce_' . $order->get_id() ),
 				'order_id'    => $order->get_id(),
 				'intent_id'   => 'pi_converted',
 			)
@@ -957,7 +957,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		};
 
 		$request = array(
-			'_ajax_nonce' => wp_create_nonce( 'wcpay_update_order_status_nonce' ),
+			'_ajax_nonce' => wp_create_nonce( 'wcpay_update_order_status_nonce_' . $order->get_id() ),
 			'order_id'    => $order->get_id(),
 		);
 		if ( null !== $received_intent_id ) {
@@ -1018,7 +1018,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 
 		$response = $this->create_controller( $api_client )->confirm_order_payment(
 			array(
-				'_ajax_nonce' => wp_create_nonce( 'wcpay_update_order_status_nonce' ),
+				'_ajax_nonce' => wp_create_nonce( 'wcpay_update_order_status_nonce_' . $order->get_id() ),
 				'order_id'    => $order->get_id(),
 				'intent_id'   => 'seti_chosen_by_the_caller',
 			)
@@ -1043,6 +1043,70 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		return array(
 			'logged-out visitor' => array( false ),
 			'another customer'   => array( true ),
+		);
+	}
+
+	/**
+	 * @testdox Order-status callback takes only the nonce minted for the posted order: $_dataName.
+	 *
+	 * A guest posts another guest order's ID with the nonce from their own confirmation hash and an intent ID of their choosing.
+	 * Core lets any visitor pay a customerless order, so only the nonce's order stops the mismatch note. As in client 11.2.0
+	 * (includes/class-wc-payment-gateway-wcpay.php:4166-4198; tests/unit/test-class-wc-payment-gateway-wcpay.php:6253-6330).
+	 *
+	 * @dataProvider provider_update_order_status_nonce_orders
+	 *
+	 * @param string $nonce_order    Order the nonce was minted for: 'posted', 'other' or 'none' for the action without an order.
+	 * @param int    $expected_code  Response status.
+	 * @param bool   $expected_noted Whether the posted order gets the mismatch note.
+	 */
+	public function test_update_order_status_takes_only_the_nonce_minted_for_the_posted_order( string $nonce_order, int $expected_code, bool $expected_noted ): void {
+		$other_order  = $this->create_woopayments_order( '10.00' );
+		$posted_order = $this->create_woopayments_order( '10.00' );
+		$posted_order->update_meta_data( '_intent_id', 'pi_posted_order' );
+		$posted_order->save();
+		wp_set_current_user( 0 );
+		$nonce_actions = array(
+			'posted' => 'wcpay_update_order_status_nonce_' . $posted_order->get_id(),
+			'other'  => 'wcpay_update_order_status_nonce_' . $other_order->get_id(),
+			'none'   => 'wcpay_update_order_status_nonce',
+		);
+		$api_client    = new class() extends Client {
+			/**
+			 * Tell whether the transport is available.
+			 *
+			 * @return bool
+			 */
+			public function is_available(): bool {
+				return true;
+			}
+		};
+
+		$response = $this->create_controller( $api_client )->confirm_order_payment(
+			array(
+				'_ajax_nonce' => wp_create_nonce( $nonce_actions[ $nonce_order ] ),
+				'order_id'    => $posted_order->get_id(),
+				'intent_id'   => 'pi_chosen_by_the_caller',
+			)
+		);
+
+		$notes = array_filter(
+			wc_get_order_notes( array( 'order_id' => $posted_order->get_id() ) ),
+			static fn( $note ): bool => false !== strpos( $note->content, 'pi_chosen_by_the_caller' )
+		);
+		$this->assertSame( $expected_code, $response['status_code'] );
+		$this->assertSame( $expected_noted ? 1 : 0, count( $notes ) );
+	}
+
+	/**
+	 * Nonces a guest may hold when posting an order's ID.
+	 *
+	 * @return array<string,array{string,int,bool}>
+	 */
+	public function provider_update_order_status_nonce_orders(): array {
+		return array(
+			'a nonce for another guest order' => array( 'other', 403, false ),
+			'the action without an order'     => array( 'none', 403, false ),
+			'the nonce for the posted order'  => array( 'posted', 409, true ),
 		);
 	}
 
@@ -1186,7 +1250,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		$sut        = $this->create_controller( $api_client );
 		$response   = $sut->confirm_order_payment(
 			array(
-				'_ajax_nonce' => wp_create_nonce( 'wcpay_update_order_status_nonce' ),
+				'_ajax_nonce' => wp_create_nonce( 'wcpay_update_order_status_nonce_' . $order->get_id() ),
 				'order_id'    => $order->get_id(),
 				'intent_id'   => 'seti_native',
 			)
@@ -1259,7 +1323,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		try {
 			$response = $this->create_controller( $api_client )->confirm_order_payment(
 				array(
-					'_ajax_nonce' => wp_create_nonce( 'wcpay_update_order_status_nonce' ),
+					'_ajax_nonce' => wp_create_nonce( 'wcpay_update_order_status_nonce_' . $order->get_id() ),
 					'order_id'    => $order->get_id(),
 					'intent_id'   => 'seti_native',
 				)
@@ -1314,7 +1378,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		$sut        = $this->create_controller( $api_client, null, null, $this->create_account_service( true ) );
 		$response   = $sut->confirm_order_payment(
 			array(
-				'_ajax_nonce' => wp_create_nonce( 'wcpay_update_order_status_nonce' ),
+				'_ajax_nonce' => wp_create_nonce( 'wcpay_update_order_status_nonce_' . $order->get_id() ),
 				'order_id'    => $order->get_id(),
 				'intent_id'   => 'pi_requires_action',
 			)
@@ -1577,7 +1641,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 
 		return $this->create_controller( $api_client, null, null, null, $fee_details_note_controller )->confirm_order_payment(
 			array(
-				'_ajax_nonce' => wp_create_nonce( 'wcpay_update_order_status_nonce' ),
+				'_ajax_nonce' => wp_create_nonce( 'wcpay_update_order_status_nonce_' . $order->get_id() ),
 				'order_id'    => $order->get_id(),
 				'intent_id'   => (string) $intent['id'],
 			)
@@ -1634,7 +1698,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		$sut      = $this->create_controller( $api_client, null, null, $account_service );
 		$response = $sut->confirm_order_payment(
 			array(
-				'_ajax_nonce' => wp_create_nonce( 'wcpay_update_order_status_nonce' ),
+				'_ajax_nonce' => wp_create_nonce( 'wcpay_update_order_status_nonce_' . $order->get_id() ),
 				'order_id'    => $order->get_id(),
 				'intent_id'   => $recorded['body']['id'],
 			)
@@ -1727,7 +1791,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 
 		$this->create_controller( $api_client, null, null, $this->create_account_service( true ) )->confirm_order_payment(
 			array(
-				'_ajax_nonce' => wp_create_nonce( 'wcpay_update_order_status_nonce' ),
+				'_ajax_nonce' => wp_create_nonce( 'wcpay_update_order_status_nonce_' . $order->get_id() ),
 				'order_id'    => $order->get_id(),
 				'intent_id'   => $intent['id'],
 			)
@@ -1803,7 +1867,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		try {
 			$this->create_controller( $api_client )->confirm_order_payment(
 				array(
-					'_ajax_nonce' => wp_create_nonce( 'wcpay_update_order_status_nonce' ),
+					'_ajax_nonce' => wp_create_nonce( 'wcpay_update_order_status_nonce_' . $order->get_id() ),
 					'order_id'    => $order->get_id(),
 					'intent_id'   => $intent['id'],
 				)
@@ -2003,7 +2067,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		try {
 			$response = $sut->confirm_order_payment(
 				array(
-					'_ajax_nonce'                => wp_create_nonce( 'wcpay_update_order_status_nonce' ),
+					'_ajax_nonce'                => wp_create_nonce( 'wcpay_update_order_status_nonce_' . $order->get_id() ),
 					'order_id'                   => $order->get_id(),
 					'intent_id'                  => $recorded['body']['id'],
 					'should_save_payment_method' => 'true',
@@ -2045,7 +2109,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		try {
 			$response = $sut->confirm_order_payment(
 				array(
-					'_ajax_nonce'                => wp_create_nonce( 'wcpay_update_order_status_nonce' ),
+					'_ajax_nonce'                => wp_create_nonce( 'wcpay_update_order_status_nonce_' . $order->get_id() ),
 					'order_id'                   => $order->get_id(),
 					'intent_id'                  => $recorded['body']['id'],
 					'should_save_payment_method' => 'true',
@@ -2123,7 +2187,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 
 		$response = $sut->confirm_order_payment(
 			array(
-				'_ajax_nonce'                => wp_create_nonce( 'wcpay_update_order_status_nonce' ),
+				'_ajax_nonce'                => wp_create_nonce( 'wcpay_update_order_status_nonce_' . $order->get_id() ),
 				'order_id'                   => $order->get_id(),
 				'intent_id'                  => $intent['id'],
 				'should_save_payment_method' => 'true',
@@ -2262,7 +2326,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		try {
 			$response = $sut->confirm_order_payment(
 				array(
-					'_ajax_nonce'                => wp_create_nonce( 'wcpay_update_order_status_nonce' ),
+					'_ajax_nonce'                => wp_create_nonce( 'wcpay_update_order_status_nonce_' . $order->get_id() ),
 					'order_id'                   => $order->get_id(),
 					'intent_id'                  => 'pi_excluded_shape',
 					'should_save_payment_method' => 'true',
@@ -2567,7 +2631,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 
 		$response = $sut->confirm_order_payment(
 			array(
-				'_ajax_nonce'                => wp_create_nonce( 'wcpay_update_order_status_nonce' ),
+				'_ajax_nonce'                => wp_create_nonce( 'wcpay_update_order_status_nonce_' . $order->get_id() ),
 				'order_id'                   => $order->get_id(),
 				'intent_id'                  => 'pi_sepa',
 				'should_save_payment_method' => 'true',
@@ -2734,7 +2798,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		try {
 			$response = $sut->confirm_order_payment(
 				array(
-					'_ajax_nonce'                => wp_create_nonce( 'wcpay_update_order_status_nonce' ),
+					'_ajax_nonce'                => wp_create_nonce( 'wcpay_update_order_status_nonce_' . $order->get_id() ),
 					'order_id'                   => $order->get_id(),
 					'intent_id'                  => 'pi_native',
 					'should_save_payment_method' => 'false',
@@ -2793,7 +2857,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		try {
 			$response = $sut->confirm_order_payment(
 				array(
-					'_ajax_nonce'                => wp_create_nonce( 'wcpay_update_order_status_nonce' ),
+					'_ajax_nonce'                => wp_create_nonce( 'wcpay_update_order_status_nonce_' . $order->get_id() ),
 					'order_id'                   => $order->get_id(),
 					'intent_id'                  => 'pi_native',
 					'should_save_payment_method' => 'false',
@@ -2896,7 +2960,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 
 		$response = $sut->confirm_order_payment(
 			array(
-				'_ajax_nonce'                => wp_create_nonce( 'wcpay_update_order_status_nonce' ),
+				'_ajax_nonce'                => wp_create_nonce( 'wcpay_update_order_status_nonce_' . $order->get_id() ),
 				'order_id'                   => $order->get_id(),
 				'intent_id'                  => 'seti_native',
 				'should_save_payment_method' => 'false',
@@ -3046,7 +3110,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		try {
 			$response = $sut->confirm_order_payment(
 				array(
-					'_ajax_nonce'                => wp_create_nonce( 'wcpay_update_order_status_nonce' ),
+					'_ajax_nonce'                => wp_create_nonce( 'wcpay_update_order_status_nonce_' . $subscription->get_id() ),
 					'order_id'                   => $subscription->get_id(),
 					'intent_id'                  => 'seti_change',
 					'should_save_payment_method' => 'false',
@@ -3138,7 +3202,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		try {
 			$response = $sut->confirm_order_payment(
 				array(
-					'_ajax_nonce'                => wp_create_nonce( 'wcpay_update_order_status_nonce' ),
+					'_ajax_nonce'                => wp_create_nonce( 'wcpay_update_order_status_nonce_' . $subscription->get_id() ),
 					'order_id'                   => $subscription->get_id(),
 					'intent_id'                  => 'seti_change',
 					'should_save_payment_method' => 'false',
@@ -3238,7 +3302,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 
 		$response = $sut->confirm_order_payment(
 			array(
-				'_ajax_nonce'                => wp_create_nonce( 'wcpay_update_order_status_nonce' ),
+				'_ajax_nonce'                => wp_create_nonce( 'wcpay_update_order_status_nonce_' . $order->get_id() ),
 				'order_id'                   => $order->get_id(),
 				'intent_id'                  => 'pi_native',
 				'should_save_payment_method' => 'false',
