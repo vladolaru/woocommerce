@@ -60,7 +60,6 @@ class OverviewService {
 			'account_status'                        => $this->get_account_status_fields( $account_data ),
 			'overview_tasks_visibility'             => $this->get_overview_tasks_visibility(),
 			'is_connection_success_modal_dismissed' => $this->is_truthy( get_option( 'wcpay_connection_success_modal_dismissed', false ) ),
-			'disputes_awaiting_response_count'      => $this->get_cached_disputes_awaiting_response_count(),
 			'account_details'                       => $this->get_account_details( $account_data ),
 			'account_fees'                          => $this->get_active_account_fees( $account_data ),
 			'account_loans'                         => $this->get_capital_loans( $account_data ),
@@ -300,8 +299,6 @@ class OverviewService {
 				WooPaymentsDatabaseCache::ACCOUNT_KEY,
 				WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION,
 				'wcpay_onboarding_test_mode',
-				WooPaymentsDatabaseCache::DISPUTE_STATUS_COUNTS_KEY,
-				WooPaymentsDatabaseCache::DISPUTE_STATUS_COUNTS_KEY_TEST_MODE,
 				'woocommerce_dismissed_todo_tasks',
 				'woocommerce_deleted_todo_tasks',
 				'woocommerce_remind_me_later_todo_tasks',
@@ -423,30 +420,6 @@ class OverviewService {
 	 */
 	private function get_account_id( array $account_data ): string {
 		return $this->get_scalar( $account_data['account_id'] ?? '' );
-	}
-
-	/**
-	 * Get the cached actionable dispute count without refreshing the platform-backed cache.
-	 *
-	 * @return int|null
-	 */
-	private function get_cached_disputes_awaiting_response_count(): ?int {
-		$cache_key      = $this->account_service->is_test_mode_enabled()
-			? WooPaymentsDatabaseCache::DISPUTE_STATUS_COUNTS_KEY_TEST_MODE
-			: WooPaymentsDatabaseCache::DISPUTE_STATUS_COUNTS_KEY;
-		$cache_contents = get_option( $cache_key, false );
-		$counts         = is_array( $cache_contents ) && is_array( $cache_contents['data'] ?? null )
-			? $cache_contents['data']
-			: null;
-
-		if ( ! is_array( $counts ) ) {
-			return null;
-		}
-
-		return max(
-			0,
-			(int) ( $counts['needs_response'] ?? 0 ) + (int) ( $counts['warning_needs_response'] ?? 0 )
-		);
 	}
 
 	/**

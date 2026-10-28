@@ -45,8 +45,6 @@ class OverviewServiceTest extends WC_Unit_Test_Case {
 		delete_option( 'woocommerce_remind_me_later_todo_tasks' );
 		delete_option( 'wcpay_connection_success_modal_dismissed' );
 		delete_option( 'wcpay_onboarding_test_mode' );
-		delete_option( 'wcpay_dispute_status_counts_cache' );
-		delete_option( 'wcpay_test_dispute_status_counts_cache' );
 		delete_option( 'wcpay_instant_deposits_previously_eligible' );
 		delete_option( 'wcpay_instant_deposit_notice_dismissed' );
 
@@ -129,19 +127,6 @@ class OverviewServiceTest extends WC_Unit_Test_Case {
 				'upe_enabled_payment_method_ids' => array( 'card', 'link' ),
 			)
 		);
-		update_option(
-			'wcpay_test_dispute_status_counts_cache',
-			array(
-				'data'    => array(
-					'needs_response'         => 2,
-					'warning_needs_response' => 1,
-					'under_review'           => 4,
-				),
-				'fetched' => time(),
-				'errored' => false,
-			)
-		);
-
 		$overview = $this->sut->get_overview();
 
 		$this->assertSame( 'acct_native_test', $overview['account']['id'] );
@@ -167,7 +152,6 @@ class OverviewServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( array( 'deleted-task' ), $overview['overview_tasks_visibility']['deleted_todo_tasks'] );
 		$this->assertSame( array( 'later-task' => 1781740800000 ), $overview['overview_tasks_visibility']['remind_me_later_todo_tasks'] );
 		$this->assertTrue( $overview['is_connection_success_modal_dismissed'] );
-		$this->assertSame( 3, $overview['disputes_awaiting_response_count'] );
 		$this->assertSame( 'Restricted soon', $overview['account_details']['account_status']['text'] );
 		$this->assertSame( 'Payouts enabled', $overview['account_details']['payout_status']['text'] );
 		$this->assertSame( 'Action required', $overview['account_details']['banner']['text'] );
@@ -223,7 +207,6 @@ class OverviewServiceTest extends WC_Unit_Test_Case {
 		$this->assertFalse( $overview['account_status']['past_due'] );
 		$this->assertSame( '', $overview['account_status']['account_link'] );
 		$this->assertSame( array(), $overview['account_status']['requirements']['errors'] );
-		$this->assertNull( $overview['disputes_awaiting_response_count'] );
 		$this->assertNull( $overview['account_details'] );
 		$this->assertSame( array(), $overview['account_fees'] );
 		$this->assertFalse( $overview['account_loans']['has_active_loan'] );

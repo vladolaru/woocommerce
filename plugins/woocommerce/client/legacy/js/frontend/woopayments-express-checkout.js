@@ -3272,7 +3272,7 @@
 			}
 		}
 
-		// Client 11.2.0 shortcode-buttons-express/index.js:248: a newer refresh may have started during the wait.
+		// Client 11.2.0 shortcode-buttons-express/index.js:254-256: a newer refresh may have started during the wait.
 		if ( isSuperseded() ) {
 			return;
 		}

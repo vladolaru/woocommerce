@@ -223,7 +223,6 @@ const createShell = ( overrides: Record< string, unknown > = {} ) => ( {
 		deposits_enabled: true,
 		deposits: RECORDED_ACCOUNT_DEPOSITS,
 	},
-	disputes_awaiting_response_count: null,
 	overview_tasks_visibility: {
 		dismissed_todo_tasks: [],
 		deleted_todo_tasks: [],
@@ -427,7 +426,6 @@ describe( 'WooPaymentsOverviewPage', () => {
 								},
 								banner: null,
 							},
-							disputes_awaiting_response_count: 2,
 						} ),
 					},
 				},
@@ -447,7 +445,7 @@ describe( 'WooPaymentsOverviewPage', () => {
 		).toBeInTheDocument();
 		expect( screen.getByText( 'Preloaded status' ) ).toBeInTheDocument();
 		expect( mockGetShell ).not.toHaveBeenCalled();
-		// The awaiting-response count still asks for the disputes summary behind the dispute task.
+		// The dispute task still asks for the disputes summary.
 		await waitFor( () =>
 			expect( mockGetDisputesSummary ).toHaveBeenCalledTimes( 1 )
 		);
@@ -550,9 +548,7 @@ describe( 'WooPaymentsOverviewPage', () => {
 	] )(
 		'reads the single dispute only when the summary counts one (count %d)',
 		async ( count, reads, actionLabel ) => {
-			mockGetShell.mockResolvedValue(
-				createShell( { disputes_awaiting_response_count: count } )
-			);
+			mockGetShell.mockResolvedValue( createShell() );
 			mockGetOverview.mockResolvedValue( createDepositsOverview() );
 			mockGetRecent.mockResolvedValue( { data: [], total_count: 0 } );
 			mockGetDisputesSummary.mockResolvedValue( {
@@ -587,9 +583,7 @@ describe( 'WooPaymentsOverviewPage', () => {
 
 	// Client 11.2.0 `data/disputes/resolvers.js:100-118`.
 	it( 'raises the client snackbar when the disputes summary read fails', async () => {
-		mockGetShell.mockResolvedValue(
-			createShell( { disputes_awaiting_response_count: 3 } )
-		);
+		mockGetShell.mockResolvedValue( createShell() );
 		mockGetOverview.mockResolvedValue( createDepositsOverview() );
 		mockGetRecent.mockResolvedValue( { data: [], total_count: 0 } );
 		mockGetDisputesSummary.mockRejectedValue(
@@ -1030,12 +1024,10 @@ describe( 'WooPaymentsOverviewPage', () => {
 		).not.toBeInTheDocument();
 	} );
 
-	// Client 11.2.0 `overview/index.js:100-105` asks the summary whatever the store's cached count, which a new dispute
-	// leaves at zero until its webhook arrives.
-	it( 'shows the dispute task from the summary when the cached count is zero', async () => {
-		mockGetShell.mockResolvedValue(
-			createShell( { disputes_awaiting_response_count: 0 } )
-		);
+	// Client 11.2.0 `overview/index.js:100-105` asks the summary whatever the store's cached dispute counts say, which a
+	// new dispute leaves at zero until its webhook arrives; the shell carries no count, so the summary alone decides.
+	it( 'shows the dispute task from the summary alone, whatever the cached count', async () => {
+		mockGetShell.mockResolvedValue( createShell() );
 		mockGetOverview.mockResolvedValue( createDepositsOverview() );
 		mockGetRecent.mockResolvedValue( { data: [], total_count: 0 } );
 		mockGetDisputesSummary.mockResolvedValue( {

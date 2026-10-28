@@ -44,7 +44,6 @@ const createShell = ( overrides: Record< string, unknown > = {} ) => ( {
 		payments_enabled: true,
 		deposits_enabled: true,
 	},
-	disputes_awaiting_response_count: null,
 	overview_tasks_visibility: {
 		dismissed_todo_tasks: [],
 		deleted_todo_tasks: [],

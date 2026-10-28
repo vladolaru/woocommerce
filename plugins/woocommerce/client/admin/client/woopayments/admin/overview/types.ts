@@ -184,7 +184,6 @@ export interface WooPaymentsOverviewShell {
 	account_status: WooPaymentsOverviewAccountStatus;
 	overview_tasks_visibility: WooPaymentsOverviewTasksVisibility;
 	is_connection_success_modal_dismissed: boolean;
-	disputes_awaiting_response_count: number | null;
 	account_details?: WooPaymentsOverviewAccountDetails | null;
 	account_fees?: WooPaymentsOverviewAccountFee[];
 	account_loans?: {

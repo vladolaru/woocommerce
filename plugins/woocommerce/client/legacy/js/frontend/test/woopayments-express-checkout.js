@@ -4543,7 +4543,7 @@ describe( 'WooPayments express checkout', () => {
 			return cart;
 		}
 
-		// Client 11.2.0 `index.js:248` checks for a newer refresh again after waiting for Stripe.js; test
+		// Client 11.2.0 `index.js:254-256` checks for a newer refresh again after waiting for Stripe.js; test
 		// `tokenized-express-checkout--shortcode-checkout-page.test.js:404-475`.
 		test( 'builds no Elements from a refresh superseded while Stripe.js loads', async () => {
 			jest.useFakeTimers();

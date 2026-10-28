@@ -62,7 +62,6 @@ export const createRecordedOverviewShell = (
 		remind_me_later_todo_tasks: {},
 	},
 	is_connection_success_modal_dismissed: false,
-	disputes_awaiting_response_count: 0,
 	account_details: {
 		account_status: { text: 'Connected', background_color: 'green' },
 		payout_status: {

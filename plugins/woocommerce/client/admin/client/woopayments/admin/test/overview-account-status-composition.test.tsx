@@ -80,10 +80,10 @@ const urgentDisputesSummary = () => ( {
 } );
 
 const renderForStatus = async ( status: string, paymentsEnabled = true ) => {
-	const shell = createRecordedOverviewShell(
-		{ status, payments_enabled: paymentsEnabled },
-		{ disputes_awaiting_response_count: 1 }
-	);
+	const shell = createRecordedOverviewShell( {
+		status,
+		payments_enabled: paymentsEnabled,
+	} );
 	( getWooPaymentsOverviewShell as jest.Mock ).mockResolvedValue( {
 		...shell,
 		account: { ...shell.account, working: paymentsEnabled },
