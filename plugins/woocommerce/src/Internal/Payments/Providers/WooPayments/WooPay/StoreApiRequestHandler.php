@@ -488,8 +488,11 @@ class StoreApiRequestHandler {
 	 * (class-wc-payments-woopay-direct-checkout.php:56-103): an order core's Store API would resume (a checkout draft, or a
 	 * pending or failed order while the cart is unchanged, DraftOrderTrait::is_valid_draft_order()) becomes the pending order
 	 * core resumes, and any other pointer is cleared. Unlike the client, a stored `false` counts as no order awaiting payment
-	 * (WC_Session::__isset() reports it as set; core writes it after a payment or a cancellation). The takeover holds the order
-	 * payment lock and reads the order again under it, so it never changes an order another request is paying. While another
+	 * (WC_Session::__isset() reports it as set; core writes it after a payment or a cancellation), and a checkout draft is
+	 * resumed only while its cart hash matches the current cart, checked under the lock after the fresh read; the client and
+	 * core resume any checkout draft, and WC_Checkout::create_order() places a new order when the cart hash differs, so a draft
+	 * totalled for another cart would be left behind as a pending order. The takeover holds the order payment lock and reads
+	 * the order again under it, so it never changes an order another request is paying. While another
 	 * request holds the lock of a checkout draft, or of a pending or failed order whatever its cart, checkout stops with a
 	 * notice instead of placing and paying a second order; the client and core place one.
 	 *
@@ -527,7 +530,7 @@ class StoreApiRequestHandler {
 
 		try {
 			$draft_order = wc_get_container()->get( OrderPaymentLifecycleService::class )->get_fresh_order_from_data_store( $draft_order );
-			if ( ! $this->is_valid_draft_order( $draft_order ) ) {
+			if ( ! $this->is_valid_draft_order( $draft_order ) || ! $draft_order->has_cart_hash( WC()->cart->get_cart_hash() ) ) {
 				$session->set( 'store_api_draft_order', null );
 
 				return $order_id;
