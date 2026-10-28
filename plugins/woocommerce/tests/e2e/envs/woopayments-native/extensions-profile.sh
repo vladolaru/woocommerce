@@ -76,7 +76,7 @@ woocommerce_com_package() {
 			echo "Missing WooCommerce.com package: $zip" >&2
 			return 1
 		}
-		unzip -q "$zip" -d "$WORK_ROOT/$slug"
+		unzip -q "$zip" -d "$WORK_ROOT/$slug" || return 1
 		printf '%s\n' "$WORK_ROOT/$slug/$slug"
 	elif command -v wccom-ext > /dev/null 2>&1; then
 		wccom-ext get "$slug" "$version"
