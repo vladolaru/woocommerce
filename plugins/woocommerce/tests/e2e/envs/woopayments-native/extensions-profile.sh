@@ -36,26 +36,18 @@ if [[ "$WP_ENV_SERVICE" == 'tests-cli' && ! "$STORE_URL" =~ :8187(/|$) ]]; then
 	exit 1
 fi
 
-readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
-readonly PLUGIN_ROOT="$(cd "$SCRIPT_DIR/../../../.." && pwd -P)"
-readonly WORK_ROOT="$(mktemp -d "${TMPDIR%/}/woopayments-extension-profile.XXXXXX")"
-
-cleanup() {
-	local status=$?
-	if [[ "$WORK_ROOT" == "${TMPDIR%/}"/woopayments-extension-profile.* && -d "$WORK_ROOT" ]]; then
-		rm -rf -- "$WORK_ROOT"
-	fi
-	return "$status"
-}
-trap cleanup EXIT
+PLUGIN_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../.." && pwd -P)"
+WORK_ROOT="$(mktemp -d "${TMPDIR%/}/woopayments-extension-profile.XXXXXX")"
+readonly PLUGIN_ROOT WORK_ROOT
+trap 'rm -rf -- "$WORK_ROOT"' EXIT
 
 readonly -a EXTENSION_KEYS=( subscriptions bookings deposits square paypal-payments )
-readonly -a EXTENSION_REPOSITORIES=(
-	'https://github.com/woocommerce/woocommerce-subscriptions.git'
-	'https://github.com/woocommerce/woocommerce-bookings.git'
-	'https://github.com/woocommerce/woocommerce-deposits.git'
-	'https://github.com/woocommerce/woocommerce-square.git'
-	'https://github.com/woocommerce/woocommerce-paypal-payments.git'
+readonly -a EXTENSION_SLUGS=(
+	'woocommerce-subscriptions'
+	'woocommerce-bookings'
+	'woocommerce-deposits'
+	'woocommerce-square'
+	'woocommerce-paypal-payments'
 )
 readonly -a EXTENSION_OLDEST_PINS=( 7.5.0 3.5.3 2.2.9 4.7.4 2.9.6 )
 readonly -a EXTENSION_LATEST_PINS=( 9.2.0 3.10.0 2.4.7 5.5.0 4.1.3 )
@@ -66,37 +58,32 @@ readonly -a EXTENSION_MAIN_FILES=(
 	'woocommerce-square.php'
 	'woocommerce-paypal-payments.php'
 )
-readonly -a EXTENSION_CANONICAL_SLUGS=(
-	'woocommerce-subscriptions'
-	'woocommerce-bookings'
-	'woocommerce-deposits'
-	'woocommerce-square'
-	'woocommerce-paypal-payments'
-)
 readonly -a WP_ENV=( pnpm exec wp-env --config "$WP_ENV_CONFIG" run "$WP_ENV_SERVICE" )
 
 normalize_origin() {
 	printf '%s\n' "$1" | sed -E 's#/+$##'
 }
 
-clone_extension() {
-	local repository="$1"
+# Prints the unpacked plugin directory of a WooCommerce.com release: from the runner's
+# E2E_WOOPAYMENTS_EXTENSION_ZIPS directory when set, else from `wccom-ext get`.
+woocommerce_com_package() {
+	local slug="$1"
 	local version="$2"
-	local destination="$3"
-	local token="${E2E_WOOPAYMENTS_EXTENSION_READ_TOKEN:-}"
 
-	if [[ -z "$token" ]]; then
-		GIT_TERMINAL_PROMPT=0 git clone --quiet --depth 1 --branch "$version" "$repository" "$destination"
-		return
+	if [[ -n "${E2E_WOOPAYMENTS_EXTENSION_ZIPS:-}" ]]; then
+		local zip="${E2E_WOOPAYMENTS_EXTENSION_ZIPS%/}/$slug.$version.zip"
+		[[ -f "$zip" ]] || {
+			echo "Missing WooCommerce.com package: $zip" >&2
+			return 1
+		}
+		unzip -q "$zip" -d "$WORK_ROOT/$slug"
+		printf '%s\n' "$WORK_ROOT/$slug/$slug"
+	elif command -v wccom-ext > /dev/null 2>&1; then
+		wccom-ext get "$slug" "$version"
+	else
+		echo "Missing WooCommerce.com package $slug.$version.zip: set E2E_WOOPAYMENTS_EXTENSION_ZIPS to a directory holding it, or put wccom-ext on PATH." >&2
+		return 1
 	fi
-
-	local authorization
-	authorization="$(printf 'x-access-token:%s' "$token" | base64 | tr -d '\r\n')"
-	GIT_TERMINAL_PROMPT=0 \
-		GIT_CONFIG_COUNT=1 \
-		GIT_CONFIG_KEY_0='http.https://github.com/.extraheader' \
-		GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $authorization" \
-		git clone --quiet --depth 1 --branch "$version" "$repository" "$destination"
 }
 
 cd "$PLUGIN_ROOT"
@@ -113,109 +100,33 @@ if [[ -z "$actual_store_url" || "$(normalize_origin "$actual_store_url")" != "$(
 fi
 
 declare -a selected_versions=()
-declare -a source_directories=()
 declare -a profile_plugins=()
 
 for index in "${!EXTENSION_KEYS[@]}"; do
 	key="${EXTENSION_KEYS[$index]}"
-	repository="${EXTENSION_REPOSITORIES[$index]}"
-	main_file="${EXTENSION_MAIN_FILES[$index]}"
+	slug="${EXTENSION_SLUGS[$index]}"
 	if [[ "$PIN_SET" == 'oldest' ]]; then
 		version="${EXTENSION_OLDEST_PINS[$index]}"
 	else
 		version="${EXTENSION_LATEST_PINS[$index]}"
 	fi
-	source_directory="$WORK_ROOT/$(basename "$repository" .git)"
-	build_log="$WORK_ROOT/$key-composer.log"
 
 	echo "Preparing $key $version"
-	clone_extension "$repository" "$version" "$source_directory"
-	if ! (
-		cd "$source_directory"
-		if grep -Fq 'vendor/bin/strauss' composer.json; then
-			composer install --prefer-dist --no-interaction --no-progress --optimize-autoloader
-			composer install --no-dev --prefer-dist --no-interaction --no-progress --optimize-autoloader --no-scripts
-		else
-			composer install --no-dev --prefer-dist --no-interaction --no-progress --optimize-autoloader
-		fi
-	) > "$build_log" 2>&1; then
-		cat "$build_log" >&2
-		exit 1
+	if "${WP_ENV[@]}" wp plugin is-active "$slug" > /dev/null 2>&1; then
+		"${WP_ENV[@]}" wp plugin deactivate "$slug" --quiet
 	fi
-	if [[ "$key" == 'square' ]] && ! (
-		cd "$source_directory"
-		npm ci --no-audit --no-fund
-		npm run build:webpack
-	) > "$WORK_ROOT/$key-npm.log" 2>&1; then
-		cat "$WORK_ROOT/$key-npm.log" >&2
-		exit 1
-	fi
-	if [[ "$key" == 'paypal-payments' ]]; then
-		settings_module_package="$source_directory/modules/ppcp-settings/package.json"
-		root_webpack_config="$source_directory/webpack.config.js"
-		settings_asset_php="$source_directory/assets/ppcp-settings-js-index.asset.php"
-		npm_log="$WORK_ROOT/$key-npm.log"
-		if [[ -f "$root_webpack_config" ]]; then
-			# The current source layout builds every module's admin script from
-			# one root webpack config into the plugin's own top-level assets/
-			# directory (AssetGetter::get_asset_php_path()), so this pin needs
-			# that build to satisfy the settings module's unconditional
-			# `admin_enqueue_scripts` require(). Its one private, registry-gated
-			# devDependency (@inpsyde/playwright-utils) is e2e tooling this
-			# webpack build never touches, and this profile has no GitHub
-			# Packages credential for it, so it is dropped from the throwaway
-			# clone before installing.
-			if ! (
-				cd "$source_directory"
-				node -e "
-					const fs = require('fs');
-					const pkg = JSON.parse(fs.readFileSync('package.json'));
-					delete ( pkg.devDependencies || {} )['@inpsyde/playwright-utils'];
-					fs.writeFileSync('package.json', JSON.stringify(pkg, null, '\t') + '\n');
-				"
-				rm -f package-lock.json
-				npm install --no-audit --no-fund
-				npm run build
-			) > "$npm_log" 2>&1; then
-				cat "$npm_log" >&2
-				exit 1
-			fi
-		elif [[ -f "$settings_module_package" ]]; then
-			# Older pins build each module's own assets from a per-module
-			# package.json instead. This pin's settings module only loads
-			# behind the PCP_SETTINGS_ENABLED feature flag (unset for this
-			# smoke), so a failure here does not need to fail the profile; the
-			# asset-existence guard below still reports it.
-			(
-				cd "$(dirname "$settings_module_package")"
-				npm install --no-audit --no-fund
-				npm run build
-			) > "$npm_log" 2>&1 || true
-		fi
-		if [[ ! -f "$settings_asset_php" ]]; then
-			echo "PayPal Payments $version: $settings_asset_php was not produced. The 'WooCommerce Subscriptions settings tab renders with native WooPayments active' smoke case fatals on any pin whose settings module loads this asset unconditionally; see $npm_log for the build attempt." >&2
-		fi
+	if [[ "$key" == 'square' || "$key" == 'paypal-payments' ]]; then
+		"${WP_ENV[@]}" wp plugin install "$slug" --version="$version" --force --quiet
+	else
+		package_directory="$(woocommerce_com_package "$slug" "$version")"
+		"${WP_ENV[@]}" rm -rf "wp-content/plugins/$slug"
+		"${WP_ENV[@]}" mkdir -p "wp-content/plugins/$slug"
+		tar --no-xattrs -C "$package_directory" -cf - . | \
+			"${WP_ENV[@]}" tar -xf - -C "wp-content/plugins/$slug"
 	fi
 
 	selected_versions+=( "$version" )
-	source_directories+=( "$source_directory" )
-	profile_plugins+=( "woopayments-extension-compat-$key/$main_file" )
-done
-
-for index in "${!EXTENSION_KEYS[@]}"; do
-	canonical_slug="${EXTENSION_CANONICAL_SLUGS[$index]}"
-	profile_plugin="${profile_plugins[$index]}"
-	profile_directory="${profile_plugin%%/*}"
-	if "${WP_ENV[@]}" wp plugin is-active "$canonical_slug" > /dev/null 2>&1; then
-		"${WP_ENV[@]}" wp plugin deactivate "$canonical_slug" --quiet
-	fi
-	if "${WP_ENV[@]}" wp plugin is-active "$profile_plugin" > /dev/null 2>&1; then
-		"${WP_ENV[@]}" wp plugin deactivate "$profile_plugin" --quiet
-	fi
-	"${WP_ENV[@]}" rm -rf "wp-content/plugins/$profile_directory"
-	"${WP_ENV[@]}" mkdir -p "wp-content/plugins/$profile_directory"
-	tar --no-xattrs --exclude='.git' --exclude='node_modules' -C "${source_directories[$index]}" -cf - . | \
-		"${WP_ENV[@]}" tar -xf - -C "wp-content/plugins/$profile_directory"
+	profile_plugins+=( "$slug/${EXTENSION_MAIN_FILES[$index]}" )
 done
 
 "${WP_ENV[@]}" wp plugin activate "${profile_plugins[@]}" --quiet
