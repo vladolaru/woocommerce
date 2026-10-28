@@ -527,6 +527,8 @@ class SessionService {
 		$session_key       = hash_hkdf( 'sha256', $blog_token, self::CIPHER_KEY_LENGTH, self::SESSION_KEY_PURPOSE );
 		$session_encrypted = openssl_encrypt( $message, 'aes-256-cbc', $session_key, OPENSSL_RAW_DATA, $iv );
 		if ( false === $session_encrypted ) {
+			$this->logger->log( 'Failed to encrypt the WooPay session data.' );
+
 			return array();
 		}
 
