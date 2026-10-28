@@ -1442,6 +1442,83 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A default card the platform refuses to save is logged with logging off, and the shopper is told on My Account's request only: $_dataName.
+	 *
+	 * Core adds its success notice right after the action returns. Client 11.2.0 logs the failure whatever the logging
+	 * setting, and on My Account's set-default-payment-method request drops that one success notice and adds an error
+	 * (includes/class-wc-payments-token-service.php:430-461, :585-606).
+	 *
+	 * @testWith [true]
+	 *           [false]
+	 *
+	 * @param bool $is_my_account_request Whether the request is My Account's "Make default".
+	 */
+	public function test_set_default_failure_is_logged_and_told_to_the_shopper( bool $is_my_account_request ): void {
+		$user_id          = $this->factory()->user->create();
+		$customer_service = new class() extends WooPaymentsCustomerService {
+			/**
+			 * Get a customer ID for a user.
+			 *
+			 * @param int|null $user_id User ID.
+			 * @return string|null
+			 */
+			public function migrate_and_get_customer_id( ?int $user_id ): ?string {
+				unset( $user_id );
+				return 'cus_test';
+			}
+
+			/**
+			 * Fail the update as the platform does.
+			 *
+			 * @param string $customer_id       Customer ID.
+			 * @param string $payment_method_id Payment method ID.
+			 * @return void
+			 */
+			public function set_default_payment_method_for_customer( string $customer_id, string $payment_method_id ): void {
+				unset( $customer_id, $payment_method_id );
+				throw WooPaymentsTokenServiceTest::make_provider_error();
+			}
+		};
+		$sut              = $this->create_service(
+			array(
+				// The SEPA Debit PaymentMethod of the detach test above (Stripe API reference, PaymentMethod object).
+				'pm_sepa' => array(
+					'id'         => 'pm_sepa',
+					'type'       => 'sepa_debit',
+					'sepa_debit' => array( 'last4' => '6789' ),
+				),
+			),
+			null,
+			$customer_service
+		);
+		$token            = $sut->get_or_create_token_for_user( 'pm_sepa', $user_id );
+		$logger           = RecordingWcLogger::install();
+		$success_notice   = 'This payment method was successfully set as your default.';
+		if ( $is_my_account_request ) {
+			$GLOBALS['wp']->query_vars['set-default-payment-method'] = (string) $token->get_id();
+		}
+		wc_clear_notices();
+
+		try {
+			// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Test exercises the registered default-token hook.
+			do_action( 'woocommerce_payment_token_set_default', $token->get_id(), $token );
+			// What WC_Form_Handler::set_default_payment_method_action() adds after the action.
+			wc_add_notice( $success_notice );
+		} finally {
+			unset( $GLOBALS['wp']->query_vars['set-default-payment-method'] );
+		}
+
+		$this->assertSame(
+			$is_my_account_request ? array( 'We could not set that payment method as your default. It may no longer be available, please reload the page and try again.' ) : array(),
+			array_column( wc_get_notices( 'error' ), 'notice' )
+		);
+		$this->assertSame( $is_my_account_request ? array() : array( $success_notice ), array_column( wc_get_notices( 'success' ), 'notice' ) );
+		$context = $this->get_logged_context_at_level( $logger, 'error' );
+		$this->assertSame( array( 'pm_sepa', 'cus_test', $user_id ), array( $context['payment_method_id'] ?? null, $context['customer_id'] ?? null, $context['user_id'] ?? null ) );
+		wc_clear_notices();
+	}
+
+	/**
 	 * @testdox Reconciliation should re-register the token filter after adding tokens.
 	 */
 	public function test_reconcile_reregisters_the_filter_after_adding_tokens(): void {

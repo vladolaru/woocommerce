@@ -304,11 +304,44 @@ class WooPaymentsTokenService implements RegisterHooksInterface {
 			try {
 				$this->customer_service->set_default_payment_method_for_customer( $customer_id, (string) $token->get_token() );
 			} catch ( Throwable $exception ) {
-				wc_get_container()->get( WooPaymentsLogger::class )->log_throwable( 'Error setting WooPayments default payment method.', $exception );
+				// Core has already saved the default locally, so the failure is logged whatever the logging setting and the
+				// shopper told (client 11.2.0 class-wc-payments-token-service.php:440-457).
+				wc_get_container()->get( WooPaymentsLogger::class )->log_throwable_always(
+					'Error setting WooPayments default payment method.',
+					$exception,
+					array(
+						'payment_method_id' => (string) $token->get_token(),
+						'customer_id'       => $customer_id,
+						'user_id'           => $token->get_user_id(),
+					)
+				);
+				$this->report_failed_default_payment_method();
 			}
 		}
 
 		$this->clear_cached_payment_methods_for_user( $token->get_user_id() );
+	}
+
+	/**
+	 * On My Account's "Make default" request, replace core's success notice that follows the action with an error.
+	 *
+	 * The same action fires at checkout and in admin and REST flows, where no shopper reads notices. As client 11.2.0
+	 * report_failed_default_payment_method_mirror() (class-wc-payments-token-service.php:585-606).
+	 */
+	private function report_failed_default_payment_method(): void {
+		$session = WC()->session;
+		if ( ! isset( $GLOBALS['wp']->query_vars['set-default-payment-method'] ) || ! did_action( 'woocommerce_init' ) || ! $session instanceof \WC_Session ) {
+			return;
+		}
+
+		// An empty message drops the notice; the callback removes itself, so only the next success notice goes.
+		$drop_success_notice = static function () use ( &$drop_success_notice ) {
+			remove_filter( 'woocommerce_add_message', $drop_success_notice, 100 );
+			return '';
+		};
+		add_filter( 'woocommerce_add_message', $drop_success_notice, 100 );
+
+		wc_add_notice( __( 'We could not set that payment method as your default. It may no longer be available, please reload the page and try again.', 'woocommerce' ), 'error' );
 	}
 
 	/**
