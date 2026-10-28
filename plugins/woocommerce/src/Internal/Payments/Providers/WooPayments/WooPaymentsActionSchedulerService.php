@@ -36,8 +36,8 @@ class WooPaymentsActionSchedulerService {
 	 * Before Action Scheduler initializes, its functions return without scheduling, so a job asked for that early is
 	 * kept and scheduled on action_scheduler_init, once per blog, hook, args and group with the latest timestamp asked for
 	 * (client 11.1.0 `class-wc-payments-action-scheduler-service.php:220-249`). Once initialized, a job already pending
-	 * keeps its first timestamp; client 11.1.0 replaces it instead (`:276-281`). Every job reads the store's state when it
-	 * runs, so the first due time loses nothing, and no pending action is unscheduled.
+	 * and due no later than asked is kept, since every job reads the store's state when it runs; one due later is replaced,
+	 * which moves it earlier (client 11.2.0 `class-wc-payments-action-scheduler-service.php:304-349`).
 	 *
 	 * @since 11.0.0
 	 *
@@ -52,11 +52,16 @@ class WooPaymentsActionSchedulerService {
 			return;
 		}
 
-		if ( $this->has_pending_action( $hook, $args, $group ) ) {
+		$timestamp = $timestamp ?? time();
+		if ( $this->has_pending_action( $hook, $args, $group, $timestamp ) ) {
 			return;
 		}
 
-		as_schedule_single_action( $timestamp ?? time(), $hook, $args, $group );
+		if ( as_has_scheduled_action( $hook, $args, $group ) ) {
+			as_unschedule_action( $hook, $args, $group );
+		}
+
+		as_schedule_single_action( $timestamp, $hook, $args, $group );
 	}
 
 	/**
@@ -133,26 +138,29 @@ class WooPaymentsActionSchedulerService {
 	}
 
 	/**
-	 * Tell whether the same hook/args/group is already pending.
+	 * Tell whether the same hook/args/group is already pending and due no later than the given time.
 	 *
 	 * This intentionally excludes running actions so a currently executing
 	 * failed-event fetch can schedule the next page when the provider reports
 	 * more events.
 	 *
-	 * @param string                  $hook Hook name.
-	 * @param array<int|string,mixed> $args Action args.
-	 * @param string                  $group Action Scheduler group.
+	 * @param string                  $hook      Hook name.
+	 * @param array<int|string,mixed> $args      Action args.
+	 * @param string                  $group     Action Scheduler group.
+	 * @param int                     $timestamp Latest due time that counts.
 	 * @return bool
 	 */
-	private function has_pending_action( string $hook, array $args, string $group ): bool {
+	private function has_pending_action( string $hook, array $args, string $group, int $timestamp ): bool {
 		$actions = as_get_scheduled_actions(
 			array(
-				'hook'     => $hook,
-				'args'     => $args,
-				'group'    => $group,
-				'status'   => \ActionScheduler_Store::STATUS_PENDING,
-				'per_page' => 1,
-				'orderby'  => 'none',
+				'hook'         => $hook,
+				'args'         => $args,
+				'group'        => $group,
+				'status'       => \ActionScheduler_Store::STATUS_PENDING,
+				'date'         => $timestamp,
+				'date_compare' => '<=',
+				'per_page'     => 1,
+				'orderby'      => 'none',
 			)
 		);
 

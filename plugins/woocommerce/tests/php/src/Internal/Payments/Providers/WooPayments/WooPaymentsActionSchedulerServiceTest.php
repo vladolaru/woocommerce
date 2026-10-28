@@ -75,15 +75,25 @@ class WooPaymentsActionSchedulerServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Once Action Scheduler runs, a job already pending keeps its first timestamp (recorded difference: the WooPayments extension replaces it).
+	 * @testdox Once Action Scheduler runs, a job already pending runs at the earliest time asked for: first in $first_delay s, then asked in $second_delay s.
+	 *
+	 * Client 11.2.0 keeps a pending action due no later than asked and otherwise replaces it
+	 * (includes/class-wc-payments-action-scheduler-service.php:304-349).
+	 *
+	 * @testWith [60, 120, 60]
+	 *           [3600, 60, 60]
+	 *
+	 * @param int $first_delay    Seconds from now the first call asks for.
+	 * @param int $second_delay   Seconds from now the second call asks for.
+	 * @param int $expected_delay Seconds from now the one pending action runs.
 	 */
-	public function test_schedule_job_keeps_the_first_timestamp_of_a_pending_job(): void {
-		$first = time() + 60;
+	public function test_schedule_job_keeps_the_first_timestamp_of_a_pending_job( int $first_delay, int $second_delay, int $expected_delay ): void {
+		$now = time();
 
-		$this->sut->schedule_job( $this->hook, array( 'event_id' => 'evt_first' ), $first );
-		$this->sut->schedule_job( $this->hook, array( 'event_id' => 'evt_first' ), time() + 120 );
+		$this->sut->schedule_job( $this->hook, array( 'event_id' => 'evt_first' ), $now + $first_delay );
+		$this->sut->schedule_job( $this->hook, array( 'event_id' => 'evt_first' ), $now + $second_delay );
 
-		$this->assertSame( array( $first ), $this->get_pending_timestamps( array( 'event_id' => 'evt_first' ) ) );
+		$this->assertSame( array( $now + $expected_delay ), $this->get_pending_timestamps( array( 'event_id' => 'evt_first' ) ) );
 	}
 
 	/**
