@@ -541,6 +541,46 @@ describe( 'WooPayments transactions list columns', () => {
 		).not.toHaveAttribute( 'href', detailsHref );
 	} );
 
+	// Client 11.2.0 `transactions/list/index.tsx:67-69, :472-485` and `components/early-fraud-warning-pill/index.tsx:23-42`,
+	// tested in `transactions/list/__tests__/index.test.tsx:674-746`; the warning's shape is the REST field
+	// `WooPaymentsOrderDetailsService` adds.
+	it.each( [
+		[ 'charge', true, true ],
+		[ 'charge', false, false ],
+		[ 'payment', true, true ],
+		[ 'refund', true, false ],
+	] )(
+		'flags a %s row whose early fraud warning is actionable %s: %s',
+		async ( type, actionable, shown ) => {
+			mockGetTransactions.mockResolvedValue( {
+				data: [
+					{
+						...SUBSCRIPTION_CHARGE,
+						type,
+						early_fraud_warning: {
+							actionable,
+							fraud_type: 'made_with_stolen_card',
+						},
+					},
+				] as never,
+				total_count: 1,
+			} );
+			renderList();
+			await screen.findByText( 'Transactions loaded.' );
+
+			const cell = getCell( SUBSCRIPTION_CHARGE.transaction_id, 'type' );
+			expect(
+				within( cell ).queryAllByText( 'Fraud warning' )
+			).toHaveLength( shown ? 1 : 0 );
+			// The chip sits beside the details link, so the link's label does not hide it from screen readers.
+			expect(
+				within( within( cell ).getByRole( 'link' ) ).queryByText(
+					'Fraud warning'
+				)
+			).toBeNull();
+		}
+	);
+
 	it( 'opens no details from loan disbursement and network cost rows, like the client', () => {
 		const fields = getTransactionListFields( {
 			includeDeposit: true,

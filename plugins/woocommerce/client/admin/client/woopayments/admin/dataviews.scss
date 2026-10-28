@@ -190,6 +190,11 @@
 	justify-content: flex-end;
 }
 
+// Client 11.2.0 `components/early-fraud-warning-pill/style.scss`: the chip sits 4px after the type.
+.woocommerce-woopayments-money-movement__fraud-warning {
+	margin-inline-start: $grid-unit-05;
+}
+
 .woocommerce-woopayments-money-movement__conversion-indicator {
 	display: inline-flex;
 	fill: $studio-gray-30;

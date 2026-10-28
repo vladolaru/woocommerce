@@ -30,6 +30,7 @@ import {
 	handleSettingsPaymentsProviderRouteClick,
 } from '../utils';
 import { payoutStatusLabels } from '../payout-status';
+import { StatusChip } from '../overview/components/status-chip';
 import { formatCurrencyName } from '../currency';
 
 /**
@@ -46,7 +47,36 @@ export type WooPaymentsTransactionListRow = WooPaymentsTransaction & {
 	deposit_status?: string | null;
 	available_on?: string | null;
 	risk_level?: number | string | null;
+	early_fraud_warning?: { actionable?: boolean; fraud_type?: string } | null;
 };
+
+// Client 11.2.0 `transactions/list/index.tsx:67-69`: refund rows share the charge, so only the payment's own row is flagged.
+const PAYMENT_TRANSACTION_TYPES = [ 'charge', 'payment' ];
+
+/**
+ * The fraud warning chip for a payment the cardholder's bank reported, while the warning is actionable.
+ * Client 11.2.0 `components/early-fraud-warning-pill/index.tsx:23-42`.
+ *
+ * @param props      Render props.
+ * @param props.item The list row.
+ */
+const EarlyFraudWarningChip = ( { item }: FieldRenderProps ) =>
+	PAYMENT_TRANSACTION_TYPES.includes( item.type ?? '' ) &&
+	item.early_fraud_warning?.actionable ? (
+		<Tooltip
+			text={ __(
+				"The cardholder's bank reported this payment as potentially fraudulent. Refunding it now can prevent a dispute.",
+				'woocommerce'
+			) }
+		>
+			<span className="woocommerce-woopayments-money-movement__fraud-warning">
+				<StatusChip
+					type="warning"
+					message={ __( 'Fraud warning', 'woocommerce' ) }
+				/>
+			</span>
+		</Tooltip>
+	) : null;
 
 type FieldRenderProps = { item: WooPaymentsTransactionListRow };
 
@@ -569,32 +599,41 @@ export const getTransactionListFields = (
 				const detailsRoute = getRowDetailsRoute( item );
 
 				if ( ! detailsRoute ) {
-					return typeLabel;
+					return (
+						<>
+							{ typeLabel }
+							<EarlyFraudWarningChip item={ item } />
+						</>
+					);
 				}
 
 				// Client 11.1.0 `components/clickable-cell`: the cell opens the details but reads as plain
-				// text. It stays in the tab order, so each row keeps one keyboard way to its details.
+				// text. It stays in the tab order, so each row keeps one keyboard way to its details. The fraud
+				// warning follows the link, whose label would otherwise hide it from screen readers.
 				return (
-					<a
-						className="woocommerce-woopayments-money-movement__clickable-cell"
-						href={ getSettingsPaymentsProviderRouteUrl(
-							detailsRoute
-						) }
-						onClick={ handleSettingsPaymentsProviderRouteClick(
-							detailsRoute
-						) }
-						aria-label={ sprintf(
-							/* translators: 1: transaction type, 2: transaction ID. */
-							__(
-								'View transaction details for %1$s transaction %2$s',
-								'woocommerce'
-							),
-							typeLabel,
-							getResourceId( item )
-						) }
-					>
-						{ typeLabel }
-					</a>
+					<>
+						<a
+							className="woocommerce-woopayments-money-movement__clickable-cell"
+							href={ getSettingsPaymentsProviderRouteUrl(
+								detailsRoute
+							) }
+							onClick={ handleSettingsPaymentsProviderRouteClick(
+								detailsRoute
+							) }
+							aria-label={ sprintf(
+								/* translators: 1: transaction type, 2: transaction ID. */
+								__(
+									'View transaction details for %1$s transaction %2$s',
+									'woocommerce'
+								),
+								typeLabel,
+								getResourceId( item )
+							) }
+						>
+							{ typeLabel }
+						</a>
+						<EarlyFraudWarningChip item={ item } />
+					</>
 				);
 			},
 		},
