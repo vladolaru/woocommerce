@@ -1935,6 +1935,7 @@ class SessionControllerTest extends WC_REST_Unit_Test_Case {
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'get_account_id', 'get_publishable_key', 'get_cached_account_data', 'get_stored_account_data', 'is_test_mode_enabled', 'get_gateway_setting' ) )
 			->getMock();
+		// The cached account's signed-path flag, as client 11.2.0 reads it (includes/class-wc-payments-features.php:226-233).
 		$account_service->method( 'get_stored_account_data' )->willReturn( array( 'platform_woopay_force_signed_requests' => true ) );
 		$account_service->method( 'get_account_id' )->willReturn( 'acct_123' );
 		$account_service->method( 'get_publishable_key' )->willReturn( 'pk_test_123' );
