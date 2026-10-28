@@ -490,7 +490,8 @@ class StoreApiRequestHandler {
 	 * core resumes, and any other pointer is cleared. Unlike the client, a stored `false` counts as no order awaiting payment
 	 * (WC_Session::__isset() reports it as set; core writes it after a payment or a cancellation). The takeover holds the order
 	 * payment lock and reads the order again under it, so it never changes an order another request is paying. While another
-	 * request holds that lock, checkout stops with a notice instead of placing and paying a second order.
+	 * request holds the lock of a checkout draft, or of a pending or failed order whatever its cart, checkout stops with a
+	 * notice instead of placing and paying a second order; the client and core place one.
 	 *
 	 * @since 11.2.0
 	 *
@@ -505,7 +506,8 @@ class StoreApiRequestHandler {
 
 		$draft_order_id = absint( $session->get( 'store_api_draft_order' ) );
 		$draft_order    = $draft_order_id ? wc_get_order( $draft_order_id ) : false;
-		if ( ! $draft_order instanceof WC_Order || ! $this->is_valid_draft_order( $draft_order ) ) {
+		// WooPay may be paying a pending or failed order, so its lock is claimed before core's rule is applied.
+		if ( ! $draft_order instanceof WC_Order || ( ! $draft_order->has_status( array( OrderStatus::PENDING, OrderStatus::FAILED ) ) && ! $this->is_valid_draft_order( $draft_order ) ) ) {
 			$session->set( 'store_api_draft_order', null );
 
 			return $order_id;

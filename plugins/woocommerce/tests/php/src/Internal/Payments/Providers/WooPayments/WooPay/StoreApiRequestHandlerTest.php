@@ -666,27 +666,29 @@ class StoreApiRequestHandlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A classic checkout stops with a notice, places no order and leaves the $status WooPay order alone while another request holds its payment lock.
+	 * @testdox A classic checkout stops with a notice, places no order and leaves the $status WooPay order alone while another request holds its payment lock (same cart: $same_cart).
 	 *
 	 * Native checkout holds the order payment lock across the platform charge, with its attempt key as the lock value
 	 * (PaymentProcessingService::process_checkout_outcome()). Placing a new order instead would let this checkout charge a
-	 * second order while the first payment is unresolved. Client 11.1.0 takes the draft over without any lock
-	 * (class-wc-payments-woopay-direct-checkout.php:56-79).
+	 * second order while the first payment is unresolved, also after the shopper changed the cart. Client 11.2.0 takes the
+	 * draft over without any lock and places a new order for a changed cart (class-wc-payments-woopay-direct-checkout.php:69-91).
 	 *
-	 * @testWith ["checkout-draft"]
-	 *           ["pending"]
-	 *           ["failed"]
+	 * @testWith ["checkout-draft", true]
+	 *           ["pending", true]
+	 *           ["failed", true]
+	 *           ["pending", false]
 	 *
-	 * @param string $status Status of the order the Store API draft key names.
+	 * @param string $status    Status of the order the Store API draft key names.
+	 * @param bool   $same_cart Whether the order was placed for the current cart.
 	 */
-	public function test_classic_checkout_stops_while_the_woopay_order_payment_lock_is_held( string $status ): void {
+	public function test_classic_checkout_stops_while_the_woopay_order_payment_lock_is_held( string $status, bool $same_cart ): void {
 		$sut = $this->create_service( array(), array( 'platform_direct_checkout_eligible' => true ) );
 		$this->register_controller( $sut );
 		WC()->cart->add_to_cart( \WC_Helper_Product::create_simple_product()->get_id(), 1 );
 		WC()->cart->calculate_totals();
 		$draft = new \WC_Order();
 		$draft->set_status( $status );
-		$draft->set_cart_hash( WC()->cart->get_cart_hash() );
+		$draft->set_cart_hash( $same_cart ? WC()->cart->get_cart_hash() : 'hash-of-another-cart' );
 		$draft->save();
 		WC()->session->set( 'store_api_draft_order', $draft->get_id() );
 		WC()->session->set( 'order_awaiting_payment', null );
