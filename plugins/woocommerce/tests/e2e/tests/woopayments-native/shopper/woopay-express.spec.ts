@@ -19,13 +19,17 @@ import {
  * hosted WooPay checkout that wpcom-local serves on `woopay.localhost`, and
  * the native store records what client 11.1.0 records for a WooPay order.
  *
- * Client 11.1.0 has no browser test of hosted WooPay, so the oracle is its
- * mechanics: the express button opens the platform's `/otp/` iframe
- * (`client/checkout/woopay/express-button/express-checkout-iframe.js:40-49`,
- * `:203-205`), the WooPay order carries `is_woopay`
- * (`includes/class-payment-information.php:284-287`), and a renewal of a
- * WooPay subscription charges the token the parent order saved
- * (`includes/compat/subscriptions/trait-wc-payment-gateway-wcpay-subscriptions.php:402-425`).
+ * The client has no browser test of hosted WooPay, so the oracle is its
+ * mechanics. With first-party auth on, the express button hands the store's
+ * session to hosted WooPay through the connect iframe, whose page POSTs it to
+ * `/wp-json/platform-checkout/v1/sessions`, and follows the redirect it
+ * answers; the `/otp/` iframe and `wcpay_init_woopay` are only its fallback
+ * (client 11.2.0
+ * `client/checkout/woopay/express-button/woopay-express-checkout-button.js:254-284`,
+ * `client/checkout/woopay/connect/woopay-connect-iframe.js:22-39`). The WooPay
+ * order carries `is_woopay` (`includes/class-payment-information.php:284-287`),
+ * and a renewal of a WooPay subscription charges the token the parent order
+ * saved (`includes/compat/subscriptions/trait-wc-payment-gateway-wcpay-subscriptions.php:402-425`).
  *
  * Local-only, like the other provider cases: it needs wpcom-local with hosted
  * WooPay enabled and the store wired to it through WCPay Dev Tools. The OTP
@@ -176,40 +180,60 @@ async function fillStripeField(
 
 /**
  * Clicks the WooPay express button and completes the platform's own flow:
- * the `/otp/` iframe (the client's mechanic, asserted here), a new WooPay
- * account on a test phone number, the SMS code, the hosted checkout on
- * `woopay.localhost` paid with the basic test card, and the return to the
- * store's order-received page. Returns the order id and the OTP sink line.
+ * the first-party session (asserted here: hosted WooPay's sessions POST
+ * answers 200, the store redirects to its `platform_checkout_key` URL, and the
+ * OTP fallback's `wcpay_init_woopay` never runs), a new WooPay account on a
+ * test phone number, the SMS code, the hosted checkout on `woopay.localhost`
+ * paid with the basic test card, and the return to the store's order-received
+ * page. Returns the order id and the OTP sink line.
  */
 async function payThroughWooPay(
 	page: Page
 ): Promise< { orderId: number; otpLine: string } > {
+	const initRequests: string[] = [];
+	page.on( 'request', ( request ) => {
+		if ( request.url().includes( 'wc-ajax=wcpay_init_woopay' ) ) {
+			initRequests.push( request.url() );
+		}
+	} );
+	// The connect iframe's page sends this POST; Playwright reports its frames' requests on the page.
+	const sessionsResponse = page.waitForResponse(
+		( response ) =>
+			response.request().method() === 'POST' &&
+			response
+				.url()
+				.startsWith(
+					`${ WOOPAY_ORIGIN }/wp-json/platform-checkout/v1/sessions`
+				),
+		{ timeout: 30_000 }
+	);
+
 	const button = page.locator( '.woopay-express-button' );
 	await expect( button ).toBeVisible( { timeout: 30_000 } );
 	await button.click();
 
-	const otpFrameElement = page.locator( 'iframe.woopay-otp-iframe' );
-	await expect(
-		otpFrameElement,
-		'the express button must open the platform OTP iframe, as client 11.1.0 does'
-	).toBeVisible( { timeout: 30_000 } );
-	expect( await otpFrameElement.getAttribute( 'src' ) ).toMatch(
-		new RegExp( `^${ WOOPAY_ORIGIN }/otp/\\?` )
-	);
-
-	const otp = page.frameLocator( 'iframe.woopay-otp-iframe' );
-	await otp.getByLabel( 'Mobile number' ).fill( shopperPhone() );
-	const sentAfter = Date.now() - 1_000;
-	await otp.getByRole( 'button', { name: 'Continue' } ).click();
-	const { code, line } = await readOtpFromSink( sentAfter );
-	await otp.getByLabel( 'Verify your number' ).fill( code );
-
+	expect(
+		( await sessionsResponse ).status(),
+		'hosted WooPay must accept the first-party session (SessionController.php:139-143)'
+	).toBe( 200 );
 	await page.waitForURL(
 		( url ) =>
 			url.origin === WOOPAY_ORIGIN &&
-			url.pathname.startsWith( '/woopay' ),
+			url.pathname.startsWith( '/woopay' ) &&
+			url.searchParams.has( 'platform_checkout_key' ),
 		{ timeout: RETURN_TIMEOUT_MS }
 	);
+	expect(
+		initRequests,
+		'the first-party path never falls back to the OTP flow and its wcpay_init_woopay'
+	).toEqual( [] );
+
+	// A new WooPay account signs up on the hosted checkout itself, with the same phone and code steps the OTP iframe has.
+	await page.getByLabel( 'Mobile number' ).fill( shopperPhone() );
+	const sentAfter = Date.now() - 1_000;
+	await page.getByRole( 'button', { name: 'Continue', exact: true } ).click();
+	const { code, line } = await readOtpFromSink( sentAfter );
+	await page.getByLabel( 'Verify your number' ).fill( code );
 
 	// The hosted page's cookie banner can appear at any point and swallows clicks until it fades out, so Playwright
 	// closes it whenever it shows up before an action.

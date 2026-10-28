@@ -79,6 +79,15 @@ describe( 'WooPayments WooPay checkout', () => {
 		}
 	}
 
+	// The Connect iframe gets its src once the Tracks identity resolves, and only a load after that counts.
+	async function loadConnectIframe() {
+		const iframe = document.getElementById( 'woopay-connect-iframe' );
+		for ( let index = 0; index < 50 && ! iframe.getAttribute( 'src' ); index++ ) {
+			await Promise.resolve();
+		}
+		iframe.dispatchEvent( new window.Event( 'load' ) );
+	}
+
 	const TRACKS_URL = 'https://example.test/wp-json/wc/v3/payments/tracks';
 
 	function getTrackingRequests() {
@@ -499,6 +508,91 @@ describe( 'WooPayments WooPay checkout', () => {
 
 		} );
 
+		// Client 11.2.0 woopay/connect/woopay-connect-iframe.js:22-39 adds tracksUserIdentity only when
+		// getTracksIdentity() resolves one. Hosted WooPay's connect page posts it to its sessions route, which declares
+		// it a string (ConnectPage.php:129, SessionController.php:139-143), so a missing identity rejects the session.
+		test.each( [
+			{
+				name: 'carries the tk_ai identity',
+				cookie: 'tk_ai=fp1-anon-id; path=/',
+				expectedIdentity: JSON.stringify( {
+					_ut: 'anon',
+					_ui: 'fp1-anon-id',
+				} ),
+			},
+			{
+				name: 'leaves the identity out when none resolves',
+				cookie: null,
+				expectedIdentity: null,
+			},
+		] )(
+			'builds the WooPay Connect iframe URL that $name',
+			async ( { cookie, expectedIdentity } ) => {
+				if ( cookie ) {
+					document.cookie = cookie;
+				}
+				window.fetch = jest.fn().mockResolvedValue( {
+					ok: true,
+					json: jest.fn().mockResolvedValue( { success: false } ),
+				} );
+
+				try {
+					require( '../woopayments-woopay' );
+					await flushPromises();
+
+					const src = document
+						.getElementById( 'woopay-connect-iframe' )
+						.getAttribute( 'src' );
+					expect( src ).toEqual(
+						expect.stringContaining( 'https://pay.woo.test/connect/?' )
+					);
+					expect(
+						new window.URL( src ).searchParams.get( 'tracksUserIdentity' )
+					).toBe( expectedIdentity );
+					expect(
+						window.fetch.mock.calls.some(
+							( [ url, options ] ) =>
+								url === 'https://example.test/admin-ajax.php' &&
+								options.body.get( 'action' ) === 'get_identity'
+						)
+					).toBe( ! cookie );
+				} finally {
+					document.cookie =
+						'tk_ai=; path=/; expires=Thu, 01 Jan 1970 00:00:00 UTC';
+				}
+			}
+		);
+
+		// Browsers fire load for the about:blank document an iframe holds before its src is set; messages sent then are
+		// lost.
+		test( 'messages WooPay Connect only after the connect page loads', async () => {
+			const postMessage = jest.fn();
+			Object.defineProperty( window.HTMLIFrameElement.prototype, 'contentWindow', {
+				configurable: true,
+				get() {
+					return {
+						postMessage,
+					};
+				},
+			} );
+
+			require( '../woopayments-woopay' );
+
+			const connectIframe = document.getElementById( 'woopay-connect-iframe' );
+			expect( connectIframe.getAttribute( 'src' ) ).toBeNull();
+			connectIframe.dispatchEvent( new window.Event( 'load' ) );
+			await flushPromises();
+			expect( connectIframe.getAttribute( 'src' ) ).not.toBeNull();
+			expect( postMessage ).not.toHaveBeenCalled();
+
+			connectIframe.dispatchEvent( new window.Event( 'load' ) );
+			await flushPromises();
+			expect( postMessage ).toHaveBeenCalledWith(
+				{ action: 'getPreferredPaymentMethod' },
+				'https://pay.woo.test'
+			);
+		} );
+
 		test( 'falls back to the WooPay OTP flow when first-party Connect rejects the session', async () => {
 			const postMessage = jest.fn();
 			Object.defineProperty( window.HTMLIFrameElement.prototype, 'contentWindow', {
@@ -674,9 +768,7 @@ describe( 'WooPayments WooPay checkout', () => {
 					.getAttribute( 'aria-label' )
 			).toBe( 'WooPay with Visa ending in 4242' );
 
-			document
-				.getElementById( 'woopay-connect-iframe' )
-				.dispatchEvent( new window.Event( 'load' ) );
+			await loadConnectIframe();
 			await Promise.resolve();
 			jest.advanceTimersByTime( 5000 );
 			await Promise.resolve();
@@ -1301,13 +1393,42 @@ describe( 'WooPayments WooPay checkout', () => {
 		}
 
 		async function initializeDirectCheckout( loggedIn ) {
-			document
-				.getElementById( 'woopay-connect-iframe' )
-				.dispatchEvent( new window.Event( 'load' ) );
+			await loadConnectIframe();
 			await flushPromises();
 			emitConnectMessage( 'get_is_user_logged_in_success', loggedIn );
 			await flushPromises();
 		}
+
+		// The cart's direct checkout reaches WooPay through the same Connect iframe, whose connect page posts the store
+		// session to hosted WooPay's sessions route with the identity from its URL (client 11.2.0
+		// woopay/connect/woopay-connect-iframe.js:22-39, ConnectPage.php:129, SessionController.php:139-143).
+		test( 'opens the direct checkout Connect iframe with the Tracks identity', async () => {
+			configureDirectCheckout(
+				'<div class="wc-proceed-to-checkout"><a class="checkout-button" href="https://store.test/checkout/">Checkout</a></div>'
+			);
+			const postMessage = installConnect();
+			document.cookie = 'tk_ai=fp1-anon-id; path=/';
+
+			try {
+				require( '../woopayments-woopay' );
+				// The whole handshake, so no login answer is left pending for the next test's module.
+				await initializeDirectCheckout( true );
+
+				const src = document
+					.getElementById( 'woopay-connect-iframe' )
+					.getAttribute( 'src' );
+				expect(
+					new window.URL( src ).searchParams.get( 'tracksUserIdentity' )
+				).toBe( JSON.stringify( { _ut: 'anon', _ui: 'fp1-anon-id' } ) );
+				expect( postMessage ).toHaveBeenCalledWith(
+					{ action: 'getIsUserLoggedIn' },
+					'https://pay.woo.test'
+				);
+			} finally {
+				document.cookie =
+					'tk_ai=; path=/; expires=Thu, 01 Jan 1970 00:00:00 UTC';
+			}
+		} );
 
 
 		test( 'logged-in cart handoff sends encrypted identity and store session without payment dispatch', async () => {
@@ -1705,9 +1826,7 @@ describe( 'WooPayments WooPay checkout', () => {
 			const navigate = jest.fn();
 			__test__.setNavigate( navigate );
 
-			document
-				.getElementById( 'woopay-connect-iframe' )
-				.dispatchEvent( new window.Event( 'load' ) );
+			await loadConnectIframe();
 			await flushPromises();
 			bodyEventHandlers.updated_cart_totals();
 			emitConnectMessage( 'get_is_user_logged_in_success', true );

@@ -201,11 +201,14 @@
 		}
 	}
 
+	// Resolves after the Tracks identity does.
 	function getWooPayConnectUrl() {
 		var params;
 
 		if ( ! config.woopayHost || ! window.URLSearchParams ) {
-			return config.woopayHost ? config.woopayHost + '/connect/' : '';
+			return Promise.resolve(
+				config.woopayHost ? config.woopayHost + '/connect/' : ''
+			);
 		}
 
 		params = new window.URLSearchParams( {
@@ -220,7 +223,15 @@
 			params.append( 'testMode', config.testMode ? 'true' : 'false' );
 		}
 
-		return config.woopayHost + '/connect/?' + params.toString();
+		// Client 11.2.0 woopay/connect/woopay-connect-iframe.js:31-34. Hosted WooPay's sessions route rejects the
+		// first-party session when the connect page has no identity to post.
+		return getTracksIdentity().then( function ( tracksUserIdentity ) {
+			if ( tracksUserIdentity ) {
+				params.append( 'tracksUserIdentity', tracksUserIdentity );
+			}
+
+			return config.woopayHost + '/connect/?' + params.toString();
+		} );
 	}
 
 	function resolveWooPayConnectCallback( callbackName, value ) {
@@ -325,7 +336,6 @@
 		wooPayConnectPostMessagePromise = new Promise( function ( resolve ) {
 			var iframe = document.createElement( 'iframe' );
 			iframe.id = 'woopay-connect-iframe';
-			iframe.src = getWooPayConnectUrl();
 			iframe.height = 0;
 			iframe.width = 0;
 			// Client 11.1.0 woopay/connect/woopay-connect-iframe.js:98-101.
@@ -338,6 +348,11 @@
 			iframe.style.width = '0';
 			iframe.style.pointerEvents = 'none';
 			iframe.addEventListener( 'load', function () {
+				// Appending an iframe without a src loads about:blank first; only the connect page's load counts.
+				if ( ! iframe.getAttribute( 'src' ) ) {
+					return;
+				}
+
 				resolve( function ( message ) {
 					iframe.contentWindow.postMessage(
 						message,
@@ -346,7 +361,11 @@
 				} );
 			} );
 
+			// The iframe is in the page at once, so later calls reuse it while the Tracks identity resolves.
 			document.body.appendChild( iframe );
+			getWooPayConnectUrl().then( function ( url ) {
+				iframe.src = url;
+			} );
 		} );
 
 		return wooPayConnectPostMessagePromise;

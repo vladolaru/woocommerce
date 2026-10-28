@@ -9,7 +9,7 @@ import { useEffect, useRef, useState } from '@wordpress/element';
 /**
  * Internal dependencies
  */
-import { recordWooPaymentsUserEvent } from '../tracks';
+import { getTracksIdentity, recordWooPaymentsUserEvent } from '../tracks';
 import { ensureBlocksWooPayAppearance } from '../upe-styles';
 import { expressCheckoutIframe } from './express-checkout-iframe';
 
@@ -148,7 +148,7 @@ const getWooPayConnectOrigin = () => {
 	}
 };
 
-const getWooPayConnectUrl = () => {
+const getWooPayConnectUrl = async () => {
 	if ( ! settings.woopayHost || ! window.URLSearchParams ) {
 		return settings.woopayHost ? `${ settings.woopayHost }/connect/` : '';
 	}
@@ -163,6 +163,13 @@ const getWooPayConnectUrl = () => {
 
 	if ( settings.testMode !== undefined ) {
 		params.append( 'testMode', settings.testMode ? 'true' : 'false' );
+	}
+
+	// Client 11.2.0 woopay/connect/woopay-connect-iframe.js:31-34. Hosted WooPay's sessions route rejects the
+	// first-party session when the connect page has no identity to post.
+	const tracksUserIdentity = await getTracksIdentity( settings );
+	if ( tracksUserIdentity ) {
+		params.append( 'tracksUserIdentity', tracksUserIdentity );
 	}
 
 	return `${ settings.woopayHost }/connect/?${ params.toString() }`;
@@ -242,7 +249,6 @@ const getWooPayConnectPostMessage = () => {
 	wooPayConnectPostMessagePromise = new Promise( ( resolve ) => {
 		const iframe = document.createElement( 'iframe' );
 		iframe.id = 'woopay-connect-iframe';
-		iframe.src = getWooPayConnectUrl();
 		iframe.height = 0;
 		iframe.width = 0;
 		iframe.title = __( 'WooPay Connect', 'woocommerce' );
@@ -254,6 +260,11 @@ const getWooPayConnectPostMessage = () => {
 		iframe.style.width = '0';
 		iframe.style.pointerEvents = 'none';
 		iframe.addEventListener( 'load', () => {
+			// Appending an iframe without a src loads about:blank first; only the connect page's load counts.
+			if ( ! iframe.getAttribute( 'src' ) ) {
+				return;
+			}
+
 			resolve( ( message ) => {
 				iframe.contentWindow.postMessage(
 					message,
@@ -262,7 +273,11 @@ const getWooPayConnectPostMessage = () => {
 			} );
 		} );
 
+		// The iframe is in the page at once, so later calls reuse it while the Tracks identity resolves.
 		document.body.appendChild( iframe );
+		getWooPayConnectUrl().then( ( url ) => {
+			iframe.src = url;
+		} );
 	} );
 
 	return wooPayConnectPostMessagePromise;

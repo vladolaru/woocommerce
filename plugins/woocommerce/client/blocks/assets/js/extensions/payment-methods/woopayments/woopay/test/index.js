@@ -470,6 +470,116 @@ describe( 'wc-payment-method-woopayments-woopay', () => {
 		} );
 	} );
 
+	// Client 11.2.0 woopay/connect/woopay-connect-iframe.js:22-39 adds tracksUserIdentity only when getTracksIdentity()
+	// resolves one. Hosted WooPay's connect page posts it to its sessions route, which declares it a string
+	// (ConnectPage.php:129, SessionController.php:139-143), so a missing identity rejects the first-party session.
+	it.each( [
+		{
+			name: 'carries the tk_ai identity',
+			cookie: 'tk_ai=fp1-anon-id; path=/',
+			expectedIdentity: JSON.stringify( {
+				_ut: 'anon',
+				_ui: 'fp1-anon-id',
+			} ),
+		},
+		{
+			name: 'leaves the identity out when none resolves',
+			cookie: null,
+			expectedIdentity: null,
+		},
+	] )(
+		'builds the WooPay Connect iframe URL that $name',
+		async ( { cookie, expectedIdentity } ) => {
+			if ( cookie ) {
+				document.cookie = cookie;
+			}
+			window.fetch = jest.fn().mockResolvedValue( {
+				ok: true,
+				json: jest.fn().mockResolvedValue( { success: false } ),
+			} );
+
+			try {
+				registerWooPay();
+				const expressRegistration =
+					registerExpressPaymentMethod.mock.calls[ 0 ][ 0 ];
+
+				render( createElement( expressRegistration.content.type ) );
+
+				let connectUrl;
+				await waitFor( () => {
+					const src = document
+						.getElementById( 'woopay-connect-iframe' )
+						?.getAttribute( 'src' );
+					expect( src ).toEqual(
+						expect.stringContaining(
+							'https://pay.woo.test/connect/?'
+						)
+					);
+					connectUrl = new window.URL( src );
+				} );
+
+				expect(
+					connectUrl.searchParams.get( 'tracksUserIdentity' )
+				).toBe( expectedIdentity );
+				expect(
+					window.fetch.mock.calls.some(
+						( [ url, options ] ) =>
+							url === getMockPaymentMethodSettings().ajaxUrl &&
+							options.body.get( 'action' ) === 'get_identity'
+					)
+				).toBe( ! cookie );
+			} finally {
+				document.cookie =
+					'tk_ai=; path=/; expires=Thu, 01 Jan 1970 00:00:00 UTC';
+			}
+		}
+	);
+
+	// Browsers fire load for the about:blank document an iframe holds before its src is set; messages sent then are lost.
+	it( 'messages WooPay Connect only after the connect page loads', async () => {
+		const postMessage = jest.fn();
+		Object.defineProperty(
+			window.HTMLIFrameElement.prototype,
+			'contentWindow',
+			{
+				configurable: true,
+				get() {
+					return {
+						postMessage,
+					};
+				},
+			}
+		);
+		window.fetch = jest.fn().mockResolvedValue( {
+			ok: true,
+			json: jest.fn().mockResolvedValue( { success: false } ),
+		} );
+
+		registerWooPay();
+		const expressRegistration =
+			registerExpressPaymentMethod.mock.calls[ 0 ][ 0 ];
+
+		render( createElement( expressRegistration.content.type ) );
+
+		const connectIframe = document.getElementById(
+			'woopay-connect-iframe'
+		);
+		expect( connectIframe.getAttribute( 'src' ) ).toBeNull();
+		connectIframe.dispatchEvent( new window.Event( 'load' ) );
+		await waitFor( () => {
+			expect( connectIframe.getAttribute( 'src' ) ).not.toBeNull();
+		} );
+		expect( postMessage ).not.toHaveBeenCalled();
+
+		connectIframe.dispatchEvent( new window.Event( 'load' ) );
+		await waitFor( () => {
+			expect( postMessage ).toHaveBeenCalledWith(
+				{ action: 'getPreferredPaymentMethod' },
+				'https://pay.woo.test'
+			);
+		} );
+	} );
+
 	it( 'falls back to the WooPay OTP flow when first-party Connect rejects the session', async () => {
 		const postMessage = jest.fn();
 		Object.defineProperty(
@@ -626,6 +736,10 @@ describe( 'wc-payment-method-woopayments-woopay', () => {
 				last4: '4242',
 			} )
 		);
+		window.fetch = jest.fn().mockResolvedValue( {
+			ok: true,
+			json: jest.fn().mockResolvedValue( { success: false } ),
+		} );
 
 		registerWooPay();
 		const expressRegistration =
@@ -638,12 +752,20 @@ describe( 'wc-payment-method-woopayments-woopay', () => {
 				name: 'WooPay with Visa ending in 4242',
 			} )
 		).toHaveTextContent( '4242' );
+		// The Connect iframe gets its src once the Tracks identity resolves, and only a load after that counts.
+		const connectIframe = document.getElementById(
+			'woopay-connect-iframe'
+		);
 		await act( async () => {
-			await Promise.resolve();
+			for (
+				let index = 0;
+				index < 50 && ! connectIframe.getAttribute( 'src' );
+				index++
+			) {
+				await Promise.resolve();
+			}
 		} );
-		document
-			.getElementById( 'woopay-connect-iframe' )
-			.dispatchEvent( new window.Event( 'load' ) );
+		connectIframe.dispatchEvent( new window.Event( 'load' ) );
 		await Promise.resolve();
 
 		await act( async () => {
