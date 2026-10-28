@@ -2,7 +2,7 @@
  * External dependencies
  */
 import { dateI18n, getSettings as getDateSettings } from '@wordpress/date';
-import { __, _n, sprintf } from '@wordpress/i18n';
+import { __, sprintf } from '@wordpress/i18n';
 import { addQueryArgs } from '@wordpress/url';
 import { recordEvent } from '@woocommerce/tracks';
 import moment from 'moment';
@@ -13,6 +13,7 @@ import type { ReactNode } from 'react';
  */
 import type {
 	WooPaymentsOverviewDispute,
+	WooPaymentsOverviewDisputesSummary,
 	WooPaymentsOverviewShell,
 	WooPaymentsOverviewTask,
 	WooPaymentsOverviewTasksVisibility,
@@ -28,23 +29,6 @@ import {
 
 export const formatTaskCurrency = ( amount: number, currency?: string ) =>
 	formatWooPaymentsAmount( amount, currency );
-
-// Client 11.1.0 `dispute-task.tsx:31-44` and `disputes/utils.ts:46-50`: the cached row's `due_by`, a UTC date string.
-const getDisputeDueMoment = ( dispute: WooPaymentsOverviewDispute ) => {
-	if ( typeof dispute.due_by !== 'string' || dispute.due_by === '' ) {
-		return null;
-	}
-
-	const dueMoment = moment.utc( dispute.due_by );
-
-	return dueMoment.isValid() ? dueMoment : null;
-};
-
-const getDisputeId = ( dispute: WooPaymentsOverviewDispute ) =>
-	dispute.dispute_id ?? '';
-
-const getDisputeChargeId = ( dispute: WooPaymentsOverviewDispute ) =>
-	dispute.charge_id ?? '';
 
 // Client 11.1.0 `overview/task-list/tasks/update-business-details-task.tsx:18-171`.
 const buildUpdateBusinessDetailsTask = ( {
@@ -174,19 +158,9 @@ const buildUpdateBusinessDetailsTask = ( {
 	};
 };
 
-// Client 11.1.0 `disputes/utils.ts:41-61` `isDueWithin()`: due within the window and not yet past due.
-export const isDisputeDueWithinDays = (
-	dispute: WooPaymentsOverviewDispute,
-	days: number,
-	now = Date.now()
-) => {
-	const dueMoment = getDisputeDueMoment( dispute );
-
-	if ( ! dueMoment ) {
-		return false;
-	}
-
-	const nowMoment = moment.utc( now );
+// Client 11.2.0 `disputes/utils.ts:45-65` `isDueWithin()`: due within the window and not yet past due.
+const isDueWithinDays = ( dueMoment: moment.Moment, days: number ) => {
+	const nowMoment = moment.utc();
 
 	return (
 		dueMoment.diff( nowMoment, 'days', true ) <= days &&
@@ -194,167 +168,138 @@ export const isDisputeDueWithinDays = (
 	);
 };
 
-// Client 11.1.0 `overview/task-list/tasks/dispute-task.tsx:35-221` and `tasks.tsx:71-74`.
-const buildDisputeTask = (
-	disputes: WooPaymentsOverviewDispute[]
-): WooPaymentsOverviewTask | null => {
-	const activeDisputes = disputes
-		.filter( ( dispute ) => getDisputeDueMoment( dispute ) !== null )
-		.sort(
-			( a, b ) =>
-				( getDisputeDueMoment( a )?.valueOf() ?? 0 ) -
-				( getDisputeDueMoment( b )?.valueOf() ?? 0 )
-		);
-	const countDueWithinDays = ( days: number ) =>
-		activeDisputes.filter( ( dispute ) =>
-			isDisputeDueWithinDays( dispute, days )
-		).length;
-	const numDisputesDueWithin7Days = countDueWithinDays( 7 );
+// A date in the site timezone, as client 11.2.0 `utils/date-time.ts` `formatDateTimeFromString()` shows a UTC date string.
+const formatSiteDate = ( format: string, dateMoment: moment.Moment ) =>
+	dateI18n( format, dateMoment.toISOString(), undefined );
 
-	if ( numDisputesDueWithin7Days === 0 ) {
+// Client 11.2.0 `overview/task-list/tasks/dispute-task.tsx:19-176`, from the awaiting-response disputes summary and, for a
+// single dispute, its row.
+const buildDisputeTask = (
+	summary: WooPaymentsOverviewDisputesSummary | null,
+	activeDispute?: WooPaymentsOverviewDispute
+): WooPaymentsOverviewTask | null => {
+	const activeDisputeCount = summary?.count ?? 0;
+	const dueMoment = summary?.earliest_due_by
+		? moment.utc( summary.earliest_due_by )
+		: null;
+	const isPastDue = !! dueMoment && dueMoment.isBefore( moment.utc() );
+
+	if (
+		activeDisputeCount === 0 ||
+		! dueMoment ||
+		( ! isPastDue && ! isDueWithinDays( dueMoment, 7 ) )
+	) {
 		return null;
 	}
 
-	const activeDisputeCount = activeDisputes.length;
-	const numDisputesDueWithin24h = countDueWithinDays( 1 );
-	// Red within 72 hours, yellow before.
-	const isUrgent = countDueWithinDays( 3 ) >= 1;
-	const onClick = () =>
-		recordEvent( 'wcpay_overview_task_click', {
-			task: 'dispute-resolution-task',
-			active_dispute_count: activeDisputeCount,
-		} );
+	// The platform sends `[]` for no amounts (a PHP empty array).
+	const amounts = summary?.amount_by_currency;
+	const amountEntries =
+		amounts && ! Array.isArray( amounts )
+			? Object.entries( amounts ).filter(
+					( [ currency, amount ] ) =>
+						currency !== '' &&
+						typeof amount === 'number' &&
+						Number.isFinite( amount )
+				)
+			: [];
+	const chargeId = activeDispute?.charge_id ?? '';
+	const canOpenSingleDispute = activeDisputeCount === 1 && !! chargeId;
+	// "Last day" means due today in the site timezone, by calendar day.
+	const isDueToday =
+		! isPastDue &&
+		formatSiteDate( 'Y-m-d', dueMoment ) ===
+			formatSiteDate( 'Y-m-d', moment.utc() );
 
-	if ( activeDisputeCount === 1 ) {
-		const dispute = activeDisputes[ 0 ];
-		const chargeId = getDisputeChargeId( dispute );
-		const dueMoment = getDisputeDueMoment( dispute ) as moment.Moment;
+	let title: string;
+	if ( activeDisputeCount === 1 && amountEntries.length === 1 ) {
 		const amountFormatted = formatTaskCurrency(
-			dispute.amount ?? 0,
-			dispute.currency
+			amountEntries[ 0 ][ 1 ],
+			amountEntries[ 0 ][ 0 ]
 		);
 
-		return {
-			key: `dispute-resolution-task-${ getDisputeId( dispute ) }`,
-			level: 1,
-			title:
-				numDisputesDueWithin24h >= 1
-					? sprintf(
-							/* translators: %s: Disputed amount. */
-							__(
-								'Respond to a dispute for %s – Last day',
-								'woocommerce'
-							),
-							amountFormatted
-						)
-					: sprintf(
-							/* translators: %s: Disputed amount. */
-							__( 'Respond to a dispute for %s', 'woocommerce' ),
-							amountFormatted
-						),
-			content:
-				numDisputesDueWithin24h >= 1
-					? sprintf(
-							/* translators: %s: Response deadline time in the site timezone, for example "11:59 PM". */
-							__( 'Respond today by %s', 'woocommerce' ),
-							dateI18n(
-								'g:i A',
-								dueMoment.toISOString(),
-								undefined
-							)
-						)
-					: sprintf(
-							/* translators: 1: Response deadline date in the site date format, 2: Time left, for example "2 days". */
-							__(
-								'By %1$s – %2$s left to respond',
-								'woocommerce'
-							),
-							dateI18n(
-								getDateSettings().formats.date,
-								dueMoment.toISOString(),
-								undefined
-							),
-							dueMoment.fromNow( true )
-						),
-			actionLabel: __( 'Respond now', 'woocommerce' ),
-			href: getSettingsPaymentsProviderRouteUrl(
-				`/woopayments/transactions/details?id=${ encodeURIComponent(
-					chargeId
-				) }`
-			),
-			onClick,
-			showActionButton: true,
-			isUrgent,
-		};
-	}
-
-	const currencies = Array.from(
-		new Set(
-			activeDisputes
-				.map( ( dispute ) => dispute.currency?.toLowerCase() )
-				.filter( Boolean )
-		)
-	);
-	const title =
-		currencies.length === 1
+		title = isDueToday
 			? sprintf(
-					/* translators: 1: Number of disputes, 2: Total disputed amount. */
+					/* translators: %s: Disputed amount. */
 					__(
-						'Respond to %1$d active disputes for a total of %2$s',
+						'Respond to a dispute for %s – Last day',
 						'woocommerce'
 					),
-					activeDisputeCount,
-					formatTaskCurrency(
-						activeDisputes.reduce(
-							( total, dispute ) =>
-								total + ( dispute.amount ?? 0 ),
-							0
-						),
-						currencies[ 0 ]
-					)
+					amountFormatted
 				)
 			: sprintf(
-					/* translators: %d: Number of disputes. */
-					_n(
-						'Respond to %d active dispute',
-						'Respond to %d active disputes',
-						activeDisputeCount,
-						'woocommerce'
-					),
-					activeDisputeCount
+					/* translators: %s: Disputed amount. */
+					__( 'Respond to a dispute for %s', 'woocommerce' ),
+					amountFormatted
 				);
+	} else if ( activeDisputeCount === 1 ) {
+		title = isDueToday
+			? __( 'Respond to an active dispute – Last day', 'woocommerce' )
+			: __( 'Respond to an active dispute', 'woocommerce' );
+	} else if ( amountEntries.length === 1 ) {
+		title = sprintf(
+			/* translators: 1: Number of disputes, 2: Total disputed amount. */
+			__(
+				'Respond to %1$d active disputes for a total of %2$s',
+				'woocommerce'
+			),
+			activeDisputeCount,
+			formatTaskCurrency(
+				amountEntries[ 0 ][ 1 ],
+				amountEntries[ 0 ][ 0 ]
+			)
+		);
+	} else {
+		title = sprintf(
+			/* translators: %d: Number of disputes. */
+			__( 'Respond to %d active disputes', 'woocommerce' ),
+			activeDisputeCount
+		);
+	}
+
+	let content: string;
+	if ( isPastDue ) {
+		content = __( 'Response overdue', 'woocommerce' );
+	} else if ( isDueToday ) {
+		content = sprintf(
+			/* translators: %s: Response deadline time in the site timezone, for example "11:59 PM". */
+			__( 'Respond today by %s', 'woocommerce' ),
+			formatSiteDate( 'g:i A', dueMoment )
+		);
+	} else {
+		content = sprintf(
+			/* translators: 1: Response deadline date in the site date format, 2: Time left, for example "2 days". */
+			__( 'By %1$s – %2$s left to respond', 'woocommerce' ),
+			formatSiteDate( getDateSettings().formats.date, dueMoment ),
+			dueMoment.fromNow( true )
+		);
+	}
 
 	return {
-		key: `dispute-resolution-task-${ activeDisputes
-			.map( getDisputeId )
-			.join( '-' ) }`,
+		key: `dispute-resolution-task-${
+			activeDispute?.dispute_id ?? 'summary'
+		}`,
 		level: 1,
 		title,
-		content:
-			numDisputesDueWithin24h >= 1
-				? sprintf(
-						/* translators: %d: Number of disputes due within 24 hours. */
-						__(
-							'Final day to respond to %d of the disputes',
-							'woocommerce'
-						),
-						numDisputesDueWithin24h
-					)
-				: sprintf(
-						/* translators: %d: Number of disputes due within 7 days. */
-						__(
-							'Last week to respond to %d of the disputes',
-							'woocommerce'
-						),
-						numDisputesDueWithin7Days
-					),
-		actionLabel: __( 'See disputes', 'woocommerce' ),
+		content,
+		actionLabel: canOpenSingleDispute
+			? __( 'Respond now', 'woocommerce' )
+			: __( 'See disputes', 'woocommerce' ),
 		href: getSettingsPaymentsProviderRouteUrl(
-			'/woopayments/disputes?filter=awaiting_response'
+			canOpenSingleDispute
+				? `/woopayments/transactions/details?id=${ encodeURIComponent(
+						chargeId
+					) }`
+				: '/woopayments/disputes?filter=awaiting_response'
 		),
-		onClick,
+		onClick: () =>
+			recordEvent( 'wcpay_overview_task_click', {
+				task: 'dispute-resolution-task',
+				active_dispute_count: activeDisputeCount,
+			} ),
 		showActionButton: true,
-		isUrgent,
+		// Red when overdue or due within 72 hours, yellow before.
+		isUrgent: isPastDue || isDueWithinDays( dueMoment, 3 ),
 	};
 };
 
@@ -372,12 +317,14 @@ const compareTasks = (
 
 export const buildOverviewTasks = ( {
 	shell,
-	disputes,
+	disputesSummary,
+	activeDispute,
 	showUpdateDetailsTask = true,
 	onOpenUpdateBusinessDetails,
 }: {
 	shell: WooPaymentsOverviewShell;
-	disputes: WooPaymentsOverviewDispute[];
+	disputesSummary: WooPaymentsOverviewDisputesSummary | null;
+	activeDispute?: WooPaymentsOverviewDispute;
 	showUpdateDetailsTask?: boolean;
 	onOpenUpdateBusinessDetails: ( shell: WooPaymentsOverviewShell ) => void;
 } ): WooPaymentsOverviewTask[] =>
@@ -387,7 +334,7 @@ export const buildOverviewTasks = ( {
 				shell,
 				onOpenUpdateBusinessDetails,
 			} ),
-		buildDisputeTask( disputes ),
+		buildDisputeTask( disputesSummary, activeDispute ),
 		// No go-live task: client 11.1.0 `overview/index.js:105` calls getTasks() without showGoLiveTask, so the
 		// task shows only on WC Home (`GoLiveTask` and `woopayments/home-tasks/go-live-task.tsx`).
 	]

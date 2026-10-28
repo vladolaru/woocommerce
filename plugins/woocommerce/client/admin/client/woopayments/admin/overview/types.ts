@@ -207,15 +207,22 @@ export interface WooPaymentsOverviewShell {
 export interface WooPaymentsOverviewDispute {
 	dispute_id?: string;
 	charge_id?: string;
-	amount?: number;
-	currency?: string;
-	/** UTC `Y-m-d H:i:s`. */
-	due_by?: string;
 }
 
 export interface WooPaymentsOverviewDisputesResponse {
 	data?: WooPaymentsOverviewDispute[];
 	total_count?: number;
+}
+
+/**
+ * The disputes summary, client 11.2.0 `types/disputes.d.ts` `DisputesSummaryData`.
+ */
+export interface WooPaymentsOverviewDisputesSummary {
+	count?: number;
+	/** Disputed amounts in minor units by currency; `[]` when there are none. */
+	amount_by_currency?: Record< string, number > | [];
+	/** UTC `Y-m-d H:i:s`. */
+	earliest_due_by?: string | null;
 }
 
 export interface WooPaymentsAccountSession {

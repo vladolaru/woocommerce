@@ -11,7 +11,6 @@ import {
 	buildOverviewTasks,
 	formatTaskCurrency,
 	getVisibleOverviewTasks,
-	isDisputeDueWithinDays,
 } from '../overview/components/overview-tasks';
 
 jest.mock( '@woocommerce/tracks', () => ( { recordEvent: jest.fn() } ) );
@@ -69,13 +68,18 @@ const [ RECORDED_DISPUTE ] = JSON.parse(
 	)
 ).response.data as Array< Record< string, unknown > >;
 
-// The cached list stores `due_by` as a UTC `Y-m-d H:i:s` string.
+// The disputes summary states `earliest_due_by` as a UTC `Y-m-d H:i:s` string.
 const formatDueBy = ( timestamp: number ) =>
 	new Date( timestamp ).toISOString().slice( 0, 19 ).replace( 'T', ' ' );
 
-const createDispute = ( overrides: Record< string, unknown > = {} ) => ( {
-	...RECORDED_DISPUTE,
-	due_by: formatDueBy( NOW + DAY_IN_MS ),
+// The awaiting-response summary of the recorded dispute alone, due later today (client 11.2.0
+// `overview/task-list/__tests__/tasks.test.js` summary shape).
+const createSummary = ( overrides: Record< string, unknown > = {} ) => ( {
+	count: 1,
+	amount_by_currency: {
+		[ RECORDED_DISPUTE.currency as string ]: RECORDED_DISPUTE.amount,
+	},
+	earliest_due_by: formatDueBy( NOW + 6 * 60 * 60 * 1000 ),
 	...overrides,
 } );
 
@@ -105,7 +109,7 @@ describe( 'overview task builders', () => {
 
 		const task = buildOverviewTasks( {
 			shell,
-			disputes: [],
+			disputesSummary: null,
 			onOpenUpdateBusinessDetails: jest.fn(),
 		} )[ 0 ];
 
@@ -139,7 +143,7 @@ describe( 'overview task builders', () => {
 
 		const task = buildOverviewTasks( {
 			shell,
-			disputes: [],
+			disputesSummary: null,
 			onOpenUpdateBusinessDetails: jest.fn(),
 		} )[ 0 ];
 
@@ -174,7 +178,7 @@ describe( 'overview task builders', () => {
 
 		const task = buildOverviewTasks( {
 			shell,
-			disputes: [],
+			disputesSummary: null,
 			onOpenUpdateBusinessDetails: jest.fn(),
 		} )[ 0 ];
 
@@ -206,7 +210,7 @@ describe( 'overview task builders', () => {
 
 		const task = buildOverviewTasks( {
 			shell,
-			disputes: [],
+			disputesSummary: null,
 			onOpenUpdateBusinessDetails: jest.fn(),
 		} )[ 0 ];
 
@@ -224,11 +228,12 @@ describe( 'overview task builders', () => {
 		const task = buildOverviewTasks( {
 			showUpdateDetailsTask: false,
 			shell: createShell(),
-			disputes: [ createDispute() ],
+			disputesSummary: createSummary(),
+			activeDispute: RECORDED_DISPUTE,
 			onOpenUpdateBusinessDetails: jest.fn(),
 		} )[ 0 ];
 
-		// Client 11.1.0 `dispute-task.tsx:123-138`: due within 24 hours adds the last-day suffix.
+		// Client 11.2.0 `dispute-task.tsx:80-88, 116-138`: due today in the site timezone adds the last-day suffix.
 		expect( task ).toMatchObject( {
 			key: `dispute-resolution-task-${ RECORDED_DISPUTE.dispute_id }`,
 			title: 'Respond to a dispute for $50.00 – Last day',
@@ -245,15 +250,15 @@ describe( 'overview task builders', () => {
 		const task = buildOverviewTasks( {
 			showUpdateDetailsTask: false,
 			shell: createShell(),
-			disputes: [
-				createDispute( { dispute_id: 'dp_one', amount: 1000 } ),
-				createDispute( { dispute_id: 'dp_two', amount: 2500 } ),
-			],
+			disputesSummary: createSummary( {
+				count: 2,
+				amount_by_currency: { usd: 3500 },
+			} ),
 			onOpenUpdateBusinessDetails: jest.fn(),
 		} )[ 0 ];
 
 		expect( task ).toMatchObject( {
-			key: 'dispute-resolution-task-dp_one-dp_two',
+			key: 'dispute-resolution-task-summary',
 			title: 'Respond to 2 active disputes for a total of $35.00',
 			actionLabel: 'See disputes',
 		} );
@@ -261,23 +266,22 @@ describe( 'overview task builders', () => {
 		expect( task.href ).toContain( 'filter=awaiting_response' );
 	} );
 
-	// Client 11.1.0 `overview/task-list/tasks/dispute-task.tsx:83-86,110-112`: red within 72 hours, yellow before.
+	// Client 11.2.0 `overview/task-list/tasks/dispute-task.tsx:89-90, 111-113`: red when overdue or due within 72 hours,
+	// yellow before.
 	it.each( [
-		[ 'one day', DAY_IN_MS, true ],
-		[ 'five days', 5 * DAY_IN_MS, false ],
+		[ 'overdue', -DAY_IN_MS, true ],
+		[ 'due in one day', DAY_IN_MS, true ],
+		[ 'due in five days', 5 * DAY_IN_MS, false ],
 	] )(
-		'marks the dispute task urgent only when a dispute is due within 72 hours (due in %s)',
+		'marks the dispute task urgent only when the earliest dispute is overdue or due within 72 hours (%s)',
 		( _label, dueIn, isUrgent ) => {
 			const task = buildOverviewTasks( {
 				showUpdateDetailsTask: false,
 				shell: createShell(),
-				disputes: [
-					createDispute( { due_by: formatDueBy( NOW + dueIn ) } ),
-					createDispute( {
-						dispute_id: 'dp_later',
-						due_by: formatDueBy( NOW + 6 * DAY_IN_MS ),
-					} ),
-				],
+				disputesSummary: createSummary( {
+					count: 2,
+					earliest_due_by: formatDueBy( NOW + dueIn ),
+				} ),
 				onOpenUpdateBusinessDetails: jest.fn(),
 			} )[ 0 ];
 
@@ -298,7 +302,7 @@ describe( 'overview task builders', () => {
 					dev_mode: false,
 				},
 			} ),
-			disputes: [],
+			disputesSummary: null,
 			onOpenUpdateBusinessDetails: jest.fn(),
 		} );
 
@@ -309,7 +313,8 @@ describe( 'overview task builders', () => {
 	it( 'lists a completed task after the open ones', () => {
 		const tasks = buildOverviewTasks( {
 			shell: createShell(),
-			disputes: [ createDispute() ],
+			disputesSummary: createSummary(),
+			activeDispute: RECORDED_DISPUTE,
 			onOpenUpdateBusinessDetails: jest.fn(),
 		} );
 
@@ -345,50 +350,6 @@ describe( 'overview task builders', () => {
 				NOW
 			)
 		).toEqual( [ tasks[ 0 ] ] );
-	} );
-
-	it( 'detects disputes due within the requested day window', () => {
-		expect( isDisputeDueWithinDays( createDispute(), 7, NOW ) ).toBe(
-			true
-		);
-		expect(
-			isDisputeDueWithinDays(
-				createDispute( { due_by: formatDueBy( NOW + 8 * DAY_IN_MS ) } ),
-				7,
-				NOW
-			)
-		).toBe( false );
-	} );
-
-	// Client 11.1.0 `dispute-task.tsx:31-44` and `disputes/utils.ts:41-61` read the cached row's `due_by` only.
-	it( 'reads the due date from the cached row, not from Stripe dispute fields the list never returns', () => {
-		const [ task ] = buildOverviewTasks( {
-			showUpdateDetailsTask: false,
-			shell: createShell(),
-			disputes: [
-				createDispute( {
-					evidence_due_by: NOW + 30 * DAY_IN_MS,
-					evidence_details: { due_by: NOW + 30 * DAY_IN_MS },
-				} ),
-			],
-			onOpenUpdateBusinessDetails: jest.fn(),
-		} );
-
-		expect( task?.title ).toBe(
-			'Respond to a dispute for $50.00 – Last day'
-		);
-	} );
-
-	it( 'ignores a numeric due_by, which the cached list never returns', () => {
-		expect(
-			isDisputeDueWithinDays(
-				createDispute( {
-					due_by: Math.floor( ( NOW + DAY_IN_MS ) / 1000 ),
-				} ),
-				7,
-				NOW
-			)
-		).toBe( false );
 	} );
 
 	it( 'formats dispute task currency amounts', () => {

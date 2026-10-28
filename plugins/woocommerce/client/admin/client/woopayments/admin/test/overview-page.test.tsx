@@ -19,6 +19,7 @@ import {
 	getWooPaymentsDepositsOverview,
 	getWooPaymentsDisputeReadiness,
 	getWooPaymentsOverviewDisputes,
+	getWooPaymentsOverviewDisputesSummary,
 	getWooPaymentsOverviewShell,
 	getWooPaymentsRecentDeposits,
 	submitWooPaymentsInstantDeposit,
@@ -79,6 +80,7 @@ jest.mock( '../overview/data', () => ( {
 	getWooPaymentsDepositsOverview: jest.fn(),
 	getWooPaymentsDisputeReadiness: jest.fn(),
 	getWooPaymentsOverviewDisputes: jest.fn(),
+	getWooPaymentsOverviewDisputesSummary: jest.fn(),
 	getWooPaymentsOverviewShell: jest.fn(),
 	getWooPaymentsRecentDeposits: jest.fn(),
 	submitWooPaymentsInstantDeposit: jest.fn(),
@@ -143,6 +145,10 @@ const mockGetDisputeReadiness =
 const mockGetShell = getWooPaymentsOverviewShell as jest.MockedFunction<
 	typeof getWooPaymentsOverviewShell
 >;
+const mockGetDisputesSummary =
+	getWooPaymentsOverviewDisputesSummary as jest.MockedFunction<
+		typeof getWooPaymentsOverviewDisputesSummary
+	>;
 const mockGetOverviewDisputes =
 	getWooPaymentsOverviewDisputes as jest.MockedFunction<
 		typeof getWooPaymentsOverviewDisputes
@@ -320,6 +326,7 @@ describe( 'WooPaymentsOverviewPage', () => {
 		mockGetOverview.mockReset();
 		mockGetDisputeReadiness.mockReset();
 		mockGetShell.mockReset();
+		mockGetDisputesSummary.mockReset();
 		mockGetOverviewDisputes.mockReset();
 		mockGetRecent.mockReset();
 		mockSubmitInstantPayout.mockReset();
@@ -363,9 +370,9 @@ describe( 'WooPaymentsOverviewPage', () => {
 			},
 		} );
 		mockGetShell.mockResolvedValue( createShell() );
-		mockGetOverviewDisputes.mockResolvedValue( {
-			data: [],
-			total_count: 0,
+		mockGetDisputesSummary.mockResolvedValue( {
+			count: 0,
+			earliest_due_by: null,
 		} );
 		mockGetActiveLoanSummary.mockResolvedValue( {
 			details: undefined,
@@ -394,9 +401,9 @@ describe( 'WooPaymentsOverviewPage', () => {
 	it( 'renders the shell sections from the preloaded shell without requesting it', async () => {
 		mockGetShell.mockReturnValue( new Promise( () => {} ) );
 		mockGetOverview.mockReturnValue( new Promise( () => {} ) );
-		mockGetOverviewDisputes.mockResolvedValue( {
-			data: [],
-			total_count: 0,
+		mockGetDisputesSummary.mockResolvedValue( {
+			count: 0,
+			earliest_due_by: null,
 		} );
 		Object.defineProperty( window, 'wcSettings', {
 			configurable: true,
@@ -440,9 +447,9 @@ describe( 'WooPaymentsOverviewPage', () => {
 		).toBeInTheDocument();
 		expect( screen.getByText( 'Preloaded status' ) ).toBeInTheDocument();
 		expect( mockGetShell ).not.toHaveBeenCalled();
-		// The awaiting-response count still asks for the disputes behind the dispute task.
+		// The awaiting-response count still asks for the disputes summary behind the dispute task.
 		await waitFor( () =>
-			expect( mockGetOverviewDisputes ).toHaveBeenCalledTimes( 1 )
+			expect( mockGetDisputesSummary ).toHaveBeenCalledTimes( 1 )
 		);
 	} );
 
@@ -535,14 +542,57 @@ describe( 'WooPaymentsOverviewPage', () => {
 		).not.toBeInTheDocument();
 	} );
 
-	// Client 11.1.0 `data/disputes/resolvers.js:79-97`.
-	it( 'raises the client snackbar when the disputes read fails', async () => {
+	// Client 11.2.0 `overview/index.js:106-115`: the newest dispute is read only when exactly one awaits a response, and
+	// its row lets the task open the payment (`dispute-task.tsx:51-52, :101-103`).
+	it.each( [
+		[ 1, 1, 'Respond now' ],
+		[ 2, 0, 'See disputes' ],
+	] )(
+		'reads the single dispute only when the summary counts one (count %d)',
+		async ( count, reads, actionLabel ) => {
+			mockGetShell.mockResolvedValue(
+				createShell( { disputes_awaiting_response_count: count } )
+			);
+			mockGetOverview.mockResolvedValue( createDepositsOverview() );
+			mockGetRecent.mockResolvedValue( { data: [], total_count: 0 } );
+			mockGetDisputesSummary.mockResolvedValue( {
+				count,
+				amount_by_currency: [],
+				earliest_due_by: new Date( Date.now() + 24 * 60 * 60 * 1000 )
+					.toISOString()
+					.slice( 0, 19 )
+					.replace( 'T', ' ' ),
+			} );
+			mockGetOverviewDisputes.mockResolvedValue( {
+				// The first row of the recorded native :8889 disputes list; see the file's `_meta`.
+				data: JSON.parse(
+					fs.readFileSync(
+						path.join(
+							__dirname,
+							'fixtures/recorded-disputes-list.json'
+						),
+						'utf8'
+					)
+				).response.data.slice( 0, 1 ),
+			} );
+
+			render( <WooPaymentsOverviewPage /> );
+
+			expect(
+				await screen.findByRole( 'button', { name: actionLabel } )
+			).toBeInTheDocument();
+			expect( mockGetOverviewDisputes ).toHaveBeenCalledTimes( reads );
+		}
+	);
+
+	// Client 11.2.0 `data/disputes/resolvers.js:100-118`.
+	it( 'raises the client snackbar when the disputes summary read fails', async () => {
 		mockGetShell.mockResolvedValue(
 			createShell( { disputes_awaiting_response_count: 3 } )
 		);
 		mockGetOverview.mockResolvedValue( createDepositsOverview() );
 		mockGetRecent.mockResolvedValue( { data: [], total_count: 0 } );
-		mockGetOverviewDisputes.mockRejectedValue(
+		mockGetDisputesSummary.mockRejectedValue(
 			new Error( 'Internal Server Error' )
 		);
 
@@ -550,7 +600,7 @@ describe( 'WooPaymentsOverviewPage', () => {
 
 		await waitFor( () =>
 			expect( mockCreateErrorNotice ).toHaveBeenCalledWith(
-				'Error retrieving disputes.'
+				'Error retrieving the summary of disputes.'
 			)
 		);
 		expect( mockCreateErrorNotice ).toHaveBeenCalledTimes( 1 );
@@ -1002,7 +1052,7 @@ describe( 'WooPaymentsOverviewPage', () => {
 		expect(
 			await screen.findByText( 'Finish setting up WooPayments' )
 		).toBeInTheDocument();
-		expect( mockGetOverviewDisputes ).not.toHaveBeenCalled();
+		expect( mockGetDisputesSummary ).not.toHaveBeenCalled();
 	} );
 
 	it( 'fails closed when the overview shell cannot be loaded', async () => {

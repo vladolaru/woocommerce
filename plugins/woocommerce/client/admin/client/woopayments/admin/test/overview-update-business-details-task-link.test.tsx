@@ -35,7 +35,7 @@ const buildTask = (
 	const onOpenUpdateBusinessDetails = jest.fn();
 	const [ task ] = buildOverviewTasks( {
 		shell,
-		disputes: [],
+		disputesSummary: null,
 		onOpenUpdateBusinessDetails,
 	} );
 

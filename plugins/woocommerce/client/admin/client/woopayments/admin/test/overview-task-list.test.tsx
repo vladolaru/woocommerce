@@ -53,7 +53,7 @@ const RECORDED_AWAITING_RESPONSE = (
 	).response.data as Array< Record< string, unknown > >
  ).filter( ( dispute ) => dispute.status === 'needs_response' );
 
-// The cached list stores `due_by` as a UTC `Y-m-d H:i:s` string.
+// The disputes summary states `earliest_due_by` as a UTC `Y-m-d H:i:s` string.
 const formatDueBy = ( timestamp: number ) =>
 	new Date( timestamp ).toISOString().slice( 0, 19 ).replace( 'T', ' ' );
 
@@ -134,18 +134,18 @@ describe( 'OverviewTaskList', () => {
 		expect( screen.queryByText( 'Snoozed task' ) ).not.toBeInTheDocument();
 	} );
 
-	it( 'records the client 11.1.0 dispute task click and opens the disputes list', async () => {
-		// Expected properties: client `overview/task-list/tasks/dispute-task.tsx:52-56`.
-		const [ first, second ] = RECORDED_AWAITING_RESPONSE;
+	it( 'records the client dispute task click and opens the disputes list', async () => {
+		// Expected properties: client 11.2.0 `overview/task-list/tasks/dispute-task.tsx:54-58`.
 		const tasks = buildOverviewTasks( {
 			shell: {
 				account: { connected: true },
 				account_status: { requirements: { errors: [] } },
 			} as never,
-			disputes: [
-				{ ...first, due_by: formatDueBy( NOW + DAY_IN_MS ) },
-				{ ...second, due_by: formatDueBy( NOW + 2 * DAY_IN_MS ) },
-			],
+			disputesSummary: {
+				count: RECORDED_AWAITING_RESPONSE.length,
+				amount_by_currency: [],
+				earliest_due_by: formatDueBy( NOW + DAY_IN_MS ),
+			},
 			onOpenUpdateBusinessDetails: jest.fn(),
 		} ).filter( ( task ) => task.key.startsWith( 'dispute' ) );
 		render(

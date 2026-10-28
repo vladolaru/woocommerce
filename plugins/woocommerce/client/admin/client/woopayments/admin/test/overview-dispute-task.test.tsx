@@ -7,46 +7,35 @@ import { getSettings, setSettings } from '@wordpress/date';
  * Internal dependencies
  */
 import { buildOverviewTasks } from '../overview/components/overview-tasks';
+import type {
+	WooPaymentsOverviewDispute,
+	WooPaymentsOverviewDisputesSummary,
+} from '../overview/types';
 
 jest.mock( '@woocommerce/tracks', () => ( { recordEvent: jest.fn() } ) );
 
-// Client 11.1.0 `overview/task-list/__tests__/tasks.test.js:14-104`: cached disputes store `due_by` as a UTC `Y-m-d H:i:s` string.
-const createDispute = ( overrides: Record< string, unknown > = {} ) => ( {
-	dispute_id: 'dp_1',
-	charge_id: 'ch_mock',
-	amount: 1000,
-	currency: 'usd',
-	status: 'needs_response',
-	due_by: '2023-02-01 23:59:59',
-	...overrides,
-} );
+// Client 11.2.0 `overview/task-list/__tests__/tasks.test.js:23-60`: the single dispute's cached row.
+const ACTIVE_DISPUTE = { dispute_id: 'dp_1', charge_id: 'ch_mock' };
 
-const activeDisputes = [
-	createDispute(),
-	createDispute( { dispute_id: 'dp_2', due_by: '2023-02-03 23:59:59' } ),
-	createDispute( {
-		dispute_id: 'dp_3',
-		currency: 'eur',
-		due_by: '2023-02-07 23:59:59',
-	} ),
-	// The client ignores a dispute with an empty due date.
-	createDispute( { dispute_id: 'dp_1', due_by: '' } ),
-];
-
-const getDisputeTasks = ( disputes: Record< string, unknown >[] ) =>
+const getDisputeTasks = (
+	summary: WooPaymentsOverviewDisputesSummary | null,
+	activeDispute?: WooPaymentsOverviewDispute
+) =>
 	buildOverviewTasks( {
 		showUpdateDetailsTask: false,
 		shell: {} as unknown as Parameters<
 			typeof buildOverviewTasks
 		>[ 0 ][ 'shell' ],
-		disputes,
+		disputesSummary: summary,
+		activeDispute,
 		onOpenUpdateBusinessDetails: jest.fn(),
 	} );
 
 const mockNow = ( isoDate: string ) =>
 	jest.spyOn( Date, 'now' ).mockReturnValue( new Date( isoDate ).getTime() );
 
-describe( 'overview dispute task copy (client 11.1.0 dispute-task.tsx:115-220)', () => {
+// Client 11.2.0 `overview/task-list/tasks/dispute-task.tsx:19-176`, tested in `__tests__/tasks.test.js:324-707`.
+describe( 'overview dispute task (client 11.2.0 dispute-task.tsx)', () => {
 	const originalDateSettings = getSettings();
 
 	beforeEach( () => {
@@ -72,75 +61,159 @@ describe( 'overview dispute task copy (client 11.1.0 dispute-task.tsx:115-220)',
 		jest.restoreAllMocks();
 	} );
 
-	it( 'marks a single dispute due within 24 hours as its last day and shows the local due time', () => {
-		expect( getDisputeTasks( [ activeDisputes[ 0 ] ] ) ).toEqual( [
-			expect.objectContaining( {
+	it.each( [
+		[
+			'one dispute due today, with its row',
+			'2023-02-01T08:00:00.000Z',
+			{
+				count: 1,
+				amount_by_currency: { usd: 1000 },
+				earliest_due_by: '2023-02-01 23:59:59',
+			},
+			ACTIVE_DISPUTE,
+			{
 				key: 'dispute-resolution-task-dp_1',
 				title: 'Respond to a dispute for $10.00 – Last day',
 				content: 'Respond today by 6:59 PM',
 				actionLabel: 'Respond now',
-			} ),
-		] );
-	} );
-
-	it( 'shows the due date and the time left for a single dispute due later in the week', () => {
-		mockNow( '2023-01-27T08:00:00.000Z' );
-
-		expect( getDisputeTasks( [ activeDisputes[ 0 ] ] ) ).toEqual( [
-			expect.objectContaining( {
+				isUrgent: true,
+			},
+		],
+		[
+			'one dispute due in six days',
+			'2023-01-27T08:00:00.000Z',
+			{
+				count: 1,
+				amount_by_currency: { usd: 1000 },
+				earliest_due_by: '2023-02-01 23:59:59',
+			},
+			ACTIVE_DISPUTE,
+			{
 				key: 'dispute-resolution-task-dp_1',
 				title: 'Respond to a dispute for $10.00',
 				content: 'By Feb 1, 2023 – 6 days left to respond',
 				actionLabel: 'Respond now',
-			} ),
-		] );
-	} );
-
-	it( 'counts every active dispute in the title and the final-day ones in the content', () => {
-		expect( getDisputeTasks( activeDisputes ) ).toEqual( [
-			expect.objectContaining( {
-				key: 'dispute-resolution-task-dp_1-dp_2-dp_3',
+				isUrgent: false,
+			},
+		],
+		[
+			'one dispute due tomorrow in the site timezone, within 24 hours',
+			'2023-02-01T23:00:00.000Z',
+			{
+				count: 1,
+				amount_by_currency: { usd: 1000 },
+				earliest_due_by: '2023-02-02 13:00:00',
+			},
+			undefined,
+			{
+				key: 'dispute-resolution-task-summary',
+				title: 'Respond to a dispute for $10.00',
+				content: 'By Feb 2, 2023 – 14 hours left to respond',
+				actionLabel: 'See disputes',
+				isUrgent: true,
+			},
+		],
+		[
+			'one dispute due at 00:30 tomorrow in the site timezone',
+			'2023-02-01T10:00:00.000Z',
+			{
+				count: 1,
+				amount_by_currency: { usd: 1000 },
+				earliest_due_by: '2023-02-02 05:30:00',
+			},
+			undefined,
+			{
+				title: 'Respond to a dispute for $10.00',
+				content: 'By Feb 2, 2023 – 20 hours left to respond',
+			},
+		],
+		[
+			'one dispute due today without an amount',
+			'2023-02-01T08:00:00.000Z',
+			{
+				count: 1,
+				amount_by_currency: [],
+				earliest_due_by: '2023-02-01 23:59:59',
+			},
+			undefined,
+			{
+				key: 'dispute-resolution-task-summary',
+				title: 'Respond to an active dispute – Last day',
+				content: 'Respond today by 6:59 PM',
+				actionLabel: 'See disputes',
+			},
+		],
+		[
+			'51 disputes in one currency, the earliest overdue',
+			'2023-02-01T08:00:00.000Z',
+			{
+				count: 51,
+				amount_by_currency: { usd: 5100 },
+				earliest_due_by: '2023-01-31 23:59:59',
+			},
+			undefined,
+			{
+				key: 'dispute-resolution-task-summary',
+				title: 'Respond to 51 active disputes for a total of $51.00',
+				content: 'Response overdue',
+				actionLabel: 'See disputes',
+				isUrgent: true,
+			},
+		],
+		[
+			'disputes in two currencies',
+			'2023-01-27T08:00:00.000Z',
+			{
+				count: 3,
+				amount_by_currency: { usd: 2000, eur: 1000 },
+				earliest_due_by: '2023-02-01 23:59:59',
+			},
+			undefined,
+			{
+				key: 'dispute-resolution-task-summary',
 				title: 'Respond to 3 active disputes',
-				content: 'Final day to respond to 1 of the disputes',
+				content: 'By Feb 1, 2023 – 6 days left to respond',
 				actionLabel: 'See disputes',
-			} ),
-		] );
-	} );
+			},
+		],
+		[
+			'disputes without amounts',
+			'2023-02-01T08:00:00.000Z',
+			{
+				count: 2,
+				amount_by_currency: [],
+				earliest_due_by: '2023-02-03 23:59:59',
+			},
+			undefined,
+			{
+				key: 'dispute-resolution-task-summary',
+				title: 'Respond to 2 active disputes',
+				content: 'By Feb 3, 2023 – 3 days left to respond',
+			},
+		],
+	] )(
+		'builds the task for %s',
+		( _scenario, now, summary, activeDispute, expected ) => {
+			mockNow( now );
 
-	it( 'totals single-currency disputes and counts the final-day ones', () => {
-		expect( getDisputeTasks( activeDisputes.slice( 0, 2 ) ) ).toEqual( [
-			expect.objectContaining( {
-				key: 'dispute-resolution-task-dp_1-dp_2',
-				title: 'Respond to 2 active disputes for a total of $20.00',
-				content: 'Final day to respond to 1 of the disputes',
-				actionLabel: 'See disputes',
-			} ),
-		] );
-	} );
+			expect( getDisputeTasks( summary, activeDispute ) ).toEqual( [
+				expect.objectContaining( expected ),
+			] );
+		}
+	);
 
-	it( 'counts every active dispute in the title and the ones due within 7 days in the content', () => {
-		mockNow( '2023-01-27T08:00:00.000Z' );
-
-		expect( getDisputeTasks( activeDisputes ) ).toEqual( [
-			expect.objectContaining( {
-				key: 'dispute-resolution-task-dp_1-dp_2-dp_3',
-				title: 'Respond to 3 active disputes',
-				content: 'Last week to respond to 1 of the disputes',
-				actionLabel: 'See disputes',
-			} ),
-		] );
-	} );
-
-	it( 'shows no dispute task when no dispute is due within 7 days', () => {
-		mockNow( '2023-01-24T08:00:00.000Z' );
-
-		expect( getDisputeTasks( activeDisputes ) ).toEqual( [] );
-	} );
-
-	// Client 11.1.0 `disputes/utils.ts:41-61` `isDueWithin()`: a past-due dispute is not due within any window.
-	it( 'shows no dispute task when the only dispute is past due', () => {
-		mockNow( '2023-02-02T08:00:00.000Z' );
-
-		expect( getDisputeTasks( [ activeDisputes[ 0 ] ] ) ).toEqual( [] );
+	it.each( [
+		[ 'no summary', null ],
+		[
+			'a zero count',
+			{ count: 0, earliest_due_by: '2023-02-03 23:59:59' },
+		],
+		[ 'a null deadline', { count: 1, earliest_due_by: null } ],
+		[
+			'a deadline after seven days',
+			{ count: 1, earliest_due_by: '2023-02-09 23:59:59' },
+		],
+	] )( 'builds no task for %s', ( _scenario, summary ) => {
+		expect( getDisputeTasks( summary ) ).toEqual( [] );
 	} );
 } );

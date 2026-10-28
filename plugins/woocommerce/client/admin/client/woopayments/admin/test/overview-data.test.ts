@@ -16,6 +16,7 @@ import {
 	getWooPaymentsDepositsSummary,
 	getWooPaymentsDisputeReadiness,
 	getWooPaymentsOverviewDisputes,
+	getWooPaymentsOverviewDisputesSummary,
 	getWooPaymentsOverviewShell,
 	getWooPaymentsRecentDeposits,
 	getWooPaymentsDepositsExportUrl,
@@ -131,11 +132,23 @@ describe( 'WooPayments overview deposits data', () => {
 		} );
 	} );
 
-	it( 'loads urgent disputes with endpoint-compatible actionable statuses', async () => {
-		await getWooPaymentsOverviewDisputes();
+	// Client 11.2.0 `overview/index.js:100-115` through `data/disputes/hooks.ts` and `resolvers.js:25-38, :79-105`.
+	it.each( [
+		[
+			'the summary of the disputes awaiting a response',
+			getWooPaymentsOverviewDisputesSummary,
+			'/wc/v3/payments/disputes/summary?page=1&pagesize=25&search%5B%5D=needs_response&search%5B%5D=warning_needs_response',
+		],
+		[
+			'the newest dispute awaiting a response',
+			getWooPaymentsOverviewDisputes,
+			'/wc/v3/payments/disputes?page=1&pagesize=1&sort=created&direction=desc&search%5B%5D=needs_response&search%5B%5D=warning_needs_response',
+		],
+	] )( 'loads %s', async ( _label, load, expectedPath ) => {
+		await load();
 
 		expect( mockApiFetch ).toHaveBeenCalledWith( {
-			path: '/wc/v3/payments/disputes?page=1&pagesize=50&search%5B%5D=needs_response&search%5B%5D=warning_needs_response',
+			path: expectedPath,
 			method: 'GET',
 		} );
 	} );

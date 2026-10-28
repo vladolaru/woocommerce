@@ -13,6 +13,7 @@ import type {
 	WooPaymentsDepositsQuery,
 	WooPaymentsDepositsSummary,
 	WooPaymentsOverviewDisputesResponse,
+	WooPaymentsOverviewDisputesSummary,
 	WooPaymentsOverviewShell,
 	WooPaymentsAccountSession,
 	WooPaymentsDisputeReadinessPayload,
@@ -140,12 +141,27 @@ export const getWooPaymentsOverviewShell =
 			method: 'GET',
 		} );
 
+// Client 11.2.0 `overview/index.js:100-115`: the summary of the disputes awaiting a response, then their newest one only when
+// there is exactly one, with the queries `data/disputes/hooks.ts` and `resolvers.js:25-38, :79-105` build.
+export const getWooPaymentsOverviewDisputesSummary =
+	async (): Promise< WooPaymentsOverviewDisputesSummary > =>
+		apiFetch< WooPaymentsOverviewDisputesSummary >( {
+			path: buildPathWithQuery( `${ DISPUTES_PATH }/summary`, {
+				page: 1,
+				pagesize: 25,
+				search: DISPUTE_AWAITING_RESPONSE_STATUSES,
+			} ),
+			method: 'GET',
+		} );
+
 export const getWooPaymentsOverviewDisputes =
 	async (): Promise< WooPaymentsOverviewDisputesResponse > =>
 		apiFetch< WooPaymentsOverviewDisputesResponse >( {
 			path: buildPathWithQuery( DISPUTES_PATH, {
 				page: 1,
-				pagesize: 50,
+				pagesize: 1,
+				sort: 'created',
+				direction: 'desc',
 				search: DISPUTE_AWAITING_RESPONSE_STATUSES,
 			} ),
 			method: 'GET',

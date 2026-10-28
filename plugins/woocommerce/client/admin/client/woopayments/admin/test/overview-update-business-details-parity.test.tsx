@@ -56,6 +56,7 @@ jest.mock( '../overview/data', () => ( {
 	getWooPaymentsDepositsOverview: jest.fn(),
 	getWooPaymentsDisputeReadiness: jest.fn(),
 	getWooPaymentsOverviewDisputes: jest.fn(),
+	getWooPaymentsOverviewDisputesSummary: jest.fn(),
 	getWooPaymentsOverviewShell: jest.fn(),
 	getWooPaymentsRecentDeposits: jest.fn(),
 } ) );

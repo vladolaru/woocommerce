@@ -23,6 +23,7 @@ import { getWooPaymentsSettingsBootstrap } from '~/woopayments/settings/bootstra
 import {
 	getWooPaymentsDepositsOverview,
 	getWooPaymentsOverviewDisputes,
+	getWooPaymentsOverviewDisputesSummary,
 	getWooPaymentsOverviewShell,
 	getWooPaymentsRecentDeposits,
 	submitWooPaymentsInstantDeposit,
@@ -36,6 +37,7 @@ import type {
 	WooPaymentsDeposit,
 	WooPaymentsDepositsOverview,
 	WooPaymentsOverviewDispute,
+	WooPaymentsOverviewDisputesSummary,
 	WooPaymentsOverviewShell,
 } from './types';
 import {
@@ -97,9 +99,11 @@ export const WooPaymentsOverviewPage = () => {
 		preloadedShell
 	);
 	const [ isShellSettled, setShellSettled ] = useState( !! preloadedShell );
-	const [ disputes, setDisputes ] = useState< WooPaymentsOverviewDispute[] >(
-		[]
-	);
+	// The dispute task's data, set once it has loaded, as the client shows no task while it loads.
+	const [ disputeTaskData, setDisputeTaskData ] = useState< {
+		summary: WooPaymentsOverviewDisputesSummary;
+		activeDispute?: WooPaymentsOverviewDispute;
+	} | null >( null );
 	const [ updateBusinessDetailsShell, setUpdateBusinessDetailsShell ] =
 		useState< WooPaymentsOverviewShell | null >( null );
 	// Client 11.1.0 `overview/index.js:72-92`: the update-details task stays hidden unless the Stripe banner fails to load.
@@ -244,23 +248,50 @@ export const WooPaymentsOverviewPage = () => {
 				! nextShell.account.connected ||
 				nextShell.disputes_awaiting_response_count === 0
 			) {
-				setDisputes( [] );
+				setDisputeTaskData( null );
 				return;
 			}
 
-			getWooPaymentsOverviewDisputes()
-				.then( ( response ) => {
+			// Client 11.2.0 `overview/index.js:100-123`; the error notices are `data/disputes/resolvers.js:89-97, :110-118`.
+			getWooPaymentsOverviewDisputesSummary()
+				.then( ( summary ) =>
+					summary.count === 1
+						? getWooPaymentsOverviewDisputes().then(
+								( response ) => ( {
+									summary,
+									activeDispute: response.data?.[ 0 ],
+								} ),
+								() => {
+									if ( isMounted ) {
+										dispatch(
+											'core/notices'
+										).createErrorNotice(
+											__(
+												'Error retrieving disputes.',
+												'woocommerce'
+											)
+										);
+									}
+
+									return { summary };
+								}
+							)
+						: { summary }
+				)
+				.then( ( data ) => {
 					if ( isMounted ) {
-						setDisputes( response.data ?? [] );
+						setDisputeTaskData( data );
 					}
 				} )
 				.catch( () => {
 					if ( isMounted ) {
-						// Client 11.1.0 `data/disputes/resolvers.js:79-97`.
 						dispatch( 'core/notices' ).createErrorNotice(
-							__( 'Error retrieving disputes.', 'woocommerce' )
+							__(
+								'Error retrieving the summary of disputes.',
+								'woocommerce'
+							)
 						);
-						setDisputes( [] );
+						setDisputeTaskData( null );
 					}
 				} );
 		};
@@ -287,7 +318,7 @@ export const WooPaymentsOverviewPage = () => {
 				if ( isMounted ) {
 					setShell( null );
 					setShellSettled( true );
-					setDisputes( [] );
+					setDisputeTaskData( null );
 				}
 			} );
 
@@ -343,7 +374,8 @@ export const WooPaymentsOverviewPage = () => {
 	const tasks = shell
 		? buildOverviewTasks( {
 				shell,
-				disputes,
+				disputesSummary: disputeTaskData?.summary ?? null,
+				activeDispute: disputeTaskData?.activeDispute,
 				// Client 11.1.0 `overview/index.js:72-74,105-109`: only after the banner fails to load.
 				showUpdateDetailsTask:
 					showStripeBanner &&

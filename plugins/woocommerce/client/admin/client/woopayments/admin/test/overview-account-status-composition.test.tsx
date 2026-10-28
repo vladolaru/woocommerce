@@ -14,6 +14,7 @@ import {
 	getWooPaymentsDepositsOverview,
 	getWooPaymentsDisputeReadiness,
 	getWooPaymentsOverviewDisputes,
+	getWooPaymentsOverviewDisputesSummary,
 	getWooPaymentsOverviewShell,
 	getWooPaymentsRecentDeposits,
 } from '../overview/data';
@@ -39,6 +40,7 @@ jest.mock( '../overview/data', () => ( {
 	getWooPaymentsDepositsOverview: jest.fn(),
 	getWooPaymentsDisputeReadiness: jest.fn(),
 	getWooPaymentsOverviewDisputes: jest.fn(),
+	getWooPaymentsOverviewDisputesSummary: jest.fn(),
 	getWooPaymentsOverviewShell: jest.fn(),
 	getWooPaymentsRecentDeposits: jest.fn(),
 } ) );
@@ -53,18 +55,25 @@ const mockUseSelect = useSelect as jest.Mock;
 const mockGetDepositsOverview = getWooPaymentsDepositsOverview as jest.Mock;
 const mockGetDisputeReadiness = getWooPaymentsDisputeReadiness as jest.Mock;
 
-// A needs-response row from the recorded native :8889 disputes list, due tomorrow so the task list has a task to show.
-const urgentDispute = () => ( {
-	...(
+// A needs-response row from the recorded native :8889 disputes list.
+const urgentDispute = () =>
+	(
 		JSON.parse(
 			fs.readFileSync(
 				path.join( __dirname, 'fixtures/recorded-disputes-list.json' ),
 				'utf8'
 			)
 		).response.data as Array< Record< string, unknown > >
-	 )[ 0 ],
-	// The cached list stores `due_by` as a UTC `Y-m-d H:i:s` string.
-	due_by: new Date( Date.now() + 24 * 60 * 60 * 1000 )
+	 )[ 0 ];
+
+// The awaiting-response summary of that dispute alone, due tomorrow so the task list has a task to show.
+const urgentDisputesSummary = () => ( {
+	count: 1,
+	amount_by_currency: {
+		[ urgentDispute().currency as string ]: urgentDispute().amount,
+	},
+	// The summary states `earliest_due_by` as a UTC `Y-m-d H:i:s` string.
+	earliest_due_by: new Date( Date.now() + 24 * 60 * 60 * 1000 )
 		.toISOString()
 		.slice( 0, 19 )
 		.replace( 'T', ' ' ),
@@ -126,6 +135,9 @@ describe( 'WooPayments Overview composition by account status', () => {
 			data: [],
 			total_count: 0,
 		} );
+		(
+			getWooPaymentsOverviewDisputesSummary as jest.Mock
+		 ).mockResolvedValue( urgentDisputesSummary() );
 		( getWooPaymentsOverviewDisputes as jest.Mock ).mockResolvedValue( {
 			data: [ urgentDispute() ],
 		} );
@@ -165,9 +177,11 @@ describe( 'WooPayments Overview composition by account status', () => {
 		'reduces the page for a %s account to what the client shows',
 		async ( status ) => {
 			await renderForStatus( status );
-			// Let the disputes read and the lazy sections settle, so an absence is not just a pending render.
+			// Let the disputes summary read and the lazy sections settle, so an absence is not just a pending render.
 			await waitFor( () =>
-				expect( getWooPaymentsOverviewDisputes ).toHaveBeenCalled()
+				expect(
+					getWooPaymentsOverviewDisputesSummary
+				).toHaveBeenCalled()
 			);
 			await act(
 				() => new Promise( ( resolve ) => setTimeout( resolve, 50 ) )
