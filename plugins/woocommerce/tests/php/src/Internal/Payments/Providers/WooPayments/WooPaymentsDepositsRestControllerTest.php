@@ -157,6 +157,8 @@ class WooPaymentsDepositsRestControllerTest extends WC_REST_Unit_Test_Case {
 
 	/**
 	 * @testdox Deposits list forwards only the known platform query parameters.
+	 *
+	 * @see WooPayments 11.2.0 tests/unit/core/server/request/test-class-list-deposits-request.php:81.
 	 */
 	public function test_get_deposits_forwards_allow_listed_query_parameters(): void {
 		$this->sut->register_routes();
@@ -179,7 +181,7 @@ class WooPaymentsDepositsRestControllerTest extends WC_REST_Unit_Test_Case {
 				'page'              => '2',
 				'pagesize'          => '25',
 				'sort'              => 'date',
-				'direction'         => 'desc',
+				'direction'         => 'asc',
 				'match'             => 'all',
 				'store_currency_is' => 'usd',
 				'date_before'       => '2026-06-18',
@@ -199,7 +201,7 @@ class WooPaymentsDepositsRestControllerTest extends WC_REST_Unit_Test_Case {
 				'page'              => 2,
 				'pagesize'          => 25,
 				'sort'              => 'date',
-				'direction'         => 'desc',
+				'direction'         => 'asc',
 				'limit'             => 100,
 				'match'             => 'all',
 				'store_currency_is' => 'usd',
@@ -216,6 +218,8 @@ class WooPaymentsDepositsRestControllerTest extends WC_REST_Unit_Test_Case {
 
 	/**
 	 * @testdox Deposits list preserves the WooPayments extension request filter contract.
+	 *
+	 * @see WooPayments 11.2.0 includes/core/server/request/class-list-deposits.php:20-23.
 	 */
 	public function test_get_deposits_preserves_the_woopayments_extension_request_filter_contract(): void {
 		$this->sut->register_routes();
@@ -258,7 +262,7 @@ class WooPaymentsDepositsRestControllerTest extends WC_REST_Unit_Test_Case {
 				array(
 					'page'                   => 2,
 					'pagesize'               => 50,
-					'sort'                   => 'created',
+					'sort'                   => 'date',
 					'direction'              => 'desc',
 					'limit'                  => 100,
 					'status_is'              => 'failed',

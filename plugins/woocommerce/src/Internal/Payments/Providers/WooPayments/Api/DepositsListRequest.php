@@ -23,6 +23,14 @@ class DepositsListRequest extends PaginatedListRequest {
 	 */
 	protected $hook = 'wcpay_list_deposits_request';
 
+	protected const DEFAULT_PARAMS = array(
+		'page'      => 0,
+		'pagesize'  => 25,
+		'sort'      => 'date',
+		'direction' => 'desc',
+		'limit'     => 100,
+	);
+
 	/**
 	 * Create a request from REST request data.
 	 *
