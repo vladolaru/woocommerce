@@ -77,6 +77,11 @@ class StoreApiRequestHandler {
 	 * How old, in seconds, a WooPay envelope may be (client 11.2.0 class-woopay-session.php:46).
 	 */
 	private const ATTESTATION_MAX_AGE = 300;
+	/**
+	 * `$_SERVER` key of the vouch envelope WooPay seals onto a proxied checkout request (client 11.2.0
+	 * class-woopay-session.php:65).
+	 */
+	private const VOUCH_HEADER = 'HTTP_X_WOOPAY_ATTESTATION';
 
 	/**
 	 * Attestations resolved on this request, keyed by envelope fingerprint, so the permission check and the session build
@@ -150,7 +155,7 @@ class StoreApiRequestHandler {
 	 * The request must carry a valid Cart-Token, or the blog-token signature a store still gets while the platform keeps it
 	 * on WooPay's signed path; otherwise it dies with a 401 naming why, as client 11.2.0 does
 	 * (class-woopay-session.php:152-172, :1394-1408). It then resolves to the shopper of its Cart-Token session, so the
-	 * order keeps its customer. A signed request is marked through the `wcpay_is_woopay_store_api_request` filter.
+	 * order keeps its customer.
 	 *
 	 * @param int|bool $user Current user ID resolved so far, or false.
 	 * @return int|bool
@@ -180,10 +185,6 @@ class StoreApiRequestHandler {
 					'code'     => esc_html( $code ),
 				)
 			);
-		}
-
-		if ( $this->has_valid_request_signature() ) {
-			add_filter( 'wcpay_is_woopay_store_api_request', '__return_true' );
 		}
 
 		$cart_token_user_id = $this->get_user_id_from_cart_token();
@@ -343,6 +344,137 @@ class StoreApiRequestHandler {
 		$email = sanitize_email( $attestation['user_email'] );
 
 		return is_email( $email ) ? $email : null;
+	}
+
+	/**
+	 * Tell whether WooPay proved it composed the current request: a fresh vouch bound to the request's Cart-Token, or the
+	 * blog-token signature on the signed path. What WooPay's checkout skips card-testing protection and the preflight on
+	 * (client 11.2.0 class-wc-payment-gateway-wcpay.php:1212-1233).
+	 *
+	 * @return bool
+	 */
+	public function is_request_composed_by_woopay(): bool {
+		if ( null === $this->get_woopay_vouch() && ! $this->has_valid_request_signature() ) {
+			return false;
+		}
+
+		/**
+		 * Fires once WooPay proved it composed the request, with true. Its return value is not read: card-testing
+		 * protection and the WooPay preflight follow only that proof.
+		 *
+		 * @since 11.0.0
+		 * @deprecated 11.2.0 The WooPayments extension removed it in 11.2.0; no replacement.
+		 *
+		 * @param bool $is_woopay_store_api_request Whether the request is a WooPay Store API request.
+		 */
+		apply_filters_deprecated( 'wcpay_is_woopay_store_api_request', array( true ), '11.2.0' );
+
+		return true;
+	}
+
+	/**
+	 * Record on a WooPay checkout's order the address the shopper checked out from, as WooPay sealed it in the request's
+	 * vouch; WC_Geolocation would give WooPay's server. An address that does not parse leaves the order's own, with a log
+	 * line; without a vouch nothing changes (client 11.2.0 `WooPay_Session::set_woopay_order_customer_ip()`,
+	 * class-woopay-session.php:1237-1259).
+	 *
+	 * @param mixed $order Order the Store API checkout is updating.
+	 *
+	 * @since 11.2.0
+	 */
+	public function set_woopay_order_customer_ip( $order ): void {
+		if ( ! $order instanceof WC_Order || ! $this->woopay_eligibility->is_woopay_enabled() ) {
+			return;
+		}
+
+		$vouch = $this->get_woopay_vouch();
+		if ( null === $vouch || empty( $vouch['customer_ip'] ) || ! is_string( $vouch['customer_ip'] ) ) {
+			return;
+		}
+
+		$customer_ip_address = rest_is_ip_address( sanitize_text_field( $vouch['customer_ip'] ) );
+		if ( false === $customer_ip_address ) {
+			$this->logger->log( 'WooPay vouch carried a customer IP that does not parse; the order keeps the address the request arrived from.' );
+
+			return;
+		}
+
+		$order->set_customer_ip_address( $customer_ip_address );
+	}
+
+	/**
+	 * Get the payload WooPay sealed onto the current proxied request in its vouch header, or null when it sealed none.
+	 *
+	 * Opened under its own derived key, fresh for five minutes, and bound to the Cart-Token the request carries; never
+	 * spent, since WooPay resends the same checkout request after a failed attempt (client 11.2.0
+	 * `WooPay_Session::get_woopay_vouch()`, class-woopay-session.php:1284-1366).
+	 *
+	 * @return array<string,mixed>|null
+	 */
+	private function get_woopay_vouch(): ?array {
+		if ( ! isset( $_SERVER[ self::VOUCH_HEADER ] ) ) {
+			return null;
+		}
+
+		$raw = trim( sanitize_text_field( wp_unslash( $_SERVER[ self::VOUCH_HEADER ] ) ) );
+		if ( 1 !== preg_match( '#^[A-Za-z0-9+/=]+$#', $raw ) ) {
+			$this->logger->log( 'WooPay vouch rejected: header is not base64.' );
+
+			return null;
+		}
+
+		// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_decode -- Decodes the WooPay vouch header.
+		$envelope = json_decode( (string) base64_decode( $raw ), true );
+		if ( ! is_array( $envelope ) ) {
+			$this->logger->log( 'WooPay vouch rejected: header does not decode to an envelope.' );
+
+			return null;
+		}
+
+		$parts = array();
+		foreach ( array( 'data', 'iv', 'hash' ) as $field ) {
+			if ( ! isset( $envelope[ $field ] ) || ! is_string( $envelope[ $field ] ) ) {
+				$this->logger->log( 'WooPay vouch rejected: envelope has no usable "' . $field . '" field.' );
+
+				return null;
+			}
+
+			$parts[ $field ] = $envelope[ $field ];
+		}
+
+		$payload = $this->session_service->open_woopay_envelope( $parts, array( SessionService::VOUCH_KEY_PURPOSE ) );
+		if ( null === $payload || ! isset( $payload['timestamp'] ) ) {
+			$this->logger->log( 'WooPay vouch rejected: envelope did not open, or carries no timestamp.' );
+
+			return null;
+		}
+
+		if ( ! $this->is_fresh_woopay_timestamp( $payload['timestamp'] ) ) {
+			$this->logger->log( 'WooPay vouch rejected: envelope timestamp is missing or stale.' );
+
+			return null;
+		}
+
+		$cart_token = CartTokenUtils::get_request_cart_token();
+		if ( '' === $cart_token ) {
+			$this->logger->log( 'WooPay vouch rejected: request carries no cart to bind the envelope to.' );
+
+			return null;
+		}
+
+		if ( ! isset( $payload['cart_token'] ) || ! is_string( $payload['cart_token'] ) || '' === $payload['cart_token'] ) {
+			$this->logger->log( 'WooPay vouch rejected: envelope names no cart.' );
+
+			return null;
+		}
+
+		if ( ! hash_equals( $payload['cart_token'], hash( 'sha256', $cart_token ) ) ) {
+			$this->logger->log( 'WooPay vouch rejected: envelope was sealed for a different cart.' );
+
+			return null;
+		}
+
+		return $payload;
 	}
 
 	/**

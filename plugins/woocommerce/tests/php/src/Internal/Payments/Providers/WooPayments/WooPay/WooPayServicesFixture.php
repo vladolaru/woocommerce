@@ -137,8 +137,7 @@ trait WooPayServicesFixture {
 		remove_all_filters( 'wcpay_woopay_button_is_product_supported' );
 		remove_all_filters( 'wcpay_platform_checkout_button_are_cart_items_supported' );
 		remove_all_filters( 'pre_option_woocommerce_enable_guest_checkout' );
-		unset( $_SERVER['HTTP_USER_AGENT'], $_SERVER['HTTP_CART_TOKEN'], $_SERVER['HTTP_X_WOOPAY_VERIFIED_EMAIL_ADDRESS'], $_SERVER['HTTP_NONCE'], $_REQUEST['rest_route'] );
-		remove_filter( 'wcpay_is_woopay_store_api_request', '__return_true' );
+		unset( $_SERVER['HTTP_USER_AGENT'], $_SERVER['HTTP_CART_TOKEN'], $_SERVER['HTTP_X_WOOPAY_VERIFIED_EMAIL_ADDRESS'], $_SERVER['HTTP_NONCE'], $_SERVER['HTTP_X_WOOPAY_ATTESTATION'], $_REQUEST['rest_route'] );
 		remove_filter( 'woocommerce_gc_account_session_timeout_minutes', '__return_false' );
 		remove_all_filters( 'wcpay_woopay_is_signed_with_blog_token' );
 		wp_clear_scheduled_hook( 'woopay_restore_order_customer_id' );

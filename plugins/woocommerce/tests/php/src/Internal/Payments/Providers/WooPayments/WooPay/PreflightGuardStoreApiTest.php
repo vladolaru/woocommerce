@@ -18,7 +18,7 @@ use WP_REST_Request;
 
 /**
  * Dispatches WooPay preflight checkouts through the REST server, with the current user resolved the way WordPress resolves
- * it before any REST route runs, so the signed-request filter is set (or not) by WooPay's own signature check.
+ * it before any REST route runs, and the guard asking the same handler whether WooPay composed the request.
  */
 class PreflightGuardStoreApiTest extends WC_Unit_Test_Case {
 
@@ -189,22 +189,24 @@ class PreflightGuardStoreApiTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The preflight marker lifts coupon limits and checkout callbacks only for a signed WooPay request naming the WooPayments gateway: $_dataName.
+	 * @testdox The preflight marker lifts coupon limits and checkout callbacks only for a WooPay request WooPay proved it composed, naming the WooPayments gateway: $_dataName.
 	 *
 	 * WooPay's preflight names woocommerce_payments and posts to checkout, or to checkout/{order_id} to pay an order
-	 * (WooPay WooPayStoreApiHandler.php:574-598), signed with the store's blog token for a store reporting client 11.1.0.
+	 * (WooPay WooPayStoreApiHandler.php:574-598), with its vouch bound to the request's Cart-Token, or signed with the
+	 * store's blog token while the platform keeps the store on the signed path (client 11.2.0
+	 * class-wc-payment-gateway-wcpay.php:1212-1233, class-woopay-session.php:1284-1366).
 	 *
 	 * @dataProvider provide_preflight_requests
 	 *
 	 * @param string $route          'checkout' or 'checkout-order'.
 	 * @param string $payment_method Gateway the request names.
-	 * @param bool   $signed         Whether the request is a signed WooPay request.
+	 * @param string $proof          'vouch', 'signature', 'stale vouch' or 'none'.
 	 * @param bool   $lifted         Whether the limits and callbacks are lifted for it.
 	 */
-	public function test_preflight_marker_is_honoured_only_for_a_signed_woopay_request( string $route, string $payment_method, bool $signed, bool $lifted ): void {
+	public function test_preflight_marker_is_honoured_only_for_a_request_woopay_composed( string $route, string $payment_method, string $proof, bool $lifted ): void {
 		$this->create_exhausted_coupon_cart();
 		$request = 'checkout' === $route ? $this->make_checkout_request( $payment_method ) : $this->make_pay_for_order_request( $payment_method );
-		$this->resolve_current_user( $signed );
+		$this->resolve_current_user( $proof );
 
 		$response = rest_get_server()->dispatch( $request );
 
@@ -223,16 +225,19 @@ class PreflightGuardStoreApiTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Preflight requests: route, gateway named, signed, lifted.
+	 * Preflight requests: route, gateway named, WooPay's proof, lifted.
 	 *
-	 * @return array<string,array{0:string,1:string,2:bool,3:bool}>
+	 * @return array<string,array{0:string,1:string,2:string,3:bool}>
 	 */
 	public function provide_preflight_requests(): array {
 		return array(
-			'Cash on delivery with the marker, signed' => array( 'checkout', 'cod', true, false ),
-			'unsigned request naming the gateway'      => array( 'checkout', 'woocommerce_payments', false, false ),
-			'signed WooPay preflight, cart checkout'   => array( 'checkout', 'woocommerce_payments', true, true ),
-			'signed WooPay preflight, pay for order'   => array( 'checkout-order', 'woocommerce_payments', true, true ),
+			'Cash on delivery with the marker, signed' => array( 'checkout', 'cod', 'signature', false ),
+			'a request without WooPay proof naming the gateway' => array( 'checkout', 'woocommerce_payments', 'none', false ),
+			'a WooPay Cart-Token request with a stale vouch' => array( 'checkout', 'woocommerce_payments', 'stale vouch', false ),
+			'signed WooPay preflight, cart checkout'   => array( 'checkout', 'woocommerce_payments', 'signature', true ),
+			'signed WooPay preflight, pay for order'   => array( 'checkout-order', 'woocommerce_payments', 'signature', true ),
+			'vouched WooPay preflight, cart checkout'  => array( 'checkout', 'woocommerce_payments', 'vouch', true ),
+			'vouched WooPay preflight, pay for order'  => array( 'checkout-order', 'woocommerce_payments', 'vouch', true ),
 		);
 	}
 
@@ -252,27 +257,40 @@ class PreflightGuardStoreApiTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Resolve the current user as WordPress does before any REST route runs (WP::init()), signed as WooPay or not.
+	 * Resolve the current user as WordPress does before any REST route runs (WP::init()), for a WooPay request carrying
+	 * the given proof, and give the guard the same handler.
 	 *
-	 * @param bool $signed Whether the request is a signed WooPay request.
+	 * The vouch rows carry the Cart-Token in the request globals only, which is where the handler reads it; the Store API
+	 * route keeps the test's own session, so the cart under test is the one it checks out.
+	 *
+	 * @param string $proof 'vouch', 'stale vouch', 'signature' or 'none'.
 	 */
-	private function resolve_current_user( bool $signed ): void {
+	private function resolve_current_user( string $proof ): void {
 		// A REST checkout is a POST; WordPress reads the method while it validates a login cookie. No login cookie: the
 		// shopper is a guest, whatever an earlier test left in $_COOKIE.
 		$_SERVER['REQUEST_METHOD'] = 'POST';
 		$_SERVER['REQUEST_URI']    = '/wp-json/wc/store/v1/checkout';
 		unset( $_COOKIE[ LOGGED_IN_COOKIE ], $_COOKIE[ AUTH_COOKIE ], $_COOKIE[ SECURE_AUTH_COOKIE ] );
 		$handler = $this->create_handler();
-		if ( $signed ) {
+		$this->guard->init( $handler );
+		if ( 'none' !== $proof ) {
 			$_SERVER['HTTP_USER_AGENT'] = 'WooPay';
+		}
+		if ( 'signature' === $proof ) {
 			$this->force_real_blog_token_signed();
+		} elseif ( 'none' !== $proof ) {
+			WooPayEnvelopes::connect_store();
+			$cart_token                           = \Automattic\WooCommerce\StoreApi\Utilities\CartTokenUtils::get_cart_token( 't_guesthash' );
+			$_SERVER['HTTP_CART_TOKEN']           = $cart_token;
+			$_SERVER['HTTP_X_WOOPAY_ATTESTATION'] = WooPayEnvelopes::vouch_header(
+				$cart_token,
+				'stale vouch' === $proof ? array( 'timestamp' => time() - 301 ) : array()
+			);
 		}
 		$this->add_callback( 'determine_current_user', array( $handler, 'determine_current_user_for_woopay' ), 20 );
 
 		$GLOBALS['current_user'] = null; // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- Unset so the user is resolved again, as WP::init() does once per request.
 		wp_get_current_user();
-		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment
-		$this->assertSame( $signed, (bool) apply_filters( 'wcpay_is_woopay_store_api_request', false ) );
 	}
 
 	/**

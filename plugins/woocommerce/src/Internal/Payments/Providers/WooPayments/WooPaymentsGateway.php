@@ -25,6 +25,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\SubscriptionsController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\LinkToken;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\SessionService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\StoreApiRequestHandler;
 use Automattic\WooCommerce\Internal\Payments\RefundRowCapture;
 use Exception;
 use Throwable;
@@ -175,6 +176,13 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 	 * @var OrderPaymentLifecycleService
 	 */
 	private OrderPaymentLifecycleService $lifecycle_service;
+
+	/**
+	 * Handler of WooPay's Store API requests, which tells whether WooPay composed the request.
+	 *
+	 * @var StoreApiRequestHandler
+	 */
+	private StoreApiRequestHandler $woopay_request_handler;
 
 	/**
 	 * WooPayments payment method definition backing this gateway instance.
@@ -481,6 +489,7 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 	 * @param WooPaymentsFailedTransactionRateLimiter|null      $failed_transaction_rate_limiter Optional failed-transaction rate limiter.
 	 * @param WooPaymentsDuplicatePaymentPreventionService|null $duplicate_payment_prevention_service Optional duplicate-payment prevention service.
 	 * @param OrderPaymentLifecycleService|null                 $lifecycle_service         Optional order payment lifecycle service.
+	 * @param StoreApiRequestHandler|null                       $woopay_request_handler    Optional handler of WooPay's Store API requests.
 	 */
 	final public function init(
 		PaymentProcessingService $processing_service,
@@ -493,7 +502,8 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 		?WooPaymentsFraudPreventionService $fraud_prevention_service = null,
 		?WooPaymentsFailedTransactionRateLimiter $failed_transaction_rate_limiter = null,
 		?WooPaymentsDuplicatePaymentPreventionService $duplicate_payment_prevention_service = null,
-		?OrderPaymentLifecycleService $lifecycle_service = null
+		?OrderPaymentLifecycleService $lifecycle_service = null,
+		?StoreApiRequestHandler $woopay_request_handler = null
 	): void {
 		$this->processing_service = $processing_service;
 		$this->provider           = $provider;
@@ -532,6 +542,10 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 
 		if ( null !== $lifecycle_service ) {
 			$this->lifecycle_service = $lifecycle_service;
+		}
+
+		if ( null !== $woopay_request_handler ) {
+			$this->woopay_request_handler = $woopay_request_handler;
 		}
 	}
 
@@ -2059,6 +2073,19 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 	}
 
 	/**
+	 * Get the handler of WooPay's Store API requests.
+	 *
+	 * @return StoreApiRequestHandler
+	 */
+	private function get_woopay_request_handler(): StoreApiRequestHandler {
+		if ( ! isset( $this->woopay_request_handler ) ) {
+			$this->woopay_request_handler = wc_get_container()->get( StoreApiRequestHandler::class );
+		}
+
+		return $this->woopay_request_handler;
+	}
+
+	/**
 	 * Get a fraud-prevention error message for the current request.
 	 *
 	 * @param bool $is_checkout Whether the request is a checkout payment request.
@@ -2070,21 +2097,10 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 			return '';
 		}
 
-		if ( $is_checkout ) {
-			/**
-			 * Filters whether the request is a WooPay Store API request, which skips the card-testing token check; the WooPay
-			 * session sets it.
-			 *
-			 * Keeps this name because extensions listen to it.
-			 *
-			 * @since 11.0.0
-			 * @param bool $is_woopay_store_api_request Whether the request is a WooPay Store API request.
-			 */
-			$is_woopay_store_api_request = (bool) apply_filters( 'wcpay_is_woopay_store_api_request', false );
-
-			if ( $is_woopay_store_api_request ) {
-				return '';
-			}
+		// A checkout WooPay proved it composed (its vouch, or the signature on the signed path) skips the card-testing token
+		// check; a header or user agent any visitor can send does not (client 11.2.0 class-wc-payment-gateway-wcpay.php:1212-1233).
+		if ( $is_checkout && $this->get_woopay_request_handler()->is_request_composed_by_woopay() ) {
+			return '';
 		}
 
 		if ( ! $fraud_prevention_service->is_enabled() ) {

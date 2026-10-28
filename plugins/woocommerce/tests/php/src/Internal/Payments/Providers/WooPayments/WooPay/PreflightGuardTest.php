@@ -10,6 +10,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\W
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\PreflightGuard;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\StoreApiRequestHandler;
 use Automattic\WooCommerce\Tests\Internal\Payments\RecordingPaymentProcessingService;
 use WC_Coupon;
 use WC_Order;
@@ -55,8 +56,6 @@ class PreflightGuardTest extends WC_Unit_Test_Case {
 
 		$this->post_snapshot = $_POST; // phpcs:ignore WordPress.Security.NonceVerification.Missing -- The fixture restores the inherited request state exactly.
 		$this->snapshot_and_remove_guarded_hooks();
-		// Each request below is a signed WooPay request naming the WooPayments gateway; each row fails on one other condition.
-		add_filter( 'wcpay_is_woopay_store_api_request', '__return_true' );
 	}
 
 	/**
@@ -64,7 +63,6 @@ class PreflightGuardTest extends WC_Unit_Test_Case {
 	 */
 	public function tearDown(): void {
 		try {
-			remove_filter( 'wcpay_is_woopay_store_api_request', '__return_true' );
 			$this->restore_guarded_hook_snapshots();
 			$_POST = $this->post_snapshot;
 			wc_clear_notices();
@@ -75,7 +73,7 @@ class PreflightGuardTest extends WC_Unit_Test_Case {
 
 	/** @testdox Leaves checkout hooks unchanged for unrelated, malformed, and missing-marker requests. */
 	public function test_non_preflight_requests_leave_checkout_hooks_unchanged(): void {
-		$guard                = new PreflightGuard();
+		$guard                = $this->create_guard();
 		$action_counts        = array(
 			'meta'      => 0,
 			'processed' => 0,
@@ -195,9 +193,9 @@ class PreflightGuardTest extends WC_Unit_Test_Case {
 		$this->assertSame( $expected_callback_count, $per_user_limit_calls );
 	}
 
-	/** @testdox Suppresses checkout and coupon side effects for a signed WooPay preflight request naming the WooPayments gateway. */
+	/** @testdox Suppresses checkout and coupon side effects for a WooPay preflight request WooPay composed, naming the WooPayments gateway. */
 	public function test_preflight_request_suppresses_checkout_and_coupon_side_effects(): void {
-		$guard              = new PreflightGuard();
+		$guard              = $this->create_guard();
 		$order              = $this->create_order();
 		$coupon             = $this->create_coupon();
 		$action_counts      = array(
@@ -310,7 +308,7 @@ class PreflightGuardTest extends WC_Unit_Test_Case {
 
 	/** @testdox Restores checkout hooks after a preflight request before the next checkout request. */
 	public function test_restores_checkout_hooks_after_preflight_request(): void {
-		$guard                = new PreflightGuard();
+		$guard                = $this->create_guard();
 		$order                = $this->create_order();
 		$coupon               = $this->create_coupon();
 		$action_counts        = array(
@@ -455,6 +453,30 @@ class PreflightGuardTest extends WC_Unit_Test_Case {
 		$this->assertSame( 2, $coupon_limit_calls );
 		$this->assertSame( 2, $per_user_limit_calls );
 		$this->assertSame( $following_response, apply_filters( 'rest_request_after_callbacks', $following_response, array(), $following_request ) );
+	}
+
+	/**
+	 * Create the guard for requests WooPay proved it composed; each request in these tests fails on one other condition.
+	 * PreflightGuardStoreApiTest proves the marker against a real vouch and a real signature.
+	 *
+	 * @return PreflightGuard
+	 */
+	private function create_guard(): PreflightGuard {
+		$guard = new PreflightGuard();
+		$guard->init(
+			new class() extends StoreApiRequestHandler {
+				/**
+				 * Every request is one WooPay composed.
+				 *
+				 * @return bool
+				 */
+				public function is_request_composed_by_woopay(): bool {
+					return true;
+				}
+			}
+		);
+
+		return $guard;
 	}
 
 	/**

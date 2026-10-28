@@ -106,6 +106,8 @@ class SessionController implements RegisterHooksInterface {
 
 		add_action( 'woocommerce_store_api_checkout_order_processed', array( $this->store_api_request_handler, 'catch_woopay_checkout_errors' ), 1, 1 );
 
+		add_action( 'woocommerce_store_api_checkout_update_order_from_request', array( $this->store_api_request_handler, 'set_woopay_order_customer_ip' ) );
+
 		add_filter( 'automatewoo/referrals/referred_order_advocate', array( $this->store_api_request_handler, 'automatewoo_refer_a_friend_referral_from_parameter' ) );
 
 		add_filter( 'woocommerce_order_needs_payment', array( $this->store_api_request_handler, 'woopay_trial_subscriptions_handler' ), 20, 3 );

@@ -42,6 +42,12 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethod
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\SubscriptionAdminPaymentMethodHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\AdaptedExtensions;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\Eligibility;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\SessionService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\StoreApiRequestHandler;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\WooPay\WooPayEnvelopes;
 use Automattic\WooCommerce\StoreApi\Exceptions\RouteException;
 use Automattic\WooCommerce\StoreApi\Legacy as StoreApiLegacy;
 use Automattic\WooCommerce\StoreApi\Payments\PaymentContext as StoreApiPaymentContext;
@@ -2900,6 +2906,129 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			'Cash App Afterpay' => array( 'afterpay_clearpay', WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . 'afterpay_clearpay' ),
 			'Bancontact'        => array( 'bancontact', WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . 'bancontact' ),
 		);
+	}
+
+	/**
+	 * @testdox A checkout skips card-testing protection only when WooPay proved it composed it: $_dataName.
+	 *
+	 * Client 11.2.0 class-wc-payment-gateway-wcpay.php:1212-1233 skips the check for a request vouched by WooPay (a fresh
+	 * vouch bound to the request's Cart-Token, class-woopay-session.php:1284-1366) or signed on the signed path, and no longer
+	 * asks wcpay_is_woopay_store_api_request (removed in 7aa5c908d); tests/unit/test-class-wc-payment-gateway-wcpay.php:4301-4330,
+	 * :4725-4805. Card-testing protection is on, the session has a token and the posted one is wrong.
+	 *
+	 * @dataProvider woopay_card_testing_proof_provider
+	 *
+	 * @param string $proof   'vouch', 'vouch for another cart', 'stale vouch', 'filter', 'signature' or 'signature off the signed path'.
+	 * @param bool   $skipped Whether the checkout skips the check.
+	 */
+	public function test_checkout_skips_card_testing_only_for_a_request_woopay_composed( string $proof, bool $skipped ): void {
+		wc_clear_notices();
+		$order   = $this->create_order();
+		$service = new RecordingPaymentProcessingService();
+		$session = $this->create_session();
+		$session->set( WooPaymentsFraudPreventionService::TOKEN_NAME, 'valid-token' );
+		$_POST[ WooPaymentsFraudPreventionService::TOKEN_NAME ] = 'tampered-token';
+		$_POST['wcpay-payment-method']                          = 'pm_card';
+		\Jetpack_Options::update_option( 'blog_token', WooPayEnvelopes::BLOG_TOKEN );
+		$_SERVER['HTTP_CART_TOKEN'] = 'the.cart.token';
+		if ( in_array( $proof, array( 'vouch', 'vouch for another cart', 'stale vouch' ), true ) ) {
+			$_SERVER['HTTP_X_WOOPAY_ATTESTATION'] = WooPayEnvelopes::vouch_header(
+				'vouch for another cart' === $proof ? 'another.cart.token' : 'the.cart.token',
+				'stale vouch' === $proof ? array( 'timestamp' => time() - 301 ) : array()
+			);
+		}
+		if ( 'filter' === $proof ) {
+			add_filter( 'wcpay_is_woopay_store_api_request', '__return_true' );
+		}
+		$signed = in_array( $proof, array( 'signature', 'signature off the signed path' ), true );
+		$this->set_blog_token_signature( $signed );
+		$gateway = new WooPaymentsGateway();
+		$gateway->init(
+			$service,
+			new WooPaymentsProvider(),
+			null,
+			null,
+			null,
+			null,
+			null,
+			$this->create_fraud_prevention_service( true, $session ),
+			null,
+			null,
+			null,
+			$this->create_woopay_request_handler( 'signature off the signed path' !== $proof )
+		);
+
+		try {
+			$result = $gateway->process_payment( $order->get_id() );
+		} finally {
+			$this->set_blog_token_signature( null );
+			unset( $_SERVER['HTTP_CART_TOKEN'], $_SERVER['HTTP_X_WOOPAY_ATTESTATION'] );
+			remove_filter( 'wcpay_is_woopay_store_api_request', '__return_true' );
+		}
+
+		if ( $skipped ) {
+			$this->assertSame( 'success', $result['result'] );
+			$this->assertInstanceOf( PaymentOperationContext::class, $service->last_checkout_context );
+
+			return;
+		}
+
+		$this->assertSame( 'failure', $result['result'] );
+		$this->assertNull( $service->last_checkout_context );
+		$this->assertSame( "We're not able to process this payment. Please refresh the page and try again.", wc_get_notices( 'error' )[0]['notice'] ?? '' );
+	}
+
+	/**
+	 * Checkouts and WooPay's proof: whether card-testing protection is skipped.
+	 *
+	 * @return array<string,array{0:string,1:bool}>
+	 */
+	public function woopay_card_testing_proof_provider(): array {
+		return array(
+			'a fresh vouch bound to the request Cart-Token' => array( 'vouch', true ),
+			'a vouch sealed for another Cart-Token' => array( 'vouch for another cart', false ),
+			'a vouch 301 seconds old'               => array( 'stale vouch', false ),
+			'a callback answering true on wcpay_is_woopay_store_api_request, no proof' => array( 'filter', false ),
+			'a signature on the signed path'        => array( 'signature', true ),
+			'a signature off the signed path'       => array( 'signature off the signed path', false ),
+		);
+	}
+
+	/**
+	 * Create the handler of WooPay's Store API requests over a stored account that keeps the store on the signed path, or
+	 * not.
+	 *
+	 * @param bool $on_signed_path Whether the stored account carries platform_woopay_force_signed_requests true.
+	 * @return StoreApiRequestHandler
+	 */
+	private function create_woopay_request_handler( bool $on_signed_path ): StoreApiRequestHandler {
+		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_stored_account_data' ) )
+			->getMock();
+		$account_service->method( 'get_stored_account_data' )->willReturn( array( 'platform_woopay_force_signed_requests' => $on_signed_path ) );
+		$eligibility = new Eligibility();
+		$eligibility->init( $account_service );
+		$handler = new StoreApiRequestHandler();
+		$handler->init( $eligibility, new AdaptedExtensions(), wc_get_container()->get( WooPaymentsLogger::class ), wc_get_container()->get( SessionService::class ) );
+
+		return $handler;
+	}
+
+	/**
+	 * Drive Jetpack's blog-token signature check, a private singleton state that is unset in tests.
+	 *
+	 * @param bool|null $signed True for a request signed with the blog token, null to reset.
+	 */
+	private function set_blog_token_signature( ?bool $signed ): void {
+		$instance   = \Automattic\Jetpack\Connection\Rest_Authentication::init();
+		$reflection = new \ReflectionClass( \Automattic\Jetpack\Connection\Rest_Authentication::class );
+		$status     = $reflection->getProperty( 'rest_authentication_status' );
+		$type       = $reflection->getProperty( 'rest_authentication_type' );
+		$status->setAccessible( true );
+		$type->setAccessible( true );
+		$status->setValue( $instance, $signed ? true : null );
+		$type->setValue( $instance, $signed ? 'blog' : null );
 	}
 
 	/**

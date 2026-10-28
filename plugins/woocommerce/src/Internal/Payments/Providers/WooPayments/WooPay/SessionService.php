@@ -48,6 +48,12 @@ class SessionService {
 	public const ATTESTATION_KEY_PURPOSE = 'woopay-attestation-v1';
 
 	/**
+	 * HKDF label of the key WooPay seals the vouch on a proxied checkout request under (client 11.2.0
+	 * `WooPay_Utilities::VOUCH_KEY_PURPOSE`, class-woopay-utilities.php:48).
+	 */
+	public const VOUCH_KEY_PURPOSE = 'woopay-vouch-v1';
+
+	/**
 	 * Length in bytes of the keys HKDF derives, the key length AES-256-CBC takes.
 	 */
 	private const CIPHER_KEY_LENGTH = 32;

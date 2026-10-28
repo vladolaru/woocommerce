@@ -63,6 +63,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Transacti
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTransactionsRestController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\SessionController;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Fixtures\RecordedPublicFraudServices;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\WooPay\WooPayEnvelopes;
 use ReflectionClass;
 use ReflectionMethod;
 use WC_Coupon;
@@ -108,6 +109,8 @@ class WooPaymentsHookArityContractTest extends WC_Unit_Test_Case {
 	 */
 	private const TRIGGERS_DEPRECATION_NOTICE = array(
 		'wcpay_multi_currency_should_hide_widgets' => true,
+		// Fired through apply_filters_deprecated(): the WooPayments extension removed it in 11.2.0.
+		'wcpay_is_woopay_store_api_request'        => true,
 	);
 
 	/**
@@ -691,8 +694,24 @@ class WooPaymentsHookArityContractTest extends WC_Unit_Test_Case {
 	 * whether the current request is a WooPay Store API request.
 	 */
 	private function probe_store_api_request(): void {
-		$gateway = new WooPaymentsGateway();
-		$this->builtin_invoke( $gateway, 'get_fraud_prevention_error_message', array( true ) );
+		// The filter fires, deprecated, once WooPay proved it composed the checkout: here by its vouch, bound to the
+		// request's Cart-Token (client 11.2.0 class-woopay-session.php:1284-1366).
+		$blog_token = \Jetpack_Options::get_option( 'blog_token' );
+		\Jetpack_Options::update_option( 'blog_token', WooPayEnvelopes::BLOG_TOKEN );
+		$_SERVER['HTTP_CART_TOKEN']           = 'hook-shape.cart.token';
+		$_SERVER['HTTP_X_WOOPAY_ATTESTATION'] = WooPayEnvelopes::vouch_header( 'hook-shape.cart.token' );
+
+		try {
+			$gateway = new WooPaymentsGateway();
+			$this->builtin_invoke( $gateway, 'get_fraud_prevention_error_message', array( true ) );
+		} finally {
+			unset( $_SERVER['HTTP_CART_TOKEN'], $_SERVER['HTTP_X_WOOPAY_ATTESTATION'] );
+			if ( false === $blog_token ) {
+				\Jetpack_Options::delete_option( 'blog_token' );
+			} else {
+				\Jetpack_Options::update_option( 'blog_token', $blog_token );
+			}
+		}
 	}
 
 	/**

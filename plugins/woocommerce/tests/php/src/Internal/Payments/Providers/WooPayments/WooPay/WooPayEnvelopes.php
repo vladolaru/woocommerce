@@ -48,4 +48,26 @@ class WooPayEnvelopes {
 		);
 		// phpcs:enable WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode
 	}
+
+	/**
+	 * Build the `X-WooPay-Attestation` vouch header WooPay seals onto a proxied checkout request: the envelope under the
+	 * vouch key, bound to the sha256 of the request's Cart-Token, JSON then base64 (client 11.2.0
+	 * tests/unit/woopay/test-class-woopay-session.php:272-300).
+	 *
+	 * @param string              $cart_token Cart-Token the vouch is bound to.
+	 * @param array<string,mixed> $extra      Payload fields beside the timestamp and the cart binding, which they may replace.
+	 * @return string
+	 */
+	public static function vouch_header( string $cart_token, array $extra = array() ): string {
+		$payload = array_merge(
+			array(
+				'timestamp'  => time(),
+				'cart_token' => hash( 'sha256', $cart_token ),
+			),
+			$extra
+		);
+
+		// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode -- The header's wire encoding.
+		return base64_encode( (string) wp_json_encode( self::seal( $payload, 'woopay-vouch-v1' ) ) );
+	}
 }

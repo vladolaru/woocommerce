@@ -51,7 +51,7 @@ class StoreApiRequestHandlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should leave the resolved user untouched and the request unflagged for $_dataName.
+	 * @testdox Should leave the resolved user untouched, refusing nothing, for $_dataName.
 	 * @dataProvider passthrough_request_provider
 	 *
 	 * @param string|null         $user_agent  The request user agent, or null for none.
@@ -65,8 +65,6 @@ class StoreApiRequestHandlerTest extends WC_Unit_Test_Case {
 		$_SERVER['REQUEST_URI'] = $request_uri;
 
 		$this->assertFalse( $this->create_handler( $settings )->determine_current_user_for_woopay( false ) );
-		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment
-		$this->assertFalse( apply_filters( 'wcpay_is_woopay_store_api_request', false ) );
 	}
 
 	/**
@@ -144,6 +142,7 @@ class StoreApiRequestHandlerTest extends WC_Unit_Test_Case {
 			'no Cart-Token and no signature' => array( null, false, true, 'woopay_request_not_authenticated' ),
 			'a signature without a Cart-Token, off the signed path' => array( null, true, false, 'woopay_request_not_authenticated' ),
 			'a signature without a Cart-Token, on the signed path' => array( null, true, true, null ),
+			'a signature with an invalid Cart-Token, on the signed path' => array( 'garbage-token', true, true, null ),
 			'a signature, the account carrying no signed-path flag' => array( null, true, null, 'woopay_request_not_authenticated' ),
 		);
 	}
@@ -185,18 +184,6 @@ class StoreApiRequestHandlerTest extends WC_Unit_Test_Case {
 		);
 	}
 
-	/**
-	 * @testdox Should flag the request through wcpay_is_woopay_store_api_request when signed, even without a resolvable cart token.
-	 */
-	public function test_determine_current_user_flags_woopay_store_api_request_when_signed(): void {
-		$this->simulate_woopay_store_api_request();
-		$this->force_real_blog_token_signed();
-		$_SERVER['HTTP_CART_TOKEN'] = 'garbage-token';
-
-		$this->assertFalse( $this->create_handler()->determine_current_user_for_woopay( false ) );
-		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment
-		$this->assertTrue( apply_filters( 'wcpay_is_woopay_store_api_request', false ) );
-	}
 
 	/**
 	 * @testdox Should resolve the shopper from an authenticated cart-token session: $label.
@@ -321,6 +308,68 @@ class StoreApiRequestHandlerTest extends WC_Unit_Test_Case {
 			'verified email, unsigned, previous-tick nonce' => array( 'email', false, -1, true, true ),
 			'verified email, unsigned, another user nonce' => array( 'email', false, 0, false, false ),
 			'verified email, signed, no nonce'             => array( 'email', true, null, true, true ),
+		);
+	}
+
+	/**
+	 * @testdox A WooPay checkout records on its order the shopper address WooPay sealed in its vouch: $_dataName.
+	 *
+	 * Client 11.2.0 class-woopay-session.php:102 and :1237-1259 (validated with rest_is_ip_address(), one log line when it
+	 * does not parse, nothing without a vouch); tests/unit/woopay/test-class-woopay-session.php:139-185, :241-262. The
+	 * vouch is bound to the request's Cart-Token (:1343-1363).
+	 *
+	 * @dataProvider vouched_customer_ip_provider
+	 *
+	 * @param array<string,mixed>|null $vouch    Payload fields of the vouch, or null for a request without one.
+	 * @param string                   $expected The order's customer IP after the request.
+	 * @param string|null              $log_line Expected log line, or null for none.
+	 */
+	public function test_woopay_checkout_records_the_vouched_shopper_ip( ?array $vouch, string $expected, ?string $log_line ): void {
+		WooPayEnvelopes::connect_store();
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => 'yes' ) );
+		$lines = $this->record_woopayments_log_lines();
+		$this->register_controller( $this->create_service() );
+		$this->simulate_woopay_store_api_request();
+		$_SERVER['HTTP_CART_TOKEN'] = 'the.cart.token';
+		if ( null !== $vouch ) {
+			$_SERVER['HTTP_X_WOOPAY_ATTESTATION'] = WooPayEnvelopes::vouch_header( 'the.cart.token', $vouch );
+		}
+		// The address the Store API records: WooPay's server (OrderController::update_order_from_cart()).
+		$order = wc_create_order();
+		$order->set_customer_ip_address( '192.0.91.172' );
+
+		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Store API hook, CheckoutTrait::update_order_from_request().
+		do_action( 'woocommerce_store_api_checkout_update_order_from_request', $order, new \WP_REST_Request( 'POST', '/wc/store/v1/checkout' ) );
+
+		$this->assertSame( $expected, $order->get_customer_ip_address() );
+		$messages = array_column( $lines->getArrayCopy(), 1 );
+		if ( null === $log_line ) {
+			$this->assertSame( array(), preg_grep( '/^WooPay vouch/', $messages ) );
+		} else {
+			$this->assertSame( array( $log_line ), array_values( array_unique( preg_grep( '/^WooPay vouch/', $messages ) ) ) );
+		}
+	}
+
+	/**
+	 * Vouches on a WooPay checkout: the sealed fields, the order IP after the request, and the log line.
+	 *
+	 * @return array<string,array{0:array<string,mixed>|null,1:string,2:string|null}>
+	 */
+	public function vouched_customer_ip_provider(): array {
+		return array(
+			'a vouch with an IPv4 address'                => array( array( 'customer_ip' => '203.0.113.10' ), '203.0.113.10', null ),
+			'a vouch with an IPv6 address'                => array( array( 'customer_ip' => '2001:db8::8a2e:370:7334' ), '2001:db8::8a2e:370:7334', null ),
+			'a vouch with a value that is not an address' => array( array( 'customer_ip' => 'not-an-ip-address' ), '192.0.91.172', 'WooPay vouch carried a customer IP that does not parse; the order keeps the address the request arrived from.' ),
+			'a vouch sealing no address'                  => array( array(), '192.0.91.172', null ),
+			'a vouch sealed for another cart'             => array(
+				array(
+					'customer_ip' => '203.0.113.10',
+					'cart_token'  => hash( 'sha256', 'another.cart.token' ),
+				),
+				'192.0.91.172',
+				'WooPay vouch rejected: envelope was sealed for a different cart.',
+			),
+			'no vouch'                                    => array( null, '192.0.91.172', null ),
 		);
 	}
 

@@ -12,9 +12,9 @@ use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use WP_REST_Request;
 
 /**
- * For a signed WooPay Store API checkout, or pay-for-order checkout, that names the WooPayments gateway and carries WooPay's
- * preflight marker, empties the order meta, order processed, pending status and registration-required hooks and lifts
- * coupon usage limits for that request, then restores them. The WooPayments gateway answers such a request without charging.
+ * For a WooPay Store API checkout, or pay-for-order checkout, that WooPay proved it composed, names the WooPayments gateway
+ * and carries WooPay's preflight marker, empties the order meta, order processed, pending status and registration-required
+ * hooks and lifts coupon usage limits for that request, then restores them. The WooPayments gateway answers such a request without charging.
  *
  * @since 11.2.0
  * @internal
@@ -45,6 +45,24 @@ class PreflightGuard implements RegisterHooksInterface {
 	private $checkout_hook_snapshots = array();
 
 	/**
+	 * Handler of WooPay's Store API requests, which tells whether WooPay composed the request.
+	 *
+	 * @var StoreApiRequestHandler
+	 */
+	private StoreApiRequestHandler $store_api_request_handler;
+
+	/**
+	 * Initialize the class instance.
+	 *
+	 * @internal
+	 *
+	 * @param StoreApiRequestHandler $store_api_request_handler Handler of WooPay's Store API requests.
+	 */
+	final public function init( StoreApiRequestHandler $store_api_request_handler ): void {
+		$this->store_api_request_handler = $store_api_request_handler;
+	}
+
+	/**
 	 * Register request lifecycle callbacks once.
 	 *
 	 * @since 11.2.0
@@ -58,7 +76,7 @@ class PreflightGuard implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Suppress checkout side effects for a signed WooPay preflight request.
+	 * Suppress checkout side effects for a WooPay preflight request.
 	 *
 	 * @since 11.2.0
 	 *
@@ -157,10 +175,7 @@ class PreflightGuard implements RegisterHooksInterface {
 
 	/**
 	 * Check whether a Store API request is WooPay's preflight: it carries the exact marker, names the WooPayments gateway and
-	 * is signed by WooPay.
-	 *
-	 * The signature is the one StoreApiRequestHandler checks while the current user is resolved, before any
-	 * route runs; only a request that passed it sets the filter.
+	 * WooPay proved it composed it, by the vouch bound to its Cart-Token or by the signature on the signed path.
 	 *
 	 * @param WP_REST_Request $request The REST request.
 	 * @phpstan-param WP_REST_Request<array<string, mixed>> $request
@@ -185,13 +200,6 @@ class PreflightGuard implements RegisterHooksInterface {
 			return false;
 		}
 
-		/**
-		 * Filters whether the request is a WooPay Store API request; the WooPay session sets it once the request's signature
-		 * is checked. Also read by WooPaymentsGateway.
-		 *
-		 * @since 11.0.0
-		 * @param bool $is_woopay_store_api_request Whether the request is a WooPay Store API request.
-		 */
-		return (bool) apply_filters( 'wcpay_is_woopay_store_api_request', false );
+		return $this->store_api_request_handler->is_request_composed_by_woopay();
 	}
 }
