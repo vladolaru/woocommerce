@@ -1066,9 +1066,8 @@ const ExpressCheckoutSettingsSection = () => {
 		usePaymentRequestEnabledSettings() as BooleanSetting;
 	const [ isWooPayEnabled, setIsWooPayEnabled ] =
 		useWooPayEnabledSettings() as BooleanSetting;
-	const [ isLinkEnabled, setIsLinkEnabled ] = useLinkEnabledSettings(
-		isWooPayAvailableForStore && isWooPayEnabled
-	) as [ boolean, ( isEnabled: boolean ) => void, boolean ];
+	const [ isLinkEnabled, setIsLinkEnabled ] =
+		useLinkEnabledSettings() as BooleanSetting;
 	const [ enabledMethodIds ] =
 		useEnabledPaymentMethodIds() as StringArraySetting;
 	const [ isAmazonPayEnabled, setIsAmazonPayEnabled ] =
@@ -1109,9 +1108,21 @@ const ExpressCheckoutSettingsSection = () => {
 	const showWooPayIncompatibilityNotice = Boolean(
 		useWooPayShowIncompatibilityNotice()
 	);
+	// Client 11.2.0 `settings/express-checkout/link-item.tsx:46, :61-62, :117-118` and `woopay-item.tsx:35-38, :60,
+	// :135-136`: each checkbox only stops being turned on while the other method is on, so a store holding both can turn
+	// either off, with a conflict notice on both rows meanwhile. Link counts only with card, as its row shows only then.
+	const isWooPayOn = isWooPayAvailableForStore && isWooPayEnabled;
+	const isStripeLinkOn = isLinkEnabled && enabledMethodIds.includes( 'card' );
+	const isLinkWooPayConflict = isWooPayOn && isStripeLinkOn;
+	const conflictNotice = __(
+		"Link by Stripe and WooPay can't be enabled at the same time. Disable one of them.",
+		'woocommerce'
+	);
 	let wooPayNotice = '';
 
-	if ( isLinkEnabled ) {
+	if ( isLinkWooPayConflict ) {
+		wooPayNotice = conflictNotice;
+	} else if ( isStripeLinkOn ) {
 		wooPayNotice = __(
 			'To enable WooPay, you must first disable Link by Stripe.',
 			'woocommerce'
@@ -1122,13 +1133,16 @@ const ExpressCheckoutSettingsSection = () => {
 			'woocommerce'
 		);
 	}
-	const isWooPayBlockingLink = isWooPayAvailableForStore && isWooPayEnabled;
-	const linkNotice = isWooPayBlockingLink
-		? __(
-				'To enable Link by Stripe, you must first disable WooPay.',
-				'woocommerce'
-			)
-		: '';
+	let linkNotice = '';
+
+	if ( isLinkWooPayConflict ) {
+		linkNotice = conflictNotice;
+	} else if ( isWooPayOn ) {
+		linkNotice = __(
+			'To enable Link by Stripe, you must first disable WooPay.',
+			'woocommerce'
+		);
+	}
 
 	const expressRows: ExpressCheckoutOverviewRow[] = [];
 
@@ -1138,7 +1152,7 @@ const ExpressCheckoutSettingsSection = () => {
 			id: 'woopay',
 			label: __( 'WooPay', 'woocommerce' ),
 			checked: isWooPayEnabled,
-			disabled: isLinkEnabled,
+			disabled: isStripeLinkOn && ! isWooPayEnabled,
 			onChange: setIsWooPayEnabled,
 			items: [
 				{
@@ -1236,7 +1250,7 @@ const ExpressCheckoutSettingsSection = () => {
 			id: 'link',
 			label: __( 'Link', 'woocommerce' ),
 			checked: isLinkEnabled,
-			disabled: isWooPayBlockingLink,
+			disabled: isWooPayOn && ! isLinkEnabled,
 			onChange: setIsLinkEnabled,
 			items: [
 				{

@@ -282,8 +282,7 @@ jest.mock( '../data/hooks', () => ( {
 	useWooPayLocations: () => mockUseWooPayLocations(),
 	useAmazonPayLocations: () => mockUseAmazonPayLocations(),
 	useAmazonPayEnabledSettings: () => mockUseAmazonPayEnabledSettings(),
-	useLinkEnabledSettings: ( isWooPayBlockingLink?: boolean ) =>
-		mockUseLinkEnabledSettings( isWooPayBlockingLink ),
+	useLinkEnabledSettings: () => mockUseLinkEnabledSettings(),
 	useWooPayShowIncompatibilityNotice: () =>
 		mockUseWooPayShowIncompatibilityNotice(),
 	useGetSavingError: () => mockUseGetSavingError(),
@@ -564,7 +563,7 @@ const setHookDefaults = () => {
 	] );
 	mockUseAmazonPayLocations.mockReturnValue( [ [ 'checkout' ], noop ] );
 	mockUseAmazonPayEnabledSettings.mockReturnValue( [ true, noop ] );
-	mockUseLinkEnabledSettings.mockReturnValue( [ false, noop, true ] );
+	mockUseLinkEnabledSettings.mockReturnValue( [ false, noop ] );
 	mockUseWooPayShowIncompatibilityNotice.mockReturnValue( false );
 	mockUseGetSavingError.mockReturnValue( null );
 };
@@ -1444,7 +1443,7 @@ describe( 'WooPaymentsSettingsPage', () => {
 			[ 'amazon_pay', 'affirm' ],
 			noop,
 		] );
-		mockUseLinkEnabledSettings.mockReturnValue( [ false, noop, false ] );
+		mockUseLinkEnabledSettings.mockReturnValue( [ false, noop ] );
 
 		render( <WooPaymentsSettingsPage /> );
 
@@ -2152,6 +2151,63 @@ describe( 'WooPaymentsSettingsPage', () => {
 		expect( mockSaveSettings ).toHaveBeenCalled();
 	} );
 
+	// Client 11.2.0 `settings/express-checkout/link-item.tsx:46, :61-62, :117-118`, `woopay-item.tsx:35-38, :60, :135-136`
+	// and `settings-warnings/incompatibility-notice.js:44-51`.
+	it( 'lets a store holding Link and WooPay turn Link off, with the conflict notice on both rows', async () => {
+		const setIsLinkEnabled = jest.fn();
+		mockUseEnabledPaymentMethodIds.mockReturnValue( [
+			[ 'card', 'link' ],
+			noop,
+		] );
+		mockUseWooPayEnabledSettings.mockReturnValue( [ true, noop ] );
+		mockUseLinkEnabledSettings.mockReturnValue( [
+			true,
+			setIsLinkEnabled,
+		] );
+
+		render( <WooPaymentsSettingsPage /> );
+
+		const expressCheckoutsSection =
+			getSettingsSectionByName( 'Express checkouts' );
+		const wooPayCheckbox = within( expressCheckoutsSection ).getByRole(
+			'checkbox',
+			{ name: 'WooPay' }
+		);
+		const linkCheckbox = within( expressCheckoutsSection ).getByRole(
+			'checkbox',
+			{ name: 'Link' }
+		);
+
+		expect( wooPayCheckbox ).toBeChecked();
+		expect( wooPayCheckbox ).toBeEnabled();
+		expect( linkCheckbox ).toBeChecked();
+		expect( linkCheckbox ).toBeEnabled();
+		expect(
+			within( expressCheckoutsSection ).getAllByText(
+				"Link by Stripe and WooPay can't be enabled at the same time. Disable one of them."
+			)
+		).toHaveLength( 2 );
+
+		await userEvent.click( linkCheckbox );
+		expect( setIsLinkEnabled ).toHaveBeenCalledWith( false );
+	} );
+
+	// Client 11.2.0 `settings/express-checkout/woopay-item.tsx:35-38`: Link counts only with card.
+	it( 'keeps WooPay editable when Link is stored without card', () => {
+		mockUseEnabledPaymentMethodIds.mockReturnValue( [ [ 'link' ], noop ] );
+		mockUseWooPayEnabledSettings.mockReturnValue( [ false, noop ] );
+		mockUseLinkEnabledSettings.mockReturnValue( [ true, noop ] );
+
+		render( <WooPaymentsSettingsPage /> );
+
+		expect(
+			within( getSettingsSectionByName( 'Express checkouts' ) ).getByRole(
+				'checkbox',
+				{ name: 'WooPay' }
+			)
+		).toBeEnabled();
+	} );
+
 	it( 'hides the WooPay express checkout row when the WooPay feature flag is disabled', async () => {
 		const setIsLinkEnabled = jest.fn();
 
@@ -2171,20 +2227,10 @@ describe( 'WooPaymentsSettingsPage', () => {
 				'google_pay',
 			],
 		} );
-		mockUseLinkEnabledSettings.mockImplementation(
-			( isWooPayBlockingLink?: boolean ) => {
-				const shouldBlockLink = isWooPayBlockingLink ?? true;
-				const setLinkEnabledIfNotBlocked = ( isEnabled: boolean ) => {
-					if ( shouldBlockLink ) {
-						return;
-					}
-
-					setIsLinkEnabled( isEnabled );
-				};
-
-				return [ false, setLinkEnabledIfNotBlocked, shouldBlockLink ];
-			}
-		);
+		mockUseLinkEnabledSettings.mockReturnValue( [
+			false,
+			setIsLinkEnabled,
+		] );
 
 		render( <WooPaymentsSettingsPage /> );
 
@@ -3606,11 +3652,7 @@ describe( 'WooPaymentsSettingsPage', () => {
 				noop,
 			] );
 			mockUseWooPayEnabledSettings.mockReturnValue( [ false, noop ] );
-			mockUseLinkEnabledSettings.mockReturnValue( [
-				false,
-				noop,
-				false,
-			] );
+			mockUseLinkEnabledSettings.mockReturnValue( [ false, noop ] );
 			mockUseAmazonPayEnabledSettings.mockReturnValue( [ false, noop ] );
 
 			render( <WooPaymentsSettingsPage /> );

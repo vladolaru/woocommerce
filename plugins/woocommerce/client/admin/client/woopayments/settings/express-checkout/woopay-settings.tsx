@@ -256,7 +256,12 @@ export const WooPaySettings = () => {
 	const showIncompatibilityNotice = Boolean(
 		useWooPayShowIncompatibilityNotice()
 	);
-	const isStripeLinkEnabled = enabledMethodIds.includes( 'link' );
+	// Client 11.2.0 `express-checkout-settings/woopay-settings.js:62-66`: Link counts only with card, as its settings row
+	// shows only then.
+	const isStripeLinkEnabled =
+		enabledMethodIds.includes( 'link' ) &&
+		enabledMethodIds.includes( 'card' );
+	const isConflicting = isWooPayEnabled && isStripeLinkEnabled;
 	const isGlobalThemeSupportEligible = Boolean(
 		settings.is_woopay_global_theme_support_eligible
 	);
@@ -310,7 +315,15 @@ export const WooPaySettings = () => {
 						) }
 					</ExpressCheckoutInlineNotice>
 				) }
-				{ isStripeLinkEnabled && (
+				{ isConflicting && (
+					<ExpressCheckoutInlineNotice>
+						{ __(
+							"Link by Stripe and WooPay can't be enabled at the same time. Disable one of them.",
+							'woocommerce'
+						) }
+					</ExpressCheckoutInlineNotice>
+				) }
+				{ isStripeLinkEnabled && ! isConflicting && (
 					<ExpressCheckoutInlineNotice>
 						{ __(
 							'To enable WooPay, you must first disable Link by Stripe.',
@@ -320,7 +333,9 @@ export const WooPaySettings = () => {
 				) }
 				<CheckboxControl
 					checked={ isWooPayEnabled }
-					disabled={ isStripeLinkEnabled }
+					// Client 11.2.0 woopay-settings.js:95-98: only turning WooPay on is blocked, so a store holding both
+					// can turn it off.
+					disabled={ isStripeLinkEnabled && ! isWooPayEnabled }
 					label={ __( 'Enable WooPay', 'woocommerce' ) }
 					// Owner decision N-280: the terms text follows the saved state, not the unsaved toggle.
 					help={

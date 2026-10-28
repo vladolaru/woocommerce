@@ -262,7 +262,7 @@ const setHookDefaults = () => {
 		noop,
 	] );
 	mockUseAmazonPayEnabledSettings.mockReturnValue( [ true, noop ] );
-	mockUseLinkEnabledSettings.mockReturnValue( [ false, noop, true ] );
+	mockUseLinkEnabledSettings.mockReturnValue( [ false, noop ] );
 	mockUseWooPayShowIncompatibilityNotice.mockReturnValue( false );
 	mockUseGetAvailablePaymentMethodIds.mockReturnValue( [
 		'amazon_pay',
@@ -1353,6 +1353,34 @@ describe( 'WooPaymentsExpressCheckoutSettings', () => {
 		).not.toHaveClass( 'components-external-link' );
 		expectPlainLink( 'https://example.test/privacy-policy/' );
 		expectPlainLink( 'https://example.test/terms-and-conditions/' );
+	} );
+
+	// Client 11.2.0 `settings/express-checkout-settings/woopay-settings.js:62-66, :83-98`.
+	it( 'lets a store holding Link and WooPay turn WooPay off, with the conflict notice', async () => {
+		mockUseEnabledPaymentMethodIds.mockReturnValue( [
+			[ 'card', 'link' ],
+			noop,
+		] );
+		mockUseWooPayEnabledSettings.mockReturnValue( [ true, noop ] );
+		mockUseWooPayStoreLogo.mockReturnValue( [ '', noop ] );
+
+		render( <WooPaymentsExpressCheckoutSettings methodId="woopay" /> );
+
+		const checkbox = await screen.findByRole( 'checkbox', {
+			name: 'Enable WooPay',
+		} );
+		expect( checkbox ).toBeChecked();
+		expect( checkbox ).toBeEnabled();
+		expect(
+			screen.getByText(
+				"Link by Stripe and WooPay can't be enabled at the same time. Disable one of them."
+			)
+		).toBeInTheDocument();
+		expect(
+			screen.queryByText(
+				'To enable WooPay, you must first disable Link by Stripe.'
+			)
+		).not.toBeInTheDocument();
 	} );
 
 	it( 'renders WooPay detail controls and blocks WooPay while Link is enabled', async () => {

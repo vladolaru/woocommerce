@@ -370,27 +370,9 @@ const usePaymentMethodEnabled = ( methodId: string ) => {
 export const useAmazonPayEnabledSettings = () =>
 	usePaymentMethodEnabled( 'amazon_pay' );
 
-export const useLinkEnabledSettings = ( isWooPayBlockingLink?: boolean ) => {
-	const [ isLinkEnabled, updateIsLinkEnabled ] = usePaymentMethodEnabled(
-		'link'
-	) as [ boolean, ( isEnabled: boolean ) => void ];
-	const [ isWooPayEnabled ] = useWooPayEnabledSettings() as [ boolean ];
-	const shouldBlockLink = isWooPayBlockingLink ?? isWooPayEnabled;
-
-	const updateStripeLinkCheckout = ( isEnabled: boolean ) => {
-		if ( shouldBlockLink ) {
-			return;
-		}
-
-		if ( isEnabled ) {
-			updateIsLinkEnabled( true );
-		} else {
-			updateIsLinkEnabled( false );
-		}
-	};
-
-	return [ isLinkEnabled, updateStripeLinkCheckout, shouldBlockLink ];
-};
+// Client 11.2.0 `settings/express-checkout/link-item.tsx:30-40`: the updater refuses nothing, so a store holding Link and
+// WooPay can turn either off; the settings rows keep Link from being turned on while WooPay is on.
+export const useLinkEnabledSettings = () => usePaymentMethodEnabled( 'link' );
 
 export const useWooPayShowIncompatibilityNotice = () =>
 	useRegisteredSelect( ( select ) =>
