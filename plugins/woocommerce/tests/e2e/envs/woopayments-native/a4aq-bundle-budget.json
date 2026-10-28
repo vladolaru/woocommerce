@@ -31,8 +31,8 @@
 			"gzip_bytes": 10391
 		},
 		"woopay.js": {
-			"raw_growth_bytes": 3271,
-			"gzip_growth_bytes": 2145
+			"raw_growth_bytes": 4396,
+			"gzip_growth_bytes": 3196
 		},
 		"admin-capital.js": {
 			"raw_bytes": 11018,
