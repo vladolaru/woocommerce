@@ -68,7 +68,7 @@ class WooPaymentsOrderDetailsService {
 	}
 
 	/**
-	 * Add order and payment intent context to a transaction list response.
+	 * Add order, payment intent and early fraud warning context to a transaction list response.
 	 *
 	 * @param array<string,mixed> $response Platform response.
 	 * @return array<string,mixed>
@@ -100,6 +100,15 @@ class WooPaymentsOrderDetailsService {
 			$order                            = $orders_by_charge_id[ $charge_id ];
 			$transaction['order']             = $this->build_list_order_info( $order );
 			$transaction['payment_intent_id'] = (string) $order->get_meta( '_intent_id' );
+
+			// The key is left out when the order never had a warning, as client 11.2.0 class-list-transactions.php:309-316.
+			$early_fraud_warning = $order->get_meta( WooPaymentsPersistenceVocabulary::EARLY_FRAUD_WARNING_META_KEY, true );
+			if ( is_array( $early_fraud_warning ) && array() !== $early_fraud_warning ) {
+				$transaction['early_fraud_warning'] = array(
+					'actionable' => (bool) ( $early_fraud_warning['efw_actionable'] ?? false ),
+					'fraud_type' => (string) ( $early_fraud_warning['efw_type'] ?? '' ),
+				);
+			}
 		}
 		unset( $transaction );
 

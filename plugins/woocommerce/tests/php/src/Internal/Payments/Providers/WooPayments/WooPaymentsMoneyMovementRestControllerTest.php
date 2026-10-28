@@ -13,6 +13,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLe
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDataService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDetailsService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentDetailsRestController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\TransactionsListRequest;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTransactionsRestController;
 use WC_Order;
@@ -979,6 +980,52 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 		$this->assertSame( $order->get_order_number(), $data['data'][0]['order']['number'] );
 		$this->assertSame( 'pi_order', $data['data'][0]['payment_intent_id'] );
 		$this->assertArrayNotHasKey( 'order', $data['data'][1] );
+	}
+
+	/**
+	 * @testdox Transactions list flags a payment whose order holds an early fraud warning, and leaves the key out otherwise.
+	 *
+	 * Client 11.2.0 class-list-transactions.php:309-316 (tests/unit/core/server/request/test-class-list-transactions-request.php:238-290).
+	 * The meta has the shape the early fraud warning webhook writes (EarlyFraudWarningEventHandler).
+	 */
+	public function test_transactions_list_flags_an_early_fraud_warning(): void {
+		$warned = $this->create_order_with_charge( 'ch_warned', 'pi_warned' );
+		$warned->update_meta_data(
+			WooPaymentsPersistenceVocabulary::EARLY_FRAUD_WARNING_META_KEY,
+			array(
+				'efw_id'         => 'issfr_warned',
+				'efw_actionable' => true,
+				'efw_type'       => 'card_never_received',
+				'created'        => 1752969600,
+			)
+		);
+		$warned->save();
+		$this->create_order_with_charge( 'ch_clean', 'pi_clean' );
+		$this->api_client->response = array(
+			'data' => array(
+				array(
+					'id'        => 'txn_warned',
+					'charge_id' => 'ch_warned',
+				),
+				array(
+					'id'        => 'txn_clean',
+					'charge_id' => 'ch_clean',
+				),
+			),
+		);
+		$this->create_transactions_controller()->register_routes();
+
+		$data = $this->server->dispatch( new WP_REST_Request( 'GET', '/wc/v3/payments/transactions' ) )->get_data();
+
+		$this->assertSame(
+			array(
+				'actionable' => true,
+				'fraud_type' => 'card_never_received',
+			),
+			$data['data'][0]['early_fraud_warning'] ?? null
+		);
+		$this->assertArrayHasKey( 'order', $data['data'][1] );
+		$this->assertArrayNotHasKey( 'early_fraud_warning', $data['data'][1] );
 	}
 
 	/**
