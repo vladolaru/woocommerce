@@ -369,15 +369,58 @@ class SessionServiceTest extends WC_Unit_Test_Case {
 	 * API extension data that request registers. Client 11.2.0 registers the wcpay cart data on every request
 	 * (class-wc-payments.php:697-709).
 	 *
-	 * @testdox Should preload the Store API cart with the wcpay extension data in an active store's AJAX request.
+	 * The test empties the wcpay cart entry of the Store API registry for its own run and leaves the registry as it found
+	 * it, whether or not wcpay was registered before.
+	 *
+	 * @testdox Should preload the Store API cart with the wcpay extension data in an active store's AJAX request, wcpay registered before: $wcpay_registered_before.
+	 *
+	 * @testWith [false]
+	 *           [true]
+	 *
+	 * @param bool $wcpay_registered_before Whether wcpay cart data is registered when the test starts.
 	 */
-	public function test_ajax_session_preloads_the_cart_with_the_wcpay_extension_data(): void {
+	public function test_ajax_session_preloads_the_cart_with_the_wcpay_extension_data( bool $wcpay_registered_before ): void {
 		$extend_schema = StoreApi::container()->get( ExtendSchema::class );
 		$extend_data   = new \ReflectionProperty( ExtendSchema::class, 'extend_data' );
 		$extend_data->setAccessible( true );
+		$registry_at_start = $extend_data->getValue( $extend_schema );
+		$registry_before   = $registry_at_start;
+		unset( $registry_before[ CartSchema::IDENTIFIER ]['wcpay'] );
+		if ( $wcpay_registered_before ) {
+			$registry_before[ CartSchema::IDENTIFIER ]['wcpay'] = array(
+				'schema_callback' => '__return_empty_array',
+				'data_callback'   => '__return_empty_array',
+				'schema_type'     => ARRAY_A,
+			);
+		}
+		$extend_data->setValue( $extend_schema, $registry_before );
+
+		try {
+			$preload        = $this->build_ajax_session_preload( $extend_schema, $extend_data );
+			$registry_after = $extend_data->getValue( $extend_schema );
+		} finally {
+			$extend_data->setValue( $extend_schema, $registry_at_start );
+		}
+
+		$extensions = (array) ( $preload['cart']['extensions'] ?? array() );
+		$this->assertArrayHasKey( 'wcpay', $extensions );
+		$this->assertArrayHasKey( 'express_checkout_methods', (array) $extensions['wcpay'] );
+		$this->assertArrayHasKey( 'setup_future_usage', (array) $extensions['wcpay'] );
+		$this->assertSame( $registry_before, $registry_after, 'The test must leave the Store API registry as it found it.' );
+	}
+
+	/**
+	 * Build a WooPay session in an active store's AJAX request, with the wcpay cart data that request registers.
+	 *
+	 * @param ExtendSchema        $extend_schema Store API registry.
+	 * @param \ReflectionProperty $extend_data   Its extend_data property, accessible.
+	 * @return array<string,mixed> The session's preloaded requests.
+	 */
+	private function build_ajax_session_preload( ExtendSchema $extend_schema, \ReflectionProperty $extend_data ): array {
 		$extend_data_before = $extend_data->getValue( $extend_schema );
-		unset( $extend_data_before[ CartSchema::IDENTIFIER ]['wcpay'] );
-		$extend_data->setValue( $extend_schema, $extend_data_before );
+		$extend_data_test   = $extend_data_before;
+		unset( $extend_data_test[ CartSchema::IDENTIFIER ]['wcpay'] );
+		$extend_data->setValue( $extend_schema, $extend_data_test );
 		add_filter( 'wp_doing_ajax', '__return_true' );
 
 		try {
@@ -391,16 +434,11 @@ class SessionServiceTest extends WC_Unit_Test_Case {
 			wc_empty_cart();
 			WC()->cart->add_to_cart( $product->get_id(), 1 );
 
-			$preload = $this->create_service()->start_init_session_request( 'shopper@example.com' )['preloaded_requests'];
+			return $this->create_service()->start_init_session_request( 'shopper@example.com' )['preloaded_requests'];
 		} finally {
 			remove_filter( 'wp_doing_ajax', '__return_true' );
 			$extend_data->setValue( $extend_schema, $extend_data_before );
 		}
-
-		$extensions = (array) ( $preload['cart']['extensions'] ?? array() );
-		$this->assertArrayHasKey( 'wcpay', $extensions );
-		$this->assertArrayHasKey( 'express_checkout_methods', (array) $extensions['wcpay'] );
-		$this->assertArrayHasKey( 'setup_future_usage', (array) $extensions['wcpay'] );
 	}
 
 	/**
