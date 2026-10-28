@@ -47,6 +47,26 @@ final class WooPaymentsOrderPayAccess {
 	}
 
 	/**
+	 * Get the order the current pay link lets the current user pay, or null.
+	 *
+	 * The order comes from the routed request, not get_query_var(), which a secondary WP_Query can hide, and must be an
+	 * order whose key the link carries; a refund ID fails. As client 11.2.0
+	 * WC_Payments_Utils::get_authorized_order_from_payment_link() (includes/class-wc-payments-utils.php:1398-1430).
+	 *
+	 * @since 11.2.0
+	 *
+	 * @return \WC_Order|null
+	 */
+	public static function get_authorized_order_from_payment_link(): ?\WC_Order {
+		global $wp;
+
+		$order_id = is_object( $wp ) && isset( $wp->query_vars['order-pay'] ) ? absint( $wp->query_vars['order-pay'] ) : 0;
+		$order    = 0 < $order_id ? wc_get_order( $order_id ) : false;
+
+		return $order instanceof \WC_Order && self::can_pay_with_key( $order, self::get_request_order_key() ) ? $order : null;
+	}
+
+	/**
 	 * Tell whether the Store API order route states the order's total in the order's currency and amount.
 	 *
 	 * The route labels its totals with the active currency and price decimals (CurrencyFormatter.php:44-46) but writes them

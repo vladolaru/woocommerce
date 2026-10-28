@@ -183,7 +183,9 @@ class WooPaymentsCustomerServiceTest extends WC_Unit_Test_Case {
 		$order->set_customer_id( $user_id );
 		$order->save();
 
+		$GLOBALS['wp']->query_vars['order-pay'] = (string) $order->get_id();
 		set_query_var( 'order-pay', (string) $order->get_id() );
+		$_GET['key'] = $order->get_order_key();
 
 		$sut = $this->create_sut( false, $this->create_customer_api_client( array() ) );
 
@@ -202,9 +204,74 @@ class WooPaymentsCustomerServiceTest extends WC_Unit_Test_Case {
 			$this->assertSame( 'Grace Hopper', $data['name'] );
 			$this->assertSame( 'grace@example.com', $data['email'] );
 		} finally {
-			unset( $_GET['pay_for_order'] );
+			unset( $_GET['pay_for_order'], $_GET['key'], $GLOBALS['wp']->query_vars['order-pay'] );
 			set_query_var( 'order-pay', '' );
 		}
+	}
+
+	/**
+	 * @testdox A pay link shares a guest order's billing data only with the order's key: $_dataName.
+	 *
+	 * Core lets every visitor pay an order without a customer, so the key from the payment link is what proves the visitor
+	 * was sent that order. Client 11.2.0 WC_Payments_Utils::get_authorized_order_from_payment_link()
+	 * (includes/class-wc-payments-utils.php:1398-1430; tests/unit/test-class-wc-payments-customer-service.php:750-812).
+	 *
+	 * @dataProvider provider_pay_link_keys
+	 *
+	 * @param string $key_case      'right', 'none', 'wrong' or 'array'.
+	 * @param bool   $expect_shared Whether the billing data is returned.
+	 */
+	public function test_get_prepared_customer_data_needs_the_order_key_of_a_guest_order( string $key_case, bool $expect_shared ): void {
+		wp_set_current_user( 0 );
+		$order = wc_create_order();
+		$order->set_billing_first_name( 'Grace' );
+		$order->set_billing_last_name( 'Hopper' );
+		$order->set_billing_email( 'grace@example.com' );
+		$order->set_billing_country( 'US' );
+		$order->set_billing_address_1( '1 Main Street' );
+		$order->save();
+		$keys = array(
+			'right' => $order->get_order_key(),
+			'wrong' => 'wc_order_wrongkey',
+			'array' => array( 'x' ),
+		);
+
+		$GLOBALS['wp']->query_vars['order-pay'] = (string) $order->get_id();
+		set_query_var( 'order-pay', (string) $order->get_id() );
+		$_GET['pay_for_order'] = 'true';
+		if ( isset( $keys[ $key_case ] ) ) {
+			$_GET['key'] = $keys[ $key_case ];
+		}
+
+		try {
+			$data = $this->create_sut( false, $this->create_customer_api_client( array() ) )->get_prepared_customer_data();
+		} finally {
+			unset( $_GET['pay_for_order'], $_GET['key'], $GLOBALS['wp']->query_vars['order-pay'] );
+			set_query_var( 'order-pay', '' );
+		}
+
+		if ( ! $expect_shared ) {
+			$this->assertSame( array(), $data );
+			return;
+		}
+		$this->assertSame( 'Grace Hopper', $data['name'] );
+		$this->assertSame( 'grace@example.com', $data['email'] );
+		$this->assertSame( 'US', $data['billing_country'] );
+		$this->assertSame( '1 Main Street', $data['address']['line1'] );
+	}
+
+	/**
+	 * Pay link keys, as client 11.2.0's provider_unauthorized_pay_for_order_requests() lists the refused ones.
+	 *
+	 * @return array<string,array{string,bool}>
+	 */
+	public function provider_pay_link_keys(): array {
+		return array(
+			'no key'    => array( 'none', false ),
+			'wrong key' => array( 'wrong', false ),
+			'array key' => array( 'array', false ),
+			'right key' => array( 'right', true ),
+		);
 	}
 
 	/**

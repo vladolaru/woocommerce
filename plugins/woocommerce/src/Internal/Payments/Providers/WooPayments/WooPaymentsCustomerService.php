@@ -138,15 +138,14 @@ class WooPaymentsCustomerService implements RegisterHooksInterface {
 	 * @return array{name:string,email:string,billing_country:string,address:array<string,string>|null}|array{}
 	 */
 	public function get_prepared_customer_data(): array {
-		// Only genuine pay-for-order requests ship order billing data; change-payment
-		// and hand-built order-pay URLs get none, as in client 11.1.0
-		// (class-wc-payments-customer-service.php:507-511).
+		// Only genuine pay-for-order requests with the order's key ship order billing data; change-payment
+		// and hand-built order-pay URLs get none, as in client 11.2.0
+		// (class-wc-payments-customer-service.php:506-507).
 		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only prefill gate on a public URL flag.
 		$pay_for_order = isset( $_GET['pay_for_order'] ) && 'true' === sanitize_text_field( wp_unslash( $_GET['pay_for_order'] ) );
-		$order_id      = absint( get_query_var( 'order-pay' ) );
-		if ( $pay_for_order && 0 < $order_id ) {
-			$order = wc_get_order( $order_id );
-			if ( $order instanceof WC_Order && current_user_can( 'pay_for_order', $order->get_id() ) ) {
+		if ( $pay_for_order ) {
+			$order = WooPaymentsOrderPayAccess::get_authorized_order_from_payment_link();
+			if ( $order instanceof WC_Order ) {
 				return array(
 					'name'            => trim( $order->get_billing_first_name() . ' ' . $order->get_billing_last_name() ),
 					'email'           => $order->get_billing_email(),
