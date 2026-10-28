@@ -1275,12 +1275,13 @@ class SessionControllerTest extends WC_REST_Unit_Test_Case {
 	 * Client 11.2.0 class-wc-rest-woopay-session-controller.php:35-61 (GET and POST, `email` optional) and :100-129 (WooPay's
 	 * user agent, then a signature on the signed path or a fresh attestation; a Cart-Token is refused with its own log line);
 	 * class-woopay-session.php:1069-1156 (the envelope opens only under the attestation key and is at most 300 seconds
-	 * old); tests/unit/admin/test-class-wc-rest-woopay-session-controller.php:76-175.
+	 * old, read from a JSON or form body, never the query string); tests/unit/admin/test-class-wc-rest-woopay-session-controller.php:76-175.
 	 *
 	 * @dataProvider session_route_credentials_provider
 	 *
 	 * @param string      $method         HTTP method.
-	 * @param string      $credential     'attestation', 'stale attestation', 'blog-token envelope', 'cart token' or 'signature'.
+	 * @param string      $credential     'attestation' (JSON body), 'attestation in a form body', 'attestation in the query string',
+	 *                                    'stale attestation', 'blog-token envelope', 'cart token' or 'signature'.
 	 * @param bool        $on_signed_path Whether the platform keeps the store on WooPay's signed path.
 	 * @param int         $status         Expected response status.
 	 * @param string|null $log_line       Expected denial log line, or null when none is expected.
@@ -1298,6 +1299,10 @@ class SessionControllerTest extends WC_REST_Unit_Test_Case {
 			$this->force_real_blog_token_signed();
 		} elseif ( 'cart token' === $credential ) {
 			$_SERVER['HTTP_CART_TOKEN'] = \Automattic\WooCommerce\StoreApi\Utilities\CartTokenUtils::get_cart_token( 't_guesthash' );
+		} elseif ( 'attestation in a form body' === $credential ) {
+			$request->set_body_params( array( 'woopay_attestation' => WooPayEnvelopes::seal( array( 'timestamp' => time() ), 'woopay-attestation-v1' ) ) );
+		} elseif ( 'attestation in the query string' === $credential ) {
+			$request->set_query_params( array( 'woopay_attestation' => WooPayEnvelopes::seal( array( 'timestamp' => time() ), 'woopay-attestation-v1' ) ) );
 		} else {
 			$envelope = array(
 				'attestation'         => WooPayEnvelopes::seal( array( 'timestamp' => time() ), 'woopay-attestation-v1' ),
@@ -1333,6 +1338,8 @@ class SessionControllerTest extends WC_REST_Unit_Test_Case {
 
 		return array(
 			'a POST with a fresh attestation and no email' => array( 'POST', 'attestation', false, 200, null ),
+			'a POST with a fresh attestation in a form body' => array( 'POST', 'attestation in a form body', false, 200, null ),
+			'a POST with a fresh attestation only in the query string' => array( 'POST', 'attestation in the query string', false, 401, $denied ),
 			'a POST with an attestation 301 seconds old'   => array( 'POST', 'stale attestation', false, 401, $denied ),
 			'a POST with an envelope sealed under the blog token itself' => array( 'POST', 'blog-token envelope', false, 401, $denied ),
 			'a POST carrying only a Cart-Token'            => array( 'POST', 'cart token', false, 401, 'WooPay session route denied: a Cart-Token does not authorize this route, which needs a signature or an attestation.' ),
@@ -1342,13 +1349,20 @@ class SessionControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The session route refuses an attestation it has already accepted once.
+	 * @testdox The session route refuses an attestation it has already accepted once: $_dataName.
 	 *
-	 * Client 11.2.0 class-woopay-session.php:1432-1448 spends the envelope on its first use;
-	 * tests/unit/admin/test-class-wc-rest-woopay-session-controller.php:178-187. The second request is a new request, so it
-	 * gets a new server and handler, as a new PHP request would.
+	 * Client 11.2.0 class-woopay-session.php:1432-1448 spends the envelope on its first use, through wp_cache_add() on an
+	 * external object cache and set_transient() otherwise, keyed on the HMAC's decoded bytes (:1110-1122), so another
+	 * spelling of the same envelope is the same claim; tests/unit/admin/test-class-wc-rest-woopay-session-controller.php:178-220
+	 * and tests/unit/woopay/test-class-woopay-session.php:808-833. The replay is a new request, so it gets a new server and
+	 * handler, as a new PHP request would.
+	 *
+	 * @dataProvider replayed_attestation_provider
+	 *
+	 * @param string $respelling      How the replay spells the envelope's `hash` field: 'as sent', 'padding dropped' or 'whitespace inserted'.
+	 * @param bool   $ext_object_cache Whether the store runs an external object cache.
 	 */
-	public function test_session_route_refuses_a_replayed_attestation(): void {
+	public function test_session_route_refuses_a_replayed_attestation( string $respelling, bool $ext_object_cache ): void {
 		WooPayEnvelopes::connect_store();
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => 'yes' ) );
 		$logged   = $this->record_log_messages();
@@ -1359,22 +1373,48 @@ class SessionControllerTest extends WC_REST_Unit_Test_Case {
 			),
 			'woopay-attestation-v1'
 		);
-		$statuses = array();
-		foreach ( array( 'first', 'replay' ) as $attempt ) {
-			unset( $attempt );
-			$this->server              = new \WC_Lazy_REST_Server();
-			$GLOBALS['wp_rest_server'] = $this->server;
-			$this->sut                 = $this->create_controller( true );
-			$this->sut->register_routes();
-			$request = new WP_REST_Request( 'POST', '/payments/woopay/session' );
-			$request->set_header( 'User-Agent', 'WooPay' );
-			$request->set_header( 'Content-Type', 'application/json' );
-			$request->set_body( (string) wp_json_encode( array( 'woopay_attestation' => $envelope ) ) );
-			$statuses[] = $this->server->dispatch( $request )->get_status();
+		$replay   = $envelope;
+		if ( 'padding dropped' === $respelling ) {
+			$replay['hash'] = rtrim( $envelope['hash'], '=' );
+		} elseif ( 'whitespace inserted' === $respelling ) {
+			$replay['hash'] = substr( $envelope['hash'], 0, 8 ) . ' ' . substr( $envelope['hash'], 8 );
+		}
+		$this->assertSame( 'as sent' === $respelling, $replay['hash'] === $envelope['hash'], 'The spelling under test is what the row says.' );
+		$was_using_ext_object_cache = wp_using_ext_object_cache( $ext_object_cache );
+		$statuses                   = array();
+
+		try {
+			foreach ( array( $envelope, $replay ) as $sent ) {
+				$this->server              = new \WC_Lazy_REST_Server();
+				$GLOBALS['wp_rest_server'] = $this->server;
+				$this->sut                 = $this->create_controller( true );
+				$this->sut->register_routes();
+				$request = new WP_REST_Request( 'POST', '/payments/woopay/session' );
+				$request->set_header( 'User-Agent', 'WooPay' );
+				$request->set_header( 'Content-Type', 'application/json' );
+				$request->set_body( (string) wp_json_encode( array( 'woopay_attestation' => $sent ) ) );
+				$statuses[] = $this->server->dispatch( $request )->get_status();
+			}
+		} finally {
+			wp_using_ext_object_cache( $was_using_ext_object_cache );
 		}
 
 		$this->assertSame( array( 200, 401 ), $statuses );
 		$this->assertContains( 'WooPay attestation rejected: envelope has already been used, or its claim could not be recorded.', $logged->getArrayCopy() );
+	}
+
+	/**
+	 * Replays: the spelling of the replayed envelope and the store's claim backend.
+	 *
+	 * @return array<string,array{0:string,1:bool}>
+	 */
+	public function replayed_attestation_provider(): array {
+		return array(
+			'the same envelope, database transients'      => array( 'as sent', false ),
+			'the same envelope, an external object cache' => array( 'as sent', true ),
+			'its base64 padding dropped, database transients' => array( 'padding dropped', false ),
+			'a space inserted in its hash, database transients' => array( 'whitespace inserted', false ),
+		);
 	}
 
 	/**
