@@ -657,7 +657,7 @@ class WooPaymentsPaymentOperationService {
 		// A different body under the same key would be refused, so the retry gets its own key, kept on the order so that an
 		// ambiguous failure of the retry replays the retry. The customer is kept with it before the retry, so a renewal
 		// retried later sends the same body under that key; client 11.2.0 stores it only once the retry returns
-		// (class-wc-payment-gateway-wcpay.php:5459-5461).
+		// (class-wc-payment-gateway-wcpay.php:5459-5463).
 		$recovery_key = self::get_customer_recovery_idempotency_key( $sent_key );
 		$order->update_meta_data( self::CHARGE_IDEMPOTENCY_KEY_META, $recovery_key );
 		$order->update_meta_data( '_stripe_customer_id', $customer_id );

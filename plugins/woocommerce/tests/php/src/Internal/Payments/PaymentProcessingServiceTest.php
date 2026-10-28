@@ -1804,7 +1804,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	 * Shapes: the PaymentIntent the platform returns for a confirmed card charge (Fixtures/platform-intention-basic-card.json),
 	 * reduced to the fields this path reads, succeeded or processing as client 11.2.0's tests return it; and Stripe's
 	 * invalid_request_error object (https://docs.stripe.com/api/errors) with client 11.2.0's refusal message
-	 * (tests/unit/test-class-wc-payment-gateway-wcpay-subscriptions.php:740).
+	 * (tests/unit/test-class-wc-payment-gateway-wcpay-subscriptions.php:742).
 	 *
 	 * @return array<string,array{array<string,mixed>,int,string,string}>
 	 */
