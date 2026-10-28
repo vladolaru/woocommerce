@@ -4533,7 +4533,7 @@ describe( 'WooPayments express checkout', () => {
 
 	// Client 11.2.0 refreshes the wallet on `updated_checkout` and `updated_cart_totals` behind a numbered, blocked
 	// refresh (shortcode-buttons-express/index.js:506-571, :758-790; button-ui.js:18-44; tests in
-	// tokenized-express-checkout--shortcode-checkout.test.js).
+	// tokenized-express-checkout--shortcode-checkout-page.test.js).
 	describe( 'a cart or checkout refresh', () => {
 		function getCartAt( totalPrice ) {
 			const cart = getCartResponse();
@@ -4542,6 +4542,37 @@ describe( 'WooPayments express checkout', () => {
 			} );
 			return cart;
 		}
+
+		// Client 11.2.0 `index.js:248` checks for a newer refresh again after waiting for Stripe.js; test
+		// `tokenized-express-checkout--shortcode-checkout-page.test.js:404-475`.
+		test( 'builds no Elements from a refresh superseded while Stripe.js loads', async () => {
+			jest.useFakeTimers();
+			const loadedStripe = window.Stripe;
+			delete window.Stripe;
+			window.wp.apiFetch
+				.mockResolvedValueOnce( getCartAt( '5000' ) )
+				.mockResolvedValueOnce( getCartAt( '7000' ) );
+			require( '../woopayments-express-checkout' );
+
+			// Refresh A waits for Stripe.js, polling at 100 and 200 ms; refresh B starts 50 ms later.
+			bodyEventHandlers.updated_checkout();
+			await jest.advanceTimersByTimeAsync( 50 );
+			bodyEventHandlers.updated_checkout();
+			await jest.advanceTimersByTimeAsync( 0 );
+
+			// Stripe.js lands after A's first poll: B's poll at 150 ms proceeds first, A's at 200 ms last.
+			await jest.advanceTimersByTimeAsync( 60 );
+			window.Stripe = loadedStripe;
+			await jest.advanceTimersByTimeAsync( 50 );
+			expect( stripe.elements ).toHaveBeenCalledTimes( 1 );
+			await jest.advanceTimersByTimeAsync( 100 );
+
+			expect( stripe.elements ).toHaveBeenCalledTimes( 1 );
+			expect( stripe.elements ).toHaveBeenCalledWith(
+				expect.objectContaining( { amount: 7000 } )
+			);
+			expect( expressElement.mount ).toHaveBeenCalledTimes( 1 );
+		} );
 
 		test( 'mounts once, at the newer total, when two refreshes answer out of order', async () => {
 			const older = createDeferred();
