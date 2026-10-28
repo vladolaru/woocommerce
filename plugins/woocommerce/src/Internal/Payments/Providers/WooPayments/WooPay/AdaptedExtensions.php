@@ -201,7 +201,7 @@ class AdaptedExtensions extends IntegrationRegistry {
 	 * @param int $order_id The completed WooPay order ID.
 	 */
 	public function update_order_extension_data( int $order_id ): void {
-		// phpcs:disable WordPress.Security.NonceVerification.Recommended -- WooPay Store API request, whose blog-token signature determine_current_user_for_woopay() checked.
+		// phpcs:disable WordPress.Security.NonceVerification.Recommended -- WooPay Store API request, authenticated by its Cart-Token or the signed path in determine_current_user_for_woopay(); the parameter is only an ID.
 		if ( empty( $_GET['affiliate'] ) || ! is_scalar( $_GET['affiliate'] ) || ! $this->is_affiliate_for_woocommerce_enabled() ) {
 			return;
 		}

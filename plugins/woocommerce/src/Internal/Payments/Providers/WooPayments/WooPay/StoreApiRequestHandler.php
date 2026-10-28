@@ -648,7 +648,7 @@ class StoreApiRequestHandler {
 			return $advocate_id;
 		}
 
-		// phpcs:disable WordPress.Security.NonceVerification.Recommended -- Signed WooPay server request; the parameter is only an advocate ID.
+		// phpcs:disable WordPress.Security.NonceVerification.Recommended -- WooPay Store API request, authenticated by its Cart-Token or the signed path; the parameter is only an advocate ID.
 		if ( empty( $_GET['automatewoo_referral_id'] ) || ! is_scalar( $_GET['automatewoo_referral_id'] ) ) {
 			return false;
 		}
