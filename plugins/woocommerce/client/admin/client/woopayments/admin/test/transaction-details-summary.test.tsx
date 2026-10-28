@@ -835,6 +835,101 @@ describe( 'WooPayments payment details summary parity', () => {
 			] );
 		} );
 
+		// Client 11.2.0 `utils/charge/index.ts:54-57, 86-95, 167-169`; `payment-details/summary/__tests__/index.test.js:268-284`.
+		// The first row is R11's charge: the platform reports nothing refunded after the refund failed.
+		it.each( [
+			[ 'the only refund failed and nothing is refunded', 0, 'failed' ],
+			[ 'the only refund failed', 2000, 'failed' ],
+			[ 'the only refund was canceled', 2000, 'canceled' ],
+		] )(
+			'shows a refund failure and deducts nothing when %s',
+			( _scenario, amountRefunded, status ) => {
+				renderSummary( {
+					...getClientCharge(),
+					refunded: false,
+					amount_refunded: amountRefunded,
+					refunds: { data: [ { status, ...getRefund( 2000 ) } ] },
+				} );
+
+				expect(
+					within( getSummary() ).getByText( 'Refund failure' )
+				).toBeInTheDocument();
+				expect( getBreakdown() ).toEqual( [
+					'Fees: -$0.70',
+					'Net: $19.30',
+				] );
+			}
+		);
+
+		// Client 11.2.0 `utils/charge/__tests__/index.test.js` "should not identify an empty refund list as refund failed".
+		it( 'shows a paid charge with no refund attempt as paid', () => {
+			renderSummary( {
+				...getClientCharge(),
+				refunded: false,
+				amount_refunded: 0,
+			} );
+
+			expect(
+				within( getSummary() ).getByText( 'Paid' )
+			).toBeInTheDocument();
+		} );
+
+		// Client 11.2.0 `utils/charge/index.ts:273-280`; `utils/charge/__tests__/index.test.js` "deducts compatible refunds
+		// from mixed legacy amounts": unknown and missing statuses count as refunded.
+		it.each( [
+			[
+				'a succeeded refund',
+				[ 'succeeded' ],
+				'Refunded: -$3.00',
+				'Net: $16.30',
+			],
+			[
+				'a refund of an unknown status',
+				[ 'future_status' ],
+				'Refunded: -$3.00',
+				'Net: $16.30',
+			],
+			[
+				'a refund without a status',
+				[ undefined ],
+				'Refunded: -$3.00',
+				'Net: $16.30',
+			],
+			[
+				'failed, succeeded, unknown and missing refunds',
+				[ 'failed', 'succeeded', 'future_status', undefined ],
+				'Refunded: -$9.00',
+				'Net: $10.30',
+			],
+		] )(
+			'deducts only the refunds that moved money: %s',
+			( _scenario, statuses, refundedLine, netLine ) => {
+				renderSummary( {
+					...getClientCharge(),
+					refunded: false,
+					amount_refunded: 900,
+					refunds: {
+						data: statuses.map( ( status, index ) => ( {
+							...( status ? { status } : {} ),
+							...getRefund(
+								statuses.length > 1 ? ( index + 1 ) * 100 : 300
+							),
+						} ) ),
+					},
+				} );
+
+				// Client `isChargePartiallyRefunded()`: refunded false with an amount refunded.
+				expect(
+					within( getSummary() ).getByText( 'Partial refund' )
+				).toBeInTheDocument();
+				expect( getBreakdown() ).toEqual( [
+					refundedLine,
+					'Fees: -$0.70',
+					netLine,
+				] );
+			}
+		);
+
 		it( 'labels a refund on a charge with an inquiry as refunded', () => {
 			renderSummary( {
 				...getClientCharge(),

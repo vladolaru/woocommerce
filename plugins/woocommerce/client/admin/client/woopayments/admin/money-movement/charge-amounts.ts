@@ -21,6 +21,26 @@ const sumOf = < T >( items: T[] | undefined, pick: ( item: T ) => unknown ) =>
 		0
 	);
 
+// Client 11.2.0 `utils/charge/index.ts:54-57`: a failed or canceled refund moved no money.
+const isUnsuccessfulRefund = ( refund: { status?: string | null } ) =>
+	[ 'failed', 'canceled' ].includes( refund.status ?? '' );
+
+/**
+ * Whether the charge was not refunded and every refund attempted on it failed or was canceled.
+ * Client 11.2.0 `utils/charge/index.ts:86-95` `isChargeRefundFailed()`.
+ *
+ * @param charge The charge.
+ */
+export const isChargeRefundFailed = ( charge: WooPaymentsTransaction ) => {
+	const refunds = charge.refunds?.data ?? [];
+
+	return (
+		charge.refunded === false &&
+		refunds.length > 0 &&
+		refunds.every( isUnsuccessfulRefund )
+	);
+};
+
 // An unexpanded id or a balance transaction without a currency can't be read, so the charge's own fields stand in.
 const getBalanceTransaction = ( charge: WooPaymentsTransaction ) =>
 	charge.balance_transaction &&
@@ -105,9 +125,12 @@ export const getChargeAmounts = (
 				net: 0,
 			};
 
+	// Client 11.2.0 `utils/charge/index.ts:273-280`: only refunds that moved money count.
 	if ( toNumber( charge.amount_refunded ) > 0 ) {
 		balance.refunded -= sumOf(
-			charge.refunds?.data,
+			charge.refunds?.data?.filter(
+				( refund ) => ! isUnsuccessfulRefund( refund )
+			),
 			( refund ) => refund.balance_transaction?.amount
 		);
 	}

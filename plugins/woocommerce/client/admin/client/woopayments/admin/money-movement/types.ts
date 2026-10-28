@@ -183,6 +183,7 @@ export interface WooPaymentsChargePaydown {
 export interface WooPaymentsChargeRefunds {
 	data?: Array< {
 		balance_transaction?: { amount?: number; currency?: string } | null;
+		status?: string | null;
 		[ key: string ]: unknown;
 	} >;
 }

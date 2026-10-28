@@ -48,6 +48,7 @@ import {
 import {
 	getChargeAmounts,
 	getTransactionFeeBeforeDisputes,
+	isChargeRefundFailed,
 } from './charge-amounts';
 import {
 	isWooPaymentsSubscriptionsActive,
@@ -727,6 +728,14 @@ const getPaymentSummaryStatus = (
 
 	if ( disputeStatus ) {
 		return disputeStatus;
+	}
+
+	// Client 11.2.0 `utils/charge/index.ts:167-169`, after the dispute and before the refunds; `payment-status-chip/mappings.ts:53-56`.
+	if ( isChargeRefundFailed( transaction ) ) {
+		return {
+			message: __( 'Refund failure', 'woocommerce' ),
+			type: 'error',
+		};
 	}
 
 	const authorized = {
