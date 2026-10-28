@@ -54,6 +54,18 @@ class SessionService {
 	public const VOUCH_KEY_PURPOSE = 'woopay-vouch-v1';
 
 	/**
+	 * HKDF label of the key the store seals the session data WooPay opens under (client 11.2.0
+	 * `WooPay_Utilities::SESSION_KEY_PURPOSE`, class-woopay-utilities.php:34).
+	 */
+	private const SESSION_KEY_PURPOSE = 'woopay-session-v1';
+
+	/**
+	 * HKDF label of the key WooPay's connect page may seal the shopper's identity under (client 11.2.0
+	 * `WooPay_Utilities::CONNECT_KEY_PURPOSE`, class-woopay-utilities.php:59).
+	 */
+	private const CONNECT_KEY_PURPOSE = 'woopay-connect-v1';
+
+	/**
 	 * Length in bytes of the keys HKDF derives, the key length AES-256-CBC takes.
 	 */
 	private const CIPHER_KEY_LENGTH = 32;
@@ -257,13 +269,14 @@ class SessionService {
 	}
 
 	/**
-	 * Verify and decrypt a WooPay identity envelope.
+	 * Verify and decrypt the identity envelope WooPay's connect page sends, sealed under the connect key or, as WooPay
+	 * still seals it, the blog token itself (client 11.2.0 class-woopay-session.php:540-554).
 	 *
 	 * @param array<string,mixed>|null $encrypted_data Encrypted WooPay identity envelope.
 	 * @return array<string,mixed>
 	 */
 	private function decrypt_identity_data( ?array $encrypted_data ): array {
-		return null === $encrypted_data ? array() : $this->open_woopay_envelope( $encrypted_data, array( null ) ) ?? array();
+		return null === $encrypted_data ? array() : $this->open_woopay_envelope( $encrypted_data, array( self::CONNECT_KEY_PURPOSE, null ) ) ?? array();
 	}
 
 	/**
@@ -477,7 +490,9 @@ class SessionService {
 	}
 
 	/**
-	 * Encrypt and sign WooPay session data.
+	 * Encrypt and sign WooPay session data under the key HKDF derives from the blog token for the session, with the HMAC
+	 * over the IV and the ciphertext, the first form WooPay opens (client 11.2.0
+	 * `WooPay_Utilities::encrypt_and_sign_data()`, class-woopay-utilities.php:380-419).
 	 *
 	 * @param array<string,mixed> $data Session data.
 	 * @return array<string,mixed>
@@ -509,7 +524,8 @@ class SessionService {
 			return array();
 		}
 
-		$session_encrypted = openssl_encrypt( $message, 'aes-256-cbc', $blog_token, OPENSSL_RAW_DATA, $iv );
+		$session_key       = hash_hkdf( 'sha256', $blog_token, self::CIPHER_KEY_LENGTH, self::SESSION_KEY_PURPOSE );
+		$session_encrypted = openssl_encrypt( $message, 'aes-256-cbc', $session_key, OPENSSL_RAW_DATA, $iv );
 		if ( false === $session_encrypted ) {
 			return array();
 		}
@@ -521,7 +537,7 @@ class SessionService {
 				array(
 					'session' => $session_encrypted,
 					'iv'      => $iv,
-					'hash'    => hash_hmac( 'sha256', $session_encrypted, $blog_token ),
+					'hash'    => hash_hmac( 'sha256', $iv . $session_encrypted, $session_key ),
 				)
 			),
 		);

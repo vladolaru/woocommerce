@@ -476,25 +476,41 @@ class SessionServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should encrypt minimum session data with the WooPay reference shape.
+	 * @testdox The session data the store seals opens only as WooPay's first accepted form: $_dataName.
+	 *
+	 * Client 11.2.0 WooPay_Utilities::encrypt_and_sign_data() seals under the key HKDF derives for woopay-session-v1, the HMAC
+	 * over the IV and the ciphertext (class-woopay-utilities.php:380-419), which is the first form WooPay tries; an HMAC over
+	 * the ciphertext alone let the IV be rewritten, which changes the first plaintext block, unseen.
+	 * tests/unit/woopay/test-class-woopay-utilities.php:297-349.
+	 *
+	 * @testWith ["as sealed", false]
+	 *           ["with its IV rewritten", true]
+	 *
+	 * @param string $label      Case label.
+	 * @param bool   $rewrite_iv Whether the IV is rewritten before the check.
 	 */
-	public function test_encrypts_minimum_session_data_with_reference_shape(): void {
-		\Jetpack_Options::update_option( 'id', 12345 );
-		\Jetpack_Options::update_option( 'blog_token', 'blog-token' );
+	public function test_sealed_session_data_opens_only_as_woopay_first_accepted_form( string $label, bool $rewrite_iv ): void {
+		unset( $label );
+		WooPayEnvelopes::connect_store();
 
-		$sut    = $this->create_service();
-		$result = $sut->get_encrypted_minimum_session_data();
+		$result = $this->create_service()->get_encrypted_minimum_session_data();
 
 		$this->assertSame( '12345', $result['blog_id'] );
-		$this->assertArrayHasKey( 'session', $result['data'] );
-		$this->assertArrayHasKey( 'iv', $result['data'] );
-		$this->assertArrayHasKey( 'hash', $result['data'] );
-		// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_decode -- Verifies WooPay encrypted payload encoding.
-		$this->assertNotSame( '', base64_decode( $result['data']['session'], true ) );
-		// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_decode -- Verifies WooPay encrypted payload encoding.
-		$this->assertNotSame( false, base64_decode( $result['data']['iv'], true ) );
-		// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_decode -- Verifies WooPay encrypted payload encoding.
-		$this->assertNotSame( false, base64_decode( $result['data']['hash'], true ) );
+		// phpcs:disable WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_decode -- Decodes the sealed session.
+		$session = base64_decode( $result['data']['session'], true );
+		$iv      = base64_decode( $result['data']['iv'], true );
+		$hash    = base64_decode( $result['data']['hash'], true );
+		// phpcs:enable WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_decode
+		if ( $rewrite_iv ) {
+			$iv = strrev( (string) $iv );
+		}
+		$session_key = hash_hkdf( 'sha256', WooPayEnvelopes::BLOG_TOKEN, 32, 'woopay-session-v1' );
+
+		$this->assertSame( ! $rewrite_iv, hash_equals( hash_hmac( 'sha256', $iv . $session, $session_key ), (string) $hash ) );
+		$this->assertNotSame( hash_hmac( 'sha256', (string) $session, $session_key ), $hash, 'Not the HMAC over the ciphertext alone.' );
+		if ( ! $rewrite_iv ) {
+			$this->assertSame( $this->create_service()->get_minimum_session_data()['blog_rest_url'], json_decode( (string) openssl_decrypt( (string) $session, 'aes-256-cbc', $session_key, OPENSSL_RAW_DATA, (string) $iv ), true )['blog_rest_url'] );
+		}
 	}
 
 	/**
@@ -725,17 +741,30 @@ class SessionServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should prefer a sanitized email from a valid encrypted identity envelope.
+	 * @testdox The connect page's identity envelope gives the session its email when sealed under a key the store accepts for it: $_dataName.
+	 *
+	 * Client 11.2.0 class-woopay-session.php:540-554 opens the connect page's `encrypted_data` under woopay-connect-v1 or the
+	 * blog token itself, and nothing else; tests/unit/woopay/test-class-woopay-utilities.php:411-433, :466-500.
+	 *
+	 * @testWith ["the blog token itself", null, "shopper+direct@example.com"]
+	 *           ["the connect key", "woopay-connect-v1", "shopper+direct@example.com"]
+	 *           ["the attestation key", "woopay-attestation-v1", "fallback@example.com"]
+	 *
+	 * @param string      $label    Case label.
+	 * @param string|null $purpose  Label of the key the envelope is sealed under, or null for the blog token itself.
+	 * @param string      $expected The session email.
 	 */
-	public function test_encrypted_session_data_uses_valid_encrypted_identity_email(): void {
+	public function test_encrypted_session_data_uses_valid_encrypted_identity_email( string $label, ?string $purpose, string $expected ): void {
+		unset( $label );
+		WooPayEnvelopes::connect_store();
 		WC()->customer->set_billing_email( 'fallback@example.com' );
 		$request = array(
-			'encrypted_data' => $this->create_encrypted_identity_envelope( '{"user_email":"shopper+direct@example.com"}' ),
+			'encrypted_data' => WooPayEnvelopes::seal( array( 'user_email' => 'shopper+direct@example.com' ), $purpose ),
 		);
 
 		$session = $this->decrypt_store_session( $this->create_service()->get_encrypted_session_data( $request ) );
 
-		$this->assertSame( 'shopper+direct@example.com', $session['email'] );
+		$this->assertSame( $expected, $session['email'] );
 	}
 
 	/**

@@ -378,7 +378,9 @@ trait WooPayServicesFixture {
 	}
 
 	/**
-	 * Decrypt the store session returned by the service.
+	 * Open the store session returned by the service the way WooPay first tries to: the key HKDF derives from the blog
+	 * token for woopay-session-v1, the HMAC over the IV and the ciphertext checked first (client 11.2.0
+	 * tests/unit/woopay/test-class-woopay-utilities.php:297-349).
 	 *
 	 * @param array<string,mixed> $encrypted_session Encrypted store session.
 	 * @return array<string,mixed>
@@ -391,11 +393,16 @@ trait WooPayServicesFixture {
 		$data = base64_decode( $encrypted_session['data']['session'], true );
 		// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_decode -- Decodes the encrypted store-session fixture.
 		$iv = base64_decode( $encrypted_session['data']['iv'], true );
-		if ( false === $data || false === $iv ) {
+		// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_decode -- Decodes the encrypted store-session fixture.
+		$hash = base64_decode( $encrypted_session['data']['hash'], true );
+		if ( false === $data || false === $iv || false === $hash ) {
 			throw new \RuntimeException( 'Could not decode the encrypted store-session fixture.' );
 		}
 
-		$json = openssl_decrypt( $data, 'aes-256-cbc', 'blog-token', OPENSSL_RAW_DATA, $iv );
+		$session_key = hash_hkdf( 'sha256', 'blog-token', 32, 'woopay-session-v1' );
+		$this->assertSame( hash_hmac( 'sha256', $iv . $data, $session_key ), $hash, 'The HMAC covers the IV and the ciphertext, under the session key.' );
+
+		$json = openssl_decrypt( $data, 'aes-256-cbc', $session_key, OPENSSL_RAW_DATA, $iv );
 		if ( false === $json ) {
 			throw new \RuntimeException( 'Could not decrypt the store-session fixture.' );
 		}
