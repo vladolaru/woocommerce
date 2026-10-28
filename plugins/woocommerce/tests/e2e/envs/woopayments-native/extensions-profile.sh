@@ -116,7 +116,7 @@ for index in "${!EXTENSION_KEYS[@]}"; do
 		"${WP_ENV[@]}" wp plugin deactivate "$slug" --quiet
 	fi
 	if [[ "$key" == 'square' || "$key" == 'paypal-payments' ]]; then
-		"${WP_ENV[@]}" wp plugin install "$slug" --version="$version" --force --quiet
+		"${WP_ENV[@]}" wp plugin install "https://downloads.wordpress.org/plugin/$slug.$version.zip" --force --quiet
 	else
 		package_directory="$(woocommerce_com_package "$slug" "$version")"
 		"${WP_ENV[@]}" rm -rf "wp-content/plugins/$slug"

@@ -20,7 +20,7 @@ Bookings `2.0.9` is the historical dependency origin for the express-filter inte
 
 The profile installs each pin's released package, the one merchants install, so nothing is built from source. Each package goes into its canonical plugin directory (for example `wp-content/plugins/woocommerce-subscriptions/`), replacing any copy already there.
 
-- WooCommerce Square and WooCommerce PayPal Payments come from WordPress.org: the profile runs `wp plugin install <slug> --version=<pin> --force` in the selected wp-env service.
+- WooCommerce Square and WooCommerce PayPal Payments come from WordPress.org: the profile runs `wp plugin install https://downloads.wordpress.org/plugin/<slug>.<pin>.zip --force` in the selected wp-env service. It passes the versioned zip URL because `wp-env run` would take a `--version` flag as its own option.
 - WooCommerce Subscriptions, WooCommerce Bookings and WooCommerce Deposits come from WooCommerce.com. Set `E2E_WOOPAYMENTS_EXTENSION_ZIPS` to a directory holding each pin's release zip named `<slug>.<version>.zip`, for example `woocommerce-subscriptions.7.5.0.zip`. When that variable is unset and a `wccom-ext` command is on `PATH`, the profile runs `wccom-ext get <slug> <version>` and copies in the plugin directory it prints. Otherwise the profile stops and names the zip it needs.
 
 The released packages ship their compiled assets, including the PayPal Payments settings script that the Subscriptions settings-tab smoke in `merchant/payouts-disputes-smoke.spec.ts` loads. PayPal Payments `2.9.6` keeps its competing card and wallet onboarding and its settings module behind the feature-gated new-settings graph, so the compatibility probes set `PCP_SETTINGS_ENABLED=1` before WordPress bootstrap for both PayPal pins.
