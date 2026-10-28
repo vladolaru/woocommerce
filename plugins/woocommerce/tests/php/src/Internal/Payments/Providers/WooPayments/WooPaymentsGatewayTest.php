@@ -3006,6 +3006,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'get_stored_account_data' ) )
 			->getMock();
+		// The cached account's signed-path flag, as client 11.2.0 reads it (includes/class-wc-payments-features.php:226-233).
 		$account_service->method( 'get_stored_account_data' )->willReturn( array( 'platform_woopay_force_signed_requests' => $on_signed_path ) );
 		$eligibility = new Eligibility();
 		$eligibility->init( $account_service );

@@ -107,12 +107,27 @@ class StoreApiRequestHandlerTest extends WC_Unit_Test_Case {
 			$this->force_real_blog_token_signed();
 		}
 		$sut = $this->create_handler( array(), array( 'platform_woopay_force_signed_requests' => $flag ) );
+		// The arguments wp_die() hands its handler: the error code a REST response would carry is in them, not in the exception.
+		$die_args = null;
+		$capture  = static function () use ( &$die_args ): callable {
+			return static function ( $message, $title, $args ) use ( &$die_args ): void {
+				unset( $title );
+				$die_args = $args;
+				// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- The test's stand-in for WordPress's test die handler; never rendered.
+				throw new \WPDieException( (string) $message, (int) ( $args['response'] ?? 0 ) );
+			};
+		};
+		add_filter( 'wp_die_handler', $capture, PHP_INT_MAX );
+		add_filter( 'wp_die_json_handler', $capture, PHP_INT_MAX );
 
 		$died = null;
 		try {
 			$result = $sut->determine_current_user_for_woopay( false );
 		} catch ( \WPDieException $exception ) {
 			$died = $exception;
+		} finally {
+			remove_filter( 'wp_die_handler', $capture, PHP_INT_MAX );
+			remove_filter( 'wp_die_json_handler', $capture, PHP_INT_MAX );
 		}
 
 		$rejections = array_values( array_filter( $lines->getArrayCopy(), static fn( array $line ): bool => 0 === strpos( $line[1], 'WooPay request rejected' ) ) );
@@ -126,6 +141,7 @@ class StoreApiRequestHandlerTest extends WC_Unit_Test_Case {
 
 		$this->assertInstanceOf( \WPDieException::class, $died );
 		$this->assertSame( 401, $died->getCode() );
+		$this->assertSame( $refusal, $die_args['code'] ?? null, 'The response carries the client\'s error code.' );
 		$this->assertSame( 'woopay_invalid_cart_token' === $refusal ? 'The Cart-Token on this WooPay request is invalid or expired.' : 'WooPay request is not signed correctly.', $died->getMessage() );
 		$this->assertSame( array( 'info', 'WooPay request rejected: ' . $refusal, array() ), $rejections[0] ?? null );
 	}
@@ -327,7 +343,21 @@ class StoreApiRequestHandlerTest extends WC_Unit_Test_Case {
 	public function test_woopay_checkout_records_the_vouched_shopper_ip( ?array $vouch, string $expected, ?string $log_line ): void {
 		WooPayEnvelopes::connect_store();
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => 'yes' ) );
-		$lines = $this->record_woopayments_log_lines();
+		// WC_Logger applies its message filter once per log handler, so the lines are counted per handler.
+		$vouch_lines_by_handler = array();
+		add_filter(
+			'woocommerce_logger_log_message',
+			static function ( $message, $level, $context, $handler = null ) use ( &$vouch_lines_by_handler ) {
+				unset( $level, $context );
+				if ( 0 === strpos( (string) $message, 'WooPay vouch' ) ) {
+					$vouch_lines_by_handler[ is_object( $handler ) ? spl_object_id( $handler ) : 0 ][] = (string) $message;
+				}
+
+				return $message;
+			},
+			10,
+			4
+		);
 		$this->register_controller( $this->create_service() );
 		$this->simulate_woopay_store_api_request();
 		$_SERVER['HTTP_CART_TOKEN'] = 'the.cart.token';
@@ -342,11 +372,15 @@ class StoreApiRequestHandlerTest extends WC_Unit_Test_Case {
 		do_action( 'woocommerce_store_api_checkout_update_order_from_request', $order, new \WP_REST_Request( 'POST', '/wc/store/v1/checkout' ) );
 
 		$this->assertSame( $expected, $order->get_customer_ip_address() );
-		$messages = array_column( $lines->getArrayCopy(), 1 );
 		if ( null === $log_line ) {
-			$this->assertSame( array(), preg_grep( '/^WooPay vouch/', $messages ) );
-		} else {
-			$this->assertSame( array( $log_line ), array_values( array_unique( preg_grep( '/^WooPay vouch/', $messages ) ) ) );
+			$this->assertSame( array(), $vouch_lines_by_handler );
+
+			return;
+		}
+
+		$this->assertNotSame( array(), $vouch_lines_by_handler );
+		foreach ( $vouch_lines_by_handler as $handler_lines ) {
+			$this->assertSame( array( $log_line ), $handler_lines, 'One line, written once.' );
 		}
 	}
 
