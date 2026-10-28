@@ -71,18 +71,12 @@ interface Surface {
 	loadErrorText?: string;
 }
 
-// Client 11.1.0 test-mode-notice/index.tsx:33-48.
-const NOUNS: Record< NoticePage, string > = {
-	deposits: 'payout',
-	disputes: 'dispute',
-	payments: 'order',
-	transactions: 'order',
-};
-const VERBS: Record< NoticePage, string > = {
-	deposits: 'created',
-	disputes: 'created',
-	payments: 'placed',
-	transactions: 'placed',
+// Client 11.2.0 test-mode-notice/index.tsx:34-41: the details sentence's plural nouns.
+const PLURAL_NOUNS: Record< NoticePage, string > = {
+	deposits: 'payouts',
+	disputes: 'disputes',
+	payments: 'transactions',
+	transactions: 'transactions',
 };
 
 // Client index.tsx:173-175 and 221-223: deposits read as payouts.
@@ -113,15 +107,10 @@ function expectedCopy( surface: Surface, devMode: boolean ): ExpectedCopy {
 		href: /[?&]page=wc-settings&tab=checkout&path=%2Fwoopayments%2Fsettings$/,
 	};
 	if ( surface.isDetailsView ) {
-		const noun = NOUNS[ surface.currentPage ];
-		const verb = VERBS[ surface.currentPage ];
-		// `_n()` with a count of 2 for deposits, 1 otherwise.
-		const subject =
-			surface.currentPage === 'deposits'
-				? `these ${ noun }s were`
-				: `this ${ noun } was`;
+		// Client 11.2.0 test-mode-notice/index.tsx:182-190.
+		const noun = PLURAL_NOUNS[ surface.currentPage ];
 		return {
-			sentence: `WooPayments was in test mode when ${ subject } ${ verb }. To view live ${ noun }s, disable test mode in WooPayments settings.`,
+			sentence: `WooPayments is in test mode, so only test ${ noun } are shown. To view live ${ noun }, disable test mode in WooPayments settings.`,
 			link: settingsLink,
 		};
 	}
