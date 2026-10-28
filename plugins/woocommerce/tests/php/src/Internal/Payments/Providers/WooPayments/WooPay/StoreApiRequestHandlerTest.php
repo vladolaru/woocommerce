@@ -564,11 +564,11 @@ class StoreApiRequestHandlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A classic checkout never resumes a $status order the Store API draft key names, nor stops for its lock; it places a new order.
+	 * @testdox A classic checkout never resumes a $status order the Store API draft key names, nor stops for its lock; it places a new order and clears the pointer.
 	 *
 	 * Core resumes only a checkout draft, or a pending or failed order (DraftOrderTrait::is_valid_draft_order(),
-	 * WC_Checkout::create_order() at class-wc-checkout.php:424). Client 11.1.0 sets whatever order the key names to pending
-	 * (class-wc-payments-woopay-direct-checkout.php:71-73). A refund holds the settled order's payment lock throughout: only
+	 * WC_Checkout::create_order() at class-wc-checkout.php:424), and so does client 11.2.0, which clears the pointer
+	 * (class-wc-payments-woopay-direct-checkout.php:69-91). A refund holds the settled order's payment lock throughout: only
 	 * an order that can still be paid stops the checkout while its lock is held.
 	 *
 	 * @testWith ["processing"]
@@ -604,39 +604,65 @@ class StoreApiRequestHandlerTest extends WC_Unit_Test_Case {
 		$this->assertIsInt( $order_id );
 		$this->assertNotSame( $settled->get_id(), $order_id, 'A new order is placed.' );
 		$this->assertSame( $status, wc_get_order( $settled->get_id() )->get_status() );
-		$this->assertSame( $settled->get_id(), WC()->session->get( 'store_api_draft_order' ) );
+		$this->assertNull( WC()->session->get( 'store_api_draft_order' ), 'The pointer to an order that cannot be resumed is cleared.' );
 		$this->assertNull( WC()->session->get( 'order_awaiting_payment' ) );
 	}
 
 	/**
-	 * @testdox A classic checkout never resumes a pending WooPay order whose payment lock is free; it places a new order.
+	 * @testdox A classic checkout resumes the WooPay order only as core's Store API would, and otherwise drops it from the session: $_dataName.
 	 *
-	 * The Store API checkout sets the order to pending just before it calls the gateway (Routes/V1/Checkout.php, "Set initial
-	 * status to 'pending'"), and the payment holds the order payment lock only from there on. Client 11.1.0 resumes it
-	 * (class-wc-payments-woopay-direct-checkout.php:71-73); core's Store API resumes a pending order only while the cart is
-	 * unchanged (DraftOrderTrait::is_valid_draft_order()). An abandoned pending order is left to core's unpaid-order cleanup;
-	 * while a payment holds its lock, checkout stops instead (test_classic_checkout_stops_while_the_woopay_order_payment_lock_is_held).
+	 * A checkout draft always, or a pending or failed order while the cart is unchanged, as client 11.2.0
+	 * (class-wc-payments-woopay-direct-checkout.php:69-91; tests/unit/test-class-wc-payments-woopay-direct-checkout.php:49-112)
+	 * and core (DraftOrderTrait::is_valid_draft_order()), whose zero-total branch the client lacks. A resumed order becomes the
+	 * pending order awaiting payment; any other leaves the session's pointer cleared and the order as it was.
+	 *
+	 * @dataProvider provider_woopay_orders_the_classic_checkout_finds
+	 *
+	 * @param string $status          Status of the order the Store API draft key names.
+	 * @param string $total           Order total.
+	 * @param bool   $same_cart       Whether the order was placed for the current cart.
+	 * @param bool   $expect_resumed  Whether the classic checkout resumes it.
 	 */
-	public function test_classic_checkout_never_resumes_a_pending_woopay_order(): void {
-		$sut = $this->create_service( array(), array( 'platform_direct_checkout_eligible' => true ) );
-		$this->register_controller( $sut );
+	public function test_classic_checkout_resumes_only_an_order_core_would_resume( string $status, string $total, bool $same_cart, bool $expect_resumed ): void {
+		$sut = $this->create_handler( array(), array( 'platform_direct_checkout_eligible' => true ) );
 		WC()->cart->add_to_cart( \WC_Helper_Product::create_simple_product()->get_id(), 1 );
 		WC()->cart->calculate_totals();
-		$pending = new \WC_Order();
-		$pending->set_status( OrderStatus::PENDING );
-		$pending->set_cart_hash( WC()->cart->get_cart_hash() );
-		$pending->save();
-		WC()->session->set( 'store_api_draft_order', $pending->get_id() );
+		$order = new \WC_Order();
+		$order->set_status( $status );
+		$order->set_total( $total );
+		$order->set_cart_hash( $same_cart ? WC()->cart->get_cart_hash() : 'hash-of-another-cart' );
+		$order->save();
+		WC()->session->set( 'store_api_draft_order', $order->get_id() );
 		WC()->session->set( 'order_awaiting_payment', null );
+		Constants::set_constant( 'WOOCOMMERCE_CHECKOUT', true );
 
-		$order_id = $this->create_classic_checkout_order();
+		try {
+			$this->assertNull( $sut->maybe_use_store_api_draft_order_id( null ) );
+		} finally {
+			Constants::clear_single_constant( 'WOOCOMMERCE_CHECKOUT' );
+		}
 
-		$this->assertIsInt( $order_id );
-		$this->assertNotSame( $pending->get_id(), $order_id, 'A new order is placed.' );
-		$this->assertSame( OrderStatus::PENDING, wc_get_order( $pending->get_id() )->get_status() );
-		$this->assertSame( $pending->get_id(), WC()->session->get( 'store_api_draft_order' ) );
-		$this->assertNull( WC()->session->get( 'order_awaiting_payment' ) );
-		$this->assert_order_payment_lock_is_free( $pending, 'The status check under the lock returned early; the lock must be released.' );
+		$this->assertSame( $expect_resumed ? OrderStatus::PENDING : $status, wc_get_order( $order->get_id() )->get_status() );
+		$this->assertNull( WC()->session->get( 'store_api_draft_order' ) );
+		$this->assertSame( $expect_resumed ? $order->get_id() : null, WC()->session->get( 'order_awaiting_payment' ) );
+		$this->assert_order_payment_lock_is_free( $order, 'The takeover released the lock.' );
+	}
+
+	/**
+	 * Orders a WooPay checkout can leave under the Store API draft key.
+	 *
+	 * @return array<string,array{string,string,bool,bool}>
+	 */
+	public function provider_woopay_orders_the_classic_checkout_finds(): array {
+		return array(
+			'failed, cart changed'             => array( OrderStatus::FAILED, '10.00', false, false ),
+			'pending, cart changed'            => array( OrderStatus::PENDING, '10.00', false, false ),
+			'pending, same cart'               => array( OrderStatus::PENDING, '10.00', true, true ),
+			'failed, same cart'                => array( OrderStatus::FAILED, '10.00', true, true ),
+			'checkout draft, cart changed'     => array( OrderStatus::CHECKOUT_DRAFT, '10.00', false, true ),
+			'zero-total pending, same cart'    => array( OrderStatus::PENDING, '0.00', true, true ),
+			'zero-total pending, cart changed' => array( OrderStatus::PENDING, '0.00', false, false ),
+		);
 	}
 
 	/**
@@ -786,7 +812,7 @@ class StoreApiRequestHandlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A classic checkout reads the WooPay draft again under the payment lock and leaves it alone once it was paid.
+	 * @testdox A classic checkout reads the WooPay draft again under the payment lock and leaves it alone once it was paid, clearing the pointer.
 	 *
 	 * Another request pays the failed draft after this checkout read it and before the takeover claims the lock. The core
 	 * `query` filter (wpdb::query()) runs before each statement, so the payment is written right before the claim's
@@ -828,7 +854,7 @@ class StoreApiRequestHandlerTest extends WC_Unit_Test_Case {
 		$this->assertIsInt( $order_id );
 		$this->assertNotSame( $draft_id, $order_id, 'A new order is placed.' );
 		$this->assertSame( OrderStatus::PROCESSING, wc_get_order( $draft_id )->get_status() );
-		$this->assertSame( $draft_id, WC()->session->get( 'store_api_draft_order' ) );
+		$this->assertNull( WC()->session->get( 'store_api_draft_order' ), 'The pointer to the paid order is cleared.' );
 		$this->assert_order_payment_lock_is_free( $draft, 'The status check under the lock returned early; the lock must be released.' );
 	}
 
@@ -1033,9 +1059,9 @@ class StoreApiRequestHandlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A classic checkout places a new order, without a fatal, when the WooPay draft no longer exists.
+	 * @testdox A classic checkout places a new order, without a fatal, when the WooPay draft no longer exists, and clears the pointer.
 	 *
-	 * Client 11.1.0 calls set_status() on the wc_get_order() result unchecked (class-wc-payments-woopay-direct-checkout.php:71-72).
+	 * Client 11.2.0 class-wc-payments-woopay-direct-checkout.php:69-91; tests/unit/test-class-wc-payments-woopay-direct-checkout.php:49-58.
 	 */
 	public function test_classic_checkout_places_a_new_order_when_the_woopay_draft_is_gone(): void {
 		$sut = $this->create_service( array(), array( 'platform_direct_checkout_eligible' => true ) );
@@ -1065,7 +1091,7 @@ class StoreApiRequestHandlerTest extends WC_Unit_Test_Case {
 		$this->assertIsInt( $order_id );
 		$this->assertNotSame( $draft_id, $order_id );
 		$this->assertInstanceOf( \WC_Order::class, wc_get_order( $order_id ) );
-		$this->assertSame( $draft_id, WC()->session->get( 'store_api_draft_order' ), 'The session is left alone.' );
+		$this->assertNull( WC()->session->get( 'store_api_draft_order' ), 'The stale pointer is cleared.' );
 	}
 
 	/**
