@@ -647,6 +647,8 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 		$params = $this->create_service()->get_express_checkout_params( 'product' );
 
 		$this->assertTrue( $params['has_subscription'] );
+		// Client 11.2.0 class-wc-payments-express-checkout-button-helper.php:420-423: the product arm.
+		$this->assertSame( 'off_session', $params['setup_future_usage'] );
 	}
 
 	/**
