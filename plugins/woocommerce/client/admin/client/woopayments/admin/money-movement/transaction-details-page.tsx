@@ -55,6 +55,7 @@ import {
 import {
 	getChargeDisputes,
 	getDisputeOrdinals,
+	getKlarnaLossReasons,
 	isDisputeAwaitingResponse,
 	isDisputeInquiry,
 	isDisputeRefundable,
@@ -1501,6 +1502,9 @@ export const WooPaymentsTransactionDetailsPage = () => {
 							isRefundDialogOpen={ isRefundModalOpen }
 							bankName={ getBankName(
 								transaction.payment_method_details
+							) }
+							klarnaLossReasons={ getKlarnaLossReasons(
+								transaction
 							) }
 						/>
 						<WooPaymentsPaymentMethodDetailsSection

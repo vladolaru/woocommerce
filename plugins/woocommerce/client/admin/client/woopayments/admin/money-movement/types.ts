@@ -121,6 +121,11 @@ export interface WooPaymentsDispute {
 	balance_transactions?: WooPaymentsDisputeBalanceTransaction[];
 	issuer_evidence?: Record< string, unknown > | null;
 	enhanced_eligibility_types?: string[];
+	/** Stripe's payment method details for the dispute; Klarna's carry its loss reason once it rules (client 11.2.0 `types/disputes.d.ts`). */
+	payment_method_details?: {
+		type?: string;
+		klarna?: { chargeback_loss_reason_code?: string | null } | null;
+	} | null;
 	order?: {
 		id?: number;
 		number?: string | number;

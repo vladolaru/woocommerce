@@ -554,6 +554,95 @@ describe( 'WooPaymentsTransactionTimeline items (client map-events.js)', () => {
 		}
 	);
 
+	// Client 11.2.0 `map-events.js:1211-1286`, tested in `__tests__/map-events.test.js:1450-1605`.
+	it.each( [
+		[
+			'the stated reason of the only dispute',
+			{},
+			undefined,
+			{
+				dp_klarna: {
+					type: 'stated' as const,
+					display: 'Shipping policy violated',
+				},
+			},
+			'Dispute lost. The customer’s payment provider, Klarna, decided against you for the following reason: Shipping policy violated.',
+		],
+		[
+			'the reason of the dispute the event names',
+			{ dispute_id: 'dp_second' },
+			{
+				orderById: { dp_first: 1, dp_second: 2 },
+				orderedDisputes: [],
+				total: 2,
+			},
+			{
+				dp_first: {
+					type: 'stated' as const,
+					display: 'Proof of delivery inadequate',
+				},
+				dp_second: {
+					type: 'stated' as const,
+					display: 'Merchant did not issue refund',
+				},
+			},
+			'Dispute lost. The customer’s payment provider, Klarna, decided against you for the following reason: Merchant did not issue refund. · Dispute 2 of 2',
+		],
+		[
+			'no reason for an event without a dispute ID on a charge with several disputes',
+			{},
+			{
+				orderById: { dp_first: 1, dp_second: 2 },
+				orderedDisputes: [],
+				total: 2,
+			},
+			{
+				dp_second: {
+					type: 'stated' as const,
+					display: 'Shipping policy violated',
+				},
+			},
+			"Dispute lost. Your customer's bank, Klarna, reviewed the evidence and decided in the customer's favor.",
+		],
+		[
+			'no reason when Klarna gave none',
+			{},
+			undefined,
+			{ dp_klarna: { type: 'unspecified' as const } },
+			"Dispute lost. Your customer's bank, Klarna, reviewed the evidence and decided in the customer's favor.",
+		],
+	] )(
+		'names in the lost headline %s',
+		(
+			_scenario,
+			eventFields,
+			disputeOrder,
+			klarnaLossReasons,
+			headline
+		) => {
+			const { container } = render(
+				<WooPaymentsTransactionTimeline
+					events={ [
+						{
+							amount: 10000,
+							currency: 'USD',
+							datetime: 1586055370,
+							type: 'dispute_lost',
+							...eventFields,
+						},
+					] }
+					bankName="Klarna"
+					disputeOrder={ disputeOrder }
+					klarnaLossReasons={ klarnaLossReasons }
+				/>
+			);
+
+			expect(
+				getItems( container ).map( ( item ) => item.headline )
+			).toContain( headline );
+		}
+	);
+
 	it( 'shows the client error text in the card when the timeline fails to load', () => {
 		// index.js:39-45.
 		const { container } = render(

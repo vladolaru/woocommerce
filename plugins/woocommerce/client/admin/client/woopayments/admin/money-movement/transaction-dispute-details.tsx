@@ -35,7 +35,7 @@ import {
 	ACTIONABLE_DISPUTE_STATUSES,
 	isVisaComplianceDispute,
 } from './dispute-evidence-fields';
-import { getEffectiveDisputeFee } from './dispute-utils';
+import { getEffectiveDisputeFee, getKlarnaLossReason } from './dispute-utils';
 import type {
 	WooPaymentsBillingDetails,
 	WooPaymentsDispute,
@@ -300,6 +300,15 @@ const LostDisputeDescription = ( {
 		closedAt
 	);
 
+	// Client 11.2.0 `dispute-resolution-footer.tsx:262-357`: Klarna's reason only once evidence was submitted, and a
+	// Klarna dispute names a payment provider rather than a bank.
+	const klarnaLossReason = metadata.__evidence_submitted_at
+		? getKlarnaLossReason( dispute )
+		: null;
+	const statedLossReason =
+		klarnaLossReason?.type === 'stated' ? klarnaLossReason.display : null;
+	const isKlarnaDispute = dispute.payment_method_details?.type === 'klarna';
+
 	if ( metadata.__evidence_submitted_at ) {
 		if (
 			dispute.reason === 'noncompliant' ||
@@ -308,7 +317,47 @@ const LostDisputeDescription = ( {
 			prefix = sprintf(
 				/* translators: %1$s: date the dispute closed. */
 				__(
-					"<strong>Unfortunately, you've lost this dispute. Visa reached this decision on %1$s.</strong>",
+					"<strong>Unfortunately, you've lost this dispute.</strong> Visa reached this decision on %1$s.",
+					'woocommerce'
+				),
+				closedAt
+			);
+		} else if ( isKlarnaDispute && bankName && statedLossReason ) {
+			prefix = sprintf(
+				/* translators: %1$s: payment provider name, %2$s: date the dispute closed, %3$s: the reason given for the decision, for example "Shipping policy violated". */
+				__(
+					'<strong>Unfortunately, you lost the dispute.</strong> The customer’s payment provider, <strong>%1$s</strong>, decided against you on %2$s, citing “%3$s”.',
+					'woocommerce'
+				),
+				bankName,
+				closedAt,
+				statedLossReason
+			);
+		} else if ( isKlarnaDispute && bankName ) {
+			prefix = sprintf(
+				/* translators: %1$s: payment provider name, %2$s: date the dispute closed. */
+				__(
+					'<strong>Unfortunately, you lost the dispute.</strong> The customer’s payment provider, <strong>%1$s</strong>, decided against you on %2$s.',
+					'woocommerce'
+				),
+				bankName,
+				closedAt
+			);
+		} else if ( isKlarnaDispute && statedLossReason ) {
+			prefix = sprintf(
+				/* translators: %1$s: date the dispute closed, %2$s: the reason given for the decision, for example "Shipping policy violated". */
+				__(
+					'<strong>Unfortunately, you lost the dispute.</strong> The customer’s payment provider decided against you on %1$s, citing “%2$s”.',
+					'woocommerce'
+				),
+				closedAt,
+				statedLossReason
+			);
+		} else if ( isKlarnaDispute ) {
+			prefix = sprintf(
+				/* translators: %1$s: date the dispute closed. */
+				__(
+					'<strong>Unfortunately, you lost the dispute.</strong> The customer’s payment provider decided against you on %1$s.',
 					'woocommerce'
 				),
 				closedAt
@@ -317,7 +366,7 @@ const LostDisputeDescription = ( {
 			prefix = sprintf(
 				/* translators: %1$s: customer's bank name, %2$s: date the dispute closed. */
 				__(
-					"<strong>Unfortunately, you've lost this dispute. The customer's bank, %1$s, reached this decision on %2$s.</strong>",
+					"<strong>Unfortunately, you've lost this dispute.</strong> The customer's bank, <strong>%1$s</strong>, reached this decision on %2$s.",
 					'woocommerce'
 				),
 				bankName,
@@ -327,7 +376,7 @@ const LostDisputeDescription = ( {
 			prefix = sprintf(
 				/* translators: %1$s: date the dispute closed. */
 				__(
-					"<strong>Unfortunately, you've lost this dispute. The customer's bank reached this decision on %1$s.</strong>",
+					"<strong>Unfortunately, you've lost this dispute.</strong> The customer's bank reached this decision on %1$s.",
 					'woocommerce'
 				),
 				closedAt
@@ -347,6 +396,14 @@ const LostDisputeDescription = ( {
 	return (
 		<>
 			{ createInterpolateElement( prefix, { strong: <strong /> } ) }{ ' ' }
+			{ klarnaLossReason?.type === 'unspecified' && (
+				<>
+					{ __(
+						'Klarna did not share a reason for this decision.',
+						'woocommerce'
+					) }{ ' ' }
+				</>
+			) }
 			{ fee
 				? sprintf(
 						/* translators: %1$s: formatted dispute fee. */

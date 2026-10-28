@@ -402,3 +402,121 @@ describe( 'WooPaymentsTransactionDisputeDetails steps you can take', () => {
 		] );
 	} );
 } );
+
+// Client 11.2.0 `payment-details/dispute-details/dispute-resolution-footer.tsx:262-361`, tested in
+// `__tests__/dispute-resolution-footer.test.tsx:360-505`. The first row is R15's recorded Klarna dispute shape.
+describe( 'WooPaymentsTransactionDisputeDetails lost footer', () => {
+	const KLARNA_STATED = {
+		type: 'klarna',
+		klarna: { chargeback_loss_reason_code: 'shipping_policy_violated' },
+	};
+	const SUBMITTED = {
+		__evidence_submitted_at: '1693453017',
+		__dispute_closed_at: '1693453017',
+	};
+
+	const renderLost = (
+		paymentMethodType: string,
+		overrides: Partial< WooPaymentsDispute >
+	) =>
+		render(
+			<WooPaymentsTransactionDisputeDetails
+				transaction={ {
+					id: 'pi_test',
+					amount: 5000,
+					currency: 'usd',
+					payment_method_details: {
+						type: paymentMethodType,
+						...( paymentMethodType === 'card'
+							? { card: { issuer: 'Bank of America' } }
+							: {} ),
+					},
+				} }
+				dispute={ makeDispute( {
+					reason: 'product_not_received',
+					status: 'lost',
+					enhanced_eligibility_types: [],
+					...overrides,
+				} ) }
+				ordinal={ 1 }
+				total={ 1 }
+			/>
+		);
+
+	it.each( [
+		[
+			'a stated Klarna reason',
+			'klarna',
+			{ metadata: SUBMITTED, payment_method_details: KLARNA_STATED },
+			/^Unfortunately, you lost the dispute\. The customer’s payment provider, Klarna, decided against you on .+, citing “Shipping policy violated”\. The disputed amount/,
+			[ 'Unfortunately, you lost the dispute.', 'Klarna' ],
+		],
+		[
+			'an unmapped Klarna reason, in its own words',
+			'klarna',
+			{
+				metadata: SUBMITTED,
+				payment_method_details: {
+					type: 'klarna',
+					klarna: {
+						chargeback_loss_reason_code: ' New-reason code ',
+					},
+				},
+			},
+			/decided against you on .+, citing “New reason code”\./,
+			[ 'Unfortunately, you lost the dispute.', 'Klarna' ],
+		],
+		[
+			'an unspecified Klarna reason',
+			'klarna',
+			{
+				metadata: SUBMITTED,
+				payment_method_details: {
+					type: 'klarna',
+					klarna: {
+						chargeback_loss_reason_code: 'reason_unspecified',
+					},
+				},
+			},
+			/^Unfortunately, you lost the dispute\. The customer’s payment provider, Klarna, decided against you on .+\. Klarna did not share a reason for this decision\. The disputed amount/,
+			[ 'Unfortunately, you lost the dispute.', 'Klarna' ],
+		],
+		[
+			'no Klarna reason statement with no evidence submitted',
+			'klarna',
+			{
+				metadata: { __dispute_closed_at: '1693453017' },
+				payment_method_details: {
+					type: 'klarna',
+					klarna: {
+						chargeback_loss_reason_code: 'reason_unspecified',
+					},
+				},
+			},
+			/^This dispute was lost on .+ due to non-response\. The disputed amount/,
+			[],
+		],
+		[
+			'a card dispute',
+			'card',
+			{ metadata: SUBMITTED },
+			/^Unfortunately, you've lost this dispute\. The customer's bank, Bank of America, reached this decision on .+\. The disputed amount/,
+			[ "Unfortunately, you've lost this dispute.", 'Bank of America' ],
+		],
+	] )(
+		'tells the merchant why they lost: %s',
+		( _scenario, paymentMethodType, overrides, sentence, bold ) => {
+			renderLost( paymentMethodType, overrides );
+
+			const footer = screen.getByRole( 'link', {
+				name: /^Learn more about disputed amounts/,
+			} ).parentElement as HTMLElement;
+			expect( footer.textContent ).toMatch( sentence );
+			expect(
+				Array.from( footer.querySelectorAll( 'strong' ) ).map(
+					( element ) => element.textContent
+				)
+			).toEqual( bold );
+		}
+	);
+} );

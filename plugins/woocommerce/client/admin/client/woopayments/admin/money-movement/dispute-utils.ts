@@ -11,7 +11,7 @@ import { __ } from '@wordpress/i18n';
  * Internal dependencies
  */
 import type { WooPaymentsDispute, WooPaymentsTransaction } from './types';
-import { getDisputeId } from './utils';
+import { formatLabel, getDisputeId } from './utils';
 
 /**
  * The dispute status labels, in the client's order.
@@ -203,3 +203,91 @@ export const getPrimaryDispute = ( source: WooPaymentsDisputeSource ) => {
 		disputes[ 0 ]
 	);
 };
+
+/**
+ * Klarna's chargeback loss reason codes and their labels. `reason_unspecified` is absent: it means Klarna gave no
+ * reason. Client 11.2.0 `disputes/strings.ts:367-413` `klarnaChargebackLossReasons`.
+ */
+const KLARNA_LOSS_REASON_LABELS: Record< string, string > = {
+	shipping_policy_violated: __( 'Shipping policy violated', 'woocommerce' ),
+	proof_of_delivery_inadequate: __(
+		'Proof of delivery inadequate',
+		'woocommerce'
+	),
+	evidence_missing_proof_of_delivery: __(
+		'Evidence missing proof of delivery',
+		'woocommerce'
+	),
+	evidence_missing_customer_details: __(
+		'Evidence missing customer details',
+		'woocommerce'
+	),
+	merchant_loss_accepted: __( 'Merchant loss accepted', 'woocommerce' ),
+	merchant_didnt_counter_dispute: __(
+		'Merchant did not counter dispute',
+		'woocommerce'
+	),
+	merchant_did_not_counter_dispute: __(
+		'Merchant did not counter dispute',
+		'woocommerce'
+	),
+	merchant_didnt_issue_refund: __(
+		'Merchant did not issue refund',
+		'woocommerce'
+	),
+	merchant_did_not_issue_refund: __(
+		'Merchant did not issue refund',
+		'woocommerce'
+	),
+};
+
+export type WooPaymentsKlarnaLossReason =
+	{ type: 'unspecified' } | { type: 'stated'; display: string };
+
+/**
+ * The reason Klarna gave for deciding a dispute against the merchant, or null for a dispute with none: an unmapped
+ * code reads as its words. Client 11.2.0 `disputes/utils.ts:132-155` `getKlarnaLossReason()`.
+ *
+ * @param dispute The dispute.
+ */
+export const getKlarnaLossReason = (
+	dispute: WooPaymentsDispute
+): WooPaymentsKlarnaLossReason | null => {
+	const code =
+		dispute.payment_method_details?.klarna?.chargeback_loss_reason_code
+			?.trim()
+			.toLowerCase()
+			.replace( /[\s-]+/g, '_' );
+
+	if ( ! code ) {
+		return null;
+	}
+
+	if ( code === 'reason_unspecified' ) {
+		return { type: 'unspecified' };
+	}
+
+	return {
+		type: 'stated',
+		display: KLARNA_LOSS_REASON_LABELS[ code ] ?? formatLabel( code ),
+	};
+};
+
+/**
+ * Klarna's loss reasons for a charge's disputes, keyed by dispute ID, for the timeline's lost-dispute lines.
+ * Client 11.2.0 `disputes/utils.ts:157-180` `getKlarnaLossReasons()`.
+ *
+ * @param source The charge.
+ */
+export const getKlarnaLossReasons = ( source: WooPaymentsDisputeSource ) =>
+	getChargeDisputes( source ).reduce<
+		Record< string, WooPaymentsKlarnaLossReason >
+	>( ( reasons, dispute ) => {
+		const lossReason = getKlarnaLossReason( dispute );
+
+		if ( lossReason ) {
+			reasons[ getDisputeId( dispute ) ] = lossReason;
+		}
+
+		return reasons;
+	}, {} );

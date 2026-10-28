@@ -23,7 +23,10 @@ import type {
  * Internal dependencies
  */
 import type { WooPaymentsTimelineEvent } from './types';
-import type { WooPaymentsDisputeOrder } from './dispute-utils';
+import type {
+	WooPaymentsDisputeOrder,
+	WooPaymentsKlarnaLossReason,
+} from './dispute-utils';
 import {
 	formatAmount,
 	formatDisputeReasonLabel,
@@ -559,16 +562,61 @@ const getDisputeDepositImpact = ( event: WooPaymentsTimelineEvent ) => {
 			);
 };
 
+/**
+ * The lost dispute headline. Only Klarna states a reason, read from the charge's disputes by the event's dispute ID, or
+ * from the only dispute of a charge for an event without one. Client 11.2.0 `timeline/map-events.js:1211-1286`.
+ *
+ * @param event             The dispute_lost event.
+ * @param bankName          The customer's bank or payment provider.
+ * @param klarnaLossReasons Klarna's loss reasons keyed by dispute ID.
+ * @param disputeOrder      The charge's disputes in order.
+ */
 const getDisputeLostHeadline = (
 	event: WooPaymentsTimelineEvent,
-	bankName?: string
+	bankName?: string,
+	klarnaLossReasons: Record< string, WooPaymentsKlarnaLossReason > = {},
+	disputeOrder?: WooPaymentsDisputeOrder
 ) => {
+	const disputeId = getString( event, 'dispute_id' );
+	const lossReasons = Object.values( klarnaLossReasons );
+	let lossReason: WooPaymentsKlarnaLossReason | undefined;
+
+	if ( disputeId ) {
+		lossReason = klarnaLossReasons[ disputeId ];
+	} else if (
+		lossReasons.length === 1 &&
+		( disputeOrder?.total ?? 1 ) === 1
+	) {
+		lossReason = lossReasons[ 0 ];
+	}
+
+	const statedLossReason =
+		lossReason?.type === 'stated' ? lossReason.display : null;
 	let headline: string;
 
 	if ( event.reason === 'noncompliant' ) {
 		headline = __(
 			"<strong>Dispute lost.</strong> Visa reviewed the evidence and decided in the customer's favor.",
 			'woocommerce'
+		);
+	} else if ( bankName && statedLossReason ) {
+		headline = sprintf(
+			/* translators: %1$s: payment provider name, %2$s: the reason given for the decision, for example "Shipping policy violated". */
+			__(
+				'<strong>Dispute lost.</strong> The customer’s payment provider, %1$s, decided against you for the following reason: %2$s.',
+				'woocommerce'
+			),
+			bankName,
+			statedLossReason
+		);
+	} else if ( statedLossReason ) {
+		headline = sprintf(
+			/* translators: %s: the reason given for the decision, for example "Shipping policy violated". */
+			__(
+				'<strong>Dispute lost.</strong> The customer’s payment provider decided against you for the following reason: %s.',
+				'woocommerce'
+			),
+			statedLossReason
 		);
 	} else if ( bankName ) {
 		headline = sprintf(
@@ -653,7 +701,8 @@ const mapTimelineEvent = (
 	onRefund?: ( opener: HTMLElement ) => void,
 	refundDialogId?: string,
 	isRefundDialogOpen = false,
-	bankName?: string
+	bankName?: string,
+	klarnaLossReasons?: Record< string, WooPaymentsKlarnaLossReason >
 ): WooPaymentsTimelineItem[] => {
 	const date = getEventDate( event );
 	const type = event.type || '';
@@ -1013,7 +1062,12 @@ const mapTimelineEvent = (
 				qualify(
 					mainItem(
 						date,
-						getDisputeLostHeadline( event, bankName ),
+						getDisputeLostHeadline(
+							event,
+							bankName,
+							klarnaLossReasons,
+							disputeOrder
+						),
 						timelineIcon( CrossIcon, 'is-error' )
 					)
 				),
@@ -1235,6 +1289,7 @@ export const WooPaymentsTransactionTimeline = ( {
 	refundDialogId,
 	isRefundDialogOpen = false,
 	bankName,
+	klarnaLossReasons,
 	hasError = false,
 }: {
 	events: WooPaymentsTimelineEvent[];
@@ -1244,6 +1299,8 @@ export const WooPaymentsTransactionTimeline = ( {
 	isRefundDialogOpen?: boolean;
 	/** Customer's bank, named in the lost dispute headline. */
 	bankName?: string;
+	/** Klarna's loss reasons for the charge's disputes, keyed by dispute ID. */
+	klarnaLossReasons?: Record< string, WooPaymentsKlarnaLossReason >;
 	/** Whether the timeline failed to load. */
 	hasError?: boolean;
 } ) => {
@@ -1254,7 +1311,8 @@ export const WooPaymentsTransactionTimeline = ( {
 			onRefund,
 			refundDialogId,
 			isRefundDialogOpen,
-			bankName
+			bankName,
+			klarnaLossReasons
 		)
 	);
 

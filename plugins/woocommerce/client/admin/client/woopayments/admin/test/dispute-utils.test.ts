@@ -6,6 +6,7 @@ import {
 	getDisputeBalanceAdjustments,
 	getDisputeOrdinals,
 	getEffectiveDisputeFee,
+	getKlarnaLossReasons,
 	getPrimaryDispute,
 	isDisputeRefundable,
 } from '../money-movement/dispute-utils';
@@ -199,5 +200,42 @@ describe( 'WooPayments dispute utilities', () => {
 			isDisputeRefundable( { status: 'warning_under_review' } )
 		).toBe( true );
 		expect( isDisputeRefundable( { status: 'won' } ) ).toBe( true );
+	} );
+
+	// Client 11.2.0 `disputes/utils.ts:157-180` `getKlarnaLossReasons()`: only disputes Klarna gave a reason for.
+	it( "keys Klarna's loss reasons by dispute", () => {
+		expect(
+			getKlarnaLossReasons( {
+				disputes: [
+					{
+						id: 'dp_klarna',
+						payment_method_details: {
+							type: 'klarna',
+							klarna: {
+								chargeback_loss_reason_code:
+									'merchant_didnt_issue_refund',
+							},
+						},
+					},
+					{
+						id: 'dp_unspecified',
+						payment_method_details: {
+							type: 'klarna',
+							klarna: {
+								chargeback_loss_reason_code:
+									'reason_unspecified',
+							},
+						},
+					},
+					{ id: 'dp_card', payment_method_details: { type: 'card' } },
+				],
+			} )
+		).toEqual( {
+			dp_klarna: {
+				type: 'stated',
+				display: 'Merchant did not issue refund',
+			},
+			dp_unspecified: { type: 'unspecified' },
+		} );
 	} );
 } );
