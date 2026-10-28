@@ -767,6 +767,45 @@ class SessionServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A WooPay envelope opens only under a key its reader accepts: $_dataName.
+	 *
+	 * Client 11.2.0 WooPay_Utilities::decrypt_signed_data() tries only the keys each caller lists, each derived for its own
+	 * label (class-woopay-utilities.php:34-59, :359-367, :439-497); tests/unit/woopay/test-class-woopay-utilities.php and
+	 * tests/unit/admin/test-class-wc-rest-woopay-session-controller.php:158-170.
+	 *
+	 * @dataProvider woopay_envelope_key_provider
+	 *
+	 * @param string|null            $sealed_under Label the envelope is sealed under, or null for the blog token itself.
+	 * @param array<int,string|null> $accepted     Labels the reader accepts.
+	 * @param bool                   $opens        Whether the envelope opens.
+	 */
+	public function test_woopay_envelope_opens_only_under_an_accepted_key( ?string $sealed_under, array $accepted, bool $opens ): void {
+		WooPayEnvelopes::connect_store();
+		$payload = array(
+			'timestamp'  => 1761660000,
+			'user_email' => 'shopper@example.com',
+		);
+
+		$opened = $this->create_service()->open_woopay_envelope( WooPayEnvelopes::seal( $payload, $sealed_under ), $accepted );
+
+		$this->assertSame( $opens ? $payload : null, $opened );
+	}
+
+	/**
+	 * Envelopes: the key they are sealed under, the keys the reader accepts, and whether they open.
+	 *
+	 * @return array<string,array{0:string|null,1:array<int,string|null>,2:bool}>
+	 */
+	public function woopay_envelope_key_provider(): array {
+		return array(
+			'an attestation read as an attestation'        => array( 'woopay-attestation-v1', array( 'woopay-attestation-v1' ), true ),
+			'a vouch read as an attestation'               => array( 'woopay-vouch-v1', array( 'woopay-attestation-v1' ), false ),
+			'a blog-token envelope read as an attestation' => array( null, array( 'woopay-attestation-v1' ), false ),
+			'a blog-token envelope where the blog token is accepted' => array( null, array( null ), true ),
+		);
+	}
+
+	/**
 	 * Provide invalid encrypted identity failures.
 	 *
 	 * @return array<string,array{string}>

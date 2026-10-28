@@ -69,6 +69,13 @@ class RecordingWooPaySessionService extends SessionService {
 	public ?WP_REST_Request $last_session_request = null;
 
 	/**
+	 * Email the last session request's adapted-extension balances follow, or null for the session email.
+	 *
+	 * @var string|null
+	 */
+	public ?string $last_session_adapted_extensions_email = null;
+
+	/**
 	 * Last request passed to init_woopay_session().
 	 *
 	 * @var array<string,mixed>
@@ -210,6 +217,7 @@ class RecordingWooPaySessionService extends SessionService {
 	 * @param string|null                     $billing_email  Pay-for-order billing email.
 	 * @param array<string,mixed>|null        $appearance     WooPay appearance payload.
 	 * @param array<int,array<string,string>> $font_rules     WooPay font rules.
+	 * @param string|null                     $adapted_extensions_email Email the adapted-extension balances follow.
 	 * @return array<string,string>
 	 */
 	public function start_init_session_request(
@@ -220,11 +228,13 @@ class RecordingWooPaySessionService extends SessionService {
 		?string $key = null,
 		?string $billing_email = null,
 		?array $appearance = null,
-		array $font_rules = array()
+		array $font_rules = array(),
+		?string $adapted_extensions_email = null
 	): array {
 		unset( $user_session, $order_id, $key, $billing_email, $appearance, $font_rules );
-		$this->last_session_email   = (string) $email;
-		$this->last_session_request = $woopay_request;
+		$this->last_session_email                    = (string) $email;
+		$this->last_session_request                  = $woopay_request;
+		$this->last_session_adapted_extensions_email = $adapted_extensions_email;
 
 		return array( 'session' => 'native' );
 	}

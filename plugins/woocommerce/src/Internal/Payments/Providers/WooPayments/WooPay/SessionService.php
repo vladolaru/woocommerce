@@ -42,6 +42,17 @@ class SessionService {
 	private const WOOPAY_REST_NAMESPACE = 'wp-json/platform-checkout/v1';
 
 	/**
+	 * HKDF label of the key WooPay seals the session route's attestation under (client 11.2.0
+	 * `WooPay_Utilities::ATTESTATION_KEY_PURPOSE`, class-woopay-utilities.php:39).
+	 */
+	public const ATTESTATION_KEY_PURPOSE = 'woopay-attestation-v1';
+
+	/**
+	 * Length in bytes of the keys HKDF derives, the key length AES-256-CBC takes.
+	 */
+	private const CIPHER_KEY_LENGTH = 32;
+
+	/**
 	 * WP_Error codes a failed WooPay init request can carry that are safe to log: WP_Http::request() and
 	 * WP_Http::_dispatch_request() (http_request_failed, http_request_not_executed, http_failure) and Jetpack Connection's
 	 * Client::build_signed_request() (missing_token, malformed_token, invalid_body).
@@ -246,49 +257,67 @@ class SessionService {
 	 * @return array<string,mixed>
 	 */
 	private function decrypt_identity_data( ?array $encrypted_data ): array {
-		if ( null === $encrypted_data ) {
-			return array();
-		}
+		return null === $encrypted_data ? array() : $this->open_woopay_envelope( $encrypted_data, array( null ) ) ?? array();
+	}
 
-		$field_names = array_keys( $encrypted_data );
+	/**
+	 * Open an envelope WooPay sealed for this store: base64 `data`, `iv` and `hash` fields, AES-256-CBC, the hash an
+	 * HMAC-SHA256 over the IV and the ciphertext. The key is the first that verifies the HMAC among the accepted ones: the
+	 * key HKDF derives from the blog token for a label, or the blog token itself for a null entry (client 11.2.0
+	 * `WooPay_Utilities::derive_key_for()` and `decrypt_signed_data()`, class-woopay-utilities.php:359-367, :439-497).
+	 *
+	 * @param array<string,mixed>    $envelope          The envelope.
+	 * @param array<int,string|null> $accepted_purposes Key labels to try, in order; null for the blog token itself.
+	 * @return array<string,mixed>|null The sealed payload, or null when the envelope does not open.
+	 */
+	public function open_woopay_envelope( array $envelope, array $accepted_purposes ): ?array {
+		$field_names = array_keys( $envelope );
 		sort( $field_names );
 		if ( array( 'data', 'hash', 'iv' ) !== $field_names ) {
-			return array();
+			return null;
 		}
 
-		if ( ! is_string( $encrypted_data['data'] ) || ! is_string( $encrypted_data['iv'] ) || ! is_string( $encrypted_data['hash'] ) ) {
-			return array();
+		if ( ! is_string( $envelope['data'] ) || ! is_string( $envelope['iv'] ) || ! is_string( $envelope['hash'] ) ) {
+			return null;
 		}
 
-		// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_decode -- Decodes the WooPay identity envelope.
-		$data = base64_decode( $encrypted_data['data'], true );
-		// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_decode -- Decodes the WooPay identity envelope.
-		$iv = base64_decode( $encrypted_data['iv'], true );
-		// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_decode -- Decodes the WooPay identity envelope.
-		$hash = base64_decode( $encrypted_data['hash'], true );
+		// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_decode -- Decodes the WooPay envelope.
+		$data = base64_decode( $envelope['data'], true );
+		// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_decode -- Decodes the WooPay envelope.
+		$iv = base64_decode( $envelope['iv'], true );
+		// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_decode -- Decodes the WooPay envelope.
+		$hash = base64_decode( $envelope['hash'], true );
 		if ( false === $data || false === $iv || false === $hash || '' === $data ) {
-			return array();
+			return null;
 		}
 
 		$iv_length  = openssl_cipher_iv_length( 'aes-256-cbc' );
 		$blog_token = $this->get_store_blog_token();
 		if ( false === $iv_length || strlen( $iv ) !== $iv_length || '' === $blog_token ) {
-			return array();
+			return null;
 		}
 
-		$computed_hash = hash_hmac( 'sha256', $iv . $data, $blog_token );
-		if ( ! hash_equals( $computed_hash, $hash ) ) {
-			return array();
+		$key = null;
+		foreach ( $accepted_purposes as $purpose ) {
+			$candidate = null === $purpose ? $blog_token : hash_hkdf( 'sha256', $blog_token, self::CIPHER_KEY_LENGTH, $purpose );
+			if ( hash_equals( hash_hmac( 'sha256', $iv . $data, $candidate ), $hash ) ) {
+				$key = $candidate;
+				break;
+			}
 		}
 
-		$decrypted_data = openssl_decrypt( $data, 'aes-256-cbc', $blog_token, OPENSSL_RAW_DATA, $iv );
+		if ( null === $key ) {
+			return null;
+		}
+
+		$decrypted_data = openssl_decrypt( $data, 'aes-256-cbc', $key, OPENSSL_RAW_DATA, $iv );
 		if ( false === $decrypted_data ) {
-			return array();
+			return null;
 		}
 
-		$identity = json_decode( $decrypted_data, true );
+		$payload = json_decode( $decrypted_data, true );
 
-		return is_array( $identity ) ? $identity : array();
+		return is_array( $payload ) ? $payload : null;
 	}
 
 	/**
@@ -352,6 +381,12 @@ class SessionService {
 	 * @param string|null                     $billing_email   Pay-for-order billing email.
 	 * @param array<string,mixed>|null        $appearance      WooPay appearance payload.
 	 * @param array<int,array<string,string>> $font_rules      WooPay font rules.
+	 * @param string|null                     $adapted_extensions_email Email whose adapted-extension balances the request
+	 *                                                                  carries, and whose account an unlogged shopper gets
+	 *                                                                  `email_verified_session_nonce` for, when not the
+	 *                                                                  session email: on the session route, the email WooPay
+	 *                                                                  named ('' for none), as client 11.2.0 selects it
+	 *                                                                  (class-woopay-session.php:715-746).
 	 * @phpstan-param WP_REST_Request<array<string,mixed>>|null $woopay_request
 	 * @return array<string,mixed>
 	 */
@@ -363,7 +398,8 @@ class SessionService {
 		?string $key = null,
 		?string $billing_email = null,
 		?array $appearance = null,
-		array $font_rules = array()
+		array $font_rules = array(),
+		?string $adapted_extensions_email = null
 	): array {
 		// The session carries the order's key-bearing pay URL, so a posted order ID needs its key; client 11.1.0 trusts it (class-woopay-session.php:499-500).
 		$order = null !== $order_id ? wc_get_order( $order_id ) : false;
@@ -417,10 +453,15 @@ class SessionService {
 			$customer->save();
 		}
 
+		$adapted_extensions_email = $adapted_extensions_email ?? $email;
+		if ( '' === $adapted_extensions_email ) {
+			return $request;
+		}
+
 		$adapted_extensions->register_integrations();
-		$request['adapted_extensions'] = $adapted_extensions->get_adapted_extensions_data( $email );
+		$request['adapted_extensions'] = $adapted_extensions->get_adapted_extensions_data( $adapted_extensions_email );
 		if ( ! is_user_logged_in() && array() !== $request['adapted_extensions'] ) {
-			$registered_user = get_user_by( 'email', $email );
+			$registered_user = get_user_by( 'email', $adapted_extensions_email );
 			if ( $registered_user instanceof \WP_User ) {
 				$request['email_verified_session_nonce'] = $this->create_woopay_nonce( $registered_user->ID );
 			}

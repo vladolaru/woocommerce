@@ -252,20 +252,24 @@ class SessionController implements RegisterHooksInterface {
 
 	/**
 	 * Register WooPay session routes.
+	 *
+	 * POST carries WooPay's attestation in its body; GET stays for a request WooPay signs while the platform keeps the store
+	 * on the signed path. `email` is optional: an attested request names it inside the envelope (client 11.2.0
+	 * class-wc-rest-woopay-session-controller.php:35-61).
 	 */
 	public function register_routes(): void {
 		register_rest_route(
 			self::NAMESPACE,
 			'/session',
 			array(
-				'methods'             => WP_REST_Server::READABLE,
+				'methods'             => array( WP_REST_Server::READABLE, WP_REST_Server::CREATABLE ),
 				'callback'            => array( $this, 'get_session' ),
 				'permission_callback' => array( $this, 'has_permission' ),
 				'args'                => array(
 					'email' => array(
 						'type'     => 'string',
 						'format'   => 'email',
-						'required' => true,
+						'required' => false,
 					),
 				),
 			)
@@ -273,26 +277,40 @@ class SessionController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Check WooPay route permissions.
+	 * Check WooPay route permissions: WooPay's user agent, and a signature on the signed path or a fresh, unspent
+	 * attestation; a Cart-Token is not enough here (client 11.2.0 class-wc-rest-woopay-session-controller.php:100-129).
 	 *
 	 * @param WP_REST_Request $request REST request.
 	 * @phpstan-param WP_REST_Request<array<string,mixed>> $request
 	 * @return bool|WP_Error
 	 */
 	public function has_permission( WP_REST_Request $request ) {
+		$logger = wc_get_container()->get( WooPaymentsLogger::class );
 		if ( 'WooPay' !== $request->get_header( 'user_agent' ) ) {
+			$logger->log( 'WooPay session route denied: the request does not identify as WooPay.' );
+
 			return new WP_Error( 'woocommerce_rest_cannot_view', __( 'Sorry, you cannot list resources.', 'woocommerce' ), array( 'status' => rest_authorization_required_code() ) );
 		}
 
-		if ( ! $this->store_api_request_handler->has_valid_request_signature() ) {
-			return new WP_Error( 'woocommerce_rest_cannot_view', __( 'Sorry, you cannot list resources.', 'woocommerce' ), array( 'status' => rest_authorization_required_code() ) );
+		if ( $this->store_api_request_handler->has_valid_request_signature() || null !== $this->store_api_request_handler->get_woopay_attestation( $request ) ) {
+			return true;
 		}
 
-		return true;
+		$logger->log(
+			$this->store_api_request_handler->is_valid_request_with_cart_token()
+				? 'WooPay session route denied: a Cart-Token does not authorize this route, which needs a signature or an attestation.'
+				: 'WooPay session route denied: no signature and no usable attestation.'
+		);
+
+		return new WP_Error( 'woocommerce_rest_cannot_view', __( 'Sorry, you cannot list resources.', 'woocommerce' ), array( 'status' => rest_authorization_required_code() ) );
 	}
 
 	/**
 	 * Get WooPay session data.
+	 *
+	 * The email WooPay attested to outranks the `email` parameter. The adapted-extension balances, and the nonce that
+	 * unlocks them, follow only an email WooPay named: the attested one, or on a signed request the one it sent (client
+	 * 11.2.0 class-woopay-session.php:523-530, :715-717).
 	 *
 	 * @param WP_REST_Request $request REST request.
 	 * @phpstan-param WP_REST_Request<array<string,mixed>> $request
@@ -300,10 +318,22 @@ class SessionController implements RegisterHooksInterface {
 	 */
 	public function get_session( WP_REST_Request $request ) {
 		try {
-			$email = $request->get_param( 'email' );
+			$attested_email = $this->store_api_request_handler->get_woopay_attested_account_email( $request );
+			$email          = $request->get_param( 'email' );
+			$email          = $attested_email ?? ( is_scalar( $email ) ? sanitize_email( (string) $email ) : null );
 
 			return new WP_REST_Response(
-				$this->session_service->start_init_session_request( is_scalar( $email ) ? sanitize_email( (string) $email ) : null, null, $request ),
+				$this->session_service->start_init_session_request(
+					$email,
+					null,
+					$request,
+					null,
+					null,
+					null,
+					null,
+					array(),
+					$this->store_api_request_handler->has_valid_request_signature() ? null : (string) $attested_email
+				),
 				200
 			);
 		} catch ( Throwable $exception ) {

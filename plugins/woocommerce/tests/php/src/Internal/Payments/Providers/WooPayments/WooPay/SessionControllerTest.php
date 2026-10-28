@@ -127,8 +127,10 @@ class SessionControllerTest extends WC_REST_Unit_Test_Case {
 
 		$this->assertArrayHasKey( '/payments/woopay/session', $this->server->get_routes() );
 		$this->assertRouteHasMethod( $this->server->get_routes()['/payments/woopay/session'], WP_REST_Server::READABLE );
+		$this->assertRouteHasMethod( $this->server->get_routes()['/payments/woopay/session'], WP_REST_Server::CREATABLE );
 		$route_args = $this->server->get_routes()['/payments/woopay/session'][0]['args'];
-		$this->assertTrue( $route_args['email']['required'] );
+		// Optional since client 11.2.0: an attested request names the email inside its envelope (class-wc-rest-woopay-session-controller.php:51-57).
+		$this->assertFalse( $route_args['email']['required'] );
 		$this->assertSame( 'email', $route_args['email']['format'] );
 		$this->assertSame( 20, has_filter( 'determine_current_user', array( $this->store_api_request_handler, 'determine_current_user_for_woopay' ) ) );
 		$this->assertNotFalse( has_action( 'woocommerce_order_payment_status_changed', array( $this->store_api_request_handler, 'woopay_order_payment_status_changed' ) ) );
@@ -1268,6 +1270,214 @@ class SessionControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox The session route answers $_dataName.
+	 *
+	 * Client 11.2.0 class-wc-rest-woopay-session-controller.php:35-61 (GET and POST, `email` optional) and :100-129 (WooPay's
+	 * user agent, then a signature on the signed path or a fresh attestation; a Cart-Token is refused with its own log line);
+	 * class-woopay-session.php:1069-1156 (the envelope opens only under the attestation key and is at most 300 seconds
+	 * old); tests/unit/admin/test-class-wc-rest-woopay-session-controller.php:76-175.
+	 *
+	 * @dataProvider session_route_credentials_provider
+	 *
+	 * @param string      $method         HTTP method.
+	 * @param string      $credential     'attestation', 'stale attestation', 'blog-token envelope', 'cart token' or 'signature'.
+	 * @param bool        $on_signed_path Whether the platform keeps the store on WooPay's signed path.
+	 * @param int         $status         Expected response status.
+	 * @param string|null $log_line       Expected denial log line, or null when none is expected.
+	 */
+	public function test_session_route_admits_a_signature_on_the_signed_path_or_a_fresh_attestation( string $method, string $credential, bool $on_signed_path, int $status, ?string $log_line ): void {
+		WooPayEnvelopes::connect_store();
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => 'yes' ) );
+		$logged    = $this->record_log_messages();
+		$this->sut = $this->create_controller( true );
+		$this->woopay_eligibility->flags->force_signed_requests = $on_signed_path;
+		$this->sut->register_routes();
+		$request = new WP_REST_Request( $method, '/payments/woopay/session' );
+		$request->set_header( 'User-Agent', 'WooPay' );
+		if ( 'signature' === $credential ) {
+			$this->force_real_blog_token_signed();
+		} elseif ( 'cart token' === $credential ) {
+			$_SERVER['HTTP_CART_TOKEN'] = \Automattic\WooCommerce\StoreApi\Utilities\CartTokenUtils::get_cart_token( 't_guesthash' );
+		} else {
+			$envelope = array(
+				'attestation'         => WooPayEnvelopes::seal( array( 'timestamp' => time() ), 'woopay-attestation-v1' ),
+				'stale attestation'   => WooPayEnvelopes::seal( array( 'timestamp' => time() - 301 ), 'woopay-attestation-v1' ),
+				'blog-token envelope' => WooPayEnvelopes::seal( array( 'timestamp' => time() ), null ),
+			)[ $credential ];
+			$request->set_header( 'Content-Type', 'application/json' );
+			$request->set_body( (string) wp_json_encode( array( 'woopay_attestation' => $envelope ) ) );
+		}
+
+		try {
+			$response = $this->server->dispatch( $request );
+		} finally {
+			unset( $_SERVER['HTTP_CART_TOKEN'] );
+		}
+
+		$this->assertSame( $status, $response->get_status() );
+		if ( 200 === $status ) {
+			$this->assertSame( array( 'session' => 'native' ), $response->get_data() );
+		}
+		if ( null !== $log_line ) {
+			$this->assertContains( $log_line, $logged->getArrayCopy() );
+		}
+	}
+
+	/**
+	 * Session-route requests: method, credential, signed path, status and denial log line.
+	 *
+	 * @return array<string,array{0:string,1:string,2:bool,3:int,4:string|null}>
+	 */
+	public function session_route_credentials_provider(): array {
+		$denied = 'WooPay session route denied: no signature and no usable attestation.';
+
+		return array(
+			'a POST with a fresh attestation and no email' => array( 'POST', 'attestation', false, 200, null ),
+			'a POST with an attestation 301 seconds old'   => array( 'POST', 'stale attestation', false, 401, $denied ),
+			'a POST with an envelope sealed under the blog token itself' => array( 'POST', 'blog-token envelope', false, 401, $denied ),
+			'a POST carrying only a Cart-Token'            => array( 'POST', 'cart token', false, 401, 'WooPay session route denied: a Cart-Token does not authorize this route, which needs a signature or an attestation.' ),
+			'a signed GET with no email on the signed path' => array( 'GET', 'signature', true, 200, null ),
+			'a signed GET off the signed path'             => array( 'GET', 'signature', false, 401, $denied ),
+		);
+	}
+
+	/**
+	 * @testdox The session route refuses an attestation it has already accepted once.
+	 *
+	 * Client 11.2.0 class-woopay-session.php:1432-1448 spends the envelope on its first use;
+	 * tests/unit/admin/test-class-wc-rest-woopay-session-controller.php:178-187. The second request is a new request, so it
+	 * gets a new server and handler, as a new PHP request would.
+	 */
+	public function test_session_route_refuses_a_replayed_attestation(): void {
+		WooPayEnvelopes::connect_store();
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => 'yes' ) );
+		$logged   = $this->record_log_messages();
+		$envelope = WooPayEnvelopes::seal(
+			array(
+				'timestamp'  => time(),
+				'user_email' => 'shopper@example.com',
+			),
+			'woopay-attestation-v1'
+		);
+		$statuses = array();
+		foreach ( array( 'first', 'replay' ) as $attempt ) {
+			unset( $attempt );
+			$this->server              = new \WC_Lazy_REST_Server();
+			$GLOBALS['wp_rest_server'] = $this->server;
+			$this->sut                 = $this->create_controller( true );
+			$this->sut->register_routes();
+			$request = new WP_REST_Request( 'POST', '/payments/woopay/session' );
+			$request->set_header( 'User-Agent', 'WooPay' );
+			$request->set_header( 'Content-Type', 'application/json' );
+			$request->set_body( (string) wp_json_encode( array( 'woopay_attestation' => $envelope ) ) );
+			$statuses[] = $this->server->dispatch( $request )->get_status();
+		}
+
+		$this->assertSame( array( 200, 401 ), $statuses );
+		$this->assertContains( 'WooPay attestation rejected: envelope has already been used, or its claim could not be recorded.', $logged->getArrayCopy() );
+	}
+
+	/**
+	 * @testdox The session route serves adapted-extension balances, and the nonce that unlocks them, only for an email WooPay named: $_dataName.
+	 *
+	 * Client 11.2.0 class-woopay-session.php:523-530 (the attested email outranks request parameters) and :715-746 (the
+	 * balances and email_verified_session_nonce follow the attested email, or on a signed request the email it sends);
+	 * tests/unit/woopay/test-class-woopay-session.php:871-878, :953-1100.
+	 *
+	 * @dataProvider session_route_balance_email_provider
+	 *
+	 * @param string|null $attested_email Email the attestation names, or null for a signed request.
+	 * @param bool        $guest          Whether the attestation names no account at all.
+	 * @param string|null $expected_email Email the balances and the nonce follow, or null for none.
+	 */
+	public function test_session_route_serves_balances_only_for_an_email_woopay_named( ?string $attested_email, bool $guest, ?string $expected_email ): void {
+		WooPayEnvelopes::connect_store();
+		$named_id   = $this->factory->user->create( array( 'user_email' => 'named@example.com' ) );
+		$param_id   = $this->factory->user->create( array( 'user_email' => 'parameter@example.com' ) );
+		$extensions = $this->createMock( AdaptedExtensions::class );
+		$extensions->method( 'get_extension_data' )->willReturn( array() );
+		$extensions->method( 'get_adapted_extensions_data' )->willReturnCallback(
+			static fn( string $email ): array => array( 'points-and-rewards' => array( 'points_for' => $email ) )
+		);
+		$this->sut = $this->create_controller( true, $this->create_real_enabled_session_service( true, $extensions ) );
+		$this->sut->register_routes();
+		$request = new WP_REST_Request( null === $attested_email && ! $guest ? 'GET' : 'POST', '/payments/woopay/session' );
+		$request->set_header( 'User-Agent', 'WooPay' );
+		$request->set_param( 'email', 'parameter@example.com' );
+		if ( null === $attested_email && ! $guest ) {
+			$this->force_real_blog_token_signed();
+		} else {
+			$payload = array( 'timestamp' => time() );
+			if ( ! $guest ) {
+				$payload['user_email'] = $attested_email;
+			}
+			$request->set_header( 'Content-Type', 'application/json' );
+			$request->set_body(
+				(string) wp_json_encode(
+					array(
+						'woopay_attestation' => WooPayEnvelopes::seal( $payload, 'woopay-attestation-v1' ),
+						'email'              => 'parameter@example.com',
+					)
+				)
+			);
+		}
+
+		$response = $this->server->dispatch( $request );
+		$data     = $response->get_data();
+
+		$this->assertSame( 200, $response->get_status() );
+		$this->assertIsArray( $data );
+		$this->assertSame( $expected_email ?? 'parameter@example.com', $data['email'], 'The attested email outranks the parameter.' );
+		if ( null === $expected_email ) {
+			$this->assertArrayNotHasKey( 'adapted_extensions', $data );
+			$this->assertArrayNotHasKey( 'email_verified_session_nonce', $data );
+
+			return;
+		}
+
+		$expected_user = 'named@example.com' === $expected_email ? $named_id : $param_id;
+		$this->assertSame( array( 'points-and-rewards' => array( 'points_for' => $expected_email ) ), $data['adapted_extensions'] );
+		$this->assertSame( substr( wp_hash( wp_nonce_tick( 'wc_store_api' ) . '|wc_store_api|' . $expected_user . '|', 'nonce' ), -12, 10 ), $data['email_verified_session_nonce'] );
+	}
+
+	/**
+	 * Session-route requests naming an email: the attested one, guest, and the email the balances follow.
+	 *
+	 * @return array<string,array{0:string|null,1:bool,2:string|null}>
+	 */
+	public function session_route_balance_email_provider(): array {
+		return array(
+			'an attested account and another email in the parameter' => array( 'named@example.com', false, 'named@example.com' ),
+			'a guest attestation and an email in the parameter'      => array( null, true, null ),
+			'a signed request on the signed path naming the email in its parameter' => array( null, false, 'parameter@example.com' ),
+		);
+	}
+
+	/**
+	 * Record the message of every WooPayments log line written until the test ends.
+	 *
+	 * @return \ArrayObject<int,string>
+	 */
+	private function record_log_messages(): \ArrayObject {
+		$messages = new \ArrayObject();
+		add_filter(
+			'woocommerce_logger_log_message',
+			static function ( $message, $level, $context ) use ( $messages ) {
+				unset( $level );
+				if ( 'woopayments' === ( $context['source'] ?? '' ) ) {
+					$messages[] = (string) $message;
+				}
+
+				return $message;
+			},
+			10,
+			3
+		);
+
+		return $messages;
+	}
+
+	/**
 	 * @testdox Should build WooPay AJAX-compatible response payloads.
 	 */
 	public function test_builds_ajax_response_payloads(): void {
@@ -1668,10 +1878,11 @@ class SessionControllerTest extends WC_REST_Unit_Test_Case {
 	/**
 	 * Create a real enabled session service for controller integration tests.
 	 *
-	 * @param bool $test_mode Whether the account reports test mode.
+	 * @param bool                   $test_mode          Whether the account reports test mode.
+	 * @param AdaptedExtensions|null $adapted_extensions Adapted extensions registry, or null for a real empty one.
 	 * @return SessionService
 	 */
-	private function create_real_enabled_session_service( bool $test_mode = true ): SessionService {
+	private function create_real_enabled_session_service( bool $test_mode = true, ?AdaptedExtensions $adapted_extensions = null ): SessionService {
 		$settings = array(
 			'enabled'                           => 'yes',
 			'platform_checkout'                 => 'yes',
@@ -1714,7 +1925,7 @@ class SessionControllerTest extends WC_REST_Unit_Test_Case {
 		$this->appearance_store->init( new WooPaymentsFrontendStylesService() );
 
 		$service = new SessionService();
-		$service->init( $account_service, $this->woopay_eligibility, $this->appearance_store, $tracking_controller, wc_get_container()->get( BlocksDataExtractor::class ), new AdaptedExtensions(), $this->createMock( WooPaymentsCustomerService::class ), wc_get_container()->get( WooPaymentsLogger::class ) );
+		$service->init( $account_service, $this->woopay_eligibility, $this->appearance_store, $tracking_controller, wc_get_container()->get( BlocksDataExtractor::class ), $adapted_extensions ?? new AdaptedExtensions(), $this->createMock( WooPaymentsCustomerService::class ), wc_get_container()->get( WooPaymentsLogger::class ) );
 
 		return $service;
 	}

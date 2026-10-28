@@ -30,6 +30,7 @@ class ThrowingWooPaySessionService extends RecordingWooPaySessionService {
 	 * @param string|null                     $billing_email  Pay-for-order billing email.
 	 * @param array<string,mixed>|null        $appearance     WooPay appearance payload.
 	 * @param array<int,array<string,string>> $font_rules     WooPay font rules.
+	 * @param string|null                     $adapted_extensions_email Email the adapted-extension balances follow.
 	 * @throws \Throwable Always, to exercise the controller's failure path.
 	 */
 	public function start_init_session_request(
@@ -40,9 +41,10 @@ class ThrowingWooPaySessionService extends RecordingWooPaySessionService {
 		?string $key = null,
 		?string $billing_email = null,
 		?array $appearance = null,
-		array $font_rules = array()
+		array $font_rules = array(),
+		?string $adapted_extensions_email = null
 	): array {
-		unset( $email, $user_session, $woopay_request, $order_id, $key, $billing_email, $appearance, $font_rules );
+		unset( $email, $user_session, $woopay_request, $order_id, $key, $billing_email, $appearance, $font_rules, $adapted_extensions_email );
 
 		throw $this->throwable ?? new RuntimeException( 'Unable to read the cart.', 7 );
 	}

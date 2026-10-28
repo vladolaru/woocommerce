@@ -21,6 +21,7 @@ use Automattic\WooCommerce\StoreApi\Utilities\CartTokenUtils;
 use Automattic\WooCommerce\StoreApi\Utilities\DraftOrderTrait;
 use WC_Order;
 use WP_Error;
+use WP_REST_Request;
 
 /**
  * Handles the Store API requests WooPay's servers send for a shopper: authenticates each by its Cart-Token, or by the
@@ -64,6 +65,26 @@ class StoreApiRequestHandler {
 	 * Operation name the WooPay draft-order takeover holds the order payment lock under.
 	 */
 	private const DRAFT_REUSE_OPERATION = 'WooPay draft reuse';
+	/**
+	 * Body parameter carrying the session route's attestation envelope (client 11.2.0 class-woopay-session.php:55).
+	 */
+	private const ATTESTATION_PARAM = 'woopay_attestation';
+	/**
+	 * Transient prefix recording that an attestation envelope was spent (client 11.2.0 class-woopay-session.php:60).
+	 */
+	private const ATTESTATION_CLAIM_PREFIX = 'wcpay_woopay_attestation_';
+	/**
+	 * How old, in seconds, a WooPay envelope may be (client 11.2.0 class-woopay-session.php:46).
+	 */
+	private const ATTESTATION_MAX_AGE = 300;
+
+	/**
+	 * Attestations resolved on this request, keyed by envelope fingerprint, so the permission check and the session build
+	 * read one envelope that may be spent only once.
+	 *
+	 * @var array<string,array<string,mixed>|null>
+	 */
+	private array $resolved_attestations = array();
 
 	/**
 	 * WooPay eligibility rules.
@@ -218,8 +239,141 @@ class StoreApiRequestHandler {
 	 *
 	 * @return bool
 	 */
-	private function is_valid_request_with_cart_token(): bool {
+	public function is_valid_request_with_cart_token(): bool {
 		return null !== $this->get_payload_from_cart_token();
+	}
+
+	/**
+	 * Get the payload WooPay attested to in a session-route request's body, or null when it attested none.
+	 *
+	 * The envelope is read from the body only, sealed under its own derived key, fresh for five minutes and spent on its
+	 * first use, so a replay is refused; within one request every caller gets the same answer. As client 11.2.0
+	 * `WooPay_Session::get_woopay_attestation()` (class-woopay-session.php:1069-1156, :1432-1448).
+	 *
+	 * @param WP_REST_Request|null $request The session-route request.
+	 * @phpstan-param WP_REST_Request<array<string,mixed>>|null $request
+	 * @return array<string,mixed>|null
+	 */
+	public function get_woopay_attestation( ?WP_REST_Request $request ): ?array {
+		if ( null === $request ) {
+			return null;
+		}
+
+		$envelope = null;
+		foreach ( array( $request->get_json_params(), $request->get_body_params() ) as $params ) {
+			if ( is_array( $params ) && array_key_exists( self::ATTESTATION_PARAM, $params ) ) {
+				$envelope = $params[ self::ATTESTATION_PARAM ];
+				break;
+			}
+		}
+
+		if ( ! is_array( $envelope ) ) {
+			if ( null !== $envelope ) {
+				$this->logger->log( 'WooPay attestation rejected: ' . self::ATTESTATION_PARAM . ' is not an envelope.' );
+			}
+
+			return null;
+		}
+
+		$parts = array();
+		foreach ( array( 'data', 'iv', 'hash' ) as $field ) {
+			if ( ! isset( $envelope[ $field ] ) || ! is_string( $envelope[ $field ] ) ) {
+				$this->logger->log( 'WooPay attestation rejected: envelope has no usable "' . $field . '" field.' );
+
+				return null;
+			}
+
+			$parts[ $field ] = sanitize_text_field( wp_unslash( $envelope[ $field ] ) );
+		}
+
+		// The spent mark keys on the HMAC's bytes, so another spelling of the same envelope is the same claim.
+		// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_decode -- Decodes the WooPay envelope's HMAC.
+		$decoded_hash = base64_decode( $parts['hash'], true );
+		if ( false === $decoded_hash ) {
+			$this->logger->log( 'WooPay attestation rejected: envelope "hash" field is not base64.' );
+
+			return null;
+		}
+
+		$fingerprint = hash( 'sha256', $decoded_hash );
+		if ( array_key_exists( $fingerprint, $this->resolved_attestations ) ) {
+			return $this->resolved_attestations[ $fingerprint ];
+		}
+
+		$payload = $this->session_service->open_woopay_envelope( $parts, array( SessionService::ATTESTATION_KEY_PURPOSE ) );
+		if ( null === $payload || ! isset( $payload['timestamp'] ) ) {
+			$this->logger->log( 'WooPay attestation rejected: envelope did not open, or carries no timestamp.' );
+
+			return null;
+		}
+
+		if ( ! $this->is_fresh_woopay_timestamp( $payload['timestamp'] ) ) {
+			$this->logger->log( 'WooPay attestation rejected: envelope timestamp is missing or stale.' );
+
+			return null;
+		}
+
+		if ( ! $this->claim_attestation( $fingerprint ) ) {
+			$this->logger->log( 'WooPay attestation rejected: envelope has already been used, or its claim could not be recorded.' );
+			$this->resolved_attestations[ $fingerprint ] = null;
+
+			return null;
+		}
+
+		$this->resolved_attestations[ $fingerprint ] = $payload;
+
+		return $payload;
+	}
+
+	/**
+	 * Get the WooPay account email a session-route request's attestation names, or null when it names none (a guest).
+	 *
+	 * Client 11.2.0 `WooPay_Session::get_woopay_attested_account_email()` (class-woopay-session.php:1177-1187).
+	 *
+	 * @param WP_REST_Request|null $request The session-route request.
+	 * @phpstan-param WP_REST_Request<array<string,mixed>>|null $request
+	 * @return string|null
+	 */
+	public function get_woopay_attested_account_email( ?WP_REST_Request $request ): ?string {
+		$attestation = $this->get_woopay_attestation( $request );
+		if ( null === $attestation || empty( $attestation['user_email'] ) || ! is_string( $attestation['user_email'] ) ) {
+			return null;
+		}
+
+		$email = sanitize_email( $attestation['user_email'] );
+
+		return is_email( $email ) ? $email : null;
+	}
+
+	/**
+	 * Tell whether a sealed timestamp is within five minutes of now, either way.
+	 *
+	 * @param mixed $timestamp The sealed timestamp.
+	 * @return bool
+	 */
+	private function is_fresh_woopay_timestamp( $timestamp ): bool {
+		return is_numeric( $timestamp ) && abs( time() - (int) $timestamp ) <= self::ATTESTATION_MAX_AGE;
+	}
+
+	/**
+	 * Spend an attestation envelope, returning false when it was already spent or the claim could not be recorded.
+	 *
+	 * The write decides, with no read before it: `wp_cache_add()` refuses a key an external object cache holds, and
+	 * `set_transient()` reports false when the stored value is already the same constant. Kept for twice the freshness
+	 * window (client 11.2.0 class-woopay-session.php:1432-1448).
+	 *
+	 * @param string $fingerprint Fingerprint of the envelope.
+	 * @return bool
+	 */
+	private function claim_attestation( string $fingerprint ): bool {
+		$key        = self::ATTESTATION_CLAIM_PREFIX . $fingerprint;
+		$expiration = 2 * self::ATTESTATION_MAX_AGE;
+
+		if ( wp_using_ext_object_cache() ) {
+			return wp_cache_add( $key, 1, 'transient', $expiration );
+		}
+
+		return (bool) set_transient( $key, 1, $expiration );
 	}
 
 	/**
