@@ -1,6 +1,6 @@
 # WooPayments extension compatibility pins
 
-The WooPayments extension compatibility matrix is an opt-in profile. It installs the released packages of exact extension versions, runs only the `woopayments-native-extension-compat` Playwright project, and never joins the default WooCommerce test projects. The profile must target a disposable environment; the local runner rejects the manual native store on port `8889`.
+The WooPayments extension compatibility matrix is an opt-in local profile. It installs the released packages of exact extension versions, runs only the `woopayments-native-extension-compat` Playwright project, and never joins the default WooCommerce test projects. The profile must target a disposable environment; the local runner rejects the manual native store on port `8889`.
 
 ## Pin matrix
 
@@ -25,37 +25,34 @@ The profile installs each pin's released package, the one merchants install, so 
 
 The released packages ship their compiled assets, including the PayPal Payments settings script that the Subscriptions settings-tab smoke in `merchant/payouts-disputes-smoke.spec.ts` loads. PayPal Payments `2.9.6` keeps its competing card and wallet onboarding and its settings module behind the feature-gated new-settings graph, so the compatibility probes set `PCP_SETTINGS_ENABLED=1` before WordPress bootstrap for both PayPal pins.
 
-## Local profile
+## Running the matrix
 
-Start the tracked disposable E2E environment from `plugins/woocommerce/`, then prepare either exact pin set:
+The matrix runs locally; no CI job runs it. Run each pin set on a fresh disposable E2E environment, from `plugins/woocommerce/`, with `TMPDIR` set and the WooCommerce.com packages available (see Packages):
 
 ```sh
-pnpm wp-env:e2e start
+export WCPAY_RUNTIME=native E2E_WOOPAYMENTS_EXTENSION_COMPAT=true
+export E2E_WOOPAYMENTS_NATIVE_STORE_DIR="$PWD" E2E_WOOPAYMENTS_NATIVE_STORE_URL=http://localhost:8086
+export E2E_WOOPAYMENTS_WP_ENV_CONFIG=.wp-env.e2e.json BASE_URL=http://localhost:8086 WP_BASE_URL=http://localhost:8086
+
+pnpm env:e2e:restart
+bash tests/e2e/envs/woopayments-native/fresh-activation-smoke.sh
 
 tests/e2e/envs/woopayments-native/extensions-profile.sh \
 	--pin-set oldest \
 	--store-url http://localhost:8086 \
 	--wp-env-config .wp-env.e2e.json \
 	--wp-env-service cli
-```
 
-Use `--pin-set latest` for the latest side of the matrix. Export `E2E_WOOPAYMENTS_EXTENSION_ZIPS` first unless `wccom-ext` is on `PATH` (see Packages).
-
-Run the reserved Playwright project explicitly after the profile is active. The probes run through the shared `wpCLI`/`wpEvalJson` helpers, which target `.wp-env.e2e.json`'s `cli` service unless `E2E_WP_ENV_CONFIG` names another config, so only the opt-in flag is needed:
-
-```sh
-E2E_WOOPAYMENTS_EXTENSION_COMPAT=true \
 pnpm exec playwright test \
 	--config=tests/e2e/envs/woopayments-native/playwright.config.ts \
 	--project=woopayments-native-extension-compat \
-	tests/e2e/tests/woopayments-native/compat
+	tests/e2e/tests/woopayments-native/compat \
+	tests/e2e/tests/woopayments-native/merchant/payouts-disputes-smoke.spec.ts
 ```
 
-Unless `E2E_WOOPAYMENTS_EXTENSION_COMPAT` is exactly `true`, every compatibility spec skips itself. The profile project is serialized to one worker because the scenarios share WordPress plugin and option state. The explicit compat-directory selector keeps this matrix focused on the five pin-pair specs; other extension-tagged release smokes retain their own environment contract.
+Repeat from `pnpm env:e2e:restart` with `--pin-set latest`. Each pin set runs six cases: the five compat specs and the Subscriptions settings-tab smoke. The profile prints one `<extension> <version> active` line per extension and records the pin set in the `e2e_woopayments_extension_compat_profile` option the specs read.
 
-## CI profile
-
-The `woopayments-native-extension-compat` CI job runs the oldest and latest profiles serially against `.wp-env.e2e.json`. It is limited to same-repository pull requests in `woocommerce/woocommerce`, remains outside the required `evaluate-project-jobs` gate until it completes three green runs, and reads private extension sources through the `E2E_WOOPAYMENTS_EXTENSION_READ_TOKEN` repository secret. Fork pull requests skip the job because GitHub does not expose repository secrets to them.
+The probes run through the shared `wpCLI`/`wpEvalJson` helpers, which target `.wp-env.e2e.json`'s `cli` service unless `E2E_WP_ENV_CONFIG` names another config. Unless `E2E_WOOPAYMENTS_EXTENSION_COMPAT` is exactly `true`, every compatibility spec skips itself. The profile project is serialized to one worker because the scenarios share WordPress plugin and option state.
 
 ## Pin refresh rule
 
