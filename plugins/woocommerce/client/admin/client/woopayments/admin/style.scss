@@ -325,6 +325,11 @@
 .woocommerce-woopayments-dispute-readiness__signals .woocommerce-task-list__item {
 	grid-template-columns: 72px minmax(0, 1fr) 24px;
 
+	// Client 11.2.0 overview/dispute-readiness/style.scss:48-50.
+	.woocommerce-task-list__item-text {
+		padding-block: $gap;
+	}
+
 	&::before {
 		background: transparent;
 	}
