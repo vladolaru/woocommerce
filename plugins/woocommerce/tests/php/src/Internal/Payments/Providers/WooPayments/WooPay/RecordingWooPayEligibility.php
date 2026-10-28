@@ -86,4 +86,13 @@ class RecordingWooPayEligibility extends Eligibility {
 	public function is_woopay_global_theme_support_enabled(): bool {
 		return $this->flags->global_theme_support_enabled;
 	}
+
+	/**
+	 * Tell whether the platform keeps the store on WooPay's signed path.
+	 *
+	 * @return bool
+	 */
+	public function is_woopay_force_signed_requests_enabled(): bool {
+		return $this->flags->force_signed_requests;
+	}
 }

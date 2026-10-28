@@ -585,6 +585,20 @@ class Eligibility {
 	}
 
 	/**
+	 * Tell whether the platform keeps this store on WooPay's signed path, where a blog-token signature still authenticates
+	 * WooPay's requests. Read from the stored account, however old and with no refresh, so a caller cannot choose the
+	 * credential, as client 11.2.0 reads it (`WC_Payments_Features::is_woopay_force_signed_requests_enabled()`,
+	 * includes/class-wc-payments-features.php:226-233); a missing flag counts as off.
+	 *
+	 * @return bool
+	 */
+	public function is_woopay_force_signed_requests_enabled(): bool {
+		$account_data = $this->account_service->get_stored_account_data();
+
+		return ! empty( $account_data['platform_woopay_force_signed_requests'] );
+	}
+
+	/**
 	 * Get the express checkout location whose settings apply to a context.
 	 *
 	 * The order-pay page is a checkout page for the location settings, as in client 11.1.0, where is_checkout() holds there

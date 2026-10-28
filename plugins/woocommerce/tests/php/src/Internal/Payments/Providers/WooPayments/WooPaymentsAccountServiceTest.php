@@ -10,6 +10,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethod
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDatabaseCache;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSettingsDefaults;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\Eligibility;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use RuntimeException;
 use WC_Unit_Test_Case;
@@ -1583,6 +1584,40 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 		$this->assertTrue( $cached['data']['reports_area_enabled'] );
 		$this->assertTrue( $sut->is_reports_enabled() );
 		$this->assertSame( 'acct_native_123', $sut->get_account_id() );
+	}
+
+	/**
+	 * @testdox WooPay's signed-path flag is read from the stored account, however old, with no refresh: $label.
+	 *
+	 * Client 11.2.0 reads the cached account ignoring its expiry, and a missing flag is off
+	 * (includes/class-wc-payments-features.php:226-233; tests/unit/woopay/test-class-woopay-session.php:124-136). The
+	 * platform's fresh answer would say the opposite of the stored one here, so a refresh shows in the result and the call count.
+	 *
+	 * @testWith ["an expired account with the flag on", true, true]
+	 *           ["an expired account without the flag", false, false]
+	 *
+	 * @param string $label    Case label.
+	 * @param bool   $has_flag Whether the stored account carries platform_woopay_force_signed_requests true.
+	 * @param bool   $expected Whether the store is on the signed path.
+	 */
+	public function test_woopay_signed_path_flag_is_read_from_the_stored_account( string $label, bool $has_flag, bool $expected ): void {
+		unset( $label );
+		$stored = $this->get_valid_live_account_payload( $has_flag ? array( 'platform_woopay_force_signed_requests' => true ) : array() );
+		update_option(
+			'wcpay_account_data',
+			array(
+				'data'    => $stored,
+				// Past the longest account TTL, a day on the storefront (WooPaymentsDatabaseCache::ACCOUNT_FRONTEND_TTL).
+				'fetched' => time() - 2 * DAY_IN_SECONDS,
+				'errored' => false,
+			)
+		);
+		$api_client  = $this->create_account_api_client( $this->get_valid_live_account_payload( array( 'platform_woopay_force_signed_requests' => ! $has_flag ) ) );
+		$eligibility = new Eligibility();
+		$eligibility->init( $this->create_service_with_api_client( $api_client ) );
+
+		$this->assertSame( $expected, $eligibility->is_woopay_force_signed_requests_enabled() );
+		$this->assertSame( 0, $api_client->calls, 'The stored account is read without a refresh.' );
 	}
 
 	/**

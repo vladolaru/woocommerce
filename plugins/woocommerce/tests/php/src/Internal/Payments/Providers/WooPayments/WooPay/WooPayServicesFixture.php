@@ -472,23 +472,28 @@ trait WooPayServicesFixture {
 		// (endpoints/wcpay/class-accounts-controller.php:1074; account_id :1111, details_submitted :1122, capabilities :1125,
 		// country :1158, platform_checkout_eligible :1162, platform_direct_checkout_eligible :1163, pre_check_save_my_info
 		// :1189), read by client 11.1.0 at class-wc-payments-account.php:286, :291-292, :2733,
-		// class-wc-payments-features.php:207, :239 and class-woopay-save-user.php:76.
+		// class-wc-payments-features.php:207, :239 and class-woopay-save-user.php:76. The platform keeps a store reporting a
+		// client below 11.2.0 on WooPay's signed path, so the account carries platform_woopay_force_signed_requests true, which
+		// client 11.2.0 reads from the stored account (class-wc-payments-features.php:226-233).
 		$account_data = array_merge(
 			array(
-				'account_id'                 => 'acct_123',
-				'details_submitted'          => true,
-				'capabilities'               => array( 'card_payments' => 'active' ),
-				'country'                    => 'US',
-				'pre_check_save_my_info'     => false,
-				'platform_checkout_eligible' => true,
+				'account_id'                            => 'acct_123',
+				'details_submitted'                     => true,
+				'capabilities'                          => array( 'card_payments' => 'active' ),
+				'country'                               => 'US',
+				'pre_check_save_my_info'                => false,
+				'platform_checkout_eligible'            => true,
+				'platform_woopay_force_signed_requests' => true,
 			),
 			$account_data
 		);
+		$account_data = array_filter( $account_data, static fn( $value ): bool => null !== $value );
 
 		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
 			->disableOriginalConstructor()
-			->onlyMethods( array( 'get_account_id', 'get_publishable_key', 'get_cached_account_data', 'is_test_mode_enabled', 'get_gateway_setting' ) )
+			->onlyMethods( array( 'get_account_id', 'get_publishable_key', 'get_cached_account_data', 'get_stored_account_data', 'is_test_mode_enabled', 'get_gateway_setting' ) )
 			->getMock();
+		$account_service->method( 'get_stored_account_data' )->willReturn( $account_data );
 
 		$account_service->method( 'get_account_id' )->willReturnCallback(
 			static function () use ( $account_data ): string {
@@ -532,7 +537,7 @@ trait WooPayServicesFixture {
 
 		$adapted_extensions              = $adapted_extensions ?? new AdaptedExtensions();
 		$this->store_api_request_handler = new StoreApiRequestHandler();
-		$this->store_api_request_handler->init( $this->woopay_eligibility, $adapted_extensions );
+		$this->store_api_request_handler->init( $this->woopay_eligibility, $adapted_extensions, wc_get_container()->get( WooPaymentsLogger::class ) );
 
 		$sut = new SessionService();
 		$sut->init( $account_service, $this->woopay_eligibility, $this->appearance_store, $tracking_controller, wc_get_container()->get( BlocksDataExtractor::class ), $adapted_extensions, $customer_service ?? $this->create_customer_service_without_platform_customer(), wc_get_container()->get( WooPaymentsLogger::class ) );

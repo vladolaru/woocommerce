@@ -23,8 +23,9 @@ use WC_Order;
 use WP_Error;
 
 /**
- * Handles the Store API requests WooPay's servers send for a shopper: checks that each is signed with the store's blog
- * token, resolves the shopper from the cart-token session or a WooPay-verified email, passes referral and affiliate data
+ * Handles the Store API requests WooPay's servers send for a shopper: authenticates each by its Cart-Token, or by the
+ * blog-token signature while the platform keeps the store on WooPay's signed path, resolves the shopper from the
+ * cart-token session or a WooPay-verified email, passes referral and affiliate data
  * to the order, makes a $0 subscription order take a payment method, notes a fatal error on the order, and lets the
  * classic checkout resume a WooPay draft order under the order payment lock.
  *
@@ -92,24 +93,34 @@ class StoreApiRequestHandler {
 	private bool $is_error_handler_registered = false;
 
 	/**
+	 * WooPayments logger.
+	 *
+	 * @var WooPaymentsLogger
+	 */
+	private WooPaymentsLogger $logger;
+
+	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
 	 *
 	 * @param Eligibility       $woopay_eligibility WooPay eligibility rules.
 	 * @param AdaptedExtensions $adapted_extensions WooPay adapted extensions registry.
+	 * @param WooPaymentsLogger $logger             WooPayments logger.
 	 */
-	final public function init( Eligibility $woopay_eligibility, AdaptedExtensions $adapted_extensions ): void {
+	final public function init( Eligibility $woopay_eligibility, AdaptedExtensions $adapted_extensions, WooPaymentsLogger $logger ): void {
 		$this->woopay_eligibility = $woopay_eligibility;
 		$this->adapted_extensions = $adapted_extensions;
+		$this->logger             = $logger;
 	}
 
 	/**
 	 * Resolve the current user for WooPay-originated Store API requests.
 	 *
-	 * The request must be signed with the store's blog token (a 401 otherwise); it is marked through the
-	 * `wcpay_is_woopay_store_api_request` filter and resolves to the shopper of its Cart-Token session, so the order keeps
-	 * its customer.
+	 * The request must carry a valid Cart-Token, or the blog-token signature a store still gets while the platform keeps it
+	 * on WooPay's signed path; otherwise it dies with a 401 naming why, as client 11.2.0 does
+	 * (class-woopay-session.php:152-172, :1394-1408). It then resolves to the shopper of its Cart-Token session, so the
+	 * order keeps its customer. A signed request is marked through the `wcpay_is_woopay_store_api_request` filter.
 	 *
 	 * @param int|bool $user Current user ID resolved so far, or false.
 	 * @return int|bool
@@ -125,15 +136,25 @@ class StoreApiRequestHandler {
 			return $user;
 		}
 
-		if ( ! $this->has_valid_request_signature() ) {
-			wc_get_logger()->info(
-				'WooPay request is not signed correctly.',
-				array( 'source' => WooPaymentsLogger::SOURCE )
+		if ( ! $this->is_valid_request_with_cart_token() && ! $this->has_valid_request_signature() ) {
+			$code    = '' !== CartTokenUtils::get_request_cart_token() ? 'woopay_invalid_cart_token' : 'woopay_request_not_authenticated';
+			$message = 'woopay_invalid_cart_token' === $code
+				? __( 'The Cart-Token on this WooPay request is invalid or expired.', 'woocommerce' )
+				: __( 'WooPay request is not signed correctly.', 'woocommerce' );
+			$this->logger->log( 'WooPay request rejected: ' . $code );
+			wp_die(
+				esc_html( $message ),
+				'',
+				array(
+					'response' => 401,
+					'code'     => esc_html( $code ),
+				)
 			);
-			wp_die( esc_html__( 'WooPay request is not signed correctly.', 'woocommerce' ), 401 );
 		}
 
-		add_filter( 'wcpay_is_woopay_store_api_request', '__return_true' );
+		if ( $this->has_valid_request_signature() ) {
+			add_filter( 'wcpay_is_woopay_store_api_request', '__return_true' );
+		}
 
 		$cart_token_user_id = $this->get_user_id_from_cart_token();
 		if ( null === $cart_token_user_id ) {
@@ -155,13 +176,18 @@ class StoreApiRequestHandler {
 	}
 
 	/**
-	 * Tell whether the current request is signed with the connected blog token.
+	 * Tell whether the current request is signed with the connected blog token while the platform keeps this store on
+	 * WooPay's signed path; off it, a signature authenticates nothing (client 11.2.0 class-woopay-session.php:1007-1027).
 	 *
 	 * @return bool
 	 *
 	 * @since 11.0.0
 	 */
 	public function has_valid_request_signature(): bool {
+		if ( ! $this->woopay_eligibility->is_woopay_force_signed_requests_enabled() ) {
+			return false;
+		}
+
 		$signed = Rest_Authentication::is_signed_with_blog_token();
 
 		/**
@@ -175,6 +201,16 @@ class StoreApiRequestHandler {
 		 * @since 11.0.0
 		 */
 		return $signed && (bool) apply_filters( 'wcpay_woopay_is_signed_with_blog_token', $signed );
+	}
+
+	/**
+	 * Tell whether the current request carries a valid Cart-Token from a Store API issuer, which proves only that the caller
+	 * holds that cart (client 11.2.0 class-woopay-session.php:1039-1041).
+	 *
+	 * @return bool
+	 */
+	private function is_valid_request_with_cart_token(): bool {
+		return null !== $this->get_payload_from_cart_token();
 	}
 
 	/**

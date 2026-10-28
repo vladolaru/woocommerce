@@ -1094,18 +1094,22 @@ class SessionControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The signed-request filter can only restrict access, never grant it: $_dataName.
+	 * @testdox A signature admits the session route only on the signed path, and the signed-request filter can only restrict it, never grant it: $_dataName.
 	 *
-	 * The real blog-token check is false in tests unless the test signs the request.
+	 * The real blog-token check is false in tests unless the test signs the request. Client 11.2.0 accepts a signature only
+	 * while the stored account keeps the store on the signed path (class-woopay-session.php:1007-1010;
+	 * tests/unit/admin/test-class-wc-rest-woopay-session-controller.php:76-86).
 	 *
 	 * @dataProvider signed_request_filter_cases
 	 *
-	 * @param bool      $signed  Whether the real blog-token check passes.
-	 * @param bool|null $filter  What the wcpay_woopay_is_signed_with_blog_token filter returns, or null for no filter.
-	 * @param bool      $allowed Whether the request is allowed.
+	 * @param bool      $signed         Whether the real blog-token check passes.
+	 * @param bool|null $filter         What the wcpay_woopay_is_signed_with_blog_token filter returns, or null for no filter.
+	 * @param bool      $on_signed_path Whether the platform keeps the store on WooPay's signed path.
+	 * @param bool      $allowed        Whether the request is allowed.
 	 */
-	public function test_has_permission_follows_the_signed_request_filter_only_to_restrict( bool $signed, ?bool $filter, bool $allowed ): void {
+	public function test_has_permission_follows_the_signed_request_filter_only_to_restrict( bool $signed, ?bool $filter, bool $on_signed_path, bool $allowed ): void {
 		$this->sut = $this->create_controller( true );
+		$this->woopay_eligibility->flags->force_signed_requests = $on_signed_path;
 		if ( $signed ) {
 			$this->force_real_blog_token_signed();
 		}
@@ -1130,15 +1134,17 @@ class SessionControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * Real signature check, filter answer and whether the request is allowed.
+	 * Real signature check, filter answer, signed path and whether the request is allowed.
 	 *
-	 * @return array<string,array{0:bool,1:bool|null,2:bool}>
+	 * @return array<string,array{0:bool,1:bool|null,2:bool,3:bool}>
 	 */
 	public function signed_request_filter_cases(): array {
 		return array(
-			'unsigned, filter says signed' => array( false, true, false ),
-			'signed, no filter'            => array( true, null, true ),
-			'signed, filter says unsigned' => array( true, false, false ),
+			'unsigned, filter says signed' => array( false, true, true, false ),
+			'signed, no filter'            => array( true, null, true, true ),
+			'signed, filter says unsigned' => array( true, false, true, false ),
+			'signed, off the signed path'  => array( true, null, false, false ),
+			'signed, filter says signed, off the signed path' => array( true, true, false, false ),
 		);
 	}
 
@@ -1651,7 +1657,7 @@ class SessionControllerTest extends WC_REST_Unit_Test_Case {
 			$this->appearance_store   = new RecordingWooPayAppearanceStore( $service );
 		}
 		$this->store_api_request_handler = new StoreApiRequestHandler();
-		$this->store_api_request_handler->init( $this->woopay_eligibility, new AdaptedExtensions() );
+		$this->store_api_request_handler->init( $this->woopay_eligibility, new AdaptedExtensions(), wc_get_container()->get( WooPaymentsLogger::class ) );
 
 		$controller = new SessionController();
 		$controller->init( $service, $this->woopay_eligibility, $this->appearance_store, $this->store_api_request_handler );
@@ -1676,8 +1682,9 @@ class SessionControllerTest extends WC_REST_Unit_Test_Case {
 
 		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
 			->disableOriginalConstructor()
-			->onlyMethods( array( 'get_account_id', 'get_publishable_key', 'get_cached_account_data', 'is_test_mode_enabled', 'get_gateway_setting' ) )
+			->onlyMethods( array( 'get_account_id', 'get_publishable_key', 'get_cached_account_data', 'get_stored_account_data', 'is_test_mode_enabled', 'get_gateway_setting' ) )
 			->getMock();
+		$account_service->method( 'get_stored_account_data' )->willReturn( array( 'platform_woopay_force_signed_requests' => true ) );
 		$account_service->method( 'get_account_id' )->willReturn( 'acct_123' );
 		$account_service->method( 'get_publishable_key' )->willReturn( 'pk_test_123' );
 		$account_service->method( 'get_cached_account_data' )->willReturn(

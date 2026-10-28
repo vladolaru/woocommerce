@@ -125,6 +125,13 @@ class RecordingWooPaySessionService extends SessionService {
 	public bool $global_theme_support_enabled = true;
 
 	/**
+	 * Whether the platform keeps the store on WooPay's signed path, as it does for a store reporting a client below 11.2.0.
+	 *
+	 * @var bool
+	 */
+	public bool $force_signed_requests = true;
+
+	/**
 	 * Number of appearance writes.
 	 *
 	 * @var int

@@ -881,11 +881,29 @@ class WooPaymentsHookArityContractTest extends WC_Unit_Test_Case {
 			}
 		}
 
+		// The signature counts only while the stored account keeps the store on WooPay's signed path, as the platform does for a
+		// store reporting a client below 11.2.0 (client 11.2.0 class-woopay-session.php:1007-1010).
+		$database_cache  = wc_get_container()->get( WooPaymentsDatabaseCache::class );
+		$stored_contents = $database_cache->get_contents( WooPaymentsDatabaseCache::ACCOUNT_KEY );
+		$database_cache->write(
+			WooPaymentsDatabaseCache::ACCOUNT_KEY,
+			array(
+				'data'    => array( 'platform_woopay_force_signed_requests' => true ),
+				'fetched' => time(),
+				'errored' => false,
+			)
+		);
+
 		try {
 			$request = new WP_REST_Request( 'GET', '/payments/woopay/session' );
 			$request->set_header( 'User-Agent', 'WooPay' );
 			$controller->has_permission( $request );
 		} finally {
+			if ( is_array( $stored_contents ) ) {
+				$database_cache->write( WooPaymentsDatabaseCache::ACCOUNT_KEY, $stored_contents );
+			} else {
+				$database_cache->delete( WooPaymentsDatabaseCache::ACCOUNT_KEY );
+			}
 			if ( null !== $restore ) {
 				$restore();
 			}

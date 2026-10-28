@@ -84,7 +84,72 @@ class StoreApiRequestHandlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should die with a 401 when a WooPay request is not signed with the blog token: $_dataName.
+	 * @testdox A WooPay Store API request is authenticated by a valid Cart-Token, or by a signature only while the platform keeps the store on the signed path: $_dataName.
+	 *
+	 * Client 11.2.0 class-woopay-session.php:152-172, :1007-1041, :1394-1408 and class-wc-payments-features.php:226-233;
+	 * tests/unit/woopay/test-class-woopay-session.php:914-950 (expected messages and the 401). A refused request dies with
+	 * the client's code, which the client logs as "WooPay request rejected: <code>"; an admitted guest request keeps the
+	 * user it had.
+	 *
+	 * @dataProvider woopay_request_authentication_provider
+	 *
+	 * @param string|null $cart_token Cart-Token header: 'valid' for one the store issued, another string as sent, null for none.
+	 * @param bool        $signed     Whether the request carries a valid blog-token signature.
+	 * @param bool|null   $flag       The stored account's platform_woopay_force_signed_requests, or null when the account has none.
+	 * @param string|null $refusal    The code the request is refused with, or null when it is admitted.
+	 */
+	public function test_woopay_request_is_authenticated_by_cart_token_or_signed_path( ?string $cart_token, bool $signed, ?bool $flag, ?string $refusal ): void {
+		$this->simulate_woopay_store_api_request();
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => 'yes' ) );
+		$lines = $this->record_woopayments_log_lines();
+		if ( null !== $cart_token ) {
+			$_SERVER['HTTP_CART_TOKEN'] = 'valid' === $cart_token ? \Automattic\WooCommerce\StoreApi\Utilities\CartTokenUtils::get_cart_token( 't_guesthash' ) : $cart_token;
+		}
+		if ( $signed ) {
+			$this->force_real_blog_token_signed();
+		}
+		$sut = $this->create_handler( array(), array( 'platform_woopay_force_signed_requests' => $flag ) );
+
+		$died = null;
+		try {
+			$result = $sut->determine_current_user_for_woopay( false );
+		} catch ( \WPDieException $exception ) {
+			$died = $exception;
+		}
+
+		$rejections = array_values( array_filter( $lines->getArrayCopy(), static fn( array $line ): bool => 0 === strpos( $line[1], 'WooPay request rejected' ) ) );
+		if ( null === $refusal ) {
+			$this->assertNull( $died, 'The request is admitted.' );
+			$this->assertFalse( $result );
+			$this->assertSame( array(), $rejections );
+
+			return;
+		}
+
+		$this->assertInstanceOf( \WPDieException::class, $died );
+		$this->assertSame( 401, $died->getCode() );
+		$this->assertSame( 'woopay_invalid_cart_token' === $refusal ? 'The Cart-Token on this WooPay request is invalid or expired.' : 'WooPay request is not signed correctly.', $died->getMessage() );
+		$this->assertSame( array( 'info', 'WooPay request rejected: ' . $refusal, array() ), $rejections[0] ?? null );
+	}
+
+	/**
+	 * WooPay Store API requests: Cart-Token, signature, the stored signed-path flag, and the refusal.
+	 *
+	 * @return array<string,array{0:string|null,1:bool,2:bool|null,3:string|null}>
+	 */
+	public function woopay_request_authentication_provider(): array {
+		return array(
+			'a valid Cart-Token without a signature, off the signed path' => array( 'valid', false, false, null ),
+			'an invalid Cart-Token'          => array( 'not.a.valid.token', false, true, 'woopay_invalid_cart_token' ),
+			'no Cart-Token and no signature' => array( null, false, true, 'woopay_request_not_authenticated' ),
+			'a signature without a Cart-Token, off the signed path' => array( null, true, false, 'woopay_request_not_authenticated' ),
+			'a signature without a Cart-Token, on the signed path' => array( null, true, true, null ),
+			'a signature, the account carrying no signed-path flag' => array( null, true, null, 'woopay_request_not_authenticated' ),
+		);
+	}
+
+	/**
+	 * @testdox Should die with a 401 when a WooPay request carries neither a Cart-Token nor a signature: $_dataName.
 	 * @dataProvider unsigned_request_provider
 	 *
 	 * @param string      $request_uri The request URI.
