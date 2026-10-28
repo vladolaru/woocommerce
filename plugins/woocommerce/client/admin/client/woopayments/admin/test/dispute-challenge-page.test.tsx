@@ -1781,7 +1781,7 @@ describe( 'WooPaymentsDisputeChallengePage', () => {
 
 			expect( await getTestModeNoticeText() ).toBe(
 				testMode
-					? 'WooPayments was in test mode when this dispute was created. To view live disputes, disable test mode in WooPayments settings.'
+					? 'WooPayments is in test mode, so only test disputes are shown. To view live disputes, disable test mode in WooPayments settings.'
 					: null
 			);
 		}

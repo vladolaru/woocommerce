@@ -1070,7 +1070,7 @@ describe( 'WooPayments payout details admin surface', () => {
 
 			expect( await getTestModeNoticeText() ).toBe(
 				testMode
-					? 'WooPayments was in test mode when these payouts were created. To view live payouts, disable test mode in WooPayments settings.'
+					? 'WooPayments is in test mode, so only test payouts are shown. To view live payouts, disable test mode in WooPayments settings.'
 					: null
 			);
 		}

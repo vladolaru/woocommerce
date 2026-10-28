@@ -4779,7 +4779,7 @@ describe( 'WooPayments money movement pages', () => {
 		await screen.findByRole( 'heading', { name: 'Payment details' } );
 		// Client 11.1.0 payment-details/payment-details/index.tsx:75 (details view of `payments`).
 		expect( await getTestModeNoticeText() ).toBe(
-			'WooPayments was in test mode when this order was placed. To view live orders, disable test mode in WooPayments settings.'
+			'WooPayments is in test mode, so only test transactions are shown. To view live transactions, disable test mode in WooPayments settings.'
 		);
 		const notice = document.querySelector(
 			'.woocommerce-woopayments-test-mode-notice'
@@ -4820,7 +4820,7 @@ describe( 'WooPayments money movement pages', () => {
 				'.woocommerce-woopayments-test-mode-notice'
 			)
 		).toHaveTextContent(
-			'WooPayments was in test mode when this order was placed. To view live orders, disable test mode in WooPayments settings.'
+			'WooPayments is in test mode, so only test transactions are shown. To view live transactions, disable test mode in WooPayments settings.'
 		);
 	} );
 
@@ -4841,7 +4841,7 @@ describe( 'WooPayments money movement pages', () => {
 				'.woocommerce-woopayments-test-mode-notice'
 			)
 		).toHaveTextContent(
-			'WooPayments was in test mode when this order was placed. To view live orders, disable test mode in WooPayments settings.'
+			'WooPayments is in test mode, so only test transactions are shown. To view live transactions, disable test mode in WooPayments settings.'
 		);
 	} );
 
@@ -5002,7 +5002,7 @@ describe( 'WooPayments money movement pages', () => {
 
 			expect( await getTestModeNoticeText() ).toBe(
 				testMode
-					? 'WooPayments was in test mode when this order was placed. To view live orders, disable test mode in WooPayments settings.'
+					? 'WooPayments is in test mode, so only test transactions are shown. To view live transactions, disable test mode in WooPayments settings.'
 					: null
 			);
 		}
