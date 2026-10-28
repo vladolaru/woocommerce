@@ -51,8 +51,8 @@
 			"gzip_bytes": 9225
 		},
 		"admin-shared.css": {
-			"raw_bytes": 186606,
-			"gzip_bytes": 20973
+			"raw_bytes": 186817,
+			"gzip_bytes": 22217
 		},
 		"blocks-common.js": {
 			"allow_new": true,
