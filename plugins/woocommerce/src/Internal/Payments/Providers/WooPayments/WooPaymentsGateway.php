@@ -320,6 +320,28 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 
 		add_action( 'woocommerce_after_checkout_form', array( $this, 'handle_classic_checkout_without_fields' ) );
 		add_action( 'woocommerce_pay_order_before_payment', array( $this, 'handle_classic_checkout_without_fields' ) );
+		add_action( 'wp_footer', array( $this, 'handle_order_pay_page_footer' ) );
+	}
+
+	/**
+	 * Localize the classic checkout config on an order-pay page that rendered no payment form, such as core's email check.
+	 *
+	 * Only for an order the pay link lets the visitor pay and that still needs payment, while the gateway is enabled, so a
+	 * 3-D Secure return to that page can finish the payment. As client 11.2.0 (includes/class-wc-payments-checkout.php:193-225).
+	 *
+	 * @internal
+	 */
+	public function handle_order_pay_page_footer(): void {
+		if ( ! is_checkout_pay_page() || 'yes' !== $this->enabled ) {
+			return;
+		}
+
+		$order = WooPaymentsOrderPayAccess::get_authorized_order_from_payment_link();
+		if ( ! $order instanceof \WC_Order || ! $order->needs_payment() ) {
+			return;
+		}
+
+		$this->handle_classic_checkout_without_fields();
 	}
 
 	/**

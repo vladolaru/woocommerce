@@ -7093,6 +7093,66 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox The order-pay page loads the classic checkout stack in the footer when no form rendered it: $_dataName.
+	 *
+	 * Core's email check for a guest order past its grace period renders no payment form, so a 3-D Secure return to that
+	 * page found no script to finish the payment. Client 11.2.0 loads it on wp_footer for the pay page of an order the link
+	 * lets the visitor pay and that still needs payment, while the gateway is enabled
+	 * (includes/class-wc-payments-checkout.php:103-108, :193-225). The base test case fails on any deprecation notice.
+	 *
+	 * @dataProvider provider_order_pay_footer_cases
+	 *
+	 * @param string $page_case         'pays', 'wrong key', 'paid order', 'gateway disabled' or 'not the pay page'.
+	 * @param int    $expected_enqueues Expected fallback enqueue calls.
+	 */
+	public function test_order_pay_page_loads_the_checkout_stack_in_the_footer( string $page_case, int $expected_enqueues ): void {
+		$this->make_builtin_own_payments();
+		$provider = $this->createMock( WooPaymentsProvider::class );
+		$provider->method( 'can_process_payments' )->willReturn( true );
+		$assets = $this->createMock( WooPaymentsCheckoutAssets::class );
+		$assets->expects( $this->exactly( $expected_enqueues ) )->method( 'enqueue_classic_checkout_assets_without_fields' );
+		wp_set_current_user( 0 );
+		$order = wc_create_order();
+		$order->set_total( '10.00' );
+		$order->set_status( 'paid order' === $page_case ? OrderStatus::PROCESSING : OrderStatus::PENDING );
+		$order->save();
+		// Only the gateway's footer callback runs; the hook snapshot restores the others when the test ends.
+		remove_all_actions( 'wp_footer' );
+		$gateway          = new WooPaymentsGateway();
+		$gateway->enabled = 'gateway disabled' === $page_case ? 'no' : 'yes';
+		$gateway->init( $this->createMock( PaymentProcessingService::class ), $provider, $assets );
+		global $wp;
+		$wp->query_vars['order-pay'] = 'not the pay page' === $page_case ? '' : $order->get_id();
+		$_GET['key']                 = 'wrong key' === $page_case ? 'wc_order_wrongkey' : $order->get_order_key();
+		add_filter( 'woocommerce_is_checkout', '__return_true' );
+
+		ob_start();
+		try {
+			/** This action is documented in wp-includes/general-template.php */
+			do_action( 'wp_footer' );
+		} finally {
+			ob_end_clean();
+			remove_filter( 'woocommerce_is_checkout', '__return_true' );
+			unset( $wp->query_vars['order-pay'], $_GET['key'] );
+		}
+	}
+
+	/**
+	 * Order-pay pages the footer may load the checkout stack on.
+	 *
+	 * @return array<string,array{string,int}>
+	 */
+	public function provider_order_pay_footer_cases(): array {
+		return array(
+			'a guest order the link pays' => array( 'pays', 1 ),
+			'a wrong key'                 => array( 'wrong key', 0 ),
+			'an order already paid'       => array( 'paid order', 0 ),
+			'the gateway disabled'        => array( 'gateway disabled', 0 ),
+			'the checkout page'           => array( 'not the pay page', 0 ),
+		);
+	}
+
+	/**
 	 * @testdox Should reload settings once when the cached blog context is stale.
 	 */
 	public function test_site_derived_state_reloads_once_when_the_cached_blog_context_is_stale(): void {
