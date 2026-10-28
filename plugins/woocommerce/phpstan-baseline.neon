@@ -65029,12 +65029,6 @@ parameters:
 			path: src/StoreApi/Routes/V1/AbstractCartRoute.php
 
 		-
-			message: '#^Method Automattic\\WooCommerce\\StoreApi\\Routes\\V1\\AbstractCartRoute\:\:get_draft_order\(\) has no return type specified\.$#'
-			identifier: missingType.return
-			count: 1
-			path: src/StoreApi/Routes/V1/AbstractCartRoute.php
-
-		-
 			message: '#^Method Automattic\\WooCommerce\\StoreApi\\Routes\\V1\\AbstractCartRoute\:\:get_response\(\) has parameter \$request with generic class WP_REST_Request but does not specify its types\: T$#'
 			identifier: missingType.generics
 			count: 1
@@ -65067,24 +65061,6 @@ parameters:
 		-
 			message: '#^Method Automattic\\WooCommerce\\StoreApi\\Routes\\V1\\AbstractCartRoute\:\:requires_nonce\(\) has parameter \$request with generic class WP_REST_Request but does not specify its types\: T$#'
 			identifier: missingType.generics
-			count: 1
-			path: src/StoreApi/Routes/V1/AbstractCartRoute.php
-
-		-
-			message: '#^Method Automattic\\WooCommerce\\StoreApi\\Routes\\V1\\AbstractCartRoute\:\:set_draft_order_id\(\) has no return type specified\.$#'
-			identifier: missingType.return
-			count: 1
-			path: src/StoreApi/Routes/V1/AbstractCartRoute.php
-
-		-
-			message: '#^PHPDoc tag @return has invalid value \(\\WC_Order\|null;\)\: Unexpected token ";", expected TOKEN_HORIZONTAL_WS at offset 99 on line 4$#'
-			identifier: phpDoc.parseError
-			count: 1
-			path: src/StoreApi/Routes/V1/AbstractCartRoute.php
-
-		-
-			message: '#^Parameter \#1 \$order_object of method Automattic\\WooCommerce\\StoreApi\\Routes\\V1\\AbstractCartRoute\:\:is_valid_draft_order\(\) expects WC_Order, WC_Order\|WC_Order_Refund\|false given\.$#'
-			identifier: argument.type
 			count: 1
 			path: src/StoreApi/Routes/V1/AbstractCartRoute.php
 
@@ -65389,32 +65365,8 @@ parameters:
 			path: src/StoreApi/Routes/V1/CartRemoveCoupon.php
 
 		-
-			message: '#^Method Automattic\\WooCommerce\\StoreApi\\Routes\\V1\\CartRemoveItem\:\:get_draft_order\(\) has no return type specified\.$#'
-			identifier: missingType.return
-			count: 1
-			path: src/StoreApi/Routes/V1/CartRemoveItem.php
-
-		-
 			message: '#^Method Automattic\\WooCommerce\\StoreApi\\Routes\\V1\\CartRemoveItem\:\:get_route_post_response\(\) has parameter \$request with generic class WP_REST_Request but does not specify its types\: T$#'
 			identifier: missingType.generics
-			count: 1
-			path: src/StoreApi/Routes/V1/CartRemoveItem.php
-
-		-
-			message: '#^Method Automattic\\WooCommerce\\StoreApi\\Routes\\V1\\CartRemoveItem\:\:set_draft_order_id\(\) has no return type specified\.$#'
-			identifier: missingType.return
-			count: 1
-			path: src/StoreApi/Routes/V1/CartRemoveItem.php
-
-		-
-			message: '#^PHPDoc tag @return has invalid value \(\\WC_Order\|null;\)\: Unexpected token ";", expected TOKEN_HORIZONTAL_WS at offset 99 on line 4$#'
-			identifier: phpDoc.parseError
-			count: 1
-			path: src/StoreApi/Routes/V1/CartRemoveItem.php
-
-		-
-			message: '#^Parameter \#1 \$order_object of method Automattic\\WooCommerce\\StoreApi\\Routes\\V1\\CartRemoveItem\:\:is_valid_draft_order\(\) expects WC_Order, WC_Order\|WC_Order_Refund\|false given\.$#'
-			identifier: argument.type
 			count: 1
 			path: src/StoreApi/Routes/V1/CartRemoveItem.php
 
@@ -65431,12 +65383,6 @@ parameters:
 			path: src/StoreApi/Routes/V1/CartSelectShippingRate.php
 
 		-
-			message: '#^Method Automattic\\WooCommerce\\StoreApi\\Routes\\V1\\CartUpdateCustomer\:\:get_draft_order\(\) has no return type specified\.$#'
-			identifier: missingType.return
-			count: 1
-			path: src/StoreApi/Routes/V1/CartUpdateCustomer.php
-
-		-
 			message: '#^Method Automattic\\WooCommerce\\StoreApi\\Routes\\V1\\CartUpdateCustomer\:\:get_route_post_response\(\) has parameter \$request with generic class WP_REST_Request but does not specify its types\: T$#'
 			identifier: missingType.generics
 			count: 1
@@ -65449,26 +65395,8 @@ parameters:
 			path: src/StoreApi/Routes/V1/CartUpdateCustomer.php
 
 		-
-			message: '#^Method Automattic\\WooCommerce\\StoreApi\\Routes\\V1\\CartUpdateCustomer\:\:set_draft_order_id\(\) has no return type specified\.$#'
-			identifier: missingType.return
-			count: 1
-			path: src/StoreApi/Routes/V1/CartUpdateCustomer.php
-
-		-
 			message: '#^Method Automattic\\WooCommerce\\StoreApi\\Routes\\V1\\CartUpdateCustomer\:\:validate_address_params\(\) has parameter \$request with generic class WP_REST_Request but does not specify its types\: T$#'
 			identifier: missingType.generics
-			count: 1
-			path: src/StoreApi/Routes/V1/CartUpdateCustomer.php
-
-		-
-			message: '#^PHPDoc tag @return has invalid value \(\\WC_Order\|null;\)\: Unexpected token ";", expected TOKEN_HORIZONTAL_WS at offset 99 on line 4$#'
-			identifier: phpDoc.parseError
-			count: 1
-			path: src/StoreApi/Routes/V1/CartUpdateCustomer.php
-
-		-
-			message: '#^Parameter \#1 \$order_object of method Automattic\\WooCommerce\\StoreApi\\Routes\\V1\\CartUpdateCustomer\:\:is_valid_draft_order\(\) expects WC_Order, WC_Order\|WC_Order_Refund\|false given\.$#'
-			identifier: argument.type
 			count: 1
 			path: src/StoreApi/Routes/V1/CartUpdateCustomer.php
 
@@ -65529,12 +65457,6 @@ parameters:
 		-
 			message: '#^Method Automattic\\WooCommerce\\StoreApi\\Routes\\V1\\Checkout\:\:get_document_object_from_rest_request\(\) has parameter \$request with generic class WP_REST_Request but does not specify its types\: T$#'
 			identifier: missingType.generics
-			count: 1
-			path: src/StoreApi/Routes/V1/Checkout.php
-
-		-
-			message: '#^Method Automattic\\WooCommerce\\StoreApi\\Routes\\V1\\Checkout\:\:get_draft_order\(\) has no return type specified\.$#'
-			identifier: missingType.return
 			count: 1
 			path: src/StoreApi/Routes/V1/Checkout.php
 
@@ -65647,12 +65569,6 @@ parameters:
 			path: src/StoreApi/Routes/V1/Checkout.php
 
 		-
-			message: '#^Method Automattic\\WooCommerce\\StoreApi\\Routes\\V1\\Checkout\:\:set_draft_order_id\(\) has no return type specified\.$#'
-			identifier: missingType.return
-			count: 1
-			path: src/StoreApi/Routes/V1/Checkout.php
-
-		-
 			message: '#^Method Automattic\\WooCommerce\\StoreApi\\Routes\\V1\\Checkout\:\:should_create_customer_account\(\) has parameter \$request with generic class WP_REST_Request but does not specify its types\: T$#'
 			identifier: missingType.generics
 			count: 1
@@ -65697,18 +65613,6 @@ parameters:
 		-
 			message: '#^Method Automattic\\WooCommerce\\StoreApi\\Routes\\V1\\Checkout\:\:validate_user_can_place_order\(\) has no return type specified\.$#'
 			identifier: missingType.return
-			count: 1
-			path: src/StoreApi/Routes/V1/Checkout.php
-
-		-
-			message: '#^PHPDoc tag @return has invalid value \(\\WC_Order\|null;\)\: Unexpected token ";", expected TOKEN_HORIZONTAL_WS at offset 99 on line 4$#'
-			identifier: phpDoc.parseError
-			count: 1
-			path: src/StoreApi/Routes/V1/Checkout.php
-
-		-
-			message: '#^Parameter \#1 \$order_object of method Automattic\\WooCommerce\\StoreApi\\Routes\\V1\\Checkout\:\:is_valid_draft_order\(\) expects WC_Order, WC_Order\|WC_Order_Refund\|false given\.$#'
-			identifier: argument.type
 			count: 1
 			path: src/StoreApi/Routes/V1/Checkout.php
 
@@ -66901,12 +66805,6 @@ parameters:
 			path: src/StoreApi/Utilities/CartController.php
 
 		-
-			message: '#^Method Automattic\\WooCommerce\\StoreApi\\Utilities\\CartController\:\:get_draft_order\(\) has no return type specified\.$#'
-			identifier: missingType.return
-			count: 1
-			path: src/StoreApi/Utilities/CartController.php
-
-		-
 			message: '#^Method Automattic\\WooCommerce\\StoreApi\\Utilities\\CartController\:\:get_product_for_cart\(\) has invalid return type Automattic\\WooCommerce\\StoreApi\\Utilities\\Error\.$#'
 			identifier: class.notFound
 			count: 1
@@ -66938,12 +66836,6 @@ parameters:
 
 		-
 			message: '#^Method Automattic\\WooCommerce\\StoreApi\\Utilities\\CartController\:\:set_cart_item_quantity\(\) has no return type specified\.$#'
-			identifier: missingType.return
-			count: 1
-			path: src/StoreApi/Utilities/CartController.php
-
-		-
-			message: '#^Method Automattic\\WooCommerce\\StoreApi\\Utilities\\CartController\:\:set_draft_order_id\(\) has no return type specified\.$#'
 			identifier: missingType.return
 			count: 1
 			path: src/StoreApi/Utilities/CartController.php
@@ -66997,19 +66889,7 @@ parameters:
 			path: src/StoreApi/Utilities/CartController.php
 
 		-
-			message: '#^PHPDoc tag @return has invalid value \(\\WC_Order\|null;\)\: Unexpected token ";", expected TOKEN_HORIZONTAL_WS at offset 99 on line 4$#'
-			identifier: phpDoc.parseError
-			count: 1
-			path: src/StoreApi/Utilities/CartController.php
-
-		-
 			message: '#^Parameter \#1 \$error_code of class Automattic\\WooCommerce\\StoreApi\\Exceptions\\RouteException constructor expects string, int\|string given\.$#'
-			identifier: argument.type
-			count: 1
-			path: src/StoreApi/Utilities/CartController.php
-
-		-
-			message: '#^Parameter \#1 \$order_object of method Automattic\\WooCommerce\\StoreApi\\Utilities\\CartController\:\:is_valid_draft_order\(\) expects WC_Order, WC_Order\|WC_Order_Refund\|false given\.$#'
 			identifier: argument.type
 			count: 1
 			path: src/StoreApi/Utilities/CartController.php
@@ -67415,30 +67295,6 @@ parameters:
 			identifier: missingType.generics
 			count: 1
 			path: src/StoreApi/Utilities/ProductQueryFilters.php
-
-		-
-			message: '#^Method Automattic\\WooCommerce\\StoreApi\\Utilities\\QuantityLimits\:\:get_draft_order\(\) has no return type specified\.$#'
-			identifier: missingType.return
-			count: 1
-			path: src/StoreApi/Utilities/QuantityLimits.php
-
-		-
-			message: '#^Method Automattic\\WooCommerce\\StoreApi\\Utilities\\QuantityLimits\:\:set_draft_order_id\(\) has no return type specified\.$#'
-			identifier: missingType.return
-			count: 1
-			path: src/StoreApi/Utilities/QuantityLimits.php
-
-		-
-			message: '#^PHPDoc tag @return has invalid value \(\\WC_Order\|null;\)\: Unexpected token ";", expected TOKEN_HORIZONTAL_WS at offset 99 on line 4$#'
-			identifier: phpDoc.parseError
-			count: 1
-			path: src/StoreApi/Utilities/QuantityLimits.php
-
-		-
-			message: '#^Parameter \#1 \$order_object of method Automattic\\WooCommerce\\StoreApi\\Utilities\\QuantityLimits\:\:is_valid_draft_order\(\) expects WC_Order, WC_Order\|WC_Order_Refund\|false given\.$#'
-			identifier: argument.type
-			count: 1
-			path: src/StoreApi/Utilities/QuantityLimits.php
 
 		-
 			message: '#^Parameter \#1 \$value of method Automattic\\WooCommerce\\StoreApi\\Utilities\\QuantityLimits\:\:filter_numeric_value\(\) expects float\|int, float\|int\<min, \-1\>\|int\<1, max\>\|false given\.$#'

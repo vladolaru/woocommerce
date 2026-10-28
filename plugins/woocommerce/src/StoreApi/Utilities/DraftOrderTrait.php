@@ -25,6 +25,7 @@ trait DraftOrderTrait {
 	 * Updates draft order data in the customer session.
 	 *
 	 * @param integer $order_id Draft order ID.
+	 * @return void
 	 */
 	protected function set_draft_order_id( $order_id ) {
 		if ( ! wc()->session ) {
@@ -36,7 +37,7 @@ trait DraftOrderTrait {
 	/**
 	 * Uses the draft order ID to return an order object, if valid.
 	 *
-	 * @return \WC_Order|null;
+	 * @return \WC_Order|null
 	 */
 	protected function get_draft_order() {
 		$draft_order_id = $this->get_draft_order_id();
@@ -49,8 +50,10 @@ trait DraftOrderTrait {
 	 * Whether the passed argument is a draft order or an order that is
 	 * pending/failed and the cart hasn't changed.
 	 *
-	 * @param \WC_Order $order_object Order object to check.
+	 * @param \WC_Order|\WC_Order_Refund|false $order_object Order object to check.
 	 * @return boolean Whether the order is valid as a draft order.
+	 *
+	 * @phpstan-assert-if-true =\WC_Order $order_object
 	 */
 	protected function is_valid_draft_order( $order_object ) {
 		if ( ! $order_object instanceof \WC_Order ) {
