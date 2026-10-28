@@ -1657,7 +1657,7 @@ class SessionControllerTest extends WC_REST_Unit_Test_Case {
 			$this->appearance_store   = new RecordingWooPayAppearanceStore( $service );
 		}
 		$this->store_api_request_handler = new StoreApiRequestHandler();
-		$this->store_api_request_handler->init( $this->woopay_eligibility, new AdaptedExtensions(), wc_get_container()->get( WooPaymentsLogger::class ) );
+		$this->store_api_request_handler->init( $this->woopay_eligibility, new AdaptedExtensions(), wc_get_container()->get( WooPaymentsLogger::class ), $service );
 
 		$controller = new SessionController();
 		$controller->init( $service, $this->woopay_eligibility, $this->appearance_store, $this->store_api_request_handler );

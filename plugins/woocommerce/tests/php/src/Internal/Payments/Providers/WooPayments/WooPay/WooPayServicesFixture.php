@@ -137,7 +137,7 @@ trait WooPayServicesFixture {
 		remove_all_filters( 'wcpay_woopay_button_is_product_supported' );
 		remove_all_filters( 'wcpay_platform_checkout_button_are_cart_items_supported' );
 		remove_all_filters( 'pre_option_woocommerce_enable_guest_checkout' );
-		unset( $_SERVER['HTTP_USER_AGENT'], $_SERVER['HTTP_CART_TOKEN'], $_SERVER['HTTP_X_WOOPAY_VERIFIED_EMAIL_ADDRESS'], $_REQUEST['rest_route'] );
+		unset( $_SERVER['HTTP_USER_AGENT'], $_SERVER['HTTP_CART_TOKEN'], $_SERVER['HTTP_X_WOOPAY_VERIFIED_EMAIL_ADDRESS'], $_SERVER['HTTP_NONCE'], $_REQUEST['rest_route'] );
 		remove_filter( 'wcpay_is_woopay_store_api_request', '__return_true' );
 		remove_filter( 'woocommerce_gc_account_session_timeout_minutes', '__return_false' );
 		remove_all_filters( 'wcpay_woopay_is_signed_with_blog_token' );
@@ -535,12 +535,13 @@ trait WooPayServicesFixture {
 		$this->appearance_store = new AppearanceStore();
 		$this->appearance_store->init( new WooPaymentsFrontendStylesService() );
 
-		$adapted_extensions              = $adapted_extensions ?? new AdaptedExtensions();
-		$this->store_api_request_handler = new StoreApiRequestHandler();
-		$this->store_api_request_handler->init( $this->woopay_eligibility, $adapted_extensions, wc_get_container()->get( WooPaymentsLogger::class ) );
+		$adapted_extensions = $adapted_extensions ?? new AdaptedExtensions();
 
 		$sut = new SessionService();
 		$sut->init( $account_service, $this->woopay_eligibility, $this->appearance_store, $tracking_controller, wc_get_container()->get( BlocksDataExtractor::class ), $adapted_extensions, $customer_service ?? $this->create_customer_service_without_platform_customer(), wc_get_container()->get( WooPaymentsLogger::class ) );
+
+		$this->store_api_request_handler = new StoreApiRequestHandler();
+		$this->store_api_request_handler->init( $this->woopay_eligibility, $adapted_extensions, wc_get_container()->get( WooPaymentsLogger::class ), $sut );
 
 		return $sut;
 	}

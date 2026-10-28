@@ -260,6 +260,71 @@ class StoreApiRequestHandlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox An unsigned WooPay request resolves a store account only with a nonce the store minted for it: $_dataName.
+	 *
+	 * Client 11.2.0 class-woopay-session.php:212-222 and :230-251 ask, when the request is not signed on the signed path,
+	 * for the Nonce header create_woopay_nonce() minted for that user at the current or the previous tick (:1512-1567);
+	 * tests/unit/woopay/test-class-woopay-session.php:592-680 and :880-912. Without it the request resolves as guest.
+	 *
+	 * @dataProvider store_minted_nonce_provider
+	 *
+	 * @param string   $via         'customer' for an authenticated cart-token session, 'email' for a WooPay-verified email.
+	 * @param bool     $signed      Whether the request is signed on the signed path.
+	 * @param int|null $nonce_tick  Tick offset of the Nonce header (0 current, -1 previous), or null for none.
+	 * @param bool     $nonce_owner Whether the nonce is minted for the account itself rather than another one.
+	 * @param bool     $resolved    Whether the request resolves to the account.
+	 */
+	public function test_unsigned_woopay_request_needs_a_store_minted_nonce_for_the_account( string $via, bool $signed, ?int $nonce_tick, bool $nonce_owner, bool $resolved ): void {
+		$this->simulate_woopay_store_api_request();
+		$user_id  = $this->factory->user->create( array( 'user_email' => 'nonce-shopper@example.com' ) );
+		$other_id = $this->factory->user->create( array( 'user_email' => 'someone-else@example.com' ) );
+		$session  = 'customer' === $via ? (string) $user_id : 't_guesthash';
+		$this->insert_store_api_session(
+			$session,
+			array(
+				'id'    => 'customer' === $via ? (string) $user_id : '0',
+				'email' => 'nonce-shopper@example.com',
+			)
+		);
+		$_SERVER['HTTP_CART_TOKEN'] = \Automattic\WooCommerce\StoreApi\Utilities\CartTokenUtils::get_cart_token( $session );
+		if ( 'email' === $via ) {
+			update_option( 'woopay_enabled_adapted_extensions', array( 'woocommerce-points-and-rewards' ) );
+			$_SERVER['HTTP_X_WOOPAY_VERIFIED_EMAIL_ADDRESS'] = 'nonce-shopper@example.com';
+		}
+		if ( $signed ) {
+			$this->force_real_blog_token_signed();
+		}
+		if ( null !== $nonce_tick ) {
+			// The nonce create_woopay_nonce() mints: no cookie token, the wc_store_api action (client 11.2.0 :1512-1518).
+			$tick                  = wp_nonce_tick( 'wc_store_api' ) + $nonce_tick;
+			$_SERVER['HTTP_NONCE'] = substr( wp_hash( $tick . '|wc_store_api|' . ( $nonce_owner ? $user_id : $other_id ) . '|', 'nonce' ), -12, 10 );
+		}
+
+		$this->assertSame( $resolved ? $user_id : null, $this->create_handler()->get_user_id_from_cart_token() );
+	}
+
+	/**
+	 * Requests naming a store account: the branch, signed, nonce tick, nonce owner and whether the account is resolved.
+	 *
+	 * @return array<string,array{0:string,1:bool,2:int|null,3:bool,4:bool}>
+	 */
+	public function store_minted_nonce_provider(): array {
+		return array(
+			'session customer, unsigned, no nonce'         => array( 'customer', false, null, true, false ),
+			'session customer, unsigned, current nonce'    => array( 'customer', false, 0, true, true ),
+			'session customer, unsigned, previous-tick nonce' => array( 'customer', false, -1, true, true ),
+			'session customer, unsigned, two ticks old'    => array( 'customer', false, -2, true, false ),
+			'session customer, unsigned, another user nonce' => array( 'customer', false, 0, false, false ),
+			'session customer, signed, no nonce'           => array( 'customer', true, null, true, true ),
+			'verified email, unsigned, no nonce'           => array( 'email', false, null, true, false ),
+			'verified email, unsigned, current nonce'      => array( 'email', false, 0, true, true ),
+			'verified email, unsigned, previous-tick nonce' => array( 'email', false, -1, true, true ),
+			'verified email, unsigned, another user nonce' => array( 'email', false, 0, false, false ),
+			'verified email, signed, no nonce'             => array( 'email', true, null, true, true ),
+		);
+	}
+
+	/**
 	 * @testdox Should resolve a WooPay-verified email to the matching store account when an adapted extension is active.
 	 */
 	public function test_determine_current_user_resolves_verified_email_user_when_adapted_extension_active(): void {

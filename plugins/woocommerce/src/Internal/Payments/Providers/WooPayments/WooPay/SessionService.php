@@ -958,12 +958,40 @@ class SessionService {
 	 * @param int $user_id User ID.
 	 * @return string
 	 */
-	private function create_woopay_nonce( int $user_id ): string {
-		$action = 'wc_store_api';
-		$token  = '';
-		$tick   = wp_nonce_tick( $action );
+	public function create_woopay_nonce( int $user_id ): string {
+		return $this->get_woopay_nonce_at( wp_nonce_tick( 'wc_store_api' ), $user_id );
+	}
 
-		return substr( wp_hash( $tick . '|' . $action . '|' . $user_id . '|' . $token, 'nonce' ), -12, 10 );
+	/**
+	 * Tell whether a nonce is one create_woopay_nonce() minted for a user at the current or the previous tick, as
+	 * wp_verify_nonce() allows, but bound to that user rather than the session's (client 11.2.0
+	 * `WooPay_Session::verify_woopay_nonce()`, class-woopay-session.php:1536-1550).
+	 *
+	 * @param string $nonce   The nonce.
+	 * @param int    $user_id User ID it must be bound to.
+	 * @return bool
+	 */
+	public function verify_woopay_nonce( string $nonce, int $user_id ): bool {
+		$tick = wp_nonce_tick( 'wc_store_api' );
+
+		foreach ( array( $tick, $tick - 1 ) as $candidate_tick ) {
+			if ( hash_equals( $this->get_woopay_nonce_at( $candidate_tick, $user_id ), $nonce ) ) {
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	/**
+	 * Get the WooPay Store API nonce for a user at a nonce tick.
+	 *
+	 * @param int|float $tick    Nonce tick.
+	 * @param int       $user_id User ID.
+	 * @return string
+	 */
+	private function get_woopay_nonce_at( $tick, int $user_id ): string {
+		return substr( wp_hash( $tick . '|wc_store_api|' . $user_id . '|', 'nonce' ), -12, 10 );
 	}
 
 	/**

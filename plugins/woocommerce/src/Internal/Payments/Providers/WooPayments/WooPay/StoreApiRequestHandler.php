@@ -100,6 +100,13 @@ class StoreApiRequestHandler {
 	private WooPaymentsLogger $logger;
 
 	/**
+	 * WooPay session service, which mints and verifies the store's WooPay nonces.
+	 *
+	 * @var SessionService
+	 */
+	private SessionService $session_service;
+
+	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
@@ -107,11 +114,13 @@ class StoreApiRequestHandler {
 	 * @param Eligibility       $woopay_eligibility WooPay eligibility rules.
 	 * @param AdaptedExtensions $adapted_extensions WooPay adapted extensions registry.
 	 * @param WooPaymentsLogger $logger             WooPayments logger.
+	 * @param SessionService    $session_service    WooPay session service.
 	 */
-	final public function init( Eligibility $woopay_eligibility, AdaptedExtensions $adapted_extensions, WooPaymentsLogger $logger ): void {
+	final public function init( Eligibility $woopay_eligibility, AdaptedExtensions $adapted_extensions, WooPaymentsLogger $logger, SessionService $session_service ): void {
 		$this->woopay_eligibility = $woopay_eligibility;
 		$this->adapted_extensions = $adapted_extensions;
 		$this->logger             = $logger;
+		$this->session_service    = $session_service;
 	}
 
 	/**
@@ -216,6 +225,10 @@ class StoreApiRequestHandler {
 	/**
 	 * Resolve the shopper user id from the request's Cart-Token session.
 	 *
+	 * Unless the request is signed on the signed path, resolving a store account, from the session's customer or from a
+	 * WooPay-verified email, also needs the `Nonce` header this store minted for that account; without it the request
+	 * resolves as guest (client 11.2.0 class-woopay-session.php:212-222, :230-251).
+	 *
 	 * @return int|null
 	 *
 	 * @since 11.0.0
@@ -237,7 +250,15 @@ class StoreApiRequestHandler {
 
 		// An already-authenticated cart-token session carries the shopper's customer id.
 		if ( is_numeric( $customer['id'] ?? null ) && intval( $customer['id'] ) > 0 ) {
-			return intval( $customer['id'] );
+			$customer_id = intval( $customer['id'] );
+
+			if ( ! $this->has_valid_request_signature() && ! $this->has_store_minted_nonce_for_user( $customer_id ) ) {
+				$this->logger->log( 'WooPay Cart-Token rejected: no store-minted nonce bound to the session customer. Resolving as guest.' );
+
+				return null;
+			}
+
+			return $customer_id;
 		}
 
 		$woopay_verified_email_address = $this->get_woopay_verified_email_address();
@@ -250,6 +271,12 @@ class StoreApiRequestHandler {
 			$user = get_user_by( 'email', $woopay_verified_email_address );
 
 			if ( $woopay_verified_email_address === $customer['email'] && $user ) {
+				if ( ! $this->has_valid_request_signature() && ! $this->has_store_minted_nonce_for_user( (int) $user->ID ) ) {
+					$this->logger->log( 'WooPay verified email header rejected: no store-minted nonce bound to the requested user.' );
+
+					return null;
+				}
+
 				// Remove the Gift Cards session cache so account gift cards load.
 				add_filter( 'woocommerce_gc_account_session_timeout_minutes', '__return_false' );
 
@@ -500,6 +527,19 @@ class StoreApiRequestHandler {
 		}
 
 		return $payload;
+	}
+
+	/**
+	 * Tell whether the request's `Nonce` header is one this store minted for a user (client 11.2.0
+	 * class-woopay-session.php:1559-1567).
+	 *
+	 * @param int $user_id User ID the nonce must be bound to.
+	 * @return bool
+	 */
+	private function has_store_minted_nonce_for_user( int $user_id ): bool {
+		$nonce = isset( $_SERVER['HTTP_NONCE'] ) ? sanitize_text_field( wp_unslash( $_SERVER['HTTP_NONCE'] ) ) : '';
+
+		return '' !== $nonce && $this->session_service->verify_woopay_nonce( $nonce, $user_id );
 	}
 
 	/**
