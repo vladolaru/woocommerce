@@ -404,36 +404,27 @@ const getCartTotalsAmount = ( cart ) => getCartTotalPrice( cart );
 const shouldUseConfirmationTokens = () =>
 	params?.flags?.isEceUsingConfirmationTokens ?? true;
 
-const isSubscriptionData = ( schedule ) => {
-	if ( Array.isArray( schedule ) ) {
-		return schedule.length > 0;
+/**
+ * The setupFutureUsage the server decided for the wallet token: the cart's `wcpay` extension when it carries the field,
+ * an explicit null included; else, on order-pay, the localized value. Client 11.2.0 resolveSetupFutureUsage()
+ * (client/express-checkout/utils/subscriptions.ts:22-53).
+ *
+ * @param {Object} cartData Store API cart data.
+ * @return {string|null} 'off_session' or null.
+ */
+const resolveSetupFutureUsage = ( cartData ) => {
+	const wcpayExtension = cartData?.extensions?.wcpay;
+
+	if ( wcpayExtension && 'setup_future_usage' in wcpayExtension ) {
+		return wcpayExtension.setup_future_usage ?? null;
 	}
 
-	return (
-		typeof schedule?.billing_period === 'string' &&
-		schedule.billing_period.length > 0 &&
-		typeof schedule.billing_interval === 'number' &&
-		schedule.billing_interval > 0
-	);
+	if ( params?.button_context === 'pay_for_order' ) {
+		return params?.setup_future_usage ?? null;
+	}
+
+	return null;
 };
-
-const cartHasAnySubscription = ( cartData ) => {
-	const schedules = cartData?.extensions?.subscriptions;
-	if ( Array.isArray( schedules ) && schedules.length > 0 ) {
-		return true;
-	}
-
-	if ( ! Array.isArray( cartData?.items ) ) {
-		return false;
-	}
-
-	return cartData.items.some( ( item ) =>
-		isSubscriptionData( item?.extensions?.subscriptions )
-	);
-};
-
-const getSetupFutureUsageForCart = ( cartData ) =>
-	cartHasAnySubscription( cartData ) ? 'off_session' : null;
 
 const addReferenceElementOptions = ( options, cartData ) => {
 	if ( shouldUseConfirmationTokens() && params?.is_manual_capture ) {
@@ -441,7 +432,7 @@ const addReferenceElementOptions = ( options, cartData ) => {
 	}
 
 	if ( shouldUseConfirmationTokens() ) {
-		options.setupFutureUsage = getSetupFutureUsageForCart( cartData );
+		options.setupFutureUsage = resolveSetupFutureUsage( cartData );
 	}
 
 	const appearance = getBlocksCheckoutAppearance(
@@ -482,7 +473,7 @@ const getLiveElementsOptions = ( billing, cart ) => {
 	};
 
 	if ( shouldUseConfirmationTokens() ) {
-		options.setupFutureUsage = getSetupFutureUsageForCart( cartData );
+		options.setupFutureUsage = resolveSetupFutureUsage( cartData );
 	}
 
 	return options;
@@ -918,7 +909,7 @@ const getElementsUpdateOptionsForCart = ( cart ) => {
 	// setupFutureUsage is a confirmation-token option; Elements created in
 	// manual payment-method mode rejects it on update.
 	if ( shouldUseConfirmationTokens() ) {
-		options.setupFutureUsage = getSetupFutureUsageForCart( cartData );
+		options.setupFutureUsage = resolveSetupFutureUsage( cartData );
 	}
 
 	return options;

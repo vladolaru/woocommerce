@@ -246,6 +246,8 @@ const cartWithSubscriptionSchedule = (
 		...overrides,
 		extensions: {
 			...overrides.extensions,
+			// The server's answer for a subscription cart (WooPaymentsExpressCheckoutStoreApiExtension).
+			wcpay: { setup_future_usage: 'off_session' },
 			subscriptions: [
 				{
 					billing_period: 'month',
@@ -312,6 +314,7 @@ const freeTrialCart = cartWithExpressMethods( [ 'payment_request' ], {
 		total_tax: '0',
 	},
 	extensions: {
+		wcpay: { setup_future_usage: 'off_session' },
 		subscriptions: [ trialSubscriptionSchedule ],
 	},
 } );
@@ -774,104 +777,48 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 		);
 	} );
 
-	it( 'detects a subscription schedule on a live cart item', async () => {
-		baseExpressCheckoutParams.has_subscription = false;
-		registerExpressCheckout();
-		const applePayRegistration = getRegistration(
-			'woocommerce_payments_express_checkout_applePay'
-		);
-		const subscriptionItemCart = cartWithExpressMethods(
-			[ 'payment_request' ],
-			{
-				items: [
-					{
-						...blocksCart.items[ 0 ],
-						extensions: {
-							subscriptions: {
-								billing_period: 'month',
-								billing_interval: 1,
-							},
-						},
-					},
-				],
-			}
-		);
-
-		renderExpressPaymentMethod( applePayRegistration, {
-			...getPaymentMethodInterfaceProps( subscriptionItemCart ),
-		} );
-
-		await waitFor( () => {
-			expect( expressElement.mount ).toHaveBeenCalled();
-		} );
-
-		expect( stripe.elements ).toHaveBeenCalledWith(
-			expect.objectContaining( {
-				setupFutureUsage: 'off_session',
-			} )
-		);
-	} );
-
+	// Client 11.2.0 takes the server's decision from the cart's `wcpay.setup_future_usage` when present, an explicit null
+	// included, and reads no subscription data in the browser (client/express-checkout/utils/subscriptions.ts:36-53,
+	// block-buttons/components/express-checkout-container.js:71).
 	it.each( [
 		{
-			description: 'an empty object',
-			subscriptionData: {},
+			description: 'the cart extension asks for off_session',
+			wcpay: { setup_future_usage: 'off_session' },
+			subscriptions: undefined,
+			expected: 'off_session',
 		},
 		{
-			description: 'null data',
-			subscriptionData: null,
+			description: 'the cart extension says null on a subscription cart',
+			wcpay: { setup_future_usage: null },
+			subscriptions: [ { billing_period: 'month', billing_interval: 1 } ],
+			expected: null,
 		},
 		{
-			description: 'an all-null object',
-			subscriptionData: {
-				billing_period: null,
-				billing_interval: null,
-			},
-		},
-		{
-			description: 'an empty billing period',
-			subscriptionData: {
-				billing_period: '',
-				billing_interval: 1,
-			},
-		},
-		{
-			description: 'a non-positive billing interval',
-			subscriptionData: {
-				billing_period: 'month',
-				billing_interval: 0,
-			},
-		},
-		{
-			description: 'a non-numeric billing interval',
-			subscriptionData: {
-				billing_period: 'month',
-				billing_interval: '1',
-			},
+			description: 'a subscription cart without the field',
+			wcpay: {},
+			subscriptions: [ { billing_period: 'month', billing_interval: 1 } ],
+			expected: null,
 		},
 	] )(
-		'treats malformed item-level subscription object data as ordinary: $description',
-		async ( { subscriptionData } ) => {
+		'mounts with the setupFutureUsage the server decided: $description',
+		async ( { wcpay, subscriptions, expected } ) => {
 			registerExpressCheckout();
 			const applePayRegistration = getRegistration(
 				'woocommerce_payments_express_checkout_applePay'
 			);
-			const regularItemCart = cartWithExpressMethods(
-				[ 'payment_request' ],
-				{
-					items: [
-						{
-							...blocksCart.items[ 0 ],
-							extensions: {
-								subscriptions: subscriptionData,
-							},
-						},
-					],
-				}
-			);
+			const cart = {
+				...blocksCart,
+				extensions: {
+					...( subscriptions ? { subscriptions } : {} ),
+					wcpay: {
+						express_checkout_methods: [ 'payment_request' ],
+						...wcpay,
+					},
+				},
+			};
 
 			renderExpressPaymentMethod( applePayRegistration, {
-				...getPaymentMethodInterfaceProps( regularItemCart ),
+				...getPaymentMethodInterfaceProps( cart ),
 			} );
 
 			await waitFor( () => {
@@ -880,76 +827,11 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 
 			expect( stripe.elements ).toHaveBeenCalledWith(
 				expect.objectContaining( {
-					setupFutureUsage: null,
+					setupFutureUsage: expected,
 				} )
 			);
 		}
 	);
-
-	it( 'detects a non-empty subscription array on a live cart item', async () => {
-		registerExpressCheckout();
-		const applePayRegistration = getRegistration(
-			'woocommerce_payments_express_checkout_applePay'
-		);
-		const subscriptionItemCart = cartWithExpressMethods(
-			[ 'payment_request' ],
-			{
-				items: [
-					{
-						...blocksCart.items[ 0 ],
-						extensions: {
-							subscriptions: [ { billing_period: 'month' } ],
-						},
-					},
-				],
-			}
-		);
-
-		renderExpressPaymentMethod( applePayRegistration, {
-			...getPaymentMethodInterfaceProps( subscriptionItemCart ),
-		} );
-
-		await waitFor( () => {
-			expect( expressElement.mount ).toHaveBeenCalled();
-		} );
-
-		expect( stripe.elements ).toHaveBeenCalledWith(
-			expect.objectContaining( {
-				setupFutureUsage: 'off_session',
-			} )
-		);
-	} );
-
-	it( 'ignores an empty subscription array on a live cart item', async () => {
-		registerExpressCheckout();
-		const applePayRegistration = getRegistration(
-			'woocommerce_payments_express_checkout_applePay'
-		);
-		const regularItemCart = cartWithExpressMethods( [ 'payment_request' ], {
-			items: [
-				{
-					...blocksCart.items[ 0 ],
-					extensions: {
-						subscriptions: [],
-					},
-				},
-			],
-		} );
-
-		renderExpressPaymentMethod( applePayRegistration, {
-			...getPaymentMethodInterfaceProps( regularItemCart ),
-		} );
-
-		await waitFor( () => {
-			expect( expressElement.mount ).toHaveBeenCalled();
-		} );
-
-		expect( stripe.elements ).toHaveBeenCalledWith(
-			expect.objectContaining( {
-				setupFutureUsage: null,
-			} )
-		);
-	} );
 
 	it( 'probes Stripe wallet availability before exposing each Blocks express method', async () => {
 		registerExpressCheckout();

@@ -58,7 +58,8 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 			$GLOBALS[ WooCommerceSubscriptionsDoubles::CART_CONTAINS_SUBSCRIPTION ],
 			$GLOBALS[ WooCommerceSubscriptionsDoubles::CART_CONTAINS_RENEWAL ],
 			$GLOBALS[ WooCommerceSubscriptionsDoubles::CART_CONTAINS_RESUBSCRIBE ],
-			$GLOBALS[ WooCommerceSubscriptionsDoubles::CART_CONTAINS_SWITCHES ]
+			$GLOBALS[ WooCommerceSubscriptionsDoubles::CART_CONTAINS_SWITCHES ],
+			$GLOBALS['wcpay_test_renewal_order_ids']
 		);
 		wp_reset_postdata();
 		parent::tearDown();
@@ -734,6 +735,67 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 		$this->set_current_product( $product );
 
 		$this->assertFalse( $this->create_service()->get_express_checkout_params( $context )['has_subscription'] );
+	}
+
+	/**
+	 * Client 11.2.0 decides the token's setup_future_usage on the server (class-wc-payments-express-checkout-button-helper.php
+	 * :377-387 for order-pay, :445-453 for the filter and its normalisation) and localizes it in every context
+	 * (class-wc-payments-express-checkout-button-handler.php:261).
+	 *
+	 * @testdox Should localize the setup_future_usage the server decides: $scenario.
+	 * @dataProvider provider_setup_future_usage
+	 *
+	 * @param string      $scenario Scenario description.
+	 * @param string      $context  Express checkout context.
+	 * @param string      $order_pay The order-pay link: a renewal with its key, a renewal with a wrong key, a one-off order with its key, or none.
+	 * @param string|null $filtered  Value a filter callback returns, or null for no callback.
+	 * @param string|null $expected  Expected localized value.
+	 */
+	public function test_localizes_the_setup_future_usage_the_server_decides( string $scenario, string $context, string $order_pay, ?string $filtered, ?string $expected ): void {
+		unset( $scenario );
+		WooCommerceSubscriptionsDoubles::load_cart();
+		WooCommerceSubscriptionsDoubles::load_renewal_detector();
+		$this->register_legacy_proxy_function_mocks(
+			array(
+				'class_exists' => static fn( $class_name, ...$args ) => 'WC_Subscriptions_Core_Plugin' === $class_name || class_exists( $class_name, ...$args ),
+			)
+		);
+		if ( 'pay_for_order' === $context ) {
+			$user_id = self::factory()->user->create( array( 'role' => 'customer' ) );
+			$order   = wc_create_order();
+			$order->set_total( '24.00' );
+			$order->set_customer_id( $user_id );
+			$order->save();
+			wp_set_current_user( $user_id );
+			$GLOBALS['wcpay_test_renewal_order_ids'] = 'one-off' === $order_pay ? array() : array( $order->get_id() );
+			$_GET['pay_for_order']                   = 'true';
+			$_GET['key']                             = 'wrong key' === $order_pay ? 'wc_order_wrong' : $order->get_order_key();
+			$this->set_order_pay_query_var( $order->get_id() );
+		}
+		if ( null !== $filtered ) {
+			add_filter( 'wcpay_express_checkout_setup_future_usage', static fn() => $filtered );
+		}
+
+		$params = $this->create_service()->get_express_checkout_params( $context );
+
+		$this->assertArrayHasKey( 'setup_future_usage', $params );
+		$this->assertSame( $expected, $params['setup_future_usage'] );
+	}
+
+	/**
+	 * Provide order-pay, plain cart and filtered cases.
+	 *
+	 * @return array<string,array{string,string,string,string|null,string|null}>
+	 */
+	public function provider_setup_future_usage(): array {
+		return array(
+			'a renewal order paid by its link' => array( 'a renewal order paid by its link', 'pay_for_order', 'renewal', null, 'off_session' ),
+			'a renewal link with a wrong key'  => array( 'a renewal link with a wrong key', 'pay_for_order', 'wrong key', null, null ),
+			'a one-off order paid by its link' => array( 'a one-off order paid by its link', 'pay_for_order', 'one-off', null, null ),
+			'a plain cart'                     => array( 'a plain cart', 'checkout', '', null, null ),
+			'a filter declaring a save'        => array( 'a filter declaring a save', 'checkout', '', 'off_session', 'off_session' ),
+			'a filter returning another value' => array( 'a filter returning another value', 'checkout', '', 'yes', null ),
+		);
 	}
 
 	/**

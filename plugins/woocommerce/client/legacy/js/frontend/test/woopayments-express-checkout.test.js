@@ -431,56 +431,67 @@ describe( 'woopayments-express-checkout', () => {
 		} );
 	} );
 
+	// Client 11.2.0 takes the server's decision (client/express-checkout/utils/subscriptions.ts:22-53): the cart's
+	// `wcpay.setup_future_usage` when present, an explicit null included; the localized value on order-pay and for the
+	// product payload (shortcode-buttons-express/index.js:634, :645); nothing from subscription data in the browser.
 	describe( 'setupFutureUsage', () => {
-		it( 'is off_session at creation for carts with a subscription schedule', () => {
-			const { getStripeElementsOptions } = loadModule( baseParams() );
-			const cartData = cartResponse( {
+		const subscriptionCart = ( wcpay ) =>
+			cartResponse( {
 				extensions: {
+					...( wcpay ? { wcpay } : {} ),
 					subscriptions: [ { billing_period: 'month' } ],
 				},
 			} );
 
-			expect( getStripeElementsOptions( cartData ).setupFutureUsage ).toBe(
-				'off_session'
-			);
-		} );
-
-		it( 'is off_session when a cart item carries a subscription schedule', () => {
-			const { getSetupFutureUsageForCart } = loadModule( baseParams() );
-			const cartData = cartResponse();
-			cartData.items[ 0 ].extensions = {
-				subscriptions: {
-					billing_period: 'month',
-					billing_interval: 1,
+		it.each( [
+			[
+				'the cart extension asks for off_session',
+				{},
+				cartResponse( {
+					extensions: { wcpay: { setup_future_usage: 'off_session' } },
+				} ),
+				'off_session',
+			],
+			[
+				'the cart extension says null on a subscription cart',
+				{ setup_future_usage: 'off_session' },
+				subscriptionCart( { setup_future_usage: null } ),
+				undefined,
+			],
+			[
+				'a subscription cart without the field',
+				{ has_subscription: true },
+				subscriptionCart(),
+				undefined,
+			],
+			[
+				'the order-pay order takes the localized value',
+				{
+					button_context: 'pay_for_order',
+					order_id: 12,
+					setup_future_usage: 'off_session',
 				},
-			};
+				cartResponse( { extensions: {} } ),
+				'off_session',
+			],
+			[
+				'the product payload takes the localized value',
+				{ button_context: 'product', setup_future_usage: 'off_session' },
+				{ total: { amount: 1500 }, currency: 'usd' },
+				'off_session',
+			],
+		] )(
+			'is what the server decided: %s',
+			( description, overrides, cartData, expected ) => {
+				const { getStripeElementsOptions } = loadModule(
+					baseParams( overrides )
+				);
 
-			expect( getSetupFutureUsageForCart( cartData ) ).toBe(
-				'off_session'
-			);
-		} );
-
-		it( 'is omitted at creation for non-subscription carts', () => {
-			const { getStripeElementsOptions } = loadModule( baseParams() );
-
-			expect( getStripeElementsOptions( cartResponse() ) ).not.toHaveProperty(
-				'setupFutureUsage'
-			);
-		} );
-
-		it( 'falls back to the localized has_subscription flag for the product payload shape', () => {
-			const { getStripeElementsOptions } = loadModule(
-				baseParams( { has_subscription: true } )
-			);
-			const productShapedData = {
-				total: { amount: 1500 },
-				currency: 'usd',
-			};
-
-			expect(
-				getStripeElementsOptions( productShapedData ).setupFutureUsage
-			).toBe( 'off_session' );
-		} );
+				expect(
+					getStripeElementsOptions( cartData ).setupFutureUsage
+				).toBe( expected );
+			}
+		);
 	} );
 
 	describe( 'getStripe', () => {

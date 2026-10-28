@@ -267,8 +267,10 @@ describe( 'WooPayments express checkout', () => {
 				currency_code: 'EUR',
 			},
 			extensions: {
+				// The server's answer for a subscription cart (WooPaymentsExpressCheckoutStoreApiExtension).
 				wcpay: {
 					express_checkout_methods: methods,
+					setup_future_usage: 'off_session',
 				},
 				subscriptions: [ { interval: 'month' } ],
 			},
@@ -4533,6 +4535,7 @@ describe( 'WooPayments express checkout', () => {
 					},
 					shipping_rates: [],
 					extensions: {
+						wcpay: { setup_future_usage: 'off_session' },
 						subscriptions: [
 							{
 								billing_period: 'month',

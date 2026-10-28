@@ -9,6 +9,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsEx
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendTrackingController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenizedCartSessionController;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\WooCommerceSubscriptionsDoubles;
 use Automattic\WooCommerce\StoreApi\Schemas\ExtendSchema;
 use Automattic\WooCommerce\StoreApi\StoreApi;
 use Automattic\WooCommerce\StoreApi\Utilities\OrderController;
@@ -64,6 +65,7 @@ class WooPaymentsExpressCheckoutStoreApiExtensionTest extends WC_Unit_Test_Case 
 		}
 		unset( $_SERVER['HTTP_X_WOOPAYMENTS_TOKENIZED_CART'], $_SERVER['HTTP_X_WOOPAYMENTS_TOKENIZED_CART_NONCE'], $_GET['change_payment_method'], $_GET['rest_route'], $_REQUEST['rest_route'] );
 		remove_all_filters( 'wp_doing_cron' );
+		unset( $GLOBALS[ WooCommerceSubscriptionsDoubles::CART_CONTAINS_SUBSCRIPTION ] );
 		WC()->countries->locale = array();
 		$this->unregister_refresh_ui_callback();
 		delete_option( 'woocommerce_woocommerce_payments_apple_pay_settings' );
@@ -102,7 +104,10 @@ class WooPaymentsExpressCheckoutStoreApiExtensionTest extends WC_Unit_Test_Case 
 		$this->sut = $this->create_extension( $payment_request, $amazon_pay, true, 'EUR' );
 
 		$this->assertSame(
-			array( 'express_checkout_methods' => $expected ),
+			array(
+				'express_checkout_methods' => $expected,
+				'setup_future_usage'       => null,
+			),
 			$this->sut->get_cart_extension_data()
 		);
 	}
@@ -139,7 +144,10 @@ class WooPaymentsExpressCheckoutStoreApiExtensionTest extends WC_Unit_Test_Case 
 		$this->sut->init( $service );
 
 		$this->assertSame(
-			array( 'express_checkout_methods' => array( 'payment_request' ) ),
+			array(
+				'express_checkout_methods' => array( 'payment_request' ),
+				'setup_future_usage'       => null,
+			),
 			$this->sut->get_cart_extension_data()
 		);
 	}
@@ -184,7 +192,10 @@ class WooPaymentsExpressCheckoutStoreApiExtensionTest extends WC_Unit_Test_Case 
 		$this->sut->init( $service );
 
 		$this->assertSame(
-			array( 'express_checkout_methods' => $listed ? array( 'amazon_pay' ) : array() ),
+			array(
+				'express_checkout_methods' => $listed ? array( 'amazon_pay' ) : array(),
+				'setup_future_usage'       => null,
+			),
 			$this->sut->get_cart_extension_data()
 		);
 	}
@@ -215,7 +226,10 @@ class WooPaymentsExpressCheckoutStoreApiExtensionTest extends WC_Unit_Test_Case 
 		$this->sut->init( $service );
 
 		$this->assertSame(
-			array( 'express_checkout_methods' => array( 'amazon_pay' ) ),
+			array(
+				'express_checkout_methods' => array( 'amazon_pay' ),
+				'setup_future_usage'       => null,
+			),
 			$this->sut->get_cart_extension_data()
 		);
 	}
@@ -237,9 +251,38 @@ class WooPaymentsExpressCheckoutStoreApiExtensionTest extends WC_Unit_Test_Case 
 						'type' => 'string',
 					),
 				),
+				// Client 11.2.0 class-wc-payments-express-checkout-store-api-extension.php:118-124.
+				'setup_future_usage'       => array(
+					'description' => __( 'Whether the payment method should be saved for future off-session payments.', 'woocommerce' ),
+					'type'        => array( 'string', 'null' ),
+					'enum'        => array( 'off_session', null ),
+					'context'     => array( 'view', 'edit' ),
+					'readonly'    => true,
+				),
 			),
 			$this->sut->get_cart_extension_schema()
 		);
+	}
+
+	/**
+	 * @testdox Should send the setup_future_usage for the cart in the Store API cart data: $scenario (client 11.2.0 class-wc-payments-express-checkout-store-api-extension.php:98, button helper :347-366).
+	 * @testWith ["a WooCommerce Subscriptions cart", true, "off_session"]
+	 *           ["an ordinary cart", false, null]
+	 *
+	 * @param string      $scenario     Scenario description.
+	 * @param bool        $subscription Whether the cart contains a subscription.
+	 * @param string|null $expected     Expected setup_future_usage.
+	 */
+	public function test_get_cart_extension_data_sends_the_cart_setup_future_usage( string $scenario, bool $subscription, ?string $expected ): void {
+		unset( $scenario );
+		WooCommerceSubscriptionsDoubles::load_cart();
+		$GLOBALS[ WooCommerceSubscriptionsDoubles::CART_CONTAINS_SUBSCRIPTION ] = $subscription;
+		$this->sut = $this->create_extension();
+
+		$data = $this->sut->get_cart_extension_data();
+
+		$this->assertArrayHasKey( 'setup_future_usage', $data );
+		$this->assertSame( $expected, $data['setup_future_usage'] );
 	}
 
 	/**

@@ -7,6 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\SubscriptionMethodPolicy;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 
 /**
@@ -150,6 +151,8 @@ class WooPaymentsExpressCheckoutService {
 				'display_prices_with_tax'    => 'incl' === get_option( 'woocommerce_tax_display_cart' ),
 			),
 			'has_subscription'            => $this->context_has_subscription( $context ),
+			// Product page (no cart yet) and order-pay (the order route carries no cart extension).
+			'setup_future_usage'          => $this->get_setup_future_usage( $context ),
 			'is_manual_capture'           => $this->account_service->is_gateway_setting_enabled( 'manual_capture' ),
 			// Snake case only, as client 11.1.0 adds it to these params (class-woopay-tracker.php:672).
 			'is_shopper_tracking_enabled' => $tracking_enabled,
@@ -172,6 +175,51 @@ class WooPaymentsExpressCheckoutService {
 		);
 
 		return 'pay_for_order' === $context ? array_merge( $params, $this->get_pay_for_order_params() ) : $params;
+	}
+
+	/**
+	 * Get the setup_future_usage express checkout mints its Stripe ConfirmationToken with, for a context.
+	 *
+	 * Stripe fixes the value when the token is created and refuses the confirmation if the PaymentIntent asks for another
+	 * one; the intent asks for off_session whenever the payment method is saved. As client 11.2.0 get_setup_future_usage()
+	 * (class-wc-payments-express-checkout-button-helper.php:408-454): the recurring order a pay link authorizes, a
+	 * WooCommerce Subscriptions cart or a subscription product, then a filter for every other reason to save.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @param string $context Express checkout context: product, cart, checkout or pay_for_order.
+	 * @return string|null 'off_session' when the payment method will be saved, null otherwise.
+	 */
+	public function get_setup_future_usage( string $context ): ?string {
+		switch ( $context ) {
+			case 'pay_for_order':
+				$order         = WooPaymentsOrderPayAccess::get_authorized_order_from_payment_link();
+				$will_be_saved = null !== $order && SubscriptionMethodPolicy::is_subscriptions_available() && SubscriptionMethodPolicy::is_recurring_order( $order );
+				break;
+			case 'cart':
+			case 'checkout':
+				$will_be_saved = wc_get_container()->get( LegacyProxy::class )->call_function( 'class_exists', 'WC_Subscriptions_Cart' ) && $this->cart_has_any_subscription_schedule();
+				break;
+			default:
+				$will_be_saved = $this->context_has_subscription( $context );
+				break;
+		}
+
+		/**
+		 * Filters the setup_future_usage express checkout mints its ConfirmationToken with.
+		 *
+		 * Return 'off_session' when the payment method will be saved for later, for example by a subscriptions plugin other
+		 * than WooCommerce Subscriptions, and null otherwise. Stripe copies the token's value onto the PaymentIntent, so
+		 * declaring it for a one-off purchase attaches the shopper's card to the Stripe customer with no saved token.
+		 *
+		 * @since 11.2.0
+		 *
+		 * @param string|null $setup_future_usage 'off_session' or null.
+		 * @param string      $context            Express checkout context: product, cart, checkout or pay_for_order.
+		 */
+		$setup_future_usage = apply_filters( 'wcpay_express_checkout_setup_future_usage', $will_be_saved ? 'off_session' : null, $context );
+
+		return 'off_session' === $setup_future_usage ? 'off_session' : null;
 	}
 
 	/**

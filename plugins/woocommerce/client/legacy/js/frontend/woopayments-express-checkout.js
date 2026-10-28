@@ -426,58 +426,30 @@
 			: converted;
 	}
 
-	function isSubscriptionData( subscriptionData ) {
-		if ( Array.isArray( subscriptionData ) ) {
-			return subscriptionData.length > 0;
-		}
+	/**
+	 * The setupFutureUsage the server decided for the wallet token: the cart's `wcpay` extension when it carries the
+	 * field, an explicit null included; else, on order-pay, whose order route carries no cart extension, the localized
+	 * value. Client 11.2.0 resolveSetupFutureUsage() (client/express-checkout/utils/subscriptions.ts:22-53).
+	 */
+	function resolveSetupFutureUsage( cartData ) {
+		var wcpayExtension =
+			cartData && cartData.extensions
+				? cartData.extensions.wcpay
+				: undefined;
 
 		if (
-			typeof subscriptionData !== 'object' ||
-			subscriptionData === null
+			wcpayExtension &&
+			typeof wcpayExtension === 'object' &&
+			'setup_future_usage' in wcpayExtension
 		) {
-			return false;
+			return wcpayExtension.setup_future_usage || null;
 		}
 
-		return (
-			typeof subscriptionData.billing_period === 'string' &&
-			subscriptionData.billing_period.length > 0 &&
-			typeof subscriptionData.billing_interval === 'number' &&
-			subscriptionData.billing_interval > 0
-		);
-	}
-
-	/**
-	 * Tell whether the cart contains any subscription schedule (trial or
-	 * recurring). WC Subscriptions exposes subscription data on the Store API
-	 * response in two places: `extensions.subscriptions` on the cart (initial
-	 * purchases; empty for renewal carts) and on each cart item
-	 * (renewals/resubscribes/switches). Checking both keeps the detection
-	 * robust across cart shapes.
-	 */
-	function cartHasAnySubscription( cartData ) {
-		var schedules = cartData && cartData.extensions
-			? cartData.extensions.subscriptions
-			: undefined;
-
-		if ( Array.isArray( schedules ) && schedules.length > 0 ) {
-			return true;
+		if ( getButtonContext() === 'pay_for_order' ) {
+			return config.setup_future_usage || null;
 		}
 
-		if ( ! cartData || ! Array.isArray( cartData.items ) ) {
-			return false;
-		}
-
-		return cartData.items.some( function ( item ) {
-			return isSubscriptionData(
-				item && item.extensions
-					? item.extensions.subscriptions
-					: undefined
-			);
-		} );
-	}
-
-	function getSetupFutureUsageForCart( cartData ) {
-		return cartHasAnySubscription( cartData ) ? 'off_session' : null;
+		return null;
 	}
 
 	function cartCurrencyDriftedFromElement( cartData ) {
@@ -618,12 +590,12 @@
 	function getStripeElementsOptions( cartData ) {
 		var amount = getTotalAmount( cartData );
 		var currency = getCurrency( cartData );
-		// The product payload shape carries no Store API extensions; fall back
-		// to the localized subscription flag there.
+		// The product payload shape carries no Store API extensions; the
+		// localized value is the server's decision there.
 		var setupFutureUsage =
 			cartData && cartData.totals
-				? getSetupFutureUsageForCart( cartData )
-				: ( config.has_subscription ? 'off_session' : null );
+				? resolveSetupFutureUsage( cartData )
+				: config.setup_future_usage || null;
 		var useConfirmationTokens = shouldUseConfirmationTokens();
 		var options;
 
@@ -2205,7 +2177,7 @@
 	function updateElementsForCart( cartData ) {
 		var amount = getTotalAmount( cartData );
 		var updateOptions = shouldUseConfirmationTokens()
-			? { setupFutureUsage: getSetupFutureUsageForCart( cartData ) }
+			? { setupFutureUsage: resolveSetupFutureUsage( cartData ) }
 			: {};
 
 		if ( amount > 0 ) {
@@ -3512,7 +3484,6 @@
 			getDisplayItems: getDisplayItems,
 			getTotalAmount: getTotalAmount,
 			getStripeElementsOptions: getStripeElementsOptions,
-			getSetupFutureUsageForCart: getSetupFutureUsageForCart,
 			handleShippingAddressChange: handleShippingAddressChange,
 			handleShippingRateChange: handleShippingRateChange,
 			placeOrder: placeOrder,
