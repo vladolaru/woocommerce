@@ -67,19 +67,23 @@ describe( 'WooPaymentsTestModeNotice', () => {
 		}
 	);
 
-	// Client index.tsx:185-214: singular noun per page, plural for payouts.
+	// Client 11.2.0 components/test-mode-notice/index.tsx:34-41, 182-190.
 	it.each( [
 		[
 			'deposits',
-			'WooPayments was in test mode when these payouts were created. To view live payouts, disable test mode in WooPayments settings.',
+			'WooPayments is in test mode, so only test payouts are shown. To view live payouts, disable test mode in WooPayments settings.',
 		],
 		[
 			'disputes',
-			'WooPayments was in test mode when this dispute was created. To view live disputes, disable test mode in WooPayments settings.',
+			'WooPayments is in test mode, so only test disputes are shown. To view live disputes, disable test mode in WooPayments settings.',
 		],
 		[
 			'payments',
-			'WooPayments was in test mode when this order was placed. To view live orders, disable test mode in WooPayments settings.',
+			'WooPayments is in test mode, so only test transactions are shown. To view live transactions, disable test mode in WooPayments settings.',
+		],
+		[
+			'transactions',
+			'WooPayments is in test mode, so only test transactions are shown. To view live transactions, disable test mode in WooPayments settings.',
 		],
 	] as Array< [ WooPaymentsTestModeNoticePage, string ] > )(
 		'shows the %s details copy in test mode',

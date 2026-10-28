@@ -3,7 +3,7 @@
  */
 import { ExternalLink, Notice } from '@wordpress/components';
 import { createInterpolateElement } from '@wordpress/element';
-import { __, _n, sprintf } from '@wordpress/i18n';
+import { __, sprintf } from '@wordpress/i18n';
 
 /**
  * Internal dependencies
@@ -34,23 +34,14 @@ const resourceLabels: Record< WooPaymentsTestModeNoticePage, string > = {
 	transactions: __( 'transactions', 'woocommerce' ),
 };
 
-// Client index.tsx:33-48.
-const nouns: Record< WooPaymentsTestModeNoticePage, string > = {
-	documents: __( 'document', 'woocommerce' ),
-	deposits: __( 'payout', 'woocommerce' ),
-	disputes: __( 'dispute', 'woocommerce' ),
-	loans: __( 'loan', 'woocommerce' ),
-	payments: __( 'order', 'woocommerce' ),
-	transactions: __( 'order', 'woocommerce' ),
-};
-
-const verbs: Record< WooPaymentsTestModeNoticePage, string > = {
-	documents: __( 'created', 'woocommerce' ),
-	deposits: __( 'created', 'woocommerce' ),
-	disputes: __( 'created', 'woocommerce' ),
-	loans: __( 'created', 'woocommerce' ),
-	payments: __( 'placed', 'woocommerce' ),
-	transactions: __( 'placed', 'woocommerce' ),
+// Client 11.2.0 components/test-mode-notice/index.tsx:34-41.
+const pluralNounToUse: Record< WooPaymentsTestModeNoticePage, string > = {
+	documents: __( 'documents', 'woocommerce' ),
+	deposits: __( 'payouts', 'woocommerce' ),
+	disputes: __( 'disputes', 'woocommerce' ),
+	loans: __( 'loans', 'woocommerce' ),
+	payments: __( 'transactions', 'woocommerce' ),
+	transactions: __( 'transactions', 'woocommerce' ),
 };
 
 // Client index.tsx:163-236: dev mode first, then the details view, then the list sentence.
@@ -74,16 +65,13 @@ const getNoticeMessage = (
 
 	if ( isDetailsView ) {
 		return sprintf(
-			/* translators: 1: WooPayments, 2: resource noun, such as "order", 3: verb, such as "placed". */
-			_n(
-				'%1$s was in test mode when this %2$s was %3$s. To view live %2$ss, disable test mode in <settingsLink>%1$s settings</settingsLink>.',
-				'%1$s was in test mode when these %2$ss were %3$s. To view live %2$ss, disable test mode in <settingsLink>%1$s settings</settingsLink>.',
-				currentPage === 'deposits' ? 2 : 1,
+			/* translators: 1: WooPayments, 2: plural record type, such as "transactions". */
+			__(
+				'%1$s is in test mode, so only test %2$s are shown. To view live %2$s, disable test mode in <settingsLink>%1$s settings</settingsLink>.',
 				'woocommerce'
 			),
 			'WooPayments',
-			nouns[ currentPage ],
-			verbs[ currentPage ]
+			pluralNounToUse[ currentPage ]
 		);
 	}
 
