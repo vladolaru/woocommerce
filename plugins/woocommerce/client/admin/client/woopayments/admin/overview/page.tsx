@@ -244,15 +244,12 @@ export const WooPaymentsOverviewPage = () => {
 		let isMounted = true;
 
 		const loadDisputes = ( nextShell: WooPaymentsOverviewShell ) => {
-			if (
-				! nextShell.account.connected ||
-				nextShell.disputes_awaiting_response_count === 0
-			) {
+			if ( ! nextShell.account.connected ) {
 				setDisputeTaskData( null );
 				return;
 			}
 
-			// Client 11.2.0 `overview/index.js:100-123`; the error notices are `data/disputes/resolvers.js:89-97, :110-118`.
+			// Client 11.2.0 `overview/index.js:100-123`, which asks the summary whatever the cached count; the error notices are `data/disputes/resolvers.js:89-97, :110-118`.
 			getWooPaymentsOverviewDisputesSummary()
 				.then( ( summary ) =>
 					summary.count === 1

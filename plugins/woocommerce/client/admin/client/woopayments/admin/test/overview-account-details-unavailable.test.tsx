@@ -34,7 +34,10 @@ jest.mock( '../overview/data', () => ( {
 	getWooPaymentsDepositsOverview: jest.fn(),
 	getWooPaymentsDisputeReadiness: jest.fn(),
 	getWooPaymentsOverviewDisputes: jest.fn(),
-	getWooPaymentsOverviewDisputesSummary: jest.fn(),
+	// The summary of a store with no dispute awaiting a response; the page now always asks it.
+	getWooPaymentsOverviewDisputesSummary: jest.fn( () =>
+		Promise.resolve( { count: 0 } )
+	),
 	getWooPaymentsOverviewShell: jest.fn(),
 	getWooPaymentsRecentDeposits: jest.fn(),
 } ) );

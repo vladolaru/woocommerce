@@ -1030,29 +1030,29 @@ describe( 'WooPaymentsOverviewPage', () => {
 		).not.toBeInTheDocument();
 	} );
 
-	it( 'does not fetch disputes when the shell reports no actionable disputes', async () => {
+	// Client 11.2.0 `overview/index.js:100-105` asks the summary whatever the store's cached count, which a new dispute
+	// leaves at zero until its webhook arrives.
+	it( 'shows the dispute task from the summary when the cached count is zero', async () => {
 		mockGetShell.mockResolvedValue(
-			createShell( {
-				account_status: {
-					...createShell().account_status,
-					status: 'restricted',
-					details_submitted: false,
-				},
-				disputes_awaiting_response_count: 0,
-			} )
+			createShell( { disputes_awaiting_response_count: 0 } )
 		);
 		mockGetOverview.mockResolvedValue( createDepositsOverview() );
-		mockGetRecent.mockResolvedValue( {
-			data: [],
-			total_count: 0,
+		mockGetRecent.mockResolvedValue( { data: [], total_count: 0 } );
+		mockGetDisputesSummary.mockResolvedValue( {
+			count: 1,
+			amount_by_currency: { usd: 1000 },
+			earliest_due_by: new Date( Date.now() + 24 * 60 * 60 * 1000 )
+				.toISOString()
+				.slice( 0, 19 )
+				.replace( 'T', ' ' ),
 		} );
+		mockGetOverviewDisputes.mockResolvedValue( { data: [] } );
 
 		render( <WooPaymentsOverviewPage /> );
 
 		expect(
-			await screen.findByText( 'Finish setting up WooPayments' )
+			await screen.findByText( 'Respond to a dispute for $10.00' )
 		).toBeInTheDocument();
-		expect( mockGetDisputesSummary ).not.toHaveBeenCalled();
 	} );
 
 	it( 'fails closed when the overview shell cannot be loaded', async () => {
