@@ -613,7 +613,8 @@ class WooPaymentsPaymentOperationService {
 	 *
 	 * A kept key refused because the new request differs from the earlier one (a new card after a timeout) settles what
 	 * the earlier request did before anything is charged; see settle_earlier_charge(). A missing customer is replaced and
-	 * the charge retried, except while the order's ambiguity record exists.
+	 * the charge retried, except while the order's ambiguity record exists, or for a saved card when the user has no other
+	 * customer.
 	 *
 	 * @param PaymentOperationContext $context      Payment context.
 	 * @param array<string,mixed>     $request_data Charge request; its customer is replaced when the platform does not find it.
@@ -642,22 +643,36 @@ class WooPaymentsPaymentOperationService {
 			if ( ! $this->is_missing_customer_exception( $exception ) || null !== $record ) {
 				return $this->failed_charge_outcome( $order, $exception, true, (string) ( $request_data['customer'] ?? '' ), self::is_scheduled_renewal( $context ), (string) ( $request_data['payment_method'] ?? '' ) );
 			}
+
+			// A new customer has none of the user's saved cards, so a saved card is retried only on the user's other customer
+			// (client 11.2.0 class-wc-payment-gateway-wcpay.php:5449-5458).
+			if ( 0 < $this->get_saved_payment_token_id( $context ) && null === $this->customer_service->get_other_user_customer_id( $order, (string) ( $request_data['customer'] ?? '' ) ) ) {
+				return $this->failed_charge_outcome( $order, $exception, true, (string) ( $request_data['customer'] ?? '' ), self::is_scheduled_renewal( $context ), (string) ( $request_data['payment_method'] ?? '' ) );
+			}
 		}
 
-		$customer_id              = $this->customer_service->replace_missing_customer_for_order( $order, (string) ( $request_data['customer'] ?? '' ) );
+		$missing_customer_id      = (string) ( $request_data['customer'] ?? '' );
+		$customer_id              = $this->customer_service->replace_missing_customer_for_order( $order, $missing_customer_id );
 		$request_data['customer'] = $customer_id;
 		// A different body under the same key would be refused, so the retry gets its own key, kept on the order so that an
-		// ambiguous failure of the retry replays the retry. The customer is kept with it, as client 11.1.0 does
-		// (class-wc-payment-gateway-wcpay.php:5430), so a renewal retried later sends the same body under that key.
+		// ambiguous failure of the retry replays the retry. The customer is kept with it before the retry, so a renewal
+		// retried later sends the same body under that key; client 11.2.0 stores it only once the retry returns
+		// (class-wc-payment-gateway-wcpay.php:5459-5461).
 		$recovery_key = self::get_customer_recovery_idempotency_key( $sent_key );
 		$order->update_meta_data( self::CHARGE_IDEMPOTENCY_KEY_META, $recovery_key );
 		$order->update_meta_data( '_stripe_customer_id', $customer_id );
 		$order->save_meta_data();
 		try {
-			return $this->api_client->create_and_confirm_payment_intention( $request_data, $recovery_key );
+			$result = $this->api_client->create_and_confirm_payment_intention( $request_data, $recovery_key );
 		} catch ( ApiException $exception ) {
 			return $this->failed_charge_outcome( $order, $exception, true, $customer_id, self::is_scheduled_renewal( $context ), (string) ( $request_data['payment_method'] ?? '' ) );
 		}
+
+		if ( 0 < $this->get_saved_payment_token_id( $context ) ) {
+			$this->customer_service->replace_stale_subscription_customer_id( $order, (string) ( $request_data['payment_method'] ?? '' ), $missing_customer_id, $customer_id );
+		}
+
+		return $result;
 	}
 
 	/**

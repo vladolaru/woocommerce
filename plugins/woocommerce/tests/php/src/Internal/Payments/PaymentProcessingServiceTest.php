@@ -1416,18 +1416,14 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A renewal whose customer the platform does not find is charged on the user's own customer, or recreates it when that is the one missing: $_dataName.
+	 * @testdox A renewal whose customer the platform does not find is charged on the user's own customer: $_dataName.
 	 *
-	 * Here a renewal sends the customer on the renewal order, as client 11.1.0 does
+	 * Here a renewal sends the customer on the renewal order, as client 11.2.0 does
 	 * (includes/compat/subscriptions/trait-wc-payment-gateway-wcpay-subscriptions.php:421-424). A WooCommerce Stripe Gateway
-	 * customer left on the subscription is not on the WooPayments account, so the platform answers resource_missing. Client
-	 * 11.1.0 then deletes and recreates the user's customer (includes/class-wc-payment-gateway-wcpay.php:5417-5433), whose new
-	 * customer does not own the saved card, so the renewal fails and the user's saved cards are lost. Here the user's own
-	 * stored customer is used when it is not the missing one; the successful renewal stores it on the renewal order and,
-	 * through the saved token, on the subscription, so the next renewal sends it first. When the missing customer is the
-	 * user's own, it is recreated, as client 11.1.0 does (includes/class-wc-payment-gateway-wcpay.php:5417-5433); the new
-	 * customer does not own the saved card, so the platform refuses the retried charge and the renewal fails, with the
-	 * subscription left on its customer.
+	 * customer left on the subscription is not on the WooPayments account, so the platform answers resource_missing. The
+	 * user's own stored customer is then used, as client 11.2.0 does (includes/class-wc-payment-gateway-wcpay.php:5449-5465);
+	 * the successful renewal stores it on the renewal order and, through the saved token, on the subscription, so the next
+	 * renewal sends it first. A user with no other customer is test_saved_card_renewal_with_a_missing_customer_creates_no_customer().
 	 *
 	 * @dataProvider provider_renewals_with_a_missing_customer
 	 *
@@ -1641,11 +1637,200 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 				'cus_user',
 				true,
 			),
-			"the user's own customer" => array(
-				'cus_user',
-				array( 'POST /sites/123/wcpay/intentions', 'POST /sites/123/wcpay/customers', 'POST /sites/123/wcpay/intentions' ),
-				'cus_recreated',
-				false,
+		);
+	}
+
+	/**
+	 * @testdox A saved-card renewal whose customer is missing fails with the platform's error and creates no customer when the user has no other customer: $_dataName.
+	 *
+	 * A new customer has none of the user's saved cards, so client 11.2.0 rethrows the original error instead of creating
+	 * one (includes/class-wc-payment-gateway-wcpay.php:5449-5458; tests/unit/test-class-wc-payment-gateway-wcpay-subscriptions.php:699-727).
+	 *
+	 * @dataProvider provider_users_without_another_customer
+	 *
+	 * @param string $user_customer_id Customer stored on the user, empty for none.
+	 */
+	public function test_saved_card_renewal_with_a_missing_customer_creates_no_customer( string $user_customer_id ): void {
+		$user_id = self::factory()->user->create( array( 'role' => 'customer' ) );
+		if ( '' !== $user_customer_id ) {
+			update_user_option( $user_id, WooPaymentsCustomerService::TEST_CUSTOMER_ID_OPTION, $user_customer_id );
+		}
+		$token = new WC_Payment_Token_CC();
+		$token->set_token( 'pm_saved' );
+		$token->set_gateway_id( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+		$token->set_card_type( 'visa' );
+		$token->set_last4( '4242' );
+		$token->set_expiry_month( '12' );
+		$token->set_expiry_year( '2040' );
+		$token->set_user_id( $user_id );
+		$token->save();
+		$renewal = $this->create_woopayments_order( '10.00' );
+		$renewal->set_customer_id( $user_id );
+		$renewal->update_meta_data( '_stripe_customer_id', 'cus_stale' );
+		$renewal->add_payment_token( $token );
+		$renewal->save();
+		$http_client = new FakeHttpClient();
+		// Shapes: Stripe's resource_missing error with its 404 (https://docs.stripe.com/error-codes/resource-missing), as
+		// WooPaymentsPaymentOperationServiceTest::stripe_no_such_customer() models it; a Customer object for a create
+		// (https://docs.stripe.com/api/customers/object), which must not be asked for.
+		$http_client->responses = array(
+			$this->json_transport_response(
+				404,
+				array(
+					'error' => array(
+						'type'    => 'invalid_request_error',
+						'code'    => 'resource_missing',
+						'param'   => 'customer',
+						'message' => "No such customer: 'cus_stale'",
+					),
+				)
+			),
+			$this->json_transport_response( 200, array( 'id' => 'cus_recreated' ) ),
+		);
+
+		$outcome = $this->sut->process_checkout_outcome(
+			PaymentOperationContext::for_checkout(
+				$renewal,
+				WooPaymentsPersistenceVocabulary::GATEWAY_ID,
+				'',
+				array( 'payment_token' => (string) $token->get_id() ),
+				array( 'scheduled_subscription_payment' => true )
+			),
+			$this->timeout_transport_provider( $http_client, true )
+		);
+
+		$this->assertSame( array( 'POST /sites/123/wcpay/intentions' ), array_map( static fn( array $request ): string => $request['method'] . ' ' . $request['path'], $http_client->requests ), 'No customer is created and nothing is retried.' );
+		$this->assertSame( '' !== $user_customer_id ? $user_customer_id : false, get_user_option( WooPaymentsCustomerService::TEST_CUSTOMER_ID_OPTION, $user_id ), "The user's stored customer is unchanged." );
+		$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
+		$this->assertSame( 'resource_missing', $outcome->get_data()[ PaymentOutcome::DATA_ERROR_CODE ] ?? null, "The platform's error stands." );
+		$this->assertSame( OrderStatus::FAILED, wc_get_order( $renewal->get_id() )->get_status() );
+	}
+
+	/**
+	 * Users with no customer other than the missing one, as client 11.2.0's provider_absent_or_stale_user_customer() lists them.
+	 *
+	 * @return array<string,array{string}>
+	 */
+	public function provider_users_without_another_customer(): array {
+		return array(
+			'absent' => array( '' ),
+			'stale'  => array( 'cus_stale' ),
+		);
+	}
+
+	/**
+	 * @testdox A renewal retried on the user's customer gives that customer to its subscription holding the charged card, and a refused retry to none: $_dataName.
+	 *
+	 * Client 11.2.0 replaces the missing customer on the renewal's subscriptions only after the retry returns, and only on
+	 * those whose card is the one charged (includes/compat/subscriptions/trait-wc-payment-gateway-wcpay-subscriptions.php:1433-1448;
+	 * tests/unit/test-class-wc-payment-gateway-wcpay-subscriptions.php:614-663, 729-743); a refused retry changes no subscription.
+	 * The renewal order keeps the customer the retry sent, so a later retry under the kept key sends the same body.
+	 *
+	 * @dataProvider provider_retried_renewal_subscription_repairs
+	 *
+	 * @param array<string,mixed> $retry_response   Platform answer to the retried charge.
+	 * @param int                 $retry_code       HTTP status of that answer.
+	 * @param string              $expected_status  Renewal outcome status.
+	 * @param string              $expected_charged Customer the subscription holding the charged card carries afterwards.
+	 */
+	public function test_renewal_retry_repairs_the_subscription_holding_the_charged_card( array $retry_response, int $retry_code, string $expected_status, string $expected_charged ): void {
+		$user_id = self::factory()->user->create( array( 'role' => 'customer' ) );
+		update_user_option( $user_id, WooPaymentsCustomerService::TEST_CUSTOMER_ID_OPTION, 'cus_user' );
+		$token = new WC_Payment_Token_CC();
+		$token->set_token( 'pm_charged' );
+		$token->set_gateway_id( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+		$token->set_card_type( 'visa' );
+		$token->set_last4( '4242' );
+		$token->set_expiry_month( '12' );
+		$token->set_expiry_year( '2040' );
+		$token->set_user_id( $user_id );
+		$token->save();
+		$orders = array();
+		foreach ( array( 'subscription', 'renewal' ) as $name ) {
+			$order = $this->create_woopayments_order( '10.00' );
+			$order->set_customer_id( $user_id );
+			$order->update_meta_data( '_stripe_customer_id', 'cus_stale' );
+			$order->add_payment_token( $token );
+			$order->save();
+			$orders[ $name ] = $order;
+		}
+		$http_client = new FakeHttpClient();
+		// Shapes: Stripe's resource_missing error with its 404 (https://docs.stripe.com/error-codes/resource-missing), as
+		// WooPaymentsPaymentOperationServiceTest::stripe_no_such_customer() models it; then the provider's row.
+		$http_client->responses = array(
+			$this->json_transport_response(
+				404,
+				array(
+					'error' => array(
+						'type'    => 'invalid_request_error',
+						'code'    => 'resource_missing',
+						'param'   => 'customer',
+						'message' => "No such customer: 'cus_stale'",
+					),
+				)
+			),
+			$this->json_transport_response( $retry_code, $retry_response + array( 'metadata' => array( 'order_id' => (string) $orders['renewal']->get_id() ) ) ),
+		);
+		WooCommerceSubscriptionsDoubles::load();
+		$related = array( $orders['subscription']->get_id() );
+		$GLOBALS[ WooCommerceSubscriptionsDoubles::ORDER_SUBSCRIPTIONS ]   = array( $orders['renewal']->get_id() => array( 'renewal' => $related ) );
+		$GLOBALS[ WooCommerceSubscriptionsDoubles::RENEWAL_SUBSCRIPTIONS ] = array( $orders['renewal']->get_id() => $related );
+
+		try {
+			$outcome = $this->sut->process_checkout_outcome(
+				PaymentOperationContext::for_checkout(
+					$orders['renewal'],
+					WooPaymentsPersistenceVocabulary::GATEWAY_ID,
+					'',
+					array( 'payment_token' => (string) $token->get_id() ),
+					array( 'scheduled_subscription_payment' => true )
+				),
+				$this->timeout_transport_provider( $http_client, true )
+			);
+		} finally {
+			unset( $GLOBALS[ WooCommerceSubscriptionsDoubles::ORDER_SUBSCRIPTIONS ], $GLOBALS[ WooCommerceSubscriptionsDoubles::RENEWAL_SUBSCRIPTIONS ] );
+		}
+
+		$subscription = wc_get_order( $orders['subscription']->get_id() );
+		$this->assertSame( $expected_status, $outcome->get_status() );
+		$this->assertSame( 'cus_user', json_decode( (string) end( $http_client->requests )['body'], true )['customer'] ?? null, "The retry sends the user's customer." );
+		$this->assertSame( $expected_charged, $subscription->get_meta( '_stripe_customer_id', true ), 'The subscription holding the charged card.' );
+		$this->assertSame( 'cus_user', wc_get_order( $orders['renewal']->get_id() )->get_meta( '_stripe_customer_id', true ), 'The renewal keeps the customer the retry sent.' );
+	}
+
+	/**
+	 * Platform answers to a renewal's retry on the user's customer.
+	 *
+	 * Shapes: the PaymentIntent the platform returns for a confirmed card charge (Fixtures/platform-intention-basic-card.json),
+	 * reduced to the fields this path reads, succeeded or processing as client 11.2.0's tests return it; and Stripe's
+	 * invalid_request_error object (https://docs.stripe.com/api/errors) with client 11.2.0's refusal message
+	 * (tests/unit/test-class-wc-payment-gateway-wcpay-subscriptions.php:740).
+	 *
+	 * @return array<string,array{array<string,mixed>,int,string,string}>
+	 */
+	public function provider_retried_renewal_subscription_repairs(): array {
+		$intent = array(
+			'id'             => 'pi_renewal',
+			'object'         => 'payment_intent',
+			'amount'         => 1000,
+			'currency'       => 'usd',
+			'customer'       => 'cus_user',
+			'payment_method' => 'pm_charged',
+		);
+
+		return array(
+			'retry succeeded'  => array( $intent + array( 'status' => 'succeeded' ), 200, PaymentOutcome::STATUS_COMPLETED, 'cus_user' ),
+			'retry processing' => array( $intent + array( 'status' => 'processing' ), 200, PaymentOutcome::STATUS_AUTHORIZED, 'cus_user' ),
+			'retry refused'    => array(
+				array(
+					'error' => array(
+						'type'    => 'invalid_request_error',
+						'message' => 'The PaymentMethod does not belong to the Customer you supplied.',
+					),
+				),
+				400,
+				PaymentOutcome::STATUS_FAILED,
+				'cus_stale',
 			),
 		);
 	}

@@ -732,6 +732,47 @@ class WooPaymentsCustomerServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox The accepted customer replaces the missing one only on the renewal's subscriptions that hold the charged card and the missing customer: $_dataName.
+	 *
+	 * Client 11.2.0 replace_stale_subscription_customer_id() (includes/compat/subscriptions/trait-wc-payment-gateway-wcpay-subscriptions.php:1433-1448;
+	 * tests/unit/test-class-wc-payment-gateway-wcpay-subscriptions.php:614-694).
+	 *
+	 * @testWith ["pm_charged", "cus_stale", "cus_user"]
+	 *           ["pm_sibling", "cus_stale", "cus_stale"]
+	 *           ["pm_charged", "cus_other", "cus_other"]
+	 *
+	 * @param string $subscription_card     Card the subscription holds.
+	 * @param string $subscription_customer Customer the subscription holds.
+	 * @param string $expected_customer     Customer the subscription holds afterwards.
+	 */
+	public function test_replaces_the_stale_customer_only_where_the_charged_card_is( string $subscription_card, string $subscription_customer, string $expected_customer ): void {
+		$token = new \WC_Payment_Token_CC();
+		$token->set_token( $subscription_card );
+		$token->set_gateway_id( 'woocommerce_payments' );
+		$token->set_card_type( 'visa' );
+		$token->set_last4( '4242' );
+		$token->set_expiry_month( '12' );
+		$token->set_expiry_year( '2040' );
+		$token->set_user_id( 1 );
+		$token->save();
+		$subscription = wc_create_order();
+		$subscription->update_meta_data( '_stripe_customer_id', $subscription_customer );
+		$subscription->add_payment_token( $token );
+		$subscription->save();
+		$renewal = wc_create_order();
+		WooCommerceSubscriptionsDoubles::load();
+		$GLOBALS[ WooCommerceSubscriptionsDoubles::RENEWAL_SUBSCRIPTIONS ] = array( $renewal->get_id() => array( $subscription->get_id() ) );
+
+		try {
+			$this->create_sut( false, $this->create_customer_api_client( array() ) )->replace_stale_subscription_customer_id( $renewal, 'pm_charged', 'cus_stale', 'cus_user' );
+		} finally {
+			unset( $GLOBALS[ WooCommerceSubscriptionsDoubles::RENEWAL_SUBSCRIPTIONS ] );
+		}
+
+		$this->assertSame( $expected_customer, wc_get_order( $subscription->get_id() )->get_meta( '_stripe_customer_id', true ) );
+	}
+
+	/**
 	 * @testdox Should update the customer's default WooPayments payment method.
 	 */
 	public function test_set_default_payment_method_for_customer_updates_invoice_settings(): void {

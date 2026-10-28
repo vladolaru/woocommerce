@@ -12,6 +12,8 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiExcept
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use WC_Customer;
 use WC_Order;
+use WC_Payment_Token;
+use WC_Payment_Tokens;
 
 /**
  * Creates and stores the WooPayments customer of a user or a guest session, and moves a guest's customer onto the account
@@ -411,20 +413,67 @@ class WooPaymentsCustomerService implements RegisterHooksInterface {
 	 * @return string
 	 */
 	public function replace_missing_customer_for_order( WC_Order $order, string $missing_customer_id ): string {
-		$user_id = $this->get_order_user_id( $order );
-		if ( null !== $user_id ) {
-			$user_customer_id = $this->migrate_and_get_customer_id( $user_id );
-			if ( null !== $user_customer_id && $missing_customer_id !== $user_customer_id ) {
-				return $user_customer_id;
-			}
+		$user_customer_id = $this->get_other_user_customer_id( $order, $missing_customer_id );
+		if ( null !== $user_customer_id ) {
+			return $user_customer_id;
 		}
 
+		$user_id = $this->get_order_user_id( $order );
 		$this->delete_customer_id( $user_id );
 
 		$customer_id = $this->api_client->create_customer( $this->with_session_id( $this->map_customer_data( $order, $user_id ) ) );
 		$this->persist_customer_id( $user_id, $customer_id );
 
 		return $customer_id;
+	}
+
+	/**
+	 * Get the order's user's stored customer when it is not the missing one; nothing is created.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @param WC_Order $order               Order being charged.
+	 * @param string   $missing_customer_id Customer ID the platform did not find.
+	 * @return string|null Null for a guest order, a user with no stored customer, or one whose stored customer is the missing one.
+	 */
+	public function get_other_user_customer_id( WC_Order $order, string $missing_customer_id ): ?string {
+		$user_id          = $this->get_order_user_id( $order );
+		$user_customer_id = null !== $user_id ? $this->migrate_and_get_customer_id( $user_id ) : null;
+
+		return null !== $user_customer_id && $missing_customer_id !== $user_customer_id ? $user_customer_id : null;
+	}
+
+	/**
+	 * Give the customer the platform accepted to the renewal's subscriptions that hold the charged card and the missing customer.
+	 *
+	 * The payment proves the customer only for the card it charged, as in client 11.2.0
+	 * (includes/compat/subscriptions/trait-wc-payment-gateway-wcpay-subscriptions.php:1433-1448).
+	 *
+	 * @since 11.2.0
+	 *
+	 * @param WC_Order $renewal_order     Renewal order the retry paid.
+	 * @param string   $payment_method_id Saved payment method the platform accepted with the customer.
+	 * @param string   $stale_customer_id Customer the platform did not find.
+	 * @param string   $customer_id       Customer the platform accepted.
+	 */
+	public function replace_stale_subscription_customer_id( WC_Order $renewal_order, string $payment_method_id, string $stale_customer_id, string $customer_id ): void {
+		if ( ! function_exists( 'wcs_get_subscriptions_for_renewal_order' ) ) {
+			return;
+		}
+
+		foreach ( (array) wcs_get_subscriptions_for_renewal_order( $renewal_order->get_id() ) as $subscription ) {
+			if ( ! $subscription instanceof WC_Order ) {
+				continue;
+			}
+			$token_ids = $subscription->get_payment_tokens();
+			$token     = WC_Payment_Tokens::get( (int) end( $token_ids ) );
+			if ( ! $token instanceof WC_Payment_Token || $payment_method_id !== $token->get_token() || $stale_customer_id !== $subscription->get_meta( '_stripe_customer_id', true ) ) {
+				continue;
+			}
+
+			$subscription->update_meta_data( '_stripe_customer_id', $customer_id );
+			$subscription->save_meta_data();
+		}
 	}
 
 	/**
