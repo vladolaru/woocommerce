@@ -376,11 +376,35 @@ describe( 'WooPayments express checkout', () => {
 			'<p id="wcpay-express-checkout-button-separator">OR</p>' +
 			'</div>';
 
+		// jQuery BlockUI's element block, reduced to the state it keeps: `block()` marks the element blocked, `unblock()`
+		// clears it, and `data( 'blockUI.isBlocked' )` reads it (js/jquery-blockui/jquery.blockUI.js); `attr()` and
+		// `removeAttr()` act on the container element and chain.
 		containerJQuery = {
 			length: 1,
-			block: jest.fn(),
-			unblock: jest.fn(),
-			data: jest.fn(),
+			block: jest.fn( () => {
+				containerJQuery.isBlocked = true;
+			} ),
+			unblock: jest.fn( () => {
+				containerJQuery.isBlocked = false;
+			} ),
+			data: jest.fn( ( key ) =>
+				key === 'blockUI.isBlocked'
+					? containerJQuery.isBlocked
+					: undefined
+			),
+			attr: jest.fn( ( name, value ) => {
+				document
+					.getElementById( 'wcpay-express-checkout-element' )
+					.setAttribute( name, value );
+				return containerJQuery;
+			} ),
+			removeAttr: jest.fn( ( name ) => {
+				document
+					.getElementById( 'wcpay-express-checkout-element' )
+					.removeAttribute( name );
+				return containerJQuery;
+			} ),
+			isBlocked: false,
 		};
 		window.alert = jest.fn();
 		const jQueryMock = createJQueryMock();
@@ -2320,8 +2344,9 @@ describe( 'WooPayments express checkout', () => {
 			'<input type="hidden" name="attribute_pa_color" value="red" />';
 		await Promise.resolve();
 		jest.advanceTimersByTime( 250 );
-		await Promise.resolve();
-		await Promise.resolve();
+		// The click comes once the preview has answered: a click while it is pending is rejected (client 11.2.0
+		// shortcode-buttons-express/index.js:320-324).
+		await flushMicrotasks();
 
 		await expressHandlers.click( { resolve: resolveClick } );
 		await Promise.resolve();
@@ -2340,6 +2365,10 @@ describe( 'WooPayments express checkout', () => {
 		jest.useFakeTimers();
 		setProductPage( { iapi: true } );
 		window.wcpayExpressCheckoutParams.product.needs_shipping = true;
+		// A page without jQuery BlockUI: nothing covers the button during the preview, so the click goes through
+		// (register row 237). With BlockUI the click is rejected while the preview is pending.
+		containerJQuery.block = undefined;
+		containerJQuery.unblock = undefined;
 
 		require( '../woopayments-express-checkout' );
 		await jest.advanceTimersByTimeAsync( 0 );
@@ -3552,8 +3581,10 @@ describe( 'WooPayments express checkout', () => {
 			await mountReadyWallet();
 
 			typeQuantity( '2' );
+			// Client 11.2.0 button-ui.js:28-34.
 			expect( containerJQuery.block ).toHaveBeenCalledWith( {
 				message: null,
+				overlayCSS: { background: '#fff', opacity: 0.6 },
 			} );
 			jest.advanceTimersByTime( 200 );
 			typeQuantity( '3' );
@@ -3824,8 +3855,10 @@ describe( 'WooPayments express checkout', () => {
 			input().dispatchEvent(
 				new window.Event( 'change', { bubbles: true } )
 			);
+			// Client 11.2.0 button-ui.js:28-34.
 			expect( containerJQuery.block ).toHaveBeenCalledWith( {
 				message: null,
+				overlayCSS: { background: '#fff', opacity: 0.6 },
 			} );
 			jest.advanceTimersByTime( 250 );
 			await flushMicrotasks();
@@ -4495,6 +4528,102 @@ describe( 'WooPayments express checkout', () => {
 					.getElementById( 'wcpay-express-checkout-element' )
 					.classList.contains( 'is-ready' )
 			).toBe( false );
+		} );
+	} );
+
+	// Client 11.2.0 refreshes the wallet on `updated_checkout` and `updated_cart_totals` behind a numbered, blocked
+	// refresh (shortcode-buttons-express/index.js:506-571, :758-790; button-ui.js:18-44; tests in
+	// tokenized-express-checkout--shortcode-checkout.test.js).
+	describe( 'a cart or checkout refresh', () => {
+		function getCartAt( totalPrice ) {
+			const cart = getCartResponse();
+			cart.totals = Object.assign( {}, cart.totals, {
+				total_price: totalPrice,
+			} );
+			return cart;
+		}
+
+		test( 'mounts once, at the newer total, when two refreshes answer out of order', async () => {
+			const older = createDeferred();
+			const newer = createDeferred();
+			const olderCart = getCartAt( '5000' );
+			olderCart.needs_shipping = false;
+			window.wp.apiFetch
+				.mockReturnValueOnce( older.promise )
+				.mockReturnValueOnce( newer.promise );
+			require( '../woopayments-express-checkout' );
+
+			const olderRefresh = bodyEventHandlers.updated_checkout();
+			const newerRefresh = bodyEventHandlers.updated_checkout();
+			newer.resolve( getCartAt( '7000' ) );
+			await newerRefresh;
+			older.resolve( olderCart );
+			await olderRefresh;
+			const event = { resolve: jest.fn(), reject: jest.fn() };
+			await expressHandlers.click( event );
+
+			expect( expressElement.mount ).toHaveBeenCalledTimes( 1 );
+			expect( stripe.elements ).toHaveBeenCalledTimes( 1 );
+			expect( stripe.elements ).toHaveBeenCalledWith(
+				expect.objectContaining( { amount: 7000 } )
+			);
+			// The sheet opens on the newer cart, which needs shipping.
+			expect( event.resolve ).toHaveBeenCalledWith(
+				expect.objectContaining( { shippingAddressRequired: true } )
+			);
+		} );
+
+		test( 'rejects a click while the newest refreshed cart is on its way, and announces why', async () => {
+			const older = createDeferred();
+			const newer = createDeferred();
+			const speak = jest.fn();
+			window.wp.a11y = { speak };
+			require( '../woopayments-express-checkout' );
+			await bodyEventHandlers.updated_checkout();
+			window.wp.apiFetch
+				.mockReturnValueOnce( older.promise )
+				.mockReturnValueOnce( newer.promise );
+
+			const olderRefresh = bodyEventHandlers.updated_checkout();
+			const newerRefresh = bodyEventHandlers.updated_checkout();
+			older.resolve( getCartResponse() );
+			await olderRefresh;
+			const event = { resolve: jest.fn(), reject: jest.fn() };
+			await expressHandlers.click( event );
+
+			expect( event.reject ).toHaveBeenCalled();
+			expect( event.resolve ).not.toHaveBeenCalled();
+			expect( speak ).toHaveBeenCalledWith(
+				'Updating payment details. Please try again in a moment.',
+				'assertive'
+			);
+			expect(
+				document
+					.getElementById( 'wcpay-express-checkout-element' )
+					.getAttribute( 'aria-busy' )
+			).toBe( 'true' );
+
+			newer.resolve( getCartResponse() );
+			await newerRefresh;
+		} );
+
+		test( 'hides the button, lifts the overlay and rejects clicks when the refreshed cart fails to load', async () => {
+			require( '../woopayments-express-checkout' );
+			await bodyEventHandlers.updated_checkout();
+			window.wp.apiFetch.mockRejectedValueOnce( new Error( 'offline' ) );
+
+			await bodyEventHandlers.updated_checkout();
+			const event = { resolve: jest.fn(), reject: jest.fn() };
+			await expressHandlers.click( event );
+
+			const container = document.getElementById(
+				'wcpay-express-checkout-element'
+			);
+			expect( container.style.display ).toBe( 'none' );
+			expect( container.hasAttribute( 'aria-busy' ) ).toBe( false );
+			expect( containerJQuery.isBlocked ).toBe( false );
+			expect( event.reject ).toHaveBeenCalled();
+			expect( event.resolve ).not.toHaveBeenCalled();
 		} );
 	} );
 

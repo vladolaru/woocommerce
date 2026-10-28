@@ -267,8 +267,9 @@ class WooPaymentsExpressCheckoutController implements RegisterHooksInterface {
 				self::CLASSIC_EXPRESS_CHECKOUT_SCRIPT_HANDLE,
 				WC()->plugin_url() . '/assets/js/frontend/woopayments-express-checkout' . $suffix . '.js',
 				// wp-hooks on every surface: the extension filters (WooCommerce Subscriptions, Deposits, Product Bundles) run
-				// through it, as the client 11.1.0 bundle that imports @wordpress/hooks does.
-				array( 'jquery', WooPaymentsFrontendAssets::STRIPE_SCRIPT_HANDLE, 'wp-api-fetch', 'wp-hooks', 'wp-i18n' ),
+				// through it, as the client 11.1.0 bundle that imports @wordpress/hooks does. wp-a11y announces a click on the
+				// refresh overlay, as the client 11.2.0 bundle's @wordpress/a11y speak() does.
+				array( 'jquery', WooPaymentsFrontendAssets::STRIPE_SCRIPT_HANDLE, 'wp-a11y', 'wp-api-fetch', 'wp-hooks', 'wp-i18n' ),
 				WC_VERSION,
 				true
 			);

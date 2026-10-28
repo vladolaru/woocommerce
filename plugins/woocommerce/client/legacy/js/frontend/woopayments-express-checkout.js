@@ -9,6 +9,11 @@
 	var _n = window.wp.i18n._n;
 	var sprintf = window.wp.i18n.sprintf;
 	var cachedCartData = null;
+	// Cart and checkout refreshes are numbered, so a slower, superseded one never publishes its cart, remounts Elements
+	// or lifts the overlay over a newer one.
+	var latestForcedRefreshId = 0;
+	// When a click last hit the refresh overlay; one announcement per burst of clicks.
+	var lastBlockedClickTime = -Infinity;
 	var cachedStripe = null;
 	var elements = null;
 	var expressElement = null;
@@ -1810,36 +1815,71 @@
 		);
 	}
 
+	// blockUI clears this on `unblock()`, before the overlay finishes fading (client 11.2.0 button-ui.js:18-19).
+	function isExpressButtonBlocked() {
+		return Boolean(
+			$( '#wcpay-express-checkout-element' ).data( 'blockUI.isBlocked' )
+		);
+	}
+
 	/**
-	 * Cover the wallet button while its amount is being refreshed. Client 11.1.0 shortcode-buttons-express/button-ui.js:18-26;
-	 * blockUI comes with WooCommerce's product-page scripts, which the client relies on in the same way.
+	 * Cover the wallet button while its amount is being refreshed, with the overlay WooCommerce paints over the order
+	 * review. Client 11.2.0 shortcode-buttons-express/button-ui.js:21-35; blockUI comes with WooCommerce's cart, checkout
+	 * and product-page scripts, which the client relies on in the same way.
 	 */
 	function blockExpressButton() {
 		var $container = $( '#wcpay-express-checkout-element' );
 
 		if (
 			typeof $container.block !== 'function' ||
-			$container.data( 'blockUI.isBlocked' )
+			isExpressButtonBlocked()
 		) {
 			return;
 		}
 
-		$container.block( { message: null } );
+		$container.attr( 'aria-busy', 'true' ).block( {
+			message: null,
+			overlayCSS: { background: '#fff', opacity: 0.6 },
+		} );
+	}
+
+	// Lift the overlay without touching visibility (client 11.2.0 button-ui.js:37-39).
+	function liftExpressButtonBlock() {
+		var $container = $( '#wcpay-express-checkout-element' );
+
+		$container.removeAttr( 'aria-busy' );
+		if ( typeof $container.unblock === 'function' ) {
+			$container.unblock();
+		}
 	}
 
 	/**
-	 * Client 11.1.0 shortcode-buttons-express/button-ui.js:28-31, which also shows the container. Native shows it only
+	 * Client 11.2.0 shortcode-buttons-express/button-ui.js:41-44, which also shows the container. Native shows it only
 	 * once the wallet reported a payment method, so a browser without one gets no empty button area.
 	 */
 	function unblockExpressButton() {
-		var $container = $( '#wcpay-express-checkout-element' );
-
 		if ( expressButtonAvailable ) {
 			showExpressContainer();
 		}
 
-		if ( typeof $container.unblock === 'function' ) {
-			$container.unblock();
+		liftExpressButtonBlock();
+	}
+
+	// A click on the refresh overlay says nothing to screen-reader users, so it is announced once per burst of clicks
+	// (client 11.2.0 shortcode-buttons-express/index.js:67-80, a leading-edge 1000 ms debounce).
+	function announceRefreshInProgress() {
+		var now = Date.now();
+		var isNewBurst = now - lastBlockedClickTime >= 1000;
+
+		lastBlockedClickTime = now;
+		if ( isNewBurst ) {
+			window.wp.a11y.speak(
+				__(
+					'Updating payment details. Please try again in a moment.',
+					'woocommerce'
+				),
+				'assertive'
+			);
 		}
 	}
 
@@ -3119,11 +3159,19 @@
 		};
 	}
 
-	async function initExpressCheckout( previewCartData ) {
+	async function initExpressCheckout( previewCartData, refreshId ) {
 		var stripe;
 		var total;
 		var initialProductSelection;
 		var previewRequestId;
+		var freshCartData;
+		// Client 11.2.0 shortcode-buttons-express/index.js:506-571: a refresh a newer one superseded publishes, mounts
+		// and lifts nothing.
+		var isSuperseded = function () {
+			return (
+				refreshId !== undefined && refreshId !== latestForcedRefreshId
+			);
+		};
 
 		if (
 			isBlockSurface() ||
@@ -3180,9 +3228,18 @@
 					cachedCartData = config.product;
 				}
 			} else {
-				cachedCartData = await getCart();
+				freshCartData = await getCart();
+				if ( isSuperseded() ) {
+					return;
+				}
+				cachedCartData = freshCartData;
 			}
 		} catch ( error ) {
+			if ( isSuperseded() ) {
+				return;
+			}
+			// Nothing trustworthy is left, so the button hides and clicks are rejected until a later refresh succeeds.
+			cachedCartData = null;
 			hideExpressButton();
 			return;
 		}
@@ -3255,6 +3312,20 @@
 			// confirmation dialog instead of opening the wallet sheet.
 			if ( config.login_confirmation ) {
 				displayLoginConfirmation( event && event.expressPaymentType );
+				return;
+			}
+
+			// Client 11.2.0 shortcode-buttons-express/index.js:320-330: the Element mounted before a refresh stays
+			// clickable throughout it, and the overlay stops pointers only, so a click while blocked is rejected; so is a
+			// click with no cart to build the sheet from.
+			if ( isExpressButtonBlocked() ) {
+				event.reject();
+				announceRefreshInProgress();
+				return;
+			}
+
+			if ( ! cachedCartData && ! ( isProduct() && config.product ) ) {
+				event.reject();
 				return;
 			}
 
@@ -3375,8 +3446,8 @@
 		expressElement.mount( '#wcpay-express-checkout-element' );
 	}
 
-	function initializeExpressCheckout( previewCartData ) {
-		return initExpressCheckout( previewCartData ).then(
+	function initializeExpressCheckout( previewCartData, refreshId ) {
+		return initExpressCheckout( previewCartData, refreshId ).then(
 			function ( result ) {
 				watchIapiVariationSelection();
 				return result;
@@ -3384,6 +3455,27 @@
 			function ( error ) {
 				watchIapiVariationSelection();
 				throw error;
+			}
+		);
+	}
+
+	/**
+	 * Re-mount the wallet on a fresh cart after WooCommerce refreshed the cart or the checkout, keeping the button
+	 * blocked meanwhile and the previous cart until the new one lands. Client 11.2.0 refreshExpressCheckoutElement()
+	 * (shortcode-buttons-express/index.js:758-790).
+	 *
+	 * @return {Promise} Settles once the wallet is refreshed.
+	 */
+	function refreshExpressCheckout() {
+		var refreshId = ++latestForcedRefreshId;
+
+		blockExpressButton();
+
+		return initializeExpressCheckout( undefined, refreshId ).finally(
+			function () {
+				if ( refreshId === latestForcedRefreshId ) {
+					liftExpressButtonBlock();
+				}
 			}
 		);
 	}
@@ -3467,13 +3559,11 @@
 		}
 
 		$( document.body ).on( 'updated_checkout', function () {
-			cachedCartData = null;
-			return initializeExpressCheckout();
+			return refreshExpressCheckout();
 		} );
 
 		$( document.body ).on( 'updated_cart_totals', function () {
-			cachedCartData = null;
-			return initializeExpressCheckout();
+			return refreshExpressCheckout();
 		} );
 	} );
 	// Expose internals for unit testing only.

@@ -115,6 +115,7 @@ class WooPaymentsExpressCheckoutControllerTest extends WC_Unit_Test_Case {
 		$this->assertStringContainsString( 'var wcpayExpressCheckoutParams', $localized_data );
 		$this->assertStringContainsString( '"enabled_methods":["payment_request"]', $localized_data );
 		$this->assertContains( 'wp-hooks', wp_scripts()->registered['wc-woopayments-express-checkout']->deps, 'The extension compatibility filters need wp-hooks on checkout too.' );
+		$this->assertContains( 'wp-a11y', wp_scripts()->registered['wc-woopayments-express-checkout']->deps, 'A click on the refresh overlay is announced through wp.a11y (client 11.2.0 shortcode-buttons-express/index.js:67-80).' );
 	}
 
 	/**
