@@ -68,7 +68,8 @@ class WooPaymentsLoanApprovedNoteTest extends WC_Unit_Test_Case {
 		$this->assertSame( Note::E_WC_ADMIN_NOTE_INFORMATIONAL, $note->get_type() );
 		$this->assertSame( 'woocommerce-payments', $note->get_source() );
 		$this->assertStringContainsString( 'Congratulations! Your capital loan has been approved and ', $note->get_content() );
-		$this->assertStringContainsString( wp_kses_normalize_entities( wp_strip_all_tags( wc_price( 12345.67 ) ) ), $note->get_content() );
+		// Client 11.2.0 tests/unit/test-class-wc-payments-account.php:3601.
+		$this->assertStringContainsString( '$12,345.67', html_entity_decode( $note->get_content() ) );
 		$this->assertStringContainsString( ' was deposited into the bank account linked to WooPayments.', $note->get_content() );
 
 		$content_data = (array) $note->get_content_data();
@@ -91,10 +92,8 @@ class WooPaymentsLoanApprovedNoteTest extends WC_Unit_Test_Case {
 
 		$this->sut->handle_loan_approved_inbox_note( $this->get_active_loan_account() );
 
-		$this->assertStringContainsString(
-			wp_kses_normalize_entities( wp_strip_all_tags( wc_price( 12345.67, array( 'currency' => 'CHF' ) ) ) ),
-			$this->get_single_note()->get_content()
-		);
+		// Client 11.2.0 tests/unit/test-class-wc-payments-account.php:3636.
+		$this->assertStringContainsString( 'CHF12,345.67', html_entity_decode( $this->get_single_note()->get_content() ) );
 	}
 
 	/**
@@ -106,10 +105,7 @@ class WooPaymentsLoanApprovedNoteTest extends WC_Unit_Test_Case {
 
 		$this->sut->handle_loan_approved_inbox_note( $this->get_active_loan_account() );
 
-		$this->assertStringContainsString(
-			wp_kses_normalize_entities( wp_strip_all_tags( wc_price( 1000.0, array( 'currency' => 'USD' ) ) ) ) . ' USD was deposited',
-			$this->get_single_note()->get_content()
-		);
+		$this->assertStringContainsString( '$1,000.00 USD was deposited', html_entity_decode( $this->get_single_note()->get_content() ) );
 	}
 
 	/**
