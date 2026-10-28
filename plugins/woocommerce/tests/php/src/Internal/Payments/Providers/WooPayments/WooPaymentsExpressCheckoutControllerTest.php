@@ -49,6 +49,7 @@ class WooPaymentsExpressCheckoutControllerTest extends WC_Unit_Test_Case {
 		remove_all_filters( 'woocommerce_is_cart' );
 		remove_all_filters( 'woocommerce_is_product' );
 		$this->set_order_pay_query_var( 0 );
+		unset( $_GET['change_payment_method'] );
 		wp_dequeue_script( 'wc-woopayments-express-checkout' );
 		wp_dequeue_style( 'wc-woopayments-express-checkout' );
 		wp_dequeue_script( 'wp-hooks' );
@@ -171,22 +172,40 @@ class WooPaymentsExpressCheckoutControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should enqueue express checkout assets with pay-for-order context on order-pay pages.
+	 * Client 11.2.0 loads no express checkout on a subscription's change payment method page
+	 * (class-wc-payments-express-checkout-button-handler.php:83-86). On that page the order-pay route names a subscription
+	 * that needs payment (an unpaid parent or last renewal), so the service would offer the button; it stands in here.
+	 *
+	 * @testdox Should enqueue express checkout assets with pay-for-order context on $scenario.
+	 * @testWith ["an order-pay page", false, true]
+	 *           ["the change payment method page, with none", true, false]
+	 *
+	 * @param string $scenario              Scenario description.
+	 * @param bool   $change_payment_method Whether the request carries change_payment_method.
+	 * @param bool   $loaded                Whether the assets load and the params are localized.
 	 */
-	public function test_enqueue_frontend_assets_loads_on_order_pay_page(): void {
+	public function test_enqueue_frontend_assets_on_order_pay_pages( string $scenario, bool $change_payment_method, bool $loaded ): void {
+		unset( $scenario );
 		$service   = new RecordingExpressCheckoutService();
 		$this->sut = $this->create_controller( true, $service );
 		$this->set_checkout_shortcode_page();
 		$this->set_order_pay_query_var( 123 );
+		if ( $change_payment_method ) {
+			$_GET['change_payment_method'] = '123';
+		}
 
 		$this->sut->enqueue_frontend_assets();
 
-		$this->assertTrue( wp_script_is( 'wc-woopayments-express-checkout', 'enqueued' ) );
-		$this->assertTrue( wp_style_is( 'wc-woopayments-express-checkout', 'enqueued' ) );
-		$this->assertSame( array( 'pay_for_order' ), $service->contexts );
+		$this->assertSame( $loaded, wp_script_is( 'wc-woopayments-express-checkout', 'enqueued' ) );
+		$this->assertSame( $loaded, wp_style_is( 'wc-woopayments-express-checkout', 'enqueued' ) );
+		$this->assertSame( $loaded ? array( 'pay_for_order' ) : array(), $service->contexts );
 		$localized_data = wp_scripts()->get_data( 'wc-woopayments-express-checkout', 'data' );
-		$this->assertIsString( $localized_data );
-		$this->assertStringContainsString( '"button_context":"pay_for_order"', $localized_data );
+		if ( $loaded ) {
+			$this->assertIsString( $localized_data );
+			$this->assertStringContainsString( '"button_context":"pay_for_order"', $localized_data );
+		} else {
+			$this->assertFalse( $localized_data );
+		}
 	}
 
 	/**

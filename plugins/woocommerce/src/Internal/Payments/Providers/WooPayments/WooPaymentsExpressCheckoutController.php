@@ -151,10 +151,12 @@ class WooPaymentsExpressCheckoutController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Enqueue the express checkout frontend assets on supported shopper surfaces.
+	 * Enqueue the express checkout frontend assets on supported shopper surfaces; none on a subscription's change payment
+	 * method page, as client 11.2.0 class-wc-payments-express-checkout-button-handler.php:83-86.
 	 */
 	public function enqueue_frontend_assets(): void {
-		if ( ! $this->is_supported_frontend_surface() ) {
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only request flag.
+		if ( isset( $_GET['change_payment_method'] ) || ! $this->is_supported_frontend_surface() ) {
 			return;
 		}
 
