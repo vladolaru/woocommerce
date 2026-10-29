@@ -702,7 +702,9 @@ class WooPaymentsOrderEffectApplier {
 
 		$express_type = $effects['express_checkout_type'];
 		if ( '' !== $express_type ) {
-			$title = $this->registered_payment_method_title( $express_type, $display_country );
+			// No country: client 11.2.0 titles express payments with get_title() (class-wc-payment-gateway-wcpay.php:2730-2732),
+			// so a GB account's Link wallet payment is "Link", not its checkout name "Onelink".
+			$title = $this->registered_payment_method_title( $express_type, '' );
 			if ( '' === $title ) {
 				$title = $this->non_card_payment_method_title( $express_type );
 			}

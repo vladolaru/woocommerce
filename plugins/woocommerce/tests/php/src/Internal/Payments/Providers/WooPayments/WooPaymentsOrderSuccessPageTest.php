@@ -508,6 +508,32 @@ class WooPaymentsOrderSuccessPageTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * Client 11.2.0 `show_express_checkout_payment_method_name()` (`class-wc-payments-order-success-page.php:245-262`) reads the
+	 * icon and the title with no country, so a GB account's express Link payment shows the Link logo and "Link", where
+	 * the GB checkout form says "Onelink" (`LinkDefinition.php:64-70`, `:152-158`).
+	 *
+	 * @testdox Should show the Link logo and title for an express Link payment on a GB account.
+	 */
+	public function test_express_link_payment_on_a_gb_account_shows_link(): void {
+		$page  = $this->create_page( null, null, 'GB' );
+		$order = wc_create_order();
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+		$order->update_meta_data( '_wcpay_express_checkout_payment_method', 'link' );
+		$order->save();
+		add_filter( 'woocommerce_is_order_received_page', '__return_true' );
+
+		try {
+			$title = $page->filter_payment_method_title( 'Link (WooPayments)', $order );
+		} finally {
+			remove_filter( 'woocommerce_is_order_received_page', '__return_true' );
+		}
+
+		$this->assertStringContainsString( '/assets/images/payment-methods/link-color.svg', $title );
+		$this->assertStringContainsString( 'alt="Link"', $title );
+	}
+
+	/**
 	 * @testdox Should render card brand and last four on the order-received page.
 	 */
 	public function test_filters_card_payment_method_title_on_order_received_page(): void {
@@ -921,16 +947,17 @@ class WooPaymentsOrderSuccessPageTest extends WC_Unit_Test_Case {
 	/**
 	 * Create an order-success page controller.
 	 *
-	 * @param WooPaymentsFrontendTrackingController|null $tracker    Optional tracking controller.
-	 * @param Client|null                                $api_client Optional API client.
+	 * @param WooPaymentsFrontendTrackingController|null $tracker         Optional tracking controller.
+	 * @param Client|null                                $api_client      Optional API client.
+	 * @param string                                     $account_country Account country.
 	 * @return WooPaymentsOrderSuccessPage
 	 */
-	private function create_page( ?WooPaymentsFrontendTrackingController $tracker = null, ?Client $api_client = null ): WooPaymentsOrderSuccessPage {
+	private function create_page( ?WooPaymentsFrontendTrackingController $tracker = null, ?Client $api_client = null, string $account_country = 'US' ): WooPaymentsOrderSuccessPage {
 		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'get_account_country' ) )
 			->getMock();
-		$account_service->method( 'get_account_country' )->willReturn( 'US' );
+		$account_service->method( 'get_account_country' )->willReturn( $account_country );
 
 		$page = new class() extends WooPaymentsOrderSuccessPage {
 			/**

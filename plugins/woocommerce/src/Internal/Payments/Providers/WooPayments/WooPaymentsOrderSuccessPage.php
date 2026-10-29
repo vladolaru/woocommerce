@@ -798,7 +798,9 @@ class WooPaymentsOrderSuccessPage implements RegisterHooksInterface {
 	 * @return string
 	 */
 	private function render_definition_title( PaymentMethodDefinition $definition, WC_Order $order, bool $is_express = false ): string {
-		$account_country = $this->account_service->get_account_country();
+		// Express titles read no country, as client 11.2.0 show_express_checkout_payment_method_name() does
+		// (class-wc-payments-order-success-page.php:245-262); only the LPM title is localized (:333-372).
+		$account_country = $is_express ? null : $this->account_service->get_account_country();
 		$icon_url        = WC()->plugin_url() . '/' . ltrim( $definition->get_icon_asset_path( $account_country ), '/' );
 		$dark_icon_url   = WC()->plugin_url() . '/' . ltrim( $definition->get_dark_icon_asset_path( $account_country ), '/' );
 

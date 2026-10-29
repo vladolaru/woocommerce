@@ -619,6 +619,35 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * Client 11.2.0 `class-wc-payments-checkout.php:634-636` titles each checkout method for the account country, and
+	 * `LinkDefinition.php:64-70`, `:152-158` name Link "Onelink" with `onelink.svg` for a GB account.
+	 *
+	 * @testdox Should name Link "Onelink" with its own logo in a GB account's checkout form.
+	 */
+	public function test_get_payment_fields_js_config_names_link_onelink_for_a_gb_account(): void {
+		$account_service = $this->create_account_service(
+			true,
+			array(
+				'country'      => 'GB',
+				'capabilities' => array(
+					'card_payments' => 'active',
+					'link_payments' => 'active',
+				),
+				'fees'         => array( 'link' => array() ),
+			),
+			array( 'upe_enabled_payment_method_ids' => array( 'card', 'link' ) )
+		);
+		$registry        = new PaymentMethodRegistry();
+		$assets          = new WooPaymentsCheckoutAssets();
+		$assets->init( $account_service, $this->create_woopay_session_service( false ), $this->create_woopay_eligibility( false ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller(), $registry );
+
+		$link_config = $assets->get_payment_fields_js_config( self::CARD_SUPPORTS, $registry->get( 'card' ) )['paymentMethodsConfig']['link'];
+
+		$this->assertSame( 'Onelink', $link_config['title'] );
+		$this->assertStringEndsWith( '/assets/images/payment-methods/onelink.svg', $link_config['icon'] );
+	}
+
+	/**
 	 * Card config paths that fold Link in.
 	 *
 	 * @return array<string,array{0:bool}>

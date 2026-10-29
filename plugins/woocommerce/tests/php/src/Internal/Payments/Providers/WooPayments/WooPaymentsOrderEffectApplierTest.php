@@ -583,6 +583,46 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * Client 11.2.0 titles an express payment with the method's title for no country (`class-wc-payment-gateway-wcpay.php:2730-2732`),
+	 * so a Link wallet charge on a GB account is "Link", not the GB checkout name "Onelink" (`LinkDefinition.php:64-70`).
+	 *
+	 * @testdox A Link wallet payment on a GB account is titled "Link (WooPayments)".
+	 */
+	public function test_express_link_payment_on_a_gb_account_is_titled_link(): void {
+		$order           = $this->create_woopayments_order();
+		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_account_country', 'get_account_default_currency', 'get_mode' ) )
+			->getMock();
+		$account_service->method( 'get_account_country' )->willReturn( 'GB' );
+		$account_service->method( 'get_account_default_currency' )->willReturn( 'gbp' );
+		$account_service->method( 'get_mode' )->willReturn( 'live' );
+		$result = array(
+			'charges' => array(
+				'data' => array(
+					array(
+						'payment_method_details' => array(
+							'type' => 'card',
+							'card' => array(
+								'brand'  => 'visa',
+								'last4'  => '4242',
+								'wallet' => array( 'type' => 'link' ),
+							),
+						),
+					),
+				),
+			),
+		);
+
+		$this->create_applier( $this->create_token_service(), null, $account_service )->apply_payment_method_display_details( $order, $result );
+		$order = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 'link', $order->get_meta( '_wcpay_express_checkout_payment_method', true ) );
+		$this->assertSame( 'Link (WooPayments)', $order->get_payment_method_title() );
+	}
+
+	/**
 	 * @testdox A charge type with no registered payment method leaves the order's method and title, and its subscription's, as they are.
 	 *
 	 * Client 11.1.0 set_payment_method_title_for_order() returns before writing either for a type it has no payment method for
