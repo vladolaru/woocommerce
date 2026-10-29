@@ -2939,7 +2939,7 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should refuse a save that would turn on Link and WooPay together, with the settings screen's sentence, before anything is written: $scenario.
+	 * @testdox Should refuse a save that would turn on Link and WooPay together, with the settings screen's sentence, before any settings write: $scenario.
 	 * @dataProvider provide_link_woopay_conflicting_saves
 	 *
 	 * @param string              $scenario      Case.
@@ -2994,6 +2994,15 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 			'(b) WooPay enabled while Link is on' => array(
 				'(b) WooPay enabled while Link is on',
 				array( 'card', 'link' ),
+				'no',
+				array(
+					'is_woopay_enabled'           => true,
+					'payment_request_button_size' => 'medium',
+				),
+			),
+			'WooPay enabled while a noncanonical stored LINK is on' => array(
+				'WooPay enabled while a noncanonical stored LINK is on',
+				array( 'card', 'LINK' ),
 				'no',
 				array(
 					'is_woopay_enabled'           => true,
@@ -3103,7 +3112,78 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 				array( 'link' ),
 				'yes',
 			),
+			'an existing conflict stored with a noncanonical LINK, then an unrelated save' => array(
+				'an existing conflict stored with a noncanonical LINK, then an unrelated save',
+				true,
+				array( 'card', 'LINK' ),
+				'yes',
+				array( 'payment_request_button_size' => 'medium' ),
+				array( 'card', 'link' ),
+				'yes',
+			),
 		);
+	}
+
+	/**
+	 * @testdox Should refuse turning on WooPay beside Link on an expired account cache, applying nothing submitted.
+	 */
+	public function test_update_settings_refuses_link_and_woopay_together_on_an_expired_account_cache(): void {
+		$account = array(
+			'account_id'                 => 'acct_native_test',
+			'is_live'                    => true,
+			'platform_checkout_eligible' => true,
+			'capabilities'               => array(
+				'card_payments' => 'active',
+				'link_payments' => 'active',
+			),
+			'fees'                       => array(
+				'card' => array(),
+				'link' => array(),
+			),
+		);
+		update_option(
+			'wcpay_account_data',
+			array(
+				'data'    => $account,
+				'fetched' => time() - 2 * DAY_IN_SECONDS,
+				'errored' => false,
+			)
+		);
+		// The expired cache is refreshed once, as every settings read does, and answers the same eligible account.
+		$refreshing_api_client = $this->createMock( Client::class );
+		$refreshing_api_client->method( 'is_available' )->willReturn( true );
+		$refreshing_api_client->expects( $this->once() )->method( 'get_account' )->willReturn( $account );
+		wc_get_container()->replace( Client::class, $refreshing_api_client );
+		update_option(
+			'woocommerce_woocommerce_payments_settings',
+			array(
+				'enabled'                        => 'yes',
+				'platform_checkout'              => 'no',
+				'upe_enabled_payment_method_ids' => array( 'card', 'link' ),
+				'payment_request_button_size'    => 'small',
+			)
+		);
+		$stored_before = $this->get_raw_option_value( 'woocommerce_woocommerce_payments_settings' );
+
+		$result = $this->sut->update_settings(
+			array(
+				'is_woopay_enabled'            => true,
+				'payment_request_button_size'  => 'medium',
+				'account_statement_descriptor' => 'NEW STORE',
+			)
+		);
+
+		$this->assertInstanceOf( WP_Error::class, $result );
+		$this->assertSame( 400, $result->get_error_data()['status'] );
+		$this->assertSame(
+			"Link by Stripe and WooPay can't be enabled at the same time. Disable one of them.",
+			$result->get_error_data()['params']['enabled_payment_method_ids']
+		);
+		$this->assertSame( $stored_before, $this->get_raw_option_value( 'woocommerce_woocommerce_payments_settings' ), 'A refused save must leave the settings option byte-identical.' );
+		$this->assertNull( $this->api_client->last_account_settings, 'A refused save must not send account settings to the platform.' );
+		$this->assertSame( 0, $this->api_client->fraud_ruleset_saves, 'A refused save must not save a fraud ruleset.' );
+		$this->assertSame( array(), $this->api_client->capability_requests, 'A refused save must not request capabilities on the platform.' );
+		$this->assertSame( array(), $this->pm_promotions_service->maybe_activated_payment_methods, 'A refused save must not activate promotions.' );
 	}
 
 	/**
