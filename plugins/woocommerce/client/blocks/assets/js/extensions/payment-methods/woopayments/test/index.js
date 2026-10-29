@@ -168,9 +168,20 @@ const mockValidationActions = {
 	clearValidationError: jest.fn(),
 };
 
+// The notices store (core/notices): the notices shown, by context, and the action that removes one.
+let mockNotices = {};
+const mockNoticesActions = {
+	removeNotice: jest.fn(),
+};
+
 jest.mock( '@wordpress/data', () => ( {
 	useSelect: jest.fn(),
-	dispatch: jest.fn( () => mockValidationActions ),
+	select: jest.fn( () => ( {
+		getNotices: ( context ) => mockNotices[ context ] || [],
+	} ) ),
+	dispatch: jest.fn( ( store ) =>
+		store === 'core/notices' ? mockNoticesActions : mockValidationActions
+	),
 } ) );
 
 const originalFetch = window.fetch;
@@ -213,6 +224,12 @@ describe( 'wc-payment-method-woopayments', () => {
 		activePaymentMethod = 'woocommerce_payments';
 		storeListeners.clear();
 		validationErrors = {};
+		mockNotices = {};
+		mockNoticesActions.removeNotice.mockImplementation( ( id, context ) => {
+			mockNotices[ context ] = ( mockNotices[ context ] || [] ).filter(
+				( notice ) => notice.id !== id
+			);
+		} );
 		mockValidationActions.setValidationErrors.mockImplementation(
 			( errors ) => {
 				Object.assign( validationErrors, errors );
@@ -1686,6 +1703,66 @@ describe( 'wc-payment-method-woopayments', () => {
 		} );
 		expect( harness.elementsInstance.submit ).toHaveBeenCalledTimes( 1 );
 		expect( harness.createPaymentMethod ).not.toHaveBeenCalled();
+	} );
+
+	// Client 11.2.0 keeps the notice until the next Place order (core's payment thunks remove it there); native
+	// removes it on the shopper's next edit in the Payment Element.
+	it( 'removes the payment error notice when the shopper edits the Payment Element, and the next payment setup runs', async () => {
+		const linkPhoneError =
+			'Invalid phone number. Check that the correct country is selected.';
+		const harness = await setUpNewCardPayment();
+		const paymentElement =
+			harness.elementsInstance.create.mock.results[ 0 ].value;
+		const editPaymentElement = () =>
+			paymentElement.on.mock.calls
+				.filter( ( [ event ] ) => event === 'change' )
+				.forEach( ( [ , handler ] ) =>
+					handler( {
+						elementType: 'payment',
+						complete: true,
+						empty: false,
+						collapsed: false,
+						value: { type: 'card' },
+					} )
+				);
+		harness.elementsInstance.submit.mockResolvedValueOnce( {
+			error: {
+				type: 'validation_error',
+				code: 'invalid_phone_number',
+				message: linkPhoneError,
+			},
+		} );
+
+		// Nothing is shown yet, so an edit removes nothing.
+		editPaymentElement();
+		expect( mockNoticesActions.removeNotice ).not.toHaveBeenCalled();
+
+		expect( await harness.setupCallbacks[ 0 ]() ).toEqual( {
+			type: 'error',
+			message: linkPhoneError,
+		} );
+		// Core shows the error response as this notice in the payments context.
+		mockNotices.payments = [
+			{ id: 'wc-payment-error', content: linkPhoneError },
+		];
+
+		editPaymentElement();
+
+		expect( mockNoticesActions.removeNotice ).toHaveBeenCalledTimes( 1 );
+		expect( mockNoticesActions.removeNotice ).toHaveBeenCalledWith(
+			'wc-payment-error',
+			'payments'
+		);
+		expect( mockNotices.payments ).toEqual( [] );
+
+		const retryResult = await harness.setupCallbacks[ 0 ]();
+
+		expect( harness.elementsInstance.submit ).toHaveBeenCalledTimes( 2 );
+		expect( harness.createPaymentMethod ).toHaveBeenCalledTimes( 1 );
+		expect( retryResult.type ).toBe( 'success' );
+		expect( retryResult.meta.paymentMethodData ).toMatchObject( {
+			'wcpay-payment-method': 'pm_123',
+		} );
 	} );
 
 	it( 'records failed tokenization with the error sentinel instead of aborting', async () => {

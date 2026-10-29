@@ -12,7 +12,7 @@ import {
 	useRef,
 	useState,
 } from '@wordpress/element';
-import { dispatch, useSelect } from '@wordpress/data';
+import { dispatch, select as selectStore, useSelect } from '@wordpress/data';
 import { StoreNotice } from '@woocommerce/blocks-components';
 import FingerprintJS from '@fingerprintjs/fingerprintjs';
 
@@ -1531,6 +1531,21 @@ const WooPaymentsContent = ( {
 				setLoadErrorMessage( event?.error?.message || '' );
 				resolve( false );
 			} );
+		} );
+		// An edit in the element removes the payment error notice its validation raised, which core and client 11.2.0
+		// keep until the next Place order.
+		paymentElement.current.on( 'change', () => {
+			const context = emitResponseRef.current.noticeContexts.PAYMENTS;
+			const isErrorShown = selectStore( 'core/notices' )
+				.getNotices( context )
+				.some( ( notice ) => notice.id === 'wc-payment-error' );
+
+			if ( isErrorShown ) {
+				dispatch( 'core/notices' ).removeNotice(
+					'wc-payment-error',
+					context
+				);
+			}
 		} );
 		paymentElement.current.mount( elementContainer.current );
 	}, [ isStripeLoaded, paymentSettings, shouldSavePayment ] );
