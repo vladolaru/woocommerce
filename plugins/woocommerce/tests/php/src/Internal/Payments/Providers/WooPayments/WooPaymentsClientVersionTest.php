@@ -32,7 +32,7 @@ class WooPaymentsClientVersionTest extends WC_Unit_Test_Case {
 	 * @testdox Should declare the WooPayments version this runtime was verified against; a bump is a deliberate, reviewed change.
 	 */
 	public function test_version_is_the_verified_platform_contract(): void {
-		$this->assertSame( '11.1.0', WooPaymentsClientVersion::VERSION, 'Bumping the declared client version requires reviewing every platform gate between the versions first — see the class docblock before changing this.' );
+		$this->assertSame( '11.2.0', WooPaymentsClientVersion::VERSION, 'Bumping the declared client version requires reviewing every platform gate between the versions first — see the class docblock before changing this.' );
 	}
 
 	/**
@@ -56,19 +56,19 @@ class WooPaymentsClientVersionTest extends WC_Unit_Test_Case {
 	 */
 	public function woocommerce_version_provider(): array {
 		return array(
-			'final release'                         => array( '10.4.0', 'WooCommerce Payments/11.1.0-native-woocommerce/10.4.0' ),
-			'trunk build'                           => array( '10.4.0-dev', 'WooCommerce Payments/11.1.0-native-woocommerce/10.4.0' ),
-			'release candidate'                     => array( '10.4.0-rc.1', 'WooCommerce Payments/11.1.0-native-woocommerce/10.4.0-rc.1' ),
-			'beta'                                  => array( '10.4.0-beta.2', 'WooCommerce Payments/11.1.0-native-woocommerce/10.4.0-beta.2' ),
-			'build metadata'                        => array( '10.3.0+build.7', 'WooCommerce Payments/11.1.0-native-woocommerce/10.3.0+build.7' ),
-			'release candidate with build metadata' => array( '10.3.0-rc.1+build.7', 'WooCommerce Payments/11.1.0-native-woocommerce/10.3.0-rc.1+build.7' ),
-			'header-unsafe value'                   => array( "10.4.0\r\nX-Injected: 1", 'WooCommerce Payments/11.1.0-native-woocommerce/10.4.0X-Injected1' ),
-			'a -dev tag not at the end'             => array( '10.4.0-dev.1', 'WooCommerce Payments/11.1.0-native-woocommerce/10.4.0-dev.1' ),
+			'final release'                         => array( '10.4.0', 'WooCommerce Payments/11.2.0-native-woocommerce/10.4.0' ),
+			'trunk build'                           => array( '10.4.0-dev', 'WooCommerce Payments/11.2.0-native-woocommerce/10.4.0' ),
+			'release candidate'                     => array( '10.4.0-rc.1', 'WooCommerce Payments/11.2.0-native-woocommerce/10.4.0-rc.1' ),
+			'beta'                                  => array( '10.4.0-beta.2', 'WooCommerce Payments/11.2.0-native-woocommerce/10.4.0-beta.2' ),
+			'build metadata'                        => array( '10.3.0+build.7', 'WooCommerce Payments/11.2.0-native-woocommerce/10.3.0+build.7' ),
+			'release candidate with build metadata' => array( '10.3.0-rc.1+build.7', 'WooCommerce Payments/11.2.0-native-woocommerce/10.3.0-rc.1+build.7' ),
+			'header-unsafe value'                   => array( "10.4.0\r\nX-Injected: 1", 'WooCommerce Payments/11.2.0-native-woocommerce/10.4.0X-Injected1' ),
+			'a -dev tag not at the end'             => array( '10.4.0-dev.1', 'WooCommerce Payments/11.2.0-native-woocommerce/10.4.0-dev.1' ),
 		);
 	}
 
 	/**
-	 * @testdox Should stay parseable by the platform, whose version gates read the pinned 11.1.0: $wc_version.
+	 * @testdox Should stay parseable by the platform, whose version gates read the pinned 11.2.0: $wc_version.
 	 * @dataProvider platform_parse_provider
 	 *
 	 * @param string|null $wc_version WooCommerce version constant value, or null for the real runtime value.
@@ -82,9 +82,9 @@ class WooPaymentsClientVersionTest extends WC_Unit_Test_Case {
 		$matches    = array();
 
 		$this->assertSame( 1, preg_match( self::PLATFORM_CLIENT_VERSION_PATTERN, $user_agent, $matches ), 'The platform must still recognize the client: ' . $user_agent );
-		$this->assertSame( '11.1.0', $matches[1] );
-		$this->assertTrue( version_compare( $matches[1], WooPaymentsClientVersion::VERSION, '>=' ), 'is_client_version_at_least( 11.1.0 ) must hold.' );
-		$this->assertFalse( version_compare( $matches[1], '11.1.1', '>=' ), 'The WooCommerce version must not raise the gated client version.' );
+		$this->assertSame( '11.2.0', $matches[1] );
+		$this->assertTrue( version_compare( $matches[1], WooPaymentsClientVersion::VERSION, '>=' ), 'is_client_version_at_least( 11.2.0 ) must hold.' );
+		$this->assertFalse( version_compare( $matches[1], '11.2.1', '>=' ), 'The WooCommerce version must not raise the gated client version.' );
 		$this->assertMatchesRegularExpression( '/^[\x21-\x7E ]+$/', $user_agent, 'Only visible ASCII and spaces are valid in an HTTP header value.' );
 	}
 

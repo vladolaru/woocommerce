@@ -214,7 +214,7 @@ class WooPaymentsIntentRequestBuilderTest extends WC_Unit_Test_Case {
 					'type'   => 'online',
 					'online' => array(
 						'ip_address' => \WC_Geolocation::get_ip_address(),
-						'user_agent' => 'WooCommerce Payments/11.1.0-native-woocommerce/10.4.0-rc.1; ' . get_bloginfo( 'url' ),
+						'user_agent' => 'WooCommerce Payments/11.2.0-native-woocommerce/10.4.0-rc.1; ' . get_bloginfo( 'url' ),
 					),
 				),
 			),
