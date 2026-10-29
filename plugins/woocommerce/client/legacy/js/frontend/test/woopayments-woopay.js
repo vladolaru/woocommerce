@@ -821,7 +821,7 @@ describe( 'WooPayments WooPay checkout', () => {
 				expect( document.querySelector( '.woopay-otp-iframe' ) ).toBeNull();
 			} );
 			// A Connect iframe the Blocks script created that never loads: the timeout settles the request (client 11.2.0
-			// connect/woopay-connect.js:120-152 starts it before the wait), and the expired request never posts when the
+			// connect/woopay-connect.js:170-195 starts it before the wait), and the expired request never posts when the
 			// connect page loads after a retry has started.
 			test.each( [
 				[ 'loads late', false ],
@@ -2086,7 +2086,7 @@ describe( 'WooPayments WooPay checkout', () => {
 
 		// Client 11.2.0 keeps one injection state for the connect iframe in window.WooPayConnect
 		// (connect/connect-utils.js:1-30): a Connect that finds the iframe still injecting waits for its load
-		// (connect/woopay-connect.js:62-112, woopay-connect-iframe.js:49-66). Here the iframe carries that wait, as
+		// (connect/woopay-connect.js:67-115, woopay-connect-iframe.js:51-69). Here the iframe carries that wait, as
 		// wooPayConnectPostMessage, for both WooPay scripts: on a Blocks cart the Blocks script creates the iframe.
 		test( 'asks WooPay for the login state through the Blocks script’s Connect iframe only once its connect page loads', async () => {
 			configureDirectCheckout(
@@ -2143,6 +2143,54 @@ describe( 'WooPayments WooPay checkout', () => {
 				{ action: 'getPreferredPaymentMethod' },
 				'https://pay.woo.test'
 			);
+		} );
+
+		// Two direct checkout links can each start a request under one Connect callback name before the first deadline
+		// (each link guards only itself). Client 11.2.0 settles each request on its own timer
+		// (connect/woopay-connect.js:170-195): the first expires at its deadline and never posts; the second waits for
+		// its own answer or deadline.
+		test( 'settles each of two overlapping direct checkout requests on its own deadline', async () => {
+			configureDirectCheckout(
+				'<div class="wc-proceed-to-checkout">' +
+					'<a class="checkout-button" href="https://store.test/checkout/?from=cart">Checkout</a></div>' +
+					'<div class="widget_shopping_cart">' +
+					'<a class="button checkout" href="https://store.test/checkout/?from=mini-cart">Checkout</a></div>'
+			);
+			const postMessage = installConnect();
+			const { __test__ } = require( '../woopayments-woopay' );
+			const navigate = jest.fn();
+			__test__.setNavigate( navigate );
+			await initializeDirectCheckout( true );
+			const getEncryptedDataPosts = () =>
+				postMessage.mock.calls.filter( ( [ message ] ) => message.action === 'getEncryptedData' );
+
+			document.getElementById( 'woopay-connect-iframe' ).remove();
+			jest.useFakeTimers();
+			const cartLink = document.querySelector( '.checkout-button' );
+			const miniCartLink = document.querySelector( '.widget_shopping_cart .checkout' );
+			cartLink.click();
+			await jest.advanceTimersByTimeAsync( 1000 );
+			miniCartLink.click();
+			await jest.advanceTimersByTimeAsync( 4000 );
+
+			expect( navigate ).toHaveBeenCalledTimes( 1 );
+			expect( navigate ).toHaveBeenCalledWith( 'https://store.test/checkout/?from=cart' );
+			expect( miniCartLink.getAttribute( 'aria-disabled' ) ).toBe( 'true' );
+
+			await loadConnectIframe();
+			await flushMicrotasks();
+			expect( getEncryptedDataPosts() ).toHaveLength( 1 );
+
+			// The second request still holds the callback: its own answer (no identity here) settles it before its
+			// deadline, and the store checkout opens for that link.
+			emitConnectMessage( 'get_encrypted_data_success', null );
+			await flushMicrotasks();
+			expect( navigate ).toHaveBeenCalledTimes( 2 );
+			expect( navigate ).toHaveBeenLastCalledWith( 'https://store.test/checkout/?from=mini-cart' );
+
+			await jest.advanceTimersByTimeAsync( 5000 );
+			expect( navigate ).toHaveBeenCalledTimes( 2 );
+			expect( getEncryptedDataPosts() ).toHaveLength( 1 );
 		} );
 
 		test( 'falls back when a replacement Connect iframe never loads and ignores its late load', async () => {

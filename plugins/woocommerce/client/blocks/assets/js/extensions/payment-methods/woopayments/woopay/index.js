@@ -294,7 +294,7 @@ const sendWooPayConnectMessage = (
 	attachWooPayConnectListener();
 
 	// The timeout starts before the wait for the connect page, as client 11.2.0 sendMessageAndListenWith()
-	// (connect/woopay-connect.js:120-152): an iframe that never loads still settles the request, and an expired
+	// (connect/woopay-connect.js:170-195): an iframe that never loads still settles the request, and an expired
 	// request leaves its callback and never posts.
 	return new Promise( ( resolve ) => {
 		let timeoutId;

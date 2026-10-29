@@ -382,29 +382,34 @@
 	) {
 		attachWooPayConnectListener();
 
+		// Each request owns its timer and settled state, as client 11.2.0 sendMessageAndListenWith() owns its timer and
+		// isRejected flag (connect/woopay-connect.js:170-195): the newest request under a name takes the callback, a
+		// deadline settles only its own request, and a value reaching a settled request is ignored. Unlike the client,
+		// an expired request also never posts.
 		return new Promise( function ( resolve ) {
 			var timeoutId;
 			var settled = false;
-
-			wooPayConnectCallbacks[ callbackName ] = function ( value ) {
+			var settle = function ( value ) {
 				if ( settled ) {
 					return;
 				}
 
 				settled = true;
-				if ( timeoutId ) {
-					window.clearTimeout( timeoutId );
+				window.clearTimeout( timeoutId );
+				if ( wooPayConnectCallbacks[ callbackName ] === settle ) {
+					delete wooPayConnectCallbacks[ callbackName ];
 				}
 				resolve( value );
 			};
 
+			wooPayConnectCallbacks[ callbackName ] = settle;
+
 			if ( shouldTimeOut ) {
 				timeoutId = window.setTimeout( function () {
-					resolveWooPayConnectCallback( callbackName, fallback );
+					settle( fallback );
 				}, wooPayConnectTimeout );
 			}
 
-			// This request's own state: after it expires, a retry's callback under the same name must not make it post.
 			getWooPayConnectPostMessage()
 				.then( function ( postMessage ) {
 					if ( ! settled ) {
@@ -412,7 +417,7 @@
 					}
 				} )
 				.catch( function () {
-					resolveWooPayConnectCallback( callbackName, fallback );
+					settle( fallback );
 				} );
 		} );
 	}

@@ -581,8 +581,8 @@ describe( 'wc-payment-method-woopayments-woopay', () => {
 	} );
 
 	// Client 11.2.0 keeps one injection state for the connect iframe in window.WooPayConnect (connect/connect-utils.js:1-30):
-	// a Connect that finds the iframe still injecting waits for its load (connect/woopay-connect.js:62-112,
-	// woopay-connect-iframe.js:49-66). Here the iframe carries that wait, as wooPayConnectPostMessage, for both WooPay
+	// a Connect that finds the iframe still injecting waits for its load (connect/woopay-connect.js:67-115,
+	// woopay-connect-iframe.js:51-69). Here the iframe carries that wait, as wooPayConnectPostMessage, for both WooPay
 	// scripts: the classic one also runs on a Blocks cart (the legacy direct checkout, the Mini-Cart).
 	describe( 'Connect iframe shared with the classic WooPay script', () => {
 		let postMessage;
@@ -713,7 +713,7 @@ describe( 'wc-payment-method-woopayments-woopay', () => {
 				'https://pay.woo.test'
 			);
 		} );
-		// Client 11.2.0 WoopayConnect.sendMessageAndListenWith() (connect/woopay-connect.js:120-152) starts its timeout
+		// Client 11.2.0 WoopayConnect.sendMessageAndListenWith() (connect/woopay-connect.js:170-195) starts its timeout
 		// before it awaits the iframe, so a Connect iframe that never loads still settles the request; native legacy
 		// does the same (woopayments-woopay.js sendWooPayConnectMessage()).
 		describe( 'when the classic script’s Connect iframe never loads', () => {
@@ -833,6 +833,71 @@ describe( 'wc-payment-method-woopayments-woopay', () => {
 						'https://pay.woo.test/checkout/session'
 					);
 				} );
+			} );
+
+			// Two WooPay buttons on the page can each start a session request under one callback name before the first
+			// deadline. Client 11.2.0 gives each request its own timer and isRejected flag, and the newest takes the
+			// listener (connect/woopay-connect.js:170-195): the first expires at its deadline and never posts, the
+			// second keeps the callback for its own answer.
+			it( 'settles each of two overlapping session requests on its own deadline', async () => {
+				registerWooPay();
+				const WooPayButton =
+					registerExpressPaymentMethod.mock.calls[ 0 ][ 0 ].content
+						.type;
+				render(
+					createElement(
+						'div',
+						null,
+						createElement( WooPayButton ),
+						createElement( WooPayButton )
+					)
+				);
+				const [ firstLink, secondLink ] = screen.getAllByRole( 'link', {
+					name: 'WooPay',
+				} );
+
+				await user.click( firstLink );
+				await act( async () => {
+					await jest.advanceTimersByTimeAsync( 1000 );
+				} );
+				await user.click( secondLink );
+				await waitFor( () => {
+					expect( getSessionCalls() ).toHaveLength( 2 );
+				} );
+				await act( async () => {
+					await jest.advanceTimersByTimeAsync( 4000 );
+				} );
+				await waitFor( () => {
+					expect( createNotice ).toHaveBeenCalledTimes( 1 );
+				} );
+				expect( firstLink ).not.toHaveAttribute( 'aria-busy' );
+				expect( secondLink ).toHaveAttribute( 'aria-busy', 'true' );
+
+				await loadClassicConnectPageLate();
+				await waitFor( () => {
+					expect( getPreemptiveSessionPosts() ).toHaveLength( 1 );
+				} );
+				await act( async () => {
+					window.dispatchEvent(
+						new window.MessageEvent( 'message', {
+							origin: 'https://pay.woo.test',
+							data: {
+								action: 'set_preemptive_session_data_success',
+								value: {
+									redirect_url:
+										'https://pay.woo.test/checkout/session',
+								},
+							},
+						} )
+					);
+				} );
+				await waitFor( () => {
+					expect( navigate ).toHaveBeenCalledWith(
+						'https://pay.woo.test/checkout/session'
+					);
+				} );
+				expect( createNotice ).toHaveBeenCalledTimes( 1 );
+				expect( getPreemptiveSessionPosts() ).toHaveLength( 1 );
 			} );
 
 			it( 'times out when the iframe is removed before it loads, and retries through a new one', async () => {
