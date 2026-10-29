@@ -354,7 +354,6 @@ class WooPaymentsHookArityContractTest extends WC_Unit_Test_Case {
 		$probed = array_keys( self::probed_hooks() );
 
 		$this->assertCount( 68, $probed, 'The preserved hook-shape manifest has 68 hooks the plugin still fires.' );
-		$this->assertSame( array_unique( $probed ), $probed, 'Every probed hook name must be unique.' );
 
 		$missing_from_fixture = array_diff( $probed, array_keys( self::$fixture_by_name ) );
 		$this->assertSame( array(), $missing_from_fixture, 'Every probed hook must be a fixture entry: ' . implode( ', ', $missing_from_fixture ) );

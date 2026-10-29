@@ -6,7 +6,7 @@
     "tag": "11.2.0",
     "commit": "c6ccb818dce1485b5987586f9cd9617712cb6571"
   },
-  "count": 174,
+  "count": 175,
   "entries": [
     {
       "key": "validate_incompatible_extensions",
@@ -430,7 +430,7 @@
       "key": "wcpay_multi_currency_enabled_currencies",
       "store": "option",
       "match": "exact",
-      "plugin_site": "includes/multi-currency/MultiCurrency.php:783"
+      "plugin_site": "includes/multi-currency/MultiCurrency.php:848"
     },
     {
       "key": "wcpay_multi_currency_exchange_rate_",
@@ -562,7 +562,7 @@
       "key": "woocommerce_woocommerce_payments_settings",
       "store": "option",
       "match": "exact",
-      "plugin_site": "includes/class-wc-payment-gateway-wcpay.php:3122 (get_option_key() override)"
+      "plugin_site": "includes/class-wc-payment-gateway-wcpay.php:3127 (get_option_key() override)"
     },
     {
       "key": "woocommerce_woopayments_nox_profile",
@@ -1049,6 +1049,12 @@
       "store": "transient",
       "match": "exact",
       "plugin_site": "includes/admin/attach-rate/class-wc-payments-test-to-live-notice.php:35"
+    },
+    {
+      "key": "wcpay_woopay_attestation_",
+      "store": "transient",
+      "match": "prefix",
+      "plugin_site": "includes/woopay/class-woopay-session.php:60"
     },
     {
       "key": "woopay_enabled_by_default",
