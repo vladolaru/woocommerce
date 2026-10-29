@@ -7,10 +7,12 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPe
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\PaymentMethodRegistry;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\LinkToken;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDuplicatePaymentPreventionService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendTrackingController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderSuccessPage;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenClassMapController;
 use WC_Order;
 use WC_Unit_Test_Case;
 
@@ -531,6 +533,58 @@ class WooPaymentsOrderSuccessPageTest extends WC_Unit_Test_Case {
 
 		$this->assertStringContainsString( '/assets/images/payment-methods/link-color.svg', $title );
 		$this->assertStringContainsString( 'alt="Link"', $title );
+	}
+
+	/**
+	 * Client 11.2.0 detects a Link payment on the card gateway by the order's last payment token and renders it as a
+	 * local payment method (`class-wc-payments-order-success-page.php:205-226`). Native's text names the logo it shows
+	 * (Onelink in GB), where the client's LPM text reads no country (`:369`).
+	 *
+	 * @testdox Should show a card-gateway payment with a saved Link token as Link on the thank-you page: $_dataName.
+	 *
+	 * @dataProvider provider_saved_link_token_payments
+	 *
+	 * @param string $account_country Merchant account country.
+	 * @param string $icon_fragment   Expected logo path fragment.
+	 * @param string $expected_alt    Expected `alt` text.
+	 */
+	public function test_saved_link_token_payment_shows_link( string $account_country, string $icon_fragment, string $expected_alt ): void {
+		( new WooPaymentsTokenClassMapController() )->register();
+		$page  = $this->create_page( null, null, $account_country );
+		$token = new LinkToken();
+		$token->set_gateway_id( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+		$token->set_user_id( 1 );
+		$token->set_token( 'pm_link_saved' );
+		$token->set_email( 'buyer@example.com' );
+		$token->save();
+		$order = wc_create_order();
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+		$order->add_payment_token( $token );
+		$order->save();
+		add_filter( 'woocommerce_is_order_received_page', '__return_true' );
+
+		try {
+			$title = $page->filter_payment_method_title( 'Credit / Debit Cards', $order );
+		} finally {
+			remove_filter( 'woocommerce_is_order_received_page', '__return_true' );
+		}
+
+		$this->assertStringContainsString( 'wc-payment-lpm-logo--link', $title );
+		$this->assertStringContainsString( $icon_fragment, $title );
+		$this->assertStringContainsString( 'alt="' . $expected_alt . '"', $title );
+	}
+
+	/**
+	 * Saved Link token fixtures: Onelink in GB, Link everywhere else.
+	 *
+	 * @return array<string,array{0:string,1:string,2:string}>
+	 */
+	public function provider_saved_link_token_payments(): array {
+		return array(
+			'GB account' => array( 'GB', '/assets/images/payment-methods/onelink.svg', 'Onelink' ),
+			'US account' => array( 'US', '/assets/images/payment-methods/link-color.svg', 'Link' ),
+		);
 	}
 
 	/**

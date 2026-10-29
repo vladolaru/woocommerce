@@ -13,11 +13,13 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\PaymentMethodDefinition;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\PaymentMethodRegistry;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\LinkToken;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Throwable;
 use WC_Email;
 use WC_Email_Customer_On_Hold_Order;
 use WC_Order;
+use WC_Payment_Tokens;
 
 /**
  * Adjusts the order-received page for WooPayments orders: failed-order text, payment method titles, Multibanco
@@ -458,6 +460,16 @@ class WooPaymentsOrderSuccessPage implements RegisterHooksInterface {
 		$payment_method_id = WooPaymentsPersistenceVocabulary::GATEWAY_ID === $gateway_id
 			? 'card'
 			: substr( $gateway_id, strlen( WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX ) );
+
+		// Link payments go through the card gateway; detect them by the order's last payment token, as client 11.2.0
+		// does (class-wc-payments-order-success-page.php:205-218).
+		if ( 'card' === $payment_method_id ) {
+			$token_ids = $order->get_payment_tokens();
+			if ( ! empty( $token_ids ) && WC_Payment_Tokens::get( end( $token_ids ) ) instanceof LinkToken && null !== $this->payment_method_registry->get( 'link' ) ) {
+				$payment_method_id = 'link';
+			}
+		}
+
 		if ( 'card' === $payment_method_id ) {
 			return $this->render_card_title( $order, $payment_method_title );
 		}
