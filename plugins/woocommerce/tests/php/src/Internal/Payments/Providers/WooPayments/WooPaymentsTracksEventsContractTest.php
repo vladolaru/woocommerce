@@ -11,7 +11,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFr
 use WC_Unit_Test_Case;
 
 /**
- * Pins the plugin 11.1.0 Tracks event call-site surface (`woopayments-tracks.json`) against
+ * Pins the plugin 11.2.0 Tracks event call-site surface (`woopayments-tracks.json`) against
  * native, so an event neither recorded nor recorded as an allowed difference or a known gap is a
  * build-time failure instead of a silent analytics regression.
  *
@@ -132,8 +132,6 @@ class WooPaymentsTracksEventsContractTest extends WC_Unit_Test_Case {
 		'wcadmin_wcpay_reports_feedback_thumbs_down'     => 'data/client-delta-10.8.0-11.1.0.tsv:4 (10.9.0 inline Reports feedback survey, n/a plugin-only)',
 		'wcadmin_wcpay_reports_feedback_thumbs_up'       => 'data/client-delta-10.8.0-11.1.0.tsv:4 (10.9.0 inline Reports feedback survey, n/a plugin-only)',
 		'wcadmin_wcpay_reports_feedback_view'            => 'data/client-delta-10.8.0-11.1.0.tsv:4 (10.9.0 inline Reports feedback survey, n/a plugin-only)',
-		'wcadmin_wcpay_review_prompt_action'             => 'data/client-delta-10.8.0-11.1.0.tsv:81 and :105 (11.0.0 review-prompt rows, n/a, owner review 2026-09-12)',
-		'wcadmin_wcpay_review_prompt_shown'              => 'data/client-delta-10.8.0-11.1.0.tsv:81 and :105 (11.0.0 review-prompt rows, n/a, owner review 2026-09-12)',
 		'wcadmin_wcpay_subscriptions_account_not_connected_product_modal_dismiss' => 'Task 6.3 spec section 2: bundled WCPay Subscriptions out of scope (onboarding modal and empty state run only without WooCommerce Subscriptions).',
 		'wcadmin_wcpay_subscriptions_account_not_connected_product_modal_finish_setup' => 'Task 6.3 spec section 2: bundled WCPay Subscriptions out of scope (onboarding modal and empty state run only without WooCommerce Subscriptions).',
 		'wcadmin_wcpay_subscriptions_account_not_connected_product_modal_view' => 'Task 6.3 spec section 2: bundled WCPay Subscriptions out of scope (onboarding modal and empty state run only without WooCommerce Subscriptions).',
@@ -196,7 +194,7 @@ class WooPaymentsTracksEventsContractTest extends WC_Unit_Test_Case {
 			}
 		}
 
-		$this->assertSame( array(), $failures, "Native must record every plugin 11.1.0 Tracks event or list it in ALLOWED_DIFFERENCES/KNOWN_GAPS:\n" . implode( "\n", $failures ) );
+		$this->assertSame( array(), $failures, "Native must record every plugin 11.2.0 Tracks event or list it in ALLOWED_DIFFERENCES/KNOWN_GAPS:\n" . implode( "\n", $failures ) );
 	}
 
 	/**

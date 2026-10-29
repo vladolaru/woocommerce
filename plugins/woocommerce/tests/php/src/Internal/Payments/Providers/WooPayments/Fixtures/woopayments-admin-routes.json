@@ -3,10 +3,10 @@
   "inventory": "admin-routes",
   "source": {
     "plugin": "woocommerce-payments",
-    "tag": "11.1.0",
-    "commit": "f85392666c9b543cd24dbbf903e0dbe4cb2c5cee"
+    "tag": "11.2.0",
+    "commit": "c6ccb818dce1485b5987586f9cd9617712cb6571"
   },
-  "note": "WC Admin page=wc-admin&path= routes the plugin registers or redirects (client/index.js:145-361, includes/admin/class-wc-payments-admin.php:230-611). REST-only /payments/accounts is excluded.",
+  "note": "WC Admin page=wc-admin&path= routes the plugin registers or redirects (client/index.js:145-361, includes/admin/class-wc-payments-admin.php:228-609). REST-only /payments/accounts is excluded.",
   "admin_route_count": 20,
   "admin_routes": [
     {
@@ -75,19 +75,19 @@
     },
     {
       "path": "/payments/deposits",
-      "plugin_site": "includes/admin/class-wc-payments-admin.php:230"
+      "plugin_site": "includes/admin/class-wc-payments-admin.php:228"
     },
     {
       "path": "/payments/deposits/details",
-      "plugin_site": "includes/admin/class-wc-payments-admin.php:231"
+      "plugin_site": "includes/admin/class-wc-payments-admin.php:229"
     },
     {
       "path": "/payments/reports",
-      "plugin_site": "includes/admin/class-wc-payments-admin.php:375"
+      "plugin_site": "includes/admin/class-wc-payments-admin.php:373"
     },
     {
       "path": "/payments/additional-payment-methods",
-      "plugin_site": "includes/admin/class-wc-payments-admin.php:603"
+      "plugin_site": "includes/admin/class-wc-payments-admin.php:601"
     }
   ]
 }

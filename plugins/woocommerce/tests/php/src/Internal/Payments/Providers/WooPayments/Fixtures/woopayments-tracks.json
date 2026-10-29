@@ -3,10 +3,10 @@
   "inventory": "tracks",
   "source": {
     "plugin": "woocommerce-payments",
-    "tag": "11.1.0",
-    "commit": "f85392666c9b543cd24dbbf903e0dbe4cb2c5cee"
+    "tag": "11.2.0",
+    "commit": "c6ccb818dce1485b5987586f9cd9617712cb6571"
   },
-  "count": 192,
+  "count": 190,
   "entries": [
     {
       "wire_name": "wcadmin_page_view",
@@ -14,7 +14,7 @@
       "channel": "js_admin",
       "recorder": "recordEvent",
       "resolved_by": "literal",
-      "plugin_site": "client/connect-account-page/index.tsx:334"
+      "plugin_site": "client/connect-account-page/index.tsx:338"
     },
     {
       "wire_name": "wcadmin_payments_transactions_details_cancel_charge_button_click",
@@ -454,7 +454,7 @@
       "channel": "js_admin",
       "recorder": "recordEvent",
       "resolved_by": "literal",
-      "plugin_site": "client/overview/inbox-notifications/index.js:66"
+      "plugin_site": "client/overview/inbox-notifications/index.js:65"
     },
     {
       "wire_name": "wcadmin_wcpay_inbox_action_dismissed",
@@ -462,7 +462,7 @@
       "channel": "js_admin",
       "recorder": "recordEvent",
       "resolved_by": "literal",
-      "plugin_site": "client/overview/inbox-notifications/index.js:202"
+      "plugin_site": "client/overview/inbox-notifications/index.js:175"
     },
     {
       "wire_name": "wcadmin_wcpay_inbox_note_view",
@@ -470,7 +470,7 @@
       "channel": "js_admin",
       "recorder": "recordEvent",
       "resolved_by": "literal",
-      "plugin_site": "client/overview/inbox-notifications/index.js:90"
+      "plugin_site": "client/overview/inbox-notifications/index.js:88"
     },
     {
       "wire_name": "wcadmin_wcpay_merchant_settings_file_upload_started",
@@ -622,7 +622,7 @@
       "channel": "js_admin",
       "recorder": "recordEvent",
       "resolved_by": "literal",
-      "plugin_site": "client/overview/index.js:217"
+      "plugin_site": "client/overview/index.js:232"
     },
     {
       "wire_name": "wcadmin_wcpay_overview_stripe_notifications_banner_update",
@@ -630,7 +630,7 @@
       "channel": "js_admin",
       "recorder": "recordEvent",
       "resolved_by": "literal",
-      "plugin_site": "client/overview/index.js:225"
+      "plugin_site": "client/overview/index.js:240"
     },
     {
       "wire_name": "wcadmin_wcpay_overview_task_click",
@@ -638,7 +638,7 @@
       "channel": "js_admin",
       "recorder": "recordEvent",
       "resolved_by": "literal",
-      "plugin_site": "client/overview/task-list/tasks/dispute-task.tsx:53"
+      "plugin_site": "client/overview/task-list/tasks/dispute-task.tsx:55"
     },
     {
       "wire_name": "wcadmin_wcpay_overview_test_mode_learn_more_clicked",
@@ -646,7 +646,7 @@
       "channel": "js_admin",
       "recorder": "recordEvent",
       "resolved_by": "literal",
-      "plugin_site": "client/components/test-mode-notice/index.tsx:108"
+      "plugin_site": "client/components/test-mode-notice/index.tsx:101"
     },
     {
       "wire_name": "wcadmin_wcpay_payment_method_promotion_activate_click",
@@ -881,22 +881,6 @@
       "plugin_site": "client/reports/index.tsx:87"
     },
     {
-      "wire_name": "wcadmin_wcpay_review_prompt_action",
-      "call_name": "wcpay_review_prompt_action",
-      "channel": "js_admin",
-      "recorder": "recordEvent",
-      "resolved_by": "manual",
-      "plugin_site": "client/review-prompt/index.tsx:39"
-    },
-    {
-      "wire_name": "wcadmin_wcpay_review_prompt_shown",
-      "call_name": "wcpay_review_prompt_shown",
-      "channel": "js_admin",
-      "recorder": "recordEvent",
-      "resolved_by": "manual",
-      "plugin_site": "client/review-prompt/index.tsx:39"
-    },
-    {
       "wire_name": "wcadmin_wcpay_settings_deposits_manage_in_stripe_click",
       "call_name": "wcpay_settings_deposits_manage_in_stripe_click",
       "channel": "js_admin",
@@ -918,7 +902,7 @@
       "channel": "js_admin",
       "recorder": "recordEvent",
       "resolved_by": "literal",
-      "plugin_site": "client/components/sandbox-mode-switch-to-live-notice/modal/index.tsx:50"
+      "plugin_site": "client/components/sandbox-mode-switch-to-live-notice/modal/index.tsx:52"
     },
     {
       "wire_name": "wcadmin_wcpay_setup_live_payments_modal_open",
@@ -1014,7 +998,7 @@
       "channel": "js_admin",
       "recorder": "recordEvent",
       "resolved_by": "literal",
-      "plugin_site": "client/payment-details/dispute-details/dispute-resolution-footer.tsx:110"
+      "plugin_site": "client/payment-details/dispute-details/dispute-resolution-footer.tsx:111"
     },
     {
       "wire_name": "wcadmin_woopay_disabled",
@@ -1022,7 +1006,7 @@
       "channel": "php_admin",
       "recorder": "maybe_record_admin_event",
       "resolved_by": "manual",
-      "plugin_site": "includes/class-wc-payment-gateway-wcpay.php:3151"
+      "plugin_site": "includes/class-wc-payment-gateway-wcpay.php:3156"
     },
     {
       "wire_name": "wcadmin_woopay_enabled",
@@ -1030,7 +1014,7 @@
       "channel": "php_admin",
       "recorder": "maybe_record_admin_event",
       "resolved_by": "manual",
-      "plugin_site": "includes/class-wc-payment-gateway-wcpay.php:3151"
+      "plugin_site": "includes/class-wc-payment-gateway-wcpay.php:3156"
     },
     {
       "wire_name": "wcadmin_woopay_express_button_locations_updated",
@@ -1046,7 +1030,7 @@
       "channel": "php_admin",
       "recorder": "maybe_record_admin_event",
       "resolved_by": "manual",
-      "plugin_site": "includes/class-wc-payment-gateway-wcpay.php:3177"
+      "plugin_site": "includes/class-wc-payment-gateway-wcpay.php:3182"
     },
     {
       "wire_name": "wcadmin_woopay_global_theme_support_enabled",
@@ -1054,7 +1038,7 @@
       "channel": "php_admin",
       "recorder": "maybe_record_admin_event",
       "resolved_by": "manual",
-      "plugin_site": "includes/class-wc-payment-gateway-wcpay.php:3177"
+      "plugin_site": "includes/class-wc-payment-gateway-wcpay.php:3182"
     },
     {
       "wire_name": "wcpay_account_connect_finished",
@@ -1246,7 +1230,7 @@
       "channel": "php_admin",
       "recorder": "track_admin",
       "resolved_by": "literal",
-      "plugin_site": "includes/class-wc-payment-gateway-wcpay.php:2999"
+      "plugin_site": "includes/class-wc-payment-gateway-wcpay.php:3004"
     },
     {
       "wire_name": "wcpay_edit_order_refund_success",
@@ -1254,7 +1238,7 @@
       "channel": "php_admin",
       "recorder": "track_admin",
       "resolved_by": "literal",
-      "plugin_site": "includes/class-wc-payment-gateway-wcpay.php:2979"
+      "plugin_site": "includes/class-wc-payment-gateway-wcpay.php:2984"
     },
     {
       "wire_name": "wcpay_first_live_sale",
@@ -1262,7 +1246,7 @@
       "channel": "php_admin",
       "recorder": "record_event",
       "resolved_by": "literal",
-      "plugin_site": "includes/class-wc-payments-order-service.php:309"
+      "plugin_site": "includes/class-wc-payments-order-service.php:322"
     },
     {
       "wire_name": "wcpay_gpay_button_click",
@@ -1294,7 +1278,7 @@
       "channel": "php_admin",
       "recorder": "track_admin",
       "resolved_by": "literal",
-      "plugin_site": "includes/class-wc-payment-gateway-wcpay.php:4032"
+      "plugin_site": "includes/class-wc-payment-gateway-wcpay.php:4037"
     },
     {
       "wire_name": "wcpay_onboarding_flow_reset",

@@ -17,7 +17,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSt
 use WC_Unit_Test_Case;
 
 /**
- * Pins the plugin 11.1.0 persisted-data and Action Scheduler surface
+ * Pins the plugin 11.2.0 persisted-data and Action Scheduler surface
  * (`woopayments-persisted-data.json`) against native, so a key or scheduler hook neither named
  * nor recorded as an allowed difference is a build-time failure instead of a silent data-loss
  * risk on cutover.
@@ -81,8 +81,6 @@ class WooPaymentsPersistedDataContractTest extends WC_Unit_Test_Case {
 		'wcpay_should_redirect_to_onboarding'     => 'data/consumer-map/consumer-map.md:67 (cosmetic options are changelog items).',
 		'wcpay_survey_payment_overview_submitted' => 'data/consumer-map/consumer-map.md:67 (cosmetic options are changelog items).',
 		'wcpay_error_message'                     => 'plan.md T.7 Step 6 (d): superseded by the NOX wcpay-connection-error query arg.',
-		'woocommerce_admin_wc_payments_review_prompt_dismissed' => 'data/client-delta-10.8.0-11.1.0.tsv:81 and :105 (11.0.0 review-prompt rows, n/a, owner review 2026-09-12).',
-		'woocommerce_admin_wc_payments_review_prompt_maybe_later' => 'data/client-delta-10.8.0-11.1.0.tsv:81 and :105 (11.0.0 review-prompt rows, n/a, owner review 2026-09-12).',
 	);
 
 	/**
@@ -191,7 +189,7 @@ class WooPaymentsPersistedDataContractTest extends WC_Unit_Test_Case {
 			}
 		}
 
-		$this->assertSame( array(), $failures, "Native must name every plugin 11.1.0 persistence key or list it in ALLOWED_DIFFERENCES/KNOWN_GAPS:\n" . implode( "\n", $failures ) );
+		$this->assertSame( array(), $failures, "Native must name every plugin 11.2.0 persistence key or list it in ALLOWED_DIFFERENCES/KNOWN_GAPS:\n" . implode( "\n", $failures ) );
 	}
 
 	/**
@@ -219,9 +217,9 @@ class WooPaymentsPersistedDataContractTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox The built-in WooPayments schedules each preserved Action Scheduler hook under the WooPayments extension's group for it.
 	 *
-	 * The fixture's `group` column is read per scheduling call site at the 11.1.0 tag
+	 * The fixture's `group` column is read per scheduling call site at the 11.2.0 tag
 	 * (`extract-persisted-data.php` Pass 6): `wcpay_store_setup_sync` under
-	 * `WC_Payments_Action_Scheduler_Service::GROUP_ID` (`class-wc-payments-action-scheduler-service.php:111`),
+	 * `WC_Payments_Action_Scheduler_Service::GROUP_ID` (`class-wc-payments-action-scheduler-service.php:123`),
 	 * the post-KYC email and fee-remediation hooks under the literal `'woocommerce-payments'`
 	 * (`class-wc-payments-post-kyc-activation-email-service.php:113`,
 	 * `class-wc-payments-remediate-canceled-auth-fees.php:570,592`).
@@ -242,7 +240,7 @@ class WooPaymentsPersistedDataContractTest extends WC_Unit_Test_Case {
 
 		ksort( $builtin_groups );
 		ksort( $woopayments_extension_groups );
-		$this->assertSame( $builtin_groups, $woopayments_extension_groups, 'Each preserved Action Scheduler hook must schedule under its plugin 11.1.0 group.' );
+		$this->assertSame( $builtin_groups, $woopayments_extension_groups, 'Each preserved Action Scheduler hook must schedule under its plugin 11.2.0 group.' );
 	}
 
 	/**

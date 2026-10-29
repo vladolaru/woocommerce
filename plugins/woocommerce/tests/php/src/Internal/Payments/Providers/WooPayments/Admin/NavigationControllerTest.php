@@ -315,7 +315,7 @@ class NavigationControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should redirect every WooPayments extension WC Admin route to a route.
 	 *
-	 * Source: Fixtures/woopayments-admin-routes.json (client/index.js:145-361, includes/admin/class-wc-payments-admin.php:230-611).
+	 * Source: Fixtures/woopayments-admin-routes.json, plugin 11.2.0 (client/index.js:145-361, includes/admin/class-wc-payments-admin.php:228-609).
 	 *
 	 * @dataProvider provider_payments_paths
 	 *

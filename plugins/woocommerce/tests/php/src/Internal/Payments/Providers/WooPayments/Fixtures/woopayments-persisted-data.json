@@ -3,10 +3,10 @@
   "inventory": "persisted-data",
   "source": {
     "plugin": "woocommerce-payments",
-    "tag": "11.1.0",
-    "commit": "f85392666c9b543cd24dbbf903e0dbe4cb2c5cee"
+    "tag": "11.2.0",
+    "commit": "c6ccb818dce1485b5987586f9cd9617712cb6571"
   },
-  "count": 176,
+  "count": 174,
   "entries": [
     {
       "key": "validate_incompatible_extensions",
@@ -75,14 +75,14 @@
       "key": "woopay_restore_order_customer_id",
       "store": "action_scheduler_hook",
       "match": "exact",
-      "plugin_site": "includes/woopay/class-woopay-session.php:262",
+      "plugin_site": "includes/woopay/class-woopay-session.php:351",
       "group": null
     },
     {
       "key": "wcpay_express_checkout_redirect_url",
       "store": "cookie",
       "match": "exact",
-      "plugin_site": "includes/express-checkout/class-wc-payments-express-checkout-button-handler.php:371"
+      "plugin_site": "includes/express-checkout/class-wc-payments-express-checkout-button-handler.php:375"
     },
     {
       "key": "_wcpay_customer_id",
@@ -256,7 +256,7 @@
       "key": "_wcpay_onboarding_stripe_connected",
       "store": "option",
       "match": "exact",
-      "plugin_site": "includes/admin/class-wc-payments-admin.php:810"
+      "plugin_site": "includes/admin/class-wc-payments-admin.php:797"
     },
     {
       "key": "_wcpay_pm_promotion_dismissals",
@@ -274,7 +274,7 @@
       "key": "wcpay_activation_timestamp",
       "store": "option",
       "match": "exact",
-      "plugin_site": "includes/admin/class-wc-payments-admin.php:1177"
+      "plugin_site": "includes/admin/class-wc-payments-admin.php:1164"
     },
     {
       "key": "wcpay_apple_pay_domain_error",
@@ -316,13 +316,13 @@
       "key": "wcpay_duplicate_payment_method_notices_dismissed",
       "store": "option",
       "match": "exact",
-      "plugin_site": "includes/admin/class-wc-payments-admin.php:1063"
+      "plugin_site": "includes/admin/class-wc-payments-admin.php:1050"
     },
     {
       "key": "wcpay_exit_survey_last_shown",
       "store": "option",
       "match": "exact",
-      "plugin_site": "includes/admin/class-wc-payments-admin.php:1102"
+      "plugin_site": "includes/admin/class-wc-payments-admin.php:1089"
     },
     {
       "key": "wcpay_fee_remediation_batch_size",
@@ -364,13 +364,13 @@
       "key": "wcpay_fraud_protection_welcome_tour_dismissed",
       "store": "option",
       "match": "exact",
-      "plugin_site": "includes/class-wc-payments-features.php:271"
+      "plugin_site": "includes/class-wc-payments-features.php:294"
     },
     {
       "key": "wcpay_frt_review_feature_active",
       "store": "option",
       "match": "exact",
-      "plugin_site": "includes/class-wc-payments-features.php:262"
+      "plugin_site": "includes/class-wc-payments-features.php:285"
     },
     {
       "key": "wcpay_has_affected_auth_fee_orders",
@@ -382,19 +382,19 @@
       "key": "wcpay_has_live_sale",
       "store": "option",
       "match": "exact",
-      "plugin_site": "includes/class-wc-payments-order-service.php:181"
+      "plugin_site": "includes/class-wc-payments-order-service.php:194"
     },
     {
       "key": "wcpay_instant_deposit_notice_dismissed",
       "store": "option",
       "match": "exact",
-      "plugin_site": "includes/admin/class-wc-payments-admin.php:1061"
+      "plugin_site": "includes/admin/class-wc-payments-admin.php:1048"
     },
     {
       "key": "wcpay_instant_deposits_previously_eligible",
       "store": "option",
       "match": "exact",
-      "plugin_site": "includes/admin/class-wc-payments-admin.php:1062"
+      "plugin_site": "includes/admin/class-wc-payments-admin.php:1049"
     },
     {
       "key": "wcpay_kyc_completion_date",
@@ -412,7 +412,7 @@
       "key": "wcpay_menu_badge_hidden",
       "store": "option",
       "match": "exact",
-      "plugin_site": "includes/admin/class-wc-payments-admin.php:1183"
+      "plugin_site": "includes/admin/class-wc-payments-admin.php:1170"
     },
     {
       "key": "wcpay_multi_currency_cache_autodetect_done",
@@ -436,25 +436,25 @@
       "key": "wcpay_multi_currency_exchange_rate_",
       "store": "option",
       "match": "prefix",
-      "plugin_site": "includes/multi-currency/MultiCurrency.php:648"
+      "plugin_site": "includes/multi-currency/MultiCurrency.php:713"
     },
     {
       "key": "wcpay_multi_currency_manual_rate_",
       "store": "option",
       "match": "prefix",
-      "plugin_site": "includes/multi-currency/MultiCurrency.php:649"
+      "plugin_site": "includes/multi-currency/MultiCurrency.php:714"
     },
     {
       "key": "wcpay_multi_currency_price_charm_",
       "store": "option",
       "match": "prefix",
-      "plugin_site": "includes/multi-currency/MultiCurrency.php:651"
+      "plugin_site": "includes/multi-currency/MultiCurrency.php:716"
     },
     {
       "key": "wcpay_multi_currency_price_rounding_",
       "store": "option",
       "match": "prefix",
-      "plugin_site": "includes/multi-currency/MultiCurrency.php:650"
+      "plugin_site": "includes/multi-currency/MultiCurrency.php:715"
     },
     {
       "key": "wcpay_multi_currency_rendering_mode",
@@ -466,7 +466,7 @@
       "key": "wcpay_multi_currency_setup_completed",
       "store": "option",
       "match": "exact",
-      "plugin_site": "includes/admin/class-wc-payments-admin.php:1037"
+      "plugin_site": "includes/admin/class-wc-payments-admin.php:1024"
     },
     {
       "key": "wcpay_multi_currency_show_store_currency_changed_notice",
@@ -544,7 +544,7 @@
       "key": "wcpay_survey_payment_overview_submitted",
       "store": "option",
       "match": "exact",
-      "plugin_site": "includes/admin/class-wc-payments-admin.php:1065"
+      "plugin_site": "includes/admin/class-wc-payments-admin.php:1052"
     },
     {
       "key": "wcpay_test_mode_enabled_date",
@@ -598,7 +598,7 @@
       "key": "_card_brand",
       "store": "order_meta",
       "match": "exact",
-      "plugin_site": "includes/class-wc-payment-gateway-wcpay.php:5048"
+      "plugin_site": "includes/class-wc-payment-gateway-wcpay.php:5071"
     },
     {
       "key": "_charge_id",
@@ -610,13 +610,13 @@
       "key": "_charge_risk_level",
       "store": "order_meta",
       "match": "exact",
-      "plugin_site": "includes/class-wc-payments-order-service.php:78"
+      "plugin_site": "includes/class-wc-payments-order-service.php:91"
     },
     {
       "key": "_delayed_update_payment_method_all",
       "store": "order_meta",
       "match": "exact",
-      "plugin_site": "includes/class-wc-payment-gateway-wcpay.php:2213"
+      "plugin_site": "includes/class-wc-payment-gateway-wcpay.php:2218"
     },
     {
       "key": "_intent_id",
@@ -640,7 +640,7 @@
       "key": "_new_order_tracking_complete",
       "store": "order_meta",
       "match": "exact",
-      "plugin_site": "includes/class-wc-payment-gateway-wcpay.php:4511"
+      "plugin_site": "includes/class-wc-payment-gateway-wcpay.php:4534"
     },
     {
       "key": "_new_receipt_email_sent",
@@ -658,25 +658,25 @@
       "key": "_stripe_customer_id",
       "store": "order_meta",
       "match": "exact",
-      "plugin_site": "includes/class-wc-payments-order-service.php:85"
+      "plugin_site": "includes/class-wc-payments-order-service.php:98"
     },
     {
       "key": "_wcpay_early_fraud_warning",
       "store": "order_meta",
       "match": "exact",
-      "plugin_site": "includes/class-wc-payments-order-service.php:249"
+      "plugin_site": "includes/class-wc-payments-order-service.php:262"
     },
     {
       "key": "_wcpay_express_checkout_payment_method",
       "store": "order_meta",
       "match": "exact",
-      "plugin_site": "includes/class-wc-payment-gateway-wcpay.php:2701"
+      "plugin_site": "includes/class-wc-payment-gateway-wcpay.php:2706"
     },
     {
       "key": "_wcpay_fraud_meta_box_type",
       "store": "order_meta",
       "match": "exact",
-      "plugin_site": "includes/class-wc-payments-order-service.php:92"
+      "plugin_site": "includes/class-wc-payments-order-service.php:105"
     },
     {
       "key": "_wcpay_fraud_outcome_manual_entry",
@@ -688,31 +688,31 @@
       "key": "_wcpay_fraud_outcome_status",
       "store": "order_meta",
       "match": "exact",
-      "plugin_site": "includes/class-wc-payments-order-service.php:99"
+      "plugin_site": "includes/class-wc-payments-order-service.php:112"
     },
     {
       "key": "_wcpay_fraud_ruleset_results",
       "store": "order_meta",
       "match": "exact",
-      "plugin_site": "includes/class-wc-payments-order-service.php:107"
+      "plugin_site": "includes/class-wc-payments-order-service.php:120"
     },
     {
       "key": "_wcpay_intent_currency",
       "store": "order_meta",
       "match": "exact",
-      "plugin_site": "includes/class-wc-payments-order-service.php:114"
+      "plugin_site": "includes/class-wc-payments-order-service.php:127"
     },
     {
       "key": "_wcpay_ipp_channel",
       "store": "order_meta",
       "match": "exact",
-      "plugin_site": "includes/class-wc-payments-order-service.php:230"
+      "plugin_site": "includes/class-wc-payments-order-service.php:243"
     },
     {
       "key": "_wcpay_mode",
       "store": "order_meta",
       "match": "exact",
-      "plugin_site": "includes/class-wc-payments-order-service.php:151"
+      "plugin_site": "includes/class-wc-payments-order-service.php:164"
     },
     {
       "key": "_wcpay_multi_currency_addons_converted",
@@ -724,61 +724,61 @@
       "key": "_wcpay_multi_currency_order_default_currency",
       "store": "order_meta",
       "match": "exact",
-      "plugin_site": "includes/multi-currency/Analytics.php:486"
+      "plugin_site": "includes/multi-currency/Analytics.php:496"
     },
     {
       "key": "_wcpay_multi_currency_order_exchange_rate",
       "store": "order_meta",
       "match": "exact",
-      "plugin_site": "includes/multi-currency/Analytics.php:210"
+      "plugin_site": "includes/multi-currency/Analytics.php:208"
     },
     {
       "key": "_wcpay_multi_currency_stripe_exchange_rate",
       "store": "order_meta",
       "match": "exact",
-      "plugin_site": "includes/class-wc-payment-gateway-wcpay.php:2803"
+      "plugin_site": "includes/class-wc-payment-gateway-wcpay.php:2808"
     },
     {
       "key": "_wcpay_multibanco_entity",
       "store": "order_meta",
       "match": "exact",
-      "plugin_site": "includes/class-wc-payments-order-service.php:195"
+      "plugin_site": "includes/class-wc-payments-order-service.php:208"
     },
     {
       "key": "_wcpay_multibanco_expiry",
       "store": "order_meta",
       "match": "exact",
-      "plugin_site": "includes/class-wc-payments-order-service.php:209"
+      "plugin_site": "includes/class-wc-payments-order-service.php:222"
     },
     {
       "key": "_wcpay_multibanco_reference",
       "store": "order_meta",
       "match": "exact",
-      "plugin_site": "includes/class-wc-payments-order-service.php:202"
+      "plugin_site": "includes/class-wc-payments-order-service.php:215"
     },
     {
       "key": "_wcpay_multibanco_url",
       "store": "order_meta",
       "match": "exact",
-      "plugin_site": "includes/class-wc-payments-order-service.php:216"
+      "plugin_site": "includes/class-wc-payments-order-service.php:229"
     },
     {
       "key": "_wcpay_net",
       "store": "order_meta",
       "match": "exact",
-      "plugin_site": "includes/class-wc-payments-order-service.php:1551"
+      "plugin_site": "includes/class-wc-payments-order-service.php:1564"
     },
     {
       "key": "_wcpay_open_dispute_ids",
       "store": "order_meta",
       "match": "exact",
-      "plugin_site": "includes/class-wc-payments-order-service.php:242"
+      "plugin_site": "includes/class-wc-payments-order-service.php:255"
     },
     {
       "key": "_wcpay_payment_method_details",
       "store": "order_meta",
       "match": "exact",
-      "plugin_site": "includes/class-wc-payments-order-service.php:223"
+      "plugin_site": "includes/class-wc-payments-order-service.php:236"
     },
     {
       "key": "_wcpay_payment_methods",
@@ -790,49 +790,49 @@
       "key": "_wcpay_payment_transaction_id",
       "store": "order_meta",
       "match": "exact",
-      "plugin_site": "includes/class-wc-payments-order-service.php:188"
+      "plugin_site": "includes/class-wc-payments-order-service.php:201"
     },
     {
       "key": "_wcpay_refund_id",
       "store": "order_meta",
       "match": "exact",
-      "plugin_site": "includes/class-wc-payments-order-service.php:121"
+      "plugin_site": "includes/class-wc-payments-order-service.php:134"
     },
     {
       "key": "_wcpay_refund_status",
       "store": "order_meta",
       "match": "exact",
-      "plugin_site": "includes/class-wc-payments-order-service.php:135"
+      "plugin_site": "includes/class-wc-payments-order-service.php:148"
     },
     {
       "key": "_wcpay_refund_transaction_id",
       "store": "order_meta",
       "match": "exact",
-      "plugin_site": "includes/class-wc-payments-order-service.php:128"
+      "plugin_site": "includes/class-wc-payments-order-service.php:141"
     },
     {
       "key": "_wcpay_transaction_fee",
       "store": "order_meta",
       "match": "exact",
-      "plugin_site": "includes/class-wc-payments-order-service.php:142"
+      "plugin_site": "includes/class-wc-payments-order-service.php:155"
     },
     {
       "key": "_wcpay_wallet_type",
       "store": "order_meta",
       "match": "exact",
-      "plugin_site": "includes/class-wc-payment-gateway-wcpay.php:4636"
+      "plugin_site": "includes/class-wc-payment-gateway-wcpay.php:4659"
     },
     {
       "key": "_woopay_has_subscription",
       "store": "order_meta",
       "match": "exact",
-      "plugin_site": "includes/class-wc-payment-gateway-wcpay.php:2074"
+      "plugin_site": "includes/class-wc-payment-gateway-wcpay.php:2079"
     },
     {
       "key": "is_attached_to_subscription",
       "store": "order_meta",
       "match": "exact",
-      "plugin_site": "includes/class-wc-payment-gateway-wcpay.php:2075"
+      "plugin_site": "includes/class-wc-payment-gateway-wcpay.php:2080"
     },
     {
       "key": "is_woopay",
@@ -844,7 +844,7 @@
       "key": "last4",
       "store": "order_meta",
       "match": "exact",
-      "plugin_site": "includes/admin/class-wc-payments-admin.php:1314"
+      "plugin_site": "includes/admin/class-wc-payments-admin.php:1301"
     },
     {
       "key": "receipt_url",
@@ -862,7 +862,7 @@
       "key": "woopay_merchant_customer_id",
       "store": "order_meta",
       "match": "exact",
-      "plugin_site": "includes/woopay/class-woopay-session.php:213"
+      "plugin_site": "includes/woopay/class-woopay-session.php:302"
     },
     {
       "key": "wcpay_card_declined_registry",
@@ -994,7 +994,7 @@
       "key": "wcpay_minimum_amount_",
       "store": "transient",
       "match": "prefix",
-      "plugin_site": "includes/class-wc-payments-utils.php:974"
+      "plugin_site": "includes/class-wc-payments-utils.php:989"
     },
     {
       "key": "wcpay_on_boarding_disabled",
@@ -1018,7 +1018,7 @@
       "key": "wcpay_processing_intent_",
       "store": "transient",
       "match": "prefix",
-      "plugin_site": "includes/class-wc-payments-order-service.php:2733"
+      "plugin_site": "includes/class-wc-payments-order-service.php:2746"
     },
     {
       "key": "wcpay_store_terminal_locations",
@@ -1061,18 +1061,6 @@
       "store": "transient",
       "match": "exact",
       "plugin_site": "includes/class-wc-payments-onboarding-service.php:1585"
-    },
-    {
-      "key": "woocommerce_admin_wc_payments_review_prompt_dismissed",
-      "store": "user_meta",
-      "match": "exact",
-      "plugin_site": "includes/admin/class-wc-payments-admin.php:1583"
-    },
-    {
-      "key": "woocommerce_admin_wc_payments_review_prompt_maybe_later",
-      "store": "user_meta",
-      "match": "exact",
-      "plugin_site": "includes/admin/class-wc-payments-admin.php:1584"
     }
   ]
 }
