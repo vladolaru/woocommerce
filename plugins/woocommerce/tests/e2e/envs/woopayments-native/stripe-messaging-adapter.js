@@ -216,6 +216,7 @@
 		validatePaymentOptions( paymentOptions );
 		let mountedFrame = null;
 		const readyCallbacks = [];
+		const changeCallbacks = [];
 		const call = {
 			type: 'payment',
 			stripeOptions: copy( stripeOptions ),
@@ -257,7 +258,7 @@
 			},
 			on( event, callback ) {
 				if (
-					! [ 'loaderror', 'ready' ].includes( event ) ||
+					! [ 'change', 'loaderror', 'ready' ].includes( event ) ||
 					typeof callback !== 'function'
 				) {
 					throw rejection(
@@ -270,6 +271,10 @@
 					if ( mountedFrame ) {
 						window.setTimeout( callback, 0 );
 					}
+				}
+				// Stripe fires `change` on a shopper edit, which the adapter never makes.
+				if ( event === 'change' ) {
+					changeCallbacks.push( callback );
 				}
 			},
 			update( nextOptions ) {
