@@ -534,8 +534,7 @@
 
 	function getCheckoutBillingCountry() {
 		var input = document.querySelector( '[name="billing_country"]' );
-		var customerData =
-			baseConfig.customerData || window.wcpayCustomerData || {};
+		var customerData = baseConfig.customerData || {};
 
 		return (
 			( input && input.value ) ||
@@ -840,8 +839,7 @@
 	}
 
 	function getPreparedCustomerBillingDetails() {
-		var customerData =
-			baseConfig.customerData || window.wcpayCustomerData || {};
+		var customerData = baseConfig.customerData || {};
 		var country =
 			customerData.billing_country || customerData.billingCountry || '';
 		var address = customerData.address
