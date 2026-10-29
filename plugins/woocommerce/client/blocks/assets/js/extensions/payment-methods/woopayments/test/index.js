@@ -15,6 +15,7 @@ import { createElement, useEffect, useReducer } from '@wordpress/element';
 import { Skeleton } from '@woocommerce/base-components/skeleton';
 import { useSelect } from '@wordpress/data';
 import { registerExpressPaymentMethod } from '@woocommerce/blocks-registry';
+import FingerprintJS from '@fingerprintjs/fingerprintjs';
 
 /**
  * Internal dependencies
@@ -357,6 +358,36 @@ describe( 'wc-payment-method-woopayments', () => {
 			},
 		} );
 	} );
+
+	// Client 11.2.0 client/checkout/blocks/hooks.js:60-78 keeps the error's message, else FINGERPRINT_GENERIC_ERROR
+	// (utils/fingerprint.js:12-25, also thrown when FingerprintJS gives no agent); payment-processor.js:143-147 refuses
+	// the payment setup with it before anything else runs.
+	it.each( [
+		[
+			'FingerprintJS fails',
+			() =>
+				Promise.reject( new Error( 'FingerprintJS could not load.' ) ),
+			'FingerprintJS could not load.',
+		],
+		[
+			'FingerprintJS gives no agent',
+			() => Promise.resolve( null ),
+			'An error was encountered when preparing the payment form. Please try again later.',
+		],
+	] )(
+		'refuses the card payment without creating a payment method when %s',
+		async ( _, load, message ) => {
+			FingerprintJS.load.mockImplementationOnce( load );
+			const harness = await setUpNewCardPayment();
+
+			await expect( harness.setupCallbacks[ 0 ]() ).resolves.toEqual( {
+				type: 'error',
+				message,
+				messageContext: 'payments',
+			} );
+			expect( harness.calls ).toEqual( [] );
+		}
+	);
 
 	it( 'records a WooPayments place-order event when Blocks payment setup runs', async () => {
 		window.fetch = jest.fn().mockResolvedValue( {
@@ -2164,8 +2195,9 @@ describe( 'wc-payment-method-woopayments', () => {
 				jest.useFakeTimers();
 
 				const paymentSetup = runPaymentSetup();
+				// The setup waits for the device fingerprint before it arms the ready timeout.
 				await act( async () => {
-					jest.advanceTimersByTime( 15000 );
+					await jest.advanceTimersByTimeAsync( 15000 );
 				} );
 
 				await expect( paymentSetup ).resolves.toEqual(
@@ -2185,8 +2217,9 @@ describe( 'wc-payment-method-woopayments', () => {
 				jest.useFakeTimers();
 
 				const expiredAttempt = runPaymentSetup();
+				// The setup waits for the device fingerprint before it arms the ready timeout.
 				await act( async () => {
-					jest.advanceTimersByTime( 15000 );
+					await jest.advanceTimersByTimeAsync( 15000 );
 				} );
 				await expect( expiredAttempt ).resolves.toEqual(
 					invalidPaymentDetailsResponse

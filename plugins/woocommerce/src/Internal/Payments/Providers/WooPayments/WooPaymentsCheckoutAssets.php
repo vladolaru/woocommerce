@@ -67,6 +67,8 @@ class WooPaymentsCheckoutAssets {
 	private const BLOCKS_OMITTED_CONFIG_KEYS = array(
 		'confirmationErrorMessage',
 		'customerData',
+		// The Blocks card method translates its own (index.js FINGERPRINT_GENERIC_ERROR).
+		'fingerprintErrorMessage',
 		'paymentListWalletsConfig',
 		'woopayButtonLabels',
 		'woopayAdditionalInfoText',
@@ -435,6 +437,8 @@ class WooPaymentsCheckoutAssets {
 			'icon'                                     => '',
 			'isExpressCheckoutInPaymentMethodsEnabled' => $this->is_express_checkout_in_payment_methods_enabled(),
 			'confirmationErrorMessage'                 => __( 'There was a problem confirming your payment.', 'woocommerce' ),
+			// Client 11.2.0 client/checkout/utils/fingerprint.js:12-15; the classic checkout shows it when the device fingerprint fails.
+			'fingerprintErrorMessage'                  => __( 'An error was encountered when preparing the payment form. Please try again later.', 'woocommerce' ),
 			'cardBrandPopoverLabel'                    => __( 'Supported credit card brands', 'woocommerce' ),
 			'cardBrandLogosLabel'                      => __( 'Show all supported credit card brands', 'woocommerce' ),
 			'fraudPreventionToken'                     => $this->get_fraud_prevention_token(),

@@ -430,6 +430,8 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 		$this->assertArrayHasKey( 'woopaySignatureNonce', $config );
 		$this->assertSame( array( 'encrypted' => 'minimum' ), $config['woopayMinimumSessionData'] );
 		$this->assertSame( 'There was a problem processing the payment. Please check your email inbox and refresh the page to try again.', $config['genericErrorMessage'] );
+		// Client 11.2.0 client/checkout/utils/fingerprint.js:12-15 (FINGERPRINT_GENERIC_ERROR).
+		$this->assertSame( 'An error was encountered when preparing the payment form. Please try again later.', $config['fingerprintErrorMessage'] );
 		// With no account fraud-services config and the platform unreachable,
 		// the prepared config falls back to the bare stripe default.
 		$this->assertSame( array( 'stripe' => array() ), $config['fraudServices'] );
@@ -1684,6 +1686,7 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 	private const DROPPED_BLOCKS_DATA_KEYS = array(
 		'confirmationErrorMessage',
 		'customerData',
+		'fingerprintErrorMessage',
 		'paymentListWalletsConfig',
 		'updateOrderStatusNonce',
 		'woopayButtonLabels',

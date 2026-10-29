@@ -38,6 +38,9 @@
 	var isWaitingForStripe = false;
 	var checkoutSubmitHandlerGatewayIds = {};
 	var deviceFingerprint = '';
+	var deviceFingerprintRequest = null;
+	var isDeviceFingerprintReady = false;
+	var isWaitingForDeviceFingerprint = false;
 	var isSubmittingWithPaymentMethod = false;
 	var isSubmittingWithSetupIntent = false;
 	var cardBrandIconsHydratedLabel = null;
@@ -2378,6 +2381,29 @@
 			return;
 		}
 
+		// Client 11.2.0 classic/payment-processing.js:333-340 mounts no Payment Element until the fingerprint
+		// resolves, and shows the error instead when it fails.
+		if ( ! isDeviceFingerprintReady ) {
+			if ( ! isWaitingForDeviceFingerprint ) {
+				isWaitingForDeviceFingerprint = true;
+				getDeviceFingerprint().then(
+					function () {
+						isWaitingForDeviceFingerprint = false;
+						initializeStripeElement();
+					},
+					function ( error ) {
+						isWaitingForDeviceFingerprint = false;
+						setError(
+							error && error.message
+								? error.message
+								: config.fingerprintErrorMessage || ''
+						);
+					}
+				);
+			}
+			return;
+		}
+
 		if ( typeof window.Stripe !== 'function' ) {
 			if ( ! isWaitingForStripe ) {
 				isWaitingForStripe = true;
@@ -2459,6 +2485,12 @@
 		var component = paymentElements[ gatewayId ];
 
 		if ( ! component ) {
+			// No Payment Element without the fingerprint: the client's submit refuses then too
+			// (classic/payment-processing.js:449-465). Retry the fingerprint, which shows its error again.
+			if ( ! isDeviceFingerprintReady ) {
+				initializeStripeElement();
+				return false;
+			}
 			appendPaymentFields( form, null, null );
 			return true;
 		}
@@ -2546,6 +2578,9 @@
 		var component = paymentElements[ gatewayId ];
 
 		if ( ! component ) {
+			if ( ! isDeviceFingerprintReady ) {
+				initializeStripeElement();
+			}
 			return true;
 		}
 
@@ -2988,22 +3023,39 @@
 
 	/**
 	 * Compute the buyer *device* fingerprint the platform's risk rules score
-	 * on. Best-effort: fingerprinting must never block or break checkout.
+	 * on, as client 11.2.0 utils/fingerprint.js getFingerprint(). A failed
+	 * attempt is retried by the next call, as the client calls it per mount.
 	 */
-	function computeDeviceFingerprint() {
-		if ( ! window.FingerprintJS || ! window.FingerprintJS.load ) {
-			return;
+	function getDeviceFingerprint() {
+		if ( deviceFingerprintRequest ) {
+			return deviceFingerprintRequest;
 		}
-		window.FingerprintJS.load( { monitoring: false } )
+
+		deviceFingerprintRequest = new Promise( function ( resolve ) {
+			// A blocked wc-woopayments-fingerprintjs script leaves no FingerprintJS.
+			if ( ! window.FingerprintJS || ! window.FingerprintJS.load ) {
+				throw new Error( config.fingerprintErrorMessage || '' );
+			}
+			resolve( window.FingerprintJS.load( { monitoring: false } ) );
+		} )
 			.then( function ( agent ) {
+				if ( ! agent ) {
+					throw new Error( config.fingerprintErrorMessage || '' );
+				}
 				return agent.get();
 			} )
-			.then( function ( result ) {
-				deviceFingerprint = ( result && result.visitorId ) || '';
-			} )
-			.catch( function () {
-				// Fingerprinting is best-effort; checkout proceeds without it.
-			} );
+			.then(
+				function ( result ) {
+					deviceFingerprint = ( result && result.visitorId ) || '';
+					isDeviceFingerprintReady = true;
+				},
+				function ( error ) {
+					deviceFingerprintRequest = null;
+					throw error;
+				}
+			);
+
+		return deviceFingerprintRequest;
 	}
 
 
@@ -3790,7 +3842,6 @@
 
 	$( function () {
 		enqueueFraudScripts();
-		computeDeviceFingerprint();
 		if (
 			baseConfig.isWooPayEnabled &&
 			baseConfig.isWooPayEmailInputEnabled &&

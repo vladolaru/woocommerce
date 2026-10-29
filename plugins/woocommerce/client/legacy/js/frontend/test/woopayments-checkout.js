@@ -588,6 +588,14 @@ describe( 'WooPayments checkout', () => {
 			),
 		};
 		window.Stripe = jest.fn( () => stripeMock );
+		// The vendored FingerprintJS UMD build (wc-woopayments-fingerprintjs) sets window.FingerprintJS.
+		window.FingerprintJS = {
+			load: jest.fn( () =>
+				Promise.resolve( {
+					get: () => Promise.resolve( { visitorId: 'device_fp_legacy' } ),
+				} )
+			),
+		};
 		require( '../utils/woopayments-appearance' );
 	} );
 
@@ -609,6 +617,7 @@ describe( 'WooPayments checkout', () => {
 		delete window.wcpayAppearance;
 		delete window.wc;
 		delete window.Stripe;
+		delete window.FingerprintJS;
 		delete window.navigator.clipboard;
 		window.fetch = originalFetch;
 		window.localStorage.clear();
@@ -631,8 +640,9 @@ describe( 'WooPayments checkout', () => {
 		expect( getTrackingEvents() ).toEqual( [] );
 	} );
 
-	test( 'passes the checkout total to Stripe Elements as a number', () => {
+	test( 'passes the checkout total to Stripe Elements as a number', async () => {
 		require( '../woopayments-checkout' );
+		await flushPromises();
 
 		expect( stripeElementsOptions ).toMatchObject( {
 			amount: 5000,
@@ -644,7 +654,7 @@ describe( 'WooPayments checkout', () => {
 		} );
 	} );
 
-	test( 'uses keyed split gateway config for classic Stripe Elements', () => {
+	test( 'uses keyed split gateway config for classic Stripe Elements', async () => {
 		document.body.innerHTML =
 			'<form class="checkout">' +
 			'<input type="radio" name="payment_method" value="woocommerce_payments_klarna" checked />' +
@@ -671,6 +681,7 @@ describe( 'WooPayments checkout', () => {
 			} );
 
 		require( '../woopayments-checkout' );
+		await flushPromises();
 
 		expect( stripeElementsOptions ).toMatchObject( {
 			paymentMethodTypes: [ 'klarna' ],
@@ -743,10 +754,11 @@ describe( 'WooPayments checkout', () => {
 		);
 	} );
 
-	test( 'registers payment-list wallets through the custom place-order button API', () => {
+	test( 'registers payment-list wallets through the custom place-order button API', async () => {
 		preparePaymentListWallets();
 
 		require( '../woopayments-checkout' );
+		await flushPromises();
 
 		expect( window.wc.customPlaceOrderButton.register ).toHaveBeenCalledWith(
 			'woocommerce_payments_apple_pay',
@@ -773,10 +785,11 @@ describe( 'WooPayments checkout', () => {
 		);
 	} );
 
-	test( 'keeps custom-button wallets out of the ordinary card Payment Element terms', () => {
+	test( 'keeps custom-button wallets out of the ordinary card Payment Element terms', async () => {
 		preparePaymentListWallets( 'card' );
 
 		require( '../woopayments-checkout' );
+		await flushPromises();
 
 		expect( paymentElementOptions.terms ).toEqual( {
 			card: 'never',
@@ -960,7 +973,7 @@ describe( 'WooPayments checkout', () => {
 		).toBe( true );
 	} );
 
-	test( 'mounts split gateway Stripe Elements into the selected gateway container', () => {
+	test( 'mounts split gateway Stripe Elements into the selected gateway container', async () => {
 		document.body.innerHTML =
 			'<form class="checkout">' +
 			'<ul class="payment_methods">' +
@@ -1005,6 +1018,7 @@ describe( 'WooPayments checkout', () => {
 			.querySelector( '#wcpay-core-payment-element' );
 
 		require( '../woopayments-checkout' );
+		await flushPromises();
 
 		expect( stripeElementsOptions ).toMatchObject( {
 			paymentMethodTypes: [ 'sepa_debit' ],
@@ -1012,7 +1026,7 @@ describe( 'WooPayments checkout', () => {
 		expect( mountPaymentElement ).toHaveBeenCalledWith( selectedContainer );
 	} );
 
-	test( 'does not mount a redirect gateway into another gateway payment element container', () => {
+	test( 'does not mount a redirect gateway into another gateway payment element container', async () => {
 		// A redirect method such as Affirm or Alipay collects nothing on this
 		// page, so it renders no payment-element container of its own. The card
 		// gateway's container is still in the document, and handing that one to
@@ -1062,6 +1076,7 @@ describe( 'WooPayments checkout', () => {
 			.querySelector( '#wcpay-core-payment-element' );
 
 		require( '../woopayments-checkout' );
+		await flushPromises();
 
 		// The card container holds the card's own element only: Affirm gets none.
 		expect( createdPaymentElements ).toHaveLength( 1 );
@@ -1181,6 +1196,7 @@ describe( 'WooPayments checkout', () => {
 		localizeGatewayConfigs( [ 'card', 'klarna' ] );
 
 		require( '../woopayments-checkout' );
+		await flushPromises();
 
 		// One element per gateway at render, on one shared Stripe instance, each in its own row.
 		expect( createdPaymentElements ).toHaveLength( 2 );
@@ -1222,10 +1238,11 @@ describe( 'WooPayments checkout', () => {
 		).toHaveBeenCalledWith( 'submit' );
 	} );
 
-	test( 'keeps the Payment Elements on updated_checkout and moves them into re-rendered containers', () => {
+	test( 'keeps the Payment Elements on updated_checkout and moves them into re-rendered containers', async () => {
 		renderGatewayRows( [ 'card', 'klarna' ], 'card' );
 		localizeGatewayConfigs( [ 'card', 'klarna' ] );
 		require( '../woopayments-checkout' );
+		await flushPromises();
 		const [ card, klarna ] = createdPaymentElements;
 
 		// The fragment did not change, so the containers are the same ones.
@@ -1256,11 +1273,12 @@ describe( 'WooPayments checkout', () => {
 		expect( mountPaymentElement ).toHaveBeenCalledTimes( 4 );
 	} );
 
-	test( 'gives the shared Stripe instance the Link beta when a non-card gateway mounts first', () => {
+	test( 'gives the shared Stripe instance the Link beta when a non-card gateway mounts first', async () => {
 		renderGatewayRows( [ 'klarna', 'card' ], 'card' );
 		localizeGatewayConfigs( [ 'klarna', 'card' ] );
 
 		require( '../woopayments-checkout' );
+		await flushPromises();
 
 		expect( createdPaymentElements[ 0 ].elementsOptions ).toMatchObject( {
 			paymentMethodTypes: [ 'klarna' ],
@@ -1281,6 +1299,7 @@ describe( 'WooPayments checkout', () => {
 		renderGatewayRows( [ 'card', 'klarna' ], 'card' );
 		localizeGatewayConfigs( [ 'card', 'klarna' ] );
 		require( '../woopayments-checkout' );
+		await flushPromises();
 		const [ card, klarna ] = createdPaymentElements;
 
 		klarna.handlers.loaderror( {
@@ -1315,6 +1334,7 @@ describe( 'WooPayments checkout', () => {
 		renderGatewayRows( [ 'card', 'klarna' ], 'card' );
 		localizeGatewayConfigs( [ 'card', 'klarna' ] );
 		require( '../woopayments-checkout' );
+		await flushPromises();
 		const klarna = createdPaymentElements[ 1 ];
 		klarna.handlers.loaderror( {
 			error: { message: 'The payment form could not be loaded.' },
@@ -1348,7 +1368,7 @@ describe( 'WooPayments checkout', () => {
 		expect( klarna.group.submit ).not.toHaveBeenCalled();
 	} );
 
-	test( 'keeps a failed card element when the shopper selects a method that is not WooPayments', () => {
+	test( 'keeps a failed card element when the shopper selects a method that is not WooPayments', async () => {
 		renderGatewayRows( [ 'card', 'klarna' ], 'card' );
 		localizeGatewayConfigs( [ 'card', 'klarna' ] );
 		document
@@ -1359,6 +1379,7 @@ describe( 'WooPayments checkout', () => {
 					'<input id="payment_method_cod" type="radio" name="payment_method" value="cod" /></li>'
 			);
 		require( '../woopayments-checkout' );
+		await flushPromises();
 		const card = createdPaymentElements[ 0 ];
 		card.handlers.loaderror( {
 			error: { message: 'The payment form could not be loaded.' },
@@ -1374,7 +1395,7 @@ describe( 'WooPayments checkout', () => {
 		);
 	} );
 
-	test( 'makes the selected gateway current again after mounting every gateway', () => {
+	test( 'makes the selected gateway current again after mounting every gateway', async () => {
 		renderGatewayRows( [ 'card', 'klarna' ], 'card' );
 		localizeGatewayConfigs( [ 'card', 'klarna' ] );
 		getGatewayRow( 'woocommerce_payments' )
@@ -1384,6 +1405,7 @@ describe( 'WooPayments checkout', () => {
 				'<input id="wc-woocommerce_payments-new-payment-method" type="checkbox" />'
 			);
 		require( '../woopayments-checkout' );
+		await flushPromises();
 		// A checkout update runs the mount pass with nothing after it that resets the config (at page load the
 		// confirmation check does).
 		bodyEventHandlers.updated_checkout();
@@ -1402,10 +1424,11 @@ describe( 'WooPayments checkout', () => {
 		} );
 	} );
 
-	test( 'follows a Multi-Currency switch: kept elements move to the new rows, a newly offered method mounts in the new currency', () => {
+	test( 'follows a Multi-Currency switch: kept elements move to the new rows, an added method mounts in the new currency', async () => {
 		renderGatewayRows( [ 'card', 'klarna' ], 'card' );
 		localizeGatewayConfigs( [ 'card', 'klarna' ] );
 		require( '../woopayments-checkout' );
+		await flushPromises();
 		const [ card, klarna ] = createdPaymentElements;
 
 		// The currency switch re-renders the payment fragment through update_order_review: the rows now carry EUR,
@@ -1438,12 +1461,13 @@ describe( 'WooPayments checkout', () => {
 		).toEqual( expect.any( Function ) );
 	} );
 
-	test( 'starts core tokenization-form.js every time it mounts the Payment Element', () => {
+	test( 'starts core tokenization-form.js every time it mounts the Payment Element', async () => {
 		const formInit = jest.fn();
 		document.body.addEventListener( 'wc-credit-card-form-init', formInit );
 
 		try {
 			require( '../woopayments-checkout' );
+			await flushPromises();
 
 			expect( mountPaymentElement ).toHaveBeenCalledTimes( 1 );
 			expect( formInit ).toHaveBeenCalledTimes( 1 );
@@ -1469,7 +1493,7 @@ describe( 'WooPayments checkout', () => {
 		}
 	} );
 
-	test( 'starts a tokenization-form.js listener bound before this script runs, without waiting for a timer', () => {
+	test( 'starts a tokenization-form.js listener bound before this script runs, without waiting for a timer', async () => {
 		jest.useFakeTimers();
 		const formInit = jest.fn();
 		// tokenization-form.js is a dependency of this script, so WordPress prints it first and its listener is already
@@ -1478,6 +1502,7 @@ describe( 'WooPayments checkout', () => {
 
 		try {
 			require( '../woopayments-checkout' );
+			await jest.advanceTimersByTimeAsync( 0 );
 
 			expect( mountPaymentElement ).toHaveBeenCalledTimes( 1 );
 			expect( formInit ).toHaveBeenCalledTimes( 1 );
@@ -1489,7 +1514,7 @@ describe( 'WooPayments checkout', () => {
 		}
 	} );
 
-	test( 'initializes classic Stripe Elements with cached appearance and font rules', () => {
+	test( 'initializes classic Stripe Elements with cached appearance and font rules', async () => {
 		const appearance = {
 			theme: 'stripe',
 			labels: 'floating',
@@ -1521,6 +1546,7 @@ describe( 'WooPayments checkout', () => {
 
 		try {
 			require( '../woopayments-checkout' );
+			await flushPromises();
 
 			expect( stripeElementsOptions ).toMatchObject( {
 				appearance,
@@ -1642,7 +1668,7 @@ describe( 'WooPayments checkout', () => {
 		).toBe( 'rgb(29, 35, 39)' );
 	} );
 
-	test( 'omits computed alpha color values from generated classic Stripe Elements appearance rules', () => {
+	test( 'omits computed alpha color values from generated classic Stripe Elements appearance rules', async () => {
 		document.body.innerHTML =
 			'<form class="checkout">' +
 			'<input type="radio" name="payment_method" value="woocommerce_payments" checked />' +
@@ -1680,6 +1706,7 @@ describe( 'WooPayments checkout', () => {
 		);
 
 		require( '../woopayments-checkout' );
+		await flushPromises();
 
 		expect(
 			stripeElementsOptions.appearance.rules[ '.Input' ]
@@ -1700,10 +1727,11 @@ describe( 'WooPayments checkout', () => {
 		).not.toHaveProperty( 'boxShadow' );
 	} );
 
-	test( 'uses setup mode when the checkout total is zero', () => {
+	test( 'uses setup mode when the checkout total is zero', async () => {
 		window.wcpay_core_checkout_config.cartTotal = '0';
 
 		require( '../woopayments-checkout' );
+		await flushPromises();
 
 		expect( stripeElementsOptions ).toMatchObject( {
 			currency: 'gbp',
@@ -1714,8 +1742,9 @@ describe( 'WooPayments checkout', () => {
 		expect( stripeElementsOptions ).not.toHaveProperty( 'amount' );
 	} );
 
-	test( 'passes card PaymentElement fields, wallets, and terms options', () => {
+	test( 'passes card PaymentElement fields, wallets, and terms options', async () => {
 		require( '../woopayments-checkout' );
+		await flushPromises();
 
 		expect( elementsMock.create ).toHaveBeenCalledWith(
 			'payment',
@@ -1755,7 +1784,7 @@ describe( 'WooPayments checkout', () => {
 		} );
 	} );
 
-	test( 'hides only enabled billing fields in the payment element like the reference client', () => {
+	test( 'hides only enabled billing fields in the payment element like the reference client', async () => {
 		window.wcpay_core_checkout_config.enabledBillingFields = {
 			billing_first_name: { required: true },
 			billing_last_name: { required: true },
@@ -1767,6 +1796,7 @@ describe( 'WooPayments checkout', () => {
 		};
 
 		require( '../woopayments-checkout' );
+		await flushPromises();
 
 		expect( elementsMock.create ).toHaveBeenCalledWith(
 			'payment',
@@ -1792,10 +1822,11 @@ describe( 'WooPayments checkout', () => {
 		delete window.wcpay_core_checkout_config.enabledBillingFields;
 	} );
 
-	test( 'lets the element collect everything when all billing fields are disabled', () => {
+	test( 'lets the element collect everything when all billing fields are disabled', async () => {
 		window.wcpay_core_checkout_config.enabledBillingFields = {};
 
 		require( '../woopayments-checkout' );
+		await flushPromises();
 
 		expect( elementsMock.create ).toHaveBeenCalledWith(
 			'payment',
@@ -1821,8 +1852,9 @@ describe( 'WooPayments checkout', () => {
 		delete window.wcpay_core_checkout_config.enabledBillingFields;
 	} );
 
-	test( 'instantiates Stripe with the reference client betas', () => {
+	test( 'instantiates Stripe with the reference client betas', async () => {
 		require( '../woopayments-checkout' );
+		await flushPromises();
 
 		expect( window.Stripe ).toHaveBeenCalledWith(
 			'pk_test',
@@ -1835,10 +1867,11 @@ describe( 'WooPayments checkout', () => {
 		);
 	} );
 
-	test( 'omits the Link autofill beta when Link is not enabled', () => {
+	test( 'omits the Link autofill beta when Link is not enabled', async () => {
 		delete window.wcpay_core_checkout_config.paymentMethodsConfig.link;
 
 		require( '../woopayments-checkout' );
+		await flushPromises();
 
 		expect( window.Stripe ).toHaveBeenCalledWith(
 			'pk_test',
@@ -1848,7 +1881,7 @@ describe( 'WooPayments checkout', () => {
 		);
 	} );
 
-	test( 'uses setup mode on the add-payment-method form', () => {
+	test( 'uses setup mode on the add-payment-method form', async () => {
 		document.body.innerHTML =
 			'<form id="add_payment_method">' +
 			'<input type="radio" name="payment_method" value="woocommerce_payments" checked />' +
@@ -1864,6 +1897,7 @@ describe( 'WooPayments checkout', () => {
 		};
 
 		require( '../woopayments-checkout' );
+		await flushPromises();
 
 		expect( stripeElementsOptions ).toMatchObject( {
 			currency: 'gbp',
@@ -1883,7 +1917,7 @@ describe( 'WooPayments checkout', () => {
 		} );
 	} );
 
-	test( 'updates reusable card terms when the save-payment checkbox changes', () => {
+	test( 'updates reusable card terms when the save-payment checkbox changes', async () => {
 		document.body.innerHTML =
 			'<form class="checkout">' +
 			'<input type="radio" name="payment_method" value="woocommerce_payments" checked />' +
@@ -1892,6 +1926,7 @@ describe( 'WooPayments checkout', () => {
 			'</form>';
 
 		require( '../woopayments-checkout' );
+		await flushPromises();
 
 		document
 			.getElementById( 'wc-woocommerce_payments-new-payment-method' )
@@ -1944,44 +1979,48 @@ describe( 'WooPayments checkout', () => {
 			);
 		}
 
-		test( 'shows the terms on the My Account add-payment-method form, which always saves', () => {
+		test( 'shows the terms on the My Account add-payment-method form, which always saves', async () => {
 			renderForm( 'id="add_payment_method"' );
 			window.wcpay_core_checkout_config.isCheckout = false;
 
 			require( '../woopayments-checkout' );
+			await flushPromises();
 
 			expect( paymentElementOptions.terms ).toEqual( {
 				card: 'always',
 			} );
 		} );
 
-		test( 'hides the terms on classic checkout while the save checkbox is unchecked', () => {
+		test( 'hides the terms on classic checkout while the save checkbox is unchecked', async () => {
 			renderForm( 'class="checkout"', visibleSaveCheckbox );
 
 			require( '../woopayments-checkout' );
+			await flushPromises();
 
 			expect( paymentElementOptions.terms ).toEqual( {
 				card: 'never',
 			} );
 		} );
 
-		test( 'shows the terms on classic checkout when the save checkbox is already checked at mount', () => {
+		test( 'shows the terms on classic checkout when the save checkbox is already checked at mount', async () => {
 			renderForm(
 				'class="checkout"',
 				'<input id="wc-woocommerce_payments-new-payment-method" type="checkbox" checked />'
 			);
 
 			require( '../woopayments-checkout' );
+			await flushPromises();
 
 			expect( paymentElementOptions.terms ).toEqual( {
 				card: 'always',
 			} );
 		} );
 
-		test( 'follows the save checkbox on classic checkout as the shopper toggles it', () => {
+		test( 'follows the save checkbox on classic checkout as the shopper toggles it', async () => {
 			renderForm( 'class="checkout"', visibleSaveCheckbox );
 
 			require( '../woopayments-checkout' );
+			await flushPromises();
 
 			toggleSaveCheckbox( true );
 			expect( updatePaymentElement ).toHaveBeenLastCalledWith( {
@@ -1994,45 +2033,49 @@ describe( 'WooPayments checkout', () => {
 			} );
 		} );
 
-		test( 'shows the terms on classic checkout for a subscription cart', () => {
+		test( 'shows the terms on classic checkout for a subscription cart', async () => {
 			renderForm( 'class="checkout"', hiddenCheckedSaveCheckbox );
 			window.wcpay_core_checkout_config.cartContainsSubscription = true;
 
 			require( '../woopayments-checkout' );
+			await flushPromises();
 
 			expect( paymentElementOptions.terms ).toEqual( {
 				card: 'always',
 			} );
 		} );
 
-		test( 'shows the terms for a subscription cart even without a save checkbox', () => {
+		test( 'shows the terms for a subscription cart even without a save checkbox', async () => {
 			renderForm( 'class="checkout"' );
 			window.wcpay_core_checkout_config.cartContainsSubscription = true;
 
 			require( '../woopayments-checkout' );
+			await flushPromises();
 
 			expect( paymentElementOptions.terms ).toEqual( {
 				card: 'always',
 			} );
 		} );
 
-		test( 'shows the terms on the subscription change-payment-method form', () => {
+		test( 'shows the terms on the subscription change-payment-method form', async () => {
 			renderForm( 'id="order_review"', hiddenCheckedSaveCheckbox );
 			window.wcpay_core_checkout_config.isChangingPayment = true;
 
 			require( '../woopayments-checkout' );
+			await flushPromises();
 
 			expect( paymentElementOptions.terms ).toEqual( {
 				card: 'always',
 			} );
 		} );
 
-		test( 'hides the terms on order-pay until the shopper checks the save checkbox', () => {
+		test( 'hides the terms on order-pay until the shopper checks the save checkbox', async () => {
 			renderForm( 'id="order_review"', visibleSaveCheckbox );
 			window.wcpay_core_checkout_config.isOrderPay = true;
 			window.wcpay_core_checkout_config.orderId = 123;
 
 			require( '../woopayments-checkout' );
+			await flushPromises();
 
 			expect( paymentElementOptions.terms ).toEqual( {
 				card: 'never',
@@ -2044,13 +2087,14 @@ describe( 'WooPayments checkout', () => {
 			} );
 		} );
 
-		test( 'shows the terms on order-pay when the cart holds a subscription', () => {
+		test( 'shows the terms on order-pay when the cart holds a subscription', async () => {
 			renderForm( 'id="order_review"', hiddenCheckedSaveCheckbox );
 			window.wcpay_core_checkout_config.isOrderPay = true;
 			window.wcpay_core_checkout_config.orderId = 123;
 			window.wcpay_core_checkout_config.cartContainsSubscription = true;
 
 			require( '../woopayments-checkout' );
+			await flushPromises();
 
 			expect( paymentElementOptions.terms ).toEqual( {
 				card: 'always',
@@ -2064,6 +2108,7 @@ describe( 'WooPayments checkout', () => {
 		delete window.Stripe;
 
 		require( '../woopayments-checkout' );
+		await jest.advanceTimersByTimeAsync( 0 );
 		expect( mountPaymentElement ).not.toHaveBeenCalled();
 
 		window.Stripe = loadedStripe;
@@ -2798,6 +2843,7 @@ describe( 'WooPayments checkout', () => {
 			);
 
 		require( '../woopayments-checkout' );
+		await flushPromises();
 
 		expect(
 			checkoutFormEventHandlers.checkout_place_order_woocommerce_payments()
@@ -2855,6 +2901,7 @@ describe( 'WooPayments checkout', () => {
 			'</form>';
 
 		require( '../woopayments-checkout' );
+		await flushPromises();
 
 		orderPayFormEventHandlers.submit.call(
 			document.getElementById( 'order_review' )
@@ -2889,6 +2936,7 @@ describe( 'WooPayments checkout', () => {
 			'</form>';
 
 		require( '../woopayments-checkout' );
+		await flushPromises();
 
 		const submitResult = orderPayFormEventHandlers.submit.call(
 			document.getElementById( 'order_review' )
@@ -2917,6 +2965,7 @@ describe( 'WooPayments checkout', () => {
 		} );
 
 		require( '../woopayments-checkout' );
+		await flushPromises();
 		checkoutFormEventHandlers.checkout_place_order_woocommerce_payments();
 		await flushPromises();
 
@@ -2956,6 +3005,7 @@ describe( 'WooPayments checkout', () => {
 			} );
 
 		require( '../woopayments-checkout' );
+		await flushPromises();
 
 		const submitCheckout =
 			checkoutFormEventHandlers.checkout_place_order_woocommerce_payments;
@@ -3023,8 +3073,119 @@ describe( 'WooPayments checkout', () => {
 		} );
 	} );
 
+	describe( 'device fingerprint', () => {
+		const FINGERPRINT_ERROR =
+			'An error was encountered when preparing the payment form. Please try again later.';
+
+		beforeEach( () => {
+			document
+				.querySelector( 'form.checkout' )
+				.insertAdjacentHTML(
+					'beforeend',
+					'<div class="wcpay-core-payment-errors" hidden></div>'
+				);
+			window.wcpay_core_checkout_config.fingerprintErrorMessage =
+				FINGERPRINT_ERROR;
+		} );
+
+		function expectNoPaymentAttempt() {
+			expect( stripeMock.createPaymentMethod ).not.toHaveBeenCalled();
+			expect(
+				global.jQuery.checkoutFormResult.trigger
+			).not.toHaveBeenCalledWith( 'submit' );
+			expect(
+				global.jQuery.checkoutFormFields[ 'wcpay-payment-method' ]
+			).toBeUndefined();
+		}
+
+		// Client 11.2.0 classic/payment-processing.js:333-340 awaits getFingerprint() before it mounts the Payment
+		// Element and, when that throws, shows the error's message and mounts nothing; getFingerprint() throws
+		// FINGERPRINT_GENERIC_ERROR when FingerprintJS gives no agent (utils/fingerprint.js:12-25). A blocked
+		// vendored script leaves no FingerprintJS at all.
+		test.each( [
+			[
+				'the FingerprintJS script did not load',
+				() => {
+					delete window.FingerprintJS;
+				},
+				FINGERPRINT_ERROR,
+			],
+			[
+				'FingerprintJS fails',
+				() => {
+					window.FingerprintJS.load.mockImplementation( () =>
+						Promise.reject(
+							new Error( 'FingerprintJS could not load.' )
+						)
+					);
+				},
+				'FingerprintJS could not load.',
+			],
+		] )(
+			'mounts no Payment Element and refuses the payment when %s',
+			async ( _, breakFingerprint, message ) => {
+				breakFingerprint();
+				require( '../woopayments-checkout' );
+				await flushPromises();
+
+				expect( mountPaymentElement ).not.toHaveBeenCalled();
+				expect(
+					document.querySelector( '.wcpay-core-payment-errors' )
+						.textContent
+				).toBe( message );
+
+				expect(
+					checkoutFormEventHandlers.checkout_place_order_woocommerce_payments()
+				).toBe( false );
+				await flushPromises();
+
+				expectNoPaymentAttempt();
+				expect(
+					document.querySelector( '.wcpay-core-payment-errors' )
+						.textContent
+				).toBe( message );
+			}
+		);
+
+		// Client 11.2.0 mounts nothing until the fingerprint resolves, and its submit then finds no Elements group and
+		// refuses (classic/payment-processing.js:333-340, :449-465).
+		test( 'mounts the Payment Element once the fingerprint resolves and refuses a submit before it', async () => {
+			let resolveAgent;
+			window.FingerprintJS.load.mockImplementation(
+				() =>
+					new Promise( ( resolve ) => {
+						resolveAgent = resolve;
+					} )
+			);
+			require( '../woopayments-checkout' );
+			await flushPromises();
+
+			expect( mountPaymentElement ).not.toHaveBeenCalled();
+			expect(
+				checkoutFormEventHandlers.checkout_place_order_woocommerce_payments()
+			).toBe( false );
+			await flushPromises();
+			expectNoPaymentAttempt();
+
+			resolveAgent( {
+				get: () => Promise.resolve( { visitorId: 'device_fp_late' } ),
+			} );
+			await flushPromises();
+
+			expect( mountPaymentElement ).toHaveBeenCalledTimes( 1 );
+			expect(
+				checkoutFormEventHandlers.checkout_place_order_woocommerce_payments()
+			).toBe( false );
+			await flushPromises();
+			expect(
+				global.jQuery.checkoutFormFields[ 'wcpay-fingerprint' ].value
+			).toBe( 'device_fp_late' );
+		} );
+	} );
+
 	test( 'submits Stripe Elements before creating a checkout payment method', async () => {
 		require( '../woopayments-checkout' );
+		await flushPromises();
 
 		expect(
 			checkoutFormEventHandlers.checkout_place_order_woocommerce_payments()
@@ -3050,6 +3211,7 @@ describe( 'WooPayments checkout', () => {
 			);
 
 		require( '../woopayments-checkout' );
+		await flushPromises();
 
 		paymentElementHandlers.loaderror( {
 			error: { message: 'The payment form could not be loaded.' },
@@ -3071,6 +3233,7 @@ describe( 'WooPayments checkout', () => {
 	test( 'submits Stripe Elements only after the payment element is ready', async () => {
 		paymentElementReportsReady = false;
 		require( '../woopayments-checkout' );
+		await flushPromises();
 
 		expect(
 			checkoutFormEventHandlers.checkout_place_order_woocommerce_payments()
@@ -3095,6 +3258,7 @@ describe( 'WooPayments checkout', () => {
 			);
 		paymentElementReportsReady = false;
 		require( '../woopayments-checkout' );
+		await flushPromises();
 
 		expect(
 			checkoutFormEventHandlers.checkout_place_order_woocommerce_payments()
@@ -3129,6 +3293,7 @@ describe( 'WooPayments checkout', () => {
 			'There was a problem processing the payment.';
 		paymentElementReportsReady = false;
 		require( '../woopayments-checkout' );
+		await flushPromises();
 		jest.useFakeTimers();
 
 		expect(
@@ -3150,6 +3315,7 @@ describe( 'WooPayments checkout', () => {
 		localizeGatewayConfigs( [ 'card', 'alipay' ] );
 		paymentElementReportsReady = false;
 		require( '../woopayments-checkout' );
+		await flushPromises();
 		expect( createdPaymentElements ).toHaveLength( 2 );
 		const [ card, alipay ] = createdPaymentElements;
 
@@ -3182,6 +3348,7 @@ describe( 'WooPayments checkout', () => {
 			);
 		paymentElementReportsReady = false;
 		require( '../woopayments-checkout' );
+		await flushPromises();
 		jest.useFakeTimers();
 
 		expect(
@@ -3209,6 +3376,7 @@ describe( 'WooPayments checkout', () => {
 
 	test( 'intercepts the WooCommerce form checkout event before creating a payment method', async () => {
 		require( '../woopayments-checkout' );
+		await flushPromises();
 
 		expect(
 			checkoutFormEventHandlers.checkout_place_order_woocommerce_payments
@@ -3255,6 +3423,7 @@ describe( 'WooPayments checkout', () => {
 		const { platformStripe, connectedStripe } = useSeparateStripeAccounts();
 
 		require( '../woopayments-checkout' );
+		await flushPromises();
 		checkoutFormEventHandlers.checkout_place_order_woocommerce_payments();
 		await flushPromises();
 
@@ -3277,6 +3446,7 @@ describe( 'WooPayments checkout', () => {
 
 	test( 'marks a connected-account card payment method as not created on the platform', async () => {
 		require( '../woopayments-checkout' );
+		await flushPromises();
 		checkoutFormEventHandlers.checkout_place_order_woocommerce_payments();
 		await flushPromises();
 
@@ -3309,7 +3479,7 @@ describe( 'WooPayments checkout', () => {
 		).toBe( 'false' );
 	} );
 
-	test( 'keeps a non-card method on the connected account when only the card forces network saved cards', () => {
+	test( 'keeps a non-card method on the connected account when only the card forces network saved cards', async () => {
 		document.body.innerHTML =
 			'<form class="checkout">' +
 			'<input type="radio" name="payment_method" value="woocommerce_payments_sepa_debit" checked />' +
@@ -3328,6 +3498,7 @@ describe( 'WooPayments checkout', () => {
 			} );
 
 		require( '../woopayments-checkout' );
+		await flushPromises();
 
 		expect( window.Stripe ).toHaveBeenCalledWith(
 			'pk_test',
@@ -3361,6 +3532,7 @@ describe( 'WooPayments checkout', () => {
 		window.wcpay_core_checkout_config.isOrderPay = true;
 
 		require( '../woopayments-checkout' );
+		await flushPromises();
 
 		expect( orderPayFormEventHandlers.submit ).toBeDefined();
 		expect(
@@ -3395,6 +3567,7 @@ describe( 'WooPayments checkout', () => {
 		);
 
 		require( '../woopayments-checkout' );
+		await flushPromises();
 
 		expect(
 			checkoutFormEventHandlers.checkout_place_order_woocommerce_payments()
@@ -3434,6 +3607,7 @@ describe( 'WooPayments checkout', () => {
 		} );
 
 		require( '../woopayments-checkout' );
+		await flushPromises();
 		checkoutFormEventHandlers.checkout_place_order_woocommerce_payments();
 		await flushPromises();
 
@@ -3465,6 +3639,7 @@ describe( 'WooPayments checkout', () => {
 		);
 
 		require( '../woopayments-checkout' );
+		await flushPromises();
 		// Core's checkout.js submitOrder() blocks form#order_review on every submit (blockOnSubmit).
 		global.jQuery.orderPayFormResult.block();
 		orderPayFormEventHandlers.submit.call(
@@ -3504,6 +3679,7 @@ describe( 'WooPayments checkout', () => {
 		window.wcpay_core_checkout_config.isOrderPay = true;
 
 		require( '../woopayments-checkout' );
+		await flushPromises();
 
 		let tokenValueAtSubmit;
 		global.jQuery.orderPayFormResult.trigger.mockImplementation(
@@ -3553,6 +3729,7 @@ describe( 'WooPayments checkout', () => {
 					'<input id="billing_state" value="CA" />'
 			);
 		require( '../woopayments-checkout' );
+		await flushPromises();
 
 		expect(
 			checkoutFormEventHandlers.checkout_place_order_woocommerce_payments()
@@ -3597,6 +3774,7 @@ describe( 'WooPayments checkout', () => {
 					'<input id="billing_state" value="" />'
 			);
 		require( '../woopayments-checkout' );
+		await flushPromises();
 
 		expect(
 			checkoutFormEventHandlers.checkout_place_order_woocommerce_payments()
@@ -3620,6 +3798,7 @@ describe( 'WooPayments checkout', () => {
 					'<input id="billing_address_1" value="123 Main St" />'
 			);
 		require( '../woopayments-checkout' );
+		await flushPromises();
 
 		expect(
 			checkoutFormEventHandlers.checkout_place_order_woocommerce_payments()
@@ -3645,6 +3824,7 @@ describe( 'WooPayments checkout', () => {
 		window.wcpay_core_checkout_config.fraudPreventionToken =
 			'fraud-token-123';
 		require( '../woopayments-checkout' );
+		await flushPromises();
 
 		expect(
 			checkoutFormEventHandlers.checkout_place_order_woocommerce_payments()
@@ -3658,7 +3838,7 @@ describe( 'WooPayments checkout', () => {
 		).toBe( 'fraud-token-123' );
 	} );
 
-	test( 'adds the fraud-prevention token before submitting a redirect split-gateway classic checkout', () => {
+	test( 'adds the fraud-prevention token before submitting a redirect split-gateway classic checkout', async () => {
 		// A redirect method such as Affirm collects nothing on this page and
 		// mounts no Stripe Elements container of its own (see 'does not mount
 		// a redirect gateway into another gateway payment element container'
@@ -3709,6 +3889,7 @@ describe( 'WooPayments checkout', () => {
 			} );
 
 		require( '../woopayments-checkout' );
+		await flushPromises();
 
 		expect(
 			checkoutFormEventHandlers.checkout_place_order_woocommerce_payments_affirm()
@@ -3798,8 +3979,9 @@ describe( 'WooPayments checkout', () => {
 		} );
 	} );
 
-	test( 'remounts the payment element after checkout updates replace the payment markup', () => {
+	test( 'remounts the payment element after checkout updates replace the payment markup', async () => {
 		require( '../woopayments-checkout' );
+		await flushPromises();
 
 		const initialContainer = document.getElementById(
 			'wcpay-core-payment-element'
@@ -3929,7 +4111,7 @@ describe( 'WooPayments checkout', () => {
 		);
 	} );
 
-	test( 'creates a payment element from the refreshed amount and currency after a checkout update', () => {
+	test( 'creates a payment element from the refreshed amount and currency after a checkout update', async () => {
 		document.body.innerHTML =
 			'<form class="checkout">' +
 			'<input type="radio" name="payment_method" value="woocommerce_payments" checked />' +
@@ -3946,6 +4128,7 @@ describe( 'WooPayments checkout', () => {
 				window.wcpay_core_checkout_config.paymentMethodsConfig,
 		} );
 		bodyEventHandlers.updated_checkout();
+		await flushPromises();
 
 		expect( stripeElementsOptions ).toMatchObject( {
 			amount: 7000,
@@ -3977,7 +4160,7 @@ describe( 'WooPayments checkout', () => {
 		);
 	} );
 
-	test( 'adopts a split gateway that first appears after a checkout update', () => {
+	test( 'adopts a split gateway that first appears after a checkout update', async () => {
 		document.body.innerHTML =
 			'<form class="checkout">' +
 			'<input type="radio" name="payment_method" value="woocommerce_payments" />' +
@@ -4003,6 +4186,7 @@ describe( 'WooPayments checkout', () => {
 			} )
 		);
 		bodyEventHandlers.updated_checkout();
+		await flushPromises();
 
 		expect( stripeElementsOptions ).toMatchObject( {
 			paymentMethodTypes: [ 'ideal' ],
@@ -4367,6 +4551,7 @@ describe( 'WooPayments checkout', () => {
 		} );
 
 		require( '../woopayments-checkout' );
+		await flushPromises();
 
 		addPaymentMethodForm.dispatchEvent(
 			new window.Event( 'submit', { bubbles: true, cancelable: true } )
@@ -4427,6 +4612,7 @@ describe( 'WooPayments checkout', () => {
 		} );
 
 		require( '../woopayments-checkout' );
+		await flushPromises();
 
 		addPaymentMethodForm.dispatchEvent(
 			new window.Event( 'submit', { bubbles: true, cancelable: true } )
@@ -4466,6 +4652,7 @@ describe( 'WooPayments checkout', () => {
 		} );
 
 		require( '../woopayments-checkout' );
+		await flushPromises();
 		addPaymentMethodForm.dispatchEvent(
 			new window.Event( 'submit', { bubbles: true, cancelable: true } )
 		);
@@ -4520,6 +4707,7 @@ describe( 'WooPayments checkout', () => {
 		} );
 
 		require( '../woopayments-checkout' );
+		await flushPromises();
 		addPaymentMethodForm.dispatchEvent(
 			new window.Event( 'submit', { bubbles: true, cancelable: true } )
 		);
@@ -4561,6 +4749,7 @@ describe( 'WooPayments checkout', () => {
 		} );
 
 		require( '../woopayments-checkout' );
+		await flushPromises();
 		addPaymentMethodForm.dispatchEvent(
 			new window.Event( 'submit', {
 				bubbles: true,
@@ -4643,6 +4832,7 @@ describe( 'WooPayments checkout', () => {
 			mockSetupIntentHttpFailure( jqXHR );
 
 			require( '../woopayments-checkout' );
+			await flushPromises();
 			addPaymentMethodForm.dispatchEvent(
 				new window.Event( 'submit', {
 					bubbles: true,

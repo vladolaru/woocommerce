@@ -39,21 +39,37 @@ const saveUserRoots = new WeakMap();
 const copyTestNumberSuccessDuration = 2000;
 const EMPTY_BILLING_DATA = {};
 
+// Client 11.2.0 client/checkout/utils/fingerprint.js:12-15.
+const FINGERPRINT_GENERIC_ERROR = __(
+	'An error was encountered when preparing the payment form. Please try again later.',
+	'woocommerce'
+);
+
 // The buyer *device* fingerprint the platform's risk rules score on — the
 // FingerprintJS visitor ID, the same signal the WooPayments plugin posts.
-// Computed once per page, warmed at load so checkout submission never waits
-// on it; best-effort, so failures resolve to an empty value.
-let deviceFingerprintPromise = null;
-const getDeviceFingerprint = () => {
-	if ( ! deviceFingerprintPromise ) {
-		deviceFingerprintPromise = FingerprintJS.load( { monitoring: false } )
-			.then( ( agent ) => agent.get() )
-			.then( ( result ) => result?.visitorId || '' )
-			.catch( () => '' );
-	}
-
-	return deviceFingerprintPromise;
-};
+// Settles to `{ fingerprint }` or `{ error }`, as client 11.2.0
+// useFingerprint() (client/checkout/blocks/hooks.js:60-78). A blocked
+// wc-woopayments-fingerprintjs script leaves no FingerprintJS.
+const getDeviceFingerprint = () =>
+	Promise.resolve()
+		.then( () => {
+			if ( typeof FingerprintJS?.load !== 'function' ) {
+				throw new Error( FINGERPRINT_GENERIC_ERROR );
+			}
+			return FingerprintJS.load( { monitoring: false } );
+		} )
+		.then( ( agent ) => {
+			if ( ! agent ) {
+				throw new Error( FINGERPRINT_GENERIC_ERROR );
+			}
+			return agent.get();
+		} )
+		.then(
+			( result ) => ( { fingerprint: result?.visitorId || '' } ),
+			( error ) => ( {
+				error: error?.message || FINGERPRINT_GENERIC_ERROR,
+			} )
+		);
 
 const getPrimaryPaymentMethodConfig = ( paymentSettings = defaultSettings ) => {
 	const paymentMethodsConfig = paymentSettings?.paymentMethodsConfig || {};
@@ -1367,8 +1383,14 @@ const WooPaymentsContent = ( {
 	const paymentElement = useRef( null );
 	const emitResponseRef = useRef( emitResponse );
 	const shouldSavePaymentRef = useRef( shouldSavePayment );
+	// One attempt per mount, as the client's useFingerprint().
+	const deviceFingerprint = useRef( null );
 	const billingData =
 		billing?.billingAddress || billing?.billingData || EMPTY_BILLING_DATA;
+
+	if ( ! deviceFingerprint.current ) {
+		deviceFingerprint.current = getDeviceFingerprint();
+	}
 
 	emitResponseRef.current = emitResponse;
 	shouldSavePaymentRef.current = shouldSavePayment;
@@ -1569,6 +1591,19 @@ const WooPaymentsContent = ( {
 				return getInvalidPaymentDetailsResponse();
 			}
 
+			// Client 11.2.0 payment-processor.js:143-147 refuses the payment setup with the fingerprint error.
+			const fingerprintResult = await deviceFingerprint.current;
+			if ( fingerprintResult.error ) {
+				return getErrorResponse(
+					emitResponseRef.current,
+					fingerprintResult.error
+				);
+			}
+			// The device fingerprint — never the Stripe card fingerprint,
+			// which is a different signal entirely.
+			paymentMethodData[ 'wcpay-fingerprint' ] =
+				fingerprintResult.fingerprint;
+
 			if (
 				! ( await waitForPaymentElementReady(
 					paymentElementReady.current
@@ -1618,8 +1653,6 @@ const WooPaymentsContent = ( {
 					result.error.message || '';
 				paymentMethodData[ 'wcpay-payment-method-error-type' ] =
 					result.error.type || '';
-				paymentMethodData[ 'wcpay-fingerprint' ] =
-					await getDeviceFingerprint();
 
 				return getSuccessResponse(
 					emitResponseRef.current,
@@ -1639,10 +1672,6 @@ const WooPaymentsContent = ( {
 
 			paymentMethodData[ 'wcpay-payment-method' ] =
 				result.paymentMethod.id || '';
-			// The device fingerprint — never the Stripe card fingerprint,
-			// which is a different signal entirely.
-			paymentMethodData[ 'wcpay-fingerprint' ] =
-				await getDeviceFingerprint();
 
 			return getSuccessResponse(
 				emitResponseRef.current,
@@ -1806,9 +1835,5 @@ registerWooPayments();
 if ( shouldHandleWooPayEmailInput( defaultSettings ) ) {
 	handleWooPayEmailInput( '#email', defaultSettings );
 }
-
-window.addEventListener( 'load', () => {
-	getDeviceFingerprint();
-} );
 
 export default registerWooPayments;
