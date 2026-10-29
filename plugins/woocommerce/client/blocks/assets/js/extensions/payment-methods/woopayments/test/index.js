@@ -389,6 +389,49 @@ describe( 'wc-payment-method-woopayments', () => {
 		}
 	);
 
+	// The bundle reads FingerprintJS from the wc-woopayments-fingerprintjs script's window.FingerprintJS (webpack
+	// external), so a blocked script leaves none; client 11.2.0 bundles it and throws FINGERPRINT_GENERIC_ERROR when it
+	// gives no agent (utils/fingerprint.js:17-25).
+	it.each( [
+		[
+			'the FingerprintJS script did not load',
+			( fingerprintModule ) => {
+				fingerprintModule.default = undefined;
+			},
+		],
+		[
+			'FingerprintJS has no load function',
+			( fingerprintModule ) => {
+				fingerprintModule.default = { load: undefined };
+			},
+		],
+	] )(
+		'refuses the card payment without creating a payment method when %s',
+		async ( _, breakFingerprintScript ) => {
+			const fingerprintModule = jest.requireMock(
+				'@fingerprintjs/fingerprintjs'
+			);
+			const loadedFingerprintJS = fingerprintModule.default;
+			breakFingerprintScript( fingerprintModule );
+
+			try {
+				const harness = await setUpNewCardPayment();
+
+				await expect( harness.setupCallbacks[ 0 ]() ).resolves.toEqual(
+					{
+						type: 'error',
+						message:
+							'An error was encountered when preparing the payment form. Please try again later.',
+						messageContext: 'payments',
+					}
+				);
+				expect( harness.calls ).toEqual( [] );
+			} finally {
+				fingerprintModule.default = loadedFingerprintJS;
+			}
+		}
+	);
+
 	it( 'records a WooPayments place-order event when Blocks payment setup runs', async () => {
 		window.fetch = jest.fn().mockResolvedValue( {
 			json: jest.fn().mockResolvedValue( { success: true } ),
