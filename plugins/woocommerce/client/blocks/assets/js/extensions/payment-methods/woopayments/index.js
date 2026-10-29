@@ -1372,6 +1372,8 @@ const WooPaymentsContent = ( {
 	const accountStripe = useRef( null );
 	const elements = useRef( null );
 	const paymentElement = useRef( null );
+	// False once this content unmounts, so its element's change listener stops acting.
+	const isContentMounted = useRef( false );
 	const emitResponseRef = useRef( emitResponse );
 	const shouldSavePaymentRef = useRef( shouldSavePayment );
 	// One attempt per mount, as the client's useFingerprint().
@@ -1489,6 +1491,14 @@ const WooPaymentsContent = ( {
 	] );
 
 	useEffect( () => {
+		isContentMounted.current = true;
+
+		return () => {
+			isContentMounted.current = false;
+		};
+	}, [] );
+
+	useEffect( () => {
 		if (
 			! elementContainer.current ||
 			! paymentSettings.isCoreNativeCheckoutAvailable ||
@@ -1533,8 +1543,13 @@ const WooPaymentsContent = ( {
 			} );
 		} );
 		// An edit in the element removes the payment error notice its validation raised, which core and client 11.2.0
-		// keep until the next Place order.
+		// keep until the next Place order. The notice is shared by every payment method, so a closed element's change
+		// must not remove it.
 		paymentElement.current.on( 'change', () => {
+			if ( ! isContentMounted.current ) {
+				return;
+			}
+
 			const context = emitResponseRef.current.noticeContexts.PAYMENTS;
 			const isErrorShown = selectStore( 'core/notices' )
 				.getNotices( context )

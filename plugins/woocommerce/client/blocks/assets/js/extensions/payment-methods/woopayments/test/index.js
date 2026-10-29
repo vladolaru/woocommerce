@@ -1765,6 +1765,70 @@ describe( 'wc-payment-method-woopayments', () => {
 		} );
 	} );
 
+	describe( 'payment error notice and the Payment Element lifetime', () => {
+		const paymentErrorNotice = {
+			id: 'wc-payment-error',
+			content: 'Another payment method could not be processed.',
+		};
+		const editPaymentElementOf = ( harness ) =>
+			harness.elementsInstance.create.mock.results[ 0 ].value.on.mock.calls
+				.filter( ( [ event ] ) => event === 'change' )
+				.forEach( ( [ , handler ] ) =>
+					handler( {
+						elementType: 'payment',
+						complete: true,
+						empty: false,
+						collapsed: false,
+						value: { type: 'card' },
+					} )
+				);
+
+		// The notice is shared by every payment method, and core unmounts this content when the shopper picks another one.
+		it( 'leaves another method’s payment error notice when the closed Payment Element reports a change', async () => {
+			const harness = await setUpNewCardPayment();
+
+			harness.unmount();
+			mockNotices.payments = [ paymentErrorNotice ];
+			editPaymentElementOf( harness );
+
+			expect( mockNoticesActions.removeNotice ).not.toHaveBeenCalled();
+			expect( mockNotices.payments ).toEqual( [ paymentErrorNotice ] );
+		} );
+
+		// The element effect re-runs on the save choice and only updates the element, so the listener must outlive it.
+		it( 'still removes the payment error notice once after the save choice changes', async () => {
+			const harness = await setUpNewCardPayment();
+			const paymentElement =
+				harness.elementsInstance.create.mock.results[ 0 ].value;
+			paymentElement.update = jest.fn();
+			const content = harness.createContent();
+
+			harness.rerender(
+				createElement( content.type, {
+					...content.props,
+					shouldSavePayment: true,
+				} )
+			);
+			await waitFor( () => {
+				expect( paymentElement.update ).toHaveBeenCalledTimes( 1 );
+			} );
+			mockNotices.payments = [ paymentErrorNotice ];
+			editPaymentElementOf( harness );
+
+			expect( harness.elementsInstance.create ).toHaveBeenCalledTimes(
+				1
+			);
+			expect( mockNoticesActions.removeNotice ).toHaveBeenCalledTimes(
+				1
+			);
+			expect( mockNoticesActions.removeNotice ).toHaveBeenCalledWith(
+				'wc-payment-error',
+				'payments'
+			);
+			expect( mockNotices.payments ).toEqual( [] );
+		} );
+	} );
+
 	it( 'records failed tokenization with the error sentinel instead of aborting', async () => {
 		const harness = await setUpNewCardPayment();
 		harness.createPaymentMethod.mockResolvedValueOnce( {
