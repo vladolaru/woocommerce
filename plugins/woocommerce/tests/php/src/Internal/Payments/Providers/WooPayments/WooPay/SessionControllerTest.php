@@ -1984,9 +1984,9 @@ class SessionControllerTest extends WC_REST_Unit_Test_Case {
 		);
 		$tracking_controller = $this->getMockBuilder( WooPaymentsFrontendTrackingController::class )
 			->disableOriginalConstructor()
-			->onlyMethods( array( 'is_woopay_event_tracking_enabled' ) )
+			->onlyMethods( array( 'is_shopper_event_tracking_enabled' ) )
 			->getMock();
-		$tracking_controller->method( 'is_woopay_event_tracking_enabled' )->willReturn( true );
+		$tracking_controller->method( 'is_shopper_event_tracking_enabled' )->willReturn( true );
 
 		$this->woopay_eligibility = new Eligibility();
 		$this->woopay_eligibility->init( $account_service );

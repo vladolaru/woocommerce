@@ -475,6 +475,58 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * The WooPay config merged into the classic and Blocks checkout configs carries the store-level tracking flag, as client
+	 * 11.2.0's payment fields config does (class-woopay-tracker.php:663-665, should_enable_tracking( false, true )).
+	 *
+	 * @testdox Should keep the shopper tracking flag in the checkout configs with WooPay off, tracking option $allow_tracking.
+	 * @testWith ["yes", true]
+	 *           ["no", false]
+	 *
+	 * @param string $allow_tracking The woocommerce_allow_tracking option.
+	 * @param bool   $expected       Expected isShopperTrackingEnabled.
+	 */
+	public function test_get_payment_fields_js_config_keeps_the_shopper_tracking_flag_with_woopay_off( string $allow_tracking, bool $expected ): void {
+		update_option( 'woocommerce_default_country', 'US:CA' );
+		update_option( 'woocommerce_allow_tracking', $allow_tracking );
+		$account_service     = $this->create_account_service(
+			true,
+			array(
+				'country'                    => 'US',
+				'platform_checkout_eligible' => true,
+			),
+			array(
+				'enabled'           => 'yes',
+				'platform_checkout' => 'no',
+			)
+		);
+		$tracking_controller = new WooPaymentsFrontendTrackingController();
+		$tracking_controller->init( $account_service );
+		$eligibility = new Eligibility();
+		$eligibility->init( $account_service );
+		$appearance_store = new AppearanceStore();
+		$appearance_store->init( new WooPaymentsFrontendStylesService() );
+		$woopay_service = new SessionService();
+		$woopay_service->init( $account_service, $eligibility, $appearance_store, $tracking_controller, wc_get_container()->get( BlocksDataExtractor::class ), new AdaptedExtensions(), $this->createMock( WooPaymentsCustomerService::class ), wc_get_container()->get( WooPaymentsLogger::class ) );
+		$assets = new WooPaymentsCheckoutAssets();
+		$assets->init( $account_service, $woopay_service, $eligibility, $this->create_frontend_styles_service(), $tracking_controller, new PaymentMethodRegistry() );
+
+		$config      = $assets->get_payment_fields_js_config( self::CARD_SUPPORTS );
+		$blocks_data = $assets->get_blocks_payment_method_data( self::CARD_SUPPORTS );
+
+		$this->assertFalse( $config['isWooPayEnabled'] );
+		$this->assertSame(
+			array(
+				'classic' => $expected,
+				'blocks'  => $expected,
+			),
+			array(
+				'classic' => $config['isShopperTrackingEnabled'],
+				'blocks'  => $blocks_data['isShopperTrackingEnabled'],
+			)
+		);
+	}
+
+	/**
 	 * @testdox Should expose change-payment state only for an order-pay subscription request without mutating it.
 	 */
 	public function test_get_payment_fields_js_config_exposes_subscription_change_payment_request_state(): void {
