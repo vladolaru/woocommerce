@@ -142,9 +142,29 @@ final class WooPayments extends AbstractPaymentMethodType {
 	}
 
 	/**
-	 * Initializes the payment method type.
+	 * Initializes the payment method type: the Blocks payment styles follow the Cart and Checkout block renders.
 	 */
-	public function initialize(): void {}
+	public function initialize(): void {
+		add_action( 'woocommerce_blocks_enqueue_checkout_block_scripts_after', array( self::class, 'enqueue_styles_for_rendered_block' ) );
+		add_action( 'woocommerce_blocks_enqueue_cart_block_scripts_after', array( self::class, 'enqueue_styles_for_rendered_block' ) );
+	}
+
+	/**
+	 * Enqueue the WooPayments Blocks styles registered for the Cart or Checkout block being rendered.
+	 *
+	 * The block registers them just before, when it asks for the payment method script handles. Following the render
+	 * covers a block from a page template, and keeps the styles off classic checkout, cart and product pages, where client
+	 * 11.2.0 loads them (class-wc-payments-blocks-payment-method.php:55).
+	 *
+	 * @internal
+	 */
+	public static function enqueue_styles_for_rendered_block(): void {
+		foreach ( array( self::PAYMENT_METHOD_SCRIPT_HANDLE, self::WOOPAY_SCRIPT_HANDLE, self::EXPRESS_CHECKOUT_SCRIPT_HANDLE ) as $handle ) {
+			if ( wp_style_is( $handle, 'registered' ) ) {
+				wp_enqueue_style( $handle );
+			}
+		}
+	}
 
 	/**
 	 * Returns if this payment method should be active. If false, the scripts will not be enqueued.
@@ -242,7 +262,7 @@ final class WooPayments extends AbstractPaymentMethodType {
 	 * @return array<string,mixed>
 	 */
 	public function get_payment_method_data() {
-		$data       = $this->checkout_assets->get_blocks_payment_method_data( $this->get_card_gateway_supports(), $this->payment_gateway ? $this->payment_gateway->get_payment_method_definition() : null, $this->shared_config );
+		$data       = $this->checkout_assets->get_blocks_payment_method_data( $this->get_card_gateway_supports(), $this->payment_gateway ? $this->payment_gateway->get_payment_method_definition() : null, $this->shared_config, $this->get_button_context() );
 		$gateway_id = null === $this->payment_gateway ? WooPaymentsPersistenceVocabulary::GATEWAY_ID : $this->payment_gateway->id;
 		$data       = array_merge(
 			$data,
@@ -341,30 +361,33 @@ final class WooPayments extends AbstractPaymentMethodType {
 	}
 
 	/**
-	 * Enqueue a Blocks payment style only while rendering a Blocks cart/checkout surface.
+	 * Enqueue a Blocks payment style in the block editor, which previews the cart and checkout without rendering them.
+	 *
+	 * On the front end the style follows the block render instead (enqueue_styles_for_rendered_block()).
 	 *
 	 * @param string $handle Style handle.
 	 */
 	private function maybe_enqueue_blocks_payment_style( string $handle ): void {
-		if ( $this->is_blocks_cart_or_checkout_surface() ) {
+		if ( is_admin() ) {
 			wp_enqueue_style( $handle );
 		}
 	}
 
 	/**
-	 * Tell whether the current request renders the Blocks cart or checkout, or is an admin request.
+	 * Tell whether the request is a cart or checkout page, or an admin request, for the WooPay and express assets.
 	 *
-	 * Admin requests count, because the block editor previews the cart and checkout with every payment method, so it
-	 * loads the full Blocks payment stack.
+	 * These are client 11.2.0's page checks (class-wc-payments-express-checkout-button-helper.php:275-286), so a cart or
+	 * checkout page counts by its page ID, also when a page template renders its block. Admin requests count, because the
+	 * block editor previews the cart and checkout with every payment method.
 	 *
 	 * @return bool
 	 */
-	private function is_blocks_cart_or_checkout_surface(): bool {
+	private function is_cart_or_checkout_page(): bool {
 		if ( is_admin() ) {
 			return true;
 		}
 
-		return WooPaymentsFrontendAssets::current_post_has_block( 'woocommerce/cart' ) || WooPaymentsFrontendAssets::current_post_has_block( 'woocommerce/checkout' );
+		return is_cart() || has_block( 'woocommerce/cart' ) || is_checkout() || has_block( 'woocommerce/checkout' );
 	}
 
 	/**
@@ -394,7 +417,7 @@ final class WooPayments extends AbstractPaymentMethodType {
 	 */
 	private function should_enqueue_woopay_assets(): bool {
 		return $this->is_active() &&
-			$this->is_blocks_cart_or_checkout_surface() &&
+			$this->is_cart_or_checkout_page() &&
 			$this->woopay_eligibility->should_show_woopay_button( $this->get_button_context() );
 	}
 
@@ -405,7 +428,7 @@ final class WooPayments extends AbstractPaymentMethodType {
 	 */
 	private function should_enqueue_express_checkout_assets(): bool {
 		return $this->is_active() &&
-			$this->is_blocks_cart_or_checkout_surface() &&
+			$this->is_cart_or_checkout_page() &&
 			$this->express_checkout_service->should_show_payment_request_button( $this->get_button_context() );
 	}
 

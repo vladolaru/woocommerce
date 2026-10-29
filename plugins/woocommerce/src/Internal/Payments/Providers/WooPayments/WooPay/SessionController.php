@@ -970,6 +970,9 @@ class SessionController implements RegisterHooksInterface {
 	/**
 	 * Tell whether the current request renders a Blocks cart or checkout page.
 	 *
+	 * It reads the page content only, so a page whose block comes from a template loads the classic script, which finds no
+	 * markup, as client 11.2.0 loads its classic WooPay scripts on every Blocks page; a page holding the block skips it.
+	 *
 	 * @return bool
 	 */
 	private function is_block_cart_or_checkout_surface(): bool {

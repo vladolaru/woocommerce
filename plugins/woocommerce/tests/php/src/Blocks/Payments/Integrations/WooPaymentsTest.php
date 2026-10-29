@@ -30,9 +30,17 @@ use WC_Unit_Test_Case;
 class WooPaymentsTest extends WC_Unit_Test_Case {
 
 	/**
+	 * Temporary theme root a test wrote, or an empty string.
+	 *
+	 * @var string
+	 */
+	private $temp_theme_root = '';
+
+	/**
 	 * Tear down test fixtures.
 	 */
 	public function tearDown(): void {
+		$this->delete_temp_theme_root();
 		remove_all_filters( 'wcpay_upe_available_payment_methods' );
 
 		foreach ( array( 'wc-payment-method-woopayments', 'wc-payment-method-woopayments-woopay', 'wc-payment-method-woopayments-express-checkout', 'wc-payment-method-woopayments-fraud-scripts', 'wc-payment-method-woopayments-common', 'wc-payment-method-woopayments-woopay-common' ) as $handle ) {
@@ -401,20 +409,28 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should not enqueue Blocks WooPayments styles on classic checkout shortcode pages.
+	 * @testdox Should not enqueue Blocks WooPayments styles or scripts on the classic shortcode checkout page.
+	 *
+	 * Blocks asks for the payment method script handles on every page (Payments\Api::verify_payment_methods_dependencies()),
+	 * but no Cart or Checkout block renders here, so nothing loads. Client 11.2.0 loads its Blocks styles on this page.
+	 *
+	 * A separate process, because an earlier test can define WOOCOMMERCE_CART or WOOCOMMERCE_CHECKOUT for the rest of the run.
+	 *
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
 	 */
 	public function test_get_payment_method_script_handles_does_not_enqueue_blocks_styles_on_classic_checkout_shortcode_pages(): void {
 		$page_id = self::factory()->post->create(
 			array(
 				'post_type'    => 'page',
 				'post_status'  => 'publish',
-				'post_content' => '[woocommerce_checkout]',
+				'post_content' => '<!-- wp:shortcode -->[woocommerce_checkout]<!-- /wp:shortcode -->',
 			)
 		);
-
-		global $post;
-		$post = get_post( $page_id ); // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited
-		setup_postdata( $post );
+		update_option( 'woocommerce_checkout_page_id', $page_id );
+		$this->reset_cart_checkout_page_cache();
+		$this->go_to( get_permalink( $page_id ) );
+		$this->assertTrue( is_checkout(), 'Precondition: the classic checkout page.' );
 
 		$asset_api = $this->getMockBuilder( AssetApi::class )
 			->disableOriginalConstructor()
@@ -437,17 +453,18 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 		$provider->method( 'can_process_payments' )->willReturn( true );
 
 		$integration = new WooPayments( $asset_api, $this->create_runtime_arbiter(), $assets, $provider, $this->create_woopay_eligibility( true ), $this->create_express_checkout_service( true ) );
+		$integration->initialize();
 
-		$handles = $integration->get_payment_method_script_handles();
-
-		$this->assertSame( array( 'wc-payment-method-woopayments', 'wc-payment-method-woopayments-fraud-scripts' ), $handles );
+		foreach ( $integration->get_payment_method_script_handles() as $handle ) {
+			$this->assertFalse( wp_script_is( $handle, 'enqueued' ), $handle . ' is not enqueued.' );
+		}
 		$this->assertFalse( wp_style_is( 'wc-payment-method-woopayments', 'enqueued' ) );
 		$this->assertFalse( wp_style_is( 'wc-payment-method-woopayments-woopay', 'enqueued' ) );
 		$this->assertFalse( wp_style_is( 'wc-payment-method-woopayments-express-checkout', 'enqueued' ) );
 	}
 
 	/**
-	 * @testdox Should enqueue Blocks WooPayments styles on checkout block pages.
+	 * @testdox Should enqueue Blocks WooPayments styles on checkout block pages once the Checkout block renders.
 	 */
 	public function test_get_payment_method_script_handles_enqueues_blocks_styles_on_checkout_block_pages(): void {
 		$page_id = self::factory()->post->create(
@@ -483,6 +500,7 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 		$provider->method( 'can_process_payments' )->willReturn( true );
 
 		$integration = new WooPayments( $asset_api, $this->create_runtime_arbiter(), $assets, $provider, $this->create_woopay_eligibility( true ), $this->create_express_checkout_service( true ) );
+		$integration->initialize();
 
 		$handles = $integration->get_payment_method_script_handles();
 
@@ -490,6 +508,10 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 			array( 'wc-payment-method-woopayments', 'wc-payment-method-woopayments-woopay', 'wc-payment-method-woopayments-express-checkout', 'wc-payment-method-woopayments-fraud-scripts' ),
 			$handles
 		);
+		$this->assertFalse( wp_style_is( 'wc-payment-method-woopayments', 'enqueued' ), 'The styles wait for the block render.' );
+
+		do_action( 'woocommerce_blocks_enqueue_checkout_block_scripts_after' );
+
 		$this->assertTrue( wp_style_is( 'wc-payment-method-woopayments', 'enqueued' ) );
 		$this->assertTrue( wp_style_is( 'wc-payment-method-woopayments-woopay', 'enqueued' ) );
 		$this->assertTrue( wp_style_is( 'wc-payment-method-woopayments-express-checkout', 'enqueued' ) );
@@ -565,7 +587,7 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 	public function test_blocks_cart_with_express_checkout_loads_what_express_needs(): void {
 		$this->go_to_block_page( 'woocommerce/cart', 'woocommerce_cart_page_id' );
 
-		$dependencies = $this->get_cart_block_frontend_dependencies( $this->create_registered_integration( false, true ) );
+		$dependencies = $this->render_block_assets( $this->create_registered_integration( false, true ), 'woocommerce/cart' );
 
 		$this->assertSame( array( 'wc-payment-method-woopayments-express-checkout', 'wc-payment-method-woopayments-fraud-scripts' ), $dependencies );
 		$loaded = $this->get_dependency_closure( $dependencies );
@@ -591,7 +613,7 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 	public function test_blocks_cart_with_woopay_loads_what_woopay_needs(): void {
 		$this->go_to_block_page( 'woocommerce/cart', 'woocommerce_cart_page_id' );
 
-		$dependencies = $this->get_cart_block_frontend_dependencies( $this->create_registered_integration( true, false ) );
+		$dependencies = $this->render_block_assets( $this->create_registered_integration( true, false ), 'woocommerce/cart' );
 
 		$this->assertSame( array( 'wc-payment-method-woopayments-woopay', 'wc-payment-method-woopayments-fraud-scripts' ), $dependencies );
 		$loaded = $this->get_dependency_closure( $dependencies );
@@ -610,8 +632,7 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 	public function test_blocks_checkout_keeps_the_card_stack(): void {
 		$this->go_to_block_page( 'woocommerce/checkout', 'woocommerce_checkout_page_id' );
 
-		$api          = new Api( $this->create_payment_method_registry( $this->create_registered_integration() ), $this->createMock( AssetDataRegistry::class ) );
-		$dependencies = $api->add_payment_method_script_dependencies( array(), 'wc-checkout-block-frontend' );
+		$dependencies = $this->render_block_assets( $this->create_registered_integration(), 'woocommerce/checkout' );
 
 		$this->assertSame( array( 'wc-payment-method-woopayments', 'wc-payment-method-woopayments-fraud-scripts' ), $dependencies );
 		$loaded = $this->get_dependency_closure( $dependencies );
@@ -621,6 +642,69 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 		// The card script's built asset file lists FingerprintJS (a build external); the integration's part is registering its handle.
 		$this->assertTrue( wp_script_is( 'wc-woopayments-fingerprintjs', 'registered' ) );
 		$this->assertTrue( wp_style_is( 'wc-payment-method-woopayments', 'enqueued' ) );
+	}
+
+	/**
+	 * The cart and checkout pages, each with its block in the page content, from a template saved in the database, and
+	 * from the active theme's template file.
+	 *
+	 * @return array<string,array{0:string,1:string,2:string[]}>
+	 */
+	public function provide_cart_and_checkout_pages_by_block_source(): array {
+		$checkout_handles = array( 'wc-payment-method-woopayments', 'wc-payment-method-woopayments-woopay', 'wc-payment-method-woopayments-express-checkout', 'wc-payment-method-woopayments-fraud-scripts' );
+		$cart_handles     = array( 'wc-payment-method-woopayments-woopay', 'wc-payment-method-woopayments-express-checkout', 'wc-payment-method-woopayments-fraud-scripts' );
+
+		return array(
+			'checkout, block in the page content' => array( 'woocommerce/checkout', 'content', $checkout_handles ),
+			'checkout, page-checkout DB template' => array( 'woocommerce/checkout', 'db_template', $checkout_handles ),
+			'checkout, theme page-checkout file'  => array( 'woocommerce/checkout', 'theme_template', $checkout_handles ),
+			'cart, block in the page content'     => array( 'woocommerce/cart', 'content', $cart_handles ),
+			'cart, page-cart DB template'         => array( 'woocommerce/cart', 'db_template', $cart_handles ),
+			'cart, theme page-cart file'          => array( 'woocommerce/cart', 'theme_template', $cart_handles ),
+		);
+	}
+
+	/**
+	 * @testdox Should register the WooPay and express methods, and load the Blocks styles when the block renders, on the cart and checkout pages however the block renders: $_dataName.
+	 * @dataProvider provide_cart_and_checkout_pages_by_block_source
+	 *
+	 * A separate process, because the test switches the theme, and an earlier test can define WOOCOMMERCE_CART or
+	 * WOOCOMMERCE_CHECKOUT for the rest of the run.
+	 *
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 *
+	 * @param string   $block_name       Block the page renders.
+	 * @param string   $source           Where the block comes from: `content`, `db_template` or `theme_template`.
+	 * @param string[] $expected_handles Expected payment method dependencies of the block's frontend script.
+	 */
+	public function test_cart_and_checkout_pages_register_express_methods_however_the_block_renders( string $block_name, string $source, array $expected_handles ): void {
+		$this->go_to_page_rendered_by( $block_name, $source );
+		$this->assertSame( 'content' === $source, has_block( $block_name ), 'Precondition: only the content row holds the block in the page.' );
+		$this->assertSame( 'db_template' === $source, CartCheckoutUtils::is_overridden_by_custom_template_content( $block_name ), 'Precondition: only the DB row has a template the page check reads.' );
+		if ( 'theme_template' === $source ) {
+			$this->assertTrue( wp_is_block_theme(), 'Precondition: a block theme.' );
+			$template = get_block_template( get_stylesheet() . '//page-' . str_replace( 'woocommerce/', '', $block_name ) );
+			$this->assertSame( 'theme', $template->source ?? null, 'Precondition: the template comes from the theme file.' );
+			$this->assertTrue( has_block( $block_name, $template->content ), 'Precondition: the theme template renders the block.' );
+		}
+		$integration = $this->create_registered_integration( true, true );
+		$integration->initialize();
+
+		$api          = new Api( $this->create_payment_method_registry( $integration ), $this->createMock( AssetDataRegistry::class ) );
+		$dependencies = $api->add_payment_method_script_dependencies( array(), 'wc-' . str_replace( 'woocommerce/', '', $block_name ) . '-block-frontend' );
+
+		$this->assertSame( $expected_handles, $dependencies );
+		$styles = array( 'wc-payment-method-woopayments', 'wc-payment-method-woopayments-woopay', 'wc-payment-method-woopayments-express-checkout' );
+		foreach ( $styles as $style ) {
+			$this->assertFalse( wp_style_is( $style, 'enqueued' ), $style . ' waits for the block render.' );
+		}
+
+		do_action( 'woocommerce_blocks_enqueue_' . str_replace( 'woocommerce/', '', $block_name ) . '_block_scripts_after' );
+
+		$this->assertTrue( wp_style_is( 'wc-payment-method-woopayments-woopay', 'enqueued' ) );
+		$this->assertTrue( wp_style_is( 'wc-payment-method-woopayments-express-checkout', 'enqueued' ) );
+		$this->assertSame( 'woocommerce/checkout' === $block_name, wp_style_is( 'wc-payment-method-woopayments', 'enqueued' ), 'The card style loads on the checkout only.' );
 	}
 
 	/**
@@ -702,22 +786,31 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 	 * Blocks pages and the button context client 11.1.0 get_button_context() gives them: a page holding the Cart block is
 	 * the cart, before the checkout (class-wc-payments-express-checkout-button-helper.php:275-277, :450-468).
 	 *
-	 * @return array<string,array{0:string,1:string|null,2:string}>
+	 * A paragraph-only cart or checkout page stands for one whose block comes from a page template. The page content is read
+	 * raw, so a password-protected page and a page split by `<!--nextpage-->` still count by the block they hold.
+	 *
+	 * @return array<string,array{0:string,1:string|null,2:string,3?:string}>
 	 */
 	public function provide_blocks_pages_and_button_contexts(): array {
-		$cart     = '<!-- wp:woocommerce/cart --><div class="wp-block-woocommerce-cart"></div><!-- /wp:woocommerce/cart -->';
-		$checkout = '<!-- wp:woocommerce/checkout --><div class="wp-block-woocommerce-checkout"></div><!-- /wp:woocommerce/checkout -->';
+		$cart      = '<!-- wp:woocommerce/cart --><div class="wp-block-woocommerce-cart"></div><!-- /wp:woocommerce/cart -->';
+		$checkout  = '<!-- wp:woocommerce/checkout --><div class="wp-block-woocommerce-checkout"></div><!-- /wp:woocommerce/checkout -->';
+		$paragraph = '<!-- wp:paragraph --><p>Page</p><!-- /wp:paragraph -->';
 
 		return array(
-			'Cart block on the cart page'         => array( $cart, 'woocommerce_cart_page_id', 'cart' ),
-			'Cart block on another page'          => array( $cart, null, 'cart' ),
-			'Cart and Checkout blocks on a page'  => array( $cart . $checkout, null, 'cart' ),
-			'Checkout block on the checkout page' => array( $checkout, 'woocommerce_checkout_page_id', 'checkout' ),
+			'Cart block on the cart page'           => array( $cart, 'woocommerce_cart_page_id', 'cart' ),
+			'Cart block on another page'            => array( $cart, null, 'cart' ),
+			'Cart and Checkout blocks on a page'    => array( $cart . $checkout, null, 'cart' ),
+			'Checkout block on the checkout page'   => array( $checkout, 'woocommerce_checkout_page_id', 'checkout' ),
+			'Cart page from a page template'        => array( $paragraph, 'woocommerce_cart_page_id', 'cart' ),
+			'Checkout page from a page template'    => array( $paragraph, 'woocommerce_checkout_page_id', 'checkout' ),
+			'Password page with the Cart block'     => array( $cart, null, 'cart', 'secret' ),
+			'Checkout block after a page break'     => array( $paragraph . '<!--nextpage-->' . $checkout, null, 'checkout' ),
+			'Password page with the Checkout block' => array( $checkout, null, 'checkout', 'secret' ),
 		);
 	}
 
 	/**
-	 * @testdox Should ask for the WooPay and express buttons of the cart on any page holding the Cart block.
+	 * @testdox Should ask for the WooPay and express buttons of the page's location, and build the Blocks data for it, on any cart or checkout page and any page holding the block: $_dataName.
 	 * @dataProvider provide_blocks_pages_and_button_contexts
 	 *
 	 * A separate process, because an earlier test can define WOOCOMMERCE_CART or WOOCOMMERCE_CHECKOUT for the rest of the run.
@@ -728,13 +821,15 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 	 * @param string      $content          Page content.
 	 * @param string|null $page_option      WooCommerce page option pointing at the page, or null for none.
 	 * @param string      $expected_context Expected button context.
+	 * @param string      $password         Page password, or an empty string for none.
 	 */
-	public function test_button_context_counts_any_cart_block_page_as_the_cart( string $content, ?string $page_option, string $expected_context ): void {
+	public function test_button_context_counts_any_cart_block_page_as_the_cart( string $content, ?string $page_option, string $expected_context, string $password = '' ): void {
 		$page_id = self::factory()->post->create(
 			array(
-				'post_type'    => 'page',
-				'post_status'  => 'publish',
-				'post_content' => $content,
+				'post_type'     => 'page',
+				'post_status'   => 'publish',
+				'post_content'  => $content,
+				'post_password' => $password,
 			)
 		);
 		if ( null !== $page_option ) {
@@ -742,6 +837,7 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 		}
 		$this->reset_cart_checkout_page_cache();
 		$this->go_to( get_permalink( $page_id ) );
+		$this->assertSame( '' !== $password, post_password_required(), 'Precondition: the password form renders instead of the content.' );
 
 		$contexts = array();
 		$record   = static function ( string $context ) use ( &$contexts ): bool {
@@ -769,7 +865,13 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 			->onlyMethods( array( 'get_blocks_payment_method_data', 'should_expose_checkout_surface' ) )
 			->getMock();
 		$assets->method( 'should_expose_checkout_surface' )->willReturn( true );
-		$assets->method( 'get_blocks_payment_method_data' )->willReturn( array() );
+		$data_contexts = array();
+		$assets->method( 'get_blocks_payment_method_data' )->willReturnCallback(
+			static function ( ...$args ) use ( &$data_contexts ): array {
+				$data_contexts[] = $args[3] ?? 'none';
+				return array();
+			}
+		);
 		$provider = $this->getMockBuilder( WooPaymentsProvider::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'can_process_payments', 'get_payment_gateways', 'get_gateway_for_method' ) )
@@ -778,12 +880,14 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 		$provider->method( 'get_payment_gateways' )->willReturn( array() );
 		$integration = new WooPayments( $this->createMock( AssetApi::class ), $this->create_runtime_arbiter(), $assets, $provider, $woopay, $express );
 
-		$integration->get_payment_method_script_handles();
-		$data = $integration->get_payment_method_data();
+		$handles = $integration->get_payment_method_script_handles();
+		$data    = $integration->get_payment_method_data();
 
-		$this->assertNotEmpty( $contexts );
+		$this->assertContains( 'wc-payment-method-woopayments-woopay', $handles );
+		$this->assertContains( 'wc-payment-method-woopayments-express-checkout', $handles );
 		$this->assertSame( array( $expected_context ), array_values( array_unique( $contexts ) ) );
-		$this->assertSame( $expected_context, $data['expressCheckoutParams']['button_context'] );
+		$this->assertSame( $expected_context, $data['expressCheckoutParams']['button_context'] ?? null );
+		$this->assertSame( array( $expected_context ), $data_contexts, 'The Blocks data reads the WooPay button location of the page.' );
 	}
 
 	/**
@@ -1156,6 +1260,111 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 		$api = new Api( $this->create_payment_method_registry( $integration ), $this->createMock( AssetDataRegistry::class ) );
 
 		return $api->add_payment_method_script_dependencies( array(), 'wc-cart-block-frontend' );
+	}
+
+	/**
+	 * Run the asset steps of a Cart or Checkout block render, in AbstractBlock::render_callback()'s order: the block
+	 * script's payment method dependencies first, then the block's render action.
+	 *
+	 * @param WooPayments $integration Integration to register and initialize.
+	 * @param string      $block_name  `woocommerce/cart` or `woocommerce/checkout`.
+	 * @return string[] The payment method dependencies of the block's frontend script.
+	 */
+	private function render_block_assets( WooPayments $integration, string $block_name ): array {
+		$block = 'woocommerce/cart' === $block_name ? 'cart' : 'checkout';
+		$integration->initialize();
+		$api          = new Api( $this->create_payment_method_registry( $integration ), $this->createMock( AssetDataRegistry::class ) );
+		$dependencies = $api->add_payment_method_script_dependencies( array(), 'wc-' . $block . '-block-frontend' );
+
+		do_action( 'woocommerce_blocks_enqueue_' . $block . '_block_scripts_after' );
+
+		return $dependencies;
+	}
+
+	/**
+	 * Make a published page holding only a paragraph the store's cart or checkout page, have the given source render the
+	 * page's Cart or Checkout block, and visit the page.
+	 *
+	 * @param string $block_name `woocommerce/cart` or `woocommerce/checkout`.
+	 * @param string $source     `content`: the block is in the page content. `db_template`: a `page-cart` or
+	 *                           `page-checkout` template saved in the database renders it. `theme_template`: the active
+	 *                           block theme's own template file renders it.
+	 */
+	private function go_to_page_rendered_by( string $block_name, string $source ): void {
+		$block        = str_replace( 'woocommerce/', '', $block_name );
+		$block_markup = sprintf( '<!-- wp:%1$s --><div class="wp-block-woocommerce-%2$s"></div><!-- /wp:%1$s -->', $block_name, $block );
+		$template     = '<!-- wp:template-part {"slug":"header"} /-->' . $block_markup;
+
+		if ( 'db_template' === $source ) {
+			switch_theme( 'twentytwentyfour' );
+			$template_id = self::factory()->post->create(
+				array(
+					'post_type'    => 'wp_template',
+					'post_name'    => 'page-' . $block,
+					'post_title'   => 'Page: ' . $block,
+					'post_status'  => 'publish',
+					'post_content' => $template,
+				)
+			);
+			wp_set_post_terms( $template_id, array( get_stylesheet() ), 'wp_theme' );
+			wp_cache_delete( 'wp_template-ids', 'woocommerce_blocks' );
+		} elseif ( 'theme_template' === $source ) {
+			$this->switch_to_theme_with_template( 'page-' . $block, $template );
+		}
+
+		$page_id = self::factory()->post->create(
+			array(
+				'post_type'    => 'page',
+				'post_status'  => 'publish',
+				'post_content' => 'content' === $source ? $block_markup : '<!-- wp:paragraph --><p>Page</p><!-- /wp:paragraph -->',
+			)
+		);
+		update_option( 'woocommerce_' . $block . '_page_id', $page_id );
+		$this->reset_cart_checkout_page_cache();
+		$this->go_to( get_permalink( $page_id ) );
+	}
+
+	/**
+	 * Write a minimal block theme holding one page template to a temporary theme root, and activate it.
+	 *
+	 * @param string $slug    Template slug, such as `page-checkout`.
+	 * @param string $content Template markup.
+	 */
+	private function switch_to_theme_with_template( string $slug, string $content ): void {
+		$this->temp_theme_root = get_temp_dir() . 'wc-woopayments-blocks-test-themes-' . wp_generate_password( 8, false );
+		$theme_dir             = $this->temp_theme_root . '/wc-woopayments-blocks-test-theme';
+		wp_mkdir_p( $theme_dir . '/templates' );
+		// phpcs:disable WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- Test fixture files in a temporary directory.
+		file_put_contents( $theme_dir . '/style.css', "/*\nTheme Name: WooPayments Blocks Test Theme\n*/\n" );
+		file_put_contents( $theme_dir . '/templates/index.html', '<!-- wp:post-content /-->' );
+		file_put_contents( $theme_dir . '/templates/' . $slug . '.html', $content );
+		// phpcs:enable WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents
+
+		register_theme_directory( $this->temp_theme_root );
+		search_theme_directories( true );
+		switch_theme( 'wc-woopayments-blocks-test-theme' );
+	}
+
+	/**
+	 * Delete the temporary theme root switch_to_theme_with_template() wrote, if any.
+	 */
+	private function delete_temp_theme_root(): void {
+		if ( '' === $this->temp_theme_root ) {
+			return;
+		}
+
+		$files = new \RecursiveIteratorIterator( new \RecursiveDirectoryIterator( $this->temp_theme_root, \FilesystemIterator::SKIP_DOTS ), \RecursiveIteratorIterator::CHILD_FIRST );
+		// phpcs:disable WordPress.WP.AlternativeFunctions.file_system_operations_rmdir, WordPress.WP.AlternativeFunctions.unlink_unlink -- Test fixture cleanup.
+		foreach ( $files as $file ) {
+			if ( $file->isDir() ) {
+				rmdir( $file->getPathname() );
+			} else {
+				unlink( $file->getPathname() );
+			}
+		}
+		rmdir( $this->temp_theme_root );
+		// phpcs:enable WordPress.WP.AlternativeFunctions.file_system_operations_rmdir, WordPress.WP.AlternativeFunctions.unlink_unlink
+		$this->temp_theme_root = '';
 	}
 
 	/**

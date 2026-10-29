@@ -1681,6 +1681,34 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should build the Blocks WooPay button flag for the page's button location, so the cart location alone decides it on a Blocks cart.
+	 *
+	 * Client 11.2.0 reads only the cart location on a cart page (class-wc-payments-woopay-button-handler.php:273-281). The
+	 * session service answers per location; here the cart location allows WooPay and the checkout location leaves it out.
+	 */
+	public function test_get_blocks_payment_method_data_reads_the_woopay_button_location_of_the_page(): void {
+		$this->set_wallet_gateway_settings( true );
+		$account_service = $this->create_account_service( true, self::EXPRESS_ACCOUNT_DATA, self::EXPRESS_GATEWAY_SETTINGS );
+		$woopay_config   = $this->create_woopay_session_service( true )->get_woopay_frontend_config( 'checkout' );
+		$woopay_service  = $this->getMockBuilder( SessionService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_woopay_frontend_config', 'get_save_user_checkout_data' ) )
+			->getMock();
+		$woopay_service->method( 'get_woopay_frontend_config' )->willReturnCallback(
+			static function ( string $context ) use ( $woopay_config ): array {
+				return array_merge( $woopay_config, array( 'shouldShowWooPayButton' => 'cart' === $context ) );
+			}
+		);
+		$woopay_service->method( 'get_save_user_checkout_data' )->willReturn( array() );
+
+		$assets = new WooPaymentsCheckoutAssets();
+		$assets->init( $account_service, $woopay_service, $this->create_woopay_eligibility( true ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller(), new PaymentMethodRegistry() );
+
+		$this->assertTrue( $assets->get_blocks_payment_method_data( self::CARD_SUPPORTS, null, null, 'cart' )['shouldShowWooPayButton'], 'The Blocks cart reads the cart location.' );
+		$this->assertFalse( $assets->get_blocks_payment_method_data( self::CARD_SUPPORTS, null, null, 'checkout' )['shouldShowWooPayButton'], 'The Blocks checkout reads the checkout location.' );
+	}
+
+	/**
 	 * Top-level keys of the client 11.1.0 Blocks payment method data on a checkout page with WooPay enabled.
 	 *
 	 * Sources: class-wc-payments-blocks-payment-method.php:88-104 (title, description, is_admin, woopayHost),
