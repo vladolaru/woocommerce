@@ -698,7 +698,8 @@
 
 		if (
 			! eventName ||
-			config.is_shopper_tracking_enabled === false ||
+			// wp_localize_script() sends a false flag as ''.
+			! config.is_shopper_tracking_enabled ||
 			! tracksUrl ||
 			! nonce ||
 			! window.fetch ||

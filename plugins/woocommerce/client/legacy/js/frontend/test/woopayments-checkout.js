@@ -626,8 +626,9 @@ describe( 'WooPayments checkout', () => {
 		window.location.hash = '';
 	} );
 
-	test( 'does not record place-order tracking when shopper tracking is disabled', () => {
-		window.wcpay_core_checkout_config.isShopperTrackingEnabled = false;
+	// wp_localize_script() turns the server's false into ''.
+	test.each( [ false, '' ] )( 'does not record place-order tracking when shopper tracking is %p', ( trackingEnabled ) => {
+		window.wcpay_core_checkout_config.isShopperTrackingEnabled = trackingEnabled;
 		require( '../woopayments-checkout' );
 
 		document.getElementById( 'place_order' ).dispatchEvent(

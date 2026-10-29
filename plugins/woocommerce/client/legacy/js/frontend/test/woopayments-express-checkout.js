@@ -188,6 +188,8 @@ describe( 'WooPayments express checkout', () => {
 		return {
 			ajax_url: 'https://example.test/admin-ajax.php',
 			tracks_url: 'https://example.test/wp-json/wc/v3/payments/tracks',
+			// wp_localize_script()'s shape of true.
+			is_shopper_tracking_enabled: '1',
 			enabled_methods: [ 'payment_request' ],
 			button_context: 'checkout',
 			has_block: false,
@@ -656,8 +658,9 @@ describe( 'WooPayments express checkout', () => {
 		);
 	} );
 
-	test( 'does not record express checkout tracking when shopper tracking is disabled', async () => {
-		window.wcpayExpressCheckoutParams.is_shopper_tracking_enabled = false;
+	// wp_localize_script() turns the server's false into ''.
+	test.each( [ false, '' ] )( 'does not record express checkout tracking when shopper tracking is %p', async ( trackingEnabled ) => {
+		window.wcpayExpressCheckoutParams.is_shopper_tracking_enabled = trackingEnabled;
 
 		require( '../woopayments-express-checkout' );
 

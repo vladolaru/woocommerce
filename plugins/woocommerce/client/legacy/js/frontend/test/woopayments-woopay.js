@@ -275,8 +275,9 @@ describe( 'WooPayments WooPay checkout', () => {
 		} );
 	} );
 
-	test( 'does not record WooPay tracking when shopper tracking is disabled', async () => {
-		window.wcpay_core_woopay_config.isShopperTrackingEnabled = false;
+	// wp_localize_script() turns the server's false into ''.
+	test.each( [ false, '' ] )( 'does not record WooPay tracking when shopper tracking is %p', async ( trackingEnabled ) => {
+		window.wcpay_core_woopay_config.isShopperTrackingEnabled = trackingEnabled;
 		require( '../woopayments-woopay' );
 
 		document.querySelector( '#wcpay-woopay-button button' ).click();
