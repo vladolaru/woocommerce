@@ -172,9 +172,7 @@ final class WooPayments extends AbstractPaymentMethodType {
 			false
 		);
 		// The Blocks express script reads the token only from the page, as client 11.2.0 provides it (class-wc-payments-blocks-payment-method.php:77).
-		if ( $this->is_blocks_cart_or_checkout_surface() ) {
-			wc_get_container()->get( WooPaymentsFraudPreventionService::class )->maybe_enqueue_token_script();
-		}
+		wc_get_container()->get( WooPaymentsFraudPreventionService::class )->maybe_enqueue_token_script();
 
 		$handles = array();
 		if ( ! $this->is_blocks_cart_only_surface() ) {

@@ -2284,6 +2284,7 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 	 * @testdox Should publish the fraud-prevention token on window when rendering classic payment fields.
 	 */
 	public function test_payment_fields_publish_fraud_prevention_token_inline_script_when_enabled(): void {
+		add_filter( 'woocommerce_is_checkout', '__return_true' );
 		$session = $this->create_session();
 		$session->set( WooPaymentsFraudPreventionService::TOKEN_NAME, 'fraud-token-123' );
 

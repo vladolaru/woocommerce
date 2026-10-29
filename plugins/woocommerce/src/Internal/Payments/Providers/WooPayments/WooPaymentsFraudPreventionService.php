@@ -117,17 +117,22 @@ class WooPaymentsFraudPreventionService {
 
 	/**
 	 * Enqueue the inline script exposing the fraud-prevention token to
-	 * shopper-side scripts, when protection applies to this session.
+	 * shopper-side scripts, when protection applies to this session and page.
 	 *
-	 * Safe to call from more than one surface owner: the enqueued-script
-	 * guard makes the token script a per-page singleton, as in client 11.1.0's
-	 * maybe_append_fraud_prevention_token() (fraud-prevention/class-fraud-prevention-service.php:73-76).
+	 * Callers call it unguarded: the page check lives here, in client 11.2.0's
+	 * order (fraud-prevention/class-fraud-prevention-service.php:73-105), so the
+	 * checkout page counts by page id however its Checkout block renders. The
+	 * enqueued-script guard makes the token script a per-page singleton.
 	 */
 	public function maybe_enqueue_token_script(): void {
 		if ( wp_script_is( self::TOKEN_NAME, 'enqueued' ) ) {
 			return;
 		}
 		if ( ! $this->has_session() || ! $this->is_enabled() ) {
+			return;
+		}
+		// Product and cart pages count because express buttons pay from them; the add payment method page guards setup intents.
+		if ( ! is_checkout() && ! has_block( 'woocommerce/checkout' ) && ! is_cart() && ! is_product() && ! $this->is_pay_for_order_page() && ! is_add_payment_method_page() ) {
 			return;
 		}
 
@@ -154,6 +159,16 @@ class WooPaymentsFraudPreventionService {
 		}
 
 		return hash_equals( $session_token, $token );
+	}
+
+	/**
+	 * Tell whether the current request is the pay-for-order page, as client 11.2.0 reads it
+	 * (fraud-prevention/class-fraud-prevention-service.php:112-114).
+	 *
+	 * @return bool
+	 */
+	private function is_pay_for_order_page(): bool {
+		return is_checkout() && isset( $_GET['pay_for_order'] ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only page check.
 	}
 
 	/**

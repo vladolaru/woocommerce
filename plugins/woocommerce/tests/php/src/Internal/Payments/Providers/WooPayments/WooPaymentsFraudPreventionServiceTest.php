@@ -66,6 +66,7 @@ class WooPaymentsFraudPreventionServiceTest extends WC_Unit_Test_Case {
 	 * @testdox Should expose the token to shopper scripts once per page, only when protection applies.
 	 */
 	public function test_maybe_enqueue_token_script_is_a_guarded_singleton(): void {
+		add_filter( 'woocommerce_is_checkout', '__return_true' );
 		$session = $this->create_session();
 		$session->set( WooPaymentsFraudPreventionService::TOKEN_NAME, 'known-token' );
 
@@ -86,6 +87,30 @@ class WooPaymentsFraudPreventionServiceTest extends WC_Unit_Test_Case {
 
 		wp_dequeue_script( WooPaymentsFraudPreventionService::TOKEN_NAME );
 		wp_deregister_script( WooPaymentsFraudPreventionService::TOKEN_NAME );
+	}
+
+	/**
+	 * @testdox Should not expose the token on the checkout page without a WooCommerce session.
+	 */
+	public function test_maybe_enqueue_token_script_needs_a_session(): void {
+		add_filter( 'woocommerce_is_checkout', '__return_true' );
+		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_cached_account_data' ) )
+			->getMock();
+		$account_service->method( 'get_cached_account_data' )->willReturn( array( 'card_testing_protection_eligible' => true ) );
+		$sut = new WooPaymentsFraudPreventionService();
+		$sut->init( $account_service );
+		$wc_session   = WC()->session;
+		WC()->session = null;
+
+		try {
+			$sut->maybe_enqueue_token_script();
+		} finally {
+			WC()->session = $wc_session;
+		}
+
+		$this->assertFalse( wp_script_is( WooPaymentsFraudPreventionService::TOKEN_NAME, 'enqueued' ) );
 	}
 
 	/**

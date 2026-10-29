@@ -624,15 +624,20 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should expose the fraud-prevention token on the Blocks cart and checkout only while card-testing protection is on.
+	 * @testdox Should expose the fraud-prevention token on the cart and checkout pages only while card-testing protection is on.
 	 *
-	 * The Blocks express script reads the token only from window.wcpayFraudPreventionToken.
+	 * The Blocks express script reads the token only from window.wcpayFraudPreventionToken. A paragraph-only cart or checkout
+	 * page stands for one whose block comes from a custom page template.
 	 *
 	 * @testWith ["woocommerce/cart", "woocommerce_cart_page_id", true, true]
 	 *           ["woocommerce/checkout", "woocommerce_checkout_page_id", true, true]
 	 *           ["woocommerce/cart", "woocommerce_cart_page_id", false, false]
 	 *           ["woocommerce/checkout", "woocommerce_checkout_page_id", false, false]
 	 *           ["core/paragraph", "woocommerce_myaccount_page_id", true, false]
+	 *           ["core/paragraph", "woocommerce_checkout_page_id", true, true]
+	 *           ["core/paragraph", "woocommerce_checkout_page_id", false, false]
+	 *           ["core/paragraph", "woocommerce_cart_page_id", true, true]
+	 *           ["core/paragraph", "woocommerce_cart_page_id", false, false]
 	 *
 	 * @param string $block_name    Block the page holds.
 	 * @param string $page_option   WooCommerce page option that points at the page.

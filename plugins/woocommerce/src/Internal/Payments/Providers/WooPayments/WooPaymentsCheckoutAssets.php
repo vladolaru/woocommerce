@@ -746,9 +746,7 @@ class WooPaymentsCheckoutAssets {
 		wp_enqueue_style( self::CLASSIC_STYLE_HANDLE );
 		wp_enqueue_script( self::CLASSIC_SCRIPT_HANDLE );
 
-		if ( '' !== $config['fraudPreventionToken'] ) {
-			$this->get_fraud_prevention_service()->maybe_enqueue_token_script();
-		}
+		$this->get_fraud_prevention_service()->maybe_enqueue_token_script();
 
 		if ( $this->should_expose_checkout_surface() ) {
 			wp_enqueue_script( WooPaymentsFrontendAssets::STRIPE_SCRIPT_HANDLE );
