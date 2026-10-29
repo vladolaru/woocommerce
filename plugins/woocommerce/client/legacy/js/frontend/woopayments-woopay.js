@@ -471,12 +471,6 @@
 
 	currentPreferredCard = getCachedPreferredCard();
 
-	function getWooPayViewport() {
-		return window.innerWidth && window.innerWidth < 783
-			? 'mobile'
-			: 'desktop';
-	}
-
 	function postWooPayAjax( endpoint, data ) {
 		var url = buildWooPayAjaxUrl( endpoint );
 
@@ -1930,7 +1924,11 @@
 		fields.hidden = ! checkbox.checked;
 		// Client 11.1.0 checkout-page-save-user.js:118-124: the checkout page, not the browser URL.
 		sourceField.value = config.woopaySourceUrl || '';
-		viewportField.value = getWooPayViewport();
+		// Client 11.2.0 checkout-page-save-user.js:62-63, :364-365.
+		viewportField.value =
+			document.documentElement.clientWidth +
+			'x' +
+			document.documentElement.clientHeight;
 
 		// The offer and a pre-checked box are recorded by the WooPay email check when it finds no WooPay user, as in
 		// client 11.1.0 checkout/woopay/email-input-iframe.js:411-427, not again when the fields render.

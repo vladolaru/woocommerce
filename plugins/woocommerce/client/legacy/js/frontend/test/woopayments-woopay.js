@@ -1093,6 +1093,27 @@ describe( 'WooPayments WooPay checkout', () => {
 		} );
 	} );
 
+	// Client 11.2.0 checkout-page-save-user.js:62-63, :364-365: width x height of the document element.
+	test( 'fills the WooPay viewport field with the document element size', () => {
+		const root = document.documentElement;
+		Object.defineProperty( root, 'clientWidth', { configurable: true, value: 1451 } );
+		Object.defineProperty( root, 'clientHeight', { configurable: true, value: 993 } );
+		const innerWidth = window.innerWidth;
+		window.innerWidth = 500;
+
+		try {
+			require( '../woopayments-woopay' );
+
+			expect(
+				document.querySelector( 'input[name="woopay_viewport"]' ).value
+			).toBe( '1451x993' );
+		} finally {
+			delete root.clientWidth;
+			delete root.clientHeight;
+			window.innerWidth = innerWidth;
+		}
+	} );
+
 	test( 'adds a valid IAPI variation with its current named form fields before WooPay init', async () => {
 		document.body.innerHTML =
 			'<form class="wp-block-add-to-cart-with-options">' +
