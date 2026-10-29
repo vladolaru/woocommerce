@@ -18,6 +18,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethod
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCheckoutAssets;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExpressCheckoutService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFraudPreventionService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentOperationService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\Eligibility;
@@ -42,6 +43,9 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 		}
 		wp_deregister_script( 'stripe' );
 		wp_deregister_script( 'wc-woopayments-fingerprintjs' );
+		wp_dequeue_script( WooPaymentsFraudPreventionService::TOKEN_NAME );
+		wp_deregister_script( WooPaymentsFraudPreventionService::TOKEN_NAME );
+		$this->reset_container_replacements();
 		wp_reset_postdata();
 		$this->reset_cart_checkout_page_cache();
 		parent::tearDown();
@@ -617,6 +621,44 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 		// The card script's built asset file lists FingerprintJS (a build external); the integration's part is registering its handle.
 		$this->assertTrue( wp_script_is( 'wc-woopayments-fingerprintjs', 'registered' ) );
 		$this->assertTrue( wp_style_is( 'wc-payment-method-woopayments', 'enqueued' ) );
+	}
+
+	/**
+	 * @testdox Should expose the fraud-prevention token on the Blocks cart and checkout only while card-testing protection is on.
+	 *
+	 * The Blocks express script reads the token only from window.wcpayFraudPreventionToken.
+	 *
+	 * @testWith ["woocommerce/cart", "woocommerce_cart_page_id", true, true]
+	 *           ["woocommerce/checkout", "woocommerce_checkout_page_id", true, true]
+	 *           ["woocommerce/cart", "woocommerce_cart_page_id", false, false]
+	 *           ["woocommerce/checkout", "woocommerce_checkout_page_id", false, false]
+	 *           ["core/paragraph", "woocommerce_myaccount_page_id", true, false]
+	 *
+	 * @param string $block_name    Block the page holds.
+	 * @param string $page_option   WooCommerce page option that points at the page.
+	 * @param bool   $protection_on Whether the account has card-testing protection on.
+	 * @param bool   $expected      Whether the token script should be enqueued.
+	 */
+	public function test_blocks_pages_expose_the_fraud_prevention_token_while_protection_is_on( string $block_name, string $page_option, bool $protection_on, bool $expected ): void {
+		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_cached_account_data' ) )
+			->getMock();
+		$account_service->method( 'get_cached_account_data' )->willReturn( array( 'card_testing_protection_eligible' => $protection_on ) );
+		$session = new \WC_Session_Handler();
+		$session->set( WooPaymentsFraudPreventionService::TOKEN_NAME, 'known-token' );
+		$fraud_prevention_service = new WooPaymentsFraudPreventionService( $session );
+		$fraud_prevention_service->init( $account_service );
+		wc_get_container()->replace( WooPaymentsFraudPreventionService::class, $fraud_prevention_service );
+		$this->go_to_block_page( $block_name, $page_option );
+
+		$this->get_cart_block_frontend_dependencies( $this->create_registered_integration( false, true ) );
+
+		$this->assertSame( $expected, wp_script_is( WooPaymentsFraudPreventionService::TOKEN_NAME, 'enqueued' ) );
+		if ( $expected ) {
+			$inline = wp_scripts()->get_data( WooPaymentsFraudPreventionService::TOKEN_NAME, 'after' );
+			$this->assertStringContainsString( "window.wcpayFraudPreventionToken = 'known-token';", implode( '', array_filter( (array) $inline, 'is_string' ) ) );
+		}
 	}
 
 	/**
