@@ -14,6 +14,8 @@
 		window.location.href = url;
 	};
 	var isWooPayRequesting = false;
+	// Client 11.2.0 woopay-express-checkout-button.js:282-295, :324-337 (onClickCallbackRef.current = onClickOtpFlow).
+	var isWooPayOtpFlowNext = false;
 	var isInitWooPayRequesting = false;
 	var wooPayConnectPostMessagePromise = null;
 	var wooPayConnectCallbacks = {};
@@ -414,6 +416,7 @@
 		} );
 	}
 
+	// Client 11.2.0 session-connect.js:152-161 resolves null when Connect does not answer.
 	function sendPreemptiveSessionDataToWooPay( sessionData ) {
 		return sendWooPayConnectMessage(
 			{
@@ -421,9 +424,7 @@
 				value: sessionData,
 			},
 			'setPreemptiveSessionData',
-			{
-				is_error: true,
-			},
+			null,
 			true
 		);
 	}
@@ -1367,6 +1368,17 @@
 		};
 	}
 
+	function showWooPaySessionError() {
+		isWooPayRequesting = false;
+		showExpressErrorMessage(
+			getTrackingSource(),
+			__( 'Something went wrong. Please try again.', 'woocommerce' )
+		);
+	}
+
+	// Client 11.2.0 woopay-express-checkout-button.js:254-337: an answer without a session shows the error and sends the
+	// next click to the OTP flow; a request with no answer or a Connect that does not answer shows the error and keeps
+	// this flow.
 	function continueWooPayFirstPartyAuth() {
 		var request = postWooPayAjax(
 			'get_woopay_session',
@@ -1380,7 +1392,8 @@
 
 		request.done( function ( response ) {
 			if ( ! isValidWooPayMinimumSessionData( response ) ) {
-				continueWooPay();
+				isWooPayOtpFlowNext = true;
+				showWooPaySessionError();
 				return;
 			}
 
@@ -1388,21 +1401,29 @@
 				sessionResponse
 			) {
 				if ( sessionResponse && sessionResponse.is_error ) {
+					isWooPayOtpFlowNext = true;
 					continueWooPay();
 					return;
 				}
 
-				if ( sessionResponse && sessionResponse.redirect_url ) {
-					navigate( appendRedirectionParams( sessionResponse.redirect_url ) );
+				if ( ! sessionResponse || ! sessionResponse.redirect_url ) {
+					showWooPaySessionError();
+					return;
 				}
+
+				navigate( appendRedirectionParams( sessionResponse.redirect_url ) );
 				isWooPayRequesting = false;
 			} );
 		} );
 
 		if ( request.fail ) {
-			request.fail( function () {
-				setError( config.confirmationErrorMessage || '' );
-				isWooPayRequesting = false;
+			// The client's fetch reads a JSON error body, such as the 503 for a missing blog ID, as an answer without a
+			// session.
+			request.fail( function ( jqXHR ) {
+				if ( jqXHR && jqXHR.responseJSON ) {
+					isWooPayOtpFlowNext = true;
+				}
+				showWooPaySessionError();
 			} );
 		}
 	}
@@ -1503,7 +1524,7 @@
 
 		isWooPayRequesting = true;
 		prepareProductCartForWooPay(
-			config.isWoopayFirstPartyAuthEnabled
+			config.isWoopayFirstPartyAuthEnabled && ! isWooPayOtpFlowNext
 				? continueWooPayFirstPartyAuth
 				: continueWooPay
 		);

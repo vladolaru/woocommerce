@@ -33,7 +33,7 @@ const FULL_SCREEN_MODAL_BREAKPOINT = 768;
  * @param {string} context         The button context.
  * @param {string} message         The error message.
  */
-const showErrorMessage = ( paymentSettings, context, message ) => {
+export const showErrorMessage = ( paymentSettings, context, message ) => {
 	if ( window.wcSettings?.wcBlocksConfig && context !== 'product' ) {
 		dispatch( 'core/notices' )?.createNotice( 'error', message, {
 			context: `wc/${ context }`,

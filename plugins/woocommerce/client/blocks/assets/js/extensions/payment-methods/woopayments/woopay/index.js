@@ -11,7 +11,10 @@ import { useEffect, useRef, useState } from '@wordpress/element';
  */
 import { getTracksIdentity, recordWooPaymentsUserEvent } from '../tracks';
 import { ensureBlocksWooPayAppearance } from '../upe-styles';
-import { expressCheckoutIframe } from './express-checkout-iframe';
+import {
+	expressCheckoutIframe,
+	showErrorMessage,
+} from './express-checkout-iframe';
 
 const PAYMENT_METHOD_NAME = 'woocommerce_payments';
 const settings = getPaymentMethodData( PAYMENT_METHOD_NAME, {} );
@@ -318,6 +321,7 @@ const sendWooPayConnectMessage = (
 	} );
 };
 
+// Client 11.2.0 session-connect.js:152-161 resolves null when Connect does not answer.
 const sendPreemptiveSessionDataToWooPay = ( sessionData ) =>
 	sendWooPayConnectMessage(
 		{
@@ -325,9 +329,7 @@ const sendPreemptiveSessionDataToWooPay = ( sessionData ) =>
 			value: sessionData,
 		},
 		'setPreemptiveSessionData',
-		{
-			is_error: true,
-		},
+		null,
 		true
 	);
 
@@ -600,6 +602,8 @@ const WooPayExpressContent = () => {
 	const eventSource = buttonSettings.context || 'checkout';
 	const preferredCard = usePreferredCard();
 	const isLoadingRef = useRef( false );
+	// Client 11.2.0 woopay-express-checkout-button.js:282-295, :324-337 (onClickCallbackRef.current = onClickOtpFlow).
+	const isOtpFlowNextRef = useRef( false );
 	const buttonRef = useRef( null );
 	const [ isLoading, setIsLoading ] = useState( false );
 	const [ measuredWidth, setMeasuredWidth ] = useState( null );
@@ -625,18 +629,28 @@ const WooPayExpressContent = () => {
 			getWooPayButton
 		);
 
+	const showSessionError = () =>
+		showErrorMessage(
+			settings,
+			eventSource,
+			__( 'Something went wrong. Please try again.', 'woocommerce' )
+		);
+
+	// Client 11.2.0 woopay-express-checkout-button.js:254-337: an answer without a session shows the error and sends the
+	// next click to the OTP flow; a failed request or a Connect that does not answer shows the error and keeps this flow.
 	const continueWooPayFirstPartyAuth = async () => {
 		let sessionData;
 
 		try {
 			sessionData = await getWooPaySessionData();
 		} catch ( error ) {
-			await continueWooPay();
+			showSessionError();
 			return;
 		}
 
 		if ( ! isValidWooPayMinimumSessionData( sessionData ) ) {
-			await continueWooPay();
+			isOtpFlowNextRef.current = true;
+			showSessionError();
 			return;
 		}
 
@@ -644,13 +658,17 @@ const WooPayExpressContent = () => {
 			await sendPreemptiveSessionDataToWooPay( sessionData );
 
 		if ( sessionResponse?.is_error ) {
+			isOtpFlowNextRef.current = true;
 			await continueWooPay();
 			return;
 		}
 
-		if ( sessionResponse?.redirect_url ) {
-			navigate( sessionResponse.redirect_url );
+		if ( ! sessionResponse?.redirect_url ) {
+			showSessionError();
+			return;
 		}
+
+		navigate( sessionResponse.redirect_url );
 	};
 
 	const initWooPay = async ( event ) => {
@@ -676,7 +694,10 @@ const WooPayExpressContent = () => {
 		setIsLoading( true );
 
 		try {
-			if ( settings.isWoopayFirstPartyAuthEnabled ) {
+			if (
+				settings.isWoopayFirstPartyAuthEnabled &&
+				! isOtpFlowNextRef.current
+			) {
 				await continueWooPayFirstPartyAuth();
 			} else {
 				await continueWooPay();

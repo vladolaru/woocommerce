@@ -660,6 +660,217 @@ describe( 'wc-payment-method-woopayments-woopay', () => {
 		} );
 	} );
 
+	// Client 11.2.0 woopay-express-checkout-button.js:254-337 (onClickFirstPartyAuthFlow): an answer without a session
+	// shows "Something went wrong. Please try again." and sends the next click to the OTP flow; a request that fails, or
+	// a Connect that does not answer (session-connect.js:152-161 resolves null, so reading redirect_url throws), shows the
+	// message and keeps the first-party flow; hosted WooPay refusing the session opens the OTP flow at once and for the
+	// next click.
+	describe( 'first-party session failures', () => {
+		const sessionError = 'Something went wrong. Please try again.';
+		const validSession = {
+			blog_id: '12345',
+			data: { session: 'session', iv: 'iv', hash: 'hash' },
+		};
+		let postMessage;
+		let createNotice;
+
+		const getSessionCalls = () =>
+			window.fetch.mock.calls.filter(
+				( [ url ] ) => url === '/?wc-ajax=wcpay_get_woopay_session'
+			);
+		const getPreemptiveSessionPosts = () =>
+			postMessage.mock.calls.filter(
+				( [ message ] ) => message.action === 'setPreemptiveSessionData'
+			);
+		const mockSessionAnswer = ( answerSession ) => {
+			window.fetch = jest.fn( ( url ) =>
+				url === '/?wc-ajax=wcpay_get_woopay_session'
+					? answerSession()
+					: Promise.resolve( { json: () => Promise.resolve( {} ) } )
+			);
+		};
+		const renderButton = () => {
+			registerWooPay();
+			render(
+				createElement(
+					registerExpressPaymentMethod.mock.calls[ 0 ][ 0 ].content
+						.type
+				)
+			);
+		};
+		const clickWooPay = () =>
+			user.click( screen.getByRole( 'link', { name: 'WooPay' } ) );
+		const loadConnectPage = async () => {
+			const connectIframe = document.getElementById(
+				'woopay-connect-iframe'
+			);
+			await waitFor( () => {
+				expect( connectIframe.getAttribute( 'src' ) ).not.toBeNull();
+			} );
+			connectIframe.dispatchEvent( new window.Event( 'load' ) );
+		};
+		const expectSessionError = () =>
+			waitFor( () => {
+				expect( createNotice ).toHaveBeenCalledWith(
+					'error',
+					sessionError,
+					{ context: 'wc/checkout' }
+				);
+			} );
+		const expectOtpIframe = () =>
+			waitFor( () => {
+				expect(
+					document.querySelector( '.woopay-otp-iframe' )
+				).not.toBeNull();
+			} );
+		const closeOtpIframe = () =>
+			act( async () => {
+				window.dispatchEvent(
+					new window.MessageEvent( 'message', {
+						origin: 'https://pay.woo.test',
+						data: { action: 'close_modal' },
+					} )
+				);
+			} );
+
+		beforeEach( () => {
+			postMessage = jest.fn();
+			createNotice = jest.fn();
+			dispatch.mockReturnValue( { createNotice } );
+			Object.defineProperty(
+				window.HTMLIFrameElement.prototype,
+				'contentWindow',
+				{
+					configurable: true,
+					get() {
+						return { postMessage };
+					},
+				}
+			);
+			window.wcSettings = { wcBlocksConfig: {} };
+			getMockPaymentMethodSettings().isWoopayFirstPartyAuthEnabled = true;
+		} );
+
+		afterEach( () => {
+			delete window.wcSettings;
+		} );
+
+		it.each( [
+			[
+				'the 503 answer without a blog ID',
+				{ success: false, data: 'Could not determine the blog ID.' },
+			],
+			[
+				'an answer without the IV and hash',
+				{ blog_id: '12345', data: { session: 'session' } },
+			],
+		] )(
+			'shows the error and opens the OTP flow on the next click after %s',
+			async ( _, answer ) => {
+				mockSessionAnswer( () =>
+					Promise.resolve( { json: () => Promise.resolve( answer ) } )
+				);
+				renderButton();
+
+				await clickWooPay();
+				await expectSessionError();
+				expect(
+					document.querySelector( '.woopay-otp-iframe' )
+				).toBeNull();
+				expect( getPreemptiveSessionPosts() ).toEqual( [] );
+
+				await clickWooPay();
+				await expectOtpIframe();
+				expect( getSessionCalls() ).toHaveLength( 1 );
+			}
+		);
+
+		it( 'shows the error and keeps the first-party flow when the session request fails', async () => {
+			mockSessionAnswer( () =>
+				Promise.reject( new TypeError( 'Failed to fetch' ) )
+			);
+			renderButton();
+
+			await clickWooPay();
+			await expectSessionError();
+			expect( document.querySelector( '.woopay-otp-iframe' ) ).toBeNull();
+
+			await clickWooPay();
+			await waitFor( () => {
+				expect( getSessionCalls() ).toHaveLength( 2 );
+			} );
+			expect( document.querySelector( '.woopay-otp-iframe' ) ).toBeNull();
+		} );
+
+		it( 'opens the OTP flow at once and on the next click when hosted WooPay refuses the session', async () => {
+			mockSessionAnswer( () =>
+				Promise.resolve( {
+					json: () => Promise.resolve( validSession ),
+				} )
+			);
+			renderButton();
+
+			await clickWooPay();
+			await loadConnectPage();
+			await waitFor( () => {
+				expect( getPreemptiveSessionPosts() ).toHaveLength( 1 );
+			} );
+			await act( async () => {
+				window.dispatchEvent(
+					new window.MessageEvent( 'message', {
+						origin: 'https://pay.woo.test',
+						data: { action: 'set_preemptive_session_data_error' },
+					} )
+				);
+			} );
+			await expectOtpIframe();
+			await closeOtpIframe();
+
+			await clickWooPay();
+			await expectOtpIframe();
+			expect( getSessionCalls() ).toHaveLength( 1 );
+			expect( createNotice ).not.toHaveBeenCalled();
+		} );
+
+		it( 'shows the error and keeps the first-party flow when WooPay Connect does not answer', async () => {
+			jest.useFakeTimers();
+			user = userEvent.setup( {
+				advanceTimers: jest.advanceTimersByTime,
+			} );
+			mockSessionAnswer( () =>
+				Promise.resolve( {
+					json: () => Promise.resolve( validSession ),
+				} )
+			);
+			renderButton();
+
+			await clickWooPay();
+			await loadConnectPage();
+			await waitFor( () => {
+				expect( getPreemptiveSessionPosts() ).toHaveLength( 1 );
+			} );
+			await act( async () => {
+				await jest.advanceTimersByTimeAsync( 5000 );
+			} );
+			await expectSessionError();
+			expect( document.querySelector( '.woopay-otp-iframe' ) ).toBeNull();
+
+			await clickWooPay();
+			await waitFor( () => {
+				expect( getPreemptiveSessionPosts() ).toHaveLength( 2 );
+			} );
+			expect( getSessionCalls() ).toHaveLength( 2 );
+			// The retry waits for Connect too; let it time out so nothing is left pending for later tests.
+			await act( async () => {
+				await jest.advanceTimersByTimeAsync( 5000 );
+			} );
+			await waitFor( () => {
+				expect( createNotice ).toHaveBeenCalledTimes( 2 );
+			} );
+			expect( document.querySelector( '.woopay-otp-iframe' ) ).toBeNull();
+		} );
+	} );
+
 	it( 'renders the cached preferred WooPay card on the express button', () => {
 		const rectSpy = jest
 			.spyOn( window.HTMLElement.prototype, 'getBoundingClientRect' )
