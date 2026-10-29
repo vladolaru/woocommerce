@@ -48,6 +48,13 @@ class RecordingWooPaySessionService extends SessionService {
 	public bool $guest_rule_passes = true;
 
 	/**
+	 * Whether the store can sign a WooPay session.
+	 *
+	 * @var bool
+	 */
+	public bool $can_sign_session_data = true;
+
+	/**
 	 * Number of frontend config builds.
 	 *
 	 * @var int
@@ -249,6 +256,15 @@ class RecordingWooPaySessionService extends SessionService {
 		$this->last_init_request = $request;
 
 		return array( 'result' => 'success' );
+	}
+
+	/**
+	 * Whether the store can sign a WooPay session.
+	 *
+	 * @return bool
+	 */
+	public function can_sign_session_data(): bool {
+		return $this->can_sign_session_data;
 	}
 
 	/**

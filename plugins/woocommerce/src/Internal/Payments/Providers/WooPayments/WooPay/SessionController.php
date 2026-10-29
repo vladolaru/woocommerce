@@ -367,6 +367,12 @@ class SessionController implements RegisterHooksInterface {
 			wp_send_json( array( 'result' => 'failure' ), 403 );
 		}
 
+		// Client 11.2.0 ajax_get_woopay_session() (class-woopay-session.php:868-885) answers 503 before it builds a
+		// session; the blog token, which signs the session, is checked too.
+		if ( ! $this->session_service->can_sign_session_data() ) {
+			wp_send_json_error( __( 'Could not determine the blog ID.', 'woocommerce' ), 503 );
+		}
+
 		wp_send_json( $this->session_service->get_encrypted_session_data( wp_unslash( $_POST ) ) ); // phpcs:ignore WordPress.Security.NonceVerification.Missing
 	}
 

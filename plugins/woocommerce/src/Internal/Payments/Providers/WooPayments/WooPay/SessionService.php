@@ -490,6 +490,22 @@ class SessionService {
 	}
 
 	/**
+	 * Whether the store has the Jetpack blog ID and blog token a WooPay session is signed with; logs the one missing.
+	 *
+	 * @return bool
+	 */
+	public function can_sign_session_data(): bool {
+		$blog_id    = $this->get_store_blog_id();
+		$blog_token = $this->get_store_blog_token();
+
+		if ( '' === $blog_id ) {
+			$this->logger->log( 'WooPay blog_id is missing, so the WooPay session data cannot be signed.' );
+		}
+
+		return '' !== $blog_id && '' !== $blog_token;
+	}
+
+	/**
 	 * Encrypt and sign WooPay session data under the key HKDF derives from the blog token for the session, with the HMAC
 	 * over the IV and the ciphertext, the first form WooPay opens (client 11.2.0
 	 * `WooPay_Utilities::encrypt_and_sign_data()`, class-woopay-utilities.php:380-419).
@@ -498,16 +514,12 @@ class SessionService {
 	 * @return array<string,mixed>
 	 */
 	public function encrypt_and_sign_data( array $data ): array {
-		$blog_id    = $this->get_store_blog_id();
-		$blog_token = $this->get_store_blog_token();
-
-		if ( '' === $blog_id ) {
-			$this->logger->log( 'WooPay blog_id is missing, so the WooPay session data cannot be signed.' );
-		}
-
-		if ( '' === $blog_id || '' === $blog_token || ! function_exists( 'openssl_encrypt' ) ) {
+		if ( ! $this->can_sign_session_data() || ! function_exists( 'openssl_encrypt' ) ) {
 			return array();
 		}
+
+		$blog_id    = $this->get_store_blog_id();
+		$blog_token = $this->get_store_blog_token();
 
 		$message = wp_json_encode( $data );
 		if ( ! is_string( $message ) ) {

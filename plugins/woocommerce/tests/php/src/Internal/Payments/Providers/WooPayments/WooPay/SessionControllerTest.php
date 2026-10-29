@@ -1540,6 +1540,35 @@ class SessionControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
+	 * Client 11.2.0 `WC_Payments_WooPay_Session::ajax_get_woopay_session()` (class-woopay-session.php:868-885) answers
+	 * `wp_send_json_error( 'Could not determine the blog ID.', 503 )` before it builds a session; native checks the blog
+	 * token too, which signs the session. The status is not readable here (see dispatch_ajax_hook()).
+	 *
+	 * @testdox The WooPay session request is refused without building a session when the store's Jetpack $missing is empty.
+	 * @testWith ["blog ID", "", "token-key.blog-token"]
+	 *           ["blog token", "12345", ""]
+	 *
+	 * @param string $missing    The Jetpack option left empty.
+	 * @param string $blog_id    Store blog ID.
+	 * @param string $blog_token Store blog token.
+	 */
+	public function test_session_request_is_refused_without_the_blog_id_or_token( string $missing, string $blog_id, string $blog_token ): void {
+		unset( $missing );
+		\Jetpack_Options::update_option( 'id', $blog_id );
+		\Jetpack_Options::update_option( 'blog_token', $blog_token );
+		$this->sut = $this->create_controller( true, $this->create_real_enabled_session_service() );
+		$this->sut->register();
+
+		$this->assertSame(
+			array(
+				'success' => false,
+				'data'    => 'Could not determine the blog ID.',
+			),
+			$this->dispatch_ajax_hook_with_nonce( 'wc_ajax_wcpay_get_woopay_session', 'woopay_session_nonce', array( 'email' => 'shopper@example.com' ) )
+		);
+	}
+
+	/**
 	 * WordPress slashes the posted fields; the WooPay scripts post the shopper's email, the WooPay user session and the
 	 * pay-for-order fields (client 11.1.0 checkout/woopay/init-woopay.js:54-63, checkout/woopay/email-input-iframe.js:191-199).
 	 *
