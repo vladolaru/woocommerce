@@ -123,6 +123,10 @@ class WooPaymentsFraudPreventionService {
 	 * order (fraud-prevention/class-fraud-prevention-service.php:73-105), so the
 	 * checkout page counts by page id however its Checkout block renders. The
 	 * enqueued-script guard makes the token script a per-page singleton.
+	 *
+	 * Blocks asks for the payment method's script handles on every page (src/Blocks/Payments/Api.php:54, :165-172), so
+	 * this page check, not the caller, decides where the token prints; its Cart block term goes beyond client 11.2.0
+	 * because Blocks wallet buttons pay from a Cart block on any page, on the shopper's browser session.
 	 */
 	public function maybe_enqueue_token_script(): void {
 		if ( wp_script_is( self::TOKEN_NAME, 'enqueued' ) ) {
@@ -132,7 +136,7 @@ class WooPaymentsFraudPreventionService {
 			return;
 		}
 		// Product and cart pages count because express buttons pay from them; the add payment method page guards setup intents.
-		if ( ! is_checkout() && ! has_block( 'woocommerce/checkout' ) && ! is_cart() && ! is_product() && ! $this->is_pay_for_order_page() && ! is_add_payment_method_page() ) {
+		if ( ! is_checkout() && ! has_block( 'woocommerce/checkout' ) && ! is_cart() && ! has_block( 'woocommerce/cart' ) && ! is_product() && ! $this->is_pay_for_order_page() && ! is_add_payment_method_page() ) {
 			return;
 		}
 
