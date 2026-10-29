@@ -2476,6 +2476,16 @@
 			showPaymentElementLoadError( component );
 			settleReady( false );
 		} );
+		// An edit in the selected element clears the payment error its validation left in the box, which client
+		// 11.2.0 keeps until the next submit. A load error shares the box and stays.
+		component.paymentElement.on( 'change', function () {
+			if (
+				paymentElements[ getSelectedGatewayId() ] === component &&
+				! component.loadError
+			) {
+				setError( '' );
+			}
+		} );
 		paymentElements[ paymentGatewayId ] = component;
 		initTokenizationForm();
 		component.paymentElement.mount( container );

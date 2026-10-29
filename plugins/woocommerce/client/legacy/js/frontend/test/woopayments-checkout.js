@@ -1368,6 +1368,28 @@ describe( 'WooPayments checkout', () => {
 		expect( klarna.group.submit ).not.toHaveBeenCalled();
 	} );
 
+	// The load error and the payment error share the gateway's box; a change event clears only the payment error.
+	test( 'keeps the selected gateway load error when a Payment Element reports a change', async () => {
+		renderGatewayRows( [ 'card', 'klarna' ], 'card' );
+		localizeGatewayConfigs( [ 'card', 'klarna' ] );
+		require( '../woopayments-checkout' );
+		await flushPromises();
+		const [ card, klarna ] = createdPaymentElements;
+		card.handlers.loaderror( {
+			error: { message: 'The payment form could not be loaded.' },
+		} );
+
+		klarna.handlers.change( { elementType: 'payment', complete: false } );
+		card.handlers.change( { elementType: 'payment', complete: false } );
+
+		expect( getGatewayErrorBox( 'woocommerce_payments' ).textContent ).toBe(
+			'The payment form could not be loaded.'
+		);
+		expect( getGatewayErrorBox( 'woocommerce_payments' ).hidden ).toBe(
+			false
+		);
+	} );
+
 	test( 'keeps a failed card element when the shopper selects a method that is not WooPayments', async () => {
 		renderGatewayRows( [ 'card', 'klarna' ], 'card' );
 		localizeGatewayConfigs( [ 'card', 'klarna' ] );
@@ -3228,6 +3250,61 @@ describe( 'WooPayments checkout', () => {
 		expect(
 			document.querySelector( '.wcpay-core-payment-errors' ).textContent
 		).toBe( 'The payment form could not be loaded.' );
+	} );
+
+	// Client 11.2.0 keeps its notice until the next submit (classic/payment-processing.js:497); native clears it on
+	// the shopper's next edit in the Payment Element.
+	test( 'clears the payment error box when the shopper edits the Payment Element, and the next submit proceeds', async () => {
+		const linkPhoneError =
+			'Invalid phone number. Check that the correct country is selected.';
+		document
+			.querySelector( 'form.checkout' )
+			.insertAdjacentHTML(
+				'beforeend',
+				'<div class="wcpay-core-payment-errors" hidden></div>'
+			);
+		submitElements.mockImplementationOnce( () =>
+			Promise.resolve( {
+				error: {
+					type: 'validation_error',
+					code: 'invalid_phone_number',
+					message: linkPhoneError,
+				},
+			} )
+		);
+		require( '../woopayments-checkout' );
+		await flushPromises();
+		const box = document.querySelector( '.wcpay-core-payment-errors' );
+
+		expect(
+			checkoutFormEventHandlers.checkout_place_order_woocommerce_payments()
+		).toBe( false );
+		await flushPromises();
+
+		expect( box.textContent ).toBe( linkPhoneError );
+		expect( box.hidden ).toBe( false );
+		expect( stripeMock.createPaymentMethod ).not.toHaveBeenCalled();
+
+		paymentElementHandlers.change( {
+			elementType: 'payment',
+			complete: true,
+			empty: false,
+			collapsed: false,
+			value: { type: 'card' },
+		} );
+
+		expect( box.textContent ).toBe( '' );
+		expect( box.hidden ).toBe( true );
+
+		expect(
+			checkoutFormEventHandlers.checkout_place_order_woocommerce_payments()
+		).toBe( false );
+		await flushPromises();
+
+		expect( stripeMock.createPaymentMethod ).toHaveBeenCalledTimes( 1 );
+		expect(
+			global.jQuery.checkoutFormResult.trigger
+		).toHaveBeenCalledWith( 'submit' );
 	} );
 
 	test( 'submits Stripe Elements only after the payment element is ready', async () => {
