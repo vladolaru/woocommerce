@@ -127,10 +127,8 @@ const getAriaLabel = ( paymentSettings = defaultSettings ) => {
 		: label;
 };
 
-const getFraudPreventionToken = ( paymentSettings = defaultSettings ) =>
-	window.wcpayFraudPreventionToken ??
-	paymentSettings?.fraudPreventionToken ??
-	'';
+// Client 11.2.0 checkout/blocks/payment-processor.js:44 and saved-token-handler.js:20 read only the page global.
+const getFraudPreventionToken = () => window.wcpayFraudPreventionToken ?? '';
 
 const TestModeBadge = ( { paymentSettings } ) => {
 	if ( ! paymentSettings?.testMode ) {
@@ -1242,13 +1240,12 @@ const SavedTokenHandler = ( {
 		const unsubscribe = onPaymentSetup( () => {
 			return getSuccessResponse( emitResponseRef.current, {
 				...paymentMethodData,
-				'wcpay-fraud-prevention-token':
-					getFraudPreventionToken( paymentSettings ),
+				'wcpay-fraud-prevention-token': getFraudPreventionToken(),
 			} );
 		} );
 
 		return typeof unsubscribe === 'function' ? unsubscribe : undefined;
-	}, [ onPaymentSetup, paymentMethodData, paymentSettings ] );
+	}, [ onPaymentSetup, paymentMethodData ] );
 
 	useEffect( () => {
 		if ( ! onCheckoutSuccess ) {
@@ -1589,8 +1586,7 @@ const WooPaymentsContent = ( {
 					shouldUsePlatformStripeForCard( paymentSettings )
 						? 'true'
 						: 'false',
-				'wcpay-fraud-prevention-token':
-					getFraudPreventionToken( paymentSettings ),
+				'wcpay-fraud-prevention-token': getFraudPreventionToken(),
 			};
 
 			// Client 11.1.0 client/checkout/blocks/payment-processor.js:133-140 refuses a Payment Element that failed

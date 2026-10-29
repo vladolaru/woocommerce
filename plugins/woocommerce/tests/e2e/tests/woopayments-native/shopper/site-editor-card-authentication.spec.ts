@@ -106,28 +106,18 @@ async function expectSiteEditorBody( page: Page ): Promise< void > {
 }
 
 /**
- * Reads the effective token through the same compatibility order as Core's
- * Blocks payment method: the client-era global first, then native settings.
+ * Reads the token from the page global, its only carrier, as the Blocks
+ * payment method does.
  */
 async function expectFraudPreventionToken(
 	page: Page,
 	toBeDefined: boolean
 ): Promise< void > {
-	const token = await page.evaluate( () => {
-		const browserWindow = window as Window & {
-			wcpayFraudPreventionToken?: unknown;
-			wcSettings?: {
-				paymentMethodData?: Record< string, unknown >;
-			};
-		};
-		const settings = browserWindow.wcSettings?.paymentMethodData
-			?.woocommerce_payments as
-			{ fraudPreventionToken?: unknown } | undefined;
-		return (
-			browserWindow.wcpayFraudPreventionToken ??
-			settings?.fraudPreventionToken
-		);
-	} );
+	const token = await page.evaluate(
+		() =>
+			( window as Window & { wcpayFraudPreventionToken?: unknown } )
+				.wcpayFraudPreventionToken
+	);
 	if ( toBeDefined ) {
 		expect( token ).toEqual( expect.any( String ) );
 		expect( token ).not.toBe( '' );

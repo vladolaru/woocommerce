@@ -1748,7 +1748,6 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 	 * Native-only Blocks data keys that the native Blocks bundle reads (client/blocks/assets/js/extensions/payment-methods/woopayments).
 	 */
 	private const BLOCKS_BUNDLE_DATA_KEYS_WITH_CONSUMERS = array(
-		'fraudPreventionToken',            // index.js:113-116, the only token source on Blocks pages.
 		'isCoreNativeCheckoutAvailable',   // index.js:1040,1268 and woopay/index.js:736,748.
 		'paymentMethodTypes',              // index.js:517-521, the split gateway's own Stripe method type.
 		'supports',                        // index.js:1277, woopay/index.js:18.
@@ -2254,9 +2253,9 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should expose the fraud-prevention token in card checkout config and Blocks payment method data.
+	 * @testdox Should leave the fraud-prevention token out of card checkout config and Blocks payment method data, as the page global carries it.
 	 */
-	public function test_get_payment_fields_js_config_includes_fraud_prevention_token_when_enabled(): void {
+	public function test_get_payment_fields_js_config_leaves_the_fraud_prevention_token_to_the_page_global(): void {
 		$session = $this->create_session();
 		$session->set( WooPaymentsFraudPreventionService::TOKEN_NAME, 'fraud-token-123' );
 
@@ -2276,8 +2275,9 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 		$config = $assets->get_payment_fields_js_config( self::CARD_SUPPORTS );
 		$data   = $assets->get_blocks_payment_method_data( self::CARD_SUPPORTS );
 
-		$this->assertSame( 'fraud-token-123', $config['fraudPreventionToken'] );
-		$this->assertSame( 'fraud-token-123', $data['fraudPreventionToken'] );
+		// Client 11.2.0 delivers the token only as window.wcpayFraudPreventionToken (class-fraud-prevention-service.php:73-105).
+		$this->assertArrayNotHasKey( 'fraudPreventionToken', $config );
+		$this->assertArrayNotHasKey( 'fraudPreventionToken', $data );
 	}
 
 	/**

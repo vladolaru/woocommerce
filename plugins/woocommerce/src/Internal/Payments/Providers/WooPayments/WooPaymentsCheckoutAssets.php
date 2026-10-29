@@ -441,7 +441,6 @@ class WooPaymentsCheckoutAssets {
 			'fingerprintErrorMessage'                  => __( 'An error was encountered when preparing the payment form. Please try again later.', 'woocommerce' ),
 			'cardBrandPopoverLabel'                    => __( 'Supported credit card brands', 'woocommerce' ),
 			'cardBrandLogosLabel'                      => __( 'Show all supported credit card brands', 'woocommerce' ),
-			'fraudPreventionToken'                     => $this->get_fraud_prevention_token(),
 		);
 		if ( 0 < $payment_context['order_id'] ) {
 			$config['isOrderPay'] = true;
@@ -915,20 +914,6 @@ class WooPaymentsCheckoutAssets {
 		}
 
 		return $this->fraud_prevention_service;
-	}
-
-	/**
-	 * Get the fraud-prevention token exposed to checkout clients.
-	 *
-	 * @return string
-	 */
-	private function get_fraud_prevention_token(): string {
-		$fraud_prevention_service = $this->get_fraud_prevention_service();
-		if ( ! $fraud_prevention_service->has_session() || ! $fraud_prevention_service->is_enabled() ) {
-			return '';
-		}
-
-		return $fraud_prevention_service->get_token();
 	}
 
 	/**

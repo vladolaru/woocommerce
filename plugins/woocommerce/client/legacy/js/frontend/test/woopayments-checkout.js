@@ -615,6 +615,7 @@ describe( 'WooPayments checkout', () => {
 			)
 			.forEach( ( key ) => delete window[ key ] );
 		delete window.wcpayAppearance;
+		delete window.wcpayFraudPreventionToken;
 		delete window.wc;
 		delete window.Stripe;
 		delete window.FingerprintJS;
@@ -3747,8 +3748,7 @@ describe( 'WooPayments checkout', () => {
 		// value at the exact moment `trigger( 'submit' )` fires (rather than only
 		// checking its final value after the async flow settles) is what proves
 		// "before submitting", not just "eventually present".
-		window.wcpay_core_checkout_config.fraudPreventionToken =
-			'fraud-token-123';
+		window.wcpayFraudPreventionToken = 'fraud-token-123';
 		document.body.innerHTML =
 			'<form id="order_review">' +
 			'<input type="radio" name="payment_method" value="woocommerce_payments" checked />' +
@@ -3899,8 +3899,7 @@ describe( 'WooPayments checkout', () => {
 	} );
 
 	test( 'adds the fraud-prevention token before submitting a new-card classic checkout', async () => {
-		window.wcpay_core_checkout_config.fraudPreventionToken =
-			'fraud-token-123';
+		window.wcpayFraudPreventionToken = 'fraud-token-123';
 		require( '../woopayments-checkout' );
 		await flushPromises();
 
@@ -3929,6 +3928,7 @@ describe( 'WooPayments checkout', () => {
 		// which every gateway/method shares, and `checkout/classic/upe-utils.js:203-208`
 		// (`appendFraudPreventionTokenInputToForm`) is the client's own hidden-field append, the
 		// direct parity counterpart of native's `ensureHiddenField()` call in `appendPaymentFields()`.
+		window.wcpayFraudPreventionToken = 'fraud-token-123';
 		document.body.innerHTML =
 			'<form class="checkout">' +
 			'<ul class="payment_methods">' +
@@ -3958,7 +3958,6 @@ describe( 'WooPayments checkout', () => {
 			Object.assign( {}, window.wcpay_core_checkout_config, {
 				gatewayId: 'woocommerce_payments_affirm',
 				paymentMethodTypes: [ 'affirm' ],
-				fraudPreventionToken: 'fraud-token-123',
 				paymentMethodsConfig: {
 					affirm: {
 						isReusable: false,
@@ -4002,8 +4001,7 @@ describe( 'WooPayments checkout', () => {
 	} );
 
 	test( 'adds the fraud-prevention token before submitting a saved-card classic checkout', async () => {
-		window.wcpay_core_checkout_config.fraudPreventionToken =
-			'fraud-token-123';
+		window.wcpayFraudPreventionToken = 'fraud-token-123';
 		document.body.innerHTML =
 			'<form class="checkout">' +
 			'<input type="radio" name="payment_method" value="woocommerce_payments" checked />' +
@@ -4625,8 +4623,7 @@ describe( 'WooPayments checkout', () => {
 		window.wcpay_core_checkout_config.cartTotal = '0';
 		window.wcpay_core_checkout_config.createSetupIntentNonce =
 			'setup_nonce';
-		window.wcpay_core_checkout_config.fraudPreventionToken =
-			'fraud-token-123';
+		window.wcpayFraudPreventionToken = 'fraud-token-123';
 		window.wcpay_core_checkout_config.customerData = {
 			name: 'Renewal Target',
 			email: 'renewal-target@example.test',

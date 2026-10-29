@@ -1635,12 +1635,9 @@
 		field.value = value || '';
 	}
 
+	// Client 11.2.0 checkout/classic/upe-utils.js:204 reads the token only from the page global.
 	function getFraudPreventionToken() {
-		return (
-			config.fraudPreventionToken ||
-			window.wcpayFraudPreventionToken ||
-			''
-		);
+		return window.wcpayFraudPreventionToken || '';
 	}
 
 	// `component` is the Payment Element entry that created the payment method; express wallets pass none.
