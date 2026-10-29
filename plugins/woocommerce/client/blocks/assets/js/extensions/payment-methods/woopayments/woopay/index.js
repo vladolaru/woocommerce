@@ -293,29 +293,42 @@ const sendWooPayConnectMessage = (
 ) => {
 	attachWooPayConnectListener();
 
+	// The timeout starts before the wait for the connect page, as client 11.2.0 sendMessageAndListenWith()
+	// (connect/woopay-connect.js:120-152): an iframe that never loads still settles the request, and an expired
+	// request leaves its callback and never posts.
 	return new Promise( ( resolve ) => {
+		let timeoutId;
+		let isSettled = false;
+		const settle = ( value ) => {
+			if ( isSettled ) {
+				return;
+			}
+
+			isSettled = true;
+			window.clearTimeout( timeoutId );
+			if ( wooPayConnectCallbacks[ callbackName ] === settle ) {
+				delete wooPayConnectCallbacks[ callbackName ];
+			}
+			resolve( value );
+		};
+
+		wooPayConnectCallbacks[ callbackName ] = settle;
+
+		if ( timeout ) {
+			timeoutId = window.setTimeout(
+				() => settle( fallback ),
+				wooPayConnectTimeout
+			);
+		}
+
 		getWooPayConnectPostMessage()
 			.then( ( postMessage ) => {
-				let timeoutId;
-
-				wooPayConnectCallbacks[ callbackName ] = ( value ) => {
-					if ( timeoutId ) {
-						window.clearTimeout( timeoutId );
-					}
-
-					resolve( value );
-				};
-
-				if ( timeout ) {
-					timeoutId = window.setTimeout( () => {
-						resolveWooPayConnectCallback( callbackName, fallback );
-					}, wooPayConnectTimeout );
+				if ( ! isSettled ) {
+					postMessage( message );
 				}
-
-				postMessage( message );
 			} )
 			.catch( () => {
-				resolve( fallback );
+				settle( fallback );
 			} );
 	} );
 };

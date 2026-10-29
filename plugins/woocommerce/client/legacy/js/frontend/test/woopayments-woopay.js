@@ -820,6 +820,53 @@ describe( 'WooPayments WooPay checkout', () => {
 				expect( getNoticeMessages() ).toEqual( [ sessionError, sessionError ] );
 				expect( document.querySelector( '.woopay-otp-iframe' ) ).toBeNull();
 			} );
+			// A Connect iframe the Blocks script created that never loads: the timeout settles the request (client 11.2.0
+			// connect/woopay-connect.js:120-152 starts it before the wait), and the expired request never posts when the
+			// connect page loads after a retry has started.
+			test.each( [
+				[ 'loads late', false ],
+				[ 'is removed before it loads', true ],
+			] )(
+				'never posts an expired session request when the Blocks script’s Connect iframe %s',
+				async ( _, removeIframe ) => {
+					let connectPageLoaded;
+					const blocksIframe = document.createElement( 'iframe' );
+					blocksIframe.id = 'woopay-connect-iframe';
+					blocksIframe.wooPayConnectPostMessage = new Promise( function ( resolve ) {
+						connectPageLoaded = resolve;
+					} );
+					document.body.appendChild( blocksIframe );
+					jest.useFakeTimers();
+					mockSessionRequest( { done: validSession } );
+					require( '../woopayments-woopay' );
+
+					clickWooPay();
+					await flushMicrotasks();
+					if ( removeIframe ) {
+						blocksIframe.remove();
+					}
+					await jest.advanceTimersByTimeAsync( 5000 );
+					expect( getNoticeMessages() ).toEqual( [ sessionError ] );
+					expect( getPreemptiveSessionPosts() ).toEqual( [] );
+
+					clickWooPay();
+					await flushMicrotasks();
+					expect( getSessionPosts() ).toHaveLength( 2 );
+					connectPageLoaded( function ( message ) {
+						blocksIframe.contentWindow.postMessage( message, 'https://pay.woo.test' );
+					} );
+					if ( removeIframe ) {
+						await loadConnectIframe();
+					}
+					await flushMicrotasks();
+					expect( getPreemptiveSessionPosts() ).toHaveLength( 1 );
+
+					// Let the retry time out too, so nothing is left pending for later tests.
+					await jest.advanceTimersByTimeAsync( 5000 );
+					expect( getNoticeMessages() ).toEqual( [ sessionError, sessionError ] );
+					expect( getPreemptiveSessionPosts() ).toHaveLength( 1 );
+				}
+			);
 		} );
 
 		test( 'translates the preferred-card accessible name and the brand', () => {

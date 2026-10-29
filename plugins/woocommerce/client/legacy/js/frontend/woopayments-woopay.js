@@ -404,9 +404,10 @@
 				}, wooPayConnectTimeout );
 			}
 
+			// This request's own state: after it expires, a retry's callback under the same name must not make it post.
 			getWooPayConnectPostMessage()
 				.then( function ( postMessage ) {
-					if ( wooPayConnectCallbacks[ callbackName ] ) {
+					if ( ! settled ) {
 						postMessage( message );
 					}
 				} )

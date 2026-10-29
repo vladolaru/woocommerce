@@ -713,6 +713,164 @@ describe( 'wc-payment-method-woopayments-woopay', () => {
 				'https://pay.woo.test'
 			);
 		} );
+		// Client 11.2.0 WoopayConnect.sendMessageAndListenWith() (connect/woopay-connect.js:120-152) starts its timeout
+		// before it awaits the iframe, so a Connect iframe that never loads still settles the request; native legacy
+		// does the same (woopayments-woopay.js sendWooPayConnectMessage()).
+		describe( 'when the classic script’s Connect iframe never loads', () => {
+			const sessionError = 'Something went wrong. Please try again.';
+			let createNotice;
+			let classicIframe;
+			let connectPageLoaded;
+
+			const getPreemptiveSessionPosts = () =>
+				postMessage.mock.calls.filter(
+					( [ message ] ) =>
+						message.action === 'setPreemptiveSessionData'
+				);
+			const getSessionCalls = () =>
+				window.fetch.mock.calls.filter(
+					( [ url ] ) => url === '/?wc-ajax=wcpay_get_woopay_session'
+				);
+			const getWooPayLink = () =>
+				screen.getByRole( 'link', { name: 'WooPay' } );
+
+			beforeEach( () => {
+				jest.useFakeTimers();
+				user = userEvent.setup( {
+					advanceTimers: jest.advanceTimersByTime,
+				} );
+				createNotice = jest.fn();
+				dispatch.mockReturnValue( { createNotice } );
+				window.wcSettings = { wcBlocksConfig: {} };
+				getMockPaymentMethodSettings().isWoopayFirstPartyAuthEnabled = true;
+				window.fetch = jest.fn( ( url ) =>
+					Promise.resolve( {
+						json: () =>
+							Promise.resolve(
+								url === '/?wc-ajax=wcpay_get_woopay_session'
+									? {
+											blog_id: '12345',
+											data: {
+												session: 'session',
+												iv: 'iv',
+												hash: 'hash',
+											},
+										}
+									: {}
+							),
+					} )
+				);
+				classicIframe = document.createElement( 'iframe' );
+				classicIframe.id = 'woopay-connect-iframe';
+				classicIframe.wooPayConnectPostMessage = new Promise(
+					( resolve ) => {
+						connectPageLoaded = resolve;
+					}
+				);
+				document.body.appendChild( classicIframe );
+			} );
+
+			afterEach( () => {
+				delete window.wcSettings;
+			} );
+
+			const expectTimedOutAndReleased = async () => {
+				await act( async () => {
+					await jest.advanceTimersByTimeAsync( 5000 );
+				} );
+				await waitFor( () => {
+					expect( createNotice ).toHaveBeenCalledWith(
+						'error',
+						sessionError,
+						{ context: 'wc/checkout' }
+					);
+				} );
+				expect( getWooPayLink() ).not.toHaveAttribute( 'aria-busy' );
+				expect( getPreemptiveSessionPosts() ).toEqual( [] );
+			};
+			const loadClassicConnectPageLate = () =>
+				act( async () => {
+					connectPageLoaded( ( message ) =>
+						classicIframe.contentWindow.postMessage(
+							message,
+							'https://pay.woo.test'
+						)
+					);
+					await jest.advanceTimersByTimeAsync( 0 );
+				} );
+
+			it( 'times out, releases the button and lets the shopper retry', async () => {
+				renderButton();
+
+				await user.click( getWooPayLink() );
+				await expectTimedOutAndReleased();
+
+				// The expired request must not post when the connect page loads after all.
+				await loadClassicConnectPageLate();
+				expect( getPreemptiveSessionPosts() ).toEqual( [] );
+
+				await user.click( getWooPayLink() );
+				await waitFor( () => {
+					expect( getPreemptiveSessionPosts() ).toHaveLength( 1 );
+				} );
+				expect( getSessionCalls() ).toHaveLength( 2 );
+				await act( async () => {
+					window.dispatchEvent(
+						new window.MessageEvent( 'message', {
+							origin: 'https://pay.woo.test',
+							data: {
+								action: 'set_preemptive_session_data_success',
+								value: {
+									redirect_url:
+										'https://pay.woo.test/checkout/session',
+								},
+							},
+						} )
+					);
+				} );
+				await waitFor( () => {
+					expect( navigate ).toHaveBeenCalledWith(
+						'https://pay.woo.test/checkout/session'
+					);
+				} );
+			} );
+
+			it( 'times out when the iframe is removed before it loads, and retries through a new one', async () => {
+				renderButton();
+
+				await user.click( getWooPayLink() );
+				await waitFor( () => {
+					expect( getSessionCalls() ).toHaveLength( 1 );
+				} );
+				classicIframe.remove();
+				await expectTimedOutAndReleased();
+
+				await user.click( getWooPayLink() );
+				const replacementIframe = document.getElementById(
+					'woopay-connect-iframe'
+				);
+				expect( replacementIframe ).not.toBe( classicIframe );
+				await waitFor( () => {
+					expect(
+						replacementIframe.getAttribute( 'src' )
+					).not.toBeNull();
+				} );
+				await loadClassicConnectPageLate();
+				replacementIframe.dispatchEvent( new window.Event( 'load' ) );
+				await waitFor( () => {
+					expect( getPreemptiveSessionPosts() ).toHaveLength( 1 );
+				} );
+				expect( getSessionCalls() ).toHaveLength( 2 );
+				// Let the retry time out too, so nothing is left pending for later tests.
+				await act( async () => {
+					await jest.advanceTimersByTimeAsync( 5000 );
+				} );
+				await waitFor( () => {
+					expect( createNotice ).toHaveBeenCalledTimes( 2 );
+				} );
+				expect( getPreemptiveSessionPosts() ).toHaveLength( 1 );
+			} );
+		} );
 	} );
 
 	it( 'falls back to the WooPay OTP flow when first-party Connect rejects the session', async () => {
