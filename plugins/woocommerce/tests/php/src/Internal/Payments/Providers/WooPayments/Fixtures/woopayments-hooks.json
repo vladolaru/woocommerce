@@ -3,10 +3,10 @@
   "inventory": "hooks",
   "source": {
     "plugin": "woocommerce-payments",
-    "tag": "11.1.0",
-    "commit": "f85392666c9b543cd24dbbf903e0dbe4cb2c5cee"
+    "tag": "11.2.0",
+    "commit": "c6ccb818dce1485b5987586f9cd9617712cb6571"
   },
-  "count": 147,
+  "count": 146,
   "entries": [
     {
       "name": "__wcpay_customer_data_localized",
@@ -15,10 +15,10 @@
       "params": null,
       "deprecated": false,
       "dynamic": null,
-      "plugin_site": "includes/class-wc-payments-checkout.php:447",
+      "plugin_site": "includes/class-wc-payments-checkout.php:505",
       "sites": [
         {
-          "site": "includes/class-wc-payments-checkout.php:447",
+          "site": "includes/class-wc-payments-checkout.php:505",
           "arity": 0,
           "params": null
         }
@@ -31,10 +31,10 @@
       "params": null,
       "deprecated": false,
       "dynamic": null,
-      "plugin_site": "includes/class-wc-payments-checkout.php:430",
+      "plugin_site": "includes/class-wc-payments-checkout.php:488",
       "sites": [
         {
-          "site": "includes/class-wc-payments-checkout.php:430",
+          "site": "includes/class-wc-payments-checkout.php:488",
           "arity": 0,
           "params": null
         }
@@ -49,10 +49,10 @@
       ],
       "deprecated": false,
       "dynamic": null,
-      "plugin_site": "includes/admin/class-wc-payments-admin.php:1479",
+      "plugin_site": "includes/admin/class-wc-payments-admin.php:1466",
       "sites": [
         {
-          "site": "includes/admin/class-wc-payments-admin.php:1479",
+          "site": "includes/admin/class-wc-payments-admin.php:1466",
           "arity": 1,
           "params": [
             "WCPay\\Core\\Server\\Request\\Get_Request"
@@ -76,10 +76,10 @@
       ],
       "deprecated": false,
       "dynamic": null,
-      "plugin_site": "includes/class-wc-payments-checkout.php:214",
+      "plugin_site": "includes/class-wc-payments-checkout.php:273",
       "sites": [
         {
-          "site": "includes/class-wc-payments-checkout.php:214",
+          "site": "includes/class-wc-payments-checkout.php:273",
           "arity": 1,
           "params": [
             "string"
@@ -94,10 +94,10 @@
       "params": null,
       "deprecated": false,
       "dynamic": null,
-      "plugin_site": "includes/class-wc-payment-gateway-wcpay.php:634",
+      "plugin_site": "includes/class-wc-payment-gateway-wcpay.php:635",
       "sites": [
         {
-          "site": "includes/class-wc-payment-gateway-wcpay.php:634",
+          "site": "includes/class-wc-payment-gateway-wcpay.php:635",
           "arity": 0,
           "params": null
         }
@@ -112,10 +112,10 @@
       ],
       "deprecated": false,
       "dynamic": null,
-      "plugin_site": "includes/class-wc-payments.php:1186",
+      "plugin_site": "includes/class-wc-payments.php:1180",
       "sites": [
         {
-          "site": "includes/class-wc-payments.php:1186",
+          "site": "includes/class-wc-payments.php:1180",
           "arity": 1,
           "params": [
             "string"
@@ -130,10 +130,10 @@
       "params": null,
       "deprecated": false,
       "dynamic": null,
-      "plugin_site": "includes/class-wc-payments-checkout.php:513",
+      "plugin_site": "includes/class-wc-payments-checkout.php:571",
       "sites": [
         {
-          "site": "includes/class-wc-payments-checkout.php:513",
+          "site": "includes/class-wc-payments-checkout.php:571",
           "arity": 1,
           "params": null
         }
@@ -175,10 +175,10 @@
       ],
       "deprecated": false,
       "dynamic": null,
-      "plugin_site": "includes/class-wc-payments.php:2263",
+      "plugin_site": "includes/class-wc-payments.php:2257",
       "sites": [
         {
-          "site": "includes/class-wc-payments.php:2263",
+          "site": "includes/class-wc-payments.php:2257",
           "arity": 1,
           "params": [
             "WC_Payments_Http_Interface|null"
@@ -193,10 +193,10 @@
       "params": null,
       "deprecated": false,
       "dynamic": null,
-      "plugin_site": "includes/class-wc-payment-gateway-wcpay.php:1160",
+      "plugin_site": "includes/class-wc-payment-gateway-wcpay.php:1161",
       "sites": [
         {
-          "site": "includes/class-wc-payment-gateway-wcpay.php:1160",
+          "site": "includes/class-wc-payment-gateway-wcpay.php:1161",
           "arity": 1,
           "params": null
         }
@@ -211,10 +211,10 @@
       ],
       "deprecated": false,
       "dynamic": null,
-      "plugin_site": "includes/class-wc-payment-gateway-wcpay.php:628",
+      "plugin_site": "includes/class-wc-payment-gateway-wcpay.php:629",
       "sites": [
         {
-          "site": "includes/class-wc-payment-gateway-wcpay.php:628",
+          "site": "includes/class-wc-payment-gateway-wcpay.php:629",
           "arity": 1,
           "params": [
             "string"
@@ -440,10 +440,10 @@
       "params": null,
       "deprecated": false,
       "dynamic": null,
-      "plugin_site": "includes/class-wc-payment-gateway-wcpay.php:1688",
+      "plugin_site": "includes/class-wc-payment-gateway-wcpay.php:1693",
       "sites": [
         {
-          "site": "includes/class-wc-payment-gateway-wcpay.php:1688",
+          "site": "includes/class-wc-payment-gateway-wcpay.php:1693",
           "arity": 1,
           "params": null
         }
@@ -556,10 +556,10 @@
       ],
       "deprecated": false,
       "dynamic": null,
-      "plugin_site": "includes/class-wc-payments.php:2110",
+      "plugin_site": "includes/class-wc-payments.php:2104",
       "sites": [
         {
-          "site": "includes/class-wc-payments.php:2110",
+          "site": "includes/class-wc-payments.php:2104",
           "arity": 3,
           "params": [
             "WCPay\\Core\\Server\\Request|null",
@@ -640,10 +640,10 @@
       "params": null,
       "deprecated": false,
       "dynamic": null,
-      "plugin_site": "includes/class-wc-payments-utils.php:1113",
+      "plugin_site": "includes/class-wc-payments-utils.php:1128",
       "sites": [
         {
-          "site": "includes/class-wc-payments-utils.php:1113",
+          "site": "includes/class-wc-payments-utils.php:1128",
           "arity": 1,
           "params": null
         }
@@ -658,13 +658,35 @@
       ],
       "deprecated": false,
       "dynamic": null,
-      "plugin_site": "includes/express-checkout/class-wc-payments-express-checkout-button-handler.php:234",
+      "plugin_site": "includes/express-checkout/class-wc-payments-express-checkout-button-handler.php:236",
       "sites": [
         {
-          "site": "includes/express-checkout/class-wc-payments-express-checkout-button-handler.php:234",
+          "site": "includes/express-checkout/class-wc-payments-express-checkout-button-handler.php:236",
           "arity": 1,
           "params": [
             "array"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "wcpay_express_checkout_setup_future_usage",
+      "kind": "filter",
+      "arity": 2,
+      "params": [
+        "string|null",
+        "string"
+      ],
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/express-checkout/class-wc-payments-express-checkout-button-helper.php:445",
+      "sites": [
+        {
+          "site": "includes/express-checkout/class-wc-payments-express-checkout-button-helper.php:445",
+          "arity": 2,
+          "params": [
+            "string|null",
+            "string"
           ]
         }
       ]
@@ -678,10 +700,10 @@
       ],
       "deprecated": false,
       "dynamic": null,
-      "plugin_site": "includes/class-wc-payments.php:1702",
+      "plugin_site": "includes/class-wc-payments.php:1696",
       "sites": [
         {
-          "site": "includes/class-wc-payments.php:1702",
+          "site": "includes/class-wc-payments.php:1696",
           "arity": 1,
           "params": [
             "bool"
@@ -698,10 +720,10 @@
       ],
       "deprecated": false,
       "dynamic": null,
-      "plugin_site": "includes/class-woopay-tracker.php:689",
+      "plugin_site": "includes/class-woopay-tracker.php:694",
       "sites": [
         {
-          "site": "includes/class-woopay-tracker.php:689",
+          "site": "includes/class-woopay-tracker.php:694",
           "arity": 1,
           "params": [
             "array"
@@ -785,10 +807,10 @@
       ],
       "deprecated": false,
       "dynamic": null,
-      "plugin_site": "includes/class-wc-payment-gateway-wcpay.php:4463",
+      "plugin_site": "includes/class-wc-payment-gateway-wcpay.php:4486",
       "sites": [
         {
-          "site": "includes/class-wc-payment-gateway-wcpay.php:4463",
+          "site": "includes/class-wc-payment-gateway-wcpay.php:4486",
           "arity": 1,
           "params": [
             "string"
@@ -877,10 +899,10 @@
       ],
       "deprecated": false,
       "dynamic": null,
-      "plugin_site": "includes/admin/class-wc-payments-admin.php:1449",
+      "plugin_site": "includes/admin/class-wc-payments-admin.php:1436",
       "sites": [
         {
-          "site": "includes/admin/class-wc-payments-admin.php:1449",
+          "site": "includes/admin/class-wc-payments-admin.php:1436",
           "arity": 1,
           "params": [
             "WCPay\\Core\\Server\\Request\\Get_Request"
@@ -1130,30 +1152,14 @@
       ],
       "deprecated": false,
       "dynamic": null,
-      "plugin_site": "includes/woopay/class-woopay-utilities.php:100",
+      "plugin_site": "includes/woopay/class-woopay-utilities.php:143",
       "sites": [
         {
-          "site": "includes/woopay/class-woopay-utilities.php:100",
+          "site": "includes/woopay/class-woopay-utilities.php:143",
           "arity": 1,
           "params": [
             "bool"
           ]
-        }
-      ]
-    },
-    {
-      "name": "wcpay_is_woopay_store_api_request",
-      "kind": "filter",
-      "arity": 1,
-      "params": null,
-      "deprecated": false,
-      "dynamic": null,
-      "plugin_site": "includes/class-wc-payment-gateway-wcpay.php:1219",
-      "sites": [
-        {
-          "site": "includes/class-wc-payment-gateway-wcpay.php:1219",
-          "arity": 1,
-          "params": null
         }
       ]
     },
@@ -1164,10 +1170,10 @@
       "params": null,
       "deprecated": false,
       "dynamic": null,
-      "plugin_site": "includes/admin/class-wc-payments-admin.php:1092",
+      "plugin_site": "includes/admin/class-wc-payments-admin.php:1079",
       "sites": [
         {
-          "site": "includes/admin/class-wc-payments-admin.php:1092",
+          "site": "includes/admin/class-wc-payments-admin.php:1079",
           "arity": 1,
           "params": null
         }
@@ -1222,10 +1228,10 @@
       ],
       "deprecated": false,
       "dynamic": null,
-      "plugin_site": "includes/core/server/request/class-list-deposits.php:25",
+      "plugin_site": "includes/core/server/request/class-list-deposits.php:30",
       "sites": [
         {
-          "site": "includes/core/server/request/class-list-deposits.php:25",
+          "site": "includes/core/server/request/class-list-deposits.php:30",
           "arity": 1,
           "params": [
             "WCPay\\Core\\Server\\Request\\List_Deposits"
@@ -1262,10 +1268,10 @@
       ],
       "deprecated": false,
       "dynamic": null,
-      "plugin_site": "includes/core/server/request/class-list-documents.php:25",
+      "plugin_site": "includes/core/server/request/class-list-documents.php:30",
       "sites": [
         {
-          "site": "includes/core/server/request/class-list-documents.php:25",
+          "site": "includes/core/server/request/class-list-documents.php:30",
           "arity": 1,
           "params": [
             "WCPay\\Core\\Server\\Request\\List_Documents"
@@ -1322,10 +1328,10 @@
       ],
       "deprecated": false,
       "dynamic": null,
-      "plugin_site": "includes/core/server/request/class-list-transactions.php:35",
+      "plugin_site": "includes/core/server/request/class-list-transactions.php:36",
       "sites": [
         {
-          "site": "includes/core/server/request/class-list-transactions.php:35",
+          "site": "includes/core/server/request/class-list-transactions.php:36",
           "arity": 1,
           "params": [
             "WCPay\\Core\\Server\\Request\\List_Transactions"
@@ -1342,10 +1348,10 @@
       ],
       "deprecated": false,
       "dynamic": null,
-      "plugin_site": "includes/class-wc-payments-utils.php:841",
+      "plugin_site": "includes/class-wc-payments-utils.php:856",
       "sites": [
         {
-          "site": "includes/class-wc-payments-utils.php:841",
+          "site": "includes/class-wc-payments-utils.php:856",
           "arity": 1,
           "params": [
             "array<string,"
@@ -1367,7 +1373,7 @@
       "plugin_site": "src/Internal/Service/OrderService.php:133",
       "sites": [
         {
-          "site": "includes/class-wc-payment-gateway-wcpay.php:1957",
+          "site": "includes/class-wc-payment-gateway-wcpay.php:1962",
           "arity": 2,
           "params": [
             "array",
@@ -1394,10 +1400,10 @@
       ],
       "deprecated": false,
       "dynamic": null,
-      "plugin_site": "includes/multi-currency/MultiCurrency.php:930",
+      "plugin_site": "includes/multi-currency/MultiCurrency.php:1023",
       "sites": [
         {
-          "site": "includes/multi-currency/MultiCurrency.php:930",
+          "site": "includes/multi-currency/MultiCurrency.php:1023",
           "arity": 1,
           "params": [
             "bool"
@@ -1416,10 +1422,10 @@
       ],
       "deprecated": false,
       "dynamic": null,
-      "plugin_site": "includes/multi-currency/AsyncPriceRenderer.php:88",
+      "plugin_site": "includes/multi-currency/AsyncPriceRenderer.php:100",
       "sites": [
         {
-          "site": "includes/multi-currency/AsyncPriceRenderer.php:88",
+          "site": "includes/multi-currency/AsyncPriceRenderer.php:100",
           "arity": 3,
           "params": [
             "string",
@@ -1438,10 +1444,10 @@
       ],
       "deprecated": false,
       "dynamic": null,
-      "plugin_site": "includes/multi-currency/MultiCurrency.php:1949",
+      "plugin_site": "includes/multi-currency/MultiCurrency.php:2094",
       "sites": [
         {
-          "site": "includes/multi-currency/MultiCurrency.php:1949",
+          "site": "includes/multi-currency/MultiCurrency.php:2094",
           "arity": 1,
           "params": [
             "array"
@@ -1456,10 +1462,10 @@
       "params": null,
       "deprecated": false,
       "dynamic": null,
-      "plugin_site": "includes/multi-currency/Analytics.php:319",
+      "plugin_site": "includes/multi-currency/Analytics.php:329",
       "sites": [
         {
-          "site": "includes/multi-currency/Analytics.php:319",
+          "site": "includes/multi-currency/Analytics.php:329",
           "arity": 1,
           "params": null
         }
@@ -1472,10 +1478,10 @@
       "params": null,
       "deprecated": false,
       "dynamic": null,
-      "plugin_site": "includes/multi-currency/Analytics.php:244",
+      "plugin_site": "includes/multi-currency/Analytics.php:254",
       "sites": [
         {
-          "site": "includes/multi-currency/Analytics.php:244",
+          "site": "includes/multi-currency/Analytics.php:254",
           "arity": 1,
           "params": null
         }
@@ -1488,10 +1494,10 @@
       "params": null,
       "deprecated": false,
       "dynamic": null,
-      "plugin_site": "includes/multi-currency/Analytics.php:434",
+      "plugin_site": "includes/multi-currency/Analytics.php:444",
       "sites": [
         {
-          "site": "includes/multi-currency/Analytics.php:434",
+          "site": "includes/multi-currency/Analytics.php:444",
           "arity": 1,
           "params": null
         }
@@ -1504,10 +1510,10 @@
       "params": null,
       "deprecated": false,
       "dynamic": null,
-      "plugin_site": "includes/multi-currency/Analytics.php:381",
+      "plugin_site": "includes/multi-currency/Analytics.php:391",
       "sites": [
         {
-          "site": "includes/multi-currency/Analytics.php:381",
+          "site": "includes/multi-currency/Analytics.php:391",
           "arity": 1,
           "params": null
         }
@@ -1522,10 +1528,10 @@
       ],
       "deprecated": false,
       "dynamic": null,
-      "plugin_site": "includes/multi-currency/Analytics.php:363",
+      "plugin_site": "includes/multi-currency/Analytics.php:373",
       "sites": [
         {
-          "site": "includes/multi-currency/Analytics.php:363",
+          "site": "includes/multi-currency/Analytics.php:373",
           "arity": 1,
           "params": [
             "string[]"
@@ -1542,10 +1548,10 @@
       ],
       "deprecated": false,
       "dynamic": null,
-      "plugin_site": "includes/multi-currency/Analytics.php:298",
+      "plugin_site": "includes/multi-currency/Analytics.php:308",
       "sites": [
         {
-          "site": "includes/multi-currency/Analytics.php:298",
+          "site": "includes/multi-currency/Analytics.php:308",
           "arity": 1,
           "params": [
             "string[]"
@@ -1562,10 +1568,10 @@
       ],
       "deprecated": false,
       "dynamic": null,
-      "plugin_site": "includes/multi-currency/Analytics.php:469",
+      "plugin_site": "includes/multi-currency/Analytics.php:479",
       "sites": [
         {
-          "site": "includes/multi-currency/Analytics.php:469",
+          "site": "includes/multi-currency/Analytics.php:479",
           "arity": 1,
           "params": [
             "string[]"
@@ -1582,10 +1588,10 @@
       ],
       "deprecated": false,
       "dynamic": null,
-      "plugin_site": "includes/multi-currency/Analytics.php:416",
+      "plugin_site": "includes/multi-currency/Analytics.php:426",
       "sites": [
         {
-          "site": "includes/multi-currency/Analytics.php:416",
+          "site": "includes/multi-currency/Analytics.php:426",
           "arity": 1,
           "params": [
             "string[]"
@@ -1602,10 +1608,10 @@
       ],
       "deprecated": false,
       "dynamic": null,
-      "plugin_site": "includes/multi-currency/MultiCurrency.php:1093",
+      "plugin_site": "includes/multi-currency/MultiCurrency.php:1194",
       "sites": [
         {
-          "site": "includes/multi-currency/MultiCurrency.php:1093",
+          "site": "includes/multi-currency/MultiCurrency.php:1194",
           "arity": 1,
           "params": [
             "string"
@@ -1622,10 +1628,10 @@
       ],
       "deprecated": false,
       "dynamic": null,
-      "plugin_site": "includes/multi-currency/MultiCurrency.php:1101",
+      "plugin_site": "includes/multi-currency/MultiCurrency.php:1202",
       "sites": [
         {
-          "site": "includes/multi-currency/MultiCurrency.php:1101",
+          "site": "includes/multi-currency/MultiCurrency.php:1202",
           "arity": 1,
           "params": [
             "string"
@@ -1888,10 +1894,10 @@
       ],
       "deprecated": false,
       "dynamic": null,
-      "plugin_site": "includes/multi-currency/MultiCurrency.php:613",
+      "plugin_site": "includes/multi-currency/MultiCurrency.php:678",
       "sites": [
         {
-          "site": "includes/multi-currency/MultiCurrency.php:613",
+          "site": "includes/multi-currency/MultiCurrency.php:678",
           "arity": 1,
           "params": [
             "array"
@@ -1908,10 +1914,10 @@
       ],
       "deprecated": false,
       "dynamic": null,
-      "plugin_site": "includes/multi-currency/MultiCurrency.php:605",
+      "plugin_site": "includes/multi-currency/MultiCurrency.php:670",
       "sites": [
         {
-          "site": "includes/multi-currency/MultiCurrency.php:605",
+          "site": "includes/multi-currency/MultiCurrency.php:670",
           "arity": 1,
           "params": [
             "array"
@@ -1926,10 +1932,10 @@
       "params": null,
       "deprecated": false,
       "dynamic": null,
-      "plugin_site": "includes/class-wc-payments-order-service.php:915",
+      "plugin_site": "includes/class-wc-payments-order-service.php:928",
       "sites": [
         {
-          "site": "includes/class-wc-payments-order-service.php:915",
+          "site": "includes/class-wc-payments-order-service.php:928",
           "arity": 0,
           "params": null
         }
@@ -1942,10 +1948,10 @@
       "params": null,
       "deprecated": false,
       "dynamic": null,
-      "plugin_site": "includes/class-wc-payments-order-service.php:949",
+      "plugin_site": "includes/class-wc-payments-order-service.php:962",
       "sites": [
         {
-          "site": "includes/class-wc-payments-order-service.php:949",
+          "site": "includes/class-wc-payments-order-service.php:962",
           "arity": 0,
           "params": null
         }
@@ -1960,10 +1966,10 @@
       ],
       "deprecated": false,
       "dynamic": null,
-      "plugin_site": "includes/class-wc-payments-checkout.php:283",
+      "plugin_site": "includes/class-wc-payments-checkout.php:341",
       "sites": [
         {
-          "site": "includes/class-wc-payments-checkout.php:283",
+          "site": "includes/class-wc-payments-checkout.php:341",
           "arity": 1,
           "params": [
             "array"
@@ -1980,10 +1986,10 @@
       ],
       "deprecated": false,
       "dynamic": null,
-      "plugin_site": "includes/class-wc-payments-checkout.php:531",
+      "plugin_site": "includes/class-wc-payments-checkout.php:589",
       "sites": [
         {
-          "site": "includes/class-wc-payments-checkout.php:531",
+          "site": "includes/class-wc-payments-checkout.php:589",
           "arity": 1,
           "params": [
             "string"
@@ -2034,10 +2040,10 @@
       "params": null,
       "deprecated": false,
       "dynamic": null,
-      "plugin_site": "includes/express-checkout/class-wc-payments-express-checkout-button-helper.php:740",
+      "plugin_site": "includes/express-checkout/class-wc-payments-express-checkout-button-helper.php:845",
       "sites": [
         {
-          "site": "includes/express-checkout/class-wc-payments-express-checkout-button-helper.php:740",
+          "site": "includes/express-checkout/class-wc-payments-express-checkout-button-helper.php:845",
           "arity": 2,
           "params": null
         }
@@ -2053,10 +2059,10 @@
       ],
       "deprecated": false,
       "dynamic": null,
-      "plugin_site": "includes/express-checkout/class-wc-payments-express-checkout-button-helper.php:993",
+      "plugin_site": "includes/express-checkout/class-wc-payments-express-checkout-button-helper.php:1098",
       "sites": [
         {
-          "site": "includes/express-checkout/class-wc-payments-express-checkout-button-helper.php:993",
+          "site": "includes/express-checkout/class-wc-payments-express-checkout-button-helper.php:1098",
           "arity": 2,
           "params": [
             "bool",
@@ -2096,10 +2102,10 @@
       ],
       "deprecated": false,
       "dynamic": null,
-      "plugin_site": "includes/class-wc-payment-gateway-wcpay.php:2735",
+      "plugin_site": "includes/class-wc-payment-gateway-wcpay.php:2740",
       "sites": [
         {
-          "site": "includes/class-wc-payment-gateway-wcpay.php:2735",
+          "site": "includes/class-wc-payment-gateway-wcpay.php:2740",
           "arity": 1,
           "params": [
             "string"
@@ -2117,10 +2123,10 @@
       ],
       "deprecated": false,
       "dynamic": null,
-      "plugin_site": "includes/express-checkout/class-wc-payments-express-checkout-button-helper.php:857",
+      "plugin_site": "includes/express-checkout/class-wc-payments-express-checkout-button-helper.php:962",
       "sites": [
         {
-          "site": "includes/express-checkout/class-wc-payments-express-checkout-button-helper.php:857",
+          "site": "includes/express-checkout/class-wc-payments-express-checkout-button-helper.php:962",
           "arity": 2,
           "params": [
             "array",
@@ -2138,10 +2144,10 @@
       ],
       "deprecated": false,
       "dynamic": null,
-      "plugin_site": "includes/express-checkout/class-wc-payments-express-checkout-button-helper.php:694",
+      "plugin_site": "includes/express-checkout/class-wc-payments-express-checkout-button-helper.php:799",
       "sites": [
         {
-          "site": "includes/express-checkout/class-wc-payments-express-checkout-button-helper.php:694",
+          "site": "includes/express-checkout/class-wc-payments-express-checkout-button-helper.php:799",
           "arity": 1,
           "params": [
             "string[]"
@@ -2158,10 +2164,10 @@
       ],
       "deprecated": false,
       "dynamic": null,
-      "plugin_site": "includes/express-checkout/class-wc-payments-express-checkout-button-helper.php:839",
+      "plugin_site": "includes/express-checkout/class-wc-payments-express-checkout-button-helper.php:944",
       "sites": [
         {
-          "site": "includes/express-checkout/class-wc-payments-express-checkout-button-helper.php:839",
+          "site": "includes/express-checkout/class-wc-payments-express-checkout-button-helper.php:944",
           "arity": 1,
           "params": [
             "string"
@@ -2216,10 +2222,10 @@
       "params": null,
       "deprecated": false,
       "dynamic": null,
-      "plugin_site": "includes/admin/class-wc-payments-admin.php:1110",
+      "plugin_site": "includes/admin/class-wc-payments-admin.php:1097",
       "sites": [
         {
-          "site": "includes/admin/class-wc-payments-admin.php:1110",
+          "site": "includes/admin/class-wc-payments-admin.php:1097",
           "arity": 1,
           "params": null
         }
@@ -2288,26 +2294,6 @@
       ]
     },
     {
-      "name": "wcpay_review_prompt_experiment_variant",
-      "kind": "filter",
-      "arity": 1,
-      "params": [
-        "string"
-      ],
-      "deprecated": false,
-      "dynamic": null,
-      "plugin_site": "includes/admin/class-wc-payments-admin.php:1625",
-      "sites": [
-        {
-          "site": "includes/admin/class-wc-payments-admin.php:1625",
-          "arity": 1,
-          "params": [
-            "string"
-          ]
-        }
-      ]
-    },
-    {
       "name": "wcpay_shopper_tracking_enabled",
       "kind": "filter",
       "arity": 1,
@@ -2366,10 +2352,10 @@
       "params": null,
       "deprecated": false,
       "dynamic": null,
-      "plugin_site": "includes/class-wc-payments-order-service.php:760",
+      "plugin_site": "includes/class-wc-payments-order-service.php:773",
       "sites": [
         {
-          "site": "includes/class-wc-payments-order-service.php:760",
+          "site": "includes/class-wc-payments-order-service.php:773",
           "arity": 1,
           "params": null
         }
@@ -2487,10 +2473,10 @@
       ],
       "deprecated": false,
       "dynamic": null,
-      "plugin_site": "includes/class-wc-payment-gateway-wcpay.php:1434",
+      "plugin_site": "includes/class-wc-payment-gateway-wcpay.php:1439",
       "sites": [
         {
-          "site": "includes/class-wc-payment-gateway-wcpay.php:1434",
+          "site": "includes/class-wc-payment-gateway-wcpay.php:1439",
           "arity": 2,
           "params": [
             "Exception",
@@ -2508,10 +2494,10 @@
       ],
       "deprecated": false,
       "dynamic": null,
-      "plugin_site": "includes/class-wc-payment-gateway-wcpay.php:4864",
+      "plugin_site": "includes/class-wc-payment-gateway-wcpay.php:4887",
       "sites": [
         {
-          "site": "includes/class-wc-payment-gateway-wcpay.php:4864",
+          "site": "includes/class-wc-payment-gateway-wcpay.php:4887",
           "arity": 1,
           "params": [
             "array"
@@ -2627,17 +2613,10 @@
       ],
       "deprecated": false,
       "dynamic": null,
-      "plugin_site": "includes/admin/class-wc-rest-woopay-session-controller.php:97",
+      "plugin_site": "includes/woopay/class-woopay-session.php:1026",
       "sites": [
         {
-          "site": "includes/admin/class-wc-rest-woopay-session-controller.php:97",
-          "arity": 1,
-          "params": [
-            "bool"
-          ]
-        },
-        {
-          "site": "includes/woopay/class-woopay-session.php:864",
+          "site": "includes/woopay/class-woopay-session.php:1026",
           "arity": 1,
           "params": [
             "bool"
@@ -2654,10 +2633,10 @@
       ],
       "deprecated": false,
       "dynamic": null,
-      "plugin_site": "includes/woopay/class-woopay-utilities.php:288",
+      "plugin_site": "includes/woopay/class-woopay-utilities.php:331",
       "sites": [
         {
-          "site": "includes/woopay/class-woopay-utilities.php:288",
+          "site": "includes/woopay/class-woopay-utilities.php:331",
           "arity": 1,
           "params": [
             "bool"
@@ -2755,10 +2734,10 @@
       ],
       "deprecated": false,
       "dynamic": null,
-      "plugin_site": "includes/class-wc-payment-gateway-wcpay.php:1757",
+      "plugin_site": "includes/class-wc-payment-gateway-wcpay.php:1762",
       "sites": [
         {
-          "site": "includes/class-wc-payment-gateway-wcpay.php:1757",
+          "site": "includes/class-wc-payment-gateway-wcpay.php:1762",
           "arity": 2,
           "params": [
             "WC_Order",
@@ -2819,10 +2798,10 @@
       ],
       "deprecated": false,
       "dynamic": null,
-      "plugin_site": "includes/class-wc-payment-gateway-wcpay.php:1317",
+      "plugin_site": "includes/class-wc-payment-gateway-wcpay.php:1322",
       "sites": [
         {
-          "site": "includes/class-wc-payment-gateway-wcpay.php:1317",
+          "site": "includes/class-wc-payment-gateway-wcpay.php:1322",
           "arity": 2,
           "params": [
             "WC_Order",
@@ -2838,15 +2817,15 @@
       "params": null,
       "deprecated": false,
       "dynamic": null,
-      "plugin_site": "includes/class-wc-payment-gateway-wcpay.php:1465",
+      "plugin_site": "includes/class-wc-payment-gateway-wcpay.php:1470",
       "sites": [
         {
-          "site": "includes/class-wc-payment-gateway-wcpay.php:1465",
+          "site": "includes/class-wc-payment-gateway-wcpay.php:1470",
           "arity": 0,
           "params": null
         },
         {
-          "site": "includes/class-wc-payment-gateway-wcpay.php:1971",
+          "site": "includes/class-wc-payment-gateway-wcpay.php:1976",
           "arity": 0,
           "params": null
         }
@@ -2859,10 +2838,10 @@
       "params": null,
       "deprecated": false,
       "dynamic": null,
-      "plugin_site": "includes/class-wc-payment-gateway-wcpay.php:1080",
+      "plugin_site": "includes/class-wc-payment-gateway-wcpay.php:1081",
       "sites": [
         {
-          "site": "includes/class-wc-payment-gateway-wcpay.php:1080",
+          "site": "includes/class-wc-payment-gateway-wcpay.php:1081",
           "arity": 0,
           "params": null
         }
@@ -2882,10 +2861,10 @@
       ],
       "deprecated": false,
       "dynamic": null,
-      "plugin_site": "includes/class-wc-payment-gateway-wcpay.php:1921",
+      "plugin_site": "includes/class-wc-payment-gateway-wcpay.php:1926",
       "sites": [
         {
-          "site": "includes/class-wc-payment-gateway-wcpay.php:1921",
+          "site": "includes/class-wc-payment-gateway-wcpay.php:1926",
           "arity": 6,
           "params": [
             "WC_Order",
@@ -2905,10 +2884,10 @@
       "params": null,
       "deprecated": false,
       "dynamic": null,
-      "plugin_site": "includes/class-wc-payments.php:1571",
+      "plugin_site": "includes/class-wc-payments.php:1565",
       "sites": [
         {
-          "site": "includes/class-wc-payments.php:1571",
+          "site": "includes/class-wc-payments.php:1565",
           "arity": 0,
           "params": null
         }

@@ -10,14 +10,14 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 use WC_Unit_Test_Case;
 
 /**
- * Pins the plugin 11.1.0 hook name surface (`woopayments-hooks.json`, shared with
+ * Pins the plugin 11.2.0 hook name surface (`woopayments-hooks.json`, shared with
  * `WooPaymentsHookArityContractTest`) against native, so an owned hook neither fired natively
  * nor recorded as an allowed difference is a build-time failure instead of a silent regression.
  *
  * Every fixture hook is covered by exactly one of three routes: proven at runtime by the arity
- * test's `probed_hooks()` (69 names), resolved here by a static native fire-site scan, or listed in
- * `ALLOWED_DIFFERENCES` with its recorded authority. `BUILTIN_ONLY_HOOKS` (D6) separately pins the 4
- * native-only filters that carry no plugin fixture entry at all.
+ * test's `probed_hooks()` (68 names), resolved here by a static native fire-site scan, or listed in
+ * `ALLOWED_DIFFERENCES` with its recorded authority. `BUILTIN_ONLY_HOOKS` (D6) separately pins the 5
+ * hooks only native fires, which carry no plugin fixture entry at all.
  *
  * @since 11.2.0
  */
@@ -118,7 +118,6 @@ class WooPaymentsHookNamesContractTest extends WC_Unit_Test_Case {
 		'wcpay_plugins_page_js_settings'                   => 'dropped by design (no plugin row)',
 		'wcpay_prepare_terminal_payment_request'           => 'Request-framework or other non-contract filter, a changelog item',
 		'wcpay_refund_charge_request'                      => 'Request-framework or other non-contract filter, a changelog item',
-		'wcpay_review_prompt_experiment_variant'           => 'review prompt experiment of the extension 11.0.0, not part of the built-in WooPayments',
 		'wcpay_update_account_settings'                    => 'Request-framework or other non-contract filter, a changelog item',
 		'wcpay_update_intention_request'                   => 'Request-framework or other non-contract filter, a changelog item',
 		'wcpay_update_payment_result_on_error'             => 'Request-framework or other non-contract filter, a changelog item',
@@ -144,7 +143,11 @@ class WooPaymentsHookNamesContractTest extends WC_Unit_Test_Case {
 	 * second site (it then fired through a cross-class reference its `self::`-only regex did not match), so its
 	 * 24 names fired from 26 sites. Less the five deleted cutover filters, the ten test-only filters (eleven
 	 * sites), the three filters nothing listened to, the soft-cutover filter (deleted, nothing listened to it either) and the
-	 * built-in enable filter, the total below is 5 fire sites for 4 names.
+	 * built-in enable filter, the total is 5 fire sites for 4 names.
+	 *
+	 * `wcpay_is_woopay_store_api_request` makes it 6 sites for 5 names: the plugin removed it in 11.2.0, and native
+	 * keeps firing it through `apply_filters_deprecated()` (`WooPay/StoreApiRequestHandler.php`) for the deprecation
+	 * window, with the one argument the plugin passed.
 	 *
 	 * @var array<string,int>
 	 */
@@ -153,6 +156,7 @@ class WooPaymentsHookNamesContractTest extends WC_Unit_Test_Case {
 		'woocommerce_native_payments_shadow_mode_log_full_surfaces' => 2,
 		'woocommerce_native_payments_shadow_mode_allow_live_reads' => 2,
 		'woocommerce_woopayments_mandatory_cutover_enabled' => 1,
+		'wcpay_is_woopay_store_api_request'               => 1,
 	);
 
 	/**
@@ -220,7 +224,7 @@ class WooPaymentsHookNamesContractTest extends WC_Unit_Test_Case {
 			$failures[]         = $name . ' (expected arity ' . $entry['arity'] . '; plugin_site: ' . $entry['plugin_site'] . '; native sites found: ' . ( $found_descriptions ? implode( ', ', $found_descriptions ) : 'none' ) . ')';
 		}
 
-		$this->assertSame( array(), $failures, "Every owned plugin 11.1.0 hook must be probed at runtime, resolved natively, or listed in ALLOWED_DIFFERENCES:\n" . implode( "\n", $failures ) );
+		$this->assertSame( array(), $failures, "Every owned plugin 11.2.0 hook must be probed at runtime, resolved natively, or listed in ALLOWED_DIFFERENCES:\n" . implode( "\n", $failures ) );
 	}
 
 	/**
@@ -232,8 +236,8 @@ class WooPaymentsHookNamesContractTest extends WC_Unit_Test_Case {
 	 * `DatabaseCache`, and
 	 * `wcpay_list_transactions_request` also fires from `WooPaymentsReportsRestController` twice).
 	 * This closes that gap statically, without a second runtime probe per secondary site. A site may also use the arity of
-	 * another client 11.1.0 site of the hook (the fixture's `sites`), as `wcpay_metadata_from_order` fires with two
-	 * arguments on the zero-total WooPay save-user path (class-wc-payment-gateway-wcpay.php:1957).
+	 * another client 11.2.0 site of the hook (the fixture's `sites`), as `wcpay_metadata_from_order` fires with two
+	 * arguments on the zero-total WooPay save-user path (class-wc-payment-gateway-wcpay.php:1962).
 	 */
 	public function test_probed_hook_secondary_sites_keep_the_fixture_arity(): void {
 		$probed      = WooPaymentsHookArityContractTest::probed_hooks();
@@ -276,7 +280,7 @@ class WooPaymentsHookNamesContractTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The 4 hooks only the built-in WooPayments fires keep exactly their pinned names and arity, at 5 fire sites total.
+	 * @testdox The 5 hooks only the built-in WooPayments fires keep exactly their pinned names and arity, at 6 fire sites total.
 	 */
 	public function test_builtin_only_hooks_keep_their_names_and_arity(): void {
 		$sites       = $this->builtin_hook_fire_sites();
@@ -301,7 +305,7 @@ class WooPaymentsHookNamesContractTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( array(), $missing, "Every native-only hook must have at least one fire site:\n" . implode( "\n", $missing ) );
 		$this->assertSame( array(), $wrong_arity, "Every native-only hook fire site must keep its pinned arity:\n" . implode( "\n", $wrong_arity ) );
-		$this->assertSame( 5, $total_sites, 'The 4 hooks only the built-in WooPayments fires must fire from exactly 5 sites total (see the BUILTIN_ONLY_HOOKS docblock).' );
+		$this->assertSame( 6, $total_sites, 'The 5 hooks only the built-in WooPayments fires must fire from exactly 6 sites total (see the BUILTIN_ONLY_HOOKS docblock).' );
 	}
 
 	/**

@@ -63,7 +63,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Transacti
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTransactionsRestController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\SessionController;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Fixtures\RecordedPublicFraudServices;
-use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\WooPay\WooPayEnvelopes;
 use ReflectionClass;
 use ReflectionMethod;
 use WC_Coupon;
@@ -74,11 +73,12 @@ use WP_REST_Request;
 use WC_Unit_Test_Case;
 
 /**
- * Pins the plugin 11.1.0 hook argument shapes (arity and declared types) for the 69 hooks of the
- * retired `hook-shape-parity.php` manifest (38 probe groups), by driving native's own product-path entry point for each group and observing
- * the hook fire, instead of firing it directly.
+ * Pins the plugin 11.2.0 hook argument shapes (arity and declared types) for the 68 hooks of the
+ * retired `hook-shape-parity.php` manifest that the plugin still fires (37 probe groups), by driving native's own product-path entry point
+ * for each group and observing the hook fire, instead of firing it directly. The manifest's 69th, `wcpay_is_woopay_store_api_request`,
+ * left the plugin in 11.2.0; native still fires it deprecated, and the name test pins that site.
  *
- * Every one of the 38 groups below reaches its hook(s) through a real native call, ported from the
+ * Every one of the 37 groups below reaches its hook(s) through a real native call, ported from the
  * retired harness's own native branch for that group (`hook-shape-parity.php`). None of them fires the hook itself, so
  * `STATIC_ONLY` is empty: every hook in the manifest is proven at runtime here, and the name test
  * (`WooPaymentsHookNamesContractTest`) reads `probed_hooks()` to skip re-proving them
@@ -93,7 +93,7 @@ class WooPaymentsHookArityContractTest extends WC_Unit_Test_Case {
 	 * plan's time box, with the reason, and the fixture arity they still need to satisfy statically
 	 * (via the name test's native fire-site scanner instead of a runtime probe).
 	 *
-	 * Empty: every one of the 69 manifest hooks has a working product-path probe below.
+	 * Empty: every one of the 68 manifest hooks has a working product-path probe below.
 	 *
 	 * @var array<string,string>
 	 */
@@ -109,8 +109,6 @@ class WooPaymentsHookArityContractTest extends WC_Unit_Test_Case {
 	 */
 	private const TRIGGERS_DEPRECATION_NOTICE = array(
 		'wcpay_multi_currency_should_hide_widgets' => true,
-		// Fired through apply_filters_deprecated(): the WooPayments extension removed it in 11.2.0.
-		'wcpay_is_woopay_store_api_request'        => true,
 	);
 
 	/**
@@ -256,7 +254,7 @@ class WooPaymentsHookArityContractTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * The 69 manifest hooks this class proves at runtime, mapped to the private probe method that
+	 * The 68 manifest hooks this class proves at runtime, mapped to the private probe method that
 	 * reaches each one through native's own product path. Read by the name test
 	 * (`WooPaymentsHookNamesContractTest`) so it does not re-prove them statically.
 	 *
@@ -290,7 +288,6 @@ class WooPaymentsHookArityContractTest extends WC_Unit_Test_Case {
 			'wcpay_payment_fields_js_config'               => 'probe_checkout_config',
 			'wc_payments_account_id_for_intent_confirmation' => 'probe_checkout_config',
 			'wc_payments_thank_you_page_lpm_payment_method_logo_url' => 'probe_order_success_logos',
-			'wcpay_is_woopay_store_api_request'            => 'probe_store_api_request',
 			'wcpay_payment_request_is_product_supported'   => 'probe_express_product',
 			'wcpay_payment_request_product_data'           => 'probe_express_product',
 			'wcpay_payment_request_supported_types'        => 'probe_express_product',
@@ -356,7 +353,7 @@ class WooPaymentsHookArityContractTest extends WC_Unit_Test_Case {
 	public function test_probe_set_is_the_preserved_manifest(): void {
 		$probed = array_keys( self::probed_hooks() );
 
-		$this->assertCount( 69, $probed, 'The preserved hook-shape manifest has 69 hooks.' );
+		$this->assertCount( 68, $probed, 'The preserved hook-shape manifest has 68 hooks the plugin still fires.' );
 		$this->assertSame( array_unique( $probed ), $probed, 'Every probed hook name must be unique.' );
 
 		$missing_from_fixture = array_diff( $probed, array_keys( self::$fixture_by_name ) );
@@ -491,7 +488,7 @@ class WooPaymentsHookArityContractTest extends WC_Unit_Test_Case {
 	}
 
 	// -----------------------------------------------------------------------------------------
-	// Probe groups, one per `hook-shape-inventory.json` manifest group (38 total).
+	// Probe groups, one per `hook-shape-inventory.json` manifest group (37 total).
 	// -----------------------------------------------------------------------------------------
 
 	/**
@@ -687,31 +684,6 @@ class WooPaymentsHookArityContractTest extends WC_Unit_Test_Case {
 		$this->assertNotNull( $definition, 'The native payment method registry must have the iDEAL definition to probe order_success_logos.' );
 
 		$this->builtin_invoke( $page, 'render_definition_title', array( $definition, $order, false ) );
-	}
-
-	/**
-	 * Group `store_api_request` (1 hook): the fraud-prevention error message builder, which reads
-	 * whether the current request is a WooPay Store API request.
-	 */
-	private function probe_store_api_request(): void {
-		// The filter fires, deprecated, once WooPay proved it composed the checkout: here by its vouch, bound to the
-		// request's Cart-Token (client 11.2.0 class-woopay-session.php:1284-1366).
-		$blog_token = \Jetpack_Options::get_option( 'blog_token' );
-		\Jetpack_Options::update_option( 'blog_token', WooPayEnvelopes::BLOG_TOKEN );
-		$_SERVER['HTTP_CART_TOKEN']           = 'hook-shape.cart.token';
-		$_SERVER['HTTP_X_WOOPAY_ATTESTATION'] = WooPayEnvelopes::vouch_header( 'hook-shape.cart.token' );
-
-		try {
-			$gateway = new WooPaymentsGateway();
-			$this->builtin_invoke( $gateway, 'get_fraud_prevention_error_message', array( true ) );
-		} finally {
-			unset( $_SERVER['HTTP_CART_TOKEN'], $_SERVER['HTTP_X_WOOPAY_ATTESTATION'] );
-			if ( false === $blog_token ) {
-				\Jetpack_Options::delete_option( 'blog_token' );
-			} else {
-				\Jetpack_Options::update_option( 'blog_token', $blog_token );
-			}
-		}
 	}
 
 	/**

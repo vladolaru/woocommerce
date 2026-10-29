@@ -3,8 +3,8 @@
   "inventory": "endpoints",
   "source": {
     "plugin": "woocommerce-payments",
-    "tag": "11.1.0",
-    "commit": "f85392666c9b543cd24dbbf903e0dbe4cb2c5cee"
+    "tag": "11.2.0",
+    "commit": "c6ccb818dce1485b5987586f9cd9617712cb6571"
   },
   "rest_route_count": 96,
   "rest_routes": [
@@ -774,7 +774,7 @@
       "methods": [
         "GET"
       ],
-      "plugin_site": "includes/admin/class-wc-rest-payments-transactions-controller.php:47"
+      "plugin_site": "includes/admin/class-wc-rest-payments-transactions-controller.php:48"
     },
     {
       "namespace": "wc/v3",
@@ -783,7 +783,7 @@
       "methods": [
         "POST"
       ],
-      "plugin_site": "includes/admin/class-wc-rest-payments-transactions-controller.php:38"
+      "plugin_site": "includes/admin/class-wc-rest-payments-transactions-controller.php:39"
     },
     {
       "namespace": "wc/v3",
@@ -792,7 +792,7 @@
       "methods": [
         "GET"
       ],
-      "plugin_site": "includes/admin/class-wc-rest-payments-transactions-controller.php:101"
+      "plugin_site": "includes/admin/class-wc-rest-payments-transactions-controller.php:105"
     },
     {
       "namespace": "wc/v3",
@@ -801,7 +801,7 @@
       "methods": [
         "GET"
       ],
-      "plugin_site": "includes/admin/class-wc-rest-payments-transactions-controller.php:92"
+      "plugin_site": "includes/admin/class-wc-rest-payments-transactions-controller.php:95"
     },
     {
       "namespace": "wc/v3",
@@ -810,7 +810,7 @@
       "methods": [
         "GET"
       ],
-      "plugin_site": "includes/admin/class-wc-rest-payments-transactions-controller.php:83"
+      "plugin_site": "includes/admin/class-wc-rest-payments-transactions-controller.php:85"
     },
     {
       "namespace": "wc/v3",
@@ -819,7 +819,7 @@
       "methods": [
         "GET"
       ],
-      "plugin_site": "includes/admin/class-wc-rest-payments-transactions-controller.php:74"
+      "plugin_site": "includes/admin/class-wc-rest-payments-transactions-controller.php:75"
     },
     {
       "namespace": "wc/v3",
@@ -828,7 +828,7 @@
       "methods": [
         "GET"
       ],
-      "plugin_site": "includes/admin/class-wc-rest-payments-transactions-controller.php:65"
+      "plugin_site": "includes/admin/class-wc-rest-payments-transactions-controller.php:66"
     },
     {
       "namespace": "wc/v3",
@@ -837,7 +837,7 @@
       "methods": [
         "GET"
       ],
-      "plugin_site": "includes/admin/class-wc-rest-payments-transactions-controller.php:56"
+      "plugin_site": "includes/admin/class-wc-rest-payments-transactions-controller.php:57"
     },
     {
       "namespace": "wc/v3",
@@ -846,7 +846,7 @@
       "methods": [
         "GET"
       ],
-      "plugin_site": "includes/admin/class-wc-rest-payments-transactions-controller.php:29"
+      "plugin_site": "includes/admin/class-wc-rest-payments-transactions-controller.php:30"
     },
     {
       "namespace": "wc/v3",
@@ -882,9 +882,10 @@
       "route": "/session",
       "sample_path": "/payments/woopay/session",
       "methods": [
-        "GET"
+        "GET",
+        "POST"
       ],
-      "plugin_site": "includes/admin/class-wc-rest-woopay-session-controller.php:37"
+      "plugin_site": "includes/admin/class-wc-rest-woopay-session-controller.php:36"
     }
   ],
   "ajax_action_count": 22,
@@ -895,39 +896,39 @@
     },
     {
       "action": "wc_ajax_wcpay_check_bnpl_availability",
-      "plugin_site": "includes/class-wc-payments.php:726"
-    },
-    {
-      "action": "wc_ajax_wcpay_get_cart_total",
       "plugin_site": "includes/class-wc-payments.php:725"
     },
     {
+      "action": "wc_ajax_wcpay_get_cart_total",
+      "plugin_site": "includes/class-wc-payments.php:724"
+    },
+    {
       "action": "wc_ajax_wcpay_get_woopay_minimum_session_data",
-      "plugin_site": "includes/class-wc-payments.php:1720"
+      "plugin_site": "includes/class-wc-payments.php:1714"
     },
     {
       "action": "wc_ajax_wcpay_get_woopay_session",
-      "plugin_site": "includes/class-wc-payments.php:1717"
+      "plugin_site": "includes/class-wc-payments.php:1711"
     },
     {
       "action": "wc_ajax_wcpay_get_woopay_signature",
-      "plugin_site": "includes/class-wc-payments.php:1719"
+      "plugin_site": "includes/class-wc-payments.php:1713"
     },
     {
       "action": "wc_ajax_wcpay_init_woopay",
-      "plugin_site": "includes/class-wc-payments.php:1716"
+      "plugin_site": "includes/class-wc-payments.php:1710"
     },
     {
       "action": "wc_ajax_wcpay_set_woopay_phone_number",
-      "plugin_site": "includes/class-wc-payments.php:1718"
+      "plugin_site": "includes/class-wc-payments.php:1712"
     },
     {
       "action": "wc_ajax_wcpay_shopper_set_woopay_appearance",
-      "plugin_site": "includes/class-wc-payments.php:1724"
+      "plugin_site": "includes/class-wc-payments.php:1718"
     },
     {
       "action": "wp_ajax_create_setup_intent",
-      "plugin_site": "includes/class-wc-payment-gateway-wcpay.php:570"
+      "plugin_site": "includes/class-wc-payment-gateway-wcpay.php:571"
     },
     {
       "action": "wp_ajax_get_identity",
@@ -943,7 +944,7 @@
     },
     {
       "action": "wp_ajax_nopriv_update_order_status",
-      "plugin_site": "includes/class-wc-payment-gateway-wcpay.php:568"
+      "plugin_site": "includes/class-wc-payment-gateway-wcpay.php:569"
     },
     {
       "action": "wp_ajax_nopriv_wc_bookings_calculate_costs",
@@ -959,7 +960,7 @@
     },
     {
       "action": "wp_ajax_update_order_status",
-      "plugin_site": "includes/class-wc-payment-gateway-wcpay.php:567"
+      "plugin_site": "includes/class-wc-payment-gateway-wcpay.php:568"
     },
     {
       "action": "wp_ajax_wc_bookings_calculate_costs",
@@ -967,7 +968,7 @@
     },
     {
       "action": "wp_ajax_wcpay_admin_set_woopay_appearance",
-      "plugin_site": "includes/class-wc-payments.php:1722"
+      "plugin_site": "includes/class-wc-payments.php:1716"
     },
     {
       "action": "wp_ajax_wcpay_get_user_payment_tokens",

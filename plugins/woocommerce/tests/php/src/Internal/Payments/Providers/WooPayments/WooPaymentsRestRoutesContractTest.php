@@ -27,7 +27,7 @@ use WP_REST_Server;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\WooPay\SessionControllerTest;
 
 /**
- * Pins the plugin 11.1.0 REST route and AJAX action surface (`woopayments-endpoints.json`)
+ * Pins the plugin 11.2.0 REST route and AJAX action surface (`woopayments-endpoints.json`)
  * against what native serves, so a route or action neither served nor recorded as an allowed
  * difference is a build-time failure instead of a silent regression.
  *
@@ -228,7 +228,7 @@ class WooPaymentsRestRoutesContractTest extends WC_REST_Unit_Test_Case {
 			}
 		}
 
-		$this->assertSame( array(), $failures, "Native must serve every plugin 11.1.0 route/method or list it in ALLOWED_DIFFERENCES:\n" . implode( "\n", $failures ) );
+		$this->assertSame( array(), $failures, "Native must serve every plugin 11.2.0 route/method or list it in ALLOWED_DIFFERENCES:\n" . implode( "\n", $failures ) );
 	}
 
 	/**
@@ -281,7 +281,7 @@ class WooPaymentsRestRoutesContractTest extends WC_REST_Unit_Test_Case {
 			}
 		}
 
-		$this->assertSame( array(), $missing, "Native must name every plugin 11.1.0 AJAX action:\n" . implode( "\n", $missing ) );
+		$this->assertSame( array(), $missing, "Native must name every plugin 11.2.0 AJAX action:\n" . implode( "\n", $missing ) );
 	}
 
 	/**
