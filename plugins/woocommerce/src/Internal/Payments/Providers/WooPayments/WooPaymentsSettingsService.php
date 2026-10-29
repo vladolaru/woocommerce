@@ -434,6 +434,25 @@ class WooPaymentsSettingsService {
 			return $enabled_methods_update;
 		}
 
+		// With both on, the platform refuses every Link payment, so refuse a save that turns both on, as the settings screen
+		// does; one stored before this save does not block it. Link counts with card and WooPay with eligibility, as there.
+		$is_link_woopay_conflict = fn( array $method_ids, bool $is_woopay_on ): bool => $is_woopay_on
+			&& in_array( 'card', $method_ids, true )
+			&& in_array( 'link', $method_ids, true )
+			&& $this->woopay_eligibility->is_woopay_eligible();
+		$stored_method_ids       = $this->normalize_payment_method_ids( $this->get_array_setting( $settings, 'upe_enabled_payment_method_ids', array( 'card' ) ) );
+		$is_woopay_on_after_save = array_key_exists( 'is_woopay_enabled', $params )
+			? $this->is_yes( $this->normalize_setting_value( $params['is_woopay_enabled'], 'bool' ) )
+			: $was_woopay_enabled;
+		if (
+			$is_link_woopay_conflict( null !== $enabled_methods_update ? $enabled_methods_update['requested'] : $stored_method_ids, $is_woopay_on_after_save )
+			&& ! $is_link_woopay_conflict( $stored_method_ids, $was_woopay_enabled )
+		) {
+			return $this->enabled_payment_method_ids_error(
+				__( 'Link by Stripe and WooPay can\'t be enabled at the same time. Disable one of them.', 'woocommerce' )
+			);
+		}
+
 		if ( null !== $enabled_methods_update ) {
 			$capability_error = $this->request_unrequested_payment_methods( $enabled_methods_update['requested'] );
 			if ( is_wp_error( $capability_error ) ) {
