@@ -579,7 +579,7 @@ class SessionServiceTest extends WC_Unit_Test_Case {
 
 		$result = $this->create_service()->get_encrypted_minimum_session_data();
 
-		$this->assertSame( '12345', $result['blog_id'] );
+		$this->assertSame( 12345, $result['blog_id'] );
 		// phpcs:disable WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_decode -- Decodes the sealed session.
 		$session = base64_decode( $result['data']['session'], true );
 		$iv      = base64_decode( $result['data']['iv'], true );
@@ -595,6 +595,34 @@ class SessionServiceTest extends WC_Unit_Test_Case {
 		if ( ! $rewrite_iv ) {
 			$this->assertSame( $this->create_service()->get_minimum_session_data()['blog_rest_url'], json_decode( (string) openssl_decrypt( (string) $session, 'aes-256-cbc', $session_key, OPENSSL_RAW_DATA, (string) $iv ), true )['blog_rest_url'] );
 		}
+	}
+
+	/**
+	 * Client 11.2.0 sends Jetpack's stored blog ID unchanged, an integer on a connected store: the envelope
+	 * (class-woopay-utilities.php:416), the minimum session (class-woopay-session.php:968-975), store_data (:658) and
+	 * woopayMerchantId (class-wc-payments-checkout.php:277, class-wc-payments.php:1815).
+	 *
+	 * @testdox The store sends the WooPay blog ID as a JSON integer, as the client does: $site.
+	 * @testWith ["session envelope"]
+	 *           ["sealed minimum session data"]
+	 *           ["sealed store_data"]
+	 *           ["checkout frontend config"]
+	 *           ["direct checkout config"]
+	 *
+	 * @param string $site Where the blog ID is sent.
+	 */
+	public function test_sends_the_woopay_blog_id_as_a_json_integer( string $site ): void {
+		WooPayEnvelopes::connect_store();
+		$sut   = $this->create_service();
+		$reads = array(
+			'session envelope'            => fn() => $sut->get_encrypted_session_data( array() )['blog_id'],
+			'sealed minimum session data' => fn() => $this->decrypt_store_session( $sut->get_encrypted_minimum_session_data() )['blog_id'],
+			'sealed store_data'           => fn() => $this->decrypt_store_session( $sut->get_encrypted_session_data( array() ) )['store_data']['blog_id'],
+			'checkout frontend config'    => fn() => $sut->get_woopay_frontend_config( 'checkout' )['woopayMerchantId'],
+			'direct checkout config'      => fn() => $sut->get_woopay_direct_checkout_config()['woopayMerchantId'],
+		);
+
+		$this->assertSame( '12345', wp_json_encode( $reads[ $site ]() ) );
 	}
 
 	/**
@@ -1064,7 +1092,7 @@ class SessionServiceTest extends WC_Unit_Test_Case {
 		$this->assertFalse( $config['isWooPayGlobalThemeSupportEnabled'] );
 		$this->assertFalse( $config['forceNetworkSavedCards'] );
 		$this->assertSame( 'https://pay.woo.com', $config['woopayHost'] );
-		$this->assertSame( '12345', $config['woopayMerchantId'] );
+		$this->assertSame( 12345, $config['woopayMerchantId'] );
 		$this->assertTrue( $config['testMode'] );
 		$this->assertSame( 'checkout', $config['woopayButton']['context'] );
 		$this->assertSame( 'default', $config['woopayButton']['type'] );

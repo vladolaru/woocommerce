@@ -386,7 +386,7 @@ trait WooPayServicesFixture {
 	 * @return array<string,mixed>
 	 */
 	private function decrypt_store_session( array $encrypted_session ): array {
-		$this->assertSame( '12345', $encrypted_session['blog_id'] );
+		$this->assertSame( 12345, $encrypted_session['blog_id'] );
 		$this->assertIsArray( $encrypted_session['data'] );
 
 		// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_decode -- Decodes the encrypted store-session fixture.

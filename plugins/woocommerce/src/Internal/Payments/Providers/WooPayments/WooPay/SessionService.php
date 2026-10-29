@@ -191,7 +191,7 @@ class SessionService {
 		$blog_id    = $this->get_store_blog_id();
 		$blog_token = $this->get_store_blog_token();
 
-		if ( '' === $blog_id || '' === $blog_token ) {
+		if ( empty( $blog_id ) || '' === $blog_token ) {
 			return '';
 		}
 
@@ -498,11 +498,12 @@ class SessionService {
 		$blog_id    = $this->get_store_blog_id();
 		$blog_token = $this->get_store_blog_token();
 
-		if ( '' === $blog_id ) {
+		// Client 11.2.0 refuses a session on empty( $blog_id ) (class-woopay-session.php:878-879).
+		if ( empty( $blog_id ) ) {
 			$this->logger->log( 'WooPay blog_id is missing, so the WooPay session data cannot be signed.' );
 		}
 
-		return '' !== $blog_id && '' !== $blog_token;
+		return ! empty( $blog_id ) && '' !== $blog_token;
 	}
 
 	/**
@@ -1006,12 +1007,13 @@ class SessionService {
 	}
 
 	/**
-	 * Get the connected store blog ID.
+	 * Get the connected store blog ID as Jetpack stores it, an integer on a connected store. Client 11.2.0 sends it to WooPay
+	 * unchanged (class-woopay-utilities.php:416, class-woopay-session.php:658, :968-975).
 	 *
-	 * @return string
+	 * @return mixed The stored blog ID, or false when the store is not connected.
 	 */
-	private function get_store_blog_id(): string {
-		return (string) \Jetpack_Options::get_option( 'id' );
+	private function get_store_blog_id() {
+		return \Jetpack_Options::get_option( 'id' );
 	}
 
 	/**

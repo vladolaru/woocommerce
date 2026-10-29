@@ -423,7 +423,7 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 		// client 11.1.0 (class-wc-payment-gateway-wcpay.php:2114, :2421); no script reads it from this config.
 		$this->assertArrayNotHasKey( 'updateOrderStatusNonce', $config );
 		$this->assertSame( 'https://pay.woo.com', $config['woopayHost'] );
-		$this->assertSame( '12345', $config['woopayMerchantId'] );
+		$this->assertSame( 12345, $config['woopayMerchantId'] );
 		$this->assertArrayHasKey( 'initWooPayNonce', $config );
 		$this->assertArrayNotHasKey( 'woopayInitNonce', $config );
 		$this->assertArrayHasKey( 'woopaySessionNonce', $config );
@@ -2618,7 +2618,7 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 				'platformTrackerNonce'              => 'platform-tracks-nonce',
 				'woopayHost'                        => 'https://pay.woo.com',
 				'wcpayVersionNumber'                => \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsClientVersion::VERSION,
-				'woopayMerchantId'                  => '12345',
+				'woopayMerchantId'                  => 12345,
 				'initWooPayNonce'                   => 'init-woopay-nonce',
 				'woopaySessionNonce'                => 'woopay-session-nonce',
 				'woopaySignatureNonce'              => 'woopay-signature-nonce',
