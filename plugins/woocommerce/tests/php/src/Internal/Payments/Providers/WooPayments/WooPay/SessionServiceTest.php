@@ -657,6 +657,26 @@ class SessionServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * On a connected store, both configs carry the sealed minimum session that get_encrypted_minimum_session_data()
+	 * returns, the answer client 11.2.0's get_woopay_minimum_session_data request would fetch.
+	 *
+	 * @testdox Where direct checkout runs on a store that can sign, both WooPay configs carry the sealed minimum session data.
+	 */
+	public function test_direct_checkout_configs_carry_the_sealed_minimum_session_data_on_a_signable_store(): void {
+		WooPayEnvelopes::connect_store();
+		$sut             = $this->create_service( array(), array( 'platform_direct_checkout_eligible' => true ) );
+		$frontend_config = $sut->get_woopay_frontend_config( 'cart' );
+		$direct_config   = $sut->get_woopay_direct_checkout_config();
+
+		$this->assertTrue( $frontend_config['isWooPayDirectCheckoutEnabled'], 'Direct checkout runs, so the script reads the value.' );
+		$this->assertTrue( $direct_config['isWooPayDirectCheckoutEnabled'], 'Direct checkout runs, so the script reads the value.' );
+		$minimum_session = $this->decrypt_store_session( $sut->get_encrypted_minimum_session_data() );
+		$this->assertSame( $sut->get_minimum_session_data(), $minimum_session );
+		$this->assertSame( $minimum_session, $this->decrypt_store_session( $frontend_config['woopayMinimumSessionData'] ), 'The frontend config carries the sealed minimum session.' );
+		$this->assertSame( $minimum_session, $this->decrypt_store_session( $direct_config['woopayMinimumSessionData'] ), 'The direct checkout config carries the sealed minimum session.' );
+	}
+
+	/**
 	 * @testdox Should expose direct checkout only when the feature, account, gateway, and WooPay are enabled.
 	 * @dataProvider direct_checkout_eligibility_provider
 	 *

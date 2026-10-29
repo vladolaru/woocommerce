@@ -104,6 +104,20 @@ class WooPaymentsRestRoutesContractTest extends WC_REST_Unit_Test_Case {
 	);
 
 	/**
+	 * Fixture AJAX actions the built-in WooPayments intentionally does not serve, keyed by action name.
+	 *
+	 * A listed action must not be named natively; the scan reports it as stale if it is.
+	 *
+	 * @var array<string,array{authority:string,disposition:string}>
+	 */
+	private const ALLOWED_AJAX_DIFFERENCES = array(
+		'wc_ajax_wcpay_get_woopay_minimum_session_data' => array(
+			'authority'   => 'Task 6.9 domain f F-D2: the plugin posts it only when the localized woopayMinimumSessionData is missing; both built-in WooPay configs always carry it (SessionServiceTest direct-checkout config rows).',
+			'disposition' => 'DROPPED',
+		),
+	);
+
+	/**
 	 * Loaded fixture.
 	 *
 	 * @var array<string,mixed>
@@ -274,14 +288,23 @@ class WooPaymentsRestRoutesContractTest extends WC_REST_Unit_Test_Case {
 		);
 		$literals    = array_flip( $this->source_all_php_string_literals( $this->source_collect_files( $roots, array( 'php' ) ) ) );
 		$missing     = array();
+		$stale       = array();
 
 		foreach ( self::$fixture['ajax_actions'] as $action ) {
+			if ( isset( self::ALLOWED_AJAX_DIFFERENCES[ $action['action'] ] ) ) {
+				if ( isset( $literals[ $action['action'] ] ) ) {
+					$stale[] = $action['action'];
+				}
+				continue;
+			}
 			if ( ! isset( $literals[ $action['action'] ] ) ) {
 				$missing[] = $action['action'] . ' (plugin_site: ' . $action['plugin_site'] . ')';
 			}
 		}
 
-		$this->assertSame( array(), $missing, "Native must name every plugin 11.2.0 AJAX action:\n" . implode( "\n", $missing ) );
+		$this->assertSame( array(), $missing, "Native must name every plugin 11.2.0 AJAX action or list it in ALLOWED_AJAX_DIFFERENCES:\n" . implode( "\n", $missing ) );
+		$this->assertSame( array(), $stale, "These ALLOWED_AJAX_DIFFERENCES actions are named natively again; remove the allowance:\n" . implode( "\n", $stale ) );
+		$this->assertSame( array(), array_diff( array_keys( self::ALLOWED_AJAX_DIFFERENCES ), array_column( self::$fixture['ajax_actions'], 'action' ) ), 'Every ALLOWED_AJAX_DIFFERENCES action is a plugin 11.2.0 action.' );
 	}
 
 	/**

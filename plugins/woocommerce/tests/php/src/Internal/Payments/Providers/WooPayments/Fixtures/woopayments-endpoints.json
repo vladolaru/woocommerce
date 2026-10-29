@@ -888,7 +888,7 @@
       "plugin_site": "includes/admin/class-wc-rest-woopay-session-controller.php:36"
     }
   ],
-  "ajax_action_count": 21,
+  "ajax_action_count": 22,
   "ajax_actions": [
     {
       "action": "wc_ajax_wcpay_add_to_cart",
@@ -901,6 +901,10 @@
     {
       "action": "wc_ajax_wcpay_get_cart_total",
       "plugin_site": "includes/class-wc-payments.php:724"
+    },
+    {
+      "action": "wc_ajax_wcpay_get_woopay_minimum_session_data",
+      "plugin_site": "includes/class-wc-payments.php:1714"
     },
     {
       "action": "wc_ajax_wcpay_get_woopay_session",
