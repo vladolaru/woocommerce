@@ -704,10 +704,12 @@
 
 	function requestWooPaySession( encryptedData ) {
 		return new Promise( function ( resolve, reject ) {
-			var request = postWooPayAjax( 'get_woopay_session', {
-				_ajax_nonce: config.woopaySessionNonce || '',
-				encrypted_data: encryptedData,
-			} );
+			var data = { _ajax_nonce: config.woopaySessionNonce || '' };
+			if ( encryptedData ) {
+				data.encrypted_data = encryptedData;
+			}
+
+			var request = postWooPayAjax( 'get_woopay_session', data );
 
 			if ( ! request || ! request.done ) {
 				reject();

@@ -1705,10 +1705,14 @@ describe( 'WooPayments WooPay checkout', () => {
 			).toBe( false );
 		} );
 
-		test( 'logged-in cart handoff posts an empty identity answer and still opens hosted WooPay', async () => {
+		test.each( [
+			[ 'an empty identity answer', [], true ],
+			[ 'no identity answer', null, false ],
+		] )( 'logged-in cart handoff posts %s and still opens hosted WooPay', async ( name, answer, sendsIdentity ) => {
 			// Hosted WooPay seals the identity only for a verified email, so an unverified shopper's connect page answers
-			// []. Client 11.2.0 posts whatever it answered (direct-checkout/woopay-direct-checkout.js:434-442); the store
-			// then starts a guest WooPay session (class-woopay-session.php:540).
+			// []. Client 11.2.0 posts whatever it answered, leaving the field out when the answer is falsy
+			// (direct-checkout/woopay-direct-checkout.js:434-442); the store then starts a guest WooPay session
+			// (class-woopay-session.php:540).
 			configureDirectCheckout(
 				'<div class="wp-block-woocommerce-proceed-to-checkout-block"><a href="https://store.test/checkout/">Checkout</a></div>'
 			);
@@ -1726,15 +1730,17 @@ describe( 'WooPayments WooPay checkout', () => {
 			await initializeDirectCheckout( true );
 			document.querySelector( 'a' ).click();
 			await flushPromises();
-			emitConnectMessage( 'get_encrypted_data_success', [] );
+			emitConnectMessage( 'get_encrypted_data_success', answer );
 			await flushPromises();
 
-			expect( global.jQuery.post ).toHaveBeenCalledWith(
-				'/?wc-ajax=wcpay_get_woopay_session',
-				{
-					_ajax_nonce: 'session-nonce',
-					encrypted_data: [],
-				}
+			const sessionPosts = global.jQuery.post.mock.calls.filter(
+				( [ url ] ) => url === '/?wc-ajax=wcpay_get_woopay_session'
+			);
+			expect( sessionPosts ).toHaveLength( 1 );
+			expect( sessionPosts[ 0 ][ 1 ] ).toStrictEqual(
+				sendsIdentity
+					? { _ajax_nonce: 'session-nonce', encrypted_data: answer }
+					: { _ajax_nonce: 'session-nonce' }
 			);
 			expect( postMessage ).toHaveBeenCalledWith(
 				{ action: 'setRedirectSessionData', value: storeSession },
