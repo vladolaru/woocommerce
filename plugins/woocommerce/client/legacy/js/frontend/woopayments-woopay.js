@@ -685,18 +685,6 @@
 		return config.woopayHost + '/woopay/?' + params.toString();
 	}
 
-	function isValidEncryptedIdentity( encryptedData ) {
-		return (
-			encryptedData &&
-			typeof encryptedData.data === 'string' &&
-			encryptedData.data.length > 0 &&
-			typeof encryptedData.iv === 'string' &&
-			encryptedData.iv.length > 0 &&
-			typeof encryptedData.hash === 'string' &&
-			encryptedData.hash.length > 0
-		);
-	}
-
 	function isValidWooPayRedirectUrl( redirectUrl ) {
 		var parsedUrl;
 
@@ -761,13 +749,7 @@
 				null,
 				true
 			)
-				.then( function ( encryptedData ) {
-					if ( ! isValidEncryptedIdentity( encryptedData ) ) {
-						return Promise.reject();
-					}
-
-					return requestWooPaySession( encryptedData );
-				} )
+				.then( requestWooPaySession )
 				.then( function ( sessionData ) {
 					if ( ! isValidWooPayMinimumSessionData( sessionData ) ) {
 						return Promise.reject();

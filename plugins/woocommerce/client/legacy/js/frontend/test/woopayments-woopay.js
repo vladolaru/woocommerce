@@ -1705,6 +1705,54 @@ describe( 'WooPayments WooPay checkout', () => {
 			).toBe( false );
 		} );
 
+		test( 'logged-in cart handoff posts an empty identity answer and still opens hosted WooPay', async () => {
+			// Hosted WooPay seals the identity only for a verified email, so an unverified shopper's connect page answers
+			// []. Client 11.2.0 posts whatever it answered (direct-checkout/woopay-direct-checkout.js:434-442); the store
+			// then starts a guest WooPay session (class-woopay-session.php:540).
+			configureDirectCheckout(
+				'<div class="wp-block-woocommerce-proceed-to-checkout-block"><a href="https://store.test/checkout/">Checkout</a></div>'
+			);
+			const postMessage = installConnect();
+			global.jQuery.post = jest.fn( () => ( {
+				done: jest.fn( ( callback ) => {
+					callback( storeSession );
+					return { fail: jest.fn() };
+				} ),
+			} ) );
+			const { __test__ } = require( '../woopayments-woopay' );
+			const navigate = jest.fn();
+			__test__.setNavigate( navigate );
+
+			await initializeDirectCheckout( true );
+			document.querySelector( 'a' ).click();
+			await flushPromises();
+			emitConnectMessage( 'get_encrypted_data_success', [] );
+			await flushPromises();
+
+			expect( global.jQuery.post ).toHaveBeenCalledWith(
+				'/?wc-ajax=wcpay_get_woopay_session',
+				{
+					_ajax_nonce: 'session-nonce',
+					encrypted_data: [],
+				}
+			);
+			expect( postMessage ).toHaveBeenCalledWith(
+				{ action: 'setRedirectSessionData', value: storeSession },
+				'https://pay.woo.test'
+			);
+
+			emitConnectMessage( 'set_redirect_session_data_success', {
+				redirect_url:
+					'https://pay.woo.test/woopay/?platform_checkout_key=checkout-key',
+			} );
+			await flushPromises();
+
+			expect( navigate ).toHaveBeenCalledTimes( 1 );
+			expect( navigate ).toHaveBeenCalledWith(
+				'https://pay.woo.test/woopay/?platform_checkout_key=checkout-key'
+			);
+		} );
+
 		test.each( [
 			[
 				'classic cart',
@@ -1817,7 +1865,6 @@ describe( 'WooPayments WooPay checkout', () => {
 		} );
 
 		test.each( [
-			[ 'malformed encrypted identity', 'identity' ],
 			[ 'failed store AJAX', 'ajax' ],
 			[ 'malformed store session', 'session' ],
 			[ 'redirect on another origin', 'origin' ],
@@ -1851,10 +1898,7 @@ describe( 'WooPayments WooPay checkout', () => {
 			const link = document.querySelector( 'a' );
 			link.click();
 			await flushPromises();
-			emitConnectMessage(
-				'get_encrypted_data_success',
-				failure === 'identity' ? { data: 'only-data' } : encryptedIdentity
-			);
+			emitConnectMessage( 'get_encrypted_data_success', encryptedIdentity );
 			await flushPromises();
 
 			if ( [ 'origin', 'key' ].includes( failure ) ) {
