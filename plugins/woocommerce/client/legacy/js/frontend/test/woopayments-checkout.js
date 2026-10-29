@@ -3915,6 +3915,35 @@ describe( 'WooPayments checkout', () => {
 		).toBe( 'fraud-token-123' );
 	} );
 
+	// Client 11.2.0 checkout/classic/upe-utils.js:204 reads only the page global; a config value must never be posted.
+	test.each( [
+		[ 'the page global over a config token', 'global-token', 'global-token' ],
+		[ 'nothing without the page global', undefined, '' ],
+	] )(
+		'posts %s as the fraud-prevention token',
+		async ( _case, globalToken, expectedToken ) => {
+			window.wcpay_core_checkout_config.fraudPreventionToken =
+				'config-token';
+			if ( globalToken !== undefined ) {
+				window.wcpayFraudPreventionToken = globalToken;
+			}
+			require( '../woopayments-checkout' );
+			await flushPromises();
+
+			expect(
+				checkoutFormEventHandlers.checkout_place_order_woocommerce_payments()
+			).toBe( false );
+
+			await flushPromises();
+
+			expect(
+				global.jQuery.checkoutFormFields[
+					'wcpay-fraud-prevention-token'
+				].value
+			).toBe( expectedToken );
+		}
+	);
+
 	test( 'adds the fraud-prevention token before submitting a redirect split-gateway classic checkout', async () => {
 		// A redirect method such as Affirm collects nothing on this page and
 		// mounts no Stripe Elements container of its own (see 'does not mount

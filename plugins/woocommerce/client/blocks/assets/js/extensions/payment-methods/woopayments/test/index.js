@@ -376,6 +376,40 @@ describe( 'wc-payment-method-woopayments', () => {
 		} );
 	} );
 
+	// Client 11.2.0 checkout/blocks/payment-processor.js:44 reads only the page global; payment method data must never be posted.
+	it.each( [
+		[
+			'the page global over a payment method data token',
+			'global-token',
+			'global-token',
+		],
+		[ 'nothing without the page global', undefined, '' ],
+	] )(
+		'submits %s as the fraud-prevention token',
+		async ( _case, globalToken, expectedToken ) => {
+			const paymentMethodData = jest
+				.requireMock( '@woocommerce/settings' )
+				.getSetting( 'paymentMethodData' ).woocommerce_payments;
+			paymentMethodData.fraudPreventionToken = 'config-token';
+			if ( globalToken !== undefined ) {
+				window.wcpayFraudPreventionToken = globalToken;
+			}
+
+			try {
+				const harness = await setUpNewCardPayment();
+				const result = await harness.setupCallbacks[ 0 ]();
+
+				expect(
+					result.meta.paymentMethodData[
+						'wcpay-fraud-prevention-token'
+					]
+				).toBe( expectedToken );
+			} finally {
+				delete paymentMethodData.fraudPreventionToken;
+			}
+		}
+	);
+
 	// Client 11.2.0 client/checkout/blocks/hooks.js:60-78 keeps the error's message, else FINGERPRINT_GENERIC_ERROR
 	// (utils/fingerprint.js:12-25, also thrown when FingerprintJS gives no agent); payment-processor.js:143-147 refuses
 	// the payment setup with it before anything else runs.

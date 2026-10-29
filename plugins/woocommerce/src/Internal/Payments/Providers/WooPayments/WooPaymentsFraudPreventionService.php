@@ -7,13 +7,15 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Internal\RegisterHooksInterface;
+
 /**
  * Manages WooPayments card-testing fraud-prevention session tokens.
  *
  * @since 11.0.0
  * @internal
  */
-class WooPaymentsFraudPreventionService {
+class WooPaymentsFraudPreventionService implements RegisterHooksInterface {
 
 	/**
 	 * Checkout POST field and session key; client 11.1.0 uses the same (fraud-prevention/class-fraud-prevention-service.php:18).
@@ -129,6 +131,35 @@ class WooPaymentsFraudPreventionService {
 	 * because Blocks wallet buttons pay from a Cart block on any page, on the shopper's browser session.
 	 */
 	public function maybe_enqueue_token_script(): void {
+		$this->enqueue_token_script( true );
+	}
+
+	/**
+	 * Enqueue the token script where a Checkout or Cart block renders, without the page check.
+	 *
+	 * The block render is the surface, so a block from a template on any page, a pattern, a template part or a widget gets
+	 * the token; client 11.2.0 prints it by page only. The session, protection and per-page singleton checks still apply.
+	 *
+	 * @internal
+	 */
+	public function enqueue_token_script_for_rendered_block(): void {
+		$this->enqueue_token_script( false );
+	}
+
+	/**
+	 * Hook the token script to the Checkout and Cart block render actions (src/Blocks/BlockTypes/Checkout.php, Cart.php).
+	 */
+	public function register() {
+		add_action( 'woocommerce_blocks_enqueue_checkout_block_scripts_after', array( $this, 'enqueue_token_script_for_rendered_block' ) );
+		add_action( 'woocommerce_blocks_enqueue_cart_block_scripts_after', array( $this, 'enqueue_token_script_for_rendered_block' ) );
+	}
+
+	/**
+	 * Enqueue the footer script holding the session's token, once per page, when the session has protection on.
+	 *
+	 * @param bool $check_page Whether the current page must also be one where shoppers pay.
+	 */
+	private function enqueue_token_script( bool $check_page ): void {
 		if ( wp_script_is( self::TOKEN_NAME, 'enqueued' ) ) {
 			return;
 		}
@@ -136,7 +167,7 @@ class WooPaymentsFraudPreventionService {
 			return;
 		}
 		// Product and cart pages count because express buttons pay from them; the add payment method page guards setup intents.
-		if ( ! is_checkout() && ! has_block( 'woocommerce/checkout' ) && ! is_cart() && ! has_block( 'woocommerce/cart' ) && ! is_product() && ! $this->is_pay_for_order_page() && ! is_add_payment_method_page() ) {
+		if ( $check_page && ! is_checkout() && ! has_block( 'woocommerce/checkout' ) && ! is_cart() && ! has_block( 'woocommerce/cart' ) && ! is_product() && ! $this->is_pay_for_order_page() && ! is_add_payment_method_page() ) {
 			return;
 		}
 

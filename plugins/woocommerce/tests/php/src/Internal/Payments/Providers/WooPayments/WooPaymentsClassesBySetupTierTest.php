@@ -242,6 +242,19 @@ class WooPaymentsClassesBySetupTierTest extends WC_Unit_Test_Case {
 		$this->assertContains( self::WCPAY . 'WooPaymentsExpressCheckoutStoreApiExtension', $matrix[ WooPaymentsSetupTier::ACTIVE ]['ajax'] );
 	}
 
+	/** @testdox Registers the fraud-prevention token's block render hooks only on active front requests, where the built-in WooPayments takes payments. */
+	public function test_provider_matrix_registers_the_fraud_token_render_hooks_only_on_active_pages(): void {
+		foreach ( WooPaymentsProvider::get_classes_by_setup_tier() as $state => $request_groups ) {
+			foreach ( $request_groups as $request => $roots ) {
+				$this->assertSame(
+					WooPaymentsSetupTier::ACTIVE === $state && 'front' === $request,
+					in_array( self::WCPAY . 'WooPaymentsFraudPreventionService', $roots, true ),
+					"$state $request"
+				);
+			}
+		}
+	}
+
 	/**
 	 * The native shopper scripts post their Tracks events to the REST route this controller registers, in a request
 	 * of its own; without the controller among the REST roots the route does not exist there.

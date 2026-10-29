@@ -259,6 +259,8 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 						OrderStatusSync::class,
 						ExtensionSync::class,
 						WooPaymentsExpressCheckoutController::class,
+						// A Checkout or Cart block can render where the page check does not match, such as a template on another page.
+						WooPaymentsFraudPreventionService::class,
 						// The Cart and Checkout blocks preload the Store API cart inside the page request (Blocks Cart.php:263),
 						// so the express checkout data it adds to that cart must exist there too; client 11.1.0 registers it on every request
 						// (class-wc-payments.php:697-709).
