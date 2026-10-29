@@ -424,16 +424,6 @@ const updateOrderStatusAfterConfirmation = async (
 	shouldSavePaymentMethod = false,
 	paymentSettings = defaultSettings
 ) => {
-	if (
-		! paymentSettings.ajaxUrl ||
-		! confirmation?.orderId ||
-		! confirmation?.nonce ||
-		! intentId ||
-		! window.fetch
-	) {
-		return;
-	}
-
 	const body = new window.URLSearchParams();
 	body.append( 'action', 'update_order_status' );
 	body.append( 'order_id', confirmation.orderId );
@@ -457,16 +447,12 @@ const updateOrderStatusAfterConfirmation = async (
 		body,
 	} );
 
-	if ( ! response || typeof response.json !== 'function' ) {
-		return;
-	}
-
 	const result = await response.json();
 	if ( result?.error?.message ) {
 		throw new Error( result.error.message );
 	}
 
-	return result?.return_url || '';
+	return result?.return_url;
 };
 
 const handleConfirmationResponse = async (
@@ -543,12 +529,17 @@ const handleConfirmationResponse = async (
 			);
 		}
 
+		// Client 11.2.0 client/checkout/api/index.js:236-278 always reports the confirmed intent and sends the shopper
+		// to the return_url the store answers.
 		const redirectUrl = await updateOrderStatusAfterConfirmation(
 			confirmation,
 			intentId,
 			shouldSavePaymentMethod,
 			paymentSettings
 		);
+		if ( ! redirectUrl ) {
+			return getErrorResponse( emitResponse, confirmationErrorMessage );
+		}
 
 		return getSuccessResponse( emitResponse, {}, redirectUrl );
 	} catch ( error ) {

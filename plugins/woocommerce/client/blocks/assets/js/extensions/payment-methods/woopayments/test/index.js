@@ -3436,6 +3436,30 @@ describe( 'wc-payment-method-woopayments', () => {
 		} );
 	} );
 
+	// Client 11.2.0 client/checkout/api/index.js:236-278 always sends update_order_status after the next action and
+	// resolves with its return_url (blocks/confirm-card-payment.js:19-35); an answer without one sends the shopper nowhere.
+	it( 'reports the confirmation error when the order update answers without a return URL', async () => {
+		window.Stripe = jest.fn( () => ( {
+			handleNextAction: jest.fn().mockResolvedValue( {
+				paymentIntent: {
+					id: 'pi_123',
+				},
+			} ),
+		} ) );
+		window.fetch = jest.fn().mockResolvedValue( {
+			json: jest.fn().mockResolvedValue( { result: 'success' } ),
+		} );
+
+		await expect( runSavedTokenConfirmation() ).resolves.toEqual( {
+			type: 'error',
+			message: 'There was a problem confirming your payment.',
+			messageContext: 'payments',
+		} );
+		expect( window.fetch.mock.calls[ 0 ][ 1 ].body.get( 'action' ) ).toBe(
+			'update_order_status'
+		);
+	} );
+
 	it( 'shows the Stripe.js message when the next action rejects', async () => {
 		// Synthetic rejection: client 11.1.0 confirm-card-payment.js:36-40 shows a rejected confirmation's error.message.
 		window.Stripe = jest.fn( () => ( {
