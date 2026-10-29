@@ -4057,6 +4057,31 @@ describe( 'WooPayments checkout', () => {
 		} );
 	} );
 
+	// Client 11.2.0 binds the event on form.checkout only (event-handlers.js:47, :97-106).
+	test( 'records no place-order event when the shopper clicks the pay-for-order button', () => {
+		document.body.innerHTML =
+			'<form id="order_review">' +
+			'<input type="radio" name="payment_method" value="woocommerce_payments" checked />' +
+			'<div id="wcpay-core-payment-element"></div>' +
+			'<button id="place_order" type="submit">Pay for order</button>' +
+			'</form>';
+		window.wcpay_core_checkout_config.isOrderPay = true;
+		require( '../woopayments-checkout' );
+
+		document.getElementById( 'place_order' ).dispatchEvent(
+			new window.MouseEvent( 'click', {
+				bubbles: true,
+				cancelable: true,
+			} )
+		);
+
+		expect( getTrackingEvents() ).not.toContainEqual(
+			expect.objectContaining( {
+				name: 'checkout_place_order_button_click',
+			} )
+		);
+	} );
+
 	test( 'remounts the payment element after checkout updates replace the payment markup', async () => {
 		require( '../woopayments-checkout' );
 		await flushPromises();

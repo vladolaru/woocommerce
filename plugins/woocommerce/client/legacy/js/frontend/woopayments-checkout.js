@@ -1604,7 +1604,7 @@
 	function recordPlaceOrderButtonClick( event ) {
 		if (
 			! ( event.target instanceof window.Element ) ||
-			! event.target.closest( '#place_order' ) ||
+			! event.target.closest( 'form.checkout #place_order' ) ||
 			! isSelectedGateway()
 		) {
 			return;
