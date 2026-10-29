@@ -13,6 +13,7 @@ use Automattic\WooCommerce\Internal\Utilities\RequestTypeUtil;
 use Automattic\WooCommerce\StoreApi\Schemas\ExtendSchema;
 use Automattic\WooCommerce\StoreApi\Schemas\V1\CartSchema;
 use Automattic\WooCommerce\StoreApi\StoreApi;
+use Automattic\WooCommerce\StoreApi\Utilities\CartTokenUtils;
 use WC_Unit_Test_Case;
 use WP_REST_Request;
 use WP_REST_Response;
@@ -670,10 +671,21 @@ class SessionServiceTest extends WC_Unit_Test_Case {
 
 		$this->assertTrue( $frontend_config['isWooPayDirectCheckoutEnabled'], 'Direct checkout runs, so the script reads the value.' );
 		$this->assertTrue( $direct_config['isWooPayDirectCheckoutEnabled'], 'Direct checkout runs, so the script reads the value.' );
-		$minimum_session = $this->decrypt_store_session( $sut->get_encrypted_minimum_session_data() );
-		$this->assertSame( $sut->get_minimum_session_data(), $minimum_session );
-		$this->assertSame( $minimum_session, $this->decrypt_store_session( $frontend_config['woopayMinimumSessionData'] ), 'The frontend config carries the sealed minimum session.' );
-		$this->assertSame( $minimum_session, $this->decrypt_store_session( $direct_config['woopayMinimumSessionData'] ), 'The direct checkout config carries the sealed minimum session.' );
+		$minimum_session = $sut->get_minimum_session_data();
+		$payloads        = array(
+			'minimum session data'        => $minimum_session,
+			'sealed minimum session data' => $this->decrypt_store_session( $sut->get_encrypted_minimum_session_data() ),
+			'frontend config'             => $this->decrypt_store_session( $frontend_config['woopayMinimumSessionData'] ),
+			'direct checkout config'      => $this->decrypt_store_session( $direct_config['woopayMinimumSessionData'] ),
+		);
+		unset( $minimum_session['store_api_token'] );
+		// Each payload mints its own cart token, whose exp and iat come from time(), so tokens are checked on their own.
+		foreach ( $payloads as $source => $payload ) {
+			$this->assertTrue( CartTokenUtils::validate_cart_token( $payload['store_api_token'] ), "The {$source} cart token validates." );
+			$this->assertSame( (string) WC()->session->get_customer_id(), CartTokenUtils::get_cart_token_payload( $payload['store_api_token'] )['user_id'], "The {$source} cart token names the current cart session." );
+			unset( $payload['store_api_token'] );
+			$this->assertSame( $minimum_session, $payload, "The {$source} carries the minimum session." );
+		}
 	}
 
 	/**

@@ -2395,7 +2395,7 @@ describe( 'WooPayments WooPay checkout', () => {
 			expect( getInitCalls() ).toHaveLength( 0 );
 			expect(
 				global.jQuery.post.mock.calls.some( ( [ url ] ) =>
-					/init_woopay/.test( url )
+					/init_woopay|get_woopay_minimum_session_data/.test( url )
 				)
 			).toBe( false );
 		} );
