@@ -626,6 +626,37 @@ class SessionServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * The WooPay script reads woopayMinimumSessionData from its localized config only. Client 11.2.0 posts
+	 * get_woopay_minimum_session_data only when that value is falsy (woopay-direct-checkout.js:450-465), so on a page
+	 * that runs direct checkout both configs carry the minimum session method's answer, an array even when the session
+	 * cannot be signed, which JSON-encodes to [] and is truthy in the browser.
+	 *
+	 * @testdox Where direct checkout runs, both WooPay configs carry the minimum session data as an array when it cannot be signed: $label.
+	 * @testWith ["no blog ID", "", "blog-token"]
+	 *           ["no blog token", "12345", ""]
+	 *
+	 * @param string $label      Case label.
+	 * @param string $blog_id    Store blog ID.
+	 * @param string $blog_token Store blog token.
+	 */
+	public function test_direct_checkout_configs_carry_the_unsignable_minimum_session_data_as_an_array( string $label, string $blog_id, string $blog_token ): void {
+		unset( $label );
+		\Jetpack_Options::update_option( 'id', $blog_id );
+		\Jetpack_Options::update_option( 'blog_token', $blog_token );
+		$sut             = $this->create_service( array(), array( 'platform_direct_checkout_eligible' => true ) );
+		$frontend_config = $sut->get_woopay_frontend_config( 'cart' );
+		$direct_config   = $sut->get_woopay_direct_checkout_config();
+
+		$this->assertTrue( $frontend_config['isWooPayDirectCheckoutEnabled'], 'Direct checkout runs, so the script reads the value.' );
+		$this->assertTrue( $direct_config['isWooPayDirectCheckoutEnabled'], 'Direct checkout runs, so the script reads the value.' );
+		$minimum_session = $sut->get_encrypted_minimum_session_data();
+		$this->assertSame( array(), $minimum_session );
+		$this->assertSame( $minimum_session, $frontend_config['woopayMinimumSessionData'] );
+		$this->assertSame( $minimum_session, $direct_config['woopayMinimumSessionData'] );
+		$this->assertSame( '[]', wp_json_encode( $frontend_config['woopayMinimumSessionData'] ) );
+	}
+
+	/**
 	 * @testdox Should expose direct checkout only when the feature, account, gateway, and WooPay are enabled.
 	 * @dataProvider direct_checkout_eligibility_provider
 	 *

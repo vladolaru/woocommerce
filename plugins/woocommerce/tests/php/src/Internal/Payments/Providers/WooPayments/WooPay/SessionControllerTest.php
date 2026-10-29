@@ -1535,7 +1535,6 @@ class SessionControllerTest extends WC_REST_Unit_Test_Case {
 			),
 			$this->dispatch_ajax_hook_with_nonce( 'wc_ajax_wcpay_get_woopay_signature', 'woopay_signature_nonce', array() )
 		);
-		$this->assertSame( array( 'encrypted' => 'minimum' ), $this->dispatch_ajax_hook_with_nonce( 'wc_ajax_wcpay_get_woopay_minimum_session_data', 'woopay_session_nonce', array() ) );
 		$this->assertSame( '+15555550123', $service->last_phone_request['phone_number'] );
 	}
 
@@ -1714,7 +1713,6 @@ class SessionControllerTest extends WC_REST_Unit_Test_Case {
 			'WooPay session'              => array( 'WooPay session', 'wc_ajax_wcpay_get_woopay_session', 'customer', null, array( 'email' => 'shopper@example.com' ), $failure, null ),
 			'WooPay phone'                => array( 'WooPay phone', 'wc_ajax_wcpay_set_woopay_phone_number', 'customer', null, array( 'phone_number' => '+15555550123' ), $failure, null ),
 			'WooPay signature'            => array( 'WooPay signature', 'wc_ajax_wcpay_get_woopay_signature', 'customer', null, array(), $error, null ),
-			'minimum session'             => array( 'minimum session', 'wc_ajax_wcpay_get_woopay_minimum_session_data', 'customer', null, array(), $failure, null ),
 			'admin appearance, no nonce'  => array( 'admin appearance, no nonce', 'wp_ajax_wcpay_admin_set_woopay_appearance', 'administrator', null, $appearance, $error, null ),
 			'admin appearance, a shopper' => array( 'admin appearance, a shopper', 'wp_ajax_wcpay_admin_set_woopay_appearance', 'customer', 'wcpay_admin_woopay_appearance_nonce', $appearance, $error, null ),
 			'shopper appearance'          => array( 'shopper appearance', 'wc_ajax_wcpay_shopper_set_woopay_appearance', 'customer', null, $appearance, $error, null ),
@@ -2252,7 +2250,6 @@ class SessionControllerTest extends WC_REST_Unit_Test_Case {
 			'wc_ajax_wcpay_get_woopay_session'            => 'handle_get_woopay_session',
 			'wc_ajax_wcpay_set_woopay_phone_number'       => 'handle_set_woopay_phone_number',
 			'wc_ajax_wcpay_get_woopay_signature'          => 'handle_get_woopay_signature',
-			'wc_ajax_wcpay_get_woopay_minimum_session_data' => 'handle_get_woopay_minimum_session_data',
 			'wp_ajax_wcpay_admin_set_woopay_appearance'   => 'handle_set_admin_woopay_appearance',
 			'wc_ajax_wcpay_shopper_set_woopay_appearance' => 'handle_set_shopper_woopay_appearance',
 			'wc_ajax_wcpay_add_to_cart'                   => 'handle_add_to_cart',

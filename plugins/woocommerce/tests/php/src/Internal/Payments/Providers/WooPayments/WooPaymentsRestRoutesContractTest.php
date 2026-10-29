@@ -259,7 +259,7 @@ class WooPaymentsRestRoutesContractTest extends WC_REST_Unit_Test_Case {
 	 * at once. A literal-name scan proves native names the same action, the way the plugin
 	 * extractor itself proves the plugin does; that native actually calls `add_action()` with the
 	 * exact callback is owned by each site's own class: `SessionControllerTest`
-	 * (10 WooPay actions), `WooPaymentsFrontendTrackingControllerTest` (4),
+	 * (9 WooPay actions), `WooPaymentsFrontendTrackingControllerTest` (4),
 	 * `WooPaymentsCheckoutAjaxControllerTest` (3), `WooPaymentsPaymentMethodMessagingTest` (2),
 	 * `SubscriptionAdminPaymentMethodHandlerTest` (1) and
 	 * `WooCommerceBookingsTest` (2).

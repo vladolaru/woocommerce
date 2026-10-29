@@ -406,17 +406,6 @@ class SessionController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Handle encrypted minimum WooPay session AJAX.
-	 */
-	public function handle_get_woopay_minimum_session_data(): void {
-		if ( ! $this->is_ajax_nonce_valid( 'woopay_session_nonce' ) ) {
-			wp_send_json( array( 'result' => 'failure' ), 403 );
-		}
-
-		wp_send_json( $this->session_service->get_encrypted_minimum_session_data() );
-	}
-
-	/**
 	 * Handle admin WooPay appearance persistence AJAX.
 	 */
 	public function handle_set_admin_woopay_appearance(): void {
@@ -808,7 +797,6 @@ class SessionController implements RegisterHooksInterface {
 			'wc_ajax_wcpay_get_woopay_session'            => array( $this, 'handle_get_woopay_session' ),
 			'wc_ajax_wcpay_set_woopay_phone_number'       => array( $this, 'handle_set_woopay_phone_number' ),
 			'wc_ajax_wcpay_get_woopay_signature'          => array( $this, 'handle_get_woopay_signature' ),
-			'wc_ajax_wcpay_get_woopay_minimum_session_data' => array( $this, 'handle_get_woopay_minimum_session_data' ),
 			'wp_ajax_wcpay_admin_set_woopay_appearance'   => array( $this, 'handle_set_admin_woopay_appearance' ),
 			'wc_ajax_wcpay_shopper_set_woopay_appearance' => array( $this, 'handle_set_shopper_woopay_appearance' ),
 			'wc_ajax_wcpay_add_to_cart'                   => array( $this, 'handle_add_to_cart' ),

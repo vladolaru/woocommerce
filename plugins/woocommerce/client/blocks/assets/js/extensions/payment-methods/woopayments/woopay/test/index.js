@@ -1576,11 +1576,6 @@ describe( 'wc-payment-method-woopayments-woopay', () => {
 			expect( wrapper.parentElement ).toBe( document.body );
 			expect( navigate ).not.toHaveBeenCalled();
 			expect( getInitCalls() ).toHaveLength( 0 );
-			expect(
-				window.fetch.mock.calls.some( ( [ url ] ) =>
-					String( url ).includes( 'get_woopay_minimum_session_data' )
-				)
-			).toBe( false );
 		} );
 
 		it( 'posts init_woopay once with the OTP user session and follows the returned URL', async () => {
