@@ -580,6 +580,141 @@ describe( 'wc-payment-method-woopayments-woopay', () => {
 		} );
 	} );
 
+	// Client 11.2.0 keeps one injection state for the connect iframe in window.WooPayConnect (connect/connect-utils.js:1-30):
+	// a Connect that finds the iframe still injecting waits for its load (connect/woopay-connect.js:62-112,
+	// woopay-connect-iframe.js:49-66). Here the iframe carries that wait, as wooPayConnectPostMessage, for both WooPay
+	// scripts: the classic one also runs on a Blocks cart (the legacy direct checkout, the Mini-Cart).
+	describe( 'Connect iframe shared with the classic WooPay script', () => {
+		let postMessage;
+
+		beforeEach( () => {
+			postMessage = jest.fn();
+			Object.defineProperty(
+				window.HTMLIFrameElement.prototype,
+				'contentWindow',
+				{
+					configurable: true,
+					get() {
+						return { postMessage };
+					},
+				}
+			);
+			window.fetch = jest.fn().mockResolvedValue( {
+				ok: true,
+				json: jest.fn().mockResolvedValue( { success: false } ),
+			} );
+		} );
+
+		const renderButton = () => {
+			registerWooPay();
+			render(
+				createElement(
+					registerExpressPaymentMethod.mock.calls[ 0 ][ 0 ].content
+						.type
+				)
+			);
+		};
+
+		it( 'sends the first-party session through the classic script’s Connect iframe only once its connect page loads', async () => {
+			let connectPageLoaded;
+			const classicIframe = document.createElement( 'iframe' );
+			classicIframe.id = 'woopay-connect-iframe';
+			classicIframe.wooPayConnectPostMessage = new Promise(
+				( resolve ) => {
+					connectPageLoaded = resolve;
+				}
+			);
+			document.body.appendChild( classicIframe );
+			getMockPaymentMethodSettings().isWoopayFirstPartyAuthEnabled = true;
+			window.fetch = jest.fn().mockResolvedValue( {
+				json: jest.fn().mockResolvedValue( {
+					blog_id: '12345',
+					data: { session: 'session', iv: 'iv', hash: 'hash' },
+				} ),
+			} );
+
+			renderButton();
+			await user.click( screen.getByRole( 'link', { name: 'WooPay' } ) );
+			await waitFor( () => {
+				expect(
+					window.fetch.mock.calls.some(
+						( [ url ] ) =>
+							url === '/?wc-ajax=wcpay_get_woopay_session'
+					)
+				).toBe( true );
+			} );
+			await act( async () => {
+				await new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
+			} );
+			expect( postMessage ).not.toHaveBeenCalled();
+			expect(
+				document.querySelectorAll( '#woopay-connect-iframe' )
+			).toHaveLength( 1 );
+
+			connectPageLoaded( ( message ) =>
+				classicIframe.contentWindow.postMessage(
+					message,
+					'https://pay.woo.test'
+				)
+			);
+			await waitFor( () => {
+				expect( postMessage ).toHaveBeenCalledWith(
+					{
+						action: 'setPreemptiveSessionData',
+						value: expect.objectContaining( { blog_id: '12345' } ),
+					},
+					'https://pay.woo.test'
+				);
+			} );
+			// Answer it, so no session request is left pending for the next test.
+			await act( async () => {
+				window.dispatchEvent(
+					new window.MessageEvent( 'message', {
+						origin: 'https://pay.woo.test',
+						data: {
+							action: 'set_preemptive_session_data_success',
+							value: {
+								redirect_url:
+									'https://pay.woo.test/checkout/session',
+							},
+						},
+					} )
+				);
+			} );
+			await waitFor( () => {
+				expect( navigate ).toHaveBeenCalledWith(
+					'https://pay.woo.test/checkout/session'
+				);
+			} );
+		} );
+
+		it( 'gives the classic script the wait for the connect page of the Connect iframe it creates', async () => {
+			renderButton();
+			const connectIframe = document.getElementById(
+				'woopay-connect-iframe'
+			);
+			const connectPageWait = connectIframe.wooPayConnectPostMessage;
+			let sender = null;
+			connectPageWait.then( ( postToConnect ) => {
+				sender = postToConnect;
+			} );
+			await waitFor( () => {
+				expect( connectIframe.getAttribute( 'src' ) ).not.toBeNull();
+			} );
+			expect( sender ).toBeNull();
+
+			connectIframe.dispatchEvent( new window.Event( 'load' ) );
+			await waitFor( () => {
+				expect( sender ).toEqual( expect.any( Function ) );
+			} );
+			sender( { action: 'getIsUserLoggedIn' } );
+			expect( postMessage ).toHaveBeenCalledWith(
+				{ action: 'getIsUserLoggedIn' },
+				'https://pay.woo.test'
+			);
+		} );
+	} );
+
 	it( 'falls back to the WooPay OTP flow when first-party Connect rejects the session', async () => {
 		const postMessage = jest.fn();
 		Object.defineProperty(

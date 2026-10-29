@@ -38,7 +38,6 @@ const brandDisplayNames = {
 	unionpay: __( 'Union Pay', 'woocommerce' ),
 	visa: __( 'Visa', 'woocommerce' ),
 };
-let wooPayConnectPostMessagePromise = null;
 const wooPayConnectCallbacks = {};
 let wooPayConnectListenerAttached = false;
 let preferredCardFetchPromise = null;
@@ -224,33 +223,32 @@ const attachWooPayConnectListener = () => {
 	wooPayConnectListenerAttached = true;
 };
 
+// The connect iframe carries the wait for its connect page, so the classic WooPay script, which can run on the same
+// page, waits for the same load; client 11.2.0 shares that state in window.WooPayConnect (connect/connect-utils.js).
 const getWooPayConnectPostMessage = () => {
 	const existingIframe = document.getElementById( 'woopay-connect-iframe' );
 
-	if ( wooPayConnectPostMessagePromise && existingIframe ) {
-		return wooPayConnectPostMessagePromise;
-	}
-
-	if ( wooPayConnectPostMessagePromise && ! existingIframe ) {
-		wooPayConnectPostMessagePromise = null;
-		preferredCardFetchPromise = null;
-	}
-
 	if ( existingIframe ) {
-		return Promise.resolve( ( message ) => {
-			existingIframe.contentWindow.postMessage(
-				message,
-				settings.woopayHost
-			);
-		} );
+		return (
+			existingIframe.wooPayConnectPostMessage ||
+			Promise.resolve( ( message ) => {
+				existingIframe.contentWindow.postMessage(
+					message,
+					settings.woopayHost
+				);
+			} )
+		);
 	}
+
+	preferredCardFetchPromise = null;
 
 	if ( ! settings.woopayHost ) {
 		return Promise.reject();
 	}
 
-	wooPayConnectPostMessagePromise = new Promise( ( resolve ) => {
-		const iframe = document.createElement( 'iframe' );
+	let iframe;
+	const connectPostMessage = new Promise( ( resolve ) => {
+		iframe = document.createElement( 'iframe' );
 		iframe.id = 'woopay-connect-iframe';
 		iframe.height = 0;
 		iframe.width = 0;
@@ -282,8 +280,9 @@ const getWooPayConnectPostMessage = () => {
 			iframe.src = url;
 		} );
 	} );
+	iframe.wooPayConnectPostMessage = connectPostMessage;
 
-	return wooPayConnectPostMessagePromise;
+	return connectPostMessage;
 };
 
 const sendWooPayConnectMessage = (

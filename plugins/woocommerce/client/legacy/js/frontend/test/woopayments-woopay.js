@@ -2037,6 +2037,67 @@ describe( 'WooPayments WooPay checkout', () => {
 			);
 		} );
 
+		// Client 11.2.0 keeps one injection state for the connect iframe in window.WooPayConnect
+		// (connect/connect-utils.js:1-30): a Connect that finds the iframe still injecting waits for its load
+		// (connect/woopay-connect.js:62-112, woopay-connect-iframe.js:49-66). Here the iframe carries that wait, as
+		// wooPayConnectPostMessage, for both WooPay scripts: on a Blocks cart the Blocks script creates the iframe.
+		test( 'asks WooPay for the login state through the Blocks script’s Connect iframe only once its connect page loads', async () => {
+			configureDirectCheckout(
+				'<div class="wc-proceed-to-checkout"><a class="checkout-button" href="https://store.test/checkout/">Checkout</a></div>'
+			);
+			const postMessage = installConnect();
+			let connectPageLoaded;
+			const blocksIframe = document.createElement( 'iframe' );
+			blocksIframe.id = 'woopay-connect-iframe';
+			blocksIframe.wooPayConnectPostMessage = new Promise( function ( resolve ) {
+				connectPageLoaded = resolve;
+			} );
+			document.body.appendChild( blocksIframe );
+
+			require( '../woopayments-woopay' );
+			await flushPromises();
+			expect( postMessage ).not.toHaveBeenCalled();
+			expect( document.querySelectorAll( '#woopay-connect-iframe' ) ).toHaveLength( 1 );
+
+			connectPageLoaded( function ( message ) {
+				blocksIframe.contentWindow.postMessage( message, 'https://pay.woo.test' );
+			} );
+			await flushPromises();
+			expect( postMessage ).toHaveBeenCalledWith(
+				{ action: 'getIsUserLoggedIn' },
+				'https://pay.woo.test'
+			);
+			emitConnectMessage( 'get_is_user_logged_in_success', true );
+			await flushPromises();
+			expect( document.body.wooPayDirectCheckoutAttached ).toBe( true );
+		} );
+
+		test( 'gives the Blocks script the wait for the connect page of the Connect iframe it creates', async () => {
+			configureDirectCheckout(
+				'<div class="wc-proceed-to-checkout"><a class="checkout-button" href="https://store.test/checkout/">Checkout</a></div>'
+			);
+			const postMessage = installConnect();
+			let sender = null;
+
+			require( '../woopayments-woopay' );
+			const connectIframe = document.getElementById( 'woopay-connect-iframe' );
+			connectIframe.wooPayConnectPostMessage.then( function ( postToConnect ) {
+				sender = postToConnect;
+			} );
+			await flushPromises();
+			expect( connectIframe.getAttribute( 'src' ) ).not.toBeNull();
+			expect( sender ).toBeNull();
+
+			// The whole handshake, so no login answer is left pending for the next test's module.
+			await initializeDirectCheckout( true );
+			expect( sender ).toEqual( expect.any( Function ) );
+			sender( { action: 'getPreferredPaymentMethod' } );
+			expect( postMessage ).toHaveBeenCalledWith(
+				{ action: 'getPreferredPaymentMethod' },
+				'https://pay.woo.test'
+			);
+		} );
+
 		test( 'falls back when a replacement Connect iframe never loads and ignores its late load', async () => {
 			configureDirectCheckout(
 				'<div class="wc-proceed-to-checkout"><a class="checkout-button" href="https://store.test/checkout/">Checkout</a></div>'

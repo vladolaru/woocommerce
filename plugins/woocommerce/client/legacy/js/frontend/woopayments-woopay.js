@@ -17,7 +17,6 @@
 	// Client 11.2.0 woopay-express-checkout-button.js:282-295, :324-337 (onClickCallbackRef.current = onClickOtpFlow).
 	var isWooPayOtpFlowNext = false;
 	var isInitWooPayRequesting = false;
-	var wooPayConnectPostMessagePromise = null;
 	var wooPayConnectCallbacks = {};
 	var wooPayConnectListenerAttached = false;
 	var preferredCardFetchPromise = null;
@@ -309,34 +308,34 @@
 		wooPayConnectListenerAttached = true;
 	}
 
+	// The connect iframe carries the wait for its connect page, so the Blocks WooPay script, which can run on the same
+	// page, waits for the same load; client 11.2.0 shares that state in window.WooPayConnect (connect/connect-utils.js).
 	function getWooPayConnectPostMessage() {
 		var existingIframe;
+		var iframe;
+		var connectPostMessage;
 
 		existingIframe = document.getElementById( 'woopay-connect-iframe' );
-		if ( wooPayConnectPostMessagePromise && existingIframe ) {
-			return wooPayConnectPostMessagePromise;
-		}
-
-		if ( wooPayConnectPostMessagePromise && ! existingIframe ) {
-			wooPayConnectPostMessagePromise = null;
-			preferredCardFetchPromise = null;
-		}
-
 		if ( existingIframe ) {
-			return Promise.resolve( function ( message ) {
-				existingIframe.contentWindow.postMessage(
-					message,
-					config.woopayHost
-				);
-			} );
+			return (
+				existingIframe.wooPayConnectPostMessage ||
+				Promise.resolve( function ( message ) {
+					existingIframe.contentWindow.postMessage(
+						message,
+						config.woopayHost
+					);
+				} )
+			);
 		}
+
+		preferredCardFetchPromise = null;
 
 		if ( ! config.woopayHost ) {
 			return Promise.reject();
 		}
 
-		wooPayConnectPostMessagePromise = new Promise( function ( resolve ) {
-			var iframe = document.createElement( 'iframe' );
+		connectPostMessage = new Promise( function ( resolve ) {
+			iframe = document.createElement( 'iframe' );
 			iframe.id = 'woopay-connect-iframe';
 			iframe.height = 0;
 			iframe.width = 0;
@@ -369,8 +368,9 @@
 				iframe.src = url;
 			} );
 		} );
+		iframe.wooPayConnectPostMessage = connectPostMessage;
 
-		return wooPayConnectPostMessagePromise;
+		return connectPostMessage;
 	}
 
 	// With shouldTimeOut, the fallback answers when WooPay does not reply within the connect timeout.
