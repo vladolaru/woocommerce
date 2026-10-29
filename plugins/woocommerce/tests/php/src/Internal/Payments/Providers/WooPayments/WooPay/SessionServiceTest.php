@@ -14,6 +14,7 @@ use Automattic\WooCommerce\StoreApi\Schemas\ExtendSchema;
 use Automattic\WooCommerce\StoreApi\Schemas\V1\CartSchema;
 use Automattic\WooCommerce\StoreApi\StoreApi;
 use Automattic\WooCommerce\StoreApi\Utilities\CartTokenUtils;
+use Automattic\WooCommerce\StoreApi\Utilities\JsonWebToken;
 use WC_Unit_Test_Case;
 use WP_REST_Request;
 use WP_REST_Response;
@@ -665,7 +666,11 @@ class SessionServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_direct_checkout_configs_carry_the_sealed_minimum_session_data_on_a_signable_store(): void {
 		WooPayEnvelopes::connect_store();
+		// A nonce life so long that wp_nonce_tick() cannot advance between the builds, so every session_nonce matches.
+		add_filter( 'nonce_life', static fn() => PHP_INT_MAX );
 		$sut             = $this->create_service( array(), array( 'platform_direct_checkout_eligible' => true ) );
+		$issued_from     = time();
+		$expires_from    = CartTokenUtils::get_cart_token_expiration();
 		$frontend_config = $sut->get_woopay_frontend_config( 'cart' );
 		$direct_config   = $sut->get_woopay_direct_checkout_config();
 
@@ -678,11 +683,20 @@ class SessionServiceTest extends WC_Unit_Test_Case {
 			'frontend config'             => $this->decrypt_store_session( $frontend_config['woopayMinimumSessionData'] ),
 			'direct checkout config'      => $this->decrypt_store_session( $direct_config['woopayMinimumSessionData'] ),
 		);
+		$expires_to      = CartTokenUtils::get_cart_token_expiration();
+		$issued_to       = time();
 		unset( $minimum_session['store_api_token'] );
 		// Each payload mints its own cart token, whose exp and iat come from time(), so tokens are checked on their own.
 		foreach ( $payloads as $source => $payload ) {
 			$this->assertTrue( CartTokenUtils::validate_cart_token( $payload['store_api_token'] ), "The {$source} cart token validates." );
 			$this->assertSame( (string) WC()->session->get_customer_id(), CartTokenUtils::get_cart_token_payload( $payload['store_api_token'] )['user_id'], "The {$source} cart token names the current cart session." );
+			$claims = JsonWebToken::get_parts( $payload['store_api_token'] )->payload;
+			$this->assertSame( 'store-api', $claims->iss ?? null, "The {$source} cart token is issued by the Store API." );
+			$this->assertIsInt( $claims->iat ?? null, "The {$source} cart token carries its issue time." );
+			$this->assertGreaterThanOrEqual( $issued_from, $claims->iat, "The {$source} cart token was issued during the build." );
+			$this->assertLessThanOrEqual( $issued_to, $claims->iat, "The {$source} cart token was issued during the build." );
+			$this->assertGreaterThanOrEqual( $expires_from, $claims->exp, "The {$source} cart token lives as long as a cart token." );
+			$this->assertLessThanOrEqual( $expires_to, $claims->exp, "The {$source} cart token lives as long as a cart token." );
 			unset( $payload['store_api_token'] );
 			$this->assertSame( $minimum_session, $payload, "The {$source} carries the minimum session." );
 		}
