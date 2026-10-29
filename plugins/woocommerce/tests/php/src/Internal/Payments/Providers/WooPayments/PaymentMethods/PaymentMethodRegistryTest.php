@@ -272,6 +272,18 @@ class PaymentMethodRegistryTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'assets/images/payment-methods/clearpay-icon.svg', $afterpay->get_icon_asset_path( 'GB' ) );
 		$this->assertSame( array( 'GB' ), $afterpay->get_supported_countries( 'GB' ) );
 
+		// Client 11.2.0 LinkDefinition.php:64-70, :102-108, :152-158, :167-169, :178-180.
+		$link = $this->registry->get( 'link' );
+		$this->assertNotNull( $link );
+		$this->assertSame( 'Onelink', $link->get_title( 'GB' ) );
+		$this->assertSame( "Onelink autofills your customers' payment and shipping details to deliver an easy and seamless checkout experience.", $link->get_description( 'GB' ) );
+		$this->assertSame( 'assets/images/payment-methods/onelink.svg', $link->get_icon_asset_path( 'GB' ) );
+		$this->assertSame( 'assets/images/payment-methods/onelink.svg', $link->get_dark_icon_asset_path( 'GB' ) );
+		$this->assertSame( 'assets/images/payment-methods/onelink.svg', $link->get_settings_icon_asset_path( 'GB' ) );
+		$this->assertFileExists( WC_ABSPATH . 'assets/images/payment-methods/onelink.svg' );
+		$this->assertSame( 'Link', $link->get_title( 'US' ) );
+		$this->assertSame( 'assets/images/payment-methods/link-color.svg', $link->get_icon_asset_path( 'US' ) );
+
 		$this->assertNotNull( $affirm );
 		$this->assertSame( array( 'US' ), $affirm->get_supported_countries( 'us' ) );
 		$this->assertSame( array( 'US', 'CA' ), $affirm->get_supported_countries( 'nl' ) );
@@ -299,6 +311,38 @@ class PaymentMethodRegistryTest extends WC_Unit_Test_Case {
 		$this->assertNotNull( $wechat_pay );
 		$this->assertSame( array( 'EUR' ), $wechat_pay->get_supported_currencies( 'NL' ) );
 		$this->assertSame( array( 'NONE_SUPPORTED' ), $wechat_pay->get_supported_currencies( 'BR' ) );
+	}
+
+	/**
+	 * Rows from client 11.2.0 tests/unit/payment-methods/test-class-upe-payment-method.php:309-319, where a US store is
+	 * a USD account and a GB store a GBP account.
+	 *
+	 * @testdox Link is available in $currency for a $account_country account: $expected.
+	 *
+	 * @dataProvider link_availability_provider
+	 *
+	 * @param string $currency        Checkout currency.
+	 * @param string $account_country Merchant account country.
+	 * @param bool   $expected        Whether Link is available.
+	 */
+	public function test_link_is_available_in_usd_and_gbp_for_any_account_country( string $currency, string $account_country, bool $expected ): void {
+		$this->assertSame( $expected, $this->registry->get( 'link' )->is_available_for( $currency, $account_country ) );
+	}
+
+	/**
+	 * Link availability rows: currency, account country, expected.
+	 *
+	 * @return array<string,array{string,string,bool}>
+	 */
+	public function link_availability_provider(): array {
+		return array(
+			'USD in a US store' => array( 'USD', 'US', true ),
+			'GBP in a US store' => array( 'GBP', 'US', true ),
+			'GBP in a GB store' => array( 'GBP', 'GB', true ),
+			'USD in a GB store' => array( 'USD', 'GB', true ),
+			'EUR in a US store' => array( 'EUR', 'US', false ),
+			'EUR in a GB store' => array( 'EUR', 'GB', false ),
+		);
 	}
 
 	/**
@@ -511,7 +555,7 @@ class PaymentMethodRegistryTest extends WC_Unit_Test_Case {
 					'stripe_payment_method_type' => 'link',
 					'title'                      => 'Link',
 					'description'                => "Link autofills your customers' payment and shipping details to deliver an easy and seamless checkout experience.",
-					'currencies'                 => array( 'USD' ),
+					'currencies'                 => array( 'USD', 'GBP' ),
 					'countries'                  => array(),
 					'capabilities'               => array( 'refunds', 'tokenization' ),
 					'icon'                       => 'assets/images/payment-methods/link-color.svg',

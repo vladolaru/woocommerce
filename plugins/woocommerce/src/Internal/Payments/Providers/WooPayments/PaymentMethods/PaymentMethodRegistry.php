@@ -257,6 +257,7 @@ class PaymentMethodRegistry {
 			'GrabPay'           => __( 'GrabPay', 'woocommerce' ),
 			'iDEAL | Wero'      => __( 'iDEAL | Wero', 'woocommerce' ),
 			'Link'              => __( 'Link', 'woocommerce' ),
+			'Onelink'           => __( 'Onelink', 'woocommerce' ),
 			'Multibanco'        => __( 'Multibanco', 'woocommerce' ),
 			'Klarna'            => __( 'Klarna', 'woocommerce' ),
 			'Przelewy24 (P24)'  => __( 'Przelewy24 (P24)', 'woocommerce' ),
@@ -277,6 +278,7 @@ class PaymentMethodRegistry {
 			'A popular digital wallet for cashless payments in Singapore.' => __( 'A popular digital wallet for cashless payments in Singapore.', 'woocommerce' ),
 			"Expand your business with iDEAL | Wero — Netherlands's most popular payment method." => __( "Expand your business with iDEAL | Wero — Netherlands's most popular payment method.", 'woocommerce' ),
 			"Link autofills your customers' payment and shipping details to deliver an easy and seamless checkout experience." => __( "Link autofills your customers' payment and shipping details to deliver an easy and seamless checkout experience.", 'woocommerce' ),
+			"Onelink autofills your customers' payment and shipping details to deliver an easy and seamless checkout experience." => __( "Onelink autofills your customers' payment and shipping details to deliver an easy and seamless checkout experience.", 'woocommerce' ),
 			'A voucher based payment method for your customers in Portugal.' => __( 'A voucher based payment method for your customers in Portugal.', 'woocommerce' ),
 			'Allow customers to pay over time or pay now with Klarna.' => __( 'Allow customers to pay over time or pay now with Klarna.', 'woocommerce' ),
 			'Accept payments with Przelewy24 (P24), the most popular payment method in Poland.' => __( 'Accept payments with Przelewy24 (P24), the most popular payment method in Poland.', 'woocommerce' ),
@@ -518,14 +520,23 @@ class PaymentMethodRegistry {
 				'stripe_id'                  => 'link_payments',
 				'stripe_payment_method_type' => 'link',
 				'title'                      => 'Link',
+				'titles_by_country'          => array(
+					'GB' => 'Onelink',
+				),
 				'description'                => "Link autofills your customers' payment and shipping details to deliver an easy and seamless checkout experience.",
-				'currencies'                 => array( 'USD' ),
+				'descriptions_by_country'    => array(
+					'GB' => "Onelink autofills your customers' payment and shipping details to deliver an easy and seamless checkout experience.",
+				),
+				'currencies'                 => array( 'USD', 'GBP' ),
 				'countries'                  => array(),
 				'capabilities'               => array(
 					self::REFUNDS,
 					self::TOKENIZATION,
 				),
 				'icon'                       => 'assets/images/payment-methods/link-color.svg',
+				'icons_by_country'           => array(
+					'GB' => 'assets/images/payment-methods/onelink.svg',
+				),
 			),
 			array(
 				'id'                         => 'multibanco',
