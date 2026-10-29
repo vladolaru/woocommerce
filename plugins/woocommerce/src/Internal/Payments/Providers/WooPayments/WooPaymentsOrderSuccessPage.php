@@ -246,6 +246,20 @@ class WooPaymentsOrderSuccessPage implements RegisterHooksInterface {
 				try {
 					$intent = $api_client->get_payment_intention( $intent_id );
 				} catch ( ApiException $exception ) {
+					// The client's unguarded call shows this failure (class-wc-payments-order-success-page.php:445-457); the
+					// page stays, and the log says why the order received text did too.
+					wc_get_container()->get( WooPaymentsLogger::class )->log_always(
+						'The payment re-check on the order received page failed, so the order received text stays.',
+						'warning',
+						array_merge(
+							array(
+								'order_id'  => $order->get_id(),
+								'intent_id' => $intent_id,
+							),
+							WooPaymentsLogger::get_failure_context( $exception )
+						)
+					);
+
 					return $text;
 				}
 

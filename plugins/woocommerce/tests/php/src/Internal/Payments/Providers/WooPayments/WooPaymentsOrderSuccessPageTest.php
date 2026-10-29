@@ -729,7 +729,10 @@ class WooPaymentsOrderSuccessPageTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should keep the default copy when the live intent cannot be fetched.
+	 * Client 11.2.0 makes the same call unguarded (class-wc-payments-order-success-page.php:445-457), so its failure shows;
+	 * native keeps the page and logs the failure whatever the logging setting.
+	 *
+	 * @testdox Should keep the default copy and log a warning naming the order when the live intent cannot be fetched.
 	 */
 	public function test_keeps_order_received_text_when_intent_fetch_fails(): void {
 		$api_client = $this->getMockBuilder( Client::class )
@@ -738,10 +741,34 @@ class WooPaymentsOrderSuccessPageTest extends WC_Unit_Test_Case {
 			->getMock();
 		$api_client->method( 'is_available' )->willReturn( true );
 		$api_client->method( 'get_payment_intention' )->willThrowException( new ApiException( 'Nope.', 'wcpay_error', 500 ) );
-		$page = $this->create_page( null, $api_client );
-		$this->create_thankyou_order( 'pending', WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . 'wechat_pay', 'pi_wechat' );
+		$page  = $this->create_page( null, $api_client );
+		$order = $this->create_thankyou_order( 'pending', WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . 'wechat_pay', 'pi_wechat' );
+		$lines = array();
+		add_filter(
+			'woocommerce_logger_log_message',
+			static function ( $message, $level, $context ) use ( &$lines ) {
+				if ( 'woopayments' === ( $context['source'] ?? '' ) ) {
+					$lines[] = array( $level, $message, $context );
+				}
+
+				return $message;
+			},
+			10,
+			3
+		);
 
 		$this->assertSame( 'Thank you.', $page->replace_order_received_text_for_failed_orders( 'Thank you.' ) );
+		// WC_Logger runs the message filter once per log handler, so one line can be seen more than once.
+		$this->assertNotEmpty( $lines, 'A line is logged.' );
+		$this->assertSame( array( $lines[0] ), array_values( array_unique( $lines, SORT_REGULAR ) ), 'One line is logged.' );
+		list( $level, $message, $context ) = $lines[0];
+		$this->assertSame( 'warning', $level );
+		$this->assertSame( 'The payment re-check on the order received page failed, so the order received text stays.', $message );
+		$this->assertSame( $order->get_id(), $context['order_id'] ?? null );
+		$this->assertSame( 'pi_wechat', $context['intent_id'] ?? null );
+		$this->assertSame( ApiException::class, $context['exception'] ?? null );
+		$this->assertSame( 500, $context['http_status'] ?? null );
+		$this->assertStringNotContainsString( 'Nope.', (string) wp_json_encode( $lines ), 'The platform message stays out of the log.' );
 	}
 
 	/**
