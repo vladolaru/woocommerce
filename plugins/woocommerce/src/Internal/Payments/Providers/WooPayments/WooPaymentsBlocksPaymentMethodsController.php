@@ -39,13 +39,6 @@ final class WooPaymentsBlocksPaymentMethodsController implements RegisterHooksIn
 	private WooPaymentsProvider $provider;
 
 	/**
-	 * Runtime owner arbiter.
-	 *
-	 * @var WooPaymentsRuntimeArbiter
-	 */
-	private WooPaymentsRuntimeArbiter $arbiter;
-
-	/**
 	 * Checkout scripts and their config.
 	 *
 	 * @var WooPaymentsCheckoutAssets
@@ -87,7 +80,6 @@ final class WooPaymentsBlocksPaymentMethodsController implements RegisterHooksIn
 	 *
 	 * @param WooPaymentsSetupTier              $setup_tier               Setup tier store.
 	 * @param WooPaymentsProvider               $provider                 Native WooPayments provider.
-	 * @param WooPaymentsRuntimeArbiter         $arbiter                  Runtime owner arbiter.
 	 * @param WooPaymentsCheckoutAssets         $checkout_assets          Checkout scripts and their config.
 	 * @param Eligibility                       $woopay_eligibility       WooPay eligibility rules.
 	 * @param WooPaymentsExpressCheckoutService $express_checkout_service Express checkout service.
@@ -97,7 +89,6 @@ final class WooPaymentsBlocksPaymentMethodsController implements RegisterHooksIn
 	final public function init( // phpcs:ignore Generic.CodeAnalysis.UnnecessaryFinalModifier.Found -- Required by WooCommerce injection method rules.
 		WooPaymentsSetupTier $setup_tier,
 		WooPaymentsProvider $provider,
-		WooPaymentsRuntimeArbiter $arbiter,
 		WooPaymentsCheckoutAssets $checkout_assets,
 		Eligibility $woopay_eligibility,
 		WooPaymentsExpressCheckoutService $express_checkout_service,
@@ -106,7 +97,6 @@ final class WooPaymentsBlocksPaymentMethodsController implements RegisterHooksIn
 	): void {
 		$this->setup_tier               = $setup_tier;
 		$this->provider                 = $provider;
-		$this->arbiter                  = $arbiter;
 		$this->checkout_assets          = $checkout_assets;
 		$this->woopay_eligibility       = $woopay_eligibility;
 		$this->express_checkout_service = $express_checkout_service;
@@ -163,7 +153,6 @@ final class WooPaymentsBlocksPaymentMethodsController implements RegisterHooksIn
 				new WooPayments(
 					$asset_api,
 					$gateway,
-					$this->arbiter,
 					$this->provider,
 					$this->checkout_assets,
 					$this->woopay_eligibility,

@@ -241,11 +241,6 @@ class WooPaymentsBlocksPaymentMethodsControllerTest extends WC_Unit_Test_Case {
 	 * @return WooPaymentsBlocksPaymentMethodsController
 	 */
 	private function create_sut( WooPaymentsProvider $provider, WooPaymentsCheckoutAssets $assets, ?WooPaymentsSetupTier $setup_tier = null ): WooPaymentsBlocksPaymentMethodsController {
-		$arbiter = $this->getMockBuilder( WooPaymentsRuntimeArbiter::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'is_builtin_owner' ) )
-			->getMock();
-		$arbiter->method( 'is_builtin_owner' )->willReturn( true );
 		$woopay = $this->getMockBuilder( Eligibility::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'should_show_woopay_button' ) )
@@ -261,7 +256,6 @@ class WooPaymentsBlocksPaymentMethodsControllerTest extends WC_Unit_Test_Case {
 		$sut->init(
 			$setup_tier ?? $this->create_setup_tier( WooPaymentsSetupTier::ACTIVE, true, WooPaymentsRuntimeArbiter::OWNER_BUILTIN ),
 			$provider,
-			$arbiter,
 			$assets,
 			$woopay,
 			$express,

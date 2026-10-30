@@ -4,7 +4,6 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Blocks\Payments\Integrations;
 
 use Automattic\WooCommerce\Blocks\Assets\Api;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCheckoutAssets;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExpressCheckoutService;
@@ -65,13 +64,6 @@ final class WooPayments extends AbstractPaymentMethodType {
 	private Api $asset_api;
 
 	/**
-	 * Runtime owner arbiter.
-	 *
-	 * @var WooPaymentsRuntimeArbiter
-	 */
-	private WooPaymentsRuntimeArbiter $arbiter;
-
-	/**
 	 * Checkout scripts and their config.
 	 *
 	 * @var WooPaymentsCheckoutAssets
@@ -125,7 +117,6 @@ final class WooPayments extends AbstractPaymentMethodType {
 	 *
 	 * @param Api                               $asset_api                Asset API.
 	 * @param WooPaymentsGateway                $payment_gateway          The WooPayments gateway this payment method stands for.
-	 * @param WooPaymentsRuntimeArbiter         $arbiter                  Runtime owner arbiter.
 	 * @param WooPaymentsProvider               $provider                 Native WooPayments provider.
 	 * @param WooPaymentsCheckoutAssets         $checkout_assets          Checkout scripts and their config.
 	 * @param Eligibility                       $woopay_eligibility       WooPay eligibility rules.
@@ -133,10 +124,9 @@ final class WooPayments extends AbstractPaymentMethodType {
 	 * @param WooPaymentsFraudPreventionService $fraud_prevention_service Fraud-prevention token service.
 	 * @param WooPaymentsFrontendAssets         $frontend_assets          Registrar of the shared shopper script handles.
 	 */
-	public function __construct( Api $asset_api, WooPaymentsGateway $payment_gateway, WooPaymentsRuntimeArbiter $arbiter, WooPaymentsProvider $provider, WooPaymentsCheckoutAssets $checkout_assets, Eligibility $woopay_eligibility, WooPaymentsExpressCheckoutService $express_checkout_service, WooPaymentsFraudPreventionService $fraud_prevention_service, WooPaymentsFrontendAssets $frontend_assets ) {
+	public function __construct( Api $asset_api, WooPaymentsGateway $payment_gateway, WooPaymentsProvider $provider, WooPaymentsCheckoutAssets $checkout_assets, Eligibility $woopay_eligibility, WooPaymentsExpressCheckoutService $express_checkout_service, WooPaymentsFraudPreventionService $fraud_prevention_service, WooPaymentsFrontendAssets $frontend_assets ) {
 		$this->asset_api                = $asset_api;
 		$this->payment_gateway          = $payment_gateway;
-		$this->arbiter                  = $arbiter;
 		$this->provider                 = $provider;
 		$this->checkout_assets          = $checkout_assets;
 		$this->woopay_eligibility       = $woopay_eligibility;
@@ -174,13 +164,14 @@ final class WooPayments extends AbstractPaymentMethodType {
 	/**
 	 * Returns if this payment method should be active. If false, the scripts will not be enqueued.
 	 *
+	 * The gateway's availability, as in client 11.2.0 (class-wc-payments-blocks-payment-method.php:45-47). It already
+	 * requires the active tier, which only a store the built-in WooPayments owns reaches, and a provider that can take
+	 * payments, whose account check is the checkout assets' one.
+	 *
 	 * @return boolean
 	 */
 	public function is_active() {
-		return $this->arbiter->is_builtin_owner() &&
-			$this->provider->can_process_payments() &&
-			$this->checkout_assets->should_expose_checkout_surface() &&
-			$this->payment_gateway->is_available();
+		return $this->payment_gateway->is_available();
 	}
 
 	/**
