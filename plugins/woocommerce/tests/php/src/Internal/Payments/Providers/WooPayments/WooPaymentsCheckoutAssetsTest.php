@@ -476,11 +476,12 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 
 	/**
 	 * The WooPay objects read these keys on pages that have no card config, so building them reads only what the keys need.
-	 * The real tracking flag reads the account data once; the account service may refresh and store that cache when it is
-	 * due, as on every page that prints these keys. With a fresh cache nothing is written, and nothing builds the customer
-	 * data, the styles version or the WooPay config, or touches the session.
+	 * With the real tracking controller over an account stub that writes nothing, the account data is read once (for the
+	 * tracking flag), no option is written, and nothing builds the customer data, the styles version or the WooPay config,
+	 * or touches the session. The real account accessor can still write (a due cache refresh, or the dev-mode onboarding
+	 * flag); that is the account service's own behaviour, covered by its tests.
 	 *
-	 * @testdox The shared script config carries the eight keys both checkout scripts read and reads only what they need, test mode $test_mode.
+	 * @testdox The shared script config carries the eight keys both checkout scripts read and reads only what they need over a non-writing account stub, test mode $test_mode.
 	 * @testWith [true]
 	 *           [false]
 	 *
@@ -574,7 +575,7 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 		$this->assertSame( $test_mode, $config['testMode'], 'The express OTP iframe opens in the account mode.' );
 		$this->assertSame( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsClientVersion::VERSION, $config['wcpayVersionNumber'] );
 		$this->assertSame( 1, $account_reads, 'The account data is read once, for the tracking flag.' );
-		$this->assertSame( 0, $option_writes, 'No option is written while the account cache is fresh.' );
+		$this->assertSame( 0, $option_writes, 'No option is written by the method itself.' );
 		$this->assertSame( 0, $session->calls, 'The session is not read or written.' );
 	}
 
