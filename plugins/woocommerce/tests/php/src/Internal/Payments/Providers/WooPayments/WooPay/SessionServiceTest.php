@@ -206,6 +206,73 @@ class SessionServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * Blocks pages, the button context the Blocks integration gives them, the WooPay cart and checkout location settings,
+	 * and whether client 11.2.0 shows WooPay there (class-wc-payments-woopay-button-handler.php:272-280).
+	 *
+	 * @return array<string,array{0:string,1:string|null,2:string,3:bool,4:bool,5:bool}>
+	 */
+	public function provide_woopay_locations_by_blocks_page(): array {
+		$cart     = '<!-- wp:woocommerce/cart --><div class="wp-block-woocommerce-cart"></div><!-- /wp:woocommerce/cart -->';
+		$checkout = '<!-- wp:woocommerce/checkout --><div class="wp-block-woocommerce-checkout"></div><!-- /wp:woocommerce/checkout -->';
+
+		return array(
+			'both blocks, cart on, checkout on'    => array( $cart . $checkout, null, 'cart', true, true, true ),
+			'both blocks, cart on, checkout off'   => array( $cart . $checkout, null, 'cart', true, false, false ),
+			'both blocks, cart off, checkout on'   => array( $cart . $checkout, null, 'cart', false, true, false ),
+			'both blocks, cart off, checkout off'  => array( $cart . $checkout, null, 'cart', false, false, false ),
+			'cart page, cart on, checkout off'     => array( $cart, 'woocommerce_cart_page_id', 'cart', true, false, true ),
+			'cart page, cart off, checkout on'     => array( $cart, 'woocommerce_cart_page_id', 'cart', false, true, false ),
+			'checkout page, cart off, checkout on' => array( $checkout, 'woocommerce_checkout_page_id', 'checkout', false, true, true ),
+			'checkout page, cart on, checkout off' => array( $checkout, 'woocommerce_checkout_page_id', 'checkout', true, false, false ),
+		);
+	}
+
+	/**
+	 * @testdox The WooPay button and its Blocks config flag need every WooPay location the page belongs to: $_dataName.
+	 * @dataProvider provide_woopay_locations_by_blocks_page
+	 *
+	 * A page holding both blocks has the cart button context, and is also a checkout. The Blocks integration checks the
+	 * handle with should_show_woopay_button() and builds the flag with get_woopay_frontend_config(), both for that context.
+	 *
+	 * A separate process, because an earlier test can define WOOCOMMERCE_CART or WOOCOMMERCE_CHECKOUT for the rest of the run.
+	 *
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 *
+	 * @param string      $content     Page content.
+	 * @param string|null $page_option WooCommerce page option pointing at the page, or null for none.
+	 * @param string      $context     Button context the Blocks integration gives the page.
+	 * @param bool        $cart_on     Whether the cart location lists WooPay.
+	 * @param bool        $checkout_on Whether the checkout location lists WooPay.
+	 * @param bool        $expected    Whether WooPay shows.
+	 */
+	public function test_woopay_needs_every_location_of_the_page( string $content, ?string $page_option, string $context, bool $cart_on, bool $checkout_on, bool $expected ): void {
+		update_option( 'woocommerce_enable_guest_checkout', 'yes' );
+		$page_id = self::factory()->post->create(
+			array(
+				'post_type'    => 'page',
+				'post_status'  => 'publish',
+				'post_content' => $content,
+			)
+		);
+		if ( null !== $page_option ) {
+			update_option( $page_option, $page_id );
+		}
+		$this->reset_cart_checkout_page_cache();
+		$this->go_to( get_permalink( $page_id ) );
+
+		$sut = $this->create_service(
+			array(
+				'express_checkout_cart_methods'     => $cart_on ? array( 'woopay' ) : array(),
+				'express_checkout_checkout_methods' => $checkout_on ? array( 'woopay' ) : array(),
+			)
+		);
+
+		$this->assertSame( $expected, $this->woopay_eligibility->should_show_woopay_button( $context ), 'The Blocks WooPay handle check.' );
+		$this->assertSame( $expected, $sut->get_woopay_frontend_config( $context )['shouldShowWooPayButton'], 'The Blocks config flag.' );
+	}
+
+	/**
 	 * @testdox Should generate the reference WooPay request signature.
 	 */
 	public function test_generates_reference_request_signature(): void {

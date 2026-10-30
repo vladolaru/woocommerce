@@ -148,9 +148,12 @@ class Eligibility {
 			return false;
 		}
 
+		// The cart context also covers a page that is a checkout, which must allow WooPay as well: client 11.2.0 checks the
+		// checkout and cart locations independently (class-wc-payments-woopay-button-handler.php:272-280).
 		if (
 			! $this->is_woopay_country_available() ||
-			! $this->is_woopay_express_checkout_configured_at( $context )
+			! $this->is_woopay_express_checkout_configured_at( $context ) ||
+			( 'cart' === $context && ( is_checkout() || has_block( 'woocommerce/checkout' ) ) && ! $this->is_woopay_express_checkout_configured_at( 'checkout' ) )
 		) {
 			return false;
 		}
