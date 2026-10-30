@@ -146,13 +146,13 @@ describe( 'CurrencySettingsModal', () => {
 			path: '/wc/v3/payments/multi-currency/currencies/EUR',
 		} );
 		expect(
-			await screen.findByRole( 'heading', {
-				name: 'Manage Euro settings',
+			await screen.findByRole( 'radio', {
+				name: 'Fetch rates automatically',
 			} )
-		).toBeInTheDocument();
-		expect(
-			screen.getByRole( 'radio', { name: 'Fetch rates automatically' } )
 		).toBeChecked();
+		expect(
+			screen.getByRole( 'heading', { name: 'Manage Euro settings' } )
+		).toBeInTheDocument();
 		expect(
 			screen.queryByLabelText( 'Manual rate' )
 		).not.toBeInTheDocument();
@@ -168,8 +168,8 @@ describe( 'CurrencySettingsModal', () => {
 			'polite'
 		);
 		expect(
-			await screen.findByRole( 'heading', {
-				name: 'Manage Euro settings',
+			await screen.findByRole( 'radio', {
+				name: 'Fetch rates automatically',
 			} )
 		).toBeInTheDocument();
 	} );
