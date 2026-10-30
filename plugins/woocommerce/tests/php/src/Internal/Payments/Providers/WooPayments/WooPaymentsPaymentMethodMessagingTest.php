@@ -394,6 +394,9 @@ class WooPaymentsPaymentMethodMessagingTest extends WC_Unit_Test_Case {
 		);
 		$this->assertContains( 'stripe', wp_scripts()->registered[ self::CART_BLOCK_SCRIPT_HANDLE ]->deps );
 		$this->assertContains( 'wc-blocks-checkout', wp_scripts()->registered[ self::CART_BLOCK_SCRIPT_HANDLE ]->deps );
+		// The script reads the appearance utility as a build external, so the handle must be registered and listed.
+		$this->assertContains( WooPaymentsFrontendAssets::APPEARANCE_SCRIPT_HANDLE, wp_scripts()->registered[ self::CART_BLOCK_SCRIPT_HANDLE ]->deps );
+		$this->assertTrue( wp_script_is( WooPaymentsFrontendAssets::APPEARANCE_SCRIPT_HANDLE, 'registered' ) );
 		$this->assertTrue( wp_style_is( self::CART_BLOCK_STYLE_HANDLE, 'enqueued' ) );
 		$this->assertStringContainsString(
 			'/assets/client/blocks/wc-woopayments-cart-block-payment-method-messaging.css',

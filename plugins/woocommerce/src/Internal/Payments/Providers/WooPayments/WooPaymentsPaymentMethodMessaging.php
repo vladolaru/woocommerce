@@ -297,6 +297,7 @@ class WooPaymentsPaymentMethodMessaging implements RegisterHooksInterface {
 	 */
 	private function register_site_messaging_assets( bool $is_cart_block ): void {
 		$this->frontend_assets->register_stripe_script();
+		$this->frontend_assets->register_appearance_script();
 
 		if ( $is_cart_block ) {
 			$this->register_cart_block_assets();
@@ -304,8 +305,6 @@ class WooPaymentsPaymentMethodMessaging implements RegisterHooksInterface {
 		}
 
 		$suffix = Constants::is_true( 'SCRIPT_DEBUG' ) ? '' : '.min';
-
-		$this->frontend_assets->register_appearance_script();
 
 		if ( ! wp_script_is( self::SCRIPT_HANDLE, 'registered' ) ) {
 			wp_register_script(
@@ -340,6 +339,8 @@ class WooPaymentsPaymentMethodMessaging implements RegisterHooksInterface {
 					WooPaymentsFrontendAssets::STRIPE_SCRIPT_HANDLE,
 					'react-jsx-runtime',
 					'wc-blocks-checkout',
+					// The appearance utility is a build external of this script.
+					WooPaymentsFrontendAssets::APPEARANCE_SCRIPT_HANDLE,
 					'wp-data',
 					'wp-element',
 					'wp-plugins',

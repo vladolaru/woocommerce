@@ -292,6 +292,8 @@ final class WooPayments extends AbstractPaymentMethodType {
 	 * @return string The handle, to list as a payment method script.
 	 */
 	private function register_payment_method_assets( string $handle, array $deps ): string {
+		// Each script's asset file lists this handle: the appearance utility is a build external.
+		$this->frontend_assets->register_appearance_script();
 		$this->asset_api->register_script( $handle, 'assets/client/blocks/' . $handle . '.js', $deps );
 		$this->asset_api->register_style( $handle, 'assets/client/blocks/' . $handle . '.css', array(), 'all', true );
 		if ( is_admin() ) {

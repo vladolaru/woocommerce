@@ -378,6 +378,12 @@ const WOOPAYMENTS_SHARED_CHUNK_ENTRIES = [
 	'wc-payment-method-woopayments-express-checkout',
 ];
 
+// The WooPayments Stripe Elements appearance utility already ships as the legacy script behind the
+// `wc-woopayments-appearance` handle, which sets `window.wcpayAppearance`. Blocks scripts load it from there
+// instead of bundling a second copy.
+const isWooPaymentsAppearanceRequest = ( request ) =>
+	/[\\/]woopayments-appearance(\.js)?$/.test( request );
+
 /**
  * Build config for built-in payment gateway integrations.
  *
@@ -455,7 +461,7 @@ const getPaymentsConfig = ( options = {} ) => {
 					// dependencies: the common helpers for all three, and the WooPay email check for card and WooPay only,
 					// so the cart page (express alone) does not load it.
 					woopaymentsCommon: {
-						test: /woopayments[\\/](upe-styles|tracks|wait-for-stripe)\.js$|woopayments-appearance\.js$/,
+						test: /woopayments[\\/](upe-styles|tracks|wait-for-stripe)\.js$/,
 						chunks: ( chunk ) =>
 							WOOPAYMENTS_SHARED_CHUNK_ENTRIES.includes(
 								chunk.name
@@ -482,14 +488,24 @@ const getPaymentsConfig = ( options = {} ) => {
 				// the `wc-woopayments-fingerprintjs` handle, which sets
 				// `window.FingerprintJS`. Load it from there instead of
 				// bundling a second copy into the WooPayments card script.
-				dependencyRequestToExternal: ( request ) =>
-					request === '@fingerprintjs/fingerprintjs'
-						? 'FingerprintJS'
-						: requestToExternal( request ),
-				dependencyRequestToHandle: ( request ) =>
-					request === '@fingerprintjs/fingerprintjs'
-						? 'wc-woopayments-fingerprintjs'
-						: requestToHandle( request ),
+				dependencyRequestToExternal: ( request ) => {
+					if ( request === '@fingerprintjs/fingerprintjs' ) {
+						return 'FingerprintJS';
+					}
+					if ( isWooPaymentsAppearanceRequest( request ) ) {
+						return 'wcpayAppearance';
+					}
+					return requestToExternal( request );
+				},
+				dependencyRequestToHandle: ( request ) => {
+					if ( request === '@fingerprintjs/fingerprintjs' ) {
+						return 'wc-woopayments-fingerprintjs';
+					}
+					if ( isWooPaymentsAppearanceRequest( request ) ) {
+						return 'wc-woopayments-appearance';
+					}
+					return requestToHandle( request );
+				},
 			} ),
 			new ProgressBarPlugin(
 				getProgressBarPluginConfig( 'Payment Method Extensions' )
@@ -569,6 +585,15 @@ const getExtensionsConfig = ( options = {} ) => {
 		plugins: [
 			...getSharedPlugins( {
 				bundleAnalyzerReportTitle: 'Experimental Extensions',
+				// The WooPayments Cart block messaging imports the appearance utility too.
+				dependencyRequestToExternal: ( request ) =>
+					isWooPaymentsAppearanceRequest( request )
+						? 'wcpayAppearance'
+						: requestToExternal( request ),
+				dependencyRequestToHandle: ( request ) =>
+					isWooPaymentsAppearanceRequest( request )
+						? 'wc-woopayments-appearance'
+						: requestToHandle( request ),
 			} ),
 			new ProgressBarPlugin(
 				getProgressBarPluginConfig( 'Experimental Extensions' )
