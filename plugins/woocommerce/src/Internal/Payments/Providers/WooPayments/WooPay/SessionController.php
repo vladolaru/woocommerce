@@ -996,14 +996,15 @@ class SessionController implements RegisterHooksInterface {
 	/**
 	 * Tell whether the current request renders a Blocks cart or checkout page.
 	 *
-	 * It reads the page content only, so a page whose block comes from a template loads the classic script, which finds no
+	 * It reads the page content, so a page whose block comes from a template loads the classic script, which finds no
 	 * markup, as client 11.2.0 loads its classic WooPay scripts on every Blocks page; a page holding the block skips it, except
-	 * a cart where direct checkout runs, which still loads it with the full cart config.
+	 * a cart where direct checkout runs, which still loads it with the full cart config. A page holding the Cart block that is
+	 * also a checkout keeps it, for its classic checkout form's save-user fields (client class-woopay-save-user.php:45).
 	 *
 	 * @return bool
 	 */
 	private function is_block_cart_or_checkout_surface(): bool {
-		return has_block( 'woocommerce/cart' ) || has_block( 'woocommerce/checkout' );
+		return has_block( 'woocommerce/checkout' ) || ( has_block( 'woocommerce/cart' ) && ! is_checkout() );
 	}
 
 	/**
