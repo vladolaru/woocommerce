@@ -7050,21 +7050,21 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 *
 	 * @param array<string,mixed> $config            Config the double returns for the payment form.
 	 * @param bool                $can_take_payments Whether the account can take payments.
-	 * @param callable|null       $on_enqueue        Optional callback that receives the supports and payment method definition the gateway passes.
+	 * @param callable|null       $on_enqueue        Optional callback that receives the supports the gateway enqueues the assets with.
 	 * @return WooPaymentsCheckoutAssets
 	 */
 	private function create_checkout_assets_double( array $config = array(), bool $can_take_payments = true, ?callable $on_enqueue = null ): WooPaymentsCheckoutAssets {
 		$assets = $this->getMockBuilder( WooPaymentsCheckoutAssets::class )
 			->disableOriginalConstructor()
-			->onlyMethods( array( 'enqueue_classic_checkout_assets_for_fields', 'should_expose_checkout_surface' ) )
+			->onlyMethods( array( 'get_payment_fields_config', 'enqueue_payment_fields_assets', 'should_expose_checkout_surface' ) )
 			->getMock();
-		$assets->method( 'enqueue_classic_checkout_assets_for_fields' )->willReturnCallback(
-			static function ( array $supports, $payment_method_definition = null ) use ( $config, $on_enqueue ): array {
+		$assets->method( 'get_payment_fields_config' )->willReturn( $config );
+		$assets->method( 'enqueue_payment_fields_assets' )->willReturnCallback(
+			static function ( array $enqueued_config, array $supports ) use ( $on_enqueue ): void {
+				unset( $enqueued_config );
 				if ( null !== $on_enqueue ) {
-					$on_enqueue( $supports, $payment_method_definition );
+					$on_enqueue( $supports );
 				}
-
-				return $config;
 			}
 		);
 		$assets->method( 'should_expose_checkout_surface' )->willReturn( $can_take_payments );

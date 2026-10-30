@@ -798,8 +798,10 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 	 */
 	private function render_payment_form( ?callable $render_saved_payment_methods = null ): void {
 		$checkout_assets = $this->get_checkout_assets();
-		$config          = $checkout_assets->enqueue_classic_checkout_assets_for_fields( $this->get_card_gateway_supports(), $this->payment_method_definition );
-		$json_config     = wp_json_encode( $config );
+		$supports        = $this->get_card_gateway_supports();
+		$config          = $checkout_assets->get_payment_fields_config( $supports, $this->payment_method_definition );
+		$checkout_assets->enqueue_payment_fields_assets( $config, $supports );
+		$json_config = wp_json_encode( $config );
 
 		if ( ! is_string( $json_config ) ) {
 			$json_config = '{}';

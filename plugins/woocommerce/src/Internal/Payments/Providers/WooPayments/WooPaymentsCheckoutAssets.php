@@ -345,7 +345,7 @@ class WooPaymentsCheckoutAssets {
 			return;
 		}
 
-		$this->enqueue_classic_checkout_assets( $this->get_payment_fields_js_config( $supports ), $supports );
+		$this->enqueue_payment_fields_assets( $this->get_payment_fields_js_config( $supports ), $supports );
 	}
 
 	/**
@@ -549,19 +549,17 @@ class WooPaymentsCheckoutAssets {
 	}
 
 	/**
-	 * Enqueue the classic checkout assets for one gateway's payment fields and return the config localized for it.
+	 * Get one gateway's classic payment fields config, which the gateway prints in its payment form and localizes with
+	 * enqueue_payment_fields_assets(). The config base is built once per request for the same inputs.
 	 *
-	 * The gateway prints this config in its payment form. The config base is built once per request for the same inputs.
+	 * @since 11.2.0
 	 *
 	 * @param string[]                     $supports                  Card gateway support features.
 	 * @param PaymentMethodDefinition|null $payment_method_definition Optional payment method definition.
 	 * @return array<string,mixed>
 	 */
-	public function enqueue_classic_checkout_assets_for_fields( array $supports, ?PaymentMethodDefinition $payment_method_definition = null ): array {
-		$config = $this->complete_payment_fields_js_config( $this->get_payment_list_config_base( $supports ), $payment_method_definition );
-		$this->enqueue_classic_checkout_assets( $config, $supports );
-
-		return $config;
+	public function get_payment_fields_config( array $supports, ?PaymentMethodDefinition $payment_method_definition = null ): array {
+		return $this->complete_payment_fields_js_config( $this->get_payment_list_config_base( $supports ), $payment_method_definition );
 	}
 
 	/**
@@ -777,12 +775,14 @@ class WooPaymentsCheckoutAssets {
 	}
 
 	/**
-	 * Localize and enqueue the shared classic checkout assets.
+	 * Localize a gateway's payment fields config on the classic checkout script and enqueue the classic checkout assets.
 	 *
-	 * @param array<string,mixed> $config   Checkout configuration.
-	 * @param string[]            $supports Card gateway support features.
+	 * @since 11.2.0
+	 *
+	 * @param array<string,mixed> $config   Payment fields config, as get_payment_fields_config() returns it.
+	 * @param string[]            $supports Card gateway support features; the script needs tokenization-form.js when they include tokenization.
 	 */
-	private function enqueue_classic_checkout_assets( array $config, array $supports ): void {
+	public function enqueue_payment_fields_assets( array $config, array $supports ): void {
 		$this->register_classic_assets( $supports );
 		// The checkout script reads the card gateway's config from the base object, so it is localized once.
 		if ( WooPaymentsPersistenceVocabulary::GATEWAY_ID === $config['gatewayId'] ) {

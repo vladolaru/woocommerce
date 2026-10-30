@@ -20,6 +20,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFr
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFraudPreventionService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFraudService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSessionService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\PaymentMethodDefinition;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\PaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\SessionService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExpressCheckoutService;
@@ -186,6 +187,53 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox On $label, the payment fields config filter runs $expected_on_fields time(s) for the fields and $expected_after_form time(s) after the checkout form.
+	 *
+	 * The fallback on woocommerce_after_checkout_form checks whether the card config is already localized before it
+	 * builds, so the filter runs once per classic checkout page whether or not the card fields rendered.
+	 *
+	 * @testWith ["a checkout with card fields", true, 1, 0]
+	 *           ["a checkout without WooPayments fields", false, 0, 1]
+	 *
+	 * @param string $label               Case description.
+	 * @param bool   $render_fields       Whether the card gateway renders its payment fields.
+	 * @param int    $expected_on_fields  Filter calls while the fields render.
+	 * @param int    $expected_after_form Filter calls on woocommerce_after_checkout_form.
+	 */
+	public function test_payment_fields_config_filter_runs_once_per_checkout_render( string $label, bool $render_fields, int $expected_on_fields, int $expected_after_form ): void {
+		unset( $label );
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
+		$sut = new WooPaymentsCheckoutAssets();
+		$sut->init( $this->create_account_service( true ), $this->create_woopay_session_service( false ), $this->create_woopay_eligibility( false ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller(), new PaymentMethodRegistry() );
+		$filtered = 0;
+		add_filter(
+			'wcpay_payment_fields_js_config',
+			static function ( $config ) use ( &$filtered ) {
+				++$filtered;
+				return $config;
+			}
+		);
+
+		try {
+			$gateway = $this->create_card_gateway( $sut );
+			ob_start();
+			if ( $render_fields ) {
+				$gateway->form();
+			}
+			$on_fields = $filtered;
+			/** This action is documented in templates/checkout/form-checkout.php */
+			do_action( 'woocommerce_after_checkout_form', WC()->checkout() );
+			ob_end_clean();
+		} finally {
+			delete_option( 'woocommerce_' . WooPaymentsPersistenceVocabulary::GATEWAY_ID . '_settings' );
+			update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'no' );
+		}
+
+		$this->assertSame( $expected_on_fields, $on_fields, 'Filter calls while the payment fields render.' );
+		$this->assertSame( $expected_after_form, $filtered - $on_fields, 'Filter calls on woocommerce_after_checkout_form.' );
+	}
+
+	/**
 	 * Build the card gateway on the given checkout assets, with saved cards on, so it adds its classic checkout fallback hooks.
 	 *
 	 * @param WooPaymentsCheckoutAssets $assets Checkout assets under test.
@@ -203,6 +251,21 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 		$gateway->init( $this->createMock( PaymentProcessingService::class ), $provider, $assets );
 
 		return $gateway;
+	}
+
+	/**
+	 * Render one gateway's classic payment fields as the gateway does: build the config, then enqueue the assets with it.
+	 *
+	 * @param WooPaymentsCheckoutAssets    $assets     Checkout assets under test.
+	 * @param string[]                     $supports   Card gateway support features.
+	 * @param PaymentMethodDefinition|null $definition Payment method definition.
+	 * @return array<string,mixed> The config the gateway prints in its form.
+	 */
+	private static function render_payment_fields( WooPaymentsCheckoutAssets $assets, array $supports, ?PaymentMethodDefinition $definition = null ): array {
+		$config = $assets->get_payment_fields_config( $supports, $definition );
+		$assets->enqueue_payment_fields_assets( $config, $supports );
+
+		return $config;
 	}
 
 	/**
@@ -1535,7 +1598,7 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 		$assets = new WooPaymentsCheckoutAssets();
 		$assets->init( $this->create_account_service( true ), $this->create_woopay_session_service( false ), $this->create_woopay_eligibility( false ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller(), new PaymentMethodRegistry() );
 
-		$assets->enqueue_classic_checkout_assets_for_fields( array( 'products', 'tokenization' ) );
+		self::render_payment_fields( $assets, array( 'products', 'tokenization' ) );
 
 		// Client 11.1.0 includes/class-wc-payments-checkout.php:130-131: WordPress then prints tokenization-form.js first,
 		// so its listener is bound before the checkout script mounts the card element.
@@ -1555,7 +1618,7 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 		$assets = new WooPaymentsCheckoutAssets();
 		$assets->init( $this->create_account_service( true ), $this->create_woopay_session_service( false ), $this->create_woopay_eligibility( false ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller(), new PaymentMethodRegistry() );
 
-		$assets->enqueue_classic_checkout_assets_for_fields( self::CARD_SUPPORTS );
+		self::render_payment_fields( $assets, self::CARD_SUPPORTS );
 
 		$this->assertNotContains( 'woocommerce-tokenization-form', wp_scripts()->registered['wc-woopayments-checkout']->deps );
 		$this->assertFalse( wp_script_is( 'woocommerce-tokenization-form', 'registered' ) );
@@ -1574,7 +1637,7 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 
 		$payment_method_registry = new PaymentMethodRegistry();
 
-		$assets->enqueue_classic_checkout_assets_for_fields( self::CARD_SUPPORTS, $payment_method_registry->get( 'ideal' ) );
+		self::render_payment_fields( $assets, self::CARD_SUPPORTS, $payment_method_registry->get( 'ideal' ) );
 
 		$checkout_script = wp_scripts()->registered['wc-woopayments-checkout'];
 		$this->assertTrue( wp_script_is( 'wc-woopayments-checkout', 'enqueued' ) );
@@ -1601,7 +1664,7 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 
 		$payment_method_registry = new PaymentMethodRegistry();
 
-		$assets->enqueue_classic_checkout_assets_for_fields( self::CARD_SUPPORTS, $payment_method_registry->get( 'klarna' ) );
+		self::render_payment_fields( $assets, self::CARD_SUPPORTS, $payment_method_registry->get( 'klarna' ) );
 
 		$script_data = (string) wp_scripts()->get_data( 'wc-woopayments-checkout', 'data' );
 
@@ -1680,7 +1743,7 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 			return $config;
 		};
 		$render   = static function ( array $supports, string $payment_method_id = 'card' ) use ( $assets, $registry ): array {
-			return $assets->enqueue_classic_checkout_assets_for_fields( $supports, $registry->get( $payment_method_id ) );
+			return self::render_payment_fields( $assets, $supports, $registry->get( $payment_method_id ) );
 		};
 		add_filter( 'wc_payments_account_id_for_intent_confirmation', $count );
 		add_filter( 'wcpay_payment_fields_js_config', $filter );
@@ -2523,7 +2586,7 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 			$this->create_fraud_prevention_service( true, $session )
 		);
 
-		$assets->enqueue_classic_checkout_assets_for_fields( self::CARD_SUPPORTS );
+		self::render_payment_fields( $assets, self::CARD_SUPPORTS );
 
 		$this->assertTrue( wp_script_is( WooPaymentsFraudPreventionService::TOKEN_NAME, 'enqueued' ) );
 		$inline_scripts = wp_scripts()->registered[ WooPaymentsFraudPreventionService::TOKEN_NAME ]->extra['after'] ?? array();
