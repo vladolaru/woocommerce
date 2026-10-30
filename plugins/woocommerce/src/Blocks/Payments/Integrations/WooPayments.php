@@ -205,55 +205,25 @@ final class WooPayments extends AbstractPaymentMethodType {
 			// The card script's asset file lists this handle: FingerprintJS is a build external.
 			$this->frontend_assets->register_fingerprint_script();
 
-			$this->asset_api->register_script(
+			$handles[] = $this->register_payment_method_assets(
 				self::PAYMENT_METHOD_SCRIPT_HANDLE,
-				'assets/client/blocks/wc-payment-method-woopayments.js',
 				array_merge( array( WooPaymentsFrontendAssets::STRIPE_SCRIPT_HANDLE, self::CHECKOUT_BLOCKS_SCRIPT_HANDLE ), $this->register_common_scripts( true ) )
 			);
-			$this->asset_api->register_style(
-				self::PAYMENT_METHOD_SCRIPT_HANDLE,
-				'assets/client/blocks/wc-payment-method-woopayments.css',
-				array(),
-				'all',
-				true
-			);
-			$this->maybe_enqueue_blocks_payment_style( self::PAYMENT_METHOD_SCRIPT_HANDLE );
-			$handles[] = self::PAYMENT_METHOD_SCRIPT_HANDLE;
 		}
 
-		if ( $this->is_base_gateway_integration() && $this->should_enqueue_woopay_assets() ) {
-			$this->asset_api->register_script(
+		if ( $this->is_card_gateway() && $this->should_enqueue_woopay_assets() ) {
+			$handles[] = $this->register_payment_method_assets(
 				self::WOOPAY_SCRIPT_HANDLE,
-				'assets/client/blocks/wc-payment-method-woopayments-woopay.js',
 				array_merge( array( self::CHECKOUT_BLOCKS_SCRIPT_HANDLE ), $this->register_common_scripts( true ) )
 			);
-			$this->asset_api->register_style(
-				self::WOOPAY_SCRIPT_HANDLE,
-				'assets/client/blocks/wc-payment-method-woopayments-woopay.css',
-				array(),
-				'all',
-				true
-			);
-			$this->maybe_enqueue_blocks_payment_style( self::WOOPAY_SCRIPT_HANDLE );
-			$handles[] = self::WOOPAY_SCRIPT_HANDLE;
 		}
 
-		if ( $this->is_base_gateway_integration() && $this->should_enqueue_express_checkout_assets() ) {
+		if ( $this->is_card_gateway() && $this->should_enqueue_express_checkout_assets() ) {
 			$this->frontend_assets->register_stripe_script();
-			$this->asset_api->register_script(
+			$handles[] = $this->register_payment_method_assets(
 				self::EXPRESS_CHECKOUT_SCRIPT_HANDLE,
-				'assets/client/blocks/wc-payment-method-woopayments-express-checkout.js',
 				array_merge( array( WooPaymentsFrontendAssets::STRIPE_SCRIPT_HANDLE, self::CHECKOUT_BLOCKS_SCRIPT_HANDLE ), $this->register_common_scripts( false ) )
 			);
-			$this->asset_api->register_style(
-				self::EXPRESS_CHECKOUT_SCRIPT_HANDLE,
-				'assets/client/blocks/wc-payment-method-woopayments-express-checkout.css',
-				array(),
-				'all',
-				true
-			);
-			$this->maybe_enqueue_blocks_payment_style( self::EXPRESS_CHECKOUT_SCRIPT_HANDLE );
-			$handles[] = self::EXPRESS_CHECKOUT_SCRIPT_HANDLE;
 		}
 
 		$handles[] = self::FRAUD_SCRIPTS_SCRIPT_HANDLE;
@@ -275,7 +245,7 @@ final class WooPayments extends AbstractPaymentMethodType {
 			)
 		);
 
-		if ( $this->is_base_gateway_integration() && $this->should_enqueue_express_checkout_assets() ) {
+		if ( $this->is_card_gateway() && $this->should_enqueue_express_checkout_assets() ) {
 			$data['expressCheckoutParams'] = $this->express_checkout_service->get_express_checkout_params( $this->get_button_context() );
 		}
 
@@ -290,7 +260,7 @@ final class WooPayments extends AbstractPaymentMethodType {
 	 * @return string[]
 	 */
 	private function get_card_gateway_supports(): array {
-		if ( WooPaymentsPersistenceVocabulary::GATEWAY_ID === $this->payment_gateway->id ) {
+		if ( $this->is_card_gateway() ) {
 			return $this->payment_gateway->supports;
 		}
 
@@ -321,25 +291,32 @@ final class WooPayments extends AbstractPaymentMethodType {
 	}
 
 	/**
-	 * Tell whether this integration represents the base WooPayments card gateway.
+	 * Register a WooPayments Blocks payment method script and its style, both named for the handle.
 	 *
-	 * @return bool
+	 * The style is enqueued here only in admin, where the block editor previews the cart and checkout without rendering them;
+	 * on the front end it is enqueued when the Cart or Checkout block renders (enqueue_styles_for_rendered_block()).
+	 *
+	 * @param string   $handle Script and style handle, also the file name of both under assets/client/blocks/.
+	 * @param string[] $deps   Script dependencies.
+	 * @return string The handle, to list as a payment method script.
 	 */
-	private function is_base_gateway_integration(): bool {
-		return WooPaymentsPersistenceVocabulary::GATEWAY_ID === $this->name;
-	}
-
-	/**
-	 * Enqueue a Blocks payment style in the block editor, which previews the cart and checkout without rendering them.
-	 *
-	 * On the front end the style follows the block render instead (enqueue_styles_for_rendered_block()).
-	 *
-	 * @param string $handle Style handle.
-	 */
-	private function maybe_enqueue_blocks_payment_style( string $handle ): void {
+	private function register_payment_method_assets( string $handle, array $deps ): string {
+		$this->asset_api->register_script( $handle, 'assets/client/blocks/' . $handle . '.js', $deps );
+		$this->asset_api->register_style( $handle, 'assets/client/blocks/' . $handle . '.css', array(), 'all', true );
 		if ( is_admin() ) {
 			wp_enqueue_style( $handle );
 		}
+
+		return $handle;
+	}
+
+	/**
+	 * Tell whether this payment method stands for the WooPayments card gateway, which also carries WooPay and express checkout.
+	 *
+	 * @return bool
+	 */
+	private function is_card_gateway(): bool {
+		return WooPaymentsPersistenceVocabulary::GATEWAY_ID === $this->payment_gateway->id;
 	}
 
 	/**
