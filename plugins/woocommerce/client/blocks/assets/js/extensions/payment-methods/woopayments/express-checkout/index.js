@@ -17,15 +17,19 @@ import { addQueryArgs } from '@wordpress/url';
  * Internal dependencies
  */
 import { recordWooPaymentsUserEvent } from '../tracks';
-import { waitForStripe } from '../wait-for-stripe';
+import {
+	confirmWithStripe,
+	expressCheckout,
+	parseConfirmationHash,
+	waitForStripe,
+} from '../common';
 import { getBlocksCheckoutAppearance } from '../upe-styles';
 import { transformPrice } from './transform-price';
 import { registerSubscriptionsCompatibility } from './compatibility/wc-subscriptions';
+import { PAYMENT_METHOD_NAME, REFRESH_UI_NAMESPACE } from '../constants';
 
-const PAYMENT_METHOD_NAME = 'woocommerce_payments';
 const EXPRESS_CHECKOUT_PAYMENT_METHOD_NAME =
 	'woocommerce_payments_express_checkout';
-const REFRESH_UI_NAMESPACE = 'woopayments/express-checkout/refresh-ui';
 const settings = getPaymentMethodData( PAYMENT_METHOD_NAME, {} );
 const params = settings?.expressCheckoutParams || {};
 
@@ -668,53 +672,6 @@ const checkPaymentMethodIsAvailable = async ( method, cart ) => {
 	return Boolean( availablePaymentMethods?.[ method ] );
 };
 
-const splitName = ( name = '' ) => {
-	const parts = name.trim().split( /\s+/ ).filter( Boolean );
-
-	return {
-		first_name: parts.shift() || '',
-		last_name: parts.join( ' ' ),
-	};
-};
-
-const normalizeAddress = ( address = {}, fallback = {} ) => ( {
-	first_name: address.first_name || fallback.first_name || '',
-	last_name: address.last_name || fallback.last_name || '',
-	company: address.company || fallback.company || '',
-	address_1: address.address_1 || address.line1 || fallback.address_1 || '',
-	address_2: address.address_2 || address.line2 || fallback.address_2 || '',
-	city: address.city || fallback.city || '',
-	state: address.state || fallback.state || '',
-	postcode:
-		address.postcode || address.postal_code || fallback.postcode || '',
-	country: address.country || fallback.country || '',
-	email: address.email || fallback.email || '',
-	phone: address.phone || fallback.phone || '',
-} );
-
-const normalizePhone = ( phone ) => ( phone || '' ).replace( /[() -]/g, '' );
-
-const getWalletBillingPhone = ( event ) =>
-	normalizePhone( event?.billingDetails?.phone || event?.payerPhone );
-
-const getBillingAddress = ( event, billing ) => {
-	const eventBillingDetails = event?.billingDetails;
-	const nameParts = splitName( eventBillingDetails?.name || '' );
-
-	// Some wallets provide a single name; checkout requires a last name.
-	nameParts.last_name = nameParts.last_name || '-';
-
-	return normalizeAddress(
-		{
-			...nameParts,
-			email: eventBillingDetails?.email || '',
-			phone: getWalletBillingPhone( event ),
-			...( eventBillingDetails?.address || {} ),
-		},
-		billing?.billingAddress || {}
-	);
-};
-
 const getLineItemName = ( item ) =>
 	[
 		item.name,
@@ -926,9 +883,9 @@ const getCartCurrencyMismatch = ( expectedCurrency, cart ) => {
 };
 
 const getShippingAddressFromEvent = ( event, fallback = {} ) => {
-	const nameParts = splitName( event?.name || '' );
+	const nameParts = expressCheckout.splitName( event?.name );
 
-	return normalizeAddress(
+	return expressCheckout.normalizeAddress(
 		{
 			...nameParts,
 			...( event?.address || {} ),
@@ -1047,16 +1004,13 @@ const requestOrderStatusUpdate = async ( orderId, nonce, intentId ) => {
  * @return {true|Promise<string>} `true` when there is nothing to confirm.
  */
 const confirmIntent = ( redirectUrl ) => {
-	const partials = redirectUrl.match(
-		/#wcpay-confirm-(pi|si):([^:]+):([^:]+):([^:]+)(?::(.+))?$/
-	);
+	const confirmation = parseConfirmationHash( redirectUrl );
 
-	if ( ! partials ) {
+	if ( ! confirmation ) {
 		return true;
 	}
 
-	const [ , intentType, orderId, clientSecret, nonce, confirmationToken ] =
-		partials;
+	const { orderId, nonce } = confirmation;
 
 	const confirmPaymentOrSetup = async () => {
 		const stripe = getStripe();
@@ -1065,17 +1019,7 @@ const confirmIntent = ( redirectUrl ) => {
 			throw new Error( GENERIC_PAYMENT_ERROR_MESSAGE );
 		}
 
-		if ( intentType === 'si' && confirmationToken ) {
-			return stripe.confirmSetup( {
-				clientSecret,
-				confirmParams: {
-					confirmation_token: confirmationToken,
-				},
-				redirect: 'if_required',
-			} );
-		}
-
-		return stripe.handleNextAction( { clientSecret } );
+		return confirmWithStripe( confirmation, stripe );
 	};
 
 	return confirmPaymentOrSetup().then( async ( result ) => {
@@ -1535,7 +1479,8 @@ const ExpressCheckoutContent = ( {
 				const orderNotes = getOrderNotes();
 				// Stripe provides no separate shipping phone, so the
 				// billing one is reused on the shipping address.
-				const walletBillingPhone = getWalletBillingPhone( event );
+				const walletBillingPhone =
+					expressCheckout.getWalletBillingPhone( event );
 				const eventShippingAddress = event?.shippingAddress
 					? {
 							...getShippingAddressFromEvent(
@@ -1567,9 +1512,9 @@ const ExpressCheckoutContent = ( {
 					},
 					data: {
 						payment_method: PAYMENT_METHOD_NAME,
-						billing_address: getBillingAddress(
+						billing_address: expressCheckout.getBillingAddress(
 							event,
-							billingRef.current
+							billingRef.current?.billingAddress
 						),
 						shipping_address: eventShippingAddress || undefined,
 						...( orderNotes ? { customer_note: orderNotes } : {} ),

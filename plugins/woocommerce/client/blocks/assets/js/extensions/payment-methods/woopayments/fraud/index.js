@@ -7,8 +7,7 @@ import { getSetting } from '@woocommerce/settings';
  * Internal dependencies
  */
 import enqueueFraudScripts from '../fraud-scripts';
-
-const PAYMENT_METHOD_NAME = 'woocommerce_payments';
+import { PAYMENT_METHOD_NAME } from '../constants';
 
 /**
  * Get the fraud-services config from the WooPayments Blocks payment method data.

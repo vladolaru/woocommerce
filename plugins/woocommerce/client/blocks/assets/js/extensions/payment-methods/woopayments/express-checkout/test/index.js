@@ -417,7 +417,8 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 		billing.currency.code = 'USD';
 		billing.currency.minorUnit = 2;
 		delete baseExpressCheckoutParams.isShopperTrackingEnabled;
-		delete baseExpressCheckoutParams.is_shopper_tracking_enabled;
+		// The store always sends the flag; the shared Tracks sender reads it by truthiness.
+		baseExpressCheckoutParams.is_shopper_tracking_enabled = true;
 		apiFetch.mockResolvedValue( {
 			payment_result: {
 				payment_status: 'success',

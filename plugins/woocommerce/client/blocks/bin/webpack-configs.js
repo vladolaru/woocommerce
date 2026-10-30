@@ -384,6 +384,13 @@ const WOOPAYMENTS_SHARED_CHUNK_ENTRIES = [
 const isWooPaymentsAppearanceRequest = ( request ) =>
 	/[\\/]woopayments-appearance(\.js)?$/.test( request );
 
+// The WooPayments helpers the card, express and WooPay scripts share on both checkouts are their own entry,
+// `wc-woopayments-common`, which sets `window.wc.woopayments`. Blocks scripts import them as `./common` or
+// `../common` and load them from that handle. Only the bare relative request matches, so the entry's own path and
+// its internal imports stay bundled.
+const isWooPaymentsCommonRequest = ( request ) =>
+	/^(\.\.?\/)+common$/.test( request );
+
 /**
  * Build config for built-in payment gateway integrations.
  *
@@ -456,12 +463,13 @@ const getPaymentsConfig = ( options = {} ) => {
 				automaticNameDelimiter: '--',
 				cacheGroups: {
 					...getCacheGroups(),
-					// The WooPayments card, WooPay and express scripts load together on the checkout block. Code they share
-					// ships once, in chunks src/Blocks/Payments/Integrations/WooPayments.php registers as their
-					// dependencies: the common helpers for all three, and the WooPay email check for card and WooPay only,
-					// so the cart page (express alone) does not load it.
+					// The WooPayments card, WooPay and express scripts load together on the checkout block. Blocks-only code
+					// they share ships once, in chunks src/Blocks/Payments/Integrations/WooPayments.php registers as their
+					// dependencies: the field styles and the Tracks settings reader for all three, and the WooPay email
+					// check for card and WooPay only, so the cart page (express alone) does not load it. The helpers the
+					// classic scripts share too come from the wc-woopayments-common entry instead.
 					woopaymentsCommon: {
-						test: /woopayments[\\/](upe-styles|tracks|wait-for-stripe)\.js$/,
+						test: /woopayments[\\/](upe-styles|tracks)\.js$/,
 						chunks: ( chunk ) =>
 							WOOPAYMENTS_SHARED_CHUNK_ENTRIES.includes(
 								chunk.name
@@ -495,6 +503,9 @@ const getPaymentsConfig = ( options = {} ) => {
 					if ( isWooPaymentsAppearanceRequest( request ) ) {
 						return 'wcpayAppearance';
 					}
+					if ( isWooPaymentsCommonRequest( request ) ) {
+						return [ 'wc', 'woopayments' ];
+					}
 					return requestToExternal( request );
 				},
 				dependencyRequestToHandle: ( request ) => {
@@ -503,6 +514,9 @@ const getPaymentsConfig = ( options = {} ) => {
 					}
 					if ( isWooPaymentsAppearanceRequest( request ) ) {
 						return 'wc-woopayments-appearance';
+					}
+					if ( isWooPaymentsCommonRequest( request ) ) {
+						return 'wc-woopayments-common';
 					}
 					return requestToHandle( request );
 				},

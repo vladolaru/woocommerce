@@ -25,13 +25,18 @@ import {
 	getFontRulesFromPage,
 } from './upe-styles';
 import { recordWooPaymentsUserEvent } from './tracks';
-import { StripeWaitTimeoutError, waitForStripe } from './wait-for-stripe';
+import {
+	confirmWithStripe,
+	parseConfirmationHash,
+	StripeWaitTimeoutError,
+	waitForStripe,
+} from './common';
 import {
 	handleWooPayEmailInput,
 	shouldHandleWooPayEmailInput,
 } from './woopay/email-input-iframe';
+import { PAYMENT_METHOD_NAME } from './constants';
 
-const PAYMENT_METHOD_NAME = 'woocommerce_payments';
 const defaultSettings = getPaymentMethodData( PAYMENT_METHOD_NAME, {} );
 const defaultLabel = __( 'Card', 'woocommerce' );
 const testModeBadgeLabel = __( 'Test Mode', 'woocommerce' );
@@ -366,28 +371,10 @@ const waitForPaymentElementReady = ( readyPromise ) =>
 		} );
 	} );
 
+// The first `#wcpay-confirm-` redirect anywhere in the checkout response.
 const parseConfirmationRedirect = ( value ) => {
 	if ( typeof value === 'string' ) {
-		const match = value.match(
-			/#wcpay-confirm-(pi|si):([^:]+):([^:]+):([^:]+)(?::(.+))?$/
-		);
-
-		if ( ! match ) {
-			return null;
-		}
-
-		const clientSecret = decodeURIComponent( match[ 3 ] );
-
-		return {
-			type: match[ 1 ],
-			orderId: decodeURIComponent( match[ 2 ] ),
-			clientSecret,
-			nonce: decodeURIComponent( match[ 4 ] ),
-			confirmationToken: match[ 5 ]
-				? decodeURIComponent( match[ 5 ] )
-				: '',
-			intentId: clientSecret.split( '_secret_' )[ 0 ],
-		};
+		return parseConfirmationHash( value );
 	}
 
 	if ( ! value || typeof value !== 'object' ) {
@@ -485,25 +472,7 @@ const handleConfirmationResponse = async (
 			return getErrorResponse( emitResponse, confirmationErrorMessage );
 		}
 
-		let result;
-
-		if ( confirmation.type === 'si' ) {
-			result = confirmation.confirmationToken
-				? await stripeClient.confirmSetup( {
-						clientSecret: confirmation.clientSecret,
-						confirmParams: {
-							confirmation_token: confirmation.confirmationToken,
-						},
-						redirect: 'if_required',
-					} )
-				: await stripeClient.handleNextAction( {
-						clientSecret: confirmation.clientSecret,
-					} );
-		} else {
-			result = await stripeClient.handleNextAction( {
-				clientSecret: confirmation.clientSecret,
-			} );
-		}
+		const result = await confirmWithStripe( confirmation, stripeClient );
 
 		const intentId =
 			result.paymentIntent?.id ||

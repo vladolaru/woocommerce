@@ -15,8 +15,8 @@ import {
 	expressCheckoutIframe,
 	showErrorMessage,
 } from './express-checkout-iframe';
+import { PAYMENT_METHOD_NAME } from '../constants';
 
-const PAYMENT_METHOD_NAME = 'woocommerce_payments';
 const settings = getPaymentMethodData( PAYMENT_METHOD_NAME, {} );
 const supportedFeatures = settings.supports ||
 	settings.features || [ 'products' ];

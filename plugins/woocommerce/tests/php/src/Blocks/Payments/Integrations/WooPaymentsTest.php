@@ -59,6 +59,7 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 		wp_deregister_script( 'stripe' );
 		wp_deregister_script( 'wc-woopayments-fingerprintjs' );
 		wp_deregister_script( WooPaymentsFrontendAssets::APPEARANCE_SCRIPT_HANDLE );
+		wp_deregister_script( WooPaymentsFrontendAssets::COMMON_SCRIPT_HANDLE );
 		wp_dequeue_script( WooPaymentsFraudPreventionService::TOKEN_NAME );
 		wp_deregister_script( WooPaymentsFraudPreventionService::TOKEN_NAME );
 		$this->reset_container_replacements();
@@ -585,6 +586,7 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 		$this->assertNotContains( 'stripe', $loaded );
 		$this->assertNotContains( 'wc-woopayments-fingerprintjs', $loaded );
 		$this->assertNotContains( WooPaymentsFrontendAssets::APPEARANCE_SCRIPT_HANDLE, $loaded );
+		$this->assertNotContains( WooPaymentsFrontendAssets::COMMON_SCRIPT_HANDLE, $loaded );
 		$this->assertFalse( wp_style_is( 'wc-payment-method-woopayments', 'enqueued' ) );
 	}
 
@@ -607,11 +609,13 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 		$this->assertTrue( wp_script_is( 'stripe', 'registered' ) );
 		// A webpack entry runs only once its shared chunks have loaded; the cart skips the WooPay email check chunk.
 		$this->assertContains( 'wc-payment-method-woopayments-common', $loaded );
+		$this->assertContains( WooPaymentsFrontendAssets::COMMON_SCRIPT_HANDLE, $loaded );
 		$this->assertNotContains( 'wc-payment-method-woopayments-woopay-common', $loaded );
 		$this->assertNotContains( 'wc-payment-method-woopayments', $loaded );
 		$this->assertNotContains( 'wc-woopayments-fingerprintjs', $loaded );
 		// The express script's built asset file lists the appearance utility (a build external); the integration's part is registering its handle.
 		$this->assertTrue( wp_script_is( WooPaymentsFrontendAssets::APPEARANCE_SCRIPT_HANDLE, 'registered' ) );
+		$this->assertTrue( wp_script_is( WooPaymentsFrontendAssets::COMMON_SCRIPT_HANDLE, 'registered' ), 'An unregistered dependency would make WordPress drop the script.' );
 		$this->assertTrue( wp_style_is( 'wc-payment-method-woopayments-express-checkout', 'enqueued' ) );
 		$this->assertFalse( wp_style_is( 'wc-payment-method-woopayments', 'enqueued' ) );
 	}
@@ -632,11 +636,13 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 		$this->assertSame( array( 'wc-payment-method-woopayments-woopay', 'wc-payment-method-woopayments-fraud-scripts' ), $dependencies );
 		$loaded = $this->get_dependency_closure( $dependencies );
 		$this->assertContains( 'wc-payment-method-woopayments-common', $loaded );
+		$this->assertContains( WooPaymentsFrontendAssets::COMMON_SCRIPT_HANDLE, $loaded );
 		$this->assertContains( 'wc-payment-method-woopayments-woopay-common', $loaded );
 		$this->assertNotContains( 'wc-payment-method-woopayments', $loaded );
 		$this->assertNotContains( 'stripe', $loaded );
 		$this->assertNotContains( 'wc-woopayments-fingerprintjs', $loaded );
 		$this->assertTrue( wp_script_is( WooPaymentsFrontendAssets::APPEARANCE_SCRIPT_HANDLE, 'registered' ) );
+		$this->assertTrue( wp_script_is( WooPaymentsFrontendAssets::COMMON_SCRIPT_HANDLE, 'registered' ), 'An unregistered dependency would make WordPress drop the script.' );
 		$this->assertTrue( wp_style_is( 'wc-payment-method-woopayments-woopay', 'enqueued' ) );
 		$this->assertFalse( wp_style_is( 'wc-payment-method-woopayments', 'enqueued' ) );
 	}
@@ -653,10 +659,12 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 		$loaded = $this->get_dependency_closure( $dependencies );
 		$this->assertContains( 'stripe', $loaded );
 		$this->assertContains( 'wc-payment-method-woopayments-common', $loaded );
+		$this->assertContains( WooPaymentsFrontendAssets::COMMON_SCRIPT_HANDLE, $loaded );
 		$this->assertContains( 'wc-payment-method-woopayments-woopay-common', $loaded );
 		// The card script's built asset file lists FingerprintJS and the appearance utility (build externals); the integration's part is registering their handles.
 		$this->assertTrue( wp_script_is( 'wc-woopayments-fingerprintjs', 'registered' ) );
 		$this->assertTrue( wp_script_is( WooPaymentsFrontendAssets::APPEARANCE_SCRIPT_HANDLE, 'registered' ) );
+		$this->assertTrue( wp_script_is( WooPaymentsFrontendAssets::COMMON_SCRIPT_HANDLE, 'registered' ), 'An unregistered dependency would make WordPress drop the script.' );
 		$this->assertTrue( wp_style_is( 'wc-payment-method-woopayments', 'enqueued' ) );
 	}
 
