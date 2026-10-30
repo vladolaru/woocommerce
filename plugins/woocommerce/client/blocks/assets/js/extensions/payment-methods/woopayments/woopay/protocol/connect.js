@@ -1,7 +1,7 @@
 /**
  * Internal dependencies
  */
-import { tracks } from '../../common';
+import { getIdentity } from '../../common/tracks';
 import { getWooPayHostOrigin } from './helpers';
 
 /*
@@ -101,18 +101,16 @@ export const createConnect = ( args ) => {
 			params.append( 'testMode', args.testMode ? 'true' : 'false' );
 		}
 
-		return tracks
-			.getIdentity( {
-				ajaxUrl: args.ajaxUrl,
-				platformTrackerNonce: args.platformTrackerNonce,
-			} )
-			.then( ( tracksUserIdentity ) => {
-				if ( tracksUserIdentity ) {
-					params.append( 'tracksUserIdentity', tracksUserIdentity );
-				}
+		return getIdentity( {
+			ajaxUrl: args.ajaxUrl,
+			platformTrackerNonce: args.platformTrackerNonce,
+		} ).then( ( tracksUserIdentity ) => {
+			if ( tracksUserIdentity ) {
+				params.append( 'tracksUserIdentity', tracksUserIdentity );
+			}
 
-				return `${ args.woopayHost }/connect/?${ params.toString() }`;
-			} );
+			return `${ args.woopayHost }/connect/?${ params.toString() }`;
+		} );
 	};
 
 	const resolveCallback = ( callbackName, value ) => {

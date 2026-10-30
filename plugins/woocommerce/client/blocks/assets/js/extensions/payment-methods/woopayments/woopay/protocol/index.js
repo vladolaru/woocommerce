@@ -26,7 +26,7 @@ import { openExpressOtpIframe } from './express-otp';
 import { loadPhoneValidation, normalizePhone } from './phone-validation';
 
 // The WooPay protocol both checkouts speak with hosted WooPay, built once as the wc-woopayments-woopay-common script,
-// which loads after wc-woopayments-common. Classic scripts list that handle and read window.wc.woopayments.woopay;
+// which bundles the Tracks identity it needs. Classic scripts list that handle and read window.wc.woopayments.woopay;
 // Blocks scripts import this module, which their build maps to the same global. Internal to WooPayments, not an
 // extension API.
 export {

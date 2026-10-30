@@ -13,9 +13,8 @@ import {
 	transformPrice,
 } from './express-checkout';
 
-// The helpers the WooPayments card, express and WooPay scripts share on both checkouts, built once as the
-// wc-woopayments-common script. Classic scripts list that handle and read window.wc.woopayments; Blocks scripts
-// import this module, which their build maps to the same global. Internal to WooPayments, not an extension API.
+// The helpers the WooPayments Blocks card, express and WooPay scripts share, built once in their shared chunk
+// (wc-payment-method-woopayments-common). The classic scripts keep their own copies.
 export const tracks = { recordEvent, getIdentity };
 
 export const expressCheckout = {
@@ -32,14 +31,4 @@ export {
 	StripeWaitTimeoutError,
 	parseConfirmationHash,
 	confirmWithStripe,
-};
-
-window.wc = window.wc || {};
-window.wc.woopayments = {
-	tracks,
-	waitForStripe,
-	StripeWaitTimeoutError,
-	parseConfirmationHash,
-	confirmWithStripe,
-	expressCheckout,
 };

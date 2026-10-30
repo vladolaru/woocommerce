@@ -33,7 +33,6 @@ class WooPaymentsFrontendAssetsTest extends WC_Unit_Test_Case {
 		wp_deregister_script( WooPaymentsFrontendAssets::STRIPE_SCRIPT_HANDLE );
 		wp_deregister_script( WooPaymentsFrontendAssets::APPEARANCE_SCRIPT_HANDLE );
 		wp_deregister_script( WooPaymentsFrontendAssets::FINGERPRINT_SCRIPT_HANDLE );
-		wp_deregister_script( WooPaymentsFrontendAssets::COMMON_SCRIPT_HANDLE );
 		wp_deregister_script( WooPaymentsFrontendAssets::WOOPAY_COMMON_SCRIPT_HANDLE );
 		parent::tearDown();
 	}
@@ -43,7 +42,6 @@ class WooPaymentsFrontendAssetsTest extends WC_Unit_Test_Case {
 	 * @testWith ["register_stripe_script", "stripe", "https://js.stripe.com/v3/"]
 	 *           ["register_appearance_script", "wc-woopayments-appearance", "/assets/js/frontend/utils/woopayments-appearance"]
 	 *           ["register_fingerprint_script", "wc-woopayments-fingerprintjs", "/assets/js/fingerprintjs/fp.umd.min.js"]
-	 *           ["register_common_script", "wc-woopayments-common", "/assets/client/blocks/wc-woopayments-common.js"]
 	 *           ["register_woopay_common_script", "wc-woopayments-woopay-common", "/assets/client/blocks/wc-woopayments-woopay-common.js"]
 	 *
 	 * @param string $method Registration method.
@@ -67,21 +65,11 @@ class WooPaymentsFrontendAssetsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should register the shared shopper helpers without wp-polyfill, so classic pages gain no polyfill request.
+	 * @testdox Should register the WooPay protocol without dependencies, so classic pages gain no polyfill request.
 	 */
-	public function test_registers_the_common_helpers_without_dependencies(): void {
-		$this->sut->register_common_script();
-
-		$this->assertSame( array(), wp_scripts()->registered[ WooPaymentsFrontendAssets::COMMON_SCRIPT_HANDLE ]->deps );
-	}
-
-	/**
-	 * @testdox Should register the WooPay protocol after the shared helpers it reads the Tracks identity from, without wp-polyfill.
-	 */
-	public function test_registers_the_woopay_protocol_after_the_common_helpers(): void {
+	public function test_registers_the_woopay_protocol_without_dependencies(): void {
 		$this->sut->register_woopay_common_script();
 
-		$this->assertSame( array( WooPaymentsFrontendAssets::COMMON_SCRIPT_HANDLE ), wp_scripts()->registered[ WooPaymentsFrontendAssets::WOOPAY_COMMON_SCRIPT_HANDLE ]->deps );
-		$this->assertTrue( wp_script_is( WooPaymentsFrontendAssets::COMMON_SCRIPT_HANDLE, 'registered' ), 'An unregistered dependency would make WordPress drop the WooPay protocol.' );
+		$this->assertSame( array(), wp_scripts()->registered[ WooPaymentsFrontendAssets::WOOPAY_COMMON_SCRIPT_HANDLE ]->deps );
 	}
 }

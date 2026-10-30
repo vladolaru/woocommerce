@@ -34,11 +34,6 @@ class WooPaymentsFrontendAssets {
 	public const FINGERPRINT_SCRIPT_HANDLE = 'wc-woopayments-fingerprintjs';
 
 	/**
-	 * Handle for the helpers the card, express and WooPay scripts share on both checkouts (`window.wc.woopayments`).
-	 */
-	public const COMMON_SCRIPT_HANDLE = 'wc-woopayments-common';
-
-	/**
 	 * Handle for the WooPay protocol the card and WooPay scripts share on both checkouts (`window.wc.woopayments.woopay`).
 	 */
 	public const WOOPAY_COMMON_SCRIPT_HANDLE = 'wc-woopayments-woopay-common';
@@ -106,39 +101,15 @@ class WooPaymentsFrontendAssets {
 	}
 
 	/**
-	 * Register the shared WooPayments shopper helpers, which set `window.wc.woopayments`.
-	 *
-	 * The Blocks build emits the file; classic scripts list this handle and Blocks scripts reach it as a build
-	 * external. It lists no dependency: the build's asset file names only wp-polyfill, which the classic scripts that
-	 * read these helpers already run without.
-	 *
-	 * @since 11.4.0
-	 */
-	public function register_common_script(): void {
-		if ( wp_script_is( self::COMMON_SCRIPT_HANDLE, 'registered' ) ) {
-			return;
-		}
-
-		wp_register_script(
-			self::COMMON_SCRIPT_HANDLE,
-			WC()->plugin_url() . '/assets/client/blocks/wc-woopayments-common.js',
-			array(),
-			WC_VERSION,
-			true
-		);
-	}
-
-	/**
 	 * Register the WooPay protocol the card and WooPay scripts share, which sets `window.wc.woopayments.woopay`.
 	 *
 	 * The Blocks build emits the file; classic scripts list this handle and Blocks scripts reach it as a build external.
-	 * It reads the Tracks identity from the shared helpers, so it lists their handle and registers it too.
+	 * It lists no dependency: the build's asset file names only wp-polyfill, which the classic scripts that read the
+	 * protocol already run without.
 	 *
 	 * @since 11.4.0
 	 */
 	public function register_woopay_common_script(): void {
-		$this->register_common_script();
-
 		if ( wp_script_is( self::WOOPAY_COMMON_SCRIPT_HANDLE, 'registered' ) ) {
 			return;
 		}
@@ -146,7 +117,7 @@ class WooPaymentsFrontendAssets {
 		wp_register_script(
 			self::WOOPAY_COMMON_SCRIPT_HANDLE,
 			WC()->plugin_url() . '/assets/client/blocks/wc-woopayments-woopay-common.js',
-			array( self::COMMON_SCRIPT_HANDLE ),
+			array(),
 			WC_VERSION,
 			true
 		);

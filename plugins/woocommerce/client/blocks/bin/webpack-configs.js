@@ -384,13 +384,6 @@ const WOOPAYMENTS_SHARED_CHUNK_ENTRIES = [
 const isWooPaymentsAppearanceRequest = ( request ) =>
 	/[\\/]woopayments-appearance(\.js)?$/.test( request );
 
-// The WooPayments helpers the card, express and WooPay scripts share on both checkouts are their own entry,
-// `wc-woopayments-common`, which sets `window.wc.woopayments`. Blocks scripts import them as `./common` or
-// `../common` and load them from that handle. Only the bare relative request matches, so the entry's own path and
-// its internal imports stay bundled.
-const isWooPaymentsCommonRequest = ( request ) =>
-	/^(\.\.?\/)+common$/.test( request );
-
 // The WooPay protocol both checkouts share is its own entry, `wc-woopayments-woopay-common`, which sets
 // `window.wc.woopayments.woopay`. Blocks scripts import it as `./protocol` (from woopay/) or `./woopay/protocol` and load
 // it from that handle; the entry's own modules stay bundled.
@@ -469,13 +462,13 @@ const getPaymentsConfig = ( options = {} ) => {
 				automaticNameDelimiter: '--',
 				cacheGroups: {
 					...getCacheGroups(),
-					// The WooPayments card, WooPay and express scripts load together on the checkout block. Blocks-only code
-					// they share ships once, in a chunk src/Blocks/Payments/Integrations/WooPayments.php registers as their
-					// dependency: the field styles, the Tracks settings reader and the Blocks WooPay requests. The code the
-					// classic scripts share too comes from the wc-woopayments-common and wc-woopayments-woopay-common
-					// entries instead.
+					// The WooPayments card, WooPay and express scripts load together on the checkout block. Code they share
+					// ships once, in a chunk src/Blocks/Payments/Integrations/WooPayments.php registers as their dependency:
+					// the field styles, the Tracks settings reader, the Blocks WooPay requests, the Stripe.js wait and the
+					// shared helpers in common/. The classic scripts keep their own copies of those helpers; the WooPay
+					// protocol both checkouts share comes from the wc-woopayments-woopay-common entry instead.
 					woopaymentsCommon: {
-						test: /woopayments[\\/](upe-styles|tracks|woopay[\\/]request)\.js$/,
+						test: /woopayments[\\/](upe-styles|tracks|wait-for-stripe|woopay[\\/]request|common[\\/][^\\/]+)\.js$/,
 						chunks: ( chunk ) =>
 							WOOPAYMENTS_SHARED_CHUNK_ENTRIES.includes(
 								chunk.name
@@ -500,9 +493,6 @@ const getPaymentsConfig = ( options = {} ) => {
 					if ( isWooPaymentsAppearanceRequest( request ) ) {
 						return 'wcpayAppearance';
 					}
-					if ( isWooPaymentsCommonRequest( request ) ) {
-						return [ 'wc', 'woopayments' ];
-					}
 					if ( isWooPaymentsWooPayCommonRequest( request ) ) {
 						return [ 'wc', 'woopayments', 'woopay' ];
 					}
@@ -514,9 +504,6 @@ const getPaymentsConfig = ( options = {} ) => {
 					}
 					if ( isWooPaymentsAppearanceRequest( request ) ) {
 						return 'wc-woopayments-appearance';
-					}
-					if ( isWooPaymentsCommonRequest( request ) ) {
-						return 'wc-woopayments-common';
 					}
 					if ( isWooPaymentsWooPayCommonRequest( request ) ) {
 						return 'wc-woopayments-woopay-common';

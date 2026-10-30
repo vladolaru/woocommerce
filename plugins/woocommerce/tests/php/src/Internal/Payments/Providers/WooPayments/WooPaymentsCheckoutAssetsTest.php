@@ -581,7 +581,6 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 		wp_dequeue_script( 'wc-woopayments-appearance' );
 		wp_deregister_script( 'wc-woopayments-appearance' );
 		wp_deregister_script( 'wc-woopayments-fingerprintjs' );
-		wp_deregister_script( 'wc-woopayments-common' );
 		wp_deregister_script( 'wc-woopayments-woopay-common' );
 		wp_dequeue_style( 'wc-woopayments-checkout' );
 		wp_deregister_style( 'wc-woopayments-checkout' );
