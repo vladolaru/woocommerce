@@ -1862,10 +1862,13 @@
 		var fields;
 		var billingPhoneField;
 
+		// A Blocks checkout on the page owns save my info, even beside a classic form (client 11.2.0
+		// checkout/woopay/index.js:23-26).
 		if (
 			! form ||
 			! config.isWooPayEnabled ||
 			! config.forceNetworkSavedCards ||
+			document.querySelector( '.wc-block-checkout' ) ||
 			document.getElementById( 'wcpay-woopay-save-user' )
 		) {
 			return;

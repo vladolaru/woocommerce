@@ -1409,6 +1409,33 @@ describe( 'WooPayments WooPay checkout', () => {
 		expect( getSaveUserContainer().hidden ).toBe( true );
 	} );
 
+	// Client 11.2.0 checkout/woopay/index.js:23-26: a Blocks checkout on the page owns save my info, so the classic
+	// section stays out even when the page content also renders the classic form.
+	test.each( [
+		[
+			'leaves save my info to the Blocks checkout when one is on the page',
+			'<div class="wp-block-woocommerce-checkout wc-block-checkout"></div>',
+			false,
+		],
+		[
+			'renders save my info in the classic form beside a Cart block',
+			'<div class="wp-block-woocommerce-cart wc-block-cart"></div>',
+			true,
+		],
+	] )( '%s', ( name, blockMarkup, rendersClassic ) => {
+		document.body.insertAdjacentHTML( 'afterbegin', blockMarkup );
+
+		require( '../woopayments-woopay' );
+		bodyEventHandlers.updated_checkout();
+
+		expect( document.querySelectorAll( '#wcpay-woopay-save-user' ) ).toHaveLength(
+			rendersClassic ? 1 : 0
+		);
+		expect(
+			document.querySelector( 'input[name="save_user_in_woopay"]' ) !== null
+		).toBe( rendersClassic );
+	} );
+
 	test( 'posts no WooPay opt-in once the shopper unchecks save my info', () => {
 		require( '../woopayments-woopay' );
 		const saveCheckbox = document.querySelector(
