@@ -1675,7 +1675,7 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Split gateways sharing one holder build the gateway-independent Blocks config once, and still get their own gateway keys and filter pass.
+	 * @testdox Split gateways build the gateway-independent Blocks config once per request, and still get their own gateway keys and filter pass.
 	 */
 	public function test_split_gateway_blocks_data_builds_the_shared_config_once(): void {
 		$account_service = $this->create_account_service( true );
@@ -1696,10 +1696,9 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 		add_filter( 'wcpay_payment_fields_js_config', $filter );
 
 		try {
-			$shared   = new \ArrayObject();
 			$gateways = array();
 			foreach ( array( 'card', 'klarna', 'affirm' ) as $payment_method_id ) {
-				$gateways[] = $assets->get_blocks_payment_method_data( self::CARD_SUPPORTS, $registry->get( $payment_method_id ), $shared )['gatewayId'];
+				$gateways[] = $assets->get_blocks_payment_method_data( self::CARD_SUPPORTS, $registry->get( $payment_method_id ) )['gatewayId'];
 			}
 		} finally {
 			remove_filter( 'wc_payments_account_id_for_intent_confirmation', $count );
@@ -1906,8 +1905,8 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 		$assets = new WooPaymentsCheckoutAssets();
 		$assets->init( $account_service, $woopay_service, $this->create_woopay_eligibility( true ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller(), new PaymentMethodRegistry() );
 
-		$this->assertTrue( $assets->get_blocks_payment_method_data( self::CARD_SUPPORTS, null, null, 'cart' )['shouldShowWooPayButton'], 'The Blocks cart reads the cart location.' );
-		$this->assertFalse( $assets->get_blocks_payment_method_data( self::CARD_SUPPORTS, null, null, 'checkout' )['shouldShowWooPayButton'], 'The Blocks checkout reads the checkout location.' );
+		$this->assertTrue( $assets->get_blocks_payment_method_data( self::CARD_SUPPORTS, null, 'cart' )['shouldShowWooPayButton'], 'The Blocks cart reads the cart location.' );
+		$this->assertFalse( $assets->get_blocks_payment_method_data( self::CARD_SUPPORTS, null, 'checkout' )['shouldShowWooPayButton'], 'The Blocks checkout reads the checkout location.' );
 	}
 
 	/**
@@ -2086,8 +2085,7 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 	public function test_get_blocks_payment_method_data_omits_classic_only_keys(): void {
 		$assets = $this->create_assets_with_full_woopay_config();
 		$data   = $assets->get_blocks_payment_method_data( self::CARD_SUPPORTS );
-		$shared = new \ArrayObject();
-		$split  = $assets->get_blocks_payment_method_data( self::CARD_SUPPORTS, ( new PaymentMethodRegistry() )->get( 'klarna' ), $shared );
+		$split  = $assets->get_blocks_payment_method_data( self::CARD_SUPPORTS, ( new PaymentMethodRegistry() )->get( 'klarna' ) );
 
 		foreach ( self::DROPPED_BLOCKS_DATA_KEYS as $key ) {
 			$this->assertArrayNotHasKey( $key, $data, "Blocks data must not carry {$key}." );

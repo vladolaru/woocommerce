@@ -874,7 +874,7 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 		$data_contexts = array();
 		$assets->method( 'get_blocks_payment_method_data' )->willReturnCallback(
 			static function ( ...$args ) use ( &$data_contexts ): array {
-				$data_contexts[] = $args[3] ?? 'none';
+				$data_contexts[] = $args[2] ?? 'none';
 				return array();
 			}
 		);
@@ -979,39 +979,84 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Split-gateway Blocks integrations of one registration share one config holder, so the checkout assets class builds the shared config once.
+	 * @testdox Split-gateway Blocks integrations get byte-identical shared config data, built once per request, and each gateway's config passes the filter.
+	 *
+	 * Client 11.1.0 registers one Blocks method and builds its payment fields config once; the split integrations share one
+	 * build of the gateway-independent part.
 	 */
-	public function test_split_gateway_integrations_share_one_config_holder(): void {
-		$asset_api = $this->getMockBuilder( AssetApi::class )
+	public function test_split_gateway_integrations_get_one_shared_config_build(): void {
+		add_filter(
+			'pre_http_request',
+			static function ( $preempt, $parsed_args, string $url ) {
+				unset( $parsed_args );
+				return false !== strpos( $url, 'public-api.wordpress.com' ) ? new \WP_Error( 'blocked_in_test', 'Platform requests are blocked in unit tests.' ) : $preempt;
+			},
+			10,
+			3
+		);
+		$account = $this->getMockBuilder( WooPaymentsAccountService::class )
 			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_publishable_key', 'get_account_id', 'get_cached_account_data', 'get_gateway_setting', 'can_process_payments', 'is_test_mode_enabled' ) )
 			->getMock();
-		$assets    = $this->getMockBuilder( WooPaymentsCheckoutAssets::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'get_blocks_payment_method_data', 'should_expose_checkout_surface' ) )
+		$account->method( 'get_publishable_key' )->willReturn( 'pk_test_123' );
+		$account->method( 'get_account_id' )->willReturn( 'acct_123' );
+		$account->method( 'get_cached_account_data' )->willReturn( array( 'country' => 'US' ) );
+		$account->method( 'get_gateway_setting' )->willReturnCallback( static fn( string $key, $fallback = null ) => $fallback );
+		$account->method( 'can_process_payments' )->willReturn( true );
+		$account->method( 'is_test_mode_enabled' )->willReturn( true );
+		$styles = $this->getMockBuilder( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendStylesService::class )
+			->onlyMethods( array( 'get_or_create_styles_cache_version' ) )
 			->getMock();
-		$holders   = array();
-		$assets->method( 'get_blocks_payment_method_data' )->willReturnCallback(
-			static function ( $supports, $definition, $shared = null ) use ( &$holders ): array {
-				$holders[] = $shared;
-				return array();
-			}
+		$styles->method( 'get_or_create_styles_cache_version' )->willReturn( 'styles-v1' );
+		$assets = new WooPaymentsCheckoutAssets();
+		$assets->init(
+			$account,
+			$this->createMock( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\SessionService::class ),
+			$this->createMock( Eligibility::class ),
+			$styles,
+			$this->createMock( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendTrackingController::class ),
+			new WooPaymentsPaymentMethodRegistry()
 		);
 		$registry = new WooPaymentsPaymentMethodRegistry();
+		$gateways = array( new WooPaymentsGateway( $registry->get( 'card' ) ), new WooPaymentsGateway( $registry->get( 'klarna' ) ), new WooPaymentsGateway( $registry->get( 'affirm' ) ) );
 		$provider = $this->getMockBuilder( WooPaymentsProvider::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'can_process_payments', 'get_payment_gateways', 'get_gateway_for_method' ) )
 			->getMock();
-		$provider->method( 'can_process_payments' )->willReturn( false );
-		$provider->method( 'get_payment_gateways' )->willReturn( array( new WooPaymentsGateway( $registry->get( 'card' ) ), new WooPaymentsGateway( $registry->get( 'klarna' ) ) ) );
+		$provider->method( 'can_process_payments' )->willReturn( true );
+		$provider->method( 'get_payment_gateways' )->willReturn( $gateways );
+		$provider->method( 'get_gateway_for_method' )->willReturn( $gateways[0] );
+		$builds   = 0;
+		$filtered = 0;
+		// The config base applies this filter once per build.
+		add_filter(
+			'wc_payments_account_id_for_intent_confirmation',
+			static function ( $value ) use ( &$builds ) {
+				++$builds;
+				return $value;
+			}
+		);
+		add_filter(
+			'wcpay_payment_fields_js_config',
+			static function ( $config ) use ( &$filtered ) {
+				++$filtered;
+				return $config;
+			}
+		);
 
-		$integration = new WooPayments( $asset_api, $this->create_runtime_arbiter(), $assets, $provider, $this->create_woopay_eligibility(), $this->create_express_checkout_service() );
+		$integration  = new WooPayments( $this->createMock( AssetApi::class ), $this->create_runtime_arbiter(), $assets, $provider, $this->create_woopay_eligibility(), $this->create_express_checkout_service() );
+		$gateway_keys = array_flip( array( 'gatewayId', 'paymentMethodsConfig', 'paymentMethodTypes', 'title', 'description', 'expressCheckoutParams' ) );
+		$shared       = array();
 		foreach ( $integration->get_payment_method_integrations() as $payment_method ) {
-			$payment_method->get_payment_method_data();
+			$shared[ $payment_method->get_name() ] = (string) wp_json_encode( array_diff_key( $payment_method->get_payment_method_data(), $gateway_keys ) );
 		}
 
-		$this->assertCount( 2, $holders );
-		$this->assertInstanceOf( \ArrayObject::class, $holders[0] );
-		$this->assertSame( $holders[0], $holders[1] );
+		$this->assertSame( array( 'woocommerce_payments', 'woocommerce_payments_klarna', 'woocommerce_payments_affirm' ), array_keys( $shared ) );
+		$this->assertStringContainsString( '"publishableKey":"pk_test_123"', $shared['woocommerce_payments'] );
+		$this->assertSame( $shared['woocommerce_payments'], $shared['woocommerce_payments_klarna'], 'Klarna gets the card integration\'s shared config data.' );
+		$this->assertSame( $shared['woocommerce_payments'], $shared['woocommerce_payments_affirm'], 'Affirm gets the card integration\'s shared config data.' );
+		$this->assertSame( 1, $builds, 'The shared config is built once for the three integrations.' );
+		$this->assertSame( 3, $filtered, 'Each gateway config passes the wcpay_payment_fields_js_config filter.' );
 	}
 
 	/**

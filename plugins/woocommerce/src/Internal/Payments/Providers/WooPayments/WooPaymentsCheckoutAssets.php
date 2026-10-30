@@ -297,6 +297,17 @@ class WooPaymentsCheckoutAssets {
 	private ?array $payment_list_config_base = null;
 
 	/**
+	 * The Blocks config base built last in this request, with the key of the inputs it was built from.
+	 *
+	 * The Blocks integration registers one payment method per split gateway where client 11.1.0 registers one, so the
+	 * gateways share this base, as the classic payment list shares its own, and it is built again only when an input
+	 * of the base changes (get_blocks_config_base_key()).
+	 *
+	 * @var array{key:string,base:array{config:array<string,mixed>,saved_cards_enabled:bool,currency:string}}|null
+	 */
+	private ?array $blocks_config_base = null;
+
+	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
@@ -606,22 +617,16 @@ class WooPaymentsCheckoutAssets {
 	/**
 	 * Get Blocks payment method data.
 	 *
-	 * The Blocks integration registers one payment method per split gateway and passes them one holder, so the
-	 * gateway-independent base is built once per page and each gateway adds only its own keys.
+	 * The gateway-independent base is built once per request for the same inputs, so the split gateways' Blocks methods
+	 * share it and each gateway adds only its own keys.
 	 *
 	 * @param string[]                     $supports                  Card gateway support features, shared by every Blocks method.
 	 * @param PaymentMethodDefinition|null $payment_method_definition Optional payment method definition.
-	 * @param \ArrayObject|null            $shared                    Holder that lets split gateways share one config base (client 11.1.0 registers one Blocks method).
 	 * @param string                       $button_context            WooPay button context of the page, as client 11.2.0 reads the page (class-wc-payments-woopay-button-handler.php:273-281).
-	 * @phpstan-param \ArrayObject<string,mixed>|null $shared
 	 * @return array<string,mixed>
 	 */
-	public function get_blocks_payment_method_data( array $supports, ?PaymentMethodDefinition $payment_method_definition = null, ?\ArrayObject $shared = null, string $button_context = 'checkout' ): array {
-		if ( null !== $shared && ! isset( $shared['base'] ) ) {
-			$shared['base'] = $this->get_blocks_payment_fields_js_config_base( $supports, $button_context );
-		}
-		$base = null === $shared ? $this->get_blocks_payment_fields_js_config_base( $supports, $button_context ) : $shared['base'];
-		$data = $this->complete_payment_fields_js_config( $base, $payment_method_definition, true );
+	public function get_blocks_payment_method_data( array $supports, ?PaymentMethodDefinition $payment_method_definition = null, string $button_context = 'checkout' ): array {
+		$data = $this->complete_payment_fields_js_config( $this->get_blocks_config_base( $supports, $button_context ), $payment_method_definition, true );
 
 		// Sanitize the shopper-facing testing instructions after the wcpay_payment_fields_js_config
 		// filter has run. The Blocks checkout script renders this value via dangerouslySetInnerHTML,
@@ -652,17 +657,51 @@ class WooPaymentsCheckoutAssets {
 	}
 
 	/**
-	 * Build the config base for the Blocks payment method data, with client 11.1.0's Blocks key set.
-	 *
-	 * Before the config filter, client 11.1.0's own filter callbacks add the WooPay button keys, the express checkout
-	 * switches and the order-pay keys only while their handlers run; a subscription payment method change skips them all.
+	 * Get the config base for the Blocks payment method data, built once per request for the same inputs.
 	 *
 	 * @param string[] $supports       Card gateway support features.
 	 * @param string   $button_context WooPay button context of the page.
 	 * @return array{config:array<string,mixed>,saved_cards_enabled:bool,currency:string}
 	 */
-	private function get_blocks_payment_fields_js_config_base( array $supports, string $button_context ): array {
-		$base   = $this->get_payment_fields_js_config_base( $supports, null, $button_context );
+	private function get_blocks_config_base( array $supports, string $button_context ): array {
+		$payment_context = $this->get_payment_context();
+		$key             = $this->get_blocks_config_base_key( $supports, $payment_context, $button_context );
+		if ( null === $this->blocks_config_base || $key !== $this->blocks_config_base['key'] ) {
+			$this->blocks_config_base = array(
+				'key'  => $key,
+				'base' => $this->get_blocks_payment_fields_js_config_base( $supports, $payment_context, $button_context ),
+			);
+		}
+
+		return $this->blocks_config_base['base'];
+	}
+
+	/**
+	 * Get the key of the Blocks config base inputs that can change within one request: the classic base's inputs
+	 * (get_payment_list_config_base_key()) and the WooPay button context, which picks the button location's settings.
+	 *
+	 * @param string[]                                                             $supports        Card gateway support features.
+	 * @param array{currency:string,total:int,order_id:int,billing_country:string} $payment_context Payment context.
+	 * @param string                                                               $button_context  WooPay button context of the page.
+	 * @return string
+	 */
+	private function get_blocks_config_base_key( array $supports, array $payment_context, string $button_context ): string {
+		return (string) wp_json_encode( array( $this->get_payment_list_config_base_key( $supports, $payment_context ), $button_context ) );
+	}
+
+	/**
+	 * Build the config base for the Blocks payment method data, with client 11.1.0's Blocks key set.
+	 *
+	 * Before the config filter, client 11.1.0's own filter callbacks add the WooPay button keys, the express checkout
+	 * switches and the order-pay keys only while their handlers run; a subscription payment method change skips them all.
+	 *
+	 * @param string[]                                                             $supports        Card gateway support features.
+	 * @param array{currency:string,total:int,order_id:int,billing_country:string} $payment_context Payment context.
+	 * @param string                                                               $button_context  WooPay button context of the page.
+	 * @return array{config:array<string,mixed>,saved_cards_enabled:bool,currency:string}
+	 */
+	private function get_blocks_payment_fields_js_config_base( array $supports, array $payment_context, string $button_context ): array {
+		$base   = $this->get_payment_fields_js_config_base( $supports, $payment_context, $button_context );
 		$config = array_diff_key( $base['config'], array_flip( self::BLOCKS_OMITTED_CONFIG_KEYS ) );
 
 		if ( ! $this->should_add_woopay_button_config() ) {
