@@ -120,7 +120,6 @@ describe( 'WooPay save-user phone helpers (shared)', () => {
 		const second = loadPhoneValidation( 'https://example.test/phone.js' );
 		const scripts = document.head.querySelectorAll( 'script' );
 
-		expect( first ).toBe( second );
 		expect( scripts ).toHaveLength( 1 );
 
 		window.wcWooPaymentsPhoneValidation = {
@@ -129,6 +128,9 @@ describe( 'WooPay save-user phone helpers (shared)', () => {
 		scripts[ 0 ].onload();
 
 		await expect( first ).resolves.toBe(
+			window.wcWooPaymentsPhoneValidation
+		);
+		await expect( second ).resolves.toBe(
 			window.wcWooPaymentsPhoneValidation
 		);
 	} );

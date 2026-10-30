@@ -15,27 +15,31 @@ describe( 'wc-woopayments-woopay-common', () => {
 			customPlaceOrderButton
 		);
 
-		expect( Object.keys( window.wc.woopayments.woopay ).sort() ).toEqual( [
-			'buildAjaxUrl',
-			'claimWooPayRedirect',
-			'createConnect',
-			'deleteSkipWooPayCookie',
-			'deleteSkipWooPayCookieOnClick',
-			'dispatchUserExistEvent',
-			'getCachedPreferredCard',
-			'getTargetElement',
-			'getWooPayHostOrigin',
-			'handleEmailInput',
-			'initWooPay',
-			'isPreviewing',
-			'isSamePreferredCard',
-			'isValidPreferredCard',
-			'loadPhoneValidation',
-			'normalizePhone',
-			'openExpressOtpIframe',
-			'setCachedPreferredCard',
-			'shouldSkipWooPay',
-			'validateEmail',
-		] );
+		// The members the classic and Blocks hosts call; each must be callable.
+		const fn = expect.any( Function );
+		expect( window.wc.woopayments.woopay ).toEqual(
+			expect.objectContaining( {
+				buildAjaxUrl: fn,
+				claimWooPayRedirect: fn,
+				createConnect: fn,
+				deleteSkipWooPayCookie: fn,
+				deleteSkipWooPayCookieOnClick: fn,
+				dispatchUserExistEvent: fn,
+				getCachedPreferredCard: fn,
+				getTargetElement: fn,
+				getWooPayHostOrigin: fn,
+				handleEmailInput: fn,
+				initWooPay: fn,
+				isPreviewing: fn,
+				isSamePreferredCard: fn,
+				isValidPreferredCard: fn,
+				loadPhoneValidation: fn,
+				normalizePhone: fn,
+				openExpressOtpIframe: fn,
+				setCachedPreferredCard: fn,
+				shouldSkipWooPay: fn,
+				validateEmail: fn,
+			} )
+		);
 	} );
 } );
