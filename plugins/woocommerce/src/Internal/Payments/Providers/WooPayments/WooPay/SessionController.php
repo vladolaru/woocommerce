@@ -475,7 +475,7 @@ class SessionController implements RegisterHooksInterface {
 		$config  = $this->get_woopay_frontend_config( $context );
 		if (
 			empty( $config['shouldShowWooPayButton'] ) &&
-			! $this->woopay_eligibility->should_load_woopay_save_user_assets( $context ) &&
+			! $this->woopay_eligibility->should_load_woopay_save_user_assets() &&
 			! ( $direct_checkout_surface && $direct_checkout_runs )
 		) {
 			return;

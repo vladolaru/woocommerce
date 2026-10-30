@@ -206,8 +206,9 @@ class SessionServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Blocks pages, the button context the Blocks integration gives them, the WooPay cart and checkout location settings,
-	 * and whether client 11.2.0 shows WooPay there (class-wc-payments-woopay-button-handler.php:272-280).
+	 * Blocks pages, and a classic page holding both shortcodes, with the button context they get, the WooPay cart and
+	 * checkout location settings, and whether client 11.2.0 shows WooPay there (class-wc-payments-woopay-button-handler.php:272-280).
+	 * The classic page is a cart and a checkout through is_cart() and is_checkout() alone, with no block.
 	 *
 	 * @return array<string,array{0:string,1:string|null,2:string,3:bool,4:bool,5:bool}>
 	 */
@@ -216,14 +217,15 @@ class SessionServiceTest extends WC_Unit_Test_Case {
 		$checkout = '<!-- wp:woocommerce/checkout --><div class="wp-block-woocommerce-checkout"></div><!-- /wp:woocommerce/checkout -->';
 
 		return array(
-			'both blocks, cart on, checkout on'    => array( $cart . $checkout, null, 'cart', true, true, true ),
-			'both blocks, cart on, checkout off'   => array( $cart . $checkout, null, 'cart', true, false, false ),
-			'both blocks, cart off, checkout on'   => array( $cart . $checkout, null, 'cart', false, true, false ),
-			'both blocks, cart off, checkout off'  => array( $cart . $checkout, null, 'cart', false, false, false ),
-			'cart page, cart on, checkout off'     => array( $cart, 'woocommerce_cart_page_id', 'cart', true, false, true ),
-			'cart page, cart off, checkout on'     => array( $cart, 'woocommerce_cart_page_id', 'cart', false, true, false ),
-			'checkout page, cart off, checkout on' => array( $checkout, 'woocommerce_checkout_page_id', 'checkout', false, true, true ),
-			'checkout page, cart on, checkout off' => array( $checkout, 'woocommerce_checkout_page_id', 'checkout', true, false, false ),
+			'both blocks, cart on, checkout on'      => array( $cart . $checkout, null, 'cart', true, true, true ),
+			'both blocks, cart on, checkout off'     => array( $cart . $checkout, null, 'cart', true, false, false ),
+			'both blocks, cart off, checkout on'     => array( $cart . $checkout, null, 'cart', false, true, false ),
+			'both blocks, cart off, checkout off'    => array( $cart . $checkout, null, 'cart', false, false, false ),
+			'cart page, cart on, checkout off'       => array( $cart, 'woocommerce_cart_page_id', 'cart', true, false, true ),
+			'cart page, cart off, checkout on'       => array( $cart, 'woocommerce_cart_page_id', 'cart', false, true, false ),
+			'checkout page, cart off, checkout on'   => array( $checkout, 'woocommerce_checkout_page_id', 'checkout', false, true, true ),
+			'checkout page, cart on, checkout off'   => array( $checkout, 'woocommerce_checkout_page_id', 'checkout', true, false, false ),
+			'both shortcodes, cart on, checkout off' => array( '[woocommerce_cart][woocommerce_checkout]', null, 'cart', true, false, false ),
 		);
 	}
 
@@ -270,6 +272,69 @@ class SessionServiceTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( $expected, $this->woopay_eligibility->should_show_woopay_button( $context ), 'The Blocks WooPay handle check.' );
 		$this->assertSame( $expected, $sut->get_woopay_frontend_config( $context )['shouldShowWooPayButton'], 'The Blocks config flag.' );
+	}
+
+	/**
+	 * Classic pages where the WooPay button hides, and whether the classic WooPay script still loads for the save-user fields.
+	 *
+	 * Client 11.2.0 loads its save-user script on any checkout page, whatever the express button context
+	 * (includes/woopay-user/class-woopay-save-user.php:45).
+	 *
+	 * @return array<string,array{0:string,1:bool,2:bool,3:bool}>
+	 */
+	public function provide_classic_pages_with_a_hidden_woopay_button(): array {
+		return array(
+			'both shortcodes, cart on, checkout off'    => array( '[woocommerce_cart][woocommerce_checkout]', true, false, true ),
+			'cart shortcode, cart off, checkout on'     => array( '[woocommerce_cart]', false, true, false ),
+			'checkout shortcode, cart on, checkout off' => array( '[woocommerce_checkout]', true, false, true ),
+		);
+	}
+
+	/**
+	 * @testdox Should load the classic WooPay script for the save-user fields on any checkout page where the button hides: $_dataName.
+	 * @dataProvider provide_classic_pages_with_a_hidden_woopay_button
+	 *
+	 * Direct checkout is off, so only the save-user fields can need the script.
+	 *
+	 * A separate process, because an earlier test can define WOOCOMMERCE_CART or WOOCOMMERCE_CHECKOUT for the rest of the run.
+	 *
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 *
+	 * @param string $content     Page content.
+	 * @param bool   $cart_on     Whether the cart location lists WooPay.
+	 * @param bool   $checkout_on Whether the checkout location lists WooPay.
+	 * @param bool   $expected    Whether the classic WooPay script loads.
+	 */
+	public function test_classic_checkout_page_keeps_the_save_user_script_when_the_button_hides( string $content, bool $cart_on, bool $checkout_on, bool $expected ): void {
+		update_option( 'woocommerce_enable_guest_checkout', 'yes' );
+		add_filter( 'wcpay_force_network_saved_cards', '__return_true' );
+		$page_id = self::factory()->post->create(
+			array(
+				'post_type'    => 'page',
+				'post_status'  => 'publish',
+				'post_content' => $content,
+			)
+		);
+		$this->reset_cart_checkout_page_cache();
+		$this->go_to( get_permalink( $page_id ) );
+		$sut = $this->create_service(
+			array(
+				'express_checkout_cart_methods'     => $cart_on ? array( 'woopay' ) : array(),
+				'express_checkout_checkout_methods' => $checkout_on ? array( 'woopay' ) : array(),
+			)
+		);
+		$this->assertFalse( $this->woopay_eligibility->should_run_woopay_direct_checkout(), 'Precondition: direct checkout is off.' );
+
+		$this->register_controller( $sut )->enqueue_frontend_assets();
+
+		$this->assertSame( $expected, wp_script_is( 'wc-woopayments-woopay', 'enqueued' ) );
+		if ( $expected ) {
+			$localized = (string) wp_scripts()->get_data( 'wc-woopayments-woopay', 'data' );
+			$this->assertStringContainsString( '"shouldShowWooPayButton":""', $localized, 'The button stays hidden.' );
+			$this->assertStringContainsString( '"PRE_CHECK_SAVE_MY_INFO":', $localized );
+			$this->assertStringContainsString( '"woopayPhoneValidationScriptUrl":', $localized );
+		}
 	}
 
 	/**
@@ -828,7 +893,7 @@ class SessionServiceTest extends WC_Unit_Test_Case {
 
 		try {
 			$this->assertTrue( $sut->get_woopay_frontend_config( 'checkout' )['forceNetworkSavedCards'] );
-			$this->assertFalse( $this->woopay_eligibility->should_load_woopay_save_user_assets( 'checkout' ) );
+			$this->assertFalse( $this->woopay_eligibility->should_load_woopay_save_user_assets() );
 			$this->assertTrue( $this->woopay_eligibility->should_use_stripe_platform_on_checkout_page() );
 		} finally {
 			remove_filter( 'woocommerce_is_checkout', '__return_true' );

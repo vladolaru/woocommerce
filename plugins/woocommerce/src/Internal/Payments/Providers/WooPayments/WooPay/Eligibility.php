@@ -191,16 +191,15 @@ class Eligibility {
 	}
 
 	/**
-	 * Tell whether WooPay save-user assets should load for the current context.
+	 * Tell whether WooPay save-user assets should load on the current page.
 	 *
-	 * Client 11.1.0 loads them only while WooPayments is an available gateway, before the visitor's country is checked
-	 * (includes/woopay-user/class-woopay-save-user.php:49-57).
+	 * Client 11.2.0 loads them on any checkout page, whatever the express button context, and only while WooPayments is
+	 * an available gateway, before the visitor's country is checked (includes/woopay-user/class-woopay-save-user.php:45-57).
 	 *
-	 * @param string $context Express checkout context.
 	 * @return bool
 	 */
-	public function should_load_woopay_save_user_assets( string $context = 'checkout' ): bool {
-		return 'checkout' === $this->get_button_location( $context ) &&
+	public function should_load_woopay_save_user_assets(): bool {
+		return ( is_checkout() || has_block( 'woocommerce/checkout' ) ) &&
 			$this->is_woopay_enabled() &&
 			$this->is_woopay_gateway_available() &&
 			$this->is_woopay_country_available() &&

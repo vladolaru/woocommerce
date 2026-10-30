@@ -51,12 +51,9 @@ class RecordingWooPayEligibility extends Eligibility {
 	/**
 	 * Tell whether WooPay save-user assets should load.
 	 *
-	 * @param string $context Express checkout context.
 	 * @return bool
 	 */
-	public function should_load_woopay_save_user_assets( string $context = 'checkout' ): bool {
-		unset( $context );
-
+	public function should_load_woopay_save_user_assets(): bool {
 		return $this->flags->should_load_woopay_save_user_assets;
 	}
 
