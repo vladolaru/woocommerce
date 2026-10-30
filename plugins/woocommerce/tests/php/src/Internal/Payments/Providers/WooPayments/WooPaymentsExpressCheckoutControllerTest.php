@@ -257,9 +257,9 @@ class WooPaymentsExpressCheckoutControllerTest extends WC_Unit_Test_Case {
 	 * Pages whose block or shortcode the password form, or a `<!--nextpage-->` break, keeps off the rendered content, and
 	 * whether the classic express script loads there, with which button context.
 	 *
-	 * The page content is read raw, as has_block() reads it. On a singular page the checkout and product shortcodes count
-	 * through is_checkout() and the queried page, so their rows read a post the loop of a search page holds. The cart page
-	 * loads the script unless its Cart block excludes it, so its rows fail when only the Cart block term misreads the page.
+	 * The page content is read raw, as has_block() reads it, and the checkout and product shortcodes count on the visited
+	 * page itself. The cart page loads the script unless its Cart block excludes it, so its rows fail when only the Cart block
+	 * term misreads the page.
 	 *
 	 * @return array<string,array{0:string,1:bool,2:string,3:string|null}>
 	 */
@@ -273,10 +273,10 @@ class WooPaymentsExpressCheckoutControllerTest extends WC_Unit_Test_Case {
 			'cart page with the Cart block after a page break' => array( $page_break . $cart_block, false, 'cart page', null ),
 			'password checkout page holding the Checkout block' => array( $checkout_block, true, 'checkout page', null ),
 			'checkout page with the Checkout block after a page break' => array( $page_break . $checkout_block, false, 'checkout page', null ),
-			'password post with the checkout shortcode, in a loop' => array( '[woocommerce_checkout]', true, 'loop', 'checkout' ),
-			'checkout shortcode after a page break, in a loop' => array( $page_break . '[woocommerce_checkout]', false, 'loop', 'checkout' ),
-			'password post with a product shortcode, in a loop' => array( '[product_page id="1"]', true, 'loop', 'product' ),
-			'product shortcode after a page break, in a loop' => array( $page_break . '[product_page id="1"]', false, 'loop', 'product' ),
+			'password page with the checkout shortcode' => array( '[woocommerce_checkout]', true, 'page', 'checkout' ),
+			'checkout shortcode after a page break'     => array( $page_break . '[woocommerce_checkout]', false, 'page', 'checkout' ),
+			'password page with a product shortcode'    => array( '[product_page id="1"]', true, 'page', 'product' ),
+			'product shortcode after a page break'      => array( $page_break . '[product_page id="1"]', false, 'page', 'product' ),
 		);
 	}
 
@@ -291,8 +291,8 @@ class WooPaymentsExpressCheckoutControllerTest extends WC_Unit_Test_Case {
 	 *
 	 * @param string      $content          Post content.
 	 * @param bool        $password         Whether the post is password protected.
-	 * @param string      $request          `checkout page` or `cart page`: the post is that store page, visited. `loop`: a
-	 *                                      search page whose loop holds the post.
+	 * @param string      $request          `checkout page` or `cart page`: the post is that store page, visited. `page`: a
+	 *                                      page that is neither, visited.
 	 * @param string|null $expected_context Button context the express script loads with, or null when it does not load.
 	 */
 	public function test_enqueue_frontend_assets_reads_the_raw_page_content( string $content, bool $password, string $request, ?string $expected_context ): void {
@@ -304,7 +304,7 @@ class WooPaymentsExpressCheckoutControllerTest extends WC_Unit_Test_Case {
 		$this->sut    = $this->create_controller( true, $service );
 		$post_id      = self::factory()->post->create(
 			array(
-				'post_type'     => isset( $page_options[ $request ] ) ? 'page' : 'post',
+				'post_type'     => 'page',
 				'post_status'   => 'publish',
 				'post_content'  => $content,
 				'post_password' => $password ? 'secret' : '',
@@ -312,20 +312,80 @@ class WooPaymentsExpressCheckoutControllerTest extends WC_Unit_Test_Case {
 		);
 		if ( isset( $page_options[ $request ] ) ) {
 			update_option( $page_options[ $request ], $post_id );
-			$this->reset_cart_checkout_page_cache();
-			$this->go_to( get_permalink( $post_id ) );
-			$this->assertTrue( 'cart page' === $request ? is_cart() : is_checkout(), 'Precondition: the store page.' );
-		} else {
-			$this->go_to( home_url( '/?s=nothing-matches' ) );
-			$GLOBALS['post'] = get_post( $post_id ); // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- The post of the search page's loop.
-			$this->assertFalse( is_singular(), 'Precondition: not a singular view.' );
 		}
+		$this->reset_cart_checkout_page_cache();
+		$this->go_to( get_permalink( $post_id ) );
+		$this->assertSame( 'cart page' === $request, is_cart(), 'Precondition: only the store cart page is a cart.' );
 		$this->assertSame( $password, post_password_required( $post_id ), 'Precondition: the password form renders instead of the content.' );
 
 		$this->sut->enqueue_frontend_assets();
 
 		$this->assertSame( null !== $expected_context, wp_script_is( 'wc-woopayments-express-checkout', 'enqueued' ) );
 		$this->assertSame( null === $expected_context ? array() : array( $expected_context ), $service->contexts );
+	}
+
+	/**
+	 * Pages whose checkout or product shortcode lives outside the visited page itself: in the post an archive's loop holds,
+	 * or escaped as `[[product_page]]`, which WordPress prints as text. Client 11.2.0 reads only the main query's page and
+	 * skips escaped tags (class-wc-payments-express-checkout-button-helper.php:255-259, :284-286, :975-1031).
+	 *
+	 * @return array<string,array{0:string|null,1:string|null,2:string|null,3:string|null}>
+	 */
+	public function provide_shortcodes_outside_the_visited_page(): array {
+		return array(
+			"checkout shortcode in an archive's loop post" => array( null, null, '[woocommerce_checkout]', null ),
+			"product shortcode in an archive's loop post"  => array( null, null, '[product_page id="1"]', null ),
+			'cart page whose loop post holds a product shortcode' => array( '[woocommerce_cart]', 'woocommerce_cart_page_id', '[product_page id="1"]', 'cart' ),
+			'escaped product shortcode on a page'          => array( '[[product_page id="1"]]', null, null, null ),
+			'product shortcode after an escaped one on a page' => array( '[[product_page id="1"]] [product_page id="1"]', null, null, 'product' ),
+		);
+	}
+
+	/**
+	 * @testdox Should read the checkout and product shortcodes from the visited page only, skipping escaped tags: $_dataName.
+	 * @dataProvider provide_shortcodes_outside_the_visited_page
+	 *
+	 * A prior test can permanently define WOOCOMMERCE_CHECKOUT in the parent process.
+	 *
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 *
+	 * @param string|null $page_content     Content of the visited page, or null for a search page.
+	 * @param string|null $page_option      WooCommerce page option pointing at the visited page, or null for none.
+	 * @param string|null $loop_content     Content of a post the global loop holds, or null for none.
+	 * @param string|null $expected_context Button context the express script loads with, or null when it does not load.
+	 */
+	public function test_enqueue_frontend_assets_reads_only_the_visited_page( ?string $page_content, ?string $page_option, ?string $loop_content, ?string $expected_context ): void {
+		$service   = new RecordingExpressCheckoutService();
+		$this->sut = $this->create_controller( true, $service );
+		$this->reset_frontend_surface_state();
+		if ( null === $page_content ) {
+			$this->go_to( home_url( '/?s=nothing-matches' ) );
+			$this->assertFalse( is_singular(), 'Precondition: not a singular view.' );
+		} else {
+			$page_id = self::factory()->post->create(
+				array(
+					'post_type'    => 'page',
+					'post_status'  => 'publish',
+					'post_content' => $page_content,
+				)
+			);
+			if ( null !== $page_option ) {
+				update_option( $page_option, $page_id );
+			}
+			$this->reset_cart_checkout_page_cache();
+			$this->go_to( get_permalink( $page_id ) );
+		}
+		if ( null !== $loop_content ) {
+			$GLOBALS['post'] = self::factory()->post->create_and_get( array( 'post_content' => $loop_content ) ); // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- The post of the page's loop.
+		}
+		$this->assertSame( null !== $page_option, is_cart(), 'Precondition: only the store cart page is a cart.' );
+
+		$this->sut->enqueue_frontend_assets();
+
+		$this->assertSame( null !== $expected_context, wp_script_is( 'wc-woopayments-express-checkout', 'enqueued' ) );
+		// Joined, because an array comparison failure cannot travel back from the separate process.
+		$this->assertSame( (string) $expected_context, implode( ',', $service->contexts ) );
 	}
 
 	/**

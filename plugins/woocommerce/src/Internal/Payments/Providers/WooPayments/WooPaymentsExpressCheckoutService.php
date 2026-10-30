@@ -285,6 +285,35 @@ class WooPaymentsExpressCheckoutService {
 	}
 
 	/**
+	 * Tell whether the current request is a product page, or a singular page whose own content holds a [product_page]
+	 * shortcode. Reads the main query's page, not the loop post, and skips escaped [[product_page]] tags, as client
+	 * 11.2.0 is_product() does (class-wc-payments-express-checkout-button-helper.php:255-259, :975-1031).
+	 *
+	 * @since 11.2.0
+	 *
+	 * @return bool
+	 */
+	public static function is_product_page(): bool {
+		if ( is_product() ) {
+			return true;
+		}
+
+		$main_query = $GLOBALS['wp_the_query'] ?? null;
+		$host       = $main_query instanceof \WP_Query && $main_query->is_singular() ? $main_query->get_queried_object() : null;
+		if ( ! $host instanceof \WP_Post || ! preg_match_all( '/' . get_shortcode_regex( array( 'product_page' ) ) . '/', $host->post_content, $matches, PREG_SET_ORDER ) ) {
+			return false;
+		}
+
+		foreach ( $matches as $shortcode ) {
+			if ( '[' !== $shortcode[1] || ']' !== $shortcode[6] ) {
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	/**
 	 * Get button settings shared by Apple Pay and Google Pay.
 	 *
 	 * @param string $context Express checkout context.

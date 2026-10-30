@@ -312,39 +312,11 @@ class WooPaymentsExpressCheckoutController implements RegisterHooksInterface {
 			return false;
 		}
 
-		return $this->is_checkout_surface() ||
-			$this->is_product_surface() ||
+		// Client 11.2.0 is_checkout() and is_product() (class-wc-payments-express-checkout-button-helper.php:255-259,
+		// :284-286): the visited page only, never the loop post; its Checkout block term is the exclusion above.
+		return is_checkout() ||
+			WooPaymentsExpressCheckoutService::is_product_page() ||
 			is_cart();
-	}
-
-	/**
-	 * Tell whether the current request is a checkout page or checkout content page.
-	 *
-	 * @return bool
-	 */
-	private function is_checkout_surface(): bool {
-		return is_checkout() || has_shortcode( (string) get_post_field( 'post_content', null, 'raw' ), 'woocommerce_checkout' );
-	}
-
-	/**
-	 * Tell whether the current request is a product page or product shortcode content page.
-	 *
-	 * @return bool
-	 */
-	private function is_product_surface(): bool {
-		if ( is_product() ) {
-			return true;
-		}
-
-		$main_query = $GLOBALS['wp_the_query'] ?? null;
-		if ( $main_query instanceof \WP_Query && $main_query->is_singular() ) {
-			$host = $main_query->get_queried_object();
-			if ( $host instanceof \WP_Post && has_shortcode( $host->post_content, 'product_page' ) ) {
-				return true;
-			}
-		}
-
-		return has_shortcode( (string) get_post_field( 'post_content', null, 'raw' ), 'product_page' );
 	}
 
 	/**
@@ -369,11 +341,11 @@ class WooPaymentsExpressCheckoutController implements RegisterHooksInterface {
 			return 'pay_for_order';
 		}
 
-		if ( $this->is_product_surface() ) {
+		if ( WooPaymentsExpressCheckoutService::is_product_page() ) {
 			return 'product';
 		}
 
-		if ( $this->is_checkout_surface() ) {
+		if ( is_checkout() ) {
 			return 'checkout';
 		}
 

@@ -714,6 +714,73 @@ class SessionControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
+	 * Pages whose product shortcode lives outside the visited page itself: in the post an archive's loop holds, or escaped
+	 * as `[[product_page]]`, which WordPress prints as text. Client 11.2.0 reads only the main query's page and skips escaped
+	 * tags (class-wc-payments-express-checkout-button-helper.php:255-259, :975-1031), for the page and the button context.
+	 *
+	 * @return array<string,array{0:string|null,1:string|null,2:string|null,3:string|null}>
+	 */
+	public function provide_shortcodes_outside_the_visited_page(): array {
+		return array(
+			"product shortcode in an archive's loop post" => array( null, null, '[product_page id="1"]', null ),
+			'cart page whose loop post holds a product shortcode' => array( '[woocommerce_cart]', 'woocommerce_cart_page_id', '[product_page id="1"]', 'cart' ),
+			'escaped product shortcode on a page'         => array( '[[product_page id="1"]]', null, null, null ),
+			'cart page holding an escaped product shortcode' => array( '[woocommerce_cart] [[product_page id="1"]]', 'woocommerce_cart_page_id', null, 'cart' ),
+			'product shortcode after an escaped one on a page' => array( '[[product_page id="1"]] [product_page id="1"]', null, null, 'product' ),
+		);
+	}
+
+	/**
+	 * @testdox Should read the product shortcode from the visited page only, skipping escaped tags: $_dataName.
+	 * @dataProvider provide_shortcodes_outside_the_visited_page
+	 *
+	 * A separate process: WOOCOMMERCE_CART or WOOCOMMERCE_CHECKOUT, once an earlier test defines it, holds for the rest of the run.
+	 *
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 *
+	 * @param string|null $page_content     Content of the visited page, or null for a search page.
+	 * @param string|null $page_option      WooCommerce page option pointing at the visited page, or null for none.
+	 * @param string|null $loop_content     Content of a post the global loop holds, or null for none.
+	 * @param string|null $expected_context Button context the classic script loads with, or null when it does not load.
+	 */
+	public function test_enqueue_frontend_assets_reads_only_the_visited_page( ?string $page_content, ?string $page_option, ?string $loop_content, ?string $expected_context ): void {
+		$service                                      = new RecordingWooPaySessionService();
+		$service->should_show_woopay_button           = true;
+		$service->should_load_woopay_save_user_assets = false;
+		$service->direct_checkout_enabled             = false;
+		$this->sut                                    = $this->create_controller( true, $service );
+		if ( null === $page_content ) {
+			$this->go_to( home_url( '/?s=nothing-matches' ) );
+			$this->assertFalse( is_singular(), 'Precondition: not a singular view.' );
+		} else {
+			$page_id = self::factory()->post->create(
+				array(
+					'post_type'    => 'page',
+					'post_status'  => 'publish',
+					'post_content' => $page_content,
+				)
+			);
+			if ( null !== $page_option ) {
+				update_option( $page_option, $page_id );
+			}
+			$this->reset_cart_checkout_page_cache();
+			$this->go_to( get_permalink( $page_id ) );
+		}
+		if ( null !== $loop_content ) {
+			$GLOBALS['post'] = self::factory()->post->create_and_get( array( 'post_content' => $loop_content ) ); // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- The post of the page's loop.
+		}
+		$this->assertSame( null !== $page_option, is_cart(), 'Precondition: only the store cart page is a cart.' );
+
+		$this->sut->enqueue_frontend_assets();
+
+		$this->assertSame( null !== $expected_context, wp_script_is( 'wc-woopayments-woopay', 'enqueued' ) );
+		if ( null !== $expected_context ) {
+			$this->assertStringContainsString( '"context":"' . $expected_context . '"', (string) wp_scripts()->get_data( 'wc-woopayments-woopay', 'data' ) );
+		}
+	}
+
+	/**
 	 * @testdox Should move the classic billing email into a contact section only while WooPay is enabled.
 	 */
 	public function test_register_relocates_classic_email_field_only_when_woopay_is_enabled(): void {

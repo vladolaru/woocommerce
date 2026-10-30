@@ -15,6 +15,7 @@ use WP_REST_Request;
 use WP_REST_Response;
 use WP_REST_Server;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCheckoutAssets;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExpressCheckoutService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderPayAccess;
 
@@ -961,10 +962,11 @@ class SessionController implements RegisterHooksInterface {
 			return false;
 		}
 
+		// The product page as client 11.2.0 is_product() reads it: the visited page only, never the loop post
+		// (class-wc-payments-express-checkout-button-helper.php:255-259).
 		return is_checkout() ||
 			is_cart() ||
-			is_product() ||
-			has_shortcode( (string) get_post_field( 'post_content', null, 'raw' ), 'product_page' );
+			WooPaymentsExpressCheckoutService::is_product_page();
 	}
 
 	/**
@@ -1020,7 +1022,7 @@ class SessionController implements RegisterHooksInterface {
 			return 'pay_for_order';
 		}
 
-		if ( is_product() || has_shortcode( (string) get_post_field( 'post_content', null, 'raw' ), 'product_page' ) ) {
+		if ( WooPaymentsExpressCheckoutService::is_product_page() ) {
 			return 'product';
 		}
 
