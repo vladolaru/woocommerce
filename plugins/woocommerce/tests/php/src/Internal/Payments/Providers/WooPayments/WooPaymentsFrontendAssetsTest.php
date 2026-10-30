@@ -33,6 +33,7 @@ class WooPaymentsFrontendAssetsTest extends WC_Unit_Test_Case {
 		wp_deregister_script( WooPaymentsFrontendAssets::STRIPE_SCRIPT_HANDLE );
 		wp_deregister_script( WooPaymentsFrontendAssets::APPEARANCE_SCRIPT_HANDLE );
 		wp_deregister_script( WooPaymentsFrontendAssets::FINGERPRINT_SCRIPT_HANDLE );
+		wp_deregister_script( WooPaymentsFrontendAssets::COMMON_SCRIPT_HANDLE );
 		parent::tearDown();
 	}
 
@@ -41,6 +42,7 @@ class WooPaymentsFrontendAssetsTest extends WC_Unit_Test_Case {
 	 * @testWith ["register_stripe_script", "stripe", "https://js.stripe.com/v3/"]
 	 *           ["register_appearance_script", "wc-woopayments-appearance", "/assets/js/frontend/utils/woopayments-appearance"]
 	 *           ["register_fingerprint_script", "wc-woopayments-fingerprintjs", "/assets/js/fingerprintjs/fp.umd.min.js"]
+	 *           ["register_common_script", "wc-woopayments-common", "/assets/client/blocks/wc-woopayments-common.js"]
 	 *
 	 * @param string $method Registration method.
 	 * @param string $handle Script handle it registers.
@@ -60,5 +62,14 @@ class WooPaymentsFrontendAssetsTest extends WC_Unit_Test_Case {
 		$this->sut->$method();
 
 		$this->assertSame( 'https://example.com/registered-first.js', wp_scripts()->registered[ $handle ]->src, 'Another plugin registered the handle first.' );
+	}
+
+	/**
+	 * @testdox Should register the shared shopper helpers without wp-polyfill, so classic pages gain no polyfill request.
+	 */
+	public function test_registers_the_common_helpers_without_dependencies(): void {
+		$this->sut->register_common_script();
+
+		$this->assertSame( array(), wp_scripts()->registered[ WooPaymentsFrontendAssets::COMMON_SCRIPT_HANDLE ]->deps );
 	}
 }

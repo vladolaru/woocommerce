@@ -34,6 +34,11 @@ class WooPaymentsFrontendAssets {
 	public const FINGERPRINT_SCRIPT_HANDLE = 'wc-woopayments-fingerprintjs';
 
 	/**
+	 * Handle for the helpers the card, express and WooPay scripts share on both checkouts (`window.wc.woopayments`).
+	 */
+	public const COMMON_SCRIPT_HANDLE = 'wc-woopayments-common';
+
+	/**
 	 * Stripe.js URL. Stripe serves v3 from its own domain only and asks sites not to pin or bundle it.
 	 */
 	private const STRIPE_SCRIPT_URL = 'https://js.stripe.com/v3/';
@@ -89,6 +94,29 @@ class WooPaymentsFrontendAssets {
 		wp_register_script(
 			self::FINGERPRINT_SCRIPT_HANDLE,
 			WC()->plugin_url() . '/assets/js/fingerprintjs/fp.umd.min.js',
+			array(),
+			WC_VERSION,
+			true
+		);
+	}
+
+	/**
+	 * Register the shared WooPayments shopper helpers, which set `window.wc.woopayments`.
+	 *
+	 * The Blocks build emits the file; classic scripts list this handle and Blocks scripts reach it as a build
+	 * external. It lists no dependency: the build's asset file names only wp-polyfill, which the classic scripts that
+	 * read these helpers already run without.
+	 *
+	 * @since 11.4.0
+	 */
+	public function register_common_script(): void {
+		if ( wp_script_is( self::COMMON_SCRIPT_HANDLE, 'registered' ) ) {
+			return;
+		}
+
+		wp_register_script(
+			self::COMMON_SCRIPT_HANDLE,
+			WC()->plugin_url() . '/assets/client/blocks/wc-woopayments-common.js',
 			array(),
 			WC_VERSION,
 			true
