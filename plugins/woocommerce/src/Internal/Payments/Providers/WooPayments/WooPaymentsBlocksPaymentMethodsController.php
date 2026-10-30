@@ -8,6 +8,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Blocks\Assets\Api as AssetApi;
+use Automattic\WooCommerce\Blocks\Assets\AssetDataRegistry;
 use Automattic\WooCommerce\Blocks\Package;
 use Automattic\WooCommerce\Blocks\Payments\Integrations\WooPayments;
 use Automattic\WooCommerce\Blocks\Payments\PaymentMethodRegistry;
@@ -147,7 +148,8 @@ final class WooPaymentsBlocksPaymentMethodsController implements RegisterHooksIn
 		}
 
 		$this->checkout_assets->reset_config_memos();
-		$asset_api = Package::container()->get( AssetApi::class );
+		$asset_api           = Package::container()->get( AssetApi::class );
+		$asset_data_registry = Package::container()->get( AssetDataRegistry::class );
 		foreach ( $this->provider->get_payment_gateways() as $gateway ) {
 			$payment_method_registry->register(
 				new WooPayments(
@@ -158,7 +160,8 @@ final class WooPaymentsBlocksPaymentMethodsController implements RegisterHooksIn
 					$this->woopay_eligibility,
 					$this->express_checkout_service,
 					$this->fraud_prevention_service,
-					$this->frontend_assets
+					$this->frontend_assets,
+					$asset_data_registry
 				)
 			);
 		}

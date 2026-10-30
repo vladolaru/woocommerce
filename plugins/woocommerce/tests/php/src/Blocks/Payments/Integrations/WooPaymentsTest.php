@@ -139,7 +139,7 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 		try {
 			$gateway = new WooPaymentsGateway();
 			$gateway->init( new \Automattic\WooCommerce\Tests\Internal\Payments\RecordingPaymentProcessingService(), $provider, null, null, $account_service );
-			$integration = new WooPayments( $this->createMock( AssetApi::class ), $gateway, $provider, $assets, $this->create_woopay_eligibility(), $this->create_express_checkout_service(), $this->get_fraud_prevention_service(), $this->get_frontend_assets() );
+			$integration = new WooPayments( $this->createMock( AssetApi::class ), $gateway, $provider, $assets, $this->create_woopay_eligibility(), $this->create_express_checkout_service(), $this->get_fraud_prevention_service(), $this->get_frontend_assets(), $this->createMock( AssetDataRegistry::class ) );
 
 			$this->assertSame( $expected, $integration->is_active() );
 		} finally {
@@ -173,7 +173,7 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 		$gateway->id = 'woocommerce_payments_klarna';
 		$gateway->expects( $this->once() )->method( 'is_available' )->willReturn( false );
 
-		$integration = new WooPayments( $asset_api, $gateway, $provider, $assets, $this->create_woopay_eligibility(), $this->create_express_checkout_service(), $this->get_fraud_prevention_service(), $this->get_frontend_assets() );
+		$integration = new WooPayments( $asset_api, $gateway, $provider, $assets, $this->create_woopay_eligibility(), $this->create_express_checkout_service(), $this->get_fraud_prevention_service(), $this->get_frontend_assets(), $this->createMock( AssetDataRegistry::class ) );
 
 		$this->assertFalse( $integration->is_active() );
 	}
@@ -234,7 +234,7 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 			->getMock();
 		$provider->method( 'can_process_payments' )->willReturn( true );
 
-		$integration = new WooPayments( $asset_api, $this->create_card_gateway(), $provider, $assets, $this->create_woopay_eligibility(), $this->create_express_checkout_service(), $this->get_fraud_prevention_service(), $this->get_frontend_assets() );
+		$integration = new WooPayments( $asset_api, $this->create_card_gateway(), $provider, $assets, $this->create_woopay_eligibility(), $this->create_express_checkout_service(), $this->get_fraud_prevention_service(), $this->get_frontend_assets(), $this->createMock( AssetDataRegistry::class ) );
 
 		$this->assertSame( array( 'wc-payment-method-woopayments', 'wc-payment-method-woopayments-fraud-scripts' ), $integration->get_payment_method_script_handles() );
 		$this->assertTrue( wp_script_is( 'stripe', 'registered' ) );
@@ -315,7 +315,7 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 		$provider->method( 'can_process_payments' )->willReturn( true );
 		$woopay_session_service = $this->create_woopay_eligibility( true );
 
-		$integration = new WooPayments( $asset_api, $this->create_card_gateway(), $provider, $assets, $woopay_session_service, $this->create_express_checkout_service(), $this->get_fraud_prevention_service(), $this->get_frontend_assets() );
+		$integration = new WooPayments( $asset_api, $this->create_card_gateway(), $provider, $assets, $woopay_session_service, $this->create_express_checkout_service(), $this->get_fraud_prevention_service(), $this->get_frontend_assets(), $this->createMock( AssetDataRegistry::class ) );
 
 		$this->assertSame(
 			array( 'wc-payment-method-woopayments', 'wc-payment-method-woopayments-woopay', 'wc-payment-method-woopayments-fraud-scripts' ),
@@ -394,7 +394,7 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 		$provider->method( 'can_process_payments' )->willReturn( true );
 		$express_checkout_service = $this->create_express_checkout_service( true );
 
-		$integration = new WooPayments( $asset_api, $this->create_card_gateway(), $provider, $assets, $this->create_woopay_eligibility(), $express_checkout_service, $this->get_fraud_prevention_service(), $this->get_frontend_assets() );
+		$integration = new WooPayments( $asset_api, $this->create_card_gateway(), $provider, $assets, $this->create_woopay_eligibility(), $express_checkout_service, $this->get_fraud_prevention_service(), $this->get_frontend_assets(), $this->createMock( AssetDataRegistry::class ) );
 
 		$this->assertSame(
 			array( 'wc-payment-method-woopayments', 'wc-payment-method-woopayments-express-checkout', 'wc-payment-method-woopayments-fraud-scripts' ),
@@ -446,7 +446,7 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 			->getMock();
 		$provider->method( 'can_process_payments' )->willReturn( true );
 
-		$integration = new WooPayments( $asset_api, $this->create_card_gateway(), $provider, $assets, $this->create_woopay_eligibility( true ), $this->create_express_checkout_service( true ), $this->get_fraud_prevention_service(), $this->get_frontend_assets() );
+		$integration = new WooPayments( $asset_api, $this->create_card_gateway(), $provider, $assets, $this->create_woopay_eligibility( true ), $this->create_express_checkout_service( true ), $this->get_fraud_prevention_service(), $this->get_frontend_assets(), $this->createMock( AssetDataRegistry::class ) );
 		$integration->initialize();
 
 		foreach ( $integration->get_payment_method_script_handles() as $handle ) {
@@ -493,7 +493,7 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 			->getMock();
 		$provider->method( 'can_process_payments' )->willReturn( true );
 
-		$integration = new WooPayments( $asset_api, $this->create_card_gateway(), $provider, $assets, $this->create_woopay_eligibility( true ), $this->create_express_checkout_service( true ), $this->get_fraud_prevention_service(), $this->get_frontend_assets() );
+		$integration = new WooPayments( $asset_api, $this->create_card_gateway(), $provider, $assets, $this->create_woopay_eligibility( true ), $this->create_express_checkout_service( true ), $this->get_fraud_prevention_service(), $this->get_frontend_assets(), $this->createMock( AssetDataRegistry::class ) );
 		$integration->initialize();
 
 		$handles = $integration->get_payment_method_script_handles();
@@ -537,7 +537,7 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 			->getMock();
 		$provider->method( 'can_process_payments' )->willReturn( true );
 
-		$integration = new WooPayments( $asset_api, $this->create_card_gateway(), $provider, $assets, $this->create_woopay_eligibility( true ), $this->create_express_checkout_service( true ), $this->get_fraud_prevention_service(), $this->get_frontend_assets() );
+		$integration = new WooPayments( $asset_api, $this->create_card_gateway(), $provider, $assets, $this->create_woopay_eligibility( true ), $this->create_express_checkout_service( true ), $this->get_fraud_prevention_service(), $this->get_frontend_assets(), $this->createMock( AssetDataRegistry::class ) );
 		$handles     = $integration->get_payment_method_script_handles();
 		set_current_screen( 'front' );
 
@@ -701,58 +701,60 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Card data reads in one request, each as its isWooPayEnabled and isWooPayEmailInputEnabled, which a
-	 * wcpay_payment_fields_js_config callback can change between reads.
+	 * Steps of a Blocks page and the card data flags of each read in order, with the read the page publishes. Each read's
+	 * flags are isWooPayEnabled and isWooPayEmailInputEnabled, which a wcpay_payment_fields_js_config callback can change
+	 * between reads. See run_card_page_steps() for the steps.
 	 *
-	 * @return array<string,array{0:array<int,array{0:bool,1:bool}>}>
+	 * @return array<string,array{0:string[],1:array<int,array{0:bool,1:bool}>,2:int}>
 	 */
-	public function provide_card_data_read_sequences(): array {
+	public function provide_card_page_steps(): array {
+		$on  = array( true, true );
+		$off = array( true, false );
+
 		return array(
-			'on, then off'     => array( array( array( true, true ), array( true, false ) ) ),
-			'off, then on'     => array( array( array( false, true ), array( true, true ) ) ),
-			'on, on, then off' => array( array( array( true, true ), array( true, true ), array( false, true ) ) ),
+			'read of the integration before registration, off then published on' => array( array( 'read the integration', 'register', 'checkout data' ), array( $off, $on ), 1 ),
+			'read of the integration before registration, on then published off' => array( array( 'read the integration', 'register', 'checkout data' ), array( $on, $off ), 1 ),
+			'read of the registry before registration, off then published on' => array( array( 'read the registry', 'register', 'checkout data' ), array( $off, $on ), 1 ),
+			'read of the registry before registration, on then published off' => array( array( 'read the registry', 'register', 'checkout data' ), array( $on, $off ), 1 ),
+			'read after registration, off then published on' => array( array( 'register', 'read the integration', 'checkout data' ), array( $off, $on ), 1 ),
+			'read after registration, on then published off' => array( array( 'register', 'read the integration', 'checkout data' ), array( $on, $off ), 1 ),
+			'earlier read in the action, off then published on' => array( array( 'register', 'hook an earlier read', 'checkout data' ), array( $off, $on ), 1 ),
+			'earlier read in the action, on then published off' => array( array( 'register', 'hook an earlier read', 'checkout data' ), array( $on, $off ), 1 ),
+			'later read in the action, published on then off' => array( array( 'register', 'hook a later read', 'checkout data' ), array( $on, $off ), 0 ),
+			'later read in the action, published off then on' => array( array( 'register', 'hook a later read', 'checkout data' ), array( $off, $on ), 0 ),
+			'second data step, published on then off' => array( array( 'register', 'checkout data', 'checkout data' ), array( $on, $off ), 0 ),
+			'second data step, published off then on' => array( array( 'register', 'checkout data', 'checkout data' ), array( $off, $on ), 0 ),
+			'more data steps, published on, then on, then off' => array( array( 'register', 'checkout data', 'checkout data', 'checkout data' ), array( $on, $on, $off ), 0 ),
+			'read after publication, published on then off' => array( array( 'register', 'checkout data', 'read the integration' ), array( $on, $off ), 0 ),
+			'read after publication, published off then on' => array( array( 'register', 'checkout data', 'read the integration' ), array( $off, $on ), 0 ),
 		);
 	}
 
 	/**
-	 * @testdox Should keep the WooPay protocol on the Blocks card script exactly when the card data Blocks publishes needs it, however later reads change the flags: $_dataName.
+	 * @testdox Should keep the WooPay protocol on the Blocks card script exactly when the card data the page publishes needs it, whatever other reads hold: $_dataName.
 	 *
-	 * @dataProvider provide_card_data_read_sequences
+	 * @dataProvider provide_card_page_steps
 	 *
-	 * Blocks rebuilds the payment data on each read but publishes only the first (Payments\Api::add_payment_method_script_data()).
-	 *
-	 * @param array<int,array{0:bool,1:bool}> $sequence The flags of each card data read, in order.
+	 * @param string[]                        $steps          The page's steps, in order.
+	 * @param array<int,array{0:bool,1:bool}> $sequence       The flags of each card data read, in order.
+	 * @param int                             $published_read Index of the read the page publishes.
 	 */
-	public function test_card_keeps_the_woopay_protocol_its_published_data_needs( array $sequence ): void {
+	public function test_card_woopay_protocol_follows_the_read_blocks_publishes( array $steps, array $sequence, int $published_read ): void {
 		$this->go_to_block_page( 'woocommerce/checkout', 'woocommerce_checkout_page_id' );
-		$account_data = self::ACCOUNT_A;
-		$assets       = $this->create_checkout_assets( $this->create_checkout_account( $account_data ) );
 		$this->filter_card_woopay_flags( $sequence );
-		$asset_registry = new AssetDataRegistry( Package::container()->get( AssetApi::class ) );
-		$api            = $this->register_card_for_checkout( $this->create_registered_integration( false, false, null, $assets ), $asset_registry );
+		$page = $this->create_card_page( $this->create_card_page_assets() );
 
-		$reads = count( $sequence );
-		for ( $read = 0; $read < $reads; $read++ ) {
-			$api->add_payment_method_script_data();
-		}
+		$this->run_card_page_steps( $page, $steps );
 
-		$published = $this->get_published_card_data( $asset_registry );
-		$this->assertSame( $sequence[0][0], $published['isWooPayEnabled'] ?? null, 'Precondition: Blocks publishes the first read.' );
-		$this->assertSame( $sequence[0][1], $published['isWooPayEmailInputEnabled'] ?? null, 'Precondition: Blocks publishes the first read.' );
-		$deps = wp_scripts()->registered['wc-payment-method-woopayments']->deps;
-		if ( $published['isWooPayEnabled'] && $published['isWooPayEmailInputEnabled'] ) {
-			$this->assertContains( WooPaymentsFrontendAssets::WOOPAY_COMMON_SCRIPT_HANDLE, $deps, 'The published data wires the email check, which calls window.wc.woopayments.woopay.' );
-		} else {
-			$this->assertNotContains( WooPaymentsFrontendAssets::WOOPAY_COMMON_SCRIPT_HANDLE, $deps, 'The published data leaves the email check off, so the page needs no protocol.' );
-		}
+		$this->assert_card_protocol_matches_published_flags( $page['data_registry'], $sequence[ $published_read ] );
 	}
 
 	/**
-	 * Card data flags of two requests in a row.
+	 * Card data flags of the first and second reads on a page, in both directions of the WooPay email check.
 	 *
 	 * @return array<string,array{0:array{0:bool,1:bool},1:array{0:bool,1:bool}}>
 	 */
-	public function provide_card_data_of_two_requests(): array {
+	public function provide_two_card_reads(): array {
 		return array(
 			'off, then on' => array( array( false, true ), array( true, true ) ),
 			'on, then off' => array( array( true, true ), array( true, false ) ),
@@ -760,34 +762,259 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should decide the Blocks card's WooPay protocol again on the next request, on the same checkout assets service: $_dataName.
+	 * @testdox Should let the first of the Cart and Checkout blocks on one page decide the WooPay protocol, and the second change nothing: $_dataName.
 	 *
-	 * @dataProvider provide_card_data_of_two_requests
+	 * @dataProvider provide_two_card_reads
 	 *
-	 * The service can outlive a request in a persistent worker, so its init callback clears the decision.
+	 * @param array{0:bool,1:bool} $first  The Cart block's flags.
+	 * @param array{0:bool,1:bool} $second The Checkout block's flags.
+	 */
+	public function test_second_block_on_a_page_changes_nothing( array $first, array $second ): void {
+		$page_id = self::factory()->post->create(
+			array(
+				'post_type'    => 'page',
+				'post_status'  => 'publish',
+				'post_content' => '<!-- wp:woocommerce/cart --><div class="wp-block-woocommerce-cart"></div><!-- /wp:woocommerce/cart --><!-- wp:woocommerce/checkout --><div class="wp-block-woocommerce-checkout"></div><!-- /wp:woocommerce/checkout -->',
+			)
+		);
+		update_option( 'woocommerce_cart_page_id', $page_id );
+		$this->reset_cart_checkout_page_cache();
+		$this->go_to( get_permalink( $page_id ) );
+		$this->filter_card_woopay_flags( array( $first, $second ) );
+		$page = $this->create_card_page( $this->create_card_page_assets() );
+
+		$this->run_card_page_steps( $page, array( 'register', 'cart data', 'register', 'checkout data' ) );
+
+		$this->assert_card_protocol_matches_published_flags( $page['data_registry'], $first );
+	}
+
+	/**
+	 * @testdox Should let the Mini-Cart's read decide the WooPay protocol when the card script is already registered, and the Checkout block's read change nothing: $_dataName.
+	 *
+	 * @dataProvider provide_two_card_reads
+	 *
+	 * The Mini-Cart skips its data on the store's cart and checkout pages, so it publishes first only on another page that
+	 * holds the Checkout block. It registers no payment scripts itself: they are registered already only with unified
+	 * editor assets, which ask for them on init.
+	 *
+	 * @param array{0:bool,1:bool} $first  The Mini-Cart's flags.
+	 * @param array{0:bool,1:bool} $second The Checkout block's flags.
+	 */
+	public function test_mini_cart_publishing_first_decides_when_the_card_script_is_registered( array $first, array $second ): void {
+		$this->go_to_block_page( 'woocommerce/checkout', null );
+		$this->filter_card_woopay_flags( array( $first, $second ) );
+		$page = $this->create_card_page( $this->create_card_page_assets() );
+
+		$this->run_card_page_steps( $page, array( 'register', 'cart data', 'register', 'checkout data' ) );
+
+		$this->assert_card_protocol_matches_published_flags( $page['data_registry'], $first );
+	}
+
+	/**
+	 * @testdox Should keep the WooPay protocol listed when the Mini-Cart published before the card script was registered: $_dataName.
+	 *
+	 * @dataProvider provide_two_card_reads
+	 *
+	 * With nothing to change at the read that publishes, the script keeps the dependency its asset file lists. Published
+	 * off, that costs an unneeded protocol on this page. What must never happen is published on without the protocol.
+	 *
+	 * @param array{0:bool,1:bool} $first  The Mini-Cart's flags.
+	 * @param array{0:bool,1:bool} $second The Checkout block's flags.
+	 */
+	public function test_card_script_registered_after_the_mini_cart_published_keeps_the_protocol( array $first, array $second ): void {
+		$this->go_to_block_page( 'woocommerce/checkout', null );
+		$this->filter_card_woopay_flags( array( $first, $second ) );
+		$page = $this->create_card_page( $this->create_card_page_assets() );
+
+		$this->run_card_page_steps( $page, array( 'cart data', 'register', 'checkout data' ) );
+
+		$published = $this->get_published_card_data( $page['data_registry'] );
+		$this->assertSame( $first[1], $published['isWooPayEmailInputEnabled'] ?? null, 'Precondition: the Mini-Cart publishes its read.' );
+		$this->assertContains( WooPaymentsFrontendAssets::WOOPAY_COMMON_SCRIPT_HANDLE, wp_scripts()->registered['wc-payment-method-woopayments']->deps );
+	}
+
+	/**
+	 * Reads of the card data that publish nothing, with the email check off.
+	 *
+	 * @return array<string,array{0:string}>
+	 */
+	public function provide_pure_reads(): array {
+		return array(
+			'of the integration' => array( 'read the integration' ),
+			'of the registry'    => array( 'read the registry' ),
+		);
+	}
+
+	/**
+	 * @testdox Should leave the card script's dependencies untouched on a read outside the two enqueue data actions: $_dataName.
+	 *
+	 * @dataProvider provide_pure_reads
+	 *
+	 * @param string $read The read, a step of run_card_page_steps().
+	 */
+	public function test_read_outside_the_enqueue_data_actions_leaves_the_dependencies_untouched( string $read ): void {
+		$this->go_to_block_page( 'woocommerce/checkout', 'woocommerce_checkout_page_id' );
+		$this->filter_card_woopay_flags( array( array( true, false ) ) );
+		$page = $this->create_card_page( $this->create_card_page_assets() );
+		$this->run_card_page_steps( $page, array( 'register' ) );
+		$deps = wp_scripts()->registered['wc-payment-method-woopayments']->deps;
+		$this->assertContains( WooPaymentsFrontendAssets::WOOPAY_COMMON_SCRIPT_HANDLE, $deps, 'Precondition: the card script lists the protocol.' );
+
+		$this->run_card_page_steps( $page, array( $read ) );
+
+		$this->assertSame( $deps, wp_scripts()->registered['wc-payment-method-woopayments']->deps );
+	}
+
+	/**
+	 * @testdox Should decide the Blocks card's WooPay protocol afresh on the next request, with nothing carried over: $_dataName.
+	 *
+	 * @dataProvider provide_two_card_reads
 	 *
 	 * @param array{0:bool,1:bool} $first  The first request's flags.
 	 * @param array{0:bool,1:bool} $second The second request's flags.
 	 */
-	public function test_next_request_decides_the_card_woopay_protocol_again( array $first, array $second ): void {
+	public function test_next_request_decides_the_card_woopay_protocol_afresh( array $first, array $second ): void {
 		$this->go_to_block_page( 'woocommerce/checkout', 'woocommerce_checkout_page_id' );
-		$account_data = self::ACCOUNT_A;
-		$assets       = $this->create_checkout_assets( $this->create_checkout_account( $account_data ) );
 		$this->filter_card_woopay_flags( array( $first, $second ) );
-		$this->register_card_for_checkout( $this->create_registered_integration( false, false, null, $assets ), new AssetDataRegistry( Package::container()->get( AssetApi::class ) ) )->add_payment_method_script_data();
-		$this->assertSame( $first[0] && $first[1], in_array( WooPaymentsFrontendAssets::WOOPAY_COMMON_SCRIPT_HANDLE, wp_scripts()->registered['wc-payment-method-woopayments']->deps, true ), 'Precondition: the first request decides by its own flags.' );
+		$assets = $this->create_card_page_assets();
+		$page   = $this->create_card_page( $assets );
+		$this->run_card_page_steps( $page, array( 'register', 'checkout data' ) );
+		$this->assert_card_protocol_matches_published_flags( $page['data_registry'], $first );
 
-		// The next request: a fresh script registration and data registry, and only the service's own init callback.
+		// The next request: a fresh script registration and data registry, on the same service.
 		wp_deregister_script( 'wc-payment-method-woopayments' );
-		remove_all_actions( 'init' );
-		$assets->register();
-		do_action( 'init' );
-		$asset_registry = new AssetDataRegistry( Package::container()->get( AssetApi::class ) );
-		$this->register_card_for_checkout( $this->create_registered_integration( false, false, null, $assets ), $asset_registry )->add_payment_method_script_data();
+		$page = $this->create_card_page( $assets );
+		$this->run_card_page_steps( $page, array( 'register', 'checkout data' ) );
 
-		$published = $this->get_published_card_data( $asset_registry );
-		$this->assertSame( $second[1], $published['isWooPayEmailInputEnabled'] ?? null, 'Precondition: the second request publishes its own flags.' );
-		$this->assertSame( $second[0] && $second[1], in_array( WooPaymentsFrontendAssets::WOOPAY_COMMON_SCRIPT_HANDLE, wp_scripts()->registered['wc-payment-method-woopayments']->deps, true ), 'The second request decides by its own published flags.' );
+		$this->assert_card_protocol_matches_published_flags( $page['data_registry'], $second );
+	}
+
+	/**
+	 * @testdox Should read the data registry Blocks publishes to on an integration the registrar builds, so a read after publication changes nothing.
+	 */
+	public function test_registered_card_reads_the_data_registry_blocks_publishes_to(): void {
+		$this->go_to_block_page( 'woocommerce/checkout', 'woocommerce_checkout_page_id' );
+		$this->filter_card_woopay_flags( array( array( true, true ), array( true, false ) ) );
+		$payment_methods = new PaymentMethodRegistry();
+		$this->create_split_registrar( $this->create_card_page_assets(), array( $this->create_card_gateway() ) )->handle_woocommerce_blocks_payment_method_type_registration( $payment_methods );
+		$data_registry = Package::container()->get( AssetDataRegistry::class );
+		$data          = new \ReflectionProperty( AssetDataRegistry::class, 'data' );
+		$data->setAccessible( true );
+		$saved_data = $data->getValue( $data_registry );
+		$data->setValue( $data_registry, array_diff_key( $saved_data, array_flip( array( 'paymentMethodData', 'paymentMethodSortOrder' ) ) ) );
+
+		try {
+			$api = new Api( $payment_methods, $data_registry );
+			$this->run_card_page_steps(
+				array(
+					'integration'     => null,
+					'payment_methods' => $payment_methods,
+					'api'             => $this->hook_payment_data( $api ),
+					'data_registry'   => $data_registry,
+				),
+				array( 'register', 'checkout data', 'checkout data' )
+			);
+
+			$this->assert_card_protocol_matches_published_flags( $data_registry, array( true, true ) );
+		} finally {
+			$data->setValue( $data_registry, $saved_data );
+		}
+	}
+
+	/**
+	 * Create real checkout assets for a card page, over account A.
+	 *
+	 * @return WooPaymentsCheckoutAssets
+	 */
+	private function create_card_page_assets(): WooPaymentsCheckoutAssets {
+		$account_data = self::ACCOUNT_A;
+
+		return $this->create_checkout_assets( $this->create_checkout_account( $account_data ) );
+	}
+
+	/**
+	 * Create the parts of a Blocks page with the card: the integration, the real payment method registry and Blocks
+	 * payments API, and a real data registry, for one request. Only this API's callback runs on the two enqueue data actions.
+	 *
+	 * @param WooPaymentsCheckoutAssets $assets Checkout assets to build the card data with.
+	 * @return array{integration:WooPayments,payment_methods:PaymentMethodRegistry,api:Api,data_registry:AssetDataRegistry}
+	 */
+	private function create_card_page( WooPaymentsCheckoutAssets $assets ): array {
+		$data_registry = new AssetDataRegistry( Package::container()->get( AssetApi::class ) );
+		$integration   = $this->create_registered_integration( false, false, null, $assets, $data_registry );
+		$integration->initialize();
+		$payment_methods = $this->create_payment_method_registry( $integration );
+
+		return array(
+			'integration'     => $integration,
+			'payment_methods' => $payment_methods,
+			'api'             => $this->hook_payment_data( new Api( $payment_methods, $data_registry ) ),
+			'data_registry'   => $data_registry,
+		);
+	}
+
+	/**
+	 * Make a Blocks payments API's data callback the only one on the two enqueue data actions, as Api::init() hooks it.
+	 *
+	 * @param Api $api Blocks payments API.
+	 * @return Api The same API.
+	 */
+	private function hook_payment_data( Api $api ): Api {
+		foreach ( array( 'woocommerce_blocks_checkout_enqueue_data', 'woocommerce_blocks_cart_enqueue_data' ) as $action ) {
+			remove_all_actions( $action );
+			add_action( $action, array( $api, 'add_payment_method_script_data' ) );
+		}
+
+		return $api;
+	}
+
+	/**
+	 * Run steps of a Blocks page. `register` is the Checkout block's script registration step, which
+	 * AbstractBlock::render_callback() runs before the block's data. `checkout data` and `cart data` fire the Checkout
+	 * block's and the Cart or Mini-Cart block's enqueue data action. The read steps read the card data, publishing nothing.
+	 * The hook steps add a read of the card data to the checkout action, before or after the API's callback.
+	 *
+	 * @param array{integration:WooPayments|null,payment_methods:PaymentMethodRegistry,api:Api,data_registry:AssetDataRegistry} $page  The page, from create_card_page().
+	 * @param string[]                                                                                                          $steps The steps, in order.
+	 */
+	private function run_card_page_steps( array $page, array $steps ): void {
+		$read = array( $page['integration'], 'get_payment_method_data' );
+		foreach ( $steps as $step ) {
+			if ( 'register' === $step ) {
+				$page['api']->add_payment_method_script_dependencies( array(), 'wc-checkout-block-frontend' );
+			} elseif ( 'checkout data' === $step ) {
+				do_action( 'woocommerce_blocks_checkout_enqueue_data' ); // phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment
+			} elseif ( 'cart data' === $step ) {
+				do_action( 'woocommerce_blocks_cart_enqueue_data' ); // phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment
+			} elseif ( 'read the integration' === $step ) {
+				$page['integration']->get_payment_method_data();
+			} elseif ( 'read the registry' === $step ) {
+				$page['payment_methods']->get_all_registered_script_data();
+			} elseif ( 'hook an earlier read' === $step ) {
+				add_action( 'woocommerce_blocks_checkout_enqueue_data', $read, 5 );
+			} elseif ( 'hook a later read' === $step ) {
+				add_action( 'woocommerce_blocks_checkout_enqueue_data', $read, 20 );
+			}
+		}
+	}
+
+	/**
+	 * Assert the page published the given flags and the card script lists the WooPay protocol exactly when they turn the
+	 * WooPay email check on.
+	 *
+	 * @param AssetDataRegistry    $data_registry Data registry of the page.
+	 * @param array{0:bool,1:bool} $flags         The flags the page must publish.
+	 */
+	private function assert_card_protocol_matches_published_flags( AssetDataRegistry $data_registry, array $flags ): void {
+		$published = $this->get_published_card_data( $data_registry );
+		$this->assertSame( $flags[0], $published['isWooPayEnabled'] ?? null, 'Precondition: the page publishes the expected read.' );
+		$this->assertSame( $flags[1], $published['isWooPayEmailInputEnabled'] ?? null, 'Precondition: the page publishes the expected read.' );
+		$deps = wp_scripts()->registered['wc-payment-method-woopayments']->deps;
+		if ( $flags[0] && $flags[1] ) {
+			$this->assertContains( WooPaymentsFrontendAssets::WOOPAY_COMMON_SCRIPT_HANDLE, $deps, 'The published data wires the email check, which calls window.wc.woopayments.woopay.' );
+		} else {
+			$this->assertNotContains( WooPaymentsFrontendAssets::WOOPAY_COMMON_SCRIPT_HANDLE, $deps, 'The published data leaves the email check off, so the page needs no protocol.' );
+		}
 	}
 
 	/**
@@ -808,22 +1035,6 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 				return $config;
 			}
 		);
-	}
-
-	/**
-	 * Register a card integration with the real Blocks payments API over the given data registry, and run the Checkout
-	 * block's script registration step, as AbstractBlock::render_callback() does before it reads the payment data.
-	 *
-	 * @param WooPayments       $integration    Card integration.
-	 * @param AssetDataRegistry $asset_registry Data registry the page publishes.
-	 * @return Api The payments API, to read the payment data with.
-	 */
-	private function register_card_for_checkout( WooPayments $integration, AssetDataRegistry $asset_registry ): Api {
-		$integration->initialize();
-		$api = new Api( $this->create_payment_method_registry( $integration ), $asset_registry );
-		$api->add_payment_method_script_dependencies( array(), 'wc-checkout-block-frontend' );
-
-		return $api;
 	}
 
 	/**
@@ -1079,7 +1290,7 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 			->getMock();
 		$provider->method( 'can_process_payments' )->willReturn( true );
 		$provider->method( 'get_payment_gateways' )->willReturn( array() );
-		$integration = new WooPayments( $this->createMock( AssetApi::class ), $this->create_card_gateway(), $provider, $assets, $woopay, $express, $this->get_fraud_prevention_service(), $this->get_frontend_assets() );
+		$integration = new WooPayments( $this->createMock( AssetApi::class ), $this->create_card_gateway(), $provider, $assets, $woopay, $express, $this->get_fraud_prevention_service(), $this->get_frontend_assets(), $this->createMock( AssetDataRegistry::class ) );
 
 		$handles = $integration->get_payment_method_script_handles();
 		$data    = $integration->get_payment_method_data();
@@ -1119,7 +1330,7 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 		$provider->method( 'can_process_payments' )->willReturn( true );
 		$provider->method( 'get_payment_gateways' )->willReturn( array() );
 
-		$integration = new WooPayments( $asset_api, $this->create_card_gateway(), $provider, $assets, $this->create_woopay_eligibility(), $this->create_express_checkout_service(), $this->get_fraud_prevention_service(), $this->get_frontend_assets() );
+		$integration = new WooPayments( $asset_api, $this->create_card_gateway(), $provider, $assets, $this->create_woopay_eligibility(), $this->create_express_checkout_service(), $this->get_fraud_prevention_service(), $this->get_frontend_assets(), $this->createMock( AssetDataRegistry::class ) );
 
 		$this->assertSame(
 			array(
@@ -1383,12 +1594,13 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 	 * Create the Blocks payment methods registrar over the given checkout assets, on an active store with card, Klarna
 	 * and Affirm split gateways.
 	 *
-	 * @param WooPaymentsCheckoutAssets $assets Checkout assets.
+	 * @param WooPaymentsCheckoutAssets $assets   Checkout assets.
+	 * @param WooPaymentsGateway[]|null $gateways Gateways to register instead of the split ones.
 	 * @return WooPaymentsBlocksPaymentMethodsController
 	 */
-	private function create_split_registrar( WooPaymentsCheckoutAssets $assets ): WooPaymentsBlocksPaymentMethodsController {
+	private function create_split_registrar( WooPaymentsCheckoutAssets $assets, ?array $gateways = null ): WooPaymentsBlocksPaymentMethodsController {
 		$registry = new WooPaymentsPaymentMethodRegistry();
-		$gateways = array( new WooPaymentsGateway( $registry->get( 'card' ) ), new WooPaymentsGateway( $registry->get( 'klarna' ) ), new WooPaymentsGateway( $registry->get( 'affirm' ) ) );
+		$gateways = $gateways ?? array( new WooPaymentsGateway( $registry->get( 'card' ) ), new WooPaymentsGateway( $registry->get( 'klarna' ) ), new WooPaymentsGateway( $registry->get( 'affirm' ) ) );
 		$provider = $this->getMockBuilder( WooPaymentsProvider::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'can_process_payments', 'get_payment_gateways', 'get_gateway_for_method' ) )
@@ -1500,7 +1712,7 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 		$provider->method( 'get_payment_gateways' )->willReturn( array( $card_gateway, $klarna_gateway ) );
 		$provider->method( 'get_gateway_for_method' )->willReturnMap( array( array( 'card', $card_gateway ) ) );
 
-		$integration = new WooPayments( $asset_api, $klarna_gateway, $provider, $assets, $this->create_woopay_eligibility(), $this->create_express_checkout_service(), $this->get_fraud_prevention_service(), $this->get_frontend_assets() );
+		$integration = new WooPayments( $asset_api, $klarna_gateway, $provider, $assets, $this->create_woopay_eligibility(), $this->create_express_checkout_service(), $this->get_fraud_prevention_service(), $this->get_frontend_assets(), $this->createMock( AssetDataRegistry::class ) );
 
 		$this->assertSame(
 			array(
@@ -1539,7 +1751,7 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 		$provider->method( 'get_payment_gateways' )->willReturn( array() );
 		$express_checkout_service = $this->create_express_checkout_service( true );
 
-		$integration = new WooPayments( $asset_api, $this->create_card_gateway(), $provider, $assets, $this->create_woopay_eligibility(), $express_checkout_service, $this->get_fraud_prevention_service(), $this->get_frontend_assets() );
+		$integration = new WooPayments( $asset_api, $this->create_card_gateway(), $provider, $assets, $this->create_woopay_eligibility(), $express_checkout_service, $this->get_fraud_prevention_service(), $this->get_frontend_assets(), $this->createMock( AssetDataRegistry::class ) );
 
 		$this->assertSame(
 			array(
@@ -1579,10 +1791,10 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 	/**
 	 * Visit a published page holding one block and make it the matching WooCommerce page.
 	 *
-	 * @param string $block_name  Block name, such as `woocommerce/cart`.
-	 * @param string $page_option WooCommerce page option that should point at the page.
+	 * @param string      $block_name  Block name, such as `woocommerce/cart`.
+	 * @param string|null $page_option WooCommerce page option that should point at the page, or null to leave it an ordinary page.
 	 */
-	private function go_to_block_page( string $block_name, string $page_option ): void {
+	private function go_to_block_page( string $block_name, ?string $page_option ): void {
 		$class   = 'wp-block-' . str_replace( '/', '-', $block_name );
 		$page_id = self::factory()->post->create(
 			array(
@@ -1591,7 +1803,9 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 				'post_content' => sprintf( '<!-- wp:%1$s --><div class="%2$s"></div><!-- /wp:%1$s -->', $block_name, $class ),
 			)
 		);
-		update_option( $page_option, $page_id );
+		if ( null !== $page_option ) {
+			update_option( $page_option, $page_id );
+		}
 
 		$this->reset_cart_checkout_page_cache();
 		$this->go_to( get_permalink( $page_id ) );
@@ -1615,9 +1829,10 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 	 * @param bool                           $show_express_button Whether the Apple Pay and Google Pay buttons are available.
 	 * @param array<string,mixed>|null       $payment_method_data The Blocks payment method data the checkout assets build, or null to leave it unbuilt.
 	 * @param WooPaymentsCheckoutAssets|null $assets              Checkout assets to build the data with, or null for a double.
+	 * @param AssetDataRegistry|null         $asset_data_registry Data registry the page publishes, or null for a double.
 	 * @return WooPayments
 	 */
-	private function create_registered_integration( bool $show_woopay_button = false, bool $show_express_button = false, ?array $payment_method_data = null, ?WooPaymentsCheckoutAssets $assets = null ): WooPayments {
+	private function create_registered_integration( bool $show_woopay_button = false, bool $show_express_button = false, ?array $payment_method_data = null, ?WooPaymentsCheckoutAssets $assets = null, ?AssetDataRegistry $asset_data_registry = null ): WooPayments {
 		if ( null === $assets ) {
 			$assets = $this->getMockBuilder( WooPaymentsCheckoutAssets::class )
 				->disableOriginalConstructor()
@@ -1642,7 +1857,8 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 			$this->create_woopay_eligibility( $show_woopay_button ),
 			$this->create_express_checkout_service( $show_express_button ),
 			$this->get_fraud_prevention_service(),
-			$this->get_frontend_assets()
+			$this->get_frontend_assets(),
+			$asset_data_registry ?? $this->createMock( AssetDataRegistry::class )
 		);
 	}
 
@@ -1720,7 +1936,10 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 		$api          = new Api( $this->create_payment_method_registry( $integration ), $this->createMock( AssetDataRegistry::class ) );
 		$dependencies = $api->add_payment_method_script_dependencies( array(), 'wc-' . $block . '-block-frontend' );
 		if ( $with_data ) {
-			$api->add_payment_method_script_data();
+			$data_action = 'woocommerce_blocks_' . $block . '_enqueue_data';
+			remove_all_actions( $data_action );
+			add_action( $data_action, array( $api, 'add_payment_method_script_data' ) );
+			do_action( $data_action ); // phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment
 		}
 
 		do_action( 'woocommerce_blocks_enqueue_' . $block . '_block_scripts_after' );

@@ -4,6 +4,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Blocks\Payments\Integrations;
 
 use Automattic\WooCommerce\Blocks\Assets\Api;
+use Automattic\WooCommerce\Blocks\Assets\AssetDataRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCheckoutAssets;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExpressCheckoutService;
@@ -108,6 +109,13 @@ final class WooPayments extends AbstractPaymentMethodType {
 	private WooPaymentsGateway $payment_gateway;
 
 	/**
+	 * Data registry Blocks publishes the page's payment data to.
+	 *
+	 * @var AssetDataRegistry
+	 */
+	private AssetDataRegistry $asset_data_registry;
+
+	/**
 	 * Constructor.
 	 *
 	 * @param Api                               $asset_api                Asset API.
@@ -118,8 +126,9 @@ final class WooPayments extends AbstractPaymentMethodType {
 	 * @param WooPaymentsExpressCheckoutService $express_checkout_service Express checkout service.
 	 * @param WooPaymentsFraudPreventionService $fraud_prevention_service Fraud-prevention token service.
 	 * @param WooPaymentsFrontendAssets         $frontend_assets          Registrar of the shared shopper script handles.
+	 * @param AssetDataRegistry                 $asset_data_registry      Data registry Blocks publishes the page's payment data to.
 	 */
-	public function __construct( Api $asset_api, WooPaymentsGateway $payment_gateway, WooPaymentsProvider $provider, WooPaymentsCheckoutAssets $checkout_assets, Eligibility $woopay_eligibility, WooPaymentsExpressCheckoutService $express_checkout_service, WooPaymentsFraudPreventionService $fraud_prevention_service, WooPaymentsFrontendAssets $frontend_assets ) {
+	public function __construct( Api $asset_api, WooPaymentsGateway $payment_gateway, WooPaymentsProvider $provider, WooPaymentsCheckoutAssets $checkout_assets, Eligibility $woopay_eligibility, WooPaymentsExpressCheckoutService $express_checkout_service, WooPaymentsFraudPreventionService $fraud_prevention_service, WooPaymentsFrontendAssets $frontend_assets, AssetDataRegistry $asset_data_registry ) {
 		$this->asset_api                = $asset_api;
 		$this->payment_gateway          = $payment_gateway;
 		$this->provider                 = $provider;
@@ -128,6 +137,7 @@ final class WooPayments extends AbstractPaymentMethodType {
 		$this->express_checkout_service = $express_checkout_service;
 		$this->fraud_prevention_service = $fraud_prevention_service;
 		$this->frontend_assets          = $frontend_assets;
+		$this->asset_data_registry      = $asset_data_registry;
 		$this->name                     = $payment_gateway->id;
 	}
 
@@ -236,31 +246,39 @@ final class WooPayments extends AbstractPaymentMethodType {
 		}
 
 		if ( $this->is_card_gateway() ) {
-			$this->maybe_remove_woopay_protocol_dependency( $data );
+			$this->match_woopay_protocol_dependency_to_published_data( $data );
 		}
 
 		return $data;
 	}
 
 	/**
-	 * Take the WooPay protocol off the card script's dependencies when the request's first card data read turns the WooPay
-	 * email check off, so a checkout without it loads no protocol entry.
+	 * Keep the WooPay protocol on the card script only when the card data Blocks publishes turns the WooPay email check on,
+	 * so a checkout without that check loads no protocol entry. The WooPay scripts keep their own dependency on it.
 	 *
-	 * The card script calls the protocol only to wire that check, when both flags are truthy in the data Blocks publishes,
-	 * which is the request's first read (Payments\Api::add_payment_method_script_data()). So that read decides, and later
-	 * reads apply its decision whatever their flags. The WooPay scripts keep their own dependency on the protocol.
+	 * Blocks rebuilds this data on every read, but the page carries only the first paymentMethodData added inside its two
+	 * enqueue_data actions (Payments\Api::add_payment_method_script_data()). So only a read inside those actions, before that
+	 * key exists, can be the one that publishes; any other read may hold flags the page never sees, and changes nothing.
+	 * Several reads can pass both checks, so each sets the dependency both ways, and the last one, which publishes, wins.
 	 *
 	 * @param array<string,mixed> $data The card's Blocks payment method data.
 	 */
-	private function maybe_remove_woopay_protocol_dependency( array $data ): void {
-		$email_check_on = self::is_truthy_in_json( $data['isWooPayEnabled'] ?? null ) && self::is_truthy_in_json( $data['isWooPayEmailInputEnabled'] ?? null );
-		if ( $this->checkout_assets->decide_blocks_card_woopay_protocol( $email_check_on ) ) {
+	private function match_woopay_protocol_dependency_to_published_data( array $data ): void {
+		$is_enqueue_data_action = doing_action( 'woocommerce_blocks_checkout_enqueue_data' ) || doing_action( 'woocommerce_blocks_cart_enqueue_data' );
+		if ( ! $is_enqueue_data_action || $this->asset_data_registry->exists( 'paymentMethodData' ) ) {
 			return;
 		}
 
 		$script = wp_scripts()->query( self::PAYMENT_METHOD_SCRIPT_HANDLE, 'registered' );
-		if ( $script instanceof \_WP_Dependency ) {
+		if ( ! $script instanceof \_WP_Dependency ) {
+			return;
+		}
+
+		$email_check_on = self::is_truthy_in_json( $data['isWooPayEnabled'] ?? null ) && self::is_truthy_in_json( $data['isWooPayEmailInputEnabled'] ?? null );
+		if ( ! $email_check_on ) {
 			$script->deps = array_values( array_diff( $script->deps, array( WooPaymentsFrontendAssets::WOOPAY_COMMON_SCRIPT_HANDLE ) ) );
+		} elseif ( ! in_array( WooPaymentsFrontendAssets::WOOPAY_COMMON_SCRIPT_HANDLE, $script->deps, true ) ) {
+			$script->deps[] = WooPaymentsFrontendAssets::WOOPAY_COMMON_SCRIPT_HANDLE;
 		}
 	}
 

@@ -310,14 +310,6 @@ class WooPaymentsCheckoutAssets implements RegisterHooksInterface {
 	private ?array $blocks_config_base = null;
 
 	/**
-	 * Whether the Blocks card script keeps the WooPay protocol in this request, as the request's first card payment data
-	 * read decided, or null before that read (decide_blocks_card_woopay_protocol()).
-	 *
-	 * @var bool|null
-	 */
-	private ?bool $blocks_card_keeps_woopay_protocol = null;
-
-	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
@@ -630,48 +622,11 @@ class WooPaymentsCheckoutAssets implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Register the request boundary of the config memos and of the Blocks card's WooPay protocol decision.
+	 * Register the request boundary of the config memos.
 	 */
 	public function register(): void {
 		// Before Blocks registers its payment methods (init priority 5) and before any render.
 		add_action( 'init', array( $this, 'reset_config_memos' ), 0 );
-		add_action( 'init', array( $this, 'reset_blocks_card_woopay_protocol_decision' ), 0 );
-	}
-
-	/**
-	 * Get the request's decision on whether the Blocks card script keeps the WooPay protocol, and record the given one
-	 * if this is the request's first card payment data read.
-	 *
-	 * Blocks publishes only the first payment data it reads in a request, so that read decides for every later read and
-	 * every Blocks integration that shares this service. The decision is cleared on each request's init.
-	 *
-	 * @since 11.2.0
-	 *
-	 * @internal
-	 *
-	 * @param bool $email_check_on Whether this read's card data turns the WooPay email check on.
-	 * @return bool Whether the card script keeps the protocol.
-	 */
-	public function decide_blocks_card_woopay_protocol( bool $email_check_on ): bool {
-		if ( null === $this->blocks_card_keeps_woopay_protocol ) {
-			$this->blocks_card_keeps_woopay_protocol = $email_check_on;
-		}
-
-		return $this->blocks_card_keeps_woopay_protocol;
-	}
-
-	/**
-	 * Forget the request's Blocks card WooPay protocol decision, so the next request's first card data read decides.
-	 *
-	 * Unlike the config memos, it is not cleared per Blocks registration pass: the data Blocks publishes lives for the
-	 * whole request.
-	 *
-	 * @since 11.2.0
-	 *
-	 * @internal
-	 */
-	public function reset_blocks_card_woopay_protocol_decision(): void {
-		$this->blocks_card_keeps_woopay_protocol = null;
 	}
 
 	/**
