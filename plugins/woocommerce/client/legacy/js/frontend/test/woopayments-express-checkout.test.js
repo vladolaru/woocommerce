@@ -174,16 +174,9 @@ describe( 'woopayments-express-checkout', () => {
 		delete window.Stripe;
 	} );
 
+	// The conversion itself is wc-woopayments-common's (its own tests); this script passes its localized Stripe unit.
 	describe( 'transformPrice', () => {
-		it( 'keeps same-scale amounts untouched', () => {
-			const { transformPrice } = loadModule( baseParams() );
-
-			expect(
-				transformPrice( 1234, { currency_minor_unit: 2 } )
-			).toBe( 1234 );
-		} );
-
-		it( 'narrows WC minor units to a zero-decimal Stripe currency with rounding', () => {
+		it( 'converts with the Stripe minor unit this page localizes', () => {
 			const params = baseParams();
 			params.checkout.stripe_minor_unit = 0;
 			const { transformPrice } = loadModule( params );
@@ -194,14 +187,6 @@ describe( 'woopayments-express-checkout', () => {
 			expect(
 				transformPrice( 123450, { currency_minor_unit: 2 } )
 			).toBe( 1235 );
-		} );
-
-		it( 'widens a zero-decimal WC configuration to two-decimal Stripe minor units', () => {
-			const { transformPrice } = loadModule( baseParams() );
-
-			expect(
-				transformPrice( 1234, { currency_minor_unit: 0 } )
-			).toBe( 123400 );
 		} );
 	} );
 
