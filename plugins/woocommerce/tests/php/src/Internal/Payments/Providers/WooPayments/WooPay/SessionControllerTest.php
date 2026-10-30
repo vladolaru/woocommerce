@@ -639,6 +639,7 @@ class SessionControllerTest extends WC_REST_Unit_Test_Case {
 	 * has_block() reads it.
 	 *
 	 * Rows with direct checkout off show the button; rows with it on hide the button, so only direct checkout loads the script.
+	 * The cart page rows run without direct checkout, so only the Cart block exclusion keeps the script off.
 	 *
 	 * @return array<string,array{0:string,1:bool,2:string|null,3:bool,4:bool,5:string|null}>
 	 */
@@ -648,12 +649,14 @@ class SessionControllerTest extends WC_REST_Unit_Test_Case {
 		$page_break = '<!-- wp:paragraph --><p>First page</p><!-- /wp:paragraph --><!--nextpage-->';
 
 		return array(
-			'password page with a product shortcode' => array( '[product_page id="1"]', true, null, false, false, 'product' ),
-			'product shortcode after a page break'   => array( $page_break . '[product_page id="1"]', false, null, false, false, 'product' ),
+			'password page with a product shortcode'    => array( '[product_page id="1"]', true, null, false, false, 'product' ),
+			'product shortcode after a page break'      => array( $page_break . '[product_page id="1"]', false, null, false, false, 'product' ),
 			'password checkout page holding the Checkout block' => array( $checkout, true, 'woocommerce_checkout_page_id', false, false, null ),
 			'checkout page with the Checkout block after a page break' => array( $page_break . $checkout, false, 'woocommerce_checkout_page_id', false, false, null ),
 			'password page holding the Cart block, direct checkout' => array( $cart, true, null, true, false, 'cart' ),
 			'Cart block after a page break, direct checkout' => array( $page_break . $cart, false, null, true, false, 'cart' ),
+			'password cart page holding the Cart block' => array( $cart, true, 'woocommerce_cart_page_id', false, false, null ),
+			'cart page with the Cart block after a page break' => array( $page_break . $cart, false, 'woocommerce_cart_page_id', false, false, null ),
 			'password Checkout block page with the cart widget' => array( $checkout, true, null, true, true, null ),
 			'Checkout block after a page break, with the cart widget' => array( $page_break . $checkout, false, null, true, true, null ),
 		);
@@ -699,7 +702,8 @@ class SessionControllerTest extends WC_REST_Unit_Test_Case {
 			wp_enqueue_script( 'wc-cart-fragments' );
 		}
 		$this->assertSame( $password, post_password_required( $page_id ), 'Precondition: the password form renders instead of the content.' );
-		$this->assertSame( null !== $page_option, is_checkout(), 'Precondition: only the store checkout page is a checkout.' );
+		$this->assertSame( 'woocommerce_checkout_page_id' === $page_option, is_checkout(), 'Precondition: only the store checkout page is a checkout.' );
+		$this->assertSame( 'woocommerce_cart_page_id' === $page_option, is_cart(), 'Precondition: only the store cart page is a cart.' );
 
 		$this->sut->enqueue_frontend_assets();
 

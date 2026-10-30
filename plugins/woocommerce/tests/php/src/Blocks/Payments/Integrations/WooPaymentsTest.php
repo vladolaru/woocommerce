@@ -788,7 +788,8 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 	 *
 	 * A paragraph-only cart or checkout page stands for one whose block comes from a page template. The page content is read
 	 * raw, so a password-protected page and a page split by `<!--nextpage-->` still count by the block they hold. A page that
-	 * is a cart and not a checkout gets no card script.
+	 * is a cart and not a checkout gets no card script, so a protected or split page holding both blocks keeps it only while
+	 * its Checkout block still counts.
 	 *
 	 * @return array<string,array{0:string,1:string|null,2:string,3:bool,4?:string}>
 	 */
@@ -808,6 +809,8 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 			'Cart block after a page break'         => array( $paragraph . '<!--nextpage-->' . $cart, null, 'cart', false ),
 			'Checkout block after a page break'     => array( $paragraph . '<!--nextpage-->' . $checkout, null, 'checkout', true ),
 			'Password page with the Checkout block' => array( $checkout, null, 'checkout', true, 'secret' ),
+			'Password page with both blocks'        => array( $cart . $checkout, null, 'cart', true, 'secret' ),
+			'Checkout block after a Cart block and a page break' => array( $cart . '<!--nextpage-->' . $checkout, null, 'cart', true ),
 		);
 	}
 

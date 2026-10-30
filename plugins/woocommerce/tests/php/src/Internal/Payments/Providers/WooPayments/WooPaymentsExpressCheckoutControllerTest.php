@@ -258,21 +258,25 @@ class WooPaymentsExpressCheckoutControllerTest extends WC_Unit_Test_Case {
 	 * whether the classic express script loads there, with which button context.
 	 *
 	 * The page content is read raw, as has_block() reads it. On a singular page the checkout and product shortcodes count
-	 * through is_checkout() and the queried page, so their rows read a post the loop of a search page holds.
+	 * through is_checkout() and the queried page, so their rows read a post the loop of a search page holds. The cart page
+	 * loads the script unless its Cart block excludes it, so its rows fail when only the Cart block term misreads the page.
 	 *
 	 * @return array<string,array{0:string,1:bool,2:string,3:string|null}>
 	 */
 	public function provide_pages_whose_content_the_rendered_page_hides(): array {
+		$cart_block     = '<!-- wp:woocommerce/cart --><div class="wp-block-woocommerce-cart"></div><!-- /wp:woocommerce/cart -->';
 		$checkout_block = '<!-- wp:woocommerce/checkout --><div class="wp-block-woocommerce-checkout"></div><!-- /wp:woocommerce/checkout -->';
 		$page_break     = '<!-- wp:paragraph --><p>First page</p><!-- /wp:paragraph --><!--nextpage-->';
 
 		return array(
-			'password checkout page holding the Checkout block'        => array( $checkout_block, true, 'checkout page', null ),
+			'password cart page holding the Cart block' => array( $cart_block, true, 'cart page', null ),
+			'cart page with the Cart block after a page break' => array( $page_break . $cart_block, false, 'cart page', null ),
+			'password checkout page holding the Checkout block' => array( $checkout_block, true, 'checkout page', null ),
 			'checkout page with the Checkout block after a page break' => array( $page_break . $checkout_block, false, 'checkout page', null ),
-			'password post with the checkout shortcode, in a loop'     => array( '[woocommerce_checkout]', true, 'loop', 'checkout' ),
-			'checkout shortcode after a page break, in a loop'         => array( $page_break . '[woocommerce_checkout]', false, 'loop', 'checkout' ),
-			'password post with a product shortcode, in a loop'        => array( '[product_page id="1"]', true, 'loop', 'product' ),
-			'product shortcode after a page break, in a loop'          => array( $page_break . '[product_page id="1"]', false, 'loop', 'product' ),
+			'password post with the checkout shortcode, in a loop' => array( '[woocommerce_checkout]', true, 'loop', 'checkout' ),
+			'checkout shortcode after a page break, in a loop' => array( $page_break . '[woocommerce_checkout]', false, 'loop', 'checkout' ),
+			'password post with a product shortcode, in a loop' => array( '[product_page id="1"]', true, 'loop', 'product' ),
+			'product shortcode after a page break, in a loop' => array( $page_break . '[product_page id="1"]', false, 'loop', 'product' ),
 		);
 	}
 
@@ -287,26 +291,30 @@ class WooPaymentsExpressCheckoutControllerTest extends WC_Unit_Test_Case {
 	 *
 	 * @param string      $content          Post content.
 	 * @param bool        $password         Whether the post is password protected.
-	 * @param string      $request          `checkout page`: the post is the store's checkout page, visited. `loop`: a search
-	 *                                      page whose loop holds the post.
+	 * @param string      $request          `checkout page` or `cart page`: the post is that store page, visited. `loop`: a
+	 *                                      search page whose loop holds the post.
 	 * @param string|null $expected_context Button context the express script loads with, or null when it does not load.
 	 */
 	public function test_enqueue_frontend_assets_reads_the_raw_page_content( string $content, bool $password, string $request, ?string $expected_context ): void {
-		$service   = new RecordingExpressCheckoutService();
-		$this->sut = $this->create_controller( true, $service );
-		$post_id   = self::factory()->post->create(
+		$page_options = array(
+			'checkout page' => 'woocommerce_checkout_page_id',
+			'cart page'     => 'woocommerce_cart_page_id',
+		);
+		$service      = new RecordingExpressCheckoutService();
+		$this->sut    = $this->create_controller( true, $service );
+		$post_id      = self::factory()->post->create(
 			array(
-				'post_type'     => 'checkout page' === $request ? 'page' : 'post',
+				'post_type'     => isset( $page_options[ $request ] ) ? 'page' : 'post',
 				'post_status'   => 'publish',
 				'post_content'  => $content,
 				'post_password' => $password ? 'secret' : '',
 			)
 		);
-		if ( 'checkout page' === $request ) {
-			update_option( 'woocommerce_checkout_page_id', $post_id );
+		if ( isset( $page_options[ $request ] ) ) {
+			update_option( $page_options[ $request ], $post_id );
 			$this->reset_cart_checkout_page_cache();
 			$this->go_to( get_permalink( $post_id ) );
-			$this->assertTrue( is_checkout(), 'Precondition: the store checkout page.' );
+			$this->assertTrue( 'cart page' === $request ? is_cart() : is_checkout(), 'Precondition: the store page.' );
 		} else {
 			$this->go_to( home_url( '/?s=nothing-matches' ) );
 			$GLOBALS['post'] = get_post( $post_id ); // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- The post of the search page's loop.
