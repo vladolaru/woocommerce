@@ -214,6 +214,8 @@ class WooPaymentsBlocksPaymentMethodsControllerTest extends WC_Unit_Test_Case {
 			unset( $wp_actions['woocommerce_blocks_loaded'] );
 			try {
 				$sut->register();
+				// Hooked directly, the callback would run before Blocks adds its own during plugins_loaded.
+				$this->assertFalse( has_action( 'woocommerce_blocks_payment_method_type_registration', array( $sut, 'handle_woocommerce_blocks_payment_method_type_registration' ) ) );
 				/** This action is documented in src/Blocks/Domain/Bootstrap.php */
 				do_action( 'woocommerce_blocks_loaded' );
 			} finally {
