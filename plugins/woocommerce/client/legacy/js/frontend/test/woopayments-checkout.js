@@ -4977,6 +4977,21 @@ describe( 'WooPayments checkout', () => {
 			expect( addPaymentMethodForm.submit ).not.toHaveBeenCalled();
 		}
 	);
+
+	// The page lists wc-woopayments-woopay-common only when both flags are on, so with either off the protocol is absent.
+	test.each( [
+		[ 'WooPay is off', { isWooPayEnabled: '', isWooPayEmailInputEnabled: '1' } ],
+		[ 'the WooPay email input is off', { isWooPayEnabled: '1', isWooPayEmailInputEnabled: '' } ],
+	] )( 'starts the checkout without the WooPay protocol when %s', async ( description, flags ) => {
+		delete window.wc.woopayments.woopay;
+		Object.assign( window.wcpay_core_checkout_config, flags );
+
+		require( '../woopayments-checkout' );
+		await flushPromises();
+
+		expect( stripeElementsOptions ).toMatchObject( { mode: 'payment' } );
+	} );
+
 	describe( 'WooPay email input', () => {
 		const WOOPAY_HOST = 'https://pay.woo.test';
 		const CHECKOUT_PERMALINK = 'https://store.test/checkout/';

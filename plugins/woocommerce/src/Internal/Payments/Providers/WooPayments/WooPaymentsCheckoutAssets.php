@@ -859,6 +859,7 @@ class WooPaymentsCheckoutAssets implements RegisterHooksInterface {
 		if ( WooPaymentsPersistenceVocabulary::GATEWAY_ID === $config['gatewayId'] ) {
 			wp_localize_script( self::CLASSIC_SCRIPT_HANDLE, 'wcpay_core_checkout_config', $config );
 			$this->base_classic_config_localized = true;
+			$this->maybe_add_woopay_email_check_dependency( $config );
 		} else {
 			wp_localize_script( self::CLASSIC_SCRIPT_HANDLE, $this->get_classic_script_config_object_name( (string) $config['gatewayId'] ), $config );
 		}
@@ -870,6 +871,43 @@ class WooPaymentsCheckoutAssets implements RegisterHooksInterface {
 		if ( $this->should_expose_checkout_surface() ) {
 			wp_enqueue_script( WooPaymentsFrontendAssets::STRIPE_SCRIPT_HANDLE );
 		}
+	}
+
+	/**
+	 * List the WooPay protocol as a dependency of the classic checkout script when the card config turns the WooPay email
+	 * check on, so a checkout without it loads no protocol entry.
+	 *
+	 * The script calls the protocol only to wire that check, when both flags in its localized config are truthy; the flags
+	 * are read the same way here, after the config filter.
+	 *
+	 * @param array<string,mixed> $config The card gateway's payment fields config, as localized on the script.
+	 */
+	private function maybe_add_woopay_email_check_dependency( array $config ): void {
+		if ( ! self::is_truthy_when_localized( $config['isWooPayEnabled'] ?? null ) || ! self::is_truthy_when_localized( $config['isWooPayEmailInputEnabled'] ?? null ) ) {
+			return;
+		}
+
+		$this->get_frontend_assets()->register_woopay_common_script();
+		$script = wp_scripts()->query( self::CLASSIC_SCRIPT_HANDLE, 'registered' );
+		if ( $script instanceof \_WP_Dependency && ! in_array( WooPaymentsFrontendAssets::WOOPAY_COMMON_SCRIPT_HANDLE, $script->deps, true ) ) {
+			$script->deps[] = WooPaymentsFrontendAssets::WOOPAY_COMMON_SCRIPT_HANDLE;
+		}
+	}
+
+	/**
+	 * Tell whether a top-level config value is truthy in the browser once wp_localize_script() prints it.
+	 *
+	 * The localizer turns top-level scalars into strings (false becomes '', 0 becomes '0') and prints other values as
+	 * JSON, so only an empty string and null are falsy there.
+	 *
+	 * @param mixed $value Config value.
+	 */
+	private static function is_truthy_when_localized( $value ): bool {
+		if ( is_scalar( $value ) ) {
+			return '' !== (string) $value;
+		}
+
+		return null !== $value;
 	}
 
 	/**
@@ -890,10 +928,10 @@ class WooPaymentsCheckoutAssets implements RegisterHooksInterface {
 
 		$frontend_assets->register_common_script();
 
-		$frontend_assets->register_woopay_common_script();
-
 		if ( ! wp_script_is( self::CLASSIC_SCRIPT_HANDLE, 'registered' ) ) {
-			$dependencies = array( 'jquery', 'wc-checkout', WooPaymentsFrontendAssets::STRIPE_SCRIPT_HANDLE, WooPaymentsFrontendAssets::FINGERPRINT_SCRIPT_HANDLE, WooPaymentsFrontendAssets::APPEARANCE_SCRIPT_HANDLE, WooPaymentsFrontendAssets::COMMON_SCRIPT_HANDLE, WooPaymentsFrontendAssets::WOOPAY_COMMON_SCRIPT_HANDLE );
+			// The WooPay protocol is added by maybe_add_woopay_email_check_dependency(), only when the card config turns the
+			// email check on.
+			$dependencies = array( 'jquery', 'wc-checkout', WooPaymentsFrontendAssets::STRIPE_SCRIPT_HANDLE, WooPaymentsFrontendAssets::FINGERPRINT_SCRIPT_HANDLE, WooPaymentsFrontendAssets::APPEARANCE_SCRIPT_HANDLE, WooPaymentsFrontendAssets::COMMON_SCRIPT_HANDLE );
 			// tokenization-form.js must listen before this script mounts the card element and fires
 			// `wc-credit-card-form-init`, on any theme (client 11.1.0 includes/class-wc-payments-checkout.php:130-131).
 			if ( in_array( PaymentGatewayFeature::TOKENIZATION, $supports, true ) ) {

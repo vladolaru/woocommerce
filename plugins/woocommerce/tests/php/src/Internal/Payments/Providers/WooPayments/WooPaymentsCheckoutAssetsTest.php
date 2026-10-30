@@ -1880,7 +1880,6 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 		$this->assertContains( 'stripe', $checkout_script->deps );
 		$this->assertContains( 'wc-woopayments-appearance', $checkout_script->deps );
 		$this->assertContains( 'wc-woopayments-common', $checkout_script->deps, 'The checkout script reads window.wc.woopayments.' );
-		$this->assertContains( 'wc-woopayments-woopay-common', $checkout_script->deps, 'The checkout script wires the WooPay email check from window.wc.woopayments.woopay.' );
 		$this->assertContains( 'wc-checkout', $checkout_script->deps );
 		$this->assertStringStartsWith( WC()->plugin_url() . '/assets/js/frontend/woopayments-checkout', $checkout_script->src );
 		$this->assertSame( 1, wp_scripts()->get_data( 'wc-woopayments-checkout', 'group' ), 'The checkout script loads in the footer.' );
@@ -1889,7 +1888,53 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 		$this->assertTrue( wp_script_is( 'wc-woopayments-fingerprintjs', 'registered' ) );
 		$this->assertTrue( wp_script_is( 'wc-woopayments-appearance', 'registered' ) );
 		$this->assertTrue( wp_script_is( 'wc-woopayments-common', 'registered' ), 'An unregistered dependency would make WordPress drop the checkout script.' );
-		$this->assertTrue( wp_script_is( 'wc-woopayments-woopay-common', 'registered' ), 'An unregistered dependency would make WordPress drop the checkout script.' );
+	}
+
+	/**
+	 * Card configs whose WooPay flags turn the classic WooPay email check on or off, as the checkout script reads them.
+	 *
+	 * @return array<string,array{0:mixed,1:mixed,2:bool}>
+	 */
+	public function provide_woopay_email_check_flags(): array {
+		return array(
+			'WooPay and its email input on' => array( true, true, true ),
+			'WooPay off'                    => array( false, true, false ),
+			'the email input off'           => array( true, false, false ),
+			'a filtered "0", which the browser reads as on' => array( true, '0', true ),
+		);
+	}
+
+	/**
+	 * @testdox Should list the WooPay protocol with the classic checkout script only when the card config turns the WooPay email check on: $_dataName.
+	 *
+	 * @dataProvider provide_woopay_email_check_flags
+	 *
+	 * @param mixed $woopay_enabled      The card config's isWooPayEnabled.
+	 * @param mixed $email_input_enabled The card config's isWooPayEmailInputEnabled.
+	 * @param bool  $listed              Whether the script lists the protocol.
+	 */
+	public function test_classic_script_lists_the_woopay_protocol_only_with_the_email_check( $woopay_enabled, $email_input_enabled, bool $listed ): void {
+		$assets = new WooPaymentsCheckoutAssets();
+		$assets->init( $this->create_account_service( true ), $this->create_woopay_session_service( true ), $this->create_woopay_eligibility( true ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller(), new PaymentMethodRegistry() );
+		add_filter(
+			'wcpay_payment_fields_js_config',
+			static function ( array $config ) use ( $woopay_enabled, $email_input_enabled ): array {
+				$config['isWooPayEnabled']           = $woopay_enabled;
+				$config['isWooPayEmailInputEnabled'] = $email_input_enabled;
+
+				return $config;
+			}
+		);
+
+		self::render_payment_fields( $assets, self::CARD_SUPPORTS );
+
+		$deps = wp_scripts()->registered['wc-woopayments-checkout']->deps;
+		if ( $listed ) {
+			$this->assertContains( 'wc-woopayments-woopay-common', $deps, 'The checkout script wires the WooPay email check from window.wc.woopayments.woopay.' );
+			$this->assertTrue( wp_script_is( 'wc-woopayments-woopay-common', 'registered' ), 'An unregistered dependency would make WordPress drop the checkout script.' );
+		} else {
+			$this->assertNotContains( 'wc-woopayments-woopay-common', $deps, 'Without the email check the checkout script never reads window.wc.woopayments.woopay.' );
+		}
 	}
 
 	/**
