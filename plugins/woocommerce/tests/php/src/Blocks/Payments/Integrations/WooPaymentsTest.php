@@ -10,7 +10,6 @@ use Automattic\WooCommerce\Blocks\Payments\Api;
 use Automattic\WooCommerce\Blocks\Payments\Integrations\WooPayments;
 use Automattic\WooCommerce\Blocks\Payments\PaymentMethodRegistry;
 use Automattic\WooCommerce\Blocks\Utils\CartCheckoutUtils;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffectApplier;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGateway;
@@ -18,11 +17,17 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethod
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCheckoutAssets;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExpressCheckoutService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsBlocksPaymentMethodsController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFraudPreventionService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFraudService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendAssets;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentOperationService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSessionService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\Eligibility;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\SessionService;
+use Automattic\WooCommerce\StoreApi\Utilities\CartTokenUtils;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\WooCommerceSubscriptionsDoubles;
 use WC_Unit_Test_Case;
 
@@ -938,49 +943,6 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should publish one Blocks integration instance for each native WooPayments gateway.
-	 */
-	public function test_get_payment_method_integrations_publishes_one_instance_per_native_gateway(): void {
-		$asset_api = $this->getMockBuilder( AssetApi::class )
-			->disableOriginalConstructor()
-			->getMock();
-		$assets    = $this->getMockBuilder( WooPaymentsCheckoutAssets::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'should_expose_checkout_surface' ) )
-			->getMock();
-		$assets->method( 'should_expose_checkout_surface' )->willReturn( true );
-
-		$payment_method_registry = new WooPaymentsPaymentMethodRegistry();
-		$card_gateway            = new WooPaymentsGateway( $payment_method_registry->get( 'card' ) );
-		$klarna_gateway          = new WooPaymentsGateway( $payment_method_registry->get( 'klarna' ) );
-		$alipay_gateway          = new WooPaymentsGateway( $payment_method_registry->get( 'alipay' ) );
-		$provider                = $this->getMockBuilder( WooPaymentsProvider::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'can_process_payments', 'get_payment_gateways', 'get_gateway_for_method' ) )
-			->getMock();
-		$provider->method( 'can_process_payments' )->willReturn( true );
-		$provider->method( 'get_payment_gateways' )->willReturn( array( $card_gateway, $klarna_gateway, $alipay_gateway ) );
-
-		$integration  = new WooPayments( $asset_api, $this->create_card_gateway(), $this->create_runtime_arbiter(), $provider, $assets, $this->create_woopay_eligibility(), $this->create_express_checkout_service(), $this->get_fraud_prevention_service(), $this->get_frontend_assets() );
-		$integrations = $integration->get_payment_method_integrations();
-
-		$this->assertSame(
-			array(
-				'woocommerce_payments',
-				'woocommerce_payments_klarna',
-				'woocommerce_payments_alipay',
-			),
-			array_map(
-				static fn( WooPayments $payment_method ): string => $payment_method->get_name(),
-				$integrations
-			)
-		);
-		$this->assertSame( array( 'wc-payment-method-woopayments', 'wc-payment-method-woopayments-fraud-scripts' ), $integrations[0]->get_payment_method_script_handles() );
-		$this->assertSame( array( 'wc-payment-method-woopayments', 'wc-payment-method-woopayments-fraud-scripts' ), $integrations[1]->get_payment_method_script_handles() );
-		$this->assertSame( array( 'wc-payment-method-woopayments', 'wc-payment-method-woopayments-fraud-scripts' ), $integrations[2]->get_payment_method_script_handles() );
-	}
-
-	/**
 	 * Connected account A's cached data.
 	 */
 	private const ACCOUNT_A = array(
@@ -1012,13 +974,13 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 	 */
 	public function test_split_gateway_integrations_get_one_shared_config_build(): void {
 		$account_data = self::ACCOUNT_A;
-		$integration  = $this->create_split_integration( $this->create_checkout_assets( $this->create_checkout_account( $account_data ) ) );
+		$registrar    = $this->create_split_registrar( $this->create_checkout_assets( $this->create_checkout_account( $account_data ) ) );
 		$counts       = $this->count_config_builds_and_filter_calls();
 		$gateway_keys = array_flip( array( 'gatewayId', 'paymentMethodsConfig', 'paymentMethodTypes', 'title', 'description', 'expressCheckoutParams' ) );
 
 		$shared = array_map(
 			static fn( array $data ): string => (string) wp_json_encode( array_diff_key( $data, $gateway_keys ) ),
-			$this->run_registration_pass( $integration )
+			$this->run_registration_pass( $registrar )
 		);
 
 		$this->assertSame( array( 'woocommerce_payments', 'woocommerce_payments_klarna', 'woocommerce_payments_affirm' ), array_keys( $shared ) );
@@ -1044,9 +1006,9 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 	public function test_next_registration_rebuilds_the_shared_config( string $change ): void {
 		$account_data = self::ACCOUNT_A;
 		$account      = $this->create_checkout_account( $account_data );
-		$integration  = $this->create_split_integration( $this->create_checkout_assets( $account ) );
+		$registrar    = $this->create_split_registrar( $this->create_checkout_assets( $account ) );
 		$counts       = $this->count_config_builds_and_filter_calls();
-		$first        = $this->run_registration_pass( $integration )['woocommerce_payments'];
+		$first        = $this->run_registration_pass( $registrar )['woocommerce_payments'];
 		$this->assertSame( 'pk_live_A', $first['publishableKey'] );
 		$this->assertFalse( $first['testMode'] );
 		$this->assertArrayNotHasKey( 'isChangingPayment', $first );
@@ -1060,13 +1022,13 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 			if ( 'the account switches to test mode' === $change ) {
 				$account->run_in_test_mode_context(
 					true,
-					function () use ( $integration, &$second ): void {
-						$second = $this->run_registration_pass( $integration )['woocommerce_payments'];
+					function () use ( $registrar, &$second ): void {
+						$second = $this->run_registration_pass( $registrar )['woocommerce_payments'];
 					}
 				);
 			} elseif ( 'another account connects' === $change ) {
 				$account_data = self::ACCOUNT_B;
-				$second       = $this->run_registration_pass( $integration )['woocommerce_payments'];
+				$second       = $this->run_registration_pass( $registrar )['woocommerce_payments'];
 			} else {
 				$this->register_legacy_proxy_function_mocks(
 					array(
@@ -1077,7 +1039,7 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 				$GLOBALS[ WooCommerceSubscriptionsDoubles::SUBSCRIPTION_IDS ] = array( 123 );
 				$wp->query_vars['order-pay']                                  = 123;
 				$_GET['change_payment_method']                                = '123';
-				$second = $this->run_registration_pass( $integration )['woocommerce_payments'];
+				$second = $this->run_registration_pass( $registrar )['woocommerce_payments'];
 			}
 		} finally {
 			unset( $_GET['change_payment_method'], $wp->query_vars['order-pay'], $GLOBALS[ WooCommerceSubscriptionsDoubles::SUBSCRIPTION_IDS ] );
@@ -1094,6 +1056,77 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 			$this->assertTrue( $second['isChangingPayment'] ?? false, 'The change payment method page gets its own config.' );
 		}
 		$this->assertSame( 1, $counts['builds'], 'The second registration builds its own shared config.' );
+	}
+
+	/**
+	 * @testdox The next Blocks registration on the same checkout assets carries the next guest's session values, though nothing in the config key changes.
+	 *
+	 * Two guests share every key input (user 0, the account, the mode, an empty cart), so only the registration's own
+	 * reset keeps the second guest from the first guest's Sift session and WooPay cart token. No init runs between them,
+	 * as in a long-running process that registers twice.
+	 */
+	public function test_next_registration_carries_the_next_guests_session_values(): void {
+		$account_data = array_merge(
+			self::ACCOUNT_A,
+			array(
+				'fraud_services' => array(
+					'sift' => array(
+						'beacon_key'         => 'live-beacon',
+						'sandbox_beacon_key' => 'sandbox-beacon',
+					),
+				),
+			)
+		);
+		$account      = $this->create_checkout_account( $account_data );
+		// The WooPay config carries the Store API cart token of the shopper's session (WooPay/SessionService.php:351-358).
+		$woopay = $this->getMockBuilder( SessionService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_woopay_frontend_config' ) )
+			->getMock();
+		$woopay->method( 'get_woopay_frontend_config' )->willReturnCallback(
+			static fn(): array => array( 'woopayMinimumSessionData' => array( 'store_api_token' => CartTokenUtils::get_cart_token( (string) WC()->session->get_customer_id() ) ) )
+		);
+		$assets        = $this->create_checkout_assets( $account, $woopay );
+		$fraud_service = new WooPaymentsFraudService();
+		$fraud_service->init( $account, $this->createMock( WooPaymentsCustomerService::class ), new WooPaymentsSessionService(), $this->createMock( Client::class ) );
+		$property = new \ReflectionProperty( WooPaymentsCheckoutAssets::class, 'fraud_service' );
+		$property->setAccessible( true );
+		$property->setValue( $assets, $fraud_service );
+		$registrar = $this->create_split_registrar( $assets );
+		$counts    = $this->count_config_builds_and_filter_calls();
+		wp_set_current_user( 0 );
+		$original_session = WC()->session;
+
+		try {
+			WC()->session          = $this->create_guest_session( 'guest-a' );
+			$first                 = $this->run_registration_pass( $registrar )['woocommerce_payments'];
+			WC()->session          = $this->create_guest_session( 'guest-b' );
+			$second                = $this->run_registration_pass( $registrar )['woocommerce_payments'];
+			$expected_sift_session = ( new WooPaymentsSessionService() )->get_sift_session_id();
+		} finally {
+			WC()->session = $original_session;
+		}
+
+		$this->assertSame( 'guest-a', CartTokenUtils::get_cart_token_payload( $first['woopayMinimumSessionData']['store_api_token'] )['user_id'], 'Precondition: the first guest\'s cart token.' );
+		$this->assertSame( 'guest-b', CartTokenUtils::get_cart_token_payload( $second['woopayMinimumSessionData']['store_api_token'] )['user_id'], 'The cart token of the next guest.' );
+		$this->assertNotSame( $first['fraudServices']['sift']['session_id'], $second['fraudServices']['sift']['session_id'] );
+		$this->assertSame( $expected_sift_session, $second['fraudServices']['sift']['session_id'], 'The Sift session of the next guest.' );
+		$this->assertSame( 2, $counts['builds'], 'Each registration builds the shared config once.' );
+	}
+
+	/**
+	 * Create a guest's WooCommerce session with the given customer ID.
+	 *
+	 * @param string $customer_id Session customer ID.
+	 * @return \WC_Session
+	 */
+	private function create_guest_session( string $customer_id ): \WC_Session {
+		$session  = new \WC_Session_Handler();
+		$property = new \ReflectionProperty( \WC_Session::class, '_customer_id' );
+		$property->setAccessible( true );
+		$property->setValue( $session, $customer_id );
+
+		return $session;
 	}
 
 	/**
@@ -1128,9 +1161,10 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 	 * Create real checkout assets over the given account service, with platform requests blocked.
 	 *
 	 * @param WooPaymentsAccountService $account Account service.
+	 * @param SessionService|null       $woopay  WooPay session service, or null for a double that adds nothing.
 	 * @return WooPaymentsCheckoutAssets
 	 */
-	private function create_checkout_assets( WooPaymentsAccountService $account ): WooPaymentsCheckoutAssets {
+	private function create_checkout_assets( WooPaymentsAccountService $account, ?SessionService $woopay = null ): WooPaymentsCheckoutAssets {
 		add_filter(
 			'pre_http_request',
 			static function ( $preempt, $parsed_args, string $url ) {
@@ -1147,7 +1181,7 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 		$assets = new WooPaymentsCheckoutAssets();
 		$assets->init(
 			$account,
-			$this->createMock( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\SessionService::class ),
+			$woopay ?? $this->createMock( SessionService::class ),
 			$this->createMock( Eligibility::class ),
 			$styles,
 			$this->createMock( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendTrackingController::class ),
@@ -1158,12 +1192,13 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Create the base Blocks integration over the given checkout assets, with card, Klarna and Affirm split gateways.
+	 * Create the Blocks payment methods registrar over the given checkout assets, on an active store with card, Klarna
+	 * and Affirm split gateways.
 	 *
 	 * @param WooPaymentsCheckoutAssets $assets Checkout assets.
-	 * @return WooPayments
+	 * @return WooPaymentsBlocksPaymentMethodsController
 	 */
-	private function create_split_integration( WooPaymentsCheckoutAssets $assets ): WooPayments {
+	private function create_split_registrar( WooPaymentsCheckoutAssets $assets ): WooPaymentsBlocksPaymentMethodsController {
 		$registry = new WooPaymentsPaymentMethodRegistry();
 		$gateways = array( new WooPaymentsGateway( $registry->get( 'card' ) ), new WooPaymentsGateway( $registry->get( 'klarna' ) ), new WooPaymentsGateway( $registry->get( 'affirm' ) ) );
 		$provider = $this->getMockBuilder( WooPaymentsProvider::class )
@@ -1173,8 +1208,20 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 		$provider->method( 'can_process_payments' )->willReturn( true );
 		$provider->method( 'get_payment_gateways' )->willReturn( $gateways );
 		$provider->method( 'get_gateway_for_method' )->willReturn( $gateways[0] );
+		$tier_arbiter = $this->getMockBuilder( WooPaymentsRuntimeArbiter::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'is_builtin_enabled', 'get_runtime_owner' ) )
+			->getMock();
+		$tier_arbiter->method( 'is_builtin_enabled' )->willReturn( true );
+		$tier_arbiter->method( 'get_runtime_owner' )->willReturn( WooPaymentsRuntimeArbiter::OWNER_BUILTIN );
+		update_option( WooPaymentsSetupTier::OPTION_NAME, WooPaymentsSetupTier::ACTIVE );
+		$setup_tier = new WooPaymentsSetupTier();
+		$setup_tier->init( $tier_arbiter );
 
-		return new WooPayments( $this->createMock( AssetApi::class ), $this->create_card_gateway(), $this->create_runtime_arbiter(), $provider, $assets, $this->create_woopay_eligibility(), $this->create_express_checkout_service(), $this->get_fraud_prevention_service(), $this->get_frontend_assets() );
+		$registrar = new WooPaymentsBlocksPaymentMethodsController();
+		$registrar->init( $setup_tier, $provider, $this->create_runtime_arbiter(), $assets, $this->create_woopay_eligibility(), $this->create_express_checkout_service(), $this->get_fraud_prevention_service(), $this->get_frontend_assets() );
+
+		return $registrar;
 	}
 
 	/**
@@ -1209,56 +1256,21 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Run one Blocks registration pass as Blocks does: enumerate the integrations, then read each one's data.
+	 * Run one Blocks registration pass as Blocks does: register the payment methods on a fresh registry, then read each
+	 * one's data.
 	 *
-	 * @param WooPayments $integration Base integration.
-	 * @return array<string,array<string,mixed>> Payment method data by integration name.
+	 * @param WooPaymentsBlocksPaymentMethodsController $registrar Blocks payment methods registrar.
+	 * @return array<string,array<string,mixed>> Payment method data by payment method name.
 	 */
-	private function run_registration_pass( WooPayments $integration ): array {
+	private function run_registration_pass( WooPaymentsBlocksPaymentMethodsController $registrar ): array {
+		$registry = new PaymentMethodRegistry();
+		$registrar->handle_woocommerce_blocks_payment_method_type_registration( $registry );
 		$data = array();
-		foreach ( $integration->get_payment_method_integrations() as $payment_method ) {
-			$data[ $payment_method->get_name() ] = $payment_method->get_payment_method_data();
+		foreach ( $registry->get_all_registered() as $name => $payment_method ) {
+			$data[ $name ] = $payment_method->get_payment_method_data();
 		}
 
 		return $data;
-	}
-
-	/**
-	 * Client 11.1.0 builds a gateway for every registered definition (`includes/class-wc-payments.php:616-645`); the
-	 * availability filter only shapes the settings list (`includes/class-wc-payment-gateway-wcpay.php:4848-4879`).
-	 *
-	 * @testdox Should register the Blocks integration of a payment method the availability filter removes.
-	 */
-	public function test_get_payment_method_integrations_ignores_the_availability_filter(): void {
-		add_filter(
-			'wcpay_upe_available_payment_methods',
-			static fn( array $payment_method_ids ): array => array_values( array_diff( $payment_method_ids, array( 'sepa_debit' ) ) )
-		);
-		$payment_operations = $this->getMockBuilder( WooPaymentsPaymentOperationService::class )
-			->disableOriginalConstructor()
-			->getMock();
-		$api_client         = $this->getMockBuilder( Client::class )
-			->disableOriginalConstructor()
-			->getMock();
-		$account_service    = $this->getMockBuilder( WooPaymentsAccountService::class )
-			->disableOriginalConstructor()
-			->getMock();
-		$provider           = new WooPaymentsProvider();
-		$provider->init( $payment_operations, $api_client, $account_service, new WooPaymentsPaymentMethodRegistry(), wc_get_container()->get( WooPaymentsOrderEffectApplier::class ) );
-		$asset_api       = $this->getMockBuilder( AssetApi::class )
-			->disableOriginalConstructor()
-			->getMock();
-		$assets          = $this->getMockBuilder( WooPaymentsCheckoutAssets::class )
-			->disableOriginalConstructor()
-			->getMock();
-		$integration     = new WooPayments( $asset_api, $this->create_card_gateway(), $this->create_runtime_arbiter(), $provider, $assets, $this->create_woopay_eligibility(), $this->create_express_checkout_service(), $this->get_fraud_prevention_service(), $this->get_frontend_assets() );
-		$integration_ids = array_map(
-			static fn( WooPayments $payment_method ): string => $payment_method->get_name(),
-			$integration->get_payment_method_integrations()
-		);
-
-		$this->assertContains( 'woocommerce_payments_sepa_debit', $integration_ids, 'A method the filter removes keeps its Blocks integration.' );
-		$this->assertContains( 'woocommerce_payments', $integration_ids, 'The card integration stays registered.' );
 	}
 
 	/**

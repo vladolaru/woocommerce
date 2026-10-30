@@ -255,6 +255,19 @@ class WooPaymentsClassesBySetupTierTest extends WC_Unit_Test_Case {
 		}
 	}
 
+	/** @testdox Registers the Blocks payment methods only on active front, admin and REST requests: the Cart and Checkout blocks, the block editor's preview of them and the Store API. */
+	public function test_provider_matrix_registers_the_blocks_payment_methods_only_on_active_page_admin_and_rest_requests(): void {
+		foreach ( WooPaymentsProvider::get_classes_by_setup_tier() as $state => $request_groups ) {
+			foreach ( $request_groups as $request => $roots ) {
+				$this->assertSame(
+					WooPaymentsSetupTier::ACTIVE === $state && in_array( $request, array( 'front', 'admin', 'rest' ), true ),
+					in_array( self::WCPAY . 'WooPaymentsBlocksPaymentMethodsController', $roots, true ),
+					"$state $request"
+				);
+			}
+		}
+	}
+
 	/**
 	 * The native shopper scripts post their Tracks events to the REST route this controller registers, in a request
 	 * of its own; without the controller among the REST roots the route does not exist there.

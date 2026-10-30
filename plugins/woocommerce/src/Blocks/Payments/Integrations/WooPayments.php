@@ -15,7 +15,8 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPr
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\Eligibility;
 
 /**
- * WooPayments payment method integration: one Blocks payment method type per WooPayments gateway.
+ * WooPayments payment method integration: one Blocks payment method type per WooPayments gateway, which
+ * WooPaymentsBlocksPaymentMethodsController registers.
  *
  * @since 11.0.0
  */
@@ -296,32 +297,6 @@ final class WooPayments extends AbstractPaymentMethodType {
 		$card_gateway = $this->provider->get_gateway_for_method( 'card' );
 
 		return null === $card_gateway ? array() : $card_gateway->supports;
-	}
-
-	/**
-	 * Get the Blocks payment method instances for native WooPayments gateways, one per gateway.
-	 *
-	 * Each call starts a registration pass, so its split gateways share one fresh build of the config base.
-	 *
-	 * @return WooPayments[]
-	 */
-	public function get_payment_method_integrations(): array {
-		$this->checkout_assets->reset_config_memos();
-
-		return array_map(
-			fn( WooPaymentsGateway $gateway ): WooPayments => new self(
-				$this->asset_api,
-				$gateway,
-				$this->arbiter,
-				$this->provider,
-				$this->checkout_assets,
-				$this->woopay_eligibility,
-				$this->express_checkout_service,
-				$this->fraud_prevention_service,
-				$this->frontend_assets
-			),
-			$this->provider->get_payment_gateways()
-		);
 	}
 
 	/**

@@ -28,21 +28,12 @@ use Automattic\WooCommerce\Blocks\Payments\Integrations\BankTransfer;
 use Automattic\WooCommerce\Blocks\Payments\Integrations\CashOnDelivery;
 use Automattic\WooCommerce\Blocks\Payments\Integrations\Cheque;
 use Automattic\WooCommerce\Blocks\Payments\Integrations\PayPal;
-use Automattic\WooCommerce\Blocks\Payments\Integrations\WooPayments;
 use Automattic\WooCommerce\Blocks\Payments\PaymentMethodRegistry;
 use Automattic\WooCommerce\Blocks\Registry\Container;
 use Automattic\WooCommerce\Blocks\Templates\ClassicTemplatesCompatibility;
 use Automattic\WooCommerce\StoreApi\RoutesController;
 use Automattic\WooCommerce\StoreApi\SchemaController;
 use Automattic\WooCommerce\StoreApi\StoreApi;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCheckoutAssets;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExpressCheckoutService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFraudPreventionService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendAssets;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGateway;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\Eligibility;
 use Automattic\WooCommerce\Blocks\Shipping\ShippingController;
 use Automattic\WooCommerce\Blocks\TemplateOptions;
 use Automattic\WooCommerce\Internal\Features\BlockEditorUnifiedAssets;
@@ -552,23 +543,6 @@ class Bootstrap {
 			function ( Container $container ) {
 				$asset_api = $container->get( AssetApi::class );
 				return new CashOnDelivery( $asset_api );
-			}
-		);
-		$this->container->register(
-			WooPayments::class,
-			function ( Container $container ) {
-				$asset_api         = $container->get( AssetApi::class );
-				$core_container    = wc_get_container();
-				$arbiter           = $core_container->get( WooPaymentsRuntimeArbiter::class );
-				$checkout_assets   = $core_container->get( WooPaymentsCheckoutAssets::class );
-				$payments_provider = $core_container->get( WooPaymentsProvider::class );
-				$woopay            = $core_container->get( Eligibility::class );
-				$express_service   = $core_container->get( WooPaymentsExpressCheckoutService::class );
-				$fraud_prevention  = $core_container->get( WooPaymentsFraudPreventionService::class );
-				$frontend_assets   = $core_container->get( WooPaymentsFrontendAssets::class );
-				$card_gateway      = $core_container->get( WooPaymentsGateway::class );
-
-				return new WooPayments( $asset_api, $card_gateway, $arbiter, $payments_provider, $checkout_assets, $woopay, $express_service, $fraud_prevention, $frontend_assets );
 			}
 		);
 	}

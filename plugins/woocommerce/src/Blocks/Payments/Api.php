@@ -7,9 +7,7 @@ use Automattic\WooCommerce\Blocks\Payments\Integrations\BankTransfer;
 use Automattic\WooCommerce\Blocks\Payments\Integrations\CashOnDelivery;
 use Automattic\WooCommerce\Blocks\Payments\Integrations\Cheque;
 use Automattic\WooCommerce\Blocks\Payments\Integrations\PayPal;
-use Automattic\WooCommerce\Blocks\Payments\Integrations\WooPayments;
 use Automattic\WooCommerce\Internal\Features\BlockEditorUnifiedAssets;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
 
 /**
  *  The Api class provides an interface to payment method registration.
@@ -145,15 +143,6 @@ class Api {
 		$payment_method_registry->register( $container->get( PayPal::class ) );
 		$payment_method_registry->register( $container->get( BankTransfer::class ) );
 		$payment_method_registry->register( $container->get( CashOnDelivery::class ) );
-
-		if ( WooPaymentsSetupTier::ACTIVE !== wc_get_container()->get( WooPaymentsSetupTier::class )->get_effective_tier() ) {
-			return;
-		}
-
-		$woopayments = Package::container()->get( WooPayments::class );
-		foreach ( $woopayments->get_payment_method_integrations() as $woopayments_integration ) {
-			$payment_method_registry->register( $woopayments_integration );
-		}
 	}
 
 	/**

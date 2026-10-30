@@ -257,6 +257,7 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 						WooPaymentsTokenizedCartSessionController::class,
 						// Clears its checkout config memos on each request's init, before the Blocks registration and any render.
 						WooPaymentsCheckoutAssets::class,
+						WooPaymentsBlocksPaymentMethodsController::class,
 						SessionController::class,
 						OrderStatusSync::class,
 						ExtensionSync::class,
@@ -278,7 +279,8 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 						WooPaymentsVatDetailsRedirect::class,
 					)
 				),
-				RequestTypeUtil::ADMIN => array_merge( $active_maintenance_prefix, $connected_admin ),
+				// The block editor previews the Cart and Checkout blocks with the Blocks payment methods.
+				RequestTypeUtil::ADMIN => array_merge( $active_maintenance_prefix, $connected_admin, array( WooPaymentsBlocksPaymentMethodsController::class ) ),
 				RequestTypeUtil::AJAX  => array_merge(
 					$gateway_prefix,
 					$connected_ajax,
@@ -305,6 +307,8 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 						WooPaymentsDuplicatePaymentPreventionService::class,
 						WooPaymentsTokenizedCartSessionController::class,
 						WooPaymentsCheckoutAssets::class,
+						// Blocks registers its payment methods on REST requests too, such as the Store API's.
+						WooPaymentsBlocksPaymentMethodsController::class,
 						SessionController::class,
 						WooPaymentsExpressCheckoutController::class,
 						WooPaymentsExpressCheckoutStoreApiExtension::class,
