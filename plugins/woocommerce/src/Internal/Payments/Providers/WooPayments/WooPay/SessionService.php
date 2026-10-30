@@ -700,6 +700,8 @@ class SessionService {
 	/**
 	 * Get WooPay frontend config used by classic and block checkout surfaces.
 	 *
+	 * WooPay keys only: the keys the card scripts also read come from WooPaymentsCheckoutAssets::get_shared_script_config().
+	 *
 	 * @param string $context Express checkout context.
 	 * @return array<string,mixed>
 	 */
@@ -731,15 +733,6 @@ class SessionService {
 			'isWooPayDirectCheckoutEnabled'     => $this->woopay_eligibility->is_woopay_direct_checkout_enabled(),
 			'isWooPayGlobalThemeSupportEnabled' => $is_global_theme_enabled,
 			'forceNetworkSavedCards'            => $this->account_service->is_network_saved_cards_enabled() || $this->woopay_eligibility->should_use_stripe_platform_on_checkout_page(),
-			'ajaxUrl'                           => admin_url( 'admin-ajax.php' ),
-			'platformTrackerNonce'              => wp_create_nonce( 'platform_tracks_nonce' ),
-			'tracksUrl'                         => $this->frontend_tracking_controller->get_tracks_rest_url(),
-			'tracksRestNonce'                   => wp_create_nonce( 'wp_rest' ),
-			// Store-level only, as client 11.2.0 sets it (class-woopay-tracker.php:663-665); WooPay events are checked when recorded.
-			'isShopperTrackingEnabled'          => $this->frontend_tracking_controller->is_shopper_event_tracking_enabled(),
-			'woopayHost'                        => self::get_woopay_url(),
-			'testMode'                          => $this->account_service->is_test_mode_enabled(),
-			'wcpayVersionNumber'                => WooPaymentsClientVersion::VERSION,
 			'woopayMerchantId'                  => $this->get_store_blog_id(),
 			'initWooPayNonce'                   => wp_create_nonce( 'wcpay_init_woopay_nonce' ),
 			'woopaySessionNonce'                => wp_create_nonce( 'woopay_session_nonce' ),
@@ -794,17 +787,18 @@ class SessionService {
 	 *
 	 * @since 11.2.0
 	 *
+	 * @param array<string,mixed> $shared_script_config The keys the card scripts also read, from WooPaymentsCheckoutAssets::get_shared_script_config().
 	 * @return array<string,mixed>
 	 */
-	public function get_woopay_direct_checkout_config(): array {
+	public function get_woopay_direct_checkout_config( array $shared_script_config ): array {
 		return array(
-			'woopayHost'                    => self::get_woopay_url(),
-			'testMode'                      => $this->account_service->is_test_mode_enabled(),
+			'woopayHost'                    => $shared_script_config['woopayHost'],
+			'testMode'                      => $shared_script_config['testMode'],
 			'woopaySessionNonce'            => wp_create_nonce( 'woopay_session_nonce' ),
 			'woopayMerchantId'              => $this->get_store_blog_id(),
 			'isWooPayDirectCheckoutEnabled' => $this->woopay_eligibility->is_woopay_direct_checkout_enabled(),
-			'platformTrackerNonce'          => wp_create_nonce( 'platform_tracks_nonce' ),
-			'ajaxUrl'                       => admin_url( 'admin-ajax.php' ),
+			'platformTrackerNonce'          => $shared_script_config['platformTrackerNonce'],
+			'ajaxUrl'                       => $shared_script_config['ajaxUrl'],
 			'woopayMinimumSessionData'      => $this->get_encrypted_minimum_session_data(),
 		);
 	}

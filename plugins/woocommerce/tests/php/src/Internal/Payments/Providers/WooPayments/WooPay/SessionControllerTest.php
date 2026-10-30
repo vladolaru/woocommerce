@@ -6,6 +6,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\W
 use Automattic\Jetpack\Connection\Rest_Authentication;
 use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCheckoutAssets;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendStylesService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendTrackingController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\SessionController;
@@ -250,6 +251,35 @@ class SessionControllerTest extends WC_REST_Unit_Test_Case {
 		$this->assertStringContainsString( '"PRE_CHECK_SAVE_MY_INFO":"1"', $localized_data );
 		$this->assertSame( (string) get_permalink( wc_get_page_id( 'checkout' ) ), $this->get_localized_woopay_config()['woopaySourceUrl'] );
 		$this->assertStringContainsString( '/assets/client/blocks/wc-woopayments-phone-validation.js', $this->get_localized_woopay_config()['woopayPhoneValidationScriptUrl'] );
+	}
+
+	/**
+	 * @testdox The classic WooPay config carries the checkout assets' shared keys right after the WooPay flags.
+	 */
+	public function test_classic_woopay_config_carries_the_shared_script_config_after_the_flags(): void {
+		$shared = array(
+			'ajaxUrl'                  => 'shared-ajax-url',
+			'platformTrackerNonce'     => 'shared-platform-tracker-nonce',
+			'tracksUrl'                => 'shared-tracks-url',
+			'tracksRestNonce'          => 'shared-tracks-rest-nonce',
+			'isShopperTrackingEnabled' => 'shared-tracking',
+			'woopayHost'               => 'shared-woopay-host',
+			'testMode'                 => 'shared-test-mode',
+			'wcpayVersionNumber'       => 'shared-version',
+		);
+		$assets = $this->createMock( WooPaymentsCheckoutAssets::class );
+		$assets->method( 'get_shared_script_config' )->willReturn( $shared );
+		wc_get_container()->replace( WooPaymentsCheckoutAssets::class, $assets );
+		$service                 = new RecordingWooPaySessionService();
+		$service->woopay_enabled = true;
+		$this->sut               = $this->create_controller( true, $service );
+		$this->set_checkout_shortcode_page();
+
+		$this->sut->enqueue_frontend_assets();
+
+		$config    = $this->get_localized_woopay_config();
+		$flags_end = array_search( 'forceNetworkSavedCards', array_keys( $config ), true ) + 1;
+		$this->assertSame( $shared, array_slice( $config, $flags_end, count( $shared ), true ) );
 	}
 
 	/**

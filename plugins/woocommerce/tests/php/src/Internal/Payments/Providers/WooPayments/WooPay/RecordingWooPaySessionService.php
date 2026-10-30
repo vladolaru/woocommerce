@@ -188,9 +188,11 @@ class RecordingWooPaySessionService extends SessionService {
 	/**
 	 * Get the light direct-checkout config.
 	 *
+	 * @param array<string,mixed> $shared_script_config The keys the card scripts also read.
 	 * @return array<string,mixed>
 	 */
-	public function get_woopay_direct_checkout_config(): array {
+	public function get_woopay_direct_checkout_config( array $shared_script_config ): array {
+		unset( $shared_script_config );
 		++$this->direct_checkout_config_calls;
 
 		return array(

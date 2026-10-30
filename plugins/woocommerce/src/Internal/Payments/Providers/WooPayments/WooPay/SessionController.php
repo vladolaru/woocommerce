@@ -14,6 +14,7 @@ use WP_Error;
 use WP_REST_Request;
 use WP_REST_Response;
 use WP_REST_Server;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCheckoutAssets;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendAssets;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderPayAccess;
@@ -76,6 +77,13 @@ class SessionController implements RegisterHooksInterface {
 	 * @var array<string,mixed>|null
 	 */
 	private ?array $pay_for_order_params = null;
+
+	/**
+	 * Checkout assets, which build the config keys the card scripts and the WooPay script both read; resolved on first use.
+	 *
+	 * @var WooPaymentsCheckoutAssets|null
+	 */
+	private ?WooPaymentsCheckoutAssets $checkout_assets = null;
 
 	/**
 	 * Initialize the class instance.
@@ -502,7 +510,7 @@ class SessionController implements RegisterHooksInterface {
 			'wcpay_core_woopay_config',
 			array_merge(
 				array( 'wcAjaxUrl' => \WC_AJAX::get_endpoint( '%%endpoint%%' ) ),
-				$this->session_service->get_woopay_direct_checkout_config()
+				$this->session_service->get_woopay_direct_checkout_config( $this->get_checkout_assets()->get_shared_script_config() )
 			)
 		);
 		wp_enqueue_script( self::CLASSIC_WOOPAY_SCRIPT_HANDLE );
@@ -905,6 +913,10 @@ class SessionController implements RegisterHooksInterface {
 	 * @return array<string,mixed>
 	 */
 	private function get_classic_woopay_config( array $config ): array {
+		// The shared keys go right after the WooPay flags, where this object has always carried them.
+		$flags_end = array_search( 'forceNetworkSavedCards', array_keys( $config ), true );
+		$flags_end = false === $flags_end ? count( $config ) : $flags_end + 1;
+
 		return array_merge(
 			array(
 				'wcAjaxUrl'                => \WC_AJAX::get_endpoint( '%%endpoint%%' ),
@@ -914,9 +926,24 @@ class SessionController implements RegisterHooksInterface {
 				// built the way core's Blocks settings build it (AssetDataRegistry::get_store_pages()); never the browser URL.
 				'woopaySourceUrl'          => (string) get_permalink( wc_get_page_id( 'checkout' ) ),
 			),
-			$config,
+			array_slice( $config, 0, $flags_end, true ),
+			$this->get_checkout_assets()->get_shared_script_config(),
+			array_slice( $config, $flags_end, null, true ),
 			$this->session_service->get_save_user_checkout_data()
 		);
+	}
+
+	/**
+	 * Get the checkout assets, resolved on first use so requests that print no WooPay config never build them.
+	 *
+	 * @return WooPaymentsCheckoutAssets
+	 */
+	private function get_checkout_assets(): WooPaymentsCheckoutAssets {
+		if ( null === $this->checkout_assets ) {
+			$this->checkout_assets = wc_get_container()->get( WooPaymentsCheckoutAssets::class );
+		}
+
+		return $this->checkout_assets;
 	}
 
 	/**

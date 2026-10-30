@@ -28,6 +28,21 @@ class SessionServiceTest extends WC_Unit_Test_Case {
 	use WooPayServicesFixture;
 
 	/**
+	 * The keys the card scripts also read, as WooPaymentsCheckoutAssets::get_shared_script_config() hands them over, with
+	 * values no other source produces.
+	 */
+	private const SHARED_SCRIPT_CONFIG = array(
+		'ajaxUrl'                  => 'https://shared.test/admin-ajax.php',
+		'platformTrackerNonce'     => 'shared-platform-tracker-nonce',
+		'tracksUrl'                => 'https://shared.test/tracks',
+		'tracksRestNonce'          => 'shared-tracks-rest-nonce',
+		'isShopperTrackingEnabled' => true,
+		'woopayHost'               => 'https://shared-woopay.test',
+		'testMode'                 => false,
+		'wcpayVersionNumber'       => 'shared-version',
+	);
+
+	/**
 	 * @testdox Should build WooPay REST URLs from the default host.
 	 */
 	public function test_builds_woopay_rest_urls_from_default_host(): void {
@@ -753,7 +768,7 @@ class SessionServiceTest extends WC_Unit_Test_Case {
 			'sealed minimum session data' => fn() => $this->decrypt_store_session( $sut->get_encrypted_minimum_session_data() )['blog_id'],
 			'sealed store_data'           => fn() => $this->decrypt_store_session( $sut->get_encrypted_session_data( array() ) )['store_data']['blog_id'],
 			'checkout frontend config'    => fn() => $sut->get_woopay_frontend_config( 'checkout' )['woopayMerchantId'],
-			'direct checkout config'      => fn() => $sut->get_woopay_direct_checkout_config()['woopayMerchantId'],
+			'direct checkout config'      => fn() => $sut->get_woopay_direct_checkout_config( self::SHARED_SCRIPT_CONFIG )['woopayMerchantId'],
 		);
 
 		$this->assertSame( '12345', wp_json_encode( $reads[ $site ]() ) );
@@ -779,7 +794,7 @@ class SessionServiceTest extends WC_Unit_Test_Case {
 		\Jetpack_Options::update_option( 'blog_token', $blog_token );
 		$sut             = $this->create_service( array(), array( 'platform_direct_checkout_eligible' => true ) );
 		$frontend_config = $sut->get_woopay_frontend_config( 'cart' );
-		$direct_config   = $sut->get_woopay_direct_checkout_config();
+		$direct_config   = $sut->get_woopay_direct_checkout_config( self::SHARED_SCRIPT_CONFIG );
 
 		$this->assertTrue( $frontend_config['isWooPayDirectCheckoutEnabled'], 'Direct checkout runs, so the script reads the value.' );
 		$this->assertTrue( $direct_config['isWooPayDirectCheckoutEnabled'], 'Direct checkout runs, so the script reads the value.' );
@@ -804,7 +819,7 @@ class SessionServiceTest extends WC_Unit_Test_Case {
 		$issued_from     = time();
 		$expires_from    = CartTokenUtils::get_cart_token_expiration();
 		$frontend_config = $sut->get_woopay_frontend_config( 'cart' );
-		$direct_config   = $sut->get_woopay_direct_checkout_config();
+		$direct_config   = $sut->get_woopay_direct_checkout_config( self::SHARED_SCRIPT_CONFIG );
 
 		$this->assertTrue( $frontend_config['isWooPayDirectCheckoutEnabled'], 'Direct checkout runs, so the script reads the value.' );
 		$this->assertTrue( $direct_config['isWooPayDirectCheckoutEnabled'], 'Direct checkout runs, so the script reads the value.' );
@@ -1269,12 +1284,17 @@ class SessionServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should report live mode in the WooPay frontend config so the express OTP iframe opens in live mode.
+	 * Client 11.1.0 sends woopayHost, testMode, platformTrackerNonce and ajaxUrl in its light config (class-wc-payments.php:1797-1835).
+	 *
+	 * @testdox The direct-checkout config takes the keys the card scripts also read from the shared config it is given.
 	 */
-	public function test_woopay_frontend_config_reports_live_mode(): void {
-		$config = $this->create_service( array(), array(), null, null, null, false )->get_woopay_frontend_config( 'checkout' );
+	public function test_direct_checkout_config_takes_the_shared_keys_from_the_shared_config(): void {
+		$config = $this->create_service( array(), array( 'platform_direct_checkout_eligible' => true ) )->get_woopay_direct_checkout_config( self::SHARED_SCRIPT_CONFIG );
 
-		$this->assertFalse( $config['testMode'] );
+		$this->assertSame( array( 'woopayHost', 'testMode', 'woopaySessionNonce', 'woopayMerchantId', 'isWooPayDirectCheckoutEnabled', 'platformTrackerNonce', 'ajaxUrl', 'woopayMinimumSessionData' ), array_keys( $config ) );
+		foreach ( array( 'woopayHost', 'testMode', 'platformTrackerNonce', 'ajaxUrl' ) as $key ) {
+			$this->assertSame( self::SHARED_SCRIPT_CONFIG[ $key ], $config[ $key ], $key );
+		}
 	}
 
 	/**
@@ -1300,9 +1320,7 @@ class SessionServiceTest extends WC_Unit_Test_Case {
 		$this->assertFalse( $config['isWooPayDirectCheckoutEnabled'] );
 		$this->assertFalse( $config['isWooPayGlobalThemeSupportEnabled'] );
 		$this->assertFalse( $config['forceNetworkSavedCards'] );
-		$this->assertSame( 'https://pay.woo.com', $config['woopayHost'] );
 		$this->assertSame( 12345, $config['woopayMerchantId'] );
-		$this->assertTrue( $config['testMode'] );
 		$this->assertSame( 'checkout', $config['woopayButton']['context'] );
 		$this->assertSame( 'default', $config['woopayButton']['type'] );
 		$this->assertSame( 'dark', $config['woopayButton']['theme'] );
@@ -1323,11 +1341,8 @@ class SessionServiceTest extends WC_Unit_Test_Case {
 		// client/components/woopay/save-user/agreement.js).
 		$this->assertStringContainsString( '<termsOfService/>', $config['woopayAgreementText'] );
 		$this->assertStringContainsString( '<privacyPolicy/>', $config['woopayAgreementText'] );
-		$this->assertArrayHasKey( 'platformTrackerNonce', $config );
-		$this->assertSame( rest_url( 'wc/v3/payments/tracks' ), $config['tracksUrl'] );
-		$this->assertNotFalse( wp_verify_nonce( $config['tracksRestNonce'], 'wp_rest' ) );
-		$this->assertSame( admin_url( 'admin-ajax.php' ), $config['ajaxUrl'] );
-		$this->assertArrayHasKey( 'isShopperTrackingEnabled', $config );
+		// The keys the card scripts also read come from WooPaymentsCheckoutAssets::get_shared_script_config() only.
+		$this->assertSame( array(), array_intersect_key( $config, self::SHARED_SCRIPT_CONFIG ) );
 		$this->assertArrayNotHasKey( 'is_shopper_tracking_enabled', $config );
 	}
 
@@ -1935,7 +1950,6 @@ class SessionServiceTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( $expected, $sut->get_minimum_session_data()['wcpay_version'] );
 		$this->assertSame( $expected, $sut->start_init_session_request( 'shopper@example.com' )['wcpay_version'] );
-		$this->assertSame( $expected, $sut->get_woopay_frontend_config( 'checkout' )['wcpayVersionNumber'] );
 	}
 
 	/**
