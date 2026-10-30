@@ -888,8 +888,10 @@ class WooPaymentsCheckoutAssets implements RegisterHooksInterface {
 
 		$frontend_assets->register_fingerprint_script();
 
+		$frontend_assets->register_common_script();
+
 		if ( ! wp_script_is( self::CLASSIC_SCRIPT_HANDLE, 'registered' ) ) {
-			$dependencies = array( 'jquery', 'wc-checkout', WooPaymentsFrontendAssets::STRIPE_SCRIPT_HANDLE, WooPaymentsFrontendAssets::FINGERPRINT_SCRIPT_HANDLE, WooPaymentsFrontendAssets::APPEARANCE_SCRIPT_HANDLE );
+			$dependencies = array( 'jquery', 'wc-checkout', WooPaymentsFrontendAssets::STRIPE_SCRIPT_HANDLE, WooPaymentsFrontendAssets::FINGERPRINT_SCRIPT_HANDLE, WooPaymentsFrontendAssets::APPEARANCE_SCRIPT_HANDLE, WooPaymentsFrontendAssets::COMMON_SCRIPT_HANDLE );
 			// tokenization-form.js must listen before this script mounts the card element and fires
 			// `wc-credit-card-form-init`, on any theme (client 11.1.0 includes/class-wc-payments-checkout.php:130-131).
 			if ( in_array( PaymentGatewayFeature::TOKENIZATION, $supports, true ) ) {

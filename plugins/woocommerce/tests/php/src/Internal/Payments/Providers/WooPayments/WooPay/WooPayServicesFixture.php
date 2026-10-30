@@ -16,6 +16,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPe
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\AppearanceStore;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\StoreApiRequestHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\BlocksDataExtractor;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendAssets;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 
 /**
@@ -604,7 +605,7 @@ trait WooPayServicesFixture {
 	 */
 	private function register_controller( SessionService $service ): SessionController {
 		$controller = new SessionController();
-		$controller->init( $service, $this->woopay_eligibility, $this->appearance_store, $this->store_api_request_handler );
+		$controller->init( $service, $this->woopay_eligibility, $this->appearance_store, $this->store_api_request_handler, new WooPaymentsFrontendAssets() );
 		$controller->register();
 
 		return $controller;

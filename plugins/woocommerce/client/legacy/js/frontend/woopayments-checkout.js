@@ -666,42 +666,18 @@
 		}
 	}
 
+	// The shared Tracks sender (wc-woopayments-common) with this gateway's tracking values.
 	function recordUserEvent( eventName, eventProperties ) {
-		var tracksUrl = config.tracksUrl;
-		var nonce = config.platformTrackerNonce;
-		var body;
-
-		if (
-			! eventName ||
-			// wp_localize_script() sends a false flag as ''.
-			! config.isShopperTrackingEnabled ||
-			! tracksUrl ||
-			! nonce ||
-			! window.fetch ||
-			! window.FormData
-		) {
-			return;
-		}
-
-		body = new window.FormData();
-		body.append( 'tracksNonce', nonce );
-		body.append( 'tracksEventName', eventName );
-		body.append(
-			'tracksEventProp',
-			JSON.stringify( eventProperties || {} )
+		window.wc.woopayments.tracks.recordEvent(
+			{
+				isShopperTrackingEnabled: config.isShopperTrackingEnabled,
+				tracksUrl: config.tracksUrl,
+				platformTrackerNonce: config.platformTrackerNonce,
+				tracksRestNonce: config.tracksRestNonce,
+			},
+			eventName,
+			eventProperties
 		);
-
-		// The REST nonce keeps a logged-in shopper's session, which the Tracks nonce is tied to.
-		window
-			.fetch( tracksUrl, {
-				method: 'POST',
-				credentials: 'same-origin',
-				headers: config.tracksRestNonce
-					? { 'X-WP-Nonce': config.tracksRestNonce }
-					: {},
-				body: body,
-			} )
-			.catch( function () {} );
 	}
 
 	function isLinkEnabled( gatewayConfig ) {
@@ -2271,31 +2247,6 @@
 		document.body.dispatchEvent( new Event( 'wc-credit-card-form-init' ) );
 	}
 
-	// Client 11.1.0 client/checkout/api/index.js:57-71 waits up to 600 seconds for Stripe.js, checking every 100 ms,
-	// because page optimizers can defer it past the checkout render.
-	function waitForStripe() {
-		return new Promise( function ( resolve, reject ) {
-			var waited = 0;
-			var timer;
-
-			if ( typeof window.Stripe === 'function' ) {
-				resolve( window.Stripe );
-				return;
-			}
-
-			timer = window.setInterval( function () {
-				waited += 100;
-				if ( typeof window.Stripe === 'function' ) {
-					window.clearInterval( timer );
-					resolve( window.Stripe );
-				} else if ( waited > 600 * 1000 ) {
-					window.clearInterval( timer );
-					reject( new Error( 'Stripe object not found' ) );
-				}
-			}, 100 );
-		} );
-	}
-
 	// The WooPayments gateways in the page's payment method list, in its order, or the current gateway when the page
 	// renders no list.
 	function getRenderedGatewayIds() {
@@ -2403,7 +2354,7 @@
 		if ( typeof window.Stripe !== 'function' ) {
 			if ( ! isWaitingForStripe ) {
 				isWaitingForStripe = true;
-				waitForStripe().then(
+				window.wc.woopayments.waitForStripe().then(
 					function () {
 						isWaitingForStripe = false;
 						initializeStripeElement();
@@ -2651,30 +2602,6 @@
 		return createSetupIntentAndSubmit( formElement );
 	}
 
-	function parseConfirmationHash( hash ) {
-		var match = ( hash || '' ).match(
-			/^#wcpay-confirm-(pi|si):([^:]+):([^:]+):([^:]+)(?::(.+))?$/
-		);
-		var clientSecret;
-
-		if ( ! match ) {
-			return null;
-		}
-
-		clientSecret = decodeURIComponent( match[ 3 ] );
-
-		return {
-			type: match[ 1 ],
-			orderId: decodeURIComponent( match[ 2 ] ),
-			clientSecret: clientSecret,
-			nonce: decodeURIComponent( match[ 4 ] ),
-			confirmationToken: match[ 5 ]
-				? decodeURIComponent( match[ 5 ] )
-				: '',
-			intentId: clientSecret.split( '_secret_' )[ 0 ],
-		};
-	}
-
 	function isChangingPaymentMethodForSubscription() {
 		if (
 			window.location &&
@@ -2778,7 +2705,9 @@
 	}
 
 	function confirmRedirectIfPresent() {
-		var confirmation = parseConfirmationHash( window.location.hash || '' );
+		var confirmation = window.wc.woopayments.parseConfirmationHash(
+			window.location.hash || ''
+		);
 		var activePaymentForm;
 		var intentId;
 		var failedIntentId;
@@ -2824,35 +2753,20 @@
 
 		// Client 11.1.0 api.confirmIntent() reaches Stripe through getStripe(), which waits for Stripe.js.
 		if ( typeof window.Stripe === 'function' ) {
-			confirmWithStripe();
+			confirmWithAccountStripe();
 		} else {
-			waitForStripe().then( confirmWithStripe, function () {
-				setError( config.confirmationErrorMessage || '' );
-			} );
+			window.wc.woopayments
+				.waitForStripe()
+				.then( confirmWithAccountStripe, function () {
+					setError( config.confirmationErrorMessage || '' );
+				} );
 		}
 
-		function confirmWithStripe() {
-			var confirmationStripe = getAccountStripe();
-
-			if ( confirmation.type === 'si' ) {
-				if ( confirmation.confirmationToken && confirmationStripe.confirmSetup ) {
-					confirmationPromise = confirmationStripe.confirmSetup( {
-						clientSecret: confirmation.clientSecret,
-						confirmParams: {
-							confirmation_token: confirmation.confirmationToken,
-						},
-						redirect: 'if_required',
-					} );
-				} else if ( confirmationStripe.handleNextAction ) {
-					confirmationPromise = confirmationStripe.handleNextAction( {
-						clientSecret: confirmation.clientSecret,
-					} );
-				}
-			} else if ( confirmationStripe.handleNextAction ) {
-				confirmationPromise = confirmationStripe.handleNextAction( {
-					clientSecret: confirmation.clientSecret,
-				} );
-			}
+		function confirmWithAccountStripe() {
+			confirmationPromise = window.wc.woopayments.confirmWithStripe(
+				confirmation,
+				getAccountStripe()
+			);
 
 			if ( ! confirmationPromise ) {
 				setError( config.confirmationErrorMessage || '' );
@@ -3142,69 +3056,12 @@
 			'skip_woopay=; path=/; expires=Thu, 01 Jan 1970 00:00:00 UTC;';
 	}
 
-	function getTracksIdentityCookieValue() {
-		var nameEq = 'tk_ai=';
-		var cookies = document.cookie.split( ';' );
-		var i;
-		var cookie;
-
-		for ( i = 0; i < cookies.length; i++ ) {
-			cookie = cookies[ i ].replace( /^\s+/, '' );
-			if ( cookie.indexOf( nameEq ) === 0 ) {
-				return cookie.substring( nameEq.length );
-			}
-		}
-
-		return undefined;
-	}
-
-	// Resolves the stringified Tracks identity WooPay stitches its own
-	// events to — from the tk_ai cookie when present, otherwise through
-	// the platform's get_identity bridge. Never rejects.
+	// The shared Tracks identity resolver (wc-woopayments-common) with the base config's values.
 	function getTracksIdentity() {
-		var ajaxUrl = baseConfig.ajaxUrl;
-		var nonce = baseConfig.platformTrackerNonce;
-		var cookieIdentity = getTracksIdentityCookieValue();
-		var body;
-
-		if ( cookieIdentity ) {
-			return Promise.resolve(
-				JSON.stringify( { _ut: 'anon', _ui: cookieIdentity } )
-			);
-		}
-
-		if ( ! ajaxUrl || ! nonce || ! window.fetch || ! window.FormData ) {
-			return Promise.resolve( undefined );
-		}
-
-		body = new window.FormData();
-		body.append( 'tracksNonce', nonce );
-		body.append( 'action', 'get_identity' );
-
-		return window
-			.fetch( ajaxUrl, { method: 'POST', body: body } )
-			.then( function ( response ) {
-				if ( ! response.ok ) {
-					return undefined;
-				}
-
-				return response.json().then( function ( data ) {
-					if (
-						data &&
-						data.success &&
-						data.data &&
-						data.data._ui &&
-						data.data._ut
-					) {
-						return JSON.stringify( data.data );
-					}
-
-					return undefined;
-				} );
-			} )
-			.catch( function () {
-				return undefined;
-			} );
+		return window.wc.woopayments.tracks.getIdentity( {
+			ajaxUrl: baseConfig.ajaxUrl,
+			platformTrackerNonce: baseConfig.platformTrackerNonce,
+		} );
 	}
 
 	// The plugin's resolveWoopayAppearance(): server-computed appearance

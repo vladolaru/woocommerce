@@ -2,6 +2,15 @@
  * Tests for the classic (shortcode) WooPayments express checkout script.
  */
 
+// The page prints wc-woopayments-common before this script; it sets window.wc.woopayments.
+function loadWooPaymentsCommon() {
+	jest.isolateModules( () => {
+		require( '../../../../blocks/assets/js/extensions/payment-methods/woopayments/common' );
+	} );
+}
+
+beforeEach( loadWooPaymentsCommon );
+
 const { server, http, HttpResponse } = require( './msw-setup' );
 
 // Stand-in for the wp-i18n script the page loads (@wordpress/i18n __, _n and sprintf). It returns the English source

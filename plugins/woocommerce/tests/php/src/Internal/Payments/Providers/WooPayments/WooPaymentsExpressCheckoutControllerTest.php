@@ -57,6 +57,7 @@ class WooPaymentsExpressCheckoutControllerTest extends WC_Unit_Test_Case {
 		wp_deregister_script( 'wc-woopayments-express-checkout' );
 		wp_deregister_style( 'wc-woopayments-express-checkout' );
 		wp_deregister_script( 'stripe' );
+		wp_deregister_script( 'wc-woopayments-common' );
 		wp_reset_postdata();
 		parent::tearDown();
 	}
@@ -118,6 +119,8 @@ class WooPaymentsExpressCheckoutControllerTest extends WC_Unit_Test_Case {
 		$this->assertStringContainsString( '"enabled_methods":["payment_request"]', $localized_data );
 		$this->assertContains( 'wp-hooks', wp_scripts()->registered['wc-woopayments-express-checkout']->deps, 'The extension compatibility filters need wp-hooks on checkout too.' );
 		$this->assertContains( 'wp-a11y', wp_scripts()->registered['wc-woopayments-express-checkout']->deps, 'A click on the refresh overlay is announced through wp.a11y (client 11.2.0 shortcode-buttons-express/index.js:67-80).' );
+		$this->assertContains( 'wc-woopayments-common', wp_scripts()->registered['wc-woopayments-express-checkout']->deps, 'The express script reads window.wc.woopayments.' );
+		$this->assertTrue( wp_script_is( 'wc-woopayments-common', 'registered' ), 'An unregistered dependency would make WordPress drop the express script.' );
 	}
 
 	/**

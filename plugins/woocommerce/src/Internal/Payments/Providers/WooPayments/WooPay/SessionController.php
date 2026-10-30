@@ -16,6 +16,7 @@ use WP_REST_Response;
 use WP_REST_Server;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCheckoutAssets;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExpressCheckoutService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendAssets;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderPayAccess;
 
@@ -65,6 +66,13 @@ class SessionController implements RegisterHooksInterface {
 	private StoreApiRequestHandler $store_api_request_handler;
 
 	/**
+	 * Registrar of the script handles the WooPayments shopper scripts share.
+	 *
+	 * @var WooPaymentsFrontendAssets
+	 */
+	private WooPaymentsFrontendAssets $frontend_assets;
+
+	/**
 	 * Whether WooPay frontend assets have already been localized and enqueued.
 	 *
 	 * @var bool
@@ -90,16 +98,18 @@ class SessionController implements RegisterHooksInterface {
 	 *
 	 * @internal
 	 *
-	 * @param SessionService         $session_service           WooPay session service.
-	 * @param Eligibility            $woopay_eligibility        WooPay eligibility rules.
-	 * @param AppearanceStore        $appearance_store          WooPay checkout appearance store.
-	 * @param StoreApiRequestHandler $store_api_request_handler Handler of WooPay's Store API requests.
+	 * @param SessionService            $session_service           WooPay session service.
+	 * @param Eligibility               $woopay_eligibility        WooPay eligibility rules.
+	 * @param AppearanceStore           $appearance_store          WooPay checkout appearance store.
+	 * @param StoreApiRequestHandler    $store_api_request_handler Handler of WooPay's Store API requests.
+	 * @param WooPaymentsFrontendAssets $frontend_assets           Registrar of the shared script handles.
 	 */
-	final public function init( SessionService $session_service, Eligibility $woopay_eligibility, AppearanceStore $appearance_store, StoreApiRequestHandler $store_api_request_handler ): void {
+	final public function init( SessionService $session_service, Eligibility $woopay_eligibility, AppearanceStore $appearance_store, StoreApiRequestHandler $store_api_request_handler, WooPaymentsFrontendAssets $frontend_assets ): void {
 		$this->session_service           = $session_service;
 		$this->woopay_eligibility        = $woopay_eligibility;
 		$this->appearance_store          = $appearance_store;
 		$this->store_api_request_handler = $store_api_request_handler;
+		$this->frontend_assets           = $frontend_assets;
 	}
 
 	/**
@@ -830,12 +840,14 @@ class SessionController implements RegisterHooksInterface {
 	 * Register the classic WooPay assets; this controller is their only registrar.
 	 */
 	private function register_classic_woopay_assets(): void {
+		$this->frontend_assets->register_common_script();
+
 		if ( ! wp_script_is( self::CLASSIC_WOOPAY_SCRIPT_HANDLE, 'registered' ) ) {
 			$suffix = defined( 'SCRIPT_DEBUG' ) && SCRIPT_DEBUG ? '' : '.min';
 			wp_register_script(
 				self::CLASSIC_WOOPAY_SCRIPT_HANDLE,
 				WC()->plugin_url() . '/assets/js/frontend/woopayments-woopay' . $suffix . '.js',
-				array( 'jquery', 'wp-i18n' ),
+				array( 'jquery', 'wp-i18n', WooPaymentsFrontendAssets::COMMON_SCRIPT_HANDLE ),
 				WC_VERSION,
 				true
 			);

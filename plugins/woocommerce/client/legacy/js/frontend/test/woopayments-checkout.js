@@ -153,15 +153,11 @@ describe( 'WooPayments checkout', () => {
 			isExpressCheckout: true,
 			isReusable: true,
 		};
-		window.wc = {
-			customPlaceOrderButton: {
-				__getForm: jest.fn(
-					() => global.jQuery.checkoutFormResult
-				),
-				register: jest.fn( ( gateway, registration ) => {
-					registrations[ gateway ] = registration;
-				} ),
-			},
+		window.wc.customPlaceOrderButton = {
+			__getForm: jest.fn( () => global.jQuery.checkoutFormResult ),
+			register: jest.fn( ( gateway, registration ) => {
+				registrations[ gateway ] = registration;
+			} ),
 		};
 
 		return registrations;
@@ -597,6 +593,8 @@ describe( 'WooPayments checkout', () => {
 			),
 		};
 		require( '../utils/woopayments-appearance' );
+		// The page prints wc-woopayments-common before this script; it sets window.wc.woopayments.
+		require( '../../../../blocks/assets/js/extensions/payment-methods/woopayments/common' );
 	} );
 
 	afterEach( () => {

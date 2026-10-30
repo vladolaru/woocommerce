@@ -24,6 +24,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\Adapte
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\StoreApiRequestHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\BlocksDataExtractor;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendAssets;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 
 /**
@@ -104,6 +105,7 @@ class SessionControllerTest extends WC_REST_Unit_Test_Case {
 		wp_dequeue_script( 'wc-woopayments-woopay' );
 		wp_dequeue_style( 'wc-woopayments-woopay' );
 		wp_deregister_script( 'wc-woopayments-woopay' );
+		wp_deregister_script( 'wc-woopayments-common' );
 		wp_deregister_style( 'wc-woopayments-woopay' );
 		wp_reset_postdata();
 		delete_option( 'woocommerce_enable_guest_checkout' );
@@ -245,6 +247,8 @@ class SessionControllerTest extends WC_REST_Unit_Test_Case {
 
 		$this->assertTrue( wp_script_is( 'wc-woopayments-woopay', 'enqueued' ) );
 		$this->assertTrue( wp_style_is( 'wc-woopayments-woopay', 'enqueued' ) );
+		$this->assertContains( 'wc-woopayments-common', wp_scripts()->registered['wc-woopayments-woopay']->deps, 'The WooPay script reads window.wc.woopayments.' );
+		$this->assertTrue( wp_script_is( 'wc-woopayments-common', 'registered' ), 'An unregistered dependency would make WordPress drop the WooPay script.' );
 		$localized_data = wp_scripts()->get_data( 'wc-woopayments-woopay', 'data' );
 		$this->assertIsString( $localized_data );
 		$this->assertStringContainsString( '"shouldShowWooPayButton":""', $localized_data );
@@ -2124,7 +2128,7 @@ class SessionControllerTest extends WC_REST_Unit_Test_Case {
 		$this->store_api_request_handler->init( $this->woopay_eligibility, new AdaptedExtensions(), wc_get_container()->get( WooPaymentsLogger::class ), $service );
 
 		$controller = new SessionController();
-		$controller->init( $service, $this->woopay_eligibility, $this->appearance_store, $this->store_api_request_handler );
+		$controller->init( $service, $this->woopay_eligibility, $this->appearance_store, $this->store_api_request_handler, new WooPaymentsFrontendAssets() );
 
 		return $controller;
 	}
