@@ -323,7 +323,7 @@ class WooPaymentsExpressCheckoutController implements RegisterHooksInterface {
 	 * @return bool
 	 */
 	private function is_checkout_surface(): bool {
-		return is_checkout() || WooPaymentsFrontendAssets::current_post_has_shortcode( 'woocommerce_checkout' );
+		return is_checkout() || has_shortcode( (string) get_post_field( 'post_content', null, 'raw' ), 'woocommerce_checkout' );
 	}
 
 	/**
@@ -344,7 +344,7 @@ class WooPaymentsExpressCheckoutController implements RegisterHooksInterface {
 			}
 		}
 
-		return WooPaymentsFrontendAssets::current_post_has_shortcode( 'product_page' );
+		return has_shortcode( (string) get_post_field( 'post_content', null, 'raw' ), 'product_page' );
 	}
 
 	/**
@@ -356,7 +356,7 @@ class WooPaymentsExpressCheckoutController implements RegisterHooksInterface {
 	 * @return bool
 	 */
 	private function is_block_cart_or_checkout_surface(): bool {
-		return WooPaymentsFrontendAssets::current_post_has_block( 'woocommerce/cart' ) || WooPaymentsFrontendAssets::current_post_has_block( 'woocommerce/checkout' );
+		return has_block( 'woocommerce/cart' ) || has_block( 'woocommerce/checkout' );
 	}
 
 	/**

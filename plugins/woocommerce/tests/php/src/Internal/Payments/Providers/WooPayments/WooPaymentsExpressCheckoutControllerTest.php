@@ -254,6 +254,73 @@ class WooPaymentsExpressCheckoutControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * Pages whose block or shortcode the password form, or a `<!--nextpage-->` break, keeps off the rendered content, and
+	 * whether the classic express script loads there, with which button context.
+	 *
+	 * The page content is read raw, as has_block() reads it. On a singular page the checkout and product shortcodes count
+	 * through is_checkout() and the queried page, so their rows read a post the loop of a search page holds.
+	 *
+	 * @return array<string,array{0:string,1:bool,2:string,3:string|null}>
+	 */
+	public function provide_pages_whose_content_the_rendered_page_hides(): array {
+		$checkout_block = '<!-- wp:woocommerce/checkout --><div class="wp-block-woocommerce-checkout"></div><!-- /wp:woocommerce/checkout -->';
+		$page_break     = '<!-- wp:paragraph --><p>First page</p><!-- /wp:paragraph --><!--nextpage-->';
+
+		return array(
+			'password checkout page holding the Checkout block'        => array( $checkout_block, true, 'checkout page', null ),
+			'checkout page with the Checkout block after a page break' => array( $page_break . $checkout_block, false, 'checkout page', null ),
+			'password post with the checkout shortcode, in a loop'     => array( '[woocommerce_checkout]', true, 'loop', 'checkout' ),
+			'checkout shortcode after a page break, in a loop'         => array( $page_break . '[woocommerce_checkout]', false, 'loop', 'checkout' ),
+			'password post with a product shortcode, in a loop'        => array( '[product_page id="1"]', true, 'loop', 'product' ),
+			'product shortcode after a page break, in a loop'          => array( $page_break . '[product_page id="1"]', false, 'loop', 'product' ),
+		);
+	}
+
+	/**
+	 * @testdox Should read the raw page content for the Blocks exclusion and the shortcode surfaces: $_dataName.
+	 * @dataProvider provide_pages_whose_content_the_rendered_page_hides
+	 *
+	 * A prior test can permanently define WOOCOMMERCE_CHECKOUT in the parent process.
+	 *
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 *
+	 * @param string      $content          Post content.
+	 * @param bool        $password         Whether the post is password protected.
+	 * @param string      $request          `checkout page`: the post is the store's checkout page, visited. `loop`: a search
+	 *                                      page whose loop holds the post.
+	 * @param string|null $expected_context Button context the express script loads with, or null when it does not load.
+	 */
+	public function test_enqueue_frontend_assets_reads_the_raw_page_content( string $content, bool $password, string $request, ?string $expected_context ): void {
+		$service   = new RecordingExpressCheckoutService();
+		$this->sut = $this->create_controller( true, $service );
+		$post_id   = self::factory()->post->create(
+			array(
+				'post_type'     => 'checkout page' === $request ? 'page' : 'post',
+				'post_status'   => 'publish',
+				'post_content'  => $content,
+				'post_password' => $password ? 'secret' : '',
+			)
+		);
+		if ( 'checkout page' === $request ) {
+			update_option( 'woocommerce_checkout_page_id', $post_id );
+			$this->reset_cart_checkout_page_cache();
+			$this->go_to( get_permalink( $post_id ) );
+			$this->assertTrue( is_checkout(), 'Precondition: the store checkout page.' );
+		} else {
+			$this->go_to( home_url( '/?s=nothing-matches' ) );
+			$GLOBALS['post'] = get_post( $post_id ); // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- The post of the search page's loop.
+			$this->assertFalse( is_singular(), 'Precondition: not a singular view.' );
+		}
+		$this->assertSame( $password, post_password_required( $post_id ), 'Precondition: the password form renders instead of the content.' );
+
+		$this->sut->enqueue_frontend_assets();
+
+		$this->assertSame( null !== $expected_context, wp_script_is( 'wc-woopayments-express-checkout', 'enqueued' ) );
+		$this->assertSame( null === $expected_context ? array() : array( $expected_context ), $service->contexts );
+	}
+
+	/**
 	 * @testdox Should render the WooPay button, then the ECE container, then one OR separator in one wrapper on checkout.
 	 */
 	public function test_display_express_checkout_buttons_renders_woopay_and_ece_in_one_wrapper(): void {

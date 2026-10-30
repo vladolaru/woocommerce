@@ -787,9 +787,10 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 	 * the cart, before the checkout (class-wc-payments-express-checkout-button-helper.php:275-277, :450-468).
 	 *
 	 * A paragraph-only cart or checkout page stands for one whose block comes from a page template. The page content is read
-	 * raw, so a password-protected page and a page split by `<!--nextpage-->` still count by the block they hold.
+	 * raw, so a password-protected page and a page split by `<!--nextpage-->` still count by the block they hold. A page that
+	 * is a cart and not a checkout gets no card script.
 	 *
-	 * @return array<string,array{0:string,1:string|null,2:string,3?:string}>
+	 * @return array<string,array{0:string,1:string|null,2:string,3:bool,4?:string}>
 	 */
 	public function provide_blocks_pages_and_button_contexts(): array {
 		$cart      = '<!-- wp:woocommerce/cart --><div class="wp-block-woocommerce-cart"></div><!-- /wp:woocommerce/cart -->';
@@ -797,15 +798,16 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 		$paragraph = '<!-- wp:paragraph --><p>Page</p><!-- /wp:paragraph -->';
 
 		return array(
-			'Cart block on the cart page'           => array( $cart, 'woocommerce_cart_page_id', 'cart' ),
-			'Cart block on another page'            => array( $cart, null, 'cart' ),
-			'Cart and Checkout blocks on a page'    => array( $cart . $checkout, null, 'cart' ),
-			'Checkout block on the checkout page'   => array( $checkout, 'woocommerce_checkout_page_id', 'checkout' ),
-			'Cart page from a page template'        => array( $paragraph, 'woocommerce_cart_page_id', 'cart' ),
-			'Checkout page from a page template'    => array( $paragraph, 'woocommerce_checkout_page_id', 'checkout' ),
-			'Password page with the Cart block'     => array( $cart, null, 'cart', 'secret' ),
-			'Checkout block after a page break'     => array( $paragraph . '<!--nextpage-->' . $checkout, null, 'checkout' ),
-			'Password page with the Checkout block' => array( $checkout, null, 'checkout', 'secret' ),
+			'Cart block on the cart page'           => array( $cart, 'woocommerce_cart_page_id', 'cart', false ),
+			'Cart block on another page'            => array( $cart, null, 'cart', false ),
+			'Cart and Checkout blocks on a page'    => array( $cart . $checkout, null, 'cart', true ),
+			'Checkout block on the checkout page'   => array( $checkout, 'woocommerce_checkout_page_id', 'checkout', true ),
+			'Cart page from a page template'        => array( $paragraph, 'woocommerce_cart_page_id', 'cart', false ),
+			'Checkout page from a page template'    => array( $paragraph, 'woocommerce_checkout_page_id', 'checkout', true ),
+			'Password page with the Cart block'     => array( $cart, null, 'cart', false, 'secret' ),
+			'Cart block after a page break'         => array( $paragraph . '<!--nextpage-->' . $cart, null, 'cart', false ),
+			'Checkout block after a page break'     => array( $paragraph . '<!--nextpage-->' . $checkout, null, 'checkout', true ),
+			'Password page with the Checkout block' => array( $checkout, null, 'checkout', true, 'secret' ),
 		);
 	}
 
@@ -821,9 +823,10 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 	 * @param string      $content          Page content.
 	 * @param string|null $page_option      WooCommerce page option pointing at the page, or null for none.
 	 * @param string      $expected_context Expected button context.
+	 * @param bool        $expected_card    Whether the card script is listed.
 	 * @param string      $password         Page password, or an empty string for none.
 	 */
-	public function test_button_context_counts_any_cart_block_page_as_the_cart( string $content, ?string $page_option, string $expected_context, string $password = '' ): void {
+	public function test_button_context_counts_any_cart_block_page_as_the_cart( string $content, ?string $page_option, string $expected_context, bool $expected_card, string $password = '' ): void {
 		$page_id = self::factory()->post->create(
 			array(
 				'post_type'     => 'page',
@@ -885,6 +888,7 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 
 		$this->assertContains( 'wc-payment-method-woopayments-woopay', $handles );
 		$this->assertContains( 'wc-payment-method-woopayments-express-checkout', $handles );
+		$this->assertSame( $expected_card, in_array( 'wc-payment-method-woopayments', $handles, true ), 'A cart that is not a checkout gets no card script.' );
 		$this->assertSame( array( $expected_context ), array_values( array_unique( $contexts ) ) );
 		$this->assertSame( $expected_context, $data['expressCheckoutParams']['button_context'] ?? null );
 		$this->assertSame( array( $expected_context ), $data_contexts, 'The Blocks data reads the WooPay button location of the page.' );

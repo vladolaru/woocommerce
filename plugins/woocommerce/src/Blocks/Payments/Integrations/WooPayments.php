@@ -405,8 +405,8 @@ final class WooPayments extends AbstractPaymentMethodType {
 			return false;
 		}
 
-		$is_cart     = is_cart() || WooPaymentsFrontendAssets::current_post_has_block( 'woocommerce/cart' );
-		$is_checkout = is_checkout() || WooPaymentsFrontendAssets::current_post_has_block( 'woocommerce/checkout' );
+		$is_cart     = is_cart() || has_block( 'woocommerce/cart' );
+		$is_checkout = is_checkout() || has_block( 'woocommerce/checkout' );
 
 		return $is_cart && ! $is_checkout;
 	}
@@ -443,6 +443,6 @@ final class WooPayments extends AbstractPaymentMethodType {
 	 * @return string
 	 */
 	private function get_button_context(): string {
-		return is_cart() || WooPaymentsFrontendAssets::current_post_has_block( 'woocommerce/cart' ) ? 'cart' : 'checkout';
+		return is_cart() || has_block( 'woocommerce/cart' ) ? 'cart' : 'checkout';
 	}
 }

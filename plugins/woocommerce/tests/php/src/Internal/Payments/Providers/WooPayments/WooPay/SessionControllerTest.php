@@ -634,6 +634,82 @@ class SessionControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
+	 * Pages whose block or shortcode the password form, or a `<!--nextpage-->` break, keeps off the rendered content, and
+	 * whether the classic WooPay script loads there, with which button context. The page content is read raw, as
+	 * has_block() reads it.
+	 *
+	 * Rows with direct checkout off show the button; rows with it on hide the button, so only direct checkout loads the script.
+	 *
+	 * @return array<string,array{0:string,1:bool,2:string|null,3:bool,4:bool,5:string|null}>
+	 */
+	public function provide_pages_whose_content_the_rendered_page_hides(): array {
+		$cart       = '<!-- wp:woocommerce/cart --><div class="wp-block-woocommerce-cart"></div><!-- /wp:woocommerce/cart -->';
+		$checkout   = '<!-- wp:woocommerce/checkout --><div class="wp-block-woocommerce-checkout"></div><!-- /wp:woocommerce/checkout -->';
+		$page_break = '<!-- wp:paragraph --><p>First page</p><!-- /wp:paragraph --><!--nextpage-->';
+
+		return array(
+			'password page with a product shortcode' => array( '[product_page id="1"]', true, null, false, false, 'product' ),
+			'product shortcode after a page break'   => array( $page_break . '[product_page id="1"]', false, null, false, false, 'product' ),
+			'password checkout page holding the Checkout block' => array( $checkout, true, 'woocommerce_checkout_page_id', false, false, null ),
+			'checkout page with the Checkout block after a page break' => array( $page_break . $checkout, false, 'woocommerce_checkout_page_id', false, false, null ),
+			'password page holding the Cart block, direct checkout' => array( $cart, true, null, true, false, 'cart' ),
+			'Cart block after a page break, direct checkout' => array( $page_break . $cart, false, null, true, false, 'cart' ),
+			'password Checkout block page with the cart widget' => array( $checkout, true, null, true, true, null ),
+			'Checkout block after a page break, with the cart widget' => array( $page_break . $checkout, false, null, true, true, null ),
+		);
+	}
+
+	/**
+	 * @testdox Should read the raw page content for the Blocks exclusion, the cart and product surfaces and direct checkout: $_dataName.
+	 * @dataProvider provide_pages_whose_content_the_rendered_page_hides
+	 *
+	 * A separate process: WOOCOMMERCE_CART or WOOCOMMERCE_CHECKOUT, once an earlier test defines it, holds for the rest of the run.
+	 *
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 *
+	 * @param string      $content          Page content.
+	 * @param bool        $password         Whether the page is password protected.
+	 * @param string|null $page_option      WooCommerce page option pointing at the page, or null for none.
+	 * @param bool        $direct_checkout  Whether direct checkout runs; the button shows only without it.
+	 * @param bool        $cart_widget      Whether the classic cart widget's fragments script is on the page.
+	 * @param string|null $expected_context Button context the classic script loads with, or null when it does not load.
+	 */
+	public function test_enqueue_frontend_assets_reads_the_raw_page_content( string $content, bool $password, ?string $page_option, bool $direct_checkout, bool $cart_widget, ?string $expected_context ): void {
+		$service                                      = new RecordingWooPaySessionService();
+		$service->should_show_woopay_button           = ! $direct_checkout;
+		$service->should_load_woopay_save_user_assets = false;
+		$service->direct_checkout_enabled             = $direct_checkout;
+		$this->sut                                    = $this->create_controller( true, $service );
+		$page_id                                      = self::factory()->post->create(
+			array(
+				'post_type'     => 'page',
+				'post_status'   => 'publish',
+				'post_content'  => $content,
+				'post_password' => $password ? 'secret' : '',
+			)
+		);
+		if ( null !== $page_option ) {
+			update_option( $page_option, $page_id );
+		}
+		$this->reset_cart_checkout_page_cache();
+		$this->go_to( get_permalink( $page_id ) );
+		if ( $cart_widget ) {
+			wp_register_script( 'wc-cart-fragments', 'https://example.com/cart-fragments.js', array(), '1.0', true );
+			wp_enqueue_script( 'wc-cart-fragments' );
+		}
+		$this->assertSame( $password, post_password_required( $page_id ), 'Precondition: the password form renders instead of the content.' );
+		$this->assertSame( null !== $page_option, is_checkout(), 'Precondition: only the store checkout page is a checkout.' );
+
+		$this->sut->enqueue_frontend_assets();
+
+		$this->assertSame( null !== $expected_context, wp_script_is( 'wc-woopayments-woopay', 'enqueued' ) );
+		if ( null !== $expected_context ) {
+			$this->assertStringContainsString( '"context":"' . $expected_context . '"', (string) wp_scripts()->get_data( 'wc-woopayments-woopay', 'data' ) );
+		}
+	}
+
+	/**
 	 * @testdox Should move the classic billing email into a contact section only while WooPay is enabled.
 	 */
 	public function test_register_relocates_classic_email_field_only_when_woopay_is_enabled(): void {

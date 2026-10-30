@@ -15,7 +15,6 @@ use WP_REST_Request;
 use WP_REST_Response;
 use WP_REST_Server;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCheckoutAssets;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendAssets;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderPayAccess;
 
@@ -965,7 +964,7 @@ class SessionController implements RegisterHooksInterface {
 		return is_checkout() ||
 			is_cart() ||
 			is_product() ||
-			WooPaymentsFrontendAssets::current_post_has_shortcode( 'product_page' );
+			has_shortcode( (string) get_post_field( 'post_content', null, 'raw' ), 'product_page' );
 	}
 
 	/**
@@ -982,7 +981,7 @@ class SessionController implements RegisterHooksInterface {
 		}
 
 		return wp_script_is( 'wc-cart-fragments', 'enqueued' ) &&
-			! ( is_checkout() || WooPaymentsFrontendAssets::current_post_has_block( 'woocommerce/checkout' ) );
+			! ( is_checkout() || has_block( 'woocommerce/checkout' ) );
 	}
 
 	/**
@@ -991,7 +990,7 @@ class SessionController implements RegisterHooksInterface {
 	 * @return bool
 	 */
 	private function is_cart_surface(): bool {
-		return is_cart() || WooPaymentsFrontendAssets::current_post_has_block( 'woocommerce/cart' );
+		return is_cart() || has_block( 'woocommerce/cart' );
 	}
 
 	/**
@@ -1004,7 +1003,7 @@ class SessionController implements RegisterHooksInterface {
 	 * @return bool
 	 */
 	private function is_block_cart_or_checkout_surface(): bool {
-		return WooPaymentsFrontendAssets::current_post_has_block( 'woocommerce/cart' ) || WooPaymentsFrontendAssets::current_post_has_block( 'woocommerce/checkout' );
+		return has_block( 'woocommerce/cart' ) || has_block( 'woocommerce/checkout' );
 	}
 
 	/**
@@ -1020,7 +1019,7 @@ class SessionController implements RegisterHooksInterface {
 			return 'pay_for_order';
 		}
 
-		if ( is_product() || WooPaymentsFrontendAssets::current_post_has_shortcode( 'product_page' ) ) {
+		if ( is_product() || has_shortcode( (string) get_post_field( 'post_content', null, 'raw' ), 'product_page' ) ) {
 			return 'product';
 		}
 
