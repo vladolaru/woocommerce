@@ -403,23 +403,32 @@
 	}
 
 	/**
-	 * The shared price conversion (wc-woopayments-common) with this page's units: GooglePay/ApplePay expect prices in
-	 * the smallest unit Stripe bills in, which can differ from the Store API's `currency_minor_unit`.
+	 * GooglePay/ApplePay expect prices in the smallest unit Stripe bills in.
+	 * The Store API reports amounts in WooCommerce minor units
+	 * (`currency_minor_unit`), which can differ from what Stripe expects
+	 * (e.g. JPY configured with two WooCommerce decimals against Stripe's
+	 * zero-decimal yen). Rescale, rounding only when narrowing precision;
+	 * widening and same-scale conversions are already integer-exact.
 	 *
 	 * @param {number} price       The price to format.
 	 * @param {Object} priceObject The price object returned by the Store API.
 	 * @return {number} The price amount in the unit Stripe expects.
 	 */
 	function transformPrice( price, priceObject ) {
-		return window.wc.woopayments.expressCheckout.transformPrice(
-			price,
-			priceObject,
-			{
-				stripeMinorUnit: config.checkout && config.checkout.stripe_minor_unit,
-				currencyDecimals:
-					config.checkout && config.checkout.currency_decimals,
-			}
-		);
+		var stripeMinorUnit =
+			config.checkout && config.checkout.stripe_minor_unit !== undefined
+				? config.checkout.stripe_minor_unit
+				: 2;
+		var currencyMinorUnit =
+			priceObject && priceObject.currency_minor_unit !== undefined
+				? priceObject.currency_minor_unit
+				: 2;
+		var converted =
+			price * Math.pow( 10, stripeMinorUnit - currencyMinorUnit );
+
+		return stripeMinorUnit < currencyMinorUnit
+			? Math.round( converted )
+			: converted;
 	}
 
 	/**
@@ -628,6 +637,31 @@
 		return Boolean( config.stripe && config.stripe.publishableKey );
 	}
 
+	// Client 11.1.0 client/checkout/api/index.js:57-71 waits up to 600 seconds for Stripe.js, checking every 100 ms,
+	// because page optimizers can defer it past the page render.
+	function waitForStripe() {
+		return new Promise( function ( resolve, reject ) {
+			var waited = 0;
+			var timer;
+
+			if ( typeof window.Stripe === 'function' ) {
+				resolve( window.Stripe );
+				return;
+			}
+
+			timer = window.setInterval( function () {
+				waited += 100;
+				if ( typeof window.Stripe === 'function' ) {
+					window.clearInterval( timer );
+					resolve( window.Stripe );
+				} else if ( waited > 600 * 1000 ) {
+					window.clearInterval( timer );
+					reject( new Error( 'Stripe object not found' ) );
+				}
+			}, 100 );
+		} );
+	}
+
 	function getStripe() {
 		if (
 			! window.Stripe ||
@@ -655,21 +689,44 @@
 		return cachedStripe;
 	}
 
-	// The shared Tracks sender (wc-woopayments-common). wcpayExpressCheckoutParams carries the client 11.1.0 snake_case
-	// keys (WooPaymentsExpressCheckoutService).
+	// wcpayExpressCheckoutParams carries the client 11.1.0 snake_case keys (WooPaymentsExpressCheckoutService).
 	function recordUserEvent( eventName, eventProperties ) {
-		window.wc.woopayments.tracks.recordEvent(
-			{
-				isShopperTrackingEnabled: config.is_shopper_tracking_enabled,
-				tracksUrl: config.tracks_url,
-				platformTrackerNonce:
-					config.nonce && config.nonce.platform_tracker,
-				tracksRestNonce: config.nonce && config.nonce.tracks_rest,
-			},
-			eventName,
-			eventProperties
+		var tracksUrl = config.tracks_url;
+		var nonce = config.nonce && config.nonce.platform_tracker;
+		var restNonce = config.nonce && config.nonce.tracks_rest;
+		var body;
+
+		if (
+			! eventName ||
+			// wp_localize_script() sends a false flag as ''.
+			! config.is_shopper_tracking_enabled ||
+			! tracksUrl ||
+			! nonce ||
+			! window.fetch ||
+			! window.FormData
+		) {
+			return;
+		}
+
+		body = new window.FormData();
+		body.append( 'tracksNonce', nonce );
+		body.append( 'tracksEventName', eventName );
+		body.append(
+			'tracksEventProp',
+			JSON.stringify( eventProperties || {} )
 		);
+
+		// The REST nonce keeps a logged-in shopper's session, which the Tracks nonce is tied to.
+		window
+			.fetch( tracksUrl, {
+				method: 'POST',
+				credentials: 'same-origin',
+				headers: restNonce ? { 'X-WP-Nonce': restNonce } : {},
+				body: body,
+			} )
+			.catch( function () {} );
 	}
+
 	function getExpressCheckoutLoadTrackingEvent( paymentMethod ) {
 		var eventNames = {
 			applePay: 'applepay_button_load',
@@ -839,9 +896,7 @@
 			return;
 		}
 
-		address = window.wc.woopayments.expressCheckout.normalizeAddress(
-			eventAddress
-		);
+		address = normalizeAddress( eventAddress );
 		[ 'country', 'state', 'city', 'postcode' ].forEach( function ( key ) {
 			if ( ! address[ key ] ) {
 				return;
@@ -946,6 +1001,74 @@
 		error.appendChild( item );
 		notices.appendChild( error );
 		error.scrollIntoView( { behavior: 'smooth', block: 'start' } );
+	}
+
+	function splitName( name ) {
+		var parts = ( name || '' ).trim().split( /\s+/ ).filter( Boolean );
+
+		return {
+			first_name: parts.shift() || '',
+			last_name: parts.join( ' ' ),
+		};
+	}
+
+	function normalizeAddress( address, fallback ) {
+		address = address || {};
+		fallback = fallback || {};
+
+		return {
+			first_name: address.first_name || fallback.first_name || '',
+			last_name: address.last_name || fallback.last_name || '',
+			company: address.company || fallback.company || '',
+			address_1:
+				address.address_1 || address.line1 || fallback.address_1 || '',
+			address_2:
+				address.address_2 || address.line2 || fallback.address_2 || '',
+			city: address.city || fallback.city || '',
+			state: address.state || fallback.state || '',
+			postcode:
+				address.postcode ||
+				address.postal_code ||
+				fallback.postcode ||
+				'',
+			country: address.country || fallback.country || '',
+			email: address.email || fallback.email || '',
+			phone: address.phone || fallback.phone || '',
+		};
+	}
+
+	function normalizePhone( phone ) {
+		return ( phone || '' ).replace( /[() -]/g, '' );
+	}
+
+	function getWalletBillingPhone( event ) {
+		var billingDetails = event && event.billingDetails;
+
+		return normalizePhone(
+			( billingDetails && billingDetails.phone ) ||
+				( event && event.payerPhone )
+		);
+	}
+
+	function getBillingAddress( event ) {
+		var billingDetails = event && event.billingDetails;
+		var nameParts = splitName( billingDetails && billingDetails.name );
+
+		// Some wallets provide a single name; checkout requires a last name.
+		nameParts.last_name = nameParts.last_name || '-';
+
+		return normalizeAddress(
+			Object.assign(
+				{},
+				nameParts,
+				billingDetails && billingDetails.address,
+				{
+					email: billingDetails && billingDetails.email,
+					phone: getWalletBillingPhone( event ),
+				}
+			),
+			cachedCartData && cachedCartData.billing_address
+		);
 	}
 
 	function displayLoginConfirmation( expressPaymentType ) {
@@ -1101,8 +1224,7 @@
 			);
 			var billingDetails = event && event.billingDetails;
 			var walletEmail = billingDetails && billingDetails.email;
-			var walletPhone =
-				window.wc.woopayments.expressCheckout.getWalletBillingPhone( event );
+			var walletPhone = getWalletBillingPhone( event );
 
 			if ( ! billingAddress.email ) {
 				billingAddress.email = walletEmail;
@@ -1171,10 +1293,7 @@
 			headers: placeOrderHeaders,
 			data: {
 				payment_method: 'woocommerce_payments',
-				billing_address: window.wc.woopayments.expressCheckout.getBillingAddress(
-					event,
-					cachedCartData && cachedCartData.billing_address
-				),
+				billing_address: getBillingAddress( event ),
 				// Refresh the shipping address from the wallet sheet, now that
 				// the customer is placing the order. Stripe provides no
 				// separate shipping phone, so the billing one is reused.
@@ -1185,9 +1304,9 @@
 									event.shippingAddress.name || '',
 									event.shippingAddress.address
 								),
-								window.wc.woopayments.expressCheckout.getWalletBillingPhone( event )
+								getWalletBillingPhone( event )
 									? {
-											phone: window.wc.woopayments.expressCheckout.getWalletBillingPhone(
+											phone: getWalletBillingPhone(
 												event
 											),
 									  }
@@ -1198,6 +1317,38 @@
 				extensions: getPlaceOrderExtensions(),
 			},
 		} );
+	}
+
+	function parseConfirmationHash( url ) {
+		var hashIndex = ( url || '' ).indexOf( '#wcpay-confirm-' );
+		var match;
+		var clientSecret;
+
+		if ( hashIndex === -1 ) {
+			return null;
+		}
+
+		match = url
+			.substring( hashIndex )
+			.match(
+				/^#wcpay-confirm-(pi|si):([^:]+):([^:]+):([^:]+)(?::(.+))?$/
+			);
+
+		if ( ! match ) {
+			return null;
+		}
+
+		clientSecret = decodeURIComponent( match[ 3 ] );
+
+		return {
+			type: match[ 1 ],
+			orderId: decodeURIComponent( match[ 2 ] ),
+			clientSecret: clientSecret,
+			nonce: decodeURIComponent( match[ 4 ] ),
+			confirmationToken: match[ 5 ]
+				? decodeURIComponent( match[ 5 ] )
+				: '',
+		};
 	}
 
 	/**
@@ -1257,10 +1408,23 @@
 			);
 		}
 
-		confirmationPromise = window.wc.woopayments.confirmWithStripe(
-			confirmation,
-			stripe
-		);
+		if (
+			confirmation.type === 'si' &&
+			confirmation.confirmationToken &&
+			stripe.confirmSetup
+		) {
+			confirmationPromise = stripe.confirmSetup( {
+				clientSecret: confirmation.clientSecret,
+				confirmParams: {
+					confirmation_token: confirmation.confirmationToken,
+				},
+				redirect: 'if_required',
+			} );
+		} else if ( stripe.handleNextAction ) {
+			confirmationPromise = stripe.handleNextAction( {
+				clientSecret: confirmation.clientSecret,
+			} );
+		}
 
 		if ( ! confirmationPromise ) {
 			return Promise.reject(
@@ -1388,8 +1552,7 @@
 			paymentResult.redirect_url ||
 			getPaymentDetail( paymentResult, 'redirect' );
 
-		confirmation =
-			window.wc.woopayments.parseConfirmationHash( redirectUrl );
+		confirmation = parseConfirmationHash( redirectUrl );
 
 		// When the intent needs a next action (SCA/3DS), the server responds
 		// with a `#wcpay-confirm-...` redirect. Navigating to a bare hash
@@ -1827,11 +1990,9 @@
 	function transformShippingAddress( name, address ) {
 		var split;
 		address = address || {};
-		split = window.wc.woopayments.expressCheckout.splitName(
-			name || address.recipient || address.name || ''
-		);
+		split = splitName( name || address.recipient || address.name || '' );
 
-		return window.wc.woopayments.expressCheckout.normalizeAddress(
+		return normalizeAddress(
 			{
 				first_name: split.first_name,
 				last_name: split.last_name,
@@ -3106,7 +3267,7 @@
 		// Client 11.1.0 shortcode-buttons-express/index.js:227 awaits api.getStripe(), which waits for Stripe.js.
 		if ( hasPublishableKey() && typeof window.Stripe !== 'function' ) {
 			try {
-				await window.wc.woopayments.waitForStripe();
+				await waitForStripe();
 			} catch ( error ) {
 				return;
 			}
@@ -3426,6 +3587,7 @@
 			getStripe: getStripe,
 			displayLoginConfirmation: displayLoginConfirmation,
 			createPaymentCredential: createPaymentCredential,
+			parseConfirmationHash: parseConfirmationHash,
 			setNavigate: function ( callback ) {
 				navigate = callback;
 			},

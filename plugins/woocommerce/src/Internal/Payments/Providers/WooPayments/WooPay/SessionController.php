@@ -840,7 +840,6 @@ class SessionController implements RegisterHooksInterface {
 	 * Register the classic WooPay assets; this controller is their only registrar.
 	 */
 	private function register_classic_woopay_assets(): void {
-		$this->frontend_assets->register_common_script();
 		$this->frontend_assets->register_woopay_common_script();
 
 		if ( ! wp_script_is( self::CLASSIC_WOOPAY_SCRIPT_HANDLE, 'registered' ) ) {
@@ -848,7 +847,7 @@ class SessionController implements RegisterHooksInterface {
 			wp_register_script(
 				self::CLASSIC_WOOPAY_SCRIPT_HANDLE,
 				WC()->plugin_url() . '/assets/js/frontend/woopayments-woopay' . $suffix . '.js',
-				array( 'jquery', 'wp-i18n', WooPaymentsFrontendAssets::COMMON_SCRIPT_HANDLE, WooPaymentsFrontendAssets::WOOPAY_COMMON_SCRIPT_HANDLE ),
+				array( 'jquery', 'wp-i18n', WooPaymentsFrontendAssets::WOOPAY_COMMON_SCRIPT_HANDLE ),
 				WC_VERSION,
 				true
 			);

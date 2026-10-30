@@ -2,15 +2,6 @@
  * Tests for the classic (shortcode) WooPayments express checkout script.
  */
 
-// The page prints wc-woopayments-common before this script; it sets window.wc.woopayments.
-function loadWooPaymentsCommon() {
-	jest.isolateModules( () => {
-		require( '../../../../blocks/assets/js/extensions/payment-methods/woopayments/common' );
-	} );
-}
-
-beforeEach( loadWooPaymentsCommon );
-
 const { server, http, HttpResponse } = require( './msw-setup' );
 
 // Stand-in for the wp-i18n script the page loads (@wordpress/i18n __, _n and sprintf). It returns the English source
@@ -174,9 +165,16 @@ describe( 'woopayments-express-checkout', () => {
 		delete window.Stripe;
 	} );
 
-	// The conversion itself is wc-woopayments-common's (its own tests); this script passes its localized Stripe unit.
 	describe( 'transformPrice', () => {
-		it( 'converts with the Stripe minor unit this page localizes', () => {
+		it( 'keeps same-scale amounts untouched', () => {
+			const { transformPrice } = loadModule( baseParams() );
+
+			expect(
+				transformPrice( 1234, { currency_minor_unit: 2 } )
+			).toBe( 1234 );
+		} );
+
+		it( 'narrows WC minor units to a zero-decimal Stripe currency with rounding', () => {
 			const params = baseParams();
 			params.checkout.stripe_minor_unit = 0;
 			const { transformPrice } = loadModule( params );
@@ -187,6 +185,14 @@ describe( 'woopayments-express-checkout', () => {
 			expect(
 				transformPrice( 123450, { currency_minor_unit: 2 } )
 			).toBe( 1235 );
+		} );
+
+		it( 'widens a zero-decimal WC configuration to two-decimal Stripe minor units', () => {
+			const { transformPrice } = loadModule( baseParams() );
+
+			expect(
+				transformPrice( 1234, { currency_minor_unit: 0 } )
+			).toBe( 123400 );
 		} );
 	} );
 

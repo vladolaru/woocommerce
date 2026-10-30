@@ -2,16 +2,14 @@
  * @jest-environment jest-fixed-jsdom
  */
 
-// The page prints wc-woopayments-common and then wc-woopayments-woopay-common before this script; they set
-// window.wc.woopayments and window.wc.woopayments.woopay.
-function loadWooPaymentsCommon() {
+// The page prints wc-woopayments-woopay-common before this script; it sets window.wc.woopayments.woopay.
+function loadWooPayProtocol() {
 	jest.isolateModules( () => {
-		require( '../../../../blocks/assets/js/extensions/payment-methods/woopayments/common' );
 		require( '../../../../blocks/assets/js/extensions/payment-methods/woopayments/woopay/protocol' );
 	} );
 }
 
-beforeEach( loadWooPaymentsCommon );
+beforeEach( loadWooPayProtocol );
 
 // Stand-in for the wp-i18n script the page loads (@wordpress/i18n __, _n and sprintf). It returns the English source
 // strings and fills only the placeholders these scripts use: %s, %d and positional %1$s; escapes, flags and widths

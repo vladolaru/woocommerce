@@ -2,15 +2,6 @@
  * @jest-environment jest-fixed-jsdom
  */
 
-// The page prints wc-woopayments-common before this script; it sets window.wc.woopayments.
-function loadWooPaymentsCommon() {
-	jest.isolateModules( () => {
-		require( '../../../../blocks/assets/js/extensions/payment-methods/woopayments/common' );
-	} );
-}
-
-beforeEach( loadWooPaymentsCommon );
-
 /**
  * Port of the client 11.1.0 tests for the WooCommerce Subscriptions express checkout compatibility filters
  * (client/express-checkout/compatibility/__tests__/wc-subscriptions.test.js), run against the filters the classic

@@ -217,18 +217,37 @@
 		return config.platformTrackerNonce;
 	}
 
-	// The shared Tracks sender (wc-woopayments-common) with the WooPay config's tracking values.
 	function recordUserEvent( eventName, eventProperties ) {
-		window.wc.woopayments.tracks.recordEvent(
-			{
-				isShopperTrackingEnabled: config.isShopperTrackingEnabled,
-				tracksUrl: config.tracksUrl,
-				platformTrackerNonce: getTrackingNonce(),
-				tracksRestNonce: config.tracksRestNonce,
-			},
-			eventName,
-			eventProperties
-		);
+		var tracksUrl = config.tracksUrl;
+		var nonce = getTrackingNonce();
+		var body;
+
+		if (
+			! eventName ||
+			// wp_localize_script() sends a false flag as ''.
+			! config.isShopperTrackingEnabled ||
+			! tracksUrl ||
+			! nonce ||
+			! window.fetch ||
+			! window.FormData
+		) {
+			return;
+		}
+
+		body = new window.FormData();
+		body.append( 'tracksNonce', nonce );
+		body.append( 'tracksEventName', eventName );
+		body.append( 'tracksEventProp', JSON.stringify( eventProperties || {} ) );
+
+		// The REST nonce keeps a logged-in shopper's session, which the Tracks nonce is tied to.
+		window.fetch( tracksUrl, {
+			method: 'POST',
+			credentials: 'same-origin',
+			headers: config.tracksRestNonce
+				? { 'X-WP-Nonce': config.tracksRestNonce }
+				: {},
+			body: body,
+		} ).catch( function () {} );
 	}
 
 	function getTrackingSource() {
@@ -553,12 +572,49 @@
 		} );
 	}
 
-	// The shared Tracks identity resolver (wc-woopayments-common) with the WooPay config's values.
+	// Resolves the stringified Tracks identity WooPay stitches its own
+	// events to: the tk_ai cookie when present, otherwise the platform's
+	// get_identity bridge. Never rejects.
 	function getTracksIdentity() {
-		return window.wc.woopayments.tracks.getIdentity( {
-			ajaxUrl: getTrackingAjaxUrl(),
-			platformTrackerNonce: getTrackingNonce(),
-		} );
+		var ajaxUrl = getTrackingAjaxUrl();
+		var nonce = getTrackingNonce();
+		var cookie = ( document.cookie || '' )
+			.split( ';' )
+			.map( function ( entry ) {
+				return entry.trim();
+			} )
+			.find( function ( entry ) {
+				return entry.indexOf( 'tk_ai=' ) === 0;
+			} );
+		var body;
+
+		if ( cookie ) {
+			return Promise.resolve(
+				JSON.stringify( { _ut: 'anon', _ui: cookie.substring( 6 ) } )
+			);
+		}
+
+		if ( ! ajaxUrl || ! nonce || ! window.fetch || ! window.FormData ) {
+			return Promise.resolve( undefined );
+		}
+
+		body = new window.FormData();
+		body.append( 'tracksNonce', nonce );
+		body.append( 'action', 'get_identity' );
+
+		return window
+			.fetch( ajaxUrl, { method: 'POST', body: body } )
+			.then( function ( response ) {
+				return response.ok ? response.json() : null;
+			} )
+			.then( function ( data ) {
+				return data && data.success && data.data && data.data._ui && data.data._ut
+					? JSON.stringify( data.data )
+					: undefined;
+			} )
+			.catch( function () {
+				return undefined;
+			} );
 	}
 
 	// The plugin's request(): nested objects become bracketed form keys and

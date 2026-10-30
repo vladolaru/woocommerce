@@ -140,7 +140,7 @@ core_assets = {
     "classic-card.css": "plugins/woocommerce/assets/css/woopayments-checkout.css",
     "blocks-card.js": [BLOCKS_CARD, FINGERPRINTJS, BLOCKS_FRAUD_SCRIPTS],
     "blocks-card.css": "plugins/woocommerce/assets/client/blocks/wc-payment-method-woopayments.css",
-    "express-checkout.js": ["plugins/woocommerce/assets/js/frontend/woopayments-express-checkout.min.js", WOOPAYMENTS_COMMON],
+    "express-checkout.js": "plugins/woocommerce/assets/js/frontend/woopayments-express-checkout.min.js",
     "express-checkout.css": "plugins/woocommerce/assets/css/woopayments-express-checkout.css",
     "frontend-tracks.js": "plugins/woocommerce/assets/js/frontend/woopayments-frontend-tracks.min.js",
     "blocks-express-checkout.js": BLOCKS_EXPRESS,

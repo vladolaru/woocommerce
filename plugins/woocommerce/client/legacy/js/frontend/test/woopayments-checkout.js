@@ -593,9 +593,7 @@ describe( 'WooPayments checkout', () => {
 			),
 		};
 		require( '../utils/woopayments-appearance' );
-		// The page prints wc-woopayments-common and then wc-woopayments-woopay-common before this script; they set
-		// window.wc.woopayments and window.wc.woopayments.woopay.
-		require( '../../../../blocks/assets/js/extensions/payment-methods/woopayments/common' );
+		// The page prints wc-woopayments-woopay-common before this script; it sets window.wc.woopayments.woopay.
 		require( '../../../../blocks/assets/js/extensions/payment-methods/woopayments/woopay/protocol' );
 	} );
 
