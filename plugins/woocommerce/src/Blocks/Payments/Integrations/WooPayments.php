@@ -297,7 +297,7 @@ final class WooPayments extends AbstractPaymentMethodType {
 	 * @return WooPayments[]
 	 */
 	public function get_payment_method_integrations(): array {
-		$this->checkout_assets->reset_blocks_config_base();
+		$this->checkout_assets->reset_config_memos();
 
 		if ( null !== $this->payment_gateway ) {
 			return array( $this );

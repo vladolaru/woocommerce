@@ -255,6 +255,8 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 						WooPaymentsOrderAdminActionsController::class,
 						WooPaymentsOrderStatusChangeController::class,
 						WooPaymentsTokenizedCartSessionController::class,
+						// Clears its checkout config memos on each request's init, before the Blocks registration and any render.
+						WooPaymentsCheckoutAssets::class,
 						SessionController::class,
 						OrderStatusSync::class,
 						ExtensionSync::class,
@@ -285,6 +287,7 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 						WooPaymentsDuplicatePaymentPreventionService::class,
 						WooPaymentsCheckoutAjaxController::class,
 						WooPaymentsTokenizedCartSessionController::class,
+						WooPaymentsCheckoutAssets::class,
 						SessionController::class,
 						WooPaymentsExpressCheckoutController::class,
 						// The WooPay session request (wc-ajax=wcpay_get_woopay_session) preloads the Store API cart it sends WooPay.
@@ -301,6 +304,7 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 						WooPaymentsAddressProvider::class,
 						WooPaymentsDuplicatePaymentPreventionService::class,
 						WooPaymentsTokenizedCartSessionController::class,
+						WooPaymentsCheckoutAssets::class,
 						SessionController::class,
 						WooPaymentsExpressCheckoutController::class,
 						WooPaymentsExpressCheckoutStoreApiExtension::class,

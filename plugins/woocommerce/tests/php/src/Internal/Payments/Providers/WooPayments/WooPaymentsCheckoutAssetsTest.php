@@ -6,6 +6,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDatabaseCache;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
+use Automattic\WooCommerce\StoreApi\Utilities\CartTokenUtils;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
@@ -42,6 +43,30 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 	 * Card gateway support features passed to the config builders where the test does not exercise them.
 	 */
 	private const CARD_SUPPORTS = array( 'products' );
+
+	/**
+	 * Connected account A's cached data, for the account service double the test can switch.
+	 */
+	private const SWITCHABLE_ACCOUNT_A = array(
+		'account_id'           => 'acct_A',
+		'live_publishable_key' => 'pk_live_A',
+		'test_publishable_key' => 'pk_test_A',
+		'payments_enabled'     => true,
+		'details_submitted'    => true,
+		'country'              => 'US',
+	);
+
+	/**
+	 * Connected account B's cached data.
+	 */
+	private const SWITCHABLE_ACCOUNT_B = array(
+		'account_id'           => 'acct_B',
+		'live_publishable_key' => 'pk_live_B',
+		'test_publishable_key' => 'pk_test_B',
+		'payments_enabled'     => true,
+		'details_submitted'    => true,
+		'country'              => 'US',
+	);
 
 	/**
 	 * @testdox Should bootstrap payment-list wallets when no ordinary WooPayments fields render.
@@ -231,6 +256,214 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( $expected_on_fields, $on_fields, 'Filter calls while the payment fields render.' );
 		$this->assertSame( $expected_after_form, $filtered - $on_fields, 'Filter calls on woocommerce_after_checkout_form.' );
+	}
+
+	/**
+	 * @testdox A kept checkout assets service builds the classic config again when $change.
+	 *
+	 * The service can outlive a request (a persistent worker, a long-running CLI process), and run_in_test_mode_context()
+	 * changes the mode within one, so the memo's key holds the account, the effective mode and the change-payment flag.
+	 *
+	 * @testWith ["the account switches to test mode"]
+	 *           ["another account connects"]
+	 *           ["the page turns from an empty-cart checkout into a subscription's change payment method page"]
+	 *
+	 * @param string $change What changes between the two renders.
+	 */
+	public function test_kept_service_rebuilds_the_classic_config_when_a_key_input_changes( string $change ): void {
+		$account_data = self::SWITCHABLE_ACCOUNT_A;
+		$account      = $this->create_switchable_account_service( $account_data );
+		$sut          = new WooPaymentsCheckoutAssets();
+		$sut->init( $account, $this->create_woopay_session_service( false ), $this->create_woopay_eligibility( false ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller(), new PaymentMethodRegistry() );
+		$filtered = 0;
+		add_filter(
+			'wcpay_payment_fields_js_config',
+			static function ( $config ) use ( &$filtered ) {
+				++$filtered;
+				return $config;
+			}
+		);
+		$first = $sut->get_payment_fields_config( self::CARD_SUPPORTS );
+		$this->assertSame( 'pk_live_A', $first['publishableKey'] );
+		$this->assertArrayNotHasKey( 'isChangingPayment', $first );
+		$filtered = 0;
+
+		global $wp;
+		$second = array();
+		try {
+			if ( 'the account switches to test mode' === $change ) {
+				$account->run_in_test_mode_context(
+					true,
+					static function () use ( $sut, &$second ): void {
+						$second = $sut->get_payment_fields_config( self::CARD_SUPPORTS );
+					}
+				);
+			} elseif ( 'another account connects' === $change ) {
+				$account_data = self::SWITCHABLE_ACCOUNT_B;
+				$second       = $sut->get_payment_fields_config( self::CARD_SUPPORTS );
+			} else {
+				$this->report_subscriptions_loaded();
+				$GLOBALS[ WooCommerceSubscriptionsDoubles::SUBSCRIPTION_IDS ] = array( 123 );
+				$wp->query_vars['order-pay']                                  = 123;
+				$_GET['change_payment_method']                                = '123';
+				$second = $sut->get_payment_fields_config( self::CARD_SUPPORTS );
+			}
+		} finally {
+			unset( $wp->query_vars['order-pay'] );
+		}
+
+		if ( 'the account switches to test mode' === $change ) {
+			$this->assertSame( 'pk_test_A', $second['publishableKey'] );
+			$this->assertTrue( $second['testMode'] );
+		} elseif ( 'another account connects' === $change ) {
+			$this->assertSame( 'acct_B', $second['accountId'] );
+			$this->assertSame( 'pk_live_B', $second['publishableKey'] );
+		} else {
+			$this->assertSame( 0, $filtered, 'A change payment method config skips the wcpay_payment_fields_js_config filter.' );
+			$this->assertTrue( $second['isChangingPayment'] ?? false, 'The change payment method page gets its own config.' );
+		}
+	}
+
+	/**
+	 * @testdox On a kept checkout assets service, the next request by $label builds the classic config once, with none of the request before's session values.
+	 *
+	 * A persistent worker or a long-running CLI process can keep the service. The base carries values bound to the
+	 * shopper's session and the time, which no key can hold, so the service clears its memos on each request's init.
+	 *
+	 * @testWith ["another guest", false]
+	 *           ["another guest, in test mode", true]
+	 *
+	 * @param string $label     Who makes the next request.
+	 * @param bool   $test_mode Whether the next request runs in test mode.
+	 */
+	public function test_next_request_rebuilds_the_classic_config_without_the_last_session_values( string $label, bool $test_mode ): void {
+		unset( $label );
+		$account_data = array_merge(
+			self::SWITCHABLE_ACCOUNT_A,
+			array(
+				'fraud_services' => array(
+					'sift' => array(
+						'beacon_key'         => 'live-beacon',
+						'sandbox_beacon_key' => 'sandbox-beacon',
+					),
+				),
+			)
+		);
+		$account      = $this->create_switchable_account_service( $account_data );
+		// The WooPay config carries the WooPay session nonce, the Store API cart token of the shopper's session and the
+		// WooPay session email (WooPay/SessionService.php:721, :741-747, :351-358).
+		$woopay = $this->getMockBuilder( SessionService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_woopay_frontend_config' ) )
+			->getMock();
+		$woopay->method( 'get_woopay_frontend_config' )->willReturnCallback(
+			static fn(): array => array(
+				'woopaySessionNonce'       => wp_create_nonce( 'woopay_session_nonce' ),
+				'woopayMinimumSessionData' => array( 'store_api_token' => CartTokenUtils::get_cart_token( (string) WC()->session->get_customer_id() ) ),
+				'woopaySessionEmail'       => (string) WC()->session->get( 'woopay_session_email', '' ),
+			)
+		);
+		$sut = new WooPaymentsCheckoutAssets();
+		$sut->init( $account, $woopay, $this->create_woopay_eligibility( false ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller(), new PaymentMethodRegistry() );
+		$fraud_service = new WooPaymentsFraudService();
+		$fraud_service->init( $account, $this->createMock( WooPaymentsCustomerService::class ), new WooPaymentsSessionService(), $this->createMock( Client::class ) );
+		$property = new \ReflectionProperty( WooPaymentsCheckoutAssets::class, 'fraud_service' );
+		$property->setAccessible( true );
+		$property->setValue( $sut, $fraud_service );
+		$builds = 0;
+		add_filter(
+			'wc_payments_account_id_for_intent_confirmation',
+			static function ( $value ) use ( &$builds ) {
+				++$builds;
+				return $value;
+			}
+		);
+		$registry = new PaymentMethodRegistry();
+		$request  = static function () use ( $sut, $registry ): array {
+			$card = $sut->get_payment_fields_config( self::CARD_SUPPORTS );
+			$sut->get_payment_fields_config( self::CARD_SUPPORTS, $registry->get( 'klarna' ) );
+
+			return $card;
+		};
+		// Only the service's own init callback runs; the hook snapshot restores the others when the test ends.
+		remove_all_actions( 'init' );
+		$sut->register();
+		wp_set_current_user( 0 );
+		$original_session = WC()->session;
+
+		try {
+			WC()->session = $this->create_guest_session( 'guest-a', 'a@example.com' );
+			$first        = $request();
+			$this->assertSame( 1, $builds, 'The first request builds the classic config once.' );
+
+			WC()->session = $this->create_guest_session( 'guest-b', 'b@example.com' );
+			// Half a nonce life later.
+			add_filter( 'nonce_life', static fn(): int => HOUR_IN_SECONDS );
+			if ( $test_mode ) {
+				add_filter( 'wcpay_test_mode', '__return_true' );
+			}
+			/** This action is documented in wp-settings.php */
+			do_action( 'init' );
+			$second              = $request();
+			$expected_nonce      = wp_create_nonce( 'wcpay_create_setup_intent_nonce' );
+			$expected_session_id = ( new WooPaymentsSessionService() )->get_sift_session_id();
+		} finally {
+			WC()->session = $original_session;
+		}
+
+		$this->assertNotSame( $first['createSetupIntentNonce'], $second['createSetupIntentNonce'] );
+		$this->assertSame( $expected_nonce, $second['createSetupIntentNonce'], 'The nonce of the next request.' );
+		$this->assertSame( 'guest-b', CartTokenUtils::get_cart_token_payload( $second['woopayMinimumSessionData']['store_api_token'] )['user_id'], 'The cart token of the next guest.' );
+		$this->assertNotSame( $first['fraudServices']['sift']['session_id'], $second['fraudServices']['sift']['session_id'] );
+		$this->assertSame( $expected_session_id, $second['fraudServices']['sift']['session_id'], 'The Sift session of the next guest.' );
+		$this->assertSame( 'b@example.com', $second['woopaySessionEmail'], 'The WooPay email of the next guest.' );
+		$this->assertSame( $test_mode, $second['testMode'] );
+		$this->assertSame( 2, $builds, 'The next request builds the classic config once.' );
+	}
+
+	/**
+	 * Create a guest's WooCommerce session with a customer ID and a WooPay session email.
+	 *
+	 * @param string $customer_id Session customer ID.
+	 * @param string $email       WooPay session email.
+	 * @return \WC_Session
+	 */
+	private function create_guest_session( string $customer_id, string $email ): \WC_Session {
+		$session = $this->create_session();
+		$session->set( 'woopay_session_email', $email );
+		$property = new \ReflectionProperty( \WC_Session::class, '_customer_id' );
+		$property->setAccessible( true );
+		$property->setValue( $session, $customer_id );
+
+		return $session;
+	}
+
+	/**
+	 * Create an account service double over the given cached account data; the test can swap the data between calls.
+	 * Its mode, publishable key, account ID and payment readiness come from the real methods.
+	 *
+	 * @param array<string,mixed> $account_data Cached account data, read by reference.
+	 * @return WooPaymentsAccountService
+	 */
+	private function create_switchable_account_service( array &$account_data ): WooPaymentsAccountService {
+		$account = $this->getMockBuilder( WooPaymentsAccountService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_cached_account_data', 'get_gateway_setting', 'is_test_mode_onboarding_enabled' ) )
+			->getMock();
+		$account->method( 'get_cached_account_data' )->willReturnCallback(
+			static function () use ( &$account_data ): array {
+				return $account_data;
+			}
+		);
+		$account->method( 'get_gateway_setting' )->willReturnCallback(
+			static function ( string $key, $fallback = null ) {
+				unset( $key );
+				return $fallback;
+			}
+		);
+		$account->method( 'is_test_mode_onboarding_enabled' )->willReturn( false );
+
+		return $account;
 	}
 
 	/**

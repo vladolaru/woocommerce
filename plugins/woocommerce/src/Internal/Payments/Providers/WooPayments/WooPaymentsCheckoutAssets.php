@@ -14,6 +14,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethod
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\PaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\SessionService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\Eligibility;
+use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 
 /**
  * Registers the WooPayments checkout scripts and styles, and builds the payment fields config they read: the
@@ -22,7 +23,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\Eligib
  * @since 11.0.0
  * @internal
  */
-class WooPaymentsCheckoutAssets {
+class WooPaymentsCheckoutAssets implements RegisterHooksInterface {
 	/**
 	 * Payment method capability for saved/reusable payment credentials.
 	 */
@@ -290,7 +291,8 @@ class WooPaymentsCheckoutAssets {
 	 * Client 11.1.0 builds its classic config once per request: payment_fields() builds it only while the checkout
 	 * script is not yet enqueued, then enqueues the script, so every later gateway reuses the first build
 	 * (includes/class-wc-payments-checkout.php:409-424). This class renders one config per gateway, so it shares the base
-	 * the same way and builds again only when an input of the base changes (get_payment_list_config_base_key()).
+	 * the same way and builds again only when an input of the base changes (get_payment_list_config_base_key()) or a new
+	 * request starts (reset_config_memos()).
 	 *
 	 * @var array{key:string,base:array{config:array<string,mixed>,saved_cards_enabled:bool,currency:string}}|null
 	 */
@@ -301,7 +303,7 @@ class WooPaymentsCheckoutAssets {
 	 *
 	 * The Blocks integration registers one payment method per split gateway where client 11.1.0 registers one, so the
 	 * gateways share this base, and it is built again when an input of the base changes (get_blocks_config_base_key())
-	 * or a new registration pass starts (reset_blocks_config_base()).
+	 * or a new request or registration pass starts (reset_config_memos()).
 	 *
 	 * @var array{key:string,base:array{config:array<string,mixed>,saved_cards_enabled:bool,currency:string}}|null
 	 */
@@ -596,8 +598,10 @@ class WooPaymentsCheckoutAssets {
 	 * Get the key of the config base inputs that can change within one request.
 	 *
 	 * The card gateway supports, the order or cart total and currency, the order and its billing country, whether the
-	 * cart holds a subscription, and the shopper (the nonces and the saved-card data are per user). The rest of the
-	 * base (account, gateway settings, page type, locale) is fixed for the request, as client 11.1.0's single build assumes.
+	 * cart holds a subscription, the shopper (the nonces and the saved-card data are per user), the account and its
+	 * effective mode (run_in_test_mode_context() changes it), and whether the page changes a subscription's payment method.
+	 * The rest of the base (gateway settings, page type, locale) is fixed for the request, as client 11.1.0's single build
+	 * assumes; the session-bound values are cleared with the memos on each request (reset_config_memos()).
 	 *
 	 * @param string[]                                                             $supports        Card gateway support features.
 	 * @param array{currency:string,total:int,order_id:int,billing_country:string} $payment_context Payment context.
@@ -610,20 +614,36 @@ class WooPaymentsCheckoutAssets {
 				$payment_context,
 				SubscriptionMethodPolicy::cart_contains_subscription_or_renewal(),
 				get_current_user_id(),
+				$this->get_account_service()->get_account_id(),
+				$this->get_account_service()->is_test_mode_enabled(),
+				$this->is_changing_payment_method_for_subscription(),
 			)
 		);
 	}
 
 	/**
-	 * Forget the shared Blocks config base, so the next Blocks payment method data builds it again.
+	 * Register the request boundary of the config memos.
+	 */
+	public function register(): void {
+		// Before Blocks registers its payment methods (init priority 5) and before any render.
+		add_action( 'init', array( $this, 'reset_config_memos' ), 0 );
+	}
+
+	/**
+	 * Forget the memoized classic and Blocks config bases, so the next render builds them again.
 	 *
-	 * The Blocks integration calls this at the start of each registration pass. This service can outlive a request, as in a
-	 * worker or WP-CLI, and the account or its mode can change between passes, which the base's key does not cover.
+	 * The bases hold values bound to the shopper's session and the time: nonces, the Store API cart token in the WooPay
+	 * session data, the Sift session ID and the WooPay session email. This service can outlive a request in a persistent
+	 * worker or a long-running CLI process, so the memos are cleared on each request's init and at the start of each
+	 * Blocks registration pass.
 	 *
 	 * @since 11.2.0
+	 *
+	 * @internal
 	 */
-	public function reset_blocks_config_base(): void {
-		$this->blocks_config_base = null;
+	public function reset_config_memos(): void {
+		$this->payment_list_config_base = null;
+		$this->blocks_config_base       = null;
 	}
 
 	/**
