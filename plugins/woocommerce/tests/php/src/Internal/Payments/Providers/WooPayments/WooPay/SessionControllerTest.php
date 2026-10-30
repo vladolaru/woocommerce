@@ -388,10 +388,20 @@ class SessionControllerTest extends WC_REST_Unit_Test_Case {
 		$service->direct_checkout_enabled             = true;
 		$this->sut                                    = $this->create_controller( true, $service );
 		$this->arrange_direct_checkout_surface( $surface );
+		// The light config emits only connection keys, so it computes no tracking keys: no tracking policy read.
+		$tracking_reads = 0;
+		$count_read     = static function ( $value ) use ( &$tracking_reads ) {
+			++$tracking_reads;
+			return $value;
+		};
+		add_filter( 'wcpay_shopper_tracking_enabled', $count_read );
+		add_filter( 'pre_option_woocommerce_allow_tracking', $count_read );
 
 		$this->sut->enqueue_frontend_assets();
 
 		$this->assert_light_direct_checkout_assets( $service );
+		$this->assertSame( array( 'ajaxUrl', 'platformTrackerNonce', 'woopayHost', 'testMode' ), array_keys( (array) $service->last_connection_script_config ), 'The controller hands over the connection keys.' );
+		$this->assertSame( 0, $tracking_reads, 'No tracking option read and no tracking filter.' );
 	}
 
 	/**

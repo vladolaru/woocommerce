@@ -475,21 +475,39 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * The WooPay objects read these keys on pages that have no card config, so building them must not read the customer,
-	 * the styles cache or the session, build the WooPay config, or write an option.
+	 * The WooPay objects read these keys on pages that have no card config, so building them reads only what the keys need.
+	 * The real tracking flag reads the account data once; the account service may refresh and store that cache when it is
+	 * due, as on every page that prints these keys. With a fresh cache nothing is written, and nothing builds the customer
+	 * data, the styles version or the WooPay config, or touches the session.
 	 *
-	 * @testdox The shared script config carries the eight keys both checkout scripts read, without side effects, test mode $test_mode.
+	 * @testdox The shared script config carries the eight keys both checkout scripts read and reads only what they need, test mode $test_mode.
 	 * @testWith [true]
 	 *           [false]
 	 *
 	 * @param bool $test_mode Whether the account is in test mode.
 	 */
-	public function test_get_shared_script_config_returns_the_shared_keys_without_side_effects( bool $test_mode ): void {
+	public function test_get_shared_script_config_reads_only_what_its_keys_need( bool $test_mode ): void {
+		update_option( 'woocommerce_allow_tracking', 'yes' );
+		update_option( 'woocommerce_default_country', 'US:CA' );
+		$account_reads   = 0;
 		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
 			->disableOriginalConstructor()
-			->onlyMethods( array( 'is_test_mode_enabled' ) )
+			->onlyMethods( array( 'is_test_mode_enabled', 'get_cached_account_data', 'get_gateway_setting' ) )
 			->getMock();
 		$account_service->method( 'is_test_mode_enabled' )->willReturn( $test_mode );
+		$account_service->method( 'get_gateway_setting' )->willReturnCallback(
+			static function ( string $key, $fallback = null ) {
+				return 'enabled' === $key ? 'yes' : $fallback;
+			}
+		);
+		$account_service->method( 'get_cached_account_data' )->willReturnCallback(
+			static function () use ( &$account_reads ): array {
+				++$account_reads;
+				return array( 'country' => 'US' );
+			}
+		);
+		$tracking_controller = new WooPaymentsFrontendTrackingController();
+		$tracking_controller->init( $account_service );
 		$woopay_service = $this->createMock( SessionService::class );
 		$woopay_service->expects( $this->never() )->method( 'get_woopay_frontend_config' );
 		$styles_service = $this->createMock( WooPaymentsFrontendStylesService::class );
@@ -497,7 +515,7 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 		$customer_service = $this->createMock( WooPaymentsCustomerService::class );
 		$customer_service->expects( $this->never() )->method( 'get_prepared_customer_data' );
 		$sut = new WooPaymentsCheckoutAssets();
-		$sut->init( $account_service, $woopay_service, $this->create_woopay_eligibility( true ), $styles_service, $this->create_frontend_tracking_controller(), new PaymentMethodRegistry(), null, $customer_service );
+		$sut->init( $account_service, $woopay_service, $this->create_woopay_eligibility( true ), $styles_service, $tracking_controller, new PaymentMethodRegistry(), null, $customer_service );
 
 		$option_writes = 0;
 		$count_write   = static function () use ( &$option_writes ): void {
@@ -555,8 +573,44 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'https://pay.woo.com', $config['woopayHost'] );
 		$this->assertSame( $test_mode, $config['testMode'], 'The express OTP iframe opens in the account mode.' );
 		$this->assertSame( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsClientVersion::VERSION, $config['wcpayVersionNumber'] );
-		$this->assertSame( 0, $option_writes, 'No option is written.' );
+		$this->assertSame( 1, $account_reads, 'The account data is read once, for the tracking flag.' );
+		$this->assertSame( 0, $option_writes, 'No option is written while the account cache is fresh.' );
 		$this->assertSame( 0, $session->calls, 'The session is not read or written.' );
+	}
+
+	/**
+	 * The light direct-checkout config emits only these four keys, so building them must not compute the tracking keys.
+	 *
+	 * @testdox The connection script config carries the four keys the light WooPay config reads and reads no tracking policy.
+	 */
+	public function test_get_connection_script_config_reads_no_tracking_policy(): void {
+		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'is_test_mode_enabled', 'get_cached_account_data', 'get_gateway_setting' ) )
+			->getMock();
+		$account_service->method( 'is_test_mode_enabled' )->willReturn( true );
+		$account_service->expects( $this->never() )->method( 'get_cached_account_data' );
+		$account_service->expects( $this->never() )->method( 'get_gateway_setting' );
+		$tracking_controller = new WooPaymentsFrontendTrackingController();
+		$tracking_controller->init( $account_service );
+		$sut = new WooPaymentsCheckoutAssets();
+		$sut->init( $account_service, $this->createMock( SessionService::class ), $this->create_woopay_eligibility( true ), $this->create_frontend_styles_service(), $tracking_controller, new PaymentMethodRegistry() );
+		$tracking_reads = 0;
+		$count_read     = static function ( $value ) use ( &$tracking_reads ) {
+			++$tracking_reads;
+			return $value;
+		};
+		add_filter( 'wcpay_shopper_tracking_enabled', $count_read );
+		add_filter( 'pre_option_woocommerce_allow_tracking', $count_read );
+
+		$config = $sut->get_connection_script_config();
+
+		$this->assertSame( array( 'ajaxUrl', 'platformTrackerNonce', 'woopayHost', 'testMode' ), array_keys( $config ) );
+		$this->assertSame( admin_url( 'admin-ajax.php' ), $config['ajaxUrl'] );
+		$this->assertNotFalse( wp_verify_nonce( $config['platformTrackerNonce'], 'platform_tracks_nonce' ) );
+		$this->assertSame( 'https://pay.woo.com', $config['woopayHost'] );
+		$this->assertTrue( $config['testMode'] );
+		$this->assertSame( 0, $tracking_reads, 'No tracking option read and no tracking filter.' );
 	}
 
 	/**

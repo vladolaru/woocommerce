@@ -367,24 +367,45 @@ class WooPaymentsCheckoutAssets {
 	}
 
 	/**
+	 * Get the shared keys a WooPay script needs to reach the store and WooPay: the AJAX URL, the tracker nonce, the WooPay
+	 * host and the account mode. The light direct-checkout config reads only these, so it computes no tracking keys.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @return array{ajaxUrl:string,platformTrackerNonce:string,woopayHost:string,testMode:bool}
+	 */
+	public function get_connection_script_config(): array {
+		return array(
+			'ajaxUrl'              => admin_url( 'admin-ajax.php' ),
+			'platformTrackerNonce' => wp_create_nonce( 'platform_tracks_nonce' ),
+			'woopayHost'           => SessionService::get_woopay_url(),
+			'testMode'             => $this->get_account_service()->is_test_mode_enabled(),
+		);
+	}
+
+	/**
 	 * Get the config keys that both the card checkout scripts and the WooPay script read, built in one place.
 	 *
-	 * It reads no customer, styles or session data and writes nothing, so WooPay pages can use it without the card config.
+	 * It reads only what its keys need and no customer, styles or session data, so WooPay pages can use it without the
+	 * card config. The tracking flag reads the account data, which the account service refreshes and stores when its cache
+	 * is due, as on every page that prints these keys.
 	 *
 	 * @since 11.2.0
 	 *
 	 * @return array{ajaxUrl:string,platformTrackerNonce:string,tracksUrl:string,tracksRestNonce:string,isShopperTrackingEnabled:bool,woopayHost:string,testMode:bool,wcpayVersionNumber:string}
 	 */
 	public function get_shared_script_config(): array {
+		$connection = $this->get_connection_script_config();
+
 		return array(
-			'ajaxUrl'                  => admin_url( 'admin-ajax.php' ),
-			'platformTrackerNonce'     => wp_create_nonce( 'platform_tracks_nonce' ),
+			'ajaxUrl'                  => $connection['ajaxUrl'],
+			'platformTrackerNonce'     => $connection['platformTrackerNonce'],
 			'tracksUrl'                => $this->get_frontend_tracking_controller()->get_tracks_rest_url(),
 			'tracksRestNonce'          => wp_create_nonce( 'wp_rest' ),
 			// Store-level only, as client 11.2.0 sets it (class-woopay-tracker.php:663-665); WooPay events are checked when recorded.
 			'isShopperTrackingEnabled' => $this->get_frontend_tracking_controller()->is_shopper_event_tracking_enabled(),
-			'woopayHost'               => SessionService::get_woopay_url(),
-			'testMode'                 => $this->get_account_service()->is_test_mode_enabled(),
+			'woopayHost'               => $connection['woopayHost'],
+			'testMode'                 => $connection['testMode'],
 			'wcpayVersionNumber'       => WooPaymentsClientVersion::VERSION,
 		);
 	}

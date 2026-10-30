@@ -510,7 +510,7 @@ class SessionController implements RegisterHooksInterface {
 			'wcpay_core_woopay_config',
 			array_merge(
 				array( 'wcAjaxUrl' => \WC_AJAX::get_endpoint( '%%endpoint%%' ) ),
-				$this->session_service->get_woopay_direct_checkout_config( $this->get_checkout_assets()->get_shared_script_config() )
+				$this->session_service->get_woopay_direct_checkout_config( $this->get_checkout_assets()->get_connection_script_config() )
 			)
 		);
 		wp_enqueue_script( self::CLASSIC_WOOPAY_SCRIPT_HANDLE );

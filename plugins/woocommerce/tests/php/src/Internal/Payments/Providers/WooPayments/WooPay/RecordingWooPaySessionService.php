@@ -186,13 +186,20 @@ class RecordingWooPaySessionService extends SessionService {
 	public int $direct_checkout_config_calls = 0;
 
 	/**
+	 * The connection keys the last light direct-checkout config build was given.
+	 *
+	 * @var array<string,mixed>|null
+	 */
+	public ?array $last_connection_script_config = null;
+
+	/**
 	 * Get the light direct-checkout config.
 	 *
-	 * @param array<string,mixed> $shared_script_config The keys the card scripts also read.
+	 * @param array<string,mixed> $connection_script_config The connection keys the card scripts also read.
 	 * @return array<string,mixed>
 	 */
-	public function get_woopay_direct_checkout_config( array $shared_script_config ): array {
-		unset( $shared_script_config );
+	public function get_woopay_direct_checkout_config( array $connection_script_config ): array {
+		$this->last_connection_script_config = $connection_script_config;
 		++$this->direct_checkout_config_calls;
 
 		return array(

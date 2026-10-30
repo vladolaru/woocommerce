@@ -787,18 +787,18 @@ class SessionService {
 	 *
 	 * @since 11.2.0
 	 *
-	 * @param array<string,mixed> $shared_script_config The keys the card scripts also read, from WooPaymentsCheckoutAssets::get_shared_script_config().
+	 * @param array<string,mixed> $connection_script_config The connection keys, from WooPaymentsCheckoutAssets::get_connection_script_config().
 	 * @return array<string,mixed>
 	 */
-	public function get_woopay_direct_checkout_config( array $shared_script_config ): array {
+	public function get_woopay_direct_checkout_config( array $connection_script_config ): array {
 		return array(
-			'woopayHost'                    => $shared_script_config['woopayHost'],
-			'testMode'                      => $shared_script_config['testMode'],
+			'woopayHost'                    => $connection_script_config['woopayHost'],
+			'testMode'                      => $connection_script_config['testMode'],
 			'woopaySessionNonce'            => wp_create_nonce( 'woopay_session_nonce' ),
 			'woopayMerchantId'              => $this->get_store_blog_id(),
 			'isWooPayDirectCheckoutEnabled' => $this->woopay_eligibility->is_woopay_direct_checkout_enabled(),
-			'platformTrackerNonce'          => $shared_script_config['platformTrackerNonce'],
-			'ajaxUrl'                       => $shared_script_config['ajaxUrl'],
+			'platformTrackerNonce'          => $connection_script_config['platformTrackerNonce'],
+			'ajaxUrl'                       => $connection_script_config['ajaxUrl'],
 			'woopayMinimumSessionData'      => $this->get_encrypted_minimum_session_data(),
 		);
 	}
