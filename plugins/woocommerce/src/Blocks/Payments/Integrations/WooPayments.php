@@ -52,11 +52,6 @@ final class WooPayments extends AbstractPaymentMethodType {
 	private const COMMON_SCRIPT_HANDLE = 'wc-payment-method-woopayments-common';
 
 	/**
-	 * The WooPay email check the card and WooPay scripts share, built as one chunk.
-	 */
-	private const WOOPAY_COMMON_SCRIPT_HANDLE = 'wc-payment-method-woopayments-woopay-common';
-
-	/**
 	 * Asset API.
 	 *
 	 * @var Api
@@ -198,14 +193,14 @@ final class WooPayments extends AbstractPaymentMethodType {
 
 			$handles[] = $this->register_payment_method_assets(
 				self::PAYMENT_METHOD_SCRIPT_HANDLE,
-				array_merge( array( WooPaymentsFrontendAssets::STRIPE_SCRIPT_HANDLE, self::CHECKOUT_BLOCKS_SCRIPT_HANDLE ), $this->register_common_scripts( true ) )
+				array_merge( array( WooPaymentsFrontendAssets::STRIPE_SCRIPT_HANDLE, self::CHECKOUT_BLOCKS_SCRIPT_HANDLE ), $this->register_common_scripts() )
 			);
 		}
 
 		if ( $this->is_card_gateway() && $this->should_enqueue_woopay_assets() ) {
 			$handles[] = $this->register_payment_method_assets(
 				self::WOOPAY_SCRIPT_HANDLE,
-				array_merge( array( self::CHECKOUT_BLOCKS_SCRIPT_HANDLE ), $this->register_common_scripts( true ) )
+				array_merge( array( self::CHECKOUT_BLOCKS_SCRIPT_HANDLE ), $this->register_common_scripts() )
 			);
 		}
 
@@ -213,7 +208,7 @@ final class WooPayments extends AbstractPaymentMethodType {
 			$this->frontend_assets->register_stripe_script();
 			$handles[] = $this->register_payment_method_assets(
 				self::EXPRESS_CHECKOUT_SCRIPT_HANDLE,
-				array_merge( array( WooPaymentsFrontendAssets::STRIPE_SCRIPT_HANDLE, self::CHECKOUT_BLOCKS_SCRIPT_HANDLE ), $this->register_common_scripts( false ) )
+				array_merge( array( WooPaymentsFrontendAssets::STRIPE_SCRIPT_HANDLE, self::CHECKOUT_BLOCKS_SCRIPT_HANDLE ), $this->register_common_scripts() )
 			);
 		}
 
@@ -261,24 +256,16 @@ final class WooPayments extends AbstractPaymentMethodType {
 	}
 
 	/**
-	 * Register the shared chunks a WooPayments Blocks script needs; each script waits for them before it runs.
+	 * Register the shared chunk a WooPayments Blocks script needs; each script waits for it before it runs.
 	 *
-	 * @param bool $with_woopay_email_check Whether the script also needs the WooPay email check chunk.
-	 * @return string[] The shared chunk handles to list as the script's dependencies.
+	 * @return string[] The shared chunk handle to list as the script's dependency.
 	 */
-	private function register_common_scripts( bool $with_woopay_email_check ): array {
-		$handles = array( self::COMMON_SCRIPT_HANDLE => 'assets/client/blocks/wc-payment-method-woopayments-common.js' );
-		if ( $with_woopay_email_check ) {
-			$handles[ self::WOOPAY_COMMON_SCRIPT_HANDLE ] = 'assets/client/blocks/wc-payment-method-woopayments-woopay-common.js';
+	private function register_common_scripts(): array {
+		if ( ! wp_script_is( self::COMMON_SCRIPT_HANDLE, 'registered' ) ) {
+			$this->asset_api->register_script( self::COMMON_SCRIPT_HANDLE, 'assets/client/blocks/wc-payment-method-woopayments-common.js', array(), false );
 		}
 
-		foreach ( $handles as $handle => $path ) {
-			if ( ! wp_script_is( $handle, 'registered' ) ) {
-				$this->asset_api->register_script( $handle, $path, array(), false );
-			}
-		}
-
-		return array_keys( $handles );
+		return array( self::COMMON_SCRIPT_HANDLE );
 	}
 
 	/**
@@ -292,9 +279,11 @@ final class WooPayments extends AbstractPaymentMethodType {
 	 * @return string The handle, to list as a payment method script.
 	 */
 	private function register_payment_method_assets( string $handle, array $deps ): string {
-		// Each script's asset file lists these handles: the appearance utility and the shared helpers are build externals.
+		// Each script's asset file lists these handles: the appearance utility, the shared helpers and the WooPay protocol
+		// are build externals.
 		$this->frontend_assets->register_appearance_script();
 		$this->frontend_assets->register_common_script();
+		$this->frontend_assets->register_woopay_common_script();
 		$this->asset_api->register_script( $handle, 'assets/client/blocks/' . $handle . '.js', $deps );
 		$this->asset_api->register_style( $handle, 'assets/client/blocks/' . $handle . '.css', array(), 'all', true );
 		if ( is_admin() ) {

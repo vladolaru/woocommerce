@@ -35,6 +35,11 @@ import {
 	handleWooPayEmailInput,
 	shouldHandleWooPayEmailInput,
 } from './woopay/email-input-iframe';
+import {
+	buildAjaxUrl,
+	loadPhoneValidation,
+	normalizePhone as normalizeWooPayPhone,
+} from './woopay/protocol';
 import { PAYMENT_METHOD_NAME } from './constants';
 
 const defaultSettings = getPaymentMethodData( PAYMENT_METHOD_NAME, {} );
@@ -662,13 +667,6 @@ const getFieldValue = ( selector ) => {
 	return field ? field.value : '';
 };
 
-const buildWooPayAjaxUrl = ( paymentSettings = defaultSettings, endpoint ) => {
-	return ( paymentSettings.wcAjaxUrl || '/?wc-ajax=%%endpoint%%' ).replace(
-		'%%endpoint%%',
-		`wcpay_${ endpoint }`
-	);
-};
-
 const getWooPayViewport = () =>
 	`${ window.document.documentElement.clientWidth }x${ window.document.documentElement.clientHeight }`;
 
@@ -717,7 +715,10 @@ const persistWooPaySaveUser = async (
 	// Resolves whether the request went through; a failed one leaves the session as it was.
 	try {
 		const response = await window.fetch(
-			buildWooPayAjaxUrl( paymentSettings, 'set_woopay_phone_number' ),
+			buildAjaxUrl(
+				{ wcAjaxUrl: paymentSettings.wcAjaxUrl },
+				'set_woopay_phone_number'
+			),
 			{
 				method: 'POST',
 				credentials: 'same-origin',
@@ -789,40 +790,6 @@ const WooPaySaveUserAgreement = ( { paymentSettings } ) => (
 );
 
 const WOOPAY_PHONE_ERROR_ID = 'invalid-woopay-phone-number';
-let phoneValidationPromise = null;
-
-// Core's mobile phone validation, built once as its own script (phone-validation.js) and loaded only when the
-// shopper opts in (WooPaymentsFrontendAssets::get_phone_validation_script_url()). Resolves null when it cannot load.
-const loadPhoneValidation = ( url ) => {
-	if ( window.wcWooPaymentsPhoneValidation ) {
-		return Promise.resolve( window.wcWooPaymentsPhoneValidation );
-	}
-	if ( ! url ) {
-		return Promise.resolve( null );
-	}
-	if ( ! phoneValidationPromise ) {
-		phoneValidationPromise = new Promise( ( resolve ) => {
-			const script = document.createElement( 'script' );
-			script.src = url;
-			script.async = true;
-			script.onload = () =>
-				resolve( window.wcWooPaymentsPhoneValidation || null );
-			script.onerror = () => {
-				phoneValidationPromise = null;
-				resolve( null );
-			};
-			document.head.appendChild( script );
-		} );
-	}
-	return phoneValidationPromise;
-};
-
-// Client 11.1.0 checkout-page-save-user.js:93-111: keep digits and +, and read a number without a country code as US
-// (WooPay is US-only).
-const normalizeWooPayPhone = ( phone ) => {
-	const value = String( phone || '' ).replace( /[^\d+]*/g, '' );
-	return value.startsWith( '+' ) ? value : '+1' + value;
-};
 
 // Client 11.1.0 use-woopay-user.js: the WooPay email check announces a WooPay user with this window event.
 const useIsWooPayUser = () => {

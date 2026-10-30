@@ -56,13 +56,13 @@
 		},
 		"blocks-common.js": {
 			"allow_new": true,
-			"raw_bytes": 14448,
-			"gzip_bytes": 5266
+			"raw_bytes": 15438,
+			"gzip_bytes": 5653
 		},
 		"blocks-woopay-common.js": {
 			"allow_new": true,
-			"raw_bytes": 9334,
-			"gzip_bytes": 3694
+			"raw_bytes": 16117,
+			"gzip_bytes": 5314
 		},
 		"blocks-woopay.css": {
 			"allow_new": true,

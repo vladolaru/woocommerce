@@ -9,19 +9,25 @@ import { useEffect, useRef, useState } from '@wordpress/element';
 /**
  * Internal dependencies
  */
-import { getTracksIdentity, recordWooPaymentsUserEvent } from '../tracks';
+import { recordWooPaymentsUserEvent } from '../tracks';
 import { ensureBlocksWooPayAppearance } from '../upe-styles';
 import {
 	expressCheckoutIframe,
 	showErrorMessage,
 } from './express-checkout-iframe';
+import {
+	buildAjaxUrl,
+	createConnect,
+	deleteSkipWooPayCookieOnClick as deleteSkipWooPayCookie,
+	getCachedPreferredCard,
+	isSamePreferredCard,
+	setCachedPreferredCard,
+} from './protocol';
 import { PAYMENT_METHOD_NAME } from '../constants';
 
 const settings = getPaymentMethodData( PAYMENT_METHOD_NAME, {} );
 const supportedFeatures = settings.supports ||
 	settings.features || [ 'products' ];
-const preferredCardCacheKey = 'woopay_preferred_card';
-const wooPayConnectTimeout = 5000;
 const buttonWidthThreshold = 140;
 const cardDisplayWidthThreshold = 220;
 const brandAliases = {
@@ -38,9 +44,26 @@ const brandDisplayNames = {
 	unionpay: __( 'Union Pay', 'woocommerce' ),
 	visa: __( 'Visa', 'woocommerce' ),
 };
-const wooPayConnectCallbacks = {};
-let wooPayConnectListenerAttached = false;
-let preferredCardFetchPromise = null;
+// This script's WooPay Connect client; the classic WooPay script on the same page has its own over the same iframe.
+// The values are read from the settings when used.
+const wooPayConnect = createConnect( {
+	get woopayHost() {
+		return settings.woopayHost;
+	},
+	get woopayMerchantId() {
+		return settings.woopayMerchantId;
+	},
+	get testMode() {
+		return settings.testMode;
+	},
+	get ajaxUrl() {
+		return settings.ajaxUrl;
+	},
+	get platformTrackerNonce() {
+		return settings.platformTrackerNonce;
+	},
+	iframeTitle: __( 'WooPay Connect', 'woocommerce' ),
+} );
 let navigate = ( url ) => {
 	window.location.href = url;
 };
@@ -87,287 +110,16 @@ const WooPayIconLight = () => (
 
 const normalizeCardBrand = ( brand ) => brandAliases[ brand ] || brand;
 
-const isValidPreferredCard = ( card ) =>
-	Boolean(
-		card &&
-		typeof card.brand === 'string' &&
-		card.brand.length > 0 &&
-		typeof card.last4 === 'string' &&
-		/^\d{4}$/.test( card.last4 )
-	);
-
-const isSamePreferredCard = ( firstCard, secondCard ) =>
-	( ! firstCard && ! secondCard ) ||
-	( firstCard &&
-		secondCard &&
-		firstCard.brand === secondCard.brand &&
-		firstCard.last4 === secondCard.last4 );
-
-const getCachedPreferredCard = () => {
-	try {
-		const cached = window.localStorage.getItem( preferredCardCacheKey );
-		if ( ! cached ) {
-			return null;
-		}
-
-		const parsed = JSON.parse( cached );
-		return isValidPreferredCard( parsed ) ? parsed : null;
-	} catch ( error ) {
-		return null;
-	}
-};
-
-const setCachedPreferredCard = ( card ) => {
-	try {
-		if ( isValidPreferredCard( card ) ) {
-			window.localStorage.setItem(
-				preferredCardCacheKey,
-				JSON.stringify( {
-					brand: card.brand,
-					last4: card.last4,
-				} )
-			);
-			return;
-		}
-
-		window.localStorage.removeItem( preferredCardCacheKey );
-	} catch ( error ) {
-		return undefined;
-	}
-};
-
 const getPreferredCardDisplayName = ( preferredCard ) => {
 	const normalizedBrand = normalizeCardBrand( preferredCard.brand );
 
 	return brandDisplayNames[ normalizedBrand ] || normalizedBrand;
 };
 
-const getWooPayConnectOrigin = () => {
-	try {
-		return new window.URL( settings.woopayHost ).origin;
-	} catch ( error ) {
-		return '';
-	}
-};
+const fetchPreferredCardFromWooPay = () => wooPayConnect.fetchPreferredCard();
 
-const getWooPayConnectUrl = async () => {
-	if ( ! settings.woopayHost || ! window.URLSearchParams ) {
-		return settings.woopayHost ? `${ settings.woopayHost }/connect/` : '';
-	}
-
-	const params = new window.URLSearchParams( {
-		source_url: window.location.href,
-	} );
-
-	if ( settings.woopayMerchantId ) {
-		params.append( 'blogId', settings.woopayMerchantId );
-	}
-
-	if ( settings.testMode !== undefined ) {
-		params.append( 'testMode', settings.testMode ? 'true' : 'false' );
-	}
-
-	// Client 11.2.0 woopay/connect/woopay-connect-iframe.js:31-34. Hosted WooPay's sessions route rejects the
-	// first-party session when the connect page has no identity to post.
-	const tracksUserIdentity = await getTracksIdentity( settings );
-	if ( tracksUserIdentity ) {
-		params.append( 'tracksUserIdentity', tracksUserIdentity );
-	}
-
-	return `${ settings.woopayHost }/connect/?${ params.toString() }`;
-};
-
-const resolveWooPayConnectCallback = ( callbackName, value ) => {
-	if ( ! wooPayConnectCallbacks[ callbackName ] ) {
-		return;
-	}
-
-	wooPayConnectCallbacks[ callbackName ]( value );
-	delete wooPayConnectCallbacks[ callbackName ];
-};
-
-const attachWooPayConnectListener = () => {
-	if ( wooPayConnectListenerAttached ) {
-		return;
-	}
-
-	window.addEventListener( 'message', ( event ) => {
-		const data = event.data || {};
-		const origin = getWooPayConnectOrigin();
-
-		if ( ! origin || event.origin !== origin ) {
-			return;
-		}
-
-		switch ( data.action ) {
-			case 'set_preemptive_session_data_success':
-				resolveWooPayConnectCallback(
-					'setPreemptiveSessionData',
-					data.value || {}
-				);
-				break;
-			case 'set_preemptive_session_data_error':
-				resolveWooPayConnectCallback( 'setPreemptiveSessionData', {
-					is_error: true,
-				} );
-				break;
-			case 'get_preferred_payment_method_success':
-				resolveWooPayConnectCallback(
-					'getPreferredPaymentMethod',
-					data.value || null
-				);
-				break;
-		}
-	} );
-
-	wooPayConnectListenerAttached = true;
-};
-
-// The connect iframe carries the wait for its connect page, so the classic WooPay script, which can run on the same
-// page, waits for the same load; client 11.2.0 shares that state in window.WooPayConnect (connect/connect-utils.js).
-const getWooPayConnectPostMessage = () => {
-	const existingIframe = document.getElementById( 'woopay-connect-iframe' );
-
-	if ( existingIframe ) {
-		return (
-			existingIframe.wooPayConnectPostMessage ||
-			Promise.resolve( ( message ) => {
-				existingIframe.contentWindow.postMessage(
-					message,
-					settings.woopayHost
-				);
-			} )
-		);
-	}
-
-	preferredCardFetchPromise = null;
-
-	if ( ! settings.woopayHost ) {
-		return Promise.reject();
-	}
-
-	let iframe;
-	const connectPostMessage = new Promise( ( resolve ) => {
-		iframe = document.createElement( 'iframe' );
-		iframe.id = 'woopay-connect-iframe';
-		iframe.height = 0;
-		iframe.width = 0;
-		iframe.title = __( 'WooPay Connect', 'woocommerce' );
-		iframe.style.border = 'none';
-		iframe.style.display = 'block';
-		iframe.style.visibility = 'hidden';
-		iframe.style.position = 'fixed';
-		iframe.style.height = '0';
-		iframe.style.width = '0';
-		iframe.style.pointerEvents = 'none';
-		iframe.addEventListener( 'load', () => {
-			// Appending an iframe without a src loads about:blank first; only the connect page's load counts.
-			if ( ! iframe.getAttribute( 'src' ) ) {
-				return;
-			}
-
-			resolve( ( message ) => {
-				iframe.contentWindow.postMessage(
-					message,
-					settings.woopayHost
-				);
-			} );
-		} );
-
-		// The iframe is in the page at once, so later calls reuse it while the Tracks identity resolves.
-		document.body.appendChild( iframe );
-		getWooPayConnectUrl().then( ( url ) => {
-			iframe.src = url;
-		} );
-	} );
-	iframe.wooPayConnectPostMessage = connectPostMessage;
-
-	return connectPostMessage;
-};
-
-const sendWooPayConnectMessage = (
-	message,
-	callbackName,
-	fallback,
-	timeout
-) => {
-	attachWooPayConnectListener();
-
-	// The timeout starts before the wait for the connect page, as client 11.2.0 sendMessageAndListenWith()
-	// (connect/woopay-connect.js:170-195): an iframe that never loads still settles the request, and an expired
-	// request leaves its callback and never posts.
-	return new Promise( ( resolve ) => {
-		let timeoutId;
-		let isSettled = false;
-		const settle = ( value ) => {
-			if ( isSettled ) {
-				return;
-			}
-
-			isSettled = true;
-			window.clearTimeout( timeoutId );
-			if ( wooPayConnectCallbacks[ callbackName ] === settle ) {
-				delete wooPayConnectCallbacks[ callbackName ];
-			}
-			resolve( value );
-		};
-
-		wooPayConnectCallbacks[ callbackName ] = settle;
-
-		if ( timeout ) {
-			timeoutId = window.setTimeout(
-				() => settle( fallback ),
-				wooPayConnectTimeout
-			);
-		}
-
-		getWooPayConnectPostMessage()
-			.then( ( postMessage ) => {
-				if ( ! isSettled ) {
-					postMessage( message );
-				}
-			} )
-			.catch( () => {
-				settle( fallback );
-			} );
-	} );
-};
-
-// Client 11.2.0 session-connect.js:152-161 resolves null when Connect does not answer.
 const sendPreemptiveSessionDataToWooPay = ( sessionData ) =>
-	sendWooPayConnectMessage(
-		{
-			action: 'setPreemptiveSessionData',
-			value: sessionData,
-		},
-		'setPreemptiveSessionData',
-		null,
-		true
-	);
-
-const fetchPreferredCardFromWooPay = () => {
-	if (
-		preferredCardFetchPromise &&
-		! document.getElementById( 'woopay-connect-iframe' )
-	) {
-		preferredCardFetchPromise = null;
-	}
-
-	if ( preferredCardFetchPromise ) {
-		return preferredCardFetchPromise;
-	}
-
-	preferredCardFetchPromise = sendWooPayConnectMessage(
-		{
-			action: 'getPreferredPaymentMethod',
-		},
-		'getPreferredPaymentMethod',
-		null,
-		true
-	).then( ( card ) => ( isValidPreferredCard( card ) ? card : null ) );
-
-	return preferredCardFetchPromise;
-};
+	wooPayConnect.sendPreemptiveSessionData( sessionData );
 
 const usePreferredCard = () => {
 	const [ preferredCard, setPreferredCard ] = useState(
@@ -397,13 +149,8 @@ const getFieldValue = ( selector ) => {
 	return field ? field.value : '';
 };
 
-const buildWooPayAjaxUrl = ( endpoint ) => {
-	if ( ! settings.wcAjaxUrl ) {
-		return '';
-	}
-
-	return settings.wcAjaxUrl.replace( '%%endpoint%%', `wcpay_${ endpoint }` );
-};
+const buildWooPayAjaxUrl = ( endpoint ) =>
+	buildAjaxUrl( { wcAjaxUrl: settings.wcAjaxUrl }, endpoint );
 
 const postWooPayAjax = async ( endpoint, body ) => {
 	const url = buildWooPayAjaxUrl( endpoint );
@@ -497,18 +244,6 @@ const canInitializeProductWooPay = () => {
 				'wc-variation-is-unavailable'
 			) )
 	);
-};
-
-const deleteSkipWooPayCookie = () => {
-	const cookies = document.cookie ? document.cookie.split( ';' ) : [];
-	const hasSkipCookie = cookies.some(
-		( cookie ) => cookie.trim() === 'skip_woopay=1'
-	);
-
-	if ( hasSkipCookie ) {
-		document.cookie =
-			'skip_woopay=; path=/; expires=Thu, 01 Jan 1970 00:00:00 UTC;';
-	}
 };
 
 const normalizeButtonSize = ( buttonSettings ) => {

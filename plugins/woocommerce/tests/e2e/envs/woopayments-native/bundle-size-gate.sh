@@ -116,16 +116,17 @@ BLOCKS_FRAUD_SCRIPTS = "plugins/woocommerce/assets/client/blocks/wc-payment-meth
 # The client bundles its appearance code into its classic checkout script; native ships it as the card script's dependency.
 CLASSIC_APPEARANCE = "plugins/woocommerce/assets/js/frontend/utils/woopayments-appearance.min.js"
 CORE_BLOCKS = "plugins/woocommerce/assets/client/blocks/"
-# Code the Blocks card, WooPay and express scripts share ships once, in two chunks those scripts depend on. Each
-# chunk is its own asset, the per-script assets leave it out, and the page assets count every file once.
+# Code the Blocks card, WooPay and express scripts share ships once, in a chunk those scripts depend on. It is its
+# own asset, the per-script assets leave it out, and the page assets count every file once.
 # The helpers the classic card, express and WooPay scripts share with them ship once too, in the wc-woopayments-common
-# entry. The client bundles them into each script, so each classic script counts the entry with it, and so do the
-# Blocks shared code and the pages.
+# entry, and the WooPay protocol the card and WooPay scripts share ships once in the wc-woopayments-woopay-common
+# entry. The client bundles both into each script, so each classic script counts the entries it loads, and so do
+# the Blocks shared code and the pages.
 BLOCKS_CARD = CORE_BLOCKS + "wc-payment-method-woopayments.js"
 BLOCKS_WOOPAY = CORE_BLOCKS + "wc-payment-method-woopayments-woopay.js"
 BLOCKS_EXPRESS = CORE_BLOCKS + "wc-payment-method-woopayments-express-checkout.js"
 BLOCKS_COMMON = CORE_BLOCKS + "wc-payment-method-woopayments-common.js"
-BLOCKS_WOOPAY_COMMON = CORE_BLOCKS + "wc-payment-method-woopayments-woopay-common.js"
+BLOCKS_WOOPAY_COMMON = CORE_BLOCKS + "wc-woopayments-woopay-common.js"
 WOOPAYMENTS_COMMON = CORE_BLOCKS + "wc-woopayments-common.js"
 MESSAGING = "plugins/woocommerce/assets/js/frontend/woopayments-payment-method-messaging.min.js"
 CART_BLOCK_MESSAGING = CORE_BLOCKS + "wc-woopayments-cart-block-payment-method-messaging.js"

@@ -391,6 +391,12 @@ const isWooPaymentsAppearanceRequest = ( request ) =>
 const isWooPaymentsCommonRequest = ( request ) =>
 	/^(\.\.?\/)+common$/.test( request );
 
+// The WooPay protocol both checkouts share is its own entry, `wc-woopayments-woopay-common`, which sets
+// `window.wc.woopayments.woopay`. Blocks scripts import it as `./protocol` (from woopay/) or `./woopay/protocol` and load
+// it from that handle; the entry's own modules stay bundled.
+const isWooPaymentsWooPayCommonRequest = ( request ) =>
+	/^(\.\.?\/)+(woopay\/)?protocol$/.test( request );
+
 /**
  * Build config for built-in payment gateway integrations.
  *
@@ -464,26 +470,17 @@ const getPaymentsConfig = ( options = {} ) => {
 				cacheGroups: {
 					...getCacheGroups(),
 					// The WooPayments card, WooPay and express scripts load together on the checkout block. Blocks-only code
-					// they share ships once, in chunks src/Blocks/Payments/Integrations/WooPayments.php registers as their
-					// dependencies: the field styles and the Tracks settings reader for all three, and the WooPay email
-					// check for card and WooPay only, so the cart page (express alone) does not load it. The helpers the
-					// classic scripts share too come from the wc-woopayments-common entry instead.
+					// they share ships once, in a chunk src/Blocks/Payments/Integrations/WooPayments.php registers as their
+					// dependency: the field styles, the Tracks settings reader and the Blocks WooPay requests. The code the
+					// classic scripts share too comes from the wc-woopayments-common and wc-woopayments-woopay-common
+					// entries instead.
 					woopaymentsCommon: {
-						test: /woopayments[\\/](upe-styles|tracks)\.js$/,
+						test: /woopayments[\\/](upe-styles|tracks|woopay[\\/]request)\.js$/,
 						chunks: ( chunk ) =>
 							WOOPAYMENTS_SHARED_CHUNK_ENTRIES.includes(
 								chunk.name
 							),
 						name: 'wc-payment-method-woopayments-common',
-						enforce: true,
-					},
-					woopaymentsWooPayCommon: {
-						test: /woopayments[\\/]woopay[\\/]email-input-iframe\.js$/,
-						chunks: ( chunk ) =>
-							WOOPAYMENTS_SHARED_CHUNK_ENTRIES.includes(
-								chunk.name
-							),
-						name: 'wc-payment-method-woopayments-woopay-common',
 						enforce: true,
 					},
 				},
@@ -506,6 +503,9 @@ const getPaymentsConfig = ( options = {} ) => {
 					if ( isWooPaymentsCommonRequest( request ) ) {
 						return [ 'wc', 'woopayments' ];
 					}
+					if ( isWooPaymentsWooPayCommonRequest( request ) ) {
+						return [ 'wc', 'woopayments', 'woopay' ];
+					}
 					return requestToExternal( request );
 				},
 				dependencyRequestToHandle: ( request ) => {
@@ -517,6 +517,9 @@ const getPaymentsConfig = ( options = {} ) => {
 					}
 					if ( isWooPaymentsCommonRequest( request ) ) {
 						return 'wc-woopayments-common';
+					}
+					if ( isWooPaymentsWooPayCommonRequest( request ) ) {
+						return 'wc-woopayments-woopay-common';
 					}
 					return requestToHandle( request );
 				},
