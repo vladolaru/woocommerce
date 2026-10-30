@@ -35,11 +35,13 @@ import {
 	handleWooPayEmailInput,
 	shouldHandleWooPayEmailInput,
 } from './woopay/email-input-iframe';
+// The save-user section renders whenever WooPay is on, also without the WooPay email check, which is the only part
+// of the card that reads the WooPay protocol entry; so the card bundles the helpers the section needs from their modules.
+import { buildAjaxUrl } from './woopay/protocol/helpers';
 import {
-	buildAjaxUrl,
 	loadPhoneValidation,
 	normalizePhone as normalizeWooPayPhone,
-} from './woopay/protocol';
+} from './woopay/protocol/phone-validation';
 import { PAYMENT_METHOD_NAME } from './constants';
 
 const defaultSettings = getPaymentMethodData( PAYMENT_METHOD_NAME, {} );

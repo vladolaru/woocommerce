@@ -235,7 +235,42 @@ final class WooPayments extends AbstractPaymentMethodType {
 			$data['expressCheckoutParams'] = $this->express_checkout_service->get_express_checkout_params( $this->get_button_context() );
 		}
 
+		if ( $this->is_card_gateway() ) {
+			$this->maybe_remove_woopay_protocol_dependency( $data );
+		}
+
 		return $data;
+	}
+
+	/**
+	 * Take the WooPay protocol off the card script's dependencies when the card's data turns the WooPay email check off,
+	 * so a checkout without it loads no protocol entry.
+	 *
+	 * The card script's built asset file lists the protocol, and the script calls it only to wire that check, when both
+	 * flags in this data are truthy. The flags are read the way the script reads this JSON data. The WooPay scripts keep
+	 * their own dependency on the protocol.
+	 *
+	 * @param array<string,mixed> $data The card's Blocks payment method data.
+	 */
+	private function maybe_remove_woopay_protocol_dependency( array $data ): void {
+		if ( self::is_truthy_in_json( $data['isWooPayEnabled'] ?? null ) && self::is_truthy_in_json( $data['isWooPayEmailInputEnabled'] ?? null ) ) {
+			return;
+		}
+
+		$script = wp_scripts()->query( self::PAYMENT_METHOD_SCRIPT_HANDLE, 'registered' );
+		if ( $script instanceof \_WP_Dependency ) {
+			$script->deps = array_values( array_diff( $script->deps, array( WooPaymentsFrontendAssets::WOOPAY_COMMON_SCRIPT_HANDLE ) ) );
+		}
+	}
+
+	/**
+	 * Tell whether a payment data value is truthy in the browser once it is printed as JSON: false, null, 0 and an
+	 * empty string are falsy there, and every other value, the string '0' and an empty array included, is truthy.
+	 *
+	 * @param mixed $value Payment data value.
+	 */
+	private static function is_truthy_in_json( $value ): bool {
+		return ! in_array( $value, array( null, false, 0, 0.0, '' ), true );
 	}
 
 	/**

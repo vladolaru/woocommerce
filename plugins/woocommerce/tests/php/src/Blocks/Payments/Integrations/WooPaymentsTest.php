@@ -650,6 +650,55 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * Card payment data whose WooPay flags turn the Blocks WooPay email check on or off, as the card script reads them.
+	 *
+	 * @return array<string,array{0:mixed,1:mixed,2:bool}>
+	 */
+	public function provide_woopay_email_check_flags(): array {
+		return array(
+			'WooPay and its email input on'      => array( true, true, true ),
+			// The email input flag does not follow the WooPay setting (WooPay\SessionService::get_woopay_frontend_config()).
+			'WooPay off'                         => array( false, true, false ),
+			'WooPay on with the email input off' => array( true, false, false ),
+			'a filtered "0", which the browser reads as on' => array( true, '0', true ),
+		);
+	}
+
+	/**
+	 * @testdox Should load the WooPay protocol with the Blocks card script only when the card data turns the WooPay email check on: $_dataName.
+	 *
+	 * @dataProvider provide_woopay_email_check_flags
+	 *
+	 * @param mixed $woopay_enabled      The card data's isWooPayEnabled.
+	 * @param mixed $email_input_enabled The card data's isWooPayEmailInputEnabled.
+	 * @param bool  $listed              Whether the card script lists the protocol.
+	 */
+	public function test_blocks_card_lists_the_woopay_protocol_only_with_the_email_check( $woopay_enabled, $email_input_enabled, bool $listed ): void {
+		$this->go_to_block_page( 'woocommerce/checkout', 'woocommerce_checkout_page_id' );
+		$integration = $this->create_registered_integration(
+			false,
+			false,
+			array(
+				'isWooPayEnabled'           => $woopay_enabled,
+				'isWooPayEmailInputEnabled' => $email_input_enabled,
+			)
+		);
+
+		$dependencies = $this->render_block_assets( $integration, 'woocommerce/checkout', true );
+
+		$deps   = wp_scripts()->registered['wc-payment-method-woopayments']->deps;
+		$loaded = $this->get_dependency_closure( $dependencies );
+		if ( $listed ) {
+			$this->assertContains( WooPaymentsFrontendAssets::WOOPAY_COMMON_SCRIPT_HANDLE, $deps, 'The card script wires the WooPay email check from window.wc.woopayments.woopay.' );
+			$this->assertTrue( wp_script_is( WooPaymentsFrontendAssets::WOOPAY_COMMON_SCRIPT_HANDLE, 'registered' ), 'An unregistered dependency would make WordPress drop the card script.' );
+		} else {
+			$this->assertNotContains( WooPaymentsFrontendAssets::WOOPAY_COMMON_SCRIPT_HANDLE, $deps, 'Without the email check the card script never calls window.wc.woopayments.woopay.' );
+			$this->assertNotContains( WooPaymentsFrontendAssets::WOOPAY_COMMON_SCRIPT_HANDLE, $loaded, 'Without the WooPay button nothing else on the page loads the protocol.' );
+		}
+		$this->assertContains( 'wc-payment-method-woopayments-common', $deps, 'The card keeps its other dependencies.' );
+	}
+
+	/**
 	 * The cart and checkout pages, each with its block in the page content, from a template saved in the database, and
 	 * from the active theme's template file.
 	 *
@@ -1421,16 +1470,20 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 	/**
 	 * Create an active WooPayments Blocks integration that registers through the real Blocks asset API.
 	 *
-	 * @param bool $show_woopay_button  Whether the WooPay button is available.
-	 * @param bool $show_express_button Whether the Apple Pay and Google Pay buttons are available.
+	 * @param bool                     $show_woopay_button  Whether the WooPay button is available.
+	 * @param bool                     $show_express_button Whether the Apple Pay and Google Pay buttons are available.
+	 * @param array<string,mixed>|null $payment_method_data The Blocks payment method data the checkout assets build, or null to leave it unbuilt.
 	 * @return WooPayments
 	 */
-	private function create_registered_integration( bool $show_woopay_button = false, bool $show_express_button = false ): WooPayments {
+	private function create_registered_integration( bool $show_woopay_button = false, bool $show_express_button = false, ?array $payment_method_data = null ): WooPayments {
 		$assets = $this->getMockBuilder( WooPaymentsCheckoutAssets::class )
 			->disableOriginalConstructor()
-			->onlyMethods( array( 'should_expose_checkout_surface' ) )
+			->onlyMethods( null === $payment_method_data ? array( 'should_expose_checkout_surface' ) : array( 'should_expose_checkout_surface', 'get_blocks_payment_method_data' ) )
 			->getMock();
 		$assets->method( 'should_expose_checkout_surface' )->willReturn( true );
+		if ( null !== $payment_method_data ) {
+			$assets->method( 'get_blocks_payment_method_data' )->willReturn( $payment_method_data );
+		}
 		$provider = $this->getMockBuilder( WooPaymentsProvider::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'can_process_payments' ) )
@@ -1509,17 +1562,22 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 
 	/**
 	 * Run the asset steps of a Cart or Checkout block render, in AbstractBlock::render_callback()'s order: the block
-	 * script's payment method dependencies first, then the block's render action.
+	 * script's payment method dependencies first, then the block's payment method data when asked, then the block's
+	 * render action.
 	 *
 	 * @param WooPayments $integration Integration to register and initialize.
 	 * @param string      $block_name  `woocommerce/cart` or `woocommerce/checkout`.
+	 * @param bool        $with_data   Whether the block also reads the payment method data, as its enqueue_data() step does.
 	 * @return string[] The payment method dependencies of the block's frontend script.
 	 */
-	private function render_block_assets( WooPayments $integration, string $block_name ): array {
+	private function render_block_assets( WooPayments $integration, string $block_name, bool $with_data = false ): array {
 		$block = 'woocommerce/cart' === $block_name ? 'cart' : 'checkout';
 		$integration->initialize();
 		$api          = new Api( $this->create_payment_method_registry( $integration ), $this->createMock( AssetDataRegistry::class ) );
 		$dependencies = $api->add_payment_method_script_dependencies( array(), 'wc-' . $block . '-block-frontend' );
+		if ( $with_data ) {
+			$api->add_payment_method_script_data();
+		}
 
 		do_action( 'woocommerce_blocks_enqueue_' . $block . '_block_scripts_after' );
 
