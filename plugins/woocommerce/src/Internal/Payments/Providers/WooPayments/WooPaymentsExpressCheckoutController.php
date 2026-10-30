@@ -45,6 +45,13 @@ class WooPaymentsExpressCheckoutController implements RegisterHooksInterface {
 	private SessionController $woopay_controller;
 
 	/**
+	 * Registrar of the script handles the WooPayments shopper scripts share.
+	 *
+	 * @var WooPaymentsFrontendAssets
+	 */
+	private WooPaymentsFrontendAssets $frontend_assets;
+
+	/**
 	 * Whether express checkout buttons have already rendered in this request.
 	 *
 	 * @var bool
@@ -59,11 +66,13 @@ class WooPaymentsExpressCheckoutController implements RegisterHooksInterface {
 	 * @param WooPaymentsExpressCheckoutService $express_checkout_service Express checkout service.
 	 * @param WooPaymentsFraudPreventionService $fraud_prevention_service Fraud prevention service.
 	 * @param SessionController                 $woopay_controller        WooPay controller.
+	 * @param WooPaymentsFrontendAssets         $frontend_assets          Registrar of the shared script handles.
 	 */
-	final public function init( WooPaymentsExpressCheckoutService $express_checkout_service, WooPaymentsFraudPreventionService $fraud_prevention_service, SessionController $woopay_controller ): void {
+	final public function init( WooPaymentsExpressCheckoutService $express_checkout_service, WooPaymentsFraudPreventionService $fraud_prevention_service, SessionController $woopay_controller, WooPaymentsFrontendAssets $frontend_assets ): void {
 		$this->express_checkout_service = $express_checkout_service;
 		$this->fraud_prevention_service = $fraud_prevention_service;
 		$this->woopay_controller        = $woopay_controller;
+		$this->frontend_assets          = $frontend_assets;
 	}
 
 	/**
@@ -261,7 +270,7 @@ class WooPaymentsExpressCheckoutController implements RegisterHooksInterface {
 	 * Register the classic express checkout assets; this controller is their only registrar.
 	 */
 	private function register_classic_express_checkout_assets(): void {
-		WooPaymentsFrontendAssets::register_stripe_script();
+		$this->frontend_assets->register_stripe_script();
 
 		if ( ! wp_script_is( self::CLASSIC_EXPRESS_CHECKOUT_SCRIPT_HANDLE, 'registered' ) ) {
 			$suffix = defined( 'SCRIPT_DEBUG' ) && SCRIPT_DEBUG ? '' : '.min';

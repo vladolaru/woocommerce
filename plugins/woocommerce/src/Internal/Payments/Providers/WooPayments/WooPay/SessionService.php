@@ -18,7 +18,6 @@ use WP_REST_Request;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsClientVersion;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendAssets;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendTrackingController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderPayAccess;
@@ -76,6 +75,11 @@ class SessionService {
 	 * Client::build_signed_request() (missing_token, malformed_token, invalid_body).
 	 */
 	private const KNOWN_REQUEST_ERROR_CODES = array( 'http_request_failed', 'http_request_not_executed', 'http_failure', 'missing_token', 'malformed_token', 'invalid_body' );
+
+	/**
+	 * Core's mobile phone validation (packages/js/components phone-number-input), bundled once by the Blocks build.
+	 */
+	private const PHONE_VALIDATION_SCRIPT_PATH = 'assets/client/blocks/wc-woopayments-phone-validation.js';
 
 	/**
 	 * WooPayments account service.
@@ -813,8 +817,19 @@ class SessionService {
 
 		return array(
 			'PRE_CHECK_SAVE_MY_INFO'         => ! empty( $account_data['pre_check_save_my_info'] ),
-			'woopayPhoneValidationScriptUrl' => WooPaymentsFrontendAssets::get_phone_validation_script_url(),
+			'woopayPhoneValidationScriptUrl' => $this->get_phone_validation_script_url(),
 		);
+	}
+
+	/**
+	 * URL of the phone validation script the Blocks and classic WooPay save-user sections load when the shopper opts in.
+	 *
+	 * It is not registered as a handle: nothing loads it with the page.
+	 *
+	 * @return string
+	 */
+	private function get_phone_validation_script_url(): string {
+		return add_query_arg( 'ver', WC_VERSION, WC()->plugin_url() . '/' . self::PHONE_VALIDATION_SCRIPT_PATH );
 	}
 
 	/**

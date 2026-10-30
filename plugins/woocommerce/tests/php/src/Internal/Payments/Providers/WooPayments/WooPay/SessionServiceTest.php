@@ -4,7 +4,6 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\WooPay;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExpressCheckoutStoreApiExtension;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendAssets;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\AdaptedExtensions;
@@ -1443,7 +1442,7 @@ class SessionServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame(
 			array(
 				'PRE_CHECK_SAVE_MY_INFO'         => true,
-				'woopayPhoneValidationScriptUrl' => WooPaymentsFrontendAssets::get_phone_validation_script_url(),
+				'woopayPhoneValidationScriptUrl' => WC()->plugin_url() . '/assets/client/blocks/wc-woopayments-phone-validation.js?ver=' . WC_VERSION,
 			),
 			$sut->get_save_user_checkout_data()
 		);

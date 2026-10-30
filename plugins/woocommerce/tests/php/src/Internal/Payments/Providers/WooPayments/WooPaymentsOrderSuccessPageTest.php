@@ -10,6 +10,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethod
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\LinkToken;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDuplicatePaymentPreventionService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendAssets;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendTrackingController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderSuccessPage;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenClassMapController;
@@ -1019,7 +1020,7 @@ class WooPaymentsOrderSuccessPageTest extends WC_Unit_Test_Case {
 			 */
 			protected function wait_before_intent_recheck(): void {}
 		};
-		$page->init( new PaymentMethodRegistry(), $account_service, $tracker, $api_client );
+		$page->init( new PaymentMethodRegistry(), $account_service, new WooPaymentsFrontendAssets(), $tracker, $api_client );
 
 		return $page;
 	}

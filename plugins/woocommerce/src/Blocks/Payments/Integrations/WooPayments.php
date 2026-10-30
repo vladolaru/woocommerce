@@ -194,11 +194,12 @@ final class WooPayments extends AbstractPaymentMethodType {
 		// The Blocks express script reads the token only from the page, as client 11.2.0 provides it (class-wc-payments-blocks-payment-method.php:77).
 		wc_get_container()->get( WooPaymentsFraudPreventionService::class )->maybe_enqueue_token_script();
 
-		$handles = array();
+		$frontend_assets = wc_get_container()->get( WooPaymentsFrontendAssets::class );
+		$handles         = array();
 		if ( ! $this->is_blocks_cart_only_surface() ) {
-			WooPaymentsFrontendAssets::register_stripe_script();
+			$frontend_assets->register_stripe_script();
 			// The card script's asset file lists this handle: FingerprintJS is a build external.
-			$this->checkout_assets->register_fingerprint_script();
+			$frontend_assets->register_fingerprint_script();
 
 			$this->asset_api->register_script(
 				self::PAYMENT_METHOD_SCRIPT_HANDLE,
@@ -234,7 +235,7 @@ final class WooPayments extends AbstractPaymentMethodType {
 		}
 
 		if ( $this->is_base_gateway_integration() && $this->should_enqueue_express_checkout_assets() ) {
-			WooPaymentsFrontendAssets::register_stripe_script();
+			$frontend_assets->register_stripe_script();
 			$this->asset_api->register_script(
 				self::EXPRESS_CHECKOUT_SCRIPT_HANDLE,
 				'assets/client/blocks/wc-payment-method-woopayments-express-checkout.js',

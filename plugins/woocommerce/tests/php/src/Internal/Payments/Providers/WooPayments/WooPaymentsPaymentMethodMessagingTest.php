@@ -5,6 +5,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\PaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendAssets;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendStylesService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentMethodMessaging;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\WooCommerceSubscriptionsDoubles;
@@ -547,7 +548,7 @@ class WooPaymentsPaymentMethodMessagingTest extends WC_Unit_Test_Case {
 		$frontend_styles_service->method( 'get_or_create_styles_cache_version' )->willReturn( 'shared-styles-token' );
 
 		$controller = new WooPaymentsPaymentMethodMessaging();
-		$controller->init( $account_service, new PaymentMethodRegistry(), $frontend_styles_service );
+		$controller->init( $account_service, new PaymentMethodRegistry(), new WooPaymentsFrontendAssets(), $frontend_styles_service );
 
 		return $controller;
 	}

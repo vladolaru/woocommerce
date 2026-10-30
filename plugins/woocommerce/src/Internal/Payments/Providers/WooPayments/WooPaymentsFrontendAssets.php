@@ -10,14 +10,19 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 use Automattic\Jetpack\Constants;
 
 /**
- * Registers the scripts the WooPayments checkout surfaces share, Stripe.js and the Stripe Elements appearance utility,
- * and tells which blocks and shortcodes the current page carries.
+ * Registers the script handles the WooPayments shopper scripts share: Stripe.js, the Stripe Elements appearance
+ * utility and FingerprintJS. Each surface registers its own scripts and lists these as dependencies.
+ *
+ * It also tells which blocks and shortcodes the current page carries.
  *
  * @since 11.0.0
  * @internal
  */
-final class WooPaymentsFrontendAssets {
+class WooPaymentsFrontendAssets {
 
+	/**
+	 * Stripe Elements appearance utility script handle.
+	 */
 	public const APPEARANCE_SCRIPT_HANDLE = 'wc-woopayments-appearance';
 
 	/**
@@ -26,21 +31,21 @@ final class WooPaymentsFrontendAssets {
 	public const STRIPE_SCRIPT_HANDLE = 'stripe';
 
 	/**
+	 * Handle for the vendored FingerprintJS device-fingerprinting script.
+	 */
+	public const FINGERPRINT_SCRIPT_HANDLE = 'wc-woopayments-fingerprintjs';
+
+	/**
 	 * Stripe.js URL. Stripe serves v3 from its own domain only and asks sites not to pin or bundle it.
 	 */
 	private const STRIPE_SCRIPT_URL = 'https://js.stripe.com/v3/';
-
-	/**
-	 * Core's mobile phone validation (packages/js/components phone-number-input), bundled once by the Blocks build.
-	 */
-	private const PHONE_VALIDATION_SCRIPT_PATH = 'assets/client/blocks/wc-woopayments-phone-validation.js';
 
 	/**
 	 * Register Stripe.js for the WooPayments surfaces that need it, unless the `stripe` handle is already registered.
 	 *
 	 * @since 11.2.0
 	 */
-	public static function register_stripe_script(): void {
+	public function register_stripe_script(): void {
 		if ( wp_script_is( self::STRIPE_SCRIPT_HANDLE, 'registered' ) ) {
 			return;
 		}
@@ -52,7 +57,7 @@ final class WooPaymentsFrontendAssets {
 	/**
 	 * Register the shared Stripe Elements appearance utility.
 	 */
-	public static function register_appearance_script(): void {
+	public function register_appearance_script(): void {
 		if ( wp_script_is( self::APPEARANCE_SCRIPT_HANDLE, 'registered' ) ) {
 			return;
 		}
@@ -61,6 +66,31 @@ final class WooPaymentsFrontendAssets {
 		wp_register_script(
 			self::APPEARANCE_SCRIPT_HANDLE,
 			WC()->plugin_url() . '/assets/js/frontend/utils/woopayments-appearance' . $suffix . '.js',
+			array(),
+			WC_VERSION,
+			true
+		);
+	}
+
+	/**
+	 * Register the vendored FingerprintJS script, which sets `window.FingerprintJS`.
+	 *
+	 * Classic checkout and the Blocks card script both load it from this one handle
+	 * to compute the buyer device fingerprint the platform's risk rules score on.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @return void
+	 */
+	public function register_fingerprint_script(): void {
+		if ( wp_script_is( self::FINGERPRINT_SCRIPT_HANDLE, 'registered' ) ) {
+			return;
+		}
+
+		// Pre-minified upstream UMD build, so there is no suffix variant.
+		wp_register_script(
+			self::FINGERPRINT_SCRIPT_HANDLE,
+			WC()->plugin_url() . '/assets/js/fingerprintjs/fp.umd.min.js',
 			array(),
 			WC_VERSION,
 			true
@@ -109,16 +139,5 @@ final class WooPaymentsFrontendAssets {
 		$post = self::get_current_post();
 
 		return null !== $post && has_shortcode( $post->post_content, $tag );
-	}
-
-	/**
-	 * URL of the phone validation script the Blocks and classic WooPay save-user sections load when the shopper opts in.
-	 *
-	 * It is not registered as a handle: nothing loads it with the page.
-	 *
-	 * @return string
-	 */
-	public static function get_phone_validation_script_url(): string {
-		return add_query_arg( 'ver', WC_VERSION, WC()->plugin_url() . '/' . self::PHONE_VALIDATION_SCRIPT_PATH );
 	}
 }

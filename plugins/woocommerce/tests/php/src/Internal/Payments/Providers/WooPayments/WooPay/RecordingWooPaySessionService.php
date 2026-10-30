@@ -3,7 +3,6 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\WooPay;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendAssets;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\SessionService;
 use WP_REST_Request;
 
@@ -218,7 +217,7 @@ class RecordingWooPaySessionService extends SessionService {
 	public function get_save_user_checkout_data(): array {
 		return array(
 			'PRE_CHECK_SAVE_MY_INFO'         => true,
-			'woopayPhoneValidationScriptUrl' => WooPaymentsFrontendAssets::get_phone_validation_script_url(),
+			'woopayPhoneValidationScriptUrl' => WC()->plugin_url() . '/assets/client/blocks/wc-woopayments-phone-validation.js?ver=' . WC_VERSION,
 		);
 	}
 

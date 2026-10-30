@@ -57,6 +57,13 @@ class WooPaymentsPaymentMethodMessaging implements RegisterHooksInterface {
 	private ?WooPaymentsFrontendStylesService $frontend_styles_service = null;
 
 	/**
+	 * Registrar of the script handles the WooPayments shopper scripts share.
+	 *
+	 * @var WooPaymentsFrontendAssets
+	 */
+	private WooPaymentsFrontendAssets $frontend_assets;
+
+	/**
 	 * Cached messaging eligibility for the current request.
 	 *
 	 * @var bool|null
@@ -77,15 +84,18 @@ class WooPaymentsPaymentMethodMessaging implements RegisterHooksInterface {
 	 *
 	 * @param WooPaymentsAccountService             $account_service         WooPayments account service.
 	 * @param PaymentMethodRegistry                 $payment_method_registry WooPayments payment method registry.
+	 * @param WooPaymentsFrontendAssets             $frontend_assets         Registrar of the shared script handles.
 	 * @param WooPaymentsFrontendStylesService|null $frontend_styles_service Optional shared frontend styles service.
 	 */
 	final public function init(
 		WooPaymentsAccountService $account_service,
 		PaymentMethodRegistry $payment_method_registry,
+		WooPaymentsFrontendAssets $frontend_assets,
 		?WooPaymentsFrontendStylesService $frontend_styles_service = null
 	): void {
 		$this->account_service         = $account_service;
 		$this->payment_method_registry = $payment_method_registry;
+		$this->frontend_assets         = $frontend_assets;
 		$this->frontend_styles_service = $frontend_styles_service;
 	}
 
@@ -286,7 +296,7 @@ class WooPaymentsPaymentMethodMessaging implements RegisterHooksInterface {
 	 * @param bool $is_cart_block Whether the current surface is the cart block.
 	 */
 	private function register_site_messaging_assets( bool $is_cart_block ): void {
-		WooPaymentsFrontendAssets::register_stripe_script();
+		$this->frontend_assets->register_stripe_script();
 
 		if ( $is_cart_block ) {
 			$this->register_cart_block_assets();
@@ -295,7 +305,7 @@ class WooPaymentsPaymentMethodMessaging implements RegisterHooksInterface {
 
 		$suffix = Constants::is_true( 'SCRIPT_DEBUG' ) ? '' : '.min';
 
-		WooPaymentsFrontendAssets::register_appearance_script();
+		$this->frontend_assets->register_appearance_script();
 
 		if ( ! wp_script_is( self::SCRIPT_HANDLE, 'registered' ) ) {
 			wp_register_script(

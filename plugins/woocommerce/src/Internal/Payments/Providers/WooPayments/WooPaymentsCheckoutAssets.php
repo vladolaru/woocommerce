@@ -44,11 +44,6 @@ class WooPaymentsCheckoutAssets {
 	private const CLASSIC_SCRIPT_HANDLE = 'wc-woopayments-checkout';
 
 	/**
-	 * Handle for the vendored FingerprintJS device-fingerprinting script.
-	 */
-	private const FINGERPRINT_SCRIPT_HANDLE = 'wc-woopayments-fingerprintjs';
-
-	/**
 	 * Classic checkout style handle.
 	 */
 	private const CLASSIC_STYLE_HANDLE = 'wc-woopayments-checkout';
@@ -274,6 +269,13 @@ class WooPaymentsCheckoutAssets {
 	 * @var WooPaymentsExpressCheckoutService|null
 	 */
 	private ?WooPaymentsExpressCheckoutService $express_checkout_service = null;
+
+	/**
+	 * Registrar of the script handles the WooPayments shopper scripts share.
+	 *
+	 * @var WooPaymentsFrontendAssets|null
+	 */
+	private ?WooPaymentsFrontendAssets $frontend_assets = null;
 
 	/**
 	 * Whether the aggregate classic checkout config has been localized.
@@ -801,47 +803,23 @@ class WooPaymentsCheckoutAssets {
 	}
 
 	/**
-	 * Register the vendored FingerprintJS script, which sets `window.FingerprintJS`.
-	 *
-	 * Classic checkout and the Blocks card script both load it from this one handle
-	 * to compute the buyer device fingerprint the platform's risk rules score on.
-	 *
-	 * @since 11.2.0
-	 *
-	 * @return void
-	 */
-	public function register_fingerprint_script(): void {
-		if ( wp_script_is( self::FINGERPRINT_SCRIPT_HANDLE, 'registered' ) ) {
-			return;
-		}
-
-		// Pre-minified upstream UMD build, so there is no suffix variant.
-		wp_register_script(
-			self::FINGERPRINT_SCRIPT_HANDLE,
-			WC()->plugin_url() . '/assets/js/fingerprintjs/fp.umd.min.js',
-			array(),
-			WC_VERSION,
-			true
-		);
-	}
-
-	/**
 	 * Register the classic checkout assets.
 	 *
 	 * @param string[] $supports Card gateway support features.
 	 * @return void
 	 */
 	public function register_classic_assets( array $supports = array() ): void {
-		WooPaymentsFrontendAssets::register_stripe_script();
+		$frontend_assets = $this->get_frontend_assets();
+		$frontend_assets->register_stripe_script();
 
 		$suffix = Constants::is_true( 'SCRIPT_DEBUG' ) ? '' : '.min';
 
-		WooPaymentsFrontendAssets::register_appearance_script();
+		$frontend_assets->register_appearance_script();
 
-		$this->register_fingerprint_script();
+		$frontend_assets->register_fingerprint_script();
 
 		if ( ! wp_script_is( self::CLASSIC_SCRIPT_HANDLE, 'registered' ) ) {
-			$dependencies = array( 'jquery', 'wc-checkout', WooPaymentsFrontendAssets::STRIPE_SCRIPT_HANDLE, self::FINGERPRINT_SCRIPT_HANDLE, WooPaymentsFrontendAssets::APPEARANCE_SCRIPT_HANDLE );
+			$dependencies = array( 'jquery', 'wc-checkout', WooPaymentsFrontendAssets::STRIPE_SCRIPT_HANDLE, WooPaymentsFrontendAssets::FINGERPRINT_SCRIPT_HANDLE, WooPaymentsFrontendAssets::APPEARANCE_SCRIPT_HANDLE );
 			// tokenization-form.js must listen before this script mounts the card element and fires
 			// `wc-credit-card-form-init`, on any theme (client 11.1.0 includes/class-wc-payments-checkout.php:130-131).
 			if ( in_array( PaymentGatewayFeature::TOKENIZATION, $supports, true ) ) {
@@ -1507,6 +1485,19 @@ class WooPaymentsCheckoutAssets {
 		}
 
 		return $this->express_checkout_service;
+	}
+
+	/**
+	 * Get the registrar of the shared WooPayments script handles.
+	 *
+	 * @return WooPaymentsFrontendAssets
+	 */
+	private function get_frontend_assets(): WooPaymentsFrontendAssets {
+		if ( null === $this->frontend_assets ) {
+			$this->frontend_assets = wc_get_container()->get( WooPaymentsFrontendAssets::class );
+		}
+
+		return $this->frontend_assets;
 	}
 
 	/**

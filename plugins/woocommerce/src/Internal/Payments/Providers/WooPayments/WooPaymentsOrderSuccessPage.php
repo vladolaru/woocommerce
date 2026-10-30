@@ -64,6 +64,13 @@ class WooPaymentsOrderSuccessPage implements RegisterHooksInterface {
 	private ?WooPaymentsFrontendTrackingController $frontend_tracking_controller = null;
 
 	/**
+	 * Registrar of the script handles the WooPayments shopper scripts share.
+	 *
+	 * @var WooPaymentsFrontendAssets
+	 */
+	private WooPaymentsFrontendAssets $frontend_assets;
+
+	/**
 	 * Card brand logos for the order received page.
 	 *
 	 * Client 11.1.0 (class-wc-payments-order-success-page.php, show_card_payment_method_name) draws `assets/images/cards/{brand}.svg`; core ships each under a `-color` name.
@@ -114,12 +121,14 @@ class WooPaymentsOrderSuccessPage implements RegisterHooksInterface {
 	 *
 	 * @param PaymentMethodRegistry                      $payment_method_registry Payment-method definition registry.
 	 * @param WooPaymentsAccountService                  $account_service              WooPayments account service.
+	 * @param WooPaymentsFrontendAssets                  $frontend_assets              Registrar of the shared script handles.
 	 * @param WooPaymentsFrontendTrackingController|null $frontend_tracking_controller Optional frontend tracking controller.
 	 * @param Client|null                                $api_client                   Optional API client for the redirect-method intent re-check.
 	 */
-	final public function init( PaymentMethodRegistry $payment_method_registry, WooPaymentsAccountService $account_service, ?WooPaymentsFrontendTrackingController $frontend_tracking_controller = null, ?Client $api_client = null ): void {
+	final public function init( PaymentMethodRegistry $payment_method_registry, WooPaymentsAccountService $account_service, WooPaymentsFrontendAssets $frontend_assets, ?WooPaymentsFrontendTrackingController $frontend_tracking_controller = null, ?Client $api_client = null ): void {
 		$this->payment_method_registry      = $payment_method_registry;
 		$this->account_service              = $account_service;
+		$this->frontend_assets              = $frontend_assets;
 		$this->frontend_tracking_controller = $frontend_tracking_controller;
 		$this->api_client                   = $api_client;
 	}
@@ -495,7 +504,7 @@ class WooPaymentsOrderSuccessPage implements RegisterHooksInterface {
 		}
 
 		$suffix = Constants::is_true( 'SCRIPT_DEBUG' ) ? '' : '.min';
-		WooPaymentsFrontendAssets::register_appearance_script();
+		$this->frontend_assets->register_appearance_script();
 
 		wp_enqueue_style(
 			self::ASSET_HANDLE,
