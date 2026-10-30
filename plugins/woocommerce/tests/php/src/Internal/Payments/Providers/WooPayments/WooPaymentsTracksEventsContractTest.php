@@ -497,6 +497,12 @@ class WooPaymentsTracksEventsContractTest extends WC_Unit_Test_Case {
 
 		$is_legacy_frontend = false !== strpos( str_replace( '\\', '/', $file ), '/client/legacy/js/frontend/woopayments-' );
 
+		// The shared WooPay protocol sends shopper events through the `recordEvent` callback each host passes in,
+		// which is the host's `wcpay_` shopper sender. Read those calls as that sender.
+		if ( false !== strpos( str_replace( '\\', '/', $file ), '/woopay/protocol/' ) ) {
+			$code = str_replace( 'args.recordEvent(', 'protocolShopperEvent(', $code );
+		}
+
 		$recorders = array(
 			'recordEvent'                => array(
 				'arg'    => 0,
@@ -504,6 +510,10 @@ class WooPaymentsTracksEventsContractTest extends WC_Unit_Test_Case {
 			),
 			'recordWooPaymentsUserEvent' => array(
 				'arg'    => 1,
+				'prefix' => 'wcpay_',
+			),
+			'protocolShopperEvent'       => array(
+				'arg'    => 0,
 				'prefix' => 'wcpay_',
 			),
 		);
