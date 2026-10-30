@@ -367,6 +367,29 @@ class WooPaymentsCheckoutAssets {
 	}
 
 	/**
+	 * Get the config keys that both the card checkout scripts and the WooPay script read, built in one place.
+	 *
+	 * It reads no customer, styles or session data and writes nothing, so WooPay pages can use it without the card config.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @return array{ajaxUrl:string,platformTrackerNonce:string,tracksUrl:string,tracksRestNonce:string,isShopperTrackingEnabled:bool,woopayHost:string,testMode:bool,wcpayVersionNumber:string}
+	 */
+	public function get_shared_script_config(): array {
+		return array(
+			'ajaxUrl'                  => admin_url( 'admin-ajax.php' ),
+			'platformTrackerNonce'     => wp_create_nonce( 'platform_tracks_nonce' ),
+			'tracksUrl'                => $this->get_frontend_tracking_controller()->get_tracks_rest_url(),
+			'tracksRestNonce'          => wp_create_nonce( 'wp_rest' ),
+			// Store-level only, as client 11.2.0 sets it (class-woopay-tracker.php:663-665); WooPay events are checked when recorded.
+			'isShopperTrackingEnabled' => $this->get_frontend_tracking_controller()->is_shopper_event_tracking_enabled(),
+			'woopayHost'               => SessionService::get_woopay_url(),
+			'testMode'                 => $this->get_account_service()->is_test_mode_enabled(),
+			'wcpayVersionNumber'       => WooPaymentsClientVersion::VERSION,
+		);
+	}
+
+	/**
 	 * Build the gateway-independent part of the payment fields config.
 	 *
 	 * @param string[]                                                                  $supports        Card gateway support features.
@@ -392,17 +415,18 @@ class WooPaymentsCheckoutAssets {
 		 * @param string $account_id The account ID for intent confirmation.
 		 */
 		$account_id_for_intent_confirmation = (string) apply_filters( 'wc_payments_account_id_for_intent_confirmation', '' );
+		$shared_script_config               = $this->get_shared_script_config();
 		$config                             = array(
 			'publishableKey'                           => $this->get_account_service()->get_publishable_key(),
 			'accountId'                                => $this->get_account_service()->get_account_id(),
 			'locale'                                   => WooPaymentsLocaleUtils::get_stripe_locale(),
 			'gatewayId'                                => '',
-			'ajaxUrl'                                  => admin_url( 'admin-ajax.php' ),
+			'ajaxUrl'                                  => $shared_script_config['ajaxUrl'],
 			'wcAjaxUrl'                                => \WC_AJAX::get_endpoint( '%%endpoint%%' ),
 			'paymentMethodsConfig'                     => array(),
 			'paymentListWalletsConfig'                 => array(),
 			'paymentMethodTypes'                       => array(),
-			'testMode'                                 => $this->get_account_service()->is_test_mode_enabled(),
+			'testMode'                                 => $shared_script_config['testMode'],
 			'enabledBillingFields'                     => $this->get_enabled_billing_fields(),
 			'currency'                                 => $payment_context['currency'],
 			'cartTotal'                                => $payment_context['total'],
@@ -428,13 +452,13 @@ class WooPaymentsCheckoutAssets {
 			'isWooPayEmailInputEnabled'                => false,
 			'isWooPayDirectCheckoutEnabled'            => false,
 			'isWooPayGlobalThemeSupportEnabled'        => false,
-			'isShopperTrackingEnabled'                 => $this->get_frontend_tracking_controller()->is_shopper_event_tracking_enabled(),
-			'platformTrackerNonce'                     => wp_create_nonce( 'platform_tracks_nonce' ),
-			'tracksUrl'                                => $this->get_frontend_tracking_controller()->get_tracks_rest_url(),
-			'tracksRestNonce'                          => wp_create_nonce( 'wp_rest' ),
-			'woopayHost'                               => SessionService::get_woopay_url(),
+			'isShopperTrackingEnabled'                 => $shared_script_config['isShopperTrackingEnabled'],
+			'platformTrackerNonce'                     => $shared_script_config['platformTrackerNonce'],
+			'tracksUrl'                                => $shared_script_config['tracksUrl'],
+			'tracksRestNonce'                          => $shared_script_config['tracksRestNonce'],
+			'woopayHost'                               => $shared_script_config['woopayHost'],
 			'accountIdForIntentConfirmation'           => $account_id_for_intent_confirmation,
-			'wcpayVersionNumber'                       => WooPaymentsClientVersion::VERSION,
+			'wcpayVersionNumber'                       => $shared_script_config['wcpayVersionNumber'],
 			'icon'                                     => '',
 			'isExpressCheckoutInPaymentMethodsEnabled' => $this->is_express_checkout_in_payment_methods_enabled(),
 			'confirmationErrorMessage'                 => __( 'There was a problem confirming your payment.', 'woocommerce' ),

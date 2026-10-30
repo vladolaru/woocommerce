@@ -475,6 +475,91 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * The WooPay objects read these keys on pages that have no card config, so building them must not read the customer,
+	 * the styles cache or the session, build the WooPay config, or write an option.
+	 *
+	 * @testdox The shared script config carries the eight keys both checkout scripts read, without side effects, test mode $test_mode.
+	 * @testWith [true]
+	 *           [false]
+	 *
+	 * @param bool $test_mode Whether the account is in test mode.
+	 */
+	public function test_get_shared_script_config_returns_the_shared_keys_without_side_effects( bool $test_mode ): void {
+		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'is_test_mode_enabled' ) )
+			->getMock();
+		$account_service->method( 'is_test_mode_enabled' )->willReturn( $test_mode );
+		$woopay_service = $this->createMock( SessionService::class );
+		$woopay_service->expects( $this->never() )->method( 'get_woopay_frontend_config' );
+		$styles_service = $this->createMock( WooPaymentsFrontendStylesService::class );
+		$styles_service->expects( $this->never() )->method( 'get_or_create_styles_cache_version' );
+		$customer_service = $this->createMock( WooPaymentsCustomerService::class );
+		$customer_service->expects( $this->never() )->method( 'get_prepared_customer_data' );
+		$sut = new WooPaymentsCheckoutAssets();
+		$sut->init( $account_service, $woopay_service, $this->create_woopay_eligibility( true ), $styles_service, $this->create_frontend_tracking_controller(), new PaymentMethodRegistry(), null, $customer_service );
+
+		$option_writes = 0;
+		$count_write   = static function () use ( &$option_writes ): void {
+			++$option_writes;
+		};
+		foreach ( array( 'added_option', 'updated_option', 'deleted_option' ) as $hook ) {
+			add_action( $hook, $count_write );
+		}
+		$session          = new class() extends \WC_Session {
+			/**
+			 * Number of session reads and writes.
+			 *
+			 * @var int
+			 */
+			public int $calls = 0;
+
+			/**
+			 * Count a session read.
+			 *
+			 * @param string $key           Session key.
+			 * @param mixed  $default_value Default value.
+			 * @return mixed
+			 */
+			public function get( $key, $default_value = null ) {
+				unset( $key );
+				++$this->calls;
+				return $default_value;
+			}
+
+			/**
+			 * Count a session write.
+			 *
+			 * @param string $key   Session key.
+			 * @param mixed  $value Session value.
+			 */
+			public function set( $key, $value ) {
+				unset( $key, $value );
+				++$this->calls;
+			}
+		};
+		$original_session = WC()->session;
+		WC()->session     = $session;
+		try {
+			$config = $sut->get_shared_script_config();
+		} finally {
+			WC()->session = $original_session;
+		}
+
+		$this->assertSame( array( 'ajaxUrl', 'platformTrackerNonce', 'tracksUrl', 'tracksRestNonce', 'isShopperTrackingEnabled', 'woopayHost', 'testMode', 'wcpayVersionNumber' ), array_keys( $config ), 'The keys, in the order the WooPay object carries them.' );
+		$this->assertSame( admin_url( 'admin-ajax.php' ), $config['ajaxUrl'] );
+		$this->assertNotFalse( wp_verify_nonce( $config['platformTrackerNonce'], 'platform_tracks_nonce' ) );
+		$this->assertSame( rest_url( 'wc/v3/payments/tracks' ), $config['tracksUrl'] );
+		$this->assertNotFalse( wp_verify_nonce( $config['tracksRestNonce'], 'wp_rest' ) );
+		$this->assertTrue( $config['isShopperTrackingEnabled'] );
+		$this->assertSame( 'https://pay.woo.com', $config['woopayHost'] );
+		$this->assertSame( $test_mode, $config['testMode'], 'The express OTP iframe opens in the account mode.' );
+		$this->assertSame( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsClientVersion::VERSION, $config['wcpayVersionNumber'] );
+		$this->assertSame( 0, $option_writes, 'No option is written.' );
+		$this->assertSame( 0, $session->calls, 'The session is not read or written.' );
+	}
+
+	/**
 	 * The WooPay config merged into the classic and Blocks checkout configs carries the store-level tracking flag, as client
 	 * 11.2.0's payment fields config does (class-woopay-tracker.php:663-665, should_enable_tracking( false, true )).
 	 *
