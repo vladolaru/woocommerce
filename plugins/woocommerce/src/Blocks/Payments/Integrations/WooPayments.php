@@ -292,9 +292,13 @@ final class WooPayments extends AbstractPaymentMethodType {
 	/**
 	 * Get the Blocks payment method instances for native WooPayments gateways.
 	 *
+	 * Each call starts a registration pass, so its split gateways share one fresh build of the config base.
+	 *
 	 * @return WooPayments[]
 	 */
 	public function get_payment_method_integrations(): array {
+		$this->checkout_assets->reset_blocks_config_base();
+
 		if ( null !== $this->payment_gateway ) {
 			return array( $this );
 		}

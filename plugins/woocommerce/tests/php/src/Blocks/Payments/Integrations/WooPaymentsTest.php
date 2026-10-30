@@ -22,6 +22,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFr
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentOperationService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\Eligibility;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\WooCommerceSubscriptionsDoubles;
 use WC_Unit_Test_Case;
 
 /**
@@ -979,12 +980,156 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Split-gateway Blocks integrations get byte-identical shared config data, built once per request, and each gateway's config passes the filter.
+	 * Connected account A's cached data.
+	 */
+	private const ACCOUNT_A = array(
+		'account_id'           => 'acct_A',
+		'live_publishable_key' => 'pk_live_A',
+		'test_publishable_key' => 'pk_test_A',
+		'payments_enabled'     => true,
+		'details_submitted'    => true,
+		'country'              => 'US',
+	);
+
+	/**
+	 * Connected account B's cached data.
+	 */
+	private const ACCOUNT_B = array(
+		'account_id'           => 'acct_B',
+		'live_publishable_key' => 'pk_live_B',
+		'test_publishable_key' => 'pk_test_B',
+		'payments_enabled'     => true,
+		'details_submitted'    => true,
+		'country'              => 'US',
+	);
+
+	/**
+	 * @testdox Split-gateway Blocks integrations get byte-identical shared config data, built once per registration, and each gateway's config passes the filter.
 	 *
 	 * Client 11.1.0 registers one Blocks method and builds its payment fields config once; the split integrations share one
 	 * build of the gateway-independent part.
 	 */
 	public function test_split_gateway_integrations_get_one_shared_config_build(): void {
+		$account_data = self::ACCOUNT_A;
+		$integration  = $this->create_split_integration( $this->create_checkout_assets( $this->create_checkout_account( $account_data ) ) );
+		$counts       = $this->count_config_builds_and_filter_calls();
+		$gateway_keys = array_flip( array( 'gatewayId', 'paymentMethodsConfig', 'paymentMethodTypes', 'title', 'description', 'expressCheckoutParams' ) );
+
+		$shared = array_map(
+			static fn( array $data ): string => (string) wp_json_encode( array_diff_key( $data, $gateway_keys ) ),
+			$this->run_registration_pass( $integration )
+		);
+
+		$this->assertSame( array( 'woocommerce_payments', 'woocommerce_payments_klarna', 'woocommerce_payments_affirm' ), array_keys( $shared ) );
+		$this->assertStringContainsString( '"publishableKey":"pk_live_A"', $shared['woocommerce_payments'] );
+		$this->assertSame( $shared['woocommerce_payments'], $shared['woocommerce_payments_klarna'], 'Klarna gets the card integration\'s shared config data.' );
+		$this->assertSame( $shared['woocommerce_payments'], $shared['woocommerce_payments_affirm'], 'Affirm gets the card integration\'s shared config data.' );
+		$this->assertSame( 1, $counts['builds'], 'The shared config is built once for the three integrations.' );
+		$this->assertSame( 3, $counts['filtered'], 'Each gateway config passes the wcpay_payment_fields_js_config filter.' );
+	}
+
+	/**
+	 * @testdox The next Blocks registration on the same checkout assets builds the shared config again when $change.
+	 *
+	 * Each registration used to get its own holder for the shared config. The checkout assets service can outlive a
+	 * request (a worker, WP-CLI, the test framework), and run_in_test_mode_context() changes the mode within one.
+	 *
+	 * @testWith ["the account switches to test mode"]
+	 *           ["another account connects"]
+	 *           ["the page turns from an empty-cart checkout into a subscription's change payment method page"]
+	 *
+	 * @param string $change What changes between the two registrations.
+	 */
+	public function test_next_registration_rebuilds_the_shared_config( string $change ): void {
+		$account_data = self::ACCOUNT_A;
+		$account      = $this->create_checkout_account( $account_data );
+		$integration  = $this->create_split_integration( $this->create_checkout_assets( $account ) );
+		$counts       = $this->count_config_builds_and_filter_calls();
+		$first        = $this->run_registration_pass( $integration )['woocommerce_payments'];
+		$this->assertSame( 'pk_live_A', $first['publishableKey'] );
+		$this->assertFalse( $first['testMode'] );
+		$this->assertArrayNotHasKey( 'isChangingPayment', $first );
+		$this->assertSame( 3, $counts['filtered'], 'The first registration passes each gateway config through the filter.' );
+		$counts['builds']   = 0;
+		$counts['filtered'] = 0;
+
+		global $wp;
+		$second = array();
+		try {
+			if ( 'the account switches to test mode' === $change ) {
+				$account->run_in_test_mode_context(
+					true,
+					function () use ( $integration, &$second ): void {
+						$second = $this->run_registration_pass( $integration )['woocommerce_payments'];
+					}
+				);
+			} elseif ( 'another account connects' === $change ) {
+				$account_data = self::ACCOUNT_B;
+				$second       = $this->run_registration_pass( $integration )['woocommerce_payments'];
+			} else {
+				$this->register_legacy_proxy_function_mocks(
+					array(
+						'class_exists' => static fn( $class_name, ...$args ) => 'WC_Subscriptions_Core_Plugin' === $class_name || class_exists( $class_name, ...$args ),
+					)
+				);
+				WooCommerceSubscriptionsDoubles::load_subscription_detector();
+				$GLOBALS[ WooCommerceSubscriptionsDoubles::SUBSCRIPTION_IDS ] = array( 123 );
+				$wp->query_vars['order-pay']                                  = 123;
+				$_GET['change_payment_method']                                = '123';
+				$second = $this->run_registration_pass( $integration )['woocommerce_payments'];
+			}
+		} finally {
+			unset( $_GET['change_payment_method'], $wp->query_vars['order-pay'], $GLOBALS[ WooCommerceSubscriptionsDoubles::SUBSCRIPTION_IDS ] );
+		}
+
+		if ( 'the account switches to test mode' === $change ) {
+			$this->assertSame( 'pk_test_A', $second['publishableKey'] );
+			$this->assertTrue( $second['testMode'] );
+		} elseif ( 'another account connects' === $change ) {
+			$this->assertSame( 'acct_B', $second['accountId'] );
+			$this->assertSame( 'pk_live_B', $second['publishableKey'] );
+		} else {
+			$this->assertSame( 0, $counts['filtered'], 'A change payment method config skips the wcpay_payment_fields_js_config filter.' );
+			$this->assertTrue( $second['isChangingPayment'] ?? false, 'The change payment method page gets its own config.' );
+		}
+		$this->assertSame( 1, $counts['builds'], 'The second registration builds its own shared config.' );
+	}
+
+	/**
+	 * Create an account service double over the given cached account data; the test can swap the data between calls.
+	 * Its mode, publishable key, account ID and payment readiness come from the real methods.
+	 *
+	 * @param array<string,mixed> $account_data Cached account data, read by reference.
+	 * @return WooPaymentsAccountService
+	 */
+	private function create_checkout_account( array &$account_data ): WooPaymentsAccountService {
+		$account = $this->getMockBuilder( WooPaymentsAccountService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_cached_account_data', 'get_gateway_setting', 'is_test_mode_onboarding_enabled' ) )
+			->getMock();
+		$account->method( 'get_cached_account_data' )->willReturnCallback(
+			static function () use ( &$account_data ): array {
+				return $account_data;
+			}
+		);
+		$account->method( 'get_gateway_setting' )->willReturnCallback(
+			static function ( string $key, $fallback = null ) {
+				unset( $key );
+				return $fallback;
+			}
+		);
+		$account->method( 'is_test_mode_onboarding_enabled' )->willReturn( false );
+
+		return $account;
+	}
+
+	/**
+	 * Create real checkout assets over the given account service, with platform requests blocked.
+	 *
+	 * @param WooPaymentsAccountService $account Account service.
+	 * @return WooPaymentsCheckoutAssets
+	 */
+	private function create_checkout_assets( WooPaymentsAccountService $account ): WooPaymentsCheckoutAssets {
 		add_filter(
 			'pre_http_request',
 			static function ( $preempt, $parsed_args, string $url ) {
@@ -994,16 +1139,6 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 			10,
 			3
 		);
-		$account = $this->getMockBuilder( WooPaymentsAccountService::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'get_publishable_key', 'get_account_id', 'get_cached_account_data', 'get_gateway_setting', 'can_process_payments', 'is_test_mode_enabled' ) )
-			->getMock();
-		$account->method( 'get_publishable_key' )->willReturn( 'pk_test_123' );
-		$account->method( 'get_account_id' )->willReturn( 'acct_123' );
-		$account->method( 'get_cached_account_data' )->willReturn( array( 'country' => 'US' ) );
-		$account->method( 'get_gateway_setting' )->willReturnCallback( static fn( string $key, $fallback = null ) => $fallback );
-		$account->method( 'can_process_payments' )->willReturn( true );
-		$account->method( 'is_test_mode_enabled' )->willReturn( true );
 		$styles = $this->getMockBuilder( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendStylesService::class )
 			->onlyMethods( array( 'get_or_create_styles_cache_version' ) )
 			->getMock();
@@ -1017,6 +1152,17 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 			$this->createMock( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendTrackingController::class ),
 			new WooPaymentsPaymentMethodRegistry()
 		);
+
+		return $assets;
+	}
+
+	/**
+	 * Create the base Blocks integration over the given checkout assets, with card, Klarna and Affirm split gateways.
+	 *
+	 * @param WooPaymentsCheckoutAssets $assets Checkout assets.
+	 * @return WooPayments
+	 */
+	private function create_split_integration( WooPaymentsCheckoutAssets $assets ): WooPayments {
 		$registry = new WooPaymentsPaymentMethodRegistry();
 		$gateways = array( new WooPaymentsGateway( $registry->get( 'card' ) ), new WooPaymentsGateway( $registry->get( 'klarna' ) ), new WooPaymentsGateway( $registry->get( 'affirm' ) ) );
 		$provider = $this->getMockBuilder( WooPaymentsProvider::class )
@@ -1026,37 +1172,54 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 		$provider->method( 'can_process_payments' )->willReturn( true );
 		$provider->method( 'get_payment_gateways' )->willReturn( $gateways );
 		$provider->method( 'get_gateway_for_method' )->willReturn( $gateways[0] );
-		$builds   = 0;
-		$filtered = 0;
-		// The config base applies this filter once per build.
+
+		return new WooPayments( $this->createMock( AssetApi::class ), $this->create_runtime_arbiter(), $assets, $provider, $this->create_woopay_eligibility(), $this->create_express_checkout_service() );
+	}
+
+	/**
+	 * Count shared config builds, through the account filter the config base applies once per build, and
+	 * wcpay_payment_fields_js_config calls.
+	 *
+	 * @return \ArrayObject<string,int> The `builds` and `filtered` counts.
+	 */
+	private function count_config_builds_and_filter_calls(): \ArrayObject {
+		$counts = new \ArrayObject(
+			array(
+				'builds'   => 0,
+				'filtered' => 0,
+			)
+		);
 		add_filter(
 			'wc_payments_account_id_for_intent_confirmation',
-			static function ( $value ) use ( &$builds ) {
-				++$builds;
+			static function ( $value ) use ( $counts ) {
+				$counts['builds'] = $counts['builds'] + 1;
 				return $value;
 			}
 		);
 		add_filter(
 			'wcpay_payment_fields_js_config',
-			static function ( $config ) use ( &$filtered ) {
-				++$filtered;
+			static function ( $config ) use ( $counts ) {
+				$counts['filtered'] = $counts['filtered'] + 1;
 				return $config;
 			}
 		);
 
-		$integration  = new WooPayments( $this->createMock( AssetApi::class ), $this->create_runtime_arbiter(), $assets, $provider, $this->create_woopay_eligibility(), $this->create_express_checkout_service() );
-		$gateway_keys = array_flip( array( 'gatewayId', 'paymentMethodsConfig', 'paymentMethodTypes', 'title', 'description', 'expressCheckoutParams' ) );
-		$shared       = array();
+		return $counts;
+	}
+
+	/**
+	 * Run one Blocks registration pass as Blocks does: enumerate the integrations, then read each one's data.
+	 *
+	 * @param WooPayments $integration Base integration.
+	 * @return array<string,array<string,mixed>> Payment method data by integration name.
+	 */
+	private function run_registration_pass( WooPayments $integration ): array {
+		$data = array();
 		foreach ( $integration->get_payment_method_integrations() as $payment_method ) {
-			$shared[ $payment_method->get_name() ] = (string) wp_json_encode( array_diff_key( $payment_method->get_payment_method_data(), $gateway_keys ) );
+			$data[ $payment_method->get_name() ] = $payment_method->get_payment_method_data();
 		}
 
-		$this->assertSame( array( 'woocommerce_payments', 'woocommerce_payments_klarna', 'woocommerce_payments_affirm' ), array_keys( $shared ) );
-		$this->assertStringContainsString( '"publishableKey":"pk_test_123"', $shared['woocommerce_payments'] );
-		$this->assertSame( $shared['woocommerce_payments'], $shared['woocommerce_payments_klarna'], 'Klarna gets the card integration\'s shared config data.' );
-		$this->assertSame( $shared['woocommerce_payments'], $shared['woocommerce_payments_affirm'], 'Affirm gets the card integration\'s shared config data.' );
-		$this->assertSame( 1, $builds, 'The shared config is built once for the three integrations.' );
-		$this->assertSame( 3, $filtered, 'Each gateway config passes the wcpay_payment_fields_js_config filter.' );
+		return $data;
 	}
 
 	/**

@@ -297,11 +297,11 @@ class WooPaymentsCheckoutAssets {
 	private ?array $payment_list_config_base = null;
 
 	/**
-	 * The Blocks config base built last in this request, with the key of the inputs it was built from.
+	 * The Blocks config base built last in the current Blocks registration pass, with the key of the inputs it was built from.
 	 *
 	 * The Blocks integration registers one payment method per split gateway where client 11.1.0 registers one, so the
-	 * gateways share this base, as the classic payment list shares its own, and it is built again only when an input
-	 * of the base changes (get_blocks_config_base_key()).
+	 * gateways share this base, and it is built again when an input of the base changes (get_blocks_config_base_key())
+	 * or a new registration pass starts (reset_blocks_config_base()).
 	 *
 	 * @var array{key:string,base:array{config:array<string,mixed>,saved_cards_enabled:bool,currency:string}}|null
 	 */
@@ -615,10 +615,22 @@ class WooPaymentsCheckoutAssets {
 	}
 
 	/**
+	 * Forget the shared Blocks config base, so the next Blocks payment method data builds it again.
+	 *
+	 * The Blocks integration calls this at the start of each registration pass. This service can outlive a request, as in a
+	 * worker or WP-CLI, and the account or its mode can change between passes, which the base's key does not cover.
+	 *
+	 * @since 11.2.0
+	 */
+	public function reset_blocks_config_base(): void {
+		$this->blocks_config_base = null;
+	}
+
+	/**
 	 * Get Blocks payment method data.
 	 *
-	 * The gateway-independent base is built once per request for the same inputs, so the split gateways' Blocks methods
-	 * share it and each gateway adds only its own keys.
+	 * The gateway-independent base is built once per Blocks registration pass for the same inputs, so the split gateways'
+	 * Blocks methods share it and each gateway adds only its own keys.
 	 *
 	 * @param string[]                     $supports                  Card gateway support features, shared by every Blocks method.
 	 * @param PaymentMethodDefinition|null $payment_method_definition Optional payment method definition.
