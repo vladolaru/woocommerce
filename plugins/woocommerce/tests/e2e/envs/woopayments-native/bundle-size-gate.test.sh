@@ -62,15 +62,17 @@ printf 'var appearance=1;\n' > "$core_repo/plugins/woocommerce/assets/js/fronten
 printf 'var fp=1;\n' > "$core_repo/plugins/woocommerce/assets/js/fingerprintjs/fp.umd.min.js"
 mkdir -p "$core_repo/plugins/woocommerce/assets/client/blocks"
 printf 'window.wc={woopayments:{}};\n' > "$core_repo/plugins/woocommerce/assets/client/blocks/wc-woopayments-common.js"
+printf 'window.wc.woopayments.woopay={};\n' > "$core_repo/plugins/woocommerce/assets/client/blocks/wc-woopayments-woopay-common.js"
 bash "$GATE" capture --repo "$core_repo" --out "$WORK_DIR/core-capture.json" > /dev/null
 assert_json "$WORK_DIR/core-capture.json" 'data["profile"] == "wc-core"'
-# The client bundles FingerprintJS, its appearance code and its shared helpers into its card script, so native's card
-# entry sums the four files, each gzipped on its own.
+# The client bundles FingerprintJS, its appearance code, its shared helpers and its WooPay email check into its card
+# script, so native's card entry sums the five files, each gzipped on its own.
 core_min="$core_repo/plugins/woocommerce/assets/js/frontend/woopayments-checkout.min.js"
 core_fp="$core_repo/plugins/woocommerce/assets/js/fingerprintjs/fp.umd.min.js"
 core_appearance="$core_repo/plugins/woocommerce/assets/js/frontend/utils/woopayments-appearance.min.js"
 core_common="$core_repo/plugins/woocommerce/assets/client/blocks/wc-woopayments-common.js"
-assert_json "$WORK_DIR/core-capture.json" 'data["assets"]["classic-card.js"]["status"] == "present" and data["assets"]["classic-card.js"]["path"] == ["plugins/woocommerce/assets/js/frontend/woopayments-checkout.min.js", "plugins/woocommerce/assets/js/fingerprintjs/fp.umd.min.js", "plugins/woocommerce/assets/js/frontend/utils/woopayments-appearance.min.js", "plugins/woocommerce/assets/client/blocks/wc-woopayments-common.js"] and data["assets"]["classic-card.js"]["raw_bytes"] == sum(len(open(f, "rb").read()) for f in ("'"$core_min"'", "'"$core_fp"'", "'"$core_appearance"'", "'"$core_common"'")) and data["assets"]["classic-card.js"]["gzip_bytes"] == sum(len(__import__("gzip").compress(open(f, "rb").read(), compresslevel=9)) for f in ("'"$core_min"'", "'"$core_fp"'", "'"$core_appearance"'", "'"$core_common"'"))'
+core_woopay_common="$core_repo/plugins/woocommerce/assets/client/blocks/wc-woopayments-woopay-common.js"
+assert_json "$WORK_DIR/core-capture.json" 'data["assets"]["classic-card.js"]["status"] == "present" and data["assets"]["classic-card.js"]["path"] == ["plugins/woocommerce/assets/js/frontend/woopayments-checkout.min.js", "plugins/woocommerce/assets/js/fingerprintjs/fp.umd.min.js", "plugins/woocommerce/assets/js/frontend/utils/woopayments-appearance.min.js", "plugins/woocommerce/assets/client/blocks/wc-woopayments-common.js", "plugins/woocommerce/assets/client/blocks/wc-woopayments-woopay-common.js"] and data["assets"]["classic-card.js"]["raw_bytes"] == sum(len(open(f, "rb").read()) for f in ("'"$core_min"'", "'"$core_fp"'", "'"$core_appearance"'", "'"$core_common"'", "'"$core_woopay_common"'")) and data["assets"]["classic-card.js"]["gzip_bytes"] == sum(len(__import__("gzip").compress(open(f, "rb").read(), compresslevel=9)) for f in ("'"$core_min"'", "'"$core_fp"'", "'"$core_appearance"'", "'"$core_common"'", "'"$core_woopay_common"'"))'
 # A list entry is missing when any of its files is.
 assert_json "$WORK_DIR/core-capture.json" 'data["assets"]["blocks-card.js"]["status"] == "missing"'
 assert_json "$WORK_DIR/core-capture.json" 'data["assets"]["settings-main.css"] == {"status": "missing", "path": "plugins/woocommerce/assets/client/admin/chunks/settings-payments-woopayments.style.css"}'

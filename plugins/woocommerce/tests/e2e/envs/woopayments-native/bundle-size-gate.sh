@@ -136,7 +136,7 @@ BLOCKS_APPEARANCE = CLASSIC_APPEARANCE
 core_assets = {
     "settings-main.js": CORE_ADMIN_CHUNKS + "settings-payments-woopayments.js",
     "settings-main.css": CORE_ADMIN_CHUNKS + "settings-payments-woopayments.style.css",
-    "classic-card.js": ["plugins/woocommerce/assets/js/frontend/woopayments-checkout.min.js", FINGERPRINTJS, CLASSIC_APPEARANCE, WOOPAYMENTS_COMMON],
+    "classic-card.js": ["plugins/woocommerce/assets/js/frontend/woopayments-checkout.min.js", FINGERPRINTJS, CLASSIC_APPEARANCE, WOOPAYMENTS_COMMON, BLOCKS_WOOPAY_COMMON],
     "classic-card.css": "plugins/woocommerce/assets/css/woopayments-checkout.css",
     "blocks-card.js": [BLOCKS_CARD, FINGERPRINTJS, BLOCKS_FRAUD_SCRIPTS],
     "blocks-card.css": "plugins/woocommerce/assets/client/blocks/wc-payment-method-woopayments.css",
@@ -150,8 +150,8 @@ core_assets = {
     # WooPay button styles in this stylesheet, the Blocks save-user styles in blocks-card.css and the Blocks WooPay
     # button styles in blocks-woopay.css (the client's are in its blocks-checkout.css).
     "woopay.css": "plugins/woocommerce/assets/css/woopayments-woopay.css",
-    "woopay-express-button.js": ["plugins/woocommerce/assets/js/frontend/woopayments-woopay.min.js", WOOPAYMENTS_COMMON],
-    "woopay-direct-checkout.js": ["plugins/woocommerce/assets/js/frontend/woopayments-woopay.min.js", WOOPAYMENTS_COMMON],
+    "woopay-express-button.js": ["plugins/woocommerce/assets/js/frontend/woopayments-woopay.min.js", WOOPAYMENTS_COMMON, BLOCKS_WOOPAY_COMMON],
+    "woopay-direct-checkout.js": ["plugins/woocommerce/assets/js/frontend/woopayments-woopay.min.js", WOOPAYMENTS_COMMON, BLOCKS_WOOPAY_COMMON],
     "blocks-common.js": [BLOCKS_COMMON, WOOPAYMENTS_COMMON],
     "blocks-woopay-common.js": BLOCKS_WOOPAY_COMMON,
     "blocks-woopay.css": CORE_BLOCKS + "wc-payment-method-woopayments-woopay.css",
