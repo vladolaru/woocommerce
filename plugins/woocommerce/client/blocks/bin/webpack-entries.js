@@ -405,6 +405,8 @@ const entries = {
 			'./assets/js/extensions/payment-methods/woopayments/index.js',
 		'wc-woopayments-common':
 			'./assets/js/extensions/payment-methods/woopayments/common/index.js',
+		'wc-woopayments-woopay-common':
+			'./assets/js/extensions/payment-methods/woopayments/woopay/protocol/index.js',
 		'wc-woopayments-phone-validation':
 			'./assets/js/extensions/payment-methods/woopayments/phone-validation.js',
 		'wc-payment-method-woopayments-woopay':
