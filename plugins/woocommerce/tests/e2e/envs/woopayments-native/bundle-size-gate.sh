@@ -125,6 +125,9 @@ BLOCKS_COMMON = CORE_BLOCKS + "wc-payment-method-woopayments-common.js"
 BLOCKS_WOOPAY_COMMON = CORE_BLOCKS + "wc-payment-method-woopayments-woopay-common.js"
 MESSAGING = "plugins/woocommerce/assets/js/frontend/woopayments-payment-method-messaging.min.js"
 CART_BLOCK_MESSAGING = CORE_BLOCKS + "wc-woopayments-cart-block-payment-method-messaging.js"
+# The Blocks scripts load the appearance code from the classic file too (a build external), so it is its own file on
+# Blocks pages and a dependency of the Cart-block messaging, which the client bundles it into.
+BLOCKS_APPEARANCE = CLASSIC_APPEARANCE
 core_assets = {
     "settings-main.js": CORE_ADMIN_CHUNKS + "settings-payments-woopayments.js",
     "settings-main.css": CORE_ADMIN_CHUNKS + "settings-payments-woopayments.style.css",
@@ -151,7 +154,7 @@ core_assets = {
     "woopay-phone-validation.js": CORE_BLOCKS + "wc-woopayments-phone-validation.js",
     "product-details.js": MESSAGING,
     "product-details.css": "plugins/woocommerce/assets/css/woopayments-payment-method-messaging.css",
-    "cart-block.js": CART_BLOCK_MESSAGING,
+    "cart-block.js": [CART_BLOCK_MESSAGING, BLOCKS_APPEARANCE],
     "cart-block.css": CORE_BLOCKS + "wc-woopayments-cart-block-payment-method-messaging.css",
     "success.js": "plugins/woocommerce/assets/js/frontend/woopayments-order-success.min.js",
     "success.css": "plugins/woocommerce/assets/css/woopayments-order-success.css",
@@ -160,8 +163,8 @@ core_assets = {
     # payment method messaging on, WooPay direct checkout off, shopper tracking off, and before the shopper opts in to
     # saving their details. The client also loads its express-checkout.js on both pages, and its cart.js and its
     # product-details.js messaging on the cart; native's messaging on the cart is its Cart-block script.
-    "page-blocks-checkout.js": [BLOCKS_CARD, BLOCKS_WOOPAY, BLOCKS_EXPRESS, BLOCKS_COMMON, BLOCKS_WOOPAY_COMMON, FINGERPRINTJS, BLOCKS_FRAUD_SCRIPTS],
-    "page-blocks-cart.js": [BLOCKS_WOOPAY, BLOCKS_EXPRESS, BLOCKS_COMMON, BLOCKS_WOOPAY_COMMON, BLOCKS_FRAUD_SCRIPTS, CART_BLOCK_MESSAGING],
+    "page-blocks-checkout.js": [BLOCKS_CARD, BLOCKS_WOOPAY, BLOCKS_EXPRESS, BLOCKS_COMMON, BLOCKS_WOOPAY_COMMON, FINGERPRINTJS, BLOCKS_FRAUD_SCRIPTS, BLOCKS_APPEARANCE],
+    "page-blocks-cart.js": [BLOCKS_WOOPAY, BLOCKS_EXPRESS, BLOCKS_COMMON, BLOCKS_WOOPAY_COMMON, BLOCKS_FRAUD_SCRIPTS, CART_BLOCK_MESSAGING, BLOCKS_APPEARANCE],
     "multi-currency-admin.js": "plugins/woocommerce/assets/client/admin/wp-admin-scripts/multi-currency-settings.js",
     "multi-currency-admin.css": "plugins/woocommerce/assets/client/admin/multi-currency-settings/style.css",
     "multi-currency-analytics.js": None,
