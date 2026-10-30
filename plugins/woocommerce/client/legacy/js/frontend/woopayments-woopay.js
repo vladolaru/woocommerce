@@ -13,18 +13,13 @@
 	var isWooPayRequesting = false;
 	// Client 11.2.0 woopay-express-checkout-button.js:282-295, :324-337 (onClickCallbackRef.current = onClickOtpFlow).
 	var isWooPayOtpFlowNext = false;
-	var isInitWooPayRequesting = false;
-	var wooPayConnectCallbacks = {};
-	var wooPayConnectListenerAttached = false;
-	var preferredCardFetchPromise = null;
+	// This script's WooPay Connect client (wc-woopayments-woopay-common), created on first use.
+	var wooPayConnect = null;
 	var currentPreferredCard = null;
-	var preferredCardCacheKey = 'woopay_preferred_card';
-	var wooPayConnectTimeout = 5000;
 	var buttonWidthThreshold = 140;
 	var cardDisplayWidthThreshold = 220;
 	var directCheckoutLoggedIn = false;
 	var hasPhoneForMobileEnter = false;
-	var phoneValidationPromise = null;
 	var isWooPayUser = false;
 	var proceedToCheckoutSelector =
 		'.wc-proceed-to-checkout .checkout-button,' +
@@ -82,14 +77,15 @@
 		errorElement.hidden = ! message;
 	}
 
-	function buildWooPayAjaxUrl( endpoint ) {
-		if ( ! config.wcAjaxUrl ) {
-			return '';
-		}
+	// The WooPay protocol both checkouts share (wc-woopayments-woopay-common).
+	function getWooPayProtocol() {
+		return window.wc.woopayments.woopay;
+	}
 
-		return config.wcAjaxUrl.replace(
-			'%%endpoint%%',
-			'wcpay_' + endpoint
+	function buildWooPayAjaxUrl( endpoint ) {
+		return getWooPayProtocol().buildAjaxUrl(
+			{ wcAjaxUrl: config.wcAjaxUrl },
+			endpoint
 		);
 	}
 
@@ -134,57 +130,6 @@
 		return brandAliases[ brand ] || brand;
 	}
 
-	function isValidPreferredCard( card ) {
-		return (
-			card &&
-			typeof card.brand === 'string' &&
-			card.brand.length > 0 &&
-			typeof card.last4 === 'string' &&
-			/^\d{4}$/.test( card.last4 )
-		);
-	}
-
-	function isSamePreferredCard( firstCard, secondCard ) {
-		return (
-			( ! firstCard && ! secondCard ) ||
-			( firstCard &&
-				secondCard &&
-				firstCard.brand === secondCard.brand &&
-				firstCard.last4 === secondCard.last4 )
-		);
-	}
-
-	function getCachedPreferredCard() {
-		var parsed;
-
-		try {
-			parsed = JSON.parse(
-				window.localStorage.getItem( preferredCardCacheKey )
-			);
-		} catch ( error ) {
-			return null;
-		}
-
-		return isValidPreferredCard( parsed ) ? parsed : null;
-	}
-
-	function setCachedPreferredCard( card ) {
-		try {
-			if ( isValidPreferredCard( card ) ) {
-				window.localStorage.setItem(
-					preferredCardCacheKey,
-					JSON.stringify( {
-						brand: card.brand,
-						last4: card.last4,
-					} )
-				);
-				return;
-			}
-
-			window.localStorage.removeItem( preferredCardCacheKey );
-		} catch ( error ) {}
-	}
-
 	function getPreferredCardDisplayName( preferredCard ) {
 		var normalizedBrand = normalizeCardBrand( preferredCard.brand );
 
@@ -192,182 +137,25 @@
 	}
 
 	function getWooPayConnectOrigin() {
-		try {
-			return new window.URL( config.woopayHost ).origin;
-		} catch ( error ) {
-			return '';
-		}
-	}
-
-	// Resolves after the Tracks identity does.
-	function getWooPayConnectUrl() {
-		var params;
-
-		if ( ! config.woopayHost || ! window.URLSearchParams ) {
-			return Promise.resolve(
-				config.woopayHost ? config.woopayHost + '/connect/' : ''
-			);
-		}
-
-		params = new window.URLSearchParams( {
-			source_url: window.location.href,
-		} );
-
-		if ( config.woopayMerchantId ) {
-			params.append( 'blogId', config.woopayMerchantId );
-		}
-
-		if ( config.testMode !== undefined ) {
-			params.append( 'testMode', config.testMode ? 'true' : 'false' );
-		}
-
-		// Client 11.2.0 woopay/connect/woopay-connect-iframe.js:31-34. Hosted WooPay's sessions route rejects the
-		// first-party session when the connect page has no identity to post.
-		return getTracksIdentity().then( function ( tracksUserIdentity ) {
-			if ( tracksUserIdentity ) {
-				params.append( 'tracksUserIdentity', tracksUserIdentity );
-			}
-
-			return config.woopayHost + '/connect/?' + params.toString();
+		return getWooPayProtocol().getWooPayHostOrigin( {
+			woopayHost: config.woopayHost,
 		} );
 	}
 
-	function resolveWooPayConnectCallback( callbackName, value ) {
-		if ( ! wooPayConnectCallbacks[ callbackName ] ) {
-			return;
-		}
-
-		wooPayConnectCallbacks[ callbackName ]( value );
-		delete wooPayConnectCallbacks[ callbackName ];
-	}
-
-	function attachWooPayConnectListener() {
-		if ( wooPayConnectListenerAttached ) {
-			return;
-		}
-
-		window.addEventListener( 'message', function ( event ) {
-			var data = event.data || {};
-			var origin = getWooPayConnectOrigin();
-
-			if ( ! origin || event.origin !== origin ) {
-				return;
-			}
-
-			switch ( data.action ) {
-				case 'set_preemptive_session_data_success':
-					resolveWooPayConnectCallback(
-						'setPreemptiveSessionData',
-						data.value || {}
-					);
-					break;
-				case 'set_preemptive_session_data_error':
-					resolveWooPayConnectCallback( 'setPreemptiveSessionData', {
-						is_error: true,
-					} );
-					break;
-				case 'get_preferred_payment_method_success':
-					resolveWooPayConnectCallback(
-						'getPreferredPaymentMethod',
-						data.value || null
-					);
-					break;
-				case 'get_is_user_logged_in_success':
-					resolveWooPayConnectCallback(
-						'getIsUserLoggedIn',
-						!! data.value
-					);
-					break;
-				case 'get_is_woopay_reachable_success':
-					resolveWooPayConnectCallback(
-						'getIsWooPayReachable',
-						!! data.value
-					);
-					break;
-				case 'get_encrypted_data_success':
-					resolveWooPayConnectCallback(
-						'getEncryptedData',
-						data.value || null
-					);
-					break;
-				case 'set_redirect_session_data_success':
-					resolveWooPayConnectCallback(
-						'setRedirectSessionData',
-						data.value || null
-					);
-					break;
-				case 'set_redirect_session_data_error':
-					resolveWooPayConnectCallback( 'setRedirectSessionData', null );
-					break;
-			}
-		} );
-
-		wooPayConnectListenerAttached = true;
-	}
-
-	// The connect iframe carries the wait for its connect page, so the Blocks WooPay script, which can run on the same
-	// page, waits for the same load; client 11.2.0 shares that state in window.WooPayConnect (connect/connect-utils.js).
-	function getWooPayConnectPostMessage() {
-		var existingIframe;
-		var iframe;
-		var connectPostMessage;
-
-		existingIframe = document.getElementById( 'woopay-connect-iframe' );
-		if ( existingIframe ) {
-			return (
-				existingIframe.wooPayConnectPostMessage ||
-				Promise.resolve( function ( message ) {
-					existingIframe.contentWindow.postMessage(
-						message,
-						config.woopayHost
-					);
-				} )
-			);
-		}
-
-		preferredCardFetchPromise = null;
-
-		if ( ! config.woopayHost ) {
-			return Promise.reject();
-		}
-
-		connectPostMessage = new Promise( function ( resolve ) {
-			iframe = document.createElement( 'iframe' );
-			iframe.id = 'woopay-connect-iframe';
-			iframe.height = 0;
-			iframe.width = 0;
-			// Client 11.1.0 woopay/connect/woopay-connect-iframe.js:98-101.
-			iframe.title = __( 'WooPay Connect Direct Checkout', 'woocommerce' );
-			iframe.style.border = 'none';
-			iframe.style.display = 'block';
-			iframe.style.visibility = 'hidden';
-			iframe.style.position = 'fixed';
-			iframe.style.height = '0';
-			iframe.style.width = '0';
-			iframe.style.pointerEvents = 'none';
-			iframe.addEventListener( 'load', function () {
-				// Appending an iframe without a src loads about:blank first; only the connect page's load counts.
-				if ( ! iframe.getAttribute( 'src' ) ) {
-					return;
-				}
-
-				resolve( function ( message ) {
-					iframe.contentWindow.postMessage(
-						message,
-						config.woopayHost
-					);
-				} );
+	function getWooPayConnect() {
+		if ( ! wooPayConnect ) {
+			wooPayConnect = getWooPayProtocol().createConnect( {
+				woopayHost: config.woopayHost,
+				woopayMerchantId: config.woopayMerchantId,
+				testMode: config.testMode,
+				ajaxUrl: config.ajaxUrl,
+				platformTrackerNonce: config.platformTrackerNonce,
+				// Client 11.1.0 woopay/connect/woopay-connect-iframe.js:98-101.
+				iframeTitle: __( 'WooPay Connect Direct Checkout', 'woocommerce' ),
 			} );
+		}
 
-			// The iframe is in the page at once, so later calls reuse it while the Tracks identity resolves.
-			document.body.appendChild( iframe );
-			getWooPayConnectUrl().then( function ( url ) {
-				iframe.src = url;
-			} );
-		} );
-		iframe.wooPayConnectPostMessage = connectPostMessage;
-
-		return connectPostMessage;
+		return wooPayConnect;
 	}
 
 	// With shouldTimeOut, the fallback answers when WooPay does not reply within the connect timeout.
@@ -377,96 +165,39 @@
 		fallback,
 		shouldTimeOut
 	) {
-		attachWooPayConnectListener();
-
-		// Each request owns its timer and settled state, as client 11.2.0 sendMessageAndListenWith() owns its timer and
-		// isRejected flag (connect/woopay-connect.js:170-195): the newest request under a name takes the callback, a
-		// deadline settles only its own request, and a value reaching a settled request is ignored. Unlike the client,
-		// an expired request also never posts.
-		return new Promise( function ( resolve ) {
-			var timeoutId;
-			var settled = false;
-			var settle = function ( value ) {
-				if ( settled ) {
-					return;
-				}
-
-				settled = true;
-				window.clearTimeout( timeoutId );
-				if ( wooPayConnectCallbacks[ callbackName ] === settle ) {
-					delete wooPayConnectCallbacks[ callbackName ];
-				}
-				resolve( value );
-			};
-
-			wooPayConnectCallbacks[ callbackName ] = settle;
-
-			if ( shouldTimeOut ) {
-				timeoutId = window.setTimeout( function () {
-					settle( fallback );
-				}, wooPayConnectTimeout );
-			}
-
-			getWooPayConnectPostMessage()
-				.then( function ( postMessage ) {
-					if ( ! settled ) {
-						postMessage( message );
-					}
-				} )
-				.catch( function () {
-					settle( fallback );
-				} );
-		} );
-	}
-
-	// Client 11.2.0 session-connect.js:152-161 resolves null when Connect does not answer.
-	function sendPreemptiveSessionDataToWooPay( sessionData ) {
-		return sendWooPayConnectMessage(
-			{
-				action: 'setPreemptiveSessionData',
-				value: sessionData,
-			},
-			'setPreemptiveSessionData',
-			null,
-			true
+		return getWooPayConnect().sendMessage(
+			message,
+			callbackName,
+			fallback,
+			shouldTimeOut
 		);
 	}
 
-	function fetchPreferredCardFromWooPay() {
-		if (
-			preferredCardFetchPromise &&
-			! document.getElementById( 'woopay-connect-iframe' )
-		) {
-			preferredCardFetchPromise = null;
-		}
-
-		if ( preferredCardFetchPromise ) {
-			return preferredCardFetchPromise;
-		}
-
-		preferredCardFetchPromise = sendWooPayConnectMessage(
-			{
-				action: 'getPreferredPaymentMethod',
-			},
-			'getPreferredPaymentMethod',
-			null,
-			true
-		).then( function ( card ) {
-			card = isValidPreferredCard( card ) ? card : null;
-			setCachedPreferredCard( card );
-
-			if ( ! isSamePreferredCard( card, currentPreferredCard ) ) {
-				currentPreferredCard = card;
-				renderWooPayExpressButton();
-			}
-
-			return card;
-		} );
-
-		return preferredCardFetchPromise;
+	function sendPreemptiveSessionDataToWooPay( sessionData ) {
+		return getWooPayConnect().sendPreemptiveSessionData( sessionData );
 	}
 
-	currentPreferredCard = getCachedPreferredCard();
+	function fetchPreferredCardFromWooPay() {
+		return getWooPayConnect()
+			.fetchPreferredCard()
+			.then( function ( card ) {
+				getWooPayProtocol().setCachedPreferredCard( card );
+
+				if (
+					! getWooPayProtocol().isSamePreferredCard(
+						card,
+						currentPreferredCard
+					)
+				) {
+					currentPreferredCard = card;
+					renderWooPayExpressButton();
+				}
+
+				return card;
+			} );
+	}
+
+	currentPreferredCard = getWooPayProtocol().getCachedPreferredCard();
 
 	function postWooPayAjax( endpoint, data ) {
 		var url = buildWooPayAjaxUrl( endpoint );
@@ -557,15 +288,7 @@
 	}
 
 	function deleteSkipWooPayCookie() {
-		var cookies = document.cookie ? document.cookie.split( ';' ) : [];
-		var hasSkipCookie = cookies.some( function ( cookie ) {
-			return cookie.trim() === 'skip_woopay=1';
-		} );
-
-		if ( hasSkipCookie ) {
-			document.cookie =
-				'skip_woopay=; path=/; expires=Thu, 01 Jan 1970 00:00:00 UTC;';
-		}
+		getWooPayProtocol().deleteSkipWooPayCookieOnClick();
 	}
 
 	function setFormDataValue( data, name, value ) {
@@ -838,14 +561,6 @@
 		} );
 	}
 
-	function validateEmail( value ) {
-		var pattern = new RegExp(
-			/^([a-z\d!#$%&'*+\-\/=?^_`{|}~\u00A0-\uD7FF\uF900-\uFDCF\uFDF0-\uFFEF]+(\.[a-z\d!#$%&'*+\-\/=?^_`{|}~\u00A0-\uD7FF\uF900-\uFDCF\uFDF0-\uFFEF]+)*|"((([ \t]*\r\n)?[ \t]+)?([\x01-\x08\x0b\x0c\x0e-\x1f\x7f\x21\x23-\x5b\x5d-\x7e\u00A0-\uD7FF\uF900-\uFDCF\uFDF0-\uFFEF]|\\[\x01-\x09\x0b\x0c\x0d-\x7f\u00A0-\uD7FF\uF900-\uFDCF\uFDF0-\uFFEF]))*(([ \t]*\r\n)?[ \t]+)?")@(([a-z\d\u00A0-\uD7FF\uF900-\uFDCF\uFDF0-\uFFEF]|[a-z\d\u00A0-\uD7FF\uF900-\uFDCF\uFDF0-\uFFEF][a-z\d\-._~\u00A0-\uD7FF\uF900-\uFDCF\uFDF0-\uFFEF]*[a-z\d\u00A0-\uD7FF\uF900-\uFDCF\uFDF0-\uFFEF])\.)+([a-z\u00A0-\uD7FF\uF900-\uFDCF\uFDF0-\uFFEF]|[a-z\u00A0-\uD7FF\uF900-\uFDCF\uFDF0-\uFFEF][a-z\d\-._~\u00A0-\uD7FF\uF900-\uFDCF\uFDF0-\uFFEF]*[0-9a-z\u00A0-\uD7FF\uF900-\uFDCF\uFDF0-\uFFEF]){2,}\.?$/i
-		);
-
-		return pattern.test( value );
-	}
-
 	// The plugin's request(): nested objects become bracketed form keys and
 	// empty values are left out.
 	function appendFormData( formData, data, prefix ) {
@@ -861,51 +576,6 @@
 		} );
 
 		return formData;
-	}
-
-	// The email input (woopayments-checkout.js) and the express button
-	// (woopayments-woopay.js) both answer WooPay's redirect message from
-	// separate scripts with separate in-flight guards. The first listener
-	// claims the event they share, so only one init_woopay starts.
-	function claimWooPayRedirect( event ) {
-		if ( event.wcWooPayInitClaimed ) {
-			return false;
-		}
-		event.wcWooPayInitClaimed = true;
-		return true;
-	}
-
-	// The plugin's initWooPay(): one init_woopay request in flight per page,
-	// since WooPay's <Login> sends the redirect message twice.
-	function requestInitWooPay( userEmail, userSession ) {
-		var themed = !! config.isWooPayGlobalThemeSupportEnabled;
-
-		if ( isInitWooPayRequesting ) {
-			return undefined;
-		}
-
-		isInitWooPayRequesting = true;
-
-		return window
-			.fetch( buildWooPayAjaxUrl( 'init_woopay' ), {
-				method: 'POST',
-				body: appendFormData( new window.FormData(), {
-					_wpnonce: config.initWooPayNonce || '',
-					appearance: themed ? config.woopayAppearance : null,
-					font_rules: themed ? config.woopayFontRules : null,
-					email: userEmail,
-					user_session: userSession,
-					order_id: config.order_id,
-					key: config.key,
-					billing_email: config.billing_email,
-				} ),
-			} )
-			.then( function ( response ) {
-				return response.json();
-			} )
-			.finally( function () {
-				isInitWooPayRequesting = false;
-			} );
 	}
 
 	// The plugin's express-button showErrorMessage(): a Blocks notice on the
@@ -958,304 +628,77 @@
 			.catch( function () {} );
 	}
 
-	// Port of the plugin's express-button expressCheckoutIframe(): opens the
-	// WooPay one-time-code iframe as a centered modal. The verified code
-	// hands the platform session back through postMessage, and init_woopay
-	// starts WooPay with it.
-	function expressCheckoutIframe( context, emailSelector ) {
-		var fullScreenModalBreakpoint = 768;
-		var woopayHost = config.woopayHost || '';
-		var iframeHeaderValue = true;
-		var tracksUserId;
-		var userEmail = '';
-		var iframeWrapper = document.createElement( 'div' );
-		var iframe = document.createElement( 'iframe' );
-		// The dialog's own way out. WooPay's iframe draws a close control and turns Escape into close_modal, but
-		// neither exists when the iframe never loads, and a key pressed inside the iframe never reaches this page.
-		// After the iframe, so Tab past the iframe's last control reaches it; the stylesheet shows it only while it
-		// has focus.
-		var closeButton = document.createElement( 'button' );
-		// Where focus was when the dialog opened; closing gives it back, as the Blocks email-lookup iframe gives it
-		// back to the email field (blocks woopay/email-input-iframe.js closeIframe()).
-		var previouslyFocused = null;
+	// This script's WooPay requests: a multipart body with bracketed keys for nested values (appendFormData()).
+	function postWooPayFormData( endpoint, data ) {
+		return window
+			.fetch( buildWooPayAjaxUrl( endpoint ), {
+				method: 'POST',
+				body: appendFormData( new window.FormData(), data ),
+			} )
+			.then( function ( response ) {
+				return response.json();
+			} );
+	}
 
-		iframeWrapper.setAttribute( 'role', 'dialog' );
-		iframeWrapper.setAttribute( 'aria-modal', 'true' );
-		iframeWrapper.classList.add( 'woopay-otp-iframe-wrapper' );
-
-		iframe.title = config.woopayOtpIframeTitle || '';
-		iframe.classList.add( 'woopay-otp-iframe' );
-		// Keep twentytwenty.intrinsicRatioVideos from resizing the iframe.
-		iframe.classList.add( 'intrinsic-ignore' );
-
-		// The dialog is named after the iframe it holds; client 11.1.0 names only the iframe.
-		if ( iframe.title ) {
-			iframeWrapper.setAttribute( 'aria-label', iframe.title );
-		}
-
-		// Client 11.1.0's name (email-input-iframe.js:85): it switches the iframe header for the viewport, tells WooPay, and
-		// keeps page scrolling locked while the iframe is open. The header default must match the platform's.
-		function getWindowSize() {
-			if (
-				( fullScreenModalBreakpoint <= window.innerWidth &&
-					iframeHeaderValue ) ||
-				( fullScreenModalBreakpoint > window.innerWidth &&
-					! iframeHeaderValue )
-			) {
-				iframeHeaderValue = ! iframeHeaderValue;
-				iframe.contentWindow.postMessage(
-					{ action: 'setHeader', value: iframeHeaderValue },
-					woopayHost
-				);
-			}
-
-			// Prevent scrolling while the iframe is open.
-			document.body.style.overflow = 'hidden';
-		}
-
-		// Center the iframe, or fill the window below the breakpoint.
-		function setPopoverPosition() {
-			var iframeRect;
-
-			if ( fullScreenModalBreakpoint > window.innerWidth ) {
-				iframe.style.left = '0';
-				iframe.style.right = '';
-				iframe.style.top = '0';
-				return;
-			}
-
-			iframeRect = iframe.getBoundingClientRect();
-			iframe.style.top =
-				Math.floor( window.innerHeight / 2 - iframeRect.height / 2 ) + 'px';
-			iframe.style.left =
-				Math.floor( window.innerWidth / 2 - iframeRect.width / 2 ) + 'px';
-		}
-
-		function closeIframe() {
-			window.removeEventListener( 'resize', getWindowSize );
-			window.removeEventListener( 'resize', setPopoverPosition );
-			window.removeEventListener( 'pageshow', onPageShow );
-			window.removeEventListener( 'message', onMessage );
-			document.removeEventListener( 'keyup', onKeyUp );
-			document.removeEventListener( 'focusin', onFocusIn );
-
-			iframeWrapper.remove();
-			iframe.classList.remove( 'open' );
-
-			document.body.style.overflow = '';
-
+	// The values the WooPay button's OTP flow (wc-woopayments-woopay-common) reads, from this script's config.
+	function getExpressOtpArgs( context ) {
+		return {
+			wcAjaxUrl: config.wcAjaxUrl,
+			post: postWooPayFormData,
+			initWooPayNonce: config.initWooPayNonce,
+			woopaySessionNonce: config.woopaySessionNonce,
+			orderId: config.order_id,
+			key: config.key,
+			billingEmail: config.billing_email,
+			getInitAppearance: function () {
+				return config.isWooPayGlobalThemeSupportEnabled
+					? config.woopayAppearance
+					: null;
+			},
+			getInitFontRules: function () {
+				return config.isWooPayGlobalThemeSupportEnabled
+					? config.woopayFontRules
+					: null;
+			},
+			getSessionAppearance: function () {
+				return config.woopayAppearance;
+			},
+			woopayHost: config.woopayHost,
+			testMode: config.testMode,
+			wcpayVersionNumber: config.wcpayVersionNumber,
+			isWoopayFirstPartyAuthEnabled: config.isWoopayFirstPartyAuthEnabled,
+			otpIframeTitle: config.woopayOtpIframeTitle,
+			otpCloseLabel: config.woopayOtpCloseLabel,
+			unavailableMessage: config.woopayExpressUnavailableMessage,
+			showError: function ( message ) {
+				showExpressErrorMessage( context, message );
+			},
+			navigate: function ( url ) {
+				navigate( url );
+			},
+			getRedirectUrl: appendRedirectionParams,
 			// updated_checkout renders the WooPay button again (renderWooPayExpressButton()), so the button that opened
 			// the dialog may have been replaced while it was open; the new one gets focus.
-			if (
-				previouslyFocused &&
-				! previouslyFocused.isConnected &&
-				previouslyFocused.classList &&
-				previouslyFocused.classList.contains( 'woopay-express-button' )
-			) {
-				previouslyFocused = document.querySelector(
-					'#wcpay-woopay-button .woopay-express-button'
-				);
-			}
-			if ( previouslyFocused && previouslyFocused.focus ) {
-				previouslyFocused.focus();
-			}
-			previouslyFocused = null;
-		}
-
-		function onInitWooPayResponse( response ) {
-			// The iframe was closed meanwhile.
-			if ( ! document.querySelector( '.woopay-otp-iframe' ) ) {
-				return;
-			}
-
-			if ( response && response.result === 'success' ) {
-				navigate( appendRedirectionParams( response.url ) );
-				return;
-			}
-
-			showExpressErrorMessage(
-				context,
-				config.woopayExpressUnavailableMessage || ''
-			);
-			closeIframe();
-		}
-
-		function onMessage( event ) {
-			var data = event.data || {};
-			var request;
-
-			if ( ! woopayHost || event.origin !== getWooPayConnectOrigin() ) {
-				return;
-			}
-
-			switch ( data.action ) {
-				case 'otp_email_submitted':
-					userEmail = data.userEmail;
-					break;
-				case 'redirect_to_woopay_skip_session_init':
-					if ( data.redirectUrl ) {
-						navigate( appendRedirectionParams( data.redirectUrl ) );
-					}
-					break;
-				case 'redirect_to_platform_checkout':
-				case 'redirect_to_woopay':
-					if ( ! claimWooPayRedirect( event ) ) {
-						break;
-					}
-					request = requestInitWooPay(
-						userEmail || data.userEmail,
-						data.platformCheckoutUserSession
+			getFocusTarget: function ( previouslyFocused ) {
+				if (
+					! previouslyFocused.isConnected &&
+					previouslyFocused.classList &&
+					previouslyFocused.classList.contains( 'woopay-express-button' )
+				) {
+					return document.querySelector(
+						'#wcpay-woopay-button .woopay-express-button'
 					);
+				}
 
-					// The second redirect message finds a request in flight.
-					if ( request ) {
-						request.then( onInitWooPayResponse, function () {
-							onInitWooPayResponse( null );
-						} );
-					}
-					break;
-				case 'close_modal':
-					closeIframe();
-					break;
-				case 'iframe_height':
-					if ( data.height > 300 ) {
-						if ( fullScreenModalBreakpoint <= window.innerWidth ) {
-							iframe.style.height = data.height + 'px';
-							iframe.style.top =
-								Math.floor( window.innerHeight / 2 - data.height / 2 ) +
-								'px';
-						} else {
-							iframe.style.height = '';
-							iframe.style.top = '';
-						}
-					}
-					break;
-				default:
-				// Only respond to expected actions (otp_validation_failed included).
-			}
-		}
+				return previouslyFocused;
+			},
+			// A failed init_woopay after the shopper closed the dialog shows nothing.
+			reportFailureWhenClosed: false,
+		};
+	}
 
-		function onPageShow( event ) {
-			if ( event.persisted ) {
-				// Safari needs the iframe closed on bfcache restore.
-				closeIframe();
-			}
-		}
-
-		function onKeyUp( event ) {
-			if ( event.key === 'Escape' ) {
-				closeIframe();
-			}
-		}
-
-		// A modal dialog keeps focus: Tab past the close button, or Shift+Tab before the iframe's first control, lands
-		// on the page behind it and comes back to the iframe.
-		function onFocusIn( event ) {
-			if ( ! iframeWrapper.contains( event.target ) ) {
-				iframe.focus();
-			}
-		}
-
-		function openIframe( email ) {
-			var urlParams = new window.URLSearchParams();
-
-			// Only one OTP iframe at a time.
-			if ( document.querySelector( '.woopay-otp-iframe' ) ) {
-				return;
-			}
-
-			previouslyFocused = document.activeElement;
-			window.addEventListener( 'pageshow', onPageShow );
-			window.addEventListener( 'message', onMessage );
-			document.addEventListener( 'keyup', onKeyUp );
-			document.addEventListener( 'focusin', onFocusIn );
-
-			// wp_localize_script serves the boolean as '1' or ''.
-			urlParams.append( 'testMode', !! config.testMode );
-			urlParams.append(
-				'needsHeader',
-				fullScreenModalBreakpoint > window.innerWidth
-			);
-			urlParams.append( 'wcpayVersion', config.wcpayVersionNumber );
-
-			if ( email && validateEmail( email ) ) {
-				userEmail = email;
-				urlParams.append( 'email', email );
-			}
-			urlParams.append(
-				'is_blocks',
-				!! ( window.wcSettings && window.wcSettings.wcBlocksConfig )
-			);
-			urlParams.append( 'is_express', 'true' );
-			urlParams.append( 'express_context', context );
-			urlParams.append( 'source_url', window.location.href );
-			urlParams.append(
-				'viewport',
-				document.documentElement.clientWidth +
-					'x' +
-					document.documentElement.clientHeight
-			);
-
-			if ( tracksUserId ) {
-				urlParams.append( 'tracksUserIdentity', tracksUserId );
-			}
-
-			iframe.src = woopayHost + '/otp/?' + urlParams.toString();
-
-			document.body.insertBefore( iframeWrapper, null );
-
-			setPopoverPosition();
-
-			iframe.focus();
-		}
-
-		iframe.addEventListener( 'load', function () {
-			iframeHeaderValue = true;
-
-			if ( config.isWoopayFirstPartyAuthEnabled ) {
-				window
-					.fetch( buildWooPayAjaxUrl( 'get_woopay_session' ), {
-						method: 'POST',
-						body: appendFormData( new window.FormData(), {
-							_ajax_nonce: config.woopaySessionNonce || '',
-							order_id: config.order_id,
-							key: config.key,
-							billing_email: config.billing_email,
-							appearance: config.woopayAppearance,
-						} ),
-					} )
-					.then( function ( response ) {
-						return response.json();
-					} )
-					.then( function ( response ) {
-						if ( response && response.data && response.data.session ) {
-							iframe.contentWindow.postMessage(
-								{ action: 'setSessionData', value: response },
-								woopayHost
-							);
-						}
-					} )
-					.catch( function () {} );
-			}
-
-			getWindowSize();
-			window.addEventListener( 'resize', getWindowSize );
-
-			setPopoverPosition();
-			window.addEventListener( 'resize', setPopoverPosition );
-
-			iframe.classList.add( 'open' );
-		} );
-
-		closeButton.type = 'button';
-		closeButton.classList.add( 'woopay-otp-iframe-close' );
-		closeButton.textContent = config.woopayOtpCloseLabel || '';
-
-		iframeWrapper.insertBefore( iframe, null );
-		iframeWrapper.insertBefore( closeButton, null );
-		// A click on the backdrop or on the close button closes the dialog.
-		iframeWrapper.addEventListener( 'click', closeIframe );
-
+	// Opens the WooPay button's one-time-code dialog once the Tracks identity resolves.
+	function expressCheckoutIframe( context, emailSelector ) {
 		return getTracksIdentity().then( function ( identity ) {
 			var emailInput = document.querySelector( emailSelector );
 			// The order-pay page has no email field; client 11.1.0 takes the
@@ -1266,8 +709,12 @@
 					? config.billing_email
 					: emailInput && emailInput.value;
 
-			tracksUserId = identity;
-			openIframe( email || config.woopaySessionEmail );
+			getWooPayProtocol().openExpressOtpIframe(
+				getExpressOtpArgs( context ),
+				context,
+				email || config.woopaySessionEmail,
+				identity
+			);
 		} );
 	}
 
@@ -1648,35 +1095,14 @@
 	// Client 11.1.0 checkout-page-save-user.js:93-111: keep digits and +, and read a number without a country code as US
 	// (WooPay is US-only).
 	function normalizeWooPayPhone( phone ) {
-		var value = String( phone || '' ).replace( /[^\d+]*/g, '' );
-		return value.indexOf( '+' ) === 0 ? value : '+1' + value;
+		return getWooPayProtocol().normalizePhone( phone );
 	}
 
-	// Core's mobile phone validation, built once by the Blocks build (phone-validation.js) for both checkouts and
-	// loaded only when the shopper opts in. Resolves null when it cannot load.
+	// Core's mobile phone validation, loaded only when the shopper opts in. Resolves null when it cannot load.
 	function loadPhoneValidation() {
-		if ( window.wcWooPaymentsPhoneValidation ) {
-			return Promise.resolve( window.wcWooPaymentsPhoneValidation );
-		}
-		if ( ! config.woopayPhoneValidationScriptUrl ) {
-			return Promise.resolve( null );
-		}
-		if ( ! phoneValidationPromise ) {
-			phoneValidationPromise = new Promise( function ( resolve ) {
-				var script = document.createElement( 'script' );
-				script.src = config.woopayPhoneValidationScriptUrl;
-				script.async = true;
-				script.onload = function () {
-					resolve( window.wcWooPaymentsPhoneValidation || null );
-				};
-				script.onerror = function () {
-					phoneValidationPromise = null;
-					resolve( null );
-				};
-				document.head.appendChild( script );
-			} );
-		}
-		return phoneValidationPromise;
+		return getWooPayProtocol().loadPhoneValidation(
+			config.woopayPhoneValidationScriptUrl
+		);
 	}
 
 	// True, false, or null while the validation script is not loaded.

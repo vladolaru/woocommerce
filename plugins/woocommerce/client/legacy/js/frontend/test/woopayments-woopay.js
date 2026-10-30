@@ -2,10 +2,12 @@
  * @jest-environment jest-fixed-jsdom
  */
 
-// The page prints wc-woopayments-common before this script; it sets window.wc.woopayments.
+// The page prints wc-woopayments-common and then wc-woopayments-woopay-common before this script; they set
+// window.wc.woopayments and window.wc.woopayments.woopay.
 function loadWooPaymentsCommon() {
 	jest.isolateModules( () => {
 		require( '../../../../blocks/assets/js/extensions/payment-methods/woopayments/common' );
+		require( '../../../../blocks/assets/js/extensions/payment-methods/woopayments/woopay/protocol' );
 	} );
 }
 
@@ -998,6 +1000,8 @@ describe( 'WooPayments WooPay checkout', () => {
 			await loadConnectIframe();
 			await Promise.resolve();
 			jest.advanceTimersByTime( 5000 );
+			// The shared Connect client settles the request, then this script stores and renders its answer.
+			await Promise.resolve();
 			await Promise.resolve();
 
 			expect( postMessage ).toHaveBeenCalledWith(

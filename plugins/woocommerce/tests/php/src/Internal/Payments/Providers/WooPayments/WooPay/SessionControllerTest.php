@@ -106,6 +106,7 @@ class SessionControllerTest extends WC_REST_Unit_Test_Case {
 		wp_dequeue_style( 'wc-woopayments-woopay' );
 		wp_deregister_script( 'wc-woopayments-woopay' );
 		wp_deregister_script( 'wc-woopayments-common' );
+		wp_deregister_script( 'wc-woopayments-woopay-common' );
 		wp_deregister_style( 'wc-woopayments-woopay' );
 		wp_reset_postdata();
 		delete_option( 'woocommerce_enable_guest_checkout' );
@@ -249,6 +250,8 @@ class SessionControllerTest extends WC_REST_Unit_Test_Case {
 		$this->assertTrue( wp_style_is( 'wc-woopayments-woopay', 'enqueued' ) );
 		$this->assertContains( 'wc-woopayments-common', wp_scripts()->registered['wc-woopayments-woopay']->deps, 'The WooPay script reads window.wc.woopayments.' );
 		$this->assertTrue( wp_script_is( 'wc-woopayments-common', 'registered' ), 'An unregistered dependency would make WordPress drop the WooPay script.' );
+		$this->assertContains( 'wc-woopayments-woopay-common', wp_scripts()->registered['wc-woopayments-woopay']->deps, 'The WooPay script reads window.wc.woopayments.woopay.' );
+		$this->assertTrue( wp_script_is( 'wc-woopayments-woopay-common', 'registered' ), 'An unregistered dependency would make WordPress drop the WooPay script.' );
 		$localized_data = wp_scripts()->get_data( 'wc-woopayments-woopay', 'data' );
 		$this->assertIsString( $localized_data );
 		$this->assertStringContainsString( '"shouldShowWooPayButton":""', $localized_data );

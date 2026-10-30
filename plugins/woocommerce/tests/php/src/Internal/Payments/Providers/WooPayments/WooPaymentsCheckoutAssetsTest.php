@@ -582,6 +582,7 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 		wp_deregister_script( 'wc-woopayments-appearance' );
 		wp_deregister_script( 'wc-woopayments-fingerprintjs' );
 		wp_deregister_script( 'wc-woopayments-common' );
+		wp_deregister_script( 'wc-woopayments-woopay-common' );
 		wp_dequeue_style( 'wc-woopayments-checkout' );
 		wp_deregister_style( 'wc-woopayments-checkout' );
 		wp_dequeue_script( 'wcpay-fraud-prevention-token' );
@@ -1879,6 +1880,7 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 		$this->assertContains( 'stripe', $checkout_script->deps );
 		$this->assertContains( 'wc-woopayments-appearance', $checkout_script->deps );
 		$this->assertContains( 'wc-woopayments-common', $checkout_script->deps, 'The checkout script reads window.wc.woopayments.' );
+		$this->assertContains( 'wc-woopayments-woopay-common', $checkout_script->deps, 'The checkout script wires the WooPay email check from window.wc.woopayments.woopay.' );
 		$this->assertContains( 'wc-checkout', $checkout_script->deps );
 		$this->assertStringStartsWith( WC()->plugin_url() . '/assets/js/frontend/woopayments-checkout', $checkout_script->src );
 		$this->assertSame( 1, wp_scripts()->get_data( 'wc-woopayments-checkout', 'group' ), 'The checkout script loads in the footer.' );
@@ -1887,6 +1889,7 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 		$this->assertTrue( wp_script_is( 'wc-woopayments-fingerprintjs', 'registered' ) );
 		$this->assertTrue( wp_script_is( 'wc-woopayments-appearance', 'registered' ) );
 		$this->assertTrue( wp_script_is( 'wc-woopayments-common', 'registered' ), 'An unregistered dependency would make WordPress drop the checkout script.' );
+		$this->assertTrue( wp_script_is( 'wc-woopayments-woopay-common', 'registered' ), 'An unregistered dependency would make WordPress drop the checkout script.' );
 	}
 
 	/**
