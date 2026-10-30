@@ -1230,7 +1230,6 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 
 		$config = $assets->get_payment_fields_js_config( self::CARD_SUPPORTS );
 
-		$this->assertSame( $platform, $assets->should_use_stripe_platform_on_checkout_page() );
 		$this->assertSame( $platform, $config['forceNetworkSavedCards'] );
 		$this->assertSame( $platform, $config['paymentMethodsConfig']['card']['forceNetworkSavedCards'] );
 	}

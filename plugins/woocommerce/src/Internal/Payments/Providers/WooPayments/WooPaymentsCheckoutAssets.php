@@ -1371,12 +1371,14 @@ class WooPaymentsCheckoutAssets {
 	}
 
 	/**
-	 * Tell whether card checkout should use Stripe platform behavior for saved payment details.
+	 * Tell whether card checkout should use Stripe platform behavior for saved payment details: network saved cards are
+	 * on, or Stripe initializes through the platform account because WooPay applies. WooPay eligibility owns that one
+	 * predicate, which the card and the WooPay config both read (client 11.1.0 class-wc-payments-checkout.php:194, :599).
 	 *
 	 * @return bool
 	 */
 	private function should_force_network_saved_cards(): bool {
-		return $this->get_account_service()->is_network_saved_cards_enabled() || $this->should_use_stripe_platform_on_checkout_page();
+		return $this->get_account_service()->is_network_saved_cards_enabled() || $this->get_woopay_eligibility()->should_use_stripe_platform_on_checkout_page();
 	}
 
 	/**
@@ -1415,17 +1417,6 @@ class WooPaymentsCheckoutAssets {
 	 */
 	private function should_show_save_option( bool $saved_cards_enabled ): bool {
 		return $saved_cards_enabled && ! SubscriptionMethodPolicy::cart_contains_subscription_or_renewal();
-	}
-
-	/**
-	 * Tell whether card checkout initializes Stripe through the platform account because WooPay applies; the WooPay
-	 * session service owns the one predicate both the card and the WooPay config read (client 11.1.0
-	 * class-wc-payments-checkout.php:194, :599).
-	 *
-	 * @return bool
-	 */
-	public function should_use_stripe_platform_on_checkout_page(): bool {
-		return $this->get_woopay_eligibility()->should_use_stripe_platform_on_checkout_page();
 	}
 
 	/**

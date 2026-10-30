@@ -24,6 +24,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\SubscriptionMethodPolicy;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\SubscriptionsController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\LinkToken;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\Eligibility;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\SessionService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\StoreApiRequestHandler;
 use Automattic\WooCommerce\Internal\Payments\RefundRowCapture;
@@ -120,6 +121,13 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 	 * @var SessionService
 	 */
 	private SessionService $woopay_session_service;
+
+	/**
+	 * WooPay eligibility rules.
+	 *
+	 * @var Eligibility
+	 */
+	private Eligibility $woopay_eligibility;
 
 	/**
 	 * WooPayments API client.
@@ -860,7 +868,7 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 	 */
 	public function save_payment_method_checkbox() {
 		$force_checked = $this->cart_contains_subscription() || $this->is_subscription_change_payment_form();
-		$should_hide   = $force_checked || ( 'card' === $this->get_payment_method_id() && $this->get_checkout_assets()->should_use_stripe_platform_on_checkout_page() );
+		$should_hide   = $force_checked || ( 'card' === $this->get_payment_method_id() && $this->get_woopay_eligibility()->should_use_stripe_platform_on_checkout_page() );
 
 		$html = sprintf(
 			'<p class="form-row woocommerce-SavedPaymentMethods-saveNew">
@@ -1939,6 +1947,19 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 		}
 
 		return $this->checkout_assets;
+	}
+
+	/**
+	 * Get the WooPay eligibility rules.
+	 *
+	 * @return Eligibility
+	 */
+	private function get_woopay_eligibility(): Eligibility {
+		if ( ! isset( $this->woopay_eligibility ) ) {
+			$this->woopay_eligibility = wc_get_container()->get( Eligibility::class );
+		}
+
+		return $this->woopay_eligibility;
 	}
 
 	/**

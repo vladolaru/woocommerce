@@ -6203,16 +6203,18 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 *           ["sepa_debit", true, "visible"]
 	 *
 	 * @param string $payment_method Payment method of the gateway.
-	 * @param bool   $platform       Whether the checkout assets report WooPay on the checkout page.
+	 * @param bool   $platform       Whether WooPay eligibility reports WooPay on the checkout page.
 	 * @param string $expected       Whether the checkbox is hidden or visible.
 	 */
 	public function test_save_payment_method_checkbox_hides_for_woopay_on_the_card_checkout( string $payment_method, bool $platform, string $expected ): void {
 		WooCommerceSubscriptionsDoubles::load_cart();
 		$GLOBALS['wcpay_test_cart_contains_subscription'] = false;
-		$assets = $this->createMock( WooPaymentsCheckoutAssets::class );
-		$assets->method( 'should_use_stripe_platform_on_checkout_page' )->willReturn( $platform );
+
+		$eligibility = $this->createMock( Eligibility::class );
+		$eligibility->method( 'should_use_stripe_platform_on_checkout_page' )->willReturn( $platform );
+		wc_get_container()->replace( Eligibility::class, $eligibility );
 		$gateway = new WooPaymentsGateway( ( new PaymentMethodRegistry() )->get( $payment_method ) );
-		$gateway->init( new RecordingPaymentProcessingService(), new WooPaymentsProvider(), $assets );
+		$gateway->init( new RecordingPaymentProcessingService(), new WooPaymentsProvider(), $this->createMock( WooPaymentsCheckoutAssets::class ) );
 
 		ob_start();
 		$gateway->save_payment_method_checkbox();
