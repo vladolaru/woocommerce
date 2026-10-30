@@ -15,7 +15,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPr
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\Eligibility;
 
 /**
- * WooPayments payment method integration.
+ * WooPayments payment method integration: one Blocks payment method type per WooPayments gateway.
  *
  * @since 11.0.0
  */
@@ -55,13 +55,6 @@ final class WooPayments extends AbstractPaymentMethodType {
 	 * The WooPay email check the card and WooPay scripts share, built as one chunk.
 	 */
 	private const WOOPAY_COMMON_SCRIPT_HANDLE = 'wc-payment-method-woopayments-woopay-common';
-
-	/**
-	 * Payment method name defined by payment methods extending this class.
-	 *
-	 * @var string
-	 */
-	protected $name = WooPaymentsPersistenceVocabulary::GATEWAY_ID;
 
 	/**
 	 * Asset API.
@@ -106,32 +99,50 @@ final class WooPayments extends AbstractPaymentMethodType {
 	private WooPaymentsExpressCheckoutService $express_checkout_service;
 
 	/**
-	 * Native WooPayments gateway for this Blocks payment method instance.
+	 * Fraud-prevention token service.
 	 *
-	 * @var WooPaymentsGateway|null
+	 * @var WooPaymentsFraudPreventionService
 	 */
-	private ?WooPaymentsGateway $payment_gateway;
+	private WooPaymentsFraudPreventionService $fraud_prevention_service;
+
+	/**
+	 * Registrar of the script handles the WooPayments shopper scripts share.
+	 *
+	 * @var WooPaymentsFrontendAssets
+	 */
+	private WooPaymentsFrontendAssets $frontend_assets;
+
+	/**
+	 * The WooPayments gateway this Blocks payment method stands for.
+	 *
+	 * @var WooPaymentsGateway
+	 */
+	private WooPaymentsGateway $payment_gateway;
 
 	/**
 	 * Constructor.
 	 *
-	 * @param Api                               $asset_api                 Asset API.
-	 * @param WooPaymentsRuntimeArbiter         $arbiter                   Runtime owner arbiter.
-	 * @param WooPaymentsCheckoutAssets         $checkout_assets           Checkout scripts and their config.
-	 * @param WooPaymentsProvider               $provider                  Native WooPayments provider.
-	 * @param Eligibility                       $woopay_eligibility        WooPay eligibility rules.
-	 * @param WooPaymentsExpressCheckoutService $express_checkout_service  Express checkout service.
-	 * @param WooPaymentsGateway|null           $payment_gateway           Optional payment gateway instance.
+	 * @param Api                               $asset_api                Asset API.
+	 * @param WooPaymentsGateway                $payment_gateway          The WooPayments gateway this payment method stands for.
+	 * @param WooPaymentsRuntimeArbiter         $arbiter                  Runtime owner arbiter.
+	 * @param WooPaymentsProvider               $provider                 Native WooPayments provider.
+	 * @param WooPaymentsCheckoutAssets         $checkout_assets          Checkout scripts and their config.
+	 * @param Eligibility                       $woopay_eligibility       WooPay eligibility rules.
+	 * @param WooPaymentsExpressCheckoutService $express_checkout_service Express checkout service.
+	 * @param WooPaymentsFraudPreventionService $fraud_prevention_service Fraud-prevention token service.
+	 * @param WooPaymentsFrontendAssets         $frontend_assets          Registrar of the shared shopper script handles.
 	 */
-	public function __construct( Api $asset_api, WooPaymentsRuntimeArbiter $arbiter, WooPaymentsCheckoutAssets $checkout_assets, WooPaymentsProvider $provider, Eligibility $woopay_eligibility, WooPaymentsExpressCheckoutService $express_checkout_service, ?WooPaymentsGateway $payment_gateway = null ) {
+	public function __construct( Api $asset_api, WooPaymentsGateway $payment_gateway, WooPaymentsRuntimeArbiter $arbiter, WooPaymentsProvider $provider, WooPaymentsCheckoutAssets $checkout_assets, Eligibility $woopay_eligibility, WooPaymentsExpressCheckoutService $express_checkout_service, WooPaymentsFraudPreventionService $fraud_prevention_service, WooPaymentsFrontendAssets $frontend_assets ) {
 		$this->asset_api                = $asset_api;
+		$this->payment_gateway          = $payment_gateway;
 		$this->arbiter                  = $arbiter;
-		$this->checkout_assets          = $checkout_assets;
 		$this->provider                 = $provider;
+		$this->checkout_assets          = $checkout_assets;
 		$this->woopay_eligibility       = $woopay_eligibility;
 		$this->express_checkout_service = $express_checkout_service;
-		$this->payment_gateway          = $payment_gateway;
-		$this->name                     = null === $payment_gateway ? WooPaymentsPersistenceVocabulary::GATEWAY_ID : $payment_gateway->id;
+		$this->fraud_prevention_service = $fraud_prevention_service;
+		$this->frontend_assets          = $frontend_assets;
+		$this->name                     = $payment_gateway->id;
 	}
 
 	/**
@@ -168,7 +179,7 @@ final class WooPayments extends AbstractPaymentMethodType {
 		return $this->arbiter->is_builtin_owner() &&
 			$this->provider->can_process_payments() &&
 			$this->checkout_assets->should_expose_checkout_surface() &&
-			( null === $this->payment_gateway || $this->payment_gateway->is_available() );
+			$this->payment_gateway->is_available();
 	}
 
 	/**
@@ -185,14 +196,13 @@ final class WooPayments extends AbstractPaymentMethodType {
 			false
 		);
 		// The Blocks express script reads the token only from the page, as client 11.2.0 provides it (class-wc-payments-blocks-payment-method.php:77).
-		wc_get_container()->get( WooPaymentsFraudPreventionService::class )->maybe_enqueue_token_script();
+		$this->fraud_prevention_service->maybe_enqueue_token_script();
 
-		$frontend_assets = wc_get_container()->get( WooPaymentsFrontendAssets::class );
-		$handles         = array();
+		$handles = array();
 		if ( ! $this->is_blocks_cart_only_surface() ) {
-			$frontend_assets->register_stripe_script();
+			$this->frontend_assets->register_stripe_script();
 			// The card script's asset file lists this handle: FingerprintJS is a build external.
-			$frontend_assets->register_fingerprint_script();
+			$this->frontend_assets->register_fingerprint_script();
 
 			$this->asset_api->register_script(
 				self::PAYMENT_METHOD_SCRIPT_HANDLE,
@@ -228,7 +238,7 @@ final class WooPayments extends AbstractPaymentMethodType {
 		}
 
 		if ( $this->is_base_gateway_integration() && $this->should_enqueue_express_checkout_assets() ) {
-			$frontend_assets->register_stripe_script();
+			$this->frontend_assets->register_stripe_script();
 			$this->asset_api->register_script(
 				self::EXPRESS_CHECKOUT_SCRIPT_HANDLE,
 				'assets/client/blocks/wc-payment-method-woopayments-express-checkout.js',
@@ -256,12 +266,11 @@ final class WooPayments extends AbstractPaymentMethodType {
 	 * @return array<string,mixed>
 	 */
 	public function get_payment_method_data() {
-		$data       = $this->checkout_assets->get_blocks_payment_method_data( $this->get_card_gateway_supports(), $this->payment_gateway ? $this->payment_gateway->get_payment_method_definition() : null, $this->get_button_context() );
-		$gateway_id = null === $this->payment_gateway ? WooPaymentsPersistenceVocabulary::GATEWAY_ID : $this->payment_gateway->id;
-		$data       = array_merge(
+		$data = $this->checkout_assets->get_blocks_payment_method_data( $this->get_card_gateway_supports(), $this->payment_gateway->get_payment_method_definition(), $this->get_button_context() );
+		$data = array_merge(
 			$data,
 			array(
-				'gatewayId' => $gateway_id,
+				'gatewayId' => $this->payment_gateway->id,
 			)
 		);
 
@@ -275,12 +284,12 @@ final class WooPayments extends AbstractPaymentMethodType {
 	/**
 	 * Get the card gateway's support features, which every WooPayments Blocks method shares, as in client 11.1.0.
 	 *
-	 * The card gateway exists even when card is not offered, as the client's does; with no gateways at all, nothing is supported.
+	 * The card gateway exists even when card is not offered, as the client's does.
 	 *
 	 * @return string[]
 	 */
 	private function get_card_gateway_supports(): array {
-		if ( null !== $this->payment_gateway && WooPaymentsPersistenceVocabulary::GATEWAY_ID === $this->payment_gateway->id ) {
+		if ( WooPaymentsPersistenceVocabulary::GATEWAY_ID === $this->payment_gateway->id ) {
 			return $this->payment_gateway->supports;
 		}
 
@@ -290,7 +299,7 @@ final class WooPayments extends AbstractPaymentMethodType {
 	}
 
 	/**
-	 * Get the Blocks payment method instances for native WooPayments gateways.
+	 * Get the Blocks payment method instances for native WooPayments gateways, one per gateway.
 	 *
 	 * Each call starts a registration pass, so its split gateways share one fresh build of the config base.
 	 *
@@ -299,26 +308,19 @@ final class WooPayments extends AbstractPaymentMethodType {
 	public function get_payment_method_integrations(): array {
 		$this->checkout_assets->reset_config_memos();
 
-		if ( null !== $this->payment_gateway ) {
-			return array( $this );
-		}
-
-		$gateways = $this->provider->get_payment_gateways();
-		if ( empty( $gateways ) ) {
-			return array( $this );
-		}
-
 		return array_map(
 			fn( WooPaymentsGateway $gateway ): WooPayments => new self(
 				$this->asset_api,
+				$gateway,
 				$this->arbiter,
-				$this->checkout_assets,
 				$this->provider,
+				$this->checkout_assets,
 				$this->woopay_eligibility,
 				$this->express_checkout_service,
-				$gateway
+				$this->fraud_prevention_service,
+				$this->frontend_assets
 			),
-			$gateways
+			$this->provider->get_payment_gateways()
 		);
 	}
 

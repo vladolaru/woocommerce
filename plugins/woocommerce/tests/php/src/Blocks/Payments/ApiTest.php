@@ -22,6 +22,9 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRu
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCheckoutAssets;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExpressCheckoutService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFraudPreventionService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendAssets;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\Eligibility;
 use WC_Unit_Test_Case;
@@ -90,13 +93,19 @@ class ApiTest extends WC_Unit_Test_Case {
 	 */
 	public function test_resolves_and_registers_woopayments_once_for_active_tier(): void {
 		$woopayments_resolutions = 0;
-		$woopayments             = new WooPayments(
+		$card_gateway            = new WooPaymentsGateway();
+		$provider                = $this->createMock( WooPaymentsProvider::class );
+		$provider->method( 'get_payment_gateways' )->willReturn( array( $card_gateway ) );
+		$woopayments = new WooPayments(
 			$this->createMock( AssetApi::class ),
+			$card_gateway,
 			$this->createMock( WooPaymentsRuntimeArbiter::class ),
+			$provider,
 			$this->createMock( WooPaymentsCheckoutAssets::class ),
-			$this->createMock( WooPaymentsProvider::class ),
 			$this->createMock( Eligibility::class ),
-			$this->createMock( WooPaymentsExpressCheckoutService::class )
+			$this->createMock( WooPaymentsExpressCheckoutService::class ),
+			$this->createMock( WooPaymentsFraudPreventionService::class ),
+			$this->createMock( WooPaymentsFrontendAssets::class )
 		);
 		$this->state->write_tier( WooPaymentsSetupTier::ACTIVE );
 		$this->register_blocks_integrations(

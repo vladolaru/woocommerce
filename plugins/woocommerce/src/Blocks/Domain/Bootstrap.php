@@ -38,6 +38,9 @@ use Automattic\WooCommerce\StoreApi\StoreApi;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCheckoutAssets;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExpressCheckoutService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFraudPreventionService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendAssets;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\Eligibility;
 use Automattic\WooCommerce\Blocks\Shipping\ShippingController;
@@ -561,8 +564,11 @@ class Bootstrap {
 				$payments_provider = $core_container->get( WooPaymentsProvider::class );
 				$woopay            = $core_container->get( Eligibility::class );
 				$express_service   = $core_container->get( WooPaymentsExpressCheckoutService::class );
+				$fraud_prevention  = $core_container->get( WooPaymentsFraudPreventionService::class );
+				$frontend_assets   = $core_container->get( WooPaymentsFrontendAssets::class );
+				$card_gateway      = $core_container->get( WooPaymentsGateway::class );
 
-				return new WooPayments( $asset_api, $arbiter, $checkout_assets, $payments_provider, $woopay, $express_service );
+				return new WooPayments( $asset_api, $card_gateway, $arbiter, $payments_provider, $checkout_assets, $woopay, $express_service, $fraud_prevention, $frontend_assets );
 			}
 		);
 	}
