@@ -27,8 +27,8 @@
 			"gzip_growth_bytes": 778
 		},
 		"woopay-direct-checkout.js": {
-			"raw_bytes": 29473,
-			"gzip_bytes": 11400
+			"raw_bytes": 30918,
+			"gzip_bytes": 11623
 		},
 		"woopay.js": {
 			"raw_growth_bytes": 4396,
@@ -56,8 +56,8 @@
 		},
 		"blocks-common.js": {
 			"allow_new": true,
-			"raw_bytes": 12311,
-			"gzip_bytes": 4255
+			"raw_bytes": 14448,
+			"gzip_bytes": 5266
 		},
 		"blocks-woopay-common.js": {
 			"allow_new": true,
@@ -73,6 +73,9 @@
 			"allow_new": true,
 			"raw_bytes": 9411,
 			"gzip_bytes": 4330
+		},
+		"express-checkout.js": {
+			"gzip_growth_bytes": 515
 		},
 		"cart-block.css": {
 			"gzip_growth_bytes": 25
