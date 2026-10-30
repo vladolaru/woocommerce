@@ -256,6 +256,20 @@ describe( 'WooPayments WooPay checkout', () => {
 		);
 	} );
 
+	// The button finds the cookie by its exact pair, so an earlier cookie whose value names skip_woopay (an attribution
+	// cookie holding WooPay's back-to-store URL) does not hide it.
+	test( 'clears the skip_woopay cookie on a WooPay button click', async () => {
+		document.cookie = 'landing=%2Fcheckout%3Fskip_woopay%3Dtrue; path=/';
+		document.cookie = 'skip_woopay=1; path=/';
+		require( '../woopayments-woopay' );
+
+		document.querySelector( '#wcpay-woopay-button button' ).click();
+		await flushPromises();
+
+		expect( document.cookie ).not.toContain( 'skip_woopay=1' );
+		document.cookie = 'landing=; path=/; expires=Thu, 01 Jan 1970 00:00:00 UTC;';
+	} );
+
 	test( 'records WooPay express load and click events', async () => {
 		require( '../woopayments-woopay' );
 
@@ -2633,6 +2647,38 @@ describe( 'WooPayments WooPay checkout', () => {
 			await flushPromises();
 
 			expect( navigate ).not.toHaveBeenCalled();
+			expect(
+				window.fetch.mock.calls.some(
+					( [ , options ] ) =>
+						options &&
+						options.body instanceof window.URLSearchParams &&
+						options.body.get( 'action' ) ===
+							'woopay_express_checkout_button_show_error_notice'
+				)
+			).toBe( false );
+		} );
+
+		// The Blocks WooPay button shows the error in this case; each checkout keeps its own behaviour.
+		test( 'shows nothing when init_woopay cannot be reached after the iframe closed', async () => {
+			let rejectInit;
+			window.fetch = jest.fn( ( url ) =>
+				url === '/?wc-ajax=wcpay_init_woopay'
+					? new Promise( ( resolve, reject ) => {
+							rejectInit = reject;
+					  } )
+					: Promise.resolve( { json: () => Promise.resolve( {} ) } )
+			);
+			await openOtpIframe();
+
+			sendWooPayMessage( {
+				action: 'redirect_to_woopay',
+				platformCheckoutUserSession: 'platform-session-1',
+			} );
+			sendWooPayMessage( { action: 'close_modal' } );
+
+			rejectInit( new TypeError( 'Failed to fetch' ) );
+			await flushPromises();
+
 			expect(
 				window.fetch.mock.calls.some(
 					( [ , options ] ) =>

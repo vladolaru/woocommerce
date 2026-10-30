@@ -131,6 +131,28 @@ describe( 'wc-payment-method-woopayments-woopay', () => {
 		user = userEvent.setup();
 	} );
 
+	// The button finds the cookie by its exact pair, so an earlier cookie whose value names skip_woopay (an attribution
+	// cookie holding WooPay's back-to-store URL) does not hide it.
+	it( 'clears the skip_woopay cookie on a WooPay button click', async () => {
+		document.cookie = 'landing=%2Fcheckout%3Fskip_woopay%3Dtrue; path=/';
+		document.cookie = 'skip_woopay=1; path=/';
+		window.fetch = jest.fn().mockResolvedValue( {
+			json: jest.fn().mockResolvedValue( {} ),
+		} );
+
+		registerWooPay();
+		render(
+			createElement(
+				registerExpressPaymentMethod.mock.calls[ 0 ][ 0 ].content.type
+			)
+		);
+		await user.click( screen.getByRole( 'button', { name: 'WooPay' } ) );
+
+		expect( document.cookie ).not.toContain( 'skip_woopay=1' );
+		document.cookie =
+			'landing=; path=/; expires=Thu, 01 Jan 1970 00:00:00 UTC;';
+	} );
+
 	it( 'registers a branded WooPay express button and opens the OTP iframe on click', async () => {
 		document.body.innerHTML =
 			'<input id="email" value="shopper@example.com" />';
@@ -1791,6 +1813,36 @@ describe( 'wc-payment-method-woopayments-woopay', () => {
 			} );
 			expect( document.querySelector( '.woopay-otp-iframe' ) ).toBeNull();
 			expect( navigate ).not.toHaveBeenCalled();
+		} );
+
+		// The classic WooPay button shows nothing in this case; each checkout keeps its own behaviour.
+		it( 'shows the unavailable notice when init_woopay cannot be reached after the iframe closed', async () => {
+			let rejectInit;
+			window.fetch = jest.fn( ( url ) =>
+				url === '/?wc-ajax=wcpay_init_woopay'
+					? new Promise( ( resolve, reject ) => {
+							rejectInit = reject;
+						} )
+					: Promise.resolve( { json: () => Promise.resolve( {} ) } )
+			);
+			await openOtpIframe();
+
+			await sendWooPayMessage( {
+				action: 'redirect_to_woopay',
+				platformCheckoutUserSession: 'platform-session-1',
+			} );
+			await sendWooPayMessage( { action: 'close_modal' } );
+			await act( async () => {
+				rejectInit( new TypeError( 'Failed to fetch' ) );
+			} );
+
+			await waitFor( () => {
+				expect( createNotice ).toHaveBeenCalledWith(
+					'error',
+					'WooPay is unavailable at this time. Sorry for the inconvenience.',
+					{ context: 'wc/checkout' }
+				);
+			} );
 		} );
 
 		// Recorded decision C12: the client throws in new URL() on an
