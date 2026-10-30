@@ -34,7 +34,7 @@ class WooPaymentsBlocksPaymentMethodsControllerTest extends WC_Unit_Test_Case {
 	 */
 	public function tearDown(): void {
 		remove_all_filters( 'wcpay_upe_available_payment_methods' );
-		foreach ( array( 'wc-payment-method-woopayments', 'wc-payment-method-woopayments-fraud-scripts', 'wc-payment-method-woopayments-common', 'wc-payment-method-woopayments-woopay-common' ) as $handle ) {
+		foreach ( array( 'wc-payment-method-woopayments', 'wc-payment-method-woopayments-fraud-scripts', 'wc-payment-method-woopayments-common', 'wc-woopayments-woopay-common', 'wc-woopayments-appearance' ) as $handle ) {
 			wp_dequeue_style( $handle );
 			wp_deregister_style( $handle );
 			wp_dequeue_script( $handle );
