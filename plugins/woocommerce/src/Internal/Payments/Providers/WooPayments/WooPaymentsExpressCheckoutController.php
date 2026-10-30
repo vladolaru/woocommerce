@@ -313,7 +313,8 @@ class WooPaymentsExpressCheckoutController implements RegisterHooksInterface {
 		}
 
 		// Client 11.2.0 is_checkout() and is_product() (class-wc-payments-express-checkout-button-helper.php:255-259,
-		// :284-286): the visited page only, never the loop post; its Checkout block term is the exclusion above.
+		// :284-286): core's is_checkout() reads the global post on singular views, as the client's does, and the product
+		// term reads only the main query's page; the client's Checkout block term is the exclusion above.
 		return is_checkout() ||
 			WooPaymentsExpressCheckoutService::is_product_page() ||
 			is_cart();

@@ -2138,6 +2138,61 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * Pages and the location whose express settings the switches follow. An escaped `[[product_page]]` tag prints as text,
+	 * so it does not make a product page, as client 11.2.0 is_product() reads it
+	 * (class-wc-payments-express-checkout-button-helper.php:255-259, :975-1031).
+	 *
+	 * @return array<string,array{0:string,1:bool,2:bool,3:bool}>
+	 */
+	public function provide_pages_for_the_express_switch_location(): array {
+		return array(
+			'checkout page holding an escaped product shortcode' => array( '[woocommerce_checkout] [[product_page id="1"]]', true, true, false ),
+			'page holding a product shortcode' => array( '[product_page id="1"]', false, false, true ),
+		);
+	}
+
+	/**
+	 * @testdox Blocks data takes the express switches from the visited page's location, counting only unescaped product shortcodes: $_dataName.
+	 * @dataProvider provide_pages_for_the_express_switch_location
+	 *
+	 * A separate process, because an earlier test can define WOOCOMMERCE_CART or WOOCOMMERCE_CHECKOUT for the rest of the run.
+	 *
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 *
+	 * @param string $content          Page content.
+	 * @param bool   $checkout_page    Whether the page is the store checkout page.
+	 * @param bool   $payment_request  Expected Apple Pay/Google Pay switch: on only at checkout.
+	 * @param bool   $amazon_pay       Expected Amazon Pay switch: on only on product pages.
+	 */
+	public function test_blocks_data_express_switches_follow_the_visited_page( string $content, bool $checkout_page, bool $payment_request, bool $amazon_pay ): void {
+		$page_id = self::factory()->post->create(
+			array(
+				'post_type'    => 'page',
+				'post_status'  => 'publish',
+				'post_content' => $content,
+			)
+		);
+		if ( $checkout_page ) {
+			update_option( 'woocommerce_checkout_page_id', $page_id );
+		}
+		$this->reset_cart_checkout_page_cache();
+		$this->go_to( get_permalink( $page_id ) );
+		$this->assertSame( $checkout_page, is_checkout(), 'Precondition: only the store checkout page is a checkout.' );
+
+		$data = $this->create_assets_for_express_handlers(
+			array(
+				'express_checkout_product_methods'  => array( 'amazon_pay' ),
+				'express_checkout_cart_methods'     => array(),
+				'express_checkout_checkout_methods' => array( 'payment_request' ),
+			)
+		)->get_blocks_payment_method_data( self::CARD_SUPPORTS );
+
+		$this->assertSame( $payment_request, $data['isPaymentRequestEnabled'] );
+		$this->assertSame( $amazon_pay, $data['isAmazonPayEnabled'] );
+	}
+
+	/**
 	 * @testdox Blocks data leaves out the express checkout switches while express checkout is off.
 	 *
 	 * @dataProvider provider_express_handler_off

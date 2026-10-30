@@ -760,8 +760,7 @@ class WooPaymentsCheckoutAssets {
 	 * @return string
 	 */
 	private function get_express_button_context(): string {
-		$post = get_post();
-		if ( is_product() || ( $post instanceof \WP_Post && has_shortcode( $post->post_content, 'product_page' ) ) ) {
+		if ( WooPaymentsExpressCheckoutService::is_product_page() ) {
 			return 'product';
 		}
 

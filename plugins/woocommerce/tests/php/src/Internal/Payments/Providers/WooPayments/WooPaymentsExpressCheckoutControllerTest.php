@@ -122,6 +122,11 @@ class WooPaymentsExpressCheckoutControllerTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Should enqueue express checkout assets on custom checkout shortcode pages.
+	 *
+	 * A prior test can permanently define WOOCOMMERCE_CHECKOUT in the parent process.
+	 *
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
 	 */
 	public function test_enqueue_frontend_assets_loads_on_checkout_shortcode_page(): void {
 		$this->sut = $this->create_controller( true );
@@ -132,10 +137,10 @@ class WooPaymentsExpressCheckoutControllerTest extends WC_Unit_Test_Case {
 				'post_content' => '[woocommerce_checkout]',
 			)
 		);
-
-		global $post;
-		$post = get_post( $page_id ); // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited
-		setup_postdata( $post );
+		$this->reset_cart_checkout_page_cache();
+		$this->go_to( get_permalink( $page_id ) );
+		$this->assertNotSame( $page_id, wc_get_page_id( 'checkout' ), 'Precondition: not the store checkout page.' );
+		$this->assertFalse( defined( 'WOOCOMMERCE_CHECKOUT' ), 'Precondition: no inherited checkout constant.' );
 
 		$this->sut->enqueue_frontend_assets();
 
