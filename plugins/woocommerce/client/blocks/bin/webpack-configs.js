@@ -392,10 +392,11 @@ const isWooPaymentsWooPayCommonRequest = ( request ) =>
 
 // The card script loads without the protocol when its payment data turns the WooPay email check off
 // (src/Blocks/Payments/Integrations/WooPayments.php), so the external reads the namespace without throwing when it is
-// absent: a `var` external prints this expression as written, where a `window` one would read
-// `window.wc.woopayments.woopay` and throw on a missing `woopayments`. Every call into it sits behind that check.
+// absent, and gives an empty object then: a `var` external prints this expression as written, where a `window` one
+// would read `window.wc.woopayments.woopay` and throw on a missing `woopayments`. The card wires the email check only
+// when the members it calls are there (woopay/email-input-iframe.js).
 const WOOPAYMENTS_WOOPAY_COMMON_EXTERNAL =
-	'var (window.wc && window.wc.woopayments || {}).woopay';
+	'var (window.wc && window.wc.woopayments || {}).woopay || {}';
 
 /**
  * Build config for built-in payment gateway integrations.

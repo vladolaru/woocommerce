@@ -5,8 +5,8 @@ import { screen, waitFor } from '@testing-library/react';
 
 /*
  * The card script lists the WooPay protocol entry only when its data turns the WooPay email check on
- * (src/Blocks/Payments/Integrations/WooPayments.php); without it the build's external for ./woopay/protocol is
- * undefined. The protocol stands in here as a module that records every member the card reads, and holds nothing
+ * (src/Blocks/Payments/Integrations/WooPayments.php); without it the build's external for ./woopay/protocol is an
+ * empty object. The protocol stands in here as a module that records every member the card reads, and holds nothing
  * unless a test loads it.
  */
 const mockProtocolReads = [];
@@ -130,7 +130,10 @@ const loadCard = ( paymentMethodData ) => {
 	return card;
 };
 
-const renderCard = ( { registerWooPayments, render, createElement } ) => {
+const renderCard = (
+	{ registerWooPayments, render, createElement },
+	onPaymentSetup = jest.fn()
+) => {
 	// The checkout's payment block, where the save-user section renders.
 	document.body.innerHTML = `
 		<div class="wc-block-checkout">
@@ -143,7 +146,7 @@ const renderCard = ( { registerWooPayments, render, createElement } ) => {
 		createElement( content.type, {
 			...content.props,
 			eventRegistration: {
-				onPaymentSetup: jest.fn(),
+				onPaymentSetup,
 				onCheckoutSuccess: jest.fn(),
 			},
 			emitResponse: {
@@ -233,6 +236,55 @@ describe( 'wc-payment-method-woopayments and the WooPay protocol entry', () => {
 			);
 		} );
 		expect( mockProtocolReads ).toEqual( [] );
+	} );
+
+	it( 'renders the card and sets up its payment, without the WooPay email check, when the data turns the check on but the protocol is absent', async () => {
+		// The page published both flags on while the protocol entry did not load: the build reads an empty object.
+		document.body.innerHTML =
+			'<div data-block-name="woocommerce/checkout"><input type="email" id="email" /></div>';
+		let card;
+		expect( () => {
+			card = loadCard( {
+				...cardData,
+				...wooPayData,
+				isWooPayEmailInputEnabled: true,
+			} );
+		} ).not.toThrow();
+		const onPaymentSetup = jest.fn();
+		renderCard( card, onPaymentSetup );
+
+		await waitFor( () => {
+			expect(
+				document.querySelector( '#wcpay-core-blocks-payment-element' )
+			).not.toBeNull();
+		} );
+		expect( onPaymentSetup ).toHaveBeenCalled();
+		expect(
+			await screen.findByLabelText( 'Mobile phone number' )
+		).toBeInTheDocument();
+	} );
+
+	it( 'does not wire the WooPay email check when a protocol member it calls is absent', async () => {
+		document.body.innerHTML =
+			'<div data-block-name="woocommerce/checkout"><input type="email" id="email" /></div>';
+		const getTargetElement = jest.fn();
+		const handleEmailInput = jest.fn();
+		mockProtocol.members = {
+			...jest.requireActual( '../woopay/protocol' ),
+			getTargetElement,
+			handleEmailInput,
+		};
+		delete mockProtocol.members.buildAjaxUrl;
+
+		loadCard( {
+			...cardData,
+			...wooPayData,
+			isWooPayEmailInputEnabled: true,
+		} );
+		await new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
+
+		expect( getTargetElement ).not.toHaveBeenCalled();
+		expect( handleEmailInput ).not.toHaveBeenCalled();
 	} );
 
 	it( 'wires the WooPay email check through the protocol when WooPay and its email input are on', async () => {

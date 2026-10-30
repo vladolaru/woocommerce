@@ -3,6 +3,7 @@
  */
 import { recordWooPaymentsUserEvent, getTracksIdentity } from '../tracks';
 import {
+	buildAjaxUrl,
 	claimWooPayRedirect,
 	deleteSkipWooPayCookie,
 	getTargetElement,
@@ -48,8 +49,21 @@ export const initWooPay = ( paymentSettings, userEmail, userSession ) =>
 	);
 
 /**
+ * Whether the protocol entry has loaded the members the email check calls. The card script loads without it when its
+ * payment data turns the check off, and its build then reads an empty object here.
+ *
+ * @return {boolean} True when every member is there.
+ */
+const hasEmailCheckProtocol = () =>
+	typeof isPreviewing === 'function' &&
+	typeof getTargetElement === 'function' &&
+	typeof handleEmailInput === 'function' &&
+	typeof buildAjaxUrl === 'function';
+
+/**
  * Whether the checkout should wire the WooPay email-input flow — the plugin's
  * blocks entry gate: WooPay on, email input on, not previewing, checkout block present.
+ * Without the protocol the check does not wire, and the card works without it.
  *
  * @param {Object} paymentSettings Payment method settings.
  * @return {boolean} True when the flow should be wired.
@@ -57,6 +71,7 @@ export const initWooPay = ( paymentSettings, userEmail, userSession ) =>
 export const shouldHandleWooPayEmailInput = ( paymentSettings ) =>
 	!! paymentSettings?.isWooPayEnabled &&
 	!! paymentSettings?.isWooPayEmailInputEnabled &&
+	hasEmailCheckProtocol() &&
 	! isPreviewing( { isPreview: paymentSettings?.isPreview } ) &&
 	!! document.querySelector( '[data-block-name="woocommerce/checkout"]' );
 
@@ -68,7 +83,7 @@ export const shouldHandleWooPayEmailInput = ( paymentSettings ) =>
  */
 export const handleWooPayEmailInput = async ( field, paymentSettings ) => {
 	// Pay-for-order pages carry their own WooPay entry point.
-	if ( paymentSettings.isOrderPay ) {
+	if ( paymentSettings.isOrderPay || ! hasEmailCheckProtocol() ) {
 		return;
 	}
 

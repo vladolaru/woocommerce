@@ -243,17 +243,18 @@ final class WooPayments extends AbstractPaymentMethodType {
 	}
 
 	/**
-	 * Take the WooPay protocol off the card script's dependencies when the card's data turns the WooPay email check off,
-	 * so a checkout without it loads no protocol entry.
+	 * Take the WooPay protocol off the card script's dependencies when the request's first card data read turns the WooPay
+	 * email check off, so a checkout without it loads no protocol entry.
 	 *
-	 * The card script's built asset file lists the protocol, and the script calls it only to wire that check, when both
-	 * flags in this data are truthy. The flags are read the way the script reads this JSON data. The WooPay scripts keep
-	 * their own dependency on the protocol.
+	 * The card script calls the protocol only to wire that check, when both flags are truthy in the data Blocks publishes,
+	 * which is the request's first read (Payments\Api::add_payment_method_script_data()). So that read decides, and later
+	 * reads apply its decision whatever their flags. The WooPay scripts keep their own dependency on the protocol.
 	 *
 	 * @param array<string,mixed> $data The card's Blocks payment method data.
 	 */
 	private function maybe_remove_woopay_protocol_dependency( array $data ): void {
-		if ( self::is_truthy_in_json( $data['isWooPayEnabled'] ?? null ) && self::is_truthy_in_json( $data['isWooPayEmailInputEnabled'] ?? null ) ) {
+		$email_check_on = self::is_truthy_in_json( $data['isWooPayEnabled'] ?? null ) && self::is_truthy_in_json( $data['isWooPayEmailInputEnabled'] ?? null );
+		if ( $this->checkout_assets->decide_blocks_card_woopay_protocol( $email_check_on ) ) {
 			return;
 		}
 
