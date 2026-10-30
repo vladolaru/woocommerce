@@ -383,7 +383,7 @@ final class WooPayments extends AbstractPaymentMethodType {
 	 *
 	 * @return bool
 	 */
-	private function is_cart_or_checkout_page(): bool {
+	private function is_cart_checkout_or_admin(): bool {
 		if ( is_admin() ) {
 			return true;
 		}
@@ -418,7 +418,7 @@ final class WooPayments extends AbstractPaymentMethodType {
 	 */
 	private function should_enqueue_woopay_assets(): bool {
 		return $this->is_active() &&
-			$this->is_cart_or_checkout_page() &&
+			$this->is_cart_checkout_or_admin() &&
 			$this->woopay_eligibility->should_show_woopay_button( $this->get_button_context() );
 	}
 
@@ -429,7 +429,7 @@ final class WooPayments extends AbstractPaymentMethodType {
 	 */
 	private function should_enqueue_express_checkout_assets(): bool {
 		return $this->is_active() &&
-			$this->is_cart_or_checkout_page() &&
+			$this->is_cart_checkout_or_admin() &&
 			$this->express_checkout_service->should_show_payment_request_button( $this->get_button_context() );
 	}
 
