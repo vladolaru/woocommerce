@@ -270,12 +270,10 @@ final class WooPayments extends AbstractPaymentMethodType {
 	 * without that check loads no protocol entry. The WooPay scripts keep their own dependency on it.
 	 *
 	 * The page carries only the first paymentMethodData Blocks adds inside its two enqueue_data actions
-	 * (Payments\Api::add_payment_method_script_data()), so the dependency is set by whichever comes last: that publication,
-	 * or the card script's first registration in this request when a Mini-Cart published before the script existed. Core's
-	 * publishing read is the last card read before that key exists, and each such read sets the dependency both ways.
-	 * Any other read may hold flags the page never sees, and changes nothing.
-	 * A first registration during wp_print_scripts with the data already published serves no block on the page, so it reads
-	 * nothing: block themes render the whole template before wp_head, and classic themes print before anything has published.
+	 * (Payments\Api::add_payment_method_script_data()), so the dependency follows that data: at publication when the card
+	 * script exists, or on the script's first registration after publication outside script printing, as when a Mini-Cart
+	 * publishes first. Core's publishing read is the last card read before that key exists, and any other read changes nothing.
+	 * A first use later than that keeps the protocol the script's asset file lists: an unneeded file, never a broken card.
 	 *
 	 * @param array<string,mixed> $data The card's Blocks payment method data.
 	 */
