@@ -1,0 +1,4343 @@
+<?php
+declare( strict_types = 1 );
+
+namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
+
+use Automattic\WooCommerce\Enums\OrderStatus;
+use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\EventIngestor;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Fixtures\RecordedPlatformEvents;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\TransportLog;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\PaymentMethodRegistry;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDatabaseCache;
+use Automattic\WooCommerce\Proxies\LegacyProxy;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsActionSchedulerService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCheckoutAjaxController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeeDetailsNoteController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentConfirmationService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDataService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffectApplier;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentMethodDetailsService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\SepaToken;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenClassMapController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Api\FakeHttpClient;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\SubscriptionDouble;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\WooCommerceSubscriptionsDoubles;
+use WC_Order;
+use WC_Payment_Token;
+use WC_Payment_Token_CC;
+use WC_Payment_Tokens;
+use WC_Unit_Test_Case;
+
+/**
+ * Tests for the WooPaymentsCheckoutAjaxController class.
+ */
+class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
+
+	/**
+	 * Original store currency.
+	 *
+	 * @var string
+	 */
+	private string $original_currency;
+
+	/**
+	 * Set up test fixtures.
+	 */
+	public function setUp(): void {
+		parent::setUp();
+		$this->original_currency = (string) get_option( 'woocommerce_currency', 'USD' );
+	}
+
+	/**
+	 * Tear down test fixtures.
+	 */
+	public function tearDown(): void {
+		$this->reset_container_replacements();
+		remove_all_actions( 'wp_ajax_update_order_status' );
+		remove_all_actions( 'wp_ajax_nopriv_update_order_status' );
+		remove_all_actions( 'wp_ajax_create_setup_intent' );
+		remove_all_filters( 'woocommerce_payment_token_class' );
+		unset( $GLOBALS['wcpay_test_order_subscription_relationships'], $GLOBALS['wcpay_test_renewal_order_ids'] );
+		if ( class_exists( 'WC_Subscriptions_Change_Payment_Gateway', false ) && method_exists( 'WC_Subscriptions_Change_Payment_Gateway', 'reset' ) ) {
+			\WC_Subscriptions_Change_Payment_Gateway::reset();
+		}
+		wp_set_current_user( 0 );
+		update_option( 'woocommerce_currency', $this->original_currency );
+		parent::tearDown();
+	}
+
+	/**
+	 * @testdox Should register AJAX callbacks even when transport readiness is still deferred.
+	 */
+	public function test_registers_callbacks_when_transport_is_unavailable_at_boot(): void {
+		$api_client = new class() extends Client {
+			/**
+			 * Tell whether the transport is available.
+			 *
+			 * @return bool
+			 */
+			public function is_available(): bool {
+				return false;
+			}
+		};
+		$sut        = $this->create_controller( $api_client );
+
+		$sut->register();
+
+		$this->assertSame( 10, has_action( 'wp_ajax_update_order_status', array( $sut, 'handle_update_order_status' ) ) );
+		$this->assertSame( 10, has_action( 'wp_ajax_nopriv_update_order_status', array( $sut, 'handle_update_order_status' ) ) );
+		$this->assertSame( 10, has_action( 'wp_ajax_create_setup_intent', array( $sut, 'handle_create_setup_intent' ) ) );
+	}
+
+	/**
+	 * @testdox Order-status callback should complete a zero-total order from the SetupIntent.
+	 *
+	 * The intent is REC-3DS-5's succeeded
+	 * challenge (`Fixtures/platform-3ds-challenge-results.json`, pair `my_account_setup_intent_challenge_completed`):
+	 * a real My Account add-payment-method SetupIntent that succeeded after a hosted 3DS challenge.
+	 */
+	public function test_update_order_status_completes_zero_total_setup_intent(): void {
+		$recorded = $this->load_recorded_manual_3ds_entry( 'my_account_setup_intent_challenge_completed' );
+		$order    = $this->create_woopayments_order( '0.00' );
+		$order->update_meta_data( '_intent_id', $recorded['body']['id'] );
+		$order->save();
+
+		$http_client           = new FakeHttpClient();
+		$http_client->response = array(
+			'response' => array( 'code' => 200 ),
+			'headers'  => array( 'content-type' => 'application/json; charset=UTF-8' ),
+			'body'     => wp_json_encode( $recorded['body'] ),
+		);
+		$account_service       = $this->create_account_service( false );
+		$api_client            = new Client();
+		$api_client->init( $http_client, $account_service, wc_get_container()->get( TransportLog::class ) );
+		$sut      = $this->create_controller( $api_client, null, null, $account_service );
+		$response = $sut->confirm_order_payment(
+			array(
+				'_ajax_nonce' => wp_create_nonce( 'wcpay_update_order_status_nonce_' . $order->get_id() ),
+				'order_id'    => $order->get_id(),
+				'intent_id'   => $recorded['body']['id'],
+			)
+		);
+		$order    = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertArrayHasKey( 'return_url', $response );
+		$this->assertSame( 200, $response['status_code'] );
+		$this->assertSame( 'completed', $order->get_status() );
+		$this->assertSame( $recorded['body']['id'], $order->get_meta( '_intent_id', true ) );
+		$this->assertSame( $recorded['body']['payment_method'], $order->get_meta( '_payment_method_id', true ) );
+		$this->assertSame( $recorded['body']['customer'], $order->get_meta( '_stripe_customer_id', true ) );
+		// A live account stores plugin 11.1.0 `Order_Mode::PRODUCTION` (class-wc-payment-gateway-wcpay.php:1677).
+		$this->assertSame( 'prod', $order->get_meta( '_wcpay_mode', true ) );
+		// Plugin 11.1.0 stores the order currency for setup intents (class-wc-payments-order-service.php:1361).
+		$this->assertSame( 'USD', $order->get_meta( '_wcpay_intent_currency', true ) );
+		// Client 11.1.0 update_order_status() completes the $0 order with this plain note (gw:4263-4271); its order service then
+		// sees a paid order and writes no success note (os:2747-2764).
+		$notes = array_map( static fn( $note ): string => wp_strip_all_tags( html_entity_decode( (string) $note->content ) ), wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+		$this->assertContains( 'A payment of $0.00 was successfully charged using WooPayments (' . $recorded['body']['id'] . ').', $notes );
+		$this->assert_order_has_no_note_containing( $order, 'A test payment of' );
+		$this->assert_order_has_no_note_containing( $order, '<strong>successfully charged</strong>' );
+	}
+
+	/**
+	 * @testdox Zero-total SetupIntent callbacks preserve supported SEPA title and token identity.
+	 */
+	public function test_update_order_status_preserves_zero_total_setup_intent_sepa_title(): void {
+		$user_id = $this->factory()->user->create();
+		wp_set_current_user( $user_id );
+		$order = $this->create_woopayments_order( '0.00' );
+		$order->set_customer_id( $user_id );
+		$order->set_currency( 'EUR' );
+		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID . '_sepa_debit' );
+		$order->update_meta_data( '_intent_id', 'seti_sepa_title' );
+		$order->save();
+		$api_client      = new class() extends Client {
+			/**
+			 * Tell whether the transport is available.
+			 *
+			 * @return bool
+			 */
+			public function is_available(): bool {
+				return true;
+			}
+
+			/**
+			 * Retrieve the succeeded SetupIntent.
+			 *
+			 * @param string $setup_intent_id SetupIntent ID.
+			 * @return array<string,mixed>
+			 */
+			public function get_setup_intention( string $setup_intent_id ): array {
+				return array(
+					'id'             => $setup_intent_id,
+					'status'         => 'succeeded',
+					'customer'       => 'cus_sepa',
+					'payment_method' => 'pm_sepa',
+				);
+			}
+		};
+		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_gateway_setting', 'get_account_country' ) )
+			->getMock();
+		$account_service->init( wc_get_container()->get( LegacyProxy::class ), wc_get_container()->get( WooPaymentsDatabaseCache::class ) );
+		$account_service->method( 'get_gateway_setting' )->willReturn( array( 'card', 'sepa_debit' ) );
+		$account_service->method( 'get_account_country' )->willReturn( 'DE' );
+		$token_service   = $this->create_token_service(
+			array(
+				'pm_sepa' => array(
+					'id'         => 'pm_sepa',
+					'type'       => 'sepa_debit',
+					'sepa_debit' => array(
+						'last4' => '6789',
+					),
+				),
+			),
+			$account_service
+		);
+		$token_class_map = new WooPaymentsTokenClassMapController();
+		$token_class_map->register();
+		$sut = $this->create_controller( $api_client, null, $token_service, $account_service );
+		WooCommerceSubscriptionsDoubles::load_renewal_detector();
+		$GLOBALS['wcpay_test_renewal_order_ids'] = array( $order->get_id() );
+
+		$response = $sut->confirm_order_payment(
+			array(
+				'_ajax_nonce' => wp_create_nonce( 'wcpay_update_order_status_nonce_' . $order->get_id() ),
+				'order_id'    => $order->get_id(),
+				'intent_id'   => 'seti_sepa_title',
+			)
+		);
+		$order    = wc_get_order( $order->get_id() );
+		$tokens   = array_values( WC_Payment_Tokens::get_customer_tokens( $user_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID . '_sepa_debit' ) );
+
+		$this->assertSame( 200, $response['status_code'] );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( WooPaymentsPersistenceVocabulary::GATEWAY_ID . '_sepa_debit', $order->get_payment_method() );
+		$this->assertSame( 'SEPA Direct Debit', $order->get_payment_method_title() );
+		$this->assertSame( 'pm_sepa', $order->get_meta( '_payment_method_id', true ) );
+		$this->assertCount( 1, $tokens );
+		$this->assertInstanceOf( SepaToken::class, $tokens[0] );
+		$this->assertSame( 'pm_sepa', $tokens[0]->get_token() );
+		$this->assertSame( array( $tokens[0]->get_id() ), array_values( $order->get_payment_tokens() ) );
+	}
+
+	/**
+	 * @testdox Zero-total SetupIntent callbacks expose card identity before lifecycle hooks.
+	 */
+	public function test_update_order_status_exposes_zero_total_setup_intent_card_identity_before_lifecycle(): void {
+		$user_id = $this->factory()->user->create();
+		wp_set_current_user( $user_id );
+
+		$order = $this->create_woopayments_order( '0.00' );
+		$order->set_customer_id( $user_id );
+		$order->set_payment_method_title( 'Card' );
+		$order->update_meta_data( '_intent_id', 'seti_card_identity' );
+		$order->save();
+		$subscription = $this->create_woopayments_order( '0.00' );
+		$subscription->set_customer_id( $user_id );
+		$subscription->set_payment_method_title( 'Card' );
+		$subscription->save();
+		// Relates the subscription without marking the order recurring: the renewal check reads its own registry.
+		WooCommerceSubscriptionsDoubles::load_order_subscriptions();
+		$GLOBALS['wcpay_test_order_subscription_relationships'] = array( $order->get_id() => array( 'renewal' => array( $subscription->get_id() ) ) );
+
+		$api_client           = new class() extends Client {
+			/**
+			 * Tell whether the transport is available.
+			 *
+			 * @return bool
+			 */
+			public function is_available(): bool {
+				return true;
+			}
+
+			/**
+			 * Retrieve the confirmed SetupIntent.
+			 *
+			 * @param string $setup_intent_id SetupIntent ID.
+			 * @return array<string,mixed>
+			 */
+			public function get_setup_intention( string $setup_intent_id ): array {
+				if ( 'seti_card_identity' !== $setup_intent_id ) {
+					throw new \RuntimeException( 'Unexpected setup intent ID.' );
+				}
+
+				return array(
+					'id'             => 'seti_card_identity',
+					'status'         => 'succeeded',
+					'customer'       => 'cus_card_identity',
+					'payment_method' => 'pm_card_identity',
+				);
+			}
+		};
+		$token_service        = $this->create_token_service(
+			array(
+				'pm_card_identity' => array(
+					'id'   => 'pm_card_identity',
+					'type' => 'card',
+					'card' => array(
+						'brand'     => 'visa',
+						'funding'   => 'credit',
+						'last4'     => '4242',
+						'network'   => 'visa',
+						'exp_month' => 12,
+						'exp_year'  => 2030,
+					),
+				),
+			)
+		);
+		$sut                  = $this->create_controller( $api_client, null, $token_service );
+		$observed_identity    = array();
+		$record_payment_state = function ( int $order_id ) use ( $order, $subscription, &$observed_identity ): void {
+			if ( $order->get_id() !== $order_id ) {
+				return;
+			}
+
+			$observed_order        = wc_get_order( $order_id );
+			$observed_subscription = wc_get_order( $subscription->get_id() );
+			$observed_identity     = array(
+				'title'              => $observed_order instanceof WC_Order ? $observed_order->get_payment_method_title() : '',
+				'last4'              => $observed_order instanceof WC_Order ? $observed_order->get_meta( 'last4', true ) : '',
+				'brand'              => $observed_order instanceof WC_Order ? $observed_order->get_meta( '_card_brand', true ) : '',
+				'subscription_title' => $observed_subscription instanceof WC_Order ? $observed_subscription->get_payment_method_title() : '',
+			);
+		};
+		add_action( 'woocommerce_payment_complete', $record_payment_state, 1, 1 );
+
+		try {
+			$response = $sut->confirm_order_payment(
+				array(
+					'_ajax_nonce'                => wp_create_nonce( 'wcpay_update_order_status_nonce_' . $order->get_id() ),
+					'order_id'                   => $order->get_id(),
+					'intent_id'                  => 'seti_card_identity',
+					'should_save_payment_method' => 'true',
+				)
+			);
+		} finally {
+			remove_action( 'woocommerce_payment_complete', $record_payment_state, 1 );
+		}
+
+		$this->assertSame( 200, $response['status_code'] );
+		$this->assertSame( 'Visa credit card', $observed_identity['title'] ?? '' );
+		$this->assertSame( '4242', $observed_identity['last4'] ?? '' );
+		$this->assertSame( 'visa', $observed_identity['brand'] ?? '' );
+		$this->assertSame( 'Visa credit card', $observed_identity['subscription_title'] ?? '' );
+	}
+
+	/**
+	 * @testdox Saved recurring credentials complete once with generic identity when display details are unavailable.
+	 * @dataProvider unavailable_saved_setup_intent_display_details_data
+	 *
+	 * @param bool $throw_details_lookup Whether the display-details lookup throws.
+	 */
+	public function test_saved_recurring_setup_intent_uses_generic_identity_when_display_details_are_unavailable( bool $throw_details_lookup ): void {
+		$user_id = $this->factory()->user->create();
+		wp_set_current_user( $user_id );
+		$token        = $this->create_card_token( $user_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_saved_unavailable' );
+		$order        = $this->create_woopayments_order( '0.00' );
+		$subscription = $this->create_woopayments_order( '0.00' );
+		$order->set_customer_id( $user_id );
+		$order->set_payment_method_title( 'Visa credit card' );
+		$order->update_meta_data( '_intent_id', 'seti_saved_unavailable' );
+		$order->update_meta_data( '_payment_method_id', 'pm_saved_unavailable' );
+		$order->update_meta_data( 'last4', '9999' );
+		$order->update_meta_data( '_card_brand', 'mastercard' );
+		$order->update_meta_data( '_wcpay_payment_method_details', '{"type":"card","card":{"last4":"9999"}}' );
+		$order->save();
+		$subscription->set_customer_id( $user_id );
+		$subscription->set_payment_method_title( 'Visa credit card' );
+		$subscription->save();
+		$details_reads  = new \ArrayObject( array( 0 ) );
+		$api_client     = new class() extends Client {
+			/**
+			 * Tell whether the transport is available.
+			 *
+			 * @return bool
+			 */
+			public function is_available(): bool {
+				return true;
+			}
+
+			/**
+			 * Retrieve the succeeded SetupIntent.
+			 *
+			 * @param string $setup_intent_id SetupIntent ID.
+			 * @return array<string,mixed>
+			 */
+			public function get_setup_intention( string $setup_intent_id ): array {
+				return array(
+					'id'             => $setup_intent_id,
+					'status'         => 'succeeded',
+					'customer'       => 'cus_saved_unavailable',
+					'payment_method' => 'pm_saved_unavailable',
+				);
+			}
+		};
+		$sut            = $this->create_controller( $api_client, null, $this->create_token_service( array(), null, $details_reads, $throw_details_lookup ) );
+		$lifecycle_runs = 0;
+		$observer       = static function ( int $order_id ) use ( $order, &$lifecycle_runs ): void {
+			if ( $order->get_id() === $order_id ) {
+				++$lifecycle_runs;
+			}
+		};
+		$this->make_parent_order_of( $order, $subscription );
+		add_action( 'woocommerce_payment_complete', $observer, 1 );
+
+		try {
+			$response = $sut->confirm_order_payment(
+				array(
+					'_ajax_nonce' => wp_create_nonce( 'wcpay_update_order_status_nonce_' . $order->get_id() ),
+					'order_id'    => $order->get_id(),
+					'intent_id'   => 'seti_saved_unavailable',
+				)
+			);
+		} finally {
+			remove_action( 'woocommerce_payment_complete', $observer, 1 );
+		}
+
+		$order        = wc_get_order( $order->get_id() );
+		$subscription = wc_get_order( $subscription->get_id() );
+		$this->assertSame( 200, $response['status_code'] );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertInstanceOf( WC_Order::class, $subscription );
+		$this->assertSame( 1, $lifecycle_runs );
+		$this->assertSame( 'Card', $order->get_payment_method_title() );
+		$this->assertSame( 'Card', $subscription->get_payment_method_title() );
+		$this->assertSame( '', $order->get_meta( 'last4', true ) );
+		$this->assertSame( '', $order->get_meta( '_card_brand', true ) );
+		$this->assertSame( '', $order->get_meta( '_wcpay_payment_method_details', true ) );
+		$this->assertSame( array( $token->get_id() ), array_values( $order->get_payment_tokens() ) );
+		$this->assertSame( array( $token->get_id() ), array_values( $subscription->get_payment_tokens() ) );
+		$this->assertSame( 1, $details_reads[0] );
+	}
+
+	/**
+	 * Provide unavailable display-details lookup modes.
+	 *
+	 * @return array<string,array{bool}>
+	 */
+	public function unavailable_saved_setup_intent_display_details_data(): array {
+		return array(
+			'empty response' => array( false ),
+			'thrown lookup'  => array( true ),
+		);
+	}
+
+	/**
+	 * @testdox Sequential SetupIntent callbacks complete once and reuse valid same-method display details.
+	 */
+	public function test_sequential_setup_intent_callbacks_complete_once_and_reuse_same_method_display_details(): void {
+		$user_id = $this->factory()->user->create();
+		wp_set_current_user( $user_id );
+		$token        = $this->create_card_token( $user_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_callback_replay' );
+		$order        = $this->create_woopayments_order( '0.00' );
+		$subscription = $this->create_woopayments_order( '0.00' );
+		$order->set_customer_id( $user_id );
+		$order->set_payment_method_title( 'Card' );
+		$order->update_meta_data( '_intent_id', 'seti_callback_replay' );
+		$order->update_meta_data( '_payment_method_id', 'pm_callback_replay' );
+		$order->save();
+		$subscription->set_customer_id( $user_id );
+		$subscription->set_payment_method_title( 'Card' );
+		$subscription->save();
+		$details        = array(
+			'id'   => 'pm_callback_replay',
+			'type' => 'card',
+			'card' => array(
+				'brand'     => 'visa',
+				'network'   => 'visa',
+				'funding'   => 'credit',
+				'last4'     => '4242',
+				'exp_month' => 12,
+				'exp_year'  => 2030,
+			),
+		);
+		$details_reads  = new \ArrayObject( array( 0 ) );
+		$api_client     = new class() extends Client {
+			/**
+			 * Tell whether the transport is available.
+			 *
+			 * @return bool
+			 */
+			public function is_available(): bool {
+				return true;
+			}
+
+			/**
+			 * Retrieve the succeeded SetupIntent.
+			 *
+			 * @param string $setup_intent_id SetupIntent ID.
+			 * @return array<string,mixed>
+			 */
+			public function get_setup_intention( string $setup_intent_id ): array {
+				return array(
+					'id'             => $setup_intent_id,
+					'status'         => 'succeeded',
+					'customer'       => 'cus_callback_replay',
+					'payment_method' => 'pm_callback_replay',
+				);
+			}
+		};
+		$sut            = $this->create_controller( $api_client, null, $this->create_token_service( array( 'pm_callback_replay' => $details ), null, $details_reads ) );
+		$lifecycle_runs = 0;
+		$observer       = static function ( int $order_id ) use ( $order, &$lifecycle_runs ): void {
+			if ( $order->get_id() === $order_id ) {
+				++$lifecycle_runs;
+			}
+		};
+		$this->make_parent_order_of( $order, $subscription );
+		add_action( 'woocommerce_payment_complete', $observer, 1 );
+		$request = array(
+			'_ajax_nonce' => wp_create_nonce( 'wcpay_update_order_status_nonce_' . $order->get_id() ),
+			'order_id'    => $order->get_id(),
+			'intent_id'   => 'seti_callback_replay',
+		);
+
+		try {
+			$first_response  = $sut->confirm_order_payment( $request );
+			$second_response = $sut->confirm_order_payment( $request );
+		} finally {
+			remove_action( 'woocommerce_payment_complete', $observer, 1 );
+		}
+
+		$order        = wc_get_order( $order->get_id() );
+		$subscription = wc_get_order( $subscription->get_id() );
+		$this->assertSame( 200, $first_response['status_code'] );
+		$this->assertSame( 200, $second_response['status_code'] );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertInstanceOf( WC_Order::class, $subscription );
+		$this->assertSame( 1, $lifecycle_runs );
+		$this->assertSame( 'Visa credit card', $order->get_payment_method_title() );
+		$this->assertSame( 'Visa credit card', $subscription->get_payment_method_title() );
+		$this->assertSame( '4242', $order->get_meta( 'last4', true ) );
+		$this->assertSame( 'visa', $order->get_meta( '_card_brand', true ) );
+		$this->assertSame(
+			array(
+				'type' => 'card',
+				'card' => $details['card'],
+			),
+			json_decode( (string) $order->get_meta( '_wcpay_payment_method_details', true ), true )
+		);
+		$this->assertSame( '', $order->get_meta( '_wcpay_raw_payment_method_details', true ) );
+		$this->assertSame( '', $order->get_meta( 'id', true ) );
+		$this->assertSame( '', $order->get_meta( 'customer', true ) );
+		$this->assertSame( '', $subscription->get_meta( 'last4', true ) );
+		$this->assertSame( '', $subscription->get_meta( '_card_brand', true ) );
+		$this->assertSame( '', $subscription->get_meta( '_wcpay_payment_method_details', true ) );
+		$this->assertSame( '', $subscription->get_meta( '_wcpay_raw_payment_method_details', true ) );
+		$this->assertSame( 'pm_callback_replay', $order->get_meta( '_payment_method_id', true ) );
+		$this->assertSame( 'pm_callback_replay', $subscription->get_meta( '_payment_method_id', true ) );
+		$this->assertSame( 'cus_callback_replay', $order->get_meta( '_stripe_customer_id', true ) );
+		$this->assertSame( 'cus_callback_replay', $subscription->get_meta( '_stripe_customer_id', true ) );
+		$this->assertSame( 'seti_callback_replay', $order->get_meta( '_intent_id', true ) );
+		$this->assertSame( array( $token->get_id() ), array_values( $order->get_payment_tokens() ) );
+		$this->assertSame( array( $token->get_id() ), array_values( $subscription->get_payment_tokens() ) );
+		$this->assertSame( 1, $details_reads[0] );
+	}
+
+	/**
+	 * @testdox A failing lifecycle application leaves the order's title and setup metadata unwritten: $_dataName.
+	 *
+	 * The confirmation builds the outcome without writing the order; only the lifecycle owner applies it. When that
+	 * application throws, the callback answers 500 and the order keeps what it had.
+	 *
+	 * @dataProvider provider_lifecycle_failure_leaves_order_unwritten
+	 *
+	 * @param string              $total  Order total.
+	 * @param array<string,mixed> $intent PaymentIntent or SetupIntent response.
+	 */
+	public function test_lifecycle_failure_leaves_the_order_unwritten( string $total, array $intent ): void {
+		$order = $this->create_woopayments_order( $total );
+		$order->set_payment_method_title( 'Card' );
+		$order->update_meta_data( '_intent_id', $intent['id'] );
+		$order->save();
+
+		$fee_details_note_controller = $this->getMockBuilder( WooPaymentsFeeDetailsNoteController::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'apply_and_schedule_fee_details_with_lock' ) )
+			->getMock();
+		$fee_details_note_controller->expects( $this->once() )
+			->method( 'apply_and_schedule_fee_details_with_lock' )
+			->willThrowException( new \RuntimeException( 'Lifecycle unavailable.' ) );
+
+		$response = $this->get_update_order_status_response_for_intent( $order, $intent, $fee_details_note_controller );
+		$reloaded = wc_get_order( $order->get_id() );
+
+		$this->assertSame( 500, $response['status_code'] );
+		$this->assertInstanceOf( WC_Order::class, $reloaded );
+		$this->assertSame( 'Card', $reloaded->get_payment_method_title() );
+		$this->assertSame( '', $reloaded->get_meta( '_payment_method_id', true ) );
+		$this->assertSame( '', $reloaded->get_meta( '_stripe_customer_id', true ) );
+		$this->assertSame( '', $reloaded->get_meta( '_wcpay_mode', true ) );
+	}
+
+	/**
+	 * Intents whose lifecycle application fails.
+	 *
+	 * @return array<string,array{0:string,1:array<string,mixed>}>
+	 */
+	public function provider_lifecycle_failure_leaves_order_unwritten(): array {
+		return array(
+			'PaymentIntent requires_payment_method with error' => array(
+				'50.00',
+				array(
+					'id'                 => 'pi_failed',
+					'status'             => 'requires_payment_method',
+					'last_payment_error' => array( 'code' => 'card_declined' ),
+				),
+			),
+			'succeeded zero-total SetupIntent' => array(
+				'0.00',
+				array(
+					'id'             => 'seti_read_only',
+					'status'         => 'succeeded',
+					'customer'       => 'cus_read_only',
+					'payment_method' => 'pm_read_only',
+				),
+			),
+		);
+	}
+
+	/**
+	 * @testdox An unrelated runtime exception with code 409 should retain the generic 500 response.
+	 */
+	public function test_unrelated_runtime_exception_with_409_code_returns_generic_error(): void {
+		$order = $this->create_woopayments_order( '50.00' );
+		$order->update_meta_data( '_intent_id', 'pi_runtime_conflict' );
+		$order->save();
+
+		$api_client                  = new class() extends Client {
+			/**
+			 * Tell whether transport is available.
+			 *
+			 * @return bool
+			 */
+			public function is_available(): bool {
+				return true;
+			}
+
+			/**
+			 * Return an authorized PaymentIntent.
+			 *
+			 * @param string $intent_id Intent ID.
+			 * @return array<string,mixed>
+			 */
+			public function get_payment_intention( string $intent_id ): array {
+				return array(
+					'id'     => $intent_id,
+					'status' => 'succeeded',
+				);
+			}
+		};
+		$fee_details_note_controller = $this->getMockBuilder( WooPaymentsFeeDetailsNoteController::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'apply_and_schedule_fee_details_with_lock' ) )
+			->getMock();
+		$fee_details_note_controller->expects( $this->once() )
+			->method( 'apply_and_schedule_fee_details_with_lock' )
+			->willThrowException( new \RuntimeException( 'Unrelated lifecycle conflict.', 409 ) );
+
+		$response = $this->create_controller( $api_client, null, null, null, $fee_details_note_controller )
+			->confirm_order_payment(
+				array(
+					'_ajax_nonce' => wp_create_nonce( 'wcpay_update_order_status_nonce_' . $order->get_id() ),
+					'order_id'    => $order->get_id(),
+					'intent_id'   => 'pi_runtime_conflict',
+				)
+			);
+
+		$this->assertSame( 500, $response['status_code'] );
+		$this->assertSame(
+			__( "We're not able to process this payment. Please try again later.", 'woocommerce' ),
+			$response['error']['message']
+		);
+	}
+
+	/**
+	 * @testdox Order-status callback should use the account service for lifecycle mode metadata.
+	 */
+	public function test_update_order_status_uses_account_service_mode_for_lifecycle_meta(): void {
+		$order = $this->create_woopayments_order( '50.00' );
+		$order->update_meta_data( '_intent_id', 'pi_native' );
+		$order->save();
+
+		$api_client = new class() extends Client {
+			/**
+			 * Tell whether the transport is available.
+			 *
+			 * @return bool
+			 */
+			public function is_available(): bool {
+				return true;
+			}
+
+			/**
+			 * Retrieve a PaymentIntent.
+			 *
+			 * @param string $intent_id PaymentIntent ID.
+			 * @return array<string,mixed>
+			 */
+			public function get_payment_intention( string $intent_id ): array {
+				if ( 'pi_native' !== $intent_id ) {
+					throw new \RuntimeException( 'Unexpected payment intent ID.' );
+				}
+
+				return array(
+					'id'             => 'pi_native',
+					'status'         => 'succeeded',
+					'currency'       => 'usd',
+					'amount'         => 5000,
+					'customer'       => 'cus_native',
+					'payment_method' => 'pm_native',
+					'charges'        => array(
+						'total_count' => 1,
+						'data'        => array(
+							array(
+								'id'                     => 'ch_native',
+								'payment_method'         => 'pm_native',
+								'payment_method_details' => array(
+									'type' => 'card',
+									'card' => array(
+										'brand'   => 'visa',
+										'funding' => 'credit',
+										'last4'   => '4242',
+										'network' => 'visa',
+									),
+								),
+								'balance_transaction'    => array( 'id' => 'txn_native' ),
+								'outcome'                => array( 'risk_level' => 'normal' ),
+								'amount'                 => 5000,
+								'currency'               => 'usd',
+								'captured'               => true,
+								'application_fee_amount' => 218,
+								'fee_breakdown_v1'       => array(
+									'totals' => array(
+										'fee' => array(
+											'amount'   => 175,
+											'currency' => 'usd',
+										),
+										'net' => array(
+											'amount'   => 4825,
+											'currency' => 'usd',
+										),
+									),
+								),
+							),
+						),
+					),
+				);
+			}
+		};
+		$sut        = $this->create_controller( $api_client, null, null, $this->create_account_service( true ) );
+
+		$response = $sut->confirm_order_payment(
+			array(
+				'_ajax_nonce' => wp_create_nonce( 'wcpay_update_order_status_nonce_' . $order->get_id() ),
+				'order_id'    => $order->get_id(),
+				'intent_id'   => 'pi_native',
+			)
+		);
+		$order    = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 200, $response['status_code'] );
+		$this->assertSame( 'test', $order->get_meta( '_wcpay_mode', true ) );
+		$this->assertSame( '1.75', $order->get_meta( '_wcpay_transaction_fee', true ) );
+		$this->assertSame( '48.25', $order->get_meta( '_wcpay_net', true ) );
+		$this->assertFalse( $order->meta_exists( '_wcpay_fraud_outcome_status' ) );
+		$this->assertFalse( $order->meta_exists( '_wcpay_fraud_meta_box_type' ) );
+		$this->assertSame( 'Visa credit card', $order->get_payment_method_title() );
+		$this->assertSame( '4242', $order->get_meta( 'last4', true ) );
+		$this->assertSame( 'visa', $order->get_meta( '_card_brand', true ) );
+		$this->assertStringContainsString( '"last4":"4242"', (string) $order->get_meta( '_wcpay_payment_method_details', true ) );
+		$this->assert_order_has_note_containing( $order, 'A test payment of' );
+		$this->assert_order_has_note_containing( $order, 'was processed using WooPayments in <strong>test mode</strong>' );
+		$this->assert_order_has_note_containing( $order, 'No real funds were collected' );
+		$this->assert_order_has_no_note_containing( $order, 'was <strong>successfully charged</strong> using WooPayments' );
+		$this->assert_order_has_note_containing( $order, 'pi_native' );
+		$this->assert_order_has_note_containing( $order, 'page=wc-admin' );
+		$this->assert_order_has_note_containing( $order, 'id=pi_native' );
+		$this->assert_order_has_no_note_containing( $order, '/woopayments/transactions/details' );
+		$this->assert_order_has_no_note_containing( $order, 'transaction_id=txn_native' );
+	}
+
+	/**
+	 * @testdox Order-status callback should preserve non-card payment method titles.
+	 */
+	public function test_update_order_status_preserves_non_card_payment_method_title(): void {
+		$order = $this->create_woopayments_order( '50.00' );
+		$order->update_meta_data( '_intent_id', 'pi_klarna' );
+		$order->save();
+
+		$api_client = new class() extends Client {
+			/**
+			 * Tell whether the transport is available.
+			 *
+			 * @return bool
+			 */
+			public function is_available(): bool {
+				return true;
+			}
+
+			/**
+			 * Retrieve a PaymentIntent.
+			 *
+			 * @param string $intent_id PaymentIntent ID.
+			 * @return array<string,mixed>
+			 */
+			public function get_payment_intention( string $intent_id ): array {
+				if ( 'pi_klarna' !== $intent_id ) {
+					throw new \RuntimeException( 'Unexpected payment intent ID.' );
+				}
+
+				return array(
+					'id'             => 'pi_klarna',
+					'status'         => 'succeeded',
+					'currency'       => 'usd',
+					'amount'         => 5000,
+					'customer'       => 'cus_native',
+					'payment_method' => 'pm_klarna',
+					'charges'        => array(
+						'total_count' => 1,
+						'data'        => array(
+							array(
+								'id'                     => 'ch_klarna',
+								'payment_method'         => 'pm_klarna',
+								'payment_method_details' => array(
+									'type'   => 'klarna',
+									'klarna' => array(),
+								),
+							),
+						),
+					),
+				);
+			}
+		};
+		$sut        = $this->create_controller( $api_client );
+
+		$response = $sut->confirm_order_payment(
+			array(
+				'_ajax_nonce' => wp_create_nonce( 'wcpay_update_order_status_nonce_' . $order->get_id() ),
+				'order_id'    => $order->get_id(),
+				'intent_id'   => 'pi_klarna',
+			)
+		);
+		$order    = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 200, $response['status_code'] );
+		$this->assertSame( 'Klarna', $order->get_payment_method_title() );
+		$this->assertStringContainsString( '"type":"klarna"', (string) $order->get_meta( '_wcpay_payment_method_details', true ) );
+		$this->assertFalse( $order->meta_exists( '_wcpay_fraud_outcome_status' ) );
+		$this->assertSame( 'not_card', $order->get_meta( '_wcpay_fraud_meta_box_type', true ) );
+	}
+
+	/**
+	 * @testdox Order-status callback should persist settlement exchange-rate meta for converted-currency charges.
+	 */
+	public function test_update_order_status_persists_settlement_exchange_rate_meta_for_converted_currency_charge(): void {
+		update_option( 'woocommerce_currency', 'USD' );
+		$order = $this->create_woopayments_order( '40.00' );
+		$order->set_currency( 'GBP' );
+		$order->update_meta_data( '_intent_id', 'pi_converted' );
+		$order->save();
+
+		$api_client = new class() extends Client {
+			/**
+			 * Tell whether the transport is available.
+			 *
+			 * @return bool
+			 */
+			public function is_available(): bool {
+				return true;
+			}
+
+			/**
+			 * Retrieve a PaymentIntent.
+			 *
+			 * @param string $intent_id PaymentIntent ID.
+			 * @return array<string,mixed>
+			 */
+			public function get_payment_intention( string $intent_id ): array {
+				if ( 'pi_converted' !== $intent_id ) {
+					throw new \RuntimeException( 'Unexpected payment intent ID.' );
+				}
+
+				return array(
+					'id'             => 'pi_converted',
+					'status'         => 'succeeded',
+					'currency'       => 'gbp',
+					'amount'         => 4000,
+					'customer'       => 'cus_native',
+					'payment_method' => 'pm_native',
+					'charges'        => array(
+						'total_count' => 1,
+						'data'        => array(
+							array(
+								'id'                  => 'ch_converted',
+								'payment_method'      => 'pm_native',
+								'balance_transaction' => array(
+									'id'            => 'txn_converted',
+									'exchange_rate' => 1.33127,
+								),
+								'amount'              => 4000,
+								'currency'            => 'gbp',
+							),
+						),
+					),
+				);
+			}
+		};
+		$sut        = $this->create_controller( $api_client, null, null, $this->create_account_service( true, 'usd' ) );
+
+		$response = $sut->confirm_order_payment(
+			array(
+				'_ajax_nonce' => wp_create_nonce( 'wcpay_update_order_status_nonce_' . $order->get_id() ),
+				'order_id'    => $order->get_id(),
+				'intent_id'   => 'pi_converted',
+			)
+		);
+		$order    = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 200, $response['status_code'] );
+		$this->assertSame( '1.33127', $order->get_meta( '_wcpay_multi_currency_stripe_exchange_rate', true ) );
+	}
+
+	/**
+	 * @testdox Order-status callback should reject mismatched intent IDs before transport reads and note the received ID.
+	 *
+	 * Source: client 11.1.0 `gw:4184-4188` (a missing `intent_id` is the translated "unknown") and `gw:4372-4384`
+	 * (the note for `intent_id_mismatch` and `empty_intent_id`).
+	 *
+	 * @dataProvider mismatched_intent_id_data
+	 *
+	 * @param string|null $received_intent_id Request intent ID, or null when the request has none.
+	 * @param string      $stored_intent_id   Intent ID stored on the order.
+	 * @param string      $noted_intent_id    Intent ID the order note names.
+	 */
+	public function test_update_order_status_rejects_mismatched_intent_id( ?string $received_intent_id, string $stored_intent_id, string $noted_intent_id ): void {
+		$order = $this->create_woopayments_order( '0.00' );
+		$order->update_meta_data( '_intent_id', $stored_intent_id );
+		$order->save();
+
+		$api_client = new class() extends Client {
+			/**
+			 * Tell whether the transport is available.
+			 *
+			 * @return bool
+			 */
+			public function is_available(): bool {
+				return true;
+			}
+
+			// phpcs:disable Squiz.Commenting.FunctionComment.InvalidNoReturn -- This test double must fail if the transport is called.
+			/**
+			 * Retrieve a SetupIntent.
+			 *
+			 * @param string $setup_intent_id SetupIntent ID.
+			 * @return array<string,mixed>
+			 */
+			public function get_setup_intention( string $setup_intent_id ): array {
+				unset( $setup_intent_id );
+				throw new \RuntimeException( 'Intent mismatch should not call the transport.' );
+			}
+			// phpcs:enable Squiz.Commenting.FunctionComment.InvalidNoReturn
+		};
+
+		$request = array(
+			'_ajax_nonce' => wp_create_nonce( 'wcpay_update_order_status_nonce_' . $order->get_id() ),
+			'order_id'    => $order->get_id(),
+		);
+		if ( null !== $received_intent_id ) {
+			$request['intent_id'] = $received_intent_id;
+		}
+
+		$response = $this->create_controller( $api_client )->confirm_order_payment( $request );
+
+		$this->assertArrayHasKey( 'error', $response );
+		$this->assertSame( 409, $response['status_code'] );
+		$this->assert_order_has_note_containing(
+			$order,
+			'A payment with ID <code>' . $noted_intent_id . '</code> was used in an attempt to pay for this order. This payment intent ID does not match any payments for this order, so it was ignored and the order was not updated.'
+		);
+	}
+
+	/**
+	 * Intent IDs that do not match the order.
+	 *
+	 * @return array<string,array{?string,string,string}>
+	 */
+	public function mismatched_intent_id_data(): array {
+		return array(
+			'different intent'       => array( 'seti_other', 'seti_expected', 'seti_other' ),
+			'no intent in request'   => array( null, 'seti_expected', 'unknown' ),
+			'no intent on the order' => array( 'seti_other', '', 'seti_other' ),
+		);
+	}
+
+	/**
+	 * @testdox Order-status callback refuses a caller who may not pay for the order before noting a mismatched intent: $_dataName.
+	 *
+	 * A visitor who holds a valid order-status nonce posts another customer's order ID with an intent ID of their choosing.
+	 * The caller check runs first, so the order gets no "payment with ID ... was used in an attempt to pay" note. Client
+	 * 11.1.0 has no caller check and writes that note for any caller with the nonce (class-wc-payment-gateway-wcpay.php:4185-4206,
+	 * :4372-4384), which it hands out only in the confirmation hash of a checkout that needed authentication (:2114, :2421).
+	 *
+	 * @dataProvider provider_mismatched_intent_callers_without_the_order
+	 *
+	 * @param bool $logged_in Whether the caller is logged in as another customer; else a logged-out visitor.
+	 */
+	public function test_update_order_status_refuses_a_caller_without_the_order_before_noting_a_mismatch( bool $logged_in ): void {
+		$order = $this->create_woopayments_order( '0.00' );
+		$order->set_customer_id( $this->factory()->user->create() );
+		$order->update_meta_data( '_intent_id', 'seti_expected' );
+		$order->save();
+		wp_set_current_user( $logged_in ? $this->factory()->user->create() : 0 );
+		$api_client = new class() extends Client {
+			/**
+			 * Tell whether the transport is available.
+			 *
+			 * @return bool
+			 */
+			public function is_available(): bool {
+				return true;
+			}
+		};
+
+		$response = $this->create_controller( $api_client )->confirm_order_payment(
+			array(
+				'_ajax_nonce' => wp_create_nonce( 'wcpay_update_order_status_nonce_' . $order->get_id() ),
+				'order_id'    => $order->get_id(),
+				'intent_id'   => 'seti_chosen_by_the_caller',
+			)
+		);
+
+		$this->assertSame(
+			array(),
+			array_filter(
+				wc_get_order_notes( array( 'order_id' => $order->get_id() ) ),
+				static fn( $note ): bool => false !== strpos( $note->content, 'was used in an attempt to pay for this order' )
+			)
+		);
+		$this->assertSame( 403, $response['status_code'] );
+	}
+
+	/**
+	 * Callers who may not pay for a customer's order.
+	 *
+	 * @return array<string,array{bool}>
+	 */
+	public function provider_mismatched_intent_callers_without_the_order(): array {
+		return array(
+			'logged-out visitor' => array( false ),
+			'another customer'   => array( true ),
+		);
+	}
+
+	/**
+	 * @testdox Order-status callback takes only the nonce minted for the posted order: $_dataName.
+	 *
+	 * A guest posts another guest order's ID with the nonce from their own confirmation hash and an intent ID of their choosing.
+	 * Core lets any visitor pay a customerless order, so only the nonce's order stops the mismatch note. As in client 11.2.0
+	 * (includes/class-wc-payment-gateway-wcpay.php:4166-4198; tests/unit/test-class-wc-payment-gateway-wcpay.php:6253-6330).
+	 *
+	 * @dataProvider provider_update_order_status_nonce_orders
+	 *
+	 * @param string $nonce_order    Order the nonce was minted for: 'posted', 'other' or 'none' for the action without an order.
+	 * @param int    $expected_code  Response status.
+	 * @param bool   $expected_noted Whether the posted order gets the mismatch note.
+	 */
+	public function test_update_order_status_takes_only_the_nonce_minted_for_the_posted_order( string $nonce_order, int $expected_code, bool $expected_noted ): void {
+		$other_order  = $this->create_woopayments_order( '10.00' );
+		$posted_order = $this->create_woopayments_order( '10.00' );
+		$posted_order->update_meta_data( '_intent_id', 'pi_posted_order' );
+		$posted_order->save();
+		wp_set_current_user( 0 );
+		$nonce_actions = array(
+			'posted' => 'wcpay_update_order_status_nonce_' . $posted_order->get_id(),
+			'other'  => 'wcpay_update_order_status_nonce_' . $other_order->get_id(),
+			'none'   => 'wcpay_update_order_status_nonce',
+		);
+		$api_client    = new class() extends Client {
+			/**
+			 * Tell whether the transport is available.
+			 *
+			 * @return bool
+			 */
+			public function is_available(): bool {
+				return true;
+			}
+		};
+
+		$response = $this->create_controller( $api_client )->confirm_order_payment(
+			array(
+				'_ajax_nonce' => wp_create_nonce( $nonce_actions[ $nonce_order ] ),
+				'order_id'    => $posted_order->get_id(),
+				'intent_id'   => 'pi_chosen_by_the_caller',
+			)
+		);
+
+		$notes = array_filter(
+			wc_get_order_notes( array( 'order_id' => $posted_order->get_id() ) ),
+			static fn( $note ): bool => false !== strpos( $note->content, 'pi_chosen_by_the_caller' )
+		);
+		$this->assertSame( $expected_code, $response['status_code'] );
+		$this->assertSame( $expected_noted ? 1 : 0, count( $notes ) );
+	}
+
+	/**
+	 * Nonces a guest may hold when posting an order's ID.
+	 *
+	 * @return array<string,array{string,int,bool}>
+	 */
+	public function provider_update_order_status_nonce_orders(): array {
+		return array(
+			'a nonce for another guest order' => array( 'other', 403, false ),
+			'the action without an order'     => array( 'none', 403, false ),
+			'the nonce for the posted order'  => array( 'posted', 409, true ),
+		);
+	}
+
+	/**
+	 * @testdox Order-status callback should reject requests without a valid nonce before mutating the order.
+	 * @dataProvider provider_update_order_status_invalid_nonce
+	 *
+	 * @param array<string,mixed> $nonce_overrides Request overrides carrying the missing or invalid nonce.
+	 */
+	public function test_update_order_status_rejects_request_without_valid_nonce( array $nonce_overrides ): void {
+		$order = $this->create_woopayments_order( '0.00' );
+		$order->update_meta_data( '_intent_id', 'seti_native' );
+		$order->save();
+
+		$api_client = new class() extends Client {
+			/**
+			 * Tell whether the transport is available.
+			 *
+			 * @return bool
+			 */
+			public function is_available(): bool {
+				return true;
+			}
+
+			// phpcs:disable Squiz.Commenting.FunctionComment.InvalidNoReturn -- This test double must fail if the transport is called.
+			/**
+			 * Retrieve a SetupIntent.
+			 *
+			 * @param string $setup_intent_id SetupIntent ID.
+			 * @return array<string,mixed>
+			 */
+			public function get_setup_intention( string $setup_intent_id ): array {
+				unset( $setup_intent_id );
+				throw new \RuntimeException( 'A request without a valid nonce must not reach the transport.' );
+			}
+			// phpcs:enable Squiz.Commenting.FunctionComment.InvalidNoReturn
+		};
+		$sut        = $this->create_controller( $api_client );
+
+		$response = $sut->confirm_order_payment(
+			array_merge(
+				array(
+					'order_id'  => $order->get_id(),
+					'intent_id' => 'seti_native',
+				),
+				$nonce_overrides
+			)
+		);
+		$order    = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertArrayHasKey( 'error', $response );
+		$this->assertArrayNotHasKey( 'return_url', $response );
+		$this->assertSame( 403, $response['status_code'] );
+		$this->assertNotSame( 'completed', $order->get_status() );
+		$this->assertSame( '', $order->get_meta( '_intention_status', true ), 'A request without a valid nonce must not mutate the order.' );
+	}
+
+	/**
+	 * Data provider for order-status callbacks that omit or corrupt the AJAX nonce.
+	 *
+	 * @return array<string,array{0:array<string,mixed>}>
+	 */
+	public function provider_update_order_status_invalid_nonce(): array {
+		return array(
+			'missing nonce' => array( array() ),
+			'invalid nonce' => array( array( '_ajax_nonce' => 'not-a-valid-nonce' ) ),
+		);
+	}
+
+	/**
+	 * @testdox Order-status callback lets only a caller who may pay for the order act on it: $_dataName.
+	 *
+	 * The callback checks `pay_for_order` for the current user: another customer may not act on a customer's order, the
+	 * owner may, and anyone may act on a guest order (the nopriv flow). A refused caller gets a 403 before any intent read.
+	 *
+	 * @dataProvider provider_order_status_caller_access
+	 *
+	 * @param string $order_owner             'customer' for an order owned by a customer account, 'guest' for a guest order.
+	 * @param string $caller                  'owner', 'another customer' or 'guest'.
+	 * @param bool   $allowed                 Whether the caller may act on the order.
+	 * @param int    $expected_status_code    Expected response status code.
+	 * @param string $expected_order_status   Expected order status.
+	 * @param string $expected_intent_status  Expected `_intention_status` meta.
+	 * @param int    $expected_intent_reads   Expected SetupIntent reads.
+	 */
+	public function test_update_order_status_lets_only_a_caller_who_may_pay_act_on_the_order( string $order_owner, string $caller, bool $allowed, int $expected_status_code, string $expected_order_status, string $expected_intent_status, int $expected_intent_reads ): void {
+		$owner_id = 'customer' === $order_owner ? $this->factory()->user->create() : 0;
+
+		$order = $this->create_woopayments_order( '0.00' );
+		$order->set_customer_id( $owner_id );
+		$order->update_meta_data( '_intent_id', 'seti_native' );
+		$order->save();
+
+		if ( 'owner' === $caller ) {
+			$caller_id = $owner_id;
+		} elseif ( 'another customer' === $caller ) {
+			$caller_id = $this->factory()->user->create();
+		} else {
+			$caller_id = 0;
+		}
+		wp_set_current_user( $caller_id );
+
+		$api_client = new class() extends Client {
+			/**
+			 * SetupIntent reads.
+			 *
+			 * @var int
+			 */
+			public int $setup_intent_reads = 0;
+
+			/**
+			 * Tell whether the transport is available.
+			 *
+			 * @return bool
+			 */
+			public function is_available(): bool {
+				return true;
+			}
+
+			/**
+			 * Retrieve a SetupIntent.
+			 *
+			 * @param string $setup_intent_id SetupIntent ID.
+			 * @return array<string,mixed>
+			 */
+			public function get_setup_intention( string $setup_intent_id ): array {
+				++$this->setup_intent_reads;
+				if ( 'seti_native' !== $setup_intent_id ) {
+					throw new \RuntimeException( 'Unexpected setup intent ID.' );
+				}
+
+				return array(
+					'id'             => 'seti_native',
+					'status'         => 'succeeded',
+					'customer'       => 'cus_native',
+					'payment_method' => 'pm_native',
+				);
+			}
+		};
+		$sut        = $this->create_controller( $api_client );
+		$response   = $sut->confirm_order_payment(
+			array(
+				'_ajax_nonce' => wp_create_nonce( 'wcpay_update_order_status_nonce_' . $order->get_id() ),
+				'order_id'    => $order->get_id(),
+				'intent_id'   => 'seti_native',
+			)
+		);
+		$order      = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( ! $allowed, array_key_exists( 'error', $response ) );
+		$this->assertSame( $allowed, array_key_exists( 'return_url', $response ) );
+		$this->assertSame( $expected_status_code, $response['status_code'] );
+		$this->assertSame( $expected_order_status, $order->get_status() );
+		$this->assertSame( $expected_intent_status, $order->get_meta( '_intention_status', true ) );
+		$this->assertSame( $expected_intent_reads, $api_client->setup_intent_reads );
+	}
+
+	/**
+	 * Order owners and callers of the order-status callback.
+	 *
+	 * @return array<string,array{0:string,1:string,2:bool,3:int,4:string,5:string,6:int}>
+	 */
+	public function provider_order_status_caller_access(): array {
+		return array(
+			'another customer on a customer order' => array( 'customer', 'another customer', false, 403, 'pending', '', 0 ),
+			'owner on their own order'             => array( 'customer', 'owner', true, 200, 'completed', 'succeeded', 1 ),
+			'guest on a guest order'               => array( 'guest', 'guest', true, 200, 'completed', 'succeeded', 1 ),
+			'signed-in customer on a guest order'  => array( 'guest', 'another customer', true, 200, 'completed', 'succeeded', 1 ),
+		);
+	}
+
+	/**
+	 * @testdox Order-status callback answers the order-received URL through the woocommerce_get_return_url filter.
+	 *
+	 * Client 11.1.0 update_order_status() answers `$this->get_return_url( $order )` (gw:4353, 4363), which no WooPayments
+	 * gateway overrides, so it is WC_Payment_Gateway::get_return_url(): the order-received URL passed through the filter.
+	 */
+	public function test_update_order_status_answers_the_filtered_order_received_url(): void {
+		$order = $this->create_woopayments_order( '0.00' );
+		$order->update_meta_data( '_intent_id', 'seti_native' );
+		$order->save();
+
+		$api_client = new class() extends Client {
+			/**
+			 * Tell whether the transport is available.
+			 *
+			 * @return bool
+			 */
+			public function is_available(): bool {
+				return true;
+			}
+
+			/**
+			 * Retrieve a SetupIntent.
+			 *
+			 * @param string $setup_intent_id SetupIntent ID.
+			 * @return array<string,mixed>
+			 */
+			public function get_setup_intention( string $setup_intent_id ): array {
+				// The SetupIntent fields client 11.1.0 serializes (includes/wc-payment-api/models/class-wc-payments-api-setup-intention.php:78-89, jsonSerialize()).
+				return array(
+					'id'             => $setup_intent_id,
+					'status'         => 'succeeded',
+					'customer'       => 'cus_native',
+					'payment_method' => 'pm_native',
+				);
+			}
+		};
+		$filter     = static fn( string $url ): string => add_query_arg( 'filtered', '1', $url );
+		add_filter( 'woocommerce_get_return_url', $filter );
+
+		try {
+			$response = $this->create_controller( $api_client )->confirm_order_payment(
+				array(
+					'_ajax_nonce' => wp_create_nonce( 'wcpay_update_order_status_nonce_' . $order->get_id() ),
+					'order_id'    => $order->get_id(),
+					'intent_id'   => 'seti_native',
+				)
+			);
+		} finally {
+			remove_filter( 'woocommerce_get_return_url', $filter );
+		}
+
+		$this->assertSame( 200, $response['status_code'] );
+		$this->assertSame( add_query_arg( 'filtered', '1', wc_get_order( $order->get_id() )->get_checkout_order_received_url() ), $response['return_url'] );
+	}
+
+	/**
+	 * @testdox Order-status callback should preserve the payment-started surface for customer-action intents.
+	 */
+	public function test_update_order_status_preserves_payment_started_surface_for_customer_action_intent(): void {
+		$order = $this->create_woopayments_order( '65.00' );
+		$order->update_meta_data( '_intent_id', 'pi_requires_action' );
+		$order->save();
+
+		$api_client = new class() extends Client {
+			/**
+			 * Tell whether the transport is available.
+			 *
+			 * @return bool
+			 */
+			public function is_available(): bool {
+				return true;
+			}
+
+			/**
+			 * Retrieve a PaymentIntent.
+			 *
+			 * @param string $intent_id PaymentIntent ID.
+			 * @return array<string,mixed>
+			 */
+			public function get_payment_intention( string $intent_id ): array {
+				if ( 'pi_requires_action' !== $intent_id ) {
+					throw new \RuntimeException( 'Unexpected payment intent ID.' );
+				}
+
+				return array(
+					'id'                   => 'pi_requires_action',
+					'status'               => 'requires_action',
+					'currency'             => 'usd',
+					'customer'             => 'cus_native',
+					'payment_method'       => 'pm_native',
+					'payment_method_types' => array( 'wechat_pay' ),
+				);
+			}
+		};
+		$sut        = $this->create_controller( $api_client, null, null, $this->create_account_service( true ) );
+		$response   = $sut->confirm_order_payment(
+			array(
+				'_ajax_nonce' => wp_create_nonce( 'wcpay_update_order_status_nonce_' . $order->get_id() ),
+				'order_id'    => $order->get_id(),
+				'intent_id'   => 'pi_requires_action',
+			)
+		);
+		$order      = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertArrayHasKey( 'error', $response );
+		$this->assertSame( 409, $response['status_code'] );
+		$this->assertSame( 'pending', $order->get_status() );
+		$this->assertSame( 'pi_requires_action', $order->get_meta( '_intent_id', true ) );
+		$this->assertSame( 'requires_action', $order->get_meta( '_intention_status', true ) );
+		$this->assertSame( 'pm_native', $order->get_meta( '_payment_method_id', true ) );
+		$this->assertSame( 'cus_native', $order->get_meta( '_stripe_customer_id', true ) );
+		$this->assertSame( 'USD', $order->get_meta( '_wcpay_intent_currency', true ) );
+		$this->assertSame( 'test', $order->get_meta( '_wcpay_mode', true ) );
+		$this->assertFalse( $order->meta_exists( '_wcpay_payment_method_details' ) );
+		$this->assertSame( '', $order->get_meta( '_wcpay_payment_transaction_id', true ) );
+		$this->assertSame( 'not_card', $order->get_meta( '_wcpay_fraud_meta_box_type', true ) );
+		$this->assert_order_has_note_containing( $order, 'A payment of' );
+		$this->assert_order_has_note_containing( $order, 'was <strong>started</strong> using WooPayments' );
+		$this->assert_order_has_note_containing( $order, 'pi_requires_action' );
+	}
+
+	/**
+	 * @testdox Order-status callback should leave an intent the client marks as started pending with the started note: $_dataName.
+	 *
+	 * Source: client 11.1.0 `os:418-427`: `requires_payment_method` without an error is `mark_payment_started()`
+	 * (`os:1695-1707`, note `os:2202-2218`), which keeps the order pending. For a zero-total order the AJAX
+	 * `update_order_status` handler fetches a SetupIntent (`gw:4238-4242`) and calls `update_order_status_from_intent()`
+	 * (`gw:4339-4345`); its `get_intent_data()` sets `error` only for PaymentIntents (`os:2963-2967`), so `last_setup_error`
+	 * is never read and either status is `mark_payment_started()` too. The redirect-return path fails the same SetupIntent
+	 * (see the redirect-return controller test). The started note carries the intent ID in a code element (`utils:1056-1058`
+	 * builds no URL for `seti_`). The 409 envelope with an `error` key is native's (C1).
+	 *
+	 * @dataProvider provider_unauthorized_intent_outcomes
+	 *
+	 * @param string              $total         Order total.
+	 * @param array<string,mixed> $intent        PaymentIntent or SetupIntent response.
+	 * @param string              $started_note  Fragment of the expected started note.
+	 */
+	public function test_update_order_status_keeps_started_intent_pending( string $total, array $intent, string $started_note ): void {
+		$order = $this->create_woopayments_order( $total );
+		$order->update_meta_data( '_intent_id', $intent['id'] );
+		$order->save();
+
+		$response = $this->get_update_order_status_response_for_intent( $order, $intent );
+		$order    = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertArrayHasKey( 'error', $response );
+		$this->assertArrayNotHasKey( 'return_url', $response );
+		$this->assertSame( 409, $response['status_code'] );
+		$this->assertSame( 'pending', $order->get_status() );
+		$this->assertSame( $intent['status'], $order->get_meta( '_intention_status', true ) );
+		$this->assert_order_has_note_containing( $order, $started_note );
+	}
+
+	/**
+	 * Intents the order-status callback leaves pending as started.
+	 *
+	 * @return array<string,array{0:string,1:array<string,mixed>,2:string}>
+	 */
+	public function provider_unauthorized_intent_outcomes(): array {
+		$setup_error = array(
+			'type'    => 'invalid_request_error',
+			'code'    => 'setup_intent_authentication_failure',
+			'message' => 'We are unable to authenticate your payment method.',
+		);
+
+		return array(
+			'error-free requires_payment_method PaymentIntent' => array(
+				'10.00',
+				array(
+					'id'             => 'pi_requires_payment_method',
+					'status'         => 'requires_payment_method',
+					'currency'       => 'usd',
+					'customer'       => 'cus_native',
+					'payment_method' => 'pm_native',
+				),
+				'was <strong>started</strong> using WooPayments (<code>pi_requires_payment_method</code>)',
+			),
+			'requires_payment_method SetupIntent with a setup error' => array(
+				'0.00',
+				array(
+					'id'               => 'seti_setup_error',
+					'status'           => 'requires_payment_method',
+					'customer'         => 'cus_native',
+					'payment_method'   => 'pm_native',
+					'last_setup_error' => $setup_error,
+				),
+				'was <strong>started</strong> using WooPayments (<code>seti_setup_error</code>).',
+			),
+			'requires_action SetupIntent with a setup error' => array(
+				'0.00',
+				array(
+					'id'               => 'seti_setup_error',
+					'status'           => 'requires_action',
+					'customer'         => 'cus_native',
+					'payment_method'   => 'pm_native',
+					'last_setup_error' => $setup_error,
+				),
+				'was <strong>started</strong> using WooPayments (<code>seti_setup_error</code>).',
+			),
+		);
+	}
+
+	/**
+	 * @testdox Order-status callback should fail a requires_action intent that carries a payment error.
+	 *
+	 * Source: client 11.1.0 `os:418-422`: `requires_action` with an error is `mark_payment_failed()`.
+	 */
+	public function test_update_order_status_fails_requires_action_intent_with_payment_error(): void {
+		$order = $this->create_woopayments_order( '10.00' );
+		$order->update_meta_data( '_intent_id', 'pi_requires_action_error' );
+		$order->save();
+
+		$response = $this->get_update_order_status_response_for_intent(
+			$order,
+			array(
+				'id'                 => 'pi_requires_action_error',
+				'status'             => 'requires_action',
+				'currency'           => 'usd',
+				'customer'           => 'cus_native',
+				'payment_method'     => 'pm_native',
+				'last_payment_error' => array(
+					'type'    => 'card_error',
+					'code'    => 'payment_intent_authentication_failure',
+					'message' => 'We are unable to authenticate your payment method.',
+				),
+			)
+		);
+		$order    = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertArrayNotHasKey( 'return_url', $response );
+		$this->assertSame( 409, $response['status_code'] );
+		$this->assertSame( 'failed', $order->get_status() );
+		$this->assertSame( 'requires_action', $order->get_meta( '_intention_status', true ) );
+	}
+
+	/**
+	 * @testdox Order-status callback should cancel the order with the cancellation note for a canceled SetupIntent, with or without a setup error.
+	 *
+	 * Source: client 11.1.0. The AJAX handler passes the fetched SetupIntent to `update_order_status_from_intent()`
+	 * (`gw:4339-4345`), which sends `canceled` to `mark_payment_capture_cancelled()` (`os:400-402`) whatever
+	 * `last_setup_error` holds (`os:2963-2967`). That writes the cancellation note (`os:2315-2330`), with the ID in a
+	 * code element (`utils:1056-1058`), and cancels the order (`os:1533-1554`). It writes no "UPE payment failed" note.
+	 *
+	 * @dataProvider canceled_setup_intent_data
+	 *
+	 * @param array<string,mixed>|null $last_setup_error SetupIntent setup error.
+	 */
+	public function test_update_order_status_cancels_order_for_canceled_setup_intent( ?array $last_setup_error ): void {
+		$order = $this->create_woopayments_order( '0.00' );
+		$order->update_meta_data( '_intent_id', 'seti_canceled' );
+		$order->save();
+
+		$this->get_update_order_status_response_for_intent(
+			$order,
+			array(
+				'id'               => 'seti_canceled',
+				'status'           => 'canceled',
+				'customer'         => 'cus_native',
+				'payment_method'   => 'pm_native',
+				'last_setup_error' => $last_setup_error,
+			)
+		);
+		$order = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 'cancelled', $order->get_status() );
+		$this->assert_order_has_note_containing( $order, 'Payment authorization was successfully <strong>cancelled</strong> (<code>seti_canceled</code>).' );
+		foreach ( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) as $note ) {
+			$this->assertStringNotContainsString( 'UPE payment failed', (string) $note->content );
+		}
+	}
+
+	/**
+	 * Canceled SetupIntent shapes for the order-status callback.
+	 *
+	 * @return array<string,array{0:array<string,mixed>|null}>
+	 */
+	public function canceled_setup_intent_data(): array {
+		return array(
+			'no setup error'   => array( null ),
+			'with setup error' => array(
+				array(
+					'type'    => 'invalid_request_error',
+					'code'    => 'setup_intent_authentication_failure',
+					'message' => 'We are unable to authenticate your payment method.',
+				),
+			),
+		);
+	}
+
+	/**
+	 * Run the order-status callback against a fixed PaymentIntent or SetupIntent response.
+	 *
+	 * @param WC_Order                                 $order                       Order being confirmed.
+	 * @param array<string,mixed>                      $intent                      PaymentIntent or SetupIntent response.
+	 * @param WooPaymentsFeeDetailsNoteController|null $fee_details_note_controller Fee details note controller, which applies the lifecycle event.
+	 * @return array<string,mixed>
+	 */
+	private function get_update_order_status_response_for_intent( WC_Order $order, array $intent, ?WooPaymentsFeeDetailsNoteController $fee_details_note_controller = null ): array {
+		$api_client = new class( $intent ) extends Client {
+			/**
+			 * PaymentIntent response.
+			 *
+			 * @var array<string,mixed>
+			 */
+			private array $intent;
+
+			/**
+			 * Constructor.
+			 *
+			 * @param array<string,mixed> $intent PaymentIntent response.
+			 */
+			public function __construct( array $intent ) {
+				$this->intent = $intent;
+			}
+
+			/**
+			 * Tell whether the transport is available.
+			 *
+			 * @return bool
+			 */
+			public function is_available(): bool {
+				return true;
+			}
+
+			/**
+			 * Retrieve a PaymentIntent.
+			 *
+			 * @param string $intent_id PaymentIntent ID.
+			 * @return array<string,mixed>
+			 */
+			public function get_payment_intention( string $intent_id ): array {
+				if ( $this->intent['id'] !== $intent_id ) {
+					throw new \RuntimeException( 'Unexpected payment intent ID.' );
+				}
+
+				return $this->intent;
+			}
+
+			/**
+			 * Retrieve a SetupIntent.
+			 *
+			 * @param string $setup_intent_id SetupIntent ID.
+			 * @return array<string,mixed>
+			 */
+			public function get_setup_intention( string $setup_intent_id ): array {
+				if ( $this->intent['id'] !== $setup_intent_id ) {
+					throw new \RuntimeException( 'Unexpected setup intent ID.' );
+				}
+
+				return $this->intent;
+			}
+		};
+
+		return $this->create_controller( $api_client, null, null, null, $fee_details_note_controller )->confirm_order_payment(
+			array(
+				'_ajax_nonce' => wp_create_nonce( 'wcpay_update_order_status_nonce_' . $order->get_id() ),
+				'order_id'    => $order->get_id(),
+				'intent_id'   => (string) $intent['id'],
+			)
+		);
+	}
+
+	/**
+	 * @testdox Order-status callback should fail a post-authentication decline with the recorded intent identity.
+	 *
+	 * A hosted 3DS challenge that fails, or that completes and is
+	 * then declined, both leave the PaymentIntent `requires_payment_method`. REC-3DS-3a
+	 * (`Fixtures/platform-3ds-challenge-results.json`, pair `blocks_challenge_failed`) has 0 charges
+	 * (`payment_intent_authentication_failure`); REC-3DS-3b (pair
+	 * `blocks_post_authentication_decline`) has one failed charge (`card_declined`/
+	 * `generic_decline`). Both carry `last_payment_error`, so the order is `failed`, as the client's
+	 * `mark_payment_failed()` leaves it (`os:418-422`); the Blocks checkout posts this callback on a
+	 * failed next action (F-3DS-1). The client's own `update_order_status` AJAX handler echoes nothing at all for a
+	 * non-authorized intent — it only `wp_json_encode`s and `wp_die()`s a `return_url` inside the
+	 * `if ( $intent->is_authorized() )` branch (`gw:4347-4367`) — so the 409-with-an-`error`-key
+	 * envelope is native's own shape, not a client-parity claim, and is left unasserted here (only
+	 * `return_url`'s absence is asserted, matching the client exactly).
+	 *
+	 * `_charge_id` matches the client's own mapping, not an assumption: the client's AJAX handler
+	 * fetches the intent, reads `$charge = $intent->get_charge()` and
+	 * `$charge_id = ! empty( $charge ) ? $charge->get_id() : null`, then calls
+	 * `attach_intent_info_to_order()` unconditionally (`gw:4220-4226`), which persists that same
+	 * `$charge_id` (`os:1362-1363`); for a `requires_payment_method` intent with an error, the same
+	 * `charge_id` flows into `mark_payment_failed()` (`os:418-422`). The client's own intent
+	 * deserializer resolves `get_charge()` as `end( $charges['data'] )` when `total_count > 0`
+	 * (`includes/wc-payment-api/class-wc-payments-api-client.php:2403`), the same rule
+	 * `WooPaymentsIntentCodec::latest_charge()` uses. REC-3DS-3a's 0 charges therefore keep
+	 * `_charge_id` empty, and REC-3DS-3b's one failed charge sets it to that failed charge's id.
+	 *
+	 * @dataProvider post_authentication_decline_data
+	 *
+	 * @param string $pair               Fixture pair key.
+	 * @param string $expected_charge_id Expected `_charge_id` meta: empty for 3a's chargeless intent, the recorded failed charge id for 3b's.
+	 */
+	public function test_update_order_status_fails_order_for_post_authentication_decline( string $pair, string $expected_charge_id ): void {
+		$recorded = $this->load_recorded_manual_3ds_entry( $pair );
+		$order    = $this->create_woopayments_order( '10.99' );
+		$order->update_meta_data( '_intent_id', $recorded['body']['id'] );
+		$order->save();
+
+		$http_client           = new FakeHttpClient();
+		$http_client->response = array(
+			'response' => array( 'code' => 200 ),
+			'headers'  => array( 'content-type' => 'application/json; charset=UTF-8' ),
+			'body'     => wp_json_encode( $recorded['body'] ),
+		);
+		$account_service       = $this->create_account_service( false );
+		$api_client            = new Client();
+		$api_client->init( $http_client, $account_service, wc_get_container()->get( TransportLog::class ) );
+		$sut      = $this->create_controller( $api_client, null, null, $account_service );
+		$response = $sut->confirm_order_payment(
+			array(
+				'_ajax_nonce' => wp_create_nonce( 'wcpay_update_order_status_nonce_' . $order->get_id() ),
+				'order_id'    => $order->get_id(),
+				'intent_id'   => $recorded['body']['id'],
+			)
+		);
+		$order    = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertArrayNotHasKey( 'return_url', $response, "$pair must not confirm the checkout, matching the client's own is_authorized() gate on echoing return_url." );
+		$this->assertSame( $recorded['body']['id'], $order->get_meta( '_intent_id', true ), "$pair must keep the intent id it was confirming." );
+		$this->assertSame( 'failed', $order->get_status(), "$pair carries last_payment_error, so the order is failed." );
+		$this->assertSame( 'requires_payment_method', $order->get_meta( '_intention_status', true ) );
+		$this->assertSame( $expected_charge_id, $order->get_meta( '_charge_id', true ), "$pair's charge identity must match the recorded intent's own charges list." );
+	}
+
+	/**
+	 * @testdox A post-authentication decline whose status update the order payment lock refuses still saves the declined charge: $_dataName.
+	 *
+	 * The payment_intent.payment_failed webhook holds the lock while the page's status update runs. Client 11.1.0 stores the intent's charge before its order lock (gw:4236 → os:1351-1418, os:1373-1378), so
+	 * its order keeps `_charge_id`, `_charge_risk_level` and the charge's `_wcpay_payment_method_details`; the webhook stores
+	 * none of them (wh:444-483). The refused update writes no status and no note, and nothing once the stored intent
+	 * status is succeeded (os:1353). Values from REC-3DS-3b (`Fixtures/platform-3ds-challenge-results.json`, pair
+	 * `blocks_post_authentication_decline`): charge `ch_3UJjIPBzWlxcwgpP0KWwmy3j`, `outcome.risk_level` `normal`, card last4 1629.
+	 *
+	 * @dataProvider refused_post_authentication_decline_data
+	 *
+	 * @param string $stored_intention_status `_intention_status` on the order before the update.
+	 * @param bool   $saves_charge            Whether the charge facts are saved.
+	 */
+	public function test_refused_post_authentication_decline_keeps_the_declined_charge( string $stored_intention_status, bool $saves_charge ): void {
+		$recorded = $this->load_recorded_manual_3ds_entry( 'blocks_post_authentication_decline' );
+		$intent   = $recorded['body'];
+		$order    = $this->create_woopayments_order( '10.99' );
+		$order->update_meta_data( '_intent_id', $intent['id'] );
+		$order->update_meta_data( '_intention_status', $stored_intention_status );
+		$order->save();
+		$notes_before = count( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+
+		$lock       = wc_get_container()->get( OrderPaymentLock::class );
+		$vocabulary = new WooPaymentsPersistenceVocabulary();
+		$lock_token = $lock->claim( $order, $vocabulary, $intent['id'], 'payment status update' );
+		$this->assertNotNull( $lock_token );
+		try {
+			$this->get_update_order_status_response_for_intent( $order, $intent );
+		} finally {
+			$lock->release( $order, $vocabulary, $lock_token );
+		}
+
+		$reloaded = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $reloaded );
+		$this->assertSame( 'pending', $reloaded->get_status(), 'The refused update must not change the status.' );
+		$this->assertCount( $notes_before, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), 'The refused update must add no note.' );
+		$this->assertSame( $stored_intention_status, $reloaded->get_meta( '_intention_status', true ) );
+		$this->assertSame( $saves_charge ? 'ch_3UJjIPBzWlxcwgpP0KWwmy3j' : '', $reloaded->get_meta( '_charge_id', true ) );
+		$this->assertSame( $saves_charge ? 'normal' : '', $reloaded->get_meta( '_charge_risk_level', true ) );
+		$details = json_decode( (string) $reloaded->get_meta( '_wcpay_payment_method_details', true ), true );
+		$this->assertSame( $saves_charge ? $intent['charges']['data'][0]['payment_method_details'] : null, $details, "The charge's payment method details, as os:1373-1378 store them." );
+	}
+
+	/**
+	 * @testdox A post-authentication decline gets one failed note whichever of the status update and the webhook runs first: $_dataName.
+	 *
+	 * Client 11.1.0's status update fails the order with its own note and the raw platform message
+	 * (gw:4344 → os:418-422 → os:463-478, note text os:2106-2128); its payment_intent.payment_failed webhook adds nothing to
+	 * an order already failed (os:469-472). The status update's note shares the webhook note's identity (intent, failed,
+	 * payment_failed), so when the webhook runs inside the status update's intent fetch and fails the order first, the
+	 * status update adds none. The intent is REC-3DS-3b (`Fixtures/platform-3ds-challenge-results.json`, pair
+	 * `blocks_post_authentication_decline`). The webhook is the recorded card decline delivery
+	 * (`Fixtures/platform-payment-intent-events.json`, `card_declined_failed`) carrying that intent as its object: a
+	 * forwarded payment_intent event's object is the PaymentIntent the fetch returns, with the same keys.
+	 *
+	 * @dataProvider post_authentication_decline_note_order_data
+	 *
+	 * @param bool   $webhook_first Whether the webhook runs inside the status update's intent fetch.
+	 * @param string $note_suffix   End of the one failed note.
+	 */
+	public function test_post_authentication_decline_gets_one_failed_note( bool $webhook_first, string $note_suffix ): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
+		$intent = $this->load_recorded_manual_3ds_entry( 'blocks_post_authentication_decline' )['body'];
+		$order  = $this->create_woopayments_order( '10.99' );
+		$order->update_meta_data( '_intent_id', $intent['id'] );
+		$order->update_meta_data( '_payment_method_id', (string) $intent['last_payment_error']['payment_method']['id'] );
+		$order->save();
+		$intent['metadata']['order_id']  = (string) $order->get_id();
+		$intent['metadata']['order_key'] = $order->get_order_key();
+		$webhook                         = RecordedPlatformEvents::body( 'platform-payment-intent-events.json', 'card_declined_failed' );
+		$webhook['data']['object']       = $intent;
+		$ingestor                        = wc_get_container()->get( EventIngestor::class );
+
+		$api_client = $this->create_api_client_running_during_fetch( $intent, $webhook_first ? static fn() => $ingestor->process( $webhook ) : null );
+
+		$this->create_controller( $api_client, null, null, $this->create_account_service( true ) )->confirm_order_payment(
+			array(
+				'_ajax_nonce' => wp_create_nonce( 'wcpay_update_order_status_nonce_' . $order->get_id() ),
+				'order_id'    => $order->get_id(),
+				'intent_id'   => $intent['id'],
+			)
+		);
+		if ( ! $webhook_first ) {
+			$ingestor->process( $webhook );
+		}
+
+		$reloaded     = wc_get_order( $order->get_id() );
+		$failed_notes = $this->get_failed_payment_notes( $order );
+		$this->assertInstanceOf( WC_Order::class, $reloaded );
+		$this->assertSame( 'failed', $reloaded->get_status() );
+		$this->assertCount( 1, $failed_notes, 'One failed note, whichever writer ran first.' );
+		$this->assertStringEndsWith( $note_suffix, $failed_notes[0] );
+		$this->assertStringContainsString( $intent['id'], $failed_notes[0] );
+	}
+
+	/**
+	 * Which writer of a post-authentication decline runs first, and the failed note the order keeps.
+	 *
+	 * @return array<string,array{bool,string}>
+	 */
+	public function post_authentication_decline_note_order_data(): array {
+		return array(
+			'status update first, the webhook later adds none' => array( false, '). Your card was declined.' ),
+			'webhook during the intent fetch, the update adds none' => array( true, '). With the following message: <code>Your card was declined.</code>' ),
+		);
+	}
+
+	/**
+	 * @testdox A post-authentication decline on an order already failed adds no failed note, as client 11.1.0's mark_payment_failed() (os:469-472).
+	 */
+	public function test_post_authentication_decline_on_a_failed_order_adds_no_failed_note(): void {
+		$intent = $this->load_recorded_manual_3ds_entry( 'blocks_post_authentication_decline' )['body'];
+		$order  = $this->create_woopayments_order( '10.99' );
+		$order->set_status( OrderStatus::FAILED );
+		$order->update_meta_data( '_intent_id', $intent['id'] );
+		$order->save();
+
+		$this->get_update_order_status_response_for_intent( $order, $intent );
+
+		$this->assertSame( array(), $this->get_failed_payment_notes( $order ) );
+	}
+
+	/**
+	 * @testdox A refused post-authentication decline saves no charge once the order names a newer intent.
+	 *
+	 * A second checkout of the order, in another tab, stores its own intent and its payment_intent.succeeded webhook holds
+	 * the lock while the first tab's status update fetches the declined intent (REC-3DS-3b). The refused update leaves
+	 * the newer intent's charge facts alone. Client 11.1.0 checks only the stored intent status (os:1353), so it can
+	 * write the declined charge over the newer one.
+	 */
+	public function test_refused_post_authentication_decline_saves_nothing_once_the_order_names_another_intent(): void {
+		$intent = $this->load_recorded_manual_3ds_entry( 'blocks_post_authentication_decline' )['body'];
+		$order  = $this->create_woopayments_order( '10.99' );
+		$order->update_meta_data( '_intent_id', $intent['id'] );
+		$order->update_meta_data( '_intention_status', 'requires_action' );
+		$order->save();
+
+		$lock       = wc_get_container()->get( OrderPaymentLock::class );
+		$vocabulary = new WooPaymentsPersistenceVocabulary();
+		$lock_token = null;
+		$api_client = $this->create_api_client_running_during_fetch(
+			$intent,
+			static function () use ( $order, $lock, $vocabulary, &$lock_token ): void {
+				$newer_checkout = wc_get_order( $order->get_id() );
+				$newer_checkout->update_meta_data( '_intent_id', 'pi_newer_checkout' );
+				$newer_checkout->save_meta_data();
+				$lock_token = $lock->claim( $newer_checkout, $vocabulary, 'pi_newer_checkout', 'payment status update' );
+			}
+		);
+
+		try {
+			$this->create_controller( $api_client )->confirm_order_payment(
+				array(
+					'_ajax_nonce' => wp_create_nonce( 'wcpay_update_order_status_nonce_' . $order->get_id() ),
+					'order_id'    => $order->get_id(),
+					'intent_id'   => $intent['id'],
+				)
+			);
+		} finally {
+			if ( null !== $lock_token ) {
+				$lock->release( $order, $vocabulary, $lock_token );
+			}
+		}
+
+		$this->assertNotNull( $lock_token, 'The newer checkout holds the lock.' );
+		$reloaded = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $reloaded );
+		$this->assertSame( 'pi_newer_checkout', $reloaded->get_meta( '_intent_id', true ) );
+		$this->assertSame( '', $reloaded->get_meta( '_charge_id', true ) );
+		$this->assertSame( '', $reloaded->get_meta( '_charge_risk_level', true ) );
+		$this->assertSame( '', $reloaded->get_meta( '_wcpay_payment_method_details', true ) );
+	}
+
+	/**
+	 * Create an API client that returns a PaymentIntent, running a callback while it is fetched.
+	 *
+	 * @param array<string,mixed> $intent       PaymentIntent response.
+	 * @param callable|null       $during_fetch Runs while the intent is fetched.
+	 * @return Client
+	 */
+	private function create_api_client_running_during_fetch( array $intent, ?callable $during_fetch ): Client {
+		return new class( $intent, $during_fetch ) extends Client {
+			/**
+			 * PaymentIntent response.
+			 *
+			 * @var array<string,mixed>
+			 */
+			private array $intent;
+
+			/**
+			 * Runs while the intent is fetched, when set.
+			 *
+			 * @var callable|null
+			 */
+			private $during_fetch;
+
+			/**
+			 * Constructor.
+			 *
+			 * @param array<string,mixed> $intent       PaymentIntent response.
+			 * @param callable|null       $during_fetch Runs while the intent is fetched.
+			 */
+			public function __construct( array $intent, ?callable $during_fetch ) {
+				$this->intent       = $intent;
+				$this->during_fetch = $during_fetch;
+			}
+
+			/**
+			 * Tell whether the transport is available.
+			 *
+			 * @return bool
+			 */
+			public function is_available(): bool {
+				return true;
+			}
+
+			/**
+			 * Retrieve the PaymentIntent.
+			 *
+			 * @param string $intent_id PaymentIntent ID.
+			 * @return array<string,mixed>
+			 */
+			public function get_payment_intention( string $intent_id ): array {
+				unset( $intent_id );
+				if ( null !== $this->during_fetch ) {
+					( $this->during_fetch )();
+				}
+
+				return $this->intent;
+			}
+		};
+	}
+
+	/**
+	 * Get the contents of an order's payment failure notes.
+	 *
+	 * @param WC_Order $order Order.
+	 * @return string[]
+	 */
+	private function get_failed_payment_notes( WC_Order $order ): array {
+		$contents = wp_list_pluck( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), 'content' );
+
+		return array_values( array_filter( $contents, static fn( $content ): bool => false !== strpos( (string) $content, '<strong>failed</strong> using WooPayments' ) ) );
+	}
+
+	/**
+	 * Stored intent statuses a refused post-authentication decline meets.
+	 *
+	 * @return array<string,array{string,bool}>
+	 */
+	public function refused_post_authentication_decline_data(): array {
+		return array(
+			'started payment: the charge is saved'     => array( 'requires_action', true ),
+			'succeeded intent: nothing is overwritten' => array( 'succeeded', false ),
+		);
+	}
+
+	/**
+	 * REC-3DS-3 post-authentication decline pairs, one with no attached charge and one with a
+	 * failed charge.
+	 *
+	 * @return array<string,array{string,string}>
+	 */
+	public function post_authentication_decline_data(): array {
+		return array(
+			'REC-3DS-3a: hosted challenge failed, 0 charges'    => array( 'blocks_challenge_failed', '' ),
+			'REC-3DS-3b: post-auth decline, one failed charge' => array( 'blocks_post_authentication_decline', 'ch_3UJjIPBzWlxcwgpP0KWwmy3j' ),
+		);
+	}
+
+	/**
+	 * @testdox Order-status callback should save requested cards before completing the order.
+	 *
+	 * The intent is REC-3DS-2's real completed
+	 * challenge (`Fixtures/platform-3ds-challenge-results.json`, pair `classic_checkout_challenge_completed`),
+	 * a guest classic checkout in the recording; this test gives its customer a WordPress user (per
+	 * the plan's recording notes) so the token-count assertions below stay meaningful.
+	 */
+	public function test_update_order_status_saves_requested_card_token_before_completing_order(): void {
+		$user_id = $this->factory()->user->create();
+		wp_set_current_user( $user_id );
+
+		$order = $this->create_woopayments_order( '10.99' );
+		$order->set_customer_id( $user_id );
+		$order->set_payment_method_title( 'WooPayments' );
+
+		$recorded = $this->load_recorded_manual_3ds_entry( 'classic_checkout_challenge_completed' );
+		$order->update_meta_data( '_intent_id', $recorded['body']['id'] );
+		$order->save();
+
+		$http_client           = new FakeHttpClient();
+		$http_client->response = array(
+			'response' => array( 'code' => 200 ),
+			'headers'  => array( 'content-type' => 'application/json; charset=UTF-8' ),
+			'body'     => wp_json_encode( $recorded['body'] ),
+		);
+		$account_service       = $this->create_account_service( false );
+		$api_client            = new Client();
+		$api_client->init( $http_client, $account_service, wc_get_container()->get( TransportLog::class ) );
+		$recorded_payment_method_id = (string) $recorded['body']['payment_method'];
+		$recorded_charge            = $recorded['body']['charges']['data'][0];
+		$token_service              = $this->create_token_service(
+			array(
+				$recorded_payment_method_id => array(
+					'id'   => $recorded_payment_method_id,
+					'type' => 'card',
+					'card' => array(
+						'brand'     => $recorded_charge['payment_method_details']['card']['brand'],
+						'last4'     => $recorded_charge['payment_method_details']['card']['last4'],
+						'exp_month' => $recorded_charge['payment_method_details']['card']['exp_month'],
+						'exp_year'  => $recorded_charge['payment_method_details']['card']['exp_year'],
+					),
+				),
+			)
+		);
+		$sut                        = $this->create_controller( $api_client, null, $token_service, $account_service );
+
+		$status_at_token_attach          = '';
+		$payment_complete_observations   = array();
+		$payment_complete_observer_count = 0;
+		$record_order_status             = function ( int $order_id ) use ( &$status_at_token_attach ): void {
+			$order = wc_get_order( $order_id );
+
+			$status_at_token_attach = $order instanceof WC_Order ? $order->get_status() : '';
+		};
+		$record_payment_complete         = function ( int $order_id ) use ( $order, $user_id, &$payment_complete_observations, &$payment_complete_observer_count ): void {
+			if ( $order->get_id() !== $order_id ) {
+				return;
+			}
+
+			$observed_order = wc_get_order( $order_id );
+			$tokens         = array_values( WC_Payment_Tokens::get_customer_tokens( $user_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID ) );
+			$token          = $tokens[0] ?? null;
+
+			++$payment_complete_observer_count;
+			$payment_complete_observations = array(
+				'gateway'        => $observed_order instanceof WC_Order ? $observed_order->get_payment_method() : '',
+				'title'          => $observed_order instanceof WC_Order ? $observed_order->get_payment_method_title() : '',
+				'last4'          => $observed_order instanceof WC_Order ? $observed_order->get_meta( 'last4', true ) : '',
+				'brand'          => $observed_order instanceof WC_Order ? $observed_order->get_meta( '_card_brand', true ) : '',
+				'details'        => $observed_order instanceof WC_Order ? $observed_order->get_meta( '_wcpay_payment_method_details', true ) : '',
+				'raw_details'    => $observed_order instanceof WC_Order ? $observed_order->get_meta( '_wcpay_raw_payment_method_details', true ) : '',
+				'payment_method' => $observed_order instanceof WC_Order ? $observed_order->get_meta( '_payment_method_id', true ) : '',
+				'tokens'         => $tokens,
+				'token'          => $token,
+			);
+		};
+		add_action( 'woocommerce_payment_token_added_to_order', $record_order_status, 10, 1 );
+		add_action( 'woocommerce_payment_complete', $record_payment_complete, 1, 1 );
+
+		try {
+			$response = $sut->confirm_order_payment(
+				array(
+					'_ajax_nonce'                => wp_create_nonce( 'wcpay_update_order_status_nonce_' . $order->get_id() ),
+					'order_id'                   => $order->get_id(),
+					'intent_id'                  => $recorded['body']['id'],
+					'should_save_payment_method' => 'true',
+				)
+			);
+		} finally {
+			remove_action( 'woocommerce_payment_token_added_to_order', $record_order_status, 10 );
+			remove_action( 'woocommerce_payment_complete', $record_payment_complete, 1 );
+		}
+
+		$order  = wc_get_order( $order->get_id() );
+		$tokens = array_values( WC_Payment_Tokens::get_customer_tokens( $user_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID ) );
+		$token  = $tokens[0] ?? null;
+		$last4  = (string) $recorded_charge['payment_method_details']['card']['last4'];
+
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 200, $response['status_code'] );
+		$this->assertSame( 'completed', $order->get_status() );
+		$this->assertNotSame( 'completed', $status_at_token_attach, 'The token must be attached before the lifecycle service completes the order.' );
+		$this->assertInstanceOf( WC_Payment_Token_CC::class, $token );
+		$this->assertSame( $recorded_payment_method_id, $token->get_token() );
+		$this->assertContains( $token->get_id(), $order->get_payment_tokens() );
+		$this->assertSame( array( $token->get_id() ), array_values( $order->get_payment_tokens() ) );
+		$this->assertSame( 1, $payment_complete_observer_count );
+		$this->assertSame( WooPaymentsPersistenceVocabulary::GATEWAY_ID, $payment_complete_observations['gateway'] );
+		$this->assertSame( 'Visa credit card', $payment_complete_observations['title'] );
+		$this->assertSame( $last4, $payment_complete_observations['last4'] );
+		$this->assertSame( 'visa', $payment_complete_observations['brand'] );
+		$this->assertStringContainsString( '"last4":"' . $last4 . '"', (string) $payment_complete_observations['details'] );
+		$this->assertSame( '', $payment_complete_observations['raw_details'] );
+		$this->assertSame( $recorded_payment_method_id, $payment_complete_observations['payment_method'] );
+		$this->assertCount( 1, $payment_complete_observations['tokens'] );
+		$this->assertInstanceOf( WC_Payment_Token_CC::class, $payment_complete_observations['token'] );
+		$this->assertSame( $recorded_payment_method_id, $payment_complete_observations['token']->get_token() );
+		$this->assertSame( 'visa', $payment_complete_observations['token']->get_card_type() );
+		$this->assertSame( $last4, $payment_complete_observations['token']->get_last4() );
+
+		add_action( 'woocommerce_payment_complete', $record_payment_complete, 1, 1 );
+		try {
+			$response = $sut->confirm_order_payment(
+				array(
+					'_ajax_nonce'                => wp_create_nonce( 'wcpay_update_order_status_nonce_' . $order->get_id() ),
+					'order_id'                   => $order->get_id(),
+					'intent_id'                  => $recorded['body']['id'],
+					'should_save_payment_method' => 'true',
+				)
+			);
+		} finally {
+			remove_action( 'woocommerce_payment_complete', $record_payment_complete, 1 );
+		}
+
+		$order        = wc_get_order( $order->get_id() );
+		$tokens       = array_values( WC_Payment_Tokens::get_customer_tokens( $user_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID ) );
+		$active_token = $order instanceof WC_Order ? $token_service->get_active_token_for_order( $order ) : null;
+
+		$this->assertSame( 200, $response['status_code'] );
+		$this->assertSame( 1, $payment_complete_observer_count );
+		$this->assertCount( 1, $tokens );
+		$this->assertInstanceOf( WC_Payment_Token_CC::class, $active_token );
+		$this->assertSame( $recorded_payment_method_id, $active_token->get_token() );
+		$this->assertSame( array( $token->get_id() ), array_values( $order->get_payment_tokens() ) );
+	}
+
+	/**
+	 * @testdox Order-status callback for a $status intent saves the requested card, titles the order from the charge and puts it on hold.
+	 *
+	 * Client 11.1.0 update_order_status() treats every authorized status (succeeded, requires_capture, processing;
+	 * class-intent-status.php:35-39) alike: it saves the requested card when `$intent->is_authorized()` (gw:4308-4310),
+	 * titles the order from the charge's card details once a token exists (gw:4331-4335), marks a requires_capture or
+	 * processing intent authorized, which puts the order on hold (os:410-416, os:1612-1624), and answers the return URL
+	 * (gw:4347-4361).
+	 *
+	 * @dataProvider authorized_intent_statuses
+	 *
+	 * @param string $status Intent status.
+	 */
+	public function test_update_order_status_saves_the_card_for_an_authorized_intent( string $status ): void {
+		$user_id = $this->factory()->user->create();
+		wp_set_current_user( $user_id );
+
+		$order = $this->create_woopayments_order( '10.99' );
+		$order->set_customer_id( $user_id );
+		$order->set_payment_method_title( 'WooPayments' );
+
+		// REC-CAP's manual-capture authorization (Fixtures/platform-manual-capture.json); the processing case changes only the intent status.
+		$intent           = $this->load_recorded_intent_entry( 'platform-manual-capture.json', 'authorize_manual_capture' )['body'];
+		$intent['status'] = $status;
+		$order->update_meta_data( '_intent_id', $intent['id'] );
+		$order->save();
+
+		$http_client           = new FakeHttpClient();
+		$http_client->response = array(
+			'response' => array( 'code' => 200 ),
+			'headers'  => array( 'content-type' => 'application/json; charset=UTF-8' ),
+			'body'     => wp_json_encode( $intent ),
+		);
+		$account_service       = $this->create_account_service( false );
+		$api_client            = new Client();
+		$api_client->init( $http_client, $account_service, wc_get_container()->get( TransportLog::class ) );
+		$payment_method_id = (string) $intent['payment_method'];
+		$card              = $intent['charges']['data'][0]['payment_method_details']['card'];
+		$token_service     = $this->create_token_service(
+			array(
+				$payment_method_id => array(
+					'id'   => $payment_method_id,
+					'type' => 'card',
+					'card' => array(
+						'brand'     => $card['brand'],
+						'last4'     => $card['last4'],
+						'exp_month' => $card['exp_month'],
+						'exp_year'  => $card['exp_year'],
+					),
+				),
+			)
+		);
+		$sut               = $this->create_controller( $api_client, null, $token_service, $account_service );
+
+		$response = $sut->confirm_order_payment(
+			array(
+				'_ajax_nonce'                => wp_create_nonce( 'wcpay_update_order_status_nonce_' . $order->get_id() ),
+				'order_id'                   => $order->get_id(),
+				'intent_id'                  => $intent['id'],
+				'should_save_payment_method' => 'true',
+			)
+		);
+
+		$order  = wc_get_order( $order->get_id() );
+		$tokens = array_values( WC_Payment_Tokens::get_customer_tokens( $user_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID ) );
+
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 200, $response['status_code'] );
+		$this->assertSame( 'on-hold', $order->get_status() );
+		$this->assertCount( 1, $tokens );
+		$this->assertSame( $payment_method_id, $tokens[0]->get_token() );
+		$this->assertSame( array( $tokens[0]->get_id() ), array_values( $order->get_payment_tokens() ) );
+		$this->assertSame( 'Visa credit card', $order->get_payment_method_title() );
+		$this->assertSame( '4242', $order->get_meta( 'last4', true ) );
+	}
+
+	/**
+	 * Intent statuses, other than succeeded, in which the intent holds the shopper's money.
+	 *
+	 * @return array<string,array{string}>
+	 */
+	public function authorized_intent_statuses(): array {
+		return array(
+			'requires_capture' => array( 'requires_capture' ),
+			'processing'       => array( 'processing' ),
+		);
+	}
+
+	/**
+	 * @testdox Order-status callbacks keep excluded charge card shapes on the established post-lifecycle display path.
+	 * Card-network precedence follows the pinned WooPayments 11.1.0 CardDefinition; a malformed display brand still answers HTTP 200.
+	 *
+	 * @dataProvider excluded_charge_card_shapes
+	 *
+	 * @param array<string,mixed>|null $charge                  PaymentIntent charge data, if present.
+	 * @param string                   $expected_observed_title Expected title at the lifecycle boundary.
+	 * @param int                      $expected_status_code    Expected response status code.
+	 * @param string|null              $expected_final_title    Expected final title when the selected brand is unusable.
+	 */
+	public function test_update_order_status_keeps_excluded_charge_card_shapes_on_post_lifecycle_display_path( ?array $charge, string $expected_observed_title, int $expected_status_code, ?string $expected_final_title = null ): void {
+		$user_id = $this->factory()->user->create();
+		wp_set_current_user( $user_id );
+
+		$order = $this->create_woopayments_order( '10.00' );
+		$order->set_customer_id( $user_id );
+		$order->set_payment_method_title( 'WooPayments' );
+		$order->update_meta_data( '_intent_id', 'pi_excluded_shape' );
+		$order->save();
+
+		$api_client              = new class( $charge ) extends Client {
+			/**
+			 * Charge data returned with the PaymentIntent.
+			 *
+			 * @var array<string,mixed>|null
+			 */
+			private ?array $charge;
+
+			/**
+			 * Constructor.
+			 *
+			 * @param array<string,mixed>|null $charge Charge data returned with the PaymentIntent.
+			 */
+			public function __construct( ?array $charge ) {
+				$this->charge = $charge;
+			}
+
+			/**
+			 * Tell whether the transport is available.
+			 *
+			 * @return bool
+			 */
+			public function is_available(): bool {
+				return true;
+			}
+
+			/**
+			 * Retrieve a PaymentIntent.
+			 *
+			 * @param string $intent_id PaymentIntent ID.
+			 * @return array<string,mixed>
+			 */
+			public function get_payment_intention( string $intent_id ): array {
+				if ( 'pi_excluded_shape' !== $intent_id ) {
+					throw new \RuntimeException( 'Unexpected payment intent ID.' );
+				}
+
+				$intent = array(
+					'id'                   => 'pi_excluded_shape',
+					'status'               => 'succeeded',
+					'currency'             => 'usd',
+					'customer'             => 'cus_native',
+					'payment_method'       => 'pm_native',
+					'payment_method_types' => array( 'card' ),
+				);
+				if ( null !== $this->charge ) {
+					$intent['charges'] = array(
+						'total_count' => 1,
+						'data'        => array( $this->charge ),
+					);
+				}
+
+				return $intent;
+			}
+		};
+		$token_service           = $this->create_token_service(
+			array(
+				'pm_native' => array(
+					'id'   => 'pm_native',
+					'type' => 'card',
+					'card' => array(
+						'brand'     => 'visa',
+						'last4'     => '4242',
+						'exp_month' => 12,
+						'exp_year'  => 2030,
+					),
+				),
+			)
+		);
+		$sut                     = $this->create_controller( $api_client, null, $token_service );
+		$observed_title          = '';
+		$observer_count          = 0;
+		$record_payment_complete = function ( int $order_id ) use ( $order, &$observed_title, &$observer_count ): void {
+			if ( $order->get_id() !== $order_id ) {
+				return;
+			}
+
+			$observed_order = wc_get_order( $order_id );
+			++$observer_count;
+			$observed_title = $observed_order instanceof WC_Order ? $observed_order->get_payment_method_title() : '';
+		};
+		add_action( 'woocommerce_payment_complete', $record_payment_complete, 1, 1 );
+
+		try {
+			$response = $sut->confirm_order_payment(
+				array(
+					'_ajax_nonce'                => wp_create_nonce( 'wcpay_update_order_status_nonce_' . $order->get_id() ),
+					'order_id'                   => $order->get_id(),
+					'intent_id'                  => 'pi_excluded_shape',
+					'should_save_payment_method' => 'true',
+				)
+			);
+		} finally {
+			remove_action( 'woocommerce_payment_complete', $record_payment_complete, 1 );
+		}
+
+		$order = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( $expected_status_code, $response['status_code'] );
+		$this->assertSame( 1, $observer_count );
+		$this->assertSame( $expected_observed_title, $observed_title );
+		if ( 200 === $expected_status_code && null === $expected_final_title ) {
+			$this->assertNotSame( 'WooPayments', $order->get_payment_method_title() );
+		}
+		if ( null !== $expected_final_title ) {
+			$this->assertSame( $expected_final_title, $order->get_payment_method_title() );
+		}
+	}
+
+	/**
+	 * Provide charge card shapes excluded from the pre-lifecycle identity projection.
+	 *
+	 * @return array<string,array{array<string,mixed>|null,string,int}>
+	 */
+	public function excluded_charge_card_shapes(): array {
+		return array(
+			'missing charge details'                  => array( null, 'WooPayments', 200 ),
+			'partial card details'                    => array(
+				array(
+					'id'                     => 'ch_partial',
+					'payment_method'         => 'pm_native',
+					'payment_method_details' => array(
+						'type' => 'card',
+						'card' => array( 'last4' => '4242' ),
+					),
+				),
+				'WooPayments',
+				200,
+			),
+			'missing card funding'                    => array(
+				array(
+					'id'                     => 'ch_missing_funding',
+					'payment_method'         => 'pm_native',
+					'payment_method_details' => array(
+						'type' => 'card',
+						'card' => array(
+							'brand'   => 'visa',
+							'last4'   => '4242',
+							'network' => 'visa',
+						),
+					),
+				),
+				'WooPayments',
+				200,
+			),
+			'link wrapped card'                       => array(
+				array(
+					'id'                     => 'ch_link',
+					'payment_method'         => 'pm_native',
+					'payment_method_details' => array(
+						'type' => 'card',
+						'card' => array(
+							'brand'   => 'visa',
+							'funding' => 'credit',
+							'last4'   => '4242',
+							'network' => 'visa',
+							'wallet'  => array( 'type' => 'link' ),
+						),
+					),
+				),
+				'WooPayments',
+				200,
+			),
+			'card present'                            => array(
+				array(
+					'id'                     => 'ch_card_present',
+					'payment_method'         => 'pm_native',
+					'payment_method_details' => array(
+						'type'         => 'card_present',
+						'card_present' => array( 'last4' => '4242' ),
+					),
+				),
+				'WooPayments',
+				200,
+				// No payment method is registered for card_present, so the order keeps its title, as client 11.1.0
+				// set_payment_method_title_for_order() returns early (includes/class-wc-payment-gateway-wcpay.php:2694-2697).
+				'WooPayments',
+			),
+			'capitalized card type'                   => array(
+				array(
+					'id'                     => 'ch_capitalized_card_type',
+					'payment_method'         => 'pm_native',
+					'payment_method_details' => array(
+						'type' => 'Card',
+						'card' => array(
+							'brand'   => 'visa',
+							'funding' => 'credit',
+							'last4'   => '4242',
+							'network' => 'visa',
+						),
+					),
+				),
+				'WooPayments',
+				200,
+			),
+			'uppercase card type'                     => array(
+				array(
+					'id'                     => 'ch_uppercase_card_type',
+					'payment_method'         => 'pm_native',
+					'payment_method_details' => array(
+						'type' => 'CARD',
+						'card' => array(
+							'brand'   => 'visa',
+							'funding' => 'credit',
+							'last4'   => '4242',
+							'network' => 'visa',
+						),
+					),
+				),
+				'WooPayments',
+				200,
+			),
+			'spaced card type'                        => array(
+				array(
+					'id'                     => 'ch_spaced_card_type',
+					'payment_method'         => 'pm_native',
+					'payment_method_details' => array(
+						'type' => 'ca rd',
+						'card' => array(
+							'brand'   => 'visa',
+							'funding' => 'credit',
+							'last4'   => '4242',
+							'network' => 'visa',
+						),
+					),
+				),
+				'WooPayments',
+				200,
+			),
+			'whitespace card type'                    => array(
+				array(
+					'id'                     => 'ch_whitespace_card_type',
+					'payment_method'         => 'pm_native',
+					'payment_method_details' => array(
+						'type' => ' card ',
+						'card' => array(
+							'brand'   => 'visa',
+							'funding' => 'credit',
+							'last4'   => '4242',
+							'network' => 'visa',
+						),
+					),
+				),
+				'WooPayments',
+				200,
+			),
+			'empty display brand shadows network'     => array(
+				array(
+					'id'                     => 'ch_empty_display_brand',
+					'payment_method'         => 'pm_native',
+					'payment_method_details' => array(
+						'type' => 'card',
+						'card' => array(
+							'brand'         => 'visa',
+							'display_brand' => '',
+							'funding'       => 'credit',
+							'last4'         => '4242',
+							'network'       => 'visa',
+						),
+					),
+				),
+				'WooPayments',
+				200,
+				'Credit / Debit Cards',
+			),
+			'malformed display brand shadows network' => array(
+				array(
+					'id'                     => 'ch_malformed_display_brand',
+					'payment_method'         => 'pm_native',
+					'payment_method_details' => array(
+						'type' => 'card',
+						'card' => array(
+							'brand'         => 'visa',
+							'display_brand' => array( 'visa' ),
+							'funding'       => 'credit',
+							'last4'         => '4242',
+							'network'       => 'visa',
+						),
+					),
+				),
+				'WooPayments',
+				200,
+				'Credit / Debit Cards',
+			),
+			'non-array available network'             => array(
+				array(
+					'id'                     => 'ch_string_available',
+					'payment_method'         => 'pm_native',
+					'payment_method_details' => array(
+						'type' => 'card',
+						'card' => array(
+							'brand'    => 'visa',
+							'funding'  => 'credit',
+							'last4'    => '4242',
+							'networks' => array( 'available' => 'visa' ),
+						),
+					),
+				),
+				'WooPayments',
+				200,
+			),
+			'valid available network'                 => array(
+				array(
+					'id'                     => 'ch_available_network',
+					'payment_method'         => 'pm_native',
+					'payment_method_details' => array(
+						'type' => 'card',
+						'card' => array(
+							'brand'    => 'visa',
+							'funding'  => 'credit',
+							'last4'    => '4242',
+							'networks' => array( 'available' => array( 'visa' ) ),
+						),
+					),
+				),
+				'Visa credit card',
+				200,
+			),
+		);
+	}
+
+	/**
+	 * @testdox Order-status callback should save requested non-card tokens through type-aware creation.
+	 */
+	public function test_update_order_status_saves_requested_non_card_token(): void {
+		$user_id = $this->factory()->user->create();
+		wp_set_current_user( $user_id );
+
+		$order = $this->create_woopayments_order( '10.00' );
+		$order->set_customer_id( $user_id );
+		$order->set_currency( 'EUR' );
+		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID . '_sepa_debit' );
+		$order->update_meta_data( '_intent_id', 'pi_sepa' );
+		$order->save();
+
+		$api_client      = new class() extends Client {
+			/**
+			 * Tell whether the transport is available.
+			 *
+			 * @return bool
+			 */
+			public function is_available(): bool {
+				return true;
+			}
+
+			/**
+			 * Retrieve a PaymentIntent.
+			 *
+			 * @param string $intent_id PaymentIntent ID.
+			 * @return array<string,mixed>
+			 */
+			public function get_payment_intention( string $intent_id ): array {
+				if ( 'pi_sepa' !== $intent_id ) {
+					throw new \RuntimeException( 'Unexpected payment intent ID.' );
+				}
+
+				return array(
+					'id'             => 'pi_sepa',
+					'status'         => 'succeeded',
+					'currency'       => 'eur',
+					'customer'       => 'cus_native',
+					'payment_method' => 'pm_sepa',
+				);
+			}
+		};
+		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_gateway_setting' ) )
+			->getMock();
+		$account_service->method( 'get_gateway_setting' )
+			->with( 'upe_enabled_payment_method_ids', array( 'card' ) )
+			->willReturn( array( 'card', 'sepa_debit' ) );
+		$token_service   = $this->create_token_service(
+			array(
+				'pm_sepa' => array(
+					'id'         => 'pm_sepa',
+					'type'       => 'sepa_debit',
+					'sepa_debit' => array(
+						'last4' => '6789',
+					),
+				),
+			),
+			$account_service
+		);
+		$sut             = $this->create_controller( $api_client, null, $token_service );
+		$token_class_map = new WooPaymentsTokenClassMapController();
+		$token_class_map->register();
+
+		$response = $sut->confirm_order_payment(
+			array(
+				'_ajax_nonce'                => wp_create_nonce( 'wcpay_update_order_status_nonce_' . $order->get_id() ),
+				'order_id'                   => $order->get_id(),
+				'intent_id'                  => 'pi_sepa',
+				'should_save_payment_method' => 'true',
+			)
+		);
+		$order    = wc_get_order( $order->get_id() );
+		$tokens   = array_values( WC_Payment_Tokens::get_customer_tokens( $user_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID . '_sepa_debit' ) );
+		$token    = $tokens[0] ?? null;
+
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 200, $response['status_code'] );
+		$this->assertInstanceOf( SepaToken::class, $token );
+		$this->assertSame( 'pm_sepa', $token->get_token() );
+		$this->assertContains( $token->get_id(), $order->get_payment_tokens() );
+	}
+
+	/**
+	 * @testdox Authenticated renewal callbacks save and synchronize a new card despite an unchecked save preference.
+	 *
+	 * @dataProvider renewal_order_statuses
+	 *
+	 * @param string $renewal_status Renewal order status.
+	 */
+	public function test_update_order_status_saves_and_syncs_new_card_for_failed_or_pending_renewal( string $renewal_status ): void {
+		WooCommerceSubscriptionsDoubles::load_renewal_detector();
+		WooCommerceSubscriptionsDoubles::load_order_subscriptions();
+		$user_id      = $this->factory()->user->create();
+		$order        = $this->create_woopayments_order( '10.00' );
+		$subscription = $this->create_woopayments_order( '10.00' );
+		$unrelated    = $this->create_woopayments_order( '10.00' );
+		wp_set_current_user( $user_id );
+
+		$order->set_customer_id( $user_id );
+		$order->set_status( $renewal_status );
+		$order->set_payment_method_title( 'WooPayments' );
+		$order->update_meta_data( '_intent_id', 'pi_native' );
+		$order->save();
+		$subscription->set_customer_id( $user_id );
+		$subscription->set_payment_method_title( 'WooPayments' );
+		$subscription->update_meta_data( '_payment_method_id', 'pm_old' );
+		$subscription->update_meta_data( '_stripe_customer_id', 'cus_old' );
+		$subscription->save();
+		$old_token = new WC_Payment_Token_CC();
+		$old_token->set_gateway_id( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+		$old_token->set_token( 'pm_old' );
+		$old_token->set_user_id( $user_id );
+		$old_token->set_card_type( 'mastercard' );
+		$old_token->set_last4( '1111' );
+		$old_token->set_expiry_month( 1 );
+		$old_token->set_expiry_year( 2030 );
+		$old_token->save();
+		$order->add_payment_token( $old_token );
+		$order->update_meta_data( '_payment_method_id', 'pm_old' );
+		$order->update_meta_data( '_stripe_customer_id', 'cus_old' );
+		$order->save();
+		$subscription->add_payment_token( $old_token );
+		$subscription->save();
+		$unrelated->set_customer_id( $user_id );
+		$unrelated->set_payment_method( 'cheque' );
+		$unrelated->set_payment_method_title( 'Check payments' );
+		$unrelated->update_meta_data( '_payment_method_id', 'pm_unrelated' );
+		$unrelated->update_meta_data( '_stripe_customer_id', 'cus_unrelated' );
+		$unrelated->save();
+		$GLOBALS['wcpay_test_renewal_order_ids']                = array( $order->get_id() );
+		$GLOBALS['wcpay_test_order_subscription_relationships'] = array(
+			$order->get_id() => array( 'renewal' => array( $subscription->get_id() ) ),
+		);
+
+		$api_client                      = new class() extends Client {
+			/**
+			 * Tell whether the transport is available.
+			 *
+			 * @return bool
+			 */
+			public function is_available(): bool {
+				return true;
+			}
+
+			/**
+			 * Retrieve a PaymentIntent.
+			 *
+			 * @param string $intent_id PaymentIntent ID.
+			 * @return array<string,mixed>
+			 */
+			public function get_payment_intention( string $intent_id ): array {
+				if ( 'pi_native' !== $intent_id ) {
+					throw new \RuntimeException( 'Unexpected payment intent ID.' );
+				}
+
+				return array(
+					'id'             => 'pi_native',
+					'status'         => 'succeeded',
+					'currency'       => 'usd',
+					'customer'       => 'cus_native',
+					'payment_method' => 'pm_native',
+					'charges'        => array(
+						'total_count' => 1,
+						'data'        => array(
+							array(
+								'id'                     => 'ch_native',
+								'payment_method'         => 'pm_native',
+								'payment_method_details' => array(
+									'type' => 'card',
+									'card' => array(
+										'brand'   => 'visa',
+										'funding' => 'credit',
+										'last4'   => '4242',
+										'network' => 'visa',
+									),
+								),
+							),
+						),
+					),
+				);
+			}
+		};
+		$token_service                   = $this->create_token_service(
+			array(
+				'pm_native' => array(
+					'id'   => 'pm_native',
+					'type' => 'card',
+					'card' => array(
+						'brand'     => 'visa',
+						'last4'     => '4242',
+						'exp_month' => 12,
+						'exp_year'  => 2030,
+					),
+				),
+			)
+		);
+		$sut                             = $this->create_controller( $api_client, null, $token_service );
+		$payment_complete_observations   = array();
+		$payment_complete_observer_count = 0;
+		$record_payment_complete         = function ( int $order_id ) use ( $order, $subscription, $token_service, &$payment_complete_observations, &$payment_complete_observer_count ): void {
+			if ( $order->get_id() !== $order_id ) {
+				return;
+			}
+
+			$observed_order            = wc_get_order( $order_id );
+			$observed_subscription     = wc_get_order( $subscription->get_id() );
+			$active_order_token        = $observed_order instanceof WC_Order ? $token_service->get_active_token_for_order( $observed_order ) : null;
+			$active_subscription_token = $observed_subscription instanceof WC_Order ? $token_service->get_active_token_for_order( $observed_subscription ) : null;
+
+			++$payment_complete_observer_count;
+			$payment_complete_observations = array(
+				'gateway'                        => $observed_order instanceof WC_Order ? $observed_order->get_payment_method() : '',
+				'title'                          => $observed_order instanceof WC_Order ? $observed_order->get_payment_method_title() : '',
+				'last4'                          => $observed_order instanceof WC_Order ? $observed_order->get_meta( 'last4', true ) : '',
+				'brand'                          => $observed_order instanceof WC_Order ? $observed_order->get_meta( '_card_brand', true ) : '',
+				'details'                        => $observed_order instanceof WC_Order ? $observed_order->get_meta( '_wcpay_payment_method_details', true ) : '',
+				'raw_details'                    => $observed_order instanceof WC_Order ? $observed_order->get_meta( '_wcpay_raw_payment_method_details', true ) : '',
+				'payment_method'                 => $observed_order instanceof WC_Order ? $observed_order->get_meta( '_payment_method_id', true ) : '',
+				'token'                          => $active_order_token,
+				'subscription_token'             => $observed_subscription instanceof WC_Order ? $observed_subscription->get_payment_tokens() : array(),
+				'active_subscription_token'      => $active_subscription_token,
+				'subscription_method'            => $observed_subscription instanceof WC_Order ? $observed_subscription->get_payment_method() : '',
+				'subscription_title'             => $observed_subscription instanceof WC_Order ? $observed_subscription->get_payment_method_title() : '',
+				'subscription_payment_method_id' => $observed_subscription instanceof WC_Order ? $observed_subscription->get_meta( '_payment_method_id', true ) : '',
+				'subscription_customer_id'       => $observed_subscription instanceof WC_Order ? $observed_subscription->get_meta( '_stripe_customer_id', true ) : '',
+			);
+		};
+		add_action( 'woocommerce_payment_complete', $record_payment_complete, 1, 1 );
+
+		try {
+			$response = $sut->confirm_order_payment(
+				array(
+					'_ajax_nonce'                => wp_create_nonce( 'wcpay_update_order_status_nonce_' . $order->get_id() ),
+					'order_id'                   => $order->get_id(),
+					'intent_id'                  => 'pi_native',
+					'should_save_payment_method' => 'false',
+				)
+			);
+		} finally {
+			remove_action( 'woocommerce_payment_complete', $record_payment_complete, 1 );
+		}
+		$order  = wc_get_order( $order->get_id() );
+		$tokens = array_values( WC_Payment_Tokens::get_customer_tokens( $user_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID ) );
+		$token  = $order instanceof WC_Order ? $token_service->get_active_token_for_order( $order ) : null;
+
+		$subscription = wc_get_order( $subscription->get_id() );
+		$unrelated    = wc_get_order( $unrelated->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertInstanceOf( WC_Order::class, $subscription );
+		$this->assertInstanceOf( WC_Order::class, $unrelated );
+		$this->assertSame( 200, $response['status_code'] );
+		$this->assertInstanceOf( WC_Payment_Token_CC::class, $token );
+		$this->assertCount( 2, $tokens );
+		$this->assertSame( $user_id, $token->get_user_id() );
+		$this->assertContains( $token->get_id(), $order->get_payment_tokens(), 'Saved cards should be linked to the parent order.' );
+		$this->assertSame( array( $old_token->get_id(), $token->get_id() ), array_values( $order->get_payment_tokens() ) );
+		$this->assertContains( $token->get_id(), $subscription->get_payment_tokens(), 'Saved cards should be linked to the renewal subscription.' );
+		$this->assertContains( $old_token->get_id(), $order->get_payment_tokens(), 'Historical cards should remain linked to the renewal order.' );
+		$this->assertContains( $old_token->get_id(), $subscription->get_payment_tokens(), 'Historical cards should remain linked to the renewal subscription.' );
+		$this->assertSame( 'pm_native', $subscription->get_meta( '_payment_method_id', true ) );
+		$this->assertSame( 'cus_native', $subscription->get_meta( '_stripe_customer_id', true ) );
+		$this->assertSame( WooPaymentsPersistenceVocabulary::GATEWAY_ID, $subscription->get_payment_method() );
+		$this->assertSame( 'Visa credit card', $subscription->get_payment_method_title() );
+		$this->assertSame( 1, $payment_complete_observer_count );
+		$this->assertSame( WooPaymentsPersistenceVocabulary::GATEWAY_ID, $payment_complete_observations['gateway'] );
+		$this->assertSame( 'Visa credit card', $payment_complete_observations['title'] );
+		$this->assertSame( '4242', $payment_complete_observations['last4'] );
+		$this->assertSame( 'visa', $payment_complete_observations['brand'] );
+		$this->assertStringContainsString( '"last4":"4242"', (string) $payment_complete_observations['details'] );
+		$this->assertSame( '', $payment_complete_observations['raw_details'] );
+		$this->assertSame( 'pm_native', $payment_complete_observations['payment_method'] );
+		$this->assertInstanceOf( WC_Payment_Token_CC::class, $payment_complete_observations['token'] );
+		$this->assertSame( 'pm_native', $payment_complete_observations['token']->get_token() );
+		$this->assertSame( array( $old_token->get_id(), $token->get_id() ), array_values( $payment_complete_observations['subscription_token'] ) );
+		$this->assertInstanceOf( WC_Payment_Token_CC::class, $payment_complete_observations['active_subscription_token'] );
+		$this->assertSame( 'pm_native', $payment_complete_observations['active_subscription_token']->get_token() );
+		$this->assertSame( WooPaymentsPersistenceVocabulary::GATEWAY_ID, $payment_complete_observations['subscription_method'] );
+		$this->assertSame( 'Visa credit card', $payment_complete_observations['subscription_title'] );
+		$this->assertSame( 'pm_native', $payment_complete_observations['subscription_payment_method_id'] );
+		$this->assertSame( 'cus_native', $payment_complete_observations['subscription_customer_id'] );
+		$this->assertSame( array(), $unrelated->get_payment_tokens() );
+		$this->assertSame( 'pm_unrelated', $unrelated->get_meta( '_payment_method_id', true ) );
+		$this->assertSame( 'cus_unrelated', $unrelated->get_meta( '_stripe_customer_id', true ) );
+		$this->assertSame( 'cheque', $unrelated->get_payment_method() );
+		$this->assertSame( 'Check payments', $unrelated->get_payment_method_title() );
+
+		add_action( 'woocommerce_payment_complete', $record_payment_complete, 1, 1 );
+		try {
+			$response = $sut->confirm_order_payment(
+				array(
+					'_ajax_nonce'                => wp_create_nonce( 'wcpay_update_order_status_nonce_' . $order->get_id() ),
+					'order_id'                   => $order->get_id(),
+					'intent_id'                  => 'pi_native',
+					'should_save_payment_method' => 'false',
+				)
+			);
+		} finally {
+			remove_action( 'woocommerce_payment_complete', $record_payment_complete, 1 );
+		}
+		$order        = wc_get_order( $order->get_id() );
+		$subscription = wc_get_order( $subscription->get_id() );
+		$tokens       = array_values( WC_Payment_Tokens::get_customer_tokens( $user_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID ) );
+
+		$this->assertSame( 200, $response['status_code'] );
+		$this->assertSame( 1, $payment_complete_observer_count );
+		$this->assertCount( 2, $tokens );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( array( $old_token->get_id(), $token->get_id() ), array_values( $order->get_payment_tokens() ) );
+		$this->assertSame( array( $old_token->get_id(), $token->get_id() ), array_values( $subscription->get_payment_tokens() ) );
+	}
+
+	/**
+	 * Provide failed and pending renewal statuses.
+	 *
+	 * @return array<string,array{string}>
+	 */
+	public function renewal_order_statuses(): array {
+		return array(
+			'failed renewal'  => array( 'failed' ),
+			'pending renewal' => array( 'pending' ),
+		);
+	}
+
+	/**
+	 * @testdox Order-status callback should update WC Subscriptions after SCA change-payment confirmation ($_dataName).
+	 *
+	 * Client 11.1.0 tells the shopper all subscriptions changed only when Subscriptions' update-all returns true
+	 * (includes/compat/subscriptions/trait-wc-payment-gateway-wcpay-subscriptions.php:1473-1479).
+	 *
+	 * @dataProvider provider_update_all_results
+	 *
+	 * @param bool   $update_all_result What Subscriptions' update-all returns.
+	 * @param string $expected_notice   Success notice the shopper sees.
+	 */
+	public function test_update_order_status_updates_subscription_payment_method_after_change_payment_confirmation( bool $update_all_result, string $expected_notice ): void {
+		WooCommerceSubscriptionsDoubles::load_change_payment_gateway();
+		\WC_Subscriptions_Change_Payment_Gateway::$update_all_payment_methods_result = $update_all_result;
+		$user_id = $this->factory()->user->create();
+		wp_set_current_user( $user_id );
+
+		$order = $this->create_woopayments_order( '0.00' );
+		$order->set_customer_id( $user_id );
+		$order->update_meta_data( '_intent_id', 'seti_native' );
+		$order->update_meta_data( '_delayed_update_payment_method_all', WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+		$order->save();
+
+		$api_client    = new class() extends Client {
+			/**
+			 * Tell whether the transport is available.
+			 *
+			 * @return bool
+			 */
+			public function is_available(): bool {
+				return true;
+			}
+
+			/**
+			 * Retrieve a SetupIntent.
+			 *
+			 * @param string $setup_intent_id SetupIntent ID.
+			 * @return array<string,mixed>
+			 */
+			public function get_setup_intention( string $setup_intent_id ): array {
+				if ( 'seti_native' !== $setup_intent_id ) {
+					throw new \RuntimeException( 'Unexpected setup intent ID.' );
+				}
+
+				return array(
+					'id'             => 'seti_native',
+					'status'         => 'succeeded',
+					'customer'       => 'cus_native',
+					'payment_method' => 'pm_native',
+				);
+			}
+		};
+		$token_service = $this->create_token_service(
+			array(
+				'pm_native' => array(
+					'id'   => 'pm_native',
+					'type' => 'card',
+					'card' => array(
+						'brand'     => 'visa',
+						'last4'     => '4242',
+						'exp_month' => 12,
+						'exp_year'  => 2030,
+					),
+				),
+			)
+		);
+		$sut           = $this->create_controller( $api_client, null, $token_service );
+
+		$response = $sut->confirm_order_payment(
+			array(
+				'_ajax_nonce'                => wp_create_nonce( 'wcpay_update_order_status_nonce_' . $order->get_id() ),
+				'order_id'                   => $order->get_id(),
+				'intent_id'                  => 'seti_native',
+				'should_save_payment_method' => 'false',
+				'is_changing_payment'        => 'true',
+			)
+		);
+		$order    = wc_get_order( $order->get_id() );
+		$tokens   = array_values( WC_Payment_Tokens::get_customer_tokens( $user_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID ) );
+		$token    = $tokens[0] ?? null;
+
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 200, $response['status_code'] );
+		$this->assertInstanceOf( WC_Payment_Token_CC::class, $token );
+		$this->assertContains( $token->get_id(), $order->get_payment_tokens() );
+		$this->assertSame(
+			array(
+				array(
+					'order_id'   => $order->get_id(),
+					'gateway_id' => WooPaymentsPersistenceVocabulary::GATEWAY_ID,
+				),
+			),
+			\WC_Subscriptions_Change_Payment_Gateway::$updated_payment_methods
+		);
+		$this->assertSame(
+			array(
+				array(
+					'order_id'   => $order->get_id(),
+					'gateway_id' => WooPaymentsPersistenceVocabulary::GATEWAY_ID,
+				),
+			),
+			\WC_Subscriptions_Change_Payment_Gateway::$updated_all_payment_methods
+		);
+		$this->assertSame( array( $expected_notice ), array_column( wc_get_notices( 'success' ), 'notice' ) );
+	}
+
+	/**
+	 * Results of Subscriptions' update-all after a change where the shopper asked to update every subscription.
+	 *
+	 * @return array<string,array{bool,string}>
+	 */
+	public function provider_update_all_results(): array {
+		return array(
+			'update-all applied' => array( true, 'Payment method updated for all your current subscriptions.' ),
+			'update-all refused' => array( false, 'Payment method updated.' ),
+		);
+	}
+
+	/**
+	 * @testdox Order-status callback confirms a 3DS payment method change on a subscription with a recurring total through its SetupIntent, leaving its failed switch order unpaid.
+	 *
+	 * Client 11.1.0 fetches the SetupIntent for any payment method change, whatever the amount (class-wc-payment-gateway-wcpay.php:4217, 4238-4242).
+	 * Completing it must not pay the subscription's newest unpaid order: WooCommerce Subscriptions 9.0.1 skips that only while the
+	 * change request flag is set (includes/core/class-wc-subscription.php:2025-2041).
+	 */
+	public function test_update_order_status_confirms_change_payment_setup_intent_on_subscription_with_recurring_total(): void {
+		WooCommerceSubscriptionsDoubles::load_change_payment_gateway();
+		\WC_Subscriptions_Change_Payment_Gateway::$will_update_all_payment_methods = false;
+		WooCommerceSubscriptionsDoubles::load();
+		WooCommerceSubscriptionsDoubles::load_order_detector();
+		$user_id = $this->factory()->user->create();
+		wp_set_current_user( $user_id );
+
+		$subscription = new SubscriptionDouble();
+		$subscription->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+		$subscription->set_currency( 'USD' );
+		$subscription->set_total( '10.00' );
+		$subscription->set_customer_id( $user_id );
+		$subscription->set_status( 'active' );
+		$subscription->update_meta_data( '_intent_id', 'seti_change' );
+		$subscription->save();
+		$GLOBALS[ WooCommerceSubscriptionsDoubles::SUBSCRIPTION_IDS ] = array( $subscription->get_id() );
+		$switch_order = $this->create_woopayments_order( '20.00' );
+		$switch_order->set_status( 'failed' );
+		$switch_order->save();
+		$GLOBALS[ WooCommerceSubscriptionsDoubles::ORDER_SUBSCRIPTIONS ] = array( $switch_order->get_id() => array( 'switch' => array( $subscription->get_id() ) ) );
+
+		$api_client = new class() extends Client {
+			/**
+			 * Intent IDs fetched as PaymentIntents.
+			 *
+			 * @var string[]
+			 */
+			public array $payment_intent_fetches = array();
+
+			/**
+			 * Tell whether the transport is available.
+			 *
+			 * @return bool
+			 */
+			public function is_available(): bool {
+				return true;
+			}
+
+			// phpcs:disable Squiz.Commenting.FunctionComment.InvalidNoReturn -- This test double always throws.
+			/**
+			 * Refuse a PaymentIntent fetch, which a payment method change never needs.
+			 *
+			 * @param string $intent_id PaymentIntent ID.
+			 * @return array<string,mixed>
+			 * @throws \LogicException Always.
+			 */
+			public function get_payment_intention( string $intent_id ): array {
+				$this->payment_intent_fetches[] = $intent_id;
+				throw new \LogicException( 'A payment method change must not fetch a PaymentIntent.' );
+			}
+			// phpcs:enable Squiz.Commenting.FunctionComment.InvalidNoReturn
+
+			/**
+			 * Retrieve a SetupIntent.
+			 *
+			 * @param string $setup_intent_id SetupIntent ID.
+			 * @return array<string,mixed>
+			 */
+			public function get_setup_intention( string $setup_intent_id ): array {
+				if ( 'seti_change' !== $setup_intent_id ) {
+					throw new \RuntimeException( 'Unexpected setup intent ID.' );
+				}
+
+				// The fields the callback reads from a succeeded SetupIntent, as the platform returns it (recorded in
+				// Fixtures/platform-3ds-challenge-results.json, pair my_account_setup_intent_challenge_completed).
+				return array(
+					'id'             => 'seti_change',
+					'status'         => 'succeeded',
+					'customer'       => 'cus_change',
+					'payment_method' => 'pm_change',
+				);
+			}
+		};
+		// The card fields of a Stripe PaymentMethod the token is created from (https://docs.stripe.com/api/payment_methods/object#payment_method_object-card).
+		$token_service = $this->create_token_service(
+			array(
+				'pm_change' => array(
+					'id'   => 'pm_change',
+					'type' => 'card',
+					'card' => array(
+						'brand'     => 'visa',
+						'last4'     => '4242',
+						'exp_month' => 12,
+						'exp_year'  => 2030,
+					),
+				),
+			)
+		);
+		$sut           = $this->create_controller( $api_client, null, $token_service );
+		\WC_Subscriptions_Change_Payment_Gateway::$is_request_to_change_payment = false;
+
+		try {
+			$response = $sut->confirm_order_payment(
+				array(
+					'_ajax_nonce'                => wp_create_nonce( 'wcpay_update_order_status_nonce_' . $subscription->get_id() ),
+					'order_id'                   => $subscription->get_id(),
+					'intent_id'                  => 'seti_change',
+					'should_save_payment_method' => 'false',
+					'is_changing_payment'        => 'true',
+				)
+			);
+		} finally {
+			unset( $GLOBALS[ WooCommerceSubscriptionsDoubles::SUBSCRIPTION_IDS ] );
+		}
+		$subscription = wc_get_order( $subscription->get_id() );
+		$tokens       = array_values( WC_Payment_Tokens::get_customer_tokens( $user_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID ) );
+		$token        = $tokens[0] ?? null;
+
+		$switch_order = wc_get_order( $switch_order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $switch_order );
+		$this->assertSame( 'failed', $switch_order->get_status(), 'A payment method change must not pay the failed switch order.' );
+		$this->assertSame( '', $switch_order->get_transaction_id() );
+		$this->assertSame( array(), $api_client->payment_intent_fetches, 'The SetupIntent ID must not be fetched as a PaymentIntent.' );
+		$this->assertSame( 200, $response['status_code'] );
+		$this->assertInstanceOf( WC_Order::class, $subscription );
+		$this->assertInstanceOf( WC_Payment_Token_CC::class, $token );
+		$this->assertContains( $token->get_id(), $subscription->get_payment_tokens() );
+		$this->assertSame(
+			array(
+				array(
+					'order_id'   => $subscription->get_id(),
+					'gateway_id' => WooPaymentsPersistenceVocabulary::GATEWAY_ID,
+				),
+			),
+			\WC_Subscriptions_Change_Payment_Gateway::$updated_payment_methods
+		);
+		$this->assertSame( array( 'Payment method updated.' ), array_column( wc_get_notices( 'success' ), 'notice' ) );
+		$this->assertFalse( \WC_Subscriptions_Change_Payment_Gateway::$is_request_to_change_payment, 'The change request flag gets its earlier value back.' );
+	}
+
+	/**
+	 * @testdox Order-status callback gives the change request flag its earlier value back when a payment method change confirmation fails.
+	 *
+	 * A subscription with a recurring total whose new card cannot be saved: the confirmation refuses it inside the flag's scope.
+	 */
+	public function test_update_order_status_restores_the_change_request_flag_when_the_change_fails(): void {
+		WooCommerceSubscriptionsDoubles::load_change_payment_gateway();
+		WooCommerceSubscriptionsDoubles::load();
+		WooCommerceSubscriptionsDoubles::load_order_detector();
+		$user_id = $this->factory()->user->create();
+		wp_set_current_user( $user_id );
+
+		$subscription = new SubscriptionDouble();
+		$subscription->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+		$subscription->set_currency( 'USD' );
+		$subscription->set_total( '10.00' );
+		$subscription->set_customer_id( $user_id );
+		$subscription->set_status( 'active' );
+		$subscription->update_meta_data( '_intent_id', 'seti_change' );
+		$subscription->save();
+		$GLOBALS[ WooCommerceSubscriptionsDoubles::SUBSCRIPTION_IDS ] = array( $subscription->get_id() );
+
+		$api_client = new class() extends Client {
+			/**
+			 * Tell whether the transport is available.
+			 *
+			 * @return bool
+			 */
+			public function is_available(): bool {
+				return true;
+			}
+
+			/**
+			 * Retrieve a SetupIntent.
+			 *
+			 * @param string $setup_intent_id SetupIntent ID.
+			 * @return array<string,mixed>
+			 */
+			public function get_setup_intention( string $setup_intent_id ): array {
+				// The fields the callback reads from a succeeded SetupIntent, as the platform returns it (recorded in
+				// Fixtures/platform-3ds-challenge-results.json, pair my_account_setup_intent_challenge_completed).
+				return array(
+					'id'             => $setup_intent_id,
+					'status'         => 'succeeded',
+					'customer'       => 'cus_change',
+					'payment_method' => 'pm_change',
+				);
+			}
+		};
+		// No payment method details for pm_change, so the token cannot be created.
+		$sut = $this->create_controller( $api_client, null, $this->create_token_service() );
+		\WC_Subscriptions_Change_Payment_Gateway::$is_request_to_change_payment = false;
+
+		try {
+			$response = $sut->confirm_order_payment(
+				array(
+					'_ajax_nonce'                => wp_create_nonce( 'wcpay_update_order_status_nonce_' . $subscription->get_id() ),
+					'order_id'                   => $subscription->get_id(),
+					'intent_id'                  => 'seti_change',
+					'should_save_payment_method' => 'false',
+					'is_changing_payment'        => 'true',
+				)
+			);
+		} finally {
+			unset( $GLOBALS[ WooCommerceSubscriptionsDoubles::SUBSCRIPTION_IDS ] );
+		}
+
+		$this->assertNotSame( 200, $response['status_code'], 'The change is refused.' );
+		$this->assertSame( array(), \WC_Subscriptions_Change_Payment_Gateway::$updated_payment_methods );
+		$this->assertFalse( \WC_Subscriptions_Change_Payment_Gateway::$is_request_to_change_payment, 'The change request flag gets its earlier value back.' );
+	}
+
+	/**
+	 * @testdox Order-status callback should block recurring orders when token saving fails.
+	 */
+	public function test_update_order_status_blocks_recurring_order_when_token_save_fails(): void {
+		$user_id = $this->factory()->user->create();
+		wp_set_current_user( $user_id );
+
+		$order = $this->create_woopayments_order( '10.00' );
+		$order->set_customer_id( $user_id );
+		$order->set_payment_method_title( 'WooPayments' );
+		$order->update_meta_data( '_intent_id', 'pi_native' );
+		$order->save();
+
+		$api_client    = new class() extends Client {
+			/**
+			 * Tell whether the transport is available.
+			 *
+			 * @return bool
+			 */
+			public function is_available(): bool {
+				return true;
+			}
+
+			/**
+			 * Retrieve a PaymentIntent.
+			 *
+			 * @param string $intent_id PaymentIntent ID.
+			 * @return array<string,mixed>
+			 */
+			public function get_payment_intention( string $intent_id ): array {
+				if ( 'pi_native' !== $intent_id ) {
+					throw new \RuntimeException( 'Unexpected payment intent ID.' );
+				}
+
+				return array(
+					'id'             => 'pi_native',
+					'status'         => 'succeeded',
+					'currency'       => 'usd',
+					'customer'       => 'cus_native',
+					'payment_method' => 'pm_native',
+					'charges'        => array(
+						'total_count' => 1,
+						'data'        => array(
+							array(
+								'id'                     => 'ch_native',
+								'payment_method'         => 'pm_native',
+								'payment_method_details' => array(
+									'type' => 'card',
+									'card' => array(
+										'brand'   => 'visa',
+										'funding' => 'credit',
+										'last4'   => '4242',
+										'network' => 'visa',
+									),
+								),
+							),
+						),
+					),
+				);
+			}
+		};
+		$token_service = new class() extends WooPaymentsTokenService {
+			// phpcs:disable Squiz.Commenting.FunctionComment.InvalidNoReturn -- This test double must fail token saving.
+			/**
+			 * Fail token creation.
+			 *
+			 * @param string $payment_method_id Provider payment method ID.
+			 * @param int    $user_id           User ID.
+			 * @return WC_Payment_Token|null
+			 */
+			public function get_or_create_token_for_user( string $payment_method_id, int $user_id ): ?WC_Payment_Token {
+				unset( $payment_method_id, $user_id );
+
+				throw new \RuntimeException( 'Token save failed.' );
+			}
+			// phpcs:enable Squiz.Commenting.FunctionComment.InvalidNoReturn
+		};
+		$sut           = $this->create_controller( $api_client, null, $token_service );
+
+		WooCommerceSubscriptionsDoubles::load_renewal_detector();
+		$GLOBALS['wcpay_test_renewal_order_ids'] = array( $order->get_id() );
+
+		$response = $sut->confirm_order_payment(
+			array(
+				'_ajax_nonce'                => wp_create_nonce( 'wcpay_update_order_status_nonce_' . $order->get_id() ),
+				'order_id'                   => $order->get_id(),
+				'intent_id'                  => 'pi_native',
+				'should_save_payment_method' => 'false',
+			)
+		);
+		$order    = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 409, $response['status_code'] );
+		$this->assertSame( 'Unable to save payment method for subscription. Please try again or use a different payment method.', $response['error']['message'] );
+		$this->assertNotSame( 'completed', $order->get_status() );
+		$this->assertSame( 'WooPayments', $order->get_payment_method_title() );
+		$this->assertSame( '', $order->get_meta( 'last4', true ) );
+		$this->assertSame( '', $order->get_meta( '_intention_status', true ), 'Recurring orders should not be completed when their required token cannot be saved.' );
+	}
+
+	/**
+	 * @testdox Setup-intent callback should return the SetupIntent response envelope.
+	 *
+	 * The `requires_action` row is REC-3DS-4's recorded envelope
+	 * (`Fixtures/platform-setup-intent-requires-action.json`, pair `setup_intent_requires_action`): a
+	 * 3DS-required card add attempt through the same `create_setup_intent_for_request()` path REC-2
+	 * recorded its declines from. The controller only ever re-serializes `id`/`status`/`client_secret`
+	 * from whatever `create_and_confirm_setup_intention()` returns
+	 * (`WooPaymentsCheckoutAjaxController.php:271-278`), so the expected envelope here is derived
+	 * from that mapping applied to the recorded body, not from watching native run: the fixture's
+	 * own `native_observation` block is marked NOT an expectation source for exactly this reason.
+	 *
+	 * @dataProvider create_setup_intent_response_envelope_data
+	 *
+	 * @param string $payment_method_id     Payment method credential sent as `wcpay-payment-method`.
+	 * @param string $customer_id           Customer id the mocked customer service returns.
+	 * @param bool   $use_recorded_envelope Whether to feed REC-3DS-4's recorded envelope through a fake transport.
+	 */
+	public function test_create_setup_intent_returns_response_envelope( string $payment_method_id, string $customer_id, bool $use_recorded_envelope ): void {
+		$user_id = $this->factory()->user->create();
+		wp_set_current_user( $user_id );
+		$http_client = null;
+
+		if ( $use_recorded_envelope ) {
+			$recorded              = $this->load_recorded_intent_entry( 'platform-setup-intent-requires-action.json', 'setup_intent_requires_action' );
+			$http_client           = new FakeHttpClient();
+			$http_client->response = array(
+				'response' => array( 'code' => $recorded['http_status'] ),
+				'headers'  => array( 'content-type' => $recorded['content_type'] ),
+				'body'     => wp_json_encode( $recorded['body'] ),
+			);
+			$api_client            = new Client();
+			$api_client->init( $http_client, $this->create_account_service( false ), wc_get_container()->get( TransportLog::class ) );
+			$expected_data = array(
+				'id'            => (string) $recorded['body']['id'],
+				'status'        => (string) $recorded['body']['status'],
+				'client_secret' => (string) $recorded['body']['client_secret'],
+			);
+		} else {
+			$api_client    = new class() extends Client {
+				/**
+				 * Tell whether the transport is available.
+				 *
+				 * @return bool
+				 */
+				public function is_available(): bool {
+					return true;
+				}
+
+				/**
+				 * Create and confirm a SetupIntent.
+				 *
+				 * @param array<string,mixed> $request_data Request data.
+				 * @param string              $idempotency_key Idempotency key.
+				 * @return array<string,mixed>
+				 */
+				public function create_and_confirm_setup_intention( array $request_data, string $idempotency_key ): array {
+					if ( 'cus_user' !== $request_data['customer']
+						|| 'pm_card' !== $request_data['payment_method']
+						|| array( 'card' ) !== $request_data['payment_method_types']
+						|| '' === $idempotency_key ) {
+						throw new \RuntimeException( 'Unexpected setup intent payload.' );
+					}
+
+					return array(
+						'id'            => 'seti_user',
+						'status'        => 'succeeded',
+						'client_secret' => 'seti_user_secret_abc',
+					);
+				}
+			};
+			$expected_data = array(
+				'id'            => 'seti_user',
+				'status'        => 'succeeded',
+				'client_secret' => 'seti_user_secret_abc',
+			);
+		}
+
+		$customer_service = $this->getMockBuilder( WooPaymentsCustomerService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_or_create_customer_id_for_user' ) )
+			->getMock();
+		$customer_service->expects( $this->once() )
+			->method( 'get_or_create_customer_id_for_user' )
+			->with( $user_id )
+			->willReturn( $customer_id );
+
+		$sut      = $this->create_controller( $api_client, $customer_service );
+		$response = $sut->create_setup_intent_for_request(
+			array(
+				'_ajax_nonce'          => wp_create_nonce( 'wcpay_create_setup_intent_nonce' ),
+				'wcpay-payment-method' => $payment_method_id,
+			)
+		);
+
+		$this->assertTrue( $response['success'] );
+		$this->assertSame( 200, $response['status_code'] );
+		$this->assertSame( $expected_data, $response['data'] );
+		$this->assertFalse(
+			\WC_Rate_Limiter::retried_too_soon( 'add_payment_method_' . $user_id ),
+			'The AJAX setup phase must leave the WooCommerce form-handler rate limit available.'
+		);
+
+		if ( null !== $http_client ) {
+			$this->assertSame( 1, $http_client->request_count );
+			$sent = json_decode( (string) $http_client->last_body, true );
+			$this->assertIsArray( $sent, 'The request body sent over the fake transport must be valid JSON.' );
+			$this->assertSame( $payment_method_id, $sent['payment_method'] ?? null, 'REC-3DS-4 request must send the 3DS-required test card as the payment method.' );
+			$this->assertSame( $customer_id, $sent['customer'] ?? null );
+		}
+	}
+
+	/**
+	 * `create_setup_intent` response-envelope scenarios: a hand-built succeeded stub, and REC-3DS-4's
+	 * recorded `requires_action` envelope.
+	 *
+	 * @return array<string,array{string,string,bool}>
+	 */
+	public function create_setup_intent_response_envelope_data(): array {
+		return array(
+			'succeeded'                   => array( 'pm_card', 'cus_user', false ),
+			'requires_action (REC-3DS-4)' => array( 'pm_card_threeDSecure2Required', 'cus_UsIeTbmGHPc9jY', true ),
+		);
+	}
+
+	/**
+	 * @testdox Setup-intent card declines return the localized shopper message, create the customer before the transport call, and leave no payment method saved.
+	 *
+	 * The response body and HTTP status are the real decline envelope local WPCOM returned for each Stripe
+	 * test card, recorded in `Fixtures/platform-setup-intent-declines.json` (REC-2). All five recorded errors
+	 * are `card_error` and carry a `setup_intent` object (never `payment_intent`); the client's decline-code
+	 * lookup at `class-wc-payments-utils.php:801-817`, catalog `:852-866` (11.1.0) does not read either
+	 * intent object, only `code` and `decline_code`. The recorded 402 answers 400, as the client maps it
+	 * (`utils:878-891`).
+	 *
+	 * @dataProvider recorded_setup_intent_decline_data
+	 *
+	 * @param string $pair             REC-2 fixture pair key.
+	 * @param string $expected_message Expected localized shopper-facing message.
+	 */
+	public function test_create_setup_intent_localizes_card_decline_api_errors( string $pair, string $expected_message ): void {
+		$user_id = $this->factory()->user->create();
+		wp_set_current_user( $user_id );
+
+		$recorded = $this->load_recorded_setup_intent_decline_entry( $pair );
+		// The recorded platform text equals the English catalog, so replace it to prove the catalog, not the platform, supplies the message.
+		$recorded['error']['message'] = 'Platform decline text that must not reach the shopper.';
+		$http_client                  = new FakeHttpClient();
+		$http_client->response        = array(
+			'response' => array( 'code' => $recorded['http_status'] ),
+			'headers'  => array( 'content-type' => 'application/json; charset=UTF-8' ),
+			'body'     => wp_json_encode( array( 'error' => $recorded['error'] ) ),
+		);
+		$account_service              = $this->create_account_service( false );
+		$api_client                   = new Client();
+		$api_client->init( $http_client, $account_service, wc_get_container()->get( TransportLog::class ) );
+
+		$customer_service = $this->getMockBuilder( WooPaymentsCustomerService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_or_create_customer_id_for_user' ) )
+			->getMock();
+		$customer_service->expects( $this->once() )
+			->method( 'get_or_create_customer_id_for_user' )
+			->with( $user_id )
+			->willReturnCallback(
+				function () use ( $http_client ) {
+					$this->assertSame( 0, $http_client->request_count, 'The customer must be created before the SetupIntent request is sent.' );
+
+					return 'cus_rec2';
+				}
+			);
+
+		$sut      = $this->create_controller( $api_client, $customer_service, null, $account_service );
+		$response = $sut->create_setup_intent_for_request(
+			array(
+				'_ajax_nonce'          => wp_create_nonce( 'wcpay_create_setup_intent_nonce' ),
+				'wcpay-payment-method' => 'pm_declined',
+			)
+		);
+
+		$this->assertFalse( $response['success'] );
+		$this->assertSame( 400, $response['status_code'] );
+		$this->assertSame( $expected_message, $response['data']['error']['message'] );
+		$this->assertSame( 1, $http_client->request_count );
+		global $wpdb;
+		// Count rows directly: the token data store only returns gateways registered in this request, and the test runtime registers none.
+		$this->assertSame(
+			'0',
+			$wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM {$wpdb->prefix}woocommerce_payment_tokens WHERE user_id = %d", $user_id ) ),
+			"$pair must leave no saved payment method row for the shopper."
+		);
+	}
+
+	/**
+	 * REC-2 recorded SetupIntent decline entries, one row per Stripe test card pair.
+	 *
+	 * @return array<string,array{string,string}>
+	 */
+	public function recorded_setup_intent_decline_data(): array {
+		return array(
+			'generic_decline (card_declined)'    => array( 'generic_decline', 'Error: Your card was declined.' ),
+			'incorrect_cvc'                      => array( 'incorrect_cvc', "Error: Your card's security code is incorrect." ),
+			'expired_card'                       => array( 'expired_card', 'Error: Your card has expired.' ),
+			'insufficient_funds (card_declined)' => array( 'insufficient_funds', 'Error: Your card has insufficient funds.' ),
+			'processing_error'                   => array( 'processing_error', 'Error: An error occurred while processing your card. Try again in a little bit.' ),
+		);
+	}
+
+	/**
+	 * Load one recorded REC-2 SetupIntent decline entry's HTTP status and `error` object by pair key.
+	 *
+	 * @param string $pair REC-2 fixture pair key.
+	 * @return array{http_status:int,error:array<string,mixed>}
+	 */
+	private function load_recorded_setup_intent_decline_entry( string $pair ): array {
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads a local immutable test fixture.
+		$fixture = file_get_contents( __DIR__ . '/Fixtures/platform-setup-intent-declines.json' );
+		$this->assertIsString( $fixture );
+		$decoded = json_decode( $fixture, true );
+		$this->assertIsArray( $decoded );
+
+		foreach ( $decoded['entries'] as $entry ) {
+			if ( is_array( $entry ) && ( $entry['pair'] ?? '' ) === $pair ) {
+				return array(
+					'http_status' => (int) $entry['response']['http_status'],
+					'error'       => $entry['response']['body']['error'],
+				);
+			}
+		}
+
+		$this->fail( "REC-2 fixture has no entry for pair '$pair'." );
+	}
+
+	/**
+	 * Load one recorded PaymentIntent/SetupIntent entry's HTTP status, response body, and sent
+	 * request body by fixture file and pair key.
+	 *
+	 * Shared by the T.3 Task 4 tests that feed a recorded envelope through the real
+	 * {@see Client} over a {@see FakeHttpClient}.
+	 *
+	 * @param string $fixture Fixture file name under `Fixtures/`.
+	 * @param string $pair    Fixture pair key.
+	 * @return array{http_status:int,content_type:string,body:array<string,mixed>}
+	 */
+	private function load_recorded_intent_entry( string $fixture, string $pair ): array {
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads a local immutable test fixture.
+		$contents = file_get_contents( __DIR__ . '/Fixtures/' . $fixture );
+		$this->assertIsString( $contents );
+		$decoded = json_decode( $contents, true );
+		$this->assertIsArray( $decoded );
+
+		foreach ( $decoded['entries'] as $entry ) {
+			if ( is_array( $entry ) && ( $entry['pair'] ?? '' ) === $pair ) {
+				return array(
+					'http_status'  => (int) $entry['response']['http_status'],
+					'content_type' => (string) $entry['response']['content_type'],
+					'body'         => $entry['response']['body'],
+				);
+			}
+		}
+
+		$this->fail( "Fixture '$fixture' has no entry for pair '$pair'." );
+	}
+
+	/**
+	 * Load one recorded REC-3DS-2/3/5 manual-run entry's response body by pair key.
+	 *
+	 * `Fixtures/platform-3ds-challenge-results.json` entries are keyed by `pair`, not `response.content_type`
+	 * (they were captured with a plain `get_payment_intention()`/`get_setup_intention()` GET, not
+	 * through the REC-1-style pair/http_status/content_type shape).
+	 *
+	 * @param string $pair Fixture pair key.
+	 * @return array{body:array<string,mixed>}
+	 */
+	private function load_recorded_manual_3ds_entry( string $pair ): array {
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads a local immutable test fixture.
+		$contents = file_get_contents( __DIR__ . '/Fixtures/platform-3ds-challenge-results.json' );
+		$this->assertIsString( $contents );
+		$decoded = json_decode( $contents, true );
+		$this->assertIsArray( $decoded );
+
+		foreach ( $decoded['entries'] as $entry ) {
+			if ( is_array( $entry ) && ( $entry['pair'] ?? '' ) === $pair ) {
+				return array( 'body' => $entry['response']['body'] );
+			}
+		}
+
+		$this->fail( "REC-3DS manual fixture has no entry for pair '$pair'." );
+	}
+
+	/**
+	 * @testdox Setup-intent callback refuses a request inside the add-payment-method cooldown without ever calling the provider.
+	 *
+	 * The cooldown key (`add_payment_method_<user_id>`) is the same one WooCommerce's core My Account
+	 * add-payment-method form checks (`includes/class-wc-form-handler.php:608-628`); the AJAX SetupIntent
+	 * path must refuse before creating anything server-side, matching the plugin's check-before-create
+	 * ordering and message at `gw:4589-4593` (11.1.0). The client's `Add_Payment_Method_Exception` answers the
+	 * default 400 (`utils:878-891`).
+	 */
+	public function test_create_setup_intent_refuses_inside_add_payment_method_rate_limit_without_provider_call(): void {
+		$user_id = $this->factory()->user->create();
+		wp_set_current_user( $user_id );
+
+		\WC_Rate_Limiter::set_rate_limit( 'add_payment_method_' . $user_id, 20 );
+
+		$api_client = new class() extends Client {
+			/**
+			 * SetupIntent creation requests this fake received.
+			 *
+			 * @var array<int,array<string,mixed>>
+			 */
+			public array $created_setup_intents = array();
+
+			/**
+			 * Tell whether the transport is available.
+			 *
+			 * @return bool
+			 */
+			public function is_available(): bool {
+				return true;
+			}
+
+			/**
+			 * Create and confirm a SetupIntent.
+			 *
+			 * @param array<string,mixed> $request_data    Request data.
+			 * @param string              $idempotency_key Idempotency key.
+			 * @return array<string,mixed>
+			 */
+			public function create_and_confirm_setup_intention( array $request_data, string $idempotency_key ): array {
+				unset( $idempotency_key );
+				$this->created_setup_intents[] = $request_data;
+
+				return array(
+					'id'     => 'seti_should_not_exist',
+					'status' => 'succeeded',
+				);
+			}
+		};
+
+		$customer_service = $this->getMockBuilder( WooPaymentsCustomerService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_or_create_customer_id_for_user' ) )
+			->getMock();
+		$customer_service->expects( $this->never() )->method( 'get_or_create_customer_id_for_user' );
+
+		$sut      = $this->create_controller( $api_client, $customer_service );
+		$response = $sut->create_setup_intent_for_request(
+			array(
+				'_ajax_nonce'          => wp_create_nonce( 'wcpay_create_setup_intent_nonce' ),
+				'wcpay-payment-method' => 'pm_card',
+			)
+		);
+
+		$this->assertFalse( $response['success'] );
+		$this->assertSame( 400, $response['status_code'] );
+		$this->assertSame(
+			'You cannot add a new payment method so soon after the previous one. Please try again later.',
+			$response['data']['error']['message']
+		);
+		$this->assertSame( array(), $api_client->created_setup_intents, 'A rate-limited request must never create a SetupIntent.' );
+	}
+
+	/**
+	 * @testdox Setup-intent card-testing prevention preserves the platform's actionable message.
+	 */
+	public function test_create_setup_intent_preserves_card_testing_prevention_message(): void {
+		$platform_message = "Error: We're not able to add this payment method. Please try again later.";
+		$response         = $this->get_create_setup_intent_api_error_response(
+			new ApiException(
+				$platform_message,
+				'wcpay_card_testing_prevention',
+				400,
+				''
+			)
+		);
+
+		$this->assertFalse( $response['success'] );
+		$this->assertSame( 400, $response['status_code'] );
+		$this->assertSame( $platform_message, $response['data']['error']['message'] );
+	}
+
+	/**
+	 * @testdox Setup-intent transport failures should redact technical messages.
+	 */
+	public function test_create_setup_intent_redacts_non_card_api_errors(): void {
+		$technical_message = 'Upstream socket credentials debug detail.';
+		$response          = $this->get_create_setup_intent_api_error_response(
+			new ApiException(
+				$technical_message,
+				'api_connection_error',
+				503,
+				'api_error'
+			)
+		);
+
+		$this->assertFalse( $response['success'] );
+		$this->assertSame( 503, $response['status_code'] );
+		$this->assertSame(
+			"We're not able to process this request. Please refresh the page and try again.",
+			$response['data']['error']['message']
+		);
+		$this->assertStringNotContainsString( $technical_message, wp_json_encode( $response ) );
+	}
+
+	/**
+	 * @testdox Setup-intent API errors answer the platform status, with 402 and a missing status answering 400.
+	 *
+	 * Source: client 11.1.0 `utils:878-891` (`get_filtered_error_status_code`), used at `gw:4612`.
+	 *
+	 * @dataProvider setup_intent_api_error_status_data
+	 *
+	 * @param int $http_code       Platform HTTP status on the exception.
+	 * @param int $expected_status Expected response status.
+	 */
+	public function test_create_setup_intent_answers_filtered_api_error_status( int $http_code, int $expected_status ): void {
+		$response = $this->get_create_setup_intent_api_error_response(
+			new ApiException( 'Error: Your card was declined.', 'card_declined', $http_code, 'card_error' )
+		);
+
+		$this->assertFalse( $response['success'] );
+		$this->assertSame( $expected_status, $response['status_code'] );
+	}
+
+	/**
+	 * Platform statuses and the status the setup-intent response answers.
+	 *
+	 * @return array<string,array{int,int}>
+	 */
+	public function setup_intent_api_error_status_data(): array {
+		return array(
+			'402 decline'        => array( 402, 400 ),
+			'no HTTP status'     => array( 0, 400 ),
+			'transport failure'  => array( 500, 500 ),
+			'platform not found' => array( 404, 404 ),
+		);
+	}
+
+	/**
+	 * @testdox Setup-intent requests with an invalid nonce answer 400, as the WooPayments extension's exception does.
+	 *
+	 * Source: client 11.1.0 `gw:4568-4574` (`Add_Payment_Method_Exception`) and `utils:878-891` (default 400).
+	 */
+	public function test_create_setup_intent_rejects_invalid_nonce_with_400(): void {
+		wp_set_current_user( $this->factory()->user->create() );
+
+		$api_client = $this->createMock( Client::class );
+		$api_client->method( 'is_available' )->willReturn( true );
+		$api_client->expects( $this->never() )->method( 'create_and_confirm_setup_intention' );
+
+		$sut      = $this->create_controller( $api_client );
+		$response = $sut->create_setup_intent_for_request(
+			array(
+				'_ajax_nonce'          => 'invalid',
+				'wcpay-payment-method' => 'pm_card',
+			)
+		);
+
+		$this->assertFalse( $response['success'] );
+		$this->assertSame( 400, $response['status_code'] );
+		$this->assertSame( "We're not able to add this payment method. Please refresh the page and try again.", $response['data']['error']['message'] );
+	}
+
+	/**
+	 * @testdox Setup-intent requests that fail outside the platform call answer 400.
+	 *
+	 * Source: client 11.1.0 `utils:878-891` (a non-API exception answers the default 400).
+	 */
+	public function test_create_setup_intent_answers_400_for_non_api_failures(): void {
+		wp_set_current_user( $this->factory()->user->create() );
+
+		$customer_service = $this->getMockBuilder( WooPaymentsCustomerService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_or_create_customer_id_for_user' ) )
+			->getMock();
+		$customer_service->method( 'get_or_create_customer_id_for_user' )->willThrowException( new \RuntimeException( 'Customer store unavailable.' ) );
+
+		$api_client = $this->createMock( Client::class );
+		$api_client->method( 'is_available' )->willReturn( true );
+
+		$sut      = $this->create_controller( $api_client, $customer_service );
+		$response = $sut->create_setup_intent_for_request(
+			array(
+				'_ajax_nonce'          => wp_create_nonce( 'wcpay_create_setup_intent_nonce' ),
+				'wcpay-payment-method' => 'pm_card',
+			)
+		);
+
+		$this->assertFalse( $response['success'] );
+		$this->assertSame( 400, $response['status_code'] );
+	}
+
+	/**
+	 * @testdox Setup-intent callback should derive payment method types from the submitted WooPayments gateway ID.
+	 */
+	public function test_create_setup_intent_derives_payment_method_type_from_submitted_gateway_id(): void {
+		$user_id = $this->factory()->user->create();
+		wp_set_current_user( $user_id );
+
+		$api_client = new class() extends Client {
+			/**
+			 * Last request data.
+			 *
+			 * @var array<string,mixed>
+			 */
+			public array $last_request_data = array();
+
+			/**
+			 * Tell whether the transport is available.
+			 *
+			 * @return bool
+			 */
+			public function is_available(): bool {
+				return true;
+			}
+
+			/**
+			 * Create and confirm a SetupIntent.
+			 *
+			 * @param array<string,mixed> $request_data Request data.
+			 * @param string              $idempotency_key Idempotency key.
+			 * @return array<string,mixed>
+			 */
+			public function create_and_confirm_setup_intention( array $request_data, string $idempotency_key ): array {
+				unset( $idempotency_key );
+
+				$this->last_request_data = $request_data;
+
+				return array(
+					'id'            => 'seti_sepa',
+					'status'        => 'succeeded',
+					'client_secret' => 'seti_sepa_secret_abc',
+				);
+			}
+		};
+
+		$customer_service = $this->getMockBuilder( WooPaymentsCustomerService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_or_create_customer_id_for_user' ) )
+			->getMock();
+		$customer_service->expects( $this->once() )
+			->method( 'get_or_create_customer_id_for_user' )
+			->with( $user_id )
+			->willReturn( 'cus_user' );
+
+		$sut = $this->create_controller( $api_client, $customer_service );
+
+		$sut->create_setup_intent_for_request(
+			array(
+				'_ajax_nonce'          => wp_create_nonce( 'wcpay_create_setup_intent_nonce' ),
+				'payment_method'       => WooPaymentsPersistenceVocabulary::GATEWAY_ID . '_sepa_debit',
+				'wcpay-payment-method' => 'pm_sepa_debit',
+			)
+		);
+
+		$this->assertSame( array( 'sepa_debit' ), $api_client->last_request_data['payment_method_types'] );
+	}
+
+	/**
+	 * Get a setup-intent response for a native API failure.
+	 *
+	 * @param ApiException $exception API exception to throw.
+	 * @return array<string,mixed>
+	 */
+	private function get_create_setup_intent_api_error_response( ApiException $exception ): array {
+		$user_id = $this->factory()->user->create();
+		wp_set_current_user( $user_id );
+
+		$api_client = new class( $exception ) extends Client {
+			/**
+			 * API exception to throw.
+			 *
+			 * @var ApiException
+			 */
+			private ApiException $exception;
+
+			/**
+			 * Constructor.
+			 *
+			 * @param ApiException $exception API exception to throw.
+			 */
+			public function __construct( ApiException $exception ) {
+				$this->exception = $exception;
+			}
+
+			/**
+			 * Tell whether the transport is available.
+			 *
+			 * @return bool
+			 */
+			public function is_available(): bool {
+				return true;
+			}
+
+			// phpcs:ignore Squiz.Commenting.FunctionComment.InvalidNoReturn -- Test double always throws.
+			/**
+			 * Fail SetupIntent creation.
+			 *
+			 * @param array<string,mixed> $request_data    Request data.
+			 * @param string              $idempotency_key Idempotency key.
+			 * @throws ApiException Always.
+			 */
+			public function create_and_confirm_setup_intention( array $request_data, string $idempotency_key ): array {
+				unset( $request_data, $idempotency_key );
+
+				throw $this->exception;
+			}
+		};
+
+		$customer_service = $this->getMockBuilder( WooPaymentsCustomerService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_or_create_customer_id_for_user' ) )
+			->getMock();
+		$customer_service->method( 'get_or_create_customer_id_for_user' )->willReturn( 'cus_user' );
+
+		$sut = $this->create_controller( $api_client, $customer_service );
+
+		return $sut->create_setup_intent_for_request(
+			array(
+				'_ajax_nonce'          => wp_create_nonce( 'wcpay_create_setup_intent_nonce' ),
+				'wcpay-payment-method' => 'pm_card',
+			)
+		);
+	}
+
+	/**
+	 * @testdox Create-setup-intent requests with an invalid fraud-prevention token are rejected before any SetupIntent exists.
+	 */
+	public function test_create_setup_intent_rejects_invalid_fraud_prevention_token_before_creating(): void {
+		$user_id = $this->factory->user->create();
+		wp_set_current_user( $user_id );
+		WC()->initialize_session();
+
+		// A connected store: without a connection the account read returns no account, like the client.
+		$connected_api_client = $this->createMock( Client::class );
+		$connected_api_client->method( 'is_available' )->willReturn( true );
+		wc_get_container()->replace( Client::class, $connected_api_client );
+		// Seed through the container's account service: it memoizes the account
+		// cache per instance, and the controller's fraud service reads through
+		// that same shared instance.
+		wc_get_container()->get( WooPaymentsAccountService::class )->cache_account_data(
+			array(
+				'account_id'                       => 'acct_fraud_check',
+				'is_live'                          => true,
+				'card_testing_protection_eligible' => true,
+			)
+		);
+
+		$api_client = new class() extends Client {
+			/**
+			 * Tell whether the transport is available.
+			 *
+			 * @return bool
+			 */
+			public function is_available(): bool {
+				return true;
+			}
+
+			/**
+			 * SetupIntent creation requests this fake received.
+			 *
+			 * @var array<int,array<string,mixed>>
+			 */
+			public array $created_setup_intents = array();
+
+			/**
+			 * Create and confirm a SetupIntent.
+			 *
+			 * @param array<string,mixed> $request_data    Request data.
+			 * @param string              $idempotency_key Idempotency key.
+			 * @return array<string,mixed>
+			 */
+			public function create_and_confirm_setup_intention( array $request_data, string $idempotency_key ): array {
+				// Avoid parameter not used PHPCS errors.
+				unset( $idempotency_key );
+				$this->created_setup_intents[] = $request_data;
+
+				return array(
+					'id'     => 'seti_should_not_exist',
+					'status' => 'succeeded',
+				);
+			}
+		};
+
+		$fraud_prevention_service = wc_get_container()->get( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFraudPreventionService::class );
+		$this->assertTrue( $fraud_prevention_service->has_session(), 'Precondition: the fraud service must see the WooCommerce session.' );
+		$this->assertTrue( $fraud_prevention_service->is_enabled(), 'Precondition: card-testing protection must read as eligible.' );
+
+		$sut      = $this->create_controller( $api_client );
+		$response = $sut->create_setup_intent_for_request(
+			array(
+				'_ajax_nonce'                  => wp_create_nonce( 'wcpay_create_setup_intent_nonce' ),
+				'wcpay-payment-method'         => 'pm_card',
+				'wcpay-fraud-prevention-token' => 'wrong-token',
+			)
+		);
+
+		$this->assertFalse( $response['success'] );
+		$this->assertSame( 400, $response['status_code'] );
+		$this->assertSame( array(), $api_client->created_setup_intents, 'A fraud-failed request must never create a SetupIntent.' );
+
+		// The container's account service memoizes the account cache per
+		// instance; reset the shared instance to a non-eligible payload so the
+		// fraud gate disarms for the rest of the suite, then drop the option.
+		wc_get_container()->get( WooPaymentsAccountService::class )->cache_account_data(
+			array(
+				'account_id' => 'acct_fraud_check',
+				'is_live'    => true,
+			)
+		);
+		delete_option( 'wcpay_account_data' );
+		wp_set_current_user( 0 );
+	}
+
+	/**
+	 * @testdox Add-payment-method setup intents carry the buyer-fingerprinting risk metadata.
+	 */
+	public function test_create_setup_intent_attaches_fingerprint_metadata(): void {
+		$user_id = $this->factory->user->create();
+		wp_set_current_user( $user_id );
+
+		$api_client = new class() extends Client {
+			/**
+			 * Captured setup-intention payloads.
+			 *
+			 * @var array<int,array<string,mixed>>
+			 */
+			public array $captured = array();
+
+			/**
+			 * Tell whether the transport is available.
+			 *
+			 * @return bool
+			 */
+			public function is_available(): bool {
+				return true;
+			}
+
+			/**
+			 * Create and confirm a SetupIntent.
+			 *
+			 * @param array<string,mixed> $request_data    Request data.
+			 * @param string              $idempotency_key Idempotency key.
+			 * @return array<string,mixed>
+			 */
+			public function create_and_confirm_setup_intention( array $request_data, string $idempotency_key ): array {
+				// Avoid parameter not used PHPCS errors.
+				unset( $idempotency_key );
+				$this->captured[] = $request_data;
+
+				return array(
+					'id'            => 'seti_fp',
+					'status'        => 'succeeded',
+					'client_secret' => 'seti_fp_secret',
+				);
+			}
+		};
+
+		$customer_service = $this->getMockBuilder( WooPaymentsCustomerService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_or_create_customer_id_for_user' ) )
+			->getMock();
+		$customer_service->method( 'get_or_create_customer_id_for_user' )->willReturn( 'cus_fp' );
+
+		$sut      = $this->create_controller( $api_client, $customer_service );
+		$response = $sut->create_setup_intent_for_request(
+			array(
+				'_ajax_nonce'          => wp_create_nonce( 'wcpay_create_setup_intent_nonce' ),
+				'wcpay-payment-method' => 'pm_card',
+				'wcpay-fingerprint'    => 'device_fp_addpm',
+			)
+		);
+
+		$this->assertTrue( $response['success'] );
+		$this->assertCount( 1, $api_client->captured );
+		$metadata = $api_client->captured[0]['metadata'];
+		$this->assertSame( 'device_fp_addpm', $metadata['fraud_prevention_data_shopper_ua_hash'] );
+		$this->assertSame( hash( 'sha512', \WC_Geolocation::get_ip_address() ), $metadata['fraud_prevention_data_shopper_ip_hash'] );
+		$this->assertTrue( $metadata['fraud_prevention_data_available'] );
+
+		wp_set_current_user( 0 );
+	}
+
+	/**
+	 * Create a checkout AJAX controller.
+	 *
+	 * @param Client                                   $api_client       API client.
+	 * @param WooPaymentsCustomerService|null          $customer_service Customer service.
+	 * @param WooPaymentsTokenService|null             $token_service    Token service.
+	 * @param WooPaymentsAccountService|null           $account_service  Account service.
+	 * @param WooPaymentsFeeDetailsNoteController|null $fee_details_note_controller Fee details note controller, which applies the lifecycle event.
+	 * @return WooPaymentsCheckoutAjaxController
+	 */
+	private function create_controller( Client $api_client, ?WooPaymentsCustomerService $customer_service = null, ?WooPaymentsTokenService $token_service = null, ?WooPaymentsAccountService $account_service = null, ?WooPaymentsFeeDetailsNoteController $fee_details_note_controller = null ): WooPaymentsCheckoutAjaxController {
+		$arbiter = $this->createMock( WooPaymentsRuntimeArbiter::class );
+		$arbiter->method( 'is_builtin_owner' )->willReturn( true );
+
+		$sut = new WooPaymentsCheckoutAjaxController();
+		$sut->init(
+			$arbiter,
+			$api_client,
+			$customer_service ?? $this->createMock( WooPaymentsCustomerService::class ),
+			$this->create_intent_confirmation_service( $api_client, $token_service, $account_service, $fee_details_note_controller ),
+			new PaymentMethodRegistry()
+		);
+
+		return $sut;
+	}
+
+	/**
+	 * Create the intent confirmation service the order-status callback confirms through.
+	 *
+	 * @param Client                                   $api_client                  API client.
+	 * @param WooPaymentsTokenService|null             $token_service               Token service.
+	 * @param WooPaymentsAccountService|null           $account_service             Account service.
+	 * @param WooPaymentsFeeDetailsNoteController|null $fee_details_note_controller Fee details note controller, which applies the lifecycle event.
+	 * @return WooPaymentsIntentConfirmationService
+	 */
+	private function create_intent_confirmation_service( Client $api_client, ?WooPaymentsTokenService $token_service = null, ?WooPaymentsAccountService $account_service = null, ?WooPaymentsFeeDetailsNoteController $fee_details_note_controller = null ): WooPaymentsIntentConfirmationService {
+		$token_service   = $token_service ?? $this->create_token_service();
+		$account_service = $account_service ?? $this->create_account_service( false );
+		$effect_applier  = new WooPaymentsOrderEffectApplier();
+		$effect_applier->init(
+			$token_service,
+			new WooPaymentsOrderDataService(),
+			$account_service,
+			wc_get_container()->get( WooPaymentsOrderNoteService::class ),
+			new PaymentMethodRegistry(),
+			wc_get_container()->get( WooPaymentsActionSchedulerService::class )
+		);
+
+		$service = new WooPaymentsIntentConfirmationService();
+		$service->init(
+			$api_client,
+			$fee_details_note_controller ?? wc_get_container()->get( WooPaymentsFeeDetailsNoteController::class ),
+			$token_service,
+			$account_service,
+			$effect_applier
+		);
+
+		return $service;
+	}
+
+	/**
+	 * Create a WooPayments account service mock.
+	 *
+	 * @param bool   $test_mode                Whether WooPayments should run in test mode.
+	 * @param string $account_default_currency Account default currency.
+	 * @return WooPaymentsAccountService
+	 */
+	private function create_account_service( bool $test_mode, string $account_default_currency = 'usd' ): WooPaymentsAccountService {
+		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_mode', 'is_test_mode_enabled', 'get_account_default_currency', 'get_account_country' ) )
+			->getMock();
+
+		$account_service->method( 'get_mode' )->willReturn( $test_mode ? 'test' : 'live' );
+		$account_service->method( 'is_test_mode_enabled' )->willReturn( $test_mode );
+		$account_service->method( 'get_account_default_currency' )->willReturn( $account_default_currency );
+		$account_service->method( 'get_account_country' )->willReturn( 'US' );
+
+		return $account_service;
+	}
+
+	/**
+	 * Create a token service test double.
+	 *
+	 * @param array<string,array<string,mixed>> $payment_method_details Payment method details keyed by ID.
+	 * @param WooPaymentsAccountService|null    $account_service        Optional account service.
+	 * @param \ArrayObject<int,int>|null        $details_reads          Optional payment-method detail read counter.
+	 * @param bool                              $throw_details_lookup   Whether details lookup throws.
+	 * @return WooPaymentsTokenService
+	 */
+	private function create_token_service( array $payment_method_details = array(), ?WooPaymentsAccountService $account_service = null, ?\ArrayObject $details_reads = null, bool $throw_details_lookup = false ): WooPaymentsTokenService {
+		$details_service = new class( $payment_method_details, $details_reads, $throw_details_lookup ) extends WooPaymentsPaymentMethodDetailsService {
+			/**
+			 * Payment method details keyed by ID.
+			 *
+			 * @var array<string,array<string,mixed>>
+			 */
+			private array $payment_method_details;
+
+			/** @var \ArrayObject<int,int>|null */
+			private ?\ArrayObject $details_reads;
+
+			/** @var bool */
+			private bool $throw_details_lookup;
+
+			/**
+			 * Constructor.
+			 *
+			 * @param array<string,array<string,mixed>> $payment_method_details Payment method details keyed by ID.
+			 * @param \ArrayObject<int,int>|null        $details_reads Payment-method detail read counter.
+			 * @param bool                              $throw_details_lookup Whether details lookup throws.
+			 */
+			public function __construct( array $payment_method_details, ?\ArrayObject $details_reads, bool $throw_details_lookup ) {
+				$this->payment_method_details = $payment_method_details;
+				$this->details_reads          = $details_reads;
+				$this->throw_details_lookup   = $throw_details_lookup;
+			}
+
+			/**
+			 * Get payment method details.
+			 *
+			 * @param string $payment_method_id Payment method ID.
+			 * @return array<string,mixed>
+			 */
+			public function get_payment_method_details( string $payment_method_id ): array {
+				if ( $this->details_reads instanceof \ArrayObject ) {
+					++$this->details_reads[0];
+				}
+				if ( $this->throw_details_lookup ) {
+					throw new \RuntimeException( 'Display details unavailable.' );
+				}
+
+				return $this->payment_method_details[ $payment_method_id ] ?? array();
+			}
+		};
+
+		$sut = new WooPaymentsTokenService();
+		$sut->init( $details_service, wc_get_container()->get( Client::class ), wc_get_container()->get( WooPaymentsCustomerService::class ), $account_service ?? wc_get_container()->get( WooPaymentsAccountService::class ), wc_get_container()->get( WooPaymentsOrderDataService::class ), wc_get_container()->get( PaymentMethodRegistry::class ) );
+
+		return $sut;
+	}
+
+	/**
+	 * Create a persisted WooPayments card token for a test customer.
+	 *
+	 * @param int    $user_id Payment token owner.
+	 * @param string $gateway_id Gateway ID.
+	 * @param string $provider_token Provider payment-method ID.
+	 * @return WC_Payment_Token_CC
+	 */
+	private function create_card_token( int $user_id, string $gateway_id, string $provider_token ): WC_Payment_Token_CC {
+		$token = new WC_Payment_Token_CC();
+		$token->set_gateway_id( $gateway_id );
+		$token->set_user_id( $user_id );
+		$token->set_token( $provider_token );
+		$token->set_card_type( 'visa' );
+		$token->set_last4( '4242' );
+		$token->set_expiry_month( '12' );
+		$token->set_expiry_year( '2030' );
+		$token->save();
+
+		return $token;
+	}
+
+	/**
+	 * Assert that an order has a note containing the expected content.
+	 *
+	 * @param WC_Order $order    Order object.
+	 * @param string   $expected Expected note content.
+	 */
+	private function assert_order_has_note_containing( WC_Order $order, string $expected ): void {
+		$notes = wc_get_order_notes(
+			array(
+				'order_id' => $order->get_id(),
+				'type'     => 'any',
+			)
+		);
+
+		foreach ( $notes as $note ) {
+			if ( false !== strpos( (string) $note->content, $expected ) ) {
+				$this->addToAssertionCount( 1 );
+				return;
+			}
+		}
+
+		$this->fail( "Missing order note containing: {$expected}" );
+	}
+
+	/**
+	 * Assert that an order has no note containing the expected content.
+	 *
+	 * @param WC_Order $order    Order object.
+	 * @param string   $expected Expected note content.
+	 */
+	private function assert_order_has_no_note_containing( WC_Order $order, string $expected ): void {
+		$notes = wc_get_order_notes(
+			array(
+				'order_id' => $order->get_id(),
+				'type'     => 'any',
+			)
+		);
+
+		foreach ( $notes as $note ) {
+			if ( false !== strpos( (string) $note->content, $expected ) ) {
+				$this->fail( "Unexpected order note containing: {$expected}" );
+			}
+		}
+
+		$this->addToAssertionCount( 1 );
+	}
+
+	/**
+	 * Create a WooPayments test order.
+	 *
+	 * @param string $total Order total.
+	 * @return WC_Order
+	 */
+	private function create_woopayments_order( string $total ): WC_Order {
+		$order = new WC_Order();
+		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+		$order->set_currency( 'USD' );
+		$order->set_total( $total );
+		$order->save();
+
+		return $order;
+	}
+
+	/**
+	 * Make an order the parent order of a subscription, as WooCommerce Subscriptions reports it.
+	 *
+	 * @param WC_Order $order        Parent order.
+	 * @param WC_Order $subscription Subscription.
+	 */
+	private function make_parent_order_of( WC_Order $order, WC_Order $subscription ): void {
+		WooCommerceSubscriptionsDoubles::load_order_detector();
+		WooCommerceSubscriptionsDoubles::load_order_subscriptions();
+		$GLOBALS['wcpay_test_order_subscription_relationships'] = array( $order->get_id() => array( 'parent' => array( $subscription->get_id() ) ) );
+	}
+}

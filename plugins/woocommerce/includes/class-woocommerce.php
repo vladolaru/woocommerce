@@ -321,6 +321,9 @@ final class WooCommerce {
 				'name' => 'WooCommerce',
 			)
 		);
+		// WooCommerce bundles Jetpack Sync but turns it on only once WooPayments is set up; until a plugin does, the
+		// connection must see Sync as off, so it reports active plugins and package versions to WordPress.com itself.
+		add_filter( 'pre_option_jetpack_sync_settings_disable', array( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsConnectionFeatures::class, 'report_sync_off_until_ensured' ) );
 	}
 
 	/**
@@ -428,6 +431,32 @@ final class WooCommerce {
 		$container->get( Automattic\WooCommerce\Internal\CostOfGoodsSold\CostOfGoodsSoldController::class )->register();
 		$container->get( Automattic\WooCommerce\Internal\Admin\Settings\PaymentsController::class )->register();
 		$container->get( Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsController::class )->register();
+		$container->get( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsStatusReport::class )->register();
+		// Declares the WooPayments extension's classes for Woo extensions that probe them; removed in WooCommerce 12.0.0 (Compat/README.md lists what goes with it).
+		$container->get( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Compat\WooPaymentsExtensionFacadeLoader::class )->register();
+		// Registered on every request, since the extension's Multi-Currency class must answer on every request type while WooCommerce
+		// runs Multi-Currency and the loader decides at plugins_loaded; removed in WooCommerce 12.0.0 (MultiCurrency/Compat/README.md).
+		$container->get( Automattic\WooCommerce\Internal\MultiCurrency\Compat\WooPaymentsExtensionFacadeLoader::class )->register();
+		$container->get( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\VerifiedEmailRestoreService::class )->register();
+		// The conversion of a network-wide activation of the WooPayments extension into per-site activations, offered on network
+		// admin and in a store site's refusal notice, and the check of a network-wide activation and the rollbacks it records.
+		// They run where no setup tier is active, so they are registered here and not in the tier matrix; Cutover/README.md
+		// lists what to remove with the Cutover folder.
+		if ( is_multisite() ) {
+			Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\PerSiteActivationController::register_multisite_hooks();
+			if ( is_network_admin() ) {
+				$container->get( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\PerSiteActivationController::class )->register();
+			}
+		}
+
+		// The WooPayments personal-data eraser runs on every setup tier, since the stored customer data outlives the
+		// connection; the class loads only when WordPress builds its eraser list.
+		add_filter( 'wp_privacy_personal_data_erasers', array( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerDataEraser::class, 'add_eraser' ) );
+		$this->load_payments_and_multi_currency( $container );
+		// Canary-only comparison of the built-in WooPayments with the WooPayments extension, on stores the extension owns.
+		if ( $container->get( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter::class )->is_extension_owner() ) {
+			Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Shadow\NativePaymentsShadowMode::register_when_enabled( $container );
+		}
 		$container->get( Automattic\WooCommerce\Internal\Utilities\LegacyRestApiStub::class )->register();
 		$container->get( LegacySelect2UsageTracker::class )->register();
 		$container->get( Automattic\WooCommerce\Internal\VariationGallery\Telemetry::class )->register();
@@ -706,6 +735,41 @@ final class WooCommerce {
 	 */
 	public function load_rest_api() {
 		\Automattic\WooCommerce\RestApi\Server::instance()->init();
+	}
+
+	/**
+	 * Start WooCommerce's built-in payment provider and its Multi-Currency module for the current request.
+	 *
+	 * The request type is classified once and handed to both. Multi-Currency registers first, so its hooks keep their
+	 * place ahead of the payment provider's.
+	 *
+	 * @param \Automattic\WooCommerce\Container $container Dependency container.
+	 */
+	private function load_payments_and_multi_currency( $container ): void {
+		/**
+		 * Whether WooCommerce loads its built-in payment provider and its Multi-Currency module on this request.
+		 * Returning false loads neither: shoppers see store-currency prices, and only the `WCPay\MultiCurrency\MultiCurrency`
+		 * facade, declared separately, still answers.
+		 *
+		 * It is applied while WooCommerce loads, so a callback must be added before WooCommerce loads, from a mu-plugin or a
+		 * plugin that loads earlier.
+		 *
+		 * @since 11.2.0
+		 *
+		 * @param bool $load Whether to load the built-in payment provider and Multi-Currency.
+		 */
+		if ( ! apply_filters( 'woocommerce_load_payment_providers', true ) ) {
+			return;
+		}
+
+		$request_type = Automattic\WooCommerce\Internal\Utilities\RequestTypeUtil::get_request_type( (bool) $this->is_rest_api_request() );
+		( new Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyBootstrap(
+			static fn(): array => Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider::get_multi_currency_classes()
+		) )->register( $container, $request_type );
+		( new Automattic\WooCommerce\Internal\Payments\PaymentsBootstrap(
+			static fn( $container, string $request_type ): array => $container->get( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier::class )->get_classes_for_request( $request_type ),
+			static fn( $container ): bool => $container->get( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter::class )->is_builtin_owner()
+		) )->register( $container, $request_type );
 	}
 
 	/**

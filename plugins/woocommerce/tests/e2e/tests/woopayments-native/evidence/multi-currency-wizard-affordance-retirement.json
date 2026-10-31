@@ -1,0 +1,87 @@
+{
+	"schema_version": 2,
+	"slice_id": "multi-currency-wizard-affordance-retirement",
+	"wc_base_commit": "143b1c5ea5d1c2ff63a90e943783ffe815f8a04d",
+	"verified_at_commit": "9c48b899dde321ea39837a53d6254fa85cc2d5f1",
+	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+	"source_test_paths": [],
+	"source_test_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+	"contract_ids": [
+		"default::chromium::tests/e2e/specs/wcpay/merchant/multi-currency-on-boarding.spec.ts:110::Multi-currency on-boarding › Currency selection and management › should exclude already enabled currencies from the onboarding",
+		"default::chromium::tests/e2e/specs/wcpay/merchant/multi-currency-on-boarding.spec.ts:125::Multi-currency on-boarding › Currency selection and management › should display suggested currencies at the beginning of the list"
+	],
+	"targets": [
+		{
+			"path": "plugins/woocommerce/tests/php/src/Internal/MultiCurrency/MultiCurrencySettingsControllerTest.php",
+			"contract": "Retired as a wizard-only affordance; the underlying need is carried by: default::chromium::tests/e2e/specs/wcpay/merchant/multi-currency-on-boarding.spec.ts:59::Multi-currency on-boarding › Currency selection and management › should disable the submit button when no currencies are selected"
+		},
+		{
+			"path": "plugins/woocommerce/tests/php/src/Internal/MultiCurrency/MultiCurrencySettingsControllerTest.php",
+			"contract": "Retired as a wizard-only affordance with no native counterpart; the surface it guarded is proven by: default::chromium::tests/e2e/specs/wcpay/merchant/multi-currency-on-boarding.spec.ts:59::Multi-currency on-boarding › Currency selection and management › should disable the submit button when no currencies are selected"
+		}
+	],
+	"implementation_commits": [
+		"9c48b899dde321ea39837a53d6254fa85cc2d5f1"
+	],
+	"verification": [
+		{
+			"command": "node plugins/woocommerce/tests/e2e/bin/validate-woopayments-client-contract-map.mjs --from-git-ref HEAD",
+			"exit_code": 0,
+			"summary": "Ledger validation passed with both wizard-affordance contracts retired, and the reopening validated against the immediate predecessor: each row records exactly one new unlock satisfaction reproducing its packet's exact prior unlock decision against a dated calibration heading, with all prior packet content byte-identical."
+		},
+		{
+			"command": "pnpm --dir plugins/woocommerce test:e2e:woopayments:controller",
+			"exit_code": 0,
+			"summary": "The full controller passed on the retirement proposal before commit, including the contract-map validator unit tests after the closeInventory helper was corrected to decide retirement from the accepted disposition rather than the planned one, which is the rule the validator itself applies."
+		}
+	],
+	"reviews": [
+		{
+			"role": "disposition-authority",
+			"verdict": "APPROVE",
+			"source_test_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+			"summary": "The 2026-08-08 decision recorded in DECISIONS.md classes both contracts as wizard affordances and authorizes pairing them with the native behaviour covering the underlying need, or retiring them. No source was migrated or reviewed for either row."
+		},
+		{
+			"role": "code",
+			"verdict": "APPROVE",
+			"source_test_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+			"summary": "The reviewer checked both retirements against the native module and the retained test rather than against the write-up. For the exclusion row they confirmed native renders the available list search-filtered with enabled currencies pre-checked rather than omitted, and that the retained contract's smoke proves offered-once, already-checked and no duplicate control; they also read the row's deferral packet and found it had already placed literal absence from a removal-capable list outside the contract, which is stronger than the summary claimed. For the ordering row they confirmed there is no recommendation policy, metadata or ordered group anywhere in the native settings module and that the client's own oracle never asserted order, so retiring it without a pairing claim is the correct action and the retained contract is a surface anchor. They judged the retained lower-layer path the right formal slot while noting it asserts settings-screen ownership rather than either need, so the behavioural carrier is the retained contract itself; both points are recorded in the retirement rationales. They confirmed the ledger mechanics match the established precedent, that the test-helper correction reproduces the validator's own effective-disposition rule, and that holding the geolocation preview row back is principled because its would-be pair is a native behaviour that takes the store down."
+		},
+		{
+			"role": "e2e-tests",
+			"verdict": "APPROVE",
+			"source_test_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+			"summary": "Inapplicable rather than omitted: a retirement introduces no test. The unlock decisions name this role because they were written on the assumption of an implementation to review, and there is none - no spec, no run, and no oracle. The behaviour the retained contract carries was reviewed by this role at closure of that contract."
+		},
+		{
+			"role": "reliability",
+			"verdict": "APPROVE",
+			"source_test_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+			"summary": "Inapplicable rather than omitted: a retirement runs nothing and touches no store state, so there is no failure mode, no restoration and no shared-resource risk to judge. The ledger transition itself is validated by the controller run recorded above."
+		},
+		{
+			"role": "accessibility",
+			"verdict": "APPROVE",
+			"source_test_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+			"summary": "Inapplicable rather than omitted: a retirement introduces no user-facing surface. The native surface these contracts described is the add-currencies modal, whose accessibility was reviewed at closure of the retained contract, including the announcement and reachability of its refused control."
+		}
+	],
+	"closures": [],
+	"retirements": [
+		{
+			"contract_id": "default::chromium::tests/e2e/specs/wcpay/merchant/multi-currency-on-boarding.spec.ts:110::Multi-currency on-boarding › Currency selection and management › should exclude already enabled currencies from the onboarding",
+			"retained_contract_id": "default::chromium::tests/e2e/specs/wcpay/merchant/multi-currency-on-boarding.spec.ts:59::Multi-currency on-boarding › Currency selection and management › should disable the submit button when no currencies are selected",
+			"approver": "human-approved:multi-currency-settings-native-equivalent-2026-08-08",
+			"rationale": "Native does not omit an already-enabled currency from the add/remove list; it shows it pre-checked. The underlying need - a merchant cannot add what they already have - is carried by the retained contract, whose smoke proves the enabled currency is offered exactly once, already selected, with no second addable control for the same code. This row's own deferral packet had already bounded the contract that way, placing literal absence from a removal-capable management list outside its scope. The retained lower-layer path in target_path is the formal slot the schema requires and asserts settings-screen ownership rather than this need; the behavioural carrier is the retained contract named here."
+		},
+		{
+			"contract_id": "default::chromium::tests/e2e/specs/wcpay/merchant/multi-currency-on-boarding.spec.ts:125::Multi-currency on-boarding › Currency selection and management › should display suggested currencies at the beginning of the list",
+			"retained_contract_id": "default::chromium::tests/e2e/specs/wcpay/merchant/multi-currency-on-boarding.spec.ts:59::Multi-currency on-boarding › Currency selection and management › should disable the submit button when no currencies are selected",
+			"approver": "human-approved:multi-currency-settings-native-equivalent-2026-08-08",
+			"rationale": "Retired without a pairing claim, because suggested ordering has no native counterpart: the settings module ships no recommendation policy, no recommendation metadata and no ordered group, and the list is alphabetical. The client's own oracle never asserted ordering either - it counted recommended-tagged elements - so migrating it faithfully would have produced a check that could not fail. The retained contract anchors the surface where currencies are chosen, whose search filter serves the findability need this affordance existed for, rather than carrying the ordering need itself. The retained lower-layer path in target_path is the formal slot the schema requires and asserts settings-screen ownership only."
+		}
+	],
+	"known_gaps": [],
+	"deferral": null
+}

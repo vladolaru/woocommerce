@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Let merchants turn on Apple Pay, Google Pay and Amazon Pay on the built-in WooPayments settings page.

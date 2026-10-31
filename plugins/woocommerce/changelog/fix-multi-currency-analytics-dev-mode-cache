@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Serve uncached Multi-currency Analytics reports only in WooPayments dev mode while the built-in WooPayments owns payments, instead of following the WooCommerce Stripe Gateway dev mode constant.

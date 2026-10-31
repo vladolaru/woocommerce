@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+The WooPayments transactions list shows every column WooPayments offered, including the order, sales channel, customer, risk level and payout columns, with the same defaults and always-visible columns.

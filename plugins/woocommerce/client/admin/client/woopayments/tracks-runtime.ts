@@ -1,0 +1,128 @@
+/**
+ * External dependencies
+ */
+import { addFilter, hasFilter } from '@wordpress/hooks';
+
+// Core's admin recorder runs every event through this filter, with the prefixed event name
+// (`includes/tracks/class-wc-site-tracking.php`, `window.wcTracks.recordEvent`).
+const EVENT_PROPERTIES_FILTER = 'woocommerce_tracks_client_event_properties';
+const FILTER_NAMESPACE = 'woocommerce/woopayments/payments-runtime';
+
+export const PAYMENTS_RUNTIME_PROPERTY = 'payments_runtime';
+export const PAYMENTS_RUNTIME = 'woocommerce_core';
+
+const isRecord = ( value: unknown ): value is Record< string, unknown > =>
+	typeof value === 'object' && value !== null && ! Array.isArray( value );
+
+// The native list pages record the client's own page view paths; trunk's `payments_connect_core_test`
+// welcome page view does not match.
+const NATIVE_PAGE_VIEW_PATH_PREFIXES = [
+	'payments_transactions',
+	'payments_disputes',
+	'payments_reports',
+];
+
+// The native WooPayments admin events keep the client's names; trunk's own payments events
+// (such as `payments_task_stepper_view`) do not match.
+const isWooPaymentsAdminEvent = (
+	eventName: string,
+	properties: Record< string, unknown >
+) => {
+	if ( eventName === 'wcadmin_page_view' ) {
+		const { path } = properties;
+		return (
+			typeof path === 'string' &&
+			NATIVE_PAGE_VIEW_PATH_PREFIXES.some( ( prefix ) =>
+				path.startsWith( prefix )
+			)
+		);
+	}
+
+	return (
+		eventName.startsWith( 'wcadmin_wcpay_' ) ||
+		eventName.startsWith( 'wcadmin_payments_transactions_' )
+	);
+};
+
+// The platform's hosting provider for the site, from the tracking info core preloads with the WooPayments settings
+// (`SharedSettings`), as client 11.1.0 adds `wcpaySettings.trackingInfo?.hosting_provider` to every admin
+// event (`client/tracks/index.ts:44`).
+const getPreloadedHostingProvider = () => {
+	const hostingProvider = (
+		window as typeof window & {
+			wcSettings?: {
+				admin?: {
+					woopaymentsSettings?: {
+						trackingInfo?: { hosting_provider?: unknown } | null;
+					};
+				};
+			};
+		}
+	 ).wcSettings?.admin?.woopaymentsSettings?.trackingInfo?.hosting_provider;
+
+	return typeof hostingProvider === 'string' && hostingProvider !== ''
+		? hostingProvider
+		: undefined;
+};
+
+/**
+ * Mark a native WooPayments admin event as recorded by the WooCommerce core runtime, with the site's hosting provider when
+ * the platform's tracking info is preloaded.
+ *
+ * @param properties The event properties, as another filter callback may have left them.
+ * @param eventName  The prefixed event name.
+ * @return The properties, with the runtime for a native WooPayments event.
+ */
+export const addPaymentsRuntimeProperty = (
+	properties: unknown,
+	eventName: unknown
+) => {
+	if (
+		! isRecord( properties ) ||
+		typeof eventName !== 'string' ||
+		! isWooPaymentsAdminEvent( eventName, properties )
+	) {
+		return properties;
+	}
+
+	const hostingProvider = getPreloadedHostingProvider();
+
+	return {
+		...properties,
+		...( hostingProvider ? { hosting_provider: hostingProvider } : {} ),
+		[ PAYMENTS_RUNTIME_PROPERTY ]: PAYMENTS_RUNTIME,
+	};
+};
+
+/**
+ * Register the filter once per page; each native entry bundles its own copy of this module. Call it only where native
+ * owns the runtime: the plugin's own `wcadmin_wcpay_*` events carry the same names.
+ */
+export const registerPaymentsRuntimeTracksProperty = () => {
+	if ( hasFilter( EVENT_PROPERTIES_FILTER, FILTER_NAMESPACE ) ) {
+		return;
+	}
+
+	addFilter(
+		EVENT_PROPERTIES_FILTER,
+		FILTER_NAMESPACE,
+		addPaymentsRuntimeProperty
+	);
+};
+
+/**
+ * Register the filter on a Payments settings page only when core preloaded `woopaymentsSettings`, which it does only
+ * while native owns the runtime (`SharedSettings::preload_shared_settings()`). A native route
+ * reached on a plugin-owned store has no preload.
+ */
+export const registerPaymentsRuntimeTracksPropertyWhenPreloaded = () => {
+	const preloaded = (
+		window as typeof window & {
+			wcSettings?: { admin?: { woopaymentsSettings?: unknown } };
+		}
+	 ).wcSettings?.admin?.woopaymentsSettings;
+
+	if ( isRecord( preloaded ) ) {
+		registerPaymentsRuntimeTracksProperty();
+	}
+};

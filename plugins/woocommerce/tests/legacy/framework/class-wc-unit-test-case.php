@@ -5,8 +5,10 @@
  * @package WooCommerce\Tests
  */
 
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use Automattic\WooCommerce\Testing\Tools\CodeHacking\CodeHacker;
+use Automattic\WooCommerce\Testing\Tools\EnvironmentIsolation;
 use Automattic\WooCommerce\Utilities\OrderUtil;
 use PHPUnit\Framework\Constraint\IsType;
 
@@ -128,6 +130,15 @@ class WC_Unit_Test_Case extends WP_HTTP_TestCase {
 
 		parent::setUp();
 
+		// Re-establish the machine-independent baseline for every test. Applying
+		// it once at bootstrap is not enough: Constants::clear_constants() drops
+		// every override, several suites call it, and after that the development
+		// environment's own constants become visible again to everything that
+		// runs later. Subclass setUp() runs after this, so a test that wants one
+		// of these signals still sets it and wins.
+		EnvironmentIsolation::apply();
+		EnvironmentIsolation::apply_for_test( static::class );
+
 		// Add custom factories.
 		$this->factory = new WC_Unit_Test_Factory();
 
@@ -177,9 +188,9 @@ class WC_Unit_Test_Case extends WP_HTTP_TestCase {
 	 * Tear down test case.
 	 *
 	 * The cart contents, the cart context, the queued notices, the cached country
-	 * locale, and the loaded shipping methods all live on the WC() singletons, which
-	 * neither the per-test database rollback nor the hook restore resets, so clear them
-	 * here or they leak into every later test in the process.
+	 * locale, the loaded shipping methods, and the request-local payments runtime owner
+	 * all survive the per-test database rollback and hook restore, so clear them here
+	 * before they leak into a later test in the process.
 	 *
 	 * @since 11.1.0
 	 */
@@ -192,6 +203,8 @@ class WC_Unit_Test_Case extends WP_HTTP_TestCase {
 			// test that runs after this one.
 			parent::tearDown();
 		}
+
+		EnvironmentIsolation::assert_no_unmocked_requests();
 	}
 
 	/**
@@ -239,6 +252,9 @@ class WC_Unit_Test_Case extends WP_HTTP_TestCase {
 
 		// WC_Shipping caches the loaded methods, including any a test's filters or zones added.
 		WC()->shipping()->unregister_shipping_methods();
+
+		// The container keeps this arbiter instance across tests, but its memo only applies to one request.
+		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 	}
 
 	/**

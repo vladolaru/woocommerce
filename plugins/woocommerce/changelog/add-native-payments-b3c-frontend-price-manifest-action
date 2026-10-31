@@ -1,0 +1,4 @@
+Significance: patch
+Type: dev
+
+Add the missing refund action to the native multi-currency frontend price hook manifest.

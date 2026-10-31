@@ -73,6 +73,13 @@ interface Props {
 	 * @default defaultArrowRender
 	 */
 	arrowRender?: () => React.ReactNode;
+	/**
+	 * Additional props applied to the phone number text field.
+	 */
+	inputProps?: Omit<
+		React.InputHTMLAttributes< HTMLInputElement >,
+		'id' | 'type' | 'value' | 'onChange' | 'className' | 'style'
+	>;
 }
 
 const { countries, countryCodes } = parseData( data );
@@ -88,6 +95,7 @@ const PhoneNumberInput = ( {
 	selectedRender = defaultSelectedRender,
 	itemRender = defaultItemRender,
 	arrowRender = defaultArrowRender,
+	inputProps,
 }: Props ) => {
 	const menuRef = useRef< HTMLButtonElement >( null );
 	const inputRef = useRef< HTMLInputElement >( null );
@@ -185,12 +193,16 @@ const PhoneNumberInput = ( {
 				</span>
 			</button>
 			<input
+				{ ...inputProps }
 				id={ id }
 				ref={ inputRef }
 				type="text"
 				value={ phoneNumber }
 				onKeyDown={ handleKeyDown }
 				onChange={ handleInput }
+				onBlur={ ( event ) => {
+					inputProps?.onBlur?.( event );
+				} }
 				className="wcpay-component-phone-number-input__input"
 				style={ { paddingLeft: `${ menuWidth }px` } }
 			/>
@@ -201,22 +213,23 @@ const PhoneNumberInput = ( {
 				} ) }
 			>
 				{ isOpen &&
-					Object.keys( countries ).map( ( key, index ) => (
-						// eslint-disable-next-line react/jsx-key
-						<li
-							{ ...getItemProps( {
-								key,
-								index,
-								item: key,
-								className: clsx(
-									'wcpay-component-phone-number-input__menu-item',
-									{ highlighted: highlightedIndex === index }
-								),
-							} ) }
-						>
-							{ itemRender( countries[ key ] ) }
-						</li>
-					) ) }
+					Object.keys( countries ).map( ( key, index ) => {
+						const { key: itemKey, ...itemProps } = getItemProps( {
+							key,
+							index,
+							item: key,
+							className: clsx(
+								'wcpay-component-phone-number-input__menu-item',
+								{ highlighted: highlightedIndex === index }
+							),
+						} );
+
+						return (
+							<li key={ itemKey } { ...itemProps }>
+								{ itemRender( countries[ key ] ) }
+							</li>
+						);
+					} ) }
 			</ul>
 		</div>
 	);

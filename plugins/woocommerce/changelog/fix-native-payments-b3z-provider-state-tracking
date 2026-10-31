@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Use the canonical WooPayments extension slug for native provider state tracking snapshots.

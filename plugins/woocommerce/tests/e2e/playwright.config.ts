@@ -36,7 +36,7 @@ export const ADMIN_STATE_PATH = `${ STORAGE_DIR_PATH }/admin.json`;
 export const CUSTOMER_STATE_PATH = `${ STORAGE_DIR_PATH }/customer.json`;
 export const CONSUMER_KEY = { name: '', key: '', secret: '' };
 
-const reporter = [
+export const reporter = [
 	[ 'list' ],
 	[
 		'allure-playwright',
@@ -173,6 +173,7 @@ const nonCoreSpecs = [
 	'**/api-tests/**',
 	'**/tests/paypal/**',
 	'**/tests/blocks/**',
+	'**/tests/woopayments-native/**',
 ];
 
 /**

@@ -1,0 +1,40 @@
+{
+	"schema_version": 2,
+	"slice_id": "order-cancel-confirm-deferral",
+	"wc_base_commit": "92b2fc3376f6a5ce47d283656cb0c06dc569fb9f",
+	"verified_at_commit": "7cfb1a0af2822c27c42d58cc2cdea351882e6a43",
+	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+	"source_test_paths": [
+		"plugins/woocommerce/tests/e2e/tests/woopayments-native/evidence/calibration-notes.md"
+	],
+	"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+	"contract_ids": [
+		"default::chromium::tests/e2e/specs/wcpay/merchant/merchant-orders-status-change.spec.ts:80::Order › Status Change › Change Status of order to Cancelled › When Order Status changed to Cancel, show Cancel Confirmation modal, change status to Cancel if confirmed"
+	],
+	"targets": [
+		{
+			"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/scenarios/refund.ts",
+			"contract": "pending"
+		}
+	],
+	"implementation_commits": [],
+	"verification": [],
+	"reviews": [
+		{
+			"role": "deferral",
+			"verdict": "APPROVE",
+			"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+			"summary": "Fresh broad review approved evidence SHA b12a89a2b02b8c0e4de801cca2bcf663169ddf59e714ced91a1ff5dc885ea363 against ledger SHA a2488cd8ee6bdbd221814ed6f25561068f9c8021154f301495cc87e112bbd7c3: exactly the confirmed captured-order cancellation row moves through the four permitted fields from planned/not-assessed to deferred/blocked-environment under blocked-environment:PILOT-NATIVE-READINESS, while its pending accepted disposition, absent provisional target, pending target contract, unresolved owner, dismissed-cancellation boundary, and refund siblings remain unchanged. The retained contract requires an accessible cancellation-without-refund warning, exactly one persisted local Processing-to-Cancelled transition, unchanged captured payment identity/state/refunded amount, and zero provider refund, authorization cancellation, void, reversal, or other mutation. This captured-versus-authorization distinction is sourced from the client strategy's explicit copy and separate open-authorization branch, the client backend's uncaptured/requires_capture guard, and Core's requires_capture-only cancellation controller. Core's missing confirmation surface is a concrete parity gap, but no fix is falsely authorized while the shared target, UI/config contract, and owner remain unresolved. Native readiness is correctly primary and Core readiness secondary. The evidence handles shared-target drift and records protected allocation, exclusive listener attribution, ordered locks, one checkout journal, no replay, byte-exact restoration, retained financial evidence, safe cleanup, quarantine, one worker, and zero retries while truthfully claiming zero current resources or quarantine."
+		}
+	],
+	"closures": [],
+	"known_gaps": [],
+	"deferral": {
+		"blocker": "Standing-native readiness fails before account, callback, fixture, or browser work; the provisional scenario target is absent; and the captured-order confirmation UI/config target contract and owner remain pending. Core has no current equivalent confirmation surface, but those unresolved boundaries keep a safe product fix outside the autonomous allowlist.",
+		"affected_scope": "Only the exact confirmed cancellation of a captured refundable order: an accessible warning distinguishes cancellation without refund, one affirmative action persists one Processing-to-Cancelled local transition, and the same captured provider payment remains unchanged with zero refund, authorization cancellation, void, reversal, or other provider mutation. The dismissed cancellation and both refund branches remain separate.",
+		"no_allowlisted_action_reason": "The run cannot enable native ownership, establish account/callback readiness, repair shared Core E2E sites, allocate an unapproved provider lane, invent the pending row-specific target or UI owner, or merge captured cancellation with authorization-cancel or refund semantics. Existing status-hook, generic order-edit, and refund tests do not prove the modal branch, exactly-once submission, or provider no-op join.",
+		"reference": "blocked-environment:PILOT-NATIVE-READINESS",
+		"unlock_decision": "Externally satisfy native and Core E2E readiness; approve a drift-safe row-specific native order-admin UI/config target and owner with the explicit captured-order cancellation-without-refund contract; add lower-layer modal eligibility, copy semantics, exactly-once status submission, and provider no-op RED/GREEN coverage; provision one exact captured order through protected allocation, exclusive listener attribution, ordered locks, a single checkout journal, zero replay, byte-exact setting restoration, retained financial evidence, cleanup, and quarantine controls; then run once with one worker and zero retries and obtain fresh required reviews.",
+		"quarantine_status": "No browser context, account, store, order, product, payment, provider record, listener, lock, journal, setting, retention record, or quarantine was created or changed for this row. The separately owned listener remains untouched."
+	}
+}

@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Log a warning when a native WooPayments lifecycle event is skipped due to order-lock contention, instead of dropping it silently.

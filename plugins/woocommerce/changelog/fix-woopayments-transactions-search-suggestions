@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+WooPayments transaction search suggestions float over the transactions list, so a click selects the suggestion.

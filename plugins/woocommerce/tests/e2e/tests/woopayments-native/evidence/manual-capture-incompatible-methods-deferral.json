@@ -1,0 +1,48 @@
+{
+	"schema_version": 2,
+	"slice_id": "manual-capture-incompatible-methods-deferral",
+	"wc_base_commit": "92b2fc3376f6a5ce47d283656cb0c06dc569fb9f",
+	"verified_at_commit": "ea4f798c8433faf25ca7076e8ed02b35cab67e6e",
+	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+	"source_test_paths": [
+		"plugins/woocommerce/tests/e2e/tests/woopayments-native/evidence/calibration-notes.md"
+	],
+	"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+	"contract_ids": [
+		"default::chromium::tests/e2e/specs/wcpay/merchant/merchant-payment-settings-manual-capture.spec.ts:48::As a merchant, I should be prompted a confirmation modal when I try to activate the manual capture › should show the non-card methods disabled when manual capture is enabled"
+	],
+	"targets": [
+		{
+			"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/scenarios/manual-capture.ts",
+			"contract": "pending"
+		}
+	],
+	"implementation_commits": [],
+	"verification": [],
+	"reviews": [
+		{
+			"role": "deferral",
+			"verdict": "APPROVE",
+			"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+			"summary": "Fresh broad review approved evidence SHA c3746b5e47b9c07cb31508141c42e1255fcb136957b5c21cedc93f6ffc6e0c15 against ledger SHA bb1a14a430bbd2c947013aca7475bcde3bc6f69f2fbf1692b0e0d60f6883f808. Ledger row 60 preserves accepted_disposition=pending, provisional target scenarios/manual-capture.ts, target_contract=pending, and unresolved owner, changing only fields 37-40 from planned/not-assessed/none/none to the specified deferral. It binds I60 to the deterministic displayed, otherwise-actionable allowsManualCapture=false set from an authoritatively disabled baseline; confirms enable once; requires every member to be disabled with an associated reason and visible warning while a compatible control remains unaffected by this predicate; excludes checked-state, persisted-ID, checkout, and provider claims; and forbids Save while requiring zero settings updates and byte-identical raw settings. Row 58's warning boundary, row 59's reverse transition, and the financial pilot remain separate. Core lower-layer coverage supports no established defect, not closure; native readiness precedes target/owner/topology, fixture, locks/journal, adapter/oracle, and review work. The contract remains provider-free with zero allocated resources, while future execution requires ordered locks, full-byte pre-write restoration journaling, accessibility and capability-drift review, and quarantine on ambiguous writes, divergence, drift, ownership loss, or uncertain restoration."
+		}
+	],
+	"closures": [],
+	"known_gaps": [],
+	"deferral": {
+		"blocker": "Standing-native readiness fails before the provider-free native settings route can run; the provisional target is absent; and the row-specific target contract, frontend/settings owner, deterministic capability fixture, and drift-safe project topology remain pending. Core already implements and lower-layer-tests disabled incompatible controls, accessible reasons, and the explanatory warning, so no production defect is established.",
+		"affected_scope": "Only the exact unsaved incompatible-method contract: from authoritatively disabled manual capture, enumerate the deterministic displayed and otherwise-actionable method set whose definitions have allowsManualCapture=false, confirm enablement once, require every member to become disabled with a programmatically associated reason, keep compatible negative controls free of that predicate, and expose the visible warning that unsupported methods were automatically disabled. Checked state, persisted enabled IDs, checkout exclusion, and provider capability changes are not asserted. Never save; require zero settings update and byte-identical authoritative raw gateway/payment-method configuration.",
+		"no_allowlisted_action_reason": "The run cannot enable native ownership, establish the required native account/callback readiness, repair shared Core E2E sites, approve the exact capability-derived displayed method fixture, or invent the pending target, owner, and project topology. Component and service tests cannot substitute for the authenticated browser confirmation, real account-derived method set, accessibility tree, zero HTTP mutation, or complete raw-option identity proof. No provider writer, provider CI allocation, or listener can unlock this settings-only row.",
+		"reference": "blocked-environment:PILOT-NATIVE-READINESS",
+		"unlock_decision": "Externally satisfy native readiness and provide a runnable Core browser target; approve the exact provider-free target contract, frontend/settings owner, and row-safe topology; provide an authoritatively disabled baseline plus a deterministic displayed incompatible set with explicit capability, status, currency, and availability evidence and a compatible negative control; capture complete raw bytes and settings-request observations under ordered account, store, settings, and capability-fixture ownership with a pre-write restoration journal if normalization is unavoidable; implement the semantic accessible adapter and zero-update/full-byte-identity oracle; then run once with one worker and zero retries and obtain fresh code, E2E-test, reliability, and accessibility reviews.",
+		"quarantine_status": "No browser context, account, store, setting, capability, lock, journal, listener, provider object, environment, retention record, or quarantine was created or changed for this row. A future ambiguous settings request, raw-byte divergence, capability drift, lost ownership, or uncertain restoration must preserve the request/restoration evidence and quarantine the exact store, settings resource, and capability fixture; no financial or provider resource belongs to this contract.",
+		"unlock_satisfactions": [
+			{
+				"contract_id": "default::chromium::tests/e2e/specs/wcpay/merchant/merchant-payment-settings-manual-capture.spec.ts:48::As a merchant, I should be prompted a confirmation modal when I try to activate the manual capture › should show the non-card methods disabled when manual capture is enabled",
+				"unlock_decision": "Externally satisfy native readiness and provide a runnable Core browser target; approve the exact provider-free target contract, frontend/settings owner, and row-safe topology; provide an authoritatively disabled baseline plus a deterministic displayed incompatible set with explicit capability, status, currency, and availability evidence and a compatible negative control; capture complete raw bytes and settings-request observations under ordered account, store, settings, and capability-fixture ownership with a pre-write restoration journal if normalization is unavoidable; implement the semantic accessible adapter and zero-update/full-byte-identity oracle; then run once with one worker and zero retries and obtain fresh code, E2E-test, reliability, and accessibility reviews.",
+				"satisfied_on": "2026-08-07",
+				"reference": "calibration-notes:2026-08-07:settings-modal-copy-family-smoke"
+			}
+		]
+	}
+}

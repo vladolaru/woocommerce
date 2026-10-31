@@ -1,0 +1,4 @@
+Significance: patch
+Type: dev
+Comment: Match the WooPayments 11.1.0 woocommerce_payments_data Blocks payload in native WooPayments: add is_admin and leave out 14 classic-only or unread payment fields config keys.
+

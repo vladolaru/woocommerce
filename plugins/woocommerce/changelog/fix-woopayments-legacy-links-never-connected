@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Send old WooPayments settings and Payments page links to onboarding on stores that never connected WooPayments, instead of an error page.

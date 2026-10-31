@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Show the WooPayments payment method promotion as the WooPayments plugin does: a card that slides in at the bottom right after 4 seconds.

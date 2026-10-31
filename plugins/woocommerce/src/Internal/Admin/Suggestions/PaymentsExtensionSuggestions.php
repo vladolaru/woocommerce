@@ -8,6 +8,7 @@ defined( 'ABSPATH' ) || exit;
 use Automattic\WooCommerce\Internal\Admin\Onboarding\OnboardingProfile;
 use Automattic\WooCommerce\Internal\Admin\Settings\Payments;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Utilities\ArrayUtil;
 
 /**
@@ -4467,7 +4468,10 @@ class PaymentsExtensionSuggestions {
 		$standardized['id']        = $extension_details['id'];
 		$standardized['_priority'] = $extension_details['_priority'];
 		$standardized['_type']     = $extension_details['_type'];
-		$standardized['plugin']    = $extension_details['plugin'];
+		// While the WooPayments feature is on, the built-in WooPayments is offered instead of the extension.
+		if ( isset( $extension_details['plugin'] ) && ( self::WOOPAYMENTS !== $extension_details['id'] || ! wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->is_builtin_enabled() ) ) {
+			$standardized['plugin'] = $extension_details['plugin'];
+		}
 
 		// Optional fields.
 		$standardized['title']       = $extension_details['title'] ?? '';

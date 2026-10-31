@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Keep the store's admin and shop pages working when a plugin asks WooPayments whether it is enabled through the WooPayments extension's API.

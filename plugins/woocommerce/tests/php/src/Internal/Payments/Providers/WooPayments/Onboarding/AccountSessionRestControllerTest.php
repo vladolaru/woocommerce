@@ -1,0 +1,430 @@
+<?php
+declare( strict_types = 1 );
+
+namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Onboarding;
+
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Onboarding\AccountSessionRestController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Onboarding\EmbeddedAccountSessionService;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\ProviderTextLogAssertions;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\RecordingWcLogger;
+use WC_REST_Unit_Test_Case;
+use WP_REST_Request;
+use WP_REST_Response;
+use WP_REST_Server;
+
+/**
+ * Tests for the AccountSessionRestController class.
+ */
+class AccountSessionRestControllerTest extends WC_REST_Unit_Test_Case {
+
+	use ProviderTextLogAssertions;
+
+	/**
+	 * The System Under Test.
+	 *
+	 * @var AccountSessionRestController
+	 */
+	private AccountSessionRestController $sut;
+
+	/**
+	 * Recording service.
+	 *
+	 * @var EmbeddedAccountSessionService
+	 */
+	private EmbeddedAccountSessionService $service;
+
+	/**
+	 * Recording account service.
+	 *
+	 * @var WooPaymentsAccountService
+	 */
+	private WooPaymentsAccountService $account_service;
+
+	/**
+	 * Set up test fixtures.
+	 */
+	public function setUp(): void {
+		parent::setUp();
+
+		$this->service         = $this->create_service();
+		$this->account_service = $this->create_account_service();
+		$this->sut             = $this->create_controller();
+
+		wp_set_current_user( $this->factory->user->create( array( 'role' => 'administrator' ) ) );
+	}
+
+	/**
+	 * Tear down test fixtures.
+	 */
+	public function tearDown(): void {
+		remove_filter( 'woocommerce_rest_api_get_rest_namespaces', array( $this->sut, 'handle_woocommerce_rest_api_get_rest_namespaces' ) );
+		remove_all_filters( 'woocommerce_logging_class' );
+		wc_get_container()->reset_all_replacements();
+		parent::tearDown();
+	}
+
+	/**
+	 * @testdox Account session route is registered under wc/v3 when the built-in WooPayments owns the runtime.
+	 */
+	public function test_registers_route_when_builtin_owns_runtime(): void {
+		// WooCommerce's REST server registers the routes of the instance the container holds.
+		wc_get_container()->replace( AccountSessionRestController::class, $this->sut );
+		$this->sut->register();
+		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment
+		do_action( 'rest_api_init' );
+
+		$routes = $this->server->get_routes();
+
+		$this->assertArrayHasKey( '/wc/v3/payments/accounts', $routes );
+		$this->assertRouteHasMethod( $routes['/wc/v3/payments/accounts'], WP_REST_Server::READABLE );
+		$this->assertArrayHasKey( '/wc/v3/payments/accounts/session', $routes );
+		$this->assertRouteHasMethod( $routes['/wc/v3/payments/accounts/session'], WP_REST_Server::READABLE );
+	}
+
+	/**
+	 * The routes, each with the recording service it must not reach without permission.
+	 *
+	 * @return array<string,array{0:string,1:string}>
+	 */
+	public function provide_routes_and_recorders(): array {
+		return array(
+			'account session route' => array( '/wc/v3/payments/accounts/session', 'service' ),
+			'accounts route'        => array( '/wc/v3/payments/accounts', 'account_service' ),
+		);
+	}
+
+	/**
+	 * @testdox Account routes require manage_woocommerce before calling the service or reading account data.
+	 * @dataProvider provide_routes_and_recorders
+	 *
+	 * @param string $route    Route path.
+	 * @param string $recorder Property holding the recording service the route calls.
+	 */
+	public function test_route_requires_manage_woocommerce( string $route, string $recorder ): void {
+		$this->sut->register_routes();
+		wp_set_current_user( 0 );
+
+		$response = $this->server->dispatch( new WP_REST_Request( 'GET', $route ) );
+
+		$this->assertSame( rest_authorization_required_code(), $response->get_status() );
+		$this->assertSame( '', $this->{$recorder}->last_call );
+	}
+
+	/**
+	 * @testdox Accounts route returns cached account data with the WooPayments extension's flags.
+	 */
+	public function test_accounts_route_returns_cached_account_payload(): void {
+		$this->account_service->account_data = array(
+			'account_id'            => 'acct_native',
+			'card_present_eligible' => true,
+			'country'               => 'NL',
+			'status'                => 'complete',
+			'store_currencies'      => array(
+				'default'   => 'eur',
+				'supported' => array( 'eur', 'usd' ),
+			),
+		);
+		$this->account_service->test_mode    = true;
+		$this->sut->register_routes();
+
+		$response = $this->server->dispatch( new WP_REST_Request( 'GET', '/wc/v3/payments/accounts' ) );
+
+		$this->assertSame( 200, $response->get_status() );
+		$this->assertSame( 'get_cached_account_data', $this->account_service->last_call );
+		$this->assertSame(
+			array(
+				'account_id'            => 'acct_native',
+				'card_present_eligible' => false,
+				'country'               => 'NL',
+				'status'                => 'complete',
+				'store_currencies'      => array(
+					'default'   => 'eur',
+					'supported' => array( 'eur', 'usd' ),
+				),
+				'test_mode'             => true,
+				'test_mode_onboarding'  => false,
+			),
+			$response->get_data()
+		);
+	}
+
+	/**
+	 * @testdox Accounts route returns the WooPayments extension's fallback shape when no account data exists.
+	 */
+	public function test_accounts_route_returns_no_account_fallback_payload(): void {
+		update_option( 'woocommerce_currency', 'USD' );
+		update_option( 'woocommerce_default_country', 'US:CA' );
+		$this->account_service->account_data = array();
+		// Onboarding test mode forces test mode on (client includes/core/class-mode.php:127-128).
+		$this->account_service->test_mode            = true;
+		$this->account_service->test_mode_onboarding = true;
+		$this->sut->register_routes();
+
+		$response = $this->server->dispatch( new WP_REST_Request( 'GET', '/wc/v3/payments/accounts' ) );
+
+		$this->assertSame( 200, $response->get_status() );
+		$this->assertSame(
+			array(
+				'card_present_eligible'    => false,
+				'country'                  => 'US',
+				'current_deadline'         => null,
+				'has_overdue_requirements' => false,
+				'has_pending_requirements' => false,
+				'statement_descriptor'     => '',
+				'status'                   => 'NOACCOUNT',
+				'store_currencies'         => array(
+					'default'   => 'USD',
+					'supported' => array( 'USD' ),
+				),
+				'customer_currencies'      => array(
+					'supported' => array( 'USD' ),
+				),
+				'test_mode'                => true,
+				'test_mode_onboarding'     => true,
+			),
+			$response->get_data()
+		);
+	}
+
+	/**
+	 * @testdox Accounts route preserves the WooPayments extension's onboarding-disabled status when no account data exists.
+	 */
+	public function test_accounts_route_returns_onboarding_disabled_fallback_status(): void {
+		$this->account_service->account_data        = array();
+		$this->account_service->onboarding_disabled = true;
+		$this->sut->register_routes();
+
+		$response = $this->server->dispatch( new WP_REST_Request( 'GET', '/wc/v3/payments/accounts' ) );
+
+		$this->assertSame( 200, $response->get_status() );
+		$this->assertSame( 'ONBOARDING_DISABLED', $response->get_data()['status'] );
+		// A live store reports both test mode flags off (client includes/admin/class-wc-rest-payments-accounts-controller.php:84-85).
+		$this->assertFalse( $response->get_data()['test_mode'] );
+		$this->assertFalse( $response->get_data()['test_mode_onboarding'] );
+	}
+
+	/**
+	 * @testdox Account session route returns the mapped service payload.
+	 */
+	public function test_route_returns_service_payload(): void {
+		$this->service->response = array(
+			'clientSecret'   => 'cs_test',
+			'expiresAt'      => 1781740800,
+			'accountId'      => 'acct_native',
+			'isLive'         => false,
+			'publishableKey' => 'pk_test_native',
+			'locale'         => get_user_locale(),
+		);
+		$this->sut->register_routes();
+
+		$response = $this->server->dispatch( new WP_REST_Request( 'GET', '/wc/v3/payments/accounts/session' ) );
+
+		$this->assertSame( 200, $response->get_status() );
+		$this->assertSame( 'create_session', $this->service->last_call );
+		$this->assertSame( $this->service->response, $response->get_data() );
+	}
+
+	/**
+	 * Failures of the account session service: a platform error, and an unexpected exception whose message holds a key.
+	 *
+	 * @return array<string,array{0:\Throwable,1:string[],2:array{0:int,1:string}|null}>
+	 */
+	public function provide_session_failures(): array {
+		return array(
+			'a platform error'        => array( self::make_provider_error(), self::$provider_leak_fragments, array( 404, 'resource_missing' ) ),
+			'an unexpected exception' => array( new \RuntimeException( 'secret platform failure: sk_test_123' ), array( 'sk_test_123', 'secret platform failure' ), null ),
+		);
+	}
+
+	/**
+	 * @testdox Account session route logs the failure instead of silently discarding it, keeping the sanitized 500.
+	 * @dataProvider provide_session_failures
+	 *
+	 * @param \Throwable                 $exception                What the service throws.
+	 * @param string[]                   $leak_fragments           Text of the failure the response must not carry.
+	 * @param array{0:int,1:string}|null $expected_status_and_code The HTTP status and error code in the log line, or null when not checked.
+	 */
+	public function test_route_logs_error_when_service_throws( \Throwable $exception, array $leak_fragments, ?array $expected_status_and_code ): void {
+		$this->service->exception = $exception;
+		$logger                   = RecordingWcLogger::install();
+		self::enable_woopayments_debug_logging();
+		$this->sut->register_routes();
+
+		$response = $this->server->dispatch( new WP_REST_Request( 'GET', '/wc/v3/payments/accounts/session' ) );
+
+		$this->assertSame( 500, $response->get_status() );
+		$this->assertSame( 'woocommerce_woopayments_account_session_error', $response->as_error()->get_error_code() );
+		foreach ( $leak_fragments as $fragment ) {
+			$this->assertStringNotContainsString( $fragment, (string) wp_json_encode( $response->get_data() ) );
+		}
+
+		$this->assertCount( 1, $logger->lines );
+		$context = $this->get_logged_context_at_level( $logger, 'error' );
+		if ( null !== $expected_status_and_code ) {
+			$this->assertSame( $expected_status_and_code, array( $context['http_status'], $context['error_code'] ) );
+		}
+		$this->assert_log_holds_no_provider_text( $logger );
+	}
+
+	/**
+	 * Create a native account-session REST controller.
+	 *
+	 * @return AccountSessionRestController
+	 */
+	private function create_controller(): AccountSessionRestController {
+		$controller = new AccountSessionRestController();
+		$controller->init( $this->service, $this->account_service );
+
+		return $controller;
+	}
+
+	/**
+	 * Create a recording account service.
+	 *
+	 * @return WooPaymentsAccountService
+	 */
+	private function create_account_service(): WooPaymentsAccountService {
+		return new class() extends WooPaymentsAccountService {
+
+			/**
+			 * Last called method.
+			 *
+			 * @var string
+			 */
+			public string $last_call = '';
+
+			/**
+			 * Cached account data.
+			 *
+			 * @var array<string,mixed>
+			 */
+			public array $account_data = array();
+
+			/**
+			 * Whether WooPayments is in test mode.
+			 *
+			 * @var bool
+			 */
+			public bool $test_mode = false;
+
+			/**
+			 * Whether WooPayments is using test-mode onboarding.
+			 *
+			 * @var bool
+			 */
+			public bool $test_mode_onboarding = false;
+
+			/**
+			 * Whether WooPayments onboarding is disabled.
+			 *
+			 * @var bool
+			 */
+			public bool $onboarding_disabled = false;
+
+			/**
+			 * Get cached account data.
+			 *
+			 * @param bool $force_refresh Whether to force refresh.
+			 * @return array<string,mixed>
+			 */
+			public function get_cached_account_data( bool $force_refresh = false ): array {
+				unset( $force_refresh );
+
+				$this->last_call = __FUNCTION__;
+
+				return $this->account_data;
+			}
+
+			/**
+			 * Tell whether WooPayments is in test mode.
+			 *
+			 * @return bool
+			 */
+			public function is_test_mode_enabled(): bool {
+				return $this->test_mode;
+			}
+
+			/**
+			 * Tell whether WooPayments is using test-mode onboarding.
+			 *
+			 * @return bool
+			 */
+			public function is_test_mode_onboarding_enabled(): bool {
+				return $this->test_mode_onboarding;
+			}
+
+			/**
+			 * Tell whether WooPayments onboarding is disabled.
+			 *
+			 * @return bool
+			 */
+			public function is_onboarding_disabled(): bool {
+				return $this->onboarding_disabled;
+			}
+		};
+	}
+
+	/**
+	 * Create a recording service.
+	 *
+	 * @return EmbeddedAccountSessionService
+	 */
+	private function create_service(): EmbeddedAccountSessionService {
+		return new class() extends EmbeddedAccountSessionService {
+
+			/**
+			 * Last called method.
+			 *
+			 * @var string
+			 */
+			public string $last_call = '';
+
+			/**
+			 * Response returned by the service.
+			 *
+			 * @var array<string,mixed>
+			 */
+			public array $response = array();
+
+			/**
+			 * Optional exception thrown by the next call.
+			 *
+			 * @var \Throwable|null
+			 */
+			public ?\Throwable $exception = null;
+
+			/**
+			 * Create an embedded account session.
+			 *
+			 * @return array<string,mixed>
+			 * @throws \Throwable When configured.
+			 */
+			public function create_session(): array {
+				$this->last_call = __FUNCTION__;
+
+				if ( null !== $this->exception ) {
+					throw $this->exception;
+				}
+
+				return $this->response;
+			}
+		};
+	}
+
+	/**
+	 * Assert a route handler supports a method.
+	 *
+	 * @param array<int,array<string,mixed>> $route_handlers Route handlers.
+	 * @param string                         $method         Method constant.
+	 */
+	private function assertRouteHasMethod( array $route_handlers, string $method ): void {
+		foreach ( $route_handlers as $handler ) {
+			if ( isset( $handler['methods'][ $method ] ) && true === $handler['methods'][ $method ] ) {
+				return;
+			}
+		}
+
+		$this->fail( 'Route does not accept method ' . $method . '.' );
+	}
+}

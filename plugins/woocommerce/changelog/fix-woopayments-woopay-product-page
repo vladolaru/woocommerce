@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Show the WooPay express button on product pages again when WooPay is enabled in WooPayments.

@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Detect the WooCommerce Stripe Gateway's current express checkout setting and its per-method gateways when flagging payment methods enabled by more than one extension in WooPayments settings.

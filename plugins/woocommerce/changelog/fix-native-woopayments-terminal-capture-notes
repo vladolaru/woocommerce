@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Add the WooPayments authorized, capture and payment notes to in-person payments captured from the mobile app, and their Fee details note.

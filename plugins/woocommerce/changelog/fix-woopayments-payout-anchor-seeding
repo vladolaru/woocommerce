@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+WooPayments settings now pre-select Monday or the 1st as the payout day when switching the payout schedule to weekly or monthly, keeping any day already chosen.

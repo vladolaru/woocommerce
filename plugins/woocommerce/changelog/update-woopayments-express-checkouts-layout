@@ -1,0 +1,4 @@
+Significance: patch
+Type: update
+
+Show each express checkout on the built-in WooPayments settings page as one row with its logo, name, description and action, with Apple Pay and Google Pay under one checkbox.

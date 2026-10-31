@@ -1,0 +1,234 @@
+<?php
+/**
+ * WooPaymentsFraudPreventionService class file.
+ */
+
+declare( strict_types = 1 );
+
+namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
+
+use Automattic\WooCommerce\Internal\RegisterHooksInterface;
+
+/**
+ * Manages WooPayments card-testing fraud-prevention session tokens.
+ *
+ * @since 11.0.0
+ * @internal
+ */
+class WooPaymentsFraudPreventionService implements RegisterHooksInterface {
+
+	/**
+	 * Checkout POST field and session key; client 11.1.0 uses the same (fraud-prevention/class-fraud-prevention-service.php:18).
+	 */
+	public const TOKEN_NAME = 'wcpay-fraud-prevention-token';
+
+	/**
+	 * Fraud-prevention token length, client 11.1.0's (fraud-prevention/class-fraud-prevention-service.php:157).
+	 */
+	private const TOKEN_LENGTH = 16;
+
+	/**
+	 * WooCommerce session.
+	 *
+	 * @var \WC_Session|null
+	 */
+	private ?\WC_Session $session;
+
+	/**
+	 * WooPayments account service.
+	 *
+	 * @var WooPaymentsAccountService
+	 */
+	private WooPaymentsAccountService $account_service;
+
+	/**
+	 * Constructor.
+	 *
+	 * @param \WC_Session|null $session Optional WooCommerce session.
+	 */
+	public function __construct( ?\WC_Session $session = null ) {
+		$this->session = $session;
+	}
+
+	/**
+	 * Initialize the class instance.
+	 *
+	 * @internal
+	 *
+	 * @param WooPaymentsAccountService $account_service WooPayments account service.
+	 */
+	final public function init( WooPaymentsAccountService $account_service ): void {
+		$this->account_service = $account_service;
+	}
+
+	/**
+	 * Tell whether a WooCommerce session is available for token storage.
+	 *
+	 * @return bool
+	 */
+	public function has_session(): bool {
+		return $this->get_session() instanceof \WC_Session;
+	}
+
+	/**
+	 * Tell whether card-testing fraud-prevention checks are enabled for the account.
+	 *
+	 * @return bool
+	 */
+	public function is_enabled(): bool {
+		$account_data = $this->get_account_service()->get_cached_account_data();
+
+		return ! empty( $account_data['card_testing_protection_eligible'] );
+	}
+
+	/**
+	 * Get the current fraud-prevention token, generating one when missing.
+	 *
+	 * @return string
+	 */
+	public function get_token(): string {
+		$session = $this->get_session();
+		if ( ! $session instanceof \WC_Session ) {
+			return '';
+		}
+
+		$token = $session->get( self::TOKEN_NAME );
+		if ( ! is_string( $token ) || '' === $token ) {
+			return $this->regenerate_token();
+		}
+
+		return $token;
+	}
+
+	/**
+	 * Regenerate and persist the fraud-prevention token.
+	 *
+	 * @return string
+	 */
+	public function regenerate_token(): string {
+		$session = $this->get_session();
+		if ( ! $session instanceof \WC_Session ) {
+			return '';
+		}
+
+		$token = wp_generate_password( self::TOKEN_LENGTH, false );
+		$session->set( self::TOKEN_NAME, $token );
+
+		return $token;
+	}
+
+	/**
+	 * Enqueue the inline script exposing the fraud-prevention token to
+	 * shopper-side scripts, when protection applies to this session and page.
+	 *
+	 * Callers call it unguarded: the page check lives here, in client 11.2.0's
+	 * order (fraud-prevention/class-fraud-prevention-service.php:73-105), so the
+	 * checkout page counts by page id however its Checkout block renders. The
+	 * enqueued-script guard makes the token script a per-page singleton.
+	 *
+	 * Blocks asks for the payment method's script handles on every page (src/Blocks/Payments/Api.php:54, :165-172), so
+	 * this page check, not the caller, decides where the token prints; its Cart block term goes beyond client 11.2.0
+	 * because Blocks wallet buttons pay from a Cart block on any page, on the shopper's browser session.
+	 */
+	public function maybe_enqueue_token_script(): void {
+		$this->enqueue_token_script( true );
+	}
+
+	/**
+	 * Enqueue the token script where a Checkout or Cart block renders, without the page check.
+	 *
+	 * The block render is the surface, so a block from a template on any page, a pattern, a template part or a widget gets
+	 * the token; client 11.2.0 prints it by page only. The session, protection and per-page singleton checks still apply.
+	 *
+	 * @internal
+	 */
+	public function enqueue_token_script_for_rendered_block(): void {
+		$this->enqueue_token_script( false );
+	}
+
+	/**
+	 * Hook the token script to the Checkout and Cart block render actions (src/Blocks/BlockTypes/Checkout.php, Cart.php).
+	 */
+	public function register() {
+		add_action( 'woocommerce_blocks_enqueue_checkout_block_scripts_after', array( $this, 'enqueue_token_script_for_rendered_block' ) );
+		add_action( 'woocommerce_blocks_enqueue_cart_block_scripts_after', array( $this, 'enqueue_token_script_for_rendered_block' ) );
+	}
+
+	/**
+	 * Enqueue the footer script holding the session's token, once per page, when the session has protection on.
+	 *
+	 * @param bool $check_page Whether the current page must also be one where shoppers pay.
+	 */
+	private function enqueue_token_script( bool $check_page ): void {
+		if ( wp_script_is( self::TOKEN_NAME, 'enqueued' ) ) {
+			return;
+		}
+		if ( ! $this->has_session() || ! $this->is_enabled() ) {
+			return;
+		}
+		// Product and cart pages count because express buttons pay from them; the add payment method page guards setup intents.
+		if ( $check_page && ! is_checkout() && ! has_block( 'woocommerce/checkout' ) && ! is_cart() && ! has_block( 'woocommerce/cart' ) && ! is_product() && ! $this->is_pay_for_order_page() && ! is_add_payment_method_page() ) {
+			return;
+		}
+
+		if ( ! wp_script_is( self::TOKEN_NAME, 'registered' ) ) {
+			wp_register_script( self::TOKEN_NAME, false, array(), WC_VERSION, true );
+		}
+		wp_add_inline_script(
+			self::TOKEN_NAME,
+			"window.wcpayFraudPreventionToken = '" . esc_js( $this->get_token() ) . "';"
+		);
+		wp_enqueue_script( self::TOKEN_NAME );
+	}
+
+	/**
+	 * Verify a submitted token against the session token.
+	 *
+	 * @param string|null $token Submitted token.
+	 * @return bool
+	 */
+	public function verify_token( ?string $token ): bool {
+		$session_token = $this->get_token();
+		if ( '' === $session_token || ! is_string( $token ) ) {
+			return false;
+		}
+
+		return hash_equals( $session_token, $token );
+	}
+
+	/**
+	 * Tell whether the current request is the pay-for-order page, as client 11.2.0 reads it
+	 * (fraud-prevention/class-fraud-prevention-service.php:112-114).
+	 *
+	 * @return bool
+	 */
+	private function is_pay_for_order_page(): bool {
+		return is_checkout() && isset( $_GET['pay_for_order'] ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only page check.
+	}
+
+	/**
+	 * Get the WooPayments account service.
+	 *
+	 * @return WooPaymentsAccountService
+	 */
+	private function get_account_service(): WooPaymentsAccountService {
+		if ( ! isset( $this->account_service ) ) {
+			$this->account_service = wc_get_container()->get( WooPaymentsAccountService::class );
+		}
+
+		return $this->account_service;
+	}
+
+	/**
+	 * Get the current WooCommerce session.
+	 *
+	 * @return \WC_Session|null
+	 */
+	private function get_session(): ?\WC_Session {
+		if ( ! $this->session instanceof \WC_Session ) {
+			$this->session = WooPaymentsSessionService::get_wc_session();
+		}
+
+		return $this->session;
+	}
+}

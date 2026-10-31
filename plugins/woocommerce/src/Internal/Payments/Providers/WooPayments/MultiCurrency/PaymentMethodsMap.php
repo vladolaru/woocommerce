@@ -1,0 +1,181 @@
+<?php
+/**
+ * PaymentMethodsMap class file.
+ */
+
+declare( strict_types = 1 );
+
+namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency;
+
+use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencySettingsController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\PaymentMethodDefinition;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\PaymentMethodRegistry;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
+use Automattic\WooCommerce\Internal\RegisterHooksInterface;
+
+/**
+ * Tells the Multi-Currency settings page which currencies the enabled WooPayments methods need, so it asks before one is removed.
+ *
+ * Mirrors client 11.1.0 WC_Payments_Currency_Manager::get_enabled_payment_method_currencies() and
+ * add_payment_method_currency_dependencies_script() (includes/compat/multi-currency/class-wc-payments-currency-manager.php:66-91, 145-176).
+ *
+ * @since 11.2.0
+ * @internal
+ */
+class PaymentMethodsMap implements RegisterHooksInterface {
+
+	/**
+	 * Methods the map never lists: they take any currency.
+	 */
+	private const METHODS_WITHOUT_CURRENCY_NEEDS = array( 'card', 'card_present', 'link' );
+
+	/**
+	 * Payments runtime owner arbiter.
+	 *
+	 * @var WooPaymentsRuntimeArbiter
+	 */
+	private WooPaymentsRuntimeArbiter $arbiter;
+
+	/**
+	 * Account service, resolved when the settings page needs it.
+	 *
+	 * @var WooPaymentsAccountService|null
+	 */
+	private ?WooPaymentsAccountService $account_service = null;
+
+	/**
+	 * Initialize the class instance.
+	 *
+	 * @internal
+	 *
+	 * @param WooPaymentsRuntimeArbiter $arbiter Payments runtime owner arbiter.
+	 */
+	final public function init( WooPaymentsRuntimeArbiter $arbiter ): void {
+		$this->arbiter = $arbiter;
+	}
+
+	/**
+	 * Hook the settings page script into admin requests while the built-in WooPayments owns payments.
+	 */
+	public function register(): void {
+		if ( ! is_admin() || ! $this->arbiter->is_builtin_owner() ) {
+			return;
+		}
+
+		if ( false === has_action( 'admin_head', array( $this, 'handle_admin_head' ) ) ) {
+			add_action( 'admin_head', array( $this, 'handle_admin_head' ) );
+		}
+	}
+
+	/**
+	 * Print window.multiCurrencyPaymentMethodsMap and window.multiCurrencyPaymentMethodIcons on the Multi-Currency settings page.
+	 *
+	 * @internal
+	 */
+	public function handle_admin_head(): void {
+		global $current_tab;
+
+		// Admin requests only: get_current_screen() comes from wp-admin/includes/screen.php.
+		$screen = function_exists( 'get_current_screen' ) ? get_current_screen() : null;
+		if ( ! MultiCurrencySettingsController::is_multi_currency_settings_page( is_string( $current_tab ) ? $current_tab : null, $screen ? $screen->base : null ) ) {
+			return;
+		}
+
+		$map        = $this->get_currency_payment_methods_map();
+		$map_json   = empty( $map ) ? false : wp_json_encode( $map );
+		$icons_json = wp_json_encode( $this->get_payment_method_icons() );
+		if ( false === $map_json || false === $icons_json ) {
+			return;
+		}
+
+		// The client reads each method's settings icon from its own script data (payment-methods-map.tsx:21-33); here it travels with the map.
+		wp_print_inline_script_tag( 'window.multiCurrencyPaymentMethodsMap = ' . $map_json . ";\nwindow.multiCurrencyPaymentMethodIcons = " . $icons_json . ';' );
+	}
+
+	/**
+	 * Get the settings icon URL of each enabled method that needs a currency.
+	 *
+	 * @return array<string,string> Icon URLs keyed by method ID.
+	 */
+	public function get_payment_method_icons(): array {
+		$country = $this->get_account_service()->get_account_country();
+		$icons   = array();
+
+		foreach ( $this->get_currency_dependent_definitions() as $definition ) {
+			$path = $definition->get_settings_icon_asset_path( '' !== $country ? $country : null );
+			if ( '' !== $path ) {
+				$icons[ $definition->get_id() ] = WC()->plugin_url() . '/' . ltrim( $path, '/' );
+			}
+		}
+
+		return $icons;
+	}
+
+	/**
+	 * Get the enabled payment methods that need each currency.
+	 *
+	 * A domestic-only method needs the account country's currency, as the client's currency manager maps it (client 11.1.0
+	 * `includes/compat/multi-currency/class-wc-payments-currency-manager.php:67-90`); others need their supported currencies.
+	 * Titles follow the account country else US, while supported currencies read no country when the
+	 * account has none (`includes/payment-methods/Configs/Definitions/AlipayDefinition.php:106-108`).
+	 *
+	 * @return array<string,array<string,string>> Method titles keyed by method ID, keyed by currency code.
+	 */
+	public function get_currency_payment_methods_map(): array {
+		$account_service = $this->get_account_service();
+		$country         = $account_service->get_account_country();
+		$country         = '' !== $country ? $country : null;
+		$title_country   = $account_service->get_account_country_or_us();
+		$map             = array();
+
+		foreach ( $this->get_currency_dependent_definitions() as $definition ) {
+			$payment_method_id = $definition->get_id();
+			$currencies        = in_array( PaymentMethodRegistry::DOMESTIC_TRANSACTIONS_ONLY, $definition->get_capabilities(), true )
+				? array( $account_service->get_account_domestic_currency() )
+				: $definition->get_supported_currencies( $country );
+
+			foreach ( $currencies as $currency_code ) {
+				$map[ strtoupper( $currency_code ) ][ $payment_method_id ] = $definition->get_title( $title_country );
+			}
+		}
+
+		return $map;
+	}
+
+	/**
+	 * Get the definitions of the registered methods that are enabled, other than card, card_present and link, in display order.
+	 *
+	 * @return PaymentMethodDefinition[]
+	 */
+	private function get_currency_dependent_definitions(): array {
+		$enabled_ids = $this->get_account_service()->get_gateway_setting( 'upe_enabled_payment_method_ids', array() );
+		$enabled_ids = is_array( $enabled_ids ) ? $enabled_ids : array();
+		if ( empty( $enabled_ids ) ) {
+			return array();
+		}
+
+		return array_values(
+			array_filter(
+				wc_get_container()->get( PaymentMethodRegistry::class )->get_registered( $this->get_account_service() ),
+				static function ( PaymentMethodDefinition $definition ) use ( $enabled_ids ): bool {
+					return in_array( $definition->get_id(), $enabled_ids, true )
+						&& ! in_array( $definition->get_id(), self::METHODS_WITHOUT_CURRENCY_NEEDS, true );
+				}
+			)
+		);
+	}
+
+	/**
+	 * Get the account service.
+	 *
+	 * @return WooPaymentsAccountService
+	 */
+	private function get_account_service(): WooPaymentsAccountService {
+		if ( null === $this->account_service ) {
+			$this->account_service = wc_get_container()->get( WooPaymentsAccountService::class );
+		}
+
+		return $this->account_service;
+	}
+}

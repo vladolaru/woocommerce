@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Open the details from any cell of a WooPayments transactions, disputes or payouts row, and start each disputes and payouts row with an info link.

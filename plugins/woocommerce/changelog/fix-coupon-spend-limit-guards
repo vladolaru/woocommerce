@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Keep a coupon's maximum spend when a currency switcher converts coupon amounts and the rate exceeds the coupon's maximum-to-minimum ratio, by checking the minimum and maximum spend setters against the stored amounts.

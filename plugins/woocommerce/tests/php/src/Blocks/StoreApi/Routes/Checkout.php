@@ -2347,7 +2347,7 @@ class Checkout extends \WP_Test_REST_TestCase {
 	}
 
 	/**
-	 * Test that local pickup orders bypass shipping country validation.
+	 * @testdox Local pickup orders bypass shipping country validation.
 	 */
 	public function test_local_pickup_country_validation() {
 		// Set shipping to a country that's not enabled for shipping.
@@ -2371,6 +2371,7 @@ class Checkout extends \WP_Test_REST_TestCase {
 					'postcode'                    => '12345',
 					'country'                     => 'US',
 					'email'                       => 'test@test.com',
+					'phone'                       => '555-555-5555',
 					'plugin-namespace/student-id' => '12345678',
 				),
 				'shipping_address' => (object) array(
@@ -2381,6 +2382,7 @@ class Checkout extends \WP_Test_REST_TestCase {
 					'state'                       => 'CA',
 					'postcode'                    => '12345',
 					'country'                     => 'FR',
+					'phone'                       => '555-555-5555',
 					'plugin-namespace/student-id' => '12345678',
 				),
 				'payment_method'   => WC_Gateway_BACS::ID,

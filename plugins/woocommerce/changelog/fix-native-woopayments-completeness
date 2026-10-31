@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Complete native WooPayments merchant parity across checkout, payment methods, tokens, multi-currency, admin, and provider lifecycle behavior.

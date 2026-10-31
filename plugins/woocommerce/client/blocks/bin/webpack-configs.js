@@ -371,6 +371,33 @@ const getFrontConfig = ( options = {} ) => {
 	};
 };
 
+// The WooPayments Blocks entries whose shared code is split into chunks (see getPaymentsConfig()).
+const WOOPAYMENTS_SHARED_CHUNK_ENTRIES = [
+	'wc-payment-method-woopayments',
+	'wc-payment-method-woopayments-woopay',
+	'wc-payment-method-woopayments-express-checkout',
+];
+
+// The WooPayments Stripe Elements appearance utility already ships as the legacy script behind the
+// `wc-woopayments-appearance` handle, which sets `window.wcpayAppearance`. Blocks scripts load it from there
+// instead of bundling a second copy.
+const isWooPaymentsAppearanceRequest = ( request ) =>
+	/[\\/]woopayments-appearance(\.js)?$/.test( request );
+
+// The WooPay protocol both checkouts share is its own entry, `wc-woopayments-woopay-common`, which sets
+// `window.wc.woopayments.woopay`. Blocks scripts import it as `./protocol` (from woopay/) or `./woopay/protocol` and load
+// it from that handle; the entry's own modules stay bundled.
+const isWooPaymentsWooPayCommonRequest = ( request ) =>
+	/^(\.\.?\/)+(woopay\/)?protocol$/.test( request );
+
+// The card script loads without the protocol when its payment data turns the WooPay email check off
+// (src/Blocks/Payments/Integrations/WooPayments.php), so the external reads the namespace without throwing when it is
+// absent, and gives an empty object then: a `var` external prints this expression as written, where a `window` one
+// would read `window.wc.woopayments.woopay` and throw on a missing `woopayments`. The card wires the email check only
+// when the members it calls are there (woopay/email-input-iframe.js).
+const WOOPAYMENTS_WOOPAY_COMMON_EXTERNAL =
+	'var (window.wc && window.wc.woopayments || {}).woopay || {}';
+
 /**
  * Build config for built-in payment gateway integrations.
  *
@@ -378,7 +405,18 @@ const getFrontConfig = ( options = {} ) => {
  */
 const getPaymentsConfig = ( options = {} ) => {
 	const { alias, resolvePlugins = [] } = options;
-	const resolve = getResolve( { alias, resolvePlugins } );
+	const resolve = getResolve( {
+		alias: {
+			...alias,
+			// Core's mobile phone validation, bundled into the WooPay save-user phone validation script only. Not an
+			// `@woocommerce/` request, so it is never externalized to the wc-components admin script.
+			'woocommerce-phone-number-validation': path.resolve(
+				__dirname,
+				'../../../../../packages/js/components/src/phone-number-input/validation.ts'
+			),
+		},
+		resolvePlugins,
+	} );
 	return {
 		entry: getEntryConfig( 'payments', options.exclude || [] ),
 		output: {
@@ -432,12 +470,54 @@ const getPaymentsConfig = ( options = {} ) => {
 				automaticNameDelimiter: '--',
 				cacheGroups: {
 					...getCacheGroups(),
+					// The WooPayments card, WooPay and express scripts load together on the checkout block. Code they share
+					// ships once, in a chunk src/Blocks/Payments/Integrations/WooPayments.php registers as their dependency:
+					// the field styles, the Tracks settings reader, the Blocks WooPay requests, the Stripe.js wait and the
+					// shared helpers in common/. The classic scripts keep their own copies of those helpers; the WooPay
+					// protocol both checkouts share comes from the wc-woopayments-woopay-common entry instead.
+					woopaymentsCommon: {
+						test: /woopayments[\\/](upe-styles|tracks|wait-for-stripe|woopay[\\/]request|common[\\/][^\\/]+)\.js$/,
+						chunks: ( chunk ) =>
+							WOOPAYMENTS_SHARED_CHUNK_ENTRIES.includes(
+								chunk.name
+							),
+						name: 'wc-payment-method-woopayments-common',
+						enforce: true,
+					},
 				},
 			},
 		},
 		plugins: [
 			...getSharedPlugins( {
 				bundleAnalyzerReportTitle: 'Payment Method Extensions',
+				// FingerprintJS already ships as the vendored UMD build behind
+				// the `wc-woopayments-fingerprintjs` handle, which sets
+				// `window.FingerprintJS`. Load it from there instead of
+				// bundling a second copy into the WooPayments card script.
+				dependencyRequestToExternal: ( request ) => {
+					if ( request === '@fingerprintjs/fingerprintjs' ) {
+						return 'FingerprintJS';
+					}
+					if ( isWooPaymentsAppearanceRequest( request ) ) {
+						return 'wcpayAppearance';
+					}
+					if ( isWooPaymentsWooPayCommonRequest( request ) ) {
+						return WOOPAYMENTS_WOOPAY_COMMON_EXTERNAL;
+					}
+					return requestToExternal( request );
+				},
+				dependencyRequestToHandle: ( request ) => {
+					if ( request === '@fingerprintjs/fingerprintjs' ) {
+						return 'wc-woopayments-fingerprintjs';
+					}
+					if ( isWooPaymentsAppearanceRequest( request ) ) {
+						return 'wc-woopayments-appearance';
+					}
+					if ( isWooPaymentsWooPayCommonRequest( request ) ) {
+						return 'wc-woopayments-woopay-common';
+					}
+					return requestToHandle( request );
+				},
 			} ),
 			new ProgressBarPlugin(
 				getProgressBarPluginConfig( 'Payment Method Extensions' )
@@ -517,6 +597,15 @@ const getExtensionsConfig = ( options = {} ) => {
 		plugins: [
 			...getSharedPlugins( {
 				bundleAnalyzerReportTitle: 'Experimental Extensions',
+				// The WooPayments Cart block messaging imports the appearance utility too.
+				dependencyRequestToExternal: ( request ) =>
+					isWooPaymentsAppearanceRequest( request )
+						? 'wcpayAppearance'
+						: requestToExternal( request ),
+				dependencyRequestToHandle: ( request ) =>
+					isWooPaymentsAppearanceRequest( request )
+						? 'wc-woopayments-appearance'
+						: requestToHandle( request ),
 			} ),
 			new ProgressBarPlugin(
 				getProgressBarPluginConfig( 'Experimental Extensions' )

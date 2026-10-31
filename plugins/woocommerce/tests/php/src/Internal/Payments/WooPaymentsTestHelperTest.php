@@ -1,0 +1,342 @@
+<?php
+declare( strict_types = 1 );
+
+namespace Automattic\WooCommerce\Tests\Internal\Payments;
+
+use Automattic\Jetpack\Constants;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
+use WC_Data_Store;
+use WC_Payment_Token_CC;
+use WC_Rate_Limiter;
+use WC_Unit_Test_Case;
+use WP_REST_Request;
+
+/**
+ * Tests for the WooPayments end-to-end test helper mu-plugin.
+ */
+class WooPaymentsTestHelperTest extends WC_Unit_Test_Case {
+
+	/**
+	 * Clear what a case leaves for the rest of the process: the routes it registered on the global REST server, the
+	 * services resolved while the built-in WooPayments was on, and the opt-in constant overrides.
+	 */
+	public function tearDown(): void {
+		$GLOBALS['wp_rest_server'] = null;
+		wc_get_container()->reset_all_resolved();
+		Constants::set_constant( 'E2E_WOOPAYMENTS_TRANSITION', null );
+		parent::tearDown();
+	}
+
+	/**
+	 * @testdox Active WooPayments extension wins over the built-in E2E bootstrap.
+	 */
+	public function test_active_woopayments_extension_still_wins(): void {
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
+		$this->load_bootstrap();
+		update_option( 'active_plugins', array( WooPaymentsRuntimeArbiter::PLUGIN_FILE ) );
+
+		$arbiter = wc_get_container()->get( WooPaymentsRuntimeArbiter::class );
+
+		$this->assertSame(
+			WooPaymentsRuntimeArbiter::OWNER_EXTENSION,
+			$arbiter->get_runtime_owner(),
+			'Extension-wins ownership must remain authoritative when the WooPayments extension is active.'
+		);
+	}
+
+	/**
+	 * @testdox The $route route rejects an unauthenticated request.
+	 * @testWith ["/wc-native-payments-e2e/v1/status"]
+	 *           ["/wc-native-payments-e2e/v1/saved-card-evidence"]
+	 *
+	 * @param string $route Diagnostic route.
+	 */
+	public function test_diagnostic_routes_reject_unauthenticated_requests( string $route ): void {
+		$this->load_bootstrap();
+		wp_set_current_user( 0 );
+		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Initializing the REST server in a test.
+		do_action( 'rest_api_init' );
+
+		$response = rest_do_request( new WP_REST_Request( 'GET', $route ) );
+
+		$this->assertSame( 401, $response->get_status(), 'Unauthenticated diagnostics must be rejected.' );
+	}
+
+	/**
+	 * @testdox Saved-card evidence returns exact local token mappings and rate-limit readiness.
+	 */
+	public function test_saved_card_evidence_returns_exact_local_tokens_and_creation_readiness(): void {
+		$this->load_bootstrap();
+		$user_id = self::factory()->user->create(
+			array(
+				'user_login' => 'saved-card-customer',
+				'role'       => 'customer',
+			)
+		);
+		$token   = $this->create_card_token( $user_id, 'pm_exact', true );
+		$this->create_card_token( $user_id, 'pm_unscoped', false, '' );
+		WC_Rate_Limiter::set_rate_limit( 'add_payment_method_' . $user_id, 20 );
+		wp_set_current_user( self::factory()->user->create( array( 'role' => 'administrator' ) ) );
+		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Initializing the REST server in a test.
+		do_action( 'rest_api_init' );
+		$request = new WP_REST_Request( 'GET', '/wc-native-payments-e2e/v1/saved-card-evidence' );
+		$request->set_param( 'customer_username', 'saved-card-customer' );
+
+		$response = rest_do_request( $request );
+		$data     = $response->get_data();
+
+		$this->assertSame( 200, $response->get_status(), 'Authenticated local saved-card evidence should be readable.' );
+		$this->assertFalse( $data['creation_ready'], 'An active Core add-payment-method limiter must report not ready.' );
+		$this->assertSame(
+			array(
+				array(
+					'token_id'          => $token->get_id(),
+					'payment_method_id' => 'pm_exact',
+					'is_default'        => true,
+				),
+			),
+			$data['tokens'],
+			'Local evidence must preserve the exact WooCommerce token and provider payment-method mapping.'
+		);
+	}
+
+	/**
+	 * @testdox Named saved-card evidence proves the exact local mapping and provider customer.
+	 */
+	public function test_named_saved_card_evidence_proves_local_mapping_and_provider_customer(): void {
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
+		$this->load_bootstrap();
+		$user_id          = self::factory()->user->create(
+			array(
+				'user_login' => 'native-saved-card-customer',
+				'role'       => 'customer',
+			)
+		);
+		$token            = $this->create_card_token( $user_id, 'pm_exact', true );
+		$customer_service = new class() extends WooPaymentsCustomerService {
+			/**
+			 * Return deterministic provider customer evidence.
+			 *
+			 * @param int|null $user_id WordPress user ID.
+			 * @return string
+			 */
+			public function get_persisted_customer_id_by_user_id( ?int $user_id ): ?string {
+				unset( $user_id );
+				return 'cus_exact';
+			}
+		};
+		wc_get_container()->replace( WooPaymentsCustomerService::class, $customer_service );
+		wp_set_current_user( self::factory()->user->create( array( 'role' => 'administrator' ) ) );
+		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Initializing the REST server in a test.
+		do_action( 'rest_api_init' );
+		$request = new WP_REST_Request( 'GET', '/wc-native-payments-e2e/v1/saved-card-evidence' );
+		$request->set_param( 'customer_username', 'native-saved-card-customer' );
+		$request->set_param( 'token_id', $token->get_id() );
+		$request->set_param( 'payment_method_id', 'pm_exact' );
+
+		$response = rest_do_request( $request );
+		$data     = $response->get_data();
+
+		$this->assertSame( 200, $response->get_status(), 'Exact saved-card evidence should be readable.' );
+		$this->assertSame( 'cus_exact', $data['provider_customer_id'], 'Evidence must name the exact provider customer.' );
+		$this->assertArrayNotHasKey(
+			'provider_default_payment_method_id',
+			$data,
+			'Evidence must not depend on an unsupported individual-customer provider read.'
+		);
+	}
+
+	/**
+	 * @testdox Named saved-card evidence rejects a mismatched provider payment-method ID.
+	 */
+	public function test_named_saved_card_evidence_rejects_mismatched_local_mapping(): void {
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
+		$this->load_bootstrap();
+		$user_id = self::factory()->user->create(
+			array(
+				'user_login' => 'mismatched-saved-card-customer',
+				'role'       => 'customer',
+			)
+		);
+		$token   = $this->create_card_token( $user_id, 'pm_actual', true );
+		wp_set_current_user( self::factory()->user->create( array( 'role' => 'administrator' ) ) );
+		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Initializing the REST server in a test.
+		do_action( 'rest_api_init' );
+		$request = new WP_REST_Request( 'GET', '/wc-native-payments-e2e/v1/saved-card-evidence' );
+		$request->set_param( 'customer_username', 'mismatched-saved-card-customer' );
+		$request->set_param( 'token_id', $token->get_id() );
+		$request->set_param( 'payment_method_id', 'pm_expected' );
+
+		$response = rest_do_request( $request );
+
+		$this->assertSame( 409, $response->get_status(), 'Mismatched local token evidence must fail closed.' );
+		$this->assertSame( 'saved_card_mapping_mismatch', $response->get_data()['code'], 'The mismatch must be explicit.' );
+	}
+
+	/**
+	 * @testdox The E2E runtime does not register a surrogate WooPayments cutover action.
+	 */
+	public function test_runtime_does_not_register_surrogate_cutover_action(): void {
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
+		$this->define_transition_e2e_constant();
+		$this->load_bootstrap();
+
+		$this->assertFalse(
+			has_action( 'admin_post_wc_native_payments_e2e_cutover' ),
+			'The cutover must run through CutoverController, not a mu-plugin action.'
+		);
+	}
+
+	/**
+	 * @testdox Runtime status never trusts locally writable callback proof.
+	 */
+	public function test_status_rejects_locally_writable_callback_proof(): void {
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
+		$this->define_transition_e2e_constant();
+		$this->load_bootstrap();
+		\Jetpack_Options::update_option( 'id', 321 );
+		update_option(
+			'woocommerce_native_payments_e2e_callback_probe',
+			array(
+				'registered'    => true,
+				'reachable'     => true,
+				'wpcom_blog_id' => 321,
+				'proved_at'     => time(),
+			)
+		);
+		wp_set_current_user( self::factory()->user->create( array( 'role' => 'administrator' ) ) );
+		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Initializing the REST server in a test.
+		do_action( 'rest_api_init' );
+
+		$response = rest_do_request(
+			new WP_REST_Request( 'GET', '/wc-native-payments-e2e/v1/status' )
+		);
+
+		$this->assertSame(
+			array(
+				'registered'    => false,
+				'reachable'     => false,
+				'wpcom_blog_id' => 0,
+			),
+			$response->get_data()['callback_probe'],
+			'The local runtime must not be able to invent callback readiness.'
+		);
+		$this->assertTrue( $response->get_data()['builtin_enabled'], 'The status route must report the built-in WooPayments enabled by the WooPayments feature.' );
+	}
+
+	/**
+	 * @testdox Runtime status rejects stale or wrong-blog callback proof.
+	 *
+	 * @dataProvider invalid_callback_proof_provider
+	 *
+	 * @param array<string,mixed> $proof Invalid callback proof.
+	 */
+	public function test_status_rejects_invalid_callback_proof( array $proof ): void {
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
+		$this->define_transition_e2e_constant();
+		$this->load_bootstrap();
+		\Jetpack_Options::update_option( 'id', 321 );
+		update_option( 'woocommerce_native_payments_e2e_callback_probe', $proof );
+		wp_set_current_user( self::factory()->user->create( array( 'role' => 'administrator' ) ) );
+		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Initializing the REST server in a test.
+		do_action( 'rest_api_init' );
+
+		$response = rest_do_request(
+			new WP_REST_Request( 'GET', '/wc-native-payments-e2e/v1/status' )
+		);
+
+		$this->assertSame(
+			array(
+				'registered'    => false,
+				'reachable'     => false,
+				'wpcom_blog_id' => 0,
+			),
+			$response->get_data()['callback_probe'],
+			'Untrusted callback proof must fail closed.'
+		);
+	}
+
+	/**
+	 * Invalid callback proofs.
+	 *
+	 * @return array<string,array{array<string,mixed>}>
+	 */
+	public static function invalid_callback_proof_provider(): array {
+		return array(
+			'stale'      => array(
+				array(
+					'registered'    => true,
+					'reachable'     => true,
+					'wpcom_blog_id' => 321,
+					'proved_at'     => time() - 600,
+				),
+			),
+			'wrong blog' => array(
+				array(
+					'registered'    => true,
+					'reachable'     => true,
+					'wpcom_blog_id' => 999,
+					'proved_at'     => time(),
+				),
+			),
+		);
+	}
+
+	/**
+	 * Define the exact transition opt-in constant.
+	 */
+	private function define_transition_e2e_constant(): void {
+		// Nothing reads this constant today; the override keeps the case's stated precondition without a real define().
+		Constants::set_constant( 'E2E_WOOPAYMENTS_TRANSITION', true );
+	}
+
+	/**
+	 * Create a WooPayments card token for a customer.
+	 *
+	 * @param int    $user_id           WordPress user ID.
+	 * @param string $payment_method_id Provider payment-method ID.
+	 * @param bool   $is_default        Whether the token is the local default.
+	 * @param string $gateway_id        Payment gateway ID.
+	 * @return WC_Payment_Token_CC
+	 */
+	private function create_card_token(
+		int $user_id,
+		string $payment_method_id,
+		bool $is_default,
+		string $gateway_id = 'woocommerce_payments'
+	): WC_Payment_Token_CC {
+		$token = new WC_Payment_Token_CC();
+		$token->set_gateway_id( $gateway_id );
+		$token->set_token( $payment_method_id );
+		$token->set_user_id( $user_id );
+		$token->set_card_type( 'visa' );
+		$token->set_last4( '4242' );
+		$token->set_expiry_month( '02' );
+		$token->set_expiry_year( '2045' );
+		$token->set_default( $is_default );
+		$token->save();
+		WC_Data_Store::load( 'payment-token' )->set_default_status( $token->get_id(), $is_default );
+
+		return $token;
+	}
+
+	/**
+	 * Load and activate the same file that wp-env maps into the mu-plugins directory.
+	 *
+	 * The file deliberately skips its own registration under PHPUnit, so that
+	 * merely being loaded as an mu-plugin cannot force built-in WooPayments ownership
+	 * onto unrelated tests. This class is the one that wants it active, so it
+	 * registers explicitly. A fresh instance per call is correct because the
+	 * WordPress test case restores the hook registry between tests, which drops
+	 * whatever a previous test registered.
+	 */
+	private function load_bootstrap(): void {
+		if ( ! class_exists( 'WooCommerce_WooPayments_Native_E2E_Runtime', false ) ) {
+			require_once dirname( __DIR__, 4 ) . '/e2e/test-plugins/woopayments-native-runtime/woopayments-native-runtime.php';
+		}
+
+		( new \WooCommerce_WooPayments_Native_E2E_Runtime() )->register();
+	}
+}

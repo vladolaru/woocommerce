@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+WooPayments lists now show a loading spinner in place of the old rows and scroll back to the top of the list when you change page, sort, filter or search.

@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+WooPayments exports stop checking for the file when you leave the page, and a large unfiltered fees export asks before it starts.

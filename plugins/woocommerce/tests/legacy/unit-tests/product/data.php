@@ -35,8 +35,6 @@ class WC_Tests_Product_Data extends WC_Unit_Test_Case {
 	 * @since 3.0.0
 	 */
 	public function test_product_getters_and_setters() {
-		global $wpdb;
-
 		$attributes = array();
 		$attribute  = new WC_Product_Attribute();
 		$attribute->set_id( 0 );
@@ -108,15 +106,9 @@ class WC_Tests_Product_Data extends WC_Unit_Test_Case {
 		$this->assertEquals( $product->get_date_on_sale_from()->getTimestamp(), 1475798400 );
 		$this->assertEquals( $product->get_date_on_sale_to()->getTimestamp(), 1477267200 );
 
-		$image_url = media_sideload_image( 'http://cldup.com/Dr1Bczxq4q.png', $product->get_id(), '', 'src' );
-
-		$this->assertNotWPError( $image_url );
-
-		$image_id = $wpdb->get_col( $wpdb->prepare( "SELECT ID FROM {$wpdb->posts} WHERE guid = %s", $image_url ) );
-		$product->set_image_id( $image_id[0] );
-		$product->save();
-		$this->assertEquals( $image_id[0], $product->get_image_id() );
-		wp_delete_attachment( $image_id[0], true ); // Remove attachment.
+		$image = $this->set_product_image( $product );
+		$this->assertEquals( $image['id'], $product->get_image_id() );
+		wp_delete_attachment( $image['id'], true );
 	}
 
 	/**
@@ -610,7 +602,7 @@ class WC_Tests_Product_Data extends WC_Unit_Test_Case {
 			$product->get_image( 'single', array( 'class' => 'custom-class' ) )
 		);
 
-		wp_delete_attachment( $image['id'], true ); // Remove attachment.
+		wp_delete_attachment( $image['id'], true );
 	}
 
 	/**
@@ -638,7 +630,7 @@ class WC_Tests_Product_Data extends WC_Unit_Test_Case {
 			$variation_1->get_image( 'single', array( 'class' => 'custom-class' ) )
 		);
 
-		wp_delete_attachment( $image['id'], true ); // Remove attachment.
+		wp_delete_attachment( $image['id'], true );
 	}
 
 	/**
@@ -695,7 +687,46 @@ class WC_Tests_Product_Data extends WC_Unit_Test_Case {
 
 		return array(
 			'id'  => $image_id,
-			'url' => $image_url,
+			'url' => wp_get_attachment_url( $image_id ),
 		);
+	}
+
+	/**
+	 * Sideload the local product image fixture.
+	 *
+	 * @param int $product_id Product ID.
+	 * @return int Attachment ID.
+	 */
+	protected function sideload_product_image_fixture( $product_id ) {
+		require_once ABSPATH . 'wp-admin/includes/file.php';
+		require_once ABSPATH . 'wp-admin/includes/media.php';
+		require_once ABSPATH . 'wp-admin/includes/image.php';
+
+		$fixture_path = WC_Unit_Tests_Bootstrap::instance()->tests_dir . '/data/Dr1Bczxq4q.png';
+		$tmp_file     = wp_tempnam( basename( $fixture_path ) );
+
+		$this->assertNotFalse( $tmp_file, 'A temporary file should be available for the product image fixture.' );
+		$this->assertTrue( copy( $fixture_path, $tmp_file ), 'The product image fixture should copy to a temporary file.' );
+		clearstatcache( true, $tmp_file );
+
+		$file = array(
+			'name'     => basename( $fixture_path ),
+			'tmp_name' => $tmp_file,
+			'type'     => 'image/png',
+			'size'     => filesize( $tmp_file ),
+			'error'    => 0,
+		);
+
+		$image_id = media_handle_sideload( $file, $product_id );
+
+		if ( is_wp_error( $image_id ) ) {
+			if ( file_exists( $tmp_file ) ) {
+				wp_delete_file( $tmp_file );
+			}
+		}
+
+		$this->assertNotWPError( $image_id );
+
+		return (int) $image_id;
 	}
 }

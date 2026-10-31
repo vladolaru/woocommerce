@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Load the DataViews stylesheet on the native WooPayments list pages so their tables, filters and pagination are styled.

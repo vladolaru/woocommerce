@@ -1,0 +1,40 @@
+{
+	"schema_version": 2,
+	"slice_id": "multi-currency-geolocation-toggle-deferral",
+	"wc_base_commit": "92b2fc3376f6a5ce47d283656cb0c06dc569fb9f",
+	"verified_at_commit": "1fb20593e0efae9f7e7c149b263863daa829414a",
+	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+	"source_test_paths": [
+		"plugins/woocommerce/tests/e2e/tests/woopayments-native/evidence/calibration-notes.md"
+	],
+	"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+	"contract_ids": [
+		"default::chromium::tests/e2e/specs/wcpay/merchant/multi-currency-on-boarding.spec.ts:165::Multi-currency on-boarding › Geolocation features › should offer currency switch by geolocation"
+	],
+	"targets": [
+		{
+			"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/merchant/onboarding.spec.ts",
+			"contract": "pending"
+		}
+	],
+	"implementation_commits": [],
+	"verification": [],
+	"reviews": [
+		{
+			"role": "deferral",
+			"verdict": "APPROVE",
+			"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+			"summary": "Fresh broad review approved evidence SHA e3f9375e0f578b59e1e1779021ca7c800737add435b35f61fcaf36036a2b4d73 against ledger SHA a39c802b0be309b7baa2d25cfc0464326aea6cd0a9cc76f1a36c7e95a80e87b5 with no findings. The sole row preserves pending ownership and target fields and changes only fields 37-40 to deferred/blocked-environment/blocked-environment:PILOT-NATIVE-READINESS/evidence. The evidence honestly strengthens the weak transient oracle with a non-default enabled-currency fixture, semantic comprehensible checkbox, one activation yielding checked, dirty, and save-actionable state with zero pre-save POST/raw change, exactly one zero-replay acknowledged save preserving canonical companions, and raw yes plus checked after reload. It covers wildcard raw snapshots, pre-write journal, ordered locks, exact option existence/byte restoration including companions, quarantine, accessibility, drift, and sibling isolation. Real geolocation, UK preview, shopper notice or currency, rates, checkout, orders, payments, and provider effects remain explicitly excluded, and no Core defect is claimed."
+		}
+	],
+	"closures": [],
+	"known_gaps": [],
+	"deferral": {
+		"blocker": "Standing-native readiness fails before the authenticated native multi-currency settings route can run; the provisional target is absent; and the exact target contract, settings owner, deterministic enabled-currency fixture, canonical companion settings, complete restoration mechanism, and row-safe topology remain pending. Core already exposes the semantic automatic-currency opt-in, authenticated persistence path, and geolocation consumers, so no production defect or product-authority conflict is established.",
+		"affected_scope": "Only the automatic geolocation opt-in contract: from an authoritatively disabled raw setting and meaningful enabled-currency fixture, expose one comprehensible semantic checkbox; activate it once and require transient checked/dirty/save-actionable state with zero settings POST or raw change before save; then dispatch exactly one save with no replay, require one acknowledged request preserving companion settings, raw value yes, and checked state after full reload. Real geolocation lookup, UK-to-GBP preview, shopper notice or currency change, rates, checkout, orders, payments, and provider effects remain separate.",
+		"no_allowlisted_action_reason": "The run cannot enable native ownership, establish account/callback readiness, repair shared Core E2E sites, invent the pending target/owner/topology, or perform an unjournaled settings mutation. Component and PHP tests cannot substitute for the authenticated semantic choice, zero-pre-save mutation, exactly-one save occurrence, raw option identity, reload persistence, and byte-exact restoration. No provider writer or listener can unlock this local opt-in contract.",
+		"reference": "blocked-environment:PILOT-NATIVE-READINESS",
+		"unlock_decision": "Externally satisfy native readiness; approve the exact row-safe merchant target, settings owner, native settings adapter, and topology; provide a deterministic native store with one non-default enabled currency and canonical automatic-switching, storefront-switcher, and rendering-mode values under ordered ownership, with a complete wildcard raw snapshot and pre-write restoration journal; implement the semantic draft boundary and one zero-retry save joined to raw yes and reloaded checked state, then restore exact option existence and bytes; obtain fresh code, E2E-test, reliability, and accessibility reviews.",
+		"quarantine_status": "No browser context, account, store, option, currency fixture, catalog/cache, lock, journal, provider object, listener, environment, retention record, or quarantine was created or changed for this row. A future ambiguous save, extra request, wrong store/account join, companion-option drift, unexpected settings/provider traffic, lost ownership, or incomplete restoration must preserve evidence and quarantine the exact store, ownership/bootstrap identity, multi-currency options, catalog/cache fixture, and journal; no financial or provider resource belongs to this contract."
+	}
+}

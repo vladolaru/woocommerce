@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Show the WooPay logo as the title of the WooPay feedback dialog, as the WooPayments plugin does.

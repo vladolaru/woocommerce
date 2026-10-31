@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+The WooPayments disputes list shows the currency, source, order, customer, email, country and respond-by columns, with Disputed on hidden by default as in WooPayments.

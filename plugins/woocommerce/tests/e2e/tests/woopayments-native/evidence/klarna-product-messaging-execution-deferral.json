@@ -1,0 +1,57 @@
+{
+	"schema_version": 2,
+	"slice_id": "klarna-product-messaging-execution-deferral",
+	"wc_base_commit": "1a4c8f6fb9e984f412144f29c080ef22fa68da23",
+	"verified_at_commit": "1a4c8f6fb9e984f412144f29c080ef22fa68da23",
+	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+	"source_test_paths": [
+		"plugins/woocommerce/tests/e2e/tests/woopayments-native/shopper/alternative-methods.spec.ts"
+	],
+	"source_test_sha256": "b8a119c6383d0ed1403434ba2a353079560121ce4298da9bd483f69681c9b00d",
+	"contract_ids": [
+		"default::chromium::tests/e2e/specs/wcpay/shopper/klarna-checkout-purchase.spec.ts:42::Klarna Checkout › shows the message in the product page"
+	],
+	"targets": [
+		{
+			"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/shopper/alternative-methods.spec.ts",
+			"contract": "Klarna Checkout › shows the message in the product page"
+		}
+	],
+	"implementation_commits": [],
+	"verification": [
+		{
+			"command": "targeted static checks and readonly-project collection for alternative-methods.spec.ts",
+			"exit_code": 0,
+			"summary": "The native Klarna product-messaging spec passed its prepared static checks and collected under the provider-free woopayments-native-readonly project."
+		},
+		{
+			"command": "WCPAY_RUNTIME=native pnpm --dir plugins/woocommerce test:e2e:with-env woopayments-native --project=woopayments-native-readonly --workers=1 --retries=0 --grep='Klarna Checkout › shows the message in the product page' tests/e2e/tests/woopayments-native/shopper/alternative-methods.spec.ts",
+			"exit_code": 1,
+			"summary": "Report ctrf-report-1786644632085.json records 1/1 failed at the eligibility precondition in 3.2 seconds. WooPayments reported Klarna as available, but enabled_payment_method_ids was exactly [card]. The test stopped before product creation and performed no mutation."
+		}
+	],
+	"reviews": [
+		{
+			"role": "semantic",
+			"verdict": "APPROVE",
+			"source_test_sha256": "b8a119c6383d0ed1403434ba2a353079560121ce4298da9bd483f69681c9b00d",
+			"summary": "The native target preserves the current-client shopper promise—eligible products expose perceptible Klarna financing information—while replacing the fixed plugin iframe assumption with native eligibility, exact product identity, semantic product content, and message-frame checks."
+		},
+		{
+			"role": "simplification",
+			"verdict": "APPROVE",
+			"source_test_sha256": "b8a119c6383d0ed1403434ba2a353079560121ce4298da9bd483f69681c9b00d",
+			"summary": "The test reads merchant configuration and fails before creating a product when Klarna is not enabled. It does not toggle payment methods, alter multicurrency, or reproduce the client's global settings mutations."
+		}
+	],
+	"closures": [],
+	"known_gaps": [],
+	"deferral": {
+		"blocker": "Klarna is available for the account but is not enabled in current merchant settings. The exact enabled payment-method IDs are [card], so the current provider-free target cannot truthfully test eligible Klarna messaging.",
+		"affected_scope": "One native-specific product-page messaging contract: with WooPayments enabled for a US account, Klarna active and enabled, USD store currency, and a US store country, create one exact run-owned USD 100 product and prove the shopper product surface exposes a non-empty Klarna financing message before deleting that product.",
+		"no_allowlisted_action_reason": "Enabling Klarna would mutate existing merchant payment settings and is outside this execution's permitted merchant-setting scope. An available-but-disabled method is not eligible messaging state, and creating a product anyway would not prove the contract.",
+		"reference": "blocked-environment:PILOT-KLARNA-METHOD-NOT-ENABLED",
+		"unlock_decision": "Have the merchant deliberately enable Klarna through the normal settings workflow, then rerun the unchanged provider-free target. Do not let the test toggle or restore merchant payment-method settings itself.",
+		"quarantine_status": "Report ctrf-report-1786644632085.json stopped at the settings precondition before product creation. No product, order, payment, provider attempt, settings mutation, listener activity, cleanup action, or quarantine was created."
+	}
+}

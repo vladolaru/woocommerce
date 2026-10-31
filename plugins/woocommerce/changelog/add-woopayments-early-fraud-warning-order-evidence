@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Allow merchants to see Stripe Radar early fraud warnings and open the inline refund flow from eligible WooPayments orders.

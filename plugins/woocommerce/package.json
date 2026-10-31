@@ -71,10 +71,13 @@
 		"test": "pnpm test:unit",
 		"test:api": "pnpm test:e2e:default --project=api",
 		"test:api:hpos-off": "pnpm test:e2e:with-env default-hpos-disabled --project=api-hpos-disabled",
+		"test:api:woopayments-on": "WOOPAYMENTS_FEATURE=yes pnpm test:api",
 		"test:api:object-cache": "pnpm test:e2e:with-env default-object-cache --project=api",
 		"test:api:tracking": "test \"$(pnpm --silent wp-env:e2e run cli wp option get woocommerce_allow_tracking)\" = \"yes\" && pnpm test:api",
 		"test:e2e:core-serial": "pnpm test:e2e:default --project=core-serial",
+		"test:e2e:core-serial:woopayments-on": "WOOPAYMENTS_FEATURE=yes pnpm test:e2e:core-serial",
 		"test:e2e:core-parallel": "pnpm test:e2e:default --project=core-parallel",
+		"test:e2e:core-parallel:woopayments-on": "WOOPAYMENTS_FEATURE=yes pnpm test:e2e:core-parallel",
 		"test:e2e:default": "pnpm test:e2e:install && pnpm test:e2e:with-env default",
 		"test:e2e:install": "pnpm playwright install chromium",
 		"test:e2e:blocks": "pnpm test:e2e:blocks:parallel && pnpm test:e2e:blocks:serial",
@@ -92,6 +95,11 @@
 		"test:e2e:gb-stable": "pnpm test:e2e:with-env gutenberg-stable",
 		"test:e2e:gb-nightly": "pnpm test:e2e:with-env gutenberg-nightly",
 		"test:e2e:paypal-standard": "pnpm test:e2e:default --project=paypal-standard",
+		"test:e2e:woopayments:contract-map": "node tests/e2e/bin/validate-woopayments-client-contract-map.mjs",
+		"test:e2e:woopayments:contract-map:unit": "node --test tests/e2e/bin/validate-woopayments-client-contract-map.test.mjs",
+		"test:e2e:woopayments:controller": "pnpm test:e2e:woopayments:contract-map:unit && pnpm test:e2e:woopayments:contract-map && node --test tests/e2e/bin/validate-woopayments-project-routing.test.mjs && bash tests/e2e/envs/woopayments-native/env-setup.test.sh && NODE_OPTIONS=\"${NODE_OPTIONS:-} --conditions=wc-source\" pnpm playwright test --config=tests/e2e/envs/woopayments-native/unit.playwright.config.ts",
+		"test:e2e:woopayments:native:pr": "WCPAY_RUNTIME=native pnpm test:e2e:with-env woopayments-native --project=woopayments-native-provider --grep @woopayments-pr",
+		"test:e2e:woopayments:native:scheduled": "WCPAY_RUNTIME=native pnpm test:e2e:with-env woopayments-native --project=woopayments-native-readonly --project=woopayments-native-provider",
 		"test:env:start": "pnpm env:test",
 		"test:perf": "./tests/performance/bin/k6 run ./tests/performance/tests/main.js",
 		"test:perf:ci-setup": "pnpm test:perf:install-k6 && pnpm env:perf",
@@ -104,6 +112,8 @@
 		"test:metrics:ci:unified-editor-assets": "pnpm wp-env:e2e run cli wp option update woocommerce_feature_block_editor_unified_assets_enabled yes && pnpm test:metrics:ci",
 		"test:php:env": "sh ./client/blocks/bin/copy-blocks-json.sh && pnpm wp-env:test run --env-cwd='wp-content/plugins/woocommerce' cli tests/php/bin/run-phpunit.sh -c phpunit.xml --verbose",
 		"test:php:env:hpos-off": "sh ./client/blocks/bin/copy-blocks-json.sh && pnpm wp-env:test run --env-cwd='wp-content/plugins/woocommerce' cli env DISABLE_HPOS=1 tests/php/bin/run-phpunit.sh -c phpunit.xml --verbose",
+		"test:php:env:woopayments-on": "sh ./client/blocks/bin/copy-blocks-json.sh && pnpm wp-env:test run --env-cwd='wp-content/plugins/woocommerce' cli env WOOPAYMENTS_FEATURE=yes tests/php/bin/run-phpunit.sh -c phpunit.xml --verbose",
+		"test:php:env:multisite": "sh ./client/blocks/bin/copy-blocks-json.sh && pnpm wp-env:test run --env-cwd='wp-content/plugins/woocommerce' cli tests/php/bin/run-phpunit-multisite.sh",
 		"test:php:env:watch": "sh ./client/blocks/bin/copy-blocks-json.sh && pnpm wp-env:test run --env-cwd='wp-content/plugins/woocommerce' cli vendor/bin/phpunit-watcher watch --verbose",
 		"test:plugincheck": "pnpm wp-env:e2e run cli wp plugin check ${PLUGIN_SLUG:-woocommerce}",
 		"test:unit": "pnpm test:php",
@@ -414,6 +424,88 @@
 					],
 					"report": {
 						"resultsBlobName": "core-e2e-report-php-7.4",
+						"resultsPath": "tests/e2e/test-results",
+						"allure": true
+					}
+				},
+				{
+					"name": "Core e2e tests - parallel - PHP 8.3 (WooPayments on)",
+					"testType": "e2e",
+					"usesSharedPluginBuild": true,
+					"command": "test:e2e:core-parallel:woopayments-on",
+					"shardingArguments": [
+						"--shard=1/2",
+						"--shard=2/2"
+					],
+					"changes": [
+						"client/admin/config/*.json",
+						"composer.json",
+						"composer.lock",
+						"i18n/**/*.php",
+						"includes/**/*.php",
+						"patterns/**/*.php",
+						"src/**/*.php",
+						"templates/**/*.php",
+						"tests/e2e/{*,!(tests)/**,tests/{*,!(blocks)/**}}",
+						".wp-env.e2e.json",
+						"woocommerce.php",
+						"uninstall.php"
+					],
+					"testEnv": {
+						"start": "env:e2e --debug",
+						"config": {
+							"phpVersion": "8.3"
+						}
+					},
+					"events": [
+						"pull_request",
+						"push",
+						"release-checks",
+						"core-e2e-woopayments-on"
+					],
+					"report": {
+						"resultsBlobName": "core-e2e-report-woopayments-on",
+						"resultsPath": "tests/e2e/test-results",
+						"allure": true
+					}
+				},
+				{
+					"name": "Core e2e tests - serial - PHP 8.3 (WooPayments on)",
+					"testType": "e2e",
+					"usesSharedPluginBuild": true,
+					"command": "test:e2e:core-serial:woopayments-on",
+					"shardingArguments": [
+						"--shard=1/2",
+						"--shard=2/2"
+					],
+					"changes": [
+						"client/admin/config/*.json",
+						"composer.json",
+						"composer.lock",
+						"i18n/**/*.php",
+						"includes/**/*.php",
+						"patterns/**/*.php",
+						"src/**/*.php",
+						"templates/**/*.php",
+						"tests/e2e/{*,!(tests)/**,tests/{*,!(blocks)/**}}",
+						".wp-env.e2e.json",
+						"woocommerce.php",
+						"uninstall.php"
+					],
+					"testEnv": {
+						"start": "env:e2e --debug",
+						"config": {
+							"phpVersion": "8.3"
+						}
+					},
+					"events": [
+						"pull_request",
+						"push",
+						"release-checks",
+						"core-e2e-woopayments-on"
+					],
+					"report": {
+						"resultsBlobName": "core-e2e-report-woopayments-on",
 						"resultsPath": "tests/e2e/test-results",
 						"allure": true
 					}
@@ -808,6 +900,41 @@
 					}
 				},
 				{
+					"name": "Core API tests (WooPayments on)",
+					"testType": "api",
+					"usesSharedPluginBuild": true,
+					"command": "test:api:woopayments-on",
+					"optional": false,
+					"changes": [
+						"composer.json",
+						"composer.lock",
+						"i18n/**/*.php",
+						"includes/**/*.php",
+						"src/**/*.php",
+						"tests/e2e/bin/**",
+						"tests/e2e/tests/api-tests/**",
+						"tests/e2e/*.js",
+						"tests/e2e/*.sh",
+						".wp-env.e2e.json",
+						"woocommerce.php",
+						"uninstall.php"
+					],
+					"onlyForDependencies": [],
+					"testEnv": {
+						"start": "env:e2e --debug"
+					},
+					"events": [
+						"pull_request",
+						"push",
+						"core-api-woopayments-on"
+					],
+					"report": {
+						"resultsBlobName": "core-api-report-woopayments-on",
+						"resultsPath": "tests/e2e/test-results",
+						"allure": true
+					}
+				},
+				{
 					"name": "PHP: 8.5 WP: latest (HPOS:off)",
 					"testType": "unit:php",
 					"command": "test:php:env:hpos-off",
@@ -837,6 +964,67 @@
 						"pull_request",
 						"push",
 						"php-unit-php-8.5-wp-latest-hpos-off"
+					]
+				},
+				{
+					"name": "PHP: 8.5 WP: latest (WooPayments on)",
+					"testType": "unit:php",
+					"command": "test:php:env:woopayments-on",
+					"shardingArguments": [],
+					"onlyForDependencies": [],
+					"changes": [
+						"client/admin/config/*.json",
+						"client/blocks/packages/public-api/blocks-checkout/utils/validation/test/postcode-validation-fixtures.json",
+						"i18n/postcode-validation-rules.json",
+						"composer.json",
+						"composer.lock",
+						"**/*.php",
+						".wp-env.test.json",
+						"phpunit.xml",
+						"client/blocks/assets/js/**/block.json",
+						"client/blocks/bin/copy-blocks-json.sh",
+						"tests/php/bin/run-phpunit.sh"
+					],
+					"testEnv": {
+						"start": "env:test --debug",
+						"config": {
+							"phpVersion": "8.5",
+							"wpVersion": "latest"
+						}
+					},
+					"events": [
+						"pull_request",
+						"push",
+						"php-unit-php-8.5-wp-latest-woopayments-on"
+					]
+				},
+				{
+					"name": "PHP: 8.1 WP: latest (multisite)",
+					"testType": "unit:php",
+					"command": "test:php:env:multisite",
+					"shardingArguments": [],
+					"onlyForDependencies": [],
+					"changes": [
+						"composer.json",
+						"composer.lock",
+						"**/*.php",
+						".wp-env.test.json",
+						"tests/php/multisite.xml",
+						"tests/php/bin/run-phpunit-multisite.sh",
+						"client/blocks/assets/js/**/block.json",
+						"client/blocks/bin/copy-blocks-json.sh"
+					],
+					"testEnv": {
+						"start": "env:test --debug",
+						"config": {
+							"phpVersion": "8.1",
+							"wpVersion": "latest"
+						}
+					},
+					"events": [
+						"pull_request",
+						"push",
+						"php-unit-multisite"
 					]
 				},
 				{

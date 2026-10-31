@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Import native WooPayments settings hooks under their use-prefixed names and dedupe the duplicate payment-method dismiss-notice logic into a shared hook.

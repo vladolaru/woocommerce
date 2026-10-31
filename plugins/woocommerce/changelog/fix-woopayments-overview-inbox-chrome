@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+The WooPayments Overview inbox notes no longer sit inside an extra card with a visible Inbox heading, matching WooPayments.

@@ -8455,18 +8455,6 @@ parameters:
 			path: includes/class-wc-ajax.php
 
 		-
-			message: '#^Cannot call method get_total\(\) on WC_Order\|WC_Order_Refund\|false\.$#'
-			identifier: method.nonObject
-			count: 1
-			path: includes/class-wc-ajax.php
-
-		-
-			message: '#^Cannot call method get_total_refunded\(\) on WC_Order\|WC_Order_Refund\|false\.$#'
-			identifier: method.nonObject
-			count: 2
-			path: includes/class-wc-ajax.php
-
-		-
 			message: '#^Cannot call method get_zone_name\(\) on bool\|WC_Shipping_Zone\.$#'
 			identifier: method.nonObject
 			count: 1
@@ -8822,12 +8810,6 @@ parameters:
 
 		-
 			message: '#^Parameter \#2 \$qty of method WC_Abstract_Order\:\:add_product\(\) expects int, float\|int given\.$#'
-			identifier: argument.type
-			count: 1
-			path: includes/class-wc-ajax.php
-
-		-
-			message: '#^Parameter \#2 \$quantity of method WC_Cart\:\:add_to_cart\(\) expects int, float\|int given\.$#'
 			identifier: argument.type
 			count: 1
 			path: includes/class-wc-ajax.php
@@ -11690,18 +11672,6 @@ parameters:
 
 		-
 			message: '#^Parameter \#1 \$value of method WC_Customer\:\:set_billing_last_name\(\) expects string, array\|string given\.$#'
-			identifier: argument.type
-			count: 1
-			path: includes/class-wc-form-handler.php
-
-		-
-			message: '#^Parameter \#2 \$quantity of method WC_Cart\:\:add_to_cart\(\) expects int, float\|int given\.$#'
-			identifier: argument.type
-			count: 2
-			path: includes/class-wc-form-handler.php
-
-		-
-			message: '#^Parameter \#2 \$quantity of method WC_Cart\:\:add_to_cart\(\) expects int, float\|int\<1, max\> given\.$#'
 			identifier: argument.type
 			count: 1
 			path: includes/class-wc-form-handler.php
@@ -34006,12 +33976,6 @@ parameters:
 			path: includes/wc-order-functions.php
 
 		-
-			message: '#^Parameter \#1 \$value of method WC_Abstract_Order\:\:set_total\(\) expects string, \(float\|int\) given\.$#'
-			identifier: argument.type
-			count: 1
-			path: includes/wc-order-functions.php
-
-		-
 			message: '#^Parameter \#1 \$value of method WC_Customer_Download\:\:set_user_email\(\) expects int, string given\.$#'
 			identifier: argument.type
 			count: 1
@@ -44008,12 +43972,6 @@ parameters:
 			path: src/Admin/Features/OnboardingTasks/DeprecatedExtendedTask.php
 
 		-
-			message: '#^Cannot call method is_connected\(\) on class\-string\|object\.$#'
-			identifier: method.nonObject
-			count: 1
-			path: src/Admin/Features/OnboardingTasks/Init.php
-
-		-
 			message: '#^Method Automattic\\WooCommerce\\Admin\\Features\\OnboardingTasks\\Init\:\:get_instance\(\) has no return type specified\.$#'
 			identifier: missingType.return
 			count: 1
@@ -44458,32 +44416,8 @@ parameters:
 			path: src/Admin/Features/OnboardingTasks/Tasks/Tax.php
 
 		-
-			message: '#^Call to method is_account_partially_onboarded\(\) on an unknown class WC_Payments\.$#'
-			identifier: class.notFound
-			count: 1
-			path: src/Admin/Features/OnboardingTasks/Tasks/WooCommercePayments.php
-
-		-
-			message: '#^Call to method is_connected\(\) on an unknown class WC_Payments\.$#'
-			identifier: class.notFound
-			count: 1
-			path: src/Admin/Features/OnboardingTasks/Tasks/WooCommercePayments.php
-
-		-
 			message: '#^Cannot access property \$id on object\|null\.$#'
 			identifier: property.nonObject
-			count: 1
-			path: src/Admin/Features/OnboardingTasks/Tasks/WooCommercePayments.php
-
-		-
-			message: '#^Cannot call method has_incentive\(\) on Automattic\\WooCommerce\\Internal\\Admin\\WcPayWelcomePage\|null\.$#'
-			identifier: method.nonObject
-			count: 1
-			path: src/Admin/Features/OnboardingTasks/Tasks/WooCommercePayments.php
-
-		-
-			message: '#^Method Automattic\\WooCommerce\\Admin\\Features\\OnboardingTasks\\Tasks\\WooCommercePayments\:\:get_gateway\(\) has invalid return type WC_Payments\.$#'
-			identifier: class.notFound
 			count: 1
 			path: src/Admin/Features/OnboardingTasks/Tasks/WooCommercePayments.php
 
@@ -53146,12 +53080,6 @@ parameters:
 			path: src/Internal/Admin/Events.php
 
 		-
-			message: '#^Method Automattic\\WooCommerce\\Internal\\Admin\\Events\:\:possibly_delete_notes\(\) has no return type specified\.$#'
-			identifier: missingType.return
-			count: 1
-			path: src/Internal/Admin/Events.php
-
-		-
 			message: '#^Method Automattic\\WooCommerce\\Internal\\Admin\\Events\:\:possibly_refresh_data_source_pollers\(\) has no return type specified\.$#'
 			identifier: missingType.return
 			count: 1
@@ -54142,42 +54070,6 @@ parameters:
 			path: src/Internal/Admin/Notes/OrderMilestones.php
 
 		-
-			message: '#^Cannot call method has_incentive\(\) on Automattic\\WooCommerce\\Internal\\Admin\\WcPayWelcomePage\|null\.$#'
-			identifier: method.nonObject
-			count: 1
-			path: src/Internal/Admin/Notes/PaymentsMoreInfoNeeded.php
-
-		-
-			message: '#^Method Automattic\\WooCommerce\\Internal\\Admin\\Notes\\PaymentsMoreInfoNeeded\:\:get_note\(\) should return Automattic\\WooCommerce\\Admin\\Notes\\Note but empty return statement found\.$#'
-			identifier: return.empty
-			count: 1
-			path: src/Internal/Admin/Notes/PaymentsMoreInfoNeeded.php
-
-		-
-			message: '#^Method Automattic\\WooCommerce\\Internal\\Admin\\Notes\\PaymentsMoreInfoNeeded\:\:is_applicable\(\) has no return type specified\.$#'
-			identifier: missingType.return
-			count: 1
-			path: src/Internal/Admin/Notes/PaymentsMoreInfoNeeded.php
-
-		-
-			message: '#^Cannot call method has_incentive\(\) on Automattic\\WooCommerce\\Internal\\Admin\\WcPayWelcomePage\|null\.$#'
-			identifier: method.nonObject
-			count: 1
-			path: src/Internal/Admin/Notes/PaymentsRemindMeLater.php
-
-		-
-			message: '#^Method Automattic\\WooCommerce\\Internal\\Admin\\Notes\\PaymentsRemindMeLater\:\:get_note\(\) should return Automattic\\WooCommerce\\Admin\\Notes\\Note but empty return statement found\.$#'
-			identifier: return.empty
-			count: 1
-			path: src/Internal/Admin/Notes/PaymentsRemindMeLater.php
-
-		-
-			message: '#^Method Automattic\\WooCommerce\\Internal\\Admin\\Notes\\PaymentsRemindMeLater\:\:is_applicable\(\) has no return type specified\.$#'
-			identifier: missingType.return
-			count: 1
-			path: src/Internal/Admin/Notes/PaymentsRemindMeLater.php
-
-		-
 			message: '#^Method Automattic\\WooCommerce\\Internal\\Admin\\Notes\\PerformanceOnMobile\:\:get_note\(\) should return Automattic\\WooCommerce\\Admin\\Notes\\Note but empty return statement found\.$#'
 			identifier: return.empty
 			count: 4
@@ -54284,72 +54176,6 @@ parameters:
 			identifier: missingType.return
 			count: 1
 			path: src/Internal/Admin/Notes/UnsecuredReportFiles.php
-
-		-
-			message: '#^Call to an undefined method WC_Data_Store\:\:get_notes_with_name\(\)\.$#'
-			identifier: method.notFound
-			count: 2
-			path: src/Internal/Admin/Notes/WooCommercePayments.php
-
-		-
-			message: '#^Cannot call method get_action\(\) on Automattic\\WooCommerce\\Admin\\Notes\\Note\|true\.$#'
-			identifier: method.nonObject
-			count: 1
-			path: src/Internal/Admin/Notes/WooCommercePayments.php
-
-		-
-			message: '#^Cannot call method get_status\(\) on Automattic\\WooCommerce\\Admin\\Notes\\Note\|true\.$#'
-			identifier: method.nonObject
-			count: 1
-			path: src/Internal/Admin/Notes/WooCommercePayments.php
-
-		-
-			message: '#^Cannot call method save\(\) on Automattic\\WooCommerce\\Admin\\Notes\\Note\|true\.$#'
-			identifier: method.nonObject
-			count: 1
-			path: src/Internal/Admin/Notes/WooCommercePayments.php
-
-		-
-			message: '#^Cannot call method set_status\(\) on Automattic\\WooCommerce\\Admin\\Notes\\Note\|true\.$#'
-			identifier: method.nonObject
-			count: 1
-			path: src/Internal/Admin/Notes/WooCommercePayments.php
-
-		-
-			message: '#^Method Automattic\\WooCommerce\\Internal\\Admin\\Notes\\WooCommercePayments\:\:install_on_action\(\) has no return type specified\.$#'
-			identifier: missingType.return
-			count: 1
-			path: src/Internal/Admin/Notes/WooCommercePayments.php
-
-		-
-			message: '#^Method Automattic\\WooCommerce\\Internal\\Admin\\Notes\\WooCommercePayments\:\:is_applicable\(\) has no return type specified\.$#'
-			identifier: missingType.return
-			count: 1
-			path: src/Internal/Admin/Notes/WooCommercePayments.php
-
-		-
-			message: '#^Method Automattic\\WooCommerce\\Internal\\Admin\\Notes\\WooCommercePayments\:\:is_installed\(\) has no return type specified\.$#'
-			identifier: missingType.return
-			count: 1
-			path: src/Internal/Admin/Notes/WooCommercePayments.php
-
-		-
-			message: '#^Method Automattic\\WooCommerce\\Internal\\Admin\\Notes\\WooCommercePayments\:\:possibly_add_note\(\) has no return type specified\.$#'
-			identifier: missingType.return
-			count: 1
-			path: src/Internal/Admin/Notes/WooCommercePayments.php
-
-		-
-			message: '#^Parameter \#1 \$request of method Automattic\\WooCommerce\\Admin\\API\\Plugins\:\:activate_plugins\(\) expects WP_REST_Request, array\<string, string\> given\.$#'
-			identifier: argument.type
-			count: 1
-			path: src/Internal/Admin/Notes/WooCommercePayments.php
-
-		-
-			message: '#^Parameter \#1 \$request of method Automattic\\WooCommerce\\Admin\\API\\Plugins\:\:install_plugins\(\) expects WP_REST_Request, array\<string, string\> given\.$#'
-			identifier: argument.type
-			count: 1
-			path: src/Internal/Admin/Notes/WooCommercePayments.php
 
 		-
 			message: '#^Method Automattic\\WooCommerce\\Internal\\Admin\\Notes\\WooCommerceSubscriptions\:\:get_note\(\) should return Automattic\\WooCommerce\\Admin\\Notes\\Note\|null but empty return statement found\.$#'
@@ -56960,72 +56786,6 @@ parameters:
 			identifier: class.notFound
 			count: 1
 			path: src/Internal/Admin/WCAdminUser.php
-
-		-
-			message: '#^Access to an undefined property object\:\:\$id\.$#'
-			identifier: property.notFound
-			count: 1
-			path: src/Internal/Admin/WCPayPromotion/Init.php
-
-		-
-			message: '#^Method Automattic\\WooCommerce\\Internal\\Admin\\WCPayPromotion\\Init\:\:delete_specs_transient\(\) has no return type specified\.$#'
-			identifier: missingType.return
-			count: 1
-			path: src/Internal/Admin/WCPayPromotion/Init.php
-
-		-
-			message: '#^Method Automattic\\WooCommerce\\Internal\\Admin\\WCPayPromotion\\Init\:\:load_payment_method_promotions\(\) has no return type specified\.$#'
-			identifier: missingType.return
-			count: 1
-			path: src/Internal/Admin/WCPayPromotion/Init.php
-
-		-
-			message: '#^Method Automattic\\WooCommerce\\Internal\\Admin\\WCPayPromotion\\WCPayPromotionDataSourcePoller\:\:get_instance\(\) has no return type specified\.$#'
-			identifier: missingType.return
-			count: 1
-			path: src/Internal/Admin/WCPayPromotion/WCPayPromotionDataSourcePoller.php
-
-		-
-			message: '#^Access to an undefined property object\:\:\$content\.$#'
-			identifier: property.notFound
-			count: 1
-			path: src/Internal/Admin/WCPayPromotion/WCPaymentGatewayPreInstallWCPayPromotion.php
-
-		-
-			message: '#^Access to an undefined property object\:\:\$title\.$#'
-			identifier: property.notFound
-			count: 1
-			path: src/Internal/Admin/WCPayPromotion/WCPaymentGatewayPreInstallWCPayPromotion.php
-
-		-
-			message: '#^Method Automattic\\WooCommerce\\Internal\\Admin\\WCPayPromotion\\WCPaymentGatewayPreInstallWCPayPromotion\:\:init_form_fields\(\) has no return type specified\.$#'
-			identifier: missingType.return
-			count: 1
-			path: src/Internal/Admin/WCPayPromotion/WCPaymentGatewayPreInstallWCPayPromotion.php
-
-		-
-			message: '#^PHPDoc tag @extends has invalid value \(\\WC_Payment_Gateway\)\: Unexpected token "\\n ", expected ''\<'' at offset 71 on line 4$#'
-			identifier: phpDoc.parseError
-			count: 1
-			path: src/Internal/Admin/WCPayPromotion/WCPaymentGatewayPreInstallWCPayPromotion.php
-
-		-
-			message: '#^Property WC_Payment_Gateway\:\:\$enabled \(string\) does not accept false\.$#'
-			identifier: assign.propertyType
-			count: 1
-			path: src/Internal/Admin/WCPayPromotion/WCPaymentGatewayPreInstallWCPayPromotion.php
-
-		-
-			message: '#^Method Automattic\\WooCommerce\\Internal\\Admin\\WcPayWelcomePage\:\:get_active_payments_task_slug\(\) is unused\.$#'
-			identifier: method.unused
-			count: 1
-			path: src/Internal/Admin/WcPayWelcomePage.php
-
-		-
-			message: '#^Method Automattic\\WooCommerce\\Internal\\Admin\\WcPayWelcomePage\:\:is_payments_task_complete\(\) is unused\.$#'
-			identifier: method.unused
-			count: 1
-			path: src/Internal/Admin/WcPayWelcomePage.php
 
 		-
 			message: '#^Method Automattic\\WooCommerce\\Internal\\AssignDefaultCategory\:\:init\(\) has no return type specified\.$#'
@@ -65269,12 +65029,6 @@ parameters:
 			path: src/StoreApi/Routes/V1/AbstractCartRoute.php
 
 		-
-			message: '#^Method Automattic\\WooCommerce\\StoreApi\\Routes\\V1\\AbstractCartRoute\:\:get_draft_order\(\) has no return type specified\.$#'
-			identifier: missingType.return
-			count: 1
-			path: src/StoreApi/Routes/V1/AbstractCartRoute.php
-
-		-
 			message: '#^Method Automattic\\WooCommerce\\StoreApi\\Routes\\V1\\AbstractCartRoute\:\:get_response\(\) has parameter \$request with generic class WP_REST_Request but does not specify its types\: T$#'
 			identifier: missingType.generics
 			count: 1
@@ -65307,24 +65061,6 @@ parameters:
 		-
 			message: '#^Method Automattic\\WooCommerce\\StoreApi\\Routes\\V1\\AbstractCartRoute\:\:requires_nonce\(\) has parameter \$request with generic class WP_REST_Request but does not specify its types\: T$#'
 			identifier: missingType.generics
-			count: 1
-			path: src/StoreApi/Routes/V1/AbstractCartRoute.php
-
-		-
-			message: '#^Method Automattic\\WooCommerce\\StoreApi\\Routes\\V1\\AbstractCartRoute\:\:set_draft_order_id\(\) has no return type specified\.$#'
-			identifier: missingType.return
-			count: 1
-			path: src/StoreApi/Routes/V1/AbstractCartRoute.php
-
-		-
-			message: '#^PHPDoc tag @return has invalid value \(\\WC_Order\|null;\)\: Unexpected token ";", expected TOKEN_HORIZONTAL_WS at offset 99 on line 4$#'
-			identifier: phpDoc.parseError
-			count: 1
-			path: src/StoreApi/Routes/V1/AbstractCartRoute.php
-
-		-
-			message: '#^Parameter \#1 \$order_object of method Automattic\\WooCommerce\\StoreApi\\Routes\\V1\\AbstractCartRoute\:\:is_valid_draft_order\(\) expects WC_Order, WC_Order\|WC_Order_Refund\|false given\.$#'
-			identifier: argument.type
 			count: 1
 			path: src/StoreApi/Routes/V1/AbstractCartRoute.php
 
@@ -65629,32 +65365,8 @@ parameters:
 			path: src/StoreApi/Routes/V1/CartRemoveCoupon.php
 
 		-
-			message: '#^Method Automattic\\WooCommerce\\StoreApi\\Routes\\V1\\CartRemoveItem\:\:get_draft_order\(\) has no return type specified\.$#'
-			identifier: missingType.return
-			count: 1
-			path: src/StoreApi/Routes/V1/CartRemoveItem.php
-
-		-
 			message: '#^Method Automattic\\WooCommerce\\StoreApi\\Routes\\V1\\CartRemoveItem\:\:get_route_post_response\(\) has parameter \$request with generic class WP_REST_Request but does not specify its types\: T$#'
 			identifier: missingType.generics
-			count: 1
-			path: src/StoreApi/Routes/V1/CartRemoveItem.php
-
-		-
-			message: '#^Method Automattic\\WooCommerce\\StoreApi\\Routes\\V1\\CartRemoveItem\:\:set_draft_order_id\(\) has no return type specified\.$#'
-			identifier: missingType.return
-			count: 1
-			path: src/StoreApi/Routes/V1/CartRemoveItem.php
-
-		-
-			message: '#^PHPDoc tag @return has invalid value \(\\WC_Order\|null;\)\: Unexpected token ";", expected TOKEN_HORIZONTAL_WS at offset 99 on line 4$#'
-			identifier: phpDoc.parseError
-			count: 1
-			path: src/StoreApi/Routes/V1/CartRemoveItem.php
-
-		-
-			message: '#^Parameter \#1 \$order_object of method Automattic\\WooCommerce\\StoreApi\\Routes\\V1\\CartRemoveItem\:\:is_valid_draft_order\(\) expects WC_Order, WC_Order\|WC_Order_Refund\|false given\.$#'
-			identifier: argument.type
 			count: 1
 			path: src/StoreApi/Routes/V1/CartRemoveItem.php
 
@@ -65671,12 +65383,6 @@ parameters:
 			path: src/StoreApi/Routes/V1/CartSelectShippingRate.php
 
 		-
-			message: '#^Method Automattic\\WooCommerce\\StoreApi\\Routes\\V1\\CartUpdateCustomer\:\:get_draft_order\(\) has no return type specified\.$#'
-			identifier: missingType.return
-			count: 1
-			path: src/StoreApi/Routes/V1/CartUpdateCustomer.php
-
-		-
 			message: '#^Method Automattic\\WooCommerce\\StoreApi\\Routes\\V1\\CartUpdateCustomer\:\:get_route_post_response\(\) has parameter \$request with generic class WP_REST_Request but does not specify its types\: T$#'
 			identifier: missingType.generics
 			count: 1
@@ -65689,26 +65395,8 @@ parameters:
 			path: src/StoreApi/Routes/V1/CartUpdateCustomer.php
 
 		-
-			message: '#^Method Automattic\\WooCommerce\\StoreApi\\Routes\\V1\\CartUpdateCustomer\:\:set_draft_order_id\(\) has no return type specified\.$#'
-			identifier: missingType.return
-			count: 1
-			path: src/StoreApi/Routes/V1/CartUpdateCustomer.php
-
-		-
 			message: '#^Method Automattic\\WooCommerce\\StoreApi\\Routes\\V1\\CartUpdateCustomer\:\:validate_address_params\(\) has parameter \$request with generic class WP_REST_Request but does not specify its types\: T$#'
 			identifier: missingType.generics
-			count: 1
-			path: src/StoreApi/Routes/V1/CartUpdateCustomer.php
-
-		-
-			message: '#^PHPDoc tag @return has invalid value \(\\WC_Order\|null;\)\: Unexpected token ";", expected TOKEN_HORIZONTAL_WS at offset 99 on line 4$#'
-			identifier: phpDoc.parseError
-			count: 1
-			path: src/StoreApi/Routes/V1/CartUpdateCustomer.php
-
-		-
-			message: '#^Parameter \#1 \$order_object of method Automattic\\WooCommerce\\StoreApi\\Routes\\V1\\CartUpdateCustomer\:\:is_valid_draft_order\(\) expects WC_Order, WC_Order\|WC_Order_Refund\|false given\.$#'
-			identifier: argument.type
 			count: 1
 			path: src/StoreApi/Routes/V1/CartUpdateCustomer.php
 
@@ -65769,12 +65457,6 @@ parameters:
 		-
 			message: '#^Method Automattic\\WooCommerce\\StoreApi\\Routes\\V1\\Checkout\:\:get_document_object_from_rest_request\(\) has parameter \$request with generic class WP_REST_Request but does not specify its types\: T$#'
 			identifier: missingType.generics
-			count: 1
-			path: src/StoreApi/Routes/V1/Checkout.php
-
-		-
-			message: '#^Method Automattic\\WooCommerce\\StoreApi\\Routes\\V1\\Checkout\:\:get_draft_order\(\) has no return type specified\.$#'
-			identifier: missingType.return
 			count: 1
 			path: src/StoreApi/Routes/V1/Checkout.php
 
@@ -65887,12 +65569,6 @@ parameters:
 			path: src/StoreApi/Routes/V1/Checkout.php
 
 		-
-			message: '#^Method Automattic\\WooCommerce\\StoreApi\\Routes\\V1\\Checkout\:\:set_draft_order_id\(\) has no return type specified\.$#'
-			identifier: missingType.return
-			count: 1
-			path: src/StoreApi/Routes/V1/Checkout.php
-
-		-
 			message: '#^Method Automattic\\WooCommerce\\StoreApi\\Routes\\V1\\Checkout\:\:should_create_customer_account\(\) has parameter \$request with generic class WP_REST_Request but does not specify its types\: T$#'
 			identifier: missingType.generics
 			count: 1
@@ -65937,18 +65613,6 @@ parameters:
 		-
 			message: '#^Method Automattic\\WooCommerce\\StoreApi\\Routes\\V1\\Checkout\:\:validate_user_can_place_order\(\) has no return type specified\.$#'
 			identifier: missingType.return
-			count: 1
-			path: src/StoreApi/Routes/V1/Checkout.php
-
-		-
-			message: '#^PHPDoc tag @return has invalid value \(\\WC_Order\|null;\)\: Unexpected token ";", expected TOKEN_HORIZONTAL_WS at offset 99 on line 4$#'
-			identifier: phpDoc.parseError
-			count: 1
-			path: src/StoreApi/Routes/V1/Checkout.php
-
-		-
-			message: '#^Parameter \#1 \$order_object of method Automattic\\WooCommerce\\StoreApi\\Routes\\V1\\Checkout\:\:is_valid_draft_order\(\) expects WC_Order, WC_Order\|WC_Order_Refund\|false given\.$#'
-			identifier: argument.type
 			count: 1
 			path: src/StoreApi/Routes/V1/Checkout.php
 
@@ -67141,12 +66805,6 @@ parameters:
 			path: src/StoreApi/Utilities/CartController.php
 
 		-
-			message: '#^Method Automattic\\WooCommerce\\StoreApi\\Utilities\\CartController\:\:get_draft_order\(\) has no return type specified\.$#'
-			identifier: missingType.return
-			count: 1
-			path: src/StoreApi/Utilities/CartController.php
-
-		-
 			message: '#^Method Automattic\\WooCommerce\\StoreApi\\Utilities\\CartController\:\:get_product_for_cart\(\) has invalid return type Automattic\\WooCommerce\\StoreApi\\Utilities\\Error\.$#'
 			identifier: class.notFound
 			count: 1
@@ -67178,12 +66836,6 @@ parameters:
 
 		-
 			message: '#^Method Automattic\\WooCommerce\\StoreApi\\Utilities\\CartController\:\:set_cart_item_quantity\(\) has no return type specified\.$#'
-			identifier: missingType.return
-			count: 1
-			path: src/StoreApi/Utilities/CartController.php
-
-		-
-			message: '#^Method Automattic\\WooCommerce\\StoreApi\\Utilities\\CartController\:\:set_draft_order_id\(\) has no return type specified\.$#'
 			identifier: missingType.return
 			count: 1
 			path: src/StoreApi/Utilities/CartController.php
@@ -67237,19 +66889,7 @@ parameters:
 			path: src/StoreApi/Utilities/CartController.php
 
 		-
-			message: '#^PHPDoc tag @return has invalid value \(\\WC_Order\|null;\)\: Unexpected token ";", expected TOKEN_HORIZONTAL_WS at offset 99 on line 4$#'
-			identifier: phpDoc.parseError
-			count: 1
-			path: src/StoreApi/Utilities/CartController.php
-
-		-
 			message: '#^Parameter \#1 \$error_code of class Automattic\\WooCommerce\\StoreApi\\Exceptions\\RouteException constructor expects string, int\|string given\.$#'
-			identifier: argument.type
-			count: 1
-			path: src/StoreApi/Utilities/CartController.php
-
-		-
-			message: '#^Parameter \#1 \$order_object of method Automattic\\WooCommerce\\StoreApi\\Utilities\\CartController\:\:is_valid_draft_order\(\) expects WC_Order, WC_Order\|WC_Order_Refund\|false given\.$#'
 			identifier: argument.type
 			count: 1
 			path: src/StoreApi/Utilities/CartController.php
@@ -67655,30 +67295,6 @@ parameters:
 			identifier: missingType.generics
 			count: 1
 			path: src/StoreApi/Utilities/ProductQueryFilters.php
-
-		-
-			message: '#^Method Automattic\\WooCommerce\\StoreApi\\Utilities\\QuantityLimits\:\:get_draft_order\(\) has no return type specified\.$#'
-			identifier: missingType.return
-			count: 1
-			path: src/StoreApi/Utilities/QuantityLimits.php
-
-		-
-			message: '#^Method Automattic\\WooCommerce\\StoreApi\\Utilities\\QuantityLimits\:\:set_draft_order_id\(\) has no return type specified\.$#'
-			identifier: missingType.return
-			count: 1
-			path: src/StoreApi/Utilities/QuantityLimits.php
-
-		-
-			message: '#^PHPDoc tag @return has invalid value \(\\WC_Order\|null;\)\: Unexpected token ";", expected TOKEN_HORIZONTAL_WS at offset 99 on line 4$#'
-			identifier: phpDoc.parseError
-			count: 1
-			path: src/StoreApi/Utilities/QuantityLimits.php
-
-		-
-			message: '#^Parameter \#1 \$order_object of method Automattic\\WooCommerce\\StoreApi\\Utilities\\QuantityLimits\:\:is_valid_draft_order\(\) expects WC_Order, WC_Order\|WC_Order_Refund\|false given\.$#'
-			identifier: argument.type
-			count: 1
-			path: src/StoreApi/Utilities/QuantityLimits.php
 
 		-
 			message: '#^Parameter \#1 \$value of method Automattic\\WooCommerce\\StoreApi\\Utilities\\QuantityLimits\:\:filter_numeric_value\(\) expects float\|int, float\|int\<min, \-1\>\|int\<1, max\>\|false given\.$#'

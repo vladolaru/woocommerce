@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Fix WooPayments saving a new card and updating the subscription payment method when paying failed or pending renewals.

@@ -1,0 +1,48 @@
+{
+	"schema_version": 2,
+	"slice_id": "subscriptions-settings-deferral",
+	"wc_base_commit": "92b2fc3376f6a5ce47d283656cb0c06dc569fb9f",
+	"verified_at_commit": "9a48319ab52b43499debc13b1d68a78a1d3f1549",
+	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+	"source_test_paths": [
+		"plugins/woocommerce/tests/e2e/tests/woopayments-native/evidence/calibration-notes.md"
+	],
+	"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+	"contract_ids": [
+		"default::chromium::tests/e2e/specs/subscriptions/merchant/merchant-subscriptions-settings.spec.ts:13::WooCommerce › Settings › Subscriptions › Merchant should be able to load WooCommerce Subscriptions settings tab"
+	],
+	"targets": [
+		{
+			"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/subscriptions/purchase.spec.ts",
+			"contract": "pending"
+		}
+	],
+	"implementation_commits": [],
+	"verification": [],
+	"reviews": [
+		{
+			"role": "deferral",
+			"verdict": "APPROVE",
+			"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+			"summary": "Fresh broad review approved the exact one-row provider-free deferral: native readiness is the earliest durable blocker, an approved pinned activated Subscriptions fixture for both runtimes is additionally required, listener exclusivity is irrelevant, and lower-layer or generic settings tests cannot prove the exact extension tab, heading, capability, and no-fatal contract."
+		}
+	],
+	"closures": [],
+	"known_gaps": [],
+	"deferral": {
+		"blocker": "The standing store lacks native ownership, account, and callback readiness, and there is no approved deterministic version-pinned activated WooCommerce Subscriptions provisioner for both runtime comparisons.",
+		"affected_scope": "Only the exact merchant read-only WooCommerce Subscriptions settings tab and heading compatibility smoke represented by this row.",
+		"no_allowlisted_action_reason": "No allowlisted action can repair shared native readiness, grant fixture approval, or substitute lower-layer or generic settings tests for booting WooCommerce Subscriptions with native ownership active and asserting the exact tab, heading, capability, and no-fatal behavior.",
+		"reference": "blocked-environment:PILOT-NATIVE-READINESS",
+		"unlock_decision": "Provide an externally managed native-ready store and an approved version-pinned activated WooCommerce Subscriptions fixture in both runtimes, establish the exact target owner and contract, and execute the unchanged semantic read-only smoke with retries disabled.",
+		"quarantine_status": "No resource was allocated or mutated, and no row-specific quarantine exists. No provider or listener is required; the existing separately owned listener is irrelevant and untouched.",
+		"unlock_satisfactions": [
+			{
+				"contract_id": "default::chromium::tests/e2e/specs/subscriptions/merchant/merchant-subscriptions-settings.spec.ts:13::WooCommerce › Settings › Subscriptions › Merchant should be able to load WooCommerce Subscriptions settings tab",
+				"unlock_decision": "Provide an externally managed native-ready store and an approved version-pinned activated WooCommerce Subscriptions fixture in both runtimes, establish the exact target owner and contract, and execute the unchanged semantic read-only smoke with retries disabled.",
+				"satisfied_on": "2026-08-07",
+				"reference": "calibration-notes:2026-08-07:admin-surface-load-family-smoke"
+			}
+		]
+	}
+}

@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Show every page of the WooPayments disputes and payouts lists, not only the first 25 rows.

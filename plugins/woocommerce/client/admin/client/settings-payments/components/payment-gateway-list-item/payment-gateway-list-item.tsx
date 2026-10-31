@@ -31,6 +31,7 @@ import {
 import { ReactivateLivePaymentsButton } from '~/settings-payments/components/buttons/reactivate-live-payments-button';
 import { IncentiveStatusBadge } from '~/settings-payments/components/incentive-status-badge';
 import { OfficialBadge } from '~/settings-payments/components/official-badge';
+import { NativeBadge } from '~/settings-payments/components/native-badge';
 
 type PaymentGatewayItemProps = {
 	gateway: PaymentGatewayProvider;
@@ -192,13 +193,18 @@ export const PaymentGatewayListItem = ( {
 								}
 							/>
 						) }
-						{ /* If the gateway has a matching suggestion, it is an official extension. */ }
-						{ gateway._suggestion_id && (
-							<OfficialBadge
-								variant="expanded"
-								suggestionId={ gateway._suggestion_id }
-							/>
-						) }
+						{ /* If the gateway has a matching suggestion, it is an official extension, or built into WooCommerce. */ }
+						{ gateway._suggestion_id &&
+							( gateway._native ? (
+								<NativeBadge
+									suggestionId={ gateway._suggestion_id }
+								/>
+							) : (
+								<OfficialBadge
+									variant="expanded"
+									suggestionId={ gateway._suggestion_id }
+								/>
+							) ) }
 						{ gateway.supports?.includes( 'subscriptions' ) && (
 							<Tooltip
 								placement="top"

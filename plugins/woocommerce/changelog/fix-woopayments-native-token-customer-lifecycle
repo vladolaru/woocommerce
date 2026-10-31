@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Key the legacy WooPayments customer-ID migration to account liveness and reconcile saved tokens with the provider's payment methods on native WooPayments.

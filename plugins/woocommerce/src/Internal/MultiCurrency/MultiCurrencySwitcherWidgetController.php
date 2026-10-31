@@ -1,0 +1,181 @@
+<?php
+/**
+ * MultiCurrencySwitcherWidgetController class file.
+ */
+
+declare( strict_types = 1 );
+
+namespace Automattic\WooCommerce\Internal\MultiCurrency;
+
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\ServiceFactory;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\SwitcherRenderer;
+use Automattic\WooCommerce\Internal\RegisterHooksInterface;
+use Automattic\WooCommerce\Internal\MultiCurrency\Integrations\IntegrationsController;
+
+/**
+ * Registers the currency switcher widget, and renders it for the wc_get_currency_switcher_markup() template tag.
+ *
+ * @since 11.0.0
+ * @internal
+ */
+class MultiCurrencySwitcherWidgetController implements RegisterHooksInterface {
+
+	/**
+	 * Runtime owner arbiter.
+	 *
+	 * @var MultiCurrencyRuntimeArbiter
+	 */
+	private MultiCurrencyRuntimeArbiter $arbiter;
+
+	/**
+	 * Integrations controller.
+	 *
+	 * @var IntegrationsController
+	 */
+	private IntegrationsController $integrations_controller;
+
+	/**
+	 * Switcher renderer, built on first use.
+	 *
+	 * @var SwitcherRenderer|null
+	 */
+	private ?SwitcherRenderer $switcher_renderer = null;
+
+	/**
+	 * Registered widget instance.
+	 *
+	 * @var MultiCurrencySwitcherWidget|null
+	 */
+	private ?MultiCurrencySwitcherWidget $widget = null;
+
+	/**
+	 * Multi-Currency service factory.
+	 *
+	 * @var ServiceFactory
+	 */
+	private ServiceFactory $service_factory;
+
+	/**
+	 * Initialize the class instance.
+	 *
+	 * @internal
+	 *
+	 * @param MultiCurrencyRuntimeArbiter $arbiter                  Runtime owner arbiter.
+	 * @param IntegrationsController      $integrations_controller Integrations controller.
+	 * @param ServiceFactory              $service_factory          Multi-Currency service factory.
+	 */
+	final public function init(
+		MultiCurrencyRuntimeArbiter $arbiter,
+		IntegrationsController $integrations_controller,
+		ServiceFactory $service_factory
+	): void {
+		$this->arbiter                 = $arbiter;
+		$this->integrations_controller = $integrations_controller;
+		$this->service_factory         = $service_factory;
+	}
+
+	/**
+	 * Register switcher widget hooks.
+	 */
+	public function register() {
+		if ( ! $this->arbiter->is_builtin_owner() ) {
+			return;
+		}
+
+		add_action( 'widgets_init', array( $this, 'handle_widgets_init' ) );
+	}
+
+	/**
+	 * Register the currency switcher widget once.
+	 *
+	 * @internal
+	 */
+	public function handle_widgets_init(): void {
+		if ( null !== $this->widget ) {
+			return;
+		}
+
+		$this->widget = new MultiCurrencySwitcherWidget(
+			$this->get_switcher_renderer(),
+			$this->integrations_controller
+		);
+
+		register_widget( $this->widget );
+	}
+
+	/**
+	 * Get the registered switcher widget markup.
+	 *
+	 * While the WooPayments extension owns Multi-Currency, the template tag wc_get_currency_switcher_markup() hands off here to the extension's WC_Payments_Multi_Currency(): the extension owns the store, and the template tag is the extension's contract.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @param array $instance Widget instance settings.
+	 * @param array $args     Widget arguments.
+	 * @return string Currency switcher widget markup.
+	 */
+	public function get_switcher_widget_markup( array $instance = array(), array $args = array() ): string {
+		global $wp_widget_factory;
+
+		if ( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION === $this->arbiter->get_runtime_owner() && function_exists( 'WC_Payments_Multi_Currency' ) ) {
+			$plugin_multi_currency = \WC_Payments_Multi_Currency(); // phpcs:ignore WordPress.NamingConventions.ValidFunctionName.FunctionNameInvalid -- WooPayments public compatibility facade.
+			if ( is_object( $plugin_multi_currency ) && is_callable( array( $plugin_multi_currency, 'get_switcher_widget_markup' ) ) ) {
+				return (string) call_user_func( array( $plugin_multi_currency, 'get_switcher_widget_markup' ), $instance, $args );
+			}
+		}
+
+		if ( ! $this->arbiter->is_builtin_owner() || ! is_object( $this->widget ) || ! is_object( $wp_widget_factory ) || ! isset( $wp_widget_factory->widgets ) || ! is_array( $wp_widget_factory->widgets ) ) {
+			return '';
+		}
+
+		$widget_key = array_search( $this->widget, $wp_widget_factory->widgets, true );
+		if ( false === $widget_key ) {
+			return '';
+		}
+
+		/**
+		 * Filters the currency switcher widget instance settings used by themes.
+		 *
+		 * @since 11.2.0
+		 *
+		 * @param array $instance Widget instance settings.
+		 */
+		$filtered_instance = apply_filters( 'wcpay_multi_currency_theme_widget_instance', $instance );
+		$instance          = is_array( $filtered_instance ) ? $filtered_instance : $instance;
+
+		/**
+		 * Filters the currency switcher widget arguments used by themes.
+		 *
+		 * @since 11.2.0
+		 *
+		 * @param array $args Widget arguments.
+		 */
+		$filtered_args = apply_filters( 'wcpay_multi_currency_theme_widget_args', $args );
+		$args          = is_array( $filtered_args ) ? $filtered_args : $args;
+		$buffer_level  = ob_get_level();
+
+		ob_start();
+		try {
+			the_widget( (string) $widget_key, $instance, $args );
+
+			return (string) ob_get_clean();
+		} finally {
+			while ( ob_get_level() > $buffer_level ) {
+				ob_end_clean();
+			}
+		}
+	}
+
+	/**
+	 * Get the switcher renderer.
+	 *
+	 * @return SwitcherRenderer
+	 */
+	private function get_switcher_renderer(): SwitcherRenderer {
+		if ( null === $this->switcher_renderer ) {
+			$this->switcher_renderer = $this->service_factory->create_switcher_renderer();
+		}
+
+		return $this->switcher_renderer;
+	}
+}

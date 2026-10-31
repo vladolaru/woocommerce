@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Turn WooPay on after WooPayments onboarding when the platform asks for it, as the WooPayments plugin does, unless Link is enabled.

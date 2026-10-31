@@ -1,0 +1,75 @@
+{
+	"schema_version": 2,
+	"slice_id": "saved-method-authentication-execution-deferral",
+	"wc_base_commit": "1a4c8f6fb9e984f412144f29c080ef22fa68da23",
+	"verified_at_commit": "1a4c8f6fb9e984f412144f29c080ef22fa68da23",
+	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+	"source_test_paths": [
+		"plugins/woocommerce/tests/e2e/tests/woopayments-native/shopper/saved-method-authentication.spec.ts",
+		"plugins/woocommerce/tests/e2e/utils/woopayments-native/drivers/saved-method-authentication.test.ts",
+		"plugins/woocommerce/tests/e2e/utils/woopayments-native/drivers/saved-method-authentication.ts"
+	],
+	"source_test_sha256": "17aa141a5f52744fd3906a6628bf337be23e92121de6fd45d9ec01a7e5176a47",
+	"contract_ids": [
+		"default::chromium::tests/e2e/specs/wcpay/shopper/shopper-myaccount-payment-methods-add-fail.spec.ts:71::Payment Methods › when attempting to add a declined-3ds card › it should not add the card",
+		"default::chromium::tests/e2e/specs/wcpay/shopper/shopper-myaccount-saved-cards.spec.ts:146::Shopper can save and delete cards › Testing card: 3ds › should add the 3ds card as a new payment method",
+		"default::chromium::tests/e2e/specs/wcpay/shopper/shopper-myaccount-saved-cards.spec.ts:196::Shopper can save and delete cards › Testing card: 3ds › should be able to purchase with the saved 3ds card"
+	],
+	"targets": [
+		{
+			"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/shopper/saved-method-authentication.spec.ts",
+			"contract": "a failed My Account 3DS challenge leaves the exact SetupIntent unauthenticated, saves no token or attachment, and returns an announced usable add-method form"
+		},
+		{
+			"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/shopper/saved-method-authentication.spec.ts",
+			"contract": "one My Account 3DS token completes required SetupIntent and Classic PaymentIntent challenges and settles one exact USD 10.99 payment"
+		}
+	],
+	"implementation_commits": [],
+	"verification": [
+		{
+			"command": "focused saved-method-authentication driver unit suite",
+			"exit_code": 0,
+			"summary": "The saved-method parser and product-oracle unit suite passed 3/3."
+		},
+		{
+			"command": "provider-project collection for saved-method-authentication.spec.ts",
+			"exit_code": 0,
+			"summary": "Collection found exactly two target tests: the failed-challenge contract and the shared authenticated-add-and-purchase contract."
+		},
+		{
+			"command": "targeted ESLint, Prettier, and PHP checks",
+			"exit_code": 0,
+			"summary": "The saved-method implementation and its shared runtime dependencies passed the prepared TypeScript and PHP checks."
+		},
+		{
+			"command": "provider execution readiness gate for saved-method-authentication.spec.ts",
+			"exit_code": 1,
+			"summary": "No saved-method provider run started. The standing 3220-card authority and exact product oracle are ready, but the free-trial quarantine already owns and blocks the account and store, so allocation stopped before any saved-method shopper, SetupIntent, token, order, PaymentIntent, charge, or cleanup mutation."
+		}
+	],
+	"reviews": [
+		{
+			"role": "semantic",
+			"verdict": "APPROVE",
+			"source_test_sha256": "17aa141a5f52744fd3906a6628bf337be23e92121de6fd45d9ec01a7e5176a47",
+			"summary": "The negative target proves a mandatory failed 3DS challenge leaves the exact SetupIntent unauthenticated, creates no Woo token or provider attachment, and restores an announced usable form. The positive target joins one 3220 method through mandatory SetupIntent and PaymentIntent challenges to one exact Woo token, provider attachment, order, USD 10.99 PaymentIntent, charge, and capture."
+		},
+		{
+			"role": "simplification",
+			"verdict": "APPROVE",
+			"source_test_sha256": "17aa141a5f52744fd3906a6628bf337be23e92121de6fd45d9ec01a7e5176a47",
+			"summary": "Three client contracts share two product journeys and one narrow saved-method adapter. Fresh run-owned shoppers and exact local/provider identities replace the client's shared-customer sequencing without recreating obsolete plugin structure."
+		}
+	],
+	"closures": [],
+	"known_gaps": [],
+	"deferral": {
+		"blocker": "Provider execution cannot begin while the free-trial immutable quarantine owns and blocks the shared account and store. The target code, exact annotations, 3220 authority, product oracle, unit tests, collection, static checks, PHP checks, and reviews are ready, but no safe provider allocation exists.",
+		"affected_scope": "Three current-client contracts represented by two native journeys. The failure journey requires a real failed My Account 3DS challenge, the exact unauthenticated SetupIntent, unchanged provider attachments and Woo token set, announced error, and usable form. The positive journey requires one 3220 method to complete mandatory SetupIntent and Classic PaymentIntent challenges and join the exact shopper, provider customer, Woo token, attached method, USD 10.99 order, PaymentIntent, charge, and capture before owned cleanup.",
+		"no_allowlisted_action_reason": "Starting either journey while the account/store quarantine exists would overlap an unresolved provider attempt and undermine exact attribution. A local unit or collection pass cannot substitute for the real challenge, provider attachment, token, payment, and cleanup graph; nor may the run bypass or clear another scenario's quarantine.",
+		"reference": "blocked-environment:PILOT-PROVIDER-QUARANTINE",
+		"unlock_decision": "Resolve the free-trial quarantine through its owning recovery workflow, confirm the account and store are safe, then run the two exact saved-method tests with one worker and zero retries under their approved 3220 authority and existing exact product oracle.",
+		"quarantine_status": "No saved-method provider run started and this slice created no shopper, SetupIntent, provider customer, payment method, Woo token, product, order, PaymentIntent, charge, capture, journal, listener interval, cleanup action, or additional quarantine."
+	}
+}

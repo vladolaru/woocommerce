@@ -1,0 +1,316 @@
+<?php
+declare( strict_types = 1 );
+
+namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\WooPay;
+
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\SessionService;
+use WP_REST_Request;
+
+/**
+ * Recording WooPay session service for controller tests.
+ */
+class RecordingWooPaySessionService extends SessionService {
+
+	/**
+	 * Whether WooPay is enabled.
+	 *
+	 * @var bool
+	 */
+	public bool $woopay_enabled = true;
+
+	/**
+	 * Whether the WooPay button should be shown.
+	 *
+	 * @var bool
+	 */
+	public bool $should_show_woopay_button = true;
+
+	/**
+	 * Whether WooPay save-user assets should be loaded.
+	 *
+	 * @var bool
+	 */
+	public bool $should_load_woopay_save_user_assets = true;
+
+	/**
+	 * Whether WooPay direct checkout is enabled.
+	 *
+	 * @var bool
+	 */
+	public bool $direct_checkout_enabled = false;
+
+	/**
+	 * Whether the shopper passes the WooPay guest rule.
+	 *
+	 * @var bool
+	 */
+	public bool $guest_rule_passes = true;
+
+	/**
+	 * Whether the store can sign a WooPay session.
+	 *
+	 * @var bool
+	 */
+	public bool $can_sign_session_data = true;
+
+	/**
+	 * Number of frontend config builds.
+	 *
+	 * @var int
+	 */
+	public int $frontend_config_calls = 0;
+
+	/**
+	 * Last session email.
+	 *
+	 * @var string
+	 */
+	public string $last_session_email = '';
+
+	/**
+	 * Last WooPay REST request the session data was built for.
+	 *
+	 * @var WP_REST_Request|null
+	 */
+	public ?WP_REST_Request $last_session_request = null;
+
+	/**
+	 * Email the last session request's adapted-extension balances follow, or null for the session email.
+	 *
+	 * @var string|null
+	 */
+	public ?string $last_session_adapted_extensions_email = null;
+
+	/**
+	 * Last request passed to init_woopay_session().
+	 *
+	 * @var array<string,mixed>
+	 */
+	public array $last_init_request = array();
+
+	/**
+	 * Last request passed to get_encrypted_session_data().
+	 *
+	 * @var array<string,mixed>
+	 */
+	public array $last_encrypted_session_request = array();
+
+	/**
+	 * Last phone request.
+	 *
+	 * @var array<string,mixed>
+	 */
+	public array $last_phone_request = array();
+
+	/**
+	 * Last appearance.
+	 *
+	 * @var array<string,mixed>
+	 */
+	public array $last_appearance = array();
+
+	/**
+	 * WooPay appearance response.
+	 *
+	 * @var array<string,mixed>
+	 */
+	public array $appearance = array();
+
+	/**
+	 * WooPay font rules response.
+	 *
+	 * @var array<int,array<string,string>>
+	 */
+	public array $font_rules = array();
+
+	/**
+	 * Whether appearance should be stored.
+	 *
+	 * @var bool
+	 */
+	public bool $appearance_stored = true;
+
+	/**
+	 * Whether WooPay global theme support is enabled.
+	 *
+	 * @var bool
+	 */
+	public bool $global_theme_support_enabled = true;
+
+	/**
+	 * Whether the platform keeps the store on WooPay's signed path, as it does for a store reporting a client below 11.2.0.
+	 *
+	 * @var bool
+	 */
+	public bool $force_signed_requests = true;
+
+	/**
+	 * Number of appearance writes.
+	 *
+	 * @var int
+	 */
+	public int $appearance_writes = 0;
+
+	/**
+	 * Get WooPay frontend config.
+	 *
+	 * @param string $context Express checkout context.
+	 * @return array<string,mixed>
+	 */
+	public function get_woopay_frontend_config( string $context = 'checkout' ): array {
+		++$this->frontend_config_calls;
+
+		return array(
+			'isWooPayEnabled'               => $this->woopay_enabled,
+			'shouldShowWooPayButton'        => $this->should_show_woopay_button,
+			'isWooPayDirectCheckoutEnabled' => $this->direct_checkout_enabled,
+			'forceNetworkSavedCards'        => true,
+			'woopaySessionNonce'            => 'woopay-session-nonce',
+			'woopayButton'                  => array(
+				'type'    => 'default',
+				'theme'   => 'dark',
+				'height'  => '48',
+				'radius'  => '',
+				'size'    => 'medium',
+				'context' => $context,
+			),
+		);
+	}
+
+	/**
+	 * Number of light direct-checkout config builds.
+	 *
+	 * @var int
+	 */
+	public int $direct_checkout_config_calls = 0;
+
+	/**
+	 * The connection keys the last light direct-checkout config build was given.
+	 *
+	 * @var array<string,mixed>|null
+	 */
+	public ?array $last_connection_script_config = null;
+
+	/**
+	 * Get the light direct-checkout config.
+	 *
+	 * @param array<string,mixed> $connection_script_config The connection keys the card scripts also read.
+	 * @return array<string,mixed>
+	 */
+	public function get_woopay_direct_checkout_config( array $connection_script_config ): array {
+		$this->last_connection_script_config = $connection_script_config;
+		++$this->direct_checkout_config_calls;
+
+		return array(
+			'woopayHost'                    => 'https://pay.woo.com',
+			'isWooPayDirectCheckoutEnabled' => $this->direct_checkout_enabled,
+			'woopaySessionNonce'            => 'woopay-session-nonce',
+			'woopayMinimumSessionData'      => array( 'encrypted' => 'minimum' ),
+		);
+	}
+
+	/**
+	 * Get WooPay save-user checkout data.
+	 *
+	 * @return array<string,bool|string>
+	 */
+	public function get_save_user_checkout_data(): array {
+		return array(
+			'PRE_CHECK_SAVE_MY_INFO'         => true,
+			'woopayPhoneValidationScriptUrl' => WC()->plugin_url() . '/assets/client/blocks/wc-woopayments-phone-validation.js?ver=' . WC_VERSION,
+		);
+	}
+
+	/**
+	 * Record the email and REST request a WooPay session request starts with.
+	 *
+	 * @param string|null                     $email          Shopper email.
+	 * @param string|null                     $user_session   WooPay user session.
+	 * @param WP_REST_Request|null            $woopay_request WooPay REST request.
+	 * @param int|null                        $order_id       Pay-for-order order ID.
+	 * @param string|null                     $key            Pay-for-order key.
+	 * @param string|null                     $billing_email  Pay-for-order billing email.
+	 * @param array<string,mixed>|null        $appearance     WooPay appearance payload.
+	 * @param array<int,array<string,string>> $font_rules     WooPay font rules.
+	 * @param string|null                     $adapted_extensions_email Email the adapted-extension balances follow.
+	 * @return array<string,string>
+	 */
+	public function start_init_session_request(
+		?string $email = null,
+		?string $user_session = null,
+		?WP_REST_Request $woopay_request = null,
+		?int $order_id = null,
+		?string $key = null,
+		?string $billing_email = null,
+		?array $appearance = null,
+		array $font_rules = array(),
+		?string $adapted_extensions_email = null
+	): array {
+		unset( $user_session, $order_id, $key, $billing_email, $appearance, $font_rules );
+		$this->last_session_email                    = (string) $email;
+		$this->last_session_request                  = $woopay_request;
+		$this->last_session_adapted_extensions_email = $adapted_extensions_email;
+
+		return array( 'session' => 'native' );
+	}
+
+	/**
+	 * Init WooPay.
+	 *
+	 * @param array<string,mixed> $request Request data.
+	 * @return array<string,string>
+	 */
+	public function init_woopay_session( array $request ): array {
+		$this->last_init_request = $request;
+
+		return array( 'result' => 'success' );
+	}
+
+	/**
+	 * Whether the store can sign a WooPay session.
+	 *
+	 * @return bool
+	 */
+	public function can_sign_session_data(): bool {
+		return $this->can_sign_session_data;
+	}
+
+	/**
+	 * Get encrypted session data.
+	 *
+	 * @param array<string,mixed> $request Request data.
+	 * @return array<string,string>
+	 */
+	public function get_encrypted_session_data( array $request ): array {
+		$this->last_encrypted_session_request = $request;
+
+		return array( 'encrypted' => 'session' );
+	}
+
+	/**
+	 * Store WooPay phone data.
+	 *
+	 * @param array<string,mixed> $request Request data.
+	 */
+	public function set_woopay_phone_session_data( array $request ): void {
+		$this->last_phone_request = $request;
+	}
+
+	/**
+	 * Get the WooPay request signature.
+	 *
+	 * @return string
+	 */
+	public function get_woopay_request_signature(): string {
+		return 'signed';
+	}
+
+	/**
+	 * Get encrypted minimum session data.
+	 *
+	 * @return array<string,string>
+	 */
+	public function get_encrypted_minimum_session_data(): array {
+		return array( 'encrypted' => 'minimum' );
+	}
+}

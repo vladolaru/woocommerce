@@ -1,0 +1,40 @@
+{
+	"schema_version": 2,
+	"slice_id": "auth-customer-environment-deferral",
+	"wc_base_commit": "92b2fc3376f6a5ce47d283656cb0c06dc569fb9f",
+	"verified_at_commit": "e98af271b7cde28f33fa6a1dbb419c1157033ed0",
+	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+	"source_test_paths": [
+		"plugins/woocommerce/tests/e2e/tests/woopayments-native/evidence/calibration-notes.md"
+	],
+	"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+	"contract_ids": [
+		"default::setup::tests/e2e/specs/auth.setup.ts:99::authenticate as customer"
+	],
+	"targets": [
+		{
+			"path": "plugins/woocommerce/tests/e2e/fixtures/auth.setup.ts",
+			"contract": "pending"
+		}
+	],
+	"implementation_commits": [],
+	"verification": [],
+	"reviews": [
+		{
+			"role": "deferral",
+			"verdict": "APPROVE",
+			"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+			"summary": "Fresh broad review approved evidence SHA 881443c012e4e0a5e2888bc637141de092be5a6403ed6e667f7479d7eb717f39 against ledger SHA 5ecc7388af09f08bc674393096ecee7fd77def2feb74e3bb9f1bcdd7545ef349: exactly the customer-authentication row moves through the four permitted fields from planned/not-assessed to deferred/blocked-environment, with administrator and editor rows untouched and the target path, pending contract, and owner-decision-required preserved. The retained contract remains fresh seeded-customer authentication, persisted Core customer state, and fresh-context semantic My Account plus Log out proof across both intended runtimes. The evidence binds the canonical calibration bundle, accurately reuses the pre-fixture Core readiness failures at :8086, :8087, and :8889, preserves lower-layer, cached-state, and neighboring-test non-substitution, makes no browser/provider/resource/quarantine claim, and records the smallest complete unlock of externally ready dual-runtime targets plus an approved row-specific target and owner followed by fresh-state/fresh-context My Account verification with zero retries and fresh reviews."
+		}
+	],
+	"closures": [],
+	"known_gaps": [],
+	"deferral": {
+		"blocker": "The exact shopper-session contract cannot execute in an approved Core E2E runtime: localhost:8086 refuses connections, localhost:8087 has no active WooCommerce REST route, and localhost:8889 rejects the first exact Core REST request with HTTP 401. The target contract and row owner also remain pending.",
+		"affected_scope": "Only the exact runtime-neutral customer authentication setup row: fresh seeded-customer login, persisted Core customer state, and fresh-context authenticated My Account proof against both intended runtimes. No WooPayments account, checkout, payment, order, or native-ownership behavior is claimed.",
+		"no_allowlisted_action_reason": "The run cannot start, repair, restart, reseed, reconfigure, or supply credentials for shared E2E sites, and it cannot invent the pending row-specific target contract or owner. Static fixture inspection, cached state, request-only authentication, and neighboring My Account or dashboard-denial tests do not substitute for fresh browser state creation and consumption.",
+		"reference": "blocked-environment:PILOT-CORE-E2E-ENVIRONMENT-READINESS",
+		"unlock_decision": "Externally provide reachable configured Core and second intended-runtime E2E targets with active WooCommerce and valid seeded customer access; approve a row-specific target contract and owner separated from administrator and editor setup; then prove fresh-state login plus fresh-context semantic My Account and Log out evidence once per runtime with zero retries and fresh required reviews.",
+		"quarantine_status": "No browser fixture, storage state, account, store, provider record, listener, lock, journal, or quarantine was created or changed for this row. The separately owned listener remains untouched."
+	}
+}

@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+The WooPayments order dispute notice uses the store date format and shows the days left when the response deadline is less than a week away.

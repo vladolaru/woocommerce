@@ -1,0 +1,4 @@
+Significance: patch
+Type: dev
+
+Record that a WooPayments provider fidelity run discharges its family scoped to a named claim, with 3DS authentication excluded.

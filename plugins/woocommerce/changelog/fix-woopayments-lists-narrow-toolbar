@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+On narrow screens the WooPayments list cards keep the title and column menu on one row and put the search and actions below, as the WooPayments plugin does.

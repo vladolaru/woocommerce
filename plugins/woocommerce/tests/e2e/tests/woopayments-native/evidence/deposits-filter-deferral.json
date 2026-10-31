@@ -1,0 +1,40 @@
+{
+	"schema_version": 2,
+	"slice_id": "deposits-filter-deferral",
+	"wc_base_commit": "92b2fc3376f6a5ce47d283656cb0c06dc569fb9f",
+	"verified_at_commit": "66dc51b192a06147db1216e6f39bd4c08e52125e",
+	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+	"source_test_paths": [
+		"plugins/woocommerce/tests/e2e/tests/woopayments-native/evidence/calibration-notes.md"
+	],
+	"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+	"contract_ids": [
+		"default::chromium::tests/e2e/specs/wcpay/merchant/merchant-admin-deposits.spec.ts:28::Merchant deposits › Select deposits list advanced filters"
+	],
+	"targets": [
+		{
+			"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/merchant/payouts-disputes-smoke.spec.ts",
+			"contract": "pending"
+		}
+	],
+	"implementation_commits": [],
+	"verification": [],
+	"reviews": [
+		{
+			"role": "deferral",
+			"verdict": "APPROVE",
+			"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+			"summary": "Fresh broad review approved this exact line-28 blocked-environment deferral and its four-field-only transition, strict separation from line 11, retained manage_woocommerce authorization and semantic Pending control, accessible active scope, exact status_is=pending route/query and both list/summary request propagation, loaded-or-empty terminal state, honest fixture-or-scope boundary, frozen click-only false-positive rejection, pending owner and target preservation, earliest native-readiness blocker, later filter prerequisites, possible metadata issue not mislabeled as a known gap, lower-layer non-substitution, shared-target bundle risk, listener irrelevance, predecessor and calibration bindings, and zero quarantine."
+		}
+	],
+	"closures": [],
+	"known_gaps": [],
+	"deferral": {
+		"blocker": "Standing native ownership, account, and callback readiness fails first. The run also lacks a resolved exact target contract and implementation owner, authenticated connected native merchant fixture, approved Pending filter specification, semantic filter metadata and discoverability, complete UI-to-query-to-REST lower-layer coverage, and an explicit decision between visible filter/request propagation only or deterministic result inclusion and exclusion using approved payout identities.",
+		"affected_scope": "Only the exact line-28 payout-status filter observation: an authenticated merchant with manage_woocommerce discovers and selects the semantic native Pending filter; the UI visibly and accessibly communicates the active Pending scope; route/query state contains exactly status_is=pending; and both follow-up payout-list and payout-summary requests carry that predicate for the same account and reach a loaded-or-empty terminal state without protected-route, capability, migration/runtime, fetch, alert, or page-exception failure. Without approved deterministic pending and non-pending payouts, no provider result inclusion or exclusion is claimed.",
+		"no_allowlisted_action_reason": "No allowlisted action can repair standing native readiness, assign the unresolved target owner or exact contract, approve the filter semantics or fixture scope, provide the authenticated connected native fixture, or establish the complete semantic UI-to-query-to-both-requests observation. Existing query, mocked component/data, REST-controller, and API-client tests prove useful pieces but do not drive a merchant selecting the built native Pending control. The frozen plugin-specific clicks end without a terminal assertion and are not proof; line 11's unfiltered load-state evidence cannot substitute for this distinct filter contract. A possible missing native filter metadata issue is not a known gap until prerequisites pass and an exact target yields an anchored RED.",
+		"reference": "blocked-environment:PILOT-NATIVE-READINESS",
+		"unlock_decision": "Externally provide a standing store that passes native ownership, account, and callback readiness; resolve the exact target and owner; approve the Pending filter specification and semantic native control; add lower-layer RED/GREEN coverage for UI-to-query-to-REST propagation; and decide whether E2E proves only visible active filter plus list/summary request propagation or also deterministic result inclusion and exclusion with approved known pending and non-pending payout identities. Then run one zero-retry read-only observation with one worker. Before eventual closure, resolve the shared provisional target's bundle-drift risk by completing intended shared-file edits or assigning a row-specific target under an authorized specification decision.",
+		"quarantine_status": "This deferral allocated and mutated nothing, acquired no lease or lock, opened no provider-write or restoration journal, performed no browser or provider run, and created no quarantine. The existing separately owned listener is irrelevant to this read-only filter contract and remains untouched."
+	}
+}

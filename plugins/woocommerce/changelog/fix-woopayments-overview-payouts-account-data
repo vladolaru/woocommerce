@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+The WooPayments Overview payouts card now reads the payout restriction, the new-account waiting period, the minimum payout amounts and the account link from the account, as WooPayments does, so the schedule sentence, the waiting-period and minimum-balance notices, the Change payout schedule button and the failed-payout link show when they should.

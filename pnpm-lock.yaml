@@ -592,7 +592,7 @@ importers:
         version: 7.25.7
       '@storybook/addon-docs':
         specifier: 10.5.10
-        version: 10.5.10(@types/react-dom@18.3.7(@types/react@18.3.28))(@types/react@18.3.28)(esbuild@0.27.7)(storybook@10.5.10(@types/react@18.3.28)(prettier@2.8.8)(react@18.3.1))(webpack@5.97.1)
+        version: 10.5.10(@types/react-dom@18.3.7(@types/react@18.3.28))(@types/react@18.3.28)(esbuild@0.27.7)(storybook@10.5.10(@types/react@18.3.28)(prettier@2.8.8)(react@18.3.1))(webpack@5.97.1(@swc/core@1.15.24)(esbuild@0.27.7))
       '@storybook/addon-links':
         specifier: 10.5.10
         version: 10.5.10(@types/react@18.3.28)(react@18.3.1)(storybook@10.5.10(@types/react@18.3.28)(prettier@2.8.8)(react@18.3.1))
@@ -828,6 +828,9 @@ importers:
       '@woocommerce/experimental':
         specifier: workspace:*
         version: link:../experimental
+      '@wordpress/api-fetch':
+        specifier: catalog:wp-min
+        version: 7.33.1
       '@wordpress/components':
         specifier: catalog:wp-min
         version: 30.6.5(@emotion/is-prop-valid@1.4.0)(@types/react-dom@18.3.7(@types/react@18.3.28))(@types/react@18.3.28)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
@@ -837,6 +840,9 @@ importers:
       '@wordpress/data':
         specifier: ^10.19.0
         version: 10.44.0(@types/react@18.3.28)(react@18.3.1)
+      '@wordpress/data-controls':
+        specifier: catalog:wp-min
+        version: 4.33.1(@types/react@18.3.28)(react@18.3.1)
       '@wordpress/element':
         specifier: catalog:wp-min
         version: 6.33.1
@@ -3330,6 +3336,9 @@ importers:
       '@emotion/styled':
         specifier: ^11.11.0
         version: 11.14.1(@emotion/react@11.14.0(@types/react@18.3.28)(react@18.3.1))(@types/react@18.3.28)(react@18.3.1)
+      '@fingerprintjs/fingerprintjs':
+        specifier: 3.4.1
+        version: 3.4.1
       '@paypal/react-paypal-js':
         specifier: ^8.8.3
         version: 8.9.2(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
@@ -3842,6 +3851,9 @@ importers:
 
   plugins/woocommerce/client/legacy:
     dependencies:
+      '@fingerprintjs/fingerprintjs':
+        specifier: 3.4.1
+        version: 3.4.1
       sourcebuster:
         specifier: github:woocommerce/sourcebuster-js#b28980f98d8ed3f35ac84974e603a6c3bd103752
         version: https://codeload.github.com/woocommerce/sourcebuster-js/tar.gz/b28980f98d8ed3f35ac84974e603a6c3bd103752
@@ -3903,6 +3915,9 @@ importers:
       jquery4:
         specifier: npm:jquery@4.0.0
         version: jquery@4.0.0
+      msw:
+        specifier: 2.10.4
+        version: 2.10.4(@types/node@24.12.2)(typescript@5.7.3)
       sass:
         specifier: 1.69.5
         version: 1.69.5
@@ -4295,7 +4310,7 @@ importers:
         version: 10.5.10(storybook@10.5.10(@types/react@18.3.28)(prettier@2.8.8)(react@18.3.1))
       '@storybook/addon-docs':
         specifier: 10.5.10
-        version: 10.5.10(@types/react-dom@18.3.7(@types/react@18.3.28))(@types/react@18.3.28)(esbuild@0.27.7)(storybook@10.5.10(@types/react@18.3.28)(prettier@2.8.8)(react@18.3.1))(webpack@5.97.1)
+        version: 10.5.10(@types/react-dom@18.3.7(@types/react@18.3.28))(@types/react@18.3.28)(esbuild@0.27.7)(storybook@10.5.10(@types/react@18.3.28)(prettier@2.8.8)(react@18.3.1))(webpack@5.97.1(@swc/core@1.15.24)(esbuild@0.27.7))
       '@storybook/addon-links':
         specifier: 10.5.10
         version: 10.5.10(@types/react@18.3.28)(react@18.3.1)(storybook@10.5.10(@types/react@18.3.28)(prettier@2.8.8)(react@18.3.1))
@@ -5983,6 +5998,9 @@ packages:
   '@faker-js/faker@9.9.0':
     resolution: {integrity: sha512-OEl393iCOoo/z8bMezRlJu+GlRGlsKbUAN7jKB6LhnKoqKve5DXRpalbItIIcwnCjs1k/FOPjFzcA6Qn+H+YbA==}
     engines: {node: '>=18.0.0', npm: '>=9.0.0'}
+
+  '@fingerprintjs/fingerprintjs@3.4.1':
+    resolution: {integrity: sha512-i3TqlaIdF+4qDHP6OStMtLXCnvnoo2C156rNPm9/kIglUtnLAF45+sGkZZmVQB+58dDF0mNpaiqvKHNSR8J1Hg==}
 
   '@floating-ui/core@1.7.5':
     resolution: {integrity: sha512-1Ih4WTWyw0+lKyFMcBHGbb5U5FtuHJuujoyyr5zTaWS5EYMeT6Jb2AuDeftsCsEuchO+mM2ij5+q9crhydzLhQ==}
@@ -15123,8 +15141,8 @@ packages:
     resolution: {integrity: sha512-RE2g0b5VGZsOCFOCgP7omTRYFqydmZkBwl5oNnQ1lDYC57uyO9KqNnNVxT7COSHTxrRCWVcAVOcbjk+tvh/rgQ==}
     engines: {node: '>=0.10.0'}
 
-  legacy-javascript@0.0.3:
-    resolution: {integrity: sha512-1r6MT4dVaJyXt4G07Cm2cQ0AUaLJdefiEp4SmIAylA++gnEQ82YvmzE58RkM5EP0fk5hROLCslUPGnwIYdZQVA==}
+  legacy-javascript@0.0.4:
+    resolution: {integrity: sha512-UTmeKBVxnfJcpmpOvzzNnLsQT99BXHpPlc/ZKddIRmWmrR0fw6335I3lq4+sJoP60UTbBNaYsGYVPc65YB1x3A==}
 
   leven@3.1.0:
     resolution: {integrity: sha512-qsda+H8jTaUaN/x5vzW2rzc+8Rw4TAQ/4KjB46IwK5VH+IlVeeeje/EoZRpiXvIqjFgK84QffqPztGI3VBLG1A==}
@@ -22624,6 +22642,10 @@ snapshots:
 
   '@faker-js/faker@9.9.0': {}
 
+  '@fingerprintjs/fingerprintjs@3.4.1':
+    dependencies:
+      tslib: 2.8.1
+
   '@floating-ui/core@1.7.5':
     dependencies:
       '@floating-ui/utils': 0.2.12
@@ -24109,7 +24131,7 @@ snapshots:
 
   '@paulirish/trace_engine@0.0.59':
     dependencies:
-      legacy-javascript: 0.0.3
+      legacy-javascript: 0.0.4
       third-party-web: 0.30.0
 
   '@paypal/paypal-js@9.6.0':
@@ -24803,10 +24825,10 @@ snapshots:
       axe-core: 4.11.3
       storybook: 10.5.10(@types/react@18.3.28)(react@18.3.1)(wp-prettier@3.9.6)
 
-  '@storybook/addon-docs@10.5.10(@types/react-dom@18.3.7(@types/react@18.3.28))(@types/react@18.3.28)(esbuild@0.27.7)(storybook@10.5.10(@types/react@18.3.28)(prettier@2.8.8)(react@18.3.1))(webpack@5.97.1)':
+  '@storybook/addon-docs@10.5.10(@types/react-dom@18.3.7(@types/react@18.3.28))(@types/react@18.3.28)(esbuild@0.27.7)(storybook@10.5.10(@types/react@18.3.28)(prettier@2.8.8)(react@18.3.1))(webpack@5.97.1(@swc/core@1.15.24)(esbuild@0.27.7))':
     dependencies:
       '@mdx-js/react': 3.1.1(@types/react@18.3.28)(react@18.3.1)
-      '@storybook/csf-plugin': 10.5.10(esbuild@0.27.7)(storybook@10.5.10(@types/react@18.3.28)(prettier@2.8.8)(react@18.3.1))(webpack@5.97.1)
+      '@storybook/csf-plugin': 10.5.10(esbuild@0.27.7)(storybook@10.5.10(@types/react@18.3.28)(prettier@2.8.8)(react@18.3.1))(webpack@5.97.1(@swc/core@1.15.24)(esbuild@0.27.7))
       '@storybook/icons': 2.1.0(react@18.3.1)
       '@storybook/react-dom-shim': 10.5.10(@types/react-dom@18.3.7(@types/react@18.3.28))(@types/react@18.3.28)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(storybook@10.5.10(@types/react@18.3.28)(prettier@2.8.8)(react@18.3.1))
       react: 18.3.1
@@ -24923,7 +24945,7 @@ snapshots:
       storybook: 10.5.10(@types/react@18.3.28)(react@18.3.1)(wp-prettier@3.9.6)
       ts-dedent: 2.2.0
 
-  '@storybook/csf-plugin@10.5.10(esbuild@0.27.7)(storybook@10.5.10(@types/react@18.3.28)(prettier@2.8.8)(react@18.3.1))(webpack@5.97.1)':
+  '@storybook/csf-plugin@10.5.10(esbuild@0.27.7)(storybook@10.5.10(@types/react@18.3.28)(prettier@2.8.8)(react@18.3.1))(webpack@5.97.1(@swc/core@1.15.24)(esbuild@0.27.7))':
     dependencies:
       storybook: 10.5.10(@types/react@18.3.28)(prettier@2.8.8)(react@18.3.1)
       unplugin: 2.3.11
@@ -33512,7 +33534,7 @@ snapshots:
       postcss-value-parser: 4.2.0
       semver: 7.7.4
     optionalDependencies:
-      webpack: 5.97.1(@swc/core@1.15.24)(esbuild@0.27.7)(uglify-js@3.19.3)(webpack-cli@5.1.4)
+      webpack: 5.97.1(@swc/core@1.15.24)(esbuild@0.27.7)(webpack-cli@5.1.4)
 
   css-loader@7.1.4(webpack@5.97.1(@swc/core@1.15.24)(esbuild@0.27.7)):
     dependencies:
@@ -37351,7 +37373,7 @@ snapshots:
 
   lazy-cache@1.0.4: {}
 
-  legacy-javascript@0.0.3: {}
+  legacy-javascript@0.0.4: {}
 
   leven@3.1.0: {}
 
@@ -37926,7 +37948,7 @@ snapshots:
     dependencies:
       schema-utils: 4.3.3
       tapable: 2.3.2
-      webpack: 5.97.1(@swc/core@1.15.24)(esbuild@0.27.7)(uglify-js@3.19.3)(webpack-cli@5.1.4)
+      webpack: 5.97.1(@swc/core@1.15.24)(esbuild@0.27.7)(webpack-cli@5.1.4)
 
   minimalistic-assert@1.0.1: {}
 
@@ -42415,7 +42437,7 @@ snapshots:
       watchpack: 2.5.1
       webpack-sources: 3.3.4
     optionalDependencies:
-      webpack-cli: 5.1.4(webpack-bundle-analyzer@4.9.1)(webpack@5.97.1)
+      webpack-cli: 5.1.4(webpack-bundle-analyzer@4.9.1)(webpack-dev-server@4.15.2)(webpack@5.97.1)
     transitivePeerDependencies:
       - '@swc/core'
       - esbuild

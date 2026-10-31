@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Keep recognising order notes the WooPayments extension wrote in other languages after the switch to the built-in WooPayments, by storing the extension's translated note wordings during the switch.
