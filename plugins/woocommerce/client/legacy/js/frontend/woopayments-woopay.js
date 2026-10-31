@@ -13,8 +13,6 @@
 	var isWooPayRequesting = false;
 	// Client 11.2.0 woopay-express-checkout-button.js:282-295, :324-337 (onClickCallbackRef.current = onClickOtpFlow).
 	var isWooPayOtpFlowNext = false;
-	// This script's WooPay Connect client (wc-woopayments-woopay-common), created on first use.
-	var wooPayConnect = null;
 	var currentPreferredCard = null;
 	var buttonWidthThreshold = 140;
 	var cardDisplayWidthThreshold = 220;
@@ -142,20 +140,17 @@
 		} );
 	}
 
+	// The page's WooPay Connect client (wc-woopayments-woopay-common), which the Blocks WooPay script shares.
 	function getWooPayConnect() {
-		if ( ! wooPayConnect ) {
-			wooPayConnect = getWooPayProtocol().createConnect( {
-				woopayHost: config.woopayHost,
-				woopayMerchantId: config.woopayMerchantId,
-				testMode: config.testMode,
-				ajaxUrl: config.ajaxUrl,
-				platformTrackerNonce: config.platformTrackerNonce,
-				// Client 11.1.0 woopay/connect/woopay-connect-iframe.js:98-101.
-				iframeTitle: __( 'WooPay Connect Direct Checkout', 'woocommerce' ),
-			} );
-		}
-
-		return wooPayConnect;
+		return getWooPayProtocol().getConnect( {
+			woopayHost: config.woopayHost,
+			woopayMerchantId: config.woopayMerchantId,
+			testMode: config.testMode,
+			ajaxUrl: config.ajaxUrl,
+			platformTrackerNonce: config.platformTrackerNonce,
+			// Client 11.1.0 woopay/connect/woopay-connect-iframe.js:98-101.
+			iframeTitle: __( 'WooPay Connect Direct Checkout', 'woocommerce' ),
+		} );
 	}
 
 	// With shouldTimeOut, the fallback answers when WooPay does not reply within the connect timeout.

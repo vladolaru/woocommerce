@@ -15,8 +15,8 @@ import {
 	validateEmail,
 } from './helpers';
 import {
-	createConnect,
 	getCachedPreferredCard,
+	getConnect,
 	isSamePreferredCard,
 	isValidPreferredCard,
 	setCachedPreferredCard,
@@ -32,11 +32,11 @@ import { loadPhoneValidation, normalizePhone } from './phone-validation';
 export {
 	buildAjaxUrl,
 	claimWooPayRedirect,
-	createConnect,
 	deleteSkipWooPayCookie,
 	deleteSkipWooPayCookieOnClick,
 	dispatchUserExistEvent,
 	getCachedPreferredCard,
+	getConnect,
 	getTargetElement,
 	getWooPayHostOrigin,
 	handleEmailInput,
@@ -57,11 +57,11 @@ window.wc.woopayments = window.wc.woopayments || {};
 window.wc.woopayments.woopay = {
 	buildAjaxUrl,
 	claimWooPayRedirect,
-	createConnect,
 	deleteSkipWooPayCookie,
 	deleteSkipWooPayCookieOnClick,
 	dispatchUserExistEvent,
 	getCachedPreferredCard,
+	getConnect,
 	getTargetElement,
 	getWooPayHostOrigin,
 	handleEmailInput,

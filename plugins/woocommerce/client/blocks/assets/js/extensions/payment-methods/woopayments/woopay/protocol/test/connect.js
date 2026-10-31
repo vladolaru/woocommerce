@@ -1,7 +1,6 @@
 /**
  * Internal dependencies
  */
-import { createConnect } from '../connect';
 import { loadPhoneValidation, normalizePhone } from '../phone-validation';
 
 const WOOPAY_HOST = 'https://pay.woo.test';
@@ -10,6 +9,15 @@ const flushPromises = async () => {
 	for ( let i = 0; i < 6; i++ ) {
 		await Promise.resolve();
 	}
+};
+
+// The client lives for the page, so each case gets a fresh copy of the module.
+const loadGetConnect = () => {
+	let getConnect;
+	jest.isolateModules( () => {
+		( { getConnect } = require( '../connect' ) );
+	} );
+	return getConnect;
 };
 
 describe( 'WooPay Connect (shared)', () => {
@@ -35,6 +43,7 @@ describe( 'WooPay Connect (shared)', () => {
 		document.cookie =
 			'tk_ai=; path=/; expires=Thu, 01 Jan 1970 00:00:00 UTC;';
 		delete window.HTMLIFrameElement.prototype.contentWindow;
+		jest.useRealTimers();
 	} );
 
 	const loadConnectIframe = async () => {
@@ -52,7 +61,7 @@ describe( 'WooPay Connect (shared)', () => {
 	] )(
 		'reads testMode %p by truthiness in the connect URL',
 		async ( testMode, expected ) => {
-			createConnect( {
+			loadGetConnect()( {
 				woopayHost: WOOPAY_HOST,
 				woopayMerchantId: '123',
 				testMode,
@@ -68,27 +77,44 @@ describe( 'WooPay Connect (shared)', () => {
 		}
 	);
 
-	// Each script keeps its own Connect client over the page's one iframe, so the classic and Blocks WooPay scripts on
-	// one page each ask for the preferred card, as before the protocol was shared.
-	test( 'gives each script its own client over one connect iframe', async () => {
-		const args = { woopayHost: WOOPAY_HOST, iframeTitle: 'WooPay Connect' };
-		const first = createConnect( args ).fetchPreferredCard();
-		const second = createConnect( args ).fetchPreferredCard();
+	const sendWooPayMessage = ( data ) =>
+		window.dispatchEvent(
+			new window.MessageEvent( 'message', { origin: WOOPAY_HOST, data } )
+		);
+
+	const getPreemptiveSession = ( connect, value ) =>
+		connect.sendMessage(
+			{ action: 'setPreemptiveSessionData', value },
+			'setPreemptiveSessionData',
+			null,
+			true
+		);
+
+	// The classic and Blocks WooPay scripts both run on a Blocks cart or checkout with direct checkout on. Client 11.2.0
+	// asks once per page (express-button/preferred-card-fetch.ts), and direct checkout asks for no card.
+	test( 'gives the classic and Blocks WooPay scripts one client, which asks for the preferred card once', async () => {
+		const getConnect = loadGetConnect();
+		const classicConnect = getConnect( {
+			woopayHost: WOOPAY_HOST,
+			iframeTitle: 'WooPay Connect Direct Checkout',
+		} );
+		const blocksConnect = getConnect( {
+			woopayHost: WOOPAY_HOST,
+			iframeTitle: 'WooPay Connect',
+		} );
+		const first = classicConnect.fetchPreferredCard();
+		const second = blocksConnect.fetchPreferredCard();
 
 		await loadConnectIframe();
 
+		expect( blocksConnect ).toBe( classicConnect );
 		expect( document.querySelectorAll( 'iframe' ) ).toHaveLength( 1 );
-		expect( postMessage ).toHaveBeenCalledTimes( 2 );
+		expect( postMessage ).toHaveBeenCalledTimes( 1 );
 
-		window.dispatchEvent(
-			new window.MessageEvent( 'message', {
-				origin: WOOPAY_HOST,
-				data: {
-					action: 'get_preferred_payment_method_success',
-					value: { brand: 'visa', last4: '4242' },
-				},
-			} )
-		);
+		sendWooPayMessage( {
+			action: 'get_preferred_payment_method_success',
+			value: { brand: 'visa', last4: '4242' },
+		} );
 
 		await expect( first ).resolves.toEqual( {
 			brand: 'visa',
@@ -98,6 +124,101 @@ describe( 'WooPay Connect (shared)', () => {
 			brand: 'visa',
 			last4: '4242',
 		} );
+	} );
+
+	// Hosted WooPay answers every request and its answers name none (build/connect.js), so with one client two requests
+	// under one name wait on one list. A newer request taking the callback would leave the older one waiting for its
+	// 5 s deadline, and its own answer unused.
+	test( 'settles two requests under one name from their two answers, without a deadline', async () => {
+		jest.useFakeTimers();
+		const connect = loadGetConnect()( { woopayHost: WOOPAY_HOST } );
+		const settled = [];
+		getPreemptiveSession( connect, 'first' ).then( ( value ) =>
+			settled.push( [ 'first', value ] )
+		);
+		getPreemptiveSession( connect, 'second' ).then( ( value ) =>
+			settled.push( [ 'second', value ] )
+		);
+
+		await loadConnectIframe();
+		expect( postMessage ).toHaveBeenCalledTimes( 2 );
+
+		sendWooPayMessage( {
+			action: 'set_preemptive_session_data_success',
+			value: { redirect_url: 'https://pay.woo.test/first' },
+		} );
+		await flushPromises();
+		expect( settled ).toEqual( [
+			[ 'first', { redirect_url: 'https://pay.woo.test/first' } ],
+		] );
+
+		sendWooPayMessage( { action: 'set_preemptive_session_data_error' } );
+		await flushPromises();
+		expect( settled ).toEqual( [
+			[ 'first', { redirect_url: 'https://pay.woo.test/first' } ],
+			[ 'second', { is_error: true } ],
+		] );
+
+		await jest.advanceTimersByTimeAsync( 5000 );
+		expect( settled ).toHaveLength( 2 );
+	} );
+
+	test( 'keeps the newer request waiting when the older one reaches its deadline', async () => {
+		jest.useFakeTimers();
+		const connect = loadGetConnect()( { woopayHost: WOOPAY_HOST } );
+		const settled = [];
+		getPreemptiveSession( connect, 'first' ).then( ( value ) =>
+			settled.push( [ 'first', value ] )
+		);
+		await loadConnectIframe();
+		await jest.advanceTimersByTimeAsync( 1000 );
+		getPreemptiveSession( connect, 'second' ).then( ( value ) =>
+			settled.push( [ 'second', value ] )
+		);
+		await jest.advanceTimersByTimeAsync( 4000 );
+		expect( settled ).toEqual( [ [ 'first', null ] ] );
+
+		sendWooPayMessage( {
+			action: 'set_preemptive_session_data_success',
+			value: { redirect_url: 'https://pay.woo.test/second' },
+		} );
+		await flushPromises();
+		expect( settled[ 1 ] ).toEqual( [
+			'second',
+			{ redirect_url: 'https://pay.woo.test/second' },
+		] );
+	} );
+
+	// A request sent to an iframe that left the page gets no answer, so it must not stand in front of the new iframe's.
+	test( 'gives the answer of a replacement iframe to the request sent to it', async () => {
+		jest.useFakeTimers();
+		const connect = loadGetConnect()( { woopayHost: WOOPAY_HOST } );
+		const settled = [];
+		getPreemptiveSession( connect, 'lost' ).then( ( value ) =>
+			settled.push( [ 'lost', value ] )
+		);
+		await loadConnectIframe();
+
+		document.getElementById( 'woopay-connect-iframe' ).remove();
+		getPreemptiveSession( connect, 'replacement' ).then( ( value ) =>
+			settled.push( [ 'replacement', value ] )
+		);
+		await loadConnectIframe();
+		sendWooPayMessage( {
+			action: 'set_preemptive_session_data_success',
+			value: { redirect_url: 'https://pay.woo.test/replacement' },
+		} );
+		await flushPromises();
+
+		expect( settled ).toEqual( [
+			[
+				'replacement',
+				{ redirect_url: 'https://pay.woo.test/replacement' },
+			],
+		] );
+
+		await jest.advanceTimersByTimeAsync( 5000 );
+		expect( settled[ 1 ] ).toEqual( [ 'lost', null ] );
 	} );
 } );
 

@@ -17,9 +17,9 @@ import {
 } from './express-checkout-iframe';
 import {
 	buildAjaxUrl,
-	createConnect,
 	deleteSkipWooPayCookieOnClick as deleteSkipWooPayCookie,
 	getCachedPreferredCard,
+	getConnect,
 	isSamePreferredCard,
 	setCachedPreferredCard,
 } from './protocol';
@@ -44,9 +44,9 @@ const brandDisplayNames = {
 	unionpay: __( 'Union Pay', 'woocommerce' ),
 	visa: __( 'Visa', 'woocommerce' ),
 };
-// This script's WooPay Connect client; the classic WooPay script on the same page has its own over the same iframe.
-// The values are read from the settings when used.
-const wooPayConnect = createConnect( {
+// What this script gives the page's WooPay Connect client, which it shares with the classic WooPay script. The values
+// are read from the settings when used.
+const wooPayConnectArgs = {
 	get woopayHost() {
 		return settings.woopayHost;
 	},
@@ -63,7 +63,7 @@ const wooPayConnect = createConnect( {
 		return settings.platformTrackerNonce;
 	},
 	iframeTitle: __( 'WooPay Connect', 'woocommerce' ),
-} );
+};
 let navigate = ( url ) => {
 	window.location.href = url;
 };
@@ -116,10 +116,11 @@ const getPreferredCardDisplayName = ( preferredCard ) => {
 	return brandDisplayNames[ normalizedBrand ] || normalizedBrand;
 };
 
-const fetchPreferredCardFromWooPay = () => wooPayConnect.fetchPreferredCard();
+const fetchPreferredCardFromWooPay = () =>
+	getConnect( wooPayConnectArgs ).fetchPreferredCard();
 
 const sendPreemptiveSessionDataToWooPay = ( sessionData ) =>
-	wooPayConnect.sendPreemptiveSessionData( sessionData );
+	getConnect( wooPayConnectArgs ).sendPreemptiveSessionData( sessionData );
 
 const usePreferredCard = () => {
 	const [ preferredCard, setPreferredCard ] = useState(

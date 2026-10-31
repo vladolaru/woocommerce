@@ -21,11 +21,11 @@ describe( 'wc-woopayments-woopay-common', () => {
 			expect.objectContaining( {
 				buildAjaxUrl: fn,
 				claimWooPayRedirect: fn,
-				createConnect: fn,
 				deleteSkipWooPayCookie: fn,
 				deleteSkipWooPayCookieOnClick: fn,
 				dispatchUserExistEvent: fn,
 				getCachedPreferredCard: fn,
+				getConnect: fn,
 				getTargetElement: fn,
 				getWooPayHostOrigin: fn,
 				handleEmailInput: fn,

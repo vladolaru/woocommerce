@@ -12,6 +12,7 @@ import { dispatch } from '@wordpress/data';
  * Internal dependencies
  */
 import registerWooPay, { __test__ } from '../index';
+import { getConnect } from '../protocol';
 
 jest.mock( '@woocommerce/blocks-registry', () => ( {
 	registerExpressPaymentMethod: jest.fn(),
@@ -735,6 +736,53 @@ describe( 'wc-payment-method-woopayments-woopay', () => {
 				'https://pay.woo.test'
 			);
 		} );
+
+		// The classic script's preferred-card call, on a Blocks cart with direct checkout on.
+		it( 'sends one preferred-card request for the button and the classic script', async () => {
+			const classicCard = getConnect( {
+				woopayHost: 'https://pay.woo.test',
+			} ).fetchPreferredCard();
+
+			renderButton();
+			const connectIframe = document.getElementById(
+				'woopay-connect-iframe'
+			);
+			await waitFor( () => {
+				expect( connectIframe.getAttribute( 'src' ) ).not.toBeNull();
+			} );
+			connectIframe.dispatchEvent( new window.Event( 'load' ) );
+			await waitFor( () => {
+				expect( postMessage ).toHaveBeenCalled();
+			} );
+			await act( async () => {
+				window.dispatchEvent(
+					new window.MessageEvent( 'message', {
+						origin: 'https://pay.woo.test',
+						data: {
+							action: 'get_preferred_payment_method_success',
+							value: { brand: 'visa', last4: '4242' },
+						},
+					} )
+				);
+				await classicCard;
+			} );
+
+			await expect( classicCard ).resolves.toEqual( {
+				brand: 'visa',
+				last4: '4242',
+			} );
+			await waitFor( () => {
+				expect(
+					window.localStorage.getItem( 'woopay_preferred_card' )
+				).toContain( '4242' );
+			} );
+			expect(
+				postMessage.mock.calls.filter(
+					( [ message ] ) =>
+						message.action === 'getPreferredPaymentMethod'
+				)
+			).toHaveLength( 1 );
+		} );
 		// Client 11.2.0 WoopayConnect.sendMessageAndListenWith() (connect/woopay-connect.js:170-195) starts its timeout
 		// before it awaits the iframe, so a Connect iframe that never loads still settles the request; native legacy
 		// does the same (woopayments-woopay.js sendWooPayConnectMessage()).
@@ -858,9 +906,9 @@ describe( 'wc-payment-method-woopayments-woopay', () => {
 			} );
 
 			// Two WooPay buttons on the page can each start a session request under one callback name before the first
-			// deadline. Client 11.2.0 gives each request its own timer and isRejected flag, and the newest takes the
-			// listener (connect/woopay-connect.js:170-195): the first expires at its deadline and never posts, the
-			// second keeps the callback for its own answer.
+			// deadline. Each request has its own timer and isRejected flag, as in client 11.2.0
+			// (connect/woopay-connect.js:170-195): the first expires at its deadline and never posts, and the second
+			// waits for its own answer.
 			it( 'settles each of two overlapping session requests on its own deadline', async () => {
 				registerWooPay();
 				const WooPayButton =

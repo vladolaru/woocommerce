@@ -6,12 +6,14 @@ import { getWooPayHostOrigin } from './helpers';
 
 /*
  * WooPay Connect: a hidden iframe of WooPay's connect page that answers postMessage requests (client 11.2.0
- * checkout/woopay/connect/). The iframe and the wait for its page live on the iframe element, so every script on the
- * page posts through the same one.
+ * checkout/woopay/connect/). This entry is one script on the page, so the classic and Blocks WooPay scripts share one
+ * client through getConnect(). The wait for the connect page lives on the iframe element.
  */
 
 const PREFERRED_CARD_CACHE_KEY = 'woopay_preferred_card';
 const CONNECT_TIMEOUT = 5000;
+
+let pageConnect = null;
 
 export const isValidPreferredCard = ( card ) =>
 	Boolean(
@@ -63,10 +65,9 @@ export const setCachedPreferredCard = ( card ) => {
 };
 
 /**
- * Create a script's WooPay Connect client: its own message listener, pending requests and preferred-card request, over
- * the page's one connect iframe.
+ * Create the page's WooPay Connect client: its message listener, pending requests, preferred-card request and iframe.
  *
- * @param {Object}  args                      The calling script's values.
+ * @param {Object}  args                      The first calling script's values.
  * @param {string}  args.woopayHost           The WooPay host URL.
  * @param {string}  args.woopayMerchantId     The store's WooPay blog ID.
  * @param {boolean} args.testMode             Whether the account is in test mode; left out of the URL when undefined.
@@ -75,8 +76,9 @@ export const setCachedPreferredCard = ( card ) => {
  * @param {string}  args.iframeTitle          Title of the connect iframe, when this script creates it.
  * @return {Object} `sendMessage`, `sendPreemptiveSessionData` and `fetchPreferredCard`.
  */
-export const createConnect = ( args ) => {
-	const callbacks = {};
+const createConnect = ( args ) => {
+	// The requests waiting for an answer, by callback name, oldest first.
+	let pendingRequests = {};
 	let isListenerAttached = false;
 	let preferredCardFetchPromise = null;
 
@@ -114,12 +116,11 @@ export const createConnect = ( args ) => {
 	};
 
 	const resolveCallback = ( callbackName, value ) => {
-		if ( ! callbacks[ callbackName ] ) {
-			return;
-		}
+		const [ oldestRequest ] = pendingRequests[ callbackName ] || [];
 
-		callbacks[ callbackName ]( value );
-		delete callbacks[ callbackName ];
+		if ( oldestRequest ) {
+			oldestRequest( value );
+		}
 	};
 
 	const attachListener = () => {
@@ -177,8 +178,8 @@ export const createConnect = ( args ) => {
 		isListenerAttached = true;
 	};
 
-	// The connect iframe carries the wait for its connect page, so every script on the page waits for the same load;
-	// client 11.2.0 shares that state in window.WooPayConnect (connect/connect-utils.js).
+	// The connect iframe carries the wait for its connect page; client 11.2.0 shares that state in window.WooPayConnect
+	// (connect/connect-utils.js).
 	const getPostMessage = () => {
 		const existingIframe = document.getElementById(
 			'woopay-connect-iframe'
@@ -196,6 +197,9 @@ export const createConnect = ( args ) => {
 			);
 		}
 
+		// The iframe is gone, so nothing is left to answer the requests sent to it. They end at their deadlines, and an
+		// answer from the new iframe must not reach them.
+		pendingRequests = {};
 		preferredCardFetchPromise = null;
 
 		if ( ! args.woopayHost ) {
@@ -245,9 +249,10 @@ export const createConnect = ( args ) => {
 	 * Post a request to WooPay Connect and resolve its answer.
 	 *
 	 * Each request owns its timer and settled state, as client 11.2.0 sendMessageAndListenWith() owns its timer and
-	 * isRejected flag (connect/woopay-connect.js:170-195): the newest request under a name takes the callback, a deadline
-	 * settles only its own request, and a value reaching a settled request is ignored. Unlike the client, an expired
-	 * request also never posts.
+	 * isRejected flag (connect/woopay-connect.js:170-195): a deadline settles only its own request. WooPay answers every
+	 * request and its answers name none, so an answer goes to the oldest request under its name, and a newer request
+	 * never takes the place of an older one and leaves it waiting for its deadline. Unlike the client, an expired request
+	 * also never posts.
 	 *
 	 * @param {Object}  message       The message for the connect page.
 	 * @param {string}  callbackName  The answer it waits for.
@@ -259,6 +264,9 @@ export const createConnect = ( args ) => {
 		attachListener();
 
 		return new Promise( ( resolve ) => {
+			// First, so a replaced iframe has cleared its requests before this one joins the list.
+			const connectPostMessage = getPostMessage();
+			const pending = pendingRequests[ callbackName ] || [];
 			let timeoutId;
 			let isSettled = false;
 			const settle = ( value ) => {
@@ -268,13 +276,12 @@ export const createConnect = ( args ) => {
 
 				isSettled = true;
 				window.clearTimeout( timeoutId );
-				if ( callbacks[ callbackName ] === settle ) {
-					delete callbacks[ callbackName ];
-				}
+				pending.splice( pending.indexOf( settle ), 1 );
 				resolve( value );
 			};
 
-			callbacks[ callbackName ] = settle;
+			pending.push( settle );
+			pendingRequests[ callbackName ] = pending;
 
 			if ( shouldTimeOut ) {
 				timeoutId = window.setTimeout(
@@ -283,7 +290,7 @@ export const createConnect = ( args ) => {
 				);
 			}
 
-			getPostMessage()
+			connectPostMessage
 				.then( ( postMessage ) => {
 					if ( ! isSettled ) {
 						postMessage( message );
@@ -333,4 +340,20 @@ export const createConnect = ( args ) => {
 	};
 
 	return { sendMessage, sendPreemptiveSessionData, fetchPreferredCard };
+};
+
+/**
+ * Get the page's one WooPay Connect client, so the page sends one preferred-card request, the count of client 11.2.0
+ * express-button/preferred-card-fetch.ts. The first caller's values build it: both WooPay scripts get the same
+ * connection values from the store.
+ *
+ * @param {Object} args The calling script's values; see createConnect().
+ * @return {Object} `sendMessage`, `sendPreemptiveSessionData` and `fetchPreferredCard`.
+ */
+export const getConnect = ( args ) => {
+	if ( ! pageConnect ) {
+		pageConnect = createConnect( args );
+	}
+
+	return pageConnect;
 };

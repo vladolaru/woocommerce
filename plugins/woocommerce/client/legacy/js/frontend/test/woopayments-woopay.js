@@ -1032,6 +1032,46 @@ describe( 'WooPayments WooPay checkout', () => {
 			rectSpy.mockRestore();
 		} );
 
+		// The Blocks button's preferred-card call, on a Blocks cart with direct checkout on.
+		test( 'sends one preferred-card request for this script and the Blocks button', async () => {
+			const postMessage = jest.fn();
+			Object.defineProperty( window.HTMLIFrameElement.prototype, 'contentWindow', {
+				configurable: true,
+				get() {
+					return { postMessage };
+				},
+			} );
+			window.wcpay_core_woopay_config.woopayHost = 'https://pay.woo.test';
+			const blocksCard = window.wc.woopayments.woopay
+				.getConnect( { woopayHost: 'https://pay.woo.test' } )
+				.fetchPreferredCard();
+
+			require( '../woopayments-woopay' );
+			await loadConnectIframe();
+			await flushPromises();
+			window.dispatchEvent(
+				new window.MessageEvent( 'message', {
+					origin: 'https://pay.woo.test',
+					data: {
+						action: 'get_preferred_payment_method_success',
+						value: { brand: 'visa', last4: '4242' },
+					},
+				} )
+			);
+			await flushPromises();
+
+			await expect( blocksCard ).resolves.toEqual( {
+				brand: 'visa',
+				last4: '4242',
+			} );
+			expect( window.localStorage.getItem( 'woopay_preferred_card' ) ).toContain( '4242' );
+			expect(
+				postMessage.mock.calls.filter(
+					( [ message ] ) => message.action === 'getPreferredPaymentMethod'
+				)
+			).toHaveLength( 1 );
+		} );
+
 		test( 'does not add disabled product forms to the cart before product-page WooPay init', async () => {
 				document.body.innerHTML =
 					'<form class="cart">' +
@@ -2270,7 +2310,7 @@ describe( 'WooPayments WooPay checkout', () => {
 		} );
 
 		// Two direct checkout links can each start a request under one Connect callback name before the first deadline
-		// (each link guards only itself). Client 11.2.0 settles each request on its own timer
+		// (each link guards only itself). Each request settles on its own timer, as in client 11.2.0
 		// (connect/woopay-connect.js:170-195): the first expires at its deadline and never posts; the second waits for
 		// its own answer or deadline.
 		test( 'settles each of two overlapping direct checkout requests on its own deadline', async () => {
@@ -2305,8 +2345,8 @@ describe( 'WooPayments WooPay checkout', () => {
 			await flushMicrotasks();
 			expect( getEncryptedDataPosts() ).toHaveLength( 1 );
 
-			// The second request still holds the callback: its own answer (no identity here) settles it before its
-			// deadline, and the store checkout opens for that link.
+			// The second request is still waiting: its own answer (no identity here) settles it before its deadline, and
+			// the store checkout opens for that link.
 			emitConnectMessage( 'get_encrypted_data_success', null );
 			await flushMicrotasks();
 			expect( navigate ).toHaveBeenCalledTimes( 2 );
