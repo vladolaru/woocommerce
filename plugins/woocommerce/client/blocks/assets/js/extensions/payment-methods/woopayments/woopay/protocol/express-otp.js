@@ -173,7 +173,7 @@ export const openExpressOtpIframe = ( args, context, email, tracksUserId ) => {
 				break;
 			case 'redirect_to_platform_checkout':
 			case 'redirect_to_woopay': {
-				if ( ! claimWooPayRedirect( e ) ) {
+				if ( ! claimWooPayRedirect( e, iframe ) ) {
 					break;
 				}
 				const promise = initWooPay(

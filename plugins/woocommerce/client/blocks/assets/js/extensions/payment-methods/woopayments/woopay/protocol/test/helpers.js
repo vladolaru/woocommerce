@@ -52,11 +52,19 @@ describe( 'WooPay protocol helpers', () => {
 		expect( validateEmail( 'not an email' ) ).toBe( false );
 	} );
 
-	test( 'lets the first listener claim a redirect message', () => {
+	test( 'lets the first listener with an open dialog claim a redirect message', () => {
 		const event = {};
+		const openDialog = document.body.appendChild(
+			document.createElement( 'iframe' )
+		);
 
-		expect( claimWooPayRedirect( event ) ).toBe( true );
-		expect( claimWooPayRedirect( event ) ).toBe( false );
+		expect(
+			claimWooPayRedirect( event, document.createElement( 'iframe' ) )
+		).toBe( false );
+		expect( claimWooPayRedirect( event, openDialog ) ).toBe( true );
+		expect( claimWooPayRedirect( event, openDialog ) ).toBe( false );
+
+		openDialog.remove();
 	} );
 
 	describe( 'the skip_woopay cookie', () => {

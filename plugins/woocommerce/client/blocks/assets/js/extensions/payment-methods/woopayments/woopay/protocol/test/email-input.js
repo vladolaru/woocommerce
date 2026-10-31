@@ -2,6 +2,7 @@
  * Internal dependencies
  */
 import { handleEmailInput } from '../email-input';
+import { openExpressOtpIframe } from '../express-otp';
 
 const WOOPAY_HOST = 'https://pay.woo.test';
 
@@ -244,6 +245,78 @@ describe( 'WooPay email check (shared)', () => {
 			expect( document.activeElement === input ).toBe( refocuses );
 		}
 	);
+
+	// The email check is wired at load, so its listener hears the button dialog's redirect message first. The button's
+	// dialog owns that flow: one init_woopay, and the outcome the button promises, not the email check's notice.
+	describe( 'with the WooPay button dialog open on the same page', () => {
+		const sendRedirect = () =>
+			window.dispatchEvent(
+				new window.MessageEvent( 'message', {
+					origin: WOOPAY_HOST,
+					data: {
+						action: 'redirect_to_woopay',
+						platformCheckoutUserSession: 'session',
+					},
+				} )
+			);
+
+		test.each( [
+			[ 'rejected', 'open', 1 ],
+			[ 'rejected', 'closed', 0 ],
+			[ 'answered with a failure', 'open', 1 ],
+			[ 'answered with a failure', 'closed', 0 ],
+		] )(
+			'init_woopay %s with the dialog %s shows %p button errors and no email notice',
+			async ( outcome, dialog, errors ) => {
+				const emailArgs = getArgs();
+				const settle = {};
+				const buttonArgs = getArgs( {
+					showError: jest.fn(),
+					post: jest.fn(
+						() =>
+							new Promise( ( resolve, reject ) => {
+								settle.resolve = resolve;
+								settle.reject = reject;
+							} )
+					),
+				} );
+				handleEmailInput( emailArgs, input );
+				openExpressOtpIframe( buttonArgs, 'checkout', '' );
+
+				sendRedirect();
+				if ( dialog === 'closed' ) {
+					document
+						.querySelector( '.woopay-otp-iframe-close' )
+						.click();
+				}
+				if ( outcome === 'rejected' ) {
+					settle.reject( new Error( 'failed' ) );
+				} else {
+					settle.resolve( { result: 'failure' } );
+				}
+				await flushPromises();
+
+				expect( buttonArgs.post ).toHaveBeenCalledTimes( 1 );
+				expect( buttonArgs.post ).toHaveBeenCalledWith(
+					'init_woopay',
+					expect.anything()
+				);
+				expect( emailArgs.post ).not.toHaveBeenCalledWith(
+					'init_woopay',
+					expect.anything()
+				);
+				expect( buttonArgs.showError ).toHaveBeenCalledTimes( errors );
+				expect(
+					document.querySelector( '.woopay-otp-iframe' )
+				).toBeNull();
+				expect(
+					document.querySelector(
+						'.wc-block-checkout__guest-checkout-notice'
+					)
+				).toBeNull();
+			}
+		);
+	} );
 
 	test( 'cancels the lookup through the calling script when the order is placed', async () => {
 		const args = getArgs();
