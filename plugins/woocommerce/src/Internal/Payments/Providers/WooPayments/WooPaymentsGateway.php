@@ -801,7 +801,7 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 		$supports        = $this->get_card_gateway_supports();
 		$config          = $checkout_assets->get_payment_fields_config( $supports, $this->payment_method_definition );
 		$checkout_assets->enqueue_payment_fields_assets( $config, $supports );
-		$json_config = wp_json_encode( $config );
+		$json_config = wp_json_encode( $checkout_assets->get_payment_form_config( $config ) );
 
 		if ( ! is_string( $json_config ) ) {
 			$json_config = '{}';

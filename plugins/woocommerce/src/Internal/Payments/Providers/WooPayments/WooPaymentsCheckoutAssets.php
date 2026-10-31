@@ -96,6 +96,19 @@ class WooPaymentsCheckoutAssets implements RegisterHooksInterface {
 	);
 
 	/**
+	 * Config keys the classic checkout gets only once per page, in the localized config, and never in the payment form.
+	 *
+	 * Their values change between renders with nothing in the cart changed: the WooPay session data is sealed under a new
+	 * IV each time, and the shortcode flag reads the requested page. WooCommerce replaces the payment fragment when its
+	 * markup changes (checkout.js:778-786), which empties the card the shopper typed. Client 11.2.0 likewise prints only
+	 * cart values in the fragment (includes/class-wc-payments-checkout.php:418-428).
+	 */
+	private const PAGE_ONLY_CONFIG_KEYS = array(
+		'woopayMinimumSessionData',
+		'isShortcodeCheckout',
+	);
+
+	/**
 	 * Country-specific Stripe test card numbers used by WooPayments checkout.
 	 *
 	 * @var array<string,string>
@@ -573,6 +586,19 @@ class WooPaymentsCheckoutAssets implements RegisterHooksInterface {
 	 */
 	public function get_payment_fields_config( array $supports, ?PaymentMethodDefinition $payment_method_definition = null ): array {
 		return $this->complete_payment_fields_js_config( $this->get_payment_list_config_base( $supports ), $payment_method_definition );
+	}
+
+	/**
+	 * Get the part of a gateway's payment fields config that its classic payment form prints: all of it but the keys the
+	 * page gets only once (PAGE_ONLY_CONFIG_KEYS), so a form rendered again with nothing changed prints the same markup.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @param array<string,mixed> $config Payment fields config, as get_payment_fields_config() returns it.
+	 * @return array<string,mixed>
+	 */
+	public function get_payment_form_config( array $config ): array {
+		return array_diff_key( $config, array_flip( self::PAGE_ONLY_CONFIG_KEYS ) );
 	}
 
 	/**

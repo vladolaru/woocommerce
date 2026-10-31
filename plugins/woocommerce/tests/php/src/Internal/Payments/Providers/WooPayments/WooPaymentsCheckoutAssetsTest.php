@@ -1824,6 +1824,104 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * WooCommerce replaces the payment fragment of an update_order_review answer when its HTML differs from the last
+	 * answer's (checkout.js:778-786), and the replaced form remounts the card element empty. Client 11.2.0 localizes its
+	 * config once per page (includes/class-wc-payments-checkout.php:481) and its fragment carries only what the cart can
+	 * change (:418-428, :521), so an update with nothing changed leaves the typed card alone.
+	 *
+	 * @testdox Should print the same payment form on the checkout page and on two updates with nothing changed: $shopper, WooPay on $woopay.
+	 * @testWith ["guest", true]
+	 *           ["guest", false]
+	 *           ["customer", true]
+	 *           ["customer", false]
+	 *
+	 * @param string $shopper Who checks out.
+	 * @param bool   $woopay  Whether WooPay is on.
+	 */
+	public function test_payment_form_prints_the_same_bytes_on_every_render_with_nothing_changed( string $shopper, bool $woopay ): void {
+		\Jetpack_Options::update_option( 'id', 12345 );
+		\Jetpack_Options::update_option( 'blog_token', 'blog-token' );
+		wp_set_current_user( 'customer' === $shopper ? self::factory()->user->create( array( 'role' => 'customer' ) ) : 0 );
+		// The real WooPay minimum session data, sealed under a new IV on every call (WooPay/SessionService.php:539).
+		$sealed_session = wc_get_container()->get( SessionService::class );
+		$woopay_service = $this->getMockBuilder( SessionService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_woopay_frontend_config', 'get_save_user_checkout_data' ) )
+			->getMock();
+		$woopay_config  = $this->create_woopay_session_service( $woopay )->get_woopay_frontend_config();
+		$woopay_service->method( 'get_woopay_frontend_config' )->willReturnCallback(
+			static fn(): array => array_merge( $woopay_config, array( 'woopayMinimumSessionData' => $woopay ? $sealed_session->get_encrypted_minimum_session_data() : array() ) )
+		);
+		$woopay_service->method( 'get_save_user_checkout_data' )->willReturn( array() );
+		$assets = new WooPaymentsCheckoutAssets();
+		$assets->init( $this->create_account_service( true ), $woopay_service, $this->create_woopay_eligibility( $woopay ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller(), new PaymentMethodRegistry() );
+		$gateway = $this->create_card_gateway( $assets );
+		WC()->cart->add_to_cart( \WC_Helper_Product::create_simple_product()->get_id(), 1 );
+		WC()->cart->calculate_totals();
+		$page_id = self::factory()->post->create(
+			array(
+				'post_type'    => 'page',
+				'post_status'  => 'publish',
+				'post_content' => '[woocommerce_checkout]',
+			)
+		);
+		update_option( 'woocommerce_checkout_page_id', $page_id );
+		// Each render is its own request, whose init clears the config memos (register()).
+		$render = static function () use ( $assets, $gateway ): string {
+			$assets->reset_config_memos();
+			ob_start();
+			$gateway->payment_fields();
+
+			return (string) ob_get_clean();
+		};
+
+		try {
+			$this->reset_cart_checkout_page_cache();
+			$this->go_to( get_permalink( $page_id ) );
+			$this->assertTrue( is_checkout(), 'Precondition: the checkout page.' );
+			$forms = array( 'checkout page' => $render() );
+			$page  = $this->get_localized_core_checkout_config( (string) wp_scripts()->get_data( 'wc-woopayments-checkout', 'data' ) );
+
+			// WC_AJAX::update_order_review() defines WOOCOMMERCE_CHECKOUT before it renders the payment fragment.
+			$this->go_to( add_query_arg( 'wc-ajax', 'update_order_review', home_url( '/' ) ) );
+			$this->reset_cart_checkout_page_cache();
+			Constants::set_constant( 'WOOCOMMERCE_CHECKOUT', true );
+			$forms['first update']  = $render();
+			$forms['second update'] = $render();
+		} finally {
+			Constants::clear_single_constant( 'WOOCOMMERCE_CHECKOUT' );
+			delete_option( 'woocommerce_' . WooPaymentsPersistenceVocabulary::GATEWAY_ID . '_settings' );
+			WC()->cart->empty_cart();
+		}
+
+		$pairs = array(
+			'first update'  => 'checkout page',
+			'second update' => 'first update',
+		);
+		foreach ( $pairs as $label => $previous ) {
+			$this->assertSame( self::get_printed_config( $forms[ $previous ] ), self::get_printed_config( $forms[ $label ] ), "The {$label} prints the {$previous}'s config." );
+			$this->assertSame( $forms[ $previous ], $forms[ $label ], "The {$label} prints the {$previous}'s payment form." );
+		}
+		// The page still gets the keys the form leaves out, once, in the config localized with the checkout page.
+		$this->assertSame( '1', $page['isShortcodeCheckout'] ?? null, 'The page config marks the shortcode checkout; the localizer prints true as "1".' );
+		$this->assertSame( $woopay ? 12345 : null, $page['woopayMinimumSessionData']['blog_id'] ?? null, 'The page config carries the WooPay session data when WooPay is on.' );
+	}
+
+	/**
+	 * Decode the config a payment form prints in its `data-wcpay-config` attribute.
+	 *
+	 * @param string $form Payment form markup.
+	 * @return array<string,mixed>
+	 */
+	private static function get_printed_config( string $form ): array {
+		if ( 1 !== preg_match( '/data-wcpay-config="([^"]*)"/', $form, $matches ) ) {
+			return array();
+		}
+
+		return (array) json_decode( html_entity_decode( $matches[1], ENT_QUOTES ), true );
+	}
+
+	/**
 	 * @testdox Should make core's tokenization-form.js a dependency of the classic checkout script when the card gateway supports tokenization, as client 11.1.0 does.
 	 */
 	public function test_classic_script_depends_on_tokenization_form_when_tokenization_is_supported(): void {
