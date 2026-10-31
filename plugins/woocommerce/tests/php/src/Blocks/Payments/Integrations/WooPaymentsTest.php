@@ -44,6 +44,45 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 	private $temp_theme_root = '';
 
 	/**
+	 * The WooPayments handles each Blocks script's generated asset file lists, by script handle.
+	 *
+	 * @var array<string,string[]>
+	 */
+	private array $asset_file_dependencies = array();
+
+	/**
+	 * Supply what the Blocks build generates. CI's PHP jobs build no client, so these rows read the same dependencies
+	 * on a built tree and an unbuilt one. A row changes the list to state the asset file it needs.
+	 */
+	public function setUp(): void {
+		parent::setUp();
+
+		$this->asset_file_dependencies = array(
+			'wc-payment-method-woopayments'        => array( WooPaymentsFrontendAssets::APPEARANCE_SCRIPT_HANDLE, 'wc-woopayments-fingerprintjs', WooPaymentsFrontendAssets::WOOPAY_COMMON_SCRIPT_HANDLE ),
+			'wc-payment-method-woopayments-woopay' => array( WooPaymentsFrontendAssets::APPEARANCE_SCRIPT_HANDLE, WooPaymentsFrontendAssets::WOOPAY_COMMON_SCRIPT_HANDLE ),
+			'wc-payment-method-woopayments-express-checkout' => array( WooPaymentsFrontendAssets::APPEARANCE_SCRIPT_HANDLE ),
+		);
+		add_filter( 'woocommerce_blocks_register_script_dependencies', array( $this, 'use_asset_file_dependencies' ), 10, 2 );
+	}
+
+	/**
+	 * Replace the WooPayments handles a script's asset file gave it, if any, with this row's list.
+	 *
+	 * @param string[] $dependencies The script's dependencies.
+	 * @param string   $handle       The script's handle.
+	 * @return string[]
+	 */
+	public function use_asset_file_dependencies( array $dependencies, string $handle ): array {
+		if ( ! isset( $this->asset_file_dependencies[ $handle ] ) ) {
+			return $dependencies;
+		}
+
+		$generated = array( WooPaymentsFrontendAssets::APPEARANCE_SCRIPT_HANDLE, 'wc-woopayments-fingerprintjs', WooPaymentsFrontendAssets::WOOPAY_COMMON_SCRIPT_HANDLE );
+
+		return array_merge( array_diff( $dependencies, $generated ), $this->asset_file_dependencies[ $handle ] );
+	}
+
+	/**
 	 * Tear down test fixtures.
 	 */
 	public function tearDown(): void {
@@ -898,6 +937,26 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 			'of the integration' => array( 'read the integration' ),
 			'of the registry'    => array( 'read the registry' ),
 		);
+	}
+
+	/**
+	 * @testdox Should add the WooPay protocol the card data needs when the card script's asset file does not list it.
+	 */
+	public function test_blocks_card_adds_the_woopay_protocol_its_asset_file_does_not_list(): void {
+		$this->asset_file_dependencies['wc-payment-method-woopayments'] = array();
+		$this->go_to_block_page( 'woocommerce/checkout', 'woocommerce_checkout_page_id' );
+		$integration = $this->create_registered_integration(
+			false,
+			false,
+			array(
+				'isWooPayEnabled'           => true,
+				'isWooPayEmailInputEnabled' => true,
+			)
+		);
+
+		$this->render_block_assets( $integration, 'woocommerce/checkout', true );
+
+		$this->assertContains( WooPaymentsFrontendAssets::WOOPAY_COMMON_SCRIPT_HANDLE, wp_scripts()->registered['wc-payment-method-woopayments']->deps );
 	}
 
 	/**
