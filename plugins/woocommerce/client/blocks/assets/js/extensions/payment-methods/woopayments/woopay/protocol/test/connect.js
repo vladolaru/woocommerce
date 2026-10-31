@@ -2,6 +2,11 @@
  * Internal dependencies
  */
 import { loadPhoneValidation, normalizePhone } from '../phone-validation';
+import {
+	dispatchFromWindow,
+	getIframeWindow,
+	postFromWooPay,
+} from './utils/post-from-woopay';
 
 const WOOPAY_HOST = 'https://pay.woo.test';
 
@@ -77,10 +82,7 @@ describe( 'WooPay Connect (shared)', () => {
 		}
 	);
 
-	const sendWooPayMessage = ( data ) =>
-		window.dispatchEvent(
-			new window.MessageEvent( 'message', { origin: WOOPAY_HOST, data } )
-		);
+	const sendWooPayMessage = ( data ) => postFromWooPay( data, WOOPAY_HOST );
 
 	const getPreemptiveSession = ( connect, value ) =>
 		connect.sendMessage(
@@ -264,6 +266,46 @@ describe( 'WooPay Connect (shared)', () => {
 
 		await jest.advanceTimersByTimeAsync( 5000 );
 		expect( settled[ 1 ] ).toEqual( [ 'lost', null ] );
+	} );
+
+	// Answers name no request, but the source tells two iframes apart: an answer the old iframe had already sent belongs to
+	// a request the old iframe took, not to the new iframe's.
+	test( 'takes no answer from an iframe another has replaced', async () => {
+		jest.useFakeTimers();
+		const connect = loadGetConnect()( { woopayHost: WOOPAY_HOST } );
+		const settled = [];
+		getPreemptiveSession( connect, 'old' ).then( ( value ) =>
+			settled.push( [ 'old', value ] )
+		);
+		await loadConnectIframe();
+		const oldIframe = document.getElementById( 'woopay-connect-iframe' );
+		const oldWindow = getIframeWindow( oldIframe );
+
+		const replacement = document.createElement( 'iframe' );
+		replacement.id = 'woopay-connect-iframe';
+		replacement.src = `${ WOOPAY_HOST }/connect/`;
+		oldIframe.replaceWith( replacement );
+		getPreemptiveSession( connect, 'new' ).then( ( value ) =>
+			settled.push( [ 'new', value ] )
+		);
+		replacement.dispatchEvent( new window.Event( 'load' ) );
+		await flushPromises();
+
+		dispatchFromWindow( oldWindow, {
+			action: 'set_preemptive_session_data_success',
+			value: { redirect_url: 'https://pay.woo.test/old' },
+		} );
+		await flushPromises();
+		expect( settled ).toEqual( [] );
+
+		sendWooPayMessage( {
+			action: 'set_preemptive_session_data_success',
+			value: { redirect_url: 'https://pay.woo.test/new' },
+		} );
+		await flushPromises();
+		expect( settled ).toEqual( [
+			[ 'new', { redirect_url: 'https://pay.woo.test/new' } ],
+		] );
 	} );
 
 	test( 'asks for the preferred card again when another iframe takes the id', async () => {

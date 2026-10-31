@@ -11,6 +11,7 @@ import {
 	deleteSkipWooPayCookie,
 	__test__,
 } from '../email-input-iframe';
+import { postFromWooPay } from '../protocol/test/utils/post-from-woopay';
 
 const WOOPAY_HOST = 'https://pay.woo.test';
 
@@ -85,11 +86,8 @@ describe( 'WooPay email input (blocks)', () => {
 		await flushPromises();
 	};
 
-	const postWooPayMessage = ( data, origin = WOOPAY_HOST ) => {
-		window.dispatchEvent(
-			new window.MessageEvent( 'message', { data, origin } )
-		);
-	};
+	const postWooPayMessage = ( data, origin = WOOPAY_HOST ) =>
+		postFromWooPay( data, origin );
 
 	const setup = async ( overrides = {} ) => {
 		const input = renderCheckout();

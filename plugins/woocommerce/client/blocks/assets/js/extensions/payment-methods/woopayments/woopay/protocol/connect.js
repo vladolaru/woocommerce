@@ -137,6 +137,14 @@ const createConnect = ( args ) => {
 				return;
 			}
 
+			// An iframe that has gone can still have an answer on its way, for a request that is no longer in the list.
+			if (
+				! connectIframe ||
+				event.source !== connectIframe.contentWindow
+			) {
+				return;
+			}
+
 			switch ( data.action ) {
 				case 'set_preemptive_session_data_success':
 					resolveCallback(

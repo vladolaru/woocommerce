@@ -2,6 +2,11 @@
  * Internal dependencies
  */
 import { openExpressOtpIframe } from '../express-otp';
+import {
+	dispatchFromWindow,
+	getIframeWindow,
+	postFromWooPay,
+} from './utils/post-from-woopay';
 
 const WOOPAY_HOST = 'https://pay.woo.test';
 
@@ -27,16 +32,12 @@ const getArgs = ( overrides = {} ) => ( {
 	...overrides,
 } );
 
-const sendRedirect = () =>
-	window.dispatchEvent(
-		new window.MessageEvent( 'message', {
-			origin: WOOPAY_HOST,
-			data: {
-				action: 'redirect_to_woopay',
-				platformCheckoutUserSession: 'session',
-			},
-		} )
-	);
+const REDIRECT = {
+	action: 'redirect_to_woopay',
+	platformCheckoutUserSession: 'session',
+};
+
+const sendRedirect = () => postFromWooPay( REDIRECT, WOOPAY_HOST );
 
 const flushPromises = async () => {
 	for ( let i = 0; i < 5; i++ ) {
@@ -213,6 +214,33 @@ describe( 'WooPay button OTP dialog (shared)', () => {
 		await flushPromises();
 
 		expect( args.navigate ).not.toHaveBeenCalled();
+	} );
+
+	// Dialog A's redirect, already on its way when the shopper closed A and opened B, must not start B's request with
+	// A's session.
+	test( 'claims no redirect from a dialog the shopper closed', async () => {
+		const url = `${ WOOPAY_HOST }/woopay/?platform_checkout_key=k`;
+		const args = getArgs( {
+			post: jest.fn( () =>
+				Promise.resolve( { result: 'success', url } )
+			),
+		} );
+		openExpressOtpIframe( args, 'cart', '' );
+		const closedDialog = getIframeWindow(
+			document.querySelector( '.woopay-otp-iframe' )
+		);
+		document.querySelector( '.woopay-otp-iframe-close' ).click();
+		openExpressOtpIframe( args, 'cart', '' );
+
+		dispatchFromWindow( closedDialog, REDIRECT, WOOPAY_HOST );
+		await flushPromises();
+		expect( args.post ).not.toHaveBeenCalled();
+		expect( args.navigate ).not.toHaveBeenCalled();
+
+		sendRedirect();
+		await flushPromises();
+		expect( args.post ).toHaveBeenCalledTimes( 1 );
+		expect( args.navigate ).toHaveBeenCalledWith( url );
 	} );
 
 	test( 'gives focus back to the control the calling script names', () => {

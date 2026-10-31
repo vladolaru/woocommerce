@@ -13,6 +13,7 @@ import { dispatch } from '@wordpress/data';
  */
 import registerWooPay, { __test__ } from '../index';
 import { getConnect } from '../protocol';
+import { postFromWooPay } from '../protocol/test/utils/post-from-woopay';
 
 jest.mock( '@woocommerce/blocks-registry', () => ( {
 	registerExpressPaymentMethod: jest.fn(),
@@ -291,15 +292,10 @@ describe( 'wc-payment-method-woopayments-woopay', () => {
 			).not.toBeNull();
 		} );
 		await act( async () => {
-			window.dispatchEvent(
-				new window.MessageEvent( 'message', {
-					origin: 'https://pay.woo.test',
-					data: {
-						action: 'redirect_to_woopay',
-						platformCheckoutUserSession: 'platform-session-1',
-					},
-				} )
-			);
+			postFromWooPay( {
+				action: 'redirect_to_woopay',
+				platformCheckoutUserSession: 'platform-session-1',
+			} );
 		} );
 
 		await waitFor( () => {
@@ -475,17 +471,12 @@ describe( 'wc-payment-method-woopayments-woopay', () => {
 				'https://pay.woo.test'
 			);
 		} );
-		window.dispatchEvent(
-			new window.MessageEvent( 'message', {
-				origin: 'https://pay.woo.test',
-				data: {
-					action: 'set_preemptive_session_data_success',
-					value: {
-						redirect_url: 'https://pay.woo.test/checkout/session',
-					},
-				},
-			} )
-		);
+		postFromWooPay( {
+			action: 'set_preemptive_session_data_success',
+			value: {
+				redirect_url: 'https://pay.woo.test/checkout/session',
+			},
+		} );
 		await waitFor( () => {
 			expect( navigate ).toHaveBeenCalledWith(
 				'https://pay.woo.test/checkout/session'
@@ -691,18 +682,12 @@ describe( 'wc-payment-method-woopayments-woopay', () => {
 			} );
 			// Answer it, so no session request is left pending for the next test.
 			await act( async () => {
-				window.dispatchEvent(
-					new window.MessageEvent( 'message', {
-						origin: 'https://pay.woo.test',
-						data: {
-							action: 'set_preemptive_session_data_success',
-							value: {
-								redirect_url:
-									'https://pay.woo.test/checkout/session',
-							},
-						},
-					} )
-				);
+				postFromWooPay( {
+					action: 'set_preemptive_session_data_success',
+					value: {
+						redirect_url: 'https://pay.woo.test/checkout/session',
+					},
+				} );
 			} );
 			await waitFor( () => {
 				expect( navigate ).toHaveBeenCalledWith(
@@ -755,15 +740,10 @@ describe( 'wc-payment-method-woopayments-woopay', () => {
 				expect( postMessage ).toHaveBeenCalled();
 			} );
 			await act( async () => {
-				window.dispatchEvent(
-					new window.MessageEvent( 'message', {
-						origin: 'https://pay.woo.test',
-						data: {
-							action: 'get_preferred_payment_method_success',
-							value: { brand: 'visa', last4: '4242' },
-						},
-					} )
-				);
+				postFromWooPay( {
+					action: 'get_preferred_payment_method_success',
+					value: { brand: 'visa', last4: '4242' },
+				} );
 				await classicCard;
 			} );
 
@@ -885,18 +865,13 @@ describe( 'wc-payment-method-woopayments-woopay', () => {
 				} );
 				expect( getSessionCalls() ).toHaveLength( 2 );
 				await act( async () => {
-					window.dispatchEvent(
-						new window.MessageEvent( 'message', {
-							origin: 'https://pay.woo.test',
-							data: {
-								action: 'set_preemptive_session_data_success',
-								value: {
-									redirect_url:
-										'https://pay.woo.test/checkout/session',
-								},
-							},
-						} )
-					);
+					postFromWooPay( {
+						action: 'set_preemptive_session_data_success',
+						value: {
+							redirect_url:
+								'https://pay.woo.test/checkout/session',
+						},
+					} );
 				} );
 				await waitFor( () => {
 					expect( navigate ).toHaveBeenCalledWith(
@@ -948,18 +923,13 @@ describe( 'wc-payment-method-woopayments-woopay', () => {
 					expect( getPreemptiveSessionPosts() ).toHaveLength( 1 );
 				} );
 				await act( async () => {
-					window.dispatchEvent(
-						new window.MessageEvent( 'message', {
-							origin: 'https://pay.woo.test',
-							data: {
-								action: 'set_preemptive_session_data_success',
-								value: {
-									redirect_url:
-										'https://pay.woo.test/checkout/session',
-								},
-							},
-						} )
-					);
+					postFromWooPay( {
+						action: 'set_preemptive_session_data_success',
+						value: {
+							redirect_url:
+								'https://pay.woo.test/checkout/session',
+						},
+					} );
 				} );
 				await waitFor( () => {
 					expect( navigate ).toHaveBeenCalledWith(
@@ -1072,14 +1042,9 @@ describe( 'wc-payment-method-woopayments-woopay', () => {
 				'https://pay.woo.test'
 			);
 		} );
-		window.dispatchEvent(
-			new window.MessageEvent( 'message', {
-				origin: 'https://pay.woo.test',
-				data: {
-					action: 'set_preemptive_session_data_error',
-				},
-			} )
-		);
+		postFromWooPay( {
+			action: 'set_preemptive_session_data_error',
+		} );
 
 		await waitFor( () => {
 			expect(
@@ -1244,12 +1209,9 @@ describe( 'wc-payment-method-woopayments-woopay', () => {
 				expect( getPreemptiveSessionPosts() ).toHaveLength( 1 );
 			} );
 			await act( async () => {
-				window.dispatchEvent(
-					new window.MessageEvent( 'message', {
-						origin: 'https://pay.woo.test',
-						data: { action: 'set_preemptive_session_data_error' },
-					} )
-				);
+				postFromWooPay( {
+					action: 'set_preemptive_session_data_error',
+				} );
 			} );
 			await expectOtpIframe();
 			await closeOtpIframe();
@@ -1575,9 +1537,7 @@ describe( 'wc-payment-method-woopayments-woopay', () => {
 
 		const sendWooPayMessage = ( data, origin = 'https://pay.woo.test' ) =>
 			act( async () => {
-				window.dispatchEvent(
-					new window.MessageEvent( 'message', { origin, data } )
-				);
+				postFromWooPay( data, origin );
 			} );
 
 		const openOtpIframe = async () => {

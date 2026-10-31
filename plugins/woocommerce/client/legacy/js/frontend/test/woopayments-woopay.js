@@ -2,6 +2,10 @@
  * @jest-environment jest-fixed-jsdom
  */
 
+const {
+	postFromWooPay,
+} = require( '../../../../blocks/assets/js/extensions/payment-methods/woopayments/woopay/protocol/test/utils/post-from-woopay' );
+
 // The page prints wc-woopayments-woopay-common before this script; it sets window.wc.woopayments.woopay.
 function loadWooPayProtocol() {
 	jest.isolateModules( () => {
@@ -513,17 +517,12 @@ describe( 'WooPayments WooPay checkout', () => {
 				},
 				'https://pay.woo.test'
 			);
-			window.dispatchEvent(
-				new window.MessageEvent( 'message', {
-					origin: 'https://pay.woo.test',
-					data: {
-						action: 'set_preemptive_session_data_success',
-						value: {
-							redirect_url: 'https://pay.woo.test/checkout/session',
-						},
-					},
-				} )
-			);
+			postFromWooPay( {
+				action: 'set_preemptive_session_data_success',
+				value: {
+					redirect_url: 'https://pay.woo.test/checkout/session',
+				},
+			} );
 			await flushPromises();
 
 			expect( navigate ).toHaveBeenCalledWith(
@@ -660,14 +659,9 @@ describe( 'WooPayments WooPay checkout', () => {
 				.getElementById( 'woopay-connect-iframe' )
 				.dispatchEvent( new window.Event( 'load' ) );
 			await flushPromises();
-			window.dispatchEvent(
-				new window.MessageEvent( 'message', {
-					origin: 'https://pay.woo.test',
-					data: {
-						action: 'set_preemptive_session_data_error',
-					},
-				} )
-			);
+			postFromWooPay( {
+				action: 'set_preemptive_session_data_error',
+			} );
 			await flushPromises();
 
 			expect(
@@ -731,12 +725,7 @@ describe( 'WooPayments WooPay checkout', () => {
 			const clickWooPay = () =>
 				document.querySelector( '#wcpay-woopay-button a' ).click();
 			const sendWooPayMessage = ( data ) =>
-				window.dispatchEvent(
-					new window.MessageEvent( 'message', {
-						origin: 'https://pay.woo.test',
-						data,
-					} )
-				);
+				postFromWooPay( data );
 
 			beforeEach( () => {
 				postMessage = jest.fn();
@@ -1049,15 +1038,10 @@ describe( 'WooPayments WooPay checkout', () => {
 			require( '../woopayments-woopay' );
 			await loadConnectIframe();
 			await flushPromises();
-			window.dispatchEvent(
-				new window.MessageEvent( 'message', {
-					origin: 'https://pay.woo.test',
-					data: {
-						action: 'get_preferred_payment_method_success',
-						value: { brand: 'visa', last4: '4242' },
-					},
-				} )
-			);
+			postFromWooPay( {
+				action: 'get_preferred_payment_method_success',
+				value: { brand: 'visa', last4: '4242' },
+			} );
 			await flushPromises();
 
 			await expect( blocksCard ).resolves.toEqual( {
@@ -1721,12 +1705,7 @@ describe( 'WooPayments WooPay checkout', () => {
 		// woopayHost origin and hands event.data, shaped { action, value }, to callbackFn (session-connect.js:184-216,
 		// user-connect.js:72-86).
 		function emitConnectMessage( action, value, origin = 'https://pay.woo.test' ) {
-			window.dispatchEvent(
-				new window.MessageEvent( 'message', {
-					origin,
-					data: { action, value },
-				} )
-			);
+			postFromWooPay( { action, value }, origin );
 		}
 
 		async function initializeDirectCheckout( loggedIn ) {
@@ -2580,12 +2559,7 @@ describe( 'WooPayments WooPay checkout', () => {
 		}
 
 		function sendWooPayMessage( data, origin ) {
-			window.dispatchEvent(
-				new window.MessageEvent( 'message', {
-					origin: origin || 'https://pay.woo.test',
-					data: data,
-				} )
-			);
+			postFromWooPay( data, origin );
 		}
 
 		async function openOtpIframe() {
@@ -3207,12 +3181,7 @@ describe( 'WooPayments WooPay checkout', () => {
 		let postMessage;
 
 		function sendWooPayMessage( data ) {
-			window.dispatchEvent(
-				new window.MessageEvent( 'message', {
-					origin: 'https://pay.woo.test',
-					data: data,
-				} )
-			);
+			postFromWooPay( data );
 		}
 
 		function getAjaxCalls( endpoint ) {

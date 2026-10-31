@@ -3,6 +3,7 @@
  */
 import { handleEmailInput } from '../email-input';
 import { openExpressOtpIframe } from '../express-otp';
+import { postFromWooPay } from './utils/post-from-woopay';
 
 const WOOPAY_HOST = 'https://pay.woo.test';
 
@@ -230,14 +231,12 @@ describe( 'WooPay email check (shared)', () => {
 			await typeEmail( 'shopper@example.com' );
 			document.querySelector( '.woopay-otp-iframe-close' ).focus();
 
-			window.dispatchEvent(
-				new window.MessageEvent( 'message', {
-					origin: WOOPAY_HOST,
-					data: {
-						action: 'redirect_to_woopay',
-						platformCheckoutUserSession: 'session',
-					},
-				} )
+			postFromWooPay(
+				{
+					action: 'redirect_to_woopay',
+					platformCheckoutUserSession: 'session',
+				},
+				WOOPAY_HOST
 			);
 			await flushPromises();
 
@@ -250,14 +249,12 @@ describe( 'WooPay email check (shared)', () => {
 	// dialog owns that flow: one init_woopay, and the outcome the button promises, not the email check's notice.
 	describe( 'with the WooPay button dialog open on the same page', () => {
 		const sendRedirect = () =>
-			window.dispatchEvent(
-				new window.MessageEvent( 'message', {
-					origin: WOOPAY_HOST,
-					data: {
-						action: 'redirect_to_woopay',
-						platformCheckoutUserSession: 'session',
-					},
-				} )
+			postFromWooPay(
+				{
+					action: 'redirect_to_woopay',
+					platformCheckoutUserSession: 'session',
+				},
+				WOOPAY_HOST
 			);
 
 		test.each( [

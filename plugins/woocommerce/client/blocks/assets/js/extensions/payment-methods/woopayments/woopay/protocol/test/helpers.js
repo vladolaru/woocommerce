@@ -52,19 +52,33 @@ describe( 'WooPay protocol helpers', () => {
 		expect( validateEmail( 'not an email' ) ).toBe( false );
 	} );
 
-	test( 'lets the first listener with an open dialog claim a redirect message', () => {
-		const event = {};
+	test( 'lets the first listener with an open dialog claim a redirect message from that dialog', () => {
 		const openDialog = document.body.appendChild(
 			document.createElement( 'iframe' )
 		);
+		const otherDialog = document.body.appendChild(
+			document.createElement( 'iframe' )
+		);
+		const closedDialog = document.createElement( 'iframe' );
+		const event = { source: openDialog.contentWindow };
 
-		expect(
-			claimWooPayRedirect( event, document.createElement( 'iframe' ) )
-		).toBe( false );
+		expect( claimWooPayRedirect( event, closedDialog ) ).toBe( false );
+		expect( claimWooPayRedirect( event, otherDialog ) ).toBe( false );
 		expect( claimWooPayRedirect( event, openDialog ) ).toBe( true );
 		expect( claimWooPayRedirect( event, openDialog ) ).toBe( false );
 
 		openDialog.remove();
+		otherDialog.remove();
+	} );
+
+	// A discarded frame's message can carry a null source, and a closed iframe's window is null too.
+	test( 'lets no closed dialog claim a message with no source', () => {
+		expect(
+			claimWooPayRedirect(
+				{ source: null },
+				document.createElement( 'iframe' )
+			)
+		).toBe( false );
 	} );
 
 	describe( 'the skip_woopay cookie', () => {

@@ -2,6 +2,10 @@
  * @jest-environment jest-fixed-jsdom
  */
 
+const {
+	postFromWooPay,
+} = require( '../../../../blocks/assets/js/extensions/payment-methods/woopayments/woopay/protocol/test/utils/post-from-woopay' );
+
 describe( 'WooPayments checkout', () => {
 	let bodyEventHandlers;
 	let checkoutFormState;
@@ -5121,9 +5125,7 @@ describe( 'WooPayments checkout', () => {
 		}
 
 		function postWooPayMessage( data, origin = WOOPAY_HOST ) {
-			window.dispatchEvent(
-				new window.MessageEvent( 'message', { data, origin } )
-			);
+			postFromWooPay( data, origin );
 		}
 
 		beforeEach( () => {

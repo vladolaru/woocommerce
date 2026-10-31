@@ -96,15 +96,20 @@ export const deleteSkipWooPayCookie = () => {
 
 /**
  * Claim a WooPay redirect message for one listener's init_woopay request. The email input and the WooPay button
- * hear every message from WooPay and the email input's listener is first, so only the listener whose dialog is open
- * claims it, on the event both receive. That dialog then gets the outcome: the notice, its closing and the redirect.
+ * hear every message from WooPay and the email input's listener is first, so only the open dialog that sent it claims
+ * it, on the event both receive. That dialog then gets the outcome: the notice, its closing and the redirect. A closed
+ * iframe's window is null and a discarded frame's message can carry a null source, so the source alone would match it.
  *
  * @param {MessageEvent}      event  The WooPay redirect message.
  * @param {HTMLIFrameElement} iframe The iframe of the listener's dialog.
  * @return {boolean} True when this listener handles the message.
  */
 export const claimWooPayRedirect = ( event, iframe ) => {
-	if ( event.wcWooPayInitClaimed || ! iframe.isConnected ) {
+	if (
+		event.wcWooPayInitClaimed ||
+		! iframe.isConnected ||
+		event.source !== iframe.contentWindow
+	) {
 		return false;
 	}
 	event.wcWooPayInitClaimed = true;
