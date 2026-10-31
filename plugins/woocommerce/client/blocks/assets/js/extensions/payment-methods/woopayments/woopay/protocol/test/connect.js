@@ -220,6 +220,83 @@ describe( 'WooPay Connect (shared)', () => {
 		await jest.advanceTimersByTimeAsync( 5000 );
 		expect( settled[ 1 ] ).toEqual( [ 'lost', null ] );
 	} );
+
+	// Another element under the id, with no wait of this client's on it: nothing sent to the old iframe is answered, and
+	// the new one takes messages only once its connect page loads.
+	test( 'follows the iframe element when another takes its id', async () => {
+		jest.useFakeTimers();
+		const connect = loadGetConnect()( { woopayHost: WOOPAY_HOST } );
+		const settled = [];
+		getPreemptiveSession( connect, 'lost' ).then( ( value ) =>
+			settled.push( [ 'lost', value ] )
+		);
+		await loadConnectIframe();
+		expect( postMessage ).toHaveBeenCalledTimes( 1 );
+
+		const replacement = document.createElement( 'iframe' );
+		replacement.id = 'woopay-connect-iframe';
+		replacement.src = `${ WOOPAY_HOST }/connect/`;
+		document
+			.getElementById( 'woopay-connect-iframe' )
+			.replaceWith( replacement );
+
+		getPreemptiveSession( connect, 'replacement' ).then( ( value ) =>
+			settled.push( [ 'replacement', value ] )
+		);
+		await flushPromises();
+		expect( postMessage ).toHaveBeenCalledTimes( 1 );
+
+		replacement.dispatchEvent( new window.Event( 'load' ) );
+		await flushPromises();
+		expect( postMessage ).toHaveBeenCalledTimes( 2 );
+
+		sendWooPayMessage( {
+			action: 'set_preemptive_session_data_success',
+			value: { redirect_url: 'https://pay.woo.test/replacement' },
+		} );
+		await flushPromises();
+		expect( settled ).toEqual( [
+			[
+				'replacement',
+				{ redirect_url: 'https://pay.woo.test/replacement' },
+			],
+		] );
+
+		await jest.advanceTimersByTimeAsync( 5000 );
+		expect( settled[ 1 ] ).toEqual( [ 'lost', null ] );
+	} );
+
+	test( 'asks for the preferred card again when another iframe takes the id', async () => {
+		const connect = loadGetConnect()( { woopayHost: WOOPAY_HOST } );
+		connect.fetchPreferredCard();
+		await loadConnectIframe();
+		sendWooPayMessage( {
+			action: 'get_preferred_payment_method_success',
+			value: { brand: 'visa', last4: '4242' },
+		} );
+		await flushPromises();
+
+		const replacement = document.createElement( 'iframe' );
+		replacement.id = 'woopay-connect-iframe';
+		replacement.src = `${ WOOPAY_HOST }/connect/`;
+		document
+			.getElementById( 'woopay-connect-iframe' )
+			.replaceWith( replacement );
+
+		const card = connect.fetchPreferredCard();
+		replacement.dispatchEvent( new window.Event( 'load' ) );
+		await flushPromises();
+		expect( postMessage ).toHaveBeenCalledTimes( 2 );
+
+		sendWooPayMessage( {
+			action: 'get_preferred_payment_method_success',
+			value: { brand: 'amex', last4: '0005' },
+		} );
+		await expect( card ).resolves.toEqual( {
+			brand: 'amex',
+			last4: '0005',
+		} );
+	} );
 } );
 
 describe( 'WooPay save-user phone helpers (shared)', () => {

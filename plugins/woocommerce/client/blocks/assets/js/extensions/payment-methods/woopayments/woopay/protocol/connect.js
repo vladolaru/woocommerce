@@ -77,7 +77,8 @@ export const setCachedPreferredCard = ( card ) => {
  * @return {Object} `sendMessage`, `sendPreemptiveSessionData` and `fetchPreferredCard`.
  */
 const createConnect = ( args ) => {
-	// The requests waiting for an answer, by callback name, oldest first.
+	// The iframe the requests below were sent to, and those waiting for an answer, by callback name, oldest first.
+	let connectIframe = null;
 	let pendingRequests = {};
 	let isListenerAttached = false;
 	let preferredCardFetchPromise = null;
@@ -178,50 +179,10 @@ const createConnect = ( args ) => {
 		isListenerAttached = true;
 	};
 
-	// The connect iframe carries the wait for its connect page; client 11.2.0 shares that state in window.WooPayConnect
-	// (connect/connect-utils.js).
-	const getPostMessage = () => {
-		const existingIframe = document.getElementById(
-			'woopay-connect-iframe'
-		);
-
-		if ( existingIframe ) {
-			return (
-				existingIframe.wooPayConnectPostMessage ||
-				Promise.resolve( ( message ) => {
-					existingIframe.contentWindow.postMessage(
-						message,
-						args.woopayHost
-					);
-				} )
-			);
-		}
-
-		// The iframe is gone, so nothing is left to answer the requests sent to it. They end at their deadlines, and an
-		// answer from the new iframe must not reach them.
-		pendingRequests = {};
-		preferredCardFetchPromise = null;
-
-		if ( ! args.woopayHost ) {
-			return Promise.reject();
-		}
-
-		let iframe;
-		const connectPostMessage = new Promise( ( resolve ) => {
-			iframe = document.createElement( 'iframe' );
-			iframe.id = 'woopay-connect-iframe';
-			iframe.height = 0;
-			iframe.width = 0;
-			iframe.title = args.iframeTitle || '';
-			iframe.style.border = 'none';
-			iframe.style.display = 'block';
-			iframe.style.visibility = 'hidden';
-			iframe.style.position = 'fixed';
-			iframe.style.height = '0';
-			iframe.style.width = '0';
-			iframe.style.pointerEvents = 'none';
+	// Resolves once the iframe's connect page loads; appending an iframe without a src loads about:blank first.
+	const waitForConnectPage = ( iframe ) =>
+		new Promise( ( resolve ) => {
 			iframe.addEventListener( 'load', () => {
-				// Appending an iframe without a src loads about:blank first; only the connect page's load counts.
 				if ( ! iframe.getAttribute( 'src' ) ) {
 					return;
 				}
@@ -233,16 +194,58 @@ const createConnect = ( args ) => {
 					);
 				} );
 			} );
-
-			// The iframe is in the page at once, so later calls reuse it while the Tracks identity resolves.
-			document.body.appendChild( iframe );
-			getConnectUrl().then( ( url ) => {
-				iframe.src = url;
-			} );
 		} );
-		iframe.wooPayConnectPostMessage = connectPostMessage;
 
-		return connectPostMessage;
+	// The connect iframe carries the wait for its connect page; client 11.2.0 shares that state in window.WooPayConnect
+	// (connect/connect-utils.js).
+	const getPostMessage = () => {
+		const existingIframe = document.getElementById(
+			'woopay-connect-iframe'
+		);
+
+		// Another element under the id, or none, answers nothing that was sent to the old one. Those requests end at their
+		// deadlines, and an answer from the new iframe must not reach them.
+		if ( existingIframe !== connectIframe ) {
+			connectIframe = existingIframe;
+			pendingRequests = {};
+			preferredCardFetchPromise = null;
+		}
+
+		if ( existingIframe ) {
+			if ( ! existingIframe.wooPayConnectPostMessage ) {
+				existingIframe.wooPayConnectPostMessage =
+					waitForConnectPage( existingIframe );
+			}
+
+			return existingIframe.wooPayConnectPostMessage;
+		}
+
+		if ( ! args.woopayHost ) {
+			return Promise.reject();
+		}
+
+		const iframe = document.createElement( 'iframe' );
+		iframe.id = 'woopay-connect-iframe';
+		iframe.height = 0;
+		iframe.width = 0;
+		iframe.title = args.iframeTitle || '';
+		iframe.style.border = 'none';
+		iframe.style.display = 'block';
+		iframe.style.visibility = 'hidden';
+		iframe.style.position = 'fixed';
+		iframe.style.height = '0';
+		iframe.style.width = '0';
+		iframe.style.pointerEvents = 'none';
+		iframe.wooPayConnectPostMessage = waitForConnectPage( iframe );
+		connectIframe = iframe;
+
+		// The iframe is in the page at once, so later calls reuse it while the Tracks identity resolves.
+		document.body.appendChild( iframe );
+		getConnectUrl().then( ( url ) => {
+			iframe.src = url;
+		} );
+
+		return iframe.wooPayConnectPostMessage;
 	};
 
 	/**
@@ -318,7 +321,7 @@ const createConnect = ( args ) => {
 	const fetchPreferredCard = () => {
 		if (
 			preferredCardFetchPromise &&
-			! document.getElementById( 'woopay-connect-iframe' )
+			document.getElementById( 'woopay-connect-iframe' ) !== connectIframe
 		) {
 			preferredCardFetchPromise = null;
 		}
