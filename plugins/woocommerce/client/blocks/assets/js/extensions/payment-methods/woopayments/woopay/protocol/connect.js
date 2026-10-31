@@ -412,8 +412,10 @@ const createConnect = ( args ) => {
 			function onMessage( event ) {
 				const data = event.data || {};
 
+				// A removed iframe's window is null, and so is a discarded frame's source: the deadline settles that check.
 				if (
 					event.origin !== origin ||
+					! iframe.isConnected ||
 					event.source !== iframe.contentWindow
 				) {
 					return;

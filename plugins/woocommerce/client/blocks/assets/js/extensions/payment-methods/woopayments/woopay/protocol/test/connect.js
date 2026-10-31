@@ -532,6 +532,35 @@ describe( 'WooPay Connect (shared)', () => {
 			}
 		);
 
+		// A removed iframe's window is null, so without the isConnected read a null source would match it.
+		test.each( [
+			[ 'the set answer', SET_SUCCESS ],
+			[ 'the read answer', getAnswer( true ) ],
+		] )(
+			'takes %s from nobody once the iframe is removed, and answers false at the deadline',
+			async ( name, message ) => {
+				jest.useFakeTimers();
+				const { check, iframe } = startCheck();
+				let answer;
+				check.then( ( value ) => {
+					answer = value;
+				} );
+				iframe.dispatchEvent( new window.Event( 'load' ) );
+				iframe.remove();
+				Object.defineProperty( iframe, 'contentWindow', {
+					configurable: true,
+					value: null,
+				} );
+
+				dispatchFromWindow( null, message );
+				await jest.advanceTimersByTimeAsync( 4999 );
+				expect( answer ).toBeUndefined();
+				await jest.advanceTimersByTimeAsync( 1 );
+
+				expect( answer ).toBe( false );
+			}
+		);
+
 		test( 'answers false with no iframe when there is no WooPay host', async () => {
 			const check = loadGetConnect()( {} ).areThirdPartyCookiesEnabled();
 
