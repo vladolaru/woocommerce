@@ -136,6 +136,53 @@ describe( 'WooPay button OTP dialog (shared)', () => {
 		}
 	);
 
+	test.each( [
+		[ 'a rejection', ( settle ) => settle.reject( new Error( 'failed' ) ) ],
+		[
+			'a failed answer',
+			( settle ) => settle.resolve( { result: 'failure' } ),
+		],
+		[
+			'a success',
+			( settle ) =>
+				settle.resolve( {
+					result: 'success',
+					url: `${ WOOPAY_HOST }/woopay/?platform_checkout_key=k`,
+				} ),
+		],
+	] )(
+		'leaves the new dialog alone on %s of a request from a dialog the shopper closed',
+		async ( name, finish ) => {
+			const settle = {};
+			const args = getArgs( {
+				post: jest.fn(
+					() =>
+						new Promise( ( resolve, reject ) => {
+							settle.resolve = resolve;
+							settle.reject = reject;
+						} )
+				),
+			} );
+			openExpressOtpIframe( args, 'cart', '' );
+
+			sendRedirect();
+			document.querySelector( '.woopay-otp-iframe-close' ).click();
+			openExpressOtpIframe( args, 'cart', '' );
+			const reopened = document.querySelector( '.woopay-otp-iframe' );
+
+			finish( settle );
+			await flushPromises();
+
+			expect( args.showError ).not.toHaveBeenCalled();
+			expect( args.navigate ).not.toHaveBeenCalled();
+			expect( document.querySelector( '.woopay-otp-iframe' ) ).toBe(
+				reopened
+			);
+
+			document.querySelector( '.woopay-otp-iframe-close' ).click();
+		}
+	);
+
 	test( 'gives focus back to the control the calling script names', () => {
 		document.body.innerHTML =
 			'<button id="opener">WooPay</button><button id="replacement">WooPay</button>';

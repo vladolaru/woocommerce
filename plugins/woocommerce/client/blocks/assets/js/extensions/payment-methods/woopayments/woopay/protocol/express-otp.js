@@ -189,10 +189,8 @@ export const openExpressOtpIframe = ( args, context, email, tracksUserId ) => {
 
 				promise
 					.then( ( response ) => {
-						// The iframe was closed meanwhile.
-						if (
-							! document.querySelector( '.woopay-otp-iframe' )
-						) {
+						// This request's dialog was closed meanwhile, whatever dialog is open now.
+						if ( ! iframe.isConnected ) {
 							return;
 						}
 						if ( response?.result === 'success' ) {
@@ -202,11 +200,9 @@ export const openExpressOtpIframe = ( args, context, email, tracksUserId ) => {
 						}
 					} )
 					.catch( () => {
-						// The iframe was closed meanwhile. Client 11.2.0 has no catch here, which leaves an open dialog
-						// stuck; a shopper still in the dialog gets the notice and the way out.
-						if (
-							! document.querySelector( '.woopay-otp-iframe' )
-						) {
+						// Client 11.2.0 has no catch here, which leaves an open dialog stuck; a shopper still in the dialog gets
+						// the notice and the way out.
+						if ( ! iframe.isConnected ) {
 							return;
 						}
 						showUnavailable();
