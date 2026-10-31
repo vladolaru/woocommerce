@@ -6,6 +6,7 @@ import {
 	dispatchFromWindow,
 	getIframeWindow,
 	postFromWooPay,
+	removeMessageListenersAfterEach,
 } from './utils/post-from-woopay';
 
 const WOOPAY_HOST = 'https://pay.woo.test';
@@ -27,6 +28,8 @@ const loadGetConnect = () => {
 
 describe( 'WooPay Connect (shared)', () => {
 	let postMessage;
+
+	removeMessageListenersAfterEach();
 
 	beforeEach( () => {
 		postMessage = jest.fn();
@@ -297,6 +300,9 @@ describe( 'WooPay Connect (shared)', () => {
 		} );
 		await flushPromises();
 		expect( settled ).toEqual( [] );
+		expect( console ).toHaveWarnedWith(
+			'WooPay Connect dropped set_preemptive_session_data_success: the message did not come from the Connect iframe.'
+		);
 
 		sendWooPayMessage( {
 			action: 'set_preemptive_session_data_success',
@@ -332,9 +338,50 @@ describe( 'WooPay Connect (shared)', () => {
 		} );
 		await flushPromises();
 		expect( settled ).toEqual( [] );
+		expect( console ).toHaveWarnedWith(
+			'WooPay Connect dropped set_preemptive_session_data_success: the Connect iframe has left the page.'
+		);
 
 		await jest.advanceTimersByTimeAsync( 5000 );
 		expect( settled ).toEqual( [ [ 'detached', null ] ] );
+	} );
+
+	// WooPay's other pages share the origin, so the code dialog's messages reach this listener on every normal page.
+	test.each( [ 'iframe_height', 'close_modal', 'otp_email_submitted' ] )(
+		'stays silent on %s, which is not a Connect answer',
+		async ( action ) => {
+			const connect = loadGetConnect()( { woopayHost: WOOPAY_HOST } );
+			connect.fetchPreferredCard();
+			await loadConnectIframe();
+
+			dispatchFromWindow( {}, { action } );
+
+			expect( console ).not.toHaveWarned();
+		}
+	);
+
+	// A nested frame on WooPay's origin, or any other sender: its answer is dropped, and dev tools and the canary's console
+	// capture must see that.
+	test( 'warns once when a Connect answer does not come from the iframe', async () => {
+		const connect = loadGetConnect()( { woopayHost: WOOPAY_HOST } );
+		const card = jest.fn();
+		connect.fetchPreferredCard().then( card );
+		await loadConnectIframe();
+		const answer = {
+			action: 'get_preferred_payment_method_success',
+			value: { brand: 'visa', last4: '4242' },
+		};
+
+		dispatchFromWindow( {}, answer );
+		dispatchFromWindow( {}, answer );
+		await flushPromises();
+
+		expect( card ).not.toHaveBeenCalled();
+		expect( console ).toHaveWarnedWith(
+			'WooPay Connect dropped get_preferred_payment_method_success: the message did not come from the Connect iframe.'
+		);
+		// eslint-disable-next-line no-console -- The matchers cannot count the calls.
+		expect( console.warn ).toHaveBeenCalledTimes( 1 );
 	} );
 
 	test( 'asks for the preferred card again when another iframe takes the id', async () => {

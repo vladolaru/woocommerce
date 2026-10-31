@@ -236,6 +236,7 @@ describe( 'WooPay button OTP dialog (shared)', () => {
 		await flushPromises();
 		expect( args.post ).not.toHaveBeenCalled();
 		expect( args.navigate ).not.toHaveBeenCalled();
+		expect( console ).toHaveWarned();
 
 		sendRedirect();
 		await flushPromises();

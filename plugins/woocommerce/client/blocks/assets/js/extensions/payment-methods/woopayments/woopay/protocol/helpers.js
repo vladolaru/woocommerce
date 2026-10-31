@@ -22,6 +22,25 @@
 // One init_woopay request in flight per page: WooPay's <Login> re-renders and sends the redirect message twice.
 let isInitRequesting = false;
 
+const warnedMessageChecks = new Set();
+
+/**
+ * Say once per page that a sender check dropped a message meant for it. The checks rely on hosted WooPay posting from
+ * the iframes' own top documents, so a change there shows in dev tools and the canary's console capture, not as silence.
+ *
+ * @param {string} check   The check that dropped the message.
+ * @param {string} message What to say.
+ */
+export const warnDroppedWooPayMessage = ( check, message ) => {
+	if ( warnedMessageChecks.has( check ) ) {
+		return;
+	}
+
+	warnedMessageChecks.add( check );
+	// eslint-disable-next-line no-console -- The only signal of a dropped message; the shopper sees nothing.
+	console.warn( message );
+};
+
 /**
  * Build the URL of a WooPayments wc-ajax endpoint.
  *
@@ -99,19 +118,25 @@ export const deleteSkipWooPayCookie = () => {
  * hear every message from WooPay and the email input's listener is first, so only the open dialog that sent it claims
  * it, on the event both receive. That dialog then gets the outcome: the notice, its closing and the redirect. A closed
  * iframe's window is null and a discarded frame's message can carry a null source, so the source alone would match it.
+ * A closed dialog and an already claimed event are normal on a page with both listeners, so only an open dialog warns.
  *
  * @param {MessageEvent}      event  The WooPay redirect message.
  * @param {HTMLIFrameElement} iframe The iframe of the listener's dialog.
  * @return {boolean} True when this listener handles the message.
  */
 export const claimWooPayRedirect = ( event, iframe ) => {
-	if (
-		event.wcWooPayInitClaimed ||
-		! iframe.isConnected ||
-		event.source !== iframe.contentWindow
-	) {
+	if ( event.wcWooPayInitClaimed || ! iframe.isConnected ) {
 		return false;
 	}
+
+	if ( event.source !== iframe.contentWindow ) {
+		warnDroppedWooPayMessage(
+			'claim',
+			`WooPay redirect claim dropped ${ event.data?.action }: the message did not come from the open dialog's iframe.`
+		);
+		return false;
+	}
+
 	event.wcWooPayInitClaimed = true;
 	return true;
 };

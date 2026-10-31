@@ -4,6 +4,7 @@
 
 const {
 	postFromWooPay,
+	removeMessageListenersAfterEach,
 } = require( '../../../../blocks/assets/js/extensions/payment-methods/woopayments/woopay/protocol/test/utils/post-from-woopay' );
 
 // The page prints wc-woopayments-woopay-common before this script; it sets window.wc.woopayments.woopay.
@@ -14,6 +15,7 @@ function loadWooPayProtocol() {
 }
 
 beforeEach( loadWooPayProtocol );
+removeMessageListenersAfterEach();
 
 // Stand-in for the wp-i18n script the page loads (@wordpress/i18n __, _n and sprintf). It returns the English source
 // strings and fills only the placeholders these scripts use: %s, %d and positional %1$s; escapes, flags and widths

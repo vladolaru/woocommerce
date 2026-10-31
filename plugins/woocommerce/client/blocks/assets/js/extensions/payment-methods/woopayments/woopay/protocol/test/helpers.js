@@ -66,9 +66,66 @@ describe( 'WooPay protocol helpers', () => {
 		expect( claimWooPayRedirect( event, otherDialog ) ).toBe( false );
 		expect( claimWooPayRedirect( event, openDialog ) ).toBe( true );
 		expect( claimWooPayRedirect( event, openDialog ) ).toBe( false );
+		expect( console ).toHaveWarned();
 
 		openDialog.remove();
 		otherDialog.remove();
+	} );
+
+	describe( 'the warning for a dropped redirect', () => {
+		// The warning is once per page, so each case gets a fresh copy of the module.
+		const loadClaim = () => {
+			let claim;
+			jest.isolateModules( () => {
+				claim = require( '../helpers' ).claimWooPayRedirect;
+			} );
+			return claim;
+		};
+
+		test( 'warns once when an open dialog hears a redirect from another window', () => {
+			const claim = loadClaim();
+			const openDialog = document.body.appendChild(
+				document.createElement( 'iframe' )
+			);
+			const event = {
+				source: {},
+				data: { action: 'redirect_to_woopay' },
+			};
+
+			expect( claim( event, openDialog ) ).toBe( false );
+			expect( claim( { ...event }, openDialog ) ).toBe( false );
+
+			expect( console ).toHaveWarnedWith(
+				"WooPay redirect claim dropped redirect_to_woopay: the message did not come from the open dialog's iframe."
+			);
+			// eslint-disable-next-line no-console -- The matchers cannot count the calls.
+			expect( console.warn ).toHaveBeenCalledTimes( 1 );
+
+			openDialog.remove();
+		} );
+
+		// The email check hears the button's redirect with its own dialog closed, and a listener can hear an event another
+		// has claimed. Both are normal on a page with the two listeners.
+		test( 'stays silent for a closed dialog and for an event already claimed', () => {
+			const claim = loadClaim();
+			const openDialog = document.body.appendChild(
+				document.createElement( 'iframe' )
+			);
+			const data = { action: 'redirect_to_woopay' };
+
+			claim(
+				{ source: openDialog.contentWindow, data },
+				document.createElement( 'iframe' )
+			);
+			claim(
+				{ source: {}, data, wcWooPayInitClaimed: true },
+				openDialog
+			);
+
+			expect( console ).not.toHaveWarned();
+
+			openDialog.remove();
+		} );
 	} );
 
 	// A discarded frame's message can carry a null source, and a closed iframe's window is null too.

@@ -1,6 +1,35 @@
 const WOOPAY_ORIGIN = 'https://pay.woo.test';
 
 /**
+ * Remove each test's message listeners after it. A page has one Connect client, but each test that loads a fresh copy
+ * of the module leaves one listening, and its iframe is gone, so it would warn about the next test's messages.
+ */
+export const removeMessageListenersAfterEach = () => {
+	let listeners;
+	let addEventListener;
+
+	beforeEach( () => {
+		listeners = [];
+		const add = window.addEventListener.bind( window );
+		addEventListener = jest
+			.spyOn( window, 'addEventListener' )
+			.mockImplementation( ( type, listener, options ) => {
+				if ( type === 'message' ) {
+					listeners.push( listener );
+				}
+				add( type, listener, options );
+			} );
+	} );
+
+	afterEach( () => {
+		listeners.forEach( ( listener ) =>
+			window.removeEventListener( 'message', listener )
+		);
+		addEventListener.mockRestore();
+	} );
+};
+
+/**
  * The window of an iframe, held still: the listeners compare event.source with iframe.contentWindow, and a stubbed
  * getter would answer a new object each time.
  *

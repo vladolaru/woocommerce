@@ -2,7 +2,7 @@
  * Internal dependencies
  */
 import { getIdentity } from '../../common/tracks';
-import { getWooPayHostOrigin } from './helpers';
+import { getWooPayHostOrigin, warnDroppedWooPayMessage } from './helpers';
 
 /*
  * WooPay Connect: a hidden iframe of WooPay's connect page that answers postMessage requests (client 11.2.0
@@ -116,12 +116,24 @@ const createConnect = ( args ) => {
 		} );
 	};
 
-	const resolveCallback = ( callbackName, value ) => {
+	const settleOldestRequest = ( callbackName, value ) => {
 		const [ oldestRequest ] = pendingRequests[ callbackName ] || [];
 
 		if ( oldestRequest ) {
 			oldestRequest( value );
 		}
+	};
+
+	// Why this answer must not settle a request, or '' when it can. The source compare alone is not enough: a removed
+	// iframe's window is null, and so is a discarded frame's source.
+	const getDropReason = ( event ) => {
+		if ( ! connectIframe?.isConnected ) {
+			return 'the Connect iframe has left the page';
+		}
+
+		return event.source === connectIframe.contentWindow
+			? ''
+			: 'the message did not come from the Connect iframe';
 	};
 
 	const attachListener = () => {
@@ -137,13 +149,20 @@ const createConnect = ( args ) => {
 				return;
 			}
 
-			// The source compare alone is not enough: a removed iframe's window is null, and so is a discarded frame's source.
-			if (
-				! connectIframe?.isConnected ||
-				event.source !== connectIframe.contentWindow
-			) {
-				return;
-			}
+			// Checked per answer, not per message: the code dialog's messages share this origin and are not this listener's.
+			const resolveCallback = ( callbackName, value ) => {
+				const dropReason = getDropReason( event );
+
+				if ( dropReason ) {
+					warnDroppedWooPayMessage(
+						'connect',
+						`WooPay Connect dropped ${ data.action }: ${ dropReason }.`
+					);
+					return;
+				}
+
+				settleOldestRequest( callbackName, value );
+			};
 
 			switch ( data.action ) {
 				case 'set_preemptive_session_data_success':
