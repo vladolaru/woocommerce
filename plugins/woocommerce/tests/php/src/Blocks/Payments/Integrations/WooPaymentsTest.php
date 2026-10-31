@@ -811,26 +811,81 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should keep the WooPay protocol listed when the Mini-Cart published before the card script was registered: $_dataName.
+	 * Pages where the Mini-Cart publishes before the card script is registered: its steps, the flags of each card data read
+	 * in order, and whether the card script ends up listing the WooPay protocol. Read 0 is the Mini-Cart's, which publishes,
+	 * and read 1 is the registration's. The rows with different flags are the accepted case of a config callback that
+	 * changes its answer within a request: the registration's read decides, and the card's guard bounds a mismatch.
 	 *
-	 * @dataProvider provide_two_card_reads
-	 *
-	 * With nothing to change at the read that publishes, the script keeps the dependency its asset file lists. Published
-	 * off, that costs an unneeded protocol on this page. What must never happen is published on without the protocol.
-	 *
-	 * @param array{0:bool,1:bool} $first  The Mini-Cart's flags.
-	 * @param array{0:bool,1:bool} $second The Checkout block's flags.
+	 * @return array<string,array{0:string[],1:array<int,array{0:bool,1:bool}>,2:bool}>
 	 */
-	public function test_card_script_registered_after_the_mini_cart_published_keeps_the_protocol( array $first, array $second ): void {
-		$this->go_to_block_page( 'woocommerce/checkout', null );
-		$this->filter_card_woopay_flags( array( $first, $second ) );
-		$page = $this->create_card_page( $this->create_card_page_assets() );
+	public function provide_mini_cart_first_pages(): array {
+		$on         = array( true, true );
+		$off        = array( true, false );
+		$woopay_off = array( false, true );
+		$page       = array( 'cart data', 'register', 'checkout data' );
+		$editor     = array( 'cart data', 'register in the editor', 'cart data', 'checkout data' );
+		$later_read = array( 'cart data', 'register', 'read the integration', 'checkout data' );
 
-		$this->run_card_page_steps( $page, array( 'cart data', 'register', 'checkout data' ) );
+		return array(
+			'ordinary page, email check on'           => array( $page, array( $on ), true ),
+			'ordinary page, email check off'          => array( $page, array( $off ), false ),
+			'ordinary page, WooPay off'               => array( $page, array( $woopay_off ), false ),
+			'block editor, email check on'            => array( $editor, array( $on ), true ),
+			'block editor, email check off'           => array( $editor, array( $off ), false ),
+			'block editor, WooPay off'                => array( $editor, array( $woopay_off ), false ),
+			'later reads change nothing, on then off' => array( $later_read, array( $on, $on, $off ), true ),
+			'later reads change nothing, off then on' => array( $later_read, array( $off, $off, $on ), false ),
+			'registration reads on, the page published off' => array( $page, array( $off, $on ), true ),
+			'registration reads off, the page published on' => array( $page, array( $on, $off ), false ),
+		);
+	}
+
+	/**
+	 * @testdox Should let the card script's registration set the WooPay protocol when the Mini-Cart published first: $_dataName.
+	 *
+	 * @dataProvider provide_mini_cart_first_pages
+	 *
+	 * @param string[]                        $steps    The page's steps, in order.
+	 * @param array<int,array{0:bool,1:bool}> $sequence The flags of each card data read, in order.
+	 * @param bool                            $listed   Whether the card script lists the protocol.
+	 */
+	public function test_card_script_registered_after_the_mini_cart_published_sets_the_protocol( array $steps, array $sequence, bool $listed ): void {
+		$this->go_to_block_page( 'woocommerce/checkout', null );
+		$this->filter_card_woopay_flags( $sequence );
+		$page = $this->create_card_page( $this->create_card_page_assets() );
+		if ( in_array( 'register in the editor', $steps, true ) ) {
+			set_current_screen( 'edit-page' );
+		}
+
+		$this->run_card_page_steps( $page, $steps );
+		set_current_screen( 'front' );
 
 		$published = $this->get_published_card_data( $page['data_registry'] );
-		$this->assertSame( $first[1], $published['isWooPayEmailInputEnabled'] ?? null, 'Precondition: the Mini-Cart publishes its read.' );
-		$this->assertContains( WooPaymentsFrontendAssets::WOOPAY_COMMON_SCRIPT_HANDLE, wp_scripts()->registered['wc-payment-method-woopayments']->deps );
+		$this->assertSame( $sequence[0][0], $published['isWooPayEnabled'] ?? null, 'Precondition: the Mini-Cart publishes its read.' );
+		$this->assertSame( $sequence[0][1], $published['isWooPayEmailInputEnabled'] ?? null, 'Precondition: the Mini-Cart publishes its read.' );
+		$deps = wp_scripts()->registered['wc-payment-method-woopayments']->deps;
+		if ( $listed ) {
+			$this->assertContains( WooPaymentsFrontendAssets::WOOPAY_COMMON_SCRIPT_HANDLE, $deps, 'The registration read wires the email check.' );
+		} else {
+			$this->assertNotContains( WooPaymentsFrontendAssets::WOOPAY_COMMON_SCRIPT_HANDLE, $deps, 'The registration read leaves the email check off.' );
+		}
+	}
+
+	/**
+	 * @testdox Should read the card data once, in the Mini-Cart's pass, when printing the scripts first registers the card script on a page without a Cart or Checkout block.
+	 *
+	 * A block theme renders its header Mini-Cart before wp_head, so its pass comes before the print-time dependency check.
+	 */
+	public function test_card_script_registered_after_the_mini_cart_during_print_makes_no_read(): void {
+		$this->go_to_block_page( 'core/paragraph', null );
+		$counts = $this->count_config_builds_and_filter_calls();
+		$page   = $this->create_card_page( $this->create_card_page_assets() );
+
+		$this->run_card_page_steps( $page, array( 'cart data', 'print' ) );
+
+		$this->assertTrue( $page['data_registry']->exists( 'paymentMethodData' ), 'Precondition: the Mini-Cart publishes.' );
+		$this->assertTrue( wp_script_is( 'wc-payment-method-woopayments', 'registered' ), 'Precondition: printing the scripts registers the card script.' );
+		$this->assertSame( 1, $counts['filtered'], 'Only the Mini-Cart reads the card data.' );
 	}
 
 	/**
@@ -970,7 +1025,9 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 
 	/**
 	 * Run steps of a Blocks page. `register` is the Checkout block's script registration step, which
-	 * AbstractBlock::render_callback() runs before the block's data. `checkout data` and `cart data` fire the Checkout
+	 * AbstractBlock::render_callback() runs before the block's data, and `register in the editor` is the one
+	 * AbstractBlock::enqueue_editor_assets() runs with unified editor assets off. `print` is wp_print_scripts with only the
+	 * API's dependency check on it, as Api::init() hooks it. `checkout data` and `cart data` fire the Checkout
 	 * block's and the Cart or Mini-Cart block's enqueue data action. The read steps read the card data, publishing nothing.
 	 * The hook steps add a read of the card data to the checkout action, before or after the API's callback.
 	 *
@@ -982,6 +1039,12 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 		foreach ( $steps as $step ) {
 			if ( 'register' === $step ) {
 				$page['api']->add_payment_method_script_dependencies( array(), 'wc-checkout-block-frontend' );
+			} elseif ( 'register in the editor' === $step ) {
+				$page['api']->add_payment_method_script_dependencies( array(), 'wc-checkout-block' );
+			} elseif ( 'print' === $step ) {
+				remove_all_actions( 'wp_print_scripts' );
+				add_action( 'wp_print_scripts', array( $page['api'], 'verify_payment_methods_dependencies' ), 1 );
+				do_action( 'wp_print_scripts' ); // phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment
 			} elseif ( 'checkout data' === $step ) {
 				do_action( 'woocommerce_blocks_checkout_enqueue_data' ); // phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment
 			} elseif ( 'cart data' === $step ) {

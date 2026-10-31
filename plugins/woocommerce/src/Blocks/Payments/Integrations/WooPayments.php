@@ -201,10 +201,14 @@ final class WooPayments extends AbstractPaymentMethodType {
 			// The card script's asset file lists this handle: FingerprintJS is a build external.
 			$this->frontend_assets->register_fingerprint_script();
 
-			$handles[] = $this->register_payment_method_assets(
+			$card_script_is_new = ! wp_script_is( self::PAYMENT_METHOD_SCRIPT_HANDLE, 'registered' );
+			$handles[]          = $this->register_payment_method_assets(
 				self::PAYMENT_METHOD_SCRIPT_HANDLE,
 				array_merge( array( WooPaymentsFrontendAssets::STRIPE_SCRIPT_HANDLE, self::CHECKOUT_BLOCKS_SCRIPT_HANDLE ), $this->register_common_scripts() )
 			);
+			if ( $card_script_is_new && $this->is_card_gateway() && $this->asset_data_registry->exists( 'paymentMethodData' ) && ! doing_action( 'wp_print_scripts' ) ) {
+				$this->set_woopay_protocol_dependency( $this->get_checkout_assets_data() );
+			}
 		}
 
 		if ( $this->is_card_gateway() && $this->should_enqueue_woopay_assets() ) {
@@ -233,9 +237,8 @@ final class WooPayments extends AbstractPaymentMethodType {
 	 * @return array<string,mixed>
 	 */
 	public function get_payment_method_data() {
-		$data = $this->checkout_assets->get_blocks_payment_method_data( $this->get_card_gateway_supports(), $this->payment_gateway->get_payment_method_definition(), $this->get_button_context() );
 		$data = array_merge(
-			$data,
+			$this->get_checkout_assets_data(),
 			array(
 				'gatewayId' => $this->payment_gateway->id,
 			)
@@ -245,30 +248,38 @@ final class WooPayments extends AbstractPaymentMethodType {
 			$data['expressCheckoutParams'] = $this->express_checkout_service->get_express_checkout_params( $this->get_button_context() );
 		}
 
-		if ( $this->is_card_gateway() ) {
-			$this->match_woopay_protocol_dependency_to_published_data( $data );
+		$is_enqueue_data_action = doing_action( 'woocommerce_blocks_checkout_enqueue_data' ) || doing_action( 'woocommerce_blocks_cart_enqueue_data' );
+		if ( $this->is_card_gateway() && $is_enqueue_data_action && ! $this->asset_data_registry->exists( 'paymentMethodData' ) ) {
+			$this->set_woopay_protocol_dependency( $data );
 		}
 
 		return $data;
 	}
 
 	/**
-	 * Keep the WooPay protocol on the card script only when the card data Blocks publishes turns the WooPay email check on,
-	 * so a checkout without that check loads no protocol entry. The WooPay scripts keep their own dependency on it.
+	 * Get this payment method's data from the checkout assets, without publishing it.
 	 *
-	 * Blocks rebuilds this data on every read, but the page carries only the first paymentMethodData added inside its two
-	 * enqueue_data actions (Payments\Api::add_payment_method_script_data()). So only a read inside those actions, before that
-	 * key exists, can be the one that publishes; any other read may hold flags the page never sees, and changes nothing.
-	 * Several reads can pass both checks, so each sets the dependency both ways, and the last one, which publishes, wins.
+	 * @return array<string,mixed>
+	 */
+	private function get_checkout_assets_data(): array {
+		return $this->checkout_assets->get_blocks_payment_method_data( $this->get_card_gateway_supports(), $this->payment_gateway->get_payment_method_definition(), $this->get_button_context() );
+	}
+
+	/**
+	 * Keep the WooPay protocol on the card script only when the card data turns the WooPay email check on, so a checkout
+	 * without that check loads no protocol entry. The WooPay scripts keep their own dependency on it.
+	 *
+	 * The page carries only the first paymentMethodData Blocks adds inside its two enqueue_data actions
+	 * (Payments\Api::add_payment_method_script_data()), so the dependency is set by whichever comes last: that publication,
+	 * or the card script's first registration in this request when a Mini-Cart published before the script existed. Core's
+	 * publishing read is the last card read before that key exists, and each such read sets the dependency both ways.
+	 * Any other read may hold flags the page never sees, and changes nothing.
+	 * A first registration during wp_print_scripts with the data already published serves no block on the page, so it reads
+	 * nothing: block themes render the whole template before wp_head, and classic themes print before anything has published.
 	 *
 	 * @param array<string,mixed> $data The card's Blocks payment method data.
 	 */
-	private function match_woopay_protocol_dependency_to_published_data( array $data ): void {
-		$is_enqueue_data_action = doing_action( 'woocommerce_blocks_checkout_enqueue_data' ) || doing_action( 'woocommerce_blocks_cart_enqueue_data' );
-		if ( ! $is_enqueue_data_action || $this->asset_data_registry->exists( 'paymentMethodData' ) ) {
-			return;
-		}
-
+	private function set_woopay_protocol_dependency( array $data ): void {
 		$script = wp_scripts()->query( self::PAYMENT_METHOD_SCRIPT_HANDLE, 'registered' );
 		if ( ! $script instanceof \_WP_Dependency ) {
 			return;
