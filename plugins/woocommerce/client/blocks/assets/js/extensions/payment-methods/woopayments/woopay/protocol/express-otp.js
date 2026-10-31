@@ -191,7 +191,9 @@ export const openExpressOtpIframe = ( args, context, email, tracksUserId ) => {
 					.then( ( response ) => {
 						if ( response?.result === 'success' ) {
 							// Any open dialog: as the client reads it, since a reopened dialog's redirect can lose to the in-flight guard.
-							if ( document.querySelector( '.woopay-otp-iframe' ) ) {
+							if (
+								document.querySelector( '.woopay-otp-iframe' )
+							) {
 								args.navigate( getRedirectUrl( response.url ) );
 							}
 							return;

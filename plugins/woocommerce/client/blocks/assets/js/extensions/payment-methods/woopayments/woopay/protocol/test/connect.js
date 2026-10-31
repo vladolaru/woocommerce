@@ -308,6 +308,35 @@ describe( 'WooPay Connect (shared)', () => {
 		] );
 	} );
 
+	// A browser answers null for a removed iframe's window, where jsdom keeps it, so the row sets that null by hand. A
+	// message whose frame was discarded carries a null source too, and any frame on WooPay's origin can send one.
+	test( 'settles nothing for a null source once the iframe has left the page', async () => {
+		jest.useFakeTimers();
+		const connect = loadGetConnect()( { woopayHost: WOOPAY_HOST } );
+		const settled = [];
+		getPreemptiveSession( connect, 'detached' ).then( ( value ) =>
+			settled.push( [ 'detached', value ] )
+		);
+		await loadConnectIframe();
+
+		const iframe = document.getElementById( 'woopay-connect-iframe' );
+		iframe.remove();
+		Object.defineProperty( iframe, 'contentWindow', {
+			configurable: true,
+			value: null,
+		} );
+
+		dispatchFromWindow( null, {
+			action: 'set_preemptive_session_data_success',
+			value: { redirect_url: 'https://pay.woo.test/another-frame' },
+		} );
+		await flushPromises();
+		expect( settled ).toEqual( [] );
+
+		await jest.advanceTimersByTimeAsync( 5000 );
+		expect( settled ).toEqual( [ [ 'detached', null ] ] );
+	} );
+
 	test( 'asks for the preferred card again when another iframe takes the id', async () => {
 		const connect = loadGetConnect()( { woopayHost: WOOPAY_HOST } );
 		connect.fetchPreferredCard();

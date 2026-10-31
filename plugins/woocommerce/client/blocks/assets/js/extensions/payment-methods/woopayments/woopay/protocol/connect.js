@@ -137,9 +137,9 @@ const createConnect = ( args ) => {
 				return;
 			}
 
-			// An iframe that has gone can still have an answer on its way, for a request that is no longer in the list.
+			// The source compare alone is not enough: a removed iframe's window is null, and so is a discarded frame's source.
 			if (
-				! connectIframe ||
+				! connectIframe?.isConnected ||
 				event.source !== connectIframe.contentWindow
 			) {
 				return;
