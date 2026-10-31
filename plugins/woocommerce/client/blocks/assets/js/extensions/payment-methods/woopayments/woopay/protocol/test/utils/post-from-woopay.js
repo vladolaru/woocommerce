@@ -66,6 +66,36 @@ export const dispatchFromWindow = ( source, data, origin = WOOPAY_ORIGIN ) => {
 };
 
 /**
+ * Answer the third-party cookie check from its temporary iframe, as hosted WooPay's connect page does: the test cookie
+ * is written, then read (hosted build/connect.js, setTempThirdPartyCookie and getIsThirdPartyCookiesEnabled).
+ *
+ * @param {boolean} isEnabled What the read answers.
+ * @param {string}  origin    The sender's origin.
+ */
+export const answerThirdPartyCookieCheck = (
+	isEnabled,
+	origin = WOOPAY_ORIGIN
+) => {
+	const iframe = document.getElementById( 'temp-woopay-connect-iframe' );
+	const iframeWindow = getIframeWindow( iframe );
+
+	iframe.dispatchEvent( new window.Event( 'load' ) );
+	dispatchFromWindow(
+		iframeWindow,
+		{ action: 'set_temp_third_party_cookie_success', value: true },
+		origin
+	);
+	dispatchFromWindow(
+		iframeWindow,
+		{
+			action: 'get_is_third_party_cookies_enabled_success',
+			value: isEnabled,
+		},
+		origin
+	);
+};
+
+/**
  * Deliver a WooPay message from the iframe that sends it: Connect answers from the connect iframe, the rest from the
  * open code dialog.
  *

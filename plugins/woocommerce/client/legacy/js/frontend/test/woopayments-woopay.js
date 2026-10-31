@@ -3,6 +3,7 @@
  */
 
 const {
+	answerThirdPartyCookieCheck,
 	postFromWooPay,
 	removeMessageListenersAfterEach,
 } = require( '../../../../blocks/assets/js/extensions/payment-methods/woopayments/woopay/protocol/test/utils/post-from-woopay' );
@@ -1710,11 +1711,21 @@ describe( 'WooPayments WooPay checkout', () => {
 			postFromWooPay( { action, value }, origin );
 		}
 
-		async function initializeDirectCheckout( loggedIn ) {
+		async function answerLoginCheck( loggedIn ) {
 			await loadConnectIframe();
 			await flushPromises();
 			emitConnectMessage( 'get_is_user_logged_in_success', loggedIn );
 			await flushPromises();
+		}
+
+		// A shopper Connect does not see as logged in takes the click's route: the check says third-party cookies do not
+		// work, so Connect cannot tell (client 11.2.0 direct-checkout/index.js:46-50).
+		async function initializeDirectCheckout( loggedIn ) {
+			await answerLoginCheck( loggedIn );
+			if ( ! loggedIn ) {
+				answerThirdPartyCookieCheck( false );
+				await flushPromises();
+			}
 		}
 
 		// The cart's direct checkout reaches WooPay through the same Connect iframe, whose connect page posts the store
@@ -2100,6 +2111,104 @@ describe( 'WooPayments WooPay checkout', () => {
 			);
 		} );
 
+		describe( 'with the third-party cookie check', () => {
+			const cartLink =
+				'<div class="wc-proceed-to-checkout"><a class="checkout-button" href="#checkout">Checkout</a></div>';
+
+			const getTempIframe = () =>
+				document.getElementById( 'temp-woopay-connect-iframe' );
+
+			function clickCartLink() {
+				const event = new window.MouseEvent( 'click', {
+					bubbles: true,
+					cancelable: true,
+				} );
+				document.querySelector( '.checkout-button' ).dispatchEvent( event );
+
+				return event;
+			}
+
+			// Client 11.2.0 direct-checkout/index.js:34-44, from #7890's "cookies enabled, logged out goes to the merchant".
+			test( 'leaves the click on the store for a shopper logged out where third-party cookies work', async () => {
+				configureDirectCheckout( cartLink );
+				const postMessage = installConnect();
+				require( '../woopayments-woopay' );
+
+				await answerLoginCheck( false );
+				answerThirdPartyCookieCheck( true );
+				await flushPromises();
+				bodyEventHandlers.updated_cart_totals();
+
+				expect( document.body.wooPayDirectCheckoutAttached ).toBeFalsy();
+				expect( clickCartLink().defaultPrevented ).toBe( false );
+				expect( postMessage ).not.toHaveBeenCalledWith(
+					{ action: 'isWooPayReachable' },
+					expect.anything()
+				);
+			} );
+
+			test( 'leaves the click to WooPay where third-party cookies do not work', async () => {
+				configureDirectCheckout( cartLink );
+				installConnect();
+				const { __test__ } = require( '../woopayments-woopay' );
+				__test__.setNavigate( jest.fn() );
+
+				await answerLoginCheck( false );
+				expect( document.body.wooPayDirectCheckoutAttached ).toBeFalsy();
+				answerThirdPartyCookieCheck( false );
+				await flushPromises();
+
+				expect( document.body.wooPayDirectCheckoutAttached ).toBe( true );
+				expect( clickCartLink().defaultPrevented ).toBe( true );
+				await flushPromises();
+			} );
+
+			test( 'runs no check for a shopper Connect sees as logged in', async () => {
+				configureDirectCheckout( cartLink );
+				installConnect();
+				require( '../woopayments-woopay' );
+
+				await answerLoginCheck( true );
+
+				expect( getTempIframe() ).toBeNull();
+				expect( document.body.wooPayDirectCheckoutAttached ).toBe( true );
+			} );
+
+			test( 'starts the check only once the window has loaded', async () => {
+				configureDirectCheckout( cartLink );
+				installConnect();
+				const readyState = jest
+					.spyOn( document, 'readyState', 'get' )
+					.mockReturnValue( 'interactive' );
+				require( '../woopayments-woopay' );
+
+				try {
+					await answerLoginCheck( false );
+					expect( getTempIframe() ).toBeNull();
+
+					window.dispatchEvent( new window.Event( 'load' ) );
+					await flushPromises();
+					expect( getTempIframe() ).not.toBeNull();
+				} finally {
+					readyState.mockRestore();
+				}
+			} );
+
+			// Client 11.2.0's variable starts false, so a cart update ahead of the answer takes the not-sure route
+			// (direct-checkout/index.js:19, :34, :46-50).
+			test( 'attaches on a cart update ahead of the answer', async () => {
+				configureDirectCheckout( cartLink );
+				installConnect();
+				require( '../woopayments-woopay' );
+
+				await answerLoginCheck( false );
+				bodyEventHandlers.updated_cart_totals();
+
+				expect( getTempIframe() ).not.toBeNull();
+				expect( document.body.wooPayDirectCheckoutAttached ).toBe( true );
+			} );
+		} );
+
 		test( 'not-logged-in flow probes reachability before using the minimum session', async () => {
 			// Oracle: WooPayments 11.1.0 session-connect.js:168-177 and direct-checkout/woopay-direct-checkout.js:200-228,398-412.
 			configureDirectCheckout(
@@ -2332,12 +2441,15 @@ describe( 'WooPayments WooPay checkout', () => {
 
 			expect( ordinaryClick.defaultPrevented ).toBe( false );
 			expect( submitClick.defaultPrevented ).toBe( false );
-			// getIsUserLoggedIn, then isWooPayReachable; no preferred-card query without a WooPay button.
-			expect( postMessage ).toHaveBeenCalledTimes( 2 );
-			expect( postMessage ).toHaveBeenLastCalledWith(
-				{ action: 'isWooPayReachable' },
-				'https://pay.woo.test'
-			);
+			// No preferred-card query without a WooPay button.
+			expect(
+				postMessage.mock.calls.map( ( [ message ] ) => message.action )
+			).toEqual( [
+				'getIsUserLoggedIn',
+				'setTempThirdPartyCookie',
+				'getIsThirdPartyCookiesEnabled',
+				'isWooPayReachable',
+			] );
 			expect( navigate ).toHaveBeenCalledTimes( 1 );
 			expect( navigate ).toHaveBeenCalledWith(
 				'https://store.test/checkout/'

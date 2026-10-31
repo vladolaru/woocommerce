@@ -415,6 +415,158 @@ describe( 'WooPay Connect (shared)', () => {
 			last4: '0005',
 		} );
 	} );
+
+	describe( 'third-party cookie check', () => {
+		const TEMP_IFRAME = '#temp-woopay-connect-iframe';
+		const SET_SUCCESS = {
+			action: 'set_temp_third_party_cookie_success',
+			value: true,
+		};
+		const getAnswer = ( value ) => ( {
+			action: 'get_is_third_party_cookies_enabled_success',
+			value,
+		} );
+
+		const startCheck = () => {
+			const check = loadGetConnect()( {
+				woopayHost: WOOPAY_HOST,
+			} ).areThirdPartyCookiesEnabled();
+			const iframe = document.querySelector( TEMP_IFRAME );
+
+			return { check, iframe, iframeWindow: getIframeWindow( iframe ) };
+		};
+
+		// Client 11.2.0 connect/session-connect.js:31-127; hosted build/connect.js answers both messages.
+		test.each( [ [ true ], [ false ] ] )(
+			'asks a temporary iframe and answers %p',
+			async ( isEnabled ) => {
+				const { check, iframe, iframeWindow } = startCheck();
+
+				expect( iframe.src ).toBe( `${ WOOPAY_HOST }/connect/` );
+				iframe.dispatchEvent( new window.Event( 'load' ) );
+				dispatchFromWindow( iframeWindow, SET_SUCCESS );
+				dispatchFromWindow( iframeWindow, getAnswer( isEnabled ) );
+
+				await expect( check ).resolves.toBe( isEnabled );
+				expect( postMessage.mock.calls ).toEqual( [
+					[ { action: 'setTempThirdPartyCookie' }, WOOPAY_HOST ],
+					[
+						{ action: 'getIsThirdPartyCookiesEnabled' },
+						WOOPAY_HOST,
+					],
+				] );
+				expect( document.querySelector( TEMP_IFRAME ) ).toBeNull();
+			}
+		);
+
+		test( 'answers false when the test cookie was not set, without reading it', async () => {
+			const { check, iframe, iframeWindow } = startCheck();
+
+			iframe.dispatchEvent( new window.Event( 'load' ) );
+			dispatchFromWindow( iframeWindow, {
+				...SET_SUCCESS,
+				value: false,
+			} );
+
+			await expect( check ).resolves.toBe( false );
+			expect( postMessage ).toHaveBeenCalledTimes( 1 );
+			expect( document.querySelector( TEMP_IFRAME ) ).toBeNull();
+		} );
+
+		// Setting the cookie reloads the connect page, so the iframe can load twice.
+		test( 'sets the test cookie once when the connect page reloads', () => {
+			const { iframe } = startCheck();
+
+			iframe.dispatchEvent( new window.Event( 'load' ) );
+			iframe.dispatchEvent( new window.Event( 'load' ) );
+
+			expect( postMessage ).toHaveBeenCalledTimes( 1 );
+		} );
+
+		test( 'takes messages from its own iframe only', async () => {
+			const { check, iframe, iframeWindow } = startCheck();
+			const otherWindow = {};
+
+			iframe.dispatchEvent( new window.Event( 'load' ) );
+			dispatchFromWindow( otherWindow, SET_SUCCESS );
+			dispatchFromWindow(
+				iframeWindow,
+				SET_SUCCESS,
+				'https://evil.test'
+			);
+			expect( postMessage ).toHaveBeenCalledTimes( 1 );
+
+			dispatchFromWindow( iframeWindow, SET_SUCCESS );
+			dispatchFromWindow( otherWindow, getAnswer( false ) );
+			dispatchFromWindow( iframeWindow, getAnswer( true ) );
+
+			await expect( check ).resolves.toBe( true );
+		} );
+
+		test.each( [
+			[ 'no page loads', false ],
+			[ 'the read goes unanswered', true ],
+		] )(
+			'answers false at the deadline when %s',
+			async ( name, reachesRead ) => {
+				jest.useFakeTimers();
+				const { check, iframe, iframeWindow } = startCheck();
+				let answer;
+				check.then( ( value ) => {
+					answer = value;
+				} );
+
+				if ( reachesRead ) {
+					await jest.advanceTimersByTimeAsync( 4000 );
+					iframe.dispatchEvent( new window.Event( 'load' ) );
+					dispatchFromWindow( iframeWindow, SET_SUCCESS );
+				}
+
+				// Each step has its own 5 s, as each client promise has its own timer.
+				await jest.advanceTimersByTimeAsync( 4999 );
+				expect( answer ).toBeUndefined();
+				await jest.advanceTimersByTimeAsync( 1 );
+
+				expect( answer ).toBe( false );
+				expect( document.querySelector( TEMP_IFRAME ) ).toBeNull();
+			}
+		);
+
+		test( 'answers false with no iframe when there is no WooPay host', async () => {
+			const check = loadGetConnect()( {} ).areThirdPartyCookiesEnabled();
+
+			await expect( check ).resolves.toBe( false );
+			expect( document.querySelector( TEMP_IFRAME ) ).toBeNull();
+		} );
+
+		test( 'leaves a request on the page connect iframe waiting for its own answer', async () => {
+			const connect = loadGetConnect()( { woopayHost: WOOPAY_HOST } );
+			const card = connect.fetchPreferredCard();
+			await loadConnectIframe();
+			const check = connect.areThirdPartyCookiesEnabled();
+			const iframeWindow = getIframeWindow(
+				document.querySelector( TEMP_IFRAME )
+			);
+
+			document
+				.querySelector( TEMP_IFRAME )
+				.dispatchEvent( new window.Event( 'load' ) );
+			dispatchFromWindow( iframeWindow, {
+				...SET_SUCCESS,
+				value: false,
+			} );
+			await expect( check ).resolves.toBe( false );
+
+			sendWooPayMessage( {
+				action: 'get_preferred_payment_method_success',
+				value: { brand: 'amex', last4: '0005' },
+			} );
+			await expect( card ).resolves.toEqual( {
+				brand: 'amex',
+				last4: '0005',
+			} );
+		} );
+	} );
 } );
 
 describe( 'WooPay save-user phone helpers (shared)', () => {

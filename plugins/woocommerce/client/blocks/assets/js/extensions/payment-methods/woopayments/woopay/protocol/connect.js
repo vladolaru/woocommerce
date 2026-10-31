@@ -74,7 +74,7 @@ export const setCachedPreferredCard = ( card ) => {
  * @param {string}  args.ajaxUrl              admin-ajax URL, for the Tracks identity.
  * @param {string}  args.platformTrackerNonce Nonce of the Tracks identity request.
  * @param {string}  args.iframeTitle          Title of the connect iframe, when this script creates it.
- * @return {Object} `sendMessage`, `sendPreemptiveSessionData` and `fetchPreferredCard`.
+ * @return {Object} `sendMessage`, `sendPreemptiveSessionData`, `fetchPreferredCard` and `areThirdPartyCookiesEnabled`.
  */
 const createConnect = ( args ) => {
 	// The iframe the requests below were sent to, and those waiting for an answer, by callback name, oldest first.
@@ -223,6 +223,23 @@ const createConnect = ( args ) => {
 			} );
 		} );
 
+	const createHiddenIframe = ( id ) => {
+		const iframe = document.createElement( 'iframe' );
+		iframe.id = id;
+		iframe.height = 0;
+		iframe.width = 0;
+		iframe.title = args.iframeTitle || '';
+		iframe.style.border = 'none';
+		iframe.style.display = 'block';
+		iframe.style.visibility = 'hidden';
+		iframe.style.position = 'fixed';
+		iframe.style.height = '0';
+		iframe.style.width = '0';
+		iframe.style.pointerEvents = 'none';
+
+		return iframe;
+	};
+
 	// The connect iframe carries the wait for its connect page; client 11.2.0 shares that state in window.WooPayConnect
 	// (connect/connect-utils.js).
 	const getPostMessage = () => {
@@ -251,18 +268,7 @@ const createConnect = ( args ) => {
 			return Promise.reject();
 		}
 
-		const iframe = document.createElement( 'iframe' );
-		iframe.id = 'woopay-connect-iframe';
-		iframe.height = 0;
-		iframe.width = 0;
-		iframe.title = args.iframeTitle || '';
-		iframe.style.border = 'none';
-		iframe.style.display = 'block';
-		iframe.style.visibility = 'hidden';
-		iframe.style.position = 'fixed';
-		iframe.style.height = '0';
-		iframe.style.width = '0';
-		iframe.style.pointerEvents = 'none';
+		const iframe = createHiddenIframe( 'woopay-connect-iframe' );
 		iframe.wooPayConnectPostMessage = waitForConnectPage( iframe );
 		connectIframe = iframe;
 
@@ -369,7 +375,92 @@ const createConnect = ( args ) => {
 		return preferredCardFetchPromise;
 	};
 
-	return { sendMessage, sendPreemptiveSessionData, fetchPreferredCard };
+	/**
+	 * Ask WooPay whether third-party cookies work here, through a temporary iframe (client 11.2.0
+	 * connect/session-connect.js:23-127): setting the test cookie reloads the connect page, which would abort a request
+	 * in the page's connect iframe. Only that iframe's messages count, so it needs no place in the page's requests.
+	 *
+	 * @return {Promise<boolean>} True when they work; false on any other answer, or none by a deadline.
+	 */
+	const areThirdPartyCookiesEnabled = () =>
+		new Promise( ( resolve ) => {
+			const origin = getWooPayHostOrigin( args );
+
+			if ( ! origin ) {
+				resolve( false );
+				return;
+			}
+
+			const iframe = createHiddenIframe( 'temp-woopay-connect-iframe' );
+			let timeoutId;
+
+			const finish = ( value ) => {
+				window.clearTimeout( timeoutId );
+				window.removeEventListener( 'message', onMessage );
+				iframe.remove();
+				resolve( value );
+			};
+
+			const restartDeadline = () => {
+				window.clearTimeout( timeoutId );
+				timeoutId = window.setTimeout(
+					() => finish( false ),
+					CONNECT_TIMEOUT
+				);
+			};
+
+			function onMessage( event ) {
+				const data = event.data || {};
+
+				if (
+					event.origin !== origin ||
+					event.source !== iframe.contentWindow
+				) {
+					return;
+				}
+
+				if ( data.action === 'set_temp_third_party_cookie_success' ) {
+					if ( ! data.value ) {
+						finish( false );
+						return;
+					}
+
+					restartDeadline();
+					iframe.contentWindow.postMessage(
+						{ action: 'getIsThirdPartyCookiesEnabled' },
+						args.woopayHost
+					);
+				}
+
+				if (
+					data.action === 'get_is_third_party_cookies_enabled_success'
+				) {
+					finish( !! data.value );
+				}
+			}
+
+			window.addEventListener( 'message', onMessage );
+			iframe.addEventListener(
+				'load',
+				() => {
+					iframe.contentWindow.postMessage(
+						{ action: 'setTempThirdPartyCookie' },
+						args.woopayHost
+					);
+				},
+				{ once: true }
+			);
+			iframe.src = `${ args.woopayHost }/connect/`;
+			restartDeadline();
+			document.body.appendChild( iframe );
+		} );
+
+	return {
+		sendMessage,
+		sendPreemptiveSessionData,
+		fetchPreferredCard,
+		areThirdPartyCookiesEnabled,
+	};
 };
 
 /**
@@ -378,7 +469,7 @@ const createConnect = ( args ) => {
  * connection values from the store.
  *
  * @param {Object} args The calling script's values; see createConnect().
- * @return {Object} `sendMessage`, `sendPreemptiveSessionData` and `fetchPreferredCard`.
+ * @return {Object} `sendMessage`, `sendPreemptiveSessionData`, `fetchPreferredCard` and `areThirdPartyCookiesEnabled`.
  */
 export const getConnect = ( args ) => {
 	if ( ! pageConnect ) {

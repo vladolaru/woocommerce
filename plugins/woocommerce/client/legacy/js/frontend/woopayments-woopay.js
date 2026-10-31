@@ -17,6 +17,7 @@
 	var buttonWidthThreshold = 140;
 	var cardDisplayWidthThreshold = 220;
 	var directCheckoutLoggedIn = false;
+	var isKnownLoggedOutOfWooPay = false;
 	var hasPhoneForMobileEnter = false;
 	var isWooPayUser = false;
 	var proceedToCheckoutSelector =
@@ -565,6 +566,28 @@
 		);
 	}
 
+	// A shopper Connect can see as logged out keeps a plain link to the store's checkout. Everyone else takes the click.
+	function attachDirectCheckoutForShopper() {
+		if ( ! isKnownLoggedOutOfWooPay ) {
+			attachDirectCheckoutListeners();
+		}
+	}
+
+	// Resolves after the window's load event, so the check's iframe holds nothing up (client 11.2.0
+	// direct-checkout/index.js:247).
+	function whenWindowLoaded() {
+		return new Promise( function ( resolve ) {
+			if ( document.readyState === 'complete' ) {
+				resolve();
+				return;
+			}
+
+			window.addEventListener( 'load', resolve, { once: true } );
+		} );
+	}
+
+	// Client 11.2.0 direct-checkout/index.js:34-51: Connect's "not logged in" is only true where third-party cookies work;
+	// elsewhere the click has to find out. A shopper it reports logged in needs no check.
 	function initializeDirectCheckout() {
 		if ( ! shouldRunDirectCheckout() ) {
 			return;
@@ -577,7 +600,20 @@
 			true
 		).then( function ( loggedIn ) {
 			directCheckoutLoggedIn = loggedIn;
-			attachDirectCheckoutListeners();
+
+			if ( loggedIn ) {
+				attachDirectCheckoutListeners();
+				return;
+			}
+
+			whenWindowLoaded()
+				.then( function () {
+					return getWooPayConnect().areThirdPartyCookiesEnabled();
+				} )
+				.then( function ( areEnabled ) {
+					isKnownLoggedOutOfWooPay = areEnabled;
+					attachDirectCheckoutForShopper();
+				} );
 		} );
 	}
 
@@ -1424,7 +1460,7 @@
 		// update replaces the markup it lived in.
 		renderWooPayExpressButton();
 		if ( shouldRunDirectCheckout() ) {
-			attachDirectCheckoutListeners();
+			attachDirectCheckoutForShopper();
 		}
 	} );
 
