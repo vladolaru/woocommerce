@@ -1863,7 +1863,7 @@ describe( 'wc-payment-method-woopayments-woopay', () => {
 			expect( navigate ).not.toHaveBeenCalled();
 		} );
 
-		// The classic WooPay button shows nothing in this case; each checkout keeps its own behaviour.
+		// A shopper who closed the dialog has left the flow, so a failed init_woopay shows nothing on either button.
 		it( 'shows nothing when init_woopay cannot be reached after the iframe closed', async () => {
 			let rejectInit;
 			window.fetch = jest.fn( ( url ) =>

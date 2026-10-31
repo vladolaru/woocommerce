@@ -1883,6 +1883,24 @@ describe( 'WooPayments WooPay checkout', () => {
 				);
 			} );
 
+			// The cart update reads the cookie afresh, as client 11.2.0 direct-checkout/index.js:290 does.
+			test( 'attaches on a cart update when the cookie has gone since the page loaded', async () => {
+				document.cookie = 'skip_woopay=1; path=/';
+				configureDirectCheckout( cartLink );
+				installConnect();
+				const { __test__ } = require( '../woopayments-woopay' );
+				__test__.setNavigate( jest.fn() );
+				await flushPromises();
+				expect( document.body.wooPayDirectCheckoutAttached ).toBeFalsy();
+
+				document.cookie = 'skip_woopay=' + skipCookieExpiry;
+				bodyEventHandlers.updated_cart_totals();
+
+				expect( document.body.wooPayDirectCheckoutAttached ).toBe( true );
+				expect( clickProceedToCheckout() ).toBe( true );
+				await flushPromises();
+			} );
+
 			// Set and cleared are both the exact pair: the cookie's expiry, and a cookie that only holds the text.
 			test.each( [
 				[ 'no cookie', null ],
@@ -2844,7 +2862,7 @@ describe( 'WooPayments WooPay checkout', () => {
 			).toBe( false );
 		} );
 
-		// The Blocks WooPay button shows the error in this case; each checkout keeps its own behaviour.
+		// A shopper who closed the dialog has left the flow, so a failed init_woopay shows nothing on either button.
 		test( 'shows nothing when init_woopay cannot be reached after the iframe closed', async () => {
 			let rejectInit;
 			window.fetch = jest.fn( ( url ) =>
