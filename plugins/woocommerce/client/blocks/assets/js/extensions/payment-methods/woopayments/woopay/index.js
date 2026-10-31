@@ -17,7 +17,7 @@ import {
 } from './express-checkout-iframe';
 import {
 	buildAjaxUrl,
-	deleteSkipWooPayCookieOnClick as deleteSkipWooPayCookie,
+	deleteSkipWooPayCookie,
 	getCachedPreferredCard,
 	getConnect,
 	isSamePreferredCard,

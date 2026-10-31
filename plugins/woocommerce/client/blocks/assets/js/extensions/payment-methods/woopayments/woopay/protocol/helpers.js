@@ -73,48 +73,24 @@ export const getWooPayHostOrigin = ( args ) => {
 };
 
 /**
- * Whether the shopper opted out of WooPay for this session, as the email check reads it: the first cookie that names
- * skip_woopay decides.
+ * Whether the shopper opted out of WooPay for this session. The store only ever writes skip_woopay=1, so the exact pair
+ * decides, and another cookie that holds the text, such as one storing WooPay's back-to-store URL, changes nothing.
+ * Client 11.2.0 lets the first cookie holding the text decide (checkout/woopay/utils.js:72-88).
  *
- * @return {boolean} True when that cookie is skip_woopay=1.
+ * @return {boolean} True when the skip_woopay=1 cookie is set.
  */
-export const shouldSkipWooPay = () => {
-	const skipWooPayCookie = document.cookie
+export const shouldSkipWooPay = () =>
+	document.cookie
 		.split( ';' )
-		.find( ( cookie ) => cookie.includes( 'skip_woopay' ) );
-
-	if ( ! skipWooPayCookie ) {
-		return false;
-	}
-
-	const [ name, value ] = skipWooPayCookie.split( '=' );
-
-	return name.trim() === 'skip_woopay' && value.trim() === '1';
-};
-
-const expireSkipWooPayCookie = () => {
-	document.cookie =
-		'skip_woopay=; path=/; expires=Thu, 01 Jan 1970 00:00:00 UTC;';
-};
+		.some( ( cookie ) => cookie.trim() === 'skip_woopay=1' );
 
 /**
- * Delete the skip_woopay cookie when the shopper opts back in from the email check, reading it as shouldSkipWooPay().
+ * Delete the skip_woopay cookie when the shopper opts back in to WooPay.
  */
 export const deleteSkipWooPayCookie = () => {
 	if ( shouldSkipWooPay() ) {
-		expireSkipWooPayCookie();
-	}
-};
-
-/**
- * Delete the skip_woopay cookie when the shopper clicks a WooPay button. The buttons find the cookie by its exact
- * skip_woopay=1 pair anywhere in the cookie string, so another cookie whose value names skip_woopay does not hide it.
- */
-export const deleteSkipWooPayCookieOnClick = () => {
-	const cookies = document.cookie ? document.cookie.split( ';' ) : [];
-
-	if ( cookies.some( ( cookie ) => cookie.trim() === 'skip_woopay=1' ) ) {
-		expireSkipWooPayCookie();
+		document.cookie =
+			'skip_woopay=; path=/; expires=Thu, 01 Jan 1970 00:00:00 UTC;';
 	}
 };
 

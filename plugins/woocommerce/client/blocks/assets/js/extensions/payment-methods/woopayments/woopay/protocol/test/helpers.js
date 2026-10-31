@@ -5,7 +5,6 @@ import {
 	buildAjaxUrl,
 	claimWooPayRedirect,
 	deleteSkipWooPayCookie,
-	deleteSkipWooPayCookieOnClick,
 	initWooPay,
 	isPreviewing,
 	sendSessionToOtpIframe,
@@ -60,29 +59,60 @@ describe( 'WooPay protocol helpers', () => {
 		expect( claimWooPayRedirect( event ) ).toBe( false );
 	} );
 
-	test( 'reads and clears the skip_woopay cookie the way each caller always has', () => {
-		document.cookie = 'skip_woopay=1; path=/';
-		expect( shouldSkipWooPay() ).toBe( true );
-		deleteSkipWooPayCookie();
-		expect( document.cookie ).not.toContain( 'skip_woopay=1' );
+	describe( 'the skip_woopay cookie', () => {
+		const expire = ( name ) => {
+			document.cookie = `${ name }=; path=/; expires=Thu, 01 Jan 1970 00:00:00 UTC;`;
+		};
 
-		document.cookie = 'skip_woopay=1; path=/';
-		deleteSkipWooPayCookieOnClick();
-		expect( document.cookie ).not.toContain( 'skip_woopay=1' );
-	} );
+		afterEach( () => {
+			[ 'landing', 'skip_woopay', 'sskip_woopay' ].forEach( expire );
+		} );
 
-	// The two reads differ when an earlier cookie's value names skip_woopay, as an attribution cookie that stored the
-	// landing URL of WooPay's back-to-store link does. Each keeps the reading its callers had.
-	test( 'keeps the email check and button reads of the skip cookie apart', () => {
-		document.cookie = 'landing=%2Fcheckout%3Fskip_woopay%3Dtrue; path=/';
-		document.cookie = 'skip_woopay=1; path=/';
+		test( 'reads and clears the cookie', () => {
+			expect( shouldSkipWooPay() ).toBe( false );
 
-		expect( shouldSkipWooPay() ).toBe( false );
-		deleteSkipWooPayCookie();
-		expect( document.cookie ).toContain( 'skip_woopay=1' );
+			document.cookie = 'skip_woopay=1; path=/';
+			expect( shouldSkipWooPay() ).toBe( true );
 
-		deleteSkipWooPayCookieOnClick();
-		expect( document.cookie ).not.toContain( 'skip_woopay=1' );
+			deleteSkipWooPayCookie();
+			expect( shouldSkipWooPay() ).toBe( false );
+			expect( document.cookie ).not.toContain( 'skip_woopay=1' );
+		} );
+
+		// A cookie that stores the URL of WooPay's back-to-store link holds the text, and an older cookie comes first.
+		test( 'finds a set cookie behind an earlier cookie that holds the text', () => {
+			document.cookie =
+				'landing=%2Fcheckout%3Fskip_woopay%3Dtrue; path=/';
+			document.cookie = 'skip_woopay=1; path=/';
+
+			expect( shouldSkipWooPay() ).toBe( true );
+
+			deleteSkipWooPayCookie();
+			expect( document.cookie ).not.toContain( 'skip_woopay=1' );
+			expect( document.cookie ).toContain( 'landing=' );
+		} );
+
+		// Browsers keep a cookie set without "="; jsdom drops it, so the getter stands in for one.
+		test( 'does not throw on a skip_woopay cookie without a value', () => {
+			const cookie = jest
+				.spyOn( document, 'cookie', 'get' )
+				.mockReturnValue( 'skip_woopay' );
+
+			expect( shouldSkipWooPay() ).toBe( false );
+			expect( deleteSkipWooPayCookie ).not.toThrow();
+
+			cookie.mockRestore();
+		} );
+
+		// Client 11.2.0's own cases (woopay/__tests__/utils.test.js:47-66).
+		test.each( [ 'skip_woopay=10', 'sskip_woopay=1', 'skip_woopay=' ] )(
+			'reads %s as no skip',
+			( cookie ) => {
+				document.cookie = `${ cookie }; path=/`;
+
+				expect( shouldSkipWooPay() ).toBe( false );
+			}
+		);
 	} );
 
 	describe( 'initWooPay', () => {

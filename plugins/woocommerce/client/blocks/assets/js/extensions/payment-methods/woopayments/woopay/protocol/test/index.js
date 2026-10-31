@@ -22,7 +22,6 @@ describe( 'wc-woopayments-woopay-common', () => {
 				buildAjaxUrl: fn,
 				claimWooPayRedirect: fn,
 				deleteSkipWooPayCookie: fn,
-				deleteSkipWooPayCookieOnClick: fn,
 				dispatchUserExistEvent: fn,
 				getCachedPreferredCard: fn,
 				getConnect: fn,

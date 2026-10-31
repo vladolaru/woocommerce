@@ -302,7 +302,7 @@
 	}
 
 	function deleteSkipWooPayCookie() {
-		getWooPayProtocol().deleteSkipWooPayCookieOnClick();
+		getWooPayProtocol().deleteSkipWooPayCookie();
 	}
 
 	function setFormDataValue( data, name, value ) {

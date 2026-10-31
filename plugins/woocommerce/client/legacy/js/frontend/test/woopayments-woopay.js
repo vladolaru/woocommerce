@@ -254,8 +254,8 @@ describe( 'WooPayments WooPay checkout', () => {
 		);
 	} );
 
-	// The button finds the cookie by its exact pair, so an earlier cookie whose value names skip_woopay (an attribution
-	// cookie holding WooPay's back-to-store URL) does not hide it.
+	// An earlier cookie whose value holds the text (an attribution cookie storing WooPay's back-to-store URL) does not
+	// hide the skip cookie.
 	test( 'clears the skip_woopay cookie on a WooPay button click', async () => {
 		document.cookie = 'landing=%2Fcheckout%3Fskip_woopay%3Dtrue; path=/';
 		document.cookie = 'skip_woopay=1; path=/';
