@@ -1864,7 +1864,7 @@ describe( 'wc-payment-method-woopayments-woopay', () => {
 		} );
 
 		// The classic WooPay button shows nothing in this case; each checkout keeps its own behaviour.
-		it( 'shows the unavailable notice when init_woopay cannot be reached after the iframe closed', async () => {
+		it( 'shows nothing when init_woopay cannot be reached after the iframe closed', async () => {
 			let rejectInit;
 			window.fetch = jest.fn( ( url ) =>
 				url === '/?wc-ajax=wcpay_init_woopay'
@@ -1884,13 +1884,7 @@ describe( 'wc-payment-method-woopayments-woopay', () => {
 				rejectInit( new TypeError( 'Failed to fetch' ) );
 			} );
 
-			await waitFor( () => {
-				expect( createNotice ).toHaveBeenCalledWith(
-					'error',
-					'WooPay is unavailable at this time. Sorry for the inconvenience.',
-					{ context: 'wc/checkout' }
-				);
-			} );
+			expect( createNotice ).not.toHaveBeenCalled();
 		} );
 
 		// Recorded decision C12: the client throws in new URL() on an

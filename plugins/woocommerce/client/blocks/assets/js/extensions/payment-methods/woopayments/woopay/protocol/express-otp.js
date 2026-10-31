@@ -33,8 +33,6 @@ const FULL_SCREEN_MODAL_BREAKPOINT = 768;
  * @param {Function} [args.getRedirectUrl]              Returns the URL to send the shopper to for a WooPay URL.
  * @param {Function} [args.getFocusTarget]              Returns the control that gets focus back on close, given the one
  *                                                      that had it when the dialog opened.
- * @param {boolean}  [args.reportFailureWhenClosed]     Whether a failed init_woopay shows the error after the shopper
- *                                                      closed the dialog.
  * @param {string}   context                            The button context (checkout, cart, product, pay_for_order).
  * @param {string}   [email]                            The email to prefill.
  * @param {string}   [tracksUserId]                     The shopper's Tracks identity, for the OTP iframe.
@@ -204,8 +202,9 @@ export const openExpressOtpIframe = ( args, context, email, tracksUserId ) => {
 						}
 					} )
 					.catch( () => {
+						// The iframe was closed meanwhile. Client 11.2.0 has no catch here, which leaves an open dialog
+						// stuck; a shopper still in the dialog gets the notice and the way out.
 						if (
-							! args.reportFailureWhenClosed &&
 							! document.querySelector( '.woopay-otp-iframe' )
 						) {
 							return;

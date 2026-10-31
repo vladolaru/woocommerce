@@ -111,14 +111,13 @@ describe( 'WooPay button OTP dialog (shared)', () => {
 	} );
 
 	test.each( [
-		[ true, 1 ],
-		[ false, 0 ],
+		[ 'open', 1 ],
+		[ 'closed', 0 ],
 	] )(
-		'with reportFailureWhenClosed %p, a failed init_woopay after the shopper closed the dialog shows %p errors',
-		async ( reportFailureWhenClosed, errors ) => {
+		'with the dialog %s, a failed init_woopay shows %p errors',
+		async ( dialog, errors ) => {
 			let reject;
 			const args = getArgs( {
-				reportFailureWhenClosed,
 				post: jest.fn(
 					() => new Promise( ( resolve, r ) => ( reject = r ) )
 				),
@@ -126,11 +125,14 @@ describe( 'WooPay button OTP dialog (shared)', () => {
 			openExpressOtpIframe( args, 'cart', '' );
 
 			sendRedirect();
-			document.querySelector( '.woopay-otp-iframe-close' ).click();
+			if ( dialog === 'closed' ) {
+				document.querySelector( '.woopay-otp-iframe-close' ).click();
+			}
 			reject( new Error( 'failed' ) );
 			await flushPromises();
 
 			expect( args.showError ).toHaveBeenCalledTimes( errors );
+			expect( document.querySelector( '.woopay-otp-iframe' ) ).toBeNull();
 		}
 	);
 

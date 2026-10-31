@@ -95,8 +95,6 @@ export const expressCheckoutIframe = async (
 			getFocusTarget: ( previouslyFocused ) =>
 				( typeof opener === 'function' ? opener() : opener ) ||
 				previouslyFocused,
-			// A failed init_woopay shows the error even when the shopper already closed the dialog.
-			reportFailureWhenClosed: true,
 		},
 		context,
 		emailInput?.value || paymentSettings.woopaySessionEmail,

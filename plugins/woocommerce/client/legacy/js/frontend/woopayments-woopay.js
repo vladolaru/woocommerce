@@ -751,8 +751,6 @@
 
 				return previouslyFocused;
 			},
-			// A failed init_woopay after the shopper closed the dialog shows nothing.
-			reportFailureWhenClosed: false,
 		};
 	}
 
