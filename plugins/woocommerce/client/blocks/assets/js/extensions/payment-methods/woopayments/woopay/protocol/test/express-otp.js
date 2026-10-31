@@ -142,14 +142,6 @@ describe( 'WooPay button OTP dialog (shared)', () => {
 			'a failed answer',
 			( settle ) => settle.resolve( { result: 'failure' } ),
 		],
-		[
-			'a success',
-			( settle ) =>
-				settle.resolve( {
-					result: 'success',
-					url: `${ WOOPAY_HOST }/woopay/?platform_checkout_key=k`,
-				} ),
-		],
 	] )(
 		'leaves the new dialog alone on %s of a request from a dialog the shopper closed',
 		async ( name, finish ) => {
@@ -182,6 +174,46 @@ describe( 'WooPay button OTP dialog (shared)', () => {
 			document.querySelector( '.woopay-otp-iframe-close' ).click();
 		}
 	);
+
+	// The shopper asked for WooPay again, and dialog B's own redirect can lose to the in-flight guard, so A's success is
+	// the one that takes them there. Client 11.2.0 reads the page here too.
+	test( 'follows a success from a closed dialog while another dialog is open', async () => {
+		const url = `${ WOOPAY_HOST }/woopay/?platform_checkout_key=k`;
+		let resolve;
+		const args = getArgs( {
+			post: jest.fn( () => new Promise( ( r ) => ( resolve = r ) ) ),
+		} );
+		openExpressOtpIframe( args, 'cart', '' );
+
+		sendRedirect();
+		document.querySelector( '.woopay-otp-iframe-close' ).click();
+		openExpressOtpIframe( args, 'cart', '' );
+
+		resolve( { result: 'success', url } );
+		await flushPromises();
+
+		expect( args.navigate ).toHaveBeenCalledWith( url );
+		expect( args.showError ).not.toHaveBeenCalled();
+	} );
+
+	test( 'follows no success once every dialog is closed', async () => {
+		let resolve;
+		const args = getArgs( {
+			post: jest.fn( () => new Promise( ( r ) => ( resolve = r ) ) ),
+		} );
+		openExpressOtpIframe( args, 'cart', '' );
+
+		sendRedirect();
+		document.querySelector( '.woopay-otp-iframe-close' ).click();
+
+		resolve( {
+			result: 'success',
+			url: `${ WOOPAY_HOST }/woopay/?platform_checkout_key=k`,
+		} );
+		await flushPromises();
+
+		expect( args.navigate ).not.toHaveBeenCalled();
+	} );
 
 	test( 'gives focus back to the control the calling script names', () => {
 		document.body.innerHTML =

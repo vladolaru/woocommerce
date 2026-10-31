@@ -189,23 +189,24 @@ export const openExpressOtpIframe = ( args, context, email, tracksUserId ) => {
 
 				promise
 					.then( ( response ) => {
-						// This request's dialog was closed meanwhile, whatever dialog is open now.
-						if ( ! iframe.isConnected ) {
+						if ( response?.result === 'success' ) {
+							// Any open dialog: as the client reads it, since a reopened dialog's redirect can lose to the in-flight guard.
+							if ( document.querySelector( '.woopay-otp-iframe' ) ) {
+								args.navigate( getRedirectUrl( response.url ) );
+							}
 							return;
 						}
-						if ( response?.result === 'success' ) {
-							args.navigate( getRedirectUrl( response.url ) );
-						} else {
+
+						// This request's own dialog: a stale failure must not touch a dialog opened since.
+						if ( iframe.isConnected ) {
 							showUnavailable();
 						}
 					} )
 					.catch( () => {
-						// Client 11.2.0 has no catch here, which leaves an open dialog stuck; a shopper still in the dialog gets
-						// the notice and the way out.
-						if ( ! iframe.isConnected ) {
-							return;
+						// This request's own dialog, as above. Client 11.2.0 has no catch here, which leaves an open dialog stuck.
+						if ( iframe.isConnected ) {
+							showUnavailable();
 						}
-						showUnavailable();
 					} );
 				break;
 			}
