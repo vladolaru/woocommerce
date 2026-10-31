@@ -3070,7 +3070,24 @@
 	// checkout/woopay/email-input-iframe.js) with this checkout's billing email field, notices and requests.
 	// ------------------------------------------------------------------
 	function getWooPayProtocol() {
-		return window.wc.woopayments.woopay;
+		return ( window.wc && window.wc.woopayments && window.wc.woopayments.woopay ) || {};
+	}
+
+	/**
+	 * Whether the protocol has loaded the members the email check calls. An optional dependency gets a guard, an essential
+	 * one does not. This card needs the protocol for the email check alone, so without it the check does not wire and the
+	 * card works. The WooPay scripts can do nothing without it, so its load failure stays an error there.
+	 *
+	 * @return {boolean} True when every member is there.
+	 */
+	function hasEmailCheckProtocol() {
+		var protocol = getWooPayProtocol();
+
+		return (
+			typeof protocol.isPreviewing === 'function' &&
+			typeof protocol.handleEmailInput === 'function' &&
+			typeof protocol.buildAjaxUrl === 'function'
+		);
 	}
 
 	// The Customizer preview iframe or a post preview.
@@ -3263,6 +3280,7 @@
 		if (
 			baseConfig.isWooPayEnabled &&
 			baseConfig.isWooPayEmailInputEnabled &&
+			hasEmailCheckProtocol() &&
 			! isPreviewing()
 		) {
 			handleWooPayEmailInput( '#billing_email' );

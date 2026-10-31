@@ -5052,7 +5052,7 @@ describe( 'WooPayments checkout', () => {
 		}
 
 		// The flow wires up once the Tracks identity resolves, like the plugin.
-		async function setupWooPayEmailInput( configOverrides = {} ) {
+		async function setupWooPayEmailInput( configOverrides = {}, extraFormHtml = '' ) {
 			document.body.innerHTML =
 				'<form class="checkout" name="checkout">' +
 				'<p class="form-row" id="billing_email_field">' +
@@ -5061,6 +5061,7 @@ describe( 'WooPayments checkout', () => {
 				'</span></p>' +
 				'<input type="radio" name="payment_method" value="woocommerce_payments" checked />' +
 				'<div id="wcpay-core-payment-element"></div>' +
+				extraFormHtml +
 				'<button id="place_order" type="button">Place order</button>' +
 				'</form>';
 			Object.assign( window.wcpay_core_checkout_config, {
@@ -5203,6 +5204,72 @@ describe( 'WooPayments checkout', () => {
 				delete window.wcSettings;
 			}
 		} );
+
+		function expectStartupToHaveFinished() {
+			const listenersOfType = ( eventType ) =>
+				documentEventListeners.filter( ( [ type ] ) => type === eventType );
+
+			expect( listenersOfType( 'click' ) ).toHaveLength( 2 );
+			expect( listenersOfType( 'change' ) ).toHaveLength( 1 );
+		}
+
+		// Both flags are on and the page lists wc-woopayments-woopay-common, but the file failed to load.
+		test.each( [
+			[ 'namespace', () => delete window.wc.woopayments ],
+			[ 'woopay member', () => delete window.wc.woopayments.woopay ],
+		] )( 'costs only the email check when the WooPay protocol %s is absent', async ( description, removeProtocol ) => {
+			removeProtocol();
+			const registrations = preparePaymentListWallets( 'card' );
+			window.wcpay_core_checkout_config_woocommerce_payments_ideal =
+				Object.assign( {}, window.wcpay_core_checkout_config, {
+					gatewayId: 'woocommerce_payments_ideal',
+					paymentMethodId: 'ideal',
+					paymentMethodTypes: [ 'ideal' ],
+					paymentMethodsConfig: {
+						ideal: { countries: [ 'BE' ], isReusable: false },
+					},
+				} );
+			setPaymentIntentConfirmationHash();
+
+			const input = await setupWooPayEmailInput(
+				{},
+				'<ul><li id="payment-ideal">' +
+					'<input type="radio" name="payment_method" value="woocommerce_payments_ideal" />' +
+					'</li></ul>'
+			);
+
+			expect( stripeMock.handleNextAction ).toHaveBeenCalledWith( {
+				clientSecret: 'pi_native_secret_abc',
+			} );
+			expect( registrations.woocommerce_payments_apple_pay ).toBeDefined();
+			expect( document.getElementById( 'payment-ideal' ).style.display ).toBe( 'none' );
+			expectStartupToHaveFinished();
+
+			await typeEmail( input, 'shopper@example.com' );
+
+			expect( getPostCalls( 'get_woopay_signature' ) ).toHaveLength( 0 );
+			expect( getUserExistsCalls() ).toHaveLength( 0 );
+		} );
+
+		test.each( [ 'isPreviewing', 'handleEmailInput', 'buildAjaxUrl' ] )(
+			'does not start the email check when the WooPay protocol lacks %s',
+			async ( member ) => {
+				const protocol = {
+					isPreviewing: jest.fn( () => false ),
+					handleEmailInput: jest.fn(),
+					buildAjaxUrl: jest.fn(),
+				};
+				delete protocol[ member ];
+				window.wc.woopayments.woopay = protocol;
+
+				await setupWooPayEmailInput();
+
+				Object.values( protocol ).forEach( ( spy ) => {
+					expect( spy ).not.toHaveBeenCalled();
+				} );
+				expectStartupToHaveFinished();
+			}
+		);
 
 		test( 'does not wire the email input when the email-input flag is off', async () => {
 			const input = await setupWooPayEmailInput( {
