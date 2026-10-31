@@ -73,7 +73,6 @@ const CARD_FRAME_SELECTORS = {
 export type CardSurface = keyof typeof CARD_FRAME_SELECTORS;
 
 const EXPIRY_FIELD_NAME = /^Expir/i;
-const ENTRY_ATTEMPTS = 3;
 const ENTRY_SETTLE_MS = 1_500;
 const ENTRY_STEP_TIMEOUT_MS = 5_000;
 
@@ -81,84 +80,94 @@ function digitsOnly( value: string ): string {
 	return value.replace( /\D/g, '' );
 }
 
+interface CardField {
+	label: string;
+	locator: Locator;
+	value: string;
+}
+
+function getCardFields(
+	page: Page,
+	card: ProviderTestCard,
+	surface: CardSurface
+): CardField[] {
+	const frame = page.frameLocator( CARD_FRAME_SELECTORS[ surface ] );
+	return [
+		{
+			label: 'card number',
+			locator: frame.getByRole( 'textbox', {
+				name: 'Card number',
+			} ),
+			value: card.number,
+		},
+		{
+			label: 'expiry',
+			locator: frame.getByRole( 'textbox', {
+				name: EXPIRY_FIELD_NAME,
+			} ),
+			value: card.expiry,
+		},
+		{
+			label: 'security code',
+			locator: frame.getByRole( 'textbox', {
+				name: 'Security code',
+			} ),
+			value: card.cvc,
+		},
+	];
+}
+
 /**
- * Types a card into a native Payment Element and proves the element kept it.
+ * Reads the card back from a native Payment Element and fails when the
+ * element no longer holds exactly what was typed.
  *
- * The element clears every field it holds when its deferred
- * `elements/sessions` response arrives, which can land after typing already
- * finished; a caller that types once and moves on may submit an empty card.
- * The entry is read back and retyped until the element holds exactly what
- * was typed, so a submission built on it is a precondition rather than a
- * hope.
+ * The element empties when WooCommerce replaces the classic checkout's
+ * payment section, which an `update_order_review` answer with a changed
+ * payment fragment does. A card the element lost is a shopper-visible
+ * defect, so this reports it and never retypes it.
+ */
+export async function expectCardKept(
+	page: Page,
+	card: ProviderTestCard,
+	surface: CardSurface
+): Promise< void > {
+	const lost: string[] = [];
+	for ( const field of getCardFields( page, card, surface ) ) {
+		const kept = digitsOnly(
+			await field.locator.inputValue( {
+				timeout: ENTRY_STEP_TIMEOUT_MS,
+			} )
+		);
+		if ( kept !== digitsOnly( field.value ) ) {
+			lost.push( field.label );
+		}
+	}
+	if ( lost.length > 0 ) {
+		throw new Error(
+			`WooPayments ${ surface } payment element lost the ${ lost.join(
+				', '
+			) } it was given, so a submission would carry an incomplete card.`
+		);
+	}
+}
+
+/**
+ * Types a card into a native Payment Element once and proves the element
+ * kept it, after a settle long enough for a checkout update the typing set
+ * off to land (expectCardKept()).
  */
 export async function fillCardDetails(
 	page: Page,
 	card: ProviderTestCard,
 	surface: CardSurface
 ): Promise< void > {
-	const frame = page.frameLocator( CARD_FRAME_SELECTORS[ surface ] );
-	const fields: Array< { label: string; locator: Locator; value: string } > =
-		[
-			{
-				label: 'card number',
-				locator: frame.getByRole( 'textbox', {
-					name: 'Card number',
-				} ),
-				value: card.number,
-			},
-			{
-				label: 'expiry',
-				locator: frame.getByRole( 'textbox', {
-					name: EXPIRY_FIELD_NAME,
-				} ),
-				value: card.expiry,
-			},
-			{
-				label: 'security code',
-				locator: frame.getByRole( 'textbox', {
-					name: 'Security code',
-				} ),
-				value: card.cvc,
-			},
-		];
-
-	let lastProblem = '';
-	for ( let attempt = 1; attempt <= ENTRY_ATTEMPTS; attempt += 1 ) {
-		try {
-			for ( const field of fields ) {
-				await field.locator.fill( field.value, {
-					timeout: ENTRY_STEP_TIMEOUT_MS,
-				} );
-			}
-			await new Promise( ( resolve ) =>
-				setTimeout( resolve, ENTRY_SETTLE_MS )
-			);
-			const lost: string[] = [];
-			for ( const field of fields ) {
-				const kept = digitsOnly(
-					await field.locator.inputValue( {
-						timeout: ENTRY_STEP_TIMEOUT_MS,
-					} )
-				);
-				if ( kept !== digitsOnly( field.value ) ) {
-					lost.push( field.label );
-				}
-			}
-			if ( lost.length === 0 ) {
-				return;
-			}
-			lastProblem = `dropped ${ lost.join( ', ' ) }`;
-		} catch ( error ) {
-			lastProblem = `could not be read back (${
-				error instanceof Error
-					? error.message.split( '\n' )[ 0 ]
-					: error
-			})`;
-		}
+	for ( const field of getCardFields( page, card, surface ) ) {
+		await field.locator.fill( field.value, {
+			timeout: ENTRY_STEP_TIMEOUT_MS,
+		} );
 	}
-	throw new Error(
-		`WooPayments ${ surface } payment element kept no complete card after ${ ENTRY_ATTEMPTS } entries - the last one ${ lastProblem } - so a submission would carry an incomplete card.`
-	);
+	await new Promise( ( resolve ) => setTimeout( resolve, ENTRY_SETTLE_MS ) );
+	await expectCardKept( page, card, surface );
 }
 
 const OUTER_FRAME = 'body > div > iframe[name^="__privateStripeFrame"]';

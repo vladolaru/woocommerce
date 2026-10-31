@@ -9,6 +9,7 @@ import { logIn, logInFromMyAccount } from '../../../utils/login';
 import { createClassicCheckoutPage } from '../../../utils/pages';
 import {
 	completeThreeDSChallenge,
+	expectCardKept,
 	expectSettledCardPayment,
 	fillCardDetails,
 	getPaymentIntent,
@@ -647,6 +648,7 @@ test.describe( 'WooPayments native product-first free-trial authentication', () 
 
 				await fillCardDetails( page, TEST_CARDS.threeDSOtp, 'classic' );
 
+				await expectCardKept( page, TEST_CARDS.threeDSOtp, 'classic' );
 				const dispatch = await submitClassicChallengeCheckout( page );
 				expect( dispatch.intentType ).toBe( 'si' );
 				expect( dispatch.intentId ).toMatch( /^seti_/ );

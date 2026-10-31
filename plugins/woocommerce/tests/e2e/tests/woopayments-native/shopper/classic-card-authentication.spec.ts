@@ -9,6 +9,7 @@ import { logInFromMyAccount } from '../../../utils/login';
 import { createClassicCheckoutPage } from '../../../utils/pages';
 import {
 	completeThreeDSChallenge,
+	expectCardKept,
 	expectSettledCardPayment,
 	fillCardDetails,
 	getPaymentIntent,
@@ -568,6 +569,11 @@ test.describe( 'WooPayments native Classic checkout card authentication', () => 
 					'classic'
 				);
 
+				await expectCardKept(
+					page,
+					TEST_CARDS.threeDSChallenge,
+					'classic'
+				);
 				const dispatch = await submitClassicChallengeCheckout( page );
 				await expectPendingChallenge( restApi, dispatch );
 				expect(
@@ -662,6 +668,11 @@ test.describe( 'WooPayments native Classic checkout card authentication', () => 
 						'a token-bearing submission requires a real exposed fraud-prevention token'
 					).toBe( true );
 
+					await expectCardKept(
+						page,
+						TEST_CARDS.threeDSChallenge,
+						'classic'
+					);
 					const admitted =
 						await submitClassicChallengeCheckout( page );
 					await expectPendingChallenge( restApi, admitted );
@@ -733,6 +744,11 @@ test.describe( 'WooPayments native Classic checkout card authentication', () => 
 						} );
 					} );
 					try {
+						await expectCardKept(
+							page,
+							TEST_CARDS.threeDSChallenge,
+							'classic'
+						);
 						await page
 							.getByRole( 'button', { name: /place order/i } )
 							.click();
@@ -865,6 +881,11 @@ test.describe( 'WooPayments native Classic checkout card authentication', () => 
 					'classic'
 				);
 
+				await expectCardKept(
+					page,
+					TEST_CARDS.declinedAfter3DS,
+					'classic'
+				);
 				const dispatch = await submitClassicChallengeCheckout( page );
 				await expectPendingChallenge( restApi, dispatch );
 
@@ -1042,6 +1063,11 @@ test.describe( 'WooPayments native Classic checkout card authentication', () => 
 					await save.check();
 					await expect( save ).toBeChecked();
 
+					await expectCardKept(
+						page,
+						TEST_CARDS.threeDSChallenge,
+						'classic'
+					);
 					const dispatch =
 						await submitClassicChallengeCheckout( page );
 					await expectPendingChallenge( restApi, dispatch );

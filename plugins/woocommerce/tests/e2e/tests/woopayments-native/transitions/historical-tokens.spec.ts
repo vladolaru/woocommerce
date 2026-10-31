@@ -23,9 +23,10 @@ import {
  * apart; the spec asserts plugin ownership separately before every
  * plugin-era write. The entry stays spec-local rather than routed through
  * `utils/woopayments.ts`'s `fillCardDetails`. It re-fills and reads back
- * the number/expiry/CVC (the same defect `fillCardDetails` guards: the
- * element clears its fields when a deferred `elements/sessions` response
- * lands after typing already finished), then fills the optional
+ * the number/expiry/CVC (the element empties when WooCommerce replaces the
+ * checkout's payment section, which an `update_order_review` answer with a
+ * changed payment fragment does; `elements/sessions` empties nothing), then
+ * fills the optional
  * country/postcode pair the account's billing-details collection may add.
  */
 async function fillPluginOwnedCardDetails(
@@ -56,8 +57,8 @@ async function fillPluginOwnedCardDetails(
 		for ( const field of fields ) {
 			await field.locator.fill( field.value, { timeout: 5_000 } );
 		}
-		// Waits for the deferred `elements/sessions` clear to have happened
-		// (or not) instead of always idling the same fixed span: checks
+		// Waits for a checkout update that replaces the payment section to
+		// land (or not) instead of always idling the same fixed span: checks
 		// immediately, then re-checks every 100ms up to a 1.5s budget.
 		const deadline = Date.now() + 1_500;
 		do {

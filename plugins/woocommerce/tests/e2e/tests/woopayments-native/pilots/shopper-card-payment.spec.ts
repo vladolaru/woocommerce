@@ -6,6 +6,7 @@ import { expect, tags, test } from '../../../fixtures/fixtures';
 import { random } from '../../../utils/helpers';
 import { createClassicCheckoutPage } from '../../../utils/pages';
 import {
+	expectCardKept,
 	expectSettledCardPayment,
 	fillCardDetails,
 	getPaymentIntent,
@@ -432,6 +433,7 @@ test.describe( 'Client contract row 121: basic-card purchase, protection off', (
 				};
 				page.on( 'request', onRequest );
 				try {
+					await expectCardKept( page, TEST_CARDS.basic, 'classic' );
 					await page
 						.getByRole( 'button', { name: /place order/i } )
 						.click();

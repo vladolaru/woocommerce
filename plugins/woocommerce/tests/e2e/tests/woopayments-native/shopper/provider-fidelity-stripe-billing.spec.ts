@@ -10,6 +10,7 @@ import {
 	StripeTestClock,
 } from '../../../utils/stripe-test-clock';
 import {
+	expectCardKept,
 	expectSettledCardPayment,
 	fillCardDetails,
 	requireTestModeAccount,
@@ -319,6 +320,7 @@ test.describe( 'WooPayments native Stripe Billing subscription fidelity', () => 
 				.getByRole( 'radio', { name: 'Use a new payment method' } )
 				.check();
 			await fillCardDetails( page, TEST_CARDS.basic, 'classic' );
+			await expectCardKept( page, TEST_CARDS.basic, 'classic' );
 			await page.getByRole( 'button', { name: /place order/i } ).click();
 			await page.waitForURL( /\/order-received\/[1-9]\d*/, {
 				timeout: RECEIPT_TIMEOUT_MS,

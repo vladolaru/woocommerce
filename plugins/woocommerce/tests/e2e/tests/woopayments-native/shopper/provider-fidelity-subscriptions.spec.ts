@@ -7,6 +7,7 @@ import { getFakeUser } from '../../../utils/data';
 import { logIn, logInFromMyAccount } from '../../../utils/login';
 import { createClassicCheckoutPage } from '../../../utils/pages';
 import {
+	expectCardKept,
 	expectSettledCardPayment,
 	fillCardDetails,
 	requireTestModeAccount,
@@ -458,6 +459,7 @@ test.describe( 'WooPayments native subscription provider lifecycle fidelity', ()
 				};
 				page.on( 'request', onRequest );
 				try {
+					await expectCardKept( page, TEST_CARDS.basic, 'classic' );
 					await page
 						.getByRole( 'button', { name: /place order/i } )
 						.click();

@@ -6,6 +6,7 @@ import { expect, tags, test } from '../../../fixtures/fixtures';
 import { random } from '../../../utils/helpers';
 import { createClassicCheckoutPage } from '../../../utils/pages';
 import {
+	expectCardKept,
 	fillCardDetails,
 	getCharge,
 	getPaymentIntent,
@@ -343,6 +344,11 @@ test.describe( 'WooPayments native card decline recovery', () => {
 					 ).__e2eCheckoutDocument = marker;
 					return marker;
 				} );
+				await expectCardKept(
+					page,
+					TEST_CARDS.genericDecline,
+					'classic'
+				);
 				await page
 					.getByRole( 'button', { name: /place order/i } )
 					.click();
@@ -401,6 +407,7 @@ test.describe( 'WooPayments native card decline recovery', () => {
 					'the retry must happen in the same document as the failed attempt, not a reload'
 				).toBe( documentMarker );
 				await fillCardDetails( page, TEST_CARDS.basic, 'classic' );
+				await expectCardKept( page, TEST_CARDS.basic, 'classic' );
 				await page
 					.getByRole( 'button', { name: /place order/i } )
 					.click();

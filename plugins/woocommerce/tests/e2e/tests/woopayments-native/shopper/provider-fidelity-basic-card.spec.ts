@@ -7,6 +7,7 @@ import { wpEvalJson } from '../../../utils/cli';
 import { random } from '../../../utils/helpers';
 import { createClassicCheckoutPage } from '../../../utils/pages';
 import {
+	expectCardKept,
 	expectSettledCardPayment,
 	fillCardDetails,
 	getPaymentIntent,
@@ -457,6 +458,11 @@ test.describe( 'WooPayments native basic card charge fidelity', () => {
 					};
 					page.on( 'request', captureAdmittedRequest );
 					try {
+						await expectCardKept(
+							page,
+							TEST_CARDS.basic,
+							'classic'
+						);
 						await page
 							.getByRole( 'button', { name: /place order/i } )
 							.click();
@@ -575,6 +581,11 @@ test.describe( 'WooPayments native basic card charge fidelity', () => {
 						await route.continue( { postData: params.toString() } );
 					} );
 					try {
+						await expectCardKept(
+							page,
+							TEST_CARDS.basic,
+							'classic'
+						);
 						await page
 							.getByRole( 'button', { name: /place order/i } )
 							.click();
