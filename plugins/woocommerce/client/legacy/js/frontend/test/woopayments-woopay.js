@@ -2800,6 +2800,112 @@ describe( 'WooPayments WooPay checkout', () => {
 			);
 		} );
 
+		// Client 11.2.0 init-woopay.js:43-52: theme support on and a shortcode checkout reads the page, otherwise the stored
+		// values. Its readers are the card script's, on window.wcpayAppearance only when that script is on the page; the
+		// readers are set after the dialog opens here because the two scripts have no order.
+		describe( 'with the appearance and fonts', () => {
+			const storedAppearance = { theme: 'stored-theme' };
+			const storedFontRules = [ { cssSrc: 'https://fonts.test/stored.css' } ];
+			const pageAppearance = { theme: 'page-theme' };
+			const pageFontRules = [ { cssSrc: 'https://fonts.test/page.css' } ];
+
+			afterEach( () => {
+				delete window.wcpayAppearance;
+			} );
+
+			async function verifyCode() {
+				window.fetch = jest.fn( () =>
+					Promise.resolve( {
+						json: () => Promise.resolve( { result: 'error' } ),
+					} )
+				);
+				sendWooPayMessage( {
+					action: 'redirect_to_platform_checkout',
+					platformCheckoutUserSession: 'platform-session-1',
+				} );
+				await flushPromises();
+
+				return getInitCalls()[ 0 ][ 1 ].body;
+			}
+
+			test.each( [
+				[
+					'the page, where the card script reads it',
+					() => pageAppearance,
+					() => pageFontRules,
+					'page-theme',
+					'https://fonts.test/page.css',
+				],
+				[
+					'the stored values when the card script cannot read the page',
+					() => null,
+					() => null,
+					'stored-theme',
+					'https://fonts.test/stored.css',
+				],
+			] )( 'sends %s', async ( name, readAppearance, readFontRules, theme, fontUrl ) => {
+				Object.assign( window.wcpay_core_woopay_config, {
+					isWooPayGlobalThemeSupportEnabled: true,
+					woopayAppearance: storedAppearance,
+					woopayFontRules: storedFontRules,
+				} );
+				await openOtpIframe();
+				window.wcpayAppearance = {
+					getWooPayInitAppearance: readAppearance,
+					getWooPayInitFontRules: readFontRules,
+				};
+
+				const body = await verifyCode();
+
+				expect( body.get( 'appearance[theme]' ) ).toBe( theme );
+				expect( body.get( 'font_rules[0][cssSrc]' ) ).toBe( fontUrl );
+			} );
+
+			// A page with no card script: the product and cart pages, a checkout with the card gateway off. The appearance
+			// script can be there for another feature, with no readers on it.
+			test.each( [
+				[ 'no appearance script', undefined ],
+				[ 'the appearance script but no card script', {} ],
+			] )( 'sends the stored values with %s', async ( name, appearanceGlobal ) => {
+				Object.assign( window.wcpay_core_woopay_config, {
+					isWooPayGlobalThemeSupportEnabled: true,
+					woopayAppearance: storedAppearance,
+					woopayFontRules: storedFontRules,
+				} );
+				window.wcpayAppearance = appearanceGlobal;
+				await openOtpIframe();
+
+				const body = await verifyCode();
+
+				expect( body.get( 'appearance[theme]' ) ).toBe( 'stored-theme' );
+				expect( body.get( 'font_rules[0][cssSrc]' ) ).toBe(
+					'https://fonts.test/stored.css'
+				);
+			} );
+
+			test( 'sends and reads nothing with theme support off', async () => {
+				const readAppearance = jest.fn( () => pageAppearance );
+				const readFontRules = jest.fn( () => pageFontRules );
+				Object.assign( window.wcpay_core_woopay_config, {
+					isWooPayGlobalThemeSupportEnabled: false,
+					woopayAppearance: null,
+					woopayFontRules: [],
+				} );
+				await openOtpIframe();
+				window.wcpayAppearance = {
+					getWooPayInitAppearance: readAppearance,
+					getWooPayInitFontRules: readFontRules,
+				};
+
+				const body = await verifyCode();
+
+				expect( body.get( 'appearance[theme]' ) ).toBeNull();
+				expect( body.get( 'font_rules[0][cssSrc]' ) ).toBeNull();
+				expect( readAppearance ).not.toHaveBeenCalled();
+				expect( readFontRules ).not.toHaveBeenCalled();
+			} );
+		} );
+
 		test( 'starts init_woopay only for a redirect no other WooPay script has claimed', async () => {
 			const redirect = {
 				action: 'redirect_to_platform_checkout',

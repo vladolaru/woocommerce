@@ -1633,6 +1633,69 @@ describe( 'WooPayments checkout', () => {
 		);
 	} );
 
+	// The WooPay button's init_woopay reads through these (client 11.2.0 init-woopay.js:43-52, for both bundles).
+	describe( 'WooPay init_woopay readers', () => {
+		const getReaders = () => {
+			require( '../woopayments-checkout' );
+
+			return window.wcpayAppearance;
+		};
+
+		beforeEach( () => {
+			document.body.innerHTML =
+				'<form class="checkout">' +
+				'<input type="radio" name="payment_method" value="woocommerce_payments" checked />' +
+				'<p class="form-row"><label for="billing_first_name">First name</label><input id="billing_first_name" type="text" /></p>' +
+				'<div id="wcpay-core-payment-element"></div>' +
+				'<button id="place_order" type="button">Place order</button>' +
+				'</form>';
+			Object.assign( window.wcpay_core_checkout_config, {
+				isWooPayGlobalThemeSupportEnabled: true,
+				isShortcodeCheckout: true,
+				woopayAppearance: { theme: 'stored-theme' },
+				woopayFontRules: [ { cssSrc: 'https://fonts.test/stored.css' } ],
+			} );
+		} );
+
+		test( 'read the page on a shortcode checkout, with the WooPay rules', () => {
+			const { getWooPayInitAppearance, getWooPayInitFontRules } =
+				getReaders();
+
+			expect( getWooPayInitAppearance().theme ).not.toBe( 'stored-theme' );
+			expect( getWooPayInitAppearance().rules ).toHaveProperty( [ '.Link' ] );
+			expect( getWooPayInitFontRules() ).toEqual( [] );
+		} );
+
+		test( 'answer the stored values on any other page', () => {
+			window.wcpay_core_checkout_config.isShortcodeCheckout = false;
+			const { getWooPayInitAppearance, getWooPayInitFontRules } =
+				getReaders();
+
+			expect( getWooPayInitAppearance() ).toEqual( {
+				theme: 'stored-theme',
+			} );
+			expect( getWooPayInitFontRules() ).toEqual( [
+				{ cssSrc: 'https://fonts.test/stored.css' },
+			] );
+		} );
+
+		test( 'answer nothing with theme support off', () => {
+			window.wcpay_core_checkout_config.isWooPayGlobalThemeSupportEnabled = false;
+			const { getWooPayInitAppearance, getWooPayInitFontRules } =
+				getReaders();
+
+			expect( getWooPayInitAppearance() ).toBeNull();
+			expect( getWooPayInitFontRules() ).toBeNull();
+		} );
+
+		test( 'answer null when the page has nothing to read', () => {
+			document.body.innerHTML =
+				'<form id="order_review"><div id="wcpay-core-payment-element"></div></form>';
+
+			expect( getReaders().getWooPayInitAppearance() ).toBeNull();
+		} );
+	} );
+
 	test( 'enriches cached classic WooPay appearance without adding link rules to Stripe Elements', async () => {
 		document.body.innerHTML =
 			'<form class="checkout">' +

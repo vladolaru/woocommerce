@@ -3193,8 +3193,29 @@
 			: null;
 	}
 
-	// The values the WooPay email check reads, from the base config. init_woopay sends the shortcode checkout's own
-	// appearance and fonts, read from the page, as the plugin's initWooPay() does.
+	// init_woopay sends the shortcode checkout's own appearance and fonts, read from the page, as the plugin's
+	// initWooPay() does.
+	function getWooPayInitAppearance() {
+		if ( ! baseConfig.isWooPayGlobalThemeSupportEnabled ) {
+			return null;
+		}
+
+		return baseConfig.isShortcodeCheckout
+			? getClassicCheckoutAppearance( true )
+			: baseConfig.woopayAppearance || null;
+	}
+
+	function getWooPayInitFontRules() {
+		if ( ! baseConfig.isWooPayGlobalThemeSupportEnabled ) {
+			return null;
+		}
+
+		return baseConfig.isShortcodeCheckout
+			? appearanceUtils.getFontRulesFromPage()
+			: baseConfig.woopayFontRules || null;
+	}
+
+	// The values the WooPay email check reads, from the base config.
 	function getWooPayEmailInputArgs() {
 		return {
 			wcAjaxUrl: baseConfig.wcAjaxUrl,
@@ -3204,24 +3225,8 @@
 			orderId: baseConfig.orderId || '',
 			key: baseConfig.key || '',
 			billingEmail: baseConfig.billing_email || '',
-			getInitAppearance: function () {
-				if ( ! baseConfig.isWooPayGlobalThemeSupportEnabled ) {
-					return null;
-				}
-
-				return baseConfig.isShortcodeCheckout
-					? getClassicCheckoutAppearance( true )
-					: baseConfig.woopayAppearance || null;
-			},
-			getInitFontRules: function () {
-				if ( ! baseConfig.isWooPayGlobalThemeSupportEnabled ) {
-					return null;
-				}
-
-				return baseConfig.isShortcodeCheckout
-					? appearanceUtils.getFontRulesFromPage()
-					: baseConfig.woopayFontRules || null;
-			},
+			getInitAppearance: getWooPayInitAppearance,
+			getInitFontRules: getWooPayInitFontRules,
 			getSessionAppearance: getWooPayEmailInputAppearance,
 			woopayHost: baseConfig.woopayHost,
 			woopayMerchantId: baseConfig.woopayMerchantId,
@@ -3275,6 +3280,11 @@
 			);
 		} );
 	}
+
+	// The WooPay button's script reads the page through these, so init_woopay has one reader.
+	appearanceUtils.getWooPayInitAppearance = getWooPayInitAppearance;
+	appearanceUtils.getWooPayInitFontRules = getWooPayInitFontRules;
+
 	$( function () {
 		enqueueFraudScripts();
 		if (

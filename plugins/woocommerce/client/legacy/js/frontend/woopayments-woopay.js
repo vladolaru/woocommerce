@@ -741,6 +741,14 @@
 			} );
 	}
 
+	// A value the card script reads from the checkout page. It is not on every page this button shows on, and neither
+	// script depends on the other, so it is asked when the request is built, and the stored value answers without it.
+	function readWooPayInitValue( readerName, storedValue ) {
+		var reader = window.wcpayAppearance && window.wcpayAppearance[ readerName ];
+
+		return ( reader && reader() ) || storedValue;
+	}
+
 	// The values the WooPay button's OTP flow (wc-woopayments-woopay-common) reads, from this script's config.
 	function getExpressOtpArgs( context ) {
 		return {
@@ -753,12 +761,12 @@
 			billingEmail: config.billing_email,
 			getInitAppearance: function () {
 				return config.isWooPayGlobalThemeSupportEnabled
-					? config.woopayAppearance
+					? readWooPayInitValue( 'getWooPayInitAppearance', config.woopayAppearance )
 					: null;
 			},
 			getInitFontRules: function () {
 				return config.isWooPayGlobalThemeSupportEnabled
-					? config.woopayFontRules
+					? readWooPayInitValue( 'getWooPayInitFontRules', config.woopayFontRules )
 					: null;
 			},
 			getSessionAppearance: function () {
