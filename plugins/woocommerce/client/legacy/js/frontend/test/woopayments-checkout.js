@@ -618,6 +618,7 @@ describe( 'WooPayments checkout', () => {
 			.forEach( ( key ) => delete window[ key ] );
 		delete window.wcpayAppearance;
 		delete window.wcpayFraudPreventionToken;
+		delete window.wc_checkout_params;
 		delete window.wc;
 		delete window.Stripe;
 		delete window.FingerprintJS;
@@ -656,6 +657,30 @@ describe( 'WooPayments checkout', () => {
 			paymentMethodCreation: 'manual',
 			paymentMethodTypes: [ 'card', 'link' ],
 		} );
+	} );
+
+	// Core replaces the whole payment section with its first update_order_review answer (checkout.js:779-781), so a card
+	// typed into an element mounted before it is lost. Client 11.2.0 mounts on updated_checkout only
+	// (classic/event-handlers.js:74).
+	test( 'mounts the card element only after the first checkout update on a checkout core updates', async () => {
+		// WC_Frontend_Scripts localizes is_checkout as 1 on the checkout page, which starts core's first update.
+		window.wc_checkout_params = { is_checkout: '1' };
+
+		require( '../woopayments-checkout' );
+		// Core's init_payment_methods() selects the method at load, before the first answer.
+		bodyEventHandlers.payment_method_selected();
+		await flushPromises();
+
+		expect( stripeMock.elements ).not.toHaveBeenCalled();
+		expect( mountPaymentElement ).not.toHaveBeenCalled();
+
+		bodyEventHandlers.updated_checkout();
+		await flushPromises();
+
+		expect( mountPaymentElement ).toHaveBeenCalledTimes( 1 );
+		expect( mountPaymentElement ).toHaveBeenCalledWith(
+			document.getElementById( 'wcpay-core-payment-element' )
+		);
 	} );
 
 	test( 'uses keyed split gateway config for classic Stripe Elements', async () => {

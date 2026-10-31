@@ -35,6 +35,14 @@
 	//   waits for this, for at most PAYMENT_ELEMENT_READY_TIMEOUT_MS.
 	var paymentElements = {};
 	var PAYMENT_ELEMENT_READY_TIMEOUT_MS = 15000;
+	// Core replaces the whole payment section with its first update_order_review answer (checkout.js:779-781), which
+	// would empty a card typed before it. So on a checkout that core updates on load (checkout.js:236-238), the Payment
+	// Element waits for that first update, as client 11.2.0 mounts it on updated_checkout (classic/event-handlers.js:74).
+	var isAwaitingFirstCheckoutUpdate = !! (
+		window.wc_checkout_params &&
+		window.wc_checkout_params.is_checkout === '1' &&
+		document.querySelector( 'form.checkout' )
+	);
 	var isWaitingForStripe = false;
 	var checkoutSubmitHandlerGatewayIds = {};
 	var deviceFingerprint = '';
@@ -2361,6 +2369,9 @@
 		setCurrentGatewayConfig();
 		selectedGatewayId = gatewayId;
 		hydrateCardBrandIcons();
+		if ( isAwaitingFirstCheckoutUpdate ) {
+			return;
+		}
 		mounts = getPaymentElementMounts( selectedGatewayId );
 
 		Object.keys( paymentElements ).forEach( function ( paymentGatewayId ) {
@@ -3319,6 +3330,7 @@
 	} );
 
 	$( document.body ).on( 'updated_checkout', function () {
+		isAwaitingFirstCheckoutUpdate = false;
 		mergeRefreshedPaymentFieldsConfig();
 		registerCheckoutSubmitHandlers();
 		registerPaymentListWallets();
