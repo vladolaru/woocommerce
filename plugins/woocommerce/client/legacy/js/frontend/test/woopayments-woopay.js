@@ -1768,6 +1768,96 @@ describe( 'WooPayments WooPay checkout', () => {
 		} );
 
 
+		describe( 'with the skip_woopay cookie', () => {
+			const cartLink =
+				'<div class="wc-proceed-to-checkout"><a class="checkout-button" href="https://store.test/checkout/">Checkout</a></div>';
+			const skipCookieExpiry =
+				'; path=/; expires=Thu, 01 Jan 1970 00:00:00 UTC';
+
+			afterEach( () => {
+				document.cookie = 'skip_woopay=' + skipCookieExpiry;
+				document.cookie = 'landing=' + skipCookieExpiry;
+			} );
+
+			// Whether direct checkout took the click. jsdom cannot follow the link, so the last listener stops it.
+			function clickProceedToCheckout() {
+				let wasTaken;
+				window.addEventListener(
+					'click',
+					( event ) => {
+						wasTaken = event.defaultPrevented;
+						event.preventDefault();
+					},
+					{ once: true }
+				);
+				document.querySelector( '.checkout-button' ).click();
+
+				return wasTaken;
+			}
+
+			// Client 11.2.0 direct-checkout/index.js:248: with the cookie set, the load listener returns before any
+			// Connect message, so Proceed to checkout stays a plain link to the store.
+			test( 'keeps Proceed to checkout on the store when the cookie is set', async () => {
+				document.cookie = 'skip_woopay=1; path=/';
+				configureDirectCheckout( cartLink );
+				const postMessage = installConnect();
+
+				require( '../woopayments-woopay' );
+				await flushPromises();
+
+				expect( document.getElementById( 'woopay-connect-iframe' ) ).toBeNull();
+				expect( postMessage ).not.toHaveBeenCalled();
+				expect( clickProceedToCheckout() ).toBe( false );
+				expect( document.body.wooPayDirectCheckoutAttached ).toBeFalsy();
+			} );
+
+			// Client 11.2.0 direct-checkout/index.js:290.
+			test( 'attaches nothing when the cart updates with the cookie set', async () => {
+				document.cookie = 'skip_woopay=1; path=/';
+				configureDirectCheckout( cartLink );
+				installConnect();
+
+				require( '../woopayments-woopay' );
+				bodyEventHandlers.updated_cart_totals();
+				await flushPromises();
+
+				expect( document.body.wooPayDirectCheckoutAttached ).toBeFalsy();
+				expect( clickProceedToCheckout() ).toBe( false );
+			} );
+
+			// Set and cleared are both the exact pair: the cookie's expiry, and a cookie that only holds the text.
+			test.each( [
+				[ 'no cookie', null ],
+				[ 'a cookie holding the text', 'landing=%2Fcheckout%3Fskip_woopay%3Dtrue' ],
+			] )( 'runs direct checkout with %s', async ( name, cookie ) => {
+				if ( cookie ) {
+					document.cookie = cookie + '; path=/';
+				}
+				configureDirectCheckout( cartLink );
+				const postMessage = installConnect();
+				global.jQuery.post = jest.fn( () => ( {
+					done: jest.fn( ( callback ) => {
+						callback( storeSession );
+						return { fail: jest.fn() };
+					} ),
+				} ) );
+				const { __test__ } = require( '../woopayments-woopay' );
+				__test__.setNavigate( jest.fn() );
+
+				await initializeDirectCheckout( true );
+
+				expect( document.body.wooPayDirectCheckoutAttached ).toBe( true );
+				expect( clickProceedToCheckout() ).toBe( true );
+				await flushPromises();
+				expect( postMessage ).toHaveBeenCalledWith(
+					{ action: 'getEncryptedData' },
+					'https://pay.woo.test'
+				);
+				emitConnectMessage( 'get_encrypted_data_success', null );
+				await flushPromises();
+			} );
+		} );
+
 		test( 'logged-in cart handoff sends encrypted identity and store session without payment dispatch', async () => {
 			// Oracle: WooPayments 11.1.0 direct-checkout/woopay-direct-checkout.js:20,98-108,138-172,433-441.
 			configureDirectCheckout(

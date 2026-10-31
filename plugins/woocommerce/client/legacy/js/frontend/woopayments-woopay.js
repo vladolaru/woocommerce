@@ -551,8 +551,16 @@
 		);
 	}
 
+	// A shopper who opted out of WooPay keeps the store's checkout (client 11.2.0 direct-checkout/index.js:248, :290).
+	function shouldRunDirectCheckout() {
+		return (
+			config.isWooPayDirectCheckoutEnabled &&
+			! getWooPayProtocol().shouldSkipWooPay()
+		);
+	}
+
 	function initializeDirectCheckout() {
-		if ( ! config.isWooPayDirectCheckoutEnabled ) {
+		if ( ! shouldRunDirectCheckout() ) {
 			return;
 		}
 
@@ -1411,7 +1419,7 @@
 		// Client 11.1.0 woopay/express-button/index.js:95-106 renders the button again on both refresh events: a cart
 		// update replaces the markup it lived in.
 		renderWooPayExpressButton();
-		if ( config.isWooPayDirectCheckoutEnabled ) {
+		if ( shouldRunDirectCheckout() ) {
 			attachDirectCheckoutListeners();
 		}
 	} );
