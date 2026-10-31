@@ -2194,6 +2194,45 @@ describe( 'WooPayments WooPay checkout', () => {
 				}
 			} );
 
+			// No answer says nothing about the shopper: a Connect page that takes past the deadline can still belong to a
+			// shopper logged in to WooPay, and the check can say true by then (client 11.2.0 asks the login after the check,
+			// so its late page usually answers). Whatever starts here answers true, as that browser would.
+			test.each( [
+				[ 'with no cart update', false ],
+				[ 'after a cart update', true ],
+			] )( 'leaves the click to WooPay when Connect gives no login answer, %s', async ( name, updatesCart ) => {
+				jest.useFakeTimers();
+				configureDirectCheckout( cartLink );
+				const postMessage = installConnect();
+				const { __test__ } = require( '../woopayments-woopay' );
+				__test__.setNavigate( jest.fn() );
+
+				await jest.advanceTimersByTimeAsync( 5000 );
+				if ( getTempIframe() ) {
+					answerThirdPartyCookieCheck( true );
+					await flushMicrotasks();
+				}
+				if ( updatesCart ) {
+					bodyEventHandlers.updated_cart_totals();
+				}
+				document
+					.getElementById( 'woopay-connect-iframe' )
+					.dispatchEvent( new window.Event( 'load' ) );
+
+				expect( getTempIframe() ).toBeNull();
+				expect( document.body.wooPayDirectCheckoutAttached ).toBe( true );
+				expect( clickCartLink().defaultPrevented ).toBe( true );
+				await flushMicrotasks();
+				expect( postMessage ).toHaveBeenCalledWith(
+					{ action: 'isWooPayReachable' },
+					'https://pay.woo.test'
+				);
+				expect( postMessage ).not.toHaveBeenCalledWith(
+					{ action: 'getEncryptedData' },
+					expect.anything()
+				);
+			} );
+
 			// Client 11.2.0's variable starts false, so a cart update ahead of the answer takes the not-sure route
 			// (direct-checkout/index.js:19, :34, :46-50).
 			test( 'attaches on a cart update ahead of the answer', async () => {
@@ -2861,7 +2900,7 @@ describe( 'WooPayments WooPay checkout', () => {
 				expect( body.get( 'font_rules[0][cssSrc]' ) ).toBe( fontUrl );
 			} );
 
-			// A page with no card script: the product and cart pages, a checkout with the card gateway off. The appearance
+			// A page with no card script: the product and cart pages. The appearance
 			// script can be there for another feature, with no readers on it.
 			test.each( [
 				[ 'no appearance script', undefined ],

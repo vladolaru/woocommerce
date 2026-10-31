@@ -587,7 +587,8 @@
 	}
 
 	// Client 11.2.0 direct-checkout/index.js:34-51: Connect's "not logged in" is only true where third-party cookies work;
-	// elsewhere the click has to find out. A shopper it reports logged in needs no check.
+	// elsewhere the click has to find out. A shopper it reports logged in needs no check, and with no answer from a Connect
+	// page that is late, there is nothing for the check to confirm, so the click finds out.
 	function initializeDirectCheckout() {
 		if ( ! shouldRunDirectCheckout() ) {
 			return;
@@ -596,12 +597,12 @@
 		sendWooPayConnectMessage(
 			{ action: 'getIsUserLoggedIn' },
 			'getIsUserLoggedIn',
-			false,
+			null,
 			true
 		).then( function ( loggedIn ) {
-			directCheckoutLoggedIn = loggedIn;
+			directCheckoutLoggedIn = !! loggedIn;
 
-			if ( loggedIn ) {
+			if ( loggedIn || loggedIn === null ) {
 				attachDirectCheckoutListeners();
 				return;
 			}
