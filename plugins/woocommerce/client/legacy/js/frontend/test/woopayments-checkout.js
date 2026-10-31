@@ -445,6 +445,7 @@ describe( 'WooPayments checkout', () => {
 			platformTrackerNonce: 'tracks-nonce',
 			paymentMethodsConfig: {
 				card: {
+					gatewayId: 'woocommerce_payments',
 					isReusable: true,
 					cardBrandIcons: [
 						{
@@ -678,6 +679,25 @@ describe( 'WooPayments checkout', () => {
 		await flushPromises();
 
 		expect( mountPaymentElement ).toHaveBeenCalledTimes( 1 );
+		expect( mountPaymentElement ).toHaveBeenCalledWith(
+			document.getElementById( 'wcpay-core-payment-element' )
+		);
+	} );
+
+	// The script depends on wc-checkout, so wc_checkout_params is on order-pay too, with is_checkout 0
+	// (WC_Frontend_Scripts); core runs no update there, and the client mounts at once (classic/event-handlers.js:136-139).
+	test( 'mounts the card element at once on order-pay, where core runs no checkout update', async () => {
+		window.wc_checkout_params = { is_checkout: '0' };
+		document.body.innerHTML =
+			'<form id="order_review">' +
+			'<input type="radio" name="payment_method" value="woocommerce_payments" checked />' +
+			'<div id="wcpay-core-payment-element"></div>' +
+			'</form>';
+		window.wcpay_core_checkout_config.isOrderPay = true;
+
+		require( '../woopayments-checkout' );
+		await flushPromises();
+
 		expect( mountPaymentElement ).toHaveBeenCalledWith(
 			document.getElementById( 'wcpay-core-payment-element' )
 		);
@@ -1121,8 +1141,9 @@ describe( 'WooPayments checkout', () => {
 	} );
 
 	// Classic checkout rows as WooPaymentsGateway::render_payment_form() prints them: each WooPayments gateway's row
-	// holds its wrapper (with the gateway's config in data-wcpay-config), its Payment Element container and its error
-	// box. `overrides` stand for what update_order_review re-renders, such as a Multi-Currency switch.
+	// holds its wrapper (with its method type and, in data-wcpay-config, the three keys an update refreshes), its Payment
+	// Element container and its error box. `overrides` stand for what update_order_review re-renders, such as a
+	// Multi-Currency switch.
 	function getGatewayConfig( type, overrides = {} ) {
 		if ( type === 'card' ) {
 			return Object.assign(
@@ -1139,7 +1160,12 @@ describe( 'WooPayments checkout', () => {
 				gatewayId: 'woocommerce_payments_' + type,
 				paymentMethodId: type,
 				paymentMethodTypes: [ type ],
-				paymentMethodsConfig: { [ type ]: { isReusable: false } },
+				paymentMethodsConfig: {
+					[ type ]: {
+						gatewayId: 'woocommerce_payments_' + type,
+						isReusable: false,
+					},
+				},
 			},
 			overrides
 		);
@@ -1163,7 +1189,7 @@ describe( 'WooPayments checkout', () => {
 						( type === selectedType ? ' checked' : '' ) +
 						' />' +
 						`<div class="payment_box payment_method_${ id }">` +
-						'<div class="wcpay-core-checkout-form wcpay-upe-form">' +
+						`<div class="wcpay-core-checkout-form wcpay-upe-form" data-payment-method-type="${ type }">` +
 						'<fieldset class="wc-payment-form"><div id="wcpay-core-payment-element" ' +
 						'class="wcpay-core-payment-element wcpay-upe-element"></div></fieldset>' +
 						'<div class="woocommerce-error wcpay-core-payment-errors" role="alert" hidden></div>' +
@@ -1177,9 +1203,22 @@ describe( 'WooPayments checkout', () => {
 				.querySelector( '.wcpay-core-checkout-form' )
 				.setAttribute(
 					'data-wcpay-config',
-					JSON.stringify( getGatewayConfig( type, overrides ) )
+					JSON.stringify(
+						getPaymentFormConfig(
+							getGatewayConfig( type, overrides )
+						)
+					)
 				);
 		} );
+	}
+
+	// The three keys WooPaymentsCheckoutAssets::get_payment_form_config() lets the form print.
+	function getPaymentFormConfig( gatewayConfig ) {
+		return {
+			paymentMethodsConfig: gatewayConfig.paymentMethodsConfig,
+			currency: gatewayConfig.currency,
+			cartTotal: gatewayConfig.cartTotal,
+		};
 	}
 
 	// The config objects the page localizes when it loads (WooPaymentsCheckoutAssets), one per split gateway.
@@ -4274,11 +4313,12 @@ describe( 'WooPayments checkout', () => {
 		);
 	} );
 
-	// The payment fields WooCommerce re-renders in the update_order_review fragment carry the gateway's refreshed
-	// config in data-wcpay-config (the gateway's payment_fields()).
-	function renderRefreshedPaymentFields( refreshedConfig ) {
+	// The payment fields WooCommerce re-renders in the update_order_review fragment carry the gateway's method type and,
+	// in data-wcpay-config, the refreshed paymentMethodsConfig, currency and cartTotal (the gateway's payment_fields()).
+	function renderRefreshedPaymentFields( paymentMethodType, refreshedConfig ) {
 		const wrapper = document.createElement( 'div' );
 		wrapper.className = 'wcpay-core-checkout-form wcpay-upe-form';
+		wrapper.setAttribute( 'data-payment-method-type', paymentMethodType );
 		wrapper.setAttribute(
 			'data-wcpay-config',
 			JSON.stringify( refreshedConfig )
@@ -4313,16 +4353,16 @@ describe( 'WooPayments checkout', () => {
 			'</form>';
 
 		require( '../woopayments-checkout' );
-		renderRefreshedPaymentFields( {
-			gatewayId: 'woocommerce_payments_ideal',
-			currency: 'EUR',
-			cartTotal: 7000,
+		renderRefreshedPaymentFields( 'ideal', {
 			paymentMethodsConfig: {
 				ideal: {
+					gatewayId: 'woocommerce_payments_ideal',
 					countries: [ 'NL' ],
 					isReusable: false,
 				},
 			},
+			currency: 'EUR',
+			cartTotal: 7000,
 		} );
 		bodyEventHandlers.updated_checkout();
 
@@ -4340,12 +4380,11 @@ describe( 'WooPayments checkout', () => {
 		require( '../woopayments-checkout' );
 		expect( mountPaymentElement ).not.toHaveBeenCalled();
 
-		renderRefreshedPaymentFields( {
-			gatewayId: 'woocommerce_payments',
-			currency: 'EUR',
-			cartTotal: 7000,
+		renderRefreshedPaymentFields( 'card', {
 			paymentMethodsConfig:
 				window.wcpay_core_checkout_config.paymentMethodsConfig,
+			currency: 'EUR',
+			cartTotal: 7000,
 		} );
 		bodyEventHandlers.updated_checkout();
 		await flushPromises();
@@ -4362,12 +4401,11 @@ describe( 'WooPayments checkout', () => {
 		require( '../woopayments-checkout' );
 		// Core inserts the update_order_review fragment, re-inits the payment methods (which renders the selected
 		// custom-button wallet) and only then fires updated_checkout (checkout.js:849, :865).
-		renderRefreshedPaymentFields( {
-			gatewayId: 'woocommerce_payments',
-			currency: 'EUR',
-			cartTotal: 7000,
+		renderRefreshedPaymentFields( 'card', {
 			paymentMethodsConfig:
 				window.wcpay_core_checkout_config.paymentMethodsConfig,
+			currency: 'EUR',
+			cartTotal: 7000,
 		} );
 		stripeMock.elements.mockClear();
 		await registrations.woocommerce_payments_apple_pay.render(
@@ -4380,7 +4418,9 @@ describe( 'WooPayments checkout', () => {
 		);
 	} );
 
-	test( 'adopts a split gateway that first appears after a checkout update', async () => {
+	// The form prints only the three refreshed keys, so a gateway the page never localized takes the rest from the page
+	// config: the account, keys and messages the payment request needs.
+	test( 'adopts a split gateway first rendered after a checkout update from the page config and its three refreshed keys', async () => {
 		document.body.innerHTML =
 			'<form class="checkout">' +
 			'<input type="radio" name="payment_method" value="woocommerce_payments" />' +
@@ -4393,25 +4433,32 @@ describe( 'WooPayments checkout', () => {
 				'beforeend',
 				'<input type="radio" name="payment_method" value="woocommerce_payments_ideal" checked />'
 			);
-		renderRefreshedPaymentFields(
-			Object.assign( {}, window.wcpay_core_checkout_config, {
-				gatewayId: 'woocommerce_payments_ideal',
-				paymentMethodId: 'ideal',
-				paymentMethodTypes: [ 'ideal' ],
-				currency: 'EUR',
-				cartTotal: 7000,
-				paymentMethodsConfig: {
-					ideal: { isReusable: false },
+		renderRefreshedPaymentFields( 'ideal', {
+			paymentMethodsConfig: {
+				ideal: {
+					gatewayId: 'woocommerce_payments_ideal',
+					isReusable: false,
 				},
-			} )
-		);
+			},
+			currency: 'EUR',
+			cartTotal: 7000,
+		} );
 		bodyEventHandlers.updated_checkout();
 		await flushPromises();
 
+		expect( window.Stripe ).toHaveBeenCalledWith(
+			'pk_test',
+			expect.objectContaining( { stripeAccount: 'acct_test' } )
+		);
 		expect( stripeElementsOptions ).toMatchObject( {
-			paymentMethodTypes: [ 'ideal' ],
+			amount: 7000,
 			currency: 'eur',
+			mode: 'payment',
+			paymentMethodTypes: [ 'ideal' ],
 		} );
+		expect( mountPaymentElement ).toHaveBeenCalledWith(
+			document.getElementById( 'wcpay-core-payment-element' )
+		);
 		expect(
 			checkoutFormEventHandlers.checkout_place_order_woocommerce_payments_ideal
 		).toEqual( expect.any( Function ) );

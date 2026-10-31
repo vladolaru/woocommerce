@@ -1746,11 +1746,13 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 			set_query_var( 'order-pay', $order->get_id() );
 			$_GET['key'] = $order->get_order_key();
 			$expected    = array(
-				'cartTotal'  => 5678,
-				'currency'   => 'EUR',
+				'cartTotal' => 5678,
+				'currency'  => 'EUR',
+			);
+			$page_keys   = array(
 				'gatewayId'  => WooPaymentsPersistenceVocabulary::GATEWAY_ID,
-				'isOrderPay' => true,
-				'orderId'    => $order->get_id(),
+				'isOrderPay' => '1',
+				'orderId'    => (string) $order->get_id(),
 			);
 		} else {
 			WC()->cart->add_to_cart(
@@ -1764,9 +1766,11 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 				1
 			);
 			WC()->cart->calculate_totals();
-			$expected = array(
-				'cartTotal'  => 1234,
-				'currency'   => 'USD',
+			$expected  = array(
+				'cartTotal' => 1234,
+				'currency'  => 'USD',
+			);
+			$page_keys = array(
 				'gatewayId'  => WooPaymentsPersistenceVocabulary::GATEWAY_ID,
 				'isOrderPay' => null,
 				'orderId'    => null,
@@ -1800,6 +1804,15 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 		foreach ( $expected as $key => $value ) {
 			$this->assertSame( $value, $printed[ $key ] ?? null, "The form prints {$key}." );
 		}
+		// The checkout script finds the gateway through the printed method entry (woopayments-checkout.js mergeRefreshedPaymentFieldsConfig()).
+		$this->assertSame( WooPaymentsPersistenceVocabulary::GATEWAY_ID, $printed['paymentMethodsConfig']['card']['gatewayId'] ?? null, 'The form prints its method entry, which names the gateway.' );
+		// Everything else, a third party's filtered keys included, reaches the page once in the localized config.
+		$page = $this->get_localized_core_checkout_config( (string) wp_scripts()->get_data( 'wc-woopayments-checkout', 'data' ) );
+		foreach ( $page_keys as $key => $value ) {
+			$this->assertSame( $value, $page[ $key ] ?? null, "The page config carries {$key}." );
+		}
+		$this->assertSame( 'yes', $page['filtered'] ?? null, 'The page config carries the filtered key.' );
+		$this->assertArrayNotHasKey( 'filtered', $printed, 'The form prints no filtered key beyond the three.' );
 
 		$this->assertStringContainsString( 'wcpay-core-checkout-form', $output );
 		// Core's tokenization-form.js hides `.wc-payment-form` while a saved method is selected, so it must wrap the card element.
@@ -1808,8 +1821,6 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 		$this->assertStringContainsString( 'wcpay-core-test-mode-instructions', $output );
 		$this->assertStringContainsString( '4000 0064 2000 0001', $output );
 		$this->assertStringContainsString( 'js-woopayments-copy-test-number', $output );
-		$this->assertStringContainsString( 'data-wcpay-config', $output );
-		$this->assertStringContainsString( 'filtered', $output );
 		$this->assertTrue( wp_script_is( 'wc-woopayments-checkout', 'enqueued' ) );
 		$this->assertStringContainsString(
 			'/assets/js/frontend/woopayments-checkout',
@@ -1826,35 +1837,56 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 	/**
 	 * WooCommerce replaces the payment fragment of an update_order_review answer when its HTML differs from the last
 	 * answer's (checkout.js:778-786), and the replaced form remounts the card element empty. Client 11.2.0 localizes its
-	 * config once per page (includes/class-wc-payments-checkout.php:481) and its fragment carries only what the cart can
-	 * change (:418-428, :521), so an update with nothing changed leaves the typed card alone.
+	 * config once per page (includes/class-wc-payments-checkout.php:481) and refreshes only paymentMethodsConfig, currency
+	 * and cartTotal per update (:418-428), so an update that changes nothing in the cart leaves the typed card alone,
+	 * whatever else changed on the server: the appearance the mounted card stores, the shopper's email, a nonce tick.
 	 *
-	 * @testdox Should print the same payment form on the checkout page and on two updates with nothing changed: $shopper, WooPay on $woopay.
-	 * @testWith ["guest", true]
-	 *           ["guest", false]
-	 *           ["customer", true]
-	 *           ["customer", false]
+	 * @testdox Should print the same payment form on the checkout page and on two updates when $change changes between them: $shopper, WooPay on $woopay.
+	 * @testWith ["guest", true, "nothing"]
+	 *           ["guest", false, "nothing"]
+	 *           ["customer", true, "nothing"]
+	 *           ["customer", false, "nothing"]
+	 *           ["guest", true, "the stored appearance"]
+	 *           ["guest", false, "the stored appearance"]
+	 *           ["customer", true, "the session email"]
+	 *           ["guest", true, "a nonce tick"]
+	 *           ["customer", false, "a nonce tick"]
 	 *
 	 * @param string $shopper Who checks out.
 	 * @param bool   $woopay  Whether WooPay is on.
+	 * @param string $change  What changes on the server between the two updates, the cart staying the same.
 	 */
-	public function test_payment_form_prints_the_same_bytes_on_every_render_with_nothing_changed( string $shopper, bool $woopay ): void {
+	public function test_payment_form_prints_the_same_bytes_on_every_render_with_nothing_changed( string $shopper, bool $woopay, string $change ): void {
 		\Jetpack_Options::update_option( 'id', 12345 );
 		\Jetpack_Options::update_option( 'blog_token', 'blog-token' );
 		wp_set_current_user( 'customer' === $shopper ? self::factory()->user->create( array( 'role' => 'customer' ) ) : 0 );
-		// The real WooPay minimum session data, sealed under a new IV on every call (WooPay/SessionService.php:539).
-		$sealed_session = wc_get_container()->get( SessionService::class );
-		$woopay_service = $this->getMockBuilder( SessionService::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'get_woopay_frontend_config', 'get_save_user_checkout_data' ) )
-			->getMock();
-		$woopay_config  = $this->create_woopay_session_service( $woopay )->get_woopay_frontend_config();
-		$woopay_service->method( 'get_woopay_frontend_config' )->willReturnCallback(
-			static fn(): array => array_merge( $woopay_config, array( 'woopayMinimumSessionData' => $woopay ? $sealed_session->get_encrypted_minimum_session_data() : array() ) )
+		// The real WooPay config, with global theme support on: a classic theme with nothing stored prints null and [],
+		// until the mounted card stores the shopper appearance (SessionService.php:719-720, AppearanceStore.php:160-166).
+		$account_service = $this->create_account_service(
+			true,
+			array(
+				'account_id'                            => 'acct_123',
+				'country'                               => 'US',
+				'details_submitted'                     => true,
+				'capabilities'                          => array( 'card_payments' => 'active' ),
+				'platform_checkout_eligible'            => true,
+				'platform_global_theme_support_enabled' => true,
+			),
+			array(
+				'enabled'                                => 'yes',
+				'platform_checkout'                      => $woopay ? 'yes' : 'no',
+				'is_woopay_global_theme_support_enabled' => 'yes',
+				'express_checkout_checkout_methods'      => array( 'woopay' ),
+			)
 		);
-		$woopay_service->method( 'get_save_user_checkout_data' )->willReturn( array() );
+		$eligibility     = new Eligibility();
+		$eligibility->init( $account_service );
+		$appearance_store = new AppearanceStore();
+		$appearance_store->init( new WooPaymentsFrontendStylesService() );
+		$woopay_service = new SessionService();
+		$woopay_service->init( $account_service, $eligibility, $appearance_store, $this->create_frontend_tracking_controller(), wc_get_container()->get( BlocksDataExtractor::class ), new AdaptedExtensions(), $this->createMock( WooPaymentsCustomerService::class ), wc_get_container()->get( WooPaymentsLogger::class ) );
 		$assets = new WooPaymentsCheckoutAssets();
-		$assets->init( $this->create_account_service( true ), $woopay_service, $this->create_woopay_eligibility( $woopay ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller(), new PaymentMethodRegistry() );
+		$assets->init( $account_service, $woopay_service, $eligibility, $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller(), new PaymentMethodRegistry() );
 		$gateway = $this->create_card_gateway( $assets );
 		WC()->cart->add_to_cart( \WC_Helper_Product::create_simple_product()->get_id(), 1 );
 		WC()->cart->calculate_totals();
@@ -1866,16 +1898,22 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 			)
 		);
 		update_option( 'woocommerce_checkout_page_id', $page_id );
-		// Each render is its own request, whose init clears the config memos (register()).
-		$render = static function () use ( $assets, $gateway ): string {
+		// Each render is its own request, whose init clears the config memos (register()). The full config built in that
+		// request is kept beside the form, to show the change reached it.
+		$configs        = array();
+		$render         = static function () use ( $assets, $gateway, &$configs ): string {
 			$assets->reset_config_memos();
 			ob_start();
 			$gateway->payment_fields();
+			$configs[] = $assets->get_payment_fields_config( $gateway->supports );
 
 			return (string) ob_get_clean();
 		};
+		$original_theme = get_stylesheet();
 
 		try {
+			switch_theme( 'storefront' );
+			$this->assertFalse( wp_is_block_theme(), 'Precondition: a classic theme, which computes no appearance of its own.' );
 			$this->reset_cart_checkout_page_cache();
 			$this->go_to( get_permalink( $page_id ) );
 			$this->assertTrue( is_checkout(), 'Precondition: the checkout page.' );
@@ -1886,14 +1924,37 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 			$this->go_to( add_query_arg( 'wc-ajax', 'update_order_review', home_url( '/' ) ) );
 			$this->reset_cart_checkout_page_cache();
 			Constants::set_constant( 'WOOCOMMERCE_CHECKOUT', true );
-			$forms['first update']  = $render();
+			$forms['first update'] = $render();
+			if ( 'the stored appearance' === $change ) {
+				// What the mounted card's appearance request stores (SessionController.php:741).
+				$appearance_store->maybe_save_woopay_appearance(
+					array(
+						'theme'     => 'stripe',
+						'variables' => array( 'colorText' => '#111111' ),
+						'rules'     => array( '.Input' => array( 'borderRadius' => '4px' ) ),
+					),
+					array( array( 'cssSrc' => 'https://fonts.googleapis.com/css2?family=Inter' ) )
+				);
+			} elseif ( 'the session email' === $change ) {
+				// What a WooPay session request writes (WooPay/SessionService.php:475).
+				WC()->customer->set_billing_email( 'changed@example.com' );
+			} elseif ( 'a nonce tick' === $change ) {
+				add_filter( 'nonce_life', static fn(): int => HOUR_IN_SECONDS );
+			}
 			$forms['second update'] = $render();
 		} finally {
+			switch_theme( $original_theme );
 			Constants::clear_single_constant( 'WOOCOMMERCE_CHECKOUT' );
 			delete_option( 'woocommerce_' . WooPaymentsPersistenceVocabulary::GATEWAY_ID . '_settings' );
 			WC()->cart->empty_cart();
 		}
 
+		$this->assertSame( '1', $page['isWooPayGlobalThemeSupportEnabled'] ?? null, 'Precondition: global theme support is on.' );
+		$this->assertSame( $woopay ? '1' : '', $page['isWooPayEnabled'] ?? null, 'Precondition: WooPay is on only where the row says.' );
+		$this->assertNull( $page['woopayAppearance'], 'Precondition: nothing stored yet, so the page prints a null appearance.' );
+		if ( 'nothing' !== $change ) {
+			$this->assertNotSame( $configs[1], $configs[2], "Precondition: {$change} reaches the config." );
+		}
 		$pairs = array(
 			'first update'  => 'checkout page',
 			'second update' => 'first update',
@@ -1902,9 +1963,11 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 			$this->assertSame( self::get_printed_config( $forms[ $previous ] ), self::get_printed_config( $forms[ $label ] ), "The {$label} prints the {$previous}'s config." );
 			$this->assertSame( $forms[ $previous ], $forms[ $label ], "The {$label} prints the {$previous}'s payment form." );
 		}
-		// The page still gets the keys the form leaves out, once, in the config localized with the checkout page.
+		$this->assertSame( array( 'paymentMethodsConfig', 'currency', 'cartTotal' ), array_keys( self::get_printed_config( $forms['checkout page'] ) ), 'The form prints only the keys a checkout update refreshes.' );
+		// The page still gets every other key, once, in the config localized with the checkout page.
 		$this->assertSame( '1', $page['isShortcodeCheckout'] ?? null, 'The page config marks the shortcode checkout; the localizer prints true as "1".' );
 		$this->assertSame( $woopay ? 12345 : null, $page['woopayMinimumSessionData']['blog_id'] ?? null, 'The page config carries the WooPay session data when WooPay is on.' );
+		$this->assertSame( WooPaymentsPersistenceVocabulary::GATEWAY_ID, $page['gatewayId'] ?? null, 'The page config names its gateway.' );
 	}
 
 	/**

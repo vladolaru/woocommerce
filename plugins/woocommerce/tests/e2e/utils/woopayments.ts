@@ -152,9 +152,11 @@ export async function expectCardKept(
 }
 
 /**
- * Types a card into a native Payment Element once and proves the element
- * kept it, after a settle long enough for a checkout update the typing set
- * off to land (expectCardKept()).
+ * Types a card into a native Payment Element once, waits a short settle and
+ * proves the element kept it (expectCardKept()).
+ *
+ * The read-back sees only what the element holds at that moment: a checkout
+ * update still in flight can land after it and empty the card.
  */
 export async function fillCardDetails(
 	page: Page,

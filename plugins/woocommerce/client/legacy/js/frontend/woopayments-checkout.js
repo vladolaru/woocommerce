@@ -217,13 +217,17 @@
 	// Client 11.1.0 includes/class-wc-payments-checkout.php:353-373 merges the refreshed paymentMethodsConfig, currency
 	// and cartTotal into the page config from a script in the update_order_review fragment, before core re-inits the
 	// payment methods. Native reads them from the payment fields WooCommerce re-renders in that fragment
-	// (data-wcpay-config, one per WooPayments gateway), every time a config is about to be read; a gateway first
-	// rendered after the page loaded adopts its whole config.
+	// (data-wcpay-config, one per WooPayments gateway, which carries only those three keys), every time a config is
+	// about to be read. A gateway first rendered after the page loaded gets the page config with its own gateway ID and
+	// Stripe type, from the form's method type as the client reads it (client/checkout/utils/upe.js:45-54).
 	function mergeRefreshedPaymentFieldsConfig() {
 		document
 			.querySelectorAll( '.wcpay-core-checkout-form[data-wcpay-config]' )
 			.forEach( function ( wrapper ) {
 				var refreshed;
+				var paymentMethodType;
+				var paymentMethodEntry;
+				var paymentGatewayId;
 				var target;
 
 				// Core replaces a changed fragment with new elements (checkout.js:773), so a wrapper already read has nothing new.
@@ -240,31 +244,37 @@
 					return;
 				}
 
-				if (
-					! refreshed ||
-					typeof refreshed !== 'object' ||
-					! refreshed.gatewayId
-				) {
+				paymentMethodType = wrapper.getAttribute(
+					'data-payment-method-type'
+				);
+				paymentMethodEntry =
+					refreshed &&
+					refreshed.paymentMethodsConfig &&
+					refreshed.paymentMethodsConfig[ paymentMethodType ];
+				paymentGatewayId =
+					paymentMethodEntry && paymentMethodEntry.gatewayId;
+				if ( ! paymentGatewayId ) {
 					return;
 				}
 
 				target =
-					window[
-						getGatewayConfigObjectName( refreshed.gatewayId )
-					];
+					window[ getGatewayConfigObjectName( paymentGatewayId ) ];
 				if (
 					( ! target || typeof target !== 'object' ) &&
 					( baseConfig.gatewayId || defaultGatewayId ) ===
-						refreshed.gatewayId
+						paymentGatewayId
 				) {
 					target = baseConfig;
 				}
 
 				if ( ! target || typeof target !== 'object' ) {
-					window[
-						getGatewayConfigObjectName( refreshed.gatewayId )
-					] = refreshed;
-					return;
+					target = Object.assign( {}, baseConfig, {
+						gatewayId: paymentGatewayId,
+						paymentMethodTypes: [ paymentMethodType ],
+						paymentListWalletsConfig: {},
+					} );
+					window[ getGatewayConfigObjectName( paymentGatewayId ) ] =
+						target;
 				}
 
 				[ 'paymentMethodsConfig', 'currency', 'cartTotal' ].forEach(
