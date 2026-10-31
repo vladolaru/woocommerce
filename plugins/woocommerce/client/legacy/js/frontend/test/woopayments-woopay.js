@@ -1825,6 +1825,64 @@ describe( 'WooPayments WooPay checkout', () => {
 				expect( clickProceedToCheckout() ).toBe( false );
 			} );
 
+			// The cookie can arrive once the listener is on: the email check writes it after DOM ready, on a
+			// ?skip_woopay=true or back-button arrival, and another tab can write it.
+			test( 'keeps a click on the store when the cookie arrives after the listener attached', async () => {
+				configureDirectCheckout( cartLink );
+				const postMessage = installConnect();
+				require( '../woopayments-woopay' );
+				await initializeDirectCheckout( true );
+				expect( document.body.wooPayDirectCheckoutAttached ).toBe( true );
+
+				document.cookie = 'skip_woopay=1; path=/';
+
+				expect( clickProceedToCheckout() ).toBe( false );
+				await flushPromises();
+				expect( postMessage ).not.toHaveBeenCalledWith(
+					{ action: 'getEncryptedData' },
+					'https://pay.woo.test'
+				);
+			} );
+
+			test( 'keeps a click on the store when the cookie arrives while the login check is pending', async () => {
+				configureDirectCheckout( cartLink );
+				const postMessage = installConnect();
+				require( '../woopayments-woopay' );
+				await loadConnectIframe();
+				await flushPromises();
+
+				document.cookie = 'skip_woopay=1; path=/';
+				emitConnectMessage( 'get_is_user_logged_in_success', false );
+				await flushPromises();
+
+				expect( clickProceedToCheckout() ).toBe( false );
+				await flushPromises();
+				expect( postMessage ).not.toHaveBeenCalledWith(
+					{ action: 'isWooPayReachable' },
+					'https://pay.woo.test'
+				);
+			} );
+
+			// Client 11.2.0 attaches to the element, so cart.js replacing the link takes the listener with it, and its
+			// updated_cart_totals read leaves the new link plain. Native's one listener stays on the body.
+			test( 'keeps a click on a replaced cart link on the store when the cookie arrived before the cart update', async () => {
+				configureDirectCheckout( cartLink );
+				const postMessage = installConnect();
+				require( '../woopayments-woopay' );
+				await initializeDirectCheckout( true );
+
+				document.cookie = 'skip_woopay=1; path=/';
+				document.querySelector( '.wc-proceed-to-checkout' ).outerHTML = cartLink;
+				bodyEventHandlers.updated_cart_totals();
+
+				expect( clickProceedToCheckout() ).toBe( false );
+				await flushPromises();
+				expect( postMessage ).not.toHaveBeenCalledWith(
+					{ action: 'getEncryptedData' },
+					'https://pay.woo.test'
+				);
+			} );
+
 			// Set and cleared are both the exact pair: the cookie's expiry, and a cookie that only holds the text.
 			test.each( [
 				[ 'no cookie', null ],

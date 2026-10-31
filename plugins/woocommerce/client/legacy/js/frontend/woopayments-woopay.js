@@ -530,6 +530,12 @@
 				return;
 			}
 
+			// The cookie can arrive after this listener attaches, and this one listener outlives the links a cart update
+			// replaces, where the client's listeners go with them.
+			if ( ! shouldRunDirectCheckout() ) {
+				return;
+			}
+
 			event.preventDefault();
 			if ( element.wooPayDirectCheckoutActive ) {
 				return;
