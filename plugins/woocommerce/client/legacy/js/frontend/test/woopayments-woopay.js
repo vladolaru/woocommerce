@@ -73,6 +73,36 @@ describe( 'WooPayments WooPay checkout', () => {
 		'contentWindow'
 	);
 
+	// A page has one copy of the script, but each test loads a fresh one, and the tab-return listeners of the copies
+	// before it would drop (or, mutated, prefetch) the session of the copy under test.
+	let visibilityListeners;
+	let documentAddEventListener;
+
+	beforeEach( () => {
+		visibilityListeners = [];
+		const add = document.addEventListener.bind( document );
+		documentAddEventListener = jest
+			.spyOn( document, 'addEventListener' )
+			.mockImplementation( ( type, listener, options ) => {
+				if ( type === 'visibilitychange' ) {
+					visibilityListeners.push( [ type, listener ] );
+				}
+				add( type, listener, options );
+			} );
+	} );
+
+	afterEach( () => {
+		visibilityListeners.forEach( ( [ type, listener ] ) =>
+			document.removeEventListener( type, listener )
+		);
+		documentAddEventListener.mockRestore();
+		window.addEventListener.mock.calls
+			.filter( ( [ type ] ) => type === 'pageshow' )
+			.forEach( ( [ type, listener ] ) =>
+				window.removeEventListener( type, listener )
+			);
+	} );
+
 	afterEach( () => {
 		delete window.wcWooPaymentsPhoneValidation;
 		Object.defineProperty(
@@ -2611,6 +2641,11 @@ describe( 'WooPayments WooPay checkout', () => {
 			} );
 			let sessionPosts;
 			let failNextSession;
+			function countEncryptedDataRequests( postMessage ) {
+				return postMessage.mock.calls.filter(
+					( [ message ] ) => message.action === 'getEncryptedData'
+				).length;
+			}
 
 			// Each get_woopay_session answers the cart as it is now: the first, second and third session in turn.
 			function installStoreSessions() {
@@ -2797,10 +2832,14 @@ describe( 'WooPayments WooPay checkout', () => {
 				await answerEncryptedData();
 				expect( sessionPosts ).toHaveLength( 1 );
 
-				// The other tab's change reaches the store; this page hears nothing of it.
+				expect( countEncryptedDataRequests( postMessage ) ).toBe( 1 );
+
+				// The other tab's change reaches the store; this page hears nothing of it. Coming back sends Connect
+				// no request: the session is dropped and asked for at the click, not prefetched.
 				showPage();
 				await flushPromises();
 				expect( sessionPosts ).toHaveLength( 1 );
+				expect( countEncryptedDataRequests( postMessage ) ).toBe( 1 );
 				await clickAndAnswer();
 				if ( asksAgain ) {
 					await answerEncryptedData();
