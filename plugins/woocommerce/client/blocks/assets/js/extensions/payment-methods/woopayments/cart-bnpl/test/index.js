@@ -131,6 +131,41 @@ describe( 'WooPayments cart block BNPL messaging', () => {
 		).not.toBeNull();
 	} );
 
+	// Client 11.2.0 builds its Stripe instance once for the page (cart/blocks/product-details.js:28-37, :79).
+	it( 'keeps one Stripe instance when the cart changes', async () => {
+		const { rerender } = render(
+			<BNPLCartMessaging
+				cart={ { cartTotals: { total_price: '12345' } } }
+				context="woocommerce/cart"
+			/>
+		);
+		await waitFor( () => {
+			expect( mountMessagingElement ).toHaveBeenCalledTimes( 1 );
+		} );
+
+		rerender(
+			<BNPLCartMessaging
+				cart={ { cartTotals: { total_price: '24690' } } }
+				context="woocommerce/cart"
+			/>
+		);
+		rerender(
+			<BNPLCartMessaging
+				cart={ { cartTotals: { total_price: '37035' } } }
+				context="woocommerce/cart"
+			/>
+		);
+		await waitFor( () => {
+			expect( mountMessagingElement ).toHaveBeenCalledTimes( 3 );
+		} );
+
+		expect( window.Stripe ).toHaveBeenCalledTimes( 1 );
+		expect( createElement ).toHaveBeenLastCalledWith(
+			'paymentMethodMessaging',
+			expect.objectContaining( { amount: 37035 } )
+		);
+	} );
+
 	it( 'renders nothing outside the cart context', () => {
 		const { container } = render(
 			<BNPLCartMessaging

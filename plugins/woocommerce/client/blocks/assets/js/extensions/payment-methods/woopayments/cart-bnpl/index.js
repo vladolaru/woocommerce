@@ -48,6 +48,24 @@ const getStripeOptions = ( config ) => {
 	return stripeOptions;
 };
 
+// One Stripe instance for the page, built from its fixed messaging config, as client 11.2.0's module-level API object
+// (cart/blocks/product-details.js:28-37), so a cart change adds no Stripe controller frame. Kept per Stripe.js load.
+let cachedStripe = null;
+
+const getStripe = ( config ) => {
+	if ( cachedStripe?.factory !== window.Stripe ) {
+		cachedStripe = {
+			factory: window.Stripe,
+			stripe: window.Stripe(
+				config.publishableKey,
+				getStripeOptions( config )
+			),
+		};
+	}
+
+	return cachedStripe.stripe;
+};
+
 /**
  * Render Stripe BNPL payment method messaging in the Cart block order summary.
  *
@@ -94,10 +112,7 @@ export const BNPLCartMessaging = ( { cart, context } ) => {
 			return undefined;
 		}
 
-		const stripe = window.Stripe(
-			config.publishableKey,
-			getStripeOptions( config )
-		);
+		const stripe = getStripe( config );
 		if ( ! stripe ) {
 			return undefined;
 		}
