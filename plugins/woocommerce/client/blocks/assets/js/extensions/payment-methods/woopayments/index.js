@@ -833,7 +833,7 @@ const WooPaySaveUserSection = ( { paymentSettings } ) => {
 	);
 	const [ phone, setPhone ] = useState( getWooPayInitialPhone );
 	const [ phoneValidation, setPhoneValidation ] = useState(
-		() => window.wcWooPaymentsPhoneValidation || null
+		() => window.wc?.woopayments?.phoneValidation || null
 	);
 	const [ isPhoneValidationUnavailable, setIsPhoneValidationUnavailable ] =
 		useState( false );

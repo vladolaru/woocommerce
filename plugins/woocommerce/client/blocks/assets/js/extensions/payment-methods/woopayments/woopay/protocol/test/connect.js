@@ -707,7 +707,7 @@ describe( 'WooPay Connect (shared)', () => {
 
 describe( 'WooPay save-user phone helpers (shared)', () => {
 	afterEach( () => {
-		delete window.wcWooPaymentsPhoneValidation;
+		delete window.wc;
 		document.head.innerHTML = '';
 	} );
 
@@ -726,16 +726,21 @@ describe( 'WooPay save-user phone helpers (shared)', () => {
 
 		expect( scripts ).toHaveLength( 1 );
 
-		window.wcWooPaymentsPhoneValidation = {
-			validatePhoneNumber: () => true,
-		};
+		// The script runs on a page without the WooPay protocol entry, so it creates the namespace itself.
+		expect( window.wc ).toBeUndefined();
+		jest.isolateModules( () =>
+			jest.requireActual( '../../../phone-validation' )
+		);
+		expect(
+			window.wc.woopayments.phoneValidation.validatePhoneNumber
+		).toEqual( expect.any( Function ) );
 		scripts[ 0 ].onload();
 
 		await expect( first ).resolves.toBe(
-			window.wcWooPaymentsPhoneValidation
+			window.wc.woopayments.phoneValidation
 		);
 		await expect( second ).resolves.toBe(
-			window.wcWooPaymentsPhoneValidation
+			window.wc.woopayments.phoneValidation
 		);
 	} );
 } );

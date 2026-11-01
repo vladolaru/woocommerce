@@ -104,7 +104,7 @@ describe( 'WooPayments WooPay checkout', () => {
 	} );
 
 	afterEach( () => {
-		delete window.wcWooPaymentsPhoneValidation;
+		delete window.wc.woopayments.phoneValidation;
 		Object.defineProperty(
 			window.HTMLIFrameElement.prototype,
 			'contentWindow',
@@ -1131,7 +1131,7 @@ describe( 'WooPayments WooPay checkout', () => {
 			window.history.pushState( {}, '', '/checkout/?utm_source=a-long-campaign' );
 			// Stand-in for the validation script (phone-validation.js, core's validatePhoneNumber) the section loads on
 			// opt-in; core tests the rules themselves.
-			window.wcWooPaymentsPhoneValidation = {
+			window.wc.woopayments.phoneValidation = {
 				validatePhoneNumber: ( number ) => number === '+12015550123',
 			};
 			require( '../woopayments-woopay' );
@@ -1542,7 +1542,7 @@ describe( 'WooPayments WooPay checkout', () => {
 
 	test( 'shows the WooPay phone error for an invalid number without stopping the order', () => {
 		// Stand-in for the validation script (phone-validation.js, core's validatePhoneNumber).
-		window.wcWooPaymentsPhoneValidation = {
+		window.wc.woopayments.phoneValidation = {
 			validatePhoneNumber: ( number ) => number === '+12015550123',
 		};
 		require( '../woopayments-woopay' );
@@ -1574,7 +1574,7 @@ describe( 'WooPayments WooPay checkout', () => {
 
 	test( 'shows the WooPay phone error when the order is placed and lets the order go on', () => {
 		// Stand-in for the validation script (phone-validation.js, core's validatePhoneNumber).
-		window.wcWooPaymentsPhoneValidation = {
+		window.wc.woopayments.phoneValidation = {
 			validatePhoneNumber: ( number ) => number === '+12015550123',
 		};
 		require( '../woopayments-woopay' );
@@ -3568,7 +3568,7 @@ describe( 'WooPayments WooPay checkout', () => {
 		} );
 
 		// Client 11.2.0 init-woopay.js:43-52: theme support on and a shortcode checkout reads the page, otherwise the stored
-		// values. Its readers are the card script's, on window.wcpayAppearance only when that script is on the page; the
+		// values. Its readers are the card script's, on window.wc.woopayments.appearance only when that script is on the page; the
 		// readers are set after the dialog opens here because the two scripts have no order.
 		describe( 'with the appearance and fonts', () => {
 			const storedAppearance = { theme: 'stored-theme' };
@@ -3577,7 +3577,7 @@ describe( 'WooPayments WooPay checkout', () => {
 			const pageFontRules = [ { cssSrc: 'https://fonts.test/page.css' } ];
 
 			afterEach( () => {
-				delete window.wcpayAppearance;
+				delete window.wc.woopayments.appearance;
 			} );
 
 			async function verifyCode() {
@@ -3617,7 +3617,7 @@ describe( 'WooPayments WooPay checkout', () => {
 					woopayFontRules: storedFontRules,
 				} );
 				await openOtpIframe();
-				window.wcpayAppearance = {
+				window.wc.woopayments.appearance = {
 					getWooPayInitAppearance: readAppearance,
 					getWooPayInitFontRules: readFontRules,
 				};
@@ -3639,7 +3639,7 @@ describe( 'WooPayments WooPay checkout', () => {
 					woopayAppearance: storedAppearance,
 					woopayFontRules: storedFontRules,
 				} );
-				window.wcpayAppearance = appearanceGlobal;
+				window.wc.woopayments.appearance = appearanceGlobal;
 				await openOtpIframe();
 
 				const body = await verifyCode();
@@ -3659,7 +3659,7 @@ describe( 'WooPayments WooPay checkout', () => {
 					woopayFontRules: [],
 				} );
 				await openOtpIframe();
-				window.wcpayAppearance = {
+				window.wc.woopayments.appearance = {
 					getWooPayInitAppearance: readAppearance,
 					getWooPayInitFontRules: readFontRules,
 				};

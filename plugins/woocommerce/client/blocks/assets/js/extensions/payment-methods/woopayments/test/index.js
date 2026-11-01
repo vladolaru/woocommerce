@@ -267,7 +267,7 @@ describe( 'wc-payment-method-woopayments', () => {
 		jest.useRealTimers();
 		jest.restoreAllMocks();
 		delete window.Stripe;
-		delete window.wcWooPaymentsPhoneValidation;
+		delete window.wc.woopayments.phoneValidation;
 		delete window.navigator.clipboard;
 		delete window.wcpayFraudPreventionToken;
 		window.fetch = originalFetch;
@@ -824,7 +824,7 @@ describe( 'wc-payment-method-woopayments', () => {
 	it( 'records WooPay save-info checkbox events and leaves the offer to the email check', async () => {
 		const user = userEvent.setup();
 		// The validation script the section loads on opt-in (phone-validation.js), already present here.
-		window.wcWooPaymentsPhoneValidation = { validatePhoneNumber };
+		window.wc.woopayments.phoneValidation = { validatePhoneNumber };
 		window.fetch = jest.fn().mockResolvedValue( {
 			json: jest.fn().mockResolvedValue( { success: true } ),
 		} );
@@ -1007,7 +1007,7 @@ describe( 'wc-payment-method-woopayments', () => {
 		);
 
 	it( 'blocks the checkout for an invalid WooPay phone number once the shopper leaves the field', async () => {
-		window.wcWooPaymentsPhoneValidation = { validatePhoneNumber };
+		window.wc.woopayments.phoneValidation = { validatePhoneNumber };
 		mockValidationActions.setValidationErrors.mockClear();
 		renderSaveUserSection();
 		const phoneField = await screen.findByLabelText(
@@ -1031,7 +1031,7 @@ describe( 'wc-payment-method-woopayments', () => {
 	} );
 
 	it( 'shows the WooPay phone error under the field once the shopper leaves it', async () => {
-		window.wcWooPaymentsPhoneValidation = { validatePhoneNumber };
+		window.wc.woopayments.phoneValidation = { validatePhoneNumber };
 		renderSaveUserSection();
 		const phoneField = await screen.findByLabelText(
 			'Mobile phone number'
@@ -1110,7 +1110,7 @@ describe( 'wc-payment-method-woopayments', () => {
 		} );
 
 	it( 'stores each valid WooPay phone change once, without waiting for blur', async () => {
-		window.wcWooPaymentsPhoneValidation = { validatePhoneNumber };
+		window.wc.woopayments.phoneValidation = { validatePhoneNumber };
 		renderSaveUserSection();
 		const phoneField = await screen.findByLabelText(
 			'Mobile phone number'
@@ -1133,7 +1133,7 @@ describe( 'wc-payment-method-woopayments', () => {
 	] )(
 		'sends the same WooPay number again after a %s request',
 		async ( description, failure ) => {
-			window.wcWooPaymentsPhoneValidation = { validatePhoneNumber };
+			window.wc.woopayments.phoneValidation = { validatePhoneNumber };
 			renderSaveUserSection();
 			const phoneField = await screen.findByLabelText(
 				'Mobile phone number'
@@ -1176,7 +1176,7 @@ describe( 'wc-payment-method-woopayments', () => {
 		'still clears a stored WooPay opt-in after a failed update when %s',
 		async ( description, withdraw ) => {
 			const user = userEvent.setup();
-			window.wcWooPaymentsPhoneValidation = { validatePhoneNumber };
+			window.wc.woopayments.phoneValidation = { validatePhoneNumber };
 			renderSaveUserSection();
 			const phoneField = await screen.findByLabelText(
 				'Mobile phone number'
@@ -1199,7 +1199,7 @@ describe( 'wc-payment-method-woopayments', () => {
 
 	it( 'sends the WooPay clear again after a failed clear', async () => {
 		const user = userEvent.setup();
-		window.wcWooPaymentsPhoneValidation = { validatePhoneNumber };
+		window.wc.woopayments.phoneValidation = { validatePhoneNumber };
 		renderSaveUserSection();
 		const phoneField = await screen.findByLabelText(
 			'Mobile phone number'
@@ -1226,7 +1226,7 @@ describe( 'wc-payment-method-woopayments', () => {
 	} );
 
 	it( 'clears the WooPay phone error for a valid number', async () => {
-		window.wcWooPaymentsPhoneValidation = { validatePhoneNumber };
+		window.wc.woopayments.phoneValidation = { validatePhoneNumber };
 		renderSaveUserSection();
 		const phoneField = await screen.findByLabelText(
 			'Mobile phone number'
@@ -1273,7 +1273,7 @@ describe( 'wc-payment-method-woopayments', () => {
 	} );
 
 	it( 'clears the WooPay opt-in for another method and stores it again back on WooPayments', async () => {
-		window.wcWooPaymentsPhoneValidation = { validatePhoneNumber };
+		window.wc.woopayments.phoneValidation = { validatePhoneNumber };
 		renderSaveUserSection();
 		const phoneField = await screen.findByLabelText(
 			'Mobile phone number'

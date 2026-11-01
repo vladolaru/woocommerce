@@ -5,11 +5,11 @@ let phoneValidationPromise = null;
  * shopper opts in to save their details to WooPay.
  *
  * @param {string} url The validation script URL (WooPaymentsFrontendAssets::get_phone_validation_script_url()).
- * @return {Promise<Object|null>} `window.wcWooPaymentsPhoneValidation`, or null when it cannot load.
+ * @return {Promise<Object|null>} `window.wc.woopayments.phoneValidation`, or null when it cannot load.
  */
 export const loadPhoneValidation = ( url ) => {
-	if ( window.wcWooPaymentsPhoneValidation ) {
-		return Promise.resolve( window.wcWooPaymentsPhoneValidation );
+	if ( window.wc?.woopayments?.phoneValidation ) {
+		return Promise.resolve( window.wc.woopayments.phoneValidation );
 	}
 	if ( ! url ) {
 		return Promise.resolve( null );
@@ -20,7 +20,7 @@ export const loadPhoneValidation = ( url ) => {
 			script.src = url;
 			script.async = true;
 			script.onload = () =>
-				resolve( window.wcWooPaymentsPhoneValidation || null );
+				resolve( window.wc?.woopayments?.phoneValidation || null );
 			script.onerror = () => {
 				phoneValidationPromise = null;
 				resolve( null );

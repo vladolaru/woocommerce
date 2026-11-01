@@ -388,7 +388,9 @@
 		return true;
 	}
 
-	root.wcpayAppearance = {
+	root.wc = root.wc || {};
+	root.wc.woopayments = root.wc.woopayments || {};
+	root.wc.woopayments.appearance = {
 		compositeAgainstWhite: compositeAgainstWhite,
 		containsAlphaColor: containsAlphaColor,
 		dispatchAppearanceEvent: dispatchAppearanceEvent,
@@ -405,6 +407,6 @@
 	};
 
 	if ( typeof module === 'object' && module.exports ) {
-		module.exports = root.wcpayAppearance;
+		module.exports = root.wc.woopayments.appearance;
 	}
 } )( typeof window !== 'undefined' ? window : globalThis );

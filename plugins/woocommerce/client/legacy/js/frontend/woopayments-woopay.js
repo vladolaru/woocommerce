@@ -917,7 +917,9 @@
 	// A value the card script reads from the checkout page. It is not on every page this button shows on, and neither
 	// script depends on the other, so it is asked when the request is built, and the stored value answers without it.
 	function readWooPayInitValue( readerName, storedValue ) {
-		var reader = window.wcpayAppearance && window.wcpayAppearance[ readerName ];
+		var appearance =
+			window.wc && window.wc.woopayments && window.wc.woopayments.appearance;
+		var reader = appearance && appearance[ readerName ];
 
 		return ( reader && reader() ) || storedValue;
 	}
@@ -1388,12 +1390,14 @@
 	// True, false, or null while the validation script is not loaded.
 	function isWooPayPhoneValid() {
 		var phoneField = document.getElementById( 'woopay_user_phone_field_full' );
+		var phoneValidation =
+			window.wc && window.wc.woopayments && window.wc.woopayments.phoneValidation;
 
-		if ( ! window.wcWooPaymentsPhoneValidation || ! phoneField ) {
+		if ( ! phoneValidation || ! phoneField ) {
 			return null;
 		}
 
-		return window.wcWooPaymentsPhoneValidation.validatePhoneNumber(
+		return phoneValidation.validatePhoneNumber(
 			normalizeWooPayPhone( phoneField.value )
 		);
 	}

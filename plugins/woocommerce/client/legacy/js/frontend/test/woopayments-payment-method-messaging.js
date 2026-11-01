@@ -197,7 +197,7 @@ describe( 'WooPayments BNPL payment method messaging', () => {
 		delete global.jQuery;
 		delete window.jQuery;
 		delete window.Stripe;
-		delete window.wcpayAppearance;
+		delete window.wc.woopayments.appearance;
 		delete window.wcpayStripeSiteMessaging;
 	} );
 

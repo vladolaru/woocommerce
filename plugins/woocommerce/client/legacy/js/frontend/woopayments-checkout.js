@@ -5,7 +5,8 @@
 	var defaultGatewayId = 'woocommerce_payments';
 	var configObjectPrefix = 'wc_woopayments_checkout_params_';
 	var baseConfig = window.wc_woopayments_checkout_params || {};
-	var appearanceUtils = window.wcpayAppearance;
+	var appearanceUtils =
+		window.wc && window.wc.woopayments && window.wc.woopayments.appearance;
 	// Each WooPayments gateway's config, keyed by gateway ID: a copy of its localized object, which this script never
 	// writes, or one built from the page config for a gateway first rendered after load. Checkout updates merge their
 	// cart values in here (mergeRefreshedPaymentFieldsConfig()).

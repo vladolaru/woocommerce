@@ -172,7 +172,7 @@ describe( 'wc-payment-method-woopayments and the WooPay protocol entry', () => {
 	afterEach( () => {
 		mockCleanup();
 		mockCleanup = () => {};
-		delete window.wcWooPaymentsPhoneValidation;
+		delete window.wc.woopayments.phoneValidation;
 		window.fetch = originalFetch;
 		document.body.innerHTML = '';
 		document.head.innerHTML = '';
@@ -252,7 +252,7 @@ describe( 'wc-payment-method-woopayments and the WooPay protocol entry', () => {
 			'script[src="https://example.test/wc-woopayments-phone-validation.js"]'
 		);
 		expect( script ).not.toBeNull();
-		window.wcWooPaymentsPhoneValidation = {
+		window.wc.woopayments.phoneValidation = {
 			validatePhoneNumber: () => true,
 		};
 		card.fireEvent.load( script );

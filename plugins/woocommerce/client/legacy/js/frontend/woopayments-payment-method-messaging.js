@@ -70,7 +70,9 @@
 	}
 
 	function getStripeElementsOptions( config, location ) {
-		var appearanceUtils = window.wcpayAppearance || null;
+		var appearanceUtils =
+			( window.wc && window.wc.woopayments && window.wc.woopayments.appearance ) ||
+			null;
 		var options = {};
 		var appearance;
 		var fontRules;

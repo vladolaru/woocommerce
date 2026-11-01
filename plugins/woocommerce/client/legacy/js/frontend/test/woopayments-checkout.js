@@ -654,7 +654,7 @@ describe( 'WooPayments checkout', () => {
 				( key ) => key.indexOf( 'wc_woopayments_checkout_params' ) === 0
 			)
 			.forEach( ( key ) => delete window[ key ] );
-		delete window.wcpayAppearance;
+		delete window.wc.woopayments.appearance;
 		delete window.wcpayFraudPreventionToken;
 		delete window.wc_checkout_params;
 		delete window.wc;
@@ -1804,7 +1804,7 @@ describe( 'WooPayments checkout', () => {
 		const getReaders = () => {
 			require( '../woopayments-checkout' );
 
-			return window.wcpayAppearance;
+			return window.wc.woopayments.appearance;
 		};
 
 		beforeEach( () => {
@@ -5592,9 +5592,9 @@ describe( 'WooPayments checkout', () => {
 			expect( listenersOfType( 'change' ) ).toHaveLength( 1 );
 		}
 
-		// Both flags are on and the page lists wc-woopayments-woopay-common, but the file failed to load.
+		// Both flags are on and the page lists wc-woopayments-woopay-common, but the file failed to load. The namespace
+		// itself is always there: the appearance script this one depends on creates it.
 		test.each( [
-			[ 'namespace', () => delete window.wc.woopayments ],
 			[ 'woopay member', () => delete window.wc.woopayments.woopay ],
 		] )( 'costs only the email check when the WooPay protocol %s is absent', async ( description, removeProtocol ) => {
 			removeProtocol();

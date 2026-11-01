@@ -2,7 +2,8 @@
 ( function () {
 	'use strict';
 
-	var appearanceUtils = window.wcpayAppearance;
+	var appearanceUtils =
+		window.wc && window.wc.woopayments && window.wc.woopayments.appearance;
 
 	function hasVisibleBackground( value ) {
 		var color = appearanceUtils.parseColor( value );

@@ -379,7 +379,7 @@ const WOOPAYMENTS_SHARED_CHUNK_ENTRIES = [
 ];
 
 // The WooPayments Stripe Elements appearance utility already ships as the legacy script behind the
-// `wc-woopayments-appearance` handle, which sets `window.wcpayAppearance`. Blocks scripts load it from there
+// `wc-woopayments-appearance` handle, which sets `window.wc.woopayments.appearance`. Blocks scripts load it from there
 // instead of bundling a second copy.
 const isWooPaymentsAppearanceRequest = ( request ) =>
 	/[\\/]woopayments-appearance(\.js)?$/.test( request );
@@ -499,7 +499,7 @@ const getPaymentsConfig = ( options = {} ) => {
 						return 'FingerprintJS';
 					}
 					if ( isWooPaymentsAppearanceRequest( request ) ) {
-						return 'wcpayAppearance';
+						return [ 'wc', 'woopayments', 'appearance' ];
 					}
 					if ( isWooPaymentsWooPayCommonRequest( request ) ) {
 						return WOOPAYMENTS_WOOPAY_COMMON_EXTERNAL;
@@ -600,7 +600,7 @@ const getExtensionsConfig = ( options = {} ) => {
 				// The WooPayments Cart block messaging imports the appearance utility too.
 				dependencyRequestToExternal: ( request ) =>
 					isWooPaymentsAppearanceRequest( request )
-						? 'wcpayAppearance'
+						? [ 'wc', 'woopayments', 'appearance' ]
 						: requestToExternal( request ),
 				dependencyRequestToHandle: ( request ) =>
 					isWooPaymentsAppearanceRequest( request )
