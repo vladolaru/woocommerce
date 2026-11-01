@@ -48,18 +48,22 @@ const getStripeOptions = ( config ) => {
 	return stripeOptions;
 };
 
-// One Stripe instance for the page, built from its fixed messaging config, as client 11.2.0's module-level API object
-// (cart/blocks/product-details.js:28-37), so a cart change adds no Stripe controller frame. Kept per Stripe.js load.
+// One Stripe instance for the page, as client 11.2.0's module-level API object (cart/blocks/product-details.js:28-37),
+// so a cart change adds no Stripe controller frame. A new Stripe.js load, publishable key or option builds a new one.
 let cachedStripe = null;
 
 const getStripe = ( config ) => {
-	if ( cachedStripe?.factory !== window.Stripe ) {
+	const options = getStripeOptions( config );
+	const key = JSON.stringify( [ config.publishableKey, options ] );
+
+	if (
+		cachedStripe?.factory !== window.Stripe ||
+		cachedStripe?.key !== key
+	) {
 		cachedStripe = {
 			factory: window.Stripe,
-			stripe: window.Stripe(
-				config.publishableKey,
-				getStripeOptions( config )
-			),
+			key,
+			stripe: window.Stripe( config.publishableKey, options ),
 		};
 	}
 

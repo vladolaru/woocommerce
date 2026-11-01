@@ -166,6 +166,35 @@ describe( 'WooPayments cart block BNPL messaging', () => {
 		);
 	} );
 
+	it( 'builds a new Stripe instance when the account or locale changes', async () => {
+		const { rerender } = render(
+			<BNPLCartMessaging
+				cart={ { cartTotals: { total_price: '12345' } } }
+				context="woocommerce/cart"
+			/>
+		);
+		await waitFor( () => {
+			expect( mountMessagingElement ).toHaveBeenCalledTimes( 1 );
+		} );
+
+		setMessagingConfig( { accountId: 'acct_other', locale: 'fr' } );
+		rerender(
+			<BNPLCartMessaging
+				cart={ { cartTotals: { total_price: '24690' } } }
+				context="woocommerce/cart"
+			/>
+		);
+		await waitFor( () => {
+			expect( mountMessagingElement ).toHaveBeenCalledTimes( 2 );
+		} );
+
+		expect( window.Stripe ).toHaveBeenCalledTimes( 2 );
+		expect( window.Stripe ).toHaveBeenLastCalledWith( 'pk_test_123', {
+			locale: 'fr',
+			stripeAccount: 'acct_other',
+		} );
+	} );
+
 	it( 'renders nothing outside the cart context', () => {
 		const { container } = render(
 			<BNPLCartMessaging
