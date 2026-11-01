@@ -1830,7 +1830,7 @@ describe( 'wc-payment-method-woopayments', () => {
 		} );
 
 		// The element effect re-runs on the save choice and only updates the element, so the listener must outlive it.
-		it( 'still removes the payment error notice once after the save choice changes', async () => {
+		it( 'still removes the payment error notice once on a card change Stripe reports, after the save choice changes', async () => {
 			const harness = await setUpNewCardPayment();
 			const paymentElement =
 				harness.elementsInstance.create.mock.results[ 0 ].value;

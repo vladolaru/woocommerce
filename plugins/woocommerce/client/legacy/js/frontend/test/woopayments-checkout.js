@@ -1379,7 +1379,7 @@ describe( 'WooPayments checkout', () => {
 	} );
 
 	// The Payment Element's listeners live as long as the element (cx-1): a move into a re-rendered container keeps them.
-	test( 'clears the payment error when the shopper edits the card after ticking save card and a checkout update', async () => {
+	test( 'clears the payment error on a card change Stripe reports, after ticking save card and a checkout update', async () => {
 		const saveCheckbox =
 			'<input id="wc-woocommerce_payments-new-payment-method" type="checkbox" />';
 		const incompleteNumber = 'Your card number is incomplete.';
