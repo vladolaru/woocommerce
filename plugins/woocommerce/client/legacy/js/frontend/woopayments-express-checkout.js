@@ -829,7 +829,7 @@
 	}
 
 	// Client 11.1.0 event-handlers.js:290-302: the whole page is blocked while the wallet sheet is open, so the form
-	// behind it cannot change the sheet's cart. Without jQuery BlockUI on the page both do nothing (register row 238).
+	// behind it cannot change the sheet's cart. Without jQuery BlockUI on the page both do nothing.
 	function blockPage() {
 		if ( typeof $.blockUI === 'function' ) {
 			$.blockUI( {
@@ -953,10 +953,10 @@
 	}
 
 	/**
-	 * The text of an error that may carry notice markup, as client 11.1.0 getErrorMessageFromNotice()
-	 * (express-checkout/utils/error-messages.ts:7-13) gets it, keeping the whole text where the client keeps only the
-	 * first node's. DOMParser builds an inert document: no script runs and no inline handler fires, though the browser
-	 * may still fetch an image or iframe it names. Only the text reaches the page.
+	 * The whole text of an error that may carry notice markup (client 11.1.0 getErrorMessageFromNotice(),
+	 * express-checkout/utils/error-messages.ts:7-13, keeps only the first node's text). DOMParser builds an inert
+	 * document: no script runs and no inline handler fires, though the browser may still fetch an image or iframe it
+	 * names. Only the text reaches the page.
 	 *
 	 * @param {string} notice Error message or notice HTML.
 	 * @return {string} Plain text.
@@ -971,8 +971,8 @@
 	/**
 	 * Client 11.1.0 abortPayment() (shortcode-buttons-express/index.js:186-206): the new error goes into the first
 	 * notices wrapper and the page scrolls to it. The notice uses core's error markup (templates/notices/error.php),
-	 * whose role="alert" has screen readers announce it. Unlike the client, which removes every error on the page
-	 * first (index.js:189), only earlier wallet errors go, and nothing is removed when there is no notices wrapper.
+	 * whose role="alert" has screen readers announce it. Only earlier wallet errors go, and nothing is removed when
+	 * there is no notices wrapper (client 11.1.0 index.js:189 removes every error on the page first).
 	 *
 	 * @param {string} message Error message.
 	 */
@@ -1834,7 +1834,7 @@
 	/**
 	 * Cover the wallet button while its amount is being refreshed, with the overlay WooCommerce paints over the order
 	 * review. Client 11.2.0 shortcode-buttons-express/button-ui.js:21-35; blockUI comes with WooCommerce's cart, checkout
-	 * and product-page scripts, which the client relies on in the same way.
+	 * and product-page scripts.
 	 */
 	function blockExpressButton() {
 		var $container = $( '#wcpay-express-checkout-element' );
@@ -1863,8 +1863,8 @@
 	}
 
 	/**
-	 * Client 11.2.0 shortcode-buttons-express/button-ui.js:41-44, which also shows the container. Native shows it only
-	 * once the wallet reported a payment method, so a browser without one gets no empty button area.
+	 * The container shows only once the wallet reported a payment method, so a browser without one gets no empty button
+	 * area. Client 11.2.0 shortcode-buttons-express/button-ui.js:41-44 also shows the container.
 	 */
 	function unblockExpressButton() {
 		if ( expressButtonAvailable ) {
@@ -1911,9 +1911,9 @@
 			return Promise.resolve();
 		}
 
-		// Earlier wallet errors go when the product changes. Client 11.1.0 removes every error on the page here
-		// (shortcode-buttons-express/index.js:613), WooCommerce's and extensions' included; as in setError(), native removes
-		// only the errors the wallet added.
+		// Earlier wallet errors go when the product changes: as in setError(), only the errors the wallet added.
+		// Client 11.1.0 removes every error on the page here (shortcode-buttons-express/index.js:613), WooCommerce's and
+		// extensions' included.
 		document
 			.querySelectorAll( '.woocommerce-error[' + WALLET_ERROR_ATTRIBUTE + ']' )
 			.forEach( function ( notice ) {
@@ -2246,8 +2246,8 @@
 	/**
 	 * Tell whether the server product data prices what the form would add: the server prices one unit
 	 * (WooPaymentsExpressCheckoutService::get_product_data()), while the quantity field can start above one (a minimum
-	 * quantity, a failed add-to-cart, a browser form restore). Native departure from client 11.1.0, whose first open
-	 * keeps the one-unit payload (shortcode-buttons-express/index.js:87-92, :110-127, :504-512).
+	 * quantity, a failed add-to-cart, a browser form restore). Client 11.1.0's first open keeps the one-unit payload
+	 * (shortcode-buttons-express/index.js:87-92, :110-127, :504-512).
 	 *
 	 * @return {boolean} Whether the button can be priced from the server product data.
 	 */
@@ -2325,8 +2325,8 @@
 
 		// Product Bundles: items bundled by another item are part of its price
 		// (client shortcode-buttons-express/compatibility/wc-product-bundles.js:6-19).
-		// Registered before the Subscriptions filters, as the client imports it
-		// (shortcode-buttons-express/index.js:16-17), so a bundle's recurring price
+		// Registered before the Subscriptions filters (client 11.1.0
+		// shortcode-buttons-express/index.js:16-17), so a bundle's recurring price
 		// is split over its parent only.
 		hooks.addFilter(
 			'wcpay.express-checkout.map-line-items',
@@ -3505,7 +3505,7 @@
 		}
 
 		// The container starts in the stylesheet's hidden state (no `is-ready`) and the separator in the state the
-		// server rendered (hidden unless a WooPay button shows), as on the client.
+		// server rendered (hidden unless a WooPay button shows).
 		initOrderAttribution();
 
 		if ( isProduct() ) {
@@ -3529,7 +3529,7 @@
 				}
 			);
 
-			// Native departure from the client: WooCommerce fires the change above before it enables the add-to-cart
+			// WooCommerce fires the change above before it enables the add-to-cart
 			// button for a variation chosen on a cleared form (it does so on `show_variation`), so the change finds
 			// the form blocked and skips the re-price. Re-price that change once WooCommerce shows the variation.
 			$( document.body ).on( 'show_variation', function () {
@@ -3542,8 +3542,8 @@
 			} );
 
 			// A quantity change blocks the button at once, so it cannot be clicked at a stale amount, and re-prices the
-			// wallet 250ms after the last one (client wc-product-page.js:64-83, delegated through jQuery). Native
-			// departure: also on `change`, the only event WooCommerce's quantity steppers fire. A quantity already
+			// wallet 250ms after the last one (client wc-product-page.js:64-83, delegated through jQuery). It also
+			// listens to `change`, the only event WooCommerce's quantity steppers fire. A quantity already
 			// priced (the page-load value, or the last change) is skipped, so typing and then leaving the field re-prices once.
 			debouncedUpdateButtonData = debounce( 250, updateButtonData );
 			pricedQuantities = new WeakMap();

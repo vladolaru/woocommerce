@@ -18,7 +18,8 @@
 
 	// Sentinel submitted in place of a payment method when client-side
 	// payment method creation failed, so the server records a failed order.
-	// Matches the WooPayments plugin's Payment_Information::PAYMENT_METHOD_ERROR.
+	// The gateway checks for the same value
+	// (WooPaymentsGateway::PAYMENT_METHOD_ERROR_SENTINEL).
 	var PAYMENT_METHOD_ERROR_SENTINEL =
 		'woocommerce_payments_payment_method_error';
 	// The gateway whose config is current, and the gateways whose checkout submit handler is registered.
@@ -35,8 +36,8 @@
 	// (classic/payment-processing.js:40-49). Each entry holds the gateway's
 	// `stripe` instance, `isPlatformStripe`, its `elements` group, the
 	// `paymentElement`, the `container` it is mounted in, and:
-	// - `loadError`: the `loaderror` the element reported. The client refuses
-	//   to submit while it is set; without it a shopper whose payment form
+	// - `loadError`: the `loaderror` the element reported. The submit is
+	//   refused while it is set; without it a shopper whose payment form
 	//   failed to load presses the button and gets no message at all.
 	// - `ready`: settles when the element reports `ready` (true) or
 	//   `loaderror` (false). Stripe.js can leave `elements.submit()` pending
@@ -254,11 +255,11 @@
 
 	// Client 11.1.0 includes/class-wc-payments-checkout.php:353-373 merges the refreshed paymentMethodsConfig, currency
 	// and cartTotal into the page config from a script in the update_order_review fragment, before core re-inits the
-	// payment methods. Native reads them from the payment fields WooCommerce re-renders in that fragment
+	// payment methods. Here they are read from the payment fields WooCommerce re-renders in that fragment
 	// (data-wcpay-config, one per WooPayments gateway, which carries only those three keys), every time a config is
 	// about to be read, into the gateway's entry in gatewayConfigs. A gateway first rendered after the page loaded gets
-	// the page config with its own gateway ID and Stripe type, from the form's method type as the client reads it
-	// (client/checkout/utils/upe.js:45-54).
+	// the page config with its own gateway ID and Stripe type, from the form's method type (as client 11.1.0 reads it,
+	// client/checkout/utils/upe.js:45-54).
 	function mergeRefreshedPaymentFieldsConfig() {
 		document
 			.querySelectorAll( '.woopayments-checkout-form[data-wcpay-config]' )
@@ -764,8 +765,8 @@
 		);
 	}
 
-	// Betas the reference client requests on every connected-account
-	// Stripe instance; the Link autofill modal only works with Link on.
+	// Betas every connected-account Stripe instance requests; the Link
+	// autofill modal only works with Link on.
 	function getStripeBetas( gatewayConfig ) {
 		var betas = [ 'card_country_event_beta_1' ];
 
@@ -798,7 +799,7 @@
 		} );
 	}
 
-	// Intent confirmation always runs on the connected account (client confirmIntent() uses getStripe( true )).
+	// Intent confirmation always runs on the connected account (client 11.1.0 confirmIntent() uses getStripe( true )).
 	function getAccountStripe() {
 		accountStripe = accountStripe || createAccountStripe();
 		return accountStripe;
@@ -1025,10 +1026,10 @@
 	}
 
 	function getHiddenBillingFields( enabledBillingFields ) {
-		// A missing map means a config predating enabledBillingFields: keep the
-		// previous all-hidden behavior. A present-but-empty map is a store with
-		// every billing field disabled: like the reference client, every field
-		// resolves to 'auto' so the Payment Element collects the details itself.
+		// Without the map (a config filter can drop it), every field stays
+		// hidden. A present-but-empty map is a store with every billing field
+		// disabled: every field resolves to 'auto' so the Payment Element
+		// collects the details itself.
 		if ( ! enabledBillingFields ) {
 			return {
 				name: 'never',
@@ -1724,8 +1725,8 @@
 			'wcpay-payment-method-error-type',
 			error && error.type ? error.type : ''
 		);
-		// The buyer *device* fingerprint. The WooPayments plugin sends the
-		// FingerprintJS visitor ID here; the Stripe card fingerprint is a
+		// The buyer *device* fingerprint: the FingerprintJS visitor ID goes
+		// here; the Stripe card fingerprint is a
 		// different signal entirely and must not be posted under this name.
 		ensureHiddenField( form, 'wcpay-fingerprint', deviceFingerprint || '' );
 		ensureHiddenField(
@@ -2288,7 +2289,7 @@
 	}
 
 	// A Payment Element that failed to load is rebuilt when the shopper selects its method again, so the
-	// reselection retries the load, as rebuilding on every method switch used to. Client 11.1.0 never retries.
+	// reselection retries the load; client 11.1.0 never retries.
 	// Keyed on the selected input, not the current config, which falls back to card for other gateways. The old
 	// error leaves the gateway's box first; a new `loaderror` writes it back.
 	function resetFailedPaymentElement() {
@@ -2538,8 +2539,8 @@
 			showPaymentElementLoadError( component );
 			settleReady( false );
 		} );
-		// An edit in the selected element clears the payment error its validation left in the box, which client
-		// 11.2.0 keeps until the next submit. A load error shares the box and stays.
+		// An edit in the selected element clears the payment error its validation left in the box, which
+		// client 11.2.0 keeps until the next submit. A load error shares the box and stays.
 		component.paymentElement.on( 'change', function () {
 			if (
 				paymentElements[ getSelectedGatewayId() ] === component &&
@@ -2557,8 +2558,8 @@
 		var component = paymentElements[ selection.gatewayId ];
 
 		if ( ! component ) {
-			// No Payment Element without the fingerprint: the client's submit refuses then too
-			// (classic/payment-processing.js:449-465). Retry the fingerprint, which shows its error again.
+			// No Payment Element without the fingerprint, so there is nothing to submit (client 11.2.0
+			// classic/payment-processing.js:449-465). Retry the fingerprint, which shows its error again.
 			if ( ! isDeviceFingerprintReady ) {
 				initializeStripeElement();
 				return false;
@@ -2633,7 +2634,7 @@
 		// Let WooCommerce's own validation surface missing billing fields
 		// instead of creating an orphan PaymentMethod first. Only the checkout
 		// form carries billing fields: the pay-for-order and change-payment
-		// forms must still tokenize the card, as the plugin does.
+		// forms must still tokenize the card.
 		if ( isCheckoutForm && isBillingInformationMissing() ) {
 			return true;
 		}
@@ -3043,7 +3044,7 @@
 
 	/**
 	 * Enqueue the anti-fraud scripts described by the localized fraud-services
-	 * config, mirroring the WooPayments client plugin's fraud-scripts loader.
+	 * config.
 	 *
 	 * Idempotent across scripts sharing the page: the Sift snippet must push
 	 * its account, identity and pageview commands exactly once.
@@ -3080,8 +3081,7 @@
 		}
 
 		// Stripe.js is already a registered dependency of this script; the
-		// injection below only covers the config-driven case where it is not,
-		// matching the plugin's loader.
+		// injection below only covers the config-driven case where it is not.
 		if (
 			fraudConfig.stripe &&
 			! document.querySelector( '[src^="https://js.stripe.com/v3"]' )
@@ -3096,7 +3096,7 @@
 	/**
 	 * Compute the buyer *device* fingerprint the platform's risk rules score
 	 * on, as client 11.2.0 utils/fingerprint.js getFingerprint(). A failed
-	 * attempt is retried by the next call, as the client calls it per mount.
+	 * attempt is retried by the next call.
 	 */
 	function getDeviceFingerprint() {
 		if ( deviceFingerprintRequest ) {
@@ -3243,8 +3243,8 @@
 			} );
 	}
 
-	// The plugin's resolveWoopayAppearance(): server-computed appearance
-	// first, DOM extraction on the shortcode checkout as the fallback.
+	// Server-computed appearance first, DOM extraction on the shortcode
+	// checkout as the fallback.
 	function getWooPayEmailInputAppearance() {
 		if ( ! baseConfig.isWooPayGlobalThemeSupportEnabled ) {
 			return null;
@@ -3259,8 +3259,7 @@
 			: null;
 	}
 
-	// init_woopay sends the shortcode checkout's own appearance and fonts, read from the page, as the plugin's
-	// initWooPay() does.
+	// init_woopay sends the shortcode checkout's own appearance and fonts, read from the page.
 	function getWooPayInitAppearance() {
 		if ( ! baseConfig.isWooPayGlobalThemeSupportEnabled ) {
 			return null;
@@ -3318,7 +3317,7 @@
 					checkoutForm.addEventListener( 'submit', callback );
 				}
 			},
-			// Client 11.1.0 reads window.woopayCheckout; native localizes the flag with the WooPay config.
+			// The flag is localized with the WooPay config; client 11.1.0 reads window.woopayCheckout.
 			isSaveMyInfoPreChecked: function () {
 				return (
 					window.wc_woopayments_woopay_params &&
@@ -3336,8 +3335,8 @@
 			return;
 		}
 
-		// The plugin resolves the Tracks identity before wiring anything so
-		// the OTP URL always carries it.
+		// The Tracks identity resolves before anything is wired, so the OTP
+		// URL always carries it.
 		getTracksIdentity().then( function ( identity ) {
 			getWooPayProtocol().handleEmailInput(
 				getWooPayEmailInputArgs(),

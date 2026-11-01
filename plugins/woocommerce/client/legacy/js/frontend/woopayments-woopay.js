@@ -101,8 +101,8 @@
 		return field && field.value ? field.value : config.woopaySessionEmail || '';
 	}
 
-	// Port of the plugin's appendRedirectionParams() (client 11.1.0
-	// woopay/utils.js:48-63): on an order's pay page WooPay needs the order,
+	// Client 11.1.0 appendRedirectionParams()
+	// (woopay/utils.js:48-63): on an order's pay page WooPay needs the order,
 	// its key and the billing email to pay that order instead of a cart.
 	function appendRedirectionParams( woopayUrl ) {
 		var url;
@@ -495,7 +495,7 @@
 
 		request = fetchDirectCheckoutSession();
 		prefetchedSession = request;
-		// A failed prefetch fails a click already waiting on it, as on the client; the next click asks again.
+		// A failed prefetch fails a click already waiting on it; the next click asks again.
 		request.catch( function () {
 			if ( prefetchedSession === request ) {
 				prefetchedSession = null;
@@ -505,7 +505,7 @@
 
 	// Client 11.2.0 direct-checkout/index.js:261-277 hooks the three Blocks cart actions. A quantity change and a removal
 	// fire before the Store API answers, so they only drop the session; the cart's sync event that follows the answer
-	// prefetches again. The client misses the Mini-Cart's sync event and the classic cart events, which these also cover.
+	// prefetches again. These also cover the Mini-Cart's sync event and the classic cart events.
 	function startSessionPrefetch() {
 		var hooks = window.wp && window.wp.hooks;
 		var namespace = 'wc-woopayments/direct-checkout';
@@ -624,7 +624,7 @@
 			}
 
 			// The cookie can arrive after this listener attaches, and this one listener outlives the links a cart update
-			// replaces, where the client's listeners go with them. So can the check's answer that the shopper is logged out.
+			// replaces. So can the check's answer that the shopper is logged out.
 			if ( ! shouldRunDirectCheckout() || isKnownLoggedOutOfWooPay ) {
 				return;
 			}
@@ -709,9 +709,9 @@
 		}
 	}
 
-	// The third-party cookie check's answer from an earlier page in this tab, or null. The client asks on every page view
-	// (client 11.2.0 direct-checkout/index.js:254-255), loading a hidden WooPay page each time; the answer does not change
-	// between pages, so a tab asks once.
+	// The third-party cookie check's answer from an earlier page in this tab, or null. The check loads a hidden WooPay
+	// page and its answer does not change between pages, so a tab asks once (client 11.2.0
+	// direct-checkout/index.js:254-255 asks on every page view).
 	function readStoredThirdPartyCookieCheck() {
 		var storage = getSessionStorage();
 		var value = storage ? storage.getItem( thirdPartyCookieCheckKey ) : null;
@@ -762,8 +762,8 @@
 
 			if ( loggedIn || loggedIn === null ) {
 				attachDirectCheckoutListeners();
-				// Only a true answer: it means WooPay's login cookie reached the connect page, which the client's check
-				// stands in for (client 11.2.0 direct-checkout/index.js:34-36).
+				// Only a true answer: it means WooPay's login cookie reached the connect page, which the third-party
+				// cookie check stands in for (client 11.2.0 direct-checkout/index.js:34-36).
 				if ( loggedIn ) {
 					startSessionPrefetch();
 				}
@@ -835,8 +835,8 @@
 			} );
 	}
 
-	// The plugin's request(): nested objects become bracketed form keys and
-	// empty values are left out.
+	// Nested objects become bracketed form keys and empty values are left
+	// out.
 	function appendFormData( formData, data, prefix ) {
 		Object.keys( data ).forEach( function ( key ) {
 			var value = data[ key ];
@@ -852,8 +852,8 @@
 		return formData;
 	}
 
-	// The plugin's express-button showErrorMessage(): a Blocks notice on the
-	// cart and checkout blocks, a server-rendered WooCommerce notice elsewhere.
+	// A Blocks notice on the cart and checkout blocks, a server-rendered
+	// WooCommerce notice elsewhere.
 	function showExpressErrorMessage( context, message ) {
 		if (
 			window.wcSettings &&
@@ -983,9 +983,9 @@
 	function expressCheckoutIframe( context, emailSelector ) {
 		return getTracksIdentity().then( function ( identity ) {
 			var emailInput = document.querySelector( emailSelector );
-			// The order-pay page has no email field; client 11.1.0 takes the
-			// order's email there (express-checkout-iframe.js:22-33). Native
-			// takes the billing email the page may give this visitor.
+			// The order-pay page has no email field, so the billing email the
+			// page may give this visitor is used; client 11.1.0 takes the
+			// order's email there (express-checkout-iframe.js:22-33).
 			var email =
 				config.pay_for_order === 'true'
 					? config.billing_email
@@ -1072,8 +1072,7 @@
 		} );
 
 		if ( request.fail ) {
-			// The client's fetch reads a JSON error body, such as the 503 for a missing blog ID, as an answer without a
-			// session.
+			// A JSON error body, such as the 503 for a missing blog ID, counts as an answer without a session.
 			request.fail( function ( jqXHR ) {
 				if ( jqXHR && jqXHR.responseJSON ) {
 					isWooPayOtpFlowNext = true;
@@ -1356,8 +1355,8 @@
 		);
 	}
 
-	// A hidden offer posts nothing with the order. Consent travels with the form only, as on the client's classic
-	// checkout (checkout-page-save-user.js:158-160 sends session requests from Blocks only), so nothing else needs clearing.
+	// A hidden offer posts nothing with the order. Consent travels with the form only, so nothing else needs clearing
+	// (client 11.1.0 checkout-page-save-user.js:158-160 sends session requests from Blocks only).
 	function updateSaveUserVisibility() {
 		var container = document.getElementById( 'wcpay-woopay-save-user' );
 		var isApplicable = isSaveUserOfferApplicable();
@@ -1543,7 +1542,7 @@
 			escapeHtml( config.woopayPhoneLabel ) +
 			'</label>' +
 			'<input type="tel" id="woopay_user_phone_field_full" autocomplete="tel" aria-describedby="validate-error-invalid-woopay-phone-number" />' +
-			// The number WooPay receives, with its country code, as the client's phone input posts it.
+			// The number WooPay receives, with its country code.
 			'<input type="hidden" name="woopay_user_phone_field[full]" />' +
 			'<p id="validate-error-invalid-woopay-phone-number" class="woopay-phone-number-error" role="alert" hidden>' +
 			escapeHtml( __( 'Please enter a valid mobile phone number.', 'woocommerce' ) ) +
