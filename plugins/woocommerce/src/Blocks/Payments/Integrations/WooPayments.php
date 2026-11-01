@@ -67,7 +67,7 @@ final class WooPayments extends AbstractPaymentMethodType {
 	private WooPaymentsCheckoutAssets $checkout_assets;
 
 	/**
-	 * Native WooPayments provider.
+	 * WooPayments provider.
 	 *
 	 * @var WooPaymentsProvider
 	 */
@@ -120,7 +120,7 @@ final class WooPayments extends AbstractPaymentMethodType {
 	 *
 	 * @param Api                               $asset_api                Asset API.
 	 * @param WooPaymentsGateway                $payment_gateway          The WooPayments gateway this payment method stands for.
-	 * @param WooPaymentsProvider               $provider                 Native WooPayments provider.
+	 * @param WooPaymentsProvider               $provider                 WooPayments provider.
 	 * @param WooPaymentsCheckoutAssets         $checkout_assets          Checkout scripts and their config.
 	 * @param Eligibility                       $woopay_eligibility       WooPay eligibility rules.
 	 * @param WooPaymentsExpressCheckoutService $express_checkout_service Express checkout service.
@@ -153,8 +153,8 @@ final class WooPayments extends AbstractPaymentMethodType {
 	 * Enqueue the WooPayments Blocks styles registered for the Cart or Checkout block being rendered.
 	 *
 	 * The block registers them just before, when it asks for the payment method script handles. Following the render
-	 * covers a block from a page template, and keeps the styles off classic checkout, cart and product pages, where client
-	 * 11.2.0 loads them (class-wc-payments-blocks-payment-method.php:55).
+	 * covers a block from a page template, and keeps the styles off classic checkout, cart and product pages, where
+	 * client 11.2.0 loads them (class-wc-payments-blocks-payment-method.php:55).
 	 *
 	 * @internal
 	 */
@@ -304,7 +304,8 @@ final class WooPayments extends AbstractPaymentMethodType {
 	/**
 	 * Get the card gateway's support features, which every WooPayments Blocks method shares, as in client 11.1.0.
 	 *
-	 * The card gateway exists even when card is not offered, as the client's does.
+	 * The card gateway exists even when card is not offered, so the other methods read their features from it; with no
+	 * card gateway, nothing is supported.
 	 *
 	 * @return string[]
 	 */

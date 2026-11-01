@@ -925,7 +925,7 @@ class SessionController implements RegisterHooksInterface {
 	 * @return array<string,mixed>
 	 */
 	private function get_classic_woopay_config( array $config ): array {
-		// The shared keys go right after the WooPay flags, where this object has always carried them.
+		// The shared keys go right after the WooPay flags.
 		$flags_end = array_search( 'forceNetworkSavedCards', array_keys( $config ), true );
 		$flags_end = false === $flags_end ? count( $config ) : $flags_end + 1;
 
@@ -1027,8 +1027,8 @@ class SessionController implements RegisterHooksInterface {
 	 * @return string
 	 */
 	private function get_current_button_context(): string {
-		// Order-pay first, so a product shortcode on the checkout page cannot make the order's button a product button. Client
-		// 11.1.0 get_button_context() checks the product first (class-wc-payments-express-checkout-button-helper.php:450-468)
+		// Order-pay first, so a product shortcode on the checkout page cannot make the order's button a product button.
+		// Client 11.1.0 get_button_context() checks the product first (class-wc-payments-express-checkout-button-helper.php:450-468)
 		// but adds the order to its config whatever the context (express checkout display handler :184-222).
 		if ( $this->is_order_pay_surface() ) {
 			return 'pay_for_order';

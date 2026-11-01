@@ -33,7 +33,7 @@ final class WooPaymentsBlocksPaymentMethodsController implements RegisterHooksIn
 	private WooPaymentsSetupTier $setup_tier;
 
 	/**
-	 * Native WooPayments provider.
+	 * WooPayments provider.
 	 *
 	 * @var WooPaymentsProvider
 	 */
@@ -80,7 +80,7 @@ final class WooPaymentsBlocksPaymentMethodsController implements RegisterHooksIn
 	 * @internal
 	 *
 	 * @param WooPaymentsSetupTier              $setup_tier               Setup tier store.
-	 * @param WooPaymentsProvider               $provider                 Native WooPayments provider.
+	 * @param WooPaymentsProvider               $provider                 WooPayments provider.
 	 * @param WooPaymentsCheckoutAssets         $checkout_assets          Checkout scripts and their config.
 	 * @param Eligibility                       $woopay_eligibility       WooPay eligibility rules.
 	 * @param WooPaymentsExpressCheckoutService $express_checkout_service Express checkout service.
