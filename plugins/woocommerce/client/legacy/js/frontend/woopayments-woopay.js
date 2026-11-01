@@ -23,6 +23,9 @@
 	var thirdPartyCookieCheckKey = 'wc_woopay_third_party_cookies';
 	var hasPhoneForMobileEnter = false;
 	var isWooPayUser = false;
+	// The shopper's save my info choice and typed phone, null until they make one. A checkout update that replaces the
+	// payment section renders the fields again from these instead of the pre-check and the billing phone.
+	var saveUserChoice = { checked: null, phone: null };
 	var proceedToCheckoutSelector =
 		'.wc-proceed-to-checkout .checkout-button,' +
 		'.wp-block-woocommerce-proceed-to-checkout-block,' +
@@ -1574,7 +1577,10 @@
 			'input[name="woopay_viewport"]'
 		);
 
-		checkbox.checked = !! config.PRE_CHECK_SAVE_MY_INFO;
+		checkbox.checked =
+			null === saveUserChoice.checked
+				? !! config.PRE_CHECK_SAVE_MY_INFO
+				: saveUserChoice.checked;
 		fields.hidden = ! checkbox.checked;
 		// Client 11.1.0 checkout-page-save-user.js:118-124: the checkout page, not the browser URL.
 		sourceField.value = config.woopaySourceUrl || '';
@@ -1589,6 +1595,9 @@
 		// Client 11.1.0 checkout-page-save-user.js:93-111, :225-232: the number starts from the billing phone.
 		billingPhoneField = document.getElementById( 'billing_phone' );
 		phoneField.value = billingPhoneField ? billingPhoneField.value : '';
+		if ( null !== saveUserChoice.phone ) {
+			phoneField.value = saveUserChoice.phone;
+		}
 		syncWooPayPhone();
 
 		function validateWhenOptedIn() {
@@ -1602,6 +1611,7 @@
 		}
 
 		checkbox.addEventListener( 'change', function () {
+			saveUserChoice.checked = checkbox.checked;
 			fields.hidden = ! checkbox.checked;
 			recordUserEvent( 'checkout_save_my_info_click', {
 				status: checkbox.checked ? 'checked' : 'unchecked',
@@ -1609,7 +1619,10 @@
 			validateWhenOptedIn();
 			updateWooPayPhoneError();
 		} );
-		phoneField.addEventListener( 'input', syncWooPayPhone );
+		phoneField.addEventListener( 'input', function () {
+			saveUserChoice.phone = phoneField.value;
+			syncWooPayPhone();
+		} );
 		phoneField.addEventListener( 'blur', function () {
 			syncWooPayPhone();
 			updateWooPayPhoneError();

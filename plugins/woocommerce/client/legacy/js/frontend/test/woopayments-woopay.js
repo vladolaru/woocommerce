@@ -1540,6 +1540,61 @@ describe( 'WooPayments WooPay checkout', () => {
 		expect( getSaveUserPosts() ).toEqual( [] );
 	} );
 
+	// WooCommerce replaces the payment section when a checkout update changes it (checkout.js:777-787), which takes the
+	// save my info fields with it; updated_checkout then renders them again.
+	const refreshPaymentSection = () => {
+		getSaveUserContainer().remove();
+		bodyEventHandlers.updated_checkout();
+	};
+
+	test( 'keeps save my info unchecked after a checkout update when the shopper unchecked the pre-checked box', () => {
+		require( '../woopayments-woopay' );
+		const saveCheckbox = document.querySelector(
+			'input[name="save_user_in_woopay"]'
+		);
+		saveCheckbox.checked = false;
+		saveCheckbox.dispatchEvent( new window.Event( 'change', { bubbles: true } ) );
+
+		refreshPaymentSection();
+
+		expect(
+			document.querySelector( 'input[name="save_user_in_woopay"]' ).checked
+		).toBe( false );
+		expect( getPostedSaveUserFields() ).not.toContain( 'save_user_in_woopay' );
+	} );
+
+	test( 'keeps the save my info opt-in and the typed phone after a checkout update', () => {
+		window.wc_woopayments_woopay_params.PRE_CHECK_SAVE_MY_INFO = false;
+		document
+			.querySelector( 'form.checkout' )
+			.insertAdjacentHTML(
+				'afterbegin',
+				'<input id="billing_phone" value="(201) 555-0999" />'
+			);
+		require( '../woopayments-woopay' );
+		const saveCheckbox = document.querySelector(
+			'input[name="save_user_in_woopay"]'
+		);
+		saveCheckbox.checked = true;
+		saveCheckbox.dispatchEvent( new window.Event( 'change', { bubbles: true } ) );
+		const phoneField = document.getElementById( 'woopay_user_phone_field_full' );
+		phoneField.value = '(201) 555-0123';
+		phoneField.dispatchEvent( new window.Event( 'input', { bubbles: true } ) );
+
+		refreshPaymentSection();
+
+		expect(
+			document.querySelector( 'input[name="save_user_in_woopay"]' ).checked
+		).toBe( true );
+		expect(
+			document.getElementById( 'woopay_user_phone_field_full' ).value
+		).toBe( '(201) 555-0123' );
+		expect( getPostedCheckoutFields() ).toMatchObject( {
+			save_user_in_woopay: 'true',
+			'woopay_user_phone_field[full]': '+12015550123',
+		} );
+	} );
+
 	test( 'shows the WooPay phone error for an invalid number without stopping the order', () => {
 		// Stand-in for the validation script (phone-validation.js, core's validatePhoneNumber).
 		window.wc.woopayments.phoneValidation = {
