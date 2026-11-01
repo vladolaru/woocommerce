@@ -273,9 +273,9 @@
 		);
 	}
 
-	// Client 11.1.0's name (woopay-express-checkout-button.js:124): when it answers no, it also shows the error and ends
-	// the WooPay request.
-	function canAddProductToCart() {
+	// Shows the error and ends the WooPay request when it answers no (client 11.2.0
+	// woopay-express-checkout-button.js:124).
+	function ensureProductCanBeAdded() {
 		var form = getProductFormElement();
 		var button;
 
@@ -412,9 +412,6 @@
 				!! parsedUrl.searchParams.get( 'platform_checkout_key' )
 			);
 		} catch ( error ) {
-			if ( error ) {
-				return false;
-			}
 			return false;
 		}
 	}
@@ -1176,7 +1173,7 @@
 
 		deleteSkipWooPayCookie();
 
-		if ( ! canAddProductToCart() ) {
+		if ( ! ensureProductCanBeAdded() ) {
 			return;
 		}
 

@@ -211,6 +211,7 @@ const getWooPaySessionData = async () => {
 	);
 	appendWooPayRequestValue( body, 'font_rules', settings.woopayFontRules );
 	body.append( 'email', getWooPayEmail() );
+	// The Blocks config carries no order key or billing email, so these go empty; orderId is printed only on order-pay.
 	body.append( 'order_id', settings.order_id || '' );
 	body.append( 'key', settings.key || '' );
 	body.append( 'billing_email', settings.billing_email || '' );

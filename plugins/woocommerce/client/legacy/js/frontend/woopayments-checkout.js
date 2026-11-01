@@ -3080,8 +3080,9 @@
 			}
 		}
 
-		// Stripe.js is already a registered dependency of this script; the
-		// injection below only covers the config-driven case where it is not.
+		// Stripe.js is a dependency of this script, so the check below finds
+		// it here; the branch keeps the fraud-services shape the Blocks loader
+		// shares (fraud-scripts.js).
 		if (
 			fraudConfig.stripe &&
 			! document.querySelector( '[src^="https://js.stripe.com/v3"]' )

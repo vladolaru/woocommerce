@@ -97,7 +97,7 @@ export const handleEmailInput = ( args, woopayEmailInput, tracksUserId ) => {
 	}
 
 	// Switches the iframe header for the viewport, tells WooPay, and keeps page scrolling locked while the iframe is
-	// open (client 11.1.0 email-input-iframe.js:85). The header default must match the platform's.
+	// open (client 11.2.0 email-input-iframe.js:85). The header default must match the platform's.
 	let iframeHeaderValue = true;
 	const syncIframeHeader = () => {
 		if (
