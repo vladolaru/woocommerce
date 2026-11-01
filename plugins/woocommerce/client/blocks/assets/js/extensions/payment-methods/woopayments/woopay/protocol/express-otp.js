@@ -65,7 +65,7 @@ export const openExpressOtpIframe = ( args, context, email, tracksUserId ) => {
 
 	// Tracks the iframe header state; the default must match the platform's.
 	let iframeHeaderValue = true;
-	const getWindowSize = () => {
+	const syncIframeHeader = () => {
 		if (
 			( FULL_SCREEN_MODAL_BREAKPOINT <= window.innerWidth &&
 				iframeHeaderValue ) ||
@@ -104,8 +104,8 @@ export const openExpressOtpIframe = ( args, context, email, tracksUserId ) => {
 
 		sendSessionToOtpIframe( args, iframe );
 
-		getWindowSize();
-		window.addEventListener( 'resize', getWindowSize );
+		syncIframeHeader();
+		window.addEventListener( 'resize', syncIframeHeader );
 
 		setPopoverPosition();
 		window.addEventListener( 'resize', setPopoverPosition );
@@ -125,7 +125,7 @@ export const openExpressOtpIframe = ( args, context, email, tracksUserId ) => {
 	iframeWrapper.insertBefore( closeButton, null );
 
 	const closeIframe = () => {
-		window.removeEventListener( 'resize', getWindowSize );
+		window.removeEventListener( 'resize', syncIframeHeader );
 		window.removeEventListener( 'resize', setPopoverPosition );
 		window.removeEventListener( 'pageshow', onPageShow );
 		window.removeEventListener( 'message', onMessage );

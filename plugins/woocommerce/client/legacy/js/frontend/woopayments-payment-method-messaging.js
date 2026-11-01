@@ -205,7 +205,7 @@
 		return paymentMessageElement;
 	}
 
-	function bindProductEvents( config, paymentMessageElement ) {
+	function bindMessagingEvents( config, paymentMessageElement ) {
 		var quantityInput = $( '.quantity input[type=number]' );
 		var productCurrency = getProductCurrency( config );
 		var hasVariations =
@@ -344,7 +344,7 @@
 
 		function mountAndBind() {
 			paymentMessageElement = initializeBnplSiteMessaging( config );
-			bindProductEvents( config, paymentMessageElement );
+			bindMessagingEvents( config, paymentMessageElement );
 		}
 
 		// Client 11.1.0 product-details/bnpl-site-messaging/index.js:81 awaits api.getStripe(), which waits for Stripe.js.

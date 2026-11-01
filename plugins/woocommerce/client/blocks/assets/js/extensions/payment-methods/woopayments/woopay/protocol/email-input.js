@@ -96,10 +96,10 @@ export const handleEmailInput = ( args, woopayEmailInput, tracksUserId ) => {
 		document.cookie = `skip_woopay=1; path=/; expires=${ followingDay.toUTCString() }`;
 	}
 
-	// Client 11.1.0's name (email-input-iframe.js:85): it switches the iframe header for the viewport, tells WooPay,
-	// and keeps page scrolling locked while the iframe is open. The header default must match the platform's.
+	// Switches the iframe header for the viewport, tells WooPay, and keeps page scrolling locked while the iframe is
+	// open (client 11.1.0 email-input-iframe.js:85). The header default must match the platform's.
 	let iframeHeaderValue = true;
-	const getWindowSize = () => {
+	const syncIframeHeader = () => {
 		if (
 			( FULL_SCREEN_MODAL_BREAKPOINT <= window.innerWidth &&
 				iframeHeaderValue ) ||
@@ -180,8 +180,8 @@ export const handleEmailInput = ( args, woopayEmailInput, tracksUserId ) => {
 
 		sendSessionToOtpIframe( args, iframe );
 
-		getWindowSize();
-		window.addEventListener( 'resize', getWindowSize );
+		syncIframeHeader();
+		window.addEventListener( 'resize', syncIframeHeader );
 
 		setPopoverPosition();
 		window.addEventListener( 'resize', setPopoverPosition );
@@ -223,7 +223,7 @@ export const handleEmailInput = ( args, woopayEmailInput, tracksUserId ) => {
 			iframeWrapper.ownerDocument.activeElement
 		);
 
-		window.removeEventListener( 'resize', getWindowSize );
+		window.removeEventListener( 'resize', syncIframeHeader );
 		window.removeEventListener( 'resize', setPopoverPosition );
 		document.removeEventListener( 'focusin', onFocusIn );
 
