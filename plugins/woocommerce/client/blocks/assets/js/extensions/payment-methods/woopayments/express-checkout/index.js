@@ -65,7 +65,7 @@ const EXPRESS_METHOD_TO_PAYMENT_METHOD_TYPE = {
 const SHIPPING_RATES_UPPER_LIMIT_COUNT = 9;
 
 const availabilityCache = new Map();
-let availabilityStripe = null;
+let expressStripe = null;
 
 const getTrackingSettings = () => ( {
 	...settings,
@@ -552,16 +552,18 @@ const getStripeBetas = () =>
 		? [ 'card_country_event_beta_1', 'link_autofill_modal_beta_1' ]
 		: [ 'card_country_event_beta_1' ];
 
+// One Stripe instance for the availability probes and every button mount, so a remount after a checkout update adds no
+// Stripe controller frame (client 11.2.0 checkout/api/index.js:79-112, loadStripeForExpressCheckout() at :120-131).
 const getStripe = () => {
-	if ( availabilityStripe ) {
-		return availabilityStripe;
+	if ( expressStripe ) {
+		return expressStripe;
 	}
 
 	if ( ! window.Stripe || ! params?.stripe?.publishableKey ) {
 		return null;
 	}
 
-	availabilityStripe = window.Stripe( params.stripe.publishableKey, {
+	expressStripe = window.Stripe( params.stripe.publishableKey, {
 		locale: params.stripe.locale || 'auto',
 		...( params.stripe.accountId
 			? { stripeAccount: params.stripe.accountId }
@@ -569,7 +571,7 @@ const getStripe = () => {
 		betas: getStripeBetas(),
 	} );
 
-	return availabilityStripe;
+	return expressStripe;
 };
 
 const checkAvailablePaymentMethods = ( cart ) => {
@@ -1253,13 +1255,7 @@ const ExpressCheckoutContent = ( {
 
 		initOrderAttribution();
 
-		stripeRef.current = window.Stripe( params.stripe.publishableKey, {
-			locale: params.stripe.locale || 'auto',
-			...( params.stripe.accountId
-				? { stripeAccount: params.stripe.accountId }
-				: {} ),
-			betas: getStripeBetas(),
-		} );
+		stripeRef.current = getStripe();
 		elementsRef.current = stripeRef.current.elements(
 			getStripeElementsOptions( billing, getCurrentCart() )
 		);
@@ -1656,7 +1652,7 @@ const getExpressPaymentMethod = ( method ) => {
 
 const registerWooPaymentsExpressCheckout = () => {
 	availabilityCache.clear();
-	availabilityStripe = null;
+	expressStripe = null;
 
 	if (
 		Array.isArray( params.enabled_methods ) &&

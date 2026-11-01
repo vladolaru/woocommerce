@@ -544,7 +544,11 @@ const isLinkEnabled = ( paymentSettings = defaultSettings ) =>
 		paymentSettings.paymentMethodsConfig?.card !== undefined
 	);
 
-const createStripe = (
+// One Stripe instance per set of options, so the platform and connected-account instances stay apart and a remount
+// adds no Stripe controller frame (client 11.2.0 checkout/api/index.js:79-112).
+const stripeInstances = new Map();
+
+const getStripe = (
 	paymentSettings = defaultSettings,
 	forceAccountRequest = false
 ) => {
@@ -571,7 +575,18 @@ const createStripe = (
 		}
 	}
 
-	return window.Stripe( paymentSettings.publishableKey, stripeOptions );
+	const key = JSON.stringify( [
+		paymentSettings.publishableKey,
+		stripeOptions,
+	] );
+	if ( ! stripeInstances.has( key ) ) {
+		stripeInstances.set(
+			key,
+			window.Stripe( paymentSettings.publishableKey, stripeOptions )
+		);
+	}
+
+	return stripeInstances.get( key );
 };
 
 const getReusablePaymentMethodTerms = (
@@ -1201,7 +1216,7 @@ const SavedTokenHandler = ( {
 				() => {
 					accountStripe.current =
 						accountStripe.current ||
-						createStripe( paymentSettings, true );
+						getStripe( paymentSettings, true );
 
 					return accountStripe.current;
 				},
@@ -1456,7 +1471,7 @@ const WooPaymentsContent = ( {
 			return;
 		}
 
-		stripe.current = createStripe( paymentSettings );
+		stripe.current = getStripe( paymentSettings );
 		if ( ! stripe.current ) {
 			return;
 		}
@@ -1653,7 +1668,7 @@ const WooPaymentsContent = ( {
 				() => {
 					accountStripe.current =
 						accountStripe.current ||
-						createStripe( paymentSettings, true );
+						getStripe( paymentSettings, true );
 
 					return accountStripe.current;
 				},
@@ -1774,6 +1789,7 @@ export const getWooPaymentsPaymentMethod = (
 };
 
 const registerWooPayments = () => {
+	stripeInstances.clear();
 	const paymentMethods = getWooPaymentsGatewayIds()
 		.map( ( paymentMethodId ) =>
 			getPaymentMethodData( paymentMethodId, null )

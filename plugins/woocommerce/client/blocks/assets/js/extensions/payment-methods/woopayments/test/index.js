@@ -3419,6 +3419,90 @@ describe( 'wc-payment-method-woopayments', () => {
 		);
 	} );
 
+	// Client 11.2.0 keeps one instance per account kind for the page (checkout/api/index.js:79-112): the platform one
+	// the card element uses under network saved cards, and the connected-account one that confirms intents.
+	it( 'keeps one Stripe instance per account when the card method mounts again', async () => {
+		window.fetch = jest.fn().mockResolvedValue( {
+			json: jest.fn().mockResolvedValue( {
+				return_url: 'https://example.test/checkout/order-received/123/',
+			} ),
+		} );
+		window.Stripe = jest.fn( () => ( {
+			elements: jest.fn( () => ( {
+				create: jest.fn( () => ( {
+					on: jest.fn(),
+					mount: jest.fn(),
+				} ) ),
+			} ) ),
+			handleNextAction: jest.fn().mockResolvedValue( {
+				paymentIntent: {
+					id: 'pi_123',
+				},
+			} ),
+		} ) );
+		const registration = registerWooPayments();
+		const content = registration.content;
+		const mountAndConfirm = async () => {
+			let checkoutSuccessResult;
+			const onCheckoutSuccess = jest.fn( ( callback ) => {
+				checkoutSuccessResult = callback( {
+					processingResponse: {
+						paymentDetails: {
+							redirect:
+								'#wcpay-confirm-pi:123:pi_123_secret_abc:nonce_123',
+						},
+					},
+				} );
+			} );
+			const view = render(
+				createElement( content.type, {
+					...content.props,
+					eventRegistration: {
+						onPaymentSetup: jest.fn(),
+						onCheckoutSuccess,
+					},
+					emitResponse: {
+						responseTypes: {
+							SUCCESS: 'success',
+							ERROR: 'error',
+						},
+						noticeContexts: {
+							PAYMENTS: 'payments',
+						},
+					},
+				} )
+			);
+			await waitFor( () => {
+				expect( onCheckoutSuccess ).toHaveBeenCalled();
+			} );
+			await checkoutSuccessResult;
+			view.unmount();
+		};
+
+		await mountAndConfirm();
+		await mountAndConfirm();
+
+		expect(
+			window.Stripe.mock.calls.map( ( [ , options ] ) => options )
+		).toEqual( [
+			{ locale: 'auto' },
+			{
+				locale: 'auto',
+				stripeAccount: 'acct_123',
+				betas: [
+					'card_country_event_beta_1',
+					'link_autofill_modal_beta_1',
+				],
+			},
+		] );
+		const [ platformStripe, accountStripe ] =
+			window.Stripe.mock.results.map( ( result ) => result.value );
+		// Each mount builds its own Elements group on the platform instance; each confirmation uses the account one.
+		expect( platformStripe.elements ).toHaveBeenCalledTimes( 2 );
+		expect( platformStripe.handleNextAction ).not.toHaveBeenCalled();
+		expect( accountStripe.handleNextAction ).toHaveBeenCalledTimes( 2 );
+	} );
+
 	// A failed next action carries the Stripe error (REC-3DS-3b's shopper-facing
 	// decline message) to the Blocks payments notice, and still posts
 	// update_order_status with the error's intent ID so the server can fail the

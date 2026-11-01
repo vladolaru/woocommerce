@@ -568,6 +568,30 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 		expect( registerExpressPaymentMethod ).toHaveBeenCalledTimes( 2 );
 	} );
 
+	// Core swaps the express buttons for a skeleton while the checkout recalculates
+	// (cart-checkout-shared/payment-methods/express-payment/checkout-express-payment.tsx), which unmounts them; client
+	// 11.2.0 mounts them again on its one connected-account instance (checkout/api/index.js:79-112, :120-131).
+	it( 'keeps one Stripe instance when the wallet button mounts again', async () => {
+		registerExpressCheckout();
+		const applePayRegistration = getRegistration(
+			'woocommerce_payments_express_checkout_applePay'
+		);
+
+		const firstMount = renderExpressPaymentMethod( applePayRegistration );
+		await waitFor( () => {
+			expect( expressElement.mount ).toHaveBeenCalledTimes( 1 );
+		} );
+		firstMount.unmount();
+		renderExpressPaymentMethod( applePayRegistration );
+		await waitFor( () => {
+			expect( expressElement.mount ).toHaveBeenCalledTimes( 2 );
+		} );
+
+		expect( window.Stripe ).toHaveBeenCalledTimes( 1 );
+		// Each mount builds its own Elements group on that instance.
+		expect( stripe.elements ).toHaveBeenCalledTimes( 2 );
+	} );
+
 	it( 'mounts Stripe ECE with method-specific button options', async () => {
 		registerExpressCheckout();
 		const applePayRegistration = getRegistration(
@@ -651,8 +675,9 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 
 			await applePayRegistration.canMakePayment( { cart: blocksCart } );
 			renderExpressPaymentMethod( applePayRegistration );
+			// The availability probe and the button both mount an element.
 			await waitFor( () => {
-				expect( window.Stripe ).toHaveBeenCalledTimes( 2 );
+				expect( expressElement.mount ).toHaveBeenCalledTimes( 2 );
 			} );
 
 			window.Stripe.mock.calls.forEach( ( [ , options ] ) => {
