@@ -146,49 +146,69 @@
 		}
 	}
 
-	// Once the first cart message has rendered, keep its height on .cart-collaterals, which a cart update leaves in
-	// place, for the stylesheet's --wc-bnpl-* rules: the next Update cart holds the space and shows a loader of that
-	// size (client 11.2.0 product-details/bnpl-site-messaging/index.js:144-197).
+	// Keep the cart message's height on .cart-collaterals, which a cart update leaves in place, for the stylesheet's
+	// --wc-bnpl-* rules, so the next Update cart holds the space and shows a loader of that size. Client 11.2.0 measures
+	// once, two seconds after ready (product-details/bnpl-site-messaging/index.js:144-197), which reads Stripe's unsized
+	// frame while the message is below the fold; the values are written again each time the frame grows.
+	var cartFrameObserver = null;
+	var pinnedCartFrameHeight = 0;
+
 	function pinCartMessageHeight( bottomMargin ) {
 		var cartCollaterals = document.querySelector( '.cart-collaterals' );
+		var frame = document.querySelector(
+			'.cart_totals .__PrivateStripeElement'
+		);
 
 		if (
 			! cartCollaterals ||
-			window
-				.getComputedStyle( cartCollaterals )
-				.getPropertyValue( '--wc-bnpl-height' )
-				.trim()
+			! frame ||
+			typeof window.ResizeObserver !== 'function'
 		) {
 			return;
 		}
 
-		window.setTimeout( function () {
-			var message = getMessageContainer();
-			var frame = document.querySelector(
-				'.cart_totals .__PrivateStripeElement'
-			);
-			var marginBottom = parseFloat( bottomMargin ) || 0;
+		if ( ! cartFrameObserver ) {
+			cartFrameObserver = new window.ResizeObserver( function ( entries ) {
+				entries.forEach( function ( entry ) {
+					writeCartMessageHeight(
+						cartCollaterals,
+						entry.target,
+						bottomMargin
+					);
+				} );
+			} );
+		}
+		cartFrameObserver.observe( frame );
+	}
 
-			if ( ! message || ! frame ) {
-				return;
-			}
+	function writeCartMessageHeight( cartCollaterals, frame, bottomMargin ) {
+		var message = getMessageContainer();
+		var frameHeight = parseFloat( window.getComputedStyle( frame ).height );
+		var marginBottom = parseFloat( bottomMargin ) || 0;
 
-			cartCollaterals.style.setProperty(
-				'--wc-bnpl-height',
-				parseFloat( window.getComputedStyle( message ).height ) +
-					marginBottom +
-					'px'
-			);
-			cartCollaterals.style.setProperty(
-				'--wc-bnpl-container-height',
-				parseFloat( window.getComputedStyle( frame ).height ) - 12 + 'px'
-			);
-			cartCollaterals.style.setProperty(
-				'--wc-bnpl-loader-margin',
-				marginBottom + 2 + 'px'
-			);
-			message.style.setProperty( '--wc-bnpl-margin-bottom', '-4px' );
-		}, 2000 );
+		// Only growth counts: a hidden or replaced message reports a smaller frame, and the pin keeps the space.
+		if ( ! message || ! ( frameHeight > pinnedCartFrameHeight ) ) {
+			return;
+		}
+		pinnedCartFrameHeight = frameHeight;
+
+		// The message's own height comes from the pinned variable; drop it to measure the message as rendered.
+		cartCollaterals.style.removeProperty( '--wc-bnpl-height' );
+		cartCollaterals.style.setProperty(
+			'--wc-bnpl-height',
+			parseFloat( window.getComputedStyle( message ).height ) +
+				marginBottom +
+				'px'
+		);
+		cartCollaterals.style.setProperty(
+			'--wc-bnpl-container-height',
+			frameHeight - 12 + 'px'
+		);
+		cartCollaterals.style.setProperty(
+			'--wc-bnpl-loader-margin',
+			marginBottom + 2 + 'px'
+		);
+		message.style.setProperty( '--wc-bnpl-margin-bottom', '-4px' );
 	}
 
 	// Client 11.1.0 client/checkout/api/index.js:57-71 waits up to 600 seconds for Stripe.js, checking every 100 ms,

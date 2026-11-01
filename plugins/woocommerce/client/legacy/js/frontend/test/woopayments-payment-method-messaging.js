@@ -473,49 +473,112 @@ describe( 'WooPayments BNPL payment method messaging', () => {
 		expect( container.classList.contains( 'pmme-updated' ) ).toBe( true );
 	} );
 
-	// Client 11.2.0 product-details/bnpl-site-messaging/index.js:144-197: two seconds after the first cart message is
-	// ready, its height, the Stripe frame's height and the loader margin go on .cart-collaterals for the stylesheet.
-	test( 'keeps the space of the classic cart message for the next cart update', async () => {
-		// Classic cart (templates/cart/cart.php, cart-totals.php): div.cart-collaterals holds div.cart_totals; Stripe
-		// mounts its frame in a div.__PrivateStripeElement inside the message.
-		document.body.innerHTML =
-			'<div class="cart-collaterals"><div class="cart_totals">' +
-			'<table class="shop_table" style="margin-bottom: 16px"></table>' +
-			'<div id="payment-method-message" style="height: 40px">' +
-			'<div class="__PrivateStripeElement" style="height: 52px"></div>' +
-			'</div></div></div>';
-		setMessagingConfig( { isCart: true, cartTotal: 2000 } );
-		const readyHandlers = [];
-		createElement.mockImplementation( () => ( {
-			mount: mountElement,
-			on: jest.fn( ( event, handler ) => {
-				if ( event === 'ready' ) {
-					readyHandlers.push( handler );
-				}
-			} ),
-			update: updateElement,
-		} ) );
-		jest.useFakeTimers();
+	// The space the classic cart message takes is kept on .cart-collaterals for the stylesheet: its height, the Stripe
+	// frame's height and the loader margin, as client 11.2.0 measures them (product-details/bnpl-site-messaging/
+	// index.js:144-197), written again each time the frame grows.
+	describe( 'the classic cart message space', () => {
+		const OriginalResizeObserver = window.ResizeObserver;
+		let resizeCallbacks;
+		let observed;
+		let readyHandlers;
 
-		require( '../woopayments-payment-method-messaging' );
-		readyHandlers.forEach( ( handler ) => handler() );
-		await jest.advanceTimersByTimeAsync( 2000 );
+		// Stand-in for ResizeObserver (https://developer.mozilla.org/docs/Web/API/ResizeObserver), which jsdom lacks: the
+		// test reports a size change to every observer.
+		const reportResize = () =>
+			resizeCallbacks.forEach( ( callback ) =>
+				callback( observed.map( ( target ) => ( { target } ) ) )
+			);
 
-		const collaterals = document.querySelector( '.cart-collaterals' );
-		expect( collaterals.style.getPropertyValue( '--wc-bnpl-height' ) ).toBe(
-			'56px'
-		);
-		expect(
-			collaterals.style.getPropertyValue( '--wc-bnpl-container-height' )
-		).toBe( '40px' );
-		expect(
-			collaterals.style.getPropertyValue( '--wc-bnpl-loader-margin' )
-		).toBe( '18px' );
-		expect(
-			getMessageContainer().style.getPropertyValue(
-				'--wc-bnpl-margin-bottom'
-			)
-		).toBe( '-4px' );
+		const setSizes = ( messageHeight, frameHeight ) => {
+			getMessageContainer().style.height = messageHeight;
+			document.querySelector( '.__PrivateStripeElement' ).style.height =
+				frameHeight;
+		};
+
+		const getPinned = () => {
+			const collaterals = document.querySelector( '.cart-collaterals' );
+
+			return [
+				collaterals.style.getPropertyValue( '--wc-bnpl-height' ),
+				collaterals.style.getPropertyValue(
+					'--wc-bnpl-container-height'
+				),
+				collaterals.style.getPropertyValue( '--wc-bnpl-loader-margin' ),
+				getMessageContainer().style.getPropertyValue(
+					'--wc-bnpl-margin-bottom'
+				),
+			];
+		};
+
+		beforeEach( () => {
+			resizeCallbacks = [];
+			observed = [];
+			window.ResizeObserver = jest.fn( ( callback ) => {
+				resizeCallbacks.push( callback );
+				return {
+					observe: ( target ) => observed.push( target ),
+					disconnect: jest.fn(),
+				};
+			} );
+			// Classic cart (templates/cart/cart.php, cart-totals.php): div.cart-collaterals holds div.cart_totals; Stripe
+			// mounts its frame in a div.__PrivateStripeElement inside the message.
+			document.body.innerHTML =
+				'<div class="cart-collaterals"><div class="cart_totals">' +
+				'<table class="shop_table" style="margin-bottom: 16px"></table>' +
+				'<div id="payment-method-message">' +
+				'<div class="__PrivateStripeElement"></div>' +
+				'</div></div></div>';
+			setMessagingConfig( { isCart: true, cartTotal: 2000 } );
+			readyHandlers = [];
+			createElement.mockImplementation( () => ( {
+				mount: mountElement,
+				on: jest.fn( ( event, handler ) => {
+					if ( event === 'ready' ) {
+						readyHandlers.push( handler );
+					}
+				} ),
+				update: updateElement,
+			} ) );
+			jest.useFakeTimers();
+			require( '../woopayments-payment-method-messaging' );
+		} );
+
+		afterEach( () => {
+			window.ResizeObserver = OriginalResizeObserver;
+		} );
+
+		const becomeReady = async () => {
+			readyHandlers.forEach( ( handler ) => handler() );
+			reportResize();
+			await jest.advanceTimersByTimeAsync( 2000 );
+		};
+
+		test( 'keeps the space of the classic cart message for the next cart update', async () => {
+			setSizes( '40px', '52px' );
+
+			await becomeReady();
+
+			expect( getPinned() ).toEqual( [ '56px', '40px', '18px', '-4px' ] );
+		} );
+
+		// Below the fold, Stripe's frame is a 9px placeholder until the shopper scrolls it into view, where it grows to
+		// its rendered height (measured on a store: 9px, then 26.7px).
+		test( 'measures the message again once Stripe sizes its frame below the fold', async () => {
+			setSizes( '11px', '9px' );
+			await becomeReady();
+			expect( getPinned() ).toEqual( [ '27px', '-3px', '18px', '-4px' ] );
+
+			setSizes( '28.7px', '26.7px' );
+			reportResize();
+			await jest.advanceTimersByTimeAsync( 2000 );
+
+			expect( getPinned() ).toEqual( [
+				'44.7px',
+				'14.7px',
+				'18px',
+				'-4px',
+			] );
+		} );
 	} );
 
 	test( 'does not initialize the classic script for cart block messaging', async () => {
