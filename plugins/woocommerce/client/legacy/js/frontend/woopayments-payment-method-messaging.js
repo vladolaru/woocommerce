@@ -178,6 +178,8 @@
 				} );
 			} );
 		}
+		// A cart update replaces the frame; only the current one is watched.
+		cartFrameObserver.disconnect();
 		cartFrameObserver.observe( frame );
 	}
 

@@ -130,10 +130,11 @@ class WooPaymentsIppReceiptEmailTest extends WC_Unit_Test_Case {
 					$email->init_hooks();
 					$email->trigger( $order, $this->get_merchant_settings(), $charge );
 
-					// Decoded on both sides: WordPress 7.2 prints a literal × and $ where 10.8.0 printed &times; and &#036;.
+					// Decoded on both sides: WordPress 7.2 prints a literal × and $ where 10.8.0 printed &times; and &#036;, and
+					// <br> where 10.8.0 printed <br />.
 					$this->assertSame(
-						$this->decode_entities( $this->load_oracle_fixture( 'ipp-receipt-10.8.0.html' ) ),
-						$this->decode_entities( $this->normalize_receipt_content( $email->get_content_html(), $order, false ) )
+						$this->normalize_markup( $this->load_oracle_fixture( 'ipp-receipt-10.8.0.html' ) ),
+						$this->normalize_markup( $this->normalize_receipt_content( $email->get_content_html(), $order, false ) )
 					);
 					$this->assertSame(
 						$this->decode_entities( $this->load_oracle_fixture( 'ipp-receipt-10.8.0.txt' ) ),
@@ -378,6 +379,24 @@ class WooPaymentsIppReceiptEmailTest extends WC_Unit_Test_Case {
 	 */
 	private function decode_entities( string $content ): string {
 		return html_entity_decode( $content, ENT_QUOTES | ENT_HTML5, 'UTF-8' );
+	}
+
+	/**
+	 * Decode HTML entities and write self-closing void tags (`<br />`) the HTML5 way (`<br>`), so a receipt compares by
+	 * the markup it shows.
+	 *
+	 * @param string $content Receipt markup.
+	 * @return string
+	 */
+	private function normalize_markup( string $content ): string {
+		$markup = preg_replace(
+			'#<(area|base|br|col|embed|hr|img|input|link|meta|source|track|wbr)\b([^>]*?)\s*/>#i',
+			'<$1$2>',
+			$this->decode_entities( $content )
+		);
+		$this->assertIsString( $markup );
+
+		return $markup;
 	}
 
 	/**

@@ -517,7 +517,7 @@ describe( 'WooPayments BNPL payment method messaging', () => {
 				resizeCallbacks.push( callback );
 				return {
 					observe: ( target ) => observed.push( target ),
-					disconnect: jest.fn(),
+					disconnect: () => observed.splice( 0 ),
 				};
 			} );
 			// Classic cart (templates/cart/cart.php, cart-totals.php): div.cart-collaterals holds div.cart_totals; Stripe
@@ -577,6 +577,27 @@ describe( 'WooPayments BNPL payment method messaging', () => {
 				'14.7px',
 				'18px',
 				'-4px',
+			] );
+		} );
+
+		// Each Update cart mounts a new message, whose frame replaces the last one.
+		test( 'watches only the current Stripe frame after cart updates', async () => {
+			setSizes( '40px', '52px' );
+			await becomeReady();
+
+			for ( let update = 0; update < 2; update++ ) {
+				document
+					.querySelector( '.__PrivateStripeElement' )
+					.replaceWith(
+						Object.assign( document.createElement( 'div' ), {
+							className: '__PrivateStripeElement',
+						} )
+					);
+				await becomeReady();
+			}
+
+			expect( observed ).toEqual( [
+				document.querySelector( '.__PrivateStripeElement' ),
 			] );
 		} );
 	} );
