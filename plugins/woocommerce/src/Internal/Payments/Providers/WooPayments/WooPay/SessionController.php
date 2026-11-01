@@ -931,12 +931,16 @@ class SessionController implements RegisterHooksInterface {
 
 		return array_merge(
 			array(
-				'wcAjaxUrl'                => \WC_AJAX::get_endpoint( '%%endpoint%%' ),
-				'confirmationErrorMessage' => __( 'There was a problem processing the payment. Please try again.', 'woocommerce' ),
+				'wcAjaxUrl'                 => \WC_AJAX::get_endpoint( '%%endpoint%%' ),
+				'confirmationErrorMessage'  => __( 'There was a problem processing the payment. Please try again.', 'woocommerce' ),
+				// The product page alerts when the product cannot be added yet (client 11.2.0
+				// woopay-express-checkout-button.js:124-162).
+				'productOptionsMessage'     => __( 'Please select your product options before proceeding.', 'woocommerce' ),
+				'productUnavailableMessage' => __( 'Sorry, this product is unavailable. Please choose a different combination.', 'woocommerce' ),
 				// The save-user source URL is the checkout page permalink, which client 11.1.0 sends from
 				// wcSettings.storePages.checkout.permalink (`client/components/woopay/save-user/checkout-page-save-user.js:118-124, :355-360`),
 				// built the way core's Blocks settings build it (AssetDataRegistry::get_store_pages()); never the browser URL.
-				'woopaySourceUrl'          => (string) get_permalink( wc_get_page_id( 'checkout' ) ),
+				'woopaySourceUrl'           => (string) get_permalink( wc_get_page_id( 'checkout' ) ),
 			),
 			array_slice( $config, 0, $flags_end, true ),
 			$this->get_checkout_assets()->get_shared_script_config(),

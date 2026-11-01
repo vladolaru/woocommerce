@@ -273,11 +273,12 @@
 		);
 	}
 
-	// Shows the error and ends the WooPay request when it answers no (client 11.2.0
-	// woopay-express-checkout-button.js:124).
+	// Alerts the shopper and answers no while the product form cannot be added to the cart: an unavailable variation, or
+	// options still to choose (client 11.2.0 woopay-express-checkout-button.js:124-162).
 	function ensureProductCanBeAdded() {
 		var form = getProductFormElement();
 		var button;
+		var variationParams = window.wc_add_to_cart_variation_params;
 
 		if ( ! isProductPageWooPayButton() || ! form ) {
 			return true;
@@ -287,7 +288,7 @@
 			form.classList.contains( 'wp-block-add-to-cart-with-options' ) &&
 			form.classList.contains( 'is-invalid' )
 		) {
-			setError( config.confirmationErrorMessage || '' );
+			window.alert( config.productOptionsMessage || '' );
 			isWooPayRequesting = false;
 			return false;
 		}
@@ -300,7 +301,14 @@
 				button.classList.contains( 'wc-variation-selection-needed' ) ||
 				button.classList.contains( 'wc-variation-is-unavailable' ) )
 		) {
-			setError( config.confirmationErrorMessage || '' );
+			window.alert(
+				button.classList.contains( 'wc-variation-is-unavailable' )
+					? ( variationParams &&
+							variationParams.i18n_unavailable_text ) ||
+							config.productUnavailableMessage ||
+							''
+					: config.productOptionsMessage || ''
+			);
 			isWooPayRequesting = false;
 			return false;
 		}

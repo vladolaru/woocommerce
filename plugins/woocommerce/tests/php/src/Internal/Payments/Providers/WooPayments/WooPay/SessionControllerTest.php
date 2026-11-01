@@ -254,6 +254,9 @@ class SessionControllerTest extends WC_REST_Unit_Test_Case {
 		$this->assertStringContainsString( '"shouldShowWooPayButton":""', $localized_data );
 		$this->assertStringContainsString( '"PRE_CHECK_SAVE_MY_INFO":"1"', $localized_data );
 		$this->assertSame( (string) get_permalink( wc_get_page_id( 'checkout' ) ), $this->get_localized_woopay_config()['woopaySourceUrl'] );
+		// Client 11.2.0 woopay-express-checkout-button.js:144-155, the product page alerts.
+		$this->assertSame( 'Please select your product options before proceeding.', $this->get_localized_woopay_config()['productOptionsMessage'] );
+		$this->assertSame( 'Sorry, this product is unavailable. Please choose a different combination.', $this->get_localized_woopay_config()['productUnavailableMessage'] );
 		$this->assertStringContainsString( '/assets/client/blocks/wc-woopayments-phone-validation.js', $this->get_localized_woopay_config()['woopayPhoneValidationScriptUrl'] );
 	}
 

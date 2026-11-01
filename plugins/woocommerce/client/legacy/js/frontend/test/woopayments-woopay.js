@@ -1096,32 +1096,64 @@ describe( 'WooPayments WooPay checkout', () => {
 			).toHaveLength( 1 );
 		} );
 
-		test( 'does not add disabled product forms to the cart before product-page WooPay init', async () => {
-				document.body.innerHTML =
-					'<form class="cart">' +
-					'<input type="hidden" name="product_id" value="123" />' +
-					'<button type="submit" class="single_add_to_cart_button disabled ' +
-					'wc-variation-selection-needed" name="add-to-cart" value="123">Add to cart</button>' +
-					'<div id="wcpay-woopay-button" data-product_page="1"><div class="woopay-express-button is-placeholder"></div></div>' +
-					'<div class="woopayments-payment-errors" hidden></div>' +
-					'</form>';
+		// Client 11.2.0 woopay-express-checkout-button.js:124-162: on a disabled add-to-cart button the click alerts, with
+		// WooCommerce's unavailable-variation text (add-to-cart-variation.js params) when the variation is unavailable.
+		test.each( [
+			[
+				'asks for the product options while a variation is still to choose',
+				'disabled wc-variation-selection-needed',
+				undefined,
+				'Please select your product options before proceeding.',
+			],
+			[
+				'says an unavailable variation cannot be bought, in WooCommerce words',
+				'disabled wc-variation-is-unavailable',
+				{
+					i18n_unavailable_text:
+						'Sorry, this product is unavailable. Please choose a different combination.',
+				},
+				'Sorry, this product is unavailable. Please choose a different combination.',
+			],
+			[
+				'says an unavailable variation cannot be bought without the variation script',
+				'disabled wc-variation-is-unavailable',
+				undefined,
+				'This combination is unavailable.',
+			],
+		] )( '%s, and adds nothing to the cart', async ( name, buttonClasses, variationParams, message ) => {
+			document.body.innerHTML =
+				'<form class="cart">' +
+				'<input type="hidden" name="product_id" value="123" />' +
+				'<button type="submit" class="single_add_to_cart_button ' +
+				buttonClasses +
+				'" name="add-to-cart" value="123">Add to cart</button>' +
+				'<div id="wcpay-woopay-button" data-product_page="1"><div class="woopay-express-button is-placeholder"></div></div>' +
+				'</form>';
+			// Localized by WooPay\SessionController::get_classic_woopay_config().
+			window.wc_woopayments_woopay_params.productOptionsMessage =
+				'Please select your product options before proceeding.';
+			window.wc_woopayments_woopay_params.productUnavailableMessage =
+				'This combination is unavailable.';
 			window.wc_woopayments_woopay_params.addToCartNonce = 'add-to-cart-nonce';
-			window.wc_woopayments_woopay_params.confirmationErrorMessage =
-				'Choose product options before using WooPay.';
 			window.wc_woopayments_woopay_params.woopayButton.context = 'product';
+			window.wc_add_to_cart_variation_params = variationParams;
+			const alert = jest.spyOn( window, 'alert' ).mockImplementation( () => {} );
 
-			require( '../woopayments-woopay' );
+			try {
+				require( '../woopayments-woopay' );
 
-			document.querySelector( '#wcpay-woopay-button button' ).click();
-			await flushPromises();
+				document.querySelector( '#wcpay-woopay-button button' ).click();
+				await flushPromises();
 
-			expect( global.jQuery.post ).not.toHaveBeenCalledWith(
-				'/?wc-ajax=wcpay_add_to_cart',
-				expect.anything()
-			);
-			expect(
-				document.querySelector( '.woopayments-payment-errors' ).textContent
-			).toBe( 'Choose product options before using WooPay.' );
+				expect( alert ).toHaveBeenCalledWith( message );
+				expect( global.jQuery.post ).not.toHaveBeenCalledWith(
+					'/?wc-ajax=wcpay_add_to_cart',
+					expect.anything()
+				);
+			} finally {
+				alert.mockRestore();
+				delete window.wc_add_to_cart_variation_params;
+			}
 		} );
 
 		test( 'renders WooPay save-my-info fields and posts the full number with the order', async () => {
@@ -1304,32 +1336,36 @@ describe( 'WooPayments WooPay checkout', () => {
 		expect( klarnaBox.textContent ).toBe( 'Stale Klarna error' );
 	} );
 
-	test( 'does not add an invalid IAPI product form before WooPay init', async () => {
+	test( 'asks for the product options on an invalid IAPI product form and adds nothing to the cart', async () => {
 		document.body.innerHTML =
 			'<form class="wp-block-add-to-cart-with-options is-invalid">' +
 			'<input type="hidden" name="add-to-cart" value="257" />' +
 			'<input type="hidden" name="product_id" value="257" />' +
 			'<input type="hidden" name="variation_id" value="" />' +
 			'<div id="wcpay-woopay-button" data-product_page="1"><div class="woopay-express-button is-placeholder"></div></div>' +
-			'<div class="woopayments-payment-errors" hidden></div>' +
 			'</form>';
 		window.wc_woopayments_woopay_params.addToCartNonce = 'add-to-cart-nonce';
-		window.wc_woopayments_woopay_params.confirmationErrorMessage =
-			'Choose product options before using WooPay.';
+		window.wc_woopayments_woopay_params.productOptionsMessage =
+			'Please select your product options before proceeding.';
 		window.wc_woopayments_woopay_params.woopayButton.context = 'product';
+		const alert = jest.spyOn( window, 'alert' ).mockImplementation( () => {} );
 
-		require( '../woopayments-woopay' );
+		try {
+			require( '../woopayments-woopay' );
 
-		document.querySelector( '#wcpay-woopay-button button' ).click();
-		await flushPromises();
+			document.querySelector( '#wcpay-woopay-button button' ).click();
+			await flushPromises();
 
-		expect( global.jQuery.post ).not.toHaveBeenCalledWith(
-			'/?wc-ajax=wcpay_add_to_cart',
-			expect.anything()
-		);
-		expect(
-			document.querySelector( '.woopayments-payment-errors' ).textContent
-		).toBe( 'Choose product options before using WooPay.' );
+			expect( alert ).toHaveBeenCalledWith(
+				'Please select your product options before proceeding.'
+			);
+			expect( global.jQuery.post ).not.toHaveBeenCalledWith(
+				'/?wc-ajax=wcpay_add_to_cart',
+				expect.anything()
+			);
+		} finally {
+			alert.mockRestore();
+		}
 	} );
 
 	test( 'shows the WooPay terms and privacy agreement under save my info and records link clicks', () => {
