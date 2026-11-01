@@ -1,3 +1,9 @@
+// Loads the entry as the page does: once, in a fresh module registry.
+const loadEntry = () =>
+	jest.isolateModules( () => {
+		require( '../index' );
+	} );
+
 describe( 'wc-woopayments-woopay-common', () => {
 	afterEach( () => {
 		delete window.wc;
@@ -7,9 +13,7 @@ describe( 'wc-woopayments-woopay-common', () => {
 		const customPlaceOrderButton = {};
 		window.wc = { customPlaceOrderButton };
 
-		jest.isolateModules( () => {
-			require( '../index' );
-		} );
+		loadEntry();
 
 		expect( window.wc.customPlaceOrderButton ).toBe(
 			customPlaceOrderButton
@@ -21,6 +25,7 @@ describe( 'wc-woopayments-woopay-common', () => {
 			expect.objectContaining( {
 				buildAjaxUrl: fn,
 				claimWooPayRedirect: fn,
+				clearWooPayReturned: fn,
 				deleteSkipWooPayCookie: fn,
 				dispatchUserExistEvent: fn,
 				getCachedPreferredCard: fn,
@@ -38,7 +43,29 @@ describe( 'wc-woopayments-woopay-common', () => {
 				setCachedPreferredCard: fn,
 				shouldSkipWooPay: fn,
 				validateEmail: fn,
+				wasReturnedByWooPay: fn,
 			} )
 		);
+	} );
+
+	// The script loads in the footer, so its marker read runs before the checkout's DOM ready hash readers.
+	it( 'takes the WooPay return marker off the URL as it loads', () => {
+		window.history.replaceState(
+			null,
+			'',
+			'/checkout/#wc-woopay-returned'
+		);
+
+		try {
+			loadEntry();
+
+			expect( window.location.hash ).toBe( '' );
+			expect( window.wc.woopayments.woopay.wasReturnedByWooPay() ).toBe(
+				true
+			);
+		} finally {
+			window.sessionStorage.clear();
+			window.history.replaceState( null, '', '/' );
+		}
 	} );
 } );

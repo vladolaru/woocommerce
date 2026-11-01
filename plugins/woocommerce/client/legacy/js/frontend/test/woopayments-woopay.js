@@ -2440,6 +2440,86 @@ describe( 'WooPayments WooPay checkout', () => {
 			} );
 		} );
 
+		// Hosted WooPay sends a shopper it does not see as logged in back to the store's checkout, which records the return in
+		// the tab (protocol takeWooPayReturnedMarker()). Another trip would only send them back again.
+		describe( 'after WooPay sent the shopper back', () => {
+			const cartLink =
+				'<div class="wc-proceed-to-checkout"><a class="checkout-button" href="#checkout">Checkout</a></div>';
+			const storageKey = 'wc_woopay_returned';
+
+			function clickCartLink() {
+				const event = new window.MouseEvent( 'click', {
+					bubbles: true,
+					cancelable: true,
+				} );
+				document.querySelector( '.checkout-button' ).dispatchEvent( event );
+
+				return event;
+			}
+
+			function loadAfterReturn( age ) {
+				window.sessionStorage.setItem( storageKey, String( Date.now() - age ) );
+				configureDirectCheckout( cartLink );
+				const postMessage = installConnect();
+				const { __test__ } = require( '../woopayments-woopay' );
+				__test__.setNavigate( jest.fn() );
+
+				return postMessage;
+			}
+
+			test( 'leaves the click on the store with no check while the return is recent', async () => {
+				const postMessage = loadAfterReturn( 60 * 1000 );
+
+				await answerLoginCheck( false );
+				bodyEventHandlers.updated_cart_totals();
+
+				expect(
+					document.getElementById( 'temp-woopay-connect-iframe' )
+				).toBeNull();
+				expect( document.body.wooPayDirectCheckoutAttached ).toBeFalsy();
+				expect( clickCartLink().defaultPrevented ).toBe( false );
+				expect( postMessage ).not.toHaveBeenCalledWith(
+					{ action: 'isWooPayReachable' },
+					expect.anything()
+				);
+			} );
+
+			test( 'leaves the click on the store when Connect gives no login answer and the return is recent', async () => {
+				jest.useFakeTimers();
+				loadAfterReturn( 60 * 1000 );
+
+				await jest.advanceTimersByTimeAsync( 5000 );
+
+				expect( document.body.wooPayDirectCheckoutAttached ).toBeFalsy();
+				expect( clickCartLink().defaultPrevented ).toBe( false );
+			} );
+
+			test( 'runs the check again once the return is 30 minutes old', async () => {
+				loadAfterReturn( 30 * 60 * 1000 );
+
+				await answerLoginCheck( false );
+
+				expect(
+					document.getElementById( 'temp-woopay-connect-iframe' )
+				).not.toBeNull();
+				answerThirdPartyCookieCheck( false );
+				await flushPromises();
+				expect( clickCartLink().defaultPrevented ).toBe( true );
+				await flushPromises();
+			} );
+
+			test( 'forgets the return and takes the click to WooPay once Connect reports the shopper logged in', async () => {
+				loadAfterReturn( 60 * 1000 );
+
+				await answerLoginCheck( true );
+
+				expect( window.sessionStorage.getItem( storageKey ) ).toBeNull();
+				expect( document.body.wooPayDirectCheckoutAttached ).toBe( true );
+				expect( clickCartLink().defaultPrevented ).toBe( true );
+				await flushPromises();
+			} );
+		} );
+
 		// Client 11.2.0 direct-checkout/index.js:34-36 and woopay-direct-checkout.js:139-148, :494-511: a shopper Connect
 		// reports logged in has the store's session asked at load, and the click sends it while it matches the cart.
 		describe( 'with the logged-in session prefetch', () => {

@@ -24,6 +24,67 @@ let isInitRequesting = false;
 
 const warnedMessageChecks = new Set();
 
+// The fragment the store puts on the checkout URL hosted WooPay redirects a shopper back to (SessionService
+// get_minimum_session_data()), and how long that return keeps direct checkout off in the tab.
+const WOOPAY_RETURNED_FRAGMENT = '#wc-woopay-returned';
+const WOOPAY_RETURNED_KEY = 'wc_woopay_returned';
+const WOOPAY_RETURNED_LIFETIME = 30 * 60 * 1000;
+
+// The tab's session storage, or null where it cannot be written (core's test, cart-fragments.js:12-20).
+const getSessionStorage = () => {
+	try {
+		window.sessionStorage.setItem( 'wc', 'test' );
+		window.sessionStorage.removeItem( 'wc' );
+		return window.sessionStorage;
+	} catch {
+		return null;
+	}
+};
+
+/**
+ * On the page hosted WooPay redirected a shopper back to, remember the time in the tab and take the marker off the URL,
+ * so it is never shared or bookmarked. WooPay sends back from direct checkout's redirect a shopper it does not see as
+ * logged in, or one whose WooPay session it could not start. Runs when the script loads, before the checkout's own
+ * hash readers, which look for other values.
+ */
+export const takeWooPayReturnedMarker = () => {
+	if ( window.location.hash !== WOOPAY_RETURNED_FRAGMENT ) {
+		return;
+	}
+
+	const storage = getSessionStorage();
+	if ( storage ) {
+		storage.setItem( WOOPAY_RETURNED_KEY, String( Date.now() ) );
+	}
+
+	window.history.replaceState(
+		window.history.state,
+		'',
+		window.location.pathname + window.location.search
+	);
+};
+
+/**
+ * Tell whether hosted WooPay sent the shopper back to the store in this tab in the last 30 minutes.
+ *
+ * @return {boolean} True while that return is recent.
+ */
+export const wasReturnedByWooPay = () => {
+	const storage = getSessionStorage();
+	const age =
+		Date.now() - Number( storage?.getItem( WOOPAY_RETURNED_KEY ) || NaN );
+
+	return age >= 0 && age < WOOPAY_RETURNED_LIFETIME;
+};
+
+/**
+ * Forget WooPay's return once the shopper shows a WooPay login: a Connect login answer, an email the email check finds,
+ * or a WooPay session starting.
+ */
+export const clearWooPayReturned = () => {
+	getSessionStorage()?.removeItem( WOOPAY_RETURNED_KEY );
+};
+
 /**
  * Say once per page that a sender check dropped a message meant for it. The checks rely on hosted WooPay posting from
  * the iframes' own top documents, so a change there shows in dev tools and the canary's console capture, not as silence.
@@ -147,6 +208,10 @@ export const claimWooPayRedirect = ( event, iframe ) => {
  * @param {boolean} userExist Whether the email belongs to a WooPay user.
  */
 export const dispatchUserExistEvent = ( userExist ) => {
+	if ( userExist ) {
+		clearWooPayReturned();
+	}
+
 	window.dispatchEvent(
 		new window.CustomEvent( 'woopayUserCheck', {
 			detail: { isRegisteredUser: userExist },
@@ -206,6 +271,7 @@ export const initWooPay = ( args, userEmail, userSession ) => {
 	}
 
 	isInitRequesting = true;
+	clearWooPayReturned();
 
 	return args
 		.post( 'init_woopay', {

@@ -728,6 +728,15 @@
 		).then( function ( loggedIn ) {
 			directCheckoutLoggedIn = !! loggedIn;
 
+			if ( loggedIn ) {
+				getWooPayProtocol().clearWooPayReturned();
+			} else if ( getWooPayProtocol().wasReturnedByWooPay() ) {
+				// Hosted WooPay sent this shopper back to the store recently: another trip through it would send them
+				// back again, so the click stays on the store, as for a shopper the check shows logged out.
+				isKnownLoggedOutOfWooPay = true;
+				return;
+			}
+
 			if ( loggedIn || loggedIn === null ) {
 				attachDirectCheckoutListeners();
 				// Only a true answer: it means WooPay's login cookie reached the connect page, which the client's check

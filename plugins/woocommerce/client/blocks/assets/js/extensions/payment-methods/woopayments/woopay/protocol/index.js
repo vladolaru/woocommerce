@@ -4,6 +4,7 @@
 import {
 	buildAjaxUrl,
 	claimWooPayRedirect,
+	clearWooPayReturned,
 	deleteSkipWooPayCookie,
 	dispatchUserExistEvent,
 	getTargetElement,
@@ -11,7 +12,9 @@ import {
 	initWooPay,
 	isPreviewing,
 	shouldSkipWooPay,
+	takeWooPayReturnedMarker,
 	validateEmail,
+	wasReturnedByWooPay,
 } from './helpers';
 import {
 	getCachedPreferredCard,
@@ -31,6 +34,7 @@ import { loadPhoneValidation, normalizePhone } from './phone-validation';
 export {
 	buildAjaxUrl,
 	claimWooPayRedirect,
+	clearWooPayReturned,
 	deleteSkipWooPayCookie,
 	dispatchUserExistEvent,
 	getCachedPreferredCard,
@@ -48,6 +52,7 @@ export {
 	setCachedPreferredCard,
 	shouldSkipWooPay,
 	validateEmail,
+	wasReturnedByWooPay,
 };
 
 window.wc = window.wc || {};
@@ -55,6 +60,7 @@ window.wc.woopayments = window.wc.woopayments || {};
 window.wc.woopayments.woopay = {
 	buildAjaxUrl,
 	claimWooPayRedirect,
+	clearWooPayReturned,
 	deleteSkipWooPayCookie,
 	dispatchUserExistEvent,
 	getCachedPreferredCard,
@@ -72,4 +78,8 @@ window.wc.woopayments.woopay = {
 	setCachedPreferredCard,
 	shouldSkipWooPay,
 	validateEmail,
+	wasReturnedByWooPay,
 };
+
+// At load, so the marker is gone before any script reads the checkout's hash at DOM ready.
+takeWooPayReturnedMarker();

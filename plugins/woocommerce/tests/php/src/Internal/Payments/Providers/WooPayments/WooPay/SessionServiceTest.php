@@ -1964,6 +1964,30 @@ class SessionServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * Hosted WooPay redirects a shopper it sends back from direct checkout to the minimum session's checkout URL, through
+	 * sanitize_text_field() and esc_url() (WooPay.php woopay_maybe_redirect_to_merchant_checkout()). Its back-to-store
+	 * and sign-out links read the full session's store data, which a shopper who chose the store from WooPay follows.
+	 *
+	 * @testdox Should mark only the checkout URL WooPay sends a shopper back to, as a fragment, unless it has one: $checkout_url.
+	 * @testWith ["https://store.test/checkout/", "https://store.test/checkout/#wc-woopay-returned"]
+	 *           ["https://store.test/?page_id=8", "https://store.test/?page_id=8#wc-woopay-returned"]
+	 *           ["https://store.test/checkout/#billing", "https://store.test/checkout/#billing"]
+	 *
+	 * @param string $checkout_url The store's checkout URL.
+	 * @param string $expected     The checkout URL the minimum session carries.
+	 */
+	public function test_marks_only_the_checkout_url_woopay_sends_a_shopper_back_to( string $checkout_url, string $expected ): void {
+		add_filter( 'woocommerce_get_checkout_url', static fn() => $checkout_url );
+		$sut = $this->create_service();
+
+		$minimum_url = $sut->get_minimum_session_data()['blog_checkout_url'];
+
+		$this->assertSame( $expected, $minimum_url, 'The minimum session carries the marked URL.' );
+		$this->assertSame( $expected, esc_url( sanitize_text_field( $minimum_url ) ), 'WooPay redirects to it unchanged.' );
+		$this->assertSame( $checkout_url, $sut->start_init_session_request( 'shopper@example.com' )['store_data']['blog_checkout_url'], 'The full session never carries the marker.' );
+	}
+
+	/**
 	 * @testdox Should advertise the WooPay email-input flow by default while direct checkout stays unported.
 	 */
 	public function test_frontend_config_advertises_email_input_but_not_direct_checkout(): void {

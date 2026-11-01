@@ -36,6 +36,11 @@ class SessionService {
 
 	private const WOOPAY_SESSION_KEY = 'woopay-user-data';
 
+	/**
+	 * Fragment on the checkout URL hosted WooPay redirects a shopper back to; the WooPay common script reads it.
+	 */
+	private const WOOPAY_RETURNED_FRAGMENT = 'wc-woopay-returned';
+
 	private const WOOPAY_DEFAULT_URL = 'https://pay.woo.com';
 
 	private const WOOPAY_REST_NAMESPACE = 'wp-json/platform-checkout/v1';
@@ -353,10 +358,23 @@ class SessionService {
 			'wcpay_version'     => WooPaymentsClientVersion::VERSION,
 			'blog_id'           => $this->get_store_blog_id(),
 			'blog_rest_url'     => get_rest_url(),
-			'blog_checkout_url' => wc_get_checkout_url(),
+			'blog_checkout_url' => $this->get_bounce_checkout_url(),
 			'session_nonce'     => $this->create_woopay_nonce( get_current_user_id() ),
 			'store_api_token'   => $this->get_store_api_token(),
 		);
+	}
+
+	/**
+	 * Get the checkout URL hosted WooPay sends a shopper back to from the direct checkout redirect, marked so the
+	 * checkout page can tell WooPay returned them. The marker is a fragment: browsers never send it, and WooPay's
+	 * esc_url() leaves it intact where it would garble a query argument. A URL that already has a fragment stays as it is.
+	 *
+	 * @return string
+	 */
+	private function get_bounce_checkout_url(): string {
+		$checkout_url = wc_get_checkout_url();
+
+		return false === strpos( $checkout_url, '#' ) ? $checkout_url . '#' . self::WOOPAY_RETURNED_FRAGMENT : $checkout_url;
 	}
 
 	/**

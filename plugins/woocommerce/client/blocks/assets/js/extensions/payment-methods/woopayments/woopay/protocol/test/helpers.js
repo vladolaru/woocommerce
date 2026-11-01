@@ -4,12 +4,16 @@
 import {
 	buildAjaxUrl,
 	claimWooPayRedirect,
+	clearWooPayReturned,
 	deleteSkipWooPayCookie,
+	dispatchUserExistEvent,
 	initWooPay,
 	isPreviewing,
 	sendSessionToOtpIframe,
 	shouldSkipWooPay,
+	takeWooPayReturnedMarker,
 	validateEmail,
+	wasReturnedByWooPay,
 } from '../helpers';
 
 const clearCookies = () => {
@@ -312,5 +316,133 @@ describe( 'WooPay protocol helpers', () => {
 				expect( post ).not.toHaveBeenCalled();
 			}
 		);
+	} );
+
+	// The store's marker on the checkout URL hosted WooPay sends a shopper back to (SessionService
+	// get_minimum_session_data()), and the tab's memory of that return.
+	describe( "WooPay's return to the store", () => {
+		const storageKey = 'wc_woopay_returned';
+		const now = 1800000000000;
+
+		beforeEach( () => {
+			jest.spyOn( Date, 'now' ).mockReturnValue( now );
+		} );
+
+		afterEach( () => {
+			jest.restoreAllMocks();
+			window.sessionStorage.clear();
+			window.history.replaceState( null, '', '/' );
+		} );
+
+		test( 'remembers the return in the tab and takes the marker off the URL', () => {
+			window.history.replaceState(
+				{ kept: true },
+				'',
+				'/checkout/?lang=fr#wc-woopay-returned'
+			);
+
+			takeWooPayReturnedMarker();
+
+			expect( window.sessionStorage.getItem( storageKey ) ).toBe(
+				String( now )
+			);
+			expect( window.location.pathname + window.location.search ).toBe(
+				'/checkout/?lang=fr'
+			);
+			expect( window.location.hash ).toBe( '' );
+			expect( window.history.state ).toEqual( { kept: true } );
+			expect( window.localStorage.getItem( storageKey ) ).toBeNull();
+		} );
+
+		// The card's redirect confirmation lives in the hash too (woopayments-checkout.js confirmRedirectIfPresent()); the
+		// store never marks a URL that has a fragment, and the reader leaves any other fragment alone.
+		test.each( [
+			[
+				'a card confirmation',
+				'#wcpay-confirm-pi:7:pi_123_secret_456:nonce',
+			],
+			[
+				'the marker inside a longer fragment',
+				'#wc-woopay-returned-and-more',
+			],
+			[ 'another fragment', '#billing' ],
+		] )( 'leaves %s alone', ( name, hash ) => {
+			window.history.replaceState( null, '', '/checkout/' + hash );
+
+			takeWooPayReturnedMarker();
+
+			expect( window.location.hash ).toBe( hash );
+			expect( window.sessionStorage.getItem( storageKey ) ).toBeNull();
+		} );
+
+		test.each( [
+			[ 'just now', 0, true ],
+			[ 'after 29 minutes', 29 * 60 * 1000, true ],
+			[ 'after 30 minutes', 30 * 60 * 1000, false ],
+			[ 'with a time ahead of the clock', -1000, false ],
+		] )( 'counts a return as recent %s', ( name, age, isRecent ) => {
+			window.sessionStorage.setItem( storageKey, String( now - age ) );
+
+			expect( wasReturnedByWooPay() ).toBe( isRecent );
+		} );
+
+		test( 'counts nothing as a return with no stored time', () => {
+			expect( wasReturnedByWooPay() ).toBe( false );
+		} );
+
+		test( 'reads and writes nothing where session storage cannot be written', () => {
+			jest.spyOn(
+				window.Storage.prototype,
+				'setItem'
+			).mockImplementation( () => {
+				throw new Error( 'QuotaExceededError' );
+			} );
+			window.history.replaceState(
+				null,
+				'',
+				'/checkout/#wc-woopay-returned'
+			);
+
+			expect( () => takeWooPayReturnedMarker() ).not.toThrow();
+			expect( window.location.hash ).toBe( '' );
+			expect( wasReturnedByWooPay() ).toBe( false );
+			expect( () => clearWooPayReturned() ).not.toThrow();
+		} );
+
+		test.each( [
+			[
+				'forgets',
+				'the email check finds a WooPay user',
+				false,
+				() => dispatchUserExistEvent( true ),
+			],
+			[
+				'keeps',
+				'the email check finds no WooPay user',
+				true,
+				() => dispatchUserExistEvent( false ),
+			],
+			[
+				'forgets',
+				'a WooPay session starts',
+				false,
+				() =>
+					initWooPay(
+						{
+							post: () => Promise.resolve( {} ),
+							getInitAppearance: () => null,
+							getInitFontRules: () => null,
+						},
+						'shopper@example.com',
+						'session'
+					),
+			],
+		] )( '%s the return when %s', async ( verb, name, isKept, signal ) => {
+			window.sessionStorage.setItem( storageKey, String( now ) );
+
+			await signal();
+
+			expect( wasReturnedByWooPay() ).toBe( isKept );
+		} );
 	} );
 } );
