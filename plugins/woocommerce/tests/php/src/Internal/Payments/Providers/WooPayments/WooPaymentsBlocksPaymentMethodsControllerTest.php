@@ -48,7 +48,7 @@ class WooPaymentsBlocksPaymentMethodsControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should publish one Blocks integration instance for each native WooPayments gateway.
+	 * @testdox Should publish one Blocks integration instance for each WooPayments gateway.
 	 *
 	 * A separate process, because an earlier test can define WOOCOMMERCE_CART for the rest of the run, which drops the card
 	 * script from the handles.
@@ -56,7 +56,7 @@ class WooPaymentsBlocksPaymentMethodsControllerTest extends WC_Unit_Test_Case {
 	 * @runInSeparateProcess
 	 * @preserveGlobalState disabled
 	 */
-	public function test_registers_one_blocks_payment_method_per_native_gateway(): void {
+	public function test_registers_one_blocks_payment_method_per_gateway(): void {
 		$assets = $this->getMockBuilder( WooPaymentsCheckoutAssets::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'should_expose_checkout_surface' ) )

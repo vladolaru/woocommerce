@@ -3091,7 +3091,7 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should expose fraud-services config from the preserved account payload.
+	 * @testdox Should expose fraud-services config from the account payload.
 	 *
 	 * The account's config wins over the platform's public config and the bare `stripe` fallback (client 11.1.0
 	 * class-wc-payments-fraud-service.php:92-113). The payload differs from that fallback, so a config that ignored the
