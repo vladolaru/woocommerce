@@ -2265,13 +2265,22 @@
 		} );
 	}
 
+	// Takes a Payment Element out of its container, the one place it leaves the page. Its `ready`, `loaderror` and
+	// `change` listeners are attached once, when the element is created, and stay: an element moved into a re-rendered
+	// container keeps them.
+	function detachPaymentElement( component ) {
+		if ( component.paymentElement.unmount ) {
+			component.paymentElement.unmount();
+		}
+	}
+
 	// Tears down one gateway's Payment Element: its container left the page, or it failed to load and the shopper
 	// selected its method again (resetFailedPaymentElement()). The shared Stripe instances stay.
 	function resetStripePaymentElement( paymentGatewayId ) {
 		var component = paymentElements[ paymentGatewayId ];
 
-		if ( component && component.paymentElement.unmount ) {
-			component.paymentElement.unmount();
+		if ( component ) {
+			detachPaymentElement( component );
 		}
 
 		delete paymentElements[ paymentGatewayId ];
@@ -2491,9 +2500,7 @@
 
 		if ( component ) {
 			if ( component.container !== container ) {
-				if ( component.paymentElement.unmount ) {
-					component.paymentElement.unmount();
-				}
+				detachPaymentElement( component );
 				initTokenizationForm();
 				component.paymentElement.mount( container );
 				component.container = container;

@@ -580,6 +580,16 @@ describe( 'WooPayments checkout', () => {
 									handler();
 								}
 							},
+							// Stripe elements also take `off( event )`, which removes the event's listeners.
+							off: ( event ) => {
+								if (
+									paymentElementHandlers[ event ] ===
+									created.handlers[ event ]
+								) {
+									delete paymentElementHandlers[ event ];
+								}
+								delete created.handlers[ event ];
+							},
 						};
 					} ),
 				};
@@ -1366,6 +1376,71 @@ describe( 'WooPayments checkout', () => {
 		expect( card.unmount ).toHaveBeenCalledTimes( 1 );
 		expect( klarna.unmount ).toHaveBeenCalledTimes( 1 );
 		expect( mountPaymentElement ).toHaveBeenCalledTimes( 4 );
+	} );
+
+	// The Payment Element's listeners live as long as the element (cx-1): a move into a re-rendered container keeps them.
+	test( 'clears the payment error when the shopper edits the card after ticking save card and a checkout update', async () => {
+		const saveCheckbox =
+			'<input id="wc-woocommerce_payments-new-payment-method" type="checkbox" />';
+		const incompleteNumber = 'Your card number is incomplete.';
+		renderGatewayRows( [ 'card' ], 'card' );
+		document
+			.querySelector( 'form.checkout' )
+			.insertAdjacentHTML( 'beforeend', saveCheckbox );
+		submitElements.mockImplementationOnce( () =>
+			Promise.resolve( {
+				error: {
+					type: 'validation_error',
+					code: 'incomplete_number',
+					message: incompleteNumber,
+				},
+			} )
+		);
+		require( '../woopayments-checkout' );
+		await flushPromises();
+		const [ card ] = createdPaymentElements;
+
+		const checkbox = document.getElementById(
+			'wc-woocommerce_payments-new-payment-method'
+		);
+		checkbox.checked = true;
+		checkbox.dispatchEvent(
+			new window.Event( 'change', { bubbles: true, cancelable: true } )
+		);
+		expect( updatePaymentElement ).toHaveBeenCalledWith( {
+			terms: { card: 'always' },
+		} );
+
+		// update_order_review replaced the payment fragment, save box still ticked.
+		renderGatewayRows( [ 'card' ], 'card' );
+		document
+			.querySelector( 'form.checkout' )
+			.insertAdjacentHTML( 'beforeend', saveCheckbox );
+		document.getElementById(
+			'wc-woocommerce_payments-new-payment-method'
+		).checked = true;
+		bodyEventHandlers.updated_checkout();
+		expect( card.unmount ).toHaveBeenCalledTimes( 1 );
+		expect( card.mount ).toHaveBeenLastCalledWith(
+			getGatewayContainer( 'woocommerce_payments' )
+		);
+
+		expect(
+			checkoutFormEventHandlers.checkout_place_order_woocommerce_payments()
+		).toBe( false );
+		await flushPromises();
+		const box = getGatewayErrorBox( 'woocommerce_payments' );
+		expect( box.textContent ).toBe( incompleteNumber );
+
+		card.handlers.change( {
+			elementType: 'payment',
+			complete: false,
+			empty: false,
+			value: { type: 'card' },
+		} );
+
+		expect( box.textContent ).toBe( '' );
+		expect( box.hidden ).toBe( true );
 	} );
 
 	test( 'gives the shared Stripe instance the Link beta when a non-card gateway mounts first', async () => {
