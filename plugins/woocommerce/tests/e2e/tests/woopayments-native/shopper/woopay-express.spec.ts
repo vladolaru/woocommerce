@@ -12,6 +12,7 @@ import {
 	expectSettledCardPayment,
 	requireTestModeAccount,
 	TEST_CARDS,
+	typeIntoStripeField,
 } from '../../../utils/woopayments';
 
 /**
@@ -173,9 +174,11 @@ async function fillStripeField(
 			{ timeout: 60_000 }
 		)
 		.toBe( true );
-	await ( field as Frame )
-		.getByRole( 'textbox', { name: label } )
-		.fill( value );
+	await typeIntoStripeField(
+		page,
+		( field as Frame ).getByRole( 'textbox', { name: label } ),
+		value
+	);
 }
 
 /**

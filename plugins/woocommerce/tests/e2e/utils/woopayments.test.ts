@@ -64,6 +64,49 @@ test( 'fillCardDetails enters and keeps a card in a Blocks Payment Element', asy
 	).toHaveValue( TEST_CARDS.basic.number );
 } );
 
+test( 'fillCardDetails clicks each card field before typing into it', async ( {
+	page,
+} ) => {
+	const trackedFields =
+		CARD_FIELDS_HTML +
+		`<script>
+			document.querySelectorAll( 'input' ).forEach( ( input ) => {
+				input.addEventListener( 'click', () =>
+					parent.fieldLog.push( 'click ' + input.id )
+				);
+				input.addEventListener(
+					'input',
+					() => parent.fieldLog.push( 'type ' + input.id ),
+					{ once: true }
+				);
+			} );
+		</script>`;
+	await page.setContent(
+		`<script>window.fieldLog = [];</script>
+		<div id="wcpay-core-blocks-payment-element">
+			<iframe name="__privateStripeFrame123" srcdoc="${ trackedFields.replace(
+				/"/g,
+				'&quot;'
+			) }"></iframe>
+		</div>`
+	);
+
+	await fillCardDetails( page, TEST_CARDS.basic, 'blocks' );
+
+	expect(
+		await page.evaluate(
+			() => ( window as unknown as { fieldLog: string[] } ).fieldLog
+		)
+	).toEqual( [
+		'click number',
+		'type number',
+		'click expiry',
+		'type expiry',
+		'click cvc',
+		'type cvc',
+	] );
+} );
+
 // Answering hides the challenge body itself, the way the real Stripe
 // challenge dismisses on an answer; `completeThreeDSChallenge` waits for
 // exactly that, so a test double that never hides would time the case out

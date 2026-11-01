@@ -12,6 +12,7 @@ import {
 	expectSettledCardPayment,
 	requireTestModeAccount,
 	TEST_CARDS,
+	typeIntoStripeField,
 	type ProviderTestCard,
 } from '../../../utils/woopayments';
 
@@ -55,7 +56,10 @@ async function fillPluginOwnedCardDetails(
 	let kept = false;
 	for ( let attempt = 1; attempt <= 3 && ! kept; attempt++ ) {
 		for ( const field of fields ) {
-			await field.locator.fill( field.value, { timeout: 5_000 } );
+			// Typing appends, and a retry meets fields that kept their value.
+			await typeIntoStripeField( page, field.locator, field.value, {
+				replace: true,
+			} );
 		}
 		// Waits for a checkout update that replaces the payment section to
 		// land (or not) instead of always idling the same fixed span: checks

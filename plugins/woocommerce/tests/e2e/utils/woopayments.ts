@@ -152,8 +152,31 @@ export async function expectCardKept(
 }
 
 /**
+ * Types into a field inside a Stripe frame the way a shopper does: a click
+ * into the field, then key events.
+ *
+ * `locator.fill()` focuses a cross-origin field by script, and about 1 time
+ * in 25 the page takes window focus back and the digits land in the checkout's
+ * email field. A click puts focus there for real. Pass `replace` to select
+ * what the field already holds first, as `fill()` did.
+ */
+export async function typeIntoStripeField(
+	page: Page,
+	field: Locator,
+	value: string,
+	{ replace = false }: { replace?: boolean } = {}
+): Promise< void > {
+	await field.click( { timeout: ENTRY_STEP_TIMEOUT_MS } );
+	if ( replace ) {
+		await page.keyboard.press( 'ControlOrMeta+a' );
+	}
+	await page.keyboard.type( value );
+}
+
+/**
  * Types a card into a native Payment Element once, waits a short settle and
- * proves the element kept it (expectCardKept()).
+ * proves the element kept it (expectCardKept()). Each field is clicked before
+ * it is typed into, because `fill()` can drop the digits into the email field.
  *
  * The read-back sees only what the element holds at that moment: a checkout
  * update still in flight can land after it and empty the card.
@@ -164,9 +187,7 @@ export async function fillCardDetails(
 	surface: CardSurface
 ): Promise< void > {
 	for ( const field of getCardFields( page, card, surface ) ) {
-		await field.locator.fill( field.value, {
-			timeout: ENTRY_STEP_TIMEOUT_MS,
-		} );
+		await typeIntoStripeField( page, field.locator, field.value );
 	}
 	await new Promise( ( resolve ) => setTimeout( resolve, ENTRY_SETTLE_MS ) );
 	await expectCardKept( page, card, surface );

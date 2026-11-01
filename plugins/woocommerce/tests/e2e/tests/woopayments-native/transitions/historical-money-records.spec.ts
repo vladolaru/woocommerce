@@ -16,6 +16,7 @@ import {
 	getCharge,
 	requireTestModeAccount,
 	TEST_CARDS,
+	typeIntoStripeField,
 	type ProviderTestCard,
 } from '../../../utils/woopayments';
 
@@ -34,13 +35,21 @@ async function fillPluginOwnedCardDetails(
 	const frame = page.frameLocator(
 		'.wcpay-upe-element[data-payment-method-type="card"] iframe[name^="__privateStripeFrame"]'
 	);
-	await frame
-		.getByRole( 'textbox', { name: 'Card number' } )
-		.fill( card.number );
-	await frame.getByRole( 'textbox', { name: /^Expir/i } ).fill( card.expiry );
-	await frame
-		.getByRole( 'textbox', { name: 'Security code' } )
-		.fill( card.cvc );
+	await typeIntoStripeField(
+		page,
+		frame.getByRole( 'textbox', { name: 'Card number' } ),
+		card.number
+	);
+	await typeIntoStripeField(
+		page,
+		frame.getByRole( 'textbox', { name: /^Expir/i } ),
+		card.expiry
+	);
+	await typeIntoStripeField(
+		page,
+		frame.getByRole( 'textbox', { name: 'Security code' } ),
+		card.cvc
+	);
 }
 
 /**
