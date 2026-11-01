@@ -2412,6 +2412,32 @@ describe( 'WooPayments WooPay checkout', () => {
 				expect( getTempIframe() ).not.toBeNull();
 				expect( document.body.wooPayDirectCheckoutAttached ).toBe( true );
 			} );
+
+			// Codex 987 F2: the client's early listener went with the replaced button, and the next one gets none
+			// (direct-checkout/index.js:34-44, :288-299). Native's one body listener stays, so it reads the answer itself.
+			test( 'leaves a replaced cart link on the store once the check answers after an early cart update', async () => {
+				configureDirectCheckout( cartLink );
+				const postMessage = installConnect();
+				const { __test__ } = require( '../woopayments-woopay' );
+				const navigate = jest.fn();
+				__test__.setNavigate( navigate );
+
+				await answerLoginCheck( false );
+				bodyEventHandlers.updated_cart_totals();
+				expect( document.body.wooPayDirectCheckoutAttached ).toBe( true );
+				answerThirdPartyCookieCheck( true );
+				await flushPromises();
+				document.querySelector( '.wc-proceed-to-checkout' ).outerHTML = cartLink;
+				bodyEventHandlers.updated_cart_totals();
+
+				expect( clickCartLink().defaultPrevented ).toBe( false );
+				await flushPromises();
+				expect( postMessage ).not.toHaveBeenCalledWith(
+					{ action: 'isWooPayReachable' },
+					expect.anything()
+				);
+				expect( navigate ).not.toHaveBeenCalled();
+			} );
 		} );
 
 		// Client 11.2.0 direct-checkout/index.js:34-36 and woopay-direct-checkout.js:139-148, :494-511: a shopper Connect

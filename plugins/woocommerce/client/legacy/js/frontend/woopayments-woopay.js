@@ -611,8 +611,8 @@
 			}
 
 			// The cookie can arrive after this listener attaches, and this one listener outlives the links a cart update
-			// replaces, where the client's listeners go with them.
-			if ( ! shouldRunDirectCheckout() ) {
+			// replaces, where the client's listeners go with them. So can the check's answer that the shopper is logged out.
+			if ( ! shouldRunDirectCheckout() || isKnownLoggedOutOfWooPay ) {
 				return;
 			}
 
