@@ -902,18 +902,6 @@ const getCartCurrencyMismatch = ( expectedCurrency, cart ) => {
 	);
 };
 
-const getShippingAddressFromEvent = ( event, fallback = {} ) => {
-	const nameParts = expressCheckout.splitName( event?.name );
-
-	return expressCheckout.normalizeAddress(
-		{
-			...nameParts,
-			...( event?.address || {} ),
-		},
-		fallback
-	);
-};
-
 const getOrderNotes = () =>
 	window.wp?.data?.select?.( 'wc/store/checkout' )?.getOrderNotes?.() || '';
 
@@ -1361,11 +1349,9 @@ const ExpressCheckoutContent = ( {
 							'X-WooPayments-Tokenized-Cart': true,
 						},
 						data: {
-							shipping_address: getShippingAddressFromEvent(
-								event,
-								shippingDataRef.current?.shippingAddress ||
-									billingRef.current?.billingAddress ||
-									{}
+							shipping_address: expressCheckout.getWalletAddress(
+								event?.name,
+								event?.address
 							),
 						},
 					} );
@@ -1494,20 +1480,21 @@ const ExpressCheckoutContent = ( {
 					getPaymentMethodTypes( getCurrentCart() );
 				const orderNotes = getOrderNotes();
 				// Stripe provides no separate shipping phone, so the
-				// billing one is reused on the shipping address.
-				const walletBillingPhone =
-					expressCheckout.getWalletBillingPhone( event );
+				// billing one is reused on the shipping address. With no
+				// wallet shipping address none is sent, and the Store API uses
+				// the billing address (client 11.2.0
+				// express-checkout/transformers/stripe-to-wc.js:66-77).
 				const eventShippingAddress = event?.shippingAddress
 					? {
-							...getShippingAddressFromEvent(
-								event.shippingAddress,
-								shippingDataRef.current?.shippingAddress || {}
+							...expressCheckout.getWalletAddress(
+								event.shippingAddress.name,
+								event.shippingAddress.address
 							),
-							...( walletBillingPhone
-								? { phone: walletBillingPhone }
-								: {} ),
+							phone: expressCheckout.getWalletBillingPhone(
+								event
+							),
 						}
-					: shippingDataRef.current?.shippingAddress;
+					: undefined;
 				const response = await apiFetch( {
 					method: 'POST',
 					path: getStoreApiPath( '/wc/store/v1/checkout' ),
@@ -1528,11 +1515,9 @@ const ExpressCheckoutContent = ( {
 					},
 					data: {
 						payment_method: PAYMENT_METHOD_NAME,
-						billing_address: expressCheckout.getBillingAddress(
-							event,
-							billingRef.current?.billingAddress
-						),
-						shipping_address: eventShippingAddress || undefined,
+						billing_address:
+							expressCheckout.getBillingAddress( event ),
+						shipping_address: eventShippingAddress,
 						...( orderNotes ? { customer_note: orderNotes } : {} ),
 						payment_data: getPaymentData(
 							paymentCredentialId,

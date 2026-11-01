@@ -1415,8 +1415,9 @@ describe( 'woopayments-express-checkout', () => {
 							email: 'jane@example.com',
 							phone: '2125550100',
 						} ),
+						// The wallet's fields and the billing phone, no email (client 11.2.0
+						// express-checkout/transformers/stripe-to-wc.js:66-77).
 						shipping_address: Object.assign( {}, walletAddress, {
-							email: '',
 							phone: '2125550100',
 						} ),
 						payment_data: paymentData( 'checkout' ),
@@ -1606,7 +1607,9 @@ describe( 'woopayments-express-checkout', () => {
 			).not.toContain( 'wcpay-is-platform-payment-method' );
 		} );
 
-		it( 'falls back to the cached cart shipping address without a wallet address', async () => {
+		// Client 11.2.0 sends no shipping address when the wallet sends none (express-checkout/transformers/stripe-to-wc.js:
+		// 66-77), and the Store API then uses the billing address (Checkout::update_customer_from_request()).
+		it( 'sends no shipping address without a wallet address', async () => {
 			const testables = loadModule( baseParams() );
 			testables.setState( {
 				cachedCartData: cartResponse( {
@@ -1619,11 +1622,11 @@ describe( 'woopayments-express-checkout', () => {
 				billingDetails: { name: 'Jane Q Shopper' },
 			} );
 
-			const requestData = apiFetch.mock.calls[ 0 ][ 0 ].data;
-			expect( requestData.shipping_address ).toEqual( {
-				country: 'DE',
-				city: 'Berlin',
-			} );
+			// apiFetch sends data as JSON, which drops an undefined value.
+			const requestData = JSON.parse(
+				JSON.stringify( apiFetch.mock.calls[ 0 ][ 0 ].data )
+			);
+			expect( requestData ).not.toHaveProperty( 'shipping_address' );
 		} );
 	} );
 } );

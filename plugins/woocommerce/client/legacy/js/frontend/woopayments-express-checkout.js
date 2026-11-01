@@ -904,7 +904,7 @@
 			return;
 		}
 
-		address = normalizeAddress( eventAddress );
+		address = getWalletAddress( '', eventAddress );
 		[ 'country', 'state', 'city', 'postcode' ].forEach( function ( key ) {
 			if ( ! address[ key ] ) {
 				return;
@@ -1020,31 +1020,6 @@
 		};
 	}
 
-	function normalizeAddress( address, fallback ) {
-		address = address || {};
-		fallback = fallback || {};
-
-		return {
-			first_name: address.first_name || fallback.first_name || '',
-			last_name: address.last_name || fallback.last_name || '',
-			company: address.company || fallback.company || '',
-			address_1:
-				address.address_1 || address.line1 || fallback.address_1 || '',
-			address_2:
-				address.address_2 || address.line2 || fallback.address_2 || '',
-			city: address.city || fallback.city || '',
-			state: address.state || fallback.state || '',
-			postcode:
-				address.postcode ||
-				address.postal_code ||
-				fallback.postcode ||
-				'',
-			country: address.country || fallback.country || '',
-			email: address.email || fallback.email || '',
-			phone: address.phone || fallback.phone || '',
-		};
-	}
-
 	function normalizePhone( phone ) {
 		return ( phone || '' ).replace( /[() -]/g, '' );
 	}
@@ -1058,25 +1033,21 @@
 		);
 	}
 
+	// The wallet's billing details alone, as client 11.2.0 transformStripePaymentMethodForStoreApi()
+	// (express-checkout/transformers/stripe-to-wc.js:41-63).
 	function getBillingAddress( event ) {
-		var billingDetails = event && event.billingDetails;
-		var nameParts = splitName( billingDetails && billingDetails.name );
+		var billingDetails = ( event && event.billingDetails ) || {};
+		var address = getWalletAddress(
+			billingDetails.name || '',
+			billingDetails.address
+		);
 
 		// Some wallets provide a single name; checkout requires a last name.
-		nameParts.last_name = nameParts.last_name || '-';
+		address.last_name = address.last_name || '-';
+		address.email = billingDetails.email || '';
+		address.phone = getWalletBillingPhone( event );
 
-		return normalizeAddress(
-			Object.assign(
-				{},
-				nameParts,
-				billingDetails && billingDetails.address,
-				{
-					email: billingDetails && billingDetails.email,
-					phone: getWalletBillingPhone( event ),
-				}
-			),
-			cachedCartData && cachedCartData.billing_address
-		);
+		return address;
 	}
 
 	function displayLoginConfirmation( expressPaymentType ) {
@@ -1304,23 +1275,20 @@
 				billing_address: getBillingAddress( event ),
 				// Refresh the shipping address from the wallet sheet, now that
 				// the customer is placing the order. Stripe provides no
-				// separate shipping phone, so the billing one is reused.
+				// separate shipping phone, so the billing one is reused. With
+				// no wallet shipping address none is sent, and the Store API
+				// uses the billing address (client 11.2.0
+				// express-checkout/transformers/stripe-to-wc.js:66-77).
 				shipping_address:
 					event && event.shippingAddress
 						? Object.assign(
-								transformShippingAddress(
+								getWalletAddress(
 									event.shippingAddress.name || '',
 									event.shippingAddress.address
 								),
-								getWalletBillingPhone( event )
-									? {
-											phone: getWalletBillingPhone(
-												event
-											),
-									  }
-									: {}
+								{ phone: getWalletBillingPhone( event ) }
 						  )
-						: cachedCartData && cachedCartData.shipping_address,
+						: undefined,
 				payment_data: getPaymentData( paymentCredentialId ),
 				extensions: getPlaceOrderExtensions(),
 			},
@@ -1995,25 +1963,26 @@
 		return address.line2 || address.line_2 || address.address_2 || '';
 	}
 
-	function transformShippingAddress( name, address ) {
+	// A wallet name and address as a Store API address, with only the wallet's
+	// fields: one the wallet leaves out, as Apple Pay does with the street
+	// before the shopper authorizes, stays empty (client 11.2.0
+	// express-checkout/transformers/stripe-to-wc.js:10-23).
+	function getWalletAddress( name, address ) {
 		var split;
 		address = address || {};
 		split = splitName( name || address.recipient || address.name || '' );
 
-		return normalizeAddress(
-			{
-				first_name: split.first_name,
-				last_name: split.last_name,
-				company: '',
-				address_1: getAddressLine( address, 0 ),
-				address_2: getAddressLine( address, 1 ),
-				city: address.city || address.locality || '',
-				state: address.state || address.region || '',
-				postcode: address.postal_code || address.postcode || '',
-				country: address.country || '',
-			},
-			cachedCartData && cachedCartData.shipping_address
-		);
+		return {
+			first_name: split.first_name,
+			last_name: split.last_name,
+			company: address.organization || '',
+			address_1: getAddressLine( address, 0 ),
+			address_2: getAddressLine( address, 1 ),
+			city: address.city || address.locality || '',
+			state: address.state || address.region || '',
+			postcode: address.postal_code || address.postcode || '',
+			country: address.country || '',
+		};
 	}
 
 	function getShippingRates( cartData ) {
@@ -2979,10 +2948,7 @@
 				'X-WooPayments-Tokenized-Cart': true,
 			},
 			data: {
-				shipping_address: transformShippingAddress(
-					event.name,
-					event.address
-				),
+				shipping_address: getWalletAddress( event.name, event.address ),
 			},
 		} )
 			.then( function ( cartData ) {

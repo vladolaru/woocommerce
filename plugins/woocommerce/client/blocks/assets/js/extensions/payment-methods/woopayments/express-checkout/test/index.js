@@ -1494,6 +1494,160 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 		);
 	} );
 
+	// Client 11.2.0 places the order with the wallet's addresses alone (express-checkout/transformers/stripe-to-wc.js:
+	// 10-77): a field the wallet leaves out stays empty, whatever the page holds.
+	describe( 'the addresses sent from the wallet', () => {
+		const pageBilling = {
+			...billing,
+			billingAddress: {
+				...billing.billingAddress,
+				company: 'Lovelace Ltd',
+				address_2: 'Unit 9',
+			},
+		};
+		const pageShippingData = {
+			...shippingData,
+			shippingAddress: {
+				...shippingData.shippingAddress,
+				company: 'Lovelace Ltd',
+				address_2: 'Apt 2',
+			},
+		};
+		// A one-line wallet address, as the confirm event carries it (https://docs.stripe.com/js.md,
+		// "expressCheckoutElement.on('confirm', handler)").
+		const walletAddress = {
+			line1: '9 Wallet Way',
+			city: 'New York',
+			state: 'NY',
+			postal_code: '10001',
+			country: 'US',
+		};
+
+		const renderWallet = async () => {
+			registerExpressCheckout();
+			renderExpressPaymentMethod(
+				getRegistration(
+					'woocommerce_payments_express_checkout_applePay'
+				),
+				{ billing: pageBilling, shippingData: pageShippingData }
+			);
+			await waitFor( () => {
+				expect( expressHandlers.confirm ).toBeDefined();
+			} );
+		};
+
+		const confirmWith = async ( event ) => {
+			await renderWallet();
+			await act( async () => {
+				await expressHandlers.confirm( {
+					billingDetails: {
+						email: 'shopper@example.test',
+						name: 'Ada Lovelace',
+						phone: '(212) 555-0100',
+						address: walletAddress,
+					},
+					...event,
+				} );
+			} );
+
+			return apiFetch.mock.calls[ 0 ][ 0 ].data;
+		};
+
+		it( 'ships the order to the wallet address with no saved apartment line or company', async () => {
+			const data = await confirmWith( {
+				shippingAddress: {
+					name: 'Ada Lovelace',
+					address: walletAddress,
+				},
+			} );
+
+			expect( data.shipping_address ).toEqual( {
+				first_name: 'Ada',
+				last_name: 'Lovelace',
+				company: '',
+				address_1: '9 Wallet Way',
+				address_2: '',
+				city: 'New York',
+				state: 'NY',
+				postcode: '10001',
+				country: 'US',
+				phone: '2125550100',
+			} );
+		} );
+
+		it( 'bills the order to the wallet billing address alone', async () => {
+			const data = await confirmWith( {
+				shippingAddress: {
+					name: 'Ada Lovelace',
+					address: walletAddress,
+				},
+			} );
+
+			expect( data.billing_address ).toEqual( {
+				first_name: 'Ada',
+				last_name: 'Lovelace',
+				company: '',
+				address_1: '9 Wallet Way',
+				address_2: '',
+				city: 'New York',
+				state: 'NY',
+				postcode: '10001',
+				country: 'US',
+				email: 'shopper@example.test',
+				phone: '2125550100',
+			} );
+		} );
+
+		// Without a wallet shipping address the Store API uses the billing address (Checkout::update_customer_from_request()).
+		it( 'sends no shipping address when the wallet sends none', async () => {
+			const data = await confirmWith( {} );
+
+			// apiFetch sends data as JSON, which drops an undefined value.
+			expect( JSON.parse( JSON.stringify( data ) ) ).not.toHaveProperty(
+				'shipping_address'
+			);
+		} );
+
+		// Before the shopper authorizes, Apple Pay sends only the city, state, postcode and country; client 11.2.0 sends
+		// that and nothing else (express-checkout/event-handlers.js:96-101, the "semi-anonymized data" note).
+		it( 'sends the redacted Apple Pay address as it is when the shopper picks it in the sheet', async () => {
+			await renderWallet();
+
+			await act( async () => {
+				await expressHandlers.shippingaddresschange( {
+					name: '',
+					address: {
+						city: 'New York',
+						state: 'NY',
+						postal_code: '10001',
+						country: 'US',
+					},
+					resolve: jest.fn(),
+					reject: jest.fn(),
+				} );
+			} );
+
+			expect( apiFetch.mock.calls[ 0 ][ 0 ] ).toEqual(
+				expect.objectContaining( {
+					path: '/wc/store/v1/cart/update-customer?currency=USD',
+					data: {
+						shipping_address: {
+							first_name: '',
+							last_name: '',
+							company: '',
+							address_1: '',
+							address_2: '',
+							city: 'New York',
+							state: 'NY',
+							postcode: '10001',
+							country: 'US',
+						},
+					},
+				} )
+			);
+		} );
+	} );
+
 	it( 'resolves wallet clicks with cart line items and shipping rates', async () => {
 		const onClick = jest.fn();
 		const resolve = jest.fn();

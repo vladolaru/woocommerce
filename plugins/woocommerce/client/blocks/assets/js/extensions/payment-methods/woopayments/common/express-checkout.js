@@ -14,28 +14,26 @@ export const splitName = ( name ) => {
 };
 
 /**
- * Build a WooCommerce address from a Stripe or WooCommerce one, filling each empty field from the fallback.
+ * A wallet's name and Stripe address as a Store API address, with only the wallet's fields: one the wallet leaves out,
+ * as Apple Pay does with the street before the shopper authorizes, stays empty (client 11.2.0
+ * express-checkout/transformers/stripe-to-wc.js:10-23).
  *
- * @param {Object} address  Stripe address (line1, postal_code) or WooCommerce address.
- * @param {Object} fallback WooCommerce address the calling script already holds.
- * @return {Object} WooCommerce address.
+ * @param {string} name    The wallet's full name.
+ * @param {Object} address Stripe address (line1, line2, postal_code, organization).
+ * @return {Object} Store API address without email or phone.
  */
-export const normalizeAddress = ( address, fallback ) => {
+export const getWalletAddress = ( name, address ) => {
 	const source = address || {};
-	const known = fallback || {};
 
 	return {
-		first_name: source.first_name || known.first_name || '',
-		last_name: source.last_name || known.last_name || '',
-		company: source.company || known.company || '',
-		address_1: source.address_1 || source.line1 || known.address_1 || '',
-		address_2: source.address_2 || source.line2 || known.address_2 || '',
-		city: source.city || known.city || '',
-		state: source.state || known.state || '',
-		postcode: source.postcode || source.postal_code || known.postcode || '',
-		country: source.country || known.country || '',
-		email: source.email || known.email || '',
-		phone: source.phone || known.phone || '',
+		...splitName( name ),
+		company: source.organization || '',
+		address_1: source.line1 || '',
+		address_2: source.line2 || '',
+		city: source.city || '',
+		state: source.state || '',
+		postcode: source.postal_code || '',
+		country: source.country || '',
 	};
 };
 
@@ -58,28 +56,26 @@ export const getWalletBillingPhone = ( event ) =>
 	normalizePhone( event?.billingDetails?.phone || event?.payerPhone );
 
 /**
- * The billing address of an Express Checkout Element confirm event.
+ * The billing address of an Express Checkout Element confirm event: the wallet's billing details alone (client 11.2.0
+ * express-checkout/transformers/stripe-to-wc.js:41-63).
  *
- * @param {Object} event           Express Checkout Element confirm event.
- * @param {Object} fallbackAddress Billing address the calling script holds, for the fields the wallet leaves empty.
+ * @param {Object} event Express Checkout Element confirm event.
  * @return {Object} WooCommerce billing address.
  */
-export const getBillingAddress = ( event, fallbackAddress ) => {
+export const getBillingAddress = ( event ) => {
 	const billingDetails = event?.billingDetails;
-	const nameParts = splitName( billingDetails?.name );
-
-	// Some wallets provide a single name; checkout requires a last name.
-	nameParts.last_name = nameParts.last_name || '-';
-
-	return normalizeAddress(
-		{
-			...nameParts,
-			email: billingDetails?.email || '',
-			phone: getWalletBillingPhone( event ),
-			...( billingDetails?.address || {} ),
-		},
-		fallbackAddress
+	const address = getWalletAddress(
+		billingDetails?.name,
+		billingDetails?.address
 	);
+
+	return {
+		...address,
+		// Some wallets provide a single name; checkout requires a last name.
+		last_name: address.last_name || '-',
+		email: billingDetails?.email || '',
+		phone: getWalletBillingPhone( event ),
+	};
 };
 
 const toFiniteNumber = ( value, fallback ) => {

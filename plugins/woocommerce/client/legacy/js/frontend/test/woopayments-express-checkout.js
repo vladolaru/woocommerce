@@ -4934,6 +4934,142 @@ describe( 'WooPayments express checkout', () => {
 	// (https://docs.stripe.com/js.md): `click` carries expressPaymentType and resolve ("expressCheckoutElement.on('click',
 	// handler)"); `cancel` fires when the payment interface is dismissed, with no payload the handler reads
 	// (https://docs.stripe.com/js/elements_object/express_checkout_element_cancel_event).
+	// Client 11.2.0 places the order and updates the cart with the wallet's addresses alone
+	// (express-checkout/transformers/stripe-to-wc.js:10-77): a field the wallet leaves out stays empty, whatever the
+	// cart holds.
+	describe( 'the addresses sent from the wallet', () => {
+		// A one-line wallet address, as the confirm event carries it (https://docs.stripe.com/js.md,
+		// "expressCheckoutElement.on('confirm', handler)").
+		const walletAddress = {
+			line1: '9 Wallet Way',
+			city: 'New York',
+			state: 'NY',
+			postal_code: '10001',
+			country: 'US',
+		};
+
+		// The cart the page holds: saved addresses with an apartment line and a company.
+		function getSavedAddressCart() {
+			const cart = getCartResponse();
+			cart.billing_address = Object.assign( {}, cart.billing_address, {
+				company: 'Lovelace Ltd',
+				address_2: 'Unit 9',
+			} );
+			cart.shipping_address = Object.assign( {}, cart.shipping_address, {
+				company: 'Lovelace Ltd',
+				address_2: 'Apt 2',
+			} );
+
+			return cart;
+		}
+
+		async function confirmWith( event ) {
+			window.wp.apiFetch
+				.mockResolvedValueOnce( getSavedAddressCart() )
+				.mockResolvedValueOnce( { payment_result: { payment_status: 'success' } } );
+			require( '../woopayments-express-checkout' ).__test__.setNavigate( jest.fn() );
+			await bodyEventHandlers.updated_checkout();
+			await flushPromises();
+			await expressHandlers.click( { resolve: jest.fn() } );
+
+			await expressHandlers.confirm(
+				Object.assign(
+					{
+						billingDetails: {
+							email: 'shopper@example.test',
+							name: 'Ada Lovelace',
+							phone: '(212) 555-0100',
+							address: walletAddress,
+						},
+					},
+					event
+				)
+			);
+
+			return window.wp.apiFetch.mock.calls[ window.wp.apiFetch.mock.calls.length - 1 ][ 0 ].data;
+		}
+
+		test( 'ships the order to the wallet address with no saved apartment line or company', async () => {
+			const data = await confirmWith( {
+				shippingAddress: { name: 'Ada Lovelace', address: walletAddress },
+			} );
+
+			expect( data.shipping_address ).toEqual( {
+				first_name: 'Ada',
+				last_name: 'Lovelace',
+				company: '',
+				address_1: '9 Wallet Way',
+				address_2: '',
+				city: 'New York',
+				state: 'NY',
+				postcode: '10001',
+				country: 'US',
+				phone: '2125550100',
+			} );
+		} );
+
+		test( 'bills the order to the wallet billing address alone', async () => {
+			const data = await confirmWith( {
+				shippingAddress: { name: 'Ada Lovelace', address: walletAddress },
+			} );
+
+			expect( data.billing_address ).toEqual( {
+				first_name: 'Ada',
+				last_name: 'Lovelace',
+				company: '',
+				address_1: '9 Wallet Way',
+				address_2: '',
+				city: 'New York',
+				state: 'NY',
+				postcode: '10001',
+				country: 'US',
+				email: 'shopper@example.test',
+				phone: '2125550100',
+			} );
+		} );
+
+		// Before the shopper authorizes, Apple Pay sends only the city, state, postcode and country; client 11.2.0 sends
+		// that and nothing else (express-checkout/event-handlers.js:96-101, the "semi-anonymized data" note).
+		test( 'sends the redacted Apple Pay address as it is when the shopper picks it in the sheet', async () => {
+			window.wp.apiFetch.mockResolvedValueOnce( getSavedAddressCart() );
+			require( '../woopayments-express-checkout' );
+			await bodyEventHandlers.updated_checkout();
+			await flushPromises();
+			await expressHandlers.click( { resolve: jest.fn() } );
+
+			await expressHandlers.shippingaddresschange( {
+				name: '',
+				address: {
+					city: 'New York',
+					state: 'NY',
+					postal_code: '10001',
+					country: 'US',
+				},
+				resolve: jest.fn(),
+				reject: jest.fn(),
+			} );
+
+			expect( window.wp.apiFetch ).toHaveBeenLastCalledWith(
+				expect.objectContaining( {
+					path: '/wc/store/v1/cart/update-customer?currency=USD',
+					data: {
+						shipping_address: {
+							first_name: '',
+							last_name: '',
+							company: '',
+							address_1: '',
+							address_2: '',
+							city: 'New York',
+							state: 'NY',
+							postcode: '10001',
+							country: 'US',
+						},
+					},
+				} )
+			);
+		} );
+	} );
+
 	describe( 'the page is locked while the wallet sheet is open', () => {
 		const PAGE_LOCK_OPTIONS = {
 			message: null,

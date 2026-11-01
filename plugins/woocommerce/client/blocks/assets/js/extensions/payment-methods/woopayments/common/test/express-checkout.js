@@ -4,7 +4,7 @@
 import {
 	getBillingAddress,
 	getWalletBillingPhone,
-	normalizeAddress,
+	getWalletAddress,
 	splitName,
 	transformPrice,
 } from '../express-checkout';
@@ -21,24 +21,25 @@ describe( 'express checkout address helpers', () => {
 		} );
 	} );
 
-	it( 'maps a Stripe address and fills empty fields from the fallback', () => {
+	// Client 11.2.0 express-checkout/transformers/stripe-to-wc.js:10-23.
+	it( 'maps a Stripe address with only the wallet fields', () => {
 		expect(
-			normalizeAddress(
-				{ line1: '1 Main St', line2: null, postal_code: '10001' },
-				{ address_2: 'Apt 2', city: 'New York', country: 'US' }
-			)
+			getWalletAddress( 'Ada Lovelace', {
+				line1: '1 Main St',
+				line2: null,
+				postal_code: '10001',
+				organization: 'Analytical Engines',
+			} )
 		).toEqual( {
-			first_name: '',
-			last_name: '',
-			company: '',
+			first_name: 'Ada',
+			last_name: 'Lovelace',
+			company: 'Analytical Engines',
 			address_1: '1 Main St',
-			address_2: 'Apt 2',
-			city: 'New York',
+			address_2: '',
+			city: '',
 			state: '',
 			postcode: '10001',
-			country: 'US',
-			email: '',
-			phone: '',
+			country: '',
 		} );
 	} );
 
@@ -56,25 +57,26 @@ describe( 'express checkout address helpers', () => {
 
 	it( 'builds the billing address from the confirm event, with a placeholder last name', () => {
 		expect(
-			getBillingAddress(
-				{
-					billingDetails: {
-						name: 'Ada',
-						email: 'ada@example.test',
-						phone: '555-0100',
-						address: { line1: '1 Main St', country: 'GB' },
-					},
+			getBillingAddress( {
+				billingDetails: {
+					name: 'Ada',
+					email: 'ada@example.test',
+					phone: '555-0100',
+					address: { line1: '1 Main St', country: 'GB' },
 				},
-				{ city: 'London', email: 'held@example.test' }
-			)
-		).toMatchObject( {
+			} )
+		).toEqual( {
 			first_name: 'Ada',
 			last_name: '-',
+			company: '',
+			address_1: '1 Main St',
+			address_2: '',
+			city: '',
+			state: '',
+			postcode: '',
+			country: 'GB',
 			email: 'ada@example.test',
 			phone: '5550100',
-			address_1: '1 Main St',
-			city: 'London',
-			country: 'GB',
 		} );
 	} );
 } );

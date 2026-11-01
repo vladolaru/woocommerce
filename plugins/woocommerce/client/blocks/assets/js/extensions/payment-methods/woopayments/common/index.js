@@ -6,8 +6,8 @@ import { StripeWaitTimeoutError, waitForStripe } from '../wait-for-stripe';
 import { confirmWithStripe, parseConfirmationHash } from './confirmation';
 import {
 	getBillingAddress,
+	getWalletAddress,
 	getWalletBillingPhone,
-	normalizeAddress,
 	normalizePhone,
 	splitName,
 	transformPrice,
@@ -19,7 +19,7 @@ export const tracks = { recordEvent, getIdentity };
 
 export const expressCheckout = {
 	getBillingAddress,
-	normalizeAddress,
+	getWalletAddress,
 	splitName,
 	normalizePhone,
 	getWalletBillingPhone,
