@@ -1677,7 +1677,28 @@ describe( 'WooPayments WooPay checkout', () => {
 			},
 		};
 
+		// The Blocks cart actions, as @wordpress/hooks delivers them to the callbacks registered for each.
+		let cartHooks;
+
+		function runCartHook( name, args ) {
+			( cartHooks[ name ] || [] ).forEach( ( callback ) => callback( args ) );
+		}
+
+		// A quantity change in flight drops the prefetched session, so the next click asks Connect itself.
+		function dropPrefetchedSession() {
+			runCartHook( 'experimental__woocommerce_blocks-cart-set-item-quantity', {
+				product: { key: 'item-1' },
+				quantity: 2,
+			} );
+		}
+
 		function configureDirectCheckout( markup ) {
+			cartHooks = {};
+			window.wp.hooks = {
+				addAction: jest.fn( ( name, namespace, callback ) => {
+					cartHooks[ name ] = ( cartHooks[ name ] || [] ).concat( callback );
+				} ),
+			};
 			document.body.innerHTML = markup;
 			Object.assign( window.wcpay_core_woopay_config, {
 				isWooPayDirectCheckoutEnabled: true,
@@ -1825,6 +1846,8 @@ describe( 'WooPayments WooPay checkout', () => {
 				require( '../woopayments-woopay' );
 				await initializeDirectCheckout( true );
 				expect( document.body.wooPayDirectCheckoutAttached ).toBe( true );
+				// The load-time prefetch has asked already; only the click's own asks count here.
+				postMessage.mockClear();
 
 				document.cookie = 'skip_woopay=1; path=/';
 
@@ -1866,6 +1889,9 @@ describe( 'WooPayments WooPay checkout', () => {
 				document.cookie = 'skip_woopay=1; path=/';
 				document.querySelector( '.wc-proceed-to-checkout' ).outerHTML = cartLink;
 				bodyEventHandlers.updated_cart_totals();
+				// The prefetch at load and after the cart update have asked already; only the click's own asks count here.
+				await flushPromises();
+				postMessage.mockClear();
 
 				expect( clickProceedToCheckout() ).toBe( false );
 				await flushPromises();
@@ -2248,6 +2274,271 @@ describe( 'WooPayments WooPay checkout', () => {
 			} );
 		} );
 
+		// Client 11.2.0 direct-checkout/index.js:34-36 and woopay-direct-checkout.js:139-148, :494-511: a shopper Connect
+		// reports logged in has the store's session asked at load, and the click sends it while it matches the cart.
+		describe( 'with the logged-in session prefetch', () => {
+			const cartLink =
+				'<div class="wc-proceed-to-checkout"><a class="checkout-button" href="https://store.test/checkout/">Checkout</a></div>';
+			const sessionFor = ( name ) => ( {
+				blog_id: '12345',
+				data: { session: name, iv: name + '-iv', hash: name + '-hash' },
+			} );
+			let sessionPosts;
+			let failNextSession;
+
+			// Each get_woopay_session answers the cart as it is now: the first, second and third session in turn.
+			function installStoreSessions() {
+				sessionPosts = [];
+				failNextSession = false;
+				global.jQuery.post = jest.fn( ( url, data ) => {
+					const request = {
+						done: jest.fn( ( callback ) => {
+							if ( url === '/?wc-ajax=wcpay_get_woopay_session' ) {
+								sessionPosts.push( data );
+								if ( ! failNextSession ) {
+									callback( sessionFor( 'session-' + sessionPosts.length ) );
+								}
+							} else {
+								callback( { result: 'success' } );
+							}
+							return request;
+						} ),
+						fail: jest.fn( ( callback ) => {
+							if ( failNextSession ) {
+								failNextSession = false;
+								callback();
+							}
+							return request;
+						} ),
+					};
+					return request;
+				} );
+			}
+
+			async function answerEncryptedData() {
+				emitConnectMessage( 'get_encrypted_data_success', encryptedIdentity );
+				await flushPromises();
+			}
+
+			function getRedirectSessions( postMessage ) {
+				return postMessage.mock.calls
+					.filter( ( [ message ] ) => message.action === 'setRedirectSessionData' )
+					.map( ( [ message ] ) => message.value.data.session );
+			}
+
+			async function loadAsLoggedIn( markup = cartLink ) {
+				configureDirectCheckout( markup );
+				const postMessage = installConnect();
+				installStoreSessions();
+				const { __test__ } = require( '../woopayments-woopay' );
+				__test__.setNavigate( jest.fn() );
+				await initializeDirectCheckout( true );
+
+				return postMessage;
+			}
+
+			async function clickAndAnswer() {
+				document.querySelector( 'a' ).click();
+				await flushPromises();
+			}
+
+			const syncFrom = ( type ) => () =>
+				window.dispatchEvent(
+					new window.CustomEvent( 'wc-blocks_store_sync_required', {
+						detail: { type },
+					} )
+				);
+
+			// The hazard: a session asked before a cart change would hand WooPay the old cart.
+			test.each( [
+				[
+					'a Blocks quantity change and its sync',
+					() => {
+						dropPrefetchedSession();
+						syncFrom( 'from_@wordpress/data' )();
+					},
+				],
+				[
+					'a Blocks removal and its sync',
+					() => {
+						runCartHook( 'experimental__woocommerce_blocks-cart-remove-item', {
+							product: { key: 'item-1' },
+							quantity: 1,
+						} );
+						syncFrom( 'from_@wordpress/data' )();
+					},
+				],
+				[
+					'a Blocks add',
+					() =>
+						runCartHook( 'experimental__woocommerce_blocks-cart-add-item', {
+							product: { key: 'item-2' },
+						} ),
+				],
+				[ 'a Mini-Cart change', syncFrom( 'from_iAPI' ) ],
+				[ 'a Blocks coupon or shipping change', syncFrom( 'from_@wordpress/data' ) ],
+				[ 'a classic cart update', () => bodyEventHandlers.updated_cart_totals() ],
+				[
+					'a classic add to cart',
+					() => bodyEventHandlers[ 'added_to_cart removed_from_cart' ](),
+				],
+			] )( 'sends the session asked after %s, not the one from before it', async ( name, changeCart ) => {
+				const postMessage = await loadAsLoggedIn();
+				await answerEncryptedData();
+				expect( sessionPosts ).toHaveLength( 1 );
+
+				changeCart();
+				await flushPromises();
+				await answerEncryptedData();
+				await clickAndAnswer();
+
+				expect( sessionPosts ).toHaveLength( 2 );
+				expect( getRedirectSessions( postMessage ) ).toStrictEqual( [
+					'session-2',
+				] );
+			} );
+
+			test.each( [
+				[ 'quantity', 'experimental__woocommerce_blocks-cart-set-item-quantity' ],
+				[ 'removal', 'experimental__woocommerce_blocks-cart-remove-item' ],
+			] )( 'asks at the click while a Blocks %s change is in flight', async ( name, hook ) => {
+				const postMessage = await loadAsLoggedIn();
+				await answerEncryptedData();
+
+				// The Store API has not answered yet, so asking now could still read the old cart.
+				runCartHook( hook, { product: { key: 'item-1' }, quantity: 1 } );
+				await flushPromises();
+				expect(
+					postMessage.mock.calls.filter(
+						( [ message ] ) => message.action === 'getEncryptedData'
+					)
+				).toHaveLength( 1 );
+
+				await clickAndAnswer();
+				await answerEncryptedData();
+
+				expect( sessionPosts ).toHaveLength( 2 );
+				expect( getRedirectSessions( postMessage ) ).toStrictEqual( [
+					'session-2',
+				] );
+			} );
+
+			test( 'waits for a prefetch still in flight and asks nothing more', async () => {
+				const postMessage = await loadAsLoggedIn();
+
+				await clickAndAnswer();
+				expect( sessionPosts ).toHaveLength( 0 );
+				await answerEncryptedData();
+
+				expect( sessionPosts ).toHaveLength( 1 );
+				expect(
+					postMessage.mock.calls.filter(
+						( [ message ] ) => message.action === 'getEncryptedData'
+					)
+				).toHaveLength( 1 );
+				expect( getRedirectSessions( postMessage ) ).toStrictEqual( [
+					'session-1',
+				] );
+			} );
+
+			test( 'asks again at the next click after a prefetch fails', async () => {
+				const postMessage = await loadAsLoggedIn();
+				failNextSession = true;
+				await answerEncryptedData();
+				expect( sessionPosts ).toHaveLength( 1 );
+
+				await clickAndAnswer();
+				await answerEncryptedData();
+
+				expect( sessionPosts ).toHaveLength( 2 );
+				expect( getRedirectSessions( postMessage ) ).toStrictEqual( [
+					'session-2',
+				] );
+			} );
+
+			test( 'prefetches at load for a shopper Connect reports logged in', async () => {
+				await loadAsLoggedIn();
+				await answerEncryptedData();
+
+				expect( sessionPosts ).toStrictEqual( [
+					{ _ajax_nonce: 'session-nonce', encrypted_data: encryptedIdentity },
+				] );
+			} );
+
+			test.each( [
+				[ 'logged out where third-party cookies work', false, true ],
+				[ 'logged out where they do not', false, false ],
+			] )( 'prefetches nothing for a shopper %s', async ( name, loggedIn, cookiesWork ) => {
+				configureDirectCheckout( cartLink );
+				const postMessage = installConnect();
+				installStoreSessions();
+				require( '../woopayments-woopay' );
+
+				await answerLoginCheck( loggedIn );
+				answerThirdPartyCookieCheck( cookiesWork );
+				await flushPromises();
+				bodyEventHandlers.updated_cart_totals();
+				syncFrom( 'from_iAPI' )();
+				await flushPromises();
+
+				expect( postMessage ).not.toHaveBeenCalledWith(
+					{ action: 'getEncryptedData' },
+					expect.anything()
+				);
+				expect( sessionPosts ).toHaveLength( 0 );
+			} );
+
+			test( 'prefetches nothing when Connect gives no login answer', async () => {
+				jest.useFakeTimers();
+				configureDirectCheckout( cartLink );
+				const postMessage = installConnect();
+				installStoreSessions();
+				require( '../woopayments-woopay' );
+
+				await jest.advanceTimersByTimeAsync( 5000 );
+				bodyEventHandlers.updated_cart_totals();
+				await flushMicrotasks();
+
+				expect( document.body.wooPayDirectCheckoutAttached ).toBe( true );
+				expect( postMessage ).not.toHaveBeenCalledWith(
+					{ action: 'getEncryptedData' },
+					expect.anything()
+				);
+			} );
+
+			test.each( [
+				[
+					'on a product page',
+					cartLink,
+					( config ) => {
+						config.woopayButton = Object.assign( {}, config.woopayButton, {
+							context: 'product',
+						} );
+					},
+				],
+				[
+					'on a page with no Proceed to checkout',
+					'<a class="some-link" href="https://store.test/shop/">Shop</a>',
+					() => {},
+				],
+			] )( 'prefetches nothing %s', async ( name, markup, adjustConfig ) => {
+				configureDirectCheckout( markup );
+				adjustConfig( window.wcpay_core_woopay_config );
+				const postMessage = installConnect();
+				installStoreSessions();
+				require( '../woopayments-woopay' );
+
+				await initializeDirectCheckout( true );
+				syncFrom( 'from_iAPI' )();
+				await flushPromises();
+
+				expect( postMessage ).not.toHaveBeenCalledWith(
+					{ action: 'getEncryptedData' },
+					expect.anything()
+				);
+			} );
+		} );
+
 		test( 'not-logged-in flow probes reachability before using the minimum session', async () => {
 			// Oracle: WooPayments 11.1.0 session-connect.js:168-177 and direct-checkout/woopay-direct-checkout.js:200-228,398-412.
 			configureDirectCheckout(
@@ -2371,6 +2662,8 @@ describe( 'WooPayments WooPay checkout', () => {
 			const navigate = jest.fn();
 			__test__.setNavigate( navigate );
 			await initializeDirectCheckout( true );
+			// The click's own request is the subject, not the load-time prefetch.
+			dropPrefetchedSession();
 			jest.useFakeTimers();
 			document.querySelector( 'a' ).click();
 			await Promise.resolve();
@@ -2623,6 +2916,9 @@ describe( 'WooPayments WooPay checkout', () => {
 			const navigate = jest.fn();
 			__test__.setNavigate( navigate );
 			await initializeDirectCheckout( true );
+			// The clicks' own requests are the subject, not the load-time prefetch.
+			dropPrefetchedSession();
+			postMessage.mockClear();
 			const getEncryptedDataPosts = () =>
 				postMessage.mock.calls.filter( ( [ message ] ) => message.action === 'getEncryptedData' );
 
@@ -2664,6 +2960,8 @@ describe( 'WooPayments WooPay checkout', () => {
 			const navigate = jest.fn();
 			__test__.setNavigate( navigate );
 			await initializeDirectCheckout( true );
+			// The click's own request is the subject, not the load-time prefetch.
+			dropPrefetchedSession();
 
 			document.getElementById( 'woopay-connect-iframe' ).remove();
 			jest.useFakeTimers();

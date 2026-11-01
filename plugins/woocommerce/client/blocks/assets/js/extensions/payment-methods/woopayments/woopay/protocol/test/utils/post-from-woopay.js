@@ -1,8 +1,12 @@
 const WOOPAY_ORIGIN = 'https://pay.woo.test';
 
+// Window events a fresh copy of a WooPay script listens to for the rest of the page.
+const PAGE_LONG_EVENTS = [ 'message', 'wc-blocks_store_sync_required' ];
+
 /**
- * Remove each test's message listeners after it. A page has one Connect client, but each test that loads a fresh copy
- * of the module leaves one listening, and its iframe is gone, so it would warn about the next test's messages.
+ * Remove each test's message and cart sync listeners after it. A page has one Connect client, but each test that loads
+ * a fresh copy of the module leaves one listening, and its iframe is gone, so it would warn about the next test's
+ * messages, and an old copy would answer the next test's cart sync.
  */
 export const removeMessageListenersAfterEach = () => {
 	let listeners;
@@ -14,16 +18,16 @@ export const removeMessageListenersAfterEach = () => {
 		addEventListener = jest
 			.spyOn( window, 'addEventListener' )
 			.mockImplementation( ( type, listener, options ) => {
-				if ( type === 'message' ) {
-					listeners.push( listener );
+				if ( PAGE_LONG_EVENTS.includes( type ) ) {
+					listeners.push( [ type, listener ] );
 				}
 				add( type, listener, options );
 			} );
 	} );
 
 	afterEach( () => {
-		listeners.forEach( ( listener ) =>
-			window.removeEventListener( 'message', listener )
+		listeners.forEach( ( [ type, listener ] ) =>
+			window.removeEventListener( type, listener )
 		);
 		addEventListener.mockRestore();
 	} );

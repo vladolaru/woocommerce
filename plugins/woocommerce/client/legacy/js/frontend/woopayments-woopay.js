@@ -18,6 +18,8 @@
 	var cardDisplayWidthThreshold = 220;
 	var directCheckoutLoggedIn = false;
 	var isKnownLoggedOutOfWooPay = false;
+	var isSessionPrefetchOn = false;
+	var prefetchedSession = null;
 	var hasPhoneForMobileEnter = false;
 	var isWooPayUser = false;
 	var proceedToCheckoutSelector =
@@ -454,15 +456,91 @@
 		element.classList.remove( 'is-woopay-direct-checkout-loading' );
 	}
 
+	// Client 11.2.0 woopay-direct-checkout.js:434-443: the shopper's encrypted identity from Connect, then the store's
+	// WooPay session for it.
+	function fetchDirectCheckoutSession() {
+		return sendWooPayConnectMessage(
+			{ action: 'getEncryptedData' },
+			'getEncryptedData',
+			null,
+			true
+		).then( requestWooPaySession );
+	}
+
+	// The prefetched session while it still matches the cart, awaited when still in flight; otherwise one asked now
+	// (client 11.2.0 woopay-direct-checkout.js:139-148).
+	function getDirectCheckoutSession() {
+		return prefetchedSession || fetchDirectCheckoutSession();
+	}
+
+	function dropPrefetchedSession() {
+		prefetchedSession = null;
+	}
+
+	// Client 11.2.0 woopay-direct-checkout.js:494-504 prefetches at load for a shopper Connect reports logged in, never on a
+	// product page, and again after a cart change. Every call drops the session it held: a cart change makes it stale. Only
+	// pages with a Proceed to checkout control prefetch, since only their click uses it.
+	function prefetchDirectCheckoutSession() {
+		var request;
+
+		prefetchedSession = null;
+		if (
+			! isSessionPrefetchOn ||
+			getWooPayButtonSettings().context === 'product' ||
+			! document.querySelector( proceedToCheckoutSelector )
+		) {
+			return;
+		}
+
+		request = fetchDirectCheckoutSession();
+		prefetchedSession = request;
+		// A failed prefetch fails a click already waiting on it, as on the client; the next click asks again.
+		request.catch( function () {
+			if ( prefetchedSession === request ) {
+				prefetchedSession = null;
+			}
+		} );
+	}
+
+	// Client 11.2.0 direct-checkout/index.js:261-277 hooks the three Blocks cart actions. A quantity change and a removal
+	// fire before the Store API answers, so they only drop the session; the cart's sync event that follows the answer
+	// prefetches again. The client misses the Mini-Cart's sync event and the classic cart events, which these also cover.
+	function startSessionPrefetch() {
+		var hooks = window.wp && window.wp.hooks;
+		var namespace = 'wc-woopayments/direct-checkout';
+
+		isSessionPrefetchOn = true;
+		if ( hooks && hooks.addAction ) {
+			hooks.addAction(
+				'experimental__woocommerce_blocks-cart-set-item-quantity',
+				namespace,
+				dropPrefetchedSession
+			);
+			hooks.addAction(
+				'experimental__woocommerce_blocks-cart-remove-item',
+				namespace,
+				dropPrefetchedSession
+			);
+			hooks.addAction(
+				'experimental__woocommerce_blocks-cart-add-item',
+				namespace,
+				prefetchDirectCheckoutSession
+			);
+		}
+		window.addEventListener(
+			'wc-blocks_store_sync_required',
+			prefetchDirectCheckoutSession
+		);
+		$( document.body ).on(
+			'added_to_cart removed_from_cart',
+			prefetchDirectCheckoutSession
+		);
+		prefetchDirectCheckoutSession();
+	}
+
 	function runDirectCheckout( loggedIn ) {
 		if ( loggedIn ) {
-			return sendWooPayConnectMessage(
-				{ action: 'getEncryptedData' },
-				'getEncryptedData',
-				null,
-				true
-			)
-				.then( requestWooPaySession )
+			return getDirectCheckoutSession()
 				.then( function ( sessionData ) {
 					if ( ! isValidWooPayMinimumSessionData( sessionData ) ) {
 						return Promise.reject();
@@ -604,6 +682,11 @@
 
 			if ( loggedIn || loggedIn === null ) {
 				attachDirectCheckoutListeners();
+				// Only a true answer: it means WooPay's login cookie reached the connect page, which the client's check
+				// stands in for (client 11.2.0 direct-checkout/index.js:34-36).
+				if ( loggedIn ) {
+					startSessionPrefetch();
+				}
 				return;
 			}
 
@@ -1471,6 +1554,7 @@
 		if ( shouldRunDirectCheckout() ) {
 			attachDirectCheckoutForShopper();
 		}
+		prefetchDirectCheckoutSession();
 	} );
 
 	$( function () {
