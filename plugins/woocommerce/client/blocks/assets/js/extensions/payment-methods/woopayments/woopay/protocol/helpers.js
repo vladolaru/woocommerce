@@ -42,19 +42,14 @@ const getSessionStorage = () => {
 };
 
 /**
- * On the page hosted WooPay redirected a shopper back to, remember the time in the tab and take the marker off the URL,
- * so it is never shared or bookmarked. WooPay sends back from direct checkout's redirect a shopper it does not see as
- * logged in, or one whose WooPay session it could not start. Runs when the script loads, before the checkout's own
- * hash readers, which look for other values.
+ * Take the WooPay return marker off the URL without recording anything. The checkout's card script calls it at DOM
+ * ready, where the WooPay common script may not load, so the marker never survives a checkout page.
+ *
+ * @return {boolean} True when the URL carried the marker.
  */
-export const takeWooPayReturnedMarker = () => {
+export const stripWooPayReturnedMarker = () => {
 	if ( window.location.hash !== WOOPAY_RETURNED_FRAGMENT ) {
-		return;
-	}
-
-	const storage = getSessionStorage();
-	if ( storage ) {
-		storage.setItem( WOOPAY_RETURNED_KEY, String( Date.now() ) );
+		return false;
 	}
 
 	window.history.replaceState(
@@ -62,6 +57,25 @@ export const takeWooPayReturnedMarker = () => {
 		'',
 		window.location.pathname + window.location.search
 	);
+
+	return true;
+};
+
+/**
+ * On the page hosted WooPay redirected a shopper back to, remember the time in the tab and take the marker off the URL,
+ * so it is never shared or bookmarked. WooPay sends back from direct checkout's redirect a shopper it does not see as
+ * logged in, or one whose WooPay session it could not start. Runs when the script loads, before the checkout's own
+ * hash readers, which look for other values.
+ */
+export const takeWooPayReturnedMarker = () => {
+	if ( ! stripWooPayReturnedMarker() ) {
+		return;
+	}
+
+	const storage = getSessionStorage();
+	if ( storage ) {
+		storage.setItem( WOOPAY_RETURNED_KEY, String( Date.now() ) );
+	}
 };
 
 /**

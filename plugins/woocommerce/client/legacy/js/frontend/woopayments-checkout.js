@@ -3306,7 +3306,21 @@
 	appearanceUtils.getWooPayInitAppearance = getWooPayInitAppearance;
 	appearanceUtils.getWooPayInitFontRules = getWooPayInitFontRules;
 
+	// The WooPay return marker (WooPay\SessionService get_bounce_checkout_url()) never survives the classic checkout, also
+	// where the WooPay common script, which records the return as it loads, does not load. It runs at DOM ready, after
+	// that script, and before the redirect confirmation reads the hash below; the marker is never that value.
+	function stripWooPayReturnedMarker() {
+		if ( window.location.hash === '#wc-woopay-returned' ) {
+			window.history.replaceState(
+				window.history.state,
+				'',
+				window.location.pathname + window.location.search
+			);
+		}
+	}
+
 	$( function () {
+		stripWooPayReturnedMarker();
 		enqueueFraudScripts();
 		if (
 			baseConfig.isWooPayEnabled &&

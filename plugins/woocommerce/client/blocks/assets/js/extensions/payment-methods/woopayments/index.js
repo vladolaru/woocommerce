@@ -37,7 +37,10 @@ import {
 } from './woopay/email-input-iframe';
 // The save-user section renders whenever WooPay is on, also without the WooPay email check, which is the only part
 // of the card that reads the WooPay protocol entry; so the card bundles the helpers the section needs from their modules.
-import { buildAjaxUrl } from './woopay/protocol/helpers';
+import {
+	buildAjaxUrl,
+	stripWooPayReturnedMarker,
+} from './woopay/protocol/helpers';
 import {
 	loadPhoneValidation,
 	normalizePhone as normalizeWooPayPhone,
@@ -1789,6 +1792,15 @@ registerWooPayments();
 // WooPayments plugin's blocks entry point.
 if ( shouldHandleWooPayEmailInput( defaultSettings ) ) {
 	handleWooPayEmailInput( '#email', defaultSettings );
+}
+
+// The one WooPayments script every checkout block loads: the WooPay return marker (WooPay\SessionService
+// get_bounce_checkout_url()) never survives the page, also where the WooPay common script, which records the return
+// as it loads, does not load. At DOM ready, so that script has run first wherever it loads.
+if ( document.readyState === 'loading' ) {
+	document.addEventListener( 'DOMContentLoaded', stripWooPayReturnedMarker );
+} else {
+	stripWooPayReturnedMarker();
 }
 
 export default registerWooPayments;

@@ -200,6 +200,33 @@ describe( 'wc-payment-method-woopayments and the WooPay protocol entry', () => {
 		expect( mockProtocolReads ).toEqual( [] );
 	} );
 
+	// Codex 999 F4: a checkout block whose WooPay UI is off loads no WooPay common script, so the card takes the marker
+	// off; only that script records a return.
+	it( 'takes the WooPay return marker off a checkout block with the WooPay UI off, and records no return', () => {
+		window.history.replaceState(
+			null,
+			'',
+			'/checkout/?lang=fr#wc-woopay-returned'
+		);
+		const historyLength = window.history.length;
+
+		try {
+			loadCard( { ...cardData, isWooPayEnabled: false } );
+
+			expect( window.location.hash ).toBe( '' );
+			expect( window.location.pathname + window.location.search ).toBe(
+				'/checkout/?lang=fr'
+			);
+			expect( window.history.length ).toBe( historyLength );
+			expect(
+				window.sessionStorage.getItem( 'wc_woopay_returned' )
+			).toBeNull();
+			expect( mockProtocolReads ).toEqual( [] );
+		} finally {
+			window.history.replaceState( null, '', '/' );
+		}
+	} );
+
 	it( 'runs the WooPay save-user section with the email check off without reading the WooPay protocol', async () => {
 		const card = loadCard( {
 			...cardData,

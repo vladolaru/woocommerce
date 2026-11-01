@@ -4418,6 +4418,32 @@ describe( 'WooPayments checkout', () => {
 		);
 	} );
 
+	// Codex 999 F4: with the WooPay UI off the WooPay common script does not load on the classic checkout, so the card
+	// script takes the marker off at DOM ready; only that script records a return. The page's protocol copy here loaded
+	// before the marker was in the URL, as one loaded nowhere would.
+	test.each( [
+		[ 'the WooPay return marker', '#wc-woopay-returned', '' ],
+		[ 'another fragment', '#billing', '#billing' ],
+	] )( 'leaves %s on a classic checkout as the shopper should see it, and records no return', ( name, hash, expected ) => {
+		window.history.replaceState( null, '', '/checkout/?lang=fr' + hash );
+		const historyLength = window.history.length;
+
+		try {
+			require( '../woopayments-checkout' );
+
+			expect( window.location.hash ).toBe( expected );
+			expect( window.location.pathname + window.location.search ).toBe(
+				'/checkout/?lang=fr'
+			);
+			expect( window.history.length ).toBe( historyLength );
+			expect(
+				window.sessionStorage.getItem( 'wc_woopay_returned' )
+			).toBeNull();
+		} finally {
+			window.history.replaceState( null, '', '/' );
+		}
+	} );
+
 	// The form prints only the three refreshed keys, so a gateway the page never localized takes the rest from the page
 	// config: the account, keys and messages the payment request needs.
 	test( 'adopts a split gateway first rendered after a checkout update from the page config and its three refreshed keys', async () => {
