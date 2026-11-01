@@ -11,7 +11,7 @@ use Automattic\Jetpack\Constants;
 
 /**
  * Registers the script handles the WooPayments shopper scripts share: Stripe.js, the Stripe Elements appearance
- * utility and FingerprintJS. Each surface registers its own scripts and lists these as dependencies.
+ * utility, FingerprintJS and the WooPay protocol. Each surface registers its own scripts and lists these as dependencies.
  *
  * @since 11.0.0
  * @internal

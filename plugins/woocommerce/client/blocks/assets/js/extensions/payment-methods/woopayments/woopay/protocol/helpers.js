@@ -101,7 +101,7 @@ export const clearWooPayReturned = () => {
 
 /**
  * Say once per page that a sender check dropped a message meant for it. The checks rely on hosted WooPay posting from
- * the iframes' own top documents, so a change there shows in dev tools and the canary's console capture, not as silence.
+ * the iframes' own top documents, so a change there shows in the browser console, not as silence.
  *
  * @param {string} check   The check that dropped the message.
  * @param {string} message What to say.

@@ -263,7 +263,7 @@ const getCartTotalPrice = ( cart ) => {
 		return transformPrice( totalPrice, totals );
 	}
 
-	return Number( params?.checkout?.cart_total || 0 );
+	return 0;
 };
 
 // Pin the currency the page was rendered with, so cache-optimized or
@@ -386,7 +386,7 @@ const getCartTotal = ( billing ) => {
 		} );
 	}
 
-	return Number( params?.checkout?.cart_total || 0 );
+	return 0;
 };
 
 const getCartCurrency = ( billing ) =>

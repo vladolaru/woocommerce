@@ -271,10 +271,10 @@
 				var target;
 
 				// Core replaces a changed fragment with new elements (checkout.js:773), so a wrapper already read has nothing new.
-				if ( wrapper.wcpayConfigMerged ) {
+				if ( wrapper.woopaymentsConfigMerged ) {
 					return;
 				}
-				wrapper.wcpayConfigMerged = true;
+				wrapper.woopaymentsConfigMerged = true;
 
 				try {
 					refreshed = JSON.parse(

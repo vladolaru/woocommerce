@@ -73,7 +73,7 @@ class WooPaymentsCheckoutAssets implements RegisterHooksInterface {
 		'woopayAgreementText',
 		'woopayTermsOfServiceLabel',
 		'woopayPrivacyPolicyLabel',
-		// The Blocks readers fall back to the same text (index.js WooPaySaveUserSection).
+		// The Blocks save-user section translates the same text itself (index.js WooPaySaveUserSection).
 		'woopaySaveUserLabel',
 		'woopayPhoneLabel',
 		// The Blocks card method translates its own brand labels (CardBrandIcons in index.js).
@@ -1294,10 +1294,10 @@ class WooPaymentsCheckoutAssets implements RegisterHooksInterface {
 		// collects no payment, so the order behind it must not decide the
 		// context: its total would flow into `cartTotal` and make the checkout
 		// script build a payment-mode Payment Element for an amount the shopper
-		// is not paying. Client 11.1.0 resolves this request to the cart context
-		// (class-wc-payments-checkout.php:237-238, :250-253), whose empty-cart
-		// total of zero yields a setup-mode element, and this class must produce
-		// the same element.
+		// is not paying. The request resolves to the cart context instead, as
+		// client 11.2.0 does (class-wc-payments-checkout.php:297-298, :310-313):
+		// an empty cart gives a setup-mode element, and a cart with items gives
+		// that cart's total, as on the client.
 		if ( 0 < $order_id && ! $this->is_changing_payment_method_for_subscription() ) {
 			$order = wc_get_order( $order_id );
 			// The pay link's key as well as the capability: core grants pay_for_order on a guest order to anyone, and the

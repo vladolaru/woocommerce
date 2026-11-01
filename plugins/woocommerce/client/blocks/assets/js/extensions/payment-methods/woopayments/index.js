@@ -1588,11 +1588,6 @@ const WooPaymentsContent = ( {
 			if ( typeof elements.current.submit === 'function' ) {
 				const submitResult = await elements.current.submit();
 				if ( submitResult?.error ) {
-					paymentMethodData[ 'wcpay-payment-method-error-code' ] =
-						submitResult.error.code || '';
-					paymentMethodData[ 'wcpay-payment-method-error-message' ] =
-						submitResult.error.message || '';
-
 					return {
 						type: emitResponseRef.current.responseTypes.ERROR,
 						message:
