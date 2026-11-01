@@ -60,7 +60,9 @@ const EXPRESS_METHOD_TO_PAYMENT_METHOD_TYPE = {
 	amazon_pay: 'amazon_pay',
 };
 
-const SHIPPING_RATES_UPPER_LIMIT_COUNT = 20;
+// This const defines the max number of shipping options that can be handled by the ECE.
+// More than 9 options will prevent the UI from behaving correctly.
+const SHIPPING_RATES_UPPER_LIMIT_COUNT = 9;
 
 const availabilityCache = new Map();
 let availabilityStripe = null;
@@ -774,6 +776,23 @@ const getCartDisplayItems = ( cart ) => {
 			amount: -transformPrice( refundAmount, totals ),
 			name: __( 'Refund', 'woocommerce' ),
 		} );
+	}
+
+	const totalAmount = transformPrice(
+		parseMinorUnitAmount( totals.total_price ) - refundAmount,
+		totals
+	);
+	const totalAmountOfDisplayItems = displayItems.reduce(
+		( accumulator, item ) => accumulator + item.amount,
+		0
+	);
+
+	// If the total is even slightly less than the sum of the line items
+	// (rounding on individual items/taxes/shipping, or the
+	// `woocommerce_tax_round_at_subtotal` setting), Stripe throws an
+	// error - in that case, show only the total to the customer.
+	if ( totalAmount < totalAmountOfDisplayItems ) {
+		return [];
 	}
 
 	return displayItems;

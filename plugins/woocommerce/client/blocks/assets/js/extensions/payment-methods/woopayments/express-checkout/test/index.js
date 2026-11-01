@@ -1520,6 +1520,83 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 		expect( onClick ).toHaveBeenCalled();
 	} );
 
+	// Client 11.2.0 express-checkout/transformers/wc-to-stripe.js:176-187: Stripe throws when the line items add up to
+	// more than the amount, which per-line tax rounding can cause; the sheet then shows the total alone.
+	it( 'opens the wallet with the total alone when the cart lines add up to more than the total', async () => {
+		const resolve = jest.fn();
+		registerExpressCheckout();
+		const googlePayRegistration = getRegistration(
+			'woocommerce_payments_express_checkout_googlePay'
+		);
+
+		// Beanie 2000, shipping 700 and tax 300 add up to 3000, one cent above the cart total.
+		renderExpressPaymentMethod( googlePayRegistration, {
+			billing: { ...billing, cartTotal: { value: 2999 } },
+		} );
+
+		await waitFor( () => {
+			expect( expressHandlers.click ).toBeDefined();
+		} );
+
+		act( () => {
+			expressHandlers.click( { resolve } );
+		} );
+
+		expect( resolve ).toHaveBeenCalledWith(
+			expect.objectContaining( { lineItems: [] } )
+		);
+	} );
+
+	// Client 11.2.0 express-checkout/shipping-limits.js:1-4: more than 9 shipping options break the wallet sheet.
+	it( 'offers the wallet at most nine shipping rates, the chosen one first', async () => {
+		const resolve = jest.fn();
+		const tenRates = Array.from( { length: 10 }, ( unused, index ) => ( {
+			rate_id: `flat_rate:${ index }`,
+			name: `Rate ${ index }`,
+			price: '700',
+			taxes: '0',
+			selected: index === 9,
+			currency_minor_unit: 2,
+			meta_data: [],
+		} ) );
+		registerExpressCheckout();
+		const googlePayRegistration = getRegistration(
+			'woocommerce_payments_express_checkout_googlePay'
+		);
+
+		renderExpressPaymentMethod( googlePayRegistration, {
+			...getPaymentMethodInterfaceProps(
+				cartWithExpressMethods( [ 'payment_request' ], {
+					shipping_rates: [ { shipping_rates: tenRates } ],
+				} )
+			),
+		} );
+
+		await waitFor( () => {
+			expect( expressHandlers.click ).toBeDefined();
+		} );
+
+		act( () => {
+			expressHandlers.click( { resolve } );
+		} );
+
+		expect(
+			resolve.mock.calls[ 0 ][ 0 ].shippingRates.map(
+				( rate ) => rate.id
+			)
+		).toEqual( [
+			'flat_rate:9',
+			'flat_rate:0',
+			'flat_rate:1',
+			'flat_rate:2',
+			'flat_rate:3',
+			'flat_rate:4',
+			'flat_rate:5',
+			'flat_rate:6',
+			'flat_rate:7',
+		] );
+	} );
+
 	it( 'updates the Store API cart and Elements when the wallet shipping address changes', async () => {
 		baseExpressCheckoutParams.has_subscription = true;
 		const updatedCart = cartWithExpressMethods( [ 'payment_request' ], {
