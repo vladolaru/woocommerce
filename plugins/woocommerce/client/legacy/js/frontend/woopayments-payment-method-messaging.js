@@ -140,9 +140,55 @@
 			paymentMessageElement.on( 'ready', function () {
 				if ( config.isCart ) {
 					paymentMessageContainer.classList.add( 'ready' );
+					pinCartMessageHeight( bottomMargin );
 				}
 			} );
 		}
+	}
+
+	// Once the first cart message has rendered, keep its height on .cart-collaterals, which a cart update leaves in
+	// place, for the stylesheet's --wc-bnpl-* rules: the next Update cart holds the space and shows a loader of that
+	// size (client 11.2.0 product-details/bnpl-site-messaging/index.js:144-197).
+	function pinCartMessageHeight( bottomMargin ) {
+		var cartCollaterals = document.querySelector( '.cart-collaterals' );
+
+		if (
+			! cartCollaterals ||
+			window
+				.getComputedStyle( cartCollaterals )
+				.getPropertyValue( '--wc-bnpl-height' )
+				.trim()
+		) {
+			return;
+		}
+
+		window.setTimeout( function () {
+			var message = getMessageContainer();
+			var frame = document.querySelector(
+				'.cart_totals .__PrivateStripeElement'
+			);
+			var marginBottom = parseFloat( bottomMargin ) || 0;
+
+			if ( ! message || ! frame ) {
+				return;
+			}
+
+			cartCollaterals.style.setProperty(
+				'--wc-bnpl-height',
+				parseFloat( window.getComputedStyle( message ).height ) +
+					marginBottom +
+					'px'
+			);
+			cartCollaterals.style.setProperty(
+				'--wc-bnpl-container-height',
+				parseFloat( window.getComputedStyle( frame ).height ) - 12 + 'px'
+			);
+			cartCollaterals.style.setProperty(
+				'--wc-bnpl-loader-margin',
+				marginBottom + 2 + 'px'
+			);
+			message.style.setProperty( '--wc-bnpl-margin-bottom', '-4px' );
+		}, 2000 );
 	}
 
 	// Client 11.1.0 client/checkout/api/index.js:57-71 waits up to 600 seconds for Stripe.js, checking every 100 ms,

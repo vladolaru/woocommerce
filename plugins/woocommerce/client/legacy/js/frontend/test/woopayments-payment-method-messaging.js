@@ -473,6 +473,51 @@ describe( 'WooPayments BNPL payment method messaging', () => {
 		expect( container.classList.contains( 'pmme-updated' ) ).toBe( true );
 	} );
 
+	// Client 11.2.0 product-details/bnpl-site-messaging/index.js:144-197: two seconds after the first cart message is
+	// ready, its height, the Stripe frame's height and the loader margin go on .cart-collaterals for the stylesheet.
+	test( 'keeps the space of the classic cart message for the next cart update', async () => {
+		// Classic cart (templates/cart/cart.php, cart-totals.php): div.cart-collaterals holds div.cart_totals; Stripe
+		// mounts its frame in a div.__PrivateStripeElement inside the message.
+		document.body.innerHTML =
+			'<div class="cart-collaterals"><div class="cart_totals">' +
+			'<table class="shop_table" style="margin-bottom: 16px"></table>' +
+			'<div id="payment-method-message" style="height: 40px">' +
+			'<div class="__PrivateStripeElement" style="height: 52px"></div>' +
+			'</div></div></div>';
+		setMessagingConfig( { isCart: true, cartTotal: 2000 } );
+		const readyHandlers = [];
+		createElement.mockImplementation( () => ( {
+			mount: mountElement,
+			on: jest.fn( ( event, handler ) => {
+				if ( event === 'ready' ) {
+					readyHandlers.push( handler );
+				}
+			} ),
+			update: updateElement,
+		} ) );
+		jest.useFakeTimers();
+
+		require( '../woopayments-payment-method-messaging' );
+		readyHandlers.forEach( ( handler ) => handler() );
+		await jest.advanceTimersByTimeAsync( 2000 );
+
+		const collaterals = document.querySelector( '.cart-collaterals' );
+		expect( collaterals.style.getPropertyValue( '--wc-bnpl-height' ) ).toBe(
+			'56px'
+		);
+		expect(
+			collaterals.style.getPropertyValue( '--wc-bnpl-container-height' )
+		).toBe( '40px' );
+		expect(
+			collaterals.style.getPropertyValue( '--wc-bnpl-loader-margin' )
+		).toBe( '18px' );
+		expect(
+			getMessageContainer().style.getPropertyValue(
+				'--wc-bnpl-margin-bottom'
+			)
+		).toBe( '-4px' );
+	} );
+
 	test( 'does not initialize the classic script for cart block messaging', async () => {
 		setMessagingConfig( { isCartBlock: true } );
 
