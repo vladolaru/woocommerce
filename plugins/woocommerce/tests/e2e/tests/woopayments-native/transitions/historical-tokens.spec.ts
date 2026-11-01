@@ -11,6 +11,7 @@ import {
 	clickExtensionStripeSubmit,
 	expectSettledCardPayment,
 	requireTestModeAccount,
+	keepingScrollPosition,
 	TEST_CARDS,
 	typeIntoStripeField,
 	type ProviderTestCard,
@@ -143,7 +144,9 @@ async function addPluginOwnedCard(
 	await page.goto( 'my-account/payment-methods/' );
 	await page.getByRole( 'link', { name: /add payment method/i } ).click();
 	await expect( page.locator( ADD_FORM ) ).toBeVisible();
-	await fillPluginOwnedCardDetails( page, TEST_CARDS.basic );
+	await keepingScrollPosition( page, () =>
+		fillPluginOwnedCardDetails( page, TEST_CARDS.basic )
+	);
 	await clickExtensionStripeSubmit(
 		page,
 		page.getByRole( 'button', { name: 'Add payment method', exact: true } )

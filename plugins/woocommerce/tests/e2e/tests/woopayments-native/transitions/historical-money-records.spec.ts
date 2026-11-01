@@ -15,6 +15,7 @@ import {
 	getPaymentIntent,
 	getCharge,
 	requireTestModeAccount,
+	keepingScrollPosition,
 	TEST_CARDS,
 	typeIntoStripeField,
 	type ProviderTestCard,
@@ -174,7 +175,9 @@ async function runHistoricalMoneyRecords(
 				'input[name="payment_method"][value="woocommerce_payments"]'
 			)
 			.check();
-		await fillPluginOwnedCardDetails( page, TEST_CARDS.genericDecline );
+		await keepingScrollPosition( page, () =>
+			fillPluginOwnedCardDetails( page, TEST_CARDS.genericDecline )
+		);
 
 		let declineSubmissionCount = 0;
 		const onDeclineRequest = ( request: Request ) => {

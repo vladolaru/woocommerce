@@ -11,6 +11,7 @@ import { createClassicCheckoutPage } from '../../../utils/pages';
 import {
 	expectSettledCardPayment,
 	requireTestModeAccount,
+	keepingScrollPosition,
 	TEST_CARDS,
 	typeIntoStripeField,
 } from '../../../utils/woopayments';
@@ -250,9 +251,11 @@ async function payThroughWooPay(
 
 	// Hosted checkout: Stripe's split card fields, each in its own frame,
 	// then the platform's review step before the order is placed.
-	await fillStripeField( page, /card number/i, TEST_CARDS.basic.number );
-	await fillStripeField( page, /expiration/i, TEST_CARDS.basic.expiry );
-	await fillStripeField( page, /CVC/i, TEST_CARDS.basic.cvc );
+	await keepingScrollPosition( page, async () => {
+		await fillStripeField( page, /card number/i, TEST_CARDS.basic.number );
+		await fillStripeField( page, /expiration/i, TEST_CARDS.basic.expiry );
+		await fillStripeField( page, /CVC/i, TEST_CARDS.basic.cvc );
+	} );
 	// A new WooPay account has no saved address; the platform asks for one. Wait for the page to settle on either the
 	// review button or the address prompt before deciding.
 	const reviewButton = page.getByRole( 'button', {

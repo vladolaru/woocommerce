@@ -149,6 +149,26 @@ test( 'fillCardDetails replaces a card the fields already hold', async ( {
 	).toHaveValue( TEST_CARDS.genericDecline.cvc );
 } );
 
+test( 'fillCardDetails leaves the page scrolled where the entry found it', async ( {
+	page,
+} ) => {
+	await page.setContent(
+		`<div style="height: 3000px"></div>
+		<div id="wcpay-core-blocks-payment-element">
+			<iframe name="__privateStripeFrame123" srcdoc="${ CARD_FIELDS_HTML.replace(
+				/"/g,
+				'&quot;'
+			) }"></iframe>
+		</div>
+		<div style="height: 3000px"></div>`
+	);
+	await page.evaluate( () => window.scrollTo( 0, 100 ) );
+
+	await fillCardDetails( page, TEST_CARDS.basic, 'blocks' );
+
+	expect( await page.evaluate( () => window.scrollY ) ).toBe( 100 );
+} );
+
 test( 'fillCardDetails fails at once when the click leaves another element focused', async ( {
 	page,
 } ) => {

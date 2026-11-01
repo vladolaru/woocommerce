@@ -182,11 +182,31 @@ export async function typeIntoStripeField(
 }
 
 /**
+ * Runs a card entry and scrolls the page back to where it found it.
+ *
+ * Clicking into a card field scrolls the page further than `fill()` did.
+ * The next click that scrolls, such as Place order, is then sent by
+ * Chromium by the layout from before its scroll, which puts it on the CVC
+ * field inside the Stripe frame, and the form never submits.
+ */
+export async function keepingScrollPosition(
+	page: Page,
+	enter: () => Promise< void >
+): Promise< void > {
+	const scrollY = await page.evaluate( () => window.scrollY );
+	await enter();
+	await page.evaluate( ( y ) => window.scrollTo( 0, y ), scrollY );
+}
+
+/**
  * Types a card into a native Payment Element once, waits a short settle and
  * proves the element kept it (expectCardKept()). Each field is clicked before
  * it is typed into, because `fill()` can drop the digits into the email field.
  * A field that already holds a card is replaced, not typed into: a decline
  * or recovery row enters a second card in the same document.
+ *
+ * The page is scrolled back to where the entry found it
+ * (keepingScrollPosition()).
  *
  * The read-back sees only what the element holds at that moment: a checkout
  * update still in flight can land after it and empty the card.
@@ -196,11 +216,13 @@ export async function fillCardDetails(
 	card: ProviderTestCard,
 	surface: CardSurface
 ): Promise< void > {
-	for ( const field of getCardFields( page, card, surface ) ) {
-		await typeIntoStripeField( page, field.locator, field.value, {
-			replace: true,
-		} );
-	}
+	await keepingScrollPosition( page, async () => {
+		for ( const field of getCardFields( page, card, surface ) ) {
+			await typeIntoStripeField( page, field.locator, field.value, {
+				replace: true,
+			} );
+		}
+	} );
 	await new Promise( ( resolve ) => setTimeout( resolve, ENTRY_SETTLE_MS ) );
 	await expectCardKept( page, card, surface );
 }
