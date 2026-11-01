@@ -2352,6 +2352,29 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should send the card method's icon and dark icon URLs in the card entry of the classic and Blocks configs.
+	 *
+	 * Client 11.2.0 sends `icon` and `darkIcon` for every method entry, the card's included
+	 * (`class-wc-payments-checkout.php:635-636`); the card's dark icon is its icon (`CardDefinition.php:171-184`).
+	 */
+	public function test_card_entry_has_the_card_icon_urls(): void {
+		$account_service = $this->create_account_service( true );
+		$assets          = new WooPaymentsCheckoutAssets();
+		$assets->init( $account_service, $this->create_woopay_session_service( false ), $this->create_woopay_eligibility( false ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller(), new PaymentMethodRegistry() );
+		$expected = WC()->plugin_url() . '/assets/images/payment-methods/generic-card.svg';
+
+		$entries = array(
+			'classic' => $assets->get_payment_fields_js_config( self::CARD_SUPPORTS )['paymentMethodsConfig']['card'],
+			'blocks'  => $assets->get_blocks_payment_method_data( self::CARD_SUPPORTS )['paymentMethodsConfig']['card'],
+		);
+
+		foreach ( $entries as $surface => $entry ) {
+			$this->assertSame( $expected, $entry['icon'] ?? null, "The $surface card entry carries the card icon." );
+			$this->assertSame( $expected, $entry['darkIcon'] ?? null, "The $surface card entry carries the card dark icon." );
+		}
+	}
+
+	/**
 	 * @testdox Should expose the WooPay express-method gate flags in Blocks payment method data.
 	 *
 	 * The Blocks bundle only registers WooPay's express payment method once

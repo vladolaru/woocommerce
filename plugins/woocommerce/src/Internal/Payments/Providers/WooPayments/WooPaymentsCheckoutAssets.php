@@ -1126,12 +1126,16 @@ class WooPaymentsCheckoutAssets implements RegisterHooksInterface {
 			return array();
 		}
 
-		$config = array(
+		$card_definition = $this->payment_method_registry->get( 'card' );
+		$account_country = $this->get_account_service()->get_account_country_or_us();
+		$config          = array(
 			'card' => array(
 				'id'                     => 'card',
 				'gatewayId'              => WooPaymentsPersistenceVocabulary::GATEWAY_ID,
 				'title'                  => __( 'Card', 'woocommerce' ),
 				'label'                  => __( 'Card', 'woocommerce' ),
+				'icon'                   => null === $card_definition ? '' : $this->get_payment_method_icon_url( $card_definition->get_icon_asset_path( $account_country ) ),
+				'darkIcon'               => null === $card_definition ? '' : $this->get_payment_method_icon_url( $card_definition->get_dark_icon_asset_path( $account_country ) ),
 				'isReusable'             => true,
 				'isBnpl'                 => false,
 				'isExpressCheckout'      => false,
