@@ -3335,8 +3335,8 @@
 			return;
 		}
 
-		// The Tracks identity resolves before anything is wired, so the OTP
-		// URL always carries it.
+		// The wiring waits for the Tracks identity lookup, so the OTP URL
+		// carries the identity when there is one.
 		getTracksIdentity().then( function ( identity ) {
 			getWooPayProtocol().handleEmailInput(
 				getWooPayEmailInputArgs(),

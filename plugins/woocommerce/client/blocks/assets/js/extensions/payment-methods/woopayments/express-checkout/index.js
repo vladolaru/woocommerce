@@ -992,15 +992,14 @@ const requestOrderStatusUpdate = async ( orderId, nonce, intentId ) => {
 };
 
 /**
- * Confirm an intent that needs a next action (3DS) and get the order's return URL.
- *
- * Returns `true` when the redirect carries no `#wcpay-confirm-` hash, otherwise a promise of the authenticated return
- * URL (client 11.2.0 WCPayAPI.confirmIntent(), client/checkout/api/index.js). There is no account override for intent
- * confirmation: only the WooPay platform blog sets one, through the `wc_payments_account_id_for_intent_confirmation`
- * filter, and it runs its own WooPayments build.
+ * Confirm an intent that needs a next action (3DS) and get the order's return URL (client 11.2.0
+ * WCPayAPI.confirmIntent(), client/checkout/api/index.js). There is no account override for intent confirmation: only
+ * the WooPay platform blog sets one, through the `wc_payments_account_id_for_intent_confirmation` filter, and it runs
+ * its own WooPayments build.
  *
  * @param {string} redirectUrl Redirect URL or confirmation hash from the checkout response.
- * @return {true|Promise<string>} `true` when there is nothing to confirm.
+ * @return {true|Promise<string>} `true` when the redirect carries no `#wcpay-confirm-` hash, otherwise a promise of the
+ *                                authenticated return URL.
  */
 const confirmIntent = ( redirectUrl ) => {
 	const confirmation = parseConfirmationHash( redirectUrl );

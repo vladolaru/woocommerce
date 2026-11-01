@@ -835,8 +835,9 @@
 			} );
 	}
 
-	// Nested objects become bracketed form keys and empty values are left
-	// out.
+	// Strings and numbers are appended, empty strings included; nested
+	// objects become bracketed form keys; null, undefined, booleans and
+	// other non-object values are skipped.
 	function appendFormData( formData, data, prefix ) {
 		Object.keys( data ).forEach( function ( key ) {
 			var value = data[ key ];
