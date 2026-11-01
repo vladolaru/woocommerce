@@ -5086,6 +5086,33 @@ describe( 'WooPayments express checkout', () => {
 			).toBe( 'Your card was declined.' );
 		} );
 
+		// The confirm event's paymentFailed() closes the sheet (https://docs.stripe.com/js.md,
+		// "expressCheckoutElement.on('confirm', handler)": "called if you're unable to process the customer's payment").
+		test( 'closes the wallet sheet when the wallet payment fails', async () => {
+			const paymentFailed = jest.fn();
+			window.wp.apiFetch
+				.mockResolvedValueOnce( getCartResponse() )
+				// Store API checkout error, shaped as in the test above.
+				.mockRejectedValueOnce( {
+					code: 'woocommerce_rest_checkout_process_payment_error',
+					message: 'Your card was declined.',
+					data: { status: 400 },
+				} );
+			await mountCheckoutWallet();
+			await expressHandlers.click( { resolve: jest.fn() } );
+
+			await expressHandlers.confirm( {
+				billingDetails: {
+					email: 'shopper@example.test',
+					name: 'Ada Lovelace',
+				},
+				paymentFailed,
+			} );
+
+			expect( paymentFailed ).toHaveBeenCalledTimes( 1 );
+			expect( paymentFailed ).toHaveBeenCalledWith( { reason: 'fail' } );
+		} );
+
 		test( 'unlocks the page when the product cannot be added to the sheet\'s cart', async () => {
 			setProductPage();
 			// With `parse: false` @wordpress/api-fetch rejects with the fetch Response itself for a non-2xx status

@@ -3429,6 +3429,10 @@
 				response = await placeOrder( paymentCredentialId, event );
 				await redirectToOrder( response );
 			} catch ( error ) {
+				// Closes the wallet sheet, which would otherwise stay in its processing state over the error.
+				if ( typeof event.paymentFailed === 'function' ) {
+					event.paymentFailed( { reason: 'fail' } );
+				}
 				setError(
 					( error && error.message ) ||
 						GENERIC_PAYMENT_ERROR_MESSAGE
