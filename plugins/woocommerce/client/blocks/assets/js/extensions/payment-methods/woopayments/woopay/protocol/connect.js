@@ -74,7 +74,8 @@ export const setCachedPreferredCard = ( card ) => {
  * @param {string}  args.ajaxUrl              admin-ajax URL, for the Tracks identity.
  * @param {string}  args.platformTrackerNonce Nonce of the Tracks identity request.
  * @param {string}  args.iframeTitle          Title of the connect iframe, when this script creates it.
- * @return {Object} `sendMessage`, `sendPreemptiveSessionData`, `fetchPreferredCard` and `areThirdPartyCookiesEnabled`.
+ * @return {Object} `sendMessage`, `sendPreemptiveSessionData`, `fetchPreferredCard`, `areThirdPartyCookiesEnabled` and
+ * `initPostMessageTimeout`.
  */
 const createConnect = ( args ) => {
 	// The iframe the requests below were sent to, and those waiting for an answer, by callback name, oldest first.
@@ -82,6 +83,8 @@ const createConnect = ( args ) => {
 	let pendingRequests = {};
 	let isListenerAttached = false;
 	let preferredCardFetchPromise = null;
+	// Hosted WooPay says how long to wait for its answers; 5000 ms until it does (client 11.2.0 connect-utils.js:38-53).
+	let connectTimeout = CONNECT_TIMEOUT;
 
 	// Resolves once the Tracks identity does: hosted WooPay's sessions route rejects the first-party session when the
 	// connect page has no identity to post (client 11.2.0 woopay/connect/woopay-connect-iframe.js:31-34).
@@ -199,6 +202,9 @@ const createConnect = ( args ) => {
 					break;
 				case 'set_redirect_session_data_error':
 					resolveCallback( 'setRedirectSessionData', null );
+					break;
+				case 'get_post_message_timeout_success':
+					resolveCallback( 'getPostMessageTimeout', data.value );
 					break;
 			}
 		} );
@@ -322,7 +328,7 @@ const createConnect = ( args ) => {
 			if ( shouldTimeOut ) {
 				timeoutId = window.setTimeout(
 					() => settle( fallback ),
-					CONNECT_TIMEOUT
+					connectTimeout
 				);
 			}
 
@@ -349,6 +355,25 @@ const createConnect = ( args ) => {
 			null,
 			true
 		);
+
+	/**
+	 * Ask WooPay how long to wait for its answers and use that for every request sent after it answers (client 11.2.0
+	 * woopay-direct-checkout.js:124-130, asked from direct checkout's init). Requests already waiting keep the deadline
+	 * they started with, and the third-party cookie check keeps 5000 ms, as the client's runs before it asks.
+	 *
+	 * @return {Promise<void>} Settles once WooPay answers or the deadline passes.
+	 */
+	const initPostMessageTimeout = () =>
+		sendMessage(
+			{ action: 'getPostMessageTimeout' },
+			'getPostMessageTimeout',
+			null,
+			true
+		).then( ( timeout ) => {
+			if ( Number.isFinite( timeout ) && timeout > 0 ) {
+				connectTimeout = timeout;
+			}
+		} );
 
 	// One preferred-card request per connect iframe; a valid card or null.
 	const fetchPreferredCard = () => {
@@ -462,6 +487,7 @@ const createConnect = ( args ) => {
 		sendPreemptiveSessionData,
 		fetchPreferredCard,
 		areThirdPartyCookiesEnabled,
+		initPostMessageTimeout,
 	};
 };
 
@@ -471,7 +497,8 @@ const createConnect = ( args ) => {
  * connection values from the store.
  *
  * @param {Object} args The calling script's values; see createConnect().
- * @return {Object} `sendMessage`, `sendPreemptiveSessionData`, `fetchPreferredCard` and `areThirdPartyCookiesEnabled`.
+ * @return {Object} `sendMessage`, `sendPreemptiveSessionData`, `fetchPreferredCard`, `areThirdPartyCookiesEnabled` and
+ * `initPostMessageTimeout`.
  */
 export const getConnect = ( args ) => {
 	if ( ! pageConnect ) {

@@ -1785,6 +1785,31 @@ describe( 'WooPayments WooPay checkout', () => {
 		} );
 
 
+		// Client 11.2.0 asks WooPay's deadline only from direct checkout (direct-checkout/index.js:257).
+		test.each( [
+			[ 'asks', true ],
+			[ 'does not ask', false ],
+		] )( '%s WooPay how long to wait where direct checkout runs: %s', async ( name, runs ) => {
+			configureDirectCheckout(
+				'<div class="wc-proceed-to-checkout"><a class="checkout-button" href="#checkout">Checkout</a></div>'
+			);
+			window.wcpay_core_woopay_config.isWooPayDirectCheckoutEnabled = runs;
+			window.wcpay_core_woopay_config.shouldShowWooPayButton = true;
+			const postMessage = installConnect();
+			require( '../woopayments-woopay' );
+			await loadConnectIframe();
+			await flushPromises();
+
+			expect(
+				postMessage.mock.calls.some(
+					( [ message ] ) => message.action === 'getPostMessageTimeout'
+				)
+			).toBe( runs );
+			emitConnectMessage( 'get_post_message_timeout_success', 3000 );
+			emitConnectMessage( 'get_is_user_logged_in_success', true );
+			await flushPromises();
+		} );
+
 		describe( 'with the skip_woopay cookie', () => {
 			const cartLink =
 				'<div class="wc-proceed-to-checkout"><a class="checkout-button" href="https://store.test/checkout/">Checkout</a></div>';
@@ -3019,10 +3044,11 @@ describe( 'WooPayments WooPay checkout', () => {
 
 			expect( ordinaryClick.defaultPrevented ).toBe( false );
 			expect( submitClick.defaultPrevented ).toBe( false );
-			// No preferred-card query without a WooPay button.
+			// No preferred-card query without a WooPay button; direct checkout asks WooPay's deadline first.
 			expect(
 				postMessage.mock.calls.map( ( [ message ] ) => message.action )
 			).toEqual( [
+				'getPostMessageTimeout',
 				'getIsUserLoggedIn',
 				'setTempThirdPartyCookie',
 				'getIsThirdPartyCookiesEnabled',

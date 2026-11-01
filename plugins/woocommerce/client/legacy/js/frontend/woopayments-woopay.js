@@ -720,6 +720,8 @@
 			return;
 		}
 
+		// Client 11.2.0 direct-checkout/index.js:257: the page's later Connect requests wait as long as WooPay asks.
+		getWooPayConnect().initPostMessageTimeout();
 		sendWooPayConnectMessage(
 			{ action: 'getIsUserLoggedIn' },
 			'getIsUserLoggedIn',

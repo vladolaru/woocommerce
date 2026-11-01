@@ -416,6 +416,113 @@ describe( 'WooPay Connect (shared)', () => {
 		} );
 	} );
 
+	// Client 11.2.0 connect-utils.js:38-53 and woopay-direct-checkout.js:124-130; hosted ConnectPage.php:108 sends 3000.
+	describe( "WooPay's deadline", () => {
+		const settledAt = async ( connect ) => {
+			let settled = false;
+			getPreemptiveSession( connect, 'later' ).then( () => {
+				settled = true;
+			} );
+			await jest.advanceTimersByTimeAsync( 2999 );
+			const before = settled;
+			await jest.advanceTimersByTimeAsync( 1 );
+			const atThree = settled;
+			await jest.advanceTimersByTimeAsync( 2000 );
+
+			return { before, atThree, atFive: settled };
+		};
+
+		test( 'waits as long as WooPay says for requests sent after its answer', async () => {
+			jest.useFakeTimers();
+			const connect = loadGetConnect()( { woopayHost: WOOPAY_HOST } );
+			const asked = connect.initPostMessageTimeout();
+			await loadConnectIframe();
+			expect( postMessage ).toHaveBeenCalledWith(
+				{ action: 'getPostMessageTimeout' },
+				WOOPAY_HOST
+			);
+			sendWooPayMessage( {
+				action: 'get_post_message_timeout_success',
+				value: 3000,
+			} );
+			await asked;
+
+			expect( await settledAt( connect ) ).toEqual( {
+				before: false,
+				atThree: true,
+				atFive: true,
+			} );
+		} );
+
+		test.each( [
+			[ 'no answer', undefined ],
+			[ 'an answer that is not a positive number', '3000' ],
+			[ 'an answer of zero', 0 ],
+		] )( 'keeps 5000 ms after %s', async ( name, value ) => {
+			jest.useFakeTimers();
+			const connect = loadGetConnect()( { woopayHost: WOOPAY_HOST } );
+			const asked = connect.initPostMessageTimeout();
+			await loadConnectIframe();
+			if ( value === undefined ) {
+				await jest.advanceTimersByTimeAsync( 5000 );
+			} else {
+				sendWooPayMessage( {
+					action: 'get_post_message_timeout_success',
+					value,
+				} );
+			}
+			await asked;
+
+			expect( await settledAt( connect ) ).toEqual( {
+				before: false,
+				atThree: false,
+				atFive: true,
+			} );
+		} );
+
+		test( 'keeps 5000 ms for a request sent before the answer', async () => {
+			jest.useFakeTimers();
+			const connect = loadGetConnect()( { woopayHost: WOOPAY_HOST } );
+			const asked = connect.initPostMessageTimeout();
+			let settled = false;
+			getPreemptiveSession( connect, 'early' ).then( () => {
+				settled = true;
+			} );
+			await loadConnectIframe();
+			sendWooPayMessage( {
+				action: 'get_post_message_timeout_success',
+				value: 3000,
+			} );
+			await asked;
+
+			await jest.advanceTimersByTimeAsync( 4999 );
+			expect( settled ).toBe( false );
+			await jest.advanceTimersByTimeAsync( 1 );
+			expect( settled ).toBe( true );
+		} );
+
+		test( 'keeps 5000 ms for the third-party cookie check', async () => {
+			jest.useFakeTimers();
+			const connect = loadGetConnect()( { woopayHost: WOOPAY_HOST } );
+			const asked = connect.initPostMessageTimeout();
+			await loadConnectIframe();
+			sendWooPayMessage( {
+				action: 'get_post_message_timeout_success',
+				value: 3000,
+			} );
+			await asked;
+			let answer;
+			connect.areThirdPartyCookiesEnabled().then( ( value ) => {
+				answer = value;
+			} );
+
+			await jest.advanceTimersByTimeAsync( 4999 );
+			expect( answer ).toBeUndefined();
+			await jest.advanceTimersByTimeAsync( 1 );
+			expect( answer ).toBe( false );
+		} );
+	} );
+
 	describe( 'third-party cookie check', () => {
 		const TEMP_IFRAME = '#temp-woopay-connect-iframe';
 		const SET_SUCCESS = {
