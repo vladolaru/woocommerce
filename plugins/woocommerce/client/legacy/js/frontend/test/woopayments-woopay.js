@@ -213,7 +213,7 @@ describe( 'WooPayments WooPay checkout', () => {
 		global.$ = jQueryMock;
 		window.jQuery = jQueryMock;
 		window.$ = jQueryMock;
-		window.wcpay_core_woopay_config = {
+		window.wc_woopayments_woopay_params = {
 			ajaxUrl: 'https://example.test/admin-ajax.php',
 			tracksUrl: TRACKS_URL,
 			tracksRestNonce: 'rest-nonce',
@@ -259,7 +259,7 @@ describe( 'WooPayments WooPay checkout', () => {
 			delete global.$;
 			delete window.jQuery;
 			delete window.$;
-			delete window.wcpay_core_woopay_config;
+			delete window.wc_woopayments_woopay_params;
 			delete window.requestIdleCallback;
 			window.localStorage.clear();
 			window.sessionStorage.clear();
@@ -343,7 +343,7 @@ describe( 'WooPayments WooPay checkout', () => {
 
 	// wp_localize_script() turns the server's false into ''.
 	test.each( [ false, '' ] )( 'does not record WooPay tracking when shopper tracking is %p', async ( trackingEnabled ) => {
-		window.wcpay_core_woopay_config.isShopperTrackingEnabled = trackingEnabled;
+		window.wc_woopayments_woopay_params.isShopperTrackingEnabled = trackingEnabled;
 		require( '../woopayments-woopay' );
 
 		document.querySelector( '#wcpay-woopay-button button' ).click();
@@ -361,8 +361,8 @@ describe( 'WooPayments WooPay checkout', () => {
 			'<button type="submit" class="single_add_to_cart_button" name="add-to-cart" value="123">Add to cart</button>' +
 			'<div id="wcpay-woopay-button" data-product_page="1"><div class="woopay-express-button is-placeholder"></div></div>' +
 			'</form>';
-		window.wcpay_core_woopay_config.addToCartNonce = 'add-to-cart-nonce';
-		window.wcpay_core_woopay_config.woopayButton.context = 'product';
+		window.wc_woopayments_woopay_params.addToCartNonce = 'add-to-cart-nonce';
+		window.wc_woopayments_woopay_params.woopayButton.context = 'product';
 
 		require( '../woopayments-woopay' );
 
@@ -423,10 +423,10 @@ describe( 'WooPayments WooPay checkout', () => {
 			'<div id="wcpay-woopay-button" data-product_page="1"><div class="woopay-express-button is-placeholder"></div></div>' +
 			'<div class="wcpay-core-payment-errors" hidden></div>' +
 			'</form>';
-		window.wcpay_core_woopay_config.addToCartNonce = 'add-to-cart-nonce';
-		window.wcpay_core_woopay_config.confirmationErrorMessage =
+		window.wc_woopayments_woopay_params.addToCartNonce = 'add-to-cart-nonce';
+		window.wc_woopayments_woopay_params.confirmationErrorMessage =
 			'There was a problem processing the payment. Please try again.';
-		window.wcpay_core_woopay_config.woopayButton.context = 'product';
+		window.wc_woopayments_woopay_params.woopayButton.context = 'product';
 		const submit = jest
 			.spyOn( window.HTMLFormElement.prototype, 'submit' )
 			.mockImplementation( () => {} );
@@ -471,8 +471,8 @@ describe( 'WooPayments WooPay checkout', () => {
 			'<button type="submit" class="single_add_to_cart_button" name="add-to-cart">Add to cart</button>' +
 			'<div id="wcpay-woopay-button" data-product_page="1"><div class="woopay-express-button is-placeholder"></div></div>' +
 			'</form>';
-		window.wcpay_core_woopay_config.addToCartNonce = 'add-to-cart-nonce';
-		window.wcpay_core_woopay_config.woopayButton.context = 'product';
+		window.wc_woopayments_woopay_params.addToCartNonce = 'add-to-cart-nonce';
+		window.wc_woopayments_woopay_params.woopayButton.context = 'product';
 
 		require( '../woopayments-woopay' );
 
@@ -504,8 +504,8 @@ describe( 'WooPayments WooPay checkout', () => {
 					};
 				},
 			} );
-			window.wcpay_core_woopay_config.isWoopayFirstPartyAuthEnabled = true;
-			window.wcpay_core_woopay_config.woopayHost = 'https://pay.woo.test';
+			window.wc_woopayments_woopay_params.isWoopayFirstPartyAuthEnabled = true;
+			window.wc_woopayments_woopay_params.woopayHost = 'https://pay.woo.test';
 			global.jQuery.post = jest.fn( ( url, data ) => ( {
 				done: jest.fn( ( callback ) => {
 					callback(
@@ -666,8 +666,8 @@ describe( 'WooPayments WooPay checkout', () => {
 					};
 				},
 			} );
-			window.wcpay_core_woopay_config.isWoopayFirstPartyAuthEnabled = true;
-			window.wcpay_core_woopay_config.woopayHost = 'https://pay.woo.test';
+			window.wc_woopayments_woopay_params.isWoopayFirstPartyAuthEnabled = true;
+			window.wc_woopayments_woopay_params.woopayHost = 'https://pay.woo.test';
 			global.jQuery.post = jest.fn( ( url ) => ( {
 				done: jest.fn( ( callback ) => {
 					callback(
@@ -775,7 +775,7 @@ describe( 'WooPayments WooPay checkout', () => {
 						return { postMessage };
 					},
 				} );
-				window.wcpay_core_woopay_config.isWoopayFirstPartyAuthEnabled = true;
+				window.wc_woopayments_woopay_params.isWoopayFirstPartyAuthEnabled = true;
 			} );
 
 			test.each( [
@@ -1021,7 +1021,7 @@ describe( 'WooPayments WooPay checkout', () => {
 					};
 				},
 			} );
-			window.wcpay_core_woopay_config.woopayHost = 'https://pay.woo.test';
+			window.wc_woopayments_woopay_params.woopayHost = 'https://pay.woo.test';
 			window.localStorage.setItem(
 				'woopay_preferred_card',
 				JSON.stringify( {
@@ -1070,7 +1070,7 @@ describe( 'WooPayments WooPay checkout', () => {
 					return { postMessage };
 				},
 			} );
-			window.wcpay_core_woopay_config.woopayHost = 'https://pay.woo.test';
+			window.wc_woopayments_woopay_params.woopayHost = 'https://pay.woo.test';
 			const blocksCard = window.wc.woopayments.woopay
 				.getConnect( { woopayHost: 'https://pay.woo.test' } )
 				.fetchPreferredCard();
@@ -1105,10 +1105,10 @@ describe( 'WooPayments WooPay checkout', () => {
 					'<div id="wcpay-woopay-button" data-product_page="1"><div class="woopay-express-button is-placeholder"></div></div>' +
 					'<div class="wcpay-core-payment-errors" hidden></div>' +
 					'</form>';
-			window.wcpay_core_woopay_config.addToCartNonce = 'add-to-cart-nonce';
-			window.wcpay_core_woopay_config.confirmationErrorMessage =
+			window.wc_woopayments_woopay_params.addToCartNonce = 'add-to-cart-nonce';
+			window.wc_woopayments_woopay_params.confirmationErrorMessage =
 				'Choose product options before using WooPay.';
-			window.wcpay_core_woopay_config.woopayButton.context = 'product';
+			window.wc_woopayments_woopay_params.woopayButton.context = 'product';
 
 			require( '../woopayments-woopay' );
 
@@ -1126,7 +1126,7 @@ describe( 'WooPayments WooPay checkout', () => {
 
 		test( 'renders WooPay save-my-info fields and posts the full number with the order', async () => {
 			// Localized by WooPay\SessionController::get_classic_woopay_config(), the checkout page permalink.
-			window.wcpay_core_woopay_config.woopaySourceUrl =
+			window.wc_woopayments_woopay_params.woopaySourceUrl =
 				'https://example.test/checkout/';
 			window.history.pushState( {}, '', '/checkout/?utm_source=a-long-campaign' );
 			// Stand-in for the validation script (phone-validation.js, core's validatePhoneNumber) the section loads on
@@ -1213,8 +1213,8 @@ describe( 'WooPayments WooPay checkout', () => {
 			'<input type="hidden" name="attribute_size" value="large" />' +
 			'<div id="wcpay-woopay-button" data-product_page="1"><div class="woopay-express-button is-placeholder"></div></div>' +
 			'</form>';
-		window.wcpay_core_woopay_config.addToCartNonce = 'add-to-cart-nonce';
-		window.wcpay_core_woopay_config.woopayButton.context = 'product';
+		window.wc_woopayments_woopay_params.addToCartNonce = 'add-to-cart-nonce';
+		window.wc_woopayments_woopay_params.woopayButton.context = 'product';
 
 		require( '../woopayments-woopay' );
 
@@ -1273,9 +1273,9 @@ describe( 'WooPayments WooPay checkout', () => {
 			'</li>' +
 			'</ul>' +
 			'</form>';
-		window.wcpay_core_woopay_config.confirmationErrorMessage =
+		window.wc_woopayments_woopay_params.confirmationErrorMessage =
 			'WooPay is unavailable right now.';
-		window.wcpay_core_woopay_config.isWoopayFirstPartyAuthEnabled = true;
+		window.wc_woopayments_woopay_params.isWoopayFirstPartyAuthEnabled = true;
 		global.jQuery.post.mockImplementation( () => ( {
 			done: jest.fn( () => ( {
 				fail: jest.fn(),
@@ -1313,10 +1313,10 @@ describe( 'WooPayments WooPay checkout', () => {
 			'<div id="wcpay-woopay-button" data-product_page="1"><div class="woopay-express-button is-placeholder"></div></div>' +
 			'<div class="wcpay-core-payment-errors" hidden></div>' +
 			'</form>';
-		window.wcpay_core_woopay_config.addToCartNonce = 'add-to-cart-nonce';
-		window.wcpay_core_woopay_config.confirmationErrorMessage =
+		window.wc_woopayments_woopay_params.addToCartNonce = 'add-to-cart-nonce';
+		window.wc_woopayments_woopay_params.confirmationErrorMessage =
 			'Choose product options before using WooPay.';
-		window.wcpay_core_woopay_config.woopayButton.context = 'product';
+		window.wc_woopayments_woopay_params.woopayButton.context = 'product';
 
 		require( '../woopayments-woopay' );
 
@@ -1335,11 +1335,11 @@ describe( 'WooPayments WooPay checkout', () => {
 	test( 'shows the WooPay terms and privacy agreement under save my info and records link clicks', () => {
 		// Client 11.1.0 client/components/woopay/save-user/agreement.js,
 		// rendered in the checked save-details form (checkout-page-save-user.js:402-403).
-		window.wcpay_core_woopay_config.woopayAgreementText =
+		window.wc_woopayments_woopay_params.woopayAgreementText =
 			"By continuing, you agree to WooPay's <termsOfService/> and <privacyPolicy/>.";
-		window.wcpay_core_woopay_config.woopayTermsOfServiceLabel =
+		window.wc_woopayments_woopay_params.woopayTermsOfServiceLabel =
 			'Terms of Service';
-		window.wcpay_core_woopay_config.woopayPrivacyPolicyLabel =
+		window.wc_woopayments_woopay_params.woopayPrivacyPolicyLabel =
 			'Privacy Policy';
 
 		require( '../woopayments-woopay' );
@@ -1394,13 +1394,13 @@ describe( 'WooPayments WooPay checkout', () => {
 	test( 'shows the WooPay additional-information line under save my info', () => {
 		// Client 11.1.0 client/components/woopay/save-user/additional-information.js,
 		// rendered directly before the agreement (checkout-page-save-user.js:402-403).
-		window.wcpay_core_woopay_config.woopayAdditionalInfoText =
+		window.wc_woopayments_woopay_params.woopayAdditionalInfoText =
 			"Next time you buy here and on other Woo-powered stores, we'll send you a code to securely purchase with WooPay.";
-		window.wcpay_core_woopay_config.woopayAgreementText =
+		window.wc_woopayments_woopay_params.woopayAgreementText =
 			"By continuing, you agree to WooPay's <termsOfService/> and <privacyPolicy/>.";
-		window.wcpay_core_woopay_config.woopayTermsOfServiceLabel =
+		window.wc_woopayments_woopay_params.woopayTermsOfServiceLabel =
 			'Terms of Service';
-		window.wcpay_core_woopay_config.woopayPrivacyPolicyLabel =
+		window.wc_woopayments_woopay_params.woopayPrivacyPolicyLabel =
 			'Privacy Policy';
 
 		require( '../woopayments-woopay' );
@@ -1604,8 +1604,8 @@ describe( 'WooPayments WooPay checkout', () => {
 	} );
 
 	test( 'loads the phone validation script only when the shopper opts in', () => {
-		window.wcpay_core_woopay_config.PRE_CHECK_SAVE_MY_INFO = false;
-		window.wcpay_core_woopay_config.woopayPhoneValidationScriptUrl =
+		window.wc_woopayments_woopay_params.PRE_CHECK_SAVE_MY_INFO = false;
+		window.wc_woopayments_woopay_params.woopayPhoneValidationScriptUrl =
 			'https://example.test/wc-woopayments-phone-validation.js';
 		const getScript = () =>
 			document.querySelector(
@@ -1627,7 +1627,7 @@ describe( 'WooPayments WooPay checkout', () => {
 	test( 'shows the WooPay phone field only while save my info is checked', () => {
 		// Client 11.1.0 checkout-page-save-user.js renders the phone field
 		// inside the save-details form, which exists only while checked.
-		window.wcpay_core_woopay_config.PRE_CHECK_SAVE_MY_INFO = false;
+		window.wc_woopayments_woopay_params.PRE_CHECK_SAVE_MY_INFO = false;
 
 		require( '../woopayments-woopay' );
 
@@ -1654,11 +1654,11 @@ describe( 'WooPayments WooPay checkout', () => {
 	} );
 
 	test( 'keeps a translated agreement string as text, never markup', () => {
-		window.wcpay_core_woopay_config.woopayAgreementText =
+		window.wc_woopayments_woopay_params.woopayAgreementText =
 			'<img src=x onerror=alert(1)> <termsOfService/> <privacyPolicy/>';
-		window.wcpay_core_woopay_config.woopayTermsOfServiceLabel =
+		window.wc_woopayments_woopay_params.woopayTermsOfServiceLabel =
 			'<b>Terms</b>';
-		window.wcpay_core_woopay_config.woopayPrivacyPolicyLabel = 'Privacy';
+		window.wc_woopayments_woopay_params.woopayPrivacyPolicyLabel = 'Privacy';
 
 		require( '../woopayments-woopay' );
 
@@ -1737,7 +1737,7 @@ describe( 'WooPayments WooPay checkout', () => {
 				} ),
 			};
 			document.body.innerHTML = markup;
-			Object.assign( window.wcpay_core_woopay_config, {
+			Object.assign( window.wc_woopayments_woopay_params, {
 				isWooPayDirectCheckoutEnabled: true,
 				shouldShowWooPayButton: false,
 				forceNetworkSavedCards: false,
@@ -1826,8 +1826,8 @@ describe( 'WooPayments WooPay checkout', () => {
 			configureDirectCheckout(
 				'<div class="wc-proceed-to-checkout"><a class="checkout-button" href="#checkout">Checkout</a></div>'
 			);
-			window.wcpay_core_woopay_config.isWooPayDirectCheckoutEnabled = runs;
-			window.wcpay_core_woopay_config.shouldShowWooPayButton = true;
+			window.wc_woopayments_woopay_params.isWooPayDirectCheckoutEnabled = runs;
+			window.wc_woopayments_woopay_params.shouldShowWooPayButton = true;
 			const postMessage = installConnect();
 			require( '../woopayments-woopay' );
 			await loadConnectIframe();
@@ -2166,7 +2166,7 @@ describe( 'WooPayments WooPay checkout', () => {
 			// { action: 'getPreferredPaymentMethod' }, which this page must not send.
 			document.body.innerHTML =
 				'<div class="widget_shopping_cart"><a class="button checkout" href="https://store.test/checkout/">Checkout</a></div>';
-			window.wcpay_core_woopay_config = {
+			window.wc_woopayments_woopay_params = {
 				wcAjaxUrl: '/?wc-ajax=%%endpoint%%',
 				woopayHost: 'https://pay.woo.test',
 				testMode: true,
@@ -2269,7 +2269,7 @@ describe( 'WooPayments WooPay checkout', () => {
 				[ 'with the WooPay button', true ],
 			] )( 'adds no WooPay iframe until the window has loaded, %s', async ( name, showsButton ) => {
 				configureDirectCheckout( cartLink );
-				window.wcpay_core_woopay_config.shouldShowWooPayButton = showsButton;
+				window.wc_woopayments_woopay_params.shouldShowWooPayButton = showsButton;
 				const postMessage = installConnect();
 				const readyState = jest
 					.spyOn( document, 'readyState', 'get' )
@@ -2950,7 +2950,7 @@ describe( 'WooPayments WooPay checkout', () => {
 				],
 			] )( 'prefetches nothing %s', async ( name, markup, adjustConfig ) => {
 				configureDirectCheckout( markup );
-				adjustConfig( window.wcpay_core_woopay_config );
+				adjustConfig( window.wc_woopayments_woopay_params );
 				const postMessage = installConnect();
 				installStoreSessions();
 				require( '../woopayments-woopay' );
@@ -3114,7 +3114,7 @@ describe( 'WooPayments WooPay checkout', () => {
 			configureDirectCheckout(
 				'<div class="wc-proceed-to-checkout"><a class="checkout-button" href="#checkout">Checkout</a></div>'
 			);
-			window.wcpay_core_woopay_config.isWooPayDirectCheckoutEnabled = false;
+			window.wc_woopayments_woopay_params.isWooPayDirectCheckoutEnabled = false;
 			const postMessage = installConnect();
 			const { __test__ } = require( '../woopayments-woopay' );
 			const navigate = jest.fn();
@@ -3463,7 +3463,7 @@ describe( 'WooPayments WooPay checkout', () => {
 					get: () => ( { postMessage } ),
 				}
 			);
-			Object.assign( window.wcpay_core_woopay_config, {
+			Object.assign( window.wc_woopayments_woopay_params, {
 				// wp_localize_script serves booleans as '1' and ''; the client
 				// sends its JSON boolean, so the query must read testMode=true.
 				testMode: '1',
@@ -3611,7 +3611,7 @@ describe( 'WooPayments WooPay checkout', () => {
 					'https://fonts.test/stored.css',
 				],
 			] )( 'sends %s', async ( name, readAppearance, readFontRules, theme, fontUrl ) => {
-				Object.assign( window.wcpay_core_woopay_config, {
+				Object.assign( window.wc_woopayments_woopay_params, {
 					isWooPayGlobalThemeSupportEnabled: true,
 					woopayAppearance: storedAppearance,
 					woopayFontRules: storedFontRules,
@@ -3634,7 +3634,7 @@ describe( 'WooPayments WooPay checkout', () => {
 				[ 'no appearance script', undefined ],
 				[ 'the appearance script but no card script', {} ],
 			] )( 'sends the stored values with %s', async ( name, appearanceGlobal ) => {
-				Object.assign( window.wcpay_core_woopay_config, {
+				Object.assign( window.wc_woopayments_woopay_params, {
 					isWooPayGlobalThemeSupportEnabled: true,
 					woopayAppearance: storedAppearance,
 					woopayFontRules: storedFontRules,
@@ -3653,7 +3653,7 @@ describe( 'WooPayments WooPay checkout', () => {
 			test( 'sends and reads nothing with theme support off', async () => {
 				const readAppearance = jest.fn( () => pageAppearance );
 				const readFontRules = jest.fn( () => pageFontRules );
-				Object.assign( window.wcpay_core_woopay_config, {
+				Object.assign( window.wc_woopayments_woopay_params, {
 					isWooPayGlobalThemeSupportEnabled: false,
 					woopayAppearance: null,
 					woopayFontRules: [],
@@ -3889,7 +3889,7 @@ describe( 'WooPayments WooPay checkout', () => {
 		// Recorded decision C12: the client throws in new URL() on an
 		// unparsable host; native trusts no message at all.
 		test( 'trusts no message when the WooPay host cannot be parsed', async () => {
-			window.wcpay_core_woopay_config.woopayHost = 'not a url';
+			window.wc_woopayments_woopay_params.woopayHost = 'not a url';
 			await openOtpIframe();
 
 			[ 'https://attacker.test', 'null' ].forEach( ( origin ) => {
@@ -4194,7 +4194,7 @@ describe( 'WooPayments WooPay checkout', () => {
 				'<div id="wcpay-woopay-button"><div class="woopay-express-button is-placeholder"></div></div>' +
 				'</form>';
 			// wp_localize_script serves top-level scalars as strings.
-			Object.assign( window.wcpay_core_woopay_config, {
+			Object.assign( window.wc_woopayments_woopay_params, {
 				pay_for_order: 'true',
 				order_id: '5707',
 				key: 'wc_order_abc',
@@ -4203,7 +4203,7 @@ describe( 'WooPayments WooPay checkout', () => {
 				testMode: '1',
 				wcpayVersionNumber: '11.1.0',
 			} );
-			window.wcpay_core_woopay_config.woopayButton.context =
+			window.wc_woopayments_woopay_params.woopayButton.context =
 				'pay_for_order';
 			window.history.replaceState( null, '', '/' );
 		} );
@@ -4279,7 +4279,7 @@ describe( 'WooPayments WooPay checkout', () => {
 		} );
 
 		test( 'sends the order with the first-party session and to the WooPay redirect', async () => {
-			window.wcpay_core_woopay_config.isWoopayFirstPartyAuthEnabled = true;
+			window.wc_woopayments_woopay_params.isWoopayFirstPartyAuthEnabled = true;
 			// get_woopay_session answers with the encrypted session: { blog_id, data: { session, iv, hash } }
 			// (client includes/woopay/class-woopay-utilities.php:308-335, encrypt_and_sign_data(); read at
 			// woopay-express-checkout-button.js:306-308).
@@ -4324,7 +4324,7 @@ describe( 'WooPayments WooPay checkout', () => {
 		} );
 
 		test( 'sends the order with the OTP iframe session after the first-party session falls back', async () => {
-			window.wcpay_core_woopay_config.isWoopayFirstPartyAuthEnabled = true;
+			window.wc_woopayments_woopay_params.isWoopayFirstPartyAuthEnabled = true;
 			// get_woopay_session answers { blog_id, data: { session, iv, hash } } (client
 			// includes/woopay/class-woopay-utilities.php:308-335, encrypt_and_sign_data()).
 			global.jQuery.post = jest.fn( () => ( {
@@ -4398,7 +4398,7 @@ describe( 'WooPayments WooPay checkout', () => {
 		} );
 
 		test( 'leaves the WooPay URL alone when the page carries no order key', async () => {
-			delete window.wcpay_core_woopay_config.key;
+			delete window.wc_woopayments_woopay_params.key;
 			await openOtpIframe();
 
 			sendWooPayMessage( {
@@ -4416,8 +4416,8 @@ describe( 'WooPayments WooPay checkout', () => {
 	test( 'leaves the cart Proceed to checkout click to the footer Tracks script', () => {
 		document.body.innerHTML =
 			'<div class="wc-proceed-to-checkout"><a class="checkout-button" href="#checkout">Checkout</a></div>';
-		window.wcpay_core_woopay_config.woopayButton.context = 'cart';
-		window.wcpay_core_woopay_config.shouldShowWooPayButton = false;
+		window.wc_woopayments_woopay_params.woopayButton.context = 'cart';
+		window.wc_woopayments_woopay_params.shouldShowWooPayButton = false;
 		require( '../woopayments-woopay' );
 
 		document.querySelector( '.checkout-button' ).click();

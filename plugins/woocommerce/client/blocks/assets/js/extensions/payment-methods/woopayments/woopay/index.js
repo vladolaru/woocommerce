@@ -532,7 +532,7 @@ export const getWooPayExpressPaymentMethod = () => ( {
 	edit: <WooPayExpressContent />,
 	canMakePayment: () =>
 		Boolean(
-			settings.isCoreNativeCheckoutAvailable &&
+			settings.canProcessPayments &&
 			settings.isWooPayEnabled &&
 			settings.shouldShowWooPayButton
 		),
@@ -544,7 +544,7 @@ export const getWooPayExpressPaymentMethod = () => ( {
 
 const registerWooPay = () => {
 	if (
-		settings.isCoreNativeCheckoutAvailable &&
+		settings.canProcessPayments &&
 		settings.isWooPayEnabled &&
 		settings.shouldShowWooPayButton
 	) {

@@ -32,7 +32,7 @@ jest.mock( '@woocommerce/settings', () => {
 			cartTotal: 1000,
 			stylesCacheVersion: 'styles-v1',
 			currency: 'USD',
-			isCoreNativeCheckoutAvailable: true,
+			canProcessPayments: true,
 			paymentMethodTypes: [ 'card' ],
 			paymentMethodsConfig: {
 				card: {
@@ -50,7 +50,7 @@ jest.mock( '@woocommerce/settings', () => {
 			cartTotal: 1000,
 			stylesCacheVersion: 'styles-v1',
 			currency: 'USD',
-			isCoreNativeCheckoutAvailable: true,
+			canProcessPayments: true,
 			// The split config carries the card's top-level flag (WooPaymentsCheckoutAssets payment fields config).
 			forceNetworkSavedCards: true,
 			paymentMethodTypes: [ 'klarna' ],
@@ -184,7 +184,7 @@ describe( 'wc-payment-method-woopayments per-method registration', () => {
 		const paymentMethod = getWooPaymentsPaymentMethod( {
 			gatewayId: 'woocommerce_payments_klarna',
 			isCheckout: false,
-			isCoreNativeCheckoutAvailable: true,
+			canProcessPayments: true,
 			paymentMethodsConfig: {
 				klarna: {
 					title: 'Klarna',

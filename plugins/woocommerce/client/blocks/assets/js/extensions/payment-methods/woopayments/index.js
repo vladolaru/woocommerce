@@ -1408,7 +1408,7 @@ const WooPaymentsContent = ( {
 		if (
 			isStripeLoaded ||
 			! paymentSettings.publishableKey ||
-			! paymentSettings.isCoreNativeCheckoutAvailable
+			! paymentSettings.canProcessPayments
 		) {
 			return undefined;
 		}
@@ -1425,7 +1425,7 @@ const WooPaymentsContent = ( {
 	}, [
 		isStripeLoaded,
 		paymentSettings.publishableKey,
-		paymentSettings.isCoreNativeCheckoutAvailable,
+		paymentSettings.canProcessPayments,
 	] );
 
 	useEffect( () => {
@@ -1439,7 +1439,7 @@ const WooPaymentsContent = ( {
 	useEffect( () => {
 		if (
 			! elementContainer.current ||
-			! paymentSettings.isCoreNativeCheckoutAvailable ||
+			! paymentSettings.canProcessPayments ||
 			! isStripeLoaded
 		) {
 			return;
@@ -1757,7 +1757,7 @@ export const getWooPaymentsPaymentMethod = (
 			<SavedTokenHandler paymentSettings={ paymentSettings } />
 		),
 		canMakePayment: ( { paymentMethods = [], billingAddress = {} } = {} ) =>
-			Boolean( paymentSettings.isCoreNativeCheckoutAvailable ) &&
+			Boolean( paymentSettings.canProcessPayments ) &&
 			( paymentSettings.isCheckout === false ||
 				( paymentMethods.includes( paymentMethodName ) &&
 					( supportedCountries.length === 0 ||

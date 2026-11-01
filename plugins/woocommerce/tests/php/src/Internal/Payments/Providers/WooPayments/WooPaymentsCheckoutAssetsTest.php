@@ -132,7 +132,7 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 		}
 
 		$this->assertFalse( wp_script_is( 'wc-woopayments-checkout', 'enqueued' ) );
-		$this->assertStringNotContainsString( 'wcpay_core_checkout_config', (string) wp_scripts()->get_data( 'wc-woopayments-checkout', 'data' ) );
+		$this->assertStringNotContainsString( 'wc_woopayments_checkout_params', (string) wp_scripts()->get_data( 'wc-woopayments-checkout', 'data' ) );
 	}
 
 	/**
@@ -208,7 +208,7 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 		}
 		$script_data = (string) wp_scripts()->get_data( 'wc-woopayments-checkout', 'data' );
 
-		$this->assertSame( 1, substr_count( $script_data, 'var wcpay_core_checkout_config = ' ) );
+		$this->assertSame( 1, substr_count( $script_data, 'var wc_woopayments_checkout_params = ' ) );
 	}
 
 	/**
@@ -511,13 +511,13 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Decode the `wcpay_core_checkout_config` object localized on the classic checkout script.
+	 * Decode the `wc_woopayments_checkout_params` object localized on the classic checkout script.
 	 *
 	 * @param string $script_data Localized script data.
 	 * @return array<string,mixed>
 	 */
 	private function get_localized_core_checkout_config( string $script_data ): array {
-		$this->assertSame( 1, preg_match( '/^var wcpay_core_checkout_config = (.+);$/m', $script_data, $matches ) );
+		$this->assertSame( 1, preg_match( '/^var wc_woopayments_checkout_params = (.+);$/m', $script_data, $matches ) );
 
 		return json_decode( $matches[1], true );
 	}
@@ -2119,10 +2119,10 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 
 		$script_data = (string) wp_scripts()->get_data( 'wc-woopayments-checkout', 'data' );
 
-		$this->assertStringContainsString( 'var wcpay_core_checkout_config_woocommerce_payments_klarna = ', $script_data );
+		$this->assertStringContainsString( 'var wc_woopayments_checkout_params_woocommerce_payments_klarna = ', $script_data );
 		$this->assertStringContainsString( '"gatewayId":"woocommerce_payments_klarna"', $script_data );
 		$this->assertStringContainsString( '"paymentMethodTypes":["klarna"]', $script_data );
-		$this->assertStringNotContainsString( 'var wcpay_core_checkout_config = ', $script_data );
+		$this->assertStringNotContainsString( 'var wc_woopayments_checkout_params = ', $script_data );
 	}
 
 	/**
@@ -2262,8 +2262,8 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 		$this->assertSame( 5, $filtered, 'Each gateway config still passes the wcpay_payment_fields_js_config filter.' );
 		$this->assertSame( array( 'woocommerce_payments', 'woocommerce_payments_klarna', 'woocommerce_payments_affirm' ), $gateways );
 		$localized = (string) wp_scripts()->get_data( 'wc-woopayments-checkout', 'data' );
-		$this->assertStringContainsString( 'var wcpay_core_checkout_config = ', $localized, 'The card gateway config is localized under the base object.' );
-		$this->assertStringNotContainsString( 'var wcpay_core_checkout_config_woocommerce_payments =', $localized, 'The checkout script reads the card config from the base object only.' );
+		$this->assertStringContainsString( 'var wc_woopayments_checkout_params = ', $localized, 'The card gateway config is localized under the base object.' );
+		$this->assertStringNotContainsString( 'var wc_woopayments_checkout_params_woocommerce_payments =', $localized, 'The checkout script reads the card config from the base object only.' );
 	}
 
 	/**
@@ -2428,7 +2428,7 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 	 * Native-only Blocks data keys that the native Blocks bundle reads (client/blocks/assets/js/extensions/payment-methods/woopayments).
 	 */
 	private const BLOCKS_BUNDLE_DATA_KEYS_WITH_CONSUMERS = array(
-		'isCoreNativeCheckoutAvailable',   // index.js:1040,1268 and woopay/index.js:736,748.
+		'canProcessPayments',              // index.js:1040,1268 and woopay/index.js:736,748.
 		'paymentMethodTypes',              // index.js:517-521, the split gateway's own Stripe method type.
 		'supports',                        // index.js:1277, woopay/index.js:18.
 		'PRE_CHECK_SAVE_MY_INFO',          // index.js:706 (the client localizes it as woopayCheckout).
@@ -3058,7 +3058,7 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( 'pk_test_123', $config['publishableKey'] );
 		$this->assertSame( 'acct_123', $config['accountId'] );
-		$this->assertFalse( $config['isCoreNativeCheckoutAvailable'] );
+		$this->assertFalse( $config['canProcessPayments'] );
 		$this->assertArrayNotHasKey( 'createSetupIntentNonce', $config );
 		$this->assertArrayNotHasKey( 'updateOrderStatusNonce', $config );
 		$this->assertArrayNotHasKey( 'initWooPayNonce', $config );

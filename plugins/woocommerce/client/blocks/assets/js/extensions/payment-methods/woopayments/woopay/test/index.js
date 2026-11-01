@@ -29,7 +29,7 @@ jest.mock( '@woocommerce/settings', () => {
 		gatewayId: 'woocommerce_payments',
 		forceNetworkSavedCards: true,
 		initWooPayNonce: 'init-nonce',
-		isCoreNativeCheckoutAvailable: true,
+		canProcessPayments: true,
 		isWoopayFirstPartyAuthEnabled: false,
 		isWooPayEnabled: true,
 		shouldShowWooPayButton: true,

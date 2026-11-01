@@ -1,10 +1,10 @@
-/* global jQuery, wcpay_core_checkout_config */
+/* global jQuery, wc_woopayments_checkout_params */
 ( function ( $, window, document ) {
 	'use strict';
 
 	var defaultGatewayId = 'woocommerce_payments';
-	var configObjectPrefix = 'wcpay_core_checkout_config_';
-	var baseConfig = window.wcpay_core_checkout_config || {};
+	var configObjectPrefix = 'wc_woopayments_checkout_params_';
+	var baseConfig = window.wc_woopayments_checkout_params || {};
 	var appearanceUtils = window.wcpayAppearance;
 	// Each WooPayments gateway's config, keyed by gateway ID: a copy of its localized object, which this script never
 	// writes, or one built from the page config for a gateway first rendered after load. Checkout updates merge their
@@ -391,7 +391,7 @@
 			getBaseGatewayConfig()
 		);
 
-		if ( baseConfig.gatewayId || window.wcpay_core_checkout_config ) {
+		if ( baseConfig.gatewayId || window.wc_woopayments_checkout_params ) {
 			gatewayIds[ baseConfig.gatewayId || defaultGatewayId ] = true;
 		}
 
@@ -2390,7 +2390,7 @@
 			if (
 				container &&
 				! isPaymentListWalletGateway( selection.gatewayId ) &&
-				config.isCoreNativeCheckoutAvailable &&
+				config.canProcessPayments &&
 				config.publishableKey
 			) {
 				mounts.push( {
@@ -3320,8 +3320,8 @@
 			// Client 11.1.0 reads window.woopayCheckout; native localizes the flag with the WooPay config.
 			isSaveMyInfoPreChecked: function () {
 				return (
-					window.wcpay_core_woopay_config &&
-					window.wcpay_core_woopay_config.PRE_CHECK_SAVE_MY_INFO
+					window.wc_woopayments_woopay_params &&
+					window.wc_woopayments_woopay_params.PRE_CHECK_SAVE_MY_INFO
 				);
 			},
 		};

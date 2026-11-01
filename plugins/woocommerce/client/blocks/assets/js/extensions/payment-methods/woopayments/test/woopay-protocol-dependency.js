@@ -93,7 +93,7 @@ const cardData = {
 	cartTotal: 1000,
 	stylesCacheVersion: 'styles-v1',
 	currency: 'USD',
-	isCoreNativeCheckoutAvailable: true,
+	canProcessPayments: true,
 	wcAjaxUrl: '/?wc-ajax=%%endpoint%%',
 	paymentMethodTypes: [ 'card' ],
 	paymentMethodsConfig: { card: { title: 'Card', isReusable: true } },

@@ -1,9 +1,9 @@
 /* eslint-disable max-len */
-/* global jQuery, wcpay_core_woopay_config */
+/* global jQuery, wc_woopayments_woopay_params */
 ( function ( $, window, document ) {
 	'use strict';
 
-	var config = window.wcpay_core_woopay_config || {};
+	var config = window.wc_woopayments_woopay_params || {};
 	// Shopper-facing strings, translated through the wp-i18n dependency like client 11.1.0's @wordpress/i18n imports.
 	var __ = window.wp.i18n.__;
 	var sprintf = window.wp.i18n.sprintf;

@@ -2509,7 +2509,7 @@ class SessionControllerTest extends WC_REST_Unit_Test_Case {
 	private function get_localized_woopay_config(): array {
 		$localized_data = wp_scripts()->get_data( 'wc-woopayments-woopay', 'data' );
 		$this->assertIsString( $localized_data );
-		$this->assertSame( 1, preg_match( '/var wcpay_core_woopay_config = (\{.*\});/s', $localized_data, $matches ) );
+		$this->assertSame( 1, preg_match( '/var wc_woopayments_woopay_params = (\{.*\});/s', $localized_data, $matches ) );
 
 		return json_decode( $matches[1], true );
 	}

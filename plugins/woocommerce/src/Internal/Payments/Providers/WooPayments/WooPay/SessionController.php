@@ -504,7 +504,7 @@ class SessionController implements RegisterHooksInterface {
 		$config['isWooPayDirectCheckoutEnabled'] = $direct_checkout_runs;
 
 		$this->register_classic_woopay_assets();
-		wp_localize_script( self::CLASSIC_WOOPAY_SCRIPT_HANDLE, 'wcpay_core_woopay_config', $this->get_classic_woopay_config( $config ) );
+		wp_localize_script( self::CLASSIC_WOOPAY_SCRIPT_HANDLE, 'wc_woopayments_woopay_params', $this->get_classic_woopay_config( $config ) );
 		wp_enqueue_style( self::CLASSIC_WOOPAY_STYLE_HANDLE );
 		wp_enqueue_script( self::CLASSIC_WOOPAY_SCRIPT_HANDLE );
 		$this->has_enqueued_frontend_assets = true;
@@ -517,7 +517,7 @@ class SessionController implements RegisterHooksInterface {
 		$this->register_classic_woopay_assets();
 		wp_localize_script(
 			self::CLASSIC_WOOPAY_SCRIPT_HANDLE,
-			'wcpay_core_woopay_config',
+			'wc_woopayments_woopay_params',
 			array_merge(
 				array( 'wcAjaxUrl' => \WC_AJAX::get_endpoint( '%%endpoint%%' ) ),
 				$this->session_service->get_woopay_direct_checkout_config( $this->get_checkout_assets()->get_connection_script_config() )
