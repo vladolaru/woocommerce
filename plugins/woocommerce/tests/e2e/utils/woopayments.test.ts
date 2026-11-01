@@ -74,11 +74,15 @@ test( 'fillCardDetails clicks each card field before typing into it', async ( {
 				input.addEventListener( 'click', () =>
 					parent.fieldLog.push( 'click ' + input.id )
 				);
-				input.addEventListener(
-					'input',
-					() => parent.fieldLog.push( 'type ' + input.id ),
-					{ once: true }
-				);
+				// The first digit key, not the select-all shortcut: fill()
+				// sends input events but no key events.
+				let typed = false;
+				input.addEventListener( 'keydown', ( event ) => {
+					if ( ! typed && /^\\d$/.test( event.key ) ) {
+						typed = true;
+						parent.fieldLog.push( 'key ' + input.id );
+					}
+				} );
 			} );
 		</script>`;
 	await page.setContent(
@@ -99,12 +103,68 @@ test( 'fillCardDetails clicks each card field before typing into it', async ( {
 		)
 	).toEqual( [
 		'click number',
-		'type number',
+		'key number',
 		'click expiry',
-		'type expiry',
+		'key expiry',
 		'click cvc',
-		'type cvc',
+		'key cvc',
 	] );
+} );
+
+test( 'fillCardDetails replaces a card the fields already hold', async ( {
+	page,
+} ) => {
+	const heldCard = TEST_CARDS.basic;
+	const populatedFields = CARD_FIELDS_HTML.replace(
+		'<input id="number" />',
+		`<input id="number" value="${ heldCard.number }" />`
+	)
+		.replace(
+			'<input id="expiry" />',
+			`<input id="expiry" value="${ heldCard.expiry }" />`
+		)
+		.replace(
+			'<input id="cvc" />',
+			`<input id="cvc" value="${ heldCard.cvc }" />`
+		);
+	await page.setContent(
+		`<div id="wcpay-core-blocks-payment-element">
+			<iframe name="__privateStripeFrame123" srcdoc="${ populatedFields.replace(
+				/"/g,
+				'&quot;'
+			) }"></iframe>
+		</div>`
+	);
+
+	await fillCardDetails( page, TEST_CARDS.genericDecline, 'blocks' );
+
+	const frame = page.frameLocator(
+		'#wcpay-core-blocks-payment-element iframe[name^="__privateStripeFrame"]'
+	);
+	await expect(
+		frame.getByRole( 'textbox', { name: 'Card number' } )
+	).toHaveValue( TEST_CARDS.genericDecline.number );
+	await expect(
+		frame.getByRole( 'textbox', { name: 'Security code' } )
+	).toHaveValue( TEST_CARDS.genericDecline.cvc );
+} );
+
+test( 'fillCardDetails fails at once when the click leaves another element focused', async ( {
+	page,
+} ) => {
+	// The field refuses focus, as a click that a layer above it swallows would leave it.
+	await page.setContent(
+		`<div id="wcpay-core-blocks-payment-element">
+			<iframe name="__privateStripeFrame123" srcdoc="${ (
+				CARD_FIELDS_HTML +
+				"<script>document.getElementById( 'number' ).addEventListener( 'focus', ( e ) => e.target.blur() );</script>"
+			).replace( /"/g, '&quot;' ) }"></iframe>
+		</div>`
+	);
+
+	await expect(
+		fillCardDetails( page, TEST_CARDS.basic, 'blocks' )
+	).rejects.toThrow( /did not focus/ );
 } );
 
 // Answering hides the challenge body itself, the way the real Stripe

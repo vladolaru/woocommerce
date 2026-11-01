@@ -159,6 +159,10 @@ export async function expectCardKept(
  * in 25 the page takes window focus back and the digits land in the checkout's
  * email field. A click puts focus there for real. Pass `replace` to select
  * what the field already holds first, as `fill()` did.
+ *
+ * The click must leave the field focused, or the keys would go elsewhere:
+ * that is asserted once before typing, so a misrouted click fails naming the
+ * field. It is a check, never a retry.
  */
 export async function typeIntoStripeField(
 	page: Page,
@@ -167,6 +171,10 @@ export async function typeIntoStripeField(
 	{ replace = false }: { replace?: boolean } = {}
 ): Promise< void > {
 	await field.click( { timeout: ENTRY_STEP_TIMEOUT_MS } );
+	await expect(
+		field,
+		`The click did not focus ${ field }, so typing would go elsewhere.`
+	).toBeFocused( { timeout: ENTRY_STEP_TIMEOUT_MS } );
 	if ( replace ) {
 		await page.keyboard.press( 'ControlOrMeta+a' );
 	}
@@ -177,6 +185,8 @@ export async function typeIntoStripeField(
  * Types a card into a native Payment Element once, waits a short settle and
  * proves the element kept it (expectCardKept()). Each field is clicked before
  * it is typed into, because `fill()` can drop the digits into the email field.
+ * A field that already holds a card is replaced, not typed into: a decline
+ * or recovery row enters a second card in the same document.
  *
  * The read-back sees only what the element holds at that moment: a checkout
  * update still in flight can land after it and empty the card.
@@ -187,7 +197,9 @@ export async function fillCardDetails(
 	surface: CardSurface
 ): Promise< void > {
 	for ( const field of getCardFields( page, card, surface ) ) {
-		await typeIntoStripeField( page, field.locator, field.value );
+		await typeIntoStripeField( page, field.locator, field.value, {
+			replace: true,
+		} );
 	}
 	await new Promise( ( resolve ) => setTimeout( resolve, ENTRY_SETTLE_MS ) );
 	await expectCardKept( page, card, surface );
