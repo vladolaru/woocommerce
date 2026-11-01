@@ -76,7 +76,7 @@ class WooPaymentsCheckoutAssets implements RegisterHooksInterface {
 		// The Blocks readers fall back to the same text (index.js WooPaySaveUserSection).
 		'woopaySaveUserLabel',
 		'woopayPhoneLabel',
-		// The Blocks card method translates its own brand labels (index.js:191-194, :233-236).
+		// The Blocks card method translates its own brand labels (CardBrandIcons in index.js).
 		'cardBrandPopoverLabel',
 		'cardBrandLogosLabel',
 	);
@@ -458,9 +458,9 @@ class WooPaymentsCheckoutAssets implements RegisterHooksInterface {
 			$customer_data['billing_country'] = $payment_context['billing_country'];
 		}
 		/**
-		 * Filters the account ID used for payment intent confirmation.
+		 * Filters the accountIdForIntentConfirmation value printed in the checkout config.
 		 *
-		 * Keeps this name because the WooPay platform site sets it to the account that confirms intents on its checkout.
+		 * No WooCommerce script reads it; the WooPay platform site, which sets it, runs its own WooPayments build.
 		 *
 		 * @since 11.0.0
 		 *
@@ -564,6 +564,7 @@ class WooPaymentsCheckoutAssets implements RegisterHooksInterface {
 		$config['gatewayId']            = $this->get_gateway_id_for_payment_method_definition( $payment_method_definition );
 		$config['paymentMethodsConfig'] = $this->get_payment_methods_config( $base['saved_cards_enabled'], $payment_method_definition, $base['currency'] );
 		$config['paymentMethodTypes']   = $this->get_payment_method_types_for_definition( $payment_method_definition, $config['paymentMethodsConfig'] );
+		// A subscription's change-payment-method config returns unfiltered, the extension's contract for this filter.
 		if ( ! empty( $config['isChangingPayment'] ) ) {
 			return $config;
 		}
@@ -714,7 +715,8 @@ class WooPaymentsCheckoutAssets implements RegisterHooksInterface {
 			array(
 				'title'       => $this->get_blocks_payment_method_title( $payment_method_definition ),
 				'description' => $this->get_blocks_payment_method_description( $payment_method_definition ),
-				// Client 11.1.0 class-wc-payments-blocks-payment-method.php:102, for the payment method preview in wp-admin.
+				// A key of the extension's payment data (client 11.1.0 class-wc-payments-blocks-payment-method.php:102), kept
+				// for code that reads it; no WooCommerce script does.
 				'is_admin'    => is_admin(),
 				'supports'    => array_values( $supports ),
 			)

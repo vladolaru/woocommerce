@@ -390,6 +390,8 @@
 
 	root.wc = root.wc || {};
 	root.wc.woopayments = root.wc.woopayments || {};
+	// The classic card script adds getWooPayInitAppearance() and getWooPayInitFontRules() here; the WooPay button script
+	// reads them when it builds its init request.
 	root.wc.woopayments.appearance = {
 		compositeAgainstWhite: compositeAgainstWhite,
 		containsAlphaColor: containsAlphaColor,

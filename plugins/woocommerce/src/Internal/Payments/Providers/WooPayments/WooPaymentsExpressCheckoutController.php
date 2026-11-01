@@ -178,10 +178,10 @@ class WooPaymentsExpressCheckoutController implements RegisterHooksInterface {
 		wp_localize_script( self::CLASSIC_EXPRESS_CHECKOUT_SCRIPT_HANDLE, 'wcpayExpressCheckoutParams', $this->express_checkout_service->get_express_checkout_params( $context ) );
 		wp_enqueue_style( self::CLASSIC_EXPRESS_CHECKOUT_STYLE_HANDLE );
 		wp_enqueue_script( self::CLASSIC_EXPRESS_CHECKOUT_SCRIPT_HANDLE );
-		// Wallet payments started from product and cart pages must carry the
-		// card-testing prevention token; only checkout surfaces exposed it
-		// before, so live stores with card-testing protection rejected every
-		// product- and cart-initiated wallet payment.
+		// Product and cart wallet payments post the card-testing token this
+		// prints. A product-page payment runs on the tokenized cart session,
+		// which never holds that token, so card-testing protection still
+		// refuses it.
 		$this->fraud_prevention_service->maybe_enqueue_token_script();
 	}
 

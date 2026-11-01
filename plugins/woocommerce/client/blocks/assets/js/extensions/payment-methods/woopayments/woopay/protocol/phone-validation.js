@@ -4,7 +4,7 @@ let phoneValidationPromise = null;
  * Load core's mobile phone validation, built once as its own script (phone-validation.js) and loaded only when the
  * shopper opts in to save their details to WooPay.
  *
- * @param {string} url The validation script URL (WooPaymentsFrontendAssets::get_phone_validation_script_url()).
+ * @param {string} url The validation script URL (the WooPay config's woopayPhoneValidationScriptUrl).
  * @return {Promise<Object|null>} `window.wc.woopayments.phoneValidation`, or null when it cannot load.
  */
 export const loadPhoneValidation = ( url ) => {

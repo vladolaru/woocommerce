@@ -810,6 +810,8 @@ const getWooPayAppearance = ( appearance, selectors, scope ) => {
 	};
 };
 
+// With theme support on, the computed WooPay appearance is written onto the payment settings object, where
+// ensureBlocksWooPayAppearance() and the WooPay session request read it.
 const maybeUpdateWooPayAppearance = ( appearance, paymentSettings ) => {
 	if ( paymentSettings?.isWooPayGlobalThemeSupportEnabled ) {
 		paymentSettings.woopayAppearance = appearance;

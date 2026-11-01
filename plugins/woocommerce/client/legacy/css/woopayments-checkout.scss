@@ -93,16 +93,11 @@
 	margin-bottom: 0.5em;
 }
 
-#wcpay-upe-element,
 .wcpay-upe-element,
 #woopayments-payment-element,
 .woopayments-payment-element {
 	padding: 7px;
 	margin-bottom: 0.5em;
-
-	&.processing {
-		min-height: 70px;
-	}
 }
 
 #payment .payment_methods {
