@@ -2519,7 +2519,6 @@ describe( 'WooPayments WooPay checkout', () => {
 				expect(
 					document.getElementById( 'temp-woopay-connect-iframe' )
 				).toBeNull();
-				expect( document.body.wooPayDirectCheckoutAttached ).toBeFalsy();
 				expect( clickCartLink().defaultPrevented ).toBe( false );
 				expect( postMessage ).not.toHaveBeenCalledWith(
 					{ action: 'isWooPayReachable' },
@@ -2533,8 +2532,46 @@ describe( 'WooPayments WooPay checkout', () => {
 
 				await jest.advanceTimersByTimeAsync( 5000 );
 
-				expect( document.body.wooPayDirectCheckoutAttached ).toBeFalsy();
 				expect( clickCartLink().defaultPrevented ).toBe( false );
+			} );
+
+			// Codex 999 F3: the return is read at the click, so a release reaches a page that loaded while it held.
+			test.each( [
+				[
+					'the email check finds a WooPay user',
+					() =>
+						window.wc.woopayments.woopay.dispatchUserExistEvent(
+							true
+						),
+				],
+				[
+					'30 minutes pass',
+					() => {
+						const now = Date.now();
+						return jest
+							.spyOn( Date, 'now' )
+							.mockReturnValue( now + 30 * 60 * 1000 );
+					},
+				],
+			] )( 'takes the click to WooPay once %s on a page that loaded with a recent return', async ( name, release ) => {
+				const postMessage = loadAfterReturn( 60 * 1000 );
+				await answerLoginCheck( false );
+				expect( clickCartLink().defaultPrevented ).toBe( false );
+
+				const clock = release();
+
+				try {
+					expect( clickCartLink().defaultPrevented ).toBe( true );
+					await flushPromises();
+					expect( postMessage ).toHaveBeenCalledWith(
+						{ action: 'isWooPayReachable' },
+						'https://pay.woo.test'
+					);
+				} finally {
+					if ( clock ) {
+						clock.mockRestore();
+					}
+				}
 			} );
 
 			test( 'runs the check again once the return is 30 minutes old', async () => {

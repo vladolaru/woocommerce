@@ -638,10 +638,18 @@
 	}
 
 	// A shopper who opted out of WooPay keeps the store's checkout (client 11.2.0 direct-checkout/index.js:248, :290).
-	function shouldRunDirectCheckout() {
+	function isDirectCheckoutOn() {
 		return (
 			config.isWooPayDirectCheckoutEnabled &&
 			! getWooPayProtocol().shouldSkipWooPay()
+		);
+	}
+
+	// Read at every click. A shopper hosted WooPay sent back recently keeps the store's checkout, until the email check
+	// finds a WooPay user or 30 minutes pass, also on a page that loaded before either.
+	function shouldRunDirectCheckout() {
+		return (
+			isDirectCheckoutOn() && ! getWooPayProtocol().wasReturnedByWooPay()
 		);
 	}
 
@@ -716,7 +724,7 @@
 	function initializeDirectCheckout() {
 		var storedAnswer;
 
-		if ( ! shouldRunDirectCheckout() ) {
+		if ( ! isDirectCheckoutOn() ) {
 			return;
 		}
 
@@ -733,9 +741,9 @@
 			if ( loggedIn ) {
 				getWooPayProtocol().clearWooPayReturned();
 			} else if ( getWooPayProtocol().wasReturnedByWooPay() ) {
-				// Hosted WooPay sent this shopper back to the store recently: another trip through it would send them
-				// back again, so the click stays on the store, as for a shopper the check shows logged out.
-				isKnownLoggedOutOfWooPay = true;
+				// Hosted WooPay sent this shopper back to the store recently, so no check runs. The listener reads the
+				// return at the click (shouldRunDirectCheckout()) and finds out through WooPay once it is released.
+				attachDirectCheckoutListeners();
 				return;
 			}
 
@@ -1619,7 +1627,7 @@
 		// Client 11.1.0 woopay/express-button/index.js:95-106 renders the button again on both refresh events: a cart
 		// update replaces the markup it lived in.
 		renderWooPayExpressButton();
-		if ( shouldRunDirectCheckout() ) {
+		if ( isDirectCheckoutOn() ) {
 			attachDirectCheckoutForShopper();
 		}
 		prefetchDirectCheckoutSession();
