@@ -2726,6 +2726,103 @@ describe( 'WooPayments express checkout', () => {
 		);
 	} );
 
+	// wcpayExpressCheckoutParams is a public global: the script reads it once and never writes it.
+	test( 'sends the preview methods and a refreshed Store API nonce with the order, leaving the localized params as printed', async () => {
+		const resolveClick = jest.fn();
+		let printed;
+		document.body.innerHTML =
+			'<div class="woocommerce-notices-wrapper"></div>' +
+			'<form class="cart">' +
+			'<button type="submit" name="add-to-cart" value="123">Add to cart</button>' +
+			'</form>' +
+			'<div class="wcpay-express-checkout-wrapper">' +
+			'<div id="wcpay-express-checkout-element"></div>' +
+			'<p id="wcpay-express-checkout-button-separator">OR</p>' +
+			'</div>';
+		window.wcpayExpressCheckoutParams.button_context = 'product';
+		window.wcpayExpressCheckoutParams.enabled_methods = [
+			'payment_request',
+			'amazon_pay',
+		];
+		window.wcpayExpressCheckoutParams.payment_method_types = [
+			'card',
+			'amazon_pay',
+		];
+		window.wcpayExpressCheckoutParams.product = {
+			displayItems: [ { label: 'Express Widget', amount: 2500 } ],
+			total: { label: 'Express Widget', amount: 2500, pending: true },
+			needs_shipping: false,
+			currency: 'usd',
+			country_code: 'US',
+			product_type: 'simple',
+		};
+		printed = JSON.parse(
+			JSON.stringify( window.wcpayExpressCheckoutParams )
+		);
+		// The resolved currency differs from the localized one, so the preview's methods replace the localized ones.
+		window.wcpayAsyncCurrency = { ready: Promise.resolve( 'EUR' ) };
+		window.wp.apiFetch
+			.mockResolvedValueOnce(
+				getStoreApiResponse(
+					getResolvedProductCart( [ 'payment_request' ] ),
+					{ Nonce: 'store-api-nonce-2' }
+				)
+			)
+			.mockResolvedValueOnce(
+				getStoreApiResponse(
+					{
+						needs_shipping: false,
+						totals: { total_price: '4200', currency_code: 'EUR' },
+					},
+					{
+						'X-WooPayments-Tokenized-Cart-Session':
+							'cart-session-token',
+					}
+				)
+			)
+			.mockResolvedValueOnce(
+				getStoreApiResponse(
+					{ payment_result: { payment_status: 'success' } },
+					{
+						'X-WooPayments-Tokenized-Cart-Session':
+							'cart-session-token',
+					}
+				)
+			);
+
+		require( '../woopayments-express-checkout' );
+		await flushPromises();
+		await flushPromises();
+
+		await expressHandlers.click( { resolve: resolveClick } );
+		await flushPromises();
+		await expressHandlers.confirm( {
+			billingDetails: {
+				email: 'shopper@example.test',
+				name: 'Ada Lovelace',
+			},
+		} );
+
+		expect( window.wp.apiFetch ).toHaveBeenLastCalledWith(
+			expect.objectContaining( {
+				method: 'POST',
+				path: '/wc/store/v1/checkout?currency=EUR',
+				headers: expect.objectContaining( {
+					Nonce: 'store-api-nonce-2',
+				} ),
+				data: expect.objectContaining( {
+					payment_data: expect.arrayContaining( [
+						{
+							key: 'wcpay-express-payment-method-types',
+							value: JSON.stringify( [ 'card' ] ),
+						},
+					] ),
+				} ),
+			} )
+		);
+		expect( window.wcpayExpressCheckoutParams ).toEqual( printed );
+	} );
+
 	test( 'deletes the isolated product cart session on cancel', async () => {
 		document.body.innerHTML =
 			'<div class="woocommerce-notices-wrapper"></div>' +

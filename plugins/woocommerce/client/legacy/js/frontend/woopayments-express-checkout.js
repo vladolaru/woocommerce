@@ -3,6 +3,15 @@
 	'use strict';
 
 	var config = window.wcpayExpressCheckoutParams || {};
+	// The localized values that change during the page's life, read once; the script never writes `config`. A product
+	// preview narrows the methods, a product-page Store API answer refreshes the nonce, and a pay-for-order POST that
+	// stored the wallet email makes it the order's authorization email.
+	var state = {
+		enabledMethods: config.enabled_methods,
+		paymentMethodTypes: config.payment_method_types,
+		storeApiNonce: config.nonce && config.nonce.store_api_nonce,
+		billingEmail: config.billing_email,
+	};
 	// Shopper-facing strings, translated through the wp-i18n dependency like client 11.1.0's @wordpress/i18n
 	// imports (transformers/wc-to-stripe.js, compatibility/wc-subscriptions.js).
 	var __ = window.wp.i18n.__;
@@ -33,8 +42,8 @@
 	var lastSelectedAddress = null;
 	var resolvedProductCurrency = '';
 	var productCurrencyResolutionPromise = null;
-	var productEnabledMethodCeiling = Array.isArray( config.enabled_methods )
-		? config.enabled_methods.slice()
+	var productEnabledMethodCeiling = Array.isArray( state.enabledMethods )
+		? state.enabledMethods.slice()
 		: [];
 	var iapiPreviewRequestId = 0;
 	var iapiLastSelection = null;
@@ -89,22 +98,22 @@
 
 	function isPaymentRequestEnabled() {
 		return (
-			Array.isArray( config.enabled_methods ) &&
-			config.enabled_methods.indexOf( 'payment_request' ) !== -1
+			Array.isArray( state.enabledMethods ) &&
+			state.enabledMethods.indexOf( 'payment_request' ) !== -1
 		);
 	}
 
 	function isAmazonPayEnabled() {
 		return (
-			Array.isArray( config.enabled_methods ) &&
-			config.enabled_methods.indexOf( 'amazon_pay' ) !== -1 &&
+			Array.isArray( state.enabledMethods ) &&
+			state.enabledMethods.indexOf( 'amazon_pay' ) !== -1 &&
 			getPaymentMethodTypes().indexOf( 'amazon_pay' ) !== -1
 		);
 	}
 
 	function getPaymentMethodTypes() {
-		var paymentMethodTypes = Array.isArray( config.payment_method_types )
-			? config.payment_method_types
+		var paymentMethodTypes = Array.isArray( state.paymentMethodTypes )
+			? state.paymentMethodTypes
 			: [ 'card' ];
 
 		paymentMethodTypes = paymentMethodTypes.filter( function ( type ) {
@@ -181,8 +190,8 @@
 			);
 		} );
 
-		config.enabled_methods = methods;
-		config.payment_method_types = methods.reduce( function (
+		state.enabledMethods = methods;
+		state.paymentMethodTypes = methods.reduce( function (
 			types,
 			method
 		) {
@@ -216,8 +225,8 @@
 		var nonce = config.nonce || {};
 		var headers = {};
 
-		if ( nonce.store_api_nonce ) {
-			headers.Nonce = nonce.store_api_nonce;
+		if ( state.storeApiNonce ) {
+			headers.Nonce = state.storeApiNonce;
 		}
 
 		if (
@@ -263,8 +272,7 @@
 
 		nextNonce = response.headers.get( 'Nonce' );
 		if ( nextNonce ) {
-			config.nonce = config.nonce || {};
-			config.nonce.store_api_nonce = nextNonce;
+			state.storeApiNonce = nextNonce;
 		}
 
 		nextSession = response.headers.get(
@@ -363,7 +371,7 @@
 				method: 'GET',
 				path: addQueryArgs( '/wc/store/v1/order/' + config.order_id, {
 					key: config.key,
-					billing_email: config.billing_email,
+					billing_email: state.billingEmail,
 				} ),
 			} );
 		}
@@ -1244,7 +1252,7 @@
 				data: {
 					key: config.key,
 					// The stored email authorizes this request; wallet email is mutation data.
-					billing_email: config.billing_email,
+					billing_email: state.billingEmail,
 					payment_method: 'woocommerce_payments',
 					billing_address: billingAddress,
 					shipping_address: shippingAddress,
@@ -1255,7 +1263,7 @@
 				function ( response ) {
 					// The Store API has persisted the submitted address before payment returns.
 					if ( submittedBillingEmail ) {
-						config.billing_email = submittedBillingEmail;
+						state.billingEmail = submittedBillingEmail;
 					}
 
 					return response;
@@ -1268,7 +1276,7 @@
 						) === -1 &&
 						submittedBillingEmail
 					) {
-						config.billing_email = submittedBillingEmail;
+						state.billingEmail = submittedBillingEmail;
 					}
 
 					throw error;

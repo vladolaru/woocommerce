@@ -1222,7 +1222,6 @@ describe( 'woopayments-express-checkout', () => {
 					} );
 				}
 
-				expect( params.billing_email ).toBe( 'first@example.com' );
 				testables.setState( {
 					cachedCartData: cartResponse( {
 						billing_address: {
@@ -1282,7 +1281,6 @@ describe( 'woopayments-express-checkout', () => {
 					} )
 				).rejects.toBe( error );
 
-				expect( params.billing_email ).toBe( '' );
 				apiFetch.mockResolvedValueOnce( { payment_result: {} } );
 				await testables.placeOrder( 'ctoken_456', {
 					billingDetails: { email: 'second@example.com' },
@@ -1323,16 +1321,17 @@ describe( 'woopayments-express-checkout', () => {
 			expect(
 				apiFetch.mock.calls[ 0 ][ 0 ].data.billing_address.email
 			).toBe( 'not an email' );
-			expect( params.billing_email ).toBe( '' );
 		} );
 
-		it( 'keeps an absent authorization email absent after a successful payment', async () => {
+		// wcpayExpressCheckoutParams is a public global: the script reads it and never writes it.
+		it( 'leaves the localized params as printed when a payment stores the wallet email', async () => {
 			const params = baseParams( {
 				button_context: 'pay_for_order',
 				order_id: 123,
 				key: 'wc_order_key',
 				billing_email: '',
 			} );
+			const printed = JSON.parse( JSON.stringify( params ) );
 			const testables = loadModule( params );
 			testables.setState( {
 				cachedCartData: cartResponse( {
@@ -1342,10 +1341,118 @@ describe( 'woopayments-express-checkout', () => {
 			} );
 			apiFetch.mockResolvedValueOnce( { payment_result: {} } );
 
-			await testables.placeOrder( 'ctoken_123', { billingDetails: {} } );
+			await testables.placeOrder( 'ctoken_123', {
+				billingDetails: { email: 'first@example.com' },
+			} );
 
-			expect( params.billing_email ).toBe( '' );
+			expect( params ).toEqual( printed );
 		} );
+
+		// The order POST, keys in order, as the script sent it before its changing values moved into module state.
+		const walletAddress = {
+			first_name: 'Jane',
+			last_name: 'Q Shopper',
+			company: '',
+			address_1: '',
+			address_2: '',
+			city: '',
+			state: '',
+			postcode: '94110',
+			country: 'US',
+		};
+		const paymentData = ( context ) => [
+			{ key: 'wcpay-confirmation-token', value: 'ctoken_123' },
+			{ key: 'wcpay-express-payment-method-types', value: '["card"]' },
+			{ key: 'wcpay-express-checkout-context', value: context },
+			{ key: 'wcpay-fraud-prevention-token', value: '' },
+		];
+		it.each( [
+			[
+				'checkout',
+				{},
+				{
+					method: 'POST',
+					path: '/wc/store/v1/checkout?currency=USD',
+					headers: {
+						Nonce: 'store-api-nonce',
+						'X-WooPayments-Tokenized-Cart-Nonce':
+							'tokenized-cart-nonce',
+						'X-WooPayments-Tokenized-Cart': true,
+						'X-WooPayments-Payment-Currency': 'usd',
+					},
+					data: {
+						payment_method: 'woocommerce_payments',
+						billing_address: Object.assign( {}, walletAddress, {
+							email: 'jane@example.com',
+							phone: '2125550100',
+						} ),
+						shipping_address: Object.assign( {}, walletAddress, {
+							email: '',
+							phone: '2125550100',
+						} ),
+						payment_data: paymentData( 'checkout' ),
+						extensions: {},
+					},
+				},
+			],
+			[
+				'pay-for-order',
+				{
+					button_context: 'pay_for_order',
+					order_id: 123,
+					key: 'wc_order_key',
+					billing_email: 'stored@example.com',
+				},
+				{
+					method: 'POST',
+					path: '/wc/store/v1/checkout/123',
+					data: {
+						key: 'wc_order_key',
+						billing_email: 'stored@example.com',
+						payment_method: 'woocommerce_payments',
+						billing_address: {
+							country: 'US',
+							email: 'jane@example.com',
+							phone: '2125550100',
+						},
+						shipping_address: {
+							country: 'US',
+							phone: '2125550100',
+						},
+						payment_data: paymentData( 'pay_for_order' ),
+						extensions: {},
+					},
+					headers: { Nonce: 'store-api-nonce' },
+				},
+			],
+		] )(
+			'sends the %s order POST unchanged for the same inputs',
+			async ( _context, overrides, expected ) => {
+				const testables = loadModule( baseParams( overrides ) );
+				testables.setState( {
+					cachedCartData: cartResponse(),
+					elementCurrency: 'usd',
+				} );
+				apiFetch.mockResolvedValueOnce( { payment_result: {} } );
+
+				await testables.placeOrder( 'ctoken_123', {
+					billingDetails: {
+						name: 'Jane Q Shopper',
+						email: 'jane@example.com',
+						phone: '212 555 0100',
+						address: { country: 'US', postal_code: '94110' },
+					},
+					shippingAddress: {
+						name: 'Jane Q Shopper',
+						address: { country: 'US', postal_code: '94110' },
+					},
+				} );
+
+				expect( JSON.stringify( apiFetch.mock.calls[ 0 ][ 0 ] ) ).toBe(
+					JSON.stringify( expected )
+				);
+			}
+		);
 
 		it( 'refreshes the shipping address from the wallet confirm event', async () => {
 			const testables = loadModule( baseParams() );
