@@ -211,10 +211,17 @@ class MultiCurrencySettingsControllerTest extends WC_Unit_Test_Case {
 		$sut->render_settings_container();
 		$markup = ob_get_clean();
 
-		$this->assertSame(
-			'<div id="wcpay_multi_currency_settings_container" class="wc-settings-prevent-change-event" aria-describedby="wcpay_multi_currency_settings_container-description"></div>',
-			$markup
-		);
+		// One empty div, compared by tag and attribute set: WordPress 7.2 prints the attributes in another order.
+		$this->assertMatchesRegularExpression( '#^<div\b[^>]*></div>$#', $markup );
+		$processor = new \WP_HTML_Tag_Processor( $markup );
+		$this->assertTrue( $processor->next_tag() );
+		$this->assertSame( 'DIV', $processor->get_tag() );
+		$attribute_names = $processor->get_attribute_names_with_prefix( '' );
+		sort( $attribute_names );
+		$this->assertSame( array( 'aria-describedby', 'class', 'id' ), $attribute_names );
+		$this->assertSame( 'wcpay_multi_currency_settings_container', $processor->get_attribute( 'id' ) );
+		$this->assertSame( 'wc-settings-prevent-change-event', $processor->get_attribute( 'class' ) );
+		$this->assertSame( 'wcpay_multi_currency_settings_container-description', $processor->get_attribute( 'aria-describedby' ) );
 		$this->assertTrue( $GLOBALS['hide_save_button'] );
 	}
 

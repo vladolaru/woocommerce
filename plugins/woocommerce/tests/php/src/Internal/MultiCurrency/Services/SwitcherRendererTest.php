@@ -49,9 +49,10 @@ class SwitcherRendererTest extends WC_Unit_Test_Case {
 		$this->assertStringContainsString( 'name="paged" value="2"', $markup );
 		$this->assertStringNotContainsString( 'type="hidden" name="currency"', $markup );
 		$this->assertStringContainsString( 'value="GBP" selected', $markup );
+		// Decoded text: WordPress 7.2 prints the symbol as a literal £ where 7.1 prints &pound;.
 		$this->assertStringContainsString(
-			$this->get_flag( 'GB' ) . ' ' . get_woocommerce_currency_symbol( 'GBP' ) . ' GBP',
-			$markup
+			html_entity_decode( $this->get_flag( 'GB' ) . ' £ GBP', ENT_QUOTES | ENT_HTML5, 'UTF-8' ),
+			html_entity_decode( $markup, ENT_QUOTES | ENT_HTML5, 'UTF-8' )
 		);
 		$this->assertStringEndsWith( '</section>', $markup );
 	}

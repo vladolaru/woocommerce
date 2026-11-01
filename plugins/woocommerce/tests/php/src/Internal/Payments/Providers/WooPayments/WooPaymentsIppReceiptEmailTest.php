@@ -130,13 +130,14 @@ class WooPaymentsIppReceiptEmailTest extends WC_Unit_Test_Case {
 					$email->init_hooks();
 					$email->trigger( $order, $this->get_merchant_settings(), $charge );
 
+					// Decoded on both sides: WordPress 7.2 prints a literal × and $ where 10.8.0 printed &times; and &#036;.
 					$this->assertSame(
-						$this->load_oracle_fixture( 'ipp-receipt-10.8.0.html' ),
-						$this->normalize_receipt_content( $email->get_content_html(), $order, false )
+						$this->decode_entities( $this->load_oracle_fixture( 'ipp-receipt-10.8.0.html' ) ),
+						$this->decode_entities( $this->normalize_receipt_content( $email->get_content_html(), $order, false ) )
 					);
 					$this->assertSame(
-						$this->load_oracle_fixture( 'ipp-receipt-10.8.0.txt' ),
-						$this->normalize_receipt_content( $email->get_content_plain(), $order, true )
+						$this->decode_entities( $this->load_oracle_fixture( 'ipp-receipt-10.8.0.txt' ) ),
+						$this->decode_entities( $this->normalize_receipt_content( $email->get_content_plain(), $order, true ) )
 					);
 				} finally {
 					remove_filter( 'woocommerce_get_formatted_order_total', $explicit_price_filter, 100 );
@@ -367,6 +368,16 @@ class WooPaymentsIppReceiptEmailTest extends WC_Unit_Test_Case {
 		$this->assertIsString( $content );
 
 		return $content;
+	}
+
+	/**
+	 * Decode HTML entities, so a receipt compares by the characters it shows.
+	 *
+	 * @param string $content Receipt content.
+	 * @return string
+	 */
+	private function decode_entities( string $content ): string {
+		return html_entity_decode( $content, ENT_QUOTES | ENT_HTML5, 'UTF-8' );
 	}
 
 	/**
