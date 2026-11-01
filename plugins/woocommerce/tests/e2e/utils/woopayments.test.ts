@@ -17,6 +17,7 @@ import {
 	completeThreeDSChallenge,
 	expectSettledCardPayment,
 	fillCardDetails,
+	keepingScrollPosition,
 	requireTestModeAccount,
 	TEST_CARDS,
 } from './woopayments';
@@ -165,6 +166,22 @@ test( 'fillCardDetails leaves the page scrolled where the entry found it', async
 	await page.evaluate( () => window.scrollTo( 0, 100 ) );
 
 	await fillCardDetails( page, TEST_CARDS.basic, 'blocks' );
+
+	expect( await page.evaluate( () => window.scrollY ) ).toBe( 100 );
+} );
+
+test( 'keepingScrollPosition scrolls back when the entry throws and keeps its error', async ( {
+	page,
+} ) => {
+	await page.setContent( '<div style="height: 6000px"></div>' );
+	await page.evaluate( () => window.scrollTo( 0, 100 ) );
+
+	await expect(
+		keepingScrollPosition( page, async () => {
+			await page.evaluate( () => window.scrollTo( 0, 2000 ) );
+			throw new Error( 'the entry failed' );
+		} )
+	).rejects.toThrow( 'the entry failed' );
 
 	expect( await page.evaluate( () => window.scrollY ) ).toBe( 100 );
 } );
