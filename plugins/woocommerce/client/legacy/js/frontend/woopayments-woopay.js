@@ -20,6 +20,7 @@
 	var isKnownLoggedOutOfWooPay = false;
 	var isSessionPrefetchOn = false;
 	var prefetchedSession = null;
+	var thirdPartyCookieCheckKey = 'wc_woopay_third_party_cookies';
 	var hasPhoneForMobileEnter = false;
 	var isWooPayUser = false;
 	var proceedToCheckoutSelector =
@@ -664,10 +665,57 @@
 		} );
 	}
 
+	// Resolves when the browser is idle, or at the latest after 2 s.
+	function whenIdle() {
+		return new Promise( function ( resolve ) {
+			if ( window.requestIdleCallback ) {
+				window.requestIdleCallback( resolve, { timeout: 2000 } );
+				return;
+			}
+
+			window.setTimeout( resolve, 0 );
+		} );
+	}
+
+	// The tab's session storage, or null where it cannot be written (core's test, cart-fragments.js:12-20).
+	function getSessionStorage() {
+		try {
+			window.sessionStorage.setItem( 'wc', 'test' );
+			window.sessionStorage.removeItem( 'wc' );
+			return window.sessionStorage;
+		} catch ( error ) {
+			return null;
+		}
+	}
+
+	// The third-party cookie check's answer from an earlier page in this tab, or null. The client asks on every page view
+	// (client 11.2.0 direct-checkout/index.js:254-255), loading a hidden WooPay page each time; the answer does not change
+	// between pages, so a tab asks once.
+	function readStoredThirdPartyCookieCheck() {
+		var storage = getSessionStorage();
+		var value = storage ? storage.getItem( thirdPartyCookieCheckKey ) : null;
+
+		if ( value === '1' || value === '0' ) {
+			return value === '1';
+		}
+
+		return null;
+	}
+
+	function storeThirdPartyCookieCheck( areEnabled ) {
+		var storage = getSessionStorage();
+
+		if ( storage ) {
+			storage.setItem( thirdPartyCookieCheckKey, areEnabled ? '1' : '0' );
+		}
+	}
+
 	// Client 11.2.0 direct-checkout/index.js:34-51: Connect's "not logged in" is only true where third-party cookies work;
 	// elsewhere the click has to find out. A shopper it reports logged in needs no check, and with no answer from a Connect
 	// page that is late, there is nothing for the check to confirm, so the click finds out.
 	function initializeDirectCheckout() {
+		var storedAnswer;
+
 		if ( ! shouldRunDirectCheckout() ) {
 			return;
 		}
@@ -690,11 +738,20 @@
 				return;
 			}
 
+			storedAnswer = readStoredThirdPartyCookieCheck();
+			if ( storedAnswer !== null ) {
+				isKnownLoggedOutOfWooPay = storedAnswer;
+				attachDirectCheckoutForShopper();
+				return;
+			}
+
 			whenWindowLoaded()
+				.then( whenIdle )
 				.then( function () {
 					return getWooPayConnect().areThirdPartyCookiesEnabled();
 				} )
 				.then( function ( areEnabled ) {
+					storeThirdPartyCookieCheck( areEnabled );
 					isKnownLoggedOutOfWooPay = areEnabled;
 					attachDirectCheckoutForShopper();
 				} );

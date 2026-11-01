@@ -210,6 +210,8 @@ describe( 'WooPayments WooPay checkout', () => {
 		window.fetch = jest.fn().mockResolvedValue( {
 			json: jest.fn().mockResolvedValue( { success: true } ),
 		} );
+		// An idle browser: the third-party cookie check starts as soon as it is scheduled. jsdom has no idle callback.
+		window.requestIdleCallback = ( callback ) => callback();
 	} );
 
 		afterEach( () => {
@@ -226,7 +228,9 @@ describe( 'WooPayments WooPay checkout', () => {
 			delete window.jQuery;
 			delete window.$;
 			delete window.wcpay_core_woopay_config;
+			delete window.requestIdleCallback;
 			window.localStorage.clear();
+			window.sessionStorage.clear();
 			window.fetch = originalFetch;
 			document.body.innerHTML = '';
 		} );
@@ -2257,6 +2261,142 @@ describe( 'WooPayments WooPay checkout', () => {
 					{ action: 'getEncryptedData' },
 					expect.anything()
 				);
+			} );
+
+			describe( 'once per tab session', () => {
+				const storageKey = 'wc_woopay_third_party_cookies';
+
+				// The next page view in the same tab: a fresh document and fresh copies of both scripts, the same storage.
+				function loadNextPageView() {
+					// The last page's scripts go with it, so their window listeners do too.
+					window.addEventListener.mock.calls
+						.filter( ( [ type ] ) => type === 'message' )
+						.forEach( ( [ type, listener ] ) =>
+							window.removeEventListener( type, listener )
+						);
+					document.body.removeEventListener(
+						'click',
+						document.body.wooPayDirectCheckoutHandler
+					);
+					delete document.body.wooPayDirectCheckoutHandler;
+					delete document.body.wooPayDirectCheckoutAttached;
+					document.body.innerHTML = cartLink;
+					jest.isolateModules( () => {
+						require( '../../../../blocks/assets/js/extensions/payment-methods/woopayments/woopay/protocol' );
+						require( '../woopayments-woopay' );
+					} );
+				}
+
+				test.each( [
+					[ 'work', true ],
+					[ 'do not work', false ],
+				] )( 'runs the check once across three page views where third-party cookies %s', async ( name, areEnabled ) => {
+					configureDirectCheckout( cartLink );
+					installConnect();
+					const { __test__ } = require( '../woopayments-woopay' );
+					__test__.setNavigate( jest.fn() );
+
+					await answerLoginCheck( false );
+					expect( getTempIframe() ).not.toBeNull();
+					answerThirdPartyCookieCheck( areEnabled );
+					await flushPromises();
+
+					for ( const view of [ 2, 3 ] ) {
+						loadNextPageView();
+						await answerLoginCheck( false );
+
+						expect( [ view, getTempIframe() ] ).toStrictEqual( [ view, null ] );
+						expect( [ view, clickCartLink().defaultPrevented ] ).toStrictEqual( [
+							view,
+							! areEnabled,
+						] );
+						await flushPromises();
+					}
+				} );
+
+				test( 'runs the check on every page view where session storage cannot be written', async () => {
+					const setItem = jest
+						.spyOn( window.Storage.prototype, 'setItem' )
+						.mockImplementation( () => {
+							throw new Error( 'QuotaExceededError' );
+						} );
+					try {
+						configureDirectCheckout( cartLink );
+						installConnect();
+						require( '../woopayments-woopay' );
+						await answerLoginCheck( false );
+						expect( getTempIframe() ).not.toBeNull();
+						answerThirdPartyCookieCheck( true );
+						await flushPromises();
+
+						loadNextPageView();
+						await answerLoginCheck( false );
+
+						expect( getTempIframe() ).not.toBeNull();
+						answerThirdPartyCookieCheck( true );
+						await flushPromises();
+						expect( clickCartLink().defaultPrevented ).toBe( false );
+					} finally {
+						setItem.mockRestore();
+					}
+				} );
+
+				test( 'keeps the answer to the tab it was asked in', async () => {
+					configureDirectCheckout( cartLink );
+					installConnect();
+					require( '../woopayments-woopay' );
+					await answerLoginCheck( false );
+					answerThirdPartyCookieCheck( true );
+					await flushPromises();
+
+					expect( window.sessionStorage.getItem( storageKey ) ).toBe( '1' );
+					expect( window.localStorage.getItem( storageKey ) ).toBeNull();
+
+					// A new tab starts with empty session storage.
+					window.sessionStorage.clear();
+					loadNextPageView();
+					await answerLoginCheck( false );
+					expect( getTempIframe() ).not.toBeNull();
+					answerThirdPartyCookieCheck( true );
+					await flushPromises();
+				} );
+
+				test( 'starts the check once the browser is idle', async () => {
+					let idleCallback;
+					window.requestIdleCallback = jest.fn( ( callback ) => {
+						idleCallback = callback;
+					} );
+					configureDirectCheckout( cartLink );
+					installConnect();
+					require( '../woopayments-woopay' );
+
+					await answerLoginCheck( false );
+					expect( getTempIframe() ).toBeNull();
+					expect( window.requestIdleCallback ).toHaveBeenCalledWith(
+						expect.any( Function ),
+						{ timeout: 2000 }
+					);
+
+					idleCallback();
+					await flushPromises();
+					expect( getTempIframe() ).not.toBeNull();
+					answerThirdPartyCookieCheck( true );
+					await flushPromises();
+				} );
+
+				test( 'starts the check on the next task where the browser has no idle callback', async () => {
+					delete window.requestIdleCallback;
+					configureDirectCheckout( cartLink );
+					installConnect();
+					require( '../woopayments-woopay' );
+
+					await answerLoginCheck( false );
+					await flushPromises();
+
+					expect( getTempIframe() ).not.toBeNull();
+					answerThirdPartyCookieCheck( true );
+					await flushPromises();
+				} );
 			} );
 
 			// Client 11.2.0's variable starts false, so a cart update ahead of the answer takes the not-sure route
