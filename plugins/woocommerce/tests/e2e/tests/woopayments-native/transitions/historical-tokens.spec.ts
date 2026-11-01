@@ -20,7 +20,7 @@ import {
 /**
  * The 11.1.0 plugin's own Payment Element container
  * (`class-wc-payment-gateway-wcpay.php:611`, `.wcpay-upe-element`), used for
- * every plugin-owned card entry below. Native's `#wcpay-core-payment-element`
+ * every plugin-owned card entry below. Native's `#woopayments-payment-element`
  * carries the same class too, so this selector does not tell the runtimes
  * apart; the spec asserts plugin ownership separately before every
  * plugin-era write. The entry stays spec-local rather than routed through

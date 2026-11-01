@@ -23,7 +23,7 @@ const CONTRACT_IDS = [
 
 const PAYMENTS_SETTINGS_API = 'wc/v3/payments/settings';
 const BLOCKS_CARD_FRAME_SELECTOR =
-	'#wcpay-core-blocks-payment-element iframe[name^="__privateStripeFrame"]';
+	'#woopayments-blocks-payment-element iframe[name^="__privateStripeFrame"]';
 
 // One run-stable virtual product owned by this smoke, established idempotently
 // on every run; nothing is deleted.

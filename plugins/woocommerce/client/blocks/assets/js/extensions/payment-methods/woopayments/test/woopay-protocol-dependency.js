@@ -191,7 +191,7 @@ describe( 'wc-payment-method-woopayments and the WooPay protocol entry', () => {
 
 		await waitFor( () => {
 			expect(
-				document.querySelector( '#wcpay-core-blocks-payment-element' )
+				document.querySelector( '#woopayments-blocks-payment-element' )
 			).not.toBeNull();
 		} );
 		expect(
@@ -282,7 +282,7 @@ describe( 'wc-payment-method-woopayments and the WooPay protocol entry', () => {
 
 		await waitFor( () => {
 			expect(
-				document.querySelector( '#wcpay-core-blocks-payment-element' )
+				document.querySelector( '#woopayments-blocks-payment-element' )
 			).not.toBeNull();
 		} );
 		expect( onPaymentSetup ).toHaveBeenCalled();

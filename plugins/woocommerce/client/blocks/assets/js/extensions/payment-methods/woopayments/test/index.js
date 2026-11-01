@@ -758,7 +758,7 @@ describe( 'wc-payment-method-woopayments', () => {
 			document.querySelector( '.payment-methods--logos' )
 		).toBeInTheDocument();
 		expect(
-			document.querySelector( '.wcpay-core-card-brand-icons' )
+			document.querySelector( '.woopayments-card-brand-icons' )
 		).not.toBeInTheDocument();
 		expect( registration.ariaLabel ).toContain( 'Test Mode' );
 	} );
@@ -2195,7 +2195,7 @@ describe( 'wc-payment-method-woopayments', () => {
 		} );
 
 		const paymentElementContainer = container.querySelector(
-			'#wcpay-core-blocks-payment-element'
+			'#woopayments-blocks-payment-element'
 		);
 		expect( paymentElementContainer ).not.toBeNull();
 		expect( mount ).toHaveBeenCalledWith( paymentElementContainer );
@@ -2511,7 +2511,7 @@ describe( 'wc-payment-method-woopayments', () => {
 				} );
 				const { container } = renderCardContent();
 				const wrapper = container.querySelector(
-					'.wcpay-core-blocks-payment-element-wrapper'
+					'.woopayments-blocks-payment-element-wrapper'
 				);
 
 				act( () => {
@@ -2520,7 +2520,7 @@ describe( 'wc-payment-method-woopayments', () => {
 
 				expect( wrapper ).toContainElement(
 					container.querySelector(
-						'#wcpay-core-blocks-payment-element'
+						'#woopayments-blocks-payment-element'
 					)
 				);
 				expect( wrapper ).not.toHaveClass( 'is-apm' );
@@ -2533,7 +2533,7 @@ describe( 'wc-payment-method-woopayments', () => {
 			const { container, on } = renderCardContent();
 			const getSkeleton = () =>
 				container.querySelector(
-					'.wcpay-core-blocks-payment-element-skeleton'
+					'.woopayments-blocks-payment-element-skeleton'
 				);
 
 			await waitFor( () => {

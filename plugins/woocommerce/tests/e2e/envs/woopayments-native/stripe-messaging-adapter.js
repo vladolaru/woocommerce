@@ -234,8 +234,8 @@
 					! target ||
 					target.nodeType !== 1 ||
 					! [
-						'wcpay-core-blocks-payment-element',
-						'wcpay-core-payment-element',
+						'woopayments-blocks-payment-element',
+						'woopayments-payment-element',
 					].includes( target.id )
 				) {
 					throw rejection(

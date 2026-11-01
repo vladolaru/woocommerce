@@ -1814,11 +1814,11 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'yes', $page['filtered'] ?? null, 'The page config carries the filtered key.' );
 		$this->assertArrayNotHasKey( 'filtered', $printed, 'The form prints no filtered key beyond the three.' );
 
-		$this->assertStringContainsString( 'wcpay-core-checkout-form', $output );
+		$this->assertStringContainsString( 'woopayments-checkout-form', $output );
 		// Core's tokenization-form.js hides `.wc-payment-form` while a saved method is selected, so it must wrap the card element.
 		// The wrapper is the client's fieldset (client includes/class-wc-payments-checkout.php), inline padding included.
-		$this->assertStringContainsString( '<fieldset style="padding: 7px" class="wc-payment-form"><div id="wcpay-core-payment-element" class="wcpay-core-payment-element wcpay-upe-element" data-payment-method-type="card"></div></fieldset>', $output );
-		$this->assertStringContainsString( 'wcpay-core-test-mode-instructions', $output );
+		$this->assertStringContainsString( '<fieldset style="padding: 7px" class="wc-payment-form"><div id="woopayments-payment-element" class="woopayments-payment-element wcpay-upe-element" data-payment-method-type="card"></div></fieldset>', $output );
+		$this->assertStringContainsString( 'woopayments-test-mode-instructions', $output );
 		$this->assertStringContainsString( '4000 0064 2000 0001', $output );
 		$this->assertStringContainsString( 'js-woopayments-copy-test-number', $output );
 		$this->assertTrue( wp_script_is( 'wc-woopayments-checkout', 'enqueued' ) );

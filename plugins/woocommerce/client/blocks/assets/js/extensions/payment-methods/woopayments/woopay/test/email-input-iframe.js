@@ -553,7 +553,7 @@ describe( 'WooPay email input (blocks)', () => {
 			'<div id="payment-method"></div></form>' +
 			'<footer><a href="#footer">Footer link</a></footer>';
 		expect(
-			document.querySelector( '#wcpay-core-blocks-payment-element' )
+			document.querySelector( '#woopayments-blocks-payment-element' )
 		).toBeNull();
 		getComputedStyleSpy = jest
 			.spyOn( window, 'getComputedStyle' )

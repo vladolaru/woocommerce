@@ -205,7 +205,7 @@ const CardBrandIcons = ( { paymentSettings } ) => {
 	const visibleIcons = cardBrandIcons.slice( 0, 4 );
 	const additionalIcons = cardBrandIcons.slice( visibleIcons.length );
 	const hasAdditionalIcons = additionalIcons.length > 0;
-	const popoverId = 'wcpay-core-payment-methods-popover';
+	const popoverId = 'woopayments-payment-methods-popover';
 	const togglePopover = () => setIsPopoverOpen( ( isOpen ) => ! isOpen );
 
 	return (
@@ -1229,7 +1229,7 @@ const CARD_MIN_HEIGHT_BY_ROWS = { 1: '70px', 2: '145px', 3: '220px' };
 const CardSkeletonRows = ( { Skeleton, rowCount } ) => {
 	if ( rowCount === 1 ) {
 		return (
-			<div className="wcpay-core-skeleton-row">
+			<div className="woopayments-skeleton-row">
 				<Skeleton width="50%" height="3rem" borderRadius="4px" />
 				<Skeleton width="25%" height="3rem" borderRadius="4px" />
 				<Skeleton width="25%" height="3rem" borderRadius="4px" />
@@ -1240,7 +1240,7 @@ const CardSkeletonRows = ( { Skeleton, rowCount } ) => {
 		return [ 0, 1, 2 ].map( ( row ) => (
 			<Skeleton
 				key={ row }
-				className="wcpay-core-skeleton-row"
+				className="woopayments-skeleton-row"
 				height="3.5rem"
 				borderRadius="4px"
 			/>
@@ -1249,7 +1249,7 @@ const CardSkeletonRows = ( { Skeleton, rowCount } ) => {
 	return (
 		<>
 			<Skeleton height="3.5rem" borderRadius="4px" />
-			<div className="wcpay-core-skeleton-row">
+			<div className="woopayments-skeleton-row">
 				<Skeleton height="3.5rem" borderRadius="4px" />
 				<Skeleton height="3.5rem" borderRadius="4px" />
 			</div>
@@ -1267,7 +1267,7 @@ const PaymentElementSkeleton = ( {
 	onTransitionEnd,
 } ) => (
 	<div
-		className={ `wcpay-core-blocks-payment-element-skeleton${
+		className={ `woopayments-blocks-payment-element-skeleton${
 			isHidden ? ' is-hidden' : ''
 		}` }
 		aria-hidden={ isHidden }
@@ -1669,7 +1669,7 @@ const WooPaymentsContent = ( {
 			{ paymentSettings.testMode &&
 			getTestingInstructions( paymentSettings ) ? (
 				<p
-					className="wcpay-core-test-mode-instructions"
+					className="woopayments-test-mode-instructions"
 					dangerouslySetInnerHTML={ {
 						__html: getTestingInstructions( paymentSettings ),
 					} }
@@ -1684,7 +1684,7 @@ const WooPaymentsContent = ( {
 			) : null }
 			<div
 				ref={ wrapperRef }
-				className={ `wcpay-core-blocks-payment-element-wrapper${
+				className={ `woopayments-blocks-payment-element-wrapper${
 					isCardMethod ? '' : ' is-apm'
 				}` }
 				style={
@@ -1703,8 +1703,8 @@ const WooPaymentsContent = ( {
 					/>
 				) : null }
 				<div
-					id="wcpay-core-blocks-payment-element"
-					className="wcpay-core-blocks-payment-element"
+					id="woopayments-blocks-payment-element"
+					className="woopayments-blocks-payment-element"
 					ref={ elementContainer }
 					aria-live="polite"
 				/>

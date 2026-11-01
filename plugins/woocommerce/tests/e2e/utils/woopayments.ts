@@ -63,11 +63,11 @@ export const TEST_CARDS = {
 } satisfies Record< string, ProviderTestCard >;
 
 const CARD_FRAME_SELECTORS = {
-	blocks: '#wcpay-core-blocks-payment-element iframe[name^="__privateStripeFrame"]',
+	blocks: '#woopayments-blocks-payment-element iframe[name^="__privateStripeFrame"]',
 	classic:
-		'#payment .payment_method_woocommerce_payments #wcpay-core-payment-element iframe[name^="__privateStripeFrame"]',
+		'#payment .payment_method_woocommerce_payments #woopayments-payment-element iframe[name^="__privateStripeFrame"]',
 	'my-account':
-		'#wcpay-core-payment-element iframe[name^="__privateStripeFrame"]',
+		'#woopayments-payment-element iframe[name^="__privateStripeFrame"]',
 } as const;
 
 export type CardSurface = keyof typeof CARD_FRAME_SELECTORS;

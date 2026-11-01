@@ -70,7 +70,7 @@ function cardFrameRuntime(): 'client' | 'native' {
 function blocksCardFrameSelector( runtime: 'client' | 'native' ): string {
 	return runtime === 'client'
 		? '#payment-method .wcpay-payment-element iframe[name^="__privateStripeFrame"]'
-		: '#wcpay-core-blocks-payment-element iframe[name^="__privateStripeFrame"]';
+		: '#woopayments-blocks-payment-element iframe[name^="__privateStripeFrame"]';
 }
 
 async function ensureSmokeProduct( restApi: ApiClient ): Promise< number > {
@@ -248,7 +248,7 @@ async function assertStripeAdapterFixtureIntegrity(
 	const mount =
 		runtime === 'client'
 			? '#payment-method .wcpay-payment-element'
-			: '#wcpay-core-blocks-payment-element';
+			: '#woopayments-blocks-payment-element';
 	const adapter = await page.evaluate( () => ( {
 		errors: Reflect.get( window, '__wooPaymentsStripeAdapterErrors' ),
 		calls: Reflect.get( window, '__wooPaymentsStripePaymentCalls' ),

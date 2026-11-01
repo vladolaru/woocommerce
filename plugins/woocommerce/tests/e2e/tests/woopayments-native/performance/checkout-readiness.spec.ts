@@ -20,7 +20,7 @@ const CARD_GATEWAY_ID = 'woocommerce_payments';
 // provider-involved, so it imports no provider machinery; the selector
 // matches the shared helper's blocks Card frame lookup for 'native'.
 const CARD_FRAME_SELECTOR =
-	'#wcpay-core-blocks-payment-element iframe[name^="__privateStripeFrame"]';
+	'#woopayments-blocks-payment-element iframe[name^="__privateStripeFrame"]';
 
 // The provider's transaction-creating endpoints only. Mounting the Card
 // element legitimately fetches the Elements session configuration from other
@@ -76,7 +76,7 @@ async function assertStripeAdapterFixtureIntegrity(
 	expect( adapter.calls ).toContainEqual(
 		expect.objectContaining( {
 			type: 'payment',
-			mount: '#wcpay-core-blocks-payment-element',
+			mount: '#woopayments-blocks-payment-element',
 			lifecycle: expect.arrayContaining( [ 'mount' ] ),
 		} )
 	);

@@ -127,7 +127,7 @@ describe( 'WooPayments checkout', () => {
 			'<input type="radio" name="payment_method" value="woocommerce_payments" ' +
 			( selectedMethod === 'card' ? 'checked ' : '' ) +
 			'/>' +
-			'<div id="wcpay-core-payment-element"></div>' +
+			'<div id="woopayments-payment-element"></div>' +
 			'</li>' +
 			'<li class="wc_payment_method payment_method_woocommerce_payments_apple_pay">' +
 			'<input type="radio" name="payment_method" value="woocommerce_payments_apple_pay" ' +
@@ -447,7 +447,7 @@ describe( 'WooPayments checkout', () => {
 		document.body.innerHTML =
 			'<form class="checkout">' +
 			'<input type="radio" name="payment_method" value="woocommerce_payments" checked />' +
-			'<div id="wcpay-core-payment-element"></div>' +
+			'<div id="woopayments-payment-element"></div>' +
 			'<button id="place_order" type="button">Place order</button>' +
 			'</form>';
 
@@ -717,7 +717,7 @@ describe( 'WooPayments checkout', () => {
 
 		expect( mountPaymentElement ).toHaveBeenCalledTimes( 1 );
 		expect( mountPaymentElement ).toHaveBeenCalledWith(
-			document.getElementById( 'wcpay-core-payment-element' )
+			document.getElementById( 'woopayments-payment-element' )
 		);
 	} );
 
@@ -728,7 +728,7 @@ describe( 'WooPayments checkout', () => {
 		document.body.innerHTML =
 			'<form id="order_review">' +
 			'<input type="radio" name="payment_method" value="woocommerce_payments" checked />' +
-			'<div id="wcpay-core-payment-element"></div>' +
+			'<div id="woopayments-payment-element"></div>' +
 			'</form>';
 		window.wc_woopayments_checkout_params.isOrderPay = true;
 
@@ -736,7 +736,7 @@ describe( 'WooPayments checkout', () => {
 		await flushPromises();
 
 		expect( mountPaymentElement ).toHaveBeenCalledWith(
-			document.getElementById( 'wcpay-core-payment-element' )
+			document.getElementById( 'woopayments-payment-element' )
 		);
 	} );
 
@@ -744,7 +744,7 @@ describe( 'WooPayments checkout', () => {
 		document.body.innerHTML =
 			'<form class="checkout">' +
 			'<input type="radio" name="payment_method" value="woocommerce_payments_klarna" checked />' +
-			'<div id="wcpay-core-payment-element"></div>' +
+			'<div id="woopayments-payment-element"></div>' +
 			'<button id="place_order" type="button">Place order</button>' +
 			'</form>';
 		window.wc_woopayments_checkout_params = Object.assign(
@@ -792,7 +792,7 @@ describe( 'WooPayments checkout', () => {
 			'<img class="wcpay-payment-method-icon" ' +
 			'src="https://example.test/klarna.svg" alt="Klarna" /></label>' +
 			'<div class="payment_box" style="background-color: rgb(255, 255, 255)"></div>' +
-			'<div id="wcpay-core-payment-element"></div>' +
+			'<div id="woopayments-payment-element"></div>' +
 			'</li>' +
 			'</ul>' +
 			'</div>' +
@@ -867,7 +867,7 @@ describe( 'WooPayments checkout', () => {
 			document
 				.querySelector( 'input[value="woocommerce_payments"]' )
 				.closest( 'li' )
-				.querySelector( '#wcpay-core-payment-element' )
+				.querySelector( '#woopayments-payment-element' )
 		);
 	} );
 
@@ -1066,14 +1066,14 @@ describe( 'WooPayments checkout', () => {
 			'<li class="wc_payment_method payment_method_woocommerce_payments">' +
 			'<input id="payment_method_woocommerce_payments" type="radio" name="payment_method" value="woocommerce_payments" />' +
 			'<div class="payment_box payment_method_woocommerce_payments">' +
-			'<div id="wcpay-core-payment-element" data-gateway-marker="card"></div>' +
+			'<div id="woopayments-payment-element" data-gateway-marker="card"></div>' +
 			'</div>' +
 			'</li>' +
 			'<li class="wc_payment_method payment_method_woocommerce_payments_sepa_debit">' +
 			'<input id="payment_method_woocommerce_payments_sepa_debit" type="radio" ' +
 			'name="payment_method" value="woocommerce_payments_sepa_debit" checked />' +
 			'<div class="payment_box payment_method_woocommerce_payments_sepa_debit">' +
-			'<div id="wcpay-core-payment-element" data-gateway-marker="sepa"></div>' +
+			'<div id="woopayments-payment-element" data-gateway-marker="sepa"></div>' +
 			'</div>' +
 			'</li>' +
 			'</ul>' +
@@ -1101,7 +1101,7 @@ describe( 'WooPayments checkout', () => {
 		const selectedContainer = document
 			.getElementById( 'payment_method_woocommerce_payments_sepa_debit' )
 			.closest( 'li' )
-			.querySelector( '#wcpay-core-payment-element' );
+			.querySelector( '#woopayments-payment-element' );
 
 		require( '../woopayments-checkout' );
 		await flushPromises();
@@ -1126,7 +1126,7 @@ describe( 'WooPayments checkout', () => {
 			'<li class="wc_payment_method payment_method_woocommerce_payments">' +
 			'<input id="payment_method_woocommerce_payments" type="radio" name="payment_method" value="woocommerce_payments" />' +
 			'<div class="payment_box payment_method_woocommerce_payments">' +
-			'<div id="wcpay-core-payment-element" data-gateway-marker="card"></div>' +
+			'<div id="woopayments-payment-element" data-gateway-marker="card"></div>' +
 			'</div>' +
 			'</li>' +
 			'<li class="wc_payment_method payment_method_woocommerce_payments_affirm">' +
@@ -1159,7 +1159,7 @@ describe( 'WooPayments checkout', () => {
 		const cardContainer = document
 			.getElementById( 'payment_method_woocommerce_payments' )
 			.closest( 'li' )
-			.querySelector( '#wcpay-core-payment-element' );
+			.querySelector( '#woopayments-payment-element' );
 
 		require( '../woopayments-checkout' );
 		await flushPromises();
@@ -1226,10 +1226,10 @@ describe( 'WooPayments checkout', () => {
 						( type === selectedType ? ' checked' : '' ) +
 						' />' +
 						`<div class="payment_box payment_method_${ id }">` +
-						`<div class="wcpay-core-checkout-form wcpay-upe-form" data-payment-method-type="${ type }">` +
-						'<fieldset class="wc-payment-form"><div id="wcpay-core-payment-element" ' +
-						'class="wcpay-core-payment-element wcpay-upe-element"></div></fieldset>' +
-						'<div class="woocommerce-error wcpay-core-payment-errors" role="alert" hidden></div>' +
+						`<div class="woopayments-checkout-form wcpay-upe-form" data-payment-method-type="${ type }">` +
+						'<fieldset class="wc-payment-form"><div id="woopayments-payment-element" ' +
+						'class="woopayments-payment-element wcpay-upe-element"></div></fieldset>' +
+						'<div class="woocommerce-error woopayments-payment-errors" role="alert" hidden></div>' +
 						'</div></div></li>'
 					);
 				} )
@@ -1237,7 +1237,7 @@ describe( 'WooPayments checkout', () => {
 			'</ul><button id="place_order" type="button">Place order</button></form>';
 		types.forEach( ( type ) => {
 			getGatewayRow( getGatewayId( type ) )
-				.querySelector( '.wcpay-core-checkout-form' )
+				.querySelector( '.woopayments-checkout-form' )
 				.setAttribute(
 					'data-wcpay-config',
 					JSON.stringify(
@@ -1276,13 +1276,13 @@ describe( 'WooPayments checkout', () => {
 
 	function getGatewayContainer( id ) {
 		return getGatewayRow( id ).querySelector(
-			'#wcpay-core-payment-element'
+			'#woopayments-payment-element'
 		);
 	}
 
 	function getGatewayErrorBox( id ) {
 		return getGatewayRow( id ).querySelector(
-			'.wcpay-core-payment-errors'
+			'.woopayments-payment-errors'
 		);
 	}
 
@@ -1591,7 +1591,7 @@ describe( 'WooPayments checkout', () => {
 		renderGatewayRows( [ 'card', 'klarna' ], 'card' );
 		localizeGatewayConfigs( [ 'card', 'klarna' ] );
 		getGatewayRow( 'woocommerce_payments' )
-			.querySelector( '.wcpay-core-checkout-form' )
+			.querySelector( '.woopayments-checkout-form' )
 			.insertAdjacentHTML(
 				'beforeend',
 				'<input id="wc-woocommerce_payments-new-payment-method" type="checkbox" />'
@@ -1671,7 +1671,7 @@ describe( 'WooPayments checkout', () => {
 
 			// A fragment refresh replaces the container, so the element is mounted again.
 			const container = document.getElementById(
-				'wcpay-core-payment-element'
+				'woopayments-payment-element'
 			);
 			container.replaceWith( container.cloneNode() );
 			bodyEventHandlers.updated_checkout();
@@ -1812,7 +1812,7 @@ describe( 'WooPayments checkout', () => {
 				'<form class="checkout">' +
 				'<input type="radio" name="payment_method" value="woocommerce_payments" checked />' +
 				'<p class="form-row"><label for="billing_first_name">First name</label><input id="billing_first_name" type="text" /></p>' +
-				'<div id="wcpay-core-payment-element"></div>' +
+				'<div id="woopayments-payment-element"></div>' +
 				'<button id="place_order" type="button">Place order</button>' +
 				'</form>';
 			Object.assign( window.wc_woopayments_checkout_params, {
@@ -1856,7 +1856,7 @@ describe( 'WooPayments checkout', () => {
 
 		test( 'answer null when the page has nothing to read', () => {
 			document.body.innerHTML =
-				'<form id="order_review"><div id="wcpay-core-payment-element"></div></form>';
+				'<form id="order_review"><div id="woopayments-payment-element"></div></form>';
 
 			expect( getReaders().getWooPayInitAppearance() ).toBeNull();
 		} );
@@ -1869,7 +1869,7 @@ describe( 'WooPayments checkout', () => {
 			'<p class="form-row"><label for="billing_first_name">First name</label><input id="billing_first_name" type="text" /></p>' +
 			'<a class="checkout-link">Checkout link</a>' +
 			'<footer><a>Footer link</a></footer>' +
-			'<div id="wcpay-core-payment-element"></div>' +
+			'<div id="woopayments-payment-element"></div>' +
 			'<button id="place_order" type="button">Place order</button>' +
 			'</form>';
 		window.wc_woopayments_checkout_params.isWooPayGlobalThemeSupportEnabled = true;
@@ -1928,7 +1928,7 @@ describe( 'WooPayments checkout', () => {
 			'<form class="checkout">' +
 			'<input type="radio" name="payment_method" value="woocommerce_payments" checked />' +
 			'<p class="form-row"><label for="billing_first_name">First name</label><input id="billing_first_name" type="text" /></p>' +
-			'<div id="wcpay-core-payment-element"></div>' +
+			'<div id="woopayments-payment-element"></div>' +
 			'<button id="place_order" type="button">Place order</button>' +
 			'</form>';
 		jest.spyOn( window, 'getComputedStyle' ).mockImplementation(
@@ -2140,7 +2140,7 @@ describe( 'WooPayments checkout', () => {
 		document.body.innerHTML =
 			'<form id="add_payment_method">' +
 			'<input type="radio" name="payment_method" value="woocommerce_payments" checked />' +
-			'<div id="wcpay-core-payment-element"></div>' +
+			'<div id="woopayments-payment-element"></div>' +
 			'</form>';
 		window.wc_woopayments_checkout_params.isCheckout = false;
 		window.wc_woopayments_checkout_params.customerData = {
@@ -2177,7 +2177,7 @@ describe( 'WooPayments checkout', () => {
 			'<form class="checkout">' +
 			'<input type="radio" name="payment_method" value="woocommerce_payments" checked />' +
 			'<input id="wc-woocommerce_payments-new-payment-method" type="checkbox" checked />' +
-			'<div id="wcpay-core-payment-element"></div>' +
+			'<div id="woopayments-payment-element"></div>' +
 			'</form>';
 
 		require( '../woopayments-checkout' );
@@ -2211,7 +2211,7 @@ describe( 'WooPayments checkout', () => {
 				formAttributes +
 				'>' +
 				'<input type="radio" name="payment_method" value="woocommerce_payments" checked />' +
-				'<div id="wcpay-core-payment-element"></div>' +
+				'<div id="woopayments-payment-element"></div>' +
 				( saveCheckbox || '' ) +
 				'</form>';
 		}
@@ -2457,7 +2457,7 @@ describe( 'WooPayments checkout', () => {
 			'<form class="checkout">' +
 			'<input type="radio" name="payment_method" value="woocommerce_payments" checked />' +
 			'<input id="wc-woocommerce_payments-new-payment-method" type="checkbox" checked />' +
-			'<div id="wcpay-core-payment-element"></div>' +
+			'<div id="woopayments-payment-element"></div>' +
 			'</form>';
 		stripeMock.handleNextAction.mockImplementationOnce(
 			() =>
@@ -2538,7 +2538,7 @@ describe( 'WooPayments checkout', () => {
 			.querySelector( 'form.checkout' )
 			.insertAdjacentHTML(
 				'beforeend',
-				'<div class="wcpay-core-payment-errors" hidden></div>'
+				'<div class="woopayments-payment-errors" hidden></div>'
 			);
 		stripeMock.handleNextAction.mockResolvedValueOnce( {
 			error: {
@@ -2557,7 +2557,7 @@ describe( 'WooPayments checkout', () => {
 		await flushPromises();
 
 		expect(
-			document.querySelector( '.wcpay-core-payment-errors' ).textContent
+			document.querySelector( '.woopayments-payment-errors' ).textContent
 		).toBe(
 			'We are unable to authenticate your payment method. Please choose a different payment method and try again.'
 		);
@@ -2598,15 +2598,15 @@ describe( 'WooPayments checkout', () => {
 			'<li class="wc_payment_method payment_method_woocommerce_payments_klarna">' +
 			'<input type="radio" name="payment_method" value="woocommerce_payments_klarna" />' +
 			'<div class="payment_box">' +
-			'<div class="woocommerce-error wcpay-core-payment-errors" role="alert">' +
+			'<div class="woocommerce-error woopayments-payment-errors" role="alert">' +
 			'Stale Klarna error</div>' +
 			'</div>' +
 			'</li>' +
 			'<li class="wc_payment_method payment_method_woocommerce_payments">' +
 			'<input type="radio" name="payment_method" value="woocommerce_payments" checked />' +
 			'<div class="payment_box">' +
-			'<div id="wcpay-core-payment-element"></div>' +
-			'<div class="woocommerce-error wcpay-core-payment-errors" role="alert" hidden></div>' +
+			'<div id="woopayments-payment-element"></div>' +
+			'<div class="woocommerce-error woopayments-payment-errors" role="alert" hidden></div>' +
 			'</div>' +
 			'</li>' +
 			'</ul>' +
@@ -2628,7 +2628,7 @@ describe( 'WooPayments checkout', () => {
 		await flushPromises();
 
 		const [ klarnaBox, cardBox ] = document.querySelectorAll(
-			'.wcpay-core-payment-errors'
+			'.woopayments-payment-errors'
 		);
 		expect( cardBox.textContent ).toBe( 'Your card was declined.' );
 		expect( cardBox.hidden ).toBe( false );
@@ -2679,7 +2679,7 @@ describe( 'WooPayments checkout', () => {
 		document.body.innerHTML =
 			'<form id="order_review">' +
 			'<input type="radio" name="payment_method" value="woocommerce_payments" checked />' +
-			'<div class="wcpay-core-payment-errors" hidden></div>' +
+			'<div class="woopayments-payment-errors" hidden></div>' +
 			'</form>';
 		stripeMock.handleNextAction.mockResolvedValueOnce( {
 			error: {
@@ -3148,7 +3148,7 @@ describe( 'WooPayments checkout', () => {
 		document.body.innerHTML =
 			'<form id="order_review">' +
 			'<input type="radio" name="payment_method" value="woocommerce_payments" checked />' +
-			'<div id="wcpay-core-payment-element"></div>' +
+			'<div id="woopayments-payment-element"></div>' +
 			'<input type="text" id="billing_first_name" value="Ada" />' +
 			'<input type="text" id="billing_last_name" value="Lovelace" />' +
 			'<input type="email" id="billing_email" value="ada@example.test" />' +
@@ -3187,7 +3187,7 @@ describe( 'WooPayments checkout', () => {
 			'<form id="order_review">' +
 			'<input type="hidden" name="change_payment_method" value="42" />' +
 			'<input type="radio" name="payment_method" value="woocommerce_payments" checked />' +
-			'<div id="wcpay-core-payment-element"></div>' +
+			'<div id="woopayments-payment-element"></div>' +
 			'</form>';
 
 		require( '../woopayments-checkout' );
@@ -3337,7 +3337,7 @@ describe( 'WooPayments checkout', () => {
 				.querySelector( 'form.checkout' )
 				.insertAdjacentHTML(
 					'beforeend',
-					'<div class="wcpay-core-payment-errors" hidden></div>'
+					'<div class="woopayments-payment-errors" hidden></div>'
 				);
 			window.wc_woopayments_checkout_params.fingerprintErrorMessage =
 				FINGERPRINT_ERROR;
@@ -3385,7 +3385,7 @@ describe( 'WooPayments checkout', () => {
 
 				expect( mountPaymentElement ).not.toHaveBeenCalled();
 				expect(
-					document.querySelector( '.wcpay-core-payment-errors' )
+					document.querySelector( '.woopayments-payment-errors' )
 						.textContent
 				).toBe( message );
 
@@ -3396,7 +3396,7 @@ describe( 'WooPayments checkout', () => {
 
 				expectNoPaymentAttempt();
 				expect(
-					document.querySelector( '.wcpay-core-payment-errors' )
+					document.querySelector( '.woopayments-payment-errors' )
 						.textContent
 				).toBe( message );
 			}
@@ -3462,7 +3462,7 @@ describe( 'WooPayments checkout', () => {
 			.querySelector( 'form.checkout' )
 			.insertAdjacentHTML(
 				'beforeend',
-				'<div class="wcpay-core-payment-errors" hidden></div>'
+				'<div class="woopayments-payment-errors" hidden></div>'
 			);
 
 		require( '../woopayments-checkout' );
@@ -3481,7 +3481,7 @@ describe( 'WooPayments checkout', () => {
 		expect( submitElements ).not.toHaveBeenCalled();
 		expect( stripeMock.createPaymentMethod ).not.toHaveBeenCalled();
 		expect(
-			document.querySelector( '.wcpay-core-payment-errors' ).textContent
+			document.querySelector( '.woopayments-payment-errors' ).textContent
 		).toBe( 'The payment form could not be loaded.' );
 	} );
 
@@ -3494,7 +3494,7 @@ describe( 'WooPayments checkout', () => {
 			.querySelector( 'form.checkout' )
 			.insertAdjacentHTML(
 				'beforeend',
-				'<div class="wcpay-core-payment-errors" hidden></div>'
+				'<div class="woopayments-payment-errors" hidden></div>'
 			);
 		submitElements.mockImplementationOnce( () =>
 			Promise.resolve( {
@@ -3507,7 +3507,7 @@ describe( 'WooPayments checkout', () => {
 		);
 		require( '../woopayments-checkout' );
 		await flushPromises();
-		const box = document.querySelector( '.wcpay-core-payment-errors' );
+		const box = document.querySelector( '.woopayments-payment-errors' );
 
 		expect(
 			checkoutFormEventHandlers.checkout_place_order_woocommerce_payments()
@@ -3564,7 +3564,7 @@ describe( 'WooPayments checkout', () => {
 			.querySelector( 'form.checkout' )
 			.insertAdjacentHTML(
 				'beforeend',
-				'<div class="wcpay-core-payment-errors" hidden></div>'
+				'<div class="woopayments-payment-errors" hidden></div>'
 			);
 		paymentElementReportsReady = false;
 		require( '../woopayments-checkout' );
@@ -3586,7 +3586,7 @@ describe( 'WooPayments checkout', () => {
 		expect( submitElements ).not.toHaveBeenCalled();
 		expect( stripeMock.createPaymentMethod ).not.toHaveBeenCalled();
 		expect(
-			document.querySelector( '.wcpay-core-payment-errors' ).textContent
+			document.querySelector( '.woopayments-payment-errors' ).textContent
 		).toBe( 'The payment form could not be loaded.' );
 		expectClassicCheckoutReleaseCount( 1 );
 		expectClassicCheckoutUiState( false );
@@ -3597,7 +3597,7 @@ describe( 'WooPayments checkout', () => {
 			.querySelector( 'form.checkout' )
 			.insertAdjacentHTML(
 				'beforeend',
-				'<div class="wcpay-core-payment-errors" hidden></div>'
+				'<div class="woopayments-payment-errors" hidden></div>'
 			);
 		window.wc_woopayments_checkout_params.genericErrorMessage =
 			'There was a problem processing the payment.';
@@ -3614,7 +3614,7 @@ describe( 'WooPayments checkout', () => {
 		expect( submitElements ).not.toHaveBeenCalled();
 		expect( stripeMock.createPaymentMethod ).not.toHaveBeenCalled();
 		expect(
-			document.querySelector( '.wcpay-core-payment-errors' ).textContent
+			document.querySelector( '.woopayments-payment-errors' ).textContent
 		).toBe( 'There was a problem processing the payment.' );
 		expectClassicCheckoutReleaseCount( 1 );
 		expectClassicCheckoutUiState( false );
@@ -3654,7 +3654,7 @@ describe( 'WooPayments checkout', () => {
 			.querySelector( 'form.checkout' )
 			.insertAdjacentHTML(
 				'beforeend',
-				'<div class="wcpay-core-payment-errors" hidden></div>'
+				'<div class="woopayments-payment-errors" hidden></div>'
 			);
 		paymentElementReportsReady = false;
 		require( '../woopayments-checkout' );
@@ -3793,7 +3793,7 @@ describe( 'WooPayments checkout', () => {
 		document.body.innerHTML =
 			'<form class="checkout">' +
 			'<input type="radio" name="payment_method" value="woocommerce_payments_sepa_debit" checked />' +
-			'<div id="wcpay-core-payment-element"></div>' +
+			'<div id="woopayments-payment-element"></div>' +
 			'</form>';
 		window.wc_woopayments_checkout_params_woocommerce_payments_sepa_debit =
 			Object.assign( {}, window.wc_woopayments_checkout_params, {
@@ -3837,7 +3837,7 @@ describe( 'WooPayments checkout', () => {
 		document.body.innerHTML =
 			'<form id="order_review">' +
 			'<input type="radio" name="payment_method" value="woocommerce_payments" checked />' +
-			'<div id="wcpay-core-payment-element"></div>' +
+			'<div id="woopayments-payment-element"></div>' +
 			'</form>';
 		window.wc_woopayments_checkout_params.isOrderPay = true;
 
@@ -3940,7 +3940,7 @@ describe( 'WooPayments checkout', () => {
 		document.body.innerHTML =
 			'<form id="order_review">' +
 			'<input type="radio" name="payment_method" value="woocommerce_payments" checked />' +
-			'<div id="wcpay-core-payment-element"></div>' +
+			'<div id="woopayments-payment-element"></div>' +
 			'</form>';
 		window.wc_woopayments_checkout_params.isOrderPay = true;
 		// Synthetic failure: client 11.1.0 classic/payment-processing.js:494-497 unblocks the form on any thrown error.
@@ -3983,7 +3983,7 @@ describe( 'WooPayments checkout', () => {
 		document.body.innerHTML =
 			'<form id="order_review">' +
 			'<input type="radio" name="payment_method" value="woocommerce_payments" checked />' +
-			'<div id="wcpay-core-payment-element"></div>' +
+			'<div id="woopayments-payment-element"></div>' +
 			'</form>';
 		window.wc_woopayments_checkout_params.isOrderPay = true;
 
@@ -4195,7 +4195,7 @@ describe( 'WooPayments checkout', () => {
 			'<li class="wc_payment_method payment_method_woocommerce_payments">' +
 			'<input id="payment_method_woocommerce_payments" type="radio" name="payment_method" value="woocommerce_payments" />' +
 			'<div class="payment_box payment_method_woocommerce_payments">' +
-			'<div id="wcpay-core-payment-element" data-gateway-marker="card"></div>' +
+			'<div id="woopayments-payment-element" data-gateway-marker="card"></div>' +
 			'</div>' +
 			'</li>' +
 			'<li class="wc_payment_method payment_method_woocommerce_payments_affirm">' +
@@ -4246,7 +4246,7 @@ describe( 'WooPayments checkout', () => {
 			'name="wc-woocommerce_payments-payment-token" type="radio" value="new" />' +
 			'<input id="wc-woocommerce_payments-payment-token-12" ' +
 			'name="wc-woocommerce_payments-payment-token" type="radio" value="12" checked />' +
-			'<div id="wcpay-core-payment-element"></div>' +
+			'<div id="woopayments-payment-element"></div>' +
 			'</form>';
 		require( '../woopayments-checkout' );
 
@@ -4269,7 +4269,7 @@ describe( 'WooPayments checkout', () => {
 			'name="wc-woocommerce_payments-payment-token" type="radio" value="new" />' +
 			'<input id="wc-woocommerce_payments-payment-token-12" ' +
 			'name="wc-woocommerce_payments-payment-token" type="radio" value="12" checked />' +
-			'<div id="wcpay-core-payment-element"></div>' +
+			'<div id="woopayments-payment-element"></div>' +
 			'</form>';
 		require( '../woopayments-checkout' );
 
@@ -4320,7 +4320,7 @@ describe( 'WooPayments checkout', () => {
 		document.body.innerHTML =
 			'<form id="order_review">' +
 			'<input type="radio" name="payment_method" value="woocommerce_payments" checked />' +
-			'<div id="wcpay-core-payment-element"></div>' +
+			'<div id="woopayments-payment-element"></div>' +
 			'<button id="place_order" type="submit">Pay for order</button>' +
 			'</form>';
 		window.wc_woopayments_checkout_params.isOrderPay = true;
@@ -4345,7 +4345,7 @@ describe( 'WooPayments checkout', () => {
 		await flushPromises();
 
 		const initialContainer = document.getElementById(
-			'wcpay-core-payment-element'
+			'woopayments-payment-element'
 		);
 
 		expect( mountPaymentElement ).toHaveBeenCalledWith( initialContainer );
@@ -4353,11 +4353,11 @@ describe( 'WooPayments checkout', () => {
 		document.body.innerHTML =
 			'<form class="checkout">' +
 			'<input type="radio" name="payment_method" value="woocommerce_payments" checked />' +
-			'<div id="wcpay-core-payment-element"></div>' +
+			'<div id="woopayments-payment-element"></div>' +
 			'</form>';
 
 		const replacementContainer = document.getElementById(
-			'wcpay-core-payment-element'
+			'woopayments-payment-element'
 		);
 
 		bodyEventHandlers.updated_checkout();
@@ -4392,7 +4392,7 @@ describe( 'WooPayments checkout', () => {
 			'<ul>' +
 			'<li id="payment-card"><input type="radio" name="payment_method" value="woocommerce_payments" /></li>' +
 			'<li id="payment-ideal"><input type="radio" name="payment_method" value="woocommerce_payments_ideal" checked />' +
-			'<div id="wcpay-core-payment-element"></div></li>' +
+			'<div id="woopayments-payment-element"></div></li>' +
 			'</ul>' +
 			'</form>';
 
@@ -4419,14 +4419,14 @@ describe( 'WooPayments checkout', () => {
 	// in data-wcpay-config, the refreshed paymentMethodsConfig, currency and cartTotal (the gateway's payment_fields()).
 	function renderRefreshedPaymentFields( paymentMethodType, refreshedConfig ) {
 		const wrapper = document.createElement( 'div' );
-		wrapper.className = 'wcpay-core-checkout-form wcpay-upe-form';
+		wrapper.className = 'woopayments-checkout-form wcpay-upe-form';
 		wrapper.setAttribute( 'data-payment-method-type', paymentMethodType );
 		wrapper.setAttribute(
 			'data-wcpay-config',
 			JSON.stringify( refreshedConfig )
 		);
 		wrapper.innerHTML =
-			'<div id="wcpay-core-payment-element" class="wcpay-core-payment-element"></div>';
+			'<div id="woopayments-payment-element" class="woopayments-payment-element"></div>';
 		document.querySelector( 'form.checkout' ).appendChild( wrapper );
 	}
 
@@ -4585,7 +4585,7 @@ describe( 'WooPayments checkout', () => {
 			paymentMethodTypes: [ 'ideal' ],
 		} );
 		expect( mountPaymentElement ).toHaveBeenCalledWith(
-			document.getElementById( 'wcpay-core-payment-element' )
+			document.getElementById( 'woopayments-payment-element' )
 		);
 		const adoptedElements = elementsMock;
 
@@ -4844,11 +4844,11 @@ describe( 'WooPayments checkout', () => {
 			'<input id="payment_method_woocommerce_payments" type="radio" ' +
 			'name="payment_method" value="woocommerce_payments" checked />' +
 			'<label for="payment_method_woocommerce_payments">Card ' +
-			'<span class="wcpay-core-card-brand-icons payment-methods--logos">' +
+			'<span class="woopayments-card-brand-icons payment-methods--logos">' +
 			'<span class="test-mode badge">Test Mode</span>' +
 			'<img src="https://example.test/visa.svg" alt="Visa" />' +
 			'</span></label>' +
-			'<div id="wcpay-core-payment-element"></div>' +
+			'<div id="woopayments-payment-element"></div>' +
 			'</form>';
 
 		require( '../woopayments-checkout' );
@@ -4936,10 +4936,10 @@ describe( 'WooPayments checkout', () => {
 			'<input id="payment_method_woocommerce_payments" type="radio" ' +
 			'name="payment_method" value="woocommerce_payments" checked />' +
 			'<label for="payment_method_woocommerce_payments">Card ' +
-			'<span class="wcpay-core-card-brand-icons payment-methods--logos">' +
+			'<span class="woopayments-card-brand-icons payment-methods--logos">' +
 			'<img src="https://example.test/visa.svg" alt="Visa" />' +
 			'</span></label>' +
-			'<div id="wcpay-core-payment-element"></div>' +
+			'<div id="woopayments-payment-element"></div>' +
 			'</form>';
 
 		require( '../woopayments-checkout' );
@@ -4955,10 +4955,10 @@ describe( 'WooPayments checkout', () => {
 			'<input id="payment_method_woocommerce_payments" type="radio" ' +
 			'name="payment_method" value="woocommerce_payments" checked />' +
 			'<label for="payment_method_woocommerce_payments">Card ' +
-			'<span class="wcpay-core-card-brand-icons payment-methods--logos">' +
+			'<span class="woopayments-card-brand-icons payment-methods--logos">' +
 			'<img src="https://example.test/visa.svg" alt="Visa" />' +
 			'</span></label>' +
-			'<div id="wcpay-core-payment-element"></div>' +
+			'<div id="woopayments-payment-element"></div>' +
 			'</form>';
 
 		bodyEventHandlers.updated_checkout();
@@ -4979,7 +4979,7 @@ describe( 'WooPayments checkout', () => {
 			'<form class="checkout">' +
 			'<input id="billing_email" value="shopper@example.com" />' +
 			'<input type="radio" name="payment_method" value="woocommerce_payments" checked />' +
-			'<div id="wcpay-core-payment-element"></div>' +
+			'<div id="woopayments-payment-element"></div>' +
 			'<div id="wcpay-woopay-button"><div class="woopay-express-button is-placeholder"></div></div>' +
 			'</form>';
 
@@ -4999,8 +4999,8 @@ describe( 'WooPayments checkout', () => {
 		form.submit = jest.fn();
 		form.innerHTML =
 			'<input type="radio" name="payment_method" value="woocommerce_payments" checked />' +
-			'<div id="wcpay-core-payment-element"></div>' +
-			'<div class="wcpay-core-payment-errors" role="alert" hidden></div>' +
+			'<div id="woopayments-payment-element"></div>' +
+			'<div class="woopayments-payment-errors" role="alert" hidden></div>' +
 			'<button type="submit">Add payment method</button>';
 		document.body.innerHTML = '';
 		document.body.appendChild( form );
@@ -5025,7 +5025,7 @@ describe( 'WooPayments checkout', () => {
 		addPaymentMethodForm.submit = jest.fn();
 		addPaymentMethodForm.innerHTML =
 			'<input type="radio" name="payment_method" value="woocommerce_payments" checked />' +
-			'<div id="wcpay-core-payment-element"></div>';
+			'<div id="woopayments-payment-element"></div>';
 		document.body.innerHTML = '';
 		document.body.appendChild( addPaymentMethodForm );
 		window.wc_woopayments_checkout_params.cartTotal = '0';
@@ -5106,8 +5106,8 @@ describe( 'WooPayments checkout', () => {
 		addPaymentMethodForm.submit = jest.fn();
 		addPaymentMethodForm.innerHTML =
 			'<input type="radio" name="payment_method" value="woocommerce_payments" checked />' +
-			'<div id="wcpay-core-payment-element"></div>' +
-			'<div class="wcpay-core-payment-errors" hidden></div>';
+			'<div id="woopayments-payment-element"></div>' +
+			'<div class="woopayments-payment-errors" hidden></div>';
 		document.body.innerHTML = '';
 		document.body.appendChild( addPaymentMethodForm );
 		window.wc_woopayments_checkout_params.cartTotal = '0';
@@ -5129,7 +5129,7 @@ describe( 'WooPayments checkout', () => {
 		await flushPromises();
 
 		expect(
-			document.querySelector( '.wcpay-core-payment-errors' ).textContent
+			document.querySelector( '.woopayments-payment-errors' ).textContent
 		).toBe( 'Your card number is incomplete.' );
 		expect( global.jQuery.post ).not.toHaveBeenCalled();
 		expect( addPaymentMethodForm.submit ).not.toHaveBeenCalled();
@@ -5171,7 +5171,7 @@ describe( 'WooPayments checkout', () => {
 			'seti_failed_authentication_secret_abc'
 		);
 		expect(
-			document.querySelector( '.wcpay-core-payment-errors' ).textContent
+			document.querySelector( '.woopayments-payment-errors' ).textContent
 		).toBe(
 			'We are unable to authenticate your payment method. Please choose a different payment method and try again.'
 		);
@@ -5267,7 +5267,7 @@ describe( 'WooPayments checkout', () => {
 		await flushPromises();
 
 		const errorElement = document.querySelector(
-			'.wcpay-core-payment-errors'
+			'.woopayments-payment-errors'
 		);
 		expect( errorElement.textContent ).toBe(
 			'Error: Your card was declined.'
@@ -5350,7 +5350,7 @@ describe( 'WooPayments checkout', () => {
 			await flushPromises();
 
 			expect(
-				document.querySelector( '.wcpay-core-payment-errors' )
+				document.querySelector( '.woopayments-payment-errors' )
 					.textContent
 			).toBe( 'Unable to add payment method.' );
 			expect( addPaymentMethodForm.submit ).not.toHaveBeenCalled();
@@ -5441,7 +5441,7 @@ describe( 'WooPayments checkout', () => {
 				'<input type="email" id="billing_email" name="billing_email" />' +
 				'</span></p>' +
 				'<input type="radio" name="payment_method" value="woocommerce_payments" checked />' +
-				'<div id="wcpay-core-payment-element"></div>' +
+				'<div id="woopayments-payment-element"></div>' +
 				extraFormHtml +
 				'<button id="place_order" type="button">Place order</button>' +
 				'</form>';

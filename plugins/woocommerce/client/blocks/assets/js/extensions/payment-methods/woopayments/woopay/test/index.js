@@ -238,7 +238,7 @@ describe( 'wc-payment-method-woopayments-woopay', () => {
 			'<div id="payment-method"></div></form>' +
 			'<footer><a href="#footer">Footer link</a></footer>';
 		expect(
-			document.querySelector( '#wcpay-core-blocks-payment-element' )
+			document.querySelector( '#woopayments-blocks-payment-element' )
 		).toBeNull();
 		getComputedStyleSpy = jest
 			.spyOn( window, 'getComputedStyle' )
@@ -402,7 +402,7 @@ describe( 'wc-payment-method-woopayments-woopay', () => {
 			)
 		).toBeNull();
 		expect(
-			document.querySelector( '.wcpay-core-woopay-save-user' )
+			document.querySelector( '.woopayments-woopay-save-user' )
 		).toBeNull();
 		expect(
 			window.fetch.mock.calls.some(

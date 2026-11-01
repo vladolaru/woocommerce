@@ -365,7 +365,7 @@ describe( 'wc-payment-method-woopayments per-method registration', () => {
 
 		expect(
 			container.querySelector(
-				'.wcpay-core-blocks-payment-element-wrapper'
+				'.woopayments-blocks-payment-element-wrapper'
 			)
 		).toHaveClass( 'is-apm' );
 		expect( window.ResizeObserver ).not.toHaveBeenCalled();

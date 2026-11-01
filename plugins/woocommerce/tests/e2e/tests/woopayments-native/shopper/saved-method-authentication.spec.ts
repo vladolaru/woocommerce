@@ -62,7 +62,7 @@ const ADD_FORM = '#add_payment_method';
 // Every WooPayments gateway box (Card, Klarna, …) prints its own error box,
 // so read the one inside the Card gateway.
 const ADD_ERROR =
-	'.payment_method_woocommerce_payments .wcpay-core-payment-errors';
+	'.payment_method_woocommerce_payments .woopayments-payment-errors';
 const ADD_SUCCESS_NOTICE = 'Payment method successfully added.';
 const CONFIRMATION_HASH_PATTERN =
 	/^#wcpay-confirm-(pi|si):([^:]+):([^:]+):([^:]+)(?::(.+))?$/;
@@ -267,7 +267,7 @@ function isAddPaymentMethodSubmission( request: Request ): boolean {
 
 async function fillOptionalBillingFields( page: Page ): Promise< void > {
 	const frame = page.frameLocator(
-		`${ ADD_FORM } #wcpay-core-payment-element iframe[name^="__privateStripeFrame"]`
+		`${ ADD_FORM } #woopayments-payment-element iframe[name^="__privateStripeFrame"]`
 	);
 	const country = frame.getByRole( 'combobox', { name: /country/i } );
 	if ( ( await country.count() ) > 0 && ( await country.isVisible() ) ) {

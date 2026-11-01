@@ -53,7 +53,7 @@
 	// Each WooPayments gateway renders its own box, so the error goes to the
 	// selected gateway's box and the others are cleared.
 	function setError( message ) {
-		var boxSelector = '.wcpay-core-payment-errors';
+		var boxSelector = '.woopayments-payment-errors';
 		var boxes = Array.prototype.slice.call(
 			document.querySelectorAll( boxSelector )
 		);
@@ -1270,7 +1270,7 @@
 		// The Blocks express button renders and owns its own wrapper.
 		if (
 			! container ||
-			container.classList.contains( 'wcpay-core-woopay-express' ) ||
+			container.classList.contains( 'woopayments-woopay-express' ) ||
 			! config.isWooPayEnabled ||
 			! config.shouldShowWooPayButton
 		) {

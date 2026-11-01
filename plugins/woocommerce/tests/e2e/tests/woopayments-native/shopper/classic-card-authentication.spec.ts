@@ -904,7 +904,7 @@ test.describe( 'WooPayments native Classic checkout card authentication', () => 
 				// Every WooPayments gateway box (Card, Klarna, …) prints its
 				// own error box, so read the one inside the Card gateway.
 				const paymentError = page.locator(
-					'.payment_method_woocommerce_payments .wcpay-core-payment-errors'
+					'.payment_method_woocommerce_payments .woopayments-payment-errors'
 				);
 				await expect( paymentError ).toBeVisible( {
 					timeout: 30_000,

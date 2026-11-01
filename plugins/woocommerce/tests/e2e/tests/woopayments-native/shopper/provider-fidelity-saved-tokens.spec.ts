@@ -172,7 +172,7 @@ function tokenIdentities(
  */
 async function fillOptionalBillingFields( page: Page ): Promise< void > {
 	const frame = page.frameLocator(
-		`${ ADD_FORM } #wcpay-core-payment-element iframe[name^="__privateStripeFrame"]`
+		`${ ADD_FORM } #woopayments-payment-element iframe[name^="__privateStripeFrame"]`
 	);
 	const country = frame.getByRole( 'combobox', { name: /country/i } );
 	if ( ( await country.count() ) > 0 && ( await country.isVisible() ) ) {

@@ -814,12 +814,12 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 		// styles `.payment_box .wc-payment-form .wcpay-upe-element`. The wrapper is client 11.1.0's own fieldset, inline
 		// padding included (client includes/class-wc-payments-checkout.php), so themes and the appearance probe for
 		// `.payment_box fieldset` see the same markup.
-		echo '<div id="wcpay-core-checkout-form" class="wcpay-core-checkout-form wcpay-upe-form" data-payment-method-type="' . esc_attr( $payment_method_type ) . '" data-wcpay-config="' . esc_attr( $json_config ) . '">';
+		echo '<div id="woopayments-checkout-form" class="woopayments-checkout-form wcpay-upe-form" data-payment-method-type="' . esc_attr( $payment_method_type ) . '" data-wcpay-config="' . esc_attr( $json_config ) . '">';
 
 		if ( ! empty( $config['testMode'] ) ) {
 			$testing_instructions = $config['paymentMethodsConfig']['card']['testingInstructions'] ?? '';
 			if ( is_string( $testing_instructions ) && '' !== $testing_instructions ) {
-				echo '<p class="wcpay-core-test-mode-instructions testmode-info">';
+				echo '<p class="woopayments-test-mode-instructions testmode-info">';
 				echo wp_kses_post( $testing_instructions );
 				echo '</p>';
 			}
@@ -832,12 +832,12 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 		}
 
 		echo '<fieldset style="padding: 7px" class="wc-payment-form">';
-		echo '<div id="wcpay-core-payment-element" class="wcpay-core-payment-element wcpay-upe-element" data-payment-method-type="' . esc_attr( $payment_method_type ) . '"></div>';
+		echo '<div id="woopayments-payment-element" class="woopayments-payment-element wcpay-upe-element" data-payment-method-type="' . esc_attr( $payment_method_type ) . '"></div>';
 		echo '</fieldset>';
-		echo '<div class="woocommerce-error wcpay-core-payment-errors" role="alert" hidden></div>';
+		echo '<div class="woocommerce-error woopayments-payment-errors" role="alert" hidden></div>';
 
 		if ( ! $checkout_assets->should_expose_checkout_surface() ) {
-			echo '<p class="woocommerce-info wcpay-core-checkout-unavailable">';
+			echo '<p class="woocommerce-info woopayments-checkout-unavailable">';
 			echo esc_html__( 'WooPayments checkout is not available right now. Please choose another payment method.', 'woocommerce' );
 			echo '</p>';
 		}
@@ -1194,7 +1194,7 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 				);
 			}
 
-			$icon = '<span class="wcpay-core-card-brand-icons payment-methods--logos">' . implode( '', $icons ) . '</span>';
+			$icon = '<span class="woopayments-card-brand-icons payment-methods--logos">' . implode( '', $icons ) . '</span>';
 		}
 
 		/**

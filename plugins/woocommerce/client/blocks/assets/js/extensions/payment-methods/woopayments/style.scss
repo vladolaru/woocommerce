@@ -170,7 +170,7 @@
 // Client 11.1.0 client/checkout/blocks/style.scss: the wrapper reserves the Payment
 // Element's height (the card's comes from a ResizeObserver) and the skeleton
 // overlays the mount point until Stripe is ready.
-.wcpay-core-blocks-payment-element-wrapper {
+.woopayments-blocks-payment-element-wrapper {
 	position: relative;
 
 	&.is-apm {
@@ -178,7 +178,7 @@
 	}
 }
 
-.wcpay-core-blocks-payment-element-skeleton {
+.woopayments-blocks-payment-element-skeleton {
 	position: absolute;
 	inset-block-start: 0;
 	inset-inline: 0;
@@ -193,7 +193,7 @@
 	}
 }
 
-.wcpay-core-skeleton-row {
+.woopayments-skeleton-row {
 	display: flex;
 	gap: 12px;
 	margin-block-start: 12px;
@@ -373,7 +373,7 @@
 @media (prefers-reduced-motion: reduce) {
 
 	// Not `none`: the skeleton unmounts on transitionend, which a 1ms transition still fires.
-	.wcpay-core-blocks-payment-element-skeleton {
+	.woopayments-blocks-payment-element-skeleton {
 		transition-duration: 1ms;
 	}
 

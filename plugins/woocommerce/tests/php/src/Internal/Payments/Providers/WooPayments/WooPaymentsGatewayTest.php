@@ -571,7 +571,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			$ideal_gateway->payment_fields();
 			$fields = (string) ob_get_clean();
 			remove_filter( 'woocommerce_is_checkout', '__return_true' );
-			$this->assertStringContainsString( 'id="wcpay-core-checkout-form"', $fields );
+			$this->assertStringContainsString( 'id="woopayments-checkout-form"', $fields );
 			$this->assertStringNotContainsString( 'wc-woocommerce_payments_ideal-new-payment-method', $fields, 'iDEAL cannot be saved, so it offers no save checkbox.' );
 
 			update_option( 'woocommerce_myaccount_page_id', $my_account_page_id );
@@ -5825,12 +5825,12 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( $gateway_supports, $received_supports );
 		$this->assertContains( PaymentGatewayFeature::TOKENIZATION, $received_supports );
-		$this->assertStringContainsString( 'id="wcpay-core-checkout-form"', $output );
+		$this->assertStringContainsString( 'id="woopayments-checkout-form"', $output );
 		$this->assertStringContainsString( 'wc-woocommerce_payments-new-payment-method', $output );
 		$this->assertStringContainsString( 'wc-woocommerce_payments-payment-token-new', $output );
 		// The saved payment methods print inside the form, below the test-mode instructions and above the card element, as in
 		// client 11.1.0 (includes/class-wc-payments-checkout.php:462-502); the save checkbox follows the form.
-		$this->assertMatchesRegularExpression( '/<div id="wcpay-core-checkout-form"[^>]*>.*wcpay-core-test-mode-instructions.*wc-woocommerce_payments-payment-token-new.*<fieldset style="padding: 7px" class="wc-payment-form">.*<\/div>.*wc-woocommerce_payments-new-payment-method/s', $output );
+		$this->assertMatchesRegularExpression( '/<div id="woopayments-checkout-form"[^>]*>.*woopayments-test-mode-instructions.*wc-woocommerce_payments-payment-token-new.*<fieldset style="padding: 7px" class="wc-payment-form">.*<\/div>.*wc-woocommerce_payments-new-payment-method/s', $output );
 		$this->assertMatchesRegularExpression( '/<input[^>]+id="wc-woocommerce_payments-new-payment-method"[^>]+type="checkbox"[^>]*>/', $output );
 		$this->assertDoesNotMatchRegularExpression( '/<input[^>]+id="wc-woocommerce_payments-new-payment-method"[^>]+checked[^>]*>/', $output );
 	}
@@ -5882,7 +5882,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 
 		$this->assertSame(
 			$expects_notice ? 1 : 0,
-			preg_match( '/<div id="wcpay-core-checkout-form"[^>]*>.*<p class="woocommerce-info wcpay-core-checkout-unavailable">WooPayments checkout is not available right now\. Please choose another payment method\.<\/p><\/div>$/s', $output ),
+			preg_match( '/<div id="woopayments-checkout-form"[^>]*>.*<p class="woocommerce-info woopayments-checkout-unavailable">WooPayments checkout is not available right now\. Please choose another payment method\.<\/p><\/div>$/s', $output ),
 			$scenario
 		);
 	}
@@ -5939,7 +5939,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		// Client 11.1.0 includes/class-wc-payments-checkout.php:401,493-499: tokenization shows on this page, so core's
 		// script loads, but the saved methods list does not. The save checkbox is the decided difference above.
 		$this->assertTrue( wp_script_is( 'woocommerce-tokenization-form', 'enqueued' ) );
-		$this->assertStringContainsString( 'id="wcpay-core-checkout-form"', $output );
+		$this->assertStringContainsString( 'id="woopayments-checkout-form"', $output );
 		$this->assertStringNotContainsString( 'woocommerce-SavedPaymentMethods', $output );
 	}
 
@@ -6071,7 +6071,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			remove_filter( 'woocommerce_currency', $store_currency );
 		}
 
-		$this->assertStringContainsString( 'id="wcpay-core-checkout-form"', $output );
+		$this->assertStringContainsString( 'id="woopayments-checkout-form"', $output );
 		$this->assertStringNotContainsString( 'wc-' . $gateway_id . '-new-payment-method', $output );
 	}
 
@@ -6309,7 +6309,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$gateway->payment_fields();
 		$output = (string) ob_get_clean();
 
-		$this->assertStringContainsString( 'wcpay-core-checkout-form', $output );
+		$this->assertStringContainsString( 'woopayments-checkout-form', $output );
 	}
 
 	/**

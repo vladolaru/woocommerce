@@ -1589,10 +1589,10 @@ const ExpressCheckoutContent = ( {
 	}, [ liveElementsOptions ] );
 
 	return (
-		<div className="wcpay-core-express-checkout">
+		<div className="woopayments-express-checkout-container">
 			<div
 				ref={ containerRef }
-				className="wcpay-core-express-checkout__element"
+				className="woopayments-express-checkout-container__element"
 			/>
 		</div>
 	);

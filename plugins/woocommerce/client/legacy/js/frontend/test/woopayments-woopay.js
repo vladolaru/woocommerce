@@ -421,7 +421,7 @@ describe( 'WooPayments WooPay checkout', () => {
 			'<input type="hidden" name="product_id" value="123" />' +
 			'<button type="submit" class="single_add_to_cart_button" name="add-to-cart" value="123">Add to cart</button>' +
 			'<div id="wcpay-woopay-button" data-product_page="1"><div class="woopay-express-button is-placeholder"></div></div>' +
-			'<div class="wcpay-core-payment-errors" hidden></div>' +
+			'<div class="woopayments-payment-errors" hidden></div>' +
 			'</form>';
 		window.wc_woopayments_woopay_params.addToCartNonce = 'add-to-cart-nonce';
 		window.wc_woopayments_woopay_params.confirmationErrorMessage =
@@ -448,7 +448,7 @@ describe( 'WooPayments WooPay checkout', () => {
 
 			expect( submit ).toHaveBeenCalledTimes( submits ? 1 : 0 );
 			expect(
-				document.querySelector( '.wcpay-core-payment-errors' )
+				document.querySelector( '.woopayments-payment-errors' )
 					.textContent
 			).toBe(
 				submits
@@ -1103,7 +1103,7 @@ describe( 'WooPayments WooPay checkout', () => {
 					'<button type="submit" class="single_add_to_cart_button disabled ' +
 					'wc-variation-selection-needed" name="add-to-cart" value="123">Add to cart</button>' +
 					'<div id="wcpay-woopay-button" data-product_page="1"><div class="woopay-express-button is-placeholder"></div></div>' +
-					'<div class="wcpay-core-payment-errors" hidden></div>' +
+					'<div class="woopayments-payment-errors" hidden></div>' +
 					'</form>';
 			window.wc_woopayments_woopay_params.addToCartNonce = 'add-to-cart-nonce';
 			window.wc_woopayments_woopay_params.confirmationErrorMessage =
@@ -1120,7 +1120,7 @@ describe( 'WooPayments WooPay checkout', () => {
 				expect.anything()
 			);
 			expect(
-				document.querySelector( '.wcpay-core-payment-errors' ).textContent
+				document.querySelector( '.woopayments-payment-errors' ).textContent
 			).toBe( 'Choose product options before using WooPay.' );
 		} );
 
@@ -1239,7 +1239,7 @@ describe( 'WooPayments WooPay checkout', () => {
 		// 11.1.0 woopay-express-checkout-button.js:469); this script can load on
 		// a Blocks cart for direct checkout and must not replace that button.
 		document.body.innerHTML =
-			'<div id="wcpay-woopay-button" class="wcpay-core-woopay-express">' +
+			'<div id="wcpay-woopay-button" class="woopayments-woopay-express">' +
 			'<button type="button" class="woopay-express-button" data-width-type="wide">WooPay</button>' +
 			'</div>';
 		const blocksButton = document.querySelector(
@@ -1265,11 +1265,11 @@ describe( 'WooPayments WooPay checkout', () => {
 			'<ul class="wc_payment_methods payment_methods methods">' +
 			'<li class="wc_payment_method payment_method_woocommerce_payments_klarna">' +
 			'<input type="radio" name="payment_method" value="woocommerce_payments_klarna" />' +
-			'<div class="wcpay-core-payment-errors">Stale Klarna error</div>' +
+			'<div class="woopayments-payment-errors">Stale Klarna error</div>' +
 			'</li>' +
 			'<li class="wc_payment_method payment_method_woocommerce_payments">' +
 			'<input type="radio" name="payment_method" value="woocommerce_payments" checked />' +
-			'<div class="wcpay-core-payment-errors" hidden></div>' +
+			'<div class="woopayments-payment-errors" hidden></div>' +
 			'</li>' +
 			'</ul>' +
 			'</form>';
@@ -1289,7 +1289,7 @@ describe( 'WooPayments WooPay checkout', () => {
 		await flushPromises();
 
 		const [ klarnaBox, cardBox ] = document.querySelectorAll(
-			'.wcpay-core-payment-errors'
+			'.woopayments-payment-errors'
 		);
 		expect(
 			window.fetch.mock.calls.some(
@@ -1311,7 +1311,7 @@ describe( 'WooPayments WooPay checkout', () => {
 			'<input type="hidden" name="product_id" value="257" />' +
 			'<input type="hidden" name="variation_id" value="" />' +
 			'<div id="wcpay-woopay-button" data-product_page="1"><div class="woopay-express-button is-placeholder"></div></div>' +
-			'<div class="wcpay-core-payment-errors" hidden></div>' +
+			'<div class="woopayments-payment-errors" hidden></div>' +
 			'</form>';
 		window.wc_woopayments_woopay_params.addToCartNonce = 'add-to-cart-nonce';
 		window.wc_woopayments_woopay_params.confirmationErrorMessage =
@@ -1328,7 +1328,7 @@ describe( 'WooPayments WooPay checkout', () => {
 			expect.anything()
 		);
 		expect(
-			document.querySelector( '.wcpay-core-payment-errors' ).textContent
+			document.querySelector( '.woopayments-payment-errors' ).textContent
 		).toBe( 'Choose product options before using WooPay.' );
 	} );
 

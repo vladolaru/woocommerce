@@ -260,7 +260,7 @@
 	// (client/checkout/utils/upe.js:45-54).
 	function mergeRefreshedPaymentFieldsConfig() {
 		document
-			.querySelectorAll( '.wcpay-core-checkout-form[data-wcpay-config]' )
+			.querySelectorAll( '.woopayments-checkout-form[data-wcpay-config]' )
 			.forEach( function ( wrapper ) {
 				var refreshed;
 				var paymentMethodType;
@@ -485,7 +485,7 @@
 			input && input.closest ? input.closest( 'li' ) : null;
 		var container =
 			gatewayElement &&
-			gatewayElement.querySelector( '#wcpay-core-payment-element' );
+			gatewayElement.querySelector( '#woopayments-payment-element' );
 		var sharedContainer;
 		var owningRow;
 
@@ -494,7 +494,7 @@
 		}
 
 		sharedContainer = document.getElementById(
-			'wcpay-core-payment-element'
+			'woopayments-payment-element'
 		);
 
 		// Without a row to compare against there is nothing to attribute the
@@ -631,7 +631,7 @@
 	// Each WooPayments gateway renders its own box, so the error goes to the
 	// selected gateway's box and the others are cleared.
 	function setError( message ) {
-		var boxSelector = '.wcpay-core-payment-errors';
+		var boxSelector = '.woopayments-payment-errors';
 		var boxes = Array.prototype.slice.call(
 			document.querySelectorAll( boxSelector )
 		);
@@ -1950,7 +1950,7 @@
 		var handlers = {};
 		var itemsPerRow = Math.min( icons.length, 5 );
 
-		popover.id = 'wcpay-core-payment-methods-popover';
+		popover.id = 'woopayments-payment-methods-popover';
 		popover.className = 'logo-popover payment-methods--logos-popover';
 		popover.setAttribute( 'role', 'dialog' );
 		popover.setAttribute( 'tabindex', '-1' );
@@ -2025,7 +2025,7 @@
 			logos.setAttribute( 'aria-haspopup', 'dialog' );
 			logos.setAttribute(
 				'aria-controls',
-				'wcpay-core-payment-methods-popover'
+				'woopayments-payment-methods-popover'
 			);
 			logos.setAttribute(
 				'aria-label',
@@ -2075,7 +2075,7 @@
 		}
 
 		sourceLogos =
-			label.querySelector( '.wcpay-core-card-brand-icons' ) ||
+			label.querySelector( '.woopayments-card-brand-icons' ) ||
 			label.querySelector( '.payment-methods--logos' ) ||
 			label.querySelector( 'img' );
 		if ( ! sourceLogos ) {
@@ -2306,10 +2306,10 @@
 	// into the failed element's own container.
 	function showPaymentElementLoadError( component ) {
 		var wrapper = component.container.closest
-			? component.container.closest( '.wcpay-core-checkout-form' )
+			? component.container.closest( '.woopayments-checkout-form' )
 			: null;
 		var box = wrapper
-			? wrapper.querySelector( '.wcpay-core-payment-errors' )
+			? wrapper.querySelector( '.woopayments-payment-errors' )
 			: null;
 
 		if ( ! box ) {

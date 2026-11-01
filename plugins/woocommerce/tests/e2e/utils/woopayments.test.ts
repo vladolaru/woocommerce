@@ -47,7 +47,7 @@ test( 'fillCardDetails enters and keeps a card in a Blocks Payment Element', asy
 	page,
 } ) => {
 	await page.setContent(
-		`<div id="wcpay-core-blocks-payment-element">
+		`<div id="woopayments-blocks-payment-element">
 			<iframe name="__privateStripeFrame123" srcdoc="${ CARD_FIELDS_HTML.replace(
 				/"/g,
 				'&quot;'
@@ -58,7 +58,7 @@ test( 'fillCardDetails enters and keeps a card in a Blocks Payment Element', asy
 	await fillCardDetails( page, TEST_CARDS.basic, 'blocks' );
 
 	const frame = page.frameLocator(
-		'#wcpay-core-blocks-payment-element iframe[name^="__privateStripeFrame"]'
+		'#woopayments-blocks-payment-element iframe[name^="__privateStripeFrame"]'
 	);
 	await expect(
 		frame.getByRole( 'textbox', { name: 'Card number' } )
@@ -88,7 +88,7 @@ test( 'fillCardDetails clicks each card field before typing into it', async ( {
 		</script>`;
 	await page.setContent(
 		`<script>window.fieldLog = [];</script>
-		<div id="wcpay-core-blocks-payment-element">
+		<div id="woopayments-blocks-payment-element">
 			<iframe name="__privateStripeFrame123" srcdoc="${ trackedFields.replace(
 				/"/g,
 				'&quot;'
@@ -129,7 +129,7 @@ test( 'fillCardDetails replaces a card the fields already hold', async ( {
 			`<input id="cvc" value="${ heldCard.cvc }" />`
 		);
 	await page.setContent(
-		`<div id="wcpay-core-blocks-payment-element">
+		`<div id="woopayments-blocks-payment-element">
 			<iframe name="__privateStripeFrame123" srcdoc="${ populatedFields.replace(
 				/"/g,
 				'&quot;'
@@ -140,7 +140,7 @@ test( 'fillCardDetails replaces a card the fields already hold', async ( {
 	await fillCardDetails( page, TEST_CARDS.genericDecline, 'blocks' );
 
 	const frame = page.frameLocator(
-		'#wcpay-core-blocks-payment-element iframe[name^="__privateStripeFrame"]'
+		'#woopayments-blocks-payment-element iframe[name^="__privateStripeFrame"]'
 	);
 	await expect(
 		frame.getByRole( 'textbox', { name: 'Card number' } )
@@ -155,7 +155,7 @@ test( 'fillCardDetails leaves the page scrolled where the entry found it', async
 } ) => {
 	await page.setContent(
 		`<div style="height: 3000px"></div>
-		<div id="wcpay-core-blocks-payment-element">
+		<div id="woopayments-blocks-payment-element">
 			<iframe name="__privateStripeFrame123" srcdoc="${ CARD_FIELDS_HTML.replace(
 				/"/g,
 				'&quot;'
@@ -226,7 +226,7 @@ test( 'fillCardDetails fails at once when the click leaves another element focus
 } ) => {
 	// The field refuses focus, as a click that a layer above it swallows would leave it.
 	await page.setContent(
-		`<div id="wcpay-core-blocks-payment-element">
+		`<div id="woopayments-blocks-payment-element">
 			<iframe name="__privateStripeFrame123" srcdoc="${ (
 				CARD_FIELDS_HTML +
 				"<script>document.getElementById( 'number' ).addEventListener( 'focus', ( e ) => e.target.blur() );</script>"

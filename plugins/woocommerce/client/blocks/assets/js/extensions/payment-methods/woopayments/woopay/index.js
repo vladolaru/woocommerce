@@ -502,7 +502,7 @@ const WooPayExpressContent = () => {
 	};
 
 	return (
-		<div id="wcpay-woopay-button" className="wcpay-core-woopay-express">
+		<div id="wcpay-woopay-button" className="woopayments-woopay-express">
 			{ settings.isWoopayFirstPartyAuthEnabled ? (
 				<a
 					{ ...buttonProps }
