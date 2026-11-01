@@ -2749,6 +2749,68 @@ describe( 'WooPayments WooPay checkout', () => {
 				] );
 			} );
 
+			// Opus gate F1: a cart changed in another tab sends this page no event; the tab's return and a back-forward
+			// cache restore are the moments it may have happened.
+			test.each( [
+				[
+					'the tab becomes visible again',
+					true,
+					() => {
+						const visibility = jest
+							.spyOn( document, 'visibilityState', 'get' )
+							.mockReturnValue( 'visible' );
+						document.dispatchEvent( new window.Event( 'visibilitychange' ) );
+						visibility.mockRestore();
+					},
+				],
+				[
+					'the page comes back from the back-forward cache',
+					true,
+					() => {
+						const event = new window.Event( 'pageshow' );
+						Object.defineProperty( event, 'persisted', { value: true } );
+						window.dispatchEvent( event );
+					},
+				],
+				[
+					'the tab is hidden',
+					false,
+					() => {
+						const visibility = jest
+							.spyOn( document, 'visibilityState', 'get' )
+							.mockReturnValue( 'hidden' );
+						document.dispatchEvent( new window.Event( 'visibilitychange' ) );
+						visibility.mockRestore();
+					},
+				],
+				[
+					'the page first shows',
+					false,
+					() => {
+						const event = new window.Event( 'pageshow' );
+						Object.defineProperty( event, 'persisted', { value: false } );
+						window.dispatchEvent( event );
+					},
+				],
+			] )( 'after a cart change in another tab, when %s, asks at the click: %s', async ( name, asksAgain, showPage ) => {
+				const postMessage = await loadAsLoggedIn();
+				await answerEncryptedData();
+				expect( sessionPosts ).toHaveLength( 1 );
+
+				// The other tab's change reaches the store; this page hears nothing of it.
+				showPage();
+				await flushPromises();
+				expect( sessionPosts ).toHaveLength( 1 );
+				await clickAndAnswer();
+				if ( asksAgain ) {
+					await answerEncryptedData();
+				}
+
+				expect( getRedirectSessions( postMessage ) ).toStrictEqual( [
+					asksAgain ? 'session-2' : 'session-1',
+				] );
+			} );
+
 			test( 'waits for a prefetch still in flight and asks nothing more', async () => {
 				const postMessage = await loadAsLoggedIn();
 

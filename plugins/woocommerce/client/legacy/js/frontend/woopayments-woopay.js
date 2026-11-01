@@ -536,6 +536,19 @@
 			'added_to_cart removed_from_cart',
 			prefetchDirectCheckoutSession
 		);
+		// A tab the shopper comes back to, or a page restored from the back-forward cache, may hold a session from before
+		// a cart change made elsewhere, which this page never saw. Only drop it: the next click asks, and pays the warm
+		// request, since the first one already made the store session's Stripe customer.
+		document.addEventListener( 'visibilitychange', function () {
+			if ( document.visibilityState === 'visible' ) {
+				dropPrefetchedSession();
+			}
+		} );
+		window.addEventListener( 'pageshow', function ( event ) {
+			if ( event.persisted ) {
+				dropPrefetchedSession();
+			}
+		} );
 		prefetchDirectCheckoutSession();
 	}
 
