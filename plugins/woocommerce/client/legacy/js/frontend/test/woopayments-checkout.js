@@ -4459,9 +4459,25 @@ describe( 'WooPayments checkout', () => {
 		expect( mountPaymentElement ).toHaveBeenCalledWith(
 			document.getElementById( 'wcpay-core-payment-element' )
 		);
+		const adoptedElements = elementsMock;
+
+		// Place order: the adopted gateway's own elements make the payment method, and the form posts it.
 		expect(
-			checkoutFormEventHandlers.checkout_place_order_woocommerce_payments_ideal
-		).toEqual( expect.any( Function ) );
+			checkoutFormEventHandlers.checkout_place_order_woocommerce_payments_ideal()
+		).toBe( false );
+		await flushPromises();
+
+		expect( adoptedElements.submit ).toHaveBeenCalledTimes( 1 );
+		expect( stripeMock.createPaymentMethod ).toHaveBeenCalledTimes( 1 );
+		expect( stripeMock.createPaymentMethod ).toHaveBeenCalledWith(
+			expect.objectContaining( { elements: adoptedElements } )
+		);
+		expect(
+			global.jQuery.checkoutFormFields[ 'wcpay-payment-method' ].value
+		).toBe( 'pm_native' );
+		expect(
+			global.jQuery.checkoutFormResult.trigger
+		).toHaveBeenCalledWith( 'submit' );
 		delete window.wcpay_core_checkout_config_woocommerce_payments_ideal;
 	} );
 

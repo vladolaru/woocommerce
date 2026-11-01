@@ -1952,8 +1952,17 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 		$this->assertSame( '1', $page['isWooPayGlobalThemeSupportEnabled'] ?? null, 'Precondition: global theme support is on.' );
 		$this->assertSame( $woopay ? '1' : '', $page['isWooPayEnabled'] ?? null, 'Precondition: WooPay is on only where the row says.' );
 		$this->assertNull( $page['woopayAppearance'], 'Precondition: nothing stored yet, so the page prints a null appearance.' );
-		if ( 'nothing' !== $change ) {
-			$this->assertNotSame( $configs[1], $configs[2], "Precondition: {$change} reaches the config." );
+		// The named change itself, not the whole config: fresh encryption alone makes two WooPay configs differ.
+		if ( 'the stored appearance' === $change ) {
+			$this->assertNull( $configs[1]['woopayAppearance'], 'Precondition: the first update finds no stored appearance.' );
+			$this->assertSame( '#111111', $configs[2]['woopayAppearance']['variables']['colorText'] ?? null, 'Precondition: the second update reads the stored appearance.' );
+			$this->assertSame( array(), $configs[1]['woopayFontRules'], 'Precondition: the first update finds no stored font rules.' );
+			$this->assertNotSame( array(), $configs[2]['woopayFontRules'], 'Precondition: the second update reads the stored font rules.' );
+		} elseif ( 'the session email' === $change ) {
+			$this->assertNotSame( 'changed@example.com', $configs[1]['woopaySessionEmail'], 'Precondition: the first update has the old email.' );
+			$this->assertSame( 'changed@example.com', $configs[2]['woopaySessionEmail'], 'Precondition: the second update has the written email.' );
+		} elseif ( 'a nonce tick' === $change ) {
+			$this->assertNotSame( $configs[1]['tracksRestNonce'], $configs[2]['tracksRestNonce'], 'Precondition: the second update has the next tick\'s nonces.' );
 		}
 		$pairs = array(
 			'first update'  => 'checkout page',
