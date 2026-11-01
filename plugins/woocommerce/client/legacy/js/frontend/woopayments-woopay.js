@@ -1628,12 +1628,17 @@
 	$( function () {
 		renderWooPayExpressButton();
 		renderWooPaySaveUserFields();
-		// Client 11.1.0 fetches the preferred card from its express-button bundle, which loads only where the button shows
-		// (class-wc-payments-woopay-button-handler.php:166-170, express-button/index.js:115-120).
-		if ( config.isWooPayEnabled && config.shouldShowWooPayButton ) {
-			fetchPreferredCardFromWooPay();
-		}
-		initializeDirectCheckout();
+		// Both create the Connect iframe, which client 11.2.0 never adds before the window's load event, so the hidden
+		// WooPay page does not compete with the store page's own load (direct-checkout/index.js:247-252,
+		// express-button/index.js:114-118).
+		whenWindowLoaded().then( function () {
+			// Client 11.1.0 fetches the preferred card from its express-button bundle, which loads only where the button
+			// shows (class-wc-payments-woopay-button-handler.php:166-170, express-button/index.js:115-120).
+			if ( config.isWooPayEnabled && config.shouldShowWooPayButton ) {
+				fetchPreferredCardFromWooPay();
+			}
+			initializeDirectCheckout();
+		} );
 	} );
 
 	if ( typeof module !== 'undefined' && module.exports ) {

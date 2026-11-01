@@ -95,11 +95,13 @@ describe( 'WooPayments WooPay checkout', () => {
 		}
 	}
 
-	// The Connect iframe gets its src once the Tracks identity resolves, and only a load after that counts.
+	// The scripts create the Connect iframe once the window has loaded, which jsdom has by then; it gets its src once the
+	// Tracks identity resolves, and only a load after that counts.
 	async function loadConnectIframe() {
-		const iframe = document.getElementById( 'woopay-connect-iframe' );
-		for ( let index = 0; index < 50 && ! iframe.getAttribute( 'src' ); index++ ) {
+		let iframe = document.getElementById( 'woopay-connect-iframe' );
+		for ( let index = 0; index < 50 && ! ( iframe && iframe.getAttribute( 'src' ) ); index++ ) {
 			await Promise.resolve();
+			iframe = document.getElementById( 'woopay-connect-iframe' );
 		}
 		iframe.dispatchEvent( new window.Event( 'load' ) );
 	}
@@ -607,7 +609,8 @@ describe( 'WooPayments WooPay checkout', () => {
 			} );
 
 			require( '../woopayments-woopay' );
-
+			// The iframe comes once the window has loaded, which it has in jsdom.
+			await Promise.resolve();
 			const connectIframe = document.getElementById( 'woopay-connect-iframe' );
 			expect( connectIframe.getAttribute( 'src' ) ).toBeNull();
 			connectIframe.dispatchEvent( new window.Event( 'load' ) );
@@ -2229,21 +2232,36 @@ describe( 'WooPayments WooPay checkout', () => {
 				expect( document.body.wooPayDirectCheckoutAttached ).toBe( true );
 			} );
 
-			test( 'starts the check only once the window has loaded', async () => {
+			// Client 11.2.0 adds both iframes in its window load listener (direct-checkout/index.js:247-255), and so does the
+			// classic express button for the preferred card (express-button/index.js:114-118).
+			test.each( [
+				[ 'with no WooPay button', false ],
+				[ 'with the WooPay button', true ],
+			] )( 'adds no WooPay iframe until the window has loaded, %s', async ( name, showsButton ) => {
 				configureDirectCheckout( cartLink );
-				installConnect();
+				window.wcpay_core_woopay_config.shouldShowWooPayButton = showsButton;
+				const postMessage = installConnect();
 				const readyState = jest
 					.spyOn( document, 'readyState', 'get' )
 					.mockReturnValue( 'interactive' );
 				require( '../woopayments-woopay' );
 
 				try {
-					await answerLoginCheck( false );
-					expect( getTempIframe() ).toBeNull();
-
-					window.dispatchEvent( new window.Event( 'load' ) );
 					await flushPromises();
+					expect(
+						document.getElementById( 'woopay-connect-iframe' )
+					).toBeNull();
+					expect( postMessage ).not.toHaveBeenCalled();
+
+					// A document is complete when its window's load event fires.
+					readyState.mockReturnValue( 'complete' );
+					window.dispatchEvent( new window.Event( 'load' ) );
+					await answerLoginCheck( false );
 					expect( getTempIframe() ).not.toBeNull();
+					expect( postMessage ).toHaveBeenCalledWith(
+						{ action: 'getIsUserLoggedIn' },
+						'https://pay.woo.test'
+					);
 				} finally {
 					readyState.mockRestore();
 				}
@@ -3154,6 +3172,8 @@ describe( 'WooPayments WooPay checkout', () => {
 			let sender = null;
 
 			require( '../woopayments-woopay' );
+			// The iframe comes once the window has loaded, which it has in jsdom.
+			await Promise.resolve();
 			const connectIframe = document.getElementById( 'woopay-connect-iframe' );
 			connectIframe.wooPayConnectPostMessage.then( function ( postToConnect ) {
 				sender = postToConnect;
