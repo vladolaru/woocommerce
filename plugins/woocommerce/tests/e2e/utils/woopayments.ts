@@ -183,7 +183,8 @@ export async function typeIntoStripeField(
 
 /**
  * Runs a card entry and scrolls the page back to where it found it, also
- * when the entry throws.
+ * when the entry throws. A failed scroll-back is reported, except when it
+ * would hide the entry's own error.
  *
  * Clicking into a card field scrolls the page further than `fill()` did.
  * The next click that scrolls, such as Place order, is then sent by
@@ -195,14 +196,16 @@ export async function keepingScrollPosition(
 	enter: () => Promise< void >
 ): Promise< void > {
 	const scrollY = await page.evaluate( () => window.scrollY );
+	const restore = () =>
+		page.evaluate( ( y ) => window.scrollTo( 0, y ), scrollY );
 	try {
 		await enter();
-	} finally {
-		// Also when the entry throws; a closed page must not hide that error.
-		await page
-			.evaluate( ( y ) => window.scrollTo( 0, y ), scrollY )
-			.catch( () => undefined );
+	} catch ( error ) {
+		// A closed page must not hide the entry's own error.
+		await restore().catch( () => undefined );
+		throw error;
 	}
+	await restore();
 }
 
 /**

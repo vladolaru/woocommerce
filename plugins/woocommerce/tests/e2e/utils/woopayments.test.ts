@@ -186,6 +186,41 @@ test( 'keepingScrollPosition scrolls back when the entry throws and keeps its er
 	expect( await page.evaluate( () => window.scrollY ) ).toBe( 100 );
 } );
 
+/** A page that reads its scroll position once, then fails every scroll-back. */
+function pageWhoseScrollBackRejects( error: Error ): Page {
+	let calls = 0;
+	return {
+		evaluate: async () => {
+			calls += 1;
+			if ( calls === 1 ) {
+				return 0;
+			}
+			throw error;
+		},
+	} as unknown as Page;
+}
+
+test( 'keepingScrollPosition reports a failed scroll-back after an entry that succeeded', async () => {
+	const restoreError = new Error( 'the scroll-back failed' );
+
+	await expect(
+		keepingScrollPosition( pageWhoseScrollBackRejects( restoreError ), () =>
+			Promise.resolve()
+		)
+	).rejects.toBe( restoreError );
+} );
+
+test( 'keepingScrollPosition keeps the entry error when the scroll-back fails too', async () => {
+	const entryError = new Error( 'the entry failed' );
+
+	await expect(
+		keepingScrollPosition(
+			pageWhoseScrollBackRejects( new Error( 'the scroll-back failed' ) ),
+			() => Promise.reject( entryError )
+		)
+	).rejects.toBe( entryError );
+} );
+
 test( 'fillCardDetails fails at once when the click leaves another element focused', async ( {
 	page,
 } ) => {
