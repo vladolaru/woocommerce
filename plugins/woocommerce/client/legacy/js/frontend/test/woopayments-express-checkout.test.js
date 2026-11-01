@@ -1323,6 +1323,35 @@ describe( 'woopayments-express-checkout', () => {
 			).toBe( 'not an email' );
 		} );
 
+		it( 'keeps an absent authorization email for the next payment after a success without a wallet email', async () => {
+			const testables = loadModule(
+				baseParams( {
+					button_context: 'pay_for_order',
+					order_id: 123,
+					key: 'wc_order_key',
+					billing_email: '',
+				} )
+			);
+			testables.setState( {
+				cachedCartData: cartResponse( {
+					billing_address: { email: '', phone: '' },
+					shipping_address: { phone: '' },
+				} ),
+			} );
+			apiFetch.mockResolvedValueOnce( { payment_result: {} } );
+			await testables.placeOrder( 'ctoken_123', { billingDetails: {} } );
+
+			apiFetch.mockResolvedValueOnce( { payment_result: {} } );
+			await testables.placeOrder( 'ctoken_456', {
+				billingDetails: { email: 'second@example.com' },
+			} );
+
+			expect( apiFetch.mock.calls[ 1 ][ 0 ].data ).toHaveProperty(
+				'billing_email',
+				''
+			);
+		} );
+
 		// wcpayExpressCheckoutParams is a public global: the script reads it and never writes it.
 		it( 'leaves the localized params as printed when a payment stores the wallet email', async () => {
 			const params = baseParams( {
