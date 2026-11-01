@@ -6,7 +6,11 @@
 	var configObjectPrefix = 'wcpay_core_checkout_config_';
 	var baseConfig = window.wcpay_core_checkout_config || {};
 	var appearanceUtils = window.wcpayAppearance;
-	var config = baseConfig;
+	// Each WooPayments gateway's config, keyed by gateway ID: a copy of its localized object, which this script never
+	// writes, or one built from the page config for a gateway first rendered after load. Checkout updates merge their
+	// cart values in here (mergeRefreshedPaymentFieldsConfig()).
+	var gatewayConfigs = Object.create( null );
+	var config = getBaseGatewayConfig();
 	var navigate = function ( url ) {
 		window.location = url;
 	};
@@ -16,7 +20,11 @@
 	// Matches the WooPayments plugin's Payment_Information::PAYMENT_METHOD_ERROR.
 	var PAYMENT_METHOD_ERROR_SENTINEL =
 		'woocommerce_payments_payment_method_error';
-	var gatewayId = config.gatewayId || defaultGatewayId;
+	// The gateway whose config is current, and the gateways whose checkout submit handler is registered.
+	var selection = {
+		gatewayId: config.gatewayId || defaultGatewayId,
+		checkoutSubmitHandlerGatewayIds: {},
+	};
 	// One Stripe instance per account, shared by every Payment Element, as
 	// client 11.1.0 checkout/api/index.js:79-113 keeps one per account.
 	var accountStripe = null;
@@ -44,7 +52,6 @@
 		document.querySelector( 'form.checkout' )
 	);
 	var isWaitingForStripe = false;
-	var checkoutSubmitHandlerGatewayIds = {};
 	var deviceFingerprint = '';
 	var deviceFingerprintRequest = null;
 	var isDeviceFingerprintReady = false;
@@ -177,24 +184,54 @@
 		);
 	}
 
+	// The gateway's entry in gatewayConfigs, copied on first use from its localized object, or from the page config for
+	// the gateway the page config belongs to; null for a gateway with neither and no entry yet.
+	function getStoredGatewayConfig( paymentGatewayId ) {
+		var keyedConfig;
+
+		if ( ! gatewayConfigs[ paymentGatewayId ] ) {
+			keyedConfig =
+				window[ getGatewayConfigObjectName( paymentGatewayId ) ];
+
+			if ( keyedConfig && typeof keyedConfig === 'object' ) {
+				gatewayConfigs[ paymentGatewayId ] = Object.assign(
+					{},
+					keyedConfig
+				);
+			} else if (
+				( baseConfig.gatewayId || defaultGatewayId ) ===
+				paymentGatewayId
+			) {
+				gatewayConfigs[ paymentGatewayId ] = Object.assign(
+					{},
+					baseConfig
+				);
+			}
+		}
+
+		return gatewayConfigs[ paymentGatewayId ] || null;
+	}
+
+	// The card gateway's config: the page config with the cart values of the latest checkout update.
+	function getBaseGatewayConfig() {
+		return getStoredGatewayConfig(
+			baseConfig.gatewayId || defaultGatewayId
+		);
+	}
+
 	function getConfigForGateway( paymentGatewayId ) {
-		var keyedConfig =
-			window[ getGatewayConfigObjectName( paymentGatewayId ) ];
+		var storedConfig = getStoredGatewayConfig( paymentGatewayId );
+		var pageConfig;
 		var paymentMethodEntry;
 		var paymentMethodsConfig;
 
-		if ( keyedConfig && typeof keyedConfig === 'object' ) {
-			return keyedConfig;
+		if ( storedConfig ) {
+			return storedConfig;
 		}
 
-		if (
-			( baseConfig.gatewayId || defaultGatewayId ) === paymentGatewayId
-		) {
-			return baseConfig;
-		}
-
+		pageConfig = getBaseGatewayConfig();
 		paymentMethodEntry = getPaymentMethodEntryForGateway(
-			baseConfig,
+			pageConfig,
 			paymentGatewayId
 		);
 		if ( paymentMethodEntry ) {
@@ -202,7 +239,7 @@
 			paymentMethodsConfig[ paymentMethodEntry.id ] =
 				paymentMethodEntry.config;
 
-			return Object.assign( {}, baseConfig, {
+			return Object.assign( {}, pageConfig, {
 				gatewayId: paymentGatewayId,
 				paymentMethodId: paymentMethodEntry.id,
 				paymentMethodsConfig: paymentMethodsConfig,
@@ -218,8 +255,9 @@
 	// and cartTotal into the page config from a script in the update_order_review fragment, before core re-inits the
 	// payment methods. Native reads them from the payment fields WooCommerce re-renders in that fragment
 	// (data-wcpay-config, one per WooPayments gateway, which carries only those three keys), every time a config is
-	// about to be read. A gateway first rendered after the page loaded gets the page config with its own gateway ID and
-	// Stripe type, from the form's method type as the client reads it (client/checkout/utils/upe.js:45-54).
+	// about to be read, into the gateway's entry in gatewayConfigs. A gateway first rendered after the page loaded gets
+	// the page config with its own gateway ID and Stripe type, from the form's method type as the client reads it
+	// (client/checkout/utils/upe.js:45-54).
 	function mergeRefreshedPaymentFieldsConfig() {
 		document
 			.querySelectorAll( '.wcpay-core-checkout-form[data-wcpay-config]' )
@@ -257,24 +295,14 @@
 					return;
 				}
 
-				target =
-					window[ getGatewayConfigObjectName( paymentGatewayId ) ];
-				if (
-					( ! target || typeof target !== 'object' ) &&
-					( baseConfig.gatewayId || defaultGatewayId ) ===
-						paymentGatewayId
-				) {
-					target = baseConfig;
-				}
-
-				if ( ! target || typeof target !== 'object' ) {
-					target = Object.assign( {}, baseConfig, {
+				target = getStoredGatewayConfig( paymentGatewayId );
+				if ( ! target ) {
+					target = Object.assign( {}, getBaseGatewayConfig(), {
 						gatewayId: paymentGatewayId,
 						paymentMethodTypes: [ paymentMethodType ],
 						paymentListWalletsConfig: {},
 					} );
-					window[ getGatewayConfigObjectName( paymentGatewayId ) ] =
-						target;
+					gatewayConfigs[ paymentGatewayId ] = target;
 				}
 
 				[ 'paymentMethodsConfig', 'currency', 'cartTotal' ].forEach(
@@ -348,17 +376,20 @@
 		mergeRefreshedPaymentFieldsConfig();
 
 		var nextGatewayId =
-			paymentGatewayId || getSelectedGatewayId() || gatewayId;
-		var nextConfig = getConfigForGateway( nextGatewayId ) || baseConfig;
+			paymentGatewayId || getSelectedGatewayId() || selection.gatewayId;
+		var nextConfig =
+			getConfigForGateway( nextGatewayId ) || getBaseGatewayConfig();
 
 		config = nextConfig;
-		gatewayId = nextConfig.gatewayId || nextGatewayId || defaultGatewayId;
+		selection.gatewayId =
+			nextConfig.gatewayId || nextGatewayId || defaultGatewayId;
 	}
 
 	function getKnownGatewayIds() {
 		var gatewayIds = {};
-		var paymentMethodConfigs =
-			getGatewayPaymentMethodConfigs( baseConfig );
+		var paymentMethodConfigs = getGatewayPaymentMethodConfigs(
+			getBaseGatewayConfig()
+		);
 
 		if ( baseConfig.gatewayId || window.wcpay_core_checkout_config ) {
 			gatewayIds[ baseConfig.gatewayId || defaultGatewayId ] = true;
@@ -403,12 +434,12 @@
 		var selectedGatewayId = getSelectedGatewayId();
 
 		if ( selectedGatewayId ) {
-			return selectedGatewayId === gatewayId;
+			return selectedGatewayId === selection.gatewayId;
 		}
 
 		return (
 			$( 'input[name="payment_method"]' ).filter(
-				'[value="' + gatewayId + '"]'
+				'[value="' + selection.gatewayId + '"]'
 			).length === 1
 		);
 	}
@@ -820,7 +851,7 @@
 
 	function shouldSavePaymentMethod() {
 		var savePaymentMethodCheckbox = document.getElementById(
-			'wc-' + gatewayId + '-new-payment-method'
+			'wc-' + selection.gatewayId + '-new-payment-method'
 		);
 
 		return !! (
@@ -830,7 +861,7 @@
 
 	function isUsingSavedPaymentMethod() {
 		var newPaymentTokenInput = document.getElementById(
-			'wc-' + gatewayId + '-payment-token-new'
+			'wc-' + selection.gatewayId + '-payment-token-new'
 		);
 
 		return !! newPaymentTokenInput && ! newPaymentTokenInput.checked;
@@ -1270,11 +1301,13 @@
 	// A gateway can first render after an update_order_review (for example once a currency change makes it available).
 	function registerCheckoutSubmitHandlers() {
 		getKnownGatewayIds().forEach( function ( paymentGatewayId ) {
-			if ( checkoutSubmitHandlerGatewayIds[ paymentGatewayId ] ) {
+			if (
+				selection.checkoutSubmitHandlerGatewayIds[ paymentGatewayId ]
+			) {
 				return;
 			}
 
-			checkoutSubmitHandlerGatewayIds[ paymentGatewayId ] = true;
+			selection.checkoutSubmitHandlerGatewayIds[ paymentGatewayId ] = true;
 			$( 'form.checkout' ).on(
 				'checkout_place_order_' + paymentGatewayId,
 				function () {
@@ -1301,11 +1334,12 @@
 	}
 
 	function updatePaymentElementTerms( event ) {
-		var component = paymentElements[ gatewayId ];
+		var component = paymentElements[ selection.gatewayId ];
 
 		if (
 			! event.target ||
-			event.target.id !== 'wc-' + gatewayId + '-new-payment-method' ||
+			event.target.id !==
+				'wc-' + selection.gatewayId + '-new-payment-method' ||
 			! component ||
 			typeof component.paymentElement.update !== 'function'
 		) {
@@ -1735,7 +1769,7 @@
 	}
 
 	function confirmSetupIntentIfNeeded( setupIntent ) {
-		var component = paymentElements[ gatewayId ];
+		var component = paymentElements[ selection.gatewayId ];
 		var setupStripe = component ? component.stripe : null;
 
 		if ( setupIntent && setupIntent.status === 'succeeded' ) {
@@ -1835,7 +1869,7 @@
 
 	function getCardBrandLogosLabel() {
 		var label = document.querySelector(
-			'label[for="payment_method_' + gatewayId + '"]'
+			'label[for="payment_method_' + selection.gatewayId + '"]'
 		);
 		var input;
 		var listItem;
@@ -1845,7 +1879,7 @@
 		}
 
 		input = document.querySelector(
-			'input[name="payment_method"][value="' + gatewayId + '"]'
+			'input[name="payment_method"][value="' + selection.gatewayId + '"]'
 		);
 		listItem = input && input.closest ? input.closest( 'li' ) : null;
 
@@ -2248,7 +2282,7 @@
 	// Keyed on the selected input, not the current config, which falls back to card for other gateways. The old
 	// error leaves the gateway's box first; a new `loaderror` writes it back.
 	function resetFailedPaymentElement() {
-		var selectedGatewayId = getSelectedGatewayId() || gatewayId;
+		var selectedGatewayId = getSelectedGatewayId() || selection.gatewayId;
 		var failed = paymentElements[ selectedGatewayId ];
 
 		if ( failed && failed.loadError ) {
@@ -2322,7 +2356,7 @@
 		);
 
 		if ( ! inputs.length ) {
-			return [ gatewayId ];
+			return [ selection.gatewayId ];
 		}
 
 		return inputs
@@ -2343,14 +2377,17 @@
 			var container;
 
 			setCurrentGatewayConfig( paymentGatewayId );
-			container = getGatewayPaymentContainer( gatewayId );
+			container = getGatewayPaymentContainer( selection.gatewayId );
 			if (
 				container &&
-				! isPaymentListWalletGateway( gatewayId ) &&
+				! isPaymentListWalletGateway( selection.gatewayId ) &&
 				config.isCoreNativeCheckoutAvailable &&
 				config.publishableKey
 			) {
-				mounts.push( { gatewayId: gatewayId, container: container } );
+				mounts.push( {
+					gatewayId: selection.gatewayId,
+					container: container,
+				} );
 			}
 		} );
 		setCurrentGatewayConfig( selectedGatewayId );
@@ -2377,7 +2414,7 @@
 		var mounts;
 
 		setCurrentGatewayConfig();
-		selectedGatewayId = gatewayId;
+		selectedGatewayId = selection.gatewayId;
 		hydrateCardBrandIcons();
 		if ( isAwaitingFirstCheckoutUpdate ) {
 			return;
@@ -2509,7 +2546,7 @@
 	}
 
 	function createPaymentMethodAndSubmit( form ) {
-		var component = paymentElements[ gatewayId ];
+		var component = paymentElements[ selection.gatewayId ];
 
 		if ( ! component ) {
 			// No Payment Element without the fingerprint: the client's submit refuses then too
@@ -2602,7 +2639,7 @@
 	}
 
 	function createSetupIntentAndSubmit( formElement ) {
-		var component = paymentElements[ gatewayId ];
+		var component = paymentElements[ selection.gatewayId ];
 
 		if ( ! component ) {
 			if ( ! isDeviceFingerprintReady ) {
@@ -2659,7 +2696,7 @@
 
 		setCurrentGatewayConfig( selectedGateway.value );
 
-		if ( selectedGateway.value !== gatewayId ) {
+		if ( selectedGateway.value !== selection.gatewayId ) {
 			return true;
 		}
 

@@ -10,6 +10,7 @@ describe( 'WooPayments checkout', () => {
 	let bodyEventHandlers;
 	let checkoutFormState;
 	let checkoutFormEventHandlers;
+	let checkoutFormHandlerLists;
 	let createdPaymentElements;
 	let documentEventListeners;
 	let orderPayFormEventHandlers;
@@ -234,9 +235,27 @@ describe( 'WooPayments checkout', () => {
 					? checkoutFormFields[ name ]
 					: defaultResult;
 			} ),
+			// Like jQuery, every handler bound to an event runs, in order, and the event's result is the last
+			// handler's value other than undefined (what core's checkout.js reads through triggerHandler()).
 			on: jest.fn( ( event, handler ) => {
 				event.split( ' ' ).forEach( ( eventName ) => {
-					checkoutFormEventHandlers[ eventName ] = handler;
+					checkoutFormHandlerLists[ eventName ] = (
+						checkoutFormHandlerLists[ eventName ] || []
+					).concat( handler );
+					checkoutFormEventHandlers[ eventName ] = function (
+						...args
+					) {
+						let result;
+						checkoutFormHandlerLists[ eventName ].forEach(
+							( bound ) => {
+								const value = bound.apply( this, args );
+								if ( value !== undefined ) {
+									result = value;
+								}
+							}
+						);
+						return result;
+					};
 				} );
 				return checkoutFormResult;
 			} ),
@@ -247,7 +266,14 @@ describe( 'WooPayments checkout', () => {
 				}
 				return checkoutFormResult;
 			} ),
-			trigger: jest.fn( () => checkoutFormResult ),
+			trigger: jest.fn( ( eventName ) => {
+				if ( checkoutFormEventHandlers[ eventName ] ) {
+					checkoutFormEventHandlers[ eventName ].call(
+						checkoutFormResult
+					);
+				}
+				return checkoutFormResult;
+			} ),
 			unblock: jest.fn( () => {
 				checkoutFormState.blocked = false;
 				return checkoutFormResult;
@@ -395,6 +421,7 @@ describe( 'WooPayments checkout', () => {
 		};
 		bodyEventHandlers = {};
 		checkoutFormEventHandlers = {};
+		checkoutFormHandlerLists = {};
 		documentEventListeners = [];
 		jest.spyOn( document, 'addEventListener' ).mockImplementation(
 			( type, listener, options ) => {
@@ -4504,7 +4531,105 @@ describe( 'WooPayments checkout', () => {
 		expect(
 			global.jQuery.checkoutFormResult.trigger
 		).toHaveBeenCalledWith( 'submit' );
-		delete window.wcpay_core_checkout_config_woocommerce_payments_ideal;
+	} );
+
+	// Each checkout update registers the submit handlers of gateways it first sees; one already registered must not be
+	// bound again, or one Place order would run the payment twice.
+	test( 'binds one Place order handler per gateway across checkout updates and creates one payment method per submit', async () => {
+		renderGatewayRows( [ 'card' ], 'card' );
+		require( '../woopayments-checkout' );
+		await flushPromises();
+		bodyEventHandlers.updated_checkout();
+		bodyEventHandlers.updated_checkout();
+		await flushPromises();
+
+		expect(
+			checkoutFormHandlerLists.checkout_place_order_woocommerce_payments
+		).toHaveLength( 1 );
+
+		expect(
+			checkoutFormEventHandlers.checkout_place_order_woocommerce_payments()
+		).toBe( false );
+		await flushPromises();
+
+		expect( submitElements ).toHaveBeenCalledTimes( 1 );
+		expect( stripeMock.createPaymentMethod ).toHaveBeenCalledTimes( 1 );
+		expect(
+			global.jQuery.checkoutFormResult.trigger
+		).toHaveBeenCalledWith( 'submit' );
+	} );
+
+	// wcpay_core_checkout_config is a public global: the script reads the localized configs and never writes them.
+	test( 'leaves the localized checkout configs as printed when an update refreshes them and adds a gateway', async () => {
+		document.body.innerHTML =
+			'<form class="checkout">' +
+			'<input type="radio" name="payment_method" value="woocommerce_payments" />' +
+			'<input type="radio" name="payment_method" value="woocommerce_payments_klarna" />' +
+			'</form>';
+		window.wcpay_core_checkout_config_woocommerce_payments_klarna =
+			Object.assign( {}, window.wcpay_core_checkout_config, {
+				gatewayId: 'woocommerce_payments_klarna',
+				paymentMethodTypes: [ 'klarna' ],
+				paymentMethodsConfig: {
+					klarna: {
+						gatewayId: 'woocommerce_payments_klarna',
+						isReusable: false,
+					},
+				},
+			} );
+		const printed = JSON.parse(
+			JSON.stringify( window.wcpay_core_checkout_config )
+		);
+		const printedKlarna = JSON.parse(
+			JSON.stringify(
+				window.wcpay_core_checkout_config_woocommerce_payments_klarna
+			)
+		);
+
+		require( '../woopayments-checkout' );
+		document
+			.querySelector( 'form.checkout' )
+			.insertAdjacentHTML(
+				'beforeend',
+				'<input type="radio" name="payment_method" value="woocommerce_payments_ideal" checked />'
+			);
+		renderRefreshedPaymentFields( 'card', {
+			paymentMethodsConfig: printed.paymentMethodsConfig,
+			currency: 'EUR',
+			cartTotal: 7000,
+		} );
+		renderRefreshedPaymentFields( 'klarna', {
+			paymentMethodsConfig: printedKlarna.paymentMethodsConfig,
+			currency: 'EUR',
+			cartTotal: 7000,
+		} );
+		renderRefreshedPaymentFields( 'ideal', {
+			paymentMethodsConfig: {
+				ideal: {
+					gatewayId: 'woocommerce_payments_ideal',
+					isReusable: false,
+				},
+			},
+			currency: 'EUR',
+			cartTotal: 7000,
+		} );
+		bodyEventHandlers.updated_checkout();
+		await flushPromises();
+
+		expect( stripeElementsOptions ).toMatchObject( {
+			amount: 7000,
+			currency: 'eur',
+			paymentMethodTypes: [ 'ideal' ],
+		} );
+		expect( window.wcpay_core_checkout_config ).toEqual( printed );
+		expect(
+			window.wcpay_core_checkout_config_woocommerce_payments_klarna
+		).toEqual( printedKlarna );
+		expect(
+			Object.keys( window ).filter(
+				( key ) => key.indexOf( 'wcpay_core_checkout_config_' ) === 0
+			)
+		).toEqual( [ 'wcpay_core_checkout_config_woocommerce_payments_klarna' ] );
 	} );
 
 	// Markup of WooPaymentsCheckoutAssets::get_card_testing_instructions().
