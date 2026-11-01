@@ -736,7 +736,6 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 		$this->assertFalse( $config['isPreview'] );
 		$this->assertFalse( $config['isShortcodeCheckout'] );
 		$this->assertSame( '', $config['accountIdForIntentConfirmation'] );
-		$this->assertSame( '', $config['icon'] );
 		$this->assertFalse( $config['isExpressCheckoutInPaymentMethodsEnabled'] );
 		$this->assertTrue( $config['isWooPayEnabled'] );
 		$this->assertTrue( $config['isWoopayExpressCheckoutEnabled'] );
@@ -2310,6 +2309,46 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 		$this->assertSame( $expected, $split['supports'] );
 		$this->assertArrayNotHasKey( 'supports', $classic['paymentMethodsConfig']['card'] );
 		$this->assertArrayNotHasKey( 'supports', $split['paymentMethodsConfig']['klarna'] );
+	}
+
+	/**
+	 * @testdox Should send the card gateway's icon URL as the top-level icon on the card and split gateway configs and their filter payloads.
+	 *
+	 * Client 11.2.0 sends `$this->gateway->get_icon_url()` (`class-wc-payments-checkout.php:278`), the card gateway's
+	 * `generic-card.svg` (`CardDefinition.php:171-173`), in the one config it builds for every gateway.
+	 */
+	public function test_config_icon_is_the_card_gateway_icon_url(): void {
+		$account_service = $this->create_account_service( true );
+		$assets          = new WooPaymentsCheckoutAssets();
+		$assets->init( $account_service, $this->create_woopay_session_service( false ), $this->create_woopay_eligibility( false ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller(), new PaymentMethodRegistry() );
+		$klarna        = ( new PaymentMethodRegistry() )->get( 'klarna' );
+		$expected      = WC()->plugin_url() . '/assets/images/payment-methods/generic-card.svg';
+		$filtered_icon = array();
+		$record        = static function ( $config ) use ( &$filtered_icon ) {
+			$filtered_icon[ $config['gatewayId'] ][] = $config['icon'];
+			return $config;
+		};
+		add_filter( 'wcpay_payment_fields_js_config', $record );
+
+		try {
+			$icons = array(
+				'classic card'  => $assets->get_payment_fields_js_config( self::CARD_SUPPORTS )['icon'],
+				'classic split' => $assets->get_payment_fields_config( self::CARD_SUPPORTS, $klarna )['icon'],
+				'blocks card'   => $assets->get_blocks_payment_method_data( self::CARD_SUPPORTS )['icon'],
+				'blocks split'  => $assets->get_blocks_payment_method_data( self::CARD_SUPPORTS, $klarna )['icon'],
+			);
+		} finally {
+			remove_filter( 'wcpay_payment_fields_js_config', $record );
+		}
+
+		$this->assertSame( array_fill_keys( array( 'classic card', 'classic split', 'blocks card', 'blocks split' ), $expected ), $icons );
+		$this->assertSame(
+			array(
+				'woocommerce_payments'        => array( $expected, $expected ),
+				'woocommerce_payments_klarna' => array( $expected, $expected ),
+			),
+			$filtered_icon
+		);
 	}
 
 	/**

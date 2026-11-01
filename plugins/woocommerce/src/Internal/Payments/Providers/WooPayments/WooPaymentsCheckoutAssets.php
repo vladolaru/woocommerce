@@ -466,6 +466,7 @@ class WooPaymentsCheckoutAssets implements RegisterHooksInterface {
 		 */
 		$account_id_for_intent_confirmation = (string) apply_filters( 'wc_payments_account_id_for_intent_confirmation', '' );
 		$shared_script_config               = $this->get_shared_script_config();
+		$card_definition                    = $this->payment_method_registry->get( 'card' );
 		$config                             = array(
 			'publishableKey'                           => $this->get_account_service()->get_publishable_key(),
 			'accountId'                                => $this->get_account_service()->get_account_id(),
@@ -509,7 +510,8 @@ class WooPaymentsCheckoutAssets implements RegisterHooksInterface {
 			'woopayHost'                               => $shared_script_config['woopayHost'],
 			'accountIdForIntentConfirmation'           => $account_id_for_intent_confirmation,
 			'wcpayVersionNumber'                       => $shared_script_config['wcpayVersionNumber'],
-			'icon'                                     => '',
+			// The card gateway's icon on every gateway's config, as client 11.2.0 sends it (class-wc-payments-checkout.php:278), with no account country.
+			'icon'                                     => null === $card_definition ? '' : $this->get_payment_method_icon_url( $card_definition->get_icon_asset_path() ),
 			'isExpressCheckoutInPaymentMethodsEnabled' => $this->is_express_checkout_in_payment_methods_enabled(),
 			'confirmationErrorMessage'                 => __( 'There was a problem confirming your payment.', 'woocommerce' ),
 			// Client 11.2.0 client/checkout/utils/fingerprint.js:12-15; the classic checkout shows it when the device fingerprint fails.
