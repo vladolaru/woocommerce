@@ -61,8 +61,8 @@ const hasEmailCheckProtocol = () =>
 	typeof buildAjaxUrl === 'function';
 
 /**
- * Whether the checkout should wire the WooPay email-input flow — the plugin's
- * blocks entry gate: WooPay on, email input on, not previewing, checkout block present.
+ * Whether the checkout should wire the WooPay email-input flow: WooPay on, email
+ * input on, not previewing, checkout block present.
  * Without the protocol the check does not wire, and the card works without it.
  *
  * @param {Object} paymentSettings Payment method settings.
@@ -116,7 +116,7 @@ export const handleWooPayEmailInput = async ( field, paymentSettings ) => {
 				).then( ( formSubmitButton ) => {
 					formSubmitButton?.addEventListener( 'click', callback );
 				} ),
-			// Client 11.1.0 reads window.woopayCheckout; native carries the flag in the payment settings.
+			// The flag comes from the payment settings; client 11.1.0 reads window.woopayCheckout.
 			isSaveMyInfoPreChecked: () =>
 				paymentSettings.PRE_CHECK_SAVE_MY_INFO,
 			// The Blocks email field wrapper is the text-input component; the notice goes below the whole field.

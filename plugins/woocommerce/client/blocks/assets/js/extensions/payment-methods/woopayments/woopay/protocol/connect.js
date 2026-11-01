@@ -293,8 +293,7 @@ const createConnect = ( args ) => {
 	 * Each request owns its timer and settled state, as client 11.2.0 sendMessageAndListenWith() owns its timer and
 	 * isRejected flag (connect/woopay-connect.js:170-195): a deadline settles only its own request. WooPay answers every
 	 * request and its answers name none, so an answer goes to the oldest request under its name, and a newer request
-	 * never takes the place of an older one and leaves it waiting for its deadline. Unlike the client, an expired request
-	 * also never posts.
+	 * never takes the place of an older one and leaves it waiting for its deadline. An expired request never posts.
 	 *
 	 * @param {Object}  message       The message for the connect page.
 	 * @param {string}  callbackName  The answer it waits for.
@@ -359,7 +358,7 @@ const createConnect = ( args ) => {
 	/**
 	 * Ask WooPay how long to wait for its answers and use that for every request sent after it answers (client 11.2.0
 	 * woopay-direct-checkout.js:124-130, asked from direct checkout's init). Requests already waiting keep the deadline
-	 * they started with, and the third-party cookie check keeps 5000 ms, as the client's runs before it asks.
+	 * they started with, and the third-party cookie check always waits 5000 ms.
 	 *
 	 * @return {Promise<void>} Settles once WooPay answers or the deadline passes.
 	 */

@@ -9,10 +9,9 @@ import { __, _n, sprintf } from '@wordpress/i18n';
  */
 import { transformPrice } from '../transform-price';
 
-// WooCommerce Subscriptions compatibility for the Blocks express checkout, ported from client 11.1.0
-// client/express-checkout/compatibility/wc-subscriptions.js (imported there by both express bundles; the classic
-// express script registers the same filters). The client registers the filters as an import side effect; here the
-// express checkout entry calls registerSubscriptionsCompatibility(), since the Blocks build drops side-effect-only
+// WooCommerce Subscriptions compatibility for the Blocks express checkout (client 11.1.0
+// client/express-checkout/compatibility/wc-subscriptions.js); the classic express script registers the same filters.
+// The express checkout entry calls registerSubscriptionsCompatibility(), since the Blocks build drops side-effect-only
 // imports (package.json `sideEffects`).
 
 /**
@@ -146,7 +145,7 @@ const getRecurringCartTotal = ( cartData ) => {
 
 		// During free trials, subscription.totals.total_shipping may be 0
 		// even after a shipping rate is selected, because shipping is deferred.
-		// Read the selected rate's price from the extension's shipping_rates instead.
+		// Read the selected rate's price from the subscription's shipping_rates instead.
 		const selectedRate =
 			subscription.shipping_rates?.[ 0 ]?.shipping_rates?.find(
 				( r ) => r.selected

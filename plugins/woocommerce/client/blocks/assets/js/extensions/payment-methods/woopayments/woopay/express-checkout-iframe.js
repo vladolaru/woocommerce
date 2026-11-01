@@ -16,8 +16,8 @@ import { getWooPayRequestArgs } from './request';
  */
 
 /**
- * Show an express-button error the way the plugin does: a Blocks notice on
- * the cart and checkout blocks, a server-rendered WooCommerce notice elsewhere.
+ * Show an express-button error: a Blocks notice on the cart and checkout
+ * blocks, a server-rendered WooCommerce notice elsewhere.
  *
  * @param {Object} paymentSettings Payment method settings.
  * @param {string} context         The button context.

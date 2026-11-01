@@ -29,8 +29,7 @@ export const getFraudServicesConfig = () => {
 	return gatewayId ? paymentMethodData[ gatewayId ].fraudServices : undefined;
 };
 
-// Runs on the Blocks cart and checkout, after the page loads, as the
-// WooPayments plugin's Blocks bundle does.
+// Runs on the Blocks cart and checkout, after the page loads.
 window.addEventListener( 'load', () => {
 	enqueueFraudScripts( getFraudServicesConfig() );
 } );

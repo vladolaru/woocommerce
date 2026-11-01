@@ -458,9 +458,8 @@ const addReferenceElementOptions = ( options, cartData ) => {
 /**
  * Get the Elements options that follow the live cart: amount and setupFutureUsage.
  *
- * The client rebuilds these from `billing.cartTotal` on every render and stays in payment mode whatever the amount,
- * $0 included; a free-trial cart gets its recurring total from the `total-amount` filter
- * (express-checkout-container.js:62-84).
+ * Built from `billing.cartTotal` on every render, in payment mode whatever the amount, $0 included; a free-trial cart
+ * gets its recurring total from the `total-amount` filter (client 11.2.0 express-checkout-container.js:62-84).
  *
  * @param {Object} billing Blocks billing data.
  * @param {Object} cart    Cart data.
@@ -504,7 +503,7 @@ const getStripeElementsOptions = ( billing, cart ) => {
 };
 
 /**
- * Get the options whose values differ from the ones last applied, as react-stripe-js does for the client's
+ * Get the options whose values differ from the ones last applied, as react-stripe-js does for
  * `<Elements options>` before calling `elements.update()`.
  *
  * @param {Object} next    Options for the current render.
@@ -995,10 +994,10 @@ const requestOrderStatusUpdate = async ( orderId, nonce, intentId ) => {
 /**
  * Confirm an intent that needs a next action (3DS) and get the order's return URL.
  *
- * Port of the client's WCPayAPI.confirmIntent() (client/checkout/api/index.js): returns `true` when the
- * redirect carries no `#wcpay-confirm-` hash, otherwise a promise of the authenticated return URL. The client's
- * `accountIdForIntentConfirmation` branch (:209-215) is left out: only the WooPay platform blog sets that value, through
- * the `wc_payments_account_id_for_intent_confirmation` filter, and it runs its own WooPayments build.
+ * Returns `true` when the redirect carries no `#wcpay-confirm-` hash, otherwise a promise of the authenticated return
+ * URL (client 11.2.0 WCPayAPI.confirmIntent(), client/checkout/api/index.js). There is no account override for intent
+ * confirmation: only the WooPay platform blog sets one, through the `wc_payments_account_id_for_intent_confirmation`
+ * filter, and it runs its own WooPayments build.
  *
  * @param {string} redirectUrl Redirect URL or confirmation hash from the checkout response.
  * @return {true|Promise<string>} `true` when there is nothing to confirm.
@@ -1322,8 +1321,8 @@ const ExpressCheckoutContent = ( {
 			} );
 		} );
 
-		// Client 11.1.0 refreshes on cancel only after an address pick (event-handlers.js:319-325); native also does after a
-		// rate pick, which the server cart already holds. Accepted improvement, inbox N-266.
+		// A cancel refreshes the Blocks cart once the sheet changed the server cart: after an address pick or a rate pick,
+		// which the server cart already holds. Client 11.1.0 refreshes only after an address pick (event-handlers.js:319-325).
 		expressElementRef.current.on( 'cancel', () => {
 			// Client 11.1.0 onCancelHandler() (event-handlers.js:320-326, block-buttons/hooks/use-express-checkout.js:47-50).
 			unlockPage();
@@ -1570,7 +1569,7 @@ const ExpressCheckoutContent = ( {
 		setExpressPaymentError,
 	] );
 
-	// Keep the wallet amount in step with the cart, as the client's <Elements options> does on every render.
+	// Keep the wallet amount in step with the cart: Elements gets each changed option once it changes.
 	useEffect( () => {
 		if ( ! elementsRef.current || ! appliedElementsOptionsRef.current ) {
 			return;

@@ -60,8 +60,8 @@ const FINGERPRINT_GENERIC_ERROR = __(
 	'woocommerce'
 );
 
-// The buyer *device* fingerprint the platform's risk rules score on — the
-// FingerprintJS visitor ID, the same signal the WooPayments plugin posts.
+// The buyer *device* fingerprint the platform's risk rules score on: the
+// FingerprintJS visitor ID.
 // Settles to `{ fingerprint }` or `{ error }`, as client 11.2.0
 // useFingerprint() (client/checkout/blocks/hooks.js:60-78). A blocked
 // wc-woopayments-fingerprintjs script leaves no FingerprintJS.
@@ -351,8 +351,8 @@ const getSuccessResponse = (
 } );
 
 // Sentinel submitted in place of a payment method when client-side payment
-// method creation failed, so the server records a failed order. Matches the
-// WooPayments plugin's Payment_Information::PAYMENT_METHOD_ERROR.
+// method creation failed, so the server records a failed order. The gateway
+// checks for the same value (WooPaymentsGateway::PAYMENT_METHOD_ERROR_SENTINEL).
 const PAYMENT_METHOD_ERROR_SENTINEL =
 	'woocommerce_payments_payment_method_error';
 
@@ -520,8 +520,8 @@ const handleConfirmationResponse = async (
 
 		return getSuccessResponse( emitResponse, {}, redirectUrl );
 	} catch ( error ) {
-		// The client shows error.message as is; native shows its translated message when there is none and when
-		// Stripe.js never loads, instead of the client's English "Stripe object not found".
+		// Stripe's error message as is; the translated confirmation message when there is none and when Stripe.js
+		// never loads.
 		return getErrorResponse(
 			emitResponse,
 			error instanceof StripeWaitTimeoutError
@@ -562,8 +562,8 @@ const createStripe = (
 			! shouldUsePlatformStripeForCard( paymentSettings ) )
 	) {
 		stripeOptions.stripeAccount = paymentSettings.accountId;
-		// The reference client requests these betas on every
-		// connected-account instance; the platform instance gets none.
+		// Every connected-account instance requests these betas; the
+		// platform instance gets none.
 		stripeOptions.betas = [ 'card_country_event_beta_1' ];
 
 		if ( isLinkEnabled( paymentSettings ) ) {
@@ -839,7 +839,7 @@ const WooPaySaveUserSection = ( { paymentSettings } ) => {
 		useState( false );
 	const [ isPhoneTouched, setIsPhoneTouched ] = useState( false );
 	const fullPhone = normalizeWooPayPhone( phone );
-	// Unknown (null) while the validation script loads, as the client's lazy phone input is.
+	// Unknown (null) while the validation script loads.
 	const isPhoneValid = phoneValidation
 		? phoneValidation.validatePhoneNumber( fullPhone )
 		: null;
@@ -985,8 +985,8 @@ const WooPaySaveUserSection = ( { paymentSettings } ) => {
 		return null;
 	}
 
-	// The former fallbacks for woopaySaveUserLabel and woopayPhoneLabel, which carried the same
-	// text (WooPay\SessionService::get_woopay_frontend_config()); the Blocks data drops them.
+	// The same text as the classic config's woopaySaveUserLabel and woopayPhoneLabel
+	// (WooPay\SessionService::get_woopay_frontend_config()), which the Blocks data leaves out.
 	const saveUserLabel = __(
 		'Securely save my information for 1-click checkout',
 		'woocommerce'
@@ -1075,7 +1075,7 @@ const WooPaySaveUserSection = ( { paymentSettings } ) => {
 							}
 							onBlur={ () => setIsPhoneTouched( true ) }
 						/>
-						{ /* The number WooPay receives, with its country code, as the client's phone input posts. */ }
+						{ /* The number WooPay receives, with its country code. */ }
 						<input
 							type="hidden"
 							name="woopay_user_phone_field[full]"
@@ -1314,7 +1314,7 @@ const WooPaymentsContent = ( {
 	const isContentMounted = useRef( false );
 	const emitResponseRef = useRef( emitResponse );
 	const shouldSavePaymentRef = useRef( shouldSavePayment );
-	// One attempt per mount, as the client's useFingerprint().
+	// One attempt per mount.
 	const deviceFingerprint = useRef( null );
 	const billingData =
 		billing?.billingAddress || billing?.billingData || EMPTY_BILLING_DATA;
@@ -1788,8 +1788,7 @@ const registerWooPayments = () => {
 
 registerWooPayments();
 
-// The WooPay email lookup runs on the checkout block only, mirroring the
-// WooPayments plugin's blocks entry point.
+// The WooPay email lookup runs on the checkout block only.
 if ( shouldHandleWooPayEmailInput( defaultSettings ) ) {
 	handleWooPayEmailInput( '#email', defaultSettings );
 }
