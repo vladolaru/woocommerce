@@ -2705,6 +2705,18 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 				expect( pageLock.isLocked() ).toBe( true );
 			} );
 
+			it( 'leaves the wallet sheet to Stripe when the payment succeeds', async () => {
+				const paymentFailed = jest.fn();
+				answerWithOrderPage();
+
+				await confirmGooglePay( { paymentFailed } );
+
+				expect( navigate ).toHaveBeenCalledWith(
+					'http://localhost/checkout/order-received/77/?key=wc_order_abc'
+				);
+				expect( paymentFailed ).not.toHaveBeenCalled();
+			} );
+
 			// Client 11.1.0: a throw from `window.location = url` is inside onConfirmHandler()'s try, so abortPayment() shows
 			// it and unblocks (event-handlers.js:244-271, :312-314). Setting `location.href` to a URL the browser cannot
 			// parse throws a TypeError (https://html.spec.whatwg.org/multipage/nav-history-apis.html#dom-location-href).

@@ -1558,15 +1558,16 @@ const ExpressCheckoutContent = ( {
 						'woocommerce'
 					);
 
-				event?.paymentFailed?.( {
-					reason: 'fail',
-					message,
-				} );
 				// Client 11.1.0 abortPayment() unlocks the page on every failure, a navigation that throws included
 				// (event-handlers.js:254-271, onAbortPaymentHandler() at :312-314, block-buttons/hooks/use-express-checkout.js:57-63).
 				unlockPage();
 				refreshCartAfterWalletMutation();
 				setExpressPaymentError?.( message );
+				// Last, so a throw from it cannot cost the unlock, the cart refresh or the error.
+				event?.paymentFailed?.( {
+					reason: 'fail',
+					message,
+				} );
 			}
 		} );
 

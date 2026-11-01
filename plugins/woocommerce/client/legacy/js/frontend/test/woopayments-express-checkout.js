@@ -5113,6 +5113,33 @@ describe( 'WooPayments express checkout', () => {
 			expect( paymentFailed ).toHaveBeenCalledWith( { reason: 'fail' } );
 		} );
 
+		test( 'leaves the wallet sheet to Stripe when the wallet payment succeeds', async () => {
+			const paymentFailed = jest.fn();
+			const navigate = jest.fn();
+			window.wp.apiFetch
+				.mockResolvedValueOnce( getCartResponse() )
+				.mockResolvedValueOnce( getOrderPageCheckoutResponse() );
+			require( '../woopayments-express-checkout' ).__test__.setNavigate(
+				navigate
+			);
+			await bodyEventHandlers.updated_checkout();
+			await flushPromises();
+			await expressHandlers.click( { resolve: jest.fn() } );
+
+			await expressHandlers.confirm( {
+				billingDetails: {
+					email: 'shopper@example.test',
+					name: 'Ada Lovelace',
+				},
+				paymentFailed,
+			} );
+
+			expect( navigate ).toHaveBeenCalledWith(
+				'https://example.test/checkout/order-received/77/'
+			);
+			expect( paymentFailed ).not.toHaveBeenCalled();
+		} );
+
 		test( 'unlocks the page when the product cannot be added to the sheet\'s cart', async () => {
 			setProductPage();
 			// With `parse: false` @wordpress/api-fetch rejects with the fetch Response itself for a non-2xx status
