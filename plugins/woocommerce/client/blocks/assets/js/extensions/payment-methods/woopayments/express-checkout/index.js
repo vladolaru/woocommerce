@@ -1047,7 +1047,10 @@ const confirmIntent = ( redirectUrl ) => {
 
 		// A closed wallet iframe resolves without an error, but the intent still requires action.
 		if ( result?.paymentIntent?.status === 'requires_action' ) {
-			paymentError = 'Payment requires additional action.';
+			paymentError = __(
+				'Payment requires additional action.',
+				'woocommerce'
+			);
 		}
 
 		const intentId =

@@ -729,6 +729,9 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'There was a problem processing the payment. Please check your email inbox and refresh the page to try again.', $config['genericErrorMessage'] );
 		// Client 11.2.0 client/checkout/utils/fingerprint.js:12-15 (FINGERPRINT_GENERIC_ERROR).
 		$this->assertSame( 'An error was encountered when preparing the payment form. Please try again later.', $config['fingerprintErrorMessage'] );
+		// The Blocks card method's prompt text (index.js copyTestNumber()); client 11.2.0 prompts "Copy the test number:"
+		// (client/checkout/utils/copy-test-number.js:23-26).
+		$this->assertSame( 'Copy test card number:', $config['copyTestCardNumberPrompt'] );
 		// With no account fraud-services config and the platform unreachable,
 		// the prepared config falls back to the bare stripe default.
 		$this->assertSame( array( 'stripe' => array() ), $config['fraudServices'] );
@@ -2509,6 +2512,7 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 		'confirmationErrorMessage',
 		'customerData',
 		'fingerprintErrorMessage',
+		'copyTestCardNumberPrompt',
 		'paymentListWalletsConfig',
 		'updateOrderStatusNonce',
 		'woopayButtonLabels',

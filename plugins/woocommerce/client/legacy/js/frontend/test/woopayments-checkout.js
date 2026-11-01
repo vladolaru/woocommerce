@@ -4762,6 +4762,9 @@ describe( 'WooPayments checkout', () => {
 		const prompt = jest
 			.spyOn( window, 'prompt' )
 			.mockImplementation( () => null );
+		// Translated by WooPaymentsCheckoutAssets, as on a store in another language.
+		window.wc_woopayments_checkout_params.copyTestCardNumberPrompt =
+			'Copiez le numéro de la carte de test :';
 		const button = renderTestNumberButton();
 
 		require( '../woopayments-checkout' );
@@ -4769,7 +4772,7 @@ describe( 'WooPayments checkout', () => {
 		button.click();
 
 		expect( prompt ).toHaveBeenCalledWith(
-			'Copy test card number:',
+			'Copiez le numéro de la carte de test :',
 			'4242 4242 4242 4242'
 		);
 		expect( button.classList.contains( 'state--success' ) ).toBe( false );

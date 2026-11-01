@@ -692,7 +692,7 @@
 				window.navigator.clipboard.writeText( testNumber )
 			).then( showCopied, function () {} );
 		} else if ( typeof window.prompt === 'function' ) {
-			window.prompt( 'Copy test card number:', testNumber );
+			window.prompt( config.copyTestCardNumberPrompt || '', testNumber );
 		}
 
 		// The status after the button announces the copy (WooPaymentsCheckoutAssets::get_card_testing_instructions()).

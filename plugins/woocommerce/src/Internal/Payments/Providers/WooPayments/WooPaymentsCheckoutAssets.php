@@ -65,6 +65,8 @@ class WooPaymentsCheckoutAssets implements RegisterHooksInterface {
 		'customerData',
 		// The Blocks card method translates its own (index.js FINGERPRINT_GENERIC_ERROR).
 		'fingerprintErrorMessage',
+		// The Blocks card method translates its own (index.js copyTestNumber()).
+		'copyTestCardNumberPrompt',
 		'paymentListWalletsConfig',
 		'woopayButtonLabels',
 		'woopayAdditionalInfoText',
@@ -516,6 +518,8 @@ class WooPaymentsCheckoutAssets implements RegisterHooksInterface {
 			'confirmationErrorMessage'                 => __( 'There was a problem confirming your payment.', 'woocommerce' ),
 			// Client 11.2.0 client/checkout/utils/fingerprint.js:12-15; the classic checkout shows it when the device fingerprint fails.
 			'fingerprintErrorMessage'                  => __( 'An error was encountered when preparing the payment form. Please try again later.', 'woocommerce' ),
+			// The classic checkout's prompt when the browser has no Clipboard API, beside the test card number.
+			'copyTestCardNumberPrompt'                 => __( 'Copy test card number:', 'woocommerce' ),
 			'cardBrandPopoverLabel'                    => __( 'Supported credit card brands', 'woocommerce' ),
 			'cardBrandLogosLabel'                      => __( 'Show all supported credit card brands', 'woocommerce' ),
 		);
