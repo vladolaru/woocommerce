@@ -27,8 +27,8 @@
 			"gzip_growth_bytes": 778
 		},
 		"woopay-direct-checkout.js": {
-			"raw_bytes": 42359,
-			"gzip_bytes": 15372
+			"raw_bytes": 43244,
+			"gzip_bytes": 15630
 		},
 		"woopay.js": {
 			"raw_growth_bytes": 4396,
@@ -66,8 +66,8 @@
 		},
 		"blocks-woopay.css": {
 			"allow_new": true,
-			"raw_bytes": 3406,
-			"gzip_bytes": 1034
+			"raw_bytes": 3643,
+			"gzip_bytes": 1069
 		},
 		"woopay-phone-validation.js": {
 			"allow_new": true,
