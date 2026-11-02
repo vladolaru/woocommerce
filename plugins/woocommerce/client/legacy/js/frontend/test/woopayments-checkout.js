@@ -2949,6 +2949,52 @@ describe( 'WooPayments checkout', () => {
 		expectNoConfirmationResubmit();
 	} );
 
+	// The store refuses with a non-2xx status and { error: { message } } (WooPaymentsCheckoutAjaxController
+	// error_response()); client 11.2.0 answers HTTP 200 with the same shape and shows its message
+	// (checkout/api/index.js:262-270, classic/3ds-flow-handling.js:44-52).
+	test.each( [
+		[
+			'the store message for a refused confirmation',
+			{
+				status: 403,
+				responseJSON: {
+					error: { message: 'Please refresh the page and try again.' },
+					status_code: 403,
+				},
+			},
+			'Please refresh the page and try again.',
+		],
+		[
+			'the generic message when the answer carries none',
+			{ status: 502, responseJSON: undefined },
+			'There was a problem confirming your payment.',
+		],
+	] )( 'shows %s and keeps the form blocked', async ( label, jqXHR, message ) => {
+		document
+			.querySelector( 'form.checkout' )
+			.insertAdjacentHTML(
+				'beforeend',
+				'<div class="woopayments-payment-errors" hidden></div>'
+			);
+		window.wc_woopayments_checkout_params.confirmationErrorMessage =
+			'There was a problem confirming your payment.';
+		global.jQuery.post.mockImplementationOnce( () => ( {
+			done: jest.fn( () => ( {
+				fail: jest.fn( ( callback ) => callback( jqXHR ) ),
+			} ) ),
+		} ) );
+		setPaymentIntentConfirmationHash();
+
+		require( '../woopayments-checkout' );
+		await flushPromises();
+
+		expect(
+			document.querySelector( '.woopayments-payment-errors' ).textContent
+		).toBe( message );
+		expectClassicCheckoutBlockedOnce();
+		expectNoConfirmationResubmit();
+	} );
+
 	test( 'keeps callback success without a return URL non-reentrant', async () => {
 		mockConfirmationCallbackResponse( { status_code: 200 } );
 		setPaymentIntentConfirmationHash();

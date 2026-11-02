@@ -3052,8 +3052,15 @@
 							} );
 							window.location.href = returnUrl.href;
 						} )
-						.fail( function () {
-							setError( config.confirmationErrorMessage || '' );
+						// The store answers its refusals with a non-2xx status and { error: { message } }.
+						.fail( function ( jqXHR ) {
+							setError(
+								getConfirmationErrorMessage(
+									jqXHR &&
+										jqXHR.responseJSON &&
+										jqXHR.responseJSON.error
+								)
+							);
 						} );
 				},
 				function ( error ) {
