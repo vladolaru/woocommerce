@@ -62,6 +62,7 @@ class WooPaymentsCheckoutAssets implements RegisterHooksInterface {
 	 */
 	private const BLOCKS_OMITTED_CONFIG_KEYS = array(
 		'confirmationErrorMessage',
+		'paymentMayHaveGoneThroughMessage',
 		'customerData',
 		// The Blocks card method translates its own (index.js FINGERPRINT_GENERIC_ERROR).
 		'fingerprintErrorMessage',
@@ -516,6 +517,10 @@ class WooPaymentsCheckoutAssets implements RegisterHooksInterface {
 			'icon'                                     => null === $card_definition ? '' : $this->get_payment_method_icon_url( $card_definition->get_icon_asset_path() ),
 			'isExpressCheckoutInPaymentMethodsEnabled' => $this->is_express_checkout_in_payment_methods_enabled(),
 			'confirmationErrorMessage'                 => __( 'There was a problem confirming your payment.', 'woocommerce' ),
+			// The classic checkout adds it after the error when a 3DS confirmation fails once Stripe has run it, and the
+			// form stays blocked so a second Place order cannot pay twice.
+			/* translators: Shown after a payment error when the payment may still have been taken. */
+			'paymentMayHaveGoneThroughMessage'         => __( 'Your payment may have gone through. Check your email for an order confirmation before you try again, or refresh the page.', 'woocommerce' ),
 			// Client 11.2.0 client/checkout/utils/fingerprint.js:12-15; the classic checkout shows it when the device fingerprint fails.
 			'fingerprintErrorMessage'                  => __( 'An error was encountered when preparing the payment form. Please try again later.', 'woocommerce' ),
 			// The classic checkout's prompt when the browser has no Clipboard API, beside the test card number.

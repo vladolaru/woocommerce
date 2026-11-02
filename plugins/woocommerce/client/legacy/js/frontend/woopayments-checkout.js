@@ -2909,6 +2909,16 @@
 			activePaymentForm.removeClass( 'processing' ).unblock();
 		}
 
+		// Once Stripe has run the confirmation, a failure here can follow a charge, so the form stays blocked to keep a
+		// second Place order from paying again. The extra line tells the shopper how to find out.
+		function setKeptBlockedError( message ) {
+			setError(
+				[ message, config.paymentMayHaveGoneThroughMessage ]
+					.filter( Boolean )
+					.join( ' ' )
+			);
+		}
+
 		setCurrentGatewayConfig();
 
 		if ( ! confirmation ) {
@@ -2965,12 +2975,18 @@
 			confirmationPromise.then(
 				function ( result ) {
 					if ( ! result || typeof result !== 'object' ) {
-						setError( config.confirmationErrorMessage || '' );
+						setKeptBlockedError( config.confirmationErrorMessage || '' );
 						return;
 					}
 
 					if ( result.error ) {
-						setError( getConfirmationErrorMessage( result.error ) );
+						if ( isRetrySafeIntentError( result.error ) ) {
+							setError( getConfirmationErrorMessage( result.error ) );
+						} else {
+							setKeptBlockedError(
+								getConfirmationErrorMessage( result.error )
+							);
+						}
 
 						// Report the failed authentication to the server so the
 						// order is marked failed synchronously (stock released,
@@ -2998,7 +3014,7 @@
 
 					intentId = getConfirmedIntentId( confirmation, result );
 					if ( ! intentId ) {
-						setError( config.confirmationErrorMessage || '' );
+						setKeptBlockedError( config.confirmationErrorMessage || '' );
 						return;
 					}
 
@@ -3017,7 +3033,7 @@
 										? JSON.parse( response )
 										: response;
 							} catch ( error ) {
-								setError( config.confirmationErrorMessage || '' );
+								setKeptBlockedError( config.confirmationErrorMessage || '' );
 								return;
 							}
 
@@ -3025,12 +3041,12 @@
 								! resultResponse ||
 								typeof resultResponse !== 'object'
 							) {
-								setError( config.confirmationErrorMessage || '' );
+								setKeptBlockedError( config.confirmationErrorMessage || '' );
 								return;
 							}
 
 							if ( resultResponse.error ) {
-								setError(
+								setKeptBlockedError(
 									getStoreErrorMessage( resultResponse.error )
 								);
 								return;
@@ -3041,7 +3057,7 @@
 									? resultResponse.return_url.trim()
 									: '';
 							if ( ! returnUrl ) {
-								setError( config.confirmationErrorMessage || '' );
+								setKeptBlockedError( config.confirmationErrorMessage || '' );
 								return;
 							}
 
@@ -3051,14 +3067,14 @@
 									window.location.href
 								);
 							} catch ( error ) {
-								setError( config.confirmationErrorMessage || '' );
+								setKeptBlockedError( config.confirmationErrorMessage || '' );
 								return;
 							}
 							if (
 								returnUrl.protocol !== 'http:' &&
 								returnUrl.protocol !== 'https:'
 							) {
-								setError( config.confirmationErrorMessage || '' );
+								setKeptBlockedError( config.confirmationErrorMessage || '' );
 								return;
 							}
 
@@ -3073,7 +3089,7 @@
 						} )
 						// The store answers its refusals with a non-2xx status and { error: { message } }.
 						.fail( function ( jqXHR ) {
-							setError(
+							setKeptBlockedError(
 								getStoreErrorMessage(
 									jqXHR &&
 										jqXHR.responseJSON &&
@@ -3083,7 +3099,7 @@
 						} );
 				},
 				function ( error ) {
-					setError( getConfirmationErrorMessage( error ) );
+					setKeptBlockedError( getConfirmationErrorMessage( error ) );
 				}
 			);
 		}

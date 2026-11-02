@@ -3077,6 +3077,232 @@ describe( 'WooPayments checkout', () => {
 	// event-handlers.js:69-71), so Place order is live while the order page loads, and a second click can place a second
 	// order. The form stays blocked through the navigation and is released when the page comes back from the
 	// back-forward cache (`pageshow` with `persisted`, https://developer.mozilla.org/docs/Web/API/PageTransitionEvent).
+	// After Stripe has run the confirmation, every branch that keeps the form blocked adds one line telling the shopper
+	// the payment may have gone through; a branch that releases the form, or one where Stripe never ran, does not.
+	describe( 'the line for a confirmation that may have charged', () => {
+		const GENERIC = 'There was a problem confirming your payment.';
+		const LINE =
+			'Your payment may have gone through. Check your email for an order confirmation before you try again, or refresh the page.';
+
+		function getErrorText() {
+			return document.querySelector( '.woopayments-payment-errors' )
+				.textContent;
+		}
+
+		function mockStoreRefusal( jqXHR ) {
+			global.jQuery.post.mockImplementationOnce( () => ( {
+				done: jest.fn( () => ( {
+					fail: jest.fn( ( callback ) => callback( jqXHR ) ),
+				} ) ),
+			} ) );
+		}
+
+		beforeEach( () => {
+			document
+				.querySelector( 'form.checkout' )
+				.insertAdjacentHTML(
+					'beforeend',
+					'<div class="woopayments-payment-errors" hidden></div>'
+				);
+			window.wc_woopayments_checkout_params.confirmationErrorMessage =
+				GENERIC;
+			window.wc_woopayments_checkout_params.paymentMayHaveGoneThroughMessage =
+				LINE;
+		} );
+
+		test.each( [
+			[
+				'the store refuses with a non-2xx status',
+				() =>
+					mockStoreRefusal( {
+						status: 403,
+						responseJSON: {
+							error: {
+								message: 'Please refresh the page and try again.',
+							},
+						},
+					} ),
+				'Please refresh the page and try again.',
+			],
+			[
+				'the store answers with an error',
+				() =>
+					mockConfirmationCallbackResponse( {
+						error: { message: 'The order could not be updated.' },
+					} ),
+				'The order could not be updated.',
+			],
+			[
+				'the store answer is not JSON',
+				() => mockConfirmationCallbackResponse( '{' ),
+				GENERIC,
+			],
+			[
+				'the store answer is not an object',
+				() => mockConfirmationCallbackResponse( 'null' ),
+				GENERIC,
+			],
+			[
+				'the store answer has no return URL',
+				() => mockConfirmationCallbackResponse( { status_code: 200 } ),
+				GENERIC,
+			],
+			[
+				'the return URL does not parse',
+				() =>
+					mockConfirmationCallbackResponse( {
+						status_code: 200,
+						return_url: 'http://[',
+					} ),
+				GENERIC,
+			],
+			[
+				'the return URL is not http or https',
+				() =>
+					mockConfirmationCallbackResponse( {
+						status_code: 200,
+						return_url: 'javascript:void(0)',
+					} ),
+				GENERIC,
+			],
+			[
+				'Stripe reports a succeeded PaymentIntent with the error',
+				() =>
+					stripeMock.handleNextAction.mockResolvedValueOnce( {
+						error: {
+							message: 'Payment status is not retry-safe.',
+							payment_intent: { id: 'pi_native', status: 'succeeded' },
+						},
+					} ),
+				'Payment status is not retry-safe.',
+			],
+			[
+				'Stripe reports a processing PaymentIntent with the error',
+				() =>
+					stripeMock.handleNextAction.mockResolvedValueOnce( {
+						error: {
+							message: 'Payment status is uncertain.',
+							payment_intent: { id: 'pi_native', status: 'processing' },
+						},
+					} ),
+				'Payment status is uncertain.',
+			],
+			[
+				'Stripe reports an error with no intent',
+				() =>
+					stripeMock.handleNextAction.mockResolvedValueOnce( {
+						error: { message: 'Authentication failed.' },
+					} ),
+				'Authentication failed.',
+			],
+			[
+				'Stripe returns no result',
+				() => stripeMock.handleNextAction.mockResolvedValueOnce( null ),
+				GENERIC,
+			],
+			[
+				'Stripe returns a result with no intent id',
+				() => stripeMock.handleNextAction.mockResolvedValueOnce( {} ),
+				GENERIC,
+			],
+			[
+				'the Stripe confirmation rejects',
+				() =>
+					stripeMock.handleNextAction.mockRejectedValueOnce(
+						new Error( 'Stripe.js failed.' )
+					),
+				'Stripe.js failed.',
+			],
+		] )(
+			'is added when %s, and the form stays blocked',
+			async ( _branch, arrange, message ) => {
+				arrange();
+				setPaymentIntentConfirmationHash();
+
+				require( '../woopayments-checkout' );
+				await flushPromises();
+
+				expect( getErrorText() ).toBe( message + ' ' + LINE );
+				expectClassicCheckoutBlockedOnce();
+				expectNoConfirmationResubmit();
+			}
+		);
+
+		test( 'is added when Stripe reports a succeeded SetupIntent with the error', async () => {
+			stripeMock.handleNextAction.mockResolvedValueOnce( {
+				error: {
+					message: 'Setup status is not retry-safe.',
+					setup_intent: { id: 'seti_failed', status: 'succeeded' },
+				},
+			} );
+			window.location.hash =
+				'#wcpay-confirm-si:123:seti_failed_secret_abc:nonce';
+
+			require( '../woopayments-checkout' );
+			await flushPromises();
+
+			expect( getErrorText() ).toBe(
+				'Setup status is not retry-safe. ' + LINE
+			);
+			expectClassicCheckoutBlockedOnce();
+		} );
+
+		test.each( [
+			[ 'PaymentIntent', 'requires_payment_method' ],
+			[ 'PaymentIntent', 'canceled' ],
+			[ 'SetupIntent', 'requires_payment_method' ],
+			[ 'SetupIntent', 'canceled' ],
+		] )(
+			'is not added when a retry-safe %s in %s releases the form',
+			async ( kind, status ) => {
+				const isSetup = kind === 'SetupIntent';
+				stripeMock.handleNextAction.mockResolvedValueOnce( {
+					error: {
+						message: 'Your card was declined.',
+						[ isSetup ? 'setup_intent' : 'payment_intent' ]: {
+							id: isSetup ? 'seti_failed' : 'pi_failed',
+							status,
+						},
+					},
+				} );
+				window.location.hash = isSetup
+					? '#wcpay-confirm-si:123:seti_failed_secret_abc:nonce'
+					: '#wcpay-confirm-pi:123:pi_failed_secret_abc:nonce';
+
+				require( '../woopayments-checkout' );
+				await flushPromises();
+
+				expect( getErrorText() ).toBe( 'Your card was declined.' );
+				expectClassicCheckoutUiState( false );
+			}
+		);
+
+		// Stripe never ran, so nothing can have been charged: the generic message alone.
+		test.each( [
+			[
+				'there is no publishable key',
+				() => {
+					window.wc_woopayments_checkout_params.publishableKey = '';
+				},
+			],
+			[
+				'Stripe.js cannot confirm',
+				() => {
+					delete stripeMock.handleNextAction;
+				},
+			],
+		] )( 'is not added when %s', async ( _branch, arrange ) => {
+			arrange();
+			setPaymentIntentConfirmationHash();
+
+			require( '../woopayments-checkout' );
+			await flushPromises();
+
+			expect( getErrorText() ).toBe( GENERIC );
+			expectClassicCheckoutBlockedOnce();
+		} );
+	} );
+
 	test( 'keeps the form blocked while it leaves for the order, releasing it on a back-forward cache return', async () => {
 		mockConfirmationCallbackResponse( {
 			status_code: 200,

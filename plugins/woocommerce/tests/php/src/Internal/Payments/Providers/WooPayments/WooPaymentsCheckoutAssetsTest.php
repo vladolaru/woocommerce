@@ -732,6 +732,7 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 		// The Blocks card method's prompt text (index.js copyTestNumber()); client 11.2.0 prompts "Copy the test number:"
 		// (client/checkout/utils/copy-test-number.js:23-26).
 		$this->assertSame( 'Copy test card number:', $config['copyTestCardNumberPrompt'] );
+		$this->assertSame( 'Your payment may have gone through. Check your email for an order confirmation before you try again, or refresh the page.', $config['paymentMayHaveGoneThroughMessage'] );
 		// With no account fraud-services config and the platform unreachable,
 		// the prepared config falls back to the bare stripe default.
 		$this->assertSame( array( 'stripe' => array() ), $config['fraudServices'] );
@@ -2510,6 +2511,7 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 	 */
 	private const DROPPED_BLOCKS_DATA_KEYS = array(
 		'confirmationErrorMessage',
+		'paymentMayHaveGoneThroughMessage',
 		'customerData',
 		'fingerprintErrorMessage',
 		'copyTestCardNumberPrompt',
