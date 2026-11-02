@@ -59,7 +59,6 @@
 	var isDeviceFingerprintReady = false;
 	var isWaitingForDeviceFingerprint = false;
 	var isSubmittingWithPaymentMethod = false;
-	var isSubmittingWithSetupIntent = false;
 	var cardBrandIconsHydratedLabel = null;
 	var cardBrandIconsHydrationCleanup = null;
 	var expressButtonStates = {};
@@ -2559,6 +2558,13 @@
 	function createPaymentMethodAndSubmit( form ) {
 		var component = paymentElements[ selection.gatewayId ];
 
+		// A submit while another is in flight would tokenize and post again: the element block below does not stop
+		// the keyboard. Refuse it as core's checkout.js does on `processing` (client 11.2.0
+		// classic/payment-processing.js:438-498 has no such check).
+		if ( form.hasClass( 'processing' ) ) {
+			return false;
+		}
+
 		if ( ! component ) {
 			// No Payment Element without the fingerprint, so there is nothing to submit (client 11.2.0
 			// classic/payment-processing.js:449-465). Retry the fingerprint, which shows its error again.
@@ -2646,13 +2652,13 @@
 		return createPaymentMethodAndSubmit( form );
 	}
 
-	function submitAddPaymentMethodForm( formElement ) {
-		isSubmittingWithSetupIntent = true;
-		formElement.submit();
-	}
-
 	function createSetupIntentAndSubmit( formElement ) {
 		var component = paymentElements[ selection.gatewayId ];
+
+		// Same in-flight guard as createPaymentMethodAndSubmit(): core's add-payment-method.js only blocks the form.
+		if ( $( formElement ).hasClass( 'processing' ) ) {
+			return false;
+		}
 
 		// No Payment Element mounted: release the overlay core's script put on the form, as client 11.2.0 does on
 		// every refusal (classic/payment-processing.js:449-498). With the fingerprint ready, the selected method has no
@@ -2665,13 +2671,14 @@
 				$( formElement ).removeClass( 'processing' ).unblock();
 			}, 0 );
 			if ( isDeviceFingerprintReady ) {
-				submitAddPaymentMethodForm( formElement );
+				formElement.submit();
 			} else {
 				initializeStripeElement();
 			}
 			return false;
 		}
 
+		$( formElement ).addClass( 'processing' );
 		createPaymentMethod( component )
 			.then( function ( result ) {
 				if ( result.error ) {
@@ -2683,6 +2690,7 @@
 			} )
 			.then( function ( setupIntent ) {
 				if ( ! setupIntent || ! setupIntent.id ) {
+					$( formElement ).removeClass( 'processing' ).unblock();
 					setError( config.confirmationErrorMessage || '' );
 					return;
 				}
@@ -2698,7 +2706,10 @@
 					getFraudPreventionToken()
 				);
 				setError( '' );
-				submitAddPaymentMethodForm( formElement );
+				// The native submit() fires no submit event, so nothing has to let it through; the form keeps
+				// `processing` while the page leaves, and a second Enter is refused instead of posting this
+				// SetupIntent again.
+				formElement.submit();
 			} )
 			.catch( function ( error ) {
 				$( formElement ).removeClass( 'processing' ).unblock();
@@ -2721,11 +2732,6 @@
 		setCurrentGatewayConfig( selectedGateway.value );
 
 		if ( selectedGateway.value !== selection.gatewayId ) {
-			return true;
-		}
-
-		if ( isSubmittingWithSetupIntent ) {
-			isSubmittingWithSetupIntent = false;
 			return true;
 		}
 

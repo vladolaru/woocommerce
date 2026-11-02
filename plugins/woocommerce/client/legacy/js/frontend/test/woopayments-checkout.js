@@ -227,6 +227,10 @@ describe( 'WooPayments checkout', () => {
 				checkoutFormState.blocked = true;
 				return checkoutFormResult;
 			} ),
+			hasClass: jest.fn(
+				( className ) =>
+					className === 'processing' && checkoutFormState.processing
+			),
 			filter: jest.fn( () => checkoutFormResult ),
 			find: jest.fn( ( selector ) => {
 				const match = selector.match( /input\[name="([^"]+)"\]/ );
@@ -292,6 +296,10 @@ describe( 'WooPayments checkout', () => {
 				orderPayFormState.blocked = true;
 				return orderPayFormResult;
 			} ),
+			hasClass: jest.fn(
+				( className ) =>
+					className === 'processing' && orderPayFormState.processing
+			),
 			filter: jest.fn( () => orderPayFormResult ),
 			find: jest.fn( ( selector ) => {
 				const match = selector.match( /input\[name="([^"]+)"\]/ );
@@ -4079,6 +4087,74 @@ describe( 'WooPayments checkout', () => {
 		);
 	} );
 
+	// Core's checkout.js only blocks form#order_review, and an element block does not stop Enter on the focused
+	// button (jquery.blockUI.js bind()), so a second submit reaches the handler while the first card is tokenized.
+	describe( 'a second order-pay submit', () => {
+		function useOrderPayForm() {
+			document.body.innerHTML =
+				'<form id="order_review">' +
+				'<input type="radio" name="payment_method" value="woocommerce_payments" checked />' +
+				'<div id="woopayments-payment-element"></div>' +
+				'</form>';
+			window.wc_woopayments_checkout_params.isOrderPay = true;
+		}
+
+		function submitOrderPayForm() {
+			return orderPayFormEventHandlers.submit.call(
+				document.getElementById( 'order_review' )
+			);
+		}
+
+		function countOrderPayPosts() {
+			return global.jQuery.orderPayFormResult.trigger.mock.calls.filter(
+				( [ event ] ) => event === 'submit'
+			).length;
+		}
+
+		test( 'is refused while the card is tokenized, so one payment method is created and posted', async () => {
+			let resolvePaymentMethod;
+			useOrderPayForm();
+			stripeMock.createPaymentMethod.mockImplementationOnce(
+				() =>
+					new Promise( ( resolve ) => {
+						resolvePaymentMethod = resolve;
+					} )
+			);
+
+			require( '../woopayments-checkout' );
+			await flushPromises();
+			expect( submitOrderPayForm() ).toBe( false );
+			await flushPromises();
+			expect( submitOrderPayForm() ).toBe( false );
+			await flushPromises();
+			resolvePaymentMethod( { paymentMethod: { id: 'pm_native' } } );
+			await flushPromises();
+
+			expect( stripeMock.createPaymentMethod ).toHaveBeenCalledTimes( 1 );
+			expect( countOrderPayPosts() ).toBe( 1 );
+		} );
+
+		test( 'goes through after a failed tokenization', async () => {
+			useOrderPayForm();
+			// Synthetic failure: client 11.2.0 classic/payment-processing.js:494-497 unblocks the form on any thrown error.
+			submitElements.mockImplementationOnce( () =>
+				Promise.reject( new Error( 'Your card number is incomplete.' ) )
+			);
+
+			require( '../woopayments-checkout' );
+			await flushPromises();
+			submitOrderPayForm();
+			await flushPromises();
+			expect( countOrderPayPosts() ).toBe( 0 );
+
+			submitOrderPayForm();
+			await flushPromises();
+
+			expect( stripeMock.createPaymentMethod ).toHaveBeenCalledTimes( 1 );
+			expect( countOrderPayPosts() ).toBe( 1 );
+		} );
+	} );
+
 	test( 'adds the fraud-prevention token before submitting the order-pay form', async () => {
 		// `appendPaymentFields()` calls `ensureHiddenField( form,
 		// 'wcpay-fraud-prevention-token', getFraudPreventionToken() )`
@@ -5134,6 +5210,124 @@ describe( 'WooPayments checkout', () => {
 			} ) ),
 		} );
 	}
+
+	function mockSetupIntentSuccess() {
+		global.jQuery.post.mockReturnValue( {
+			done: jest.fn( ( callback ) => {
+				callback( {
+					success: true,
+					data: { id: 'seti_native', status: 'succeeded' },
+				} );
+				return { fail: jest.fn() };
+			} ),
+		} );
+	}
+
+	function countSetupIntentRequests() {
+		return global.jQuery.post.mock.calls.filter(
+			( [ , data ] ) => data && data.action === 'create_setup_intent'
+		).length;
+	}
+
+	function submitAddPaymentMethodForm( form ) {
+		form.dispatchEvent(
+			new window.Event( 'submit', { bubbles: true, cancelable: true } )
+		);
+	}
+
+	// Core's add-payment-method.js only blocks the form, which does not stop Enter on the focused button.
+	test( 'refuses a second add-payment-method submit while the card is tokenized', async () => {
+		let resolvePaymentMethod;
+		const form = createAddPaymentMethodForm();
+		stripeMock.createPaymentMethod.mockImplementationOnce(
+			() =>
+				new Promise( ( resolve ) => {
+					resolvePaymentMethod = resolve;
+				} )
+		);
+		mockSetupIntentSuccess();
+
+		require( '../woopayments-checkout' );
+		await flushPromises();
+		submitAddPaymentMethodForm( form );
+		await flushPromises();
+		submitAddPaymentMethodForm( form );
+		await flushPromises();
+		resolvePaymentMethod( { paymentMethod: { id: 'pm_native' } } );
+		await flushPromises();
+
+		expect( stripeMock.createPaymentMethod ).toHaveBeenCalledTimes( 1 );
+		expect( countSetupIntentRequests() ).toBe( 1 );
+		expect( form.submit ).toHaveBeenCalledTimes( 1 );
+	} );
+
+	// The native submit() fires no submit event. A second Enter while the page leaves does, and a submit event left
+	// to its default would make the browser post the same SetupIntent again.
+	test( 'refuses a second add-payment-method submit after the form has been sent', async () => {
+		const form = createAddPaymentMethodForm();
+		const secondSubmit = new window.Event( 'submit', {
+			bubbles: true,
+			cancelable: true,
+		} );
+		mockSetupIntentSuccess();
+
+		require( '../woopayments-checkout' );
+		await flushPromises();
+		submitAddPaymentMethodForm( form );
+		await flushPromises();
+		expect( form.submit ).toHaveBeenCalledTimes( 1 );
+
+		form.dispatchEvent( secondSubmit );
+		await flushPromises();
+
+		expect( secondSubmit.defaultPrevented ).toBe( true );
+		expect( stripeMock.createPaymentMethod ).toHaveBeenCalledTimes( 1 );
+		expect( countSetupIntentRequests() ).toBe( 1 );
+		expect( form.submit ).toHaveBeenCalledTimes( 1 );
+	} );
+
+	test.each( [
+		[
+			'Stripe returns an error',
+			() =>
+				stripeMock.createPaymentMethod.mockResolvedValueOnce( {
+					error: { message: 'Your card number is incomplete.' },
+				} ),
+		],
+		[
+			'the store refuses the setup intent',
+			() => mockSetupIntentHttpFailure( undefined ),
+		],
+		[
+			'the setup intent comes back without an id',
+			() =>
+				global.jQuery.post.mockReturnValueOnce( {
+					done: jest.fn( ( callback ) => {
+						callback( { success: true, data: { status: 'succeeded' } } );
+						return { fail: jest.fn() };
+					} ),
+				} ),
+		],
+	] )(
+		'submits the add-payment-method form again after %s',
+		async ( _failure, failFirstAttempt ) => {
+			const form = createAddPaymentMethodForm();
+			mockSetupIntentSuccess();
+			failFirstAttempt();
+
+			require( '../woopayments-checkout' );
+			await flushPromises();
+			submitAddPaymentMethodForm( form );
+			await flushPromises();
+			expect( form.submit ).not.toHaveBeenCalled();
+
+			submitAddPaymentMethodForm( form );
+			await flushPromises();
+
+			expect( stripeMock.createPaymentMethod ).toHaveBeenCalledTimes( 2 );
+			expect( form.submit ).toHaveBeenCalledTimes( 1 );
+		}
+	);
 
 	test( 'adds a setup intent field before submitting the add-payment-method form', async () => {
 		const addPaymentMethodForm = document.createElement( 'form' );
