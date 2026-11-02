@@ -160,6 +160,9 @@ jest.mock( '@woocommerce/settings', () => {
 // Blocks data store, which needs the full settings fixture, so the tests render a plain stand-in.
 jest.mock( '@woocommerce/blocks-components', () => ( {
 	StoreNotice: ( { children } ) => <div role="alert">{ children }</div>,
+	TextInput: jest.requireActual(
+		'@woocommerce/blocks-components/text-input/text-input'
+	).default,
 } ) );
 
 // The validation store actions the WooPay save-user section dispatches (wc/store/validation).

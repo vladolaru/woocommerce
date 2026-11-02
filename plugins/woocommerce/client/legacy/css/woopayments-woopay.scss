@@ -220,8 +220,46 @@
 	margin-top: 24px;
 }
 
+// Core pads each div.form-row in the payment box by 1em (woocommerce.scss #payment div.form-row). The section takes that
+// inset once, so the checkbox lines up with the fields and the place order row, and its rows add no padding of their own.
+#payment #wcpay-woopay-save-user {
+	padding: 0 1em;
+
+	div.form-row {
+		padding: 0;
+	}
+}
+
 #wcpay-woopay-save-user {
 	margin-top: 16px;
+
+	// Client 11.2.0 settings/phone-input/style.scss: the fields stack with one gap, and the helper and terms text is
+	// small, with the error in the error colour.
+	.save-details-form {
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+
+		&[hidden] {
+			display: none;
+		}
+
+		> * {
+			margin: 0;
+		}
+	}
+
+	.additional-information,
+	.tos {
+		font-size: var(--wp--preset--font-size--x-small, calc(var(--wp--preset--font-size--small, 14px) * 0.875));
+		line-height: 1.4;
+	}
+
+	.woopay-phone-number-error {
+		color: var(--wc-red, #cc1818);
+		font-size: 13px;
+		line-height: 1;
+	}
 
 	.form-row {
 		margin: 0 0 16px;

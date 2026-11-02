@@ -27,6 +27,8 @@
 	// The shopper's save my info choice and typed phone, null until they make one. A checkout update that replaces the
 	// payment section renders the fields again from these instead of the pre-check and the billing phone.
 	var saveUserChoice = { checked: null, phone: null };
+	// Whether the shopper has left the phone field or placed the order; until then an empty field shows no error.
+	var isWooPayPhoneTouched = false;
 	var proceedToCheckoutSelector =
 		'.wc-proceed-to-checkout .checkout-button,' +
 		'.wp-block-woocommerce-proceed-to-checkout-block,' +
@@ -1445,12 +1447,16 @@
 		);
 	}
 
-	// Client 11.1.0 checkout-page-save-user.js:176-181, :389-398: the classic message shows for an invalid number, on
-	// blur and when the shopper places the order; it does not stop the submission. Without the validation script the
-	// number cannot be judged, so nothing shows.
+	// Client 11.2.0 checkout-page-save-user.js:176-181, :388-399 and settings/phone-input/index.tsx:197-206: the classic
+	// message shows for an invalid number once the field holds one or the shopper has left it, and when the shopper
+	// places the order; ticking the box alone shows nothing. It does not stop the submission. Without the validation
+	// script the number cannot be judged, so nothing shows.
 	function updateWooPayPhoneError() {
 		var checkbox = document.querySelector(
 			'input[name="save_user_in_woopay"]'
+		);
+		var phoneField = document.getElementById(
+			'woopay_user_phone_field_full'
 		);
 		var error = document.getElementById(
 			'validate-error-invalid-woopay-phone-number'
@@ -1465,7 +1471,9 @@
 			checkbox &&
 			checkbox.checked &&
 			isSaveUserOfferApplicable() &&
-			isValid === false
+			isValid === false &&
+			( isWooPayPhoneTouched ||
+				( phoneField && '' !== phoneField.value.trim() ) )
 		);
 	}
 
@@ -1664,10 +1672,12 @@
 			syncWooPayPhone();
 		} );
 		phoneField.addEventListener( 'blur', function () {
+			isWooPayPhoneTouched = true;
 			syncWooPayPhone();
 			updateWooPayPhoneError();
 		} );
 		$( form ).on( 'checkout_place_order', function () {
+			isWooPayPhoneTouched = true;
 			updateWooPayPhoneError();
 		} );
 		updateSaveUserVisibility();

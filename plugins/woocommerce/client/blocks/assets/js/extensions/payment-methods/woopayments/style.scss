@@ -219,23 +219,22 @@
 		}
 	}
 
+	// Client 11.2.0 settings/phone-input/style.scss: the phone field is a Blocks text input, and the helper and terms
+	// text is small.
 	.save-details-form {
+		display: flex;
+		flex-direction: column;
+		gap: 12px;
 		margin-top: 16px;
 
-		label {
-			display: block;
-			margin-bottom: 6px;
+		.wc-block-components-text-input {
+			margin-top: 0;
 		}
 
-		input[type="tel"] {
-			box-sizing: border-box;
-			width: 100%;
-			min-height: 48px;
-			padding: 11px 12px;
-			border: 1px solid currentColor;
-			border-radius: 4px;
-			background: #fff;
-			font: inherit;
+		.additional-information,
+		.tos {
+			font-size: var(--wp--preset--font-size--x-small, calc(var(--wp--preset--font-size--small, 14px) * 0.875));
+			line-height: 1.4;
 		}
 	}
 

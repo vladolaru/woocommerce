@@ -1682,6 +1682,72 @@ describe( 'WooPayments WooPay checkout', () => {
 		).toBe( false );
 	} );
 
+	// Client 11.2.0 checkout-page-save-user.js:176-181, :388-399 and settings/phone-input/index.tsx:197-206: an empty
+	// phone field shows no error until the shopper leaves it or places the order, also when the box starts ticked.
+	describe( 'the WooPay phone error on an empty field', () => {
+		const getError = () =>
+			document.getElementById( 'validate-error-invalid-woopay-phone-number' );
+
+		beforeEach( () => {
+			// Stand-in for the validation script (phone-validation.js, core's validatePhoneNumber).
+			window.wc.woopayments.phoneValidation = {
+				validatePhoneNumber: ( number ) => number === '+12015550123',
+			};
+		} );
+
+		test( 'stays hidden when the shopper ticks save my info', async () => {
+			window.wc_woopayments_woopay_params.PRE_CHECK_SAVE_MY_INFO = false;
+			require( '../woopayments-woopay' );
+			const saveCheckbox = document.querySelector(
+				'input[name="save_user_in_woopay"]'
+			);
+
+			saveCheckbox.checked = true;
+			saveCheckbox.dispatchEvent(
+				new window.Event( 'change', { bubbles: true } )
+			);
+			await flushPromises();
+
+			expect( getError().hidden ).toBe( true );
+		} );
+
+		test( 'stays hidden when the box starts ticked', async () => {
+			window.wc_woopayments_woopay_params.PRE_CHECK_SAVE_MY_INFO = true;
+			require( '../woopayments-woopay' );
+			await flushPromises();
+
+			expect(
+				document.querySelector( 'input[name="save_user_in_woopay"]' )
+					.checked
+			).toBe( true );
+			expect( getError().hidden ).toBe( true );
+		} );
+
+		test( 'shows once the shopper leaves the field', async () => {
+			require( '../woopayments-woopay' );
+			await flushPromises();
+
+			document
+				.getElementById( 'woopay_user_phone_field_full' )
+				.dispatchEvent( new window.Event( 'blur', { bubbles: true } ) );
+
+			expect( getError().hidden ).toBe( false );
+		} );
+
+		test( 'shows when the shopper places the order', async () => {
+			require( '../woopayments-woopay' );
+			await flushPromises();
+			const placeOrder = global.jQuery(
+				document.querySelector( 'form.checkout' )
+			).on.mock.calls.find(
+				( [ event ] ) => event === 'checkout_place_order'
+			)[ 1 ];
+
+			expect( placeOrder() ).not.toBe( false );
+			expect( getError().hidden ).toBe( false );
+		} );
+	} );
+
 	test( 'keeps the posted WooPay number current as the shopper types', () => {
 		require( '../woopayments-woopay' );
 		const phoneField = document.getElementById( 'woopay_user_phone_field_full' );

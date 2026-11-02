@@ -13,7 +13,7 @@ import {
 	useState,
 } from '@wordpress/element';
 import { dispatch, select as selectStore, useSelect } from '@wordpress/data';
-import { StoreNotice } from '@woocommerce/blocks-components';
+import { StoreNotice, TextInput } from '@woocommerce/blocks-components';
 import FingerprintJS from '@fingerprintjs/fingerprintjs';
 
 /**
@@ -1067,12 +1067,11 @@ const WooPaySaveUserSection = ( { paymentSettings } ) => {
 							value={ getWooPayViewport() }
 							readOnly
 						/>
-						<label htmlFor="woopay_user_phone_field_full">
-							{ phoneLabel }
-						</label>
-						<input
+						{ /* The Blocks text input, as client 11.2.0's phone input sits in one (settings/phone-input/index.tsx:212-216). */ }
+						<TextInput
 							type="tel"
 							id="woopay_user_phone_field_full"
+							label={ phoneLabel }
 							autoComplete="tel"
 							value={ phone }
 							aria-invalid={
@@ -1080,14 +1079,12 @@ const WooPaySaveUserSection = ( { paymentSettings } ) => {
 									? 'true'
 									: undefined
 							}
-							aria-describedby={
+							ariaDescribedBy={
 								phoneError && ! phoneError.hidden
 									? 'validate-error-invalid-woopay-phone-number'
 									: undefined
 							}
-							onChange={ ( event ) =>
-								setPhone( event.target.value )
-							}
+							onChange={ setPhone }
 							onBlur={ () => setIsPhoneTouched( true ) }
 						/>
 						{ /* The number WooPay receives, with its country code. */ }

@@ -62,6 +62,9 @@ jest.mock( '@fingerprintjs/fingerprintjs', () => ( {
 // The bundle loads StoreNotice from the wc-blocks-components script at runtime; the tests render a plain stand-in.
 jest.mock( '@woocommerce/blocks-components', () => ( {
 	StoreNotice: ( { children } ) => <div role="alert">{ children }</div>,
+	TextInput: jest.requireActual(
+		'@woocommerce/blocks-components/text-input/text-input'
+	).default,
 } ) );
 
 jest.mock( '@wordpress/data', () => ( {
