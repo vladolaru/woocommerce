@@ -5185,6 +5185,66 @@ describe( 'WooPayments checkout', () => {
 		expect( addPaymentMethodForm.submit ).not.toHaveBeenCalled();
 	} );
 
+	// Core's add-payment-method.js blocks the form on every submit. With no Payment Element client 11.2.0's submit
+	// throws in validateElements( null ) and its catch unblocks the form and shows the error
+	// (classic/payment-processing.js:449-498, utils/validate-elements.js:7-12).
+	describe( 'add payment method without a Payment Element', () => {
+		const FINGERPRINT_ERROR =
+			'An error was encountered when preparing the payment form. Please try again later.';
+
+		const submitForm = async ( form ) => {
+			form.dispatchEvent(
+				new window.Event( 'submit', { bubbles: true, cancelable: true } )
+			);
+			await flushPromises();
+		};
+
+		const expectFormReleased = ( form ) => {
+			expect( global.jQuery ).toHaveBeenCalledWith( form );
+			expect(
+				global.jQuery.checkoutFormResult.removeClass
+			).toHaveBeenCalledWith( 'processing' );
+			expect( global.jQuery.checkoutFormResult.unblock ).toHaveBeenCalled();
+		};
+
+		test( 'releases the form and shows the fingerprint error when FingerprintJS is blocked', async () => {
+			const addPaymentMethodForm = createAddPaymentMethodForm();
+			window.wc_woopayments_checkout_params.fingerprintErrorMessage =
+				FINGERPRINT_ERROR;
+			delete window.FingerprintJS;
+
+			require( '../woopayments-checkout' );
+			await flushPromises();
+			await submitForm( addPaymentMethodForm );
+
+			expectFormReleased( addPaymentMethodForm );
+			expect(
+				document.querySelector( '.woopayments-payment-errors' ).textContent
+			).toBe( FINGERPRINT_ERROR );
+			expect( addPaymentMethodForm.submit ).not.toHaveBeenCalled();
+			expect( global.jQuery.post ).not.toHaveBeenCalled();
+		} );
+
+		// The store then answers with its own notice (WooPaymentsGateway: "A WooPayments payment method was not
+		// provided.").
+		test( 'releases the form and sends it to the store when Stripe.js is blocked', async () => {
+			jest.useFakeTimers();
+			const addPaymentMethodForm = createAddPaymentMethodForm();
+			delete window.Stripe;
+
+			require( '../woopayments-checkout' );
+			await jest.advanceTimersByTimeAsync( 0 );
+			addPaymentMethodForm.dispatchEvent(
+				new window.Event( 'submit', { bubbles: true, cancelable: true } )
+			);
+			await jest.advanceTimersByTimeAsync( 0 );
+
+			expectFormReleased( addPaymentMethodForm );
+			expect( addPaymentMethodForm.submit ).toHaveBeenCalledTimes( 1 );
+			expect( global.jQuery.post ).not.toHaveBeenCalled();
+		} );
+	} );
+
 	test( 'releases add-payment-method after a failed SetupIntent confirmation', async () => {
 		const addPaymentMethodForm = createAddPaymentMethodForm();
 		global.jQuery.post.mockReturnValueOnce( {

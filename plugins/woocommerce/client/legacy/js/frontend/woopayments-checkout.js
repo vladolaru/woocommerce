@@ -2652,11 +2652,18 @@
 	function createSetupIntentAndSubmit( formElement ) {
 		var component = paymentElements[ selection.gatewayId ];
 
+		// No Payment Element mounted: release the overlay core's script put on the form, as client 11.2.0 does on
+		// every refusal (classic/payment-processing.js:449-498). With the fingerprint ready, Stripe.js is what is
+		// missing, so the form goes to the store, which answers with its own notice; otherwise the mount runs again
+		// and shows the fingerprint error.
 		if ( ! component ) {
-			if ( ! isDeviceFingerprintReady ) {
+			$( formElement ).removeClass( 'processing' ).unblock();
+			if ( isDeviceFingerprintReady ) {
+				submitAddPaymentMethodForm( formElement );
+			} else {
 				initializeStripeElement();
 			}
-			return true;
+			return false;
 		}
 
 		createPaymentMethod( component )
