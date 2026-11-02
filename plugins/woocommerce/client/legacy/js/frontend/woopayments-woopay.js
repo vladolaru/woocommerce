@@ -11,6 +11,7 @@
 		window.location.href = url;
 	};
 	var isWooPayRequesting = false;
+	var wooPayButtonContent = '';
 	// Client 11.2.0 woopay-express-checkout-button.js:282-295, :324-337 (onClickCallbackRef.current = onClickOtpFlow).
 	var isWooPayOtpFlowNext = false;
 	var currentPreferredCard = null;
@@ -289,7 +290,7 @@
 			form.classList.contains( 'is-invalid' )
 		) {
 			window.alert( config.productOptionsMessage || '' );
-			isWooPayRequesting = false;
+			setWooPayRequesting( false );
 			return false;
 		}
 
@@ -309,7 +310,7 @@
 							''
 					: config.productOptionsMessage || ''
 			);
-			isWooPayRequesting = false;
+			setWooPayRequesting( false );
 			return false;
 		}
 
@@ -1012,10 +1013,10 @@
 	function continueWooPay() {
 		expressCheckoutIframe( getTrackingSource(), '#billing_email' ).then(
 			function () {
-				isWooPayRequesting = false;
+				setWooPayRequesting( false );
 			},
 			function () {
-				isWooPayRequesting = false;
+				setWooPayRequesting( false );
 			}
 		);
 	}
@@ -1033,7 +1034,7 @@
 	}
 
 	function showWooPaySessionError() {
-		isWooPayRequesting = false;
+		setWooPayRequesting( false );
 		showExpressErrorMessage(
 			getTrackingSource(),
 			__( 'Something went wrong. Please try again.', 'woocommerce' )
@@ -1050,7 +1051,7 @@
 		);
 
 		if ( ! request || ! request.done ) {
-			isWooPayRequesting = false;
+			setWooPayRequesting( false );
 			return;
 		}
 
@@ -1076,7 +1077,7 @@
 				}
 
 				navigate( appendRedirectionParams( sessionResponse.redirect_url ) );
-				isWooPayRequesting = false;
+				setWooPayRequesting( false );
 			} );
 		} );
 
@@ -1103,7 +1104,7 @@
 		productData = getProductFormData();
 		if ( ! productData.product_id ) {
 			setError( config.confirmationErrorMessage || '' );
-			isWooPayRequesting = false;
+			setWooPayRequesting( false );
 			return;
 		}
 
@@ -1118,14 +1119,14 @@
 		);
 
 		if ( ! request || ! request.done ) {
-			isWooPayRequesting = false;
+			setWooPayRequesting( false );
 			return;
 		}
 
 		request.done( function ( response ) {
 			if ( response && response.error ) {
 				setError( config.confirmationErrorMessage || '' );
-				isWooPayRequesting = false;
+				setWooPayRequesting( false );
 				return;
 			}
 
@@ -1136,7 +1137,7 @@
 			request.fail( function ( jqXHR ) {
 				var form;
 
-				isWooPayRequesting = false;
+				setWooPayRequesting( false );
 				// A failed woocommerce_add_to_cart_validation answers 400 { error: true, submit: true }: submit the product
 				// form so the extension's own notice shows, as client 11.1.0 does (woopay-express-checkout-button.js:186-196).
 				if ( getAddToCartFailure( jqXHR ).submit ) {
@@ -1166,6 +1167,35 @@
 		return body && typeof body === 'object' ? body : {};
 	}
 
+	// Client 11.2.0 woopay-express-checkout-button.js:232-234, :445-488: while the WooPay request runs, the button shows a
+	// spinner in place of its content and reads as busy. It stays focusable, as the Blocks button does; a click while
+	// busy is ignored by initWooPay().
+	function setWooPayRequesting( isRequesting ) {
+		if ( isWooPayRequesting === isRequesting ) {
+			return;
+		}
+
+		isWooPayRequesting = isRequesting;
+		Array.prototype.forEach.call(
+			document.querySelectorAll( '#wcpay-woopay-button .woopay-express-button' ),
+			showWooPayButtonBusyState
+		);
+	}
+
+	function showWooPayButtonBusyState( button ) {
+		button.classList.toggle( 'is-loading', isWooPayRequesting );
+		if ( isWooPayRequesting ) {
+			button.setAttribute( 'aria-disabled', 'true' );
+			button.setAttribute( 'aria-busy', 'true' );
+			button.innerHTML = '<span class="wc-block-components-spinner"></span>';
+			return;
+		}
+
+		button.removeAttribute( 'aria-disabled' );
+		button.removeAttribute( 'aria-busy' );
+		button.innerHTML = wooPayButtonContent;
+	}
+
 	function initWooPay( event ) {
 		if ( event && event.preventDefault ) {
 			event.preventDefault();
@@ -1185,7 +1215,7 @@
 			return;
 		}
 
-		isWooPayRequesting = true;
+		setWooPayRequesting( true );
 		prepareProductCartForWooPay(
 			config.isWoopayFirstPartyAuthEnabled && ! isWooPayOtpFlowNext
 				? continueWooPayFirstPartyAuth
@@ -1334,7 +1364,12 @@
 				  )
 				: getWooPayButtonLabel( type )
 		);
-		button.innerHTML = getWooPayButtonContent( settings, displayedCard );
+		wooPayButtonContent = getWooPayButtonContent( settings, displayedCard );
+		button.innerHTML = wooPayButtonContent;
+		// updated_checkout can render the button again while a request runs.
+		if ( isWooPayRequesting ) {
+			showWooPayButtonBusyState( button );
+		}
 
 		recordUserEvent( 'woopay_button_load', {
 			source: getTrackingSource(),

@@ -1790,6 +1790,95 @@ describe( 'WooPayments WooPay checkout', () => {
 		] );
 	} );
 
+	// Client 11.2.0 woopay-express-checkout-button.js:232-234, :445-488: the button shows a spinner and reads as busy
+	// while the WooPay request runs, and gets its content back when the request ends.
+	describe( 'the busy WooPay button', () => {
+		const getButton = () =>
+			document.querySelector( '#wcpay-woopay-button .woopay-express-button' );
+
+		function expectBusy( isBusy ) {
+			const button = getButton();
+			expect( button.classList.contains( 'is-loading' ) ).toBe( isBusy );
+			expect( button.getAttribute( 'aria-busy' ) ).toBe(
+				isBusy ? 'true' : null
+			);
+			expect( button.getAttribute( 'aria-disabled' ) ).toBe(
+				isBusy ? 'true' : null
+			);
+			expect(
+				button.querySelector( '.wc-block-components-spinner' ) !== null
+			).toBe( isBusy );
+			expect( button.querySelector( 'svg' ) !== null ).toBe( ! isBusy );
+		}
+
+		let answerSession;
+
+		beforeEach( () => {
+			window.wc_woopayments_woopay_params.isWoopayFirstPartyAuthEnabled = true;
+			window.wc_woopayments_woopay_params.woopayHost = 'https://pay.woo.test';
+			Object.defineProperty( window.HTMLIFrameElement.prototype, 'contentWindow', {
+				configurable: true,
+				get() {
+					return { postMessage: jest.fn() };
+				},
+			} );
+			answerSession = {};
+			global.jQuery.post = jest.fn( () => ( {
+				done: jest.fn( ( callback ) => {
+					answerSession.done = callback;
+					return { fail: jest.fn() };
+				} ),
+				fail: jest.fn( ( callback ) => {
+					answerSession.fail = callback;
+				} ),
+			} ) );
+		} );
+
+		test( 'is busy while the session request runs and clears when it fails', async () => {
+			require( '../woopayments-woopay' );
+			expectBusy( false );
+
+			getButton().click();
+			await flushPromises();
+			expectBusy( true );
+
+			answerSession.fail( { status: 500 } );
+			await flushPromises();
+			expectBusy( false );
+		} );
+
+		test( 'clears once hosted WooPay answers with the checkout address', async () => {
+			const { __test__ } = require( '../woopayments-woopay' );
+			const navigate = jest.fn();
+			__test__.setNavigate( navigate );
+
+			getButton().click();
+			await flushPromises();
+			expectBusy( true );
+
+			answerSession.done( {
+				blog_id: '12345',
+				data: { session: 'session', iv: 'iv', hash: 'hash' },
+			} );
+			document
+				.getElementById( 'woopay-connect-iframe' )
+				.dispatchEvent( new window.Event( 'load' ) );
+			await flushPromises();
+			postFromWooPay( {
+				action: 'set_preemptive_session_data_success',
+				value: {
+					redirect_url: 'https://pay.woo.test/checkout/session',
+				},
+			} );
+			await flushPromises();
+
+			expect( navigate ).toHaveBeenCalledWith(
+				'https://pay.woo.test/checkout/session'
+			);
+			expectBusy( false );
+		} );
+	} );
+
 	describe( 'direct checkout', () => {
 		const encryptedIdentity = {
 			data: 'encrypted-identity',

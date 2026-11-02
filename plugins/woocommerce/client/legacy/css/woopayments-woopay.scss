@@ -127,6 +127,35 @@
 		opacity: 0.5;
 	}
 
+	// Client 11.2.0 express-button/style.scss:126-130 keeps the busy button at full strength, with the Blocks spinner in
+	// it; the Blocks spinner styles are not on classic pages, so the spinner is drawn here.
+	&.is-loading {
+		opacity: 1;
+	}
+
+	.wc-block-components-spinner {
+		height: 100%;
+		left: 0;
+		position: absolute;
+		top: 0;
+		width: 100%;
+
+		&::after {
+			animation: woopayments-woopay-spinner 1s infinite linear;
+			border: 0.2em solid currentcolor;
+			border-left-color: transparent;
+			border-radius: 50%;
+			box-sizing: border-box;
+			content: "";
+			height: 1em;
+			left: 50%;
+			margin: -0.5em 0 0 -0.5em;
+			position: absolute;
+			top: 50%;
+			width: 1em;
+		}
+	}
+
 	&:not(:disabled):not(.is-placeholder):hover {
 		cursor: pointer;
 	}
@@ -307,5 +336,16 @@ the script centers it with inline top/left on wide viewports. */
 
 	.woopay-otp-iframe {
 		transition: none;
+	}
+}
+
+@keyframes woopayments-woopay-spinner {
+
+	from {
+		transform: rotate(0deg);
+	}
+
+	to {
+		transform: rotate(360deg);
 	}
 }
