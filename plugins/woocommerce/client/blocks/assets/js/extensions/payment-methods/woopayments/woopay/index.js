@@ -35,13 +35,15 @@ const brandAliases = {
 	diners_club: 'diners',
 	union_pay: 'unionpay',
 };
+// The classic button's list (woopayments-woopay.js), from client 11.1.0 woopay-express-checkout-button.js:34-45.
 const brandDisplayNames = {
 	amex: __( 'American Express', 'woocommerce' ),
+	cartes_bancaires: __( 'Cartes Bancaires', 'woocommerce' ),
 	diners: __( 'Diners Club', 'woocommerce' ),
 	discover: __( 'Discover', 'woocommerce' ),
 	jcb: __( 'JCB', 'woocommerce' ),
 	mastercard: __( 'Mastercard', 'woocommerce' ),
-	unionpay: __( 'Union Pay', 'woocommerce' ),
+	unionpay: __( 'UnionPay', 'woocommerce' ),
 	visa: __( 'Visa', 'woocommerce' ),
 };
 // What this script gives the page's WooPay Connect client, which it shares with the classic WooPay script. The values

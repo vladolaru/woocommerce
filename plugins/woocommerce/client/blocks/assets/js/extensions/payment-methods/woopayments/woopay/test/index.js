@@ -1352,6 +1352,32 @@ describe( 'wc-payment-method-woopayments-woopay', () => {
 		}
 	);
 
+	// Client 11.1.0 woopay-express-checkout-button.js:34-45 names each brand; a Cartes Bancaires card has no brand image
+	// in the card method's set, so its name shows as text.
+	it( 'names a preferred Cartes Bancaires card on the express button', () => {
+		const rectSpy = jest
+			.spyOn( window.HTMLElement.prototype, 'getBoundingClientRect' )
+			.mockReturnValue( { width: 220 } );
+		window.localStorage.setItem(
+			'woopay_preferred_card',
+			JSON.stringify( { brand: 'cartes_bancaires', last4: '1001' } )
+		);
+
+		try {
+			registerWooPay();
+			const expressRegistration =
+				registerExpressPaymentMethod.mock.calls[ 0 ][ 0 ];
+			render( createElement( expressRegistration.content.type ) );
+
+			const button = screen.getByRole( 'button', {
+				name: 'WooPay with Cartes Bancaires ending in 1001',
+			} );
+			expect( button ).toHaveTextContent( 'Cartes Bancaires1001' );
+		} finally {
+			rectSpy.mockRestore();
+		}
+	} );
+
 	// Client 11.1.0 only shows the preferred card once the button measures at
 	// least 220px wide; below that it falls back to the plain WooPay label
 	// (woopay-express-checkout-button.js:32,387-392).
