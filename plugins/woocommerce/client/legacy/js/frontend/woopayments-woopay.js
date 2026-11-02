@@ -1092,8 +1092,15 @@
 					return;
 				}
 
+				// The button stays busy while the page leaves, so a second click cannot start another session, as client
+				// 11.2.0 sets the location without clearing its loading state (woopay-express-checkout-button.js:279-282,
+				// :321-324); a return from the back-forward cache releases it.
+				window.addEventListener( 'pageshow', function ( event ) {
+					if ( event.persisted ) {
+						setWooPayRequesting( false );
+					}
+				} );
 				navigate( appendRedirectionParams( sessionResponse.redirect_url ) );
-				setWooPayRequesting( false );
 			} );
 		} );
 

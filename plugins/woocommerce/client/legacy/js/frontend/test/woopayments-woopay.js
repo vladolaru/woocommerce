@@ -2009,7 +2009,7 @@ describe( 'WooPayments WooPay checkout', () => {
 			expectBusy( false );
 		} );
 
-		test( 'clears once hosted WooPay answers with the checkout address', async () => {
+		test( 'stays busy while the page leaves for hosted WooPay, and clears on a back-forward cache return', async () => {
 			const { __test__ } = require( '../woopayments-woopay' );
 			const navigate = jest.fn();
 			__test__.setNavigate( navigate );
@@ -2036,6 +2036,16 @@ describe( 'WooPayments WooPay checkout', () => {
 
 			expect( navigate ).toHaveBeenCalledWith(
 				'https://pay.woo.test/checkout/session'
+			);
+			expectBusy( true );
+
+			window.dispatchEvent(
+				new window.PageTransitionEvent( 'pageshow', { persisted: false } )
+			);
+			expectBusy( true );
+
+			window.dispatchEvent(
+				new window.PageTransitionEvent( 'pageshow', { persisted: true } )
 			);
 			expectBusy( false );
 		} );
