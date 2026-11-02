@@ -1496,6 +1496,19 @@
 			( isWooPayPhoneTouched ||
 				( phoneField && '' !== phoneField.value.trim() ) )
 		);
+
+		// A hidden element still counts in aria-describedby, so the field names the error only while it shows, as the
+		// Blocks field does.
+		if ( ! phoneField ) {
+			return;
+		}
+		if ( error.hidden ) {
+			phoneField.removeAttribute( 'aria-describedby' );
+			phoneField.removeAttribute( 'aria-invalid' );
+		} else {
+			phoneField.setAttribute( 'aria-describedby', error.id );
+			phoneField.setAttribute( 'aria-invalid', 'true' );
+		}
 	}
 
 	// The number WooPay receives goes in the posted field with its country code; mobile_enter is recorded once the
@@ -1614,7 +1627,7 @@
 			'<label for="woopay_user_phone_field_full">' +
 			escapeHtml( config.woopayPhoneLabel ) +
 			'</label>' +
-			'<input type="tel" id="woopay_user_phone_field_full" autocomplete="tel" aria-describedby="validate-error-invalid-woopay-phone-number" />' +
+			'<input type="tel" id="woopay_user_phone_field_full" autocomplete="tel" />' +
 			// The number WooPay receives, with its country code.
 			'<input type="hidden" name="woopay_user_phone_field[full]" />' +
 			'<p id="validate-error-invalid-woopay-phone-number" class="woopay-phone-number-error" role="alert" hidden>' +

@@ -1738,6 +1738,30 @@ describe( 'WooPayments WooPay checkout', () => {
 	describe( 'the WooPay phone error on an empty field', () => {
 		const getError = () =>
 			document.getElementById( 'validate-error-invalid-woopay-phone-number' );
+		const getPhoneField = () =>
+			document.getElementById( 'woopay_user_phone_field_full' );
+
+		// What a screen reader announces with the field: the text of every element aria-describedby names, hidden or
+		// not (accname 1.2, step 2B), and whether the field is marked invalid.
+		function getAnnouncement() {
+			const phoneField = getPhoneField();
+			return {
+				description: (
+					phoneField.getAttribute( 'aria-describedby' ) || ''
+				)
+					.split( /\s+/ )
+					.filter( Boolean )
+					.map( ( id ) => document.getElementById( id ) )
+					.filter( Boolean )
+					.map( ( element ) => element.textContent.trim() )
+					.join( ' ' ),
+				invalid: phoneField.getAttribute( 'aria-invalid' ),
+			};
+		}
+		const errorAnnouncement = {
+			description: 'Please enter a valid mobile phone number.',
+			invalid: 'true',
+		};
 
 		beforeEach( () => {
 			// Stand-in for the validation script (phone-validation.js, core's validatePhoneNumber).
@@ -1760,6 +1784,10 @@ describe( 'WooPayments WooPay checkout', () => {
 			await flushPromises();
 
 			expect( getError().hidden ).toBe( true );
+			expect( getAnnouncement() ).toEqual( {
+				description: '',
+				invalid: null,
+			} );
 		} );
 
 		test( 'stays hidden when the box starts ticked', async () => {
@@ -1772,17 +1800,33 @@ describe( 'WooPayments WooPay checkout', () => {
 					.checked
 			).toBe( true );
 			expect( getError().hidden ).toBe( true );
+			expect( getAnnouncement() ).toEqual( {
+				description: '',
+				invalid: null,
+			} );
 		} );
 
 		test( 'shows once the shopper leaves the field', async () => {
 			require( '../woopayments-woopay' );
 			await flushPromises();
 
-			document
-				.getElementById( 'woopay_user_phone_field_full' )
-				.dispatchEvent( new window.Event( 'blur', { bubbles: true } ) );
+			getPhoneField().dispatchEvent(
+				new window.Event( 'blur', { bubbles: true } )
+			);
 
 			expect( getError().hidden ).toBe( false );
+			expect( getAnnouncement() ).toEqual( errorAnnouncement );
+
+			// A valid number takes the error and its announcement away.
+			getPhoneField().value = '(201) 555-0123';
+			getPhoneField().dispatchEvent(
+				new window.Event( 'blur', { bubbles: true } )
+			);
+
+			expect( getAnnouncement() ).toEqual( {
+				description: '',
+				invalid: null,
+			} );
 		} );
 
 		test( 'shows when the shopper places the order', async () => {
@@ -1796,6 +1840,7 @@ describe( 'WooPayments WooPay checkout', () => {
 
 			expect( placeOrder() ).not.toBe( false );
 			expect( getError().hidden ).toBe( false );
+			expect( getAnnouncement() ).toEqual( errorAnnouncement );
 		} );
 	} );
 
