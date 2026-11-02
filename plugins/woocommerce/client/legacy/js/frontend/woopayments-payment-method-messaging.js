@@ -6,6 +6,51 @@
 		bnplProductPage: 'bnpl_product_page',
 		bnplClassicCart: 'bnpl_classic_cart',
 	};
+	// Client 11.2.0 checkout/upe-styles/index.js:91-133 (appearanceSelectors.bnplProductPage, .bnplClassicCart): where
+	// the message's text and background are read from.
+	var appearanceSelectors = {
+		bnpl_product_page: {
+			text: [ '.product .cart .quantity' ],
+			background: [
+				'#payment-method-message',
+				'#main > .product > div.summary.entry-summary',
+				'#main > .product',
+				'#main',
+				'body',
+			],
+		},
+		bnpl_classic_cart: {
+			text: [ '.cart .quantity' ],
+			background: [
+				'#payment-method-message',
+				'#main .entry-content .cart_totals',
+				'#main .entry-content',
+				'#main',
+				'body',
+			],
+		},
+	};
+	// Client 11.2.0 checkout/upe-styles/upe-styles.js: the .Text properties Stripe accepts.
+	var textStyleProps = [
+		'color',
+		'padding',
+		'paddingTop',
+		'paddingRight',
+		'paddingBottom',
+		'paddingLeft',
+		'fontFamily',
+		'fontSize',
+		'lineHeight',
+		'letterSpacing',
+		'fontWeight',
+		'fontVariation',
+		'textDecoration',
+		'textShadow',
+		'textTransform',
+		'-webkit-font-smoothing',
+		'-moz-osx-font-smoothing',
+		'transition',
+	];
 
 	function getConfig() {
 		return window.wcpayStripeSiteMessaging || null;
@@ -69,6 +114,123 @@
 			: elementsLocations.bnplProductPage;
 	}
 
+	function queryFirst( selectors ) {
+		var i;
+		var element;
+
+		for ( i = 0; i < selectors.length; i++ ) {
+			element = document.querySelector( selectors[ i ] );
+			if ( element ) {
+				return element;
+			}
+		}
+
+		return null;
+	}
+
+	function getTextRules( appearanceUtils, element ) {
+		var styles = element ? window.getComputedStyle( element ) : null;
+		var rules = {};
+
+		if ( ! styles ) {
+			return rules;
+		}
+
+		textStyleProps.forEach( function ( prop ) {
+			var raw = styles.getPropertyValue(
+				prop.replace( /[A-Z]/g, function ( letter ) {
+					return '-' + letter.toLowerCase();
+				} )
+			);
+			var value;
+			var color;
+
+			if ( appearanceUtils.containsAlphaColor( raw ) ) {
+				return;
+			}
+			value = appearanceUtils.normalizeAppearanceValueForStripe( raw );
+			if ( ! value ) {
+				return;
+			}
+			if ( 'color' === prop ) {
+				color = appearanceUtils.parseColor( value );
+				value =
+					color && color.a < 1
+						? appearanceUtils.toRgbString(
+								appearanceUtils.compositeAgainstWhite( color )
+						  )
+						: value;
+			}
+			rules[ prop ] = value;
+		} );
+
+		return rules;
+	}
+
+	function getBackgroundColor( appearanceUtils, selectors ) {
+		var i;
+		var element;
+		var color;
+		var parsed;
+
+		for ( i = 0; i < selectors.length; i++ ) {
+			element = document.querySelector( selectors[ i ] );
+			color = element ? window.getComputedStyle( element ).backgroundColor : '';
+			parsed = color ? appearanceUtils.parseColor( color ) : null;
+			if ( parsed && parsed.a >= 0.5 ) {
+				return color;
+			}
+		}
+
+		return '#ffffff';
+	}
+
+	function isColorLight( appearanceUtils, color ) {
+		var parsed = appearanceUtils.parseColor( color );
+
+		if ( ! parsed ) {
+			return true;
+		}
+		if ( parsed.a < 1 ) {
+			parsed = appearanceUtils.compositeAgainstWhite( parsed );
+		}
+
+		return ( parsed.r * 299 + parsed.g * 587 + parsed.b * 114 ) / 1000 > 125;
+	}
+
+	// Client 11.2.0 product-details/bnpl-site-messaging/index.js:66-73 computes the appearance from the page when none is
+	// cached (checkout/upe-styles/index.js getAppearance). The messaging element reads the theme, the text variables and
+	// the .Text rules (https://docs.stripe.com/elements/payment-method-messaging), so those are what is computed; the
+	// client's input, label and tab rules, read from hidden copies of a form field, have nothing to style here.
+	function getAppearanceFromPage( appearanceUtils, location ) {
+		var selectors = appearanceSelectors[ location ];
+		var textRules = getTextRules(
+			appearanceUtils,
+			queryFirst( selectors.text )
+		);
+		var backgroundColor = getBackgroundColor(
+			appearanceUtils,
+			selectors.background
+		);
+
+		return appearanceUtils.normalizeAppearanceForStripe( {
+			variables: {
+				colorBackground: backgroundColor,
+				colorText: textRules.color,
+				fontFamily: textRules.fontFamily,
+				fontSizeBase: textRules.fontSize,
+			},
+			theme: isColorLight( appearanceUtils, backgroundColor )
+				? 'stripe'
+				: 'night',
+			labels: 'above',
+			rules: {
+				'.Text': textRules,
+				'.Text--redirect': textRules,
+			},
+		} );
+	}
+
 	function getStripeElementsOptions( config, location ) {
 		var appearanceUtils =
 			( window.wc && window.wc.woopayments && window.wc.woopayments.appearance ) ||
@@ -85,9 +247,16 @@
 			location,
 			config.stylesCacheVersion
 		);
-		if ( appearance ) {
-			options.appearance = appearance;
+		if ( ! appearance ) {
+			appearance = getAppearanceFromPage( appearanceUtils, location );
+			appearanceUtils.dispatchAppearanceEvent( appearance, location );
+			appearanceUtils.setCachedAppearance(
+				location,
+				config.stylesCacheVersion,
+				appearance
+			);
 		}
+		options.appearance = appearance;
 
 		fontRules = appearanceUtils.getFontRulesFromPage();
 		if ( fontRules.length ) {

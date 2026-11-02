@@ -229,6 +229,98 @@ describe( 'WooPayments BNPL payment method messaging', () => {
 		);
 	} );
 
+	// Client 11.2.0 product-details/bnpl-site-messaging/index.js:66-73: with nothing cached, the appearance is computed
+	// from the page with the location's selectors (checkout/upe-styles/index.js:91-133), announced and cached. The page
+	// has a classic cart quantity first and a product form quantity after it, each in its own colour, so each location
+	// shows which one it read.
+	describe( 'appearance on a cache miss', () => {
+		const pageMarkup =
+			'<style>' +
+			'body { background-color: rgb(20, 20, 20); }' +
+			'#cart-quantity { color: rgb(200, 10, 10); font-size: 13px; }' +
+			'#product-quantity { color: rgb(10, 200, 10); font-size: 17px; }' +
+			'</style>' +
+			'<div class="cart"><div class="quantity" id="cart-quantity"></div></div>' +
+			'<div class="product"><form class="cart"><div class="quantity" id="product-quantity"></div></form></div>' +
+			'<div class="cart_totals"><div id="payment-method-message"></div></div>';
+
+		// Earlier tests compute and cache an appearance for the default markup.
+		beforeEach( () => window.localStorage.clear() );
+
+		test.each( [
+			[ 'bnpl_product_page', false, 'rgb(10, 200, 10)', '17px' ],
+			[ 'bnpl_classic_cart', true, 'rgb(200, 10, 10)', '13px' ],
+		] )(
+			'computes, announces and caches the %s appearance',
+			async ( location, isCart, colorText, fontSizeBase ) => {
+				const announced = jest.fn();
+				document.addEventListener( 'wcpay_elements_appearance', announced );
+				document.body.innerHTML = pageMarkup;
+				setMessagingConfig( { isCart, cartTotal: 2000 } );
+
+				try {
+					require( '../woopayments-payment-method-messaging' );
+					await flushPromises();
+				} finally {
+					document.removeEventListener(
+						'wcpay_elements_appearance',
+						announced
+					);
+				}
+
+				const appearance = stripeElements.mock.calls[ 0 ][ 0 ].appearance;
+				expect( appearance ).toMatchObject( {
+					theme: 'night',
+					variables: {
+						colorBackground: 'rgb(20, 20, 20)',
+						colorText,
+						fontSizeBase,
+					},
+					rules: { '.Text': { color: colorText } },
+				} );
+				expect( announced.mock.calls[ 0 ][ 0 ].detail ).toEqual( {
+					appearance,
+					elementsLocation: location,
+				} );
+				expect(
+					JSON.parse(
+						window.localStorage.getItem( 'wcpay_appearance_' + location )
+					)
+				).toEqual( { version: '1', appearance } );
+			}
+		);
+
+		test( 'uses the cached appearance and computes nothing', async () => {
+			const cached = {
+				variables: { colorText: 'rgb(1, 2, 3)' },
+				rules: { '.Input': { color: 'rgb(1, 2, 3)' } },
+			};
+			window.localStorage.setItem(
+				'wcpay_appearance_bnpl_product_page',
+				JSON.stringify( { version: '1', appearance: cached } )
+			);
+			const announced = jest.fn();
+			document.addEventListener( 'wcpay_elements_appearance', announced );
+			document.body.innerHTML = pageMarkup;
+
+			try {
+				require( '../woopayments-payment-method-messaging' );
+				await flushPromises();
+			} finally {
+				document.removeEventListener(
+					'wcpay_elements_appearance',
+					announced
+				);
+				window.localStorage.clear();
+			}
+
+			expect( stripeElements.mock.calls[ 0 ][ 0 ].appearance ).toEqual(
+				cached
+			);
+			expect( announced ).not.toHaveBeenCalled();
+		} );
+	} );
+
 	test( 'mounts the messaging element once Stripe.js loads after the messaging script', async () => {
 		jest.useFakeTimers();
 		const loadedStripe = window.Stripe;
