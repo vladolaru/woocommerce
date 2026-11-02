@@ -2570,9 +2570,10 @@
 			return true;
 		}
 
-		// Client 11.1.0 classic/payment-processing.js:82-108, :449-497: block the form before tokenizing, so core's
-		// checkout.js ignores another click while the form has `processing`; release it on failure; drop
-		// `processing` just before the intentional resubmit, which core would otherwise ignore.
+		// Client 11.2.0 classic/payment-processing.js:82-108, :449-498: block the form before tokenizing: on checkout,
+		// core's checkout.js ignores another click while the form has `processing`; on order-pay and change payment
+		// method the overlay stops the click. Release it on failure; drop `processing` just before the intentional
+		// resubmit, which core would otherwise ignore.
 		form.addClass( 'processing' ).block( {
 			message: null,
 			overlayCSS: {
