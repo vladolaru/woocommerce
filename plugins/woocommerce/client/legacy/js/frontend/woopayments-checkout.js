@@ -3036,7 +3036,13 @@
 								return;
 							}
 
-							releaseConfirmationUi();
+							// The form stays blocked while the order page loads, so a second Place order cannot start another
+							// order and charge; it is released if the shopper comes back here from the back-forward cache.
+							window.addEventListener( 'pageshow', function ( event ) {
+								if ( event.persisted ) {
+									releaseConfirmationUi();
+								}
+							} );
 							window.location.href = returnUrl.href;
 						} )
 						.fail( function () {

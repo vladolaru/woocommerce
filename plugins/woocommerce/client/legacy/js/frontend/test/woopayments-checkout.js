@@ -2999,13 +2999,11 @@ describe( 'WooPayments checkout', () => {
 		}
 	);
 
-	test( 'releases once immediately before valid return navigation', async () => {
-		let hashWhenReleased;
-		global.jQuery.checkoutFormResult.unblock.mockImplementationOnce( () => {
-			hashWhenReleased = window.location.hash;
-			checkoutFormState.blocked = false;
-			return global.jQuery.checkoutFormResult;
-		} );
+	// Client 11.2.0 releases the form one microtask after it sets the location (checkout/classic/3ds-flow-handling.js:40-43,
+	// event-handlers.js:69-71), so Place order is live while the order page loads, and a second click can place a second
+	// order. The form stays blocked through the navigation and is released when the page comes back from the
+	// back-forward cache (`pageshow` with `persisted`, https://developer.mozilla.org/docs/Web/API/PageTransitionEvent).
+	test( 'keeps the form blocked while it leaves for the order, releasing it on a back-forward cache return', async () => {
 		mockConfirmationCallbackResponse( {
 			status_code: 200,
 			return_url: window.location.origin + '/#order-received',
@@ -3016,14 +3014,22 @@ describe( 'WooPayments checkout', () => {
 		await flushPromises();
 
 		expect( global.jQuery.post ).toHaveBeenCalledTimes( 1 );
+		expect( window.location.hash ).toBe( '#order-received' );
+		expectClassicCheckoutBlockedOnce();
+
+		window.dispatchEvent(
+			new window.PageTransitionEvent( 'pageshow', { persisted: false } )
+		);
+		expectClassicCheckoutBlockedOnce();
+
+		window.dispatchEvent(
+			new window.PageTransitionEvent( 'pageshow', { persisted: true } )
+		);
 		expectClassicCheckoutReleaseCount( 1 );
-		expectClassicCheckoutBlockCount( 1 );
 		expectClassicCheckoutUiState( false );
 		expect(
 			global.jQuery.checkoutFormResult.removeClass
 		).toHaveBeenCalledWith( 'processing' );
-		expect( hashWhenReleased ).toBe( '' );
-		expect( window.location.hash ).toBe( '#order-received' );
 		expectNoConfirmationResubmit();
 	} );
 
