@@ -2930,8 +2930,11 @@
 		consumeConfirmationHash();
 		blockConfirmationUi();
 
+		// Until Stripe runs the confirmation nothing can have been charged, so these failures release the form with the
+		// error, as client 11.2.0 releases after any outcome (checkout/classic/event-handlers.js:69-71, :108-114).
 		if ( ! config.publishableKey ) {
 			setError( config.confirmationErrorMessage || '' );
+			releaseConfirmationUi();
 			return;
 		}
 
@@ -2941,6 +2944,7 @@
 		} else {
 			waitForStripe().then( confirmWithStripe, function () {
 				setError( config.confirmationErrorMessage || '' );
+				releaseConfirmationUi();
 			} );
 		}
 
@@ -2969,6 +2973,7 @@
 
 			if ( ! confirmationPromise ) {
 				setError( config.confirmationErrorMessage || '' );
+				releaseConfirmationUi();
 				return;
 			}
 

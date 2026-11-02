@@ -2906,7 +2906,7 @@ describe( 'WooPayments checkout', () => {
 		expectNoConfirmationResubmit();
 	} );
 
-	test( 'consumes the hash but stays blocked without a Stripe confirmation capability', async () => {
+	test( 'consumes the hash and releases the form without a Stripe confirmation capability', async () => {
 		delete stripeMock.handleNextAction;
 		setPaymentIntentConfirmationHash();
 
@@ -2914,7 +2914,8 @@ describe( 'WooPayments checkout', () => {
 		await flushPromises();
 
 		expect( window.location.hash ).toBe( '' );
-		expectClassicCheckoutBlockedOnce();
+		expectClassicCheckoutBlockCount( 1 );
+		expectClassicCheckoutReleaseCount( 1 );
 		expect( global.jQuery.post ).not.toHaveBeenCalled();
 		expectNoConfirmationResubmit();
 	} );
@@ -3277,30 +3278,51 @@ describe( 'WooPayments checkout', () => {
 			}
 		);
 
-		// Stripe never ran, so nothing can have been charged: the generic message alone.
+		// Stripe never ran, so nothing can have been charged: the form is released with the generic message alone, as
+		// client 11.2.0 releases after any outcome (checkout/classic/event-handlers.js:69-71, :108-114).
 		test.each( [
 			[
 				'there is no publishable key',
-				() => {
+				async () => {
 					window.wc_woopayments_checkout_params.publishableKey = '';
+					require( '../woopayments-checkout' );
+					await flushPromises();
+				},
+			],
+			[
+				'Stripe.js never loads',
+				async () => {
+					jest.useFakeTimers();
+					delete window.Stripe;
+					require( '../woopayments-checkout' );
+					// waitForStripe() gives up after 600 seconds.
+					jest.advanceTimersByTime( 601 * 1000 );
+					await jest.advanceTimersByTimeAsync( 0 );
 				},
 			],
 			[
 				'Stripe.js cannot confirm',
-				() => {
+				async () => {
 					delete stripeMock.handleNextAction;
+					require( '../woopayments-checkout' );
+					await flushPromises();
 				},
 			],
-		] )( 'is not added when %s', async ( _branch, arrange ) => {
-			arrange();
-			setPaymentIntentConfirmationHash();
+		] )(
+			'is not added, and the form is released, when %s',
+			async ( _branch, run ) => {
+				setPaymentIntentConfirmationHash();
 
-			require( '../woopayments-checkout' );
-			await flushPromises();
+				await run();
 
-			expect( getErrorText() ).toBe( GENERIC );
-			expectClassicCheckoutBlockedOnce();
-		} );
+				expect( getErrorText() ).toBe( GENERIC );
+				expectClassicCheckoutBlockCount( 1 );
+				expectClassicCheckoutReleaseCount( 1 );
+				expectClassicCheckoutUiState( false );
+				expect( global.jQuery.post ).not.toHaveBeenCalled();
+				expectNoConfirmationResubmit();
+			}
+		);
 	} );
 
 	test( 'keeps the form blocked while it leaves for the order, releasing it on a back-forward cache return', async () => {
