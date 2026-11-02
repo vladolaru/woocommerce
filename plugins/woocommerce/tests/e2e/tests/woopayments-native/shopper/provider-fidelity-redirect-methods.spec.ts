@@ -411,6 +411,14 @@ test.describe( 'WooPayments native redirect-method provider outcome fidelity', (
 							`label[for="payment_method_${ ALIPAY.gatewayId }"]`
 						)
 					).toHaveText( ALIPAY.label );
+					// The Alipay element sizes its box once its content renders,
+					// which moves Place order; wait for that content first.
+					await page
+						.frameLocator(
+							'.payment_box.payment_method_woocommerce_payments_alipay iframe'
+						)
+						.getByText( /redirected/i )
+						.waitFor();
 
 					let checkoutRequestCount = 0;
 					const checkoutResponses: Array<
