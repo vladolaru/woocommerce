@@ -1580,8 +1580,13 @@
 			isWooPayPhoneValid()
 		);
 
+		// An empty field posts an empty number, as client 11.2.0's phone input does (settings/phone-input/index.tsx:139),
+		// so the server refuses an opted-in checkout with no phone (maybe_show_woopay_phone_number_error()); normalizing
+		// it would post '+1'.
 		if ( fullPhoneField && phoneField ) {
-			fullPhoneField.value = normalizeWooPayPhone( phoneField.value );
+			fullPhoneField.value = phoneField.value.trim()
+				? normalizeWooPayPhone( phoneField.value )
+				: '';
 		}
 
 		if ( isPhoneValid && ! hasPhoneForMobileEnter ) {

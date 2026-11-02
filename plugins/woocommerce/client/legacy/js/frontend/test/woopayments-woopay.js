@@ -1844,6 +1844,29 @@ describe( 'WooPayments WooPay checkout', () => {
 		} );
 	} );
 
+	// Client 11.2.0: an empty phone input leaves the hidden full number empty (settings/phone-input/index.tsx:139), and
+	// the server refuses the opted-in checkout (includes/class-wc-payments.php:2204-2210).
+	test( 'posts an empty WooPay number while the opted-in phone field is empty', () => {
+		window.wc_woopayments_woopay_params.PRE_CHECK_SAVE_MY_INFO = true;
+		require( '../woopayments-woopay' );
+		const phoneField = document.getElementById( 'woopay_user_phone_field_full' );
+
+		expect( phoneField.value ).toBe( '' );
+		expect( getPostedCheckoutFields() ).toMatchObject( {
+			save_user_in_woopay: 'true',
+			'woopay_user_phone_field[full]': '',
+		} );
+
+		phoneField.value = '(201) 555-0123';
+		phoneField.dispatchEvent( new window.Event( 'input', { bubbles: true } ) );
+		phoneField.value = '  ';
+		phoneField.dispatchEvent( new window.Event( 'input', { bubbles: true } ) );
+
+		expect(
+			getPostedCheckoutFields()[ 'woopay_user_phone_field[full]' ]
+		).toBe( '' );
+	} );
+
 	test( 'keeps the posted WooPay number current as the shopper types', () => {
 		require( '../woopayments-woopay' );
 		const phoneField = document.getElementById( 'woopay_user_phone_field_full' );

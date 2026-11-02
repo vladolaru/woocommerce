@@ -1461,6 +1461,30 @@ class SessionServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should add no WooPay save-user metadata for an opted-in classic checkout that posts an empty phone.
+	 *
+	 * The classic form posts an empty full number for an empty phone field; the checkout is refused before payment
+	 * (SessionController::maybe_show_woopay_phone_number_error()), and the order metadata carries no WooPay keys.
+	 */
+	public function test_adds_no_woopay_metadata_for_an_empty_posted_phone(): void {
+		$this->original_session = WC()->session;
+		WC()->session           = $this->create_session();
+		$original_post          = $_POST; // phpcs:ignore WordPress.Security.NonceVerification.Missing
+		$_POST                  = array(
+			'save_user_in_woopay'     => 'true',
+			'woopay_user_phone_field' => array( 'full' => '' ),
+		);
+
+		try {
+			$metadata = $this->create_service()->maybe_add_woopay_user_metadata( array( 'existing' => 'kept' ), \WC_Helper_Order::create_order() );
+		} finally {
+			$_POST = $original_post;
+		}
+
+		$this->assertSame( array( 'existing' => 'kept' ), $metadata );
+	}
+
+	/**
 	 * @testdox Should add WooPay save-user session data to order metadata.
 	 */
 	public function test_adds_woopay_session_data_to_order_metadata(): void {
