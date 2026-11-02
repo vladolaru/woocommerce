@@ -3355,6 +3355,72 @@ describe( 'WooPayments checkout', () => {
 		expectNoConfirmationResubmit();
 	} );
 
+	// A second confirmation on the same page (a new #wcpay-confirm- hash after a back-forward cache return) must not
+	// leave the first one's listener behind.
+	test( 'keeps one return listener over two confirmations and returns, releasing the form each time', async () => {
+		const addSpy = jest.spyOn( window, 'addEventListener' );
+		const removeSpy = jest.spyOn( window, 'removeEventListener' );
+		// The pageshow listeners attached since the spies started: each added function once, less the removed ones,
+		// replayed in call order.
+		const countPageshowListeners = () => {
+			const toEvents = ( mock, kind ) =>
+				mock.calls.map( ( [ type, listener ], i ) => ( {
+					kind,
+					type,
+					listener,
+					order: mock.invocationCallOrder[ i ],
+				} ) );
+			const attached = new Set();
+			toEvents( addSpy.mock, 'add' )
+				.concat( toEvents( removeSpy.mock, 'remove' ) )
+				.filter( ( { type } ) => 'pageshow' === type )
+				.sort( ( a, b ) => a.order - b.order )
+				.forEach( ( { kind, listener } ) =>
+					'add' === kind
+						? attached.add( listener )
+						: attached.delete( listener )
+				);
+			return attached.size;
+		};
+		const returnFromCache = () =>
+			window.dispatchEvent(
+				new window.PageTransitionEvent( 'pageshow', { persisted: true } )
+			);
+
+		try {
+			mockConfirmationCallbackResponse( {
+				status_code: 200,
+				return_url: window.location.origin + '/#order-received',
+			} );
+			setPaymentIntentConfirmationHash();
+			require( '../woopayments-checkout' );
+			await flushPromises();
+			expect( countPageshowListeners() ).toBe( 1 );
+
+			returnFromCache();
+			expectClassicCheckoutReleaseCount( 1 );
+			expect( countPageshowListeners() ).toBe( 0 );
+
+			mockConfirmationCallbackResponse( {
+				status_code: 200,
+				return_url: window.location.origin + '/#order-received-again',
+			} );
+			setPaymentIntentConfirmationHash();
+			windowEventHandlers.hashchange();
+			await flushPromises();
+			expectClassicCheckoutBlockCount( 2 );
+			expect( countPageshowListeners() ).toBe( 1 );
+
+			returnFromCache();
+			expectClassicCheckoutReleaseCount( 2 );
+			expectClassicCheckoutUiState( false );
+			expect( countPageshowListeners() ).toBe( 0 );
+		} finally {
+			addSpy.mockRestore();
+			removeSpy.mockRestore();
+		}
+	} );
+
 	test( 'preserves SetupIntent confirmation callbacks', async () => {
 		window.location.hash =
 			'#wcpay-confirm-si:123:seti_native_secret_abc:nonce:ctoken_native';

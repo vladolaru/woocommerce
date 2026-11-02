@@ -2880,6 +2880,27 @@
 			: '';
 	}
 
+	// The one listener that releases a confirmed 3DS payment's form on a back-forward cache return. A later confirmation
+	// on the same page replaces it, and it removes itself once it has released the form.
+	var confirmationReturnListener = null;
+
+	function releaseConfirmationOnReturn( release ) {
+		if ( confirmationReturnListener ) {
+			window.removeEventListener( 'pageshow', confirmationReturnListener );
+		}
+
+		confirmationReturnListener = function ( event ) {
+			if ( ! event.persisted ) {
+				return;
+			}
+
+			window.removeEventListener( 'pageshow', confirmationReturnListener );
+			confirmationReturnListener = null;
+			release();
+		};
+		window.addEventListener( 'pageshow', confirmationReturnListener );
+	}
+
 	function confirmRedirectIfPresent() {
 		var confirmation = parseConfirmationHash( window.location.hash || '' );
 		var activePaymentForm;
@@ -3085,11 +3106,7 @@
 
 							// The form stays blocked while the order page loads, so a second Place order cannot start another
 							// order and charge; it is released if the shopper comes back here from the back-forward cache.
-							window.addEventListener( 'pageshow', function ( event ) {
-								if ( event.persisted ) {
-									releaseConfirmationUi();
-								}
-							} );
+							releaseConfirmationOnReturn( releaseConfirmationUi );
 							window.location.href = returnUrl.href;
 						} )
 						// The store answers its refusals with a non-2xx status and { error: { message } }.
