@@ -166,16 +166,26 @@ class StripeBillingMigratorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should move a past next payment date to the end of the Stripe subscription's current period.
+	 * @testdox Should move a past next payment date to the Stripe subscription's period end only while that is in the future ($period_end_offset s from now).
+	 * @testWith [2592000, true]
+	 *           [-3600, false]
+	 *
+	 * The period end is set relative to now over the recorded subscription, whose own stamp has passed. With no
+	 * WooCommerce Subscriptions date helpers loaded, a past period end leaves the next payment date as it was.
+	 *
+	 * @param int  $period_end_offset Seconds from now to the Stripe subscription's current period end.
+	 * @param bool $is_moved          Whether the next payment date moves to the period end.
 	 */
-	public function test_moves_a_past_next_payment_date_to_the_stripe_period_end(): void {
-		list( $sut, $api ) = $this->build_migrator();
-		$subscription      = $this->create_stripe_billed_subscription( self::MAIN_SUBSCRIPTION_ID, array( 'next_payment' => gmdate( 'Y-m-d H:i:s', time() - DAY_IN_SECONDS ) ) );
-		$api->method( 'get_subscription' )->willReturn( $this->active_wcpay_subscription );
+	public function test_moves_a_past_next_payment_date_only_to_a_future_stripe_period_end( int $period_end_offset, bool $is_moved ): void {
+		list( $sut, $api )  = $this->build_migrator();
+		$next_payment       = gmdate( 'Y-m-d H:i:s', time() - DAY_IN_SECONDS );
+		$subscription       = $this->create_stripe_billed_subscription( self::MAIN_SUBSCRIPTION_ID, array( 'next_payment' => $next_payment ) );
+		$current_period_end = time() + $period_end_offset;
+		$api->method( 'get_subscription' )->willReturn( array( 'current_period_end' => $current_period_end ) + $this->active_wcpay_subscription );
 
 		$sut->migrate_wcpay_subscription( $subscription->get_id() );
 
-		$this->assertSame( gmdate( 'Y-m-d H:i:s', (int) $this->active_wcpay_subscription['current_period_end'] ), wc_get_order( $subscription->get_id() )->get_meta( '_schedule_next_payment' ) );
+		$this->assertSame( $is_moved ? gmdate( 'Y-m-d H:i:s', $current_period_end ) : $next_payment, wc_get_order( $subscription->get_id() )->get_meta( '_schedule_next_payment' ) );
 	}
 
 	/**
