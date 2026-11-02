@@ -16,6 +16,7 @@ import {
 	getFontRulesFromPage,
 	setCachedAppearance,
 } from '../upe-styles';
+import { waitForStripe } from '../wait-for-stripe';
 
 const APPEARANCE_LOCATION = 'bnpl_cart_block';
 
@@ -85,6 +86,31 @@ export const BNPLCartMessaging = ( { cart, context } ) => {
 	const amount = getCartAmount( cart );
 	const amountRef = useRef( amount );
 	amountRef.current = amount;
+	const [ isStripeLoaded, setIsStripeLoaded ] = useState(
+		() => typeof window.Stripe === 'function'
+	);
+
+	// Client 11.2.0 waits for Stripe.js through useStripeAsync( api ) (cart/blocks/product-details.js:79,
+	// hooks/use-stripe-async.js, checkout/api/index.js:57-71), so a page that loads it late still shows the message.
+	// The wait stops when the block unmounts.
+	useEffect( () => {
+		if (
+			isStripeLoaded ||
+			context !== 'woocommerce/cart' ||
+			! config.shouldInitializePMME ||
+			! config.publishableKey
+		) {
+			return undefined;
+		}
+
+		const controller = new window.AbortController();
+		waitForStripe( controller.signal ).then(
+			() => setIsStripeLoaded( true ),
+			() => undefined
+		);
+
+		return () => controller.abort();
+	}, [ isStripeLoaded, config, context ] );
 	const [ fontRules ] = useState( () => getFontRulesFromPage() );
 	const [ appearance, setAppearance ] = useState( () =>
 		getCachedAppearance(
@@ -113,7 +139,7 @@ export const BNPLCartMessaging = ( { cart, context } ) => {
 			context !== 'woocommerce/cart' ||
 			! config.shouldInitializePMME ||
 			! config.publishableKey ||
-			! window.Stripe ||
+			! isStripeLoaded ||
 			! mountRef.current ||
 			! hasAppearance( appearance )
 		) {
@@ -151,7 +177,7 @@ export const BNPLCartMessaging = ( { cart, context } ) => {
 			messagingRef.current = null;
 			paymentMethodMessaging.destroy?.();
 		};
-	}, [ appearance, config, context, fontRules ] );
+	}, [ appearance, config, context, fontRules, isStripeLoaded ] );
 
 	// A cart change updates the amount on the mounted element, as client 11.2.0's React Stripe.js element updates its
 	// options in place (cart/blocks/product-details.js:109-125), so the message does not collapse and regrow.

@@ -1,7 +1,7 @@
 /**
  * External dependencies
  */
-import { render, waitFor } from '@testing-library/react';
+import { act, render, waitFor } from '@testing-library/react';
 import { registerPlugin } from '@wordpress/plugins';
 
 /**
@@ -177,6 +177,66 @@ describe( 'WooPayments cart block BNPL messaging', () => {
 			[ { amount: 24690 } ],
 			[ { amount: 37035 } ],
 		] );
+	} );
+
+	// Client 11.2.0 waits for Stripe.js through useStripeAsync( api ) (cart/blocks/product-details.js:79,
+	// hooks/use-stripe-async.js): a deferred Stripe.js still gets the message, built once with the latest total.
+	describe( 'with Stripe.js loading after the cart renders', () => {
+		let loadedStripe;
+
+		beforeEach( () => {
+			jest.useFakeTimers();
+			loadedStripe = window.Stripe;
+			delete window.Stripe;
+		} );
+
+		afterEach( () => {
+			jest.useRealTimers();
+		} );
+
+		const renderCart = ( totalPrice ) => (
+			<BNPLCartMessaging
+				cart={ { cartTotals: { total_price: totalPrice } } }
+				context="woocommerce/cart"
+			/>
+		);
+
+		it( 'creates one element with the latest total once Stripe.js loads, then updates it', async () => {
+			const { rerender } = render( renderCart( '12345' ) );
+			rerender( renderCart( '24690' ) );
+			expect( createElement ).not.toHaveBeenCalled();
+
+			window.Stripe = loadedStripe;
+			await act( async () => {
+				await jest.advanceTimersByTimeAsync( 100 );
+			} );
+			rerender( renderCart( '37035' ) );
+
+			expect( createElement ).toHaveBeenCalledTimes( 1 );
+			expect( createElement ).toHaveBeenCalledWith(
+				'paymentMethodMessaging',
+				expect.objectContaining( { amount: 24690 } )
+			);
+			expect( mountMessagingElement ).toHaveBeenCalledTimes( 1 );
+			expect( updateMessagingElement.mock.calls ).toEqual( [
+				[ { amount: 37035 } ],
+			] );
+			expect( destroyMessagingElement ).not.toHaveBeenCalled();
+		} );
+
+		it( 'creates nothing and stops waiting when the cart unmounts before Stripe.js loads', async () => {
+			const { unmount } = render( renderCart( '12345' ) );
+			unmount();
+			expect( jest.getTimerCount() ).toBe( 0 );
+
+			window.Stripe = loadedStripe;
+			await act( async () => {
+				await jest.advanceTimersByTimeAsync( 100 );
+			} );
+
+			expect( createElement ).not.toHaveBeenCalled();
+			expect( jest.getTimerCount() ).toBe( 0 );
+		} );
 	} );
 
 	it( 'builds a new Stripe instance when the account or locale changes', async () => {

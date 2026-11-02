@@ -11,9 +11,10 @@ export class StripeWaitTimeoutError extends Error {}
 /**
  * Resolve with `window.Stripe` once Stripe.js has defined it.
  *
+ * @param {AbortSignal} [signal] Stops the wait when aborted; the promise then never settles.
  * @return {Promise<Function>} Rejects when Stripe.js has not loaded within 600 seconds.
  */
-export const waitForStripe = () =>
+export const waitForStripe = ( signal ) =>
 	new Promise( ( resolve, reject ) => {
 		if ( typeof window.Stripe === 'function' ) {
 			resolve( window.Stripe );
@@ -33,4 +34,7 @@ export const waitForStripe = () =>
 				);
 			}
 		}, STRIPE_WAIT_INTERVAL );
+		signal?.addEventListener( 'abort', () =>
+			window.clearInterval( timer )
+		);
 	} );
