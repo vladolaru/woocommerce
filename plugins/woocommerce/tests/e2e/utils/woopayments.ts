@@ -233,11 +233,12 @@ async function waitForCardEntry(
 		} );
 	}
 	if ( surface === 'blocks' ) {
+		// A page without the cart store has no update to wait for.
 		await page.waitForFunction(
 			( spinnerSelector ) =>
-				! window.wp.data
-					.select( 'wc/store/cart' )
-					.isCustomerDataUpdating() &&
+				! window.wp?.data
+					?.select( 'wc/store/cart' )
+					?.isCustomerDataUpdating?.() &&
 				! document.querySelector( spinnerSelector ),
 			WOOPAY_EMAIL_CHECK_SPINNER,
 			{ timeout: CARD_ENTRY_READY_TIMEOUT_MS }

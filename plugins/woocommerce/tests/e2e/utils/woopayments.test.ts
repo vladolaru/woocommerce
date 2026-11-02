@@ -221,6 +221,80 @@ test( 'keepingScrollPosition keeps the entry error when the scroll-back fails to
 	).rejects.toBe( entryError );
 } );
 
+type EntryFixtureWindow = { entryLog: string[]; cartUpdating: boolean };
+
+// The Blocks checkout's cart store reports a customer-data update and the WooPay email check shows its spinner; each
+// order of clearing them proves the entry waits for that one last.
+for ( const clearOrder of [
+	[ 'cart idle', 'spinner removed' ],
+	[ 'spinner removed', 'cart idle' ],
+] ) {
+	test( `fillCardDetails on Blocks starts only after the cart update and the email check are done (${ clearOrder.join(
+		', then '
+	) })`, async ( { page } ) => {
+		const loggedFields =
+			CARD_FIELDS_HTML +
+			`<script>
+				document.querySelectorAll( 'input' ).forEach( ( input ) => {
+					input.addEventListener( 'click', () =>
+						parent.entryLog.push( 'click ' + input.id )
+					);
+				} );
+			</script>`;
+		await page.setContent(
+			`<script>
+				window.entryLog = [];
+				window.cartUpdating = true;
+				window.wp = {
+					data: {
+						select: ( store ) =>
+							store === 'wc/store/cart'
+								? { isCustomerDataUpdating: () => window.cartUpdating }
+								: undefined,
+					},
+				};
+			</script>
+			<div><div class="wc-block-components-spinner"></div><input id="email" /></div>
+			<div id="woopayments-blocks-payment-element">
+				<iframe name="__privateStripeFrame123" srcdoc="${ loggedFields.replace(
+					/"/g,
+					'&quot;'
+				) }"></iframe>
+			</div>`
+		);
+
+		const entry = fillCardDetails( page, TEST_CARDS.basic, 'blocks' );
+		entry.catch( () => undefined );
+		for ( const step of clearOrder ) {
+			// Holds each state long enough for an entry that does not wait to have clicked already.
+			await new Promise( ( resolve ) => setTimeout( resolve, 500 ) );
+			await page.evaluate( ( name ) => {
+				const fixture = window as unknown as EntryFixtureWindow;
+				if ( name === 'cart idle' ) {
+					fixture.cartUpdating = false;
+				} else {
+					document
+						.querySelector( '.wc-block-components-spinner' )
+						?.remove();
+				}
+				fixture.entryLog.push( name );
+			}, step );
+		}
+		await entry;
+
+		expect(
+			await page.evaluate(
+				() => ( window as unknown as EntryFixtureWindow ).entryLog
+			)
+		).toEqual( [
+			...clearOrder,
+			'click number',
+			'click expiry',
+			'click cvc',
+		] );
+	} );
+}
+
 test( 'fillCardDetails fails at once when the click leaves another element focused', async ( {
 	page,
 } ) => {
