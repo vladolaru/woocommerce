@@ -456,14 +456,14 @@
 
 	// Core replaces the cart totals on Update cart, message container included. The element moves into the new container
 	// with the new total, so the page keeps one Stripe instance and element once one exists (client 11.2.0 builds a new
-	// pair each time, product-details/index.js:174-190, bnpl-site-messaging/index.js:51-87).
+	// pair each time, product-details/index.js:174-190, bnpl-site-messaging/index.js:51-87). Returns the element it
+	// builds, if it builds one.
 	function remountCartMessage( config, paymentMessageElement ) {
 		var options = getMessagingOptions( config );
 
 		// No element was built at load (no message container then): build one now.
 		if ( ! paymentMessageElement ) {
-			initializeBnplSiteMessaging( config );
-			return;
+			return initializeBnplSiteMessaging( config );
 		}
 
 		paymentMessageElement.unmount();
@@ -552,7 +552,9 @@
 			} )
 				.then( function ( response ) {
 					config.cartTotal = response.total;
-					remountCartMessage( config, paymentMessageElement );
+					paymentMessageElement =
+						remountCartMessage( config, paymentMessageElement ) ||
+						paymentMessageElement;
 					window.setTimeout( function () {
 						$( '.pmme-loading' ).remove();
 						$( '#payment-method-message' ).show();

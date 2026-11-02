@@ -610,6 +610,40 @@ describe( 'WooPayments BNPL payment method messaging', () => {
 		expect( unmountElement ).not.toHaveBeenCalled();
 	} );
 
+	test( 'keeps the one element built on the first cart update when the page loaded without a message container', async () => {
+		document.body.innerHTML =
+			'<div class="cart_totals"><table class="shop_table"></table></div>';
+		setMessagingConfig( { isCart: true, cartTotal: 2000 } );
+		jest.useFakeTimers();
+
+		require( '../woopayments-payment-method-messaging' );
+		expect( createElement ).not.toHaveBeenCalled();
+
+		// Each update ends in a new element (Stripe called) or an update of the kept one.
+		const remounts = () =>
+			window.Stripe.mock.calls.length + updateElement.mock.calls.length;
+		for ( const [ index, total ] of [ 4500, 6000 ].entries() ) {
+			ajaxResponses.wcpay_get_cart_total = { total };
+			replaceCartTotals();
+			trigger( 'body', 'updated_cart_totals' );
+			await waitUntil( () => remounts() === index + 1, {
+				fakeTimers: true,
+			} );
+			await jest.advanceTimersByTimeAsync( 1000 );
+		}
+
+		expect( window.Stripe ).toHaveBeenCalledTimes( 1 );
+		expect( createElement ).toHaveBeenCalledTimes( 1 );
+		expect( createElement ).toHaveBeenCalledWith(
+			'paymentMethodMessaging',
+			expect.objectContaining( { amount: 4500 } )
+		);
+		expect( updateElement ).toHaveBeenLastCalledWith( {
+			amount: 6000,
+			currency: 'USD',
+		} );
+	} );
+
 	// The space the classic cart message takes is kept on .cart-collaterals for the stylesheet: its height, the Stripe
 	// frame's height and the loader margin, as client 11.2.0 measures them (product-details/bnpl-site-messaging/
 	// index.js:144-197), written again each time the frame grows.
