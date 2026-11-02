@@ -2813,15 +2813,21 @@
 			: config.confirmationErrorMessage || '';
 	}
 
-	function isRetrySafePaymentIntentError( error ) {
-		var paymentIntent =
-			error && typeof error === 'object' ? error.payment_intent : null;
+	// A confirmation error is retry-safe when its payment or setup intent waits for a new payment method or is canceled:
+	// no money moved, so the form is released, as the client always does (client 11.2.0
+	// checkout/classic/event-handlers.js:69-71, :108-114). Any other intent state, or an error with no intent, may have
+	// charged, so the form stays blocked.
+	function isRetrySafeIntentError( error ) {
+		var intent =
+			error && typeof error === 'object'
+				? error.payment_intent || error.setup_intent
+				: null;
 
 		return (
-			paymentIntent &&
-			typeof paymentIntent === 'object' &&
-			( paymentIntent.status === 'requires_payment_method' ||
-				paymentIntent.status === 'canceled' )
+			intent &&
+			typeof intent === 'object' &&
+			( intent.status === 'requires_payment_method' ||
+				intent.status === 'canceled' )
 		);
 	}
 
@@ -2954,7 +2960,7 @@
 							);
 						}
 
-						if ( isRetrySafePaymentIntentError( result.error ) ) {
+						if ( isRetrySafeIntentError( result.error ) ) {
 							releaseConfirmationUi();
 						}
 						return;

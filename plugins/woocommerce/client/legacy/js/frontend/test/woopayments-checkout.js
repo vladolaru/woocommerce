@@ -2808,6 +2808,47 @@ describe( 'WooPayments checkout', () => {
 		}
 	);
 
+	// A free-trial subscription or a payment method change confirms a SetupIntent (`#wcpay-confirm-si`, no confirmation
+	// token, so handleNextAction). Client 11.2.0 releases the form after any 3DS outcome
+	// (checkout/classic/event-handlers.js:69-71, :108-114); a SetupIntent waiting for a new payment method or canceled
+	// moved no money, so the form is released too, and any other state stays blocked as for a PaymentIntent.
+	test.each( [
+		[ 'requires_payment_method', true ],
+		[ 'canceled', true ],
+		[ 'succeeded', false ],
+	] )(
+		'releases classic checkout after a failed SetupIntent confirmation in %s: %p',
+		async ( status, released ) => {
+			stripeMock.handleNextAction.mockResolvedValueOnce( {
+				error: {
+					message:
+						'We are unable to authenticate your payment method. Please choose a different payment method and try again.',
+					setup_intent: {
+						id: 'seti_failed',
+						status,
+					},
+				},
+			} );
+			window.location.hash =
+				'#wcpay-confirm-si:123:seti_failed_secret_abc:nonce';
+
+			require( '../woopayments-checkout' );
+			await flushPromises();
+
+			expect( global.jQuery.post ).toHaveBeenCalledWith(
+				'https://example.test/admin-ajax.php',
+				expect.objectContaining( {
+					action: 'update_order_status',
+					intent_id: 'seti_failed',
+				} )
+			);
+			expectClassicCheckoutBlockCount( 1 );
+			expectClassicCheckoutReleaseCount( released ? 1 : 0 );
+			expectClassicCheckoutUiState( ! released );
+			expectNoConfirmationResubmit();
+		}
+	);
+
 	test( 'keeps scalar Stripe errors non-reentrant', async () => {
 		stripeMock.handleNextAction.mockResolvedValueOnce( {
 			error: 'Authentication failed.',
