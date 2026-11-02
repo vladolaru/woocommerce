@@ -80,8 +80,8 @@ export const handleEmailInput = ( args, woopayEmailInput, tracksUserId ) => {
 	iframeArrow.setAttribute( 'aria-hidden', 'true' );
 	iframeArrow.classList.add( 'arrow' );
 
-	// A back-button return from WooPay (or ?skip_woopay=true) must not bounce the shopper straight back; the cookie
-	// extends the skip to the whole session.
+	// Any back-button load of this page, ?skip_woopay=true or the skip cookie must not bounce the shopper straight back
+	// to WooPay, as on the client; the cookie extends the skip to the whole session.
 	const searchParams = new URLSearchParams( window.location.search );
 	const isSkipWoopayCookieSet = shouldSkipWooPay();
 	const customerClickedBackButton =
@@ -303,7 +303,8 @@ export const handleEmailInput = ( args, woopayEmailInput, tracksUserId ) => {
 		}
 	} );
 
-	// Placing the order before the lookup returns cancels the WooPay request and closes the iframe.
+	// Placing the order cancels the WooPay lookup and closes the iframe; the one controller also cancels every later
+	// lookup on this page, as the client's does.
 	const abortController = window.AbortController
 		? new window.AbortController()
 		: null;
@@ -517,7 +518,8 @@ export const handleEmailInput = ( args, woopayEmailInput, tracksUserId ) => {
 	}
 
 	if ( customerClickedBackButton ) {
-		// The shopper returned via the back button: they exist. Wait for the window to settle before announcing it.
+		// A back-button load or the skip cookie counts as a WooPay user, as on the client: the save-my-info offer hides.
+		// Wait for the window to settle before announcing it.
 		setTimeout( () => {
 			dispatchUserExistEvent( true );
 		}, 2000 );

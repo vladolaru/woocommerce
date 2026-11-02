@@ -1218,7 +1218,8 @@
 
 				setWooPayRequesting( false );
 				// A failed woocommerce_add_to_cart_validation answers 400 { error: true, submit: true }: submit the product
-				// form so the extension's own notice shows, as client 11.1.0 does (woopay-express-checkout-button.js:186-196).
+				// form, as client 11.2.0 does (woopay-express-checkout-button.js:186-196). A simple product's form posts no
+				// add-to-cart this way, so only a form that carries it as an input shows the extension's notice.
 				if ( getAddToCartFailure( jqXHR ).submit ) {
 					form = getProductFormElement();
 					if ( form ) {
@@ -1247,8 +1248,8 @@
 	}
 
 	// Client 11.2.0 woopay-express-checkout-button.js:232-234, :445-488: while the WooPay request runs, the button shows a
-	// spinner in place of its content and reads as busy. It stays focusable, as the Blocks button does; a click while
-	// busy is ignored by initWooPay().
+	// spinner in place of its content and reads as busy. It stays focusable, as the Blocks <button> variant does; a click
+	// while busy is ignored by initWooPay().
 	function setWooPayRequesting( isRequesting ) {
 		if ( isWooPayRequesting === isRequesting ) {
 			return;
@@ -1485,8 +1486,9 @@
 		);
 	}
 
-	// A hidden offer posts nothing with the order. Consent travels with the form only, so nothing else needs clearing
-	// (client 11.1.0 checkout-page-save-user.js:158-160 sends session requests from Blocks only).
+	// A hidden offer posts nothing with the order. The classic offer posts its consent with the form only; the server
+	// also reads a WooPay session value, which only the Blocks save-user section writes (client 11.2.0
+	// checkout-page-save-user.js:158-160 sends session requests from Blocks only).
 	function updateSaveUserVisibility() {
 		var container = document.getElementById( 'wcpay-woopay-save-user' );
 		var isApplicable = isSaveUserOfferApplicable();
