@@ -1057,6 +1057,41 @@
 		);
 	}
 
+	// Releases the busy WooPay button when the shopper comes back to the page from the back-forward cache. A page load
+	// that is not a return leaves it in place.
+	function releaseWooPayOnReturn( event ) {
+		if ( ! event || ! event.persisted ) {
+			return;
+		}
+
+		window.removeEventListener( 'pageshow', releaseWooPayOnReturn );
+		setWooPayRequesting( false );
+	}
+
+	// The hosted WooPay address the page leaves for, or '' when it would not leave: not http or https, or the current
+	// document with another hash.
+	function getWooPayDepartureUrl( redirectUrl ) {
+		var url;
+
+		try {
+			url = new window.URL(
+				appendRedirectionParams( redirectUrl ),
+				window.location.href
+			);
+		} catch ( error ) {
+			return '';
+		}
+
+		if ( 'http:' !== url.protocol && 'https:' !== url.protocol ) {
+			return '';
+		}
+		if ( url.href.split( '#' )[ 0 ] === window.location.href.split( '#' )[ 0 ] ) {
+			return '';
+		}
+
+		return url.href;
+	}
+
 	// Client 11.2.0 woopay-express-checkout-button.js:254-337: an answer without a session shows the error and sends the
 	// next click to the OTP flow; a request with no answer or a Connect that does not answer shows the error and keeps
 	// this flow.
@@ -1081,6 +1116,8 @@
 			sendPreemptiveSessionDataToWooPay( response ).then( function (
 				sessionResponse
 			) {
+				var departureUrl;
+
 				if ( sessionResponse && sessionResponse.is_error ) {
 					isWooPayOtpFlowNext = true;
 					continueWooPay();
@@ -1092,15 +1129,22 @@
 					return;
 				}
 
+				departureUrl = getWooPayDepartureUrl( sessionResponse.redirect_url );
+				if ( ! departureUrl ) {
+					showWooPaySessionError();
+					return;
+				}
+
 				// The button stays busy while the page leaves, so a second click cannot start another session, as client
 				// 11.2.0 sets the location without clearing its loading state (woopay-express-checkout-button.js:279-282,
-				// :321-324); a return from the back-forward cache releases it.
-				window.addEventListener( 'pageshow', function ( event ) {
-					if ( event.persisted ) {
-						setWooPayRequesting( false );
-					}
-				} );
-				navigate( appendRedirectionParams( sessionResponse.redirect_url ) );
+				// :321-324); a return from the back-forward cache releases it. One listener, however many attempts.
+				window.addEventListener( 'pageshow', releaseWooPayOnReturn );
+				try {
+					navigate( departureUrl );
+				} catch ( error ) {
+					window.removeEventListener( 'pageshow', releaseWooPayOnReturn );
+					showWooPaySessionError();
+				}
 			} );
 		} );
 

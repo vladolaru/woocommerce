@@ -2009,6 +2009,127 @@ describe( 'WooPayments WooPay checkout', () => {
 			expectBusy( false );
 		} );
 
+		// How many pageshow listeners are attached to the window now, counting from the time this is called: each added
+		// function once, as addEventListener does, less the removed ones, replayed in call order. The adds come from the
+		// suite's window.addEventListener spy (removeMessageListenersAfterEach); the remove spy goes after each test.
+		let removeSpy = null;
+
+		afterEach( () => {
+			if ( removeSpy ) {
+				removeSpy.mockRestore();
+				removeSpy = null;
+			}
+		} );
+
+		function trackPageshowListeners() {
+			const addMock = window.addEventListener.mock;
+			const firstAdd = addMock.calls.length;
+			removeSpy = jest.spyOn( window, 'removeEventListener' );
+
+			return () => {
+				const toEvents = ( mock, from, kind ) =>
+					mock.calls.slice( from ).map( ( [ type, listener ], i ) => ( {
+						kind,
+						type,
+						listener,
+						order: mock.invocationCallOrder[ from + i ],
+					} ) );
+				const attached = new Set();
+				toEvents( addMock, firstAdd, 'add' )
+					.concat( toEvents( removeSpy.mock, 0, 'remove' ) )
+					.filter( ( { type } ) => 'pageshow' === type )
+					.sort( ( a, b ) => a.order - b.order )
+					.forEach( ( { kind, listener } ) =>
+						'add' === kind
+							? attached.add( listener )
+							: attached.delete( listener )
+					);
+				return attached.size;
+			};
+		}
+
+		async function answerWithRedirect( redirectUrl ) {
+			getButton().click();
+			await flushPromises();
+			answerSession.done( {
+				blog_id: '12345',
+				data: { session: 'session', iv: 'iv', hash: 'hash' },
+			} );
+			document
+				.getElementById( 'woopay-connect-iframe' )
+				.dispatchEvent( new window.Event( 'load' ) );
+			await flushPromises();
+			postFromWooPay( {
+				action: 'set_preemptive_session_data_success',
+				value: { redirect_url: redirectUrl },
+			} );
+			await flushPromises();
+		}
+
+		const returnFromCache = () =>
+			window.dispatchEvent(
+				new window.PageTransitionEvent( 'pageshow', { persisted: true } )
+			);
+
+		// Assigning one of these keeps the page, so no return would ever release the button.
+		test.each( [
+			[ 'the current page with a hash', '#' ],
+			[ 'another hash on the current page', '#woopay' ],
+			[ 'a script address', 'javascript:void(0)' ],
+			// appendRedirectionParams() cannot parse it, so building the address throws.
+			[
+				'an order-pay address that does not parse',
+				'http://[',
+				{ pay_for_order: 'true', order_id: '7', key: 'wc_order_key' },
+			],
+		] )(
+			'leaves the button retryable when hosted WooPay answers with %s',
+			async ( _label, redirectUrl, orderPay = {} ) => {
+				Object.assign( window.wc_woopayments_woopay_params, orderPay );
+				const { __test__ } = require( '../woopayments-woopay' );
+				const navigate = jest.fn();
+				__test__.setNavigate( navigate );
+				const countListeners = trackPageshowListeners();
+
+				await answerWithRedirect( redirectUrl );
+
+				expect( navigate ).not.toHaveBeenCalled();
+				expectBusy( false );
+				expect( countListeners() ).toBe( 0 );
+			}
+		);
+
+		test( 'keeps one return listener over two departures and returns, releasing the button each time', async () => {
+			const { __test__ } = require( '../woopayments-woopay' );
+			const navigate = jest.fn();
+			__test__.setNavigate( navigate );
+			const countListeners = trackPageshowListeners();
+
+			for ( const attempt of [ 1, 2 ] ) {
+				await answerWithRedirect( 'https://pay.woo.test/checkout/session' );
+				expect( navigate ).toHaveBeenCalledTimes( attempt );
+				expectBusy( true );
+				expect( countListeners() ).toBe( 1 );
+
+				returnFromCache();
+				expectBusy( false );
+				expect( countListeners() ).toBe( 0 );
+			}
+		} );
+
+		test( 'releases the button and drops the return listener when the navigation fails', async () => {
+			const { __test__ } = require( '../woopayments-woopay' );
+			__test__.setNavigate( () => {
+				throw new Error( 'Navigation blocked' );
+			} );
+			const countListeners = trackPageshowListeners();
+
+			await answerWithRedirect( 'https://pay.woo.test/checkout/session' );
+
+			expectBusy( false );
+			expect( countListeners() ).toBe( 0 );
+		} );
+
 		test( 'stays busy while the page leaves for hosted WooPay, and clears on a back-forward cache return', async () => {
 			const { __test__ } = require( '../woopayments-woopay' );
 			const navigate = jest.fn();
