@@ -74,6 +74,20 @@
 		line-height: 1;
 	}
 
+	// Client 11.2.0 express-button/style.scss:74-104: the preferred card's brand image, sized to the button.
+	img.woopay-button-card-brand {
+		height: 18px;
+		width: auto;
+	}
+
+	&[data-size="small"] img.woopay-button-card-brand {
+		height: 14px;
+	}
+
+	&[data-size="large"] img.woopay-button-card-brand {
+		height: 22px;
+	}
+
 	svg {
 		display: inline-block;
 		flex: 0 0 auto;

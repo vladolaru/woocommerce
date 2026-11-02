@@ -66,6 +66,13 @@ function getPostedCheckoutFields() {
 	return fields;
 }
 
+const summarizeCardBrand = ( element ) => ( {
+	tag: element.tagName,
+	src: element.getAttribute( 'src' ),
+	alt: element.getAttribute( 'alt' ),
+	text: element.textContent,
+} );
+
 describe( 'WooPayments WooPay checkout', () => {
 	// jsdom defines `contentWindow` as an accessor on HTMLIFrameElement.prototype; tests that stub it put jsdom's back.
 	const nativeContentWindow = Object.getOwnPropertyDescriptor(
@@ -983,6 +990,50 @@ describe( 'WooPayments WooPay checkout', () => {
 			expect( button.textContent ).toContain( '4242' );
 			rectSpy.mockRestore();
 		} );
+
+		// Client 11.2.0 woopay-express-checkout-button.js:383-412: the brand as an image; here the checkout's card label
+		// image, and the name as text for a brand with none.
+		test.each( [
+			[
+				'visa',
+				{
+					tag: 'IMG',
+					src: 'https://example.test/visa-color.svg',
+					alt: 'Visa',
+					text: '',
+				},
+			],
+			[
+				'diners',
+				{ tag: 'SPAN', src: null, alt: null, text: 'Diners Club' },
+			],
+		] )(
+			'shows the preferred %s card as its brand image when the checkout has one',
+			( brand, expected ) => {
+				const rectSpy = jest
+					.spyOn( window.HTMLElement.prototype, 'getBoundingClientRect' )
+					.mockReturnValue( { width: 220 } );
+				window.wc_woopayments_woopay_params.cardBrandIcons = [
+					{
+						id: 'visa',
+						alt: 'Visa',
+						src: 'https://example.test/visa-color.svg',
+					},
+				];
+				window.localStorage.setItem(
+					'woopay_preferred_card',
+					JSON.stringify( { brand, last4: '4242' } )
+				);
+
+				require( '../woopayments-woopay' );
+
+				const brandElement = document.querySelector(
+					'#wcpay-woopay-button .woopay-button-card-brand'
+				);
+				expect( summarizeCardBrand( brandElement ) ).toEqual( expected );
+				rectSpy.mockRestore();
+			}
+		);
 
 		// Client 11.1.0 only shows the preferred card once the button measures
 		// at least 220px wide; below that it falls back to the plain WooPay

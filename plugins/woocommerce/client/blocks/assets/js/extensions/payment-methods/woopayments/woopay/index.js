@@ -307,6 +307,19 @@ const getWooPayButtonAriaLabel = ( type, preferredCard ) => {
 	return getWooPayButtonLabel( type );
 };
 
+// Client 11.2.0 woopay-express-checkout-button.js:383-412 shows the preferred card's brand as an image. The image is the
+// one the card method shows for the card label (paymentMethodsConfig.card.cardBrandIcons); a brand with none keeps its
+// name as text.
+const getPreferredCardIconUrl = ( preferredCard ) => {
+	const brand = normalizeCardBrand( preferredCard.brand );
+	const icons = settings.paymentMethodsConfig?.card?.cardBrandIcons;
+	const icon = Array.isArray( icons )
+		? icons.find( ( entry ) => entry?.id === brand )
+		: null;
+
+	return typeof icon?.src === 'string' ? icon.src : '';
+};
+
 const WooPayButtonContent = ( { buttonSettings, preferredCard } ) => {
 	const type = buttonSettings.type || 'default';
 	const prefix = getWooPayButtonPrefix( type );
@@ -322,9 +335,20 @@ const WooPayButtonContent = ( { buttonSettings, preferredCard } ) => {
 					<Icon />
 				</span>
 				<span className="woopay-button-separator" aria-hidden="true" />
-				<span className="woopay-button-card-brand" aria-hidden="true">
-					{ getPreferredCardDisplayName( preferredCard ) }
-				</span>
+				{ getPreferredCardIconUrl( preferredCard ) ? (
+					<img
+						className="woopay-button-card-brand"
+						src={ getPreferredCardIconUrl( preferredCard ) }
+						alt={ getPreferredCardDisplayName( preferredCard ) }
+					/>
+				) : (
+					<span
+						className="woopay-button-card-brand"
+						aria-hidden="true"
+					>
+						{ getPreferredCardDisplayName( preferredCard ) }
+					</span>
+				) }
 				<span className="woopay-button-last4">
 					{ preferredCard.last4 }
 				</span>

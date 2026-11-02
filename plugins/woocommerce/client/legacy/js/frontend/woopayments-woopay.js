@@ -144,6 +144,20 @@
 		return brandDisplayNames[ normalizedBrand ] || normalizedBrand;
 	}
 
+	// Client 11.2.0 woopay-express-checkout-button.js:383-412 shows the preferred card's brand as an image. The image is
+	// the one the checkout shows for the card label (cardBrandIcons); a brand with none keeps its name as text.
+	function getPreferredCardIconUrl( preferredCard ) {
+		var brand = normalizeCardBrand( preferredCard.brand );
+		var icon = ( Array.isArray( config.cardBrandIcons )
+			? config.cardBrandIcons
+			: []
+		).filter( function ( entry ) {
+			return entry && entry.id === brand;
+		} )[ 0 ];
+
+		return icon && typeof icon.src === 'string' ? icon.src : '';
+	}
+
 	function getWooPayConnectOrigin() {
 		return getWooPayProtocol().getWooPayHostOrigin( {
 			woopayHost: config.woopayHost,
@@ -1272,6 +1286,7 @@
 		var displayName = preferredCard
 			? getPreferredCardDisplayName( preferredCard )
 			: '';
+		var iconUrl = preferredCard ? getPreferredCardIconUrl( preferredCard ) : '';
 
 		if ( preferredCard ) {
 			return (
@@ -1280,9 +1295,15 @@
 				icon +
 				'</span>' +
 				'<span class="woopay-button-separator" aria-hidden="true"></span>' +
-				'<span class="woopay-button-card-brand" aria-hidden="true">' +
-				escapeHtml( displayName ) +
-				'</span>' +
+				( iconUrl
+					? '<img class="woopay-button-card-brand" src="' +
+					  escapeHtml( iconUrl ).replace( /"/g, '&quot;' ) +
+					  '" alt="' +
+					  escapeHtml( displayName ).replace( /"/g, '&quot;' ) +
+					  '" />'
+					: '<span class="woopay-button-card-brand" aria-hidden="true">' +
+					  escapeHtml( displayName ) +
+					  '</span>' ) +
 				'<span class="woopay-button-last4">' +
 				escapeHtml( preferredCard.last4 ) +
 				'</span>' +

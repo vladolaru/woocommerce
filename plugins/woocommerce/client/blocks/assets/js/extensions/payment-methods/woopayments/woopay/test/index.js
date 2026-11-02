@@ -89,6 +89,13 @@ let navigate;
 let getComputedStyleSpy;
 let user;
 
+const summarizeCardBrand = ( element ) => ( {
+	tag: element.tagName,
+	src: element.getAttribute( 'src' ),
+	alt: element.getAttribute( 'alt' ),
+	text: element.textContent,
+} );
+
 describe( 'wc-payment-method-woopayments-woopay', () => {
 	afterEach( () => {
 		Object.defineProperty(
@@ -1285,6 +1292,65 @@ describe( 'wc-payment-method-woopayments-woopay', () => {
 		expect( button ).toHaveTextContent( '4242' );
 		rectSpy.mockRestore();
 	} );
+
+	// Client 11.2.0 woopay-express-checkout-button.js:383-412: the brand as an image; here the card method's card label
+	// image, and the name as text for a brand with none.
+	it.each( [
+		[
+			'visa',
+			{
+				tag: 'IMG',
+				src: 'https://example.test/visa-color.svg',
+				alt: 'Visa',
+				text: '',
+			},
+		],
+		[
+			'diners',
+			{ tag: 'SPAN', src: null, alt: null, text: 'Diners Club' },
+		],
+	] )(
+		'shows the preferred %s card as its brand image when the card method has one',
+		( brand, expected ) => {
+			const rectSpy = jest
+				.spyOn( window.HTMLElement.prototype, 'getBoundingClientRect' )
+				.mockReturnValue( { width: 220 } );
+			getMockPaymentMethodSettings().paymentMethodsConfig = {
+				card: {
+					cardBrandIcons: [
+						{
+							id: 'visa',
+							alt: 'Visa',
+							src: 'https://example.test/visa-color.svg',
+						},
+					],
+				},
+			};
+			window.localStorage.setItem(
+				'woopay_preferred_card',
+				JSON.stringify( { brand, last4: '4242' } )
+			);
+
+			try {
+				registerWooPay();
+				const expressRegistration =
+					registerExpressPaymentMethod.mock.calls[ 0 ][ 0 ];
+				const { container } = render(
+					createElement( expressRegistration.content.type )
+				);
+
+				const brandElement = container.querySelector(
+					'.woopay-button-card-brand'
+				);
+				expect( summarizeCardBrand( brandElement ) ).toEqual(
+					expected
+				);
+			} finally {
+				delete getMockPaymentMethodSettings().paymentMethodsConfig;
+				rectSpy.mockRestore();
+			}
+		}
+	);
 
 	// Client 11.1.0 only shows the preferred card once the button measures at
 	// least 220px wide; below that it falls back to the plain WooPay label

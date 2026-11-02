@@ -258,6 +258,8 @@ class SessionControllerTest extends WC_REST_Unit_Test_Case {
 		$this->assertSame( 'Please select your product options before proceeding.', $this->get_localized_woopay_config()['productOptionsMessage'] );
 		$this->assertSame( 'Sorry, this product is unavailable. Please choose a different combination.', $this->get_localized_woopay_config()['productUnavailableMessage'] );
 		$this->assertStringContainsString( '/assets/client/blocks/wc-woopayments-phone-validation.js', $this->get_localized_woopay_config()['woopayPhoneValidationScriptUrl'] );
+		$card_brand_icons = array_column( $this->get_localized_woopay_config()['cardBrandIcons'], 'src', 'id' );
+		$this->assertStringContainsString( '/assets/images/payment-methods/visa-color.svg', $card_brand_icons['visa'], 'The WooPay button shows the checkout card label images.' );
 	}
 
 	/**

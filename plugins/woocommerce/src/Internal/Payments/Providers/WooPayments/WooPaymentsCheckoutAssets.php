@@ -1487,11 +1487,13 @@ class WooPaymentsCheckoutAssets implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Get shopper-facing card brand icon data.
+	 * Get shopper-facing card brand icon data, for the card label and the WooPay button's preferred card.
+	 *
+	 * @since 11.4.0
 	 *
 	 * @return array<int,array{id:string,alt:string,src:string}>
 	 */
-	private function get_card_brand_icons(): array {
+	public function get_card_brand_icons(): array {
 		$icons = array();
 
 		foreach ( self::get_card_brand_icon_labels() as $brand => $label ) {
