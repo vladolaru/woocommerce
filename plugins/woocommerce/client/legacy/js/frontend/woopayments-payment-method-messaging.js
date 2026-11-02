@@ -110,7 +110,8 @@
 		};
 	}
 
-	function updateLayoutForReadyElement( config, paymentMessageElement ) {
+	// The message takes the bottom margin of the price or the cart totals table above it; returns that margin.
+	function setMessageMargin() {
 		var paymentMessageContainer = getMessageContainer();
 		var priceElement =
 			document.querySelector( '.price' ) ||
@@ -123,7 +124,7 @@
 		var bottomMargin;
 
 		if ( ! paymentMessageContainer || ! referenceElement ) {
-			return;
+			return null;
 		}
 
 		style = window.getComputedStyle( referenceElement );
@@ -133,13 +134,24 @@
 			bottomMargin
 		);
 
+		return bottomMargin;
+	}
+
+	function updateLayoutForReadyElement( config, paymentMessageElement ) {
+		var bottomMargin = setMessageMargin();
+
+		if ( null === bottomMargin ) {
+			return;
+		}
+
 		if (
 			paymentMessageElement &&
 			typeof paymentMessageElement.on === 'function'
 		) {
 			paymentMessageElement.on( 'ready', function () {
-				if ( config.isCart ) {
-					paymentMessageContainer.classList.add( 'ready' );
+				// A cart update moves the element into a new container, so the current one is read here.
+				if ( config.isCart && getMessageContainer() ) {
+					getMessageContainer().classList.add( 'ready' );
 					pinCartMessageHeight( bottomMargin );
 				}
 			} );
@@ -273,6 +285,27 @@
 		return paymentMessageElement;
 	}
 
+	// Core replaces the cart totals on Update cart, message container included. The element moves into the new container
+	// with the new total, so the page keeps one Stripe instance and element (client 11.2.0 builds a new pair each time,
+	// product-details/index.js:174-190, bnpl-site-messaging/index.js:51-87).
+	function remountCartMessage( config, paymentMessageElement ) {
+		var options = getMessagingOptions( config );
+
+		// No element was built at load (no message container then): build one now.
+		if ( ! paymentMessageElement ) {
+			initializeBnplSiteMessaging( config );
+			return;
+		}
+
+		paymentMessageElement.unmount();
+		paymentMessageElement.update( {
+			amount: options.amount,
+			currency: options.currency,
+		} );
+		paymentMessageElement.mount( '#payment-method-message' );
+		setMessageMargin();
+	}
+
 	function bindMessagingEvents( config, paymentMessageElement ) {
 		var quantityInput = $( '.quantity input[type=number]' );
 		var productCurrency = getProductCurrency( config );
@@ -347,15 +380,20 @@
 			$( '#payment-method-message' ).hide();
 			request( config, 'get_cart_total', {
 				security: config.nonce.get_cart_total,
-			} ).then( function ( response ) {
-				config.cartTotal = response.total;
-				initializeBnplSiteMessaging( config );
-				window.setTimeout( function () {
+			} )
+				.then( function ( response ) {
+					config.cartTotal = response.total;
+					remountCartMessage( config, paymentMessageElement );
+					window.setTimeout( function () {
+						$( '.pmme-loading' ).remove();
+						$( '#payment-method-message' ).show();
+						$( '#payment-method-message' ).addClass( 'pmme-updated' );
+					}, 1000 );
+				} )
+				.catch( function () {
+					// Without a new total the message stays hidden rather than show the old amount.
 					$( '.pmme-loading' ).remove();
-					$( '#payment-method-message' ).show();
-					$( '#payment-method-message' ).addClass( 'pmme-updated' );
-				}, 1000 );
-			} );
+				} );
 		} );
 
 		if ( hasVariations ) {

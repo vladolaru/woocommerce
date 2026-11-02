@@ -8,6 +8,7 @@ describe( 'WooPayments BNPL payment method messaging', () => {
 	let eventHandlers;
 	let createElement;
 	let mountElement;
+	let unmountElement;
 	let updateElement;
 	let stripeElements;
 	let ajaxRequests;
@@ -171,12 +172,15 @@ describe( 'WooPayments BNPL payment method messaging', () => {
 			)
 		);
 		mountElement = jest.fn();
+		unmountElement = jest.fn();
 		updateElement = jest.fn();
-		// Stripe.js elements.create( 'paymentMethodMessaging', options ) returns an element with mount(), on() and update()
+		// Stripe.js elements.create( 'paymentMethodMessaging', options ) returns an element with mount(), unmount(), on()
+		// and update() (https://docs.stripe.com/js/element/mount, https://docs.stripe.com/js/element/unmount)
 		// (https://docs.stripe.com/js/elements_object/create_payment_method_messaging_element; client 11.1.0
 		// client/product-details/bnpl-site-messaging/index.js:84-94 creates and mounts it).
 		createElement = jest.fn( () => ( {
 			mount: mountElement,
+			unmount: unmountElement,
 			on: jest.fn(),
 			update: updateElement,
 		} ) );
@@ -423,13 +427,21 @@ describe( 'WooPayments BNPL payment method messaging', () => {
 		} );
 	} );
 
-	test( 'renders the classic cart message again with the refreshed cart total', async () => {
-		// Classic cart totals (templates/cart/cart-totals.php): div.cart_totals holds table.shop_table.
-		document.body.innerHTML =
-			'<div class="cart_totals"><table class="shop_table"></table>' +
-			'<div id="payment-method-message"></div></div>';
+	// Classic cart totals (templates/cart/cart-totals.php): div.cart_totals holds table.shop_table. Core replaces the
+	// whole div.cart_totals on Update cart (cart.js update_cart_totals_div()), message container included.
+	const cartTotalsMarkup =
+		'<div class="cart_totals"><table class="shop_table"></table>' +
+		'<div id="payment-method-message"></div></div>';
+
+	const replaceCartTotals = () => {
+		document.querySelector( '.cart_totals' ).outerHTML = cartTotalsMarkup;
+	};
+
+	// Client 11.2.0 builds a new Stripe instance and element on every Update cart (product-details/index.js:174-190,
+	// bnpl-site-messaging/index.js:51-87); the one element moves into the new totals instead, with the new amount.
+	test( 'moves the one classic cart message into the new totals on each cart update', async () => {
+		document.body.innerHTML = cartTotalsMarkup;
 		setMessagingConfig( { isCart: true, cartTotal: 2000 } );
-		ajaxResponses.wcpay_get_cart_total = { total: 4500 };
 		jest.useFakeTimers();
 
 		require( '../woopayments-payment-method-messaging' );
@@ -438,39 +450,72 @@ describe( 'WooPayments BNPL payment method messaging', () => {
 			expect.objectContaining( { amount: 2000 } )
 		);
 
-		trigger( 'body', 'updated_cart_totals' );
-		const container = getMessageContainer();
-		expect(
-			container.previousElementSibling.classList.contains( 'pmme-loading' )
-		).toBe( true );
-		expect( container.style.display ).toBe( 'none' );
+		for ( const total of [ 4500, 6000 ] ) {
+			ajaxResponses.wcpay_get_cart_total = { total };
+			replaceCartTotals();
+			trigger( 'body', 'updated_cart_totals' );
+			const container = getMessageContainer();
+			expect(
+				container.previousElementSibling.classList.contains(
+					'pmme-loading'
+				)
+			).toBe( true );
+			expect( container.style.display ).toBe( 'none' );
 
-		await waitUntil( () => createElement.mock.calls.length === 2, {
-			fakeTimers: true,
+			await waitUntil(
+				() =>
+					updateElement.mock.calls.some(
+						( [ options ] ) => options.amount === total
+					),
+				{ fakeTimers: true }
+			);
+			// The new element gets a second to render before the placeholder makes way.
+			expect( container.style.display ).toBe( 'none' );
+			await jest.advanceTimersByTimeAsync( 1000 );
+
+			expect( document.querySelector( '.pmme-loading' ) ).toBeNull();
+			expect( container.style.display ).toBe( '' );
+			expect( container.classList.contains( 'pmme-updated' ) ).toBe(
+				true
+			);
+		}
+
+		expect( window.Stripe ).toHaveBeenCalledTimes( 1 );
+		expect( createElement ).toHaveBeenCalledTimes( 1 );
+		expect( updateElement ).toHaveBeenLastCalledWith( {
+			amount: 6000,
+			currency: 'USD',
 		} );
-
-		expect( ajaxRequests ).toHaveLength( 1 );
-		expect( ajaxRequests[ 0 ].endpoint ).toBe( 'wcpay_get_cart_total' );
-		expect( ajaxRequests[ 0 ].formData.get( 'security' ) ).toBe(
-			'cart-nonce'
-		);
-		expect( createElement ).toHaveBeenCalledTimes( 2 );
-		expect( createElement ).toHaveBeenLastCalledWith(
-			'paymentMethodMessaging',
-			expect.objectContaining( { amount: 4500 } )
-		);
-		expect( mountElement ).toHaveBeenCalledTimes( 2 );
+		expect( unmountElement ).toHaveBeenCalledTimes( 2 );
+		expect( mountElement ).toHaveBeenCalledTimes( 3 );
 		expect( mountElement ).toHaveBeenLastCalledWith(
 			'#payment-method-message'
 		);
-		// The new element gets a second to render before the placeholder makes way.
-		expect( container.style.display ).toBe( 'none' );
+		expect( ajaxRequests.map( ( { endpoint } ) => endpoint ) ).toEqual( [
+			'wcpay_get_cart_total',
+			'wcpay_get_cart_total',
+		] );
+		expect( ajaxRequests[ 0 ].formData.get( 'security' ) ).toBe(
+			'cart-nonce'
+		);
+	} );
 
-		await jest.advanceTimersByTimeAsync( 1000 );
+	test( 'clears the loader when the cart total cannot be read', async () => {
+		document.body.innerHTML = cartTotalsMarkup;
+		setMessagingConfig( { isCart: true, cartTotal: 2000 } );
+		// A failed wc-ajax request: a server error page instead of the JSON total.
+		ajaxResponses.wcpay_get_cart_total = () =>
+			new HttpResponse( 'Internal Server Error', { status: 500 } );
+
+		require( '../woopayments-payment-method-messaging' );
+		replaceCartTotals();
+		trigger( 'body', 'updated_cart_totals' );
+		expect( document.querySelector( '.pmme-loading' ) ).not.toBeNull();
+
+		await waitUntil( () => ! document.querySelector( '.pmme-loading' ) );
 
 		expect( document.querySelector( '.pmme-loading' ) ).toBeNull();
-		expect( container.style.display ).toBe( '' );
-		expect( container.classList.contains( 'pmme-updated' ) ).toBe( true );
+		expect( unmountElement ).not.toHaveBeenCalled();
 	} );
 
 	// The space the classic cart message takes is kept on .cart-collaterals for the stylesheet: its height, the Stripe
