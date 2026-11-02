@@ -270,7 +270,7 @@
 				var paymentGatewayId;
 				var target;
 
-				// Core replaces a changed fragment with new elements (checkout.js:773), so a wrapper already read has nothing new.
+				// Core replaces a changed fragment with new elements (checkout.js:783), so a wrapper already read has nothing new.
 				if ( wrapper.woopaymentsConfigMerged ) {
 					return;
 				}
@@ -799,7 +799,9 @@
 		} );
 	}
 
-	// Intent confirmation always runs on the connected account (client 11.1.0 confirmIntent() uses getStripe( true )).
+	// Redirect confirmations run on the connected account (client 11.2.0 confirmIntent() uses getStripe( true ),
+	// checkout/api/index.js:167, :201); the add-payment-method setup intent confirms on the instance its element was
+	// built with.
 	function getAccountStripe() {
 		accountStripe = accountStripe || createAccountStripe();
 		return accountStripe;

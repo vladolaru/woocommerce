@@ -166,7 +166,9 @@ class WooPaymentsFraudPreventionService implements RegisterHooksInterface {
 		if ( ! $this->has_session() || ! $this->is_enabled() ) {
 			return;
 		}
-		// Product and cart pages count because express buttons pay from them; the add payment method page guards setup intents.
+		// Product and cart pages count, as in client 11.2.0's page condition (class-fraud-prevention-service.php:93), because
+		// express buttons pay from them; a product-page payment runs on the tokenized cart session, which never holds this
+		// token, so card-testing protection still refuses it. The add payment method page guards setup intents.
 		if ( $check_page && ! is_checkout() && ! has_block( 'woocommerce/checkout' ) && ! is_cart() && ! has_block( 'woocommerce/cart' ) && ! is_product() && ! $this->is_pay_for_order_page() && ! is_add_payment_method_page() ) {
 			return;
 		}

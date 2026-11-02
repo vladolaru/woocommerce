@@ -403,8 +403,6 @@ const getCartTotalsCurrency = ( cart ) =>
 		''
 	).toLowerCase();
 
-const getCartTotalsAmount = ( cart ) => getCartTotalPrice( cart );
-
 // Defaults to true when the flag is absent; the platform's
 // ece_confirmation_tokens_disabled flag turns it off.
 const shouldUseConfirmationTokens = () =>
@@ -527,7 +525,7 @@ const getAvailabilityElementsOptions = ( cart ) => {
 	const cartData = normalizeStoreApiCart( cart );
 	const amount = applyFilters(
 		'wcpay.express-checkout.total-amount',
-		getCartTotalsAmount( cart ),
+		getCartTotalPrice( cart ),
 		cartData
 	);
 	// The client probes in payment mode with at least 1 minor unit (checkPaymentMethodIsAvailable.ts:95-97).
