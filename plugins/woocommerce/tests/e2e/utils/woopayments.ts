@@ -75,6 +75,7 @@ export type CardSurface = keyof typeof CARD_FRAME_SELECTORS;
 const EXPIRY_FIELD_NAME = /^Expir/i;
 const ENTRY_SETTLE_MS = 1_500;
 const ENTRY_STEP_TIMEOUT_MS = 5_000;
+const CARD_ENTRY_READY_TIMEOUT_MS = 15_000;
 
 function digitsOnly( value: string ): string {
 	return value.replace( /\D/g, '' );
@@ -209,6 +210,29 @@ export async function keepingScrollPosition(
 }
 
 /**
+ * Waits until the card can be entered: on classic checkout no checkout update
+ * holds the payment section (WooCommerce blocks it while
+ * `update_order_review` runs and may then replace it, rebuilding the Payment
+ * Element), and the card number field of the element now in the page is
+ * editable. A wait for a state, never a retry: the frame locator resolves to
+ * the current element each time it is used.
+ */
+async function waitForCardEntry(
+	page: Page,
+	card: ProviderTestCard,
+	surface: CardSurface
+): Promise< void > {
+	if ( surface === 'classic' ) {
+		await expect( page.locator( '#payment .blockUI' ) ).toHaveCount( 0, {
+			timeout: CARD_ENTRY_READY_TIMEOUT_MS,
+		} );
+	}
+	await expect(
+		getCardFields( page, card, surface )[ 0 ].locator
+	).toBeEditable( { timeout: CARD_ENTRY_READY_TIMEOUT_MS } );
+}
+
+/**
  * Types a card into a native Payment Element once, waits a short settle and
  * proves the element kept it (expectCardKept()). Each field is clicked before
  * it is typed into, because `fill()` can drop the digits into the email field.
@@ -226,6 +250,7 @@ export async function fillCardDetails(
 	card: ProviderTestCard,
 	surface: CardSurface
 ): Promise< void > {
+	await waitForCardEntry( page, card, surface );
 	await keepingScrollPosition( page, async () => {
 		for ( const field of getCardFields( page, card, surface ) ) {
 			await typeIntoStripeField( page, field.locator, field.value, {
