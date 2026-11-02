@@ -2965,6 +2965,22 @@ describe( 'WooPayments checkout', () => {
 			'Please refresh the page and try again.',
 		],
 		[
+			// WooPaymentsIntentConfirmationService throws its 409 with esc_html__(), so the apostrophe arrives as an
+			// entity, and a markup-looking message stays text.
+			'the decoded store message for an escaped refusal',
+			{
+				status: 409,
+				responseJSON: {
+					error: {
+						message:
+							'We&#039;re not able to process this payment. Please try again later. &lt;img src=x onerror=alert(1)&gt;',
+					},
+					status_code: 409,
+				},
+			},
+			"We're not able to process this payment. Please try again later. <img src=x onerror=alert(1)>",
+		],
+		[
 			'the generic message when the answer carries none',
 			{ status: 502, responseJSON: undefined },
 			'There was a problem confirming your payment.',
@@ -2991,6 +3007,10 @@ describe( 'WooPayments checkout', () => {
 		expect(
 			document.querySelector( '.woopayments-payment-errors' ).textContent
 		).toBe( message );
+		// Text only: nothing in the message becomes markup.
+		expect(
+			document.querySelector( '.woopayments-payment-errors' ).children
+		).toHaveLength( 0 );
 		expectClassicCheckoutBlockedOnce();
 		expectNoConfirmationResubmit();
 	} );

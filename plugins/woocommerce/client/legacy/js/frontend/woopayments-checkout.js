@@ -2823,6 +2823,15 @@
 			: config.confirmationErrorMessage || '';
 	}
 
+	// The store escapes its update_order_status messages for HTML (esc_html() on the exceptions), and the error box
+	// shows text, so the entities are decoded first. DOMParser builds an inert document: nothing runs or loads.
+	function getStoreErrorMessage( error ) {
+		return new window.DOMParser().parseFromString(
+			getConfirmationErrorMessage( error ),
+			'text/html'
+		).documentElement.textContent;
+	}
+
 	// A confirmation error is retry-safe when its payment or setup intent waits for a new payment method or is canceled:
 	// no money moved, so the form is released, as the client always does (client 11.2.0
 	// checkout/classic/event-handlers.js:69-71, :108-114). Any other intent state, or an error with no intent, may have
@@ -3011,9 +3020,7 @@
 
 							if ( resultResponse.error ) {
 								setError(
-									getConfirmationErrorMessage(
-										resultResponse.error
-									)
+									getStoreErrorMessage( resultResponse.error )
 								);
 								return;
 							}
@@ -3056,7 +3063,7 @@
 						// The store answers its refusals with a non-2xx status and { error: { message } }.
 						.fail( function ( jqXHR ) {
 							setError(
-								getConfirmationErrorMessage(
+								getStoreErrorMessage(
 									jqXHR &&
 										jqXHR.responseJSON &&
 										jqXHR.responseJSON.error
