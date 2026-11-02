@@ -5281,9 +5281,18 @@ describe( 'WooPayments checkout', () => {
 
 			require( '../woopayments-checkout' );
 			await flushPromises();
+			// Core's add-payment-method.js blocks the form in its own submit handler (add-payment-method.js:74-76).
+			// Both bind in DOM-ready callbacks; a store showed core's running after this script's, as here.
+			addPaymentMethodForm.addEventListener( 'submit', () => {
+				global.jQuery( addPaymentMethodForm ).block( {
+					message: null,
+					overlayCSS: { background: '#fff', opacity: 0.6 },
+				} );
+			} );
 			await submitForm( addPaymentMethodForm );
 
 			expectFormReleased( addPaymentMethodForm );
+			expect( checkoutFormState.blocked ).toBe( false );
 			expect(
 				document.querySelector( '.woopayments-payment-errors' ).textContent
 			).toBe( FINGERPRINT_ERROR );

@@ -2658,7 +2658,11 @@
 		// missing, so the form goes to the store, which answers with its own notice; otherwise the mount runs again
 		// and shows the fingerprint error.
 		if ( ! component ) {
-			$( formElement ).removeClass( 'processing' ).unblock();
+			// Core's add-payment-method.js blocks the form in its own submit handler, which can run after this one:
+			// release once the event has reached every handler.
+			window.setTimeout( function () {
+				$( formElement ).removeClass( 'processing' ).unblock();
+			}, 0 );
 			if ( isDeviceFingerprintReady ) {
 				submitAddPaymentMethodForm( formElement );
 			} else {
