@@ -255,6 +255,9 @@ class SessionController implements RegisterHooksInterface {
 	/**
 	 * Hide the core billing email field on checkout: the WooPay contact section renders it.
 	 *
+	 * Only the billing email is hidden. A store's own email-type checkout field keeps rendering; client 11.2.0 hides every
+	 * email field without the WooPay class (class-wc-payments.php:1991-1997).
+	 *
 	 * @param string $field         The rendered field markup.
 	 * @param string $key           The field key.
 	 * @param mixed  $args          Field arguments.
@@ -263,7 +266,7 @@ class SessionController implements RegisterHooksInterface {
 	 */
 	public function filter_woocommerce_form_field_woopay_email( $field, $key, $args, $_unused_value ) {
 		$class = is_array( $args ) && isset( $args['class'][0] ) ? (string) $args['class'][0] : '';
-		if ( false === strpos( $class, 'woopay-billing-email' ) && is_checkout() && ! is_checkout_pay_page() ) {
+		if ( 'billing_email' === $key && false === strpos( $class, 'woopay-billing-email' ) && is_checkout() && ! is_checkout_pay_page() ) {
 			return '';
 		}
 

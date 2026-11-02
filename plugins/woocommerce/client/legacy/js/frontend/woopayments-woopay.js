@@ -1780,10 +1780,13 @@
 			syncWooPayPhone();
 			updateWooPayPhoneError();
 		} );
-		$( form ).on( 'checkout_place_order', function () {
-			isWooPayPhoneTouched = true;
-			updateWooPayPhoneError();
-		} );
+		// The form outlives each checkout update that renders these fields again, so one handler replaces the last.
+		$( form )
+			.off( 'checkout_place_order.woopaySaveUser' )
+			.on( 'checkout_place_order.woopaySaveUser', function () {
+				isWooPayPhoneTouched = true;
+				updateWooPayPhoneError();
+			} );
 		updateSaveUserVisibility();
 		validateWhenOptedIn();
 	}

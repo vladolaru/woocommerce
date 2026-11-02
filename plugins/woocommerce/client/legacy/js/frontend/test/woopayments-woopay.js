@@ -161,6 +161,7 @@ describe( 'WooPayments WooPay checkout', () => {
 		const defaultResult = {
 			length: 0,
 			on: jest.fn( () => defaultResult ),
+			off: jest.fn( () => defaultResult ),
 		};
 		const bodyResult = {
 			length: 1,
@@ -1634,6 +1635,45 @@ describe( 'WooPayments WooPay checkout', () => {
 		bodyEventHandlers.updated_checkout();
 	};
 
+	// The checkout_place_order handlers left bound on the form: the mock's .on() and .off() calls replayed in call
+	// order, an .off( event ) removing the handlers bound under that exact name, as jQuery does for a namespaced event.
+	const getPlaceOrderHandlers = () => {
+		const form = global.jQuery( document.querySelector( 'form.checkout' ) );
+		const calls = [
+			...form.on.mock.calls.map( ( args, index ) => ( {
+				args,
+				bind: true,
+				order: form.on.mock.invocationCallOrder[ index ],
+			} ) ),
+			...form.off.mock.calls.map( ( args, index ) => ( {
+				args,
+				bind: false,
+				order: form.off.mock.invocationCallOrder[ index ],
+			} ) ),
+		].sort( ( a, b ) => a.order - b.order );
+		let bound = [];
+		calls.forEach( ( { args, bind } ) => {
+			bound = bind
+				? bound.concat( [ args ] )
+				: bound.filter( ( [ event ] ) => event !== args[ 0 ] );
+		} );
+		return bound.filter(
+			( [ event ] ) => event.split( '.' )[ 0 ] === 'checkout_place_order'
+		);
+	};
+
+	// Client 11.2.0 binds one more handler for each refresh that renders the fields again
+	// (components/woopay/save-user/checkout-page-save-user.js:176-182, checkout/woopay/index.js:88-97).
+	test( 'keeps one place order handler over two checkout updates', () => {
+		require( '../woopayments-woopay' );
+		expect( getPlaceOrderHandlers() ).toHaveLength( 1 );
+
+		refreshPaymentSection();
+		refreshPaymentSection();
+
+		expect( getPlaceOrderHandlers() ).toHaveLength( 1 );
+	} );
+
 	test( 'keeps save my info unchecked after a checkout update when the shopper unchecked the pre-checked box', () => {
 		require( '../woopayments-woopay' );
 		const saveCheckbox = document.querySelector(
@@ -1723,7 +1763,7 @@ describe( 'WooPayments WooPay checkout', () => {
 		document.getElementById( 'woopay_user_phone_field_full' ).value = '123';
 		const placeOrder = global.jQuery(
 			document.querySelector( 'form.checkout' )
-		).on.mock.calls.find( ( [ event ] ) => event === 'checkout_place_order' )[ 1 ];
+		).on.mock.calls.find( ( [ event ] ) => event.split( '.' )[ 0 ] === 'checkout_place_order' )[ 1 ];
 
 		// Client 11.1.0 checkout-page-save-user.js:176-181 shows the message and does not cancel the submission.
 		expect( placeOrder() ).not.toBe( false );
@@ -1835,7 +1875,7 @@ describe( 'WooPayments WooPay checkout', () => {
 			const placeOrder = global.jQuery(
 				document.querySelector( 'form.checkout' )
 			).on.mock.calls.find(
-				( [ event ] ) => event === 'checkout_place_order'
+				( [ event ] ) => event.split( '.' )[ 0 ] === 'checkout_place_order'
 			)[ 1 ];
 
 			expect( placeOrder() ).not.toBe( false );

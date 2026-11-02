@@ -827,7 +827,7 @@ class SessionControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should hide the core billing email on checkout while leaving the WooPay one and other pages alone.
+	 * @testdox Should hide the core billing email on checkout while leaving the WooPay one, other email fields and other pages alone.
 	 */
 	public function test_filter_woocommerce_form_field_woopay_email_hides_core_field_on_checkout(): void {
 		$this->sut = $this->create_controller( true );
@@ -837,6 +837,10 @@ class SessionControllerTest extends WC_REST_Unit_Test_Case {
 
 		$this->assertSame( '', $this->sut->filter_woocommerce_form_field_woopay_email( $field, 'billing_email', array( 'class' => array( 'form-row-wide' ) ), '' ) );
 		$this->assertSame( $field, $this->sut->filter_woocommerce_form_field_woopay_email( $field, 'billing_email', array( 'class' => array( 'form-row-wide woopay-billing-email' ) ), '' ) );
+
+		// A store's own email-type checkout field keeps rendering.
+		$custom_field = '<p class="form-row"><input type="email" name="billing_invoice_email" /></p>';
+		$this->assertSame( $custom_field, $this->sut->filter_woocommerce_form_field_woopay_email( $custom_field, 'billing_invoice_email', array( 'class' => array( 'form-row-wide' ) ), '' ) );
 
 		// The pay-for-order page is a checkout page the relocation must leave alone.
 		$GLOBALS['wp']->query_vars['order-pay'] = 123;
