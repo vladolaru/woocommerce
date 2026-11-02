@@ -928,7 +928,7 @@ describe( 'wc-payment-method-woopayments', () => {
 	// fetch() resolves with a Response whose ok is false for an HTTP error (https://developer.mozilla.org/docs/Web/API/Response/ok).
 	const saveUserFailure = { ok: false, status: 500 };
 
-	const renderSaveUserSection = () => {
+	const renderSaveUserSection = ( billingPhone = '5551234567' ) => {
 		window.fetch = jest.fn().mockResolvedValue( {
 			ok: true,
 			json: jest.fn().mockResolvedValue( { success: true } ),
@@ -937,7 +937,7 @@ describe( 'wc-payment-method-woopayments', () => {
 			<div class="wc-block-checkout">
 				<div class="wp-block-woocommerce-checkout-payment-block"></div>
 			</div>
-			<input id="billing-phone" value="5551234567" />
+			<input id="billing-phone" value="${ billingPhone }" />
 		`;
 		const registration = registerWooPayments();
 		const content = registration.content;
@@ -1111,6 +1111,86 @@ describe( 'wc-payment-method-woopayments', () => {
 			await Promise.resolve();
 			await Promise.resolve();
 		} );
+
+	// The settings name no validation script here, so the loader resolves null, as it does when the script fails to load
+	// (woopay/protocol/phone-validation.js).
+	it( 'blocks the checkout and stores nothing for an empty WooPay phone when the validation script is missing', async () => {
+		renderSaveUserSection( '' );
+		const phoneField = await screen.findByLabelText(
+			'Mobile phone number'
+		);
+		await settleSaveUserRequest();
+
+		expect( validationErrors ).toHaveProperty(
+			'invalid-woopay-phone-number',
+			{
+				message: 'Please enter a valid mobile phone number.',
+				hidden: true,
+			}
+		);
+
+		fireEvent.change( phoneField, { target: { value: '   ' } } );
+		fireEvent.blur( phoneField );
+		await settleSaveUserRequest();
+
+		expect( screen.getByRole( 'alert' ) ).toHaveTextContent(
+			'Please enter a valid mobile phone number.'
+		);
+		expect( getSaveUserRequests() ).toEqual( [] );
+	} );
+
+	it( 'stores a typed WooPay phone as before when the validation script is missing', async () => {
+		renderSaveUserSection( '' );
+		const phoneField = await screen.findByLabelText(
+			'Mobile phone number'
+		);
+		await settleSaveUserRequest();
+		const before = getSaveUserRequests().length;
+
+		fireEvent.change( phoneField, {
+			target: { value: '(201) 555-0123' },
+		} );
+
+		expect( validationErrors ).not.toHaveProperty(
+			'invalid-woopay-phone-number'
+		);
+		const stored = getSaveUserRequests().slice( before );
+		expect( stored ).toHaveLength( 1 );
+		expect( stored[ 0 ].get( 'save_user_in_woopay' ) ).toBe( 'true' );
+		expect( stored[ 0 ].get( 'woopay_user_phone_field[full]' ) ).toBe(
+			'+12015550123'
+		);
+	} );
+
+	it( 'stores a WooPay phone only from six digits when the validation script is missing', async () => {
+		renderSaveUserSection( '' );
+		const phoneField = await screen.findByLabelText(
+			'Mobile phone number'
+		);
+		await settleSaveUserRequest();
+
+		for ( const value of [ '-', '12345' ] ) {
+			fireEvent.change( phoneField, { target: { value } } );
+			await settleSaveUserRequest();
+
+			expect( validationErrors ).toHaveProperty(
+				'invalid-woopay-phone-number'
+			);
+			expect( getSaveUserRequests() ).toEqual( [] );
+		}
+
+		fireEvent.change( phoneField, { target: { value: '123456' } } );
+		await settleSaveUserRequest();
+
+		expect( validationErrors ).not.toHaveProperty(
+			'invalid-woopay-phone-number'
+		);
+		const stored = getSaveUserRequests();
+		expect( stored ).toHaveLength( 1 );
+		expect( stored[ 0 ].get( 'woopay_user_phone_field[full]' ) ).toBe(
+			'+1123456'
+		);
+	} );
 
 	it( 'stores each valid WooPay phone change once, without waiting for blur', async () => {
 		window.wc.woopayments.phoneValidation = { validatePhoneNumber };

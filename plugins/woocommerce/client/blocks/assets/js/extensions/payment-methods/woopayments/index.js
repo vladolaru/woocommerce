@@ -854,6 +854,8 @@ const WooPaySaveUserSection = ( { paymentSettings } ) => {
 		useState( false );
 	const [ isPhoneTouched, setIsPhoneTouched ] = useState( false );
 	const fullPhone = normalizeWooPayPhone( phone );
+	// Client 11.1.0 settings/phone-input/lazy.jsx:21-24: without the validation script, six or more digits count as valid.
+	const isPlainPhoneValid = phone.replace( /\D/g, '' ).length >= 6;
 	// Unknown (null) while the validation script loads.
 	const isPhoneValid = phoneValidation
 		? phoneValidation.validatePhoneNumber( fullPhone )
@@ -890,14 +892,18 @@ const WooPaySaveUserSection = ( { paymentSettings } ) => {
 
 	// Client 11.1.0 checkout-page-save-user.js:184-223: while opted in, an invalid or not yet validated number blocks
 	// the checkout through the validation store, hidden until the shopper leaves the field or places the order. A
-	// validation script that failed to load does not block the checkout.
+	// validation script that failed to load does not block a number with six or more digits; a shorter one still blocks.
 	useEffect( () => {
 		const validation = dispatch( 'wc/store/validation' );
 		if (
 			isOfferApplicable &&
 			isSavingUser &&
 			isPhoneValid !== true &&
-			! ( isPhoneValid === null && isPhoneValidationUnavailable )
+			! (
+				isPhoneValid === null &&
+				isPhoneValidationUnavailable &&
+				isPlainPhoneValid
+			)
 		) {
 			validation.setValidationErrors( {
 				[ WOOPAY_PHONE_ERROR_ID ]: {
@@ -917,6 +923,7 @@ const WooPaySaveUserSection = ( { paymentSettings } ) => {
 		isSavingUser,
 		isPhoneValid,
 		isPhoneValidationUnavailable,
+		isPlainPhoneValid,
 		isPhoneTouched,
 	] );
 
@@ -936,7 +943,9 @@ const WooPaySaveUserSection = ( { paymentSettings } ) => {
 	useEffect( () => {
 		const canStore =
 			isPhoneValid === true ||
-			( isPhoneValid === null && isPhoneValidationUnavailable );
+			( isPhoneValid === null &&
+				isPhoneValidationUnavailable &&
+				isPlainPhoneValid );
 		let next = null;
 
 		if ( isOfferApplicable && isSavingUser ) {
@@ -968,6 +977,7 @@ const WooPaySaveUserSection = ( { paymentSettings } ) => {
 		isSavingUser,
 		isPhoneValid,
 		isPhoneValidationUnavailable,
+		isPlainPhoneValid,
 		fullPhone,
 		paymentSettings,
 	] );
