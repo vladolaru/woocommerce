@@ -2572,8 +2572,9 @@
 
 		// Client 11.2.0 classic/payment-processing.js:82-108, :449-498: block the form before tokenizing: on checkout,
 		// core's checkout.js ignores another click while the form has `processing`; on order-pay and change payment
-		// method the overlay stops the click. Release it on failure; drop `processing` just before the intentional
-		// resubmit, which core would otherwise ignore.
+		// method the overlay stops pointer clicks, while an element block does not stop keyboard activation of the
+		// focused button. Release it on failure; drop `processing` just before the intentional resubmit, which core
+		// would otherwise ignore.
 		form.addClass( 'processing' ).block( {
 			message: null,
 			overlayCSS: {
@@ -2654,9 +2655,9 @@
 		var component = paymentElements[ selection.gatewayId ];
 
 		// No Payment Element mounted: release the overlay core's script put on the form, as client 11.2.0 does on
-		// every refusal (classic/payment-processing.js:449-498). With the fingerprint ready, Stripe.js is what is
-		// missing, so the form goes to the store, which answers with its own notice; otherwise the mount runs again
-		// and shows the fingerprint error.
+		// every refusal (classic/payment-processing.js:449-498). With the fingerprint ready, the selected method has no
+		// Payment Element, usually because Stripe.js did not load, so the form goes to the store, which answers with its
+		// own notice; otherwise the mount runs again and shows the fingerprint error.
 		if ( ! component ) {
 			// Core's add-payment-method.js blocks the form in its own submit handler, which can run after this one:
 			// release once the event has reached every handler.
@@ -2827,8 +2828,8 @@
 			: config.confirmationErrorMessage || '';
 	}
 
-	// The store escapes its update_order_status messages for HTML (esc_html() on the exceptions), and the error box
-	// shows text, so the entities are decoded first. DOMParser builds an inert document: nothing runs or loads.
+	// Some update_order_status messages arrive HTML-escaped (the confirmation service's esc_html()); the error box shows
+	// text, so entities are decoded first. DOMParser builds an inert document: nothing runs or loads.
 	function getStoreErrorMessage( error ) {
 		return new window.DOMParser().parseFromString(
 			getConfirmationErrorMessage( error ),
