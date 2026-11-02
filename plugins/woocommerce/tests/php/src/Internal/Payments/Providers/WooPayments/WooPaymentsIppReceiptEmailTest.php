@@ -136,9 +136,10 @@ class WooPaymentsIppReceiptEmailTest extends WC_Unit_Test_Case {
 						$this->normalize_markup( $this->load_oracle_fixture( 'ipp-receipt-10.8.0.html' ) ),
 						$this->normalize_markup( $this->normalize_receipt_content( $email->get_content_html(), $order, false ) )
 					);
+					// The plain text also pads its columns by the printed width, which differs once the entities are literal.
 					$this->assertSame(
-						$this->decode_entities( $this->load_oracle_fixture( 'ipp-receipt-10.8.0.txt' ) ),
-						$this->decode_entities( $this->normalize_receipt_content( $email->get_content_plain(), $order, true ) )
+						$this->normalize_plain_text( $this->load_oracle_fixture( 'ipp-receipt-10.8.0.txt' ) ),
+						$this->normalize_plain_text( $this->normalize_receipt_content( $email->get_content_plain(), $order, true ) )
 					);
 				} finally {
 					remove_filter( 'woocommerce_get_formatted_order_total', $explicit_price_filter, 100 );
@@ -397,6 +398,20 @@ class WooPaymentsIppReceiptEmailTest extends WC_Unit_Test_Case {
 		$this->assertIsString( $markup );
 
 		return $markup;
+	}
+
+	/**
+	 * Normalize a plain-text receipt as markup and collapse runs of spaces, so its column padding, which depends on how
+	 * wide the printed amounts are, does not count.
+	 *
+	 * @param string $content Plain-text receipt.
+	 * @return string
+	 */
+	private function normalize_plain_text( string $content ): string {
+		$text = preg_replace( '/ {2,}/', ' ', $this->normalize_markup( $content ) );
+		$this->assertIsString( $text );
+
+		return $text;
 	}
 
 	/**
