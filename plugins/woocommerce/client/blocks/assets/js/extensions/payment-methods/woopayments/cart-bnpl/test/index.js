@@ -53,16 +53,21 @@ const setMessagingConfig = ( overrides = {} ) => {
 
 describe( 'WooPayments cart block BNPL messaging', () => {
 	let createElement;
+	let destroyMessagingElement;
 	let elements;
 	let mountMessagingElement;
+	let updateMessagingElement;
 
 	beforeEach( () => {
 		mockSelect.mockReset();
 
 		mountMessagingElement = jest.fn();
+		destroyMessagingElement = jest.fn();
+		updateMessagingElement = jest.fn();
 		createElement = jest.fn( () => ( {
 			mount: mountMessagingElement,
-			destroy: jest.fn(),
+			destroy: destroyMessagingElement,
+			update: updateMessagingElement,
 		} ) );
 		elements = jest.fn( () => ( {
 			create: createElement,
@@ -131,8 +136,10 @@ describe( 'WooPayments cart block BNPL messaging', () => {
 		).not.toBeNull();
 	} );
 
-	// Client 11.2.0 builds its Stripe instance once for the page (cart/blocks/product-details.js:28-37, :79).
-	it( 'keeps one Stripe instance when the cart changes', async () => {
+	// Client 11.2.0 builds its Stripe instance once for the page (cart/blocks/product-details.js:28-37, :79) and React
+	// Stripe.js keeps the element, updating its options in place (:109-125). A new cart object with the same total, as
+	// the optimistic update and the server answer can give, changes nothing.
+	it( 'keeps one Stripe instance and one element, updating the amount in place, when the cart changes', async () => {
 		const { rerender } = render(
 			<BNPLCartMessaging
 				cart={ { cartTotals: { total_price: '12345' } } }
@@ -151,19 +158,25 @@ describe( 'WooPayments cart block BNPL messaging', () => {
 		);
 		rerender(
 			<BNPLCartMessaging
+				cart={ { cartTotals: { total_price: '24690' } } }
+				context="woocommerce/cart"
+			/>
+		);
+		rerender(
+			<BNPLCartMessaging
 				cart={ { cartTotals: { total_price: '37035' } } }
 				context="woocommerce/cart"
 			/>
 		);
-		await waitFor( () => {
-			expect( mountMessagingElement ).toHaveBeenCalledTimes( 3 );
-		} );
 
 		expect( window.Stripe ).toHaveBeenCalledTimes( 1 );
-		expect( createElement ).toHaveBeenLastCalledWith(
-			'paymentMethodMessaging',
-			expect.objectContaining( { amount: 37035 } )
-		);
+		expect( createElement ).toHaveBeenCalledTimes( 1 );
+		expect( mountMessagingElement ).toHaveBeenCalledTimes( 1 );
+		expect( destroyMessagingElement ).not.toHaveBeenCalled();
+		expect( updateMessagingElement.mock.calls ).toEqual( [
+			[ { amount: 24690 } ],
+			[ { amount: 37035 } ],
+		] );
 	} );
 
 	it( 'builds a new Stripe instance when the account or locale changes', async () => {

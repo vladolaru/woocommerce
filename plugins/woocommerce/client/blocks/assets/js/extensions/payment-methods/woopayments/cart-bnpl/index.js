@@ -81,6 +81,10 @@ const getStripe = ( config ) => {
 export const BNPLCartMessaging = ( { cart, context } ) => {
 	const config = getMessagingConfig();
 	const mountRef = useRef( null );
+	const messagingRef = useRef( null );
+	const amount = getCartAmount( cart );
+	const amountRef = useRef( amount );
+	amountRef.current = amount;
 	const [ fontRules ] = useState( () => getFontRulesFromPage() );
 	const [ appearance, setAppearance ] = useState( () =>
 		getCachedAppearance(
@@ -128,7 +132,7 @@ export const BNPLCartMessaging = ( { cart, context } ) => {
 		const paymentMethodMessaging = elements.create(
 			'paymentMethodMessaging',
 			{
-				amount: getCartAmount( cart ),
+				amount: amountRef.current,
 				countryCode: config.country,
 				currency: config.currencyCode || 'USD',
 				paymentMethodTypes: Array.isArray( config.paymentMethods )
@@ -138,11 +142,28 @@ export const BNPLCartMessaging = ( { cart, context } ) => {
 		);
 
 		paymentMethodMessaging.mount( mountRef.current );
+		messagingRef.current = {
+			element: paymentMethodMessaging,
+			amount: amountRef.current,
+		};
 
 		return () => {
+			messagingRef.current = null;
 			paymentMethodMessaging.destroy?.();
 		};
-	}, [ appearance, cart, config, context, fontRules ] );
+	}, [ appearance, config, context, fontRules ] );
+
+	// A cart change updates the amount on the mounted element, as client 11.2.0's React Stripe.js element updates its
+	// options in place (cart/blocks/product-details.js:109-125), so the message does not collapse and regrow.
+	useEffect( () => {
+		const messaging = messagingRef.current;
+		if ( ! messaging || messaging.amount === amount ) {
+			return;
+		}
+
+		messaging.amount = amount;
+		messaging.element.update?.( { amount } );
+	}, [ amount ] );
 
 	if (
 		context !== 'woocommerce/cart' ||
