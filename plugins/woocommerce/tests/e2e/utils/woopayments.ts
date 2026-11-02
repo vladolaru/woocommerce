@@ -76,6 +76,9 @@ const EXPIRY_FIELD_NAME = /^Expir/i;
 const ENTRY_SETTLE_MS = 1_500;
 const ENTRY_STEP_TIMEOUT_MS = 5_000;
 const CARD_ENTRY_READY_TIMEOUT_MS = 15_000;
+// The WooPay email check puts its spinner just before the email field while
+// the lookup runs.
+const WOOPAY_EMAIL_CHECK_SPINNER = '.wc-block-components-spinner + #email';
 
 function digitsOnly( value: string ): string {
 	return value.replace( /\D/g, '' );
@@ -213,7 +216,9 @@ export async function keepingScrollPosition(
  * Waits until the card can be entered: on classic checkout no checkout update
  * holds the payment section (WooCommerce blocks it while
  * `update_order_review` runs and may then replace it, rebuilding the Payment
- * Element), and the card number field of the element now in the page is
+ * Element); on the Blocks checkout no customer-data update is pending and the
+ * WooPay email check shows no spinner, the moment a click once lost the card
+ * field's focus; and the card number field of the element now in the page is
  * editable. A wait for a state, never a retry: the frame locator resolves to
  * the current element each time it is used.
  */
@@ -226,6 +231,17 @@ async function waitForCardEntry(
 		await expect( page.locator( '#payment .blockUI' ) ).toHaveCount( 0, {
 			timeout: CARD_ENTRY_READY_TIMEOUT_MS,
 		} );
+	}
+	if ( surface === 'blocks' ) {
+		await page.waitForFunction(
+			( spinnerSelector ) =>
+				! window.wp.data
+					.select( 'wc/store/cart' )
+					.isCustomerDataUpdating() &&
+				! document.querySelector( spinnerSelector ),
+			WOOPAY_EMAIL_CHECK_SPINNER,
+			{ timeout: CARD_ENTRY_READY_TIMEOUT_MS }
+		);
 	}
 	await expect(
 		getCardFields( page, card, surface )[ 0 ].locator
