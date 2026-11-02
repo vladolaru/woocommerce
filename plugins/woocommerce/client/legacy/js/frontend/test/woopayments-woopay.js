@@ -3493,6 +3493,51 @@ describe( 'WooPayments WooPay checkout', () => {
 			);
 		} );
 
+		// Client 11.2.0 leaves its link loading after the redirect and has no pageshow handler
+		// (direct-checkout/woopay-direct-checkout.js:365-420); native releases it on a back-forward cache return.
+		test( 'releases Proceed to checkout after it left for WooPay, on a back-forward cache return', async () => {
+			configureDirectCheckout(
+				'<div class="wc-proceed-to-checkout"><a class="checkout-button" href="https://store.test/checkout/">Checkout</a></div>'
+			);
+			const postMessage = installConnect();
+			const { __test__ } = require( '../woopayments-woopay' );
+			const navigate = jest.fn();
+			__test__.setNavigate( navigate );
+			await initializeDirectCheckout( false );
+			const link = document.querySelector( 'a' );
+			const getReachabilityChecks = () =>
+				postMessage.mock.calls.filter(
+					( [ message ] ) => message.action === 'isWooPayReachable'
+				);
+
+			link.click();
+			await flushPromises();
+			emitConnectMessage( 'get_is_woopay_reachable_success', true );
+			await flushPromises();
+			expect( navigate ).toHaveBeenCalledTimes( 1 );
+			expect( link.getAttribute( 'aria-disabled' ) ).toBe( 'true' );
+
+			window.dispatchEvent(
+				new window.PageTransitionEvent( 'pageshow', { persisted: false } )
+			);
+			expect( link.getAttribute( 'aria-disabled' ) ).toBe( 'true' );
+
+			window.dispatchEvent(
+				new window.PageTransitionEvent( 'pageshow', { persisted: true } )
+			);
+			expect( link.hasAttribute( 'aria-disabled' ) ).toBe( false );
+			expect(
+				link.classList.contains( 'is-woopay-direct-checkout-loading' )
+			).toBe( false );
+
+			link.click();
+			await flushPromises();
+			expect( getReachabilityChecks() ).toHaveLength( 2 );
+			emitConnectMessage( 'get_is_woopay_reachable_success', true );
+			await flushPromises();
+			expect( navigate ).toHaveBeenCalledTimes( 2 );
+		} );
+
 		test.each( [
 			[ 'failed store AJAX', 'ajax' ],
 			[ 'malformed store session', 'session' ],

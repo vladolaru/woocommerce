@@ -673,6 +673,18 @@
 			'click',
 			document.body.wooPayDirectCheckoutHandler
 		);
+		// A link left busy for WooPay is usable again after Back from the back-forward cache. Client 11.2.0 has no such
+		// handler, so its link stays busy and ignores clicks until a reload (woopay-direct-checkout.js:365-420).
+		window.addEventListener( 'pageshow', function ( event ) {
+			if ( event.persisted ) {
+				document.querySelectorAll( proceedToCheckoutSelector ).forEach( function ( element ) {
+					if ( element.wooPayDirectCheckoutActive ) {
+						element.wooPayDirectCheckoutActive = false;
+						setDirectCheckoutLoading( element, false );
+					}
+				} );
+			}
+		} );
 	}
 
 	// A shopper who opted out of WooPay keeps the store's checkout (client 11.2.0 direct-checkout/index.js:248, :290).

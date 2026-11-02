@@ -70,6 +70,29 @@ let navigate = ( url ) => {
 	window.location.href = url;
 };
 
+// The hosted WooPay address the page leaves for, or '' when it would not leave: not http or https, or the current
+// document with another hash. The classic button checks the same (woopayments-woopay.js getWooPayDepartureUrl()).
+const getWooPayDepartureUrl = ( redirectUrl ) => {
+	let url;
+
+	try {
+		url = new window.URL( redirectUrl, window.location.href );
+	} catch {
+		return '';
+	}
+
+	if ( url.protocol !== 'http:' && url.protocol !== 'https:' ) {
+		return '';
+	}
+	if (
+		url.href.split( '#' )[ 0 ] === window.location.href.split( '#' )[ 0 ]
+	) {
+		return '';
+	}
+
+	return url.href;
+};
+
 const WooPayIcon = () => (
 	<svg
 		aria-hidden="true"
@@ -414,6 +437,7 @@ const WooPayExpressContent = () => {
 
 	// Client 11.2.0 woopay-express-checkout-button.js:254-337: an answer without a session shows the error and sends the
 	// next click to the OTP flow; a failed request or a Connect that does not answer shows the error and keeps this flow.
+	// Resolves true once the page leaves for hosted WooPay; an address it would not leave for shows the error.
 	const continueWooPayFirstPartyAuth = async () => {
 		let sessionData;
 
@@ -439,12 +463,22 @@ const WooPayExpressContent = () => {
 			return;
 		}
 
-		if ( ! sessionResponse?.redirect_url ) {
+		const departureUrl = sessionResponse?.redirect_url
+			? getWooPayDepartureUrl( sessionResponse.redirect_url )
+			: '';
+		if ( ! departureUrl ) {
 			showSessionError();
 			return;
 		}
 
-		navigate( sessionResponse.redirect_url );
+		try {
+			navigate( departureUrl );
+		} catch {
+			showSessionError();
+			return;
+		}
+
+		return true;
 	};
 
 	const initWooPay = async ( event ) => {
@@ -469,22 +503,44 @@ const WooPayExpressContent = () => {
 		isLoadingRef.current = true;
 		setIsLoading( true );
 
+		let isLeaving = false;
 		try {
 			if (
 				settings.isWoopayFirstPartyAuthEnabled &&
 				! isOtpFlowNextRef.current
 			) {
-				await continueWooPayFirstPartyAuth();
+				isLeaving = await continueWooPayFirstPartyAuth();
 			} else {
 				await continueWooPay();
 			}
 		} catch ( error ) {
 			// Keep the shopper on the current page if WooPay initialization fails.
 		} finally {
-			isLoadingRef.current = false;
-			setIsLoading( false );
+			// The button stays busy while the page leaves for hosted WooPay, as client 11.2.0 sets the location without
+			// clearing its loading state (woopay-express-checkout-button.js:279-282); a back-forward cache return
+			// releases it.
+			if ( ! isLeaving ) {
+				isLoadingRef.current = false;
+				setIsLoading( false );
+			}
 		}
 	};
+
+	// Client 11.2.0 woopay-express-checkout-button.js:358-371.
+	useEffect( () => {
+		const releaseOnReturn = ( event ) => {
+			if ( event?.persisted ) {
+				isLoadingRef.current = false;
+				setIsLoading( false );
+			}
+		};
+
+		window.addEventListener( 'pageshow', releaseOnReturn );
+
+		return () => {
+			window.removeEventListener( 'pageshow', releaseOnReturn );
+		};
+	}, [] );
 
 	let buttonWidthType = null;
 	if ( measuredWidth !== null ) {

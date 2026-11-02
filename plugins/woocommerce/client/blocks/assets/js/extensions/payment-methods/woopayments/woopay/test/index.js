@@ -1266,6 +1266,133 @@ describe( 'wc-payment-method-woopayments-woopay', () => {
 			} );
 			expect( document.querySelector( '.woopay-otp-iframe' ) ).toBeNull();
 		} );
+
+		// Client 11.2.0 woopay-express-checkout-button.js:279-282 leaves the button loading while the page leaves, and
+		// :358-371 clears it on a back-forward cache return. The classic button checks the address the same way.
+		describe( 'when hosted WooPay answers with an address', () => {
+			const getButton = () =>
+				screen.getByRole( 'link', { name: 'WooPay' } );
+			const answerWithAddress = async ( redirectUrl ) => {
+				await clickWooPay();
+				await loadConnectPage();
+				await waitFor( () => {
+					expect( getPreemptiveSessionPosts() ).toHaveLength( 1 );
+				} );
+				await act( async () => {
+					postFromWooPay( {
+						action: 'set_preemptive_session_data_success',
+						value: { redirect_url: redirectUrl },
+					} );
+				} );
+			};
+			const showPage = ( persisted ) =>
+				act( async () => {
+					window.dispatchEvent(
+						new window.PageTransitionEvent( 'pageshow', {
+							persisted,
+						} )
+					);
+				} );
+
+			beforeEach( () => {
+				mockSessionAnswer( () =>
+					Promise.resolve( {
+						json: () => Promise.resolve( validSession ),
+					} )
+				);
+			} );
+
+			it( 'stays busy while the page leaves, and clears on a back-forward cache return', async () => {
+				renderButton();
+
+				await answerWithAddress(
+					'https://pay.woo.test/checkout/session'
+				);
+				await waitFor( () => {
+					expect( navigate ).toHaveBeenCalledWith(
+						'https://pay.woo.test/checkout/session'
+					);
+				} );
+				await user.click( getButton() );
+				expect( getButton() ).toHaveAttribute( 'aria-busy', 'true' );
+				expect( getSessionCalls() ).toHaveLength( 1 );
+
+				await showPage( false );
+				expect( getButton() ).toHaveAttribute( 'aria-busy', 'true' );
+
+				await showPage( true );
+				expect( getButton() ).not.toHaveAttribute( 'aria-busy' );
+				expect( getButton() ).not.toHaveClass( 'is-loading' );
+				expect( createNotice ).not.toHaveBeenCalled();
+			} );
+
+			it.each( [
+				[ 'a hash', '#' ],
+				[ 'another hash on this page', '#woopay' ],
+				[ 'this page', 'http://localhost/' ],
+				[ 'a script address', 'javascript:void(0)' ],
+			] )(
+				'shows the error and releases the button for %s',
+				async ( _, redirectUrl ) => {
+					renderButton();
+
+					await answerWithAddress( redirectUrl );
+					await expectSessionError();
+					await waitFor( () => {
+						expect( getButton() ).not.toHaveAttribute(
+							'aria-busy'
+						);
+					} );
+					expect( navigate ).not.toHaveBeenCalled();
+				}
+			);
+
+			it( 'shows the error and releases the button when the navigation fails', async () => {
+				navigate = jest.fn( () => {
+					throw new Error( 'Navigation blocked' );
+				} );
+				__test__.setNavigate( navigate );
+				renderButton();
+
+				await answerWithAddress(
+					'https://pay.woo.test/checkout/session'
+				);
+				await expectSessionError();
+				await waitFor( () => {
+					expect( getButton() ).not.toHaveAttribute( 'aria-busy' );
+				} );
+				expect( navigate ).toHaveBeenCalledTimes( 1 );
+			} );
+
+			it( 'drops its return listener when the button goes away', () => {
+				const add = jest.spyOn( window, 'addEventListener' );
+				const remove = jest.spyOn( window, 'removeEventListener' );
+
+				try {
+					registerWooPay();
+					const { unmount } = render(
+						createElement(
+							registerExpressPaymentMethod.mock.calls[ 0 ][ 0 ]
+								.content.type
+						)
+					);
+					const listeners = add.mock.calls
+						.filter( ( [ type ] ) => type === 'pageshow' )
+						.map( ( [ , listener ] ) => listener );
+					expect( listeners ).toHaveLength( 1 );
+
+					unmount();
+
+					expect( remove ).toHaveBeenCalledWith(
+						'pageshow',
+						listeners[ 0 ]
+					);
+				} finally {
+					add.mockRestore();
+					remove.mockRestore();
+				}
+			} );
+		} );
 	} );
 
 	it( 'renders the cached preferred WooPay card on the express button', () => {
