@@ -5,6 +5,8 @@ const ACTION_TYPES = {
 	SET_IS_SAVING_SETTINGS: 'SET_IS_SAVING_SETTINGS',
 	SET_SELECTED_PAYMENT_METHOD: 'SET_SELECTED_PAYMENT_METHOD',
 	SET_UNSELECTED_PAYMENT_METHOD: 'SET_UNSELECTED_PAYMENT_METHOD',
+	// A control, not a reducer action: it holds the routine that yields it for good.
+	NEVER_ANSWER: 'NEVER_ANSWER',
 } as const;
 
 export default ACTION_TYPES;

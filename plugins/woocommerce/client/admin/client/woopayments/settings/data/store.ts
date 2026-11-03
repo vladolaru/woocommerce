@@ -7,6 +7,7 @@ import { controls } from '@wordpress/data-controls';
 /**
  * Internal dependencies
  */
+import ACTION_TYPES from './action-types';
 import reducer from './reducer';
 import * as selectors from './selectors';
 import * as actions from './actions';
@@ -20,5 +21,8 @@ export const store = createReduxStore( STORE_NAME, {
 	actions,
 	selectors,
 	resolvers,
-	controls,
+	controls: {
+		...controls,
+		[ ACTION_TYPES.NEVER_ANSWER ]: () => new Promise( () => undefined ),
+	},
 } );

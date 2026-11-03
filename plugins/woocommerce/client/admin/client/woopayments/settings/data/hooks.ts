@@ -291,18 +291,20 @@ export const useSettings = () => {
 };
 
 /**
- * Forget the settings when a settings route is left, so the next one reads them from the server and unsaved edits are
- * dropped, as leaving one of client 11.2.0's settings pages (each its own admin page load) does. A clean store is also
- * read again when a settings route opens, since a read still running at the last leave lands after the reset.
+ * Give each settings route visit its own settings, as each of client 11.2.0's settings pages (its own admin page load)
+ * has: the store is reset when a settings route is left, and when one opens on settings an earlier read finished, so
+ * the visit reads the server and unsaved edits are dropped. A request from a closed visit then writes nothing.
  */
 export const useResetSettingsOnLeave = () => {
-	const { invalidateResolutionForStoreSelector, resetSettings } =
-		useRegisteredDispatch();
+	const { resetSettings } = useRegisteredDispatch();
 	const registry = useRegistry();
 
 	useEffect( () => {
-		if ( ! registry.select( STORE_NAME ).isDirty() ) {
-			void invalidateResolutionForStoreSelector( 'getSettings' );
+		// A first visit's read is already scheduled or running, so it is kept.
+		if (
+			registry.select( STORE_NAME ).hasFinishedResolution( 'getSettings' )
+		) {
+			void resetSettings();
 		}
 
 		return () => {
@@ -310,7 +312,7 @@ export const useResetSettingsOnLeave = () => {
 			// settings again on the way out and keep that read for the next visit.
 			queueMicrotask( () => void resetSettings() );
 		};
-	}, [ invalidateResolutionForStoreSelector, registry, resetSettings ] );
+	}, [ registry, resetSettings ] );
 };
 
 const makeExpressCheckoutLocationHook = ( methodId: string ) => () => {

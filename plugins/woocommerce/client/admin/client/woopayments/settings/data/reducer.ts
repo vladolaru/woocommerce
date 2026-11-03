@@ -18,6 +18,8 @@ type SettingsState = {
 	savingError: unknown;
 	data: SettingsData;
 	savedData: SettingsData;
+	// Counts the resets, so a request can tell that the settings visit it started in has closed.
+	visit: number;
 };
 
 const defaultState: SettingsState = {
@@ -26,6 +28,7 @@ const defaultState: SettingsState = {
 	savingError: null,
 	data: {},
 	savedData: {},
+	visit: 0,
 };
 
 // Lists the server only reads as sets. Turning an item off and on again moves it to the end without changing anything.
@@ -77,7 +80,7 @@ export const receiveSettings = (
 			};
 
 		case ACTION_TYPES.RESET_SETTINGS:
-			return defaultState;
+			return { ...defaultState, visit: state.visit + 1 };
 
 		case ACTION_TYPES.SET_SETTINGS_VALUES:
 			return withEditedData(

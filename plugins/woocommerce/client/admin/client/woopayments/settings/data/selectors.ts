@@ -5,6 +5,7 @@ type SettingsRootState = {
 		isSaving?: boolean;
 		isDirty?: boolean;
 		savingError?: unknown;
+		visit?: number;
 	};
 };
 
@@ -69,6 +70,11 @@ export const isSavingSettings = ( state: SettingsRootState ) => {
 
 export const isDirty = ( state: SettingsRootState ) => {
 	return getSettingsState( state ).isDirty || false;
+};
+
+// Changes on each reset, which closes a settings visit.
+export const getSettingsVisit = ( state: SettingsRootState ) => {
+	return getSettingsState( state ).visit || 0;
 };
 
 export const getAccountStatementDescriptor = ( state: SettingsRootState ) => {

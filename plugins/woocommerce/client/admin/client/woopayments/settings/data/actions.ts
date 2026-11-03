@@ -231,6 +231,10 @@ export function* saveSettings(): Generator<
 	SettingsSaveResponse
 > {
 	let error: SettingsSaveError | null = null;
+	// A save answering after its settings visit closed leaves the next visit's settings and saving state alone, as a
+	// discarded page's request does.
+	const visit = select( STORE_NAME ).getSettingsVisit();
+	const isVisitOpen = () => select( STORE_NAME ).getSettingsVisit() === visit;
 
 	try {
 		const settings = select( STORE_NAME ).getSettings();
@@ -257,19 +261,21 @@ export function* saveSettings(): Generator<
 		} );
 		const responseData = response.data ?? response;
 
-		yield updateSettings( {
-			...settings,
-			...responseData,
-			// The response reports WooPay as the saved choice AND current eligibility. Keep the merchant's choice, as the
-			// client keeps every submitted setting (client 11.1.0 client/data/settings/actions.js:194-197), so a later
-			// save cannot turn WooPay off while the account is briefly ineligible.
-			...( 'is_woopay_enabled' in settings
-				? { is_woopay_enabled: settings.is_woopay_enabled }
-				: {} ),
-			payment_method_statuses:
-				responseData.payment_method_statuses ??
-				settings.payment_method_statuses,
-		} );
+		if ( isVisitOpen() ) {
+			yield updateSettings( {
+				...settings,
+				...responseData,
+				// The response reports WooPay as the saved choice AND current eligibility. Keep the merchant's choice, as the
+				// client keeps every submitted setting (client 11.1.0 client/data/settings/actions.js:194-197), so a later
+				// save cannot turn WooPay off while the account is briefly ineligible.
+				...( 'is_woopay_enabled' in settings
+					? { is_woopay_enabled: settings.is_woopay_enabled }
+					: {} ),
+				payment_method_statuses:
+					responseData.payment_method_statuses ??
+					settings.payment_method_statuses,
+			} );
+		}
 
 		yield dispatch( 'core/notices' ).createSuccessNotice(
 			__( 'Settings saved.', 'woocommerce' )
@@ -301,7 +307,9 @@ export function* saveSettings(): Generator<
 			);
 		}
 	} finally {
-		yield updateIsSavingSettings( false, error );
+		if ( isVisitOpen() ) {
+			yield updateIsSavingSettings( false, error );
+		}
 	}
 
 	return error === null;
