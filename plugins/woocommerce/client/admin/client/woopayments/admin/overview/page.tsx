@@ -493,14 +493,16 @@ export const WooPaymentsOverviewPage = () => {
 							!! shell?.is_instant_deposit_notice_dismissed
 						}
 					/>
-					<PayoutsOverviewCard
-						isLoading={ isLoading || isPayoutsLoading }
-						hasError={ hasPayoutsError }
-						overview={ overview }
-						recentPayouts={ recentPayouts }
-						selectedCurrency={ selectedCurrency || undefined }
-						accountStatus={ shell?.account_status }
-					/>
+					{ shell && (
+						<PayoutsOverviewCard
+							isLoading={ isLoading || isPayoutsLoading }
+							hasError={ hasPayoutsError }
+							overview={ overview }
+							recentPayouts={ recentPayouts }
+							selectedCurrency={ selectedCurrency || undefined }
+							accountStatus={ shell.account_status }
+						/>
+					) }
 				</>
 			) }
 			{ shell && (

@@ -1067,6 +1067,15 @@ describe( 'WooPaymentsOverviewPage', () => {
 			screen.queryByRole( 'heading', { name: 'Things to do' } )
 		).not.toBeInTheDocument();
 		expect( screen.queryByText( 'Shell failed.' ) ).not.toBeInTheDocument();
+		// Without the account's payout fields the payouts card would call the account new and hide its schedule.
+		expect(
+			( await screen.findAllByText( '$10.00' ) ).length
+		).toBeGreaterThan( 0 );
+		expect(
+			screen.queryByText( /7-day waiting period/, {
+				ignore: 'script, style, .a11y-speak-region',
+			} )
+		).not.toBeInTheDocument();
 	} );
 
 	it( 'persists connection success modal dismissal', async () => {
