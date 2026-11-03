@@ -226,6 +226,10 @@ const FeesReport = ( {
 	const hasError = Boolean( rowsState.error || summaryState.error );
 	const isLoading = rowsState.isLoading || summaryState.isLoading;
 	const hasFilters = Boolean( view.search || ( view.filters ?? [] ).length );
+	// The load's error event reads this ref, so the load runs again only when the request changes, not for a Date filter
+	// with no dates yet. The client's store answers an unchanged query from its cache.
+	const hasFiltersRef = useRef( hasFilters );
+	hasFiltersRef.current = hasFilters;
 	const totalPages = Math.max(
 		1,
 		Math.ceil( totalItems / Number( view.perPage || 25 ) )
@@ -383,14 +387,14 @@ const FeesReport = ( {
 				isLoading: false,
 			} );
 			recordEvent( 'wcpay_reports_fees_load_error', {
-				has_filters: hasFilters,
+				has_filters: hasFiltersRef.current,
 			} );
 			speak(
 				__( 'Fees report could not be loaded.', 'woocommerce' ),
 				'assertive'
 			);
 		}
-	}, [ hasFilters, serializedQuery ] );
+	}, [ serializedQuery ] );
 
 	useEffect( () => {
 		void load();

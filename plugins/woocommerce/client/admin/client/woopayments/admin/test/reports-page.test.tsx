@@ -1161,7 +1161,16 @@ describe( 'WooPaymentsReportsPage', () => {
 
 		await userEvent.click( screen.getByRole( 'tab', { name: 'Fees' } ) );
 		await screen.findByRole( 'searchbox', { name: 'Search fees' } );
-		// A Date filter with no dates yet filters nothing (client 11.2.0 `getFeesDateFilterValue()`): no preset is pressed.
+		// A Date filter with no dates yet filters nothing (client 11.2.0 `getFeesDateFilterValue()`): no preset is pressed, and
+		// the request is the one already loaded, so nothing is sent again.
+		await waitFor( () =>
+			expect( screen.getByTestId( 'reports-dataviews' ) ).toHaveAttribute(
+				'aria-busy',
+				'false'
+			)
+		);
+		const feesCalls = mockGetFees.mock.calls.length;
+		const feesSummaryCalls = mockGetFeesSummary.mock.calls.length;
 		await userEvent.click(
 			screen.getByRole( 'button', {
 				name: 'Add date filter without dates',
@@ -1174,9 +1183,9 @@ describe( 'WooPaymentsReportsPage', () => {
 		expect(
 			feesPopover.getByRole( 'button', { name: 'Previous year' } )
 		).toHaveAttribute( 'aria-pressed', 'false' );
-		expect( mockGetFees ).toHaveBeenLastCalledWith(
-			expect.not.objectContaining( { date_between: expect.anything() } )
-		);
+		await act( waitForNextTick );
+		expect( mockGetFees ).toHaveBeenCalledTimes( feesCalls );
+		expect( mockGetFeesSummary ).toHaveBeenCalledTimes( feesSummaryCalls );
 		await userEvent.click(
 			screen.getByRole( 'button', { name: 'Apply detailed fees view' } )
 		);
