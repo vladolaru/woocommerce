@@ -371,6 +371,17 @@ const jsConfig = {
 					chunks: 'async',
 					enforce: true,
 				},
+				// WooPayments admin routes share these small list helpers. Split
+				// them out whatever their size, so no route bundles its own copy
+				// and the default groups do not regroup when one route stops
+				// importing one of them.
+				woopaymentsLists: {
+					test: /[\\/]client[\\/]woopayments[\\/]admin[\\/](list-query|money-movement[\\/](list-filters|query|use-dataviews-reload-state))\.tsx?$/,
+					chunks: 'async',
+					minChunks: 2,
+					minSize: 0,
+					reuseExistingChunk: true,
+				},
 				// WooPayments onboarding and Overview both load Stripe Connect.
 				// Keep one copy in a shared async chunk.
 				stripeConnect: {
