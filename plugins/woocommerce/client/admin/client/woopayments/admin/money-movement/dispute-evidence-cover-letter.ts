@@ -137,11 +137,13 @@ const getChargeId = ( dispute: WooPaymentsDispute ) => {
 	);
 };
 
-// Client 11.1.0 `formatDateTimeFromTimestamp( ..., { separator: ', ' } )`: site formats, read as UTC.
+// Client 11.1.0 `formatDateTimeFromTimestamp( ..., { separator: ', ' } )`: site formats, read as UTC. A date-only
+// value is a calendar day, so it is shown in UTC too and keeps its day in every site time zone.
 const formatDate = (
 	value: string | number | undefined,
 	placeholder: string,
-	includeTime = false
+	includeTime = false,
+	dateOnly = false
 ) => {
 	if ( value === undefined || value === '' || value === null ) {
 		return placeholder;
@@ -161,7 +163,7 @@ const formatDate = (
 	return dateI18n(
 		includeTime ? `${ formats.date }, ${ formats.time }` : formats.date,
 		date.toISOString(),
-		undefined
+		dateOnly || undefined
 	);
 };
 
@@ -724,13 +726,14 @@ const generateBodyCreditNotProcessed = (
 		return `${ getOpening( data ) }
 
 ${ sprintf(
-	/* translators: %1$s: customer name, %2$s: order date, %3$s: refund amount */
+	/* translators: %1$s: customer name, %2$s: refund date, %3$s: refund amount */
 	__(
 		"Our records indicate that the customer, %1$s, was refunded on %2$s for the amount of %3$s. The refund was processed through our payment provider and should be visible on the customer's statement within 7 - 10 business days.",
 		'woocommerce'
 	),
 	data.customerName,
-	data.orderDate,
+	// The dispute carries no refund date; the merchant fills it in.
+	__( '<Refund Date>', 'woocommerce' ),
 	data.refundAmount
 ) }
 
@@ -833,13 +836,14 @@ ${ getRequestUs() }`;
 
 	return `${ getOpening( data ) }
 ${ sprintf(
-	/* translators: %1$s: case number, %2$s: transaction ID */
+	/* translators: %1$s: first order number, %2$s: second order number */
 	__(
 		'Our records show that the customer placed two distinct orders: %1$s and %2$s. Both transactions were legitimate, fulfilled independently, and are not duplicates.',
 		'woocommerce'
 	),
-	data.caseNumber,
-	data.transactionId
+	// The dispute names neither order; the merchant fills them in.
+	__( '<First Order Number>', 'woocommerce' ),
+	__( '<Second Order Number>', 'woocommerce' )
 ) }
 
 ${ getDocumentation( attachmentsList ) }
@@ -894,7 +898,7 @@ export const generateDisputeCoverLetter = ( {
 			__( '<Case Number>', 'woocommerce' ),
 		transactionId: getChargeId( dispute ),
 		transactionDate: formatDate(
-			dispute.created,
+			charge?.created,
 			__( '<Transaction Date>', 'woocommerce' ),
 			true
 		),
@@ -909,7 +913,9 @@ export const generateDisputeCoverLetter = ( {
 		),
 		deliveryDate: formatDate(
 			evidence.shipping_date,
-			__( '<Delivery/Service Date>', 'woocommerce' )
+			__( '<Delivery/Service Date>', 'woocommerce' ),
+			false,
+			true
 		),
 		refundAmount: dispute.amount
 			? `${ formatRefundAmount(

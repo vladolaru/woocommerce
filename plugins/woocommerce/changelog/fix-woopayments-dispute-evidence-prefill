@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Prefill WooPayments dispute evidence correctly: no shipping date unless one is saved, the right delivery and transaction dates, and placeholders for the refund date and order numbers.

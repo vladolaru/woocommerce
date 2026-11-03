@@ -852,13 +852,9 @@ describe( 'WooPaymentsDisputeChallengePage', () => {
 		expect( back.firstElementChild?.tagName.toLowerCase() ).toBe( 'svg' );
 	} );
 
-	// Client 11.1.0 `new-evidence/shipping-details.tsx:57-70`: a date field showing the saved date, or today when none is saved.
-	it( 'asks for the shipping date with a date field prefilled with the saved date or today', async () => {
-		// Late in the UTC day, so the expected date is the UTC one the field shows.
-		jest.useFakeTimers( {
-			now: new Date( '2026-03-04T23:30:00Z' ),
-			doNotFake: [ 'setTimeout', 'queueMicrotask', 'nextTick' ],
-		} );
+	// Client 11.2.0 `new-evidence/shipping-details.tsx:57-70` shows today when no date is saved and submits none; the
+	// field stays empty instead, so it shows what the evidence holds.
+	it( 'asks for the shipping date with a date field showing the saved date, empty when none is saved', async () => {
 		mockGetDispute.mockResolvedValue( makeDispute() );
 
 		const { unmount } = renderChallengePage();
@@ -870,7 +866,7 @@ describe( 'WooPaymentsDisputeChallengePage', () => {
 
 		const emptyDate = screen.getByLabelText( 'Shipping date' );
 		expect( emptyDate ).toHaveAttribute( 'type', 'date' );
-		expect( emptyDate ).toHaveValue( '2026-03-04' );
+		expect( emptyDate ).toHaveValue( '' );
 		unmount();
 
 		mockGetDispute.mockResolvedValue(

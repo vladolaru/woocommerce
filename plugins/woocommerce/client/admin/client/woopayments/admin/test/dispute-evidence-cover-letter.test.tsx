@@ -271,7 +271,7 @@ describe( 'Dispute cover letter bodies', () => {
 
 	it( 'uses the header, recipient and closing layout', () => {
 		expect( letterFor( 'fraudulent' ) ).toMatch(
-			/^Coffee Roasters\n1 Market Street\nsupport@example.com\n\+1 555 123 4567\nFeb 20, 2026\n\nTo: Test Issuing Bank\nSubject: Chargeback Dispute – Case #dp_test\n\nDear Dispute Resolution Team,\n\nWe are submitting evidence in response to chargeback #dp_test for transaction #ch_test on <Transaction Date>\.\n\n/
+			/^Coffee Roasters\n1 Market Street\nsupport@example.com\n\+1 555 123 4567\nFeb 20, 2026\n\nTo: Test Issuing Bank\nSubject: Chargeback Dispute – Case #dp_test\n\nDear Dispute Resolution Team,\n\nWe are submitting evidence in response to chargeback #dp_test for transaction #ch_test on February 17, 2026, 2:00 pm\.\n\n/
 		);
 	} );
 
@@ -353,14 +353,14 @@ describe( 'Dispute cover letter bodies', () => {
 				refundStatus: 'refund_has_been_issued',
 			} )
 		).toContain(
-			"was refunded on February 17, 2026, 2:00 pm for the amount of 50.00 USD. The refund was processed through our payment provider and should be visible on the customer's statement within 7 - 10 business days."
+			"was refunded on <Refund Date> for the amount of 50.00 USD. The refund was processed through our payment provider and should be visible on the customer's statement within 7 - 10 business days."
 		);
 		expect(
 			letterFor( 'credit_not_processed', {
 				refundStatus: 'refund_was_not_owed',
 			} )
 		).toContain(
-			'on <Transaction Date>.\nThe customer requested a refund outside of the eligible window outlined in our refund policy, which was clearly presented on the website and on the order confirmation.'
+			'on February 17, 2026, 2:00 pm.\nThe customer requested a refund outside of the eligible window outlined in our refund policy, which was clearly presented on the website and on the order confirmation.'
 		);
 	} );
 
@@ -373,7 +373,7 @@ describe( 'Dispute cover letter bodies', () => {
 		expect(
 			letterFor( 'duplicate', { duplicateStatus: 'is_not_duplicate' } )
 		).toContain(
-			'Our records show that the customer placed two distinct orders: dp_test and ch_test. Both transactions were legitimate, fulfilled independently, and are not duplicates.'
+			'Our records show that the customer placed two distinct orders: <First Order Number> and <Second Order Number>. Both transactions were legitimate, fulfilled independently, and are not duplicates.'
 		);
 	} );
 } );
@@ -393,7 +393,14 @@ describe( 'Dispute cover letter dates and attachments', () => {
 	const attachmentsOf = ( letter: string ) =>
 		letter.split( '\n' ).filter( ( line ) => line.startsWith( '• ' ) );
 
+	// The transaction is the charge, so it is dated by the charge, not the dispute. The delivery date is a calendar
+	// day, so it reads the same in every site time zone; this site is five hours west of UTC.
 	it( 'dates the transaction and order with the time, today and the delivery without', () => {
+		const dateSettings = getSettings();
+		setSettings( {
+			...dateSettings,
+			timezone: { ...dateSettings.timezone, offset: '-5', string: '' },
+		} );
 		jest.useFakeTimers().setSystemTime(
 			new Date( '2026-02-20T12:00:00Z' )
 		);
@@ -402,13 +409,14 @@ describe( 'Dispute cover letter dates and attachments', () => {
 			{ evidence: { shipping_date: '2026-02-19' } }
 		);
 		jest.useRealTimers();
+		setSettings( dateSettings );
 
 		expect( letter.split( '\n' )[ 4 ] ).toBe( 'February 20, 2026' );
 		expect( letter ).toContain(
-			'for transaction #ch_test on February 18, 2026, 2:00 pm.'
+			'for transaction #ch_test on February 17, 2026, 9:00 am.'
 		);
 		expect( letter ).toContain(
-			'ordered <Product> on February 17, 2026, 2:00 pm and received it on February 19, 2026.'
+			'ordered <Product> on February 17, 2026, 9:00 am and received it on February 19, 2026.'
 		);
 	} );
 

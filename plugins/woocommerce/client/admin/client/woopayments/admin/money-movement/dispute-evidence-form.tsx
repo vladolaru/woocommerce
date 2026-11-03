@@ -139,13 +139,17 @@ const getShippingFieldLabel = ( field: string ) => {
 };
 
 /**
- * The shipping date as a date field value: the saved date, or today when none is saved.
- * Client 11.1.0 `new-evidence/shipping-details.tsx:62-68`; today is only shown, it is saved once the merchant picks a date.
+ * The shipping date as a date field value: the saved date, or empty when none is saved, so the field shows what the
+ * evidence holds. Client 11.2.0 `new-evidence/shipping-details.tsx:63-68` shows today instead and submits no date.
  *
  * @param shippingDate The saved shipping date.
  */
 const getShippingDateFieldValue = ( shippingDate: string ) => {
-	const date = shippingDate ? new Date( shippingDate ) : new Date();
+	if ( ! shippingDate ) {
+		return '';
+	}
+
+	const date = new Date( shippingDate );
 
 	return Number.isNaN( date.getTime() )
 		? ''
