@@ -10,7 +10,7 @@ import type { ReactNode } from 'react';
 /**
  * Internal dependencies
  */
-import { ProviderRouteLoading } from '~/settings-payments/components/provider-route-loading';
+import { WooPaymentsRouteLoading } from '~/settings-payments/components/woopayments-route-loading';
 import { getSettingsPaymentsProviderRouteUrl } from './utils';
 import { registerPaymentsRuntimeTracksPropertyWhenPreloaded } from '../tracks-runtime';
 
@@ -167,7 +167,7 @@ const getFallbackRoutePath = () => {
 };
 
 const LoadingFallback = () => (
-	<ProviderRouteLoading providerName="WooPayments" />
+	<WooPaymentsRouteLoading providerName="WooPayments" />
 );
 
 const WooPaymentsAdminAreaUnavailable = () => {
@@ -313,7 +313,7 @@ const WooPaymentsReportsRoute = () => {
 /**
  * The WooPayments routes of the Payments settings app, which reads them once this chunk loads, in this order.
  */
-export const woopaymentsProviderRoutes: Array< {
+export const wooPaymentsRoutes: Array< {
 	path: string;
 	element: ReactNode;
 } > = [

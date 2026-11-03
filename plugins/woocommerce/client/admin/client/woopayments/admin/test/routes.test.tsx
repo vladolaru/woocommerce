@@ -10,7 +10,7 @@ import apiFetch from '@wordpress/api-fetch';
 /**
  * Internal dependencies
  */
-import { woopaymentsProviderRoutes } from '../routes';
+import { wooPaymentsRoutes } from '../routes';
 import { SettingsPaymentsWooPaymentsWrapper } from '~/settings-payments';
 
 jest.mock( '@wordpress/api-fetch', () => jest.fn() );
@@ -90,7 +90,7 @@ const setAdminRouteAvailability = (
 };
 
 const getRouteElement = ( routePath: string ) => {
-	const route = woopaymentsProviderRoutes.find(
+	const route = wooPaymentsRoutes.find(
 		( { path: registeredPath } ) => registeredPath === routePath
 	);
 
@@ -130,9 +130,7 @@ describe( 'WooPayments Settings Payments routes', () => {
 
 	it( 'lists the WooPayments routes the Payments settings app reads, in order', () => {
 		expect(
-			woopaymentsProviderRoutes.map(
-				( { path: routePath } ) => routePath
-			)
+			wooPaymentsRoutes.map( ( { path: routePath } ) => routePath )
 		).toEqual( [
 			'/woopayments/settings',
 			'/woopayments/settings/express-checkout/:methodId',
@@ -150,10 +148,10 @@ describe( 'WooPayments Settings Payments routes', () => {
 			'/woopayments/loans',
 			'/woopayments/documents',
 		] );
-		woopaymentsProviderRoutes.forEach( ( route ) => {
+		wooPaymentsRoutes.forEach( ( route ) => {
 			expect( route.element ).toBeDefined();
 		} );
-		expect( JSON.stringify( woopaymentsProviderRoutes ) ).not.toContain(
+		expect( JSON.stringify( wooPaymentsRoutes ) ).not.toContain(
 			'wc-pay-welcome-page'
 		);
 	} );
@@ -171,7 +169,7 @@ describe( 'WooPayments Settings Payments routes', () => {
 			},
 		};
 
-		const route = woopaymentsProviderRoutes.find(
+		const route = wooPaymentsRoutes.find(
 			( { path: routePath } ) => routePath === '/woopayments/reports'
 		);
 
@@ -422,7 +420,7 @@ describe( 'WooPayments Settings Payments routes', () => {
 				data: [],
 			} );
 
-		const route = woopaymentsProviderRoutes.find(
+		const route = wooPaymentsRoutes.find(
 			( { path: routePath } ) => routePath === '/woopayments/loans'
 		);
 

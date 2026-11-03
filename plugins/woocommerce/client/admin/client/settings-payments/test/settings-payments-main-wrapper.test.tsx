@@ -1,13 +1,13 @@
-const mockNativeRoutesLoaded = jest.fn();
+const mockWooPaymentsRoutesLoaded = jest.fn();
 
 jest.mock( '~/woopayments/admin/routes', () => {
-	mockNativeRoutesLoaded();
+	mockWooPaymentsRoutesLoaded();
 
 	return {
-		woopaymentsProviderRoutes: [
+		wooPaymentsRoutes: [
 			{
 				path: '/woopayments/overview',
-				element: <div>Native overview page</div>,
+				element: <div>WooPayments overview page</div>,
 			},
 		],
 	};
@@ -62,7 +62,7 @@ const renderWrapper = async () => {
 // Lets dynamic imports and lazy chunks settle.
 const flushImports = () => new Promise( ( resolve ) => setTimeout( resolve ) );
 
-describe( 'SettingsPaymentsMainWrapper native provider routes', () => {
+describe( 'SettingsPaymentsMainWrapper WooPayments routes', () => {
 	let cleanup: () => void = () => {};
 
 	// The first fresh load transforms every module; keep that cost out of the first test's timeout.
@@ -72,7 +72,7 @@ describe( 'SettingsPaymentsMainWrapper native provider routes', () => {
 	}, 30000 );
 
 	beforeEach( () => {
-		mockNativeRoutesLoaded.mockClear();
+		mockWooPaymentsRoutesLoaded.mockClear();
 		window.scrollTo = jest.fn();
 	} );
 
@@ -91,7 +91,7 @@ describe( 'SettingsPaymentsMainWrapper native provider routes', () => {
 			'Main payments list',
 		],
 	] )(
-		'does not load the native routes on %s',
+		'does not load the WooPayments routes on %s',
 		async ( _label, path, expectedPage ) => {
 			setPaymentsPath( path );
 			const { screen, act, cleanup: done } = await renderWrapper();
@@ -102,11 +102,11 @@ describe( 'SettingsPaymentsMainWrapper native provider routes', () => {
 			).toBeInTheDocument();
 			await act( flushImports );
 
-			expect( mockNativeRoutesLoaded ).not.toHaveBeenCalled();
+			expect( mockWooPaymentsRoutesLoaded ).not.toHaveBeenCalled();
 		}
 	);
 
-	it( 'loads and renders a native route on a direct /woopayments load', async () => {
+	it( 'loads and renders a WooPayments route on a direct /woopayments load', async () => {
 		setPaymentsPath( '/woopayments/overview' );
 		const { screen, cleanup: done } = await renderWrapper();
 		cleanup = done;
@@ -119,12 +119,12 @@ describe( 'SettingsPaymentsMainWrapper native provider routes', () => {
 		).not.toBeInTheDocument();
 
 		expect(
-			await screen.findByText( 'Native overview page' )
+			await screen.findByText( 'WooPayments overview page' )
 		).toBeInTheDocument();
-		expect( mockNativeRoutesLoaded ).toHaveBeenCalledTimes( 1 );
+		expect( mockWooPaymentsRoutesLoaded ).toHaveBeenCalledTimes( 1 );
 	} );
 
-	it( 'loads and renders a native route after navigating into /woopayments', async () => {
+	it( 'loads and renders a WooPayments route after navigating into /woopayments', async () => {
 		setPaymentsPath();
 		const { screen, act, history, cleanup: done } = await renderWrapper();
 		cleanup = done;
@@ -132,7 +132,7 @@ describe( 'SettingsPaymentsMainWrapper native provider routes', () => {
 		expect(
 			await screen.findByText( 'Main payments list' )
 		).toBeInTheDocument();
-		expect( mockNativeRoutesLoaded ).not.toHaveBeenCalled();
+		expect( mockWooPaymentsRoutesLoaded ).not.toHaveBeenCalled();
 
 		act( () => {
 			history.push(
@@ -144,13 +144,13 @@ describe( 'SettingsPaymentsMainWrapper native provider routes', () => {
 			screen.queryByText( 'Main payments list' )
 		).not.toBeInTheDocument();
 		expect(
-			await screen.findByText( 'Native overview page' )
+			await screen.findByText( 'WooPayments overview page' )
 		).toBeInTheDocument();
-		expect( mockNativeRoutesLoaded ).toHaveBeenCalledTimes( 1 );
+		expect( mockWooPaymentsRoutesLoaded ).toHaveBeenCalledTimes( 1 );
 	} );
 
 	it( 'falls back instead of loading forever when the routes chunk fails, and retries on the next mount', async () => {
-		mockNativeRoutesLoaded.mockImplementationOnce( () => {
+		mockWooPaymentsRoutesLoaded.mockImplementationOnce( () => {
 			throw new Error( 'ChunkLoadError' );
 		} );
 		setPaymentsPath( '/woopayments/overview' );
@@ -170,8 +170,8 @@ describe( 'SettingsPaymentsMainWrapper native provider routes', () => {
 		cleanup = rtl.cleanup;
 
 		expect(
-			await rtl.screen.findByText( 'Native overview page' )
+			await rtl.screen.findByText( 'WooPayments overview page' )
 		).toBeInTheDocument();
-		expect( mockNativeRoutesLoaded ).toHaveBeenCalledTimes( 2 );
+		expect( mockWooPaymentsRoutesLoaded ).toHaveBeenCalledTimes( 2 );
 	} );
 } );

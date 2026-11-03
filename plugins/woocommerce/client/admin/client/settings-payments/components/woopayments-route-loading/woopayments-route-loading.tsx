@@ -6,7 +6,7 @@ import { __, sprintf } from '@wordpress/i18n';
 /**
  * Shows that a payments provider page is loading.
  */
-export const ProviderRouteLoading = ( {
+export const WooPaymentsRouteLoading = ( {
 	providerName,
 }: {
 	providerName: string;
