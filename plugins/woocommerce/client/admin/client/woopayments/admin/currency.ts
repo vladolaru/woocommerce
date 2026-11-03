@@ -7,7 +7,10 @@ import { __ } from '@wordpress/i18n';
  * Internal dependencies
  */
 import { formatCurrencyWithOptionalCode } from './currency-format';
-import { formatWooPaymentsAmount } from './overview/utils';
+import {
+	formatWooPaymentsAmount,
+	normalizeCurrencyCode,
+} from './overview/utils';
 import { getWooPaymentsSettingsBootstrap } from '../settings/bootstrap';
 
 const CURRENCY_NAMES: Record< string, string > = {
@@ -64,7 +67,7 @@ export const formatExplicitCurrency = (
 
 	return formatCurrencyWithOptionalCode(
 		amount === 0 ? 0 : amount,
-		( currency || 'usd' ).toUpperCase(),
+		normalizeCurrencyCode( currency ),
 		skipSymbol,
 		null,
 		isExplicit
