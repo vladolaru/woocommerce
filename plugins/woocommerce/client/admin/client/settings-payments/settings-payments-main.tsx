@@ -40,7 +40,7 @@ import {
 	isWooPayments,
 	getWooPaymentsFromProviders,
 	providersContainWooPaymentsNeedsSetup,
-	isCoreNativeWooPayments,
+	isBuiltinWooPaymentsSuggestion,
 	isIncentiveDismissedEarlierThanTimestamp,
 	isActionIncentive,
 	recordPaymentsEvent,
@@ -352,7 +352,7 @@ export const SettingsPaymentsMain = () => {
 				} );
 			}
 
-			if ( isCoreNativeWooPayments( paymentsEntity ) ) {
+			if ( isBuiltinWooPaymentsSuggestion( paymentsEntity ) ) {
 				recordPaymentsOnboardingEvent(
 					'woopayments_onboarding_modal_opened',
 					{
@@ -627,7 +627,9 @@ export const SettingsPaymentsMain = () => {
 				) }
 			</div>
 			{ ( providersContainWooPaymentsNeedsSetup( providers ) ||
-				providersContainWooPaymentsInTestMode( providers ) ) && (
+				providersContainWooPaymentsInTestMode( providers ) ||
+				// A hidden built-in suggestion is listed among the suggestions and sets up from there.
+				suggestions.some( isBuiltinWooPaymentsSuggestion ) ) && (
 				<WooPaymentsModal
 					isOpen={ isOnboardingModalOpen }
 					setIsOpen={ setIsOnboardingModalOpen }

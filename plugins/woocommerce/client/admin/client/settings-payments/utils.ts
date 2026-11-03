@@ -113,15 +113,13 @@ export const isWooPayments = ( id: string ) => {
 };
 
 /**
- * Checks whether WooPayments is provided by core without a standalone plugin.
+ * Whether setting up this entity opens the onboarding of the WooPayments built into WooCommerce instead of installing a
+ * plugin: a WooPayments entity with no plugin slug. It reads no flag, so it holds in every list that carries the entity.
+ *
+ * @param entity The payments provider or suggested extension.
  */
-export const isCoreNativeWooPayments = ( provider: PaymentsEntity ) => {
-	return (
-		isWooPayments( provider.id ) &&
-		provider.onboarding?.type === 'native_in_context' &&
-		! provider.plugin?.slug
-	);
-};
+export const isBuiltinWooPaymentsSuggestion = ( entity: PaymentsEntity ) =>
+	isWooPayments( entity.id ) && ! entity.plugin?.slug;
 
 /**
  * Whether a payments provider is the WooPayments gateway or suggestion built into WooCommerce, as the providers
@@ -180,7 +178,7 @@ export const providersContainWooPaymentsNeedsSetup = (
 	const wooPayments = providers.find( ( obj ) => isWooPayments( obj.id ) );
 	return (
 		wooPayments?.state?.needs_setup === true ||
-		( !! wooPayments && isCoreNativeWooPayments( wooPayments ) )
+		( !! wooPayments && isBuiltinWooPaymentsSuggestion( wooPayments ) )
 	);
 };
 

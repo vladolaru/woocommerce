@@ -19,7 +19,10 @@ import {
 import { GridItemPlaceholder } from '~/settings-payments/components/grid-item-placeholder';
 import { OfficialBadge } from '../official-badge';
 import { IncentiveStatusBadge } from '~/settings-payments/components/incentive-status-badge';
-import { recordPaymentsEvent } from '~/settings-payments/utils';
+import {
+	isBuiltinWooPaymentsSuggestion,
+	recordPaymentsEvent,
+} from '~/settings-payments/utils';
 
 interface OtherPaymentGatewaysProps {
 	/**
@@ -311,6 +314,18 @@ export const OtherPaymentGateways = ( {
 													'Activate',
 													'woocommerce'
 												);
+									}
+
+									// The WooPayments built into WooCommerce installs nothing; it opens its onboarding.
+									if (
+										isBuiltinWooPaymentsSuggestion(
+											extension
+										)
+									) {
+										ctaLabel = __< string >(
+											'Set up',
+											'woocommerce'
+										);
 									}
 
 									return (

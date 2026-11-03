@@ -39,6 +39,35 @@ jest.mock( '~/settings-payments/components/payment-gateways', () => ( {
 	PaymentGateways: () => <div>Payment gateways list</div>,
 } ) );
 
+jest.mock( '~/settings-payments/onboarding/providers/woopayments', () => ( {
+	__esModule: true,
+	default: ( { isOpen }: { isOpen: boolean } ) =>
+		isOpen ? <div role="dialog">WooPayments onboarding</div> : null,
+} ) );
+
+// The WooPayments suggestion as "Other payment options" lists it once hidden: the REST schema drops its onboarding data.
+const hiddenWooPaymentsSuggestion = {
+	id: 'woopayments',
+	_priority: 1,
+	_type: 'psp',
+	title: 'Accept payments with Woo',
+	description: 'Payments',
+	short_description: '',
+	plugin: { status: 'not_installed' },
+	image: '',
+	icon: '',
+	links: [],
+	tags: [],
+	category: '',
+	_links: {},
+} as unknown as SuggestedPaymentsExtension;
+const pspCategory = {
+	id: 'psp',
+	_priority: 1,
+	title: 'Payment providers',
+	description: '',
+};
+
 const noticeMessage = 'Ready for live payments.';
 const noticeProvider = {
 	id: 'woocommerce_payments',
@@ -316,6 +345,84 @@ describe( 'SettingsPaymentsMain', () => {
 		);
 
 		expect( screen.queryByText( noticeMessage ) ).not.toBeInTheDocument();
+	} );
+
+	describe( 'the WooPayments card in more payment options', () => {
+		const renderWithSuggestion = async (
+			plugin: Record< string, string >
+		) => {
+			act( () => {
+				dispatch( paymentSettingsStore ).getPaymentProvidersSuccess(
+					[],
+					[],
+					[
+						{
+							...hiddenWooPaymentsSuggestion,
+							plugin,
+						} as SuggestedPaymentsExtension,
+					],
+					[ pspCategory ]
+				);
+			} );
+			render(
+				<Router>
+					<SettingsPaymentsMain />
+				</Router>
+			);
+			await userEvent.click(
+				screen.getByRole( 'button', { name: /More payment options/ } )
+			);
+		};
+
+		afterEach( () => {
+			window.history.replaceState( {}, '', '/' );
+		} );
+
+		it( 'opens the built-in onboarding for the hidden built-in suggestion and installs nothing', async () => {
+			await renderWithSuggestion( { status: 'not_installed' } );
+
+			await userEvent.click(
+				screen.getByRole( 'button', { name: /^(Set up|Install)$/ } )
+			);
+
+			expect( await screen.findByRole( 'dialog' ) ).toHaveTextContent(
+				'WooPayments onboarding'
+			);
+			expect( apiFetch ).not.toHaveBeenCalledWith(
+				expect.objectContaining( {
+					path: expect.stringContaining( '/plugins/install' ),
+				} )
+			);
+		} );
+
+		it( "installs the WooPayments extension from the extension's suggestion", async () => {
+			// The install stays pending, so the test ends at the request.
+			( apiFetch as jest.Mock ).mockImplementation( ( request ) =>
+				request.path?.includes( '/plugins/install' )
+					? new Promise( () => {} )
+					: Promise.resolve( {} )
+			);
+			await renderWithSuggestion( {
+				slug: 'woocommerce-payments',
+				status: 'not_installed',
+			} );
+
+			await userEvent.click(
+				screen.getByRole( 'button', { name: 'Install' } )
+			);
+
+			await waitFor( () =>
+				expect( apiFetch ).toHaveBeenCalledWith(
+					expect.objectContaining( {
+						path: expect.stringContaining( '/plugins/install' ),
+						data: expect.objectContaining( {
+							plugins: 'woocommerce-payments',
+						} ),
+					} )
+				)
+			);
+			expect( screen.queryByRole( 'dialog' ) ).not.toBeInTheDocument();
+		} );
 	} );
 
 	it( 'should record settings_payments_pageview event on load', () => {

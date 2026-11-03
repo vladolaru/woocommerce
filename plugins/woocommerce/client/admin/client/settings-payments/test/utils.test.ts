@@ -14,7 +14,7 @@ import {
 } from '../utils';
 
 describe( 'providersContainWooPaymentsNeedsSetup', () => {
-	it( 'recognizes a plugin-free native WooPayments suggestion as needing setup', () => {
+	it( 'recognizes the built-in WooPayments suggestion as needing setup', () => {
 		const providers = [
 			{
 				id: '_wc_pes_woopayments',
