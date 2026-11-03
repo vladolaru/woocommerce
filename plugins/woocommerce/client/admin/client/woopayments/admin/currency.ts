@@ -40,7 +40,7 @@ export const formatAmount = ( amount?: number, currency?: string ) =>
 /**
  * Whether admin amounts carry an explicit currency code, preloaded like the client's `wcpaySettings.shouldUseExplicitPrice`.
  */
-export const shouldUseExplicitPrice = () =>
+const shouldUseExplicitPrice = () =>
 	getWooPaymentsSettingsBootstrap().shouldUseExplicitPrice === true;
 
 /**

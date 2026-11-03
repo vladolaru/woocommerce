@@ -16,11 +16,7 @@ import {
 	getPaymentMethodDefinition,
 } from '../../settings/payment-method-definitions';
 import { getWooPaymentsSettingsBootstrap } from '../../settings/bootstrap';
-export {
-	formatAmount,
-	formatExplicitCurrency,
-	shouldUseExplicitPrice,
-} from '../currency';
+export { formatAmount, formatExplicitCurrency } from '../currency';
 import { formatAmount } from '../currency';
 import type {
 	WooPaymentsPaymentMethodDetails,
