@@ -157,7 +157,7 @@ export const SaveSettingsSection = ( {
 	}, [ savingError, shouldFocusSavingError ] );
 
 	const save = async () => {
-		// The save outcome is announced by the snackbar only, as in the client.
+		// The save outcome is announced by the snackbar only.
 		const isSuccess = await saveSettings();
 
 		if ( ! isSuccess ) {

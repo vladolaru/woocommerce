@@ -93,8 +93,8 @@ const ExpressCheckoutSettingsSection = () => {
 		useEnabledPaymentMethodIds() as StringArraySetting;
 	const [ isAmazonPayEnabled, setIsAmazonPayEnabled ] =
 		useAmazonPayEnabledSettings() as BooleanSetting;
-	// Owner decision N-280, a recorded improvement over client 11.1.0: each description follows the saved state,
-	// so toggling a checkbox never moves the row; the terms text goes only after a successful save.
+	// Each description follows the saved state, so toggling a checkbox never moves the row; the terms text goes
+	// only after a successful save.
 	const savedSettings = asSettingsRecord( useGetSavedSettings() );
 	const savedEnabledMethodIds = asStringArray(
 		savedSettings.enabled_payment_method_ids
@@ -347,7 +347,7 @@ const ExpressCheckoutSettingsSection = () => {
 			],
 			notice: amazonPayAvailability.notice || '',
 			noticeStatus: amazonPayAvailability.noticeStatus,
-			// Owner-decided improvement: client 11.1.0's amazon-pay-item.tsx shows no duplicate notice.
+			// Amazon Pay also shows the duplicate-method notice (client 11.1.0's amazon-pay-item.tsx shows none).
 			duplicatePaymentMethodId: 'amazon_pay',
 		} );
 	}

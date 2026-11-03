@@ -515,8 +515,8 @@ const getDiscountTooltipText = ( discountFee?: FeeAmount ) => {
 };
 
 /**
- * A pill that opens its details above itself in a core Popover, on hover, focus or click, as the client's
- * HoverTooltip does for fees. Escape closes it and returns focus to the pill.
+ * A pill that opens its details above itself in a core Popover, on hover, focus or click.
+ * Escape closes it and returns focus to the pill.
  */
 const PillDetailsPopover = ( {
 	id,
@@ -849,7 +849,7 @@ const PmPromotionBadge = ( {
 };
 
 /**
- * Holds a payment method row's notices, stacked below the row like the client's row notices.
+ * Holds a payment method row's notices, stacked below the row.
  */
 export const PaymentMethodRowNotices = ( {
 	children,
@@ -1035,8 +1035,8 @@ export const getPaymentMethodAvailability = (
 				),
 				noticeStatus: 'warning',
 			};
-		// The platform reports `disabled` for a method it no longer offers to this account. The client has no case for it and
-		// leaves the toggle working while checkout drops the method (client 11.1.0 .claude/docs/payment-method-lifecycle.md).
+		// The platform reports `disabled` for a method it no longer offers to this account.
+		// The row is not actionable: checkout drops the method (client 11.1.0 .claude/docs/payment-method-lifecycle.md).
 		case 'disabled':
 			return {
 				isActionable: false,
@@ -1429,7 +1429,7 @@ export const WooPaymentsPaymentMethodsList = ( {
 			return 0;
 		} );
 
-	// Like the client, an empty list (for example after a failed settings read) shows nothing.
+	// An empty list (for example after a failed settings read) shows nothing.
 	if ( definitions.length === 0 ) {
 		return null;
 	}

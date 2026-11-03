@@ -138,7 +138,7 @@ export const FraudProtectionSettings = () => {
 		'/woopayments/settings/fraud-protection?from=woopayments-settings';
 	const advancedSettingsUrl =
 		getSettingsPaymentsProviderRouteUrl( advancedSettingsPath );
-	// Owner decision N-280: Edit / Configure follows the saved rules, so an unsaved ruleset does not relabel it.
+	// Edit / Configure follows the saved rules, so an unsaved ruleset does not relabel it.
 	const savedAdvancedFraudProtectionSettings = asSettingsRecord(
 		useGetSavedSettings()
 	).advanced_fraud_protection_settings;

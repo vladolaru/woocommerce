@@ -110,7 +110,7 @@ const getFraudProtectionEnvironment = ( settings: SettingsRecord ) => {
 		),
 		allowedCountriesType: asString( allowedCountries.type, 'all' ),
 		settingCountries: asStringArray( allowedCountries.countries ),
-		// Unknown AVS state reads as off, CVC as on, as in the client.
+		// Unknown AVS state reads as off, CVC as on.
 		isAvsFailureDeclineEnabled: asBoolean(
 			fraudProtection.decline_on_avs_failure,
 			false
@@ -433,7 +433,7 @@ const RuleToggle = ( {
 	}
 
 	return (
-		// Owner decision N-283: a checkbox, like every other native settings control; the client uses a toggle.
+		// A checkbox, like every other settings control.
 		<div className="woopayments-fraud-protection-rule__control">
 			<CheckboxControl
 				checked={ settingUI.enabled }
@@ -836,7 +836,7 @@ export const FraudProtectionAdvancedSettingsPage = () => {
 	const isSellingToSupportedAvsLocations =
 		isSellingToAvsSupportedLocations( environment );
 	// A failed settings read shows the same retrieval error as an `'error'` ruleset, with no Save, so
-	// default rules are never saved over the stored ruleset (N-261).
+	// default rules are never saved over the stored ruleset.
 	const hasAdvancedFraudProtectionSettingsError =
 		advancedFraudProtectionSettings === 'error' ||
 		Object.keys( settings ).length === 0;

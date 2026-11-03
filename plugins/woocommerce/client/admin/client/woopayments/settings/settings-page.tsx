@@ -64,7 +64,7 @@ import {
 import './settings-page-only.scss';
 import './style.scss';
 
-// The settings embed can render this page outside the native routes.
+// The settings embed can render this page outside the WooPayments routes.
 registerPaymentsRuntimeTracksPropertyWhenPreloaded();
 
 const VAT_DETAILS_MODAL_QUERY_PARAM = 'woopayments-vat-details-modal';

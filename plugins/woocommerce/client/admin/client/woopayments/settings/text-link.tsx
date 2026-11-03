@@ -4,8 +4,8 @@
 import type { ReactNode } from 'react';
 
 /**
- * A link inside running text that opens in a new tab without the external-link glyph, as the
- * client's plain `<a target="_blank">` links do. Also usable as a `createInterpolateElement` tag.
+ * A link inside running text that opens in a new tab without the external-link glyph, like a plain
+ * `<a target="_blank">`. Also usable as a `createInterpolateElement` tag.
  */
 export const TextLink = ( {
 	href,

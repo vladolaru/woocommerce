@@ -334,7 +334,7 @@ export const WooPaySettings = () => {
 					// can turn it off.
 					disabled={ isStripeLinkEnabled && ! isWooPayEnabled }
 					label={ __( 'Enable WooPay', 'woocommerce' ) }
-					// Owner decision N-280: the terms text follows the saved state, not the unsaved toggle.
+					// The terms text follows the saved state, not the unsaved toggle.
 					help={
 						isWooPaySaved ? (
 							__(

@@ -123,7 +123,7 @@
 	list-style: none;
 	border-top: 1px solid $gray-100;
 
-	// The card edge closes the list, like the client's cards, so the last row has no rule of its own.
+	// The card edge closes the list, so the last row has no rule of its own.
 	> .woopayments-settings-payment-method-item:last-child {
 		padding-bottom: 0;
 		border-bottom: 0;
@@ -151,7 +151,7 @@
 		align-items: center;
 	}
 
-	// Apple Pay and Google Pay share one checkbox and one action, like the client's grouped express checkout row.
+	// Apple Pay and Google Pay share one checkbox and one action in a grouped express checkout row.
 	&--grouped {
 		.components-checkbox-control {
 			grid-row: 1 / span 2;
@@ -303,7 +303,7 @@
 		}
 	}
 
-	// One slot for every row notice (availability, exclusion, duplicate), placed like the client's: full row
+	// One slot for every row notice (availability, exclusion, duplicate): full row
 	// width, 24px below the row, stacked when more than one applies.
 	&__notices {
 		display: flex;
@@ -320,16 +320,16 @@
 		margin: 0;
 	}
 
-	// Below 660px the client restacks each row: the checkbox, then the logo and name on one line, with the
+	// Below 660px each row restacks: the checkbox, then the logo and name on one line, with the
 	// description, card brands and fee pill underneath. core's breakpoint() mixin has no 660px size, so this
-	// uses the client's width directly.
+	// uses the width directly.
 	@media (max-width: 660px) {
 		&__main {
 			grid-template-columns: 24px auto minmax(0, 1fr);
 			gap: $gap-smaller $gap-small;
 		}
 
-		// The client's logos drop to 30px high on narrow screens.
+		// The logos drop to 30px high on narrow screens.
 		&__icon {
 			// stylelint-disable declaration-property-value-disallowed-list -- narrow-screen logo box, sized by the asset.
 			width: 48px;

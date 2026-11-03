@@ -37,7 +37,7 @@ const getPayoutOverview = async (): Promise< DepositsOverview > =>
 		method: 'GET',
 	} );
 
-// Client 11.1.0 `settings/deposits/index.js:209-212` reads `wcpaySettings.accountStatus.accountLink`, which the native Overview shell carries.
+// Client 11.1.0 `settings/deposits/index.js:209-212` reads `wcpaySettings.accountStatus.accountLink`, which the Overview shell carries.
 const getAccountLink = async (): Promise< string | undefined > => {
 	const shell = await apiFetch< OverviewShell >( {
 		path: '/wc-admin/settings/payments/woopayments/overview',

@@ -171,7 +171,7 @@ export const AccountModeNotice = ( {
 			preloadedAccountMode ? getNoticeState( preloadedAccountMode ) : null
 		);
 	const [ isModalVisible, setModalVisible ] = useState( false );
-	// The settings read carries dev mode; when it fails, the page's own flag still picks the client's development copy.
+	// The settings read carries dev mode; when it fails, the page's own flag still picks the development copy.
 	const isDevMode =
 		isDevModeEnabled || getWooPaymentsSettingsBootstrap().devMode === true;
 

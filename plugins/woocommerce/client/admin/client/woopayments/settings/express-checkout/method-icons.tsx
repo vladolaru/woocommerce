@@ -50,7 +50,7 @@ export const ExpressCheckoutMethodIcons = ( {
 	<div className="woopayments-express-checkout-settings__icons">
 		{ EXPRESS_CHECKOUT_METHOD_ICONS[ methodId ].map( ( icon ) => (
 			<div
-				// Like the client, the WooPay logo has no badge outline.
+				// The WooPay logo has no badge outline.
 				className={
 					methodId === 'woopay'
 						? 'woopayments-express-checkout-settings__icon'
