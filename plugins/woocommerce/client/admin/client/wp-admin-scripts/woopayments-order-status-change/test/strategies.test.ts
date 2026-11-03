@@ -55,6 +55,7 @@ describe( 'getOrderStatusChangeDecision', () => {
 			expect( decision ).toEqual( {
 				type: 'error',
 				message: 'Order cannot be refunded',
+				reset: true,
 			} );
 		} );
 
@@ -67,6 +68,7 @@ describe( 'getOrderStatusChangeDecision', () => {
 			expect( decision ).toEqual( {
 				type: 'error',
 				message: 'Order cannot be refunded',
+				reset: true,
 			} );
 		} );
 
@@ -227,6 +229,7 @@ describe( 'getOrderStatusChangeDecision', () => {
 			).toEqual( {
 				type: 'error',
 				message: 'Order cannot be refunded',
+				reset: true,
 			} );
 		} );
 

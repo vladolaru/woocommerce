@@ -45,8 +45,8 @@ export interface WooPaymentsOrderStatusChangeConfig {
 export type OrderStatusChangeDecision =
 	/** Let the selection stand; nothing to confirm. */
 	| { type: 'none' }
-	/** The selection cannot be honoured. Tell the merchant why. */
-	| { type: 'error'; message: string }
+	/** The selection cannot be honoured. Tell the merchant why; `reset` also puts the field back on the saved status. */
+	| { type: 'error'; message: string; reset?: true }
 	/** Ask the merchant to confirm a full refund through the gateway. */
 	| {
 			type: 'refund-confirmation';

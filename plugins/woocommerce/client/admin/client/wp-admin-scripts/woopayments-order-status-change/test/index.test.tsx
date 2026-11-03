@@ -280,29 +280,60 @@ describe( 'woopayments-order-status-change entrypoint', () => {
 		} );
 	} );
 
-	it( 'reports why a refund is refused through the admin notices store', () => {
-		// Client 11.1.0 `order/order-status-change-strategies/index.tsx:204-213`: an error notice in
-		// `core/notices`, which the WooCommerce admin shows as a snackbar, not a notice in the order box.
-		window.woocommerceWooPaymentsOrderStatusChange = {
-			order_status: 'wc-processing',
-			can_refund: false,
-			refund_amount: 42.5,
-			formatted_refund_amount: '$42.50',
-			refunded_amount: 0,
-			charge_id: '',
-			has_open_authorization: false,
-		};
+	// Client 11.1.0 `order/order-status-change-strategies/index.tsx:204-218`: an error notice in
+	// `core/notices`, which the WooCommerce admin shows as a snackbar, not a notice in the order box.
+	// Only the refund lock puts the field back: saved as Refunded, core would record a refund with no
+	// gateway call. With nothing left to refund, core records nothing, so the field stays as in the client.
+	it.each( [
+		{
+			message: 'Order cannot be refunded',
+			orderStatus: 'wc-processing',
+			canRefund: false,
+			refundAmount: 42.5,
+			refundedAmount: 0,
+			fieldAfter: 'wc-processing',
+		},
+		{
+			message: 'Invalid refund amount',
+			orderStatus: 'wc-completed',
+			canRefund: true,
+			refundAmount: 0,
+			refundedAmount: 42.5,
+			fieldAfter: 'wc-refunded',
+		},
+	] )(
+		'reports "$message" through the admin notices store and leaves the field on $fieldAfter',
+		( {
+			message,
+			orderStatus,
+			canRefund,
+			refundAmount,
+			refundedAmount,
+			fieldAfter,
+		} ) => {
+			window.woocommerceWooPaymentsOrderStatusChange = {
+				order_status: orderStatus,
+				can_refund: canRefund,
+				refund_amount: refundAmount,
+				formatted_refund_amount: '$' + refundAmount.toFixed( 2 ),
+				refunded_amount: refundedAmount,
+				charge_id: '',
+				has_open_authorization: false,
+			};
 
-		bootEntry();
-		selectStatus( 'wc-refunded' );
+			bootEntry();
+			selectStatus( 'wc-refunded' );
 
-		expect( mockCreateErrorNotice ).toHaveBeenCalledWith(
-			'Order cannot be refunded'
-		);
-		expect(
-			orderScreenQueries().queryByText( 'Order cannot be refunded' )
-		).not.toBeInTheDocument();
-	} );
+			expect( mockCreateErrorNotice ).toHaveBeenCalledTimes( 1 );
+			expect( mockCreateErrorNotice ).toHaveBeenCalledWith( message );
+			expect(
+				orderScreenQueries().queryByText( message )
+			).not.toBeInTheDocument();
+			expect( document.getElementById( 'order_status' ) ).toHaveValue(
+				fieldAfter
+			);
+		}
+	);
 
 	// Client 11.1.0 order/index.js:62-92 and class-wc-payments-admin.php:873-874.
 	describe( 'manual refund button', () => {

@@ -48,13 +48,18 @@ function decideRefunded(
 		return { type: 'none' };
 	}
 
+	// Left on Refunded, Update would let core record a refund that no gateway
+	// call backs, so this refusal puts the field back on the saved status.
 	if ( ! config.can_refund ) {
 		return {
 			type: 'error',
 			message: __( 'Order cannot be refunded', 'woocommerce' ),
+			reset: true,
 		};
 	}
 
+	// Nothing is left to refund, so saving Refunded records no refund: the field
+	// stays, as in the client.
 	if ( config.refund_amount <= 0 ) {
 		return {
 			type: 'error',

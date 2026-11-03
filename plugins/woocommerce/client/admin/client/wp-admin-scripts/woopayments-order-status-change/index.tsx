@@ -313,7 +313,9 @@ function initialize(): void {
 
 		switch ( decision.type ) {
 			case 'error':
-				resetOrderStatus( config.order_status );
+				if ( decision.reset ) {
+					resetOrderStatus( config.order_status );
+				}
 				showError( decision.message );
 				break;
 
