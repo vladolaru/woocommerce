@@ -12,7 +12,7 @@ import { recordEvent } from '@woocommerce/tracks';
 import { getSettingsPaymentsProviderRouteUrl } from '~/woopayments/admin/utils';
 import { registerPaymentsRuntimeTracksProperty } from '~/woopayments/tracks-runtime';
 
-// PHP lists this task, and so loads this chunk, only while native owns the runtime.
+// PHP lists this task, and so loads this chunk, only while the built-in WooPayments owns the runtime.
 registerPaymentsRuntimeTracksProperty();
 
 // The PHP task `GoLiveTask` decides visibility and copy; this fill only handles the click.

@@ -111,7 +111,7 @@ const NoticeAction = ( {
 	label: string;
 	countdownDays: number;
 } ) => (
-	// Core Notice's own actions row, so the button sits under the message as in the client.
+	// Core Notice's own actions row, so the button sits under the message.
 	<div className="components-notice__actions">
 		<a
 			className="components-button is-secondary"
@@ -172,7 +172,7 @@ const AwaitingResponseNotice = ( {
 			due_by_days: countdownDays,
 			...( isSingle ? {} : { dispute_count: disputes.length } ),
 		} );
-		// eslint-disable-next-line react-hooks/exhaustive-deps -- Record once per notice state, as the client does.
+		// eslint-disable-next-line react-hooks/exhaustive-deps -- Record once per notice state.
 	}, [ countdownDays, disputes.length ] );
 
 	if ( disputes.length === 1 ) {

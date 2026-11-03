@@ -14,7 +14,7 @@ export const PAYMENTS_RUNTIME = 'woocommerce_core';
 const isRecord = ( value: unknown ): value is Record< string, unknown > =>
 	typeof value === 'object' && value !== null && ! Array.isArray( value );
 
-// The native list pages record the client's own page view paths; trunk's `payments_connect_core_test`
+// The WooPayments list pages record these page view paths; trunk's `payments_connect_core_test`
 // welcome page view does not match.
 const WOOPAYMENTS_PAGE_VIEW_PATH_PREFIXES = [
 	'payments_transactions',
@@ -22,7 +22,7 @@ const WOOPAYMENTS_PAGE_VIEW_PATH_PREFIXES = [
 	'payments_reports',
 ];
 
-// The native WooPayments admin events keep the client's names; trunk's own payments events
+// The WooPayments admin events keep their established names; trunk's own payments events
 // (such as `payments_task_stepper_view`) do not match.
 const isWooPaymentsAdminEvent = (
 	eventName: string,
@@ -66,12 +66,12 @@ const getPreloadedHostingProvider = () => {
 };
 
 /**
- * Mark a native WooPayments admin event as recorded by the WooCommerce core runtime, with the site's hosting provider when
+ * Mark a WooPayments admin event as recorded by the WooCommerce core runtime, with the site's hosting provider when
  * the platform's tracking info is preloaded.
  *
  * @param properties The event properties, as another filter callback may have left them.
  * @param eventName  The prefixed event name.
- * @return The properties, with the runtime for a native WooPayments event.
+ * @return The properties, with the runtime for a WooPayments event.
  */
 export const addPaymentsRuntimeProperty = (
 	properties: unknown,
@@ -95,8 +95,8 @@ export const addPaymentsRuntimeProperty = (
 };
 
 /**
- * Register the filter once per page; each native entry bundles its own copy of this module. Call it only where native
- * owns the runtime: the plugin's own `wcadmin_wcpay_*` events carry the same names.
+ * Register the filter once per page; each entry bundles its own copy of this module. Call it only where the built-in WooPayments
+ * owns the runtime: events from a store that does not run it carry the same `wcadmin_wcpay_*` names.
  */
 export const registerPaymentsRuntimeTracksProperty = () => {
 	if ( hasFilter( EVENT_PROPERTIES_FILTER, FILTER_NAMESPACE ) ) {
@@ -112,8 +112,8 @@ export const registerPaymentsRuntimeTracksProperty = () => {
 
 /**
  * Register the filter on a Payments settings page only when core preloaded `woopaymentsSettings`, which it does only
- * while native owns the runtime (`SharedSettings::preload_shared_settings()`). A native route
- * reached on a plugin-owned store has no preload.
+ * while the built-in WooPayments owns the runtime (`SharedSettings::preload_shared_settings()`). A WooPayments route
+ * reached on a store that does not run it has no preload.
  */
 export const registerPaymentsRuntimeTracksPropertyWhenPreloaded = () => {
 	const preloaded = (

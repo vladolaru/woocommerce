@@ -6,7 +6,7 @@
  * Server-provided context about the order being edited.
  *
  * Localized as `window.woocommerceWooPaymentsOrderStatusChange` on the order
- * edit screen, and only for orders paid through native WooPayments. Keys stay
+ * edit screen, and only for orders paid through the built-in WooPayments. Keys stay
  * snake_case because they cross the PHP boundary verbatim.
  */
 export interface WooPaymentsOrderStatusChangeConfig {
@@ -31,7 +31,7 @@ export interface WooPaymentsOrderStatusChangeConfig {
 	test_mode?: boolean;
 	/** Whether to hide core's manual refund button; false only after a provider refund failed. */
 	disable_manual_refunds?: boolean;
-	/** Whether the dispute notice adds the currency code to amounts, like the client's `shouldUseExplicitPrice`. */
+	/** Whether the dispute notice adds the currency code to amounts. */
 	should_use_explicit_price?: boolean;
 }
 
