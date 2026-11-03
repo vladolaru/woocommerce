@@ -55,15 +55,25 @@ const possiblyImportWooPaymentsGoLiveTask = () => {
 			/* webpackChunkName: "woopayments-go-live-task" */ '~/woopayments/home-tasks/go-live-task'
 		);
 
+	const haveTaskListsResolved = () =>
+		select( onboardingStore ).hasFinishedResolution( 'getTaskLists', [] );
+
 	if ( hasWooPaymentsGoLiveTask() ) {
 		importGoLiveTask();
 		return;
 	}
 
+	if ( haveTaskListsResolved() ) {
+		return;
+	}
+
+	// The page decides once, when the task lists first resolve, and then stops listening.
 	const unsubscribe = subscribe( () => {
-		if ( hasWooPaymentsGoLiveTask() ) {
+		if ( haveTaskListsResolved() ) {
 			unsubscribe();
-			importGoLiveTask();
+			if ( hasWooPaymentsGoLiveTask() ) {
+				importGoLiveTask();
+			}
 		}
 	}, onboardingStore );
 };

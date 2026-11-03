@@ -78,6 +78,29 @@ describe( 'WC Home task fills: WooPayments go-live task', () => {
 		expect( modules.plugins.getPlugin( GO_LIVE_PLUGIN ) ).toBeUndefined();
 	} );
 
+	it.each( [ 'before', 'after' ] )(
+		'decides once when the task lists first resolve without the task %s the fills load',
+		async ( when ) => {
+			const modules = await loadModules();
+
+			if ( when === 'before' ) {
+				resolveTaskLists( modules, [ taskList( [ 'products' ] ) ] );
+				await importFills();
+			} else {
+				await importFills();
+				resolveTaskLists( modules, [ taskList( [ 'products' ] ) ] );
+			}
+			resolveTaskLists( modules, [
+				taskList( [ 'products', 'go-live-payments' ] ),
+			] );
+			await flushImports();
+
+			expect(
+				modules.plugins.getPlugin( GO_LIVE_PLUGIN )
+			).toBeUndefined();
+		}
+	);
+
 	it( 'loads the go-live fill when the task list already contains the task', async () => {
 		const modules = await loadModules();
 		resolveTaskLists( modules, [
