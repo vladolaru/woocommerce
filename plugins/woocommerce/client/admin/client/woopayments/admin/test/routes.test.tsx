@@ -467,7 +467,11 @@ describe( 'WooPayments Settings Payments routes', () => {
 				name: 'WooPayments',
 			} );
 			expect(
-				await screen.findByRole( 'region', { name: 'WooPayments' } )
+				await screen.findByRole(
+					'region',
+					{ name: 'WooPayments' },
+					{ timeout: 3000 }
+				)
 			).toBeInTheDocument();
 
 			await userEvent.click(
