@@ -28,7 +28,8 @@ import { recordEvent } from '@woocommerce/tracks';
 /**
  * Internal dependencies
  */
-import { registerWooPaymentsPmPromotionsStore } from './data/register';
+import { registerStoreUnlessTaken } from '../data/register-store';
+import { store as pmPromotionsStore } from './data/store';
 import { usePmPromotionActions, usePmPromotions } from './data/hooks';
 import type { PmPromotion } from './types';
 import { getPromotionBadgeChipType } from './badge';
@@ -110,7 +111,7 @@ const FOCUSABLE_SELECTOR =
  * bottom right 4 seconds after the page renders, takes focus, closes on Escape and gives focus back when it closes.
  */
 export const SpotlightPromotion = () => {
-	registerWooPaymentsPmPromotionsStore();
+	registerStoreUnlessTaken( pmPromotionsStore );
 
 	const { pmPromotions, isLoading } = usePmPromotions();
 	const { activatePmPromotion, dismissPmPromotion } = usePmPromotionActions();

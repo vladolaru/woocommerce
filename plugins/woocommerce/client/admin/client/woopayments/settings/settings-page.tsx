@@ -117,7 +117,8 @@ import {
 	useWooPayEnabledSettings,
 	useWooPayShowIncompatibilityNotice,
 } from './data/hooks';
-import { registerWooPaymentsSettingsStore } from './data/register';
+import { store as settingsStore } from './data/store';
+import { registerStoreUnlessTaken } from '../data/register-store';
 import { getWooPaymentsDocumentsAccount } from '../admin/documents/data';
 import type { WooPaymentsVatDetails } from '../admin/documents/types';
 import './settings-page-only.scss';
@@ -2288,7 +2289,7 @@ const AdvancedSettingsSection = () => {
 };
 
 export const WooPaymentsSettingsPage = () => {
-	registerWooPaymentsSettingsStore();
+	registerStoreUnlessTaken( settingsStore );
 	getWooPaymentsSettingsBootstrap();
 
 	const { isLoading, isSaving } = useSettings();

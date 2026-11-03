@@ -6,10 +6,11 @@ import { useDispatch, useSelect } from '@wordpress/data';
 /**
  * Internal dependencies
  */
-import { registerWooPaymentsPmPromotionsStore, STORE_NAME } from './register';
+import { registerStoreUnlessTaken } from '../../data/register-store';
+import { store as pmPromotionsStore, STORE_NAME } from './store';
 
 export const usePmPromotions = () => {
-	registerWooPaymentsPmPromotionsStore();
+	registerStoreUnlessTaken( pmPromotionsStore );
 
 	const pmPromotions = useSelect( ( select ) =>
 		select( STORE_NAME ).getPmPromotions()
@@ -31,7 +32,7 @@ export const usePmPromotions = () => {
 };
 
 export const usePmPromotionActions = () => {
-	registerWooPaymentsPmPromotionsStore();
+	registerStoreUnlessTaken( pmPromotionsStore );
 
 	const { activatePmPromotion, dismissPmPromotion } =
 		useDispatch( STORE_NAME );

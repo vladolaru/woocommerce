@@ -7,16 +7,17 @@ import type { MapSelect } from '@wordpress/data/build-types/types';
 /**
  * Internal dependencies
  */
-import { registerWooPaymentsSettingsStore, STORE_NAME } from './register';
+import { registerStoreUnlessTaken } from '../../data/register-store';
+import { store as settingsStore, STORE_NAME } from './store';
 
 const useRegisteredDispatch = () => {
-	registerWooPaymentsSettingsStore();
+	registerStoreUnlessTaken( settingsStore );
 
 	return useDispatch( STORE_NAME );
 };
 
 const useRegisteredSelect = ( mapSelect: MapSelect, deps?: unknown[] ) => {
-	registerWooPaymentsSettingsStore();
+	registerStoreUnlessTaken( settingsStore );
 
 	// eslint-disable-next-line react-hooks/exhaustive-deps -- This wrapper preserves useSelect's caller-provided dependency contract.
 	return useSelect( mapSelect, deps );

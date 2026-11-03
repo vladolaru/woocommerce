@@ -127,7 +127,7 @@ export default [
 	},
 	{
 		files: [ 'client/woopayments/**/*.{js,ts,tsx}' ],
-		ignores: [ 'client/woopayments/**/data/register.ts' ],
+		ignores: [ 'client/woopayments/data/register-store.ts' ],
 		rules: {
 			'no-restricted-syntax': [
 				'error',
@@ -135,25 +135,25 @@ export default [
 					selector:
 						"ImportDeclaration[source.value='@wordpress/data'] ImportSpecifier[imported.name='register']",
 					message:
-						'Import register from @wordpress/data only in data/register.ts so WooPayments store registration stays lazy and coexistence-safe.',
+						'Import register from @wordpress/data only in data/register-store.ts so WooPayments store registration stays lazy and coexistence-safe.',
 				},
 				{
 					selector:
 						"ImportDeclaration[source.value='@wordpress/data'] ImportSpecifier[imported.name='registerStore']",
 					message:
-						'Import registerStore from @wordpress/data only in data/register.ts so WooPayments store registration stays lazy and coexistence-safe.',
+						'Import registerStore from @wordpress/data only in data/register-store.ts so WooPayments store registration stays lazy and coexistence-safe.',
 				},
 				{
 					selector:
 						"ImportDeclaration[source.value='@wordpress/data'] ImportSpecifier[imported.name='registerGenericStore']",
 					message:
-						'Import registerGenericStore from @wordpress/data only in data/register.ts so WooPayments store registration stays lazy and coexistence-safe.',
+						'Import registerGenericStore from @wordpress/data only in data/register-store.ts so WooPayments store registration stays lazy and coexistence-safe.',
 				},
 				{
 					selector:
 						"ImportDeclaration[source.value='@wordpress/data'] ImportNamespaceSpecifier",
 					message:
-						'Do not namespace import @wordpress/data in WooPayments files; named imports keep store registration enforceable from data/register.ts only.',
+						'Do not namespace import @wordpress/data in WooPayments files; named imports keep store registration enforceable from data/register-store.ts only.',
 				},
 			],
 		},
