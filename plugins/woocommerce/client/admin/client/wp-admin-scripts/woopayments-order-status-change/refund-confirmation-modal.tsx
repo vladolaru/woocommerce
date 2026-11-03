@@ -91,7 +91,7 @@ export function RefundConfirmationModal( {
 	};
 
 	// A failed refund must not leave the dropdown claiming the order is
-	// refunded; the merchant is handed the reason next to the field instead.
+	// refunded; the reason is shown as an error notice instead.
 	const failWith = ( message: string ) => {
 		resetOrderStatus( previousStatus );
 		onClose();

@@ -553,7 +553,7 @@ describe( 'woopayments-order-status-change entrypoint', () => {
 		).not.toBeInTheDocument();
 	} );
 
-	it( 'locks order refunds when any fetched dispute blocks them', async () => {
+	it( 'locks order refunds when any fetched dispute blocks them, and puts a refused Refunded back', async () => {
 		addPaymentDetailsMountPoint();
 		window.woocommerceWooPaymentsOrderStatusChange = {
 			order_status: 'wc-processing',
@@ -593,6 +593,13 @@ describe( 'woopayments-order-status-change entrypoint', () => {
 		expect( mockCreateErrorNotice ).toHaveBeenCalledWith(
 			'Order cannot be refunded'
 		);
+		// Left on Refunded, Update would save a refund that no gateway call backs.
+		expect( document.getElementById( 'order_status' ) ).toHaveValue(
+			'wc-processing'
+		);
+		expect(
+			orderScreenQueries().queryByText( /Refund confirmation/ )
+		).not.toBeInTheDocument();
 	} );
 
 	it( 'uses a truthful accessible lock reason for an unknown dispute status', async () => {

@@ -13,8 +13,8 @@
  * Everything here is DOM and React wiring. The rules live in `./strategies`,
  * which is pure and separately tested.
  *
- * The entry no-ops unless PHP localized `window.woocommerceWooPaymentsOrderStatusChange`,
- * which it only does on the order edit screen for orders paid through the built-in WooPayments.
+ * The entry does nothing unless PHP printed `window.woocommerceWooPaymentsOrderStatusChange` (an inline script
+ * before it), which it does only on the order edit screen for orders paid through the built-in WooPayments.
  */
 
 /**
@@ -33,7 +33,7 @@ import type { ReactNode } from 'react';
 import { AuthorizationConfirmationModal } from './authorization-confirmation-modal';
 import { CancelConfirmationModal } from './cancel-confirmation-modal';
 import { getOrderStatusChangeDecision } from './strategies';
-import { getOrderStatusField } from './order-status-field';
+import { getOrderStatusField, resetOrderStatus } from './order-status-field';
 import { RefundConfirmationModal } from './refund-confirmation-modal';
 import { WooPaymentsOrderDisputeNotice } from './order-dispute-notice';
 import { WooPaymentsOrderTestModeNotice } from './order-test-mode-notice';
@@ -313,6 +313,7 @@ function initialize(): void {
 
 		switch ( decision.type ) {
 			case 'error':
+				resetOrderStatus( config.order_status );
 				showError( decision.message );
 				break;
 

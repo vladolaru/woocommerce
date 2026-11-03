@@ -5,7 +5,7 @@
 /**
  * Server-provided context about the order being edited.
  *
- * Localized as `window.woocommerceWooPaymentsOrderStatusChange` on the order
+ * Printed as JSON into `window.woocommerceWooPaymentsOrderStatusChange` on the order
  * edit screen, and only for orders paid through the built-in WooPayments. Keys stay
  * snake_case because they cross the PHP boundary verbatim.
  */
