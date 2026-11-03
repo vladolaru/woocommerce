@@ -38,7 +38,6 @@ type CoverLetterData = {
 	customerName: string;
 	product: string;
 	orderDate: string;
-	deliveryDate: string;
 	refundAmount: string;
 	refundStatus?: string;
 	duplicateStatus?: string;
@@ -137,13 +136,11 @@ const getChargeId = ( dispute: WooPaymentsDispute ) => {
 	);
 };
 
-// Client 11.1.0 `formatDateTimeFromTimestamp( ..., { separator: ', ' } )`: site formats, read as UTC. A date-only
-// value is a calendar day, so it is shown in UTC too and keeps its day in every site time zone.
+// Client 11.1.0 `formatDateTimeFromTimestamp( ..., { separator: ', ' } )`: site formats, read as UTC.
 const formatDate = (
 	value: string | number | undefined,
 	placeholder: string,
-	includeTime = false,
-	dateOnly = false
+	includeTime = false
 ) => {
 	if ( value === undefined || value === '' || value === null ) {
 		return placeholder;
@@ -163,7 +160,7 @@ const formatDate = (
 	return dateI18n(
 		includeTime ? `${ formats.date }, ${ formats.time }` : formats.date,
 		date.toISOString(),
-		dateOnly || undefined
+		undefined
 	);
 };
 
@@ -767,7 +764,8 @@ ${ sprintf(
 	data.customerName,
 	data.product,
 	data.orderDate,
-	data.deliveryDate
+	// The evidence holds the shipping date, not the delivery date; the merchant fills it in.
+	__( '<Delivery/Service Date>', 'woocommerce' )
 ) }
 
 ${ getDocumentation( attachmentsList ) }
@@ -820,12 +818,13 @@ const generateBodyDuplicate = (
 	if ( data.duplicateStatus === 'is_duplicate' ) {
 		return `${ getOpening( data ) }
 ${ sprintf(
-	/* translators: %1$s: order date, %2$s: refund amount */
+	/* translators: %1$s: refund date, %2$s: refund amount */
 	__(
 		"Our records indicate that this charge was a duplicate of a previous transaction. A refund has already been issued to the customer on %1$s for the amount of %2$s. This refund should be visible on the customer's statement within 7 - 10 business days.",
 		'woocommerce'
 	),
-	data.orderDate,
+	// The dispute carries no refund date; the merchant fills it in.
+	__( '<Refund Date>', 'woocommerce' ),
 	data.refundAmount
 ) }
 
@@ -909,12 +908,6 @@ export const generateDisputeCoverLetter = ( {
 		orderDate: formatDate(
 			charge?.created,
 			__( '<Order Date>', 'woocommerce' ),
-			true
-		),
-		deliveryDate: formatDate(
-			evidence.shipping_date,
-			__( '<Delivery/Service Date>', 'woocommerce' ),
-			false,
 			true
 		),
 		refundAmount: dispute.amount

@@ -347,14 +347,42 @@ describe( 'Dispute cover letter bodies', () => {
 		}
 	} );
 
-	it( 'uses the credit not processed bodies for each refund status', () => {
-		expect(
-			letterFor( 'credit_not_processed', {
-				refundStatus: 'refund_has_been_issued',
-			} )
-		).toContain(
-			"was refunded on <Refund Date> for the amount of 50.00 USD. The refund was processed through our payment provider and should be visible on the customer's statement within 7 - 10 business days."
-		);
+	// The dispute holds no refund date, and the saved shipping date is when the parcel left, not when it arrived.
+	it.each( [
+		{
+			body: 'credit not processed refund',
+			reason: 'credit_not_processed',
+			extra: { refundStatus: 'refund_has_been_issued' },
+			sentence:
+				"was refunded on <Refund Date> for the amount of 50.00 USD. The refund was processed through our payment provider and should be visible on the customer's statement within 7 - 10 business days.",
+		},
+		{
+			body: 'duplicate refund',
+			reason: 'duplicate',
+			extra: { duplicateStatus: 'is_duplicate' },
+			sentence:
+				"Our records indicate that this charge was a duplicate of a previous transaction. A refund has already been issued to the customer on <Refund Date> for the amount of 50.00 USD. This refund should be visible on the customer's statement within 7 - 10 business days.",
+		},
+		{
+			body: 'product not received',
+			reason: 'product_not_received',
+			extra: {
+				evidence: {
+					product_description: 'Coffee beans',
+					shipping_date: '2026-02-19',
+				},
+			},
+			sentence:
+				'ordered Coffee beans on February 17, 2026, 2:00 pm and received it on <Delivery/Service Date>.',
+		},
+	] )(
+		'leaves the merchant to date the $body body',
+		( { reason, extra, sentence } ) => {
+			expect( letterFor( reason, extra ) ).toContain( sentence );
+		}
+	);
+
+	it( 'uses the credit not processed body when no refund was owed', () => {
 		expect(
 			letterFor( 'credit_not_processed', {
 				refundStatus: 'refund_was_not_owed',
@@ -364,12 +392,7 @@ describe( 'Dispute cover letter bodies', () => {
 		);
 	} );
 
-	it( 'uses the duplicate bodies for each duplicate status', () => {
-		expect(
-			letterFor( 'duplicate', { duplicateStatus: 'is_duplicate' } )
-		).toContain(
-			"Our records indicate that this charge was a duplicate of a previous transaction. A refund has already been issued to the customer on February 17, 2026, 2:00 pm for the amount of 50.00 USD. This refund should be visible on the customer's statement within 7 - 10 business days."
-		);
+	it( 'uses the duplicate body when the charge is not a duplicate', () => {
 		expect(
 			letterFor( 'duplicate', { duplicateStatus: 'is_not_duplicate' } )
 		).toContain(
@@ -393,9 +416,9 @@ describe( 'Dispute cover letter dates and attachments', () => {
 	const attachmentsOf = ( letter: string ) =>
 		letter.split( '\n' ).filter( ( line ) => line.startsWith( '• ' ) );
 
-	// The transaction is the charge, so it is dated by the charge, not the dispute. The delivery date is a calendar
-	// day, so it reads the same in every site time zone; this site is five hours west of UTC.
-	it( 'dates the transaction and order with the time, today and the delivery without', () => {
+	// The transaction is the charge, so it is dated by the charge, not the dispute, in the site time zone; this site
+	// is five hours west of UTC.
+	it( 'dates the transaction and order with the time and today without', () => {
 		const dateSettings = getSettings();
 		setSettings( {
 			...dateSettings,
@@ -404,10 +427,7 @@ describe( 'Dispute cover letter dates and attachments', () => {
 		jest.useFakeTimers().setSystemTime(
 			new Date( '2026-02-20T12:00:00Z' )
 		);
-		const letter = letterFor(
-			{ reason: 'product_not_received' },
-			{ evidence: { shipping_date: '2026-02-19' } }
-		);
+		const letter = letterFor( { reason: 'product_not_received' } );
 		jest.useRealTimers();
 		setSettings( dateSettings );
 
@@ -416,7 +436,7 @@ describe( 'Dispute cover letter dates and attachments', () => {
 			'for transaction #ch_test on February 17, 2026, 9:00 am.'
 		);
 		expect( letter ).toContain(
-			'ordered <Product> on February 17, 2026, 9:00 am and received it on February 19, 2026.'
+			'ordered <Product> on February 17, 2026, 9:00 am and '
 		);
 	} );
 
