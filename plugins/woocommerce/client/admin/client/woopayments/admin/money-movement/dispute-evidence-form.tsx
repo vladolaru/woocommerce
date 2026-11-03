@@ -1008,8 +1008,8 @@ export const DisputeEvidenceForm = ( {
 				</Panel>
 			) }
 			{ notice && (
-				// The wrapper takes focus after an update. `updateNotice` announces the message once through `speak()`, as the
-				// client's snackbars do (new-evidence/index.tsx:517,540), so neither the wrapper nor the `Notice` is a live region.
+				// The wrapper takes focus after an update. `updateNotice` announces the message once through `speak()`, so
+				// neither the wrapper nor the `Notice` is a live region. Client 11.1.0 `new-evidence/index.tsx:517,540`.
 				<div
 					ref={ noticeRef }
 					className="woocommerce-woopayments-dispute-evidence__notice"

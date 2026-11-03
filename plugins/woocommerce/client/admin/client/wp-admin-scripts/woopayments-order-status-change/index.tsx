@@ -1,5 +1,5 @@
 /**
- * Confirmation flow for order status changes on native WooPayments orders.
+ * Confirmation flow for order status changes on orders paid through the built-in WooPayments.
  *
  * Core's "Refunded" status only records a refund locally — `wc_order_fully_refunded()`
  * never asks the gateway for anything — so an order can read as refunded while
@@ -14,7 +14,7 @@
  * which is pure and separately tested.
  *
  * The entry no-ops unless PHP localized `window.woocommerceWooPaymentsOrderStatusChange`,
- * which it only does on the order edit screen for native WooPayments orders.
+ * which it only does on the order edit screen for orders paid through the built-in WooPayments.
  */
 
 /**
@@ -40,7 +40,7 @@ import { WooPaymentsOrderTestModeNotice } from './order-test-mode-notice';
 import type { WooPaymentsOrderStatusChangeConfig } from './types';
 import { registerPaymentsRuntimeTracksProperty } from '../../woopayments/tracks-runtime';
 
-// PHP enqueues this entry only while native owns the runtime.
+// PHP enqueues this entry only on stores that run the built-in WooPayments.
 registerPaymentsRuntimeTracksProperty();
 
 const CONTAINER_CLASS_NAME = 'woocommerce-woopayments-order-status-change';

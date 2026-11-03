@@ -99,7 +99,7 @@ export const WooPaymentsOverviewPage = () => {
 		preloadedShell
 	);
 	const [ isShellSettled, setShellSettled ] = useState( !! preloadedShell );
-	// The dispute task's data, set once it has loaded, as the client shows no task while it loads.
+	// The dispute task's data, set once it has loaded; no dispute task shows while it loads.
 	const [ disputeTaskData, setDisputeTaskData ] = useState< {
 		summary: WooPaymentsOverviewDisputesSummary;
 		activeDispute?: WooPaymentsOverviewDispute;
@@ -449,7 +449,7 @@ export const WooPaymentsOverviewPage = () => {
 						>
 							<Suspense fallback={ null }>
 								<StripeNotificationsBanner
-									// Client 11.1.0 keeps the wrapper hidden on a session failure (`overview/index.js:318-325`); unlike its endless spinner, stop loading (inbox N-139).
+									// Client 11.1.0 keeps the wrapper hidden on a session failure (`overview/index.js:318-325`); loading stops too, so no spinner is left.
 									onInitError={ () => {
 										setBannerFailed( true );
 										setBannerLoading( false );

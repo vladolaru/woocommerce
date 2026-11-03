@@ -25,7 +25,7 @@ interface AuthorizationConfirmationModalProps {
 }
 
 /**
- * Get the copy for each action, ported from client 11.1.0
+ * Get the copy for each action. Client 11.1.0
  * `client/order/order-status-change-strategies/index.tsx:60-196`.
  *
  * @param action Whether the new status captures or cancels the authorization.

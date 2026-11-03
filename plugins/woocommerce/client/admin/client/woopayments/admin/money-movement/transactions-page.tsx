@@ -82,7 +82,7 @@ const AUTHORIZATION_FIELDS = [
 	'action',
 ];
 const NO_COLUMN_KEY_CHANGES: Record< string, string > = {};
-// The client's columns with `visible: false`.
+// Hidden until the merchant stores a column preference.
 const AUTHORIZATION_DEFAULT_HIDDEN_COLUMNS = [
 	'customer_email',
 	'customer_country',

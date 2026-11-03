@@ -324,7 +324,7 @@ const getCaptureDeadline = ( authorization: WooPaymentsAuthorization ) =>
 	moment.utc( authorization.created ).add( 7, 'days' );
 
 /**
- * Time left until the capture deadline, as moment's `fromNow( true )` reads it with the client's
+ * Time left until the capture deadline, as moment's `fromNow( true )` reads it, with translated
  * relative-time strings (client 11.1.0 `payment-details/summary/index.tsx:433-445`). Built here
  * instead of mutating moment's shared `en` locale, which other admin screens also read.
  *
@@ -729,8 +729,7 @@ export const WooPaymentsTransactionDetailsPage = () => {
 					}
 				};
 
-				// The authorization and the timeline only need the transaction, so they load together, as the client's
-				// separate data hooks do.
+				// The authorization and the timeline only need the transaction, so they load together.
 				await Promise.all( [ loadAuthorization(), loadTimeline() ] );
 
 				if ( shouldUpdate() ) {
@@ -815,9 +814,9 @@ export const WooPaymentsTransactionDetailsPage = () => {
 	const chargeId = transaction?.charge_id || '';
 	const hasPaymentDetails = !! ( paymentIntentId || chargeId );
 	const hasDetailPaymentSurface = isCardReaderFeeRoute || hasPaymentDetails;
-	// The client's payment details route only takes payment ids, so it shows the notice while loading
-	// and on error too (client payment-details/payment-details/index.tsx:54); a payment id in the URL
-	// is known before the transaction loads.
+	// A payment id in the URL marks a payment details page before the transaction loads, so the
+	// test-mode notice also shows while loading and on error.
+	// Client 11.1.0 `payment-details/payment-details/index.tsx:54`.
 	const isPaymentDetailsPage =
 		hasDetailPaymentSurface || /^(pi|ch|py)_/.test( id );
 	const showTestModeNotice = isPaymentDetailsPage;

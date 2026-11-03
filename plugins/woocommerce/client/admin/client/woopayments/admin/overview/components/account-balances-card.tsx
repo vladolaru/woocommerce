@@ -544,7 +544,7 @@ export const AccountBalancesCard = ( {
 					{ /* Client 11.1.0 `components/account-balances/index.tsx:226-251`. */ }
 					{ instantDepositsPreviouslyEligible &&
 						( ! instantBalance || instantBalance.amount === 0 ) && (
-							// Core's bordered notice (N-243) sits inside the padded body, clear of the card's edge.
+							// Core's bordered `Notice`, used without style overrides, sits inside the padded body, clear of the card's edge.
 							<CardBody className="woocommerce-woopayments-overview__instant-payout-unavailable">
 								<Notice
 									status="warning"

@@ -280,7 +280,7 @@ const getResolvedStatusDescription = (
 	}
 };
 
-// Mirrors the client's DisputeLostFooter copy (dispute-resolution-footer.tsx).
+// The lost dispute's footer copy. Client 11.1.0 `dispute-resolution-footer.tsx` `DisputeLostFooter`.
 const LostDisputeDescription = ( {
 	dispute,
 	bankName,
