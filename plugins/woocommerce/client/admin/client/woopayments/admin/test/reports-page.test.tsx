@@ -199,6 +199,9 @@ const mockDataViews = jest.fn(
 						key={ String(
 							item.id || item.transaction_id || index
 						) }
+						data-testid={ `row-${ String(
+							item.id || item.transaction_id || index
+						) }` }
 					>
 						{ visibleFields.map( ( field ) => (
 							<div key={ field.id }>
@@ -647,45 +650,45 @@ describe( 'WooPaymentsReportsPage', () => {
 		);
 	} );
 
-	it( 'projects already-negative Payouts CSV amounts as negative', async () => {
-		mockGetBalanceSummary.mockResolvedValueOnce( {
-			...balanceSummary,
-			payouts: {
-				amount: -1102608,
-				count: 2,
-			},
-		} );
-		renderReportsPage();
+	// Client 11.2.0 `reports/balance/rows.ts:80-89,222`: Payouts show as an outflow on screen and in the CSV alike, whatever sign
+	// the platform stores (the client's fixture stores a positive magnitude); zero stays unsigned.
+	it.each( [
+		[
+			'a positive magnitude',
+			8070,
+			'-$80.70',
+			'payouts,Payouts,-80.7,2,usd',
+		],
+		[
+			'a negative amount',
+			-8070,
+			'-$80.70',
+			'payouts,Payouts,-80.7,2,usd',
+		],
+		[ 'zero', 0, '$0.00', 'payouts,Payouts,0,2,usd' ],
+	] )(
+		'signs Payouts stored as %s the same way on screen and in the CSV',
+		async ( _case, amount, shown, csvRow ) => {
+			mockGetBalanceSummary.mockResolvedValueOnce( {
+				...balanceSummary,
+				payouts: { amount, count: 2 },
+			} );
+			renderReportsPage();
 
-		await screen.findByRole( 'heading', { name: 'Balance summary' } );
-		await userEvent.click(
-			screen.getByRole( 'button', { name: 'Export' } )
-		);
+			expect(
+				within( await screen.findByTestId( 'row-payouts' ) ).getByText(
+					shown
+				)
+			).toBeInTheDocument();
 
-		expect( mockDownloadCSVFile.mock.calls[ 0 ][ 1 ] ).toContain(
-			'payouts,Payouts,-11026.08,2,usd'
-		);
-	} );
-
-	it( 'keeps zero Payouts CSV amounts numeric and unsigned', async () => {
-		mockGetBalanceSummary.mockResolvedValueOnce( {
-			...balanceSummary,
-			payouts: {
-				amount: 0,
-				count: 2,
-			},
-		} );
-		renderReportsPage();
-
-		await screen.findByRole( 'heading', { name: 'Balance summary' } );
-		await userEvent.click(
-			screen.getByRole( 'button', { name: 'Export' } )
-		);
-
-		expect( mockDownloadCSVFile.mock.calls[ 0 ][ 1 ] ).toContain(
-			'payouts,Payouts,0,2,usd'
-		);
-	} );
+			await userEvent.click(
+				screen.getByRole( 'button', { name: 'Export' } )
+			);
+			expect( mockDownloadCSVFile.mock.calls[ 0 ][ 1 ] ).toContain(
+				csvRow
+			);
+		}
+	);
 
 	it( 'keeps the reference Balance anchor rows visible when activity rows are zero', async () => {
 		mockGetBalanceSummary.mockImplementationOnce( async () => {

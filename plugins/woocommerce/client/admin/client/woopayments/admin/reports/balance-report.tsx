@@ -317,7 +317,14 @@ const hasBalanceActivity = ( rows: BalanceRow[] ) =>
 			( row.amount !== 0 || Number( row.count ?? 0 ) > 0 )
 	);
 
-const getBalanceCsvAmount = ( row: BalanceRow ) =>
+/**
+ * The amount a row shows, on screen and in the CSV: Payouts always leave the balance, so a non-zero amount shows as negative.
+ *
+ * Client 11.2.0 `reports/balance/rows.ts:80-89,222` (`displayNegative`).
+ *
+ * @param row Balance row.
+ */
+const getDisplayedBalanceAmount = ( row: BalanceRow ) =>
 	row.id === 'payouts' && row.amount !== 0
 		? -Math.abs( row.amount )
 		: row.amount;
@@ -353,7 +360,7 @@ const getBalanceCsv = (
 			{ value: row.label, display: row.label },
 			{
 				value: getWooPaymentsAmountFromMinorUnits(
-					getBalanceCsvAmount( row ),
+					getDisplayedBalanceAmount( row ),
 					currency
 				),
 				display: '',
@@ -511,10 +518,14 @@ const BalanceReport = ( { now }: { now: Date } ) => {
 				id: 'amount',
 				label: __( 'Amount', 'woocommerce' ),
 				type: 'integer',
-				getValue: ( { item }: { item: BalanceRow } ) => item.amount,
+				getValue: ( { item }: { item: BalanceRow } ) =>
+					getDisplayedBalanceAmount( item ),
 				render: ( { item }: { item: BalanceRow } ) => (
 					<span>
-						{ formatBalanceAmount( item.amount, reportCurrency ) }
+						{ formatBalanceAmount(
+							getDisplayedBalanceAmount( item ),
+							reportCurrency
+						) }
 					</span>
 				),
 			},
