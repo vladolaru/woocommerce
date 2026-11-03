@@ -15,6 +15,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAd
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsApplePayDomainService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCurrencyUtils;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderStatusChangeController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTrackingInfoService;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 
@@ -121,7 +122,23 @@ class SharedSettings implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Add the WooPayments pages' data to the shared settings, on the Payments settings tab only.
+	 * Add the data `formatCurrency()` reads, as client 11.1.0 `class-wc-payments-admin.php:1007,1023,1047` localizes it: the
+	 * store country, the zero-decimal currencies and each country's currency format.
+	 *
+	 * @param array<mixed> $provider_settings The WooPayments pages' data.
+	 * @return array<mixed>
+	 */
+	private function add_currency_format_data( array $provider_settings ): array {
+		$provider_settings['storeCountry']          = WC()->countries->get_base_country();
+		$provider_settings['zeroDecimalCurrencies'] = WooPaymentsCurrencyUtils::get_zero_decimal_currencies();
+		$provider_settings['currencyData']          = $this->get_currency_data();
+
+		return $provider_settings;
+	}
+
+	/**
+	 * Add the WooPayments pages' data to the shared settings, on the Payments settings tab, and the currency format data on
+	 * the order edit screen of a WooPayments order.
 	 *
 	 * @param mixed $settings Shared admin settings.
 	 * @return array<mixed>
@@ -132,6 +149,13 @@ class SharedSettings implements RegisterHooksInterface {
 		}
 
 		if ( ! $this->navigation->is_payments_settings_request() ) {
+			// The order edit screen's dispute notice formats its amounts with the same data, which client 11.1.0 localizes
+			// there for WooPayments orders (`class-wc-payments-admin.php:837,871-875`).
+			if ( null !== wc_get_container()->get( WooPaymentsOrderStatusChangeController::class )->get_confirmation_screen_order() ) {
+				$order_screen_settings           = isset( $settings['woopaymentsSettings'] ) && is_array( $settings['woopaymentsSettings'] ) ? $settings['woopaymentsSettings'] : array();
+				$settings['woopaymentsSettings'] = $this->add_currency_format_data( $order_screen_settings );
+			}
+
 			return $settings;
 		}
 
@@ -171,11 +195,8 @@ class SharedSettings implements RegisterHooksInterface {
 		$settings['woopaymentsSettings']['isSubscriptionsActive'] = $this->is_subscriptions_plugin_active();
 		// Client 11.1.0 `class-wc-payments-admin.php:1040` localizes this for `formatExplicitCurrency()`.
 		$settings['woopaymentsSettings']['shouldUseExplicitPrice'] = ExplicitPriceFormatter::should_output_explicit_admin_price();
-		// Client 11.1.0 `class-wc-payments-admin.php:1007,1023,1047` localizes these for `formatCurrency()`: the store country, the
-		// zero-decimal currencies and each country's currency format.
-		$settings['woopaymentsSettings']['storeCountry']          = WC()->countries->get_base_country();
-		$settings['woopaymentsSettings']['zeroDecimalCurrencies'] = WooPaymentsCurrencyUtils::get_zero_decimal_currencies();
-		$settings['woopaymentsSettings']['currencyData']          = $this->get_currency_data();
+		// The money formatter's data, which the order edit screen gets too.
+		$settings['woopaymentsSettings'] = $this->add_currency_format_data( $settings['woopaymentsSettings'] );
 		// Client 11.1.0 `class-wc-payments-admin.php:1074-1085` localizes this for the dispute cover letter.
 		$settings['woopaymentsSettings']['formattedStoreAddress'] = $this->get_formatted_store_address();
 		// Client 11.1.0 `class-wc-payments-admin.php:1031` localizes this on every page; the transactions list reads it for its Loan filter.

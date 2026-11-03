@@ -219,15 +219,8 @@ class WooPaymentsOrderStatusChangeController implements RegisterHooksInterface {
 	 * @internal
 	 */
 	public function handle_admin_enqueue_scripts(): void {
-		// Admin requests only: get_current_screen() comes from wp-admin/includes/screen.php.
-		$screen    = function_exists( 'get_current_screen' ) ? get_current_screen() : null;
-		$screen_id = $screen ? $screen->id : '';
-		if ( ! in_array( $screen_id, $this->get_order_edit_screen_ids(), true ) ) {
-			return;
-		}
-
-		$order = wc_get_order();
-		if ( ! $order instanceof WC_Order || ! $this->confirmation->should_offer_confirmation( $order ) ) {
+		$order = $this->get_confirmation_screen_order();
+		if ( null === $order ) {
 			return;
 		}
 
@@ -252,6 +245,26 @@ class WooPaymentsOrderStatusChangeController implements RegisterHooksInterface {
 			'before'
 		);
 		wp_enqueue_script( self::SCRIPT_HANDLE );
+	}
+
+	/**
+	 * Get the order when this request is the order edit screen of a WooPayments order, where the script loads.
+	 *
+	 * @internal
+	 *
+	 * @return WC_Order|null The order being edited, or null on any other screen or order.
+	 */
+	public function get_confirmation_screen_order(): ?WC_Order {
+		// Admin requests only: get_current_screen() comes from wp-admin/includes/screen.php.
+		$screen    = function_exists( 'get_current_screen' ) ? get_current_screen() : null;
+		$screen_id = $screen ? $screen->id : '';
+		if ( ! in_array( $screen_id, $this->get_order_edit_screen_ids(), true ) ) {
+			return null;
+		}
+
+		$order = wc_get_order();
+
+		return $order instanceof WC_Order && $this->confirmation->should_offer_confirmation( $order ) ? $order : null;
 	}
 
 	/**

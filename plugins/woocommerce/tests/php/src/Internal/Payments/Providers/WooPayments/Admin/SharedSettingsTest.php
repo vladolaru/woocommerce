@@ -75,6 +75,8 @@ class SharedSettingsTest extends WC_Unit_Test_Case {
 			delete_option( $store_option );
 		}
 		$this->reset_container_replacements();
+		unset( $GLOBALS['theorder'] );
+		set_current_screen( 'front' );
 
 		parent::tearDown();
 	}
@@ -110,6 +112,32 @@ class SharedSettingsTest extends WC_Unit_Test_Case {
 			),
 			$settings['currencyData']['JP']
 		);
+	}
+
+	/**
+	 * The order edit screen's dispute notice formats its amounts with the same data, which client 11.1.0 localizes there
+	 * for WooPayments orders only (`class-wc-payments-admin.php:837,871-875`).
+	 *
+	 * @testdox Should preload only the currency format data on the edit screen of a $payment_method order: $expected_keys.
+	 *
+	 * @testWith ["woocommerce_payments", ["storeCountry", "zeroDecimalCurrencies", "currencyData"]]
+	 *           ["bacs", []]
+	 *
+	 * @param string   $payment_method The order's payment method.
+	 * @param string[] $expected_keys  The keys preloaded under woopaymentsSettings.
+	 */
+	public function test_preloads_the_currency_format_data_on_the_woopayments_order_edit_screen( string $payment_method, array $expected_keys ): void {
+		$order = wc_create_order();
+		$order->set_payment_method( $payment_method );
+		$order->save();
+		$GLOBALS['theorder'] = $order;
+		set_current_screen( 'shop_order' );
+
+		$settings = $this->create_shared_settings( true )->preload_shared_settings( array() );
+
+		$this->assertSame( $expected_keys, array_keys( $settings['woopaymentsSettings'] ?? array() ) );
+		$this->assertSame( array() !== $expected_keys, in_array( 'jpy', $settings['woopaymentsSettings']['zeroDecimalCurrencies'] ?? array(), true ) );
+		$this->assertSame( array() !== $expected_keys ? 'JPY' : null, $settings['woopaymentsSettings']['currencyData']['JP']['code'] ?? null );
 	}
 
 	/**
