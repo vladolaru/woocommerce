@@ -41,7 +41,7 @@ describe( 'WooPayments money movement query helpers', () => {
 		} );
 	} );
 
-	it( 'keeps page one and maps perPage fallback to native pagesize', () => {
+	it( 'keeps page one and maps perPage fallback to pagesize', () => {
 		const query = parseMoneyMovementQuery( '?perPage=10', {
 			pagesize: 25,
 			sort: 'created',
@@ -56,7 +56,7 @@ describe( 'WooPayments money movement query helpers', () => {
 		} );
 	} );
 
-	it( 'accepts legacy per_page URLs and maps them to native pagesize', () => {
+	it( 'accepts legacy per_page URLs and maps them to pagesize', () => {
 		const query = parseMoneyMovementQuery( '?per_page=50', {
 			pagesize: 25,
 			sort: 'created',
@@ -177,7 +177,7 @@ describe( 'WooPayments money movement query helpers', () => {
 		expect( routePath ).not.toContain( 'wc-admin' );
 	} );
 
-	it( 'converts native query state to a DataViews table view', () => {
+	it( 'converts query state to a DataViews table view', () => {
 		const view = moneyMovementQueryToDataViewsView(
 			{
 				page: 4,
@@ -221,7 +221,7 @@ describe( 'WooPayments money movement query helpers', () => {
 		[ 'date_before', 'before', '2026-06-19' ],
 		[ 'date_between', 'between', [ '2026-06-01', '2026-06-19' ] ],
 	] )(
-		'maps %s between native query state and one DataViews Date filter',
+		'maps %s between query state and one DataViews Date filter',
 		( queryParam, operator, value ) => {
 			const view = moneyMovementQueryToDataViewsView( {
 				[ queryParam ]: value,
@@ -327,7 +327,7 @@ describe( 'WooPayments money movement query helpers', () => {
 		}
 	);
 
-	it( 'converts DataViews table state back to native REST query params', () => {
+	it( 'converts DataViews table state back to REST query params', () => {
 		const query = dataViewsViewToMoneyMovementQuery( {
 			type: 'table',
 			page: 5,

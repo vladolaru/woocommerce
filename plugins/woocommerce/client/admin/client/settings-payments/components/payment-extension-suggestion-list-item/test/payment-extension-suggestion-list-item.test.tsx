@@ -59,7 +59,7 @@ describe( 'PaymentExtensionSuggestionListItem', () => {
 		);
 	} );
 
-	it( 'should offer setup without installing a plugin for core-native WooPayments', async () => {
+	it( 'should offer setup without installing a plugin for built-in WooPayments', async () => {
 		const setUpPlugin = jest.fn();
 		const suggestion = {
 			id: '_wc_pes_woopayments',

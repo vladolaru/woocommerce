@@ -97,7 +97,7 @@ describe( 'overview task builders', () => {
 		jest.restoreAllMocks();
 	} );
 
-	it( 'builds an incomplete setup task that routes to native onboarding', () => {
+	it( 'builds an incomplete setup task that routes to built-in onboarding', () => {
 		const shell = createShell( {
 			account_status: {
 				...createShell().account_status,

@@ -179,7 +179,7 @@ const RECORDED = JSON.parse(
 const [ DUE, PAST_DUE, WON ] = RECORDED;
 
 // Client 11.1.0 `disputes/index.tsx:50-148`, in order; the info-button column is named for menus.
-const CLIENT_COLUMNS = [
+const EXPECTED_COLUMNS = [
 	[ 'details', 'Details' ],
 	[ 'amount', 'Amount' ],
 	[ 'currency', 'Currency' ],
@@ -247,7 +247,7 @@ describe( 'WooPayments disputes list columns', () => {
 
 		expect(
 			mockFields.map( ( field ) => [ field.id, field.label ] )
-		).toEqual( CLIENT_COLUMNS );
+		).toEqual( EXPECTED_COLUMNS );
 		expect(
 			mockFields
 				.filter( ( field ) => field.enableHiding === false )

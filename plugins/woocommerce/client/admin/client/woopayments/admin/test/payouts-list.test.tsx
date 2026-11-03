@@ -111,7 +111,7 @@ const RECORDED = JSON.parse(
 ).response.data as Array< Record< string, unknown > >;
 
 // Client 11.1.0 `deposits/list/index.tsx:41-94`, in order; the info-button column is named for menus.
-const CLIENT_COLUMNS = [
+const EXPECTED_COLUMNS = [
 	[ 'details', 'Details' ],
 	[ 'date', 'Date' ],
 	[ 'type', 'Type' ],
@@ -151,7 +151,7 @@ describe( 'WooPayments payouts list columns', () => {
 		await screen.findByText( 'Payout history loaded.' );
 		expect(
 			mockFields.map( ( field ) => [ field.id, field.label ] )
-		).toEqual( CLIENT_COLUMNS );
+		).toEqual( EXPECTED_COLUMNS );
 		// Client `required: true`: Date, Type, Amount and Status.
 		expect(
 			mockFields
@@ -167,7 +167,7 @@ describe( 'WooPayments payouts list columns', () => {
 		// No client column is `visible: false`.
 		expect( screen.getByTestId( 'payouts-dataviews' ) ).toHaveAttribute(
 			'data-visible-fields',
-			CLIENT_COLUMNS.map( ( [ id ] ) => id ).join( ',' )
+			EXPECTED_COLUMNS.map( ( [ id ] ) => id ).join( ',' )
 		);
 	} );
 

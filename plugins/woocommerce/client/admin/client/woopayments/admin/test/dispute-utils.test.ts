@@ -91,7 +91,7 @@ describe( 'WooPayments dispute utilities', () => {
 	} );
 
 	describe( 'effective dispute fee detection', () => {
-		const legacyFeeRow = {
+		const disputeFeeRow = {
 			amount: -5000,
 			currency: 'usd',
 			fee: 1500,
@@ -117,7 +117,7 @@ describe( 'WooPayments dispute utilities', () => {
 				'explicit null annotation with a legacy fee row',
 				{
 					effective_fee: null,
-					balance_transactions: [ legacyFeeRow ],
+					balance_transactions: [ disputeFeeRow ],
 				},
 				false,
 			],
@@ -154,14 +154,14 @@ describe( 'WooPayments dispute utilities', () => {
 			],
 			[
 				'legacy dispute fee row',
-				{ balance_transactions: [ legacyFeeRow ] },
+				{ balance_transactions: [ disputeFeeRow ] },
 				true,
 			],
 			[
 				'legacy dispute reversal row',
 				{
 					balance_transactions: [
-						legacyFeeRow,
+						disputeFeeRow,
 						{
 							amount: 5000,
 							currency: 'usd',
@@ -175,7 +175,7 @@ describe( 'WooPayments dispute utilities', () => {
 			[
 				'zero legacy dispute fee',
 				{
-					balance_transactions: [ { ...legacyFeeRow, fee: 0 } ],
+					balance_transactions: [ { ...disputeFeeRow, fee: 0 } ],
 				},
 				false,
 			],

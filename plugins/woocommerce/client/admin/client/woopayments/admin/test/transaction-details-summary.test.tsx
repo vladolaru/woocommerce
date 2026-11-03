@@ -577,7 +577,7 @@ describe( 'WooPayments payment details summary parity', () => {
 				/>
 			);
 		// Client test `getBaseCharge()`: the balance transaction carries no `net`.
-		const getClientCharge = () => ( {
+		const chargeFixture = () => ( {
 			...getBaseCharge(),
 			disputed: false,
 			dispute: null,
@@ -599,7 +599,7 @@ describe( 'WooPayments payment details summary parity', () => {
 
 		it( 'subtracts a partial refund from the net', () => {
 			renderSummary( {
-				...getClientCharge(),
+				...chargeFixture(),
 				refunded: false,
 				amount_refunded: 1200,
 				refunds: { data: [ getRefund( 1200 ) ] },
@@ -614,7 +614,7 @@ describe( 'WooPayments payment details summary parity', () => {
 
 		it( 'leaves only the fee as the net of a full refund', () => {
 			renderSummary( {
-				...getClientCharge(),
+				...chargeFixture(),
 				refunded: true,
 				amount_refunded: 2000,
 				refunds: { data: [ getRefund( 2000 ) ] },
@@ -630,7 +630,7 @@ describe( 'WooPayments payment details summary parity', () => {
 		it( 'reads the net from the fee breakdown envelope of a refunded charge', () => {
 			// Recorded from a fully refunded :8889 charge (`wc/v3/payments/charges/{id}`); ids scrubbed.
 			renderSummary( {
-				...getClientCharge(),
+				...chargeFixture(),
 				amount: 1099,
 				refunded: true,
 				amount_refunded: 1099,
@@ -664,7 +664,7 @@ describe( 'WooPayments payment details summary parity', () => {
 
 		it( 'reads a refunded buy now, pay later charge from its envelope', () => {
 			renderSummary( {
-				...getClientCharge(),
+				...chargeFixture(),
 				amount: 10000,
 				refunded: true,
 				amount_refunded: 10000,
@@ -698,7 +698,7 @@ describe( 'WooPayments payment details summary parity', () => {
 
 		it( 'counts the envelope tax in the fees', () => {
 			renderSummary( {
-				...getClientCharge(),
+				...chargeFixture(),
 				fee_breakdown_v1: {
 					rows: [],
 					totals: {
@@ -719,7 +719,7 @@ describe( 'WooPayments payment details summary parity', () => {
 
 		it( 'keeps the envelope net when a loan repayment applies, since the server folded it in', () => {
 			renderSummary( {
-				...getClientCharge(),
+				...chargeFixture(),
 				paydown: { amount: -300 },
 				fee_breakdown_v1: {
 					rows: [],
@@ -742,7 +742,7 @@ describe( 'WooPayments payment details summary parity', () => {
 
 		it( 'ignores an envelope whose currency disagrees with the balance transaction', () => {
 			renderSummary( {
-				...getClientCharge(),
+				...chargeFixture(),
 				amount_refunded: 500,
 				refunds: { data: [ getRefund( 500 ) ] },
 				fee_breakdown_v1: {
@@ -766,7 +766,7 @@ describe( 'WooPayments payment details summary parity', () => {
 		// Client 11.1.0 `summary/index.tsx:559-566`: the fees use `formatCurrency()`, so they carry no currency code.
 		it( 'shows a multi-currency refund in the settlement currency', () => {
 			renderSummary( {
-				...getClientCharge(),
+				...chargeFixture(),
 				amount: 1800,
 				application_fee_amount: 82,
 				amount_refunded: 1500,
@@ -786,7 +786,7 @@ describe( 'WooPayments payment details summary parity', () => {
 
 		it( 'deducts a lost dispute and its fee on the legacy path', () => {
 			renderSummary( {
-				...getClientCharge(),
+				...chargeFixture(),
 				disputed: true,
 				dispute: getDispute( [
 					{
@@ -808,7 +808,7 @@ describe( 'WooPayments payment details summary parity', () => {
 		it( 'nets a reversed dispute back to the charge', () => {
 			// Client snapshot "renders the information of a dispute-reversal charge".
 			renderSummary( {
-				...getClientCharge(),
+				...chargeFixture(),
 				disputed: true,
 				dispute: {
 					...getDispute( [
@@ -845,7 +845,7 @@ describe( 'WooPayments payment details summary parity', () => {
 			'shows a refund failure and deducts nothing when %s',
 			( _scenario, amountRefunded, status ) => {
 				renderSummary( {
-					...getClientCharge(),
+					...chargeFixture(),
 					refunded: false,
 					amount_refunded: amountRefunded,
 					refunds: { data: [ { status, ...getRefund( 2000 ) } ] },
@@ -864,7 +864,7 @@ describe( 'WooPayments payment details summary parity', () => {
 		// Client 11.2.0 `utils/charge/__tests__/index.test.js` "should not identify an empty refund list as refund failed".
 		it( 'shows a paid charge with no refund attempt as paid', () => {
 			renderSummary( {
-				...getClientCharge(),
+				...chargeFixture(),
 				refunded: false,
 				amount_refunded: 0,
 			} );
@@ -905,7 +905,7 @@ describe( 'WooPayments payment details summary parity', () => {
 			'deducts only the refunds that moved money: %s',
 			( _scenario, statuses, refundedLine, netLine ) => {
 				renderSummary( {
-					...getClientCharge(),
+					...chargeFixture(),
 					refunded: false,
 					amount_refunded: 900,
 					refunds: {
@@ -932,7 +932,7 @@ describe( 'WooPayments payment details summary parity', () => {
 
 		it( 'labels a refund on a charge with an inquiry as refunded', () => {
 			renderSummary( {
-				...getClientCharge(),
+				...chargeFixture(),
 				amount_refunded: 1000,
 				refunds: { data: [ getRefund( 1000 ) ] },
 				disputed: true,
@@ -952,7 +952,7 @@ describe( 'WooPayments payment details summary parity', () => {
 		it( 'splits the legacy dispute fee out of the total in the breakdown', async () => {
 			// Client test "renders the fee breakdown tooltip of a disputed charge".
 			renderSummary( {
-				...getClientCharge(),
+				...chargeFixture(),
 				currency: 'jpy',
 				amount: 10000,
 				disputed: true,
@@ -996,7 +996,7 @@ describe( 'WooPayments payment details summary parity', () => {
 				amount: 2000,
 				currency: 'usd',
 				charge: {
-					...getClientCharge(),
+					...chargeFixture(),
 					refunded: false,
 					amount_refunded: 1200,
 					refunds: { data: [ getRefund( 1200 ) ] },

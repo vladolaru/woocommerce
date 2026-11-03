@@ -18,7 +18,7 @@ jest.mock( '@woocommerce/tracks', () => ( { recordEvent: jest.fn() } ) );
 const mockUseSelect = useSelect as jest.Mock;
 
 // Client 11.1.0 `overview/inbox-notifications/index.js:48-56,85-87`.
-const CLIENT_EMPTY_INBOX_COPY =
+const EMPTY_INBOX_COPY =
 	'As things begin to happen in your store your inbox will start to fill up. ' +
 	"You'll see things like achievements, new feature announcements, extension recommendations and more!";
 
@@ -32,9 +32,7 @@ describe( 'overview inbox empty state', () => {
 
 		render( <InboxNotifications /> );
 
-		expect(
-			screen.getByText( CLIENT_EMPTY_INBOX_COPY )
-		).toBeInTheDocument();
+		expect( screen.getByText( EMPTY_INBOX_COPY ) ).toBeInTheDocument();
 		expect(
 			screen.queryByText( 'No inbox notifications.' )
 		).not.toBeInTheDocument();
@@ -62,9 +60,7 @@ describe( 'overview inbox empty state', () => {
 
 		render( <InboxNotifications /> );
 
-		expect(
-			screen.getByText( CLIENT_EMPTY_INBOX_COPY )
-		).toBeInTheDocument();
+		expect( screen.getByText( EMPTY_INBOX_COPY ) ).toBeInTheDocument();
 		expect( screen.queryByText( 'Deleted note' ) ).not.toBeInTheDocument();
 	} );
 } );

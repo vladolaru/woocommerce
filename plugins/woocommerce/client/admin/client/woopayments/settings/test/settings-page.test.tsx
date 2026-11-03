@@ -628,7 +628,7 @@ describe( 'WooPaymentsSettingsPage', () => {
 		jest.useRealTimers();
 	} );
 
-	it( 'renders the native settings manager sections', () => {
+	it( 'renders the settings manager sections', () => {
 		render( <WooPaymentsSettingsPage /> );
 
 		expect( screen.getByText( 'Spotlight promotion' ) ).toBeInTheDocument();
@@ -2016,7 +2016,7 @@ describe( 'WooPaymentsSettingsPage', () => {
 		).not.toBeInTheDocument();
 	} );
 
-	it( 'links customizable express checkout rows to native provider settings routes', () => {
+	it( 'links customizable express checkout rows to provider settings routes', () => {
 		render( <WooPaymentsSettingsPage /> );
 
 		const customizeLinks = [
@@ -2780,7 +2780,7 @@ describe( 'WooPaymentsSettingsPage', () => {
 		).not.toBeInTheDocument();
 	} );
 
-	it( 'links pending verification guidance to the native payments overview route', () => {
+	it( 'links pending verification guidance to the payments overview route', () => {
 		mockUseGetAvailablePaymentMethodIds.mockReturnValue( [
 			'card',
 			'sepa_debit',
@@ -5362,7 +5362,7 @@ describe( 'WooPaymentsSettingsPage', () => {
 		expect( setProtectionLevel ).toHaveBeenCalledWith( 'advanced' );
 	} );
 
-	it( 'links advanced fraud protection to the native provider settings route', () => {
+	it( 'links advanced fraud protection to the provider settings route', () => {
 		mockUseCurrentProtectionLevel.mockReturnValue( [ 'advanced', noop ] );
 		mockUseAdvancedFraudProtectionSettings.mockReturnValue( [ [], noop ] );
 
@@ -5801,7 +5801,7 @@ describe( 'WooPaymentsSettingsPage', () => {
 		}
 	} );
 
-	it( 'honors explicitly disabled Basic fraud checks from the native settings contract', async () => {
+	it( 'honors explicitly disabled Basic fraud checks from the settings contract', async () => {
 		mockUseCurrentProtectionLevel.mockReturnValue( [ 'basic', noop ] );
 		mockUseGetSettings.mockReturnValue( {
 			fraud_protection: {

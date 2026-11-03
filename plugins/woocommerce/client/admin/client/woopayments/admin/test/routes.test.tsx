@@ -450,7 +450,7 @@ describe( 'WooPayments Settings Payments routes', () => {
 		);
 	} );
 
-	it( 'renders the native settings page under the Payments settings header', async () => {
+	it( 'renders the WooPayments settings page under the Payments settings header', async () => {
 		const push = jest
 			.spyOn( getHistory(), 'push' )
 			.mockImplementation( () => undefined );

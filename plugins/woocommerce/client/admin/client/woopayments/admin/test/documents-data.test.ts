@@ -70,7 +70,7 @@ describe( 'WooPayments Documents data helpers', () => {
 		}
 	} );
 
-	it( 'loads account document metadata from the native account summary when nothing was preloaded', async () => {
+	it( 'loads account document metadata from the account summary when nothing was preloaded', async () => {
 		await getWooPaymentsDocumentsAccount();
 
 		expect( mockApiFetch ).toHaveBeenCalledWith( {

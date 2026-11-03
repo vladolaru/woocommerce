@@ -123,7 +123,7 @@ describe( 'WooPayments overview deposits data', () => {
 		expect( request.searchParams.get( 'locale' ) ).toBe( 'fr_FR' );
 	} );
 
-	it( 'loads the overview action shell projection from the native endpoint', async () => {
+	it( 'loads the overview action shell projection from the endpoint', async () => {
 		await getWooPaymentsOverviewShell();
 
 		expect( mockApiFetch ).toHaveBeenCalledWith( {

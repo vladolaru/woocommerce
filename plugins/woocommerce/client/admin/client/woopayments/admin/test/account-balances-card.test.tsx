@@ -272,7 +272,7 @@ describe( 'AccountBalancesCard', () => {
 		);
 	} );
 
-	it( 'opens the instant payout modal and submits the native action', async () => {
+	it( 'opens the instant payout modal and submits the action', async () => {
 		const submitInstantPayout = jest.fn().mockResolvedValue( {
 			id: 'po_instant',
 			date: 1781740800000,

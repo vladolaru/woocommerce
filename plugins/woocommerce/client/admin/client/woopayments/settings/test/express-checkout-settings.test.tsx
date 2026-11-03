@@ -1023,7 +1023,7 @@ describe( 'WooPaymentsExpressCheckoutSettings', () => {
 		expect( previewButton ).toHaveTextContent( /^Buy with$/ );
 	} );
 
-	it( 'mounts the live Stripe Express Checkout preview with native checkout loader behavior on HTTPS', async () => {
+	it( 'mounts the live Stripe Express Checkout preview with checkout loader behavior on HTTPS', async () => {
 		setWindowProtocol( 'https:' );
 		installStripeMock();
 

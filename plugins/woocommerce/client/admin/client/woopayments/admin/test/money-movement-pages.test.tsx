@@ -5008,7 +5008,7 @@ describe( 'WooPayments money movement pages', () => {
 		}
 	);
 
-	it( 'derives refund order ids from native order URLs when the detail payload omits the order id', async () => {
+	it( 'derives refund order ids from order URLs when the detail payload omits the order id', async () => {
 		mockGetPaymentIntent.mockResolvedValue( {
 			id: 'pi_order_url',
 			status: 'succeeded',

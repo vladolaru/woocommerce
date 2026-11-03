@@ -269,7 +269,7 @@ describe( 'WooPayments payout details admin surface', () => {
 		} );
 	} );
 
-	it( 'links payout history rows to native payout details', async () => {
+	it( 'links payout history rows to payout details', async () => {
 		mockGetDeposits.mockResolvedValue( {
 			total_count: 1,
 			data: [
@@ -1079,7 +1079,7 @@ describe( 'WooPayments payout details admin surface', () => {
 	// Client 11.1.0 `deposits/details/index.tsx:104-243` and `deposits/strings.ts`.
 	describe( 'payout overview', () => {
 		// Client 11.1.0 `deposits/details/__tests__/index.test.tsx` fixture.
-		const clientDeposit = {
+		const depositFixture = {
 			id: 'po_mock',
 			date: '2020-01-02 17:46:02',
 			type: 'deposit',
@@ -1131,7 +1131,7 @@ describe( 'WooPayments payout details admin surface', () => {
 		} );
 
 		it( 'renders an automatic payout with its date, status and amount', async () => {
-			await renderPayout( clientDeposit );
+			await renderPayout( depositFixture );
 
 			expect(
 				getOverviewItem( 'Payout date: Jan 2, 2020' )
@@ -1143,7 +1143,7 @@ describe( 'WooPayments payout details admin surface', () => {
 
 		it( 'renders an automatic withdrawal as deducted', async () => {
 			await renderPayout( {
-				...clientDeposit,
+				...depositFixture,
 				type: 'withdrawal',
 				amount: -2000,
 			} );
@@ -1164,7 +1164,7 @@ describe( 'WooPayments payout details admin surface', () => {
 		] )(
 			'labels the %s status like the client',
 			async ( status, label ) => {
-				await renderPayout( { ...clientDeposit, status } );
+				await renderPayout( { ...depositFixture, status } );
 
 				expect(
 					getOverviewItem( 'Payout date: Jan 2, 2020' )
@@ -1173,7 +1173,7 @@ describe( 'WooPayments payout details admin surface', () => {
 		);
 
 		it( 'breaks down an instant payout into amount, service fee and net amount', async () => {
-			await renderPayout( { ...clientDeposit, automatic: false } );
+			await renderPayout( { ...depositFixture, automatic: false } );
 
 			expect(
 				screen.getByRole( 'list', { name: 'Payout overview' } )
@@ -1192,7 +1192,7 @@ describe( 'WooPayments payout details admin surface', () => {
 
 		it( 'shows a zero service fee as 0% and $0.00', async () => {
 			await renderPayout( {
-				...clientDeposit,
+				...depositFixture,
 				automatic: false,
 				fee: 0,
 				fee_percentage: 0,
@@ -1204,7 +1204,7 @@ describe( 'WooPayments payout details admin surface', () => {
 
 		it( 'uses withdrawal wording for an instant withdrawal breakdown', async () => {
 			await renderPayout( {
-				...clientDeposit,
+				...depositFixture,
 				type: 'withdrawal',
 				automatic: false,
 			} );
@@ -1331,7 +1331,7 @@ describe( 'WooPayments payout details admin surface', () => {
 			'maps the %s failure code to the client message',
 			async ( failureCode, message ) => {
 				await renderPayout( {
-					...clientDeposit,
+					...depositFixture,
 					status: 'failed',
 					failure_code: failureCode,
 					failure_message: 'Raw Stripe failure message',
@@ -1352,7 +1352,7 @@ describe( 'WooPayments payout details admin surface', () => {
 			'falls back to the raw failure message for %s',
 			async ( _case, failureCode ) => {
 				await renderPayout( {
-					...clientDeposit,
+					...depositFixture,
 					status: 'failed',
 					failure_code: failureCode,
 					failure_message:
@@ -1368,7 +1368,7 @@ describe( 'WooPayments payout details admin surface', () => {
 		);
 
 		it( 'shows Unknown when a failed payout has no failure code or message', async () => {
-			await renderPayout( { ...clientDeposit, status: 'failed' } );
+			await renderPayout( { ...depositFixture, status: 'failed' } );
 
 			expect(
 				screen.getByText( 'Failure reason:' ).parentElement
@@ -1383,7 +1383,7 @@ describe( 'WooPayments payout details admin surface', () => {
 
 		it( 'shows the failure reason only for failed payouts', async () => {
 			await renderPayout( {
-				...clientDeposit,
+				...depositFixture,
 				failure_code: 'insufficient_funds',
 				failure_message: 'Raw Stripe failure message',
 			} );

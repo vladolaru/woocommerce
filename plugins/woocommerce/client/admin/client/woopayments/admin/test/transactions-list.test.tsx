@@ -193,7 +193,7 @@ const RECORDED = JSON.parse(
 const [ SUBSCRIPTION_CHARGE, EUR_PAYMENT, EUR_REFUND ] = RECORDED;
 
 // Client 11.1.0 `transactions/list/index.tsx:136-291`, in order.
-const CLIENT_COLUMNS = [
+const EXPECTED_COLUMNS = [
 	[ 'transaction_id', 'Transaction ID' ],
 	[ 'date', 'Date' ],
 	[ 'type', 'Type' ],
@@ -305,7 +305,7 @@ describe( 'WooPayments transactions list columns', () => {
 		} ) as MockField[];
 
 		expect( fields.map( ( field ) => [ field.id, field.label ] ) ).toEqual(
-			CLIENT_COLUMNS
+			EXPECTED_COLUMNS
 		);
 		expect(
 			fields
