@@ -150,7 +150,8 @@ const blockedSearchCompleter = {
 };
 
 /**
- * The Blocked transactions view, ported from client 11.1.0 `transactions/blocked/index.tsx`.
+ * The Blocked transactions view: the transactions fraud protection blocked.
+ * Client 11.1.0 `transactions/blocked/index.tsx`.
  */
 export const WooPaymentsBlockedTransactions = () => {
 	const location = useLocation();

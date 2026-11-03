@@ -9,8 +9,8 @@ import CurrencyFactory from '@woocommerce/currency';
 import { getWooPaymentsSettingsBootstrap } from '../settings/bootstrap';
 
 /**
- * Money formatting ported from client 11.1.0 `includes/multi-currency/client/utils/currency/index.js`, fed by the same
- * localized data: the store country, the zero-decimal currencies and each country's currency format.
+ * Money formatting from the localized data: the store country, the zero-decimal currencies and each country's currency
+ * format. Client 11.1.0 `includes/multi-currency/client/utils/currency/index.js`.
  */
 
 type CurrencyFormat = {

@@ -14,8 +14,8 @@ import {
 	hasSameSymbol as hasSameCurrencySymbol,
 } from '../currency-format';
 
-// The captured-event body follows client 11.1.0: map-events.js (the legacy `fee_rates` path)
-// and envelope/compose.js with fee-breakdown-label-map.ts (the `fee_breakdown_v1` path).
+// The captured-event body, from the legacy `fee_rates` record or the `fee_breakdown_v1` envelope.
+// Client 11.1.0 `map-events.js` (`fee_rates`), `envelope/compose.js` and `fee-breakdown-label-map.ts` (`fee_breakdown_v1`).
 
 type TimelineRecord = Record< string, unknown >;
 

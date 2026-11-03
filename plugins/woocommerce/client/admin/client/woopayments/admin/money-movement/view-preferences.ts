@@ -5,8 +5,7 @@ import { useMemo } from 'react';
 import { useUserPreferences } from '@woocommerce/data';
 
 /**
- * The user meta keys for hidden list columns, registered in PHP by
- * UserPreferenceFields like WC_Payments::add_user_data_fields().
+ * The user meta keys for hidden list columns, registered in PHP by `UserPreferenceFields`.
  */
 export type WooPaymentsHiddenColumnsKey =
 	| 'wc_payments_transactions_hidden_columns'

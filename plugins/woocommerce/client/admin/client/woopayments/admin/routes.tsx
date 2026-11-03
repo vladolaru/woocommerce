@@ -295,7 +295,7 @@ const WooPaymentsProtectedRoute = ( {
 );
 
 /**
- * The route table answers for the account. `featureFlags.reportsArea` carries the same answer in the preload, and a `wcpay_js_settings` callback may turn it off.
+ * Shows the Reports page only when the route table allows it and `featureFlags.reportsArea` is on. The two can differ: the route also needs full account access, and a `wcpay_js_settings` callback may turn the flag off.
  */
 const WooPaymentsReportsRoute = () => {
 	if ( ! isRouteAvailable( '/woopayments/reports' ) ) {

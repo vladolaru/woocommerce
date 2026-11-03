@@ -477,7 +477,8 @@ const refundReasonLabels: Record< string, string > = {
 	requested_by_customer: __( 'Requested by customer', 'woocommerce' ),
 };
 
-// Mirrors the client's refund FX line (map-events.js composeFXString and formatFX).
+// The refund's currency conversion line, when the customer paid in another currency.
+// Client 11.1.0 `map-events.js` `composeFXString()` and `formatFX()`.
 const getRefundFx = ( event: WooPaymentsTimelineEvent ) => {
 	const details = ( event.transaction_details || {} ) as Record<
 		string,
@@ -677,7 +678,7 @@ const getNetworkCostItem = (
 	);
 };
 
-// With `isExplicit`, the amount carries its currency code.
+// `isExplicit` picks `formatExplicitCurrency`, which adds the currency code when the explicit-price setting is on.
 const createAmountMessage = (
 	template: TranslatableText< `${ string }%s${ string }` >,
 	event: WooPaymentsTimelineEvent,

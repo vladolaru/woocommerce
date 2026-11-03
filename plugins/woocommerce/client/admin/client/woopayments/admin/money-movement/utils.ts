@@ -390,8 +390,8 @@ const getColorTransactionSourceIconUrl = ( source: string ) =>
 		: undefined;
 
 /**
- * The logo for a transaction or dispute source, the card brand or the payment method,
- * standing in for the client 11.1.0 `payment-method__brand--{source}` sprite.
+ * The logo for a transaction or dispute source, the card brand or the payment method.
+ * Client 11.1.0 `payment-method__brand--{source}` sprite.
  *
  * @param source The source, such as `visa` or `sepa_debit`.
  */
@@ -512,7 +512,8 @@ export const formatDisputeReasonLabel = ( reason?: string ) => {
 	}
 };
 
-// Mirrors the client's getBankName (utils/charge/index.ts:339-363).
+// The card issuer, or the buy now, pay later provider that handles the method's disputes.
+// Client 11.1.0 `utils/charge/index.ts:339-363` `getBankName()`.
 export const getBankName = (
 	paymentMethodDetails?: WooPaymentsPaymentMethodDetails
 ): string | undefined => {

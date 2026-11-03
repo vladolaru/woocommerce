@@ -433,7 +433,6 @@ const RuleToggle = ( {
 	}
 
 	return (
-		// A checkbox, like every other settings control.
 		<div className="woopayments-fraud-protection-rule__control">
 			<CheckboxControl
 				checked={ settingUI.enabled }
