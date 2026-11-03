@@ -483,7 +483,7 @@ const composeTaxString = ( event: WooPaymentsTimelineEvent ) => {
 };
 
 // Client formatNetString(): the legacy capture net, in the store currency for converted charges.
-const getLegacyNet = ( event: WooPaymentsTimelineEvent ) => {
+const getCaptureNetWithoutBreakdown = ( event: WooPaymentsTimelineEvent ) => {
 	if ( isFxEvent( event ) ) {
 		const details = getTransactionDetails( event );
 		const captured = getNumber( details, 'store_amount_captured' );
@@ -863,7 +863,7 @@ export const getCapturedDetails = ( event: WooPaymentsTimelineEvent ) => {
 		};
 	}
 
-	const net = getLegacyNet( event );
+	const net = getCaptureNetWithoutBreakdown( event );
 
 	return {
 		net,

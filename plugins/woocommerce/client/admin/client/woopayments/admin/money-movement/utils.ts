@@ -373,7 +373,7 @@ const getPayLaterSourceIconUrl = ( source: string ) => {
  * Client 11.1.0 `assets/css/admin.css` draws these sources with files that differ from the settings icons.
  * Core ships each of them under a `-color` name; the file names are native-owned, the artwork is the client's.
  */
-const CLIENT_TRANSACTION_SOURCE_ICONS: Record< string, string > = {
+const COLOR_TRANSACTION_SOURCE_ICONS: Record< string, string > = {
 	amex: 'amex-card-color.svg',
 	discover: 'discover-card-color.svg',
 	jcb: 'jcb-color.svg',
@@ -382,10 +382,10 @@ const CLIENT_TRANSACTION_SOURCE_ICONS: Record< string, string > = {
 	visa: 'visa-card-color.svg',
 };
 
-const getClientTransactionSourceIconUrl = ( source: string ) =>
-	CLIENT_TRANSACTION_SOURCE_ICONS[ source ]
+const getColorTransactionSourceIconUrl = ( source: string ) =>
+	COLOR_TRANSACTION_SOURCE_ICONS[ source ]
 		? `${ WC_ASSET_URL || '' }images/payment-methods/${
-				CLIENT_TRANSACTION_SOURCE_ICONS[ source ]
+				COLOR_TRANSACTION_SOURCE_ICONS[ source ]
 			}`
 		: undefined;
 
@@ -397,7 +397,7 @@ const getClientTransactionSourceIconUrl = ( source: string ) =>
  */
 export const getTransactionSourceIconUrl = ( source: string ) =>
 	getPayLaterSourceIconUrl( source ) ||
-	getClientTransactionSourceIconUrl( source ) ||
+	getColorTransactionSourceIconUrl( source ) ||
 	CARD_BRANDS.find( ( brand ) => brand.id === source )?.iconUrl ||
 	getPaymentMethodDefinition( source )?.iconUrl;
 
