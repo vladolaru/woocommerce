@@ -1227,7 +1227,8 @@ export const WooPaymentsMissingOrderNotice = ( {
 	onRefund,
 }: {
 	transaction: WooPaymentsTransaction;
-	onRefund: ( opener: HTMLElement ) => void;
+	/** Left out when the charge cannot be refunded in full; the notice then has no Refund button. */
+	onRefund?: ( opener: HTMLElement ) => void;
 } ) => {
 	if ( ! isPaymentOrderMissing( transaction ) ) {
 		return null;
@@ -1236,7 +1237,8 @@ export const WooPaymentsMissingOrderNotice = ( {
 	return (
 		<WooPaymentsSummaryCardNotice
 			actions={
-				! transaction.refunded && (
+				! transaction.refunded &&
+				onRefund && (
 					<Button
 						variant="primary"
 						__next40pxDefaultSize

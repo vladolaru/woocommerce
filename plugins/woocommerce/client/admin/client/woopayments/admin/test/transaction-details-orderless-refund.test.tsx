@@ -315,6 +315,38 @@ describe( 'WooPayments refund of a payment without an order', () => {
 			).toBeInTheDocument();
 		} );
 
+		// Better than client 11.2.0, whose notice offers a full refund of the original amount here and then shows the
+		// refund error: the button follows the actions menu's partly refunded and dispute checks.
+		it.each( [
+			[ 'partly refunded', { amount_refunded: 500 } ],
+			[
+				'charged back',
+				{
+					dispute: {
+						id: 'dp_lost',
+						status: 'lost',
+						reason: 'fraudulent',
+						amount: 2000,
+						currency: 'usd',
+					},
+				},
+			],
+		] )(
+			'drops the Refund button for a %s charge',
+			async ( _label, override ) => {
+				renderPaymentDetails( {
+					...getOrderlessCharge(),
+					...override,
+				} as WooPaymentsCharge );
+
+				const notice = await findMissingOrderNotice();
+
+				expect(
+					within( notice ).queryByRole( 'button' )
+				).not.toBeInTheDocument();
+			}
+		);
+
 		it( 'says a refunded charge cannot be disputed and drops the Refund button', async () => {
 			renderPaymentDetails( {
 				...getOrderlessCharge(),

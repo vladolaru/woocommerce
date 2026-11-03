@@ -1419,7 +1419,14 @@ export const WooPaymentsTransactionDetailsPage = () => {
 							<WooPaymentsMissingOrderNotice
 								transaction={ transaction }
 								// Client 11.1.0 `payment-details/summary/index.tsx:897-903` opens the modal with no open event.
-								onRefund={ openRefundModal }
+								// A full refund is refused on a partly refunded or charged-back charge, so the menu's
+								// checks hide it; an uncaptured charge keeps it, as in the client.
+								onRefund={
+									! isPartiallyRefunded &&
+									disputes.every( isDisputeRefundable )
+										? openRefundModal
+										: undefined
+								}
 							/>
 							{ showCaptureNotice && captureDeadline && (
 								<WooPaymentsSummaryCardNotice
