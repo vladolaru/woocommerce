@@ -98,6 +98,7 @@ export const SettingsSaveBar = ( {
 	isSaving,
 	isDisabled = false,
 	validationError = null,
+	shouldConfirmLeave,
 	onSave,
 	children,
 }: {
@@ -107,10 +108,12 @@ export const SettingsSaveBar = ( {
 	isDisabled?: boolean;
 	/** A field that blocks saving: Save stays clickable and leads to it. */
 	validationError?: FieldValidationError | null;
+	/** Whether a move to another route asks first; it is read when the move happens, so it must not close over state. */
+	shouldConfirmLeave?: ( toUrl: URL ) => boolean;
 	onSave: () => void;
 	children?: ReactNode;
 } ) => {
-	useConfirmUnsavedChanges( isDirty );
+	useConfirmUnsavedChanges( isDirty, shouldConfirmLeave );
 
 	const isInactive = isSaving || isDisabled || ! isDirty;
 	const isBlockedByValidation = isDirty && !! validationError;

@@ -79,6 +79,16 @@ export function updateSettings( data: SettingsValues ) {
 	};
 }
 
+/**
+ * Forget the loaded settings and every unsaved edit, so the next `getSettings` read asks the server again.
+ */
+export function* resetSettings(): Generator< unknown, void, unknown > {
+	yield { type: ACTION_TYPES.RESET_SETTINGS };
+	yield dispatch( STORE_NAME ).invalidateResolutionForStoreSelector(
+		'getSettings'
+	);
+}
+
 export function updateIsWCPayEnabled( isEnabled: boolean ) {
 	return updateSettingsValues( { is_wcpay_enabled: isEnabled } );
 }

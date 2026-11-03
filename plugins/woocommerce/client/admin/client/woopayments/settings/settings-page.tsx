@@ -49,7 +49,12 @@ import {
 } from './sections/advanced';
 import { SettingsSection, type FieldValidationError } from './settings-shell';
 import { SpotlightPromotion } from '../promotions/spotlight';
-import { useDevMode, useGetSettings, useSettings } from './data/hooks';
+import {
+	useDevMode,
+	useGetSettings,
+	useResetSettingsOnLeave,
+	useSettings,
+} from './data/hooks';
 import { store as settingsStore } from './data/store';
 import { registerStoreUnlessTaken } from '../data/register-store';
 import { getWooPaymentsDocumentsAccount } from '../admin/documents/data';
@@ -276,6 +281,7 @@ const FraudProtectionSettingsSection = () => {
 export const WooPaymentsSettingsPage = () => {
 	registerStoreUnlessTaken( settingsStore );
 	getWooPaymentsSettingsBootstrap();
+	useResetSettingsOnLeave();
 
 	const { isLoading, isSaving } = useSettings();
 	const [ transactionsValidationError, setTransactionsValidationError ] =

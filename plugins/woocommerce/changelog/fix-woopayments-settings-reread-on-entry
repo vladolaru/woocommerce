@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Read the WooPayments settings again on each visit, so saving after going live keeps live mode and discarded edits stay discarded.

@@ -286,6 +286,7 @@ jest.mock( '../data/hooks', () => ( {
 	useWooPayShowIncompatibilityNotice: () =>
 		mockUseWooPayShowIncompatibilityNotice(),
 	useGetSavingError: () => mockUseGetSavingError(),
+	useResetSettingsOnLeave: () => undefined,
 } ) );
 
 const noop = jest.fn();

@@ -50,6 +50,7 @@ jest.mock( '../data/hooks', () => ( {
 	useAdvancedFraudProtectionSettings: () =>
 		mockUseAdvancedFraudProtectionSettings(),
 	useGetSettings: () => mockUseGetSettings(),
+	useResetSettingsOnLeave: () => undefined,
 } ) );
 
 const setProtectionLevel = jest.fn();

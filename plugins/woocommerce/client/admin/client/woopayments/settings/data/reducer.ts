@@ -76,6 +76,9 @@ export const receiveSettings = (
 				isDirty: false,
 			};
 
+		case ACTION_TYPES.RESET_SETTINGS:
+			return defaultState;
+
 		case ACTION_TYPES.SET_SETTINGS_VALUES:
 			return withEditedData(
 				{ ...state, savingError: null },

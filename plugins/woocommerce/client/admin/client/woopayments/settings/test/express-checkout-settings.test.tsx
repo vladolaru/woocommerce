@@ -102,6 +102,7 @@ jest.mock( '../data/hooks', () => ( {
 	useDevMode: () => mockUseDevMode(),
 	useGetSavingError: () => null,
 	useGetSavedSettings: () => mockUseGetSavedSettings(),
+	useResetSettingsOnLeave: () => undefined,
 } ) );
 
 jest.mock( '../bootstrap', () => ( {

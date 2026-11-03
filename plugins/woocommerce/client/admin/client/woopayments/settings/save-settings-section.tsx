@@ -1,12 +1,15 @@
 /**
  * External dependencies
  */
+import { select } from '@wordpress/data';
 import { useEffect, useState } from '@wordpress/element';
 import { recordEvent } from '@woocommerce/tracks';
+import { isEqual } from 'lodash';
 
 /**
  * Internal dependencies
  */
+import { STORE_NAME } from './data/store-name';
 import { asSettingsRecord, asString } from './settings-values';
 import { useGetSavingError, useGetSettings, useSettings } from './data/hooks';
 import {
@@ -41,6 +44,24 @@ const getDaysSinceDate = ( date: string, now = new Date() ) => {
 
 const isWooPayDisableFeedbackThrottled = ( date: string ) =>
 	date !== '' && getDaysSinceDate( date ) < FEEDBACK_THROTTLE_DAYS;
+
+// Client 11.2.0 opens the advanced fraud rules without the leave prompt when the only change is the protection level,
+// from Basic to Advanced (settings/fraud-protection/protection-levels/index.tsx:70-124); the rules page sets that level
+// itself when it saves.
+const shouldConfirmLeave = ( toUrl: URL ) => {
+	const { current_protection_level: level, ...settings } =
+		select( STORE_NAME ).getSettings();
+	const { current_protection_level: savedLevel, ...savedSettings } =
+		select( STORE_NAME ).getSavedSettings();
+
+	return ! (
+		toUrl.searchParams.get( 'path' ) ===
+			'/woopayments/settings/fraud-protection' &&
+		( savedLevel || 'basic' ) === 'basic' &&
+		level === 'advanced' &&
+		isEqual( settings, savedSettings )
+	);
+};
 
 const getSavingErrorDetails = ( value: unknown ) => {
 	const error = asSettingsRecord( value );
@@ -201,6 +222,7 @@ export const SaveSettingsSection = ( {
 			isSaving={ Boolean( isSaving ) }
 			isDisabled={ Boolean( isLoading || disabled ) }
 			validationError={ validationError }
+			shouldConfirmLeave={ shouldConfirmLeave }
 			onSave={ save }
 		>
 			{ isWooPayDisableFeedbackOpen && (

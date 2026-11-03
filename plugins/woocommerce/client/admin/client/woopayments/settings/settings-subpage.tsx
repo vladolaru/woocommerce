@@ -11,6 +11,7 @@ import type { ReactNode } from 'react';
  */
 import { BackButton } from '~/settings-payments/components/buttons/back-button';
 import { getSettingsPaymentsProviderAdminPath } from '../admin/utils';
+import { useResetSettingsOnLeave } from './data/hooks';
 
 /**
  * A WooPayments settings subpage under core's offline payments header (settings-payments/index.tsx), with a back
@@ -35,6 +36,8 @@ export const SettingsSubpage = ( {
 	isBusy?: boolean;
 	children: ReactNode;
 } ) => {
+	useResetSettingsOnLeave();
+
 	useEffect( () => {
 		window.scrollTo( 0, 0 );
 	}, [] );
