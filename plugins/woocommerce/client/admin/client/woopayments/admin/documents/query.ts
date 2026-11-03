@@ -7,6 +7,7 @@ import type {
 	WooPaymentsDocumentsQuery,
 } from './types';
 import {
+	appendArrayParam,
 	getFilterQueryValue,
 	isSortDirection,
 	normalizePositiveInteger,
@@ -111,19 +112,6 @@ const getQueryValue = (
 	return values.length === 1 ? values[ 0 ] : values;
 };
 
-const addParam = ( params: URLSearchParams, key: string, value: unknown ) => {
-	if ( value === undefined || value === null || value === '' ) {
-		return;
-	}
-
-	if ( Array.isArray( value ) ) {
-		value.forEach( ( item ) => addParam( params, `${ key }[]`, item ) );
-		return;
-	}
-
-	params.append( key, String( value ) );
-};
-
 const getFilterOperator = ( param: string, value: string | string[] ) => {
 	if ( param === 'type_is_not' ) {
 		return Array.isArray( value ) ? 'isNone' : 'isNot';
@@ -207,7 +195,7 @@ export const serializeDocumentsQuery = (
 	const params = new URLSearchParams();
 
 	paramOrder.forEach( ( key ) => {
-		addParam( params, paramNames[ key ] || key, query[ key ] );
+		appendArrayParam( params, paramNames[ key ] || key, query[ key ] );
 	} );
 
 	return params.toString();

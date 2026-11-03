@@ -6,6 +6,7 @@ import {
 	normalizeLocalCalendarDate,
 } from '../money-movement/query';
 import {
+	appendArrayParam,
 	getFirstString,
 	isSortDirection,
 	normalizePositiveInteger,
@@ -137,19 +138,6 @@ const getDateFilterQuery = (
 	};
 };
 
-const addParam = ( params: URLSearchParams, key: string, value: unknown ) => {
-	if ( value === undefined || value === null || value === '' ) {
-		return;
-	}
-
-	if ( Array.isArray( value ) ) {
-		value.forEach( ( item ) => addParam( params, `${ key }[]`, item ) );
-		return;
-	}
-
-	params.append( key, String( value ) );
-};
-
 const serializeReportsQuery = (
 	query: ReportsFeesQuery,
 	paramOrder: readonly string[]
@@ -157,7 +145,7 @@ const serializeReportsQuery = (
 	const params = new URLSearchParams();
 
 	paramOrder.forEach( ( key ) => {
-		addParam( params, key, query[ key as keyof ReportsFeesQuery ] );
+		appendArrayParam( params, key, query[ key as keyof ReportsFeesQuery ] );
 	} );
 
 	return params.toString();
@@ -168,9 +156,9 @@ export const serializeReportsBalanceQuery = (
 ): string => {
 	const params = new URLSearchParams();
 
-	addParam( params, 'date_start', query.date_start );
-	addParam( params, 'date_end', query.date_end );
-	addParam( params, 'currency', query.currency?.toLowerCase() );
+	appendArrayParam( params, 'date_start', query.date_start );
+	appendArrayParam( params, 'date_end', query.date_end );
+	appendArrayParam( params, 'currency', query.currency?.toLowerCase() );
 
 	return params.toString();
 };
@@ -367,7 +355,7 @@ const addFeesDateFilterParams = (
 	if ( operator === 'between' ) {
 		if ( Array.isArray( value ) && value.length === 2 ) {
 			if ( isYmd( value[ 0 ] ) && isYmd( value[ 1 ] ) ) {
-				addParam( params, 'date_between', value );
+				appendArrayParam( params, 'date_between', value );
 			}
 		}
 		return;
@@ -378,11 +366,11 @@ const addFeesDateFilterParams = (
 	}
 
 	if ( operator === 'on' ) {
-		addParam( params, 'date_between', [ value, value ] );
+		appendArrayParam( params, 'date_between', [ value, value ] );
 	} else if ( operator === 'before' ) {
-		addParam( params, 'date_before', value );
+		appendArrayParam( params, 'date_before', value );
 	} else if ( operator === 'after' ) {
-		addParam( params, 'date_after', value );
+		appendArrayParam( params, 'date_after', value );
 	}
 };
 
@@ -398,19 +386,23 @@ export const serializeReportsFeesViewToSearch = (
 	const params = new URLSearchParams();
 	const search = getFirstString( view.search );
 
-	addParam( params, 'orderby', view.sort?.field );
-	addParam(
+	appendArrayParam( params, 'orderby', view.sort?.field );
+	appendArrayParam(
 		params,
 		'order',
 		isSortDirection( view.sort?.direction ) ? view.sort?.direction : ''
 	);
-	addParam( params, 'paged', normalizePositiveInteger( view.page, 1 ) );
-	addParam(
+	appendArrayParam(
+		params,
+		'paged',
+		normalizePositiveInteger( view.page, 1 )
+	);
+	appendArrayParam(
 		params,
 		'per_page',
 		normalizePositiveInteger( view.perPage, 25 )
 	);
-	addParam( params, 'search', search ? [ search ] : undefined );
+	appendArrayParam( params, 'search', search ? [ search ] : undefined );
 
 	view.filters?.forEach( ( filter ) => {
 		if ( filter.field === 'date' ) {
@@ -418,7 +410,7 @@ export const serializeReportsFeesViewToSearch = (
 		}
 
 		if ( filter.field === 'payment_method' ) {
-			addParam(
+			appendArrayParam(
 				params,
 				'payment_method_type',
 				getFirstString( filter.value )
@@ -426,7 +418,11 @@ export const serializeReportsFeesViewToSearch = (
 		}
 
 		if ( filter.field === 'type' ) {
-			addParam( params, 'type', getSingleUrlValue( filter.value ) );
+			appendArrayParam(
+				params,
+				'type',
+				getSingleUrlValue( filter.value )
+			);
 		}
 	} );
 

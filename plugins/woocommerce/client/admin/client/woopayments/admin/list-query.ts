@@ -64,3 +64,55 @@ export const getFilterQueryValue = ( value: unknown ) => {
 
 	return String( value );
 };
+
+/**
+ * Append a query value: a list value as one `key[]` entry per item, as the documents and reports endpoints read lists.
+ * Empty values are skipped.
+ *
+ * @param params The query being built.
+ * @param key    The param name.
+ * @param value  The value.
+ */
+export const appendArrayParam = (
+	params: URLSearchParams,
+	key: string,
+	value: unknown
+) => {
+	if ( value === undefined || value === null || value === '' ) {
+		return;
+	}
+
+	if ( Array.isArray( value ) ) {
+		value.forEach( ( item ) =>
+			appendArrayParam( params, `${ key }[]`, item )
+		);
+		return;
+	}
+
+	params.append( key, String( value ) );
+};
+
+/**
+ * Append a query value: a list value as one entry per item under the same key, as the money-movement endpoints read
+ * lists. Empty values are skipped.
+ *
+ * @param params The query being built.
+ * @param key    The param name.
+ * @param value  The value.
+ */
+export const appendRepeatedParam = (
+	params: URLSearchParams,
+	key: string,
+	value: unknown
+) => {
+	if ( value === undefined || value === null || value === '' ) {
+		return;
+	}
+
+	if ( Array.isArray( value ) ) {
+		value.forEach( ( item ) => appendRepeatedParam( params, key, item ) );
+		return;
+	}
+
+	params.append( key, String( value ) );
+};

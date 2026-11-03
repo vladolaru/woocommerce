@@ -11,6 +11,7 @@ import type {
 	WooPaymentsMoneyMovementSortDirection,
 } from './types';
 import {
+	appendRepeatedParam,
 	getFilterQueryValue,
 	getFirstString,
 	isSortDirection,
@@ -400,19 +401,6 @@ const getQueryValue = (
 	return values.length === 1 ? values[ 0 ] : values;
 };
 
-const addParam = ( params: URLSearchParams, key: string, value: unknown ) => {
-	if ( value === undefined || value === null || value === '' ) {
-		return;
-	}
-
-	if ( Array.isArray( value ) ) {
-		value.forEach( ( item ) => addParam( params, key, item ) );
-		return;
-	}
-
-	params.append( key, String( value ) );
-};
-
 const getFilterOperator = (
 	param: WooPaymentsMoneyMovementQueryFilterParam,
 	value: string | string[]
@@ -529,7 +517,7 @@ export const serializeMoneyMovementQuery = (
 	const params = new URLSearchParams();
 
 	QUERY_PARAM_ORDER.forEach( ( key ) => {
-		addParam(
+		appendRepeatedParam(
 			params,
 			key === 'sort' || key === 'direction'
 				? SORT_URL_PARAMS[ key ]
@@ -575,7 +563,11 @@ export const serializeWooPaymentsAuthorizationsQuery = (
 	AUTHORIZATION_QUERY_PARAM_ORDER.forEach( ( key ) => {
 		const value = sanitized[ key ];
 		// This is an API query: PHP keeps only the last of repeated bare keys.
-		addParam( params, Array.isArray( value ) ? `${ key }[]` : key, value );
+		appendRepeatedParam(
+			params,
+			Array.isArray( value ) ? `${ key }[]` : key,
+			value
+		);
 	} );
 
 	return params.toString();
