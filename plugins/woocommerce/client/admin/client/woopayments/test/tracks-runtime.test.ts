@@ -42,7 +42,7 @@ describe( 'payments_runtime on admin Tracks events', () => {
 		settingsWindow.wcSettings = initialWcSettings;
 	} );
 
-	it( 'marks native WooPayments admin events as recorded by WooCommerce core', () => {
+	it( 'marks WooPayments admin events as recorded by WooCommerce core', () => {
 		registerPaymentsRuntimeTracksProperty();
 
 		expect(
@@ -70,7 +70,7 @@ describe( 'payments_runtime on admin Tracks events', () => {
 		'payments_transactions_blocked',
 		'payments_disputes',
 		'payments_reports',
-	] )( 'marks the native %s page view', ( path ) => {
+	] )( 'marks the %s page view', ( path ) => {
 		registerPaymentsRuntimeTracksProperty();
 
 		expect( filterEvent( 'wcadmin_page_view', { path } ) ).toEqual( {
@@ -102,7 +102,7 @@ describe( 'payments_runtime on admin Tracks events', () => {
 	} );
 
 	// Client 11.1.0 adds `wcpaySettings.trackingInfo?.hosting_provider` to every admin event (`client/tracks/index.ts:44`).
-	it( 'adds the preloaded hosting provider to native WooPayments admin events only', () => {
+	it( 'adds the preloaded hosting provider to WooPayments admin events only', () => {
 		settingsWindow.wcSettings = {
 			admin: {
 				woopaymentsSettings: {
@@ -139,7 +139,7 @@ describe( 'payments_runtime on admin Tracks events', () => {
 		);
 	} );
 
-	it( 'adds the filter once however many native entries register it', () => {
+	it( 'adds the filter once however many entries register it', () => {
 		registerPaymentsRuntimeTracksProperty();
 		registerPaymentsRuntimeTracksProperty();
 		registerPaymentsRuntimeTracksProperty();
@@ -149,7 +149,7 @@ describe( 'payments_runtime on admin Tracks events', () => {
 		).toBe( 1 );
 	} );
 
-	describe( 'when the native routes load', () => {
+	describe( 'when the WooPayments routes load', () => {
 		const loadRoutesModule = () =>
 			jest.isolateModulesAsync( async () => {
 				await import( '../admin/routes' );
@@ -189,7 +189,7 @@ describe( 'payments_runtime on admin Tracks events', () => {
 			);
 		} );
 
-		it( 'marks the same event on a store native owns, where core preloads the WooPayments settings', async () => {
+		it( 'marks the same event on a store the built-in WooPayments owns, where core preloads the WooPayments settings', async () => {
 			settingsWindow.wcSettings = { admin: { woopaymentsSettings: {} } };
 
 			await loadRoutesModule();

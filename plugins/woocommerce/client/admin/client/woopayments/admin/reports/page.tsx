@@ -25,10 +25,10 @@ const normalizeReportsTab = ( tab: string | null ): ReportsTab =>
 
 const getReportsTabFromSearch = ( search: string ): ReportsTab => {
 	const params = new URLSearchParams( search );
-	const nativeTab = params.get( 'report_tab' );
+	const reportTab = params.get( 'report_tab' );
 
-	if ( nativeTab ) {
-		return normalizeReportsTab( nativeTab );
+	if ( reportTab ) {
+		return normalizeReportsTab( reportTab );
 	}
 
 	return isSettingsPaymentsSearch( search )

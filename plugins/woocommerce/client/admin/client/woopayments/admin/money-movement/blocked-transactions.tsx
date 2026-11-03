@@ -68,7 +68,7 @@ type FraudOutcomesSummary = {
 type SearchValue = { key: string; label: string };
 
 // Client 11.1.0 TableCard query names for the native list params.
-const CLIENT_QUERY_KEYS: Record< string, string > = {
+const EXPORT_FILE_QUERY_KEYS: Record< string, string > = {
 	pagesize: 'per_page',
 };
 const NOT_FOUND = 'wcpay_fraud_outcome_not_found';
@@ -282,12 +282,12 @@ export const WooPaymentsBlockedTransactions = () => {
 			page,
 			path,
 			tab,
-			view: nativeView,
+			view: omittedView,
 			...listQuery
 		} = getQuery() as Record< string, string >;
 		const params: Record< string, string > = { tab: 'blocked-page' };
 		Object.entries( listQuery ).forEach( ( [ key, value ] ) => {
-			params[ CLIENT_QUERY_KEYS[ key ] ?? key ] = value;
+			params[ EXPORT_FILE_QUERY_KEYS[ key ] ?? key ] = value;
 		} );
 
 		try {

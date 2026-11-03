@@ -54,7 +54,7 @@ const getSafeUrl = ( url?: string ) => {
 	}
 };
 
-const getNativeRoutePath = () => {
+const getSettingsPathArg = () => {
 	try {
 		return (
 			new URLSearchParams( window.location.search ).get( 'path' ) || ''
@@ -66,7 +66,7 @@ const getNativeRoutePath = () => {
 
 const getPageSource = () => {
 	const currentPath = window.location.pathname + window.location.search;
-	const routePath = getNativeRoutePath();
+	const routePath = getSettingsPathArg();
 	const path = routePath || currentPath;
 
 	if ( path.includes( '/woopayments/overview' ) ) {

@@ -16,7 +16,7 @@ const isRecord = ( value: unknown ): value is Record< string, unknown > =>
 
 // The native list pages record the client's own page view paths; trunk's `payments_connect_core_test`
 // welcome page view does not match.
-const NATIVE_PAGE_VIEW_PATH_PREFIXES = [
+const WOOPAYMENTS_PAGE_VIEW_PATH_PREFIXES = [
 	'payments_transactions',
 	'payments_disputes',
 	'payments_reports',
@@ -32,7 +32,7 @@ const isWooPaymentsAdminEvent = (
 		const { path } = properties;
 		return (
 			typeof path === 'string' &&
-			NATIVE_PAGE_VIEW_PATH_PREFIXES.some( ( prefix ) =>
+			WOOPAYMENTS_PAGE_VIEW_PATH_PREFIXES.some( ( prefix ) =>
 				path.startsWith( prefix )
 			)
 		);
