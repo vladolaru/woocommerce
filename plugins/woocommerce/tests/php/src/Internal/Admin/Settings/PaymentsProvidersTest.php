@@ -1328,7 +1328,7 @@ class PaymentsProvidersTest extends WC_Unit_Test_Case {
 
 		$gateway_details = $this->sut->get_payment_gateway_details( $fake_gateway, 0, 'US' );
 
-		$this->assertSame( $expected_builtin, $gateway_details['_native'] ?? false );
+		$this->assertSame( $expected_builtin, $gateway_details['_woopayments_builtin'] ?? false );
 	}
 
 	/**
@@ -1990,7 +1990,7 @@ class PaymentsProvidersTest extends WC_Unit_Test_Case {
 
 		$listed = array_merge( $suggestions['preferred'], $suggestions['other'] );
 		// The suggestion's id with its built-in onboarding flag: both are offered, or neither.
-		$this->assertSame( $offered ? array( ExtensionSuggestions::WOOPAYMENTS => true ) : array(), array_column( $listed, '_native', 'id' ) );
+		$this->assertSame( $offered ? array( ExtensionSuggestions::WOOPAYMENTS => true ) : array(), array_column( $listed, '_woopayments_builtin', 'id' ) );
 		$this->assertSame( $offered ? array( ExtensionSuggestions::WOOPAYMENTS ) : array(), array_column( $listed, 'id' ) );
 	}
 

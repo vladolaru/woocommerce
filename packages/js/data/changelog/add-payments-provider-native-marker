@@ -1,4 +1,4 @@
 Significance: patch
 Type: add
 
-Expose the optional native marker on payments settings providers.
+Expose the optional built-in WooPayments marker on payments settings providers.

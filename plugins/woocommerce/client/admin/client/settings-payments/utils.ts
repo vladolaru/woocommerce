@@ -128,7 +128,7 @@ export const isBuiltinWooPaymentsSuggestion = ( entity: PaymentsEntity ) =>
  * @param provider The payments provider.
  */
 export const isBuiltinWooPayments = ( provider: PaymentsProvider ) =>
-	provider._native === true;
+	provider._woopayments_builtin === true;
 
 /**
  * Checks whether a provider is WooPayments and that it is eligible for WooPay.

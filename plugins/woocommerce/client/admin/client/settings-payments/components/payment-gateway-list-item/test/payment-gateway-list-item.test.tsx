@@ -798,7 +798,7 @@ describe( 'PaymentGatewayListItem', () => {
 					gateway={ createMockGateway( {
 						id: 'woocommerce_payments',
 						_suggestion_id: 'woopayments',
-						_native: true,
+						_woopayments_builtin: true,
 					} ) }
 					{ ...defaultProps }
 				/>

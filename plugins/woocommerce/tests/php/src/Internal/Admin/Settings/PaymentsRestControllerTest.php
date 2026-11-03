@@ -429,10 +429,10 @@ class PaymentsRestControllerTest extends WC_Unit_Test_Case {
 			->willReturn(
 				array(
 					array(
-						'id'      => 'woocommerce_payments',
-						'_order'  => 0,
-						'_type'   => PaymentsProviders::TYPE_GATEWAY,
-						'_native' => true,
+						'id'                   => 'woocommerce_payments',
+						'_order'               => 0,
+						'_type'                => PaymentsProviders::TYPE_GATEWAY,
+						'_woopayments_builtin' => true,
 					),
 					array(
 						'id'     => WC_Gateway_Paypal::ID,
@@ -451,8 +451,8 @@ class PaymentsRestControllerTest extends WC_Unit_Test_Case {
 		// Assert.
 		$this->assertSame( 200, $response->get_status() );
 		$data = $response->get_data();
-		$this->assertTrue( $data['providers'][0]['_native'] );
-		$this->assertArrayNotHasKey( '_native', $data['providers'][1] );
+		$this->assertTrue( $data['providers'][0]['_woopayments_builtin'] );
+		$this->assertArrayNotHasKey( '_woopayments_builtin', $data['providers'][1] );
 	}
 
 	/**
@@ -487,7 +487,7 @@ class PaymentsRestControllerTest extends WC_Unit_Test_Case {
 		);
 		// The response drops keys outside the suggestion schema and adds the attach and hide links.
 		$shaped = function ( array $item ): array {
-			unset( $item['plugin']['file'], $item['_native'] );
+			unset( $item['plugin']['file'], $item['_woopayments_builtin'] );
 			$item['_links'] = array(
 				'attach' => array( 'href' => rest_url( '/wc-admin/settings/payments/suggestion/' . $item['id'] . '/attach' ) ),
 				'hide'   => array( 'href' => rest_url( '/wc-admin/settings/payments/suggestion/' . $item['id'] . '/hide' ) ),
@@ -508,15 +508,15 @@ class PaymentsRestControllerTest extends WC_Unit_Test_Case {
 		$builtin                = array_merge(
 			$suggestion,
 			array(
-				'id'         => 'woopayments',
-				'title'      => 'WooPayments',
-				'plugin'     => array(
+				'id'                   => 'woopayments',
+				'title'                => 'WooPayments',
+				'plugin'               => array(
 					'_type'  => 'wporg',
 					'file'   => '',
 					'status' => 'not_installed',
 				),
-				'onboarding' => $woopayments_onboarding,
-				'_native'    => true,
+				'onboarding'           => $woopayments_onboarding,
+				'_woopayments_builtin' => true,
 			)
 		);
 		$extension              = array_merge(
@@ -530,7 +530,7 @@ class PaymentsRestControllerTest extends WC_Unit_Test_Case {
 				),
 			)
 		);
-		unset( $extension['_native'] );
+		unset( $extension['_woopayments_builtin'] );
 
 		return array(
 			'built-in WooPayments keeps onboarding' => array( $builtin, $shaped( $builtin ) ),

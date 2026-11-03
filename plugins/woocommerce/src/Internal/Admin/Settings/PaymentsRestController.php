@@ -341,7 +341,7 @@ class PaymentsRestController extends RestApiControllerBase {
 
 		// Only the built-in WooPayments suggestion keeps its onboarding details: its onboarding starts from this list.
 		return array_map(
-			fn( $suggestion ) => empty( $suggestion['_native'] ) ? array_diff_key( $suggestion, array( 'onboarding' => true ) ) : $suggestion,
+			fn( $suggestion ) => empty( $suggestion['_woopayments_builtin'] ) ? array_diff_key( $suggestion, array( 'onboarding' => true ) ) : $suggestion,
 			$suggestions['other'] ?? array()
 		);
 	}
@@ -693,37 +693,37 @@ class PaymentsRestController extends RestApiControllerBase {
 			'type'        => 'object',
 			'description' => esc_html__( 'A payment provider in the context of the main Payments Settings page list.', 'woocommerce' ),
 			'properties'  => array(
-				'id'             => array(
+				'id'                   => array(
 					'type'        => 'string',
 					'description' => esc_html__( 'The unique identifier for the provider.', 'woocommerce' ),
 					'context'     => array( 'view', 'edit' ),
 					'readonly'    => true,
 				),
-				'_order'         => array(
+				'_order'               => array(
 					'type'        => 'integer',
 					'description' => esc_html__( 'The sort order of the provider.', 'woocommerce' ),
 					'context'     => array( 'view', 'edit' ),
 					'readonly'    => true,
 				),
-				'_type'          => array(
+				'_type'                => array(
 					'type'        => 'string',
 					'description' => esc_html__( 'The type of payment provider. Use this to differentiate between the various items in the list and determine their intended use.', 'woocommerce' ),
 					'context'     => array( 'view', 'edit' ),
 					'readonly'    => true,
 				),
-				'title'          => array(
+				'title'                => array(
 					'type'        => 'string',
 					'description' => esc_html__( 'The title of the provider.', 'woocommerce' ),
 					'context'     => array( 'view', 'edit' ),
 					'readonly'    => true,
 				),
-				'description'    => array(
+				'description'          => array(
 					'type'        => 'string',
 					'description' => esc_html__( 'The description of the provider.', 'woocommerce' ),
 					'context'     => array( 'view', 'edit' ),
 					'readonly'    => true,
 				),
-				'supports'       => array(
+				'supports'             => array(
 					'description' => esc_html__( 'Supported features for this provider.', 'woocommerce' ),
 					'type'        => 'array',
 					'context'     => array( 'view', 'edit' ),
@@ -732,7 +732,7 @@ class PaymentsRestController extends RestApiControllerBase {
 						'type' => 'string',
 					),
 				),
-				'plugin'         => array(
+				'plugin'               => array(
 					'type'        => 'object',
 					'description' => esc_html__( 'The corresponding plugin details of the provider.', 'woocommerce' ),
 					'context'     => array( 'view', 'edit' ),
@@ -775,17 +775,17 @@ class PaymentsRestController extends RestApiControllerBase {
 						),
 					),
 				),
-				'image'          => array(
+				'image'                => array(
 					'type'        => 'string',
 					'description' => esc_html__( 'The URL of the provider image.', 'woocommerce' ),
 					'readonly'    => true,
 				),
-				'icon'           => array(
+				'icon'                 => array(
 					'type'        => 'string',
 					'description' => esc_html__( 'The URL of the provider icon (square aspect ratio - 72px by 72px).', 'woocommerce' ),
 					'readonly'    => true,
 				),
-				'links'          => array(
+				'links'                => array(
 					'type'        => 'array',
 					'description' => esc_html__( 'Links for the provider.', 'woocommerce' ),
 					'context'     => array( 'view', 'edit' ),
@@ -808,7 +808,7 @@ class PaymentsRestController extends RestApiControllerBase {
 						),
 					),
 				),
-				'state'          => array(
+				'state'                => array(
 					'type'        => 'object',
 					'description' => esc_html__( 'The general state of the provider with regards to it\'s payments processing.', 'woocommerce' ),
 					'properties'  => array(
@@ -844,7 +844,7 @@ class PaymentsRestController extends RestApiControllerBase {
 						),
 					),
 				),
-				'management'     => array(
+				'management'           => array(
 					'type'        => 'object',
 					'description' => esc_html__( 'The management details of the provider.', 'woocommerce' ),
 					'properties'  => array(
@@ -871,7 +871,7 @@ class PaymentsRestController extends RestApiControllerBase {
 						),
 					),
 				),
-				'onboarding'     => array(
+				'onboarding'           => array(
 					'type'        => 'object',
 					'description' => esc_html__( 'Onboarding-related details for the provider.', 'woocommerce' ),
 					'properties'  => array(
@@ -1062,7 +1062,7 @@ class PaymentsRestController extends RestApiControllerBase {
 						),
 					),
 				),
-				'tags'           => array(
+				'tags'                 => array(
 					'type'        => 'array',
 					'description' => esc_html__( 'The tags associated with the provider.', 'woocommerce' ),
 					'uniqueItems' => true,
@@ -1074,20 +1074,20 @@ class PaymentsRestController extends RestApiControllerBase {
 						'readonly'    => true,
 					),
 				),
-				'_suggestion_id' => array(
+				'_suggestion_id'       => array(
 					'type'        => 'string',
 					'description' => esc_html__( 'The suggestion ID matching this provider.', 'woocommerce' ),
 					'context'     => array( 'view', 'edit' ),
 					'readonly'    => true,
 				),
-				'_native'        => array(
+				'_woopayments_builtin' => array(
 					'type'        => 'boolean',
-					'description' => esc_html__( 'Whether the provider is the WooPayments gateway built into WooCommerce rather than one run by its extension.', 'woocommerce' ),
+					'description' => esc_html__( 'Whether the provider is the WooPayments gateway or suggestion built into WooCommerce, not the WooPayments extension\'s.', 'woocommerce' ),
 					'context'     => array( 'view', 'edit' ),
 					'readonly'    => true,
 				),
-				'_incentive'     => $this->get_schema_for_incentive(),
-				'_links'         => array(
+				'_incentive'           => $this->get_schema_for_incentive(),
+				'_links'               => array(
 					'type'       => 'object',
 					'context'    => array( 'view', 'edit' ),
 					'readonly'   => true,

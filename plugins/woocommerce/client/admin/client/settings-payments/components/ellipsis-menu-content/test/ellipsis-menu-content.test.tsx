@@ -118,7 +118,7 @@ describe( 'EllipsisMenuContent component', () => {
 					provider={
 						{
 							id: 'woocommerce_payments',
-							_native: true,
+							_woopayments_builtin: true,
 						} as PaymentsProvider
 					}
 					isSuggestion={ false }

@@ -155,7 +155,7 @@ test.describe( 'Store with the WooPayments feature off and no extension', () => 
 				).json() ) as {
 					providers: Array< {
 						id: string;
-						_native?: boolean;
+						_woopayments_builtin?: boolean;
 						plugin?: { slug?: string };
 						onboarding?: { _links?: Record< string, unknown > };
 					} >;
@@ -166,7 +166,7 @@ test.describe( 'Store with the WooPayments feature off and no extension', () => 
 				expect( wooPayments?.plugin?.slug ).toBe(
 					'woocommerce-payments'
 				);
-				expect( wooPayments?._native ).toBeUndefined();
+				expect( wooPayments?._woopayments_builtin ).toBeUndefined();
 
 				await expect(
 					wooPaymentsRow.getByRole( 'button', { name: /^Install$/ } )

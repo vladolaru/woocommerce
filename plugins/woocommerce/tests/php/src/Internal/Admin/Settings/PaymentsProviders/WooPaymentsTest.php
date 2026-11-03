@@ -1064,7 +1064,7 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 
 		$enhanced = $this->sut->enhance_extension_suggestion( $extension_suggestion );
 
-		$this->assertSame( $expected_builtin, $enhanced['_native'] ?? false );
+		$this->assertSame( $expected_builtin, $enhanced['_woopayments_builtin'] ?? false );
 	}
 
 	/**

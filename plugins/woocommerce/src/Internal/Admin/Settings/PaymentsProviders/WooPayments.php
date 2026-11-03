@@ -286,7 +286,7 @@ class WooPayments extends PaymentGateway {
 
 		$is_builtin_suggestion = self::ONBOARDING_TYPE_NATIVE_IN_CONTEXT === $extension_suggestion['onboarding']['type'] && empty( $extension_suggestion['plugin']['slug'] );
 		if ( $is_builtin_suggestion ) {
-			$extension_suggestion['_native'] = true;
+			$extension_suggestion['_woopayments_builtin'] = true;
 		}
 		if ( $is_builtin_suggestion && ! empty( $extension_suggestion['_incentive'] ) && is_array( $extension_suggestion['_incentive'] ) ) {
 			$extension_suggestion['_incentive']['cta_label'] = $this->get_builtin_incentive_cta_label( $extension_suggestion );

@@ -1445,7 +1445,7 @@ class PaymentsProviders {
 		$suggestion_plugin_slug = $this->get_suggestion_plugin_slug_for_gateway( $payment_gateway, $normalized_plugin_slug );
 
 		if ( $this->is_builtin_woopayments_gateway( $payment_gateway, $normalized_plugin_slug ) ) {
-			$gateway_details['_native'] = true;
+			$gateway_details['_woopayments_builtin'] = true;
 		}
 
 		// If we have a matching suggestion, hoist details from there.
