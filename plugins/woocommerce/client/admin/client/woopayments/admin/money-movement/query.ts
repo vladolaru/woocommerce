@@ -122,7 +122,7 @@ const FILTER_PARAM_TO_FIELD: Partial<
 	date_between: 'date',
 };
 
-// Filter fields whose "Is not" goes to the client's `<name>_is_not` argument.
+// Filter fields whose "Is not" goes to the `<name>_is_not` argument.
 const IS_NOT_FILTER_PARAMS: Record<
 	string,
 	WooPaymentsMoneyMovementQueryFilterParam
@@ -279,7 +279,7 @@ const getUserTimezone = () => {
 
 /**
  * Turns the list's local calendar-day date filters into the platform's UTC
- * `Y-m-d H:i:s` day boundaries, like the client's `formatDateValue()`.
+ * `Y-m-d H:i:s` day boundaries.
  *
  * @param query The list query.
  */

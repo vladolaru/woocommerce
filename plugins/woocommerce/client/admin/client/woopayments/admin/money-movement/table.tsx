@@ -62,10 +62,10 @@ export const LiveStatusMessage = ( {
 );
 
 /**
- * Reports a list read that failed, with the client's copy for that read, as the client's data
- * resolvers do (for example client 11.1.0 `data/transactions/resolvers.js:76-81`).
+ * Reports a list read that failed, with the copy for that read (for example client 11.1.0
+ * `data/transactions/resolvers.js:76-81`).
  *
- * @param message The client's message, such as "Error retrieving transactions.".
+ * @param message The message for the read, such as "Error retrieving transactions.".
  */
 export const reportListLoadError = ( message: string ) =>
 	(

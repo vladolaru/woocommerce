@@ -67,7 +67,7 @@ type FraudOutcomesSummary = {
 };
 type SearchValue = { key: string; label: string };
 
-// Client 11.1.0 TableCard query names for the native list params.
+// Client 11.1.0 TableCard query names for the list params.
 const EXPORT_FILE_QUERY_KEYS: Record< string, string > = {
 	pagesize: 'per_page',
 };
@@ -277,7 +277,7 @@ export const WooPaymentsBlockedTransactions = () => {
 	const onDownload = async () => {
 		setIsDownloading( true );
 		// Client 11.1.0 `blocked/index.tsx:128-130, :148`: the file name carries
-		// the admin query minus page and path, under the client's URL names.
+		// the admin query minus page and path, under the list's URL names.
 		const {
 			page,
 			path,

@@ -238,7 +238,7 @@ export const runWooPaymentsExport = async ( {
 	pollDelayMs = 1000,
 	signal,
 }: RunWooPaymentsExportOptions ): Promise< void > => {
-	// The client starts the request, then raises the snackbar without waiting for it.
+	// The request starts, then the snackbar is raised without waiting for it.
 	const exportRequest = requestExport().then(
 		( response ) => ( { response } ),
 		() => ( { response: undefined } )

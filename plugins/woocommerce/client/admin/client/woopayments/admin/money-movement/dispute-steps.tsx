@@ -201,7 +201,7 @@ const getEmailLink = (
 		window.wcSettings?.siteTitle || '',
 		chargeDate
 	);
-	// The client's single translated body, split into its paragraphs.
+	// The single translated body, split into its paragraphs.
 	const body = [
 		sprintf(
 			/* translators: %s: customer name. */

@@ -14,7 +14,7 @@ import {
 	hasSameSymbol as hasSameCurrencySymbol,
 } from '../currency-format';
 
-// Ports the captured-event body of client 11.1.0: map-events.js (the legacy `fee_rates` path)
+// The captured-event body follows client 11.1.0: map-events.js (the legacy `fee_rates` path)
 // and envelope/compose.js with fee-breakdown-label-map.ts (the `fee_breakdown_v1` path).
 
 type TimelineRecord = Record< string, unknown >;
@@ -45,7 +45,7 @@ export const getNumber = (
 };
 
 /**
- * Formats a minor-unit amount, printing zero without a minus sign like the client's formatCurrency.
+ * Formats a minor-unit amount, printing zero without a minus sign.
  *
  * @param amount   Amount in minor units.
  * @param currency Currency code.
@@ -54,7 +54,7 @@ export const formatMoney = ( amount: number, currency?: string ) =>
 	formatAmount( amount === 0 ? 0 : amount, currency || 'usd' );
 
 /**
- * Formats a minor-unit amount like formatMoney(), with the currency code when the client's `formatExplicitCurrency()` adds it.
+ * Formats a minor-unit amount like formatMoney(), with the currency code when `formatExplicitCurrency()` adds it.
  *
  * @param amount     Amount in minor units.
  * @param currency   Currency code.
@@ -80,13 +80,13 @@ const formatFeePercentage = ( rate: number ) =>
 	Number( ( rate * 100 ).toFixed( 3 ) );
 
 /**
- * Formats a currency conversion line with the client's formatFX(), for example `€1.00 → 1.13467 USD: $12.47`.
+ * Formats a currency conversion line, for example `€1.00 → 1.13467 USD: $12.47`.
  *
  * @param fromCurrency     Source currency code.
  * @param fromAmount       Source amount in minor units.
  * @param toCurrency       Target currency code.
  * @param toAmount         Target amount in minor units.
- * @param baseCurrencyCode Currency whose separators and symbol position are used; the client passes the store currency.
+ * @param baseCurrencyCode Currency whose separators and symbol position are used; callers pass the store currency.
  */
 export const formatFx = (
 	fromCurrency?: string,
@@ -884,7 +884,7 @@ export const getCapturedDetails = ( event: WooPaymentsTimelineEvent ) => {
 };
 
 /**
- * Returns the envelope's payout impact for dispute events, like the client's getEnvelopeDepositImpact().
+ * Returns the envelope's payout impact for dispute events.
  *
  * @param event Dispute timeline event.
  */

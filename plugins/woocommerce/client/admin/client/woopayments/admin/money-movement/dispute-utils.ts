@@ -14,7 +14,7 @@ import type { WooPaymentsDispute, WooPaymentsTransaction } from './types';
 import { formatLabel, getDisputeId } from './utils';
 
 /**
- * The dispute status labels, in the client's order.
+ * The dispute status labels, in display order.
  * Client 11.1.0 `disputes/strings.ts` `displayStatus`.
  */
 export const DISPUTE_STATUS_LABELS: Record< string, string > = {

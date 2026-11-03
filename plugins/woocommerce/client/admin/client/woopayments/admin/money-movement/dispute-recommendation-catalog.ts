@@ -761,7 +761,7 @@ export const RECOMMENDATIONS_CATALOG: Recommendation[] = [
 	},
 
 	// ============ CLUSTER 13: response-time timing ============
-	// Deferred until `submitted_at` reaches the client: a positive (quick
+	// Deferred until `submitted_at` reaches this page: a positive (quick
 	// response) and a tip (slow) join once the predicate language gains timing.
 
 	// ============ CLUSTER 14: prior good history (Tip only) ============

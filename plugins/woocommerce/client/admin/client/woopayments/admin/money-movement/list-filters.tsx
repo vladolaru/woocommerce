@@ -20,7 +20,7 @@ export type WooPaymentsListFilter = {
 };
 
 /**
- * One filter as the client's `FilterPicker` draws it (client 11.1.0 `disputes/filters/index.tsx`,
+ * One filter as the `FilterPicker` draws it (client 11.1.0 `disputes/filters/index.tsx`,
  * `@woocommerce/components` FilterPicker): a choice applies only when its button is clicked, so
  * moving through the choices with the keyboard never reloads the list.
  *
@@ -125,7 +125,7 @@ export const WooPaymentsListFilters = ( {
 );
 
 /**
- * The client's "Show" choices: `all` is the default and stays out of the URL.
+ * The "Show" choices: `all` is the default and stays out of the URL.
  */
 export type WooPaymentsListShowFilter =
 	'all' | 'advanced' | 'awaiting_response';
@@ -146,7 +146,7 @@ export const getListShowFilter = (
 };
 
 /**
- * Whether the advanced filters match all or any, the client's `match` argument; `all` stays out of the URL.
+ * Whether the advanced filters match all or any; `all` stays out of the URL.
  */
 export type WooPaymentsListMatch = 'all' | 'any';
 
@@ -160,7 +160,7 @@ export const getListMatch = ( search: string ): WooPaymentsListMatch =>
 
 /**
  * Adds the "Show" choice, and "match any" for the advanced filters, to a list route,
- * as the client's FilterPicker and AdvancedFilters keep them in the URL.
+ * as FilterPicker and AdvancedFilters keep them in the URL.
  *
  * @param route      The list route.
  * @param showFilter The "Show" choice.

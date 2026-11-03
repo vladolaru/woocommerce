@@ -60,8 +60,8 @@ import {
 } from '../capital/active-loan-summary';
 import './transaction-timeline.scss';
 
-// Maps platform timeline events to core `Timeline` items the way client 11.1.0
-// `payment-details/timeline/map-events.js` does: icons, headlines with the status in bold, and detail lines.
+// Maps platform timeline events to core `Timeline` items (client 11.1.0
+// `payment-details/timeline/map-events.js`): icons, headlines with the status in bold, and detail lines.
 
 const earlyFraudWarningFraudTypeLabels: Record< string, string > = {
 	card_never_received: __( 'Card never received', 'woocommerce' ),
@@ -185,7 +185,7 @@ const knownDisputeReasons = new Set( [
 	'noncompliant',
 ] );
 
-// Gridicons take a class name (the client's `is-success`, `is-warning` and `is-error` colours); the shared typings omit it.
+// Gridicons take a class name (`is-success`, `is-warning` and `is-error` colours); the shared typings omit it.
 const timelineIcon = ( Icon: ElementType, className?: string ) => {
 	const Component = Icon as ElementType< { className?: string } >;
 
@@ -449,7 +449,7 @@ const createBodyLine = ( label: string, value: string ) =>
 			)
 		: null;
 
-// Client `getRefundFailureReason()`: the failure reasons the client puts into words.
+// Client `getRefundFailureReason()`: the failure reasons put into words.
 const refundFailureReasons: Record< string, string > = {
 	expired_or_canceled_card: __(
 		'the card being expired or canceled.',
@@ -677,7 +677,7 @@ const getNetworkCostItem = (
 	);
 };
 
-// `isExplicit` follows the client's `stringWithAmount( ..., true )` and `formatExplicitCurrency()` headlines.
+// With `isExplicit`, the amount carries its currency code.
 const createAmountMessage = (
 	template: TranslatableText< `${ string }%s${ string }` >,
 	event: WooPaymentsTimelineEvent,
@@ -846,7 +846,7 @@ const mapTimelineEvent = (
 				amount === undefined
 					? undefined
 					: formatExplicitCurrency( amount, getCurrency( event ) );
-			// The client words three failure reasons; other reasons keep the plain failure line and the reason.
+			// Three failure reasons have their own wording; other reasons keep the plain failure line and the reason.
 			const headline =
 				reasonText && formattedAmount
 					? sprintf(

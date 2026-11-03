@@ -24,11 +24,11 @@ export type WooPaymentsMoneyMovementDataViewsProps<
 	onChangeView: ( view: View ) => void;
 	total: number;
 	isLoading: boolean;
-	/** The card title, like the client's `TableCard` `title`. */
+	/** The card title. */
 	title?: string;
-	/** The card footer's summary, like the client's `TableCard` `summary`. */
+	/** The card footer's summary. */
 	summary?: Array< { label: string; value: string } >;
-	/** Fields aligned to the end, like the client's `isNumeric` columns. */
+	/** Fields aligned to the end, as numeric columns. */
 	numericFields?: string[];
 	toolbarActions?: ReactNode;
 	loadingMessage?: ReactNode;
@@ -39,7 +39,7 @@ export type WooPaymentsMoneyMovementDataViewsProps<
 const PER_PAGE_SIZES = [ 25, 50, 75, 100 ];
 
 /**
- * A list in a card, standing in for the client's `TableCard`: the title,
+ * A list in a card: the title,
  * search and actions share the card's top row above the table.
  */
 export function WooPaymentsMoneyMovementDataViews<

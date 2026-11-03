@@ -109,9 +109,9 @@ const DISPUTE_FIELDS = [
 	'due_by',
 	'action',
 ];
-// The platform sorts on `due_by`; the client's column key is `dueBy`.
+// The platform sorts on `due_by`; the column key is `dueBy`.
 const DISPUTE_COLUMN_KEYS = { due_by: 'dueBy' };
-// The client's columns with `visible: false`.
+// The columns hidden by default.
 const DISPUTE_DEFAULT_HIDDEN_COLUMNS = [
 	'currency',
 	'customerEmail',
@@ -202,7 +202,7 @@ const DISPUTE_STATUS_FILTER_ELEMENTS = Object.entries(
 	DISPUTE_STATUS_LABELS
 ).map( ( [ value, label ] ) => ( { value, label } ) );
 
-// The cache stores UTC `Y-m-d H:i:s` strings, as the client's `moment.utc()` reads them.
+// The cache stores UTC `Y-m-d H:i:s` strings.
 const parseUtcDate = ( value: string ) =>
 	new Date(
 		/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test( value )
@@ -211,7 +211,7 @@ const parseUtcDate = ( value: string ) =>
 	);
 
 /**
- * The client's Respond by cell: nothing unless a response is due, a countdown
+ * The Respond by cell: nothing unless a response is due, a countdown
  * inside 72 hours, and the due date otherwise.
  * Client 11.1.0 `disputes/index.tsx:158-192` `smartDueDate()`.
  *
@@ -460,7 +460,7 @@ export const WooPaymentsDisputesPage = () => {
 				label: __( 'Customer', 'woocommerce' ),
 				enableSorting: false,
 				render: ( { item }: { item: WooPaymentsDisputeListRow } ) =>
-					// The client links an empty name too; an empty link has no accessible name.
+					// A link needs a name: an empty link has no accessible name.
 					item.order?.customer_url && item.customer_name ? (
 						<a href={ item.order.customer_url }>
 							{ item.customer_name }

@@ -257,7 +257,7 @@ const SourceLogo = ( { source }: { source: string } ) => {
 };
 
 /**
- * A non-card payment method as the client's `PaymentMethodDetails` shows it: the method's logo, then its detail.
+ * A non-card payment method: the method's logo, then its detail.
  * Client 11.1.0 `components/payment-method-details/index.tsx:136-192`.
  *
  * @param props        The component props.
@@ -1300,7 +1300,7 @@ const PaymentMethodCard = ( { children }: { children: ReactNode } ) => (
 );
 
 // Client 11.1.0 `payment-details/payment-method/*/index.js`: each method's two columns, `id` and `owner` standing
-// for the ID row and the Owner, Owner email and Address rows. Types missing here get no card, as in the client.
+// for the ID row and the Owner, Owner email and Address rows. Types missing here get no card.
 const PAYMENT_METHOD_LAYOUTS: Record< string, [ string[], string[] ] > = {
 	affirm: [ [ 'id' ], [ 'owner' ] ],
 	afterpay_clearpay: [ [ 'id' ], [ 'owner' ] ],

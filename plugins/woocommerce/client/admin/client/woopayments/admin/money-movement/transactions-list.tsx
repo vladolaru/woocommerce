@@ -71,11 +71,11 @@ type WorkingView = {
 } | null;
 
 export type WooPaymentsTransactionsListProps = {
-	/** Scopes the list to one payout, like the client's `TransactionsList depositId`. */
+	/** Scopes the list to one payout. */
 	depositId?: string;
 	/** Builds the settings-shell route for a changed list query. */
 	buildRoute: ( query: WooPaymentsMoneyMovementQuery ) => string;
-	/** The card title, like the client's `TransactionsList` "Transactions". */
+	/** The card title. */
 	title?: string;
 };
 

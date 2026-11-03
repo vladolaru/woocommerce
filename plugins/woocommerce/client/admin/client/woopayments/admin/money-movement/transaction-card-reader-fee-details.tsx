@@ -44,7 +44,7 @@ const getFeeCurrency = ( row: WooPaymentsReaderChargeSummaryRow ) =>
 	row.fee?.currency;
 
 /**
- * The fee as the client's CSV holds it: a number in the currency's major unit (`formatExportAmount()`).
+ * The fee as the CSV holds it: a number in the currency's major unit (`formatExportAmount()`).
  *
  * @param row The reader row.
  */
@@ -60,7 +60,7 @@ const getExportFee = ( row: WooPaymentsReaderChargeSummaryRow ) => {
 };
 
 /**
- * Download the rows as the client does, through WooCommerce's CSV export, which neutralizes formula-leading cells.
+ * Download the rows through WooCommerce's CSV export, which neutralizes formula-leading cells.
  *
  * Client 11.1.0 `payment-details/readers/index.js:121-131`.
  *

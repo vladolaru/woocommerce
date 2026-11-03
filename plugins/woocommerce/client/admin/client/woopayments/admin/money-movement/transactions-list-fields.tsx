@@ -79,11 +79,11 @@ const EarlyFraudWarningChip = ( { item }: FieldRenderProps ) =>
 type FieldRenderProps = { item: WooPaymentsTransactionListRow };
 
 export type TransactionListFieldOptions = {
-	/** The payout columns, left out inside a payout like the client's `includeDeposit`. */
+	/** The payout columns, left out inside a payout. */
 	includeDeposit: boolean;
 	/** The Subscription # column, only with WooCommerce Subscriptions active. */
 	includeSubscription: boolean;
-	/** DataViews filters; the client shows no filters inside a payout. */
+	/** DataViews filters; none inside a payout. */
 	includeFilters: boolean;
 };
 
@@ -138,14 +138,13 @@ type WooPaymentsSubscriptionsWindow = typeof window & {
 };
 
 /**
- * Whether WooCommerce Subscriptions 2.2.0+ is active, like the client's
- * `wcpaySettings.isSubscriptionsActive`.
+ * Whether WooCommerce Subscriptions 2.2.0+ is active.
  */
 export const isWooPaymentsSubscriptionsActive = () =>
 	( window as WooPaymentsSubscriptionsWindow ).wcSettings?.admin
 		?.woopaymentsSettings?.isSubscriptionsActive === true;
 
-// The rows the client shows no payment method, customer or payout for.
+// The rows with no payment method, customer or payout.
 const isFinancingType = ( item: WooPaymentsTransactionListRow ) =>
 	item.type === 'financing_payout' || item.type === 'financing_paydown';
 
@@ -232,7 +231,7 @@ export const PaymentSource = ( {
  *
  * @param props          The component props.
  * @param props.route    The details route path; without it the cell is plain text.
- * @param props.onClick  Called on a click before the details open, such as for the client's Tracks event.
+ * @param props.onClick  Called on a click before the details open, such as for a Tracks event.
  * @param props.children The cell content.
  */
 export const ClickableCell = ( {
@@ -293,7 +292,7 @@ export const DetailsLink = ( {
 );
 
 /**
- * The info column's field: its header is for screen readers only, as the client's column has no title.
+ * The info column's field: its header is for screen readers only, since the column has no title.
  */
 export const DETAILS_FIELD_BASE = {
 	id: 'details',
@@ -411,9 +410,9 @@ type WooPaymentsTransactionsFilterWindow = typeof window & {
 };
 
 export type TransactionListFilterChoices = {
-	/** The summary's `customer_currencies`, the client's Customer currency choices. */
+	/** The summary's `customer_currencies`, the Customer currency choices. */
 	customerCurrencies: string[];
-	/** The summary's `sources`, the client's Payment method choices. */
+	/** The summary's `sources`, the Payment method choices. */
 	sources: string[];
 };
 
@@ -463,8 +462,8 @@ const selectFilter = (
 } );
 
 /**
- * The client's advanced filters that are not columns, as DataViews filter fields. Their ids are
- * the client's URL arguments, so "Is not" becomes `<name>_is_not`; they stay out of the columns.
+ * The advanced filters that are not columns, as DataViews filter fields. Their ids are
+ * the URL arguments, so "Is not" becomes `<name>_is_not`; they stay out of the columns.
  * Client 11.1.0 `transactions/filters/config.ts:134-600`, in its add menu's alphabetical order.
  *
  * @param choices The summary's customer currencies and payment methods.
@@ -535,11 +534,11 @@ export const getTransactionListFilterFields = (
 };
 
 /**
- * The transactions list fields, in the client's column order with its labels,
- * `required` columns as `enableHiding: false` and its sortable columns.
+ * The transactions list fields, in column order with labels,
+ * `required` columns as `enableHiding: false` and sortable columns.
  * Client 11.1.0 `transactions/list/index.tsx:136-291` (columns) and :315-558 (cells).
  *
- * @param options The client's column conditions.
+ * @param options The column conditions.
  */
 export const getTransactionListFields = (
 	options: TransactionListFieldOptions

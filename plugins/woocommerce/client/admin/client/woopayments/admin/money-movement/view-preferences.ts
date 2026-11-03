@@ -5,7 +5,7 @@ import { useMemo } from 'react';
 import { useUserPreferences } from '@woocommerce/data';
 
 /**
- * The client's user meta keys for hidden list columns, registered in PHP by
+ * The user meta keys for hidden list columns, registered in PHP by
  * UserPreferenceFields like WC_Payments::add_user_data_fields().
  */
 export type WooPaymentsHiddenColumnsKey =
@@ -21,15 +21,14 @@ const NO_DEFAULT_HIDDEN_COLUMNS: string[] = [];
 
 /**
  * Keeps a list's hidden columns in user meta through core's user preferences
- * store, like the client's usePersistedColumnVisibility(). The stored value is
- * the client's list of hidden column keys; `columnKeys` maps native field ids
- * to those keys where they differ, and keys native does not show are kept.
- * With nothing stored, the client's hidden-by-default columns stay hidden.
+ * store. The stored value is a list of hidden column keys; `columnKeys` maps field ids
+ * to those keys where they differ, and keys not shown here are kept.
+ * With nothing stored, the hidden-by-default columns stay hidden.
  *
- * @param preferenceKey        The client's user meta key for this list.
+ * @param preferenceKey        The user meta key for this list.
  * @param fields               The list's fields, in display order.
- * @param columnKeys           Native field id to client column key, where they differ.
- * @param defaultHiddenColumns Client column keys with `visible: false`, used until a preference is stored.
+ * @param columnKeys           Field id to column key, where they differ.
+ * @param defaultHiddenColumns Column keys hidden until a preference is stored.
  */
 export const usePersistedHiddenFields = (
 	preferenceKey: WooPaymentsHiddenColumnsKey,
@@ -41,7 +40,7 @@ export const usePersistedHiddenFields = (
 	const stored = ( preferences as Record< string, unknown > )[
 		preferenceKey
 	];
-	// The client stores '' until the first change, which means "use the defaults".
+	// The stored value is '' until the first change, which means "use the defaults".
 	const hidden = Array.isArray( stored )
 		? ( stored as string[] )
 		: defaultHiddenColumns;

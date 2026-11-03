@@ -84,7 +84,7 @@ export const buildPathWithQuery = (
 		}
 
 		if ( Array.isArray( value ) ) {
-			// PHP keeps only the last of repeated bare keys, so send `key[]` like the client's addQueryArgs.
+			// PHP keeps only the last of repeated bare keys, so send `key[]`.
 			const arrayKey = key.endsWith( '[]' ) ? key : `${ key }[]`;
 			value.forEach( ( item ) =>
 				params.append( arrayKey, String( item ) )
@@ -347,7 +347,7 @@ const AFTERPAY_COUNTRY_ICONS: Record< string, string > = {
 };
 
 /**
- * The client's framed icon for Affirm and Afterpay, which the settings wordmarks cannot stand in for at this size.
+ * The framed icon for Affirm and Afterpay, which the settings wordmarks cannot stand in for at this size.
  * Afterpay follows the account country. Client 11.1.0 `assets/css/admin.css:148-162`.
  *
  * @param source The source, such as `affirm`.
@@ -371,7 +371,7 @@ const getPayLaterSourceIconUrl = ( source: string ) => {
 
 /**
  * Client 11.1.0 `assets/css/admin.css` draws these sources with files that differ from the settings icons.
- * Core ships each of them under a `-color` name; the file names are native-owned, the artwork is the client's.
+ * Core ships each of them under a `-color` name; the artwork matches the files above.
  */
 const COLOR_TRANSACTION_SOURCE_ICONS: Record< string, string > = {
 	amex: 'amex-card-color.svg',
@@ -391,7 +391,7 @@ const getColorTransactionSourceIconUrl = ( source: string ) =>
 
 /**
  * The logo for a transaction or dispute source, the card brand or the payment method,
- * standing in for the client's `payment-method__brand--{source}` sprite.
+ * standing in for the client 11.1.0 `payment-method__brand--{source}` sprite.
  *
  * @param source The source, such as `visa` or `sepa_debit`.
  */
@@ -402,7 +402,7 @@ export const getTransactionSourceIconUrl = ( source: string ) =>
 	getPaymentMethodDefinition( source )?.iconUrl;
 
 /**
- * The text the client shows after the source logo in the transactions list.
+ * The text shown after the source logo in the transactions list.
  * Client 11.1.0 `transactions/list/index.tsx:86-115` `getPaymentSourceDetails()`.
  *
  * @param transaction The transaction.
