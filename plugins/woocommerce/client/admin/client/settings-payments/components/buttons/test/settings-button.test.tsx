@@ -15,10 +15,10 @@ import {
  * Internal dependencies
  */
 import { SettingsButton } from '..';
-import { navigateToUrl } from '../navigation';
 
 const mockNavigate = jest.fn();
-const mockNavigateToUrl = navigateToUrl as jest.Mock;
+const currentPageHref =
+	'http://localhost/wp-admin/admin.php?page=wc-settings&tab=checkout';
 
 jest.mock( '@woocommerce/tracks', () => ( {
 	recordEvent: jest.fn(),
@@ -27,10 +27,6 @@ jest.mock( '@woocommerce/tracks', () => ( {
 jest.mock( 'react-router-dom', () => ( {
 	...jest.requireActual( 'react-router-dom' ),
 	useNavigate: () => mockNavigate,
-} ) );
-
-jest.mock( '../navigation', () => ( {
-	navigateToUrl: jest.fn(),
 } ) );
 
 describe( 'SettingsButton', () => {
@@ -59,7 +55,20 @@ describe( 'SettingsButton', () => {
 		_type: 'gateway',
 	} as PaymentGatewayProvider;
 
+	const originalLocation = window.location;
+
+	beforeEach( () => {
+		Object.defineProperty( window, 'location', {
+			configurable: true,
+			value: { href: currentPageHref },
+		} );
+	} );
+
 	afterEach( () => {
+		Object.defineProperty( window, 'location', {
+			configurable: true,
+			value: originalLocation,
+		} );
 		jest.clearAllMocks();
 	} );
 
@@ -99,7 +108,7 @@ describe( 'SettingsButton', () => {
 		expect( mockNavigate ).toHaveBeenCalledWith(
 			'/wp-admin/admin.php?page=wc-settings&tab=checkout&path=%2Fthird-party%2Fsettings&from=settings-payments'
 		);
-		expect( mockNavigateToUrl ).not.toHaveBeenCalled();
+		expect( window.location.href ).toBe( currentPageHref );
 	} );
 
 	it( 'routes WooPayments settings paths through React Router', () => {
@@ -119,17 +128,12 @@ describe( 'SettingsButton', () => {
 		expect( mockNavigate ).toHaveBeenCalledWith(
 			'/wp-admin/admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Fsettings%2Fexpress-checkout%2Fwoopay&from=settings-payments'
 		);
-		expect( mockNavigateToUrl ).not.toHaveBeenCalled();
+		expect( window.location.href ).toBe( currentPageHref );
 	} );
 
 	it( 'leaves non-Reactified provider settings URLs on full-page navigation', () => {
 		const sectionSettingsHref =
 			'http://localhost/wp-admin/admin.php?page=wc-settings&tab=checkout&section=third_party&from=settings-payments';
-		window.history.pushState(
-			{},
-			'',
-			'http://localhost/wp-admin/admin.php?page=wc-settings&tab=checkout'
-		);
 
 		const { getByRole } = render(
 			<Router>
@@ -143,6 +147,6 @@ describe( 'SettingsButton', () => {
 		fireEvent.click( getByRole( 'button', { name: 'Manage' } ) );
 
 		expect( mockNavigate ).not.toHaveBeenCalled();
-		expect( mockNavigateToUrl ).toHaveBeenCalledWith( sectionSettingsHref );
+		expect( window.location.href ).toBe( sectionSettingsHref );
 	} );
 } );

@@ -20,7 +20,6 @@ import {
 	recordPaymentsProviderEvent,
 	removeOriginFromURL,
 } from '~/settings-payments/utils';
-import { navigateToUrl } from './navigation';
 
 interface SettingsButtonProps {
 	/**
@@ -94,7 +93,7 @@ export const SettingsButton = ( {
 					);
 					navigate( removeOriginFromURL( settingsHref ) );
 				} else {
-					navigateToUrl( settingsHref );
+					window.location.href = settingsHref;
 				}
 			} }
 		>
