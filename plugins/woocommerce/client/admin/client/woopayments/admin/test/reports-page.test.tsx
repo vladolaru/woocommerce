@@ -219,9 +219,17 @@ const mockDataViews = jest.fn(
 	}
 );
 
+// The composed pieces render nothing here: the mock lays out the rows itself.
 jest.mock( '@wordpress/dataviews/wp', () => ( {
-	DataViews: ( props: Record< string, unknown > ) =>
-		mockDataViews( props as Parameters< typeof mockDataViews >[ 0 ] ),
+	DataViews: Object.assign(
+		( props: Record< string, unknown > ) =>
+			mockDataViews( props as Parameters< typeof mockDataViews >[ 0 ] ),
+		{
+			FiltersToggle: () => null,
+			FiltersToggled: () => null,
+			Layout: () => null,
+		}
+	),
 } ) );
 
 const mockGetBalanceSummary =

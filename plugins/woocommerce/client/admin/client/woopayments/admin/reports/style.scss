@@ -108,6 +108,18 @@ body.woocommerce_page_wc-settings.woocommerce-settings-payments-tab:has(.woocomm
 		}
 	}
 
+	// Client 11.2.0 `reports/balance/style.scss:458-474`: a fixed summary shows no column headers; screen readers keep them.
+	.dataviews-view-table thead {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		margin: -1px;
+		padding: 0;
+		border: 0;
+		overflow: hidden;
+		clip-path: inset( 50% );
+	}
+
 	&__count {
 		display: inline-flex;
 		min-width: $woopayments-badge-min-height;

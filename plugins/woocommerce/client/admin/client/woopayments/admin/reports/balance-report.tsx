@@ -559,6 +559,9 @@ const BalanceReport = ( { now }: { now: Date } ) => {
 			{
 				id: 'label',
 				label: __( 'Description', 'woocommerce' ),
+				// Client 11.2.0 `reports/balance/balance-dataview.tsx:186-191`: plain header text, no sort or hide menu.
+				enableHiding: false,
+				enableSorting: false,
 				getValue: ( { item }: { item: BalanceRow } ) => item.label,
 				// Client 11.2.0 `reports/balance/balance-dataview.tsx:193-223`: the indent level and a decorative count badge,
 				// with the count spelled out for screen readers.
@@ -598,6 +601,8 @@ const BalanceReport = ( { now }: { now: Date } ) => {
 				id: 'amount',
 				label: __( 'Amount', 'woocommerce' ),
 				type: 'integer',
+				enableHiding: false,
+				enableSorting: false,
 				getValue: ( { item }: { item: BalanceRow } ) =>
 					getDisplayedBalanceAmount( item ),
 				render: ( { item }: { item: BalanceRow } ) => (
@@ -844,7 +849,15 @@ const BalanceReport = ( { now }: { now: Date } ) => {
 					totalPages: 1,
 				} }
 				getItemId={ ( item: BalanceRow ) => item.id }
-			/>
+			>
+				{ /* Client 11.2.0 `reports/balance/balance-dataview.tsx:326-365`: only the date filter and the rows, with no
+				   search box, view options or pagination. */ }
+				<div className="dataviews__view-actions">
+					<DataViews.FiltersToggle />
+				</div>
+				<DataViews.FiltersToggled className="dataviews-filters__container" />
+				<DataViews.Layout />
+			</DataViews>
 			{ balanceState }
 		</section>
 	);
