@@ -490,6 +490,8 @@ const FeesReport = ( { now }: { now: Date } ) => {
 				id: 'amount',
 				label: __( 'Gross amount', 'woocommerce' ),
 				type: 'integer',
+				// Client 11.2.0 `reports/fees/fields.tsx:137-157`: sortable, not a filter.
+				filterBy: false,
 				getValue: ( { item }: { item: ReportsFee } ) =>
 					item.amount ?? 0,
 				render: ( { item }: { item: ReportsFee } ) => (
@@ -506,6 +508,7 @@ const FeesReport = ( { now }: { now: Date } ) => {
 				id: 'fees',
 				label: __( 'Fees total', 'woocommerce' ),
 				type: 'integer',
+				filterBy: false,
 				getValue: ( { item }: { item: ReportsFee } ) => item.fees ?? 0,
 				render: ( { item }: { item: ReportsFee } ) => (
 					<span>

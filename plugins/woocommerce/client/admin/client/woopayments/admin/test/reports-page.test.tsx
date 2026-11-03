@@ -1500,17 +1500,23 @@ describe( 'WooPaymentsReportsPage', () => {
 		);
 	} );
 
-	it( 'defaults the Fees DataViews Date filter to Between', async () => {
+	// Client 11.2.0 `reports/fees/fields.tsx:137-157`: the two amount columns sort but are not offered as filters.
+	it( 'defaults the Fees DataViews Date filter to Between and offers no amount filters', async () => {
 		renderReportsPage( [ '/woopayments/reports?tab=fees' ] );
 
 		await screen.findByRole( 'searchbox', { name: 'Search fees' } );
+		const fields = mockDataViews.mock.calls.at( -1 )?.[ 0 ].fields;
 		expect(
-			mockDataViews.mock.calls
-				.at( -1 )?.[ 0 ]
-				.fields?.find( ( field ) => field.id === 'date' )?.filterBy
+			fields?.find( ( field ) => field.id === 'date' )?.filterBy
 		).toEqual( {
 			operators: [ 'between', 'on', 'before', 'after' ],
 		} );
+		expect(
+			fields?.find( ( field ) => field.id === 'amount' )?.filterBy
+		).toBe( false );
+		expect(
+			fields?.find( ( field ) => field.id === 'fees' )?.filterBy
+		).toBe( false );
 	} );
 
 	it( 'renders Fees error and empty states', async () => {
