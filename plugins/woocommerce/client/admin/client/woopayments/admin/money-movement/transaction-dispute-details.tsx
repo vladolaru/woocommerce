@@ -19,7 +19,7 @@ import {
 	useRef,
 	useState,
 } from '@wordpress/element';
-import { dateI18n } from '@wordpress/date';
+import { dateI18n, getSettings as getDateSettings } from '@wordpress/date';
 import { __, _n, sprintf } from '@wordpress/i18n';
 import { Icon, backup, lock, pencil } from '@wordpress/icons';
 import { recordEvent } from '@woocommerce/tracks';
@@ -756,7 +756,10 @@ export const DisputeSummaryRow = ( {
 		},
 		{
 			title: __( 'Disputed On', 'woocommerce' ),
-			content: formatDisputeDate( dispute.created, 'F j, Y' ),
+			content: formatDisputeDate(
+				dispute.created,
+				getDateSettings().formats.date
+			),
 		},
 		{
 			title: __( 'Reason', 'woocommerce' ),

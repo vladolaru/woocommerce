@@ -5,6 +5,10 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { getHistory } from '@woocommerce/navigation';
 import { recordEvent } from '@woocommerce/tracks';
 import userEvent from '@testing-library/user-event';
+import {
+	getSettings as getDateSettings,
+	setSettings as setDateSettings,
+} from '@wordpress/date';
 
 /**
  * Internal dependencies
@@ -519,4 +523,27 @@ describe( 'WooPaymentsTransactionDisputeDetails lost footer', () => {
 			).toEqual( bold );
 		}
 	);
+} );
+
+// Client 11.2.0 `payment-details/dispute-details/dispute-summary-row.tsx:41-48`: the site's date format.
+describe( 'WooPaymentsTransactionDisputeDetails summary row', () => {
+	const originalDateSettings = getDateSettings();
+
+	afterEach( () => {
+		setDateSettings( originalDateSettings );
+	} );
+
+	it( "shows Disputed On in the site's date format", () => {
+		setDateSettings( {
+			...originalDateSettings,
+			formats: { ...originalDateSettings.formats, date: 'd/m/Y' },
+		} );
+
+		// 2026-10-05 12:00 UTC.
+		renderDetails( makeDispute( { created: 1791201600 } ) );
+
+		expect(
+			screen.getByText( 'Disputed On' ).nextElementSibling
+		).toHaveTextContent( /^05\/10\/2026$/ );
+	} );
 } );

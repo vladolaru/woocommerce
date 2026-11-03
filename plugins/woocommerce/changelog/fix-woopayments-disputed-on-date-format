@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Show the WooPayments "Disputed On" date in the site's date format.
