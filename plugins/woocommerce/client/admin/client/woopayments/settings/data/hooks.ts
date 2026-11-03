@@ -1,7 +1,7 @@
 /**
  * External dependencies
  */
-import { useDispatch, useSelect } from '@wordpress/data';
+import { useDispatch, useRegistry, useSelect } from '@wordpress/data';
 import { useEffect } from '@wordpress/element';
 import type { MapSelect } from '@wordpress/data/build-types/types';
 
@@ -292,19 +292,25 @@ export const useSettings = () => {
 
 /**
  * Forget the settings when a settings route is left, so the next one reads them from the server and unsaved edits are
- * dropped, as leaving one of client 11.2.0's settings pages (each its own admin page load) does.
+ * dropped, as leaving one of client 11.2.0's settings pages (each its own admin page load) does. A clean store is also
+ * read again when a settings route opens, since a read still running at the last leave lands after the reset.
  */
 export const useResetSettingsOnLeave = () => {
-	const { resetSettings } = useRegisteredDispatch();
+	const { invalidateResolutionForStoreSelector, resetSettings } =
+		useRegisteredDispatch();
+	const registry = useRegistry();
 
-	useEffect(
-		() => () => {
+	useEffect( () => {
+		if ( ! registry.select( STORE_NAME ).isDirty() ) {
+			void invalidateResolutionForStoreSelector( 'getSettings' );
+		}
+
+		return () => {
 			// Once the route's own selectors have unsubscribed: run during the unmount, they would read the
 			// settings again on the way out and keep that read for the next visit.
 			queueMicrotask( () => void resetSettings() );
-		},
-		[ resetSettings ]
-	);
+		};
+	}, [ invalidateResolutionForStoreSelector, registry, resetSettings ] );
 };
 
 const makeExpressCheckoutLocationHook = ( methodId: string ) => () => {

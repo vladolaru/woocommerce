@@ -123,6 +123,16 @@ const renderSettingsPage = async () => {
 	return page;
 };
 
+const settingsReads = () =>
+	mockApiFetch.mock.calls.filter( ( [ options ] ) => {
+		const { path, method } = options as { path?: string; method?: string };
+
+		return path === SETTINGS_PATH && ! method;
+	} ).length;
+
+const settle = () =>
+	act( () => new Promise( ( resolve ) => setTimeout( resolve ) ) );
+
 const save = async () => {
 	await userEvent.click(
 		screen.getByRole( 'button', { name: 'Save changes' } )
@@ -200,6 +210,102 @@ describe( 'WooPayments settings store across settings routes', () => {
 			);
 		}
 	);
+
+	it( 'saves live mode after leaving while the settings still load, then going live and coming back', async () => {
+		const serve = mockApiFetch.getMockImplementation();
+		let finishRead: ( () => void ) | undefined;
+		mockApiFetch.mockImplementation( ( options ) => {
+			const { path, method } = options as {
+				path?: string;
+				method?: string;
+			};
+
+			if ( path === SETTINGS_PATH && ! method && ! finishRead ) {
+				// The first read answers with the settings the server held when it was asked: test mode on.
+				const held = { ...server };
+
+				return new Promise( ( resolve ) => {
+					finishRead = () => resolve( held );
+				} );
+			}
+
+			return serve!( options );
+		} );
+		await act( () => dispatch( settingsStore ).resetSettings() );
+
+		const settingsPage = render( <WooPaymentsSettingsPage /> );
+		await waitFor( () => expect( finishRead ).toBeDefined() );
+		settingsPage.unmount();
+		await settle();
+		await act( async () => finishRead!() );
+		await settle();
+
+		const payments = render(
+			<WooPaymentsAdminNotices
+				notice={ testToLiveNotice }
+				focusTargetRef={ createRef() }
+				onDismiss={ () => undefined }
+			/>
+		);
+		await userEvent.click( screen.getByText( 'Turn on live payments' ) );
+		await waitFor( () =>
+			expect( server.is_test_mode_enabled ).toBe( false )
+		);
+		payments.unmount();
+		posts.length = 0;
+
+		await renderSettingsPage();
+		await waitFor( () =>
+			expect(
+				screen.getByRole( 'checkbox', { name: 'Enable test mode' } )
+			).not.toBeChecked()
+		);
+		await userEvent.click(
+			screen.getByRole( 'checkbox', { name: 'Log error messages' } )
+		);
+		await save();
+
+		expect( posts[ 0 ] ).toEqual(
+			expect.objectContaining( { is_test_mode_enabled: false } )
+		);
+	} );
+
+	it.each( [
+		[
+			'the first settings page visit',
+			async () => {
+				await act( () => dispatch( settingsStore ).resetSettings() );
+				mockApiFetch.mockClear();
+				await renderSettingsPage();
+			},
+		],
+		[
+			'a move from the settings page to a Customize page',
+			async () => {
+				const settingsPage = await renderSettingsPage();
+				await settle();
+				mockApiFetch.mockClear();
+				// The old route's cleanup and the new route's mount run before the deferred reset, as in one route change.
+				settingsPage.unmount();
+				render(
+					<SettingsSubpage
+						headingId="woopayments-express-checkout-settings-payment_request"
+						title="Apple Pay / Google Pay"
+						backPath="/woopayments/settings"
+						from="woopayments_express_checkout_settings"
+					>
+						<CustomizeSettings />
+					</SettingsSubpage>
+				);
+				await screen.findByText( 'Customize settings loaded' );
+			},
+		],
+	] )( 'reads the settings once on %s', async ( _visit, visit ) => {
+		await visit();
+		await settle();
+
+		expect( settingsReads() ).toBe( 1 );
+	} );
 
 	it.each( [
 		[ 'only the level changed', false, false ],
