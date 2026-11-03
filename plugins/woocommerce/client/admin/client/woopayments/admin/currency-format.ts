@@ -266,7 +266,7 @@ export const hasSameSymbol = (
  * @param baseCurrencyCode Currency whose separators and symbol position are used.
  * @param isExplicit       Whether to add the code; defaults to the localized flag.
  */
-export const formatExplicitCurrency = (
+export const formatCurrencyWithOptionalCode = (
 	amount: number,
 	currencyCode = 'USD',
 	skipSymbol = false,
@@ -340,12 +340,12 @@ export const formatFX = (
 	}
 
 	const fromAmount = isZeroDecimalCurrency( from.currency ) ? 1 : 100;
-	return `${ formatExplicitCurrency(
+	return `${ formatCurrencyWithOptionalCode(
 		fromAmount,
 		from.currency,
 		true,
 		baseCurrencyCode
-	) } → ${ formatExchangeRate( from, to, rate ) }: ${ formatExplicitCurrency(
+	) } → ${ formatExchangeRate( from, to, rate ) }: ${ formatCurrencyWithOptionalCode(
 		Math.abs( to.amount ?? 0 ),
 		to.currency,
 		false,
