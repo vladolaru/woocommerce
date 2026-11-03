@@ -18,6 +18,8 @@ import { store as settingsStore } from '../data/store';
 import { WooPaymentsSettingsPage } from '../settings-page';
 import { SettingsSubpage } from '../settings-subpage';
 import { FraudProtectionAdvancedSettingsPage } from '../fraud-protection/advanced';
+import { DisputeEvidenceForm } from '../../admin/money-movement/dispute-evidence-form';
+import type { WooPaymentsDispute } from '../../admin/money-movement/types';
 import { ReactivateLivePaymentsButton } from '~/settings-payments/components/buttons/reactivate-live-payments-button';
 import { WooPaymentsAdminNotices } from '~/settings-payments/components/woopayments-admin-notices';
 
@@ -199,11 +201,26 @@ const goLive = async () => {
 	posts.length = 0;
 };
 
-// Opens the settings page on an empty store and leaves it while its read, answering with test mode on, is held.
-const leaveWhileReading = async () => {
+// A test dispute the evidence form can open, which reads the settings for its cover letter.
+const evidenceDispute = {
+	id: 'dp_test',
+	reason: 'fraudulent',
+	status: 'needs_response',
+	amount: 5000,
+	currency: 'usd',
+	created: 1771423200,
+	charge: { id: 'ch_test', created: 1771336800 },
+	evidence: {},
+	evidence_details: { due_by: 1772028000 },
+	metadata: { __product_type: 'digital_product_or_service' },
+} as WooPaymentsDispute;
+
+// Opens the settings page, or the given route, on an empty store and leaves it while its read, answering with test
+// mode on, is held.
+const leaveWhileReading = async ( route = <WooPaymentsSettingsPage /> ) => {
 	await act( () => dispatch( settingsStore ).resetSettings() );
 	const read = holdNext();
-	const settingsPage = render( <WooPaymentsSettingsPage /> );
+	const settingsPage = render( route );
 	await waitFor( () => expect( read.release ).toBeDefined() );
 	settingsPage.unmount();
 	await settle();
@@ -228,7 +245,7 @@ const leaveWhileSaving = async () => {
 	return saveRequest;
 };
 
-// Stands in for the dispute evidence form, which reads the settings store outside the settings routes.
+// A reader of the settings store outside the settings routes that keeps no visit of its own.
 const EvidenceFormSettings = () =>
 	useGetSettings().account_business_support_email ? (
 		<p>Evidence form settings loaded</p>
@@ -418,6 +435,24 @@ describe( 'WooPayments settings store across settings routes', () => {
 			},
 		],
 		[
+			'a settings read from the dispute evidence form answers after the settings page opens',
+			async () => {
+				const read = await leaveWhileReading(
+					<DisputeEvidenceForm
+						dispute={ evidenceDispute }
+						fileDetails={ {} }
+					/>
+				);
+				await goLive();
+				render( <WooPaymentsSettingsPage /> );
+				await settle();
+				await read.release!();
+				await screen.findByRole( 'checkbox', {
+					name: 'Enable test mode',
+				} );
+			},
+		],
+		[
 			"a settings save from the last visit answers after the next visit's read",
 			async () => {
 				const saveRequest = await leaveWhileSaving();
@@ -467,6 +502,15 @@ describe( 'WooPayments settings store across settings routes', () => {
 		expect(
 			await screen.findByRole( 'button', { name: 'Save changes' } )
 		).toHaveAttribute( 'aria-disabled', 'true' );
+		// Not after an edit either: the stale test mode never goes out.
+		await userEvent.click(
+			screen.getByRole( 'checkbox', { name: 'Log error messages' } )
+		);
+		await userEvent.click(
+			screen.getByRole( 'button', { name: 'Save changes' } )
+		);
+		await settle();
+		expect( posts ).toHaveLength( 0 );
 	} );
 
 	it( 'reads the settings again for a visit after another reader loaded them', async () => {

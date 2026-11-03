@@ -27,6 +27,7 @@ jest.mock( '../money-movement/data', () => ( {
 
 jest.mock( '../../settings/data/hooks', () => ( {
 	useGetSettings: jest.fn(),
+	useResetSettingsOnLeave: jest.fn(),
 } ) );
 
 const mockUpdateDispute = updateWooPaymentsDispute as jest.MockedFunction<

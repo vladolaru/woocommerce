@@ -70,7 +70,10 @@ import {
 	getSettingsPaymentsProviderRouteUrl,
 	handleSettingsPaymentsProviderRouteClick,
 } from '../utils';
-import { useGetSettings } from '../../settings/data/hooks';
+import {
+	useGetSettings,
+	useResetSettingsOnLeave,
+} from '../../settings/data/hooks';
 import { OrderLink } from './transactions-list-fields';
 import {
 	DisputeNotice,
@@ -553,6 +556,8 @@ export const DisputeEvidenceForm = ( {
 	}, [ evidence, filesByField, recommendedShippingDocuments ] );
 	// Client 11.1.0 new-evidence/index.tsx:132-133 reads the payments settings and the charge's bank.
 	const settings = useGetSettings();
+	// The client's form is its own page load, so its settings read ends with the form, as a settings visit's does.
+	useResetSettingsOnLeave();
 	const generatedCoverLetter = useMemo( () => {
 		const charge =
 			typeof dispute.charge === 'object' ? dispute.charge : undefined;
