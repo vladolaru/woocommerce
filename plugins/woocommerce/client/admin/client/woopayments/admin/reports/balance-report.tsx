@@ -5,6 +5,7 @@ import { Button } from '@wordpress/components';
 import { speak } from '@wordpress/a11y';
 import { dateI18n } from '@wordpress/date';
 import { __, _n, sprintf } from '@wordpress/i18n';
+import moment from 'moment';
 import {
 	type ReactNode,
 	useCallback,
@@ -65,12 +66,13 @@ type BalanceRow = {
 
 type BalancePeriod = { start: string; end: string };
 
-// Client 11.2.0 `reports/balance/utils.ts:72-77`: the site date format, read in UTC.
+// Client 11.2.0 `reports/balance/utils.ts:72-77` and `utils/date-time.ts:38-49`: the site date format, in UTC. The platform's
+// period has no offset, so it is read as UTC first; the browser's time zone would otherwise move the day.
 const formatUtcDate = ( value: string ) =>
 	sprintf(
 		/* translators: %s: date rendered in the site's date format. */
 		__( '%s UTC', 'woocommerce' ),
-		dateI18n( getDateFormat(), value, 'UTC' )
+		dateI18n( getDateFormat(), moment.utc( value ).toISOString(), 'UTC' )
 	);
 
 /**

@@ -11,6 +11,7 @@ import {
 } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
+import moment from 'moment-timezone';
 import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom';
 import { speak } from '@wordpress/a11y';
 import { recordEvent } from '@woocommerce/tracks';
@@ -59,9 +60,15 @@ jest.mock( '@wordpress/a11y', () => ( {
 // publishes wc_date_format() as wcSettings.dateFormat (src/Blocks/Assets/AssetDataRegistry.php:94). Distinct values show which
 // source each part of a report date comes from.
 let mockSiteTimeFormat = 'H:i';
+// A test that checks the formatted date itself turns on the real formatter.
+let mockRealDateI18n = false;
 jest.mock( '@wordpress/date', () => ( {
 	dateI18n: jest.fn( ( format, date, timezone ) =>
-		[ format, date, timezone ].filter( Boolean ).join( '|' )
+		mockRealDateI18n
+			? jest
+					.requireActual( '@wordpress/date' )
+					.dateI18n( format, date, timezone )
+			: [ format, date, timezone ].filter( Boolean ).join( '|' )
 	),
 	getSettings: () => ( {
 		formats: { date: 'F j, Y', time: mockSiteTimeFormat },
@@ -449,6 +456,7 @@ describe( 'WooPaymentsReportsPage', () => {
 
 	beforeEach( () => {
 		mockSiteTimeFormat = 'H:i';
+		mockRealDateI18n = false;
 		window.wcSettings = {
 			adminUrl: 'http://example.com/wp-admin',
 			dateFormat: 'd/m/Y',
@@ -536,7 +544,7 @@ describe( 'WooPaymentsReportsPage', () => {
 		expect( dataViews ).toBeInTheDocument();
 		// Client 11.2.0 `reports/balance/utils.ts:72-100`: the anchors name the period's dates in WooCommerce's date format, in UTC.
 		for ( const label of [
-			'Starting balance - d/m/Y|2026-06-01T00:00:00Z|UTC UTC',
+			'Starting balance - d/m/Y|2026-06-01T00:00:00.000Z|UTC UTC',
 			'Total charges captured',
 			'Fees',
 			'Charge fees',
@@ -553,7 +561,7 @@ describe( 'WooPaymentsReportsPage', () => {
 			'Other adjustments',
 			'Net balance change in the period',
 			'Payouts',
-			'Ending balance - d/m/Y|2026-06-19T23:59:59Z|UTC UTC',
+			'Ending balance - d/m/Y|2026-06-19T23:59:59.000Z|UTC UTC',
 		] ) {
 			expect(
 				within( dataViews ).getByText( label )
@@ -694,7 +702,7 @@ describe( 'WooPaymentsReportsPage', () => {
 			expect.any( String )
 		);
 		expect( csv ).toContain(
-			'"Native Merchant LLC",acct_native_123,starting_balance,"Starting balance - d/m/Y|2026-06-01T00:00:00Z|UTC UTC",0,,usd,2026-06-01,2026-06-19'
+			'"Native Merchant LLC",acct_native_123,starting_balance,"Starting balance - d/m/Y|2026-06-01T00:00:00.000Z|UTC UTC",0,,usd,2026-06-01,2026-06-19'
 		);
 		expect( csv ).toContain(
 			'total_charges_captured,"Total charges captured",1626.72,8,usd'
@@ -790,70 +798,121 @@ describe( 'WooPaymentsReportsPage', () => {
 		}
 	);
 
-	it( 'keeps the reference Balance anchor rows visible when activity rows are zero', async () => {
-		mockGetBalanceSummary.mockImplementationOnce( async () => {
-			await waitForNextTick();
-			return {
-				currency: 'usd',
-				starting_balance: {
-					amount: 0,
-				},
-				total_charges_captured: {
-					amount: 0,
-					count: 0,
-				},
-				fees: {
-					amount: 0,
-				},
-				net_balance_change_in_the_period: {
-					amount: 0,
-				},
-				payouts: {
-					amount: 0,
-					count: 0,
-				},
-				ending_balance: {
-					amount: 0,
-				},
-			};
-		} );
+	// Client 11.2.0 `utils/date-time.ts:38-49`: the platform's period has no offset and is read as UTC, so the anchors name
+	// the same days whatever the browser's time zone; the CSV labels share them. Jest cannot change the engine's time zone
+	// within a run, so moment's default zone stands in for the browser's (moment reads an offset-less string in it), and the
+	// offset spy follows it.
+	it.each( [
+		[
+			"the platform's period, in a browser east of UTC",
+			'Etc/GMT-3',
+			-180,
+			{ start: '2026-10-01T00:00:00', end: '2026-10-31T23:59:59' },
+			'October 1, 2026 UTC',
+			'October 31, 2026 UTC',
+		],
+		[
+			"the platform's period, in a browser west of UTC",
+			'Etc/GMT+5',
+			300,
+			{ start: '2026-10-01T00:00:00', end: '2026-10-31T23:59:59' },
+			'October 1, 2026 UTC',
+			'October 31, 2026 UTC',
+		],
+		[
+			'the requested period when the summary has none',
+			'Etc/GMT-3',
+			-180,
+			undefined,
+			'May 1, 2026 UTC',
+			'May 31, 2026 UTC',
+		],
+	] )(
+		'keeps the Balance anchor rows visible when activity rows are zero, dated by %s',
+		async ( _case, timezone, offset, period, startDate, endDate ) => {
+			moment.tz.setDefault( timezone );
+			timezoneSpy.mockReturnValue( offset );
+			mockRealDateI18n = true;
+			window.wcSettings.dateFormat = 'F j, Y';
+			mockGetBalanceSummary.mockImplementationOnce( async () => {
+				await waitForNextTick();
+				return {
+					currency: 'usd',
+					...( period ? { period } : {} ),
+					starting_balance: {
+						amount: 0,
+					},
+					total_charges_captured: {
+						amount: 0,
+						count: 0,
+					},
+					fees: {
+						amount: 0,
+					},
+					net_balance_change_in_the_period: {
+						amount: 0,
+					},
+					payouts: {
+						amount: 0,
+						count: 0,
+					},
+					ending_balance: {
+						amount: 0,
+					},
+				};
+			} );
 
-		renderReportsPage();
+			try {
+				renderReportsPage();
 
-		expect(
-			await screen.findByRole( 'heading', {
-				name: 'No balance activity',
-			} )
-		).toBeInTheDocument();
-		const dataViews = screen.getByTestId( 'reports-dataviews' );
+				expect(
+					await screen.findByRole( 'heading', {
+						name: 'No balance activity',
+					} )
+				).toBeInTheDocument();
+				const dataViews = screen.getByTestId( 'reports-dataviews' );
 
-		// Without a period in the summary, the anchors name the requested period.
-		for ( const label of [
-			'Starting balance - d/m/Y|2026-05-01T00:00:00.000Z|UTC UTC',
-			'Total charges captured',
-			'Fees',
-			'Net balance change in the period',
-			'Payouts',
-			'Ending balance - d/m/Y|2026-05-31T23:59:59.999Z|UTC UTC',
-		] ) {
-			expect(
-				within( dataViews ).getByText( label )
-			).toBeInTheDocument();
+				for ( const label of [
+					`Starting balance - ${ startDate }`,
+					'Total charges captured',
+					'Fees',
+					'Net balance change in the period',
+					'Payouts',
+					`Ending balance - ${ endDate }`,
+				] ) {
+					expect(
+						within( dataViews ).getByText( label )
+					).toBeInTheDocument();
+				}
+
+				for ( const label of [
+					'Reader costs',
+					'Charge fees',
+					'Payout fees',
+					'Refund failures',
+					'Network costs',
+				] ) {
+					expect(
+						within( dataViews ).queryByText( label )
+					).not.toBeInTheDocument();
+				}
+				expect( speak ).not.toHaveBeenCalled();
+
+				await userEvent.click(
+					screen.getByRole( 'button', { name: 'Export' } )
+				);
+				const csv = mockDownloadCSVFile.mock.calls[ 0 ][ 1 ];
+				expect( csv ).toContain(
+					`starting_balance,"Starting balance - ${ startDate }",0,`
+				);
+				expect( csv ).toContain(
+					`ending_balance,"Ending balance - ${ endDate }",0,`
+				);
+			} finally {
+				moment.tz.setDefault();
+			}
 		}
-
-		for ( const label of [
-			'Reader costs',
-			'Charge fees',
-			'Payout fees',
-			'Refund failures',
-			'Network costs',
-		] ) {
-			expect(
-				within( dataViews ).queryByText( label )
-			).not.toBeInTheDocument();
-		}
-		expect( speak ).not.toHaveBeenCalled();
-	} );
+	);
 
 	// Client 11.1.0 `reports/balance/index.tsx:177` requests the account's default currency (`wcpaySettings.accountDefaultCurrency`);
 	// native preloads it in woopaymentsSettings. A PLN account must not be asked for USD, which the platform refuses.
