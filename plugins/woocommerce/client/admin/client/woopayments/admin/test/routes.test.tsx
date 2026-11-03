@@ -12,6 +12,9 @@ import apiFetch from '@wordpress/api-fetch';
  */
 import { wooPaymentsRoutes } from '../routes';
 import { SettingsPaymentsWooPaymentsWrapper } from '~/settings-payments';
+// The settings page's lazy chunk, loaded with this file: on a cold transform cache its first load takes seconds, which
+// otherwise falls inside the page's `findByRole` wait.
+import '~/settings-payments/settings-payments-woopayments';
 
 jest.mock( '@wordpress/api-fetch', () => jest.fn() );
 jest.mock( '../overview', () => () => 'Overview route loaded' );
@@ -467,11 +470,7 @@ describe( 'WooPayments Settings Payments routes', () => {
 				name: 'WooPayments',
 			} );
 			expect(
-				await screen.findByRole(
-					'region',
-					{ name: 'WooPayments' },
-					{ timeout: 3000 }
-				)
+				await screen.findByRole( 'region', { name: 'WooPayments' } )
 			).toBeInTheDocument();
 
 			await userEvent.click(
