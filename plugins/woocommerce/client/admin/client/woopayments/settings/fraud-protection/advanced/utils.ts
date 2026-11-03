@@ -1,10 +1,8 @@
 /**
  * Internal dependencies
  */
-import {
-	getWooPaymentsAmountFromMinorUnits,
-	isWooPaymentsZeroDecimalProviderCurrency,
-} from '../../../currency';
+import { getWooPaymentsAmountFromMinorUnits } from '../../../currency';
+import { isZeroDecimalCurrency } from '../../../admin/currency-format';
 import {
 	avsSupportedCountries,
 	CheckOperators,
@@ -67,9 +65,7 @@ const buildFormattedRulePrice = (
 		return '';
 	}
 
-	const minorUnitFactor = isWooPaymentsZeroDecimalProviderCurrency( currency )
-		? 1
-		: 100;
+	const minorUnitFactor = isZeroDecimalCurrency( currency ) ? 1 : 100;
 
 	// Rounded: 19.99 * 100 is 1998.9999999999998 in floating point, which client 11.1.0 truncates to 1998 (:73).
 	return [

@@ -9,10 +9,8 @@ import { dateI18n, getSettings as getDateSettings } from '@wordpress/date';
  * Internal dependencies
  */
 import type { WooPaymentsDispute } from './types';
-import {
-	getWooPaymentsAmountFromMinorUnits,
-	isWooPaymentsZeroDecimalProviderCurrency,
-} from '../../currency';
+import { getWooPaymentsAmountFromMinorUnits } from '../../currency';
+import { isZeroDecimalCurrency } from '../currency-format';
 import type { EvidenceField } from './dispute-evidence-fields';
 
 type CoverLetterMerchantDetails = {
@@ -872,7 +870,7 @@ const BODY_GENERATORS: Record<
  */
 const formatRefundAmount = ( amount: number, currency: string ) =>
 	getWooPaymentsAmountFromMinorUnits( amount, currency ).toFixed(
-		isWooPaymentsZeroDecimalProviderCurrency( currency ) ? 0 : 2
+		isZeroDecimalCurrency( currency ) ? 0 : 2
 	);
 
 export const generateDisputeCoverLetter = ( {
