@@ -457,7 +457,7 @@ describe( 'PaymentGatewaySuggestions', () => {
 		).toEqual( [ 'tasklist_payments_wcpay_bnpl_click' ] );
 	} );
 
-	test( 'should route WooPayments setup to native Settings Payments onboarding', async () => {
+	test( 'should route WooPayments setup to Settings Payments onboarding', async () => {
 		const onComplete = jest.fn();
 		const query = {};
 		const mockLocation = {
@@ -497,7 +497,7 @@ describe( 'PaymentGatewaySuggestions', () => {
 		expect( mockLocation.href ).not.toContain( '/plugins/connect-wcpay' );
 	} );
 
-	test( 'should keep WooPayments setup action when native provider is enabled but needs onboarding', async () => {
+	test( 'should keep WooPayments setup action when the built-in provider is enabled but needs onboarding', async () => {
 		const onComplete = jest.fn();
 		const query = {};
 		const mockLocation = {
