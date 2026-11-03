@@ -28,7 +28,7 @@ import { DataViews, type Field, type View } from '@wordpress/dataviews/wp';
 import { getWooPaymentsReportsBalanceSummary } from './data';
 import { ReportState } from './report-state';
 import { useDataViewsReloadState } from '../money-movement/use-dataviews-reload-state';
-import { WooPaymentsFilterPicker } from '../money-movement/list-filters';
+import { ReportsDatePresets } from './date-presets';
 import type {
 	ReportsBalanceQuery,
 	ReportsBalanceSummary,
@@ -680,6 +680,22 @@ const BalanceReport = ( { now }: { now: Date } ) => {
 	const balanceListRef = useDataViewsReloadState< HTMLElement >(
 		state.isLoading
 	);
+	const filtersOpenedRef = useRef( false );
+
+	// Client 11.2.0 `reports/balance/balance-dataview.tsx:47-67,152-158`: the date chip shows from the start, once per mount,
+	// since the date presets live in its popover. DataViews has no prop for it, so this clicks its own toggle.
+	useEffect( () => {
+		if ( filtersOpenedRef.current || ! balanceListRef.current ) {
+			return;
+		}
+
+		balanceListRef.current
+			.querySelector< HTMLButtonElement >(
+				'.dataviews-filters__visibility-toggle[aria-pressed="false"]:not([aria-haspopup])'
+			)
+			?.click();
+		filtersOpenedRef.current = true;
+	}, [ balanceListRef, isInitialLoading ] );
 
 	if ( isInitialLoading ) {
 		return (
@@ -737,36 +753,6 @@ const BalanceReport = ( { now }: { now: Date } ) => {
 		>
 			<div className="woocommerce-woopayments-reports__toolbar">
 				<h2>{ __( 'Balance summary', 'woocommerce' ) }</h2>
-				<WooPaymentsFilterPicker
-					filter={ {
-						id: 'date-range',
-						label: __( 'Date range', 'woocommerce' ),
-						value: activeDatePreset,
-						options: [
-							{
-								label: __( 'Previous month', 'woocommerce' ),
-								value: 'last_month',
-							},
-							{
-								label: __( 'Previous year', 'woocommerce' ),
-								value: 'last_year',
-							},
-							{
-								label: __( 'Month to date', 'woocommerce' ),
-								value: 'month_to_date',
-							},
-							{
-								label: __( 'Year to date', 'woocommerce' ),
-								value: 'year_to_date',
-							},
-							{
-								label: __( 'Custom', 'woocommerce' ),
-								value: 'custom',
-							},
-						],
-						onChange: handlePresetChange,
-					} }
-				/>
 				<div className="woocommerce-woopayments-reports__actions">
 					<Button
 						variant="secondary"
@@ -837,6 +823,10 @@ const BalanceReport = ( { now }: { now: Date } ) => {
 			>
 				{ exportStatus }
 			</div>
+			<ReportsDatePresets
+				selectedPreset={ activeDatePreset }
+				onPresetChange={ handlePresetChange }
+			/>
 			<DataViews
 				data={ tableRows }
 				fields={ fields }

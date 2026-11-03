@@ -29,11 +29,7 @@ import {
 	requestWooPaymentsReportsFeesExport,
 } from '../reports/data';
 import { formatAmount as formatMoneyMovementAmount } from '../money-movement/utils';
-import {
-	chooseFilter,
-	getFilterPicker,
-	getFilterPickerChoices,
-} from './helpers/filter-picker';
+import { chooseFilter, getFilterPickerChoices } from './helpers/filter-picker';
 import { ZERO_DECIMAL_CURRENCIES } from './helpers/zero-decimal-currencies';
 
 // The export raises snackbars; other stores keep the real dispatch.
@@ -128,6 +124,42 @@ const mockDataViews = jest.fn(
 		return (
 			<div data-testid="reports-dataviews" aria-busy={ isLoading }>
 				{ header }
+				{ /* The DataViews 17.1.0 date range popover's markup, with its own presets and a custom range applied. */ }
+				{ fields.some(
+					( field ) => field.id === 'date' && field.filterBy
+				) && (
+					<div
+						className="dataviews-filters__summary-popover"
+						data-testid="date-popover"
+					>
+						<div>
+							{ [
+								'Last 7 days',
+								'Last 30 days',
+								'Month to date',
+								'Last year',
+								'Year to date',
+							].map( ( label ) => (
+								<button
+									key={ label }
+									type="button"
+									className="dataviews-controls__date-preset"
+									aria-pressed="false"
+								>
+									{ label }
+								</button>
+							) ) }
+							<button
+								type="button"
+								className="dataviews-controls__date-preset is-pressed"
+								aria-pressed="true"
+							>
+								Custom
+							</button>
+						</div>
+						<div className="dataviews-controls__date-range-inputs" />
+					</div>
+				) }
 				{ fields.some(
 					( field ) => field.id === 'date' && field.filterBy
 				) &&
@@ -370,6 +402,14 @@ const feeRow = {
 	deposit_id: 'po_123',
 };
 
+// Clicks a preset in the DataViews date popover.
+const choosePreset = ( name: string ) =>
+	fireEvent.click(
+		within( screen.getByTestId( 'date-popover' ) ).getByRole( 'button', {
+			name,
+		} )
+	);
+
 const waitForNextTick = () =>
 	new Promise< void >( ( resolve ) => {
 		window.setTimeout( resolve, 0 );
@@ -504,7 +544,6 @@ describe( 'WooPaymentsReportsPage', () => {
 		expect(
 			within( dataViews ).queryByText( 'Charges' )
 		).not.toBeInTheDocument();
-		expect( screen.getByLabelText( 'Date range' ) ).toBeInTheDocument();
 		expect( mockGetBalanceSummary ).toHaveBeenCalledWith( {
 			date_start: '2026-05-01T00:00:00.000Z',
 			date_end: '2026-05-31T23:59:59.999Z',
@@ -838,29 +877,6 @@ describe( 'WooPaymentsReportsPage', () => {
 		).toBeInTheDocument();
 	} );
 
-	it( 'lets merchants change the Balance period through the Date range selector', async () => {
-		renderReportsPage();
-
-		await screen.findByRole( 'heading', { name: 'Balance summary' } );
-		await userEvent.click( getFilterPicker( 'Date range' ) );
-		await userEvent.click(
-			screen.getByRole( 'button', { name: 'Year to date' } )
-		);
-
-		expect( getFilterPicker( 'Date range' ) ).toHaveFocus();
-
-		await waitFor( () =>
-			expect( mockGetBalanceSummary ).toHaveBeenLastCalledWith( {
-				date_start: '2026-01-01T00:00:00.000Z',
-				date_end: '2026-06-18T23:59:59.999Z',
-				currency: 'usd',
-			} )
-		);
-		expect( screen.getByTestId( 'location' ) ).toHaveTextContent(
-			'date_between%5B%5D=2026-01-01'
-		);
-	} );
-
 	it( 'keeps the Fees rows of the current query when an earlier request answers last', async () => {
 		let resolveEarlier: ( rows: ( typeof feeRow )[] ) => void = () => {};
 		renderReportsPage( [ '/woopayments/reports?report_tab=fees' ] );
@@ -940,7 +956,7 @@ describe( 'WooPaymentsReportsPage', () => {
 		await waitFor( () =>
 			expect( mockGetBalanceSummary ).toHaveBeenCalledTimes( 1 )
 		);
-		await screen.findByLabelText( 'Date range', { selector: 'button' } );
+		await screen.findByTestId( 'date-popover' );
 
 		mockGetBalanceSummary
 			.mockImplementationOnce(
@@ -953,8 +969,8 @@ describe( 'WooPaymentsReportsPage', () => {
 				...balanceSummary,
 				ending_balance: { amount: 222222 },
 			} ) );
-		chooseFilter( 'Date range', 'Previous year' );
-		chooseFilter( 'Date range', 'Previous month' );
+		choosePreset( 'Previous year' );
+		choosePreset( 'Previous month' );
 		await screen.findByText( /2,222\.22/ );
 
 		await act( async () => {
@@ -975,7 +991,7 @@ describe( 'WooPaymentsReportsPage', () => {
 		await waitFor( () =>
 			expect( mockGetBalanceSummary ).toHaveBeenCalledTimes( 1 )
 		);
-		await screen.findByLabelText( 'Date range', { selector: 'button' } );
+		await screen.findByTestId( 'date-popover' );
 
 		mockGetBalanceSummary
 			.mockImplementationOnce(
@@ -988,8 +1004,8 @@ describe( 'WooPaymentsReportsPage', () => {
 				...balanceSummary,
 				ending_balance: { amount: 222222 },
 			} ) );
-		chooseFilter( 'Date range', 'Previous year' );
-		chooseFilter( 'Date range', 'Previous month' );
+		choosePreset( 'Previous year' );
+		choosePreset( 'Previous month' );
 		await screen.findByText( /2,222\.22/ );
 
 		await act( async () => {
@@ -1003,34 +1019,63 @@ describe( 'WooPaymentsReportsPage', () => {
 		).not.toBeInTheDocument();
 	} );
 
+	// Client 11.2.0 `reports/date-filter/dataviews-date-range-preset-portal.tsx`: Previous month and Previous year join the
+	// DataViews date range presets, in front of them.
 	it( 'applies previous-period presets to Balance and Fees using the stable report clock', async () => {
 		renderReportsPage();
 
 		await screen.findByRole( 'heading', { name: 'Balance summary' } );
-		expect( getFilterPickerChoices( 'Date range' ) ).toEqual( [
+		const popover = within( screen.getByTestId( 'date-popover' ) );
+		expect(
+			popover
+				.getAllByRole( 'button' )
+				.map( ( button ) => button.textContent )
+		).toEqual( [
 			'Previous month',
 			'Previous year',
+			'Last 7 days',
+			'Last 30 days',
 			'Month to date',
+			'Last year',
 			'Year to date',
 			'Custom',
 		] );
+		// The default period is the previous month: its preset shows pressed, and DataViews' Custom does not.
+		expect(
+			popover.getByRole( 'button', { name: 'Previous month' } )
+		).toHaveAttribute( 'aria-pressed', 'true' );
+		expect(
+			popover.getByRole( 'button', { name: 'Custom' } )
+		).toHaveAttribute( 'aria-pressed', 'false' );
 
-		chooseFilter( 'Date range', 'Previous month' );
-
-		await waitFor( () =>
-			expect( mockGetBalanceSummary ).toHaveBeenLastCalledWith( {
-				date_start: '2026-05-01T00:00:00.000Z',
-				date_end: '2026-05-31T23:59:59.999Z',
-				currency: 'usd',
-			} )
+		fireEvent.click(
+			popover.getByRole( 'button', { name: 'Previous year' } )
 		);
-
-		chooseFilter( 'Date range', 'Previous year' );
 
 		await waitFor( () =>
 			expect( mockGetBalanceSummary ).toHaveBeenLastCalledWith( {
 				date_start: '2025-01-01T00:00:00.000Z',
 				date_end: '2025-12-31T23:59:59.999Z',
+				currency: 'usd',
+			} )
+		);
+		expect( screen.getByTestId( 'location' ) ).toHaveTextContent(
+			'date_between%5B%5D=2025-01-01'
+		);
+		await waitFor( () =>
+			expect(
+				popover.getByRole( 'button', { name: 'Previous year' } )
+			).toHaveAttribute( 'aria-pressed', 'true' )
+		);
+
+		fireEvent.click(
+			popover.getByRole( 'button', { name: 'Previous month' } )
+		);
+
+		await waitFor( () =>
+			expect( mockGetBalanceSummary ).toHaveBeenLastCalledWith( {
+				date_start: '2026-05-01T00:00:00.000Z',
+				date_end: '2026-05-31T23:59:59.999Z',
 				currency: 'usd',
 			} )
 		);
@@ -1183,7 +1228,9 @@ describe( 'WooPaymentsReportsPage', () => {
 		expect(
 			screen.getByRole( 'button', { name: 'Apply April date filter' } )
 		).toBeInTheDocument();
-		expect( screen.getByLabelText( 'Date range' ) ).toBeInTheDocument();
+		expect( screen.getByTestId( 'date-popover' ) ).toHaveTextContent(
+			'Previous month'
+		);
 		expect( speak ).toHaveBeenCalledWith(
 			'Balance report could not be loaded.',
 			'assertive'
@@ -1220,7 +1267,9 @@ describe( 'WooPaymentsReportsPage', () => {
 		expect(
 			screen.getByRole( 'button', { name: 'Apply April date filter' } )
 		).toBeInTheDocument();
-		expect( screen.getByLabelText( 'Date range' ) ).toBeInTheDocument();
+		expect( screen.getByTestId( 'date-popover' ) ).toHaveTextContent(
+			'Previous month'
+		);
 	} );
 
 	it( 'renders Fees states, search, DataViews fields, and export flow', async () => {
