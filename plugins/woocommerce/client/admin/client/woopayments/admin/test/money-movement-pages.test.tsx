@@ -9,6 +9,7 @@ import { recordEvent } from '@woocommerce/tracks';
 import type { ReactNode } from 'react';
 import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom';
 import { dateI18n, getSettings, setSettings } from '@wordpress/date';
+import { resetLocaleData, setLocaleData } from '@wordpress/i18n';
 
 /**
  * Internal dependencies
@@ -6193,77 +6194,111 @@ describe( 'WooPayments money movement pages', () => {
 		expect( outsideFocusTarget ).toHaveFocus();
 	} );
 
-	it( 'surfaces transaction detail authorization action failures', async () => {
-		mockGetPaymentIntent.mockResolvedValue( {
-			id: 'pi_auth',
-			status: 'requires_capture',
-			amount: 5000,
-			currency: 'usd',
-			created: 1781712000,
-			charge: {
-				id: 'ch_auth',
-				balance_transaction: 'txn_auth',
-				type: 'charge',
+	// Client 11.2.0 data/authorizations/actions.ts:283, :413: one translatable sentence per action. The details
+	// page cancels through the fraud review's Block button.
+	it.each( [
+		[
+			'capture',
+			'Capture authorization for order #123',
+			undefined,
+			'Unable to capture authorization for order #%1$s. %2$s',
+			'Autorisierung für Bestellung #%1$s konnte nicht erfasst werden. %2$s',
+			'Autorisierung für Bestellung #123 konnte nicht erfasst werden. Authorization already captured.',
+		],
+		[
+			'cancel',
+			'Block transaction',
+			'review',
+			'Unable to cancel authorization for order #%1$s. %2$s',
+			'Autorisierung für Bestellung #%1$s konnte nicht storniert werden. %2$s',
+			'Autorisierung für Bestellung #123 konnte nicht storniert werden. Authorization already captured.',
+		],
+	] )(
+		'surfaces a failed %s from transaction details in the admin language',
+		async (
+			_action,
+			buttonName,
+			fraudMetaBoxType,
+			source,
+			translation,
+			notice
+		) => {
+			setLocaleData( { [ source ]: [ translation ] }, 'woocommerce' );
+			mockGetPaymentIntent.mockResolvedValue( {
+				id: 'pi_auth',
+				status: 'requires_capture',
 				amount: 5000,
 				currency: 'usd',
 				created: 1781712000,
-				payment_intent: 'pi_auth',
-				captured: false,
-				amount_refunded: 0,
-				order: {
-					id: 123,
-					number: '123',
+				charge: {
+					id: 'ch_auth',
+					balance_transaction: 'txn_auth',
+					type: 'charge',
+					amount: 5000,
+					currency: 'usd',
+					created: 1781712000,
+					payment_intent: 'pi_auth',
+					captured: false,
+					amount_refunded: 0,
+					order: {
+						id: 123,
+						number: '123',
+						fraud_meta_box_type: fraudMetaBoxType,
+					},
 				},
-			},
-		} );
-		mockGetAuthorization.mockResolvedValue( {
-			payment_intent_id: 'pi_auth',
-			order_id: 123,
-			captured: false,
-		} );
-		mockGetTimeline.mockResolvedValue( { data: [] } );
-		mockCaptureAuthorization.mockRejectedValue(
-			new Error( 'Authorization already captured.' )
-		);
+			} );
+			mockGetAuthorization.mockResolvedValue( {
+				payment_intent_id: 'pi_auth',
+				order_id: 123,
+				captured: false,
+			} );
+			mockGetTimeline.mockResolvedValue( { data: [] } );
+			mockCaptureAuthorization.mockRejectedValue(
+				new Error( 'Authorization already captured.' )
+			);
+			mockCancelAuthorization.mockRejectedValue(
+				new Error( 'Authorization already captured.' )
+			);
 
-		render(
-			<MemoryRouter
-				initialEntries={ [
-					'/woopayments/transactions/details?id=pi_auth&transaction_id=txn_auth',
-				] }
-			>
-				<WooPaymentsTransactionDetailsPage />
-			</MemoryRouter>
-		);
+			try {
+				render(
+					<MemoryRouter
+						initialEntries={ [
+							'/woopayments/transactions/details?id=pi_auth&transaction_id=txn_auth',
+						] }
+					>
+						<WooPaymentsTransactionDetailsPage />
+					</MemoryRouter>
+				);
 
-		const captureButton = await screen.findByRole( 'button', {
-			name: 'Capture authorization for order #123',
-		} );
+				const actionButton = await screen.findByRole( 'button', {
+					name: buttonName,
+				} );
 
-		await act( async () => {
-			await userEvent.click( captureButton );
-			await Promise.resolve();
-		} );
+				await act( async () => {
+					await userEvent.click( actionButton );
+					await Promise.resolve();
+				} );
 
-		await waitFor( () =>
-			expect(
-				screen.getByRole( 'button', {
-					name: 'Capture authorization for order #123',
-				} )
-			).toBeEnabled()
-		);
-		expect(
-			screen.getByRole( 'button', {
-				name: 'Capture authorization for order #123',
-			} )
-		).toHaveFocus();
+				await waitFor( () =>
+					expect(
+						screen.getByRole( 'button', { name: buttonName } )
+					).toBeEnabled()
+				);
+				expect(
+					screen.getByRole( 'button', { name: buttonName } )
+				).toHaveFocus();
 
-		await waitFor( () =>
-			expect( mockCreateErrorNotice ).toHaveBeenCalledWith(
-				'Unable to capture authorization for order #123. Authorization already captured.'
-			)
-		);
-	} );
+				await waitFor( () =>
+					expect( mockCreateErrorNotice ).toHaveBeenCalledWith(
+						notice
+					)
+				);
+			} finally {
+				resetLocaleData();
+			}
+		}
+	);
 
 	it( 'surfaces authorization detail load failures for otherwise capturable transactions', async () => {
 		mockGetPaymentIntent.mockResolvedValue( {

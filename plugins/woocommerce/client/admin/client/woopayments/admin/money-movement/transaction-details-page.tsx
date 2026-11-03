@@ -1154,23 +1154,31 @@ export const WooPaymentsTransactionDetailsPage = () => {
 				);
 			}
 		} catch ( error ) {
+			const failureDetail = getErrorMessage(
+				error,
+				__( 'Please refresh the page and try again.', 'woocommerce' )
+			);
+
 			getNotices().createErrorNotice(
-				sprintf(
-					/* translators: 1: action name, 2: order ID, 3: error message. */
-					__(
-						'Unable to %1$s authorization for order #%2$s. %3$s',
-						'woocommerce'
-					),
-					action,
-					String( orderId ),
-					getErrorMessage(
-						error,
-						__(
-							'Please refresh the page and try again.',
-							'woocommerce'
+				action === 'capture'
+					? sprintf(
+							/* translators: 1: order ID, 2: error message. */
+							__(
+								'Unable to capture authorization for order #%1$s. %2$s',
+								'woocommerce'
+							),
+							String( orderId ),
+							failureDetail
 						)
-					)
-				)
+					: sprintf(
+							/* translators: 1: order ID, 2: error message. */
+							__(
+								'Unable to cancel authorization for order #%1$s. %2$s',
+								'woocommerce'
+							),
+							String( orderId ),
+							failureDetail
+						)
 			);
 		} finally {
 			if ( isCurrentActionRoute() ) {
