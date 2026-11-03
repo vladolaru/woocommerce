@@ -17,10 +17,10 @@ import {
 } from '../settings-busy-state';
 import { SettingsSubpage } from '../settings-subpage';
 import {
-	asSettingsRecord,
 	isAmazonPayExpressCheckoutAvailable,
 	isWooPayAvailable,
 } from './settings-utils';
+import { asSettingsRecord } from '../settings-values';
 import { useDevMode, useGetSettings, useSettings } from '../data/hooks';
 import './style.scss';
 

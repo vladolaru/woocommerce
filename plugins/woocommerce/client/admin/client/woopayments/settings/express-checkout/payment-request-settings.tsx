@@ -12,10 +12,10 @@ import { ExpressCheckoutLocationCheckboxes } from './components';
 import { SettingsSection } from '../settings-shell';
 import { ExpressCheckoutMethodIcons } from './method-icons';
 import {
-	asSettingsRecord,
 	getExpressCheckoutFeatureFlags,
 	isExpressCheckoutInPaymentMethodsListSupported,
 } from './settings-utils';
+import { asSettingsRecord } from '../settings-values';
 import {
 	useExpressCheckoutInPaymentMethodsEnabledSettings,
 	useGetAvailablePaymentMethodIds,

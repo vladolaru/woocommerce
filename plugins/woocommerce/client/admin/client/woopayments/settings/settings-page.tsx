@@ -121,6 +121,12 @@ import { store as settingsStore } from './data/store';
 import { registerStoreUnlessTaken } from '../data/register-store';
 import { getWooPaymentsDocumentsAccount } from '../admin/documents/data';
 import type { WooPaymentsVatDetails } from '../admin/documents/types';
+import {
+	asBoolean,
+	asSettingsRecord,
+	asString,
+	asStringArray,
+} from './settings-values';
 import './settings-page-only.scss';
 import './style.scss';
 
@@ -165,7 +171,6 @@ const WORDPRESS_ENVIRONMENT_URL =
 	'https://make.wordpress.org/core/2020/08/27/wordpress-environment-types/';
 const EMAIL_ADDRESS_PATTERN =
 	/^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9.-]+$/;
-type SettingsRecord = Record< string, unknown >;
 type StringSetter = ( value: string ) => void;
 type BooleanSetter = ( value: boolean ) => void;
 type ValidationSetter = ( error: FieldValidationError | null ) => void;
@@ -216,10 +221,6 @@ const STANDARD_PAYMENT_METHOD_EXCLUDED_IDS = [
 	'google_pay',
 	'link',
 ];
-const asString = ( value: unknown, fallback = '' ) =>
-	typeof value === 'string' ? value : fallback;
-const asBoolean = ( value: unknown, fallback = false ) =>
-	typeof value === 'boolean' ? value : fallback;
 
 const createTermsLink = ( href: string ) => <TextLink href={ href } />;
 
@@ -248,11 +249,6 @@ const removeVatDetailsModalQueryParam = () => {
 		`${ url.pathname }${ url.search }${ url.hash }`
 	);
 };
-
-const asStringArray = ( value: unknown ) =>
-	Array.isArray( value )
-		? value.filter( ( item ): item is string => typeof item === 'string' )
-		: [];
 
 const asPayoutInterval = ( value: string ): PayoutInterval =>
 	[ 'daily', 'weekly', 'monthly' ].includes( value )
@@ -317,9 +313,6 @@ const getPayoutScheduleHelpText = ( payoutInterval: PayoutInterval ) => {
 
 	return __( 'Payouts will occur every business day.', 'woocommerce' );
 };
-
-const asSettingsRecord = ( value: unknown ): SettingsRecord =>
-	value && typeof value === 'object' ? ( value as SettingsRecord ) : {};
 
 const asAccountFees = ( value: unknown ): AccountFees =>
 	value && typeof value === 'object' ? ( value as AccountFees ) : {};

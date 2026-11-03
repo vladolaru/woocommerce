@@ -21,6 +21,7 @@ import {
 	useGetSavedSettings,
 	useGetSettings,
 } from '../data/hooks';
+import { asSettingsRecord, type SettingsRecord } from '../settings-values';
 import './style.scss';
 
 const ProtectionLevel = {
@@ -28,12 +29,8 @@ const ProtectionLevel = {
 	ADVANCED: 'advanced',
 } as const;
 
-type SettingsRecord = Record< string, unknown >;
 type StringSetting = [ string, ( value: string ) => void ];
 type AdvancedFraudProtectionSetting = [ unknown, ( value: unknown[] ) => void ];
-
-const asSettingsRecord = ( value: unknown ): SettingsRecord =>
-	value && typeof value === 'object' ? ( value as SettingsRecord ) : {};
 
 const FraudProtectionTour = lazy( () =>
 	import(

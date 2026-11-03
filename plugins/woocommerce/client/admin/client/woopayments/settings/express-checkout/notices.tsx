@@ -8,10 +8,10 @@ import { __, sprintf } from '@wordpress/i18n';
  */
 import { ExpressCheckoutInlineNotice } from './components';
 import {
-	asSettingsRecord,
 	getExpressCheckoutFeatureFlags,
 	isWooPayAvailable,
 } from './settings-utils';
+import { asSettingsRecord } from '../settings-values';
 import {
 	useAmazonPayEnabledSettings,
 	useGetAvailablePaymentMethodIds,

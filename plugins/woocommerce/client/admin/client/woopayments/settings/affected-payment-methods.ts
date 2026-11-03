@@ -24,8 +24,8 @@ import {
 	usePaymentRequestEnabledSettings,
 	useWooPayEnabledSettings,
 } from './data/hooks';
+import { asSettingsRecord, asString, asStringArray } from './settings-values';
 
-type SettingsRecord = Record< string, unknown >;
 type BooleanSetting = [ boolean, ( value: boolean ) => void ];
 type StringArraySetting = [ string[], ( value: string[] ) => void ];
 
@@ -40,17 +40,6 @@ const [ APPLE_PAY_ICON, GOOGLE_PAY_ICON ] =
 const WOOPAY_ICON_URL = `${
 	WC_ASSET_URL || ''
 }images/payment-methods/woo-short-color.svg`;
-
-const asSettingsRecord = ( value: unknown ): SettingsRecord =>
-	value && typeof value === 'object' ? ( value as SettingsRecord ) : {};
-
-const asString = ( value: unknown, fallback = '' ) =>
-	typeof value === 'string' ? value : fallback;
-
-const asStringArray = ( value: unknown ) =>
-	Array.isArray( value )
-		? value.filter( ( item ): item is string => typeof item === 'string' )
-		: [];
 
 const asRequirements = ( value: unknown ) =>
 	Array.isArray( value ) ? value : [];

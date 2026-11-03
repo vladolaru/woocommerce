@@ -11,7 +11,7 @@ import {
 	ExpressCheckoutInlineNotice,
 	ExpressCheckoutPreviewFallback,
 } from './components';
-import { asSettingsRecord } from './settings-utils';
+import { asSettingsRecord } from '../settings-values';
 import WooPayLogoImage from './assets/woopay-preview-logo.svg';
 import {
 	useGetSettings,

@@ -51,9 +51,15 @@ import {
 	readRuleset,
 	writeRuleset,
 } from './utils';
+import {
+	asBoolean,
+	asSettingsRecord,
+	asString,
+	asStringArray,
+	type SettingsRecord,
+} from '../../settings-values';
 import './style.scss';
 
-type SettingsRecord = Record< string, unknown >;
 type StringSetting = [ string, ( value: string ) => void ];
 type AdvancedFraudProtectionSetting = [ unknown, ( value: unknown[] ) => void ];
 type WindowWithWooSettings = Window & {
@@ -62,20 +68,6 @@ type WindowWithWooSettings = Window & {
 		countries?: Record< string, string >;
 	};
 };
-
-const asSettingsRecord = ( value: unknown ): SettingsRecord =>
-	value && typeof value === 'object' ? ( value as SettingsRecord ) : {};
-
-const asString = ( value: unknown, fallback = '' ) =>
-	typeof value === 'string' ? value : fallback;
-
-const asStringArray = ( value: unknown ) =>
-	Array.isArray( value )
-		? value.filter( ( item ): item is string => typeof item === 'string' )
-		: [];
-
-const asBoolean = ( value: unknown, fallback = false ) =>
-	typeof value === 'boolean' ? value : fallback;
 
 const CVC_VERIFICATION_DOC_URL =
 	'https://woocommerce.com/document/woopayments/fraud-and-disputes/fraud-protection/#advanced-configuration';

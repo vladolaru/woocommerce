@@ -11,10 +11,8 @@ import { ExpressCheckoutAppearanceSettings } from './appearance-settings';
 import { ExpressCheckoutLocationCheckboxes } from './components';
 import { SettingsSection } from '../settings-shell';
 import { ExpressCheckoutMethodIcons } from './method-icons';
-import {
-	asSettingsRecord,
-	isExpressCheckoutInPaymentMethodsListSupported,
-} from './settings-utils';
+import { isExpressCheckoutInPaymentMethodsListSupported } from './settings-utils';
+import { asSettingsRecord } from '../settings-values';
 import {
 	useAmazonPayEnabledSettings,
 	useAmazonPayLocations,

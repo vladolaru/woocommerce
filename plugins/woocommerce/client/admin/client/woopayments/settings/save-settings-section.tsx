@@ -7,7 +7,7 @@ import { recordEvent } from '@woocommerce/tracks';
 /**
  * Internal dependencies
  */
-import { asSettingsRecord, asString } from './express-checkout/settings-utils';
+import { asSettingsRecord, asString } from './settings-values';
 import { useGetSavingError, useGetSettings, useSettings } from './data/hooks';
 import {
 	focusField,

@@ -1,4 +1,13 @@
-export type SettingsRecord = Record< string, unknown >;
+/**
+ * Internal dependencies
+ */
+import {
+	asBoolean,
+	asSettingsRecord,
+	asStringArray,
+	type SettingsRecord,
+} from '../settings-values';
+
 export type ExpressCheckoutFeatureFlagName =
 	| 'woopay'
 	| 'woopayExpressCheckout'
@@ -16,20 +25,6 @@ const DEFAULT_EXPRESS_CHECKOUT_FEATURE_FLAGS: ExpressCheckoutFeatureFlags = {
 	isDynamicCheckoutPlaceOrderButtonEnabled: true,
 	amazonPay: true,
 };
-
-export const asSettingsRecord = ( value: unknown ): SettingsRecord =>
-	value && typeof value === 'object' ? ( value as SettingsRecord ) : {};
-
-export const asString = ( value: unknown, fallback = '' ) =>
-	typeof value === 'string' ? value : fallback;
-
-export const asStringArray = ( value: unknown ) =>
-	Array.isArray( value )
-		? value.filter( ( item ): item is string => typeof item === 'string' )
-		: [];
-
-const asBoolean = ( value: unknown, fallback: boolean ) =>
-	typeof value === 'boolean' ? value : fallback;
 
 export const getExpressCheckoutFeatureFlags = (
 	settings: SettingsRecord

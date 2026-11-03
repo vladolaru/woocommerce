@@ -30,11 +30,8 @@ import {
 import { SettingsSection } from '../settings-shell';
 import { ExpressCheckoutMethodIcons } from './method-icons';
 import { TextLink } from '../text-link';
-import {
-	asSettingsRecord,
-	asString,
-	getExpressCheckoutFeatureFlags,
-} from './settings-utils';
+import { getExpressCheckoutFeatureFlags } from './settings-utils';
+import { asSettingsRecord, asString } from '../settings-values';
 import {
 	useEnabledPaymentMethodIds,
 	useGetSavedSettings,

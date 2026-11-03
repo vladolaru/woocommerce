@@ -17,11 +17,7 @@ import { recordEvent } from '@woocommerce/tracks';
  */
 import { saveOption } from '../data/actions';
 import { useGetSettings, useSettings } from '../data/hooks';
-
-type SettingsRecord = Record< string, unknown >;
-
-const asSettingsRecord = ( value: unknown ): SettingsRecord =>
-	value && typeof value === 'object' ? ( value as SettingsRecord ) : {};
+import { asSettingsRecord, type SettingsRecord } from '../settings-values';
 
 const getIsWelcomeTourDismissed = ( settings: SettingsRecord ) => {
 	const fraudProtection = asSettingsRecord( settings.fraud_protection );
