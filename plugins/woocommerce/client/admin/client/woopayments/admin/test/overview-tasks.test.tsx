@@ -9,9 +9,9 @@ import path from 'path';
  */
 import {
 	buildOverviewTasks,
-	formatTaskCurrency,
 	getVisibleOverviewTasks,
 } from '../overview/components/overview-tasks';
+import { formatWooPaymentsAmount } from '../overview/utils';
 
 jest.mock( '@woocommerce/tracks', () => ( { recordEvent: jest.fn() } ) );
 
@@ -352,6 +352,6 @@ describe( 'overview task builders', () => {
 	} );
 
 	it( 'formats dispute task currency amounts', () => {
-		expect( formatTaskCurrency( 1000, 'usd' ) ).toBe( '$10.00' );
+		expect( formatWooPaymentsAmount( 1000, 'usd' ) ).toBe( '$10.00' );
 	} );
 } );

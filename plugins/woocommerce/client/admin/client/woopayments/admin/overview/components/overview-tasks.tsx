@@ -27,9 +27,6 @@ import {
 	getRequirementErrorMessages,
 } from './requirement-error-messages';
 
-export const formatTaskCurrency = ( amount: number, currency?: string ) =>
-	formatWooPaymentsAmount( amount, currency );
-
 // Client 11.1.0 `overview/task-list/tasks/update-business-details-task.tsx:18-171`.
 const buildUpdateBusinessDetailsTask = ( {
 	shell,
@@ -213,7 +210,7 @@ const buildDisputeTask = (
 
 	let title: string;
 	if ( activeDisputeCount === 1 && amountEntries.length === 1 ) {
-		const amountFormatted = formatTaskCurrency(
+		const amountFormatted = formatWooPaymentsAmount(
 			amountEntries[ 0 ][ 1 ],
 			amountEntries[ 0 ][ 0 ]
 		);
@@ -244,7 +241,7 @@ const buildDisputeTask = (
 				'woocommerce'
 			),
 			activeDisputeCount,
-			formatTaskCurrency(
+			formatWooPaymentsAmount(
 				amountEntries[ 0 ][ 1 ],
 				amountEntries[ 0 ][ 0 ]
 			)
