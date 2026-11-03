@@ -28,12 +28,21 @@ jest.mock( '@woocommerce/navigation', () => ( {
 	getNewPath: jest.fn( () => 'native-woopayments-onboarding-url' ),
 } ) );
 
-jest.mock( '~/woopayments/onboarding', () => ( {
-	LYSPaymentsSteps: [],
-	OnboardingProvider: ( { children }: { children: ReactNode } ) => (
-		<div data-testid="onboarding-provider">{ children }</div>
-	),
-} ) );
+jest.mock(
+	'~/settings-payments/onboarding/providers/woopayments/steps',
+	() => ( {
+		LYSPaymentsSteps: [],
+	} )
+);
+
+jest.mock(
+	'~/settings-payments/onboarding/providers/woopayments/data/onboarding-context',
+	() => ( {
+		OnboardingProvider: ( { children }: { children: ReactNode } ) => (
+			<div data-testid="onboarding-provider">{ children }</div>
+		),
+	} )
+);
 
 const ContextReader = () => {
 	const { isWooPaymentsActive, isWooPaymentsInstalled } =

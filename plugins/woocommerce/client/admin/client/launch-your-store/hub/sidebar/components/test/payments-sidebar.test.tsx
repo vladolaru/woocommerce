@@ -194,9 +194,12 @@ jest.mock( '~/launch-your-store/data/setup-payments-context', () => ( {
 	useSetUpPaymentsContext: () => mockSetUpPaymentsContext,
 } ) );
 
-jest.mock( '~/woopayments/onboarding', () => ( {
-	useOnboardingContext: () => mockOnboardingContext,
-} ) );
+jest.mock(
+	'~/settings-payments/onboarding/providers/woopayments/data/onboarding-context',
+	() => ( {
+		useOnboardingContext: () => mockOnboardingContext,
+	} )
+);
 
 /**
  * Internal dependencies

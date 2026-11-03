@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/ban-ts-comment */
-
+/* eslint-disable import/order */
 /**
  * External dependencies
  */
@@ -15,6 +15,7 @@ import {
 	// @ts-ignore No types for this exist yet.
 	__unstableMotion as motion,
 } from '@wordpress/components';
+import { useOnboardingContext } from '~/settings-payments/onboarding/providers/woopayments/data/onboarding-context';
 import { recordEvent } from '@woocommerce/tracks';
 import type { TaskType } from '@woocommerce/data';
 
@@ -26,7 +27,6 @@ import { SidebarContainer } from './sidebar-container';
 import { SiteHub } from '~/customize-store/site-hub';
 import { taskIcons, taskCompleteIcon } from './icons';
 import { StepPlaceholder } from './step-placeholder';
-import { useOnboardingContext } from '~/woopayments/onboarding';
 import { useSetUpPaymentsContext } from '~/launch-your-store/data/setup-payments-context';
 import { WooPaymentsProviderOnboardingStep } from '~/settings-payments/onboarding/types';
 import { recordPaymentsOnboardingEvent } from '~/settings-payments/utils';

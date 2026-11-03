@@ -50,7 +50,7 @@ import {
 	getMorePaymentOptionsUrl,
 } from '~/settings-payments/utils';
 import { WooPaymentsPostSandboxAccountSetupModal } from '~/settings-payments/components/modals';
-import WooPaymentsModal from '~/woopayments/onboarding';
+import WooPaymentsModal from '~/settings-payments/onboarding/providers/woopayments';
 import {
 	wooPaymentsOnboardingSessionEntrySettings,
 	wooPaymentsProviderId,
