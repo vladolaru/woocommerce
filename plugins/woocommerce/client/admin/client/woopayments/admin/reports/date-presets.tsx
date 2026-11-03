@@ -26,6 +26,10 @@ const getPresets = (): Array< {
 // eslint-disable-next-line @wordpress/i18n-text-domain
 const getCustomPresetLabel = () => __( 'Custom' );
 
+const isPressed = ( button: HTMLElement ) =>
+	button.getAttribute( 'aria-pressed' ) === 'true' ||
+	button.classList.contains( 'is-pressed' );
+
 // DataViews has no API to add date presets; these selectors are its private markup (the bundled @wordpress/dataviews 17.1.0).
 // If they change, the two presets stop showing and the date filter keeps working.
 const getInsertionPoint = () => {
@@ -68,7 +72,7 @@ const getInsertionPoint = () => {
  * Adds "Previous month" and "Previous year" before the presets of the DataViews date range popover, whenever it opens.
  *
  * Client 11.2.0 `reports/date-filter/dataviews-date-range-preset-portal.tsx`: the two calendar presets join DataViews' own six.
- * When one of them is the applied range, DataViews' presets show unpressed and its Custom preset stays usable.
+ * When one of them is the applied range, DataViews' presets show unpressed (pressed again once it is not) and its Custom preset stays usable.
  *
  * @param props                The component props.
  * @param props.selectedPreset The preset the applied range matches.
@@ -83,6 +87,8 @@ const ReportsDatePresets = ( {
 	selectedRef.current = selectedPreset;
 	const onPresetChangeRef = useRef( onPresetChange );
 	onPresetChangeRef.current = onPresetChange;
+	// DataViews' presets shown unpressed here, pressed again when the selection leaves the two presets.
+	const unpressedRef = useRef( new Set< HTMLButtonElement >() );
 
 	const sync = useCallback( ( force: boolean ) => {
 		const point = getInsertionPoint();
@@ -90,6 +96,7 @@ const ReportsDatePresets = ( {
 		if ( ! point ) {
 			nodeRef.current?.remove();
 			nodeRef.current = null;
+			unpressedRef.current.clear();
 			return;
 		}
 
@@ -116,11 +123,25 @@ const ReportsDatePresets = ( {
 				`.dataviews-controls__date-preset:not(.${ injectedClass })`
 			)
 		);
+		const unpressed = unpressedRef.current;
 		for ( const button of nativePresets ) {
 			if ( selected ) {
+				if ( isPressed( button ) ) {
+					unpressed.add( button );
+				}
 				button.setAttribute( 'aria-pressed', 'false' );
 				button.classList.remove( 'is-pressed' );
 			}
+		}
+		// React does not repair attributes changed outside it, so press them again, unless DataViews pressed one since.
+		if ( ! selected && unpressed.size ) {
+			if ( ! nativePresets.some( isPressed ) ) {
+				unpressed.forEach( ( button ) => {
+					button.setAttribute( 'aria-pressed', 'true' );
+					button.classList.add( 'is-pressed' );
+				} );
+			}
+			unpressed.clear();
 		}
 		nativePresets
 			.find(
@@ -160,6 +181,7 @@ const ReportsDatePresets = ( {
 	useEffect( () => {
 		let frame: number | null = null;
 		const observed = new Set< Element >();
+		const unpressed = unpressedRef.current;
 		const observeFallback = ( target: MutationObserver ) => {
 			const fallback = document.querySelector(
 				'.components-popover__fallback-container'
@@ -197,6 +219,7 @@ const ReportsDatePresets = ( {
 			observer.disconnect();
 			nodeRef.current?.remove();
 			nodeRef.current = null;
+			unpressed.clear();
 		};
 	}, [ sync ] );
 
