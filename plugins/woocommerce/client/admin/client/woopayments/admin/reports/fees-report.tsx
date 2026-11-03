@@ -6,6 +6,7 @@ import { speak } from '@wordpress/a11y';
 import { dateI18n, getSettings as getDateSettings } from '@wordpress/date';
 import { __, sprintf } from '@wordpress/i18n';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from '@wordpress/element';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { recordEvent } from '@woocommerce/tracks';
 // @ts-expect-error - Use the WordPress-bundled DataViews entry in wp-admin builds.
@@ -31,7 +32,7 @@ import {
 	useWooPaymentsExport,
 } from '../money-movement/export';
 import { useDataViewsReloadState } from '../money-movement/use-dataviews-reload-state';
-import { WooPaymentsFilterPicker } from '../money-movement/list-filters';
+import { ReportsDatePresets } from './date-presets';
 import type { ReportsFee, ReportsFeesQuery, ReportsFeesSummary } from './types';
 import {
 	formatExplicitCurrency,
@@ -171,7 +172,14 @@ const getImmediateFeesParams = (
 	return params.toString();
 };
 
-const FeesReport = ( { now }: { now: Date } ) => {
+const FeesReport = ( {
+	now,
+	headerActions,
+}: {
+	now: Date;
+	// The page header's actions slot, where the client keeps Export.
+	headerActions: HTMLElement | null;
+} ) => {
 	const location = useLocation();
 	const navigate = useNavigate();
 	// Client 11.1.0 `reports/fees/use-fees-url-sync.ts:167-195`: sort, paging, search and filters come from the URL.
@@ -686,6 +694,26 @@ const FeesReport = ( { now }: { now: Date } ) => {
 			ref={ feesListRef }
 			className="woocommerce-woopayments-reports-fees"
 		>
+			{ /* Client 11.2.0 `reports/header.tsx:30-34`: Export sits in the page header, with no heading or date select
+			   in the table toolbar; the date presets live in the date filter, as on Balance. */ }
+			{ headerActions &&
+				createPortal(
+					<Button
+						variant="primary"
+						onClick={ handleExport }
+						disabled={ isExporting }
+						accessibleWhenDisabled
+						aria-busy={ isExporting }
+						isBusy={ isExporting }
+					>
+						{ __( 'Export', 'woocommerce' ) }
+					</Button>,
+					headerActions
+				) }
+			<ReportsDatePresets
+				selectedPreset={ activeDatePreset }
+				onPresetChange={ handlePresetChange }
+			/>
 			<DataViews
 				data={ rows }
 				fields={ fields }
@@ -694,63 +722,6 @@ const FeesReport = ( { now }: { now: Date } ) => {
 				isLoading={ isLoading }
 				search
 				searchLabel={ __( 'Search fees', 'woocommerce' ) }
-				header={
-					<div className="woocommerce-woopayments-reports__toolbar">
-						<h2>{ __( 'Fees', 'woocommerce' ) }</h2>
-						<WooPaymentsFilterPicker
-							filter={ {
-								id: 'date-range',
-								label: __( 'Date range', 'woocommerce' ),
-								value: activeDatePreset,
-								options: [
-									{
-										label: __(
-											'Previous month',
-											'woocommerce'
-										),
-										value: 'last_month',
-									},
-									{
-										label: __(
-											'Previous year',
-											'woocommerce'
-										),
-										value: 'last_year',
-									},
-									{
-										label: __(
-											'Month to date',
-											'woocommerce'
-										),
-										value: 'month_to_date',
-									},
-									{
-										label: __(
-											'Year to date',
-											'woocommerce'
-										),
-										value: 'year_to_date',
-									},
-									{
-										label: __( 'Custom', 'woocommerce' ),
-										value: 'custom',
-									},
-								],
-								onChange: handlePresetChange,
-							} }
-						/>
-						<Button
-							variant="primary"
-							onClick={ handleExport }
-							disabled={ isExporting }
-							accessibleWhenDisabled
-							aria-busy={ isExporting }
-							isBusy={ isExporting }
-						>
-							{ __( 'Export', 'woocommerce' ) }
-						</Button>
-					</div>
-				}
 				paginationInfo={ {
 					totalItems,
 					totalPages,

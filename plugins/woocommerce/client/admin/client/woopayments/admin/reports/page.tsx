@@ -2,7 +2,7 @@
  * External dependencies
  */
 import { __ } from '@wordpress/i18n';
-import { type KeyboardEvent, useEffect, useId, useRef } from 'react';
+import { type KeyboardEvent, useEffect, useId, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { recordEvent } from '@woocommerce/tracks';
 
@@ -49,6 +49,9 @@ export const WooPaymentsReportsPage = ( {
 	const feesPanelId = useId();
 	const balanceTabRef = useRef< HTMLButtonElement >( null );
 	const feesTabRef = useRef< HTMLButtonElement >( null );
+	const [ headerActions, setHeaderActions ] = useState< HTMLElement | null >(
+		null
+	);
 
 	useEffect( () => {
 		recordEvent( 'page_view', {
@@ -107,9 +110,16 @@ export const WooPaymentsReportsPage = ( {
 			<h1 className="screen-reader-text">
 				{ __( 'Reports', 'woocommerce' ) }
 			</h1>
-			<p className="woocommerce-woopayments-reports__intro">
-				{ __( 'View your reconciliation reports.', 'woocommerce' ) }
-			</p>
+			{ /* Client 11.2.0 `reports/header.tsx`: the intro, with the active report's actions beside it. */ }
+			<div className="woocommerce-woopayments-reports__header">
+				<p className="woocommerce-woopayments-reports__intro">
+					{ __( 'View your reconciliation reports.', 'woocommerce' ) }
+				</p>
+				<div
+					className="woocommerce-woopayments-reports__header-actions"
+					ref={ setHeaderActions }
+				/>
+			</div>
 			<div
 				className="woocommerce-woopayments-reports__tabs"
 				role="tablist"
@@ -158,7 +168,12 @@ export const WooPaymentsReportsPage = ( {
 				aria-labelledby={ feesTabId }
 				hidden={ activeTab !== 'fees' }
 			>
-				{ activeTab === 'fees' && <FeesReport now={ stableNow } /> }
+				{ activeTab === 'fees' && (
+					<FeesReport
+						now={ stableNow }
+						headerActions={ headerActions }
+					/>
+				) }
 			</div>
 		</div>
 	);

@@ -29,7 +29,6 @@ import {
 	requestWooPaymentsReportsFeesExport,
 } from '../reports/data';
 import { formatAmount as formatMoneyMovementAmount } from '../money-movement/utils';
-import { chooseFilter, getFilterPickerChoices } from './helpers/filter-picker';
 import { ZERO_DECIMAL_CURRENCIES } from './helpers/zero-decimal-currencies';
 
 // The export raises snackbars; other stores keep the real dispatch.
@@ -896,8 +895,8 @@ describe( 'WooPaymentsReportsPage', () => {
 			.mockImplementation( async () => [
 				{ ...feeRow, transaction_id: 'txn_new' },
 			] );
-		chooseFilter( 'Date range', 'Previous month' );
-		chooseFilter( 'Date range', 'Previous year' );
+		choosePreset( 'Previous month' );
+		choosePreset( 'Previous year' );
 		await screen.findByRole( 'link', { name: 'txn_new' } );
 
 		await act( async () => {
@@ -931,8 +930,8 @@ describe( 'WooPaymentsReportsPage', () => {
 			.mockImplementation( async () => [
 				{ ...feeRow, transaction_id: 'txn_new' },
 			] );
-		chooseFilter( 'Date range', 'Previous month' );
-		chooseFilter( 'Date range', 'Previous year' );
+		choosePreset( 'Previous month' );
+		choosePreset( 'Previous year' );
 		await screen.findByRole( 'link', { name: 'txn_new' } );
 
 		await act( async () => {
@@ -1085,15 +1084,22 @@ describe( 'WooPaymentsReportsPage', () => {
 		await userEvent.click(
 			screen.getByRole( 'button', { name: 'Apply detailed fees view' } )
 		);
-		expect( getFilterPickerChoices( 'Date range' ) ).toEqual( [
+		expect(
+			within( screen.getByTestId( 'date-popover' ) )
+				.getAllByRole( 'button' )
+				.map( ( button ) => button.textContent )
+		).toEqual( [
 			'Previous month',
 			'Previous year',
+			'Last 7 days',
+			'Last 30 days',
 			'Month to date',
+			'Last year',
 			'Year to date',
 			'Custom',
 		] );
 
-		chooseFilter( 'Date range', 'Previous month' );
+		choosePreset( 'Previous month' );
 
 		await waitFor( () =>
 			expect( mockGetFees ).toHaveBeenLastCalledWith(
@@ -1112,7 +1118,7 @@ describe( 'WooPaymentsReportsPage', () => {
 			)
 		);
 
-		chooseFilter( 'Date range', 'Previous year' );
+		choosePreset( 'Previous year' );
 
 		await waitFor( () =>
 			expect( mockGetFees ).toHaveBeenLastCalledWith(

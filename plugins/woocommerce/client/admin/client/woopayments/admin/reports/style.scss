@@ -11,9 +11,21 @@ body.woocommerce_page_wc-settings.woocommerce-settings-payments-tab:has(.woocomm
 .woocommerce-woopayments-reports {
 	max-width: $woopayments-wide-page-max-width;
 
+	&__header {
+		display: flex;
+		align-items: flex-start;
+		justify-content: space-between;
+		gap: $gap;
+	}
+
 	&__intro {
 		margin: 0 0 $gap;
 		color: $studio-gray-60;
+	}
+
+	&__header-actions {
+		display: flex;
+		gap: $gap-smaller;
 	}
 
 	&__tabs {
