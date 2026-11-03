@@ -18,6 +18,7 @@ import { EllipsisMenuWrapper as EllipsisMenu } from '~/settings-payments/compone
 import {
 	isWooPayments,
 	isCoreNativeWooPayments,
+	isBuiltinWooPayments,
 	hasIncentive,
 	isWooPayEligible,
 	recordPaymentsProviderEvent,
@@ -124,7 +125,7 @@ export const PaymentExtensionSuggestionListItem = ( {
 							<IncentiveStatusBadge incentive={ incentive } />
 						) }
 						{ /* All payment extension suggestions are official, except the one built into WooCommerce. */ }
-						{ suggestion._native ? (
+						{ isBuiltinWooPayments( suggestion ) ? (
 							<NativeBadge suggestionId={ suggestion.id } />
 						) : (
 							<OfficialBadge

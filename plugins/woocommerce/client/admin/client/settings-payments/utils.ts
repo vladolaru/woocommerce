@@ -124,6 +124,15 @@ export const isCoreNativeWooPayments = ( provider: PaymentsEntity ) => {
 };
 
 /**
+ * Whether a payments provider is the WooPayments gateway or suggestion built into WooCommerce, as the providers
+ * list marks it.
+ *
+ * @param provider The payments provider.
+ */
+export const isBuiltinWooPayments = ( provider: PaymentsProvider ) =>
+	provider._native === true;
+
+/**
  * Checks whether a provider is WooPayments and that it is eligible for WooPay.
  */
 export const isWooPayEligible = ( provider: PaymentsProvider ) => {

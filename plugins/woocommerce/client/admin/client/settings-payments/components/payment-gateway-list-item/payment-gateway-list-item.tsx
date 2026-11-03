@@ -17,6 +17,7 @@ import { StatusBadge } from '~/settings-payments/components/status-badge';
 import { EllipsisMenuWrapper as EllipsisMenu } from '~/settings-payments/components/ellipsis-menu-content';
 import {
 	hasIncentive,
+	isBuiltinWooPayments,
 	isWooPayEligible,
 	isWooPayments,
 } from '~/settings-payments/utils';
@@ -195,7 +196,7 @@ export const PaymentGatewayListItem = ( {
 						) }
 						{ /* If the gateway has a matching suggestion, it is an official extension, or built into WooCommerce. */ }
 						{ gateway._suggestion_id &&
-							( gateway._native ? (
+							( isBuiltinWooPayments( gateway ) ? (
 								<NativeBadge
 									suggestionId={ gateway._suggestion_id }
 								/>
