@@ -40,10 +40,8 @@ import type {
 	WooPaymentsOverviewDisputesSummary,
 	WooPaymentsOverviewShell,
 } from './types';
-import {
-	getSelectedBalanceCurrency,
-	getSettingsPaymentsProviderRouteUrl,
-} from './utils';
+import { getSelectedBalanceCurrency } from './utils';
+import { getSettingsPaymentsProviderRouteUrl } from '../utils';
 import { SpotlightPromotion } from '../../promotions/spotlight';
 import {
 	OverviewModeNotice,

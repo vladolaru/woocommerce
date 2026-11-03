@@ -16,8 +16,6 @@ import type {
 	WooPaymentsMoneyAmount,
 } from './types';
 
-export { getSettingsPaymentsProviderRouteUrl } from '../utils';
-
 export const normalizeCurrencyCode = ( currency?: string | null ) =>
 	( currency || 'usd' ).toUpperCase();
 

@@ -18,10 +18,8 @@ import type {
 	WooPaymentsOverviewTask,
 	WooPaymentsOverviewTasksVisibility,
 } from '../types';
-import {
-	formatWooPaymentsAmount,
-	getSettingsPaymentsProviderRouteUrl,
-} from '../utils';
+import { formatWooPaymentsAmount } from '../utils';
+import { getSettingsPaymentsProviderRouteUrl } from '../../utils';
 import {
 	formatRequirementDeadline,
 	getRequirementErrorMessages,

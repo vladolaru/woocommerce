@@ -15,7 +15,7 @@ import { getWooPaymentsSettingsBootstrap } from '~/woopayments/settings/bootstra
 import BannerNotice from '~/settings-payments/onboarding/providers/woopayments/components/banner-notice';
 import type { WooPaymentsOverviewAccount } from '../types';
 import { HelpPopover } from './help-popover';
-import { getSettingsPaymentsProviderRouteUrl } from '../utils';
+import { getSettingsPaymentsProviderRouteUrl } from '../../utils';
 
 const TEST_ACCOUNTS_URL =
 	'https://woocommerce.com/document/woopayments/testing-and-troubleshooting/test-accounts/';
