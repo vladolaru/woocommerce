@@ -1,7 +1,7 @@
 /**
  * External dependencies
  */
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import { useSelect } from '@wordpress/data';
 import { paymentSettingsStore, pluginsStore } from '@woocommerce/data';
 import type { ReactNode } from 'react';
@@ -13,6 +13,8 @@ import {
 	SetUpPaymentsProvider,
 	useSetUpPaymentsContext,
 } from './setup-payments-context';
+import { PaymentsSidebar } from '../hub/sidebar/components/payments-sidebar';
+import type { SidebarComponentProps } from '../hub/sidebar/xstate';
 
 jest.mock( '@wordpress/data', () => ( {
 	...jest.requireActual( '@wordpress/data' ),
@@ -41,8 +43,53 @@ jest.mock(
 		OnboardingProvider: ( { children }: { children: ReactNode } ) => (
 			<div data-testid="onboarding-provider">{ children }</div>
 		),
+		// The onboarding steps the provider loads for the payments step's sidebar.
+		useOnboardingContext: () => ( {
+			steps: [
+				{ id: 'payment_methods', label: 'Choose your payment methods' },
+				{ id: 'wpcom_connection', label: 'Connect with WordPress.com' },
+				{ id: 'activate_payments', label: 'Activate payments' },
+			],
+			currentStep: null,
+			justCompletedStepId: null,
+			isLoading: false,
+		} ),
 	} )
 );
+
+jest.mock(
+	'@wordpress/edit-site/build-module/components/sidebar-navigation-item',
+	() => ( {
+		__esModule: true,
+		default: ( { children }: { children: ReactNode } ) => (
+			<div data-testid="sidebar-navigation-item">{ children }</div>
+		),
+	} )
+);
+
+jest.mock(
+	'~/launch-your-store/hub/sidebar/components/sidebar-container',
+	() => ( {
+		SidebarContainer: ( { children }: { children: ReactNode } ) => (
+			<div>{ children }</div>
+		),
+	} )
+);
+
+jest.mock( '~/customize-store/site-hub', () => ( {
+	SiteHub: () => null,
+} ) );
+
+jest.mock( '~/launch-your-store/hub/sidebar/tasklist', () => ( {
+	getPaymentsTaskFromLysTasklist: jest.fn().mockResolvedValue( {
+		id: 'payments',
+		additionalData: { wooPaymentsIsInstalled: false },
+	} ),
+} ) );
+
+jest.mock( '@woocommerce/tracks', () => ( {
+	recordEvent: jest.fn(),
+} ) );
 
 const ContextReader = () => {
 	const {
@@ -73,16 +120,18 @@ const onboarding = {
 };
 
 const mockStores = (
-	provider: Record< string, unknown >,
+	provider: Record< string, unknown > | null,
 	activePlugins: string[],
-	installedPlugins: string[]
+	installedPlugins: string[],
+	suggestions: Record< string, unknown >[] = []
 ) =>
 	( useSelect as jest.Mock ).mockImplementation( ( selector ) =>
 		selector( ( store: unknown ) => {
 			if ( store === paymentSettingsStore ) {
 				return {
 					isFetching: () => false,
-					getPaymentProviders: () => [ provider ],
+					getPaymentProviders: () => ( provider ? [ provider ] : [] ),
+					getSuggestions: () => suggestions,
 				};
 			}
 
@@ -187,6 +236,89 @@ describe( 'SetUpPaymentsProvider', () => {
 			// The onboarding provider wraps the hub only while WooPayments is active.
 			expect( !! screen.queryByTestId( 'onboarding-provider' ) ).toBe(
 				isActive === 'true'
+			);
+		}
+	);
+} );
+
+describe( "Launch Your Store's payments step", () => {
+	const sidebarProps = {
+		sendEventToSidebar: jest.fn(),
+		sendEventToMainContent: jest.fn(),
+		onMobileClose: jest.fn(),
+		context: {},
+	} as unknown as SidebarComponentProps;
+
+	afterEach( () => {
+		jest.clearAllMocks();
+	} );
+
+	// The entities as the providers REST response lists them (live on a flag-on and a flag-off store).
+	it.each( [
+		{
+			name: 'the built-in WooPayments suggestion, hidden into the suggestions list',
+			provider: null,
+			suggestions: [
+				{
+					id: 'woopayments',
+					_type: 'psp',
+					plugin: { status: 'not_installed' },
+					onboarding,
+				},
+			],
+			items: [
+				'Set up WooPayments',
+				'Choose your payment methods',
+				'Connect with WordPress.com',
+				'Activate payments',
+			],
+		},
+		{
+			name: "the WooPayments extension's suggestion, no extension installed",
+			provider: {
+				id: '_wc_pes_woopayments',
+				plugin: {
+					slug: 'woocommerce-payments',
+					status: 'not_installed',
+				},
+				onboarding,
+			},
+			suggestions: [],
+			items: [ 'Install WooPayments' ],
+		},
+		{
+			name: "the WooPayments extension's suggestion, hidden into the suggestions list",
+			provider: null,
+			suggestions: [
+				{
+					id: 'woopayments',
+					_type: 'psp',
+					plugin: {
+						_type: 'wporg',
+						slug: 'woocommerce-payments',
+						status: 'not_installed',
+					},
+				},
+			],
+			items: [ 'Install WooPayments' ],
+		},
+	] )(
+		'lists the steps for $name',
+		async ( { provider, suggestions, items } ) => {
+			mockStores( provider, [], [], suggestions );
+
+			render(
+				<SetUpPaymentsProvider closeModal={ jest.fn() }>
+					<PaymentsSidebar { ...sidebarProps } />
+				</SetUpPaymentsProvider>
+			);
+
+			await waitFor( () =>
+				expect(
+					screen
+						.getAllByTestId( 'sidebar-navigation-item' )
+						.map( ( item ) => item.textContent )
+				).toEqual( items )
 			);
 		}
 	);

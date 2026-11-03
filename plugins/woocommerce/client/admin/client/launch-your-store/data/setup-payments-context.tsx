@@ -11,13 +11,17 @@ import { getNewPath } from '@woocommerce/navigation';
  */
 import { LYSPaymentsSteps } from '~/settings-payments/onboarding/providers/woopayments/steps';
 import { OnboardingProvider } from '~/settings-payments/onboarding/providers/woopayments/data/onboarding-context';
-import { isBuiltinWooPayments, isWooPayments } from '~/settings-payments/utils';
+import {
+	isBuiltinWooPayments,
+	isBuiltinWooPaymentsSuggestion,
+	isWooPayments,
+} from '~/settings-payments/utils';
 import { wooPaymentsExtensionSlug } from '~/settings-payments/constants';
 
 interface SetUpPaymentsContextType {
 	isWooPaymentsActive: boolean;
 	isWooPaymentsInstalled: boolean;
-	// The providers list carries the WooPayments built into WooCommerce, not the WooPayments extension.
+	// The payments settings carry the WooPayments built into WooCommerce, not the WooPayments extension.
 	isBuiltinWooPayments: boolean;
 	wooPaymentsRecentlyActivated: boolean;
 	setWooPaymentsRecentlyActivated: ( value: boolean ) => void;
@@ -66,9 +70,12 @@ export const SetUpPaymentsProvider: React.FC< {
 			return {
 				wooPaymentsPluginSlug: resolvedSlug ?? wooPaymentsExtensionSlug,
 				isSlugResolved: hasLoadedProviders,
-				isBuiltin:
-					!! wooPaymentsProvider &&
-					isBuiltinWooPayments( wooPaymentsProvider ),
+				isBuiltin: wooPaymentsProvider
+					? isBuiltinWooPayments( wooPaymentsProvider )
+					: // A hidden built-in suggestion is listed among the suggestions, not the providers.
+						store
+							.getSuggestions()
+							.some( isBuiltinWooPaymentsSuggestion ),
 			};
 		},
 		// Empty deps array - the selector subscribes to store state internally.
