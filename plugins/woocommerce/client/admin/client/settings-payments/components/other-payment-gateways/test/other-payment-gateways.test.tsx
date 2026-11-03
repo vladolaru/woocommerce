@@ -65,6 +65,27 @@ describe( 'OtherPaymentGateways', () => {
 		{
 			name: 'the hidden built-in WooPayments suggestion',
 			plugin: { status: 'not_installed' },
+			badge: 'Built in',
+		},
+		{
+			name: "the WooPayments extension's suggestion",
+			plugin: { slug: 'woocommerce-payments', status: 'not_installed' },
+			badge: 'Official',
+		},
+	] )( 'shows the "$badge" badge on $name', ( { plugin, badge } ) => {
+		renderExpanded( suggestion( plugin ) );
+
+		expect(
+			screen.getByRole( 'button', {
+				name: new RegExp( `badge ${ badge }$` ),
+			} )
+		).toBeInTheDocument();
+	} );
+
+	it.each( [
+		{
+			name: 'the hidden built-in WooPayments suggestion',
+			plugin: { status: 'not_installed' },
 			label: 'Set up',
 		},
 		{

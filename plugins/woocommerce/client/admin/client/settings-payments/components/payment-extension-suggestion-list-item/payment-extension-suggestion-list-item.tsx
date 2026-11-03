@@ -27,7 +27,7 @@ import { DefaultDragHandle } from '~/settings-payments/components/sortable';
 import { StatusBadge } from '~/settings-payments/components/status-badge';
 import { IncentiveStatusBadge } from '~/settings-payments/components/incentive-status-badge';
 import { OfficialBadge } from '~/settings-payments/components/official-badge';
-import { NativeBadge } from '~/settings-payments/components/native-badge';
+import { BuiltinBadge } from '~/settings-payments/components/builtin-badge';
 
 type PaymentExtensionSuggestionListItemProps = {
 	/**
@@ -126,7 +126,7 @@ export const PaymentExtensionSuggestionListItem = ( {
 						) }
 						{ /* All payment extension suggestions are official, except the one built into WooCommerce. */ }
 						{ isBuiltinWooPayments( suggestion ) ? (
-							<NativeBadge suggestionId={ suggestion.id } />
+							<BuiltinBadge suggestionId={ suggestion.id } />
 						) : (
 							<OfficialBadge
 								variant="expanded"

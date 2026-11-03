@@ -126,7 +126,7 @@ test.describe( 'Store with the WooPayments feature off and no extension', () => 
 			const wooPaymentsRow = page
 				.locator( '.woocommerce-list__item' )
 				.filter( { hasText: 'Accept payments with Woo' } );
-			// The built-in badge by its test id (`native-badge.tsx`), not by its label, which domain g renames (N-344).
+			// The built-in badge by its test id (`builtin-badge.tsx`), not by its label.
 			const builtinBadge = wooPaymentsRow.getByTestId(
 				'woocommerce-builtin-badge'
 			);
