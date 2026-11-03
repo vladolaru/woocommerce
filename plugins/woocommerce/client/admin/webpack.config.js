@@ -360,7 +360,7 @@ const jsConfig = {
 			// See https://github.com/woocommerce/woocommerce-admin/pull/5229
 			name: false,
 			cacheGroups: {
-				// Native WooPayments routes share most of their styles. Emit them
+				// WooPayments routes share most of their styles. Emit them
 				// once as one async stylesheet instead of a copy per route chunk.
 				woopaymentsStyles: {
 					type: 'css/mini-extract',

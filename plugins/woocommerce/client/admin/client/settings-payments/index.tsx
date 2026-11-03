@@ -347,7 +347,7 @@ let loadedWooPaymentsRoutes: WooPaymentsRoute[] | undefined;
 let wooPaymentsRoutesRequest: Promise< WooPaymentsRoute[] > | undefined;
 
 /**
- * Loads the Core-owned WooPayments routes once, only when a Payments path needs them.
+ * Loads the WooPayments routes once, only when a Payments path needs them.
  */
 const loadWooPaymentsRoutes = () => {
 	if ( ! wooPaymentsRoutesRequest ) {

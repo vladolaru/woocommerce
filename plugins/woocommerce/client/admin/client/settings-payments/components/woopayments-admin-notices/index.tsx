@@ -52,7 +52,7 @@ interface WooPaymentsAdminNoticesProps {
 }
 
 /**
- * Render one native WooPayments notice on the Payments settings page.
+ * Render one WooPayments notice on the Payments settings page.
  */
 export const WooPaymentsAdminNotices = ( {
 	notice,

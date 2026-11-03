@@ -17,7 +17,7 @@ module.exports = {
 	},
 	overrides: [
 		{
-			// Native WooPayments styles take colours, spacing, type and radii from upstream tokens:
+			// WooPayments styles take colours, spacing, type and radii from upstream tokens:
 			// the WP admin colour scheme, @wordpress/components, WooCommerce's shared admin variables,
 			// then client/woopayments/_tokens.scss. Literal px survive only for 0 and 1px.
 			files: [ 'client/woopayments/**/*.scss' ],
