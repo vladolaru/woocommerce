@@ -128,3 +128,34 @@ describe( 'Dispute evidence step labels', () => {
 		expect( mockUpdateDispute ).not.toHaveBeenCalled();
 	} );
 } );
+
+describe( 'Dispute evidence document labels', () => {
+	// Client 11.2.0 new-evidence/evidence-matrix.ts:836-845 and recommended-document-fields.ts:465-477: each step
+	// names the customer's signature from its own list.
+	it( "labels the customer's signature by step for a physical product not received", async () => {
+		renderForm(
+			makeDispute( {
+				reason: 'product_not_received',
+				metadata: { __product_type: 'physical_product' },
+			} )
+		);
+
+		expect(
+			screen.getByText( "Customer's signature" )
+		).toBeInTheDocument();
+		expect(
+			screen.queryByText( 'Proof of delivery' )
+		).not.toBeInTheDocument();
+
+		await userEvent.click(
+			screen.getByRole( 'button', { name: '2 Shipping details' } )
+		);
+
+		expect(
+			await screen.findByText( 'Proof of delivery' )
+		).toBeInTheDocument();
+		expect(
+			screen.queryByText( "Customer's signature" )
+		).not.toBeInTheDocument();
+	} );
+} );

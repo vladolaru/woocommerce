@@ -49,7 +49,6 @@ import {
 	type DocumentEvidenceField,
 	type EvidenceFileMap,
 	type EvidenceField,
-	type RecommendedDocumentField,
 	buildEvidencePayload,
 	getEvidenceFileByteTotal,
 	getRecommendedDocumentFields,
@@ -504,21 +503,6 @@ export const DisputeEvidenceForm = ( {
 				: [],
 		[ dispute.reason, includeShippingStep, productType ]
 	);
-	const recommendedDocumentLabels = useMemo(
-		() =>
-			[ ...recommendedDocuments, ...recommendedShippingDocuments ].reduce<
-				Partial<
-					Record< DocumentEvidenceField, RecommendedDocumentField >
-				>
-			>(
-				( labels, document ) => ( {
-					...labels,
-					[ document.key ]: document,
-				} ),
-				{}
-			),
-		[ recommendedDocuments, recommendedShippingDocuments ]
-	);
 	const documentFieldsToRender = useMemo( () => {
 		const fields = recommendedDocuments.map( ( document ) => document.key );
 
@@ -930,8 +914,10 @@ export const DisputeEvidenceForm = ( {
 		handleCoverLetterChange( value );
 	};
 
+	// Each step labels its documents from its own list: one field can be named differently on two steps.
 	const renderRecommendedDocumentsSection = (
-		fieldsToRender = documentFieldsToRender
+		fieldsToRender = documentFieldsToRender,
+		documents = recommendedDocuments
 	) => (
 		<fieldset className="woocommerce-woopayments-dispute-evidence__section">
 			<legend>{ __( 'Recommended documents', 'woocommerce' ) }</legend>
@@ -947,7 +933,9 @@ export const DisputeEvidenceForm = ( {
 				</ExternalLink>
 			</p>
 			{ fieldsToRender.map( ( field ) => {
-				const recommendedDocument = recommendedDocumentLabels[ field ];
+				const recommendedDocument = documents.find(
+					( document ) => document.key === field
+				);
 				const label =
 					recommendedDocument?.label || formatLabel( field );
 
@@ -1522,7 +1510,8 @@ export const DisputeEvidenceForm = ( {
 											) }
 										</fieldset>
 										{ renderRecommendedDocumentsSection(
-											shippingDocumentFieldsToRender
+											shippingDocumentFieldsToRender,
+											recommendedShippingDocuments
 										) }
 									</>
 								) }
