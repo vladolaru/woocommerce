@@ -499,6 +499,41 @@
       "count": 1
     }
   },
+  "client/woopayments/settings/sections/advanced.tsx": {
+    "@wordpress/use-recommended-components": {
+      "count": 1
+    }
+  },
+  "client/woopayments/settings/sections/buy-now-pay-later.tsx": {
+    "@wordpress/use-recommended-components": {
+      "count": 1
+    }
+  },
+  "client/woopayments/settings/sections/general.tsx": {
+    "@wordpress/use-recommended-components": {
+      "count": 1
+    }
+  },
+  "client/woopayments/settings/sections/notifications.tsx": {
+    "@wordpress/use-recommended-components": {
+      "count": 1
+    }
+  },
+  "client/woopayments/settings/sections/payouts.tsx": {
+    "@wordpress/use-recommended-components": {
+      "count": 1
+    }
+  },
+  "client/woopayments/settings/sections/section-descriptions.tsx": {
+    "@wordpress/use-recommended-components": {
+      "count": 1
+    }
+  },
+  "client/woopayments/settings/sections/transactions.tsx": {
+    "@wordpress/use-recommended-components": {
+      "count": 1
+    }
+  },
   "client/woopayments/settings/settings-page.tsx": {
     "@wordpress/use-recommended-components": {
       "count": 1
