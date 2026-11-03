@@ -34,8 +34,11 @@ import { wooPaymentsOnboardingSessionEntryLYS } from '~/settings-payments/consta
 import { getPaymentsTaskFromLysTasklist } from '../tasklist';
 
 export const PaymentsSidebar = ( props: SidebarComponentProps ) => {
-	const { wooPaymentsRecentlyActivated, isWooPaymentsActive } =
-		useSetUpPaymentsContext();
+	const {
+		wooPaymentsRecentlyActivated,
+		isWooPaymentsActive,
+		isBuiltinWooPayments,
+	} = useSetUpPaymentsContext();
 
 	const {
 		steps: allSteps,
@@ -140,40 +143,39 @@ export const PaymentsSidebar = ( props: SidebarComponentProps ) => {
 		isStepComplete,
 	}: {
 		isStepComplete: boolean;
-	} ) => {
-		/* translators: %s: WooPayments */
-		let label = sprintf( __( 'Install %s', 'woocommerce' ), 'WooPayments' );
-
-		if ( isWooPaymentsActive ) {
-			/* translators: %s: WooPayments */
-			label = sprintf( __( 'Set up %s', 'woocommerce' ), 'WooPayments' );
-		} else if ( payments_task?.additionalData?.wooPaymentsIsInstalled ) {
-			/* translators: %s: WooPayments */
-			label = sprintf( __( 'Enable %s', 'woocommerce' ), 'WooPayments' );
-		}
-
-		return (
-			<SidebarNavigationItem
-				key="install-woopayments"
-				className={ clsx( 'install-woopayments', {
-					active: isStepComplete,
-					'payment-step': true,
-					'payment-step--active': isStepComplete,
-					'payment-step--disabled': isStepComplete,
-					'is-complete': isStepComplete,
-				} ) }
-				icon={
-					isStepComplete
-						? taskCompleteIcon
-						: taskIcons.activePaymentStep
-				}
-				disabled={ true }
-				showChevron={ false }
-			>
-				{ label }
-			</SidebarNavigationItem>
-		);
-	};
+	} ) => (
+		<SidebarNavigationItem
+			key="install-woopayments"
+			className={ clsx( 'install-woopayments', {
+				active: isStepComplete,
+				'payment-step': true,
+				'payment-step--active': isStepComplete,
+				'payment-step--disabled': isStepComplete,
+				'is-complete': isStepComplete,
+			} ) }
+			icon={
+				isStepComplete ? taskCompleteIcon : taskIcons.activePaymentStep
+			}
+			disabled={ true }
+			showChevron={ false }
+		>
+			{ isBuiltinWooPayments &&
+				/* translators: %s: WooPayments */
+				sprintf( __( 'Set up %s', 'woocommerce' ), 'WooPayments' ) }
+			{ ! isBuiltinWooPayments &&
+				( payments_task?.additionalData?.wooPaymentsIsInstalled
+					? sprintf(
+							/* translators: %s: WooPayments */
+							__( 'Enable %s', 'woocommerce' ),
+							'WooPayments'
+						)
+					: sprintf(
+							/* translators: %s: WooPayments */
+							__( 'Install %s', 'woocommerce' ),
+							'WooPayments'
+						) ) }
+		</SidebarNavigationItem>
+	);
 
 	return (
 		<div

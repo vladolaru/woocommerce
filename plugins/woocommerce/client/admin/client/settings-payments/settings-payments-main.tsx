@@ -584,7 +584,8 @@ export const SettingsPaymentsMain = () => {
 			<div
 				className="settings-payments-main__container"
 				ref={ containerRef }
-				tabIndex={ -1 }
+				// The notice's focus target, so a page without a notice keeps the container out of the focus order.
+				tabIndex={ adminNotice ? -1 : undefined }
 			>
 				{ adminNotice && noticeKey !== hiddenNoticeKey && (
 					<WooPaymentsAdminNotices

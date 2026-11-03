@@ -243,6 +243,38 @@ describe( 'SettingsPaymentsMain', () => {
 		expect( screen.queryByText( noticeMessage ) ).not.toBeInTheDocument();
 	} );
 
+	it.each( [
+		{
+			name: 'with a notice',
+			notice: noticeProvider._admin_notice,
+			tabIndex: '-1',
+		},
+		{ name: 'without a notice', notice: undefined, tabIndex: null },
+	] )(
+		'makes the page container focusable only $name',
+		( { notice, tabIndex } ) => {
+			act( () => {
+				dispatch( paymentSettingsStore ).getPaymentProvidersSuccess(
+					[ { ...noticeProvider, _admin_notice: notice } ],
+					[],
+					[],
+					[]
+				);
+			} );
+			const { container } = render(
+				<Router>
+					<SettingsPaymentsMain />
+				</Router>
+			);
+
+			expect(
+				container
+					.querySelector( '.settings-payments-main__container' )
+					?.getAttribute( 'tabindex' )
+			).toBe( tabIndex );
+		}
+	);
+
 	it( 'ignores notices attached to other gateways', () => {
 		act( () => {
 			dispatch( paymentSettingsStore ).getPaymentProvidersSuccess(

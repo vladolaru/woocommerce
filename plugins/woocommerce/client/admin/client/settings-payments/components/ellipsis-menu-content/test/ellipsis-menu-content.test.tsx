@@ -110,19 +110,41 @@ describe( 'EllipsisMenuContent component', () => {
 		expect( getByText( 'Disable' ) ).toBeInTheDocument();
 	} );
 
-	it( 'does not offer Deactivate for the built-in WooPayments gateway', () => {
-		const { getByText, queryByText } = render(
+	it.each( [ 'woocommerce/woocommerce', 'woocommerce-dev/woocommerce' ] )(
+		'does not offer Deactivate for the built-in WooPayments gateway in %s',
+		( pluginFile ) => {
+			const { getByText, queryByText } = render(
+				<EllipsisMenuContent
+					provider={
+						{
+							id: 'woocommerce_payments',
+							_native: true,
+						} as PaymentsProvider
+					}
+					isSuggestion={ false }
+					isEnabled={ false }
+					links={ links }
+					pluginFile={ pluginFile }
+					onToggle={ () => {} }
+				/>
+			);
+			expect( getByText( 'See pricing & fees' ) ).toBeInTheDocument();
+			expect( queryByText( 'Deactivate' ) ).not.toBeInTheDocument();
+		}
+	);
+
+	it( "offers Deactivate for the WooPayments extension's gateway", () => {
+		const { getByRole } = render(
 			<EllipsisMenuContent
 				provider={ { id: 'woocommerce_payments' } as PaymentsProvider }
 				isSuggestion={ false }
 				isEnabled={ false }
 				links={ links }
-				pluginFile={ 'woocommerce/woocommerce' }
+				pluginFile={ 'woocommerce-payments/woocommerce-payments' }
 				onToggle={ () => {} }
 			/>
 		);
-		expect( getByText( 'See pricing & fees' ) ).toBeInTheDocument();
-		expect( queryByText( 'Deactivate' ) ).not.toBeInTheDocument();
+		expect( getByRole( 'button', { name: 'Deactivate' } ) ).toBeEnabled();
 	} );
 
 	it( 'keeps the disabled Deactivate item for other bundled gateways', () => {

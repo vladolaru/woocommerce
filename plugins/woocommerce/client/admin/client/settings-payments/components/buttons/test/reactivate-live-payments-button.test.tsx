@@ -32,7 +32,7 @@ jest.mock( '~/settings-payments/utils', () => ( {
 describe( 'ReactivateLivePaymentsButton', () => {
 	afterEach( () => jest.clearAllMocks() );
 
-	it( 'switches to live mode, refreshes providers, and reports success', async () => {
+	it( 'renders a plain link, switches to live mode and refreshes providers', async () => {
 		let resolveRequest: () => void = () => {};
 		( apiFetch as jest.Mock ).mockImplementation(
 			() =>
@@ -40,41 +40,29 @@ describe( 'ReactivateLivePaymentsButton', () => {
 					resolveRequest = resolve;
 				} )
 		);
-		const onSuccess = jest.fn();
-		const onUpdatingChange = jest.fn();
 		render(
-			<ReactivateLivePaymentsButton
-				buttonText="Turn on live payments"
-				settingsHref="/payments/settings"
-				onSuccess={ onSuccess }
-				onUpdatingChange={ onUpdatingChange }
-			/>
+			<ReactivateLivePaymentsButton settingsHref="/payments/settings" />
 		);
 
-		const button = screen.getByRole( 'link', {
-			name: 'Turn on live payments',
+		const link = screen.getByRole( 'link', {
+			name: 'Reactivate payments',
 		} );
-		expect( button ).toHaveAttribute( 'href', '/payments/settings' );
-		await userEvent.click( button );
-		expect( onUpdatingChange ).toHaveBeenCalledWith( true );
-		await waitFor( () =>
-			expect(
-				screen.getByRole( 'button', { name: 'Turn on live payments' } )
-			).toHaveAttribute( 'aria-disabled', 'true' )
-		);
+		expect( link ).toHaveAttribute( 'href', '/payments/settings' );
+		expect( link ).not.toHaveAttribute( 'aria-disabled' );
 
+		await userEvent.click( link );
 		expect( apiFetch ).toHaveBeenCalledWith( {
 			path: '/wc/v3/payments/settings',
 			method: 'POST',
 			data: { is_test_mode_enabled: false },
 		} );
 		await act( async () => resolveRequest() );
-		await waitFor( () => expect( onSuccess ).toHaveBeenCalledTimes( 1 ) );
-		expect( onUpdatingChange ).toHaveBeenLastCalledWith( false );
-		expect(
-			jest.mocked( useDispatch ).mock.results[ 0 ].value
-				.invalidateResolutionForStoreSelector
-		).toHaveBeenCalledWith( 'getPaymentProviders' );
+		await waitFor( () =>
+			expect(
+				jest.mocked( useDispatch ).mock.results[ 0 ].value
+					.invalidateResolutionForStoreSelector
+			).toHaveBeenCalledWith( 'getPaymentProviders' )
+		);
 		expect(
 			dispatch( 'core/notices' ).createSuccessNotice
 		).toHaveBeenCalled();

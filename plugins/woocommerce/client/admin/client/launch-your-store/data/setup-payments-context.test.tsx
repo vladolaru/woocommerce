@@ -45,8 +45,11 @@ jest.mock(
 );
 
 const ContextReader = () => {
-	const { isWooPaymentsActive, isWooPaymentsInstalled } =
-		useSetUpPaymentsContext();
+	const {
+		isWooPaymentsActive,
+		isWooPaymentsInstalled,
+		isBuiltinWooPayments,
+	} = useSetUpPaymentsContext();
 
 	return (
 		<div>
@@ -56,62 +59,135 @@ const ContextReader = () => {
 			<span data-testid="is-installed">
 				{ isWooPaymentsInstalled ? 'true' : 'false' }
 			</span>
+			<span data-testid="is-builtin">
+				{ isBuiltinWooPayments ? 'true' : 'false' }
+			</span>
 		</div>
 	);
 };
 
+// Trunk's onboarding type for the extension's suggestion, and for the built-in suggestion.
+const onboarding = {
+	type: 'native_in_context',
+	_links: { onboard: { href: 'onboarding-url' } },
+};
+
+const mockStores = (
+	provider: Record< string, unknown >,
+	activePlugins: string[],
+	installedPlugins: string[]
+) =>
+	( useSelect as jest.Mock ).mockImplementation( ( selector ) =>
+		selector( ( store: unknown ) => {
+			if ( store === paymentSettingsStore ) {
+				return {
+					isFetching: () => false,
+					getPaymentProviders: () => [ provider ],
+				};
+			}
+
+			if ( store === pluginsStore ) {
+				return {
+					getActivePlugins: () => activePlugins,
+					getInstalledPlugins: () => installedPlugins,
+				};
+			}
+
+			return {};
+		} )
+	);
+
 describe( 'SetUpPaymentsProvider', () => {
-	beforeEach( () => {
-		( useSelect as jest.Mock ).mockImplementation( ( selector ) =>
-			selector( ( store: unknown ) => {
-				if ( store === paymentSettingsStore ) {
-					return {
-						isFetching: () => false,
-						getPaymentProviders: () => [
-							{
-								id: 'woocommerce_payments',
-								onboarding: {
-									type: 'native_in_context',
-									_links: {
-										onboard: {
-											href: 'native-onboarding-url',
-										},
-									},
-								},
-							},
-						],
-					};
-				}
-
-				if ( store === pluginsStore ) {
-					return {
-						getActivePlugins: () => [],
-						getInstalledPlugins: () => [],
-					};
-				}
-
-				return {};
-			} )
-		);
-	} );
-
 	afterEach( () => {
 		jest.clearAllMocks();
 	} );
 
-	it( 'should expose native WooPayments as active and installed without the legacy plugin', () => {
-		render(
-			<SetUpPaymentsProvider closeModal={ jest.fn() }>
-				<ContextReader />
-			</SetUpPaymentsProvider>
-		);
+	it.each( [
+		{
+			name: 'the built-in WooPayments gateway',
+			provider: {
+				id: 'woocommerce_payments',
+				plugin: { slug: 'woocommerce', status: 'active' },
+				onboarding,
+				_native: true,
+			},
+			activePlugins: [],
+			installedPlugins: [],
+			expected: [ 'true', 'true', 'true' ],
+		},
+		{
+			name: 'the built-in WooPayments suggestion',
+			provider: {
+				id: '_wc_pes_woopayments',
+				plugin: { file: '', status: 'not_installed' },
+				onboarding,
+				_native: true,
+			},
+			activePlugins: [],
+			installedPlugins: [],
+			expected: [ 'true', 'true', 'true' ],
+		},
+		{
+			name: "the WooPayments extension's suggestion, not installed",
+			provider: {
+				id: '_wc_pes_woopayments',
+				plugin: {
+					slug: 'woocommerce-payments',
+					status: 'not_installed',
+				},
+				onboarding,
+			},
+			activePlugins: [],
+			installedPlugins: [],
+			expected: [ 'false', 'false', 'false' ],
+		},
+		{
+			name: "the WooPayments extension's suggestion, installed and inactive",
+			provider: {
+				id: '_wc_pes_woopayments',
+				plugin: { slug: 'woocommerce-payments', status: 'installed' },
+				onboarding,
+			},
+			activePlugins: [],
+			installedPlugins: [ 'woocommerce-payments' ],
+			expected: [ 'false', 'true', 'false' ],
+		},
+		{
+			name: 'the active WooPayments extension',
+			provider: {
+				id: 'woocommerce_payments',
+				plugin: { slug: 'woocommerce-payments', status: 'active' },
+				onboarding,
+			},
+			activePlugins: [ 'woocommerce-payments' ],
+			installedPlugins: [ 'woocommerce-payments' ],
+			expected: [ 'true', 'true', 'false' ],
+		},
+	] )(
+		'exposes active, installed and built-in for $name',
+		( { provider, activePlugins, installedPlugins, expected } ) => {
+			mockStores( provider, activePlugins, installedPlugins );
 
-		expect( screen.getByTestId( 'is-active' ) ).toHaveTextContent( 'true' );
-		expect( screen.getByTestId( 'is-installed' ) ).toHaveTextContent(
-			'true'
-		);
-		expect(
-			screen.getByTestId( 'onboarding-provider' )
-		).toBeInTheDocument();
-	} );
+			render(
+				<SetUpPaymentsProvider closeModal={ jest.fn() }>
+					<ContextReader />
+				</SetUpPaymentsProvider>
+			);
+
+			const [ isActive, isInstalled, isBuiltin ] = expected;
+			expect( screen.getByTestId( 'is-active' ) ).toHaveTextContent(
+				isActive
+			);
+			expect( screen.getByTestId( 'is-installed' ) ).toHaveTextContent(
+				isInstalled
+			);
+			expect( screen.getByTestId( 'is-builtin' ) ).toHaveTextContent(
+				isBuiltin
+			);
+			// The onboarding provider wraps the hub only while WooPayments is active.
+			expect( !! screen.queryByTestId( 'onboarding-provider' ) ).toBe(
+				isActive === 'true'
+			);
+		}
+	);
 } );

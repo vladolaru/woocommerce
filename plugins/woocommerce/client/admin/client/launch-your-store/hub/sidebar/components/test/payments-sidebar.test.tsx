@@ -157,6 +157,7 @@ jest.mock( 'clsx', () => ( ...args: unknown[] ) => {
 const mockSetUpPaymentsContext = {
 	isWooPaymentsActive: false,
 	isWooPaymentsInstalled: false,
+	isBuiltinWooPayments: false,
 	wooPaymentsRecentlyActivated: false,
 	setWooPaymentsRecentlyActivated: jest.fn(),
 };
@@ -230,6 +231,7 @@ describe( 'PaymentsSidebar', () => {
 		// Reset context mock values.
 		mockSetUpPaymentsContext.isWooPaymentsActive = false;
 		mockSetUpPaymentsContext.isWooPaymentsInstalled = false;
+		mockSetUpPaymentsContext.isBuiltinWooPayments = false;
 		mockSetUpPaymentsContext.wooPaymentsRecentlyActivated = false;
 		mockOnboardingContext.steps = [];
 		mockOnboardingContext.currentStep = null;
@@ -376,9 +378,6 @@ describe( 'PaymentsSidebar', () => {
 			// First should be Install step (completed)
 			expect( sidebarItems[ 0 ] ).toHaveClass( 'install-woopayments' );
 			expect( sidebarItems[ 0 ] ).toHaveClass( 'is-complete' );
-			expect( sidebarItems[ 0 ] ).toHaveTextContent(
-				/Set up.*WooPayments/i
-			);
 
 			// Other steps should be present
 			expect( sidebarItems[ 1 ] ).toHaveTextContent(
@@ -388,5 +387,48 @@ describe( 'PaymentsSidebar', () => {
 				'Choose your payment methods'
 			);
 		} );
+
+		it.each( [
+			{
+				name: 'the built-in WooPayments',
+				isBuiltinWooPayments: true,
+				wooPaymentsIsInstalled: false,
+				label: 'Set up WooPayments',
+			},
+			{
+				name: 'the active WooPayments extension',
+				isBuiltinWooPayments: false,
+				wooPaymentsIsInstalled: true,
+				label: 'Enable WooPayments',
+			},
+		] )(
+			'labels the completed first step for $name "$label"',
+			async ( {
+				isBuiltinWooPayments,
+				wooPaymentsIsInstalled,
+				label,
+			} ) => {
+				mockSetUpPaymentsContext.isWooPaymentsActive = true;
+				mockSetUpPaymentsContext.isWooPaymentsInstalled = true;
+				mockSetUpPaymentsContext.isBuiltinWooPayments =
+					isBuiltinWooPayments;
+				mockGetPaymentsTaskFromLysTasklist.mockResolvedValue( {
+					id: 'payments',
+					title: 'Set up payments',
+					additionalData: { wooPaymentsIsInstalled },
+				} );
+
+				render( <PaymentsSidebar { ...mockProps } /> );
+
+				await waitFor( () =>
+					expect(
+						screen.getAllByTestId( 'sidebar-navigation-item' )[ 0 ]
+					).toHaveTextContent( label )
+				);
+				expect(
+					screen.getAllByTestId( 'sidebar-navigation-item' )[ 0 ]
+				).toHaveClass( 'is-complete' );
+			}
+		);
 	} );
 } );
