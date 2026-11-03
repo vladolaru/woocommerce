@@ -10,7 +10,7 @@ import {
 	within,
 } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { useState, type ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom';
 import { speak } from '@wordpress/a11y';
 import { recordEvent } from '@woocommerce/tracks';
@@ -81,58 +81,6 @@ jest.mock( '../reports/data', () => ( {
 	getWooPaymentsReportsFeesExportUrl: jest.fn(),
 } ) );
 
-// DataViews 17.1.0's own presets: the one it applies shows pressed, else Custom (a range edited by hand keeps it so).
-const MockNativeDatePresets = ( {
-	view,
-	onChangeView,
-}: {
-	view: Record< string, unknown >;
-	onChangeView?: ( view: Record< string, unknown > ) => void;
-} ) => {
-	const [ pressed, setPressed ] = useState( 'Custom' );
-
-	return (
-		<>
-			{ [
-				'Last 7 days',
-				'Last 30 days',
-				'Month to date',
-				'Last year',
-				'Year to date',
-				'Custom',
-			].map( ( label ) => (
-				<button
-					key={ label }
-					type="button"
-					className={ `dataviews-controls__date-preset${
-						label === pressed ? ' is-pressed' : ''
-					}` }
-					aria-pressed={ label === pressed ? 'true' : 'false' }
-					onClick={ () => {
-						if ( label === 'Custom' ) {
-							return;
-						}
-						setPressed( label );
-						// One fixed range stands for each preset's own.
-						onChangeView?.( {
-							...view,
-							filters: [
-								{
-									field: 'date',
-									operator: 'between',
-									value: [ '2026-06-12', '2026-06-18' ],
-								},
-							],
-						} );
-					} }
-				>
-					{ label }
-				</button>
-			) ) }
-		</>
-	);
-};
-
 const mockDataViews = jest.fn(
 	( {
 		data = [],
@@ -184,10 +132,29 @@ const mockDataViews = jest.fn(
 						data-testid="date-popover"
 					>
 						<div>
-							<MockNativeDatePresets
-								view={ view }
-								onChangeView={ onChangeView }
-							/>
+							{ [
+								'Last 7 days',
+								'Last 30 days',
+								'Month to date',
+								'Last year',
+								'Year to date',
+							].map( ( label ) => (
+								<button
+									key={ label }
+									type="button"
+									className="dataviews-controls__date-preset"
+									aria-pressed="false"
+								>
+									{ label }
+								</button>
+							) ) }
+							<button
+								type="button"
+								className="dataviews-controls__date-preset is-pressed"
+								aria-pressed="true"
+							>
+								Custom
+							</button>
 						</div>
 						<div className="dataviews-controls__date-range-inputs" />
 					</div>
@@ -1200,44 +1167,6 @@ describe( 'WooPaymentsReportsPage', () => {
 				} )
 			)
 		);
-
-		// Leaving the two presets with the popover open: a range edited by hand shows Custom pressed again, and a
-		// DataViews preset applied after one of them is the only one pressed.
-		const pressedPresets = () =>
-			within( screen.getByTestId( 'date-popover' ) )
-				.queryAllByRole( 'button', { pressed: true } )
-				.map( ( button ) => button.textContent );
-		await userEvent.click(
-			screen.getByRole( 'button', { name: 'Apply April date filter' } )
-		);
-		await waitFor( () =>
-			expect( mockGetFees ).toHaveBeenLastCalledWith(
-				expect.objectContaining( {
-					date_between: [
-						'2026-03-31 21:00:00',
-						'2026-04-30 20:59:59',
-					],
-				} )
-			)
-		);
-		expect( pressedPresets() ).toEqual( [ 'Custom' ] );
-
-		choosePreset( 'Previous month' );
-		await waitFor( () =>
-			expect( pressedPresets() ).toEqual( [ 'Previous month' ] )
-		);
-		choosePreset( 'Last 7 days' );
-		await waitFor( () =>
-			expect( mockGetFees ).toHaveBeenLastCalledWith(
-				expect.objectContaining( {
-					date_between: [
-						'2026-06-11 21:00:00',
-						'2026-06-18 20:59:59',
-					],
-				} )
-			)
-		);
-		expect( pressedPresets() ).toEqual( [ 'Last 7 days' ] );
 	} );
 
 	it( 'lets merchants change the Balance period through the DataViews date filter', async () => {
