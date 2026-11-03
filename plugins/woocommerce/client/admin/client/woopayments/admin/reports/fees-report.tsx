@@ -44,6 +44,7 @@ import {
 import {
 	type AsyncState,
 	type DataViewsFilter,
+	getDateFormat,
 	getGlobalSettings,
 	navigateReportsRoute,
 	getLastFullCalendarMonthDateFilter,
@@ -55,12 +56,7 @@ import {
 	matchBalanceDatePreset,
 } from './utils';
 
-// Client 11.1.0 `class-wc-payments-admin.php:1072-1073` sends wc_date_format() and the time_format option. Native has the first as
-// wcSettings.dateFormat (AssetDataRegistry) and the second through `@wordpress/date`.
-const getDateFormat = () =>
-	getGlobalSettings().wcSettings?.dateFormat ||
-	getDateSettings().formats.date;
-
+// Client 11.1.0 `class-wc-payments-admin.php:1073` sends the time_format option; native reads it through `@wordpress/date`.
 const getTimeFormat = () => getDateSettings().formats.time;
 
 const getDateTimeIso = ( value?: string | null ) => {

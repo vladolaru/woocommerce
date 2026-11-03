@@ -3,6 +3,7 @@
  */
 import { useNavigate } from 'react-router-dom';
 import { getHistory, getNewPath } from '@woocommerce/navigation';
+import { getSettings as getDateSettings } from '@wordpress/date';
 // @ts-expect-error - Use the WordPress-bundled DataViews entry in wp-admin builds.
 import { type View } from '@wordpress/dataviews/wp';
 
@@ -53,6 +54,11 @@ type GlobalSettings = typeof globalThis & {
 };
 
 const getGlobalSettings = () => globalThis as GlobalSettings;
+
+// Client 11.1.0 `class-wc-payments-admin.php:1072` sends wc_date_format(); native has it as wcSettings.dateFormat (AssetDataRegistry).
+const getDateFormat = () =>
+	getGlobalSettings().wcSettings?.dateFormat ||
+	getDateSettings().formats.date;
 
 const isSettingsPaymentsSearch = ( search: string ) => {
 	const params = new URLSearchParams( search );
@@ -386,6 +392,7 @@ export type { AsyncState, BalanceDateFilterValue, DataViewsFilter };
 
 export {
 	getGlobalSettings,
+	getDateFormat,
 	isSettingsPaymentsSearch,
 	navigateReportsRoute,
 	isYmd,

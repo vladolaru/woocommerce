@@ -3,7 +3,8 @@
  */
 import { Button } from '@wordpress/components';
 import { speak } from '@wordpress/a11y';
-import { __, sprintf } from '@wordpress/i18n';
+import { dateI18n } from '@wordpress/date';
+import { __, _n, sprintf } from '@wordpress/i18n';
 import {
 	type ReactNode,
 	useCallback,
@@ -38,6 +39,7 @@ import { getWooPaymentsAmountFromMinorUnits } from '../../currency';
 import {
 	type AsyncState,
 	type BalanceDateFilterValue,
+	getDateFormat,
 	getGlobalSettings,
 	navigateReportsRoute,
 	isYmd,
@@ -56,8 +58,20 @@ type BalanceRow = {
 	label: string;
 	amount: number;
 	count?: number;
+	// Client 11.2.0 `reports/balance/rows.ts:36-49`: the indent level; top-level rows have none.
+	depth?: number;
 	alwaysVisible?: boolean;
 };
+
+type BalancePeriod = { start: string; end: string };
+
+// Client 11.2.0 `reports/balance/utils.ts:72-77`: the site date format, read in UTC.
+const formatUtcDate = ( value: string ) =>
+	sprintf(
+		/* translators: %s: date rendered in the site's date format. */
+		__( '%s UTC', 'woocommerce' ),
+		dateI18n( getDateFormat(), value, 'UTC' )
+	);
 
 /**
  * Format a balance summary amount with an explicit leading `+` on inflows.
@@ -180,17 +194,40 @@ const serializeBalanceDateFilterToSearch = (
 	return params.toString();
 };
 
+// Client 11.2.0 `reports/balance/index.tsx:227-230`: the summary's own period, else the requested one.
+const getBalancePeriod = (
+	summary: ReportsBalanceSummary,
+	query: ReportsBalanceQuery
+): BalancePeriod => ( {
+	start: summary.period?.start ?? query.date_start ?? '',
+	end: summary.period?.end ?? query.date_end ?? '',
+} );
+
 const getBalanceAmount = (
 	row: ReportsBalanceSummaryRow | undefined
 ): number => row?.amount ?? 0;
 
-const getBalanceRows = ( summary: ReportsBalanceSummary ): BalanceRow[] =>
+/**
+ * The Balance rows, in the client's order, with its indent levels, its counted rows and its dated anchor labels.
+ *
+ * Client 11.2.0 `reports/balance/rows.ts:110-232` and `reports/balance/utils.ts:79-100`.
+ *
+ * @param summary Balance summary.
+ * @param period  The period the anchor labels name: the summary's own, else the requested one.
+ */
+const getBalanceRows = (
+	summary: ReportsBalanceSummary,
+	period: BalancePeriod
+): BalanceRow[] =>
 	[
 		{
 			id: 'starting_balance',
-			label: __( 'Starting balance', 'woocommerce' ),
+			label: sprintf(
+				/* translators: %s: period start date. */
+				__( 'Starting balance - %s', 'woocommerce' ),
+				formatUtcDate( period.start )
+			),
 			amount: getBalanceAmount( summary.starting_balance ),
-			count: summary.starting_balance?.count,
 			alwaysVisible: true,
 		},
 		{
@@ -204,80 +241,87 @@ const getBalanceRows = ( summary: ReportsBalanceSummary ): BalanceRow[] =>
 			id: 'fees',
 			label: __( 'Fees', 'woocommerce' ),
 			amount: getBalanceAmount( summary.fees ),
-			count: summary.fees?.count,
+			depth: 1,
 			alwaysVisible: true,
 		},
 		{
 			id: 'charge_fees',
 			label: __( 'Charge fees', 'woocommerce' ),
 			amount: getBalanceAmount( summary.charge_fees ),
-			count: summary.charge_fees?.count,
+			depth: 2,
 		},
 		{
 			id: 'dispute_fees',
 			label: __( 'Dispute fees', 'woocommerce' ),
 			amount: getBalanceAmount( summary.dispute_fees ),
-			count: summary.dispute_fees?.count,
+			depth: 2,
 		},
 		{
 			id: 'fee_refunds',
 			label: __( 'Fee refunds', 'woocommerce' ),
 			amount: getBalanceAmount( summary.fee_refunds ),
-			count: summary.fee_refunds?.count,
+			depth: 2,
 		},
 		{
 			id: 'refunds',
 			label: __( 'Refunds', 'woocommerce' ),
 			amount: getBalanceAmount( summary.refunds ),
 			count: summary.refunds?.count,
+			depth: 1,
 		},
 		{
 			id: 'refund_failure',
 			label: __( 'Refund failures', 'woocommerce' ),
 			amount: getBalanceAmount( summary.refund_failure ),
 			count: summary.refund_failure?.count,
+			depth: 1,
 		},
 		{
 			id: 'disputes',
 			label: __( 'Disputes', 'woocommerce' ),
 			amount: getBalanceAmount( summary.disputes ),
 			count: summary.disputes?.count,
+			depth: 1,
 		},
 		{
 			id: 'financing_payout',
 			label: __( 'Financing payout', 'woocommerce' ),
 			amount: getBalanceAmount( summary.financing_payout ),
 			count: summary.financing_payout?.count,
+			depth: 1,
 		},
 		{
 			id: 'financing_paydown',
 			label: __( 'Financing paydown', 'woocommerce' ),
 			amount: getBalanceAmount( summary.financing_paydown ),
 			count: summary.financing_paydown?.count,
+			depth: 1,
 		},
 		{
 			id: 'payout_fees',
 			label: __( 'Payout fees', 'woocommerce' ),
 			amount: getBalanceAmount( summary.payout_fees ),
-			count: summary.payout_fees?.count,
+			depth: 1,
 		},
 		{
 			id: 'reader_fees',
 			label: __( 'Reader costs', 'woocommerce' ),
 			amount: getBalanceAmount( summary.reader_fees ),
-			count: summary.reader_fees?.count,
+			depth: 1,
 		},
 		{
 			id: 'network_costs',
 			label: __( 'Network costs', 'woocommerce' ),
 			amount: getBalanceAmount( summary.network_costs ),
 			count: summary.network_costs?.count,
+			depth: 1,
 		},
 		{
 			id: 'other_adjustments',
 			label: __( 'Other adjustments', 'woocommerce' ),
 			amount: getBalanceAmount( summary.other_adjustments ),
 			count: summary.other_adjustments?.count,
+			depth: 1,
 		},
 		{
 			id: 'net_balance_change_in_the_period',
@@ -285,7 +329,6 @@ const getBalanceRows = ( summary: ReportsBalanceSummary ): BalanceRow[] =>
 			amount: getBalanceAmount(
 				summary.net_balance_change_in_the_period
 			),
-			count: summary.net_balance_change_in_the_period?.count,
 			alwaysVisible: true,
 		},
 		{
@@ -293,13 +336,17 @@ const getBalanceRows = ( summary: ReportsBalanceSummary ): BalanceRow[] =>
 			label: __( 'Payouts', 'woocommerce' ),
 			amount: getBalanceAmount( summary.payouts ),
 			count: summary.payouts?.count,
+			depth: 1,
 			alwaysVisible: true,
 		},
 		{
 			id: 'ending_balance',
-			label: __( 'Ending balance', 'woocommerce' ),
+			label: sprintf(
+				/* translators: %s: period end date. */
+				__( 'Ending balance - %s', 'woocommerce' ),
+				formatUtcDate( period.end )
+			),
 			amount: getBalanceAmount( summary.ending_balance ),
-			count: summary.ending_balance?.count,
 			alwaysVisible: true,
 		},
 	].filter(
@@ -431,7 +478,10 @@ const BalanceReport = ( { now }: { now: Date } ) => {
 
 		try {
 			const summary = await getWooPaymentsReportsBalanceSummary( query );
-			const rows = getBalanceRows( summary );
+			const rows = getBalanceRows(
+				summary,
+				getBalancePeriod( summary, query )
+			);
 			const rowsHaveActivity = hasBalanceActivity( rows );
 
 			if ( ! isCurrent() ) {
@@ -488,7 +538,7 @@ const BalanceReport = ( { now }: { now: Date } ) => {
 	}, [ state.error ] );
 
 	const summary = state.data || {};
-	const rows = getBalanceRows( summary );
+	const rows = getBalanceRows( summary, getBalancePeriod( summary, query ) );
 	const hasActivity = hasBalanceActivity( rows );
 	const tableRows = state.error ? [] : rows;
 	const reportCurrency = summary.currency || currency;
@@ -510,8 +560,38 @@ const BalanceReport = ( { now }: { now: Date } ) => {
 				id: 'label',
 				label: __( 'Description', 'woocommerce' ),
 				getValue: ( { item }: { item: BalanceRow } ) => item.label,
+				// Client 11.2.0 `reports/balance/balance-dataview.tsx:193-223`: the indent level and a decorative count badge,
+				// with the count spelled out for screen readers.
 				render: ( { item }: { item: BalanceRow } ) => (
-					<span>{ item.label }</span>
+					<span
+						className={ `woocommerce-woopayments-reports-balance__label woocommerce-woopayments-reports-balance__label--depth-${
+							item.depth ?? 0
+						}` }
+					>
+						<span>{ item.label }</span>
+						{ typeof item.count === 'number' && (
+							<>
+								<span
+									aria-hidden="true"
+									className="woocommerce-woopayments-reports-balance__count"
+								>
+									{ item.count }
+								</span>
+								<span className="screen-reader-text">
+									{ sprintf(
+										/* translators: %d: number of ledger entries included in this Balance row. */
+										_n(
+											'%d item',
+											'%d items',
+											item.count,
+											'woocommerce'
+										),
+										item.count
+									) }
+								</span>
+							</>
+						) }
+					</span>
 				),
 			},
 			{
@@ -521,7 +601,11 @@ const BalanceReport = ( { now }: { now: Date } ) => {
 				getValue: ( { item }: { item: BalanceRow } ) =>
 					getDisplayedBalanceAmount( item ),
 				render: ( { item }: { item: BalanceRow } ) => (
-					<span>
+					<span
+						className={ `woocommerce-woopayments-reports-balance__amount woocommerce-woopayments-reports-balance__amount--depth-${
+							item.depth ?? 0
+						}` }
+					>
 						{ formatBalanceAmount(
 							getDisplayedBalanceAmount( item ),
 							reportCurrency

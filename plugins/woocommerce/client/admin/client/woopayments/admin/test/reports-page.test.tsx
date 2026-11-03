@@ -65,7 +65,9 @@ jest.mock( '@wordpress/a11y', () => ( {
 // source each part of a report date comes from.
 let mockSiteTimeFormat = 'H:i';
 jest.mock( '@wordpress/date', () => ( {
-	dateI18n: jest.fn( ( format, date ) => `${ format }|${ date }` ),
+	dateI18n: jest.fn( ( format, date, timezone ) =>
+		[ format, date, timezone ].filter( Boolean ).join( '|' )
+	),
 	getSettings: () => ( {
 		formats: { date: 'F j, Y', time: mockSiteTimeFormat },
 	} ),
@@ -466,8 +468,9 @@ describe( 'WooPaymentsReportsPage', () => {
 		).toBeInTheDocument();
 		const dataViews = screen.getByTestId( 'reports-dataviews' );
 		expect( dataViews ).toBeInTheDocument();
+		// Client 11.2.0 `reports/balance/utils.ts:72-100`: the anchors name the period's dates in WooCommerce's date format, in UTC.
 		for ( const label of [
-			'Starting balance',
+			'Starting balance - d/m/Y|2026-06-01T00:00:00Z|UTC UTC',
 			'Total charges captured',
 			'Fees',
 			'Charge fees',
@@ -484,7 +487,7 @@ describe( 'WooPaymentsReportsPage', () => {
 			'Other adjustments',
 			'Net balance change in the period',
 			'Payouts',
-			'Ending balance',
+			'Ending balance - d/m/Y|2026-06-19T23:59:59Z|UTC UTC',
 		] ) {
 			expect(
 				within( dataViews ).getByText( label )
@@ -573,6 +576,36 @@ describe( 'WooPaymentsReportsPage', () => {
 		).not.toBeInTheDocument();
 	} );
 
+	// Client 11.2.0 `reports/balance/rows.ts:110-232` and `balance-dataview.tsx:198-221`: only the rows the client counts carry a
+	// count, shown as a badge and spelled out for screen readers.
+	it( 'counts the Balance rows the client counts', async () => {
+		mockGetBalanceSummary.mockResolvedValueOnce( {
+			...balanceSummary,
+			fees: { amount: -6064, count: 4 },
+		} );
+		renderReportsPage();
+
+		const charges = await screen.findByTestId(
+			'row-total_charges_captured'
+		);
+		expect( within( charges ).getByText( '8' ) ).toHaveAttribute(
+			'aria-hidden',
+			'true'
+		);
+		expect( within( charges ).getByText( '8 items' ) ).toBeInTheDocument();
+		expect(
+			within( screen.getByTestId( 'row-refund_failure' ) ).getByText(
+				'1 item'
+			)
+		).toBeInTheDocument();
+		expect(
+			within( screen.getByTestId( 'row-payouts' ) ).getByText( '2 items' )
+		).toBeInTheDocument();
+		expect(
+			within( screen.getByTestId( 'row-fees' ) ).queryByText( /item/ )
+		).not.toBeInTheDocument();
+	} );
+
 	it( 'downloads the loaded Balance summary with business and account identity CSV columns', async () => {
 		mockGetBalanceSummary.mockResolvedValueOnce( {
 			...balanceSummary,
@@ -594,7 +627,7 @@ describe( 'WooPaymentsReportsPage', () => {
 			expect.any( String )
 		);
 		expect( csv ).toContain(
-			'"Native Merchant LLC",acct_native_123,starting_balance,"Starting balance",0,,usd,2026-06-01,2026-06-19'
+			'"Native Merchant LLC",acct_native_123,starting_balance,"Starting balance - d/m/Y|2026-06-01T00:00:00Z|UTC UTC",0,,usd,2026-06-01,2026-06-19'
 		);
 		expect( csv ).toContain(
 			'total_charges_captured,"Total charges captured",1626.72,8,usd'
@@ -727,13 +760,14 @@ describe( 'WooPaymentsReportsPage', () => {
 		).toBeInTheDocument();
 		const dataViews = screen.getByTestId( 'reports-dataviews' );
 
+		// Without a period in the summary, the anchors name the requested period.
 		for ( const label of [
-			'Starting balance',
+			'Starting balance - d/m/Y|2026-05-01T00:00:00.000Z|UTC UTC',
 			'Total charges captured',
 			'Fees',
 			'Net balance change in the period',
 			'Payouts',
-			'Ending balance',
+			'Ending balance - d/m/Y|2026-05-31T23:59:59.999Z|UTC UTC',
 		] ) {
 			expect(
 				within( dataViews ).getByText( label )
