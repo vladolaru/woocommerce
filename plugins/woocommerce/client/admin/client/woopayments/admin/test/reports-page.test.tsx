@@ -586,17 +586,19 @@ describe( 'WooPaymentsReportsPage', () => {
 		);
 	} );
 
-	it( 'defaults the Balance DataViews Date filter to Between', async () => {
+	it( 'defaults the Balance DataViews Date filter to Between and offers no amount filter', async () => {
 		renderReportsPage();
 
 		await screen.findByRole( 'heading', { name: 'Balance summary' } );
+		const fields = mockDataViews.mock.calls.at( -1 )?.[ 0 ].fields;
 		expect(
-			mockDataViews.mock.calls
-				.at( -1 )?.[ 0 ]
-				.fields?.find( ( field ) => field.id === 'date' )?.filterBy
+			fields?.find( ( field ) => field.id === 'date' )?.filterBy
 		).toEqual( {
 			operators: [ 'between', 'before', 'after', 'on' ],
 		} );
+		expect(
+			fields?.find( ( field ) => field.id === 'amount' )?.filterBy
+		).toBe( false );
 	} );
 
 	it( 'formats Balance amounts with the standard admin helper and prints the same visible table', async () => {

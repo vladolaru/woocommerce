@@ -604,6 +604,8 @@ const BalanceReport = ( { now }: { now: Date } ) => {
 				type: 'integer',
 				enableHiding: false,
 				enableSorting: false,
+				// Client 11.2.0 `reports/balance/balance-dataview.tsx:225-239`: the period is the only Balance filter.
+				filterBy: false,
 				getValue: ( { item }: { item: BalanceRow } ) =>
 					getDisplayedBalanceAmount( item ),
 				render: ( { item }: { item: BalanceRow } ) => (

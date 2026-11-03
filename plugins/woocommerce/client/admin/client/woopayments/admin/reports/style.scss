@@ -120,6 +120,12 @@ body.woocommerce_page_wc-settings.woocommerce-settings-payments-tab:has(.woocomm
 		}
 	}
 
+	// Client 11.2.0 `reports/balance/style.scss:447-452`: with Date the only filter, the trailing "Add filter" button
+	// would only repeat the filters toggle.
+	.dataviews-filters-button {
+		display: none;
+	}
+
 	// Client 11.2.0 `reports/balance/style.scss:458-474`: a fixed summary shows no column headers; screen readers keep them.
 	.dataviews-view-table thead {
 		position: absolute;
