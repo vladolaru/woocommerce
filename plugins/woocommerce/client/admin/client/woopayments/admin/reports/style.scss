@@ -120,6 +120,12 @@ body.woocommerce_page_wc-settings.woocommerce-settings-payments-tab:has(.woocomm
 		}
 	}
 
+	// Client 11.2.0 `reports/balance/style.scss:360-368`: the toggle's row is a flex row, as DataViews' own, so the filter
+	// count badge sits on the toggle rather than at the row's far end.
+	.dataviews__view-actions {
+		display: flex;
+	}
+
 	// Client 11.2.0 `reports/balance/style.scss:447-452`: with Date the only filter, the trailing "Add filter" button
 	// would only repeat the filters toggle.
 	.dataviews-filters-button {
