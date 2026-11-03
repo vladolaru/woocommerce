@@ -670,7 +670,7 @@ describe( 'WooPaymentsReportsPage', () => {
 		const csv = mockDownloadCSVFile.mock.calls[ 0 ][ 1 ];
 
 		expect( mockDownloadCSVFile ).toHaveBeenCalledWith(
-			'balance-report-2026-06-01-to-2026-06-19.csv',
+			'wcpay-balance-2026-06-01_2026-06-19.csv',
 			expect.any( String )
 		);
 		expect( csv ).toContain(

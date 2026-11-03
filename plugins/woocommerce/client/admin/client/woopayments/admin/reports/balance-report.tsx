@@ -424,7 +424,8 @@ const getBalanceCsvFileName = ( summary: ReportsBalanceSummary ) => {
 	const periodStart = summary.period?.start?.slice( 0, 10 ) || 'export';
 	const periodEnd = summary.period?.end?.slice( 0, 10 ) || 'export';
 
-	return `balance-report-${ periodStart }-to-${ periodEnd }.csv`;
+	// Client 11.2.0 `reports/balance/format.ts:22-27`.
+	return `wcpay-balance-${ periodStart }_${ periodEnd }.csv`;
 };
 
 const BalanceReport = ( { now }: { now: Date } ) => {
