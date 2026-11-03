@@ -45,7 +45,7 @@ jest.mock( '~/settings-payments/onboarding/providers/woopayments', () => ( {
 		isOpen ? <div role="dialog">WooPayments onboarding</div> : null,
 } ) );
 
-// The WooPayments suggestion as "Other payment options" lists it once hidden: the REST schema drops its onboarding data.
+// The built-in WooPayments suggestion as "More payment options" lists it once hidden: no plugin slug.
 const hiddenWooPaymentsSuggestion = {
 	id: 'woopayments',
 	_priority: 1,

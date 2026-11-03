@@ -339,7 +339,11 @@ class PaymentsRestController extends RestApiControllerBase {
 
 		$suggestions = $this->payments->get_payment_extension_suggestions( $location );
 
-		return $suggestions['other'] ?? array();
+		// Only the built-in WooPayments suggestion keeps its onboarding details: its onboarding starts from this list.
+		return array_map(
+			fn( $suggestion ) => empty( $suggestion['_native'] ) ? array_diff_key( $suggestion, array( 'onboarding' => true ) ) : $suggestion,
+			$suggestions['other'] ?? array()
+		);
 	}
 
 	/**
@@ -1226,6 +1230,12 @@ class PaymentsRestController extends RestApiControllerBase {
 							),
 						),
 					),
+				),
+				'onboarding'  => array(
+					'type'        => 'object',
+					'description' => esc_html__( 'Onboarding-related details for the provider.', 'woocommerce' ),
+					'context'     => array( 'view', 'edit' ),
+					'readonly'    => true,
 				),
 				'_incentive'  => $this->get_schema_for_incentive(),
 				'tags'        => array(

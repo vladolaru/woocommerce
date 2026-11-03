@@ -635,6 +635,10 @@ export const SettingsPaymentsMain = () => {
 					setIsOpen={ setIsOnboardingModalOpen }
 					providerData={
 						getWooPaymentsFromProviders( providers ) ||
+						// The hidden built-in suggestion carries the onboarding state the modal reads.
+						( suggestions.find(
+							isBuiltinWooPaymentsSuggestion
+						) as unknown as PaymentsProvider ) ||
 						( {} as PaymentsProvider )
 					}
 				/>
