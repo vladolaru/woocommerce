@@ -6,6 +6,11 @@ import type {
 	WooPaymentsDocumentsDataViewFilter,
 	WooPaymentsDocumentsQuery,
 } from './types';
+import {
+	getFilterQueryValue,
+	isSortDirection,
+	normalizePositiveInteger,
+} from '../list-query';
 
 export const DEFAULT_DOCUMENTS_QUERY: Required<
 	Pick<
@@ -76,24 +81,6 @@ const FILTER_PARAM_TO_FIELD: Partial<
 	type_is_not: 'type',
 };
 
-const normalizePositiveInteger = (
-	value: unknown,
-	fallback: number
-): number => {
-	let parsed = Number.NaN;
-
-	if ( typeof value === 'number' ) {
-		parsed = value;
-	} else if ( typeof value === 'string' ) {
-		parsed = Number( value );
-	}
-
-	return Number.isInteger( parsed ) && parsed > 0 ? parsed : fallback;
-};
-
-const isSortDirection = ( value: unknown ): value is 'asc' | 'desc' =>
-	value === 'asc' || value === 'desc';
-
 const getSearchParams = ( locationOrSearch: string ) => {
 	if ( locationOrSearch.startsWith( '?' ) ) {
 		return new URLSearchParams( locationOrSearch.slice( 1 ) );
@@ -143,22 +130,6 @@ const getFilterOperator = ( param: string, value: string | string[] ) => {
 	}
 
 	return Array.isArray( value ) ? 'isAny' : 'is';
-};
-
-const getFilterQueryValue = ( value: unknown ) => {
-	if ( Array.isArray( value ) ) {
-		const values = value
-			.map( ( item ) => String( item ) )
-			.filter( ( item ) => item !== '' );
-
-		return values.length ? values : undefined;
-	}
-
-	if ( value === undefined || value === null || value === '' ) {
-		return undefined;
-	}
-
-	return String( value );
 };
 
 const getFilterParamForDataViewFilter = (

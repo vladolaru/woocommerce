@@ -10,6 +10,12 @@ import type {
 	WooPaymentsMoneyMovementRouteLocation,
 	WooPaymentsMoneyMovementSortDirection,
 } from './types';
+import {
+	getFilterQueryValue,
+	getFirstString,
+	isSortDirection,
+	normalizePositiveInteger,
+} from '../list-query';
 
 export const DEFAULT_MONEY_MOVEMENT_QUERY: Required<
 	Pick< WooPaymentsMoneyMovementQuery, 'page' | 'pagesize' >
@@ -356,26 +362,6 @@ export const buildSettledTransactionsApiPath = (
 	return queryString ? `${ path }?${ queryString }` : path;
 };
 
-const isSortDirection = (
-	value: unknown
-): value is WooPaymentsMoneyMovementSortDirection =>
-	value === 'asc' || value === 'desc';
-
-const normalizePositiveInteger = (
-	value: unknown,
-	fallback: number
-): number => {
-	let parsed = Number.NaN;
-
-	if ( typeof value === 'number' ) {
-		parsed = value;
-	} else if ( typeof value === 'string' ) {
-		parsed = Number( value );
-	}
-
-	return Number.isInteger( parsed ) && parsed > 0 ? parsed : fallback;
-};
-
 const getSearchString = (
 	locationOrSearch: WooPaymentsMoneyMovementRouteLocation | string
 ) => {
@@ -412,14 +398,6 @@ const getQueryValue = (
 	}
 
 	return values.length === 1 ? values[ 0 ] : values;
-};
-
-const getFirstString = ( value: unknown ): string | undefined => {
-	if ( Array.isArray( value ) ) {
-		return value.find( ( item ) => typeof item === 'string' && item );
-	}
-
-	return typeof value === 'string' && value ? value : undefined;
 };
 
 const addParam = ( params: URLSearchParams, key: string, value: unknown ) => {
@@ -480,22 +458,6 @@ const getFilterParamForDataViewFilter = (
 	}
 
 	return FILTER_FIELD_ALIASES[ filter.field ];
-};
-
-const getFilterQueryValue = ( value: unknown ) => {
-	if ( Array.isArray( value ) ) {
-		const values = value
-			.map( ( item ) => String( item ) )
-			.filter( ( item ) => item !== '' );
-
-		return values.length ? values : undefined;
-	}
-
-	if ( value === undefined || value === null || value === '' ) {
-		return undefined;
-	}
-
-	return String( value );
 };
 
 export const parseMoneyMovementQuery = (

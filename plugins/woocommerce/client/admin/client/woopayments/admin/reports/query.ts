@@ -5,6 +5,11 @@ import {
 	formatLocalDateBoundaryForApi,
 	normalizeLocalCalendarDate,
 } from '../money-movement/query';
+import {
+	getFirstString,
+	isSortDirection,
+	normalizePositiveInteger,
+} from '../list-query';
 import type {
 	ReportsBalanceQuery,
 	ReportsFeesQuery,
@@ -49,24 +54,6 @@ const SORT_FIELD_BY_COLUMN_ID: Record< string, string > = {
 	deposit_date: 'available_on',
 };
 
-const isSortDirection = ( value: unknown ): value is ReportsSortDirection =>
-	value === 'asc' || value === 'desc';
-
-const normalizePositiveInteger = (
-	value: unknown,
-	fallback: number
-): number => {
-	let parsed = Number.NaN;
-
-	if ( typeof value === 'number' ) {
-		parsed = value;
-	} else if ( typeof value === 'string' ) {
-		parsed = Number( value );
-	}
-
-	return Number.isInteger( parsed ) && parsed > 0 ? parsed : fallback;
-};
-
 const getUserTimeZone = () => {
 	const offset = -new Date().getTimezoneOffset();
 	const sign = offset >= 0 ? '+' : '-';
@@ -94,14 +81,6 @@ const normalizeStringArray = ( value: unknown ): string[] | undefined => {
 	}
 
 	return [ String( value ) ];
-};
-
-const getSingleString = ( value: unknown ): string | undefined => {
-	if ( Array.isArray( value ) ) {
-		return value.find( ( item ) => typeof item === 'string' && item );
-	}
-
-	return typeof value === 'string' && value ? value : undefined;
 };
 
 const isDateOnly = ( value: string ) => /^\d{4}-\d{2}-\d{2}$/.test( value );
@@ -139,7 +118,7 @@ const getDateFilterQuery = (
 		return {};
 	}
 
-	const date = getSingleString( value );
+	const date = getFirstString( value );
 
 	if ( ! date ) {
 		return {};
@@ -221,7 +200,7 @@ export const buildReportsFeesQueryFromView = (
 		}
 
 		if ( filter.field === 'payment_method' ) {
-			query.payment_method_type = getSingleString( filter.value );
+			query.payment_method_type = getFirstString( filter.value );
 		}
 
 		if ( filter.field === 'type' ) {
@@ -229,7 +208,7 @@ export const buildReportsFeesQueryFromView = (
 		}
 	} );
 
-	const search = getSingleString( view.search );
+	const search = getFirstString( view.search );
 
 	if ( search ) {
 		query.search = [ search ];
@@ -417,7 +396,7 @@ export const serializeReportsFeesViewToSearch = (
 	view: Partial< ReportsFeesView >
 ): string => {
 	const params = new URLSearchParams();
-	const search = getSingleString( view.search );
+	const search = getFirstString( view.search );
 
 	addParam( params, 'orderby', view.sort?.field );
 	addParam(
@@ -442,7 +421,7 @@ export const serializeReportsFeesViewToSearch = (
 			addParam(
 				params,
 				'payment_method_type',
-				getSingleString( filter.value )
+				getFirstString( filter.value )
 			);
 		}
 
