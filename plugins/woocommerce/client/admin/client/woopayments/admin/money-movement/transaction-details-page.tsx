@@ -182,6 +182,12 @@ const isAuthorizationEligible = (
 	);
 };
 
+/**
+ * Falls back to the order ID in the order edit URL (`post` on the posts screen, `id` on the HPOS screen) when the
+ * charge's order has no `id`.
+ *
+ * @param transaction The payment shown on the page.
+ */
 const getTransactionOrderId = ( transaction: WooPaymentsTransaction ) => {
 	const orderId = Number( transaction.order?.id );
 

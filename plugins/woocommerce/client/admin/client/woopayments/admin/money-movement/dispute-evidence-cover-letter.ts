@@ -212,8 +212,8 @@ const STANDARD_ATTACHMENTS: Array< {
 		label: __( 'Order receipt', 'woocommerce' ),
 		labelForReasons: [
 			{
-				// For non-physical product types credit_not_processed, RECEIPT is "Refund receipt".
-				// For physical_product, RECEIPT stays "Order receipt" (REFUND_RECEIPT_DOCUMENTATION is "Refund receipt").
+				// For non-physical product types credit_not_processed, `receipt` is "Refund receipt".
+				// For physical_product, `receipt` stays "Order receipt" (`duplicate_charge_documentation` is "Refund receipt").
 				reasons: [ 'credit_not_processed' ],
 				label: __( 'Refund receipt', 'woocommerce' ),
 				productTypes: [
@@ -229,10 +229,10 @@ const STANDARD_ATTACHMENTS: Array< {
 	},
 	{
 		// For duplicate disputes:
-		// - is_duplicate: shows as "Refund receipt" (REFUND_RECEIPT_DOCUMENTATION maps to this)
+		// - is_duplicate: shows as "Refund receipt" (`duplicate_charge_documentation` maps to this)
 		// - is_not_duplicate: shows as "Any additional receipts"
 		// For credit_not_processed + physical_product + refund_has_been_issued:
-		// - shows as "Refund receipt" (REFUND_RECEIPT_DOCUMENTATION)
+		// - shows as "Refund receipt" (`duplicate_charge_documentation`)
 		key: 'duplicate_charge_documentation',
 		label: __( 'Any additional receipts', 'woocommerce' ),
 		onlyForReasons: [ 'duplicate', 'credit_not_processed' ],
@@ -269,7 +269,7 @@ const STANDARD_ATTACHMENTS: Array< {
 		labelForReasons: [
 			{
 				// For most product types with credit_not_processed,
-				// CUSTOMER_COMMUNICATION is repurposed as "Other documents". For physical_product,
+				// `customer_communication` is repurposed as "Other documents". For physical_product,
 				// it keeps the default "Customer communication" label since the matrix includes
 				// it explicitly with its proper label.
 				reasons: [ 'credit_not_processed' ],
@@ -407,8 +407,8 @@ const STANDARD_ATTACHMENTS: Array< {
 			},
 			{
 				// For fraudulent disputes with digital_product_or_service type,
-				// SERVICE_DOCUMENTATION is repurposed as "Prior undisputed transaction history"
-				// because ACCESS_ACTIVITY_LOG is used for "Login or usage records".
+				// `service_documentation` is repurposed as "Prior undisputed transaction history"
+				// because `access_activity_log` is used for "Login or usage records".
 				reasons: [ 'fraudulent' ],
 				label: __(
 					'Prior undisputed transaction history',
@@ -418,8 +418,8 @@ const STANDARD_ATTACHMENTS: Array< {
 			},
 			{
 				// For credit_not_processed × physical_product × refund_was_not_owed,
-				// SERVICE_DOCUMENTATION is used as "Other documents" since
-				// UNCATEGORIZED_FILE is used for "Proof of acceptance".
+				// `service_documentation` is used as "Other documents" since
+				// `uncategorized_file` is used for "Proof of acceptance".
 				reasons: [ 'credit_not_processed' ],
 				label: __( 'Other documents', 'woocommerce' ),
 				refundStatuses: [ 'refund_was_not_owed' ],

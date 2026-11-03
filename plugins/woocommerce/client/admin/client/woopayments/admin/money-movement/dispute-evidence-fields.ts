@@ -536,7 +536,7 @@ const getCreditNotProcessedDocuments = (
 	] );
 };
 
-const REFERENCE_EVIDENCE_MATRIX: Record<
+const RECOMMENDED_DOCUMENTS_BY_REASON: Record<
 	string,
 	Record< string, RecommendedDocumentField[] >
 > = {
@@ -1292,7 +1292,7 @@ export const getRecommendedDocumentFields = ( {
 	} else if ( reason === 'credit_not_processed' ) {
 		documents = getCreditNotProcessedDocuments( productType, refundStatus );
 	} else if ( reason ) {
-		documents = REFERENCE_EVIDENCE_MATRIX[ reason ]?.[ productType ];
+		documents = RECOMMENDED_DOCUMENTS_BY_REASON[ reason ]?.[ productType ];
 	}
 
 	if ( ! documents ) {
