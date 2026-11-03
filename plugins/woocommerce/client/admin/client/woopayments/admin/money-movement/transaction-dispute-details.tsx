@@ -1105,12 +1105,15 @@ export const WooPaymentsTransactionDisputeDetails = ( {
 	ordinal,
 	total,
 	onIssueRefund,
+	onDisputeClosed,
 }: {
 	transaction: WooPaymentsTransaction;
 	dispute: WooPaymentsDispute;
 	ordinal: number;
 	total: number;
 	onIssueRefund?: () => void;
+	/** Called once the merchant accepted the dispute, so the page can read the payment again. */
+	onDisputeClosed?: () => void;
 } ) => {
 	const [ currentDispute, setCurrentDispute ] = useState<
 		WooPaymentsDispute | undefined
@@ -1182,6 +1185,7 @@ export const WooPaymentsTransactionDisputeDetails = ( {
 			recordEvent( 'wcpay_dispute_accepted', {
 				dispute_id: disputeId,
 			} );
+			onDisputeClosed?.();
 		} catch ( error ) {
 			dispatch( 'core/notices' ).createErrorNotice(
 				getErrorMessage(

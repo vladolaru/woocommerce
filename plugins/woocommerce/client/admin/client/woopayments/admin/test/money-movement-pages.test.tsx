@@ -6887,6 +6887,30 @@ describe( 'WooPayments money movement pages', () => {
 		const acceptButton = await screen.findByRole( 'button', {
 			name: 'Accept dispute',
 		} );
+		// Client 11.2.0 data/disputes/actions.js:66-72: the payment is read again once the dispute closes.
+		mockGetPaymentIntent.mockResolvedValue( {
+			id: 'pi_test',
+			status: 'succeeded',
+			amount: 5000,
+			currency: 'usd',
+			created: 1781712000,
+			charge: {
+				id: 'ch_test',
+				balance_transaction: 'txn_test',
+				type: 'charge',
+				amount: 5000,
+				currency: 'usd',
+				created: 1781712000,
+				payment_intent: 'pi_test',
+				dispute: {
+					id: 'dp_test',
+					status: 'lost',
+					reason: 'fraudulent',
+					amount: 5000,
+					currency: 'usd',
+				},
+			},
+		} );
 
 		await act( async () => {
 			await userEvent.click( acceptButton );
@@ -6922,6 +6946,11 @@ describe( 'WooPayments money movement pages', () => {
 			/^This dispute was lost on/
 		);
 		expect( lostOutcome.closest( '[tabindex="-1"]' ) ).toHaveFocus();
+		expect(
+			await within(
+				screen.getByRole( 'region', { name: 'Summary' } )
+			).findByText( 'Disputed: Lost' )
+		).toBeInTheDocument();
 	} );
 
 	// Client 11.1.0 `dispute-awaiting-response-details.tsx:243-249`, `:508-517`: the modal cannot close while the accept runs.

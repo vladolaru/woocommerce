@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Update the WooPayments payment details page right after a dispute is accepted, so its status no longer reads "Response needed".

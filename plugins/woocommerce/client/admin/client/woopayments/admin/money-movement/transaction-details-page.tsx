@@ -1388,6 +1388,16 @@ export const WooPaymentsTransactionDetailsPage = () => {
 															)
 													: undefined
 											}
+											// Client 11.2.0 data/disputes/actions.js:66-72: the summary reads the payment again.
+											onDisputeClosed={ () => {
+												const closeRouteKey = routeKey;
+												void loadTransaction( {
+													setLoading: false,
+													shouldUpdate: () =>
+														routeKeyRef.current ===
+														closeRouteKey,
+												} );
+											} }
 										/>
 									);
 								}
