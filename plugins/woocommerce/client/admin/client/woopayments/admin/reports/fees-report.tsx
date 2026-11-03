@@ -48,12 +48,11 @@ import {
 	getDateFormat,
 	getGlobalSettings,
 	navigateReportsRoute,
-	getLastFullCalendarMonthDateFilter,
+	isYmd,
 	isBalanceDatePreset,
 	getBalanceDateFilterForPreset,
 	getBalancePeriodForDateFilter,
 	getRangeDays,
-	getBalanceDateFilterFromView,
 	matchBalanceDatePreset,
 } from './utils';
 
@@ -233,18 +232,20 @@ const FeesReport = ( {
 	);
 	const isInitialLoading =
 		isLoading && ! rowsState.data && ! summaryState.data;
+	// Client 11.2.0 `reports/fees/date-filter-values.ts:38-74`: only a complete applied range can match a preset. A Date
+	// filter just added, or with one bound set, filters nothing, so no preset shows pressed.
 	const activeDatePreset = useMemo( () => {
-		const hasDateFilter = (
+		const dateFilter = (
 			view.filters as DataViewsFilter[] | undefined
-		 )?.some( ( filter ) => filter.field === 'date' );
+		 )?.find( ( filter ) => filter.field === 'date' );
+		const range = dateFilter?.value;
 
-		return hasDateFilter
+		return dateFilter?.operator === 'between' &&
+			Array.isArray( range ) &&
+			isYmd( range[ 0 ] ) &&
+			isYmd( range[ 1 ] )
 			? matchBalanceDatePreset(
-					getBalanceDateFilterFromView(
-						view,
-						getLastFullCalendarMonthDateFilter( now ),
-						now
-					),
+					{ operator: 'between', value: [ range[ 0 ], range[ 1 ] ] },
 					now
 				)
 			: 'custom';

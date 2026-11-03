@@ -184,6 +184,25 @@ const mockDataViews = jest.fn(
 							Apply April date filter
 						</button>
 					) }
+				{ /* DataViews adds a date filter with no value until the merchant picks dates. */ }
+				{ fields.some(
+					( field ) => field.id === 'date' && field.filterBy
+				) &&
+					onChangeView && (
+						<button
+							type="button"
+							onClick={ () =>
+								onChangeView( {
+									...view,
+									filters: [
+										{ field: 'date', operator: 'between' },
+									],
+								} )
+							}
+						>
+							Add date filter without dates
+						</button>
+					) }
 				{ search && onChangeView && (
 					<button
 						type="button"
@@ -1081,6 +1100,22 @@ describe( 'WooPaymentsReportsPage', () => {
 
 		await userEvent.click( screen.getByRole( 'tab', { name: 'Fees' } ) );
 		await screen.findByRole( 'searchbox', { name: 'Search fees' } );
+		// A Date filter with no dates yet filters nothing (client 11.2.0 `getFeesDateFilterValue()`): no preset is pressed.
+		await userEvent.click(
+			screen.getByRole( 'button', {
+				name: 'Add date filter without dates',
+			} )
+		);
+		const feesPopover = within( screen.getByTestId( 'date-popover' ) );
+		expect(
+			feesPopover.getByRole( 'button', { name: 'Previous month' } )
+		).toHaveAttribute( 'aria-pressed', 'false' );
+		expect(
+			feesPopover.getByRole( 'button', { name: 'Previous year' } )
+		).toHaveAttribute( 'aria-pressed', 'false' );
+		expect( mockGetFees ).toHaveBeenLastCalledWith(
+			expect.not.objectContaining( { date_between: expect.anything() } )
+		);
 		await userEvent.click(
 			screen.getByRole( 'button', { name: 'Apply detailed fees view' } )
 		);
