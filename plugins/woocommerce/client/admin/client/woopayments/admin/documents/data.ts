@@ -28,7 +28,7 @@ const PAYMENTS_PATH = '/wc/v3/payments';
 const DOCUMENTS_PATH = `${ PAYMENTS_PATH }/documents`;
 const VAT_PATH = `${ PAYMENTS_PATH }/vat`;
 
-const buildPathWithQuery = (
+const buildDocumentsPath = (
 	path: string,
 	query: WooPaymentsDocumentsQuery,
 	paramOrder: readonly string[]
@@ -77,7 +77,7 @@ export const getWooPaymentsDocuments = (
 	query: WooPaymentsDocumentsQuery = {}
 ): Promise< WooPaymentsDocumentsListResponse > =>
 	apiFetch< WooPaymentsDocumentsListResponse >( {
-		path: buildPathWithQuery(
+		path: buildDocumentsPath(
 			DOCUMENTS_PATH,
 			query,
 			DOCUMENT_LIST_QUERY_PARAM_ORDER
@@ -89,7 +89,7 @@ export const getWooPaymentsDocumentsSummary = (
 	query: WooPaymentsDocumentsQuery = {}
 ): Promise< WooPaymentsDocumentsSummary > =>
 	apiFetch< WooPaymentsDocumentsSummary >( {
-		path: buildPathWithQuery(
+		path: buildDocumentsPath(
 			`${ DOCUMENTS_PATH }/summary`,
 			query,
 			DOCUMENT_SUMMARY_QUERY_PARAM_ORDER

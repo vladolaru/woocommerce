@@ -23,14 +23,14 @@ import { getWooPaymentsExportRecipient } from '../money-movement/export';
 
 const REPORTS_PATH = '/wc/v3/payments/reports';
 
-const buildPathWithQuery = ( path: string, queryString: string ) =>
+const appendQueryString = ( path: string, queryString: string ) =>
 	queryString ? `${ path }?${ queryString }` : path;
 
 export const getWooPaymentsReportsBalanceSummary = (
 	query: ReportsBalanceQuery = {}
 ): Promise< ReportsBalanceSummary > =>
 	apiFetch< ReportsBalanceSummary >( {
-		path: buildPathWithQuery(
+		path: appendQueryString(
 			`${ REPORTS_PATH }/balance`,
 			serializeReportsBalanceQuery( query )
 		),
@@ -41,7 +41,7 @@ export const getWooPaymentsReportsFees = (
 	query: ReportsFeesQuery = {}
 ): Promise< ReportsFee[] > =>
 	apiFetch< ReportsFee[] >( {
-		path: buildPathWithQuery(
+		path: appendQueryString(
 			`${ REPORTS_PATH }/fees`,
 			serializeReportsFeesListQuery( query )
 		),
@@ -52,7 +52,7 @@ export const getWooPaymentsReportsFeesSummary = (
 	query: ReportsFeesQuery = {}
 ): Promise< ReportsFeesSummary > =>
 	apiFetch< ReportsFeesSummary >( {
-		path: buildPathWithQuery(
+		path: appendQueryString(
 			`${ REPORTS_PATH }/fees/summary`,
 			serializeReportsFeesSummaryQuery( query )
 		),
@@ -63,7 +63,7 @@ export const requestWooPaymentsReportsFeesExport = (
 	query: ReportsFeesQuery = {}
 ): Promise< Record< string, unknown > > =>
 	apiFetch< Record< string, unknown > >( {
-		path: buildPathWithQuery(
+		path: appendQueryString(
 			`${ REPORTS_PATH }/fees/download`,
 			serializeReportsFeesExportQuery( {
 				...query,
