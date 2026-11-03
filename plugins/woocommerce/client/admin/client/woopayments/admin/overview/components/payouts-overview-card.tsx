@@ -201,7 +201,7 @@ export const PayoutsOverviewCard = ( {
 	accountStatus,
 }: {
 	isLoading: boolean;
-	/** The recent payouts read failed; the page raised the snackbar, so the history section stays out, as in the client. */
+	/** The recent payouts read failed; the page raised the snackbar, so the history section stays out. */
 	hasError?: boolean;
 	overview: WooPaymentsDepositsOverview | null;
 	recentPayouts: WooPaymentsDeposit[];

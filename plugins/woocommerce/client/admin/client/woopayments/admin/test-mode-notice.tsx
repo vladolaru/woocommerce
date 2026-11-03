@@ -89,7 +89,7 @@ const getNoticeMessage = (
 /**
  * Warn that a WooPayments admin page shows test data (client 11.1.0 components/test-mode-notice).
  *
- * Shown only while WooPayments runs in test mode, the client's `isInTestMode()`.
+ * Shown only while WooPayments runs in test mode.
  */
 export const WooPaymentsTestModeNotice = ( {
 	currentPage,
@@ -98,8 +98,8 @@ export const WooPaymentsTestModeNotice = ( {
 	currentPage: WooPaymentsTestModeNoticePage;
 	isDetailsView?: boolean;
 } ) => {
-	// Preloaded by SharedSettings::preload_shared_settings(), as the client reads
-	// `wcpaySettings.testMode` / `devMode`: no request of its own.
+	// Preloaded by SharedSettings::preload_shared_settings() as `testMode` and
+	// `devMode`: no request of its own.
 	const settings = getWooPaymentsSettingsBootstrap();
 
 	if ( settings.testMode !== true ) {

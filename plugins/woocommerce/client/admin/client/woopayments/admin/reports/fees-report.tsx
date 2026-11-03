@@ -56,7 +56,7 @@ import {
 	matchBalanceDatePreset,
 } from './utils';
 
-// Client 11.1.0 `class-wc-payments-admin.php:1073` sends the time_format option; native reads it through `@wordpress/date`.
+// Client 11.1.0 `class-wc-payments-admin.php:1073` sends the time_format option; here it is read through `@wordpress/date`.
 const getTimeFormat = () => getDateSettings().formats.time;
 
 const getDateTimeIso = ( value?: string | null ) => {
@@ -176,7 +176,7 @@ const FeesReport = ( {
 	headerActions,
 }: {
 	now: Date;
-	// The page header's actions slot, where the client keeps Export.
+	// The page header's actions slot, where Export goes.
 	headerActions: HTMLElement | null;
 } ) => {
 	const location = useLocation();
@@ -227,7 +227,7 @@ const FeesReport = ( {
 	const isLoading = rowsState.isLoading || summaryState.isLoading;
 	const hasFilters = Boolean( view.search || ( view.filters ?? [] ).length );
 	// The load's error event reads this ref, so the load runs again only when the request changes, not for a Date filter
-	// with no dates yet. The client's store answers an unchanged query from its cache.
+	// with no dates yet.
 	const hasFiltersRef = useRef( hasFilters );
 	hasFiltersRef.current = hasFilters;
 	const totalPages = Math.max(

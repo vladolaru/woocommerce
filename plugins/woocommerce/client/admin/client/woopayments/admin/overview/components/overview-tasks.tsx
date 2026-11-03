@@ -111,7 +111,7 @@ const buildUpdateBusinessDetailsTask = ( {
 		showActionButton: true,
 	};
 
-	// The client ignores clicks on a complete or enabled account.
+	// Clicks do nothing on a complete or enabled account.
 	if ( completed ) {
 		return { ...task, onClick: () => undefined };
 	}
@@ -133,7 +133,7 @@ const buildUpdateBusinessDetailsTask = ( {
 		return { ...task, onClick: () => onOpenUpdateBusinessDetails( shell ) };
 	}
 
-	// Test-drive accounts have no account link; the client still opens a blank tab there, native opens nothing (N-194).
+	// Test-drive accounts have no account link, so the click opens nothing.
 	const accountLink = accountStatus.account_link;
 	const accountLinkWithSource = accountLink
 		? addQueryArgs( accountLink, {
@@ -338,7 +338,7 @@ export const buildOverviewTasks = ( {
 		.filter( ( task ): task is WooPaymentsOverviewTask => !! task )
 		.sort( compareTasks );
 
-// Native once let merchants dismiss or snooze these tasks, which the client never allows, so stored entries for them are ignored.
+// These tasks cannot be dismissed or snoozed, so stored entries for them are ignored.
 const ALWAYS_VISIBLE_TASK_KEYS = [
 	'update-business-details',
 	'complete-setup',

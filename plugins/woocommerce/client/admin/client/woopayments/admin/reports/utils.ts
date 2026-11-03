@@ -55,7 +55,7 @@ type GlobalSettings = typeof globalThis & {
 
 const getGlobalSettings = () => globalThis as GlobalSettings;
 
-// Client 11.1.0 `class-wc-payments-admin.php:1072` sends wc_date_format(); native has it as wcSettings.dateFormat (AssetDataRegistry).
+// Client 11.1.0 `class-wc-payments-admin.php:1072` sends wc_date_format(); here it is wcSettings.dateFormat (AssetDataRegistry).
 const getDateFormat = () =>
 	getGlobalSettings().wcSettings?.dateFormat ||
 	getDateSettings().formats.date;

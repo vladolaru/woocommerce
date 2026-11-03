@@ -260,7 +260,7 @@ export const WooPaymentsVatModal = ( {
 	};
 
 	const handleVatNumberChange = ( value: string ) => {
-		// Put the country prefix back when the merchant deletes it, as the client does.
+		// Put the country prefix back when the merchant deletes it.
 		const prefix = vatNumberPrefix.trim();
 		setVatNumber( value.trim().startsWith( prefix ) ? value : prefix );
 	};

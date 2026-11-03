@@ -1,6 +1,6 @@
 // DataViews ships its styles apart from its script, and WordPress registers no
 // handle for them. Sass inlines the stylesheet here, so it lands once in the
-// shared native WooPayments stylesheet with the pages that render DataViews.
+// shared WooPayments stylesheet with the pages that render DataViews.
 // With a `.css` extension Sass would leave a plain CSS `@import` instead.
 // stylelint-disable-next-line scss/load-partial-extension
 @import "@wordpress/dataviews/build-style/style";
@@ -24,7 +24,7 @@
 			display: none;
 		}
 
-		// The "View options" menu, the client's column menu.
+		// The "View options" menu is the column menu.
 		> :last-child > .components-dropdown {
 			order: 1;
 		}
@@ -63,15 +63,15 @@
 		gap: $gap-smaller;
 		justify-content: flex-end;
 
-		// The transactions and blocked searches take the room left in the row, as in the client.
+		// The transactions and blocked searches take the room left in the row.
 		> :not(.components-button) {
 			flex: 1 1 240px;
 		}
 	}
 
 	// On a narrow card the title takes the free room, so the actions and the column menu sit at the
-	// end of its row. With a search, the client keeps the menu beside the title and wraps the search
-	// and actions onto the next row.
+	// end of its row. With a search, the menu stays beside the title and the search
+	// and actions wrap onto the next row.
 	@container dataviews-wrapper (max-width: 430px) {
 		.dataviews__view-actions {
 			column-gap: $gap-smaller;
@@ -98,7 +98,7 @@
 	}
 
 	// Client 11.1.0 `@woocommerce/components` `table/style.scss`: the header row sits on a grey band
-	// with a line below it. The line above it is the client's card header border (`CardHeader`); on
+	// with a line below it. The line above it is the card header border (`CardHeader`); on
 	// the header row it stays right above the header when DataViews shows its filter row.
 	.dataviews-view-table thead th {
 		// stylelint-disable-next-line color-no-hex -- Client 11.1.0 table header band; no upstream token.

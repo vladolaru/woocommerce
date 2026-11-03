@@ -165,7 +165,7 @@ export const OverviewTaskList = ( {
 				{ announcement }
 			</p>
 			{ visibleTasks.length > 0 && (
-				// The client's CollapsibleList folds after five tasks; the Overview builds at most three.
+				// The Overview builds at most three tasks, so the list never needs to fold.
 				<List className="woocommerce-woopayments-overview__task-list">
 					{ visibleTasks.map( ( task ) => (
 						<TaskItem

@@ -78,7 +78,7 @@
 	align-self: center;
 }
 
-// A divider between the date and the amount of an automatic payout (the client's summary item border).
+// A divider between the date and the amount of an automatic payout.
 .woocommerce-woopayments-payout-overview--automatic {
 	> .woocommerce-woopayments-payout-overview__item {
 		border-inline-end: 1px solid $gray-100;
@@ -92,7 +92,7 @@
 	white-space: nowrap;
 
 	.woocommerce-order-status__indicator {
-		// The client's WC Admin page is border-box, so its ring sits inside the 0.85em dot (17px at 20px).
+		// The WC Admin page is border-box, so the ring sits inside the 0.85em dot (17px at 20px).
 		box-sizing: border-box;
 		height: 0.85em;
 		width: 0.85em;
@@ -102,7 +102,7 @@
 			border-color: $studio-green-5;
 		}
 
-		// stylelint-disable color-no-hex -- Client 11.1.0 payout status dot palette (pending and in transit) has no upstream token; improvement pass with the status badges.
+		// stylelint-disable color-no-hex -- Client 11.1.0 payout status dot palette (pending and in transit) has no upstream token.
 		&.is-pending {
 			background: #f0c33c;
 			border-color: #f5e6ab;

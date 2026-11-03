@@ -22,8 +22,8 @@ export const UpdateBusinessDetailsModal = ( {
 	shell: WooPaymentsOverviewShell;
 	onClose: () => void;
 } ) => {
-	// Client 11.1.0 `overview/modal/update-business-details/index.tsx` opens the bare account link; native adds
-	// noopener,noreferrer (N-194).
+	// Client 11.1.0 `overview/modal/update-business-details/index.tsx` opens the bare account link; the link here adds
+	// noopener,noreferrer.
 	const accountLink = shell.account_status.account_link;
 	const { status, current_deadline: currentDeadline } = shell.account_status;
 	const errorMessages = getRequirementErrorMessages(

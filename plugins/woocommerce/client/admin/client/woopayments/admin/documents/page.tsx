@@ -66,7 +66,7 @@ const DOCUMENTS_SHOW_FILTERS: WooPaymentsListShowFilter[] = [
 	'all',
 	'advanced',
 ];
-// The client names the download column `download`.
+// The download column is keyed `download`.
 const DOCUMENT_COLUMN_KEYS = { actions: 'download' };
 
 type PendingDownload = {

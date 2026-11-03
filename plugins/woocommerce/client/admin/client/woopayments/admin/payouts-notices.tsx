@@ -73,7 +73,7 @@ export const WooPaymentsPayoutsNotices = () => {
 
 	const dismissScheduleNotice = () => {
 		setIsScheduleNoticeDismissed( true );
-		// The client also marks its localized settings, so the notice stays hidden when the page is opened again without a reload.
+		// The localized settings are marked too, so the notice stays hidden when the page is opened again without a reload.
 		const preloadedSettings = getPreloadedSettings();
 		if ( preloadedSettings ) {
 			preloadedSettings.isNextDepositNoticeDismissed = true;

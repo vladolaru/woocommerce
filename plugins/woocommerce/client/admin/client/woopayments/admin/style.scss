@@ -101,7 +101,7 @@
 }
 
 .woocommerce-woopayments-overview__balance-formula {
-	// stylelint-disable-next-line color-no-hex -- no token for this blue; see the improvement-pass list.
+	// stylelint-disable-next-line color-no-hex -- no token for this blue.
 	color: #0a4b78;
 	font-size: $font-size-small;
 	// stylelint-disable-next-line declaration-property-value-disallowed-list -- no token at 10px (between $gap-smaller and $gap-small).

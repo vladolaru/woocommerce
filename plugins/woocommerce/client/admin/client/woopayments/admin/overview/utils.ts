@@ -21,7 +21,10 @@ export { getSettingsPaymentsProviderRouteUrl } from '../utils';
 export const normalizeCurrencyCode = ( currency?: string | null ) =>
 	( currency || 'usd' ).toUpperCase();
 
-// Client 11.1.0 `formatCurrency()`: zero-decimal aware and in the store's currency format; a negated zero reads "$0.00".
+/**
+ * Formats a minor-unit amount that is always a number; call `formatAmount` where it can be missing.
+ * Client 11.1.0 `formatCurrency()`: zero-decimal aware and in the store's currency format; a negated zero reads "$0.00".
+ */
 export const formatWooPaymentsAmount = (
 	amount: number,
 	currency?: string | null

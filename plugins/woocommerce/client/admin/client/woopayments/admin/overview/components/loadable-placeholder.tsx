@@ -8,7 +8,7 @@ import type { ReactNode } from 'react';
  *
  * @param props          Component props.
  * @param props.children Text that sets the bar's width; it is never shown or announced.
- * @param props.isBlock  Whether the bar is a full-width block, like the client's `LoadableBlock`.
+ * @param props.isBlock  Whether the bar is a full-width block.
  */
 export const LoadablePlaceholder = ( {
 	children,

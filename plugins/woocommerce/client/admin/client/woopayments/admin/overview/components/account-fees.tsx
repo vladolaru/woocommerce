@@ -213,7 +213,7 @@ const AccountFee = ( {
 } ) => {
 	const base = ( accountFee.fee.base ?? {} ) as FeeRate;
 	const discounts = ( accountFee.fee.discount ?? [] ) as FeeRate[];
-	// Like the client, only the first discount shows.
+	// Only the first discount shows.
 	const current = discounts[ 0 ] ?? base;
 	const currency = base.currency || 'usd';
 	const expirationDescription = getExpirationDescription( current );

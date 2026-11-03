@@ -14,7 +14,7 @@ import { WooPaymentsRouteLoading } from '~/settings-payments/components/woopayme
 import { getSettingsPaymentsProviderRouteUrl } from './utils';
 import { registerPaymentsRuntimeTracksPropertyWhenPreloaded } from '../tracks-runtime';
 
-// A native link on a store the plugin owns also loads these routes, so the core preload decides.
+// A link on a store that does not run the built-in WooPayments also loads these routes, so the core preload decides.
 registerPaymentsRuntimeTracksPropertyWhenPreloaded();
 
 // Share the chunk name with the Payments settings tab in `settings-payments/index.tsx`
@@ -177,7 +177,7 @@ const WooPaymentsAdminAreaUnavailable = () => {
 			? __( 'Go to WooPayments overview', 'woocommerce' )
 			: __( 'Go to WooPayments settings', 'woocommerce' );
 
-	// Monitor row L13: the message sits in a card, as the client's unavailable pages do.
+	// The message sits in a card.
 	return (
 		<Card>
 			<CardBody role="status" aria-live="polite">
@@ -294,6 +294,9 @@ const WooPaymentsProtectedRoute = ( {
 	</>
 );
 
+/**
+ * The route table answers for the account. `featureFlags.reportsArea` carries the same answer in the preload, and a `wcpay_js_settings` callback may turn it off.
+ */
 const WooPaymentsReportsRoute = () => {
 	if ( ! isRouteAvailable( '/woopayments/reports' ) ) {
 		return <WooPaymentsAdminAreaUnavailable />;

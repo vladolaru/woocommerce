@@ -156,7 +156,7 @@ const ReportsDatePresets = ( {
 		sync( true );
 	}, [ selectedPreset, sync ] );
 
-	// The popover mounts in the popover slot or the fallback container; watch both, as the client does.
+	// The popover mounts in the popover slot or the fallback container; watch both.
 	useEffect( () => {
 		let frame: number | null = null;
 		const observed = new Set< Element >();

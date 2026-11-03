@@ -27,7 +27,7 @@ export interface StripeNotificationsChange {
 /**
  * Stripe's embedded notification banner, as client 11.1.0 `embedded-components/index.tsx:192-224`.
  *
- * A failed session renders no copy: the client's onboarding-failure notice sits in the Overview's hidden wrapper.
+ * A failed session renders nothing; `onInitError` and `onLoadError` report it to the caller.
  */
 export const StripeNotificationsBanner = ( {
 	onInitError,
@@ -69,7 +69,7 @@ export const StripeNotificationsBanner = ( {
 		};
 
 		void initialize();
-		// One session per visit, as the client; the page passes new callbacks every render.
+		// One session per visit; the page passes new callbacks every render.
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [] );
 

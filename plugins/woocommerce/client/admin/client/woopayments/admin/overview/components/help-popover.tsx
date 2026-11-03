@@ -21,7 +21,7 @@ export const HelpPopover = ( {
 }: {
 	label: string;
 	children: ReactNode;
-	/** The client's `buttonSize`: 16 by default, 24 beside the payout status chip. */
+	/** The button size: 16 by default, 24 beside the payout status chip. */
 	size?: 16 | 24;
 } ) => (
 	<Dropdown

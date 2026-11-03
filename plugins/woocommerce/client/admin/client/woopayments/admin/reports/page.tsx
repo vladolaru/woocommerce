@@ -58,7 +58,7 @@ export const WooPaymentsReportsPage = ( {
 			path: 'payments_reports',
 			tab: activeTab,
 		} );
-		// Mount-only parity with the reference surface.
+		// Mount-only: the page view is recorded once.
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [] );
 

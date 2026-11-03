@@ -169,7 +169,7 @@ export const AccountDetailsCard = ( {
 			{ /* Client 11.1.0 `components/account-details/payout-status-wrapper.tsx:19-86`. */ }
 			<div className="woocommerce-woopayments-account-details__payouts">
 				<span>{ __( 'Payouts:', 'woocommerce' ) }</span>
-				{ /* The chip and its help sit together, as the client's inner `Flex gap={ 0 }`. */ }
+				{ /* The chip and its help sit together, with no gap. */ }
 				<Flex
 					align="center"
 					gap={ 0 }

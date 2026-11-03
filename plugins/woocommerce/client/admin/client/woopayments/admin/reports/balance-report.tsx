@@ -210,7 +210,7 @@ const getBalanceAmount = (
 ): number => row?.amount ?? 0;
 
 /**
- * The Balance rows, in the client's order, with its indent levels, its counted rows and its dated anchor labels.
+ * The Balance rows in report order, with indent levels, counted rows and dated anchor labels.
  *
  * Client 11.2.0 `reports/balance/rows.ts:110-232` and `reports/balance/utils.ts:79-100`.
  *

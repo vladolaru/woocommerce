@@ -23,7 +23,7 @@ export const payoutStatusLabels: Record< string, string > = {
 };
 
 /**
- * The client's payout status label, shared by the payouts list, payout details and the overview card.
+ * The payout status label, shared by the payouts list, payout details and the overview card.
  * Client 11.1.0 `components/deposit-status-chip/index.tsx:30-35`.
  *
  * @param payout The payout.

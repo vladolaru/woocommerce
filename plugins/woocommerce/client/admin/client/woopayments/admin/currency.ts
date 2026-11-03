@@ -27,7 +27,7 @@ const CURRENCY_NAMES: Record< string, string > = {
 };
 
 /**
- * The currency's name, or its upper-case code when the client has no name for it.
+ * The currency's name, or its upper-case code when no name is known for it.
  * Client 11.1.0 `includes/multi-currency/client/utils/currency/index.js:8-29` `formatCurrencyName()`.
  *
  * @param currencyCode Currency code.
@@ -35,13 +35,16 @@ const CURRENCY_NAMES: Record< string, string > = {
 export const formatCurrencyName = ( currencyCode: string ) =>
 	CURRENCY_NAMES[ currencyCode.toLowerCase() ] || currencyCode.toUpperCase();
 
+/**
+ * Formats a minor-unit amount, or `-` when the amount is missing; call it where the amount can be absent, and `formatWooPaymentsAmount` where it is always a number.
+ */
 export const formatAmount = ( amount?: number, currency?: string ) =>
 	typeof amount === 'number'
 		? formatWooPaymentsAmount( amount, currency )
 		: '-';
 
 /**
- * Whether admin amounts carry an explicit currency code, preloaded like the client's `wcpaySettings.shouldUseExplicitPrice`.
+ * Whether admin amounts carry an explicit currency code, as the settings preload says.
  */
 const shouldUseExplicitPrice = () =>
 	getWooPaymentsSettingsBootstrap().shouldUseExplicitPrice === true;
@@ -52,7 +55,7 @@ const shouldUseExplicitPrice = () =>
  *
  * @param amount     Amount in the currency's minor unit.
  * @param currency   Currency code.
- * @param skipSymbol Whether to trim off the currency symbol, like the client's `removeCurrencySymbol()`.
+ * @param skipSymbol Whether to trim off the currency symbol.
  * @param isExplicit Whether to add the code; defaults to the preloaded flag, for screens that localize it themselves.
  */
 export const formatExplicitCurrency = (
