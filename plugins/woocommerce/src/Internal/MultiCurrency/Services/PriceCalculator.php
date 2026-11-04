@@ -58,9 +58,8 @@ class PriceCalculator {
 			return round( $converted_price, $this->get_currency_decimals( $currency ) );
 		}
 
-		$apply_charm_pricing = $apply_charm_only_to_products
-			? 'product' === $type
-			: in_array( $type, array( 'product', 'shipping' ), true );
+		// Only product and shipping prices reach this point, and both take the charm unless it is limited to products.
+		$apply_charm_pricing = ! $apply_charm_only_to_products || 'product' === $type;
 
 		return $this->get_adjusted_price( $converted_price, $apply_charm_pricing, $currency, $price, $currency->get_rate_decimal() );
 	}
