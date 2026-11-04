@@ -1360,7 +1360,7 @@ class ReconciliationJob implements RegisterHooksInterface {
 
 		$this->with_write_lock(
 			$now,
-			function () use ( $record, $now ): void {
+			function () use ( $now ): void {
 				$record = $this->state_store->get_record();
 				if ( ! is_array( $record ) ) {
 					return;
