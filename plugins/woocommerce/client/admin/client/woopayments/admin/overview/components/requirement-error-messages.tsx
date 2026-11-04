@@ -300,7 +300,7 @@ export const REQUIREMENT_ERROR_MESSAGES: Record<
 };
 
 // Client 11.1.0 `overview/task-list/tasks.tsx:22-23`: too generic to help the merchant.
-const REQUIREMENT_CODE_BLACKLIST = [ 'invalid_value_other' ];
+const IGNORED_REQUIREMENT_CODES = [ 'invalid_value_other' ];
 
 /**
  * Map requirement errors to their friendly copy, as client 11.1.0 `overview/task-list/tasks.tsx:47-65` does.
@@ -317,9 +317,7 @@ export const getRequirementErrorMessages = (
 			errors
 				.filter(
 					( error ) =>
-						! REQUIREMENT_CODE_BLACKLIST.includes(
-							error.code ?? ''
-						)
+						! IGNORED_REQUIREMENT_CODES.includes( error.code ?? '' )
 				)
 				.map(
 					( error ) =>

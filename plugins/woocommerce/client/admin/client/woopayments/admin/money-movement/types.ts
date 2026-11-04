@@ -407,12 +407,8 @@ export interface WooPaymentsMoneyMovementQuery {
 	[ key: string ]: string | string[] | number | boolean | undefined;
 }
 
-export interface WooPaymentsAuthorizationQuery extends WooPaymentsMoneyMovementQuery {
-	order_id_is?: string | string[];
-	customer_email_is?: string | string[];
-	customer_country_is?: string | string[];
-	risk_level_is?: string | string[];
-}
+// The uncaptured list sends only paging and sorting (query.ts `AUTHORIZATION_QUERY_PARAM_ORDER`).
+export type WooPaymentsAuthorizationQuery = WooPaymentsMoneyMovementQuery;
 
 export type WooPaymentsMoneyMovementQueryFilterParam =
 	| 'loan_id_is'

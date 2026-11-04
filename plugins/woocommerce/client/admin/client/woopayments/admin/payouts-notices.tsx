@@ -24,18 +24,7 @@ import type {
 	WooPaymentsOverviewAccountStatus,
 } from './overview/types';
 import { saveOption } from '../settings/data/actions';
-
-type WooPaymentsPayoutsNoticesWindow = typeof window & {
-	wcSettings?: {
-		admin?: {
-			woopaymentsSettings?: { isNextDepositNoticeDismissed?: boolean };
-		};
-	};
-};
-
-const getPreloadedSettings = () =>
-	( window as WooPaymentsPayoutsNoticesWindow ).wcSettings?.admin
-		?.woopaymentsSettings;
+import { getWooPaymentsSettingsBootstrap } from '../settings/bootstrap';
 
 // Client 11.1.0 `deposits/utils/index.ts:46-56`.
 const AUTOMATIC_SCHEDULE_INTERVALS = [ 'daily', 'weekly', 'monthly' ];
@@ -50,7 +39,9 @@ export const WooPaymentsPayoutsNotices = () => {
 		useState< WooPaymentsOverviewAccountStatus | null >( null );
 	const [ isScheduleNoticeDismissed, setIsScheduleNoticeDismissed ] =
 		useState(
-			() => getPreloadedSettings()?.isNextDepositNoticeDismissed === true
+			() =>
+				getWooPaymentsSettingsBootstrap()
+					.isNextDepositNoticeDismissed === true
 		);
 
 	useEffect( () => {
@@ -74,10 +65,7 @@ export const WooPaymentsPayoutsNotices = () => {
 	const dismissScheduleNotice = () => {
 		setIsScheduleNoticeDismissed( true );
 		// The localized settings are marked too, so the notice stays hidden when the page is opened again without a reload.
-		const preloadedSettings = getPreloadedSettings();
-		if ( preloadedSettings ) {
-			preloadedSettings.isNextDepositNoticeDismissed = true;
-		}
+		getWooPaymentsSettingsBootstrap().isNextDepositNoticeDismissed = true;
 		void saveOption( 'wcpay_next_deposit_notice_dismissed', true );
 	};
 

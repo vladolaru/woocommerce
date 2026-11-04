@@ -289,20 +289,6 @@
 	}
 }
 
-.woocommerce-woopayments-account-details__fees ul {
-	display: grid;
-	gap: $gap-small;
-	list-style: none;
-	margin: 0;
-	padding: 0;
-}
-
-.woocommerce-woopayments-account-details__fees li {
-	border: 1px solid $studio-gray-5;
-	border-radius: $radius-medium;
-	padding: $gap-small;
-}
-
 // Client 11.1.0 `overview/dispute-readiness/style.scss`.
 .woocommerce-woopayments-dispute-readiness__header.components-card__header {
 	align-items: flex-start;
@@ -635,9 +621,6 @@
 	display: flex;
 	flex-wrap: wrap;
 	gap: $gap-smaller;
-}
-
-.woocommerce-woopayments-money-movement__dispute-modal-actions {
 	justify-content: flex-end;
 	margin-top: $gap-large;
 }

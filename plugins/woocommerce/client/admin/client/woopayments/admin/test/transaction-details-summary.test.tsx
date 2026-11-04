@@ -11,7 +11,7 @@ import { getSettings, setSettings } from '@wordpress/date';
  */
 import { WooPaymentsPaymentSummarySection } from '../money-movement/transaction-detail-sections';
 import { WooPaymentsTransactionDetailsPage } from '../money-movement/transaction-details-page';
-import { WooPaymentsDisputeDetailsRedirect } from '../money-movement/dispute-details';
+import { WooPaymentsDisputeDetailsRedirect } from '../money-movement/dispute-details-redirect';
 import {
 	getWooPaymentsAuthorization,
 	getWooPaymentsCharge,

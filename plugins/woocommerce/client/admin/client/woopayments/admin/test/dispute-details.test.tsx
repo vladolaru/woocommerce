@@ -7,7 +7,7 @@ import { MemoryRouter } from 'react-router-dom';
 /**
  * Internal dependencies
  */
-import { WooPaymentsDisputeDetailsRedirect } from '../money-movement/dispute-details';
+import { WooPaymentsDisputeDetailsRedirect } from '../money-movement/dispute-details-redirect';
 import { getWooPaymentsDispute } from '../money-movement/data';
 import type { WooPaymentsDispute } from '../money-movement/types';
 import { getSettingsPaymentsProviderAdminPath } from '../utils';
