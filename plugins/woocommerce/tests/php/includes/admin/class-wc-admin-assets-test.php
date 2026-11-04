@@ -167,12 +167,8 @@ class WC_Admin_Assets_Test extends WC_Unit_Test_Case {
 		$order->set_currency( $order_currency );
 		$order->save();
 
-		set_current_screen();
-		$screen            = get_current_screen();
-		$screen->id        = wc_get_page_screen_id( 'shop-order' );
-		$screen->base      = $screen->id;
-		$screen->post_type = 'shop_order';
-		$theorder          = $order;
+		set_current_screen( wc_get_page_screen_id( 'shop-order' ) );
+		$theorder = $order;
 		wp_scripts()->add_data( 'wc-admin-meta-boxes', 'data', '' );
 
 		try {
