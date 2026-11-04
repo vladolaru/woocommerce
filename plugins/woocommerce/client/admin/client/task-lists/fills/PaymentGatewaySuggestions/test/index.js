@@ -4,6 +4,7 @@
 import { useSelect } from '@wordpress/data';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { recordEvent } from '@woocommerce/tracks';
+import apiFetch from '@wordpress/api-fetch';
 /**
  * Internal dependencies
  */
@@ -19,6 +20,8 @@ jest.mock( '@wordpress/data', () => ( {
 } ) );
 
 jest.mock( '@woocommerce/tracks', () => ( { recordEvent: jest.fn() } ) );
+
+jest.mock( '@wordpress/api-fetch', () => jest.fn() );
 
 jest.mock( '~/utils/features', () => ( {
 	isFeatureEnabled: jest.fn(),
@@ -101,6 +104,14 @@ const paymentGatewaySuggestions = [
 
 const paymentGatewaySuggestionsWithoutWCPay = paymentGatewaySuggestions.filter(
 	( p ) => ! p.id.startsWith( 'woocommerce_payments' )
+);
+
+// With the WooPayments feature on, the server sends the WooPayments suggestions without plugins to install.
+const builtInPaymentGatewaySuggestions = paymentGatewaySuggestions.map(
+	( { plugins, ...suggestion } ) =>
+		suggestion.id.startsWith( 'woocommerce_payments' )
+			? suggestion
+			: { ...suggestion, plugins }
 );
 
 describe( 'PaymentGatewaySuggestions', () => {
@@ -457,7 +468,7 @@ describe( 'PaymentGatewaySuggestions', () => {
 		).toEqual( [ 'tasklist_payments_wcpay_bnpl_click' ] );
 	} );
 
-	test( 'should route WooPayments setup to Settings Payments onboarding', async () => {
+	test( 'should route WooPayments setup to Settings Payments onboarding with the feature on', async () => {
 		const onComplete = jest.fn();
 		const query = {};
 		const mockLocation = {
@@ -472,7 +483,7 @@ describe( 'PaymentGatewaySuggestions', () => {
 		useSelect.mockImplementation( () => ( {
 			isResolving: false,
 			getPaymentGateway: jest.fn(),
-			paymentGatewaySuggestions,
+			paymentGatewaySuggestions: builtInPaymentGatewaySuggestions,
 			installedPaymentGateways: [],
 			countryCode: 'US',
 		} ) );
@@ -512,7 +523,7 @@ describe( 'PaymentGatewaySuggestions', () => {
 		useSelect.mockImplementation( () => ( {
 			isResolving: false,
 			getPaymentGateway: jest.fn(),
-			paymentGatewaySuggestions,
+			paymentGatewaySuggestions: builtInPaymentGatewaySuggestions,
 			installedPaymentGateways: [
 				{
 					id: 'woocommerce_payments',
@@ -544,6 +555,69 @@ describe( 'PaymentGatewaySuggestions', () => {
 			expect( mockLocation.href ).toContain( 'page=wc-settings' )
 		);
 		expect( mockLocation.href ).toContain( 'path=/woopayments/onboarding' );
+	} );
+
+	// With the WooPayments feature off, the suggestion names the extension (trunk's fixture above).
+	const renderFeatureOffSuggestion = ( installedPaymentGateways ) => {
+		apiFetch.mockClear();
+		apiFetch.mockResolvedValue( {
+			connectUrl: 'https://connect.example.test/',
+		} );
+		useSelect.mockImplementation( () => ( {
+			isResolving: false,
+			getPaymentGateway: jest.fn(),
+			paymentGatewaySuggestions,
+			installedPaymentGateways,
+			countryCode: 'US',
+		} ) );
+
+		const { container } = render(
+			<PaymentGatewaySuggestions onComplete={ jest.fn() } query={ {} } />
+		);
+
+		return container.querySelector(
+			'.woocommerce-wcpay-suggestion button'
+		);
+	};
+
+	test( 'with the feature off, Get started opens the extension install step, as trunk does', () => {
+		const button = renderFeatureOffSuggestion( [] );
+		expect( button ).toHaveTextContent( 'Get started' );
+
+		fireEvent.click( button );
+
+		expect(
+			new URLSearchParams( window.location.search ).get( 'id' )
+		).toBe( 'woocommerce_payments:non-us' );
+		expect( apiFetch ).not.toHaveBeenCalled();
+	} );
+
+	test( 'with the feature off, Finish setup connects the installed extension, as trunk does', async () => {
+		const button = renderFeatureOffSuggestion( [
+			{
+				id: 'woocommerce_payments',
+				title: 'WooPayments',
+				enabled: false,
+				needs_setup: true,
+				settings_url: 'http://example.com',
+			},
+		] );
+		expect( button ).toHaveTextContent( 'Finish setup' );
+		Object.defineProperty( global.window, 'location', {
+			value: { href: 'test' },
+			configurable: true,
+			writable: true,
+		} );
+
+		fireEvent.click( button );
+
+		await waitFor( () =>
+			expect( window.location ).toBe( 'https://connect.example.test/' )
+		);
+		expect( apiFetch ).toHaveBeenCalledWith( {
+			path: '/wc-admin/plugins/connect-wcpay',
+			method: 'POST',
+		} );
 	} );
 
 	test( 'should navigate to the marketplace when clicking the WooCommerce Marketplace link', async () => {

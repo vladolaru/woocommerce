@@ -1,3 +1,57 @@
+/**
+ * External dependencies
+ */
+import { __ } from '@wordpress/i18n';
+import apiFetch from '@wordpress/api-fetch';
+import { WC_ADMIN_NAMESPACE } from '@woocommerce/data';
+import { recordEvent } from '@woocommerce/tracks';
+
+/**
+ * Internal dependencies
+ */
+import { createNoticesFromResponse } from '~/lib/notices';
+
+export function connectWcpay( createNotice, onCatch ) {
+	const errorMessage = __(
+		'There was an error connecting to WooPayments. Please try again or connect later in store settings.',
+		'woocommerce'
+	);
+	apiFetch( {
+		path: WC_ADMIN_NAMESPACE + '/plugins/connect-wcpay',
+		method: 'POST',
+	} )
+		.then( ( response ) => {
+			window.location = response.connectUrl;
+		} )
+		.catch( () => {
+			createNotice( 'error', errorMessage );
+			if ( typeof onCatch === 'function' ) {
+				onCatch();
+			}
+		} );
+}
+
+export function installActivateAndConnectWcpay(
+	reject,
+	createNotice,
+	installAndActivatePlugins
+) {
+	installAndActivatePlugins( [ 'woocommerce-payments' ] )
+		.then( () => {
+			recordEvent( 'woocommerce_payments_install', {
+				context: 'tasklist',
+			} );
+
+			connectWcpay( createNotice, () => {
+				reject();
+			} );
+		} )
+		.catch( ( error ) => {
+			createNoticesFromResponse( error );
+			reject();
+		} );
+}
+
 const WOOPAYMENTS_ONBOARDING_PATH =
 	'admin.php?page=wc-settings&tab=checkout&path=/woopayments/onboarding';
 
@@ -7,12 +61,11 @@ export function getWooPaymentsOnboardingUrl( from = 'WCADMIN_PAYMENT_TASK' ) {
 	) }`;
 }
 
-export function connectWcpay() {
+/**
+ * Open the built-in WooPayments onboarding, offered while the WooPayments feature is on.
+ */
+export function openWooPaymentsOnboarding() {
 	window.location.href = getWooPaymentsOnboardingUrl();
-}
-
-export function installActivateAndConnectWcpay() {
-	connectWcpay();
 }
 
 export function isWCPaySupported( countryCode ) {
