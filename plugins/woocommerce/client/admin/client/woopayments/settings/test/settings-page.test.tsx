@@ -5482,7 +5482,7 @@ describe( 'WooPaymentsSettingsPage', () => {
 
 	it( 'records fraud tour completion after the fraud section becomes visible', async () => {
 		installMockIntersectionObserver();
-		mockUseGetSettings.mockReturnValue( {
+		const settings = {
 			account_country: 'US',
 			store_currency: 'USD',
 			feature_flags: DEFAULT_FEATURE_FLAGS,
@@ -5499,9 +5499,10 @@ describe( 'WooPaymentsSettingsPage', () => {
 				decline_on_cvc_failure: true,
 				is_welcome_tour_dismissed: false,
 			},
-		} );
+		};
+		mockUseGetSettings.mockReturnValue( settings );
 
-		render( <WooPaymentsSettingsPage /> );
+		const { rerender } = render( <WooPaymentsSettingsPage /> );
 
 		const tourAnchor = document.getElementById(
 			'fraud-protection-card-options'
@@ -5543,6 +5544,33 @@ describe( 'WooPaymentsSettingsPage', () => {
 		expect( getFraudTourEventNames() ).toEqual( [
 			'wcpay_fraud_protection_tour_clicked_through',
 		] );
+		expect(
+			screen.queryByTestId( 'fraud-protection-tour' )
+		).not.toBeInTheDocument();
+
+		// Client 11.2.0 `settings/fraud-protection/tour/index.tsx:35-73`: a finished tour stays finished while the
+		// merchant edits settings (the store still holds the value it loaded).
+		mockUseGetSettings.mockReturnValue( {
+			...settings,
+			is_debug_log_enabled: true,
+		} );
+		rerender( <WooPaymentsSettingsPage /> );
+		act( () => {
+			mockIntersectionObserverCallbacks
+				.slice( 1 )
+				.forEach( ( callback, index ) =>
+					callback(
+						[
+							{
+								isIntersecting: true,
+								target: tourAnchor,
+							} as IntersectionObserverEntry,
+						],
+						mockIntersectionObserverInstances[ index + 1 ]
+					)
+				);
+		} );
+
 		expect(
 			screen.queryByTestId( 'fraud-protection-tour' )
 		).not.toBeInTheDocument();

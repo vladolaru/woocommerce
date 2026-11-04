@@ -161,10 +161,6 @@ export const FraudProtectionTour = () => {
 	const [ tourKey, setTourKey ] = useState( 0 );
 
 	useEffect( () => {
-		setIsDismissed( getIsWelcomeTourDismissed( settings ) );
-	}, [ settings ] );
-
-	useEffect( () => {
 		const reference = getTourReferenceElement();
 
 		if (
