@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Record the amount of a refund WooPayments reports by webhook at the order currency's decimals, not the store's.

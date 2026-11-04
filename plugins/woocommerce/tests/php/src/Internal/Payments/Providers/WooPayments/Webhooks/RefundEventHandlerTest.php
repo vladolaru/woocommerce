@@ -1488,6 +1488,52 @@ class RefundEventHandlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A partial charge.refunded records the platform's amount at the order currency's decimals: $name.
+	 * @dataProvider provider_partial_refund_amount_decimals
+	 *
+	 * @param string $name            Row name.
+	 * @param string $store_currency  Store currency.
+	 * @param int    $store_decimals  Store price decimals.
+	 * @param string $order_currency  Order currency.
+	 * @param int    $refund_minor    The platform refund amount, in the currency's minor units.
+	 * @param string $expected_amount The local refund's amount, at two decimals.
+	 */
+	public function test_partial_charge_refunded_records_the_amount_at_the_order_currency_decimals( string $name, string $store_currency, int $store_decimals, string $order_currency, int $refund_minor, string $expected_amount ): void {
+		unset( $name );
+		update_option( 'woocommerce_currency', $store_currency );
+		update_option( 'woocommerce_price_num_decimals', $store_decimals );
+		$order = $this->create_refundable_order();
+		$order->set_currency( $order_currency );
+		$order->set_total( 'JPY' === $order_currency ? 1800 : 18 );
+		$order->save();
+		$charge                                 = $this->get_successful_refund_charge();
+		$charge['payment_intent']               = 'pi_123';
+		$charge['currency']                     = strtolower( $order_currency );
+		$charge['amount']                       = 1800;
+		$charge['refunds']['data'][0]['amount'] = $refund_minor;
+
+		$this->sut->process( 'charge.refunded', $charge );
+
+		$refund = $this->get_refund_by_provider_id( wc_get_order( $order->get_id() ), 're_123' );
+		$this->assertSame( $expected_amount, wc_format_decimal( $refund->get_amount(), 2 ), 'The local refund should record the amount the platform refunded.' );
+		$this->assertSame( $expected_amount, wc_format_decimal( -1 * (float) $refund->get_total(), 2 ), 'The refund total should match the amount.' );
+	}
+
+	/**
+	 * Store and order currencies, with the platform refund and the amount the local refund records.
+	 *
+	 * @return array<string,array{0:string,1:string,2:int,3:string,4:int,5:string}>
+	 */
+	public function provider_partial_refund_amount_decimals(): array {
+		return array(
+			'three-decimal order currency on a zero-decimal store' => array( 'three-decimal order currency on a zero-decimal store', 'JPY', 0, 'KWD', 1050, '10.50' ),
+			'two-decimal order currency on a zero-decimal store' => array( 'two-decimal order currency on a zero-decimal store', 'JPY', 0, 'USD', 1050, '10.50' ),
+			'zero-decimal order currency on a two-decimal store' => array( 'zero-decimal order currency on a two-decimal store', 'USD', 2, 'JPY', 1050, '1050.00' ),
+			'store currency order' => array( 'store currency order', 'USD', 2, 'USD', 1050, '10.50' ),
+		);
+	}
+
+	/**
 	 * Get the order's refund linked to a provider refund.
 	 *
 	 * @param WC_Order $order     Order object.

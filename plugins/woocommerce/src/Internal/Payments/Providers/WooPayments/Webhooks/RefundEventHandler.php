@@ -20,6 +20,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIn
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
+use Automattic\WooCommerce\Internal\Utilities\CurrencyUtil;
 use InvalidArgumentException;
 use RuntimeException;
 use WC_Order;
@@ -310,7 +311,7 @@ class RefundEventHandler {
 	 */
 	private function create_local_refund( WC_Order $order, string $refund_id, float $amount, string $reason, array $line_items ): WC_Order_Refund {
 		$refund_args = array(
-			'amount'                          => wc_format_decimal( $amount, wc_get_price_decimals() ),
+			'amount'                          => wc_format_decimal( $amount, CurrencyUtil::get_price_decimals( $order->get_currency() ) ),
 			'reason'                          => $reason,
 			'order_id'                        => $order->get_id(),
 			RefundRowCapture::REFUND_META_ARG => array( '_wcpay_refund_id' => $refund_id ),
