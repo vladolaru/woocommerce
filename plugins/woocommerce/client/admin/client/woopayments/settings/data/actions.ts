@@ -111,12 +111,16 @@ export function updateEnabledPaymentMethodIds( methodIds: string[] ) {
 	} );
 }
 
+// The dismissed notices are saved as their own option, outside the settings save, so they are no unsaved edit.
 export function updateDismissedDuplicatePaymentMethodNotices(
 	notices: Record< string, string[] >
 ) {
-	return updateSettingsValues( {
-		dismissed_duplicate_payment_method_notices: { ...notices },
-	} );
+	return {
+		type: ACTION_TYPES.SET_SAVED_SETTINGS_VALUES,
+		payload: {
+			dismissed_duplicate_payment_method_notices: { ...notices },
+		},
+	};
 }
 
 export function updateIsSavingSettings( isSaving: boolean, error?: unknown ) {

@@ -122,6 +122,34 @@ describe( 'WooPayments settings store', () => {
 		] );
 	} );
 
+	// Client 11.2.0 `components/duplicate-notice/index.tsx:45-50`: a dismissed notice is saved as its own option and
+	// never touches the settings form, so it leaves nothing to save and keeps the merchant's other edits unsaved.
+	it( 'keeps a dismissed duplicate payment method notice out of the unsaved changes', async () => {
+		const store = await setupStore();
+		await loadSettings( store, {
+			is_debug_log_enabled: false,
+			dismissed_duplicate_payment_method_notices: {},
+		} );
+		const klarna = { klarna: [ 'woocommerce_payments_klarna', 'other' ] };
+
+		store.dispatch().updateDismissedDuplicatePaymentMethodNotices( klarna );
+
+		expect(
+			store.select().getDismissedDuplicatePaymentMethodNotices()
+		).toEqual( klarna );
+		expect( store.select().isDirty() ).toBe( false );
+
+		store.dispatch().updateIsDebugLogEnabled( true );
+		store.dispatch().updateDismissedDuplicatePaymentMethodNotices( {
+			...klarna,
+			affirm: [ 'woocommerce_payments_affirm', 'other' ],
+		} );
+
+		expect( store.select().isDirty() ).toBe( true );
+		store.dispatch().updateIsDebugLogEnabled( false );
+		expect( store.select().isDirty() ).toBe( false );
+	} );
+
 	it( 'reports the save as pending until the REST request settles', async () => {
 		const store = await setupStore();
 		await loadSettings( store, { is_wcpay_enabled: true } );

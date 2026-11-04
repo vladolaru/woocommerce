@@ -91,6 +91,19 @@ export const receiveSettings = (
 				}
 			);
 
+		// Values saved on their own: they change the saved copy too, and leave any other unsaved edit as it is.
+		case ACTION_TYPES.SET_SAVED_SETTINGS_VALUES:
+			return withEditedData(
+				{
+					...state,
+					savedData: {
+						...state.savedData,
+						...( action.payload ?? {} ),
+					},
+				},
+				{ ...state.data, ...( action.payload ?? {} ) }
+			);
+
 		case ACTION_TYPES.SET_IS_SAVING_SETTINGS:
 			return {
 				...state,

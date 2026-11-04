@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Stop dismissing a WooPayments duplicate payment method notice from marking the settings page as having unsaved changes.

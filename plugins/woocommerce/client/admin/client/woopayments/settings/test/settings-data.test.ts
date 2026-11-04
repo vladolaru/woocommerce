@@ -194,24 +194,6 @@ describe( 'WooPayments settings data store', () => {
 		).toBe( true );
 	} );
 
-	it( 'updates dismissed duplicate notices in the settings store', async () => {
-		const { updateDismissedDuplicatePaymentMethodNotices } =
-			await import( '../data/actions' );
-
-		expect(
-			updateDismissedDuplicatePaymentMethodNotices( {
-				card: [ 'woocommerce_payments', 'legacy_card_gateway' ],
-			} )
-		).toEqual( {
-			type: 'SET_SETTINGS_VALUES',
-			payload: {
-				dismissed_duplicate_payment_method_notices: {
-					card: [ 'woocommerce_payments', 'legacy_card_gateway' ],
-				},
-			},
-		} );
-	} );
-
 	it( 'starts the Stripe Billing migration through the plugin route and tracks the request', async () => {
 		const { dispatch } = jest.requireMock( '@wordpress/data' );
 		const { submitStripeBillingSubscriptionMigration } =
