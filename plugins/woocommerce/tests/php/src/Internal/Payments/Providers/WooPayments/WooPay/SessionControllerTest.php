@@ -2120,6 +2120,48 @@ class SessionControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Product-page add-to-cart of a $status product, for a guest, replaces the cart only when the guest can view the product.
+	 * @testWith ["publish", true]
+	 *           ["draft", false]
+	 *           ["private", false]
+	 *
+	 * Core's add-to-cart shortcodes answer only for a product the current user can view (WC_Product::is_viewable()).
+	 *
+	 * @param string $status   Product status.
+	 * @param bool   $viewable Whether a guest can view the product.
+	 */
+	public function test_add_to_cart_replaces_the_cart_only_for_a_viewable_product( string $status, bool $viewable ): void {
+		if ( ! function_exists( 'wc_load_cart' ) ) {
+			$this->markTestSkipped( 'Cart bootstrap is unavailable.' );
+		}
+		wc_load_cart();
+		$in_cart = \WC_Helper_Product::create_simple_product();
+		WC()->cart->add_to_cart( $in_cart->get_id() );
+		$product = \WC_Helper_Product::create_simple_product();
+		$product->set_status( $status );
+		$product->save();
+
+		$this->sut = $this->create_controller( true );
+		$_POST     = array( // phpcs:ignore WordPress.Security.NonceVerification.Missing
+			'security'   => wp_create_nonce( 'wcpay-add-to-cart' ),
+			'product_id' => (string) $product->get_id(),
+			'quantity'   => '1',
+		);
+		$_REQUEST  = $_POST; // phpcs:ignore WordPress.Security.NonceVerification.Missing
+		$this->sut->register();
+
+		$response = $this->dispatch_ajax_hook( 'wc_ajax_wcpay_add_to_cart' )['body'];
+
+		$this->assertIsArray( $response );
+		$this->assertSame( $viewable ? 'success' : 'invalid_product_id', $viewable ? ( $response['result'] ?? null ) : ( $response['error']['code'] ?? null ) );
+		$this->assertSame(
+			array( $viewable ? $product->get_id() : $in_cart->get_id() ),
+			array_values( wp_list_pluck( WC()->cart->get_cart(), 'product_id' ) ),
+			'The cart holds only the added product, or is left as it was.'
+		);
+	}
+
+	/**
 	 * Create the System Under Test.
 	 *
 	 * @param bool                $woopay_enabled Whether WooPay should be enabled.

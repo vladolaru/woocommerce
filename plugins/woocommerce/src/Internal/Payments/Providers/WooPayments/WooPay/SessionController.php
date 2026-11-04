@@ -570,7 +570,8 @@ class SessionController implements RegisterHooksInterface {
 		$product_id = isset( $request['product_id'] ) ? absint( $request['product_id'] ) : 0;
 		$product    = wc_get_product( $product_id );
 
-		if ( ! $product ) {
+		// As core's add-to-cart shortcodes do, answer only for a product the current user can view.
+		if ( ! $product || ! $product->is_viewable() ) {
 			wp_send_json(
 				array(
 					'error' => array(
