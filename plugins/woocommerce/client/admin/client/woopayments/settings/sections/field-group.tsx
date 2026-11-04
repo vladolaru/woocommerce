@@ -12,9 +12,8 @@ const FieldGroup = ( {
 	title: string;
 	children: React.ReactNode;
 } ) => {
-	// Expose each field group as a labelled `group` landmark (named by its
-	// heading) so it can be located by role + accessible name rather than by
-	// CSS class. `useId` gives the heading a stable, unique id even when no
+	// Expose each field group as a `group` named by its heading, so it can be
+	// found by role and accessible name rather than by CSS class. `useId` gives the heading a stable, unique id even when no
 	// `id` prop is passed.
 	const headingId = useId();
 

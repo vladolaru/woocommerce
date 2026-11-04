@@ -161,8 +161,8 @@ const TransactionsSettingsSection = ( {
 		string | undefined
 	>();
 	const savingError = useGetSavingError();
-	// Only the descriptor's own error shows under the field; any other save error is the page notice (client 11.1.0
-	// client/settings/transactions/index.js:47-49).
+	// The descriptor, support email and support phone errors show at their own fields; any other save error is the page
+	// notice (client 11.1.0 client/settings/transactions/index.js:47-49).
 	const serverErrorMessage = getSavingErrorDetailMessage(
 		savingError,
 		'account_statement_descriptor'

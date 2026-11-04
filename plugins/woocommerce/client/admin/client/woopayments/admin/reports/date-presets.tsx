@@ -26,7 +26,7 @@ const getPresets = (): Array< {
 // eslint-disable-next-line @wordpress/i18n-text-domain
 const getCustomPresetLabel = () => __( 'Custom' );
 
-// DataViews has no API to add date presets; these selectors are its private markup (the bundled @wordpress/dataviews 17.1.0).
+// DataViews has no API to add date presets; these selectors are its private markup (@wordpress/dataviews 20.0.0, the catalog's wp-bundled version).
 // If they change, the two presets stop showing and the date filter keeps working.
 const getInsertionPoint = () => {
 	for ( const popover of Array.from(

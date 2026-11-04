@@ -14,16 +14,16 @@ export const PAYMENTS_RUNTIME = 'woocommerce_core';
 const isRecord = ( value: unknown ): value is Record< string, unknown > =>
 	typeof value === 'object' && value !== null && ! Array.isArray( value );
 
-// The WooPayments list pages record these page view paths; trunk's `payments_connect_core_test`
-// welcome page view does not match.
+// The WooPayments list pages record these page view paths; WooCommerce's own `payments_connect_core_test` welcome
+// page view does not match.
 const WOOPAYMENTS_PAGE_VIEW_PATH_PREFIXES = [
 	'payments_transactions',
 	'payments_disputes',
 	'payments_reports',
 ];
 
-// The WooPayments admin events keep their established names; trunk's own payments events
-// (such as `payments_task_stepper_view`) do not match.
+// The WooPayments admin events keep their established names; WooCommerce's own payments events (such as
+// `payments_task_stepper_view`) do not match.
 const isWooPaymentsAdminEvent = (
 	eventName: string,
 	properties: Record< string, unknown >

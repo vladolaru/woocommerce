@@ -33,7 +33,7 @@ const buildDocumentsPath = (
 	query: WooPaymentsDocumentsQuery,
 	paramOrder: readonly string[]
 ) => {
-	// Client 11.1.0 `data/documents/resolvers.js:26-30`: dates go as the start or end of the merchant's day.
+	// Client 11.1.0 `data/documents/resolvers.js:26-30`: dates go as the start or end of the day in the browser's time zone.
 	const queryString = serializeDocumentsQuery(
 		normalizeDateFiltersForApi(
 			query as WooPaymentsMoneyMovementQuery

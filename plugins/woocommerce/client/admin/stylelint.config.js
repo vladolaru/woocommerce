@@ -19,7 +19,8 @@ module.exports = {
 		{
 			// WooPayments styles take colours, spacing, type and radii from upstream tokens:
 			// the WP admin colour scheme, @wordpress/components, WooCommerce's shared admin variables,
-			// then client/woopayments/_tokens.scss. Literal px survive only for 0 and 1px.
+			// then client/woopayments/_tokens.scss.
+			// Margins, paddings, gaps, font sizes, radii and sizes take no literal px above 1px.
 			files: [ 'client/woopayments/**/*.scss' ],
 			rules: {
 				'color-no-hex': true,

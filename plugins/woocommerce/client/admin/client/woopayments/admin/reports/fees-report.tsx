@@ -75,6 +75,8 @@ const getDateTimeIso = ( value?: string | null ) => {
 	return `${ value.replace( ' ', 'T' ) }Z`;
 };
 
+// Fees dates use the date format from wcSettings (then @wordpress/date) and the time format from @wordpress/date, as
+// the Fees rows have always shown them; formatSiteDateTime() reads @wordpress/date only, so it would change them.
 const formatDateTimeFromString = (
 	value?: string | null,
 	includeTime = false

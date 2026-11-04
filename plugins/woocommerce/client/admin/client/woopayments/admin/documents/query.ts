@@ -258,6 +258,8 @@ export const documentsQueryToDataViewsView = (
 			normalizedQuery.pagesize,
 			DEFAULT_DOCUMENTS_QUERY.pagesize
 		),
+		// DataViews has no field for the advanced filters' any or all switch, so `match` travels in the view's `search`,
+		// which this page keeps off; page.tsx drops it outside Advanced filters.
 		search:
 			typeof normalizedQuery.match === 'string'
 				? normalizedQuery.match
