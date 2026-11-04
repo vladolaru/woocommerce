@@ -150,6 +150,15 @@ const FeesReport = ( {
 	// The page header's actions slot, where Export goes.
 	headerActions: HTMLElement | null;
 } ) => {
+	// Client 11.2.0 `reports/date-filter/presets.ts:116-140`: the Fees presets resolve on the browser's calendar, so the
+	// preset functions get the browser's day as a UTC date. Balance keeps the UTC calendar, as the client's does.
+	const calendarNow = useMemo(
+		() =>
+			new Date(
+				Date.UTC( now.getFullYear(), now.getMonth(), now.getDate() )
+			),
+		[ now ]
+	);
 	const location = useLocation();
 	const navigate = useNavigate();
 	// Client 11.1.0 `reports/fees/use-fees-url-sync.ts:167-195`: sort, paging, search and filters come from the URL.
@@ -221,10 +230,10 @@ const FeesReport = ( {
 			isYmd( range[ 1 ] )
 			? matchBalanceDatePreset(
 					{ operator: 'between', value: [ range[ 0 ], range[ 1 ] ] },
-					now
+					calendarNow
 				)
 			: 'custom';
-	}, [ now, view ] );
+	}, [ calendarNow, view ] );
 
 	useEffect(
 		() => () => {
@@ -563,8 +572,11 @@ const FeesReport = ( {
 			return;
 		}
 
-		const dateFilter = getBalanceDateFilterForPreset( nextPreset, now );
-		const period = getBalancePeriodForDateFilter( dateFilter, now );
+		const dateFilter = getBalanceDateFilterForPreset(
+			nextPreset,
+			calendarNow
+		);
+		const period = getBalancePeriodForDateFilter( dateFilter, calendarNow );
 		recordEvent( 'wcpay_reports_fees_date_filter_change', {
 			preset: nextPreset,
 			range_days: getRangeDays( period.date_start, period.date_end ),

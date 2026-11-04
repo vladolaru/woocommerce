@@ -1226,6 +1226,59 @@ describe( 'WooPaymentsReportsPage', () => {
 		);
 	} );
 
+	// Client 11.2.0 `reports/date-filter/presets.ts:116-140`: the Fees presets resolve on the browser's calendar; Balance
+	// stays on UTC (`reports/balance/use-balance-date-filter.ts:18`, `:44-67`). At 01:00 on June 1 in a browser at +03:00,
+	// UTC is still on May 31.
+	it( "resolves the Fees previous-month preset on the browser's calendar and Balance on UTC", async () => {
+		const originalTz = process.env.TZ;
+		process.env.TZ = 'Etc/GMT-3';
+
+		try {
+			render(
+				<MemoryRouter initialEntries={ [ '/woopayments/reports' ] }>
+					<WooPaymentsReportsPage
+						now={ new Date( '2026-05-31T22:00:00Z' ) }
+					/>
+				</MemoryRouter>
+			);
+
+			await waitFor( () =>
+				expect( mockGetBalanceSummary ).toHaveBeenLastCalledWith( {
+					date_start: '2026-04-01T00:00:00.000Z',
+					date_end: '2026-04-30T23:59:59.999Z',
+					currency: 'usd',
+				} )
+			);
+
+			await userEvent.click(
+				screen.getByRole( 'tab', { name: 'Fees' } )
+			);
+			await screen.findByRole( 'searchbox', { name: 'Search fees' } );
+			choosePreset( 'Previous month' );
+
+			await waitFor( () =>
+				expect( mockGetFees ).toHaveBeenLastCalledWith(
+					expect.objectContaining( {
+						date_between: [
+							'2026-04-30 21:00:00',
+							'2026-05-31 20:59:59',
+						],
+					} )
+				)
+			);
+			await waitFor( () =>
+				expect(
+					within( screen.getByTestId( 'date-popover' ) ).getByRole(
+						'button',
+						{ name: 'Previous month' }
+					)
+				).toHaveAttribute( 'aria-pressed', 'true' )
+			);
+		} finally {
+			process.env.TZ = originalTz;
+		}
+	} );
+
 	it( 'lets merchants change the Balance period through the DataViews date filter', async () => {
 		renderReportsPage();
 
