@@ -1413,6 +1413,81 @@ class RefundEventHandlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A full charge.refunded names each line from its unrounded refund history, at the order currency's decimals and never below zero: $name.
+	 * @dataProvider provider_full_refund_history_rows
+	 *
+	 * The earlier refund names line money with a 0 amount, so the whole order total stays refundable, as a full refund
+	 * event needs.
+	 *
+	 * @param string                                       $name           Row name.
+	 * @param string                                       $currency       Order currency; the store's is USD at two decimals.
+	 * @param array<string,array{int,float|int,float|int}> $lines          Units, total and tax of each line.
+	 * @param float                                        $order_total    Order total, which the event refunds.
+	 * @param array{int,float,float}                       $earlier        Units, total and tax of line A the earlier refund named.
+	 * @param int                                          $decimals       Decimals of the order currency.
+	 * @param array<string,string>                         $expected_lines Lines the event's refund names, as "quantity total tax".
+	 */
+	public function test_full_charge_refunded_names_lines_from_unrounded_refund_history( string $name, string $currency, array $lines, float $order_total, array $earlier, int $decimals, array $expected_lines ): void {
+		unset( $name );
+		$order = $this->create_refundable_order();
+		$order->set_currency( $currency );
+		$items = $this->add_taxed_lines( $order, $lines, $order_total );
+		$this->refund_line_money( $order, $items['A'], $earlier[0], $earlier[1], $earlier[2], false );
+		$charge                                 = $this->get_successful_refund_charge();
+		$charge['payment_intent']               = 'pi_123';
+		$charge['currency']                     = strtolower( $currency );
+		$charge['amount']                       = (int) round( $order_total * 100 );
+		$charge['refunds']['data'][0]['amount'] = (int) round( $order_total * 100 );
+
+		$this->sut->process( 'charge.refunded', $charge );
+
+		$order  = wc_get_order( $order->get_id() );
+		$refund = $this->get_refund_by_provider_id( $order, 're_123' );
+		$this->assertSame( $expected_lines, $this->get_refund_lines( $refund, $decimals ) );
+		$this->assertSame( array_map( static fn( array $line ): int => $line[0], $lines ), $this->get_refunded_units( $order, $items ), 'Each line is refunded up to its ordered units.' );
+	}
+
+	/**
+	 * Orders whose earlier refund the line history must read unrounded, or clamp, with the lines the event's refund names.
+	 *
+	 * @return array<string,array{0:string,1:string,2:array<string,array{int,float|int,float|int}>,3:float,4:array{int,float,float},5:int,6:array<string,string>}>
+	 */
+	public function provider_full_refund_history_rows(): array {
+		return array(
+			'three-decimal order currency after a partial net and tax refund' => array(
+				'three-decimal order currency after a partial net and tax refund',
+				'KWD',
+				array(
+					'A' => array( 2, 10.008, 1.002 ),
+					'B' => array( 1, 20, 2 ),
+				),
+				33.01,
+				array( 1, 5.004, 0.501 ),
+				3,
+				array(
+					'A' => '-1 -5.004 -0.501',
+					'B' => '-1 -20.000 -2.000',
+				),
+			),
+			'line refunded past its total' => array(
+				'line refunded past its total',
+				'USD',
+				array(
+					'A' => array( 3, 30, 3 ),
+					'B' => array( 1, 20, 2 ),
+				),
+				55.0,
+				array( 1, 35.0, 4.0 ),
+				2,
+				array(
+					'A' => '-2 0.00 0.00',
+					'B' => '-1 -20.00 -2.00',
+				),
+			),
+		);
+	}
+
+	/**
 	 * Get the order's refund linked to a provider refund.
 	 *
 	 * @param WC_Order $order     Order object.

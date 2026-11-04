@@ -1617,15 +1617,17 @@ class DataUtils {
 	 * line_refunds records each product refund line individually — quantity and tax-inclusive
 	 * gross, both as positive magnitudes — so the quantity-form top-up can verify that prior
 	 * refunds match their quantity-derived amounts before reconciling rounding drift.
+	 * net_totals sums each product line's refunded total without tax, as stored and unrounded.
 	 *
 	 * @param WC_Order $order Order instance.
-	 * @return array{qtys: array<int, int>, totals: array<int, float>, tax_totals: array<int, array<int, float>>, line_refunds: array<int, list<array{qty: int, gross: float}>>}
+	 * @return array{qtys: array<int, int>, totals: array<int, float>, tax_totals: array<int, array<int, float>>, line_refunds: array<int, list<array{qty: int, gross: float}>>, net_totals: array<int, float>}
 	 */
 	public function compute_refunded_quantities_and_totals( WC_Order $order ): array {
 		$qtys         = array();
 		$totals       = array();
 		$tax_totals   = array();
 		$line_refunds = array();
+		$net_totals   = array();
 
 		// Accumulate the already-refunded tax per original item, keyed by tax rate
 		// id, as a positive amount. Refund line items store taxes as negatives, so
@@ -1673,6 +1675,7 @@ class DataUtils {
 				$refunded_gross                 = $this->get_item_gross( $refunded_item, $order, $read_raw );
 				$qtys[ $original_id ]           = ( $qtys[ $original_id ] ?? 0 ) + $refunded_item->get_quantity();
 				$totals[ $original_id ]         = ( $totals[ $original_id ] ?? 0.0 ) + $refunded_gross * -1;
+				$net_totals[ $original_id ]     = ( $net_totals[ $original_id ] ?? 0.0 ) + (float) $refunded_item->get_total() * -1;
 				$line_refunds[ $original_id ][] = array(
 					'qty'   => absint( $refunded_item->get_quantity() ),
 					'gross' => abs( $refunded_gross ),
@@ -1708,6 +1711,7 @@ class DataUtils {
 			'totals'       => $totals,
 			'tax_totals'   => $tax_totals,
 			'line_refunds' => $line_refunds,
+			'net_totals'   => $net_totals,
 		);
 	}
 

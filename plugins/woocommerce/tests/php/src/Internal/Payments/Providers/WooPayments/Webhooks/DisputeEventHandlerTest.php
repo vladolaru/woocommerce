@@ -1212,6 +1212,117 @@ class DisputeEventHandlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A lost dispute of the whole charge names each line from its unrounded refund history, at the order currency's decimals and never below zero: $name.
+	 * @dataProvider provider_lost_dispute_history_rows
+	 *
+	 * The earlier refund returns line A's money with it, as the order screen does; the dispute's refund is the amount
+	 * still refundable.
+	 *
+	 * @param string                                       $name            Row name.
+	 * @param string                                       $currency        Order currency; the store's is USD at two decimals.
+	 * @param array<string,array{int,float|int,float|int}> $lines           Units, total and tax of each line.
+	 * @param float                                        $order_total     Order total.
+	 * @param array{int,float,float}                       $earlier         Units, total and tax of line A the earlier refund named.
+	 * @param int                                          $decimals        Decimals of the order currency.
+	 * @param string                                       $expected_amount Amount of the dispute's refund.
+	 * @param array<string,string>                         $expected_lines  Lines the dispute's refund names, as "quantity total tax".
+	 */
+	public function test_lost_dispute_names_lines_from_unrounded_refund_history( string $name, string $currency, array $lines, float $order_total, array $earlier, int $decimals, string $expected_amount, array $expected_lines ): void {
+		unset( $name );
+		wc_get_container()->get( RefundRowCapture::class )->register();
+		$order = $this->create_disputable_order();
+		$order->set_currency( $currency );
+		$items = $this->add_taxed_lines( $order, $lines, $order_total );
+		$order->set_status( 'on-hold' );
+		$order->update_meta_data( '_charge_id', 'ch_lines_lost' );
+		$order->update_meta_data( '_wcpay_open_dispute_ids', array( 'dp_lines_lost' ) );
+		$order->save();
+		$this->refund_line_money( $order, $items['A'], $earlier[0], $earlier[1], $earlier[2], true );
+		$handler = new DisputeEventHandler();
+		$handler->init(
+			new class() extends Client {
+				/**
+				 * Answer with no summary, so the remaining refundable amount is refunded.
+				 *
+				 * @param string $dispute_id Dispute ID.
+				 * @return array<string,mixed>
+				 */
+				public function get_dispute_summary( string $dispute_id ): array {
+					unset( $dispute_id );
+
+					return array();
+				}
+			},
+			wc_get_container()->get( WooPaymentsDatabaseCache::class ),
+			wc_get_container()->get( WooPaymentsOrderNoteService::class ),
+			wc_get_container()->get( OrderPaymentLock::class ),
+			wc_get_container()->get( WooPaymentsPersistenceVocabulary::class ),
+			wc_get_container()->get( EventOrderResolver::class ),
+			wc_get_container()->get( OtherChargeRecorder::class )
+		);
+
+		$handler->process(
+			'charge.dispute.closed',
+			array(
+				'id'       => 'dp_lines_lost',
+				'charge'   => 'ch_lines_lost',
+				'status'   => 'lost',
+				'amount'   => (int) round( $order_total * 100 ),
+				'currency' => strtolower( $currency ),
+			)
+		);
+
+		$order   = wc_get_order( $order->get_id() );
+		$refunds = array_values( array_filter( $order->get_refunds(), static fn( \WC_Order_Refund $refund ): bool => 'dp_lines_lost' === $refund->get_meta( '_wcpay_dispute_id', true ) ) );
+		$this->assertCount( 1, $refunds );
+		$this->assertSame( $expected_amount, wc_format_decimal( $refunds[0]->get_amount(), $decimals ) );
+		$this->assertSame( $expected_lines, $this->get_refund_lines( $refunds[0], $decimals ) );
+		$this->assertSame( array_map( static fn( array $line ): int => $line[0], $lines ), $this->get_refunded_units( $order, $items ), 'Each line is refunded up to its ordered units.' );
+	}
+
+	/**
+	 * Orders whose earlier refund the line history must read unrounded, or clamp, with the dispute refund's amount and lines.
+	 *
+	 * @return array<string,array{0:string,1:string,2:array<string,array{int,float|int,float|int}>,3:float,4:array{int,float,float},5:int,6:string,7:array<string,string>}>
+	 */
+	public function provider_lost_dispute_history_rows(): array {
+		return array(
+			'three-decimal order currency after a partial net and tax refund' => array(
+				'three-decimal order currency after a partial net and tax refund',
+				'KWD',
+				array(
+					'A' => array( 2, 10.008, 1.002 ),
+					'B' => array( 1, 20, 2 ),
+				),
+				33.01,
+				array( 1, 5.004, 0.501 ),
+				3,
+				'27.505',
+				array(
+					'A' => '-1 -5.004 -0.501',
+					'B' => '-1 -20.000 -2.000',
+				),
+			),
+			'line refunded past its total' => array(
+				'line refunded past its total',
+				'USD',
+				array(
+					'A' => array( 3, 30, 3 ),
+					'B' => array( 1, 20, 2 ),
+				),
+				55.0,
+				array( 1, 35.0, 4.0 ),
+				2,
+				'16.00',
+				array(
+					'A' => '-2 0.00 0.00',
+					'B' => '-1 -20.00 -2.00',
+				),
+			),
+		);
+	}
+
+	/**
 	 * @testdox A lost charge.dispute.closed on a charge recorded on an order another gateway paid adds no refund, fetches nothing and keeps the status.
 	 */
 	public function test_lost_dispute_on_another_charge_adds_no_refund(): void {
