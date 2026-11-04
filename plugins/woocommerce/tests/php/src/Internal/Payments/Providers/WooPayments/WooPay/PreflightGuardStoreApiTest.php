@@ -330,6 +330,9 @@ class PreflightGuardStoreApiTest extends WC_Unit_Test_Case {
 	/**
 	 * Build a Store API pay-for-order request with WooPay's preflight marker, for a pending order.
 	 *
+	 * The body carries the order's own addresses: the route refuses an address that would change the order's shipping
+	 * or tax location (OrderController::update_existing_order_addresses()).
+	 *
 	 * @param string $payment_method Gateway the request names.
 	 * @return WP_REST_Request<array<string,mixed>>
 	 */
@@ -345,8 +348,9 @@ class PreflightGuardStoreApiTest extends WC_Unit_Test_Case {
 				'billing_email' => $order->get_billing_email(),
 			)
 		);
-		$body                  = $this->get_preflight_body( $payment_method );
-		$body['billing_email'] = $order->get_billing_email();
+		$body                     = $this->get_preflight_body( $payment_method );
+		$body['billing_address']  = $order->get_address( 'billing' );
+		$body['shipping_address'] = $order->get_shipping_country() ? $order->get_address( 'shipping' ) : $order->get_address( 'billing' );
 		$request->set_body_params( $body );
 
 		return $request;
