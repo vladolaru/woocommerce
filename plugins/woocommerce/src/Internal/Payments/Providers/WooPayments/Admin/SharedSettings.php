@@ -84,6 +84,19 @@ class SharedSettings implements RegisterHooksInterface {
 	 */
 	public function register() {
 		add_filter( 'woocommerce_admin_shared_settings', array( $this, 'preload_shared_settings' ) );
+		add_action( 'admin_enqueue_scripts', array( $this, 'handle_admin_enqueue_scripts' ) );
+	}
+
+	/**
+	 * Print WordPress's REST root and nonce (`wpApiSettings`) on the Payments settings tab, whose document download links
+	 * carry them, as client 11.1.0's admin app depends on `wp-api-request` (`class-wc-payments-admin.php:637`).
+	 *
+	 * @internal
+	 */
+	public function handle_admin_enqueue_scripts(): void {
+		if ( $this->navigation->is_payments_settings_request() ) {
+			wp_enqueue_script( 'wp-api-request' );
+		}
 	}
 
 	/**

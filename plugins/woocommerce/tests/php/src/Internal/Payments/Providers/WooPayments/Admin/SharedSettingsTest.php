@@ -38,8 +38,65 @@ class SharedSettingsTest extends WC_Unit_Test_Case {
 		$sut->register();
 
 		$this->assertSame( 10, has_filter( 'woocommerce_admin_shared_settings', array( $sut, 'preload_shared_settings' ) ) );
+		$this->assertSame( 10, has_action( 'admin_enqueue_scripts', array( $sut, 'handle_admin_enqueue_scripts' ) ) );
 
 		remove_filter( 'woocommerce_admin_shared_settings', array( $sut, 'preload_shared_settings' ), 10 );
+		remove_action( 'admin_enqueue_scripts', array( $sut, 'handle_admin_enqueue_scripts' ), 10 );
+	}
+
+	/**
+	 * Client 11.2.0 makes its admin app depend on `wp-api-request` (`class-wc-payments-admin.php:637`), so `wpApiSettings`
+	 * carries the REST root and nonce its document download links add (`client/utils/index.js:125-131`). This class loads
+	 * only while the built-in WooPayments owns payments (the connected and active admin tiers).
+	 *
+	 * @testdox Should enqueue the REST API settings script on the Payments settings pages only ($_dataName).
+	 * @dataProvider provide_rest_api_settings_requests
+	 *
+	 * @param array<string,string> $query    Query arguments of the admin request.
+	 * @param bool                 $expected Whether `wp-api-request` is enqueued.
+	 */
+	public function test_enqueues_the_rest_api_settings_on_the_payments_settings_pages( array $query, bool $expected ): void {
+		foreach ( $query as $key => $value ) {
+			$_GET[ $key ] = $value;
+		}
+		$sut = $this->create_shared_settings( true );
+
+		$sut->handle_admin_enqueue_scripts();
+
+		$this->assertSame( $expected, wp_script_is( 'wp-api-request', 'enqueued' ) );
+	}
+
+	/**
+	 * Admin requests on and off the Payments settings pages.
+	 *
+	 * @return array<string,array{0:array<string,string>,1:bool}>
+	 */
+	public function provide_rest_api_settings_requests(): array {
+		return array(
+			'the WooPayments Documents page'          => array(
+				array(
+					'page' => 'wc-settings',
+					'tab'  => 'checkout',
+					'path' => '/woopayments/documents',
+				),
+				true,
+			),
+			'the payments settings main page'         => array(
+				array(
+					'page' => 'wc-settings',
+					'tab'  => 'checkout',
+				),
+				true,
+			),
+			'WooCommerce Admin with the checkout tab' => array(
+				array(
+					'page' => 'wc-admin',
+					'tab'  => 'checkout',
+				),
+				false,
+			),
+			'the orders page'                         => array( array( 'page' => 'wc-orders' ), false ),
+		);
 	}
 
 	/**
@@ -66,6 +123,7 @@ class SharedSettingsTest extends WC_Unit_Test_Case {
 		remove_filter( 'wp_redirect', array( $this, 'intercept_redirect' ), 10 );
 		remove_filter( 'wp_doing_ajax', '__return_true' );
 		remove_all_filters( 'wcpay_js_settings' );
+		wp_dequeue_script( 'wp-api-request' );
 		unset( $_GET['page'], $_GET['tab'], $_GET['path'], $_GET['section'], $_GET['from'], $_SERVER['HTTP_REFERER'] );
 		delete_option( 'wcpay_account_data' );
 		delete_option( 'wcpay_onboarding_test_mode' );
