@@ -98,13 +98,13 @@ const getRuleBase = (
 	check: null,
 } );
 
-const maybeParseInteger = ( value: string | number | null ) => {
+export const maybeParseInteger = ( value: string | number | null ) => {
 	const parsed = parseInt( `${ value ?? '' }`, 10 );
 
 	return isNaN( parsed ) ? null : parsed;
 };
 
-const maybeParseFloat = ( value: string | number | null ) => {
+export const maybeParseFloat = ( value: string | number | null ) => {
 	const parsed = parseFloat( `${ value ?? '' }` );
 
 	return isNaN( parsed ) ? null : parsed;

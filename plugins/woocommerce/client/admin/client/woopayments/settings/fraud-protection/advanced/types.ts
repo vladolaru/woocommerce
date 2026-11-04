@@ -1,3 +1,8 @@
+export type AdvancedFraudProtectionSetting = [
+	unknown,
+	( value: unknown[] ) => void,
+];
+
 export type FraudPreventionSetting = {
 	block: boolean;
 	enabled: boolean;

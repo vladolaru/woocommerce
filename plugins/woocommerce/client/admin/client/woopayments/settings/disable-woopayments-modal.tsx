@@ -9,9 +9,11 @@ import { __, sprintf } from '@wordpress/i18n';
  * Internal dependencies
  */
 import type { WooPaymentsAffectedPaymentMethod } from './affected-payment-methods';
+import {
+	PROVIDER_NAME,
+	WOOPAYMENTS_DOC_URL,
+} from './sections/section-descriptions';
 
-const PROVIDER_NAME = 'WooPayments';
-const WOOPAYMENTS_DOC_URL = 'https://woocommerce.com/document/woopayments/';
 const WOOCOMMERCE_SUPPORT_URL =
 	'https://woocommerce.com/my-account/create-a-ticket/?select=5278104';
 

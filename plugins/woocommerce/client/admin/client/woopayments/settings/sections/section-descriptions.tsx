@@ -5,6 +5,13 @@ import { ExternalLink } from '@wordpress/components';
 import { __, sprintf } from '@wordpress/i18n';
 
 const PROVIDER_NAME = 'WooPayments';
+const WOOPAYMENTS_DOC_URL = 'https://woocommerce.com/document/woopayments/';
+const BNPL_DOC_URL =
+	'https://woocommerce.com/document/woopayments/payment-methods/buy-now-pay-later/';
+const NOTIFICATIONS_DOC_URL =
+	'https://woocommerce.com/document/woopayments/settings-guide/#account-notifications';
+const ADVANCED_SETTINGS_DOC_URL =
+	'https://woocommerce.com/document/woopayments/settings-guide/#advanced-settings';
 
 // Client 11.1.0 settings/settings-manager/index.js and
 // settings/payment-methods-section/index.js: the loading and loaded states
@@ -56,10 +63,68 @@ const FraudProtectionSectionDescription = () => (
 	</>
 );
 
+const BuyNowPayLaterSectionDescription = () => (
+	<>
+		<p>
+			{ __(
+				'Boost sales by offering customers additional buying power and flexible payment options.',
+				'woocommerce'
+			) }
+		</p>
+		<ExternalLink href={ BNPL_DOC_URL }>
+			{ __( 'Learn more', 'woocommerce' ) }
+		</ExternalLink>
+	</>
+);
+
+const TransactionsSectionDescription = () => (
+	<>
+		<p>
+			{ __(
+				"Update your store's configuration to ensure smooth transactions.",
+				'woocommerce'
+			) }
+		</p>
+		<ExternalLink href={ WOOPAYMENTS_DOC_URL }>
+			{ __( 'View our documentation', 'woocommerce' ) }
+		</ExternalLink>
+	</>
+);
+
+const NotificationsSectionDescription = () => (
+	<>
+		<p>
+			{ __(
+				'Receive important notifications about your WooPayments account.',
+				'woocommerce'
+			) }
+		</p>
+		<ExternalLink href={ NOTIFICATIONS_DOC_URL }>
+			{ __( 'Learn more', 'woocommerce' ) }
+		</ExternalLink>
+	</>
+);
+
+const AdvancedSettingsSectionDescription = () => (
+	<>
+		<p>
+			{ __( 'More options for specific payment needs.', 'woocommerce' ) }
+		</p>
+		<ExternalLink href={ ADVANCED_SETTINGS_DOC_URL }>
+			{ __( 'View our documentation', 'woocommerce' ) }
+		</ExternalLink>
+	</>
+);
+
 export {
 	PROVIDER_NAME,
+	WOOPAYMENTS_DOC_URL,
 	GeneralSectionDescription,
 	PaymentMethodsSectionDescription,
 	ExpressCheckoutsSectionDescription,
 	FraudProtectionSectionDescription,
+	BuyNowPayLaterSectionDescription,
+	TransactionsSectionDescription,
+	NotificationsSectionDescription,
+	AdvancedSettingsSectionDescription,
 };

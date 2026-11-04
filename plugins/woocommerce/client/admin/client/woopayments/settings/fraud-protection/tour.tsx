@@ -17,13 +17,8 @@ import { recordEvent } from '@woocommerce/tracks';
  */
 import { saveOption } from '../data/actions';
 import { useGetSettings, useSettings } from '../data/hooks';
-import { asSettingsRecord, type SettingsRecord } from '../settings-values';
-
-const getIsWelcomeTourDismissed = ( settings: SettingsRecord ) => {
-	const fraudProtection = asSettingsRecord( settings.fraud_protection );
-
-	return fraudProtection.is_welcome_tour_dismissed === true;
-};
+import { isWelcomeTourDismissed } from '.';
+import { asSettingsRecord } from '../settings-values';
 
 const getTourReferenceElement = () =>
 	document.getElementById( 'fraud-protection-card-options' ) ??
@@ -155,7 +150,7 @@ export const FraudProtectionTour = () => {
 	const { isLoading } = useSettings();
 	const isSavingDismissal = useRef( false );
 	const [ isDismissed, setIsDismissed ] = useState( () =>
-		getIsWelcomeTourDismissed( settings )
+		isWelcomeTourDismissed( settings )
 	);
 	const [ showTour, setShowTour ] = useState( false );
 	const [ tourKey, setTourKey ] = useState( 0 );

@@ -57,7 +57,7 @@ const LEARN_MORE_URL =
 	'https://woocommerce.com/document/woopayments/startup-guide/#signup-process';
 const RESET_ACCOUNT_URL =
 	'https://woocommerce.com/document/woopayments/startup-guide/#resetting';
-const WORDPRESS_ENVIRONMENT_URL =
+export const WORDPRESS_ENVIRONMENT_URL =
 	'https://make.wordpress.org/core/2020/08/27/wordpress-environment-types/';
 const TEST_ACCOUNT_DEV_URL =
 	'https://woocommerce.com/document/woopayments/testing-and-troubleshooting/test-accounts/#developer-notes';

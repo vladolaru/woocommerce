@@ -1,7 +1,7 @@
 /**
  * External dependencies
  */
-import { ExternalLink, Notice, TextControl } from '@wordpress/components';
+import { Notice, TextControl } from '@wordpress/components';
 import { useEffect, useState } from '@wordpress/element';
 import { __ } from '@wordpress/i18n';
 
@@ -15,6 +15,7 @@ import {
 	useGetSavingError,
 } from '../data/hooks';
 import { FieldGroup } from './field-group';
+import { NotificationsSectionDescription } from './section-descriptions';
 import {
 	type ValidationSetter,
 	type StringSetting,
@@ -27,9 +28,6 @@ const NOTIFICATIONS_EMAIL_CONFIRM_ERROR_ID =
 	'woopayments-notifications-email-confirm-error';
 const NOTIFICATIONS_EMAIL_CONFIRM_INPUT_ID =
 	'woopayments-notifications-email-confirm-input';
-
-const NOTIFICATIONS_DOC_URL =
-	'https://woocommerce.com/document/woopayments/settings-guide/#account-notifications';
 
 const NotificationsSettingsSection = ( {
 	onValidationChange,
@@ -94,19 +92,7 @@ const NotificationsSettingsSection = ( {
 		<SettingsSection
 			id="notifications"
 			title={ __( 'Account notifications', 'woocommerce' ) }
-			description={
-				<>
-					<p>
-						{ __(
-							'Receive important notifications about your WooPayments account.',
-							'woocommerce'
-						) }
-					</p>
-					<ExternalLink href={ NOTIFICATIONS_DOC_URL }>
-						{ __( 'Learn more', 'woocommerce' ) }
-					</ExternalLink>
-				</>
-			}
+			description={ <NotificationsSectionDescription /> }
 		>
 			<FieldGroup title={ __( 'Notifications email', 'woocommerce' ) }>
 				<p className="woopayments-settings-muted">
@@ -185,4 +171,4 @@ const NotificationsSettingsSection = ( {
 	);
 };
 
-export { NOTIFICATIONS_DOC_URL, NotificationsSettingsSection };
+export { NotificationsSettingsSection };

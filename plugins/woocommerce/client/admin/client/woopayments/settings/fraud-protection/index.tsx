@@ -22,15 +22,14 @@ import {
 	useGetSettings,
 } from '../data/hooks';
 import { asSettingsRecord, type SettingsRecord } from '../settings-values';
+import type { StringSetting } from '../sections/utils';
+import type { AdvancedFraudProtectionSetting } from './advanced/types';
 import './style.scss';
 
 const ProtectionLevel = {
 	BASIC: 'basic',
 	ADVANCED: 'advanced',
 } as const;
-
-type StringSetting = [ string, ( value: string ) => void ];
-type AdvancedFraudProtectionSetting = [ unknown, ( value: unknown[] ) => void ];
 
 const FraudProtectionTour = lazy( () =>
 	import(
@@ -53,7 +52,7 @@ const normalizeProtectionLevel = ( level: string ) =>
 		? ProtectionLevel.ADVANCED
 		: ProtectionLevel.BASIC;
 
-const isWelcomeTourDismissed = ( settings: SettingsRecord ) =>
+export const isWelcomeTourDismissed = ( settings: SettingsRecord ) =>
 	asSettingsRecord( settings.fraud_protection ).is_welcome_tour_dismissed ===
 	true;
 

@@ -25,9 +25,7 @@ import {
 	useWooPayEnabledSettings,
 } from './data/hooks';
 import { asSettingsRecord, asString, asStringArray } from './settings-values';
-
-type BooleanSetting = [ boolean, ( value: boolean ) => void ];
-type StringArraySetting = [ string[], ( value: string[] ) => void ];
+import type { BooleanSetting, StringArraySetting } from './sections/utils';
 
 export type WooPaymentsAffectedPaymentMethod = {
 	id: string;

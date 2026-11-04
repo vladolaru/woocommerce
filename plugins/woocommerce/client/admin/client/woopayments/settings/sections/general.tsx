@@ -29,13 +29,12 @@ import {
 	GeneralSectionDescription,
 } from './section-descriptions';
 import type { BooleanSetting } from './utils';
+import { WORDPRESS_ENVIRONMENT_URL } from '../account-mode-notice';
 
 const TESTING_DOC_URL =
 	'https://woocommerce.com/document/woopayments/testing-and-troubleshooting/testing/';
 const TEST_CARDS_DOC_URL =
 	'https://woocommerce.com/document/woopayments/testing-and-troubleshooting/testing/#test-cards';
-const WORDPRESS_ENVIRONMENT_URL =
-	'https://make.wordpress.org/core/2020/08/27/wordpress-environment-types/';
 
 const TestModeConfirmationModal = ( {
 	onClose,
@@ -62,7 +61,7 @@ const TestModeConfirmationModal = ( {
 					'woocommerce'
 				) }
 			</p>
-			<ExternalLink href="https://woocommerce.com/document/woopayments/testing-and-troubleshooting/testing/">
+			<ExternalLink href={ TESTING_DOC_URL }>
 				{ __( 'Learn more about test mode', 'woocommerce' ) }
 			</ExternalLink>
 			<div className="woopayments-settings-modal__actions">

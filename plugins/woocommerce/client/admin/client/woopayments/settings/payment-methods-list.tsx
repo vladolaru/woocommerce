@@ -37,11 +37,10 @@ import {
 } from '../admin/overview/components/status-chip';
 import { getSettingsPaymentsProviderRouteUrl } from '../admin/utils';
 import { formatCurrency } from '../admin/currency-format';
-
-type PaymentMethodStatus = {
-	status?: string;
-	requirements?: unknown[];
-};
+import type {
+	DuplicatePaymentMethodNotices,
+	PaymentMethodStatus,
+} from './sections/utils';
 
 type FeeAmount = {
 	percentage_rate?: number;
@@ -60,8 +59,6 @@ type FeeStructure = {
 	fx?: FeeAmount;
 	discount?: FeeAmount[];
 };
-
-type DuplicatePaymentMethodNotices = Record< string, string[] | undefined >;
 
 type PaymentMethodsListProps = {
 	methodIds: string[];

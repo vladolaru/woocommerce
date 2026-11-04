@@ -47,6 +47,7 @@ import {
 } from '../data/hooks';
 import { asSettingsRecord, asString } from '../settings-values';
 import { FieldGroup } from './field-group';
+import { TransactionsSectionDescription } from './section-descriptions';
 import {
 	type ValidationSetter,
 	type BooleanSetting,
@@ -63,8 +64,6 @@ const SUPPORT_EMAIL_ERROR_ID = 'woopayments-support-email-error';
 const SUPPORT_PHONE_ERROR_ID = 'woopayments-support-phone-error';
 const MANUAL_CAPTURE_DOC_URL =
 	'https://woocommerce.com/document/woopayments/settings-guide/authorize-and-capture/';
-
-const WOOPAYMENTS_DOC_URL = 'https://woocommerce.com/document/woopayments/';
 
 const IN_PERSON_PAYMENTS_DOC_URL =
 	'https://woocommerce.com/in-person-payments/';
@@ -255,19 +254,7 @@ const TransactionsSettingsSection = ( {
 		<SettingsSection
 			id="transactions"
 			title={ __( 'Transactions', 'woocommerce' ) }
-			description={
-				<>
-					<p>
-						{ __(
-							"Update your store's configuration to ensure smooth transactions.",
-							'woocommerce'
-						) }
-					</p>
-					<ExternalLink href={ WOOPAYMENTS_DOC_URL }>
-						{ __( 'View our documentation', 'woocommerce' ) }
-					</ExternalLink>
-				</>
-			}
+			description={ <TransactionsSectionDescription /> }
 		>
 			<FieldGroup
 				title={ __( 'Transaction preferences', 'woocommerce' ) }
@@ -526,4 +513,4 @@ const TransactionsSettingsSection = ( {
 	);
 };
 
-export { WOOPAYMENTS_DOC_URL, TransactionsSettingsSection };
+export { TransactionsSettingsSection };

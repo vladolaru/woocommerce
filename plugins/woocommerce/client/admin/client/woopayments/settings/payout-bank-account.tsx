@@ -65,35 +65,35 @@ export const PayoutBankAccount = () => {
 	useEffect( () => {
 		let isMounted = true;
 
-		Promise.all( [
+		void Promise.allSettled( [
 			getPayoutOverview(),
-			getAccountLink().catch( () => undefined ),
-		] )
-			.then( ( [ overview, accountLink ] ) => {
-				if ( ! isMounted ) {
-					return;
-				}
+			getAccountLink(),
+		] ).then( ( [ overview, accountLink ] ) => {
+			if ( ! isMounted ) {
+				return;
+			}
 
-				const externalAccounts =
-					overview.account?.default_external_accounts ?? [];
-				const hasErroredExternalAccount = externalAccounts.some(
-					( externalAccount ) => externalAccount.status === 'errored'
-				);
+			const externalAccounts =
+				overview.status === 'fulfilled'
+					? ( overview.value.account?.default_external_accounts ??
+						[] )
+					: [];
+			const hasErroredExternalAccount = externalAccounts.some(
+				( externalAccount ) => externalAccount.status === 'errored'
+			);
 
-				setState( {
-					accountLink,
-					hasErroredExternalAccount,
-				} );
-
-				if ( hasErroredExternalAccount ) {
-					speak( payoutFailureMessage, 'assertive' );
-				}
-			} )
-			.catch( () => {
-				if ( isMounted ) {
-					setState( { hasErroredExternalAccount: false } );
-				}
+			setState( {
+				accountLink:
+					accountLink.status === 'fulfilled'
+						? accountLink.value
+						: undefined,
+				hasErroredExternalAccount,
 			} );
+
+			if ( hasErroredExternalAccount ) {
+				speak( payoutFailureMessage, 'assertive' );
+			}
+		} );
 
 		return () => {
 			isMounted = false;

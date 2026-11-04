@@ -45,14 +45,19 @@ const STANDARD_PAYMENT_METHOD_EXCLUDED_IDS = [
 	'link',
 ];
 
-const PaymentMethodsSettingsSection = () => {
+/**
+ * The payment methods list for the given method ids, wired to the settings store; the payment methods and the buy now,
+ * pay later sections each pass their own ids.
+ *
+ * @param props           The component props.
+ * @param props.methodIds The method ids to list.
+ */
+const SettingsPaymentMethodsList = ( {
+	methodIds,
+}: {
+	methodIds: string[];
+} ) => {
 	const settings = asSettingsRecord( useGetSettings() );
-	const availablePaymentMethodIds = asStringArray(
-		useGetAvailablePaymentMethodIds()
-	).filter(
-		( methodId ) =>
-			! STANDARD_PAYMENT_METHOD_EXCLUDED_IDS.includes( methodId )
-	);
 	const statuses = asSettingsRecord( useGetPaymentMethodStatuses() );
 	const accountFees = asAccountFees( useGetAccountFees() );
 	const {
@@ -61,9 +66,6 @@ const PaymentMethodsSettingsSection = () => {
 		onDismissDuplicateNotice,
 	} = useDuplicatePaymentMethodNotices();
 	const pmPromotions = asPmPromotions( settings.pm_promotions );
-	const standardPaymentMethodIds = availablePaymentMethodIds.filter(
-		( methodId ) => ! BNPL_METHOD_IDS.includes( methodId )
-	);
 	const [ enabledMethodIds ] =
 		useEnabledPaymentMethodIds() as StringArraySetting;
 	const [ , addPaymentMethod ] = usePaymentMethodSelection() as [
@@ -79,8 +81,42 @@ const PaymentMethodsSettingsSection = () => {
 	const storeCurrency = asString( settings.store_currency );
 	const isMultiCurrencyEnabled = asBoolean(
 		settings.is_multi_currency_enabled,
-		true
+		false
 	);
+
+	return (
+		<WooPaymentsPaymentMethodsList
+			methodIds={ methodIds }
+			enabledMethodIds={ enabledMethodIds }
+			statuses={
+				statuses as Record< string, PaymentMethodStatus | undefined >
+			}
+			accountFees={ accountFees }
+			pmPromotions={ pmPromotions }
+			duplicatedPaymentMethodIds={ duplicatedPaymentMethodIds }
+			dismissedDuplicatePaymentMethodNotices={
+				dismissedDuplicatePaymentMethodNotices
+			}
+			isManualCaptureEnabled={ Boolean( isManualCaptureEnabled ) }
+			isMultiCurrencyEnabled={ isMultiCurrencyEnabled }
+			storeCurrency={ storeCurrency }
+			accountCountry={ accountCountry }
+			onEnable={ addPaymentMethod }
+			onDisable={ removePaymentMethod }
+			onDismissDuplicateNotice={ onDismissDuplicateNotice }
+		/>
+	);
+};
+
+const PaymentMethodsSettingsSection = () => {
+	const standardPaymentMethodIds = asStringArray(
+		useGetAvailablePaymentMethodIds()
+	).filter(
+		( methodId ) =>
+			! STANDARD_PAYMENT_METHOD_EXCLUDED_IDS.includes( methodId ) &&
+			! BNPL_METHOD_IDS.includes( methodId )
+	);
+	const [ isManualCaptureEnabled ] = useManualCapture() as BooleanSetting;
 
 	return (
 		<SettingsSection
@@ -101,32 +137,12 @@ const PaymentMethodsSettingsSection = () => {
 						) }
 					</Notice>
 				) }
-				<WooPaymentsPaymentMethodsList
+				<SettingsPaymentMethodsList
 					methodIds={ standardPaymentMethodIds }
-					enabledMethodIds={ enabledMethodIds }
-					statuses={
-						statuses as Record<
-							string,
-							PaymentMethodStatus | undefined
-						>
-					}
-					accountFees={ accountFees }
-					pmPromotions={ pmPromotions }
-					duplicatedPaymentMethodIds={ duplicatedPaymentMethodIds }
-					dismissedDuplicatePaymentMethodNotices={
-						dismissedDuplicatePaymentMethodNotices
-					}
-					isManualCaptureEnabled={ Boolean( isManualCaptureEnabled ) }
-					isMultiCurrencyEnabled={ isMultiCurrencyEnabled }
-					storeCurrency={ storeCurrency }
-					accountCountry={ accountCountry }
-					onEnable={ addPaymentMethod }
-					onDisable={ removePaymentMethod }
-					onDismissDuplicateNotice={ onDismissDuplicateNotice }
 				/>
 			</FieldGroup>
 		</SettingsSection>
 	);
 };
 
-export { PaymentMethodsSettingsSection };
+export { PaymentMethodsSettingsSection, SettingsPaymentMethodsList };

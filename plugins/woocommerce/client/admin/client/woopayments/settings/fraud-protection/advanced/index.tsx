@@ -40,7 +40,9 @@ import {
 	useSettings,
 } from '../../data/hooks';
 import { ProtectionLevel, Rules } from './constants';
+import type { StringSetting } from '../../sections/utils';
 import {
+	type AdvancedFraudProtectionSetting,
 	FraudPreventionSettings,
 	isOrderItemsThresholdSetting,
 	isPurchasePriceThresholdSetting,
@@ -48,6 +50,8 @@ import {
 } from './types';
 import {
 	isSellingToAvsSupportedLocations,
+	maybeParseFloat,
+	maybeParseInteger,
 	readRuleset,
 	writeRuleset,
 } from './utils';
@@ -60,8 +64,6 @@ import {
 } from '../../settings-values';
 import './style.scss';
 
-type StringSetting = [ string, ( value: string ) => void ];
-type AdvancedFraudProtectionSetting = [ unknown, ( value: unknown[] ) => void ];
 type WindowWithWooSettings = Window & {
 	wcSettings?: {
 		adminUrl?: string;
@@ -161,25 +163,13 @@ const getCurrencySymbol = (
 const hasEnabledRule = ( settings: ProtectionSettingsUI ) =>
 	Object.values( settings ).some( ( setting ) => setting.enabled );
 
-const getFloatValue = ( value: string | number | null ) => {
-	const parsed = parseFloat( `${ value ?? '' }` );
-
-	return isNaN( parsed ) ? 0 : parsed;
-};
-
-const getIntegerValue = ( value: string | number | null ) => {
-	const parsed = parseInt( `${ value ?? '' }`, 10 );
-
-	return isNaN( parsed ) ? 0 : parsed;
-};
-
 const validateThresholds = ( settings: ProtectionSettingsUI ) => {
 	const orderItems = settings[ Rules.RULE_ORDER_ITEMS_THRESHOLD ];
 	const purchasePrice = settings[ Rules.RULE_PURCHASE_PRICE_THRESHOLD ];
 
 	if ( orderItems?.enabled && isOrderItemsThresholdSetting( orderItems ) ) {
-		const minItems = getIntegerValue( orderItems.min_items );
-		const maxItems = getIntegerValue( orderItems.max_items );
+		const minItems = maybeParseInteger( orderItems.min_items ) ?? 0;
+		const maxItems = maybeParseInteger( orderItems.max_items ) ?? 0;
 
 		if ( ! minItems && ! maxItems ) {
 			return __(
@@ -200,8 +190,8 @@ const validateThresholds = ( settings: ProtectionSettingsUI ) => {
 		purchasePrice?.enabled &&
 		isPurchasePriceThresholdSetting( purchasePrice )
 	) {
-		const minAmount = getFloatValue( purchasePrice.min_amount );
-		const maxAmount = getFloatValue( purchasePrice.max_amount );
+		const minAmount = maybeParseFloat( purchasePrice.min_amount ) ?? 0;
+		const maxAmount = maybeParseFloat( purchasePrice.max_amount ) ?? 0;
 
 		if ( ! minAmount && ! maxAmount ) {
 			return __(
@@ -525,12 +515,10 @@ const ThresholdControls = ( {
 		)
 			? settingUI
 			: null;
-		const minAmount = getFloatValue(
-			purchasePriceSetting?.min_amount ?? ''
-		);
-		const maxAmount = getFloatValue(
-			purchasePriceSetting?.max_amount ?? ''
-		);
+		const minAmount =
+			maybeParseFloat( purchasePriceSetting?.min_amount ?? '' ) ?? 0;
+		const maxAmount =
+			maybeParseFloat( purchasePriceSetting?.max_amount ?? '' ) ?? 0;
 		const thresholdNotice = getThresholdNotice( {
 			minimum: minAmount,
 			maximum: maxAmount,
@@ -577,8 +565,10 @@ const ThresholdControls = ( {
 	const orderItemsSetting = isOrderItemsThresholdSetting( settingUI )
 		? settingUI
 		: null;
-	const minItems = getIntegerValue( orderItemsSetting?.min_items ?? '' );
-	const maxItems = getIntegerValue( orderItemsSetting?.max_items ?? '' );
+	const minItems =
+		maybeParseInteger( orderItemsSetting?.min_items ?? '' ) ?? 0;
+	const maxItems =
+		maybeParseInteger( orderItemsSetting?.max_items ?? '' ) ?? 0;
 	const thresholdNotice = getThresholdNotice( {
 		minimum: minItems,
 		maximum: maxItems,

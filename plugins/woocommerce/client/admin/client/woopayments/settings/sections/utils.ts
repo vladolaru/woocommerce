@@ -109,6 +109,7 @@ export type {
 	StringSetting,
 	StringArraySetting,
 	PaymentMethodStatus,
+	DuplicatePaymentMethodNotices,
 };
 
 export {

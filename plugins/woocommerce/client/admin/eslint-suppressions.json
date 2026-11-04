@@ -504,17 +504,7 @@
       "count": 1
     }
   },
-  "client/woopayments/settings/sections/buy-now-pay-later.tsx": {
-    "@wordpress/use-recommended-components": {
-      "count": 1
-    }
-  },
   "client/woopayments/settings/sections/general.tsx": {
-    "@wordpress/use-recommended-components": {
-      "count": 1
-    }
-  },
-  "client/woopayments/settings/sections/notifications.tsx": {
     "@wordpress/use-recommended-components": {
       "count": 1
     }

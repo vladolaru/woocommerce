@@ -18,6 +18,6 @@ export const AMAZON_PAY_DEFINITION: WooPaymentsPaymentMethodDefinition = {
 	iconUrl: '',
 	stripeKey: 'amazon_pay_payments',
 	currencies: [],
-	allowsManualCapture: false,
+	allowsManualCapture: true,
 	allowsPayLater: false,
 };

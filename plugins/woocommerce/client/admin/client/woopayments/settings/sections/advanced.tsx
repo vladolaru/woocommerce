@@ -13,9 +13,7 @@ import { StripeBillingSection } from '../stripe-billing/stripe-billing-section';
 import { useDebugLog, useDevMode, useMultiCurrency } from '../data/hooks';
 import { FieldGroup } from './field-group';
 import type { BooleanSetting } from './utils';
-
-const ADVANCED_SETTINGS_DOC_URL =
-	'https://woocommerce.com/document/woopayments/settings-guide/#advanced-settings';
+import { AdvancedSettingsSectionDescription } from './section-descriptions';
 
 const AdvancedSettingsSection = () => {
 	const [ isMultiCurrencyEnabled, setIsMultiCurrencyEnabled ] =
@@ -33,19 +31,7 @@ const AdvancedSettingsSection = () => {
 		<SettingsSection
 			id="advanced"
 			title={ __( 'Advanced settings', 'woocommerce' ) }
-			description={
-				<>
-					<p>
-						{ __(
-							'More options for specific payment needs.',
-							'woocommerce'
-						) }
-					</p>
-					<ExternalLink href={ ADVANCED_SETTINGS_DOC_URL }>
-						{ __( 'View our documentation', 'woocommerce' ) }
-					</ExternalLink>
-				</>
-			}
+			description={ <AdvancedSettingsSectionDescription /> }
 		>
 			<CheckboxControl
 				className="woopayments-settings-advanced-option"
@@ -98,4 +84,4 @@ const AdvancedSettingsSection = () => {
 	);
 };
 
-export { ADVANCED_SETTINGS_DOC_URL, AdvancedSettingsSection };
+export { AdvancedSettingsSection };

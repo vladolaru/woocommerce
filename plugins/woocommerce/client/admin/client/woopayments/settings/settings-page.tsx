@@ -20,33 +20,20 @@ import { WOOPAYMENTS_SETTINGS_HEADING_ID } from '~/settings-payments/constants';
 import { registerPaymentsRuntimeTracksPropertyWhenPreloaded } from '../tracks-runtime';
 import { AccountModeNotice } from './account-mode-notice';
 import { ApplePayDomainErrorNotice } from './apple-pay-domain-error-notice';
-import { getWooPaymentsSettingsBootstrap } from './bootstrap';
 import { FraudProtectionSettings } from './fraud-protection';
 import { PaymentMethodsSettingsSection } from './sections/payment-methods';
-import {
-	BNPL_DOC_URL,
-	BuyNowPayLaterSettingsSection,
-} from './sections/buy-now-pay-later';
+import { BuyNowPayLaterSettingsSection } from './sections/buy-now-pay-later';
 import { ExpressCheckoutSettingsSection } from './sections/express-checkout';
 import { SettingsBusyState } from './settings-busy-state';
-import {
-	WOOPAYMENTS_DOC_URL,
-	TransactionsSettingsSection,
-} from './sections/transactions';
-import {
-	NOTIFICATIONS_DOC_URL,
-	NotificationsSettingsSection,
-} from './sections/notifications';
+import { TransactionsSettingsSection } from './sections/transactions';
+import { NotificationsSettingsSection } from './sections/notifications';
 import { SaveSettingsSection } from './save-settings-section';
 import { GeneralSettingsSection } from './sections/general';
 import {
 	PAYOUT_SCHEDULE_DOC_URL,
 	PayoutsSettingsSection,
 } from './sections/payouts';
-import {
-	ADVANCED_SETTINGS_DOC_URL,
-	AdvancedSettingsSection,
-} from './sections/advanced';
+import { AdvancedSettingsSection } from './sections/advanced';
 import { SettingsSection, type FieldValidationError } from './settings-shell';
 import { SpotlightPromotion } from '../promotions/spotlight';
 import {
@@ -65,6 +52,10 @@ import {
 	PaymentMethodsSectionDescription,
 	ExpressCheckoutsSectionDescription,
 	FraudProtectionSectionDescription,
+	BuyNowPayLaterSectionDescription,
+	TransactionsSectionDescription,
+	NotificationsSectionDescription,
+	AdvancedSettingsSectionDescription,
 } from './sections/section-descriptions';
 import './settings-page-only.scss';
 import './style.scss';
@@ -144,19 +135,7 @@ const SettingsLoadingSections = () => {
 			id: 'buy-now-pay-later-methods',
 			title: __( 'Buy now, pay later', 'woocommerce' ),
 			lines: 7,
-			description: (
-				<>
-					<p>
-						{ __(
-							'Boost sales by offering customers additional buying power and flexible payment options.',
-							'woocommerce'
-						) }
-					</p>
-					<ExternalLink href={ BNPL_DOC_URL }>
-						{ __( 'Learn more', 'woocommerce' ) }
-					</ExternalLink>
-				</>
-			),
+			description: <BuyNowPayLaterSectionDescription />,
 		},
 		{
 			id: 'express-checkouts',
@@ -168,19 +147,7 @@ const SettingsLoadingSections = () => {
 			id: 'transactions',
 			title: __( 'Transactions', 'woocommerce' ),
 			lines: 8,
-			description: (
-				<>
-					<p>
-						{ __(
-							"Update your store's configuration to ensure smooth transactions.",
-							'woocommerce'
-						) }
-					</p>
-					<ExternalLink href={ WOOPAYMENTS_DOC_URL }>
-						{ __( 'View our documentation', 'woocommerce' ) }
-					</ExternalLink>
-				</>
-			),
+			description: <TransactionsSectionDescription />,
 		},
 		{
 			id: 'payouts',
@@ -196,19 +163,7 @@ const SettingsLoadingSections = () => {
 			id: 'notifications',
 			title: __( 'Account notifications', 'woocommerce' ),
 			lines: 4,
-			description: (
-				<>
-					<p>
-						{ __(
-							'Receive important notifications about your WooPayments account.',
-							'woocommerce'
-						) }
-					</p>
-					<ExternalLink href={ NOTIFICATIONS_DOC_URL }>
-						{ __( 'Learn more', 'woocommerce' ) }
-					</ExternalLink>
-				</>
-			),
+			description: <NotificationsSectionDescription />,
 		},
 		{
 			id: 'fraud-protection',
@@ -220,19 +175,7 @@ const SettingsLoadingSections = () => {
 			id: 'advanced',
 			title: __( 'Advanced settings', 'woocommerce' ),
 			lines: 5,
-			description: (
-				<>
-					<p>
-						{ __(
-							'More options for specific payment needs.',
-							'woocommerce'
-						) }
-					</p>
-					<ExternalLink href={ ADVANCED_SETTINGS_DOC_URL }>
-						{ __( 'View our documentation', 'woocommerce' ) }
-					</ExternalLink>
-				</>
-			),
+			description: <AdvancedSettingsSectionDescription />,
 		},
 	];
 
@@ -280,7 +223,6 @@ const FraudProtectionSettingsSection = () => {
 
 export const WooPaymentsSettingsPage = () => {
 	registerStoreUnlessTaken( settingsStore );
-	getWooPaymentsSettingsBootstrap();
 	useResetSettingsOnLeave();
 
 	const { isLoading, isSaving } = useSettings();
