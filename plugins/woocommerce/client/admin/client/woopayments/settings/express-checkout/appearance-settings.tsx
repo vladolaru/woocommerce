@@ -159,8 +159,18 @@ export const ExpressCheckoutAppearanceSettings = ( {
 							) }
 							hideLabelFromVision
 							value={ String( radius ) }
+							min={ 0 }
+							max={ 30 }
 							onChange={ ( value ) =>
-								setRadius( parseInt( value || '0', 10 ) )
+								setRadius(
+									Math.min(
+										30,
+										Math.max(
+											0,
+											parseInt( value || '0', 10 )
+										)
+									)
+								)
 							}
 							__nextHasNoMarginBottom
 							__next40pxDefaultSize

@@ -4,7 +4,14 @@
 import apiFetch from '@wordpress/api-fetch';
 import { speak } from '@wordpress/a11y';
 import { dispatch } from '@wordpress/data';
-import { act, render, screen, waitFor, within } from '@testing-library/react';
+import {
+	act,
+	fireEvent,
+	render,
+	screen,
+	waitFor,
+	within,
+} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { getHistory } from '@woocommerce/navigation';
 
@@ -840,6 +847,34 @@ describe( 'WooPaymentsExpressCheckoutSettings', () => {
 			)
 		).toBeInTheDocument();
 	} );
+
+	// Client 11.2.0 `settings/express-checkout-settings/general-payment-request-button-settings.js:178-189`: the number
+	// input takes 0 to 30, as the slider beside it.
+	it.each( [
+		[ '100', 30 ],
+		[ '-5', 0 ],
+		[ '12', 12 ],
+	] )(
+		'keeps a typed border radius of %s in the 0 to 30 range',
+		async ( typed, saved ) => {
+			const setRadius = jest.fn();
+			mockUsePaymentRequestButtonBorderRadius.mockReturnValue( [
+				4,
+				setRadius,
+			] );
+
+			render(
+				<WooPaymentsExpressCheckoutSettings methodId="payment_request" />
+			);
+
+			fireEvent.change(
+				await screen.findByLabelText( 'Border radius, number input' ),
+				{ target: { value: typed } }
+			);
+
+			expect( setRadius ).toHaveBeenLastCalledWith( saved );
+		}
+	);
 
 	it( 'does not render shared appearance notices when no other express checkout buttons share settings', async () => {
 		mockUseWooPayEnabledSettings.mockReturnValue( [ false, noop ] );
