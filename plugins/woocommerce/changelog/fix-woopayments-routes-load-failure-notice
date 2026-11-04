@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-Show an error with a reload button, instead of the payments list, when a WooPayments page in Payments settings fails to load.

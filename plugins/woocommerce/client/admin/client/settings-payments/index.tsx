@@ -2,12 +2,7 @@
  * External dependencies
  */
 import { Gridicon } from '@automattic/components';
-import {
-	Button,
-	Notice,
-	Placeholder,
-	SelectControl,
-} from '@wordpress/components';
+import { Button, Placeholder, SelectControl } from '@wordpress/components';
 import React, { lazy, Suspense, useEffect, useState } from '@wordpress/element';
 import type { ReactNode } from 'react';
 import {
@@ -379,14 +374,6 @@ const needsWooPaymentsRoutes = ( pathname: string ) =>
 	( pathname === '/woopayments' || pathname.startsWith( '/woopayments/' ) ) &&
 	! pathname.startsWith( '/woopayments/onboarding' );
 
-// Core preloads the route availability only while the built-in WooPayments owns payments (`SharedSettings`).
-const isBuiltinWooPaymentsAdmin = () =>
-	!! (
-		window.wcSettings?.admin as
-			| { woopaymentsSettings?: { adminRouteAvailability?: unknown } }
-			| undefined
-	 )?.woopaymentsSettings?.adminRouteAvailability;
-
 /**
  * Renders the Payments routes, loading the WooPayments routes first when the current path needs them.
  */
@@ -396,9 +383,8 @@ const SettingsPaymentsRoutes = () => {
 	const [ wooPaymentsRoutes, setWooPaymentsRoutes ] = useState(
 		loadedWooPaymentsRoutes
 	);
-	// A failed load (offline, broken build) shows a reload notice instead of loading forever; the next path tries again.
-	const [ failedPathname, setFailedPathname ] = useState< string >();
-	const hasLoadFailed = ! wooPaymentsRoutes && failedPathname === pathname;
+	// A failed load (offline, broken build) falls back to the other routes instead of loading forever.
+	const [ hasLoadFailed, setHasLoadFailed ] = useState( false );
 	const isLoadingWooPaymentsRoutes =
 		! wooPaymentsRoutes &&
 		! hasLoadFailed &&
@@ -418,7 +404,7 @@ const SettingsPaymentsRoutes = () => {
 			},
 			() => {
 				if ( isMounted ) {
-					setFailedPathname( pathname );
+					setHasLoadFailed( true );
 				}
 			}
 		);
@@ -426,29 +412,10 @@ const SettingsPaymentsRoutes = () => {
 		return () => {
 			isMounted = false;
 		};
-	}, [ isLoadingWooPaymentsRoutes, pathname ] );
+	}, [ isLoadingWooPaymentsRoutes ] );
 
 	if ( isLoadingWooPaymentsRoutes ) {
 		return <WooPaymentsRouteLoading />;
-	}
-
-	// The copy wc-admin's error boundary shows when one of its lazy pages fails to load (`~/error-boundary`).
-	// Elsewhere the payments list shows, as trunk does.
-	if ( hasLoadFailed && isBuiltinWooPaymentsAdmin() ) {
-		return (
-			<Notice
-				status="error"
-				isDismissible={ false }
-				actions={ [
-					{
-						label: __( 'Reload Page', 'woocommerce' ),
-						onClick: () => window.location.reload(),
-					},
-				] }
-			>
-				{ __( 'Oops, something went wrong', 'woocommerce' ) }
-			</Notice>
-		);
 	}
 
 	return (
