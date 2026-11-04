@@ -37,6 +37,8 @@ import type { ReportsFee, ReportsFeesQuery, ReportsFeesSummary } from './types';
 import {
 	formatExplicitCurrency,
 	getTransactionDetailsRoute,
+	getTransactionSourceLabel,
+	getTransactionTypeLabel,
 } from '../money-movement/utils';
 import {
 	getSettingsPaymentsProviderRouteUrl,
@@ -108,37 +110,6 @@ const getTransactionRoute = ( item: ReportsFee ) =>
 		transaction_id: item.transaction_id,
 		type: item.type,
 	} );
-
-const getMethodLabel = ( value?: string ) => {
-	if ( ! value ) {
-		return '-';
-	}
-
-	if ( value === 'card' ) {
-		return __( 'Card', 'woocommerce' );
-	}
-
-	return value
-		.replace( /_/g, ' ' )
-		.replace( /\b\w/g, ( letter ) => letter.toUpperCase() );
-};
-
-const getTypeLabel = ( value?: string ) => {
-	if ( ! value ) {
-		return '-';
-	}
-
-	const labels: Record< string, string > = {
-		charge: __( 'Charge', 'woocommerce' ),
-		payment: __( 'Payment', 'woocommerce' ),
-		refund: __( 'Refund', 'woocommerce' ),
-		dispute: __( 'Dispute', 'woocommerce' ),
-		fee_refund: __( 'Fee refund', 'woocommerce' ),
-		network_costs: __( 'Network costs', 'woocommerce' ),
-	};
-
-	return labels[ value ] || getMethodLabel( value );
-};
 
 // Client 11.1.0 `reports/fees/use-fees-url-sync.ts:26,208-233`: a search reaches the URL after typing pauses.
 const FEES_SEARCH_URL_DEBOUNCE_MS = 500;
@@ -428,14 +399,18 @@ const FeesReport = ( {
 				elements: ( summaryState.data?.sources || [] ).map(
 					( source ) => ( {
 						value: source,
-						label: getMethodLabel( source ),
+						label: getTransactionSourceLabel( source ),
 					} )
 				),
 				filterBy: { operators: [ 'is' ] },
 				getValue: ( { item }: { item: ReportsFee } ) =>
 					item.payment_method?.type || '',
 				render: ( { item }: { item: ReportsFee } ) => (
-					<span>{ getMethodLabel( item.payment_method?.type ) }</span>
+					<span>
+						{ getTransactionSourceLabel(
+							item.payment_method?.type || ''
+						) }
+					</span>
 				),
 			},
 			{
@@ -445,13 +420,13 @@ const FeesReport = ( {
 					summaryState.data?.types || [ 'charge', 'refund' ]
 				).map( ( type ) => ( {
 					value: type,
-					label: getTypeLabel( type ),
+					label: getTransactionTypeLabel( type ),
 				} ) ),
 				// Client 11.1.0 `reports/fees/fields.tsx:88`: one type at a time.
 				filterBy: { operators: [ 'is' ] },
 				getValue: ( { item }: { item: ReportsFee } ) => item.type || '',
 				render: ( { item }: { item: ReportsFee } ) => (
-					<span>{ getTypeLabel( item.type ) }</span>
+					<span>{ getTransactionTypeLabel( item.type ) }</span>
 				),
 			},
 			{

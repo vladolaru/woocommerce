@@ -1483,6 +1483,49 @@ describe( 'WooPaymentsReportsPage', () => {
 		clickSpy.mockRestore();
 	} );
 
+	// Client 11.2.0 `reports/fees/strings.ts:9-25` and `fields.tsx:79-94`: the Fees method and type labels are the
+	// transactions list's own (`constants/payment-method.ts:48-65`, `transactions/strings.ts`), in sentence case.
+	it( 'labels Fees methods and types as the transactions list does', async () => {
+		mockGetFees.mockImplementation( async () => {
+			await waitForNextTick();
+			return [
+				{
+					...feeRow,
+					payment_method: { type: 'ach_debit' },
+					type: 'refund_failure',
+				},
+			];
+		} );
+		mockGetFeesSummary.mockImplementation( async () => {
+			await waitForNextTick();
+			return {
+				count: 1,
+				sources: [ 'ach_debit' ],
+				types: [ 'refund_failure' ],
+			};
+		} );
+
+		renderReportsPage( [ '/woopayments/reports?tab=fees' ] );
+
+		const dataViews = await screen.findByTestId( 'reports-dataviews' );
+		expect(
+			await within( dataViews ).findByText( 'ACH debit' )
+		).toBeInTheDocument();
+		expect(
+			within( dataViews ).getByText( 'Refund failure' )
+		).toBeInTheDocument();
+		const fields = mockDataViews.mock.lastCall?.[ 0 ].fields as Array< {
+			id: string;
+			elements?: Array< { value: string; label: string } >;
+		} >;
+		expect(
+			fields.find( ( field ) => field.id === 'payment_method' )?.elements
+		).toEqual( [ { value: 'ach_debit', label: 'ACH debit' } ] );
+		expect(
+			fields.find( ( field ) => field.id === 'type' )?.elements
+		).toEqual( [ { value: 'refund_failure', label: 'Refund failure' } ] );
+	} );
+
 	it( 'exposes the Fees date filter through DataViews', async () => {
 		renderReportsPage( [ '/woopayments/reports?tab=fees' ] );
 

@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Show translated payment method and transaction type names on the WooPayments Fees report, as the transactions list does, instead of raw ids.
