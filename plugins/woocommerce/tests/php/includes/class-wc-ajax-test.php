@@ -2317,6 +2317,78 @@ class WC_AJAX_Test extends \WP_Ajax_UnitTestCase {
 	}
 
 	/**
+	 * @testdox Refund requests reject structured and non-finite line values before normalization.
+	 * @dataProvider invalid_refund_line_value_data
+	 *
+	 * @param string $field          Payload field containing the invalid value.
+	 * @param mixed  $invalid_value  Invalid decoded JSON value.
+	 * @param string $expected_error Expected semantic error.
+	 */
+	public function test_refund_line_items_rejects_invalid_numeric_values( string $field, $invalid_value, string $expected_error ): void {
+		// phpcs:ignore WordPress.Security.NonceVerification.Missing -- Preserves test fixture state.
+		$original_post             = $_POST;
+		$original_user_id          = get_current_user_id();
+		$payment_gateway_registry  = WC_Payment_Gateways::instance();
+		$original_payment_gateways = $payment_gateway_registry->payment_gateways;
+		$gateway                   = $this->create_recording_refund_gateway();
+		$order                     = null;
+		$products                  = array();
+		$refund_created_calls      = 0;
+		$refund_created_callback   = static function () use ( &$refund_created_calls ): void {
+			++$refund_created_calls;
+		};
+
+		try {
+			$payment_gateway_registry->payment_gateways[] = $gateway;
+			$fixture                                      = $this->create_refundable_order( $gateway );
+			$order                                        = $fixture['order'];
+			$products                                     = $fixture['products'];
+			$quantities                                   = array( 'first' => 0 );
+			$line_totals                                  = array( 'first' => 1 );
+
+			if ( 'quantity' === $field ) {
+				$quantities['first'] = $invalid_value;
+			} else {
+				$line_totals['first'] = $invalid_value;
+			}
+
+			add_action( 'woocommerce_refund_created', $refund_created_callback, 10, 0 );
+			$this->_setRole( 'administrator' );
+
+			$response = $this->submit_refund_ajax_request( $order, $fixture['item_ids'], $quantities, $line_totals, '1' );
+
+			$this->assert_fresh_refund_rejected( $response, $expected_error, $gateway, $refund_created_calls, $order );
+		} finally {
+			remove_action( 'woocommerce_refund_created', $refund_created_callback, 10 );
+			$this->delete_refund_fixture( $order, $products );
+			$payment_gateway_registry->payment_gateways = $original_payment_gateways;
+			$_POST                                      = $original_post;
+			wp_set_current_user( $original_user_id );
+		}
+	}
+
+	/**
+	 * Data provider for invalid decoded refund values.
+	 *
+	 * @return array<string,array{string,mixed,string}>
+	 */
+	public static function invalid_refund_line_value_data(): array {
+		return array(
+			'quantity array'              => array( 'quantity', array( 1 ), 'Line item quantity must be a finite number.' ),
+			'total object'                => array( 'total', (object) array( 'value' => 1 ), 'Refund total must be a finite number.' ),
+			'quantity boolean'            => array( 'quantity', true, 'Line item quantity must be a finite number.' ),
+			'total null'                  => array( 'total', null, 'Refund total must be a finite number.' ),
+			'quantity non-numeric string' => array( 'quantity', 'not-a-number', 'Line item quantity must be a finite number.' ),
+			'total NaN spelling'          => array( 'total', 'NaN', 'Refund total must be a finite number.' ),
+			'quantity INF spelling'       => array( 'quantity', 'INF', 'Line item quantity must be a finite number.' ),
+			'total exponent overflow'     => array( 'total', '1e309', 'Refund total must be a finite number.' ),
+			'total boolean'               => array( 'total', true, 'Refund total must be a finite number.' ),
+			'total non-numeric string'    => array( 'total', 'not-a-number', 'Refund total must be a finite number.' ),
+			'quantity exponent overflow'  => array( 'quantity', '1e309', 'Line item quantity must be a finite number.' ),
+		);
+	}
+
+	/**
 	 * @testdox A refund quantity cannot exceed the units left after a prior partial refund.
 	 */
 	public function test_refund_line_items_rejects_quantity_above_remaining_after_partial_refund(): void {
@@ -3776,6 +3848,72 @@ class WC_AJAX_Test extends \WP_Ajax_UnitTestCase {
 	}
 
 	/**
+	 * @testdox A numeric quantity string within the units left is refunded and restocked as before.
+	 */
+	public function test_refund_line_items_accepts_numeric_quantity_string(): void {
+		$order = $this->create_restockable_order_for_refund_quantity_test();
+
+		$response = $this->do_restocking_refund_line_items_request( $order, '2' );
+
+		$this->assertTrue( $response['success'] ?? false, 'The AJAX refund request should succeed.' );
+		$order   = wc_get_order( $order->get_id() );
+		$item_id = array_keys( $order->get_items() )[0];
+		$this->assertSame( -2, $order->get_qty_refunded_for_item( $item_id ), 'Two units should be refunded.' );
+		$this->assertSame( 9, wc_get_product( $order->get_items()[ $item_id ]->get_product_id() )->get_stock_quantity(), 'Two units should be restocked.' );
+	}
+
+	/**
+	 * Creates an order for 3 units of a $10 product that manages its stock, with the stock reduced from 10 to 7.
+	 *
+	 * @return WC_Order
+	 */
+	private function create_restockable_order_for_refund_quantity_test(): WC_Order {
+		$product = WC_Helper_Product::create_simple_product();
+		$product->set_manage_stock( true );
+		$product->set_stock_quantity( 10 );
+		$product->save();
+
+		$order = new WC_Order();
+		$order->add_product( $product, 3 );
+		$order->calculate_totals();
+		$order->save();
+		wc_reduce_stock_levels( $order->get_id() );
+
+		$this->assertSame( 7, wc_get_product( $product->get_id() )->get_stock_quantity(), 'The order should hold 3 units of stock.' );
+
+		return wc_get_order( $order->get_id() );
+	}
+
+	/**
+	 * Posts a $10 refund of the order's first line with the given quantity and restocking on.
+	 *
+	 * @param WC_Order $order Order to refund.
+	 * @param string   $qty   Quantity to refund, as the request carries it.
+	 * @return array|null Decoded JSON response.
+	 */
+	private function do_restocking_refund_line_items_request( WC_Order $order, string $qty ): ?array {
+		$item_id = array_keys( $order->get_items() )[0];
+		$this->_setRole( 'administrator' );
+
+		$_POST['security']               = wp_create_nonce( 'order-item' );
+		$_POST['order_id']               = $order->get_id();
+		$_POST['refund_amount']          = '10';
+		$_POST['refunded_amount']        = '0';
+		$_POST['refund_reason']          = '';
+		$_POST['line_item_qtys']         = wp_json_encode( array( $item_id => $qty ) );
+		$_POST['line_item_totals']       = wp_json_encode( array( $item_id => '10' ) );
+		$_POST['line_item_tax_totals']   = wp_json_encode( array() );
+		$_POST['api_refund']             = 'false';
+		$_POST['restock_refunded_items'] = 'true';
+
+		try {
+			return $this->do_ajax( 'woocommerce_refund_line_items' );
+		} finally {
+			unset( $_POST['security'], $_POST['order_id'], $_POST['refund_amount'], $_POST['refunded_amount'], $_POST['refund_reason'], $_POST['line_item_qtys'], $_POST['line_item_totals'], $_POST['line_item_tax_totals'], $_POST['api_refund'], $_POST['restock_refunded_items'] );
+		}
+	}
+
+	/**
 	 * @testdox Refunding an order that does not exist returns an error instead of a fatal.
 	 */
 	public function test_refund_line_items_rejects_missing_order(): void {
@@ -4221,6 +4359,28 @@ class WC_AJAX_Test extends \WP_Ajax_UnitTestCase {
 		}
 
 		return $resolved;
+	}
+
+	/**
+	 * Assert a fresh order was not mutated by a rejected refund request.
+	 *
+	 * @param array<string,mixed>                                                                                    $response             AJAX response.
+	 * @param string                                                                                                 $expected_error       Expected semantic error.
+	 * @param WC_Payment_Gateway&object{refund_calls:array<int,array{order_id:int,amount:float|null,reason:string}>} $gateway              Recording gateway.
+	 * @param int                                                                                                    $refund_created_calls Number of refund-created action calls.
+	 * @param WC_Order                                                                                               $order                Target order.
+	 */
+	private function assert_fresh_refund_rejected( array $response, string $expected_error, WC_Payment_Gateway $gateway, int $refund_created_calls, WC_Order $order ): void {
+		$this->assertFalse( $response['success'], 'Invalid refund input should return an AJAX error.' );
+		$this->assertSame( $expected_error, $response['data']['error'], 'The AJAX error should identify the invalid refund input.' );
+		$this->assertCount( 0, $gateway->refund_calls, 'Invalid refund input should not reach the payment gateway.' );
+		$this->assertSame( 0, $refund_created_calls, 'Invalid refund input should not fire the refund-created action.' );
+
+		$stored_order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $stored_order, 'The order should still exist after rejection.' );
+		$this->assertCount( 0, $stored_order->get_refunds(), 'Invalid refund input should not create a local refund.' );
+		$this->assertSame( 0.0, (float) $stored_order->get_total_refunded(), 'The refunded total should remain unchanged.' );
+		$this->assertSame( 20.0, (float) $stored_order->get_remaining_refund_amount(), 'The full order amount should remain refundable.' );
 	}
 
 	/**

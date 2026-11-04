@@ -2987,6 +2987,10 @@ class WC_AJAX {
 			}
 			$order_items = $order->get_items();
 			foreach ( $line_item_qtys as $item_id => $qty ) {
+				if ( ! is_scalar( $qty ) || is_bool( $qty ) || ! is_numeric( $qty ) || ! is_finite( (float) $qty ) ) {
+					throw new Exception( __( 'Line item quantity must be a finite number.', 'woocommerce' ) );
+				}
+
 				$qty = max( $qty, 0 );
 
 				// Enforce the refund input's max here, because this AJAX request skips browser validation.
@@ -3027,6 +3031,10 @@ class WC_AJAX {
 
 			$comparison_precision = wc_get_rounding_precision();
 			foreach ( $line_item_totals as $item_id => $total ) {
+				if ( ! is_scalar( $total ) || is_bool( $total ) || ! is_numeric( $total ) || ! is_finite( (float) $total ) ) {
+					throw new Exception( __( 'Refund total must be a finite number.', 'woocommerce' ) );
+				}
+
 				$refund_total = wc_format_decimal( $total );
 				$item         = $order_items[ $item_id ] ?? null;
 
