@@ -6,6 +6,7 @@ import path from 'path';
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { recordEvent } from '@woocommerce/tracks';
+import { resetLocaleData, setLocaleData } from '@wordpress/i18n';
 
 /**
  * Internal dependencies
@@ -322,38 +323,53 @@ describe( 'PayoutsOverviewCard', () => {
 		).toBeInTheDocument();
 	} );
 
-	it( 'shows failed-payout account recovery when the selected bank account is errored', () => {
-		render(
-			<PayoutsOverviewCard
-				isLoading={ false }
-				accountStatus={ createAccountStatus(
-					{},
-					'https://example.com/account-link'
-				) }
-				overview={ createOverview( {
-					account: {
-						...createOverview().account,
-						default_external_accounts: [
-							{
-								currency: 'usd',
-								status: 'errored',
-							},
-						],
+	const createErroredAccountOverview = () =>
+		createOverview( {
+			account: {
+				...createOverview().account,
+				default_external_accounts: [
+					{
+						currency: 'usd',
+						status: 'errored',
 					},
-				} ) }
-				recentPayouts={ [] }
-			/>
+				],
+			},
+		} );
+
+	// Client 11.2.0 `components/deposits-overview/deposit-notices.tsx:197-219`: one translatable sentence, the link inside it.
+	it( 'shows failed-payout account recovery when the selected bank account is errored', () => {
+		setLocaleData(
+			{
+				'Payouts are currently paused because a recent payout failed. Please <a>update your bank account details</a>.':
+					[
+						'Auszahlungen sind pausiert, weil eine Auszahlung fehlgeschlagen ist. Bitte <a>aktualisiere deine Bankdaten</a>.',
+					],
+			},
+			'woocommerce'
 		);
 
-		expect(
-			inCard().getByText(
-				/Payouts are currently paused because a recent payout failed/i
-			)
-		).toBeInTheDocument();
+		try {
+			render(
+				<PayoutsOverviewCard
+					isLoading={ false }
+					accountStatus={ createAccountStatus(
+						{},
+						'https://example.com/account-link'
+					) }
+					overview={ createErroredAccountOverview() }
+					recentPayouts={ [] }
+				/>
+			);
+		} finally {
+			resetLocaleData();
+		}
 
 		const updateLink = screen.getByRole( 'link', {
-			name: /^update your bank account details/,
+			name: /^aktualisiere deine Bankdaten/,
 		} );
+		expect( updateLink.closest( '.components-notice' ) ).toHaveTextContent(
+			'Auszahlungen sind pausiert, weil eine Auszahlung fehlgeschlagen ist. Bitte aktualisiere deine Bankdaten'
+		);
 		expect( updateLink ).toHaveAttribute(
 			'href',
 			'https://example.com/account-link?from=WCPAY_PAYOUTS&source=wcpay-payout-failure-notice'
@@ -370,6 +386,25 @@ describe( 'PayoutsOverviewCard', () => {
 				source: 'wcpay-payout-failure-notice',
 			}
 		);
+	} );
+
+	// Client 11.2.0 `components/deposits-overview/deposit-notices.tsx:190`: no notice without an account link, as for a test drive.
+	it( 'shows no failed-payout notice without an account link', () => {
+		render(
+			<PayoutsOverviewCard
+				isLoading={ false }
+				accountStatus={ createAccountStatus( {}, '' ) }
+				overview={ createErroredAccountOverview() }
+				recentPayouts={ [] }
+			/>
+		);
+
+		expect(
+			inCard().queryByText( /Payouts are currently paused/ )
+		).not.toBeInTheDocument();
+		expect(
+			inCard().queryByText( /bank account details/i )
+		).not.toBeInTheDocument();
 	} );
 
 	// Client 11.1.0 `components/deposits-overview/index.tsx:118,201-210`: a failed list leaves no history section; the page raises the snackbar.

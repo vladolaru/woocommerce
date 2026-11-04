@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Show the WooPayments Overview failed-payout notice as one translatable sentence, and only when it can link to the bank account details.

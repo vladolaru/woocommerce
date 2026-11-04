@@ -11,6 +11,7 @@ import {
 	Icon,
 	Notice,
 } from '@wordpress/components';
+import { createInterpolateElement } from '@wordpress/element';
 import { __, sprintf } from '@wordpress/i18n';
 import { calendar } from '@wordpress/icons';
 import { addQueryArgs } from '@wordpress/url';
@@ -68,40 +69,36 @@ const PAYOUT_STATUS_CHIP_TYPES: Record< string, StatusChipType > = {
 	canceled: 'info',
 };
 
-const FailedPayoutNotice = ( { accountLink }: { accountLink?: string } ) => {
-	const accountLinkWithSource = accountLink
-		? addQueryArgs( accountLink, {
-				from: 'WCPAY_PAYOUTS',
-				source: 'wcpay-payout-failure-notice',
-			} )
-		: '';
-
-	return (
-		<PayoutNotice>
-			{ __(
-				'Payouts are currently paused because a recent payout failed. Please',
+// Client 11.2.0 `components/deposits-overview/deposit-notices.tsx:197-219`: one sentence with the account link in it,
+// shown only when there is a link.
+const FailedPayoutNotice = ( { accountLink }: { accountLink: string } ) => (
+	<PayoutNotice>
+		{ createInterpolateElement(
+			__(
+				'Payouts are currently paused because a recent payout failed. Please <a>update your bank account details</a>.',
 				'woocommerce'
-			) }{ ' ' }
-			{ accountLinkWithSource ? (
-				// Client 11.1.0 `components/deposits-overview/deposit-notices.tsx:203-216`.
-				<ExternalLink
-					href={ accountLinkWithSource }
-					onClick={ () =>
-						recordEvent( 'wcpay_account_details_link_clicked', {
+			),
+			{
+				a: (
+					<ExternalLink
+						href={ addQueryArgs( accountLink, {
 							from: 'WCPAY_PAYOUTS',
 							source: 'wcpay-payout-failure-notice',
-						} )
-					}
-				>
-					{ __( 'update your bank account details', 'woocommerce' ) }
-				</ExternalLink>
-			) : (
-				__( 'Update your bank account details.', 'woocommerce' )
-			) }
-			{ accountLinkWithSource ? '.' : '' }
-		</PayoutNotice>
-	);
-};
+						} ) }
+						onClick={ () =>
+							recordEvent( 'wcpay_account_details_link_clicked', {
+								from: 'WCPAY_PAYOUTS',
+								source: 'wcpay-payout-failure-notice',
+							} )
+						}
+					>
+						<></>
+					</ExternalLink>
+				),
+			}
+		) }
+	</PayoutNotice>
+);
 
 const getPayoutDetailsRoute = ( payout: WooPaymentsDeposit ) =>
 	`/woopayments/payouts/details?id=${ encodeURIComponent( payout.id ) }`;
@@ -366,14 +363,15 @@ export const PayoutsOverviewCard = ( {
 					currency.toLowerCase() &&
 				externalAccount.status === 'errored'
 		) ?? false;
-	const accountLink = accountStatus?.account_link;
+	const accountLink = accountStatus?.account_link || '';
+	const hasFailedPayoutNotice = hasErroredExternalAccount && !! accountLink;
 	const canChangePayoutSchedule =
 		! isPayoutsSuspended && hasCompletedWaitingPeriod;
 	const isAwaitingPendingFunds =
 		availableFunds === 0 && pendingFunds > 0 && hasCompletedWaitingPeriod;
 	const hasNotices =
 		isPayoutsSuspended ||
-		hasErroredExternalAccount ||
+		hasFailedPayoutNotice ||
 		! hasCompletedWaitingPeriod ||
 		hasNegativeBalance ||
 		isBelowMinimumPayout ||
@@ -471,7 +469,7 @@ export const PayoutsOverviewCard = ( {
 											</ExternalLink>
 										</PayoutNotice>
 									) }
-									{ hasErroredExternalAccount && (
+									{ hasFailedPayoutNotice && (
 										<FailedPayoutNotice
 											accountLink={ accountLink }
 										/>
