@@ -670,6 +670,51 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 	}
 
 	/**
+	 * @testdox Payment detail timeline for $intention_id reads the manual fraud outcome of the order holding pi_Exact only for the exact ID: $expected.
+	 * @testWith ["pi_Exact", true]
+	 *           ["pi_exact", false]
+	 *
+	 * The meta lookup follows the table collation; core's download lookup requires an exact match of the stored value
+	 * (WC_Customer_Download_Data_Store::get_downloads()). The platform names no order for the intent here.
+	 *
+	 * @param string $intention_id Payment intent ID the timeline asks for.
+	 * @param bool   $expected     Whether the order's manual outcome is added.
+	 */
+	public function test_payment_detail_timeline_finds_the_order_only_for_the_exact_intent_id( string $intention_id, bool $expected ): void {
+		$order = wc_create_order();
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$order->update_meta_data( '_intent_id', 'pi_Exact' );
+		$order->update_meta_data(
+			'_wcpay_fraud_outcome_manual_entry',
+			array(
+				'type'     => 'fraud_outcome_manual_approve',
+				'datetime' => 1781712200,
+			)
+		);
+		$order->save();
+		$this->api_client->responses = array(
+			'get_timeline'          => array(
+				'data' => array(
+					array(
+						'type'     => 'fraud_outcome_review',
+						'datetime' => 1781712000,
+					),
+				),
+			),
+			'get_payment_intention' => array( 'metadata' => array() ),
+		);
+		$this->create_payment_details_controller()->register_routes();
+
+		$response = $this->server->dispatch( new WP_REST_Request( 'GET', '/wc/v3/payments/timeline/' . $intention_id ) );
+
+		$this->assertSame( 200, $response->get_status() );
+		$this->assertSame(
+			$expected ? array( 'fraud_outcome_manual_approve', 'fraud_outcome_review' ) : array( 'fraud_outcome_review' ),
+			wp_list_pluck( $response->get_data()['data'], 'type' )
+		);
+	}
+
+	/**
 	 * The admin routes answer a platform failure with its status when it is a 4xx or 5xx, and 500 for anything else.
 	 *
 	 * Faked failures are ApiException( message, code, status ), the shape the API client builds from a platform

@@ -198,6 +198,9 @@ class EventOrderResolver {
 	/**
 	 * Find the first order whose payment meta key has the value.
 	 *
+	 * The meta query compares with the table collation, so the found order counts only when its stored value is exactly
+	 * the value, as core's download lookup requires an exact match.
+	 *
 	 * @param string $meta_key   Payment meta key.
 	 * @param string $meta_value Payment meta value; an empty value finds no order.
 	 * @return WC_Order|null
@@ -219,6 +222,8 @@ class EventOrderResolver {
 			return null;
 		}
 
-		return isset( $orders[0] ) && $orders[0] instanceof WC_Order ? $orders[0] : null;
+		$order = $orders[0] ?? null;
+
+		return $order instanceof WC_Order && (string) $order->get_meta( $meta_key, true ) === $meta_value ? $order : null;
 	}
 }

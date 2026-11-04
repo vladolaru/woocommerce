@@ -86,6 +86,33 @@ class EventOrderResolverTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A $lookup lookup for $looked_up finds the order holding ch_Exact and pi_Exact only for the exact ID: $expected.
+	 * @testWith ["charge", "ch_Exact", true]
+	 *           ["charge", "ch_exact", false]
+	 *           ["intent", "pi_Exact", true]
+	 *           ["intent", "pi_exact", false]
+	 *
+	 * The meta lookup follows the table collation; core's download lookup requires an exact match of the stored value
+	 * (WC_Customer_Download_Data_Store::get_downloads()).
+	 *
+	 * @param string $lookup    Which lookup runs: by charge ID or by the intent event's ID.
+	 * @param string $looked_up The ID looked up.
+	 * @param bool   $expected  Whether the order is found.
+	 */
+	public function test_payment_id_lookups_find_only_the_exact_stored_id( string $lookup, string $looked_up, bool $expected ): void {
+		$order = $this->create_order(
+			array(
+				'_charge_id' => 'ch_Exact',
+				'_intent_id' => 'pi_Exact',
+			)
+		);
+
+		$found = 'charge' === $lookup ? $this->sut->find_order_by_charge_id( $looked_up ) : $this->sut->find_order_for_intent_event( array( 'id' => $looked_up ) );
+
+		$this->assertSame( $expected ? $order->get_id() : null, $found instanceof WC_Order ? $found->get_id() : null );
+	}
+
+	/**
 	 * @testdox A payment intent whose intent order has another key falls back to the order its metadata names.
 	 *
 	 * Client 11.1.0 returns no order here (class-wc-payments-webhook-processing-service.php:1002-1012); see the class docblock.

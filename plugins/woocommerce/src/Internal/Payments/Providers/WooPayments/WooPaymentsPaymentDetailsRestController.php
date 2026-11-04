@@ -381,6 +381,9 @@ class WooPaymentsPaymentDetailsRestController extends RestApiControllerBase {
 	/**
 	 * Get the order whose `_intent_id` meta is this payment intent.
 	 *
+	 * The meta query compares with the table collation, so the found order counts only when its stored value is exactly
+	 * the ID, as core's download lookup requires an exact match.
+	 *
 	 * @param string $intention_id Payment intent ID.
 	 * @return WC_Order|null
 	 */
@@ -399,7 +402,7 @@ class WooPaymentsPaymentDetailsRestController extends RestApiControllerBase {
 		}
 
 		$order = reset( $orders );
-		return $order instanceof WC_Order ? $order : null;
+		return $order instanceof WC_Order && (string) $order->get_meta( '_intent_id', true ) === $intention_id ? $order : null;
 	}
 
 	/**
