@@ -652,18 +652,20 @@ describe( 'WooPayments Blocked transactions tab', () => {
 		expect( fileName ).toMatch(
 			/^blocked-transactions_\d{4}-\d{2}-\d{2}_tab-blocked-page\.csv$/
 		);
+		// Amounts in major units and the status as the list shows it, as client 11.2.0's other exports write them
+		// (`disputes/index.tsx:259`, `deposits/list/index.tsx:146`, `formatExportAmount()`).
 		expect( csv ).toBe(
 			[
 				'"Date / Time",Amount,Customer,Status',
 				`"${ formatSiteDateTime(
 					ADA.created
-				) }",5000,"Ada Lovelace",block`,
+				) }",50,"Ada Lovelace","Payment blocked"`,
 				`"${ formatSiteDateTime(
 					GRACE.created
-				) }",1250,"Grace Hopper",block`,
+				) }",12.5,"Grace Hopper","Payment blocked"`,
 				`"${ formatSiteDateTime(
 					REVIEW_ROW.created
-				) }",700,"Katherine Johnson",review`,
+				) }",7,"Katherine Johnson","Payment blocked"`,
 			].join( '\n' )
 		);
 		expect( mockRecordEvent ).toHaveBeenCalledWith(

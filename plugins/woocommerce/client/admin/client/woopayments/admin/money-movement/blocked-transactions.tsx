@@ -37,6 +37,7 @@ import {
 import { WooPaymentsMoneyMovementDataViews } from './dataviews';
 import { ExportButton } from './table';
 import { StatusChip } from '../overview/components/status-chip';
+import { getWooPaymentsAmountFromMinorUnits } from '../../currency';
 import {
 	formatExplicitCurrency,
 	formatSiteDateTime,
@@ -82,13 +83,17 @@ const COLUMNS = [
 ];
 const COLUMN_KEYS = COLUMNS.map( ( { key } ) => key );
 
-// Client 11.1.0 `transactions/blocked/columns.tsx:62-101`: each cell's CSV value.
+// Client 11.1.0 `transactions/blocked/columns.tsx:62-101`: each cell's CSV value. The amount is in major units and the
+// status is the list's label, as client 11.2.0's disputes and payouts exports write them (`formatExportAmount()`).
 const getCsvValue = ( item: FraudOutcomeTransaction, key: string ) =>
 	( {
 		created: formatSiteDateTime( item.created ),
-		amount: item.amount,
+		amount: getWooPaymentsAmountFromMinorUnits(
+			item.amount,
+			item.currency
+		),
 		customer: item.customer_name,
-		status: item.status,
+		status: __( 'Payment blocked', 'woocommerce' ),
 	} )[ key ] ?? '';
 
 const toArray = ( value: WooPaymentsMoneyMovementQuery[ string ] ) =>
