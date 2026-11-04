@@ -7,6 +7,7 @@ import React, { lazy, Suspense, useEffect } from '@wordpress/element';
 import type { ReactNode } from 'react';
 import {
 	unstable_HistoryRouter as HistoryRouter,
+	type HistoryRouterProps,
 	Route,
 	Routes,
 	useInRouterContext,
@@ -363,7 +364,14 @@ export const SettingsPaymentsMainWrapper = () => {
 	return (
 		<>
 			<Header title={ __( 'Settings', 'woocommerce' ) } />
-			<HistoryRouter history={ getHistory() }>
+			<HistoryRouter
+				// The `history` v5 object provides what HistoryRouter uses at runtime; only the types differ.
+				history={
+					getHistory() as unknown as HistoryRouterProps[ 'history' ]
+				}
+				// Render route changes synchronously, as v6 did, so routes stay in step with getQuery().
+				useTransitions={ false }
+			>
 				<Routes>
 					<Route
 						path="/offline"

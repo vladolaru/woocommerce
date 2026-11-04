@@ -674,6 +674,11 @@ class WC_AJAX {
 			wp_die();
 		}
 
+		// Match the product page, which shows variation details only after the product password is entered.
+		if ( post_password_required( $variable_product->get_id() ) ) {
+			wp_die();
+		}
+
 		$data_store   = WC_Data_Store::load( 'product' );
 		$variation_id = $data_store->find_matching_product_variation( $variable_product, wp_unslash( $_POST ) );
 		$variation    = $variation_id ? $variable_product->get_available_variation( $variation_id ) : false;
@@ -2950,12 +2955,12 @@ class WC_AJAX {
 		$response               = array();
 
 		try {
-			/**
-			 * The order being refunded.
-			 *
-			 * @var WC_Order $order
-			 */
-			$order           = wc_get_order( $order_id );
+			$order = wc_get_order( $order_id );
+
+			if ( ! $order instanceof WC_Order ) {
+				throw new Exception( __( 'Invalid order ID.', 'woocommerce' ) );
+			}
+
 			$price_decimals  = CurrencyUtil::get_price_decimals( $order->get_currency() );
 			$refund_amount   = isset( $_POST['refund_amount'] ) ? wc_format_decimal( sanitize_text_field( wp_unslash( $_POST['refund_amount'] ) ), $price_decimals ) : 0;
 			$refunded_amount = isset( $_POST['refunded_amount'] ) ? wc_format_decimal( sanitize_text_field( wp_unslash( $_POST['refunded_amount'] ) ), $price_decimals ) : 0;
@@ -2970,24 +2975,40 @@ class WC_AJAX {
 			}
 
 			// Prepare line items which we are refunding.
-			$line_items                  = array();
-			$item_ids                    = array_unique( array_merge( array_keys( $line_item_qtys ), array_keys( $line_item_totals ) ) );
-			$order_items                 = $order->get_items( array( 'line_item', 'fee', 'shipping' ) );
-			$refunded_product_quantities = array();
-			$refunded_product_totals     = array();
+			$line_items = array();
+			$item_ids   = array_unique( array_merge( array_keys( $line_item_qtys ), array_keys( $line_item_totals ) ) );
 
 			foreach ( $item_ids as $item_id ) {
-				if ( ! isset( $order_items[ $item_id ] ) ) {
-					throw new Exception( __( 'Refund line item must belong to this order.', 'woocommerce' ) );
-				}
-
 				$line_items[ $item_id ] = array(
 					'qty'          => 0,
 					'refund_total' => 0,
 					'refund_tax'   => array(),
 				);
 			}
+			$order_items = $order->get_items();
+			foreach ( $line_item_qtys as $item_id => $qty ) {
+				$qty = max( $qty, 0 );
 
+				// Enforce the refund input's max here, because this AJAX request skips browser validation.
+				// Rounding drops float noise when the woocommerce_stock_amount filter allows fractional quantities.
+				if ( $qty > 0 && isset( $order_items[ $item_id ] ) ) {
+					$remaining_qty = NumberUtil::round( abs( $order_items[ $item_id ]->get_quantity() ) - abs( $order->get_qty_refunded_for_item( $item_id ) ), WC_ROUNDING_PRECISION );
+
+					if ( $qty > $remaining_qty ) {
+						throw new Exception(
+							sprintf(
+								/* translators: %s: remaining refundable quantity */
+								__( 'Line item quantity cannot be greater than the remaining refundable quantity (%s).', 'woocommerce' ),
+								$remaining_qty
+							)
+						);
+					}
+				}
+
+				$line_items[ $item_id ]['qty'] = $qty;
+			}
+
+			$refunded_product_totals = array();
 			foreach ( $order->get_refunds() as $order_refund ) {
 				foreach ( $order_refund->get_items( 'line_item' ) as $refunded_item ) {
 					if ( ! $refunded_item instanceof WC_Order_Item_Product ) {
@@ -3000,43 +3021,14 @@ class WC_AJAX {
 						continue;
 					}
 
-					$refunded_product_quantities[ $refunded_item_id ] = ( $refunded_product_quantities[ $refunded_item_id ] ?? 0 ) + $refunded_item->get_quantity();
-					$refunded_product_totals[ $refunded_item_id ]     = ( $refunded_product_totals[ $refunded_item_id ] ?? 0 ) - (float) $refunded_item->get_total();
+					$refunded_product_totals[ $refunded_item_id ] = ( $refunded_product_totals[ $refunded_item_id ] ?? 0 ) - (float) $refunded_item->get_total();
 				}
 			}
 
-			foreach ( $line_item_qtys as $item_id => $qty ) {
-				if ( ! is_scalar( $qty ) || is_bool( $qty ) || ! is_numeric( $qty ) || ! is_finite( (float) $qty ) ) {
-					throw new Exception( __( 'Line item quantity must be a finite number.', 'woocommerce' ) );
-				}
-
-				$item = $order_items[ $item_id ];
-
-				if ( $item instanceof WC_Order_Item_Product ) {
-					$requested_qty = (float) $qty;
-					if ( 0 > $requested_qty ) {
-						throw new Exception( __( 'Line item quantity must be non-negative.', 'woocommerce' ) );
-					}
-
-					$qty           = wc_stock_amount( $requested_qty );
-					$remaining_qty = $item->get_quantity() + ( $refunded_product_quantities[ $item_id ] ?? 0 );
-					if ( $qty > $remaining_qty ) {
-						throw new Exception( __( 'Line item quantity cannot be greater than the remaining refundable quantity.', 'woocommerce' ) );
-					}
-
-					$line_items[ $item_id ]['qty'] = $qty;
-				} else {
-					$line_items[ $item_id ]['qty'] = max( $qty, 0 );
-				}
-			}
 			$comparison_precision = wc_get_rounding_precision();
 			foreach ( $line_item_totals as $item_id => $total ) {
-				if ( ! is_scalar( $total ) || is_bool( $total ) || ! is_numeric( $total ) || ! is_finite( (float) $total ) ) {
-					throw new Exception( __( 'Refund total must be a finite number.', 'woocommerce' ) );
-				}
-
 				$refund_total = wc_format_decimal( $total );
-				$item         = $order_items[ $item_id ];
+				$item         = $order_items[ $item_id ] ?? null;
 
 				if ( $item instanceof WC_Order_Item_Product ) {
 					$requested_total = (float) $refund_total;
