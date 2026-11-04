@@ -76,26 +76,13 @@ export const WooPaymentsAdminNotices = ( {
 			return;
 		}
 		shownRef.current = shownKey;
+		// A background request the merchant did not ask for, so a failure is not theirs to retry.
 		void apiFetch( {
 			url: notice._links.shown.href,
 			method: 'POST',
 			data: notice.stage ? { stage: notice.stage } : undefined,
-		} ).catch( () => {
-			createErrorNotice(
-				__(
-					'We could not update this notice. Please try again.',
-					'woocommerce'
-				),
-				{ type: 'snackbar', explicitDismiss: true }
-			);
-		} );
-	}, [
-		isSuppressed,
-		shownKey,
-		notice._links.shown.href,
-		notice.stage,
-		createErrorNotice,
-	] );
+		} ).catch( () => undefined );
+	}, [ isSuppressed, shownKey, notice._links.shown.href, notice.stage ] );
 
 	const finish = () => {
 		// Move focus only when it is still on the notice, or was lost with it; a user who moved on keeps their place.

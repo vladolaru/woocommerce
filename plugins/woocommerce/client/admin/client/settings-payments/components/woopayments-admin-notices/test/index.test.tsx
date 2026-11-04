@@ -162,6 +162,33 @@ describe( 'WooPaymentsAdminNotices', () => {
 		expect( apiFetch ).toHaveBeenCalledTimes( 1 );
 	} );
 
+	it( 'raises no error when the background shown request fails', async () => {
+		( apiFetch as jest.Mock ).mockRejectedValue(
+			new Error( 'Request failed' )
+		);
+		render(
+			<WooPaymentsAdminNotices
+				notice={ notice }
+				focusTargetRef={ { current: focusTarget } }
+				onDismiss={ jest.fn() }
+			/>
+		);
+
+		await waitFor( () =>
+			expect( apiFetch ).toHaveBeenCalledWith( {
+				url: notice._links.shown.href,
+				method: 'POST',
+			} )
+		);
+		// Let the rejected request settle before checking nothing was raised.
+		await new Promise( ( resolve ) => setTimeout( resolve ) );
+
+		expect( mockCreateErrorNotice ).not.toHaveBeenCalled();
+		expect(
+			screen.getByText( notice.message, { selector: 'p' } )
+		).toBeInTheDocument();
+	} );
+
 	it( 'keeps the snooze control busy, then returns focus when the notice closes', async () => {
 		const currentNotice = { ...notice };
 		let finishSnooze: ( value: { success: boolean } ) => void = () => {};
