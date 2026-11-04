@@ -4,13 +4,13 @@
 import { cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { getHistory } from '@woocommerce/navigation';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import apiFetch from '@wordpress/api-fetch';
 
 /**
  * Internal dependencies
  */
-import { wooPaymentsRoutes } from '../routes';
+import WooPaymentsRouter, { wooPaymentsRoutes } from '../routes';
 import { SettingsPaymentsWooPaymentsWrapper } from '~/settings-payments';
 // The settings page's lazy chunk, loaded with this file: on a cold transform cache its first load takes seconds, which
 // otherwise falls inside the page's `findByRole` wait.
@@ -483,4 +483,38 @@ describe( 'WooPayments Settings Payments routes', () => {
 			push.mockRestore();
 		}
 	} );
+
+	it.each( [
+		[
+			'/woopayments/settings/express-checkout/apple_pay',
+			'Express settings route loaded',
+		],
+		[ '/woopayments/transactions', 'Transactions route loaded' ],
+		[ '/woopayments', 'Payments list fallback' ],
+		[ '/woopayments/unknown', 'Payments list fallback' ],
+	] )(
+		'renders the page for %s under the Payments settings route /woopayments/*',
+		async ( path, expectedText ) => {
+			setAdminRouteAvailability( {} );
+
+			render(
+				<MemoryRouter initialEntries={ [ path ] }>
+					<Routes>
+						<Route
+							path="/woopayments/*"
+							element={
+								<WooPaymentsRouter
+									fallback={ <p>Payments list fallback</p> }
+								/>
+							}
+						/>
+					</Routes>
+				</MemoryRouter>
+			);
+
+			expect(
+				await screen.findByText( expectedText )
+			).toBeInTheDocument();
+		}
+	);
 } );

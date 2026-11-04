@@ -9,6 +9,7 @@ use Automattic\WooCommerce\Blocks\Utils\CartCheckoutUtils;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsService;
 use Automattic\WooCommerce\Internal\Logging\SafeGlobalFunctionProxy;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExtensionRuntime;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Throwable;
 use WC_Gateway_BACS;
 use WC_Gateway_Cheque;
@@ -167,6 +168,12 @@ class PaymentsController {
 			$settings['woocommerce_checkout_block_compatibility'] = array(
 				'incompatible_gateway_ids' => $this->get_gateway_ids_incompatible_with_checkout_block(),
 			);
+		}
+
+		// The Payments settings page serves the WooPayments pages only while the built-in WooPayments owns payments.
+		if ( 'checkout' === $current_tab ) {
+			$arbiter                               = wc_get_container()->get( WooPaymentsRuntimeArbiter::class );
+			$settings['woopayments_builtin_owner'] = $arbiter->is_builtin_enabled() && WooPaymentsRuntimeArbiter::OWNER_BUILTIN === $arbiter->get_runtime_owner();
 		}
 
 		return $settings;

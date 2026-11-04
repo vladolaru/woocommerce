@@ -81,6 +81,7 @@ declare global {
 				woocommerce_checkout_block_compatibility?: {
 					incompatible_gateway_ids: string[];
 				};
+				woopayments_builtin_owner?: boolean;
 				wcpay_welcome_page_connect_nonce: string;
 				currentUserData: {
 					first_name: string;

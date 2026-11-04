@@ -9,6 +9,8 @@ use Automattic\WooCommerce\Blocks\Payments\PaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Admin\Settings\Payments;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExtensionRuntime;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Tests\Internal\Admin\Settings\Mocks\FakePaymentGateway;
 use PHPUnit\Framework\MockObject\MockObject;
 use WC_Unit_Test_Case;
@@ -108,6 +110,9 @@ class PaymentsControllerTest extends WC_Unit_Test_Case {
 			}
 		}
 		$this->registered_integration_names = array();
+
+		$this->reset_legacy_proxy_mocks();
+		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 
 		parent::tearDown();
 	}
@@ -285,6 +290,91 @@ class PaymentsControllerTest extends WC_Unit_Test_Case {
 			$settings['woocommerce_checkout_block_compatibility']['incompatible_gateway_ids'],
 			'A gateway whose integration only sets its name in initialize() should not be reported as incompatible'
 		);
+	}
+
+	/**
+	 * @testdox Should tell the Payments settings page whether the built-in WooPayments owns payments: $_dataName.
+	 *
+	 * @dataProvider provide_woopayments_owner_states
+	 *
+	 * @param string      $feature           The WooPayments feature option: 'yes' or 'no'.
+	 * @param bool        $extension_active  Whether the WooPayments extension is active.
+	 * @param string|null $extension_version The version the WooPayments extension last recorded, or null when it never ran.
+	 * @param bool        $expected          The expected preloaded value.
+	 */
+	public function test_preload_settings_tells_whether_the_builtin_woopayments_owns_payments( string $feature, bool $extension_active, ?string $extension_version, bool $expected ): void {
+		$this->set_woopayments_owner_state( $feature, $extension_active, $extension_version );
+
+		$settings = $this->sut->preload_settings();
+
+		$this->assertArrayHasKey( 'woopayments_builtin_owner', $settings );
+		$this->assertSame( $expected, $settings['woopayments_builtin_owner'] );
+	}
+
+	/**
+	 * The WooPayments ownership states of a store.
+	 *
+	 * @return array<string, array{string, bool, ?string, bool}>
+	 */
+	public function provide_woopayments_owner_states(): array {
+		return array(
+			'the feature is off'                         => array( 'no', false, null, false ),
+			'the WooPayments extension owns payments'    => array( 'yes', true, '10.0.0', false ),
+			'the store waits for its switch'             => array( 'yes', false, '10.0.0', false ),
+			'the built-in owns payments, not yet set up' => array( 'yes', false, null, true ),
+		);
+	}
+
+	/**
+	 * @testdox Should not tell other settings tabs whether the built-in WooPayments owns payments.
+	 */
+	public function test_preload_settings_adds_no_woopayments_owner_outside_the_payments_tab(): void {
+		$GLOBALS['current_tab'] = 'general';
+		$this->set_woopayments_owner_state( 'yes', false, null );
+
+		$settings = $this->sut->preload_settings();
+
+		$this->assertArrayNotHasKey( 'woopayments_builtin_owner', $settings );
+	}
+
+	/**
+	 * Put the store in a WooPayments ownership state, with every WooPayments extension signal controlled.
+	 *
+	 * @param string      $feature           The WooPayments feature option: 'yes' or 'no'.
+	 * @param bool        $extension_active  Whether the WooPayments extension is active.
+	 * @param string|null $extension_version The version the WooPayments extension last recorded, or null when it never ran.
+	 */
+	private function set_woopayments_owner_state( string $feature, bool $extension_active, ?string $extension_version ): void {
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, $feature );
+		if ( null === $extension_version ) {
+			delete_option( WooPaymentsRuntimeArbiter::EXTENSION_VERSION_OPTION );
+		} else {
+			update_option( WooPaymentsRuntimeArbiter::EXTENSION_VERSION_OPTION, $extension_version );
+		}
+
+		$this->register_legacy_proxy_function_mocks(
+			array(
+				'get_option'      => function ( $name, $default_value = false ) use ( $extension_active ) {
+					if ( 'active_plugins' === $name ) {
+						return $extension_active ? array( WooPaymentsRuntimeArbiter::PLUGIN_FILE ) : array();
+					}
+					return get_option( $name, $default_value );
+				},
+				'get_site_option' => function ( $name, $default_value = false ) {
+					if ( 'active_sitewide_plugins' === $name ) {
+						return array();
+					}
+					return get_site_option( $name, $default_value );
+				},
+				'defined'         => function ( $constant_name ) {
+					if ( 'WCPAY_PLUGIN_FILE' === $constant_name ) {
+						return false;
+					}
+					return defined( $constant_name );
+				},
+			)
+		);
+		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 	}
 
 	/**

@@ -3,7 +3,7 @@
  */
 import { Gridicon } from '@automattic/components';
 import { Button, Placeholder, SelectControl } from '@wordpress/components';
-import React, { lazy, Suspense, useEffect, useState } from '@wordpress/element';
+import React, { lazy, Suspense, useEffect } from '@wordpress/element';
 import type { ReactNode } from 'react';
 import {
 	unstable_HistoryRouter as HistoryRouter,
@@ -20,6 +20,7 @@ import { __, sprintf } from '@wordpress/i18n';
  */
 import { Header } from './components/header/header';
 import { BackButton } from './components/buttons/back-button';
+import { ErrorBoundary } from '~/error-boundary';
 import { ListPlaceholder } from '~/settings-payments/components/list-placeholder';
 import { WooPaymentsRouteLoading } from '~/settings-payments/components/woopayments-route-loading';
 import { WOOPAYMENTS_SETTINGS_HEADING_ID } from '~/settings-payments/constants';
@@ -341,121 +342,75 @@ export const SettingsPaymentsChequeWrapper = () =>
 		chunkComponent: SettingsPaymentsChequeChunk,
 	} );
 
-type WooPaymentsRoute = { path: string; element: ReactNode };
-
-let loadedWooPaymentsRoutes: WooPaymentsRoute[] | undefined;
-let wooPaymentsRoutesRequest: Promise< WooPaymentsRoute[] > | undefined;
-
 /**
- * Loads the WooPayments routes once, only when a Payments path needs them.
+ * Lazy-loaded chunk for the WooPayments pages, with their routes under `/woopayments`.
  */
-const loadWooPaymentsRoutes = () => {
-	if ( ! wooPaymentsRoutesRequest ) {
-		wooPaymentsRoutesRequest = import(
+const WooPaymentsRouterChunk = lazy(
+	() =>
+		import(
 			/* webpackChunkName: "settings-payments-woopayments-routes" */ '~/woopayments/admin/routes'
 		)
-			.then( ( { wooPaymentsRoutes } ) => {
-				loadedWooPaymentsRoutes = wooPaymentsRoutes;
+);
 
-				return wooPaymentsRoutes;
-			} )
-			.catch( ( error ) => {
-				// Let the next mount try again.
-				wooPaymentsRoutesRequest = undefined;
-				throw error;
-			} );
-	}
-
-	return wooPaymentsRoutesRequest;
-};
-
-// The WooPayments onboarding modal opens over the main page, which owns `/woopayments/onboarding`.
-const needsWooPaymentsRoutes = ( pathname: string ) =>
-	( pathname === '/woopayments' || pathname.startsWith( '/woopayments/' ) ) &&
-	! pathname.startsWith( '/woopayments/onboarding' );
-
-/**
- * Renders the Payments routes, loading the WooPayments routes first when the current path needs them.
- */
-const SettingsPaymentsRoutes = () => {
-	// The router's location also updates on in-app navigation, so this covers direct loads and pushes alike.
-	const { pathname } = useLocation();
-	const [ wooPaymentsRoutes, setWooPaymentsRoutes ] = useState(
-		loadedWooPaymentsRoutes
-	);
-	// A failed load (offline, broken build) falls back to the other routes instead of loading forever.
-	const [ hasLoadFailed, setHasLoadFailed ] = useState( false );
-	const isLoadingWooPaymentsRoutes =
-		! wooPaymentsRoutes &&
-		! hasLoadFailed &&
-		needsWooPaymentsRoutes( pathname );
-
-	useEffect( () => {
-		if ( ! isLoadingWooPaymentsRoutes ) {
-			return;
-		}
-
-		let isMounted = true;
-		loadWooPaymentsRoutes().then(
-			( routes ) => {
-				if ( isMounted ) {
-					setWooPaymentsRoutes( routes );
-				}
-			},
-			() => {
-				if ( isMounted ) {
-					setHasLoadFailed( true );
-				}
-			}
-		);
-
-		return () => {
-			isMounted = false;
-		};
-	}, [ isLoadingWooPaymentsRoutes ] );
-
-	if ( isLoadingWooPaymentsRoutes ) {
-		return <WooPaymentsRouteLoading />;
-	}
-
-	return (
-		<Routes>
-			<Route
-				path="/offline"
-				element={ <SettingsPaymentsOfflineWrapper /> }
-			/>
-			<Route
-				path="/offline/bacs"
-				element={ <SettingsPaymentsBacsWrapper /> }
-			/>
-			<Route
-				path="/offline/cod"
-				element={ <SettingsPaymentsCodWrapper /> }
-			/>
-			<Route
-				path="/offline/cheque"
-				element={ <SettingsPaymentsChequeWrapper /> }
-			/>
-			{ wooPaymentsRoutes?.map( ( route ) => (
-				<Route
-					key={ route.path }
-					path={ route.path }
-					element={ route.element }
-				/>
-			) ) }
-			<Route path="/*" element={ <SettingsPaymentsMain /> } />
-		</Routes>
-	);
-};
+// Core preloads this on the Payments settings tab: true only while the built-in WooPayments owns payments.
+const isBuiltinWooPaymentsOwner = () =>
+	window.wcSettings?.admin?.woopayments_builtin_owner === true;
 
 /**
  * Wraps the main payment settings and payment methods settings pages.
  */
-export const SettingsPaymentsMainWrapper = () => (
-	<>
-		<Header title={ __( 'Settings', 'woocommerce' ) } />
-		<HistoryRouter history={ getHistory() }>
-			<SettingsPaymentsRoutes />
-		</HistoryRouter>
-	</>
-);
+export const SettingsPaymentsMainWrapper = () => {
+	return (
+		<>
+			<Header title={ __( 'Settings', 'woocommerce' ) } />
+			<HistoryRouter history={ getHistory() }>
+				<Routes>
+					<Route
+						path="/offline"
+						element={ <SettingsPaymentsOfflineWrapper /> }
+					/>
+					<Route
+						path="/offline/bacs"
+						element={ <SettingsPaymentsBacsWrapper /> }
+					/>
+					<Route
+						path="/offline/cod"
+						element={ <SettingsPaymentsCodWrapper /> }
+					/>
+					<Route
+						path="/offline/cheque"
+						element={ <SettingsPaymentsChequeWrapper /> }
+					/>
+					{ isBuiltinWooPaymentsOwner() && (
+						<>
+							{ /* The WooPayments onboarding modal opens over the main page. */ }
+							<Route
+								path="/woopayments/onboarding/*"
+								element={ <SettingsPaymentsMain /> }
+							/>
+							<Route
+								path="/woopayments/*"
+								element={
+									<ErrorBoundary>
+										<Suspense
+											fallback={
+												<WooPaymentsRouteLoading />
+											}
+										>
+											<WooPaymentsRouterChunk
+												fallback={
+													<SettingsPaymentsMain />
+												}
+											/>
+										</Suspense>
+									</ErrorBoundary>
+								}
+							/>
+						</>
+					) }
+					<Route path="/*" element={ <SettingsPaymentsMain /> } />
+				</Routes>
+			</HistoryRouter>
+		</>
+	);
+};

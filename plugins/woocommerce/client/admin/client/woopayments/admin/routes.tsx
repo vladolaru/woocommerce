@@ -6,6 +6,7 @@ import { lazy, Suspense, useEffect } from '@wordpress/element';
 import { decodeEntities } from '@wordpress/html-entities';
 import { __, sprintf } from '@wordpress/i18n';
 import type { ReactNode } from 'react';
+import { Route, Routes } from 'react-router-dom';
 
 /**
  * Internal dependencies
@@ -14,7 +15,7 @@ import { WooPaymentsRouteLoading } from '~/settings-payments/components/woopayme
 import { getSettingsPaymentsProviderRouteUrl } from './utils';
 import { registerPaymentsRuntimeTracksPropertyWhenPreloaded } from '../tracks-runtime';
 
-// A link on a store that does not run the built-in WooPayments also loads these routes, so the core preload decides.
+// A built-in store not yet connected also loads these routes, without the core preload, so the preload decides.
 registerPaymentsRuntimeTracksPropertyWhenPreloaded();
 
 // Share the chunk name with the Payments settings tab in `settings-payments/index.tsx`
@@ -312,7 +313,7 @@ const WooPaymentsReportsRoute = () => {
 };
 
 /**
- * The WooPayments routes of the Payments settings app, which reads them once this chunk loads, in this order.
+ * The WooPayments routes of the Payments settings app, in the order `WooPaymentsRouter` registers them.
  */
 export const wooPaymentsRoutes: Array< {
 	path: string;
@@ -440,3 +441,25 @@ export const wooPaymentsRoutes: Array< {
 		),
 	},
 ];
+
+/**
+ * Renders the WooPayments routes under the Payments settings route `/woopayments/*`, and `fallback` on any other path there.
+ *
+ * @param props          The component props.
+ * @param props.fallback What a WooPayments path without a page renders.
+ */
+const WooPaymentsRouter = ( { fallback }: { fallback: ReactNode } ) => (
+	<Routes>
+		{ wooPaymentsRoutes.map( ( route ) => (
+			<Route
+				key={ route.path }
+				// The parent route matched `/woopayments`, so these paths are relative to it.
+				path={ route.path.slice( '/woopayments'.length ) }
+				element={ route.element }
+			/>
+		) ) }
+		<Route path="*" element={ fallback } />
+	</Routes>
+);
+
+export default WooPaymentsRouter;
