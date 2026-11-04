@@ -9,6 +9,10 @@ jest.mock( '~/woopayments/admin/routes', () => {
 				path: '/woopayments/overview',
 				element: <div>WooPayments overview page</div>,
 			},
+			{
+				path: '/woopayments/settings',
+				element: <div>WooPayments settings page</div>,
+			},
 		],
 	};
 } );
@@ -37,6 +41,31 @@ const setPaymentsPath = ( path?: string ) => {
 		`/wp-admin/admin.php?page=wc-settings&tab=checkout${ query }`
 	);
 };
+
+type PreloadWindow = typeof window & {
+	wcSettings: { admin: { woopaymentsSettings?: unknown } };
+};
+
+// Core preloads the route availability only while the built-in WooPayments owns payments.
+const setBuiltinWooPaymentsPreload = () => {
+	( window as PreloadWindow ).wcSettings.admin.woopaymentsSettings = {
+		adminRouteAvailability: { allowedRoutes: {} },
+	};
+};
+
+const failNextRoutesLoad = () => {
+	mockWooPaymentsRoutesLoaded.mockImplementationOnce( () => {
+		throw new Error( 'ChunkLoadError' );
+	} );
+};
+
+const pushPaymentsPath = (
+	history: { push: ( to: string ) => void },
+	path: string
+) =>
+	history.push(
+		`/wp-admin/admin.php?page=wc-settings&tab=checkout&path=${ path }`
+	);
 
 // The native routes load once per page, so each test gets fresh module copies.
 const loadModules = async () => {
@@ -79,6 +108,7 @@ describe( 'SettingsPaymentsMainWrapper WooPayments routes', () => {
 	afterEach( () => {
 		cleanup();
 		setPaymentsPath();
+		delete ( window as PreloadWindow ).wcSettings.admin.woopaymentsSettings;
 	} );
 
 	it.each( [
@@ -149,10 +179,9 @@ describe( 'SettingsPaymentsMainWrapper WooPayments routes', () => {
 		expect( mockWooPaymentsRoutesLoaded ).toHaveBeenCalledTimes( 1 );
 	} );
 
-	it( 'shows a reload notice instead of the payments list when the routes chunk fails, and retries on the next path', async () => {
-		mockWooPaymentsRoutesLoaded.mockImplementationOnce( () => {
-			throw new Error( 'ChunkLoadError' );
-		} );
+	it( 'shows a reload notice instead of the payments list when the routes chunk fails on a store the built-in WooPayments owns, and retries on the next path', async () => {
+		setBuiltinWooPaymentsPreload();
+		failNextRoutesLoad();
 		setPaymentsPath( '/woopayments/settings' );
 		const { history, cleanup: done, ...rtl } = await renderWrapper();
 		cleanup = done;
@@ -197,5 +226,52 @@ describe( 'SettingsPaymentsMainWrapper WooPayments routes', () => {
 			await rtl.screen.findByText( 'WooPayments overview page' )
 		).toBeInTheDocument();
 		expect( mockWooPaymentsRoutesLoaded ).toHaveBeenCalledTimes( 2 );
+	} );
+
+	it( 'renders the loaded routes on a path that failed before another path loaded them', async () => {
+		setBuiltinWooPaymentsPreload();
+		failNextRoutesLoad();
+		setPaymentsPath( '/woopayments/settings' );
+		const { history, cleanup: done, ...rtl } = await renderWrapper();
+		cleanup = done;
+
+		expect(
+			await rtl.screen.findByText( 'Oops, something went wrong', {
+				ignore: '.a11y-speak-region',
+			} )
+		).toBeInTheDocument();
+
+		rtl.act( () => pushPaymentsPath( history, '/woopayments/overview' ) );
+		expect(
+			await rtl.screen.findByText( 'WooPayments overview page' )
+		).toBeInTheDocument();
+
+		rtl.act( () => pushPaymentsPath( history, '/woopayments/settings' ) );
+		expect(
+			await rtl.screen.findByText( 'WooPayments settings page' )
+		).toBeInTheDocument();
+		expect(
+			rtl.screen.queryByText( 'Oops, something went wrong', {
+				ignore: '.a11y-speak-region',
+			} )
+		).not.toBeInTheDocument();
+		expect( mockWooPaymentsRoutesLoaded ).toHaveBeenCalledTimes( 2 );
+	} );
+
+	it( 'shows the payments list, as trunk does, when the routes chunk fails on a store the built-in WooPayments does not own', async () => {
+		failNextRoutesLoad();
+		setPaymentsPath( '/woopayments/settings' );
+		const { cleanup: done, ...rtl } = await renderWrapper();
+		cleanup = done;
+
+		expect(
+			await rtl.screen.findByText( 'Main payments list' )
+		).toBeInTheDocument();
+		expect(
+			rtl.screen.queryByText( 'Oops, something went wrong', {
+				ignore: '.a11y-speak-region',
+			} )
+		).not.toBeInTheDocument();
+		expect( mockWooPaymentsRoutesLoaded ).toHaveBeenCalledTimes( 1 );
 	} );
 } );
