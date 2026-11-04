@@ -38,10 +38,22 @@ final class ClassAliases {
 	 * @param class-string $class_name Class whose extension name is declared.
 	 */
 	public static function register_compat_class_alias( string $class_name ): void {
-		$alias = self::ALIASES[ $class_name ] ?? null;
+		$alias = self::get_alias( $class_name );
 
 		if ( null !== $alias && ! class_exists( $alias, true ) ) {
 			class_alias( $class_name, $alias );
 		}
+	}
+
+	/**
+	 * Get the extension class name declared as a class's alias.
+	 *
+	 * The name is returned as a plain string, since the extension's class exists only while the extension is active.
+	 *
+	 * @param string $class_name Class whose extension name is looked up.
+	 * @return string|null
+	 */
+	private static function get_alias( string $class_name ): ?string {
+		return self::ALIASES[ $class_name ] ?? null;
 	}
 }
