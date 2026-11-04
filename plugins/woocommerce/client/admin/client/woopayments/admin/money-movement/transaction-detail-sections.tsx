@@ -877,18 +877,6 @@ const getSummaryItems = (
 	].filter( Boolean ) as SummaryItem[];
 };
 
-/**
- * The payment summary card: amount, status, money lines, IDs and actions, then one row of labelled values.
- * Client 11.1.0 `payment-details/summary/index.tsx:448-1023`.
- *
- * @param props                 Component props.
- * @param props.transaction     The payment.
- * @param props.paymentIntentId Payment ID shown at the top right.
- * @param props.chargeId        Charge ID shown at the top right.
- * @param props.actions         The actions menu.
- * @param props.reviewActions   The fraud review buttons.
- * @param props.children        Dispute panes and notices at the foot of the card.
- */
 const PLACEHOLDER = 'woocommerce-woopayments-payment-details-placeholder';
 
 /**
@@ -937,6 +925,18 @@ export const WooPaymentsPaymentDetailsPlaceholder = () => (
 	</>
 );
 
+/**
+ * The payment summary card: amount, status, money lines, IDs and actions, then one row of labelled values.
+ * Client 11.1.0 `payment-details/summary/index.tsx:448-1023`.
+ *
+ * @param props                 Component props.
+ * @param props.transaction     The payment.
+ * @param props.paymentIntentId Payment ID shown at the top right.
+ * @param props.chargeId        Charge ID shown at the top right.
+ * @param props.actions         The actions menu.
+ * @param props.reviewActions   The fraud review buttons.
+ * @param props.children        Dispute panes and notices at the foot of the card.
+ */
 export const WooPaymentsPaymentSummarySection = ( {
 	transaction,
 	paymentIntentId = '',

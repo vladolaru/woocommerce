@@ -161,7 +161,8 @@ export const getMonthlyAnchorLabel = ( anchor: number ) => {
 };
 
 /**
- * The payout date in the site date format, read as UTC, as client 11.1.0 `utils/date-time.ts` `formatDateTimeFromString()` shows it.
+ * The payout date in the site date format: the value is parsed as UTC and shown in the site time zone, as client
+ * 11.1.0 `utils/date-time.ts` `formatDateTimeFromString()` shows it.
  *
  * @param payout The payout.
  */

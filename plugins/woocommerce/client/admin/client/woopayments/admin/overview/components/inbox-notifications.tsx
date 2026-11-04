@@ -83,6 +83,8 @@ const getInboxNote = ( note: WooPaymentsInboxNote ): InboxNote => ( {
 		url: action.url,
 		label: action.label,
 		primary: false,
+		// The experimental InboxNoteCard types actioned_text as a flag; a non-empty label from the note marks the
+		// action as already taken.
 		actioned_text: action.actioned_text
 			? Boolean( action.actioned_text )
 			: undefined,

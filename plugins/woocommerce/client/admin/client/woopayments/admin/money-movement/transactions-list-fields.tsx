@@ -156,7 +156,8 @@ const hasNoCustomer = ( item: WooPaymentsTransactionListRow ) =>
 const toUpperCase = ( value?: string | null ) =>
 	value ? value.toUpperCase() : '-';
 
-// Client 11.1.0 `utils/charge/index.ts:294-303` `getTransactionChannel()`.
+// Labels a list row's platform channel; the details page derives its label from the charge instead
+// (getChargeChannelLabel()). Client 11.1.0 `utils/charge/index.ts:294-303` `getTransactionChannel()`.
 export const getTransactionChannelLabel = ( channel?: string | null ) => {
 	switch ( channel ) {
 		case 'in_person':

@@ -34,9 +34,8 @@ const getRows = (
 	return response.data || response.rows || [];
 };
 
-// The platform's row is { reader_id, count, status, fee: { amount, currency } } (wpcom
-// service/class-charge-authorization-service.php get_reader_charges_summary_from_readers_transactions_count()), which
-// client 11.1.0 reads as is (payment-details/readers/index.js:62-120).
+// The platform's row is { reader_id, count, status, fee: { amount, currency } }, which client 11.1.0 reads as is
+// (payment-details/readers/index.js:62-120).
 const getFeeAmount = ( row: WooPaymentsReaderChargeSummaryRow ) =>
 	row.fee?.amount;
 
@@ -44,7 +43,7 @@ const getFeeCurrency = ( row: WooPaymentsReaderChargeSummaryRow ) =>
 	row.fee?.currency;
 
 /**
- * The fee as the CSV holds it: a number in the currency's major unit (`formatExportAmount()`).
+ * The fee as the CSV holds it: a number in the currency's major unit.
  *
  * @param row The reader row.
  */

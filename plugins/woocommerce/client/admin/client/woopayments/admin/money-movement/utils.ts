@@ -24,7 +24,7 @@ import type {
 } from './types';
 
 /**
- * A list count with the site language's thousand separator.
+ * A list count with the admin language's thousand separator.
  * Client 11.1.0 `utils/index.js:264-284` `applyThousandSeparator()`.
  *
  * @param count The count.

@@ -17,7 +17,7 @@ export type WooPaymentsTimelineItem = {
 
 /**
  * Renders the payment timeline items. Client 11.1.0 `payment-details/timeline/index.js` uses core's
- * `Timeline` with the site timezone; keep the renderer here so a later change touches one file.
+ * `Timeline` with the site timezone.
  *
  * @param props       Component props.
  * @param props.items Timeline items, newest first after the component sorts them.

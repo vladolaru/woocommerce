@@ -222,9 +222,9 @@ export const WooPaymentsBlockedTransactions = () => {
 		};
 	}, [ query ] );
 
-	// Client 11.1.0 `resolvers.js:159-199` and `hooks.ts:375-404`: the summary
-	// is keyed on the search only, so paging and sorting do not refetch it.
-	// It stays hidden while loading and after a failure other than not-found.
+	// Client 11.1.0 `resolvers.js:159-199` and `hooks.ts:375-404`: the summary refetches only when the search changes,
+	// so paging and sorting do not refetch it; as in the client, the request carries no search, so the count is
+	// store-wide. It stays hidden while loading and after a failure other than not-found.
 	const searchKey = JSON.stringify( search ?? [] );
 	useEffect( () => {
 		let isCurrent = true;
@@ -400,7 +400,6 @@ export const WooPaymentsBlockedTransactions = () => {
 				summary={ summaryItems }
 				// Client 11.1.0 `transactions/blocked/columns.tsx:42-47`.
 				numericFields={ [ 'amount' ] }
-				// Client 11.1.0 uses TableCard, whose empty text this is.
 				getItemId={ ( item ) =>
 					item.payment_intent?.id || String( item.order_id )
 				}

@@ -42,8 +42,7 @@ export type Recommendation = {
 // Excludes always-present fields that would otherwise stop c15 from firing:
 // auto-populated ones (customer_purchase_ip, customer_name,
 // customer_email_address, billing_address) and product_description (wizard
-// pre-fills it). Mirrors constants/high-impact-fields.ts; guarded in
-// recommendation-catalog.test.ts.
+// pre-fills it). Keep in step with the evidence keys dispute-evidence-fields.ts submits.
 //
 // Also omits fields the wizard does not collect yet: service_date and
 // refund_refusal_explanation (clusters 8 and 4 are deferred), and
@@ -452,8 +451,7 @@ export const RECOMMENDATIONS_CATALOG: Recommendation[] = [
 	// `shipping_date` for physical fraudulent disputes (cluster 8b), but
 	// non-physical fraud has no fulfilment-date field, so a positive could
 	// never fire and the missing-field coaching would always dead-end.
-	// Restore once the wizard collects `service_date`. Mirrors
-	// DISPUTE_HIGH_IMPACT_FIELDS.
+	// Restore once the wizard collects `service_date`.
 
 	// ============ CLUSTER 8b: shipping date (fraudulent + physical only) ============
 	// Parallel to Cluster 8 but keyed on `shipping_date` (physical fraudulent).
@@ -732,8 +730,8 @@ export const RECOMMENDATIONS_CATALOG: Recommendation[] = [
 	},
 
 	// ============ CLUSTER 12: cover letter (Tip only) ============
-	// Fires when the merchant cleared the auto-generated cover letter
-	// (uncategorized_text empty).
+	// Fires when the submitted evidence has no cover letter: a Visa compliance
+	// submission, or evidence submitted outside this form.
 	{
 		id: 'c12-cover-letter-include',
 		urgency: 'tip',
@@ -815,7 +813,7 @@ export const RECOMMENDATIONS_CATALOG: Recommendation[] = [
 			],
 			// Fires when every non-cover-letter wizard key is missing. The
 			// cover letter is auto-generated and submitted by default
-			// (index.tsx), so counting it would stop c15 firing for a merchant
+			// (dispute-evidence-form.tsx), so counting it would stop c15 firing for a merchant
 			// who sent no real evidence. suppressOthers leaves one message.
 			requireProvided: {
 				keys: NON_COVER_LETTER_EVIDENCE_KEYS,

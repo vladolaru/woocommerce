@@ -157,7 +157,7 @@ const isDateFilterParam = (
 	param === 'date_between';
 
 /**
- * The merchant's calendar day, `YYYY-MM-DD`, for a date filter value: a bare day as is, or the browser-local day of a
+ * The browser-local calendar day, `YYYY-MM-DD`, for a date filter value: a bare day as is, or the browser-local day of a
  * date-time, as client 11.1.0 `formatDateValue()` takes the day of any date Moment parses (`client/utils/index.js:244-255`).
  *
  * @param value The filter value.
@@ -237,7 +237,7 @@ const formatUtcSqlDate = ( date: Date ) => {
 };
 
 /**
- * The start or end of a `YYYY-MM-DD` day in the merchant's time zone, as a UTC `Y-m-d H:i:s` string, like client
+ * The start or end of a `YYYY-MM-DD` day in the browser's time zone, as a UTC `Y-m-d H:i:s` string, like client
  * 11.1.0 `formatDateValue()` (`client/utils/index.js:244-255`).
  *
  * @param value      The day.
