@@ -505,6 +505,51 @@ class OrderControllerTests extends \WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Pay-for-order address updates allow an invalid shipping country for an order with persisted local pickup and no live rate.
+	 */
+	public function test_update_existing_order_addresses_uses_persisted_local_pickup(): void {
+		$order = WC_Helper_Order::create_order();
+		$this->set_shipping_address(
+			$order,
+			array(
+				'country' => 'Invalid',
+				'phone'   => '555-555-5555',
+			)
+		);
+		$this->set_persisted_shipping_method_id( $order, 'local_pickup' );
+		$order->save();
+		WC()->shipping()->reset_shipping();
+
+		$this->assertEmpty( ShippingUtil::get_selected_shipping_rates_from_packages( WC()->shipping()->get_packages() ), 'The pay-for-order fixture must not inherit a live selected shipping rate.' );
+		$this->assertNull( $this->sut->update_existing_order_addresses( $order, $order->get_address( 'billing' ), null ), 'The order keeps its own shipping address.' );
+	}
+
+	/**
+	 * @testdox Pay-for-order address updates ignore a live local-pickup rate when the order has persisted non-local delivery.
+	 */
+	public function test_update_existing_order_addresses_ignores_live_local_pickup_rate(): void {
+		$this->expectException( RouteException::class );
+		$this->expectExceptionCode( 400 );
+		$this->expectExceptionMessage( 'Sorry, we do not ship orders to the provided country (Invalid)' );
+
+		$order = WC_Helper_Order::create_order();
+		$this->set_shipping_address(
+			$order,
+			array(
+				'country' => 'Invalid',
+				'phone'   => '555-555-5555',
+			)
+		);
+		$order->save();
+		$this->select_shipping_rate( 'local_pickup' );
+		$shipping_methods = $order->get_shipping_methods();
+
+		$this->assertNotContains( reset( $shipping_methods )->get_method_id(), LocalPickupUtils::get_local_pickup_method_ids(), 'The persisted order method must be non-local pickup.' );
+
+		$this->sut->update_existing_order_addresses( $order, $order->get_address( 'billing' ), null );
+	}
+
+	/**
 	 * @testdox Rejects an invalid shipping country when an existing shippable order has no persisted or live shipping methods.
 	 */
 	public function test_validate_existing_order_rejects_invalid_country_without_any_shipping_methods(): void {
@@ -558,6 +603,8 @@ class OrderControllerTests extends \WC_Unit_Test_Case {
 		$this->assertSame( 1, $controller->validate_addresses_calls, 'Existing-order payment validation must dispatch validate_addresses() exactly once.' );
 		$controller->validate_existing_order_before_update( $order );
 		$this->assertSame( 2, $controller->validate_addresses_calls, 'Existing-order update validation must dispatch validate_addresses() exactly once.' );
+		$controller->update_existing_order_addresses( $order, $order->get_address( 'billing' ), null );
+		$this->assertSame( 3, $controller->validate_addresses_calls, 'Pay-for-order address updates must dispatch validate_addresses() exactly once.' );
 	}
 
 	/**

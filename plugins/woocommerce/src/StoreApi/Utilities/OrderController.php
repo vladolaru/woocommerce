@@ -243,7 +243,7 @@ class OrderController {
 		$this->restore_state_names( $order, $old_states );
 
 		$needs_shipping = $order->needs_shipping();
-		$this->validate_addresses( $order, $needs_shipping );
+		$this->validate_existing_order_addresses( $order, $needs_shipping );
 		$this->validate_location_change( $order, $old_shipping_location, $old_tax_location, $needs_shipping );
 
 		return $shipping;
