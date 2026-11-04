@@ -31,6 +31,7 @@ import {
 } from '../reports/data';
 import { formatAmount as formatMoneyMovementAmount } from '../money-movement/utils';
 import { ZERO_DECIMAL_CURRENCIES } from './helpers/zero-decimal-currencies';
+import { pinLocalCalendarAt } from './helpers/browser-calendar';
 
 // The export raises snackbars; other stores keep the real dispatch.
 jest.mock( '@wordpress/data', () => {
@@ -1228,10 +1229,9 @@ describe( 'WooPaymentsReportsPage', () => {
 
 	// Client 11.2.0 `reports/date-filter/presets.ts:116-140`: the Fees presets resolve on the browser's calendar; Balance
 	// stays on UTC (`reports/balance/use-balance-date-filter.ts:18`, `:44-67`). At 01:00 on June 1 in a browser at +03:00,
-	// UTC is still on May 31.
+	// UTC is still on May 31. The calendar getters are pinned to +03:00 with the offset spy, so the host's zone plays no part.
 	it( "resolves the Fees previous-month preset on the browser's calendar and Balance on UTC", async () => {
-		const originalTz = process.env.TZ;
-		process.env.TZ = 'Etc/GMT-3';
+		const restoreCalendar = pinLocalCalendarAt( 180 );
 
 		try {
 			render(
@@ -1275,7 +1275,7 @@ describe( 'WooPaymentsReportsPage', () => {
 				).toHaveAttribute( 'aria-pressed', 'true' )
 			);
 		} finally {
-			process.env.TZ = originalTz;
+			restoreCalendar();
 		}
 	} );
 

@@ -10,6 +10,7 @@ import {
 	serializeReportsFeesSummaryQuery,
 	serializeReportsFeesViewToSearch,
 } from '../reports/query';
+import { pinLocalCalendarAt } from './helpers/browser-calendar';
 
 describe( 'WooPayments Reports query helpers', () => {
 	// Client 11.1.0 `formatDateValue()` takes the merchant's day; pin the browser at +03:00 so the UTC boundaries are fixed.
@@ -273,15 +274,15 @@ describe( 'WooPayments Reports query helpers', () => {
 	} );
 
 	// Client 11.1.0 `data/reports/resolvers.js:36-43` `formatDateValue()`: Before is the end of the merchant's day, and a
-	// date-time counts by its local day. The local day comes from the date getters, so the process time zone is pinned
-	// too (Etc/GMT-3 is +03:00, as the offset spy says); 23:30 at -05:00 is already the next day there.
+	// date-time counts by its local day. The local day comes from the date getters, so they are pinned to +03:00 too, as
+	// the offset spy is; 23:30 at -05:00 is already the next day there.
 	describe( 'with the browser at +03:00', () => {
-		const originalTz = process.env.TZ;
-		beforeAll( () => {
-			process.env.TZ = 'Etc/GMT-3';
+		let restoreCalendar: () => void;
+		beforeEach( () => {
+			restoreCalendar = pinLocalCalendarAt( 180 );
 		} );
-		afterAll( () => {
-			process.env.TZ = originalTz;
+		afterEach( () => {
+			restoreCalendar();
 		} );
 
 		it.each( [
