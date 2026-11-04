@@ -897,17 +897,6 @@ describe( 'WooPaymentsReportsPage', () => {
 					).not.toBeInTheDocument();
 				}
 				expect( speak ).not.toHaveBeenCalled();
-
-				await userEvent.click(
-					screen.getByRole( 'button', { name: 'Export' } )
-				);
-				const csv = mockDownloadCSVFile.mock.calls[ 0 ][ 1 ];
-				expect( csv ).toContain(
-					`starting_balance,"Starting balance - ${ startDate }",0,`
-				);
-				expect( csv ).toContain(
-					`ending_balance,"Ending balance - ${ endDate }",0,`
-				);
 			} finally {
 				moment.tz.setDefault();
 			}
@@ -1346,6 +1335,25 @@ describe( 'WooPaymentsReportsPage', () => {
 			'Balance report could not be loaded.',
 			'assertive'
 		);
+		// Client 11.2.0 `reports/balance/actions.tsx:84-118`, `:183-199`: no Print or Export of a report that did not load.
+		const expectActionsDisabled = ( reason: string ) => {
+			[ 'Print', 'Export' ].forEach( ( name ) => {
+				const button = screen.getByRole( 'button', { name } );
+				expect( button ).toHaveAttribute( 'aria-disabled', 'true' );
+				expect( button ).toHaveAccessibleDescription( reason );
+			} );
+		};
+		expectActionsDisabled(
+			'Print and Export are unavailable while the Balance report is unavailable.'
+		);
+		await userEvent.click(
+			screen.getByRole( 'button', { name: 'Export' } )
+		);
+		await userEvent.click(
+			screen.getByRole( 'button', { name: 'Print' } )
+		);
+		expect( mockDownloadCSVFile ).not.toHaveBeenCalled();
+		expect( printSpy ).not.toHaveBeenCalled();
 
 		mockGetBalanceSummary.mockImplementationOnce( async () => {
 			await waitForNextTick();
@@ -1374,6 +1382,9 @@ describe( 'WooPaymentsReportsPage', () => {
 				.closest( '[role="status"]' )
 		).toHaveTextContent(
 			'No balance activity was found for the selected period. Summary rows are shown with zero amounts.'
+		);
+		expectActionsDisabled(
+			'Print and Export are unavailable when the selected range has no Balance activity.'
 		);
 		expect(
 			screen.getByRole( 'button', { name: 'Apply April date filter' } )

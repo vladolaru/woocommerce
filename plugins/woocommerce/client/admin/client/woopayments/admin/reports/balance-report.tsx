@@ -10,6 +10,7 @@ import {
 	type ReactNode,
 	useCallback,
 	useEffect,
+	useId,
 	useMemo,
 	useRef,
 	useState,
@@ -546,6 +547,27 @@ const BalanceReport = ( { now }: { now: Date } ) => {
 	const tableRows = state.error ? [] : rows;
 	const reportCurrency = summary.currency || currency;
 	const isInitialLoading = state.isLoading && ! state.data && ! state.error;
+	// Client 11.2.0 `reports/balance/actions.tsx:84-118`: Print and Export only a loaded report with activity, and say why not.
+	const actionsDisabled = state.isLoading || !! state.error || ! hasActivity;
+	const disabledHelpId = useId();
+	const getDisabledHelpText = () => {
+		if ( state.isLoading ) {
+			return __(
+				'Print and Export are available once the Balance report finishes loading.',
+				'woocommerce'
+			);
+		}
+
+		return state.error
+			? __(
+					'Print and Export are unavailable while the Balance report is unavailable.',
+					'woocommerce'
+				)
+			: __(
+					'Print and Export are unavailable when the selected range has no Balance activity.',
+					'woocommerce'
+				);
+	};
 	const fields = useMemo< Field< BalanceRow >[] >(
 		() => [
 			{
@@ -759,8 +781,21 @@ const BalanceReport = ( { now }: { now: Date } ) => {
 			<div className="woocommerce-woopayments-reports__toolbar">
 				<h2>{ __( 'Balance summary', 'woocommerce' ) }</h2>
 				<div className="woocommerce-woopayments-reports__actions">
+					{ actionsDisabled && (
+						<span
+							id={ disabledHelpId }
+							className="screen-reader-text"
+						>
+							{ getDisabledHelpText() }
+						</span>
+					) }
 					<Button
 						variant="secondary"
+						disabled={ actionsDisabled }
+						accessibleWhenDisabled
+						aria-describedby={
+							actionsDisabled ? disabledHelpId : undefined
+						}
 						onClick={ () => {
 							recordEvent( 'wcpay_reports_balance_print_click', {
 								visible_row_count: rows.length,
@@ -772,6 +807,11 @@ const BalanceReport = ( { now }: { now: Date } ) => {
 					</Button>
 					<Button
 						variant="secondary"
+						disabled={ actionsDisabled }
+						accessibleWhenDisabled
+						aria-describedby={
+							actionsDisabled ? disabledHelpId : undefined
+						}
 						onClick={ () => {
 							const payload = { visible_row_count: rows.length };
 							// Client 11.1.0 `reports/balance/actions.tsx:131-147`.
