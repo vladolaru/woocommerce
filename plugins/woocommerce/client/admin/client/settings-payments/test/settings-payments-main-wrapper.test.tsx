@@ -149,25 +149,49 @@ describe( 'SettingsPaymentsMainWrapper WooPayments routes', () => {
 		expect( mockWooPaymentsRoutesLoaded ).toHaveBeenCalledTimes( 1 );
 	} );
 
-	it( 'falls back instead of loading forever when the routes chunk fails, and retries on the next mount', async () => {
+	it( 'shows a reload notice instead of the payments list when the routes chunk fails, and retries on the next path', async () => {
 		mockWooPaymentsRoutesLoaded.mockImplementationOnce( () => {
 			throw new Error( 'ChunkLoadError' );
 		} );
-		setPaymentsPath( '/woopayments/overview' );
-		const { rtl, settingsPayments } = await loadModules();
-		const { SettingsPaymentsMainWrapper } = settingsPayments;
+		setPaymentsPath( '/woopayments/settings' );
+		const { history, cleanup: done, ...rtl } = await renderWrapper();
+		cleanup = done;
 
-		const first = rtl.render( <SettingsPaymentsMainWrapper /> );
 		expect(
-			await rtl.screen.findByText( 'Main payments list' )
+			await rtl.screen.findByText( 'Oops, something went wrong', {
+				ignore: '.a11y-speak-region',
+			} )
 		).toBeInTheDocument();
+		expect(
+			rtl.screen.queryByText( 'Main payments list' )
+		).not.toBeInTheDocument();
 		expect(
 			rtl.screen.queryByText( 'Loading WooPayments…' )
 		).not.toBeInTheDocument();
-		first.unmount();
 
-		rtl.render( <SettingsPaymentsMainWrapper /> );
-		cleanup = rtl.cleanup;
+		const originalLocation = window.location;
+		const reload = jest.fn();
+		Object.defineProperty( window, 'location', {
+			configurable: true,
+			value: { ...originalLocation, reload },
+		} );
+		try {
+			rtl.fireEvent.click(
+				rtl.screen.getByRole( 'button', { name: 'Reload Page' } )
+			);
+		} finally {
+			Object.defineProperty( window, 'location', {
+				configurable: true,
+				value: originalLocation,
+			} );
+		}
+		expect( reload ).toHaveBeenCalledTimes( 1 );
+
+		rtl.act( () => {
+			history.push(
+				'/wp-admin/admin.php?page=wc-settings&tab=checkout&path=/woopayments/overview'
+			);
+		} );
 
 		expect(
 			await rtl.screen.findByText( 'WooPayments overview page' )

@@ -2,7 +2,12 @@
  * External dependencies
  */
 import { Gridicon } from '@automattic/components';
-import { Button, Placeholder, SelectControl } from '@wordpress/components';
+import {
+	Button,
+	Notice,
+	Placeholder,
+	SelectControl,
+} from '@wordpress/components';
 import React, { lazy, Suspense, useEffect, useState } from '@wordpress/element';
 import type { ReactNode } from 'react';
 import {
@@ -383,8 +388,9 @@ const SettingsPaymentsRoutes = () => {
 	const [ wooPaymentsRoutes, setWooPaymentsRoutes ] = useState(
 		loadedWooPaymentsRoutes
 	);
-	// A failed load (offline, broken build) falls back to the other routes instead of loading forever.
-	const [ hasLoadFailed, setHasLoadFailed ] = useState( false );
+	// A failed load (offline, broken build) shows a reload notice instead of loading forever; the next path tries again.
+	const [ failedPathname, setFailedPathname ] = useState< string >();
+	const hasLoadFailed = failedPathname === pathname;
 	const isLoadingWooPaymentsRoutes =
 		! wooPaymentsRoutes &&
 		! hasLoadFailed &&
@@ -404,7 +410,7 @@ const SettingsPaymentsRoutes = () => {
 			},
 			() => {
 				if ( isMounted ) {
-					setHasLoadFailed( true );
+					setFailedPathname( pathname );
 				}
 			}
 		);
@@ -412,10 +418,28 @@ const SettingsPaymentsRoutes = () => {
 		return () => {
 			isMounted = false;
 		};
-	}, [ isLoadingWooPaymentsRoutes ] );
+	}, [ isLoadingWooPaymentsRoutes, pathname ] );
 
 	if ( isLoadingWooPaymentsRoutes ) {
 		return <WooPaymentsRouteLoading providerName="WooPayments" />;
+	}
+
+	// The copy wc-admin's error boundary shows when one of its lazy pages fails to load (`~/error-boundary`).
+	if ( hasLoadFailed ) {
+		return (
+			<Notice
+				status="error"
+				isDismissible={ false }
+				actions={ [
+					{
+						label: __( 'Reload Page', 'woocommerce' ),
+						onClick: () => window.location.reload(),
+					},
+				] }
+			>
+				{ __( 'Oops, something went wrong', 'woocommerce' ) }
+			</Notice>
+		);
 	}
 
 	return (
