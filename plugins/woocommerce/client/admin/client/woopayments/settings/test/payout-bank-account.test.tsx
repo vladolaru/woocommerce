@@ -110,6 +110,28 @@ describe( 'PayoutBankAccount', () => {
 		).not.toBeInTheDocument();
 	} );
 
+	it.each( [
+		[ 'an empty response', () => Promise.resolve( undefined ) ],
+		[ 'a failed request', () => Promise.reject( new Error( 'Failed' ) ) ],
+	] )(
+		'keeps Manage in Stripe when the payouts overview returns %s',
+		async ( _label, overviewResponse ) => {
+			mockResponses();
+			const shellResponse = mockApiFetch.getMockImplementation();
+			mockApiFetch.mockImplementation( ( options ) =>
+				options.path === '/wc/v3/payments/deposits/overview-all'
+					? overviewResponse()
+					: shellResponse?.( options )
+			);
+
+			render( <PayoutBankAccount /> );
+
+			expect(
+				await screen.findByRole( 'link', { name: /^Manage in Stripe/ } )
+			).toHaveAttribute( 'href', ACCOUNT_LINK );
+		}
+	);
+
 	it( 'links the failed-payout notice to the shell account link in a new tab', async () => {
 		mockResponses( { externalAccountStatus: 'errored' } );
 

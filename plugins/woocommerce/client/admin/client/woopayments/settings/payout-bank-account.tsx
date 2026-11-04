@@ -75,7 +75,7 @@ export const PayoutBankAccount = () => {
 
 			const externalAccounts =
 				overview.status === 'fulfilled'
-					? ( overview.value.account?.default_external_accounts ??
+					? ( overview.value?.account?.default_external_accounts ??
 						[] )
 					: [];
 			const hasErroredExternalAccount = externalAccounts.some(
