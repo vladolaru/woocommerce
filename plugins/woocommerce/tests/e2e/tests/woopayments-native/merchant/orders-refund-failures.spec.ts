@@ -30,9 +30,11 @@ const SPARE_LINE_PRICE = 50;
 
 // The exact server-side rejection, from `WC_AJAX::refund_line_items()`. It is
 // raised before `wc_create_refund()` runs, so no refund object and no gateway
-// dispatch can exist on this path.
-const LINE_QUANTITY_ABOVE_REMAINING =
-	'Line item quantity cannot be greater than the remaining refundable quantity.';
+// dispatch can exist on this path. It ends with the line's remaining
+// refundable quantity, which PHP prints from a rounded float, so a whole
+// number shows no decimals. Nothing of the driven line is refunded before the
+// attempt, so all of its units remain.
+const LINE_QUANTITY_ABOVE_REMAINING = `Line item quantity cannot be greater than the remaining refundable quantity (${ DRIVEN_LINE_QUANTITY }).`;
 
 // The failure shapes an admin screen must not carry. A fatal replaces the
 // document; leaked notice output corrupts it. The notice pattern requires the
