@@ -17,20 +17,14 @@ import {
 } from '../settings-busy-state';
 import { SettingsSubpage } from '../settings-subpage';
 import {
+	EXPRESS_CHECKOUT_METHOD_TITLES,
 	isAmazonPayExpressCheckoutAvailable,
 	isWooPayAvailable,
+	type ExpressCheckoutMethod,
 } from './settings-utils';
 import { asSettingsRecord } from '../settings-values';
 import { useDevMode, useGetSettings, useSettings } from '../data/hooks';
 import './style.scss';
-
-type ExpressCheckoutMethodId = 'woopay' | 'payment_request' | 'amazon_pay';
-
-const METHOD_TITLES: Record< ExpressCheckoutMethodId, string > = {
-	woopay: 'WooPay',
-	payment_request: 'Apple Pay / Google Pay',
-	amazon_pay: 'Amazon Pay',
-};
 
 const METHOD_COMPONENTS = {
 	woopay: lazy( () =>
@@ -52,11 +46,11 @@ const METHOD_COMPONENTS = {
 
 const isExpressCheckoutMethodId = (
 	methodId: string
-): methodId is ExpressCheckoutMethodId =>
+): methodId is ExpressCheckoutMethod =>
 	[ 'woopay', 'payment_request', 'amazon_pay' ].includes( methodId );
 
 const isExpressCheckoutMethodAvailable = (
-	methodId: ExpressCheckoutMethodId,
+	methodId: ExpressCheckoutMethod,
 	settings: Record< string, unknown >
 ) => {
 	if ( methodId === 'woopay' ) {
@@ -71,7 +65,7 @@ const isExpressCheckoutMethodAvailable = (
 };
 
 const getExpressCheckoutMethodUnavailableMessage = (
-	methodId: ExpressCheckoutMethodId
+	methodId: ExpressCheckoutMethod
 ) => {
 	if ( methodId === 'woopay' ) {
 		return __( 'WooPay is not available for this store.', 'woocommerce' );
@@ -134,7 +128,7 @@ export const WooPaymentsExpressCheckoutSettings = ( {
 	}
 
 	const MethodSettings = METHOD_COMPONENTS[ methodId ];
-	const title = METHOD_TITLES[ methodId ];
+	const title = EXPRESS_CHECKOUT_METHOD_TITLES[ methodId ];
 	const headingId = `woopayments-express-checkout-settings-${ methodId }`;
 	let content;
 

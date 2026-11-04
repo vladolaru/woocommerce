@@ -46,13 +46,13 @@ import {
 	navigateReportsRoute,
 	isYmd,
 	getLastFullCalendarMonthDateFilter,
-	isBalanceDatePreset,
-	getBalanceDateFilterForPreset,
+	isReportDatePreset,
+	getDateFilterForPreset,
 	normalizeBalanceDateFilter,
-	getBalancePeriodForDateFilter,
+	getPeriodForDateFilter,
 	getRangeDays,
 	getBalanceDateFilterFromView,
-	matchBalanceDatePreset,
+	matchDatePreset,
 } from './utils';
 
 type BalanceRow = {
@@ -115,7 +115,7 @@ const getBalanceQuery = (
 	currency: string,
 	dateFilter: BalanceDateFilterValue
 ): ReportsBalanceQuery => ( {
-	...getBalancePeriodForDateFilter( dateFilter, now ),
+	...getPeriodForDateFilter( dateFilter, now ),
 	currency,
 } );
 
@@ -683,7 +683,7 @@ const BalanceReport = ( { now }: { now: Date } ) => {
 		} ),
 		[ dateFilter.operator, dateFilter.value, tableRows.length ]
 	);
-	const activeDatePreset = matchBalanceDatePreset( dateFilter, now );
+	const activeDatePreset = matchDatePreset( dateFilter, now );
 
 	const changeDateFilter = ( nextDateFilter: BalanceDateFilterValue ) => {
 		if (
@@ -692,9 +692,9 @@ const BalanceReport = ( { now }: { now: Date } ) => {
 			return;
 		}
 
-		const nextPeriod = getBalancePeriodForDateFilter( nextDateFilter, now );
+		const nextPeriod = getPeriodForDateFilter( nextDateFilter, now );
 		recordEvent( 'wcpay_reports_balance_date_filter_change', {
-			preset: matchBalanceDatePreset( nextDateFilter, now ),
+			preset: matchDatePreset( nextDateFilter, now ),
 			range_days: getRangeDays(
 				nextPeriod.date_start,
 				nextPeriod.date_end
@@ -713,11 +713,11 @@ const BalanceReport = ( { now }: { now: Date } ) => {
 	};
 
 	const handlePresetChange = ( nextPreset: string | null ) => {
-		if ( ! nextPreset || ! isBalanceDatePreset( nextPreset ) ) {
+		if ( ! nextPreset || ! isReportDatePreset( nextPreset ) ) {
 			return;
 		}
 
-		changeDateFilter( getBalanceDateFilterForPreset( nextPreset, now ) );
+		changeDateFilter( getDateFilterForPreset( nextPreset, now ) );
 	};
 
 	const balanceListRef = useDataViewsReloadState< HTMLElement >(

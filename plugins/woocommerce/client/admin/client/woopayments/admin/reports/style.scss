@@ -71,12 +71,6 @@ body.woocommerce_page_wc-settings.woocommerce-settings-payments-tab:has(.woocomm
 		}
 	}
 
-	&__date-range {
-		// stylelint-disable-next-line declaration-property-value-disallowed-list -- the date range select's minimum width; no upstream token.
-		min-width: 180px;
-		margin: 0;
-	}
-
 	&__actions {
 		display: flex;
 		gap: $gap-smaller;

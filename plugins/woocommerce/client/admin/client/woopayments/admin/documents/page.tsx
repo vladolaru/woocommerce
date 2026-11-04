@@ -38,7 +38,7 @@ import type {
 	WooPaymentsVatDetails,
 } from './types';
 import { WooPaymentsVatModal } from './vat-modal';
-import { formatSiteDateTime } from '../money-movement/utils';
+import { formatSiteDateTime, getErrorMessage } from '../money-movement/utils';
 import { navigateToSettingsPaymentsProviderRoute } from '../utils';
 import { usePersistedHiddenFields } from '../money-movement/view-preferences';
 import { WooPaymentsMoneyMovementDataViews } from '../money-movement/dataviews';
@@ -79,23 +79,6 @@ const getDocumentId = ( document: WooPaymentsDocument ) =>
 
 const isVatInvoice = ( document: WooPaymentsDocument ) =>
 	document.type === 'vat_invoice';
-
-const getErrorMessage = ( error: unknown, fallback: string ): string => {
-	if ( error instanceof Error && error.message ) {
-		return error.message;
-	}
-
-	if (
-		error &&
-		typeof error === 'object' &&
-		'message' in error &&
-		typeof error.message === 'string'
-	) {
-		return error.message;
-	}
-
-	return fallback;
-};
 
 const getDocumentsAccountState = (
 	response: WooPaymentsDocumentsAccountResponse

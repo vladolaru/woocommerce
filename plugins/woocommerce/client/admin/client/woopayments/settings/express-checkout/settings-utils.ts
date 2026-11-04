@@ -8,6 +8,17 @@ import {
 	type SettingsRecord,
 } from '../settings-values';
 
+export type ExpressCheckoutMethod = 'woopay' | 'payment_request' | 'amazon_pay';
+
+export const EXPRESS_CHECKOUT_METHOD_TITLES: Record<
+	ExpressCheckoutMethod,
+	string
+> = {
+	woopay: 'WooPay',
+	payment_request: 'Apple Pay / Google Pay',
+	amazon_pay: 'Amazon Pay',
+};
+
 export type ExpressCheckoutFeatureFlagName =
 	| 'woopay'
 	| 'woopayExpressCheckout'

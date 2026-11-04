@@ -266,7 +266,7 @@ export const formatLocalDateBoundaryForApi = (
 	return formatUtcSqlDate( new Date( utcTimestamp ) );
 };
 
-const getUserTimezone = () => {
+export const getUserTimezone = () => {
 	const offset = -new Date().getTimezoneOffset();
 	const sign = offset >= 0 ? '+' : '-';
 	const absoluteOffset = Math.abs( offset );

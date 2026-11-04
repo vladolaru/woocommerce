@@ -3,6 +3,7 @@
  */
 import {
 	formatLocalDateBoundaryForApi,
+	getUserTimezone,
 	normalizeLocalCalendarDate,
 } from '../money-movement/query';
 import {
@@ -18,6 +19,7 @@ import type {
 	ReportsFeesViewFilter,
 	ReportsSortDirection,
 } from './types';
+import { isYmd } from './utils';
 
 const FEES_LIST_QUERY_PARAM_ORDER = [
 	'page',
@@ -55,19 +57,6 @@ const SORT_FIELD_BY_COLUMN_ID: Record< string, string > = {
 	deposit_date: 'available_on',
 };
 
-const getUserTimeZone = () => {
-	const offset = -new Date().getTimezoneOffset();
-	const sign = offset >= 0 ? '+' : '-';
-	const absoluteOffset = Math.abs( offset );
-	const hours = String( Math.floor( absoluteOffset / 60 ) ).padStart(
-		2,
-		'0'
-	);
-	const minutes = String( absoluteOffset % 60 ).padStart( 2, '0' );
-
-	return `${ sign }${ hours }:${ minutes }`;
-};
-
 const normalizeStringArray = ( value: unknown ): string[] | undefined => {
 	if ( Array.isArray( value ) ) {
 		const values = value
@@ -83,8 +72,6 @@ const normalizeStringArray = ( value: unknown ): string[] | undefined => {
 
 	return [ String( value ) ];
 };
-
-const isDateOnly = ( value: string ) => /^\d{4}-\d{2}-\d{2}$/.test( value );
 
 // Client 11.1.0 `data/reports/resolvers.js:36-43`: every date goes through `formatDateValue()`, the start of the day
 // for "after" and a range start, the end of the day for "before" and a range end, in the browser's time zone.
@@ -176,7 +163,7 @@ export const buildReportsFeesQueryFromView = (
 		direction: isSortDirection( view.sort?.direction )
 			? view.sort.direction
 			: 'desc',
-		user_timezone: getUserTimeZone(),
+		user_timezone: getUserTimezone(),
 	};
 
 	view.filters?.forEach( ( filter ) => {
@@ -227,9 +214,6 @@ export type ReportsFeesUrlView = {
 	search: string;
 	filters: ReportsFeesViewFilter[];
 };
-
-const isYmd = ( value: unknown ): value is string =>
-	typeof value === 'string' && isDateOnly( value );
 
 /**
  * Every value of a URL param, in its plain, `key[]` and indexed `key[0]` spellings.

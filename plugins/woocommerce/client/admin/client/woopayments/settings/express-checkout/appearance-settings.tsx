@@ -15,14 +15,13 @@ import { __ } from '@wordpress/i18n';
  */
 import { ExpressCheckoutPreview } from './express-checkout-preview';
 import { ExpressCheckoutSettingsNotices } from './notices';
+import type { ExpressCheckoutMethod } from './settings-utils';
 import {
 	usePaymentRequestButtonBorderRadius,
 	usePaymentRequestButtonSize,
 	usePaymentRequestButtonTheme,
 	usePaymentRequestButtonType,
 } from '../data/hooks';
-
-type ExpressCheckoutMethod = 'woopay' | 'payment_request' | 'amazon_pay';
 
 const buttonActionOptions = [
 	{

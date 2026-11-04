@@ -30,6 +30,7 @@ import type {
 	WooPaymentsVatDetails,
 	WooPaymentsVatValidationResponse,
 } from './types';
+import { getErrorMessage } from '../money-movement/utils';
 import './vat-modal.scss';
 
 type WooPaymentsVatModalProps = {
@@ -140,23 +141,6 @@ const getTaxIdValidationHint = ( country: string ) => {
 				'woocommerce'
 			);
 	}
-};
-
-const getErrorMessage = ( error: unknown, fallback: string ) => {
-	if ( error instanceof Error && error.message ) {
-		return error.message;
-	}
-
-	if (
-		error &&
-		typeof error === 'object' &&
-		'message' in error &&
-		typeof error.message === 'string'
-	) {
-		return error.message;
-	}
-
-	return fallback;
 };
 
 const getErrorCode = ( error: unknown ) =>

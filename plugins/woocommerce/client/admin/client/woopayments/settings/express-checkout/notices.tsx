@@ -8,8 +8,10 @@ import { __, sprintf } from '@wordpress/i18n';
  */
 import { ExpressCheckoutInlineNotice } from './components';
 import {
+	EXPRESS_CHECKOUT_METHOD_TITLES,
 	getExpressCheckoutFeatureFlags,
 	isWooPayAvailable,
+	type ExpressCheckoutMethod,
 } from './settings-utils';
 import { asSettingsRecord } from '../settings-values';
 import {
@@ -19,14 +21,6 @@ import {
 	usePaymentRequestEnabledSettings,
 	useWooPayEnabledSettings,
 } from '../data/hooks';
-
-type ExpressCheckoutMethod = 'woopay' | 'payment_request' | 'amazon_pay';
-
-const METHOD_LABELS: Record< ExpressCheckoutMethod, string > = {
-	woopay: 'WooPay',
-	payment_request: 'Apple Pay / Google Pay',
-	amazon_pay: 'Amazon Pay',
-};
 
 const formatButtonList = ( buttonNames: string[] ) => {
 	if ( buttonNames.length === 1 ) {
@@ -77,13 +71,13 @@ export const ExpressCheckoutSettingsNotices = ( {
 	const enabledMethods = [
 		currentMethod !== 'woopay' &&
 			isWooPayEffectivelyEnabled &&
-			METHOD_LABELS.woopay,
+			EXPRESS_CHECKOUT_METHOD_TITLES.woopay,
 		currentMethod !== 'payment_request' &&
 			isPaymentRequestEnabled &&
-			METHOD_LABELS.payment_request,
+			EXPRESS_CHECKOUT_METHOD_TITLES.payment_request,
 		currentMethod !== 'amazon_pay' &&
 			isAmazonPayEffectivelyEnabled &&
-			METHOD_LABELS.amazon_pay,
+			EXPRESS_CHECKOUT_METHOD_TITLES.amazon_pay,
 	].filter( Boolean ) as string[];
 
 	if ( enabledMethods.length === 0 ) {

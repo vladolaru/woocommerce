@@ -34,19 +34,20 @@ const ALLOWED_FONT_DOMAINS = [
 	'fonts.wp.com',
 ];
 
-const isRecord = ( value: unknown ): value is Record< string, unknown > =>
+// Any non-null object, arrays included.
+const isObject = ( value: unknown ): value is Record< string, unknown > =>
 	typeof value === 'object' && value !== null;
 
 const getString = ( value: unknown ) =>
 	typeof value === 'string' ? value : undefined;
 
 const getAppearance = ( value: unknown ): WooPayAppearance | undefined => {
-	if ( ! isRecord( value ) ) {
+	if ( ! isObject( value ) ) {
 		return undefined;
 	}
 
 	let variables: AppearanceRule | undefined;
-	if ( isRecord( value.variables ) ) {
+	if ( isObject( value.variables ) ) {
 		variables = {};
 		Object.entries( value.variables ).forEach( ( [ key, item ] ) => {
 			const stringValue = getString( item );
@@ -61,10 +62,10 @@ const getAppearance = ( value: unknown ): WooPayAppearance | undefined => {
 	}
 
 	let rules: Record< string, AppearanceRule > | undefined;
-	if ( isRecord( value.rules ) ) {
+	if ( isObject( value.rules ) ) {
 		rules = {};
 		Object.entries( value.rules ).forEach( ( [ key, item ] ) => {
-			if ( ! isRecord( item ) ) {
+			if ( ! isObject( item ) ) {
 				return;
 			}
 
@@ -92,7 +93,7 @@ const getAppearance = ( value: unknown ): WooPayAppearance | undefined => {
 const getFontRules = ( value: unknown ): FontRule[] =>
 	Array.isArray( value )
 		? value
-				.filter( isRecord )
+				.filter( isObject )
 				.map( ( item ) => ( { cssSrc: getString( item.cssSrc ) } ) )
 		: [];
 

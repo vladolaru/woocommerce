@@ -2,8 +2,8 @@
  * Internal dependencies
  */
 import { WC_ASSET_URL } from '~/utils/admin-settings';
+import type { ExpressCheckoutMethod } from './settings-utils';
 
-type ExpressCheckoutMethod = 'woopay' | 'payment_request' | 'amazon_pay';
 type ExpressCheckoutIconMethod = ExpressCheckoutMethod | 'link';
 
 const assetUrl = ( path: string ) => `${ WC_ASSET_URL || '' }${ path }`;

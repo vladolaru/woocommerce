@@ -191,12 +191,12 @@ const getYearToDateFilter = ( now: Date ): BalanceDateFilterValue => ( {
 	],
 } );
 
-const isBalanceDatePreset = ( value: string ): value is BalanceDatePreset =>
+const isReportDatePreset = ( value: string ): value is BalanceDatePreset =>
 	[ 'last_month', 'last_year', 'month_to_date', 'year_to_date' ].includes(
 		value
 	);
 
-const getBalanceDateFilterForPreset = (
+const getDateFilterForPreset = (
 	preset: BalanceDatePreset,
 	now: Date
 ): BalanceDateFilterValue => {
@@ -247,7 +247,7 @@ const getMonthEndYmd = ( ymd: string ): string => {
 	return toYmdUTC( new Date( Date.UTC( year, month, 0 ) ) );
 };
 
-const getBalancePeriodForDateFilter = (
+const getPeriodForDateFilter = (
 	value: BalanceDateFilterValue,
 	now: Date
 ): Required< Pick< ReportsBalanceQuery, 'date_start' | 'date_end' > > => {
@@ -341,7 +341,7 @@ const getBalanceDateFilterFromView = (
 	return fallback;
 };
 
-const matchBalanceDatePreset = (
+const matchDatePreset = (
 	value: BalanceDateFilterValue,
 	now: Date
 ): BalanceDatePreset => {
@@ -397,11 +397,11 @@ export {
 	navigateReportsRoute,
 	isYmd,
 	getLastFullCalendarMonthDateFilter,
-	isBalanceDatePreset,
-	getBalanceDateFilterForPreset,
+	isReportDatePreset,
+	getDateFilterForPreset,
 	normalizeBalanceDateFilter,
-	getBalancePeriodForDateFilter,
+	getPeriodForDateFilter,
 	getRangeDays,
 	getBalanceDateFilterFromView,
-	matchBalanceDatePreset,
+	matchDatePreset,
 };

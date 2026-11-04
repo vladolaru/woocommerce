@@ -51,11 +51,11 @@ import {
 	getGlobalSettings,
 	navigateReportsRoute,
 	isYmd,
-	isBalanceDatePreset,
-	getBalanceDateFilterForPreset,
-	getBalancePeriodForDateFilter,
+	isReportDatePreset,
+	getDateFilterForPreset,
+	getPeriodForDateFilter,
 	getRangeDays,
-	matchBalanceDatePreset,
+	matchDatePreset,
 } from './utils';
 
 // Client 11.1.0 `class-wc-payments-admin.php:1073` sends the time_format option; here it is read through `@wordpress/date`.
@@ -230,7 +230,7 @@ const FeesReport = ( {
 			Array.isArray( range ) &&
 			isYmd( range[ 0 ] ) &&
 			isYmd( range[ 1 ] )
-			? matchBalanceDatePreset(
+			? matchDatePreset(
 					{ operator: 'between', value: [ range[ 0 ], range[ 1 ] ] },
 					calendarNow
 				)
@@ -570,15 +570,12 @@ const FeesReport = ( {
 	};
 
 	const handlePresetChange = ( nextPreset: string | null ) => {
-		if ( ! nextPreset || ! isBalanceDatePreset( nextPreset ) ) {
+		if ( ! nextPreset || ! isReportDatePreset( nextPreset ) ) {
 			return;
 		}
 
-		const dateFilter = getBalanceDateFilterForPreset(
-			nextPreset,
-			calendarNow
-		);
-		const period = getBalancePeriodForDateFilter( dateFilter, calendarNow );
+		const dateFilter = getDateFilterForPreset( nextPreset, calendarNow );
+		const period = getPeriodForDateFilter( dateFilter, calendarNow );
 		recordEvent( 'wcpay_reports_fees_date_filter_change', {
 			preset: nextPreset,
 			range_days: getRangeDays( period.date_start, period.date_end ),
