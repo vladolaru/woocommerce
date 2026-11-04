@@ -39,11 +39,23 @@ export function* activatePmPromotion(
 			'getPmPromotions',
 			[]
 		);
+
+		// The route answers 200 with `success: false` when the payment method was not turned on.
+		if ( response.success === false ) {
+			dispatch( 'core/notices' ).createErrorNotice(
+				__(
+					'Error activating payment method promotion.',
+					'woocommerce'
+				)
+			);
+			return false;
+		}
+
 		dispatch( 'core/notices' ).createSuccessNotice(
 			__( 'Promotion activated successfully.', 'woocommerce' )
 		);
 
-		return response.success !== false;
+		return true;
 	} catch ( e ) {
 		yield dispatch( 'core/notices' ).createErrorNotice(
 			__( 'Error activating payment method promotion.', 'woocommerce' )

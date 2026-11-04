@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Show an error, not "Promotion activated successfully.", when a WooPayments payment method promotion could not be activated.

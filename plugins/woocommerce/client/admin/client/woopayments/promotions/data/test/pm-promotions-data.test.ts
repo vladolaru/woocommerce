@@ -146,6 +146,27 @@ describe( 'WooPayments PM promotions data store', () => {
 		expect( result.done ).toBe( true );
 	} );
 
+	// The activate route answers 200 with `success: false` when the method was not turned on
+	// (`MerchantRestController::activate_pm_promotion()`); that is no success.
+	it( 'reports a failed activation the server answers with success false', async () => {
+		const { activatePmPromotion } = await import( '../actions' );
+		const action = activatePmPromotion( 'card' );
+
+		action.next();
+		const result = action.next( { success: false } );
+
+		expect( mockCreateSuccessNotice ).not.toHaveBeenCalled();
+		expect( mockCreateErrorNotice ).toHaveBeenCalledWith(
+			'Error activating payment method promotion.'
+		);
+		expect( mockInvalidateResolution ).toHaveBeenCalledWith(
+			'getPmPromotions',
+			[]
+		);
+		expect( result.value ).toBe( false );
+		expect( result.done ).toBe( true );
+	} );
+
 	it( 'posts dismissal requests to the PM promotion dismiss endpoint', async () => {
 		const { dismissPmPromotion } = await import( '../actions' );
 		const action = dismissPmPromotion( 'card' );
