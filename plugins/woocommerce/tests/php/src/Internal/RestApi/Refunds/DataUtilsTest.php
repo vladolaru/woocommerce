@@ -3501,6 +3501,147 @@ class DataUtilsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Both refund pipelines dispatch the public rounding and summing methods at the order currency's decimals, so a subclass override takes effect.
+	 * @dataProvider provider_refund_pipeline_public_methods
+	 *
+	 * @param string $pipeline The entry point: preview or creation.
+	 * @param string $method   The public method a subclass overrides.
+	 */
+	public function test_refund_pipelines_dispatch_overridable_methods( string $pipeline, string $method ): void {
+		// phpcs:disable Squiz.Commenting.FunctionComment.Missing, Squiz.Commenting.VariableComment.Missing -- the recording overrides are the fixture.
+		$sut = new class() extends DataUtils {
+			public $calls = array();
+
+			public function normalize_refund_totals( array $line_items ): array {
+				$result        = parent::normalize_refund_totals( $line_items );
+				$this->calls[] = array( 'normalize_refund_totals', $result[0]['refund_total'] );
+				return $result;
+			}
+
+			public function calculate_refund_amount( array $line_items ): ?float {
+				$result        = parent::calculate_refund_amount( $line_items );
+				$this->calls[] = array( 'calculate_refund_amount', $result );
+				return $result;
+			}
+		};
+		// phpcs:enable Squiz.Commenting.FunctionComment.Missing, Squiz.Commenting.VariableComment.Missing
+		list( $order, $item ) = $this->create_single_line_order( 'KWD', 10.0 );
+		$line_items           = array(
+			array(
+				'line_item_id' => $item->get_id(),
+				'refund_total' => 1.2345,
+			),
+		);
+
+		if ( 'preview' === $pipeline ) {
+			$sut->compute_refund_preview_or_error( $order, $line_items, 'wc-rest-refunds' );
+		} else {
+			$sut->prepare_refund_creation_or_error( $order, $line_items, false, null, 'wc-rest-refunds' );
+		}
+
+		$values = array();
+		foreach ( $sut->calls as $call ) {
+			if ( $method === $call[0] ) {
+				$values[] = $call[1];
+			}
+		}
+		$this->assertNotEmpty( $values, "The {$pipeline} pipeline should call the overridden {$method}()." );
+		$this->assertSame( 1.235, $values[0], "{$method}() should round at the order currency's three decimals inside the pipeline." );
+	}
+
+	/**
+	 * @return array<string, array{0: string, 1: string}>
+	 */
+	public function provider_refund_pipeline_public_methods(): array {
+		return array(
+			'preview pipeline, normalize_refund_totals'  => array( 'preview', 'normalize_refund_totals' ),
+			'creation pipeline, normalize_refund_totals' => array( 'creation', 'normalize_refund_totals' ),
+			'creation pipeline, calculate_refund_amount' => array( 'creation', 'calculate_refund_amount' ),
+		);
+	}
+
+	/**
+	 * @testdox The order currency's decimals apply only during one call of each entry point: a direct call and a store-currency order after a three-decimal order round at the store's decimals.
+	 * @dataProvider provider_refund_decimals_entry_points
+	 *
+	 * @param string $entry_point The entry point: preview, creation or fill.
+	 */
+	public function test_refund_pipeline_decimals_reset_after_each_call( string $entry_point ): void {
+		list( $foreign_order, $foreign_item ) = $this->create_single_line_order( 'KWD', 10.0 );
+		list( $store_order, $store_item )     = $this->create_single_line_order( get_woocommerce_currency(), 10.0 );
+
+		$foreign = $this->round_through_entry_point( $entry_point, $foreign_order, $foreign_item, 1.2345 );
+		$direct  = $this->data_utils->normalize_refund_totals( array( array( 'refund_total' => 1.2345 ) ) );
+		$store   = $this->round_through_entry_point( $entry_point, $store_order, $store_item, 1.2345 );
+
+		$this->assertSame( '1.235', $foreign, 'The three-decimal order should round at three decimals.' );
+		$this->assertSame( 1.23, $direct[0]['refund_total'], 'A direct call after the entry point should round at the store decimals.' );
+		$this->assertSame( '1.23', $store, 'The store-currency order on the same instance should round at the store decimals.' );
+	}
+
+	/**
+	 * @return array<string, array{0: string}>
+	 */
+	public function provider_refund_decimals_entry_points(): array {
+		return array(
+			'preview pipeline'           => array( 'preview' ),
+			'creation pipeline'          => array( 'creation' ),
+			'fill_missing_refund_totals' => array( 'fill' ),
+		);
+	}
+
+	/**
+	 * Helper: round one explicit refund_total of the order's line through an entry point of the shared instance.
+	 *
+	 * @param string                $entry_point  The entry point: preview, creation or fill.
+	 * @param WC_Order              $order        The order.
+	 * @param WC_Order_Item_Product $item         The order's line.
+	 * @param float                 $refund_total The refund_total sent for the line.
+	 * @return string The previewed total, the prepared amount or the filled refund_total.
+	 */
+	private function round_through_entry_point( string $entry_point, WC_Order $order, WC_Order_Item_Product $item, float $refund_total ): string {
+		$line_items = array(
+			array(
+				'line_item_id' => $item->get_id(),
+				'refund_total' => $refund_total,
+			),
+		);
+		if ( 'preview' === $entry_point ) {
+			return $this->data_utils->compute_refund_preview_or_error( $order, $line_items, 'wc-rest-refunds' )['total'];
+		}
+		if ( 'creation' === $entry_point ) {
+			return (string) $this->data_utils->prepare_refund_creation_or_error( $order, $line_items, false, null, 'wc-rest-refunds' )['amount'];
+		}
+		return (string) $this->data_utils->fill_missing_refund_totals( $line_items, $order )[0]['refund_total'];
+	}
+
+	/**
+	 * Helper: create a processing order in the given currency holding one product line of one unit.
+	 *
+	 * @param string $currency The order currency.
+	 * @param float  $total    The line total, which is also the order total.
+	 * @return array{0: WC_Order, 1: WC_Order_Item_Product} The order and the item.
+	 */
+	private function create_single_line_order( string $currency, float $total ): array {
+		$order = wc_create_order();
+		$item  = new WC_Order_Item_Product();
+		$item->set_props(
+			array(
+				'quantity' => 1,
+				'subtotal' => $total,
+				'total'    => $total,
+			)
+		);
+		$item->save();
+		$order->add_item( $item );
+		$order->set_currency( $currency );
+		$order->set_status( OrderStatus::PROCESSING );
+		$order->set_total( $total );
+		$order->save();
+		return array( $order, $item );
+	}
+
+	/**
 	 * @testdox split_inclusive_by_stored_ratio clamps to net-only when the stored total and tax nearly cancel.
 	 */
 	public function test_split_inclusive_degenerate_ratio_clamps(): void {

@@ -56,6 +56,18 @@ class DataUtils {
 	private $log_source = self::DEFAULT_LOG_SOURCE;
 
 	/**
+	 * Price decimals normalize_refund_totals() and calculate_refund_amount() round at.
+	 *
+	 * Set to the order currency's decimals for the length of one call of each entry point and of
+	 * fill_missing_refund_totals(), then restored, the same way as $log_source: those two methods
+	 * are public and overridable, so the pipelines dispatch them without a new parameter. Null
+	 * means the store's decimals, which is what a direct call uses.
+	 *
+	 * @var int|null
+	 */
+	private $price_decimals = null;
+
+	/**
 	 * Convert line items (schema format) to internal format. This keys arrays by item ID and has some different naming
 	 * conventions.
 	 *
@@ -157,10 +169,11 @@ class DataUtils {
 	 * tax-exclusive subtotal and the taxes are added on top.
 	 *
 	 * @param array $line_items The line items to calculate the refund amount from.
-	 * @return float|null The refund amount, or null if it can't be calculated.
+	 * @return float|null The refund amount, rounded to the order currency's decimals inside a pipeline and to
+	 *                    wc_get_price_decimals() otherwise, or null if it can't be calculated.
 	 */
 	public function calculate_refund_amount( array $line_items ): ?float {
-		return $this->sum_refund_amount( $line_items, wc_get_price_decimals() );
+		return $this->sum_refund_amount( $line_items, $this->price_decimals ?? wc_get_price_decimals() );
 	}
 
 	/**
@@ -845,25 +858,23 @@ class DataUtils {
 	/**
 	 * Round every caller-supplied refund_total to currency precision.
 	 *
-	 * The preview and create flows round at the order currency's decimals through
-	 * round_refund_totals(), so a value the client sends is validated, summed, split, and
+	 * Applied at the entry of both the preview and create flows, which round at the order
+	 * currency's decimals, so a value the client sends is validated, summed, split, and
 	 * stored at the same precision. A missing or null refund_total (the auto-compute form)
 	 * is left untouched.
 	 *
 	 * @param array $line_items Line items in schema format.
-	 * @return array Line items with numeric refund_total values rounded to wc_get_price_decimals().
+	 * @return array Line items with numeric refund_total values rounded to the order currency's
+	 *               decimals inside a pipeline, and to wc_get_price_decimals() otherwise.
 	 *
 	 * @since 10.9.0
 	 */
 	public function normalize_refund_totals( array $line_items ): array {
-		return $this->round_refund_totals( $line_items, wc_get_price_decimals() );
+		return $this->round_refund_totals( $line_items, $this->price_decimals ?? wc_get_price_decimals() );
 	}
 
 	/**
-	 * Round every caller-supplied refund_total to the given decimals.
-	 *
-	 * Applied at the entry of both the preview and create flows, with the order currency's
-	 * decimals, so a previewed amount always matches the created refund to the cent.
+	 * Round every caller-supplied refund_total to the given decimals: the body of normalize_refund_totals().
 	 *
 	 * @param array $line_items     Line items in schema format.
 	 * @param int   $price_decimals Decimals to round to.
@@ -907,7 +918,13 @@ class DataUtils {
 		// Round caller-supplied amounts up front so explicit values are stored at the
 		// same precision the preview validated and showed. Computed values below are
 		// already rounded by compute_quantity_refund_total().
-		$line_items = $this->round_refund_totals( $line_items, $this->get_order_price_decimals( $order ) );
+		$previous_decimals    = $this->price_decimals;
+		$this->price_decimals = $this->get_order_price_decimals( $order );
+		try {
+			$line_items = $this->normalize_refund_totals( $line_items );
+		} finally {
+			$this->price_decimals = $previous_decimals;
+		}
 
 		// Loaded lazily: only requests with at least one auto-computed line pay for
 		// the refund-history scan the remaining-amount cap needs.
@@ -1330,12 +1347,14 @@ class DataUtils {
 	 * @since 11.1.0
 	 */
 	public function compute_refund_preview_or_error( WC_Order $order, array $line_items, string $log_source ) {
-		$this->log_source = $log_source;
+		$this->log_source     = $log_source;
+		$previous_decimals    = $this->price_decimals;
+		$this->price_decimals = $this->get_order_price_decimals( $order );
 		try {
 			// Round caller-supplied refund_total values once, up front, so validation and
 			// the computed preview use the same precision the create flow stores. Reused
 			// for both validate and build below.
-			$line_items = $this->round_refund_totals( $line_items, $this->get_order_price_decimals( $order ) );
+			$line_items = $this->normalize_refund_totals( $line_items );
 
 			$validation_error = $this->validate_preview_line_items( $line_items, $order );
 
@@ -1402,7 +1421,8 @@ class DataUtils {
 
 			return $preview;
 		} finally {
-			$this->log_source = self::DEFAULT_LOG_SOURCE;
+			$this->log_source     = self::DEFAULT_LOG_SOURCE;
+			$this->price_decimals = $previous_decimals;
 		}
 	}
 
@@ -1437,7 +1457,9 @@ class DataUtils {
 	 * @since 11.1.0
 	 */
 	public function prepare_refund_creation_or_error( WC_Order $order, array $line_items, bool $has_amount_override, $amount_override, string $log_source ) {
-		$this->log_source = $log_source;
+		$this->log_source     = $log_source;
+		$previous_decimals    = $this->price_decimals;
+		$this->price_decimals = $this->get_order_price_decimals( $order );
 		try {
 			// Fill in refund_total for any line items that omit it. The simplified
 			// request form sends only {line_item_id, quantity}; the backend derives
@@ -1473,11 +1495,11 @@ class DataUtils {
 			// (split_inclusive_by_stored_ratio(), the same method the preview uses). When
 			// the client supplies an explicit refund_tax breakdown, refund_total is the
 			// tax-exclusive subtotal and the tax is added on top (core Woo semantics).
-			// Either way sum_refund_amount() adds refund_total and refund_tax up to the
+			// Either way calculate_refund_amount() adds refund_total and refund_tax up to the
 			// gross line amount, so mixing the two forms across line items is well-defined.
 			$price_decimals      = $this->get_order_price_decimals( $order );
 			$internal_line_items = $this->convert_line_items_to_internal_format( $line_items, $order );
-			$calculated_total    = ! empty( $line_items ) ? $this->sum_refund_amount( $line_items, $price_decimals ) : 0;
+			$calculated_total    = ! empty( $line_items ) ? $this->calculate_refund_amount( $line_items ) : 0;
 
 			$amount = $has_amount_override ? $amount_override : $calculated_total;
 
@@ -1528,7 +1550,8 @@ class DataUtils {
 				'amount'            => $amount,
 			);
 		} finally {
-			$this->log_source = self::DEFAULT_LOG_SOURCE;
+			$this->log_source     = self::DEFAULT_LOG_SOURCE;
+			$this->price_decimals = $previous_decimals;
 		}
 	}
 
