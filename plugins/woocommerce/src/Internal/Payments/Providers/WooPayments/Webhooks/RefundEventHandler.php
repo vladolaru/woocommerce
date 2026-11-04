@@ -221,7 +221,7 @@ class RefundEventHandler {
 				$refund_id,
 				$refunded_amount,
 				$refund_reason,
-				$is_partial_refund ? array() : $order->get_items()
+				$is_partial_refund ? array() : RefundLineItems::get_remaining( $order )
 			);
 
 			$this->add_note_and_metadata_for_created_refund( $order, $wc_refund, $refund_id, $balance_txn_id, $is_pending_refund );

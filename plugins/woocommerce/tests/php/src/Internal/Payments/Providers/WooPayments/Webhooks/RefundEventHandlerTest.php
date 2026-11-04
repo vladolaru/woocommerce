@@ -41,6 +41,7 @@ use WC_Unit_Test_Case;
 class RefundEventHandlerTest extends WC_Unit_Test_Case {
 
 	use OrderPaymentLockTestTrait;
+	use RefundLinesTestTrait;
 
 	/**
 	 * Original multi-currency options restored after each test.
@@ -1346,6 +1347,83 @@ class RefundEventHandlerTest extends WC_Unit_Test_Case {
 			'payment method changed by the merchant' => array( 'cod', 'pi_123' ),
 			'transaction ID is the charge'           => array( WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'ch_123' ),
 		);
+	}
+
+	/**
+	 * @testdox A full charge.refunded names each line at the units, total and tax not yet refunded, after an earlier refund of $earlier_units units of line A.
+	 * @dataProvider provider_full_refund_line_states
+	 *
+	 * The earlier refund names units of line A with no money, as the order screen records a 0.00 refund: a full refund
+	 * event can follow only a refund that left the whole amount refundable. WooCommerce's refund handler names a line
+	 * only up to the units not yet refunded (WC_AJAX::refund_line_items()).
+	 *
+	 * @param int                  $earlier_units  Units of line A the earlier refund named.
+	 * @param array<string,string> $expected_lines Lines the event's refund names, as "quantity total tax".
+	 */
+	public function test_full_charge_refunded_names_each_line_at_what_is_left( int $earlier_units, array $expected_lines ): void {
+		$order = $this->create_refundable_order();
+		$items = $this->add_two_taxed_lines( $order );
+		if ( $earlier_units > 0 ) {
+			$this->refund_line_units( $order, $items['A'], $earlier_units, false );
+		}
+		$charge                                 = $this->get_successful_refund_charge();
+		$charge['payment_intent']               = 'pi_123';
+		$charge['amount']                       = 5500;
+		$charge['refunds']['data'][0]['amount'] = 5500;
+
+		$this->sut->process( 'charge.refunded', $charge );
+
+		$order  = wc_get_order( $order->get_id() );
+		$refund = $this->get_refund_by_provider_id( $order, 're_123' );
+		$this->assertSame( '55.00', wc_format_decimal( $refund->get_amount(), 2 ) );
+		$this->assertSame( $expected_lines, $this->get_refund_lines( $refund ) );
+		$this->assertSame(
+			array(
+				'A' => 3,
+				'B' => 1,
+			),
+			$this->get_refunded_units( $order, $items ),
+			'No line is refunded beyond its ordered units.'
+		);
+	}
+
+	/**
+	 * Line A's state before a full refund event, with the lines the event's refund names; line B is never refunded first.
+	 *
+	 * @return array<string,array{0:int,1:array<string,string>}>
+	 */
+	public function provider_full_refund_line_states(): array {
+		return array(
+			'line A untouched'       => array(
+				0,
+				array(
+					'A' => '-3 -30.00 -3.00',
+					'B' => '-1 -20.00 -2.00',
+				),
+			),
+			'line A partly refunded' => array(
+				1,
+				array(
+					'A' => '-2 -30.00 -3.00',
+					'B' => '-1 -20.00 -2.00',
+				),
+			),
+			'line A fully refunded'  => array( 3, array( 'B' => '-1 -20.00 -2.00' ) ),
+		);
+	}
+
+	/**
+	 * Get the order's refund linked to a provider refund.
+	 *
+	 * @param WC_Order $order     Order object.
+	 * @param string   $refund_id Provider refund ID.
+	 * @return WC_Order_Refund
+	 */
+	private function get_refund_by_provider_id( WC_Order $order, string $refund_id ): WC_Order_Refund {
+		$linked = array_values( array_filter( $order->get_refunds(), static fn( WC_Order_Refund $refund ): bool => $refund_id === $refund->get_meta( '_wcpay_refund_id', true ) ) );
+		$this->assertCount( 1, $linked );
+
+		return $linked[0];
 	}
 
 	/**

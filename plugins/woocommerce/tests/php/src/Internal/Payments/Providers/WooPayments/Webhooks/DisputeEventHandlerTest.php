@@ -31,6 +31,7 @@ use WC_Unit_Test_Case;
 class DisputeEventHandlerTest extends WC_Unit_Test_Case {
 
 	use OrderPaymentLockTestTrait;
+	use RefundLinesTestTrait;
 
 	/**
 	 * The System Under Test.
@@ -1107,6 +1108,107 @@ class DisputeEventHandlerTest extends WC_Unit_Test_Case {
 		$this->assertCount( 1, $refunds );
 		$this->assertSame( '4.00', wc_format_decimal( $refunds[0]->get_amount(), 2 ) );
 		$this->assertCount( 1, $this->find_order_note( $order, 'Dispute has been closed with status' ) );
+	}
+
+	/**
+	 * @testdox A lost dispute of the whole charge names each line at the units, total and tax not yet refunded, after an earlier refund of $earlier_units units of line A.
+	 * @dataProvider provider_lost_dispute_line_states
+	 *
+	 * The earlier refund returns line A's units with their total and tax, as the order screen does; the dispute's refund
+	 * is the amount still refundable. WooCommerce's refund handler names a line only up to the units not yet refunded
+	 * (WC_AJAX::refund_line_items()).
+	 *
+	 * @param int                  $earlier_units  Units of line A the earlier refund named.
+	 * @param string               $expected_total Amount of the dispute's refund.
+	 * @param array<string,string> $expected_lines Lines the dispute's refund names, as "quantity total tax".
+	 */
+	public function test_lost_dispute_names_each_line_at_what_is_left( int $earlier_units, string $expected_total, array $expected_lines ): void {
+		wc_get_container()->get( RefundRowCapture::class )->register();
+		$order = $this->create_disputable_order();
+		$items = $this->add_two_taxed_lines( $order );
+		$order->set_status( 'on-hold' );
+		$order->update_meta_data( '_charge_id', 'ch_lines_lost' );
+		$order->update_meta_data( '_wcpay_open_dispute_ids', array( 'dp_lines_lost' ) );
+		$order->save();
+		if ( $earlier_units > 0 ) {
+			$this->refund_line_units( $order, $items['A'], $earlier_units, true );
+		}
+		$handler = new DisputeEventHandler();
+		$handler->init(
+			new class() extends Client {
+				/**
+				 * Answer with no summary, so the event's own amount is refunded.
+				 *
+				 * @param string $dispute_id Dispute ID.
+				 * @return array<string,mixed>
+				 */
+				public function get_dispute_summary( string $dispute_id ): array {
+					unset( $dispute_id );
+
+					return array();
+				}
+			},
+			wc_get_container()->get( WooPaymentsDatabaseCache::class ),
+			wc_get_container()->get( WooPaymentsOrderNoteService::class ),
+			wc_get_container()->get( OrderPaymentLock::class ),
+			wc_get_container()->get( WooPaymentsPersistenceVocabulary::class ),
+			wc_get_container()->get( EventOrderResolver::class ),
+			wc_get_container()->get( OtherChargeRecorder::class )
+		);
+
+		// A Stripe Dispute, as charge.dispute.closed carries it (https://docs.stripe.com/api/disputes/object): a lost dispute
+		// of the whole 55.00 charge.
+		$handler->process(
+			'charge.dispute.closed',
+			array(
+				'id'       => 'dp_lines_lost',
+				'charge'   => 'ch_lines_lost',
+				'status'   => 'lost',
+				'amount'   => 5500,
+				'currency' => 'usd',
+			)
+		);
+
+		$order   = wc_get_order( $order->get_id() );
+		$refunds = array_values( array_filter( $order->get_refunds(), static fn( \WC_Order_Refund $refund ): bool => 'dp_lines_lost' === $refund->get_meta( '_wcpay_dispute_id', true ) ) );
+		$this->assertCount( 1, $refunds );
+		$this->assertSame( $expected_total, wc_format_decimal( $refunds[0]->get_amount(), 2 ) );
+		$this->assertSame( $expected_lines, $this->get_refund_lines( $refunds[0] ) );
+		$this->assertSame(
+			array(
+				'A' => 3,
+				'B' => 1,
+			),
+			$this->get_refunded_units( $order, $items ),
+			'No line is refunded beyond its ordered units.'
+		);
+	}
+
+	/**
+	 * Line A's state before a lost dispute, with the dispute refund's amount and lines; line B is never refunded first.
+	 *
+	 * @return array<string,array{0:int,1:string,2:array<string,string>}>
+	 */
+	public function provider_lost_dispute_line_states(): array {
+		return array(
+			'line A untouched'       => array(
+				0,
+				'55.00',
+				array(
+					'A' => '-3 -30.00 -3.00',
+					'B' => '-1 -20.00 -2.00',
+				),
+			),
+			'line A partly refunded' => array(
+				1,
+				'44.00',
+				array(
+					'A' => '-2 -20.00 -2.00',
+					'B' => '-1 -20.00 -2.00',
+				),
+			),
+			'line A fully refunded'  => array( 3, '22.00', array( 'B' => '-1 -20.00 -2.00' ) ),
+		);
 	}
 
 	/**
