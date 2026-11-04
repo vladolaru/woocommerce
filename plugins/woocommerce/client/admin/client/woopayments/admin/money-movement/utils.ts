@@ -1,6 +1,7 @@
 /**
  * External dependencies
  */
+import { dispatch } from '@wordpress/data';
 import { dateI18n, getSettings as getDateSettings } from '@wordpress/date';
 import { decodeEntities } from '@wordpress/html-entities';
 import { __, sprintf } from '@wordpress/i18n';
@@ -71,6 +72,15 @@ export const getErrorMessage = ( error: unknown, fallback: string ): string => {
 
 	return fallback;
 };
+
+/**
+ * The notices store actions the WooPayments list pages raise.
+ */
+export const getNotices = () =>
+	dispatch( 'core/notices' ) as unknown as {
+		createSuccessNotice: ( text: string ) => void;
+		createErrorNotice: ( text: string ) => void;
+	};
 
 export const buildPathWithQuery = (
 	path: string,
@@ -161,6 +171,14 @@ export const getTransactionDetailsRoute = ( item: {
 };
 
 /**
+ * A Unix timestamp in milliseconds; values below 10^10 are taken as seconds.
+ *
+ * @param timestamp A Unix timestamp in seconds or milliseconds.
+ */
+export const toMilliseconds = ( timestamp: number ) =>
+	timestamp < 10000000000 ? timestamp * 1000 : timestamp;
+
+/**
  * A list date in the site's date format, with the site's time format after " / " when asked, read as UTC.
  * Client 11.1.0 `utils/date-time.ts` `formatDateTimeFromString()` and `formatDateTimeFromTimestamp()`.
  *
@@ -177,7 +195,7 @@ export const formatSiteDateTime = (
 
 	const date =
 		typeof value === 'number'
-			? moment.utc( value < 10000000000 ? value * 1000 : value )
+			? moment.utc( toMilliseconds( value ) )
 			: moment.utc( value );
 
 	if ( ! date.isValid() ) {

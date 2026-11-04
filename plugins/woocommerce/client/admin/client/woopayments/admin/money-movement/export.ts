@@ -1,7 +1,6 @@
 /**
  * External dependencies
  */
-import { dispatch } from '@wordpress/data';
 import { useCallback, useEffect, useRef } from '@wordpress/element';
 import { __, sprintf } from '@wordpress/i18n';
 
@@ -9,6 +8,7 @@ import { __, sprintf } from '@wordpress/i18n';
  * Internal dependencies
  */
 import { getWooPaymentsSettingsBootstrap } from '../../settings/bootstrap';
+import { getNotices } from './utils';
 
 type WooPaymentsExportResponse = Record< string, unknown >;
 
@@ -28,12 +28,6 @@ type WooPaymentsExportList = 'transactions' | 'disputes' | 'payouts' | 'fees';
 type ExportSettingsWindow = typeof window & {
 	wcSettings?: { locale?: { userLocale?: string } };
 };
-
-const getNotices = () =>
-	dispatch( 'core/notices' ) as unknown as {
-		createSuccessNotice: ( text: string ) => void;
-		createErrorNotice: ( text: string ) => void;
-	};
 
 const getCurrentUserEmail = () => {
 	const email = getWooPaymentsSettingsBootstrap().currentUserEmail;

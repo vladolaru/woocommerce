@@ -26,15 +26,13 @@ import { useLocation } from 'react-router-dom';
 import '../../settings-payments/settings-payments-body.scss';
 import { getWooPaymentsDeposit } from './overview/data';
 import type { WooPaymentsDeposit } from './overview/types';
-import {
-	formatPayoutSiteDate,
-	formatWooPaymentsAmount,
-} from './overview/utils';
+import { formatWooPaymentsAmount } from './overview/utils';
 import { getPayoutStatusLabel } from './payout-status';
 import type { WooPaymentsMoneyMovementQuery } from './money-movement/types';
 import { buildMoneyMovementRoutePath } from './money-movement/query';
 import {
 	formatExplicitCurrency,
+	formatSiteDateTime,
 	getErrorMessage,
 } from './money-movement/utils';
 import { LiveStatusMessage } from './money-movement/table';
@@ -200,7 +198,10 @@ const PayoutDateItem = ( { payout }: { payout: WooPaymentsDeposit } ) => {
 
 	return (
 		<OverviewItem
-			label={ `${ label }: ${ formatPayoutSiteDate( payout ) }` }
+			label={ `${ label }: ${ formatSiteDateTime(
+				payout.date || payout.created,
+				false
+			) }` }
 			value={
 				// Client 11.1.0 `deposits/details/index.tsx:48-66`: core's status indicator dot and label.
 				<StatusIndicator

@@ -27,7 +27,6 @@ import type {
 	WooPaymentsOverviewAccountStatus,
 } from '../types';
 import {
-	formatPayoutSiteDate,
 	formatWooPaymentsAmount,
 	getAmountForCurrency,
 	getSelectedBalanceCurrency,
@@ -36,10 +35,14 @@ import {
 	getSettingsPaymentsProviderRouteUrl,
 	handleSettingsPaymentsProviderRouteClick,
 } from '../../utils';
-import { getPayoutStatusLabel } from '../../payout-status';
+import {
+	getPayoutStatusChipType,
+	getPayoutStatusLabel,
+} from '../../payout-status';
 import { formatExplicitCurrency } from '../../currency';
+import { formatSiteDateTime } from '../../money-movement/utils';
 import { getPayoutScheduleText, PayoutSchedule } from './payout-schedule';
-import { StatusChip, type StatusChipType } from './status-chip';
+import { StatusChip } from './status-chip';
 import { LoadablePlaceholder } from './loadable-placeholder';
 
 const SUSPENDED_PAYOUTS_DOCS_URL =
@@ -59,15 +62,6 @@ const PayoutNotice = ( { children }: { children: ReactNode } ) => (
 		{ children }
 	</Notice>
 );
-
-// Client 11.1.0 `components/deposit-status-chip/index.tsx:18-24`.
-const PAYOUT_STATUS_CHIP_TYPES: Record< string, StatusChipType > = {
-	pending: 'warning',
-	in_transit: 'primary',
-	paid: 'success',
-	failed: 'error',
-	canceled: 'info',
-};
 
 // Client 11.2.0 `components/deposits-overview/deposit-notices.tsx:197-219`: one sentence with the account link in it,
 // shown only when there is a link.
@@ -132,17 +126,17 @@ const RecentPayoutsList = ( {
 									getPayoutDetailsRoute( payout )
 								) }
 							>
-								{ formatPayoutSiteDate( payout ) }
+								{ formatSiteDateTime(
+									payout.date || payout.created,
+									false
+								) }
 							</a>
 						</span>
 					</td>
 					<td>
 						<StatusChip
 							message={ getPayoutStatusLabel( payout ) }
-							type={
-								PAYOUT_STATUS_CHIP_TYPES[ payout.status ] ??
-								'info'
-							}
+							type={ getPayoutStatusChipType( payout ) }
 						/>
 					</td>
 					<td>

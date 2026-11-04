@@ -19,7 +19,7 @@ import type {
 	WooPaymentsReaderChargeSummaryRow,
 } from './types';
 import { formatExplicitCurrency, formatLabel, getErrorMessage } from './utils';
-import { isZeroDecimalCurrency } from '../currency-format';
+import { getWooPaymentsAmountFromMinorUnits } from '../../currency';
 import { LiveStatusMessage, StatusMessage } from './table';
 
 const READER_CHARGE_SUMMARY_TIMEOUT_MS = 15000;
@@ -55,7 +55,7 @@ const getExportFee = ( row: WooPaymentsReaderChargeSummaryRow ) => {
 		return 0;
 	}
 
-	return isZeroDecimalCurrency( currency ) ? amount : amount / 100;
+	return getWooPaymentsAmountFromMinorUnits( amount, currency );
 };
 
 /**

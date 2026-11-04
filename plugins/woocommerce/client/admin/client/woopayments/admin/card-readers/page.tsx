@@ -12,23 +12,7 @@ import { getWooPaymentsCardReaders } from './data';
 import type { WooPaymentsCardReader } from './types';
 import { StatusChip } from '../overview/components/status-chip';
 import { LiveStatusMessage } from '../money-movement/table';
-
-const getErrorMessage = ( error: unknown ) => {
-	if ( error instanceof Error && error.message ) {
-		return error.message;
-	}
-
-	if (
-		error &&
-		typeof error === 'object' &&
-		'message' in error &&
-		typeof error.message === 'string'
-	) {
-		return error.message;
-	}
-
-	return __( 'Unable to load card readers.', 'woocommerce' );
-};
+import { getErrorMessage } from '../money-movement/utils';
 
 const getStatusLabel = ( reader: WooPaymentsCardReader ) =>
 	reader.is_active
@@ -58,7 +42,12 @@ export const WooPaymentsCardReadersPage = () => {
 			} catch ( error ) {
 				if ( isMounted ) {
 					setReaders( [] );
-					setErrorMessage( getErrorMessage( error ) );
+					setErrorMessage(
+						getErrorMessage(
+							error,
+							__( 'Unable to load card readers.', 'woocommerce' )
+						)
+					);
 				}
 			} finally {
 				if ( isMounted ) {

@@ -10,6 +10,7 @@ import { __, sprintf } from '@wordpress/i18n';
  */
 import { getPaymentMethodDefinition } from '~/woopayments/settings/payment-method-definitions';
 import { formatCurrency } from '../../currency-format';
+import { formatCurrencyName } from '../../currency';
 import type { WooPaymentsOverviewAccountFee } from '../types';
 
 interface FeeRate {
@@ -22,24 +23,6 @@ interface FeeRate {
 	current_volume?: number | null;
 	end_time?: string | null;
 }
-
-// Client 11.1.0 `includes/multi-currency/client/utils/currency/index.js:8-19`.
-const getCurrencyName = ( currency: string ) => {
-	const names: Record< string, string > = {
-		aud: __( 'Australian dollar', 'woocommerce' ),
-		cad: __( 'Canadian dollar', 'woocommerce' ),
-		chf: __( 'Swiss franc', 'woocommerce' ),
-		dkk: __( 'Danish krone', 'woocommerce' ),
-		eur: __( 'Euro', 'woocommerce' ),
-		gbp: __( 'Pound sterling', 'woocommerce' ),
-		nok: __( 'Norwegian krone', 'woocommerce' ),
-		nzd: __( 'New Zealand dollar', 'woocommerce' ),
-		sek: __( 'Swedish krona', 'woocommerce' ),
-		usd: __( 'United States (US) dollar', 'woocommerce' ),
-	};
-
-	return names[ currency.toLowerCase() ] || currency.toUpperCase();
-};
 
 // Client 11.1.0 `utils/fees/index.ts:8-10`.
 const formatFee = ( fee = 0 ) => String( Number( ( fee * 100 ).toFixed( 3 ) ) );
@@ -222,7 +205,7 @@ const AccountFee = ( {
 		<div className="woocommerce-woopayments-account-fees__fee">
 			<p>{ getPaymentMethodName( accountFee.payment_method ) }:</p>
 			<p>
-				{ `${ getCurrencyName(
+				{ `${ formatCurrencyName(
 					currency
 				) } (${ currency.toUpperCase() }) ` }
 				{ getFeeDescription( base, current ) }

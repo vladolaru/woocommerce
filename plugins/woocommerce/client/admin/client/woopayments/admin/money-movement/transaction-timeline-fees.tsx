@@ -51,7 +51,7 @@ export const getNumber = (
  * @param currency Currency code.
  */
 export const formatMoney = ( amount: number, currency?: string ) =>
-	formatAmount( amount === 0 ? 0 : amount, currency || 'usd' );
+	formatAmount( amount, currency || 'usd' );
 
 /**
  * Formats a minor-unit amount like formatMoney(), with the currency code when `formatExplicitCurrency()` adds it.
@@ -64,12 +64,7 @@ export const formatExplicitMoney = (
 	amount: number,
 	currency?: string,
 	skipSymbol = false
-) =>
-	formatExplicitCurrency(
-		amount === 0 ? 0 : amount,
-		currency || 'usd',
-		skipSymbol
-	);
+) => formatExplicitCurrency( amount, currency || 'usd', skipSymbol );
 
 // Client hasSameSymbol(), over the store's currency data; a missing code compares as different.
 const hasSameSymbolOrFalse = ( first?: string, second?: string ) =>

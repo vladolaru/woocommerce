@@ -12,6 +12,7 @@ import { __ } from '@wordpress/i18n';
  */
 import type { WooPaymentsDispute, WooPaymentsTransaction } from './types';
 import { formatLabel, getDisputeId } from './utils';
+import type { StatusChipType } from '../overview/components/status-chip';
 
 /**
  * The dispute status labels, in display order.
@@ -26,6 +27,18 @@ export const DISPUTE_STATUS_LABELS: Record< string, string > = {
 	charge_refunded: __( 'Charge refunded', 'woocommerce' ),
 	won: __( 'Won', 'woocommerce' ),
 	lost: __( 'Lost', 'woocommerce' ),
+};
+
+// Client 11.1.0 `components/dispute-status-chip`: colours per status, red for any awaiting a response.
+export const DISPUTE_STATUS_CHIP_TYPES: Record< string, StatusChipType > = {
+	warning_needs_response: 'error',
+	warning_under_review: 'primary',
+	warning_closed: 'info',
+	needs_response: 'error',
+	under_review: 'primary',
+	charge_refunded: 'info',
+	won: 'success',
+	lost: 'info',
 };
 
 export type WooPaymentsDisputeSource = Pick<

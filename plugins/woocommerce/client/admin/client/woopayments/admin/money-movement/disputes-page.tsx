@@ -27,7 +27,10 @@ import {
 	ACTIONABLE_DISPUTE_STATUSES,
 	isDisputeActionable,
 } from './dispute-evidence-fields';
-import { DISPUTE_STATUS_LABELS } from './dispute-utils';
+import {
+	DISPUTE_STATUS_CHIP_TYPES,
+	DISPUTE_STATUS_LABELS,
+} from './dispute-utils';
 import {
 	buildMoneyMovementRoutePath,
 	dataViewsViewToMoneyMovementQuery,
@@ -72,10 +75,7 @@ import {
 	navigateToSettingsPaymentsProviderRoute,
 } from '../utils';
 import { formatCurrencyName } from '../currency';
-import {
-	StatusChip,
-	type StatusChipType,
-} from '../overview/components/status-chip';
+import { StatusChip } from '../overview/components/status-chip';
 import { WooPaymentsTestModeNotice } from '../test-mode-notice';
 import { SpotlightPromotion } from '../../promotions/spotlight';
 import '../style.scss';
@@ -185,18 +185,6 @@ const buildDisputesRoute = (
 		showFilter,
 		match
 	);
-
-// Client 11.1.0 `components/dispute-status-chip`: colours per status, red for any awaiting a response.
-const DISPUTE_STATUS_CHIP_TYPES: Record< string, StatusChipType > = {
-	warning_needs_response: 'error',
-	warning_under_review: 'primary',
-	warning_closed: 'info',
-	needs_response: 'error',
-	under_review: 'primary',
-	charge_refunded: 'info',
-	won: 'success',
-	lost: 'info',
-};
 
 const DISPUTE_STATUS_FILTER_ELEMENTS = Object.entries(
 	DISPUTE_STATUS_LABELS

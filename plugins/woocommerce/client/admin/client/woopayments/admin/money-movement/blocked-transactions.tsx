@@ -1,7 +1,6 @@
 /**
  * External dependencies
  */
-import { dispatch } from '@wordpress/data';
 import { useEffect, useMemo, useState } from '@wordpress/element';
 import { decodeEntities } from '@wordpress/html-entities';
 import { __ } from '@wordpress/i18n';
@@ -41,6 +40,7 @@ import { getWooPaymentsAmountFromMinorUnits } from '../../currency';
 import {
 	formatExplicitCurrency,
 	formatSiteDateTime,
+	getNotices,
 	getTransactionDetailsRoute,
 } from './utils';
 import { usePersistedHiddenFields } from './view-preferences';
@@ -100,11 +100,6 @@ const toArray = ( value: WooPaymentsMoneyMovementQuery[ string ] ) =>
 	value === undefined
 		? undefined
 		: ( [] as unknown[] ).concat( value ).map( String );
-
-const getNotices = () =>
-	dispatch( 'core/notices' ) as unknown as {
-		createErrorNotice: ( message: string ) => void;
-	};
 
 // Client 11.1.0 `transactions/fraud-protection/autocompleter.tsx:22-83`.
 const blockedSearchCompleter = {

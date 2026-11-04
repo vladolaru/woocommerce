@@ -51,7 +51,11 @@ import {
 	LiveStatusMessage,
 	reportListLoadError,
 } from './money-movement/table';
-import { formatCount, formatExplicitCurrency } from './money-movement/utils';
+import {
+	formatCount,
+	formatExplicitCurrency,
+	formatSiteDateTime,
+} from './money-movement/utils';
 import { usePersistedHiddenFields } from './money-movement/view-preferences';
 import {
 	ClickableCell,
@@ -63,7 +67,7 @@ import type {
 	WooPaymentsDepositsQuery,
 	WooPaymentsDepositsSummary,
 } from './overview/types';
-import { formatPayoutSiteDate } from './overview/utils';
+import { getFirstString } from './list-query';
 import {
 	getPayoutStatusChipType,
 	getPayoutStatusLabel,
@@ -139,14 +143,6 @@ const getSummaryTotal = ( summary: PayoutsSummary ) =>
 
 const getSummaryCurrency = ( summary: PayoutsSummary ) =>
 	typeof summary.currency === 'string' ? summary.currency : undefined;
-
-const getFirstString = ( value: unknown ) => {
-	if ( Array.isArray( value ) ) {
-		return value.find( ( item ) => typeof item === 'string' && item );
-	}
-
-	return typeof value === 'string' && value ? value : undefined;
-};
 
 // Client 11.1.0 `data/deposits/resolvers.js:76-89`: `match` is the advanced filters' "all or any", and dates are sent
 // as the start or end of the chosen day, both ends of a range kept.
@@ -270,7 +266,10 @@ export const WooPaymentsPayouts = () => {
 							)( event );
 						} }
 					>
-						{ formatPayoutSiteDate( item ) }
+						{ formatSiteDateTime(
+							item.date || item.created,
+							false
+						) }
 						<span className="screen-reader-text">
 							{ sprintf(
 								/* translators: %s: payout ID. */

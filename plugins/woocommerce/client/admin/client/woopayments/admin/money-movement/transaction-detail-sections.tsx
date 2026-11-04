@@ -36,8 +36,10 @@ import {
 	getP24BankLabel,
 	getTransactionSourceIconUrl,
 	getTransactionSourceLabel,
+	toMilliseconds,
 } from './utils';
 import {
+	DISPUTE_STATUS_CHIP_TYPES,
 	DISPUTE_STATUS_LABELS,
 	getChargeDisputes,
 	getDisputeBalanceAdjustments,
@@ -352,14 +354,7 @@ const PaymentMethodSummary = ( {
 				}
 				alt={ cardBrand.label }
 			/>
-			<span aria-hidden="true">{ `•••• ${ card.last4 }` }</span>
-			<span className="screen-reader-text">
-				{ sprintf(
-					/* translators: %s: last four card digits. */
-					__( 'ending in %s', 'woocommerce' ),
-					card.last4
-				) }
-			</span>
+			<Last4 last4={ card.last4 } />
 		</span>
 	);
 };
@@ -647,21 +642,6 @@ const formatPaymentSummaryAmount = (
 
 type SummaryStatus = { message: string; type: StatusChipType };
 
-// Client 11.1.0 `components/dispute-status-chip`: red while a response is due, whatever the time left.
-const getDisputeStatusChipType = ( status: string ): StatusChipType => {
-	if ( [ 'needs_response', 'warning_needs_response' ].includes( status ) ) {
-		return 'error';
-	}
-
-	if ( status === 'won' ) {
-		return 'success';
-	}
-
-	return [ 'under_review', 'warning_under_review' ].includes( status )
-		? 'primary'
-		: 'info';
-};
-
 // Client 11.1.0 `summary/index.tsx:293-301`: the status of the dispute awaiting a response, else the first one.
 const getDisputeSummaryStatus = (
 	transaction: WooPaymentsTransaction
@@ -687,7 +667,7 @@ const getDisputeSummaryStatus = (
 					__( 'Disputed: %s', 'woocommerce' ),
 					disputeLabel
 				),
-		type: getDisputeStatusChipType( disputeStatus ),
+		type: DISPUTE_STATUS_CHIP_TYPES[ disputeStatus ] || 'info',
 	};
 };
 
@@ -790,7 +770,7 @@ const formatSummaryDate = (
 
 	const date =
 		typeof value === 'number'
-			? moment.utc( value < 10000000000 ? value * 1000 : value )
+			? moment.utc( toMilliseconds( value ) )
 			: moment.utc( value );
 
 	if ( ! date.isValid() ) {

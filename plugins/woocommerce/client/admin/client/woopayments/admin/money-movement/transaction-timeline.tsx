@@ -32,6 +32,7 @@ import {
 	formatDisputeReasonLabel,
 	formatExplicitCurrency,
 	formatSiteDateTime,
+	toMilliseconds,
 } from './utils';
 import {
 	composeFxString,
@@ -215,7 +216,7 @@ const ShieldIcon = ( { className }: { className?: string } ) => (
 const getEventDate = ( event: WooPaymentsTimelineEvent ) => {
 	const value = event.datetime ?? event.created;
 	const timestamp =
-		typeof value === 'number' && value < 10000000000 ? value * 1000 : value;
+		typeof value === 'number' ? toMilliseconds( value ) : value;
 
 	return new Date( timestamp ?? NaN );
 };
