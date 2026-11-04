@@ -15,6 +15,21 @@ import {
 
 jest.mock( '@wordpress/api-fetch', () => jest.fn() );
 
+const mockCreateErrorNotice = jest.fn();
+
+jest.mock( '@wordpress/data', () => {
+	const actual = jest.requireActual( '@wordpress/data' );
+
+	return {
+		...actual,
+		dispatch: jest.fn( ( storeName ) =>
+			storeName === 'core/notices'
+				? { createErrorNotice: mockCreateErrorNotice }
+				: actual.dispatch( storeName )
+		),
+	};
+} );
+
 const mockApiFetch = apiFetch as jest.MockedFunction< typeof apiFetch >;
 const ACCOUNT_PATH = '/wc-admin/settings/payments/woopayments/account';
 const SUMMARY_PATH = '/wc/v3/payments/capital/active_loan_summary';
@@ -116,6 +131,7 @@ describe( 'WooPaymentsCapitalPage', () => {
 			adminUrl: 'http://example.com/wp-admin',
 		};
 		mockApiFetch.mockReset();
+		mockCreateErrorNotice.mockReset();
 	} );
 
 	it( 'loads Capital loans and active loan summary from preserved endpoints', async () => {
@@ -202,6 +218,36 @@ describe( 'WooPaymentsCapitalPage', () => {
 				name: '$1,000.00 - view transactions for loan loan_test',
 			} )
 		).not.toBeInTheDocument();
+	} );
+
+	// Client 11.2.0 `capital/index.tsx:216-230` and `data/capital/resolvers.ts:31-40`: the summary fails alone, with a
+	// snackbar, and the loan list still loads.
+	it( 'keeps the loan list when the active loan summary fails', async () => {
+		setHasActiveLoan( true );
+		mockCapitalApi();
+		const loadLoans = mockApiFetch.getMockImplementation();
+		mockApiFetch.mockImplementation( ( ( options ) =>
+			options?.path === SUMMARY_PATH
+				? Promise.reject( new Error( 'Summary unavailable.' ) )
+				: loadLoans?.( options ) ) as typeof apiFetch );
+
+		render( <WooPaymentsCapitalPage /> );
+
+		expect(
+			await screen.findByRole( 'link', {
+				name: 'View transactions for loan loan_test',
+			} )
+		).toBeInTheDocument();
+		expect( screen.getByRole( 'status' ) ).toHaveTextContent(
+			'Capital Loans loaded.'
+		);
+		expect( screen.queryByRole( 'alert' ) ).not.toBeInTheDocument();
+		expect(
+			screen.queryByRole( 'heading', { name: 'Active loan overview' } )
+		).not.toBeInTheDocument();
+		expect( mockCreateErrorNotice ).toHaveBeenCalledWith(
+			'Error retrieving the active loan summary.'
+		);
 	} );
 
 	it( 'requests no active loan summary for an account without an active loan', async () => {

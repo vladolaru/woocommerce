@@ -29,7 +29,10 @@ import {
 import { handleSettingsPaymentsProviderRouteClick } from '../utils';
 import { WooPaymentsTestModeNotice } from '../test-mode-notice';
 import { StatusChip } from '../overview/components/status-chip';
-import { LiveStatusMessage } from '../money-movement/table';
+import {
+	LiveStatusMessage,
+	reportListLoadError,
+} from '../money-movement/table';
 import { getWooPaymentsSettingsBootstrap } from '../../settings/bootstrap';
 
 // Client 11.1.0 `capital/index.tsx:82-84, 118, 157`: loan dates in the site date format.
@@ -165,40 +168,48 @@ export const WooPaymentsCapitalPage = () => {
 		const loadCapitalData = async () => {
 			setIsLoading( true );
 
-			try {
-				// Client 11.1.0 mounts the active loan card, and its summary request, only for an account with an active loan.
-				const [ nextSummary, nextLoans ] = await Promise.all( [
-					hasActiveLoan()
-						? getWooPaymentsCapitalActiveLoanSummary()
-						: Promise.resolve( {} as WooPaymentsCapitalSummary ),
-					getWooPaymentsCapitalLoans(),
-				] );
+			// Client 11.1.0 mounts the active loan card, and its summary request, only for an account with an active loan.
+			// Client 11.2.0 `capital/index.tsx:216-230`: the summary and the list load apart, so either can fail alone.
+			const [ summaryResult, loansResult ] = await Promise.allSettled( [
+				hasActiveLoan()
+					? getWooPaymentsCapitalActiveLoanSummary()
+					: Promise.resolve( {} as WooPaymentsCapitalSummary ),
+				getWooPaymentsCapitalLoans(),
+			] );
 
-				if ( ! isMounted ) {
-					return;
-				}
-
-				setSummary( nextSummary );
-				setLoans( nextLoans );
-				setErrorMessage( null );
-			} catch ( error ) {
-				if ( isMounted ) {
-					setLoans( [] );
-					setErrorMessage(
-						getErrorMessage(
-							error,
-							__(
-								'Unable to load WooPayments Capital Loans.',
-								'woocommerce'
-							)
-						)
-					);
-				}
-			} finally {
-				if ( isMounted ) {
-					setIsLoading( false );
-				}
+			if ( ! isMounted ) {
+				return;
 			}
+
+			if ( summaryResult.status === 'fulfilled' ) {
+				setSummary( summaryResult.value );
+			} else {
+				// Client 11.2.0 `data/capital/resolvers.ts:31-40`.
+				reportListLoadError(
+					__(
+						'Error retrieving the active loan summary.',
+						'woocommerce'
+					)
+				);
+			}
+
+			if ( loansResult.status === 'fulfilled' ) {
+				setLoans( loansResult.value );
+				setErrorMessage( null );
+			} else {
+				setLoans( [] );
+				setErrorMessage(
+					getErrorMessage(
+						loansResult.reason,
+						__(
+							'Unable to load WooPayments Capital Loans.',
+							'woocommerce'
+						)
+					)
+				);
+			}
+
+			setIsLoading( false );
 		};
 
 		void loadCapitalData();
