@@ -21,7 +21,7 @@ import { FraudProtectionAdvancedSettingsPage } from '../fraud-protection/advance
 import { DisputeEvidenceForm } from '../../admin/money-movement/dispute-evidence-form';
 import type { WooPaymentsDispute } from '../../admin/money-movement/types';
 import { ReactivateLivePaymentsButton } from '~/settings-payments/components/buttons/reactivate-live-payments-button';
-import { WooPaymentsAdminNotices } from '~/settings-payments/components/woopayments-admin-notices';
+import { WooPaymentsAdminNoticeItem } from '~/settings-payments/components/woopayments-admin-notices';
 
 jest.mock( '@wordpress/api-fetch', () => jest.fn() );
 // The test setup's `core/notices` store has no notice creators.
@@ -189,7 +189,7 @@ const failNextRead = () => {
 // On the Payments list, "Turn on live payments" turns test mode off on the server.
 const goLive = async () => {
 	const payments = render(
-		<WooPaymentsAdminNotices
+		<WooPaymentsAdminNoticeItem
 			notice={ testToLiveNotice }
 			focusTargetRef={ createRef() }
 			onDismiss={ () => undefined }
@@ -293,7 +293,7 @@ describe( 'WooPayments settings store across settings routes', () => {
 			'the "Turn on live payments" notice',
 			'Turn on live payments',
 			() => (
-				<WooPaymentsAdminNotices
+				<WooPaymentsAdminNoticeItem
 					notice={ testToLiveNotice }
 					focusTargetRef={ createRef() }
 					onDismiss={ () => undefined }
@@ -373,7 +373,7 @@ describe( 'WooPayments settings store across settings routes', () => {
 		await settle();
 
 		const payments = render(
-			<WooPaymentsAdminNotices
+			<WooPaymentsAdminNoticeItem
 				notice={ testToLiveNotice }
 				focusTargetRef={ createRef() }
 				onDismiss={ () => undefined }

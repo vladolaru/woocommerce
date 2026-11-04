@@ -55,13 +55,6 @@ const requestToHandle = ( request ) => {
 	if ( request === 'react-dom/client' ) {
 		return 'react-dom';
 	}
-
-	if (
-		request === '@wordpress/dataviews' ||
-		request === '@wordpress/dataviews/wp'
-	) {
-		return undefined;
-	}
 };
 
 module.exports = {

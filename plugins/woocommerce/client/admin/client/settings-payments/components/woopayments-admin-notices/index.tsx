@@ -45,7 +45,7 @@ const suppressCachedNotice = (
 	);
 };
 
-interface WooPaymentsAdminNoticesProps {
+interface WooPaymentsAdminNoticeItemProps {
 	notice: WooPaymentsAdminNotice;
 	focusTargetRef: RefObject< HTMLElement >;
 	onDismiss: () => void;
@@ -54,11 +54,11 @@ interface WooPaymentsAdminNoticesProps {
 /**
  * Render one WooPayments notice on the Payments settings page.
  */
-export const WooPaymentsAdminNotices = ( {
+export const WooPaymentsAdminNoticeItem = ( {
 	notice,
 	focusTargetRef,
 	onDismiss,
-}: WooPaymentsAdminNoticesProps ) => {
+}: WooPaymentsAdminNoticeItemProps ) => {
 	const [ pendingAction, setPendingAction ] = useState< string | null >(
 		null
 	);

@@ -421,7 +421,7 @@ const SettingsPaymentsRoutes = () => {
 	}, [ isLoadingWooPaymentsRoutes, pathname ] );
 
 	if ( isLoadingWooPaymentsRoutes ) {
-		return <WooPaymentsRouteLoading providerName="WooPayments" />;
+		return <WooPaymentsRouteLoading />;
 	}
 
 	// The copy wc-admin's error boundary shows when one of its lazy pages fails to load (`~/error-boundary`).

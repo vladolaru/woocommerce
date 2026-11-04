@@ -9,7 +9,7 @@ import type { WooPaymentsAdminNotice } from '@woocommerce/data';
 /**
  * Internal dependencies
  */
-import { WooPaymentsAdminNotices } from '..';
+import { WooPaymentsAdminNoticeItem } from '..';
 import { recordPaymentsEvent } from '~/settings-payments/utils';
 
 const mockCreateErrorNotice = jest.fn();
@@ -93,7 +93,7 @@ const oneAndDoneNotice: WooPaymentsAdminNotice = {
 	},
 };
 
-describe( 'WooPaymentsAdminNotices', () => {
+describe( 'WooPaymentsAdminNoticeItem', () => {
 	let focusTarget = document.createElement( 'div' );
 
 	beforeAll( () => {
@@ -126,7 +126,7 @@ describe( 'WooPaymentsAdminNotices', () => {
 
 	it( 'shows the exact test-to-live message and semantic controls, recording shown once', async () => {
 		const { rerender } = render(
-			<WooPaymentsAdminNotices
+			<WooPaymentsAdminNoticeItem
 				notice={ notice }
 				focusTargetRef={ { current: focusTarget } }
 				onDismiss={ jest.fn() }
@@ -153,7 +153,7 @@ describe( 'WooPaymentsAdminNotices', () => {
 		);
 
 		rerender(
-			<WooPaymentsAdminNotices
+			<WooPaymentsAdminNoticeItem
 				notice={ notice }
 				focusTargetRef={ { current: focusTarget } }
 				onDismiss={ jest.fn() }
@@ -167,7 +167,7 @@ describe( 'WooPaymentsAdminNotices', () => {
 			new Error( 'Request failed' )
 		);
 		render(
-			<WooPaymentsAdminNotices
+			<WooPaymentsAdminNoticeItem
 				notice={ notice }
 				focusTargetRef={ { current: focusTarget } }
 				onDismiss={ jest.fn() }
@@ -202,7 +202,7 @@ describe( 'WooPaymentsAdminNotices', () => {
 		} );
 		const onDismiss = jest.fn();
 		render(
-			<WooPaymentsAdminNotices
+			<WooPaymentsAdminNoticeItem
 				notice={ currentNotice }
 				focusTargetRef={ { current: focusTarget } }
 				onDismiss={ onDismiss }
@@ -243,7 +243,7 @@ describe( 'WooPaymentsAdminNotices', () => {
 		const elsewhere = document.createElement( 'button' );
 		document.body.appendChild( elsewhere );
 		render(
-			<WooPaymentsAdminNotices
+			<WooPaymentsAdminNoticeItem
 				notice={ currentNotice }
 				focusTargetRef={ { current: focusTarget } }
 				onDismiss={ onDismiss }
@@ -283,7 +283,7 @@ describe( 'WooPaymentsAdminNotices', () => {
 		const elsewhere = document.createElement( 'button' );
 		document.body.appendChild( elsewhere );
 		const { unmount } = render(
-			<WooPaymentsAdminNotices
+			<WooPaymentsAdminNoticeItem
 				notice={ currentNotice }
 				focusTargetRef={ { current: focusTarget } }
 				onDismiss={ onDismiss }
@@ -321,7 +321,7 @@ describe( 'WooPaymentsAdminNotices', () => {
 		} );
 		const onDismiss = jest.fn();
 		render(
-			<WooPaymentsAdminNotices
+			<WooPaymentsAdminNoticeItem
 				notice={ notice }
 				focusTargetRef={ { current: focusTarget } }
 				onDismiss={ onDismiss }
@@ -352,7 +352,7 @@ describe( 'WooPaymentsAdminNotices', () => {
 	it( 'announces the notice message once while action state and error feedback change', async () => {
 		let rejectRequest: ( ( error: Error ) => void ) | undefined;
 		render(
-			<WooPaymentsAdminNotices
+			<WooPaymentsAdminNoticeItem
 				notice={ notice }
 				focusTargetRef={ { current: focusTarget } }
 				onDismiss={ jest.fn() }
@@ -411,7 +411,7 @@ describe( 'WooPaymentsAdminNotices', () => {
 		async ( stage, message ) => {
 			const currentNotice = postKycNotice( stage, message );
 			render(
-				<WooPaymentsAdminNotices
+				<WooPaymentsAdminNoticeItem
 					notice={ currentNotice }
 					focusTargetRef={ { current: focusTarget } }
 					onDismiss={ jest.fn() }
@@ -463,7 +463,7 @@ describe( 'WooPaymentsAdminNotices', () => {
 				return Promise.resolve( { success: true } );
 			} );
 			render(
-				<WooPaymentsAdminNotices
+				<WooPaymentsAdminNoticeItem
 					notice={ currentNotice }
 					focusTargetRef={ { current: focusTarget } }
 					onDismiss={ jest.fn() }
@@ -502,7 +502,7 @@ describe( 'WooPaymentsAdminNotices', () => {
 		);
 		const onDismiss = jest.fn();
 		render(
-			<WooPaymentsAdminNotices
+			<WooPaymentsAdminNoticeItem
 				notice={ currentNotice }
 				focusTargetRef={ { current: focusTarget } }
 				onDismiss={ onDismiss }
@@ -551,7 +551,7 @@ describe( 'WooPaymentsAdminNotices', () => {
 		} );
 		const onDismiss = jest.fn();
 		render(
-			<WooPaymentsAdminNotices
+			<WooPaymentsAdminNoticeItem
 				notice={ currentNotice }
 				focusTargetRef={ { current: focusTarget } }
 				onDismiss={ onDismiss }
@@ -582,7 +582,7 @@ describe( 'WooPaymentsAdminNotices', () => {
 
 	it( 'shows the exact one-and-done copy and semantic controls', async () => {
 		render(
-			<WooPaymentsAdminNotices
+			<WooPaymentsAdminNoticeItem
 				notice={ oneAndDoneNotice }
 				focusTargetRef={ { current: focusTarget } }
 				onDismiss={ jest.fn() }
@@ -618,7 +618,7 @@ describe( 'WooPaymentsAdminNotices', () => {
 			return Promise.resolve( { success: true } );
 		} );
 		render(
-			<WooPaymentsAdminNotices
+			<WooPaymentsAdminNoticeItem
 				notice={ currentNotice }
 				focusTargetRef={ { current: focusTarget } }
 				onDismiss={ jest.fn() }
@@ -658,7 +658,7 @@ describe( 'WooPaymentsAdminNotices', () => {
 		} );
 		const onDismiss = jest.fn();
 		render(
-			<WooPaymentsAdminNotices
+			<WooPaymentsAdminNoticeItem
 				notice={ oneAndDoneNotice }
 				focusTargetRef={ { current: focusTarget } }
 				onDismiss={ onDismiss }
@@ -698,7 +698,7 @@ describe( 'WooPaymentsAdminNotices', () => {
 		const initialHref = window.location.href;
 		const onDismiss = jest.fn();
 		render(
-			<WooPaymentsAdminNotices
+			<WooPaymentsAdminNoticeItem
 				notice={ notice }
 				focusTargetRef={ { current: focusTarget } }
 				onDismiss={ onDismiss }
@@ -742,7 +742,7 @@ describe( 'WooPaymentsAdminNotices', () => {
 		} );
 		const onDismiss = jest.fn();
 		render(
-			<WooPaymentsAdminNotices
+			<WooPaymentsAdminNoticeItem
 				notice={ currentNotice }
 				focusTargetRef={ { current: focusTarget } }
 				onDismiss={ onDismiss }
@@ -791,7 +791,7 @@ describe( 'WooPaymentsAdminNotices', () => {
 		);
 		const onDismiss = jest.fn();
 		const firstRender = render(
-			<WooPaymentsAdminNotices
+			<WooPaymentsAdminNoticeItem
 				notice={ cachedNotice }
 				focusTargetRef={ { current: focusTarget } }
 				onDismiss={ onDismiss }
@@ -812,7 +812,7 @@ describe( 'WooPaymentsAdminNotices', () => {
 		}
 
 		const staleRemount = render(
-			<WooPaymentsAdminNotices
+			<WooPaymentsAdminNoticeItem
 				notice={ cachedNotice }
 				focusTargetRef={ { current: focusTarget } }
 				onDismiss={ jest.fn() }
@@ -830,7 +830,7 @@ describe( 'WooPaymentsAdminNotices', () => {
 			'Two weeks on, still no first sale?'
 		);
 		render(
-			<WooPaymentsAdminNotices
+			<WooPaymentsAdminNoticeItem
 				notice={ freshNotice }
 				focusTargetRef={ { current: focusTarget } }
 				onDismiss={ jest.fn() }
@@ -856,7 +856,7 @@ describe( 'WooPaymentsAdminNotices', () => {
 		const dateNow = jest.spyOn( Date, 'now' ).mockReturnValue( now );
 		const onDismiss = jest.fn();
 		const firstRender = render(
-			<WooPaymentsAdminNotices
+			<WooPaymentsAdminNoticeItem
 				notice={ currentNotice }
 				focusTargetRef={ { current: focusTarget } }
 				onDismiss={ onDismiss }
@@ -870,7 +870,7 @@ describe( 'WooPaymentsAdminNotices', () => {
 		firstRender.unmount();
 
 		const suppressedRemount = render(
-			<WooPaymentsAdminNotices
+			<WooPaymentsAdminNoticeItem
 				notice={ currentNotice }
 				focusTargetRef={ { current: focusTarget } }
 				onDismiss={ jest.fn() }
@@ -883,7 +883,7 @@ describe( 'WooPaymentsAdminNotices', () => {
 
 		dateNow.mockReturnValue( now + 7 * 24 * 60 * 60 * 1000 + 1 );
 		render(
-			<WooPaymentsAdminNotices
+			<WooPaymentsAdminNoticeItem
 				notice={ currentNotice }
 				focusTargetRef={ { current: focusTarget } }
 				onDismiss={ jest.fn() }
@@ -905,7 +905,7 @@ describe( 'WooPaymentsAdminNotices', () => {
 			},
 		};
 		render(
-			<WooPaymentsAdminNotices
+			<WooPaymentsAdminNoticeItem
 				notice={ currentNotice }
 				focusTargetRef={ { current: focusTarget } }
 				onDismiss={ jest.fn() }

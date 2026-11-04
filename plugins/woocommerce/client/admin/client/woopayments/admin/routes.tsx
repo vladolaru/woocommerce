@@ -166,9 +166,7 @@ const getFallbackRoutePath = () => {
 		: '/woopayments/settings';
 };
 
-const LoadingFallback = () => (
-	<WooPaymentsRouteLoading providerName="WooPayments" />
-);
+const LoadingFallback = () => <WooPaymentsRouteLoading />;
 
 const WooPaymentsAdminAreaUnavailable = () => {
 	const fallbackPath = getFallbackRoutePath();

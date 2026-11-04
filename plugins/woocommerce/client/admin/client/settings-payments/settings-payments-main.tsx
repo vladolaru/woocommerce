@@ -29,7 +29,7 @@ import './settings-payments-body.scss';
 import { createNoticesFromResponse } from '~/lib/notices';
 import { OtherPaymentGateways } from '~/settings-payments/components/other-payment-gateways';
 import { PaymentGateways } from '~/settings-payments/components/payment-gateways';
-import { WooPaymentsAdminNotices } from '~/settings-payments/components/woopayments-admin-notices';
+import { WooPaymentsAdminNoticeItem } from '~/settings-payments/components/woopayments-admin-notices';
 import { IncentiveBanner } from '~/settings-payments/components/incentive-banner';
 import { IncentiveModal } from '~/settings-payments/components/incentive-modal';
 import {
@@ -588,7 +588,7 @@ export const SettingsPaymentsMain = () => {
 				tabIndex={ adminNotice ? -1 : undefined }
 			>
 				{ adminNotice && noticeKey !== hiddenNoticeKey && (
-					<WooPaymentsAdminNotices
+					<WooPaymentsAdminNoticeItem
 						notice={ adminNotice }
 						focusTargetRef={ containerRef }
 						onDismiss={ () => setHiddenNoticeKey( noticeKey ) }
