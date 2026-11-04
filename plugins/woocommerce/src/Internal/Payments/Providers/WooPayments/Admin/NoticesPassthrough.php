@@ -75,7 +75,7 @@ class NoticesPassthrough implements RegisterHooksInterface {
 			foreach ( (array) $callbacks as $callback ) {
 				$function = is_array( $callback ) ? ( $callback['function'] ?? null ) : null;
 				$object   = is_array( $function ) ? ( $function[0] ?? null ) : null;
-				if ( ! is_object( $object ) || ! $this->is_kept_notice_object( $object, $kept_classes ) ) {
+				if ( ! is_object( $object ) || ! is_callable( $function ) || ! $this->is_kept_notice_object( $object, $kept_classes ) ) {
 					continue;
 				}
 
