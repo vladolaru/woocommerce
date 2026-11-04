@@ -185,3 +185,36 @@ body.woocommerce_page_wc-settings.woocommerce-settings-payments-tab:has(.woocomm
 		margin-top: $gap;
 	}
 }
+
+// Client 11.2.0 `reports/balance/style.scss:161-235`: while a loaded Balance report is on screen (the class is on
+// `<html>`), printing leaves out the admin screen around it and the report's own controls. The ids in `:is()` give every
+// rule an id's weight, so they win over the admin layout without `!important`.
+@media print {
+	html.wp-toolbar.woocommerce-woopayments-reports-balance-print {
+		padding-block-start: 0;
+	}
+
+	html.woocommerce-woopayments-reports-balance-print {
+		:is(
+			#adminmenumain,
+			#wpadminbar,
+			#wpfooter,
+			#screen-meta,
+			#screen-meta-links,
+			.woocommerce-layout__header,
+			.woocommerce-layout__activity-panel-wrapper,
+			.nav-tab-wrapper,
+			.woocommerce-woopayments-reports__header,
+			.woocommerce-woopayments-reports__tabs,
+			.woocommerce-woopayments-reports__actions,
+			.dataviews__view-actions
+		) {
+			display: none;
+		}
+
+		:is(#wpcontent, #wpbody, #wpbody-content, #mainform) {
+			margin: 0;
+			padding: 0;
+		}
+	}
+}

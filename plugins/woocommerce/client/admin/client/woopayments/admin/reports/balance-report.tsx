@@ -67,6 +67,9 @@ type BalanceRow = {
 
 type BalancePeriod = { start: string; end: string };
 
+// The print stylesheet in `style.scss` keys on this class on `<html>`.
+const BALANCE_PRINT_CLASS = 'woocommerce-woopayments-reports-balance-print';
+
 // Client 11.2.0 `reports/balance/utils.ts:72-77` and `utils/date-time.ts:38-49`: the site date format, in UTC. The platform's
 // period has no offset, so it is read as UTC first; the browser's time zone would otherwise move the day.
 const formatUtcDate = ( value: string ) =>
@@ -568,6 +571,19 @@ const BalanceReport = ( { now }: { now: Date } ) => {
 					'woocommerce'
 				);
 	};
+
+	// Client 11.2.0 `reports/balance/index.tsx:380-392`: while the report can be printed, the print stylesheet keeps
+	// only the report on the page.
+	useEffect( () => {
+		if ( actionsDisabled ) {
+			return;
+		}
+
+		document.documentElement.classList.add( BALANCE_PRINT_CLASS );
+
+		return () =>
+			document.documentElement.classList.remove( BALANCE_PRINT_CLASS );
+	}, [ actionsDisabled ] );
 	const fields = useMemo< Field< BalanceRow >[] >(
 		() => [
 			{
