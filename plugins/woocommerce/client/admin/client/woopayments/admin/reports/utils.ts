@@ -93,7 +93,7 @@ const navigateReportsRoute = (
 		return;
 	}
 
-	navigate( buildReportsRoute( search ) );
+	void navigate( buildReportsRoute( search ) );
 };
 
 const isYmd = ( value: unknown ): value is string =>
