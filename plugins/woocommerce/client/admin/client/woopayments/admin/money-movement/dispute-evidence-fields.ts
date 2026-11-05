@@ -1426,15 +1426,11 @@ export const buildEvidencePayload = (
 		evidence[ field ] = formState.evidence[ field ] || '';
 	} );
 
-	// As the client does: document and shipping keys always go, so an empty
-	// one clears on Stripe; any other key goes only when it has a value.
-	const alwaysSent: readonly string[] = [
-		...DOCUMENT_EVIDENCE_FIELDS,
-		...SHIPPING_EVIDENCE_FIELDS,
-	];
+	// Keys Stripe left unset (null) aren't echoed back. Document, shipping and
+	// emptied text fields go as '' so they clear on Stripe.
 	const evidenceToSend: WooPaymentsDisputeEvidence = Object.fromEntries(
 		Object.entries( evidence ).filter(
-			( [ key, value ] ) => alwaysSent.includes( key ) || !! value
+			( [ , value ] ) => value !== null && value !== undefined
 		)
 	);
 

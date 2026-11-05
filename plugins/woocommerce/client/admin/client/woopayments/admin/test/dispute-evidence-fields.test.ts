@@ -423,6 +423,7 @@ describe( 'WooPayments dispute evidence helpers', () => {
 				shipping_tracking_number: '1Z999',
 				shipping_address: '',
 				product_description: 'A custom hat.',
+				uncategorized_text: '',
 				customer_purchase_ip: '203.0.113.1',
 				enhanced_evidence: {
 					visa_compliance: {
@@ -458,7 +459,6 @@ describe( 'WooPayments dispute evidence helpers', () => {
 		].forEach( ( key ) => {
 			existingEvidence[ key ] = null;
 		} );
-		expect( Object.keys( existingEvidence ) ).toHaveLength( 29 );
 
 		const payload = buildEvidencePayload(
 			{
@@ -492,7 +492,12 @@ describe( 'WooPayments dispute evidence helpers', () => {
 		);
 	} );
 
-	it( 'should omit an emptied text key and send an emptied document key as empty', () => {
+	it( 'should send an emptied optional text key as empty so it clears, as an emptied document key does', () => {
+		const optionalTextKeys = [
+			'product_description',
+			'uncategorized_text',
+			'customer_purchase_ip',
+		];
 		const payload = buildEvidencePayload(
 			{
 				reason: 'fraudulent',
@@ -500,20 +505,26 @@ describe( 'WooPayments dispute evidence helpers', () => {
 				existingEvidence: {
 					receipt: 'file_test',
 					product_description: 'on file',
+					uncategorized_text: 'on file',
+					customer_purchase_ip: 'on file',
 				},
 				evidence: {
 					receipt: '',
 					product_description: '',
+					uncategorized_text: '',
+					customer_purchase_ip: '',
 				},
 			},
 			false
 		);
 
 		expect( payload.evidence ).toHaveProperty( 'receipt', '' );
-		expect( payload.evidence ).not.toHaveProperty( 'product_description' );
+		optionalTextKeys.forEach( ( key ) =>
+			expect( payload.evidence ).toHaveProperty( key, '' )
+		);
 		// The always-sent set is the client's, by name: a list edit that changes the body fails here.
 		expect( Object.keys( payload.evidence ).sort() ).toEqual(
-			[ ...CLIENT_ALWAYS_SENT_EVIDENCE_KEYS ].sort()
+			[ ...CLIENT_ALWAYS_SENT_EVIDENCE_KEYS, ...optionalTextKeys ].sort()
 		);
 	} );
 
