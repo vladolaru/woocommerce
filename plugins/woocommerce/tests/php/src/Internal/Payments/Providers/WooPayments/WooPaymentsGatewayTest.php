@@ -77,6 +77,13 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	use ProviderTextLogAssertions;
 
 	/**
+	 * The cart WC() held before the test, put back in tearDown() for tests that replace or remove it.
+	 *
+	 * @var \WC_Cart|null
+	 */
+	private $cart_before_test;
+
+	/**
 	 * Make core Multi-Currency own the runtime, or not.
 	 *
 	 * @param bool $enabled Whether core Multi-Currency should own the runtime.
@@ -111,9 +118,18 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * Set up test fixtures.
+	 */
+	public function setUp(): void {
+		parent::setUp();
+		$this->cart_before_test = WC()->cart;
+	}
+
+	/**
 	 * Tear down test fixtures.
 	 */
 	public function tearDown(): void {
+		WC()->cart = $this->cart_before_test;
 		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 		wc_get_container()->get( WooPaymentsSetupTier::class )->invalidate();
 		$classic_checkout_fallback_hooks = new \ReflectionProperty( WooPaymentsGateway::class, 'classic_checkout_fallback_hooks_added' );
@@ -1315,44 +1331,47 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should apply definition amount limits to split gateway availability.
+	 * @testdox Should apply definition amount limits to split gateway availability only when there is a cart: $_dataName.
+	 *
+	 * Client 11.2.0 `class-upe-payment-method.php:251-256` checks the limits only while a cart is set. A request with no cart
+	 * (admin, cron) keeps the method offered, without reading a missing cart's total.
+	 *
+	 * @dataProvider provider_definition_amount_limits_by_cart
+	 *
+	 * @param string|null $cart_total Affirm checkout total in USD, or null for a request with no cart.
+	 * @param bool        $expected   Whether Affirm is offered.
 	 */
-	public function test_split_gateway_availability_respects_definition_amount_limits(): void {
+	public function test_split_gateway_availability_respects_definition_amount_limits( ?string $cart_total, bool $expected ): void {
 		$this->activate_builtin_tier();
 		$definition = ( new PaymentMethodRegistry() )->get( 'affirm' );
 		$this->assertNotNull( $definition );
-
-		$settings_filter = static function (): array {
-			return array( 'enabled' => 'yes' );
-		};
-		$currency_filter = static function (): string {
-			return 'USD';
-		};
-		$previous_cart   = WC()->cart;
-		WC()->cart       = new \WC_Cart();
-		add_filter( 'pre_option_woocommerce_woocommerce_payments_affirm_settings', $settings_filter );
-		add_filter( 'pre_option_woocommerce_currency', $currency_filter );
-
-		try {
-			$gateway = new WooPaymentsGateway( $definition );
-			$gateway->init( new RecordingPaymentProcessingService(), $this->create_processing_ready_provider(), null, null, $this->create_account_service_for_country( 'US', 'affirm_payments' ) );
-
-			WC()->cart->set_total( '34.99' );
-			$this->assertFalse( $gateway->is_available(), 'Amounts below the definition minimum should be unavailable.' );
-
-			WC()->cart->set_total( '35.00' );
-			$this->assertTrue( $gateway->is_available(), 'The definition minimum should be available.' );
-
-			WC()->cart->set_total( '30000.00' );
-			$this->assertTrue( $gateway->is_available(), 'The definition maximum should be available.' );
-
-			WC()->cart->set_total( '30000.01' );
-			$this->assertFalse( $gateway->is_available(), 'Amounts above the definition maximum should be unavailable.' );
-		} finally {
-			remove_filter( 'pre_option_woocommerce_woocommerce_payments_affirm_settings', $settings_filter );
-			remove_filter( 'pre_option_woocommerce_currency', $currency_filter );
-			WC()->cart = $previous_cart;
+		add_filter( 'pre_option_woocommerce_woocommerce_payments_affirm_settings', static fn(): array => array( 'enabled' => 'yes' ) );
+		add_filter( 'pre_option_woocommerce_currency', static fn(): string => 'USD' );
+		WC()->cart = null;
+		if ( null !== $cart_total ) {
+			WC()->cart = new \WC_Cart();
+			WC()->cart->set_total( $cart_total );
 		}
+
+		$gateway = new WooPaymentsGateway( $definition );
+		$gateway->init( new RecordingPaymentProcessingService(), $this->create_processing_ready_provider(), null, null, $this->create_account_service_for_country( 'US', 'affirm_payments' ) );
+
+		$this->assertSame( $expected, $gateway->is_available() );
+	}
+
+	/**
+	 * Affirm checkout totals against its USD limits for a US account (35.00 to 30000.00), and a request with no cart.
+	 *
+	 * @return array<string, array{0: string|null, 1: bool}>
+	 */
+	public function provider_definition_amount_limits_by_cart(): array {
+		return array(
+			'no cart'           => array( null, true ),
+			'below the minimum' => array( '34.99', false ),
+			'at the minimum'    => array( '35.00', true ),
+			'at the maximum'    => array( '30000.00', true ),
+			'above the maximum' => array( '30000.01', false ),
+		);
 	}
 
 	/**

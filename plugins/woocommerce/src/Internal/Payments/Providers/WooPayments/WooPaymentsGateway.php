@@ -1384,6 +1384,7 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 
 	/**
 	 * Tell whether the current checkout total is inside the definition's amount limits.
+	 * With no cart (admin, REST outside the Store API, cron, WP-CLI without a cart) there is no total to check, so the limits pass.
 	 *
 	 * @param string $currency        Checkout currency.
 	 * @param string $account_country Merchant account country.
@@ -1392,6 +1393,10 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 	private function is_checkout_amount_within_definition_limits( string $currency, string $account_country ): bool {
 		$limits = $this->payment_method_definition->get_limits_per_currency();
 		if ( ! isset( $limits[ $currency ] ) ) {
+			return true;
+		}
+
+		if ( ! WC()->cart instanceof \WC_Cart ) {
 			return true;
 		}
 
