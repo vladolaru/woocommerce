@@ -9,6 +9,25 @@ import {
 } from '../money-movement/dispute-evidence-fields';
 import { generateDisputeCoverLetter } from '../money-movement/dispute-evidence-cover-letter';
 
+// Client 11.2.0 `new-evidence/index.tsx:606-628`: the shipping and document keys every save sends, even when empty.
+const CLIENT_ALWAYS_SENT_EVIDENCE_KEYS = [
+	'shipping_documentation',
+	'shipping_carrier',
+	'shipping_date',
+	'shipping_tracking_number',
+	'shipping_address',
+	'receipt',
+	'customer_communication',
+	'customer_signature',
+	'refund_policy',
+	'duplicate_charge_documentation',
+	'service_documentation',
+	'cancellation_policy',
+	'cancellation_rebuttal',
+	'access_activity_log',
+	'uncategorized_file',
+];
+
 const getFieldKeys = (
 	input: Parameters< typeof getRecommendedDocumentFields >[ 0 ]
 ) => getRecommendedDocumentFields( input ).map( ( field ) => field.key );
@@ -404,7 +423,6 @@ describe( 'WooPayments dispute evidence helpers', () => {
 				shipping_tracking_number: '1Z999',
 				shipping_address: '',
 				product_description: 'A custom hat.',
-				uncategorized_text: '',
 				customer_purchase_ip: '203.0.113.1',
 				enhanced_evidence: {
 					visa_compliance: {
@@ -413,6 +431,90 @@ describe( 'WooPayments dispute evidence helpers', () => {
 				},
 			},
 		} );
+	} );
+
+	it( "should send the client's evidence keys when Stripe returns unset keys as null", () => {
+		const stripeNullKeys = [
+			'appeal',
+			'cancellation_policy_disclosure',
+			'duplicate_charge_explanation',
+			'duplicate_charge_id',
+			'refund_policy_disclosure',
+			'refund_refusal_explanation',
+			'service_date',
+		];
+		const existingEvidence: Record< string, unknown > = {
+			billing_address: 'on file',
+			customer_email_address: 'on file',
+			customer_name: 'on file',
+			enhanced_evidence: { visa_compliance: {} },
+		};
+		[
+			...stripeNullKeys,
+			...CLIENT_ALWAYS_SENT_EVIDENCE_KEYS,
+			'customer_purchase_ip',
+			'product_description',
+			'uncategorized_text',
+		].forEach( ( key ) => {
+			existingEvidence[ key ] = null;
+		} );
+		expect( Object.keys( existingEvidence ) ).toHaveLength( 29 );
+
+		const payload = buildEvidencePayload(
+			{
+				reason: 'fraudulent',
+				productType: 'digital_product_or_service',
+				existingEvidence,
+				evidence: {
+					uncategorized_file: 'file_test',
+					product_description: 'on file',
+					uncategorized_text: 'on file',
+					customer_purchase_ip: 'on file',
+				},
+			},
+			false
+		);
+
+		expect( Object.keys( payload.evidence ).sort() ).toEqual(
+			[
+				...CLIENT_ALWAYS_SENT_EVIDENCE_KEYS,
+				'billing_address',
+				'customer_email_address',
+				'customer_name',
+				'customer_purchase_ip',
+				'enhanced_evidence',
+				'product_description',
+				'uncategorized_text',
+			].sort()
+		);
+		stripeNullKeys.forEach( ( key ) =>
+			expect( payload.evidence ).not.toHaveProperty( key )
+		);
+	} );
+
+	it( 'should omit an emptied text key and send an emptied document key as empty', () => {
+		const payload = buildEvidencePayload(
+			{
+				reason: 'fraudulent',
+				productType: 'physical_product',
+				existingEvidence: {
+					receipt: 'file_test',
+					product_description: 'on file',
+				},
+				evidence: {
+					receipt: '',
+					product_description: '',
+				},
+			},
+			false
+		);
+
+		expect( payload.evidence ).toHaveProperty( 'receipt', '' );
+		expect( payload.evidence ).not.toHaveProperty( 'product_description' );
+		// The always-sent set is the client's, by name: a list edit that changes the body fails here.
+		expect( Object.keys( payload.evidence ).sort() ).toEqual(
+			[ ...CLIENT_ALWAYS_SENT_EVIDENCE_KEYS ].sort()
+		);
 	} );
 
 	it( 'should clear shipping evidence when shipping is not applicable', () => {

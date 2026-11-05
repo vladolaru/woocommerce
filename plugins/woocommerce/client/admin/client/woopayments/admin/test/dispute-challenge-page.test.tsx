@@ -209,7 +209,6 @@ describe( 'buildEvidencePayload', () => {
 			},
 			product_description: 'A custom hat.',
 			customer_purchase_ip: '203.0.113.1',
-			uncategorized_text: '',
 		} );
 	} );
 } );
