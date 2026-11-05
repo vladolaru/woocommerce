@@ -92,10 +92,18 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 	private array $original_multi_currency_options = array();
 
 	/**
+	 * The mailer's email objects before the test, put back after it.
+	 *
+	 * @var array<string,\WC_Email>
+	 */
+	private array $original_mailer_emails = array();
+
+	/**
 	 * Set up test fixtures.
 	 */
 	public function setUp(): void {
 		parent::setUp();
+		$this->original_mailer_emails          = WC()->mailer()->emails;
 		$this->original_multi_currency_options = array(
 			'_wcpay_feature_customer_multi_currency'  => get_option( '_wcpay_feature_customer_multi_currency', null ),
 			'wcpay_multi_currency_enabled_currencies' => get_option( 'wcpay_multi_currency_enabled_currencies', null ),
@@ -965,6 +973,29 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 		);
 
 		$this->assertCount( 0, $email->triggered, 'Only card-present payments should trigger IPP receipt emails.' );
+	}
+
+	/**
+	 * @testdox After a receipt test tears down, the mailer's registry holds its original email objects, the ones the restored hooks call.
+	 */
+	public function test_teardown_puts_back_the_mailer_email_objects_the_hooks_call(): void {
+		global $wp_filter;
+		$original = WC()->mailer()->get_emails()['WC_Email_Customer_On_Hold_Order'];
+		$this->register_ipp_receipt_email( $this->create_recording_ipp_receipt_email() );
+
+		$this->tearDown();
+		$this->setUp();
+
+		$registered = WC()->mailer()->get_emails()['WC_Email_Customer_On_Hold_Order'] ?? null;
+		$this->assertSame( $original, $registered, 'The registry should hold the original on-hold email object, not a rebuilt one.' );
+		$hook = $wp_filter['woocommerce_order_status_pending_to_on-hold_notification'] ?? null;
+		foreach ( ( $hook ? $hook->callbacks : array() ) as $callbacks ) {
+			foreach ( $callbacks as $callback ) {
+				if ( is_array( $callback['function'] ) && $callback['function'][0] instanceof \WC_Email_Customer_On_Hold_Order ) {
+					$this->assertSame( $registered, $callback['function'][0], 'The hooked on-hold trigger should belong to the registry object.' );
+				}
+			}
+		}
 	}
 
 	/**
@@ -5525,12 +5556,12 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Rebuild WooCommerce's cached email registry under the currently registered filters.
+	 * Put the mailer's own email objects back, replacing the receipt doubles the test registered.
+	 *
+	 * Rebuilding them with init() would leave the registry on new objects whose triggers the
+	 * parent teardown's hook restore does not hook, while the hooks keep the original ones.
 	 */
 	private function reset_mailer_emails(): void {
-		if ( function_exists( 'WC' ) && WC()->mailer() ) {
-			WC()->mailer()->emails = array();
-			WC()->mailer()->init();
-		}
+		WC()->mailer()->emails = $this->original_mailer_emails;
 	}
 }
