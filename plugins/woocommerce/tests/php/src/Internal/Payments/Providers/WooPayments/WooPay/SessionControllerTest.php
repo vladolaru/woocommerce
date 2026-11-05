@@ -40,6 +40,13 @@ class SessionControllerTest extends WC_REST_Unit_Test_Case {
 	private $sut;
 
 	/**
+	 * WooCommerce session before the test.
+	 *
+	 * @var object|null
+	 */
+	private $original_session;
+
+	/**
 	 * WooPay eligibility rules the controller under test reads.
 	 *
 	 * @var Eligibility|null
@@ -65,6 +72,7 @@ class SessionControllerTest extends WC_REST_Unit_Test_Case {
 	 */
 	public function setUp(): void {
 		parent::setUp();
+		$this->original_session = WC()->session;
 		$this->reset_frontend_surface_state();
 	}
 
@@ -114,6 +122,8 @@ class SessionControllerTest extends WC_REST_Unit_Test_Case {
 		$_GET     = array();
 		$_POST    = array();
 		$_REQUEST = array();
+		// wc_load_cart() gives the session the base class's mock handler; put the earlier session back.
+		WC()->session = $this->original_session;
 		parent::tearDown();
 	}
 

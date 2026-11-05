@@ -18,6 +18,13 @@ use WC_Unit_Test_Case;
 class WooPaymentsCustomerServiceTest extends WC_Unit_Test_Case {
 
 	/**
+	 * WooCommerce session before the test.
+	 *
+	 * @var object|null
+	 */
+	private $original_session;
+
+	/**
 	 * Set up test fixtures.
 	 *
 	 * Earlier tests in the process can leave a guest customer in the shared WooCommerce session, which would make guest-order
@@ -25,6 +32,7 @@ class WooPaymentsCustomerServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function setUp(): void {
 		parent::setUp();
+		$this->original_session = WC()->session;
 		if ( WC()->session ) {
 			WC()->session->set( 'wcpay_customer_id', null );
 		}
@@ -39,6 +47,8 @@ class WooPaymentsCustomerServiceTest extends WC_Unit_Test_Case {
 		if ( WC()->session ) {
 			WC()->session->set( 'wcpay_customer_id', null );
 		}
+		// A test that initializes the session gets the base class's mock handler; put the earlier session back.
+		WC()->session = $this->original_session;
 
 		wp_set_current_user( 0 );
 		parent::tearDown();
