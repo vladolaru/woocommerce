@@ -124,6 +124,7 @@ class SessionControllerTest extends WC_REST_Unit_Test_Case {
 		$_REQUEST = array();
 		// wc_load_cart() gives the session the base class's mock handler; put the earlier session back.
 		WC()->session = $this->original_session;
+		wc_get_container()->reset_replacement( WooPaymentsCheckoutAssets::class );
 		parent::tearDown();
 	}
 
