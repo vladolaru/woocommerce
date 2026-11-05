@@ -72,4 +72,20 @@ class EnvironmentIsolationTest extends WC_Unit_Test_Case {
 
 		EnvironmentIsolation::assert_no_unmocked_requests();
 	}
+
+	/**
+	 * @testdox Should give the next test the run's own session when an earlier test left the base class's mock session.
+	 */
+	public function test_mock_session_left_by_an_earlier_test_is_replaced_before_the_next_test(): void {
+		$run_session = WC()->session;
+
+		WC()->initialize_session();
+		$this->assertInstanceOf( \WC_Mock_Session_Handler::class, WC()->session, 'Under the base class filter, initializing the session gives the mock.' );
+
+		// The next test's setUp applies the baseline before the base class adds its session filter again.
+		remove_filter( 'woocommerce_session_handler', array( $this, 'set_mock_session_handler' ) );
+		EnvironmentIsolation::apply_for_test( static::class );
+
+		$this->assertSame( $run_session, WC()->session, 'The next test starts with the session the run started with.' );
+	}
 }

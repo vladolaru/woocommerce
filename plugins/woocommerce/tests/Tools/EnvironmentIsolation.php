@@ -92,6 +92,13 @@ final class EnvironmentIsolation {
 	private static array $refused_requests = array();
 
 	/**
+	 * The store's session object as the first test found it; the WordPress hook snapshot holds its callbacks.
+	 *
+	 * @var \WC_Session|null
+	 */
+	private static $run_session = null;
+
+	/**
 	 * Apply the baseline.
 	 *
 	 * Runs on `muplugins_loaded` after WooCommerce is loaded, so the Jetpack
@@ -132,6 +139,7 @@ final class EnvironmentIsolation {
 	 */
 	public static function apply_for_test( string $test_class ): void {
 		self::$refused_requests = array();
+		self::restore_run_session();
 
 		foreach ( self::OFFLINE_TEST_NAMESPACES as $namespace ) {
 			if ( 0 === strpos( $test_class, $namespace ) ) {
@@ -140,6 +148,22 @@ final class EnvironmentIsolation {
 				return;
 			}
 		}
+	}
+
+	/**
+	 * Put the run's own session back when an earlier test left the base class's mock session, which nothing else resets.
+	 */
+	private static function restore_run_session(): void {
+		if ( ! WC()->session instanceof \WC_Mock_Session_Handler ) {
+			self::$run_session = self::$run_session ?? WC()->session;
+			return;
+		}
+
+		if ( self::$run_session instanceof \WC_Session ) {
+			WC()->session = self::$run_session;
+		}
+		// Keeps the run's session when the filters still name its class, otherwise builds the class they name.
+		WC()->initialize_session();
 	}
 
 	/**
