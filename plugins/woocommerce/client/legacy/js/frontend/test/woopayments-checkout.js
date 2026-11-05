@@ -4828,6 +4828,11 @@ describe( 'WooPayments checkout', () => {
 			'</form>';
 		window.wc_woopayments_checkout_params.isOrderPay = true;
 		require( '../woopayments-checkout' );
+		// The click submits the form natively. jsdom can't navigate and reports it as an error, so cancel the submit.
+		const nativeSubmit = jest.fn( ( event ) => event.preventDefault() );
+		document
+			.getElementById( 'order_review' )
+			.addEventListener( 'submit', nativeSubmit );
 
 		document.getElementById( 'place_order' ).dispatchEvent(
 			new window.MouseEvent( 'click', {
@@ -4836,6 +4841,7 @@ describe( 'WooPayments checkout', () => {
 			} )
 		);
 
+		expect( nativeSubmit ).toHaveBeenCalledTimes( 1 );
 		expect( getTrackingEvents() ).not.toContainEqual(
 			expect.objectContaining( {
 				name: 'checkout_place_order_button_click',
