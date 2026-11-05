@@ -5530,6 +5530,7 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 	private function reset_mailer_emails(): void {
 		if ( function_exists( 'WC' ) && WC()->mailer() ) {
 			WC()->mailer()->emails = array();
+			WC()->mailer()->init();
 		}
 	}
 }
