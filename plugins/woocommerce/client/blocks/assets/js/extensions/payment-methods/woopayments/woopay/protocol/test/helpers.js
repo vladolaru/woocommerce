@@ -329,7 +329,11 @@ describe( 'WooPay protocol helpers', () => {
 		} );
 
 		afterEach( () => {
-			jest.restoreAllMocks();
+			// Restore only this block's spies: restoreAllMocks() would also remove the console spies the file's warning checks read.
+			Date.now.mockRestore();
+			if ( window.Storage.prototype.setItem.mockRestore ) {
+				window.Storage.prototype.setItem.mockRestore();
+			}
 			window.sessionStorage.clear();
 			window.history.replaceState( null, '', '/' );
 		} );
