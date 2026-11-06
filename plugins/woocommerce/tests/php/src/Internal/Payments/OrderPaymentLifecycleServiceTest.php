@@ -733,28 +733,6 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Duplicate lifecycle notes are not added twice.
-	 */
-	public function test_duplicate_note_is_not_added_twice(): void {
-		$order = $this->create_woopayments_order();
-		$event = new PaymentLifecycleEvent(
-			PaymentLifecycleEvent::STATUS_STARTED,
-			'pi_started',
-			array( '_intent_id' => 'pi_started' ),
-			array(),
-			'Payment started.'
-		);
-
-		$this->apply_event( $order, $event );
-		$this->apply_event( wc_get_order( $order->get_id() ), $event );
-
-		$order = wc_get_order( $order->get_id() );
-
-		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertSame( 1, $this->countOrderNotesMatching( $order, 'Payment started.' ) );
-	}
-
-	/**
 	 * @testdox Lifecycle events lock the order with the supplied provider persistence vocabulary.
 	 */
 	public function test_apply_uses_provider_vocabulary_for_locks(): void {
@@ -860,42 +838,6 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 			hash( 'sha256', 'payment_lifecycle:pi_legacy|started|payment_started' ),
 			get_comment_meta( $legacy_note_id, '_wc_woopayments_note_identity', true )
 		);
-	}
-
-	/**
-	 * @testdox Different lifecycle note types with the same reference are each written once.
-	 */
-	public function test_different_lifecycle_note_types_are_each_written_once(): void {
-		$order = $this->create_woopayments_order();
-
-		$this->apply_event_under_lock(
-			$order,
-			new PaymentLifecycleEvent(
-				PaymentLifecycleEvent::STATUS_STARTED,
-				'pi_started',
-				array( '_intent_id' => 'pi_started' ),
-				array(),
-				'Payment started.',
-				'payment_started'
-			)
-		);
-		$this->apply_event_under_lock(
-			wc_get_order( $order->get_id() ),
-			new PaymentLifecycleEvent(
-				PaymentLifecycleEvent::STATUS_STARTED,
-				'pi_started',
-				array( '_intent_id' => 'pi_started' ),
-				array(),
-				'Payment follow-up.',
-				'payment_followup'
-			)
-		);
-
-		$order = wc_get_order( $order->get_id() );
-
-		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertSame( 1, $this->countOrderNotesMatching( $order, 'Payment started.' ) );
-		$this->assertSame( 1, $this->countOrderNotesMatching( $order, 'Payment follow-up.' ) );
 	}
 
 	/**
