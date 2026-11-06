@@ -6,6 +6,7 @@ import userEvent from '@testing-library/user-event';
 import { getHistory } from '@woocommerce/navigation';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import apiFetch from '@wordpress/api-fetch';
+import type { ReactNode } from 'react';
 
 /**
  * Internal dependencies
@@ -92,8 +93,8 @@ const setAdminRouteAvailability = (
 	};
 };
 
-const getRouteElement = ( routePath: string ) => {
-	const route = wooPaymentsRoutes.find(
+const getRouteElement = ( routePath: string, routes = wooPaymentsRoutes ) => {
+	const route = routes.find(
 		( { path: registeredPath } ) => registeredPath === routePath
 	);
 
@@ -106,6 +107,34 @@ const getRouteElement = ( routePath: string ) => {
 
 	return route.element;
 };
+
+/**
+ * Runs a check on fresh copies of the routes and of Testing Library. React.lazy keeps a loaded chunk for the life of the
+ * module registry, so a route's Suspense fallback shows only until any test in the file has loaded that chunk.
+ *
+ * @param check The check, given the fresh Testing Library and a lookup of the fresh route elements.
+ */
+const withFreshRoutes = (
+	check: ( fresh: {
+		rtl: typeof import( '@testing-library/react/pure' );
+		getElement: ( routePath: string ) => ReactNode;
+	} ) => Promise< void >
+) =>
+	jest.isolateModulesAsync( async () => {
+		// The pure entry registers no test hooks, so it can be loaded inside a test.
+		const rtl = await import( '@testing-library/react/pure' );
+		const { wooPaymentsRoutes: routes } = await import( '../routes' );
+
+		try {
+			await check( {
+				rtl,
+				getElement: ( routePath ) =>
+					getRouteElement( routePath, routes ),
+			} );
+		} finally {
+			rtl.cleanup();
+		}
+	} );
 
 const expectRouteUnavailable = ( routePath: string ) => {
 	render( getRouteElement( routePath ) );
@@ -324,15 +353,19 @@ describe( 'WooPayments Settings Payments routes', () => {
 				'/woopayments/documents': false,
 			} );
 
-			render( getRouteElement( routePath ) );
+			await withFreshRoutes( async ( { rtl, getElement } ) => {
+				rtl.render( getElement( routePath ) );
 
-			expect( screen.getByRole( 'status' ) ).toHaveTextContent(
-				'Loading WooPayments…'
-			);
-			expect(
-				screen.queryByText( unavailableMessage )
-			).not.toBeInTheDocument();
-			expect( await screen.findByText( loadedText ) ).toBeInTheDocument();
+				expect( rtl.screen.getByRole( 'status' ) ).toHaveTextContent(
+					'Loading WooPayments…'
+				);
+				expect(
+					rtl.screen.queryByText( unavailableMessage )
+				).not.toBeInTheDocument();
+				expect(
+					await rtl.screen.findByText( loadedText )
+				).toBeInTheDocument();
+			} );
 		}
 	);
 
@@ -387,17 +420,21 @@ describe( 'WooPayments Settings Payments routes', () => {
 			},
 		];
 
-		for ( const { loadedText, path: routePath } of availableRoutes ) {
-			render( getRouteElement( routePath ) );
-			expect( screen.getByRole( 'status' ) ).toHaveTextContent(
-				'Loading WooPayments…'
-			);
-			expect(
-				screen.queryByText( unavailableMessage )
-			).not.toBeInTheDocument();
-			expect( await screen.findByText( loadedText ) ).toBeInTheDocument();
-			cleanup();
-		}
+		await withFreshRoutes( async ( { rtl, getElement } ) => {
+			for ( const { loadedText, path: routePath } of availableRoutes ) {
+				rtl.render( getElement( routePath ) );
+				expect( rtl.screen.getByRole( 'status' ) ).toHaveTextContent(
+					'Loading WooPayments…'
+				);
+				expect(
+					rtl.screen.queryByText( unavailableMessage )
+				).not.toBeInTheDocument();
+				expect(
+					await rtl.screen.findByText( loadedText )
+				).toBeInTheDocument();
+				rtl.cleanup();
+			}
+		} );
 
 		[
 			'/woopayments/payouts',
