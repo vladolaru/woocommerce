@@ -66,28 +66,7 @@ class PaymentsTest extends WC_Unit_Test_Case {
 	 */
 	public function test_fires_no_retired_woopayments_task_filter( string $feature ): void {
 		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'on' === $feature ? 'yes' : 'no' );
-		// Incidental: no assertion reads this answer, it only keeps the incentives request offline. The empty list is decoded
-		// and kept as "no incentive" (src/Internal/Admin/Suggestions/Incentives/WooPayments.php:246-249).
-		add_filter(
-			'pre_http_request',
-			static function ( $preempt, $parsed_args, $url ) {
-				unset( $parsed_args );
-
-				if ( str_contains( $url, 'https://public-api.wordpress.com/wpcom/v2/wcpay/incentives' ) ) {
-					return array(
-						'success'  => true,
-						'body'     => wp_json_encode( array() ),
-						'response' => array(
-							'code' => 200,
-						),
-					);
-				}
-
-				return $preempt;
-			},
-			10,
-			3
-		);
+		$this->answer_incentives_with_none();
 		$fired = array();
 		foreach ( array( 'woocommerce_admin_woopayments_onboarding_task_badge', 'woocommerce_admin_woopayments_onboarding_task_additional_data' ) as $hook ) {
 			add_filter(
@@ -126,6 +105,8 @@ class PaymentsTest extends WC_Unit_Test_Case {
 	 * @testdox Should return the task's additional data.
 	 */
 	public function test_get_additional_data_returns_its_array_without_filter(): void {
+		$this->answer_incentives_with_none();
+
 		$result = $this->sut->get_additional_data();
 
 		$this->assertIsArray( $result, 'Additional data should be an array.' );
@@ -251,6 +232,36 @@ class PaymentsTest extends WC_Unit_Test_Case {
 
 		$this->assertTrue( $data['wooPaymentsIsActive'], 'The loaded plugin runtime counts as active WooPayments without engagement.' );
 		$this->assertFalse( $this->sut->is_complete(), 'Unfinished WooPayments onboarding keeps the task open.' );
+	}
+
+	/**
+	 * Answer the WooPayments incentives request with no incentive, so the task's real providers stay offline.
+	 *
+	 * Incidental: no assertion reads this answer. The empty list is decoded and kept as "no incentive"
+	 * (src/Internal/Admin/Suggestions/Incentives/WooPayments.php:246-249). Without it, the request goes out whenever no
+	 * earlier test in the process left an incentives answer in memory.
+	 */
+	private function answer_incentives_with_none(): void {
+		add_filter(
+			'pre_http_request',
+			static function ( $preempt, $parsed_args, $url ) {
+				unset( $parsed_args );
+
+				if ( str_contains( $url, 'https://public-api.wordpress.com/wpcom/v2/wcpay/incentives' ) ) {
+					return array(
+						'success'  => true,
+						'body'     => wp_json_encode( array() ),
+						'response' => array(
+							'code' => 200,
+						),
+					);
+				}
+
+				return $preempt;
+			},
+			10,
+			3
+		);
 	}
 
 	/**
