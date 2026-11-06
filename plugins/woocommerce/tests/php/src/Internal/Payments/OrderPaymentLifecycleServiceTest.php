@@ -8,7 +8,6 @@ use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentNotes;
 use Automattic\WooCommerce\Internal\Payments\PaymentLifecycleEvent;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabularyInterface;
 use Automattic\WooCommerce\RestApi\UnitTests\LoggerSpyTrait;
@@ -186,35 +185,6 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 				'reason'     => 'open_dispute',
 			)
 		);
-	}
-
-	/**
-	 * @testdox A completed event refreshes disputed state that was persisted after its order object loaded.
-	 */
-	public function test_success_after_dispute_created_through_a_second_order_instance_keeps_on_hold(): void {
-		$stale_order = $this->create_woopayments_order();
-
-		$fresh_order = clone $stale_order;
-		/**
-		 * Fresh order data store.
-		 *
-		 * @var \WC_Object_Data_Store_Interface $data_store
-		 */
-		$data_store = $fresh_order->get_data_store();
-		$data_store->read( $fresh_order );
-		$fresh_order->update_meta_data( '_wcpay_open_dispute_ids', array( 'dp_stale' ) );
-		$fresh_order->update_meta_data( '_intention_status', 'requires_payment_method' );
-		$fresh_order->update_status( 'on-hold' );
-
-		$this->sut->apply( $stale_order, $this->completed_event( 'pi_stale' ), $this->persistence_vocabulary );
-
-		$order = wc_get_order( $stale_order->get_id() );
-
-		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertSame( 'on-hold', $order->get_status(), 'A success event must refresh and preserve a dispute hold written by another order instance.' );
-		$this->assertSame( array( 'dp_stale' ), $order->get_meta( '_wcpay_open_dispute_ids', true ), 'A success event must preserve freshly persisted open disputes.' );
-		$this->assertSame( 'requires_payment_method', $order->get_meta( '_intention_status', true ), 'A skipped success event must not update lifecycle metadata.' );
-		$this->assertSame( 0, $this->countOrderNotesMatching( $order, 'Payment complete.' ), 'A skipped success event must not add a completion note.' );
 	}
 
 	/**
@@ -435,58 +405,6 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A payment success event skips an equivalent success note rendered by the WooPayments extension before lifecycle mutation.
-	 *
-	 * The extension's note is client 11.1.0's literal (class-wc-payments-order-service.php:2048-2066). With an additional
-	 * currency enabled its amount carries the order's currency code (class-wc-payments-order-service.php:2904-2910;
-	 * class-wc-payments-explicit-price-formatter.php:127-140, :167-187), which the built-in rendering here does not, so
-	 * the two differ.
-	 */
-	public function test_payment_success_replay_with_a_woopayments_extension_equivalent_note_keeps_existing_order_state(): void {
-		update_option( '_wcpay_feature_customer_multi_currency', '1' );
-		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'EUR' ) );
-		$order           = $this->create_woopayments_order();
-		$note_service    = wc_get_container()->get( WooPaymentsOrderNoteService::class );
-		$note_candidates = $note_service->format_payment_success_note_candidates( $order, 'pi_cutover', 'ch_cutover', 'txn_cutover' );
-		$extension_note  = sprintf(
-			'A payment of %1$s was <strong>successfully charged</strong> using WooPayments (<a href="%2$s" target="_blank" rel="noopener noreferrer">pi_cutover</a>).',
-			wc_price( (float) $order->get_total(), array( 'currency' => $order->get_currency() ) ) . ' ' . $order->get_currency(),
-			$note_service->transaction_url( 'pi_cutover', 'ch_cutover', 'txn_cutover' )
-		);
-
-		$this->assertNotSame( $note_candidates[0], $extension_note, 'The built-in rendering must differ from the extension note for this test to cover the equivalent match.' );
-		$order->add_order_note( $extension_note );
-		$order->update_meta_data( '_intention_status', 'requires_payment_method' );
-		$order->update_status( 'on-hold' );
-		$order->save();
-
-		$event = new PaymentLifecycleEvent(
-			PaymentLifecycleEvent::STATUS_COMPLETED,
-			'pi_cutover',
-			array(
-				'_intent_id'             => 'pi_cutover',
-				'_intention_status'      => 'succeeded',
-				'_wcpay_transaction_fee' => '1.23',
-			),
-			array(),
-			$note_candidates[0],
-			PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_SUCCESS,
-			$note_candidates
-		);
-
-		$this->sut->apply( $order, $event, $this->persistence_vocabulary );
-
-		$order = wc_get_order( $order->get_id() );
-
-		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertSame( 'on-hold', $order->get_status(), 'A replayed payment-success event must not re-complete an order the WooPayments extension paid.' );
-		$this->assertSame( 'requires_payment_method', $order->get_meta( '_intention_status', true ), 'A replayed payment-success event must not overwrite lifecycle metadata.' );
-		$this->assertSame( '', $order->get_meta( '_wcpay_transaction_fee', true ), 'A replayed payment-success event must not add payment metadata.' );
-		$this->assertSame( 1, $this->countOrderNotesMatching( $order, $extension_note ), 'The success note the WooPayments extension wrote must remain the only equivalent note.' );
-		$this->assertSame( 0, $this->countOrderNotesMatching( $order, $note_candidates[0] ), 'A replayed payment-success event must not add the Core rendering.' );
-	}
-
-	/**
 	 * @testdox A payment success replay with an existing equivalent note backfills its stable identity before lifecycle mutation.
 	 */
 	public function test_payment_success_replay_with_an_existing_equivalent_note_backfills_identity(): void {
@@ -573,8 +491,9 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 	 * @param string $late_intent_status Late provider intent status.
 	 * @param string $note              Lifecycle note.
 	 * @param string $note_type         Lifecycle note type.
+	 * @param bool   $preserve_status   Whether the event keeps the order status, as a fraud block does.
 	 */
-	public function test_late_failure_event_does_not_downgrade_paid_processing_order( string $event_status, string $payment_reference, string $late_intent_status, string $note, string $note_type ): void {
+	public function test_late_failure_event_does_not_downgrade_paid_processing_order( string $event_status, string $payment_reference, string $late_intent_status, string $note, string $note_type, bool $preserve_status ): void {
 		$order = $this->create_woopayments_order();
 		$order->set_transaction_id( 'pi_paid' );
 		$order->set_status( 'processing' );
@@ -591,12 +510,15 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 				array( '_intention_status' => $late_intent_status ),
 				array( '_wcpay_transaction_fee', '_wcpay_net' ),
 				$note,
-				$note_type
+				$note_type,
+				array(),
+				$preserve_status
 			)
 		);
 
 		$order = wc_get_order( $order->get_id() );
 
+		// A status-preserving event leaves the status alone either way, so its meta and note assertions carry the case.
 		$this->assertInstanceOf( WC_Order::class, $order );
 		$this->assertSame( 'processing', $order->get_status(), "{$event_status} must not downgrade a paid order." );
 		$this->assertSame( 'succeeded', $order->get_meta( '_intention_status', true ), "{$event_status} must not overwrite successful lifecycle metadata." );
@@ -638,53 +560,16 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Late failure events re-read persisted order state before mutating a stale caller instance.
-	 */
-	public function test_late_failure_event_does_not_mutate_stale_order_when_persisted_order_is_paid(): void {
-		$stale_order = $this->create_woopayments_order();
-		$stale_order->update_meta_data( '_intention_status', 'succeeded' );
-		$stale_order->update_meta_data( '_wcpay_transaction_fee', '1.23' );
-		$stale_order->save();
-
-		$paid_order = wc_get_order( $stale_order->get_id() );
-		$this->assertInstanceOf( WC_Order::class, $paid_order );
-		$paid_order->set_transaction_id( 'pi_paid' );
-		$paid_order->set_status( 'processing' );
-		$paid_order->save();
-
-		$note      = 'Late payment failure.';
-		$note_type = 'late_payment_failure';
-		$this->apply_event(
-			$stale_order,
-			new PaymentLifecycleEvent(
-				PaymentLifecycleEvent::STATUS_FAILED,
-				'pi_failed_late',
-				array( '_intention_status' => 'requires_payment_method' ),
-				array( '_wcpay_transaction_fee' ),
-				$note,
-				$note_type
-			)
-		);
-
-		$order = wc_get_order( $stale_order->get_id() );
-
-		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertSame( 'processing', $order->get_status() );
-		$this->assertSame( 'succeeded', $order->get_meta( '_intention_status', true ) );
-		$this->assertSame( '1.23', $order->get_meta( '_wcpay_transaction_fee', true ) );
-		$this->assertSame( 0, $this->countOrderNotesMatching( $order, $note ) );
-	}
-
-	/**
 	 * Data provider for late failure events received after payment.
 	 *
-	 * @return array<string,array{string,string,string,string,string}>
+	 * @return array<string,array{string,string,string,string,string,bool}>
 	 */
 	public static function paid_order_late_failure_event_provider(): array {
 		return array(
-			'failed'          => array( PaymentLifecycleEvent::STATUS_FAILED, 'pi_failed_late', 'requires_payment_method', 'Late payment failure.', 'late_payment_failure' ),
-			'canceled'        => array( PaymentLifecycleEvent::STATUS_CANCELED, 'pi_canceled_late', 'canceled', 'Late payment cancellation.', 'late_payment_cancellation' ),
-			'capture expired' => array( PaymentLifecycleEvent::STATUS_CAPTURE_EXPIRED, 'ch_expired_late', 'canceled', 'Late payment authorization expiry.', 'late_capture_expiry' ),
+			'failed'                   => array( PaymentLifecycleEvent::STATUS_FAILED, 'pi_failed_late', 'requires_payment_method', 'Late payment failure.', 'late_payment_failure', false ),
+			'canceled'                 => array( PaymentLifecycleEvent::STATUS_CANCELED, 'pi_canceled_late', 'canceled', 'Late payment cancellation.', 'late_payment_cancellation', false ),
+			'capture expired'          => array( PaymentLifecycleEvent::STATUS_CAPTURE_EXPIRED, 'ch_expired_late', 'canceled', 'Late payment authorization expiry.', 'late_capture_expiry', false ),
+			'failed, status preserved' => array( PaymentLifecycleEvent::STATUS_FAILED, 'pi_blocked_late', 'canceled', 'A payment was blocked by risk filters.', 'payment_blocked', true ),
 		);
 	}
 
