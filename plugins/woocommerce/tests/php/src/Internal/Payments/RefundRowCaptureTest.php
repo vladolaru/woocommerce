@@ -83,12 +83,18 @@ class RefundRowCaptureTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A gateway refund created inside another one's call is handed to its own call first, then the outer one to its call.
+	 * @testdox A gateway refund created inside another one's call is handed to its own call, whichever refund call comes first (inner first: $inner_first).
 	 *
-	 * Codex review 204 F3 and monitor ruling 2026-10-10 16:30: each wc_create_refund() call keeps its own refund, and a
-	 * refund call takes the one kept for the innermost call still running.
+	 * Codex review 204 F3 and monitor ruling 2026-10-10 16:30: each wc_create_refund() call keeps its own refund. Codex
+	 * review 205 R2 and monitor ruling 2026-10-10 17:25: a call takes the refund whose order and amount match it, not the
+	 * innermost one regardless, so a newer refund stays kept for its own call.
+	 *
+	 * @testWith [true]
+	 *           [false]
+	 *
+	 * @param bool $inner_first Whether the inner call's refund call comes first.
 	 */
-	public function test_nested_gateway_refunds_are_handed_to_their_own_calls(): void {
+	public function test_nested_gateway_refunds_are_handed_to_their_own_calls( bool $inner_first ): void {
 		$outer_order = $this->create_order();
 		$inner_order = $this->create_order();
 		$outer       = $this->create_refund( $outer_order, '4.25' );
@@ -98,29 +104,14 @@ class RefundRowCaptureTest extends WC_Unit_Test_Case {
 		$sut->handle_create_refund( $outer, array( 'refund_payment' => true ) );
 		$sut->handle_create_refund( $inner, array( 'refund_payment' => true ) );
 
-		$this->assertSame( $inner->get_id(), $sut->consume( $inner_order, 3.00 ), 'The inner call takes its own refund.' );
-		$this->assertSame( $outer->get_id(), $sut->consume( $outer_order, 4.25 ), 'The outer call takes its own refund.' );
-		$this->assertNull( $sut->consume( $outer_order, 4.25 ) );
-	}
-
-	/**
-	 * @testdox A refund call takes its own refund past a newer one kept for a call that has not consumed it.
-	 *
-	 * Codex review 205 R2 and monitor ruling 2026-10-10 17:25: a call takes the refund whose order and amount match it,
-	 * not the innermost one regardless.
-	 */
-	public function test_a_call_takes_its_own_refund_past_a_newer_one(): void {
-		$outer_order = $this->create_order();
-		$inner_order = $this->create_order();
-		$outer       = $this->create_refund( $outer_order, '4.25' );
-		$inner       = $this->create_refund( $inner_order, '3.00' );
-		$sut         = $this->create_capture();
-
-		$sut->handle_create_refund( $outer, array( 'refund_payment' => true ) );
-		$sut->handle_create_refund( $inner, array( 'refund_payment' => true ) );
-
-		$this->assertSame( $outer->get_id(), $sut->consume( $outer_order, 4.25 ), 'The outer call takes its own refund.' );
-		$this->assertSame( $inner->get_id(), $sut->consume( $inner_order, 3.00 ), 'The newer refund stays kept for its own call.' );
+		if ( $inner_first ) {
+			$this->assertSame( $inner->get_id(), $sut->consume( $inner_order, 3.00 ), 'The inner call takes its own refund.' );
+			$this->assertSame( $outer->get_id(), $sut->consume( $outer_order, 4.25 ), 'The outer call takes its own refund.' );
+		} else {
+			$this->assertSame( $outer->get_id(), $sut->consume( $outer_order, 4.25 ), 'The outer call takes its own refund past the newer one.' );
+			$this->assertSame( $inner->get_id(), $sut->consume( $inner_order, 3.00 ), 'The newer refund stays kept for its own call.' );
+		}
+		$this->assertNull( $sut->consume( $outer_order, 4.25 ), 'Each refund is handed over once.' );
 	}
 
 	/**
