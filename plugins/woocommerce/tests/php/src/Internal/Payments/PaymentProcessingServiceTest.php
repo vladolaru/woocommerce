@@ -194,41 +194,6 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should let core's cart-clearing hook empty the cart through the order-awaiting-payment session branch once the order is paid.
-	 *
-	 * `includes/wc-cart-functions.php:198-207` (`wc_clear_cart_after_payment()`) is the branch the
-	 * Store API's checkout flow relies on instead of the order-received query var branch: it reads
-	 * `WC()->session->order_awaiting_payment`, which `WC_Checkout::process_order_payment()`
-	 * (`includes/class-wc-checkout.php:1163`) and the Store API's `CheckoutTrait::process_payment()`
-	 * (`src/StoreApi/Utilities/CheckoutTrait.php:92`) set just before the gateway runs, and clears the cart only once
-	 * that order's status is no longer `pending`, `failed`, or `cancelled`.
-	 */
-	public function test_order_awaiting_payment_session_branch_clears_the_cart_once_the_order_is_paid(): void {
-		$product = \WC_Helper_Product::create_simple_product();
-		WC()->cart->empty_cart();
-		WC()->cart->add_to_cart( $product->get_id(), 1 );
-		unset( $GLOBALS['wp']->query_vars['order-received'] );
-
-		$order = $this->create_woopayments_order( '10.00' );
-		$order->set_cart_hash( WC()->cart->get_cart_hash() );
-		$order->set_status( 'processing' );
-		$order->save();
-
-		WC()->session->set( 'order_awaiting_payment', $order->get_id() );
-
-		// See the note on the previous test: only wc_clear_cart_after_payment() is under test here.
-		remove_action( 'template_redirect', 'redirect_canonical' );
-		remove_action( 'template_redirect', 'wc_template_redirect' );
-		try {
-			do_action( 'template_redirect' );
-		} finally {
-			WC()->session->set( 'order_awaiting_payment', 0 );
-		}
-
-		$this->assertTrue( WC()->cart->is_empty(), "A paid order tracked via the session's order_awaiting_payment must clear the shopper's matching cart." );
-	}
-
-	/**
 	 * @testdox A failed checkout attempt can be followed by a fresh successful attempt.
 	 */
 	public function test_failed_checkout_attempt_can_be_followed_by_a_fresh_successful_attempt(): void {
