@@ -96,6 +96,15 @@ const summarizeCardBrand = ( element ) => ( {
 	text: element.textContent,
 } );
 
+// A rendered button asks admin-ajax for the Tracks identity and posts its load event; the test answers both, as the
+// identity bridge does when it has no identity.
+const answerButtonRequests = () => {
+	window.fetch = jest.fn().mockResolvedValue( {
+		ok: true,
+		json: jest.fn().mockResolvedValue( { success: false } ),
+	} );
+};
+
 describe( 'wc-payment-method-woopayments-woopay', () => {
 	afterEach( () => {
 		Object.defineProperty(
@@ -1403,6 +1412,7 @@ describe( 'wc-payment-method-woopayments-woopay', () => {
 	} );
 
 	it( 'renders the cached preferred WooPay card on the express button', () => {
+		answerButtonRequests();
 		const rectSpy = jest
 			.spyOn( window.HTMLElement.prototype, 'getBoundingClientRect' )
 			.mockReturnValue( { width: 220 } );
@@ -1446,6 +1456,7 @@ describe( 'wc-payment-method-woopayments-woopay', () => {
 	] )(
 		'shows the preferred %s card as its brand image when the card method has one',
 		( brand, expected ) => {
+			answerButtonRequests();
 			const rectSpy = jest
 				.spyOn( window.HTMLElement.prototype, 'getBoundingClientRect' )
 				.mockReturnValue( { width: 220 } );
@@ -1489,6 +1500,7 @@ describe( 'wc-payment-method-woopayments-woopay', () => {
 	// Client 11.1.0 woopay-express-checkout-button.js:34-45 names each brand; a Cartes Bancaires card has no brand image
 	// in the card method's set, so its name shows as text.
 	it( 'names a preferred Cartes Bancaires card on the express button', () => {
+		answerButtonRequests();
 		const rectSpy = jest
 			.spyOn( window.HTMLElement.prototype, 'getBoundingClientRect' )
 			.mockReturnValue( { width: 220 } );
@@ -1516,6 +1528,7 @@ describe( 'wc-payment-method-woopayments-woopay', () => {
 	// least 220px wide; below that it falls back to the plain WooPay label
 	// (woopay-express-checkout-button.js:32,387-392).
 	it( 'hides the cached preferred WooPay card on a narrow express button', () => {
+		answerButtonRequests();
 		const rectSpy = jest
 			.spyOn( window.HTMLElement.prototype, 'getBoundingClientRect' )
 			.mockReturnValue( { width: 219 } );
