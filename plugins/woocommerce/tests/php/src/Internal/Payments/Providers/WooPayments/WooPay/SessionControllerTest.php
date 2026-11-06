@@ -47,6 +47,20 @@ class SessionControllerTest extends WC_REST_Unit_Test_Case {
 	private $original_session;
 
 	/**
+	 * WooCommerce customer before the test.
+	 *
+	 * @var \WC_Customer|null
+	 */
+	private $original_customer;
+
+	/**
+	 * The session's customer data before the test.
+	 *
+	 * @var mixed
+	 */
+	private $original_session_customer;
+
+	/**
 	 * WooPay eligibility rules the controller under test reads.
 	 *
 	 * @var Eligibility|null
@@ -72,7 +86,13 @@ class SessionControllerTest extends WC_REST_Unit_Test_Case {
 	 */
 	public function setUp(): void {
 		parent::setUp();
-		$this->original_session = WC()->session;
+		$this->original_session          = WC()->session;
+		$this->original_customer         = WC()->customer;
+		$this->original_session_customer = WC()->session ? WC()->session->get( 'customer' ) : null;
+		if ( WC()->customer instanceof \WC_Customer ) {
+			// Starting a WooPay session saves the shopper's email on the customer; the run's own customer keeps none.
+			WC()->customer = clone WC()->customer;
+		}
 		$this->reset_frontend_surface_state();
 	}
 
@@ -124,6 +144,12 @@ class SessionControllerTest extends WC_REST_Unit_Test_Case {
 		$_REQUEST = array();
 		// wc_load_cart() gives the session the base class's mock handler; put the earlier session back.
 		WC()->session = $this->original_session;
+		if ( $this->original_customer instanceof \WC_Customer ) {
+			WC()->customer = $this->original_customer;
+		}
+		if ( WC()->session instanceof \WC_Session ) {
+			WC()->session->set( 'customer', $this->original_session_customer );
+		}
 		wc_get_container()->reset_replacement( WooPaymentsCheckoutAssets::class );
 		parent::tearDown();
 	}
