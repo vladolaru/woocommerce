@@ -134,6 +134,9 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		// The container drops this test's refund row capture here; a repeated run of this test must install its own again.
 		$this->runtime_capture_installed = null;
 		$this->reset_container_replacements();
+		// A test that goes through the container's services leaves the platform cache entries it read in that cache's memory,
+		// which the rollback does not reach; the next test would get them back over the options it writes.
+		wc_get_container()->get( WooPaymentsDatabaseCache::class )->delete_all();
 		unset( $GLOBALS['wcpay_test_renewal_order_ids'], $GLOBALS['wcpay_test_subscription_ids'], $GLOBALS[ WooCommerceSubscriptionsDoubles::ORDER_SUBSCRIPTIONS ] );
 		// Guest customer creation stores the customer in the shared session; leave none for later classes.
 		if ( WC()->session ) {
