@@ -103,6 +103,8 @@ class StripeBillingSubscriptionServiceTest extends WC_Unit_Test_Case {
 	public function setUp(): void {
 		parent::setUp();
 		WooCommerceSubscriptionsDoubles::load();
+		$this->customer_user_ids = array();
+		$this->logging_enabled   = false;
 
 		$this->http_client          = new FakeHttpClient();
 		$this->http_client->blog_id = self::RECORDED_BLOG_ID;
