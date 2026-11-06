@@ -3,7 +3,6 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments;
 
-use Automattic\WooCommerce\Internal\DataStores\Orders\CustomOrdersTableController;
 use Automattic\WooCommerce\Internal\DataStores\Orders\OrdersTableDataStore;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
@@ -315,10 +314,10 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 	 * @testdox A completed event sees a dispute hold that another request persisted after this request cached the order.
 	 */
 	public function test_success_sees_a_dispute_persisted_by_another_request_after_the_order_was_cached(): void {
-		$this->enable_hpos_data_caching_when_hpos_is_active();
+		UncachedOrderWriter::enable_hpos_data_caching();
 		$stale_order = $this->read_order_into_request_caches( $this->create_woopayments_order() );
 
-		$this->persist_order_state_as_another_request( $stale_order->get_id(), 'on-hold', array( '_wcpay_open_dispute_ids' => array( 'dp_other_request' ) ) );
+		UncachedOrderWriter::write( $stale_order->get_id(), array( 'status' => 'on-hold' ), array( '_wcpay_open_dispute_ids' => maybe_serialize( array( 'dp_other_request' ) ) ) );
 
 		$this->sut->apply( $stale_order, $this->completed_event( 'pi_other_request' ), $this->persistence_vocabulary );
 
@@ -338,10 +337,10 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 	 * @testdox A late failure event sees a paid status that another request persisted after this request cached the order.
 	 */
 	public function test_late_failure_sees_a_paid_status_persisted_by_another_request_after_the_order_was_cached(): void {
-		$this->enable_hpos_data_caching_when_hpos_is_active();
+		UncachedOrderWriter::enable_hpos_data_caching();
 		$stale_order = $this->read_order_into_request_caches( $this->create_woopayments_order() );
 
-		$this->persist_order_state_as_another_request( $stale_order->get_id(), 'processing', array() );
+		UncachedOrderWriter::write( $stale_order->get_id(), array( 'status' => 'processing' ) );
 
 		$this->sut->apply(
 			$stale_order,
@@ -1315,15 +1314,6 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Turn on the HPOS order data cache when orders live in the HPOS tables, so stale reads can come from it.
-	 */
-	private function enable_hpos_data_caching_when_hpos_is_active(): void {
-		if ( OrderUtil::custom_orders_table_usage_is_enabled() ) {
-			update_option( CustomOrdersTableController::HPOS_DATASTORE_CACHING_ENABLED_OPTION, 'yes' );
-		}
-	}
-
-	/**
 	 * Read an order through its data store, so this request caches its row and meta.
 	 *
 	 * @param WC_Order $order Order object.
@@ -1345,45 +1335,6 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 		 */
 
 		return $cached_order;
-	}
-
-	/**
-	 * Write order status and meta straight to the database, as another request would, leaving this request's caches untouched.
-	 *
-	 * @param int                 $order_id Order ID.
-	 * @param string              $status   Order status without the wc- prefix.
-	 * @param array<string,mixed> $meta     Meta values to add.
-	 */
-	private function persist_order_state_as_another_request( int $order_id, string $status, array $meta ): void {
-		global $wpdb;
-
-		// phpcs:disable WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching,WordPress.DB.SlowDBQuery.slow_db_query_meta_key,WordPress.DB.SlowDBQuery.slow_db_query_meta_value -- Raw writes emulate another request without cache invalidation.
-		if ( OrderUtil::custom_orders_table_usage_is_enabled() ) {
-			$wpdb->update( OrdersTableDataStore::get_orders_table_name(), array( 'status' => 'wc-' . $status ), array( 'id' => $order_id ) );
-			foreach ( $meta as $key => $value ) {
-				$wpdb->insert(
-					OrdersTableDataStore::get_meta_table_name(),
-					array(
-						'order_id'   => $order_id,
-						'meta_key'   => $key,
-						'meta_value' => maybe_serialize( $value ),
-					)
-				);
-			}
-		} else {
-			$wpdb->update( $wpdb->posts, array( 'post_status' => 'wc-' . $status ), array( 'ID' => $order_id ) );
-			foreach ( $meta as $key => $value ) {
-				$wpdb->insert(
-					$wpdb->postmeta,
-					array(
-						'post_id'    => $order_id,
-						'meta_key'   => $key,
-						'meta_value' => maybe_serialize( $value ),
-					)
-				);
-			}
-		}
-		// phpcs:enable WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching,WordPress.DB.SlowDBQuery.slow_db_query_meta_key,WordPress.DB.SlowDBQuery.slow_db_query_meta_value
 	}
 
 	/**
