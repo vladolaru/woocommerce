@@ -210,6 +210,11 @@ const fireReadyWhenSubscribed = ( event, handler ) => {
 	}
 };
 
+// The payment setup posts the place-order Tracks event; a test that runs the setup answers that request.
+const answerTracksRequests = () => {
+	window.fetch = jest.fn().mockResolvedValue( { ok: true } );
+};
+
 describe( 'wc-payment-method-woopayments', () => {
 	// The Blocks payment store selectors the bundle reads (wc/store/payment getActivePaymentMethod, getPaymentMethodData).
 	let activePaymentMethod;
@@ -775,6 +780,11 @@ describe( 'wc-payment-method-woopayments', () => {
 	} );
 
 	it( 'renders the WooPay save-my-info section after the Blocks payment step', async () => {
+		// The checked section stores the opt-in and number when it mounts.
+		window.fetch = jest.fn().mockResolvedValue( {
+			ok: true,
+			json: jest.fn().mockResolvedValue( { success: true } ),
+		} );
 		document.body.innerHTML = `
 			<div class="wc-block-checkout">
 				<div class="wp-block-woocommerce-checkout-payment-block"></div>
@@ -2293,6 +2303,8 @@ describe( 'wc-payment-method-woopayments', () => {
 	} );
 
 	describe( 'Stripe.js loading', () => {
+		beforeEach( answerTracksRequests );
+
 		const renderCardWithPaymentSetup = () => {
 			let paymentSetup;
 			const registration = registerWooPayments();
@@ -3307,6 +3319,7 @@ describe( 'wc-payment-method-woopayments', () => {
 	} );
 
 	it( 'submits the tokenization failure so the server records the attempt', async () => {
+		answerTracksRequests();
 		const createPaymentMethod = jest.fn().mockResolvedValue( {
 			error: {
 				code: 'incomplete_number',
@@ -3370,6 +3383,7 @@ describe( 'wc-payment-method-woopayments', () => {
 	} );
 
 	it( 'returns a payment notice when Stripe does not provide a payment method', async () => {
+		answerTracksRequests();
 		window.Stripe = jest.fn( () => ( {
 			elements: jest.fn( () => ( {
 				create: jest.fn( () => ( {
