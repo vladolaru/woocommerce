@@ -56,14 +56,56 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Completed events mark the order paid and preserve payment meta.
+	 * @testdox A $event_status event moves the order to its status, writes its meta and note, and leaves no lock and no lock warning ($_dataName).
+	 * @dataProvider status_event_provider
+	 *
+	 * @param string               $event_status      Lifecycle event status.
+	 * @param string               $payment_reference Payment reference.
+	 * @param array<string,string> $meta_to_update    Meta the event writes.
+	 * @param string[]             $meta_to_delete    Meta keys the event deletes; the order carries them before the event.
+	 * @param string|null          $note              Lifecycle note, or null for none.
+	 * @param string               $expected_status   Order status after the event.
+	 * @param string               $expected_txn_id   Transaction ID after the event.
 	 */
-	public function test_completed_event_marks_order_paid_and_preserves_meta(): void {
+	public function test_event_moves_the_order_to_its_status_and_writes_its_meta( string $event_status, string $payment_reference, array $meta_to_update, array $meta_to_delete, ?string $note, string $expected_status, string $expected_txn_id ): void {
 		$order = $this->create_woopayments_order();
+		foreach ( $meta_to_delete as $key ) {
+			$order->update_meta_data( $key, 'stale ' . $key );
+		}
+		$order->save();
 
-		$this->apply_event(
-			$order,
-			new PaymentLifecycleEvent(
+		$this->apply_event( $order, new PaymentLifecycleEvent( $event_status, $payment_reference, $meta_to_update, $meta_to_delete, $note ) );
+
+		$order = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( $expected_status, $order->get_status() );
+		$this->assertSame( $expected_txn_id, $order->get_transaction_id() );
+		foreach ( $meta_to_update as $key => $value ) {
+			$this->assertSame( $value, $order->get_meta( $key, true ), "The event must write {$key}." );
+		}
+		foreach ( $meta_to_delete as $key ) {
+			$this->assertSame( '', $order->get_meta( $key, true ), "The event must delete {$key}." );
+		}
+		if ( null !== $note ) {
+			$this->assertOrderHasNote( $order, $note );
+		}
+		$this->assertFalse( $this->is_order_payment_lock_held_for( $order, $this->persistence_vocabulary, $payment_reference ), 'The event must release the order payment lock.' );
+		$warnings = array_filter(
+			$this->captured_logs,
+			static fn( $log ) => 'warning' === $log['level'] && str_contains( $log['message'], 'order payment lock refused' )
+		);
+		$this->assertCount( 0, $warnings, 'An event applied with an available lock must not log a lock-contention warning.' );
+	}
+
+	/**
+	 * Every lifecycle status, with the order state its event leaves.
+	 *
+	 * @return array<string,array{string,string,array<string,string>,string[],?string,string,string}>
+	 */
+	public static function status_event_provider(): array {
+		return array(
+			'completed'              => array(
 				PaymentLifecycleEvent::STATUS_COMPLETED,
 				'pi_123',
 				array(
@@ -72,19 +114,17 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 					'_intention_status' => 'succeeded',
 				),
 				array(),
-				'Payment complete.'
-			)
+				'Payment complete.',
+				'completed',
+				'pi_123',
+			),
+			'authorized'             => array( PaymentLifecycleEvent::STATUS_AUTHORIZED, 'pi_auth', array( '_intention_status' => 'requires_capture' ), array(), 'Payment authorized.', 'on-hold', 'pi_auth' ),
+			'failed'                 => array( PaymentLifecycleEvent::STATUS_FAILED, 'pi_failed', array( '_intention_status' => 'requires_payment_method' ), array(), 'Payment failed.', 'failed', '' ),
+			'canceled'               => array( PaymentLifecycleEvent::STATUS_CANCELED, 'pi_canceled', array( '_intention_status' => 'canceled' ), array( '_wcpay_transaction_fee', '_wcpay_net' ), 'Payment canceled.', 'cancelled', '' ),
+			'capture expired'        => array( PaymentLifecycleEvent::STATUS_CAPTURE_EXPIRED, 'ch_expired', array( '_charge_id' => 'ch_expired' ), array(), 'Payment authorization expired.', 'failed', '' ),
+			'started'                => array( PaymentLifecycleEvent::STATUS_STARTED, 'pi_started', array( '_intent_id' => 'pi_started' ), array(), 'Payment started.', 'pending', 'pi_started' ),
+			'started without a note' => array( PaymentLifecycleEvent::STATUS_STARTED, 'pi_started', array( '_intent_id' => 'pi_started' ), array(), null, 'pending', 'pi_started' ),
 		);
-
-		$order = wc_get_order( $order->get_id() );
-
-		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertSame( 'completed', $order->get_status() );
-		$this->assertSame( 'pi_123', $order->get_transaction_id() );
-		$this->assertSame( 'pi_123', $order->get_meta( '_intent_id', true ) );
-		$this->assertSame( 'ch_123', $order->get_meta( '_charge_id', true ) );
-		$this->assertSame( 'succeeded', $order->get_meta( '_intention_status', true ) );
-		$this->assertOrderHasNote( $order, 'Payment complete.' );
 	}
 
 	/**
@@ -530,113 +570,6 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Authorized events move the order on hold.
-	 */
-	public function test_authorized_event_moves_order_on_hold(): void {
-		$order = $this->create_woopayments_order();
-
-		$this->apply_event(
-			$order,
-			new PaymentLifecycleEvent(
-				PaymentLifecycleEvent::STATUS_AUTHORIZED,
-				'pi_auth',
-				array( '_intention_status' => 'requires_capture' ),
-				array(),
-				'Payment authorized.'
-			)
-		);
-
-		$order = wc_get_order( $order->get_id() );
-
-		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertSame( 'on-hold', $order->get_status() );
-		$this->assertSame( 'pi_auth', $order->get_transaction_id() );
-		$this->assertSame( 'requires_capture', $order->get_meta( '_intention_status', true ) );
-		$this->assertOrderHasNote( $order, 'Payment authorized.' );
-	}
-
-	/**
-	 * @testdox Failed events mark the order failed and unlock the order.
-	 */
-	public function test_failed_event_marks_order_failed_and_unlocks_order(): void {
-		$order = $this->create_woopayments_order();
-
-		$this->apply_event(
-			$order,
-			new PaymentLifecycleEvent(
-				PaymentLifecycleEvent::STATUS_FAILED,
-				'pi_failed',
-				array( '_intention_status' => 'requires_payment_method' ),
-				array(),
-				'Payment failed.'
-			)
-		);
-
-		$order = wc_get_order( $order->get_id() );
-
-		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertSame( 'failed', $order->get_status() );
-		$this->assertSame( 'requires_payment_method', $order->get_meta( '_intention_status', true ) );
-		$this->assertFalse( $this->is_order_payment_lock_held_for( $order, $this->persistence_vocabulary, 'pi_failed' ) );
-		$this->assertOrderHasNote( $order, 'Payment failed.' );
-	}
-
-	/**
-	 * @testdox Canceled events mark the order cancelled and delete stale fee meta.
-	 */
-	public function test_canceled_event_marks_order_cancelled_and_deletes_fee_meta(): void {
-		$order = $this->create_woopayments_order();
-		$order->update_meta_data( '_wcpay_transaction_fee', '123' );
-		$order->update_meta_data( '_wcpay_net', '900' );
-		$order->save();
-
-		$this->apply_event(
-			$order,
-			new PaymentLifecycleEvent(
-				PaymentLifecycleEvent::STATUS_CANCELED,
-				'pi_canceled',
-				array( '_intention_status' => 'canceled' ),
-				array( '_wcpay_transaction_fee', '_wcpay_net' ),
-				'Payment canceled.'
-			)
-		);
-
-		$order = wc_get_order( $order->get_id() );
-
-		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertSame( 'cancelled', $order->get_status() );
-		$this->assertSame( 'canceled', $order->get_meta( '_intention_status', true ) );
-		$this->assertSame( '', $order->get_meta( '_wcpay_transaction_fee', true ) );
-		$this->assertSame( '', $order->get_meta( '_wcpay_net', true ) );
-		$this->assertOrderHasNote( $order, 'Payment canceled.' );
-	}
-
-	/**
-	 * @testdox Capture-expired events mark the order failed.
-	 */
-	public function test_capture_expired_event_marks_order_failed(): void {
-		$order = $this->create_woopayments_order();
-
-		$this->apply_event(
-			$order,
-			new PaymentLifecycleEvent(
-				PaymentLifecycleEvent::STATUS_CAPTURE_EXPIRED,
-				'ch_expired',
-				array( '_charge_id' => 'ch_expired' ),
-				array(),
-				'Payment authorization expired.'
-			)
-		);
-
-		$order = wc_get_order( $order->get_id() );
-
-		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertSame( 'failed', $order->get_status() );
-		$this->assertSame( 'ch_expired', $order->get_meta( '_charge_id', true ) );
-		$this->assertOrderHasNote( $order, 'Payment authorization expired.' );
-	}
-
-	/**
 	 * @testdox Late failure events do not downgrade paid processing orders.
 	 * @dataProvider paid_order_late_failure_event_provider
 	 *
@@ -802,55 +735,6 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 			'capture expired' => array( PaymentLifecycleEvent::STATUS_CAPTURE_EXPIRED, true ),
 			'started'         => array( PaymentLifecycleEvent::STATUS_STARTED, false ),
 		);
-	}
-
-	/**
-	 * @testdox Started events add a note without changing order status.
-	 */
-	public function test_started_event_adds_note_without_status_change(): void {
-		$order = $this->create_woopayments_order();
-
-		$this->apply_event(
-			$order,
-			new PaymentLifecycleEvent(
-				PaymentLifecycleEvent::STATUS_STARTED,
-				'pi_started',
-				array( '_intent_id' => 'pi_started' ),
-				array(),
-				'Payment started.'
-			)
-		);
-
-		$order = wc_get_order( $order->get_id() );
-
-		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertSame( 'pending', $order->get_status() );
-		$this->assertSame( 'pi_started', $order->get_transaction_id() );
-		$this->assertSame( 'pi_started', $order->get_meta( '_intent_id', true ) );
-		$this->assertOrderHasNote( $order, 'Payment started.' );
-	}
-
-	/**
-	 * @testdox Started events without a note persist the payment reference and keep the order pending.
-	 */
-	public function test_started_event_without_note_persists_the_payment_reference(): void {
-		$order = $this->create_woopayments_order();
-
-		$this->apply_event(
-			$order,
-			new PaymentLifecycleEvent(
-				PaymentLifecycleEvent::STATUS_STARTED,
-				'pi_started',
-				array( '_intent_id' => 'pi_started' )
-			)
-		);
-
-		$order = wc_get_order( $order->get_id() );
-
-		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertSame( 'pending', $order->get_status() );
-		$this->assertSame( 'pi_started', $order->get_transaction_id() );
-		$this->assertSame( 'pi_started', $order->get_meta( '_intent_id', true ) );
 	}
 
 	/**
@@ -1178,30 +1062,6 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 		);
 
 		$this->clear_order_payment_lock( $order, $this->persistence_vocabulary );
-	}
-
-	/**
-	 * @testdox A lifecycle event applied with an available lock does not log a skip warning.
-	 */
-	public function test_applied_event_does_not_log_skip_warning(): void {
-		$order = $this->create_woopayments_order();
-
-		$this->apply_event(
-			$order,
-			new PaymentLifecycleEvent(
-				PaymentLifecycleEvent::STATUS_COMPLETED,
-				'pi_applied',
-				array( '_intent_id' => 'pi_applied' ),
-				array(),
-				'Payment complete.'
-			)
-		);
-
-		$warnings = array_filter(
-			$this->captured_logs,
-			static fn( $log ) => 'warning' === $log['level'] && str_contains( $log['message'], 'order payment lock refused' )
-		);
-		$this->assertCount( 0, $warnings, 'A successfully applied lifecycle event must not emit a lock-contention warning.' );
 	}
 
 	/**
