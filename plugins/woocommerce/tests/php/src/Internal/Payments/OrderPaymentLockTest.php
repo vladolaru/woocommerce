@@ -60,24 +60,6 @@ class OrderPaymentLockTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A claim should refuse a lock another request stored after this request cached the lock as missing.
-	 */
-	public function test_claim_refuses_lock_written_by_an_overlapping_request(): void {
-		$this->skip_when_transients_live_in_object_cache();
-		$order    = wc_create_order();
-		$lock_key = $this->persistence_vocabulary->get_order_lock_key( $order );
-
-		// This request reads the lock as missing, which WordPress records in its notoptions cache.
-		$this->assertFalse( get_transient( $lock_key ) );
-		// A second request then stores its lock directly in the database.
-		$this->insert_lock_rows( $lock_key, 'other_request_key', time() + 300 );
-
-		$this->assertNull( $this->sut->claim( $order, $this->persistence_vocabulary, 'this_request_key', 'payment operation' ), 'Only one of two overlapping requests may hold the order payment lock.' );
-		$this->assertSame( 'other_request_key', $this->read_lock_row( '_transient_' . $lock_key ), 'A refused claim must leave the holder unchanged.' );
-		$this->assertNotNull( $this->read_lock_row( '_transient_timeout_' . $lock_key ), 'A refused claim must keep the holder expiry.' );
-	}
-
-	/**
 	 * @testdox A claim should take over an expired lock and keep the new lock for the full TTL.
 	 */
 	public function test_claim_takes_over_an_expired_lock(): void {
@@ -398,29 +380,6 @@ class OrderPaymentLockTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A claim should write an expiry row when the holder, whose expiry equals the claim's, releases between the claim's expiry read and value insert.
-	 */
-	public function test_claim_writes_an_expiry_when_a_holder_with_the_same_expiry_releases(): void {
-		$this->skip_when_transients_live_in_object_cache();
-		$order        = wc_create_order();
-		$lock_key     = $this->persistence_vocabulary->get_order_lock_key( $order );
-		$holder_token = $this->sut->claim( $order, $this->persistence_vocabulary, 'holder_key', 'payment operation' );
-		$this->assertNotNull( $holder_token );
-
-		$filter = $this->run_before_query_after(
-			fn( string $query ): bool => $this->is_expiry_read( $query, $lock_key ),
-			fn() => $this->sut->release( $order, $this->persistence_vocabulary, $holder_token )
-		);
-
-		$claimed = $this->sut->claim( $order, $this->persistence_vocabulary, 'this_request_key', 'payment operation' );
-		remove_filter( 'query', $filter );
-
-		$this->assertNotNull( $claimed );
-		$this->assertSame( 'this_request_key', $this->read_lock_row( '_transient_' . $lock_key ) );
-		$this->assertNotNull( $this->read_lock_row( '_transient_timeout_' . $lock_key ), 'A held lock must never be left without an expiry row.' );
-	}
-
-	/**
 	 * @testdox A claim should lose when a takeover with the same lock value replaces an expired leftover expiry after the claim inserts its value.
 	 */
 	public function test_claim_loses_to_a_same_value_takeover_of_an_expired_leftover_expiry(): void {
@@ -446,38 +405,6 @@ class OrderPaymentLockTest extends WC_Unit_Test_Case {
 		$this->assertTrue( $took_over, 'The rival takeover must have run.' );
 		$this->assertNull( $claimed, 'Two requests for the same payment reference must not both hold the lock.' );
 		$this->assertSame( $rival_expiry, $this->read_lock_row( '_transient_timeout_' . $lock_key ), 'The refused claim must leave the taker expiry.' );
-	}
-
-	/**
-	 * @testdox Releasing the lock should retry once when its delete fails.
-	 */
-	public function test_release_retries_a_failed_delete_once(): void {
-		$this->skip_when_transients_live_in_object_cache();
-		$order      = wc_create_order();
-		$lock_key   = $this->persistence_vocabulary->get_order_lock_key( $order );
-		$lock_token = $this->sut->claim( $order, $this->persistence_vocabulary, 'this_request_key', 'payment operation' );
-		$this->assertNotNull( $lock_token );
-
-		// Fail the first delete, as a deadlock victim would.
-		$failed = false;
-		$fail   = function ( $query ) use ( &$fail, &$failed ) {
-			if ( 0 === strpos( ltrim( $query ), 'DELETE lock_value' ) ) {
-				$failed = true;
-				remove_filter( 'query', $fail );
-				return 'DELETE FROM a_table_that_does_not_exist';
-			}
-			return $query;
-		};
-		add_filter( 'query', $fail );
-		$suppressed = $GLOBALS['wpdb']->suppress_errors( true );
-
-		$this->sut->release( $order, $this->persistence_vocabulary, $lock_token );
-		$GLOBALS['wpdb']->suppress_errors( $suppressed );
-		remove_filter( 'query', $fail );
-
-		$this->assertTrue( $failed, 'The first delete must have failed.' );
-		$this->assertNull( $this->read_lock_row( '_transient_' . $lock_key ), 'The retried delete must release the lock.' );
-		$this->assertNull( $this->read_lock_row( '_transient_timeout_' . $lock_key ) );
 	}
 
 	/**

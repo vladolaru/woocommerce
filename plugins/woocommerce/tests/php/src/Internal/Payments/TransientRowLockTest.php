@@ -56,6 +56,7 @@ class TransientRowLockTest extends WC_Unit_Test_Case {
 
 		$this->assertFalse( $this->sut->claim( self::KEY, 'this_request', 300 ) );
 		$this->assertSame( 'other_request', $this->read_row( '_transient_' . self::KEY ), 'A refused claim must leave the holder unchanged.' );
+		$this->assertNotNull( $this->read_row( '_transient_timeout_' . self::KEY ), 'A refused claim must keep the holder expiry.' );
 	}
 
 	/**
