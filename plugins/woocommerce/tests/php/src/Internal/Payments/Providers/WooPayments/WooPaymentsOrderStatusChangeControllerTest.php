@@ -45,6 +45,7 @@ class WooPaymentsOrderStatusChangeControllerTest extends WC_Unit_Test_Case {
 
 		unset( $GLOBALS['theorder'] );
 		set_current_screen( 'front' );
+		$this->registered_entries = array();
 
 		parent::tearDown();
 	}
