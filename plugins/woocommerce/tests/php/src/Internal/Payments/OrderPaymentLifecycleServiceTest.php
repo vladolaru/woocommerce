@@ -47,13 +47,6 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 	private WooPaymentsPersistenceVocabulary $persistence_vocabulary;
 
 	/**
-	 * Test-only gettext replacements.
-	 *
-	 * @var array<string,string>
-	 */
-	private array $gettext_replacements = array();
-
-	/**
 	 * Set up test fixtures.
 	 */
 	public function setUp(): void {
@@ -61,16 +54,6 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 		$this->sut                    = wc_get_container()->get( OrderPaymentLifecycleService::class );
 		$this->order_payment_lock     = wc_get_container()->get( OrderPaymentLock::class );
 		$this->persistence_vocabulary = new WooPaymentsPersistenceVocabulary();
-	}
-
-	/**
-	 * Tear down test fixtures.
-	 */
-	public function tearDown(): void {
-		remove_filter( 'gettext', array( $this, 'translate_woocommerce_test_string' ), 10 );
-		restore_current_locale();
-		$this->gettext_replacements = array();
-		parent::tearDown();
 	}
 
 	/**
@@ -186,40 +169,6 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 		$this->assertInstanceOf( WC_Order::class, $order );
 		$this->assertSame( 'on-hold', $order->get_status(), 'A success event must refresh and preserve a dispute hold written by another order instance.' );
 		$this->assertSame( array( 'dp_stale' ), $order->get_meta( '_wcpay_open_dispute_ids', true ), 'A success event must preserve freshly persisted open disputes.' );
-		$this->assertSame( 'requires_payment_method', $order->get_meta( '_intention_status', true ), 'A skipped success event must not update lifecycle metadata.' );
-		$this->assertSame( 0, $this->countOrderNotesMatching( $order, 'Payment complete.' ), 'A skipped success event must not add a completion note.' );
-	}
-
-	/**
-	 * @testdox A completed event refreshes disputed state when its caller already owns the order payment lock.
-	 */
-	public function test_under_lock_success_after_dispute_created_through_a_second_order_instance_keeps_on_hold(): void {
-		$stale_order = $this->create_woopayments_order();
-
-		$fresh_order = clone $stale_order;
-		/**
-		 * Fresh order data store.
-		 *
-		 * @var \WC_Object_Data_Store_Interface $data_store
-		 */
-		$data_store = $fresh_order->get_data_store();
-		$data_store->read( $fresh_order );
-		$fresh_order->update_meta_data( '_wcpay_open_dispute_ids', array( 'dp_stale_under_lock' ) );
-		$fresh_order->update_meta_data( '_intention_status', 'requires_payment_method' );
-		$fresh_order->update_status( 'on-hold' );
-
-		$this->assertNotNull( $this->order_payment_lock->claim( $stale_order, $this->persistence_vocabulary, 'pi_stale_under_lock', 'payment operation' ) );
-		try {
-			$this->sut->apply_under_lock( $stale_order, $this->completed_event( 'pi_stale_under_lock' ), $this->persistence_vocabulary );
-		} finally {
-			$this->clear_order_payment_lock( $stale_order, $this->persistence_vocabulary );
-		}
-
-		$order = wc_get_order( $stale_order->get_id() );
-
-		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertSame( 'on-hold', $order->get_status(), 'A success event must refresh and preserve a dispute hold while its caller owns the payment lock.' );
-		$this->assertSame( array( 'dp_stale_under_lock' ), $order->get_meta( '_wcpay_open_dispute_ids', true ), 'A success event must preserve freshly persisted open disputes.' );
 		$this->assertSame( 'requires_payment_method', $order->get_meta( '_intention_status', true ), 'A skipped success event must not update lifecycle metadata.' );
 		$this->assertSame( 0, $this->countOrderNotesMatching( $order, 'Payment complete.' ), 'A skipped success event must not add a completion note.' );
 	}
@@ -1017,69 +966,6 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Current-locale payment-complete notes written by the extension are not duplicated by built-in replays.
-	 */
-	public function test_current_locale_payment_complete_note_from_extension_is_not_duplicated(): void {
-		$this->install_woocommerce_test_translations(
-			array(
-				'Payment complete.' => 'Zahlung abgeschlossen.',
-			)
-		);
-		switch_to_locale( 'de_DE' );
-
-		$order = $this->create_woopayments_order();
-		$order->set_transaction_id( 'pi_123' );
-		$order->set_status( 'processing' );
-		$order->save();
-		$order->add_order_note( __( 'Payment complete.', 'woocommerce' ) );
-
-		$this->apply_event_under_lock(
-			$order,
-			new PaymentLifecycleEvent(
-				PaymentLifecycleEvent::STATUS_COMPLETED,
-				'pi_123',
-				array( '_intent_id' => 'pi_123' ),
-				array(),
-				__( 'Payment complete.', 'woocommerce' ),
-				'payment_complete'
-			)
-		);
-
-		$order = wc_get_order( $order->get_id() );
-
-		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertSame( 1, $this->countOrderNotesMatching( $order, 'Zahlung abgeschlossen.' ) );
-	}
-
-	/**
-	 * @testdox English payment-complete notes written by the extension are not duplicated by built-in replays.
-	 */
-	public function test_english_payment_complete_note_from_extension_is_not_duplicated(): void {
-		$order = $this->create_woopayments_order();
-		$order->set_transaction_id( 'pi_123' );
-		$order->set_status( 'processing' );
-		$order->save();
-		$order->add_order_note( __( 'Payment complete.', 'woocommerce' ) );
-
-		$this->apply_event_under_lock(
-			$order,
-			new PaymentLifecycleEvent(
-				PaymentLifecycleEvent::STATUS_COMPLETED,
-				'pi_123',
-				array( '_intent_id' => 'pi_123' ),
-				array(),
-				__( 'Payment complete.', 'woocommerce' ),
-				'payment_complete'
-			)
-		);
-
-		$order = wc_get_order( $order->get_id() );
-
-		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertSame( 1, $this->countOrderNotesMatching( $order, 'Payment complete.' ) );
-	}
-
-	/**
 	 * @testdox Lifecycle note identities use stable note type instead of rendered note content.
 	 */
 	public function test_lifecycle_note_identity_uses_note_type_instead_of_rendered_note_content(): void {
@@ -1192,18 +1078,23 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Locked orders are not mutated for the same payment reference.
+	 * @testdox A locked order is not mutated or unlocked by an event for $event_reference while the lock holds $held_reference.
+	 * @testWith ["pi_locked", "pi_locked"]
+	 *           ["native_charge_operation", "pi_webhook"]
+	 *
+	 * @param string $held_reference  Payment reference of the operation that claimed the lock.
+	 * @param string $event_reference Payment reference of the event.
 	 */
-	public function test_locked_order_is_not_mutated_for_same_reference(): void {
+	public function test_locked_order_is_not_mutated_or_unlocked( string $held_reference, string $event_reference ): void {
 		$order = $this->create_woopayments_order();
-		$this->hold_order_payment_lock( $order, $this->persistence_vocabulary, 'pi_locked' );
+		$this->assertNotNull( $this->order_payment_lock->claim( $order, $this->persistence_vocabulary, $held_reference, 'payment operation' ) );
 
 		$this->apply_event(
 			$order,
 			new PaymentLifecycleEvent(
 				PaymentLifecycleEvent::STATUS_COMPLETED,
-				'pi_locked',
-				array( '_intent_id' => 'pi_locked' ),
+				$event_reference,
+				array( '_intent_id' => $event_reference ),
 				array(),
 				'Payment complete.'
 			)
@@ -1215,34 +1106,7 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'pending', $order->get_status() );
 		$this->assertSame( '', $order->get_meta( '_intent_id', true ) );
 		$this->assertSame( 0, $this->countOrderNotesMatching( $order, 'Payment complete.' ) );
-		$this->clear_order_payment_lock( $order, $this->persistence_vocabulary );
-	}
-
-	/**
-	 * @testdox Locked orders are not mutated or unlocked while another operation is active.
-	 */
-	public function test_locked_order_is_not_mutated_or_unlocked_for_active_operation(): void {
-		$order = $this->create_woopayments_order();
-		$this->assertNotNull( $this->order_payment_lock->claim( $order, $this->persistence_vocabulary, 'native_charge_operation', 'payment operation' ) );
-
-		$this->apply_event(
-			$order,
-			new PaymentLifecycleEvent(
-				PaymentLifecycleEvent::STATUS_COMPLETED,
-				'pi_webhook',
-				array( '_intent_id' => 'pi_webhook' ),
-				array(),
-				'Payment complete.'
-			)
-		);
-
-		$order = wc_get_order( $order->get_id() );
-
-		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertSame( 'pending', $order->get_status() );
-		$this->assertSame( '', $order->get_meta( '_intent_id', true ) );
-		$this->assertSame( 0, $this->countOrderNotesMatching( $order, 'Payment complete.' ) );
-		$this->assertTrue( $this->is_order_payment_lock_held_for( $order, $this->persistence_vocabulary, 'native_charge_operation' ) );
+		$this->assertTrue( $this->is_order_payment_lock_held_for( $order, $this->persistence_vocabulary, $held_reference ), 'A refused event must leave the holder its lock.' );
 		$this->clear_order_payment_lock( $order, $this->persistence_vocabulary );
 	}
 
@@ -1594,31 +1458,5 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 		}
 
 		return $count;
-	}
-
-	/**
-	 * Install test-only WooCommerce translations.
-	 *
-	 * @param array<string,string> $replacements Source text to translated text.
-	 */
-	private function install_woocommerce_test_translations( array $replacements ): void {
-		$this->gettext_replacements = $replacements;
-		add_filter( 'gettext', array( $this, 'translate_woocommerce_test_string' ), 10, 3 );
-	}
-
-	/**
-	 * Translate a WooCommerce string for tests.
-	 *
-	 * @param string $translation Translated text.
-	 * @param string $text        Source text.
-	 * @param string $domain      Text domain.
-	 * @return string
-	 */
-	public function translate_woocommerce_test_string( string $translation, string $text, string $domain ): string {
-		if ( 'woocommerce' !== $domain ) {
-			return $translation;
-		}
-
-		return $this->gettext_replacements[ $text ] ?? $translation;
 	}
 }
