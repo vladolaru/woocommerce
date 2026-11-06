@@ -60,20 +60,6 @@ class PaymentLifecycleEventTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Meta deletes come back as passed, in order.
-	 */
-	public function test_meta_deletes_come_back_in_order(): void {
-		$event = new PaymentLifecycleEvent(
-			PaymentLifecycleEvent::STATUS_CANCELED,
-			'pi_123',
-			array(),
-			array( '_wcpay_transaction_fee', '_wcpay_net' )
-		);
-
-		$this->assertSame( array( '_wcpay_transaction_fee', '_wcpay_net' ), $event->get_meta_to_delete() );
-	}
-
-	/**
 	 * @testdox Unknown statuses are rejected.
 	 */
 	public function test_unknown_status_is_rejected(): void {

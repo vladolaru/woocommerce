@@ -5,6 +5,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments;
 
 use Automattic\WooCommerce\Internal\Payments\PaymentOperationContext;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
+use WC_Order;
 use WC_Unit_Test_Case;
 
 /**
@@ -13,100 +14,68 @@ use WC_Unit_Test_Case;
 class PaymentOperationContextTest extends WC_Unit_Test_Case {
 
 	/**
-	 * @testdox PaymentOperationContext exposes order, gateway, payment, and provider payload data.
+	 * @testdox Each factory maps its arguments to the order, gateway, method, amount, payment and provider data ($_dataName).
+	 *
+	 * @dataProvider factory_cases
+	 *
+	 * @param callable             $create            Builds the context for the order.
+	 * @param string               $payment_method_id Expected payment method ID.
+	 * @param float|null           $amount            Expected amount.
+	 * @param array<string, mixed> $payment_data      Expected payment data.
+	 * @param array<string, mixed> $provider_data     Expected provider data.
 	 */
-	public function test_exposes_payment_operation_context_data(): void {
+	public function test_each_factory_maps_its_arguments( callable $create, string $payment_method_id, ?float $amount, array $payment_data, array $provider_data ): void {
 		$order = wc_create_order();
 
-		$context = new PaymentOperationContext(
-			$order,
-			WooPaymentsPersistenceVocabulary::GATEWAY_ID,
-			'card',
-			array(
-				'capture' => true,
-			),
-			array(
-				'stripe_customer_id' => 'cus_123',
-			)
-		);
+		$context = $create( $order );
 
 		$this->assertSame( $order, $context->get_order() );
 		$this->assertSame( $order->get_id(), $context->get_order_id() );
 		$this->assertSame( WooPaymentsPersistenceVocabulary::GATEWAY_ID, $context->get_gateway_id() );
-		$this->assertSame( 'card', $context->get_payment_method_id() );
-		$this->assertNull( $context->get_amount() );
-		$this->assertSame( array( 'capture' => true ), $context->get_payment_data() );
-		$this->assertSame( array( 'stripe_customer_id' => 'cus_123' ), $context->get_provider_data() );
+		$this->assertSame( $payment_method_id, $context->get_payment_method_id() );
+		$this->assertSame( $amount, $context->get_amount() );
+		$this->assertSame( $payment_data, $context->get_payment_data() );
+		$this->assertSame( $provider_data, $context->get_provider_data() );
 	}
 
 	/**
-	 * @testdox Checkout factory should preserve payment and provider data.
+	 * Each factory, with the values its context must expose.
+	 *
+	 * @return array<string, array<mixed>>
 	 */
-	public function test_checkout_factory_preserves_payment_and_provider_data(): void {
-		$order = wc_create_order();
-
-		$context = PaymentOperationContext::for_checkout(
-			$order,
-			WooPaymentsPersistenceVocabulary::GATEWAY_ID,
-			'pm_123',
-			array(
-				'save_payment_method' => true,
+	public function factory_cases(): array {
+		return array(
+			'checkout' => array(
+				static fn( WC_Order $order ) => PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_123', array( 'save_payment_method' => true ), array( 'confirmation_token' => 'ctoken_123' ) ),
+				'pm_123',
+				null,
+				array( 'save_payment_method' => true ),
+				array( 'confirmation_token' => 'ctoken_123' ),
 			),
-			array(
-				'confirmation_token' => 'ctoken_123',
-			)
-		);
-
-		$this->assertSame( $order, $context->get_order() );
-		$this->assertSame( WooPaymentsPersistenceVocabulary::GATEWAY_ID, $context->get_gateway_id() );
-		$this->assertSame( 'pm_123', $context->get_payment_method_id() );
-		$this->assertSame( array( 'save_payment_method' => true ), $context->get_payment_data() );
-		$this->assertSame( array( 'confirmation_token' => 'ctoken_123' ), $context->get_provider_data() );
-	}
-
-	/**
-	 * @testdox Refund factory should expose amount and reason as generic payment data.
-	 */
-	public function test_refund_factory_exposes_amount_and_reason(): void {
-		$order = wc_create_order();
-
-		$context = PaymentOperationContext::for_refund( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 7.25, 'Requested by customer' );
-
-		$this->assertSame(
-			array(
-				'amount' => 7.25,
-				'reason' => 'Requested by customer',
+			'refund'   => array(
+				static fn( WC_Order $order ) => PaymentOperationContext::for_refund( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 7.25, 'Requested by customer' ),
+				'',
+				7.25,
+				array(
+					'amount' => 7.25,
+					'reason' => 'Requested by customer',
+				),
+				array(),
 			),
-			$context->get_payment_data()
+			'capture'  => array(
+				static fn( WC_Order $order ) => PaymentOperationContext::for_capture( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 4.25, array( 'include_level3' => true ) ),
+				'',
+				4.25,
+				array(),
+				array( 'include_level3' => true ),
+			),
+			'cancel'   => array(
+				static fn( WC_Order $order ) => PaymentOperationContext::for_cancel( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, array( 'source' => 'order_action' ) ),
+				'',
+				null,
+				array(),
+				array( 'source' => 'order_action' ),
+			),
 		);
-		$this->assertSame( 7.25, $context->get_amount() );
-	}
-
-	/**
-	 * @testdox Capture and cancel factories should expose their amount and provider data.
-	 */
-	public function test_capture_and_cancel_factories_expose_provider_data(): void {
-		$order = wc_create_order();
-
-		$capture = PaymentOperationContext::for_capture(
-			$order,
-			WooPaymentsPersistenceVocabulary::GATEWAY_ID,
-			4.25,
-			array(
-				'include_level3' => true,
-			)
-		);
-		$cancel  = PaymentOperationContext::for_cancel(
-			$order,
-			WooPaymentsPersistenceVocabulary::GATEWAY_ID,
-			array(
-				'source' => 'order_action',
-			)
-		);
-
-		$this->assertSame( 4.25, $capture->get_amount() );
-		$this->assertSame( array( 'include_level3' => true ), $capture->get_provider_data() );
-		$this->assertNull( $cancel->get_amount() );
-		$this->assertSame( array( 'source' => 'order_action' ), $cancel->get_provider_data() );
 	}
 }

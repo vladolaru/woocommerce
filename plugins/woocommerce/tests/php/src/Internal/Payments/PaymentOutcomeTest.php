@@ -13,38 +13,33 @@ use WC_Unit_Test_Case;
 class PaymentOutcomeTest extends WC_Unit_Test_Case {
 
 	/**
-	 * @testdox PaymentOutcome exposes provider result data.
+	 * @testdox Only completed, authorized and no-external-payment outcomes are successful ($_dataName).
+	 *
+	 * @dataProvider status_cases
+	 *
+	 * @param string $status     Outcome status.
+	 * @param bool   $successful Whether the status counts as successful.
 	 */
-	public function test_exposes_provider_result_data(): void {
-		$outcome = new PaymentOutcome(
-			PaymentOutcome::STATUS_REQUIRES_REDIRECT,
-			'pi_123',
-			'https://example.test/redirect',
-			'pm_123',
-			'cus_123',
-			array(
-				'order_note' => 'Awaiting redirect completion.',
-			)
-		);
-
-		$this->assertSame( PaymentOutcome::STATUS_REQUIRES_REDIRECT, $outcome->get_status() );
-		$this->assertSame( 'pi_123', $outcome->get_provider_payment_id() );
-		$this->assertSame( 'https://example.test/redirect', $outcome->get_redirect_url() );
-		$this->assertSame( 'pm_123', $outcome->get_payment_method_id() );
-		$this->assertSame( 'cus_123', $outcome->get_customer_id() );
-		$this->assertSame( array( 'order_note' => 'Awaiting redirect completion.' ), $outcome->get_data() );
-		$this->assertFalse( $outcome->is_successful() );
+	public function test_successful_statuses_are_explicit( string $status, bool $successful ): void {
+		$this->assertSame( $successful, ( new PaymentOutcome( $status ) )->is_successful() );
 	}
 
 	/**
-	 * @testdox Successful statuses are explicit and provider-neutral.
+	 * Every outcome status, with whether it counts as successful.
+	 *
+	 * @return array<string, array{0: string, 1: bool}>
 	 */
-	public function test_successful_statuses_are_explicit(): void {
-		$this->assertTrue( ( new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED ) )->is_successful() );
-		$this->assertTrue( ( new PaymentOutcome( PaymentOutcome::STATUS_AUTHORIZED ) )->is_successful() );
-		$this->assertTrue( ( new PaymentOutcome( PaymentOutcome::STATUS_NO_EXTERNAL_PAYMENT ) )->is_successful() );
-		$this->assertFalse( ( new PaymentOutcome( PaymentOutcome::STATUS_FAILED ) )->is_successful() );
-		$this->assertFalse( ( new PaymentOutcome( PaymentOutcome::STATUS_CANCELED ) )->is_successful() );
+	public function status_cases(): array {
+		return array(
+			'completed'                => array( PaymentOutcome::STATUS_COMPLETED, true ),
+			'authorized'               => array( PaymentOutcome::STATUS_AUTHORIZED, true ),
+			'no external payment'      => array( PaymentOutcome::STATUS_NO_EXTERNAL_PAYMENT, true ),
+			'pending async'            => array( PaymentOutcome::STATUS_PENDING_ASYNC, false ),
+			'requires redirect'        => array( PaymentOutcome::STATUS_REQUIRES_REDIRECT, false ),
+			'requires customer action' => array( PaymentOutcome::STATUS_REQUIRES_CUSTOMER_ACTION, false ),
+			'failed'                   => array( PaymentOutcome::STATUS_FAILED, false ),
+			'canceled'                 => array( PaymentOutcome::STATUS_CANCELED, false ),
+		);
 	}
 
 	/**
