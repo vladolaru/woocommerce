@@ -74,13 +74,26 @@ prefixPaths() {
 }
 
 # Narrows chunkFiles to the files that chunk $1's readable report names, in either form
-# (see the checkstyle render below). Keeps the whole chunk when the report names no file,
-# or a file the chunk wasn't given.
+# (see the checkstyle render below), but only when the chunk exited 1 (its status is written
+# after the whole report) and every name maps to exactly one chunk file and back. Otherwise
+# the whole chunk is kept. So is a chunk with whitespace in any path: phpcs-changed cuts a
+# modified file's name at the first whitespace, and the names are read line by line.
 selectReported() {
-    local file names reported=()
+    local file name names used=$'\n' reported=()
+    [[ $(cat "$chunkDir/$1.status" 2>/dev/null) == 1 ]] || return
     names=$'\n'$(sed -n 's/^FILE: //p' "$chunkDir/$1.txt")$'\n'
     for file in "${chunkFiles[@]}"; do
-        [[ $names == *$'\n'"$file"$'\n'* || $names == *$'\n'"$prefix$file"$'\n'* ]] && reported+=("$file")
+        [[ $file == *[[:space:]]* ]] && return
+        name=
+        [[ $names == *$'\n'"$file"$'\n'* ]] && name=$file
+        if [[ -n $prefix && $names == *$'\n'"$prefix$file"$'\n'* ]]; then
+            [[ -n $name ]] && return
+            name=$prefix$file
+        fi
+        [[ -n $name ]] || continue
+        [[ $used == *$'\n'"$name"$'\n'* ]] && return
+        used+=$name$'\n'
+        reported+=("$file")
     done
     [[ ${#reported[@]} -gt 0 && ${#reported[@]} -eq $(grep -c '^FILE: ' "$chunkDir/$1.txt") ]] &&
         chunkFiles=("${reported[@]}")
