@@ -7,6 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
+use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
@@ -114,7 +115,7 @@ class WooPaymentsCustomerService implements RegisterHooksInterface {
 	public function handle_woocommerce_created_customer( $user_id ): void {
 		// Not processing a checkout, bail.
 		if (
-			! ( defined( 'WOOCOMMERCE_CHECKOUT' ) && WOOCOMMERCE_CHECKOUT )
+			! Constants::is_true( 'WOOCOMMERCE_CHECKOUT' )
 			&& ! ( function_exists( 'wcs_is_checkout_blocks_api_request' ) && wcs_is_checkout_blocks_api_request( 'v1/checkout' ) )
 		) {
 			return;

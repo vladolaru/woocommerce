@@ -7,6 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
+use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Enums\OrderStatus;
 use Automattic\WooCommerce\Enums\PaymentGatewayFeature;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
@@ -320,7 +321,7 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 	public static function handle_set_logged_in_cookie( $cookie ): void {
 		// Always defined at runtime (wp_cookie_constants() runs before plugins load); kept because PHPStan does not know the
 		// constant, as core's Store API does (StoreApi/Authentication.php).
-		if ( defined( 'LOGGED_IN_COOKIE' ) && defined( 'WOOCOMMERCE_CHECKOUT' ) && WOOCOMMERCE_CHECKOUT && did_action( 'woocommerce_created_customer' ) > 0 ) {
+		if ( defined( 'LOGGED_IN_COOKIE' ) && Constants::is_true( 'WOOCOMMERCE_CHECKOUT' ) && did_action( 'woocommerce_created_customer' ) > 0 ) {
 			$_COOKIE[ LOGGED_IN_COOKIE ] = $cookie;
 		}
 	}
