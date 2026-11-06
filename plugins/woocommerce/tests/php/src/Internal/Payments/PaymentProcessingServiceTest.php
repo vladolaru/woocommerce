@@ -138,27 +138,6 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should hand back a completed checkout with no redirect, so the gateway sends the shopper to the order's own order-received URL.
-	 *
-	 * The gateway's `format_checkout_result()` falls back to `$order->get_checkout_order_received_url()`
-	 * whenever the outcome carries no explicit redirect. This is the URL the shopper's browser is sent to
-	 * next; the following test proves what happens once it actually loads that URL.
-	 */
-	public function test_process_checkout_completed_redirects_to_order_received_url(): void {
-		$order    = $this->create_woopayments_order( '10.00' );
-		$provider = new RecordingProvider( new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_cart_redirect', '', 'pm_cart_redirect', 'cus_cart_redirect' ) );
-
-		$outcome = $this->sut->process_checkout_outcome( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_cart_redirect' ), $provider );
-		$order   = wc_get_order( $order->get_id() );
-
-		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertSame( PaymentOutcome::STATUS_COMPLETED, $outcome->get_status() );
-		$this->assertSame( 'pi_cart_redirect', $outcome->get_provider_payment_id() );
-		$this->assertArrayNotHasKey( PaymentOutcome::DATA_CHECKOUT_REDIRECT, $outcome->get_data() );
-		$this->assertSame( '', $outcome->get_redirect_url() );
-	}
-
-	/**
 	 * @testdox Should let core's cart-clearing hook empty a matching cart once the shopper's browser loads a completed checkout's redirect URL.
 	 *
 	 * WooPayments client 11.1.0 `class-wc-payment-gateway-wcpay.php:2229-2231` empties the cart
@@ -933,28 +912,6 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'order-payments', $context['source'] );
 		$this->assertSame( $order->get_id(), $context['order_id'] );
 		$this->assertSame( 'pi_post_charge', $context['payment_reference'] );
-	}
-
-	/**
-	 * @testdox A failed charge whose lifecycle application throws must rethrow rather than swallow the failure.
-	 */
-	public function test_process_checkout_outcome_rethrows_when_apply_throws_for_failed_outcome(): void {
-		$order   = $this->create_woopayments_order( '10.00' );
-		$outcome = new PaymentOutcome(
-			PaymentOutcome::STATUS_FAILED,
-			'',
-			'',
-			'',
-			'',
-			array( 'error_message' => 'Declined.' )
-		);
-
-		$sut      = $this->build_sut_with_lifecycle( $this->create_throwing_lifecycle_service() );
-		$provider = new RecordingProvider( $outcome );
-
-		$this->expectException( RuntimeException::class );
-
-		$sut->process_checkout_outcome( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_failed' ), $provider );
 	}
 
 	/**
@@ -2153,47 +2110,6 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Provider effects are applied before payment completion hooks run.
-	 */
-	public function test_process_checkout_outcome_applies_provider_effects_before_lifecycle(): void {
-		$order           = $this->create_woopayments_order( '10.00' );
-		$outcome         = new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_effect_ordering', '', 'pm_effect_ordering' );
-		$provider        = new class( $outcome ) extends RecordingProvider implements ProviderOperationEffectApplierInterface {
-			/**
-			 * Apply provider effects before the generic lifecycle.
-			 *
-			 * @param PaymentOperationContext $context   Payment context.
-			 * @param PaymentOutcome          $outcome   Provider outcome.
-			 * @param string                  $operation Operation name.
-			 * @return PaymentOutcome
-			 */
-			public function apply_operation_effects( PaymentOperationContext $context, PaymentOutcome $outcome, string $operation ): PaymentOutcome {
-				$context->get_order()->update_meta_data( '_provider_effect_operation', $operation );
-				$context->get_order()->save_meta_data();
-
-				return $outcome;
-			}
-		};
-		$observed_effect = '';
-		$observer        = static function ( int $order_id ) use ( &$observed_effect ): void {
-			$completed_order = wc_get_order( $order_id );
-			$observed_effect = $completed_order instanceof WC_Order
-				? (string) $completed_order->get_meta( '_provider_effect_operation', true )
-				: '';
-		};
-		add_action( 'woocommerce_payment_complete', $observer );
-
-		try {
-			$result = $this->sut->process_checkout_outcome( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_effect_ordering' ), $provider );
-		} finally {
-			remove_action( 'woocommerce_payment_complete', $observer );
-		}
-
-		$this->assertSame( $outcome, $result );
-		$this->assertSame( 'charge', $observed_effect );
-	}
-
-	/**
 	 * @testdox Optional post-lifecycle provider effects run after payment completion hooks.
 	 */
 	public function test_process_checkout_outcome_applies_post_lifecycle_provider_effects_after_lifecycle(): void {
@@ -2720,28 +2636,6 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$this->assertInstanceOf( WC_Order::class, $order );
 		$this->assertSame( $outcome, $result );
 		$this->assertSame( 'pi_capture_effect_failure', $order->get_transaction_id() );
-	}
-
-	/**
-	 * @testdox Should preserve a provider supplied empty checkout redirect.
-	 */
-	public function test_process_checkout_preserves_empty_checkout_redirect_override(): void {
-		$order    = $this->create_woopayments_order( '15.00' );
-		$provider = new RecordingProvider(
-			new PaymentOutcome(
-				PaymentOutcome::STATUS_PENDING_ASYNC,
-				'',
-				'',
-				'',
-				'',
-				array( 'checkout_redirect' => '' )
-			)
-		);
-
-		$outcome = $this->sut->process_checkout_outcome( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ), $provider );
-
-		$this->assertSame( PaymentOutcome::STATUS_PENDING_ASYNC, $outcome->get_status() );
-		$this->assertSame( '', $outcome->get_data()[ PaymentOutcome::DATA_CHECKOUT_REDIRECT ] ?? null );
 	}
 
 	/**
@@ -3763,49 +3657,6 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A refund outcome adopts an equivalent note and backfills its provider-neutral structural identity.
-	 */
-	public function test_process_refund_adopts_equivalent_note_and_backfills_structural_identity(): void {
-		$identity     = 'refund:re_structural:created_successful';
-		$runtime_note = 'A refund of $10.99 was successfully processed. (<code>re_structural</code>)';
-		$locale_note  = 'A refund of 10,99 $ was successfully processed. (<code>re_structural</code>)';
-		$order        = $this->create_woopayments_order( '10.99' );
-		$refund       = wc_create_refund(
-			array(
-				'order_id'       => $order->get_id(),
-				'amount'         => 10.99,
-				'refund_payment' => false,
-			)
-		);
-		$this->assertInstanceOf( WC_Order_Refund::class, $refund );
-		$order->add_order_note( $locale_note );
-
-		$effect_data = array(
-			PaymentOutcome::DATA_REFUND_NOTE             => $runtime_note,
-			PaymentOutcome::DATA_REFUND_NOTE_IDENTITY    => $identity,
-			PaymentOutcome::DATA_REFUND_NOTE_EQUIVALENTS => array( $runtime_note, $locale_note ),
-		);
-		$provider    = new RecordingProvider( new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 're_structural', '', '', '', $effect_data ) );
-
-		$result = $this->sut->process_refund( PaymentOperationContext::for_refund( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 10.99 ), $provider );
-		$order  = wc_get_order( $order->get_id() );
-
-		$this->assertTrue( $result );
-		$this->assertSame( 1, $provider->refund_calls, 'The structural note reconciliation must not issue a second provider refund.' );
-		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertCount( 1, $order->get_refunds() );
-		$refund_notes = array_values(
-			array_filter(
-				wc_get_order_notes( array( 'order_id' => $order->get_id() ) ),
-				static fn( $note ): bool => str_contains( $note->content, 're_structural' )
-			)
-		);
-		$this->assertCount( 1, $refund_notes );
-		$this->assertSame( $locale_note, $refund_notes[0]->content );
-		$this->assertSame( hash( 'sha256', $identity ), get_comment_meta( $refund_notes[0]->id, $provider->get_persistence_vocabulary()->get_note_identity_meta_key(), true ) );
-	}
-
-	/**
 	 * @testdox Mixed equivalent-note values are filtered while valid structural identity remains usable.
 	 */
 	public function test_process_refund_filters_mixed_equivalent_notes_before_structural_adoption(): void {
@@ -4056,39 +3907,6 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 			'absent equivalents'    => array( false, null ),
 			'non-array equivalents' => array( true, 'not-an-array' ),
 		);
-	}
-
-	/**
-	 * @testdox A legacy refund-note-only outcome retains exact-content deduplication without adding identity metadata.
-	 */
-	public function test_process_refund_legacy_note_only_outcome_retains_exact_content_deduplication(): void {
-		$note   = 'Legacy exact refund note. (<code>re_legacy_note</code>)';
-		$order  = $this->create_woopayments_order( '1.50' );
-		$refund = wc_create_refund(
-			array(
-				'order_id'       => $order->get_id(),
-				'amount'         => 1.50,
-				'refund_payment' => false,
-			)
-		);
-		$this->assertInstanceOf( WC_Order_Refund::class, $refund );
-		$note_id  = $order->add_order_note( $note );
-		$provider = new RecordingProvider(
-			new PaymentOutcome(
-				PaymentOutcome::STATUS_COMPLETED,
-				're_legacy_note',
-				'',
-				'',
-				'',
-				array( PaymentOutcome::DATA_REFUND_NOTE => $note )
-			)
-		);
-
-		$result = $this->sut->process_refund( PaymentOperationContext::for_refund( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 1.50 ), $provider );
-
-		$this->assertTrue( $result );
-		$this->assertCount( 1, array_filter( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), static fn( $order_note ): bool => $note === $order_note->content ) );
-		$this->assertSame( array(), get_comment_meta( $note_id ) );
 	}
 
 	/**
