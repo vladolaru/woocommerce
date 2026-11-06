@@ -153,7 +153,7 @@ class Eligibility {
 		if (
 			! $this->is_woopay_country_available() ||
 			! $this->is_woopay_express_checkout_configured_at( $context ) ||
-			( 'cart' === $context && ( is_checkout() || has_block( 'woocommerce/checkout' ) ) && ! $this->is_woopay_express_checkout_configured_at( 'checkout' ) )
+			( 'cart' === $context && $this->get_page_surface()->is_checkout_surface() && ! $this->is_woopay_express_checkout_configured_at( 'checkout' ) )
 		) {
 			return false;
 		}
@@ -199,7 +199,7 @@ class Eligibility {
 	 * @return bool
 	 */
 	public function should_load_woopay_save_user_assets(): bool {
-		return ( is_checkout() || has_block( 'woocommerce/checkout' ) ) &&
+		return $this->get_page_surface()->is_checkout_surface() &&
 			$this->is_woopay_enabled() &&
 			$this->is_woopay_gateway_available() &&
 			$this->is_woopay_country_available() &&
@@ -548,7 +548,7 @@ class Eligibility {
 			return false;
 		}
 
-		if ( ! is_checkout() && ! has_block( 'woocommerce/checkout' ) ) {
+		if ( ! $this->get_page_surface()->is_checkout_surface() ) {
 			return false;
 		}
 
@@ -598,6 +598,15 @@ class Eligibility {
 		$account_data = $this->account_service->get_stored_account_data();
 
 		return ! empty( $account_data['platform_woopay_force_signed_requests'] );
+	}
+
+	/**
+	 * Get the shopper page resolver from the container on each call, so a replacement reaches every instance.
+	 *
+	 * @return PageSurface
+	 */
+	private function get_page_surface(): PageSurface {
+		return wc_get_container()->get( PageSurface::class );
 	}
 
 	/**

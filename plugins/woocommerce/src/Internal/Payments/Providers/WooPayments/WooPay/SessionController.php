@@ -266,7 +266,7 @@ class SessionController implements RegisterHooksInterface {
 	 */
 	public function filter_woocommerce_form_field_woopay_email( $field, $key, $args, $_unused_value ) {
 		$class = is_array( $args ) && isset( $args['class'][0] ) ? (string) $args['class'][0] : '';
-		if ( 'billing_email' === $key && false === strpos( $class, 'woopay-billing-email' ) && is_checkout() && ! is_checkout_pay_page() ) {
+		if ( 'billing_email' === $key && false === strpos( $class, 'woopay-billing-email' ) && $this->get_page_surface()->is_checkout() && ! is_checkout_pay_page() ) {
 			return '';
 		}
 
@@ -987,8 +987,8 @@ class SessionController implements RegisterHooksInterface {
 
 		// The product page as client 11.2.0 is_product() reads it: the visited page only, never the loop post
 		// (class-wc-payments-express-checkout-button-helper.php:255-259).
-		return is_checkout() ||
-			is_cart() ||
+		return $this->get_page_surface()->is_checkout() ||
+			$this->get_page_surface()->is_cart() ||
 			WooPaymentsExpressCheckoutService::is_product_page();
 	}
 
@@ -1006,7 +1006,7 @@ class SessionController implements RegisterHooksInterface {
 		}
 
 		return wp_script_is( 'wc-cart-fragments', 'enqueued' ) &&
-			! ( is_checkout() || has_block( 'woocommerce/checkout' ) );
+			! $this->get_page_surface()->is_checkout_surface();
 	}
 
 	/**
@@ -1015,7 +1015,7 @@ class SessionController implements RegisterHooksInterface {
 	 * @return bool
 	 */
 	private function is_cart_surface(): bool {
-		return is_cart() || has_block( 'woocommerce/cart' );
+		return $this->get_page_surface()->is_cart() || has_block( 'woocommerce/cart' );
 	}
 
 	/**
@@ -1029,7 +1029,7 @@ class SessionController implements RegisterHooksInterface {
 	 * @return bool
 	 */
 	private function is_block_cart_or_checkout_surface(): bool {
-		return has_block( 'woocommerce/checkout' ) || ( has_block( 'woocommerce/cart' ) && ! is_checkout() );
+		return has_block( 'woocommerce/checkout' ) || ( has_block( 'woocommerce/cart' ) && ! $this->get_page_surface()->is_checkout() );
 	}
 
 	/**
@@ -1060,6 +1060,15 @@ class SessionController implements RegisterHooksInterface {
 	 * @return bool
 	 */
 	private function is_order_pay_surface(): bool {
-		return is_checkout() && is_wc_endpoint_url( 'order-pay' );
+		return $this->get_page_surface()->is_checkout() && is_wc_endpoint_url( 'order-pay' );
+	}
+
+	/**
+	 * Get the shopper page resolver from the container on each call, so a replacement reaches every instance.
+	 *
+	 * @return PageSurface
+	 */
+	private function get_page_surface(): PageSurface {
+		return wc_get_container()->get( PageSurface::class );
 	}
 }
