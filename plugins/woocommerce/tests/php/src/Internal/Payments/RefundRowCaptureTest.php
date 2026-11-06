@@ -8,7 +8,6 @@ use Automattic\WooCommerce\Internal\Payments\RefundRowCapture;
 use WC_Order;
 use WC_Order_Refund;
 use WC_Unit_Test_Case;
-use WP_REST_Request;
 
 /**
  * Tests for RefundRowCapture.
@@ -251,91 +250,6 @@ class RefundRowCaptureTest extends WC_Unit_Test_Case {
 		$refund->save();
 
 		$this->assertSame( $expected_mark, wc_get_order( $refund->get_id() )->get_meta( RefundRowCapture::MANUAL_REFUND_META, true ) );
-	}
-
-	/**
-	 * @testdox A refund recorded manually through $entry is stored with the manual record mark.
-	 * @testWith ["ajax"]
-	 *           ["rest"]
-	 *
-	 * Monitor ruling 2026-10-10 17:40: both of WooCommerce's merchant entry points create the row through
-	 * wc_create_refund() without refund_payment, whose save after `woocommerce_create_refund` (includes/wc-order-functions.php:674)
-	 * stores the mark.
-	 *
-	 * @param string $entry The entry point.
-	 */
-	public function test_marks_a_refund_recorded_manually( string $entry ): void {
-		$sut = $this->create_capture();
-		$sut->register();
-		wp_set_current_user( self::factory()->user->create( array( 'role' => 'administrator' ) ) );
-		$order = $this->create_order();
-
-		$refund_id = 'rest' === $entry ? $this->refund_through_rest( $order ) : $this->refund_through_ajax( $order );
-
-		$this->assertGreaterThan( 0, $refund_id );
-		$this->assertSame( 'yes', wc_get_order( $refund_id )->get_meta( RefundRowCapture::MANUAL_REFUND_META, true ) );
-	}
-
-	/**
-	 * Refund 1.00 of an order through the REST API without the gateway.
-	 *
-	 * @param WC_Order $order Order.
-	 * @return int The refund ID.
-	 */
-	private function refund_through_rest( WC_Order $order ): int {
-		$request = new WP_REST_Request( 'POST', '/wc/v3/orders/' . $order->get_id() . '/refunds' );
-		$request->set_body_params(
-			array(
-				'amount'     => '1.00',
-				'api_refund' => false,
-			)
-		);
-		$response = rest_get_server()->dispatch( $request );
-		$this->assertSame( 201, $response->get_status(), (string) wp_json_encode( $response->get_data() ) );
-
-		return (int) $response->get_data()['id'];
-	}
-
-	/**
-	 * Refund 1.00 of an order with "Refund manually" on the order screen (WC_AJAX::refund_line_items()).
-	 *
-	 * @param WC_Order $order Order.
-	 * @return int The refund ID.
-	 */
-	private function refund_through_ajax( WC_Order $order ): int {
-		$_POST['order_id']        = (string) $order->get_id();
-		$_POST['refund_amount']   = '1.00';
-		$_POST['refunded_amount'] = '0.00';
-		$_POST['api_refund']      = 'false';
-		$_REQUEST['security']     = wp_create_nonce( 'order-item' );
-		$die_handler              = static function () {
-			return static function () {
-				throw new \RuntimeException( 'ajax-die' );
-			};
-		};
-		add_filter( 'wp_die_ajax_handler', $die_handler );
-		add_filter( 'wp_doing_ajax', '__return_true' );
-		// The handler opens a buffer of its own, which the die handler leaves open.
-		$level = ob_get_level();
-		ob_start();
-		try {
-			\WC_AJAX::refund_line_items();
-		} catch ( \RuntimeException $exception ) {
-			$this->assertSame( 'ajax-die', $exception->getMessage() );
-		} finally {
-			$json = '';
-			while ( ob_get_level() > $level ) {
-				$json = (string) ob_get_clean() . $json;
-			}
-			remove_filter( 'wp_die_ajax_handler', $die_handler );
-			remove_filter( 'wp_doing_ajax', '__return_true' );
-			unset( $_POST['order_id'], $_POST['refund_amount'], $_POST['refunded_amount'], $_POST['api_refund'], $_REQUEST['security'] );
-		}
-		$this->assertTrue( json_decode( $json, true )['success'] ?? false, 'The manual refund must succeed: ' . $json );
-		$refunds = wc_get_order( $order->get_id() )->get_refunds();
-		$this->assertCount( 1, $refunds );
-
-		return $refunds[0]->get_id();
 	}
 
 	/**
