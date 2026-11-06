@@ -60,6 +60,11 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	use OrderPaymentLockTestTrait;
 
 	/**
+	 * A provider platform's error text: it can hold an email, a URL or a key, so no log may carry it.
+	 */
+	public const PROVIDER_FAILURE_TEXT = 'No such customer: shopper@example.com, see https://pay.example.test/r?key=sk_test_leak123';
+
+	/**
 	 * The System Under Test.
 	 *
 	 * @var PaymentProcessingService
@@ -774,20 +779,58 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A successful charge whose lifecycle application throws must persist the payment reference, log, and hand the failure back with the outcome.
+	 * @testdox A charge stays reconcilable when local work throws after the provider answered: the reference is saved, one error log names the failure's class and code but never its text, and the provider's own outcome is handed back ($_dataName).
+	 * @dataProvider reconcilable_apply_failures
+	 *
+	 * @param string               $status        Provider outcome status.
+	 * @param string               $failure_point Where local work throws: 'lifecycle', 'effects', or 'lifecycle after effects replaced the outcome'.
+	 * @param array<string,string> $expected_meta Order meta the saved reconciliation context carries.
 	 */
-	public function test_process_checkout_outcome_keeps_order_reconcilable_when_apply_throws(): void {
+	public function test_process_checkout_outcome_keeps_order_reconcilable_when_apply_throws( string $status, string $failure_point, array $expected_meta ): void {
 		$order   = $this->create_woopayments_order( '10.00' );
-		$outcome = new PaymentOutcome(
-			PaymentOutcome::STATUS_COMPLETED,
-			'pi_post_charge',
-			'',
-			'pm_post_charge',
-			'cus_post_charge'
-		);
+		$outcome = new PaymentOutcome( $status, 'pi_post_charge', PaymentOutcome::STATUS_REQUIRES_CUSTOMER_ACTION === $status ? '#wcpay-confirm-pi:1:secret:nonce' : '', 'pm_post_charge', 'cus_post_charge' );
+
+		$provider = new class( $outcome, $failure_point ) extends RecordingProvider implements ProviderOperationEffectApplierInterface {
+			/**
+			 * Where local work throws.
+			 *
+			 * @var string
+			 */
+			private string $failure_point;
+
+			/**
+			 * Build the provider double.
+			 *
+			 * @param PaymentOutcome $outcome       Provider outcome.
+			 * @param string         $failure_point Where local work throws.
+			 */
+			public function __construct( PaymentOutcome $outcome, string $failure_point ) {
+				parent::__construct( $outcome );
+				$this->failure_point = $failure_point;
+			}
+
+			/**
+			 * Throw a provider's platform text from the effects, or hand back a replaced outcome.
+			 *
+			 * @param PaymentOperationContext $context   Payment context.
+			 * @param PaymentOutcome          $outcome   Provider outcome.
+			 * @param string                  $operation Operation name.
+			 * @return PaymentOutcome
+			 * @throws RuntimeException When the effects are the failure point.
+			 */
+			public function apply_operation_effects( PaymentOperationContext $context, PaymentOutcome $outcome, string $operation ): PaymentOutcome {
+				unset( $context, $operation );
+				if ( 'effects' === $this->failure_point ) {
+					throw new RuntimeException( PaymentProcessingServiceTest::PROVIDER_FAILURE_TEXT, 9 ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- A test double's fixed text, never output.
+				}
+
+				return 'lifecycle' === $this->failure_point
+					? $outcome
+					: new PaymentOutcome( $outcome->get_status(), $outcome->get_provider_payment_id(), '', $outcome->get_payment_method_id(), $outcome->get_customer_id(), array( 'effect' => 'replaced' ) );
+			}
+		};
 
 		$sut         = $this->build_sut_with_lifecycle( $this->create_throwing_lifecycle_service() );
-		$provider    = new RecordingProvider( $outcome );
 		$fake_logger = $this->create_fake_logger();
 		add_filter(
 			'woocommerce_logging_class',
@@ -803,16 +846,47 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$order = wc_get_order( $order->get_id() );
 
 		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertSame( $outcome, $exception->get_outcome(), 'A post-charge apply failure must hand back the successful outcome, not a downgraded one.' );
-		$this->assertSame( 'Simulated lifecycle failure after a successful charge.', $exception->get_failure()->getMessage() );
+		$this->assertSame( $outcome, $exception->get_outcome(), 'An apply failure must hand back the provider outcome, not a downgraded or replaced one.' );
+		$this->assertSame( self::PROVIDER_FAILURE_TEXT, $exception->get_failure()->getMessage() );
 		$this->assertSame( 'pi_post_charge', $order->get_transaction_id(), 'The provider payment reference must be persisted so the charge stays reconcilable.' );
+		foreach ( $expected_meta as $key => $value ) {
+			$this->assertSame( $value, $order->get_meta( $key, true ), "The reconciliation context must reach the stored order: {$key}." );
+		}
 		$this->assertTrue( $exception->was_reconciliation_context_persisted(), 'The exception must report that the reference was saved.' );
 
-		$this->assertCount( 1, $fake_logger->error_calls, 'A post-charge apply failure must be logged at error level.' );
+		$this->assertCount( 1, $fake_logger->error_calls, 'An apply failure after the provider answered must be logged once at error level.' );
+		$this->assertSame( 0, strpos( $fake_logger->error_calls[0]['message'], 'Payment provider operation returned a reconcilable outcome' ) );
 		$context = $fake_logger->error_calls[0]['context'];
 		$this->assertSame( 'order-payments', $context['source'] );
 		$this->assertSame( $order->get_id(), $context['order_id'] );
 		$this->assertSame( 'pi_post_charge', $context['payment_reference'] );
+		$this->assertSame( RuntimeException::class, $context['exception_class'] );
+		$this->assertSame( 9, $context['exception_code'] );
+		$written = (string) wp_json_encode( $fake_logger->error_calls );
+		foreach ( array( 'No such customer', 'shopper@example.com', 'pay.example.test', 'sk_test_leak123' ) as $provider_text ) {
+			$this->assertStringNotContainsString( $provider_text, $written );
+		}
+	}
+
+	/**
+	 * Where local work throws after the provider answered, for outcomes the service must keep.
+	 *
+	 * @return array<string,array{string,string,array<string,string>}>
+	 */
+	public function reconcilable_apply_failures(): array {
+		return array(
+			'lifecycle throws on a charge'       => array( PaymentOutcome::STATUS_COMPLETED, 'lifecycle', array( '_intention_status' => 'succeeded' ) ),
+			'effects throw on a charge'          => array( PaymentOutcome::STATUS_COMPLETED, 'effects', array( '_intention_status' => 'succeeded' ) ),
+			'effects throw on a customer action' => array(
+				PaymentOutcome::STATUS_REQUIRES_CUSTOMER_ACTION,
+				'effects',
+				array(
+					'_intent_id'         => 'pi_post_charge',
+					'_payment_method_id' => 'pm_post_charge',
+				),
+			),
+			'replaced outcome, lifecycle throws' => array( PaymentOutcome::STATUS_COMPLETED, 'lifecycle after effects replaced the outcome', array( '_intention_status' => 'succeeded' ) ),
+		);
 	}
 
 	/**
@@ -897,7 +971,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A post-charge apply failure must not overwrite a transaction reference the order already carries.
+	 * @testdox A post-charge apply failure must not overwrite a transaction reference the order already carries, and logs both IDs.
 	 */
 	public function test_process_checkout_outcome_does_not_overwrite_existing_transaction_reference(): void {
 		$order = $this->create_woopayments_order( '10.00' );
@@ -906,8 +980,15 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 
 		$outcome = new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_post_charge', '', 'pm_post_charge' );
 
-		$sut      = $this->build_sut_with_lifecycle( $this->create_throwing_lifecycle_service() );
-		$provider = new RecordingProvider( $outcome );
+		$sut         = $this->build_sut_with_lifecycle( $this->create_throwing_lifecycle_service() );
+		$provider    = new RecordingProvider( $outcome );
+		$fake_logger = $this->create_fake_logger();
+		add_filter(
+			'woocommerce_logging_class',
+			function () use ( $fake_logger ) {
+				return $fake_logger;
+			}
+		);
 
 		$exception = $this->expect_outcome_apply_exception(
 			static fn() => $sut->process_checkout_outcome( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_post_charge' ), $provider )
@@ -918,6 +999,23 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( $outcome, $exception->get_outcome() );
 		$this->assertSame( 'pi_existing_reference', $order->get_transaction_id(), 'An existing transaction reference must be preserved.' );
 		$this->assertFalse( $exception->was_reconciliation_context_persisted(), 'The exception must report that the reference was not saved.' );
+
+		$mismatch_logs = array_values(
+			array_filter(
+				$fake_logger->error_calls,
+				static fn( array $call ): bool => 'Payment reconciliation context was not saved: the order already has a different transaction ID.' === $call['message']
+			)
+		);
+		$this->assertCount( 1, $mismatch_logs, 'The transaction ID mismatch must be logged on its own line.' );
+		$this->assertSame(
+			array(
+				'source'                  => 'order-payments',
+				'order_id'                => $order->get_id(),
+				'payment_reference'       => 'pi_post_charge',
+				'existing_transaction_id' => 'pi_existing_reference',
+			),
+			$mismatch_logs[0]['context']
+		);
 	}
 
 	/**
@@ -2378,83 +2476,6 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Successful charges stay reconcilable and are handed back when provider effect application throws.
-	 */
-	public function test_process_checkout_outcome_keeps_provider_success_when_effect_application_throws(): void {
-		$order    = $this->create_woopayments_order( '10.00' );
-		$outcome  = new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_effect_failure', '', 'pm_effect_failure' );
-		$provider = new class( $outcome ) extends RecordingProvider implements ProviderOperationEffectApplierInterface {
-			// phpcs:disable Squiz.Commenting.FunctionComment.InvalidNoReturn -- This test double always throws.
-			/**
-			 * Fail provider effect application after the remote payment succeeded.
-			 *
-			 * @param PaymentOperationContext $context   Payment context.
-			 * @param PaymentOutcome          $outcome   Provider outcome.
-			 * @param string                  $operation Operation name.
-			 * @return PaymentOutcome
-			 * @throws RuntimeException Always.
-			 */
-			public function apply_operation_effects( PaymentOperationContext $context, PaymentOutcome $outcome, string $operation ): PaymentOutcome {
-				unset( $context, $outcome, $operation );
-				throw new RuntimeException( 'Provider effect write failed.' );
-			}
-			// phpcs:enable Squiz.Commenting.FunctionComment.InvalidNoReturn
-		};
-
-		$exception = $this->expect_outcome_apply_exception(
-			fn() => $this->sut->process_checkout_outcome( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_effect_failure' ), $provider )
-		);
-		$order     = wc_get_order( $order->get_id() );
-
-		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertSame( $outcome, $exception->get_outcome() );
-		$this->assertSame( 'Provider effect write failed.', $exception->get_failure()->getMessage() );
-		$this->assertSame( 'pi_effect_failure', $order->get_transaction_id() );
-		$this->assertSame( 'succeeded', $order->get_meta( '_intention_status', true ), 'The reconciliation context must reach the stored order before the failure is handed back.' );
-	}
-
-	/**
-	 * @testdox Referenced customer-action outcomes stay reconcilable and are handed back when provider effect application throws.
-	 */
-	public function test_process_checkout_outcome_keeps_referenced_customer_action_when_effect_application_throws(): void {
-		$order    = $this->create_woopayments_order( '10.00' );
-		$outcome  = new PaymentOutcome(
-			PaymentOutcome::STATUS_REQUIRES_CUSTOMER_ACTION,
-			'pi_action_effect_failure',
-			'#wcpay-confirm-pi:1:secret:nonce',
-			'pm_action_effect_failure'
-		);
-		$provider = new class( $outcome ) extends RecordingProvider implements ProviderOperationEffectApplierInterface {
-			// phpcs:disable Squiz.Commenting.FunctionComment.InvalidNoReturn -- This test double always throws.
-			/**
-			 * Fail provider effect application after a referenced provider response.
-			 *
-			 * @param PaymentOperationContext $context   Payment context.
-			 * @param PaymentOutcome          $outcome   Provider outcome.
-			 * @param string                  $operation Operation name.
-			 * @return PaymentOutcome
-			 * @throws RuntimeException Always.
-			 */
-			public function apply_operation_effects( PaymentOperationContext $context, PaymentOutcome $outcome, string $operation ): PaymentOutcome {
-				unset( $context, $outcome, $operation );
-				throw new RuntimeException( 'Provider display effect write failed.' );
-			}
-			// phpcs:enable Squiz.Commenting.FunctionComment.InvalidNoReturn
-		};
-
-		$exception = $this->expect_outcome_apply_exception(
-			fn() => $this->sut->process_checkout_outcome( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_action_effect_failure' ), $provider )
-		);
-		$order     = wc_get_order( $order->get_id() );
-
-		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertSame( $outcome, $exception->get_outcome() );
-		$this->assertSame( 'pi_action_effect_failure', $order->get_transaction_id() );
-		$this->assertSame( 'pi_action_effect_failure', $order->get_meta( '_intent_id', true ) );
-		$this->assertSame( 'pm_action_effect_failure', $order->get_meta( '_payment_method_id', true ) );
-	}
-
-	/**
 	 * @testdox Recovery metadata mapping failures cannot replace a referenced provider outcome.
 	 */
 	public function test_process_checkout_outcome_keeps_provider_result_when_recovery_mapping_throws(): void {
@@ -3840,96 +3861,6 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'refund', $context['operation'] );
 		$this->assertSame( 're_missing_target', $context['payment_reference'] );
 		$this->assertFalse( $context['reconciliation_persisted'] );
-	}
-
-	/**
-	 * @testdox A post-charge apply failure is logged with its class and code, never its message.
-	 */
-	public function test_post_charge_apply_failure_log_leaves_out_the_failure_message(): void {
-		$order     = $this->create_woopayments_order( '10.00' );
-		$lifecycle = new class() extends OrderPaymentLifecycleService {
-			/**
-			 * Throw a provider's platform text, as a provider effect that calls its platform can.
-			 *
-			 * @param WC_Order                               $order               Order object.
-			 * @param PaymentLifecycleEvent                  $event               Lifecycle event.
-			 * @param ProviderPersistenceVocabularyInterface $persistence_vocabulary Provider persistence vocabulary.
-			 * @throws RuntimeException Always.
-			 */
-			public function apply_under_lock( WC_Order $order, PaymentLifecycleEvent $event, ProviderPersistenceVocabularyInterface $persistence_vocabulary ): string {
-				unset( $order, $event, $persistence_vocabulary );
-				throw new RuntimeException( 'No such customer: shopper@example.com, see https://pay.example.test/r?key=sk_test_leak123', 9 );
-			}
-		};
-		$lifecycle->init( $this->order_payment_lock, wc_get_container()->get( OrderPaymentNotes::class ) );
-		$sut         = $this->build_sut_with_lifecycle( $lifecycle );
-		$provider    = new RecordingProvider( new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_apply_failure', '', 'pm_apply_failure' ) );
-		$fake_logger = $this->create_fake_logger();
-		add_filter(
-			'woocommerce_logging_class',
-			function () use ( $fake_logger ) {
-				return $fake_logger;
-			}
-		);
-
-		$this->expect_outcome_apply_exception(
-			static fn() => $sut->process_checkout_outcome( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_apply_failure' ), $provider )
-		);
-
-		$apply_logs = array_values(
-			array_filter(
-				$fake_logger->error_calls,
-				static fn( array $call ): bool => 0 === strpos( $call['message'], 'Payment provider operation returned a reconcilable outcome' )
-			)
-		);
-		$this->assertCount( 1, $apply_logs );
-		$this->assertSame( RuntimeException::class, $apply_logs[0]['context']['exception_class'] );
-		$this->assertSame( 9, $apply_logs[0]['context']['exception_code'] );
-		$this->assertSame( 'pi_apply_failure', $apply_logs[0]['context']['payment_reference'] );
-		$written = (string) wp_json_encode( $fake_logger->error_calls );
-		foreach ( array( 'No such customer', 'shopper@example.com', 'pay.example.test', 'sk_test_leak123' ) as $provider_text ) {
-			$this->assertStringNotContainsString( $provider_text, $written );
-		}
-	}
-
-	/**
-	 * @testdox A post-charge apply failure on an order that already has a different transaction ID logs both IDs.
-	 */
-	public function test_process_checkout_outcome_logs_a_transaction_id_mismatch_when_apply_throws(): void {
-		$order = $this->create_woopayments_order( '10.00' );
-		$order->set_transaction_id( 'pi_first_payment' );
-		$order->save();
-
-		$sut         = $this->build_sut_with_lifecycle( $this->create_throwing_lifecycle_service() );
-		$provider    = new RecordingProvider( new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_second_payment', '', 'pm_second_payment' ) );
-		$fake_logger = $this->create_fake_logger();
-		add_filter(
-			'woocommerce_logging_class',
-			function () use ( $fake_logger ) {
-				return $fake_logger;
-			}
-		);
-
-		$this->expect_outcome_apply_exception(
-			static fn() => $sut->process_checkout_outcome( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_second_payment' ), $provider )
-		);
-
-		$mismatch_logs = array_values(
-			array_filter(
-				$fake_logger->error_calls,
-				static fn( array $call ): bool => 'Payment reconciliation context was not saved: the order already has a different transaction ID.' === $call['message']
-			)
-		);
-		$this->assertCount( 1, $mismatch_logs, 'The transaction ID mismatch must be logged on its own line.' );
-		$this->assertSame(
-			array(
-				'source'                  => 'order-payments',
-				'order_id'                => $order->get_id(),
-				'payment_reference'       => 'pi_second_payment',
-				'existing_transaction_id' => 'pi_first_payment',
-			),
-			$mismatch_logs[0]['context']
-		);
 	}
 
 	/**
@@ -5846,7 +5777,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	private function create_throwing_lifecycle_service(): OrderPaymentLifecycleService {
 		$lifecycle = new class() extends OrderPaymentLifecycleService {
 			/**
-			 * Always throw to simulate a lifecycle application failure after a successful charge.
+			 * Always throw a provider's platform text, as a provider effect that calls its platform can, after the charge.
 			 *
 			 * @param WC_Order                               $order               Order object.
 			 * @param PaymentLifecycleEvent                  $event               Lifecycle event.
@@ -5856,7 +5787,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 			public function apply_under_lock( WC_Order $order, PaymentLifecycleEvent $event, ProviderPersistenceVocabularyInterface $persistence_vocabulary ): string {
 				// Avoid parameter not used PHPCS errors.
 				unset( $order, $event, $persistence_vocabulary );
-				throw new RuntimeException( 'Simulated lifecycle failure after a successful charge.' );
+				throw new RuntimeException( PaymentProcessingServiceTest::PROVIDER_FAILURE_TEXT, 9 ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- A test double's fixed text, never output.
 			}
 		};
 		$lifecycle->init( $this->order_payment_lock, wc_get_container()->get( OrderPaymentNotes::class ) );
