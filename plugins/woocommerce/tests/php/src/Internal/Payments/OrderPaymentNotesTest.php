@@ -63,16 +63,6 @@ class OrderPaymentNotesTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox An empty identity or meta key finds no note.
-	 */
-	public function test_find_by_identity_without_identity_or_key_finds_nothing(): void {
-		$this->order->add_order_note( 'Payment note.', 0, false, array( self::IDENTITY_META_KEY => hash( 'sha256', '' ) ) );
-
-		$this->assertSame( 0, $this->sut->find_by_identity( $this->order, '', $this->vocabulary ) );
-		$this->assertSame( 0, $this->sut->find_by_identity( $this->order, 'payment:1', $this->vocabulary_with_key( '' ) ) );
-	}
-
-	/**
 	 * @testdox A note is found by its text or by one of its other renderings.
 	 */
 	public function test_find_by_content_matches_the_note_or_an_equivalent(): void {
@@ -81,19 +71,6 @@ class OrderPaymentNotesTest extends WC_Unit_Test_Case {
 		$this->assertSame( $note_id, $this->sut->find_by_content( $this->order, 'Plugin rendering.' ) );
 		$this->assertSame( $note_id, $this->sut->find_by_content( $this->order, 'Core rendering.', array( 'Plugin rendering.' ) ) );
 		$this->assertSame( 0, $this->sut->find_by_content( $this->order, 'Core rendering.' ) );
-	}
-
-	/**
-	 * @testdox Finding a note writes nothing.
-	 */
-	public function test_finding_a_note_writes_nothing(): void {
-		$note_id = (int) $this->order->add_order_note( 'Payment note.', 0, false, array( self::IDENTITY_META_KEY => hash( 'sha256', 'payment:1' ) ) );
-		$before  = get_comment_meta( $note_id );
-
-		$this->sut->find_by_identity( $this->order, 'payment:1', $this->vocabulary );
-		$this->sut->find_by_content( $this->order, 'Payment note.' );
-
-		$this->assertSame( $before, get_comment_meta( $note_id ) );
 	}
 
 	/**
@@ -111,19 +88,6 @@ class OrderPaymentNotesTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Recording an empty identity, under an empty key or on no note writes nothing.
-	 */
-	public function test_record_identity_without_identity_key_or_note_writes_nothing(): void {
-		$note_id = (int) $this->order->add_order_note( 'Payment note.' );
-
-		$this->sut->record_identity( $note_id, '', $this->vocabulary );
-		$this->sut->record_identity( $note_id, 'payment:1', $this->vocabulary_with_key( '' ) );
-		$this->sut->record_identity( 0, 'payment:1', $this->vocabulary );
-
-		$this->assertSame( array(), get_comment_meta( $note_id ) );
-	}
-
-	/**
 	 * @testdox A note added with an identity carries its hash and is then found by it.
 	 */
 	public function test_add_writes_the_note_with_its_identity(): void {
@@ -136,30 +100,27 @@ class OrderPaymentNotesTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A note added without an identity or meta key carries no meta.
+	 * @testdox An empty identity or meta key means no identity: nothing is found by it, recorded, or added with the note.
 	 *
-	 * @dataProvider no_identity_cases
+	 * @testWith ["", "_test_provider_note_identity"]
+	 *           ["payment:1", ""]
 	 *
 	 * @param string $identity          Note identity.
 	 * @param string $identity_meta_key Identity meta key.
 	 */
-	public function test_add_without_identity_or_key_writes_a_plain_note( string $identity, string $identity_meta_key ): void {
-		$note_id = $this->sut->add( $this->order, 'Payment note.', $identity, $this->vocabulary_with_key( $identity_meta_key ) );
+	public function test_empty_identity_or_key_means_no_identity( string $identity, string $identity_meta_key ): void {
+		$vocabulary = $this->vocabulary_with_key( $identity_meta_key );
+		$this->order->add_order_note( 'Tagged note.', 0, false, array( self::IDENTITY_META_KEY => hash( 'sha256', $identity ) ) );
+		$plain_id = (int) $this->order->add_order_note( 'Plain note.' );
 
+		$this->assertSame( 0, $this->sut->find_by_identity( $this->order, $identity, $vocabulary ), 'No note is found by an empty identity, even one tagged with its hash.' );
+
+		$this->sut->record_identity( $plain_id, $identity, $vocabulary );
+		$this->assertSame( array(), get_comment_meta( $plain_id ), 'No identity is recorded.' );
+
+		$note_id = $this->sut->add( $this->order, 'Payment note.', $identity, $vocabulary );
 		$this->assertGreaterThan( 0, $note_id );
-		$this->assertSame( array(), get_comment_meta( $note_id ) );
-	}
-
-	/**
-	 * Identity and key pairs that leave a note without an identity.
-	 *
-	 * @return array<string,array{string,string}>
-	 */
-	public function no_identity_cases(): array {
-		return array(
-			'no identity' => array( '', self::IDENTITY_META_KEY ),
-			'no key'      => array( 'payment:1', '' ),
-		);
+		$this->assertSame( array(), get_comment_meta( $note_id ), 'The note is added without an identity.' );
 	}
 
 	/**
