@@ -30,6 +30,13 @@ use WC_Unit_Test_Case;
 class SharedSettingsTest extends WC_Unit_Test_Case {
 
 	/**
+	 * The script queue the test began with.
+	 *
+	 * @var string[]
+	 */
+	private array $original_script_queue = array();
+
+	/**
 	 * @testdox Should add the WooPayments admin pages' data to the admin shared settings.
 	 */
 	public function test_registers_the_shared_settings_filter(): void {
@@ -106,6 +113,10 @@ class SharedSettingsTest extends WC_Unit_Test_Case {
 		parent::setUp();
 
 		$this->original_payment_gateways = WC()->payment_gateways()->payment_gateways;
+		// wp_script_is( ..., 'enqueued' ) also counts a queued script that depends on the handle, and nothing empties the
+		// queue between tests, so start from an empty one.
+		$this->original_script_queue = wp_scripts()->queue;
+		wp_scripts()->queue          = array();
 	}
 
 	/**
@@ -123,7 +134,7 @@ class SharedSettingsTest extends WC_Unit_Test_Case {
 		remove_filter( 'wp_redirect', array( $this, 'intercept_redirect' ), 10 );
 		remove_filter( 'wp_doing_ajax', '__return_true' );
 		remove_all_filters( 'wcpay_js_settings' );
-		wp_dequeue_script( 'wp-api-request' );
+		wp_scripts()->queue = $this->original_script_queue;
 		unset( $_GET['page'], $_GET['tab'], $_GET['path'], $_GET['section'], $_GET['from'], $_SERVER['HTTP_REFERER'] );
 		delete_option( 'wcpay_account_data' );
 		delete_option( 'wcpay_onboarding_test_mode' );
