@@ -120,6 +120,7 @@ class VerifiedEmailRestoreServiceTest extends WC_Unit_Test_Case {
 		parent::setUp();
 
 		$this->builtin_enabled_override  = null;
+		$this->plugin_active             = false;
 		$this->original_blog_id          = get_current_blog_id();
 		$this->original_hpos_enabled     = OrderUtil::custom_orders_table_usage_is_enabled();
 		$this->original_options          = array(
