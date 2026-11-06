@@ -131,6 +131,8 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		delete_option( 'woocommerce_tax_based_on' );
 		delete_option( 'woocommerce_calc_taxes' );
 		update_option( 'woocommerce_currency', $this->original_currency );
+		// The container drops this test's refund row capture here; a repeated run of this test must install its own again.
+		$this->runtime_capture_installed = null;
 		$this->reset_container_replacements();
 		unset( $GLOBALS['wcpay_test_renewal_order_ids'], $GLOBALS['wcpay_test_subscription_ids'], $GLOBALS[ WooCommerceSubscriptionsDoubles::ORDER_SUBSCRIPTIONS ] );
 		// Guest customer creation stores the customer in the shared session; leave none for later classes.
