@@ -59,6 +59,10 @@ class StripeBillingMigratorTest extends WC_Unit_Test_Case {
 		);
 		WooCommerceSubscriptionsDoubles::load();
 		WooCommerceSubscriptionsDoubles::load_background_repairer();
+		// The repairer stops a run once its time limit has passed since WCS_INIT_TIMESTAMP, which the first test to load it
+		// defined; later in a long PHPUnit process that is always, so the migrations would depend on how long the process ran.
+		// The limit also sets when the next run is scheduled, so it stays a date Action Scheduler can store.
+		add_filter( 'wcs_debug_tools_time_limit', static fn(): int => DAY_IN_SECONDS );
 
 		$this->active_wcpay_subscription = $this->get_recorded_body( 'update_subscription' );
 	}
