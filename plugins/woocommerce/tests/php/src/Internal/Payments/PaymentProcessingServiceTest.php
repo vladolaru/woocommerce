@@ -3705,7 +3705,9 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Malformed structural refund-note values fall back without creating comment metadata.
-	 * @dataProvider malformed_refund_note_identity_data
+	 * @testWith [""]
+	 *           [["refund:re_malformed_structure:created_successful"]]
+	 *           [42]
 	 *
 	 * @param mixed $identity Structural note identity.
 	 */
@@ -3742,19 +3744,6 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$this->assertTrue( $result );
 		$this->assertCount( 1, array_filter( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), static fn( $order_note ): bool => $note === $order_note->content ) );
 		$this->assertSame( array(), get_comment_meta( $note_id ) );
-	}
-
-	/**
-	 * Provide malformed structural refund-note identities.
-	 *
-	 * @return array<string,array{mixed}>
-	 */
-	public function malformed_refund_note_identity_data(): array {
-		return array(
-			'empty identity'             => array( '' ),
-			'array identity'             => array( array( 'refund:re_malformed_structure:created_successful' ) ),
-			'scalar non-string identity' => array( 42 ),
-		);
 	}
 
 	/**
@@ -3814,7 +3803,8 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Missing or malformed refund-note equivalents retain exact-content fallback without adding identity metadata.
-	 * @dataProvider malformed_refund_note_equivalents_data
+	 * @testWith [false, null]
+	 *           [true, "not-an-array"]
 	 *
 	 * @param bool  $include_equivalents Whether to include the equivalents field.
 	 * @param mixed $equivalent_notes    Equivalent-note field value.
@@ -3846,18 +3836,6 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$this->assertTrue( $result );
 		$this->assertCount( 1, array_filter( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), static fn( $order_note ): bool => $note === $order_note->content ) );
 		$this->assertSame( array(), get_comment_meta( $note_id ) );
-	}
-
-	/**
-	 * Provide absent and malformed refund-note equivalents.
-	 *
-	 * @return array<string,array{bool,mixed}>
-	 */
-	public function malformed_refund_note_equivalents_data(): array {
-		return array(
-			'absent equivalents'    => array( false, null ),
-			'non-array equivalents' => array( true, 'not-an-array' ),
-		);
 	}
 
 	/**

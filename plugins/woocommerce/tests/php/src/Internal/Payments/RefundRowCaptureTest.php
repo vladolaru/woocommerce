@@ -37,7 +37,9 @@ class RefundRowCaptureTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Nothing is handed over for $refund_kind; a gateway refund stays kept for its own call.
-	 * @dataProvider refunds_not_handed_over_data
+	 * @testWith ["a manual refund", false, false, 4.25]
+	 *           ["another order", true, true, 4.25]
+	 *           ["another amount", true, false, 4.00]
 	 *
 	 * Codex review 205 R2 and monitor ruling 2026-10-10 17:25: a call takes only the refund kept for it, so a call that
 	 * does not match leaves the kept refund for the call it belongs to (this replaces the forgetting that review 204 F5
@@ -61,19 +63,6 @@ class RefundRowCaptureTest extends WC_Unit_Test_Case {
 
 		$this->assertNull( $sut->consume( $order, $amount ) );
 		$this->assertSame( $refund_payment ? $refund->get_id() : null, $sut->consume( wc_get_order( $refund->get_parent_id() ), 4.25 ), 'A gateway refund stays kept for its own call.' );
-	}
-
-	/**
-	 * Refunds that are not this call's.
-	 *
-	 * @return array<string,array{string,bool,bool,float}>
-	 */
-	public function refunds_not_handed_over_data(): array {
-		return array(
-			'a manual refund' => array( 'a manual refund', false, false, 4.25 ),
-			'another order'   => array( 'another order', true, true, 4.25 ),
-			'another amount'  => array( 'another amount', true, false, 4.00 ),
-		);
 	}
 
 	/**
@@ -172,7 +161,8 @@ class RefundRowCaptureTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox A kept refund is forgotten once WooCommerce $event it, so no later call takes it.
-	 * @dataProvider refund_lifetime_end_data
+	 * @testWith ["created"]
+	 *           ["deleted"]
 	 *
 	 * Codex review 205 R2 and monitor ruling 2026-10-10 17:25: the refund's wc_create_refund() call has returned, so its
 	 * gateway call can no longer come.
@@ -199,20 +189,9 @@ class RefundRowCaptureTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * How a refund's wc_create_refund() call ends.
-	 *
-	 * @return array<string,array{string}>
-	 */
-	public function refund_lifetime_end_data(): array {
-		return array(
-			'created' => array( 'created' ),
-			'deleted' => array( 'deleted' ),
-		);
-	}
-
-	/**
 	 * @testdox With prices shown without decimals, a kept 4.25 refund is handed to a refund call of $amount: $handed_over.
-	 * @dataProvider undisplayed_decimals_data
+	 * @testWith [4.25, true]
+	 *           [4.00, false]
 	 *
 	 * Codex review 204 F4: the amounts were compared at the display precision, so 4.25 and 4.00 both read "4" and a
 	 * call for another amount took the row.
@@ -229,18 +208,6 @@ class RefundRowCaptureTest extends WC_Unit_Test_Case {
 		$sut->handle_create_refund( $refund, array( 'refund_payment' => true ) );
 
 		$this->assertSame( $handed_over ? $refund->get_id() : null, $sut->consume( $order, $amount ) );
-	}
-
-	/**
-	 * Refund call amounts against a kept 4.25 refund.
-	 *
-	 * @return array<string,array{float,bool}>
-	 */
-	public function undisplayed_decimals_data(): array {
-		return array(
-			'the same amount'                  => array( 4.25, true ),
-			'an amount that displays the same' => array( 4.00, false ),
-		);
 	}
 
 	/**
@@ -272,38 +239,33 @@ class RefundRowCaptureTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A refund recorded without the gateway is marked as a manual record when WooCommerce creates it; a refund through the gateway is not.
+	 * @testdox A refund WooCommerce creates with refund_payment $refund_payment is stored with the manual record mark "$expected_mark".
+	 * @testWith [false, "yes"]
+	 *           [true, ""]
 	 *
 	 * Codex review 205 R1 and monitor ruling 2026-10-10 17:40: only a row carrying the mark is ever taken for the
 	 * merchant's manual record of an earlier refund, so a row still inside a datastore write, which has no mark yet, never is.
+	 *
+	 * @param bool   $refund_payment Whether the refund goes through the gateway.
+	 * @param string $expected_mark  The stored manual record mark.
 	 */
-	public function test_marks_only_refunds_recorded_without_the_gateway(): void {
+	public function test_marks_only_refunds_recorded_without_the_gateway( bool $refund_payment, string $expected_mark ): void {
 		$sut    = $this->create_capture();
-		$marked = array();
-		$kinds  = array(
-			'manual'  => false,
-			'gateway' => true,
-		);
+		$refund = new WC_Order_Refund();
+		$refund->set_parent_id( $this->create_order()->get_id() );
+		$refund->set_amount( '4.25' );
+		$refund->save();
 
-		foreach ( $kinds as $kind => $refund_payment ) {
-			$refund = new WC_Order_Refund();
-			$refund->set_parent_id( $this->create_order()->get_id() );
-			$refund->set_amount( '4.25' );
-			$refund->save();
+		$sut->handle_create_refund( $refund, array( 'refund_payment' => $refund_payment ) );
+		$refund->save();
 
-			$sut->handle_create_refund( $refund, array( 'refund_payment' => $refund_payment ) );
-			$refund->save();
-
-			$marked[ $kind ] = wc_get_order( $refund->get_id() )->get_meta( RefundRowCapture::MANUAL_REFUND_META, true );
-		}
-
-		$this->assertSame( 'yes', $marked['manual'] );
-		$this->assertSame( '', $marked['gateway'] );
+		$this->assertSame( $expected_mark, wc_get_order( $refund->get_id() )->get_meta( RefundRowCapture::MANUAL_REFUND_META, true ) );
 	}
 
 	/**
 	 * @testdox A refund recorded manually through $entry is stored with the manual record mark.
-	 * @dataProvider manual_refund_entries_data
+	 * @testWith ["ajax"]
+	 *           ["rest"]
 	 *
 	 * Monitor ruling 2026-10-10 17:40: both of WooCommerce's merchant entry points create the row through
 	 * wc_create_refund() without refund_payment, whose save after `woocommerce_create_refund` (includes/wc-order-functions.php:674)
@@ -321,18 +283,6 @@ class RefundRowCaptureTest extends WC_Unit_Test_Case {
 
 		$this->assertGreaterThan( 0, $refund_id );
 		$this->assertSame( 'yes', wc_get_order( $refund_id )->get_meta( RefundRowCapture::MANUAL_REFUND_META, true ) );
-	}
-
-	/**
-	 * WooCommerce's manual refund entry points.
-	 *
-	 * @return array<string,array{string}>
-	 */
-	public function manual_refund_entries_data(): array {
-		return array(
-			'Refund manually on the order screen' => array( 'ajax' ),
-			'a REST refund with api_refund false' => array( 'rest' ),
-		);
 	}
 
 	/**
