@@ -95,6 +95,11 @@ class PreflightServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function setUp(): void {
 		parent::setUp();
+		$this->provider_ready            = true;
+		$this->platform_failures         = array();
+		$this->fee_remediation_ready     = true;
+		$this->fee_remediation_status    = 'scheduled';
+		$this->rate_api_client_connected = true;
 		update_option( 'woocommerce_woocommerce_payments_version', '10.6.0' );
 		update_option( WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION, array( 'upe_enabled_payment_method_ids' => array( 'card' ) ) );
 		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
