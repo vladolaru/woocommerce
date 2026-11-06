@@ -6,7 +6,7 @@ import { recordEvent } from '@woocommerce/tracks';
 import { act, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter as Router } from 'react-router-dom';
 import { dispatch } from '@wordpress/data';
-import { paymentSettingsStore } from '@woocommerce/data';
+import { paymentSettingsStore, userStore } from '@woocommerce/data';
 import { getHistory } from '@woocommerce/navigation';
 import type { SuggestedPaymentsExtension } from '@woocommerce/data';
 import apiFetch from '@wordpress/api-fetch';
@@ -90,6 +90,22 @@ const cancelled =
 	'settings_payments_woopayments_onboarding_wpcom_connection_cancelled';
 
 describe( 'SettingsPaymentsMain, back from the WordPress.com connection for the hidden built-in suggestion', () => {
+	// The page's installed-plugins read checks the current user's capability. Core-data would request the user with
+	// its own api-fetch copy, which the mock above misses, so the user is hydrated as withCurrentUserHydration() does.
+	beforeAll( () => {
+		const store = dispatch( userStore ) as unknown as Record<
+			string,
+			( ...args: unknown[] ) => void
+		>;
+
+		store.startResolution( 'getCurrentUser', [] );
+		store.receiveCurrentUser( {
+			id: 1,
+			capabilities: { manage_woocommerce: true },
+		} );
+		store.finishResolution( 'getCurrentUser', [] );
+	} );
+
 	beforeEach( () => {
 		( recordEvent as jest.Mock ).mockClear();
 		mockCreateErrorNotice.mockClear();

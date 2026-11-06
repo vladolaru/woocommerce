@@ -12,7 +12,7 @@ import {
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter as Router } from 'react-router-dom';
 import { dispatch, select } from '@wordpress/data';
-import { paymentSettingsStore } from '@woocommerce/data';
+import { paymentSettingsStore, userStore } from '@woocommerce/data';
 import type {
 	OfflinePaymentMethodProvider,
 	PaymentsProvider,
@@ -102,6 +102,22 @@ const noticeProvider = {
 } as PaymentsProvider;
 
 describe( 'SettingsPaymentsMain', () => {
+	// The page's installed-plugins read checks the current user's capability. Core-data would request the user with
+	// its own api-fetch copy, which the mock above misses, so the user is hydrated as withCurrentUserHydration() does.
+	beforeAll( () => {
+		const store = dispatch( userStore ) as unknown as Record<
+			string,
+			( ...args: unknown[] ) => void
+		>;
+
+		store.startResolution( 'getCurrentUser', [] );
+		store.receiveCurrentUser( {
+			id: 1,
+			capabilities: { manage_woocommerce: true },
+		} );
+		store.finishResolution( 'getCurrentUser', [] );
+	} );
+
 	afterEach( () => {
 		( apiFetch as jest.Mock ).mockReset().mockResolvedValue( {} );
 		act( () => {
