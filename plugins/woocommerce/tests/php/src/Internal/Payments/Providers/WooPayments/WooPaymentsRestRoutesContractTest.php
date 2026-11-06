@@ -195,6 +195,8 @@ class WooPaymentsRestRoutesContractTest extends WC_REST_Unit_Test_Case {
 			wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 			wc_get_container()->get( WooPaymentsSetupTier::class )->invalidate();
 			wc_get_container()->reset_all_replacements();
+			// The rollback removes the shop manager this test created.
+			$this->shop_manager_id = null;
 		} finally {
 			parent::tearDown();
 		}
