@@ -419,6 +419,8 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 		delete baseExpressCheckoutParams.isShopperTrackingEnabled;
 		// The store always sends the flag; the shared Tracks sender reads it by truthiness.
 		baseExpressCheckoutParams.is_shopper_tracking_enabled = true;
+		// With tracking on, each wallet button load and click posts a Tracks event; the tests answer those requests.
+		window.fetch = jest.fn().mockResolvedValue( {} );
 		apiFetch.mockResolvedValue( {
 			payment_result: {
 				payment_status: 'success',
