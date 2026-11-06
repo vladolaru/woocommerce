@@ -60,9 +60,9 @@ class PaymentLifecycleEventTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Meta deletes are normalized to string keys.
+	 * @testdox Meta deletes come back as passed, in order.
 	 */
-	public function test_meta_deletes_are_normalized_to_string_keys(): void {
+	public function test_meta_deletes_come_back_in_order(): void {
 		$event = new PaymentLifecycleEvent(
 			PaymentLifecycleEvent::STATUS_CANCELED,
 			'pi_123',

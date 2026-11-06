@@ -348,7 +348,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A WooPayments card decline fails the order with its intent id, exactly one note, and the allow fraud meta.
+	 * @testdox A hand-built WooPayments card decline outcome fails the order with its intent id, exactly one note, and the allow fraud meta.
 	 *
 	 * Outcome shape matches the recorded `generic_decline` envelope (`Fixtures/platform-intention-declines.json`)
 	 * as `WooPaymentsPaymentOperationServiceTest::test_charge_decline_envelope_maps_each_card_code` proves
@@ -4370,7 +4370,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A failed capture of a payment held for review marks the fraud box review_failed, as client 11.1.0 does.
+	 * @testdox A failed capture of a payment held for review marks the fraud box review_failed.
 	 *
 	 * The merchant approves a held-for-review payment and the platform refuses the capture; the re-fetched intent still
 	 * requires capture. Client 11.1.0 mark_payment_capture_failed() sets the fraud meta box type to review_failed when the
@@ -4395,7 +4395,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A capture refused as below the platform minimum notes the minimum amount after the platform message, as client 11.1.0 does.
+	 * @testdox A capture refused as below the platform minimum notes the minimum amount after the platform message.
 	 *
 	 * The merchant removes items from an authorized order until its total is below the minimum and clicks Capture charge.
 	 * Client 11.1.0 appends "The minimum amount to capture is %s." to the message it notes

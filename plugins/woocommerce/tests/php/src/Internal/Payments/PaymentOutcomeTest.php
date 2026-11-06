@@ -48,9 +48,9 @@ class PaymentOutcomeTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Provider effect plans attach to a copy without changing the outcome data.
+	 * @testdox with_effect_plan() returns a copy that holds the plan and leaves the original outcome unchanged.
 	 */
-	public function test_provider_effect_plan_is_not_serialized_as_outcome_data(): void {
+	public function test_with_effect_plan_returns_a_copy_that_holds_the_plan(): void {
 		$outcome = new PaymentOutcome(
 			PaymentOutcome::STATUS_COMPLETED,
 			'pi_effect_plan',

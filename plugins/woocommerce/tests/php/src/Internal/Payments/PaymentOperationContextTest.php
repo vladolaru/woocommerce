@@ -83,7 +83,7 @@ class PaymentOperationContextTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Capture and cancel factories should expose provider data without card-specific assumptions.
+	 * @testdox Capture and cancel factories should expose their amount and provider data.
 	 */
 	public function test_capture_and_cancel_factories_expose_provider_data(): void {
 		$order = wc_create_order();
