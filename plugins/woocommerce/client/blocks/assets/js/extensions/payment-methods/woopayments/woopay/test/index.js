@@ -731,8 +731,15 @@ describe( 'wc-payment-method-woopayments-woopay', () => {
 
 		// The classic script's preferred-card call, on a Blocks cart with direct checkout on.
 		it( 'sends one preferred-card request for the button and the classic script', async () => {
+			// The first caller builds the page's one Connect for every later test, so the classic call passes the
+			// store's values, as the classic script does (legacy woopayments-woopay.js getWooPayConnect()).
+			const settings = getMockPaymentMethodSettings();
 			const classicCard = getConnect( {
-				woopayHost: 'https://pay.woo.test',
+				woopayHost: settings.woopayHost,
+				woopayMerchantId: settings.woopayMerchantId,
+				testMode: settings.testMode,
+				ajaxUrl: settings.ajaxUrl,
+				platformTrackerNonce: settings.platformTrackerNonce,
 			} ).fetchPreferredCard();
 
 			renderButton();
