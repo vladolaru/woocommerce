@@ -153,22 +153,27 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Completed events received after a dispute keep the order on hold.
+	 * @testdox Completed events received after a dispute under the $dispute_key key keep the order on hold.
+	 * @testWith ["_wcpay_open_dispute_ids"]
+	 *           ["_provider_open_dispute_ids"]
+	 *
+	 * @param string $dispute_key Open dispute IDs meta key of the provider's vocabulary.
 	 */
-	public function test_success_after_dispute_created_keeps_on_hold(): void {
-		$order = $this->create_woopayments_order();
-		$order->update_meta_data( '_wcpay_open_dispute_ids', array( 'dp_1' ) );
+	public function test_success_after_dispute_created_keeps_on_hold( string $dispute_key ): void {
+		$order      = $this->create_woopayments_order();
+		$vocabulary = $this->vocabulary_with_dispute_key( $order, $dispute_key );
+		$order->update_meta_data( $dispute_key, array( 'dp_1' ) );
 		$order->update_meta_data( '_intention_status', 'requires_payment_method' );
 		$order->update_status( 'on-hold' );
 		$order->save();
 
-		$this->sut->apply( $order, $this->completed_event( 'pi_1' ), $this->persistence_vocabulary );
+		$this->sut->apply( $order, $this->completed_event( 'pi_1' ), $vocabulary );
 
 		$order = wc_get_order( $order->get_id() );
 
 		$this->assertInstanceOf( WC_Order::class, $order );
 		$this->assertSame( 'on-hold', $order->get_status(), 'A late success event must preserve the dispute hold.' );
-		$this->assertSame( array( 'dp_1' ), $order->get_meta( '_wcpay_open_dispute_ids', true ), 'The open dispute record must remain unchanged.' );
+		$this->assertSame( array( 'dp_1' ), $order->get_meta( $dispute_key, true ), 'The open dispute record must remain unchanged.' );
 		$this->assertSame( 'requires_payment_method', $order->get_meta( '_intention_status', true ), 'A skipped success event must not update lifecycle metadata.' );
 		$this->assertSame( 0, $this->countOrderNotesMatching( $order, 'Payment complete.' ), 'A skipped success event must not add a completion note.' );
 		$this->assertLogged(
@@ -213,34 +218,57 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A completed-event skip synchronizes persisted dispute state before a stale caller saves.
+	 * @testdox A completed-event skip brings the dispute persisted under $dispute_key onto a stale caller ($caller_state), whose save then keeps the dispute and the hold.
+	 * @testWith ["_wcpay_open_dispute_ids", "sets processing"]
+	 *           ["_provider_open_dispute_ids", "sets processing"]
+	 *           ["_wcpay_open_dispute_ids", "still pending"]
+	 *           ["_wcpay_open_dispute_ids", "already on hold"]
+	 *
+	 * @param string $dispute_key  Open dispute IDs meta key of the provider's vocabulary.
+	 * @param string $caller_state What the caller's object holds: a status change of its own to processing, the pending
+	 *                             status it loaded, or the on-hold status of an authorization, which matches the stored
+	 *                             order so only its dispute IDs differ.
 	 */
-	public function test_under_lock_success_skip_prevents_a_stale_caller_save_from_overwriting_a_dispute(): void {
+	public function test_under_lock_success_skip_prevents_a_stale_caller_save_from_overwriting_a_dispute( string $dispute_key, string $caller_state ): void {
 		$stale_order = $this->create_woopayments_order();
+		if ( 'already on hold' === $caller_state ) {
+			$stale_order->update_status( 'on-hold' );
+		}
+		$vocabulary  = $this->vocabulary_with_dispute_key( $stale_order, $dispute_key );
 		$fresh_order = wc_get_order( $stale_order->get_id() );
 
 		$this->assertInstanceOf( WC_Order::class, $fresh_order );
-		$fresh_order->update_meta_data( '_wcpay_open_dispute_ids', array( 'dp_persisted_winner' ) );
+		$fresh_order->update_meta_data( $dispute_key, array( 'dp_persisted_winner' ) );
 		$fresh_order->update_meta_data( '_intention_status', 'requires_payment_method' );
 		$fresh_order->update_status( 'on-hold' );
 
-		$stale_order->set_status( 'processing' );
-		$stale_order->update_meta_data( '_wcpay_open_dispute_ids', array() );
-		$this->assertNotNull( $this->order_payment_lock->claim( $stale_order, $this->persistence_vocabulary, 'pi_stale_save', 'payment operation' ) );
+		if ( 'sets processing' === $caller_state ) {
+			$stale_order->set_status( 'processing' );
+		}
+		// A dispute-closed handler that clears an ID on its copy and then applies a completion.
+		$stale_order->update_meta_data( $dispute_key, array() );
+		$this->assertNotNull( $this->order_payment_lock->claim( $stale_order, $vocabulary, 'pi_stale_save', 'payment operation' ) );
 		try {
-			$this->sut->apply_under_lock( $stale_order, $this->completed_event( 'pi_stale_save' ), $this->persistence_vocabulary );
+			$this->sut->apply_under_lock( $stale_order, $this->completed_event( 'pi_stale_save' ), $vocabulary );
+			$on_hold_transitions_before = did_action( 'woocommerce_order_status_pending_to_on-hold' );
+			$status_changed_before      = did_action( 'woocommerce_order_status_changed' );
 			$stale_order->save();
 		} finally {
-			$this->clear_order_payment_lock( $stale_order, $this->persistence_vocabulary );
+			$this->clear_order_payment_lock( $stale_order, $vocabulary );
 		}
 
 		$order = wc_get_order( $stale_order->get_id() );
 
 		$this->assertInstanceOf( WC_Order::class, $order );
 		$this->assertSame( 'on-hold', $order->get_status(), 'A stale caller must not restore its pre-dispute status.' );
-		$this->assertSame( array( 'dp_persisted_winner' ), $order->get_meta( '_wcpay_open_dispute_ids', true ), 'A stale caller must not erase persisted open disputes.' );
+		$this->assertSame( array( 'dp_persisted_winner' ), $order->get_meta( $dispute_key, true ), 'A stale caller must not erase persisted open disputes.' );
 		$this->assertSame( 'requires_payment_method', $order->get_meta( '_intention_status', true ), 'A skipped success event must not update lifecycle metadata.' );
 		$this->assertSame( 0, $this->countOrderNotesMatching( $order, 'Payment complete.' ), 'A skipped success event must not add a completion note.' );
+		if ( 'sets processing' !== $caller_state ) {
+			// A caller's own status change keeps its transition through the re-read, so only the other callers are counted.
+			$this->assertSame( $on_hold_transitions_before, did_action( 'woocommerce_order_status_pending_to_on-hold' ), 'The stale caller save must not fire the pending to on-hold transition again.' );
+			$this->assertSame( $status_changed_before, did_action( 'woocommerce_order_status_changed' ), 'The stale caller save must not fire a status change.' );
+		}
 	}
 
 	/**
@@ -315,39 +343,6 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'Leave the parcel at the door.', $persisted->get_customer_note(), 'The caller save must persist its customer note.' );
 		$this->assertSame( 'kept', $persisted->get_meta( '_caller_unsaved_meta', true ), 'The caller save must persist its meta value.' );
 		$this->assertSame( 1, $this->countOrderNotesMatching( $persisted, 'Payment complete.' ), 'The skipped event must not add a second success note.' );
-	}
-
-	/**
-	 * @testdox A completed event skipped because of a persisted dispute does not record a status change when its stale caller saves.
-	 */
-	public function test_under_lock_dispute_skip_does_not_record_a_status_change_when_a_stale_caller_saves(): void {
-		$stale_order = $this->create_woopayments_order();
-		$order_id    = $stale_order->get_id();
-
-		$dispute_order = wc_get_order( $order_id );
-		$this->assertInstanceOf( WC_Order::class, $dispute_order );
-		$dispute_order->update_meta_data( '_wcpay_open_dispute_ids', array( 'dp_stale_caller' ) );
-		$dispute_order->update_status( 'on-hold' );
-		$this->assertSame( 'wc-on-hold', $this->get_persisted_order_status( $order_id ) );
-
-		$this->assertNotNull( $this->order_payment_lock->claim( $stale_order, $this->persistence_vocabulary, 'pi_stale_dispute', 'payment operation' ) );
-		try {
-			$this->sut->apply_under_lock( $stale_order, $this->completed_event( 'pi_stale_dispute' ), $this->persistence_vocabulary );
-			$pending_to_on_hold_before = did_action( 'woocommerce_order_status_pending_to_on-hold' );
-			$status_changed_before     = did_action( 'woocommerce_order_status_changed' );
-			$stale_order->save();
-		} finally {
-			$this->clear_order_payment_lock( $stale_order, $this->persistence_vocabulary );
-		}
-
-		$this->assertSame( $pending_to_on_hold_before, did_action( 'woocommerce_order_status_pending_to_on-hold' ), 'The stale caller save must not fire the pending to on-hold transition again.' );
-		$this->assertSame( $status_changed_before, did_action( 'woocommerce_order_status_changed' ), 'The stale caller save must not fire a status change.' );
-		$this->assertSame( 'wc-on-hold', $this->get_persisted_order_status( $order_id ), 'The stale caller save must keep the dispute hold.' );
-
-		$order = wc_get_order( $order_id );
-		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertSame( array( 'dp_stale_caller' ), $order->get_meta( '_wcpay_open_dispute_ids', true ), 'The stale caller save must keep the persisted open disputes.' );
-		$this->assertSame( 0, $this->countOrderNotesMatching( $order, 'Payment complete.' ) );
 	}
 
 	/**
@@ -760,63 +755,6 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Completed events keep the order on hold while the provider's own open dispute key holds an ID.
-	 */
-	public function test_success_keeps_on_hold_under_the_provider_open_dispute_key(): void {
-		$order = $this->create_woopayments_order();
-		$order->update_meta_data( '_provider_open_dispute_ids', array( 'dp_custom' ) );
-		$order->update_status( 'on-hold' );
-		$order->save();
-		$vocabulary = $this->createMock( ProviderPersistenceVocabularyInterface::class );
-		$vocabulary->method( 'get_order_lock_key' )->willReturn( 'provider_lifecycle_lock_' . $order->get_id() );
-		$vocabulary->method( 'get_lock_sentinel' )->willReturn( 'provider-lock' );
-		$vocabulary->method( 'get_lock_ttl_seconds' )->willReturn( 60 );
-		$vocabulary->method( 'get_open_dispute_ids_meta_key' )->willReturn( '_provider_open_dispute_ids' );
-
-		$this->sut->apply( $order, $this->completed_event( 'pi_custom' ), $vocabulary );
-
-		$order = wc_get_order( $order->get_id() );
-
-		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertSame( 'on-hold', $order->get_status(), 'An open dispute under the provider key must keep the order on hold.' );
-		$this->assertSame( array( 'dp_custom' ), $order->get_meta( '_provider_open_dispute_ids', true ), 'The provider dispute record must remain unchanged.' );
-		$this->assertSame( 0, $this->countOrderNotesMatching( $order, 'Payment complete.' ), 'A skipped success event must not add a completion note.' );
-	}
-
-	/**
-	 * @testdox A completed-event skip keeps the dispute persisted under the provider's own key when a stale caller saves.
-	 */
-	public function test_success_skip_keeps_the_provider_key_dispute_when_a_stale_caller_saves(): void {
-		$stale_order = $this->create_woopayments_order();
-		$fresh_order = wc_get_order( $stale_order->get_id() );
-		$vocabulary  = $this->createMock( ProviderPersistenceVocabularyInterface::class );
-		$vocabulary->method( 'get_order_lock_key' )->willReturn( 'provider_lifecycle_lock_' . $stale_order->get_id() );
-		$vocabulary->method( 'get_lock_sentinel' )->willReturn( 'provider-lock' );
-		$vocabulary->method( 'get_lock_ttl_seconds' )->willReturn( 60 );
-		$vocabulary->method( 'get_open_dispute_ids_meta_key' )->willReturn( '_provider_open_dispute_ids' );
-
-		$this->assertInstanceOf( WC_Order::class, $fresh_order );
-		$fresh_order->update_meta_data( '_provider_open_dispute_ids', array( 'dp_custom_winner' ) );
-		$fresh_order->update_status( 'on-hold' );
-
-		$stale_order->set_status( 'processing' );
-		$stale_order->update_meta_data( '_provider_open_dispute_ids', array() );
-		$this->assertNotNull( $this->order_payment_lock->claim( $stale_order, $vocabulary, 'pi_custom_stale_save', 'payment operation' ) );
-		try {
-			$this->sut->apply_under_lock( $stale_order, $this->completed_event( 'pi_custom_stale_save' ), $vocabulary );
-			$stale_order->save();
-		} finally {
-			$this->clear_order_payment_lock( $stale_order, $vocabulary );
-		}
-
-		$order = wc_get_order( $stale_order->get_id() );
-
-		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertSame( 'on-hold', $order->get_status(), 'A stale caller must not restore its pre-dispute status.' );
-		$this->assertSame( array( 'dp_custom_winner' ), $order->get_meta( '_provider_open_dispute_ids', true ), 'A stale caller must not erase the dispute persisted under the provider key.' );
-	}
-
-	/**
 	 * @testdox Lifecycle events lock the order with the supplied provider persistence vocabulary.
 	 */
 	public function test_apply_uses_provider_vocabulary_for_locks(): void {
@@ -1116,6 +1054,27 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 	 */
 	private function apply_event( WC_Order $order, PaymentLifecycleEvent $event, ?ProviderPersistenceVocabularyInterface $persistence_vocabulary = null ): void {
 		$this->sut->apply( $order, $event, $persistence_vocabulary ?? $this->persistence_vocabulary );
+	}
+
+	/**
+	 * Get the WooPayments vocabulary, or a provider vocabulary of its own that keeps open dispute IDs under another key.
+	 *
+	 * @param WC_Order $order       Order the provider vocabulary locks.
+	 * @param string   $dispute_key Open dispute IDs meta key.
+	 * @return ProviderPersistenceVocabularyInterface
+	 */
+	private function vocabulary_with_dispute_key( WC_Order $order, string $dispute_key ): ProviderPersistenceVocabularyInterface {
+		if ( $this->persistence_vocabulary->get_open_dispute_ids_meta_key() === $dispute_key ) {
+			return $this->persistence_vocabulary;
+		}
+
+		$vocabulary = $this->createMock( ProviderPersistenceVocabularyInterface::class );
+		$vocabulary->method( 'get_order_lock_key' )->willReturn( 'provider_lifecycle_lock_' . $order->get_id() );
+		$vocabulary->method( 'get_lock_sentinel' )->willReturn( 'provider-lock' );
+		$vocabulary->method( 'get_lock_ttl_seconds' )->willReturn( 60 );
+		$vocabulary->method( 'get_open_dispute_ids_meta_key' )->willReturn( $dispute_key );
+
+		return $vocabulary;
 	}
 
 	/**
