@@ -1,7 +1,7 @@
 /**
  * External dependencies
  */
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 /**
@@ -29,6 +29,14 @@ const renderModal = ( action: 'capture' | 'cancel' ) => {
 	return { onClose };
 };
 
+// The modal calls onRequestClose only once its exit animation ends, which
+// jsdom never runs, so a timer ends it. Run that timer rather than racing it
+// against waitFor's timeout, which a stalled worker can lose.
+const finishExitAnimation = () =>
+	act( async () => {
+		jest.runOnlyPendingTimers();
+	} );
+
 const getMessage = () =>
 	(
 		screen.getByText( /Do you want to continue\?/ ).textContent ?? ''
@@ -38,6 +46,7 @@ const getMessage = () =>
 describe( 'AuthorizationConfirmationModal', () => {
 	beforeEach( () => {
 		jest.clearAllMocks();
+		jest.useFakeTimers();
 
 		document.body.innerHTML = `
 			<form>
@@ -55,6 +64,10 @@ describe( 'AuthorizationConfirmationModal', () => {
 		const form = document.querySelector( 'form' ) as HTMLFormElement;
 		form.submit = submit;
 		form.requestSubmit = requestSubmit;
+	} );
+
+	afterEach( () => {
+		jest.useRealTimers();
 	} );
 
 	it( 'uses the client copy and links for capturing the payment', () => {
@@ -156,6 +169,7 @@ describe( 'AuthorizationConfirmationModal', () => {
 		const { onClose } = renderModal( 'capture' );
 
 		await userEvent.keyboard( '{Escape}' );
+		await finishExitAnimation();
 
 		expect( requestSubmit ).not.toHaveBeenCalled();
 		await waitFor( () => expect( onClose ).toHaveBeenCalledTimes( 1 ) );
@@ -172,6 +186,7 @@ describe( 'AuthorizationConfirmationModal', () => {
 		await userEvent.click(
 			screen.getByRole( 'button', { name: 'Close' } )
 		);
+		await finishExitAnimation();
 
 		expect( requestSubmit ).not.toHaveBeenCalled();
 		expect( submit ).not.toHaveBeenCalled();
