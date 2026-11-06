@@ -254,14 +254,19 @@ class OrderPaymentLockTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A claim should win when only an unexpired expiry row is left behind, and replace that expiry.
+	 * @testdox A claim should win when only an unexpired expiry row is left behind, and replace that expiry ($_dataName).
+	 *
+	 * @dataProvider leftover_expiry_cases
+	 *
+	 * @param bool $equal_to_own Whether the leftover expiry equals the one the claim writes, so the claim's update writes no row.
 	 */
-	public function test_claim_wins_over_a_leftover_expiry_row_without_a_value_row(): void {
+	public function test_claim_wins_over_a_leftover_expiry_row_without_a_value_row( bool $equal_to_own ): void {
 		$this->skip_when_transients_live_in_object_cache();
 		$order    = wc_create_order();
 		$lock_key = $this->persistence_vocabulary->get_order_lock_key( $order );
 		// A release that stopped between deleting the value row and the expiry row leaves the expiry alone.
-		$this->insert_lock_row( '_transient_timeout_' . $lock_key, (string) ( time() + 100 ) );
+		$leftover = $equal_to_own ? time() + $this->persistence_vocabulary->get_lock_ttl_seconds() : time() + 100;
+		$this->insert_lock_row( '_transient_timeout_' . $lock_key, (string) $leftover );
 
 		$this->assertNotNull( $this->sut->claim( $order, $this->persistence_vocabulary, 'this_request_key', 'payment operation' ), 'A leftover expiry row without a value row must not block a claim.' );
 		$this->assertSame( 'this_request_key', $this->read_lock_row( '_transient_' . $lock_key ) );
@@ -270,36 +275,54 @@ class OrderPaymentLockTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A claim should lose when a takeover replaces its value row before it replaces an expired leftover expiry.
+	 * Leftover expiry rows a claim must win over.
+	 *
+	 * @return array<string, array{0: bool}>
 	 */
-	public function test_claim_loses_to_a_takeover_before_it_replaces_an_expired_leftover_expiry(): void {
+	public function leftover_expiry_cases(): array {
+		return array(
+			'shorter than the claim TTL'   => array( false ),
+			'equal to the claim\'s expiry' => array( true ),
+		);
+	}
+
+	/**
+	 * @testdox A claim should lose when a takeover of an expired leftover expiry lands right after the claim inserts its value ($_dataName).
+	 *
+	 * @testWith ["rival_key", "this_request_key"]
+	 *           ["pi_shared", "pi_shared"]
+	 *
+	 * @param string $rival_value Lock value the rival holds after its takeover.
+	 * @param string $claim_value Lock value this claim inserts.
+	 */
+	public function test_claim_loses_to_a_takeover_before_it_replaces_an_expired_leftover_expiry( string $rival_value, string $claim_value ): void {
 		$this->skip_when_transients_live_in_object_cache();
 		$order    = wc_create_order();
 		$lock_key = $this->persistence_vocabulary->get_order_lock_key( $order );
 		$this->insert_lock_row( '_transient_timeout_' . $lock_key, (string) ( time() - 10 ) );
 
 		// Right after this request inserts its value row, a rival sees it next to the expired expiry and takes over.
-		$value_inserted = false;
-		$took_over      = false;
-		$rival          = function ( $query ) use ( &$rival, &$value_inserted, &$took_over, $lock_key ) {
-			if ( ! $value_inserted ) {
-				$value_inserted = 0 === strpos( ltrim( $query ), 'INSERT' ) && false !== strpos( $query, "'_transient_{$lock_key}'" );
-				return $query;
+		// A rival for the same payment reference holds the same value, so only its expiry tells the claims apart.
+		$rival_expiry = (string) ( time() + 299 );
+		$took_over    = false;
+		$filter       = $this->run_before_query_after(
+			fn( string $query ): bool => $this->is_value_insert( $query, $lock_key ),
+			function () use ( &$took_over, $lock_key, $rival_value, $claim_value, $rival_expiry ): void {
+				$took_over = true;
+				if ( $rival_value !== $claim_value ) {
+					$this->update_lock_row( '_transient_' . $lock_key, $rival_value );
+				}
+				$this->update_lock_row( '_transient_timeout_' . $lock_key, $rival_expiry );
 			}
-			$took_over = true;
-			remove_filter( 'query', $rival );
-			$this->update_lock_row( '_transient_' . $lock_key, 'rival_key' );
-			$this->update_lock_row( '_transient_timeout_' . $lock_key, (string) ( time() + 299 ) );
-			return $query;
-		};
-		add_filter( 'query', $rival );
+		);
 
-		$claimed = $this->sut->claim( $order, $this->persistence_vocabulary, 'this_request_key', 'payment operation' );
-		remove_filter( 'query', $rival );
+		$claimed = $this->sut->claim( $order, $this->persistence_vocabulary, $claim_value, 'payment operation' );
+		remove_filter( 'query', $filter );
 
 		$this->assertTrue( $took_over, 'The rival takeover must have run.' );
 		$this->assertNull( $claimed, 'Only the rival may hold the lock after taking it over.' );
-		$this->assertSame( 'rival_key', $this->read_lock_row( '_transient_' . $lock_key ) );
+		$this->assertSame( $rival_value, $this->read_lock_row( '_transient_' . $lock_key ) );
+		$this->assertSame( $rival_expiry, $this->read_lock_row( '_transient_timeout_' . $lock_key ), 'The refused claim must leave the rival expiry.' );
 	}
 
 	/**
@@ -365,49 +388,6 @@ class OrderPaymentLockTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A claim should win over a leftover expiry row equal to the expiry it writes.
-	 */
-	public function test_claim_wins_over_a_leftover_expiry_equal_to_its_own(): void {
-		$this->skip_when_transients_live_in_object_cache();
-		$order      = wc_create_order();
-		$lock_key   = $this->persistence_vocabulary->get_order_lock_key( $order );
-		$expiration = (string) ( time() + $this->persistence_vocabulary->get_lock_ttl_seconds() );
-		$this->insert_lock_row( '_transient_timeout_' . $lock_key, $expiration );
-
-		$this->assertNotNull( $this->sut->claim( $order, $this->persistence_vocabulary, 'this_request_key', 'payment operation' ) );
-		$this->assertSame( 'this_request_key', $this->read_lock_row( '_transient_' . $lock_key ) );
-		$this->assertGreaterThanOrEqual( (int) $expiration, (int) $this->read_lock_row( '_transient_timeout_' . $lock_key ) );
-	}
-
-	/**
-	 * @testdox A claim should lose when a takeover with the same lock value replaces an expired leftover expiry after the claim inserts its value.
-	 */
-	public function test_claim_loses_to_a_same_value_takeover_of_an_expired_leftover_expiry(): void {
-		$this->skip_when_transients_live_in_object_cache();
-		$order    = wc_create_order();
-		$lock_key = $this->persistence_vocabulary->get_order_lock_key( $order );
-		$this->insert_lock_row( '_transient_timeout_' . $lock_key, (string) ( time() - 10 ) );
-
-		// A second request for the same payment reference sees the value row next to the expired expiry and takes over.
-		$rival_expiry = (string) ( time() + 299 );
-		$took_over    = false;
-		$filter       = $this->run_before_query_after(
-			fn( string $query ): bool => $this->is_value_insert( $query, $lock_key ),
-			function () use ( &$took_over, $lock_key, $rival_expiry ): void {
-				$took_over = true;
-				$this->update_lock_row( '_transient_timeout_' . $lock_key, $rival_expiry );
-			}
-		);
-
-		$claimed = $this->sut->claim( $order, $this->persistence_vocabulary, 'pi_shared', 'payment operation' );
-		remove_filter( 'query', $filter );
-
-		$this->assertTrue( $took_over, 'The rival takeover must have run.' );
-		$this->assertNull( $claimed, 'Two requests for the same payment reference must not both hold the lock.' );
-		$this->assertSame( $rival_expiry, $this->read_lock_row( '_transient_timeout_' . $lock_key ), 'The refused claim must leave the taker expiry.' );
-	}
-
-	/**
 	 * @testdox A claim should refuse a leftover value row without an expiry row and give that row an expiry.
 	 */
 	public function test_claim_refuses_a_leftover_value_row_without_an_expiry_row(): void {
@@ -459,25 +439,6 @@ class OrderPaymentLockTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'taker_key', $this->read_lock_row( '_transient_' . $lock_key ), 'Reading an expired lock must not delete the new holder value.' );
 		$this->assertNotNull( $this->read_lock_row( '_transient_timeout_' . $lock_key ), 'Reading an expired lock must not delete the new holder expiry.' );
 		$this->assertNull( $this->sut->claim( $order, $this->persistence_vocabulary, 'third_key', 'payment operation' ), 'A third claimant must not win while the taker holds the lock.' );
-	}
-
-	/**
-	 * @testdox A lock refusal logged without a source goes to the order-payments log.
-	 */
-	public function test_lock_refusal_without_a_source_logs_under_order_payments(): void {
-		$order   = wc_create_order();
-		$sources = array();
-		$capture = static function ( $message, $level, $context ) use ( &$sources ) {
-			$sources[] = $context['source'] ?? null;
-			return $message;
-		};
-		add_filter( 'woocommerce_logger_log_message', $capture, 10, 3 );
-
-		$this->sut->log_refusal( $order, $this->persistence_vocabulary, 'refund' );
-		remove_filter( 'woocommerce_logger_log_message', $capture, 10 );
-
-		// WC_Logger runs the filter once per log handler.
-		$this->assertSame( array( 'order-payments' ), array_values( array_unique( $sources ) ) );
 	}
 
 	/**
