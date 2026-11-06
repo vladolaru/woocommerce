@@ -65,6 +65,11 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	public const PROVIDER_FAILURE_TEXT = 'No such customer: shopper@example.com, see https://pay.example.test/r?key=sk_test_leak123';
 
 	/**
+	 * A refund note already on the order, which a malformed note structure must find by its text alone.
+	 */
+	private const FALLBACK_REFUND_NOTE = 'Existing exact refund note. (<code>re_malformed_structure</code>)';
+
+	/**
 	 * The System Under Test.
 	 *
 	 * @var PaymentProcessingService
@@ -3533,14 +3538,18 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Mixed equivalent-note values are filtered while valid structural identity remains usable.
+	 * @testdox Malformed equivalent-note values are dropped before a refund note is matched, so only a real string rendering is adopted ($_dataName).
+	 * @dataProvider malformed_refund_note_equivalents
+	 *
+	 * @param string  $reference     Provider refund ID.
+	 * @param string  $existing_note Note already on the order.
+	 * @param mixed[] $equivalents   Equivalent-note values the provider sends.
+	 * @param string  $expected_note The one refund note that carries the identity afterwards.
 	 */
-	public function test_process_refund_filters_mixed_equivalent_notes_before_structural_adoption(): void {
-		$identity     = 'refund:re_mixed_equivalents:created_successful';
-		$runtime_note = 'Native refund note. (<code>re_mixed_equivalents</code>)';
-		$locale_note  = 'Localized refund note. (<code>re_mixed_equivalents</code>)';
-		$order        = $this->create_woopayments_order( '3.25' );
-		$refund       = wc_create_refund(
+	public function test_process_refund_filters_mixed_equivalent_notes_before_structural_adoption( string $reference, string $existing_note, array $equivalents, string $expected_note ): void {
+		$identity = "refund:{$reference}:created_successful";
+		$order    = $this->create_woopayments_order( '3.25' );
+		$refund   = wc_create_refund(
 			array(
 				'order_id'       => $order->get_id(),
 				'amount'         => 3.25,
@@ -3548,19 +3557,19 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 			)
 		);
 		$this->assertInstanceOf( WC_Order_Refund::class, $refund );
-		$order->add_order_note( $locale_note );
+		$existing_note_id = $order->add_order_note( $existing_note );
 
 		$provider = new RecordingProvider(
 			new PaymentOutcome(
 				PaymentOutcome::STATUS_COMPLETED,
-				're_mixed_equivalents',
+				$reference,
 				'',
 				'',
 				'',
 				array(
-					'refund_note'             => $runtime_note,
+					'refund_note'             => "Native refund note. (<code>{$reference}</code>)",
 					'refund_note_identity'    => $identity,
-					'refund_note_equivalents' => array( $runtime_note, 42, array( '_arbitrary_comment_meta' => 'injected' ), $locale_note ),
+					'refund_note_equivalents' => $equivalents,
 				)
 			)
 		);
@@ -3573,194 +3582,90 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$refund_notes = array_values(
 			array_filter(
 				wc_get_order_notes( array( 'order_id' => $order->get_id() ) ),
-				static fn( $note ): bool => str_contains( $note->content, 're_mixed_equivalents' )
+				static fn( $note ): bool => str_contains( $note->content, $reference )
 			)
 		);
 		$this->assertCount( 1, $refund_notes );
-		$this->assertSame( $locale_note, $refund_notes[0]->content );
+		$this->assertSame( $expected_note, $refund_notes[0]->content );
 		$this->assertSame( hash( 'sha256', $identity ), get_comment_meta( $refund_notes[0]->id, $provider->get_persistence_vocabulary()->get_note_identity_meta_key(), true ) );
 		$this->assertSame( '', get_comment_meta( $refund_notes[0]->id, '_arbitrary_comment_meta', true ) );
-	}
-
-	/**
-	 * @testdox Numeric equivalent-note values are not coerced into persisted-note content matches.
-	 */
-	public function test_process_refund_does_not_coerce_numeric_equivalent_note_candidates(): void {
-		$identity     = 'refund:re_numeric_equivalent:created_successful';
-		$runtime_note = 'Native refund note. (<code>re_numeric_equivalent</code>)';
-		$order        = $this->create_woopayments_order( '3.50' );
-		$refund       = wc_create_refund(
-			array(
-				'order_id'       => $order->get_id(),
-				'amount'         => 3.50,
-				'refund_payment' => false,
-			)
-		);
-		$this->assertInstanceOf( WC_Order_Refund::class, $refund );
-		$coercion_trap_note_id = $order->add_order_note( '42' );
-
-		$provider = new RecordingProvider(
-			new PaymentOutcome(
-				PaymentOutcome::STATUS_COMPLETED,
-				're_numeric_equivalent',
-				'',
-				'',
-				'',
-				array(
-					'refund_note'             => $runtime_note,
-					'refund_note_identity'    => $identity,
-					'refund_note_equivalents' => array( 42 ),
-				)
-			)
-		);
-
-		$result = $this->sut->process_refund( PaymentOperationContext::for_refund( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 3.50 ), $provider );
-
-		$this->assertTrue( $result );
-		$runtime_notes = array_values(
-			array_filter(
-				wc_get_order_notes( array( 'order_id' => $order->get_id() ) ),
-				static fn( $note ): bool => $runtime_note === $note->content
-			)
-		);
-		$this->assertCount( 1, $runtime_notes );
-		$this->assertSame( hash( 'sha256', $identity ), get_comment_meta( $runtime_notes[0]->id, $provider->get_persistence_vocabulary()->get_note_identity_meta_key(), true ) );
-		$this->assertSame( array(), get_comment_meta( $coercion_trap_note_id ) );
-	}
-
-	/**
-	 * @testdox Malformed structural refund-note values fall back without creating comment metadata.
-	 * @testWith [""]
-	 *           [["refund:re_malformed_structure:created_successful"]]
-	 *           [42]
-	 *
-	 * @param mixed $identity Structural note identity.
-	 */
-	public function test_process_refund_does_not_coerce_malformed_structural_note_values( $identity ): void {
-		$note   = 'Existing exact refund note. (<code>re_malformed_structure</code>)';
-		$order  = $this->create_woopayments_order( '2.75' );
-		$refund = wc_create_refund(
-			array(
-				'order_id'       => $order->get_id(),
-				'amount'         => 2.75,
-				'refund_payment' => false,
-			)
-		);
-		$this->assertInstanceOf( WC_Order_Refund::class, $refund );
-		$note_id = $order->add_order_note( $note );
-
-		$provider = new RecordingProvider(
-			new PaymentOutcome(
-				PaymentOutcome::STATUS_COMPLETED,
-				're_malformed_structure',
-				'',
-				'',
-				'',
-				array(
-					'refund_note'             => $note,
-					'refund_note_identity'    => $identity,
-					'refund_note_equivalents' => array( $note ),
-				)
-			)
-		);
-
-		$result = $this->sut->process_refund( PaymentOperationContext::for_refund( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 2.75 ), $provider );
-
-		$this->assertTrue( $result );
-		$this->assertCount( 1, array_filter( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), static fn( $order_note ): bool => $note === $order_note->content ) );
-		$this->assertSame( array(), get_comment_meta( $note_id ) );
-	}
-
-	/**
-	 * @testdox A provider whose vocabulary names no note identity key gets its refund note found by text alone, with no identity written.
-	 */
-	public function test_process_refund_without_a_note_identity_key_finds_the_note_by_text(): void {
-		$note   = 'Existing exact refund note. (<code>re_no_identity_key</code>)';
-		$order  = $this->create_woopayments_order( '2.75' );
-		$refund = wc_create_refund(
-			array(
-				'order_id'       => $order->get_id(),
-				'amount'         => 2.75,
-				'refund_payment' => false,
-			)
-		);
-		$this->assertInstanceOf( WC_Order_Refund::class, $refund );
-		$note_id  = $order->add_order_note( $note );
-		$provider = new class(
-			new PaymentOutcome(
-				PaymentOutcome::STATUS_COMPLETED,
-				're_no_identity_key',
-				'',
-				'',
-				'',
-				array(
-					PaymentOutcome::DATA_REFUND_NOTE => $note,
-					PaymentOutcome::DATA_REFUND_NOTE_IDENTITY => 'refund:re_no_identity_key:created_successful',
-					PaymentOutcome::DATA_REFUND_NOTE_EQUIVALENTS => array( $note ),
-				)
-			)
-		) extends RecordingProvider {
-			/**
-			 * Get a vocabulary that names no note identity key.
-			 *
-			 * @return ProviderPersistenceVocabularyInterface
-			 */
-			public function get_persistence_vocabulary(): ProviderPersistenceVocabularyInterface {
-				return new class() extends WooPaymentsPersistenceVocabulary {
-					/**
-					 * Name no note identity key.
-					 *
-					 * @return string
-					 */
-					public function get_note_identity_meta_key(): string {
-						return '';
-					}
-				};
-			}
-		};
-
-		$result = $this->sut->process_refund( PaymentOperationContext::for_refund( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 2.75 ), $provider );
-
-		$this->assertTrue( $result );
-		$this->assertCount( 1, array_filter( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), static fn( $order_note ): bool => $note === $order_note->content ) );
-		$this->assertSame( array(), get_comment_meta( $note_id ) );
-	}
-
-	/**
-	 * @testdox Missing or malformed refund-note equivalents retain exact-content fallback without adding identity metadata.
-	 * @testWith [false, null]
-	 *           [true, "not-an-array"]
-	 *
-	 * @param bool  $include_equivalents Whether to include the equivalents field.
-	 * @param mixed $equivalent_notes    Equivalent-note field value.
-	 */
-	public function test_process_refund_falls_back_when_equivalent_notes_are_absent_or_malformed( bool $include_equivalents, $equivalent_notes ): void {
-		$note        = 'Existing exact partial-structure refund note. (<code>re_partial_structure</code>)';
-		$order       = $this->create_woopayments_order( '2.25' );
-		$refund      = wc_create_refund(
-			array(
-				'order_id'       => $order->get_id(),
-				'amount'         => 2.25,
-				'refund_payment' => false,
-			)
-		);
-		$effect_data = array(
-			PaymentOutcome::DATA_REFUND_NOTE          => $note,
-			PaymentOutcome::DATA_REFUND_NOTE_IDENTITY => 'refund:re_partial_structure:created_successful',
-		);
-		$this->assertInstanceOf( WC_Order_Refund::class, $refund );
-		$note_id = $order->add_order_note( $note );
-
-		if ( $include_equivalents ) {
-			$effect_data[ PaymentOutcome::DATA_REFUND_NOTE_EQUIVALENTS ] = $equivalent_notes;
+		if ( $existing_note !== $expected_note ) {
+			$this->assertSame( array(), get_comment_meta( $existing_note_id ), 'A note that only a coerced value would match must stay untouched.' );
 		}
-		$provider = new RecordingProvider( new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 're_partial_structure', '', '', '', $effect_data ) );
+	}
 
-		$result = $this->sut->process_refund( PaymentOperationContext::for_refund( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 2.25 ), $provider );
+	/**
+	 * Equivalent-note lists holding values that are not strings, with the note each must leave carrying the identity.
+	 *
+	 * @return array<string,array{string,string,mixed[],string}>
+	 */
+	public function malformed_refund_note_equivalents(): array {
+		return array(
+			'a mixed list adopts the localized note' => array(
+				're_mixed_equivalents',
+				'Localized refund note. (<code>re_mixed_equivalents</code>)',
+				array( 'Native refund note. (<code>re_mixed_equivalents</code>)', 42, array( '_arbitrary_comment_meta' => 'injected' ), 'Localized refund note. (<code>re_mixed_equivalents</code>)' ),
+				'Localized refund note. (<code>re_mixed_equivalents</code>)',
+			),
+			// The note reading '42' is the trap: a value cast to a string would match it.
+			'a numeric candidate matches no note'    => array(
+				're_numeric_equivalent',
+				'42',
+				array( 42 ),
+				'Native refund note. (<code>re_numeric_equivalent</code>)',
+			),
+		);
+	}
+
+	/**
+	 * @testdox A refund note with a malformed identity or malformed equivalents falls back to its exact text and writes no comment meta ($_dataName).
+	 * @dataProvider malformed_refund_note_structures
+	 *
+	 * @param mixed $identity            Structural note identity.
+	 * @param bool  $include_equivalents Whether the equivalents field is sent.
+	 * @param mixed $equivalents         Equivalents field value.
+	 */
+	public function test_process_refund_does_not_coerce_malformed_structural_note_values( $identity, bool $include_equivalents, $equivalents ): void {
+		$order  = $this->create_woopayments_order( '2.75' );
+		$refund = wc_create_refund(
+			array(
+				'order_id'       => $order->get_id(),
+				'amount'         => 2.75,
+				'refund_payment' => false,
+			)
+		);
+		$this->assertInstanceOf( WC_Order_Refund::class, $refund );
+		$note_id = $order->add_order_note( self::FALLBACK_REFUND_NOTE );
+
+		$data = array(
+			PaymentOutcome::DATA_REFUND_NOTE          => self::FALLBACK_REFUND_NOTE,
+			PaymentOutcome::DATA_REFUND_NOTE_IDENTITY => $identity,
+		);
+		if ( $include_equivalents ) {
+			$data[ PaymentOutcome::DATA_REFUND_NOTE_EQUIVALENTS ] = $equivalents;
+		}
+		$provider = new RecordingProvider( new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 're_malformed_structure', '', '', '', $data ) );
+
+		$result = $this->sut->process_refund( PaymentOperationContext::for_refund( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 2.75 ), $provider );
 
 		$this->assertTrue( $result );
-		$this->assertCount( 1, array_filter( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), static fn( $order_note ): bool => $note === $order_note->content ) );
+		$this->assertCount( 1, array_filter( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), static fn( $order_note ): bool => self::FALLBACK_REFUND_NOTE === $order_note->content ) );
 		$this->assertSame( array(), get_comment_meta( $note_id ) );
+	}
+
+	/**
+	 * Malformed note structures: an identity that is not a non-empty string, or equivalents that are absent or not a list.
+	 *
+	 * @return array<string,array{mixed,bool,mixed}>
+	 */
+	public function malformed_refund_note_structures(): array {
+		return array(
+			'empty identity'         => array( '', true, array( self::FALLBACK_REFUND_NOTE ) ),
+			'list as identity'       => array( array( 'refund:re_malformed_structure:created_successful' ), true, array( self::FALLBACK_REFUND_NOTE ) ),
+			'number as identity'     => array( 42, true, array( self::FALLBACK_REFUND_NOTE ) ),
+			'no equivalents'         => array( 'refund:re_malformed_structure:created_successful', false, null ),
+			'equivalents not a list' => array( 'refund:re_malformed_structure:created_successful', true, 'not-an-array' ),
+		);
 	}
 
 	/**
