@@ -1,12 +1,10 @@
 /**
  * External dependencies
  */
-import { applyFilters, removeAllFilters, removeFilter } from '@wordpress/hooks';
+import type * as Hooks from '@wordpress/hooks';
 
-/**
- * Internal dependencies
- */
-import '../index';
+let applyFilters: typeof Hooks.applyFilters;
+let removeFilter: typeof Hooks.removeFilter;
 
 const settings: Record< string, unknown > = {
 	// Shapes the server registers: label and code of each currency customers ordered in (client 11.1.0
@@ -23,16 +21,13 @@ jest.mock( '@woocommerce/settings', () => ( {
 		name in settings ? settings[ name ] : fallback,
 } ) );
 
-const FILTERS = [
-	'woocommerce_admin_orders_report_advanced_filters',
-	'woocommerce_admin_report_table',
-	'woocommerce_admin_orders_report_filters',
-	'woocommerce_admin_report_currency',
-];
-
 describe( 'multi-currency-analytics', () => {
-	afterAll( () => {
-		FILTERS.forEach( ( hook ) => removeAllFilters( hook ) );
+	// Fresh copies of the hooks and of the module for each test, so every test starts with all the filters the module
+	// adds on load: one test removes its report-table callback.
+	beforeEach( async () => {
+		jest.resetModules();
+		( { applyFilters, removeFilter } = await import( '@wordpress/hooks' ) );
+		await import( '../index' );
 	} );
 
 	it( 'adds a customer currency advanced filter listing the currencies by name', () => {
