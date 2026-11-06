@@ -169,6 +169,20 @@ const installStripeMock = () => {
 		mockStripe;
 };
 
+// The method settings render lazily: until a test in the file has rendered the method once, its preview adds the
+// Stripe.js script only after the chunk resolves.
+const findStripeScript = async () => {
+	await waitFor( () =>
+		expect(
+			document.querySelector( `script[src="${ STRIPE_SCRIPT_URL }"]` )
+		).toBeInTheDocument()
+	);
+
+	return document.querySelector(
+		`script[src="${ STRIPE_SCRIPT_URL }"]`
+	) as HTMLScriptElement;
+};
+
 const setHookDefaults = () => {
 	// The saved snapshot starts as the first value the WooPay hook reports.
 	mockUseGetSavedSettings.mockImplementation( () => ( {
@@ -1126,11 +1140,7 @@ describe( 'WooPaymentsExpressCheckoutSettings', () => {
 			<WooPaymentsExpressCheckoutSettings methodId="payment_request" />
 		);
 
-		const stripeScript = document.querySelector(
-			`script[src="${ STRIPE_SCRIPT_URL }"]`
-		) as HTMLScriptElement;
-
-		expect( stripeScript ).toBeInTheDocument();
+		const stripeScript = await findStripeScript();
 
 		( window as typeof window & { Stripe?: typeof mockStripe } ).Stripe =
 			stripeFactory;
@@ -1148,9 +1158,7 @@ describe( 'WooPaymentsExpressCheckoutSettings', () => {
 			<WooPaymentsExpressCheckoutSettings methodId="payment_request" />
 		);
 
-		const failedStripeScript = document.querySelector(
-			`script[src="${ STRIPE_SCRIPT_URL }"]`
-		) as HTMLScriptElement;
+		const failedStripeScript = await findStripeScript();
 		failedStripeScript.dispatchEvent( new Event( 'error' ) );
 
 		expect(
