@@ -862,8 +862,6 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 			static fn() => $sut->process_checkout_outcome( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_post_charge' ), $provider )
 		);
 
-		remove_all_filters( 'woocommerce_logging_class' );
-
 		$order = wc_get_order( $order->get_id() );
 
 		$this->assertInstanceOf( WC_Order::class, $order );
@@ -2709,7 +2707,6 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 			}
 		);
 		$outcome = $this->sut->process_checkout_outcome( PaymentOperationContext::for_checkout( $loaded, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_second' ), $provider );
-		remove_all_filters( 'woocommerce_logging_class' );
 		$order = wc_get_order( $order->get_id() );
 
 		$this->assertSame( 0, $provider->charge_calls, 'An authorization held for capture must not be charged again.' );
@@ -3324,8 +3321,6 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 
 		$result = $this->sut->process_refund( PaymentOperationContext::for_refund( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 2.50, 'Adjustment' ), $provider );
 
-		remove_all_filters( 'woocommerce_logging_class' );
-
 		$this->assertTrue( $result, 'The provider refund succeeded, so the call must report success.' );
 		$this->assertSame( 1, $provider->refund_calls );
 		$this->assertSame( 're_A', wc_get_order( $refund->get_id() )->get_meta( '_wcpay_refund_id', true ), 'A row linked to another provider refund must keep that link.' );
@@ -3901,8 +3896,6 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 
 		$result = $this->sut->process_refund( PaymentOperationContext::for_refund( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 2.50, 'Adjustment' ), $provider );
 
-		remove_all_filters( 'woocommerce_logging_class' );
-
 		$this->assertTrue( $result, 'Provider success must remain successful while the local failure is made reconcilable.' );
 		$this->assertCount( 1, $fake_logger->error_calls, 'The invalid post-provider target must emit one reconciliation error log.' );
 		$context = $fake_logger->error_calls[0]['context'];
@@ -3945,8 +3938,6 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 			static fn() => $sut->process_checkout_outcome( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_apply_failure' ), $provider )
 		);
 
-		remove_all_filters( 'woocommerce_logging_class' );
-
 		$apply_logs = array_values(
 			array_filter(
 				$fake_logger->error_calls,
@@ -3984,8 +3975,6 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$this->expect_outcome_apply_exception(
 			static fn() => $sut->process_checkout_outcome( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_second_payment' ), $provider )
 		);
-
-		remove_all_filters( 'woocommerce_logging_class' );
 
 		$mismatch_logs = array_values(
 			array_filter(

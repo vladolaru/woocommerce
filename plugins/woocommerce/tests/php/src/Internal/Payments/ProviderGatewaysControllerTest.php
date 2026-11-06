@@ -14,14 +14,6 @@ use WC_Unit_Test_Case;
 class ProviderGatewaysControllerTest extends WC_Unit_Test_Case {
 
 	/**
-	 * Tear down test fixtures.
-	 */
-	public function tearDown(): void {
-		remove_all_filters( 'woocommerce_payment_gateways' );
-		parent::tearDown();
-	}
-
-	/**
 	 * @testdox Should resolve a lazy provider once, the first time the gateway list is built.
 	 */
 	public function test_resolves_a_lazy_provider_once_when_the_gateway_list_is_built(): void {
