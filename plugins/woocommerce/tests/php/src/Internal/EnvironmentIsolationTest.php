@@ -74,18 +74,56 @@ class EnvironmentIsolationTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should give the next test the run's own session when an earlier test left the base class's mock session.
+	 * @testdox Should give the next test the run's own session when an earlier test left the base class's mock session, whatever real session came before.
 	 */
 	public function test_mock_session_left_by_an_earlier_test_is_replaced_before_the_next_test(): void {
+		// Some tests install a real session of their own and leave it, as WC_Cart_Test does.
+		$other_session = new \WC_Session_Handler();
+		$other_session->init();
+		WC()->session = $other_session;
+
+		$this->leave_mock_session_then_start_next_test();
 		$run_session = WC()->session;
 
+		$this->assertNotInstanceOf( \WC_Mock_Session_Handler::class, $run_session, 'The next test does not start with the mock.' );
+		$this->assertNotSame( $other_session, $run_session, 'The next test starts with the run\'s session, not one an earlier test installed.' );
+
+		add_filter( 'woocommerce_session_handler', array( $this, 'set_mock_session_handler' ) );
+		$this->leave_mock_session_then_start_next_test();
+
+		$this->assertSame( $run_session, WC()->session, 'Every next test starts with the same run session object.' );
+	}
+
+	/**
+	 * @testdox Should give the next test a clean session when the run's session had notices and data before a mock replaced it.
+	 */
+	public function test_restored_session_keeps_no_state_from_before_a_mock_replaced_it(): void {
+		$this->leave_mock_session_then_start_next_test();
+		$customer_id = WC()->session->get_customer_id();
+
+		// An earlier test writes into the run's session, then initializes the session under the base class filter.
+		wc_add_notice( 'Left by an earlier test.', 'error' );
+		WC()->session->set( 'left_by_an_earlier_test', 'yes' );
+		add_filter( 'woocommerce_session_handler', array( $this, 'set_mock_session_handler' ) );
+		$this->leave_mock_session_then_start_next_test();
+
+		$this->assertNotInstanceOf( \WC_Mock_Session_Handler::class, WC()->session, 'The next test does not start with the mock.' );
+		$this->assertSame( 0, wc_notice_count(), 'The next test sees no notice from before the mock.' );
+		$this->assertNull( WC()->session->get( 'left_by_an_earlier_test' ), 'The next test sees no session data from before the mock.' );
+		$this->assertNotSame( $customer_id, WC()->session->get_customer_id(), 'The next test gets a new customer, as a new request would.' );
+	}
+
+	/**
+	 * Leave a mock session the way a polluting test does, clean up as the base class teardown does, then start the next test.
+	 */
+	private function leave_mock_session_then_start_next_test(): void {
 		WC()->initialize_session();
 		$this->assertInstanceOf( \WC_Mock_Session_Handler::class, WC()->session, 'Under the base class filter, initializing the session gives the mock.' );
+
+		$this->clear_wc_singleton_state();
 
 		// The next test's setUp applies the baseline before the base class adds its session filter again.
 		remove_filter( 'woocommerce_session_handler', array( $this, 'set_mock_session_handler' ) );
 		EnvironmentIsolation::apply_for_test( static::class );
-
-		$this->assertSame( $run_session, WC()->session, 'The next test starts with the session the run started with.' );
 	}
 }

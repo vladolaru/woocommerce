@@ -92,7 +92,8 @@ final class EnvironmentIsolation {
 	private static array $refused_requests = array();
 
 	/**
-	 * The store's session object as the first test found it; the WordPress hook snapshot holds its callbacks.
+	 * The first real session object a test's setUp found. In a normal run that is the bootstrap request's session, whose
+	 * callbacks the WordPress hook snapshot holds, unless a test that does not extend WC_Unit_Test_Case replaced it first.
 	 *
 	 * @var \WC_Session|null
 	 */
@@ -152,6 +153,8 @@ final class EnvironmentIsolation {
 
 	/**
 	 * Put the run's own session back when an earlier test left the base class's mock session, which nothing else resets.
+	 *
+	 * The base class teardown cleaned the mock, not the run's session, so that session is forgotten before it is used again.
 	 */
 	private static function restore_run_session(): void {
 		if ( ! WC()->session instanceof \WC_Mock_Session_Handler ) {
@@ -161,9 +164,32 @@ final class EnvironmentIsolation {
 
 		if ( self::$run_session instanceof \WC_Session ) {
 			WC()->session = self::$run_session;
+			self::forget_run_session();
 		}
 		// Keeps the run's session when the filters still name its class, otherwise builds the class they name.
 		WC()->initialize_session();
+	}
+
+	/**
+	 * Empty the run's session, its notices and the cart, and give it a new customer ID, as a new request would have.
+	 *
+	 * The session handler's own forget_session() does that, and also expires the session cookie; a test that did not
+	 * set that cookie must not see it change, so no cookie is set while it runs.
+	 */
+	private static function forget_run_session(): void {
+		if ( ! self::$run_session instanceof \WC_Session_Handler ) {
+			return;
+		}
+
+		$no_cookie = static function () {
+			return false;
+		};
+		add_filter( 'woocommerce_set_cookie_enabled', $no_cookie, PHP_INT_MAX );
+		try {
+			self::$run_session->forget_session();
+		} finally {
+			remove_filter( 'woocommerce_set_cookie_enabled', $no_cookie, PHP_INT_MAX );
+		}
 	}
 
 	/**
