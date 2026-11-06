@@ -3,6 +3,7 @@
  */
 import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import apiFetch from '@wordpress/api-fetch';
 import { speak } from '@wordpress/a11y';
 import { MemoryRouter } from 'react-router-dom';
 import { recordEvent } from '@woocommerce/tracks';
@@ -40,6 +41,9 @@ jest.mock( '@wordpress/a11y', () => ( {
 	speak: jest.fn(),
 } ) );
 
+// The evidence form reads the WooPayments settings store, whose resolver requests the settings.
+jest.mock( '@wordpress/api-fetch', () => jest.fn() );
+
 jest.mock( '../money-movement/data', () => ( {
 	getWooPaymentsDispute: jest.fn(),
 	getWooPaymentsDisputeFileDetails: jest.fn(),
@@ -64,6 +68,7 @@ const mockRecordEvent = recordEvent as jest.MockedFunction<
 	typeof recordEvent
 >;
 const mockSpeak = speak as jest.MockedFunction< typeof speak >;
+const mockApiFetch = apiFetch as jest.MockedFunction< typeof apiFetch >;
 
 /**
  * The evidence form shows a save or upload result once, announced through `speak()` as the client's snackbars are
@@ -223,6 +228,9 @@ describe( 'WooPaymentsDisputeChallengePage', () => {
 		mockUploadFile.mockReset();
 		mockRecordEvent.mockReset();
 		mockSpeak.mockReset();
+		// Settings with no support email or phone, which the cover letter would read.
+		mockApiFetch.mockReset();
+		mockApiFetch.mockResolvedValue( {} );
 		mockAccountMode( false );
 		mockGetFileDetails.mockResolvedValue( {
 			id: 'file_unused',
