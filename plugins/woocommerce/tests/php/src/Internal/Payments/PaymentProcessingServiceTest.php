@@ -2561,33 +2561,20 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should not call the provider while the order payment lock holds $held_value.
-	 * @testWith ["0b4c2a9e-6f1d-4c3b-9a7e-2d5f8c1e4b6a"]
-	 *           ["pi_existing"]
+	 * @testdox A $operation the order payment lock refuses while it holds $held_value calls no provider, fails, and logs one warning naming the refused operation and the holder.
 	 *
+	 * Client 11.1.0 takes no lock at checkout (class-wc-payment-gateway-wcpay.php:1251-1268), so every checkout refusal here
+	 * is one the client would have allowed.
+	 *
+	 * @testWith ["checkout", "0b4c2a9e-6f1d-4c3b-9a7e-2d5f8c1e4b6a"]
+	 *           ["checkout", "pi_existing"]
+	 *           ["capture", "pi_existing"]
+	 *           ["cancel", "pi_existing"]
+	 *
+	 * @param string $operation  Refused operation.
 	 * @param string $held_value Lock value of the operation holding the lock: another checkout's key, or a payment reference.
 	 */
-	public function test_process_checkout_returns_failure_when_order_operation_is_locked( string $held_value ): void {
-		$order = $this->create_woopayments_order( '10.00' );
-		$this->hold_order_payment_lock( $order, $this->persistence_vocabulary, $held_value );
-
-		$provider = new RecordingProvider( new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_test' ) );
-
-		$outcome = $this->sut->process_checkout_outcome( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_test' ), $provider );
-
-		$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
-		$this->assertSame( '', $outcome->get_provider_payment_id() );
-		$this->assertSame( 0, $provider->charge_calls );
-		$this->clear_order_payment_lock( $order, $this->persistence_vocabulary );
-	}
-
-	/**
-	 * @testdox A checkout the order payment lock refuses logs one warning line with the lock refusal prefix.
-	 *
-	 * Client 11.1.0 takes no lock at checkout (class-wc-payment-gateway-wcpay.php:1251-1268), so every refusal here is one
-	 * the client would have allowed.
-	 */
-	public function test_checkout_refused_by_the_order_payment_lock_logs_one_warning(): void {
+	public function test_process_checkout_returns_failure_when_order_operation_is_locked( string $operation, string $held_value ): void {
 		$order  = $this->create_woopayments_order( '10.00' );
 		$logger = $this->create_fake_logger();
 		add_filter(
@@ -2596,19 +2583,31 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 				return $logger;
 			}
 		);
-		$lock  = wc_get_container()->get( OrderPaymentLock::class );
-		$token = $lock->claim( $order, $this->persistence_vocabulary, 'pi_holder', 'payment status update' );
+		$token = $this->order_payment_lock->claim( $order, $this->persistence_vocabulary, $held_value, 'payment status update' );
 		$this->assertNotNull( $token );
 
+		$provider = new RecordingProvider( new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_test' ) );
 		try {
-			$this->sut->process_checkout_outcome( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_test' ), new RecordingProvider( new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_test' ) ) );
+			switch ( $operation ) {
+				case 'checkout':
+					$outcome = $this->sut->process_checkout_outcome( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_test' ), $provider );
+					break;
+				case 'capture':
+					$outcome = $this->sut->capture( PaymentOperationContext::for_capture( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ), $provider );
+					break;
+				default:
+					$outcome = $this->sut->cancel( PaymentOperationContext::for_cancel( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ), $provider );
+			}
 		} finally {
-			$lock->release( $order, $this->persistence_vocabulary, $token );
+			$this->order_payment_lock->release( $order, $this->persistence_vocabulary, $token );
 		}
 
+		$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
+		$this->assertSame( '', $outcome->get_provider_payment_id() );
+		$this->assertSame( 0, $provider->charge_calls + $provider->capture_calls + $provider->cancel_calls, 'A refused operation must not reach the provider.' );
 		$this->assertCount( 1, $logger->entries );
 		$this->assertSame( 'warning', $logger->entries[0]['level'] );
-		$this->assertMatchesRegularExpression( '/^order payment lock refused: order ' . $order->get_id() . ', refused checkout, held by payment status update for \\d+s$/', $logger->entries[0]['message'] );
+		$this->assertMatchesRegularExpression( '/^order payment lock refused: order ' . $order->get_id() . ', refused ' . $operation . ', held by payment status update for \\d+s$/', $logger->entries[0]['message'] );
 	}
 
 	/**
@@ -2639,79 +2638,6 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( '', $third->get_redirect_url() );
 		$this->assertInstanceOf( WC_Order::class, $order );
 		$this->assertSame( 'pi_first', $order->get_transaction_id() );
-		$this->assertFalse( get_transient( $this->persistence_vocabulary->get_order_lock_key( $order ) ), 'The refusal must release the lock.' );
-	}
-
-	/**
-	 * @testdox Should not charge an order put on hold with a payment on record after this request loaded it.
-	 */
-	public function test_process_checkout_does_not_charge_an_order_put_on_hold_after_it_was_loaded(): void {
-		$order = $this->create_woopayments_order( '10.00' );
-		$order->set_transaction_id( 'pi_held' );
-		$order->update_meta_data( '_intent_id', 'pi_held' );
-		$order->save();
-		$loaded = wc_get_order( $order->get_id() );
-		$this->assertInstanceOf( WC_Order::class, $loaded );
-
-		// Another request records the manual-capture authorization of the same intent: the order goes on hold, unpaid.
-		$order->set_status( 'on-hold' );
-		$order->save();
-
-		$provider    = new RecordingProvider( new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_second' ) );
-		$fake_logger = $this->create_fake_logger();
-		add_filter(
-			'woocommerce_logging_class',
-			function () use ( $fake_logger ) {
-				return $fake_logger;
-			}
-		);
-		$outcome = $this->sut->process_checkout_outcome( PaymentOperationContext::for_checkout( $loaded, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_second' ), $provider );
-		$order = wc_get_order( $order->get_id() );
-
-		$this->assertSame( 0, $provider->charge_calls, 'An authorization held for capture must not be charged again.' );
-		$refusals = array_values(
-			array_filter(
-				$fake_logger->entries,
-				static fn( array $entry ): bool => \WC_Log_Levels::WARNING === $entry['level'] && 'order_status_changed' === ( $entry['context']['reason'] ?? null )
-			)
-		);
-		$this->assertCount( 1, $refusals, 'The refused charge must be logged once.' );
-		$this->assertSame( sprintf( 'Checkout charged nothing: order %d changed before this request claimed its payment lock.', $order->get_id() ), $refusals[0]['message'] );
-		$this->assertSame( 'order-payments', $refusals[0]['context']['source'] );
-		$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
-		$this->assertSame( 'A payment operation is already in progress for this order.', $outcome->get_data()[ PaymentOutcome::DATA_ERROR_MESSAGE ] ?? null );
-		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertSame( 'on-hold', $order->get_status(), 'The refusal must leave the held order as it is.' );
-		$this->assertFalse( get_transient( $this->persistence_vocabulary->get_order_lock_key( $order ) ), 'The refusal must release the lock.' );
-	}
-
-	/**
-	 * @testdox Should not charge an order whose payment reference changed after this request loaded it: $_dataName.
-	 *
-	 * @dataProvider provide_payment_reference_changes
-	 *
-	 * @param string $transaction_id Transaction ID another request records.
-	 * @param string $intent_id      Payment intent another request records.
-	 */
-	public function test_process_checkout_does_not_charge_an_order_whose_payment_reference_changed( string $transaction_id, string $intent_id ): void {
-		// An earlier attempt left an intent waiting for the shopper; checkout keeps the first transaction ID.
-		$order = $this->create_woopayments_order( '10.00' );
-		$order->set_transaction_id( 'pi_started' );
-		$order->update_meta_data( '_intent_id', 'pi_started' );
-		$order->save();
-		$loaded = wc_get_order( $order->get_id() );
-		$this->assertInstanceOf( WC_Order::class, $loaded );
-
-		$order->set_transaction_id( $transaction_id );
-		$order->update_meta_data( '_intent_id', $intent_id );
-		$order->save();
-
-		$provider = new RecordingProvider( new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_second' ) );
-		$outcome  = $this->sut->process_checkout_outcome( PaymentOperationContext::for_checkout( $loaded, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_second' ), $provider );
-
-		$this->assertSame( 0, $provider->charge_calls, 'A payment another request started must not be paid again.' );
-		$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
-		$this->assertSame( 'A payment operation is already in progress for this order.', $outcome->get_data()[ PaymentOutcome::DATA_ERROR_MESSAGE ] ?? null );
 		$this->assertFalse( get_transient( $this->persistence_vocabulary->get_order_lock_key( $order ) ), 'The refusal must release the lock.' );
 	}
 
@@ -3008,40 +2934,77 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should not charge an order another submission changed since this request loaded it: $_dataName.
+	 * @testdox Should not charge an order another request changed since this request loaded it, and log why once: $_dataName.
 	 *
 	 * @dataProvider provide_unpaid_changes_by_another_submission
 	 *
-	 * @param string $status         Status another submission writes.
-	 * @param string $unresolved_key Charge idempotency key another submission stores on the order.
+	 * @param string $loaded_reference Transaction ID and intent the order carries when this request loads it, or ''.
+	 * @param string $status           Status another request writes, or '' for none.
+	 * @param string $unresolved_key   Charge idempotency key another request stores on the order, or '' for none.
+	 * @param string $transaction_id   Transaction ID another request records, or '' for none.
+	 * @param string $intent_id        Payment intent another request records, or '' for none.
+	 * @param string $reason           Refusal reason the warning carries.
 	 */
-	public function test_process_checkout_does_not_charge_an_order_another_submission_changed( string $status, string $unresolved_key ): void {
-		$order  = $this->create_woopayments_order( '10.00' );
+	public function test_process_checkout_does_not_charge_an_order_another_submission_changed( string $loaded_reference, string $status, string $unresolved_key, string $transaction_id, string $intent_id, string $reason ): void {
+		$order = $this->create_woopayments_order( '10.00' );
+		if ( '' !== $loaded_reference ) {
+			$order->set_transaction_id( $loaded_reference );
+			$order->update_meta_data( '_intent_id', $loaded_reference );
+			$order->save();
+		}
 		$loaded = wc_get_order( $order->get_id() );
 		$this->assertInstanceOf( WC_Order::class, $loaded );
 
-		$order->set_status( $status );
-		$order->update_meta_data( WooPaymentsPaymentOperationService::CHARGE_IDEMPOTENCY_KEY_META, $unresolved_key );
+		if ( '' !== $status ) {
+			$order->set_status( $status );
+		}
+		if ( '' !== $unresolved_key ) {
+			$order->update_meta_data( WooPaymentsPaymentOperationService::CHARGE_IDEMPOTENCY_KEY_META, $unresolved_key );
+		}
+		if ( '' !== $transaction_id ) {
+			$order->set_transaction_id( $transaction_id );
+		}
+		if ( '' !== $intent_id ) {
+			$order->update_meta_data( '_intent_id', $intent_id );
+		}
 		$order->save();
 
-		$provider = new RecordingProvider( new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_second' ) );
-		$outcome  = $this->sut->process_checkout_outcome( PaymentOperationContext::for_checkout( $loaded, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_second' ), $provider );
+		$provider    = new RecordingProvider( new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_second' ) );
+		$fake_logger = $this->create_fake_logger();
+		add_filter(
+			'woocommerce_logging_class',
+			function () use ( $fake_logger ) {
+				return $fake_logger;
+			}
+		);
+		$outcome = $this->sut->process_checkout_outcome( PaymentOperationContext::for_checkout( $loaded, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_second' ), $provider );
+		$order   = wc_get_order( $order->get_id() );
 
-		$this->assertSame( 0, $provider->charge_calls, 'Another submission is at work on this order.' );
+		$this->assertSame( 0, $provider->charge_calls, 'Another request is at work on this order.' );
 		$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
 		$this->assertSame( 'A payment operation is already in progress for this order.', $outcome->get_data()[ PaymentOutcome::DATA_ERROR_MESSAGE ] ?? null );
+		$refusals = array_values( array_filter( $fake_logger->entries, static fn( array $entry ): bool => \WC_Log_Levels::WARNING === $entry['level'] ) );
+		$this->assertCount( 1, $refusals, 'The refused charge must be logged once.' );
+		$this->assertSame( $reason, $refusals[0]['context']['reason'] ?? null );
+		$this->assertSame( sprintf( 'Checkout charged nothing: order %d changed before this request claimed its payment lock.', $order->get_id() ), $refusals[0]['message'] );
+		$this->assertSame( 'order-payments', $refusals[0]['context']['source'] );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( '' === $status ? 'pending' : $status, $order->get_status(), 'The refusal must leave the order as the other request left it.' );
+		$this->assertFalse( get_transient( $this->persistence_vocabulary->get_order_lock_key( $order ) ), 'The refusal must release the lock.' );
 	}
 
 	/**
-	 * Unpaid changes another submission makes between this request's load and its claim.
+	 * Unpaid changes another request makes between this request's load and its claim, with the reason each is refused for.
 	 *
-	 * @return array<string,array{0:string,1:string}>
+	 * @return array<string,array{string,string,string,string,string,string}>
 	 */
 	public function provide_unpaid_changes_by_another_submission(): array {
 		return array(
-			'status only'                      => array( 'failed', '' ),
-			'unresolved charge key only'       => array( 'pending', 'key_unknown_outcome' ),
-			'status and unresolved charge key' => array( 'failed', 'key_unknown_outcome' ),
+			'put on hold with a payment on record' => array( 'pi_held', 'on-hold', '', '', '', 'order_status_changed' ),
+			'unresolved charge key only'           => array( '', '', 'key_unknown_outcome', '', '', 'unresolved_charge_key_changed' ),
+			'status and unresolved charge key'     => array( '', 'failed', 'key_unknown_outcome', '', '', 'order_status_changed' ),
+			'new transaction ID'                   => array( 'pi_started', '', '', 'pi_other', '', 'payment_reference_changed' ),
+			'new payment intent'                   => array( 'pi_started', '', '', '', 'pi_other', 'payment_reference_changed' ),
 		);
 	}
 
@@ -3084,18 +3047,6 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'fresh', $provider->seen_meta, 'The charge must see what the read under the lock returned.' );
 		$this->assertSame( 'fresh', $loaded->get_meta( '_written_after_load', true ), 'The caller continues with the order as read under the lock.' );
 		$this->assertTrue( $loaded->has_status( wc_get_is_paid_statuses() ), 'The caller sees the outcome applied on the same order.' );
-	}
-
-	/**
-	 * Payment references another request records between this request's load and its claim.
-	 *
-	 * @return array<string,array{0:string,1:string}>
-	 */
-	public function provide_payment_reference_changes(): array {
-		return array(
-			'new transaction ID' => array( 'pi_other', 'pi_started' ),
-			'new payment intent' => array( 'pi_started', 'pi_other' ),
-		);
 	}
 
 	/**
@@ -3888,26 +3839,6 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$this->assertWPError( $result );
 		$this->assertSame( 'uncaptured-payment', $result->get_error_code() );
 		$this->assertSame( 'This payment is not captured yet.', $result->get_error_message() );
-	}
-
-	/**
-	 * @testdox Capture and cancel should use the shared order claim.
-	 */
-	public function test_capture_and_cancel_use_shared_order_claim(): void {
-		$order = $this->create_woopayments_order( '10.00' );
-		$this->hold_order_payment_lock( $order, $this->persistence_vocabulary, 'pi_existing' );
-
-		$provider = new RecordingProvider( new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_test' ) );
-
-		$capture_outcome = $this->sut->capture( PaymentOperationContext::for_capture( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ), $provider );
-		$cancel_outcome  = $this->sut->cancel( PaymentOperationContext::for_cancel( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ), $provider );
-
-		$this->assertSame( PaymentOutcome::STATUS_FAILED, $capture_outcome->get_status() );
-		$this->assertSame( PaymentOutcome::STATUS_FAILED, $cancel_outcome->get_status() );
-		$this->assertSame( 0, $provider->capture_calls );
-		$this->assertSame( 0, $provider->cancel_calls );
-
-		$this->clear_order_payment_lock( $order, $this->persistence_vocabulary );
 	}
 
 	/**
