@@ -40,6 +40,20 @@ trait WooPayServicesFixture {
 	private $original_session;
 
 	/**
+	 * Original WooCommerce customer object.
+	 *
+	 * @var \WC_Customer|null
+	 */
+	private $original_customer;
+
+	/**
+	 * The session's customer data when the test began.
+	 *
+	 * @var mixed
+	 */
+	private $original_session_customer;
+
+	/**
 	 * WooPay eligibility rules the last create_service() built.
 	 *
 	 * @var TestableWooPayEligibility|null
@@ -66,7 +80,13 @@ trait WooPayServicesFixture {
 	public function setUp(): void { // phpcs:ignore WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid -- PHPUnit fixture method, run through the test class.
 		parent::setUp();
 		$this->original_session                = WC()->session;
+		$this->original_customer               = WC()->customer;
+		$this->original_session_customer       = WC()->session ? WC()->session->get( 'customer' ) : null;
 		$this->original_direct_checkout_option = get_option( '_wcpay_feature_woopay_direct_checkout', null );
+		if ( WC()->customer instanceof \WC_Customer ) {
+			// The session service saves the shopper's email on the customer; the run's own customer keeps none.
+			WC()->customer = clone WC()->customer;
+		}
 		$this->reset_frontend_surface_state();
 		add_filter(
 			'woocommerce_available_payment_gateways',
@@ -106,6 +126,12 @@ trait WooPayServicesFixture {
 	public function tearDown(): void { // phpcs:ignore WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid -- PHPUnit fixture method, run through the test class.
 		$this->reset_container_replacements();
 		WC()->session = $this->original_session;
+		if ( $this->original_customer instanceof \WC_Customer ) {
+			WC()->customer = $this->original_customer;
+		}
+		if ( WC()->session instanceof \WC_Session ) {
+			WC()->session->set( 'customer', $this->original_session_customer );
+		}
 		if ( null === $this->original_direct_checkout_option ) {
 			delete_option( '_wcpay_feature_woopay_direct_checkout' );
 		} else {
