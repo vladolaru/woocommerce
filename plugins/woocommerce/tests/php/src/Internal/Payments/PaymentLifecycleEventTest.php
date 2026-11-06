@@ -13,7 +13,7 @@ use WC_Unit_Test_Case;
 class PaymentLifecycleEventTest extends WC_Unit_Test_Case {
 
 	/**
-	 * @testdox Completed events expose status, reference, meta changes, and notes.
+	 * @testdox Completed events expose status, reference, meta changes, the note and its note type.
 	 */
 	public function test_completed_event_exposes_status_reference_meta_and_note(): void {
 		$event = new PaymentLifecycleEvent(
@@ -24,7 +24,8 @@ class PaymentLifecycleEventTest extends WC_Unit_Test_Case {
 				'_charge_id' => 'ch_123',
 			),
 			array(),
-			'Payment complete.'
+			'Payment complete.',
+			'payment_complete'
 		);
 
 		$this->assertSame( PaymentLifecycleEvent::STATUS_COMPLETED, $event->get_status() );
@@ -38,21 +39,6 @@ class PaymentLifecycleEventTest extends WC_Unit_Test_Case {
 		);
 		$this->assertSame( array(), $event->get_meta_to_delete() );
 		$this->assertSame( 'Payment complete.', $event->get_note() );
-	}
-
-	/**
-	 * @testdox Completed events expose their stable note type.
-	 */
-	public function test_completed_event_exposes_note_type(): void {
-		$event = new PaymentLifecycleEvent(
-			PaymentLifecycleEvent::STATUS_COMPLETED,
-			'pi_123',
-			array(),
-			array(),
-			'Payment complete.',
-			'payment_complete'
-		);
-
 		$this->assertSame( 'payment_complete', $event->get_note_type() );
 	}
 
