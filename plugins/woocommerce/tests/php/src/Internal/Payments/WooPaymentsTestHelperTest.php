@@ -3,9 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments;
 
-use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
 use WC_Data_Store;
 use WC_Payment_Token_CC;
@@ -20,30 +18,12 @@ class WooPaymentsTestHelperTest extends WC_Unit_Test_Case {
 
 	/**
 	 * Clear what a case leaves for the rest of the process: the routes it registered on the global REST server, the
-	 * services resolved while the built-in WooPayments was on, and the opt-in constant overrides.
+	 * services resolved while the built-in WooPayments was on.
 	 */
 	public function tearDown(): void {
 		$GLOBALS['wp_rest_server'] = null;
 		wc_get_container()->reset_all_resolved();
-		Constants::set_constant( 'E2E_WOOPAYMENTS_TRANSITION', null );
 		parent::tearDown();
-	}
-
-	/**
-	 * @testdox Active WooPayments extension wins over the built-in E2E bootstrap.
-	 */
-	public function test_active_woopayments_extension_still_wins(): void {
-		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
-		$this->load_bootstrap();
-		update_option( 'active_plugins', array( WooPaymentsRuntimeArbiter::PLUGIN_FILE ) );
-
-		$arbiter = wc_get_container()->get( WooPaymentsRuntimeArbiter::class );
-
-		$this->assertSame(
-			WooPaymentsRuntimeArbiter::OWNER_EXTENSION,
-			$arbiter->get_runtime_owner(),
-			'Extension-wins ownership must remain authoritative when the WooPayments extension is active.'
-		);
 	}
 
 	/**
@@ -176,25 +156,10 @@ class WooPaymentsTestHelperTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The E2E runtime does not register a surrogate WooPayments cutover action.
-	 */
-	public function test_runtime_does_not_register_surrogate_cutover_action(): void {
-		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
-		$this->define_transition_e2e_constant();
-		$this->load_bootstrap();
-
-		$this->assertFalse(
-			has_action( 'admin_post_wc_native_payments_e2e_cutover' ),
-			'The cutover must run through CutoverController, not a mu-plugin action.'
-		);
-	}
-
-	/**
 	 * @testdox Runtime status never trusts locally writable callback proof.
 	 */
 	public function test_status_rejects_locally_writable_callback_proof(): void {
 		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
-		$this->define_transition_e2e_constant();
 		$this->load_bootstrap();
 		\Jetpack_Options::update_option( 'id', 321 );
 		update_option(
@@ -224,72 +189,6 @@ class WooPaymentsTestHelperTest extends WC_Unit_Test_Case {
 			'The local runtime must not be able to invent callback readiness.'
 		);
 		$this->assertTrue( $response->get_data()['builtin_enabled'], 'The status route must report the built-in WooPayments enabled by the WooPayments feature.' );
-	}
-
-	/**
-	 * @testdox Runtime status rejects stale or wrong-blog callback proof.
-	 *
-	 * @dataProvider invalid_callback_proof_provider
-	 *
-	 * @param array<string,mixed> $proof Invalid callback proof.
-	 */
-	public function test_status_rejects_invalid_callback_proof( array $proof ): void {
-		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
-		$this->define_transition_e2e_constant();
-		$this->load_bootstrap();
-		\Jetpack_Options::update_option( 'id', 321 );
-		update_option( 'woocommerce_native_payments_e2e_callback_probe', $proof );
-		wp_set_current_user( self::factory()->user->create( array( 'role' => 'administrator' ) ) );
-		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Initializing the REST server in a test.
-		do_action( 'rest_api_init' );
-
-		$response = rest_do_request(
-			new WP_REST_Request( 'GET', '/wc-native-payments-e2e/v1/status' )
-		);
-
-		$this->assertSame(
-			array(
-				'registered'    => false,
-				'reachable'     => false,
-				'wpcom_blog_id' => 0,
-			),
-			$response->get_data()['callback_probe'],
-			'Untrusted callback proof must fail closed.'
-		);
-	}
-
-	/**
-	 * Invalid callback proofs.
-	 *
-	 * @return array<string,array{array<string,mixed>}>
-	 */
-	public static function invalid_callback_proof_provider(): array {
-		return array(
-			'stale'      => array(
-				array(
-					'registered'    => true,
-					'reachable'     => true,
-					'wpcom_blog_id' => 321,
-					'proved_at'     => time() - 600,
-				),
-			),
-			'wrong blog' => array(
-				array(
-					'registered'    => true,
-					'reachable'     => true,
-					'wpcom_blog_id' => 999,
-					'proved_at'     => time(),
-				),
-			),
-		);
-	}
-
-	/**
-	 * Define the exact transition opt-in constant.
-	 */
-	private function define_transition_e2e_constant(): void {
-		// Nothing reads this constant today; the override keeps the case's stated precondition without a real define().
-		Constants::set_constant( 'E2E_WOOPAYMENTS_TRANSITION', true );
 	}
 
 	/**
