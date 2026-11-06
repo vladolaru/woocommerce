@@ -3,6 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
+use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
@@ -51,6 +52,7 @@ class WooPaymentsCustomerServiceTest extends WC_Unit_Test_Case {
 		WC()->session = $this->original_session;
 
 		wp_set_current_user( 0 );
+		Constants::clear_constants();
 		parent::tearDown();
 	}
 
@@ -67,14 +69,16 @@ class WooPaymentsCustomerServiceTest extends WC_Unit_Test_Case {
 	 * @testdox A guest session customer ID should be promoted onto an account created during checkout.
 	 * @dataProvider configured_customer_promotion_provider
 	 *
-	 * @param bool   $test_mode       Whether the configured account is in test mode.
-	 * @param string $customer_option Customer option expected to receive the guest ID.
+	 * @param bool   $test_mode        Whether the configured account is in test mode.
+	 * @param string $customer_option  Customer option expected to receive the guest ID.
+	 * @param bool   $classic_checkout Whether the checkout is the classic one (WOOCOMMERCE_CHECKOUT) rather than the Checkout block's API request.
 	 */
-	public function test_created_customer_promotes_guest_session_customer_id_during_checkout( bool $test_mode, string $customer_option ): void {
+	public function test_created_customer_promotes_guest_session_customer_id_during_checkout( bool $test_mode, string $customer_option, bool $classic_checkout ): void {
 		$user_id = $this->factory->user->create( array( 'user_login' => 'created-during-checkout' ) );
 		WC()->session->set( 'wcpay_customer_id', 'cus_guest' );
 		$this->fake_wcs_checkout_blocks_api_request();
-		$GLOBALS['wcpay_test_checkout_blocks_api_request'] = true;
+		Constants::set_constant( 'WOOCOMMERCE_CHECKOUT', $classic_checkout );
+		$GLOBALS['wcpay_test_checkout_blocks_api_request'] = ! $classic_checkout;
 
 		$sut = $this->create_sut( $test_mode, $this->create_customer_api_client( array() ) );
 		$sut->handle_woocommerce_created_customer( $user_id );
@@ -83,14 +87,14 @@ class WooPaymentsCustomerServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Data provider for configured account promotion modes.
+	 * Data provider for configured account promotion modes, each through one of the two checkout signals.
 	 *
-	 * @return array<string,array{0: bool, 1: string}>
+	 * @return array<string,array{0: bool, 1: string, 2: bool}>
 	 */
 	public function configured_customer_promotion_provider(): array {
 		return array(
-			'live account' => array( false, WooPaymentsCustomerService::LIVE_CUSTOMER_ID_OPTION ),
-			'test account' => array( true, WooPaymentsCustomerService::TEST_CUSTOMER_ID_OPTION ),
+			'live account, Checkout block'   => array( false, WooPaymentsCustomerService::LIVE_CUSTOMER_ID_OPTION, false ),
+			'test account, classic checkout' => array( true, WooPaymentsCustomerService::TEST_CUSTOMER_ID_OPTION, true ),
 		);
 	}
 
@@ -113,10 +117,8 @@ class WooPaymentsCustomerServiceTest extends WC_Unit_Test_Case {
 	 * @testdox Account creation outside a checkout should not adopt the session customer ID.
 	 */
 	public function test_created_customer_outside_checkout_does_not_promote_session_customer_id(): void {
-		if ( defined( 'WOOCOMMERCE_CHECKOUT' ) && WOOCOMMERCE_CHECKOUT ) {
-			$this->markTestSkipped( 'Another test in this process defined WOOCOMMERCE_CHECKOUT; the outside-checkout scenario cannot be simulated.' );
-		}
-
+		// The helper's value wins over a constant an earlier test's checkout defined.
+		Constants::set_constant( 'WOOCOMMERCE_CHECKOUT', false );
 		$user_id = $this->factory->user->create( array( 'user_login' => 'created-outside-checkout' ) );
 		WC()->session->set( 'wcpay_customer_id', 'cus_guest' );
 		$this->fake_wcs_checkout_blocks_api_request();

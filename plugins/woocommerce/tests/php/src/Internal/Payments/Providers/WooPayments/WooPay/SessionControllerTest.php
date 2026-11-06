@@ -330,11 +330,6 @@ class SessionControllerTest extends WC_REST_Unit_Test_Case {
 
 	/**
 	 * @testdox Should enqueue direct checkout assets on a classic cart without rendering an express button.
-	 *
-	 * A prior test can permanently define WOOCOMMERCE_CHECKOUT in the parent process.
-	 *
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 */
 	public function test_enqueue_frontend_assets_for_direct_checkout_on_classic_cart(): void {
 		$service                                      = new RecordingWooPaySessionService();
@@ -503,9 +498,6 @@ class SessionControllerTest extends WC_REST_Unit_Test_Case {
 	 * @testdox A mini-cart page loads no direct checkout for a guest whose cart needs an account.
 	 *
 	 * Client 11.1.0 class-wc-payments-woopay-direct-checkout.php:92-94 enqueues nothing when the guest rule fails.
-	 *
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 */
 	public function test_mini_cart_page_loads_no_direct_checkout_when_the_guest_rule_fails(): void {
 		$service                                      = new RecordingWooPaySessionService();
@@ -535,9 +527,6 @@ class SessionControllerTest extends WC_REST_Unit_Test_Case {
 	 * @testWith ["gateway available", true]
 	 *           ["gateway unavailable", false]
 	 *
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
-	 *
 	 * @param string $label             Case label.
 	 * @param bool   $gateway_available Whether the base gateway is among the available gateways.
 	 */
@@ -566,9 +555,6 @@ class SessionControllerTest extends WC_REST_Unit_Test_Case {
 	 * On a product page the client's button checks the product, not the cart (client 11.1.0
 	 * class-wc-payments-woopay-button-handler.php:300-316), while its direct-checkout script stays unloaded
 	 * (class-wc-payments-woopay-direct-checkout.php:92-94).
-	 *
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 */
 	public function test_product_page_turns_direct_checkout_off_when_the_guest_rule_fails(): void {
 		$service                                      = new RecordingWooPaySessionService();

@@ -3,6 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
+use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Enums\OrderStatus;
 use Automattic\WooCommerce\Enums\PaymentGatewayFeature;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
@@ -166,6 +167,9 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		wp_set_current_user( 0 );
 		$this->reset_container_replacements();
 		wc_get_container()->reset_all_resolved();
+		Constants::clear_constants();
+		// The login-cookie tests leave the checkout's new cookie in the request.
+		unset( $_COOKIE[ LOGGED_IN_COOKIE ] );
 		parent::tearDown();
 	}
 
@@ -7094,17 +7098,13 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox A 3DS confirmation nonce created after classic checkout creates the shopper's account is valid on the shopper's next request.
 	 *
-	 * Runs in its own process: the checkout defines WOOCOMMERCE_CHECKOUT for the rest of the run.
 	 * Client 11.1.0 keeps the new login cookie for the rest of the request (class-wc-payment-gateway-wcpay.php:573,762-766).
-	 *
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 */
 	public function test_confirmation_nonce_created_after_checkout_account_creation_verifies_on_the_next_request(): void {
 		$user_id = self::factory()->user->create( array( 'role' => 'customer' ) );
 		new WooPaymentsGateway();
 		// What WC_Checkout::process_checkout() and wc_create_new_customer() do before the payment runs.
-		wc_maybe_define_constant( 'WOOCOMMERCE_CHECKOUT', true );
+		Constants::set_constant( 'WOOCOMMERCE_CHECKOUT', true );
 		do_action( 'woocommerce_created_customer', $user_id, array(), false );
 		$next_request_cookie = $this->set_auth_cookie_as_checkout_does( $user_id );
 
@@ -7117,11 +7117,6 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox $label leaves the current request's login cookie alone.
-	 *
-	 * Runs in its own process so no earlier test has defined WOOCOMMERCE_CHECKOUT.
-	 *
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 *
 	 * @testWith ["A login outside checkout", false, false]
 	 *           ["An account created outside checkout, as My Account registration does", false, true]
@@ -7136,9 +7131,8 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$user_id = self::factory()->user->create( array( 'role' => 'customer' ) );
 		new WooPaymentsGateway();
 		unset( $_COOKIE[ LOGGED_IN_COOKIE ] );
-		if ( $in_checkout ) {
-			wc_maybe_define_constant( 'WOOCOMMERCE_CHECKOUT', true );
-		}
+		// Set both ways: the helper's value wins over a constant an earlier test's checkout defined.
+		Constants::set_constant( 'WOOCOMMERCE_CHECKOUT', $in_checkout );
 		if ( $account_created ) {
 			do_action( 'woocommerce_created_customer', $user_id, array(), false ); // phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- What wc_create_new_customer() fires.
 		}
