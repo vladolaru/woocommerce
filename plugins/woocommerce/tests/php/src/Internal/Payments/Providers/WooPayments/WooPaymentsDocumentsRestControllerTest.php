@@ -341,6 +341,9 @@ class WooPaymentsDocumentsRestControllerTest extends WC_REST_Unit_Test_Case {
 		$server                    = $GLOBALS['wp_rest_server'];
 		$this->sut->register_routes();
 		$_SERVER['REQUEST_METHOD'] = 'GET';
+		// The merchant is set as the current user, not logged in by a cookie. A cookie login an earlier test validated would
+		// make the server's nonce check log the merchant out (rest_cookie_check_errors()).
+		unset( $GLOBALS['wp_rest_auth_cookie'] );
 
 		$server->serve_request( '/wc/v3/payments/documents/vat_invoice-123' );
 
