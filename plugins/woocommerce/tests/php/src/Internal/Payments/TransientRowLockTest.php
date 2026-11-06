@@ -124,6 +124,7 @@ class TransientRowLockTest extends WC_Unit_Test_Case {
 		$this->sut->release( self::KEY, 'same_value', self::KEY . '_holder', 'successor_holder' );
 
 		$this->assertNull( $this->read_row( '_transient_' . self::KEY ) );
+		$this->assertNull( $this->read_row( '_transient_timeout_' . self::KEY ) );
 		$this->assertNull( $this->read_row( '_transient_' . self::KEY . '_holder' ) );
 		$this->assertNull( $this->read_row( '_transient_timeout_' . self::KEY . '_holder' ) );
 	}
