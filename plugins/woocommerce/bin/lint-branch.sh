@@ -73,6 +73,19 @@ prefixPaths() {
         -e "s|<file name=\"|<file name=\"${prefix}|g"
 }
 
+# Narrows chunkFiles to the files that chunk $1's readable report names, in either form
+# (see the checkstyle render below). Keeps the whole chunk when the report names no file,
+# or a file the chunk wasn't given.
+selectReported() {
+    local file names reported=()
+    names=$'\n'$(sed -n 's/^FILE: //p' "$chunkDir/$1.txt")$'\n'
+    for file in "${chunkFiles[@]}"; do
+        [[ $names == *$'\n'"$file"$'\n'* || $names == *$'\n'"$prefix$file"$'\n'* ]] && reported+=("$file")
+    done
+    [[ ${#reported[@]} -gt 0 && ${#reported[@]} -eq $(grep -c '^FILE: ' "$chunkDir/$1.txt") ]] &&
+        chunkFiles=("${reported[@]}")
+}
+
 if [[ $chunkCount -gt 1 ]]; then
     # Every chunk writes to its own files in here, so no output interleaves.
     chunkDir=$(mktemp -d) || exit 1
@@ -136,16 +149,18 @@ status=$phpcsStatus
 # is no diff, so the cwd-relative CLI path survives. Stripping the prefix before
 # adding it normalizes both forms to a single prefix.
 #
-# In chunks, without the cache, this is a second full pass, so only the chunks that
-# failed run again: phpcs-changed exits 0 only when it has no findings to report. cs2pr
-# reads one document, so the chunks' <file> elements are merged under one XML declaration
-# and one <checkstyle> root. A chunk whose output isn't checkstyle is left out, with a note.
+# In chunks, without the cache, a full re-run would be a second full pass, so only the
+# files with findings run again: those a failed chunk's readable report names
+# (phpcs-changed exits 0 only when it has no findings to report). cs2pr reads one
+# document, so the chunks' <file> elements are merged under one XML declaration and one
+# <checkstyle> root. A chunk whose output isn't checkstyle is left out, with a note.
 if [[ -n $WC_PHPCS_CHECKSTYLE_FILE && $phpcsStatus -eq 1 ]]; then
     prefix=$(git rev-parse --show-prefix)
     if [[ $chunkCount -gt 1 ]]; then
         for (( chunk = 0; chunk < chunkCount; chunk++ )); do
             [[ $(cat "$chunkDir/$chunk.status" 2>/dev/null) == 0 ]] && continue
             selectChunk "$chunk"
+            selectReported "$chunk"
             composer exec phpcs-changed -- --git --git-base "$baseBranch" --report=checkstyle "${chunkFiles[@]}" \
                 2> "$chunkDir/$chunk.xml.err" | prefixPaths > "$chunkDir/$chunk.xml" &
         done
