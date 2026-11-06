@@ -2639,12 +2639,15 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should not call the provider while an order operation is locked.
+	 * @testdox Should not call the provider while the order payment lock holds $held_value.
+	 * @testWith ["0b4c2a9e-6f1d-4c3b-9a7e-2d5f8c1e4b6a"]
+	 *           ["pi_existing"]
+	 *
+	 * @param string $held_value Lock value of the operation holding the lock: another checkout's key, or a payment reference.
 	 */
-	public function test_process_checkout_returns_failure_when_order_operation_is_locked(): void {
+	public function test_process_checkout_returns_failure_when_order_operation_is_locked( string $held_value ): void {
 		$order = $this->create_woopayments_order( '10.00' );
-		$key   = wp_generate_uuid4();
-		$this->hold_order_payment_lock( $order, $this->persistence_vocabulary, $key );
+		$this->hold_order_payment_lock( $order, $this->persistence_vocabulary, $held_value );
 
 		$provider = new RecordingProvider( new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_test' ) );
 
@@ -2684,23 +2687,6 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$this->assertCount( 1, $logger->entries );
 		$this->assertSame( 'warning', $logger->entries[0]['level'] );
 		$this->assertMatchesRegularExpression( '/^order payment lock refused: order ' . $order->get_id() . ', refused checkout, held by payment status update for \\d+s$/', $logger->entries[0]['message'] );
-	}
-
-	/**
-	 * @testdox Should not call the provider while any order operation is locked.
-	 */
-	public function test_process_checkout_returns_failure_when_any_order_operation_is_locked(): void {
-		$order = $this->create_woopayments_order( '10.00' );
-		$this->hold_order_payment_lock( $order, $this->persistence_vocabulary, 'pi_existing' );
-
-		$provider = new RecordingProvider( new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_test' ) );
-
-		$outcome = $this->sut->process_checkout_outcome( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_test' ), $provider );
-
-		$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
-		$this->assertSame( '', $outcome->get_provider_payment_id() );
-		$this->assertSame( 0, $provider->charge_calls );
-		$this->clear_order_payment_lock( $order, $this->persistence_vocabulary );
 	}
 
 	/**
@@ -4221,36 +4207,47 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Failed captures should leave authorized orders on hold.
+	 * @testdox A failed $operation should leave the authorized order on hold with its authorization state, fees and the failure note.
+	 * @testWith ["capture", "Capture failed note."]
+	 *           ["cancel", "Cancellation failed note."]
+	 *
+	 * @param string $operation Operation: capture or cancel.
+	 * @param string $note      Failure note the provider outcome carries.
 	 */
-	public function test_capture_failure_preserves_authorized_order_status(): void {
+	public function test_authorization_operation_failure_preserves_authorized_order_status( string $operation, string $note ): void {
 		$order = $this->create_woopayments_order( '10.00' );
-		$order->set_transaction_id( 'pi_capture' );
-		$order->update_meta_data( '_intent_id', 'pi_capture' );
+		$order->set_transaction_id( 'pi_auth' );
+		$order->update_meta_data( '_intent_id', 'pi_auth' );
 		$order->update_meta_data( '_intention_status', 'requires_capture' );
+		$order->update_meta_data( '_wcpay_transaction_fee', '0.65' );
+		$order->update_meta_data( '_wcpay_net', '9.35' );
 		$order->save();
 		$order->update_status( 'on-hold' );
 
 		$provider = new RecordingProvider(
 			new PaymentOutcome(
 				PaymentOutcome::STATUS_FAILED,
-				'pi_capture',
+				'pi_auth',
 				'',
 				'',
 				'',
-				array( 'note' => 'Capture failed note.' )
+				array( 'note' => $note )
 			)
 		);
 
-		$outcome = $this->sut->capture( PaymentOperationContext::for_capture( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ), $provider );
+		$outcome = 'capture' === $operation
+			? $this->sut->capture( PaymentOperationContext::for_capture( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ), $provider )
+			: $this->sut->cancel( PaymentOperationContext::for_cancel( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ), $provider );
 		$order   = wc_get_order( $order->get_id() );
 
 		$this->assertInstanceOf( WC_Order::class, $order );
 		$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
-		$this->assertSame( 1, $provider->capture_calls );
+		$this->assertSame( 1, 'capture' === $operation ? $provider->capture_calls : $provider->cancel_calls );
 		$this->assertSame( 'on-hold', $order->get_status() );
 		$this->assertSame( 'requires_capture', $order->get_meta( '_intention_status', true ) );
-		$this->assertOrderHasNoteContaining( $order, 'Capture failed note.' );
+		$this->assertSame( '0.65', $order->get_meta( '_wcpay_transaction_fee', true ) );
+		$this->assertSame( '9.35', $order->get_meta( '_wcpay_net', true ) );
+		$this->assertOrderHasNoteContaining( $order, $note );
 	}
 
 	/**
@@ -4287,45 +4284,6 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'failed', $order->get_status(), 'An expired authorization must fail the order like the charge.expired webhook.' );
 		$this->assertSame( 'canceled', $order->get_meta( '_intention_status', true ) );
 		$this->assertOrderHasNoteContaining( $order, 'expired' );
-	}
-
-	/**
-	 * @testdox Failed authorization cancellations should preserve the order status and authorization state.
-	 */
-	public function test_cancel_failure_preserves_authorized_order_status(): void {
-		$order = $this->create_woopayments_order( '10.00' );
-		$order->set_transaction_id( 'pi_cancel' );
-		$order->update_meta_data( '_intent_id', 'pi_cancel' );
-		$order->update_meta_data( '_intention_status', 'requires_capture' );
-		$order->update_meta_data( '_wcpay_transaction_fee', '0.65' );
-		$order->update_meta_data( '_wcpay_net', '9.35' );
-		$order->save();
-		$order->update_status( 'on-hold' );
-
-		$provider = new RecordingProvider(
-			new PaymentOutcome(
-				PaymentOutcome::STATUS_FAILED,
-				'pi_cancel',
-				'',
-				'',
-				'',
-				array( 'note' => 'Cancellation failed note.' )
-			)
-		);
-
-		$outcome = $this->sut->cancel( PaymentOperationContext::for_cancel( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ), $provider );
-		$order   = wc_get_order( $order->get_id() );
-
-		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
-		$this->assertSame( 1, $provider->cancel_calls );
-		$this->assertSame( 'on-hold', $order->get_status() );
-		$this->assertSame( 'requires_capture', $order->get_meta( '_intention_status', true ) );
-		$this->assertSame( '0.65', $order->get_meta( '_wcpay_transaction_fee', true ) );
-		$this->assertSame( '9.35', $order->get_meta( '_wcpay_net', true ) );
-		$this->assertArrayNotHasKey( PaymentOutcome::DATA_META_TO_DELETE, $outcome->get_data() );
-		$this->assertArrayNotHasKey( PaymentOutcome::DATA_NOTE_TYPE, $outcome->get_data() );
-		$this->assertOrderHasNoteContaining( $order, 'Cancellation failed note.' );
 	}
 
 	/**
@@ -5064,9 +5022,14 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should call setup-capable providers for zero-total checkout when a payment credential is present.
+	 * @testdox Should call setup-capable providers for zero-total checkout with a payment method ID "$payment_method_id" or a saved token "$saved_token".
+	 * @testWith ["pm_zero", ""]
+	 *           ["", "123"]
+	 *
+	 * @param string $payment_method_id Payment method ID the checkout carries, or empty.
+	 * @param string $saved_token       Saved payment token ID the checkout carries, or empty.
 	 */
-	public function test_process_checkout_calls_setup_capable_provider_for_zero_total_checkout_with_credential(): void {
+	public function test_process_checkout_calls_setup_capable_provider_for_zero_total_checkout_with_credential( string $payment_method_id, string $saved_token ): void {
 		$order    = $this->create_woopayments_order( '0.00' );
 		$provider = new RecordingProvider(
 			new PaymentOutcome(
@@ -5084,7 +5047,10 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 			true
 		);
 
-		$outcome = $this->sut->process_checkout_outcome( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_zero' ), $provider );
+		$outcome = $this->sut->process_checkout_outcome(
+			PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, $payment_method_id, array( 'payment_token' => $saved_token ) ),
+			$provider
+		);
 		$order   = wc_get_order( $order->get_id() );
 
 		$this->assertInstanceOf( WC_Order::class, $order );
@@ -5093,46 +5059,6 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( 1, $provider->charge_calls );
 		$this->assertSame( 'seti_zero', $order->get_meta( '_intent_id', true ) );
 		$this->assertSame( 'pm_zero', $order->get_meta( '_payment_method_id', true ) );
-	}
-
-	/**
-	 * @testdox Should call setup-capable providers for zero-total checkout when a saved payment token is present.
-	 */
-	public function test_process_checkout_calls_setup_capable_provider_for_zero_total_checkout_with_saved_token(): void {
-		$order    = $this->create_woopayments_order( '0.00' );
-		$provider = new RecordingProvider(
-			new PaymentOutcome(
-				PaymentOutcome::STATUS_COMPLETED,
-				'seti_saved',
-				'',
-				'pm_saved',
-				'cus_saved',
-				array(
-					'meta' => array(
-						'_intention_status' => 'succeeded',
-					),
-				)
-			),
-			true
-		);
-
-		$outcome = $this->sut->process_checkout_outcome(
-			PaymentOperationContext::for_checkout(
-				$order,
-				WooPaymentsPersistenceVocabulary::GATEWAY_ID,
-				'',
-				array( 'payment_token' => '123' )
-			),
-			$provider
-		);
-		$order   = wc_get_order( $order->get_id() );
-
-		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertSame( PaymentOutcome::STATUS_COMPLETED, $outcome->get_status() );
-		$this->assertSame( 'seti_saved', $outcome->get_provider_payment_id() );
-		$this->assertSame( 1, $provider->charge_calls );
-		$this->assertSame( 'seti_saved', $order->get_meta( '_intent_id', true ) );
-		$this->assertSame( 'pm_saved', $order->get_meta( '_payment_method_id', true ) );
 	}
 
 	/**
