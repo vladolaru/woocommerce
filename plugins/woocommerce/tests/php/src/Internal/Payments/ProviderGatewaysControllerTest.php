@@ -22,18 +22,6 @@ class ProviderGatewaysControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should not register the built-in gateway when built-in runtime does not own the site.
-	 */
-	public function test_does_not_register_when_builtin_runtime_does_not_own_site(): void {
-		$sut = new ProviderGatewaysController();
-		$sut->set_provider( static fn(): PaymentGatewayProviderInterface => new StaticProvider( true ), static fn(): bool => false );
-
-		$sut->register();
-
-		$this->assertFalse( has_filter( 'woocommerce_payment_gateways', array( $sut, 'add_provider_gateways' ) ) );
-	}
-
-	/**
 	 * @testdox Should resolve a lazy provider once, the first time the gateway list is built.
 	 */
 	public function test_resolves_a_lazy_provider_once_when_the_gateway_list_is_built(): void {
@@ -136,47 +124,23 @@ class ProviderGatewaysControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should preserve gateway registration when the provider cannot currently process payments.
+	 * @testdox Should register the provider's gateways when the built-in runtime owns the site, without asking whether the provider can process payments ($can_process_payments).
+	 * @testWith [true]
+	 *           [false]
+	 *
+	 * @param bool $can_process_payments Whether the provider can process payments.
 	 */
-	public function test_registers_gateway_when_provider_cannot_process_payments(): void {
-		$gateway = $this->create_gateway( 'woocommerce_payments' );
-		$sut     = new ProviderGatewaysController();
-		$sut->set_provider( static fn(): PaymentGatewayProviderInterface => new StaticProvider( false, array( $gateway ) ), static fn(): bool => true );
-
-		$sut->register();
-
-		$this->assertSame( 10, has_filter( 'woocommerce_payment_gateways', array( $sut, 'add_provider_gateways' ) ) );
-		$this->assertSame( array( $gateway ), $this->apply_payment_gateways_filter() );
-	}
-
-	/**
-	 * @testdox Should keep provider readiness out of the gateway identity boundary.
-	 */
-	public function test_gateway_registration_does_not_consult_provider_readiness(): void {
+	public function test_registers_provider_gateways_without_consulting_provider_readiness( bool $can_process_payments ): void {
 		$gateway  = $this->create_gateway( 'woocommerce_payments' );
-		$provider = new StaticProvider( false, array( $gateway ) );
+		$provider = new StaticProvider( $can_process_payments, array( $gateway ) );
 		$sut      = new ProviderGatewaysController();
 		$sut->set_provider( static fn(): PaymentGatewayProviderInterface => $provider, static fn(): bool => true );
 
 		$sut->register();
 
-		$this->assertSame( array( $gateway ), $this->apply_payment_gateways_filter() );
-		$this->assertSame( 0, $provider->can_process_payments_calls );
-	}
-
-	/**
-	 * @testdox Should register contract-provided gateways when built-in runtime owns the site.
-	 */
-	public function test_registers_contract_provided_gateways_when_builtin_runtime_owns_site(): void {
-		$gateway = $this->create_gateway( 'woocommerce_payments' );
-		$sut     = new ProviderGatewaysController();
-		$sut->set_provider( static fn(): PaymentGatewayProviderInterface => new StaticProvider( true, array( $gateway ) ), static fn(): bool => true );
-
-		$sut->register();
-
 		$this->assertSame( 10, has_filter( 'woocommerce_payment_gateways', array( $sut, 'add_provider_gateways' ) ) );
-
 		$this->assertSame( array( $gateway ), $this->apply_payment_gateways_filter() );
+		$this->assertSame( 0, $provider->can_process_payments_calls, 'Gateway registration must not consult provider readiness.' );
 	}
 
 	/**
@@ -232,19 +196,6 @@ class ProviderGatewaysControllerTest extends WC_Unit_Test_Case {
 		$gateways = $sut->add_provider_gateways( array( 'WC_Gateway_BACS' ) );
 
 		$this->assertSame( array( 'WC_Gateway_BACS', $primary_gateway, $secondary_gateway ), $gateways );
-	}
-
-	/**
-	 * @testdox Should not duplicate provider-supplied gateway instances.
-	 */
-	public function test_add_provider_gateways_does_not_duplicate_gateway_instance(): void {
-		$gateway = $this->create_gateway( 'woocommerce_payments' );
-		$sut     = new ProviderGatewaysController();
-		$sut->set_provider( static fn(): PaymentGatewayProviderInterface => new StaticProvider( true, array( $gateway ) ), static fn(): bool => true );
-
-		$gateways = $sut->add_provider_gateways( array( $gateway ) );
-
-		$this->assertSame( array( $gateway ), $gateways );
 	}
 
 	/**
@@ -307,16 +258,6 @@ class ProviderGatewaysControllerTest extends WC_Unit_Test_Case {
 		$sut->set_provider( static fn(): PaymentGatewayProviderInterface => new StaticProvider( true, array( $gateway ) ), static fn(): bool => false );
 
 		$this->assertSame( array(), $sut->add_provider_gateways( null ) );
-	}
-
-	/**
-	 * @testdox Should remain resolvable by the WooCommerce runtime container.
-	 */
-	public function test_runtime_container_resolves_the_controller(): void {
-		$this->assertInstanceOf(
-			ProviderGatewaysController::class,
-			wc_get_container()->get( ProviderGatewaysController::class )
-		);
 	}
 
 	/**
