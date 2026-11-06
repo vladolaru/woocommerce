@@ -114,6 +114,27 @@ class EnvironmentIsolationTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should give each test the runtime owner its own options decide, even when the owner was resolved before it under others.
+	 */
+	public function test_runtime_owner_resolved_before_the_test_is_resolved_again_for_it(): void {
+		$arbiter = wc_get_container()->get( WooPaymentsRuntimeArbiter::class );
+		$feature = 'no';
+		$option  = static function () use ( &$feature ) {
+			return $feature;
+		};
+		add_filter( 'pre_option_' . WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, $option );
+
+		// The test bootstrap resolves the owner with the feature off; the test then turns it on, which no hook reports to this arbiter.
+		$arbiter->invalidate();
+		$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_NONE, $arbiter->get_runtime_owner() );
+		$feature = 'yes';
+
+		EnvironmentIsolation::apply_for_test( static::class );
+
+		$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_BUILTIN, $arbiter->get_runtime_owner(), 'The test sees the owner its own options decide.' );
+	}
+
+	/**
 	 * Leave a mock session the way a polluting test does, clean up as the base class teardown does, then start the next test.
 	 */
 	private function leave_mock_session_then_start_next_test(): void {

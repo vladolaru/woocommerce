@@ -11,6 +11,7 @@ namespace Automattic\WooCommerce\Testing\Tools;
 
 use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use PHPUnit\Framework\Assert;
 
 /**
@@ -141,6 +142,7 @@ final class EnvironmentIsolation {
 	public static function apply_for_test( string $test_class ): void {
 		self::$refused_requests = array();
 		self::restore_run_session();
+		self::forget_runtime_owner();
 
 		foreach ( self::OFFLINE_TEST_NAMESPACES as $namespace ) {
 			if ( 0 === strpos( $test_class, $namespace ) ) {
@@ -190,6 +192,16 @@ final class EnvironmentIsolation {
 		} finally {
 			remove_filter( 'woocommerce_set_cookie_enabled', $no_cookie, PHP_INT_MAX );
 		}
+	}
+
+	/**
+	 * Drop the payments runtime owner the container's arbiter memoized, so each test resolves it from its own options.
+	 *
+	 * The bootstrap swaps the container after WooCommerce loads, then resolves the owner on the new arbiter with the feature
+	 * off. The feature option's hook clears only the arbiter WooCommerce built before the swap, so this one would keep it.
+	 */
+	private static function forget_runtime_owner(): void {
+		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 	}
 
 	/**

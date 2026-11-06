@@ -5,7 +5,6 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use WC_Data_Store;
 use WC_Payment_Token_CC;
 use WC_Rate_Limiter;
@@ -16,15 +15,6 @@ use WP_REST_Request;
  * Tests for the WooPayments end-to-end test helper mu-plugin.
  */
 class WooPaymentsTestHelperTest extends WC_Unit_Test_Case {
-
-	/**
-	 * Start with no runtime owner resolved. The test bootstrap resolves it with the feature off, and turning the feature
-	 * on clears only the arbiter WooCommerce built before the test container replaced it.
-	 */
-	public function setUp(): void {
-		parent::setUp();
-		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
-	}
 
 	/**
 	 * Clear what a case leaves for the rest of the process: the routes it registered on the global REST server, the
