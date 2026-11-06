@@ -528,35 +528,49 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A late failed payment event on a paid order is skipped with no record: only a released or expired authorization is noted.
+	 * @testdox A late $event_status event on a paid order delivered twice leaves $expected_notes note naming the amount and $expected_warnings warnings.
 	 *
-	 * Register row 459 (owner, N-356 item 2) records skipped cancel and capture-expired events; a failed attempt moved no
+	 * A released or expired authorization is noted once and warned about on every delivery; a failed attempt moved no
 	 * money on the paid order, so it stays skipped silently, as in client 11.1.0.
+	 *
+	 * @testWith ["failed", "pi_failed_late", "", 0, 0]
+	 *           ["canceled", "pi_canceled_late", "was canceled, so that amount was released", 1, 2]
+	 *           ["capture_expired", "ch_expired_late", "expired before it was captured, so that amount was never collected", 1, 2]
+	 *
+	 * @param string $event_status      Lifecycle event status.
+	 * @param string $payment_reference Payment reference.
+	 * @param string $note_text         Text the note carries, or '' when none is expected.
+	 * @param int    $expected_notes    Number of authorization notes after both deliveries.
+	 * @param int    $expected_warnings Number of order-payments warnings after both deliveries.
 	 */
-	public function test_late_failed_event_on_a_paid_order_leaves_no_record(): void {
+	public function test_late_release_on_a_paid_order_is_noted_once_and_warned_each_time( string $event_status, string $payment_reference, string $note_text, int $expected_notes, int $expected_warnings ): void {
 		$order = $this->create_woopayments_order();
 		$order->set_transaction_id( 'pi_paid' );
 		$order->set_status( 'processing' );
 		$order->save();
+		$event = new PaymentLifecycleEvent( $event_status, $payment_reference, array( '_intention_status' => 'canceled' ), array(), 'Late payment event.', 'late_payment_event' );
 
-		$this->apply_event(
-			$order,
-			new PaymentLifecycleEvent(
-				PaymentLifecycleEvent::STATUS_FAILED,
-				'pi_failed_late',
-				array( '_intention_status' => 'requires_payment_method' ),
-				array(),
-				'Late payment failure.',
-				'late_payment_failure'
+		$this->apply_event( $order, $event );
+		$this->apply_event( wc_get_order( $order->get_id() ), $event );
+
+		$notes = array_values(
+			array_filter(
+				wc_get_order_notes( array( 'order_id' => $order->get_id() ) ),
+				static fn( $note ): bool => false !== strpos( (string) $note->content, 'payment authorization of' )
 			)
 		);
-
-		$notes = wc_get_order_notes( array( 'order_id' => $order->get_id() ) );
-		$this->assertSame( array(), array_values( array_filter( $notes, static fn( $note ): bool => false !== strpos( (string) $note->content, 'payment authorization of' ) ) ) );
-		$this->assertSame(
-			array(),
-			array_values( array_filter( $this->captured_logs, static fn( array $log ): bool => 'warning' === $log['level'] && 'order-payments' === ( $log['context']['source'] ?? '' ) ) )
-		);
+		$this->assertCount( $expected_notes, $notes, 'An authorization is noted once, however often its event arrives.' );
+		if ( 0 < $expected_notes ) {
+			$this->assertStringContainsString( $note_text, $notes[0]->content );
+			$this->assertStringContainsString( '10.00', $notes[0]->content, 'The note names the authorized amount.' );
+		}
+		$warnings = array_values( array_filter( $this->captured_logs, static fn( array $log ): bool => 'warning' === $log['level'] && 'order-payments' === ( $log['context']['source'] ?? '' ) ) );
+		$this->assertCount( $expected_warnings, $warnings, 'Every delivery of a released or expired authorization is warned about.' );
+		foreach ( $warnings as $warning ) {
+			$this->assertSame( $payment_reference, $warning['context']['payment_reference'] );
+			$this->assertSame( '10.00', $warning['context']['amount'] );
+		}
+		$this->assertSame( 0, $this->countOrderNotesMatching( wc_get_order( $order->get_id() ), 'Late payment event.' ), 'The skipped event adds no lifecycle note.' );
 	}
 
 	/**
