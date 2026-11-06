@@ -271,7 +271,18 @@ describe( 'wc-payment-method-woopayments', () => {
 		} );
 	} );
 
-	afterEach( () => {
+	afterEach( async () => {
+		// The loader keeps one promise for a validation script still loading, and lets it go when the script fails
+		// (woopay/protocol/phone-validation.js); a script a test left loading must not answer the next test. The failure
+		// lets the save-my-info section store the number, so that work settles here, while the test's mocks still answer.
+		await act( async () => {
+			document
+				.querySelectorAll( 'script[src*="phone-validation"]' )
+				.forEach( ( script ) => {
+					script.dispatchEvent( new window.Event( 'error' ) );
+					script.remove();
+				} );
+		} );
 		jest.useRealTimers();
 		jest.restoreAllMocks();
 		delete window.Stripe;
@@ -279,14 +290,6 @@ describe( 'wc-payment-method-woopayments', () => {
 		delete window.navigator.clipboard;
 		delete window.wcpayFraudPreventionToken;
 		window.fetch = originalFetch;
-		// The loader keeps one promise for a validation script still loading, and lets it go when the script fails
-		// (woopay/protocol/phone-validation.js); a script a test left loading must not answer the next test.
-		document
-			.querySelectorAll( 'script[src*="phone-validation"]' )
-			.forEach( ( script ) => {
-				script.dispatchEvent( new window.Event( 'error' ) );
-				script.remove();
-			} );
 		document.body.innerHTML = '';
 		window.history.pushState( {}, '', '/' );
 		window.localStorage.clear();
@@ -780,10 +783,10 @@ describe( 'wc-payment-method-woopayments', () => {
 	} );
 
 	it( 'renders the WooPay save-my-info section after the Blocks payment step', async () => {
-		// The checked section stores the opt-in and number when it mounts.
+		// The checked section stores the opt-in and number when it mounts; the store answers { result: 'success' }.
 		window.fetch = jest.fn().mockResolvedValue( {
 			ok: true,
-			json: jest.fn().mockResolvedValue( { success: true } ),
+			json: jest.fn().mockResolvedValue( { result: 'success' } ),
 		} );
 		document.body.innerHTML = `
 			<div class="wc-block-checkout">
