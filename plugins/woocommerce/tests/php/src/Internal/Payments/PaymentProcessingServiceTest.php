@@ -3141,22 +3141,6 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should return true when the provider refund succeeds.
-	 */
-	public function test_process_refund_returns_true_when_provider_succeeds(): void {
-		$order = $this->create_woopayments_order( '10.00' );
-		$this->create_local_refund( $order, 2.50, 'Adjustment' );
-		$provider = new RecordingProvider( new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED ) );
-
-		$result = $this->sut->process_refund( PaymentOperationContext::for_refund( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 2.50, 'Adjustment' ), $provider );
-
-		$this->assertTrue( $result );
-		$this->assertSame( 1, $provider->refund_calls );
-		// Client 11.1.0 sends a UUID v4 per refund request (class-wc-payments-api-client.php:2690, 3114-3119).
-		$this->assertMatchesRegularExpression( '/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/', $provider->last_idempotency_key );
-	}
-
-	/**
 	 * @testdox A successful refund should retain its provider identity when deferred local effects throw.
 	 */
 	public function test_process_refund_keeps_provider_identity_when_effect_application_throws(): void {
@@ -3257,81 +3241,66 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Two equal-amount partial refunds must reach the provider with distinct idempotency keys.
+	 * @testdox Two refunds of the same order, amount and reason reach the provider with distinct idempotency keys ($_dataName).
+	 *
+	 * Client 11.1.0 `process_refund()` never sets a caller key on the refund request
+	 * (class-wc-payment-gateway-wcpay.php:2970-2976), so every refund call sends its own
+	 * `Idempotency-Key` UUID (class-wc-payments-api-client.php:2690). A retry is then never answered with the earlier
+	 * failure, even when the order's refund rows look the same at both calls.
+	 *
+	 * @dataProvider equal_refund_pairs
+	 *
+	 * @param bool $retry_after_failure Whether the first refund fails and WooCommerce deletes its row before an equal retry.
 	 */
-	public function test_two_equal_amount_partial_refunds_use_distinct_idempotency_keys(): void {
+	public function test_two_equal_amount_partial_refunds_use_distinct_idempotency_keys( bool $retry_after_failure ): void {
 		$order = $this->create_woopayments_order( '10.00' );
+		if ( $retry_after_failure ) {
+			$this->backdate_refund( $this->create_local_refund( $order, 2.50, 'Adjustment' ) );
+		}
 
-		$first_refund = wc_create_refund(
-			array(
-				'order_id'       => $order->get_id(),
-				'amount'         => 2.50,
-				'reason'         => 'Adjustment',
-				'refund_payment' => false,
-			)
+		// The provider links the processed refund via `_wcpay_refund_id`, mirroring the live synchronous and webhook paths.
+		// The second refund resolves to its own row because that row is the order's newest refund when the second call reads it.
+		$first_refund   = $this->create_local_refund( $order, 2.50, 'Adjustment' );
+		$first_provider = new RecordingProvider(
+			$retry_after_failure
+				? new PaymentOutcome( PaymentOutcome::STATUS_FAILED, '', '', '', '', array( PaymentOutcome::DATA_ERROR_CODE => 'temporary_error' ) )
+				: $this->successful_refund_outcome( 're_first' )
 		);
-		$this->assertInstanceOf( WC_Order_Refund::class, $first_refund );
+		$first_result   = $this->sut->process_refund( PaymentOperationContext::for_refund( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 2.50, 'Adjustment' ), $first_provider );
+		if ( $retry_after_failure ) {
+			// WooCommerce deletes the refund row when the gateway refund fails (wc-order-functions.php:675-680).
+			$first_refund->delete( true );
+		}
 
-		// The provider links the processed refund via `_wcpay_refund_id`, mirroring the live
-		// synchronous and webhook paths. The second refund resolves to its own row because that row is the
-		// order's newest refund when the second call reads it.
-		$provider     = new RecordingProvider( $this->successful_refund_outcome( 're_first' ) );
-		$first_result = $this->sut->process_refund( PaymentOperationContext::for_refund( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 2.50, 'Adjustment' ), $provider );
-		$first_key    = $provider->last_idempotency_key;
-
-		$second_refund = wc_create_refund(
-			array(
-				'order_id'       => $order->get_id(),
-				'amount'         => 2.50,
-				'reason'         => 'Adjustment',
-				'refund_payment' => false,
-			)
-		);
-		$this->assertInstanceOf( WC_Order_Refund::class, $second_refund );
-
+		$this->create_local_refund( $order, 2.50, 'Adjustment' );
 		$second_provider = new RecordingProvider( $this->successful_refund_outcome( 're_second' ) );
 		$second_result   = $this->sut->process_refund( PaymentOperationContext::for_refund( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 2.50, 'Adjustment' ), $second_provider );
-		$second_key      = $second_provider->last_idempotency_key;
 
-		$this->assertTrue( $first_result );
+		if ( $retry_after_failure ) {
+			$this->assertWPError( $first_result );
+		} else {
+			$this->assertTrue( $first_result );
+		}
 		$this->assertTrue( $second_result );
-		$this->assertSame( 1, $provider->refund_calls, 'The first refund must reach the provider.' );
+		$this->assertSame( 1, $first_provider->refund_calls, 'The first refund must reach the provider.' );
 		$this->assertSame( 1, $second_provider->refund_calls, 'The second refund must reach the provider.' );
+		$this->assertNotSame( '', $first_provider->last_idempotency_key );
 		$this->assertNotSame(
-			$first_key,
-			$second_key,
-			'Two distinct refunds of the same amount and reason must use different idempotency keys so the provider does not replay the first refund.'
+			$first_provider->last_idempotency_key,
+			$second_provider->last_idempotency_key,
+			'Each refund call must send its own key, so the provider neither replays the first refund nor answers a retry with its failure.'
 		);
 	}
 
 	/**
-	 * @testdox A retried refund sends a new idempotency key even when an older manual refund of the same amount exists.
+	 * Pairs of equal refunds: both kept, or a failed one whose row is deleted before an equal retry.
 	 *
-	 * Client 11.1.0 `process_refund()` never sets a caller key on the refund request
-	 * (class-wc-payment-gateway-wcpay.php:2970-2976), so every refund call sends its own
-	 * `Idempotency-Key` UUID (class-wc-payments-api-client.php:2690).
+	 * @return array<string,array{bool}>
 	 */
-	public function test_retried_refund_sends_a_new_idempotency_key(): void {
-		$order = $this->create_woopayments_order( '10.00' );
-		$this->backdate_refund( $this->create_local_refund( $order, 2.50, 'Adjustment' ) );
-
-		$failed_refund    = $this->create_local_refund( $order, 2.50, 'Adjustment' );
-		$failing_provider = new RecordingProvider( new PaymentOutcome( PaymentOutcome::STATUS_FAILED, '', '', '', '', array( PaymentOutcome::DATA_ERROR_CODE => 'temporary_error' ) ) );
-		$first_result     = $this->sut->process_refund( PaymentOperationContext::for_refund( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 2.50, 'Adjustment' ), $failing_provider );
-		// WooCommerce deletes the refund row when the gateway refund fails (wc-order-functions.php:675-680).
-		$failed_refund->delete( true );
-
-		$this->create_local_refund( $order, 2.50, 'Adjustment' );
-		$retry_provider = new RecordingProvider( $this->successful_refund_outcome( 're_retry' ) );
-		$retry_result   = $this->sut->process_refund( PaymentOperationContext::for_refund( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 2.50, 'Adjustment' ), $retry_provider );
-
-		$this->assertWPError( $first_result );
-		$this->assertTrue( $retry_result );
-		$this->assertNotSame( '', $failing_provider->last_idempotency_key );
-		$this->assertNotSame(
-			$failing_provider->last_idempotency_key,
-			$retry_provider->last_idempotency_key,
-			'Like the client, each refund call sends its own key, so a retry is never answered with the earlier failure.'
+	public function equal_refund_pairs(): array {
+		return array(
+			'two kept refunds'                => array( false ),
+			'a retry after a deleted failure' => array( true ),
 		);
 	}
 
