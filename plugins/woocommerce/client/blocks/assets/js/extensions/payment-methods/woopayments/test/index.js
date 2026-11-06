@@ -274,6 +274,14 @@ describe( 'wc-payment-method-woopayments', () => {
 		delete window.navigator.clipboard;
 		delete window.wcpayFraudPreventionToken;
 		window.fetch = originalFetch;
+		// The loader keeps one promise for a validation script still loading, and lets it go when the script fails
+		// (woopay/protocol/phone-validation.js); a script a test left loading must not answer the next test.
+		document
+			.querySelectorAll( 'script[src*="phone-validation"]' )
+			.forEach( ( script ) => {
+				script.dispatchEvent( new window.Event( 'error' ) );
+				script.remove();
+			} );
 		document.body.innerHTML = '';
 		window.history.pushState( {}, '', '/' );
 		window.localStorage.clear();
@@ -3036,10 +3044,14 @@ describe( 'wc-payment-method-woopayments', () => {
 	} );
 
 	it( 'persists WooPay link rules without adding them to the cached Blocks card appearance', async () => {
-		jest.resetModules();
-		const {
-			getBlocksCheckoutAppearance: getFreshBlocksCheckoutAppearance,
-		} = require( '../upe-styles' );
+		// A fresh copy whose appearance cache starts empty. isolateModules keeps the file's registry, so the module mocks
+		// that later tests reach through jest.requireMock() stay the ones the bundle imported.
+		let getFreshBlocksCheckoutAppearance;
+		jest.isolateModules( () => {
+			( {
+				getBlocksCheckoutAppearance: getFreshBlocksCheckoutAppearance,
+			} = require( '../upe-styles' ) );
+		} );
 		makeBlocksAppearanceFixture( 'absolute' );
 		document.body.insertAdjacentHTML(
 			'beforeend',
@@ -3096,10 +3108,14 @@ describe( 'wc-payment-method-woopayments', () => {
 	} );
 
 	it( 'falls back missing Blocks link rules to the computed text color', async () => {
-		jest.resetModules();
-		const {
-			getBlocksCheckoutAppearance: getFreshBlocksCheckoutAppearance,
-		} = require( '../upe-styles' );
+		// A fresh copy whose appearance cache starts empty. isolateModules keeps the file's registry, so the module mocks
+		// that later tests reach through jest.requireMock() stay the ones the bundle imported.
+		let getFreshBlocksCheckoutAppearance;
+		jest.isolateModules( () => {
+			( {
+				getBlocksCheckoutAppearance: getFreshBlocksCheckoutAppearance,
+			} = require( '../upe-styles' ) );
+		} );
 		makeBlocksAppearanceFixture( 'absolute' );
 		window.fetch = jest.fn().mockResolvedValue( { ok: true } );
 
