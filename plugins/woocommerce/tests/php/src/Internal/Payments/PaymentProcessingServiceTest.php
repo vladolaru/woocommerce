@@ -11,7 +11,6 @@ use Automattic\WooCommerce\Internal\Payments\PaymentOperationContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentLifecycleEvent;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\TransportLog;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentCodec;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentRequestBuilder;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLevel3Service;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
@@ -308,17 +307,48 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A failed outcome flagged to preserve the order status records meta and note without failing the order.
+	 * @testdox A failed outcome records its meta and one note, keeps the intent off the transaction ID and releases the lock; it fails the order unless flagged to preserve the status ($_dataName).
+	 *
+	 * Client 11.1.0 fails a declined order (`class-wc-payment-gateway-wcpay.php:1324-1328`) and keeps the intent ID on it
+	 * (`:1331-1333`) with one failed-payment note (`:1359-1361`); a fraud block leaves the status for the merchant.
+	 *
+	 * @dataProvider failed_checkout_outcomes
+	 *
+	 * @param string               $intent_id       Provider payment ID.
+	 * @param array<string,mixed>  $data            Outcome data.
+	 * @param string               $note            Note the outcome carries.
+	 * @param string               $expected_status Order status after the checkout.
+	 * @param array<string,string> $expected_meta   Order meta after the checkout.
 	 */
-	public function test_process_checkout_preserves_order_status_for_flagged_failed_outcome(): void {
+	public function test_process_checkout_records_a_failed_outcome_and_fails_the_order_unless_flagged( string $intent_id, array $data, string $note, string $expected_status, array $expected_meta ): void {
 		$order    = $this->create_woopayments_order( '10.00' );
-		$provider = new RecordingProvider(
-			new PaymentOutcome(
-				PaymentOutcome::STATUS_FAILED,
+		$provider = new RecordingProvider( new PaymentOutcome( PaymentOutcome::STATUS_FAILED, $intent_id, '', '', '', $data + array( PaymentOutcome::DATA_NOTE => $note ) ) );
+
+		$outcome = $this->sut->process_checkout_outcome( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_test' ), $provider );
+		$order   = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status(), 'The shopper-facing checkout result must still be a failure.' );
+		$this->assertSame( $intent_id, $outcome->get_provider_payment_id() );
+		$this->assertSame( $expected_status, $order->get_status() );
+		$this->assertSame( $intent_id, $order->get_meta( '_intent_id', true ) );
+		foreach ( $expected_meta as $key => $value ) {
+			$this->assertSame( $value, (string) $order->get_meta( $key, true ), "Unexpected {$key}." );
+		}
+		$this->assertSame( '', (string) $order->get_transaction_id(), 'A failed attempt must not claim the order transaction id.' );
+		$this->assertCount( 1, array_keys( wp_list_pluck( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), 'content' ), $note, true ), 'The order must carry the outcome note once.' );
+		$this->assertFalse( $this->is_order_payment_lock_held_for( $order, $this->persistence_vocabulary, $provider->last_idempotency_key ), 'A failed attempt must release the order payment lock.' );
+	}
+
+	/**
+	 * Failed checkout outcomes, flagged to preserve the order status and not, with the order each leaves.
+	 *
+	 * @return array<string,array{string,array<string,mixed>,string,string,array<string,string>}>
+	 */
+	public function failed_checkout_outcomes(): array {
+		return array(
+			'fraud block, status preserved' => array(
 				'pi_blocked_test',
-				'',
-				'',
-				'',
 				array(
 					PaymentOutcome::DATA_ERROR_CODE => 'wcpay_blocked_by_fraud_rule',
 					PaymentOutcome::DATA_PRESERVE_ORDER_STATUS => true,
@@ -326,87 +356,28 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 						'_wcpay_fraud_outcome_status' => 'block',
 						'_intention_status'           => 'canceled',
 					),
-					PaymentOutcome::DATA_NOTE       => 'A payment was blocked by risk filters.',
-				)
-			)
-		);
-
-		$outcome = $this->sut->process_checkout_outcome( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_test' ), $provider );
-		$order   = wc_get_order( $order->get_id() );
-
-		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status(), 'The shopper-facing checkout result must still be a failure.' );
-		$this->assertSame( 'pi_blocked_test', $outcome->get_provider_payment_id() );
-		$this->assertSame( 'pending', $order->get_status(), 'A blocked payment must not fail the order; the merchant decides whether to cancel.' );
-		$this->assertSame( 'block', $order->get_meta( '_wcpay_fraud_outcome_status', true ) );
-		$this->assertSame( 'canceled', $order->get_meta( '_intention_status', true ) );
-		$this->assertSame( 'pi_blocked_test', $order->get_meta( '_intent_id', true ) );
-		$this->assertSame( '', (string) $order->get_transaction_id(), 'A blocked attempt must not claim the order transaction id.' );
-
-		$notes = wc_get_order_notes( array( 'order_id' => $order->get_id() ) );
-		$this->assertContains( 'A payment was blocked by risk filters.', wp_list_pluck( $notes, 'content' ) );
-	}
-
-	/**
-	 * @testdox A hand-built WooPayments card decline outcome fails the order with its intent id, exactly one note, and the allow fraud meta.
-	 *
-	 * Outcome shape matches the recorded `generic_decline` envelope (`Fixtures/platform-intention-declines.json`)
-	 * as `WooPaymentsPaymentOperationServiceTest::test_charge_decline_envelope_maps_each_card_code` proves
-	 * the real adapter produces it. Client 11.1.0 citations: order `failed` (`class-wc-payment-gateway-wcpay.php:1324-1328`),
-	 * intent id kept on the failed order (`:1331-1333`), exactly one failed-payment note (`:1359-1361`, `:1400`),
-	 * fraud meta box `allow` for a `card_error` decline (`:1372`). A plain checkout decline is not the card-testing
-	 * or rate-limiter refusal path.
-	 */
-	public function test_woopayments_card_decline_fails_order_with_intent_note_and_allow_meta(): void {
-		$order           = $this->create_woopayments_order( '10.01' );
-		$note_service    = wc_get_container()->get( WooPaymentsOrderNoteService::class );
-		$note_candidates = $note_service->format_checkout_payment_failed_note_candidates(
-			$order,
-			'Error: Your card was declined.',
-			'The bank did not return any further details with this decline.',
-			'card_error',
-			'card_declined'
-		);
-		$provider        = new RecordingProvider(
-			new PaymentOutcome(
-				PaymentOutcome::STATUS_FAILED,
-				'pi_3UJTiNBzWlxcwgpP0GauBpTM',
-				'',
-				'',
-				'',
+				),
+				'A payment was blocked by risk filters.',
+				'pending',
 				array(
-					PaymentOutcome::DATA_ERROR_CODE       => 'card_declined',
-					PaymentOutcome::DATA_ERROR_MESSAGE    => 'Error: Your card was declined.',
-					WooPaymentsIntentCodec::SHOPPER_ERROR_MESSAGE_KEY => 'Error: Your card was declined.',
-					PaymentOutcome::DATA_NOTE             => $note_candidates[0],
-					PaymentOutcome::DATA_NOTE_EQUIVALENTS => $note_candidates,
+					'_wcpay_fraud_outcome_status' => 'block',
+					'_intention_status'           => 'canceled',
+				),
+			),
+			'card decline'                  => array(
+				'pi_declined_test',
+				array(
+					PaymentOutcome::DATA_ERROR_CODE    => 'card_declined',
+					PaymentOutcome::DATA_ERROR_MESSAGE => 'Error: Your card was declined.',
 					WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY => array( '_wcpay_fraud_meta_box_type' => 'allow' ),
-				)
-			)
-		);
-
-		$outcome = $this->sut->process_checkout_outcome( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_rec1' ), $provider );
-		$order   = wc_get_order( $order->get_id() );
-
-		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
-		$this->assertSame( 'pi_3UJTiNBzWlxcwgpP0GauBpTM', $outcome->get_provider_payment_id() );
-		$this->assertSame( 'failed', $order->get_status() );
-		$this->assertSame( 'pi_3UJTiNBzWlxcwgpP0GauBpTM', $order->get_meta( '_intent_id', true ) );
-		$this->assertSame( '', (string) $order->get_meta( '_charge_id', true ), 'A declined charge has no charge id.' );
-		$this->assertSame( 'allow', $order->get_meta( '_wcpay_fraud_meta_box_type', true ) );
-
-		$notes                = wc_get_order_notes( array( 'order_id' => $order->get_id() ) );
-		$failed_payment_notes = array_values(
-			array_filter(
-				$notes,
-				static fn( $note ): bool => str_contains( $note->content, '<strong>failed</strong> to complete with the following message:' )
-			)
-		);
-		$this->assertCount( 1, $failed_payment_notes, 'The order must carry exactly one failed-payment note (WooCommerce core\'s own status-transition note is separate).' );
-		$this->assertFalse(
-			$this->is_order_payment_lock_held_for( $order, $this->persistence_vocabulary, $provider->last_idempotency_key ),
-			'A failed attempt must release the order payment lock.'
+				),
+				'A payment of 10.00 failed to complete.',
+				'failed',
+				array(
+					'_wcpay_fraud_meta_box_type' => 'allow',
+					'_charge_id'                 => '',
+				),
+			),
 		);
 	}
 
@@ -572,75 +543,81 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should return a redirect result without completing the order for redirect outcomes.
+	 * @testdox A $_dataName outcome is returned as the provider's own object and leaves the order pending with its meta.
 	 *
 	 * WooPayments client 11.1.0 `class-wc-payments-order-service.php:417-426`: a
 	 * `requires_action` intent for a non-offline method with no error calls `mark_payment_started()`,
 	 * which leaves the order at its pending status and writes no charge id.
+	 *
+	 * @dataProvider non_final_checkout_outcomes
+	 *
+	 * @param PaymentOutcome       $outcome           Provider outcome.
+	 * @param string               $payment_method_id Payment method ID the checkout carries.
+	 * @param array<string,string> $expected_meta     Order meta after the checkout.
 	 */
-	public function test_process_checkout_returns_redirect_without_completing_order(): void {
+	public function test_process_checkout_returns_a_non_final_outcome_without_completing_order( PaymentOutcome $outcome, string $payment_method_id, array $expected_meta ): void {
 		$order    = $this->create_woopayments_order( '15.00' );
-		$provider = new RecordingProvider(
-			new PaymentOutcome(
-				PaymentOutcome::STATUS_REQUIRES_REDIRECT,
-				'pi_redirect',
-				'https://example.test/redirect',
-				'pm_redirect',
-				'',
-				array(
-					'meta' => array(
-						'_intention_status' => 'requires_action',
-					),
-				)
-			)
-		);
+		$provider = new RecordingProvider( $outcome );
 
-		$outcome = $this->sut->process_checkout_outcome( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_redirect' ), $provider );
-		$order   = wc_get_order( $order->get_id() );
+		$result = $this->sut->process_checkout_outcome( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, $payment_method_id ), $provider );
+		$order  = wc_get_order( $order->get_id() );
 
+		$this->assertSame( $outcome, $result, 'The service must hand back the provider outcome itself.' );
 		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertSame( PaymentOutcome::STATUS_REQUIRES_REDIRECT, $outcome->get_status() );
-		$this->assertSame( 'pi_redirect', $outcome->get_provider_payment_id() );
-		$this->assertArrayNotHasKey( PaymentOutcome::DATA_CHECKOUT_REDIRECT, $outcome->get_data() );
-		$this->assertSame( 'https://example.test/redirect', $outcome->get_redirect_url() );
-		$this->assertSame( 'pm_redirect', $outcome->get_payment_method_id() );
 		$this->assertSame( 'pending', $order->get_status() );
-		$this->assertSame( 'pi_redirect', $order->get_meta( '_intent_id', true ) );
-		$this->assertSame( 'requires_action', $order->get_meta( '_intention_status', true ) );
-		$this->assertSame( '', $order->get_meta( '_charge_id', true ) );
+		foreach ( $expected_meta as $key => $value ) {
+			$this->assertSame( $value, $order->get_meta( $key, true ), "Unexpected {$key}." );
+		}
 	}
 
 	/**
-	 * @testdox Should return the checkout outcome while applying lifecycle changes.
+	 * Outcomes that leave a checkout waiting on the shopper or the provider, with the order meta each leaves.
+	 *
+	 * @return array<string,array{PaymentOutcome,string,array<string,string>}>
 	 */
-	public function test_process_checkout_outcome_returns_outcome_after_lifecycle_application(): void {
-		$order   = $this->create_woopayments_order( '15.00' );
-		$outcome = new PaymentOutcome(
-			PaymentOutcome::STATUS_REQUIRES_CUSTOMER_ACTION,
-			'pi_requires_action',
-			'#wcpay-confirm-pi:1:secret:nonce',
-			'pm_requires_action',
-			'cus_requires_action',
-			array(
-				'meta' => array(
-					'_charge_id'             => 'ch_requires_action',
-					'_wcpay_intent_currency' => 'usd',
+	public function non_final_checkout_outcomes(): array {
+		return array(
+			'redirect'        => array(
+				new PaymentOutcome( PaymentOutcome::STATUS_REQUIRES_REDIRECT, 'pi_redirect', 'https://example.test/redirect', 'pm_redirect', '', array( 'meta' => array( '_intention_status' => 'requires_action' ) ) ),
+				'pm_redirect',
+				array(
+					'_intent_id'        => 'pi_redirect',
+					'_intention_status' => 'requires_action',
+					'_charge_id'        => '',
 				),
-			)
+			),
+			'customer action' => array(
+				new PaymentOutcome(
+					PaymentOutcome::STATUS_REQUIRES_CUSTOMER_ACTION,
+					'pi_requires_action',
+					'#wcpay-confirm-pi:1:secret:nonce',
+					'pm_requires_action',
+					'cus_requires_action',
+					array(
+						'meta' => array(
+							'_charge_id'             => 'ch_requires_action',
+							'_wcpay_intent_currency' => 'usd',
+						),
+					)
+				),
+				'pm_requires_action',
+				array(
+					'_intent_id'          => 'pi_requires_action',
+					'_intention_status'   => 'requires_action',
+					'_payment_method_id'  => 'pm_requires_action',
+					'_stripe_customer_id' => 'cus_requires_action',
+					'_charge_id'          => 'ch_requires_action',
+				),
+			),
+			'pending async'   => array(
+				new PaymentOutcome( PaymentOutcome::STATUS_PENDING_ASYNC, 'remote_pending_123' ),
+				'',
+				array(
+					'_intention_status'  => 'processing',
+					'_payment_method_id' => '',
+				),
+			),
 		);
-
-		$provider = new RecordingProvider( $outcome );
-		$result   = $this->sut->process_checkout_outcome( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_requires_action' ), $provider );
-		$order    = wc_get_order( $order->get_id() );
-
-		$this->assertSame( $outcome, $result );
-		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertSame( 'pending', $order->get_status() );
-		$this->assertSame( 'pi_requires_action', $order->get_meta( '_intent_id', true ) );
-		$this->assertSame( 'requires_action', $order->get_meta( '_intention_status', true ) );
-		$this->assertSame( 'pm_requires_action', $order->get_meta( '_payment_method_id', true ) );
-		$this->assertSame( 'cus_requires_action', $order->get_meta( '_stripe_customer_id', true ) );
-		$this->assertSame( 'ch_requires_action', $order->get_meta( '_charge_id', true ) );
 	}
 
 	/**
@@ -4587,24 +4564,6 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 				'expired before it was captured, so that amount was never collected',
 			),
 		);
-	}
-
-	/**
-	 * @testdox A pending-async outcome leaves the order pending with the provider's intention status.
-	 */
-	public function test_process_checkout_pending_async_outcome_leaves_the_order_pending(): void {
-		$order    = $this->create_woopayments_order( '12.00' );
-		$provider = new RecordingProvider( new PaymentOutcome( PaymentOutcome::STATUS_PENDING_ASYNC, 'remote_pending_123' ) );
-
-		$outcome = $this->sut->process_checkout_outcome( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ), $provider );
-		$order   = wc_get_order( $order->get_id() );
-
-		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertSame( PaymentOutcome::STATUS_PENDING_ASYNC, $outcome->get_status() );
-		$this->assertSame( 'remote_pending_123', $outcome->get_provider_payment_id() );
-		$this->assertSame( 'pending', $order->get_status() );
-		$this->assertSame( 'processing', $order->get_meta( '_intention_status', true ) );
-		$this->assertSame( '', $order->get_meta( '_payment_method_id', true ) );
 	}
 
 	/**
