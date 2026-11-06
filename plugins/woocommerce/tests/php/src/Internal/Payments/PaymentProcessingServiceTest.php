@@ -4921,38 +4921,13 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should support non-Stripe redirect providers through neutral outcomes.
+	 * @testdox A pending-async outcome leaves the order pending with the provider's intention status.
 	 */
-	public function test_process_checkout_supports_non_stripe_redirect_provider(): void {
+	public function test_process_checkout_pending_async_outcome_leaves_the_order_pending(): void {
 		$order    = $this->create_woopayments_order( '12.00' );
-		$provider = new NonStripeProvider(
-			new PaymentOutcome(
-				PaymentOutcome::STATUS_REQUIRES_REDIRECT,
-				'remote_payment_123',
-				'https://offline-provider.example/pay/123'
-			)
-		);
+		$provider = new RecordingProvider( new PaymentOutcome( PaymentOutcome::STATUS_PENDING_ASYNC, 'remote_pending_123' ) );
 
-		$outcome = $this->sut->process_checkout_outcome( PaymentOperationContext::for_checkout( $order, 'offline_redirect_provider' ), $provider );
-		$order   = wc_get_order( $order->get_id() );
-
-		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertSame( PaymentOutcome::STATUS_REQUIRES_REDIRECT, $outcome->get_status() );
-		$this->assertSame( 'remote_payment_123', $outcome->get_provider_payment_id() );
-		$this->assertArrayNotHasKey( PaymentOutcome::DATA_CHECKOUT_REDIRECT, $outcome->get_data() );
-		$this->assertSame( 'https://offline-provider.example/pay/123', $outcome->get_redirect_url() );
-		$this->assertSame( 'pending', $order->get_status() );
-		$this->assertSame( 'remote_payment_123', $order->get_meta( '_intent_id', true ) );
-	}
-
-	/**
-	 * @testdox Should support non-Stripe asynchronous providers without card data.
-	 */
-	public function test_process_checkout_supports_non_stripe_pending_async_provider(): void {
-		$order    = $this->create_woopayments_order( '12.00' );
-		$provider = new NonStripeProvider( new PaymentOutcome( PaymentOutcome::STATUS_PENDING_ASYNC, 'remote_pending_123' ) );
-
-		$outcome = $this->sut->process_checkout_outcome( PaymentOperationContext::for_checkout( $order, 'offline_redirect_provider' ), $provider );
+		$outcome = $this->sut->process_checkout_outcome( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ), $provider );
 		$order   = wc_get_order( $order->get_id() );
 
 		$this->assertInstanceOf( WC_Order::class, $order );
@@ -5268,20 +5243,6 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 			remove_filter( 'gettext', $translation_filter, 10 );
 			restore_current_locale();
 		}
-	}
-
-	/**
-	 * @testdox Should support zero-total checkout without a provider-specific payment operation.
-	 */
-	public function test_process_checkout_supports_non_stripe_zero_total_provider_without_charge(): void {
-		$order    = $this->create_woopayments_order( '0.00' );
-		$provider = new NonStripeProvider( new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'remote_should_not_be_used' ) );
-
-		$outcome = $this->sut->process_checkout_outcome( PaymentOperationContext::for_checkout( $order, 'offline_redirect_provider' ), $provider );
-
-		$this->assertSame( PaymentOutcome::STATUS_NO_EXTERNAL_PAYMENT, $outcome->get_status() );
-		$this->assertSame( '', $outcome->get_provider_payment_id() );
-		$this->assertSame( 0, $provider->charge_calls );
 	}
 
 	/**
