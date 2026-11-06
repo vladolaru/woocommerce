@@ -1,7 +1,7 @@
 /**
  * External dependencies
  */
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import apiFetch from '@wordpress/api-fetch';
 
@@ -34,6 +34,15 @@ const renderModal = ( props: Partial< { onClose: () => void } > = {} ) => {
 
 	return { onClose, onError };
 };
+
+// The modal calls onRequestClose only once its exit animation ends, which
+// jsdom never runs, so a timer ends it. Tests that close the modal use fake
+// timers and run that timer rather than racing it against waitFor's timeout,
+// which a stalled worker can lose.
+const finishExitAnimation = () =>
+	act( async () => {
+		jest.runOnlyPendingTimers();
+	} );
 
 const getRequestBody = (): URLSearchParams =>
 	mockApiFetch.mock.calls[ 0 ][ 0 ].body as URLSearchParams;
@@ -77,6 +86,10 @@ describe( 'RefundConfirmationModal', () => {
 			post_id: 123,
 			order_item_nonce: 'nonce-abc',
 		};
+	} );
+
+	afterEach( () => {
+		jest.useRealTimers();
 	} );
 
 	it( 'labels the confirm action with the formatted refund amount', () => {
@@ -210,9 +223,11 @@ describe( 'RefundConfirmationModal', () => {
 	} );
 
 	it( 'restores the dropdown and refunds nothing when dismissed with Escape', async () => {
+		jest.useFakeTimers();
 		const { onClose } = renderModal();
 
 		await userEvent.keyboard( '{Escape}' );
+		await finishExitAnimation();
 
 		expect( mockApiFetch ).not.toHaveBeenCalled();
 		await waitFor( () => expect( onClose ).toHaveBeenCalledTimes( 1 ) );
@@ -238,11 +253,13 @@ describe( 'RefundConfirmationModal', () => {
 	} );
 
 	it( 'restores the dropdown and refunds nothing when closed with the close control', async () => {
+		jest.useFakeTimers();
 		const { onClose, onError } = renderModal();
 
 		await userEvent.click(
 			screen.getByRole( 'button', { name: 'Close' } )
 		);
+		await finishExitAnimation();
 
 		expect( mockApiFetch ).not.toHaveBeenCalled();
 		expect( onError ).not.toHaveBeenCalled();
