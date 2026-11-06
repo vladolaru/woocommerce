@@ -26,6 +26,7 @@ class FailedRenewalAuthenticationEmailTest extends WC_Unit_Test_Case {
 	 */
 	public function setUp(): void {
 		parent::setUp();
+		$this->sent = array();
 		// The emails run with the mailer initialized; the email parent classes load with it.
 		WC()->mailer();
 		add_filter(
