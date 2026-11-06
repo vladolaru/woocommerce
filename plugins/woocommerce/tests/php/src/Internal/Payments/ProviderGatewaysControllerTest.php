@@ -14,10 +14,21 @@ use WC_Unit_Test_Case;
 class ProviderGatewaysControllerTest extends WC_Unit_Test_Case {
 
 	/**
-	 * @testdox Should resolve a lazy provider once, the first time the gateway list is built.
+	 * @testdox A lazy provider is built once, on the first gateway list build its check passes for, and only after a passing check at registration added the hook (registration passes: $passes_at_registration; builds: $build_checks).
+	 * @testWith [true, [true, true], true, [1, 1], [1, 1]]
+	 *           [true, [true, false], true, [1, 0], [1, 1]]
+	 *           [false, [true], false, [0], [0]]
+	 *           [true, [false, true], true, [0, 1], [0, 1]]
+	 *
+	 * @param bool   $passes_at_registration Whether the check passes when the controller registers.
+	 * @param bool[] $build_checks           Whether the check passes at each later gateway list build.
+	 * @param bool   $expect_hook            Whether registration adds the gateway list hook.
+	 * @param int[]  $expected_gateways      Number of gateways each build adds.
+	 * @param int[]  $expected_builds        Number of provider builds after each gateway list build.
 	 */
-	public function test_resolves_a_lazy_provider_once_when_the_gateway_list_is_built(): void {
+	public function test_resolves_a_lazy_provider_once_when_the_gateway_list_is_built( bool $passes_at_registration, array $build_checks, bool $expect_hook, array $expected_gateways, array $expected_builds ): void {
 		$gateway = $this->create_gateway( 'woocommerce_payments' );
+		$passes  = $passes_at_registration;
 		$calls   = 0;
 		$sut     = new ProviderGatewaysController();
 		$sut->set_provider(
@@ -25,94 +36,20 @@ class ProviderGatewaysControllerTest extends WC_Unit_Test_Case {
 				++$calls;
 				return new StaticProvider( true, array( $gateway ) );
 			},
-			static fn(): bool => true
+			static function () use ( &$passes ): bool {
+				return $passes;
+			}
 		);
 
 		$sut->register();
+		$this->assertSame( $expect_hook, (bool) has_filter( 'woocommerce_payment_gateways', array( $sut, 'add_provider_gateways' ) ) );
 		$this->assertSame( 0, $calls, 'Registering the gateway hook must not build the provider.' );
 
-		$this->assertSame( array( $gateway ), $this->apply_payment_gateways_filter() );
-		$this->assertSame( array( $gateway ), $this->apply_payment_gateways_filter() );
-		$this->assertSame( 1, $calls, 'The provider must be built once.' );
-	}
-
-	/**
-	 * @testdox A provider whose check stops passing after its first gateway list build adds no gateway to a later build.
-	 */
-	public function test_a_provider_whose_check_fails_later_adds_no_gateway_to_a_later_build(): void {
-		$gateway       = $this->create_gateway( 'woocommerce_payments' );
-		$owns_gateways = true;
-		$calls         = 0;
-		$sut           = new ProviderGatewaysController();
-		$sut->set_provider(
-			static function () use ( &$calls, $gateway ): PaymentGatewayProviderInterface {
-				++$calls;
-				return new StaticProvider( true, array( $gateway ) );
-			},
-			static function () use ( &$owns_gateways ): bool {
-				return $owns_gateways;
-			}
-		);
-		$sut->register();
-
-		$this->assertSame( array( $gateway ), $this->apply_payment_gateways_filter(), 'The first build must add the gateway while the check passes.' );
-
-		$owns_gateways = false;
-
-		$this->assertSame( array(), $this->apply_payment_gateways_filter(), 'A later build must add no gateway once the check fails.' );
-		$this->assertSame( 1, $calls, 'The provider is built once, on the first build.' );
-	}
-
-	/**
-	 * @testdox A provider whose check fails at registration adds no gateway hook and is never built.
-	 */
-	public function test_a_provider_whose_check_fails_at_registration_adds_no_hook_and_is_not_built(): void {
-		$gateway = $this->create_gateway( 'woocommerce_payments' );
-		$calls   = 0;
-		$sut     = new ProviderGatewaysController();
-		$sut->set_provider(
-			static function () use ( &$calls, $gateway ): PaymentGatewayProviderInterface {
-				++$calls;
-				return new StaticProvider( true, array( $gateway ) );
-			},
-			static fn(): bool => false
-		);
-
-		$sut->register();
-
-		$this->assertFalse( has_filter( 'woocommerce_payment_gateways', array( $sut, 'add_provider_gateways' ) ) );
-		$this->assertSame( array(), $this->apply_payment_gateways_filter() );
-		$this->assertSame( 0, $calls, 'A provider whose check fails must not be built.' );
-	}
-
-	/**
-	 * @testdox A provider whose check stops passing before the first gateway list build is not built, and is built on a later build where the check passes.
-	 */
-	public function test_a_provider_whose_check_fails_before_the_first_build_is_not_built(): void {
-		$gateway       = $this->create_gateway( 'woocommerce_payments' );
-		$owns_gateways = true;
-		$calls         = 0;
-		$sut           = new ProviderGatewaysController();
-		$sut->set_provider(
-			static function () use ( &$calls, $gateway ): PaymentGatewayProviderInterface {
-				++$calls;
-				return new StaticProvider( true, array( $gateway ) );
-			},
-			static function () use ( &$owns_gateways ): bool {
-				return $owns_gateways;
-			}
-		);
-		$sut->register();
-
-		$owns_gateways = false;
-
-		$this->assertSame( array(), $this->apply_payment_gateways_filter(), 'A build after the check fails must add no gateway.' );
-		$this->assertSame( 0, $calls, 'A provider whose check fails must not be built.' );
-
-		$owns_gateways = true;
-
-		$this->assertSame( array( $gateway ), $this->apply_payment_gateways_filter(), 'A later build where the check passes must add the gateway.' );
-		$this->assertSame( 1, $calls, 'The provider is built on the first build where its check passes.' );
+		foreach ( $build_checks as $build => $check ) {
+			$passes = $check;
+			$this->assertSame( 1 === $expected_gateways[ $build ] ? array( $gateway ) : array(), $this->apply_payment_gateways_filter(), "Unexpected gateways at build {$build}." );
+			$this->assertSame( $expected_builds[ $build ], $calls, "Unexpected provider builds after build {$build}." );
+		}
 	}
 
 	/**
@@ -191,65 +128,51 @@ class ProviderGatewaysControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should not add a second gateway with an already registered gateway ID.
+	 * @testdox Should not add a provider gateway that is already registered as $registered_as.
+	 * @testWith ["an instance with its ID"]
+	 *           ["its class name"]
+	 *
+	 * @param string $registered_as How the gateway is already in the list.
 	 */
-	public function test_add_provider_gateways_does_not_add_a_gateway_with_a_registered_id(): void {
-		$registered_gateway = new class() extends WC_Payment_Gateway {
-			/**
-			 * Constructor.
-			 */
-			public function __construct() {
-				$this->id = 'woocommerce_payments';
-			}
-		};
-		$provider_gateway   = $this->create_gateway( 'woocommerce_payments' );
-		$sut                = new ProviderGatewaysController();
-		$sut->set_provider( static fn(): PaymentGatewayProviderInterface => new StaticProvider( true, array( $provider_gateway ) ), static fn(): bool => true );
-
-		$this->assertNotSame( get_class( $registered_gateway ), get_class( $provider_gateway ), 'The two gateways must differ in class so only the ID check can match them.' );
-
-		$gateways = $sut->add_provider_gateways( array( $registered_gateway ) );
-
-		$this->assertSame( array( $registered_gateway ), $gateways, 'A gateway instance with the same ID must keep the registered one and skip the provider copy.' );
-	}
-
-	/**
-	 * @testdox Should not add a gateway whose class is already registered by name.
-	 */
-	public function test_add_provider_gateways_does_not_add_a_gateway_registered_by_class_name(): void {
+	public function test_add_provider_gateways_does_not_add_a_gateway_with_a_registered_id( string $registered_as ): void {
 		$provider_gateway = $this->create_gateway( 'woocommerce_payments' );
 		$sut              = new ProviderGatewaysController();
 		$sut->set_provider( static fn(): PaymentGatewayProviderInterface => new StaticProvider( true, array( $provider_gateway ) ), static fn(): bool => true );
+		if ( 'its class name' === $registered_as ) {
+			// WooCommerce instantiates a class-name entry itself, so the provider instance must not be added too.
+			$registered = array( 'WC_Gateway_BACS', get_class( $provider_gateway ) );
+		} else {
+			$registered = array(
+				new class() extends WC_Payment_Gateway {
+					/**
+					 * Constructor.
+					 */
+					public function __construct() {
+						$this->id = 'woocommerce_payments';
+					}
+				},
+			);
+			$this->assertNotSame( get_class( $registered[0] ), get_class( $provider_gateway ), 'The two gateways must differ in class so only the ID check can match them.' );
+		}
 
-		$gateways = $sut->add_provider_gateways( array( 'WC_Gateway_BACS', get_class( $provider_gateway ) ) );
-
-		$this->assertSame( array( 'WC_Gateway_BACS', get_class( $provider_gateway ) ), $gateways, 'WooCommerce instantiates a class-name entry itself, so the provider instance must not be added too.' );
+		$this->assertSame( $registered, $sut->add_provider_gateways( $registered ), 'The registered entry must stay and the provider copy be skipped.' );
 	}
 
 	/**
-	 * @testdox Should treat a non-array gateway list from an earlier callback as empty.
-	 * @testWith [null]
-	 *           ["WC_Gateway_BACS"]
+	 * @testdox Should treat a non-array gateway list from an earlier callback as empty, adding the provider gateway only while the check passes ($gateways, check passes: $passes).
+	 * @testWith [null, true]
+	 *           ["WC_Gateway_BACS", true]
+	 *           [null, false]
 	 *
 	 * @param mixed $gateways Value returned by an earlier callback.
+	 * @param bool  $passes   Whether the provider's check passes.
 	 */
-	public function test_add_provider_gateways_treats_a_non_array_gateway_list_as_empty( $gateways ): void {
+	public function test_add_provider_gateways_treats_a_non_array_gateway_list_as_empty( $gateways, bool $passes ): void {
 		$gateway = $this->create_gateway( 'woocommerce_payments' );
 		$sut     = new ProviderGatewaysController();
-		$sut->set_provider( static fn(): PaymentGatewayProviderInterface => new StaticProvider( true, array( $gateway ) ), static fn(): bool => true );
+		$sut->set_provider( static fn(): PaymentGatewayProviderInterface => new StaticProvider( true, array( $gateway ) ), static fn(): bool => $passes );
 
-		$this->assertSame( array( $gateway ), $sut->add_provider_gateways( $gateways ) );
-	}
-
-	/**
-	 * @testdox Should return an empty list for a non-array gateway list when built-in does not own the site.
-	 */
-	public function test_add_provider_gateways_returns_an_empty_list_for_a_non_array_when_builtin_does_not_own_the_site(): void {
-		$gateway = $this->create_gateway( 'woocommerce_payments' );
-		$sut     = new ProviderGatewaysController();
-		$sut->set_provider( static fn(): PaymentGatewayProviderInterface => new StaticProvider( true, array( $gateway ) ), static fn(): bool => false );
-
-		$this->assertSame( array(), $sut->add_provider_gateways( null ) );
+		$this->assertSame( $passes ? array( $gateway ) : array(), $sut->add_provider_gateways( $gateways ) );
 	}
 
 	/**
