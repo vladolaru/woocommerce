@@ -627,6 +627,9 @@ describe( 'WooPaymentsSettingsPage', () => {
 		mockTourKitConfigs.length = 0;
 		settingsWindow.wcSettings = initialWcSettings;
 		jest.useRealTimers();
+		// Downshift, behind the phone number input's country select, appends its status live region to the body and
+		// leaves it there after the render unmounts; the next test would find a second status region.
+		document.getElementById( 'a11y-status-message' )?.remove();
 	} );
 
 	it( 'renders the settings manager sections', () => {
