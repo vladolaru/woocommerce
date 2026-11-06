@@ -387,26 +387,46 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A provider exception during a refund fails the refund with the exception message.
+	 * @testdox A refund the provider fails ($_dataName) returns an error with the provider's code, or the default refund code, and its message.
+	 *
+	 * @testWith [true, "order_payment_refund_failed", "Processor unavailable."]
+	 *           [false, "uncaptured-payment", "This payment is not captured yet."]
+	 *
+	 * @param bool   $throws           Whether the provider throws, rather than answering with a failed outcome.
+	 * @param string $expected_code    Error code of the returned error.
+	 * @param string $expected_message Error message of the returned error.
 	 */
-	public function test_refund_provider_exception_fails_with_the_exception_message(): void {
+	public function test_refund_provider_exception_fails_with_the_exception_message( bool $throws, string $expected_code, string $expected_message ): void {
 		$order = $this->create_woopayments_order( '10.00' );
 		$this->create_local_refund( $order, 2.5, 'Adjustment' );
 
+		$failed = new PaymentOutcome(
+			PaymentOutcome::STATUS_FAILED,
+			'',
+			'',
+			'',
+			'',
+			array(
+				PaymentOutcome::DATA_ERROR_CODE    => 'uncaptured-payment',
+				PaymentOutcome::DATA_ERROR_MESSAGE => 'This payment is not captured yet.',
+			)
+		);
 		// phpcs:disable Squiz.Commenting, Squiz.Classes.ClassFileName.NoMatch
-		$provider = new class( new PaymentOutcome( PaymentOutcome::STATUS_FAILED ) ) extends RecordingProvider {
-			public function refund( PaymentOperationContext $context, string $idempotency_key ): PaymentOutcome {
-				unset( $context, $idempotency_key );
-				throw new Exception( 'Processor unavailable.' );
+		$provider = $throws
+			? new class( $failed ) extends RecordingProvider {
+				public function refund( PaymentOperationContext $context, string $idempotency_key ): PaymentOutcome {
+					unset( $context, $idempotency_key );
+					throw new Exception( 'Processor unavailable.' );
+				}
 			}
-		};
+			: new RecordingProvider( $failed );
 		// phpcs:enable Squiz.Commenting, Squiz.Classes.ClassFileName.NoMatch
 
 		$result = $this->sut->process_refund( PaymentOperationContext::for_refund( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 2.5, 'Adjustment' ), $provider );
 
 		$this->assertWPError( $result );
-		$this->assertSame( 'order_payment_refund_failed', $result->get_error_code(), 'An exception without an error code fails with the default refund code.' );
-		$this->assertSame( 'Processor unavailable.', $result->get_error_message() );
+		$this->assertSame( $expected_code, $result->get_error_code() );
+		$this->assertSame( $expected_message, $result->get_error_message() );
 	}
 
 	/**
@@ -3812,33 +3832,6 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'refund', $context['operation'] );
 		$this->assertSame( 're_missing_target', $context['payment_reference'] );
 		$this->assertFalse( $context['reconciliation_persisted'] );
-	}
-
-	/**
-	 * @testdox Should preserve provider refund error codes.
-	 */
-	public function test_process_refund_preserves_provider_error_code(): void {
-		$order    = $this->create_woopayments_order( '10.00' );
-		$provider = new RecordingProvider(
-			new PaymentOutcome(
-				PaymentOutcome::STATUS_FAILED,
-				'',
-				'',
-				'',
-				'',
-				array(
-					'error_code'    => 'uncaptured-payment',
-					'error_message' => 'This payment is not captured yet.',
-				)
-			)
-		);
-		$this->create_local_refund( $order, 2.50, 'Adjustment' );
-
-		$result = $this->sut->process_refund( PaymentOperationContext::for_refund( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 2.50, 'Adjustment' ), $provider );
-
-		$this->assertWPError( $result );
-		$this->assertSame( 'uncaptured-payment', $result->get_error_code() );
-		$this->assertSame( 'This payment is not captured yet.', $result->get_error_message() );
 	}
 
 	/**
