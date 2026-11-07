@@ -37,33 +37,33 @@ class WooCommerceUPSTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should register UPS compatibility hooks for core runtime.
+	 * @testdox Should register exactly the UPS hooks the store allows, once: $_dataName.
+	 * @dataProvider provide_ups_stores
+	 *
+	 * @param string                            $owner         Runtime owner.
+	 * @param bool                              $ups_available Whether UPS is loaded.
+	 * @param array<string,array<string,int[]>> $expected      Every hook the controller registers.
 	 */
-	public function test_registers_ups_compatibility_hooks_for_core_runtime(): void {
-		$sut = $this->create_controller();
+	public function test_registers_the_ups_hooks_the_store_allows( string $owner, bool $ups_available, array $expected ): void {
+		$sut = $this->create_controller( $owner, $ups_available );
 
 		$sut->register();
 		$sut->register();
 
-		$this->assertSame( 10, has_filter( 'wcpay_multi_currency_should_return_store_currency', array( $sut, 'should_return_store_currency' ) ) );
-		$this->assertSame(
-			array( 'wcpay_multi_currency_should_return_store_currency' => array( 'should_return_store_currency' => array( 10, 1 ) ) ),
-			RegisteredHooks::of( $sut )
-		);
+		$this->assertSame( $expected, RegisteredHooks::of( $sut ) );
 	}
 
 	/**
-	 * @testdox Should not register UPS hooks when runtime guards block.
+	 * Stores and the UPS hooks each registers: the store-currency filter under core with UPS loaded, none otherwise.
+	 *
+	 * @return array<string,array{0:string,1:bool,2:array<string,array<string,int[]>>}>
 	 */
-	public function test_does_not_register_ups_hooks_when_guards_block(): void {
-		$extension_owned = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION );
-		$missing_ups     = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, false );
-
-		$extension_owned->register();
-		$missing_ups->register();
-
-		$this->assert_ups_hooks_not_registered( $extension_owned );
-		$this->assert_ups_hooks_not_registered( $missing_ups );
+	public function provide_ups_stores(): array {
+		return array(
+			'UPS loaded under core' => array( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, true, array( 'wcpay_multi_currency_should_return_store_currency' => array( 'should_return_store_currency' => array( 10, 1 ) ) ) ),
+			'the extension owns'    => array( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION, true, array() ),
+			'UPS not loaded'        => array( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, false, array() ),
+		);
 	}
 
 	/**
@@ -95,15 +95,6 @@ class WooCommerceUPSTest extends WC_Unit_Test_Case {
 		$this->assertTrue( CallStack::run( array( 'WC_Shipping_UPS->per_item_shipping' ), fn() => $sut->should_return_store_currency( false ) ) );
 		$this->assertTrue( CallStack::run( array( 'WC_Shipping_UPS->box_shipping' ), fn() => $sut->should_return_store_currency( false ) ) );
 		$this->assertTrue( CallStack::run( array( 'WC_Shipping_UPS->calculate_shipping' ), fn() => $sut->should_return_store_currency( false ) ) );
-	}
-
-	/**
-	 * Assert UPS hooks are not registered for a controller.
-	 *
-	 * @param WooCommerceUPS $sut The controller.
-	 */
-	private function assert_ups_hooks_not_registered( WooCommerceUPS $sut ): void {
-		$this->assertFalse( has_filter( 'wcpay_multi_currency_should_return_store_currency', array( $sut, 'should_return_store_currency' ) ) );
 	}
 
 	/**

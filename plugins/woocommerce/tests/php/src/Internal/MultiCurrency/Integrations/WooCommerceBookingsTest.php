@@ -59,67 +59,53 @@ class WooCommerceBookingsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should register Bookings compatibility hooks for core frontend runtime.
+	 * @testdox Should register exactly the Bookings hooks the request allows, once: $_dataName.
+	 * @dataProvider provide_bookings_requests
+	 *
+	 * @param string                            $owner              Runtime owner.
+	 * @param bool                              $bookings_available Whether Bookings is loaded.
+	 * @param bool                              $is_admin           Whether this is an admin request.
+	 * @param bool                              $is_ajax            Whether this is an Ajax request.
+	 * @param array<string,array<string,int[]>> $expected           Every hook the controller registers.
 	 */
-	public function test_registers_bookings_compatibility_hooks_for_core_frontend_runtime(): void {
-		$sut = $this->create_controller();
+	public function test_registers_the_bookings_hooks_the_request_allows( string $owner, bool $bookings_available, bool $is_admin, bool $is_ajax, array $expected ): void {
+		$sut = $this->create_controller( $owner, $bookings_available, $is_admin, $is_ajax );
 
 		$sut->register();
 		$sut->register();
 
-		$this->assertSame( 50, has_filter( 'woocommerce_bookings_calculated_booking_cost', array( $sut, 'adjust_amount_for_calculated_booking_cost' ) ) );
-		$this->assertSame( 50, has_filter( 'woocommerce_product_get_block_cost', array( $sut, 'get_price' ) ) );
-		$this->assertSame( 50, has_filter( 'woocommerce_product_get_resource_base_costs', array( $sut, 'get_resource_prices' ) ) );
-		$this->assertSame( 50, has_filter( 'wcpay_multi_currency_should_convert_product_price', array( $sut, 'should_convert_product_price' ) ) );
-		$this->assertSame( 50, has_filter( 'woocommerce_bookings_process_cost_rules_base_cost', array( $sut, 'get_price' ) ) );
-		$this->assertSame( 9, has_action( 'wp_ajax_wc_bookings_calculate_costs', array( $sut, 'add_wc_price_args_filter_for_ajax' ) ) );
-		$this->assertSame( 9, has_action( 'wp_ajax_nopriv_wc_bookings_calculate_costs', array( $sut, 'add_wc_price_args_filter_for_ajax' ) ) );
-		$this->assertSame(
-			array(
-				'wcpay_multi_currency_should_convert_product_price' => array( 'should_convert_product_price' => array( 50, 2 ) ),
-				'woocommerce_bookings_calculated_booking_cost' => array( 'adjust_amount_for_calculated_booking_cost' => array( 50, 1 ) ),
-				'woocommerce_bookings_process_cost_rules_base_cost' => array( 'get_price' => array( 50, 1 ) ),
-				'woocommerce_bookings_process_cost_rules_cost' => array( 'get_price' => array( 50, 1 ) ),
-				'woocommerce_product_booking_person_type_get_block_cost' => array( 'get_price' => array( 50, 1 ) ),
-				'woocommerce_product_booking_person_type_get_cost' => array( 'get_price' => array( 50, 1 ) ),
-				'woocommerce_product_get_block_cost'   => array( 'get_price' => array( 50, 1 ) ),
-				'woocommerce_product_get_cost'         => array( 'get_price' => array( 50, 1 ) ),
-				'woocommerce_product_get_display_cost' => array( 'get_price' => array( 50, 1 ) ),
-				'woocommerce_product_get_resource_base_costs' => array( 'get_resource_prices' => array( 50, 1 ) ),
-				'woocommerce_product_get_resource_block_costs' => array( 'get_resource_prices' => array( 50, 1 ) ),
-				'wp_ajax_nopriv_wc_bookings_calculate_costs' => array( 'add_wc_price_args_filter_for_ajax' => array( 9, 1 ) ),
-				'wp_ajax_wc_bookings_calculate_costs'  => array( 'add_wc_price_args_filter_for_ajax' => array( 9, 1 ) ),
-			),
-			RegisteredHooks::of( $sut )
+		$this->assertSame( $expected, RegisteredHooks::of( $sut ) );
+	}
+
+	/**
+	 * Requests and the Bookings hooks each registers: all of them on the storefront and on admin Ajax, none otherwise.
+	 *
+	 * @return array<string,array{0:string,1:bool,2:bool,3:bool,4:array<string,array<string,int[]>>}>
+	 */
+	public function provide_bookings_requests(): array {
+		$hooks = array(
+			'wcpay_multi_currency_should_convert_product_price' => array( 'should_convert_product_price' => array( 50, 2 ) ),
+			'woocommerce_bookings_calculated_booking_cost' => array( 'adjust_amount_for_calculated_booking_cost' => array( 50, 1 ) ),
+			'woocommerce_bookings_process_cost_rules_base_cost' => array( 'get_price' => array( 50, 1 ) ),
+			'woocommerce_bookings_process_cost_rules_cost' => array( 'get_price' => array( 50, 1 ) ),
+			'woocommerce_product_booking_person_type_get_block_cost' => array( 'get_price' => array( 50, 1 ) ),
+			'woocommerce_product_booking_person_type_get_cost' => array( 'get_price' => array( 50, 1 ) ),
+			'woocommerce_product_get_block_cost'           => array( 'get_price' => array( 50, 1 ) ),
+			'woocommerce_product_get_cost'                 => array( 'get_price' => array( 50, 1 ) ),
+			'woocommerce_product_get_display_cost'         => array( 'get_price' => array( 50, 1 ) ),
+			'woocommerce_product_get_resource_base_costs'  => array( 'get_resource_prices' => array( 50, 1 ) ),
+			'woocommerce_product_get_resource_block_costs' => array( 'get_resource_prices' => array( 50, 1 ) ),
+			'wp_ajax_nopriv_wc_bookings_calculate_costs'   => array( 'add_wc_price_args_filter_for_ajax' => array( 9, 1 ) ),
+			'wp_ajax_wc_bookings_calculate_costs'          => array( 'add_wc_price_args_filter_for_ajax' => array( 9, 1 ) ),
 		);
-	}
 
-	/**
-	 * @testdox Should register Bookings compatibility hooks for Ajax requests from wp-admin.
-	 */
-	public function test_registers_bookings_compatibility_hooks_for_admin_ajax_requests(): void {
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, true, true, true );
-
-		$sut->register();
-
-		$this->assertSame( 50, has_filter( 'woocommerce_bookings_calculated_booking_cost', array( $sut, 'adjust_amount_for_calculated_booking_cost' ) ) );
-	}
-
-	/**
-	 * @testdox Should not register Bookings hooks when runtime or request guards block.
-	 */
-	public function test_does_not_register_bookings_hooks_when_guards_block(): void {
-		$extension_owned  = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION );
-		$missing_bookings = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, false );
-		$admin            = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, true, true, false );
-
-		$extension_owned->register();
-		$missing_bookings->register();
-		$admin->register();
-
-		$this->assert_bookings_hooks_not_registered( $extension_owned );
-		$this->assert_bookings_hooks_not_registered( $missing_bookings );
-		$this->assert_bookings_hooks_not_registered( $admin );
+		return array(
+			'storefront'          => array( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, true, false, false, $hooks ),
+			'admin Ajax'          => array( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, true, true, true, $hooks ),
+			'the extension owns'  => array( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION, true, false, false, array() ),
+			'Bookings not loaded' => array( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, false, false, false, array() ),
+			'an admin page'       => array( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, true, true, false, array() ),
+		);
 	}
 
 	/**
@@ -247,17 +233,6 @@ class WooCommerceBookingsTest extends WC_Unit_Test_Case {
 				)
 			)
 		);
-	}
-
-	/**
-	 * Assert Bookings hooks are not registered for a controller.
-	 *
-	 * @param WooCommerceBookings $sut The controller.
-	 */
-	private function assert_bookings_hooks_not_registered( WooCommerceBookings $sut ): void {
-		$this->assertFalse( has_filter( 'woocommerce_bookings_calculated_booking_cost', array( $sut, 'adjust_amount_for_calculated_booking_cost' ) ) );
-		$this->assertFalse( has_filter( 'wcpay_multi_currency_should_convert_product_price', array( $sut, 'should_convert_product_price' ) ) );
-		$this->assertFalse( has_action( 'wp_ajax_wc_bookings_calculate_costs', array( $sut, 'add_wc_price_args_filter_for_ajax' ) ) );
 	}
 
 	/**

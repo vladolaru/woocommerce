@@ -58,20 +58,6 @@ class WooCommerceSubscriptionsTest extends WC_Unit_Test_Case {
 	);
 
 	/**
-	 * Cart-lifecycle hooks that must invalidate the subscription cart-type cache.
-	 *
-	 * @var string[]
-	 */
-	private array $cache_invalidation_hooks = array(
-		'woocommerce_cart_loaded_from_session',
-		'woocommerce_cart_updated',
-		'woocommerce_cart_emptied',
-		'woocommerce_add_to_cart',
-		'woocommerce_cart_item_removed',
-		'woocommerce_cart_item_restored',
-	);
-
-	/**
 	 * Controllers that scheduled deferred plugin-loaded registration.
 	 *
 	 * @var WooCommerceSubscriptions[]
@@ -94,96 +80,62 @@ class WooCommerceSubscriptionsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should register subscription filters for core frontend runtime.
+	 * @testdox Should register exactly the subscription filters the request allows, once: $_dataName.
+	 * @dataProvider provide_subscriptions_requests
+	 *
+	 * @param string                            $owner                   Runtime owner.
+	 * @param bool                              $subscriptions_available Whether Subscriptions is loaded.
+	 * @param bool                              $is_admin                Whether this is an admin request.
+	 * @param bool                              $is_cron                 Whether this is a cron request.
+	 * @param array<string,array<string,int[]>> $expected                Every hook the controller registers.
 	 */
-	public function test_registers_subscription_filters_for_core_frontend_runtime(): void {
-		$sut = $this->create_controller();
+	public function test_registers_the_subscription_filters_the_request_allows( string $owner, bool $subscriptions_available, bool $is_admin, bool $is_cron, array $expected ): void {
+		$sut = $this->create_controller( $owner, $subscriptions_available, $is_admin, $is_cron );
 
 		$sut->register();
 		$sut->register();
 
-		$this->assertSame( 50, has_filter( 'wcpay_multi_currency_override_selected_currency', array( $sut, 'override_selected_currency' ) ) );
-		$this->assertSame( 50, has_filter( 'wcpay_multi_currency_should_disable_currency_switching', array( $sut, 'should_disable_currency_switching' ) ) );
-		$this->assertSame( 50, has_filter( 'wcpay_multi_currency_should_convert_product_price', array( $sut, 'should_convert_product_price' ) ) );
-		$this->assertSame( 50, has_filter( 'wcpay_multi_currency_should_convert_coupon_amount', array( $sut, 'should_convert_coupon_amount' ) ) );
-		$this->assertSame( 100, has_filter( 'woocommerce_coupon_get_minimum_amount', array( $sut, 'get_subscription_session_coupon_spend_limit' ) ) );
-		$this->assertSame( 100, has_filter( 'woocommerce_coupon_get_maximum_amount', array( $sut, 'get_subscription_session_coupon_spend_limit' ) ) );
-		$this->assertSame( 50, has_filter( 'woocommerce_subscriptions_product_price', array( $sut, 'get_subscription_product_price' ) ) );
-		$this->assertSame( 50, has_filter( 'woocommerce_subscriptions_product_sale_price', array( $sut, 'get_stored_price_for_active_price' ) ) );
-		$this->assertSame( 50, has_filter( 'woocommerce_subscriptions_product_regular_price', array( $sut, 'get_stored_price_for_active_price' ) ) );
-		$this->assertSame( 50, has_filter( 'woocommerce_product_get__subscription_sign_up_fee', array( $sut, 'get_subscription_product_signup_fee' ) ) );
-		$this->assertSame( 50, has_filter( 'woocommerce_product_variation_get__subscription_sign_up_fee', array( $sut, 'get_subscription_product_signup_fee' ) ) );
-		$this->assertSame( 50, has_filter( 'woocommerce_subscription_price_string_details', array( $sut, 'maybe_set_current_my_account_subscription' ) ) );
-		$this->assertSame( 50, has_filter( 'woocommerce_get_formatted_subscription_total', array( $sut, 'maybe_clear_current_my_account_subscription' ) ) );
-		$this->assertSame( 50, has_filter( 'wc_price', array( $sut, 'maybe_get_explicit_format_for_subscription_total' ) ) );
-		$this->assertSame( 50, has_filter( 'option_woocommerce_subscriptions_multiple_purchase', array( $sut, 'maybe_disable_mixed_cart' ) ) );
+		$this->assertSame( $expected, RegisteredHooks::of( $sut ) );
+	}
 
-		foreach ( $this->cache_invalidation_hooks as $hook ) {
-			$this->assertSame( 10, has_action( $hook, array( $sut, 'clear_subscription_type_cache' ) ), $hook );
-		}
-
-		$this->assertSame(
-			array(
-				'option_woocommerce_subscriptions_multiple_purchase' => array( 'maybe_disable_mixed_cart' => array( 50, 1 ) ),
-				'wc_price'                                => array( 'maybe_get_explicit_format_for_subscription_total' => array( 50, 1 ) ),
-				'wcpay_multi_currency_override_selected_currency' => array( 'override_selected_currency' => array( 50, 1 ) ),
-				'wcpay_multi_currency_should_convert_coupon_amount' => array( 'should_convert_coupon_amount' => array( 50, 2 ) ),
-				'wcpay_multi_currency_should_convert_product_price' => array( 'should_convert_product_price' => array( 50, 2 ) ),
-				'wcpay_multi_currency_should_disable_currency_switching' => array( 'should_disable_currency_switching' => array( 50, 1 ) ),
-				'woocommerce_add_to_cart'                 => array( 'clear_subscription_type_cache' => array( 10, 1 ) ),
-				'woocommerce_cart_emptied'                => array( 'clear_subscription_type_cache' => array( 10, 1 ) ),
-				'woocommerce_cart_item_removed'           => array( 'clear_subscription_type_cache' => array( 10, 1 ) ),
-				'woocommerce_cart_item_restored'          => array( 'clear_subscription_type_cache' => array( 10, 1 ) ),
-				'woocommerce_cart_loaded_from_session'    => array( 'clear_subscription_type_cache' => array( 10, 1 ) ),
-				'woocommerce_cart_updated'                => array( 'clear_subscription_type_cache' => array( 10, 1 ) ),
-				'woocommerce_coupon_get_maximum_amount'   => array( 'get_subscription_session_coupon_spend_limit' => array( 100, 2 ) ),
-				'woocommerce_coupon_get_minimum_amount'   => array( 'get_subscription_session_coupon_spend_limit' => array( 100, 2 ) ),
-				'woocommerce_get_formatted_subscription_total' => array( 'maybe_clear_current_my_account_subscription' => array( 50, 2 ) ),
-				'woocommerce_product_get__subscription_sign_up_fee' => array( 'get_subscription_product_signup_fee' => array( 50, 2 ) ),
-				'woocommerce_product_variation_get__subscription_sign_up_fee' => array( 'get_subscription_product_signup_fee' => array( 50, 2 ) ),
-				'woocommerce_subscription_price_string_details' => array( 'maybe_set_current_my_account_subscription' => array( 50, 2 ) ),
-				'woocommerce_subscriptions_product_price' => array( 'get_subscription_product_price' => array( 50, 2 ) ),
-				'woocommerce_subscriptions_product_regular_price' => array( 'get_stored_price_for_active_price' => array( 50, 2 ) ),
-				'woocommerce_subscriptions_product_sale_price' => array( 'get_stored_price_for_active_price' => array( 50, 2 ) ),
-			),
-			RegisteredHooks::of( $sut )
+	/**
+	 * Requests and the subscription filters each registers: all of them, with the cart-type cache invalidation, on the
+	 * storefront under core with Subscriptions loaded, none otherwise.
+	 *
+	 * @return array<string,array{0:string,1:bool,2:bool,3:bool,4:array<string,array<string,int[]>>}>
+	 */
+	public function provide_subscriptions_requests(): array {
+		$hooks = array(
+			'option_woocommerce_subscriptions_multiple_purchase' => array( 'maybe_disable_mixed_cart' => array( 50, 1 ) ),
+			'wc_price'                                     => array( 'maybe_get_explicit_format_for_subscription_total' => array( 50, 1 ) ),
+			'wcpay_multi_currency_override_selected_currency' => array( 'override_selected_currency' => array( 50, 1 ) ),
+			'wcpay_multi_currency_should_convert_coupon_amount' => array( 'should_convert_coupon_amount' => array( 50, 2 ) ),
+			'wcpay_multi_currency_should_convert_product_price' => array( 'should_convert_product_price' => array( 50, 2 ) ),
+			'wcpay_multi_currency_should_disable_currency_switching' => array( 'should_disable_currency_switching' => array( 50, 1 ) ),
+			'woocommerce_add_to_cart'                      => array( 'clear_subscription_type_cache' => array( 10, 1 ) ),
+			'woocommerce_cart_emptied'                     => array( 'clear_subscription_type_cache' => array( 10, 1 ) ),
+			'woocommerce_cart_item_removed'                => array( 'clear_subscription_type_cache' => array( 10, 1 ) ),
+			'woocommerce_cart_item_restored'               => array( 'clear_subscription_type_cache' => array( 10, 1 ) ),
+			'woocommerce_cart_loaded_from_session'         => array( 'clear_subscription_type_cache' => array( 10, 1 ) ),
+			'woocommerce_cart_updated'                     => array( 'clear_subscription_type_cache' => array( 10, 1 ) ),
+			'woocommerce_coupon_get_maximum_amount'        => array( 'get_subscription_session_coupon_spend_limit' => array( 100, 2 ) ),
+			'woocommerce_coupon_get_minimum_amount'        => array( 'get_subscription_session_coupon_spend_limit' => array( 100, 2 ) ),
+			'woocommerce_get_formatted_subscription_total' => array( 'maybe_clear_current_my_account_subscription' => array( 50, 2 ) ),
+			'woocommerce_product_get__subscription_sign_up_fee' => array( 'get_subscription_product_signup_fee' => array( 50, 2 ) ),
+			'woocommerce_product_variation_get__subscription_sign_up_fee' => array( 'get_subscription_product_signup_fee' => array( 50, 2 ) ),
+			'woocommerce_subscription_price_string_details' => array( 'maybe_set_current_my_account_subscription' => array( 50, 2 ) ),
+			'woocommerce_subscriptions_product_price'      => array( 'get_subscription_product_price' => array( 50, 2 ) ),
+			'woocommerce_subscriptions_product_regular_price' => array( 'get_stored_price_for_active_price' => array( 50, 2 ) ),
+			'woocommerce_subscriptions_product_sale_price' => array( 'get_stored_price_for_active_price' => array( 50, 2 ) ),
 		);
-	}
 
-	/**
-	 * @testdox Should not register subscription filters when plugin owns runtime.
-	 */
-	public function test_does_not_register_when_extension_owns_runtime(): void {
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION );
-
-		$sut->register();
-
-		$this->assert_subscription_hooks_not_registered( $sut );
-	}
-
-	/**
-	 * @testdox Should not register subscription filters when subscriptions runtime is absent.
-	 */
-	public function test_does_not_register_when_subscriptions_runtime_is_absent(): void {
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, false );
-
-		$sut->register();
-
-		$this->assert_subscription_hooks_not_registered( $sut );
-	}
-
-	/**
-	 * @testdox Should not register subscription filters for admin or cron requests.
-	 */
-	public function test_does_not_register_for_admin_or_cron_requests(): void {
-		$admin = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, true, true, false );
-		$cron  = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, true, false, true );
-
-		$admin->register();
-		$cron->register();
-
-		$this->assert_subscription_hooks_not_registered( $admin );
-		$this->assert_subscription_hooks_not_registered( $cron );
+		return array(
+			'storefront under core'    => array( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, true, false, false, $hooks ),
+			'the extension owns'       => array( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION, true, false, false, array() ),
+			'Subscriptions not loaded' => array( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, false, false, false, array() ),
+			'an admin request'         => array( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, true, true, false, array() ),
+			'cron'                     => array( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, true, false, true, array() ),
+		);
 	}
 
 	/**
@@ -961,33 +913,6 @@ class WooCommerceSubscriptionsTest extends WC_Unit_Test_Case {
 		$sut->set_subscription_cart_item( 'switch', $this->create_subscription( 'CAD' ) );
 
 		$this->assertSame( 'no', $sut->maybe_disable_mixed_cart( 'yes' ) );
-	}
-
-	/**
-	 * Assert subscription compatibility hooks are not registered for a controller.
-	 *
-	 * @param WooCommerceSubscriptions $sut The controller.
-	 */
-	private function assert_subscription_hooks_not_registered( WooCommerceSubscriptions $sut ): void {
-		$this->assertFalse( has_filter( 'wcpay_multi_currency_override_selected_currency', array( $sut, 'override_selected_currency' ) ) );
-		$this->assertFalse( has_filter( 'wcpay_multi_currency_should_disable_currency_switching', array( $sut, 'should_disable_currency_switching' ) ) );
-		$this->assertFalse( has_filter( 'wcpay_multi_currency_should_convert_product_price', array( $sut, 'should_convert_product_price' ) ) );
-		$this->assertFalse( has_filter( 'wcpay_multi_currency_should_convert_coupon_amount', array( $sut, 'should_convert_coupon_amount' ) ) );
-		$this->assertFalse( has_filter( 'woocommerce_coupon_get_minimum_amount', array( $sut, 'get_subscription_session_coupon_spend_limit' ) ) );
-		$this->assertFalse( has_filter( 'woocommerce_coupon_get_maximum_amount', array( $sut, 'get_subscription_session_coupon_spend_limit' ) ) );
-		$this->assertFalse( has_filter( 'woocommerce_subscriptions_product_price', array( $sut, 'get_subscription_product_price' ) ) );
-		$this->assertFalse( has_filter( 'woocommerce_subscriptions_product_sale_price', array( $sut, 'get_stored_price_for_active_price' ) ) );
-		$this->assertFalse( has_filter( 'woocommerce_subscriptions_product_regular_price', array( $sut, 'get_stored_price_for_active_price' ) ) );
-		$this->assertFalse( has_filter( 'woocommerce_product_get__subscription_sign_up_fee', array( $sut, 'get_subscription_product_signup_fee' ) ) );
-		$this->assertFalse( has_filter( 'woocommerce_product_variation_get__subscription_sign_up_fee', array( $sut, 'get_subscription_product_signup_fee' ) ) );
-		$this->assertFalse( has_filter( 'woocommerce_subscription_price_string_details', array( $sut, 'maybe_set_current_my_account_subscription' ) ) );
-		$this->assertFalse( has_filter( 'woocommerce_get_formatted_subscription_total', array( $sut, 'maybe_clear_current_my_account_subscription' ) ) );
-		$this->assertFalse( has_filter( 'wc_price', array( $sut, 'maybe_get_explicit_format_for_subscription_total' ) ) );
-		$this->assertFalse( has_filter( 'option_woocommerce_subscriptions_multiple_purchase', array( $sut, 'maybe_disable_mixed_cart' ) ) );
-
-		foreach ( $this->cache_invalidation_hooks as $hook ) {
-			$this->assertFalse( has_action( $hook, array( $sut, 'clear_subscription_type_cache' ) ), $hook );
-		}
 	}
 
 	/**

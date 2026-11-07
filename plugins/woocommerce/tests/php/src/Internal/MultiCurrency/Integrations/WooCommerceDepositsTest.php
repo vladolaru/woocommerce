@@ -49,26 +49,41 @@ class WooCommerceDepositsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should register Deposits compatibility hooks for core runtime.
+	 * @testdox Should register exactly the Deposits hooks the store allows, once: $_dataName.
+	 * @dataProvider provide_deposits_stores
+	 *
+	 * @param string                            $owner              Runtime owner.
+	 * @param bool                              $deposits_available Whether Deposits is loaded.
+	 * @param string|null                       $deposits_version   Deposits version.
+	 * @param array<string,array<string,int[]>> $expected           Every hook the controller registers.
 	 */
-	public function test_registers_deposits_compatibility_hooks_for_core_runtime(): void {
-		$sut = $this->create_controller();
+	public function test_registers_the_deposits_hooks_the_store_allows( string $owner, bool $deposits_available, ?string $deposits_version, array $expected ): void {
+		$sut = $this->create_controller( $owner, $deposits_available, $deposits_version );
 
 		$sut->register();
 		$sut->register();
 
-		$this->assertSame( 10, has_action( 'woocommerce_deposits_create_order', array( $sut, 'modify_order_currency' ) ) );
-		$this->assertSame( 10, has_filter( 'woocommerce_get_cart_contents', array( $sut, 'modify_cart_item_deposit_amounts' ) ) );
-		$this->assertSame( 10, has_filter( 'woocommerce_product_get__wc_deposit_amount', array( $sut, 'modify_cart_item_deposit_amount_meta' ) ) );
-		$this->assertSame( 10, has_filter( 'wcpay_multi_currency_should_convert_product_price', array( $sut, 'maybe_convert_product_prices_for_deposits' ) ) );
-		$this->assertSame(
-			array(
-				'wcpay_multi_currency_should_convert_product_price' => array( 'maybe_convert_product_prices_for_deposits' => array( 10, 2 ) ),
-				'woocommerce_deposits_create_order' => array( 'modify_order_currency' => array( 10, 1 ) ),
-				'woocommerce_get_cart_contents'     => array( 'modify_cart_item_deposit_amounts' => array( 10, 1 ) ),
-				'woocommerce_product_get__wc_deposit_amount' => array( 'modify_cart_item_deposit_amount_meta' => array( 10, 2 ) ),
-			),
-			RegisteredHooks::of( $sut )
+		$this->assertSame( $expected, RegisteredHooks::of( $sut ) );
+	}
+
+	/**
+	 * Stores and the Deposits hooks each registers: all of them for a Deposits before 2.0.1 under core, none otherwise.
+	 *
+	 * @return array<string,array{0:string,1:bool,2:string|null,3:array<string,array<string,int[]>>}>
+	 */
+	public function provide_deposits_stores(): array {
+		$hooks = array(
+			'wcpay_multi_currency_should_convert_product_price' => array( 'maybe_convert_product_prices_for_deposits' => array( 10, 2 ) ),
+			'woocommerce_deposits_create_order'          => array( 'modify_order_currency' => array( 10, 1 ) ),
+			'woocommerce_get_cart_contents'              => array( 'modify_cart_item_deposit_amounts' => array( 10, 1 ) ),
+			'woocommerce_product_get__wc_deposit_amount' => array( 'modify_cart_item_deposit_amount_meta' => array( 10, 2 ) ),
+		);
+
+		return array(
+			'Deposits 2.0.0 under core' => array( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, true, '2.0.0', $hooks ),
+			'the extension owns'        => array( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION, true, '2.0.0', array() ),
+			'Deposits not loaded'       => array( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, false, '2.0.0', array() ),
+			'Deposits 2.0.1'            => array( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, true, '2.0.1', array() ),
 		);
 	}
 
@@ -88,23 +103,6 @@ class WooCommerceDepositsTest extends WC_Unit_Test_Case {
 		$sut->register();
 
 		$this->assertSame( $registers ? 10 : false, has_filter( 'woocommerce_get_cart_contents', array( $sut, 'modify_cart_item_deposit_amounts' ) ) );
-	}
-
-	/**
-	 * @testdox Should not register Deposits hooks when runtime guards block.
-	 */
-	public function test_does_not_register_deposits_hooks_when_guards_block(): void {
-		$extension_owned  = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION );
-		$missing_deposits = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, false );
-		$supported        = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, true, '2.0.1' );
-
-		$extension_owned->register();
-		$missing_deposits->register();
-		$supported->register();
-
-		$this->assert_deposits_hooks_not_registered( $extension_owned );
-		$this->assert_deposits_hooks_not_registered( $missing_deposits );
-		$this->assert_deposits_hooks_not_registered( $supported );
 	}
 
 	/**
@@ -261,18 +259,6 @@ class WooCommerceDepositsTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( 0, $saves );
 		$this->assertSame( $remaining_currency, wc_get_order( $remaining->get_id() )->get_currency( 'view' ) );
-	}
-
-	/**
-	 * Assert Deposits hooks are not registered for a controller.
-	 *
-	 * @param WooCommerceDeposits $sut The controller.
-	 */
-	private function assert_deposits_hooks_not_registered( WooCommerceDeposits $sut ): void {
-		$this->assertFalse( has_action( 'woocommerce_deposits_create_order', array( $sut, 'modify_order_currency' ) ) );
-		$this->assertFalse( has_filter( 'woocommerce_get_cart_contents', array( $sut, 'modify_cart_item_deposit_amounts' ) ) );
-		$this->assertFalse( has_filter( 'woocommerce_product_get__wc_deposit_amount', array( $sut, 'modify_cart_item_deposit_amount_meta' ) ) );
-		$this->assertFalse( has_filter( 'wcpay_multi_currency_should_convert_product_price', array( $sut, 'maybe_convert_product_prices_for_deposits' ) ) );
 	}
 
 	/**

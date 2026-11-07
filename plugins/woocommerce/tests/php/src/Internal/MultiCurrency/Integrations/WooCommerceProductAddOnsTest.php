@@ -73,76 +73,54 @@ class WooCommerceProductAddOnsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should register Product Add-ons frontend hooks for core runtime.
+	 * @testdox Should register exactly the Product Add-ons hooks the request allows, once: $_dataName.
+	 * @dataProvider provide_product_addons_requests
+	 *
+	 * @param string                            $owner                    Runtime owner.
+	 * @param bool                              $product_addons_available Whether Product Add-ons is loaded.
+	 * @param bool                              $is_admin                 Whether this is an admin request.
+	 * @param bool                              $is_ajax                  Whether this is an Ajax request.
+	 * @param bool                              $is_cron                  Whether this is a cron request.
+	 * @param array<string,array<string,int[]>> $expected                 Every hook the controller registers.
 	 */
-	public function test_registers_product_addons_frontend_hooks_for_core_runtime(): void {
-		$sut = $this->create_controller();
+	public function test_registers_the_product_addons_hooks_the_request_allows( string $owner, bool $product_addons_available, bool $is_admin, bool $is_ajax, bool $is_cron, array $expected ): void {
+		$sut = $this->create_controller( $owner, $product_addons_available, true, $is_admin, $is_ajax, $is_cron );
 
 		$sut->register();
 		$sut->register();
 
-		$this->assertSame( 50, has_filter( 'woocommerce_product_addons_option_price_raw', array( $sut, 'get_addons_price' ) ) );
-		$this->assertSame( 50, has_filter( 'woocommerce_product_addons_price_raw', array( $sut, 'get_addons_price' ) ) );
-		$this->assertSame( 50, has_filter( 'woocommerce_product_addons_params', array( $sut, 'product_addons_params' ) ) );
-		$this->assertSame( 50, has_filter( 'woocommerce_product_addons_get_item_data', array( $sut, 'get_item_data' ) ) );
-		$this->assertSame( 50, has_filter( 'woocommerce_product_addons_update_product_price', array( $sut, 'update_product_price' ) ) );
-		$this->assertSame( 50, has_filter( 'woocommerce_product_addons_order_line_item_meta', array( $sut, 'order_line_item_meta' ) ) );
-		$this->assertSame( 50, has_filter( 'wcpay_multi_currency_should_convert_product_price', array( $sut, 'should_convert_product_price' ) ) );
-		$this->assertFalse( has_filter( 'woocommerce_product_addons_ajax_get_product_price_including_tax', array( $sut, 'get_product_calculation_price' ) ) );
-		$this->assertSame(
-			array(
-				'wcpay_multi_currency_should_convert_product_price' => array( 'should_convert_product_price' => array( 50, 2 ) ),
-				'woocommerce_product_addons_get_item_data' => array( 'get_item_data' => array( 50, 3 ) ),
-				'woocommerce_product_addons_option_price_raw' => array( 'get_addons_price' => array( 50, 2 ) ),
-				'woocommerce_product_addons_order_line_item_meta' => array( 'order_line_item_meta' => array( 50, 4 ) ),
-				'woocommerce_product_addons_params'        => array( 'product_addons_params' => array( 50, 1 ) ),
-				'woocommerce_product_addons_price_raw'     => array( 'get_addons_price' => array( 50, 2 ) ),
-				'woocommerce_product_addons_update_product_price' => array( 'update_product_price' => array( 50, 4 ) ),
-			),
-			RegisteredHooks::of( $sut )
-		);
+		$this->assertSame( $expected, RegisteredHooks::of( $sut ) );
 	}
 
 	/**
-	 * @testdox Should register Product Add-ons Ajax hooks for core runtime.
+	 * Requests and the Product Add-ons hooks each registers: the price hooks on the storefront, the tax price hooks on
+	 * admin Ajax, none otherwise.
+	 *
+	 * @return array<string,array{0:string,1:bool,2:bool,3:bool,4:bool,5:array<string,array<string,int[]>>}>
 	 */
-	public function test_registers_product_addons_ajax_hooks_for_core_runtime(): void {
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, true, true, true, true, false );
-
-		$sut->register();
-		$sut->register();
-
-		$this->assertSame( 50, has_filter( 'woocommerce_product_addons_ajax_get_product_price_including_tax', array( $sut, 'get_product_calculation_price' ) ) );
-		$this->assertSame( 50, has_filter( 'woocommerce_product_addons_ajax_get_product_price_excluding_tax', array( $sut, 'get_product_calculation_price' ) ) );
-		$this->assertFalse( has_filter( 'woocommerce_product_addons_option_price_raw', array( $sut, 'get_addons_price' ) ) );
-		$this->assertFalse( has_filter( 'woocommerce_product_addons_update_product_price', array( $sut, 'update_product_price' ) ) );
-		$this->assertSame(
-			array(
-				'woocommerce_product_addons_ajax_get_product_price_excluding_tax' => array( 'get_product_calculation_price' => array( 50, 3 ) ),
-				'woocommerce_product_addons_ajax_get_product_price_including_tax' => array( 'get_product_calculation_price' => array( 50, 3 ) ),
-			),
-			RegisteredHooks::of( $sut )
+	public function provide_product_addons_requests(): array {
+		$storefront_hooks = array(
+			'wcpay_multi_currency_should_convert_product_price' => array( 'should_convert_product_price' => array( 50, 2 ) ),
+			'woocommerce_product_addons_get_item_data'    => array( 'get_item_data' => array( 50, 3 ) ),
+			'woocommerce_product_addons_option_price_raw' => array( 'get_addons_price' => array( 50, 2 ) ),
+			'woocommerce_product_addons_order_line_item_meta' => array( 'order_line_item_meta' => array( 50, 4 ) ),
+			'woocommerce_product_addons_params'           => array( 'product_addons_params' => array( 50, 1 ) ),
+			'woocommerce_product_addons_price_raw'        => array( 'get_addons_price' => array( 50, 2 ) ),
+			'woocommerce_product_addons_update_product_price' => array( 'update_product_price' => array( 50, 4 ) ),
 		);
-	}
+		$ajax_hooks       = array(
+			'woocommerce_product_addons_ajax_get_product_price_excluding_tax' => array( 'get_product_calculation_price' => array( 50, 3 ) ),
+			'woocommerce_product_addons_ajax_get_product_price_including_tax' => array( 'get_product_calculation_price' => array( 50, 3 ) ),
+		);
 
-	/**
-	 * @testdox Should not register Product Add-ons hooks when runtime guards block.
-	 */
-	public function test_does_not_register_product_addons_hooks_when_guards_block(): void {
-		$extension_owned = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION );
-		$missing_addons  = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, false );
-		$admin_non_ajax  = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, true, true, true, false, false );
-		$frontend_cron   = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, true, true, false, false, true );
-
-		$extension_owned->register();
-		$missing_addons->register();
-		$admin_non_ajax->register();
-		$frontend_cron->register();
-
-		$this->assert_product_addons_hooks_not_registered( $extension_owned );
-		$this->assert_product_addons_hooks_not_registered( $missing_addons );
-		$this->assert_product_addons_hooks_not_registered( $admin_non_ajax );
-		$this->assert_product_addons_hooks_not_registered( $frontend_cron );
+		return array(
+			'storefront'                 => array( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, true, false, false, false, $storefront_hooks ),
+			'admin Ajax'                 => array( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, true, true, true, false, $ajax_hooks ),
+			'the extension owns'         => array( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION, true, false, false, false, array() ),
+			'Product Add-ons not loaded' => array( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, false, false, false, false, array() ),
+			'an admin page'              => array( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, true, true, false, false, array() ),
+			'cron'                       => array( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, true, false, false, true, array() ),
+		);
 	}
 
 	/**
@@ -477,17 +455,6 @@ class WooCommerceProductAddOnsTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( 'Premium (formatted:2)', $result['value'] );
 		$this->assertSame( $this->converted_price( 10 ), $result['raw_price'] );
-	}
-
-	/**
-	 * Assert Product Add-ons hooks are not registered for a controller.
-	 *
-	 * @param WooCommerceProductAddOns $sut The controller.
-	 */
-	private function assert_product_addons_hooks_not_registered( WooCommerceProductAddOns $sut ): void {
-		$this->assertFalse( has_filter( 'woocommerce_product_addons_option_price_raw', array( $sut, 'get_addons_price' ) ) );
-		$this->assertFalse( has_filter( 'woocommerce_product_addons_update_product_price', array( $sut, 'update_product_price' ) ) );
-		$this->assertFalse( has_filter( 'woocommerce_product_addons_ajax_get_product_price_including_tax', array( $sut, 'get_product_calculation_price' ) ) );
 	}
 
 	/**

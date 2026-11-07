@@ -52,37 +52,40 @@ class WooCommerceFedExTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should register FedEx compatibility hooks for core runtime.
+	 * @testdox Should register exactly the FedEx hooks the store allows, once: $_dataName.
+	 * @dataProvider provide_fedex_stores
+	 *
+	 * @param string                            $owner           Runtime owner.
+	 * @param bool                              $fedex_available Whether FedEx is loaded.
+	 * @param array<string,array<string,int[]>> $expected        Every hook the controller registers.
 	 */
-	public function test_registers_fedex_compatibility_hooks_for_core_runtime(): void {
-		$sut = $this->create_controller();
+	public function test_registers_the_fedex_hooks_the_store_allows( string $owner, bool $fedex_available, array $expected ): void {
+		$sut = $this->create_controller( $owner, $fedex_available );
 
 		$sut->register();
 		$sut->register();
 
-		$this->assertSame( 10, has_filter( 'wcpay_multi_currency_should_convert_product_price', array( $sut, 'should_convert_product_price' ) ) );
-		$this->assertSame( 10, has_filter( 'wcpay_multi_currency_should_return_store_currency', array( $sut, 'should_return_store_currency' ) ) );
-		$this->assertSame(
-			array(
-				'wcpay_multi_currency_should_convert_product_price' => array( 'should_convert_product_price' => array( 10, 1 ) ),
-				'wcpay_multi_currency_should_return_store_currency' => array( 'should_return_store_currency' => array( 10, 1 ) ),
-			),
-			RegisteredHooks::of( $sut )
-		);
+		$this->assertSame( $expected, RegisteredHooks::of( $sut ) );
 	}
 
 	/**
-	 * @testdox Should not register FedEx hooks when runtime guards block.
+	 * Stores and the FedEx hooks each registers: both under core with FedEx loaded, none otherwise.
+	 *
+	 * @return array<string,array{0:string,1:bool,2:array<string,array<string,int[]>>}>
 	 */
-	public function test_does_not_register_fedex_hooks_when_guards_block(): void {
-		$extension_owned = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION );
-		$missing_fedex   = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, false );
-
-		$extension_owned->register();
-		$missing_fedex->register();
-
-		$this->assert_fedex_hooks_not_registered( $extension_owned );
-		$this->assert_fedex_hooks_not_registered( $missing_fedex );
+	public function provide_fedex_stores(): array {
+		return array(
+			'FedEx loaded under core' => array(
+				MultiCurrencyRuntimeArbiter::OWNER_BUILTIN,
+				true,
+				array(
+					'wcpay_multi_currency_should_convert_product_price' => array( 'should_convert_product_price' => array( 10, 1 ) ),
+					'wcpay_multi_currency_should_return_store_currency' => array( 'should_return_store_currency' => array( 10, 1 ) ),
+				),
+			),
+			'the extension owns'      => array( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION, true, array() ),
+			'FedEx not loaded'        => array( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, false, array() ),
+		);
 	}
 
 	/**
@@ -130,16 +133,6 @@ class WooCommerceFedExTest extends WC_Unit_Test_Case {
 		foreach ( $this->fedex_calls as $fedex_call ) {
 			$this->assertTrue( CallStack::run( array( $fedex_call ), fn() => $sut->should_return_store_currency( false ) ), "Expected {$fedex_call} to force store currency." );
 		}
-	}
-
-	/**
-	 * Assert FedEx hooks are not registered for a controller.
-	 *
-	 * @param WooCommerceFedEx $sut The controller.
-	 */
-	private function assert_fedex_hooks_not_registered( WooCommerceFedEx $sut ): void {
-		$this->assertFalse( has_filter( 'wcpay_multi_currency_should_convert_product_price', array( $sut, 'should_convert_product_price' ) ) );
-		$this->assertFalse( has_filter( 'wcpay_multi_currency_should_return_store_currency', array( $sut, 'should_return_store_currency' ) ) );
 	}
 
 	/**

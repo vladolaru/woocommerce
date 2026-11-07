@@ -43,33 +43,33 @@ class WooCommercePreOrdersTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should register Pre-Orders compatibility hooks for core runtime.
+	 * @testdox Should register exactly the Pre-Orders hooks the store allows, once: $_dataName.
+	 * @dataProvider provide_pre_orders_stores
+	 *
+	 * @param string                            $owner                Runtime owner.
+	 * @param bool                              $pre_orders_available Whether Pre-Orders is loaded.
+	 * @param array<string,array<string,int[]>> $expected             Every hook the controller registers.
 	 */
-	public function test_registers_pre_orders_compatibility_hooks_for_core_runtime(): void {
-		$sut = $this->create_controller();
+	public function test_registers_the_pre_orders_hooks_the_store_allows( string $owner, bool $pre_orders_available, array $expected ): void {
+		$sut = $this->create_controller( $owner, $pre_orders_available );
 
 		$sut->register();
 		$sut->register();
 
-		$this->assertSame( 10, has_filter( 'wc_pre_orders_fee', array( $sut, 'convert_pre_orders_fee' ) ) );
-		$this->assertSame(
-			array( 'wc_pre_orders_fee' => array( 'convert_pre_orders_fee' => array( 10, 1 ) ) ),
-			RegisteredHooks::of( $sut )
-		);
+		$this->assertSame( $expected, RegisteredHooks::of( $sut ) );
 	}
 
 	/**
-	 * @testdox Should not register Pre-Orders hooks when runtime guards block.
+	 * Stores and the Pre-Orders hooks each registers: the fee filter under core with Pre-Orders loaded, none otherwise.
+	 *
+	 * @return array<string,array{0:string,1:bool,2:array<string,array<string,int[]>>}>
 	 */
-	public function test_does_not_register_pre_orders_hooks_when_guards_block(): void {
-		$extension_owned    = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION );
-		$missing_pre_orders = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, false );
-
-		$extension_owned->register();
-		$missing_pre_orders->register();
-
-		$this->assert_pre_orders_hooks_not_registered( $extension_owned );
-		$this->assert_pre_orders_hooks_not_registered( $missing_pre_orders );
+	public function provide_pre_orders_stores(): array {
+		return array(
+			'Pre-Orders loaded under core' => array( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, true, array( 'wc_pre_orders_fee' => array( 'convert_pre_orders_fee' => array( 10, 1 ) ) ) ),
+			'the extension owns'           => array( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION, true, array() ),
+			'Pre-Orders not loaded'        => array( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, false, array() ),
+		);
 	}
 
 	/**
@@ -111,15 +111,6 @@ class WooCommercePreOrdersTest extends WC_Unit_Test_Case {
 			array( 'label' => 'Pre-order fee' ),
 			$sut->convert_pre_orders_fee( array( 'label' => 'Pre-order fee' ) )
 		);
-	}
-
-	/**
-	 * Assert Pre-Orders hooks are not registered for a controller.
-	 *
-	 * @param WooCommercePreOrders $sut The controller.
-	 */
-	private function assert_pre_orders_hooks_not_registered( WooCommercePreOrders $sut ): void {
-		$this->assertFalse( has_filter( 'wc_pre_orders_fee', array( $sut, 'convert_pre_orders_fee' ) ) );
 	}
 
 	/**

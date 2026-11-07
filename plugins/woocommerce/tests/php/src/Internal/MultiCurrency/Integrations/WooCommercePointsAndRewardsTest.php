@@ -43,40 +43,43 @@ class WooCommercePointsAndRewardsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should register Points and Rewards compatibility hooks for core frontend runtime.
+	 * @testdox Should register exactly the Points and Rewards hooks the request allows, once: $_dataName.
+	 * @dataProvider provide_points_rewards_requests
+	 *
+	 * @param string                            $owner                    Runtime owner.
+	 * @param bool                              $points_rewards_available Whether Points and Rewards is loaded.
+	 * @param bool                              $is_admin                 Whether this is an admin request.
+	 * @param array<string,array<string,int[]>> $expected                 Every hook the controller registers.
 	 */
-	public function test_registers_points_rewards_compatibility_hooks_for_core_frontend_runtime(): void {
-		$sut = $this->create_controller();
+	public function test_registers_the_points_rewards_hooks_the_request_allows( string $owner, bool $points_rewards_available, bool $is_admin, array $expected ): void {
+		$sut = $this->create_controller( $owner, $points_rewards_available, $is_admin );
 
 		$sut->register();
 		$sut->register();
 
-		$this->assertSame( 50, has_filter( 'option_wc_points_rewards_earn_points_ratio', array( $sut, 'convert_points_ratio' ) ) );
-		$this->assertSame( 50, has_filter( 'option_wc_points_rewards_redeem_points_ratio', array( $sut, 'convert_points_ratio' ) ) );
-		$this->assertSame(
-			array(
-				'option_wc_points_rewards_earn_points_ratio'   => array( 'convert_points_ratio' => array( 50, 1 ) ),
-				'option_wc_points_rewards_redeem_points_ratio' => array( 'convert_points_ratio' => array( 50, 1 ) ),
-			),
-			RegisteredHooks::of( $sut )
-		);
+		$this->assertSame( $expected, RegisteredHooks::of( $sut ) );
 	}
 
 	/**
-	 * @testdox Should not register Points and Rewards hooks when runtime guards block.
+	 * Requests and the Points and Rewards hooks each registers: both on the storefront under core, none otherwise.
+	 *
+	 * @return array<string,array{0:string,1:bool,2:bool,3:array<string,array<string,int[]>>}>
 	 */
-	public function test_does_not_register_points_rewards_hooks_when_guards_block(): void {
-		$extension_owned        = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION );
-		$missing_points_rewards = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, false );
-		$admin                  = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, true, true );
-
-		$extension_owned->register();
-		$missing_points_rewards->register();
-		$admin->register();
-
-		$this->assert_points_rewards_hooks_not_registered( $extension_owned );
-		$this->assert_points_rewards_hooks_not_registered( $missing_points_rewards );
-		$this->assert_points_rewards_hooks_not_registered( $admin );
+	public function provide_points_rewards_requests(): array {
+		return array(
+			'storefront under core'         => array(
+				MultiCurrencyRuntimeArbiter::OWNER_BUILTIN,
+				true,
+				false,
+				array(
+					'option_wc_points_rewards_earn_points_ratio'   => array( 'convert_points_ratio' => array( 50, 1 ) ),
+					'option_wc_points_rewards_redeem_points_ratio' => array( 'convert_points_ratio' => array( 50, 1 ) ),
+				),
+			),
+			'the extension owns'            => array( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION, true, false, array() ),
+			'Points and Rewards not loaded' => array( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, false, false, array() ),
+			'an admin request'              => array( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, true, true, array() ),
+		);
 	}
 
 	/**
@@ -123,16 +126,6 @@ class WooCommercePointsAndRewardsTest extends WC_Unit_Test_Case {
 	public function test_preserves_ratios_while_discount_data_is_calculated(): void {
 		$sut = $this->create_controller();
 		$this->assertSame( '10:2', CallStack::run( array( 'WC_Points_Rewards_Discount->get_discount_data' ), fn() => $sut->convert_points_ratio( '10:2' ) ) );
-	}
-
-	/**
-	 * Assert Points and Rewards hooks are not registered for a controller.
-	 *
-	 * @param WooCommercePointsAndRewards $sut The controller.
-	 */
-	private function assert_points_rewards_hooks_not_registered( WooCommercePointsAndRewards $sut ): void {
-		$this->assertFalse( has_filter( 'option_wc_points_rewards_earn_points_ratio', array( $sut, 'convert_points_ratio' ) ) );
-		$this->assertFalse( has_filter( 'option_wc_points_rewards_redeem_points_ratio', array( $sut, 'convert_points_ratio' ) ) );
 	}
 
 	/**

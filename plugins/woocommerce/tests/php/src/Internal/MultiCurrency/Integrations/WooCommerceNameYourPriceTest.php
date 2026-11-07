@@ -70,51 +70,47 @@ class WooCommerceNameYourPriceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should register Name Your Price compatibility hooks for core runtime.
+	 * @testdox Should register exactly the Name Your Price hooks the store allows, once: $_dataName.
+	 * @dataProvider provide_name_your_price_stores
+	 *
+	 * @param string                            $owner                     Runtime owner.
+	 * @param bool                              $name_your_price_available Whether Name Your Price is loaded.
+	 * @param array<string,array<string,int[]>> $expected                  Every hook the controller registers.
 	 */
-	public function test_registers_name_your_price_compatibility_hooks_for_core_runtime(): void {
-		$sut = $this->create_controller();
+	public function test_registers_the_name_your_price_hooks_the_store_allows( string $owner, bool $name_your_price_available, array $expected ): void {
+		$sut = $this->create_controller( $owner, $name_your_price_available );
 
 		$sut->register();
 		$sut->register();
 
-		$this->assertSame( 10, has_filter( 'wc_nyp_raw_minimum_price', array( $sut, 'get_nyp_prices' ) ) );
-		$this->assertSame( 10, has_filter( 'wc_nyp_raw_maximum_price', array( $sut, 'get_nyp_prices' ) ) );
-		$this->assertSame( 10, has_filter( 'wc_nyp_raw_suggested_price', array( $sut, 'get_nyp_prices' ) ) );
-		$this->assertSame( 20, has_action( 'woocommerce_add_cart_item_data', array( $sut, 'add_initial_currency' ) ) );
-		$this->assertSame( 20, has_filter( 'woocommerce_get_cart_item_from_session', array( $sut, 'convert_cart_currency' ) ) );
-		$this->assertSame( 10, has_filter( 'woocommerce_pre_remove_cart_item_from_session', array( $sut, 'remove_unconvertible_cart_item' ) ) );
-		$this->assertSame( 50, has_filter( 'wcpay_multi_currency_should_convert_product_price', array( $sut, 'should_convert_product_price' ) ) );
-		$this->assertSame( 10, has_filter( 'wc_nyp_edit_in_cart_args', array( $sut, 'edit_in_cart_args' ) ) );
-		$this->assertSame( 10, has_filter( 'wc_nyp_get_initial_price', array( $sut, 'get_initial_price' ) ) );
-		$this->assertSame(
-			array(
-				'wc_nyp_edit_in_cart_args'               => array( 'edit_in_cart_args' => array( 10, 2 ) ),
-				'wc_nyp_get_initial_price'               => array( 'get_initial_price' => array( 10, 3 ) ),
-				'wc_nyp_raw_maximum_price'               => array( 'get_nyp_prices' => array( 10, 1 ) ),
-				'wc_nyp_raw_minimum_price'               => array( 'get_nyp_prices' => array( 10, 1 ) ),
-				'wc_nyp_raw_suggested_price'             => array( 'get_nyp_prices' => array( 10, 1 ) ),
-				'wcpay_multi_currency_should_convert_product_price' => array( 'should_convert_product_price' => array( 50, 2 ) ),
-				'woocommerce_add_cart_item_data'         => array( 'add_initial_currency' => array( 20, 3 ) ),
-				'woocommerce_get_cart_item_from_session' => array( 'convert_cart_currency' => array( 20, 2 ) ),
-				'woocommerce_pre_remove_cart_item_from_session' => array( 'remove_unconvertible_cart_item' => array( 10, 4 ) ),
-			),
-			RegisteredHooks::of( $sut )
-		);
+		$this->assertSame( $expected, RegisteredHooks::of( $sut ) );
 	}
 
 	/**
-	 * @testdox Should not register Name Your Price hooks when runtime guards block.
+	 * Stores and the Name Your Price hooks each registers: all of them under core with the extension loaded, none otherwise.
+	 *
+	 * @return array<string,array{0:string,1:bool,2:array<string,array<string,int[]>>}>
 	 */
-	public function test_does_not_register_name_your_price_hooks_when_guards_block(): void {
-		$extension_owned = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION );
-		$missing_nyp     = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, false );
-
-		$extension_owned->register();
-		$missing_nyp->register();
-
-		$this->assert_name_your_price_hooks_not_registered( $extension_owned );
-		$this->assert_name_your_price_hooks_not_registered( $missing_nyp );
+	public function provide_name_your_price_stores(): array {
+		return array(
+			'Name Your Price loaded under core' => array(
+				MultiCurrencyRuntimeArbiter::OWNER_BUILTIN,
+				true,
+				array(
+					'wc_nyp_edit_in_cart_args'       => array( 'edit_in_cart_args' => array( 10, 2 ) ),
+					'wc_nyp_get_initial_price'       => array( 'get_initial_price' => array( 10, 3 ) ),
+					'wc_nyp_raw_maximum_price'       => array( 'get_nyp_prices' => array( 10, 1 ) ),
+					'wc_nyp_raw_minimum_price'       => array( 'get_nyp_prices' => array( 10, 1 ) ),
+					'wc_nyp_raw_suggested_price'     => array( 'get_nyp_prices' => array( 10, 1 ) ),
+					'wcpay_multi_currency_should_convert_product_price' => array( 'should_convert_product_price' => array( 50, 2 ) ),
+					'woocommerce_add_cart_item_data' => array( 'add_initial_currency' => array( 20, 3 ) ),
+					'woocommerce_get_cart_item_from_session' => array( 'convert_cart_currency' => array( 20, 2 ) ),
+					'woocommerce_pre_remove_cart_item_from_session' => array( 'remove_unconvertible_cart_item' => array( 10, 4 ) ),
+				),
+			),
+			'the extension owns'                => array( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION, true, array() ),
+			'Name Your Price not loaded'        => array( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, false, array() ),
+		);
 	}
 
 	/**
@@ -404,18 +400,6 @@ class WooCommerceNameYourPriceTest extends WC_Unit_Test_Case {
 		unset( $_REQUEST['nyp_currency'] );
 
 		$this->assertSame( '99.00', $sut->get_initial_price( '99.00', $this->create_product(), '_bundle' ) );
-	}
-
-	/**
-	 * Assert Name Your Price hooks are not registered for a controller.
-	 *
-	 * @param WooCommerceNameYourPrice $sut The controller.
-	 */
-	private function assert_name_your_price_hooks_not_registered( WooCommerceNameYourPrice $sut ): void {
-		$this->assertFalse( has_filter( 'wc_nyp_raw_minimum_price', array( $sut, 'get_nyp_prices' ) ) );
-		$this->assertFalse( has_action( 'woocommerce_add_cart_item_data', array( $sut, 'add_initial_currency' ) ) );
-		$this->assertFalse( has_filter( 'woocommerce_get_cart_item_from_session', array( $sut, 'convert_cart_currency' ) ) );
-		$this->assertFalse( has_filter( 'wcpay_multi_currency_should_convert_product_price', array( $sut, 'should_convert_product_price' ) ) );
 	}
 
 	/**
