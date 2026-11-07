@@ -224,7 +224,7 @@ class WooPaymentsStoreSetupReportControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should report the available payment methods as the registered methods the account has fees for (the WooPayments extension `class-wc-payment-gateway-wcpay.php:4848-4879`, sent at `class-wc-payments-account.php:2908-2909`).
+	 * @testdox Should report the available payment methods as the registered methods the account has fees for, Amazon Pay included (the WooPayments extension `class-wc-payment-gateway-wcpay.php:4848-4879`, sent at `class-wc-payments-account.php:2908-2909`; `PaymentMethodDefinitionRegistry.php:102-104` registers Amazon Pay).
 	 */
 	public function test_store_setup_sync_reports_available_methods_from_account_fees(): void {
 		// The account's `fees` is keyed by payment method ID, as in the recorded Fixtures/platform-test-drive-account.json `account.fees`.
@@ -235,6 +235,7 @@ class WooPaymentsStoreSetupReportControllerTest extends WC_Unit_Test_Case {
 					'card'       => array(),
 					'bancontact' => array(),
 					'link'       => array(),
+					'amazon_pay' => array(),
 				),
 			)
 		);
@@ -248,29 +249,10 @@ class WooPaymentsStoreSetupReportControllerTest extends WC_Unit_Test_Case {
 		);
 
 		// Registry order; Apple Pay and Google Pay are charged at card fees, so they count while card has fees.
-		$this->assertSame( array( 'card', 'bancontact', 'link', 'apple_pay', 'google_pay' ), $snapshot['payment_methods']['available'] );
+		$this->assertSame( array( 'card', 'bancontact', 'link', 'apple_pay', 'google_pay', 'amazon_pay' ), $snapshot['payment_methods']['available'] );
 		$this->assertSame( array( 'card', 'link' ), $snapshot['payment_methods']['enabled'] );
-		$this->assertSame( array( 'bancontact', 'apple_pay', 'google_pay' ), $snapshot['payment_methods']['disabled'] );
-		$this->assertSame( array( 'bancontact_payments', 'card_payments' ), $snapshot['provider_capabilities']['disabled'] );
-	}
-
-	/**
-	 * @testdox Should report Amazon Pay as available (the WooPayments extension `PaymentMethodDefinitionRegistry.php:102-104` registers it).
-	 */
-	public function test_store_setup_sync_reports_amazon_pay(): void {
-		// The account's `fees` is keyed by payment method ID, as in the recorded Fixtures/platform-test-drive-account.json `account.fees`.
-		$account_service = $this->create_account_service(
-			array(
-				'fees' => array(
-					'card'       => array(),
-					'amazon_pay' => array(),
-				),
-			)
-		);
-
-		$snapshot = $this->send_store_setup_snapshot( array( 'enabled' => 'yes' ), $account_service );
-
-		$this->assertContains( 'amazon_pay', $snapshot['payment_methods']['available'] );
+		$this->assertSame( array( 'bancontact', 'apple_pay', 'google_pay', 'amazon_pay' ), $snapshot['payment_methods']['disabled'] );
+		$this->assertSame( array( 'bancontact_payments', 'card_payments', 'amazon_pay_payments' ), $snapshot['provider_capabilities']['disabled'] );
 	}
 
 	/**
@@ -615,7 +597,7 @@ class WooPaymentsStoreSetupReportControllerTest extends WC_Unit_Test_Case {
 	 * which holds Amazon Pay only while its feature is on (`includes/payment-methods/Configs/Registry/PaymentMethodDefinitionRegistry.php:102-105`).
 	 * A domestic-only method requires the account's domestic currency, the currency of the account's country, not the account's default currency (`:71`, `:81`).
 	 *
-	 * @testdox Should auto-enable the currencies a newly enabled payment method requires: $_dataName.
+	 * @testdox Should auto-enable the currencies a newly enabled payment method requires, and none while the Multi-Currency flag is off: $_dataName.
 	 * @dataProvider provider_settings_save_currency_auto_add
 	 *
 	 * @param array<string,string> $feature_flags        Feature flag options to write.
@@ -674,6 +656,8 @@ class WooPaymentsStoreSetupReportControllerTest extends WC_Unit_Test_Case {
 	public static function provider_settings_save_currency_auto_add(): array {
 		return array(
 			'iDEAL on a US account'                     => array( array(), 'US', 'usd', array( 'eur' => 0.9 ), 'ideal', array( 'EUR' ), array() ),
+			// The extension's Multi-Currency flag off leaves the enabled currencies untouched.
+			'Multi-Currency flag off'                   => array( array( '_wcpay_feature_customer_multi_currency' => '0' ), 'US', 'usd', array( 'eur' => 0.9 ), 'ideal', array(), array( 'EUR' ) ),
 			// Amazon Pay's supported currencies on a GB account include EUR (client 11.1.0 `includes/payment-methods/Configs/Definitions/AmazonPayDefinition.php:106-128`).
 			'Amazon Pay on a GB account'                => array( array(), 'GB', 'gbp', array( 'eur' => 0.9 ), 'amazon_pay', array( 'EUR' ), array() ),
 			'Affirm on a CA account with a EUR default' => array(
@@ -700,34 +684,6 @@ class WooPaymentsStoreSetupReportControllerTest extends WC_Unit_Test_Case {
 		$provider->method( 'is_available' )->willReturn( false );
 
 		wc_get_container()->get( RateService::class )->set_provider( $provider );
-	}
-
-	/**
-	 * @testdox Should leave the enabled currencies untouched when Multi-Currency is disabled.
-	 */
-	public function test_settings_save_does_not_touch_currencies_when_multi_currency_disabled(): void {
-		update_option( '_wcpay_feature_customer_multi_currency', '0' );
-		update_option(
-			DatabaseCache::CURRENCIES_KEY,
-			array(
-				'data'               => array(
-					'currencies' => array( 'eur' => 0.9 ),
-					'updated'    => 123456,
-				),
-				'fetched'            => time(),
-				'errored'            => false,
-				'consecutive_errors' => 0,
-			),
-			false
-		);
-		update_option( 'woocommerce_woocommerce_payments_settings', array( 'upe_enabled_payment_method_ids' => array( 'card' ) ) );
-
-		$service = $this->create_service( new RecordingActionSchedulerService(), null, $this->create_account_service( array( 'account_id' => 'acct_native_test' ) ) );
-		$service->register();
-
-		update_option( 'woocommerce_woocommerce_payments_settings', array( 'upe_enabled_payment_method_ids' => array( 'card', 'ideal' ) ) );
-
-		$this->assertFalse( get_option( 'wcpay_multi_currency_enabled_currencies' ), 'Disabled Multi-Currency must not gain enabled currencies.' );
 	}
 
 	/**

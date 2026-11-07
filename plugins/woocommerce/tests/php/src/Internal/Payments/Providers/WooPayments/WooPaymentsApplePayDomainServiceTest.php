@@ -601,31 +601,18 @@ class WooPaymentsApplePayDomainServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A gateway settings update that turns Apple Pay on reaches the domain registration.
+	 * @testdox A gateway settings write that turns Apple Pay on reaches the domain registration (settings stored before: $stored_before).
+	 * @testWith [false]
+	 *           [true]
+	 *
+	 * @param bool $stored_before Whether gateway settings were stored before, so the write is an update rather than the first write.
 	 */
-	public function test_settings_update_turning_apple_pay_on_registers_the_domain(): void {
+	public function test_settings_update_turning_apple_pay_on_registers_the_domain( bool $stored_before ): void {
 		$this->service = $this->create_service();
 		update_option( self::APPLE_PAY_SETTINGS_OPTION, array( 'enabled' => 'yes' ) );
-		update_option( self::SETTINGS_OPTION, array( 'enabled' => 'no' ) );
-		$this->service->register();
-
-		update_option(
-			self::SETTINGS_OPTION,
-			array(
-				'enabled'                           => 'yes',
-				'express_checkout_checkout_methods' => array( 'payment_request' ),
-			)
-		);
-
-		$this->assertSame( array( $this->expected_domain ), $this->api_client->registered_domains );
-	}
-
-	/**
-	 * @testdox Registers the settings listeners, so a first settings write reaches the domain registration.
-	 */
-	public function test_register_hooks_the_settings_listeners(): void {
-		$this->service = $this->create_service();
-		update_option( self::APPLE_PAY_SETTINGS_OPTION, array( 'enabled' => 'yes' ) );
+		if ( $stored_before ) {
+			update_option( self::SETTINGS_OPTION, array( 'enabled' => 'no' ) );
+		}
 		$this->service->register();
 
 		update_option(

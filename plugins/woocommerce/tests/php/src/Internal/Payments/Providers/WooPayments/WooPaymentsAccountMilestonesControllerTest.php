@@ -501,32 +501,27 @@ class WooPaymentsAccountMilestonesControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Post-KYC activation email registration preserves the WooPayments email settings key.
+	 * @testdox $method registers its email under the WooPayments email class key, settings key and template paths.
+	 * @testWith ["add_post_kyc_activation_email", "WC_Payments_Email_Post_Kyc_Activation", "Automattic\\WooCommerce\\Internal\\Payments\\Providers\\WooPayments\\WooPaymentsPostKycActivationEmail", "wcpay_post_kyc_activation", "woocommerce_woocommerce_payments_wcpay_post_kyc_activation_settings", "emails/post-kyc-activation.php", "emails/plain/post-kyc-activation.php"]
+	 *           ["add_ipp_receipt_email", "WC_Payments_Email_IPP_Receipt", "Automattic\\WooCommerce\\Internal\\Payments\\Providers\\WooPayments\\WooPaymentsIppReceiptEmail", "new_receipt", "woocommerce_woocommerce_payments_new_receipt_settings", "emails/customer-ipp-receipt.php", "emails/plain/customer-ipp-receipt.php"]
+	 *
+	 * @param string $method         The email-class filter method.
+	 * @param string $class_key      Email class key in WooCommerce's email list.
+	 * @param string $email_class    Email class.
+	 * @param string $id             Email ID.
+	 * @param string $option_key     Email settings option key.
+	 * @param string $template_html  HTML template path.
+	 * @param string $template_plain Plain-text template path.
 	 */
-	public function test_post_kyc_activation_email_registration_preserves_settings_key(): void {
-		$service = $this->create_service();
-		$emails  = $service->add_post_kyc_activation_email( array() );
+	public function test_email_registration_preserves_settings_key_and_template_paths( string $method, string $class_key, string $email_class, string $id, string $option_key, string $template_html, string $template_plain ): void {
+		$emails = $this->create_service()->$method( array() );
 
-		$this->assertArrayHasKey( 'WC_Payments_Email_Post_Kyc_Activation', $emails );
-		$this->assertSame( 'wcpay_post_kyc_activation', $emails['WC_Payments_Email_Post_Kyc_Activation']->id );
-		$this->assertSame( 'woocommerce_woocommerce_payments_wcpay_post_kyc_activation_settings', $emails['WC_Payments_Email_Post_Kyc_Activation']->get_option_key() );
-		$this->assertSame( 'emails/post-kyc-activation.php', $emails['WC_Payments_Email_Post_Kyc_Activation']->template_html );
-		$this->assertSame( 'emails/plain/post-kyc-activation.php', $emails['WC_Payments_Email_Post_Kyc_Activation']->template_plain );
-	}
-
-	/**
-	 * @testdox IPP receipt email registration preserves the WooPayments email settings key and template paths.
-	 */
-	public function test_ipp_receipt_email_registration_preserves_settings_key_and_template_paths(): void {
-		$service = $this->create_service();
-		$emails  = $service->add_ipp_receipt_email( array() );
-
-		$this->assertArrayHasKey( 'WC_Payments_Email_IPP_Receipt', $emails );
-		$this->assertInstanceOf( WooPaymentsIppReceiptEmail::class, $emails['WC_Payments_Email_IPP_Receipt'] );
-		$this->assertSame( 'new_receipt', $emails['WC_Payments_Email_IPP_Receipt']->id );
-		$this->assertSame( 'woocommerce_woocommerce_payments_new_receipt_settings', $emails['WC_Payments_Email_IPP_Receipt']->get_option_key() );
-		$this->assertSame( 'emails/customer-ipp-receipt.php', $emails['WC_Payments_Email_IPP_Receipt']->template_html );
-		$this->assertSame( 'emails/plain/customer-ipp-receipt.php', $emails['WC_Payments_Email_IPP_Receipt']->template_plain );
+		$this->assertArrayHasKey( $class_key, $emails );
+		$this->assertInstanceOf( $email_class, $emails[ $class_key ] );
+		$this->assertSame( $id, $emails[ $class_key ]->id );
+		$this->assertSame( $option_key, $emails[ $class_key ]->get_option_key() );
+		$this->assertSame( $template_html, $emails[ $class_key ]->template_html );
+		$this->assertSame( $template_plain, $emails[ $class_key ]->template_plain );
 	}
 
 	/**

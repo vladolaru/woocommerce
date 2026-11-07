@@ -32,39 +32,36 @@ class WooPaymentsLogEntryFormatTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Leaves lines of other sources unchanged and does not count them.
+	 * @testdox Leaves a line unchanged and uncounted when $label.
+	 * @testWith ["an earlier filter changed core's prefix", "[ERROR] 2026-10-06 The platform sent an upstream ERROR response.", "woopayments"]
+	 *           ["it is already numbered", "2026-10-06T10:00:00+00:00 ERROR 0123456789abc-0007 Already numbered.", "woopayments"]
+	 *           ["it is not a string", null, "woopayments"]
+	 *           ["it comes from another source", "2026-10-06T10:00:00+00:00 ERROR Other.", "other-source"]
+	 *
+	 * @param string      $label  Case.
+	 * @param string|null $entry  Formatted entry, or null for a non-string entry.
+	 * @param string      $source Log source.
 	 */
-	public function test_leaves_other_sources_unchanged(): void {
+	public function test_leaves_lines_unchanged_and_uncounted( string $label, ?string $entry, string $source ): void {
+		unset( $label );
 		$sut = new WooPaymentsLogEntryFormat();
 		$sut->register();
 
-		$this->assertSame( '2026-10-06T10:00:00+00:00 ERROR Other.', $this->format( '2026-10-06T10:00:00+00:00 ERROR Other.', 'error', 'other-source' ) );
-		$this->assertMatchesRegularExpression( '/ INFO \w+-0001 Mine\.$/', $this->format( '2026-10-06T10:00:00+00:00 INFO Mine.', 'info', 'woopayments' ) );
-	}
-
-	/**
-	 * @testdox Leaves a line alone when an earlier filter changed core's prefix, when it is already numbered, or when it is not a string.
-	 */
-	public function test_leaves_lines_without_cores_prefix_unchanged(): void {
-		$sut = new WooPaymentsLogEntryFormat();
-		$sut->register();
-
-		$changed_prefix = '[ERROR] 2026-10-06 The platform sent an upstream ERROR response.';
-		$numbered       = '2026-10-06T10:00:00+00:00 ERROR 0123456789abc-0007 Already numbered.';
-
-		$this->assertSame( $changed_prefix, $this->format( $changed_prefix, 'error', 'woopayments' ) );
-		$this->assertSame( $numbered, $this->format( $numbered, 'error', 'woopayments' ) );
-		$this->assertSame(
-			array( 'not a string' ),
-			$sut->handle_woocommerce_format_log_entry(
+		if ( null === $entry ) {
+			$this->assertSame(
 				array( 'not a string' ),
-				array(
-					'level'   => 'error',
-					'context' => array( 'source' => 'woopayments' ),
+				$sut->handle_woocommerce_format_log_entry(
+					array( 'not a string' ),
+					array(
+						'level'   => 'error',
+						'context' => array( 'source' => $source ),
+					)
 				)
-			)
-		);
-		$this->assertMatchesRegularExpression( '/ ERROR \w+-0001 First counted\.$/', $this->format( '2026-10-06T10:00:00+00:00 ERROR First counted.', 'error', 'woopayments' ) );
+			);
+		} else {
+			$this->assertSame( $entry, $this->format( $entry, 'error', $source ) );
+		}
+		$this->assertMatchesRegularExpression( '/ ERROR \w+-0001 First counted\.$/', $this->format( '2026-10-06T10:00:00+00:00 ERROR First counted.', 'error', 'woopayments' ), 'The unchanged line is not counted.' );
 	}
 
 	/**

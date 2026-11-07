@@ -208,35 +208,39 @@ class WooPaymentsActionSchedulerServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Scheduling in the $_dataName avoids duplicate pending actions with the same hook, args, and group.
+	 * @testdox Scheduling twice leaves one pending action per hook, args and group, so distinct args stay distinct actions: $_dataName.
 	 *
 	 * Client 11.1.0 class-wc-payments-action-scheduler-service.php:207-220 takes an optional group
 	 * and only replaces a job with the same hook, args and group.
 	 *
 	 * @dataProvider provider_schedule_job_dedupes_in_its_group
 	 *
-	 * @param array<string,mixed> $args          Action args.
+	 * @param array<string,mixed> $first_args    Args of the first schedule.
+	 * @param array<string,mixed> $second_args   Args of the second schedule.
 	 * @param array<int,mixed>    $trailing_args Arguments after the args, left out for the default group.
-	 * @param string              $group         Group the action should land in.
+	 * @param string              $group         Group the actions should land in.
 	 * @param string              $other_group   Group that must stay empty.
 	 */
-	public function test_schedule_job_avoids_duplicate_pending_actions_in_its_group( array $args, array $trailing_args, string $group, string $other_group ): void {
-		$this->sut->schedule_job( $this->hook, $args, ...$trailing_args );
-		$this->sut->schedule_job( $this->hook, $args, ...$trailing_args );
+	public function test_schedule_job_avoids_duplicate_pending_actions_in_its_group( array $first_args, array $second_args, array $trailing_args, string $group, string $other_group ): void {
+		$this->sut->schedule_job( $this->hook, $first_args, ...$trailing_args );
+		$this->sut->schedule_job( $this->hook, $second_args, ...$trailing_args );
 
-		$this->assertSame( 1, $this->count_pending_actions( $this->hook, $args, $group ) );
-		$this->assertSame( 0, $this->count_pending_actions( $this->hook, $args, $other_group ) );
+		foreach ( array( $first_args, $second_args ) as $args ) {
+			$this->assertSame( 1, $this->count_pending_actions( $this->hook, $args, $group ) );
+			$this->assertSame( 0, $this->count_pending_actions( $this->hook, $args, $other_group ) );
+		}
 	}
 
 	/**
-	 * Groups a job is scheduled in, with the group it must stay out of.
+	 * Args scheduled twice and the group they land in, with the group they must stay out of.
 	 *
-	 * @return array<string,array{array<string,mixed>,array<int,mixed>,string,string}>
+	 * @return array<string,array{array<string,mixed>,array<string,mixed>,array<int,mixed>,string,string}>
 	 */
 	public static function provider_schedule_job_dedupes_in_its_group(): array {
 		return array(
-			'default group' => array( array( 'event_id' => 'evt_123' ), array(), 'woocommerce_payments', 'woocommerce-payments' ),
-			'given group'   => array( array( 'stage' => 7 ), array( null, 'woocommerce-payments' ), 'woocommerce-payments', 'woocommerce_payments' ),
+			'same args, default group' => array( array( 'event_id' => 'evt_123' ), array( 'event_id' => 'evt_123' ), array(), 'woocommerce_payments', 'woocommerce-payments' ),
+			'same args, given group'   => array( array( 'stage' => 7 ), array( 'stage' => 7 ), array( null, 'woocommerce-payments' ), 'woocommerce-payments', 'woocommerce_payments' ),
+			'distinct args'            => array( array( 'event_id' => 'evt_123' ), array( 'event_id' => 'evt_456' ), array(), 'woocommerce_payments', 'woocommerce-payments' ),
 		);
 	}
 
@@ -262,17 +266,6 @@ class WooPaymentsActionSchedulerServiceTest extends WC_Unit_Test_Case {
 		}
 
 		$this->assertFalse( $captured_unique, 'schedule_job() must not pass Action Scheduler hook-level uniqueness; the pending pre-check already dedupes by hook, args, and group.' );
-	}
-
-	/**
-	 * @testdox Scheduling keeps distinct args as distinct actions.
-	 */
-	public function test_schedule_job_keeps_distinct_args_as_distinct_actions(): void {
-		$this->sut->schedule_job( $this->hook, array( 'event_id' => 'evt_123' ) );
-		$this->sut->schedule_job( $this->hook, array( 'event_id' => 'evt_456' ) );
-
-		$this->assertSame( 1, $this->count_pending_actions( $this->hook, array( 'event_id' => 'evt_123' ) ) );
-		$this->assertSame( 1, $this->count_pending_actions( $this->hook, array( 'event_id' => 'evt_456' ) ) );
 	}
 
 	/**

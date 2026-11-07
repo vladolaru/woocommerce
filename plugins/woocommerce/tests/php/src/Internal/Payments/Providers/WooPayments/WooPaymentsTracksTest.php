@@ -20,9 +20,13 @@ class WooPaymentsTracksTest extends WC_Unit_Test_Case {
 	 * `payments_runtime` = `woocommerce_core`, and send no `wcpay_version`, which client 11.1.0 fills with the plugin
 	 * version.
 	 *
-	 * @testdox Should record a server-side admin event as sent by WooCommerce core, without a plugin version.
+	 * Client 11.1.0 records its other admin events without the tracking info, for example the order refund events
+	 * (class-wc-payment-gateway-wcpay.php:2979, Tracker::track_admin()).
+	 *
+	 * @testdox Should record a server-side admin event as sent by WooCommerce core, without a plugin version and without reading the tracking info.
 	 */
 	public function test_records_admin_event_with_the_builtin_runtime_and_no_plugin_version(): void {
+		$service = FixedTrackingInfoService::install();
 		update_option( 'woocommerce_allow_tracking', 'yes' );
 		$recorded = array();
 		$capture  = static function ( $properties, $event_name ) use ( &$recorded ) {
@@ -49,6 +53,8 @@ class WooPaymentsTracksTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'woocommerce_core', $properties['payments_runtime'] );
 		$this->assertSame( 'one', $properties['stage'] );
 		$this->assertArrayNotHasKey( 'wcpay_version', $properties );
+		$this->assertArrayNotHasKey( 'hosting_provider', $properties );
+		$this->assertSame( 0, $service->reads );
 	}
 
 	/**
@@ -86,26 +92,6 @@ class WooPaymentsTracksTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'fixture-host', $properties['hosting_provider'] ?? null );
 		$this->assertSame( 'code', $properties['referral_code'] ?? null );
 		$this->assertSame( 'woocommerce_core', $properties['payments_runtime'] ?? null );
-	}
-
-	/**
-	 * Client 11.1.0 records its other admin events without the tracking info, for example the order refund events
-	 * (class-wc-payment-gateway-wcpay.php:2979, Tracker::track_admin()).
-	 *
-	 * @testdox Should record an event outside those families without the tracking info and without reading it.
-	 */
-	public function test_records_other_events_without_the_tracking_info(): void {
-		$service = FixedTrackingInfoService::install();
-
-		$recorded = $this->record_events(
-			static function (): void {
-				WooPaymentsTracks::record_wcadmin_event( 'wcpay_edit_order_refund_success' );
-			}
-		);
-
-		$this->assertArrayHasKey( 'wcadmin_wcpay_edit_order_refund_success', $recorded );
-		$this->assertArrayNotHasKey( 'hosting_provider', $recorded['wcadmin_wcpay_edit_order_refund_success'] );
-		$this->assertSame( 0, $service->reads );
 	}
 
 	/**
