@@ -3,6 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Blocks\Payments\Integrations;
 
+use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Blocks\Assets\Api as AssetApi;
 use Automattic\WooCommerce\Blocks\Assets\AssetDataRegistry;
 use Automattic\WooCommerce\Blocks\Package;
@@ -28,13 +29,26 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSe
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\Eligibility;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\SessionService;
 use Automattic\WooCommerce\StoreApi\Utilities\CartTokenUtils;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\PageSurfaceReplacement;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\WooCommerceSubscriptionsDoubles;
 use WC_Unit_Test_Case;
 
 /**
  * Tests for the Blocks WooPayments integration.
+ *
+ * The page rows read the page through the replaced page surface, because an earlier test in the process can define
+ * WOOCOMMERCE_CART or WOOCOMMERCE_CHECKOUT, which core's is_cart() and is_checkout() then read for the rest of the run.
  */
 class WooPaymentsTest extends WC_Unit_Test_Case {
+
+	use PageSurfaceReplacement;
+
+	/**
+	 * The theme active before a row switches it.
+	 *
+	 * @var string
+	 */
+	private string $original_theme = '';
 
 	/**
 	 * Temporary theme root a test wrote, or an empty string.
@@ -57,6 +71,7 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 	public function setUp(): void {
 		parent::setUp();
 
+		$this->original_theme          = get_stylesheet();
 		$this->asset_file_dependencies = array(
 			'wc-payment-method-woopayments'        => array( WooPaymentsFrontendAssets::APPEARANCE_SCRIPT_HANDLE, 'wc-woopayments-fingerprintjs', WooPaymentsFrontendAssets::WOOPAY_COMMON_SCRIPT_HANDLE ),
 			'wc-payment-method-woopayments-woopay' => array( WooPaymentsFrontendAssets::APPEARANCE_SCRIPT_HANDLE, WooPaymentsFrontendAssets::WOOPAY_COMMON_SCRIPT_HANDLE ),
@@ -83,10 +98,25 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Tear down test fixtures.
+	 * Tear down test fixtures: the theme a row switched to and its theme root, as core's BlockTemplatesControllerTest
+	 * restores its theme, and the page constants a row set.
 	 */
 	public function tearDown(): void {
+		global $wp_theme_directories;
+
+		if ( get_stylesheet() !== $this->original_theme ) {
+			switch_theme( $this->original_theme );
+		}
+		if ( '' !== $this->temp_theme_root ) {
+			// phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- Unregisters the theme root the row registered.
+			$wp_theme_directories = array_values( array_diff( $wp_theme_directories, array( $this->temp_theme_root ) ) );
+			search_theme_directories( true );
+		}
+		wp_clean_themes_cache();
+		wp_cache_delete( 'wp_template-ids', 'woocommerce_blocks' );
 		$this->delete_temp_theme_root();
+		Constants::clear_single_constant( 'WOOCOMMERCE_CART' );
+		Constants::clear_single_constant( 'WOOCOMMERCE_CHECKOUT' );
 		remove_all_filters( 'wcpay_upe_available_payment_methods' );
 
 		foreach ( array( 'wc-payment-method-woopayments', 'wc-payment-method-woopayments-woopay', 'wc-payment-method-woopayments-express-checkout', 'wc-payment-method-woopayments-fraud-scripts', 'wc-payment-method-woopayments-common' ) as $handle ) {
@@ -219,8 +249,13 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Should register a core-owned Blocks asset handle for WooPayments.
+	 *
+	 * On a page the surface reads as neither the cart nor the checkout, with WOOCOMMERCE_CART defined, as an earlier cart
+	 * request in the process leaves it: the card stack stays, because the cart decision does not count the constant.
 	 */
 	public function test_get_payment_method_script_handles_registers_core_owned_woopayments_blocks_script(): void {
+		$this->replace_page_surface( false, false );
+		Constants::set_constant( 'WOOCOMMERCE_CART', true );
 		wp_deregister_script( 'stripe' );
 		wp_deregister_script( 'wc-woopayments-fingerprintjs' );
 
@@ -446,13 +481,9 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 	 *
 	 * Blocks asks for the payment method script handles on every page (Payments\Api::verify_payment_methods_dependencies()),
 	 * but no Cart or Checkout block renders here, so nothing loads. Client 11.2.0 loads its Blocks styles on this page.
-	 *
-	 * A separate process, because an earlier test can define WOOCOMMERCE_CART or WOOCOMMERCE_CHECKOUT for the rest of the run.
-	 *
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 */
 	public function test_get_payment_method_script_handles_does_not_enqueue_blocks_styles_on_classic_checkout_shortcode_pages(): void {
+		$this->use_visited_page_surface();
 		$page_id = self::factory()->post->create(
 			array(
 				'post_type'    => 'page',
@@ -590,12 +621,12 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should keep the card stack and Stripe.js off the Blocks cart when no express or WooPay button renders there, and keep the fraud scripts.
 	 *
-	 * A separate process, because an earlier test can define WOOCOMMERCE_CART or WOOCOMMERCE_CHECKOUT for the rest of the run.
-	 *
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
+	 * WOOCOMMERCE_CHECKOUT is defined, as an earlier checkout request in the process leaves it: the cart decision reads the
+	 * page surface, which does not count the constant, where core's is_checkout() would.
 	 */
 	public function test_blocks_cart_without_buttons_depends_only_on_the_fraud_scripts(): void {
+		$this->replace_page_surface( true, false );
+		Constants::set_constant( 'WOOCOMMERCE_CHECKOUT', true );
 		$this->go_to_block_page( 'woocommerce/cart', 'woocommerce_cart_page_id' );
 
 		$dependencies = $this->get_cart_block_frontend_dependencies( $this->create_registered_integration() );
@@ -613,13 +644,9 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Should load the express checkout script and Stripe.js on the Blocks cart without the card stack.
-	 *
-	 * A separate process, because an earlier test can define WOOCOMMERCE_CART or WOOCOMMERCE_CHECKOUT for the rest of the run.
-	 *
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 */
 	public function test_blocks_cart_with_express_checkout_loads_what_express_needs(): void {
+		$this->use_visited_page_surface();
 		$this->go_to_block_page( 'woocommerce/cart', 'woocommerce_cart_page_id' );
 
 		$dependencies = $this->render_block_assets( $this->create_registered_integration( false, true ), 'woocommerce/cart' );
@@ -642,13 +669,9 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Should load the WooPay button script on the Blocks cart without the card stack or Stripe.js.
-	 *
-	 * A separate process, because an earlier test can define WOOCOMMERCE_CART or WOOCOMMERCE_CHECKOUT for the rest of the run.
-	 *
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 */
 	public function test_blocks_cart_with_woopay_loads_what_woopay_needs(): void {
+		$this->use_visited_page_surface();
 		$this->go_to_block_page( 'woocommerce/cart', 'woocommerce_cart_page_id' );
 
 		$dependencies = $this->render_block_assets( $this->create_registered_integration( true, false ), 'woocommerce/cart' );
@@ -1196,17 +1219,12 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 	 * @testdox Should register the WooPay and express methods, and load the Blocks styles when the block renders, on the cart and checkout pages however the block renders: $_dataName.
 	 * @dataProvider provide_cart_and_checkout_pages_by_block_source
 	 *
-	 * A separate process, because the test switches the theme, and an earlier test can define WOOCOMMERCE_CART or
-	 * WOOCOMMERCE_CHECKOUT for the rest of the run.
-	 *
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
-	 *
 	 * @param string   $block_name       Block the page renders.
 	 * @param string   $source           Where the block comes from: `content`, `db_template` or `theme_template`.
 	 * @param string[] $expected_handles Expected payment method dependencies of the block's frontend script.
 	 */
 	public function test_cart_and_checkout_pages_register_express_methods_however_the_block_renders( string $block_name, string $source, array $expected_handles ): void {
+		$this->use_visited_page_surface();
 		$this->go_to_page_rendered_by( $block_name, $source );
 		$this->assertSame( 'content' === $source, has_block( $block_name ), 'Precondition: only the content row holds the block in the page.' );
 		$this->assertSame( 'db_template' === $source, CartCheckoutUtils::is_overridden_by_custom_template_content( $block_name ), 'Precondition: only the DB row has a template the page check reads.' );
@@ -1241,11 +1259,6 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 	 * The Blocks express script reads the token only from window.wcpayFraudPreventionToken. A paragraph-only cart or checkout
 	 * page stands for one whose block comes from a custom page template.
 	 *
-	 * A separate process, because an earlier test can define WOOCOMMERCE_CHECKOUT for the rest of the run.
-	 *
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
-	 *
 	 * @testWith ["woocommerce/cart", "woocommerce_cart_page_id", true, true]
 	 *           ["woocommerce/checkout", "woocommerce_checkout_page_id", true, true]
 	 *           ["woocommerce/cart", "woocommerce_cart_page_id", false, false]
@@ -1264,6 +1277,7 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 	 * @param bool   $expected      Whether the token script should be enqueued.
 	 */
 	public function test_blocks_pages_expose_the_fraud_prevention_token_while_protection_is_on( string $block_name, string $page_option, bool $protection_on, bool $expected ): void {
+		$this->use_visited_page_surface();
 		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'get_cached_account_data' ) )
@@ -1346,11 +1360,6 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 	 * @testdox Should ask for the WooPay and express buttons of the page's location, and build the Blocks data for it, on any cart or checkout page and any page holding the block: $_dataName.
 	 * @dataProvider provide_blocks_pages_and_button_contexts
 	 *
-	 * A separate process, because an earlier test can define WOOCOMMERCE_CART or WOOCOMMERCE_CHECKOUT for the rest of the run.
-	 *
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
-	 *
 	 * @param string      $content          Page content.
 	 * @param string|null $page_option      WooCommerce page option pointing at the page, or null for none.
 	 * @param string      $expected_context Expected button context.
@@ -1358,6 +1367,7 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 	 * @param string      $password         Page password, or an empty string for none.
 	 */
 	public function test_button_context_counts_any_cart_block_page_as_the_cart( string $content, ?string $page_option, string $expected_context, bool $expected_card, string $password = '' ): void {
+		$this->use_visited_page_surface();
 		$page_id = self::factory()->post->create(
 			array(
 				'post_type'     => 'page',
