@@ -115,7 +115,7 @@ class PerSiteActivationControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The conversion activates the extension on each site that is not deleted, an archived one included, every site of the network read, then deactivates it for every site once.
+	 * @testdox The conversion activates the extension on each site that is not deleted, an archived one included, every site of the network read, while the extension still runs for every site, then deactivates it for every site once.
 	 * @group multisite
 	 */
 	public function test_conversion_activates_each_site_that_is_not_deleted(): void {
@@ -151,26 +151,11 @@ class PerSiteActivationControllerTest extends WC_Unit_Test_Case {
 		$this->assertSame( array_fill( 0, 3, array( WooPaymentsRuntimeArbiter::PLUGIN_FILE ) ), $this->activation_args, 'activate_plugin() gets only the file: no redirect, site scope, not silent, so its hooks run.' );
 		$this->assertNotEmpty( $site_limits );
 		$this->assertSame( array( 0 ), array_values( array_unique( $site_limits ) ), 'Every site of the network is read, beyond the default page of sites.' );
+		$this->assertSame( array( "activate:$main:yes", "activate:$feature:yes", "activate:$archived:yes", 'deactivate' ), $this->calls, 'Each site is activated while the extension still runs for every site, and the network deactivation comes last.' );
 	}
 
 	/**
-	 * @testdox Each site is activated while the extension still runs for every site, and the network deactivation comes last.
-	 * @group multisite
-	 */
-	public function test_each_site_is_activated_before_the_network_deactivation(): void {
-		$this->skip_unless_multisite();
-		$main  = get_current_blog_id();
-		$other = $this->create_site( 'other', true, true );
-		$this->arrange_site( $main, true, true );
-		$this->activate_for_every_site();
-
-		$this->create_sut()->convert();
-
-		$this->assertSame( array( "activate:$main:yes", "activate:$other:yes", 'deactivate' ), $this->calls );
-	}
-
-	/**
-	 * @testdox A site whose activation fails keeps the extension: the network activation stays, and the result lists the site with the button.
+	 * @testdox A site whose activation fails keeps the extension: the network activation stays, the result lists the site with the button, and a run after the failure activates only that site, then removes the network activation.
 	 * @group multisite
 	 */
 	public function test_a_failed_site_keeps_the_network_activation(): void {
@@ -191,21 +176,8 @@ class PerSiteActivationControllerTest extends WC_Unit_Test_Case {
 		$notice = $this->render_notice( $this->create_sut() );
 		$this->assertStringContainsString( 'WooPayments could not be activated on these sites: ' . $this->get_site_label( $other ) . '. Activate WooPayments per site again to finish.', $notice );
 		$this->assertStringContainsString( 'Activate WooPayments per site</a>', $notice );
-	}
 
-	/**
-	 * @testdox A run after a partial failure activates only the failed site, then removes the network activation.
-	 * @group multisite
-	 */
-	public function test_a_run_after_a_partial_failure_finishes_the_conversion(): void {
-		$this->skip_unless_multisite();
-		$main  = get_current_blog_id();
-		$other = $this->create_site( 'other', true, true );
-		$this->arrange_site( $main, true, true );
-		$this->activate_for_every_site();
-		$this->failing_sites = array( $other );
-		$this->create_sut()->convert();
-
+		unset( $_GET[ PerSiteActivationController::QUERY_DONE ], $_GET[ PerSiteActivationController::QUERY_FAILED ] );
 		$this->failing_sites = array();
 		$this->activations   = array();
 		$second              = $this->create_sut()->convert();

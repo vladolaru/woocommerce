@@ -85,44 +85,30 @@ class PluginLifecycleListenerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Activating WooPayments from its own folder or a renamed one reaches the controller's guard, as the arbiter detects either.
-	 * @dataProvider woopayments_plugin_files
+	 * @testdox A site activation of WooPayments from its own folder or a renamed one reaches the controller's guard, while a network-wide activation, which the per-site activation controller checks site by site, and another plugin's activation do not ($_dataName).
+	 * @dataProvider activation_guard_cases
 	 *
-	 * @param string $plugin_file Plugin file being activated.
+	 * @param string $plugin_file  Plugin file being activated.
+	 * @param bool   $network_wide Whether the activation is network-wide.
+	 * @param int    $calls        Expected guard calls.
 	 */
-	public function test_woopayments_activation_reaches_the_guard( string $plugin_file ): void {
-		$this->controller->expects( $this->once() )->method( 'guard_woopayments_activation' );
+	public function test_woopayments_activation_reaches_the_guard( string $plugin_file, bool $network_wide, int $calls ): void {
+		$this->controller->expects( $this->exactly( $calls ) )->method( 'guard_woopayments_activation' );
 
-		do_action( 'activate_plugin', $plugin_file, false );
+		do_action( 'activate_plugin', $plugin_file, $network_wide ); // phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Fires core's plugin activation hook.
 	}
 
 	/**
-	 * @return array<string,array{string}>
+	 * @return array<string,array{string,bool,int}>
 	 */
-	public function woopayments_plugin_files(): array {
+	public function activation_guard_cases(): array {
 		return array(
-			'canonical folder' => array( WooPaymentsRuntimeArbiter::PLUGIN_FILE ),
-			'renamed folder'   => array( 'renamed-wcpay/woocommerce-payments.php' ),
+			'canonical folder'               => array( WooPaymentsRuntimeArbiter::PLUGIN_FILE, false, 1 ),
+			'renamed folder'                 => array( 'renamed-wcpay/woocommerce-payments.php', false, 1 ),
+			'network-wide activation'        => array( WooPaymentsRuntimeArbiter::PLUGIN_FILE, true, 0 ),
+			'a plugin with a similar folder' => array( 'woocommerce-payments-dev-tools/woocommerce-payments-dev-tools.php', false, 0 ),
+			'a plugin with a similar name'   => array( 'woocommerce-payments.php-helper/helper.php', false, 0 ),
 		);
-	}
-
-	/**
-	 * @testdox A network-wide WooPayments activation does not reach the site guard: the per-site activation controller checks it site by site.
-	 */
-	public function test_network_wide_activation_skips_the_site_guard(): void {
-		$this->controller->expects( $this->never() )->method( 'guard_woopayments_activation' );
-
-		do_action( 'activate_plugin', WooPaymentsRuntimeArbiter::PLUGIN_FILE, true ); // phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Fires core's plugin activation hook as a network activation does.
-	}
-
-	/**
-	 * @testdox Activating another plugin does not reach the guard.
-	 */
-	public function test_other_plugin_activation_skips_the_guard(): void {
-		$this->controller->expects( $this->never() )->method( 'guard_woopayments_activation' );
-
-		do_action( 'activate_plugin', 'woocommerce-payments-dev-tools/woocommerce-payments-dev-tools.php', false );
-		do_action( 'activate_plugin', 'woocommerce-payments.php-helper/helper.php', false );
 	}
 
 	/**
