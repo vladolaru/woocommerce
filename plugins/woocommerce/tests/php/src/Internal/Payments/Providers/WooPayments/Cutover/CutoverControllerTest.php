@@ -279,32 +279,7 @@ class CutoverControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox While the WooPayments extension is active for every site, the store is told a super admin first activates WooPayments per site, with no start button.
-	 */
-	public function test_extension_active_for_every_site_refuses_the_start_with_a_notice(): void {
-		$this->fake_plugin_active( false, true );
-		$this->fake_current_user_caps( true );
-		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
-		$job = new class() extends ReconciliationJob {
-			/** @return array<string,mixed>|null */
-			public function refresh_notice_record(): ?array {
-				return null;
-			}
-
-			/** Offer the first generation. */
-			public function can_offer_start(): bool {
-				return true;
-			}
-		};
-
-		$notice = $this->render_admin_notices( $this->create_cutover_controller( $job ) );
-
-		$this->assertStringContainsString( 'WooPayments is now part of WooCommerce. This store can&#039;t switch yet because the WooPayments extension is active for every site of the network. A super admin first needs to activate WooPayments on each site instead.', $notice );
-		$this->assertStringNotContainsString( 'Start the switch', $notice );
-	}
-
-	/**
-	 * @testdox The refusal shown while the extension is active for every site offers the per-site activation, posting to this site, only to a user who may manage network plugins ($_dataName).
+	 * @testdox While the WooPayments extension is active for every site, the store is told a super admin first activates WooPayments per site, with no start button, and only a user who may manage network plugins is offered the per-site activation, posting to this site ($_dataName).
 	 * @dataProvider provide_refusal_audiences
 	 *
 	 * @param string[] $capabilities The current user's capabilities among manage_woocommerce, activate_plugins and manage_network_plugins.
@@ -328,7 +303,8 @@ class CutoverControllerTest extends WC_Unit_Test_Case {
 
 		$notice = $this->render_admin_notices( $this->create_cutover_controller( $job ) );
 
-		$this->assertStringContainsString( 'A super admin first needs to activate WooPayments on each site instead.', $notice );
+		$this->assertStringContainsString( 'WooPayments is now part of WooCommerce. This store can&#039;t switch yet because the WooPayments extension is active for every site of the network. A super admin first needs to activate WooPayments on each site instead.', $notice );
+		$this->assertStringNotContainsString( 'Start the switch', $notice );
 		if ( ! $offered ) {
 			$this->assertStringNotContainsString( 'Activate WooPayments per site', $notice );
 			return;
@@ -415,7 +391,7 @@ class CutoverControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox "Not now" hides the switch notice for 30 days on every admin page but Payments settings, where it stays without the link ($store).
+	 * @testdox "Not now" hides the switch notice for 30 days on every admin page but Payments settings, where it stays without the link, and the notice is back with the link once the 30 days have passed ($store).
 	 * @testWith ["extension active"]
 	 *           ["waiting for the switch"]
 	 *
@@ -447,21 +423,12 @@ class CutoverControllerTest extends WC_Unit_Test_Case {
 		$settings     = $this->render_admin_notices( $controller );
 		$this->assertStringContainsString( 'Start the switch', $settings, 'Payments settings keeps the switch notice.' );
 		$this->assertStringNotContainsString( 'Not now', $settings );
-	}
 
-	/**
-	 * @testdox The switch notice is back on every admin page once the 30 days have passed.
-	 */
-	public function test_snoozed_switch_notice_returns_after_30_days(): void {
-		$this->arrange_switch_offer( 'extension active' );
-		$now = 1800000000;
-		update_option( ReconciliationJob::START_NOTICE_SNOOZED_UNTIL_OPTION, $now + 30 * DAY_IN_SECONDS );
+		unset( $_GET['page'], $_GET['tab'] );
 		$this->register_legacy_proxy_function_mocks( array( 'time' => static fn() => $now + 31 * DAY_IN_SECONDS ) );
-
-		$notices = $this->render_admin_notices( $this->create_cutover_controller() );
-
-		$this->assertStringContainsString( 'Start the switch', $notices );
-		$this->assertStringContainsString( 'Not now', $notices );
+		$later = $this->render_admin_notices( $controller );
+		$this->assertStringContainsString( 'Start the switch', $later, 'The switch notice is back once the 30 days have passed.' );
+		$this->assertStringContainsString( 'Not now', $later );
 	}
 
 	/**
@@ -969,7 +936,7 @@ class CutoverControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A dismissed renewal plugins warning stays hidden while the same plugins are active, in any order, shows again once the set of active renewal plugins changes, and is gone once none is active.
+	 * @testdox A dismissed renewal plugins warning is stored for its plugin files and stays hidden while the same plugins are active, in any order, shows again once the set of active renewal plugins changes, and is gone once none is active, which deletes the dismissal so the last dismissed plugin's warning shows again when it is active.
 	 */
 	public function test_dismissed_renewal_plugins_warning_shows_again_when_the_plugins_change(): void {
 		$this->arrange_builtin_store();
@@ -997,44 +964,20 @@ class CutoverControllerTest extends WC_Unit_Test_Case {
 			$this->follow_dismiss_link( $controller, $this->render_admin_notices( $controller ), CutoverController::NOTICE_RENEWAL_PLUGINS );
 			unset( $_GET[ CutoverController::QUERY_ACTION ], $_GET[ CutoverController::NONCE_NAME ], $_GET[ CutoverController::QUERY_NOTICE ] );
 			$this->assertStringNotContainsString( 'need the WooPayments extension', $this->render_admin_notices( $controller ), 'Dismissed again for the smaller set.' );
+			$this->assertSame( array( 'ultimate-payment-plans/ultimate-payment-plans.php' ), get_option( 'woocommerce_woopayments_renewal_plugins_notice_dismissed' ), 'The dismissal is kept for the plugin.' );
 
 			$renewal_plugins->plugins['deposit-and-partial-payment-plan/deposit-and-partial-payment-plan.php'] = 'Deposit and Partial Payment Plan';
 			$this->assertStringContainsString( 'set up with Ultimate Payment Plans and Deposit and Partial Payment Plan need the WooPayments extension', $this->render_admin_notices( $controller ), 'Shown again once another plugin is active.' );
 
 			$renewal_plugins->plugins = array();
 			$this->assertStringNotContainsString( 'need the WooPayments extension', $this->render_admin_notices( $controller ), 'Nothing to warn about once none is active.' );
+			$this->assertFalse( get_option( 'woocommerce_woopayments_renewal_plugins_notice_dismissed' ), 'An admin page with no listed plugin active deletes the dismissal.' );
+
+			$renewal_plugins->plugins = array( 'ultimate-payment-plans/ultimate-payment-plans.php' => 'Ultimate Payment Plans' );
+			$this->assertStringContainsString( 'set up with Ultimate Payment Plans need the WooPayments extension', $this->render_admin_notices( $controller ), 'Shown again for the last dismissed plugin once the dismissal is deleted.' );
 		} finally {
 			remove_filter( 'wp_redirect', '__return_empty_string' );
 		}
-	}
-
-	/**
-	 * @testdox A renewal plugins warning dismissed for a plugin shows again when the plugin is reactivated after an admin page was seen with none active, which deleted the dismissal.
-	 */
-	public function test_renewal_plugins_dismissal_is_deleted_once_none_is_active(): void {
-		$this->arrange_builtin_store();
-		$order_subscriptions = array( 'order-subscriptions/order-subscriptions.php' => 'Order Subscriptions for WooCommerce' );
-		$renewal_plugins     = $this->create_renewal_plugins( $order_subscriptions );
-		$controller          = $this->create_cutover_controller( null, null, $renewal_plugins );
-		$this->register_exit_mock( static fn() => null );
-		add_filter( 'wp_redirect', '__return_empty_string' );
-
-		try {
-			$this->follow_dismiss_link( $controller, $this->render_admin_notices( $controller ), CutoverController::NOTICE_RENEWAL_PLUGINS );
-		} finally {
-			remove_filter( 'wp_redirect', '__return_empty_string' );
-		}
-		unset( $_GET[ CutoverController::QUERY_ACTION ], $_GET[ CutoverController::NONCE_NAME ], $_GET[ CutoverController::QUERY_NOTICE ] );
-		$this->assertSame( array_keys( $order_subscriptions ), get_option( 'woocommerce_woopayments_renewal_plugins_notice_dismissed' ), 'The dismissal is kept for the plugin.' );
-
-		$renewal_plugins->plugins = array();
-		$this->render_admin_notices( $controller );
-
-		$this->assertFalse( get_option( 'woocommerce_woopayments_renewal_plugins_notice_dismissed' ), 'An admin page with no listed plugin active deletes the dismissal.' );
-
-		$renewal_plugins->plugins = $order_subscriptions;
-
-		$this->assertStringContainsString( 'set up with Order Subscriptions for WooCommerce need the WooPayments extension', $this->render_admin_notices( $controller ) );
 	}
 
 	/**
