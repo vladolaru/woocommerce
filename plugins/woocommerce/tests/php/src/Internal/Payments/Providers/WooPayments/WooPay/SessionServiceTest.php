@@ -746,7 +746,7 @@ class SessionServiceTest extends WC_Unit_Test_Case {
 	 * (class-woopay-utilities.php:416), the minimum session (class-woopay-session.php:968-975), store_data (:658) and
 	 * woopayMerchantId (class-wc-payments-checkout.php:277, class-wc-payments.php:1815).
 	 *
-	 * @testdox The store sends the WooPay blog ID as a JSON integer, as the client does: $site.
+	 * @testdox The store sends the WooPay blog ID as a JSON integer: $site.
 	 * @testWith ["session envelope"]
 	 *           ["sealed minimum session data"]
 	 *           ["sealed store_data"]

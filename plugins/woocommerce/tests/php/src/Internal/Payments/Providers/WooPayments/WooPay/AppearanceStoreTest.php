@@ -149,7 +149,7 @@ class AppearanceStoreTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should reject invalid WooPay appearance schema.
+	 * @testdox Should reject and not store an appearance with a key outside the allowed top-level keys.
 	 */
 	public function test_rejects_invalid_appearance_schema(): void {
 		$sut = $this->create_appearance_store();
