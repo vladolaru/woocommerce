@@ -201,18 +201,22 @@ class StoreApiRequestHandlerTest extends WC_Unit_Test_Case {
 
 
 	/**
-	 * @testdox Should resolve the shopper from an authenticated cart-token session: $label.
+	 * @testdox Should resolve the shopper from an authenticated cart-token session, and only from a Store API token: $label.
 	 *
 	 * Client 11.1.0 honours the WooPay identity whenever WooPay is on for an eligible account, onboarded or not
-	 * (includes/woopay/class-woopay-session.php:101-108, :883-890).
+	 * (includes/woopay/class-woopay-session.php:101-108, :883-890), and accepts only Store API namespaces as the issuer
+	 * (:341-344), also for a token another issuer signed with the store's cart token secret.
 	 *
-	 * @testWith ["onboarded account", {}]
-	 *           ["account still finishing onboarding", {"details_submitted": false}]
+	 * @testWith ["onboarded account", {}, null, true]
+	 *           ["account still finishing onboarding", {"details_submitted": false}, null, true]
+	 *           ["a token another API issued", {}, "another-api", false]
 	 *
 	 * @param string              $label        Case label.
 	 * @param array<string,mixed> $account_data Account data overrides.
+	 * @param string|null         $issuer       The token's issuer, or null for the Store API's own token.
+	 * @param bool                $resolves     Whether the shopper is resolved.
 	 */
-	public function test_determine_current_user_resolves_user_from_authenticated_cart_token( string $label, array $account_data ): void {
+	public function test_determine_current_user_resolves_user_from_authenticated_cart_token( string $label, array $account_data, ?string $issuer, bool $resolves ): void {
 		unset( $label );
 		$this->simulate_woopay_store_api_request();
 		$this->force_real_blog_token_signed();
@@ -225,40 +229,22 @@ class StoreApiRequestHandlerTest extends WC_Unit_Test_Case {
 				'email' => 'cart-token-shopper@example.com',
 			)
 		);
-		$_SERVER['HTTP_CART_TOKEN'] = \Automattic\WooCommerce\StoreApi\Utilities\CartTokenUtils::get_cart_token( (string) $user_id );
+		if ( null === $issuer ) {
+			$_SERVER['HTTP_CART_TOKEN'] = \Automattic\WooCommerce\StoreApi\Utilities\CartTokenUtils::get_cart_token( (string) $user_id );
+		} else {
+			$secret = new \ReflectionMethod( \Automattic\WooCommerce\StoreApi\Utilities\CartTokenUtils::class, 'get_cart_token_secret' );
+			$secret->setAccessible( true );
+			$_SERVER['HTTP_CART_TOKEN'] = \Automattic\WooCommerce\StoreApi\Utilities\JsonWebToken::create(
+				array(
+					'user_id' => (string) $user_id,
+					'exp'     => \Automattic\WooCommerce\StoreApi\Utilities\CartTokenUtils::get_cart_token_expiration(),
+					'iss'     => $issuer,
+				),
+				$secret->invoke( null )
+			);
+		}
 
-		$this->assertSame( $user_id, $this->create_handler( array(), $account_data )->determine_current_user_for_woopay( false ) );
-	}
-
-	/**
-	 * @testdox Should resolve no shopper from a cart token another issuer signed with the store's cart token secret.
-	 *
-	 * Client 11.1.0 accepts only Store API namespaces as the issuer (includes/woopay/class-woopay-session.php:341-344).
-	 */
-	public function test_determine_current_user_ignores_a_cart_token_from_another_issuer(): void {
-		$this->simulate_woopay_store_api_request();
-		$this->force_real_blog_token_signed();
-
-		$user_id = $this->factory->user->create( array( 'user_email' => 'cart-token-shopper@example.com' ) );
-		$this->insert_store_api_session(
-			(string) $user_id,
-			array(
-				'id'    => (string) $user_id,
-				'email' => 'cart-token-shopper@example.com',
-			)
-		);
-		$secret = new \ReflectionMethod( \Automattic\WooCommerce\StoreApi\Utilities\CartTokenUtils::class, 'get_cart_token_secret' );
-		$secret->setAccessible( true );
-		$_SERVER['HTTP_CART_TOKEN'] = \Automattic\WooCommerce\StoreApi\Utilities\JsonWebToken::create(
-			array(
-				'user_id' => (string) $user_id,
-				'exp'     => \Automattic\WooCommerce\StoreApi\Utilities\CartTokenUtils::get_cart_token_expiration(),
-				'iss'     => 'another-api',
-			),
-			$secret->invoke( null )
-		);
-
-		$this->assertFalse( $this->create_handler()->determine_current_user_for_woopay( false ) );
+		$this->assertSame( $resolves ? $user_id : false, $this->create_handler( array(), $account_data )->determine_current_user_for_woopay( false ) );
 	}
 
 	/**
@@ -407,43 +393,23 @@ class StoreApiRequestHandlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should resolve a WooPay-verified email to the matching store account when an adapted extension is active.
-	 */
-	public function test_determine_current_user_resolves_verified_email_user_when_adapted_extension_active(): void {
-		$this->simulate_woopay_store_api_request();
-		$this->force_real_blog_token_signed();
-
-		$user_id = $this->factory->user->create( array( 'user_email' => 'verified-shopper@example.com' ) );
-		update_option( 'woopay_enabled_adapted_extensions', array( 'woocommerce-gift-cards' ) );
-		$this->insert_store_api_session(
-			't_guesthash',
-			array(
-				'id'    => '0',
-				'email' => 'verified-shopper@example.com',
-			)
-		);
-		$_SERVER['HTTP_CART_TOKEN']                      = \Automattic\WooCommerce\StoreApi\Utilities\CartTokenUtils::get_cart_token( 't_guesthash' );
-		$_SERVER['HTTP_X_WOOPAY_VERIFIED_EMAIL_ADDRESS'] = 'verified-shopper@example.com';
-
-		$this->assertSame( $user_id, $this->create_handler()->determine_current_user_for_woopay( false ) );
-	}
-
-	/**
-	 * @testdox Should not resolve a WooPay-verified email when $_dataName.
+	 * @testdox Should resolve a WooPay-verified email to its store account only when the session names it and an adapted extension is active: $_dataName.
 	 *
-	 * @dataProvider unmatched_verified_email_provider
+	 * @dataProvider verified_email_provider
 	 *
 	 * @param string   $session_email     The email the cart-token session holds.
 	 * @param string   $header_email      The X-WooPay-Verified-Email-Address value.
 	 * @param string[] $accounts          Emails of the store accounts that exist.
 	 * @param bool     $adapted_extension Whether an adapted extension is active.
+	 * @param bool     $resolves          Whether the request resolves to the account the header email owns.
 	 */
-	public function test_determine_current_user_ignores_an_unmatched_verified_email( string $session_email, string $header_email, array $accounts, bool $adapted_extension ): void {
+	public function test_determine_current_user_resolves_a_verified_email_only_for_its_account( string $session_email, string $header_email, array $accounts, bool $adapted_extension, bool $resolves ): void {
 		$this->simulate_woopay_store_api_request();
 		$this->force_real_blog_token_signed();
 
+		$user_ids = array();
 		foreach ( $accounts as $account_email ) {
-			$this->factory->user->create( array( 'user_email' => $account_email ) );
+			$user_ids[ $account_email ] = $this->factory->user->create( array( 'user_email' => $account_email ) );
 		}
 		if ( $adapted_extension ) {
 			update_option( 'woopay_enabled_adapted_extensions', array( 'woocommerce-gift-cards' ) );
@@ -459,7 +425,7 @@ class StoreApiRequestHandlerTest extends WC_Unit_Test_Case {
 		// The header WooPay sends with the email it verified (client 11.1.0 reads it at class-woopay-session.php:872-875).
 		$_SERVER['HTTP_X_WOOPAY_VERIFIED_EMAIL_ADDRESS'] = $header_email;
 
-		$this->assertFalse( $this->create_handler()->determine_current_user_for_woopay( false ) );
+		$this->assertSame( $resolves ? $user_ids[ $header_email ] : false, $this->create_handler()->determine_current_user_for_woopay( false ) );
 	}
 
 	/**
@@ -1382,15 +1348,16 @@ class StoreApiRequestHandlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Verified emails that must not log the WooPay request in.
+	 * Verified emails, and whether they log the WooPay request in.
 	 *
-	 * @return array<string,array{0:string,1:string,2:string[],3:bool}>
+	 * @return array<string,array{0:string,1:string,2:string[],3:bool,4:bool}>
 	 */
-	public function unmatched_verified_email_provider(): array {
+	public function verified_email_provider(): array {
 		return array(
-			'the header names another account than the session' => array( 'shopper-a@example.com', 'shopper-b@example.com', array( 'shopper-a@example.com', 'shopper-b@example.com' ), true ),
-			'no account owns the header email' => array( 'guest-shopper@example.com', 'guest-shopper@example.com', array( 'shopper-a@example.com' ), true ),
-			'no adapted extension is active'   => array( 'verified-shopper@example.com', 'verified-shopper@example.com', array( 'verified-shopper@example.com' ), false ),
+			'the header and the session name an account, an adapted extension active' => array( 'verified-shopper@example.com', 'verified-shopper@example.com', array( 'verified-shopper@example.com' ), true, true ),
+			'the header names another account than the session' => array( 'shopper-a@example.com', 'shopper-b@example.com', array( 'shopper-a@example.com', 'shopper-b@example.com' ), true, false ),
+			'no account owns the header email' => array( 'guest-shopper@example.com', 'guest-shopper@example.com', array( 'shopper-a@example.com' ), true, false ),
+			'no adapted extension is active'   => array( 'verified-shopper@example.com', 'verified-shopper@example.com', array( 'verified-shopper@example.com' ), false, false ),
 		);
 	}
 }
