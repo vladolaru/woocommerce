@@ -158,6 +158,10 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	 * @testdox Should return the WooPayments settings contract, with the Stripe Billing fields as the WooPayments extension reports them without WooCommerce Subscriptions (the WooPayments extension `class-wc-rest-payments-settings-controller.php:530-600`).
 	 */
 	public function test_get_settings_returns_reference_shaped_contract(): void {
+		update_option( 'woocommerce_currency', 'EUR' );
+		update_option( 'woocommerce_allowed_countries', 'specific' );
+		update_option( 'woocommerce_specific_allowed_countries', array( 'US', 'CA' ) );
+		update_option( 'wcpay_frt_review_feature_active', '1' );
 		update_option( '_wcpay_feature_dynamic_checkout_place_order_button', '1' );
 		update_option( 'woocommerce_woocommerce_payments_google_pay_settings', array( 'enabled' => 'yes' ) );
 		update_option(
@@ -228,6 +232,10 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 					),
 					'capability_requirements'    => array(
 						'link_payments' => array( 'currently_due' => array( 'tos_acceptance.date' ) ),
+					),
+					'fraud_mitigation_settings'  => array(
+						'avs_check_enabled' => false,
+						'cvc_check_enabled' => true,
 					),
 					'fees'                       => array(
 						'card'           => array(
@@ -394,6 +402,24 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 		$this->assertFalse( $settings['is_migrating_stripe_billing'] );
 		$this->assertSame( 0, $settings['stripe_billing_subscription_count'] );
 		$this->assertSame( 0, $settings['stripe_billing_migrated_count'] );
+		$this->assertSame( 'EUR', $settings['store_currency'] );
+		$this->assertTrue( $settings['is_fraud_protection_review_feature_active'] );
+		$this->assertSame(
+			array(
+				'type'      => 'specific',
+				'countries' => array( 'US', 'CA' ),
+			),
+			$settings['fraud_protection_allowed_countries']
+		);
+		$this->assertSame(
+			array(
+				'decline_on_avs_failure'    => false,
+				'decline_on_cvc_failure'    => true,
+				'is_welcome_tour_dismissed' => false,
+			),
+			$settings['fraud_protection'],
+			'The fraud-protection fields come from the cached account and the welcome tour option, which nothing stored here.'
+		);
 	}
 
 	/**
@@ -518,52 +544,44 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should expose and persist form-field defaults when settings have not been saved.
+	 * @testdox Should expose and persist the form-field defaults in the site language when settings have not been saved ($language).
+	 * @testWith ["English", "Buy now", "By placing this order, you agree to our [terms] and understand our [privacy_policy]."]
+	 *           ["German", "Jetzt kaufen", "Mit der Bestellung stimmen Sie unseren [terms] zu und verstehen unsere [privacy_policy]."]
+	 *
+	 * @param string $language       Site language; German labels come through a `gettext` filter.
+	 * @param string $button_label   Expected express checkout button label.
+	 * @param string $custom_message Expected WooPay custom message.
 	 */
-	public function test_get_settings_round_trip_persists_form_field_defaults_when_settings_are_absent(): void {
+	public function test_get_settings_round_trip_persists_form_field_defaults_when_settings_are_absent( string $language, string $button_label, string $custom_message ): void {
 		delete_option( 'woocommerce_woocommerce_payments_settings' );
+		if ( 'German' === $language ) {
+			$translations = array(
+				'Buy now' => $button_label,
+				'By placing this order, you agree to our [terms] and understand our [privacy_policy].' => $custom_message,
+			);
+			add_filter(
+				'gettext',
+				static fn( string $translation, string $text, string $domain ): string => 'woocommerce' === $domain ? ( $translations[ $text ] ?? $translation ) : $translation,
+				10,
+				3
+			);
+		}
 
 		$read_settings = $this->sut->get_settings();
 		$updated       = $this->sut->update_settings( array() );
 		$stored        = get_option( 'woocommerce_woocommerce_payments_settings' );
 
 		$this->assertTrue( $read_settings['is_saved_cards_enabled'] );
-		$this->assertSame( 'By placing this order, you agree to our [terms] and understand our [privacy_policy].', $read_settings['woopay_custom_message'] );
+		$this->assertSame( $custom_message, $read_settings['woopay_custom_message'] );
 		$this->assertSame( array( 'payment_request', 'woopay', 'amazon_pay' ), $read_settings['express_checkout_product_methods'] );
 		$this->assertSame( array( 'payment_request', 'woopay', 'amazon_pay' ), $read_settings['express_checkout_cart_methods'] );
 		$this->assertSame( array( 'payment_request', 'woopay', 'amazon_pay' ), $read_settings['express_checkout_checkout_methods'] );
 		$this->assertIsArray( $updated );
 		$this->assertIsArray( $stored );
+		$this->assertSame( $button_label, $stored['payment_request_button_label'] );
+		$this->assertSame( $custom_message, $stored['platform_checkout_custom_message'] );
 		$this->assertSame( array( 'payment_request', 'woopay', 'amazon_pay' ), $stored['express_checkout_product_methods'] );
 		$this->assertSame( 'yes', $stored['saved_cards'] );
-	}
-
-	/**
-	 * @testdox Should expose and persist localized form-field defaults when settings have not been saved.
-	 */
-	public function test_get_settings_and_update_settings_use_localized_form_field_defaults_when_settings_are_absent(): void {
-		delete_option( 'woocommerce_woocommerce_payments_settings' );
-		$translations       = array(
-			'Buy now' => 'Jetzt kaufen',
-			'By placing this order, you agree to our [terms] and understand our [privacy_policy].' => 'Mit der Bestellung stimmen Sie unseren [terms] zu und verstehen unsere [privacy_policy].',
-		);
-		$translation_filter = static function ( string $translation, string $text, string $domain ) use ( $translations ): string {
-			return 'woocommerce' === $domain ? ( $translations[ $text ] ?? $translation ) : $translation;
-		};
-		add_filter( 'gettext', $translation_filter, 10, 3 );
-
-		try {
-			$read_settings = $this->sut->get_settings();
-			$this->sut->update_settings( array() );
-			$stored = get_option( 'woocommerce_woocommerce_payments_settings' );
-		} finally {
-			remove_filter( 'gettext', $translation_filter, 10 );
-		}
-
-		$this->assertSame( 'Mit der Bestellung stimmen Sie unseren [terms] zu und verstehen unsere [privacy_policy].', $read_settings['woopay_custom_message'] );
-		$this->assertIsArray( $stored );
-		$this->assertSame( 'Jetzt kaufen', $stored['payment_request_button_label'] );
-		$this->assertSame( 'Mit der Bestellung stimmen Sie unseren [terms] zu und verstehen unsere [privacy_policy].', $stored['platform_checkout_custom_message'] );
 	}
 
 	/**
@@ -680,44 +698,40 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should report ECE confirmation tokens and Amazon Pay as off while no account is cached (the WooPayments extension `WC_Payments_Features::is_ece_confirmation_tokens_enabled()`, `class-wc-payments-features.php:438-442`).
+	 * Amazon Pay is listed as the WooPayments extension lists it (`PaymentMethodDefinitionRegistry.php:102-104`, read by the
+	 * settings controller's `get_settings()` at `class-wc-rest-payments-settings-controller.php:516`); empty account fees
+	 * fall back neither to the legacy stored list nor to the enabled set.
+	 *
+	 * @testdox Should list the available payment methods from the account's fees ($account fees).
+	 * @testWith ["card and iDEAL", ["card", "ideal", "apple_pay", "google_pay"], null]
+	 *           ["card and Amazon Pay", ["card", "apple_pay", "google_pay", "amazon_pay"], null]
+	 *           ["no", [], []]
+	 *
+	 * @param string        $account            Cached account fees: "card and iDEAL" (with an availability filter that returns null), "card and Amazon Pay", or "no" account.
+	 * @param string[]      $expected_available Expected `available_payment_method_ids`.
+	 * @param string[]|null $expected_enabled   Expected `enabled_payment_method_ids`, or null when not asserted.
 	 */
-	public function test_get_settings_reports_ece_confirmation_tokens_off_without_a_cached_account(): void {
-		delete_option( 'wcpay_account_data' );
-
-		$feature_flags = $this->sut->get_settings()['feature_flags'];
-
-		$this->assertFalse( $feature_flags['isEceUsingConfirmationTokens'] );
-		$this->assertFalse( $feature_flags['amazonPay'], 'Amazon Pay needs ECE confirmation tokens.' );
-	}
-
-	/**
-	 * @testdox Should list Amazon Pay as available on the settings screen (the WooPayments extension `PaymentMethodDefinitionRegistry.php:102-104`, read by the settings controller's `get_settings()` at `class-wc-rest-payments-settings-controller.php:516`).
-	 */
-	public function test_get_settings_lists_amazon_pay(): void {
-		$this->store_card_and_amazon_pay_account_data();
-
-		$available = $this->sut->get_settings()['available_payment_method_ids'];
-
-		$this->assertContains( 'amazon_pay', $available );
-		$this->assertContains( 'card', $available );
-	}
-
-	/**
-	 * @testdox Should list the fee-backed payment methods on the settings screen when an availability filter callback returns null.
-	 */
-	public function test_get_settings_ignores_an_availability_filter_that_returns_null(): void {
-		$this->set_card_and_ideal_account_data();
-		$return_null = static fn() => null;
-		add_filter( 'wcpay_upe_available_payment_methods', $return_null );
-
-		try {
-			$available = $this->sut->get_settings()['available_payment_method_ids'];
-		} finally {
-			remove_filter( 'wcpay_upe_available_payment_methods', $return_null );
+	public function test_get_settings_lists_the_available_payment_methods_from_the_account_fees( string $account, array $expected_available, ?array $expected_enabled ): void {
+		update_option(
+			'woocommerce_woocommerce_payments_settings',
+			array(
+				'upe_available_payment_methods'  => array( 'card', 'ideal' ),
+				'upe_enabled_payment_method_ids' => array( 'card' ),
+			)
+		);
+		if ( 'card and iDEAL' === $account ) {
+			$this->set_card_and_ideal_account_data();
+			add_filter( 'wcpay_upe_available_payment_methods', static fn() => null );
+		} elseif ( 'card and Amazon Pay' === $account ) {
+			$this->store_card_and_amazon_pay_account_data();
 		}
 
-		$this->assertSame( array( 'card', 'ideal', 'apple_pay', 'google_pay' ), $available );
+		$settings = $this->sut->get_settings();
+
+		$this->assertSame( $expected_available, $settings['available_payment_method_ids'] );
+		if ( null !== $expected_enabled ) {
+			$this->assertSame( $expected_enabled, $settings['enabled_payment_method_ids'] );
+		}
 	}
 
 	/**
@@ -738,9 +752,18 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should expose disabled express checkout feature flags without mutating saved settings.
+	 * Without a cached account, ECE confirmation tokens are off, and so is Amazon Pay, which needs them (the WooPayments
+	 * extension `WC_Payments_Features::is_ece_confirmation_tokens_enabled()`, `class-wc-payments-features.php:438-442`).
+	 *
+	 * @testdox Should expose disabled express checkout feature flags without mutating saved settings (cached account: $account_cached).
+	 * @testWith [true, true, {"woopay": true, "woopayExpressCheckout": false, "isDynamicCheckoutPlaceOrderButtonEnabled": false, "amazonPay": true, "isEceUsingConfirmationTokens": true}]
+	 *           [false, false, {"woopay": false, "woopayExpressCheckout": false, "isDynamicCheckoutPlaceOrderButtonEnabled": false, "amazonPay": false, "isEceUsingConfirmationTokens": false}]
+	 *
+	 * @param bool               $account_cached Whether a WooPay-eligible account is cached.
+	 * @param bool               $woopay_enabled Expected `is_woopay_enabled`: the saved setting, which needs an eligible account.
+	 * @param array<string,bool> $expected_flags Expected `feature_flags`.
 	 */
-	public function test_get_settings_exposes_disabled_express_checkout_feature_flags(): void {
+	public function test_get_settings_exposes_disabled_express_checkout_feature_flags( bool $account_cached, bool $woopay_enabled, array $expected_flags ): void {
 		update_option( '_wcpay_feature_woopay_express_checkout', '0' );
 		update_option( '_wcpay_feature_dynamic_checkout_place_order_button', '0' );
 		update_option(
@@ -751,32 +774,25 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 				'upe_enabled_payment_method_ids' => array( 'card', 'amazon_pay' ),
 			)
 		);
-		update_option(
-			'wcpay_account_data',
-			array(
-				'data'    => array(
-					'account_id'                 => 'acct_native_test',
-					'is_live'                    => true,
-					'platform_checkout_eligible' => true,
-				),
-				'fetched' => time(),
-				'errored' => false,
-			)
-		);
+		if ( $account_cached ) {
+			update_option(
+				'wcpay_account_data',
+				array(
+					'data'    => array(
+						'account_id'                 => 'acct_native_test',
+						'is_live'                    => true,
+						'platform_checkout_eligible' => true,
+					),
+					'fetched' => time(),
+					'errored' => false,
+				)
+			);
+		}
 
 		$settings = $this->sut->get_settings();
 
-		$this->assertTrue( $settings['is_woopay_enabled'], 'The saved WooPay setting should remain independent of express feature flags.' );
-		$this->assertSame(
-			array(
-				'woopay'                                   => true,
-				'woopayExpressCheckout'                    => false,
-				'isDynamicCheckoutPlaceOrderButtonEnabled' => false,
-				'amazonPay'                                => true,
-				'isEceUsingConfirmationTokens'             => true,
-			),
-			$settings['feature_flags']
-		);
+		$this->assertSame( $woopay_enabled, $settings['is_woopay_enabled'], 'The saved WooPay setting should remain independent of express feature flags.' );
+		$this->assertSame( $expected_flags, $settings['feature_flags'] );
 	}
 
 	/**
@@ -893,55 +909,6 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 				'isEceUsingConfirmationTokens'             => true,
 			),
 			$settings['feature_flags']
-		);
-	}
-
-	/**
-	 * @testdox Should expose the fraud-protection environment fields that core's settings surfaces read.
-	 */
-	public function test_get_settings_exposes_fraud_protection_environment_fields(): void {
-		update_option( 'woocommerce_currency', 'EUR' );
-		update_option( 'woocommerce_allowed_countries', 'specific' );
-		update_option( 'woocommerce_specific_allowed_countries', array( 'US', 'CA' ) );
-		update_option( 'wcpay_frt_review_feature_active', '1' );
-		update_option(
-			'wcpay_account_data',
-			array(
-				'data'    => array(
-					'account_id'                => 'acct_native_test',
-					'is_live'                   => true,
-					'fraud_mitigation_settings' => array(
-						'avs_check_enabled' => false,
-						'cvc_check_enabled' => true,
-					),
-					'store_currencies'          => array(
-						'default'   => 'usd',
-						'supported' => array( 'usd', 'eur' ),
-					),
-				),
-				'fetched' => time(),
-				'errored' => false,
-			)
-		);
-
-		$settings = $this->sut->get_settings();
-
-		$this->assertSame( 'EUR', $settings['store_currency'] );
-		$this->assertTrue( $settings['is_fraud_protection_review_feature_active'] );
-		$this->assertSame(
-			array(
-				'type'      => 'specific',
-				'countries' => array( 'US', 'CA' ),
-			),
-			$settings['fraud_protection_allowed_countries']
-		);
-		$this->assertSame(
-			array(
-				'decline_on_avs_failure'    => false,
-				'decline_on_cvc_failure'    => true,
-				'is_welcome_tour_dismissed' => false,
-			),
-			$settings['fraud_protection']
 		);
 	}
 
@@ -2471,42 +2438,33 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should reject enabling payment methods the account has no fees for instead of dropping them silently.
+	 * A save during an account-cache outage, when availability is unknown, must not wipe the enabled methods.
+	 *
+	 * @testdox Should reject an enabled-methods save the account cannot back, instead of dropping methods silently (cached account: $account_cached).
+	 * @testWith [true, ["card"], ["card", "ideal"]]
+	 *           [false, ["card", "ideal"], []]
+	 *
+	 * @param bool     $account_cached Whether a connected account without iDEAL fees is cached.
+	 * @param string[] $stored_enabled Stored enabled payment methods.
+	 * @param string[] $requested      Requested enabled payment methods.
 	 */
-	public function test_update_settings_rejects_enabled_methods_the_account_has_no_fees_for(): void {
-		$this->set_connected_account_data();
+	public function test_update_settings_rejects_enabled_methods_the_account_cannot_back( bool $account_cached, array $stored_enabled, array $requested ): void {
+		if ( $account_cached ) {
+			$this->set_connected_account_data();
+		}
 		update_option(
 			'woocommerce_woocommerce_payments_settings',
-			array( 'upe_enabled_payment_method_ids' => array( 'card' ) )
+			array( 'upe_enabled_payment_method_ids' => $stored_enabled )
 		);
 
-		$result = $this->sut->update_settings(
-			array( 'enabled_payment_method_ids' => array( 'card', 'ideal' ) )
-		);
+		$result = $this->sut->update_settings( array( 'enabled_payment_method_ids' => $requested ) );
 
 		$this->assertInstanceOf( WP_Error::class, $result );
 		$this->assertSame( 'rest_invalid_param', $result->get_error_code() );
 		$this->assertSame( 400, $result->get_error_data()['status'] );
 		$this->assertArrayHasKey( 'enabled_payment_method_ids', $result->get_error_data()['params'] );
 		$stored = get_option( 'woocommerce_woocommerce_payments_settings' );
-		$this->assertSame( array( 'card' ), $stored['upe_enabled_payment_method_ids'], 'A rejected save must not touch the enabled methods.' );
-	}
-
-	/**
-	 * @testdox Should reject any enabled-methods save while the account's availability cannot be determined.
-	 */
-	public function test_update_settings_rejects_enabled_methods_save_when_availability_is_unknown(): void {
-		update_option(
-			'woocommerce_woocommerce_payments_settings',
-			array( 'upe_enabled_payment_method_ids' => array( 'card', 'ideal' ) )
-		);
-
-		$result = $this->sut->update_settings( array( 'enabled_payment_method_ids' => array() ) );
-
-		$this->assertInstanceOf( WP_Error::class, $result );
-		$this->assertSame( 'rest_invalid_param', $result->get_error_code() );
-		$stored = get_option( 'woocommerce_woocommerce_payments_settings' );
-		$this->assertSame( array( 'card', 'ideal' ), $stored['upe_enabled_payment_method_ids'], 'A settings round-trip during an account-cache outage must not wipe the enabled methods.' );
+		$this->assertSame( $stored_enabled, $stored['upe_enabled_payment_method_ids'], 'A rejected save must not touch the enabled methods.' );
 	}
 
 	/**
@@ -2784,24 +2742,6 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( 0, $this->api_client->fraud_ruleset_saves, 'A refused save must not save a fraud ruleset.' );
 		$this->assertSame( array(), $this->api_client->capability_requests, 'A refused save must not request capabilities on the platform.' );
 		$this->assertSame( array(), $this->pm_promotions_service->maybe_activated_payment_methods, 'A refused save must not activate promotions.' );
-	}
-
-	/**
-	 * @testdox Should report no available payment methods when the account has no fees.
-	 */
-	public function test_get_settings_reports_no_available_methods_without_account_fees(): void {
-		update_option(
-			'woocommerce_woocommerce_payments_settings',
-			array(
-				'upe_available_payment_methods'  => array( 'card', 'ideal' ),
-				'upe_enabled_payment_method_ids' => array( 'card' ),
-			)
-		);
-
-		$settings = $this->sut->get_settings();
-
-		$this->assertSame( array(), $settings['available_payment_method_ids'], 'Empty account fees must not fall back to the legacy stored list or the enabled set.' );
-		$this->assertSame( array(), $settings['enabled_payment_method_ids'] );
 	}
 
 	/**
