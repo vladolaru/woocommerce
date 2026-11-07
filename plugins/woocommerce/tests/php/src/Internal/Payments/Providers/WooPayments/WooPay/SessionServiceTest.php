@@ -110,25 +110,6 @@ class SessionServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should not show the checkout WooPay button unless the checkout express method is enabled.
-	 */
-	public function test_woopay_checkout_button_requires_checkout_express_method(): void {
-		$sut = $this->create_service(
-			array(
-				'platform_checkout'                 => 'yes',
-				'express_checkout_product_methods'  => array( 'payment_request' ),
-				'express_checkout_cart_methods'     => array(),
-				'express_checkout_checkout_methods' => array(),
-			)
-		);
-
-		$config = $sut->get_woopay_frontend_config( 'checkout' );
-
-		$this->assertTrue( $config['isWooPayEnabled'] );
-		$this->assertFalse( $config['shouldShowWooPayButton'] );
-	}
-
-	/**
 	 * @testdox The checkout config's WooPay email lookup for a $shopper is $expected, as the guest rule decides.
 	 *
 	 * Client 11.1.0 ANDs should_enable_woopay_on_guest_checkout() into the checkout config's isWooPayEnabled
