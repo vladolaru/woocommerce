@@ -319,9 +319,16 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should register WooPay Blocks assets only when the WooPay button is available.
+	 * @testdox Should register a button's Blocks assets only when that button is available: $_dataName.
+	 * @dataProvider provide_available_buttons
+	 *
+	 * @param bool         $woopay_button  Whether the WooPay button is available.
+	 * @param bool         $express_button Whether the Apple Pay and Google Pay buttons are available.
+	 * @param array<mixed> $script         The button script registration.
+	 * @param array<mixed> $style          The button style registration.
+	 * @param string[]     $expected       Script handles the integration lists.
 	 */
-	public function test_get_payment_method_script_handles_registers_woopay_assets_only_when_button_is_available(): void {
+	public function test_get_payment_method_script_handles_registers_button_assets_only_when_the_button_is_available( bool $woopay_button, bool $express_button, array $script, array $style, array $expected ): void {
 		wp_deregister_script( 'stripe' );
 		$this->set_current_post_to_checkout_block();
 
@@ -351,11 +358,7 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 					'assets/client/blocks/wc-payment-method-woopayments.js',
 					array( 'stripe', 'wc-blocks-checkout', 'wc-payment-method-woopayments-common' ),
 				),
-				array(
-					'wc-payment-method-woopayments-woopay',
-					'assets/client/blocks/wc-payment-method-woopayments-woopay.js',
-					array( 'wc-blocks-checkout', 'wc-payment-method-woopayments-common' ),
-				)
+				$script
 			);
 		$asset_api
 			->expects( $this->exactly( 2 ) )
@@ -367,6 +370,40 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 					array(),
 					'all',
 					true,
+				),
+				$style
+			);
+
+		$assets = $this->getMockBuilder( WooPaymentsCheckoutAssets::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'should_expose_checkout_surface' ) )
+			->getMock();
+		$assets->method( 'should_expose_checkout_surface' )->willReturn( true );
+		$provider = $this->getMockBuilder( WooPaymentsProvider::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'can_process_payments' ) )
+			->getMock();
+		$provider->method( 'can_process_payments' )->willReturn( true );
+
+		$integration = new WooPayments( $asset_api, $this->create_card_gateway(), $provider, $assets, $this->create_woopay_eligibility( $woopay_button ), $this->create_express_checkout_service( $express_button ), $this->get_fraud_prevention_service(), $this->get_frontend_assets(), $this->createMock( AssetDataRegistry::class ) );
+
+		$this->assertSame( $expected, $integration->get_payment_method_script_handles() );
+	}
+
+	/**
+	 * One available button at a time: WooPay without the express buttons, and the express buttons without WooPay.
+	 *
+	 * @return array<string,array{0:bool,1:bool,2:array<mixed>,3:array<mixed>,4:string[]}>
+	 */
+	public function provide_available_buttons(): array {
+		return array(
+			'WooPay'  => array(
+				true,
+				false,
+				array(
+					'wc-payment-method-woopayments-woopay',
+					'assets/client/blocks/wc-payment-method-woopayments-woopay.js',
+					array( 'wc-blocks-checkout', 'wc-payment-method-woopayments-common' ),
 				),
 				array(
 					'wc-payment-method-woopayments-woopay',
@@ -374,78 +411,16 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 					array(),
 					'all',
 					true,
-				)
-			);
-
-		$assets = $this->getMockBuilder( WooPaymentsCheckoutAssets::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'should_expose_checkout_surface' ) )
-			->getMock();
-		$assets->method( 'should_expose_checkout_surface' )->willReturn( true );
-		$provider = $this->getMockBuilder( WooPaymentsProvider::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'can_process_payments' ) )
-			->getMock();
-		$provider->method( 'can_process_payments' )->willReturn( true );
-		$woopay_session_service = $this->create_woopay_eligibility( true );
-
-		$integration = new WooPayments( $asset_api, $this->create_card_gateway(), $provider, $assets, $woopay_session_service, $this->create_express_checkout_service(), $this->get_fraud_prevention_service(), $this->get_frontend_assets(), $this->createMock( AssetDataRegistry::class ) );
-
-		$this->assertSame(
-			array( 'wc-payment-method-woopayments', 'wc-payment-method-woopayments-woopay', 'wc-payment-method-woopayments-fraud-scripts' ),
-			$integration->get_payment_method_script_handles()
-		);
-	}
-
-	/**
-	 * @testdox Should register payment-request Blocks assets only when the ECE button is available.
-	 */
-	public function test_get_payment_method_script_handles_registers_payment_request_assets_only_when_button_is_available(): void {
-		wp_deregister_script( 'stripe' );
-		$this->set_current_post_to_checkout_block();
-
-		$asset_api = $this->getMockBuilder( AssetApi::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'register_script', 'register_style' ) )
-			->getMock();
-		$asset_api
-			->expects( $this->exactly( 4 ) )
-			->method( 'register_script' )
-			->willReturnCallback( array( $this, 'register_script_for_real' ) )
-			->withConsecutive(
-				array(
-					'wc-payment-method-woopayments-fraud-scripts',
-					'assets/client/blocks/wc-payment-method-woopayments-fraud-scripts.js',
-					array(),
-					false,
 				),
-				array(
-					'wc-payment-method-woopayments-common',
-					'assets/client/blocks/wc-payment-method-woopayments-common.js',
-					array(),
-					false,
-				),
-				array(
-					'wc-payment-method-woopayments',
-					'assets/client/blocks/wc-payment-method-woopayments.js',
-					array( 'stripe', 'wc-blocks-checkout', 'wc-payment-method-woopayments-common' ),
-				),
+				array( 'wc-payment-method-woopayments', 'wc-payment-method-woopayments-woopay', 'wc-payment-method-woopayments-fraud-scripts' ),
+			),
+			'express' => array(
+				false,
+				true,
 				array(
 					'wc-payment-method-woopayments-express-checkout',
 					'assets/client/blocks/wc-payment-method-woopayments-express-checkout.js',
 					array( 'stripe', 'wc-blocks-checkout', 'wc-payment-method-woopayments-common' ),
-				)
-			);
-		$asset_api
-			->expects( $this->exactly( 2 ) )
-			->method( 'register_style' )
-			->withConsecutive(
-				array(
-					'wc-payment-method-woopayments',
-					'assets/client/blocks/wc-payment-method-woopayments.css',
-					array(),
-					'all',
-					true,
 				),
 				array(
 					'wc-payment-method-woopayments-express-checkout',
@@ -453,26 +428,9 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 					array(),
 					'all',
 					true,
-				)
-			);
-
-		$assets = $this->getMockBuilder( WooPaymentsCheckoutAssets::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'should_expose_checkout_surface' ) )
-			->getMock();
-		$assets->method( 'should_expose_checkout_surface' )->willReturn( true );
-		$provider = $this->getMockBuilder( WooPaymentsProvider::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'can_process_payments' ) )
-			->getMock();
-		$provider->method( 'can_process_payments' )->willReturn( true );
-		$express_checkout_service = $this->create_express_checkout_service( true );
-
-		$integration = new WooPayments( $asset_api, $this->create_card_gateway(), $provider, $assets, $this->create_woopay_eligibility(), $express_checkout_service, $this->get_fraud_prevention_service(), $this->get_frontend_assets(), $this->createMock( AssetDataRegistry::class ) );
-
-		$this->assertSame(
-			array( 'wc-payment-method-woopayments', 'wc-payment-method-woopayments-express-checkout', 'wc-payment-method-woopayments-fraud-scripts' ),
-			$integration->get_payment_method_script_handles()
+				),
+				array( 'wc-payment-method-woopayments', 'wc-payment-method-woopayments-express-checkout', 'wc-payment-method-woopayments-fraud-scripts' ),
+			),
 		);
 	}
 
