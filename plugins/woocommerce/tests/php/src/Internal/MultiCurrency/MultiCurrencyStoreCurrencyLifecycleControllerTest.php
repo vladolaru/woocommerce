@@ -23,39 +23,37 @@ class MultiCurrencyStoreCurrencyLifecycleControllerTest extends WC_Unit_Test_Cas
 	}
 
 	/**
-	 * @testdox Should not register init hook while the extension or no runtime owns multi-currency.
-	 * @dataProvider other_owner_provider
+	 * @testdox Should register exactly the store currency init hook the owner allows, once: $_dataName.
+	 * @dataProvider provide_init_hook_owners
 	 *
-	 * @param string $owner Runtime owner.
+	 * @param string                            $owner    Runtime owner.
+	 * @param array<string,array<string,int[]>> $expected Every hook the controller registers.
 	 */
-	public function test_does_not_register_init_hook_when_another_runtime_owns_multi_currency( string $owner ): void {
-		$service = $this->create_lifecycle_service();
-		$sut     = $this->create_controller( $owner, $service );
+	public function test_registers_the_init_hook_its_owner_allows( string $owner, array $expected ): void {
+		$sut = $this->create_controller( $owner, $this->create_lifecycle_service() );
 
 		$sut->register();
+		$sut->register();
 
-		$this->assertFalse( has_action( 'init', array( $sut, 'handle_init' ) ) );
-	}
-
-	/** @return array<string,array{string}> */
-	public static function other_owner_provider(): array {
-		return array(
-			'extension' => array( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION ),
-			'none'      => array( MultiCurrencyRuntimeArbiter::OWNER_NONE ),
-		);
+		$this->assertSame( $expected, RegisteredHooks::of( $sut ) );
 	}
 
 	/**
-	 * @testdox Should register init hook once when core owns runtime.
+	 * Owners and the hooks each registers: the init hook under core, nothing otherwise.
+	 *
+	 * @return array<string,array<int,mixed>>
 	 */
-	public function test_registers_init_hook_once_when_core_owns_runtime(): void {
-		$service = $this->create_lifecycle_service();
-		$sut     = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $service );
-
-		$sut->register();
-		$sut->register();
-
-		$this->assertSame( 10, has_action( 'init', array( $sut, 'handle_init' ) ) );
+	public function provide_init_hook_owners(): array {
+		return array(
+			'core owns'          => array(
+				MultiCurrencyRuntimeArbiter::OWNER_BUILTIN,
+				array(
+					'init' => array( 'handle_init' => array( 10, 1 ) ),
+				),
+			),
+			'the extension owns' => array( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION, array() ),
+			'nobody owns'        => array( MultiCurrencyRuntimeArbiter::OWNER_NONE, array() ),
+		);
 	}
 
 	/**

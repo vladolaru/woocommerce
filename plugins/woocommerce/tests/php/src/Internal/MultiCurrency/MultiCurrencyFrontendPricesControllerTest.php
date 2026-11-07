@@ -63,75 +63,58 @@ class MultiCurrencyFrontendPricesControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should not register frontend price hooks while the extension or no runtime owns multi-currency.
-	 * @dataProvider other_owner_provider
+	 * @testdox Should register exactly the frontend price hooks the request allows, once: $_dataName.
+	 * @dataProvider provide_frontend_price_hooks_requests
 	 *
-	 * @param string $owner Runtime owner.
+	 * @param string                            $owner          Runtime owner.
+	 * @param bool                              $frontend_hooks Whether the request context lets frontend hooks register.
+	 * @param array<string,array<string,int[]>> $expected       Every hook the controller registers.
 	 */
-	public function test_does_not_register_when_another_runtime_owns_multi_currency( string $owner ): void {
-		$sut = $this->create_controller( $owner );
+	public function test_registers_the_frontend_price_hooks_the_request_allows( string $owner, bool $frontend_hooks, array $expected ): void {
+		$sut = $this->create_controller( $owner, true, $this->create_request_context( $frontend_hooks ) );
 
 		$sut->register();
+		$sut->register();
 
-		$this->assertFalse( has_filter( 'woocommerce_product_get_price', array( $sut, 'get_product_price_string' ) ) );
-		$this->assertFalse( has_filter( 'woocommerce_coupon_get_amount', array( $sut, 'get_coupon_amount' ) ) );
-		$this->assertFalse( has_action( 'woocommerce_order_refunded', array( $sut, 'add_refund_meta' ) ) );
+		$this->assertSame( $expected, RegisteredHooks::of( $sut ) );
 	}
 
-	/** @return array<string,array{string}> */
-	public static function other_owner_provider(): array {
+	/**
+	 * Requests and the hooks each registers: the price, coupon and order hooks under core in a frontend context, nothing otherwise.
+	 *
+	 * @return array<string,array<int,mixed>>
+	 */
+	public function provide_frontend_price_hooks_requests(): array {
 		return array(
-			'extension' => array( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION ),
-			'none'      => array( MultiCurrencyRuntimeArbiter::OWNER_NONE ),
+			'core owns'                 => array(
+				MultiCurrencyRuntimeArbiter::OWNER_BUILTIN,
+				true,
+				array(
+					'query_loop_block_query_vars'        => array( 'maybe_modify_price_ranges_query_var' => array( 10, 3 ) ),
+					'rest_post_dispatch'                 => array( 'maybe_modify_price_ranges_rest_response' => array( 10, 3 ) ),
+					'woocommerce_coupon_get_amount'      => array( 'get_coupon_amount' => array( 99, 2 ) ),
+					'woocommerce_coupon_get_maximum_amount' => array( 'get_coupon_min_max_amount' => array( 99, 1 ) ),
+					'woocommerce_coupon_get_minimum_amount' => array( 'get_coupon_min_max_amount' => array( 99, 1 ) ),
+					'woocommerce_evaluate_shipping_cost_args' => array( 'convert_shipping_cost_args_to_store_currency' => array( 99, 3 ) ),
+					'woocommerce_get_variation_prices_hash' => array( 'add_exchange_rate_to_variation_prices_hash' => array( 99, 1 ) ),
+					'woocommerce_new_order'              => array( 'add_order_meta' => array( 99, 2 ) ),
+					'woocommerce_product_get_price'      => array( 'get_product_price_string' => array( 99, 2 ) ),
+					'woocommerce_product_get_regular_price' => array( 'get_product_price_string' => array( 99, 2 ) ),
+					'woocommerce_product_get_sale_price' => array( 'get_product_price_string' => array( 99, 2 ) ),
+					'woocommerce_product_variation_get_price' => array( 'get_product_price_string' => array( 99, 2 ) ),
+					'woocommerce_product_variation_get_regular_price' => array( 'get_product_price_string' => array( 99, 2 ) ),
+					'woocommerce_product_variation_get_sale_price' => array( 'get_product_price_string' => array( 99, 2 ) ),
+					'woocommerce_shipping_method_add_rate_args' => array( 'convert_shipping_method_rate_cost' => array( 99, 2 ) ),
+					'woocommerce_shipping_zone_shipping_methods' => array( 'convert_free_shipping_method_min_amount' => array( 99, 1 ) ),
+					'woocommerce_variation_prices_price' => array( 'get_product_price_string' => array( 99, 1 ) ),
+					'woocommerce_variation_prices_regular_price' => array( 'get_product_price_string' => array( 99, 1 ) ),
+					'woocommerce_variation_prices_sale_price' => array( 'get_product_price_string' => array( 99, 1 ) ),
+				),
+			),
+			'the extension owns'        => array( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION, true, array() ),
+			'nobody owns'               => array( MultiCurrencyRuntimeArbiter::OWNER_NONE, true, array() ),
+			'a blocked request context' => array( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, false, array() ),
 		);
-	}
-
-	/**
-	 * @testdox Should register frontend price hooks when core multi-currency owns the runtime.
-	 */
-	public function test_registers_frontend_price_hooks_when_core_owns_runtime(): void {
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
-
-		$sut->register();
-		$sut->register();
-
-		$this->assertSame( 99, has_filter( 'woocommerce_product_get_price', array( $sut, 'get_product_price_string' ) ) );
-		$this->assertSame( 99, has_filter( 'woocommerce_product_get_regular_price', array( $sut, 'get_product_price_string' ) ) );
-		$this->assertSame( 99, has_filter( 'woocommerce_product_get_sale_price', array( $sut, 'get_product_price_string' ) ) );
-		$this->assertSame( 99, has_filter( 'woocommerce_product_variation_get_price', array( $sut, 'get_product_price_string' ) ) );
-		$this->assertSame( 99, has_filter( 'woocommerce_product_variation_get_regular_price', array( $sut, 'get_product_price_string' ) ) );
-		$this->assertSame( 99, has_filter( 'woocommerce_product_variation_get_sale_price', array( $sut, 'get_product_price_string' ) ) );
-		$this->assertSame( 99, has_filter( 'woocommerce_variation_prices_price', array( $sut, 'get_product_price_string' ) ) );
-		$this->assertSame( 99, has_filter( 'woocommerce_variation_prices_regular_price', array( $sut, 'get_product_price_string' ) ) );
-		$this->assertSame( 99, has_filter( 'woocommerce_variation_prices_sale_price', array( $sut, 'get_product_price_string' ) ) );
-		$this->assertSame( 99, has_filter( 'woocommerce_get_variation_prices_hash', array( $sut, 'add_exchange_rate_to_variation_prices_hash' ) ) );
-		$this->assertSame( 99, has_filter( 'woocommerce_shipping_zone_shipping_methods', array( $sut, 'convert_free_shipping_method_min_amount' ) ) );
-		$this->assertSame( 99, has_filter( 'woocommerce_shipping_method_add_rate_args', array( $sut, 'convert_shipping_method_rate_cost' ) ) );
-		$this->assertSame( 99, has_filter( 'woocommerce_coupon_get_amount', array( $sut, 'get_coupon_amount' ) ) );
-		$this->assertSame( 99, has_filter( 'woocommerce_coupon_get_minimum_amount', array( $sut, 'get_coupon_min_max_amount' ) ) );
-		$this->assertSame( 99, has_filter( 'woocommerce_coupon_get_maximum_amount', array( $sut, 'get_coupon_min_max_amount' ) ) );
-		$this->assertSame( 99, has_filter( 'woocommerce_new_order', array( $sut, 'add_order_meta' ) ) );
-		$this->assertFalse( has_action( 'woocommerce_order_refunded', array( $sut, 'add_refund_meta' ) ), 'The bootstrap registers the refund meta copy on every request.' );
-		$this->assertSame( 10, has_filter( 'rest_post_dispatch', array( $sut, 'maybe_modify_price_ranges_rest_response' ) ) );
-		$this->assertSame( 10, has_filter( 'query_loop_block_query_vars', array( $sut, 'maybe_modify_price_ranges_query_var' ) ) );
-	}
-
-	/**
-	 * @testdox Should not register frontend price hooks in blocked request context.
-	 */
-	public function test_does_not_register_frontend_price_hooks_in_blocked_request_context(): void {
-		$sut = $this->create_controller(
-			MultiCurrencyRuntimeArbiter::OWNER_BUILTIN,
-			true,
-			$this->create_request_context( false )
-		);
-
-		$sut->register();
-
-		$this->assertFalse( has_filter( 'woocommerce_product_get_price', array( $sut, 'get_product_price_string' ) ) );
-		$this->assertFalse( has_filter( 'woocommerce_coupon_get_amount', array( $sut, 'get_coupon_amount' ) ) );
-		$this->assertFalse( has_action( 'woocommerce_order_refunded', array( $sut, 'add_refund_meta' ) ) );
-		$this->assertFalse( has_filter( 'rest_post_dispatch', array( $sut, 'maybe_modify_price_ranges_rest_response' ) ) );
 	}
 
 	/**

@@ -117,47 +117,45 @@ class MultiCurrencySelectedCurrencyControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should not register selected currency hooks when plugin owns runtime.
+	 * @testdox Should register exactly the selected currency hooks the owner allows, once: $_dataName.
+	 * @dataProvider provide_selected_currency_hooks_owners
+	 *
+	 * @param string                            $owner    Runtime owner.
+	 * @param array<string,array<string,int[]>> $expected Every hook the controller registers.
 	 */
-	public function test_does_not_register_selected_currency_hooks_when_extension_owns_runtime(): void {
-		$service = $this->create_persistence_service();
-		$sut     = $this->create_controller(
-			MultiCurrencyRuntimeArbiter::OWNER_EXTENSION,
-			$service,
-			$this->create_request_context( true, false )
-		);
+	public function test_registers_the_selected_currency_hooks_its_owner_allows( string $owner, array $expected ): void {
+		$sut = $this->create_controller( $owner, $this->create_persistence_service(), $this->create_request_context( true, false ) );
 
 		$sut->register();
+		$sut->register();
 
-		$this->assertFalse( has_action( 'init', array( $sut, 'handle_init' ) ) );
-		$this->assertFalse( has_action( 'woocommerce_load_cart_from_session', array( $sut, 'handle_woocommerce_load_cart_from_session' ) ) );
-		$this->assertFalse( has_filter( 'rest_pre_dispatch', array( $sut, 'handle_store_api_rest_pre_dispatch' ) ) );
-		$this->assertFalse( has_action( 'woocommerce_init', array( $sut, 'handle_woocommerce_init' ) ) );
-		$this->assertFalse( has_action( 'woocommerce_save_account_details', array( $sut, 'handle_woocommerce_save_account_details' ) ) );
+		$this->assertSame( $expected, RegisteredHooks::of( $sut ) );
 	}
 
 	/**
-	 * @testdox Should register selected currency hooks when core owns runtime.
+	 * Owners and the hooks each registers in a frontend context: the entry, account and geolocation hooks under core, nothing under the extension.
+	 *
+	 * @return array<string,array<int,mixed>>
 	 */
-	public function test_registers_selected_currency_hooks_when_core_owns_runtime(): void {
-		$service = $this->create_persistence_service();
-		$sut     = $this->create_controller(
-			MultiCurrencyRuntimeArbiter::OWNER_BUILTIN,
-			$service,
-			$this->create_request_context( true, false )
+	public function provide_selected_currency_hooks_owners(): array {
+		return array(
+			'core owns'          => array(
+				MultiCurrencyRuntimeArbiter::OWNER_BUILTIN,
+				array(
+					'init'                               => array(
+						'handle_geolocation_init' => array( 12, 1 ),
+						'handle_init'             => array( 11, 1 ),
+						'handle_simulation_init'  => array( 13, 1 ),
+					),
+					'woocommerce_created_customer'       => array( 'handle_woocommerce_created_customer' => array( 10, 1 ) ),
+					'woocommerce_edit_account_form'      => array( 'handle_woocommerce_edit_account_form' => array( 10, 1 ) ),
+					'woocommerce_load_cart_from_session' => array( 'handle_woocommerce_load_cart_from_session' => array( 10, 0 ) ),
+					'woocommerce_rest_prepare_customer'  => array( 'handle_woocommerce_rest_prepare_customer' => array( 10, 3 ) ),
+					'woocommerce_save_account_details'   => array( 'handle_woocommerce_save_account_details' => array( 10, 1 ) ),
+				),
+			),
+			'the extension owns' => array( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION, array() ),
 		);
-
-		$sut->register();
-		$sut->register();
-
-		$this->assertSame( 10, has_action( 'woocommerce_load_cart_from_session', array( $sut, 'handle_woocommerce_load_cart_from_session' ) ) );
-		$this->assertFalse( has_filter( 'rest_pre_dispatch', array( $sut, 'handle_store_api_rest_pre_dispatch' ) ) );
-		$this->assertFalse( has_action( 'woocommerce_init', array( $sut, 'handle_woocommerce_init' ) ) );
-		$this->assertSame( 11, has_action( 'init', array( $sut, 'handle_init' ) ) );
-		$this->assertSame( 12, has_action( 'init', array( $sut, 'handle_geolocation_init' ) ) );
-		$this->assertSame( 10, has_action( 'woocommerce_created_customer', array( $sut, 'handle_woocommerce_created_customer' ) ) );
-		$this->assertSame( 10, has_action( 'woocommerce_edit_account_form', array( $sut, 'handle_woocommerce_edit_account_form' ) ) );
-		$this->assertSame( 10, has_action( 'woocommerce_save_account_details', array( $sut, 'handle_woocommerce_save_account_details' ) ) );
 	}
 
 	/**

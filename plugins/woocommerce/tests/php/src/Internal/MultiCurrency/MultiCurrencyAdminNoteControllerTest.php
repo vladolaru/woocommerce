@@ -27,37 +27,39 @@ class MultiCurrencyAdminNoteControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should not register admin note hook when plugin owns runtime.
+	 * @testdox Should register exactly the admin note hook the request allows, once: $_dataName.
+	 * @dataProvider provide_admin_note_hook_requests
+	 *
+	 * @param string                            $owner    Runtime owner.
+	 * @param bool                              $is_admin Whether this is an admin request.
+	 * @param array<string,array<string,int[]>> $expected Every hook the controller registers.
 	 */
-	public function test_does_not_register_admin_note_hook_when_extension_owns_runtime(): void {
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION, true );
+	public function test_registers_the_admin_note_hook_the_request_allows( string $owner, bool $is_admin, array $expected ): void {
+		$sut = $this->create_controller( $owner, $is_admin );
 
 		$sut->register();
+		$sut->register();
 
-		$this->assertFalse( has_action( self::ADMIN_INIT, array( $sut, 'handle_admin_init' ) ) );
+		$this->assertSame( $expected, RegisteredHooks::of( $sut ) );
 	}
 
 	/**
-	 * @testdox Should not register admin note hook outside admin requests.
+	 * Requests and the hook each registers: the note check on an admin request under core, nothing otherwise.
+	 *
+	 * @return array<string,array<int,mixed>>
 	 */
-	public function test_does_not_register_admin_note_hook_outside_admin_requests(): void {
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, false );
-
-		$sut->register();
-
-		$this->assertFalse( has_action( self::ADMIN_INIT, array( $sut, 'handle_admin_init' ) ) );
-	}
-
-	/**
-	 * @testdox Should register admin note hook once when core owns runtime in admin.
-	 */
-	public function test_registers_admin_note_hook_once_when_core_owns_runtime_in_admin(): void {
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, true );
-
-		$sut->register();
-		$sut->register();
-
-		$this->assertSame( 10, has_action( self::ADMIN_INIT, array( $sut, 'handle_admin_init' ) ) );
+	public function provide_admin_note_hook_requests(): array {
+		return array(
+			'core in admin'      => array(
+				MultiCurrencyRuntimeArbiter::OWNER_BUILTIN,
+				true,
+				array(
+					'admin_init' => array( 'handle_admin_init' => array( 10, 1 ) ),
+				),
+			),
+			'the extension owns' => array( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION, true, array() ),
+			'outside admin'      => array( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, false, array() ),
+		);
 	}
 
 	/**

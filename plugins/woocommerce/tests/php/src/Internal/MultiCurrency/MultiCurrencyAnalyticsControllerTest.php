@@ -104,29 +104,37 @@ class MultiCurrencyAnalyticsControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should not register analytics hooks when plugin owns runtime.
+	 * @testdox Should register exactly the baseline Analytics hooks outside REST the owner allows, once: $_dataName.
+	 * @dataProvider provide_baseline_analytics_hooks_owners
+	 *
+	 * @param string                            $owner    Runtime owner.
+	 * @param array<string,array<string,int[]>> $expected Every hook the controller registers.
 	 */
-	public function test_does_not_register_analytics_hooks_when_extension_owns_runtime(): void {
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION, true );
+	public function test_registers_the_baseline_analytics_hooks_its_owner_allows( string $owner, array $expected ): void {
+		$sut = $this->create_controller( $owner, false );
 
 		$sut->register();
+		$sut->register();
 
-		$this->assertFalse( has_filter( 'woocommerce_analytics_orders_query_args', array( $sut, 'handle_woocommerce_analytics_orders_query_args' ) ) );
-		$this->assertFalse( has_filter( 'woocommerce_analytics_clauses_select', array( $sut, 'handle_woocommerce_analytics_clauses_select' ) ) );
+		$this->assertSame( $expected, RegisteredHooks::of( $sut ) );
 	}
 
 	/**
-	 * @testdox Should register baseline analytics hooks when core owns runtime.
+	 * Owners and the hooks each registers outside REST: the order query hooks under core, nothing under the extension.
+	 *
+	 * @return array<string,array<int,mixed>>
 	 */
-	public function test_registers_baseline_analytics_hooks_when_core_owns_runtime(): void {
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, false );
-
-		$sut->register();
-		$sut->register();
-
-		$this->assertSame( 10, has_filter( 'woocommerce_analytics_orders_query_args', array( $sut, 'handle_woocommerce_analytics_orders_query_args' ) ) );
-		$this->assertSame( 10, has_filter( 'woocommerce_analytics_orders_stats_query_args', array( $sut, 'handle_woocommerce_analytics_orders_query_args' ) ) );
-		$this->assertFalse( has_filter( 'woocommerce_analytics_clauses_select', array( $sut, 'handle_woocommerce_analytics_clauses_select' ) ) );
+	public function provide_baseline_analytics_hooks_owners(): array {
+		return array(
+			'core owns'          => array(
+				MultiCurrencyRuntimeArbiter::OWNER_BUILTIN,
+				array(
+					'woocommerce_analytics_orders_query_args' => array( 'handle_woocommerce_analytics_orders_query_args' => array( 10, 1 ) ),
+					'woocommerce_analytics_orders_stats_query_args' => array( 'handle_woocommerce_analytics_orders_query_args' => array( 10, 1 ) ),
+				),
+			),
+			'the extension owns' => array( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION, array() ),
+		);
 	}
 
 	/**

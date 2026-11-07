@@ -42,37 +42,39 @@ class MultiCurrencyExplicitPriceControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should register explicit price hooks once when core owns runtime.
+	 * @testdox Should register exactly the explicit price hooks the owner allows, once: $_dataName.
+	 * @dataProvider provide_explicit_price_hooks_owners
+	 *
+	 * @param string                            $owner    Runtime owner.
+	 * @param array<string,array<string,int[]>> $expected Every hook the controller registers.
 	 */
-	public function test_registers_explicit_price_hooks_once_when_core_owns_runtime(): void {
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, true );
+	public function test_registers_the_explicit_price_hooks_its_owner_allows( string $owner, array $expected ): void {
+		$sut = $this->create_controller( $owner, true );
 
 		$sut->register();
 		$sut->register();
 
-		$this->assertSame(
-			array(
-				'woocommerce_admin_order_totals_after_tax' => array( 'register_formatted_woocommerce_price_filter' => array( 10, 1 ) ),
-				'woocommerce_admin_order_totals_after_total' => array( 'unregister_formatted_woocommerce_price_filter' => array( 10, 1 ) ),
-				'woocommerce_cart_total'                   => array( 'get_explicit_price' => array( 100, 1 ) ),
-				'woocommerce_get_formatted_order_total'    => array( 'get_explicit_price' => array( 100, 2 ) ),
-			),
-			RegisteredHooks::of( $sut )
-		);
+		$this->assertSame( $expected, RegisteredHooks::of( $sut ) );
 	}
 
 	/**
-	 * @testdox Should not register explicit price hooks when plugin owns runtime.
+	 * Owners and the hooks each registers: the explicit price hooks under core, nothing under the extension.
+	 *
+	 * @return array<string,array<int,mixed>>
 	 */
-	public function test_does_not_register_explicit_price_hooks_when_extension_owns_runtime(): void {
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION, true );
-
-		$sut->register();
-
-		$this->assertFalse( has_filter( 'woocommerce_cart_total', array( $sut, 'get_explicit_price' ) ) );
-		$this->assertFalse( has_filter( 'woocommerce_get_formatted_order_total', array( $sut, 'get_explicit_price' ) ) );
-		$this->assertFalse( has_action( 'woocommerce_admin_order_totals_after_tax', array( $sut, 'register_formatted_woocommerce_price_filter' ) ) );
-		$this->assertFalse( has_action( 'woocommerce_admin_order_totals_after_total', array( $sut, 'unregister_formatted_woocommerce_price_filter' ) ) );
+	public function provide_explicit_price_hooks_owners(): array {
+		return array(
+			'core owns'          => array(
+				MultiCurrencyRuntimeArbiter::OWNER_BUILTIN,
+				array(
+					'woocommerce_admin_order_totals_after_tax' => array( 'register_formatted_woocommerce_price_filter' => array( 10, 1 ) ),
+					'woocommerce_admin_order_totals_after_total' => array( 'unregister_formatted_woocommerce_price_filter' => array( 10, 1 ) ),
+					'woocommerce_cart_total' => array( 'get_explicit_price' => array( 100, 1 ) ),
+					'woocommerce_get_formatted_order_total' => array( 'get_explicit_price' => array( 100, 2 ) ),
+				),
+			),
+			'the extension owns' => array( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION, array() ),
+		);
 	}
 
 	/**

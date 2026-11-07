@@ -55,50 +55,51 @@ class MultiCurrencyFrontendCurrenciesControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should not register frontend currency hooks while the extension or no runtime owns multi-currency.
-	 * @dataProvider other_owner_provider
+	 * @testdox Should register exactly the frontend currency hooks the owner allows, once: $_dataName.
+	 * @dataProvider provide_frontend_currency_hooks_owners
 	 *
-	 * @param string $owner Runtime owner.
+	 * @param string                            $owner    Runtime owner.
+	 * @param array<string,array<string,int[]>> $expected Every hook the controller registers.
 	 */
-	public function test_does_not_register_when_another_runtime_owns_multi_currency( string $owner ): void {
+	public function test_registers_the_frontend_currency_hooks_its_owner_allows( string $owner, array $expected ): void {
 		$sut = $this->create_controller( $owner );
 
 		$sut->register();
+		$sut->register();
 
-		$this->assertFalse( has_filter( 'woocommerce_currency', array( $sut, 'get_woocommerce_currency' ) ) );
-		$this->assertFalse( has_filter( 'woocommerce_cart_hash', array( $sut, 'add_currency_to_cart_hash' ) ) );
-	}
-
-	/** @return array<string,array{string}> */
-	public static function other_owner_provider(): array {
-		return array(
-			'extension' => array( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION ),
-			'none'      => array( MultiCurrencyRuntimeArbiter::OWNER_NONE ),
-		);
+		$this->assertSame( $expected, RegisteredHooks::of( $sut ) );
 	}
 
 	/**
-	 * @testdox Should register frontend currency hooks when core multi-currency owns the runtime.
+	 * Owners and the hooks each registers: the currency, format and order hooks under core, nothing otherwise.
+	 *
+	 * @return array<string,array<int,mixed>>
 	 */
-	public function test_registers_frontend_currency_hooks_when_core_owns_runtime(): void {
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
-
-		$sut->register();
-		$sut->register();
-
-		$this->assertSame( 900, has_filter( 'woocommerce_currency', array( $sut, 'get_woocommerce_currency' ) ) );
-		$this->assertSame( 900, has_filter( 'wc_get_price_decimals', array( $sut, 'get_price_decimals' ) ) );
-		$this->assertSame( 900, has_filter( 'wc_get_price_decimal_separator', array( $sut, 'get_price_decimal_separator' ) ) );
-		$this->assertSame( 900, has_filter( 'wc_get_price_thousand_separator', array( $sut, 'get_price_thousand_separator' ) ) );
-		$this->assertSame( 900, has_filter( 'woocommerce_price_format', array( $sut, 'get_woocommerce_price_format' ) ) );
-		$this->assertSame( 900, has_filter( 'option_woocommerce_currency_pos', array( $sut, 'get_woocommerce_currency_pos' ) ) );
-		$this->assertSame( 900, has_filter( 'woocommerce_cart_hash', array( $sut, 'add_currency_to_cart_hash' ) ) );
-		$this->assertSame( 900, has_filter( 'woocommerce_order_get_total', array( $sut, 'maybe_init_order_currency_from_order_total_prop' ) ) );
-		$this->assertSame( 900, has_filter( 'woocommerce_get_formatted_order_total', array( $sut, 'maybe_clear_order_currency_after_formatted_order_total' ) ) );
-		$this->assertSame( 900, has_filter( 'woocommerce_shipping_method_add_rate_args', array( $sut, 'fix_price_decimals_for_shipping_rates' ) ) );
-		$this->assertSame( 10, has_filter( 'woocommerce_thankyou_order_id', array( $sut, 'init_order_currency' ) ) );
-		$this->assertSame( 10, has_action( 'before_woocommerce_pay', array( $sut, 'init_order_currency_from_query_vars' ) ) );
-		$this->assertSame( 9, has_action( 'woocommerce_account_view-order_endpoint', array( $sut, 'init_order_currency' ) ) );
+	public function provide_frontend_currency_hooks_owners(): array {
+		return array(
+			'core owns'          => array(
+				MultiCurrencyRuntimeArbiter::OWNER_BUILTIN,
+				array(
+					'before_woocommerce_pay'          => array( 'init_order_currency_from_query_vars' => array( 10, 1 ) ),
+					'option_woocommerce_currency_pos' => array( 'get_woocommerce_currency_pos' => array( 900, 1 ) ),
+					'wc_get_price_decimal_separator'  => array( 'get_price_decimal_separator' => array( 900, 1 ) ),
+					'wc_get_price_decimals'           => array( 'get_price_decimals' => array( 900, 1 ) ),
+					'wc_get_price_thousand_separator' => array( 'get_price_thousand_separator' => array( 900, 1 ) ),
+					'woocommerce_account_view-order_endpoint' => array( 'init_order_currency' => array( 9, 1 ) ),
+					'woocommerce_blocks_enqueue_cart_block_scripts_after' => array( 'enqueue_blocks_totals_script' => array( 10, 1 ) ),
+					'woocommerce_blocks_enqueue_checkout_block_scripts_after' => array( 'enqueue_blocks_totals_script' => array( 10, 1 ) ),
+					'woocommerce_cart_hash'           => array( 'add_currency_to_cart_hash' => array( 900, 1 ) ),
+					'woocommerce_currency'            => array( 'get_woocommerce_currency' => array( 900, 1 ) ),
+					'woocommerce_get_formatted_order_total' => array( 'maybe_clear_order_currency_after_formatted_order_total' => array( 900, 4 ) ),
+					'woocommerce_order_get_total'     => array( 'maybe_init_order_currency_from_order_total_prop' => array( 900, 2 ) ),
+					'woocommerce_price_format'        => array( 'get_woocommerce_price_format' => array( 900, 1 ) ),
+					'woocommerce_shipping_method_add_rate_args' => array( 'fix_price_decimals_for_shipping_rates' => array( 900, 2 ) ),
+					'woocommerce_thankyou_order_id'   => array( 'init_order_currency' => array( 10, 1 ) ),
+				),
+			),
+			'the extension owns' => array( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION, array() ),
+			'nobody owns'        => array( MultiCurrencyRuntimeArbiter::OWNER_NONE, array() ),
+		);
 	}
 
 	/**

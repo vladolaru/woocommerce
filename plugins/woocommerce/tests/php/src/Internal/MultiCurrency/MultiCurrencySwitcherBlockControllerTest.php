@@ -46,26 +46,36 @@ class MultiCurrencySwitcherBlockControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should not register init hook when plugin owns runtime.
+	 * @testdox Should register exactly the switcher block init hook the owner allows, once: $_dataName.
+	 * @dataProvider provide_block_init_hook_owners
+	 *
+	 * @param string                            $owner    Runtime owner.
+	 * @param array<string,array<string,int[]>> $expected Every hook the controller registers.
 	 */
-	public function test_does_not_register_init_hook_when_extension_owns_runtime(): void {
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION );
+	public function test_registers_the_block_init_hook_its_owner_allows( string $owner, array $expected ): void {
+		$sut = $this->create_controller( $owner );
 
 		$sut->register();
+		$sut->register();
 
-		$this->assertFalse( has_action( 'init', array( $sut, 'handle_init' ) ) );
+		$this->assertSame( $expected, RegisteredHooks::of( $sut ) );
 	}
 
 	/**
-	 * @testdox Should register init hook when core owns runtime.
+	 * Owners and the hooks each registers: the init hook under core, nothing under the extension.
+	 *
+	 * @return array<string,array<int,mixed>>
 	 */
-	public function test_registers_init_hook_when_core_owns_runtime(): void {
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
-
-		$sut->register();
-		$sut->register();
-
-		$this->assertSame( 10, has_action( 'init', array( $sut, 'handle_init' ) ) );
+	public function provide_block_init_hook_owners(): array {
+		return array(
+			'core owns'          => array(
+				MultiCurrencyRuntimeArbiter::OWNER_BUILTIN,
+				array(
+					'init' => array( 'handle_init' => array( 10, 1 ) ),
+				),
+			),
+			'the extension owns' => array( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION, array() ),
+		);
 	}
 
 	/**

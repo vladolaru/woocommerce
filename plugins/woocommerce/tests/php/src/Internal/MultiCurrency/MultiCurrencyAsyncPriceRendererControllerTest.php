@@ -83,18 +83,6 @@ class MultiCurrencyAsyncPriceRendererControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should not register async renderer hooks when plugin owns runtime.
-	 */
-	public function test_does_not_register_hooks_when_extension_owns_runtime(): void {
-		update_option( 'wcpay_multi_currency_enable_auto_currency', 'yes' );
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION );
-
-		$sut->maybe_register_async_hooks();
-
-		$this->assert_hooks_not_registered( $sut );
-	}
-
-	/**
 	 * @testdox Should register async renderer hooks when core owns active cache mode.
 	 */
 	public function test_registers_hooks_when_core_owns_active_cache_mode(): void {
@@ -111,7 +99,7 @@ class MultiCurrencyAsyncPriceRendererControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should not register async renderer hooks when activation is blocked.
+	 * @testdox Should register no async renderer hook when activation is blocked: $_dataName.
 	 *
 	 * @dataProvider registration_blocker_data
 	 *
@@ -122,6 +110,7 @@ class MultiCurrencyAsyncPriceRendererControllerTest extends WC_Unit_Test_Case {
 	 * @param bool        $active_session       Whether a WooCommerce session is active.
 	 * @param bool        $auto_enabled         Whether automatic currency switching is enabled.
 	 * @param string|null $query_currency       The request's currency query argument, null when absent.
+	 * @param string      $owner                Runtime owner.
 	 */
 	public function test_does_not_register_hooks_when_activation_is_blocked(
 		bool $cache_optimized_mode,
@@ -130,7 +119,8 @@ class MultiCurrencyAsyncPriceRendererControllerTest extends WC_Unit_Test_Case {
 		bool $admin_api_request,
 		bool $active_session,
 		bool $auto_enabled,
-		?string $query_currency
+		?string $query_currency,
+		string $owner = MultiCurrencyRuntimeArbiter::OWNER_BUILTIN
 	): void {
 		update_option( 'wcpay_multi_currency_enable_auto_currency', $auto_enabled ? 'yes' : 'no' );
 
@@ -139,7 +129,7 @@ class MultiCurrencyAsyncPriceRendererControllerTest extends WC_Unit_Test_Case {
 		}
 
 		$sut = $this->create_controller(
-			MultiCurrencyRuntimeArbiter::OWNER_BUILTIN,
+			$owner,
 			$cache_optimized_mode,
 			$frontend_request,
 			$store_api_request,
@@ -149,7 +139,7 @@ class MultiCurrencyAsyncPriceRendererControllerTest extends WC_Unit_Test_Case {
 
 		$sut->maybe_register_async_hooks();
 
-		$this->assert_hooks_not_registered( $sut );
+		$this->assertSame( array(), RegisteredHooks::of( $sut ) );
 	}
 
 	/**
@@ -431,6 +421,7 @@ class MultiCurrencyAsyncPriceRendererControllerTest extends WC_Unit_Test_Case {
 			'auto switching disabled'       => array( true, true, false, false, false, false, null ),
 			'pending currency switch'       => array( true, true, false, false, false, true, 'EUR' ),
 			'empty currency query argument' => array( true, true, false, false, false, true, '' ),
+			'the extension owns'            => array( true, true, false, false, false, true, null, MultiCurrencyRuntimeArbiter::OWNER_EXTENSION ),
 		);
 	}
 

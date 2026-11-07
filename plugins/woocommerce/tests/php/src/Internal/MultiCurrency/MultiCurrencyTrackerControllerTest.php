@@ -26,26 +26,36 @@ class MultiCurrencyTrackerControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should not register tracker data when plugin owns runtime.
+	 * @testdox Should register exactly the tracker data hook the owner allows, once: $_dataName.
+	 * @dataProvider provide_tracker_data_owners
+	 *
+	 * @param string                            $owner    Runtime owner.
+	 * @param array<string,array<string,int[]>> $expected Every hook the controller registers.
 	 */
-	public function test_does_not_register_tracker_data_when_extension_owns_runtime(): void {
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION );
+	public function test_registers_the_tracker_data_its_owner_allows( string $owner, array $expected ): void {
+		$sut = $this->create_controller( $owner );
 
 		$sut->register();
+		$sut->register();
 
-		$this->assertFalse( has_filter( self::TRACKER_HOOK, array( $sut, 'add_tracker_data' ) ) );
+		$this->assertSame( $expected, RegisteredHooks::of( $sut ) );
 	}
 
 	/**
-	 * @testdox Should register tracker data once when core owns runtime.
+	 * Owners and the hooks each registers: the tracker data filter under core, nothing under the extension.
+	 *
+	 * @return array<string,array<int,mixed>>
 	 */
-	public function test_registers_tracker_data_once_when_core_owns_runtime(): void {
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
-
-		$sut->register();
-		$sut->register();
-
-		$this->assertSame( 50, has_filter( self::TRACKER_HOOK, array( $sut, 'add_tracker_data' ) ) );
+	public function provide_tracker_data_owners(): array {
+		return array(
+			'core owns'          => array(
+				MultiCurrencyRuntimeArbiter::OWNER_BUILTIN,
+				array(
+					'woocommerce_tracker_data' => array( 'add_tracker_data' => array( 50, 1 ) ),
+				),
+			),
+			'the extension owns' => array( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION, array() ),
+		);
 	}
 
 	/**

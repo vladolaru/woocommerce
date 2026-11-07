@@ -48,35 +48,40 @@ class MultiCurrencySettingsControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should not register hooks when plugin owns runtime.
+	 * @testdox Should register exactly the settings hooks the owner allows, once: $_dataName.
+	 * @dataProvider provide_settings_hooks_owners
+	 *
+	 * @param string                            $owner    Runtime owner.
+	 * @param array<string,array<string,int[]>> $expected Every hook the controller registers.
 	 */
-	public function test_does_not_register_hooks_when_extension_owns_runtime(): void {
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION );
+	public function test_registers_the_settings_hooks_its_owner_allows( string $owner, array $expected ): void {
+		$sut = $this->create_controller( $owner );
 
 		$sut->register();
+		$sut->register();
 
-		$this->assertFalse( has_filter( 'woocommerce_get_settings_pages', array( $sut, 'handle_woocommerce_get_settings_pages' ) ) );
-		$this->assertFalse( has_action( 'admin_print_scripts', array( $sut, 'handle_admin_print_scripts' ) ) );
-		$this->assertFalse( has_action( 'woocommerce_admin_field_wcpay_multi_currency_settings_page', array( $sut, 'render_settings_container' ) ) );
-		$this->assertFalse( has_action( 'admin_enqueue_scripts', array( $sut, 'handle_admin_enqueue_scripts' ) ) );
-		$this->assertFalse( has_action( 'admin_init', array( $sut, 'handle_admin_init' ) ) );
+		$this->assertSame( $expected, RegisteredHooks::of( $sut ) );
 	}
 
 	/**
-	 * @testdox Should register settings hooks when core owns runtime.
+	 * Owners and the hooks each registers: the settings page and its scripts under core, nothing under the extension.
+	 *
+	 * @return array<string,array<int,mixed>>
 	 */
-	public function test_registers_settings_hooks_when_core_owns_runtime(): void {
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
-
-		$sut->register();
-		$sut->register();
-
-		$this->assertSame( 10, has_filter( 'woocommerce_get_settings_pages', array( $sut, 'handle_woocommerce_get_settings_pages' ) ) );
-		$this->assertSame( 10, has_action( 'admin_print_scripts', array( $sut, 'handle_admin_print_scripts' ) ) );
-		$this->assertSame( 10, has_action( 'woocommerce_admin_field_wcpay_multi_currency_settings_page', array( $sut, 'render_settings_container' ) ) );
-		$this->assertFalse( has_action( 'woocommerce_admin_field_wcpay_currencies_settings_onboarding_cta', array( $sut, 'render_onboarding_cta' ) ) );
-		$this->assertSame( 10, has_action( 'admin_enqueue_scripts', array( $sut, 'handle_admin_enqueue_scripts' ) ) );
-		$this->assertSame( 10, has_action( 'admin_init', array( $sut, 'handle_admin_init' ) ) );
+	public function provide_settings_hooks_owners(): array {
+		return array(
+			'core owns'          => array(
+				MultiCurrencyRuntimeArbiter::OWNER_BUILTIN,
+				array(
+					'admin_enqueue_scripts'          => array( 'handle_admin_enqueue_scripts' => array( 10, 1 ) ),
+					'admin_init'                     => array( 'handle_admin_init' => array( 10, 1 ) ),
+					'admin_print_scripts'            => array( 'handle_admin_print_scripts' => array( 10, 1 ) ),
+					'woocommerce_admin_field_wcpay_multi_currency_settings_page' => array( 'render_settings_container' => array( 10, 1 ) ),
+					'woocommerce_get_settings_pages' => array( 'handle_woocommerce_get_settings_pages' => array( 10, 1 ) ),
+				),
+			),
+			'the extension owns' => array( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION, array() ),
+		);
 	}
 
 	/**

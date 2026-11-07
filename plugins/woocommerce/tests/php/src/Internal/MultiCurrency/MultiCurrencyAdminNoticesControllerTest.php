@@ -48,28 +48,37 @@ class MultiCurrencyAdminNoticesControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should not register admin notice hooks when plugin owns runtime.
+	 * @testdox Should register exactly the admin notice hooks the owner allows, once: $_dataName.
+	 * @dataProvider provide_admin_notice_hooks_owners
+	 *
+	 * @param string                            $owner    Runtime owner.
+	 * @param array<string,array<string,int[]>> $expected Every hook the controller registers.
 	 */
-	public function test_does_not_register_admin_notice_hooks_when_extension_owns_runtime(): void {
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION );
+	public function test_registers_the_admin_notice_hooks_its_owner_allows( string $owner, array $expected ): void {
+		$sut = $this->create_controller( $owner );
 
 		$sut->register();
+		$sut->register();
 
-		$this->assertFalse( has_action( self::ADMIN_NOTICES, array( $sut, 'handle_admin_notices' ) ) );
-		$this->assertFalse( has_action( self::WP_LOADED, array( $sut, 'handle_wp_loaded' ) ) );
+		$this->assertSame( $expected, RegisteredHooks::of( $sut ) );
 	}
 
 	/**
-	 * @testdox Should register admin notice hooks once when core owns runtime.
+	 * Owners and the hooks each registers: the notice hooks under core, nothing under the extension.
+	 *
+	 * @return array<string,array<int,mixed>>
 	 */
-	public function test_registers_admin_notice_hooks_once_when_core_owns_runtime(): void {
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
-
-		$sut->register();
-		$sut->register();
-
-		$this->assertSame( 10, has_action( self::ADMIN_NOTICES, array( $sut, 'handle_admin_notices' ) ) );
-		$this->assertSame( 10, has_action( self::WP_LOADED, array( $sut, 'handle_wp_loaded' ) ) );
+	public function provide_admin_notice_hooks_owners(): array {
+		return array(
+			'core owns'          => array(
+				MultiCurrencyRuntimeArbiter::OWNER_BUILTIN,
+				array(
+					'admin_notices' => array( 'handle_admin_notices' => array( 10, 1 ) ),
+					'wp_loaded'     => array( 'handle_wp_loaded' => array( 10, 1 ) ),
+				),
+			),
+			'the extension owns' => array( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION, array() ),
+		);
 	}
 
 	/**

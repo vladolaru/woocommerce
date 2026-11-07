@@ -67,24 +67,14 @@ class MultiCurrencyStorefrontIntegrationControllerTest extends WC_Unit_Test_Case
 	}
 
 	/**
-	 * @testdox Should not register Storefront switcher hooks when plugin owns runtime.
-	 */
-	public function test_does_not_register_hooks_when_extension_owns_runtime(): void {
-		update_option( 'wcpay_multi_currency_enable_storefront_switcher', 'yes' );
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION );
-
-		$sut->register();
-
-		$this->assertFalse( has_action( 'init', array( $sut, 'handle_init' ) ) );
-		$this->assertFalse( has_filter( 'woocommerce_breadcrumb_defaults', array( $sut, 'handle_woocommerce_breadcrumb_defaults' ) ) );
-		$this->assertFalse( has_action( 'wp_enqueue_scripts', array( $sut, 'handle_wp_enqueue_scripts' ) ) );
-	}
-
-	/**
-	 * @testdox Should leave the Storefront decision to init, reading neither the theme nor the currency state while WooCommerce loads.
+	 * @testdox Should register nothing while the extension owns Multi-Currency, and under core leave the Storefront decision to init, reading neither the theme nor the currency state while WooCommerce loads.
 	 */
 	public function test_register_defers_the_storefront_decision_to_init(): void {
 		update_option( 'wcpay_multi_currency_enable_storefront_switcher', 'yes' );
+		$extension_owned = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION );
+		$extension_owned->register();
+		$this->assertSame( array(), RegisteredHooks::of( $extension_owned ), 'Nothing registers while the extension owns Multi-Currency.' );
+
 		$state_builder = $this->create_state_builder( 2 );
 		$sut           = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, 2, 'storefront', 'storefront', null, $state_builder );
 		$theme_reads   = 0;
