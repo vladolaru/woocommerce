@@ -2096,7 +2096,7 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * Fraud ruleset saves: stored level, cached AVS flag, cached ruleset, platform ruleset, request and the ruleset the
 	 * platform must receive. The preset rows start with the AVS flag on, so each proves the save writes it off; the AVS
-	 * row starts with no flag, so it proves the save turns it on.
+	 * rows start with no flag or with it off, so each proves the save turns it on.
 	 *
 	 * @return array<string,array{0:string,1:string,2:bool|null,3:string|null,4:string|null,5:string,6:string,7:string}>
 	 */
@@ -2107,6 +2107,7 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 			'platform has none'                       => array( 'no cached ruleset and none on the platform', 'standard', true, null, 'wcpay_fraud_ruleset_not_found', 'standard', 'none', 'standard' ),
 			'platform read fails'                     => array( 'no cached ruleset and a failing platform read', 'standard', true, null, 'wcpay_server_error', 'standard', 'none', 'standard' ),
 			'advanced with AVS'                       => array( 'no cached ruleset and an advanced ruleset holding the AVS rule', 'standard', null, null, 'standard', 'advanced', 'avs', 'avs' ),
+			'advanced with AVS, flag off'             => array( 'the AVS flag off, no cached ruleset and an advanced ruleset holding the AVS rule', 'standard', false, null, 'standard', 'advanced', 'avs', 'avs' ),
 			'cache holds the requested'               => array( 'the requested ruleset already cached', 'standard', true, 'standard', null, 'standard', 'none', 'standard' ),
 			'error sentinel, unchanged level'         => array( 'the error sentinel and the stored level', 'standard', true, null, 'wcpay_server_error', 'standard', 'error', 'standard' ),
 			'error sentinel, step-down from advanced' => array( 'the error sentinel, stepping down from advanced', 'advanced', true, null, 'wcpay_server_error', 'standard', 'error', 'standard' ),
