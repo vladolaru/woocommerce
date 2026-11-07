@@ -95,26 +95,6 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox While the extension owns payments, the supportability hooks are registered only with the WooPayments feature on ($_dataName).
-	 * @testWith ["yes", true]
-	 *           ["no", false]
-	 *
-	 * @param string $feature  The WooPayments feature option.
-	 * @param bool   $expected Whether the hooks are registered.
-	 */
-	public function test_registers_supportability_hooks_while_the_extension_owns_runtime_only_with_the_feature_on( string $feature, bool $expected ): void {
-		$this->fake_plugin( true );
-		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, $feature, true );
-		$this->set_setup_tier( WooPaymentsSetupTier::AVAILABLE );
-		$sut = $this->get_sut();
-		$this->remove_status_hooks( $sut );
-
-		$sut->register();
-
-		$this->assert_supportability_hooks( $sut, $expected );
-	}
-
-	/**
 	 * @testdox A store without a connected account or the extension registers no supportability hook, so the Status page runs no preflight or account read (client 11.1.0 is absent there).
 	 * @testWith ["disabled"]
 	 *           ["available"]
@@ -154,16 +134,18 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A store with something for support to read registers all five supportability hooks ($_dataName).
+	 * @testdox A store with something for support to read registers all five supportability hooks, and one the extension owns only with the WooPayments feature on ($_dataName).
 	 * @dataProvider provide_stores_with_supportability_data
 	 *
 	 * @param string $feature        The WooPayments feature option.
+	 * @param bool   $extension      Whether the WooPayments extension is active.
 	 * @param string $stored_tier    The stored setup tier.
 	 * @param string $effective_tier The tier the store reads as.
 	 * @param bool   $cutover_record Whether the store holds a cutover record.
+	 * @param bool   $expected       Whether the hooks are registered.
 	 */
-	public function test_registers_supportability_hooks_for_a_store_with_something_to_read( string $feature, string $stored_tier, string $effective_tier, bool $cutover_record ): void {
-		$this->fake_plugin( false );
+	public function test_registers_supportability_hooks_for_a_store_with_something_to_read( string $feature, bool $extension, string $stored_tier, string $effective_tier, bool $cutover_record, bool $expected ): void {
+		$this->fake_plugin( $extension );
 		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, $feature );
 		$this->set_setup_tier( $stored_tier );
 		if ( $cutover_record ) {
@@ -195,20 +177,23 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 
 		$sut->register();
 
-		$this->assert_supportability_hooks( $sut, true );
+		$this->assert_supportability_hooks( $sut, $expected );
 	}
 
 	/**
 	 * Stores the extension does not own that still have something for support to read: a connected account, a connected
-	 * account whose feature is off (its effective tier reads disabled), and a cutover record on a store that is not connected.
+	 * account whose feature is off (its effective tier reads disabled), and a cutover record on a store that is not connected;
+	 * then a store the extension owns, with the WooPayments feature on and off.
 	 *
-	 * @return array<string,array{string,string,string,bool}>
+	 * @return array<string,array{string,bool,string,string,bool,bool}>
 	 */
 	public function provide_stores_with_supportability_data(): array {
 		return array(
-			'a connected store'                            => array( 'yes', WooPaymentsSetupTier::CONNECTED, WooPaymentsSetupTier::CONNECTED, false ),
-			'a connected store with the feature off'       => array( 'no', WooPaymentsSetupTier::CONNECTED, WooPaymentsSetupTier::DISABLED, false ),
-			'a store with a cutover record, not connected' => array( 'yes', WooPaymentsSetupTier::AVAILABLE, WooPaymentsSetupTier::AVAILABLE, true ),
+			'a connected store'                            => array( 'yes', false, WooPaymentsSetupTier::CONNECTED, WooPaymentsSetupTier::CONNECTED, false, true ),
+			'a connected store with the feature off'       => array( 'no', false, WooPaymentsSetupTier::CONNECTED, WooPaymentsSetupTier::DISABLED, false, true ),
+			'a store with a cutover record, not connected' => array( 'yes', false, WooPaymentsSetupTier::AVAILABLE, WooPaymentsSetupTier::AVAILABLE, true, true ),
+			'the extension owns payments, feature on'      => array( 'yes', true, WooPaymentsSetupTier::AVAILABLE, WooPaymentsSetupTier::AVAILABLE, false, true ),
+			'the extension owns payments, feature off'     => array( 'no', true, WooPaymentsSetupTier::AVAILABLE, WooPaymentsSetupTier::DISABLED, false, false ),
 		);
 	}
 
@@ -240,33 +225,6 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 		$sut->render_status_report_section();
 
 		$this->assertSame( array( 'Built-in WooPayments' ), array_keys( $this->get_status_tables( (string) ob_get_clean() ) ), 'No gateway is registered while the store waits, so the WooPayments gateway table has nothing true to say.' );
-	}
-
-	/**
-	 * @testdox The status report leaves the WooPayments gateway table out unless the built-in WooPayments owns payments ($_dataName).
-	 * @dataProvider provide_stores_without_a_running_built_in
-	 *
-	 * @param string $feature    The WooPayments feature option.
-	 * @param bool   $ran_before Whether the store ran the extension before.
-	 * @param string $tier       The stored setup tier.
-	 */
-	public function test_status_report_leaves_the_gateway_table_out_unless_the_built_in_owns_payments( string $feature, bool $ran_before, string $tier ): void {
-		$this->set_store_shape( $feature, false, $ran_before, $tier );
-
-		ob_start();
-		$this->get_sut()->render_status_report_section();
-
-		$this->assertSame( array( 'Built-in WooPayments' ), array_keys( $this->get_status_tables( (string) ob_get_clean() ) ) );
-	}
-
-	/**
-	 * @return array<string,array{string,bool,string}>
-	 */
-	public function provide_stores_without_a_running_built_in(): array {
-		return array(
-			'waiting for the switch'                       => array( 'yes', true, WooPaymentsSetupTier::DISABLED ),
-			'connected store, feature off, extension gone' => array( 'no', true, WooPaymentsSetupTier::CONNECTED ),
-		);
 	}
 
 	/**
@@ -440,33 +398,14 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Status data reports the WooPayments rate provider as unavailable when the registry has no available provider.
-	 */
-	public function test_status_data_reports_rate_provider_unavailable_from_registry_state(): void {
-		$this->fake_plugin( false );
-		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
-		// A connected store: without a connection the account read returns no account, like the client.
-		$connected_api_client = $this->createMock( Client::class );
-		$connected_api_client->method( 'is_available' )->willReturn( true );
-		wc_get_container()->replace( Client::class, $connected_api_client );
-		$this->seed_connected_store();
-		wc_get_container()->reset_all_resolved();
-
-		$data = $this->get_sut()->get_status_data();
-
-		$this->assertTrue( $data['multi_currency']['enabled'] );
-		$this->assertTrue( $data['account_connected'] );
-		$this->assertFalse( $data['multi_currency']['rate_provider_available'], 'Connected account state alone must not make the rate provider look available.' );
-	}
-
-	/**
-	 * @testdox Status data reports the WooPayments rate provider available only while Multi-Currency holds it and it is available: $label.
+	 * @testdox Status data reports the WooPayments rate provider available only while Multi-Currency holds it and it is available, never from the connected account alone: $label.
 	 * @testWith ["WooPayments provider available", "woopayments", true, true]
 	 *           ["WooPayments provider unavailable", "woopayments", false, false]
 	 *           ["another provider available", "other-rates", true, false]
+	 *           ["no provider registered", "", false, false]
 	 *
 	 * @param string $label       Readable case name.
-	 * @param string $provider_id ID of the provider Multi-Currency holds.
+	 * @param string $provider_id ID of the provider Multi-Currency holds, or "" for none registered.
 	 * @param bool   $available   Whether that provider is available.
 	 * @param bool   $expected    Expected rate_provider_available.
 	 */
@@ -479,10 +418,12 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 		wc_get_container()->replace( Client::class, $connected_api_client );
 		$this->seed_connected_store();
 		wc_get_container()->reset_all_resolved();
-		$provider = $this->createMock( CurrencyRateProviderInterface::class );
-		$provider->method( 'get_id' )->willReturn( $provider_id );
-		$provider->method( 'is_available' )->willReturn( $available );
-		wc_get_container()->get( RateService::class )->set_provider( $provider );
+		if ( '' !== $provider_id ) {
+			$provider = $this->createMock( CurrencyRateProviderInterface::class );
+			$provider->method( 'get_id' )->willReturn( $provider_id );
+			$provider->method( 'is_available' )->willReturn( $available );
+			wc_get_container()->get( RateService::class )->set_provider( $provider );
+		}
 
 		try {
 			$data = $this->get_sut()->get_status_data();
@@ -492,30 +433,36 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 		}
 
 		$this->assertTrue( $data['multi_currency']['enabled'] );
+		$this->assertTrue( $data['account_connected'] );
 		$this->assertSame( $expected, $data['multi_currency']['rate_provider_available'] );
 	}
 
 	/**
-	 * @testdox The account cache tool refetches the account once and leaves the cache as the extension does ($fetch_fails, $had_cached_account).
+	 * @testdox The account cache tool refetches the account once and leaves the cache as the extension does, and without a platform connection neither fetches nor touches the cache ($connected, $fetch_fails, $had_cached_account).
 	 *
 	 * Client 11.1.0 runs `refresh_account_data()` (class-wc-payments-status.php:89-102), which is `get_cached_account_data( true )`
 	 * (class-wc-payments-account.php:2534-2536): one fetch; a failed fetch keeps the old data marked errored, or returns false
-	 * without it (class-database-cache.php:166-181, class-wc-payments-account.php:2487-2489). WooCommerce prints "Tool ran." for
-	 * an array and an error for false (class-wc-rest-system-status-tools-v2-controller.php:738-746).
+	 * without it (class-database-cache.php:166-181, class-wc-payments-account.php:2487-2489); without a server connection it
+	 * returns [] before any cache work (:2442-2444). WooCommerce prints "Tool ran." for an array and an error for false
+	 * (class-wc-rest-system-status-tools-v2-controller.php:738-746).
 	 *
-	 * @testWith [false, true, "fresh", false, 0, true, "Tool ran."]
-	 *           [true, true, "old", true, 1, true, "Tool ran."]
-	 *           [true, false, "none", true, 1, false, "There was an error calling "]
+	 * @testWith [true, false, true, 1, "fresh", false, 0, true, true, "Tool ran."]
+	 *           [true, true, true, 1, "old", true, 1, true, true, "Tool ran."]
+	 *           [true, true, false, 1, "none", true, 1, true, false, "There was an error calling "]
+	 *           [false, false, true, 0, "old", false, 0, false, true, "Tool ran."]
 	 *
+	 * @param bool   $connected          Whether the platform connection is available.
 	 * @param bool   $fetch_fails        Whether the account fetch fails.
 	 * @param bool   $had_cached_account Whether an account was cached before the tool ran.
+	 * @param int    $expected_calls     Expected account fetches.
 	 * @param string $expected_data      Account the cache holds afterwards: fresh, old, or none.
 	 * @param bool   $expected_errored   Expected errored flag on the cache.
 	 * @param int    $expected_errors    Expected consecutive error count on the cache.
+	 * @param bool   $cache_changed      Whether the tool changes the cache entry at all.
 	 * @param bool   $expected_success   Whether WooCommerce reports the tool as successful.
 	 * @param string $expected_message   Start of the message WooCommerce shows the merchant.
 	 */
-	public function test_clear_account_cache_tool_refetches_the_account( bool $fetch_fails, bool $had_cached_account, string $expected_data, bool $expected_errored, int $expected_errors, bool $expected_success, string $expected_message ): void {
+	public function test_clear_account_cache_tool_refetches_the_account( bool $connected, bool $fetch_fails, bool $had_cached_account, int $expected_calls, string $expected_data, bool $expected_errored, int $expected_errors, bool $cache_changed, bool $expected_success, string $expected_message ): void {
 		$old_account   = array(
 			'account_id'        => 'acct_native_test',
 			'is_live'           => true,
@@ -523,7 +470,7 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 			'details_submitted' => true,
 		);
 		$fresh_account = array_merge( $old_account, array( 'payments_enabled' => false ) );
-		$api_client    = $this->create_account_api_client( $fresh_account, $fetch_fails, true );
+		$api_client    = $this->create_account_api_client( $fresh_account, $fetch_fails, $connected );
 		wc_get_container()->replace( Client::class, $api_client );
 		wp_set_current_user( self::factory()->user->create( array( 'role' => 'administrator' ) ) );
 		$this->fake_plugin( false );
@@ -536,11 +483,13 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 		if ( ! $had_cached_account ) {
 			wc_get_container()->get( WooPaymentsAccountService::class )->clear_cache();
 		}
+		$cache_before = get_option( 'wcpay_account_data' );
 
 		$result = ( new WC_REST_System_Status_Tools_V2_Controller() )->execute_tool( 'clear_wcpay_account_cache' );
 
 		$cache = get_option( 'wcpay_account_data' );
-		$this->assertSame( 1, $api_client->calls, 'The tool must fetch the account exactly once.' );
+		$this->assertSame( $expected_calls, $api_client->calls, 'The tool must fetch the account exactly once, and only with a platform connection.' );
+		$this->assertSame( $cache_changed, $cache_before !== $cache, 'Without a fetch the tool must leave the account cache untouched.' );
 		$this->assertIsArray( $cache, 'The tool must leave an account cache entry behind.' );
 		$this->assertSame(
 			array(
@@ -555,33 +504,6 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 		$this->assertSame( $expected_errors, $cache['consecutive_errors'] );
 		$this->assertSame( $expected_success, $result['success'] );
 		$this->assertStringStartsWith( $expected_message, $result['message'] );
-	}
-
-	/**
-	 * @testdox The account cache tool neither fetches nor touches the cache when the platform connection is unavailable.
-	 *
-	 * Client 11.1.0 `get_cached_account_data()` returns [] before any cache work when the server is not connected
-	 * (class-wc-payments-account.php:2442-2444), and WooCommerce prints "Tool ran." for an array.
-	 */
-	public function test_clear_account_cache_tool_skips_the_fetch_without_a_platform_connection(): void {
-		$api_client = $this->create_account_api_client( array( 'account_id' => 'acct_unused' ), false, false );
-		wc_get_container()->replace( Client::class, $api_client );
-		wp_set_current_user( self::factory()->user->create( array( 'role' => 'administrator' ) ) );
-		$this->fake_plugin( false );
-		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
-		$this->seed_connected_store();
-		$this->set_setup_tier( WooPaymentsSetupTier::CONNECTED );
-		$cache_before = get_option( 'wcpay_account_data' );
-		$sut          = $this->get_sut();
-		$this->remove_status_hooks( $sut );
-		$sut->register();
-
-		$result = ( new WC_REST_System_Status_Tools_V2_Controller() )->execute_tool( 'clear_wcpay_account_cache' );
-
-		$this->assertSame( 0, $api_client->calls, 'The tool must not fetch without a platform connection.' );
-		$this->assertSame( $cache_before, get_option( 'wcpay_account_data' ), 'The tool must leave the account cache untouched.' );
-		$this->assertTrue( $result['success'] );
-		$this->assertSame( 'Tool ran.', $result['message'] );
 	}
 
 	/**
@@ -814,11 +736,17 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox While the extension owns payments the report leaves the WooPayments section to the extension and reads no fraud settings.
+	 * @testdox Unless the built-in WooPayments owns payments the report renders only its own table and reads no fraud settings ($_dataName).
+	 * @testWith ["yes", true, false, "available"]
+	 *           ["no", false, true, "connected"]
+	 *
+	 * @param string $feature    The WooPayments feature option.
+	 * @param bool   $plugin     Whether the WooPayments extension is active.
+	 * @param bool   $ran_before Whether the store ran the extension before.
+	 * @param string $tier       The stored setup tier.
 	 */
-	public function test_status_report_leaves_the_extension_section_to_the_extension_while_it_owns_payments(): void {
-		$this->fake_plugin( true );
-		$this->set_setup_tier( WooPaymentsSetupTier::AVAILABLE );
+	public function test_status_report_leaves_the_extension_section_to_the_extension_while_it_owns_payments( string $feature, bool $plugin, bool $ran_before, string $tier ): void {
+		$this->set_store_shape( $feature, $plugin, $ran_before, $tier );
 		$api_client = $this->createMock( Client::class );
 		$api_client->expects( $this->never() )->method( 'get_latest_fraud_ruleset' );
 		wc_get_container()->replace( Client::class, $api_client );

@@ -42,7 +42,7 @@ class WooPaymentsCLICommandTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Status lines report owner, the WooPayments feature, preflight failures, and account summary.
+	 * @testdox Status lines come in a fixed order, name the WooPayments feature as its Features page entry does, and report owner, feature, preflight failures and account summary.
 	 */
 	public function test_status_lines_report_runtime_feature_preflight_and_account_summary(): void {
 		$this->fake_plugin( false );
@@ -52,27 +52,15 @@ class WooPaymentsCLICommandTest extends WC_Unit_Test_Case {
 		$lines = wc_get_container()->get( WooPaymentsCLICommand::class )->get_status_lines();
 		$text  = implode( "\n", $lines );
 
+		$this->assertSame(
+			array( 'Runtime owner', 'WooPayments feature', 'Cutover preflight failures', 'Account', 'Gateway enabled', 'Test mode', 'Enabled payment methods', 'WooPay', 'Multi-currency', 'Last fetch of failed webhook events' ),
+			array_map( static fn( string $line ): string => (string) strstr( $line, ':', true ), $lines )
+		);
 		$this->assertStringContainsString( 'Runtime owner: builtin', $text );
 		$this->assertStringContainsString( 'WooPayments feature: yes', $text );
 		$this->assertStringNotContainsString( 'filter', $text );
 		$this->assertStringContainsString( 'Cutover preflight failures:', $text );
 		$this->assertStringContainsString( 'Account: acct_native_test (connected)', $text );
-	}
-
-	/**
-	 * @testdox Status lines come in a fixed order and name the WooPayments feature as its Features page entry does.
-	 */
-	public function test_status_lines_name_the_woopayments_feature(): void {
-		$this->fake_plugin( false );
-		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
-		$this->seed_connected_store();
-
-		$lines = wc_get_container()->get( WooPaymentsCLICommand::class )->get_status_lines();
-
-		$this->assertSame(
-			array( 'Runtime owner', 'WooPayments feature', 'Cutover preflight failures', 'Account', 'Gateway enabled', 'Test mode', 'Enabled payment methods', 'WooPay', 'Multi-currency', 'Last fetch of failed webhook events' ),
-			array_map( static fn( string $line ): string => (string) strstr( $line, ':', true ), $lines )
-		);
 	}
 
 	/**
