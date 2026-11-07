@@ -115,7 +115,7 @@ class SessionServiceTest extends WC_Unit_Test_Case {
 	 * Client 11.1.0 ANDs should_enable_woopay_on_guest_checkout() into the checkout config's isWooPayEnabled
 	 * (class-wc-payments-checkout.php:198, class-woopay-utilities.php:46-62); its only readers are the email input on Blocks and
 	 * classic checkout (client/checkout/blocks/index.js:123-130, client/checkout/classic/event-handlers.js:165-171), which also
-	 * require isWooPayEmailInputEnabled.
+	 * require isWooPayEmailInputEnabled. The wcpay_is_woopay_email_input_enabled filter can switch the lookup off for anyone.
 	 *
 	 * @dataProvider guest_rule_provider
 	 *
@@ -123,10 +123,14 @@ class SessionServiceTest extends WC_Unit_Test_Case {
 	 * @param bool   $logged_in                  Whether the shopper is logged in.
 	 * @param string $guest_checkout             woocommerce_enable_guest_checkout value.
 	 * @param bool   $cart_contains_subscription Whether the cart holds a subscription.
+	 * @param bool   $filter_allows              Whether the wcpay_is_woopay_email_input_enabled filter leaves the lookup on.
 	 * @param bool   $expected                   Whether the email lookup is offered.
 	 */
-	public function test_checkout_config_applies_the_guest_rule_to_the_woopay_email_input( string $shopper, bool $logged_in, string $guest_checkout, bool $cart_contains_subscription, bool $expected ): void {
+	public function test_checkout_config_applies_the_guest_rule_to_the_woopay_email_input( string $shopper, bool $logged_in, string $guest_checkout, bool $cart_contains_subscription, bool $filter_allows, bool $expected ): void {
 		unset( $shopper );
+		if ( ! $filter_allows ) {
+			add_filter( 'wcpay_is_woopay_email_input_enabled', '__return_false' );
+		}
 		update_option( 'woocommerce_enable_guest_checkout', $guest_checkout );
 		wp_set_current_user( $logged_in ? self::factory()->user->create() : 0 );
 		$sut = $this->create_service();
@@ -141,15 +145,16 @@ class SessionServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * Shoppers the client's guest rule includes or excludes.
 	 *
-	 * @return array<string,array{0:string,1:bool,2:string,3:bool,4:bool}>
+	 * @return array<string,array{0:string,1:bool,2:string,3:bool,4:bool,5:bool}>
 	 */
 	public function guest_rule_provider(): array {
 		return array(
-			'guest with guest checkout on'              => array( 'guest with guest checkout on', false, 'yes', false, true ),
-			'guest with guest checkout off'             => array( 'guest with guest checkout off', false, 'no', false, false ),
-			'guest with a subscription in the cart'     => array( 'guest with a subscription in the cart', false, 'yes', true, false ),
-			'logged-in shopper with guest checkout off' => array( 'logged-in shopper with guest checkout off', true, 'no', false, true ),
-			'logged-in shopper with a subscription in the cart' => array( 'logged-in shopper with a subscription in the cart', true, 'no', true, true ),
+			'guest with guest checkout on'              => array( 'guest with guest checkout on', false, 'yes', false, true, true ),
+			'guest with guest checkout off'             => array( 'guest with guest checkout off', false, 'no', false, true, false ),
+			'guest with a subscription in the cart'     => array( 'guest with a subscription in the cart', false, 'yes', true, true, false ),
+			'logged-in shopper with guest checkout off' => array( 'logged-in shopper with guest checkout off', true, 'no', false, true, true ),
+			'logged-in shopper with a subscription in the cart' => array( 'logged-in shopper with a subscription in the cart', true, 'no', true, true, true ),
+			'logged-in shopper, the email input filtered off' => array( 'logged-in shopper, the email input filtered off', true, 'no', false, false, false ),
 		);
 	}
 
@@ -363,53 +368,90 @@ class SessionServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should preserve the WooPay string user session in init payloads.
+	 * @testdox The init-session request carries the WooPay user session, the versioned Store API URL, the Subscriptions flag (active: $subscriptions_active), the adapted extensions' data, the WooPayments compatibility version and the shopper's Tracks identity.
+	 *
+	 * Client 11.1.0 sends the Store API cart route's namespace (includes/woopay/class-woopay-session.php:908-919) and the
+	 * registry's extension data (:584-585), in the shape Affiliate for WooCommerce gets
+	 * (includes/woopay/class-woopay-adapted-extensions.php:172-176). The version is the WooPayments compatibility version, not
+	 * WooCommerce's, in the minimum session too. SubscriptionMethodPolicy asks class_exists() through LegacyProxy, so each
+	 * case answers it for WC_Subscriptions.
+	 *
+	 * @testWith [false]
+	 *           [true]
+	 *
+	 * @param bool $subscriptions_active Whether the WC_Subscriptions class is loaded.
 	 */
-	public function test_preserves_string_user_session_in_init_payloads(): void {
-		$sut    = $this->create_service();
-		$result = $sut->start_init_session_request( 'shopper@example.com', 'qwerty123' );
-
-		$this->assertSame( 'qwerty123', $result['user_session'] );
-	}
-
-	/**
-	 * @testdox Should fall back to the theme custom logo in WooPay init session store data.
-	 */
-	public function test_init_session_request_uses_theme_custom_logo_when_woopay_logo_is_not_configured(): void {
-		$custom_logo_id = 123;
-		$filter         = static function ( $downsize, $id, $size ) use ( $custom_logo_id ) {
-			if ( $custom_logo_id === $id && 'full' === $size ) {
-				return array( 'https://example.test/theme-logo.png', 128, 64, false );
-			}
-
-			return $downsize;
-		};
-		add_filter( 'image_downsize', $filter, 10, 3 );
-		set_theme_mod( 'custom_logo', $custom_logo_id );
-
-		try {
-			$sut    = $this->create_service();
-			$result = $sut->start_init_session_request( 'shopper@example.com', 'qwerty123' );
-
-			$this->assertSame( 'https://example.test/theme-logo.png', $result['store_data']['store_logo'] );
-		} finally {
-			remove_filter( 'image_downsize', $filter, 10 );
-		}
-	}
-
-	/**
-	 * @testdox Should send the WooPay store logo file URL when a custom logo is configured.
-	 */
-	public function test_init_session_request_uses_configured_woopay_store_logo_file_url(): void {
-		$sut = $this->create_service(
+	public function test_init_session_request_carries_the_store_fields( bool $subscriptions_active ): void {
+		$this->register_legacy_proxy_function_mocks(
 			array(
-				'platform_checkout_store_logo' => 'file_logo',
+				'class_exists' => static fn( $class_name, ...$rest ) => 'WC_Subscriptions' === $class_name ? $subscriptions_active : class_exists( $class_name, ...$rest ),
 			)
 		);
+		$adapted_extensions = new class() extends AdaptedExtensions {
+			/**
+			 * Get the extension data of an active Affiliate for WooCommerce referral.
+			 *
+			 * @return array<string,mixed>
+			 */
+			public function get_extension_data(): array {
+				return array( 'affiliate-for-woocommerce' => array( 'affiliate-user' => 42 ) );
+			}
+		};
+
+		$sut     = $this->create_service( array(), array(), $adapted_extensions );
+		$version = \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsClientVersion::VERSION;
+
+		$request = $sut->start_init_session_request( 'shopper@example.com', 'qwerty123' );
+
+		$this->assertSame( 'qwerty123', $request['user_session'] );
+		$this->assertSame( get_rest_url( null, 'wc/store/v1' ), $request['store_data']['store_api_url'] );
+		$this->assertSame( $subscriptions_active, $request['store_data']['is_subscriptions_plugin_active'] );
+		$this->assertSame( array( 'affiliate-for-woocommerce' => array( 'affiliate-user' => 42 ) ), $request['extension_data'] );
+		$this->assertSame( $version, $request['wcpay_version'] );
+		$this->assertSame( $version, $sut->get_minimum_session_data()['wcpay_version'], 'The minimum session reports the same version.' );
+		$this->assertSame( 'anon', $request['tracks_user_identity']['_ut'] );
+		$this->assertNotEmpty( $request['tracks_user_identity']['_ui'] );
+	}
+
+	/**
+	 * Store logo settings and the logo the init-session request sends.
+	 *
+	 * @return array<string,array{0:string|null,1:string}>
+	 */
+	public function store_logo_provider(): array {
+		return array(
+			'no WooPay logo configured, the theme logo' => array( null, 'https://example.test/theme-logo.png' ),
+			'a configured WooPay logo file'             => array( 'file_logo', get_rest_url( null, 'wc/v3/payments/file/file_logo' ) ),
+		);
+	}
+
+	/**
+	 * @testdox WooPay init session store data carries the configured WooPay logo file, else the theme custom logo: $_dataName.
+	 * @dataProvider store_logo_provider
+	 *
+	 * @param string|null $logo_setting The platform_checkout_store_logo setting, or null for none.
+	 * @param string      $expected     The store_logo the request sends.
+	 */
+	public function test_init_session_request_sends_the_store_logo( ?string $logo_setting, string $expected ): void {
+		$custom_logo_id = 123;
+		add_filter(
+			'image_downsize',
+			static function ( $downsize, $id, $size ) use ( $custom_logo_id ) {
+				if ( $custom_logo_id === $id && 'full' === $size ) {
+					return array( 'https://example.test/theme-logo.png', 128, 64, false );
+				}
+
+				return $downsize;
+			},
+			10,
+			3
+		);
+		set_theme_mod( 'custom_logo', $custom_logo_id );
+		$sut = $this->create_service( null === $logo_setting ? array() : array( 'platform_checkout_store_logo' => $logo_setting ) );
 
 		$result = $sut->start_init_session_request( 'shopper@example.com', 'qwerty123' );
 
-		$this->assertSame( get_rest_url( null, 'wc/v3/payments/file/file_logo' ), $result['store_data']['store_logo'] );
+		$this->assertSame( $expected, $result['store_data']['store_logo'] );
 	}
 
 	/**
@@ -440,43 +482,6 @@ class SessionServiceTest extends WC_Unit_Test_Case {
 			'By placing this order, you agree to our <a href="' . esc_url( (string) get_permalink( $terms_page ) ) . '">Terms of Service</a> and understand our Privacy Policy.',
 			$result['store_data']['custom_message']
 		);
-	}
-
-	/**
-	 * @testdox WooPay session data names the versioned Store API base, wc/store/v1.
-	 *
-	 * Client 11.1.0 class-woopay-session.php:908-919 sends the Store API cart route's namespace.
-	 */
-	public function test_init_session_request_sends_the_versioned_store_api_url(): void {
-		$result = $this->create_service()->start_init_session_request( 'shopper@example.com' );
-
-		$this->assertSame( get_rest_url( null, 'wc/store/v1' ), $result['store_data']['store_api_url'] );
-	}
-
-	/**
-	 * @testdox WooPay session data reports WooCommerce Subscriptions inactive while its class is not loaded.
-	 */
-	public function test_init_session_request_reports_woocommerce_subscriptions_inactive(): void {
-		$result = $this->create_service()->start_init_session_request( 'shopper@example.com' );
-
-		$this->assertFalse( $result['store_data']['is_subscriptions_plugin_active'] );
-	}
-
-	/**
-	 * @testdox WooPay session data reports WooCommerce Subscriptions active once its class is loaded.
-	 *
-	 * SubscriptionMethodPolicy asks class_exists() through LegacyProxy, so the class is reported loaded for this test only.
-	 */
-	public function test_init_session_request_reports_woocommerce_subscriptions_active(): void {
-		$this->register_legacy_proxy_function_mocks(
-			array(
-				'class_exists' => static fn( $class_name, ...$rest ) => 'WC_Subscriptions' === $class_name || class_exists( $class_name, ...$rest ),
-			)
-		);
-
-		$result = $this->create_service()->start_init_session_request( 'shopper@example.com' );
-
-		$this->assertTrue( $result['store_data']['is_subscriptions_plugin_active'] );
 	}
 
 	/**
@@ -1795,29 +1800,6 @@ class SessionServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Init session request forwards the extension data of the adapted extensions registry.
-	 *
-	 * Client 11.1.0 puts the registry's extension data in the init request (includes/woopay/class-woopay-session.php:584-585),
-	 * in the shape Affiliate for WooCommerce gets (includes/woopay/class-woopay-adapted-extensions.php:172-176).
-	 */
-	public function test_init_session_request_forwards_extension_data(): void {
-		$adapted_extensions = new class() extends AdaptedExtensions {
-			/**
-			 * Get the extension data of an active Affiliate for WooCommerce referral.
-			 *
-			 * @return array<string,mixed>
-			 */
-			public function get_extension_data(): array {
-				return array( 'affiliate-for-woocommerce' => array( 'affiliate-user' => 42 ) );
-			}
-		};
-
-		$request = $this->create_service( array(), array(), $adapted_extensions )->start_init_session_request( 'shopper@example.com' );
-
-		$this->assertSame( array( 'affiliate-for-woocommerce' => array( 'affiliate-user' => 42 ) ), $request['extension_data'] );
-	}
-
-	/**
 	 * @testdox The init-session request email is $_dataName.
 	 * @dataProvider init_session_email_provider
 	 *
@@ -1908,18 +1890,6 @@ class SessionServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should report the WooPayments compatibility version to WooPay, not the WooCommerce core version.
-	 */
-	public function test_woopay_payloads_report_the_woopayments_client_version(): void {
-		$sut = $this->create_service();
-
-		$expected = \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsClientVersion::VERSION;
-
-		$this->assertSame( $expected, $sut->get_minimum_session_data()['wcpay_version'] );
-		$this->assertSame( $expected, $sut->start_init_session_request( 'shopper@example.com' )['wcpay_version'] );
-	}
-
-	/**
 	 * Hosted WooPay redirects a shopper it sends back from direct checkout to the minimum session's checkout URL, through
 	 * sanitize_text_field() and esc_url() (WooPay.php woopay_maybe_redirect_to_merchant_checkout()). Its back-to-store
 	 * and sign-out links read the full session's store data, which a shopper who chose the store from WooPay follows.
@@ -1941,18 +1911,6 @@ class SessionServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( $expected, $minimum_url, 'The minimum session carries the marked URL.' );
 		$this->assertSame( $expected, esc_url( sanitize_text_field( $minimum_url ) ), 'WooPay redirects to it unchanged.' );
 		$this->assertSame( $checkout_url, $sut->start_init_session_request( 'shopper@example.com' )['store_data']['blog_checkout_url'], 'The full session never carries the marker.' );
-	}
-
-	/**
-	 * @testdox Should let the wcpay_is_woopay_email_input_enabled filter switch the email-input flow off.
-	 */
-	public function test_email_input_flag_honors_the_woopayments_extension_filter(): void {
-		add_filter( 'wcpay_is_woopay_email_input_enabled', '__return_false' );
-
-		$sut = $this->create_service();
-
-		$this->assertFalse( $this->woopay_eligibility->is_woopay_email_input_enabled() );
-		$this->assertFalse( $sut->get_woopay_frontend_config( 'checkout' )['isWooPayEmailInputEnabled'] );
 	}
 
 	/**
@@ -1989,17 +1947,6 @@ class SessionServiceTest extends WC_Unit_Test_Case {
 			'theme support off withholds both' => array( 'no', array( array( 'src' => 'https://example.com/font.woff2' ) ), null, array() ),
 			'theme support on falls back to the stored appearance' => array( 'yes', array(), array( 'theme' => 'night' ), null ),
 		);
-	}
-
-	/**
-	 * @testdox Should carry the shopper's Tracks identity in the init-session request.
-	 */
-	public function test_init_session_request_carries_tracks_user_identity(): void {
-		$request = $this->create_service()->start_init_session_request( 'shopper@example.com' );
-
-		$this->assertIsArray( $request['tracks_user_identity'] );
-		$this->assertSame( 'anon', $request['tracks_user_identity']['_ut'] );
-		$this->assertNotEmpty( $request['tracks_user_identity']['_ui'] );
 	}
 
 	/**
