@@ -72,7 +72,7 @@ class WooPaymentsCustomersRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Customer payment methods route fans out over enabled payment method types and returns the WooPayments extension's item shape.
+	 * @testdox Customer payment methods route is registered for any word-character customer ID, fans out over enabled payment method types and returns the WooPayments extension's item shape.
 	 */
 	public function test_route_returns_payment_methods_for_enabled_types(): void {
 		$this->account_service->gateway_settings         = array(
@@ -126,6 +126,7 @@ class WooPaymentsCustomersRestControllerTest extends WC_REST_Unit_Test_Case {
 
 		$response = $this->server->dispatch( new WP_REST_Request( 'GET', '/wc/v3/payments/customers/cus_test/payment_methods' ) );
 
+		$this->assertArrayHasKey( '/wc/v3/payments/customers/(?P<customer_id>\w+)/payment_methods', $this->server->get_routes() );
 		$this->assertSame( 200, $response->get_status() );
 		$this->assertSame(
 			array(
