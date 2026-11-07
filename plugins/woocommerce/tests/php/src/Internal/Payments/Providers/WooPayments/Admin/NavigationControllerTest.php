@@ -1153,67 +1153,6 @@ class NavigationControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should redirect to onboarding when the account is valid but the WordPress.com connection is not working.
-	 */
-	public function test_redirects_to_onboarding_without_a_working_connection(): void {
-		$this->set_admin_user();
-		$sut = $this->create_controller( true, array(), array(), false );
-
-		$url = $this->run_onboarding_redirect( $sut, '/woopayments/transactions' );
-
-		$this->assert_onboarding_redirect( $url, array() );
-	}
-
-	/**
-	 * @testdox Should redirect to onboarding when the connection works but the account is not valid.
-	 * @dataProvider provider_invalid_account_states
-	 *
-	 * @param array<string,mixed> $account_state Account state overrides.
-	 */
-	public function test_redirects_to_onboarding_with_an_invalid_account( array $account_state ): void {
-		$this->set_admin_user();
-		$sut = $this->create_controller( true, $account_state );
-
-		$url = $this->run_onboarding_redirect( $sut, '/woopayments/disputes/details' );
-
-		$this->assert_onboarding_redirect( $url, array() );
-	}
-
-	/**
-	 * Accounts that fail the client's `is_stripe_account_valid()` check.
-	 *
-	 * @return array<string,array{0:array<string,mixed>}>
-	 */
-	public function provider_invalid_account_states(): array {
-		return array(
-			'details not submitted'     => array(
-				array(
-					'is_details_submitted' => false,
-					'has_valid_account_for_admin_navigation' => false,
-				),
-			),
-			'card payments unrequested' => array(
-				array(
-					'has_valid_account_for_admin_navigation' => false,
-				),
-			),
-		);
-	}
-
-	/**
-	 * @testdox Should not redirect WooPayments admin pages with a valid account and a working connection.
-	 * @dataProvider provider_onboarding_redirect_paths
-	 *
-	 * @param string $path Requested native WooPayments route path.
-	 */
-	public function test_does_not_redirect_with_a_valid_account_and_working_connection( string $path ): void {
-		$this->set_admin_user();
-		$sut = $this->create_controller( true );
-
-		$this->assertSame( '', $this->run_onboarding_redirect( $sut, $path ) );
-	}
-
-	/**
 	 * @testdox Should not redirect a test-drive account with a working connection, read from the platform account payload.
 	 * @dataProvider provider_onboarding_redirect_paths
 	 *
@@ -1251,16 +1190,6 @@ class NavigationControllerTest extends WC_Unit_Test_Case {
 		$sut = $this->create_controller_with_account_service( $account_service, true );
 
 		$this->assertSame( '', $this->run_onboarding_redirect( $sut, $path ) );
-	}
-
-	/**
-	 * @testdox Should not redirect the onboarding route itself, so the redirect cannot loop.
-	 */
-	public function test_does_not_redirect_the_onboarding_route(): void {
-		$this->set_admin_user();
-		$sut = $this->create_controller( true, $this->get_no_account_state(), array(), false );
-
-		$this->assertSame( '', $this->run_onboarding_redirect( $sut, '/woopayments/onboarding' ) );
 	}
 
 	/**

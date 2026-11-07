@@ -189,6 +189,7 @@ class OnboardingRedirectTest extends WC_Unit_Test_Case {
 				),
 			),
 			'the settings route without a connection'      => array( false, false, $this->payments_route_request( '/woopayments/settings' ), $settings_from ),
+			'the transactions route with a valid account but no connection' => array( false, true, $this->payments_route_request( '/woopayments/transactions' ), array() ),
 			'the transactions route, connected with an invalid account' => array( true, false, $this->payments_route_request( '/woopayments/transactions' ), array() ),
 		);
 	}
