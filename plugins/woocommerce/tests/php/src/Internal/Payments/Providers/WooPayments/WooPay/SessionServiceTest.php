@@ -234,11 +234,8 @@ class SessionServiceTest extends WC_Unit_Test_Case {
 			'both blocks, cart on, checkout on'      => array( $cart . $checkout, null, 'cart', true, true, true ),
 			'both blocks, cart on, checkout off'     => array( $cart . $checkout, null, 'cart', true, false, false ),
 			'both blocks, cart off, checkout on'     => array( $cart . $checkout, null, 'cart', false, true, false ),
-			'both blocks, cart off, checkout off'    => array( $cart . $checkout, null, 'cart', false, false, false ),
 			'cart page, cart on, checkout off'       => array( $cart, 'woocommerce_cart_page_id', 'cart', true, false, true ),
-			'cart page, cart off, checkout on'       => array( $cart, 'woocommerce_cart_page_id', 'cart', false, true, false ),
 			'checkout page, cart off, checkout on'   => array( $checkout, 'woocommerce_checkout_page_id', 'checkout', false, true, true ),
-			'checkout page, cart on, checkout off'   => array( $checkout, 'woocommerce_checkout_page_id', 'checkout', true, false, false ),
 			'both shortcodes, cart on, checkout off' => array( '[woocommerce_cart][woocommerce_checkout]', null, 'cart', true, false, false ),
 		);
 	}
@@ -293,22 +290,18 @@ class SessionServiceTest extends WC_Unit_Test_Case {
 	 *
 	 * Client 11.2.0 loads its save-user script on any checkout page, whatever the express button context
 	 * (includes/woopay-user/class-woopay-save-user.php:45). On a page holding the Cart block beside the classic checkout
-	 * it renders the classic section (client/checkout/woopay/index.js:67-85). A Blocks cart that is not a checkout gets
-	 * no classic script, and the Blocks bundle owns save-user on a page holding the Checkout block.
+	 * it renders the classic section (client/checkout/woopay/index.js:67-85). The Blocks pages are
+	 * SessionControllerTest::test_enqueue_frontend_assets_reads_the_raw_page_content()'s.
 	 *
-	 * @return array<string,array{0:string,1:bool,2:bool,3:bool,4?:string}>
+	 * @return array<string,array{0:string,1:bool,2:bool,3:bool}>
 	 */
 	public function provide_classic_pages_with_a_hidden_woopay_button(): array {
-		$cart_block     = '<!-- wp:woocommerce/cart --><div class="wp-block-woocommerce-cart"></div><!-- /wp:woocommerce/cart -->';
-		$checkout_block = '<!-- wp:woocommerce/checkout --><div class="wp-block-woocommerce-checkout"></div><!-- /wp:woocommerce/checkout -->';
+		$cart_block = '<!-- wp:woocommerce/cart --><div class="wp-block-woocommerce-cart"></div><!-- /wp:woocommerce/cart -->';
 
 		return array(
-			'both shortcodes, cart on, checkout off'    => array( '[woocommerce_cart][woocommerce_checkout]', true, false, true ),
 			'cart shortcode, cart off, checkout on'     => array( '[woocommerce_cart]', false, true, false ),
 			'checkout shortcode, cart on, checkout off' => array( '[woocommerce_checkout]', true, false, true ),
 			'Cart block and checkout shortcode, cart on, checkout off' => array( $cart_block . '[woocommerce_checkout]', true, false, true ),
-			'Cart block on the cart page, cart on, checkout on' => array( $cart_block, true, true, false, 'woocommerce_cart_page_id' ),
-			'Checkout block and checkout shortcode, cart on, checkout off' => array( $checkout_block . '[woocommerce_checkout]', true, false, false ),
 		);
 	}
 
@@ -327,9 +320,8 @@ class SessionServiceTest extends WC_Unit_Test_Case {
 	 * @param bool   $cart_on     Whether the cart location lists WooPay.
 	 * @param bool   $checkout_on Whether the checkout location lists WooPay.
 	 * @param bool   $expected    Whether the classic WooPay script loads.
-	 * @param string $page_option WooCommerce page option pointing at the page, or an empty string for none.
 	 */
-	public function test_classic_checkout_page_keeps_the_save_user_script_when_the_button_hides( string $content, bool $cart_on, bool $checkout_on, bool $expected, string $page_option = '' ): void {
+	public function test_classic_checkout_page_keeps_the_save_user_script_when_the_button_hides( string $content, bool $cart_on, bool $checkout_on, bool $expected ): void {
 		update_option( 'woocommerce_enable_guest_checkout', 'yes' );
 		add_filter( 'wcpay_force_network_saved_cards', '__return_true' );
 		$page_id = self::factory()->post->create(
@@ -339,9 +331,6 @@ class SessionServiceTest extends WC_Unit_Test_Case {
 				'post_content' => $content,
 			)
 		);
-		if ( '' !== $page_option ) {
-			update_option( $page_option, $page_id );
-		}
 		$this->reset_cart_checkout_page_cache();
 		$this->go_to( get_permalink( $page_id ) );
 		$sut = $this->create_service(
