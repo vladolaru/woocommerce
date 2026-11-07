@@ -196,43 +196,42 @@ class OrderStatusSyncTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A creation lock another request holds stops this request from creating a webhook, even when this request cached the lock as missing.
+	 * @testdox The creation lock: $label.
+	 *
+	 * A lock another request holds stops this request from creating a webhook, even when this request cached the lock as
+	 * missing; an expired lock left by a stopped request is taken over and released after creation.
 	 *
 	 * Fails when the lock goes back to add_option() or update_option(): both trust the request's notoptions cache and upsert, so
-	 * two requests both create a row and the second rotates WooPay's secret.
+	 * two requests both create a row and the second rotates WooPay's secret. Fails when the takeover goes: a request that died
+	 * holding the lock would block the webhook forever. Fails when the release goes: every admin page would then wait for the
+	 * lock to expire.
+	 *
+	 * @testWith ["held by another request", 300, 0, 0, "other-request"]
+	 *           ["expired, left by a stopped request", -10, 1, 1, null]
+	 *
+	 * @param string      $label          Case label.
+	 * @param int         $expires_in     Seconds until the lock row expires.
+	 * @param int         $webhooks       How many WooPay webhooks exist after the admin page.
+	 * @param int         $platform_calls How many secrets are registered with the platform.
+	 * @param string|null $claim_after    The lock row's value after the admin page, or null when the lock is released.
 	 */
-	public function test_held_creation_lock_blocks_creation(): void {
+	public function test_creation_lock_blocks_creation_until_it_expires( string $label, int $expires_in, int $webhooks, int $platform_calls, ?string $claim_after ): void {
+		unset( $label );
 		$sync = $this->create_sync( true, true );
 		$sync->register();
 		// This request reads the lock as missing, which WordPress records in its notoptions cache.
 		$this->assertFalse( get_option( self::CLAIM_OPTION ) );
 		// Another request then takes the lock.
-		$this->insert_claim_rows( 'other-request', time() + 300 );
+		$this->insert_claim_rows( 'other-request', time() + $expires_in );
 
 		$this->run_admin_init_for( $sync );
 
-		$this->assertSame( array(), $this->find_woopay_webhook_ids() );
-		$this->assertSame( array(), $this->api_client->woopay_updates );
-		$this->assertSame( 'other-request', $this->read_option_row( self::CLAIM_OPTION ), 'The other request must keep its lock.' );
-	}
-
-	/**
-	 * @testdox An expired creation lock left by a stopped request is taken over, and released after creation.
-	 *
-	 * Fails when the takeover goes: a request that died holding the lock would block the webhook forever. Fails when the release
-	 * goes: every admin page would then wait for the lock to expire.
-	 */
-	public function test_expired_creation_lock_is_taken_over_and_released(): void {
-		$sync = $this->create_sync( true, true );
-		$sync->register();
-		$this->insert_claim_rows( 'stopped-request', time() - 10 );
-
-		$this->run_admin_init_for( $sync );
-
-		$this->assertCount( 1, $this->find_woopay_webhook_ids() );
-		$this->assertCount( 1, $this->api_client->woopay_updates );
-		$this->assertNull( $this->read_option_row( self::CLAIM_OPTION ) );
-		$this->assertNull( $this->read_option_row( self::CLAIM_EXPIRY ) );
+		$this->assertCount( $webhooks, $this->find_woopay_webhook_ids() );
+		$this->assertCount( $platform_calls, $this->api_client->woopay_updates );
+		$this->assertSame( $claim_after, $this->read_option_row( self::CLAIM_OPTION ), 'Only a lock another live request holds stays.' );
+		if ( null === $claim_after ) {
+			$this->assertNull( $this->read_option_row( self::CLAIM_EXPIRY ) );
+		}
 	}
 
 	/**
@@ -296,7 +295,9 @@ class OrderStatusSyncTest extends WC_Unit_Test_Case {
 	 * @testdox An account refresh gets the webhook a new secret on the next admin page, on the same row, with no time without a webhook.
 	 *
 	 * Fails when the refresh leaves the secret alone (WooPay never gets a fresh secret, unlike client 11.1.0, which recreates
-	 * the row), when it deletes the row (no webhook until the next admin page), or when it calls the platform itself.
+	 * the row), when it deletes the row (no webhook until the next admin page), or when it calls the platform itself. Fails
+	 * when the rotation saves the row with its first ping still pending: WooCommerce then posts a ping to WooPay's
+	 * merchant-notification endpoint, which client 11.1.0 never does.
 	 */
 	public function test_account_refresh_rotates_the_secret_in_place(): void {
 		$woopayments_extension_webhook = $this->create_woopayments_extension_webhook();
@@ -310,8 +311,28 @@ class OrderStatusSyncTest extends WC_Unit_Test_Case {
 		$this->assertSame( array(), $this->api_client->woopay_updates, 'The refresh itself must not call the platform.' );
 
 		wp_set_current_user( $this->admin_id );
+		$requests = array();
+		add_filter(
+			'pre_http_request',
+			static function ( $preempt, $args, $url ) use ( &$requests ) {
+				unset( $preempt, $args );
+				$requests[] = $url;
+				return array(
+					'headers'  => array(),
+					'body'     => '',
+					'response' => array(
+						'code'    => 200,
+						'message' => 'OK',
+					),
+					'cookies'  => array(),
+				);
+			},
+			10,
+			3
+		);
 		$this->run_admin_init_for( $sync );
 
+		$this->assertSame( array(), $requests, 'The rotation saves the row without a pending ping, so WooCommerce posts nothing to WooPay.' );
 		$secret = wc_get_webhook( $woopayments_extension_webhook->get_id() )->get_secret();
 		$this->assertSame( array( $woopayments_extension_webhook->get_id() ), $this->find_woopay_webhook_ids(), 'The secret must change on the same row.' );
 		$this->assertNotSame( self::WOOPAYMENTS_EXTENSION_SECRET, $secret );
@@ -413,40 +434,6 @@ class OrderStatusSyncTest extends WC_Unit_Test_Case {
 		$this->assertCount( 1, $this->api_client->woopay_updates, 'One refresh asks for one new secret.' );
 		$this->assertSame( $rotated_secret, $this->read_webhook_secret( $woopayments_extension_webhook->get_id() ) );
 		$this->assertNull( $this->read_option_row( self::CLAIM_OPTION ), 'The lock must be released.' );
-	}
-
-	/**
-	 * @testdox Rotating the secret sends no request to WooPay besides the platform call.
-	 *
-	 * Fails when the rotation saves the row with its first ping still pending: WooCommerce then posts a ping to WooPay's
-	 * merchant-notification endpoint, which client 11.1.0 never does.
-	 */
-	public function test_secret_rotation_sends_no_ping_to_woopay(): void {
-		$this->create_woopayments_extension_webhook();
-		$sync = $this->create_sync( true, true );
-		$sync->register();
-		do_action( 'woocommerce_payments_account_refreshed', array() );
-		$requests = array();
-		$record   = static function ( $preempt, $args, $url ) use ( &$requests ) {
-			unset( $preempt, $args );
-			$requests[] = $url;
-			return array(
-				'headers'  => array(),
-				'body'     => '',
-				'response' => array(
-					'code'    => 200,
-					'message' => 'OK',
-				),
-				'cookies'  => array(),
-			);
-		};
-		add_filter( 'pre_http_request', $record, 10, 3 );
-
-		$this->run_admin_init_for( $sync );
-		remove_filter( 'pre_http_request', $record, 10 );
-
-		$this->assertCount( 1, $this->api_client->woopay_updates, 'The rotation must have run.' );
-		$this->assertSame( array(), $requests );
 	}
 
 	/**
