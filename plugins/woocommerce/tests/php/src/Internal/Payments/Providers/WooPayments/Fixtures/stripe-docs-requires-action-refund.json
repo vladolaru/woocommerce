@@ -1,0 +1,56 @@
+{
+	"_meta": {
+		"recording": "none: HAND-BUILT, not recorded",
+		"hand_built": true,
+		"why": "No WooPayments payment method reaches requires_action today: Stripe uses it only for refunds that need the customer's bank details (Konbini, PromptPay, Boleto, bank transfers; https://docs.stripe.com/refunds#requires-action), and WooPayments offers none of them. A real test-mode Multibanco refund returned pending, then succeeded.",
+		"sources": [
+			"https://docs.stripe.com/api/refunds/object (status: pending, requires_action, succeeded, failed or canceled; next_action with type and display_details: email_sent.email_sent_at, email_sent.email_sent_to, expires_at; balance_transaction nullable)",
+			"https://docs.stripe.com/refunds#requires-action (next_action.type display_details; requires_action then pending then succeeded)"
+		],
+		"base": "The refund POST answer recorded on local WPCOM for a test-mode Multibanco refund (store :8889, 2026-10-10, charge py_3UOxgVBzWlxcwgpP1cKazbgW, 3.00 EUR), with the expanded payment_intent reduced to its ID, then changed as listed in changes.",
+		"changes": "id replaced; status pending to requires_action; pending_reason removed; balance_transaction set to null (no money has moved yet); metadata set to a hand-built marker and native's refund_source; next_action added in the documented shape, its email REDACTED and its timestamps hand-picked",
+		"sanitized": "email_sent_to REDACTED; no keys, tokens or other emails"
+	},
+	"entries": [
+		{
+			"pair": "refund_requires_action",
+			"response": {
+				"http_status": 200,
+				"content_type": "application/json; charset=UTF-8",
+				"body": {
+					"id": "pyr_handbuilt_f458_requires_action",
+					"object": "refund",
+					"amount": 300,
+					"balance_transaction": null,
+					"charge": "py_3UOxgVBzWlxcwgpP1cKazbgW",
+					"created": 1791628781,
+					"currency": "eur",
+					"customer": null,
+					"customer_account": null,
+					"metadata": {
+						"merchant_refund_reason": "requested_by_customer",
+						"refund_attempt": "key_handbuilt_f458_u1",
+						"refund_source": "woocommerce_core"
+					},
+					"payment_intent": "pi_3UOxgVBzWlxcwgpP1zTcaI7s",
+					"payment_method": null,
+					"reason": "requested_by_customer",
+					"receipt_number": null,
+					"source_transfer_reversal": null,
+					"status": "requires_action",
+					"transfer_reversal": null,
+					"next_action": {
+						"type": "display_details",
+						"display_details": {
+							"email_sent": {
+								"email_sent_at": 1791628800,
+								"email_sent_to": "REDACTED"
+							},
+							"expires_at": 1792233600
+						}
+					}
+				}
+			}
+		}
+	]
+}

@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Show the multi-currency automatic switch banner on the storefront, naming the store currency.

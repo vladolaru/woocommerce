@@ -1,0 +1,4 @@
+Significance: patch
+Type: dev
+Comment: WooPayments onboarding gets its API client and account service through init(); no behaviour change.
+

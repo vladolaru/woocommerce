@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+The WooPayments transactions, payouts and disputes advanced filters can now match any filter as well as all, and the payouts list no longer sends its search text as the match argument.

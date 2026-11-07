@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Open the WooPayments dashboard in a new tab from the Overview update-details task when there are fewer than two requirement errors, as WooPayments does.

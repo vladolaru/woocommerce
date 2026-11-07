@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Show the instant payout amount, service fee and net amount, the payout date and status, and the mapped failure reason on WooPayments payout details.

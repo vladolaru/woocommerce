@@ -1,0 +1,4 @@
+Significance: patch
+Type: add
+
+Allow Search controls to receive an accessible name.

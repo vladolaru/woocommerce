@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+The WooPayments dispute notice on the order screen now sits under the test mode notice, and the test mode notice shows its warning icon.

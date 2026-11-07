@@ -1,0 +1,40 @@
+{
+	"schema_version": 2,
+	"slice_id": "multi-currency-rounding-deferral",
+	"wc_base_commit": "92b2fc3376f6a5ce47d283656cb0c06dc569fb9f",
+	"verified_at_commit": "6e5cf3c000a5534fb3104b34b0d2bd4e571c4b3c",
+	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+	"source_test_paths": [
+		"plugins/woocommerce/tests/e2e/tests/woopayments-native/evidence/calibration-notes.md"
+	],
+	"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+	"contract_ids": [
+		"default::chromium::tests/e2e/specs/wcpay/merchant/multi-currency-setup.spec.ts:159::Multi-currency setup › Currency settings › can change the rounding precision manually"
+	],
+	"targets": [
+		{
+			"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/scenarios/multi-currency.ts",
+			"contract": "pending"
+		}
+	],
+	"implementation_commits": [],
+	"verification": [],
+	"reviews": [
+		{
+			"role": "deferral",
+			"verdict": "APPROVE",
+			"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+			"summary": "Fresh broad review approved pre-review evidence SHA fda1763bea639ec35d51ba86caf9ae25404db2d79031a13751fb8f6823acf65b against ledger SHA 613a637c0381ba9b7850a98cb6294cbfa969e170e2d639cf0bf1f5157d8234b6 with no findings. Exactly fields 37-40 changed on the specified line-159 rounding row; fields 1-36 and all sibling rows remain untouched. Standing native readiness is the earliest legal blocker. The evidence correctly preserves the 0.5-versus-0.50 semantic reload mismatch as a future bounded RED candidate rather than a known gap, binds one complete no-replay settings write to cold raw persistence, fresh GET, semantic reload, and a separately owned fresh shopper session proving exact CHF 1481.50 minor units, and covers complete restoration journals, exact-resource quarantine, accessibility, source/target drift, and a provider/listener-free boundary."
+		}
+	],
+	"closures": [],
+	"known_gaps": [],
+	"deferral": {
+		"blocker": "Standing-native readiness fails before the authenticated rounding-settings, cold persistence, semantic reload, and fresh-shopper joins can run; the provisional shared scenario is absent; and the exact target contract, owner, deterministic USD/CHF product, locale, cache, session, raw snapshot, and row-safe restoration topology remain pending. Core exposes the intended 0.50 ceiling increment and persists numeric 0.5, but static inspection predicts that a cold value normalized to string 0.5 will not select the enumerated string 0.50 option after reload. That bounded readback candidate requires an exact runnable target before it can become a formal known gap.",
+		"affected_scope": "Only one enumerated CHF ceiling-rounding transition: start with enabled CHF at manual rate 1.20, raw rounding zero, raw charm zero, pinned CHF format, and a unique non-taxable USD 1234.56 product; submit exactly one complete CHF settings POST with rounding 0.5 and unchanged companions; join response, cold raw values, fresh GET, and reloaded editor state; then in a new disposable session explicitly select CHF and prove exact CHF 1481.50 minor-unit-normalized pricing with pinned code, symbol, separators, position, and product identity. Manual-rate persistence, charm, decimal-count formatting, arbitrary input, taxes, checkout, orders, payments, and provider records remain separate.",
+		"no_allowlisted_action_reason": "The run cannot establish native account/callback readiness, repair shared sites, invent the pending target/owner/topology, or seed deterministic product, cache, locale, and session state without complete pre-write journals. A success notice, component/calculator test, warm value, inherited shopper cookie, localized parseFloat, or shopper amount alone cannot substitute for one no-replay request, cold raw persistence, semantic 0.50 reload, a separately owned selected-currency occurrence, exact upward-ceiling minor units, structured currency identity, and byte-exact restoration. No provider writer or payment listener can unlock this local rounding contract.",
+		"reference": "blocked-environment:PILOT-NATIVE-READINESS",
+		"unlock_decision": "Externally satisfy native readiness; approve a row-safe target and implementation owner; provide an enabled-CHF USD-default fixture with a unique USD 1234.56 product, manual rate 1.20, zero rounding and charm, pinned CHF locale, pre-warmed catalog/cache, ordered settings/product/locale/session ownership, complete wildcard and product/session snapshots, and separate setup, behavior, and restoration journals. Run one semantic 0.50 save and one disposable shopper-session occurrence with one worker, zero retries, and no replay; join response, cold raw 0.5, fresh GET, semantic 0.50 reload, and exact CHF 1481.50 formatting. If the predicted 0.5-versus-0.50 mismatch is the exact first RED after all prerequisites pass, use the bounded-defect workflow, then obtain fresh code, E2E-test, reliability, and accessibility reviews.",
+		"quarantine_status": "No browser context, account, store, option, currency/rate/product fixture, locale, session, cache, lock, journal, provider object, listener, retention record, or quarantine was created or changed for this row. A future ambiguous or duplicate settings request, wrong identity, automatic-rate or provider traffic, cache refresh, wildcard-name drift, incorrect cold persistence, failed semantic reload, wrong ceiling calculation or format, session leak, target drift, ownership loss, or incomplete restoration must preserve diagnostics and quarantine the exact store, settings/cache/locale/product/session graph, browser artifacts, and journal. Do not retry, normalize, weaken the reload oracle, or use sibling helpers for cleanup; no financial or platform provider resource belongs to this contract."
+	}
+}

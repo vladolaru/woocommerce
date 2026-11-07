@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+The WooPayments settings payment methods show the same logos as the WooPayments plugin, including GrabPay, the iDEAL | Wero tile and a generic card icon for cards.

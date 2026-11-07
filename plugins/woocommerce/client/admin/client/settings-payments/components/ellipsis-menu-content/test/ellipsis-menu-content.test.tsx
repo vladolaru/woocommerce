@@ -2,7 +2,7 @@
  * External dependencies
  */
 import { render } from '@testing-library/react';
-import { PaymentsProviderLink } from '@woocommerce/data';
+import { PaymentsProvider, PaymentsProviderLink } from '@woocommerce/data';
 
 /**
  * Internal dependencies
@@ -108,5 +108,56 @@ describe( 'EllipsisMenuContent component', () => {
 		expect( getByText( 'Get support' ) ).toBeInTheDocument();
 		expect( getByText( 'Reset account' ) ).toBeInTheDocument();
 		expect( getByText( 'Disable' ) ).toBeInTheDocument();
+	} );
+
+	it.each( [ 'woocommerce/woocommerce', 'woocommerce-dev/woocommerce' ] )(
+		'does not offer Deactivate for the built-in WooPayments gateway in %s',
+		( pluginFile ) => {
+			const { getByText, queryByText } = render(
+				<EllipsisMenuContent
+					provider={
+						{
+							id: 'woocommerce_payments',
+							_woopayments_builtin: true,
+						} as PaymentsProvider
+					}
+					isSuggestion={ false }
+					isEnabled={ false }
+					links={ links }
+					pluginFile={ pluginFile }
+					onToggle={ () => {} }
+				/>
+			);
+			expect( getByText( 'See pricing & fees' ) ).toBeInTheDocument();
+			expect( queryByText( 'Deactivate' ) ).not.toBeInTheDocument();
+		}
+	);
+
+	it( "offers Deactivate for the WooPayments extension's gateway", () => {
+		const { getByRole } = render(
+			<EllipsisMenuContent
+				provider={ { id: 'woocommerce_payments' } as PaymentsProvider }
+				isSuggestion={ false }
+				isEnabled={ false }
+				links={ links }
+				pluginFile={ 'woocommerce-payments/woocommerce-payments' }
+				onToggle={ () => {} }
+			/>
+		);
+		expect( getByRole( 'button', { name: 'Deactivate' } ) ).toBeEnabled();
+	} );
+
+	it( 'keeps the disabled Deactivate item for other bundled gateways', () => {
+		const { getByRole } = render(
+			<EllipsisMenuContent
+				provider={ { id: 'paypal' } as PaymentsProvider }
+				isSuggestion={ false }
+				isEnabled={ false }
+				links={ links }
+				pluginFile={ 'woocommerce/woocommerce' }
+				onToggle={ () => {} }
+			/>
+		);
+		expect( getByRole( 'button', { name: 'Deactivate' } ) ).toBeDisabled();
 	} );
 } );

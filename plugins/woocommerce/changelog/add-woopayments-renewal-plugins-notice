@@ -1,0 +1,4 @@
+Significance: patch
+Type: add
+
+Warn stores using WooPayments built into WooCommerce when an active plugin charges renewals or installments through the WooPayments extension.

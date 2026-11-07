@@ -1,0 +1,162 @@
+{
+  "schema_version": 2,
+  "slice_id": "refund-settlement-fidelity-closure",
+  "wc_base_commit": "13bf3394e1f294c87651d155dfffc0b7eac2be47",
+  "verified_at_commit": "13bf3394e1f294c87651d155dfffc0b7eac2be47",
+  "reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+  "source_test_paths": [
+    "plugins/woocommerce/tests/e2e/tests/woopayments-native/merchant/provider-fidelity-refunds.spec.ts",
+    "plugins/woocommerce/tests/e2e/utils/woopayments-native/drivers/redirect-methods.ts"
+  ],
+  "source_test_sha256": "431d36c8e77ada91959fc97c95536c71e0d42ffa090d8b7ab14983f267e4a1b3",
+  "contract_ids": [
+    "default::chromium::tests/e2e/specs/wcpay/merchant/merchant-orders-full-refund.spec.ts:38::WooCommerce Payments - Full Refund › should process a full refund for an order",
+    "default::chromium::tests/e2e/specs/wcpay/merchant/merchant-orders-full-refund.spec.ts:62::WooCommerce Payments - Full Refund › should be able to view a refunded transaction",
+    "default::chromium::tests/e2e/specs/wcpay/merchant/merchant-orders-partial-refund.spec.ts:118::Order › Partial refund › Partially refund one product of two product order",
+    "default::chromium::tests/e2e/specs/wcpay/merchant/merchant-orders-partial-refund.spec.ts:118::Order › Partial refund › Refund two products of three product order",
+    "default::chromium::tests/e2e/specs/wcpay/merchant/merchant-orders-multi-currency.spec.ts:114::Admin Multi-Currency Orders › can refund in correct currency",
+    "default::chromium::tests/e2e/specs/wcpay/merchant/merchant-orders-multi-currency.spec.ts:181::Admin Multi-Currency Orders › refund displays correctly on transaction page",
+    "default::chromium::tests/e2e/specs/wcpay/shopper/alipay-checkout-purchase.spec.ts:74::Alipay Checkout › merchant can see and refund an Alipay order",
+    "default::chromium::tests/e2e/specs/wcpay/shopper/shopper-bnpls-checkout.spec.ts:113::BNPL checkout › merchant can see and refund a Affirm order",
+    "default::chromium::tests/e2e/specs/wcpay/shopper/shopper-bnpls-checkout.spec.ts:113::BNPL checkout › merchant can see and refund a Cash App Afterpay order",
+    "default::chromium::tests/e2e/specs/wcpay/shopper/shopper-checkout-purchase-with-upe-methods.spec.ts:131::Local payment method checkout with card testing › merchant can see and refund a Bancontact order"
+  ],
+  "targets": [
+    {
+      "path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/merchant/provider-fidelity-refunds.spec.ts",
+      "contract": "the refund-settlement provider-fidelity family"
+    }
+  ],
+  "implementation_commits": [
+    "ee807fbed23bcec414cc4208d558b9f791f8138c"
+  ],
+  "execution_fixture": {
+    "site": "http://store8889.localhost:8889",
+    "wpcom_blog_id": 4,
+    "account_id": "acct_1TrY2nBzWlxcwgpP",
+    "runtime_owner": "native",
+    "migration_state": "WooPayments client plugin inactive; native runtime owner; Stripe test mode; wpcom-local Transact listener forwarding throughout"
+  },
+  "verification": [
+    {
+      "command": "WCPAY_RUNTIME=native pnpm --dir plugins/woocommerce test:e2e:with-env woopayments-native --project=woopayments-native-provider --workers=1 --retries=0 --grep \"@fidelity:refund-settlement\"",
+      "exit_code": 1,
+      "summary": "Passed 8/9 in 3.8 minutes with one worker and zero retries, on approval 2026-08-14-refund-settlement-rerun. The run exits 1 and that is retained rather than replaced: R6 Bancontact failed and its ledger row is deliberately NOT closed by this packet. R6 cannot be driven on this fixture because WooPaymentsPaymentMethodRegistry gives Bancontact countries [BE] and NativeWooPaymentsGateway::is_available() matches that against the connected account country, which is US here; the account does carry bancontact_payments active, so enabling the method changes nothing. The nine cases this packet does close each passed: R1, R1v, R2 (both allocations), R3, R3v, R4 Alipay, R5 Affirm and R7 Cash App Afterpay with its same-key replay. R7 is an improvement on the 2026-08-12 result, where the replay could not run at all. Lock directory ended clean."
+    },
+    {
+      "command": "WCPAY_RUNTIME=native pnpm --dir plugins/woocommerce test:e2e:with-env woopayments-native --project=woopayments-native-provider --workers=1 --retries=0 --grep \"@fidelity:refund-settlement\"",
+      "exit_code": 1,
+      "summary": "Passed 8/9 with one worker and zero retries, on approval 2026-08-14-country-gate-parity-refund. R6 Bancontact passed after the shopper-country availability fix, while R7 failed when a store REST request ended with a socket hang up. Quarantine receipts and unresolved provider-write attempts both ended at zero, and the payment-method settings were restored. This result is retained as verification history only and does not close R6 because the full family did not reach 9/9."
+    },
+    {
+      "command": "WCPAY_RUNTIME=native pnpm --dir plugins/woocommerce test:e2e:with-env woopayments-native --project=woopayments-native-provider --workers=1 --retries=0 --grep \"@fidelity:refund-settlement\"",
+      "exit_code": 1,
+      "summary": "Passed 8/9 with one worker and zero retries, on approval 2026-08-14-country-gate-parity-refund-2. R6 Bancontact passed, while R7 failed because Chromium could not read the checkout response body. The run quarantined four resources and left one unresolved write attempt. The follow-up audit proved that the only provider object at issue was one test-mode Cash App Afterpay intent in requires_action with amount_received 0 and no charge, refund, or money movement; the run-owned product was removed, all receipts were preserved with a resolution record, and the lock lineage was rotated. No raw provider identifier is retained here. This result is retained as verification history only and does not close R6 because the full family did not reach 9/9."
+    },
+    {
+      "command": "WCPAY_RUNTIME=native pnpm --dir plugins/woocommerce test:e2e:with-env woopayments-native --project=woopayments-native-provider --workers=1 --retries=0 --grep \"@fidelity:refund-settlement\"",
+      "exit_code": 1,
+      "summary": "Passed 8/9 with one worker and zero retries, on approval 2026-08-14-country-gate-parity-refund-3. R6 Bancontact and R7 Cash App Afterpay passed, while R2 failed because its partial refund did not appear on the provider charge within 180 seconds. Quarantine receipts and unresolved provider-write attempts both ended at zero, and the payment-method settings were restored. This result is retained as verification history only and does not close R6 because the full family did not reach 9/9; none of these three new attempts authorizes an R6 ledger closure."
+    },
+    {
+      "command": "WCPAY_RUNTIME=native pnpm --dir plugins/woocommerce test:e2e:with-env woopayments-native --project=woopayments-native-provider --workers=1 --retries=0 --grep \"@fidelity:refund-settlement\"",
+      "exit_code": 0,
+      "summary": "Passed 9/9 in 4.4 minutes with one worker and zero retries, on approval 2026-08-14-refund-reliability-1 — the first complete run this family has had. It follows three reliability fixes made after the four attempts above, each matched to one observed failure: the charge poll now re-asks once when the keep-alive connection dies (the same read-only guard the dispute family already used, extracted so both families share one copy), and the refund-convergence failure now reports the charge refund count, refunded flag and refunded total rather than only \"no refund yet\". No convergence budget was raised and no assertion was weakened; R2, which timed out once, passed here on the unchanged 180-second budget. This run is what closes R6 — every earlier attempt is retained above, including the one where R6 itself failed on the account-country gate. Lock directory ended with zero quarantine receipts and zero unresolved provider write attempts."
+    }
+  ],
+  "reviews": [],
+  "closures": [
+    {
+      "contract_id": "default::chromium::tests/e2e/specs/wcpay/merchant/merchant-orders-full-refund.spec.ts:38::WooCommerce Payments - Full Refund › should process a full refund for an order",
+      "target": {
+        "path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/merchant/provider-fidelity-refunds.spec.ts",
+        "contract": "A full card refund returns the exact paid amount as one succeeded provider refund whose identity WooCommerce stores once against the source charge"
+      },
+      "fidelity_claim": "refund-settlement",
+      "fidelity_case": "R1"
+    },
+    {
+      "contract_id": "default::chromium::tests/e2e/specs/wcpay/merchant/merchant-orders-full-refund.spec.ts:62::WooCommerce Payments - Full Refund › should be able to view a refunded transaction",
+      "target": {
+        "path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/merchant/provider-fidelity-refunds.spec.ts",
+        "contract": "The native transaction view presents the settled refund's amount, refunded status, and merchant-supplied reason within the bounded propagation window"
+      },
+      "fidelity_claim": "refund-settlement",
+      "fidelity_case": "R1v"
+    },
+    {
+      "contract_id": "default::chromium::tests/e2e/specs/wcpay/merchant/merchant-orders-partial-refund.spec.ts:118::Order › Partial refund › Partially refund one product of two product order",
+      "target": {
+        "path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/merchant/provider-fidelity-refunds.spec.ts",
+        "contract": "A partial refund allocated to two order items by item ID settles as one succeeded provider refund and leaves the exact remaining refundable amount"
+      },
+      "fidelity_claim": "refund-settlement",
+      "fidelity_case": "R2"
+    },
+    {
+      "contract_id": "default::chromium::tests/e2e/specs/wcpay/merchant/merchant-orders-partial-refund.spec.ts:118::Order › Partial refund › Refund two products of three product order",
+      "target": {
+        "path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/merchant/provider-fidelity-refunds.spec.ts",
+        "contract": "A partial refund allocated to two order items by item ID settles as one succeeded provider refund and leaves the exact remaining refundable amount"
+      },
+      "fidelity_claim": "refund-settlement",
+      "fidelity_case": "R2"
+    },
+    {
+      "contract_id": "default::chromium::tests/e2e/specs/wcpay/merchant/merchant-orders-multi-currency.spec.ts:114::Admin Multi-Currency Orders › can refund in correct currency",
+      "target": {
+        "path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/merchant/provider-fidelity-refunds.spec.ts",
+        "contract": "A foreign-currency refund settles in the source charge's own currency as one succeeded provider refund that reconciles to its balance transaction"
+      },
+      "fidelity_claim": "refund-settlement",
+      "fidelity_case": "R3"
+    },
+    {
+      "contract_id": "default::chromium::tests/e2e/specs/wcpay/merchant/merchant-orders-multi-currency.spec.ts:181::Admin Multi-Currency Orders › refund displays correctly on transaction page",
+      "target": {
+        "path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/merchant/provider-fidelity-refunds.spec.ts",
+        "contract": "The native transaction view presents the foreign-currency refund's original-currency amount and refunded status within the bounded propagation window"
+      },
+      "fidelity_claim": "refund-settlement",
+      "fidelity_case": "R3v"
+    },
+    {
+      "contract_id": "default::chromium::tests/e2e/specs/wcpay/shopper/alipay-checkout-purchase.spec.ts:74::Alipay Checkout › merchant can see and refund an Alipay order",
+      "target": {
+        "path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/merchant/provider-fidelity-refunds.spec.ts",
+        "contract": "A full refund of an Alipay charge settles as one succeeded provider refund stored on the exact WooCommerce refund"
+      },
+      "fidelity_claim": "refund-settlement",
+      "fidelity_case": "R4"
+    },
+    {
+      "contract_id": "default::chromium::tests/e2e/specs/wcpay/shopper/shopper-bnpls-checkout.spec.ts:113::BNPL checkout › merchant can see and refund a Affirm order",
+      "target": {
+        "path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/merchant/provider-fidelity-refunds.spec.ts",
+        "contract": "A full refund of an Affirm charge settles as one succeeded provider refund stored on the exact WooCommerce refund"
+      },
+      "fidelity_claim": "refund-settlement",
+      "fidelity_case": "R5"
+    },
+    {
+      "contract_id": "default::chromium::tests/e2e/specs/wcpay/shopper/shopper-bnpls-checkout.spec.ts:113::BNPL checkout › merchant can see and refund a Cash App Afterpay order",
+      "target": {
+        "path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/merchant/provider-fidelity-refunds.spec.ts",
+        "contract": "A full refund of a Cash App Afterpay charge settles as one succeeded provider refund, and a byte-identical same-key replay creates no second refund on either side"
+      },
+      "fidelity_claim": "refund-settlement",
+      "fidelity_case": "R7"
+    },
+    {
+      "contract_id": "default::chromium::tests/e2e/specs/wcpay/shopper/shopper-checkout-purchase-with-upe-methods.spec.ts:131::Local payment method checkout with card testing › merchant can see and refund a Bancontact order",
+      "target": {
+        "path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/merchant/provider-fidelity-refunds.spec.ts",
+        "contract": "A full refund of a Bancontact charge settles in EUR as one succeeded provider refund stored on the exact WooCommerce refund"
+      },
+      "fidelity_claim": "refund-settlement",
+      "fidelity_case": "R6"
+    }
+  ],
+  "known_gaps": [],
+  "deferral": null
+}

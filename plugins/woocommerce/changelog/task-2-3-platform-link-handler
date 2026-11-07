@@ -1,0 +1,4 @@
+Significance: minor
+Type: add
+
+Add native handling for WooPayments platform links and onboarding return signals.

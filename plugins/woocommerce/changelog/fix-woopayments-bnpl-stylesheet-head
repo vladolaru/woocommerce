@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Load the WooPayments buy now, pay later messaging styles in the page head on classic themes, so the message area no longer shifts the layout while the page loads.

@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Use the shopper's resolved currency for WooPayments express checkout on product pages.

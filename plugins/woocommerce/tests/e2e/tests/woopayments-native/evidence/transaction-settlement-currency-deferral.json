@@ -1,0 +1,40 @@
+{
+	"schema_version": 2,
+	"slice_id": "transaction-settlement-currency-deferral",
+	"wc_base_commit": "92b2fc3376f6a5ce47d283656cb0c06dc569fb9f",
+	"verified_at_commit": "83030791061887e785cc76674bfa2a25a9e41815",
+	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+	"source_test_paths": [
+		"plugins/woocommerce/tests/e2e/tests/woopayments-native/evidence/calibration-notes.md"
+	],
+	"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+	"contract_ids": [
+		"default::chromium::tests/e2e/specs/wcpay/merchant/merchant-orders-multi-currency.spec.ts:88::Admin Multi-Currency Orders › transaction page shows converted merchant currency"
+	],
+	"targets": [
+		{
+			"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/scenarios/multi-currency.ts",
+			"contract": "pending"
+		}
+	],
+	"implementation_commits": [],
+	"verification": [],
+	"reviews": [
+		{
+			"role": "deferral",
+			"verdict": "APPROVE",
+			"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+			"summary": "Fresh broad review approved with no material findings after independently verifying the exact line-88 boundary; the four-field-only transition preserving target, pending contract, and owner; product-fix commit 83030791061887e785cc76674bfa2a25a9e41815 bound to predecessor fab11e07928c69718529f60a55f49ca7b688f39f; the calibration source and hash convention; fresh O3/PI3/C3/BT3 identities; exact A_EUR, S_USD, F_USD, N_USD, settlement-rate, and N_USD = S_USD - F_USD reconciliation; independent order-conversion and provider-settlement rates; no cross-row borrowing or lower-layer substitution; protected allocation, listener, lock, journal, no-replay, bounded-read, restoration, cleanup, retention, and quarantine safeguards; PILOT readiness as the first blocker; zero provider-resource use; and no claim of provider-backed runtime execution."
+		}
+	],
+	"closures": [],
+	"known_gaps": [],
+	"deferral": {
+		"blocker": "Standing exact-store, account, and callback native readiness fails first. The run also lacks a resolved row-safe target contract and owner; approved deterministic USD-store/EUR-shopper order-conversion and provider-settlement rate oracles; protected provider allocation and one exclusively owned listener; exact account, store, feature/currency/rate/setting, provider-write, and financial-record locks; a durable checkout journal; bounded same-record order/provider/transaction reads; option-existence plus byte-exact global and shopper-session restoration; and approved retained-record, local/context cleanup, and quarantine handling.",
+		"affected_scope": "Only line 88 dual-currency settlement presentation: one fresh run-owned product and isolated shopper create unique order O3, intent PI3, charge C3, and balance transaction BT3 with exactly one successful captured EUR charge A_EUR; the exact provider settlement gross S_USD, fee F_USD, net N_USD, and settlement rate are all USD, with N_USD = S_USD - F_USD; the independently observed store/order conversion rate remains distinct from provider settlement FX; and an authenticated authorized merchant semantically discovers the exact related native transaction and sees the exact charge gross in EUR plus exact converted gross, fee, and net with explicit USD codes, reconciled to the same WC and provider records. It claims no line-54 order display, line-70 charge-gross-only contract, line-114 refund mutation, line-181 refunded timeline, pi_ order link, plugin route, CSS/DOM structure, literal copy, or symbol-only oracle. The bounded native presentation defect was fixed separately in 83030791061887e785cc76674bfa2a25a9e41815; deterministic tests do not substitute for this provider-backed contract.",
+		"no_allowlisted_action_reason": "No allowlisted action can repair standing native readiness, resolve the shared target/owner topology, approve deterministic order-conversion and provider-settlement rate semantics, allocate the protected provider lane, establish exclusive listener attribution, or approve exact locks, journal, byte restoration, retained-record, cleanup, and quarantine controls. Lower component/page tests prove the corrected data precedence and presentation only; they cannot establish one exact provider-backed EUR charge settling in USD or reconcile exact settlement amount, fee, net, rate, identity, and occurrence. Replaying checkout after dispatch to erase uncertainty is forbidden.",
+		"reference": "blocked-environment:PILOT-NATIVE-READINESS",
+		"unlock_decision": "Externally provide successful exact-store/account/callback native readiness; resolve a row-safe target and owner; approve deterministic USD-store/EUR-shopper order-conversion and provider-settlement rate semantics, protected allocation, and retained-record policy; obtain one exclusively owned listener; then run once with one worker and zero retries under ordered account/store/feature/currency/rate/setting/provider-write/record locks, one pre-dispatch checkout journal, exact one-occurrence O3/PI3/C3/BT3 identities, exact A_EUR/S_USD/F_USD/N_USD/rate and N_USD = S_USD - F_USD reconciliation, independently captured order-conversion rate, semantic merchant navigation, no replay, shrinking-deadline convergence, byte-exact restoration, safe local/context cleanup, and fail-closed quarantine. Use row-specific targets or explicitly reopen/re-close after shared-target drift.",
+		"quarantine_status": "This deferral and its deterministic product fix allocated and mutated no store/provider resource, acquired no lease, lock, setting, shopper session, journal, browser, provider record, or quarantine, and consumed no provider capacity. Campaign inventory remains zero for active leases, transition workspaces, open provider/restoration journals, quarantine receipts/events, and stale recoveries. The existing separately owned listener remains present, unavailable, and untouched. Any uncertain checkout, event, rate, settlement, restoration, session cleanup, local cleanup, lock, listener, or attribution state must preserve journals, quarantine affected resources, and must not be replayed."
+	}
+}

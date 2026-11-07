@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Show the "Error retrieving transaction." snackbar on the order screen when WooPayments cannot load the payment, like the WooPayments plugin.

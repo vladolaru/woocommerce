@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+When WooPayments settings fail to load, leave the payment methods card empty instead of claiming no methods are available, and keep the test account notice on the express checkout pages.

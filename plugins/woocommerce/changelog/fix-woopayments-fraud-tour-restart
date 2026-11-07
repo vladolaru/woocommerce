@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Stop the WooPayments fraud protection tour from starting again after it was finished, when another setting is changed.

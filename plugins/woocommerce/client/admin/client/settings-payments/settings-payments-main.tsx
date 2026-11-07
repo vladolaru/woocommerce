@@ -8,6 +8,7 @@ import {
 	paymentSettingsStore,
 	PaymentsProvider,
 	PaymentsEntity,
+	PaymentsProviderType,
 } from '@woocommerce/data';
 import {
 	dispatch,
@@ -28,6 +29,7 @@ import './settings-payments-body.scss';
 import { createNoticesFromResponse } from '~/lib/notices';
 import { OtherPaymentGateways } from '~/settings-payments/components/other-payment-gateways';
 import { PaymentGateways } from '~/settings-payments/components/payment-gateways';
+import { WooPaymentsAdminNoticeItem } from '~/settings-payments/components/woopayments-admin-notices';
 import { IncentiveBanner } from '~/settings-payments/components/incentive-banner';
 import { IncentiveModal } from '~/settings-payments/components/incentive-modal';
 import {
@@ -38,6 +40,7 @@ import {
 	isWooPayments,
 	getWooPaymentsFromProviders,
 	providersContainWooPaymentsNeedsSetup,
+	isBuiltinWooPaymentsSuggestion,
 	isIncentiveDismissedEarlierThanTimestamp,
 	isActionIncentive,
 	recordPaymentsEvent,
@@ -48,7 +51,10 @@ import {
 } from '~/settings-payments/utils';
 import { WooPaymentsPostSandboxAccountSetupModal } from '~/settings-payments/components/modals';
 import WooPaymentsModal from '~/settings-payments/onboarding/providers/woopayments';
-import { wooPaymentsOnboardingSessionEntrySettings } from '~/settings-payments/constants';
+import {
+	wooPaymentsOnboardingSessionEntrySettings,
+	wooPaymentsProviderId,
+} from '~/settings-payments/constants';
 
 /**
  * A component that renders the main settings page for managing payment gateways in WooCommerce.
@@ -59,6 +65,10 @@ export const SettingsPaymentsMain = () => {
 	const [ installingPlugin, setInstallingPlugin ] = useState< string | null >(
 		null
 	);
+	const [ hiddenNoticeKey, setHiddenNoticeKey ] = useState< string | null >(
+		null
+	);
+	const containerRef = useRef< HTMLDivElement >( null );
 	// State to hold the sorted providers in case of changing the order, otherwise it will be null
 	const [ sortedProviders, setSortedProviders ] = useState<
 		PaymentsProvider[] | null
@@ -209,6 +219,17 @@ export const SettingsPaymentsMain = () => {
 	const incentiveProvider = providers.find(
 		( provider: PaymentsProvider ) => '_incentive' in provider
 	);
+	const noticeProvider = providers.find(
+		( provider: PaymentsProvider ) =>
+			provider.id === wooPaymentsProviderId &&
+			provider._type === PaymentsProviderType.Gateway
+	);
+	const adminNotice = ! isFetching
+		? noticeProvider?._admin_notice
+		: undefined;
+	const noticeKey = adminNotice
+		? `${ adminNotice.id }:${ adminNotice.stage ?? '' }`
+		: null;
 	const incentive = incentiveProvider ? incentiveProvider._incentive : null;
 
 	// Determine what type of incentive surface to display.
@@ -329,6 +350,18 @@ export const SettingsPaymentsMain = () => {
 						location: businessCountry,
 					},
 				} );
+			}
+
+			if ( isBuiltinWooPaymentsSuggestion( paymentsEntity ) ) {
+				recordPaymentsOnboardingEvent(
+					'woopayments_onboarding_modal_opened',
+					{
+						from: context,
+						source: wooPaymentsOnboardingSessionEntrySettings,
+					}
+				);
+				setIsOnboardingModalOpen( true );
+				return;
 			}
 
 			setInstallingPlugin( paymentsEntity.id );
@@ -456,8 +489,10 @@ export const SettingsPaymentsMain = () => {
 		[
 			installingPlugin,
 			installAndActivatePlugins,
+			attachPaymentExtensionSuggestion,
 			invalidateResolutionForStoreSelector,
 			businessCountry,
+			setIsOnboardingModalOpen,
 		]
 	);
 
@@ -546,7 +581,19 @@ export const SettingsPaymentsMain = () => {
 					setUpPlugin={ setUpPlugin }
 				/>
 			) }
-			<div className="settings-payments-main__container">
+			<div
+				className="settings-payments-main__container"
+				ref={ containerRef }
+				// The notice's focus target, so a page without a notice keeps the container out of the focus order.
+				tabIndex={ adminNotice ? -1 : undefined }
+			>
+				{ adminNotice && noticeKey !== hiddenNoticeKey && (
+					<WooPaymentsAdminNoticeItem
+						notice={ adminNotice }
+						focusTargetRef={ containerRef }
+						onDismiss={ () => setHiddenNoticeKey( noticeKey ) }
+					/>
+				) }
 				<PaymentGateways
 					providers={ sortedProviders || providers }
 					installedPluginSlugs={ installedPluginSlugs }
@@ -580,12 +627,18 @@ export const SettingsPaymentsMain = () => {
 				) }
 			</div>
 			{ ( providersContainWooPaymentsNeedsSetup( providers ) ||
-				providersContainWooPaymentsInTestMode( providers ) ) && (
+				providersContainWooPaymentsInTestMode( providers ) ||
+				// A hidden built-in suggestion is listed among the suggestions and sets up from there.
+				suggestions.some( isBuiltinWooPaymentsSuggestion ) ) && (
 				<WooPaymentsModal
 					isOpen={ isOnboardingModalOpen }
 					setIsOpen={ setIsOnboardingModalOpen }
 					providerData={
 						getWooPaymentsFromProviders( providers ) ||
+						// The hidden built-in suggestion carries the onboarding state the modal reads.
+						( suggestions.find(
+							isBuiltinWooPaymentsSuggestion
+						) as unknown as PaymentsProvider ) ||
 						( {} as PaymentsProvider )
 					}
 				/>

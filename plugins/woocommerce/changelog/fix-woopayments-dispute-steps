@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Add the "Steps you can take" panel to WooPayments disputes awaiting a response, with an email to the customer, and explain why Klarna inquiries cannot be challenged, as WooPayments did.

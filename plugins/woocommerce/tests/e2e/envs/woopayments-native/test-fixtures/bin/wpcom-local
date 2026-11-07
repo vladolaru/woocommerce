@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+printf '%s\twpcom-local %s\n' "$PWD" "$*" >> "$E2E_FAKE_COMMAND_LOG"
+
+if [[ "$*" == *"wcpay callback probe"* ]]; then
+	store_url=''
+	blog_id=''
+	while (( $# > 0 )); do
+		case "$1" in
+			--store-url)
+				store_url="${2:-}"
+				shift 2
+				;;
+			--wpcom-blog-id)
+				blog_id="${2:-}"
+				shift 2
+				;;
+			*)
+				shift
+				;;
+		esac
+	done
+	if [[ "${E2E_FAKE_NATIVE_CALLBACK_FAIL:-0}" == '1' && "$blog_id" == '2' ]]; then
+		printf '{"command":"wcpay callback probe","status":"failure","exit_code":1,"context":{"store_url":"%s","wpcom_blog_id":"%s","callback_registered":"true","callback_reachable":"false"},"summary":"not proven","messages":[],"errors":[{"message":"not proven","failure_class":"postcondition_failure"}],"artifacts":[]}\n' "$store_url" "$blog_id"
+		exit 1
+	fi
+	printf '{"command":"wcpay callback probe","status":"success","exit_code":0,"context":{"store_url":"%s","wpcom_blog_id":"%s","store_route_kind":"dynamic","callback_registered":"true","callback_reachable":"true","callback_auth_model":"jetpack_capability","callback_provider_write":"false","callback_response_result":"success"},"summary":"proven","messages":[],"errors":[],"artifacts":[]}\n' "$store_url" "$blog_id"
+	exit 0
+fi
+
+printf '{"ready":true,"command":"%s"}\n' "$*"

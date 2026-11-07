@@ -1,0 +1,4 @@
+Significance: patch
+Type: dev
+Comment: WooPayments reads the checkout constant through the Constants helper; unchanged in production, which never sets it.
+

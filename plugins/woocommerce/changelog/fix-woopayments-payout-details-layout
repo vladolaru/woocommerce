@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Lay out WooPayments payout details as WooPayments did: the status with its coloured dot, a titled card with the bank account and reference in one row, and no extra navigation links.

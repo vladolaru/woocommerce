@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Write the Multi-currency async price amounts with a dot decimal separator on PHP 7.4 stores whose locale uses a decimal comma, so cached pages no longer show a converted price of zero.

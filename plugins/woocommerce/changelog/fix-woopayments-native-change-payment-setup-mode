@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Fix the WooPayments native change-payment surface building a payment-mode Payment Element from the subscription order total instead of the setup-mode element the surface needs.

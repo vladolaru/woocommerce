@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+The WooPayments payment details page shows how much time is left to capture an authorized payment, including during fraud review.

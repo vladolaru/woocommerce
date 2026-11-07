@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Inset the WooPayments Overview instant payouts unavailable notice inside the Balance card, so its border no longer doubles the card edge.

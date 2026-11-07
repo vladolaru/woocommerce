@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+The WooPayments Fraud & Risk order box shows check and shield icons for each outcome instead of plain dots.

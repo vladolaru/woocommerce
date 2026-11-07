@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Show the WooPayments payment method details as two columns of labels and values, with the fields WooPayments showed for each payment method.

@@ -66,6 +66,23 @@ setup( 'setup site', async ( { baseURL, restApi } ) => {
 		);
 	} );
 
+	await setup.step( 'configure the WooPayments feature', async () => {
+		// The feature-on CI leg runs the core suites with the built-in WooPayments on. Other runs keep the
+		// install value, 'no', and write nothing.
+		const { WOOPAYMENTS_FEATURE } = process.env;
+		console.log(
+			`WOOPAYMENTS_FEATURE: ${ WOOPAYMENTS_FEATURE ?? '(unset)' }`
+		);
+		if ( WOOPAYMENTS_FEATURE === 'yes' ) {
+			await setOption(
+				request,
+				baseURL,
+				'woocommerce_feature_woopayments_enabled',
+				'yes'
+			);
+		}
+	} );
+
 	await setup.step( 'enable product object caching', async () => {
 		// Always run e2e with product object caching on (the new-install default), so any
 		// flow that bypasses the product CRUD/cache interfaces surfaces as a failure. Set

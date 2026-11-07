@@ -1083,6 +1083,55 @@ class WC_REST_Order_Refunds_Preview_Test extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Preview shows a refund of an order in another currency at that currency's decimals.
+	 *
+	 * Expected totals are the requests in the order currency (USD, two decimals): 10.50 stays 10.50, and the 0.25 left
+	 * after 17.75 of an 18.00 line is previewed by amount or by quantity. A store-currency order keeps the store's
+	 * precision, where 10.50 is 11.
+	 *
+	 * @testWith ["JPY", 0, "USD", "0", {"refund_total": 10.5}, "10.50"]
+	 *           ["JPY", 0, "USD", "17.75", {"refund_total": 0.25}, "0.25"]
+	 *           ["JPY", 0, "USD", "17.75", {"quantity": 1}, "0.25"]
+	 *           ["USD", 0, "USD", "0", {"refund_total": 10.5}, "11"]
+	 *
+	 * @param string $store_currency Store currency.
+	 * @param int    $store_decimals Store price decimals.
+	 * @param string $order_currency Order currency.
+	 * @param string $refunded       Amount of the 18.00 line refunded before the preview, or "0".
+	 * @param array  $line           Preview fields of the line besides its id.
+	 * @param string $expected_total Expected preview total.
+	 */
+	public function test_preview_uses_order_currency_decimals( string $store_currency, int $store_decimals, string $order_currency, string $refunded, array $line, string $expected_total ): void {
+		update_option( 'woocommerce_currency', $store_currency );
+		update_option( 'woocommerce_price_num_decimals', $store_decimals );
+		$order   = $this->create_order_with_product( 18.00, 1 );
+		$item_id = $this->get_first_line_item_id( $order );
+		$order->set_currency( $order_currency );
+		$order->save();
+
+		if ( '0' !== $refunded ) {
+			$prior = wc_create_refund(
+				array(
+					'order_id'   => $order->get_id(),
+					'amount'     => $refunded,
+					'line_items' => array(
+						$item_id => array(
+							'qty'          => 0,
+							'refund_total' => $refunded,
+						),
+					),
+				)
+			);
+			$this->assertNotWPError( $prior );
+		}
+
+		$response = $this->do_preview_request( $order->get_id(), array( array_merge( array( 'line_item_id' => $item_id ), $line ) ) );
+
+		$this->assertSame( 200, $response->get_status() );
+		$this->assertSame( $expected_total, $response->get_data()['total'] );
+	}
+
+	/**
 	 * Create a completed order with a single product line item.
 	 *
 	 * @param float $unit_price Unit price.

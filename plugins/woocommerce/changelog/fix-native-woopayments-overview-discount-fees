@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+List discounted WooPayments fees on the Overview page in the account's order, for every enabled payment method.

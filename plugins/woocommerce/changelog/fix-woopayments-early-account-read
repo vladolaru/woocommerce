@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Keep native WooPayments account reads made while plugins load from reading as disconnected, so the Documents routes register again.

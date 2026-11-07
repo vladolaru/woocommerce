@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Show amounts in WooPayments order notes in the order currency's format, even when the note is written for a user who selected another currency.

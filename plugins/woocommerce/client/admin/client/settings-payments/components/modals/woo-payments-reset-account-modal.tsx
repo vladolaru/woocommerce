@@ -50,6 +50,16 @@ interface WooPaymentsResetAccountModalProps {
 	 * URL for the reset account API endpoint.
 	 */
 	resetUrl?: string;
+
+	/**
+	 * REST path for the reset account API endpoint, used instead of `resetUrl` when set.
+	 */
+	resetPath?: string;
+
+	/**
+	 * Callback run after a successful reset.
+	 */
+	onResetSuccess?: () => void;
 }
 
 /**
@@ -62,6 +72,8 @@ export const WooPaymentsResetAccountModal = ( {
 	isTestMode,
 	isEmbeddedResetFlow = false,
 	resetUrl,
+	resetPath,
+	onResetSuccess,
 }: WooPaymentsResetAccountModalProps ) => {
 	const [ isResettingAccount, setIsResettingAccount ] = useState( false );
 	const { invalidateResolutionForStoreSelector: invalidatePaymentGateways } =
@@ -77,7 +89,7 @@ export const WooPaymentsResetAccountModal = ( {
 	const handleResetAccount = () => {
 		setIsResettingAccount( true );
 
-		if ( ! resetUrl ) {
+		if ( ! resetUrl && ! resetPath ) {
 			recordPaymentsEvent( 'provider_reset_onboarding_failed', {
 				provider_id: wooPaymentsProviderId,
 				suggestion_id: wooPaymentsSuggestionId,
@@ -96,10 +108,11 @@ export const WooPaymentsResetAccountModal = ( {
 			return;
 		}
 
-		apiFetch( {
-			url: resetUrl,
-			method: 'POST',
-		} )
+		apiFetch(
+			resetPath
+				? { path: resetPath, method: 'POST' }
+				: { url: resetUrl, method: 'POST' }
+		)
 			.then( () => {
 				recordPaymentsEvent( 'provider_reset_onboarding_success', {
 					provider_id: wooPaymentsProviderId,
@@ -110,6 +123,7 @@ export const WooPaymentsResetAccountModal = ( {
 				void invalidatePaymentGateways( 'getPaymentProviders' );
 				// Refresh the WooPayments in-context onboarding store.
 				void invalidateWooPaymentsOnboarding( 'getOnboardingData' );
+				onResetSuccess?.();
 			} )
 			.catch( () => {
 				recordPaymentsEvent( 'provider_reset_onboarding_failed', {

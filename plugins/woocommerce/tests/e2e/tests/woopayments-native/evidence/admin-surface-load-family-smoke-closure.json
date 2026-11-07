@@ -1,0 +1,134 @@
+{
+	"schema_version": 2,
+	"slice_id": "admin-surface-load-family-smoke-closure",
+	"wc_base_commit": "143b1c5ea5d1c2ff63a90e943783ffe815f8a04d",
+	"verified_at_commit": "d07362f10c330255c084cb879b5b0677a6faf115",
+	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+	"source_test_paths": [
+		"plugins/woocommerce/tests/e2e/tests/woopayments-native/merchant/payouts-disputes-smoke.spec.ts"
+	],
+	"source_test_sha256": "177c496fb90dd577e4139b52969e41d76474a286853f3a548df55354fb88438b",
+	"contract_ids": [
+		"default::chromium::tests/e2e/specs/wcpay/merchant/merchant-admin-disputes.spec.ts:15::Merchant disputes › Load the disputes list page",
+		"default::chromium::tests/e2e/specs/subscriptions/merchant/merchant-subscriptions-settings.spec.ts:13::WooCommerce › Settings › Subscriptions › Merchant should be able to load WooCommerce Subscriptions settings tab"
+	],
+	"targets": [
+		{
+			"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/merchant/payouts-disputes-smoke.spec.ts",
+			"contract": "payments admin surfaces load for an authorized merchant without denial, fatal, or failed data fetches"
+		}
+	],
+	"implementation_commits": [
+		"d07362f10c330255c084cb879b5b0677a6faf115"
+	],
+	"verification": [
+		{
+			"command": "WCPAY_RUNTIME=native pnpm --dir plugins/woocommerce test:e2e:with-env woopayments-native --project=woopayments-native-readonly --workers=1 --retries=0 tests/e2e/tests/woopayments-native/merchant/payouts-disputes-smoke.spec.ts",
+			"exit_code": 0,
+			"summary": "The provider-free smoke ran green twice consecutively with one worker and zero retries on the closed bytes, plus a post-amend run. It asserts a connected account, an enabled gateway and an active Subscriptions extension before touching a browser, then drives the payments admin transactions and disputes surfaces and the Subscriptions settings tab as an administrator. Each surface must show none of the denial, fatal or migration failure shapes and then its own heading; each payments surface must additionally report its terminal live-region loaded message and a named column header, which is what distinguishes a loaded surface from rendered chrome. Across the whole run the collector requires at least one matched store REST response and zero failures, counting both HTTP error statuses and network-layer deaths while excluding ordinary navigation aborts. The oracle was mutation-checked in three directions: forcing the disputes routes to answer 500 fails with both the list and summary routes named; returning HTTP 200 with a wrong-shaped body for the same routes - the silent shape the first version passed on - fails at the payload-shape assertion; and deleting the account cache fails at the connected-account precondition. All mutations were reverted and the store verified healthy."
+		},
+		{
+			"command": "pnpm --dir plugins/woocommerce test:e2e:woopayments:controller",
+			"exit_code": 0,
+			"summary": "The full controller passed on the closed proposal before commit in a clean environment: the contract-map validator unit tests, the ledger validation across all 181 contracts including the two reopened rows, the project-routing validator unit tests including the two new annotation bindings, the environment-setup contract tests, and 331 provider-free harness unit tests."
+		}
+	],
+	"reviews": [
+		{
+			"role": "code",
+			"verdict": "APPROVE",
+			"source_test_sha256": "177c496fb90dd577e4139b52969e41d76474a286853f3a548df55354fb88438b",
+			"summary": "Two-round review. The first round blocked on the central oracle not being synchronized to the fetches it claimed to observe: with the pinned data-grid version the list table renders before data arrives, so the surface assertions completed immediately and the following navigation could abort still-inflight requests, which emit no response event. The fix uses an affordance the product already ships - each payments surface publishes a terminal live-region message - so each surface now asserts that message before the run leaves it, which both settles the surface and upgrades the table check from component-mounted to data-resolved. Three further findings were applied: the REST path prefix is derived from the store base URL rather than assumed absolute and the run now requires at least one matched REST response, so the oracle cannot pass vacuously; the login clears cookies first; and the Subscriptions assertion moved off an optional sub-module heading onto the active settings tab and its save control. A further finding exposed a real tension: asserting only the loaded message silently required a seeded store, while this row's packet asks for a loaded-or-empty terminal status - but widening the pattern alone let the silent-failure mutation pass again, because a malformed payload yields zero rows and therefore the empty message. Both properties are kept rather than traded: the live region proves terminality and accepts loaded-or-empty, and a separate read of the disputes route requires its data key to be an array, proving the payload was well-formed independently of row count. Preconditions, headings and failure regexes were each traced to the production sources that emit them, and the decision not to claim the transactions contract was verified against the ledger and the pilot that already annotates it."
+		},
+		{
+			"role": "e2e-tests",
+			"verdict": "APPROVE",
+			"source_test_sha256": "177c496fb90dd577e4139b52969e41d76474a286853f3a548df55354fb88438b",
+			"summary": "Two-round review; both findings resolved. The login now clears cookies before the form fill, closing the stale-session redirect gap. The timing race flagged against the closing assertion is closed without the banned network-idle wait: each payments surface asserts its own terminal live-region message before the run navigates on, so in-flight fetches are settled rather than aborted, and the negative text assertions now run against a settled page and ahead of the heading check so a denial reports as a denial. Locators are role- and text-based throughout with exact heading matching, the response listener is registered before login and all navigation, and the transactions abstention is correct: that contract id is annotated by exactly one other spec."
+		},
+		{
+			"role": "reliability",
+			"verdict": "APPROVE",
+			"source_test_sha256": "177c496fb90dd577e4139b52969e41d76474a286853f3a548df55354fb88438b",
+			"summary": "Two-round review. The oracle now catches network-layer REST failures alongside HTTP-layer ones, excluding only client-cancelled aborts, which is the specific error a surface-to-surface navigation produces; every server-side death reports a distinct error and is still recorded with its path. Preconditions compare a single object with a descriptive message so a failure names which flag is false rather than printing a bare boolean. The spec remains fully read-only - no mutating call anywhere - and every REST helper failure carries HTTP status and body. The added live-region assertions make a hung or slow surface fail attributably rather than silently."
+		},
+		{
+			"role": "accessibility",
+			"verdict": "APPROVE",
+			"source_test_sha256": "177c496fb90dd577e4139b52969e41d76474a286853f3a548df55354fb88438b",
+			"summary": "Two-round review; the blocking finding was the most consequential result of this family. A live probe of the store with the disputes fetch broken showed every assertion in the first version passing while the page announced an error to assistive technology - heading present, table present, no failure text, no failing status code. The fix asserts the surfaces' own screen-reader live region, whose copy distinguishes loading, loaded, empty and error and whose role flips to alert on failure, so the proof now runs through the same channel a screen-reader user consumes; the table check moved to a named column header rather than an unnamed table chosen by document order, and the failure-text checks moved ahead of the heading check. Recorded as inherited product state, not asserted: the payments list tables carry no accessible name, while their load-state and empty-state announcements are well implemented, and a main-landmark assertion was deliberately not added because the only such landmark belongs to the admin chrome rather than the payments app. Two advisories are recorded rather than changed, both judged by their own reviewers not worth holding closure: the column-header names are substring matches, so a future date-like column would make one ambiguous, and the status-region locator is page-wide though verified live to resolve to exactly one element per surface. Both would fail loudly rather than silently."
+		}
+	],
+	"closures": [
+		{
+			"contract_id": "default::chromium::tests/e2e/specs/wcpay/merchant/merchant-admin-disputes.spec.ts:15::Merchant disputes › Load the disputes list page",
+			"target": {
+				"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/merchant/payouts-disputes-smoke.spec.ts",
+				"contract": "payments admin surfaces load for an authorized merchant without denial, fatal, or failed data fetches"
+			},
+			"verification": [
+				{
+					"command": "WCPAY_RUNTIME=native pnpm --dir plugins/woocommerce test:e2e:with-env woopayments-native --project=woopayments-native-readonly --workers=1 --retries=0 tests/e2e/tests/woopayments-native/merchant/payouts-disputes-smoke.spec.ts",
+					"exit_code": 0,
+					"summary": "The disputes surface is proven loaded rather than merely rendered: none of the denial, fatal or migration failure shapes appears, the Disputes heading is visible, the surface's own live region reports the terminal loaded message, and its named column header is visible. The packet's requirement of successful list and summary requests is carried by the failed-REST oracle, which observed matched responses and collected no failure. Mutation-proven in three directions on these bytes."
+				}
+			],
+			"reviews": [
+				{
+					"role": "code",
+					"verdict": "APPROVE",
+					"source_test_sha256": "177c496fb90dd577e4139b52969e41d76474a286853f3a548df55354fb88438b",
+					"summary": "The load proof is the surface's own terminal live-region message, so the oracle is synchronized to the fetches it observes; the REST collector cannot pass vacuously, requiring at least one matched response."
+				},
+				{
+					"role": "e2e-tests",
+					"verdict": "APPROVE",
+					"source_test_sha256": "177c496fb90dd577e4139b52969e41d76474a286853f3a548df55354fb88438b",
+					"summary": "Role and text locators with exact headings, failure checks ordered ahead of the heading, and a settled surface before each navigation; three mutation directions fail at the expected assertions."
+				},
+				{
+					"role": "reliability",
+					"verdict": "APPROVE",
+					"source_test_sha256": "177c496fb90dd577e4139b52969e41d76474a286853f3a548df55354fb88438b",
+					"summary": "Read-only throughout, with cause-proximate REST failures and an oracle that records both HTTP-layer and network-layer deaths while excluding ordinary navigation aborts."
+				}
+			]
+		},
+		{
+			"contract_id": "default::chromium::tests/e2e/specs/subscriptions/merchant/merchant-subscriptions-settings.spec.ts:13::WooCommerce › Settings › Subscriptions › Merchant should be able to load WooCommerce Subscriptions settings tab",
+			"target": {
+				"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/merchant/payouts-disputes-smoke.spec.ts",
+				"contract": "payments admin surfaces load for an authorized merchant without denial, fatal, or failed data fetches"
+			},
+			"verification": [
+				{
+					"command": "WCPAY_RUNTIME=native pnpm --dir plugins/woocommerce test:e2e:with-env woopayments-native --project=woopayments-native-readonly --workers=1 --retries=0 tests/e2e/tests/woopayments-native/merchant/payouts-disputes-smoke.spec.ts",
+					"exit_code": 0,
+					"summary": "The Subscriptions settings surface is proven unbroken by the active payment integration: the tab renders without denial, fatal or migration text, its heading is visible, the Subscriptions tab is the active one within the settings tab navigation, and its form offers a save control. A precondition asserts the Subscriptions extension is active, so the contract cannot pass vacuously on a store that never registered the tab."
+				}
+			],
+			"reviews": [
+				{
+					"role": "code",
+					"verdict": "APPROVE",
+					"source_test_sha256": "177c496fb90dd577e4139b52969e41d76474a286853f3a548df55354fb88438b",
+					"summary": "The load proof is the surface's own terminal live-region message, so the oracle is synchronized to the fetches it observes; the REST collector cannot pass vacuously, requiring at least one matched response."
+				},
+				{
+					"role": "e2e-tests",
+					"verdict": "APPROVE",
+					"source_test_sha256": "177c496fb90dd577e4139b52969e41d76474a286853f3a548df55354fb88438b",
+					"summary": "Role and text locators with exact headings, failure checks ordered ahead of the heading, and a settled surface before each navigation; three mutation directions fail at the expected assertions."
+				},
+				{
+					"role": "reliability",
+					"verdict": "APPROVE",
+					"source_test_sha256": "177c496fb90dd577e4139b52969e41d76474a286853f3a548df55354fb88438b",
+					"summary": "Read-only throughout, with cause-proximate REST failures and an oracle that records both HTTP-layer and network-layer deaths while excluding ordinary navigation aborts."
+				}
+			]
+		}
+	],
+	"known_gaps": [],
+	"deferral": null
+}

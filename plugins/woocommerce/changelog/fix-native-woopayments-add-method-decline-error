@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Show safe, actionable card-decline errors when adding a native WooPayments payment method.

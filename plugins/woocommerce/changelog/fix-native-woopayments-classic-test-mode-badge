@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Preserve the native WooPayments Test Mode badge on classic checkout.

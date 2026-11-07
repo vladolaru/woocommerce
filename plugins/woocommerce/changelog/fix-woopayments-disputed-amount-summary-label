@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+WooPayments transaction summaries now label dispute withdrawals as deductions instead of refunds.

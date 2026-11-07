@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+WooPayments REST routes the WooCommerce mobile apps call answer errors with the same statuses and codes as the WooPayments extension, and the other WooPayments REST routes answer platform failures with a 4xx or 5xx status.

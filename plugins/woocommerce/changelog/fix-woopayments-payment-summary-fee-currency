@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+The WooPayments payment details summary shows the fees without a currency code, so the line no longer wraps on narrow screens.

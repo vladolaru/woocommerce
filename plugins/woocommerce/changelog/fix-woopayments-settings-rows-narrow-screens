@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Restack WooPayments payment method rows on narrow screens as the WooPayments plugin does, so the settings page fits phone widths.

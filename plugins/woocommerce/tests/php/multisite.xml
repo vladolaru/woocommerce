@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+	PHPUnit configuration for the `@group multisite` classes only.
+
+	This is a project-owned config, not WordPress core's own
+	`/wordpress-phpunit/multisite.xml`. Core's file also sets
+	`WP_RUN_CORE_TESTS=1`, which redefines `WP_PLUGIN_DIR` to core's own
+	test-data plugins directory and disrupts the order in which
+	WooCommerce's `init`-hooked registrations (for example custom order
+	post statuses) run relative to the site install sequence. Reusing it
+	verbatim for a plugin's own multisite run produces state that a real
+	multisite request never produces. This file sets only
+	`WP_TESTS_MULTISITE` and otherwise mirrors `phpunit.xml`.
+-->
+<phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	bootstrap="../legacy/bootstrap.php"
+	backupGlobals="false"
+	colors="true"
+	convertErrorsToExceptions="true"
+	convertNoticesToExceptions="true"
+	convertWarningsToExceptions="true"
+	verbose="true"
+	xsi:noNamespaceSchemaLocation="https://schema.phpunit.de/9.3/phpunit.xsd">
+	<php>
+		<const name="WP_TESTS_MULTISITE" value="1" />
+	</php>
+</phpunit>

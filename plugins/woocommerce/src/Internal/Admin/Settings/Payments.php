@@ -489,22 +489,14 @@ class Payments {
 		);
 
 		// Iterate through the payment providers and generate their updated snapshots.
-		// We will use the provider's plugin slug as the key for the snapshot to ensure uniqueness.
+		// Use the provider's canonical extension plugin slug as the key for the snapshot to ensure uniqueness.
 		// For now, we will only focus on the provider state for official extensions, not all the gateways.
 		$new_snapshots = array();
 		foreach ( $payment_providers as $provider ) {
-			if ( empty( $provider['plugin']['slug'] ) ||
-				empty( $provider['id'] ) ||
-				empty( $provider['state'] ) || ! is_array( $provider['state'] ) ||
-				empty( $provider['onboarding']['state'] ) || ! is_array( $provider['onboarding']['state'] ) ||
-				empty( $provider['_type'] ) ||
-				PaymentsProviders::TYPE_GATEWAY !== $provider['_type'] ||
-				empty( $provider['_suggestion_id'] )
-			) {
+			$snapshot_key = $this->get_provider_snapshot_key( $provider );
+			if ( null === $snapshot_key ) {
 				continue;
 			}
-
-			$snapshot_key = $provider['plugin']['slug'];
 
 			// Since we are going after the provider general state, not that of the specific gateway,
 			// we only need to look at the first found gateway from a given provider.
@@ -602,7 +594,7 @@ class Payments {
 			// Search for the provider by its plugin slug.
 			$provider = null;
 			foreach ( $providers as $p ) {
-				if ( isset( $p['plugin']['slug'] ) && $p['plugin']['slug'] === $provider_extension_slug ) {
+				if ( $this->get_provider_snapshot_key( $p ) === $provider_extension_slug ) {
 					$provider = $p;
 					break;
 				}
@@ -621,18 +613,46 @@ class Payments {
 				continue;
 			}
 
-			$this->maybe_track_provider_state_change( $provider, $old_snapshots[ $provider_extension_slug ], $new_snapshot );
+			$this->maybe_track_provider_state_change( $provider, $old_snapshots[ $provider_extension_slug ], $new_snapshot, $provider_extension_slug );
 		}
+	}
+
+	/**
+	 * Get the canonical snapshot key for a provider.
+	 *
+	 * @param array $provider The payment provider details.
+	 *
+	 * @return string|null The canonical extension plugin slug, or null when the provider should not be tracked.
+	 */
+	private function get_provider_snapshot_key( array $provider ): ?string {
+		if ( empty( $provider['plugin']['slug'] ) ||
+			empty( $provider['id'] ) ||
+			empty( $provider['state'] ) || ! is_array( $provider['state'] ) ||
+			empty( $provider['onboarding']['state'] ) || ! is_array( $provider['onboarding']['state'] ) ||
+			empty( $provider['_type'] ) ||
+			PaymentsProviders::TYPE_GATEWAY !== $provider['_type'] ||
+			empty( $provider['_suggestion_id'] )
+		) {
+			return null;
+		}
+
+		$suggestion = $this->providers->get_extension_suggestion_by_id( (string) $provider['_suggestion_id'] );
+		if ( is_array( $suggestion ) && ! empty( $suggestion['plugin']['slug'] ) && is_string( $suggestion['plugin']['slug'] ) ) {
+			return $suggestion['plugin']['slug'];
+		}
+
+		return (string) $provider['plugin']['slug'];
 	}
 
 	/**
 	 * Track the payment provider state change.
 	 *
-	 * @param array $provider       The payment provider details.
-	 * @param array $old_snapshot   The old snapshot of the provider's state.
-	 * @param array $new_snapshot   The new snapshot of the provider's state.
+	 * @param array  $provider                The payment provider details.
+	 * @param array  $old_snapshot            The old snapshot of the provider's state.
+	 * @param array  $new_snapshot            The new snapshot of the provider's state.
+	 * @param string $provider_extension_slug The canonical provider extension plugin slug.
 	 */
-	private function maybe_track_provider_state_change( array $provider, array $old_snapshot, array $new_snapshot ): void {
+	private function maybe_track_provider_state_change( array $provider, array $old_snapshot, array $new_snapshot, string $provider_extension_slug ): void {
 		// Note: Keep the order of the events in a way that makes sense for the onboarding flow.
 
 		// Track extension_active change.
@@ -642,7 +662,7 @@ class Payments {
 				array(
 					'provider_id'             => $provider['id'],
 					'suggestion_id'           => $provider['_suggestion_id'],
-					'provider_extension_slug' => $provider['plugin']['slug'],
+					'provider_extension_slug' => $provider_extension_slug,
 				)
 			);
 
@@ -653,7 +673,7 @@ class Payments {
 					array(
 						'provider_id'             => $provider['id'],
 						'suggestion_id'           => $provider['_suggestion_id'],
-						'provider_extension_slug' => $provider['plugin']['slug'],
+						'provider_extension_slug' => $provider_extension_slug,
 					)
 				);
 			}
@@ -663,7 +683,7 @@ class Payments {
 				array(
 					'provider_id'             => $provider['id'],
 					'suggestion_id'           => $provider['_suggestion_id'],
-					'provider_extension_slug' => $provider['plugin']['slug'],
+					'provider_extension_slug' => $provider_extension_slug,
 				)
 			);
 		}
@@ -675,7 +695,7 @@ class Payments {
 				array(
 					'provider_id'                => $provider['id'],
 					'suggestion_id'              => $provider['_suggestion_id'],
-					'provider_extension_slug'    => $provider['plugin']['slug'],
+					'provider_extension_slug'    => $provider_extension_slug,
 					'provider_account_test_mode' => $old_snapshot['account_test_mode'] ? 'yes' : 'no',
 				)
 			);
@@ -685,7 +705,7 @@ class Payments {
 				array(
 					'provider_id'                => $provider['id'],
 					'suggestion_id'              => $provider['_suggestion_id'],
-					'provider_extension_slug'    => $provider['plugin']['slug'],
+					'provider_extension_slug'    => $provider_extension_slug,
 					'provider_account_test_mode' => $new_snapshot['account_test_mode'] ? 'yes' : 'no',
 				)
 			);
@@ -698,7 +718,7 @@ class Payments {
 				array(
 					'provider_id'             => $provider['id'],
 					'suggestion_id'           => $provider['_suggestion_id'],
-					'provider_extension_slug' => $provider['plugin']['slug'],
+					'provider_extension_slug' => $provider_extension_slug,
 				)
 			);
 		} elseif ( ! $old_snapshot['needs_setup'] && $new_snapshot['needs_setup'] ) {
@@ -707,7 +727,7 @@ class Payments {
 				array(
 					'provider_id'             => $provider['id'],
 					'suggestion_id'           => $provider['_suggestion_id'],
-					'provider_extension_slug' => $provider['plugin']['slug'],
+					'provider_extension_slug' => $provider_extension_slug,
 				)
 			);
 		}
@@ -720,7 +740,7 @@ class Payments {
 					array(
 						'provider_id'             => $provider['id'],
 						'suggestion_id'           => $provider['_suggestion_id'],
-						'provider_extension_slug' => $provider['plugin']['slug'],
+						'provider_extension_slug' => $provider_extension_slug,
 					)
 				);
 			} elseif ( ! $old_snapshot['test_mode'] && $new_snapshot['test_mode'] ) {
@@ -729,7 +749,7 @@ class Payments {
 					array(
 						'provider_id'             => $provider['id'],
 						'suggestion_id'           => $provider['_suggestion_id'],
-						'provider_extension_slug' => $provider['plugin']['slug'],
+						'provider_extension_slug' => $provider_extension_slug,
 					)
 				);
 			}
@@ -743,7 +763,7 @@ class Payments {
 					array(
 						'provider_id'             => $provider['id'],
 						'suggestion_id'           => $provider['_suggestion_id'],
-						'provider_extension_slug' => $provider['plugin']['slug'],
+						'provider_extension_slug' => $provider_extension_slug,
 					)
 				);
 			} elseif ( ! $old_snapshot['account_test_mode'] && $new_snapshot['account_test_mode'] ) {
@@ -752,7 +772,7 @@ class Payments {
 					array(
 						'provider_id'             => $provider['id'],
 						'suggestion_id'           => $provider['_suggestion_id'],
-						'provider_extension_slug' => $provider['plugin']['slug'],
+						'provider_extension_slug' => $provider_extension_slug,
 					)
 				);
 			}

@@ -1,0 +1,126 @@
+{
+	"schema_version": 2,
+	"slice_id": "multi-currency-settlement-fidelity-closure",
+	"wc_base_commit": "d0a07d67525d86e8e8433e23d920328a4879e026",
+	"verified_at_commit": "bf28d48be6206342eef109b8e8de9067d7a3df12",
+	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+	"source_test_paths": [
+		"plugins/woocommerce/tests/e2e/tests/woopayments-native/shopper/provider-fidelity-multi-currency.spec.ts",
+		"plugins/woocommerce/tests/e2e/utils/woopayments-native/drivers/merchant-transactions.ts",
+		"plugins/woocommerce/tests/e2e/utils/woopayments-native/drivers/merchant-transactions.test.ts",
+		"plugins/woocommerce/client/admin/client/woopayments/admin/test/money-movement-pages.test.tsx",
+		"plugins/woocommerce/tests/php/src/Internal/Payments/Providers/WooPayments/WooPaymentsMoneyMovementRestControllerTest.php"
+	],
+	"source_test_sha256": "1a9919b3f7df6a3dd7879eaa374be1a6e0a5a299254b8e04e4e8411e68b61b10",
+	"contract_ids": [
+		"default::chromium::tests/e2e/specs/wcpay/merchant/merchant-orders-multi-currency.spec.ts:54::Admin Multi-Currency Orders › order should display in shopper currency",
+		"default::chromium::tests/e2e/specs/wcpay/merchant/merchant-orders-multi-currency.spec.ts:70::Admin Multi-Currency Orders › transaction page shows shopper currency",
+		"default::chromium::tests/e2e/specs/wcpay/merchant/merchant-orders-multi-currency.spec.ts:88::Admin Multi-Currency Orders › transaction page shows converted merchant currency",
+		"default::chromium::tests/e2e/specs/wcpay/shopper/multi-currency-checkout.spec.ts:51::Multi-currency checkout › Checkout with multiple currencies › checkout with EUR",
+		"default::chromium::tests/e2e/specs/wcpay/shopper/multi-currency-checkout.spec.ts:51::Multi-currency checkout › Checkout with multiple currencies › checkout with USD",
+		"default::chromium::tests/e2e/specs/wcpay/shopper/shopper-multi-currency-widget.spec.ts:84::Shopper Multi-Currency widget › Should not affect prices › at the order received page"
+	],
+	"targets": [
+		{
+			"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/shopper/provider-fidelity-multi-currency.spec.ts",
+			"contract": "the multi-currency-settlement provider-fidelity family"
+		}
+	],
+	"implementation_commits": [ "bf28d48be6206342eef109b8e8de9067d7a3df12" ],
+	"execution_fixture": {
+		"site": "http://store8889.localhost:8889",
+		"wpcom_blog_id": 4,
+		"account_id": "acct_1TrY2nBzWlxcwgpP",
+		"runtime_owner": "native",
+		"migration_state": "WooPayments client plugin inactive; native runtime owner; Stripe test mode"
+	},
+	"verification": [
+		{
+			"command": "WCPAY_RUNTIME=native pnpm --dir plugins/woocommerce test:e2e:with-env woopayments-native --project=woopayments-native-provider --workers=1 --retries=0 --grep \"@fidelity:multi-currency-settlement\"",
+			"exit_code": 0,
+			"summary": "Passed 3/3 in 2.5 minutes with one worker and zero retries, on approval 2026-08-20-multi-currency-closure. M1 USD, M2 EUR conversion and M3 immutability all green. Re-run deliberately rather than citing the 2026-08-13 result: that evidence predates changes to the redirect drivers, the gateway availability logic and the shared provider-evidence module, and closing a row on a week-old narrative is the failure mode this programme exists to avoid. M2 asserts the fee and net at parity with the WooPayments client rather than against the balance transaction, and carries a tripwire that fires when TRAPLAT-4144 is fixed. Lock directory ended with zero quarantine receipts and zero unresolved provider write attempts."
+		},
+		{
+			"command": "WCPAY_RUNTIME=native E2E_WOOPAYMENTS_WP_ENV_CONFIG=plugins/woocommerce/.wp-env.json pnpm --dir plugins/woocommerce test:e2e:with-env woopayments-native --project=woopayments-native-provider --workers=1 --retries=0 --grep \"@fidelity:mc-transaction-details\" tests/e2e/tests/woopayments-native/shopper/provider-fidelity-multi-currency.spec.ts",
+			"exit_code": 0,
+			"raw_result_sha256": "90e8d8dffeaed0046c18eedc576dc3a5bad8912a726fbe0f0b002e9ada373c8b",
+			"summary": "Passed the existing M2 case 1/1 in 54.2 seconds with one worker and zero retries. Order 4535 retained run ID woopayments-b9d689f2-83ea-44bf-b0c8-989e5aecb008 and exactly one succeeded 1234 eur PaymentIntent pi_3UISFfBzWlxcwgpP0BleLtgK, one succeeded captured charge ch_3UISFfBzWlxcwgpP0XR9ZmGW, one captured occurrence, and balance transaction txn_3UISFfBzWlxcwgpP0bFgrN8I. The authorized merchant route bound those exact order, intent, and charge identities and rendered the shopper summary as exactly €12.34 and EUR rather than the USD settlement amount. Cold restoration checks passed; the listener remained owned; and the run ended with zero quarantine receipts and zero unresolved provider-write attempts. An earlier command using .wp-env.override.json stopped before Playwright or any provider write because that standalone profile was not initialized; its retained bootstrap-only log has SHA-256 3785722989f930a2f032b99071f1c2798c12ecd9c10950cec9f5f4a8f23b7d1c."
+		},
+		{
+			"command": "pnpm --filter=@woocommerce/plugin-woocommerce test:php:env -- --filter WooPaymentsMoneyMovementRestControllerTest",
+			"exit_code": 0,
+			"summary": "Passed 56/56 tests and 369 assertions, including the WooPayments 11.1.0 transaction-details expectation and the recorded M2 platform response shape with independent shopper 1234 eur and settlement 1415 usd values."
+		},
+		{
+			"command": "pnpm --filter=@woocommerce/admin-library test:js -- --runInBand client/woopayments/admin/test/money-movement-pages.test.tsx",
+			"exit_code": 0,
+			"summary": "Passed 125/125 tests, including exact €12.34 and EUR shopper rendering from the recorded M2 charges.data response alongside distinct 1415 usd settlement values."
+		},
+		{
+			"command": "pnpm --dir=plugins/woocommerce exec playwright test --config=tests/e2e/envs/woopayments-native/unit.playwright.config.ts tests/e2e/utils/woopayments-native/drivers/merchant-transactions.test.ts",
+			"exit_code": 0,
+			"summary": "Passed 6/6 driver tests after the RED missing-helper run failed 5/6. The helper accepts the uniquely scoped exact shopper summary and rejects wrong currency symbols, settlement-only matches, duplicates, and mismatched graph identities."
+		}
+	],
+	"reviews": [
+		{
+			"role": "code",
+			"verdict": "COMMENT",
+			"source_test_sha256": "7ec64f5456a8fd3d5bfe6a1e6dcaa7dc620e575d66f6f90671099436df0707b9",
+			"summary": "The sole fresh Sol review found zero critical or high issues and judged row 42 honestly closed: M2 is reused without another checkout, shopper state is captured before merchant login, exact order, intent, charge, status, and uniquely scoped €12.34 EUR are verified, and retained evidence hashes match. Its one medium finding identified stale programme-partition counts in FIDELITY-CLAIMS.md; those counts were recomputed directly from fidelity-partition.tsv and corrected in the N-095 follow-up. Per N-095, the later oracle-citation and recorded-fixture follow-up was not sent through another review round."
+		}
+	],
+	"closures": [
+		{
+			"contract_id": "default::chromium::tests/e2e/specs/wcpay/merchant/merchant-orders-multi-currency.spec.ts:54::Admin Multi-Currency Orders › order should display in shopper currency",
+			"target": {
+				"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/shopper/provider-fidelity-multi-currency.spec.ts",
+				"contract": "Switching the shopper session to USD after a EUR purchase leaves that order, its provider settlement graph, its receipt and its merchant-administration currency unchanged, and creates no second order or charge"
+			},
+			"fidelity_claim": "multi-currency-settlement"
+		},
+		{
+			"contract_id": "default::chromium::tests/e2e/specs/wcpay/merchant/merchant-orders-multi-currency.spec.ts:70::Admin Multi-Currency Orders › transaction page shows shopper currency",
+			"target": {
+				"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/shopper/provider-fidelity-multi-currency.spec.ts",
+				"contract": "A EUR shopper-currency purchase settles at the provider as exactly one succeeded 1234 eur PaymentIntent and captured charge; the order stores the settlement exchange rate and USD settlement amount the provider balance transaction reports, and stores the presentment-currency fee and net the platform delivers to the order-writing path"
+			},
+			"fidelity_claim": "multi-currency-settlement",
+			"fidelity_case": "M2 authorized transaction details"
+		},
+		{
+			"contract_id": "default::chromium::tests/e2e/specs/wcpay/merchant/merchant-orders-multi-currency.spec.ts:88::Admin Multi-Currency Orders › transaction page shows converted merchant currency",
+			"target": {
+				"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/shopper/provider-fidelity-multi-currency.spec.ts",
+				"contract": "A EUR shopper-currency purchase settles at the provider as exactly one succeeded 1234 eur PaymentIntent and captured charge; the order stores the settlement exchange rate and USD settlement amount the provider balance transaction reports, and stores the presentment-currency fee and net the platform delivers to the order-writing path"
+			},
+			"fidelity_claim": "multi-currency-settlement"
+		},
+		{
+			"contract_id": "default::chromium::tests/e2e/specs/wcpay/shopper/multi-currency-checkout.spec.ts:51::Multi-currency checkout › Checkout with multiple currencies › checkout with EUR",
+			"target": {
+				"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/shopper/provider-fidelity-multi-currency.spec.ts",
+				"contract": "A EUR shopper-currency purchase settles at the provider as exactly one succeeded 1234 eur PaymentIntent and captured charge; the order stores the settlement exchange rate and USD settlement amount the provider balance transaction reports, and stores the presentment-currency fee and net the platform delivers to the order-writing path"
+			},
+			"fidelity_claim": "multi-currency-settlement"
+		},
+		{
+			"contract_id": "default::chromium::tests/e2e/specs/wcpay/shopper/multi-currency-checkout.spec.ts:51::Multi-currency checkout › Checkout with multiple currencies › checkout with USD",
+			"target": {
+				"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/shopper/provider-fidelity-multi-currency.spec.ts",
+				"contract": "A USD shopper-currency purchase settles at the provider as exactly one succeeded 1099 usd PaymentIntent and captured charge bound to the exact order, and the order stores no converted-currency metadata"
+			},
+			"fidelity_claim": "multi-currency-settlement"
+		},
+		{
+			"contract_id": "default::chromium::tests/e2e/specs/wcpay/shopper/shopper-multi-currency-widget.spec.ts:84::Shopper Multi-Currency widget › Should not affect prices › at the order received page",
+			"target": {
+				"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/shopper/provider-fidelity-multi-currency.spec.ts",
+				"contract": "Switching the shopper session to USD after a EUR purchase leaves that order, its provider settlement graph, its receipt and its merchant-administration currency unchanged, and creates no second order or charge"
+			},
+			"fidelity_claim": "multi-currency-settlement"
+		}
+	],
+	"known_gaps": [],
+	"deferral": null
+}

@@ -1,0 +1,116 @@
+const WOOPAY_ORIGIN = 'https://pay.woo.test';
+
+// Window events a fresh copy of a WooPay script listens to for the rest of the page.
+const PAGE_LONG_EVENTS = [ 'message', 'wc-blocks_store_sync_required' ];
+
+/**
+ * Remove each test's message and cart sync listeners after it. A page has one Connect client, but each test that loads
+ * a fresh copy of the module leaves one listening, and its iframe is gone, so it would warn about the next test's
+ * messages, and an old copy would answer the next test's cart sync.
+ */
+export const removeMessageListenersAfterEach = () => {
+	let listeners;
+	let addEventListener;
+
+	beforeEach( () => {
+		listeners = [];
+		const add = window.addEventListener.bind( window );
+		addEventListener = jest
+			.spyOn( window, 'addEventListener' )
+			.mockImplementation( ( type, listener, options ) => {
+				if ( PAGE_LONG_EVENTS.includes( type ) ) {
+					listeners.push( [ type, listener ] );
+				}
+				add( type, listener, options );
+			} );
+	} );
+
+	afterEach( () => {
+		listeners.forEach( ( [ type, listener ] ) =>
+			window.removeEventListener( type, listener )
+		);
+		addEventListener.mockRestore();
+	} );
+};
+
+/**
+ * The window of an iframe, held still: the listeners compare event.source with iframe.contentWindow, and a stubbed
+ * getter would answer a new object each time.
+ *
+ * @param {HTMLIFrameElement|null} iframe The iframe.
+ * @return {Object|null} Its window.
+ */
+export const getIframeWindow = ( iframe ) => {
+	if ( ! iframe ) {
+		return null;
+	}
+
+	const iframeWindow = iframe.contentWindow;
+	if ( ! Object.getOwnPropertyDescriptor( iframe, 'contentWindow' ) ) {
+		Object.defineProperty( iframe, 'contentWindow', {
+			configurable: true,
+			value: iframeWindow,
+		} );
+	}
+
+	return iframeWindow;
+};
+
+/**
+ * Deliver a message to the store window from a given window.
+ *
+ * @param {Object|null} source The sending window.
+ * @param {Object}      data   The message.
+ * @param {string}      origin The sender's origin.
+ */
+export const dispatchFromWindow = ( source, data, origin = WOOPAY_ORIGIN ) => {
+	const event = new window.MessageEvent( 'message', { data, origin } );
+	Object.defineProperty( event, 'source', { value: source } );
+	window.dispatchEvent( event );
+};
+
+/**
+ * Answer the third-party cookie check from its temporary iframe, as hosted WooPay's connect page does: the test cookie
+ * is written, then read (hosted build/connect.js, setTempThirdPartyCookie and getIsThirdPartyCookiesEnabled).
+ *
+ * @param {boolean} isEnabled What the read answers.
+ * @param {string}  origin    The sender's origin.
+ */
+export const answerThirdPartyCookieCheck = (
+	isEnabled,
+	origin = WOOPAY_ORIGIN
+) => {
+	const iframe = document.getElementById( 'temp-woopay-connect-iframe' );
+	const iframeWindow = getIframeWindow( iframe );
+
+	iframe.dispatchEvent( new window.Event( 'load' ) );
+	dispatchFromWindow(
+		iframeWindow,
+		{ action: 'set_temp_third_party_cookie_success', value: true },
+		origin
+	);
+	dispatchFromWindow(
+		iframeWindow,
+		{
+			action: 'get_is_third_party_cookies_enabled_success',
+			value: isEnabled,
+		},
+		origin
+	);
+};
+
+/**
+ * Deliver a WooPay message from the iframe that sends it: Connect answers from the connect iframe, the rest from the
+ * open code dialog.
+ *
+ * @param {Object} data   The message.
+ * @param {string} origin The sender's origin.
+ */
+export const postFromWooPay = ( data, origin ) => {
+	const isConnectAnswer = /^(get|set)_/.test( data?.action );
+	const iframe = document.querySelector(
+		isConnectAnswer ? '#woopay-connect-iframe' : '.woopay-otp-iframe'
+	);
+
+	dispatchFromWindow( getIframeWindow( iframe ), data, origin );
+};

@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+WooPayments tax details: show the country prefix, field hints and tax ID names merchants expect, and let stores without a VAT number save their business details.

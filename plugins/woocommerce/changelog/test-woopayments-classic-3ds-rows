@@ -1,0 +1,4 @@
+Significance: patch
+Type: dev
+
+Close the four classic-checkout 3D Secure contracts against their provider-verified journey.

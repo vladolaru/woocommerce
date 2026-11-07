@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Scale the WooPay checkout preview to the column so the WooPay settings page fits phone widths.

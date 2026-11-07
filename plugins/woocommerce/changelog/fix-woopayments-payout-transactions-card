@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+The transactions list on a WooPayments payout details page is no longer a card inside another card.

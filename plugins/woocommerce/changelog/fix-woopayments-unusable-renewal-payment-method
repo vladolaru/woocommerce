@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Clarify WooPayments subscription renewal failures when the saved payment method can no longer be used.

@@ -1,0 +1,40 @@
+{
+	"schema_version": 2,
+	"slice_id": "checkout-coupon-removal-card-deferral",
+	"wc_base_commit": "92b2fc3376f6a5ce47d283656cb0c06dc569fb9f",
+	"verified_at_commit": "458b93bf839cc2d3f112887442aceaa55f67188e",
+	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+	"source_test_paths": [
+		"plugins/woocommerce/tests/e2e/tests/woopayments-native/evidence/calibration-notes.md"
+	],
+	"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+	"contract_ids": [
+		"default::chromium::tests/e2e/specs/wcpay/shopper/shopper-checkout-cart-coupon.spec.ts:67::Checkout with free coupon & after modifying cart on Checkout page › Remove free coupon, then checkout"
+	],
+	"targets": [
+		{
+			"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/scenarios/checkout.ts",
+			"contract": "pending"
+		}
+	],
+	"implementation_commits": [],
+	"verification": [],
+	"reviews": [
+		{
+			"role": "deferral",
+			"verdict": "APPROVE",
+			"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+			"summary": "Fresh independent review approved pre-review evidence SHA 62a2887268b74fb1a2c0a8dfa48c07f3e1f91497fb1978cec971922b564ded97 against mutated ledger SHA 72b896a3887c171d6e961dfbfa91aa4844ffb065b0c80d3f8a9ead5e6ddb4d39 and committed baseline 8925659b401959bed432b35f84c5098b2e55adca0710647499d4315c3c72e9b3 at 458b93bf839cc2d3f112887442aceaa55f67188e, with no findings. Only the line-67 row changes fields 37-40. The deferral requires a separate fixture graph, exactly one coupon removal, authoritative post-refresh coupon absence, restored USD 10.99 total and order with zero coupon lines and discount, exactly one captured 1099 USD card graph joined across order, intent, payment method, charge and listener event, one provider writer, exclusive listener, durable pre-dispatch journal, zero retry/replay, halt on ambiguity, exact restoration, financial-history retention, quarantine and accessible removal/card/confirmation semantics."
+		}
+	],
+	"closures": [],
+	"known_gaps": [],
+	"deferral": {
+		"blocker": "Standing native readiness fails before this paid checkout may allocate its exact test-mode account/store, sole provider writer and listener or create its shopper, product, coupon, order and provider graph. The shared target contract and owner remain pending, and no approved coupon-removal fixture, complete journal or protected provider interval exists. Core's payable checkout and existing native card/provider readers make an adapter plausible; no current native defect, known gap, authority conflict or source drift is established.",
+		"affected_scope": "One independently provisioned card checkout after coupon removal. A fresh shopper owns one unique virtual non-taxable USD 10.99 product and unique 100 percent coupon. The row proves a USD 0.00 coupon-applied precondition, one semantic removal, announced result, zero coupons after authoritative refresh and restored USD 10.99 payable total. One selected native Card method and one Place order activation join exactly one order with zero coupon lines and discount, one product and USD 10.99 total to one intent, payment method and captured charge for 1099 USD, one charge and capture occurrence, exact local status and an accessible confirmation. The zero-total sibling shares no state or proof.",
+		"no_allowlisted_action_reason": "The run cannot establish native readiness, approve the target/owner or allocate its protected card account/store, exclusively owned listener, deterministic row-owned fixtures, durable provider journal and exact event oracle. Removal copy, a reloaded total, source iframe selectors and click retries, generic Order received text, local order, provider record or sibling zero-total proof alone cannot substitute for exact coupon absence, payable total, order/provider identity, amount, currency, status and occurrence joins. Use one provider writer, one worker, zero retries and no replay after a known or uncertain dispatch.",
+		"reference": "blocked-environment:PILOT-NATIVE-READINESS",
+		"unlock_decision": "Externally satisfy exact native readiness, approve the shared target and owner, and allocate one protected test-mode Card account/store with one exclusively owned listener. Supply a fresh shopper, unique USD 10.99 product and run-owned coupon, semantic runtime payment adapter, row correlation marker, exact local/provider/event readers, ordered locks, local restoration journal and one pre-dispatch provider journal. Run the row once with one worker and zero retries, prove coupon removal and accessible restored total, exact 1099 USD captured graph, byte-exact restoration and retention/quarantine, then obtain fresh code, E2E-test, reliability, accessibility and provider-evidence reviews.",
+		"quarantine_status": "No browser context, account, store, allocation, shopper, product, coupon, cart, session, order, intent, charge, payment method, event, setting, listener, lock, journal, retention record or quarantine was created or changed; the separately owned listener remains untouched. A future readiness, identity, coupon, total, dispatch, order/provider association, amount, currency, status, occurrence, event, lock, listener, restoration or cleanup mismatch must preserve the unresolved journal and financial history and quarantine the exact account/store/settings/session/shopper/product/coupon/order/provider/event graph without replay, provider deletion, account repair, broad cleanup or borrowing sibling state."
+	}
+}

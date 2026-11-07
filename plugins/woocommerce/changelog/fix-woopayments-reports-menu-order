@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+WooPayments: list Reports after Disputes in the Payments menu, as the WooPayments extension does.

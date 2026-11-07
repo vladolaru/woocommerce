@@ -1,0 +1,4 @@
+Significance: patch
+Type: dev
+Comment: Send the WooPayments 11.1.0 isPaymentRequestEnabled, isAmazonPayEnabled and order-pay keys in the native WooPayments Blocks payment method data, with the client's conditions.
+

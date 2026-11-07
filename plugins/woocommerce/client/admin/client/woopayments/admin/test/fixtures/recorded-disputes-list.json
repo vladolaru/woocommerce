@@ -1,0 +1,75 @@
+{
+	"_meta": {
+		"recording": "GET wp-json/wc/v3/payments/disputes?per_page=25&page=<n> on the native :8889 store (Transact platform via wpcom-local, Stripe test mode), 2026-09-29",
+		"sanitized": "stripe_account_id, customer name and email replaced; store host replaced with store.example.com; every other value verbatim",
+		"rows": "a needs-response dispute on an order due 2026-10-07; a needs-response dispute past its due date on an order with an Analytics customer and no billing name; a won dispute with no order"
+	},
+	"response": {
+		"data": [
+			{
+				"wcpay_disputes_cache_id": 701,
+				"stripe_account_id": "acct_test",
+				"dispute_id": "du_1UL1U2BzWlxcwgpPk8EypRUa",
+				"charge_id": "ch_3UL1U0BzWlxcwgpP143mCpEa",
+				"amount": 5000,
+				"currency": "usd",
+				"reason": "fraudulent",
+				"source": "visa",
+				"order_number": 5506,
+				"customer_name": "Test Shopper",
+				"customer_email": "shopper-dispute@example.com",
+				"customer_country": "US",
+				"status": "needs_response",
+				"created": "2026-09-29 13:54:14",
+				"due_by": "2026-10-07 23:59:59",
+				"order": {
+					"number": "5506",
+					"url": "https://store.example.com/wp-admin/admin.php?page=wc-orders&action=edit&id=5506",
+					"customer_url": null,
+					"subscriptions": []
+				}
+			},
+			{
+				"wcpay_disputes_cache_id": 437,
+				"stripe_account_id": "acct_test",
+				"dispute_id": "du_1Tv08BBzWlxcwgpPirpIKGuo",
+				"charge_id": "ch_3Tv089BzWlxcwgpP0kKnMCUj",
+				"amount": 5000,
+				"currency": "usd",
+				"reason": "fraudulent",
+				"source": "visa",
+				"order_number": 1673,
+				"customer_name": null,
+				"customer_email": null,
+				"customer_country": null,
+				"status": "needs_response",
+				"created": "2026-07-19 19:12:07",
+				"due_by": "2026-07-27 23:59:59",
+				"order": {
+					"number": "1673",
+					"url": "https://store.example.com/wp-admin/admin.php?page=wc-orders&action=edit&id=1673",
+					"customer_url": "admin.php?page=wc-admin&path=/customers&filter=single_customer&customers=2",
+					"subscriptions": []
+				}
+			},
+			{
+				"wcpay_disputes_cache_id": 667,
+				"stripe_account_id": "acct_test",
+				"dispute_id": "du_1UJbTtBzWlxcwgpPSQwkqPRE",
+				"charge_id": "ch_3UJbTrBzWlxcwgpP0g7nT6Vu",
+				"amount": 6000,
+				"currency": "usd",
+				"reason": "fraudulent",
+				"source": "visa",
+				"order_number": 0,
+				"customer_name": null,
+				"customer_email": null,
+				"customer_country": null,
+				"status": "won",
+				"created": "2026-09-25 15:56:13",
+				"due_by": "2026-10-03 23:59:59",
+				"order": null
+			}
+		]
+	}
+}

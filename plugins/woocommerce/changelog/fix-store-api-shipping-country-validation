@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Validate shipping countries against the correct shipping methods for cart and existing-order checkouts.

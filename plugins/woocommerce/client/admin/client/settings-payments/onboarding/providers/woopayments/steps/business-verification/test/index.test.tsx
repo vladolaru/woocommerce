@@ -10,6 +10,7 @@ import React from 'react';
 import type { OnboardingError } from '~/settings-payments/onboarding/types';
 import { useOnboardingContext } from '../../../data/onboarding-context';
 import { BusinessVerificationStep } from '../index';
+import strings from '../strings';
 
 // Mock all child components and dependencies.
 jest.mock( '../../../data/onboarding-context', () => ( {
@@ -123,6 +124,17 @@ describe( 'BusinessVerificationStep', () => {
 			},
 			writable: true,
 		} );
+	} );
+
+	it( 'renders activate signup help at the WooPayments signup process documentation', () => {
+		render( <>{ strings.steps.activate.subheading }</> );
+
+		expect(
+			screen.getByRole( 'link', { name: 'Learn more' } )
+		).toHaveAttribute(
+			'href',
+			'https://woocommerce.com/document/woopayments/startup-guide/#signup-process'
+		);
 	} );
 
 	describe( 'Error Notice Rendering', () => {

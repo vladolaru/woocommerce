@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Export Balance report CSV amounts in major currency units.

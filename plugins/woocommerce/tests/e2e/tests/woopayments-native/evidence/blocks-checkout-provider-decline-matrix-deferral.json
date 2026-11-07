@@ -1,0 +1,37 @@
+{
+	"schema_version": 2,
+	"slice_id": "blocks-checkout-provider-decline-matrix-deferral",
+	"wc_base_commit": "92b2fc3376f6a5ce47d283656cb0c06dc569fb9f",
+	"verified_at_commit": "b7b9b007b56455c6008c61d09f2d354678afd2af",
+	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+	"source_test_paths": ["plugins/woocommerce/tests/e2e/tests/woopayments-native/evidence/calibration-notes.md"],
+	"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+	"contract_ids": [
+		"default::chromium::tests/e2e/specs/wcpay/shopper/shopper-wc-blocks-checkout-failures.spec.ts:90::WooCommerce Blocks › Checkout failures › Should show error – An error occurred while processing your card. Try again in a little bit.",
+		"default::chromium::tests/e2e/specs/wcpay/shopper/shopper-wc-blocks-checkout-failures.spec.ts:90::WooCommerce Blocks › Checkout failures › Should show error – Your card has expired.",
+		"default::chromium::tests/e2e/specs/wcpay/shopper/shopper-wc-blocks-checkout-failures.spec.ts:90::WooCommerce Blocks › Checkout failures › Should show error – Your card has insufficient funds.",
+		"default::chromium::tests/e2e/specs/wcpay/shopper/shopper-wc-blocks-checkout-failures.spec.ts:90::WooCommerce Blocks › Checkout failures › Should show error – Your card was declined.",
+		"default::chromium::tests/e2e/specs/wcpay/shopper/shopper-wc-blocks-checkout-failures.spec.ts:90::WooCommerce Blocks › Checkout failures › Should show error – Your card's security code is incorrect."
+	],
+	"targets": [{"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/scenarios/decline.ts", "contract": "pending"}],
+	"implementation_commits": [],
+	"verification": [],
+	"reviews": [
+		{
+			"role": "deferral",
+			"verdict": "APPROVE",
+			"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+			"summary": "Fresh independent static review approved provider-matrix SHA f78451cd5af08591171b2b173817fbefe0bd51f81c49e7bb63909f37fd685715, client-validation SHA eeb85016c1faf258f908da0b6a69e71fe1f6ece40d57e1dc5ae8e573837143b0, post-auth SHA dc517c1c1628c4c285a15469c61a661cb600a3a5fa5f92fe6e4e485a7c3be27a, and retry SHA 06e91c4de79feb5be3d6d0d7ea578924cc77df9785ee5285ae8c6bf15dabae54 against mutated ledger SHA 70f0b4a794c23820694dd9a5150c5024faa5a71ca8db5bb0e37d479bafc53300, with no findings. Exactly physical rows 166-175 change, only fields 37-40, and the ten contract IDs occur exactly once across four honest schema-v2 artifacts. Every row retains the exact single scenarios/decline.ts target object and pending target/owner fields. The evidence preserves the five distinct provider-decline error graphs, three provider-free accessible validation graphs, mandatory same-intent 1629 post-auth decline, and two-attempt same-page recovery cardinality. Writer/listener ownership, zero runner retries/replay, journals, restoration, retention, quarantine, and drift controls remain explicit; the current separately owned listener is untouched, and no defect, known gap, execution, or closure is claimed."
+		}
+	],
+	"closures": [],
+	"known_gaps": [],
+	"deferral": {
+		"blocker": "The decline scenario is absent with pending contract/owner, standing native readiness is unavailable, and no approved one-shot Blocks request/provider/error reader or exclusive listener exists. Core statically maps provider failures and safe messages, but no native Blocks execution or defect is established.",
+		"affected_scope": "Five independent fresh shopper/session/product/cart graphs each perform one Card submission and one Store API checkout POST with payment_method woocommerce_payments, one exact PaymentMethod, empty creation errors, authoritative public-safe fingerprint/platform/fraud fields and save false. Each HTTP 400 response has code woocommerce_rest_payment_error, one failed/unpaid order with exact lines/amount/currency/gateway joins one PaymentIntent in requires_payment_method, and exactly one payment_intent.payment_failed event is ingested once. The literal matrix is: 0119 code processing_error, no decline-code requirement, alert Error: An error occurred while processing your card. Try again in a little bit.; 0069 code expired_card, no decline-code requirement, alert Error: Your card has expired.; 9995 code card_declined and decline_code insufficient_funds, alert Error: Your card has insufficient funds.; 0002 code card_declined and decline_code generic_decline, alert Error: Your card was declined.; 0127 code incorrect_cvc, no decline-code requirement, alert Error: Your card's security code is incorrect. Every row has zero successful intent, charge, capture, balance transaction, token, receipt, duplicate order/event/effect and exposes a visible plus announced error with an operable correction path.",
+		"no_allowlisted_action_reason": "No local action can assign target/owner, satisfy readiness, add exact request/error/provider readers or own the separately managed listener. Shared occurrence, generic copy, provider request details, retrying checkout or polling without listener attribution is insufficient. Use one worker, one protected provider writer and exclusive listener for the serial campaign, fresh graph and journal per vector, one checkout activation each, zero Playwright retries, zero provider replay and halt remaining rows after ambiguity.",
+		"reference": "blocked-environment:PILOT-NATIVE-READINESS",
+		"unlock_decision": "Approve the target topology/owner, satisfy native readiness, add row-safe one-shot Blocks and exact public-safe failure/provider/event readers, and establish one exclusive listener. Run five fresh graphs serially, prove the literal code/message matrix, exact Store API/order/intent/event joins and accessible recovery, restore exact local state, retain failed financial history and obtain fresh code, E2E, reliability, accessibility, security and drift reviews.",
+		"quarantine_status": "No shopper, product, order, provider object, listener, browser, writer, journal, restoration or quarantine was created; the separately owned listener remains untouched. Future dispatch, message, code, identity, amount, currency, event, listener, restoration or publication ambiguity must stop without replay, retain failed graphs/open journals and quarantine the exact account, store, session, order, method, intent, event interval and held locks."
+	}
+}

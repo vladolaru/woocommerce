@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Open WooPayments dispute links without reloading the page, so Back returns to the page before them.

@@ -1,0 +1,571 @@
+<?php
+declare( strict_types = 1 );
+
+namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
+
+use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffects;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderMode;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
+use WC_Unit_Test_Case;
+
+/**
+ * Tests for the WooPaymentsOrderEffects class.
+ */
+class WooPaymentsOrderEffectsTest extends WC_Unit_Test_Case {
+
+	/**
+	 * @testdox Completed non-card metadata marks the fraud box without inventing an outcome.
+	 */
+	public function test_completed_charge_meta_marks_non_card_without_defaulting_fraud_outcome(): void {
+		$intent = array(
+			'currency' => 'eur',
+			'metadata' => array(),
+		);
+		$charge = array(
+			'currency'               => 'eur',
+			'amount'                 => 6500,
+			'application_fee_amount' => 233,
+			'balance_transaction'    => array( 'id' => 'txn_ideal' ),
+			'outcome'                => array( 'risk_level' => 'normal' ),
+			'payment_method_details' => array( 'type' => 'ideal' ),
+		);
+
+		$meta = WooPaymentsOrderEffects::completed_charge_meta( $intent, $charge );
+
+		$this->assertSame( 'txn_ideal', $meta['_wcpay_payment_transaction_id'] );
+		$this->assertSame( 'normal', $meta['_charge_risk_level'] );
+		$this->assertArrayNotHasKey( '_wcpay_fraud_outcome_status', $meta );
+		$this->assertSame( 'not_card', $meta['_wcpay_fraud_meta_box_type'] );
+	}
+
+	/**
+	 * @testdox Started PaymentIntent metadata preserves non-card classification.
+	 */
+	public function test_payment_intent_meta_projects_started_non_card_effects(): void {
+		$meta = WooPaymentsOrderEffects::payment_intent_meta(
+			array(
+				'status'               => 'requires_action',
+				'payment_method_types' => array( 'wechat_pay' ),
+			),
+			'USD',
+			WooPaymentsOrderMode::PRODUCTION
+		);
+
+		$this->assertSame( 'requires_action', $meta['_intention_status'] );
+		$this->assertSame( '', $meta['_wcpay_payment_transaction_id'] );
+		$this->assertSame( 'not_card', $meta['_wcpay_fraud_meta_box_type'] );
+	}
+
+	/**
+	 * @testdox Started PaymentIntent metadata stores the intent's uppercased currency and falls back to the order currency.
+	 *
+	 * Plugin 11.1.0 stores `$intent->get_currency()`, which its intent model uppercases (class-wc-payments-api-payment-intention.php:93, class-wc-payments-order-service.php:1361).
+	 */
+	public function test_payment_intent_meta_stores_started_intent_currency_uppercased(): void {
+		$started = WooPaymentsOrderEffects::payment_intent_meta(
+			array(
+				'status'   => 'requires_action',
+				'currency' => 'eur',
+			),
+			'USD',
+			WooPaymentsOrderMode::TEST
+		);
+		$this->assertSame( 'EUR', $started['_wcpay_intent_currency'] );
+
+		$without_currency = WooPaymentsOrderEffects::started_payment_meta( array( 'status' => 'requires_action' ), 'EUR' );
+		$this->assertSame( 'EUR', $without_currency['_wcpay_intent_currency'] );
+	}
+
+	/**
+	 * @testdox An authorized PaymentIntent without a balance transaction stores an empty payment transaction ID.
+	 *
+	 * Plugin 11.1.0 reads the ID as '' when the charge has no balance transaction and stores it for every intent status
+	 * (class-wc-payments-order-service.php:1364-1365, :1415).
+	 */
+	public function test_payment_intent_meta_stores_an_empty_transaction_id_before_capture(): void {
+		$meta = WooPaymentsOrderEffects::payment_intent_meta(
+			array(
+				'id'       => 'pi_authorized',
+				'status'   => 'requires_capture',
+				'currency' => 'usd',
+				'charges'  => array(
+					'data' => array(
+						array(
+							'id'       => 'ch_authorized',
+							'currency' => 'usd',
+							'amount'   => 2500,
+						),
+					),
+				),
+			),
+			'USD',
+			WooPaymentsOrderMode::TEST
+		);
+
+		$this->assertSame( '', $meta['_wcpay_payment_transaction_id'] ?? null );
+	}
+
+	/**
+	 * @testdox Completed capture metadata uses the latest charge and explicit settlement facts.
+	 */
+	public function test_completed_capture_meta_uses_latest_charge_and_explicit_inputs(): void {
+		$intent = array(
+			'status'   => 'succeeded',
+			'currency' => 'usd',
+			'charges'  => array(
+				'data' => array(
+					array( 'id' => 'ch_old' ),
+					array(
+						'id'                  => 'ch_capture',
+						'captured'            => true,
+						'currency'            => 'usd',
+						'amount'              => 5000,
+						'balance_transaction' => array( 'id' => 'txn_capture' ),
+						'fee_breakdown_v1'    => array(
+							'totals' => array(
+								'fee' => array(
+									'amount'   => 175,
+									'currency' => 'usd',
+								),
+								'net' => array(
+									'amount'   => 4825,
+									'currency' => 'usd',
+								),
+							),
+						),
+					),
+				),
+			),
+		);
+
+		$meta = WooPaymentsOrderEffects::completed_capture_meta(
+			$intent,
+			'USD',
+			WooPaymentsOrderMode::PRODUCTION,
+			array( '_wcpay_multi_currency_stripe_exchange_rate' => '1.25' )
+		);
+
+		// Plugin 11.1.0 capture keeps the authorization's uppercase intent currency (class-wc-payments-api-payment-intention.php:93).
+		$this->assertSame( 'USD', $meta['_wcpay_intent_currency'] );
+		// Plugin 11.1.0 stores `Order_Mode::PRODUCTION` for live payments (class-order-mode.php:21).
+		$this->assertSame( 'prod', $meta['_wcpay_mode'] );
+		$this->assertSame( 'ch_capture', $meta['_charge_id'] );
+		$this->assertArrayNotHasKey( '_wcpay_payment_transaction_id', $meta );
+		$this->assertSame( '1.75', $meta['_wcpay_transaction_fee'] );
+		$this->assertSame( '48.25', $meta['_wcpay_net'] );
+		$this->assertSame( '1.25', $meta['_wcpay_multi_currency_stripe_exchange_rate'] );
+	}
+
+	/**
+	 * Fee meta from a charge follows client 11.1.0 `attach_transaction_fee_to_order()` (class-wc-payments-order-service.php:1741-1786),
+	 * on the charges recorded in REC-3 (a 12.34 EUR payment on a USD account).
+	 *
+	 * @dataProvider attached_fee_meta_cases
+	 *
+	 * @param array<string,mixed>  $charge   Charge.
+	 * @param array<string,string> $expected Fee meta the client writes.
+	 */
+	public function test_attached_fee_meta_follows_the_woopayments_extension( array $charge, array $expected ): void {
+		$this->assertSame( $expected, WooPaymentsOrderEffects::attached_fee_meta( $charge ) );
+	}
+
+	/**
+	 * REC-3 charges and the fee meta the client writes for each.
+	 *
+	 * @return array<string,array{array<string,mixed>,array<string,string>}>
+	 */
+	public function attached_fee_meta_cases(): array {
+		$created_charge    = $this->load_rec_3_entry( 0 )['charges']['data'][0];
+		$fetched_charge    = $this->load_rec_3_entry( 1 );
+		$uncaptured_charge = array_merge( $created_charge, array( 'captured' => false ) );
+
+		return array(
+			'create response, no envelope: the application fee alone, in the charge currency' => array( $created_charge, array( '_wcpay_transaction_fee' => '0.75' ) ),
+			'charge read back with its envelope: fee and net from the envelope' => array(
+				$fetched_charge,
+				array(
+					'_wcpay_transaction_fee' => '0.85',
+					'_wcpay_net'             => '13.21',
+				),
+			),
+			'charge not captured yet: nothing' => array( $uncaptured_charge, array() ),
+		);
+	}
+
+	/**
+	 * Fee meta from a succeeded payment intent event follows client 11.1.0 (class-wc-payments-webhook-processing-service.php:525-569).
+	 *
+	 * @dataProvider webhook_fee_meta_cases
+	 *
+	 * @param array<string,mixed>  $charge   First charge of the event's intent.
+	 * @param array<string,string> $expected Fee meta the client writes.
+	 */
+	public function test_webhook_fee_meta_follows_the_woopayments_extension( array $charge, array $expected ): void {
+		$intent = array(
+			'amount'   => 1234,
+			'currency' => 'eur',
+		);
+
+		$this->assertSame( $expected, WooPaymentsOrderEffects::webhook_fee_meta( $intent, $charge ) );
+	}
+
+	/**
+	 * Event charges and the fee meta the client writes for each.
+	 *
+	 * @return array<string,array{array<string,mixed>,array<string,string>}>
+	 */
+	public function webhook_fee_meta_cases(): array {
+		$created_charge = $this->load_rec_3_entry( 0 )['charges']['data'][0];
+
+		return array(
+			'envelope: fee and net from the envelope' => array(
+				$this->load_rec_3_entry( 1 ),
+				array(
+					'_wcpay_transaction_fee' => '0.85',
+					'_wcpay_net'             => '13.21',
+				),
+			),
+			'no envelope: the fee and the intent amount less it' => array(
+				$created_charge,
+				array(
+					'_wcpay_transaction_fee' => '0.75',
+					'_wcpay_net'             => '11.59',
+				),
+			),
+			'no envelope and a zero fee: nothing, as the client skips a falsy fee' => array( array_merge( $created_charge, array( 'application_fee_amount' => 0 ) ), array() ),
+		);
+	}
+
+	/**
+	 * Load a REC-3 recorded response body.
+	 *
+	 * @param int $index Entry index.
+	 * @return array<string,mixed>
+	 */
+	private function load_rec_3_entry( int $index ): array {
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads a local immutable test fixture.
+		return json_decode( (string) file_get_contents( __DIR__ . '/Fixtures/platform-eur-charge.json' ), true )['entries'][ $index ]['response']['body'];
+	}
+
+	/**
+	 * @testdox Fraud metadata stamps the meta box type and the outcome status: $_dataName.
+	 * @dataProvider provider_fraud_meta_box_type
+	 *
+	 * @param string           $composer         WooPaymentsOrderEffects method that builds the meta.
+	 * @param array<int,mixed> $args             Arguments for that method.
+	 * @param string           $expected_box     Expected fraud meta box type.
+	 * @param string           $expected_outcome Expected fraud outcome status.
+	 */
+	public function test_fraud_meta_stamps_box_type_and_outcome( string $composer, array $args, string $expected_box, string $expected_outcome ): void {
+		$meta = call_user_func_array( array( WooPaymentsOrderEffects::class, $composer ), $args );
+
+		$this->assertSame( $expected_box, $meta['_wcpay_fraud_meta_box_type'] );
+		$this->assertSame( $expected_outcome, $meta['_wcpay_fraud_outcome_status'] );
+	}
+
+	/**
+	 * Fraud review histories and the meta box and outcome each one stamps.
+	 *
+	 * @return array<string,array{string,array<int,mixed>,string,string}>
+	 */
+	public function provider_fraud_meta_box_type(): array {
+		$card_charge = array(
+			'id'                     => 'ch_fraud',
+			'currency'               => 'usd',
+			'payment_method_details' => array( 'type' => 'card' ),
+		);
+		$sepa_charge = array(
+			'currency'               => 'usd',
+			'payment_method_details' => array( 'type' => 'sepa_debit' ),
+		);
+		$intent      = static function ( string $status, string $fraud_outcome ) use ( $card_charge ): array {
+			return array(
+				'status'   => $status,
+				'currency' => 'usd',
+				'metadata' => array( 'fraud_outcome' => $fraud_outcome ),
+				'charges'  => array( 'data' => array( $card_charge ) ),
+			);
+		};
+		$allowed     = $intent( 'succeeded', 'allow' );
+		$production  = WooPaymentsOrderMode::PRODUCTION;
+
+		return array(
+			'completed charge held for review'  => array( 'completed_charge_meta', array( $allowed, $card_charge, array(), true, true ), 'review_allowed', 'allow' ),
+			'completed charge not held'         => array( 'completed_charge_meta', array( $allowed, $card_charge ), 'allow', 'allow' ),
+			'completed capture held for review' => array( 'completed_capture_meta', array( $allowed, 'USD', $production, array(), true ), 'review_allowed', 'allow' ),
+			'completed capture not held'        => array( 'completed_capture_meta', array( $allowed, 'USD', $production ), 'allow', 'allow' ),
+			'authorization under review'        => array( 'payment_intent_meta', array( $intent( 'requires_capture', 'review' ), 'USD', $production ), 'review', 'review' ),
+			'authorization allowed'             => array( 'payment_intent_meta', array( $intent( 'requires_capture', 'allow' ), 'USD', $production ), 'allow', 'allow' ),
+			'succeeded after review'            => array( 'payment_intent_meta', array( $intent( 'succeeded', 'review' ), 'USD', $production ), 'allow', 'review' ),
+			'held non-card charge'              => array( 'completed_charge_meta', array( $allowed, $sepa_charge, array(), true, true ), 'not_card', 'allow' ),
+		);
+	}
+
+	/**
+	 * @testdox Display details return identity and metadata without dispatching title filters.
+	 */
+	public function test_display_details_do_not_dispatch_the_title_suffix_filter(): void {
+		$filter_calls = 0;
+		add_filter(
+			'wcpay_payment_request_payment_method_title_suffix',
+			static function ( string $suffix ) use ( &$filter_calls ): string {
+				++$filter_calls;
+
+				return $suffix;
+			}
+		);
+
+		$effects = WooPaymentsOrderEffects::compose_payment_method_display_details(
+			array(
+				'charges' => array(
+					'data' => array(
+						array(
+							'payment_method_details' => array(
+								'type' => 'card',
+								'card' => array(
+									'brand' => 'visa',
+									'last4' => '4242',
+								),
+							),
+						),
+					),
+				),
+			),
+			'apple_pay'
+		);
+
+		$this->assertSame( 0, $filter_calls );
+		$this->assertSame( WooPaymentsPersistenceVocabulary::GATEWAY_ID, $effects['payment_method_id'] );
+		$this->assertSame( 'card', $effects['payment_method_type'] );
+		$this->assertSame( 'apple_pay', $effects['express_checkout_type'] );
+		$this->assertSame( 'apple_pay', $effects['meta']['_wcpay_express_checkout_payment_method'] );
+		$this->assertArrayNotHasKey( 'payment_method_title', $effects );
+	}
+
+	/**
+	 * @testdox Display details store card details without rendering a title.
+	 */
+	public function test_display_details_compose_card_metadata(): void {
+		$effects = WooPaymentsOrderEffects::compose_payment_method_display_details(
+			array(
+				'charges' => array(
+					'data' => array(
+						array(
+							'payment_method_details' => array(
+								'type' => 'card',
+								'card' => array(
+									'brand'         => 'visa',
+									'display_brand' => 'visa',
+									'funding'       => 'credit',
+									'last4'         => '4242',
+								),
+							),
+						),
+					),
+				),
+			)
+		);
+
+		$this->assertSame( WooPaymentsPersistenceVocabulary::GATEWAY_ID, $effects['payment_method_id'] );
+		$this->assertSame( '4242', $effects['meta']['last4'] );
+		$this->assertSame( 'visa', $effects['meta']['_card_brand'] );
+		$this->assertStringContainsString( '"last4":"4242"', $effects['meta']['_wcpay_payment_method_details'] );
+	}
+
+	/**
+	 * @testdox SetupIntent card display details reject incoherent card identity details.
+	 * @dataProvider incoherent_setup_intent_card_details_data
+	 *
+	 * @param array<string,mixed> $payment_method Incoherent provider payment-method details.
+	 */
+	public function test_setup_intent_card_display_details_reject_incoherent_details( array $payment_method ): void {
+		$effects = WooPaymentsOrderEffects::compose_setup_intent_payment_method_display_details( $payment_method );
+
+		$this->assertSame( array(), $effects );
+	}
+
+	/**
+	 * Provide malformed card identity provider responses.
+	 *
+	 * @return array<string,array{array<string,mixed>}>
+	 */
+	public function incoherent_setup_intent_card_details_data(): array {
+		$valid = array(
+			'type' => 'card',
+			'card' => array(
+				'brand'   => 'visa',
+				'network' => 'visa',
+				'funding' => 'credit',
+				'last4'   => '4242',
+			),
+		);
+
+		return array(
+			'type not exactly card'        => array( array_replace( $valid, array( 'type' => 'Card' ) ) ),
+			'brand only'                   => array(
+				array(
+					'type' => 'card',
+					'card' => array( 'brand' => 'visa' ),
+				),
+			),
+			'missing last4'                => array(
+				array(
+					'type' => 'card',
+					'card' => array(
+						'brand'   => 'visa',
+						'network' => 'visa',
+						'funding' => 'credit',
+					),
+				),
+			),
+			'empty last4'                  => array( array_replace_recursive( $valid, array( 'card' => array( 'last4' => '' ) ) ) ),
+			'array last4'                  => array( array_replace_recursive( $valid, array( 'card' => array( 'last4' => array( '4242' ) ) ) ) ),
+			'missing funding'              => array( array_replace_recursive( $valid, array( 'card' => array( 'funding' => null ) ) ) ),
+			'unsupported funding'          => array( array_replace_recursive( $valid, array( 'card' => array( 'funding' => 'charge' ) ) ) ),
+			'array funding'                => array( array_replace_recursive( $valid, array( 'card' => array( 'funding' => array( 'credit' ) ) ) ) ),
+			'empty selected title source'  => array( array_replace_recursive( $valid, array( 'card' => array( 'display_brand' => '' ) ) ) ),
+			'array selected title source'  => array( array_replace_recursive( $valid, array( 'card' => array( 'display_brand' => array( 'visa' ) ) ) ) ),
+			'non-array networks available' => array(
+				array_replace_recursive(
+					$valid,
+					array(
+						'card' => array(
+							'network'  => null,
+							'networks' => array( 'available' => 'visa' ),
+						),
+					)
+				),
+			),
+		);
+	}
+
+	/**
+	 * @testdox SetupIntent card display details cache only their normalized type and card subtree.
+	 */
+	public function test_setup_intent_card_display_details_omit_top_level_provider_data_from_cache(): void {
+		$effects = WooPaymentsOrderEffects::compose_setup_intent_payment_method_display_details(
+			array(
+				'id'              => 'pm_card_identity',
+				'type'            => 'card',
+				'customer'        => 'cus_must_not_be_cached',
+				'billing_details' => array(
+					'email' => 'must-not-be-cached@example.test',
+				),
+				'card'            => array(
+					'brand'   => 'visa',
+					'network' => 'visa',
+					'funding' => 'credit',
+					'last4'   => '4242',
+				),
+			)
+		);
+		$details = json_decode( $effects['meta']['_wcpay_payment_method_details'], true );
+
+		$this->assertSame( '4242', $effects['meta']['last4'] );
+		$this->assertIsArray( $details );
+		$this->assertSame( 'card', $details['type'] );
+		$this->assertSame( '4242', $details['card']['last4'] );
+		$this->assertArrayNotHasKey( 'customer', $details );
+		$this->assertArrayNotHasKey( 'billing_details', $details );
+	}
+
+	/**
+	 * @testdox SetupIntent Link display details do not cache provider payment-method details.
+	 */
+	public function test_setup_intent_link_display_details_avoid_payment_method_details_cache(): void {
+		$effects = WooPaymentsOrderEffects::compose_setup_intent_payment_method_display_details(
+			array(
+				'id'              => 'pm_link_identity',
+				'type'            => 'link',
+				'customer'        => 'cus_must_not_be_cached',
+				'billing_details' => array(
+					'email' => 'must-not-be-cached@example.test',
+				),
+			)
+		);
+
+		$this->assertSame( 'link', $effects['payment_method_type'] );
+		$this->assertSame( array( 'type' => 'link' ), $effects['payment_method_details'] );
+		$this->assertArrayNotHasKey( '_wcpay_payment_method_details', $effects['meta'] );
+	}
+
+	/**
+	 * The charge's SEPA Direct Debit payment method details as the platform returns them.
+	 *
+	 * The client stores this array unchanged (class-wc-payments-order-service.php:1373-1377 and :3118-3121).
+	 *
+	 * @return array<string,mixed>
+	 */
+	private function sepa_charge_payment_method_details(): array {
+		return array(
+			'sepa_debit' => array(
+				'bank_code'           => '19043',
+				'branch_code'         => '',
+				'country'             => 'AT',
+				'expected_debit_date' => '2026-07-09',
+				'fingerprint'         => 'webhook_fingerprint',
+				'last4'               => '3201',
+				'mandate'             => 'webhook_mandate',
+			),
+			'type'       => 'sepa_debit',
+		);
+	}
+
+	/**
+	 * @testdox SEPA payment method details metadata keeps the full charge shape, including the expected debit date, like the WooPayments extension.
+	 */
+	public function test_display_details_keep_full_sepa_details(): void {
+		$effects = WooPaymentsOrderEffects::compose_payment_method_display_details(
+			array(
+				'charges' => array(
+					'data' => array(
+						array( 'payment_method_details' => $this->sepa_charge_payment_method_details() ),
+					),
+				),
+			)
+		);
+
+		$this->assertSame(
+			wp_json_encode( $this->sepa_charge_payment_method_details() ),
+			$effects['meta']['_wcpay_payment_method_details']
+		);
+	}
+
+	/**
+	 * @testdox Completed-charge backfill stores the full SEPA details, including the expected debit date, like the WooPayments extension.
+	 */
+	public function test_completed_charge_backfill_keeps_full_sepa_details(): void {
+		$meta = WooPaymentsOrderEffects::completed_charge_payment_method_backfill_meta(
+			array( 'payment_method_details' => $this->sepa_charge_payment_method_details() ),
+			true
+		);
+
+		$this->assertSame(
+			wp_json_encode( $this->sepa_charge_payment_method_details() ),
+			$meta['_wcpay_payment_method_details']
+		);
+	}
+
+	/**
+	 * @testdox Refund effect data keeps every equivalent note wording it is given.
+	 */
+	public function test_refund_effect_data_keeps_every_equivalent_note(): void {
+		$equivalent_notes = array(
+			'Already rendered refund note.',
+			'Legacy catalog refund note.',
+		);
+		$effects          = WooPaymentsOrderEffects::compose_refund_effect_data(
+			array(
+				'id'                  => 're_native',
+				'status'              => 'pending',
+				'balance_transaction' => array( 'id' => 'txn_refund' ),
+			),
+			'Already rendered refund note.',
+			'refund:re_native:created_pending',
+			$equivalent_notes
+		);
+
+		$this->assertSame( $equivalent_notes, $effects[ PaymentOutcome::DATA_REFUND_NOTE_EQUIVALENTS ] );
+	}
+}

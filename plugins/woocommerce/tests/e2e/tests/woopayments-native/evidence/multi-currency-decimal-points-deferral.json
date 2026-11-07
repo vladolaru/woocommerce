@@ -1,0 +1,41 @@
+{
+	"schema_version": 2,
+	"slice_id": "multi-currency-decimal-points-deferral",
+	"wc_base_commit": "92b2fc3376f6a5ce47d283656cb0c06dc569fb9f",
+	"verified_at_commit": "2f88b960b53529e304422e2f46634a298f48ff33",
+	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+	"source_test_paths": [
+		"plugins/woocommerce/tests/e2e/tests/woopayments-native/evidence/calibration-notes.md"
+	],
+	"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+	"contract_ids": [
+		"default::chromium::tests/e2e/specs/wcpay/merchant/multi-currency-setup.spec.ts:207::Multi-currency setup › Currency decimal points › the decimal points for GBP are displayed correctly",
+		"default::chromium::tests/e2e/specs/wcpay/merchant/multi-currency-setup.spec.ts:207::Multi-currency setup › Currency decimal points › the decimal points for JPY are displayed correctly"
+	],
+	"targets": [
+		{
+			"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/scenarios/multi-currency.ts",
+			"contract": "pending"
+		}
+	],
+	"implementation_commits": [],
+	"verification": [],
+	"reviews": [
+		{
+			"role": "deferral",
+			"verdict": "APPROVE",
+			"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+			"summary": "Fresh broad review approved pre-review evidence SHA fa634f9afb6c2996053e2737b1d7013ad5288956d6527afac5b37f6069d52552 against ledger SHA 4b4124eea5fe9836b3bf18e57ff38f7f9df0f2bdbda9917a47d7a4ba4b33c279 with no findings. Exactly both line-207 GBP and JPY rows change only fields 37-40; frozen fields and all siblings remain untouched. The grouping is legal because both generated cases share the original parameterized behavior, owner, setup, selected-currency mechanism, product-price surface, cleanup, target, and verification method, while retaining independent row outcomes. Standing native readiness is the earliest blocker. The provider-free oracle uses a disposable session per row to join explicit cross-request selection, effective currency, unique product identity, structured accessible formatting, and exact GBP £987.65 with two decimals or JPY ¥185,307 with zero decimals. Complete wildcard/cache/product/session journals, byte restoration, exact-resource quarantine, accessibility, source/target drift, and isolation from settings persistence, nonzero rounding, checkout, orders, payments, and provider arithmetic are correctly bound."
+		}
+	],
+	"closures": [],
+	"known_gaps": [],
+	"deferral": {
+		"blocker": "Standing-native readiness fails before the exact-store selected-currency and accessible product-price joins can run; the grouped provisional target is absent; and its target contract, owner, deterministic USD product, manual rates, pinned locale/format, cache, disposable sessions, raw snapshots, and row-safe restoration topology remain pending. Core already owns an honest GBP-two-decimal and JPY-zero-decimal metadata-to-shopper projection, so no production defect, known gap, or product-authority conflict is established.",
+		"affected_scope": "Only the two generated product-page formatting examples of one parameterized boundary. Start from a unique non-taxable USD 1234.56 product, enabled GBP and JPY, manual rates GBP 0.8 and JPY 150.1, explicit zero rounding and charm, and pinned en_US format. In an independent disposable session per row, prove USD first, perform exactly one compatible query selection, prove one owned cross-request currency-session occurrence, then join effective code and exact accessible product identity to GBP £987.65 with two decimals or JPY ¥185,307 with zero decimals. Merchant settings persistence, nonzero rounding, charm, locale matrices, cart, checkout, orders, payments, refunds, provider arithmetic, and historical formatting remain separate.",
+		"no_allowlisted_action_reason": "The run cannot establish native account/callback readiness, repair shared sites, invent the pending grouped target/owner/topology, or seed deterministic settings, product, cache, locale, and sessions without complete pre-write journals. Lower-layer metadata, calculator, controller, or projection tests cannot substitute for a fresh browser joining explicit selected currency, cross-request session state, exact product identity, structured symbol/code/separators/position, accessible text, and exact normalized minor units. Loose digit stripping, split-on-period parsing, inherited shopper cookies, a published switcher, provider allocation, or the payment listener cannot unlock this local rendering contract.",
+		"reference": "blocked-environment:PILOT-NATIVE-READINESS",
+		"unlock_decision": "Externally satisfy native readiness; approve one row-safe two-example target contract and implementation owner; provide the unique USD 1234.56 product, enabled GBP/JPY, exact manual rates, explicit zero companions, pinned locale/format, valid provider-free currency cache, complete wildcard/cache/product/session snapshots, ordered ownership, and separate setup/restoration journal. Run the grouped target once with one worker, zero retries, independent disposable sessions, one selection occurrence each, exact effective-code/amount/format/accessibility assertions, zero provider traffic, and byte-exact restoration; then obtain fresh code, E2E-test, reliability, and accessibility reviews.",
+		"quarantine_status": "No browser context, account, store, option, currency/rate/product fixture, locale, session, cache, lock, journal, provider object, listener, retention record, or quarantine was created or changed for either row. A future wrong owner/store/build, automatic-rate or provider traffic, duplicate or cross-row selection, wrong product/effective currency/amount/precision/format, ambiguous response, wildcard-name drift, shared-target drift, session leak, lost ownership, or incomplete restoration must preserve diagnostics and quarantine the exact store, complete settings/cache/format graph, product, affected session/context, browser artifacts, and journal. Do not retry, normalize, or repair; no provider writer, financial record, or listener belongs to this grouped contract."
+	}
+}

@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Show every WooPayments dispute for a charge and summarize multiple disputes on the order screen.

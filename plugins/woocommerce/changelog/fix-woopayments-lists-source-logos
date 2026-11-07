@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+The WooPayments disputes and transactions lists now show the card brand or payment method logo, as the WooPayments plugin does.

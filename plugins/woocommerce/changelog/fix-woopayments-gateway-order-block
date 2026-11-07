@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Checkout keeps every WooPayments payment method together at the position of the WooPayments card method, or first when no gateway order is saved.

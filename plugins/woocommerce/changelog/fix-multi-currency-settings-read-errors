@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Keep the multi-currency settings page in place when its reads fail, and report each failure once with the WooPayments plugin wording.

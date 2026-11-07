@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Preserve payment methods enabled during a WooPayments test drive when switching to a live account.

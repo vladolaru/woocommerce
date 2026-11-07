@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+The WooPayments payouts page now shows the dismissible payout schedule notice and the failed-payout notice above the payouts list, as WooPayments does.

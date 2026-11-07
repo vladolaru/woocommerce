@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+The WooPayments settings notices keep core's full notice border, and the notifications email warning no longer touches the text around it.

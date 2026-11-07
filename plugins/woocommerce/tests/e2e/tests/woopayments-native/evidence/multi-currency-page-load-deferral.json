@@ -1,0 +1,40 @@
+{
+	"schema_version": 2,
+	"slice_id": "multi-currency-page-load-deferral",
+	"wc_base_commit": "92b2fc3376f6a5ce47d283656cb0c06dc569fb9f",
+	"verified_at_commit": "7abee71b67c3d144da312af53b82cc21ef7247bb",
+	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+	"source_test_paths": [
+		"plugins/woocommerce/tests/e2e/tests/woopayments-native/evidence/calibration-notes.md"
+	],
+	"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+	"contract_ids": [
+		"default::chromium::tests/e2e/specs/wcpay/merchant/multi-currency.spec.ts:43::Multi-currency › page load without any errors"
+	],
+	"targets": [
+		{
+			"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/merchant/settings-methods.spec.ts",
+			"contract": "pending"
+		}
+	],
+	"implementation_commits": [],
+	"verification": [],
+	"reviews": [
+		{
+			"role": "deferral",
+			"verdict": "APPROVE",
+			"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+			"summary": "Fresh broad review approved pre-review evidence SHA 1f1dd07017e03e7fecf5ea19888655afd1aa8c1eec910595a89078dc05f91f26 against ledger SHA 87633bdc30a1ccb8a6a6aa98c150346b5b2d8b07018abbd2f1016171aafe05eb with no findings. Exactly fields 37-40 of the line-43 page-load row change to the readiness deferral while all frozen fields, siblings, and the exact provisional target remain untouched. The retained oracle semantically joins successful /currencies and /get-settings responses to authoritative accessible currency and store-settings content, rejects attributable route, asset, data, console, page, network, loading, and visible errors, and proves zero settings or provider writes. It correctly treats an unexpired deterministic local cache as a precondition, binds complete raw snapshots and exact restoration, quarantine, accessibility, source/target drift, and future topology controls, and requires no provider writer, financial object, or listener."
+		}
+	],
+	"closures": [],
+	"known_gaps": [],
+	"deferral": {
+		"blocker": "Standing-native readiness fails before an authenticated merchant can exercise the assembled Core-owned multi-currency management surface; the provisional target is absent and shared with unrelated settings contracts; and the exact target contract, owner, valid-cache fixture, raw snapshot, and row-safe topology remain pending. Core already exposes protected currency and store-settings reads, semantic loaded content, loading and visible failure states, so this retained release smoke has no established retirement, authority conflict, production defect, or known gap.",
+		"affected_scope": "Only one authenticated connected-merchant loaded-surface smoke. Navigate semantically to the current native Multi-currency settings tab; join successful exact-store responses from both /currencies and /get-settings to the accessible Enabled currencies table, exact default row meaning, Add/remove currencies action, Store settings heading, labelled automatic-currency control, and initially non-actionable Save changes; require all loading states to settle and reject target-attributable route, asset, data, console, page, network, or visible errors. Currency mutations, shopper selection/prices, switchers, checkout, orders, payments, refunds, and provider outcomes remain separate.",
+		"no_allowlisted_action_reason": "The run cannot establish native owner/account/callback readiness, repair the shared site, invent the pending target/owner/topology, or seed a deterministic unexpired local currency cache without an approved pre-write journal. The source's disappearance of loading CSS plus two text matches, component/PHP tests, a screenshot, an onboarding branch, a successful retry after a failed GET, or provider/listener allocation cannot substitute for both authoritative reads, accessible joined content, exact error attribution, zero settings/provider writes, and byte-identical raw state.",
+		"reference": "blocked-environment:PILOT-NATIVE-READINESS",
+		"unlock_decision": "Externally satisfy exact Core-owner, connected-account, store, and callback readiness; approve a row-safe target contract and owner rather than accidentally coupling unrelated settings rows; provide a manage_woocommerce merchant, valid unexpired deterministic local currency cache, exact site/account/build identities, complete wildcard settings/cache snapshots, and any required setup/restoration journal. Register observers before one semantic navigation, execute the two-GET loaded-surface/no-error/zero-write oracle once with one worker and zero retries, close the context, prove fresh-process bytes and names unchanged, and obtain fresh code, E2E-test, reliability, and accessibility reviews.",
+		"quarantine_status": "No browser context, account, store, option, cache, lock, journal, provider object, listener, retention record, or quarantine was created or changed for this row. A future wrong store/account/owner/capability/build, cache expiry or live refresh, failed or duplicate required read, unexpected mutation, ambiguous error attribution, raw setting/cache/name-set drift, provider traffic, target drift, ownership loss, or incomplete restoration must preserve diagnostics and quarantine the exact store/account/settings/cache/browser journal. Do not retry, replay navigation, normalize data, or repair the environment. A fully identified assembled-page RED after all prerequisites pass is a product-contract failure, not permission to relabel it environmental; no financial provider object or listener belongs to this row."
+	}
+}

@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Preserve provider customer billing details when changing a subscription payment method.

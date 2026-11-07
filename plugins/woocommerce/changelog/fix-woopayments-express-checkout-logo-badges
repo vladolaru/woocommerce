@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Show the Apple Pay, Google Pay and Amazon Pay logos on their WooPayments express checkout settings pages in the same bordered badges as the WooPayments plugin.

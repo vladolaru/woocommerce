@@ -18,6 +18,9 @@ use Automattic\WooCommerce\Enums\OrderInternalStatus;
 use Automattic\WooCommerce\Enums\OrderStatus;
 use Automattic\WooCommerce\Enums\ProductStatus;
 use Automattic\WooCommerce\Internal\Features\FeaturesController;
+use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFeatureController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
 use Automattic\WooCommerce\Internal\VariationGallery\Package as VariationGalleryPackage;
 
 /**
@@ -31,6 +34,16 @@ class WC_Update_Functions_Test extends \WC_Unit_Test_Case {
 	public function tearDown(): void {
 		Constants::clear_single_constant( 'WOOCOMMERCE_BIS_ALPHA_ENABLED' );
 		delete_option( 'woocommerce_feature_customer_stock_notifications_enabled' );
+		delete_option( 'woocommerce_feature_multi_currency_enabled' );
+		delete_option( '_wcpay_feature_customer_multi_currency' );
+		delete_option( 'wcpay_multi_currency_enabled_currencies' );
+		delete_option( 'wcpay_multi_currency_setup_completed' );
+		delete_option( 'woocommerce_woopayments_setup_tier' );
+		delete_option( 'wcpay_account_data' );
+		delete_option( 'woocommerce_woocommerce_payments_settings' );
+		delete_option( 'active_plugins' );
+		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
+		wc_get_container()->get( WooPaymentsSetupTier::class )->invalidate();
 		parent::tearDown();
 	}
 
@@ -1393,5 +1406,65 @@ class WC_Update_Functions_Test extends \WC_Unit_Test_Case {
 		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Table name is code-defined.
 		$row = $wpdb->get_row( $wpdb->prepare( "SELECT payment_method FROM {$stats_table} WHERE order_id = %d", $order->get_id() ), ARRAY_A );
 		$this->assertSame( array( 'payment_method' => null ), $row, 'The row keeps a NULL payment method after a failed write.' );
+	}
+
+	/**
+	 * @testdox Migration registers the multi-currency seed, which turns the feature on after prior WooPayments use and otherwise leaves it unset.
+	 */
+	public function test_wc_update_1140_seed_multi_currency_feature(): void {
+		global $wpdb;
+
+		include_once WC_ABSPATH . 'includes/wc-update-functions.php';
+
+		$db_updates = WC_Install::get_db_update_callbacks();
+		$this->assertArrayHasKey( '11.4.0', $db_updates );
+		$this->assertContains( 'wc_update_1140_seed_multi_currency_feature', $db_updates['11.4.0'] );
+
+		$cases = array(
+			'implicit legacy default plus enabled currencies' => array( null, array( 'EUR' ), null, 'yes' ),
+			'explicit legacy flag plus completed setup' => array( '1', array(), '1', 'yes' ),
+			'legacy flag without merchant use'          => array( '1', array(), null, false ),
+			'disabled legacy flag with merchant use'    => array( '0', array( 'EUR' ), '1', false ),
+		);
+
+		foreach ( $cases as $case => list( $legacy_flag, $enabled_currencies, $setup_completed, $expected ) ) {
+			delete_option( 'woocommerce_feature_multi_currency_enabled' );
+			delete_option( '_wcpay_feature_customer_multi_currency' );
+			delete_option( 'wcpay_multi_currency_enabled_currencies' );
+			delete_option( 'wcpay_multi_currency_setup_completed' );
+
+			if ( null !== $legacy_flag ) {
+				update_option( '_wcpay_feature_customer_multi_currency', $legacy_flag );
+			}
+			if ( array() !== $enabled_currencies ) {
+				update_option( 'wcpay_multi_currency_enabled_currencies', $enabled_currencies );
+			}
+			if ( null !== $setup_completed ) {
+				update_option( 'wcpay_multi_currency_setup_completed', $setup_completed );
+			}
+
+			wc_update_1140_seed_multi_currency_feature();
+
+			$this->assertSame( $expected, get_option( 'woocommerce_feature_multi_currency_enabled' ), $case );
+		}
+
+		delete_option( 'woocommerce_feature_multi_currency_enabled' );
+		delete_option( '_wcpay_feature_customer_multi_currency' );
+		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'EUR' ) );
+		wc_update_1140_seed_multi_currency_feature();
+		$this->assertContains(
+			$wpdb->get_var( $wpdb->prepare( "SELECT autoload FROM {$wpdb->options} WHERE option_name = %s", 'woocommerce_feature_multi_currency_enabled' ) ),
+			wp_autoload_values_to_autoload(),
+			'The feature option should be autoloaded because the runtime arbiter reads it in the request hot path.'
+		);
+
+		update_option( '_wcpay_feature_customer_multi_currency', '1' );
+		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'EUR' ) );
+		update_option( 'woocommerce_feature_multi_currency_enabled', 'no' );
+
+		wc_update_1140_seed_multi_currency_feature();
+
+		$this->assertSame( 'no', get_option( 'woocommerce_feature_multi_currency_enabled' ), 'The migration should preserve an existing feature decision.' );
+		$this->assertSame( 'woocommerce_feature_multi_currency_enabled', MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION );
 	}
 }

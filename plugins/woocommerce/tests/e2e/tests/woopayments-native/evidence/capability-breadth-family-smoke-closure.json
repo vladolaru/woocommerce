@@ -1,0 +1,136 @@
+{
+	"schema_version": 2,
+	"slice_id": "capability-breadth-family-smoke-closure",
+	"wc_base_commit": "143b1c5ea5d1c2ff63a90e943783ffe815f8a04d",
+	"verified_at_commit": "586b2612563d2baca37200e45de1efadfc812a5e",
+	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+	"source_test_paths": [
+		"plugins/woocommerce/tests/e2e/tests/woopayments-native/merchant/role-access.spec.ts",
+		"plugins/woocommerce/tests/php/src/Internal/Admin/Settings/PaymentsProviders/WooPayments/WooPaymentsRestControllerIntegrationTest.php",
+		"plugins/woocommerce/tests/php/src/Internal/Payments/NativePaymentsRuntimeArbiterTest.php"
+	],
+	"source_test_sha256": "bc38a044e2a806f054dbbd36f11a5d8bc3e22832b08f8048b139a7d400630cc4",
+	"contract_ids": [
+		"default::chromium::tests/e2e/specs/wcpay/merchant/non-admin-wp-admin-access.spec.ts:43::Non-admin WP-Admin access › should be able to access wp-admin of fully onboarded WooPayments site",
+		"default::chromium::tests/e2e/specs/wcpay/merchant/non-admin-wp-admin-access.spec.ts:58::Non-admin WP-Admin access › should be able to access wp-admin before and after onboarding"
+	],
+	"targets": [
+		{
+			"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/merchant/role-access.spec.ts",
+			"contract": "editor wp-admin access stays intact on a connected store while payment administration stays gated"
+		}
+	],
+	"implementation_commits": [
+		"586b2612563d2baca37200e45de1efadfc812a5e"
+	],
+	"verification": [
+		{
+			"command": "WCPAY_RUNTIME=native pnpm --dir plugins/woocommerce test:e2e:with-env woopayments-native --project=woopayments-native-readonly --workers=1 --retries=0 tests/e2e/tests/woopayments-native/merchant/role-access.spec.ts",
+			"exit_code": 0,
+			"summary": "The provider-free smoke ran green twice consecutively with one worker and zero retries on the closed bytes, after env-setup proved provider-free readiness for the native store. It establishes a run-stable editor idempotently over REST - re-asserting credentials and the editor role every run - asserts the connected-account and enabled-gateway preconditions, proves two administrator positive controls at the payments admin surface and the payments settings REST route, then proves the editor gets an operable dashboard with the Main menu landmark and a usable Posts link, a working editing surface, the core permissions message on the classic settings screen, the payments admin not-allowed screen plus its user-facing permissions text, and a capability-coded REST 403 under a genuine authenticated nonce. The oracle was mutation-checked in both directions: granting the editor role the payments management capability fails at the first denial assertion, and deleting the account cache fails at the connected-account precondition, the cache privately captured and restored byte-equivalently."
+		},
+		{
+			"command": "pnpm --dir plugins/woocommerce test:e2e:woopayments:controller",
+			"exit_code": 0,
+			"summary": "The full controller passed on the closed proposal before commit: the contract-map validator unit tests, the ledger validation across all 181 contracts including the two reopened rows, the project-routing validator unit tests including the two new annotation bindings, the environment-setup contract tests, and the provider-free harness unit tests."
+		}
+	],
+	"reviews": [
+		{
+			"role": "code",
+			"verdict": "APPROVE",
+			"source_test_sha256": "bc38a044e2a806f054dbbd36f11a5d8bc3e22832b08f8048b139a7d400630cc4",
+			"summary": "Two-round review; approved and re-confirmed on the committed bytes after every finding was applied. The editor denial oracles are non-vacuous: the payments admin app not-allowed screen is a generic catch-all reached through a client-side capability filter, so the same-URL administrator positive control is what distinguishes a capability denial from a missing route, and it asserts both the authorized screen present and the denial screen absent. The REST oracle matches the native controller permission path exactly - a strict 403 with woocommerce_rest_cannot_view - excluding an unauthenticated or bad-nonce request masquerading as a capability denial. The before-onboarding absence claim was checked against source: every native admin-time redirect is gated on an explicit query parameter, none on connection or onboarding state. Admin credentials resolve environment-first, the fixture reset comment is corrected, the login helper closes under finally, and the nonce reader rejects anything that is not a plain short token."
+		},
+		{
+			"role": "e2e-tests",
+			"verdict": "APPROVE",
+			"source_test_sha256": "bc38a044e2a806f054dbbd36f11a5d8bc3e22832b08f8048b139a7d400630cc4",
+			"summary": "Two-round review; both findings resolved on the committed bytes. Every allowed- and denied-surface proof is a role, label, or text query rather than a CSS or test-id selector, so the contract cannot pass unless the product keeps these surfaces in the accessibility tree. The heading locators are exact, closing the substring-collision pattern the file had already fixed once, which makes the Overview and Not-allowed pair a mutually exclusive oracle. The SPA denial is ordered after the heading so its brief loading phase cannot race the check, the dashboard URL assertion still rejects any path change while tolerating an unrelated query string, and the two browser contexts are created outside their try and closed in finally."
+		},
+		{
+			"role": "reliability",
+			"verdict": "APPROVE",
+			"source_test_sha256": "bc38a044e2a806f054dbbd36f11a5d8bc3e22832b08f8048b139a7d400630cc4",
+			"summary": "Two-round review; the two flagged diagnosability gaps are fixed on the committed bytes. The login helper closes its page under finally so it is safe to reuse, and the nonce reader validates shape and surfaces the offending value, so a WAF page or PHP fatal fails loudly instead of being sent as a nonce. Setup and precondition failures carry HTTP status and body, the account and gateway preconditions are asserted before either browser context opens so a degraded store fails at the precondition, and the admin and editor contexts are fully separate so a positive-control failure aborts before the editor block. A JS boot failure on the payments app would fail a specific toBeVisible with a located timeout rather than passing silently."
+		},
+		{
+			"role": "accessibility",
+			"verdict": "APPROVE",
+			"source_test_sha256": "bc38a044e2a806f054dbbd36f11a5d8bc3e22832b08f8048b139a7d400630cc4",
+			"summary": "Two-round review; both strengthenings applied on the committed bytes. The allowed surface is now proven operable rather than merely titled: the Main menu navigation landmark is asserted exposed to assistive technology - attached, since its wrapper carries no box - with a visible, uniquely named Posts link inside it. The denial side gained the exact permissions text a merchant actually reads on the payments admin surface, distinguishing a capability denial from any unresolved route, and each locator was verified against the live rendered accessibility tree for uniqueness. Two inherited product observations are recorded rather than asserted because neither is testable until the product changes: the core permissions screen exposes no heading, landmark, or recovery path, and the payments not-allowed screen neither announces itself nor moves focus on the route change."
+		}
+	],
+	"closures": [
+		{
+			"contract_id": "default::chromium::tests/e2e/specs/wcpay/merchant/non-admin-wp-admin-access.spec.ts:43::Non-admin WP-Admin access › should be able to access wp-admin of fully onboarded WooPayments site",
+			"target": {
+				"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/merchant/role-access.spec.ts",
+				"contract": "editor wp-admin access stays intact on a connected store while payment administration stays gated"
+			},
+			"verification": [
+				{
+					"command": "WCPAY_RUNTIME=native pnpm --dir plugins/woocommerce test:e2e:with-env woopayments-native --project=woopayments-native-readonly --workers=1 --retries=0 tests/e2e/tests/woopayments-native/merchant/role-access.spec.ts",
+					"exit_code": 0,
+					"summary": "The connected-store half of this contract is proven directly: preconditions assert a connected account and enabled gateway, the editor reaches an operable dashboard - heading plus the Main menu landmark and a usable Posts link - and an ordinary editing surface, while payment administration is denied in all three shapes. The retained REST-controller integration and runtime-arbiter coverage prove the capability gate independent of the browser path."
+				}
+			],
+			"reviews": [
+				{
+					"role": "code",
+					"verdict": "APPROVE",
+					"source_test_sha256": "bc38a044e2a806f054dbbd36f11a5d8bc3e22832b08f8048b139a7d400630cc4",
+					"summary": "The denial oracles match the native permission path and are each paired with a same-URL administrator positive control, so no denial can pass against a missing surface or route."
+				},
+				{
+					"role": "e2e-tests",
+					"verdict": "APPROVE",
+					"source_test_sha256": "bc38a044e2a806f054dbbd36f11a5d8bc3e22832b08f8048b139a7d400630cc4",
+					"summary": "Role and text locators with exact headings and a hydration-safe assertion order; the mutation record shows the capability mutation fails at the correct denial assertion and the cache-deletion at the correct precondition."
+				},
+				{
+					"role": "reliability",
+					"verdict": "APPROVE",
+					"source_test_sha256": "bc38a044e2a806f054dbbd36f11a5d8bc3e22832b08f8048b139a7d400630cc4",
+					"summary": "Preconditions assert the connected-and-enabled premise before any browser context opens, and every helper failure is loud with status and body, so a degraded store fails at its cause."
+				}
+			]
+		},
+		{
+			"contract_id": "default::chromium::tests/e2e/specs/wcpay/merchant/non-admin-wp-admin-access.spec.ts:58::Non-admin WP-Admin access › should be able to access wp-admin before and after onboarding",
+			"target": {
+				"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/merchant/role-access.spec.ts",
+				"contract": "editor wp-admin access stays intact on a connected store while payment administration stays gated"
+			},
+			"verification": [
+				{
+					"command": "WCPAY_RUNTIME=native pnpm --dir plugins/woocommerce test:e2e:with-env woopayments-native --project=woopayments-native-readonly --workers=1 --retries=0 tests/e2e/tests/woopayments-native/merchant/role-access.spec.ts",
+					"exit_code": 0,
+					"summary": "The no-interception guarantee this contract asserts is proven on the connected store: the editor lands on the dashboard at its own path with no payments or onboarding redirect, verified against source that native registers no admin-page redirect keyed on payments or onboarding state. The account-state-independent capability gate is the retained lower-layer evidence, and the account-cache-absent state was exercised as a mutation direction rather than a maintained before-onboarding fixture, by the standing disposable-store owner decision."
+				}
+			],
+			"reviews": [
+				{
+					"role": "code",
+					"verdict": "APPROVE",
+					"source_test_sha256": "bc38a044e2a806f054dbbd36f11a5d8bc3e22832b08f8048b139a7d400630cc4",
+					"summary": "The denial oracles match the native permission path and are each paired with a same-URL administrator positive control, so no denial can pass against a missing surface or route."
+				},
+				{
+					"role": "e2e-tests",
+					"verdict": "APPROVE",
+					"source_test_sha256": "bc38a044e2a806f054dbbd36f11a5d8bc3e22832b08f8048b139a7d400630cc4",
+					"summary": "Role and text locators with exact headings and a hydration-safe assertion order; the mutation record shows the capability mutation fails at the correct denial assertion and the cache-deletion at the correct precondition."
+				},
+				{
+					"role": "reliability",
+					"verdict": "APPROVE",
+					"source_test_sha256": "bc38a044e2a806f054dbbd36f11a5d8bc3e22832b08f8048b139a7d400630cc4",
+					"summary": "Preconditions assert the connected-and-enabled premise before any browser context opens, and every helper failure is loud with status and body, so a degraded store fails at its cause."
+				}
+			]
+		}
+	],
+	"known_gaps": [],
+	"deferral": null
+}

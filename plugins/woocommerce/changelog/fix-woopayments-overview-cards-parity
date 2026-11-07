@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+The WooPayments Overview shows the full active loan summary, an "Edit details" link to the payments dashboard, the payout status details, active fee discounts, and a notice when instant payouts become unavailable.

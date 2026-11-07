@@ -1,0 +1,4 @@
+Significance: patch
+Type: dev
+
+Let the WooPayments native E2E bootstrap tests control the activation constant so they hold on machines that define it.

@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Let merchants configure WooPay and its checkout appearance when WooPay express checkout buttons are unavailable, hiding only the button settings, as the WooPayments plugin does.

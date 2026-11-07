@@ -2,8 +2,9 @@
  * External dependencies
  */
 import { useSelect } from '@wordpress/data';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { recordEvent } from '@woocommerce/tracks';
+import apiFetch from '@wordpress/api-fetch';
 /**
  * Internal dependencies
  */
@@ -19,6 +20,8 @@ jest.mock( '@wordpress/data', () => ( {
 } ) );
 
 jest.mock( '@woocommerce/tracks', () => ( { recordEvent: jest.fn() } ) );
+
+jest.mock( '@wordpress/api-fetch', () => jest.fn() );
 
 jest.mock( '~/utils/features', () => ( {
 	isFeatureEnabled: jest.fn(),
@@ -103,7 +106,25 @@ const paymentGatewaySuggestionsWithoutWCPay = paymentGatewaySuggestions.filter(
 	( p ) => ! p.id.startsWith( 'woocommerce_payments' )
 );
 
+// With the WooPayments feature on, the server sends the WooPayments suggestions without plugins to install.
+const builtInPaymentGatewaySuggestions = paymentGatewaySuggestions.map(
+	( { plugins, ...suggestion } ) =>
+		suggestion.id.startsWith( 'woocommerce_payments' )
+			? suggestion
+			: { ...suggestion, plugins }
+);
+
 describe( 'PaymentGatewaySuggestions', () => {
+	const originalLocation = window.location;
+
+	afterEach( () => {
+		// Several tests replace window.location to observe redirects; later tests need the real one.
+		Object.defineProperty( global.window, 'location', {
+			value: originalLocation,
+			configurable: true,
+		} );
+	} );
+
 	test( 'should render all payment gateways, including WCPay', () => {
 		const onComplete = jest.fn();
 		const query = {};
@@ -447,6 +468,158 @@ describe( 'PaymentGatewaySuggestions', () => {
 		).toEqual( [ 'tasklist_payments_wcpay_bnpl_click' ] );
 	} );
 
+	test( 'should route WooPayments setup to Settings Payments onboarding with the feature on', async () => {
+		const onComplete = jest.fn();
+		const query = {};
+		const mockLocation = {
+			href: 'test',
+		};
+
+		Object.defineProperty( global.window, 'location', {
+			value: mockLocation,
+			configurable: true,
+		} );
+
+		useSelect.mockImplementation( () => ( {
+			isResolving: false,
+			getPaymentGateway: jest.fn(),
+			paymentGatewaySuggestions: builtInPaymentGatewaySuggestions,
+			installedPaymentGateways: [],
+			countryCode: 'US',
+		} ) );
+
+		const { container } = render(
+			<PaymentGatewaySuggestions
+				onComplete={ onComplete }
+				query={ query }
+			/>
+		);
+
+		fireEvent.click(
+			container.querySelector( '.woocommerce-wcpay-suggestion button' )
+		);
+
+		await waitFor( () =>
+			expect( mockLocation.href ).toContain( 'page=wc-settings' )
+		);
+		expect( mockLocation.href ).toContain( 'tab=checkout' );
+		expect( mockLocation.href ).toContain( 'path=/woopayments/onboarding' );
+		expect( mockLocation.href ).toContain( 'from=WCADMIN_PAYMENT_TASK' );
+		expect( mockLocation.href ).not.toContain( '/plugins/connect-wcpay' );
+	} );
+
+	test( 'should keep WooPayments setup action when the built-in provider is enabled but needs onboarding', async () => {
+		const onComplete = jest.fn();
+		const query = {};
+		const mockLocation = {
+			href: 'test',
+		};
+
+		Object.defineProperty( global.window, 'location', {
+			value: mockLocation,
+			configurable: true,
+		} );
+
+		useSelect.mockImplementation( () => ( {
+			isResolving: false,
+			getPaymentGateway: jest.fn(),
+			paymentGatewaySuggestions: builtInPaymentGatewaySuggestions,
+			installedPaymentGateways: [
+				{
+					id: 'woocommerce_payments',
+					title: 'WooPayments',
+					enabled: true,
+					needs_setup: true,
+					settings_url: 'http://example.com',
+				},
+			],
+			countryCode: 'US',
+		} ) );
+
+		const { container } = render(
+			<PaymentGatewaySuggestions
+				onComplete={ onComplete }
+				query={ query }
+			/>
+		);
+
+		const button = container.querySelector(
+			'.woocommerce-wcpay-suggestion button'
+		);
+
+		expect( button ).toHaveTextContent( 'Finish setup' );
+
+		fireEvent.click( button );
+
+		await waitFor( () =>
+			expect( mockLocation.href ).toContain( 'page=wc-settings' )
+		);
+		expect( mockLocation.href ).toContain( 'path=/woopayments/onboarding' );
+	} );
+
+	// With the WooPayments feature off, the suggestion names the extension (trunk's fixture above).
+	const renderFeatureOffSuggestion = ( installedPaymentGateways ) => {
+		apiFetch.mockClear();
+		apiFetch.mockResolvedValue( {
+			connectUrl: 'https://connect.example.test/',
+		} );
+		useSelect.mockImplementation( () => ( {
+			isResolving: false,
+			getPaymentGateway: jest.fn(),
+			paymentGatewaySuggestions,
+			installedPaymentGateways,
+			countryCode: 'US',
+		} ) );
+
+		const { container } = render(
+			<PaymentGatewaySuggestions onComplete={ jest.fn() } query={ {} } />
+		);
+
+		return container.querySelector(
+			'.woocommerce-wcpay-suggestion button'
+		);
+	};
+
+	test( 'with the feature off, Get started opens the extension install step, as trunk does', () => {
+		const button = renderFeatureOffSuggestion( [] );
+		expect( button ).toHaveTextContent( 'Get started' );
+
+		fireEvent.click( button );
+
+		expect(
+			new URLSearchParams( window.location.search ).get( 'id' )
+		).toBe( 'woocommerce_payments:non-us' );
+		expect( apiFetch ).not.toHaveBeenCalled();
+	} );
+
+	test( 'with the feature off, Finish setup connects the installed extension, as trunk does', async () => {
+		const button = renderFeatureOffSuggestion( [
+			{
+				id: 'woocommerce_payments',
+				title: 'WooPayments',
+				enabled: false,
+				needs_setup: true,
+				settings_url: 'http://example.com',
+			},
+		] );
+		expect( button ).toHaveTextContent( 'Finish setup' );
+		Object.defineProperty( global.window, 'location', {
+			value: { href: 'test' },
+			configurable: true,
+			writable: true,
+		} );
+
+		fireEvent.click( button );
+
+		await waitFor( () =>
+			expect( window.location ).toBe( 'https://connect.example.test/' )
+		);
+		expect( apiFetch ).toHaveBeenCalledWith( {
+			path: '/wc-admin/plugins/connect-wcpay',
+			method: 'POST',
+		} );
+	} );
+
 	test( 'should navigate to the marketplace when clicking the WooCommerce Marketplace link', async () => {
 		const { isFeatureEnabled } = jest.requireMock( '~/utils/features' );
 		isFeatureEnabled.mockReturnValue( true );
@@ -458,6 +631,7 @@ describe( 'PaymentGatewaySuggestions', () => {
 		mockLocation.href = 'test';
 		Object.defineProperty( global.window, 'location', {
 			value: mockLocation,
+			configurable: true,
 		} );
 
 		render(

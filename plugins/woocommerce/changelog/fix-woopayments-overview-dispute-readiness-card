@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+The WooPayments Overview dispute readiness card now matches WooPayments: a short guide with a Learn more link, Dismiss in an actions menu, and a status icon on each step.

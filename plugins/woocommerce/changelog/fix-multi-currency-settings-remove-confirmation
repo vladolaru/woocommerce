@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Ask before removing a multi-currency currency that an enabled WooPayments payment method needs.

@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Keep the WooPayments subscription migration log through log cleanup on stores that log to the database from the logs settings, or that name the current file handler in WC_LOG_HANDLER.

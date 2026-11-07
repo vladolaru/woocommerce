@@ -1,0 +1,40 @@
+{
+	"schema_version": 2,
+	"slice_id": "partial-refund-multi-line-deferral",
+	"wc_base_commit": "92b2fc3376f6a5ce47d283656cb0c06dc569fb9f",
+	"verified_at_commit": "e4c7c124f862e672c4539a746dbc523b771b68f1",
+	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+	"source_test_paths": [
+		"plugins/woocommerce/tests/e2e/tests/woopayments-native/evidence/calibration-notes.md"
+	],
+	"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+	"contract_ids": [
+		"default::chromium::tests/e2e/specs/wcpay/merchant/merchant-orders-partial-refund.spec.ts:118::Order › Partial refund › Refund two products of three product order"
+	],
+	"targets": [
+		{
+			"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/scenarios/refund.ts",
+			"contract": "pending"
+		}
+	],
+	"implementation_commits": [],
+	"verification": [],
+	"reviews": [
+		{
+			"role": "deferral",
+			"verdict": "APPROVE",
+			"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+			"summary": "Fresh broad review approved with no material findings after independently verifying the exact second line-118 boundary; the four-field-only transition preserving target, pending contract, and owner; predecessor/source/calibration binding; the intended three-product fixture and QIT duplicate-Beanie exclusion; the O7/PI7/C7/BT7/L7A/L7B/L7C/LR7/R7 graph; exact two-line quantities and USD 18.00/USD 55.00 allocation, USD 73.00/7300-minor-unit provider relationship/status/occurrence, charge refund delta, unchanged parent quantities, refunded and remaining-refundable quantities, untouched Hoodie, partial status, refunded-total/USD 100.00 net arithmetic, and reason/audit reconciliation; BT7 provenance-only scope; strict amount-only/cumulative/full/multi-currency/failure/transaction-detail/restock/webhook sibling isolation; no native-defect, runtime-execution, or lower-layer-substitution claim; readiness, protected allocation, listener ownership, ordered locks, separate journals, zero-retry/no-replay, bounded reads, byte restoration, retention, cleanup, quarantine, and drift safeguards; and zero provider-resource use."
+		}
+	],
+	"closures": [],
+	"known_gaps": [],
+	"deferral": {
+		"blocker": "Standing exact-store, account, and callback native readiness fails first. The run also lacks a resolved row-safe target contract, implementation owner, and closure-bundle topology; approved deterministic three-product USD order, two-line quantity allocation, provider refund, remaining-quantity, terminal-state, and arithmetic semantics; protected provider allocation and one exclusively owned listener; exact account, store, setting, provider-write, and financial-record locks; separate durable checkout and refund journals; bounded provider, order, refund, and audit reads; byte-exact restoration of every touched state; and approved retained-record, local/context cleanup, and quarantine handling.",
+		"affected_scope": "Only the second line-118 multi-line partial refund: one fresh run-owned USD order O7 with exact PI7/C7/BT7 has L7A Beanie quantity one at USD 18.00, L7B Belt quantity two at USD 55.00 each, and L7C Hoodie quantity one at USD 45.00 plus exactly one captured payment; an authenticated authorized merchant dispatches exactly one refund R7 allocating quantity one/USD 18.00 to L7A and quantity one/USD 55.00 to L7B, no allocation to L7C, aggregate USD 73.00/7300 provider minor units, and exact reason Refund two products of three product order; sole local refund LR7 has parent O7, provider mapping R7, total -73.00, and exactly two lines bound to L7A/L7B with quantities -1 and totals -18.00/-55.00; parent quantities remain one/two/one while refunded quantities are one/one/zero and remaining refundable quantities are zero/one/one; R7 is terminal successful, related to C7/PI7/O7, and occurs once; C7 amount_refunded increases by 7300 without full refund; O7 refunded total is 73.00, net equals authoritative captured/order total minus 73.00 (USD 100.00 for the exact USD 173.00 fixture), approved partial-refund status remains unchanged, and semantic audit evidence carries exact amount and reason. BT7 is payment provenance only. It claims no amount-only sibling, accidental extra product, cumulative/full/multi-currency/failure/transaction-detail/restock/webhook behavior, positional/classic selector, plugin route/branding/copy, fixed markup, or unrelated multicurrency behavior.",
+		"no_allowlisted_action_reason": "No allowlisted action can repair standing native readiness, resolve target/bundle ownership, approve deterministic product/order/allocation/refund/remaining-quantity/terminal/arithmetic semantics, allocate the protected provider lane, establish exclusive listener ownership, or approve exact locks, journals, byte restoration, retained-record, cleanup, and quarantine controls. Native gateway/processing/effect/event tests and WooCommerce allocation validation cannot substitute for one exact two-line quantity allocation joined to the native provider refund and same-order remaining quantities/net arithmetic. The amount-only sibling supplied no runtime state and older evidence is not row-specific. No current bounded native defect is known before prerequisites and exact-target RED. Replaying checkout or refund after dispatch to erase uncertainty is forbidden.",
+		"reference": "blocked-environment:PILOT-NATIVE-READINESS",
+		"unlock_decision": "Externally provide successful exact-store/account/callback native readiness; resolve a row-safe target and owner; approve deterministic three-product USD prices/order, two-line allocation, provider refund/remaining-quantity/terminal/arithmetic semantics, protected allocation, retained-record policy, and byte-exact restoration; obtain one exclusively owned listener; then run once with one worker and zero retries under ordered account/store/setting/provider-write/record locks, separate pre-dispatch checkout and refund journals, exact O7/PI7/C7/BT7/L7A/L7B/L7C/LR7/R7 identities, one occurrence, exact allocation/provider/order/remaining/net/reason reconciliation, no mutation replay, shrinking-deadline reads, safe local/context cleanup, and fail-closed quarantine. Keep the amount-only sibling independent and explicitly reopen/re-close if the shared refund target later drifts.",
+		"quarantine_status": "This deferral allocated and mutated nothing, acquired no lease, lock, setting, shopper session, journal, browser, provider record, or quarantine, and consumed no provider capacity. Campaign inventory remains zero for active leases, transition workspaces, open provider/restoration journals, quarantine receipts/events, and stale recoveries. The existing separately owned listener remains present, unavailable, and untouched. Any uncertain checkout, refund, allocation, restoration, session cleanup, local cleanup, lock, listener, or attribution state must preserve journals, quarantine every affected resource, and must not be replayed."
+	}
+}

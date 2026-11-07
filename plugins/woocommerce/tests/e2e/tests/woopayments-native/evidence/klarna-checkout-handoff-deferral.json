@@ -1,0 +1,40 @@
+{
+	"schema_version": 2,
+	"slice_id": "klarna-checkout-handoff-deferral",
+	"wc_base_commit": "92b2fc3376f6a5ce47d283656cb0c06dc569fb9f",
+	"verified_at_commit": "15e2c43a5cff50164249934d9f19676f947647aa",
+	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+	"source_test_paths": [
+		"plugins/woocommerce/tests/e2e/tests/woopayments-native/evidence/calibration-notes.md"
+	],
+	"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+	"contract_ids": [
+		"default::chromium::tests/e2e/specs/wcpay/shopper/klarna-checkout-purchase.spec.ts:57::Klarna Checkout › allows to use Klarna as a payment method"
+	],
+	"targets": [
+		{
+			"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/shopper/alternative-methods.spec.ts",
+			"contract": "pending"
+		}
+	],
+	"implementation_commits": [],
+	"verification": [],
+	"reviews": [
+		{
+			"role": "deferral",
+			"verdict": "APPROVE",
+			"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+			"summary": "Fresh broad review approved pre-review evidence SHA c00147971d3c54ef83a68e8aeaafe96c3ba874d650817bb80b933b166c9684e8 against ledger SHA 901c80ec7eb50a635ce0ae06e97ada6f3c3e26b6b3a981ea2276e266809d77cd with no findings. Only Klarna line-57 fields 37-40 change and fields 1-36 remain byte-identical. Native readiness remains primary and provider-listener exclusivity secondary. The evidence binds one Classic checkout dispatch, zero replay, exact order, intent, run-metadata, amount, USD, Klarna-only method types, and action-required state correlation; redacted next-action equality; and strict HTTPS Klarna DNS-label provenance. It excludes authorization, return-controller execution, completion, capture, refund, and cancellation; retains the incomplete graph; and covers exclusive listener ownership, exact restoration, quarantine, source/target/runtime drift, accessibility, and security controls."
+		}
+	],
+	"closures": [],
+	"known_gaps": [],
+	"deferral": {
+		"blocker": "Standing-native readiness fails before this row may allocate a Klarna redirect provider writer, exclusive listener, browser, product, order, or intent graph; the target contract and owner remain pending; and the readiness artifact does not yet prove active klarna_payments capability plus canonical/split Klarna enablement and supported US/USD amount. Core already owns the split gateway, Classic checkout confirmation bridge, Klarna-only intent construction, next-action redirect, and eventual validated return controller, so no current native defect, known gap, authority conflict, or source staleness is established. Listener exclusivity is a later secondary blocker.",
+		"affected_scope": "Only one Classic checkout initiation through external handoff. In a fresh disposable guest session with one unique run-owned product and exact one-line USD cart, prove the accessible native Klarna gateway selected, open the provider journal before one Place order action, and emit exactly one checkout request with zero retries. Join exactly one local order and one provider PaymentIntent by run metadata, order identity, exact amount/currency, and payment method types exactly Klarna in the precise action-required state. Capture the redacted next-action destination and prove the browser top-level destination equals it under an approved normalization and resolves to secure Klarna-owned DNS-label provenance. Do not authorize, return, complete, capture, refund, or claim the redirect-return controller.",
+		"no_allowlisted_action_reason": "The run cannot establish native readiness, approve the target/owner, extend readiness to exact Klarna capability and split settings, allocate the required redirect-scoped provider tuple and exclusive listener, or create an irreversible order/intent without protected locks and a durable journal. A final URL regex containing klarna.com, repeated Place order clicks, shared cart/product, card-specific completion helper, external playground DOM, provider authorization, or mocked redirect cannot substitute for exact one-dispatch order/intent/amount/method/state correlation, redacted destination equality, strict HTTPS host validation, retained incomplete records, and quarantine on uncertainty.",
+		"reference": "blocked-environment:PILOT-NATIVE-READINESS",
+		"unlock_decision": "Externally satisfy exact native readiness extended to canonical Klarna enablement, projected split gateway, klarna_payments active, US/USD eligibility, and supported amount; approve the target contract and owner; provide a unique provider-fixture Klarna-redirect capability, exact redacted redirect normalization and origin policy, and one exclusively owned listener. Acquire account, store, feature-setting, record-event, provider-writer, and listener ownership; run one Classic submission with one worker, zero retries, one no-replay journal, exact order/intent readers, retention and quarantine; preserve the unexercised return owner; then obtain fresh code, E2E-test, reliability, accessibility, security, and provider-evidence reviews.",
+		"quarantine_status": "No browser context, account, store, allocation, product, cart, order, intent, setting, lock, journal, listener, provider object, retention record, or quarantine was created or changed for this row; the separately owned listener remains untouched. A future ambiguous checkout, duplicate order or intent, mismatched amount/currency/method/metadata, unexpected provider state, unsafe or unapproved redirect, lost listener attribution, runtime or bundle drift after dispatch, lock loss, owned-resource cleanup failure, or restoration mismatch must preserve the unresolved journal and retained incomplete financial graph and quarantine the exact account/store/order/intent/product/session/listener resources without replay. Do not add cancellation as cleanup without separate authorization."
+	}
+}

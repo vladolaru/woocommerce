@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Let merchants reset a WooPayments test account from the Account details card on the built-in WooPayments Overview, like the WooPayments plugin.

@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Unavailable WooPayments admin areas now show their message in a card instead of as bare text on the page.

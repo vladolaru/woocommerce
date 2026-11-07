@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+When WooPayments settings fail to load, show the advanced fraud protection retrieval error and offer no Save, so default rules cannot overwrite the stored ones.

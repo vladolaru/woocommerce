@@ -1,0 +1,4 @@
+Significance: patch
+Type: dev
+
+Remove the deprecated WooPayments welcome page route and inbox-note surface.

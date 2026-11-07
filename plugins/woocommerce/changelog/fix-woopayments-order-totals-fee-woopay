@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+WooPayments orders show the transaction fee and, for WooPay orders, the "Paid with WooPay" line under the order totals again.

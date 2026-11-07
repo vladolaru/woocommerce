@@ -1,0 +1,4 @@
+Significance: patch
+Type: dev
+
+Assert MetaDataUtil behavior against the meta it changes rather than the order total, so the tests hold under both order storage backends.

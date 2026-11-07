@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+The WooPayments transactions and payouts lists now offer the Show and currency selects, with the advanced filters under Show: Advanced filters, like the disputes list and the WooPayments plugin.

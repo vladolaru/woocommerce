@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Subscriptions paid with the built-in WooPayments integration now renew automatically while its gateway is disabled, its scheduled actions run when Action Scheduler runs under WP-CLI, and enabling or disabling its gateway from the payments list or the REST API now switches its checkout on or off.

@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Fill the WooPayments dispute cover letter as WooPayments did: the formatted store address, dates in the site format with times, and the attachment labels and order for each dispute reason; read a saved "multiple" product type as Other.

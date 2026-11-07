@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Show WooPayments settings notices, such as a failed Apple Pay domain verification, above the settings form when extra settings fields keep the classic settings screen, and stop firing them on the Payments page while the WooPayments extension is active.

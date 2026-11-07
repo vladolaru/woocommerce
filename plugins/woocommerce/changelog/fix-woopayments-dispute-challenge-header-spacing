@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+The WooPayments dispute challenge header no longer leaves extra space around the dispute notice.

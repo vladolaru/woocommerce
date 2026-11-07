@@ -1,0 +1,4 @@
+Significance: patch
+Type: dev
+
+Add native WooPay settings-toggle E2E and lower-layer coverage and close its two contracts.

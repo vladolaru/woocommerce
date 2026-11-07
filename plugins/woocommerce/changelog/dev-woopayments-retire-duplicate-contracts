@@ -1,0 +1,4 @@
+Significance: patch
+Type: dev
+
+Retire twelve duplicate and structural WooPayments client contracts, each naming the retained contract that already covers it.

@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Charge WooPayments methods that cannot be captured later, such as iDEAL and Klarna, with automatic capture while manual capture is on.

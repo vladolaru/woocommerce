@@ -4,6 +4,7 @@ declare( strict_types=1 );
 namespace Automattic\WooCommerce\Internal\Admin\Settings;
 
 use Automattic\WooCommerce\Internal\Jetpack\JetpackConnection;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use WP_REST_Request;
 
 defined( 'ABSPATH' ) || exit;
@@ -339,12 +340,13 @@ class Utils {
 	 * Retrieves a URL to relative path inside WooCommerce admin Payments settings with
 	 * the provided query parameters.
 	 *
-	 * @param string|null $path  Relative path of the desired page.
-	 * @param array       $query Query parameters to append to the path.
+	 * @param string|null $path     Relative path of the desired page.
+	 * @param array       $query    Query parameters to append to the path.
+	 * @param string      $fragment URL fragment to append to the URL.
 	 *
 	 * @return string       Fully qualified URL pointing to the desired path.
 	 */
-	public static function wc_payments_settings_url( ?string $path = null, array $query = array() ): string {
+	public static function wc_payments_settings_url( ?string $path = null, array $query = array(), string $fragment = '' ): string {
 		$path = $path ? '&path=' . $path : '';
 
 		$query_string = '';
@@ -352,7 +354,9 @@ class Utils {
 			$query_string = '&' . http_build_query( $query );
 		}
 
-		return admin_url( 'admin.php?page=wc-settings&tab=checkout' . $path . $query_string );
+		$fragment = '' !== $fragment ? '#' . rawurlencode( $fragment ) : '';
+
+		return admin_url( 'admin.php?page=wc-settings&tab=checkout' . $path . $query_string . $fragment );
 	}
 
 	/**
@@ -457,8 +461,9 @@ class Utils {
 				array(
 					// We use the new WooDNA value.
 					'from'         => 'woocommerce-onboarding',
-					// We inform Calypso that this is a WooPayments onboarding flow.
-					'plugin_name'  => 'woocommerce-payments',
+					// We inform Calypso that this is a WooPayments onboarding flow: the built-in WooPayments connects as
+					// WooCommerce while the WooPayments feature is on.
+					'plugin_name'  => wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->is_builtin_enabled() ? 'woocommerce' : 'woocommerce-payments',
 					// Use the current user's WP admin color scheme.
 					'color_scheme' => $result['color_scheme'],
 				),

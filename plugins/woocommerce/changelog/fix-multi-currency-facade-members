@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Answer the WooPayments extension's Multi-Currency constants, store reads and compatibility checks while WooCommerce runs Multi-currency, so plugins that call them, such as WooCommerce Payfast Gateway and Themify Product Filter, no longer stop with a fatal error.

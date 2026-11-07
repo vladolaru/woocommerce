@@ -11,12 +11,18 @@ import { getNewPath } from '@woocommerce/navigation';
  */
 import { LYSPaymentsSteps } from '~/settings-payments/onboarding/providers/woopayments/steps';
 import { OnboardingProvider } from '~/settings-payments/onboarding/providers/woopayments/data/onboarding-context';
-import { isWooPayments } from '~/settings-payments/utils';
+import {
+	isBuiltinWooPayments,
+	isBuiltinWooPaymentsSuggestion,
+	isWooPayments,
+} from '~/settings-payments/utils';
 import { wooPaymentsExtensionSlug } from '~/settings-payments/constants';
 
 interface SetUpPaymentsContextType {
 	isWooPaymentsActive: boolean;
 	isWooPaymentsInstalled: boolean;
+	// The payments settings carry the WooPayments built into WooCommerce, not the WooPayments extension.
+	isBuiltinWooPayments: boolean;
 	wooPaymentsRecentlyActivated: boolean;
 	setWooPaymentsRecentlyActivated: ( value: boolean ) => void;
 }
@@ -27,6 +33,7 @@ interface SetUpPaymentsContextType {
 const SetUpPaymentsContext = createContext< SetUpPaymentsContextType >( {
 	isWooPaymentsActive: false,
 	isWooPaymentsInstalled: false,
+	isBuiltinWooPayments: false,
 	wooPaymentsRecentlyActivated: false,
 	setWooPaymentsRecentlyActivated: () => undefined,
 } );
@@ -40,7 +47,7 @@ export const SetUpPaymentsProvider: React.FC< {
 	// Get the WooPayments provider to access the real plugin slug.
 	// This is important for test/beta versions that may be installed under a different slug.
 	// We wait for the fetch to complete before exposing state to prevent slug instability.
-	const { wooPaymentsPluginSlug, isSlugResolved } = useSelect(
+	const { wooPaymentsPluginSlug, isSlugResolved, isBuiltin } = useSelect(
 		( select ) => {
 			const store = select( paymentSettingsStore );
 			const isFetching = store.isFetching();
@@ -63,6 +70,12 @@ export const SetUpPaymentsProvider: React.FC< {
 			return {
 				wooPaymentsPluginSlug: resolvedSlug ?? wooPaymentsExtensionSlug,
 				isSlugResolved: hasLoadedProviders,
+				isBuiltin: wooPaymentsProvider
+					? isBuiltinWooPayments( wooPaymentsProvider )
+					: // A hidden built-in suggestion is listed among the suggestions, not the providers.
+						store
+							.getSuggestions()
+							.some( isBuiltinWooPaymentsSuggestion ),
 			};
 		},
 		// Empty deps array - the selector subscribes to store state internally.
@@ -71,7 +84,7 @@ export const SetUpPaymentsProvider: React.FC< {
 	);
 
 	// Check if WooPayments is active by looking for the plugin in the active plugins list.
-	const isWooPaymentsActive = useSelect(
+	const isWooPaymentsPluginActive = useSelect(
 		( select ) => {
 			const activePlugins = select( pluginsStore ).getActivePlugins();
 			// Defensively check that activePlugins is an array before calling .includes().
@@ -82,7 +95,7 @@ export const SetUpPaymentsProvider: React.FC< {
 		[ wooPaymentsPluginSlug ]
 	);
 
-	const isWooPaymentsInstalled = useSelect(
+	const isWooPaymentsPluginInstalled = useSelect(
 		( select ) => {
 			const installedPlugins =
 				select( pluginsStore ).getInstalledPlugins();
@@ -93,6 +106,9 @@ export const SetUpPaymentsProvider: React.FC< {
 		},
 		[ wooPaymentsPluginSlug ]
 	);
+
+	const isWooPaymentsActive = isBuiltin || isWooPaymentsPluginActive;
+	const isWooPaymentsInstalled = isBuiltin || isWooPaymentsPluginInstalled;
 
 	// State to track if WooPayments was recently enabled
 	const [ wooPaymentsRecentlyActivated, setWooPaymentsRecentlyActivated ] =
@@ -132,6 +148,7 @@ export const SetUpPaymentsProvider: React.FC< {
 				value={ {
 					isWooPaymentsActive: false,
 					isWooPaymentsInstalled: false,
+					isBuiltinWooPayments: false,
 					wooPaymentsRecentlyActivated: false,
 					setWooPaymentsRecentlyActivated: () => undefined,
 				} }
@@ -146,6 +163,7 @@ export const SetUpPaymentsProvider: React.FC< {
 			value={ {
 				isWooPaymentsActive,
 				isWooPaymentsInstalled,
+				isBuiltinWooPayments: isBuiltin,
 				wooPaymentsRecentlyActivated,
 				setWooPaymentsRecentlyActivated,
 			} }

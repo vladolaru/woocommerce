@@ -1,0 +1,152 @@
+{
+	"schema_version": 2,
+	"slice_id": "multi-currency-theme-compatibility-pairing-closure",
+	"wc_base_commit": "143b1c5ea5d1c2ff63a90e943783ffe815f8a04d",
+	"verified_at_commit": "90e8711af87fe247e4e3a1191bbbd8fa2a76d9ce",
+	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+	"source_test_paths": [
+		"plugins/woocommerce/tests/e2e/tests/woopayments-native/shopper/theme-compatibility.spec.ts",
+		"plugins/woocommerce/tests/php/src/Internal/MultiCurrency/MultiCurrencySettingsControllerTest.php"
+	],
+	"source_test_sha256": "4c224fad8120568e38930bc236df1e82a4733c1ecd1018757c7f93217c9f3391",
+	"contract_ids": [
+		"default::chromium::tests/e2e/specs/wcpay/merchant/multi-currency-on-boarding.spec.ts:214::Multi-currency on-boarding › Currency Switcher widget › should offer the currency switcher widget while Storefront theme is active",
+		"default::chromium::tests/e2e/specs/wcpay/merchant/multi-currency-on-boarding.spec.ts:224::Multi-currency on-boarding › Currency Switcher widget › should not offer the currency switcher widget when an unsupported theme is active"
+	],
+	"targets": [
+		{
+			"path": "plugins/woocommerce/tests/php/src/Internal/MultiCurrency/MultiCurrencySettingsControllerTest.php;plugins/woocommerce/tests/e2e/tests/woopayments-native/shopper/theme-compatibility.spec.ts",
+			"contract": "the multi-currency settings screen offers only switcher placements the active theme supports"
+		}
+	],
+	"implementation_commits": [
+		"90e8711af87fe247e4e3a1191bbbd8fa2a76d9ce"
+	],
+	"verification": [
+		{
+			"command": "WCPAY_RUNTIME=native pnpm --dir plugins/woocommerce test:e2e:with-env woopayments-native --project=woopayments-native-readonly --workers=1 --retries=0 tests/e2e/tests/woopayments-native/shopper/theme-compatibility.spec.ts",
+			"exit_code": 0,
+			"summary": "The provider-free smoke ran green twice consecutively with one worker and zero retries on the closed bytes, after env-setup proved provider-free readiness. It takes the active theme identity from the WordPress themes route rather than from the multi-currency settings response, requires neither the stylesheet nor the template to be storefront, and requires the settings screen to report the same non-empty theme name, so the oracle no longer shares a derivation with the conditional under test. It then proves the store-settings section rendered its own form, that no Storefront breadcrumb placement is offered in the accessibility tree, in the section's checkbox inventory, or in its copy, and that a keyboard user who focuses the accessibly-disabled save control and presses Enter and Space causes no multi-currency write and no change to the stored settings. Mutation-checked in three directions: inverting the built bundle's theme predicate fails the absence assertion at a received count of one, regressing the site-theme projection to an empty string fails the precondition join, and enabling the Storefront placement setting fails the precondition that it must start off. The store was verified clean afterwards."
+		},
+		{
+			"command": "pnpm --dir plugins/woocommerce test:e2e:woopayments:controller",
+			"exit_code": 0,
+			"summary": "The full controller passed on the closed proposal before commit: the contract-map validator unit tests, the ledger validation across all 181 contracts including the two reopened rows, the project-routing validator unit tests including the two new annotation bindings, the environment-setup contract tests, and the provider-free harness unit tests."
+		},
+		{
+			"command": "node plugins/woocommerce/tests/e2e/bin/validate-woopayments-client-contract-map.mjs --from-git-ref HEAD",
+			"exit_code": 0,
+			"summary": "The deferred-to-specified reopening validated against the immediate predecessor: each reopened row records exactly one new unlock satisfaction reproducing its packet's exact prior unlock decision, against a dated calibration heading whose slug matches the reference, with all prior packet content byte-identical."
+		}
+	],
+	"reviews": [
+		{
+			"role": "code",
+			"verdict": "APPROVE",
+			"source_test_sha256": "4c224fad8120568e38930bc236df1e82a4733c1ecd1018757c7f93217c9f3391",
+			"summary": "Two-round review; both blocking findings closed on the committed bytes. The theme precondition now takes its identity from the WordPress themes route rather than from the settings response the conditional under test branches on, asserts the slug predicate the native Storefront integration itself uses so a Storefront child is caught, and requires the settings screen to report that same independently read name, with the two previously vacuous-on-undefined checks made strict. The reviewer verified both sources live and confirmed they agree. The display-name versus slug divergence they raised is correctly bounded by the row's frozen scope, asserted at the one layer where the join is real, and recorded as a product observation rather than silently absorbed. Their target-path request turned out to be forbidden by the validator itself, which requires retained targets to come from the frozen lower-layer context, and they confirmed the narrowing plus the explanatory note is the right response."
+		},
+		{
+			"role": "e2e-tests",
+			"verdict": "APPROVE",
+			"source_test_sha256": "4c224fad8120568e38930bc236df1e82a4733c1ecd1018757c7f93217c9f3391",
+			"summary": "Two-round review; the write-tracking gap is fixed on the committed bytes, which now watch the whole multi-currency REST prefix rather than a single route, so the sibling currency-update write the same screen can issue would be caught. The reviewer traced the native Storefront predicate and confirmed the precondition's slug check mirrors it exactly, and judged the theme-name join a real strengthening because it catches a drift the previous self-referential check structurally could not. Locators stay role and accessible-name first, with two narrowly justified CSS exceptions - section scoping and the AT-hidden checkbox inventory - neither of which introduces strict-mode ambiguity or vacuity, and the scoped positive control runs before the scoped absence checks so a section that never rendered fails loudly first. The keyboard activation was verified against the component library source as a real rather than simulated proof, with focus awaited and asserted before the presses and the write check after both."
+		},
+		{
+			"role": "reliability",
+			"verdict": "APPROVE",
+			"source_test_sha256": "4c224fad8120568e38930bc236df1e82a4733c1ecd1018757c7f93217c9f3391",
+			"summary": "Two-round review, approved both times and re-approved against the committed bytes. Every read fails loudly with status and body, and the new themes dependency also fails loudly on a theme count other than one, which the reviewer confirmed against the WordPress themes controller is a real invariant rather than an unreachable branch. The broadened write oracle is a strict superset of the narrower one and now covers the sibling currency-update route. The keyboard activation of the accessibly-disabled save control was traced to the pinned component library, where the disabled handlers are spread after the real click handler and the save path independently early-returns when nothing is dirty, and the reviewer noted the focus assertion doubles as a regression detector: if the control ever became natively disabled, focusing it would fail rather than silently skip the exercise. The tightened boolean precondition closes a vacuous pass on a dropped field."
+		},
+		{
+			"role": "accessibility",
+			"verdict": "APPROVE",
+			"source_test_sha256": "4c224fad8120568e38930bc236df1e82a4733c1ecd1018757c7f93217c9f3391",
+			"summary": "Two-round review; the medium finding is closed with live evidence rather than inspection. The reviewer injected an aria-hidden, aria-label-only, still-tabbable placement checkbox into the rendered section and measured every assertion against it: all four name-based assertions read zero while the new section-scoped checkbox inventory rejects it, so the packet's zero accessible or focusable clause is proved by construction against a ghost harder than the one that motivated the finding. The absence claim is scoped to the section that owns the conditional, mirrored across both the storefront and breadcrumb vocabularies, and anchored by a positive control drawn from the same component. The save control's non-actionability is no longer a markup fact alone: the spec proves it stays reachable, takes focus, and does nothing when pressed, with the focus assertion gating the key presses so an unfocusable regression fails there."
+		}
+	],
+	"closures": [
+		{
+			"contract_id": "default::chromium::tests/e2e/specs/wcpay/merchant/multi-currency-on-boarding.spec.ts:214::Multi-currency on-boarding › Currency Switcher widget › should offer the currency switcher widget while Storefront theme is active",
+			"target": {
+				"path": "plugins/woocommerce/tests/php/src/Internal/MultiCurrency/MultiCurrencySettingsControllerTest.php;plugins/woocommerce/tests/e2e/tests/woopayments-native/shopper/theme-compatibility.spec.ts",
+				"contract": "the multi-currency settings screen offers only switcher placements the active theme supports"
+			},
+			"verification": [
+				{
+					"command": "WCPAY_RUNTIME=native pnpm --dir plugins/woocommerce test:e2e:with-env woopayments-native --project=woopayments-native-readonly --workers=1 --retries=0 tests/e2e/tests/woopayments-native/shopper/theme-compatibility.spec.ts",
+					"exit_code": 0,
+					"summary": "The Storefront-positive contract is discharged by pairing, not by re-assertion, because Storefront is not installed on the dedicated native store. Both halves of the native conditional were read before being named: MultiCurrencyStorefrontIntegrationControllerTest registers the breadcrumb filter and style action under Storefront and registers neither under Twenty Twenty-Five, and store-settings.test.tsx renders the placement checkbox when the reported site theme is Storefront. The surface smoke adds the join neither of them makes, requiring the settings screen to report the same theme WordPress does, so a store that is really running Storefront cannot be mistaken for one that is not."
+				}
+			],
+			"reviews": [
+				{
+					"role": "code",
+					"verdict": "APPROVE",
+					"source_test_sha256": "4c224fad8120568e38930bc236df1e82a4733c1ecd1018757c7f93217c9f3391",
+					"summary": "The theme precondition is independent of the conditional under test and strict rather than vacuous, the display-name versus slug divergence is bounded by the row's own frozen scope and recorded, and the retained-target narrowing is the response the validator's own rules allow."
+				},
+				{
+					"role": "e2e-tests",
+					"verdict": "APPROVE",
+					"source_test_sha256": "4c224fad8120568e38930bc236df1e82a4733c1ecd1018757c7f93217c9f3391",
+					"summary": "Role and accessible-name locators with two justified CSS exceptions, a scoped positive control ahead of the scoped absence checks, and a write oracle covering the whole multi-currency REST prefix."
+				},
+				{
+					"role": "reliability",
+					"verdict": "APPROVE",
+					"source_test_sha256": "4c224fad8120568e38930bc236df1e82a4733c1ecd1018757c7f93217c9f3391",
+					"summary": "Every read fails loudly including the new themes dependency, the write oracle is a strict superset, and the keyboard activation was traced to the pinned component library and doubles as a regression detector for lost inertness."
+				},
+				{
+					"role": "accessibility",
+					"verdict": "APPROVE",
+					"source_test_sha256": "4c224fad8120568e38930bc236df1e82a4733c1ecd1018757c7f93217c9f3391",
+					"summary": "An injected aria-hidden, aria-label-only, still-tabbable placement checkbox is rejected only by the section checkbox inventory, so the packet's zero accessible or focusable clause is proved by construction; the save control is proved reachable, focusable and inert to Enter and Space."
+				}
+			]
+		},
+		{
+			"contract_id": "default::chromium::tests/e2e/specs/wcpay/merchant/multi-currency-on-boarding.spec.ts:224::Multi-currency on-boarding › Currency Switcher widget › should not offer the currency switcher widget when an unsupported theme is active",
+			"target": {
+				"path": "plugins/woocommerce/tests/php/src/Internal/MultiCurrency/MultiCurrencySettingsControllerTest.php;plugins/woocommerce/tests/e2e/tests/woopayments-native/shopper/theme-compatibility.spec.ts",
+				"contract": "the multi-currency settings screen offers only switcher placements the active theme supports"
+			},
+			"verification": [
+				{
+					"command": "WCPAY_RUNTIME=native pnpm --dir plugins/woocommerce test:e2e:with-env woopayments-native --project=woopayments-native-readonly --workers=1 --retries=0 tests/e2e/tests/woopayments-native/shopper/theme-compatibility.spec.ts",
+					"exit_code": 0,
+					"summary": "The unsupported-theme contract is proven directly against the store's active block theme: the store-settings section renders its own form and its theme-independent control, and the Storefront breadcrumb placement is absent from the accessibility tree, absent from the section's checkbox inventory so an AT-hidden but tabbable offer cannot slip through, and absent from the section's copy. Nothing is written: the save control is non-actionable, a keyboard user who focuses and presses it triggers no multi-currency request, and the settings response is byte-identical afterwards."
+				}
+			],
+			"reviews": [
+				{
+					"role": "code",
+					"verdict": "APPROVE",
+					"source_test_sha256": "4c224fad8120568e38930bc236df1e82a4733c1ecd1018757c7f93217c9f3391",
+					"summary": "The theme precondition is independent of the conditional under test and strict rather than vacuous, the display-name versus slug divergence is bounded by the row's own frozen scope and recorded, and the retained-target narrowing is the response the validator's own rules allow."
+				},
+				{
+					"role": "e2e-tests",
+					"verdict": "APPROVE",
+					"source_test_sha256": "4c224fad8120568e38930bc236df1e82a4733c1ecd1018757c7f93217c9f3391",
+					"summary": "Role and accessible-name locators with two justified CSS exceptions, a scoped positive control ahead of the scoped absence checks, and a write oracle covering the whole multi-currency REST prefix."
+				},
+				{
+					"role": "reliability",
+					"verdict": "APPROVE",
+					"source_test_sha256": "4c224fad8120568e38930bc236df1e82a4733c1ecd1018757c7f93217c9f3391",
+					"summary": "Every read fails loudly including the new themes dependency, the write oracle is a strict superset, and the keyboard activation was traced to the pinned component library and doubles as a regression detector for lost inertness."
+				},
+				{
+					"role": "accessibility",
+					"verdict": "APPROVE",
+					"source_test_sha256": "4c224fad8120568e38930bc236df1e82a4733c1ecd1018757c7f93217c9f3391",
+					"summary": "An injected aria-hidden, aria-label-only, still-tabbable placement checkbox is rejected only by the section checkbox inventory, so the packet's zero accessible or focusable clause is proved by construction; the save control is proved reachable, focusable and inert to Enter and Space."
+				}
+			]
+		}
+	],
+	"known_gaps": [],
+	"deferral": null
+}

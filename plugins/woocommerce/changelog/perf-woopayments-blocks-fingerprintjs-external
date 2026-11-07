@@ -1,0 +1,4 @@
+Significance: patch
+Type: performance
+
+Load FingerprintJS in the WooPayments checkout block from the script core already ships instead of bundling a second copy, reducing the plugin download size.

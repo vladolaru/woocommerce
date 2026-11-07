@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+WooPayments payout details list the payout's transactions with the full transactions list, including its CSV download.

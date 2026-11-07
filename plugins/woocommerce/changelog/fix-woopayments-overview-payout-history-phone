@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Keep the calendar icon beside its date in the WooPayments Overview payout history on narrow screens.

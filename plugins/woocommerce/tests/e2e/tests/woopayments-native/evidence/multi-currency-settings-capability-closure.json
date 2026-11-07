@@ -1,0 +1,117 @@
+{
+	"schema_version": 2,
+	"slice_id": "multi-currency-settings-capability-closure",
+	"wc_base_commit": "143b1c5ea5d1c2ff63a90e943783ffe815f8a04d",
+	"verified_at_commit": "bc4d8c9fdf4e05e0765372bacbb67cd50e536738",
+	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+	"source_test_paths": [
+		"plugins/woocommerce/tests/e2e/tests/woopayments-native/merchant/onboarding.spec.ts"
+	],
+	"source_test_sha256": "b98da4a311f048de22b4de5c55ee54b1b9862dc800393ebf78cc821f8fe15c9f",
+	"contract_ids": [
+		"default::chromium::tests/e2e/specs/wcpay/merchant/multi-currency-on-boarding.spec.ts:59::Multi-currency on-boarding › Currency selection and management › should disable the submit button when no currencies are selected"
+	],
+	"targets": [
+		{
+			"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/merchant/onboarding.spec.ts",
+			"contract": "the add-currencies modal refuses an empty selection and explains why"
+		}
+	],
+	"implementation_commits": [
+		"fd636432e5fd9a65b0fcb07fabbf7be807490e5f",
+		"4a623c0a388f82c2e31225423d78277c2ac600a0",
+		"bc4d8c9fdf4e05e0765372bacbb67cd50e536738"
+	],
+	"verification": [
+		{
+			"command": "WCPAY_RUNTIME=native pnpm --dir plugins/woocommerce test:e2e:with-env woopayments-native --project=woopayments-native-readonly --workers=1 --retries=0 tests/e2e/tests/woopayments-native/merchant/onboarding.spec.ts",
+			"exit_code": 0,
+			"summary": "The provider-free smoke ran green twice consecutively with one worker and zero retries on the closed bytes, after env-setup proved provider-free readiness. It asserts the store enables something beyond its default, then drives the real add-currencies modal: the enabled currency is offered exactly once and pre-checked, the search field filters the list, and the primary action is available while a selection exists. Clearing the selection then proves the refusal on every channel the contract names - the action is not actionable, focus stays on the cleared checkbox, the polite announcement region carries the reason, the visible hint carries it too, the control is still reachable by a Tab press from Cancel, and pressing Enter and Space produces no multi-currency write and leaves the authoritative enabled set unchanged. Recovering the selection restores the action. Mutation-checked in three directions: reverting the built bundle's disabled prop to the saving flag alone fails the aria-disabled assertion, neutralising the speak call fails the announcement assertion with an empty region, and writing the enabled-currency option down to the store default alone fails the precondition. The store's currency options were snapshotted before the runs and read back identical afterwards."
+		},
+		{
+			"command": "npx jest --config client/jest.config.js --testPathPattern=multi-currency-settings",
+			"exit_code": 0,
+			"summary": "Twenty-one component tests pass, including three that pin the guard at its own layer: a default-only store meets the refused control on open with no announcement and no write, clearing the last currency disables the action, associates the explanation and announces it exactly once, and re-selecting restores the action. The pre-existing removal test still asserts a default-only submission through the per-row control, which is the capability the guard deliberately leaves intact."
+		},
+		{
+			"command": "pnpm --dir plugins/woocommerce test:e2e:woopayments:controller",
+			"exit_code": 0,
+			"summary": "The full controller passed on the closed proposal before commit: the contract-map validator unit tests, the ledger validation across all 181 contracts including the reopened row, the project-routing validator unit tests including the new annotation binding, the environment-setup contract tests, and the provider-free harness unit tests."
+		},
+		{
+			"command": "node plugins/woocommerce/tests/e2e/bin/validate-woopayments-client-contract-map.mjs --from-git-ref HEAD",
+			"exit_code": 0,
+			"summary": "The deferred-to-specified reopening validated against the immediate predecessor: the reopened row records exactly one new unlock satisfaction reproducing its packet's exact prior unlock decision, against a dated calibration heading whose slug matches the reference, with all prior packet content byte-identical."
+		}
+	],
+	"reviews": [
+		{
+			"role": "code",
+			"verdict": "APPROVE",
+			"source_test_sha256": "b98da4a311f048de22b4de5c55ee54b1b9862dc800393ebf78cc821f8fe15c9f",
+			"summary": "Three-round review. The reviewer verified the central claim by reading the code paths rather than the description: the guard leaves saveEnabledCurrencies untouched, so the per-row removal still reaches a default-only store, and the suite's own pre-existing test asserts exactly that submission - the narrowing is real and costs ergonomics, not capability. They proved the announcement edge with four throwaway probes against the real component rather than by reasoning, confirming silence on a successful save, on reopening an already-empty selection, and on a per-row removal with the modal closed, and exactly one announcement per genuine transition. They confirmed the restoration cannot corrupt the store because it writes nothing unless it detects divergence, and that wp-a11y is extracted into the built asset so the announcement region is guaranteed rather than assumed. Their finding that the contract's literal default-only shape was never exercised is closed by a new component test, and their condition that closure attest the committed bytes rather than a working tree is met."
+		},
+		{
+			"role": "e2e-tests",
+			"verdict": "APPROVE",
+			"source_test_sha256": "b98da4a311f048de22b4de5c55ee54b1b9862dc800393ebf78cc821f8fe15c9f",
+			"summary": "Three-round review; the one finding is resolved on the committed bytes. The reviewer traced the checkbox regex against the production label construction and confirmed it cannot cross-match another currency, that the lazily-resolved locator removes any settle risk after clearing the search, and that every write route the screen can call shares the tracked prefix under both permalink forms. They read the announcement helper's source and confirmed it writes synchronously, so the region assertion has nothing to race. Their finding that the restoration could throw from finally and outrank a body failure is fixed with a catch that logs and returns, and they confirmed the tab press anchored on Cancel is catalog-size independent while the attribute assertions remain non-redundant for failure localisation."
+		},
+		{
+			"role": "reliability",
+			"verdict": "APPROVE",
+			"source_test_sha256": "b98da4a311f048de22b4de5c55ee54b1b9862dc800393ebf78cc821f8fe15c9f",
+			"summary": "Three-round review; both findings closed against the actual bytes. The write-detection assertions now run before the modal-visibility check, so a regressed guard is reported as the unauthorized write it caused rather than as a missing dialog, and the reviewer confirmed the inline comment records that reasoning. The restoration helper re-reads, restores only on divergence, re-verifies, and returns a message instead of throwing, which they judged the right trade because surfacing the real cause always beats reporting a cleanup outcome; the residual they raised - that the helper's own reads could throw from finally during a concurrent outage - is closed by a catch that logs and returns. The write tracker matches both permalink forms, and they confirmed the decoding behaviour rather than assuming it."
+		},
+		{
+			"role": "accessibility",
+			"verdict": "APPROVE",
+			"source_test_sha256": "b98da4a311f048de22b4de5c55ee54b1b9862dc800393ebf78cc821f8fe15c9f",
+			"summary": "Three-round review; the blocking status-message finding is fixed at the root. The reviewer established the defect live - clearing the last currency left both announcement regions empty while focus stayed on the checkbox and the newly unavailable control sat two tab stops away - and then verified the fix across the full state machine: silent on open, announced on clearing, silent on recovery, re-announced on a second clearing, silent on reopen. They checked the one thing that would have made the fix cosmetic while leaving every test green, confirming the dialog carries no aria-modal so the body-level polite region is genuinely reachable by assistive technology. They also corrected the stated reason for asserting reachability by attributes rather than a tab press, having measured that anchoring on Cancel makes the distance one press independent of the catalog; the spec now takes that form."
+		}
+	],
+	"closures": [
+		{
+			"contract_id": "default::chromium::tests/e2e/specs/wcpay/merchant/multi-currency-on-boarding.spec.ts:59::Multi-currency on-boarding › Currency selection and management › should disable the submit button when no currencies are selected",
+			"target": {
+				"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/merchant/onboarding.spec.ts",
+				"contract": "the add-currencies modal refuses an empty selection and explains why"
+			},
+			"verification": [
+				{
+					"command": "WCPAY_RUNTIME=native pnpm --dir plugins/woocommerce test:e2e:with-env woopayments-native --project=woopayments-native-readonly --workers=1 --retries=0 tests/e2e/tests/woopayments-native/merchant/onboarding.spec.ts",
+					"exit_code": 0,
+					"summary": "Both halves of the contract are proven directly. The submission is prevented: with nothing selected the completion control is not actionable, and a keyboard user who tabs to it and presses Enter and Space produces zero multi-currency requests while the authoritative enabled set stays exactly as it was. That no actionable selection exists is communicated rather than merely implied: the reason is announced through the polite region at the moment the selection empties, associated with the control for anyone who reaches it, and visible on screen. The row's residual risk, that the client test asserted neither explanatory text nor screen-reader communication, is retired by assertions that fail when either channel is removed."
+				}
+			],
+			"reviews": [
+				{
+					"role": "code",
+					"verdict": "APPROVE",
+					"source_test_sha256": "b98da4a311f048de22b4de5c55ee54b1b9862dc800393ebf78cc821f8fe15c9f",
+					"summary": "The guard's narrowing is real - per-row removal still reaches a default-only store - the announcement edge was proven with probes against the real component, and the restoration cannot corrupt the shared store."
+				},
+				{
+					"role": "e2e-tests",
+					"verdict": "APPROVE",
+					"source_test_sha256": "b98da4a311f048de22b4de5c55ee54b1b9862dc800393ebf78cc821f8fe15c9f",
+					"summary": "Locators resolve the way assistive technology does, the announcement assertion has nothing to race against, and the write tracker covers every route the screen can call under both permalink forms."
+				},
+				{
+					"role": "reliability",
+					"verdict": "APPROVE",
+					"source_test_sha256": "b98da4a311f048de22b4de5c55ee54b1b9862dc800393ebf78cc821f8fe15c9f",
+					"summary": "A regressed guard reports the write it caused rather than a missing dialog, and the restoration leaves the shared store byte-identical or says loudly that it could not."
+				},
+				{
+					"role": "accessibility",
+					"verdict": "APPROVE",
+					"source_test_sha256": "b98da4a311f048de22b4de5c55ee54b1b9862dc800393ebf78cc821f8fe15c9f",
+					"summary": "The refusal is announced on the edge and the region was confirmed reachable by assistive technology, with focus retention, visibility and tab-reachability each asserted directly."
+				}
+			]
+		}
+	],
+	"known_gaps": [],
+	"deferral": null
+}

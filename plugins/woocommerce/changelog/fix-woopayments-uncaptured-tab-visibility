@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+The WooPayments Uncaptured transactions tab now shows only with manual capture on or authorizations to capture, as in the WooPayments plugin.

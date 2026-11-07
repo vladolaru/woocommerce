@@ -1,0 +1,40 @@
+{
+	"schema_version": 2,
+	"slice_id": "dispute-win-deferral",
+	"wc_base_commit": "92b2fc3376f6a5ce47d283656cb0c06dc569fb9f",
+	"verified_at_commit": "e07fd183b699c783415bee073fae27704a9b296c",
+	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+	"source_test_paths": [
+		"plugins/woocommerce/tests/e2e/tests/woopayments-native/evidence/calibration-notes.md"
+	],
+	"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+	"contract_ids": [
+		"default::chromium::tests/e2e/specs/wcpay/merchant/merchant-disputes-respond.spec.ts:158::Disputes › Respond to a dispute › Challenge a dispute with winning evidence"
+	],
+	"targets": [
+		{
+			"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/merchant/dispute-lifecycle.spec.ts",
+			"contract": "pending"
+		}
+	],
+	"implementation_commits": [],
+	"verification": [],
+	"reviews": [
+		{
+			"role": "deferral",
+			"verdict": "APPROVE",
+			"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+			"summary": "Fresh broad review approved the exact line-158 blocked-environment deferral and its four-field-only transition, strict separation from voluntary acceptance, losing evidence, and draft saving, full run-owned payment and dispute lifecycle, physical-product comprehension and meaningful cover letter, exact winning_evidence provider behavior, exactly one confirmed submit=true transition, submitted-payload and identity correlation, one evidence submission, under_review then won on the unchanged record, correct won guidance, removed actions, pending target and owner, earliest readiness blocker, later fixture, oracle, listener, lock, journal, retention, cleanup, and quarantine prerequisites, lower-layer non-substitution, shared-target drift, no-replay safety, predecessor and calibration binding, and zero current quarantine."
+		}
+	],
+	"closures": [],
+	"known_gaps": [],
+	"deferral": {
+		"blocker": "Standing native ownership, account, and callback readiness fails first. The run also lacks a resolved exact target contract, implementation owner, and closure-bundle topology; an approved deterministic test-mode dispute fixture and exact dispute oracle; one exclusively owned listener interval; exact account, store, provider-write, and record-event ownership; separate durable checkout and irreversible-evidence-submission journals; bounded event and decision reads; and approved cleanup and durable provider-record retention.",
+		"affected_scope": "Only line 158 winning evidence: one fresh run-owned product, shopper, order, credential, provider customer, payment intent, charge, payment method, dispute, and native transaction chain has exactly one successful captured payment and one fraudulent dispute occurrence with exact reconciled amount, currency, reason, and one correlated dispute-created event; the merchant completes the comprehensible physical-product workflow with an unauthorized-transaction explanation, product description, meaningful generated cover letter, and the exact winning_evidence provider behavior; sends exactly one confirmed submit=true request for the exact payload and identities; records exactly one evidence submission; observes under_review followed by provider won with unchanged identities, amount, and currency; sees correct won guidance and no response actions. It is neither voluntary acceptance, adjudicated loss, nor draft persistence.",
+		"no_allowlisted_action_reason": "No allowlisted action can repair standing native readiness, approve or supply the deterministic dispute fixture and oracle, resolve target and bundle ownership, obtain exclusive listener attribution, or establish exact locks, journals, correlations, retained-record handling, and cleanup. Mocked evidence forwarding, dispute-cache behavior, status guidance, action removal, and separate event-handler tests cannot substitute for the real checkout-to-event-to-submit-to-decision chain and exactly one irreversible provider submission. Any apparent native representation or workflow difference is not a known gap before prerequisites pass and an exact target yields an anchored RED. Retrying the submission to erase uncertainty is forbidden.",
+		"reference": "blocked-environment:PILOT-NATIVE-READINESS",
+		"unlock_decision": "Externally provide successful exact-store/account/callback native readiness; resolve a row-safe target and owner; approve a deterministic dispute fixture, oracle, and durable-record policy; obtain one exclusively owned listener; then run once with one worker and zero retries under account, store, provider-write, and record-event locks, separate checkout and submission journals, exact identity, amount, currency, event, evidence-payload, and submission correlation, exactly one confirmed submit=true, under_review then won, unchanged record values, won guidance, removed actions, bounded reads, cleanup, and fail-closed quarantine. Use row-specific targets or explicitly plan reopen and re-closure before later shared-file edits.",
+		"quarantine_status": "This deferral allocated and mutated nothing, acquired no lease or lock, opened no provider-write or restoration journal, performed no browser or provider run, consumed no provider capacity, and created no quarantine. The existing separately owned listener remains untouched and cannot support exclusive future attribution. Any uncertain eventual checkout, event, dispute, evidence submission, decision, cleanup, lock, or listener state must quarantine affected resources and must not be replayed."
+	}
+}

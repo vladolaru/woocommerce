@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Turn on WooPayments at checkout after a merchant finishes embedded account verification, in the mode of the verified account.

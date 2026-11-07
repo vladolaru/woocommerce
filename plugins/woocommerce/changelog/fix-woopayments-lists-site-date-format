@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+The WooPayments lists now show dates in the site date and time formats, and the uncaptured Capture by date no longer shifts with the browser time zone.

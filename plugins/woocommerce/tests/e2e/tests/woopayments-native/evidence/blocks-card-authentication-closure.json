@@ -1,0 +1,154 @@
+{
+	"schema_version": 2,
+	"slice_id": "blocks-card-authentication-closure",
+	"wc_base_commit": "1a4c8f6fb9e984f412144f29c080ef22fa68da23",
+	"verified_at_commit": "1a4c8f6fb9e984f412144f29c080ef22fa68da23",
+	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+	"source_test_paths": [
+		"plugins/woocommerce/tests/e2e/tests/woopayments-native/shopper/card-authentication.spec.ts",
+		"plugins/woocommerce/tests/e2e/utils/woopayments-native/drivers/blocks-card-authentication.test.ts",
+		"plugins/woocommerce/tests/e2e/utils/woopayments-native/drivers/blocks-card-authentication.ts"
+	],
+	"source_test_sha256": "0eea881b2af150b6583e7541b27ddda47bc0464d7c5b4701155cd43a5fdf70b8",
+	"contract_ids": [
+		"default::chromium::tests/e2e/specs/wcpay/shopper/shopper-wc-blocks-checkout-purchase.spec.ts:42::WooCommerce Blocks › Successful purchase › using a 3DS card",
+		"default::chromium::tests/e2e/specs/wcpay/shopper/shopper-wc-blocks-checkout-failures.spec.ts:90::WooCommerce Blocks › Checkout failures › Should show error – Your card has been declined."
+	],
+	"targets": [
+		{
+			"path": "plugins/woocommerce/tests/e2e/utils/woopayments-native/drivers/blocks-card-authentication.test.ts;plugins/woocommerce/tests/e2e/tests/woopayments-native/shopper/card-authentication.spec.ts",
+			"contract": "a completed Blocks 3DS challenge settles one exact USD 10.99 order, PaymentIntent, and captured charge"
+		},
+		{
+			"path": "plugins/woocommerce/tests/e2e/utils/woopayments-native/drivers/blocks-card-authentication.test.ts;plugins/woocommerce/tests/e2e/tests/woopayments-native/shopper/card-authentication.spec.ts",
+			"contract": "a completed Blocks 3DS challenge that is declined leaves the same PaymentIntent unpaid and restores Place order"
+		}
+	],
+	"implementation_commits": [],
+	"verification": [
+		{
+			"command": "pnpm --dir plugins/woocommerce exec playwright test --config=tests/e2e/envs/woopayments-native/unit.playwright.config.ts tests/e2e/utils/woopayments-native/drivers/blocks-card-authentication.test.ts",
+			"exit_code": 0,
+			"summary": "The focused parser suite passed 3/3, covering nested Blocks PaymentIntent confirmation extraction, SetupIntent rejection, and rejection of confirmations without durable order and PaymentIntent identity."
+		},
+		{
+			"command": "pnpm --dir plugins/woocommerce exec eslint tests/e2e/tests/woopayments-native/shopper/card-authentication.spec.ts tests/e2e/utils/woopayments-native/drivers/blocks-card-authentication.ts tests/e2e/utils/woopayments-native/drivers/blocks-card-authentication.test.ts && pnpm --dir plugins/woocommerce exec prettier --check tests/e2e/tests/woopayments-native/shopper/card-authentication.spec.ts tests/e2e/utils/woopayments-native/drivers/blocks-card-authentication.ts tests/e2e/utils/woopayments-native/drivers/blocks-card-authentication.test.ts",
+			"exit_code": 0,
+			"summary": "Targeted ESLint and Prettier checks passed for the Blocks card-authentication spec, parser, and parser tests."
+		},
+		{
+			"command": "pnpm --dir plugins/woocommerce exec playwright test --config=tests/e2e/envs/woopayments-native/playwright.config.ts --project=woopayments-native-provider --list tests/e2e/tests/woopayments-native/shopper/card-authentication.spec.ts",
+			"exit_code": 0,
+			"summary": "Provider-project collection passed and bound the exact success and decline contract annotations to their distinct test titles."
+		},
+		{
+			"command": "WCPAY_RUNTIME=native pnpm --dir plugins/woocommerce test:e2e:with-env woopayments-native --project=woopayments-native-provider --workers=1 --retries=0 --grep='a completed Blocks 3DS challenge' tests/e2e/tests/woopayments-native/shopper/card-authentication.spec.ts",
+			"exit_code": 1,
+			"summary": "The mixed exact grep did not pass overall. The success contract passed in 24.8 seconds. The decline contract reached the correct terminal PaymentIntent, unpaid order, shopper error, announcement, and restored Place order UI, but its initial oracle incorrectly expected zero charges even though the provider records one failed charge for the declined attempt."
+		},
+		{
+			"command": "authenticated WooCommerce REST read of the exact declined PaymentIntent",
+			"exit_code": 0,
+			"summary": "The exact PaymentIntent was requires_payment_method with last error code card_declined and amount_received 0. It carried exactly one failed charge with paid=false, captured=false, amount_captured=0, and failure_code card_declined. The assertion was corrected to this authoritative provider shape and re-reviewed."
+		},
+		{
+			"command": "WCPAY_RUNTIME=native pnpm --dir plugins/woocommerce test:e2e:with-env woopayments-native --project=woopayments-native-provider --workers=1 --retries=0 --grep='a completed Blocks 3DS challenge that is declined leaves the same PaymentIntent unpaid and restores Place order' tests/e2e/tests/woopayments-native/shopper/card-authentication.spec.ts",
+			"exit_code": 0,
+			"summary": "The corrected exact decline grep passed 1/1 in 21.6 seconds with a 20.6-second test body. The final listener inventory contained the expected one listener with q=0 and a=0."
+		},
+		{
+			"command": "pnpm --dir plugins/woocommerce test:e2e:woopayments:contract-map:unit",
+			"exit_code": 0,
+			"summary": "All 60 contract-map validator unit tests passed with the staged closure packet."
+		},
+		{
+			"command": "pnpm --dir plugins/woocommerce test:e2e:woopayments:contract-map",
+			"exit_code": 0,
+			"summary": "The final ledger validated all 181 frozen WooPayments client contracts."
+		},
+		{
+			"command": "pnpm --dir plugins/woocommerce exec node --test tests/e2e/bin/validate-woopayments-project-routing.test.mjs",
+			"exit_code": 0,
+			"summary": "All 21 project-routing tests passed, including exact annotation title and target-file binding."
+		},
+		{
+			"command": "git diff --check && git diff --cached --check",
+			"exit_code": 0,
+			"summary": "Both unstaged and staged diff checks completed without whitespace errors."
+		}
+	],
+	"reviews": [
+		{
+			"role": "spec-product",
+			"verdict": "APPROVE",
+			"source_test_sha256": "0eea881b2af150b6583e7541b27ddda47bc0464d7c5b4701155cd43a5fdf70b8",
+			"summary": "Approved after correcting the exact decline contract ID and then re-approved after the failed-charge oracle was aligned with the authenticated provider read. The journeys preserve the client behavior while strengthening it with exact order, PaymentIntent, charge, amount, currency, dispatch-count, shopper-feedback, and recovery joins on native Blocks checkout."
+		},
+		{
+			"role": "simplification",
+			"verdict": "APPROVE",
+			"source_test_sha256": "0eea881b2af150b6583e7541b27ddda47bc0464d7c5b4701155cd43a5fdf70b8",
+			"summary": "Approved after both corrections. A small pure parser plus focused unit tests supplies the durable Blocks confirmation identity, while the provider spec remains the thin runtime adapter for the shared success and post-authentication decline outcomes."
+		}
+	],
+	"closures": [
+		{
+			"contract_id": "default::chromium::tests/e2e/specs/wcpay/shopper/shopper-wc-blocks-checkout-purchase.spec.ts:42::WooCommerce Blocks › Successful purchase › using a 3DS card",
+			"target": {
+				"path": "plugins/woocommerce/tests/e2e/utils/woopayments-native/drivers/blocks-card-authentication.test.ts;plugins/woocommerce/tests/e2e/tests/woopayments-native/shopper/card-authentication.spec.ts",
+				"contract": "a completed Blocks 3DS challenge settles one exact USD 10.99 order, PaymentIntent, and captured charge"
+			},
+			"verification": [
+				{
+					"command": "WCPAY_RUNTIME=native pnpm --dir plugins/woocommerce test:e2e:with-env woopayments-native --project=woopayments-native-provider --workers=1 --retries=0 --grep='a completed Blocks 3DS challenge' tests/e2e/tests/woopayments-native/shopper/card-authentication.spec.ts",
+					"exit_code": 1,
+					"summary": "This success contract passed in 24.8 seconds inside the mixed invocation. The overall command exited 1 only because the subsequent decline contract's initial oracle expected zero charges instead of the one failed charge the provider records."
+				}
+			],
+			"reviews": [
+				{
+					"role": "spec-product",
+					"verdict": "APPROVE",
+					"source_test_sha256": "0eea881b2af150b6583e7541b27ddda47bc0464d7c5b4701155cd43a5fdf70b8",
+					"summary": "The native Blocks journey requires a real challenge, exactly one checkout request and response, exact receipt identity, and an exact paid USD 10.99 order joined to one succeeded captured PaymentIntent charge."
+				},
+				{
+					"role": "simplification",
+					"verdict": "APPROVE",
+					"source_test_sha256": "0eea881b2af150b6583e7541b27ddda47bc0464d7c5b4701155cd43a5fdf70b8",
+					"summary": "The retained browser journey is focused on the native Blocks boundary; the small parser and its unit tests own confirmation identity extraction."
+				}
+			]
+		},
+		{
+			"contract_id": "default::chromium::tests/e2e/specs/wcpay/shopper/shopper-wc-blocks-checkout-failures.spec.ts:90::WooCommerce Blocks › Checkout failures › Should show error – Your card has been declined.",
+			"target": {
+				"path": "plugins/woocommerce/tests/e2e/utils/woopayments-native/drivers/blocks-card-authentication.test.ts;plugins/woocommerce/tests/e2e/tests/woopayments-native/shopper/card-authentication.spec.ts",
+				"contract": "a completed Blocks 3DS challenge that is declined leaves the same PaymentIntent unpaid and restores Place order"
+			},
+			"verification": [
+				{
+					"command": "WCPAY_RUNTIME=native pnpm --dir plugins/woocommerce test:e2e:with-env woopayments-native --project=woopayments-native-provider --workers=1 --retries=0 --grep='a completed Blocks 3DS challenge that is declined leaves the same PaymentIntent unpaid and restores Place order' tests/e2e/tests/woopayments-native/shopper/card-authentication.spec.ts",
+					"exit_code": 0,
+					"summary": "The corrected contract passed 1/1 in 21.6 seconds with a 20.6-second test body. It joined the exact declined PaymentIntent and its one failed, uncaptured charge to the exact unpaid order, exact visible and announced decline copy, and a restored usable Place order button; the listener ended q=0 and a=0."
+				}
+			],
+			"reviews": [
+				{
+					"role": "spec-product",
+					"verdict": "APPROVE",
+					"source_test_sha256": "0eea881b2af150b6583e7541b27ddda47bc0464d7c5b4701155cd43a5fdf70b8",
+					"summary": "The exact decline ID is bound to a completed challenge followed by the provider's authoritative card_declined state, one failed uncaptured charge, an unpaid order, clear feedback, and recovered checkout controls."
+				},
+				{
+					"role": "simplification",
+					"verdict": "APPROVE",
+					"source_test_sha256": "0eea881b2af150b6583e7541b27ddda47bc0464d7c5b4701155cd43a5fdf70b8",
+					"summary": "The correction follows observed provider semantics directly and does not add a parallel abstraction or expand the scenario beyond the shared post-authentication decline contract."
+				}
+			]
+		}
+	],
+	"known_gaps": [],
+	"deferral": null
+}

@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+WooPayments transactions, disputes and payouts exports now send your email address and language, so a file that takes longer to prepare is emailed to you, and a snackbar tells you right away that the export is on its way.

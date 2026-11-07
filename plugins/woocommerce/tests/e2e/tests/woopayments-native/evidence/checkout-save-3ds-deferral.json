@@ -1,0 +1,33 @@
+{
+	"schema_version": 2,
+	"slice_id": "checkout-save-3ds-deferral",
+	"wc_base_commit": "92b2fc3376f6a5ce47d283656cb0c06dc569fb9f",
+	"verified_at_commit": "502b3d45fa50ccd440ec003ca4e71f4d504f3c85",
+	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+	"source_test_paths": ["plugins/woocommerce/tests/e2e/tests/woopayments-native/evidence/calibration-notes.md"],
+	"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+	"contract_ids": [
+		"default::chromium::tests/e2e/specs/wcpay/shopper/shopper-checkout-save-card-and-purchase.spec.ts:68::Saved cards › When using a 3ds card added on checkout › should save the card"
+	],
+	"targets": [{"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/scenarios/saved-method.ts", "contract": "pending"}],
+	"implementation_commits": [],
+	"verification": [],
+	"reviews": [
+		{
+			"role": "deferral",
+			"verdict": "APPROVE",
+			"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+			"summary": "Fresh independent review approved pre-review basic save/delete SHA 35182748ec541caab6b191c721b12cffcb429114316aacf65cd62eb8d7e6961d, 3DS save SHA c8c0b74e66bb8528fb25c888dc817cb86ef03a3a270d169350022e1cf999e7d3, guest eligibility SHA 6b92895797f112b7dbbd33710fe7c4a5507c62f5724148b8357d86957a79e78f and duplicate-retirements SHA 0ee9af2098e98f37635b1a7edbe7bd98f1d03c1ebad6c703045668f04135d6b1 against mutated ledger SHA 2fb5e5b50cd574c256e537f8c5d447c805216faf4b1a72e485f2c91c3ffc82a6 and baseline 2286900cc3e6600a0adbdd12b41a6a3c0acb258efd90e33145146fc17a9659a3 at 502b3d45fa50ccd440ec003ca4e71f4d504f3c85, with no findings. Exactly six rows change only fields 37-40: four readiness deferrals and two retirement-authority deferrals. The evidence preserves exact save/delete/provider identity, mandatory same-intent 3DS, provider-free guest accessibility and zero dispatch, duplicate-only retirement reasoning, one writer/listener, no retry/replay, journals, exact restoration, retention, quarantine and drift, with no unsupported defect, gap, implementation, verification, closure or retirement claim."
+		}
+	],
+	"closures": [],
+	"known_gaps": [],
+	"deferral": {
+		"blocker": "Standing native readiness fails before this challenged save-at-checkout row may allocate the exact site/blog/account, disposable customer, provider writer, or exclusively owned listener. Its absent target has pending contract and owner, and no approved deterministic mandatory-challenge capability, one-shot driver, action-state/authentication reader, exact token delta reader, or provider detach cleanup proof exists. The frozen helper silently accepts an absent challenge and retries submission; Core's same-intent save path aligns statically, so no product defect is established.",
+		"affected_scope": "One distinct fresh customer/session/cart and unique USD 10.99 product with the semantic Save to account control selected. One 3184 submission creates one exact order, payment method and unchanged intent in requires-action. A named accessible challenge must appear, receive focus and expose one Complete action; frictionless, absent or skipped challenge fails. A separately journaled single completion binds the same intent/order/save flag to successful authentication, one 1099 USD charge and capture, exactly one local token and order-token relationship, exactly one provider-customer attachment, one accessible My Account row, and correlated event delivery. Exact-token local/provider deletion is cleanup only and does not close the separate 3DS-deletion retirement row.",
+		"no_allowlisted_action_reason": "No allowlisted action can establish readiness, approve target ownership or the 3184 capability/schema, allocate listener/writer exclusivity, or add the action, token and provider-attachment readers. An optional private-frame helper, receipt, card label, lower-layer save test or previous saved-token cutover cannot replace same-intent challenge and token/cardinality joins. Run one worker with zero retries, one start and one Complete activation, separate journals, bounded reads, no replay and immediate halt on ambiguity.",
+		"reference": "blocked-environment:PILOT-NATIVE-READINESS",
+		"unlock_decision": "Externally satisfy readiness, approve the target/owner and deterministic challenge capability, allocate a disposable customer/store plus one provider writer and exclusive listener, and supply semantic one-shot challenge, action-state, token-delta and attachment/detach readers. Journal start and completion before each write, execute once with zero retries/replay, retain redacted financial/authentication/event evidence, delete the exact token only as proven cleanup, restore reversible state exactly, quarantine uncertainty, and obtain fresh code, E2E-test, reliability, concurrency, accessibility, security and provider-evidence reviews.",
+		"quarantine_status": "No browser, allocation, writer, listener, lock, journal, customer, token, order, provider record or quarantine was created; the separately owned listener remains untouched. Any future readiness, dispatch, action, challenge, focus, authentication, identity, token delta, attachment, capture, cleanup, listener, lock, restoration, publication or drift mismatch must halt, preserve journals and immutable financial history, and quarantine the exact account/store/customer/session/product/order/token/provider/event graph without replay, manual completion, provider deletion, broad reset or listener takeover."
+	}
+}

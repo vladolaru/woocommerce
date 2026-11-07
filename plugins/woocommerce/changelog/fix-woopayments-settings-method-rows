@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+The WooPayments settings payment method and express checkout rows use the same logo size, labels and narrow-screen layout as the WooPayments plugin.

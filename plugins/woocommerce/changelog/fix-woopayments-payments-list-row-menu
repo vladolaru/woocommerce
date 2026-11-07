@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+The Payments list no longer shows a Deactivate item that cannot be used in the built-in WooPayments row menu.

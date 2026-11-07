@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Stop autoloading large admin-only native WooPayments options and inject the PM promotions service instead of silently falling back to manual construction.

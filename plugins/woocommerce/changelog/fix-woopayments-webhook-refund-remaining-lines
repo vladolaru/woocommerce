@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+List only the units, totals and tax not yet refunded on refunds WooPayments records from a lost dispute or a full refund.

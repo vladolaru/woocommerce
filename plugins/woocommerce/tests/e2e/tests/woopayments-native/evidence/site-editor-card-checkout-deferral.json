@@ -1,0 +1,43 @@
+{
+	"schema_version": 2,
+	"slice_id": "site-editor-card-checkout-deferral",
+	"wc_base_commit": "92b2fc3376f6a5ce47d283656cb0c06dc569fb9f",
+	"verified_at_commit": "b211e4d4838b6b9affd4232b8c6036758e4db4cb",
+	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+	"source_test_paths": [
+		"plugins/woocommerce/tests/e2e/tests/woopayments-native/evidence/calibration-notes.md"
+	],
+	"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+	"contract_ids": [
+		"default::chromium::tests/e2e/specs/wcpay/shopper/shopper-checkout-purchase-site-editor.spec.ts:91::Successful purchase, site builder theme › card prevention: false › basic card",
+		"default::chromium::tests/e2e/specs/wcpay/shopper/shopper-checkout-purchase-site-editor.spec.ts:91::Successful purchase, site builder theme › card prevention: true › basic card",
+		"default::chromium::tests/e2e/specs/wcpay/shopper/shopper-checkout-purchase-site-editor.spec.ts:95::Successful purchase, site builder theme › card prevention: false › 3DS card",
+		"default::chromium::tests/e2e/specs/wcpay/shopper/shopper-checkout-purchase-site-editor.spec.ts:95::Successful purchase, site builder theme › card prevention: true › 3DS card"
+	],
+	"targets": [
+		{
+			"path": "plugins/woocommerce/tests/php/src/Internal/Admin/Settings/PaymentsProviders/WooPayments/WooPaymentsRestControllerIntegrationTest.php;plugins/woocommerce/tests/php/src/Internal/Payments/Providers/WooPayments/WooPaymentsSettingsServiceTest.php;plugins/woocommerce/client/admin/client/woopayments/settings/test/settings-page.test.tsx;plugins/woocommerce/tests/e2e/tests/woopayments-native/shopper/theme-compatibility.spec.ts",
+			"contract": "pending"
+		}
+	],
+	"implementation_commits": [],
+	"verification": [],
+	"reviews": [
+		{
+			"role": "deferral",
+			"verdict": "APPROVE",
+			"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+			"summary": "Fresh independent review approved pre-review evidence SHA 490b5d6828ff3c7d2a3f5c00a38e1a14b08cf2f13352f58f7445fa3e75abc8c5 against mutated ledger SHA aa9789dc75aeee2b267dd05b706d8fbd89648a521836e89455affd3a701b4a77 and committed baseline 07f414b64fc8d0a7e88a567d6266ad1cb360e35fcb9c90d1df5b6469834cd708 at b211e4d4838b6b9affd4232b8c6036758e4db4cb, with no findings. Exactly four Site Editor rows change fields 37-40 and the single semicolon-delimited target matches field 34. The deferral binds fingerprinted installed and active Twenty Twenty-Four plus Classic shortcode checkout; independent authoritative false/true protection graphs and redacted submitted-token equality; 4242 with no challenge and one 1099 USD capture; 3184 with the same requires-action intent, mandatory accessible challenge, one Complete action, terminal authentication and one capture; one writer, exclusive listener, one worker, zero retries/replay, halt-on-ambiguity, exact theme/account restoration, retention, quarantine, accessibility and drift controls. The one protected 3DS smoke plus lower-layer consolidation remains an owner decision, all four subcontracts remain live, and no defect, known gap, implementation, verification or closure is claimed."
+		}
+	],
+	"closures": [],
+	"known_gaps": [],
+	"deferral": {
+		"blocker": "Standing native readiness fails before this theme-compatibility campaign may allocate its exact account/store, provider writer, exclusive listener, Twenty Twenty-Four fixture, carding-protection controller, shoppers, orders or financial graphs. The provisional multi-target contract and owner remain pending, its E2E target is absent, and its settings-service lower targets do not yet express the checkout fraud-protection and authentication boundaries. Core's protection plumbing and action handling align statically with the frozen source, so no current native defect, known gap, authority conflict or source drift is established.",
+		"affected_scope": "Four independently attributable Classic shortcode checkout subcontracts under exact installed and active Twenty Twenty-Four identity: basic card and mandatory successful 3DS, each with authoritative carding-protection false and true. Every row owns a fresh shopper context/session, unique USD 10.99 product/cart, order, method, intent, charge, record locks and pre-dispatch journal. False rows prove cached account eligibility false, no stale session token, empty submitted token and gateway bypass; true rows prove eligibility true and one 16-character session, config, window and request token by redacted equal digest. Basic rows bind 4242, no challenge, 1099 USD and one captured occurrence. 3DS rows bind 3184, one unchanged requires-action intent, mandatory accessible challenge and one Complete action, terminal successful authentication, one captured occurrence and exact accessible confirmation. Theme, protection and payment identities all join.",
+		"no_allowlisted_action_reason": "The campaign cannot establish native readiness, approve the target/owner or one-smoke versus four-subcontract mapping, provision and fingerprint the exact theme, safely control and restore protection state, extend the provider reader for intermediate action and 3DS detail, or allocate the protected writer/listener interval. A block theme name, active-theme option, token global, URL regex, private frame selector, permissive missing challenge, lower-layer setting test, local order or provider record alone cannot substitute for exact theme, Classic surface, protection request, challenge, order/provider and occurrence joins. Use one worker, zero retries, one semantic activation per payment and challenge, no replay and halt all later rows after ambiguity.",
+		"reference": "blocked-environment:PILOT-NATIVE-READINESS",
+		"unlock_decision": "Externally satisfy exact native readiness and allocate a disposable store pre-provisioned with fingerprinted Twenty Twenty-Four, or approve complete byte-exact theme restoration. Have an owner resolve the provisional target and whether one protected 3DS theme smoke plus lower layers can replace four live rows; otherwise retain all four. Supply an authoritative false/true account-cache controller, fresh contexts, four USD 10.99 fixtures, a one-shot Classic driver, intermediate/terminal 3DS provider evidence, one protected provider writer and one exclusively owned listener. Journal every row and raw theme/account/settings state, run serialized with zero retries/replay, retain financial evidence, restore reversible state exactly, quarantine ambiguity, and obtain fresh code, lower-layer, E2E-test, reliability, concurrency, accessibility, security and provider-evidence reviews.",
+		"quarantine_status": "No browser context, account, store, allocation, theme, option, protection setting/cache, shopper, product, cart, session, order, intent, charge, payment method, challenge, event, lock, journal, listener, retention record or quarantine was created or changed; the separately owned listener remains untouched. A future readiness, theme fingerprint, Classic-surface, protection, token, dispatch, identity, amount, currency, challenge, authentication, occurrence, listener, lock, restoration or publication mismatch must preserve diagnostics and financial history and quarantine the exact account/store/theme/settings/session/product/order/provider/event graph and journals without replay, provider deletion, hard-coded Storefront restoration, broad reset, listener takeover or later-row continuation."
+	}
+}

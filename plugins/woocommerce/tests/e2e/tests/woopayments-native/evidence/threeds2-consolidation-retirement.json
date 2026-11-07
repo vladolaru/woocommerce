@@ -1,0 +1,92 @@
+{
+	"schema_version": 2,
+	"slice_id": "threeds2-consolidation-retirement-2026-08-10",
+	"wc_base_commit": "b7b5e133f0353df0995fbc298f062c56d5182b23",
+	"verified_at_commit": "960f5bf3fcaa4ba7bddc3767896baa2ca16e9d47",
+	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+	"source_test_paths": [],
+	"source_test_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+	"contract_ids": [
+		"default::chromium::tests/e2e/specs/wcpay/shopper/shopper-myaccount-saved-cards.spec.ts:146::Shopper can save and delete cards › Testing card: 3ds2 › should add the 3ds2 card as a new payment method",
+		"default::chromium::tests/e2e/specs/wcpay/shopper/shopper-myaccount-saved-cards.spec.ts:196::Shopper can save and delete cards › Testing card: 3ds2 › should be able to purchase with the saved 3ds2 card"
+	],
+	"targets": [
+		{
+			"path": "plugins/woocommerce/tests/php/src/Internal/Payments/Providers/WooPayments/WooPaymentsTokenServiceTest.php",
+			"contract": "Retired into the consolidated challenge journey; the authentication need is carried by: default::chromium::tests/e2e/specs/wcpay/shopper/shopper-myaccount-saved-cards.spec.ts:146::Shopper can save and delete cards › Testing card: 3ds › should add the 3ds card as a new payment method"
+		},
+		{
+			"path": "plugins/woocommerce/tests/php/src/Internal/Payments/Providers/WooPayments/WooPaymentsTokenServiceTest.php",
+			"contract": "Retired into the consolidated challenge journey; the authentication need is carried by: default::chromium::tests/e2e/specs/wcpay/shopper/shopper-myaccount-saved-cards.spec.ts:196::Shopper can save and delete cards › Testing card: 3ds › should be able to purchase with the saved 3ds card"
+		}
+	],
+	"implementation_commits": [
+		"960f5bf3fcaa4ba7bddc3767896baa2ca16e9d47"
+	],
+	"verification": [
+		{
+			"command": "node plugins/woocommerce/tests/e2e/bin/validate-woopayments-client-contract-map.mjs --from-git-ref HEAD",
+			"exit_code": 0,
+			"summary": "Ledger validation passed with both 3DS2 twin contracts retired, and the reopening validated against the immediate predecessor: each row records exactly one new unlock satisfaction reproducing its packet's exact prior unlock decision against a dated calibration heading, with all prior packet content byte-identical."
+		},
+		{
+			"command": "node plugins/woocommerce/tests/e2e/bin/validate-woopayments-client-contract-map.mjs --require-saturated",
+			"exit_code": 0,
+			"summary": "The ledger returned to saturation with the two 3DS2 rows closed as retired; every row is closed or deferred."
+		},
+		{
+			"command": "pnpm --dir plugins/woocommerce test:e2e:woopayments:controller",
+			"exit_code": 0,
+			"summary": "The full controller passed on the retirement proposal before commit."
+		}
+	],
+	"reviews": [
+		{
+			"role": "disposition-authority",
+			"verdict": "APPROVE",
+			"source_test_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+			"summary": "The 2026-08-10 decision recorded in DECISIONS.md consolidates each 3ds/3ds2 contract pair into one journey driven by the 3DS2 card and directs that the paired row be retired against it rather than duplicated. Both deferral packets wrote this exact consolidation branch into their unlock decisions and forbade a provider run performed only for row count; that branch is taken and no provider run occurred. No source was migrated or reviewed for either row."
+		},
+		{
+			"role": "code",
+			"verdict": "APPROVE",
+			"source_test_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+			"summary": "The reviewer verified the consolidation premise against both implementations rather than the write-up: the native payments runtime and its two checkout surfaces contain no 3DS-protocol-version branch, dispatching only on setup-versus-payment intent and SDK capability, while the client plugin's only three-d-secure mentions are a propertyless REST schema entry and a provider-blob passthrough, with its checkout calling the same version-agnostic SDK entry points the decision cites; searches for version fields, legacy 3DS1 artifacts, and per-protocol options found nothing in first-party code. Both retained 3DS sibling rows at the same spec lines remain open and deferred with their packets intact, so the authentication need survives, and the pinned challenge fixture is the provider's documented 3DS2 challenge card, which the surviving native authentication journey drives, satisfying the decision's requirement that the consolidated contract exercise the 3DS2 behaviour. The ledger transition matches the established retirement precedent: a reopen recording one unlock satisfaction per row against a dated calibration heading, followed by a closure touching only the two retired rows' state fields, with the packet materialized in the retirement-only shape naming each 3DS sibling as the retained carrier."
+		},
+		{
+			"role": "e2e-tests",
+			"verdict": "APPROVE",
+			"source_test_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+			"summary": "Inapplicable rather than omitted: a retirement introduces no test, no run and no oracle. The authentication behaviour these rows described is carried by the retained 3DS sibling contracts, whose journeys receive this role's review when they close."
+		},
+		{
+			"role": "reliability",
+			"verdict": "APPROVE",
+			"source_test_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+			"summary": "Inapplicable rather than omitted: a retirement runs nothing and touches no store or provider state, so there is no failure mode, restoration or shared-resource risk to judge. The ledger transition itself is validated by the controller run recorded above."
+		},
+		{
+			"role": "accessibility",
+			"verdict": "APPROVE",
+			"source_test_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+			"summary": "Inapplicable rather than omitted: a retirement introduces no user-facing surface. The hosted challenge surface these rows would have exercised belongs to the retained 3DS contracts and the consolidated challenge journey, where its accessibility obligations are reviewed."
+		}
+	],
+	"closures": [],
+	"retirements": [
+		{
+			"contract_id": "default::chromium::tests/e2e/specs/wcpay/shopper/shopper-myaccount-saved-cards.spec.ts:146::Shopper can save and delete cards › Testing card: 3ds2 › should add the 3ds2 card as a new payment method",
+			"retained_contract_id": "default::chromium::tests/e2e/specs/wcpay/shopper/shopper-myaccount-saved-cards.spec.ts:146::Shopper can save and delete cards › Testing card: 3ds › should add the 3ds card as a new payment method",
+			"approver": "human-approved:3ds-3ds2-pairs-consolidate-2026-08-10",
+			"rationale": "Neither implementation branches on 3DS protocol version: native dispatches only on setup-versus-payment intent and SDK capability, and the client's only protocol mentions are a propertyless schema entry and a provider-blob passthrough. A separate 3DS2 add journey therefore cannot observe anything the retained 3DS add contract does not, and the consolidation decision requires the surviving journey to drive the 3DS2 card, so the fixture's behaviour remains exercised by the retained contract."
+		},
+		{
+			"contract_id": "default::chromium::tests/e2e/specs/wcpay/shopper/shopper-myaccount-saved-cards.spec.ts:196::Shopper can save and delete cards › Testing card: 3ds2 › should be able to purchase with the saved 3ds2 card",
+			"retained_contract_id": "default::chromium::tests/e2e/specs/wcpay/shopper/shopper-myaccount-saved-cards.spec.ts:196::Shopper can save and delete cards › Testing card: 3ds › should be able to purchase with the saved 3ds card",
+			"approver": "human-approved:3ds-3ds2-pairs-consolidate-2026-08-10",
+			"rationale": "Both implementations call the same version-agnostic SDK entry points for a saved-token purchase authentication, so a distinct 3DS2 saved-token journey cannot catch anything the retained 3DS purchase contract does not. Its own deferral packet reached the same fork and directed that without an authoritative distinction no mutation be performed for row count; the consolidation decision resolves that fork, and the retained contract carries the purchase-authentication need."
+		}
+	],
+	"known_gaps": [],
+	"deferral": null
+}

@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Show the WooPayments uncaptured transactions list with the risk level names, the optional Email and Country columns, and the customer name next to the order number.

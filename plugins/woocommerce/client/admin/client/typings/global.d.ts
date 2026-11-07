@@ -81,6 +81,7 @@ declare global {
 				woocommerce_checkout_block_compatibility?: {
 					incompatible_gateway_ids: string[];
 				};
+				woopayments_builtin_owner?: boolean;
 				wcpay_welcome_page_connect_nonce: string;
 				currentUserData: {
 					first_name: string;
@@ -88,12 +89,6 @@ declare global {
 				plugins: {
 					activePlugins: string[];
 					installedPlugins: string[];
-				};
-				wcpayWelcomePageIncentive: {
-					id: string;
-					description: string;
-					cta_label: string;
-					tc_url: string;
 				};
 				currency?: {
 					symbol: string;

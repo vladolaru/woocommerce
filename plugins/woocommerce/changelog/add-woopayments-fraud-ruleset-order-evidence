@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Show fired fraud filters on held or blocked WooPayments orders.

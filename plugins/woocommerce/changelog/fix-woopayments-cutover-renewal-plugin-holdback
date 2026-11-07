@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Hold back the switch to the built-in WooPayments while a plugin that renews payments through the WooPayments extension is active.

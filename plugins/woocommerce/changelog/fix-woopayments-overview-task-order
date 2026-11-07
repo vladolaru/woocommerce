@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+The WooPayments Overview lists completed tasks after the open ones.

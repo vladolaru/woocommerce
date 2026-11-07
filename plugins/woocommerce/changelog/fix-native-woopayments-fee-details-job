@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Add the WooPayments "Fee details" order note in the background after a payment or capture, without waiting for a webhook.

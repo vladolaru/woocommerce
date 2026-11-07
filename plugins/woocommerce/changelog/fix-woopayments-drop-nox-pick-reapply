@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Keep the payment method changes a merchant makes during WooPayments onboarding: the onboarding choices are no longer applied again when verification finishes or when the account refreshes, unless saving them at the start failed.

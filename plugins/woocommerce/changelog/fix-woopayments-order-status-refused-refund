@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Put the order status back when WooPayments cannot refund an order set to Refunded, so Update records no refund.

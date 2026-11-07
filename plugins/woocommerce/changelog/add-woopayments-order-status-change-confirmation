@@ -1,0 +1,4 @@
+Significance: minor
+Type: add
+
+Confirm before changing a native WooPayments order to Refunded or Cancelled, and issue the refund at the payment provider when confirmed.

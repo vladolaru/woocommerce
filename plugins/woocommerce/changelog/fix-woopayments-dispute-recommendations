@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Show the WooPayments dispute outcome recommendations on payment details for won and lost disputes, as the client does.

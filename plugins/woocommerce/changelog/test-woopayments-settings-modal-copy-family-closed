@@ -1,0 +1,4 @@
+Significance: patch
+Type: dev
+
+Close the three WooPayments settings-modal-copy contracts as supported, bound to the reviewed provider-free manual-capture smoke and retained native gateway and order-effect coverage.

@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Accept hyphenated IDs in WooPayments API route validation, URL-encode VAT numbers, and use a jittered retry backoff.

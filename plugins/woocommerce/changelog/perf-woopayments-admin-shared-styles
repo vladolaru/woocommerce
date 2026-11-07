@@ -1,0 +1,4 @@
+Significance: patch
+Type: performance
+
+Ship the WooPayments admin styles as one shared stylesheet instead of a copy in each page chunk, reducing the plugin download size.

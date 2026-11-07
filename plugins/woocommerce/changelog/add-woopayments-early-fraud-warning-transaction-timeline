@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Allow merchants to see Stripe Radar early fraud warnings and open the eligible refund flow from the payment transaction timeline.

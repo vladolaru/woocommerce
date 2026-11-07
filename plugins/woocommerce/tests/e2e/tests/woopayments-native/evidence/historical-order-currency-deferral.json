@@ -1,0 +1,40 @@
+{
+	"schema_version": 2,
+	"slice_id": "historical-order-currency-deferral",
+	"wc_base_commit": "92b2fc3376f6a5ce47d283656cb0c06dc569fb9f",
+	"verified_at_commit": "1ba9b89449d95f9ceeb9edd720d0d3c24584036b",
+	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+	"source_test_paths": [
+		"plugins/woocommerce/tests/e2e/tests/woopayments-native/evidence/calibration-notes.md"
+	],
+	"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+	"contract_ids": [
+		"default::chromium::tests/e2e/specs/wcpay/shopper/multi-currency-checkout.spec.ts:84::Multi-currency checkout › My account › should display the correct currency in the my account order history table"
+	],
+	"targets": [
+		{
+			"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/transitions/historical-money-records.spec.ts",
+			"contract": "pending"
+		}
+	],
+	"implementation_commits": [],
+	"verification": [],
+	"reviews": [
+		{
+			"role": "deferral",
+			"verdict": "APPROVE",
+			"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+			"summary": "Fresh code review approved pre-review evidence SHA c8390f1af9e7e613b3f951d7a9f7d5ec774aec7db1c6ff69d5695b95786600a9 against mutated ledger SHA e5fedbd95828205d40040808372929bc72bba7d1219d4ee36f71a49f3c639dd9 and committed pre-mutation SHA fc4db2b27de960f014a4de85224aca6d6267221eeadf886d767d9e360d250a23 at 1ba9b89449d95f9ceeb9edd720d0d3c24584036b, with no findings. Exactly the line-93 row changes fields 37-40; fields 1-36 are byte-identical. The schema-v2 deferral truthfully distinguishes the absent target, pending contract and owner, and missing runner allowlist as the first executable blockers from campaign readiness as the legal umbrella. It specifies an exact provider-free two-order local CRUD/REST cutover oracle with unchanged persisted tuples, one worker, zero retries, no provider records, journal, or listener lease, complete pre-state journaling, allocation destruction as restoration, fail-closed exact-resource quarantine, semantic exact-row and complete-total accessibility assertions, sibling-contract separation and fresh-review drift controls, and no unsupported defect, known-gap, execution, or closure claim."
+		}
+	],
+	"closures": [],
+	"known_gaps": [],
+	"deferral": {
+		"blocker": "The historical-money-records target is absent, its target contract and implementation owner remain pending, and the transition runner does not allowlist this scenario, so it exits before allocation. The campaign's established ledger umbrella remains blocked-environment:PILOT-NATIVE-READINESS. Core's persisted-order currency authority, owner-gated order-context projection, and lower-layer coverage make native support plausible; no product defect, provider dependency, authority conflict, or frozen-to-rolling source drift is established.",
+		"affected_scope": "One provider-free plugin-to-Core cutover contract. In a unique ephemeral store, prove plugin ownership, create exactly two run-owned local WooCommerce orders for one exact customer through CRUD or REST with distinct totals and currencies USD and EUR, read back their exact identity/customer/currency/total/status/run-marker/storage-backend tuples, perform one product cutover, prove Core-only ownership, deliberately select EUR as the shopper currency, assert one exact semantic My Account row and complete total with exactly one explicit currency code for each order, and prove both persisted tuples remain unchanged. Financial checkout, provider objects, provider callbacks, refunds, pay-for-order, rollback, and storage-backend migration remain separate contracts.",
+		"no_allowlisted_action_reason": "No approved target/owner/runner can execute the required one-way transition. A source checkout, conditional generic table-row assertion, lower-layer test, currency symbol, current shopper currency, provider record, or one order cannot substitute for two independently identified local records joined across exact ownership state, unchanged persistence, and accessible per-row output. The future run must use one worker and zero retries, create no PaymentIntent, charge, payment method, balance transaction, refund, webhook, provider journal, or listener lease, and must halt on any ambiguous cutover or identity outcome.",
+		"reference": "blocked-environment:PILOT-NATIVE-READINESS",
+		"unlock_decision": "Approve the exact provider-free historical-money target contract and one implementation owner, add a narrow runner allowlist and local-transition capability in the existing ephemeral provisioner, and satisfy campaign readiness. Journal the complete raw ownership, settings, formatting, storage-backend, customer, session, and run-owned order pre-state before mutation. Execute exactly one cutover with fresh customer contexts, semantic table/rowheader/cell locators, full expected total text for USD and EUR, exact before/after record equality, zero external submissions, successful allocation destruction, retained public-safe evidence, and fresh code, E2E-test, reliability, and accessibility reviews.",
+		"quarantine_status": "No browser context, store, allocation, option, currency setting, customer, session, order, cutover, provider object, listener, journal, lock, retention record, or quarantine was created or changed; the separately owned listener remains untouched. A future owner uncertainty, customer/order mismatch, duplicate or missing exact row, amount/currency mismatch, storage-backend drift, unexpected external dispatch, ambiguous cutover, local cleanup failure, or allocation-destruction failure must preserve the exact workspace, rollback receipt, journal, diagnostics, and locks without retry, reverse cutover, speculative cleanup, or broad deletion. Successful provisioner destruction is the restoration boundary."
+	}
+}

@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Scroll the WooPayments settings page to the section named in the link, such as #fraud-protection or #advanced, once settings have loaded.

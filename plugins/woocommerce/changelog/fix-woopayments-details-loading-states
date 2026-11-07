@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Show the WooPayments payment details, payout details and dispute challenge loading and payout error states as the client does.

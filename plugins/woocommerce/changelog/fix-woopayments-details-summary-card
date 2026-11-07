@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Lay out the WooPayments payment summary as WooPayments did: the status beside the amount, fees and net once, the payment and charge IDs with the actions menu, and one row of details.

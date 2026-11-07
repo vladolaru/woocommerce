@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Refresh WooPayments account details after onboarding saves a partial account.

@@ -1,0 +1,4 @@
+Significance: patch
+Type: dev
+
+Check optional closure fidelity-claim citations against the fidelity partition.

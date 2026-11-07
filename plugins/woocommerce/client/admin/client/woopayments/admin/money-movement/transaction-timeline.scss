@@ -1,0 +1,22 @@
+// Client 11.1.0 `payment-details/timeline/style.scss`: the captured fee lines and the fraud review icon.
+.woocommerce-timeline .woocommerce-timeline-item {
+	&__body {
+		.fee-breakdown-list,
+		.discount-split-list {
+			line-height: 1.5;
+			margin-inline-start: $gap;
+		}
+
+		.fee-breakdown-list {
+			list-style-type: disc;
+		}
+
+		.discount-split-list {
+			list-style-type: circle;
+		}
+	}
+
+	&__headline svg.is-fraud-outcome-review {
+		background: $studio-orange-40;
+	}
+}

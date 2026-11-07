@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Let long WooPayments payment IDs and payout bank references wrap on phones instead of widening the page.

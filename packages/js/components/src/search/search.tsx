@@ -193,6 +193,7 @@ export class Search extends Component< SearchProps, SearchState > {
 	render() {
 		const autocompleter = this.getAutocompleter();
 		const {
+			ariaLabel,
 			className,
 			inlineTags,
 			placeholder,
@@ -210,6 +211,7 @@ export class Search extends Component< SearchProps, SearchState > {
 		return (
 			<div>
 				<SelectControl
+					ariaLabel={ ariaLabel }
 					className={ clsx( 'woocommerce-search', className, {
 						'is-static-results': staticResults,
 					} ) }

@@ -17,6 +17,7 @@ import { StatusBadge } from '~/settings-payments/components/status-badge';
 import { EllipsisMenuWrapper as EllipsisMenu } from '~/settings-payments/components/ellipsis-menu-content';
 import {
 	hasIncentive,
+	isBuiltinWooPayments,
 	isWooPayEligible,
 	isWooPayments,
 } from '~/settings-payments/utils';
@@ -31,6 +32,7 @@ import {
 import { ReactivateLivePaymentsButton } from '~/settings-payments/components/buttons/reactivate-live-payments-button';
 import { IncentiveStatusBadge } from '~/settings-payments/components/incentive-status-badge';
 import { OfficialBadge } from '~/settings-payments/components/official-badge';
+import { BuiltinBadge } from '~/settings-payments/components/builtin-badge';
 
 type PaymentGatewayItemProps = {
 	gateway: PaymentGatewayProvider;
@@ -192,13 +194,18 @@ export const PaymentGatewayListItem = ( {
 								}
 							/>
 						) }
-						{ /* If the gateway has a matching suggestion, it is an official extension. */ }
-						{ gateway._suggestion_id && (
-							<OfficialBadge
-								variant="expanded"
-								suggestionId={ gateway._suggestion_id }
-							/>
-						) }
+						{ /* If the gateway has a matching suggestion, it is an official extension, or built into WooCommerce. */ }
+						{ gateway._suggestion_id &&
+							( isBuiltinWooPayments( gateway ) ? (
+								<BuiltinBadge
+									suggestionId={ gateway._suggestion_id }
+								/>
+							) : (
+								<OfficialBadge
+									variant="expanded"
+									suggestionId={ gateway._suggestion_id }
+								/>
+							) ) }
 						{ gateway.supports?.includes( 'subscriptions' ) && (
 							<Tooltip
 								placement="top"

@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Keep the payment methods a merchant picked during WooPayments onboarding enabled after they verify their account, even while a method is still pending approval or has no fees yet.

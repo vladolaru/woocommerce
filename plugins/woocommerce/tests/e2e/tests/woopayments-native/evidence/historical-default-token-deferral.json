@@ -1,0 +1,59 @@
+{
+	"schema_version": 2,
+	"slice_id": "historical-default-token-deferral",
+	"wc_base_commit": "92b2fc3376f6a5ce47d283656cb0c06dc569fb9f",
+	"verified_at_commit": "0ddb1576e51c174b2034a1068e08dac7f0c27edf",
+	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+	"source_test_paths": [
+		"plugins/woocommerce/tests/e2e/tests/woopayments-native/transitions/historical-tokens.spec.ts",
+		"plugins/woocommerce/tests/e2e/utils/woopayments-native/drivers/checkout.ts",
+		"plugins/woocommerce/tests/e2e/utils/woopayments-native/drivers/historical-tokens.ts",
+		"plugins/woocommerce/tests/e2e/utils/woopayments-native/drivers/saved-cards.ts",
+		"plugins/woocommerce/tests/e2e/utils/woopayments-native/drivers/store-transition.ts",
+		"plugins/woocommerce/tests/e2e/utils/woopayments-native/provider-evidence.ts",
+		"plugins/woocommerce/tests/e2e/utils/woopayments-native/record-evidence.ts"
+	],
+	"source_test_sha256": "8cb0aff5b954af7eed5b70e4f00347adec06596c8c675ca5857845eb4cd1bc68",
+	"contract_ids": [
+		"default::chromium::tests/e2e/specs/wcpay/shopper/shopper-myaccount-saved-cards.spec.ts:214::Shopper can save and delete cards › Testing card: basic › should be able to set the basic card as default payment method"
+	],
+	"targets": [
+		{
+			"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/transitions/historical-tokens.spec.ts",
+			"contract": "plugin-origin default saved method remains the sole preselected Classic method after native cutover and funds one exact payment"
+		}
+	],
+	"implementation_commits": [],
+	"verification": [
+		{
+			"command": "historical 2026-08-02 transition run",
+			"exit_code": 0,
+			"raw_result_sha256": "2629999777465229b21805f519085a26c960c855983615c4f0d4e3d91b924c23",
+			"summary": "The exact one-worker, zero-retry case passed 1/1 and proved two plugin tokens, unchanged default token and provider method after cutover, sole Classic preselection, one succeeded and captured USD 10.99 payment, and exact cleanup. Its provider callback attribution remained deferred because a second listener overlapped that historical interval."
+		},
+		{
+			"command": "pnpm --filter=@woocommerce/plugin-woocommerce test:php:env -- --filter '/(test_reconciliation_preserves_plugin_origin_saved_card|test_process_payment_reuses_plugin_origin_saved_card)/'",
+			"exit_code": 0,
+			"summary": "N-097 lower-layer closure passed 2 tests and 26 assertions: every durable WooPayments 11.1.0 token/customer field remained byte-identical through the real reconciliation runner, and native checkout received the same historical token for the recorded successful USD 10.99 outcome. The fresh row-160 relaunch stopped before cutover, and its exact provider method was detached and cold-read absent before the lower-layer handoff."
+		}
+	],
+	"reviews": [
+		{
+			"role": "deferral",
+			"verdict": "APPROVE",
+			"source_test_sha256": "8cb0aff5b954af7eed5b70e4f00347adec06596c8c675ca5857845eb4cd1bc68",
+			"summary": "Fresh broad review approved the exact one-row blocked-environment deferral: listener exclusivity was lost during the sole zero-retry run, neither rerunning nor modifying the unowned listener is allowlisted, the executable target remains unclosed, and an exclusively owned listener window is the smallest unlock."
+		}
+	],
+	"closures": [
+		{
+			"contract_id": "default::chromium::tests/e2e/specs/wcpay/shopper/shopper-myaccount-saved-cards.spec.ts:214::Shopper can save and delete cards › Testing card: basic › should be able to set the basic card as default payment method",
+			"target": {
+				"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/transitions/historical-tokens.spec.ts",
+				"contract": "plugin-origin default saved method remains the sole preselected Classic method after native cutover and funds one exact payment"
+			}
+		}
+	],
+	"known_gaps": [],
+	"deferral": null
+}

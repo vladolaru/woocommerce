@@ -1,0 +1,4 @@
+Significance: patch
+Type: performance
+
+Build the Multi-currency state once per request, shared by every price, currency and compatibility service.

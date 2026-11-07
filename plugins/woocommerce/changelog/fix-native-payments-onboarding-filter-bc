@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Re-fire the removed WooPayments onboarding task badge and additional-data filters with deprecation notices to preserve backward compatibility.

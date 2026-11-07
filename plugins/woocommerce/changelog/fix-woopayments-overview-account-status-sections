@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Show the WooPayments Overview sections by account status as WooPayments does: rejected and under-review accounts no longer see tasks, balances, payouts, dispute readiness or the inbox, and restricted accounts keep dispute readiness and the inbox.

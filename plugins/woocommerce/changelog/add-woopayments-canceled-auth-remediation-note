@@ -1,0 +1,4 @@
+Significance: minor
+Type: add
+
+Show the "WooPayments: Fix incorrect order data" inbox note when a background check finds orders the canceled-authorization fee remediation tool should fix.

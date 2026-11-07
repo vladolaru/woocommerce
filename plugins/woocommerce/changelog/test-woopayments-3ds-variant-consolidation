@@ -1,0 +1,4 @@
+Significance: patch
+Type: dev
+
+Settle the 3ds and 3ds2 contract split: no implementation distinguishes the protocols, so the pairs consolidate.

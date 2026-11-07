@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+WooPayments now warns in the admin when the store currency is not supported by the connected account, as the WooPayments plugin did.

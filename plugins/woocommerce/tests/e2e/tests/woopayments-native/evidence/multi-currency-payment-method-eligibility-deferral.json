@@ -1,0 +1,41 @@
+{
+	"schema_version": 2,
+	"slice_id": "multi-currency-payment-method-eligibility-deferral",
+	"wc_base_commit": "92b2fc3376f6a5ce47d283656cb0c06dc569fb9f",
+	"verified_at_commit": "5645e1b8eb6d9b552fbf164ae55c7d5bd0027f81",
+	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+	"source_test_paths": [
+		"plugins/woocommerce/tests/e2e/tests/woopayments-native/evidence/calibration-notes.md"
+	],
+	"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+	"contract_ids": [
+		"default::chromium::tests/e2e/specs/wcpay/shopper/multi-currency-checkout.spec.ts:122::Multi-currency checkout › Available payment methods › should display EUR payment methods when switching to EUR and default is USD",
+		"default::chromium::tests/e2e/specs/wcpay/shopper/multi-currency-checkout.spec.ts:162::Multi-currency checkout › Available payment methods › should display USD payment methods when switching to USD and default is EUR"
+	],
+	"targets": [
+		{
+			"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/scenarios/multi-currency.ts",
+			"contract": "pending"
+		}
+	],
+	"implementation_commits": [],
+	"verification": [],
+	"reviews": [
+		{
+			"role": "deferral",
+			"verdict": "APPROVE",
+			"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+			"summary": "Fresh independent review approved pre-review evidence SHA 85946470d6f07bc863acd0ce5ee811dd5bd5a9d0386f8533885d595290e355b4 against mutated ledger SHA bc4cc924de492205b51380a85ca9eaca3fd42393a56ee9f72b56c0bfb4047c15 and committed baseline e5fedbd95828205d40040808372929bc72bba7d1219d4ee36f71a49f3c639dd9 at 5645e1b8eb6d9b552fbf164ae55c7d5bd0027f81, with no findings. Only the two exact line-122 and line-162 rows change fields 37-40; fields 1-36 remain byte-identical. The deferral preserves the BE Card/Bancontact four-state server and accessible-control matrix, independent contexts, products, sessions, orders, provider graphs and journals, exact EUR 10.99 Bancontact and USD 10.99 Card joins, readiness-first gating, one writer, one future exclusive listener, zero replay and halt after ambiguity, byte-exact restoration, financial-record retention, quarantine, accessibility and drift controls, and makes no defect, known-gap, implementation, verification or closure claim."
+		}
+	],
+	"closures": [],
+	"known_gaps": [],
+	"deferral": {
+		"blocker": "Standing native readiness fails before this two-row campaign may allocate its BE account/store, provider writer, exclusive listener, shoppers, products, orders, or financial graphs. The shared target is absent, its contract and owner remain pending, and no approved deterministic Card/Bancontact projection, redirect driver, complete raw restoration journal, or protected provider window exists. Core's selected-currency projection and native method registry agree with the frozen BE-bound Card-in-USD-and-EUR and Bancontact-only-in-EUR matrix, so no current native defect, known gap, authority conflict, or source drift is established.",
+		"affected_scope": "Two independently addressable journeys in one serialized feature slice. The first pins USD default and proves a USD Card-only baseline, explicitly selects EUR across a request boundary, proves Card plus Bancontact, and creates one exact EUR 10.99 Bancontact payment. The second pins EUR default and proves Card plus Bancontact, explicitly selects USD across a request boundary, proves Card only, and creates one exact USD 10.99 Card payment. Each row owns a fresh shopper context, unique product, cart, session, order, intent, charge, payment method, record locks, provider journal, accessible controls, and verdict. History, conversion arithmetic, refunds, settlement, and methods beyond Card and Bancontact remain separate.",
+		"no_allowlisted_action_reason": "The run cannot establish native readiness, approve the target/owner and Bancontact redirect driver, or allocate the protected BE provider tuple and exclusive listener. Text visibility, raw default currency, one server gateway list, one browser control, source helper retries, shared sessions, lower-layer registry tests, one row's payment, or provider state alone cannot substitute for the complete four-state join among raw default, selected session, effective checkout currency, structured totals, exact server gateway IDs, unique enabled semantic controls, and exact local/provider payment identity, method, amount, currency, status, capture, and occurrence cardinality. One worker, zero retries, zero replay, and halt before the second dispatch after any ambiguous first outcome are mandatory.",
+		"reference": "blocked-environment:PILOT-NATIVE-READINESS",
+		"unlock_decision": "Externally satisfy exact native readiness with a BE test account whose Card and Bancontact capabilities are active and USD/EUR are supported; approve the grouped target, one owner, and one Bancontact redirect fixture; allocate one protected test-mode provider window and exactly one exclusively owned listener. Pin only Card and Bancontact, BE billing, USD/EUR at manual rate 1.00, neutral rounding/charm, two unique non-taxable 10.99 products, and isolated sessions. Run both rows serially with row-specific pre-dispatch journals, exact server and accessible method matrices, exact local/provider joins, byte-exact wildcard settings/cache/user-meta/session restoration, retained financial evidence, quarantine, and fresh code, E2E-test, reliability, accessibility, and provider-evidence reviews.",
+		"quarantine_status": "No browser context, account, store, allocation, method setting, currency setting, product, cart, session, order, intent, charge, payment method, redirect, callback, event, lock, journal, listener, retention record, or quarantine was created or changed; the separately owned listener remains untouched. A future identity, country, capability, currency, bundle, lock, listener, session, gateway-matrix, accessible-control, amount, method, order/provider association, occurrence, capture, callback, restoration, or cleanup mismatch must preserve diagnostics and financial history and quarantine the exact account/store/settings/session/product/order/provider/event graph and journals without replay, provider deletion, account repair, or second-row continuation after ambiguity."
+	}
+}

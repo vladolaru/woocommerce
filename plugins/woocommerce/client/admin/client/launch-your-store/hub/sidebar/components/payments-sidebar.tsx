@@ -34,8 +34,11 @@ import { wooPaymentsOnboardingSessionEntryLYS } from '~/settings-payments/consta
 import { getPaymentsTaskFromLysTasklist } from '../tasklist';
 
 export const PaymentsSidebar = ( props: SidebarComponentProps ) => {
-	const { wooPaymentsRecentlyActivated, isWooPaymentsActive } =
-		useSetUpPaymentsContext();
+	const {
+		wooPaymentsRecentlyActivated,
+		isWooPaymentsActive,
+		isBuiltinWooPayments,
+	} = useSetUpPaymentsContext();
 
 	const {
 		steps: allSteps,
@@ -156,14 +159,21 @@ export const PaymentsSidebar = ( props: SidebarComponentProps ) => {
 			disabled={ true }
 			showChevron={ false }
 		>
-			{ payments_task?.additionalData?.wooPaymentsIsInstalled
-				? /* translators: %s: WooPayments */
-					sprintf( __( 'Enable %s', 'woocommerce' ), 'WooPayments' )
-				: /* translators: %s: WooPayments */
-					sprintf(
-						__( 'Install %s', 'woocommerce' ),
-						'WooPayments'
-					) }
+			{ isBuiltinWooPayments &&
+				/* translators: %s: WooPayments */
+				sprintf( __( 'Set up %s', 'woocommerce' ), 'WooPayments' ) }
+			{ ! isBuiltinWooPayments &&
+				( payments_task?.additionalData?.wooPaymentsIsInstalled
+					? sprintf(
+							/* translators: %s: WooPayments */
+							__( 'Enable %s', 'woocommerce' ),
+							'WooPayments'
+						)
+					: sprintf(
+							/* translators: %s: WooPayments */
+							__( 'Install %s', 'woocommerce' ),
+							'WooPayments'
+						) ) }
 		</SidebarNavigationItem>
 	);
 

@@ -262,6 +262,8 @@ class WC_Admin_Tests_PaymentGatewaySuggestions_Init extends WC_Unit_Test_Case {
 	public function test_empty_remote_suggestions_fallback_to_defaults() {
 		// Arrange.
 		update_option( 'woocommerce_default_country', 'US' );
+		// The defaults compared below are the WooPayments feature's off state, the install default.
+		update_option( 'woocommerce_feature_woopayments_enabled', 'no' );
 		// Make sure there are no specs in the transient.
 		set_transient(
 			'woocommerce_admin_' . PaymentGatewaySuggestionsDataSourcePoller::ID . '_specs',

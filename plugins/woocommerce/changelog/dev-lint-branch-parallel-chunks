@@ -1,0 +1,4 @@
+Significance: patch
+Type: dev
+Comment: Run the branch PHP lint in parallel chunks on large diffs to fit CI's time limit; no production change.
+

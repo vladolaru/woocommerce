@@ -1,0 +1,29 @@
+{
+	"schema_version": 2,
+	"slice_id": "subscriptions-shopper-purchase-deferral",
+	"wc_base_commit": "92b2fc3376f6a5ce47d283656cb0c06dc569fb9f",
+	"verified_at_commit": "cc84da9aab69691fdd532c491b77cd552ac32719",
+	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+	"source_test_paths": ["plugins/woocommerce/tests/e2e/tests/woopayments-native/evidence/calibration-notes.md"],
+	"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+	"contract_ids": ["default::chromium::tests/e2e/specs/wcpay/shopper/shopper-myaccount-renew-subscription.spec.ts:34::Subscriptions › Renew a subscription in my account › should be able to purchase a subscription"],
+	"targets": [{"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/subscriptions/purchase.spec.ts", "contract": "pending"}],
+	"implementation_commits": [],
+	"verification": [],
+	"reviews": [{
+		"role": "deferral",
+		"verdict": "APPROVE",
+		"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+		"summary": "Fresh independent review approved pre-review purchase SHA 99821cc2df7dedbd51787876894631c614df155cb578cf63661d6ec541099b49 and historical-renewal SHA 2a14af27115daec721cc0cdbdd827bf3a31af31f41e701e08eab49aff8f18b9b against mutated ledger SHA 605e9372de435cbfde44b60ce7647c9abf0df78199cb9345c85813df8b226c82 and baseline e5be9eb427d400ae7317912aa2be2d2c6495f324b9ea3a828182ce42bc9d713c at cc84da9aab69691fdd532c491b77cd552ac32719, with no findings. Exactly rows 149-150 change only fields 37-40. The independent steady-state and plugin-origin historical graphs preserve pinned Subscriptions artifacts, product and options, exact USD 11.98 initial and USD 9.99 renewal outcomes, local, provider and Action Scheduler cardinalities, customer-present subscription_payment renewal as a future RED without a known-gap claim, semantic accessibility, one serialized provider-writer lane, one versus two intentional dispatches, one exclusive listener, zero retries or replay, journals, restoration, retention, quarantine and drift without unsupported execution, defect, verification or closure claims."
+	}],
+	"closures": [],
+	"known_gaps": [],
+	"deferral": {
+		"blocker": "The steady-state subscription target is absent with pending contract and owner, and standing readiness provides neither an approved native account/store nor a version-pinned compatible WooCommerce Subscriptions artifact, deterministic signup-fee product fixture, exact subscription readers or exclusive provider listener. The source downloads a mutable latest extension and chains state to its sibling; no native execution or product defect is established.",
+		"affected_scope": "One fresh run-owned customer, empty cart and isolated tax-free and shipping-free store use a version-and-hash-pinned WooCommerce Subscriptions artifact plus the pinned product definition: USD 9.99 monthly recurring price, USD 1.99 signup fee, no trial and one-month interval. One semantic native Card checkout submits basic card 4242 exactly once under one durable journal. It produces exactly one USD 11.98 initial order, one active subscription, one local token, one provider customer attachment, one succeeded and captured PaymentIntent, one charge and one capture, with exact customer, order ID and key, currency, line, gateway, token, provider customer and payment-method joins. Provider metadata says payment_type recurring and subscription_payment initial; the signup fee occurs once, the next-payment date advances one interval, zero renewal orders exist and no scheduled renewal action executes. The receipt and unique subscription link are accessible by semantic name.",
+		"no_allowlisted_action_reason": "No allowlisted local action can assign target ownership, satisfy native callback readiness, approve or install the immutable private extension artifact, add exact subscription and provider readers, or acquire the separately owned exclusive listener. A skip flag, mutable latest download, module-variable subscription number, retrying Place order helper or UI-only receipt cannot prove this graph. Use one worker, one serialized provider-writer lane, one submission, zero Playwright retries, zero provider replay and bounded read-only reconciliation only.",
+		"reference": "blocked-environment:PILOT-NATIVE-READINESS",
+		"unlock_decision": "Approve the exact target and owner, satisfy native readiness, pin and attest the compatible Subscriptions artifact and product definition, provision deterministic options and one exclusive listener, then implement one one-shot checkout with pre-dispatch and restoration journals. Prove the complete order, subscription, token, scheduled-action and provider cardinality graph, exact USD 11.98 and recurring-initial metadata, byte-exact setting restoration and run-owned cleanup before fresh code, E2E, reliability, accessibility, security and drift review.",
+		"quarantine_status": "No extension, product, customer, cart, order, subscription, token, provider object, listener, browser, writer, journal, setting mutation, restoration or quarantine was created; the separately owned listener remains untouched. Future dispatch, provider correlation, listener exclusivity, scheduled-action, cleanup, restoration or publication ambiguity must stop without replay, retain immutable financial records and the open journal, and quarantine the exact account, store, customer, order, subscription, token, intent, charge, payment method, event interval and held locks. Proven pre-dispatch provisioning failures preserve only local recovery state."
+	}
+}

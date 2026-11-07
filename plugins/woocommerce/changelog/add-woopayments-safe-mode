@@ -1,0 +1,4 @@
+Significance: minor
+Type: add
+
+Show WooCommerce's Safe Mode banner when a copy of a store with WooPayments set up shares the store's WordPress.com connection.

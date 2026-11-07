@@ -1,0 +1,4 @@
+Significance: patch
+Type: performance
+
+Ship the WooPayments settings page in one admin script chunk instead of two identical copies, reducing the plugin download size.

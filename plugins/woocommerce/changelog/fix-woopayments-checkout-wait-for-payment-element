@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Fix redirect payment methods, such as Alipay, sometimes stalling after Place order on the WooPayments checkout.

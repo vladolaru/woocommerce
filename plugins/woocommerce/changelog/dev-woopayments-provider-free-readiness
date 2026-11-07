@@ -1,0 +1,4 @@
+Significance: patch
+Type: dev
+
+Gate WooPayments-native E2E provider readiness (account assertion, callback probe, provider-resource quarantine) on runs and tests that actually involve the provider, keyed to the provider and transition tags.

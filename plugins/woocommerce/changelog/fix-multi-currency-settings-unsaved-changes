@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Ask before discarding unsaved multi-currency currency settings, and keep Save disabled until something changes.

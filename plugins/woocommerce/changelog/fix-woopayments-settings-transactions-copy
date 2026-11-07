@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+The WooPayments settings manual capture option uses the WooPayments plugin's label and help text, the payouts delay line uses the plugin's wording, and the Transactions group descriptions use help text styling.

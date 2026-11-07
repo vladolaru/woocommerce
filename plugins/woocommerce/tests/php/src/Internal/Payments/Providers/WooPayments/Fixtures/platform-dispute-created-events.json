@@ -1,0 +1,364 @@
+{
+	"_meta": {
+		"recording": "REC-DC",
+		"source": "Local WPCOM (wpcom-local) Transact platform, blog 4, account acct_1TrY2nBzWlxcwgpP (default currency USD), Stripe test mode",
+		"store": "native WooCommerce :8889 (woocommerce-develop-2, branch exp/core-native-payments at 7e5110cb73 when captured, WooPayments plugin inactive, test mode)",
+		"captured_via": "Retained REC-5b R-e snapshots of local WPCOM async job rows (wpj_jobs, Remote_Site_Client::handle_async_webhook_send) taken read-only on 2026-09-25 while queued, before the worker ran them. The job data body is the exact array Remote_Site_Client::send_webhook() wp_json_encode()s and POSTs to the store at ?rest_route=/wc/v3/payments/webhook (Event::get_body_for_forwarding(true)). No new provider write was made for REC-DC",
+		"sanitized": "customer_email_address in data.object.evidence (and any other listed key) replaced with REDACTED where non-null; job envelope (autoenv server vars, job options) omitted; bodies otherwise verbatim",
+		"store_observation": "The REC-5b charges have no Woo order, so native could not map these events to an order when they were delivered; no order state or note was exercised",
+		"notes": "data/rec-t3-api-recordings.md in the 2026-09-03-native-payments-program-orientation session folder"
+	},
+	"entries": [
+		{
+			"pair": "accept_case_created",
+			"context": "du_1UJbToBzWlxcwgpP9bUeBTQY (REC-5b accept case, 50.00 USD, later closed lost by merchant)",
+			"queued_at": "2026-09-25T15:56:10+00:00",
+			"wpcom_job_id": 140718,
+			"delivery": {
+				"method": "POST",
+				"store_route": "/wc/v3/payments/webhook",
+				"blog_id": 4,
+				"content_type": "application/json"
+			},
+			"body": {
+				"id": "evt_1UJbTqBzWlxcwgpPIfv0hvj7",
+				"type": "charge.dispute.created",
+				"livemode": false,
+				"account": "acct_1TrY2nBzWlxcwgpP",
+				"data": {
+					"object": {
+						"id": "du_1UJbToBzWlxcwgpP9bUeBTQY",
+						"object": "dispute",
+						"amount": 5000,
+						"balance_transaction": "txn_1UJbTpBzWlxcwgpPnRegfKzn",
+						"balance_transactions": [
+							{
+								"available_on": 1790640000,
+								"created": 1790351768,
+								"net": -6500,
+								"currency": "usd",
+								"source": "du_1UJbToBzWlxcwgpP9bUeBTQY",
+								"reporting_category": "dispute",
+								"fee_details": [
+									{
+										"application": null,
+										"amount": 1500,
+										"type": "stripe_fee",
+										"description": "Dispute fee",
+										"currency": "usd"
+									}
+								],
+								"amount": -5000,
+								"status": "pending",
+								"balance_type": "payments",
+								"object": "balance_transaction",
+								"id": "txn_1UJbTpBzWlxcwgpPnRegfKzn",
+								"exchange_rate": null,
+								"type": "adjustment",
+								"description": "Chargeback withdrawal for ch_3UJbTlBzWlxcwgpP0vNaexjT",
+								"fee": 1500
+							}
+						],
+						"charge": "ch_3UJbTlBzWlxcwgpP0vNaexjT",
+						"created": 1790351768,
+						"currency": "usd",
+						"enhanced_eligibility_types": [],
+						"evidence": {
+							"access_activity_log": null,
+							"billing_address": null,
+							"cancellation_policy": null,
+							"cancellation_policy_disclosure": null,
+							"cancellation_rebuttal": null,
+							"customer_communication": null,
+							"customer_email_address": null,
+							"customer_name": null,
+							"customer_purchase_ip": null,
+							"customer_signature": null,
+							"duplicate_charge_documentation": null,
+							"duplicate_charge_explanation": null,
+							"duplicate_charge_id": null,
+							"enhanced_evidence": [],
+							"product_description": null,
+							"receipt": null,
+							"refund_policy": null,
+							"refund_policy_disclosure": null,
+							"refund_refusal_explanation": null,
+							"service_date": null,
+							"service_documentation": null,
+							"shipping_address": null,
+							"shipping_carrier": null,
+							"shipping_date": null,
+							"shipping_documentation": null,
+							"shipping_tracking_number": null,
+							"uncategorized_file": null,
+							"uncategorized_text": null
+						},
+						"evidence_details": {
+							"due_by": 1791071999,
+							"enhanced_eligibility": [],
+							"has_evidence": false,
+							"past_due": false,
+							"submission_count": 0
+						},
+						"is_charge_refundable": false,
+						"livemode": false,
+						"metadata": [],
+						"payment_intent": "pi_3UJbTlBzWlxcwgpP0FQ4MWQE",
+						"payment_method_details": {
+							"card": {
+								"brand": "visa",
+								"case_type": "chargeback",
+								"network": "visa",
+								"network_reason_code": "10.4"
+							},
+							"type": "card"
+						},
+						"reason": "fraudulent",
+						"status": "needs_response",
+						"issuer_evidence": [
+							{
+								"evidence_type": "chargeback",
+								"file_evidence": [],
+								"text_evidence": "The Issuer/Cardholder disputes this transaction as fraudulent. The authorization request did not include Card Identification Data and/or Address Verification. Provide proof of an approved Authorization containing full match on Address Verification and Card Identification Data. Also provide proof of delivery."
+							}
+						]
+					}
+				}
+			}
+		},
+		{
+			"pair": "win_case_created",
+			"context": "du_1UJbTtBzWlxcwgpPSQwkqPRE (REC-5b win case, 60.00 USD, later won)",
+			"queued_at": "2026-09-25T15:56:15+00:00",
+			"wpcom_job_id": 140722,
+			"delivery": {
+				"method": "POST",
+				"store_route": "/wc/v3/payments/webhook",
+				"blog_id": 4,
+				"content_type": "application/json"
+			},
+			"body": {
+				"id": "evt_1UJbTvBzWlxcwgpPt1jgyp08",
+				"type": "charge.dispute.created",
+				"livemode": false,
+				"account": "acct_1TrY2nBzWlxcwgpP",
+				"data": {
+					"object": {
+						"id": "du_1UJbTtBzWlxcwgpPSQwkqPRE",
+						"object": "dispute",
+						"amount": 6000,
+						"balance_transaction": "txn_1UJbTuBzWlxcwgpPhXV43VP8",
+						"balance_transactions": [
+							{
+								"available_on": 1790640000,
+								"created": 1790351773,
+								"net": -7500,
+								"currency": "usd",
+								"source": "du_1UJbTtBzWlxcwgpPSQwkqPRE",
+								"reporting_category": "dispute",
+								"fee_details": [
+									{
+										"application": null,
+										"amount": 1500,
+										"type": "stripe_fee",
+										"description": "Dispute fee",
+										"currency": "usd"
+									}
+								],
+								"amount": -6000,
+								"status": "pending",
+								"balance_type": "payments",
+								"object": "balance_transaction",
+								"id": "txn_1UJbTuBzWlxcwgpPhXV43VP8",
+								"exchange_rate": null,
+								"type": "adjustment",
+								"description": "Chargeback withdrawal for ch_3UJbTrBzWlxcwgpP0g7nT6Vu",
+								"fee": 1500
+							}
+						],
+						"charge": "ch_3UJbTrBzWlxcwgpP0g7nT6Vu",
+						"created": 1790351773,
+						"currency": "usd",
+						"enhanced_eligibility_types": [],
+						"evidence": {
+							"access_activity_log": null,
+							"billing_address": null,
+							"cancellation_policy": null,
+							"cancellation_policy_disclosure": null,
+							"cancellation_rebuttal": null,
+							"customer_communication": null,
+							"customer_email_address": null,
+							"customer_name": null,
+							"customer_purchase_ip": null,
+							"customer_signature": null,
+							"duplicate_charge_documentation": null,
+							"duplicate_charge_explanation": null,
+							"duplicate_charge_id": null,
+							"enhanced_evidence": [],
+							"product_description": null,
+							"receipt": null,
+							"refund_policy": null,
+							"refund_policy_disclosure": null,
+							"refund_refusal_explanation": null,
+							"service_date": null,
+							"service_documentation": null,
+							"shipping_address": null,
+							"shipping_carrier": null,
+							"shipping_date": null,
+							"shipping_documentation": null,
+							"shipping_tracking_number": null,
+							"uncategorized_file": null,
+							"uncategorized_text": null
+						},
+						"evidence_details": {
+							"due_by": 1791071999,
+							"enhanced_eligibility": [],
+							"has_evidence": false,
+							"past_due": false,
+							"submission_count": 0
+						},
+						"is_charge_refundable": false,
+						"livemode": false,
+						"metadata": [],
+						"payment_intent": "pi_3UJbTrBzWlxcwgpP0UfrvQzE",
+						"payment_method_details": {
+							"card": {
+								"brand": "visa",
+								"case_type": "chargeback",
+								"network": "visa",
+								"network_reason_code": "10.4"
+							},
+							"type": "card"
+						},
+						"reason": "fraudulent",
+						"status": "needs_response",
+						"issuer_evidence": [
+							{
+								"evidence_type": "chargeback",
+								"file_evidence": [],
+								"text_evidence": "The Issuer/Cardholder disputes this transaction as fraudulent. The authorization request did not include Card Identification Data and/or Address Verification. Provide proof of an approved Authorization containing full match on Address Verification and Card Identification Data. Also provide proof of delivery."
+							}
+						]
+					}
+				}
+			}
+		},
+		{
+			"pair": "lose_case_created",
+			"context": "du_1UJbTzBzWlxcwgpPteZQ2zpe (REC-5b lose case, 70.00 USD, later lost on evidence)",
+			"queued_at": "2026-09-25T15:56:21+00:00",
+			"wpcom_job_id": 140726,
+			"delivery": {
+				"method": "POST",
+				"store_route": "/wc/v3/payments/webhook",
+				"blog_id": 4,
+				"content_type": "application/json"
+			},
+			"body": {
+				"id": "evt_1UJbU1BzWlxcwgpPUV1eespG",
+				"type": "charge.dispute.created",
+				"livemode": false,
+				"account": "acct_1TrY2nBzWlxcwgpP",
+				"data": {
+					"object": {
+						"id": "du_1UJbTzBzWlxcwgpPteZQ2zpe",
+						"object": "dispute",
+						"amount": 7000,
+						"balance_transaction": "txn_1UJbU0BzWlxcwgpPPbpYvbKf",
+						"balance_transactions": [
+							{
+								"available_on": 1790640000,
+								"created": 1790351779,
+								"net": -8500,
+								"currency": "usd",
+								"source": "du_1UJbTzBzWlxcwgpPteZQ2zpe",
+								"reporting_category": "dispute",
+								"fee_details": [
+									{
+										"application": null,
+										"amount": 1500,
+										"type": "stripe_fee",
+										"description": "Dispute fee",
+										"currency": "usd"
+									}
+								],
+								"amount": -7000,
+								"status": "pending",
+								"balance_type": "payments",
+								"object": "balance_transaction",
+								"id": "txn_1UJbU0BzWlxcwgpPPbpYvbKf",
+								"exchange_rate": null,
+								"type": "adjustment",
+								"description": "Chargeback withdrawal for ch_3UJbTwBzWlxcwgpP1NnhK5cZ",
+								"fee": 1500
+							}
+						],
+						"charge": "ch_3UJbTwBzWlxcwgpP1NnhK5cZ",
+						"created": 1790351779,
+						"currency": "usd",
+						"enhanced_eligibility_types": [],
+						"evidence": {
+							"access_activity_log": null,
+							"billing_address": null,
+							"cancellation_policy": null,
+							"cancellation_policy_disclosure": null,
+							"cancellation_rebuttal": null,
+							"customer_communication": null,
+							"customer_email_address": null,
+							"customer_name": null,
+							"customer_purchase_ip": null,
+							"customer_signature": null,
+							"duplicate_charge_documentation": null,
+							"duplicate_charge_explanation": null,
+							"duplicate_charge_id": null,
+							"enhanced_evidence": [],
+							"product_description": null,
+							"receipt": null,
+							"refund_policy": null,
+							"refund_policy_disclosure": null,
+							"refund_refusal_explanation": null,
+							"service_date": null,
+							"service_documentation": null,
+							"shipping_address": null,
+							"shipping_carrier": null,
+							"shipping_date": null,
+							"shipping_documentation": null,
+							"shipping_tracking_number": null,
+							"uncategorized_file": null,
+							"uncategorized_text": null
+						},
+						"evidence_details": {
+							"due_by": 1791071999,
+							"enhanced_eligibility": [],
+							"has_evidence": false,
+							"past_due": false,
+							"submission_count": 0
+						},
+						"is_charge_refundable": false,
+						"livemode": false,
+						"metadata": [],
+						"payment_intent": "pi_3UJbTwBzWlxcwgpP1Sha1w09",
+						"payment_method_details": {
+							"card": {
+								"brand": "visa",
+								"case_type": "chargeback",
+								"network": "visa",
+								"network_reason_code": "10.4"
+							},
+							"type": "card"
+						},
+						"reason": "fraudulent",
+						"status": "needs_response",
+						"issuer_evidence": [
+							{
+								"evidence_type": "chargeback",
+								"file_evidence": [],
+								"text_evidence": "The Issuer/Cardholder disputes this transaction as fraudulent. The authorization request did not include Card Identification Data and/or Address Verification. Provide proof of an approved Authorization containing full match on Address Verification and Card Identification Data. Also provide proof of delivery."
+							}
+						]
+					}
+				}
+			}
+		}
+	]
+}

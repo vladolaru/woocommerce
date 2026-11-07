@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+The WooPayments update business details dialog is no wider than 700px and has a separator above its right-aligned buttons.

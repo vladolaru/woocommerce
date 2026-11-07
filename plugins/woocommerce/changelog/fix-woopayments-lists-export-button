@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+The WooPayments lists now offer an Export button with an icon only when they have rows, and the disputes, payouts and uncaptured lists no longer show a search box the client does not have.

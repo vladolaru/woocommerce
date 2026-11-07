@@ -1,0 +1,47 @@
+{
+  "schema_version": 2,
+  "slice_id": "klarna-product-messaging-closure",
+  "wc_base_commit": "1a4c8f6fb9e984f412144f29c080ef22fa68da23",
+  "verified_at_commit": "1a4c8f6fb9e984f412144f29c080ef22fa68da23",
+  "reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+  "source_test_paths": [
+    "plugins/woocommerce/tests/e2e/tests/woopayments-native/shopper/alternative-methods.spec.ts"
+  ],
+  "source_test_sha256": "64a33bd76276ec3c5e5b48babf408412bc6624d714ec42217d4a05c66f625601",
+  "contract_ids": [
+    "default::chromium::tests/e2e/specs/wcpay/shopper/klarna-checkout-purchase.spec.ts:42::Klarna Checkout › shows the message in the product page"
+  ],
+  "targets": [
+    {
+      "path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/shopper/alternative-methods.spec.ts",
+      "contract": "Klarna Checkout › shows the message in the product page"
+    }
+  ],
+  "implementation_commits": [],
+  "execution_fixture": {
+    "site": "http://store8891.localhost:8891",
+    "wpcom_blog_id": 9,
+    "runtime_owner": "native",
+    "migration_state": "the existing merchant's client-era Klarna enablement remained active after Core took ownership"
+  },
+  "verification": [
+    {
+      "command": "WCPAY_RUNTIME=native BASE_URL=http://store8891.localhost:8891 playwright test --project=woopayments-native-readonly --workers=1 --retries=0 tests/e2e/tests/woopayments-native/shopper/alternative-methods.spec.ts",
+      "exit_code": 0,
+      "raw_result_sha256": "23aa73cedfce3c94305ddfaf7536ee8f454955f6497ece5b7e5cb3a729542cd8",
+      "summary": "Passed 1/1 in 4.785 seconds with zero retries. Core retained the merchant's enabled and active Klarna state, bound the exact USD 100 product to native messaging configuration, rendered one visible and named message frame with accessible Klarna financing semantics, and deleted the run-owned product without checkout or provider submission."
+    }
+  ],
+  "reviews": [],
+  "closures": [
+    {
+      "contract_id": "default::chromium::tests/e2e/specs/wcpay/shopper/klarna-checkout-purchase.spec.ts:42::Klarna Checkout › shows the message in the product page",
+      "target": {
+        "path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/shopper/alternative-methods.spec.ts",
+        "contract": "Klarna Checkout › shows the message in the product page"
+      }
+    }
+  ],
+  "known_gaps": [],
+  "deferral": null
+}

@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Show a plus sign on inflows in the WooPayments balance report, as WooPayments does.

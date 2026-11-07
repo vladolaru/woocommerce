@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Keep the Set up payments task open while built-in WooPayments uses a test-drive account or has unfinished onboarding, matching the WooPayments extension.

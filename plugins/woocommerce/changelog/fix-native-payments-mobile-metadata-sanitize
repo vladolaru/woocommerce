@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Sanitize terminal intent metadata received from the WooPayments mobile API before forwarding it.

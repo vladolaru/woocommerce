@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Finish WooPayments setup when a merchant returns from completing account verification on Stripe, enabling payments in the verified account's mode.

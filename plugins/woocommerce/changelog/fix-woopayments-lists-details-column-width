@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+The details column of the WooPayments disputes and payouts lists is only as wide as its icon.

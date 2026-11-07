@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Display Balance report amounts using standard WooPayments currency formatting.
