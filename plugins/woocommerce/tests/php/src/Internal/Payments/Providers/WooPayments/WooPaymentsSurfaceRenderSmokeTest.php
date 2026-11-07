@@ -28,6 +28,10 @@ class WooPaymentsSurfaceRenderSmokeTest extends WC_Unit_Test_Case {
 		parent::setUp();
 
 		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
+		$this->assertTrue(
+			$this->get_arbiter()->is_builtin_enabled(),
+			'Precondition: the native payments runtime must be enabled, otherwise the surface assertions in this class prove nothing about it.'
+		);
 	}
 
 	/**
@@ -38,16 +42,6 @@ class WooPaymentsSurfaceRenderSmokeTest extends WC_Unit_Test_Case {
 		wp_set_current_user( 0 );
 
 		parent::tearDown();
-	}
-
-	/**
-	 * @testdox Should confirm the built-in WooPayments is actually enabled, so the surface assertions are not vacuous.
-	 */
-	public function test_builtin_runtime_is_enabled_for_these_assertions(): void {
-		$this->assertTrue(
-			$this->get_arbiter()->is_builtin_enabled(),
-			'The native payments runtime must be enabled, otherwise the surface assertions in this class prove nothing about it.'
-		);
 	}
 
 	/**

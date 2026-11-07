@@ -4,13 +4,11 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Orders\PaymentInfo;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExtensionRuntime;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderCardInfo;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentMethodDetailsService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use Automattic\WooCommerce\Tests\Internal\Payments\StaticWooPaymentsRuntimeArbiter;
 use WC_Order;
@@ -29,18 +27,6 @@ class WooPaymentsOrderCardInfoTest extends WC_Unit_Test_Case {
 		remove_all_filters( 'wcpay_dev_mode' );
 		$this->reset_container_replacements();
 		parent::tearDown();
-	}
-
-	/**
-	 * @testdox The card info provider loads on every request once WooPayments is connected or active, as the WooPayments extension registers it everywhere.
-	 */
-	public function test_card_info_provider_loads_wherever_an_order_can_render(): void {
-		$matrix = WooPaymentsProvider::get_classes_by_setup_tier();
-		foreach ( array( WooPaymentsSetupTier::CONNECTED, WooPaymentsSetupTier::ACTIVE ) as $state ) {
-			foreach ( array( 'front', 'admin', 'ajax', 'rest', 'cron' ) as $request ) {
-				$this->assertContains( WooPaymentsOrderCardInfo::class, $matrix[ $state ][ $request ], "{$state} {$request}" );
-			}
-		}
 	}
 
 	/**

@@ -65,53 +65,6 @@ class WooPaymentsIppReceiptEmailTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Receipt email renders HTML content with extension-compatible receipt sections.
-	 */
-	public function test_receipt_email_renders_extension_compatible_html_content(): void {
-		$email = $this->create_prepared_email();
-
-		$html = $email->get_content_html();
-
-		$this->assertStringContainsString( 'Hi Ada,', $html );
-		$this->assertStringContainsString( 'This is the receipt for your order #', $html );
-		$this->assertStringContainsString( 'Store Details', $html );
-		$this->assertStringContainsString( 'Reader Store', $html );
-		$this->assertStringContainsString( '123 Sample Street', $html );
-		$this->assertStringContainsString( 'support@example.test', $html );
-		$this->assertStringContainsString( 'Payment Method', $html );
-		$this->assertStringContainsString( 'Visa - 4242', $html );
-		$this->assertStringContainsString( 'Application Name', $html );
-		$this->assertStringContainsString( 'Visa credit', $html );
-		$this->assertStringContainsString( 'AID', $html );
-		$this->assertStringContainsString( 'A0000000031010', $html );
-		$this->assertStringContainsString( 'Account Type', $html );
-		$this->assertStringContainsString( 'Credit', $html );
-	}
-
-	/**
-	 * @testdox Receipt email renders plain text content with extension-compatible receipt sections.
-	 */
-	public function test_receipt_email_renders_extension_compatible_plain_content(): void {
-		$email = $this->create_prepared_email();
-
-		$plain = $email->get_content_plain();
-
-		$this->assertStringContainsString( 'Hi Ada,', $plain );
-		$this->assertStringContainsString( 'This is the receipt for your order #', $plain );
-		$this->assertStringContainsString( 'Reader Store', $plain );
-		$this->assertStringContainsString( '123 Sample Street', $plain );
-		$this->assertStringContainsString( 'support@example.test', $plain );
-		$this->assertStringContainsString( 'Payment Method:', $plain );
-		$this->assertStringContainsString( 'Visa - 4242', $plain );
-		$this->assertStringContainsString( 'Application Name:', $plain );
-		$this->assertStringContainsString( 'Visa credit', $plain );
-		$this->assertStringContainsString( 'AID:', $plain );
-		$this->assertStringContainsString( 'A0000000031010', $plain );
-		$this->assertStringContainsString( 'Account Type:', $plain );
-		$this->assertStringContainsString( 'Credit', $plain );
-	}
-
-	/**
 	 * @testdox Receipt email matches the complete normalized WooPayments 10.8.0 output.
 	 */
 	public function test_receipt_email_matches_woopayments_10_8_0_oracle(): void {
@@ -197,19 +150,6 @@ class WooPaymentsIppReceiptEmailTest extends WC_Unit_Test_Case {
 				return true;
 			}
 		};
-	}
-
-	/**
-	 * Create an email instance prepared for content rendering.
-	 *
-	 * @return object
-	 */
-	private function create_prepared_email(): object {
-		$email = $this->create_recording_email();
-		$email->init_hooks();
-		$email->trigger( $this->create_receipt_order(), $this->get_merchant_settings(), $this->get_card_present_charge() );
-
-		return $email;
 	}
 
 	/**

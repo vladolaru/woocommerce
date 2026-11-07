@@ -34,6 +34,8 @@ class WooPaymentsFrontendTrackingControllerTest extends WC_Unit_Test_Case {
 		remove_all_filters( 'pre_http_request' );
 		unset( $_COOKIE['tk_opt-out'] );
 		wp_set_current_user( 0 );
+		// Several rows replace WooPay's eligibility in the container with a partial mock; a later test must get the real one.
+		$this->reset_container_replacements();
 		parent::tearDown();
 	}
 
@@ -1158,38 +1160,22 @@ class WooPaymentsFrontendTrackingControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should send no stats counter for an order paid with WooPayments ($payment_method).
-	 * @testWith ["woocommerce_payments"]
-	 *           ["woocommerce_payments_klarna"]
-	 *
-	 * @param string $payment_method WooPayments gateway ID.
-	 */
-	public function test_sends_no_counter_for_an_order_paid_with_woopayments( string $payment_method ): void {
-		$requests = $this->capture_http_requests();
-		$sut      = $this->arrange_counter_eligible_store( $this->create_account_service( false ) );
-		$order    = $this->create_order_paid_with( $payment_method, 'WooPayments' );
-
-		$sut->register();
-		$this->fire_order_processed( 'woocommerce_checkout_order_processed', $order );
-		\WC_Tracks_Footer_Pixel::clear_events();
-
-		$counter_requests = array_filter(
-			array_column( $requests->getArrayCopy(), 'url' ),
-			static fn( string $url ): bool => 0 === strpos( $url, 'https://pixel.wp.com/g.gif' )
-		);
-		$this->assertSame( array(), $counter_requests );
-	}
-
-	/**
 	 * Each row turns off one of the client 11.1.0 gates (`should_enable_tracking( false, true )`, `includes/class-woopay-tracker.php:228-287`, and
 	 * live mode, :553-555) on a store where the counter is sent.
 	 *
-	 * @testdox Should send no stats counter for an order paid with another gateway when the $gate check fails.
+	 * An order paid with WooPayments sends no counter on a store where the checks pass. It records a Tracks event, which core's
+	 * WC_Tracks_Event::record() may send over HTTP in a REST, CLI, AJAX or cron request, so those cases check the counter
+	 * URL only; the gate cases check that nothing is sent at all.
+	 *
+	 * @testdox Should send no stats counter for an order paid with WooPayments, nor for one paid with another gateway when a counter check fails: $_dataName.
 	 * @dataProvider counter_gate_provider
 	 *
-	 * @param string $gate Gate turned off.
+	 * @param string   $gate           Gate turned off, or '' for none.
+	 * @param string   $payment_method Gateway ID of the order.
+	 * @param string   $title          Gateway title of the order.
+	 * @param callable $sent           Picks the request URLs that must not be sent.
 	 */
-	public function test_sends_no_counter_when_a_gate_is_off( string $gate ): void {
+	public function test_sends_no_counter_when_a_gate_is_off( string $gate, string $payment_method, string $title, callable $sent ): void {
 		$requests = $this->capture_http_requests();
 		$sut      = $this->arrange_counter_eligible_store( $this->create_account_service( 'test mode' === $gate, 'gateway enabled' !== $gate, true, 'account connected' !== $gate ) );
 		switch ( $gate ) {
@@ -1212,23 +1198,28 @@ class WooPaymentsFrontendTrackingControllerTest extends WC_Unit_Test_Case {
 				wp_set_current_user( self::factory()->user->create( array( 'role' => 'administrator' ) ) );
 				break;
 		}
-		$order = $this->create_order_paid_with( 'cod', 'Cash on delivery' );
+		$order = $this->create_order_paid_with( $payment_method, $title );
 
 		$sut->register();
 		$this->fire_order_processed( 'woocommerce_checkout_order_processed', $order );
+		\WC_Tracks_Footer_Pixel::clear_events();
 
-		$this->assertSame( array(), $requests->getArrayCopy() );
+		$this->assertSame( array(), array_values( array_filter( array_column( $requests->getArrayCopy(), 'url' ), $sent ) ) );
 	}
 
 	/**
-	 * The client 11.1.0 counter gates, by name.
+	 * The client 11.1.0 counter gates, by name, and the two WooPayments gateways the counter skips.
 	 *
-	 * @return array<string,array{string}>
+	 * @return array<string,array{0:string,1:string,2:string,3:callable}>
 	 */
 	public function counter_gate_provider(): array {
-		$gates = array( 'tracking option', 'tracking filter', 'gateway enabled', 'account connected', 'US store', 'opt-out cookie', 'front-end request', 'not an administrator', 'test mode' );
+		$gates   = array( 'tracking option', 'tracking filter', 'gateway enabled', 'account connected', 'US store', 'opt-out cookie', 'front-end request', 'not an administrator', 'test mode' );
+		$counter = static fn( string $url ): bool => 0 === strpos( $url, 'https://pixel.wp.com/g.gif' );
 
-		return array_combine( $gates, array_map( static fn( string $gate ): array => array( $gate ), $gates ) );
+		return array_combine( $gates, array_map( static fn( string $gate ): array => array( $gate, 'cod', 'Cash on delivery', '__return_true' ), $gates ) ) + array(
+			'paid with WooPayments'                 => array( '', 'woocommerce_payments', 'WooPayments', $counter ),
+			'paid with a WooPayments split gateway' => array( '', 'woocommerce_payments_klarna', 'WooPayments', $counter ),
+		);
 	}
 
 	/**

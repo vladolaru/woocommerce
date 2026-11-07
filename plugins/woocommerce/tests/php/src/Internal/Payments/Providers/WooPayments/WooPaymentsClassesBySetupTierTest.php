@@ -18,6 +18,7 @@ use Automattic\WooCommerce\Internal\Payments\PaymentGatewayProviderInterface;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsConnectionFeatures;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogEntryFormat;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderCardInfo;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAdminRestRouteRegistrar;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\CutoverController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\DataMigration;
@@ -130,6 +131,8 @@ class WooPaymentsClassesBySetupTierTest extends WC_Unit_Test_Case {
 			'The WordPress.com connection features' => array( WooPaymentsConnectionFeatures::class ),
 			// WooPayments writes log lines on any request, each carrying the request id and entry number.
 			'The log entry format'                  => array( WooPaymentsLogEntryFormat::class ),
+			// An order's card details render wherever an order can, as the WooPayments extension registers them everywhere.
+			'The order card info provider'          => array( WooPaymentsOrderCardInfo::class ),
 		);
 	}
 
