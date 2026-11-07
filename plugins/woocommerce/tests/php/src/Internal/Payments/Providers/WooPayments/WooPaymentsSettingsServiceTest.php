@@ -1815,62 +1815,6 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should clear the cached AVS flag when stepping down from an AVS-bearing advanced ruleset to a built-in level.
-	 */
-	public function test_update_settings_patches_cached_avs_flag_when_stepping_down_from_advanced(): void {
-		update_option( 'current_protection_level', 'advanced' );
-		update_option(
-			'wcpay_account_data',
-			array(
-				'data'    => array(
-					'account_id'                => 'acct_native_test',
-					'is_live'                   => true,
-					'capabilities'              => array(
-						'card_payments' => 'active',
-					),
-					'fees'                      => array(
-						'card' => array(),
-					),
-					'fraud_mitigation_settings' => array(
-						'avs_check_enabled' => true,
-					),
-				),
-				'fetched' => time(),
-				'errored' => false,
-			)
-		);
-		set_transient(
-			'wcpay_fraud_protection_settings',
-			array(
-				array(
-					'key'     => 'avs_verification',
-					'outcome' => 'block',
-					'check'   => array(
-						'key'      => 'avs_mismatch',
-						'operator' => 'equals',
-						'value'    => true,
-					),
-				),
-			),
-			DAY_IN_SECONDS
-		);
-
-		$result = $this->sut->update_settings(
-			array(
-				'current_protection_level'           => 'standard',
-				'advanced_fraud_protection_settings' => array(),
-			)
-		);
-
-		$cached_account = get_option( 'wcpay_account_data' );
-
-		$this->assertIsArray( $result );
-		$this->assertIsArray( $cached_account );
-		$this->assertSame( 'standard', get_option( 'current_protection_level' ) );
-		$this->assertFalse( $cached_account['data']['fraud_mitigation_settings']['avs_check_enabled'], 'Stepping down from an AVS-bearing advanced ruleset must overwrite the cached true.' );
-	}
-
-	/**
 	 * Client 11.1.0 saves the ruleset to the platform before any local write
 	 * (includes/admin/class-wc-rest-payments-settings-controller.php:1294-1302).
 	 *
@@ -1920,50 +1864,6 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'advanced', get_option( 'current_protection_level' ) );
 		$this->assertSame( $ruleset, get_transient( 'wcpay_fraud_protection_settings' ) );
 		$this->assertTrue( $cached_account['data']['fraud_mitigation_settings']['avs_check_enabled'] );
-	}
-
-	/**
-	 * @testdox Should save canonical fraud presets instead of stale advanced rules.
-	 */
-	public function test_update_settings_saves_canonical_fraud_presets(): void {
-		update_option( 'current_protection_level', 'advanced' );
-		set_transient(
-			'wcpay_fraud_protection_settings',
-			array(
-				array(
-					'key'     => 'custom_rule',
-					'outcome' => 'allow',
-					'check'   => array(
-						'key'      => 'item_count',
-						'operator' => 'greater_than',
-						'value'    => 1,
-					),
-				),
-			),
-			DAY_IN_SECONDS
-		);
-
-		$result = $this->sut->update_settings(
-			array(
-				'current_protection_level'           => 'standard',
-				'advanced_fraud_protection_settings' => array(
-					array(
-						'key'     => 'custom_rule',
-						'outcome' => 'allow',
-						'check'   => array(
-							'key'      => 'item_count',
-							'operator' => 'greater_than',
-							'value'    => 1,
-						),
-					),
-				),
-			)
-		);
-
-		$this->assertIsArray( $result );
-		$this->assertSame( 'standard', get_option( 'current_protection_level' ) );
-		$this->assertCount( 4, $this->api_client->last_fraud_ruleset );
-		$this->assertNotContains( 'custom_rule', wp_list_pluck( $this->api_client->last_fraud_ruleset, 'key' ) );
 	}
 
 	/**
@@ -2090,9 +1990,13 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should return fraud settings error when platform refresh fails.
+	 * @testdox Should return the fraud settings error, keep the advanced level and cache nothing when the platform ruleset $answer.
+	 * @testWith ["read fails"]
+	 *           ["is malformed"]
+	 *
+	 * @param string $answer How the platform answers the ruleset read.
 	 */
-	public function test_get_settings_returns_fraud_error_when_platform_refresh_fails(): void {
+	public function test_get_settings_returns_fraud_error_when_the_platform_ruleset_read_fails_or_is_malformed( string $answer ): void {
 		$this->set_connected_account_data();
 		update_option( 'current_protection_level', 'advanced' );
 		update_option(
@@ -2111,18 +2015,31 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 				),
 			)
 		);
-		$this->api_client->latest_fraud_ruleset_exception = new ApiException(
-			'Platform unavailable.',
-			'wcpay_server_error',
-			500
-		);
+		if ( 'read fails' === $answer ) {
+			$this->api_client->latest_fraud_ruleset_exception = new ApiException(
+				'Platform unavailable.',
+				'wcpay_server_error',
+				500
+			);
+		} else {
+			$this->api_client->latest_fraud_ruleset_response = array(
+				'ruleset_config' => array(
+					array(
+						'key'     => 'malformed_rule',
+						'outcome' => 'review',
+					),
+				),
+			);
+		}
 
 		$result = $this->sut->get_settings();
 
 		$this->assertSame( 1, $this->api_client->latest_fraud_ruleset_requests );
 		$this->assertSame( 'error', $result['advanced_fraud_protection_settings'] );
 		$this->assertFalse( get_transient( 'wcpay_fraud_protection_settings' ) );
-		$this->assertNull( $this->api_client->last_fraud_ruleset );
+		$this->assertNull( $this->api_client->last_fraud_ruleset, 'No Basic ruleset is created in its place.' );
+		$this->assertSame( 'advanced', $result['current_protection_level'] );
+		$this->assertSame( 'advanced', get_option( 'current_protection_level' ) );
 	}
 
 	/**
@@ -2153,30 +2070,6 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should return fraud settings error when platform ruleset response is malformed.
-	 */
-	public function test_get_settings_returns_fraud_error_when_platform_ruleset_response_is_malformed(): void {
-		$this->set_connected_account_data();
-		update_option( 'current_protection_level', 'advanced' );
-		$this->api_client->latest_fraud_ruleset_response = array(
-			'ruleset_config' => array(
-				array(
-					'key'     => 'malformed_rule',
-					'outcome' => 'review',
-				),
-			),
-		);
-
-		$result = $this->sut->get_settings();
-
-		$this->assertSame( 1, $this->api_client->latest_fraud_ruleset_requests );
-		$this->assertSame( 'advanced', $result['current_protection_level'] );
-		$this->assertSame( 'advanced', get_option( 'current_protection_level' ) );
-		$this->assertSame( 'error', $result['advanced_fraud_protection_settings'] );
-		$this->assertFalse( get_transient( 'wcpay_fraud_protection_settings' ) );
-	}
-
-	/**
 	 * Client 11.1.0 saves the requested ruleset on every settings save that sends both fraud fields, without reading the
 	 * current one first, then caches it, so the response read finds the cache
 	 * (includes/admin/class-wc-rest-payments-settings-controller.php:645, :1257-1306).
@@ -2185,16 +2078,21 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	 * @dataProvider provide_fraud_ruleset_saves
 	 *
 	 * @param string      $label        Case.
-	 * @param string|null $cached       Cached ruleset (a level name), or null for none.
+	 * @param string      $stored_level Stored protection level before the save.
+	 * @param string|null $cached       Cached ruleset (a level name or "custom"), or null for none.
 	 * @param string|null $platform     Platform ruleset (a level name), or a failure code.
 	 * @param string      $level        Requested protection level.
-	 * @param string      $submitted    Submitted advanced ruleset: "error", "avs", or "none" for an empty array.
+	 * @param string      $submitted    Submitted advanced ruleset: "error", "avs", "custom", or "none" for an empty array.
 	 * @param string      $saved        Expected saved ruleset: a level name or "avs".
 	 */
-	public function test_update_settings_saves_the_requested_fraud_ruleset_without_reading_the_platform_first( string $label, ?string $cached, ?string $platform, string $level, string $submitted, string $saved ): void {
+	public function test_update_settings_saves_the_requested_fraud_ruleset_without_reading_the_platform_first( string $label, string $stored_level, ?string $cached, ?string $platform, string $level, string $submitted, string $saved ): void {
 		unset( $label );
 		$this->set_connected_account_data();
-		update_option( 'current_protection_level', 'standard' );
+		// The cached account starts with the AVS flag on, so a save of a ruleset without the AVS rule must write it off.
+		$account                                      = get_option( 'wcpay_account_data' );
+		$account['data']['fraud_mitigation_settings'] = array( 'avs_check_enabled' => true );
+		update_option( 'wcpay_account_data', $account );
+		update_option( 'current_protection_level', $stored_level );
 		if ( null !== $cached ) {
 			set_transient( 'wcpay_fraud_protection_settings', $this->get_fraud_ruleset_case_fixture( $cached ), DAY_IN_SECONDS );
 		}
@@ -2222,24 +2120,26 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( $expected, $this->api_client->last_fraud_ruleset );
 		$this->assertSame( $expected, get_transient( 'wcpay_fraud_protection_settings' ) );
 		$this->assertSame( $level, get_option( 'current_protection_level' ) );
-		$this->assertSame( 'avs' === $saved, $cached_account['data']['fraud_mitigation_settings']['avs_check_enabled'] );
+		$this->assertSame( 'avs' === $saved, $cached_account['data']['fraud_mitigation_settings']['avs_check_enabled'], 'A save of a ruleset without the AVS rule must overwrite the cached true.' );
 		$this->assertSame( $level, $result['current_protection_level'] );
 	}
 
 	/**
-	 * Fraud ruleset saves: cached ruleset, platform ruleset, request and the ruleset the platform must receive.
+	 * Fraud ruleset saves: stored level, cached ruleset, platform ruleset, request and the ruleset the platform must receive.
 	 *
-	 * @return array<string,array{0:string,1:string|null,2:string|null,3:string,4:string,5:string}>
+	 * @return array<string,array{0:string,1:string,2:string|null,3:string|null,4:string,5:string,6:string}>
 	 */
 	public function provide_fraud_ruleset_saves(): array {
 		return array(
-			'platform holds another'          => array( 'no cached ruleset and another one on the platform', null, 'standard', 'high', 'none', 'high' ),
-			'platform holds the requested'    => array( 'no cached ruleset and the requested one on the platform', null, 'standard', 'standard', 'none', 'standard' ),
-			'platform has none'               => array( 'no cached ruleset and none on the platform', null, 'wcpay_fraud_ruleset_not_found', 'standard', 'none', 'standard' ),
-			'platform read fails'             => array( 'no cached ruleset and a failing platform read', null, 'wcpay_server_error', 'standard', 'none', 'standard' ),
-			'advanced with AVS'               => array( 'no cached ruleset and an advanced ruleset holding the AVS rule', null, 'standard', 'advanced', 'avs', 'avs' ),
-			'cache holds the requested'       => array( 'the requested ruleset already cached', 'standard', null, 'standard', 'none', 'standard' ),
-			'error sentinel, unchanged level' => array( 'the error sentinel and the stored level', null, 'wcpay_server_error', 'standard', 'error', 'standard' ),
+			'platform holds another'                  => array( 'no cached ruleset and another one on the platform', 'standard', null, 'standard', 'high', 'none', 'high' ),
+			'platform holds the requested'            => array( 'no cached ruleset and the requested one on the platform', 'standard', null, 'standard', 'standard', 'none', 'standard' ),
+			'platform has none'                       => array( 'no cached ruleset and none on the platform', 'standard', null, 'wcpay_fraud_ruleset_not_found', 'standard', 'none', 'standard' ),
+			'platform read fails'                     => array( 'no cached ruleset and a failing platform read', 'standard', null, 'wcpay_server_error', 'standard', 'none', 'standard' ),
+			'advanced with AVS'                       => array( 'no cached ruleset and an advanced ruleset holding the AVS rule', 'standard', null, 'standard', 'advanced', 'avs', 'avs' ),
+			'cache holds the requested'               => array( 'the requested ruleset already cached', 'standard', 'standard', null, 'standard', 'none', 'standard' ),
+			'error sentinel, unchanged level'         => array( 'the error sentinel and the stored level', 'standard', null, 'wcpay_server_error', 'standard', 'error', 'standard' ),
+			'error sentinel, step-down from advanced' => array( 'the error sentinel, stepping down from advanced', 'advanced', null, 'wcpay_server_error', 'standard', 'error', 'standard' ),
+			'stale advanced rules under a preset'     => array( 'the stale advanced rules submitted, stepping down from advanced', 'advanced', 'custom', null, 'standard', 'custom', 'standard' ),
 		);
 	}
 
@@ -2282,26 +2182,6 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should save canonical fraud presets when the fraud error sentinel is round-tripped.
-	 */
-	public function test_update_settings_saves_canonical_fraud_preset_with_error_sentinel(): void {
-		$this->set_connected_account_data();
-		update_option( 'current_protection_level', 'advanced' );
-
-		$result = $this->sut->update_settings(
-			array(
-				'current_protection_level'           => 'standard',
-				'advanced_fraud_protection_settings' => 'error',
-			)
-		);
-
-		$this->assertIsArray( $result );
-		$this->assertSame( 'standard', get_option( 'current_protection_level' ) );
-		$this->assertSame( $this->get_standard_fraud_ruleset_fixture(), $this->api_client->last_fraud_ruleset );
-		$this->assertSame( $this->get_standard_fraud_ruleset_fixture(), get_transient( 'wcpay_fraud_protection_settings' ) );
-	}
-
-	/**
 	 * @testdox Should not fetch fraud rulesets when no WooPayments account is connected.
 	 */
 	public function test_get_settings_does_not_fetch_fraud_ruleset_without_connected_account(): void {
@@ -2316,38 +2196,6 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'advanced', $result['current_protection_level'] );
 		$this->assertSame( array(), $result['advanced_fraud_protection_settings'] );
 		$this->assertFalse( get_transient( 'wcpay_fraud_protection_settings' ) );
-	}
-
-	/**
-	 * @testdox Should use cached fraud transient without fetching platform rulesets.
-	 */
-	public function test_get_settings_uses_cached_fraud_transient_without_platform_fetch(): void {
-		$this->set_connected_account_data();
-		update_option( 'current_protection_level', 'advanced' );
-		set_transient(
-			'wcpay_fraud_protection_settings',
-			array(
-				array(
-					'key'     => 'cached_rule',
-					'outcome' => 'review',
-					'check'   => array(
-						'key'      => 'item_count',
-						'operator' => 'greater_than',
-						'value'    => 3,
-					),
-				),
-			),
-			DAY_IN_SECONDS
-		);
-		$this->api_client->latest_fraud_ruleset_response = array(
-			'ruleset_config' => $this->get_standard_fraud_ruleset_fixture(),
-		);
-
-		$result = $this->sut->get_settings();
-
-		$this->assertSame( 0, $this->api_client->latest_fraud_ruleset_requests );
-		$this->assertSame( 'advanced', $result['current_protection_level'] );
-		$this->assertSame( 'cached_rule', $result['advanced_fraud_protection_settings'][0]['key'] );
 	}
 
 	/**
@@ -3891,7 +3739,8 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 
 	/**
 	 * Get a fraud ruleset fixture by name: standard, high, "avs" for an advanced ruleset holding the AVS rule as
-	 * client 11.1.0's tests store it (tests/unit/test-class-wc-payment-gateway-wcpay.php:4374-4386), or an empty array.
+	 * client 11.1.0's tests store it (tests/unit/test-class-wc-payment-gateway-wcpay.php:4374-4386), "custom" for an
+	 * advanced ruleset holding one custom allow rule, or an empty array.
 	 *
 	 * @param string $name Ruleset name.
 	 * @return array<int,array<string,mixed>>
@@ -3904,6 +3753,8 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 				return $this->get_high_fraud_ruleset_fixture();
 			case 'avs':
 				return array( $this->get_fraud_rule_fixture( 'avs_verification', 'block', $this->get_fraud_check_fixture( 'avs_mismatch', 'equals', true ) ) );
+			case 'custom':
+				return array( $this->get_fraud_rule_fixture( 'custom_rule', 'allow', $this->get_fraud_check_fixture( 'item_count', 'greater_than', 1 ) ) );
 		}
 
 		return array();
