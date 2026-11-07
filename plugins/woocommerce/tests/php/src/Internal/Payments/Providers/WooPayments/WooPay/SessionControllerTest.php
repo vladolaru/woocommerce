@@ -187,6 +187,9 @@ class SessionControllerTest extends WC_REST_Unit_Test_Case {
 		$this->assertSame( 10, has_action( 'wp_footer', array( $this->sut, 'enqueue_frontend_assets' ) ) );
 		$this->assertSame( 20, has_action( 'wp_footer', 'wp_print_footer_scripts' ) );
 		$this->assertSame( 10, has_action( 'woocommerce_checkout_process', array( $this->sut, 'maybe_show_woopay_phone_number_error' ) ) );
+		// The classic billing email moves into a contact section.
+		$this->assertSame( -50, has_action( 'woocommerce_checkout_billing', array( $this->sut, 'woopay_fields_before_billing_details' ) ) );
+		$this->assertSame( 20, has_filter( 'woocommerce_form_field_email', array( $this->sut, 'filter_woocommerce_form_field_woopay_email' ) ) );
 		$this->assertNotFalse( has_filter( 'wcpay_metadata_from_order', array( $this->sut, 'maybe_add_woopay_user_metadata' ) ) );
 	}
 
@@ -231,6 +234,8 @@ class SessionControllerTest extends WC_REST_Unit_Test_Case {
 		foreach ( $this->get_expected_frontend_hooks() as $hook => $method ) {
 			$this->assertFalse( has_action( $hook, array( $this->sut, $method ) ) );
 		}
+		$this->assertFalse( has_action( 'woocommerce_checkout_billing', array( $this->sut, 'woopay_fields_before_billing_details' ) ), 'The classic billing email stays where it is.' );
+		$this->assertFalse( has_filter( 'woocommerce_form_field_email', array( $this->sut, 'filter_woocommerce_form_field_woopay_email' ) ) );
 		$this->assertFalse( has_filter( 'wcpay_metadata_from_order', array( $this->sut, 'maybe_add_woopay_user_metadata' ) ) );
 	}
 
@@ -328,15 +333,30 @@ class SessionControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should enqueue direct checkout assets on a classic cart without rendering an express button.
+	 * @testdox Should enqueue the full direct checkout assets without rendering an express button: $surface.
+	 *
+	 * Client 11.1.0 should_enqueue_scripts() loads direct checkout wherever woocommerce_blocks_cart_enqueue_data fired, the
+	 * checkout page included (class-wc-payments-woopay-direct-checkout.php:130-134).
+	 *
+	 * @testWith ["classic cart"]
+	 *           ["classic checkout with a Mini-Cart block"]
+	 *
+	 * @param string $surface The page and the cart surface it renders.
 	 */
-	public function test_enqueue_frontend_assets_for_direct_checkout_on_classic_cart(): void {
+	public function test_enqueue_frontend_assets_loads_full_direct_checkout_without_a_button( string $surface ): void {
 		$service                                      = new RecordingWooPaySessionService();
 		$service->should_show_woopay_button           = false;
 		$service->should_load_woopay_save_user_assets = false;
 		$service->direct_checkout_enabled             = true;
 		$this->sut                                    = $this->create_controller( true, $service );
-		add_filter( 'woocommerce_is_cart', '__return_true' );
+		if ( 'classic cart' === $surface ) {
+			add_filter( 'woocommerce_is_cart', '__return_true' );
+		} else {
+			$this->sut->register();
+			$this->set_checkout_shortcode_page();
+			// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment
+			do_action( 'woocommerce_blocks_cart_enqueue_data' );
+		}
 
 		$this->sut->enqueue_frontend_assets();
 		$express_button = $this->sut->get_express_checkout_button_html();
@@ -408,20 +428,25 @@ class SessionControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should enqueue the light direct checkout assets for a mini-cart at footer time: $_dataName.
+	 * @testdox Should enqueue the light direct checkout assets only for a mini-cart while direct checkout runs: $_dataName.
 	 *
-	 * @dataProvider light_direct_checkout_surfaces
+	 * The light config emits only connection keys, so it computes no tracking keys and reads no tracking policy. Client 11.1.0
+	 * only runs direct checkout when it is enabled, and a classic cart widget on the checkout page or a Checkout block page
+	 * is the checkout itself.
 	 *
-	 * @param string $surface Page and cart surface, as arrange_direct_checkout_surface() builds it.
+	 * @dataProvider provide_direct_checkout_surfaces
+	 *
+	 * @param string $surface         Page and cart surface, as arrange_direct_checkout_surface() builds it.
+	 * @param bool   $direct_checkout Whether direct checkout runs.
+	 * @param bool   $light           Whether the light direct checkout assets load.
 	 */
-	public function test_enqueue_frontend_assets_loads_light_direct_checkout_for_a_mini_cart( string $surface ): void {
+	public function test_enqueue_frontend_assets_loads_light_direct_checkout_only_for_a_mini_cart( string $surface, bool $direct_checkout, bool $light ): void {
 		$service                                      = new RecordingWooPaySessionService();
 		$service->should_show_woopay_button           = false;
 		$service->should_load_woopay_save_user_assets = false;
-		$service->direct_checkout_enabled             = true;
+		$service->direct_checkout_enabled             = $direct_checkout;
 		$this->sut                                    = $this->create_controller( true, $service );
 		$this->arrange_direct_checkout_surface( $surface );
-		// The light config emits only connection keys, so it computes no tracking keys: no tracking policy read.
 		$tracking_reads = 0;
 		$count_read     = static function ( $value ) use ( &$tracking_reads ) {
 			++$tracking_reads;
@@ -432,21 +457,30 @@ class SessionControllerTest extends WC_REST_Unit_Test_Case {
 
 		$this->sut->enqueue_frontend_assets();
 
-		$this->assert_light_direct_checkout_assets( $service );
-		$this->assertSame( array( 'ajaxUrl', 'platformTrackerNonce', 'woopayHost', 'testMode' ), array_keys( (array) $service->last_connection_script_config ), 'The controller hands over the connection keys.' );
+		if ( $light ) {
+			$this->assert_light_direct_checkout_assets( $service );
+			$this->assertSame( array( 'ajaxUrl', 'platformTrackerNonce', 'woopayHost', 'testMode' ), array_keys( (array) $service->last_connection_script_config ), 'The controller hands over the connection keys.' );
+		} else {
+			$this->assertFalse( wp_script_is( 'wc-woopayments-woopay', 'enqueued' ) );
+			$this->assertFalse( wp_style_is( 'wc-woopayments-woopay', 'enqueued' ) );
+		}
 		$this->assertSame( 0, $tracking_reads, 'No tracking option read and no tracking filter.' );
 	}
 
 	/**
-	 * Mini-cart surfaces that get the light direct checkout config.
+	 * Page and cart surfaces, whether direct checkout runs, and whether the light direct checkout assets load.
 	 *
-	 * @return array<string,array{0:string}>
+	 * @return array<string,array{0:string,1:bool,2:bool}>
 	 */
-	public function light_direct_checkout_surfaces(): array {
+	public function provide_direct_checkout_surfaces(): array {
 		return array(
-			'block mini-cart on an ordinary page'      => array( 'block mini-cart' ),
-			'classic mini-cart on an ordinary page'    => array( 'classic mini-cart' ),
-			'mini-cart block on a Checkout block page' => array( 'block mini-cart on checkout block page' ),
+			'block mini-cart on an ordinary page'      => array( 'block mini-cart', true, true ),
+			'classic mini-cart on an ordinary page'    => array( 'classic mini-cart', true, true ),
+			'mini-cart block on a Checkout block page' => array( 'block mini-cart on checkout block page', true, true ),
+			'classic mini-cart, direct checkout off'   => array( 'classic mini-cart', false, false ),
+			'classic cart widget on the checkout page' => array( 'classic cart widget on checkout', true, false ),
+			'Checkout block page'                      => array( 'checkout block page', true, false ),
+			'unrelated page'                           => array( 'unrelated page', true, false ),
 		);
 	}
 
@@ -542,86 +576,6 @@ class SessionControllerTest extends WC_REST_Unit_Test_Case {
 		$localized_data = wp_scripts()->get_data( 'wc-woopayments-woopay', 'data' );
 		$this->assertIsString( $localized_data );
 		$this->assertStringContainsString( '"isWooPayDirectCheckoutEnabled":""', $localized_data );
-	}
-
-	/**
-	 * @testdox Should not build the WooPay config for a mini-cart page when direct checkout is off.
-	 */
-	public function test_mini_cart_page_skips_woopay_config_when_direct_checkout_is_off(): void {
-		$this->replace_page_surface( false, false );
-		$service                                      = new RecordingWooPaySessionService();
-		$service->should_show_woopay_button           = false;
-		$service->should_load_woopay_save_user_assets = false;
-		$service->direct_checkout_enabled             = false;
-		$this->sut                                    = $this->create_controller( true, $service );
-		$this->sut->register();
-		if ( ! wp_script_is( 'wc-cart-fragments', 'registered' ) ) {
-			wp_register_script( 'wc-cart-fragments', 'https://example.com/cart-fragments.js', array(), '1.0', true );
-		}
-		wp_enqueue_script( 'wc-cart-fragments' );
-
-		$this->sut->enqueue_frontend_assets();
-
-		$this->assertSame( 0, $service->frontend_config_calls, 'Client 11.1.0 only runs direct checkout when it is enabled.' );
-		$this->assertFalse( wp_script_is( 'wc-woopayments-woopay', 'enqueued' ) );
-	}
-
-	/**
-	 * @testdox Should run direct checkout on a classic checkout page where a Mini-Cart block renders.
-	 *
-	 * Client 11.1.0 should_enqueue_scripts() loads direct checkout wherever woocommerce_blocks_cart_enqueue_data fired, the
-	 * checkout page included (class-wc-payments-woopay-direct-checkout.php:130-134).
-	 */
-	public function test_enqueue_frontend_assets_runs_direct_checkout_for_a_mini_cart_block_on_classic_checkout(): void {
-		$service                                      = new RecordingWooPaySessionService();
-		$service->should_show_woopay_button           = false;
-		$service->should_load_woopay_save_user_assets = false;
-		$service->direct_checkout_enabled             = true;
-		$this->sut                                    = $this->create_controller( true, $service );
-		$this->sut->register();
-		$this->set_checkout_shortcode_page();
-		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment
-		do_action( 'woocommerce_blocks_cart_enqueue_data' );
-
-		$this->sut->enqueue_frontend_assets();
-
-		$this->assertTrue( wp_script_is( 'wc-woopayments-woopay', 'enqueued' ) );
-		// wp_localize_script() sends scalars as strings.
-		$this->assertSame( '1', $this->get_localized_woopay_config()['isWooPayDirectCheckoutEnabled'] );
-	}
-
-	/**
-	 * @testdox Should not enqueue direct checkout assets: $_dataName.
-	 *
-	 * @dataProvider no_direct_checkout_surfaces
-	 *
-	 * @param string $surface Page and cart surface, as arrange_direct_checkout_surface() builds it.
-	 */
-	public function test_enqueue_frontend_assets_skips_direct_checkout( string $surface ): void {
-		$service                                      = new RecordingWooPaySessionService();
-		$service->should_show_woopay_button           = false;
-		$service->should_load_woopay_save_user_assets = false;
-		$service->direct_checkout_enabled             = true;
-		$this->sut                                    = $this->create_controller( true, $service );
-		$this->arrange_direct_checkout_surface( $surface );
-
-		$this->sut->enqueue_frontend_assets();
-
-		$this->assertFalse( wp_script_is( 'wc-woopayments-woopay', 'enqueued' ) );
-		$this->assertFalse( wp_style_is( 'wc-woopayments-woopay', 'enqueued' ) );
-	}
-
-	/**
-	 * Surfaces that load no direct checkout assets.
-	 *
-	 * @return array<string,array{0:string}>
-	 */
-	public function no_direct_checkout_surfaces(): array {
-		return array(
-			'classic cart widget on the checkout page' => array( 'classic cart widget on checkout' ),
-			'Checkout block page'                      => array( 'checkout block page' ),
-			'unrelated page'                           => array( 'unrelated page' ),
-		);
 	}
 
 	/**
@@ -761,23 +715,6 @@ class SessionControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should move the classic billing email into a contact section only while WooPay is enabled.
-	 */
-	public function test_register_relocates_classic_email_field_only_when_woopay_is_enabled(): void {
-		$this->sut = $this->create_controller( false );
-		$this->sut->register();
-
-		$this->assertFalse( has_action( 'woocommerce_checkout_billing', array( $this->sut, 'woopay_fields_before_billing_details' ) ) );
-		$this->assertFalse( has_filter( 'woocommerce_form_field_email', array( $this->sut, 'filter_woocommerce_form_field_woopay_email' ) ) );
-
-		$this->sut = $this->create_controller( true );
-		$this->sut->register();
-
-		$this->assertSame( -50, has_action( 'woocommerce_checkout_billing', array( $this->sut, 'woopay_fields_before_billing_details' ) ) );
-		$this->assertSame( 20, has_filter( 'woocommerce_form_field_email', array( $this->sut, 'filter_woocommerce_form_field_woopay_email' ) ) );
-	}
-
-	/**
 	 * @testdox Should render the WooPay contact section with the billing email field.
 	 */
 	public function test_woopay_fields_before_billing_details_renders_contact_section(): void {
@@ -850,53 +787,41 @@ class SessionControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should give only the WooPay placeholder for the shared wrapper on checkout.
+	 * @testdox Should give the shared wrapper only the WooPay placeholder, in the page's context, and none while WooPay is off: $label.
+	 *
+	 * @testWith ["the checkout shortcode page", true, "checkout", "<div id=\"wcpay-woopay-button\" data-product_page=\"0\">"]
+	 *           ["WooPay off", false, "checkout", ""]
+	 *           ["a product page", true, "product", "<div id=\"wcpay-woopay-button\" data-product_page=\"1\">"]
+	 *           ["a product_page shortcode with attributes", true, "product_page shortcode", "<div id=\"wcpay-woopay-button\" data-product_page=\"1\">"]
+	 *
+	 * @param string $label          Case label.
+	 * @param bool   $woopay_enabled Whether WooPay is enabled.
+	 * @param string $page           The page: "checkout", "product" or "product_page shortcode".
+	 * @param string $expected_start How the output starts, or an empty string for no output.
 	 */
-	public function test_express_checkout_button_html_is_the_placeholder_on_checkout(): void {
-		$this->sut = $this->create_controller( true );
-		$this->set_checkout_shortcode_page();
+	public function test_express_checkout_button_html_is_the_placeholder_for_the_page( string $label, bool $woopay_enabled, string $page, string $expected_start ): void {
+		unset( $label );
+		$this->sut = $this->create_controller( $woopay_enabled );
+		if ( 'checkout' === $page ) {
+			$this->set_checkout_shortcode_page();
+		} elseif ( 'product' === $page ) {
+			$this->set_current_product();
+		} else {
+			$product = \WC_Helper_Product::create_simple_product( true );
+			$product->set_sku( 'woopay-controller-shortcode' );
+			$product->save();
+			$this->set_current_page_with_content( "[product_page columns='3' class='featured' sku='woopay-controller-shortcode']" );
+		}
 
 		$output = $this->sut->get_express_checkout_button_html();
 
-		$this->assertStringStartsWith( '<div id="wcpay-woopay-button" data-product_page="0">', $output );
+		if ( '' === $expected_start ) {
+			$this->assertSame( '', $output );
+			return;
+		}
+		$this->assertStringStartsWith( $expected_start, $output );
 		$this->assertStringNotContainsString( 'wcpay-express-checkout-wrapper', $output );
 		$this->assertStringNotContainsString( 'wcpay-express-checkout-button-separator', $output );
-	}
-
-	/**
-	 * @testdox Should give no WooPay placeholder when WooPay is disabled.
-	 */
-	public function test_express_checkout_button_html_is_empty_when_woopay_is_disabled(): void {
-		$this->sut = $this->create_controller( false );
-		$this->set_checkout_shortcode_page();
-
-		$this->assertSame( '', $this->sut->get_express_checkout_button_html() );
-	}
-
-	/**
-	 * @testdox Should give a product-context WooPay placeholder on product pages.
-	 */
-	public function test_express_checkout_button_html_on_product_page(): void {
-		$this->sut = $this->create_controller( true );
-		$this->set_current_product();
-
-		$this->assertStringContainsString( 'data-product_page="1"', $this->sut->get_express_checkout_button_html() );
-	}
-
-	/**
-	 * @testdox Should render product-context WooPay on product_page shortcode pages.
-	 */
-	public function test_express_checkout_button_html_supports_product_page_shortcode(): void {
-		$this->sut = $this->create_controller( true );
-		$product   = \WC_Helper_Product::create_simple_product( true );
-		$product->set_sku( 'woopay-controller-shortcode' );
-		$product->save();
-		$this->set_current_page_with_content( "[product_page columns='3' class='featured' sku='woopay-controller-shortcode']" );
-
-		$output = $this->sut->get_express_checkout_button_html();
-
-		$this->assertStringContainsString( 'id="wcpay-woopay-button"', $output );
-		$this->assertStringContainsString( 'data-product_page="1"', $output );
 	}
 
 	/**
@@ -949,27 +874,12 @@ class SessionControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A guest paying a guest order gets the order and key but only the email they gave, never the order's.
-	 */
-	public function test_order_pay_config_gives_a_guest_only_their_own_email(): void {
-		$order     = \WC_Helper_Order::create_order( 0 );
-		$this->sut = $this->create_controller( true );
-		$this->set_order_pay_page( $order->get_id(), $order->get_order_key() );
-
-		$this->sut->enqueue_frontend_assets();
-		$config = $this->get_localized_woopay_config();
-
-		$this->assertSame( (string) $order->get_id(), $config['order_id'] );
-		$this->assertSame( $order->get_order_key(), $config['key'] );
-		$this->assertSame( '', $config['billing_email'] );
-	}
-
-	/**
-	 * @testdox A guest's session email goes into the order-pay WooPay config only when the page is protected from page caching (DONOTCACHEPAGE $do_not_cache).
+	 * @testdox A guest paying a guest order gets the order and key, and their session email only when the page is protected from page caching (DONOTCACHEPAGE $do_not_cache), never the order's.
 	 *
 	 * Core defines DONOTCACHEPAGE on the configured checkout page, its order-pay endpoint included
 	 * (WC_Cache_Helper::prevent_caching()); another page carrying the checkout shortcode reads as checkout without it. The
-	 * constant is overridden both ways, because an earlier test in the process can define it.
+	 * constant is overridden both ways, because an earlier test in the process can define it. The order's own billing email
+	 * never goes to a guest.
 	 *
 	 * @testWith [true, "guest@example.com"]
 	 *           [false, ""]
@@ -994,6 +904,7 @@ class SessionControllerTest extends WC_REST_Unit_Test_Case {
 		$config = $this->get_localized_woopay_config();
 
 		$this->assertSame( (string) $order->get_id(), $config['order_id'] );
+		$this->assertSame( $order->get_order_key(), $config['key'] );
 		$this->assertSame( $expected, $config['billing_email'] );
 	}
 
@@ -1289,18 +1200,37 @@ class SessionControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * A failure assembling the session answers the extension's 400 wcpay_server_error with the exception's message and
-	 * logs it at info when debug logging is on (class-wc-rest-woopay-session-controller.php:67-71).
+	 * Failures assembling the session, the logging setting, the message WooPay gets, and the log line, if any.
 	 *
-	 * @testdox Should return the exception's message and log it only with logging $logging_enabled when WooPay session assembly throws.
-	 * @testWith [true]
-	 *           [false]
-	 *
-	 * @param bool $logging_enabled Whether WooPayments debug logging is on.
+	 * @return array<string,array{0:\Throwable|null,1:bool,2:string,3:string|null}>
 	 */
-	public function test_get_session_logs_and_returns_error_when_assembly_throws( bool $logging_enabled ): void {
+	public function session_assembly_failure_provider(): array {
+		$type_error = new \TypeError( 'Argument #1 must be of type array, null given, called in /var/www/html/wp-content/plugins/an-extension/cart.php on line 12' );
+
+		return array(
+			'an Exception, logging on'         => array( null, true, 'Unable to read the cart.', 'Error validating cart token from WooPay request: Unable to read the cart.' ),
+			'an Exception, logging off'        => array( null, false, 'Unable to read the cart.', null ),
+			'a PHP error, whose text it hides' => array( $type_error, false, 'Unexpected server error', null ),
+		);
+	}
+
+	/**
+	 * A failure assembling the session answers the extension's 400 wcpay_server_error with the exception's message and
+	 * logs it at info when debug logging is on (class-wc-rest-woopay-session-controller.php:67-71). Client 11.1.0 catches
+	 * only an Exception there (:67), so a PHP Error never hands WooPay its text, which can name a server path.
+	 *
+	 * @testdox Should answer a WooPay session assembly failure with a 400, the exception's message or a fixed one for a PHP error, logged only while logging is on: $_dataName.
+	 * @dataProvider session_assembly_failure_provider
+	 *
+	 * @param \Throwable|null $throwable       What the assembly throws, or null for its RuntimeException.
+	 * @param bool            $logging_enabled Whether WooPayments debug logging is on.
+	 * @param string          $message         The error message WooPay gets.
+	 * @param string|null     $log_line        The line logged, or null for none naming the WooPay request.
+	 */
+	public function test_get_session_logs_and_returns_error_when_assembly_throws( ?\Throwable $throwable, bool $logging_enabled, string $message, ?string $log_line ): void {
 		$service                 = new ThrowingWooPaySessionService();
 		$service->woopay_enabled = true;
+		$service->throwable      = $throwable;
 		$this->sut               = $this->create_controller( true, $service );
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => $logging_enabled ? 'yes' : 'no' ) );
 
@@ -1325,38 +1255,17 @@ class SessionControllerTest extends WC_REST_Unit_Test_Case {
 
 		$result = $this->sut->get_session( $request );
 
-		remove_all_filters( 'woocommerce_logger_log_message' );
-
 		$this->assertInstanceOf( WP_Error::class, $result );
 		$this->assertSame( 'wcpay_server_error', $result->get_error_code() );
-		$this->assertSame( 'Unable to read the cart.', $result->get_error_message() );
+		$this->assertSame( $message, $result->get_error_message() );
 		$this->assertSame( 400, $result->get_error_data()['status'] );
 
 		$messages = wp_list_pluck( $logged, 'message' );
-		if ( $logging_enabled ) {
-			$this->assertContains( 'Error validating cart token from WooPay request: Unable to read the cart.', $messages );
+		if ( null !== $log_line ) {
+			$this->assertContains( $log_line, $messages );
 		} else {
 			$this->assertSame( array(), preg_grep( '/WooPay request/', $messages ) );
 		}
-	}
-
-	/**
-	 * Client 11.1.0 catches only an Exception there (class-wc-rest-woopay-session-controller.php:67), so a PHP Error never
-	 * hands WooPay its text, which can name a server path.
-	 *
-	 * @testdox Should answer a fixed message, not the error's text, when WooPay session assembly raises a PHP error.
-	 */
-	public function test_get_session_hides_a_php_error_text(): void {
-		$service            = new ThrowingWooPaySessionService();
-		$service->throwable = new \TypeError( 'Argument #1 must be of type array, null given, called in /var/www/html/wp-content/plugins/an-extension/cart.php on line 12' );
-		$this->sut          = $this->create_controller( true, $service );
-
-		$result = $this->sut->get_session( new WP_REST_Request( 'GET', '/payments/woopay/session' ) );
-
-		$this->assertInstanceOf( WP_Error::class, $result );
-		$this->assertSame( 'wcpay_server_error', $result->get_error_code() );
-		$this->assertSame( 'Unexpected server error', $result->get_error_message() );
-		$this->assertSame( 400, $result->get_error_data()['status'] );
 	}
 
 	/**
@@ -1608,15 +1517,27 @@ class SessionControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should build WooPay AJAX-compatible response payloads.
+	 * WordPress slashes the posted fields; the WooPay scripts post the shopper's email, the WooPay user session and the
+	 * pay-for-order fields (client 11.1.0 checkout/woopay/init-woopay.js:54-63, checkout/woopay/email-input-iframe.js:191-199).
+	 *
+	 * @testdox Should build WooPay AJAX-compatible response payloads, handing the session service the posted fields unslashed.
 	 */
 	public function test_builds_ajax_response_payloads(): void {
 		$service   = new RecordingWooPaySessionService();
 		$this->sut = $this->create_controller( true, $service );
 		$this->sut->register();
+		$fields = array(
+			'email'         => "o'brien@example.com",
+			'user_session'  => 'session "token"',
+			'order_id'      => '123',
+			'key'           => 'wc_order_abc',
+			'billing_email' => "o'brien@example.com",
+		);
 
-		$this->assertSame( array( 'result' => 'success' ), $this->dispatch_ajax_hook_with_nonce( 'wc_ajax_wcpay_init_woopay', 'wcpay_init_woopay_nonce', array( 'email' => 'shopper@example.com' ) ) );
-		$this->assertSame( array( 'encrypted' => 'session' ), $this->dispatch_ajax_hook_with_nonce( 'wc_ajax_wcpay_get_woopay_session', 'woopay_session_nonce', array( 'email' => 'shopper@example.com' ) ) );
+		$this->assertSame( array( 'result' => 'success' ), $this->dispatch_ajax_hook_with_nonce( 'wc_ajax_wcpay_init_woopay', 'wcpay_init_woopay_nonce', wp_slash( $fields ) ) );
+		$this->assertSame( $fields, array_intersect_key( $service->last_init_request, $fields ), 'The init request is unslashed.' );
+		$this->assertSame( array( 'encrypted' => 'session' ), $this->dispatch_ajax_hook_with_nonce( 'wc_ajax_wcpay_get_woopay_session', 'woopay_session_nonce', wp_slash( $fields ) ) );
+		$this->assertSame( $fields, array_intersect_key( $service->last_encrypted_session_request, $fields ), 'The session request is unslashed.' );
 		$this->assertSame( array( 'result' => 'success' ), $this->dispatch_ajax_hook_with_nonce( 'wc_ajax_wcpay_set_woopay_phone_number', 'woopay_session_nonce', array( 'phone_number' => '+15555550123' ) ) );
 		$this->assertSame(
 			array(
@@ -1658,35 +1579,6 @@ class SessionControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * WordPress slashes the posted fields; the WooPay scripts post the shopper's email, the WooPay user session and the
-	 * pay-for-order fields (client 11.1.0 checkout/woopay/init-woopay.js:54-63, checkout/woopay/email-input-iframe.js:191-199).
-	 *
-	 * @testdox The $hook handler hands the session service the posted fields, unslashed.
-	 * @testWith ["wc_ajax_wcpay_init_woopay", "wcpay_init_woopay_nonce", "last_init_request"]
-	 *           ["wc_ajax_wcpay_get_woopay_session", "woopay_session_nonce", "last_encrypted_session_request"]
-	 *
-	 * @param string $hook         AJAX hook.
-	 * @param string $nonce_action Nonce the handler checks.
-	 * @param string $recorded     Property of the session service double that records the request.
-	 */
-	public function test_session_handlers_pass_the_unslashed_request( string $hook, string $nonce_action, string $recorded ): void {
-		$service   = new RecordingWooPaySessionService();
-		$this->sut = $this->create_controller( true, $service );
-		$this->sut->register();
-		$fields = array(
-			'email'         => "o'brien@example.com",
-			'user_session'  => 'session "token"',
-			'order_id'      => '123',
-			'key'           => 'wc_order_abc',
-			'billing_email' => "o'brien@example.com",
-		);
-
-		$this->dispatch_ajax_hook_with_nonce( $hook, $nonce_action, wp_slash( $fields ) );
-
-		$this->assertSame( $fields, array_intersect_key( $service->$recorded, $fields ) );
-	}
-
-	/**
 	 * Unticking "Save my information" posts empty=1 (client 11.1.0 components/woopay/save-user/checkout-page-save-user.js:115-160).
 	 *
 	 * @testdox A signed-in shopper's empty phone-number request clears the WooPay data stored in the session.
@@ -1704,32 +1596,6 @@ class SessionControllerTest extends WC_REST_Unit_Test_Case {
 		$this->assertSame( array( 'result' => 'success' ), $response );
 		$this->assertNull( $service->get_woopay_session_data() );
 		$this->assertSame( array(), $service->last_phone_request );
-	}
-
-	/**
-	 * @testdox The admin and shopper appearance writes store the posted appearance.
-	 */
-	public function test_appearance_writes_store_the_posted_appearance(): void {
-		$service   = new RecordingWooPaySessionService();
-		$this->sut = $this->create_controller( true, $service );
-		$this->sut->register();
-		wp_set_current_user( self::factory()->user->create( array( 'role' => 'administrator' ) ) );
-
-		$this->post_appearance_request( 'wcpay_admin_woopay_appearance_nonce' );
-		$admin = $this->dispatch_ajax_hook( 'wp_ajax_wcpay_admin_set_woopay_appearance' );
-		$this->post_appearance_request( 'woopay_session_nonce' );
-		$shopper = $this->dispatch_ajax_hook( 'wc_ajax_wcpay_shopper_set_woopay_appearance' );
-
-		$this->assertSame( array( 'success' => true ), $admin['body'] );
-		$this->assertSame(
-			array(
-				'success' => true,
-				'data'    => array( 'stored' => true ),
-			),
-			$shopper['body']
-		);
-		$this->assertSame( 2, $service->appearance_writes );
-		$this->assertSame( $this->get_valid_appearance(), $service->last_appearance );
 	}
 
 	/**
@@ -1827,16 +1693,17 @@ class SessionControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The $label appearance write is refused and writes nothing while WooPay global theme support is off.
+	 * @testdox The $label appearance write is refused and writes nothing while WooPay global theme support is off, and stores the posted appearance once it is on.
 	 * @dataProvider appearance_write_hooks
 	 *
 	 * Client 11.1.0 class-woopay-session.php:1219-1224 (admin) and :1273-1278 (shopper).
 	 *
-	 * @param string $label        Case label.
-	 * @param string $hook         AJAX hook.
-	 * @param string $nonce_action Nonce action the handler checks.
+	 * @param string              $label        Case label.
+	 * @param string              $hook         AJAX hook.
+	 * @param string              $nonce_action Nonce action the handler checks.
+	 * @param array<string,mixed> $stored_body  The handler's answer once the write is stored.
 	 */
-	public function test_appearance_write_needs_global_theme_support( string $label, string $hook, string $nonce_action ): void {
+	public function test_appearance_write_needs_global_theme_support( string $label, string $hook, string $nonce_action, array $stored_body ): void {
 		unset( $label );
 		$service   = new RecordingWooPaySessionService();
 		$this->sut = $this->create_controller( true, $service );
@@ -1860,15 +1727,24 @@ class SessionControllerTest extends WC_REST_Unit_Test_Case {
 		$this->post_appearance_request( $nonce_action );
 		$on = $this->dispatch_ajax_hook( $hook );
 
-		$this->assertTrue( $on['body']['success'] ?? false );
+		$this->assertSame( $stored_body, $on['body'] );
 		$this->assertSame( 1, $service->appearance_writes );
+		$this->assertSame( $this->get_valid_appearance(), $service->last_appearance, 'The posted appearance is the one stored.' );
 	}
 
-	/** @return array<string,array{string,string,string}> */
+	/** @return array<string,array{string,string,string,array<string,mixed>}> */
 	public function appearance_write_hooks(): array {
 		return array(
-			'admin'   => array( 'admin', 'wp_ajax_wcpay_admin_set_woopay_appearance', 'wcpay_admin_woopay_appearance_nonce' ),
-			'shopper' => array( 'shopper', 'wc_ajax_wcpay_shopper_set_woopay_appearance', 'woopay_session_nonce' ),
+			'admin'   => array( 'admin', 'wp_ajax_wcpay_admin_set_woopay_appearance', 'wcpay_admin_woopay_appearance_nonce', array( 'success' => true ) ),
+			'shopper' => array(
+				'shopper',
+				'wc_ajax_wcpay_shopper_set_woopay_appearance',
+				'woopay_session_nonce',
+				array(
+					'success' => true,
+					'data'    => array( 'stored' => true ),
+				),
+			),
 		);
 	}
 
@@ -2233,7 +2109,7 @@ class SessionControllerTest extends WC_REST_Unit_Test_Case {
 	 * Arrange the page and the cart surfaces it renders for a direct checkout row. None of these pages is a cart, and only
 	 * the checkout ones are a checkout, whatever cart or checkout constant an earlier test defined.
 	 *
-	 * @param string $surface Surface named by light_direct_checkout_surfaces() or no_direct_checkout_surfaces().
+	 * @param string $surface Surface named by provide_direct_checkout_surfaces().
 	 */
 	private function arrange_direct_checkout_surface( string $surface ): void {
 		$this->replace_page_surface( false, in_array( $surface, array( 'block mini-cart on checkout block page', 'classic cart widget on checkout', 'checkout block page' ), true ) );
