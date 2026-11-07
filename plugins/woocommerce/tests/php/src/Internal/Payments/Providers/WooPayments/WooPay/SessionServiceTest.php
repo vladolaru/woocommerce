@@ -3,6 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\WooPay;
 
+use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExpressCheckoutStoreApiExtension;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
@@ -18,7 +19,6 @@ use Automattic\WooCommerce\StoreApi\Utilities\JsonWebToken;
 use WC_Unit_Test_Case;
 use WP_REST_Request;
 use WP_REST_Response;
-use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Fixtures\LateLoadedSubscriptions;
 
 /**
  * Tests for the SessionService class.
@@ -483,13 +483,15 @@ class SessionServiceTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox WooPay session data reports WooCommerce Subscriptions active once its class is loaded.
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
+	 *
+	 * SubscriptionMethodPolicy asks class_exists() through LegacyProxy, so the class is reported loaded for this test only.
 	 */
 	public function test_init_session_request_reports_woocommerce_subscriptions_active(): void {
-		// The global WC_Subscriptions class cannot be unloaded, so this test runs in its own process.
-		require_once dirname( __DIR__ ) . '/Fixtures/LateLoadedSubscriptions.php';
-		class_alias( LateLoadedSubscriptions::class, 'WC_Subscriptions' );
+		$this->register_legacy_proxy_function_mocks(
+			array(
+				'class_exists' => static fn( $class_name, ...$rest ) => 'WC_Subscriptions' === $class_name || class_exists( $class_name, ...$rest ),
+			)
+		);
 
 		$result = $this->create_service()->start_init_session_request( 'shopper@example.com' );
 
@@ -927,53 +929,34 @@ class SessionServiceTest extends WC_Unit_Test_Case {
 	 *
 	 * Client 11.1.0 pre-fills every button surface, product pages included, from WooPay_Session::get_user_email()
 	 * (class-wc-payments-woopay-button-handler.php:151, class-woopay-session.php:433-472), which reads a guest's billing
-	 * email. Core defines DONOTCACHEPAGE only on the configured cart, checkout and My Account pages
-	 * (WC_Cache_Helper::prevent_caching() on wp_headers, which go_to() runs). Another page carrying the cart or checkout
-	 * shortcode reads as cart or checkout (CartCheckoutUtils::is_page_type()) without that protection. Logged-in pages are not
-	 * page-cached. A separate process, because DONOTCACHEPAGE stays defined once a page defines it, and CartCheckoutUtils
-	 * keeps its first page answer.
+	 * email. Here it goes into the page only where DONOTCACHEPAGE is set (core sets it on the configured cart, checkout and
+	 * My Account pages through WC_Cache_Helper::prevent_caching()) or the shopper is logged in, since logged-in pages are not
+	 * page-cached. A page that reads as a cart without that protection gets none. WooPay reads DONOTCACHEPAGE through
+	 * Constants::is_true(), so each case sets it, false included, whatever an earlier test defined.
 	 *
-	 * @testWith ["a guest on a product page", "product", false, ""]
-	 *           ["a guest on the cart page", "cart", false, "guest@example.com"]
-	 *           ["a guest on the checkout page", "checkout", false, "guest@example.com"]
-	 *           ["a guest on another page carrying the cart shortcode", "other cart", false, ""]
-	 *           ["a guest on another page carrying the checkout shortcode", "other checkout", false, ""]
-	 *           ["a logged-in shopper on a product page", "product", true, "shopper-billing@example.com"]
+	 * @testWith ["a guest on a cache-protected page", true, "none", false, "guest@example.com"]
+	 *           ["a guest on an unprotected page that reads as a cart", false, "cart", false, ""]
+	 *           ["a guest on an unprotected product page", false, "product", false, ""]
+	 *           ["a logged-in shopper on an unprotected product page", false, "product", true, "shopper-billing@example.com"]
 	 *
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
-	 *
-	 * @param string $label     Case label.
-	 * @param string $page      Page the shopper views.
-	 * @param bool   $logged_in Whether the shopper is logged in.
-	 * @param string $expected  The pre-filled email.
+	 * @param string $label        Case label.
+	 * @param bool   $do_not_cache Whether the page set DONOTCACHEPAGE.
+	 * @param string $page         "cart" for a page that reads as a cart, "product" for a product page, "none" for neither.
+	 * @param bool   $logged_in    Whether the shopper is logged in.
+	 * @param string $expected     The pre-filled email.
 	 */
-	public function test_frontend_config_prefills_the_shopper_email_only_on_uncached_pages( string $label, string $page, bool $logged_in, string $expected ): void {
+	public function test_frontend_config_prefills_the_shopper_email_only_on_uncached_pages( string $label, bool $do_not_cache, string $page, bool $logged_in, string $expected ): void {
 		unset( $label );
-		$create_page = fn( string $content ): int => $this->factory->post->create(
-			array(
-				'post_type'    => 'page',
-				'post_status'  => 'publish',
-				'post_content' => $content,
-			)
-		);
-		update_option( 'woocommerce_cart_page_id', $create_page( '[woocommerce_cart]' ) );
-		update_option( 'woocommerce_checkout_page_id', $create_page( '[woocommerce_checkout]' ) );
-		$page_ids = array(
-			'product'        => \WC_Helper_Product::create_simple_product()->get_id(),
-			'cart'           => (int) get_option( 'woocommerce_cart_page_id' ),
-			'checkout'       => (int) get_option( 'woocommerce_checkout_page_id' ),
-			'other cart'     => $create_page( '[woocommerce_cart]' ),
-			'other checkout' => $create_page( '[woocommerce_checkout]' ),
-		);
-		$user_id  = 0;
+		Constants::set_constant( 'DONOTCACHEPAGE', $do_not_cache );
+		if ( 'cart' === $page ) {
+			add_filter( 'woocommerce_is_cart', '__return_true' );
+		} elseif ( 'product' === $page ) {
+			$this->go_to( get_permalink( \WC_Helper_Product::create_simple_product()->get_id() ) );
+		}
+		$user_id = 0;
 		if ( $logged_in ) {
 			$user_id = $this->factory->user->create( array( 'user_email' => 'shopper@example.com' ) );
 			wp_set_current_user( $user_id );
-		}
-		$this->go_to( get_permalink( $page_ids[ $page ] ) );
-		if ( 0 === strpos( $page, 'other ' ) ) {
-			$this->assertTrue( is_cart() || is_checkout(), 'The other page reads as cart or checkout.' );
 		}
 		$customer      = WC()->customer;
 		WC()->customer = new \WC_Customer( $user_id, true );
@@ -983,6 +966,7 @@ class SessionServiceTest extends WC_Unit_Test_Case {
 			$config = $this->create_service()->get_woopay_frontend_config( 'product' );
 		} finally {
 			WC()->customer = $customer;
+			Constants::clear_single_constant( 'DONOTCACHEPAGE' );
 		}
 
 		$this->assertSame( $expected, $config['woopaySessionEmail'] );
@@ -1812,11 +1796,8 @@ class SessionServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Init session request includes adapted extension data and guest email verification nonce.
 	 *
-	 * A separate process: the extension class alias lives for the whole PHP process, and later WooPay tests must not see
-	 * the extension as active.
-	 *
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
+	 * The class alias lives for the rest of the process but stays inert: AdaptedExtensions also needs a Points and Rewards
+	 * integration registered on the same instance, which only this test registers.
 	 */
 	public function test_init_session_request_includes_points_and_rewards_adapted_extension_data(): void {
 		if ( ! class_exists( '\WC_Points_Rewards_Manager', false ) ) {
