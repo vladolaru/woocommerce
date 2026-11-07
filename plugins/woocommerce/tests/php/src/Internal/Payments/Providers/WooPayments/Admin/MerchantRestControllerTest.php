@@ -153,31 +153,94 @@ class MerchantRestControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should return the WooPayments account summary for users with permission.
+	 * @testdox Should answer the $_dataName read route with its service payload for users with permission.
+	 * @dataProvider provider_read_route_payloads
+	 *
+	 * @param string       $route          Route path.
+	 * @param string       $service        Property holding the service mock the route reads.
+	 * @param string       $service_method Service method the route calls once.
+	 * @param array<mixed> $payload        Payload the service returns and the route must answer.
 	 */
-	public function test_get_account_summary_by_manager() {
-		$summary = array(
-			'account' => array(
-				'connected'  => true,
-				'test_drive' => true,
-				'sandbox'    => false,
-				'live'       => false,
-			),
-			'urls'    => array(
-				'setup' => 'https://example.com/setup',
-			),
-		);
-
-		$this->mock_overview_service
+	public function test_read_routes_answer_the_service_payload_for_managers( string $route, string $service, string $service_method, array $payload ): void {
+		$this->{$service}
 			->expects( $this->once() )
-			->method( 'get_account_summary' )
-			->willReturn( $summary );
+			->method( $service_method )
+			->willReturn( $payload );
 
-		$request  = new WP_REST_Request( 'GET', self::ENDPOINT . '/account' );
-		$response = $this->server->dispatch( $request );
+		$response = $this->server->dispatch( new WP_REST_Request( 'GET', $route ) );
 
 		$this->assertSame( 200, $response->get_status() );
-		$this->assertSame( $summary, $response->get_data() );
+		$this->assertSame( $payload, $response->get_data() );
+	}
+
+	/**
+	 * Read routes, the service each one reads and the payload it answers.
+	 *
+	 * @return array<string,array{string,string,string,array<mixed>}>
+	 */
+	public function provider_read_route_payloads(): array {
+		return array(
+			'account summary'           => array(
+				self::ENDPOINT . '/account',
+				'mock_overview_service',
+				'get_account_summary',
+				array(
+					'account' => array(
+						'connected'  => true,
+						'test_drive' => true,
+						'sandbox'    => false,
+						'live'       => false,
+					),
+					'urls'    => array(
+						'setup' => 'https://example.com/setup',
+					),
+				),
+			),
+			'overview'                  => array(
+				self::ENDPOINT . '/overview',
+				'mock_overview_service',
+				'get_overview',
+				array(
+					'account'                   => array(
+						'id'        => 'acct_native_test',
+						'connected' => true,
+					),
+					'account_status'            => array(
+						'status' => 'restricted_soon',
+					),
+					'overview_tasks_visibility' => array(
+						'dismissed_todo_tasks'       => array( 'old-task' ),
+						'deleted_todo_tasks'         => array(),
+						'remind_me_later_todo_tasks' => array(),
+					),
+					'is_connection_success_modal_dismissed' => false,
+					'urls'                      => array(
+						'overview_page' => 'https://example.com/overview',
+					),
+				),
+			),
+			'settings'                  => array(
+				'/wc/v3/payments/settings',
+				'mock_settings_service',
+				'get_settings',
+				array(
+					'is_wcpay_enabled'           => true,
+					'enabled_payment_method_ids' => array( 'card' ),
+				),
+			),
+			'payment method promotions' => array(
+				'/wc/v3/payments/pm-promotions',
+				'mock_pm_promotions_service',
+				'get_visible_promotions',
+				array(
+					array(
+						'id'             => 'klarna-promo__spotlight',
+						'payment_method' => 'klarna',
+						'type'           => 'spotlight',
+					),
+				),
+			),
+		);
 	}
 
 	/**
@@ -217,14 +280,23 @@ class MerchantRestControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should clear the Apple Pay domain error the React settings notice showed, when it is still stored.
+	 * The shown report names the error the React settings notice showed ('Test error message'): the stored error is
+	 * cleared only while it is still that one, and an error a retry stored after the page load stays for the next display.
+	 *
+	 * @testdox Should answer cleared $cleared and leave $expected_stored stored when "$stored_error" is stored at the Apple Pay shown report.
+	 * @testWith ["Test error message", true, false]
+	 *           ["Newer error from a retry", false, "Newer error from a retry"]
+	 *
+	 * @param string       $stored_error    Apple Pay domain error stored before the report.
+	 * @param bool         $cleared         Expected `cleared` answer.
+	 * @param string|false $expected_stored Expected stored error after the report (false when it was deleted).
 	 */
-	public function test_apple_pay_domain_error_shown_clears_the_matching_error(): void {
-		update_option( 'wcpay_apple_pay_domain_error', 'Test error message' );
+	public function test_apple_pay_domain_error_shown_clears_only_the_error_it_showed( string $stored_error, bool $cleared, $expected_stored ): void {
+		update_option( 'wcpay_apple_pay_domain_error', $stored_error );
 
 		try {
 			$response     = $this->dispatch_apple_pay_domain_error_shown( hash( 'sha256', 'Test error message' ) );
-			$stored_error = get_option( 'wcpay_apple_pay_domain_error' );
+			$stored_after = get_option( 'wcpay_apple_pay_domain_error' );
 		} finally {
 			delete_option( 'wcpay_apple_pay_domain_error' );
 		}
@@ -233,35 +305,11 @@ class MerchantRestControllerTest extends WC_Unit_Test_Case {
 		$this->assertSame(
 			array(
 				'success' => true,
-				'cleared' => true,
+				'cleared' => $cleared,
 			),
 			$response->get_data()
 		);
-		$this->assertFalse( $stored_error );
-	}
-
-	/**
-	 * @testdox Should keep an Apple Pay domain error that was replaced between the page load and the shown report.
-	 */
-	public function test_apple_pay_domain_error_shown_keeps_a_replaced_error(): void {
-		update_option( 'wcpay_apple_pay_domain_error', 'Newer error from a retry' );
-
-		try {
-			$response     = $this->dispatch_apple_pay_domain_error_shown( hash( 'sha256', 'Test error message' ) );
-			$stored_error = get_option( 'wcpay_apple_pay_domain_error' );
-		} finally {
-			delete_option( 'wcpay_apple_pay_domain_error' );
-		}
-
-		$this->assertSame( 200, $response->get_status() );
-		$this->assertSame(
-			array(
-				'success' => true,
-				'cleared' => false,
-			),
-			$response->get_data()
-		);
-		$this->assertSame( 'Newer error from a retry', $stored_error, 'The newer error stays for the next display.' );
+		$this->assertSame( $expected_stored, $stored_after );
 	}
 
 	/**
@@ -469,62 +517,6 @@ class MerchantRestControllerTest extends WC_Unit_Test_Case {
 			'account'  => array( self::ENDPOINT . '/account', 'get_account_summary', 'woocommerce_rest_woopayments_account_error', 'Account summary unavailable.' ),
 			'overview' => array( self::ENDPOINT . '/overview', 'get_overview', 'woocommerce_rest_woopayments_overview_error', 'Overview unavailable.' ),
 		);
-	}
-
-	/**
-	 * @testdox Should return the WooPayments Overview fields for users with permission.
-	 */
-	public function test_get_overview_by_manager(): void {
-		$overview = array(
-			'account'                               => array(
-				'id'        => 'acct_native_test',
-				'connected' => true,
-			),
-			'account_status'                        => array(
-				'status' => 'restricted_soon',
-			),
-			'overview_tasks_visibility'             => array(
-				'dismissed_todo_tasks'       => array( 'old-task' ),
-				'deleted_todo_tasks'         => array(),
-				'remind_me_later_todo_tasks' => array(),
-			),
-			'is_connection_success_modal_dismissed' => false,
-			'urls'                                  => array(
-				'overview_page' => 'https://example.com/overview',
-			),
-		);
-
-		$this->mock_overview_service
-			->expects( $this->once() )
-			->method( 'get_overview' )
-			->willReturn( $overview );
-
-		$request  = new WP_REST_Request( 'GET', self::ENDPOINT . '/overview' );
-		$response = $this->server->dispatch( $request );
-
-		$this->assertSame( 200, $response->get_status() );
-		$this->assertSame( $overview, $response->get_data() );
-	}
-
-	/**
-	 * @testdox Should expose the WooPayments settings GET route.
-	 */
-	public function test_get_settings_contract_by_manager(): void {
-		$settings = array(
-			'is_wcpay_enabled'           => true,
-			'enabled_payment_method_ids' => array( 'card' ),
-		);
-
-		$this->mock_settings_service
-			->expects( $this->once() )
-			->method( 'get_settings' )
-			->willReturn( $settings );
-
-		$request  = new WP_REST_Request( 'GET', '/wc/v3/payments/settings' );
-		$response = $this->server->dispatch( $request );
-
-		$this->assertSame( 200, $response->get_status() );
-		$this->assertSame( $settings, $response->get_data() );
 	}
 
 	/**
@@ -846,30 +838,6 @@ class MerchantRestControllerTest extends WC_Unit_Test_Case {
 		$this->assertSame( 400, $response->get_status() );
 		$this->assertSame( 'wcpay_server_error', $response->get_data()['code'] );
 		$this->assertSame( 'Error: Invalid statement descriptor.', $response->get_data()['data']['details']['account_statement_descriptor']['message'] );
-	}
-
-	/**
-	 * @testdox Should expose visible WooPayments payment method promotions.
-	 */
-	public function test_get_pm_promotions_by_manager(): void {
-		$promotions = array(
-			array(
-				'id'             => 'klarna-promo__spotlight',
-				'payment_method' => 'klarna',
-				'type'           => 'spotlight',
-			),
-		);
-
-		$this->mock_pm_promotions_service
-			->expects( $this->once() )
-			->method( 'get_visible_promotions' )
-			->willReturn( $promotions );
-
-		$request  = new WP_REST_Request( 'GET', '/wc/v3/payments/pm-promotions' );
-		$response = $this->server->dispatch( $request );
-
-		$this->assertSame( 200, $response->get_status() );
-		$this->assertSame( $promotions, $response->get_data() );
 	}
 
 	/**
