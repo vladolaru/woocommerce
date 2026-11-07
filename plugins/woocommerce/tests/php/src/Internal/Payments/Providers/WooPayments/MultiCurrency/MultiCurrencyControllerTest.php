@@ -35,36 +35,26 @@ class MultiCurrencyControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should configure legacy adapters when the WooPayments plugin owns runtime.
+	 * @testdox Should configure the adapters of the runtime that owns WooPayments: the legacy ones for the plugin, the native ones for the built-in runtime ($owner).
+	 * @testWith ["the plugin", false, true, 0.82]
+	 *           ["the built-in runtime", true, false, 0.91]
+	 *
+	 * @param string $owner       The runtime owner, for the test name.
+	 * @param bool   $native_owns Whether the built-in runtime owns WooPayments.
+	 * @param bool   $plugin_owns Whether the WooPayments plugin owns WooPayments.
+	 * @param float  $rate        The EUR rate the owner's API adapter returns.
 	 */
-	public function test_configures_legacy_adapters_when_plugin_owns_runtime(): void {
-		$context = $this->create_bootstrap_context( false, true );
+	public function test_configures_the_adapters_of_the_runtime_owner( string $owner, bool $native_owns, bool $plugin_owns, float $rate ): void {
+		$context = $this->create_bootstrap_context( $native_owns, $plugin_owns );
 
 		$context['bootstrap']->register();
 
-		$this->assertTrue( $context['rate_service']->is_provider_connected(), 'The rate service should delegate plugin-owned connection checks to the legacy adapter.' );
+		$this->assertTrue( $context['rate_service']->is_provider_connected(), "The rate service should delegate connection checks to the adapter of $owner." );
 		$this->assertSame( CurrencyRateProvider::PROVIDER_ID, $context['rate_service']->get_automatic_rate_source_id() );
 		$this->assertSame(
-			array( 'EUR' => 0.82 ),
+			array( 'EUR' => $rate ),
 			$context['rate_service']->get_rates( 'usd', array( 'eur' ) ),
-			'The rate provider should use the legacy API adapter while the plugin owns runtime.'
-		);
-	}
-
-	/**
-	 * @testdox Should configure native adapters when the native runtime owns runtime.
-	 */
-	public function test_configures_native_adapters_when_native_owns_runtime(): void {
-		$context = $this->create_bootstrap_context( true, false );
-
-		$context['bootstrap']->register();
-
-		$this->assertTrue( $context['rate_service']->is_provider_connected(), 'The rate service should delegate native-owned connection checks to the native adapter.' );
-		$this->assertSame( CurrencyRateProvider::PROVIDER_ID, $context['rate_service']->get_automatic_rate_source_id() );
-		$this->assertSame(
-			array( 'EUR' => 0.91 ),
-			$context['rate_service']->get_rates( 'usd', array( 'eur' ) ),
-			'The rate provider should use the native API adapter while native owns runtime.'
+			"The rate provider should use the API adapter of $owner."
 		);
 	}
 

@@ -69,47 +69,38 @@ class PlatformConnectionServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * Jetpack reports a deleted connection owner, and an owner whose user token was removed, as no owner while the blog
 	 * token stays: the one state a connected site can reach where the connection owner is gone. Nothing is mocked; the
-	 * states come from the Jetpack connection package WooCommerce vendors.
+	 * states come from the Jetpack connection package WooCommerce vendors. A site that also lost its blog token has no
+	 * connection left, so it reports the connection failure beside the owner one.
 	 *
-	 * @testdox A connected site whose connection owner is gone reports only the connection owner failure: $_dataName.
+	 * @testdox A site whose connection owner is gone reports the connection owner failure, and also the connection failure once it lost its blog token: $_dataName.
 	 * @dataProvider provide_connection_owner_removals
 	 *
-	 * @param string $removal How the owner is removed.
+	 * @param string   $removal    How the owner is removed.
+	 * @param bool     $blog_token Whether the site keeps its blog token.
+	 * @param string[] $expected   Expected failure codes.
 	 */
-	public function test_connected_site_without_a_connection_owner_reports_only_the_owner_failure( string $removal ): void {
+	public function test_site_without_a_connection_owner_reports_the_owner_failure( string $removal, bool $blog_token, array $expected ): void {
 		$manager = $this->connect_site_with_owner();
 
 		$this->assertSame( array(), $this->create_service( $manager )->get_preflight_failures(), 'The connected site is ready before its owner is removed.' );
 
+		if ( ! $blog_token ) {
+			Jetpack_Options::delete_option( 'blog_token' );
+		}
 		$this->remove_connection_owner( $manager, $removal );
 
-		$this->assertSame( array( 'wpcom_connection_owner_unavailable' ), $this->create_service( $manager )->get_preflight_failures() );
+		$this->assertSame( $expected, $this->create_service( $manager )->get_preflight_failures() );
 	}
 
 	/**
-	 * A site that also lost its blog token has no connection left, so it reports the connection failure beside the owner one.
-	 *
-	 * @testdox A site with no blog token also reports the connection failure when its owner is deleted.
-	 */
-	public function test_disconnected_site_without_a_connection_owner_also_reports_the_connection_failure(): void {
-		$manager = $this->connect_site_with_owner();
-		Jetpack_Options::delete_option( 'blog_token' );
-		$this->remove_connection_owner( $manager, 'deleted' );
-
-		$this->assertSame(
-			array( 'wpcom_connection_unavailable', 'wpcom_connection_owner_unavailable' ),
-			$this->create_service( $manager )->get_preflight_failures()
-		);
-	}
-
-	/**
-	 * @return array<string,array{string}>
+	 * @return array<string,array{string,bool,string[]}>
 	 */
 	public function provide_connection_owner_removals(): array {
 		return array(
-			'the owner user is deleted'                   => array( 'deleted' ),
-			'the owner user is deleted and Jetpack heard' => array( 'deleted_and_disconnected' ),
-			'the owner keeps the user but loses its user token' => array( 'token_removed' ),
+			'the owner user is deleted'                   => array( 'deleted', true, array( 'wpcom_connection_owner_unavailable' ) ),
+			'the owner user is deleted and Jetpack heard' => array( 'deleted_and_disconnected', true, array( 'wpcom_connection_owner_unavailable' ) ),
+			'the owner keeps the user but loses its user token' => array( 'token_removed', true, array( 'wpcom_connection_owner_unavailable' ) ),
+			'the owner user is deleted and the blog token is gone' => array( 'deleted', false, array( 'wpcom_connection_unavailable', 'wpcom_connection_owner_unavailable' ) ),
 		);
 	}
 

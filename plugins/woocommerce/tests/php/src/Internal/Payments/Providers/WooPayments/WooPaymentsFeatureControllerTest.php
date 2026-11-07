@@ -123,12 +123,23 @@ class WooPaymentsFeatureControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The disable link turns the WooPayments feature off through the core Features handler.
+	 * @testdox The disable link turns the WooPayments feature off through the core Features handler, also while the Features page save refuses it: $store.
+	 * @testWith ["unprotected store", false]
+	 *           ["protected store", true]
+	 *
+	 * @param string $store        The store, for the test name.
+	 * @param bool   $is_protected Whether the disable choice is protected (built-in owner, connected tier).
 	 */
-	public function test_disable_link_turns_the_feature_off(): void {
+	public function test_disable_link_turns_the_feature_off( string $store, bool $is_protected ): void {
+		unset( $store );
+		if ( $is_protected ) {
+			$sut = $this->create_protectable_sut( WooPaymentsRuntimeArbiter::OWNER_BUILTIN, WooPaymentsSetupTier::CONNECTED );
+		} else {
+			update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
+			$sut = $this->create_sut( WooPaymentsRuntimeArbiter::OWNER_BUILTIN );
+		}
 		wp_set_current_user( self::factory()->user->create( array( 'role' => 'administrator' ) ) );
-		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
-		$url = $this->create_sut( WooPaymentsRuntimeArbiter::OWNER_BUILTIN )->get_disable_anyway_url();
+		$url = $sut->get_disable_anyway_url();
 		parse_str( (string) wp_parse_url( $url, PHP_URL_QUERY ), $query );
 		$_GET = $query;
 		// The handler redirects to the page without its query arguments; the test only needs the write.
@@ -169,21 +180,6 @@ class WooPaymentsFeatureControllerTest extends WC_Unit_Test_Case {
 			'built-in owner, available'             => array( WooPaymentsRuntimeArbiter::OWNER_BUILTIN, WooPaymentsSetupTier::AVAILABLE, 'no' ),
 			'extension owner, connected stored'     => array( WooPaymentsRuntimeArbiter::OWNER_EXTENSION, WooPaymentsSetupTier::CONNECTED, 'no' ),
 		);
-	}
-
-	/**
-	 * @testdox The disable link still turns WooPayments off while the Features page save refuses it.
-	 */
-	public function test_disable_link_turns_the_feature_off_while_protected(): void {
-		$sut = $this->create_protectable_sut( WooPaymentsRuntimeArbiter::OWNER_BUILTIN, WooPaymentsSetupTier::CONNECTED );
-		wp_set_current_user( self::factory()->user->create( array( 'role' => 'administrator' ) ) );
-		parse_str( (string) wp_parse_url( $sut->get_disable_anyway_url(), PHP_URL_QUERY ), $query );
-		$_GET = $query;
-		add_filter( 'wp_redirect', '__return_false' );
-
-		wc_get_container()->get( FeaturesController::class )->change_feature_enable_from_query_params();
-
-		$this->assertSame( 'no', get_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION ) );
 	}
 
 	/**
