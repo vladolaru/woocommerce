@@ -241,6 +241,7 @@ class CacheRenderingServiceTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Should use current-blog cache settings without changing the main blog.
+	 * @group multisite
 	 */
 	public function test_uses_current_blog_cache_settings_without_changing_the_main_blog(): void {
 		if ( ! is_multisite() ) {
