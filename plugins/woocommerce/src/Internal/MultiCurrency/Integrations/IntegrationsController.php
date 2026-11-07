@@ -56,16 +56,25 @@ class IntegrationsController implements RegisterHooksInterface {
 	private ?StateBuilder $state_builder = null;
 
 	/**
+	 * Request context, which reads the call stack.
+	 *
+	 * @var RequestContext
+	 */
+	private RequestContext $request_context;
+
+	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
 	 *
 	 * @param MultiCurrencyRuntimeArbiter $arbiter               Runtime owner arbiter.
 	 * @param StateBuilderFactory         $state_builder_factory State builder factory.
+	 * @param RequestContext              $request_context       Request context.
 	 */
-	final public function init( MultiCurrencyRuntimeArbiter $arbiter, StateBuilderFactory $state_builder_factory ): void {
+	final public function init( MultiCurrencyRuntimeArbiter $arbiter, StateBuilderFactory $state_builder_factory, RequestContext $request_context ): void {
 		$this->arbiter               = $arbiter;
 		$this->state_builder_factory = $state_builder_factory;
+		$this->request_context       = $request_context;
 	}
 
 	/**
@@ -213,7 +222,7 @@ class IntegrationsController implements RegisterHooksInterface {
 		if (
 			! is_array( $results )
 			|| ( is_array( $query_vars ) && 'shop_order_refund' === ( $query_vars['type'] ?? null ) )
-			|| ! RequestContext::is_call_in_backtrace( self::NEW_SALES_RECORD_BACKTRACE_CALLS )
+			|| ! $this->request_context->is_call_in_backtrace( self::NEW_SALES_RECORD_BACKTRACE_CALLS )
 		) {
 			return $results;
 		}

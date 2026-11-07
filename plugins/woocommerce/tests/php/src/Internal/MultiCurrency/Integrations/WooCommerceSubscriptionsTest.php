@@ -262,8 +262,6 @@ class WooCommerceSubscriptionsTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Should override selected currency while a My Account subscription total is formatting.
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 */
 	public function test_overrides_selected_currency_while_my_account_subscription_total_is_formatting(): void {
 		$sut          = $this->create_controller();
@@ -306,8 +304,6 @@ class WooCommerceSubscriptionsTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Should preserve explicit currency formatting when no code is needed.
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 */
 	public function test_preserves_explicit_currency_formatting_when_no_code_is_needed(): void {
 		$sut          = $this->create_controller();
@@ -326,8 +322,6 @@ class WooCommerceSubscriptionsTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Should skip explicit subscription total formatting when additional currencies are disabled.
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 */
 	public function test_skips_explicit_subscription_total_formatting_when_additional_currencies_are_disabled(): void {
 		$sut          = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, true, false, false, false );
@@ -344,8 +338,6 @@ class WooCommerceSubscriptionsTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Should leave subscription totals unchanged for a subscription without a currency code.
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 */
 	public function test_leaves_subscription_totals_unchanged_without_a_currency_code(): void {
 		$sut          = $this->create_controller();
@@ -387,8 +379,6 @@ class WooCommerceSubscriptionsTest extends WC_Unit_Test_Case {
 	 * (Subscriptions 9.3.0 `includes/core/class-wcs-cart-resubscribe.php:16,110`, `class-wcs-cart-renewal.php:298,370`), so the
 	 * renewal setup call is on the stack; client 11.1.0 lets only renewal carts convert there
 	 * (`includes/multi-currency/Compatibility/WooCommerceSubscriptions.php:226-243`).
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 */
 	public function test_keeps_resubscribe_cart_prices_while_the_cart_is_set_up(): void {
 		$resubscribe = $this->create_controller();
@@ -399,8 +389,6 @@ class WooCommerceSubscriptionsTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Should apply subscription product conversion decisions.
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 */
 	public function test_applies_subscription_product_conversion_decisions(): void {
 		$product = (object) array( 'id' => 1 );
@@ -433,8 +421,6 @@ class WooCommerceSubscriptionsTest extends WC_Unit_Test_Case {
 	 * subscription's stored price; a simple product and a new subscription bought beside it are priced in the store currency
 	 * and convert. A recorded store run at GBP 0.73 charged them 10.00 and 20.00 a month where 7.45 and 14.95 were due. The
 	 * fixture converts by doubling.
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 */
 	public function test_converts_the_other_products_of_a_resubscribe_cart_while_totals_calculate(): void {
 		$sut = $this->create_controller();
@@ -463,8 +449,6 @@ class WooCommerceSubscriptionsTest extends WC_Unit_Test_Case {
 	 * 9.3.0 `includes/core/class-wcs-cart-renewal.php:298-370`, `class-wcs-cart-resubscribe.php:19`). Totals read each line
 	 * through its own product object, so a plain line of the same product, which a cart merged at login can hold
 	 * (`includes/core/class-wc-subscriptions-cart-validator.php:409-415`), converts; the session cart holds only ids.
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 */
 	public function test_finds_every_resubscribed_item_in_the_cart_or_the_session_cart(): void {
 		$resubscribe   = array( 'subscription_resubscribe' => array( 'subscription_id' => 31 ) );
@@ -502,7 +486,8 @@ class WooCommerceSubscriptionsTest extends WC_Unit_Test_Case {
 				$this->create_arbiter( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN ),
 				new LegacyProxy(),
 				wc_get_container()->get( StateBuilderFactory::class ),
-				wc_get_container()->get( ServiceFactory::class )
+				wc_get_container()->get( ServiceFactory::class ),
+				CallStack::request_context()
 			);
 
 			return CallStack::run( array( 'WC_Cart_Totals->calculate_item_totals' ), static fn() => array_map( static fn( $product ) => $sut->should_convert_product_price( true, $product ), $products ) );
@@ -544,8 +529,6 @@ class WooCommerceSubscriptionsTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Should preserve switch subscription sign-up fees during price setup.
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 */
 	public function test_preserves_switch_subscription_signup_fees_during_price_setup(): void {
 		$product = $this->create_product( 10, false, true );
@@ -556,8 +539,6 @@ class WooCommerceSubscriptionsTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Should preserve repeated switch sign-up fees during proration total calculation.
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 */
 	public function test_preserves_repeated_switch_signup_fees_during_proration_total_calculation(): void {
 		$product = $this->create_product( 10, false, true );
@@ -571,8 +552,6 @@ class WooCommerceSubscriptionsTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Should convert repeated switch sign-up fees while apportioning switch totals.
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 */
 	public function test_converts_repeated_switch_signup_fees_while_apportioning_switch_totals(): void {
 		$product = $this->create_product( 10, false, true );
@@ -608,8 +587,6 @@ class WooCommerceSubscriptionsTest extends WC_Unit_Test_Case {
 	 * nothing, so every read holds the stored fee and must convert; where it wrote, the reads that follow hold a converted amount.
 	 *
 	 * @dataProvider switch_sign_up_fee_read_sequences
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 *
 	 * @param array<string,string> $stored_meta Meta the product stores before the switch.
 	 * @param array<mixed>         $steps       Reads (`read`, calls, raw fee, expected fee) and meta writes (`write`, key, value) in order.
@@ -737,8 +714,6 @@ class WooCommerceSubscriptionsTest extends WC_Unit_Test_Case {
 	 * A recorded store run at GBP 0.73 charged an upgrade to such a product 0.50 where about 3.50 was due. In the store currency
 	 * nothing converts, so a pricing plugin's sale price is used as it is.
 	 * @dataProvider on_sale_subscription_prices
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 *
 	 * @param float  $rate               Rate the fixture converts by.
 	 * @param string $subscription_price Stored subscription price.
@@ -797,8 +772,6 @@ class WooCommerceSubscriptionsTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Should apply subscription coupon conversion decisions.
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 */
 	public function test_applies_subscription_coupon_conversion_decisions(): void {
 		$sut = $this->create_controller();
@@ -835,8 +808,6 @@ class WooCommerceSubscriptionsTest extends WC_Unit_Test_Case {
 	 * coupon must keep its maximum.
 	 *
 	 * @dataProvider subscription_cart_coupons
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 *
 	 * @param string|null          $cart_type Subscription cart type, or null for an initial payment cart.
 	 * @param string[]             $calls     Calls on the stack while the coupon is read.
@@ -1294,7 +1265,8 @@ class WooCommerceSubscriptionsTest extends WC_Unit_Test_Case {
 			$this->create_arbiter( $owner ),
 			new LegacyProxy(),
 			ServiceFactories::state_builder( $this, $this->create_state_builder( $has_additional_currencies_enabled ) ),
-			ServiceFactories::with( $this, array( 'create_price_converter' => $this->create_price_converter( $rate ) ) )
+			ServiceFactories::with( $this, array( 'create_price_converter' => $this->create_price_converter( $rate ) ) ),
+			CallStack::request_context()
 		);
 
 		return $controller;

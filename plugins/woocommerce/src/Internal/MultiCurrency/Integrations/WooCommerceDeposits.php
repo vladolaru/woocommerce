@@ -53,16 +53,25 @@ class WooCommerceDeposits implements RegisterHooksInterface {
 	private ?PriceConverter $price_converter = null;
 
 	/**
+	 * Request context, which reads the call stack.
+	 *
+	 * @var RequestContext
+	 */
+	private RequestContext $request_context;
+
+	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
 	 *
 	 * @param MultiCurrencyRuntimeArbiter $arbiter         Runtime owner arbiter.
 	 * @param ServiceFactory              $service_factory Multi-Currency service factory.
+	 * @param RequestContext              $request_context Request context.
 	 */
-	final public function init( MultiCurrencyRuntimeArbiter $arbiter, ServiceFactory $service_factory ): void {
+	final public function init( MultiCurrencyRuntimeArbiter $arbiter, ServiceFactory $service_factory, RequestContext $request_context ): void {
 		$this->arbiter         = $arbiter;
 		$this->service_factory = $service_factory;
+		$this->request_context = $request_context;
 	}
 
 	/**
@@ -134,7 +143,7 @@ class WooCommerceDeposits implements RegisterHooksInterface {
 	public function modify_cart_item_deposit_amount_meta( $amount, $product ) {
 		if (
 			'percent' !== $this->get_product_deposit_type( $product )
-			|| ! RequestContext::is_call_in_backtrace( self::DEPOSITS_FORM_OUTPUT_CALLS )
+			|| ! $this->request_context->is_call_in_backtrace( self::DEPOSITS_FORM_OUTPUT_CALLS )
 		) {
 			return $amount;
 		}
@@ -155,7 +164,7 @@ class WooCommerceDeposits implements RegisterHooksInterface {
 		}
 
 		return 'plan' !== $this->get_product_deposit_type( $product )
-			|| ! RequestContext::is_call_in_backtrace( self::CART_TOTALS_CALLS );
+			|| ! $this->request_context->is_call_in_backtrace( self::CART_TOTALS_CALLS );
 	}
 
 	/**

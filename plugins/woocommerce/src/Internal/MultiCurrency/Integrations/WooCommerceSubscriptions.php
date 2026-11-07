@@ -187,6 +187,13 @@ class WooCommerceSubscriptions implements RegisterHooksInterface {
 	private ServiceFactory $service_factory;
 
 	/**
+	 * Request context, which reads the call stack.
+	 *
+	 * @var RequestContext
+	 */
+	private RequestContext $request_context;
+
+	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
@@ -195,12 +202,14 @@ class WooCommerceSubscriptions implements RegisterHooksInterface {
 	 * @param LegacyProxy                 $legacy_proxy          Proxy for global function calls.
 	 * @param StateBuilderFactory         $state_builder_factory State builder factory.
 	 * @param ServiceFactory              $service_factory       Multi-Currency service factory.
+	 * @param RequestContext              $request_context       Request context.
 	 */
-	final public function init( MultiCurrencyRuntimeArbiter $arbiter, LegacyProxy $legacy_proxy, StateBuilderFactory $state_builder_factory, ServiceFactory $service_factory ): void {
+	final public function init( MultiCurrencyRuntimeArbiter $arbiter, LegacyProxy $legacy_proxy, StateBuilderFactory $state_builder_factory, ServiceFactory $service_factory, RequestContext $request_context ): void {
 		$this->arbiter               = $arbiter;
 		$this->legacy_proxy          = $legacy_proxy;
 		$this->state_builder_factory = $state_builder_factory;
 		$this->service_factory       = $service_factory;
+		$this->request_context       = $request_context;
 	}
 
 	/**
@@ -366,13 +375,13 @@ class WooCommerceSubscriptions implements RegisterHooksInterface {
 		// cart converts while Subscriptions sets it up, so the shopper lands at checkout with the converted price. Other
 		// products in a resubscribe cart convert.
 		$has_renewal = null !== $this->get_subscription_type_from_cart( 'renewal' );
-		if ( $has_renewal && RequestContext::is_call_in_backtrace( self::RENEWAL_SETUP_CALLS ) ) {
+		if ( $has_renewal && $this->request_context->is_call_in_backtrace( self::RENEWAL_SETUP_CALLS ) ) {
 			return true;
 		}
 
 		return ! (
 			( $has_renewal || $this->is_resubscribed_product( $product ) )
-			&& RequestContext::is_call_in_backtrace( self::PRODUCT_PRICE_CALCULATION_CALLS )
+			&& $this->request_context->is_call_in_backtrace( self::PRODUCT_PRICE_CALCULATION_CALLS )
 		);
 	}
 
@@ -398,8 +407,8 @@ class WooCommerceSubscriptions implements RegisterHooksInterface {
 		// In a renewal cart a recurring coupon already holds its converted amount when applied; an early renewal's setup reads the original amount.
 		return ! (
 			null !== $this->get_subscription_type_from_cart( 'renewal' )
-			&& ! RequestContext::is_call_in_backtrace( self::EARLY_RENEWAL_SETUP_CALLS )
-			&& RequestContext::is_call_in_backtrace( self::APPLY_COUPON_CALLS )
+			&& ! $this->request_context->is_call_in_backtrace( self::EARLY_RENEWAL_SETUP_CALLS )
+			&& $this->request_context->is_call_in_backtrace( self::APPLY_COUPON_CALLS )
 			&& in_array( $discount_type, self::SUBSCRIPTION_RECURRING_COUPON_TYPES, true )
 		);
 	}
@@ -453,7 +462,7 @@ class WooCommerceSubscriptions implements RegisterHooksInterface {
 		if (
 			! $product instanceof \WC_Product
 			|| ! $this->get_price_converter()->should_convert_between_selected_and_default_currency()
-			|| ! RequestContext::is_call_in_backtrace( self::SUBSCRIPTION_PRODUCT_ACTIVE_PRICE_CALLS )
+			|| ! $this->request_context->is_call_in_backtrace( self::SUBSCRIPTION_PRODUCT_ACTIVE_PRICE_CALLS )
 		) {
 			return $price;
 		}
@@ -481,7 +490,7 @@ class WooCommerceSubscriptions implements RegisterHooksInterface {
 				&& $this->get_product_id( $product ) === $this->get_cart_item_product_id( $cart_item )
 				&& $this->has_rewritten_subscription_signup_fee( $product )
 				&& (
-					RequestContext::is_call_in_backtrace( self::SUBSCRIPTION_PRICE_SETUP_CALLS )
+					$this->request_context->is_call_in_backtrace( self::SUBSCRIPTION_PRICE_SETUP_CALLS )
 					|| $this->is_subscription_switch_proration_context( $this->switch_cart_item, $previous_switch_cart_item )
 					|| $this->has_changed_subscription_signup_fee_meta( $product, $this->switch_cart_item, $previous_switch_cart_item )
 				)
@@ -507,8 +516,8 @@ class WooCommerceSubscriptions implements RegisterHooksInterface {
 	public function maybe_set_current_my_account_subscription( $subscription_details, $subscription ): array {
 		if (
 			(
-				RequestContext::is_call_in_backtrace( self::MY_ACCOUNT_SUBSCRIPTIONS_TEMPLATE_CALLS )
-				|| RequestContext::is_call_in_backtrace( self::FORMATTED_SUBSCRIPTION_TOTAL_CALLS )
+				$this->request_context->is_call_in_backtrace( self::MY_ACCOUNT_SUBSCRIPTIONS_TEMPLATE_CALLS )
+				|| $this->request_context->is_call_in_backtrace( self::FORMATTED_SUBSCRIPTION_TOTAL_CALLS )
 			)
 			&& null !== $this->get_subscription_currency( $subscription )
 		) {
@@ -726,9 +735,9 @@ class WooCommerceSubscriptions implements RegisterHooksInterface {
 	private function is_subscription_switch_proration_context( string $current_switch_cart_item, string $previous_switch_cart_item ): bool {
 		return '' !== $current_switch_cart_item
 			&& $current_switch_cart_item === $previous_switch_cart_item
-			&& RequestContext::is_call_in_backtrace( self::SUBSCRIPTION_PRODUCT_SIGNUP_FEE_CALLS )
-			&& RequestContext::is_call_in_backtrace( self::CART_CALCULATE_TOTALS_CALLS )
-			&& ! RequestContext::is_call_in_backtrace( self::SWITCH_APPORTION_SIGNUP_FEE_CALLS );
+			&& $this->request_context->is_call_in_backtrace( self::SUBSCRIPTION_PRODUCT_SIGNUP_FEE_CALLS )
+			&& $this->request_context->is_call_in_backtrace( self::CART_CALCULATE_TOTALS_CALLS )
+			&& ! $this->request_context->is_call_in_backtrace( self::SWITCH_APPORTION_SIGNUP_FEE_CALLS );
 	}
 
 	/**

@@ -64,16 +64,25 @@ class WooCommerceBookings implements RegisterHooksInterface {
 	private ?DisplayService $display_service = null;
 
 	/**
+	 * Request context, which reads the call stack.
+	 *
+	 * @var RequestContext
+	 */
+	private RequestContext $request_context;
+
+	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
 	 *
 	 * @param MultiCurrencyRuntimeArbiter $arbiter         Runtime owner arbiter.
 	 * @param ServiceFactory              $service_factory Multi-Currency service factory.
+	 * @param RequestContext              $request_context Request context.
 	 */
-	final public function init( MultiCurrencyRuntimeArbiter $arbiter, ServiceFactory $service_factory ): void {
+	final public function init( MultiCurrencyRuntimeArbiter $arbiter, ServiceFactory $service_factory, RequestContext $request_context ): void {
 		$this->arbiter         = $arbiter;
 		$this->service_factory = $service_factory;
+		$this->request_context = $request_context;
 	}
 
 	/**
@@ -130,7 +139,7 @@ class WooCommerceBookings implements RegisterHooksInterface {
 	 * @return mixed
 	 */
 	public function adjust_amount_for_calculated_booking_cost( $costs ) {
-		if ( RequestContext::is_call_in_backtrace( self::CART_ADD_TO_CART_CALLS ) ) {
+		if ( $this->request_context->is_call_in_backtrace( self::CART_ADD_TO_CART_CALLS ) ) {
 			return $costs;
 		}
 
@@ -147,8 +156,8 @@ class WooCommerceBookings implements RegisterHooksInterface {
 		if (
 			! $price
 			|| (
-				RequestContext::is_call_in_backtrace( self::CART_ADD_TO_CART_CALLS )
-				&& RequestContext::is_call_in_backtrace( self::BOOKINGS_COST_CALCULATION_CALLS )
+				$this->request_context->is_call_in_backtrace( self::CART_ADD_TO_CART_CALLS )
+				&& $this->request_context->is_call_in_backtrace( self::BOOKINGS_COST_CALCULATION_CALLS )
 			)
 		) {
 			return $price;
@@ -156,7 +165,7 @@ class WooCommerceBookings implements RegisterHooksInterface {
 
 		return $this->get_price_converter()->get_price(
 			$price,
-			RequestContext::is_call_in_backtrace( self::BOOKING_PRICE_HTML_CALLS ) ? 'product' : 'exchange_rate'
+			$this->request_context->is_call_in_backtrace( self::BOOKING_PRICE_HTML_CALLS ) ? 'product' : 'exchange_rate'
 		);
 	}
 
@@ -190,7 +199,7 @@ class WooCommerceBookings implements RegisterHooksInterface {
 			return $should_convert;
 		}
 
-		return ! RequestContext::is_call_in_backtrace( self::BOOKING_PRICE_HTML_CALLS );
+		return ! $this->request_context->is_call_in_backtrace( self::BOOKING_PRICE_HTML_CALLS );
 	}
 
 	/**

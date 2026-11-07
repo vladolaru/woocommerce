@@ -21,6 +21,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyState;
 use Automattic\WooCommerce\Internal\MultiCurrency\Integrations\WooCommerceSubscriptions;
 use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\CurrencyRateProviderInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\RateService;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\RequestContext;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\ServiceFactory;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\PriceConverter;
@@ -1235,7 +1236,8 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 			wc_get_container()->get( MultiCurrencyRuntimeArbiter::class ),
 			new LegacyProxy(),
 			wc_get_container()->get( StateBuilderFactory::class ),
-			wc_get_container()->get( ServiceFactory::class )
+			wc_get_container()->get( ServiceFactory::class ),
+			wc_get_container()->get( RequestContext::class )
 		);
 		wc_get_container()->replace( WooCommerceSubscriptions::class, $controller );
 

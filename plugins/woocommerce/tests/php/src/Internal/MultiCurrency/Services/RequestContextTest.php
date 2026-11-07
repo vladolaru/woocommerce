@@ -56,7 +56,7 @@ class RequestContextTest extends WC_Unit_Test_Case {
 			 * @return bool
 			 */
 			public function matches_instance_method_call(): bool {
-				return RequestContext::is_call_in_backtrace( array( self::class . '->matches_instance_method_call' ) );
+				return ( new RequestContext() )->is_call_in_backtrace( array( self::class . '->matches_instance_method_call' ) );
 			}
 
 			/**
@@ -65,13 +65,13 @@ class RequestContextTest extends WC_Unit_Test_Case {
 			 * @return bool
 			 */
 			public static function matches_static_method_call(): bool {
-				return RequestContext::is_call_in_backtrace( array( self::class . '::matches_static_method_call' ) );
+				return ( new RequestContext() )->is_call_in_backtrace( array( self::class . '::matches_static_method_call' ) );
 			}
 		};
 
 		$this->assertTrue( $fixture->matches_instance_method_call() );
 		$this->assertTrue( $fixture::matches_static_method_call() );
-		$this->assertFalse( RequestContext::is_call_in_backtrace( array( 'Nonexistent_Class->nonexistent_method' ) ) );
+		$this->assertFalse( ( new RequestContext() )->is_call_in_backtrace( array( 'Nonexistent_Class->nonexistent_method' ) ) );
 	}
 
 	/**

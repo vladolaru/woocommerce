@@ -277,7 +277,8 @@ class IntegrationsControllerTest extends WC_Unit_Test_Case {
 		};
 		$controller->init(
 			$this->create_arbiter( $owner ),
-			ServiceFactories::state_builder( $this, $this->create_state_builder( $enabled_count ) )
+			ServiceFactories::state_builder( $this, $this->create_state_builder( $enabled_count ) ),
+			CallStack::request_context()
 		);
 
 		return $controller;

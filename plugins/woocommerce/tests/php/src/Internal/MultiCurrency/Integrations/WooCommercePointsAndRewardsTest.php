@@ -119,8 +119,6 @@ class WooCommercePointsAndRewardsTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Should preserve ratios while Points and Rewards discount data is calculated.
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 */
 	public function test_preserves_ratios_while_discount_data_is_calculated(): void {
 		$sut = $this->create_controller();
@@ -227,7 +225,8 @@ class WooCommercePointsAndRewardsTest extends WC_Unit_Test_Case {
 
 		$controller->init(
 			$this->create_arbiter( $owner ),
-			ServiceFactories::state_builder( $this, $this->create_state_builder( $this->create_state( $selected_is_default ) ) )
+			ServiceFactories::state_builder( $this, $this->create_state_builder( $this->create_state( $selected_is_default ) ) ),
+			CallStack::request_context()
 		);
 
 		return $controller;

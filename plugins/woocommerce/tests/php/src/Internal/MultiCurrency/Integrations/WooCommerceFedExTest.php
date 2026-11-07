@@ -105,8 +105,6 @@ class WooCommerceFedExTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Should suppress product conversion during FedEx shipping calculations.
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 */
 	public function test_suppresses_product_conversion_during_fedex_shipping_calculations(): void {
 		$sut = $this->create_controller();
@@ -122,8 +120,6 @@ class WooCommerceFedExTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Should force store currency during FedEx shipping calculations.
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 */
 	public function test_forces_store_currency_during_fedex_shipping_calculations(): void {
 		$sut = $this->create_controller();
@@ -218,7 +214,7 @@ class WooCommerceFedExTest extends WC_Unit_Test_Case {
 			}
 		};
 
-		$controller->init( $this->create_arbiter( $owner ) );
+		$controller->init( $this->create_arbiter( $owner ), CallStack::request_context() );
 
 		return $controller;
 	}

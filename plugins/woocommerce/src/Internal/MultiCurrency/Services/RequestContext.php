@@ -149,7 +149,7 @@ class RequestContext {
 	 * @param string[] $calls Expected calls.
 	 * @return bool
 	 */
-	public static function is_call_in_backtrace( array $calls ): bool {
+	public function is_call_in_backtrace( array $calls ): bool {
 		$expected_lookup = array_fill_keys( $calls, true );
 
 		// Cheaper equivalent of wp_debug_backtrace_summary( null, 0, false ) + in_array():

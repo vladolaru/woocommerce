@@ -85,8 +85,6 @@ class WooCommerceUPSTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Should force store currency during UPS shipping calculations.
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 */
 	public function test_forces_store_currency_during_ups_shipping_calculations(): void {
 		$sut = $this->create_controller();
@@ -180,7 +178,7 @@ class WooCommerceUPSTest extends WC_Unit_Test_Case {
 			}
 		};
 
-		$controller->init( $this->create_arbiter( $owner ) );
+		$controller->init( $this->create_arbiter( $owner ), CallStack::request_context() );
 
 		return $controller;
 	}

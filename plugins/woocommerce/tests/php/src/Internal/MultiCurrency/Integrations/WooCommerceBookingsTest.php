@@ -155,8 +155,6 @@ class WooCommerceBookingsTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Should convert Bookings price hooks with context-specific price types.
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 */
 	public function test_converts_bookings_price_hooks_with_context_specific_price_types(): void {
 		$sut = $this->create_controller();
@@ -206,8 +204,6 @@ class WooCommerceBookingsTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Should suppress default product conversion for Bookings price HTML.
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 */
 	public function test_suppresses_default_product_conversion_for_bookings_price_html(): void {
 		$sut = $this->create_controller();
@@ -370,7 +366,8 @@ class WooCommerceBookingsTest extends WC_Unit_Test_Case {
 					'create_price_converter' => $this->create_price_converter(),
 					'create_display_service' => $this->create_display_service(),
 				)
-			)
+			),
+			CallStack::request_context()
 		);
 
 		return $controller;

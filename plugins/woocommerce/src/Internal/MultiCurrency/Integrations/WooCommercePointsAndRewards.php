@@ -48,16 +48,25 @@ class WooCommercePointsAndRewards implements RegisterHooksInterface {
 	private ?StateBuilder $state_builder = null;
 
 	/**
+	 * Request context, which reads the call stack.
+	 *
+	 * @var RequestContext
+	 */
+	private RequestContext $request_context;
+
+	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
 	 *
 	 * @param MultiCurrencyRuntimeArbiter $arbiter               Runtime owner arbiter.
 	 * @param StateBuilderFactory         $state_builder_factory State builder factory.
+	 * @param RequestContext              $request_context       Request context.
 	 */
-	final public function init( MultiCurrencyRuntimeArbiter $arbiter, StateBuilderFactory $state_builder_factory ): void {
+	final public function init( MultiCurrencyRuntimeArbiter $arbiter, StateBuilderFactory $state_builder_factory, RequestContext $request_context ): void {
 		$this->arbiter               = $arbiter;
 		$this->state_builder_factory = $state_builder_factory;
+		$this->request_context       = $request_context;
 	}
 
 	/**
@@ -105,7 +114,7 @@ class WooCommercePointsAndRewards implements RegisterHooksInterface {
 
 		if (
 			$selected_currency->get_code() === $default_currency->get_code()
-			|| RequestContext::is_call_in_backtrace( self::POINTS_REWARDS_DISCOUNT_DATA_CALLS )
+			|| $this->request_context->is_call_in_backtrace( self::POINTS_REWARDS_DISCOUNT_DATA_CALLS )
 		) {
 			return $ratio;
 		}

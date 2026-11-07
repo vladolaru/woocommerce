@@ -161,8 +161,6 @@ class WooCommerceDepositsTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Should convert percent deposit amount meta while Deposits form output is rendered.
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 */
 	public function test_converts_percent_deposit_amount_meta_while_deposits_form_output_is_rendered(): void {
 		$sut = $this->create_controller();
@@ -381,7 +379,8 @@ class WooCommerceDepositsTest extends WC_Unit_Test_Case {
 
 		$controller->init(
 			$this->create_arbiter( $owner ),
-			ServiceFactories::with( $this, array( 'create_price_converter' => $this->create_price_converter() ) )
+			ServiceFactories::with( $this, array( 'create_price_converter' => $this->create_price_converter() ) ),
+			CallStack::request_context()
 		);
 
 		return $controller;

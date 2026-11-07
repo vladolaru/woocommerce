@@ -1,0 +1,4 @@
+Significance: patch
+Type: dev
+Comment: Multi-Currency reads the stack and extension checks through injected services; no behaviour change.
+

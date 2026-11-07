@@ -3,45 +3,59 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\MultiCurrency;
 
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\RequestContext;
+
 /**
  * Runs a callback with given calls on the PHP call stack, for the Multi-Currency compatibility checks that look for a
  * caller in the backtrace (`Class->method`, `Class::method`).
  *
  * WooCommerce's own methods run for real until a hook inside them, where the callback runs and the rest of the method is
- * skipped. An extension's class is declared as a stub whose method runs the callback, so a test that names one must run in
- * its own process: the stub would otherwise stay declared for every later test.
+ * skipped, so the check finds them on the real stack. An extension's call is declared around the callback instead, and
+ * only the request context from request_context() sees it, so no extension class is declared and the tests run in
+ * process.
  */
 final class CallStack {
 
 	/**
-	 * Extension classes the compatibility checks look for, with the methods each is called through (`::` for static), as
-	 * client 11.1.0 names them in `includes/multi-currency/` (cited per row).
+	 * Extension calls declared around the running callback, the first one outermost.
 	 *
-	 * The stubs are test scaffolding: each declared method takes the callback CallStack passes and runs it, which the real
-	 * extension method's signature does not; only the class and method names, and static or not, come from the source.
+	 * @var string[]
 	 */
-	private const EXTENSION_METHODS = array(
-		'WC_Product_Booking'           => array( 'get_price_html' ), // Client 11.1.0 Compatibility/WooCommerceBookings.php:108,142.
-		'WC_Bookings_Cost_Calculation' => array( '::calculate_booking_cost' ), // Client 11.1.0 Compatibility/WooCommerceBookings.php:98.
-		'WC_Deposits_Cart_Manager'     => array( 'deposits_form_output' ), // Client 11.1.0 Compatibility/WooCommerceDeposits.php:73.
-		'WC_Shipping_Fedex'            => array( 'set_settings', 'per_item_shipping', 'box_shipping', 'get_fedex_api_request', 'get_fedex_requests', 'process_result' ), // Client 11.1.0 Compatibility/WooCommerceFedEx.php:22-27.
-		'WC_Shipping_UPS'              => array( 'per_item_shipping', 'box_shipping', 'calculate_shipping' ), // Client 11.1.0 Compatibility/WooCommerceUPS.php:44-46.
-		'WC_Points_Rewards_Discount'   => array( 'get_discount_data' ), // Client 11.1.0 Compatibility/WooCommercePointsAndRewards.php:59.
-		'WC_Subscription'              => array( 'get_formatted_order_total' ), // Client 11.1.0 Compatibility/WooCommerceSubscriptions.php:331.
-		'WCS_Template_Loader'          => array( '::get_my_subscriptions' ), // Client 11.1.0 Compatibility/WooCommerceSubscriptions.php:330.
-		'WCS_Cart_Renewal'             => array( 'setup_cart' ), // Client 11.1.0 Compatibility/WooCommerceSubscriptions.php:230.
-		'WCS_Cart_Early_Renewal'       => array( 'setup_cart' ), // Client 11.1.0 Compatibility/WooCommerceSubscriptions.php:284.
-		'WC_Subscriptions_Cart'        => array( '::set_subscription_prices_for_calculation' ), // Client 11.1.0 Compatibility/WooCommerceSubscriptions.php:122.
-		'WC_Subscriptions_Product'     => array( '::get_sign_up_fee', '::get_price' ), // Client 11.1.0 Compatibility/WooCommerceSubscriptions.php:127; Subscriptions 9.3.0 includes/core/class-wc-subscriptions-product.php:553.
-		'WCS_Switch_Totals_Calculator' => array( 'apportion_sign_up_fees' ), // Client 11.1.0 Compatibility/WooCommerceSubscriptions.php:130.
-	);
+	private static array $extension_calls = array();
 
 	/**
-	 * Stub classes this process declared.
+	 * A request context whose backtrace check finds the declared extension calls, or else reads the real call stack.
 	 *
-	 * @var array<string,bool>
+	 * @return RequestContext
 	 */
-	private static array $declared = array();
+	public static function request_context(): RequestContext {
+		return new class() extends RequestContext {
+			/**
+			 * Tell whether any of the calls is a declared extension call or appears on the real call stack.
+			 *
+			 * @param string[] $calls Expected calls.
+			 * @return bool
+			 */
+			public function is_call_in_backtrace( array $calls ): bool {
+				foreach ( $calls as $call ) {
+					if ( in_array( $call, CallStack::extension_calls(), true ) ) {
+						return true;
+					}
+				}
+
+				return parent::is_call_in_backtrace( $calls );
+			}
+		};
+	}
+
+	/**
+	 * The extension calls declared around the running callback.
+	 *
+	 * @return string[]
+	 */
+	public static function extension_calls(): array {
+		return self::$extension_calls;
+	}
 
 	/**
 	 * Run a callback with the calls on the stack, the first one outermost.
@@ -83,7 +97,7 @@ final class CallStack {
 				return self::inside_hook( 'woocommerce_coupon_error', $inner, static fn() => ( new \WC_Discounts() )->apply_coupon( new \WC_Coupon() ) );
 		}
 
-		return self::through_stub( $call, $inner );
+		return self::as_extension_call( $call, $inner );
 	}
 
 	/**
@@ -123,47 +137,20 @@ final class CallStack {
 	}
 
 	/**
-	 * Run the work through a stub of the extension's class and method.
+	 * Run the work with an extension's call declared, for the request context from request_context() to find.
 	 *
-	 * @param string   $call  Call as `Class->method` or `Class::method`.
-	 * @param callable $inner Work to run inside the method.
+	 * @param string   $call  Call as `Class->method` or `Class::method`, spelled as the compatibility class lists it.
+	 * @param callable $inner Work to run inside the call.
 	 * @return mixed The work's result.
 	 */
-	private static function through_stub( string $call, callable $inner ) {
-		$is_static                   = false !== strpos( $call, '::' );
-		list( $class_name, $method ) = explode( $is_static ? '::' : '->', $call, 2 );
-		self::declare_stub( $class_name );
+	private static function as_extension_call( string $call, callable $inner ) {
+		self::$extension_calls[] = $call;
 
-		return $is_static ? $class_name::$method( $inner ) : ( new $class_name() )->$method( $inner );
-	}
-
-	/**
-	 * Declare an extension class as a stub with every method the checks look for.
-	 *
-	 * @param string $class_name Fully qualified class name.
-	 */
-	private static function declare_stub( string $class_name ): void {
-		if ( isset( self::$declared[ $class_name ] ) ) {
-			return;
+		try {
+			return $inner();
+		} finally {
+			array_pop( self::$extension_calls );
 		}
-		if ( ! isset( self::EXTENSION_METHODS[ $class_name ] ) ) {
-			throw new \LogicException( "No stub is known for {$class_name}." ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Test helper message.
-		}
-		if ( class_exists( $class_name, false ) ) {
-			throw new \LogicException( "{$class_name} already exists in this process; run the test in its own process." ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Test helper message.
-		}
-
-		$position  = strrpos( $class_name, '\\' );
-		$namespace = false === $position ? '' : substr( $class_name, 0, $position );
-		$short     = false === $position ? $class_name : substr( $class_name, $position + 1 );
-		$methods   = '';
-		foreach ( self::EXTENSION_METHODS[ $class_name ] as $method ) {
-			$methods .= 0 === strpos( $method, '::' )
-				? 'public static function ' . substr( $method, 2 ) . '( callable $c ) { return $c(); } '
-				: 'public function ' . $method . '( callable $c ) { return $c(); } ';
-		}
-		eval( "namespace {$namespace} { class {$short} { {$methods} } }" ); // phpcs:ignore Squiz.PHP.Eval.Discouraged -- Test stub of an extension class the backtrace checks name.
-		self::$declared[ $class_name ] = true;
 	}
 
 	/**

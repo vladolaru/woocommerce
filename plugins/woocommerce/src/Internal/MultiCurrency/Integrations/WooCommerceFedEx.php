@@ -38,14 +38,23 @@ class WooCommerceFedEx implements RegisterHooksInterface {
 	private MultiCurrencyRuntimeArbiter $arbiter;
 
 	/**
+	 * Request context, which reads the call stack.
+	 *
+	 * @var RequestContext
+	 */
+	private RequestContext $request_context;
+
+	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
 	 *
-	 * @param MultiCurrencyRuntimeArbiter $arbiter Runtime owner arbiter.
+	 * @param MultiCurrencyRuntimeArbiter $arbiter         Runtime owner arbiter.
+	 * @param RequestContext              $request_context Request context.
 	 */
-	final public function init( MultiCurrencyRuntimeArbiter $arbiter ): void {
-		$this->arbiter = $arbiter;
+	final public function init( MultiCurrencyRuntimeArbiter $arbiter, RequestContext $request_context ): void {
+		$this->arbiter         = $arbiter;
+		$this->request_context = $request_context;
 	}
 
 	/**
@@ -85,7 +94,7 @@ class WooCommerceFedEx implements RegisterHooksInterface {
 	 * @return bool
 	 */
 	public function should_convert_product_price( bool $should_convert ): bool {
-		return $should_convert && ! RequestContext::is_call_in_backtrace( self::FEDEX_SHIPPING_CALLS );
+		return $should_convert && ! $this->request_context->is_call_in_backtrace( self::FEDEX_SHIPPING_CALLS );
 	}
 
 	/**
@@ -95,7 +104,7 @@ class WooCommerceFedEx implements RegisterHooksInterface {
 	 * @return bool
 	 */
 	public function should_return_store_currency( bool $should_return ): bool {
-		return $should_return || RequestContext::is_call_in_backtrace( self::FEDEX_SHIPPING_CALLS );
+		return $should_return || $this->request_context->is_call_in_backtrace( self::FEDEX_SHIPPING_CALLS );
 	}
 
 	/**
