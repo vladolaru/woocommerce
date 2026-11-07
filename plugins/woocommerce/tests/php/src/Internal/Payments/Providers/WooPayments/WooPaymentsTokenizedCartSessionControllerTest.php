@@ -117,28 +117,41 @@ class WooPaymentsTokenizedCartSessionControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should leave normal WooCommerce sessions untouched when the product-page nonce is missing.
-	 */
-	public function test_keeps_default_handler_without_session_nonce(): void {
-		$this->set_store_api_request();
-		$this->sut = $this->create_controller();
-
-		$this->assertSame( 'WC_Session_Handler', $this->sut->handle_woocommerce_session_handler( 'WC_Session_Handler' ) );
-	}
-
-	/**
-	 * @testdox Should leave the session of a page request alone when only its query string holds the Store API path.
+	 * @testdox Should leave the WooCommerce session alone for a Store API request without the product-page nonce, and for a page whose query string holds the Store API path: $_dataName.
 	 *
 	 * WordPress routes /some-page/?redirect_to=/wp-json/wc/store/v1/cart to the page, not to the REST API, so the request
 	 * keeps its session even with a valid product-page session nonce.
+	 *
+	 * @dataProvider provide_requests_that_keep_the_default_handler
+	 *
+	 * @param string $request_uri Request URI.
+	 * @param string $rest_route  The rest_route query argument, or '' for none.
+	 * @param bool   $with_nonce  Whether the request carries a valid product-page session nonce.
 	 */
-	public function test_keeps_default_handler_for_a_page_whose_query_string_holds_the_store_api_path(): void {
-		$_SERVER['REQUEST_URI']                                     = '/some-page/?redirect_to=/wp-json/wc/store/v1/cart';
-		$_SERVER['HTTP_X_WOOPAYMENTS_TOKENIZED_CART_SESSION_NONCE'] = wp_create_nonce( 'woopayments_tokenized_cart_session_nonce' );
+	public function test_keeps_default_handler( string $request_uri, string $rest_route, bool $with_nonce ): void {
+		$_SERVER['REQUEST_URI'] = $request_uri;
+		if ( '' !== $rest_route ) {
+			$_GET['rest_route'] = $rest_route;
+		}
+		if ( $with_nonce ) {
+			$_SERVER['HTTP_X_WOOPAYMENTS_TOKENIZED_CART_SESSION_NONCE'] = wp_create_nonce( 'woopayments_tokenized_cart_session_nonce' );
+		}
 		$this->sut = $this->create_controller();
 
 		$this->assertSame( 'WC_Session_Handler', $this->sut->handle_woocommerce_session_handler( 'WC_Session_Handler' ) );
 		$this->assertFalse( has_filter( 'woocommerce_persistent_cart_enabled', array( $this->sut, 'disable_persistent_cart' ) ) );
+	}
+
+	/**
+	 * Requests that keep the default session handler.
+	 *
+	 * @return array<string,array{0:string,1:string,2:bool}>
+	 */
+	public function provide_requests_that_keep_the_default_handler(): array {
+		return array(
+			'Store API request without the nonce' => array( '/wp-json/wc/store/v1/cart', '/wc/store/v1/cart', false ),
+			'page whose query string holds the Store API path, with the nonce' => array( '/some-page/?redirect_to=/wp-json/wc/store/v1/cart', '', true ),
+		);
 	}
 
 	/**
@@ -161,55 +174,57 @@ class WooPaymentsTokenizedCartSessionControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should leave non-tokenized Store API requests untouched during pre-dispatch.
+	 * @testdox Should reject a Store API request with tokenized markers but no valid product-page session nonce during pre-dispatch, and leave other requests untouched: $_dataName.
+	 *
+	 * @dataProvider provide_pre_dispatch_requests
+	 *
+	 * @param string               $request_uri     Request URI.
+	 * @param string               $rest_route      The rest_route query argument, or '' for none.
+	 * @param array<string,string> $headers         Request headers, as $_SERVER keys.
+	 * @param string               $method          REST request method.
+	 * @param string               $route           REST route.
+	 * @param int|null             $expected_status Status of the rejection, or null when the request is left untouched.
 	 */
-	public function test_pre_dispatch_leaves_non_tokenized_requests_untouched(): void {
-		$this->set_store_api_request();
+	public function test_pre_dispatch_rejects_tokenized_markers_without_a_valid_session_nonce( string $request_uri, string $rest_route, array $headers, string $method, string $route, ?int $expected_status ): void {
+		$_SERVER['REQUEST_URI'] = $request_uri;
+		if ( '' !== $rest_route ) {
+			$_GET['rest_route'] = $rest_route;
+		}
+		foreach ( $headers as $header => $value ) {
+			$_SERVER[ $header ] = $value;
+		}
 		$this->sut = $this->create_controller();
 
-		$result = $this->sut->maybe_reject_invalid_tokenized_cart_session( null, null, new WP_REST_Request( 'GET', '/wc/store/v1/cart' ) );
+		$result = $this->sut->maybe_reject_invalid_tokenized_cart_session( null, null, new WP_REST_Request( $method, $route ) );
 
-		$this->assertNull( $result );
+		$this->assertSame( $expected_status, $result instanceof \WP_Error ? ( $result->get_error_data()['status'] ?? 'no status' ) : $result );
 	}
 
 	/**
-	 * @testdox Should reject tokenized Store API markers when the product-page session nonce is missing.
+	 * Pre-dispatch requests and whether they are rejected.
+	 *
+	 * @return array<string,array{0:string,1:string,2:array<string,string>,3:string,4:string,5:int|null}>
 	 */
-	public function test_rejects_tokenized_markers_without_session_nonce(): void {
-		$this->set_store_api_request();
-		$_SERVER['HTTP_X_WOOPAYMENTS_TOKENIZED_CART_SESSION'] = 'token-without-valid-nonce';
-		$this->sut = $this->create_controller();
+	public function provide_pre_dispatch_requests(): array {
+		$store_api = '/wp-json/wc/store/v1/cart';
+		$route     = '/wc/store/v1/cart';
 
-		$result = $this->sut->maybe_reject_invalid_tokenized_cart_session( null, null, new WP_REST_Request( 'POST', '/wc/store/v1/cart/add-item' ) );
-
-		$this->assertWPError( $result );
-		$this->assertSame( 400, $result->get_error_data()['status'] );
-	}
-
-	/**
-	 * @testdox Should leave a REST request outside the Store API untouched during pre-dispatch, tokenized markers or not.
-	 */
-	public function test_pre_dispatch_leaves_other_rest_requests_untouched(): void {
-		$_SERVER['REQUEST_URI']                               = '/wp-json/wc/v3/orders';
-		$_SERVER['HTTP_X_WOOPAYMENTS_TOKENIZED_CART_SESSION'] = 'token-without-valid-nonce';
-		$this->sut = $this->create_controller();
-
-		$this->assertNull( $this->sut->maybe_reject_invalid_tokenized_cart_session( null, null, new WP_REST_Request( 'GET', '/wc/v3/orders' ) ) );
-	}
-
-	/**
-	 * @testdox Should reject tokenized checkout markers when the product-page session nonce is invalid.
-	 */
-	public function test_rejects_tokenized_checkout_marker_with_invalid_session_nonce(): void {
-		$this->set_store_api_request();
-		$_SERVER['HTTP_X_WOOPAYMENTS_TOKENIZED_CART_SESSION_NONCE'] = 'expired-session-nonce';
-		$_SERVER['HTTP_X_WOOPAYMENTS_TOKENIZED_CART']               = 'true';
-		$this->sut = $this->create_controller();
-
-		$result = $this->sut->maybe_reject_invalid_tokenized_cart_session( null, null, new WP_REST_Request( 'POST', '/wc/store/v1/checkout' ) );
-
-		$this->assertWPError( $result );
-		$this->assertSame( 400, $result->get_error_data()['status'] );
+		return array(
+			'non-tokenized Store API request'       => array( $store_api, $route, array(), 'GET', '/wc/store/v1/cart', null ),
+			'REST request outside the Store API, with markers' => array( '/wp-json/wc/v3/orders', '', array( 'HTTP_X_WOOPAYMENTS_TOKENIZED_CART_SESSION' => 'token-without-valid-nonce' ), 'GET', '/wc/v3/orders', null ),
+			'tokenized markers without the nonce'   => array( $store_api, $route, array( 'HTTP_X_WOOPAYMENTS_TOKENIZED_CART_SESSION' => 'token-without-valid-nonce' ), 'POST', '/wc/store/v1/cart/add-item', 400 ),
+			'checkout marker with an invalid nonce' => array(
+				$store_api,
+				$route,
+				array(
+					'HTTP_X_WOOPAYMENTS_TOKENIZED_CART_SESSION_NONCE' => 'expired-session-nonce',
+					'HTTP_X_WOOPAYMENTS_TOKENIZED_CART' => 'true',
+				),
+				'POST',
+				'/wc/store/v1/checkout',
+				400,
+			),
+		);
 	}
 
 	/**
