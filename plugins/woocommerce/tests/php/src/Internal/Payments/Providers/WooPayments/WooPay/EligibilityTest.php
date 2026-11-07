@@ -520,49 +520,34 @@ class EligibilityTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should treat every country as WooPay-available in test mode.
+	 * @testdox WooPay's country availability follows test mode and the platform-synced country list: $label.
+	 *
+	 * Test mode makes every country available; in live mode the geolocated country must be on the synced list, which
+	 * defaults to US only, also when the stored list is malformed.
+	 *
+	 * @testWith ["test mode", true, "DE", "[\"US\"]", true]
+	 *           ["live mode, default US-only list", false, "DE", null, false]
+	 *           ["live mode, synced list with DE", false, "DE", "[\"US\",\"DE\"]", true]
+	 *           ["live mode, malformed list", false, "US", "not-json", true]
+	 *
+	 * @param string      $label       Case label.
+	 * @param bool        $test_mode   Whether the account is in test mode.
+	 * @param string      $country     The shopper's geolocated country.
+	 * @param string|null $stored_list The stored country list, or null for none.
+	 * @param bool        $expected    Whether WooPay is available to the shopper.
 	 */
-	public function test_country_availability_short_circuits_in_test_mode(): void {
+	public function test_country_availability_follows_test_mode_and_the_synced_list( string $label, bool $test_mode, string $country, ?string $stored_list, bool $expected ): void {
+		unset( $label );
 		add_filter( 'woocommerce_is_checkout', '__return_true' );
-		add_filter( 'woocommerce_geolocate_ip', static fn() => 'DE' );
-		update_option( 'woocommerce_woocommerce_payments_woopay_available_countries', wp_json_encode( array( 'US' ) ) );
-
+		add_filter( 'woocommerce_geolocate_ip', static fn() => $country );
+		if ( null !== $stored_list ) {
+			update_option( 'woocommerce_woocommerce_payments_woopay_available_countries', $stored_list );
+		}
 		add_filter( 'wcpay_force_network_saved_cards', '__return_true' );
-		$sut = $this->create_eligibility();
 
-		$this->assertTrue( $sut->should_load_woopay_save_user_assets() );
-	}
+		$sut = $this->create_eligibility( array(), array(), null, null, null, $test_mode );
 
-	/**
-	 * @testdox Should geolocate the shopper against the platform-synced country list in live mode.
-	 */
-	public function test_country_availability_geolocates_against_synced_list_in_live_mode(): void {
-		add_filter( 'woocommerce_is_checkout', '__return_true' );
-		add_filter( 'woocommerce_geolocate_ip', static fn() => 'DE' );
-
-		add_filter( 'wcpay_force_network_saved_cards', '__return_true' );
-		$sut = $this->create_eligibility( array(), array(), null, null, null, false );
-
-		// The synced list defaults to US only, so a DE shopper is unavailable.
-		$this->assertFalse( $sut->should_load_woopay_save_user_assets() );
-
-		// Once the platform-synced list includes DE, the same shopper is available.
-		update_option( 'woocommerce_woocommerce_payments_woopay_available_countries', wp_json_encode( array( 'US', 'DE' ) ) );
-		$this->assertTrue( $sut->should_load_woopay_save_user_assets() );
-	}
-
-	/**
-	 * @testdox Should fall back to the US-only default when the synced country list is malformed.
-	 */
-	public function test_country_availability_falls_back_to_default_on_malformed_list(): void {
-		add_filter( 'woocommerce_is_checkout', '__return_true' );
-		add_filter( 'woocommerce_geolocate_ip', static fn() => 'US' );
-		update_option( 'woocommerce_woocommerce_payments_woopay_available_countries', 'not-json' );
-
-		add_filter( 'wcpay_force_network_saved_cards', '__return_true' );
-		$sut = $this->create_eligibility( array(), array(), null, null, null, false );
-
-		$this->assertTrue( $sut->should_load_woopay_save_user_assets() );
+		$this->assertSame( $expected, $sut->should_load_woopay_save_user_assets() );
 	}
 
 	/**
