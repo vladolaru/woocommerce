@@ -192,11 +192,15 @@ class MultiCurrencySwitcherBlockControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should render callback delegate to projection service.
+	 * @testdox Should render the block through the switcher renderer with its attributes, the query arguments and the switching decision: switching disabled $switching_disabled.
+	 * @testWith [false]
+	 *           [true]
+	 *
+	 * @param bool $switching_disabled Whether currency switching is disabled.
 	 */
-	public function test_render_callback_delegates_to_the_switcher_renderer(): void {
+	public function test_render_callback_delegates_to_the_switcher_renderer( bool $switching_disabled ): void {
 		$switcher_renderer = $this->create_switcher_renderer();
-		$sut               = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $switcher_renderer );
+		$sut               = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $switcher_renderer, $switching_disabled );
 		$_GET['currency']  = 'EUR';
 		$_GET['orderby']   = 'price';
 
@@ -222,19 +226,7 @@ class MultiCurrencySwitcherBlockControllerTest extends WC_Unit_Test_Case {
 			),
 			$switcher_renderer->last_query_args
 		);
-		$this->assertFalse( $switcher_renderer->last_switching_disabled );
-	}
-
-	/**
-	 * @testdox Should render callback pass switching disabled decision.
-	 */
-	public function test_render_callback_passes_switching_disabled_decision(): void {
-		$switcher_renderer = $this->create_switcher_renderer();
-		$sut               = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $switcher_renderer, true );
-
-		$sut->render_block_widget( array() );
-
-		$this->assertTrue( $switcher_renderer->last_switching_disabled );
+		$this->assertSame( $switching_disabled, $switcher_renderer->last_switching_disabled );
 	}
 
 	/**

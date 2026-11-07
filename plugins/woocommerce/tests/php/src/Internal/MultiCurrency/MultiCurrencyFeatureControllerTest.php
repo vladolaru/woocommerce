@@ -282,14 +282,19 @@ class MultiCurrencyFeatureControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should protect disabling for real posts-storage Multi-Currency metadata.
+	 * @testdox Should disable the "no" choice for a real order with Multi-Currency data in the order storage in use: $_dataName.
+	 * @testWith ["posts tables", false]
+	 *           ["HPOS tables", true]
+	 *
+	 * @param string $storage Order storage label.
+	 * @param bool   $hpos    Whether orders are stored in the HPOS tables.
 	 */
-	public function test_get_feature_setting_disables_no_for_real_posts_storage_order(): void {
+	public function test_get_feature_setting_disables_no_for_a_real_order_in_the_storage_in_use( string $storage, bool $hpos ): void {
+		unset( $storage );
 		update_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
-		$order_id = $this->factory->post->create( array( 'post_type' => 'shop_order' ) );
-		add_post_meta( $order_id, '_wcpay_multi_currency_order_exchange_rate', '0.9' );
+		$this->add_order_with_an_exchange_rate( $hpos );
 		$detector = new UsageDetector();
-		add_filter( 'pre_option_' . CustomOrdersTableController::CUSTOM_ORDERS_TABLE_USAGE_ENABLED_OPTION, static fn(): string => 'no' );
+		add_filter( 'pre_option_' . CustomOrdersTableController::CUSTOM_ORDERS_TABLE_USAGE_ENABLED_OPTION, static fn(): string => $hpos ? 'yes' : 'no' );
 		$this->sut = new MultiCurrencyFeatureController();
 		$this->sut->init( $detector, $this->create_runtime_arbiter( false ) );
 		delete_transient( UsageDetector::HAS_MC_ORDERS_TRANSIENT );
@@ -298,10 +303,17 @@ class MultiCurrencyFeatureControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should protect disabling for real HPOS Multi-Currency metadata.
+	 * Store an order with a Multi-Currency exchange rate in the posts tables or the HPOS tables.
+	 *
+	 * @param bool $hpos Whether to store it in the HPOS tables.
 	 */
-	public function test_get_feature_setting_disables_no_for_real_hpos_storage_order(): void {
-		update_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
+	private function add_order_with_an_exchange_rate( bool $hpos ): void {
+		if ( ! $hpos ) {
+			$order_id = $this->factory->post->create( array( 'post_type' => 'shop_order' ) );
+			add_post_meta( $order_id, '_wcpay_multi_currency_order_exchange_rate', '0.9' );
+			return;
+		}
+
 		$order = wc_create_order();
 		wc_get_container()->get( OrdersTableDataStoreMeta::class )->add_meta(
 			$order,
@@ -312,13 +324,6 @@ class MultiCurrencyFeatureControllerTest extends WC_Unit_Test_Case {
 				)
 			)
 		);
-		$detector = new UsageDetector();
-		add_filter( 'pre_option_' . CustomOrdersTableController::CUSTOM_ORDERS_TABLE_USAGE_ENABLED_OPTION, static fn(): string => 'yes' );
-		$this->sut = new MultiCurrencyFeatureController();
-		$this->sut->init( $detector, $this->create_runtime_arbiter( false ) );
-		delete_transient( UsageDetector::HAS_MC_ORDERS_TRANSIENT );
-
-		$this->assertSame( array( 'no' ), $this->sut->get_feature_setting()['disabled']() );
 	}
 
 	/**

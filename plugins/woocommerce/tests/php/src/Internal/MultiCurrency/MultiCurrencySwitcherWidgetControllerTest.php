@@ -89,24 +89,18 @@ class MultiCurrencySwitcherWidgetControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should return empty markup before the switcher widget is registered.
+	 * @testdox Should return empty markup when the widget factory no longer holds the registered widget: $_dataName.
+	 * @dataProvider provide_broken_widget_factories
+	 *
+	 * @param string $break_factory Fixture method that breaks the widget factory after registration.
 	 */
-	public function test_returns_empty_markup_before_switcher_widget_is_registered(): void {
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
-
-		$this->assertSame( '', $sut->get_switcher_widget_markup() );
-	}
-
-	/**
-	 * @testdox Should return empty markup when the widget factory is malformed.
-	 */
-	public function test_returns_empty_markup_when_widget_factory_is_malformed(): void {
+	public function test_returns_empty_markup_when_registered_widget_is_absent_from_factory( string $break_factory ): void {
 		global $wp_widget_factory;
 
 		$sut              = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
 		$original_widgets = $wp_widget_factory->widgets;
 		$sut->handle_widgets_init();
-		$wp_widget_factory->widgets = null;
+		$this->$break_factory();
 
 		try {
 			$this->assertSame( '', $sut->get_switcher_widget_markup() );
@@ -116,14 +110,24 @@ class MultiCurrencySwitcherWidgetControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should return empty markup when the registered widget is absent from the factory.
+	 * Broken widget factories: the registered widget removed, and a malformed factory without a widget list.
+	 *
+	 * @return array<string,array{0:string}>
 	 */
-	public function test_returns_empty_markup_when_registered_widget_is_absent_from_factory(): void {
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
-		$sut->handle_widgets_init();
-		$this->remove_registered_switcher_widgets();
+	public static function provide_broken_widget_factories(): array {
+		return array(
+			'the registered widget removed' => array( 'remove_registered_switcher_widgets' ),
+			'a malformed factory'           => array( 'empty_the_widget_factory' ),
+		);
+	}
 
-		$this->assertSame( '', $sut->get_switcher_widget_markup() );
+	/**
+	 * Leave the widget factory without a widget list, as a plugin that replaces it badly can.
+	 */
+	private function empty_the_widget_factory(): void {
+		global $wp_widget_factory;
+
+		$wp_widget_factory->widgets = null;
 	}
 
 	/**
@@ -317,13 +321,17 @@ class MultiCurrencySwitcherWidgetControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should render projection markup with query args.
+	 * @testdox Should render the widget through the switcher renderer with its instance, arguments, the query arguments and the switching decision: switching disabled $switching_disabled.
+	 * @testWith [false]
+	 *           [true]
+	 *
+	 * @param bool $switching_disabled Whether currency switching is disabled.
 	 */
-	public function test_widget_renders_the_switcher_renderer_markup_with_query_args(): void {
+	public function test_widget_renders_the_switcher_renderer_markup_with_query_args( bool $switching_disabled ): void {
 		$switcher_renderer = $this->create_switcher_renderer();
 		$_GET['currency']  = 'EUR';
 		$_GET['s']         = 'shirts';
-		$widget            = $this->create_widget( $switcher_renderer );
+		$widget            = $this->create_widget( $switcher_renderer, $switching_disabled );
 
 		ob_start();
 		$widget->widget(
@@ -360,21 +368,7 @@ class MultiCurrencySwitcherWidgetControllerTest extends WC_Unit_Test_Case {
 			),
 			$switcher_renderer->last_query_args
 		);
-		$this->assertFalse( $switcher_renderer->last_switching_disabled );
-	}
-
-	/**
-	 * @testdox Should pass switching disabled decision to projection.
-	 */
-	public function test_widget_passes_switching_disabled_decision_to_the_switcher_renderer(): void {
-		$switcher_renderer = $this->create_switcher_renderer();
-		$widget            = $this->create_widget( $switcher_renderer, true );
-
-		ob_start();
-		$widget->widget( array(), array() );
-		ob_end_clean();
-
-		$this->assertTrue( $switcher_renderer->last_switching_disabled );
+		$this->assertSame( $switching_disabled, $switcher_renderer->last_switching_disabled );
 	}
 
 	/**

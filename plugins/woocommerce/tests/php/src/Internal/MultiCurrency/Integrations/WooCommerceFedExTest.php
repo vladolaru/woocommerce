@@ -107,32 +107,44 @@ class WooCommerceFedExTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should suppress product conversion during FedEx shipping calculations.
+	 * @testdox Should answer for the store currency inside each FedEx shipping calculation, and pass the decision through outside: $_dataName.
+	 * @dataProvider provide_fedex_decisions
+	 *
+	 * @param string            $method  Compatibility decision.
+	 * @param array<int,bool[]> $outside Decision in and expected out, outside FedEx.
+	 * @param array<int,bool[]> $inside  Decision in and expected out, inside each FedEx call.
 	 */
-	public function test_suppresses_product_conversion_during_fedex_shipping_calculations(): void {
+	public function test_answers_for_the_store_currency_inside_fedex_shipping_calculations( string $method, array $outside, array $inside ): void {
 		$sut = $this->create_controller();
 
-		$this->assertTrue( $sut->should_convert_product_price( true ) );
-		$this->assertFalse( $sut->should_convert_product_price( false ) );
-
-		foreach ( $this->fedex_calls as $fedex_call ) {
-			$this->assertFalse( CallStack::run( array( $fedex_call ), fn() => $sut->should_convert_product_price( true ) ), "Expected {$fedex_call} to suppress conversion." );
+		foreach ( $outside as $step ) {
+			$this->assertSame( $step[1], $sut->$method( $step[0] ), 'Outside FedEx, given ' . var_export( $step[0], true ) ); // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_var_export -- Assertion message.
 		}
-		$this->assertFalse( CallStack::run( array( $this->fedex_calls[0] ), fn() => $sut->should_convert_product_price( false ) ) );
+		foreach ( $this->fedex_calls as $fedex_call ) {
+			foreach ( $inside as $step ) {
+				$this->assertSame( $step[1], CallStack::run( array( $fedex_call ), fn() => $sut->$method( $step[0] ) ), "Inside {$fedex_call}, given " . var_export( $step[0], true ) ); // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_var_export -- Assertion message.
+			}
+		}
 	}
 
 	/**
-	 * @testdox Should force store currency during FedEx shipping calculations.
+	 * The two FedEx decisions: product prices do not convert, and the store currency is returned.
+	 *
+	 * @return array<string,array{0:string,1:array<int,bool[]>,2:array<int,bool[]>}>
 	 */
-	public function test_forces_store_currency_during_fedex_shipping_calculations(): void {
-		$sut = $this->create_controller();
-
-		$this->assertTrue( $sut->should_return_store_currency( true ) );
-		$this->assertFalse( $sut->should_return_store_currency( false ) );
-
-		foreach ( $this->fedex_calls as $fedex_call ) {
-			$this->assertTrue( CallStack::run( array( $fedex_call ), fn() => $sut->should_return_store_currency( false ) ), "Expected {$fedex_call} to force store currency." );
-		}
+	public static function provide_fedex_decisions(): array {
+		return array(
+			'product conversion' => array(
+				'should_convert_product_price',
+				array( array( true, true ), array( false, false ) ),
+				array( array( true, false ), array( false, false ) ),
+			),
+			'store currency'     => array(
+				'should_return_store_currency',
+				array( array( true, true ), array( false, false ) ),
+				array( array( false, true ) ),
+			),
+		);
 	}
 
 	/**

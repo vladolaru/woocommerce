@@ -166,19 +166,6 @@ class MultiCurrencyAdminNoteControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should use provider-neutral account resolver when no test override is set.
-	 */
-	public function test_uses_provider_account_resolver_when_no_override_is_set(): void {
-		$saved_notes = array();
-		$sut         = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, true, false );
-		$this->record_saved_notes( $saved_notes );
-
-		$sut->handle_admin_init();
-
-		$this->assertSame( array(), $saved_notes );
-	}
-
-	/**
 	 * Data provider for add-note blockers.
 	 *
 	 * @return array<string,array{0: bool, 1: bool, 2: bool}>

@@ -101,23 +101,44 @@ class WooCommercePointsAndRewardsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should convert Points and Rewards ratios by selected currency rate.
+	 * @testdox Should convert Points and Rewards ratios by the selected currency's rate, and leave them as they are for the default currency: $_dataName.
+	 * @dataProvider provide_points_ratios
+	 *
+	 * @param bool                 $selected_is_default Whether the selected currency is the store default.
+	 * @param array<string,string> $ratios              Stored ratio => expected ratio.
 	 */
-	public function test_converts_points_rewards_ratios_by_selected_currency_rate(): void {
-		$sut = $this->create_controller();
+	public function test_converts_points_rewards_ratios_only_for_another_currency( bool $selected_is_default, array $ratios ): void {
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, true, false, true, $selected_is_default );
 
-		$this->assertSame( '10:1.6', $sut->convert_points_ratio( '10:2' ) );
-		$this->assertSame( '0:0', $sut->convert_points_ratio( '' ) );
-		$this->assertSame( '0:0', $sut->convert_points_ratio( 'bad' ) );
+		foreach ( $ratios as $ratio => $expected ) {
+			$this->assertSame( $expected, $sut->convert_points_ratio( (string) $ratio ), 'Ratio "' . $ratio . '"' );
+		}
 	}
 
 	/**
-	 * @testdox Should preserve ratios when selected currency is default currency.
+	 * Ratios per selected currency: converted at 0.8 (malformed ones to "0:0"), and kept as they are, malformed ones too,
+	 * for the default currency.
+	 *
+	 * @return array<string,array{0:bool,1:array<string,string>}>
 	 */
-	public function test_preserves_ratios_when_selected_currency_is_default_currency(): void {
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, true, false, true, true );
-
-		$this->assertSame( '10:2', $sut->convert_points_ratio( '10:2' ) );
+	public static function provide_points_ratios(): array {
+		return array(
+			'another currency selected'     => array(
+				false,
+				array(
+					'10:2' => '10:1.6',
+					''     => '0:0',
+					'bad'  => '0:0',
+				),
+			),
+			'the default currency selected' => array(
+				true,
+				array(
+					'10:2' => '10:2',
+					'bad'  => 'bad',
+				),
+			),
+		);
 	}
 
 	/**

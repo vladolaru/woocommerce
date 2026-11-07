@@ -313,42 +313,38 @@ class MultiCurrencyStorefrontIntegrationControllerTest extends WC_Unit_Test_Case
 	}
 
 	/**
-	 * @testdox Should add the default Storefront inline CSS to the Storefront stylesheet.
+	 * @testdox Should add the Storefront widget's inline CSS, or the CSS its filter returns: $_dataName.
+	 * @dataProvider provide_storefront_widget_css
+	 *
+	 * @param string|null $filtered_css CSS the filter returns, or null when nothing filters it.
+	 * @param string      $pattern      Pattern the added style must match whole.
 	 */
-	public function test_enqueues_default_storefront_inline_css(): void {
+	public function test_enqueues_the_storefront_inline_css( ?string $filtered_css, string $pattern ): void {
 		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
+
 		wp_register_style( 'storefront-style', false, array(), '1.0.0' );
+		if ( null !== $filtered_css ) {
+			add_filter( 'wcpay_multi_currency_storefront_widget_css', static fn() => $filtered_css );
+		}
 
 		$sut->handle_wp_enqueue_scripts();
 
 		$style_data = wp_styles()->get_data( 'storefront-style', 'after' );
+
 		$this->assertIsArray( $style_data );
-		$this->assertStringContainsString( '#woocommerce-payments-multi-currency-storefront-widget {', $style_data[0] );
-		$this->assertStringContainsString( 'float: right;', $style_data[0] );
-		$this->assertStringContainsString( '#woocommerce-payments-multi-currency-storefront-widget form {', $style_data[0] );
-		$this->assertStringContainsString( 'margin: 0;', $style_data[0] );
+		$this->assertMatchesRegularExpression( $pattern, $style_data[0] );
 	}
 
 	/**
-	 * @testdox Should enqueue filtered Storefront inline CSS.
+	 * Storefront widget CSS: the default (floated right, its form without a margin), and the filtered CSS as it is.
+	 *
+	 * @return array<string,array{0:string|null,1:string}>
 	 */
-	public function test_enqueues_filtered_storefront_inline_css(): void {
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
-
-		wp_register_style( 'storefront-style', false, array(), '1.0.0' );
-		add_filter(
-			'wcpay_multi_currency_storefront_widget_css',
-			static function () {
-				return '#woocommerce-payments-multi-currency-storefront-widget { float: left; }';
-			}
+	public static function provide_storefront_widget_css(): array {
+		return array(
+			'default'  => array( null, '/^\s*#woocommerce-payments-multi-currency-storefront-widget \{\s*float: right;\s*\}\s*#woocommerce-payments-multi-currency-storefront-widget form \{\s*margin: 0;\s*\}\s*$/' ),
+			'filtered' => array( '#woocommerce-payments-multi-currency-storefront-widget { float: left; }', '/^#woocommerce-payments-multi-currency-storefront-widget \{ float: left; \}$/' ),
 		);
-
-		$sut->handle_wp_enqueue_scripts();
-
-		$style_data = wp_styles()->get_data( 'storefront-style', 'after' );
-
-		$this->assertIsArray( $style_data );
-		$this->assertSame( '#woocommerce-payments-multi-currency-storefront-widget { float: left; }', $style_data[0] );
 	}
 
 	/**

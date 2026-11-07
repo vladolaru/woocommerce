@@ -255,53 +255,43 @@ class WooCommerceSubscriptionsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should preserve explicit currency formatting when no code is needed.
+	 * @testdox Should leave a My Account subscription total's explicit format as it is: $_dataName.
+	 * @dataProvider provide_unchanged_subscription_totals
+	 *
+	 * @param bool               $additional_currencies Whether additional currencies are enabled.
+	 * @param string             $code                  The subscription's currency code.
+	 * @param string[]           $calls                 Calls on the stack while the total formats.
+	 * @param string             $html                  Total markup.
+	 * @param array<int,mixed[]> $overrides            Selected currency in and expected override out.
 	 */
-	public function test_preserves_explicit_currency_formatting_when_no_code_is_needed(): void {
-		$sut          = $this->create_controller();
-		$subscription = $this->create_subscription( 'EUR' );
+	public function test_leaves_a_subscription_total_without_a_needed_code_unchanged( bool $additional_currencies, string $code, array $calls, string $html, array $overrides ): void {
+		$sut          = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, true, false, false, $additional_currencies );
+		$subscription = $this->create_subscription( $code );
 		CallStack::run(
-			array( 'WCS_Template_Loader::get_my_subscriptions' ),
-			function () use ( $sut, $subscription ): void {
+			$calls,
+			function () use ( $sut, $subscription, $html, $overrides ): void {
 				$sut->maybe_set_current_my_account_subscription( array(), $subscription );
 
-				$this->assertSame( '<span>$10.00 EUR</span>', $sut->maybe_get_explicit_format_for_subscription_total( '<span>$10.00 EUR</span>' ) );
-				$this->assertSame( 'GBP', $sut->override_selected_currency( 'GBP' ) );
-				$this->assertSame( 'EUR', $sut->override_selected_currency( false ), 'The template sets the subscription the row formats.' );
+				$this->assertSame( $html, $sut->maybe_get_explicit_format_for_subscription_total( $html ) );
+				foreach ( $overrides as $override ) {
+					$this->assertSame( $override[1], $sut->override_selected_currency( $override[0] ) );
+				}
 			}
 		);
 	}
 
 	/**
-	 * @testdox Should skip explicit subscription total formatting when additional currencies are disabled.
+	 * Totals the explicit format leaves alone: one that already shows its code (under the My Account template, which sets
+	 * the subscription the row formats), one while additional currencies are disabled, and one for a subscription without
+	 * a currency code, which is no currency to switch to (both under the subscription's own total formatting).
+	 *
+	 * @return array<string,array{0:bool,1:string,2:string[],3:string,4:array<int,mixed[]>}>
 	 */
-	public function test_skips_explicit_subscription_total_formatting_when_additional_currencies_are_disabled(): void {
-		$sut          = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, true, false, false, false );
-		$subscription = $this->create_subscription( 'EUR' );
-		CallStack::run(
-			array( 'WC_Subscription->get_formatted_order_total' ),
-			function () use ( $sut, $subscription ): void {
-				$sut->maybe_set_current_my_account_subscription( array(), $subscription );
-
-				$this->assertSame( '<span>$10.00</span>', $sut->maybe_get_explicit_format_for_subscription_total( '<span>$10.00</span>' ) );
-			}
-		);
-	}
-
-	/**
-	 * @testdox Should leave subscription totals unchanged for a subscription without a currency code.
-	 */
-	public function test_leaves_subscription_totals_unchanged_without_a_currency_code(): void {
-		$sut          = $this->create_controller();
-		$subscription = $this->create_subscription( ' ' );
-		CallStack::run(
-			array( 'WC_Subscription->get_formatted_order_total' ),
-			function () use ( $sut, $subscription ): void {
-				$sut->maybe_set_current_my_account_subscription( array(), $subscription );
-
-				$this->assertSame( '<span>$10.00</span>', $sut->maybe_get_explicit_format_for_subscription_total( '<span>$10.00</span>' ) );
-				$this->assertFalse( $sut->override_selected_currency( false ), 'A blank currency code is no currency to switch to.' );
-			}
+	public static function provide_unchanged_subscription_totals(): array {
+		return array(
+			'the code already shown'         => array( true, 'EUR', array( 'WCS_Template_Loader::get_my_subscriptions' ), '<span>$10.00 EUR</span>', array( array( 'GBP', 'GBP' ), array( false, 'EUR' ) ) ),
+			'additional currencies disabled' => array( false, 'EUR', array( 'WC_Subscription->get_formatted_order_total' ), '<span>$10.00</span>', array() ),
+			'a subscription without a code'  => array( true, ' ', array( 'WC_Subscription->get_formatted_order_total' ), '<span>$10.00</span>', array( array( false, false ) ) ),
 		);
 	}
 

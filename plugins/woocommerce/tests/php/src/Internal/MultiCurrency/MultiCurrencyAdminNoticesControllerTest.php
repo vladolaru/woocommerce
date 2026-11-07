@@ -337,13 +337,18 @@ class MultiCurrencyAdminNoticesControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should die for an invalid dismissal nonce.
+	 * @testdox Should die on a dismissal request it must refuse, and keep the notice: $_dataName.
+	 * @dataProvider provide_refused_dismissals
+	 *
+	 * @param string $user_setter Fixture method that sets the current user.
+	 * @param bool   $valid_nonce Whether the request carries a valid nonce.
+	 * @param string $message     Expected wp_die() message.
 	 */
-	public function test_dies_for_invalid_dismissal_nonce(): void {
-		$this->set_current_user_can_manage_woocommerce();
+	public function test_dies_for_a_refused_dismissal_request( string $user_setter, bool $valid_nonce, string $message ): void {
+		$this->$user_setter();
 		update_option( self::NOTICE_OPTION, array( 'Canadian dollar' ) );
 		$_GET[ self::CANONICAL_NOTICE_QUERY ] = 'currency_changed';
-		$_GET[ self::CANONICAL_NONCE_QUERY ]  = 'invalid';
+		$_GET[ self::CANONICAL_NONCE_QUERY ]  = $valid_nonce ? wp_create_nonce( self::NONCE_ACTION ) : 'invalid';
 		$messages                             = array();
 		$sut                                  = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
 		$this->intercept_wp_die( $messages );
@@ -353,30 +358,22 @@ class MultiCurrencyAdminNoticesControllerTest extends WC_Unit_Test_Case {
 		try {
 			$sut->handle_wp_loaded();
 		} finally {
-			$this->assertSame( array( self::NONCE_ERROR ), $messages );
+			$this->assertSame( array( $message ), $messages );
 			$this->assertSame( array( 'Canadian dollar' ), get_option( self::NOTICE_OPTION ) );
 			$this->assertFalse( get_option( self::RATE_NOTICE_DISMISSED_OPTION, false ) );
 		}
 	}
 
 	/**
-	 * @testdox Should die for a forbidden dismissal request.
+	 * Dismissals to refuse: an invalid nonce from a merchant, and a valid one from a user who cannot manage WooCommerce.
+	 *
+	 * @return array<string,array{0:string,1:bool,2:string}>
 	 */
-	public function test_dies_for_forbidden_dismissal_request(): void {
-		$this->set_current_user_cannot_manage_woocommerce();
-		$_GET[ self::CANONICAL_NOTICE_QUERY ] = 'currency_changed';
-		$_GET[ self::CANONICAL_NONCE_QUERY ]  = wp_create_nonce( self::NONCE_ACTION );
-		$messages                             = array();
-		$sut                                  = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
-		$this->intercept_wp_die( $messages );
-
-		$this->expectException( \RuntimeException::class );
-
-		try {
-			$sut->handle_wp_loaded();
-		} finally {
-			$this->assertSame( array( self::FORBIDDEN_ERROR ), $messages );
-		}
+	public static function provide_refused_dismissals(): array {
+		return array(
+			'invalid nonce'      => array( 'set_current_user_can_manage_woocommerce', false, self::NONCE_ERROR ),
+			'missing capability' => array( 'set_current_user_cannot_manage_woocommerce', true, self::FORBIDDEN_ERROR ),
+		);
 	}
 
 	/**

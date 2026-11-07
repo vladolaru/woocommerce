@@ -458,11 +458,21 @@ class MultiCurrencySelectedCurrencyControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should not update geolocation currency when automatic switching is disabled.
+	 * @testdox Should not update the geolocation currency: $_dataName.
+	 * @dataProvider provide_geolocation_update_blockers
+	 *
+	 * @param array<string,string> $options Options the store holds.
+	 * @param array<string,string> $query   Query arguments of the request.
 	 */
-	public function test_does_not_update_geolocation_currency_when_auto_currency_is_disabled(): void {
+	public function test_does_not_update_geolocation_currency_while_blocked( array $options, array $query ): void {
+		foreach ( $options as $name => $value ) {
+			update_option( $name, $value );
+		}
 		$service = $this->create_persistence_service();
 		$sut     = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $service, null, $this->create_geolocation_service( 'CAD' ) );
+		foreach ( $query as $name => $value ) {
+			$_GET[ $name ] = $value;
+		}
 
 		$sut->handle_geolocation_init();
 
@@ -470,17 +480,15 @@ class MultiCurrencySelectedCurrencyControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should not update geolocation currency when switching is disabled.
+	 * Blockers of the geolocation update: automatic switching off, and switching disabled on the order-pay page.
+	 *
+	 * @return array<string,array{0:array<string,string>,1:array<string,string>}>
 	 */
-	public function test_does_not_update_geolocation_currency_when_switching_is_disabled(): void {
-		update_option( 'wcpay_multi_currency_enable_auto_currency', 'yes' );
-		$service               = $this->create_persistence_service();
-		$sut                   = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $service, null, $this->create_geolocation_service( 'CAD' ) );
-		$_GET['pay_for_order'] = '1';
-
-		$sut->handle_geolocation_init();
-
-		$this->assertSame( array(), $service->updated_currencies );
+	public static function provide_geolocation_update_blockers(): array {
+		return array(
+			'automatic switching off' => array( array(), array() ),
+			'switching disabled'      => array( array( 'wcpay_multi_currency_enable_auto_currency' => 'yes' ), array( 'pay_for_order' => '1' ) ),
+		);
 	}
 
 	/**
@@ -634,31 +642,36 @@ class MultiCurrencySelectedCurrencyControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should register geolocation notice when automatic switching passes guards.
+	 * @testdox Should register the geolocation notice once while automatic switching passes its guards, and not while switching is disabled: $_dataName.
+	 * @dataProvider provide_geolocation_notice_requests
+	 *
+	 * @param array<string,string> $query    Query arguments of the request.
+	 * @param int|false            $expected The notice's priority on wp_footer, or false when it is not registered.
 	 */
-	public function test_registers_geolocation_notice_when_auto_currency_passes_guards(): void {
+	public function test_registers_geolocation_notice_only_when_switching_passes_its_guards( array $query, $expected ): void {
 		update_option( 'wcpay_multi_currency_enable_auto_currency', 'yes' );
 		$service = $this->create_persistence_service();
 		$sut     = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $service, null, $this->create_geolocation_service( 'CAD', 'CA' ) );
+		foreach ( $query as $name => $value ) {
+			$_GET[ $name ] = $value;
+		}
 
 		$sut->handle_geolocation_init();
 		$sut->handle_geolocation_init();
 
-		$this->assertSame( 10, has_action( 'wp_footer', array( $sut, 'handle_wp_footer' ) ) );
+		$this->assertSame( $expected, has_action( 'wp_footer', array( $sut, 'handle_wp_footer' ) ) );
 	}
 
 	/**
-	 * @testdox Should not register geolocation notice when switching is disabled.
+	 * Requests for the geolocation notice: one that passes the guards, and the order-pay page, where switching is disabled.
+	 *
+	 * @return array<string,array{0:array<string,string>,1:int|false}>
 	 */
-	public function test_does_not_register_geolocation_notice_when_switching_is_disabled(): void {
-		update_option( 'wcpay_multi_currency_enable_auto_currency', 'yes' );
-		$service               = $this->create_persistence_service();
-		$sut                   = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $service, null, $this->create_geolocation_service( 'CAD', 'CA' ) );
-		$_GET['pay_for_order'] = '1';
-
-		$sut->handle_geolocation_init();
-
-		$this->assertFalse( has_action( 'wp_footer', array( $sut, 'handle_wp_footer' ) ) );
+	public static function provide_geolocation_notice_requests(): array {
+		return array(
+			'guards pass'        => array( array(), 10 ),
+			'switching disabled' => array( array( 'pay_for_order' => '1' ), false ),
+		);
 	}
 
 	/**
@@ -707,60 +720,97 @@ class MultiCurrencySelectedCurrencyControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should not render geolocation notice for the store default currency.
-	 */
-	public function test_does_not_render_geolocation_notice_for_store_default_currency(): void {
-		$store_currency = get_woocommerce_currency();
-		$service        = $this->create_persistence_service( true, $store_currency );
-		$sut            = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $service, null, $this->create_geolocation_service( $store_currency, 'US' ) );
-
-		ob_start();
-		$sut->handle_wp_footer();
-		$markup = (string) ob_get_clean();
-
-		$this->assertSame( '', $markup );
-	}
-
-	/**
-	 * @testdox Should not render geolocation notice for another selected currency.
-	 */
-	public function test_does_not_render_geolocation_notice_for_other_selected_currency(): void {
-		$service = $this->create_persistence_service( true, 'CAD' );
-		$sut     = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $service, null, $this->create_geolocation_service( 'EUR', 'FR' ) );
-
-		ob_start();
-		$sut->handle_wp_footer();
-		$markup = (string) ob_get_clean();
-
-		$this->assertSame( '', $markup );
-	}
-
-	/**
-	 * @testdox Should show the automatic-switch banner in the settings Preview simulation.
+	 * @testdox Should not render the geolocation notice: $_dataName.
+	 * @dataProvider provide_selections_without_a_geolocation_notice
 	 *
-	 * Client 11.1.0 MultiCurrency.php:1466-1476 and 1970-2012: with
-	 * is_mc_onboarding_simulation and enable_auto_currency in the query, a USD store
-	 * pretends the visitor is in the United Kingdom (any other store: the United
-	 * States) and always prints the notice, even with automatic switching off and
-	 * the store currency selected.
+	 * @param string $selected            Selected currency.
+	 * @param string $geolocated_currency Currency of the shopper's location.
+	 * @param string $country             The shopper's country.
 	 */
-	public function test_simulation_shows_auto_switch_notice(): void {
+	public function test_does_not_render_geolocation_notice_without_a_geolocated_selection( string $selected, string $geolocated_currency, string $country ): void {
+		$service = $this->create_persistence_service( true, $selected );
+		$sut     = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $service, null, $this->create_geolocation_service( $geolocated_currency, $country ) );
+
+		ob_start();
+		$sut->handle_wp_footer();
+		$markup = (string) ob_get_clean();
+
+		$this->assertSame( '', $markup );
+	}
+
+	/**
+	 * Selections without a notice: the store default currency (USD), and a selected currency other than the geolocated one.
+	 *
+	 * @return array<string,array{0:string,1:string,2:string}>
+	 */
+	public static function provide_selections_without_a_geolocation_notice(): array {
+		return array(
+			'the store default currency' => array( 'USD', 'USD', 'US' ),
+			'another selected currency'  => array( 'CAD', 'EUR', 'FR' ),
+		);
+	}
+
+	/**
+	 * @testdox Should show the simulated automatic-switch notice only with the simulation flag and automatic switching on: $_dataName.
+	 * @dataProvider provide_simulation_requests
+	 *
+	 * @param array<string,string> $query            Query arguments of the request.
+	 * @param int|false            $simulation_footer Priority of the simulation banner on wp_footer, or false.
+	 * @param int|false            $notice_footer     Priority of the geolocation notice on wp_footer, or false.
+	 * @param string[]             $markup            Text the notice renders.
+	 */
+	public function test_simulation_shows_the_auto_switch_notice_only_with_its_flag_and_auto_currency( array $query, $simulation_footer, $notice_footer, array $markup ): void {
 		update_option( 'woocommerce_currency', 'USD' );
-		$_GET['is_mc_onboarding_simulation'] = '1';
-		$_GET['enable_storefront_switcher']  = 'false';
-		$_GET['enable_auto_currency']        = 'true';
-		$sut                                 = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $this->create_persistence_service( true, 'USD' ), null, $this->create_geolocation_service( 'USD', 'US' ) );
+		foreach ( $query as $name => $value ) {
+			$_GET[ $name ] = $value;
+		}
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $this->create_persistence_service( true, 'USD' ), null, $this->create_geolocation_service( 'USD', 'US' ) );
 
 		$sut->handle_simulation_init();
 
-		$this->assertSame( 10, has_action( 'wp_footer', array( $sut, 'handle_wp_footer' ) ) );
+		$this->assertSame( $simulation_footer, has_action( 'wp_footer', array( $sut, 'handle_simulation_wp_footer' ) ) );
+		$this->assertSame( $notice_footer, has_action( 'wp_footer', array( $sut, 'handle_wp_footer' ) ) );
 
 		ob_start();
 		$sut->handle_wp_footer();
-		$markup = (string) ob_get_clean();
+		$rendered = (string) ob_get_clean();
 
-		$this->assertStringContainsString( "We noticed you're visiting from United Kingdom (UK). We've updated our prices to Pound sterling for your shopping convenience.", $markup );
-		$this->assertStringContainsString( 'Use United States (US) dollar instead.', $markup );
+		foreach ( $markup as $text ) {
+			$this->assertStringContainsString( $text, $rendered );
+		}
+	}
+
+	/**
+	 * Simulation requests: the flag with automatic switching on, no flag, and the flag with automatic switching off.
+	 *
+	 * @return array<string,array{0:array<string,string>,1:int|false,2:int|false,3:string[]}>
+	 */
+	public static function provide_simulation_requests(): array {
+		return array(
+			'flag and automatic switching on' => array(
+				array(
+					'is_mc_onboarding_simulation' => '1',
+					'enable_storefront_switcher'  => 'false',
+					'enable_auto_currency'        => 'true',
+				),
+				10,
+				10,
+				array(
+					"We noticed you're visiting from United Kingdom (UK). We've updated our prices to Pound sterling for your shopping convenience.",
+					'Use United States (US) dollar instead.',
+				),
+			),
+			'no flag'                         => array( array(), false, false, array() ),
+			'automatic switching off'         => array(
+				array(
+					'is_mc_onboarding_simulation' => '1',
+					'enable_auto_currency'        => 'false',
+				),
+				10,
+				false,
+				array(),
+			),
+		);
 	}
 
 	/**
@@ -821,22 +871,6 @@ class MultiCurrencySelectedCurrencyControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should leave the store alone without a simulation, and skip the banner when the simulation turns it off.
-	 */
-	public function test_no_simulation_banner_without_flag_or_auto_currency(): void {
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $this->create_persistence_service() );
-		$sut->handle_simulation_init();
-		$this->assertFalse( has_action( 'wp_footer', array( $sut, 'handle_simulation_wp_footer' ) ) );
-		$this->assertFalse( has_action( 'wp_footer', array( $sut, 'handle_wp_footer' ) ) );
-
-		$_GET['is_mc_onboarding_simulation'] = '1';
-		$_GET['enable_auto_currency']        = 'false';
-		$sut->handle_simulation_init();
-		$this->assertSame( 10, has_action( 'wp_footer', array( $sut, 'handle_simulation_wp_footer' ) ) );
-		$this->assertFalse( has_action( 'wp_footer', array( $sut, 'handle_wp_footer' ) ) );
-	}
-
-	/**
 	 * @testdox Should register the simulation on frontend requests after geolocation.
 	 */
 	public function test_registers_simulation_hook(): void {
@@ -888,21 +922,25 @@ class MultiCurrencySelectedCurrencyControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should not redirect Store API currency switches with price filters.
+	 * @testdox Should switch the currency without a redirect on a Store API request with price filters: $_dataName.
+	 * @dataProvider provide_store_api_currency_switches
+	 *
+	 * @param array<string,string> $query       Query arguments of the request.
+	 * @param string               $request_uri Request URI.
 	 */
-	public function test_does_not_redirect_store_api_currency_switch_with_price_filters(): void {
-		$service                = $this->create_persistence_service();
-		$sut                    = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $service );
-		$_GET['currency']       = 'eur';
-		$_GET['min_price']      = '10';
-		$_GET['max_price']      = '50';
+	public function test_does_not_redirect_store_api_currency_switch_with_price_filters( array $query, string $request_uri ): void {
+		$service = $this->create_persistence_service();
+		$sut     = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $service );
+		foreach ( $query as $name => $value ) {
+			$_GET[ $name ] = $value;
+		}
 		$original_request_uri   = $_SERVER['REQUEST_URI'] ?? null; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.MissingUnslash,WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
-		$_SERVER['REQUEST_URI'] = '/wp-json/wc/store/v1/products?currency=EUR&min_price=10&max_price=50';
+		$_SERVER['REQUEST_URI'] = $request_uri;
 
 		add_filter(
 			'wp_redirect',
 			static function () {
-				throw new \Exception( 'Unexpected redirect during REST request.' );
+				throw new \Exception( 'Unexpected redirect during a Store API request.' );
 			}
 		);
 
@@ -921,37 +959,21 @@ class MultiCurrencySelectedCurrencyControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should not redirect rest_route currency switches with price filters.
+	 * Store API currency switches with price filters: through the REST path, and through the rest_route argument.
+	 *
+	 * @return array<string,array{0:array<string,string>,1:string}>
 	 */
-	public function test_does_not_redirect_rest_route_currency_switch_with_price_filters(): void {
-		$service                = $this->create_persistence_service();
-		$sut                    = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $service );
-		$_GET['currency']       = 'eur';
-		$_GET['min_price']      = '10';
-		$_GET['max_price']      = '50';
-		$_GET['rest_route']     = '/wc/store/v1/products';
-		$original_request_uri   = $_SERVER['REQUEST_URI'] ?? null; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.MissingUnslash,WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
-		$_SERVER['REQUEST_URI'] = '/?rest_route=/wc/store/v1/products&currency=EUR&min_price=10&max_price=50';
-
-		add_filter(
-			'wp_redirect',
-			static function () {
-				throw new \Exception( 'Unexpected redirect during rest_route request.' );
-			}
+	public static function provide_store_api_currency_switches(): array {
+		$filters = array(
+			'currency'  => 'eur',
+			'min_price' => '10',
+			'max_price' => '50',
 		);
 
-		try {
-			$sut->handle_init();
-
-			$this->assertSame( array( 'EUR' ), $service->updated_currencies );
-		} finally {
-			remove_all_filters( 'wp_redirect' );
-			if ( null === $original_request_uri ) {
-				unset( $_SERVER['REQUEST_URI'] );
-			} else {
-				$_SERVER['REQUEST_URI'] = $original_request_uri;
-			}
-		}
+		return array(
+			'REST path'  => array( $filters, '/wp-json/wc/store/v1/products?currency=EUR&min_price=10&max_price=50' ),
+			'rest_route' => array( $filters + array( 'rest_route' => '/wc/store/v1/products' ), '/?rest_route=/wc/store/v1/products&currency=EUR&min_price=10&max_price=50' ),
+		);
 	}
 
 	/**

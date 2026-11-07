@@ -146,7 +146,7 @@ class MultiCurrencySettingsControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should register settings page without a provider dependency.
+	 * @testdox Should register the settings page while no provider is connected.
 	 */
 	public function test_registers_settings_page_without_a_provider_dependency(): void {
 		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
@@ -189,21 +189,6 @@ class MultiCurrencySettingsControllerTest extends WC_Unit_Test_Case {
 		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
 
 		$this->assertSame( array( 'existing' ), $sut->handle_woocommerce_get_settings_pages( array( 'existing' ) ) );
-	}
-
-	/**
-	 * @testdox Should register the settings page when no provider is connected.
-	 */
-	public function test_registers_the_settings_page_when_no_provider_is_connected(): void {
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
-
-		$settings_pages = $sut->handle_woocommerce_get_settings_pages( array() );
-		$settings_page  = $settings_pages[0];
-
-		$this->assertInstanceOf( MultiCurrencySettingsPage::class, $settings_page );
-		$this->assertSame( 'wcpay_multi_currency', $settings_page->get_id() );
-		$this->assertSame( array( array( 'type' => 'wcpay_multi_currency_settings_page' ) ), $settings_page->get_settings() );
-		$this->assertTrue( $GLOBALS['hide_save_button'] );
 	}
 
 	/**

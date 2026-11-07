@@ -215,35 +215,15 @@ class MultiCurrencyFrontendCurrenciesControllerTest extends WC_Unit_Test_Case {
 	/** @return array<string,array{string[],?string,?string,bool,bool,string,string}> */
 	public static function third_party_switcher_provider(): array {
 		return array(
-			'nothing selected'                        => array( array( 'USD', 'EUR' ), null, null, false, false, 'GBP', 'GBP' ),
-			'session EUR'                             => array( array( 'USD', 'EUR' ), 'EUR', null, false, false, 'GBP', 'EUR' ),
-			'session USD, two currencies'             => array( array( 'USD', 'EUR' ), 'USD', null, false, false, 'GBP', 'USD' ),
-			'session USD, only the store currency'    => array( array( 'USD' ), 'USD', null, false, false, 'GBP', 'GBP' ),
-			'override not enabled, unmarked'          => array( array( 'USD', 'EUR' ), null, 'JPY', false, false, 'GBP', 'GBP' ),
-			'override not enabled, an order currency' => array( array( 'USD', 'EUR' ), null, 'GBP', true, false, 'EUR', 'GBP' ),
-			'store currency for a shipping rate'      => array( array( 'USD', 'EUR' ), null, null, false, true, 'GBP', 'USD' ),
-		);
-	}
-
-	/**
-	 * @testdox Should pass every currency a third-party switcher answers through while nothing is selected.
-	 *
-	 * Client 11.2.0 `tests/unit/multi-currency/test-class-frontend-currencies.php:154-163`.
-	 */
-	public function test_passes_each_third_party_currency_through_while_nothing_is_selected(): void {
-		update_option( 'woocommerce_currency', 'USD' );
-		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'USD', 'EUR' ) );
-		update_option( 'wcpay_multi_currency_exchange_rate_eur', 'manual' );
-		update_option( 'wcpay_multi_currency_manual_rate_eur', '0.9' );
-
-		$this->with_session_currency(
-			null,
-			function (): void {
-				$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, null, null, wc_get_container()->get( ServiceFactory::class )->create_display_service() );
-
-				$this->assertSame( 'GBP', $sut->get_woocommerce_currency( 'GBP' ) );
-				$this->assertSame( 'CAD', $sut->get_woocommerce_currency( 'CAD' ) );
-			}
+			'nothing selected'                          => array( array( 'USD', 'EUR' ), null, null, false, false, 'GBP', 'GBP' ),
+			// Client 11.2.0 `tests/unit/multi-currency/test-class-frontend-currencies.php:154-163`: a currency without a stored rate passes through too.
+			'nothing selected, a currency with no rate' => array( array( 'USD', 'EUR' ), null, null, false, false, 'CAD', 'CAD' ),
+			'session EUR'                               => array( array( 'USD', 'EUR' ), 'EUR', null, false, false, 'GBP', 'EUR' ),
+			'session USD, two currencies'               => array( array( 'USD', 'EUR' ), 'USD', null, false, false, 'GBP', 'USD' ),
+			'session USD, only the store currency'      => array( array( 'USD' ), 'USD', null, false, false, 'GBP', 'GBP' ),
+			'override not enabled, unmarked'            => array( array( 'USD', 'EUR' ), null, 'JPY', false, false, 'GBP', 'GBP' ),
+			'override not enabled, an order currency'   => array( array( 'USD', 'EUR' ), null, 'GBP', true, false, 'EUR', 'GBP' ),
+			'store currency for a shipping rate'        => array( array( 'USD', 'EUR' ), null, null, false, true, 'GBP', 'USD' ),
 		);
 	}
 
@@ -464,69 +444,54 @@ class MultiCurrencyFrontendCurrenciesControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should initialize order currency from order query vars.
+	 * @testdox Should initialize the order currency from the order query vars, order-pay first: $_dataName.
+	 * @dataProvider provide_order_query_vars
 	 *
-	 * @dataProvider order_query_var_provider
-	 *
-	 * @param string $query_var Query var name.
+	 * @param array<string,string> $orders   Query var => the currency of the order it names.
+	 * @param string               $expected The currency the request then uses.
+	 * @param int                  $decimals That currency's decimals.
 	 */
-	public function test_initializes_order_currency_from_order_query_vars( string $query_var ): void {
-		$order = wc_create_order();
-		$order->set_currency( 'JPY' );
-		$order->save();
+	public function test_initializes_order_currency_from_order_query_vars( array $orders, string $expected, int $decimals ): void {
+		$query_vars = array();
+		foreach ( $orders as $query_var => $currency ) {
+			$order = wc_create_order();
+			$order->set_currency( $currency );
+			$order->save();
+			$query_vars[ $query_var ] = $order->get_id();
+		}
 		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
 
 		$this->with_query_vars(
-			array( $query_var => $order->get_id() ),
-			function () use ( $sut, $order ): void {
+			$query_vars,
+			function () use ( $sut, $query_vars, $expected, $decimals ): void {
 				$sut->init_order_currency_from_query_vars();
 
-				$this->assertSame( 'JPY', $sut->get_woocommerce_currency( 'USD' ) );
-				$this->assertSame( 0, $sut->get_price_decimals( 2 ) );
-				$this->assertSame( $order->get_id(), $sut->init_order_currency( $order->get_id() ) );
+				$this->assertSame( $expected, $sut->get_woocommerce_currency( 'USD' ) );
+				$this->assertSame( $decimals, $sut->get_price_decimals( 2 ) );
+				$this->assertSame( reset( $query_vars ), $sut->init_order_currency( reset( $query_vars ) ) );
 			}
 		);
 	}
 
 	/**
-	 * Data provider for supported order query vars.
+	 * Order query vars, each alone, and all three at once, where order-pay wins.
 	 *
-	 * @return array<string, array{string}>
+	 * @return array<string,array{0:array<string,string>,1:string,2:int}>
 	 */
-	public function order_query_var_provider(): array {
+	public function provide_order_query_vars(): array {
 		return array(
-			'order-pay'      => array( 'order-pay' ),
-			'order-received' => array( 'order-received' ),
-			'view-order'     => array( 'view-order' ),
-		);
-	}
-
-	/**
-	 * @testdox Should prefer order-pay before other order query vars.
-	 */
-	public function test_prefers_order_pay_before_other_order_query_vars(): void {
-		$order_pay = wc_create_order();
-		$order_pay->set_currency( 'JPY' );
-		$order_pay->save();
-		$order_received = wc_create_order();
-		$order_received->set_currency( 'EUR' );
-		$order_received->save();
-		$view_order = wc_create_order();
-		$view_order->set_currency( 'AUD' );
-		$view_order->save();
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
-
-		$this->with_query_vars(
-			array(
-				'order-pay'      => $order_pay->get_id(),
-				'order-received' => $order_received->get_id(),
-				'view-order'     => $view_order->get_id(),
+			'order-pay'      => array( array( 'order-pay' => 'JPY' ), 'JPY', 0 ),
+			'order-received' => array( array( 'order-received' => 'JPY' ), 'JPY', 0 ),
+			'view-order'     => array( array( 'view-order' => 'JPY' ), 'JPY', 0 ),
+			'all three'      => array(
+				array(
+					'order-pay'      => 'JPY',
+					'order-received' => 'EUR',
+					'view-order'     => 'AUD',
+				),
+				'JPY',
+				0,
 			),
-			function () use ( $sut ): void {
-				$sut->init_order_currency_from_query_vars();
-
-				$this->assertSame( 'JPY', $sut->get_woocommerce_currency() );
-			}
 		);
 	}
 

@@ -171,9 +171,14 @@ class WooCommerceNameYourPriceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should restore original NYP amount when cart currency matches the selected currency.
+	 * @testdox Should restore the original NYP amount in the cart's currency, converting it when that differs from the selected currency: $_dataName.
+	 * @dataProvider provide_nyp_cart_currencies
+	 *
+	 * @param string       $original Amount the shopper entered.
+	 * @param string       $currency Currency the shopper entered it in.
+	 * @param string|float $expected The cart item's NYP amount.
 	 */
-	public function test_restores_original_nyp_amount_when_cart_currency_matches_selected_currency(): void {
+	public function test_restores_the_original_nyp_amount_in_the_cart_currency( string $original, string $currency, $expected ): void {
 		$sut     = $this->create_controller();
 		$product = $this->create_product();
 
@@ -181,35 +186,26 @@ class WooCommerceNameYourPriceTest extends WC_Unit_Test_Case {
 			array(
 				'data'         => $product,
 				'nyp'          => '99.00',
-				'nyp_original' => '12.00',
-				'nyp_currency' => 'GBP',
+				'nyp_original' => $original,
+				'nyp_currency' => $currency,
 			),
 			array()
 		);
 
-		$this->assertSame( '12.00', $cart_item['nyp'] );
-		$this->assertSame( 'GBP', $product->get_meta( '_wcpay_multi_currency_nyp_currency' ) );
+		$this->assertSame( $expected, $cart_item['nyp'] );
+		$this->assertSame( $currency, $product->get_meta( '_wcpay_multi_currency_nyp_currency' ) );
 	}
 
 	/**
-	 * @testdox Should convert original NYP amount when cart currency differs from selected currency.
+	 * Entered amounts: in the selected currency (GBP), restored as entered, and in USD, converted.
+	 *
+	 * @return array<string,array{0:string,1:string,2:string|float}>
 	 */
-	public function test_converts_original_nyp_amount_when_cart_currency_differs_from_selected_currency(): void {
-		$sut     = $this->create_controller();
-		$product = $this->create_product();
-
-		$cart_item = $sut->convert_cart_currency(
-			array(
-				'data'         => $product,
-				'nyp'          => '99.00',
-				'nyp_original' => '10.00',
-				'nyp_currency' => 'USD',
-			),
-			array()
+	public static function provide_nyp_cart_currencies(): array {
+		return array(
+			'entered in the selected currency' => array( '12.00', 'GBP', '12.00' ),
+			'entered in another currency'      => array( '10.00', 'USD', 8.2 ),
 		);
-
-		$this->assertSame( 8.2, $cart_item['nyp'] );
-		$this->assertSame( 'USD', $product->get_meta( '_wcpay_multi_currency_nyp_currency' ) );
 	}
 
 	/**
