@@ -12,9 +12,29 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Services\RequestContext;
  * WooCommerce's own methods run for real until a hook inside them, where the callback runs and the rest of the method is
  * skipped, so the check finds them on the real stack. An extension's call is declared around the callback instead, and
  * only the request context from request_context() sees it, so no extension class is declared and the tests run in
- * process.
+ * process. A call that is neither one of WooCommerce's own covered here nor listed in EXTENSION_METHODS throws.
  */
 final class CallStack {
+
+	/**
+	 * Extension classes the compatibility checks look for, with the methods each is called through (`::` for static), as
+	 * client 11.1.0 names them in `includes/multi-currency/` (cited per row). A declared call must match one exactly.
+	 */
+	private const EXTENSION_METHODS = array(
+		'WC_Product_Booking'           => array( 'get_price_html' ), // Client 11.1.0 Compatibility/WooCommerceBookings.php:108,142.
+		'WC_Bookings_Cost_Calculation' => array( '::calculate_booking_cost' ), // Client 11.1.0 Compatibility/WooCommerceBookings.php:98.
+		'WC_Deposits_Cart_Manager'     => array( 'deposits_form_output' ), // Client 11.1.0 Compatibility/WooCommerceDeposits.php:73.
+		'WC_Shipping_Fedex'            => array( 'set_settings', 'per_item_shipping', 'box_shipping', 'get_fedex_api_request', 'get_fedex_requests', 'process_result' ), // Client 11.1.0 Compatibility/WooCommerceFedEx.php:22-27.
+		'WC_Shipping_UPS'              => array( 'per_item_shipping', 'box_shipping', 'calculate_shipping' ), // Client 11.1.0 Compatibility/WooCommerceUPS.php:44-46.
+		'WC_Points_Rewards_Discount'   => array( 'get_discount_data' ), // Client 11.1.0 Compatibility/WooCommercePointsAndRewards.php:59.
+		'WC_Subscription'              => array( 'get_formatted_order_total' ), // Client 11.1.0 Compatibility/WooCommerceSubscriptions.php:331.
+		'WCS_Template_Loader'          => array( '::get_my_subscriptions' ), // Client 11.1.0 Compatibility/WooCommerceSubscriptions.php:330.
+		'WCS_Cart_Renewal'             => array( 'setup_cart' ), // Client 11.1.0 Compatibility/WooCommerceSubscriptions.php:230.
+		'WCS_Cart_Early_Renewal'       => array( 'setup_cart' ), // Client 11.1.0 Compatibility/WooCommerceSubscriptions.php:284.
+		'WC_Subscriptions_Cart'        => array( '::set_subscription_prices_for_calculation' ), // Client 11.1.0 Compatibility/WooCommerceSubscriptions.php:122.
+		'WC_Subscriptions_Product'     => array( '::get_sign_up_fee', '::get_price' ), // Client 11.1.0 Compatibility/WooCommerceSubscriptions.php:127; Subscriptions 9.3.0 includes/core/class-wc-subscriptions-product.php:553.
+		'WCS_Switch_Totals_Calculator' => array( 'apportion_sign_up_fees' ), // Client 11.1.0 Compatibility/WooCommerceSubscriptions.php:130.
+	);
 
 	/**
 	 * Extension calls declared around the running callback, the first one outermost.
@@ -142,8 +162,18 @@ final class CallStack {
 	 * @param string   $call  Call as `Class->method` or `Class::method`, spelled as the compatibility class lists it.
 	 * @param callable $inner Work to run inside the call.
 	 * @return mixed The work's result.
+	 * @throws \LogicException When the call is not an extension call EXTENSION_METHODS lists, in that form.
 	 */
 	private static function as_extension_call( string $call, callable $inner ) {
+		$is_static                   = false !== strpos( $call, '::' );
+		list( $class_name, $method ) = array_pad( explode( $is_static ? '::' : '->', $call, 2 ), 2, '' );
+		if ( ! isset( self::EXTENSION_METHODS[ $class_name ] ) ) {
+			throw new \LogicException( "{$call} is neither a WooCommerce call run() covers nor an extension call EXTENSION_METHODS lists." ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Test helper message.
+		}
+		if ( ! in_array( ( $is_static ? '::' : '' ) . $method, self::EXTENSION_METHODS[ $class_name ], true ) ) {
+			throw new \LogicException( "{$call} does not match how client 11.1.0 names a {$class_name} call in EXTENSION_METHODS." ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Test helper message.
+		}
+
 		self::$extension_calls[] = $call;
 
 		try {

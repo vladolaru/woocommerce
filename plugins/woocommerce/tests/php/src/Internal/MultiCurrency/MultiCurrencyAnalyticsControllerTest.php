@@ -104,14 +104,15 @@ class MultiCurrencyAnalyticsControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should register exactly the baseline Analytics hooks outside REST the owner allows, once: $_dataName.
+	 * @testdox Should register exactly the baseline Analytics hooks the owner allows, once: $_dataName.
 	 * @dataProvider provide_baseline_analytics_hooks_owners
 	 *
-	 * @param string                            $owner    Runtime owner.
-	 * @param array<string,array<string,int[]>> $expected Every hook the controller registers.
+	 * @param string                            $owner        Runtime owner.
+	 * @param bool                              $rest_request Whether the request is a WooCommerce REST request.
+	 * @param array<string,array<string,int[]>> $expected     Every hook the controller registers.
 	 */
-	public function test_registers_the_baseline_analytics_hooks_its_owner_allows( string $owner, array $expected ): void {
-		$sut = $this->create_controller( $owner, false );
+	public function test_registers_the_baseline_analytics_hooks_its_owner_allows( string $owner, bool $rest_request, array $expected ): void {
+		$sut = $this->create_controller( $owner, $rest_request );
 
 		$sut->register();
 		$sut->register();
@@ -120,20 +121,22 @@ class MultiCurrencyAnalyticsControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Owners and the hooks each registers outside REST: the order query hooks under core, nothing under the extension.
+	 * Owners and requests and the hooks each registers: the order query hooks under core outside REST, nothing under the extension on any request.
 	 *
 	 * @return array<string,array<int,mixed>>
 	 */
 	public function provide_baseline_analytics_hooks_owners(): array {
 		return array(
-			'core owns'          => array(
+			'core owns, outside REST'               => array(
 				MultiCurrencyRuntimeArbiter::OWNER_BUILTIN,
+				false,
 				array(
 					'woocommerce_analytics_orders_query_args' => array( 'handle_woocommerce_analytics_orders_query_args' => array( 10, 1 ) ),
 					'woocommerce_analytics_orders_stats_query_args' => array( 'handle_woocommerce_analytics_orders_query_args' => array( 10, 1 ) ),
 				),
 			),
-			'the extension owns' => array( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION, array() ),
+			'the extension owns, outside REST'      => array( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION, false, array() ),
+			'the extension owns, on a REST request' => array( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION, true, array() ),
 		);
 	}
 
