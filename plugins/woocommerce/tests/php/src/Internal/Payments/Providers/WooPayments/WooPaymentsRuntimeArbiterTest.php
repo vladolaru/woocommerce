@@ -200,15 +200,16 @@ class WooPaymentsRuntimeArbiterTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Runtime ownership is computed once for repeated owner and helper calls.
+	 * @testdox Runtime ownership is computed once for repeated owner and helper calls and kept when the feature option changes, until explicit invalidation recomputes it.
 	 */
 	public function test_runtime_ownership_is_computed_once_for_repeated_owner_and_helper_calls(): void {
 		$this->fake_plugin();
-		$feature_reads = 0;
+		$feature_option = 'yes';
+		$feature_reads  = 0;
 		$this->answer_feature_reads(
-			static function () use ( &$feature_reads ): string {
+			static function () use ( &$feature_reads, &$feature_option ): string {
 				++$feature_reads;
-				return 'yes';
+				return $feature_option;
 			}
 		);
 
@@ -217,27 +218,14 @@ class WooPaymentsRuntimeArbiterTest extends WC_Unit_Test_Case {
 		$this->assertFalse( $this->sut->is_extension_owner() );
 		$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_BUILTIN, $this->sut->get_runtime_owner() );
 		$this->assertSame( 1, $feature_reads, 'The owner decision should be resolved once for all repeated owner and helper calls.' );
-	}
 
-	/**
-	 * @testdox Explicit invalidation recomputes the runtime owner.
-	 */
-	public function test_explicit_invalidation_recomputes_the_runtime_owner(): void {
-		$this->fake_plugin();
-		$feature_on = false;
-		$this->answer_feature_reads(
-			static function () use ( &$feature_on ): string {
-				return $feature_on ? 'yes' : 'no';
-			}
-		);
-
-		$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_NONE, $this->sut->get_runtime_owner() );
-		$feature_on = true;
-		$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_NONE, $this->sut->get_runtime_owner(), 'The current request keeps its first owner decision until explicitly invalidated.' );
+		$feature_option = 'no';
+		$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_BUILTIN, $this->sut->get_runtime_owner(), 'The current request keeps its first owner decision until explicitly invalidated.' );
 
 		$this->sut->invalidate();
 
-		$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_BUILTIN, $this->sut->get_runtime_owner() );
+		$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_NONE, $this->sut->get_runtime_owner() );
+		$this->assertSame( 2, $feature_reads, 'Invalidation recomputes the owner with one more read.' );
 	}
 
 	/**
@@ -275,14 +263,15 @@ class WooPaymentsRuntimeArbiterTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox is_builtin_enabled() reads the WooPayments feature option, whoever owns payments ($_dataName).
+	 * @testdox is_builtin_enabled() reads the WooPayments feature option whoever owns payments, and the owner is the expected one ($_dataName).
 	 * @dataProvider provide_feature_option_values
 	 *
 	 * @param string|null $stored          Stored feature option, or null when absent.
 	 * @param bool        $plugin_active   Whether the WooPayments extension is active.
 	 * @param bool        $expected        Whether the built-in WooPayments reads as enabled.
+	 * @param string      $owner           Expected runtime owner.
 	 */
-	public function test_is_builtin_enabled_reads_the_feature_option( ?string $stored, bool $plugin_active, bool $expected ): void {
+	public function test_is_builtin_enabled_reads_the_feature_option( ?string $stored, bool $plugin_active, bool $expected, string $owner ): void {
 		$this->fake_plugin( $plugin_active );
 		if ( null === $stored ) {
 			delete_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION );
@@ -292,21 +281,21 @@ class WooPaymentsRuntimeArbiterTest extends WC_Unit_Test_Case {
 		$this->sut->invalidate();
 
 		$this->assertSame( $expected, $this->sut->is_builtin_enabled() );
-		$this->assertSame( $expected && ! $plugin_active ? WooPaymentsRuntimeArbiter::OWNER_BUILTIN : ( $plugin_active ? WooPaymentsRuntimeArbiter::OWNER_EXTENSION : WooPaymentsRuntimeArbiter::OWNER_NONE ), $this->sut->get_runtime_owner() );
+		$this->assertSame( $owner, $this->sut->get_runtime_owner() );
 	}
 
 	/**
 	 * Stored feature option values with and without the WooPayments extension.
 	 *
-	 * @return array<string,array{0:string|null,1:bool,2:bool}>
+	 * @return array<string,array{0:string|null,1:bool,2:bool,3:string}>
 	 */
 	public function provide_feature_option_values(): array {
 		return array(
-			'on, no extension'      => array( 'yes', false, true ),
-			'off, no extension'     => array( 'no', false, false ),
-			'absent, no extension'  => array( null, false, false ),
-			'on, extension active'  => array( 'yes', true, true ),
-			'off, extension active' => array( 'no', true, false ),
+			'on, no extension'      => array( 'yes', false, true, WooPaymentsRuntimeArbiter::OWNER_BUILTIN ),
+			'off, no extension'     => array( 'no', false, false, WooPaymentsRuntimeArbiter::OWNER_NONE ),
+			'absent, no extension'  => array( null, false, false, WooPaymentsRuntimeArbiter::OWNER_NONE ),
+			'on, extension active'  => array( 'yes', true, true, WooPaymentsRuntimeArbiter::OWNER_EXTENSION ),
+			'off, extension active' => array( 'no', true, false, WooPaymentsRuntimeArbiter::OWNER_EXTENSION ),
 		);
 	}
 
