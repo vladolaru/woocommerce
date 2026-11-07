@@ -51,86 +51,93 @@ class PaymentMethodsMapTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should map each currency to the enabled methods that need it, like the client.
+	 * @testdox Should map each currency to the enabled methods that need it, like the client: $_dataName.
+	 * @dataProvider provide_currency_payment_methods_maps
+	 *
+	 * @param string[]                           $enabled_methods Enabled payment method IDs.
+	 * @param string                             $account_country Account country, or '' for none.
+	 * @param string                             $store_country   Store base country, or '' to keep the default.
+	 * @param array<string,array<string,string>> $expected        Expected map: method titles keyed by method ID, keyed by currency.
 	 */
-	public function test_maps_currencies_to_enabled_methods_that_need_them(): void {
-		$this->enable_methods( array( 'card', 'link', 'bancontact', 'ideal', 'klarna', 'affirm' ) );
+	public function test_maps_currencies_to_enabled_methods_that_need_them( array $enabled_methods, string $account_country, string $store_country, array $expected ): void {
+		$this->enable_methods( $enabled_methods );
+		if ( '' !== $store_country ) {
+			update_option( 'woocommerce_default_country', $store_country );
+		}
 
-		$this->assertSame(
-			array(
-				'USD' => array(
-					'affirm' => 'Affirm',
-					'klarna' => 'Klarna',
-				),
-				'EUR' => array(
-					'bancontact' => 'Bancontact',
-					'ideal'      => 'iDEAL | Wero',
+		$this->assertSame( $expected, $this->create_sut( true, $account_country )->get_currency_payment_methods_map() );
+	}
+
+	/**
+	 * Enabled methods, account and store countries, and the map the client builds for them.
+	 *
+	 * Client 11.1.0 `includes/compat/multi-currency/class-wc-payments-currency-manager.php:66-91` maps a domestic-only
+	 * method to the account country's domestic currency (`:67-82`), else US dollars without an account country
+	 * (`includes/class-wc-payment-gateway-wcpay.php:3507-3523`, `includes/class-wc-payments-account.php:2731-2734`), and
+	 * titles each method for the account country, else US, never the store country (`:82`,
+	 * `includes/class-wc-payment-gateway-wcpay.php:3604-3613`). It builds the map from the payment method map
+	 * (`:67-70`), which holds Amazon Pay (`includes/payment-methods/Configs/Registry/PaymentMethodDefinitionRegistry.php:102-105`).
+	 *
+	 * @return array<string,array{0:string[],1:string,2:string,3:array<string,array<string,string>>}>
+	 */
+	public function provide_currency_payment_methods_maps(): array {
+		return array(
+			'mixed methods for a US account'             => array(
+				array( 'card', 'link', 'bancontact', 'ideal', 'klarna', 'affirm' ),
+				'US',
+				'',
+				array(
+					'USD' => array(
+						'affirm' => 'Affirm',
+						'klarna' => 'Klarna',
+					),
+					'EUR' => array(
+						'bancontact' => 'Bancontact',
+						'ideal'      => 'iDEAL | Wero',
+					),
 				),
 			),
-			$this->create_sut()->get_currency_payment_methods_map()
+			'domestic-only method for a German account paid out in US dollars' => array(
+				array( 'card', 'klarna' ),
+				'DE',
+				'',
+				array( 'EUR' => array( 'klarna' => 'Klarna' ) ),
+			),
+			'domestic-only method without an account country, German store' => array(
+				array( 'card', 'klarna' ),
+				'',
+				'DE',
+				array( 'USD' => array( 'klarna' => 'Klarna' ) ),
+			),
+			'title for a US account without an account country, British store' => array(
+				array( 'card', 'afterpay_clearpay' ),
+				'',
+				'GB',
+				array( 'USD' => array( 'afterpay_clearpay' => 'Cash App Afterpay' ) ),
+			),
+			'Amazon Pay and iDEAL for a British account' => array(
+				array( 'card', 'ideal', 'amazon_pay' ),
+				'GB',
+				'',
+				array(
+					'EUR' => array(
+						'ideal'      => 'iDEAL | Wero',
+						'amazon_pay' => 'Amazon Pay',
+					),
+					'USD' => array( 'amazon_pay' => 'Amazon Pay' ),
+					'AUD' => array( 'amazon_pay' => 'Amazon Pay' ),
+					'GBP' => array( 'amazon_pay' => 'Amazon Pay' ),
+					'DKK' => array( 'amazon_pay' => 'Amazon Pay' ),
+					'HKD' => array( 'amazon_pay' => 'Amazon Pay' ),
+					'JPY' => array( 'amazon_pay' => 'Amazon Pay' ),
+					'NZD' => array( 'amazon_pay' => 'Amazon Pay' ),
+					'NOK' => array( 'amazon_pay' => 'Amazon Pay' ),
+					'SEK' => array( 'amazon_pay' => 'Amazon Pay' ),
+					'CHF' => array( 'amazon_pay' => 'Amazon Pay' ),
+					'ZAR' => array( 'amazon_pay' => 'Amazon Pay' ),
+				),
+			),
 		);
-	}
-
-	/**
-	 * @testdox Should map a domestic-only method to the account country's currency, not the payout currency.
-	 */
-	public function test_maps_domestic_only_methods_to_the_account_country_currency(): void {
-		$this->enable_methods( array( 'card', 'klarna' ) );
-
-		// A German account paid out in US dollars: the client uses the domestic currency
-		// (client 11.1.0 `includes/compat/multi-currency/class-wc-payments-currency-manager.php:67-82`).
-		$this->assertSame(
-			array( 'EUR' => array( 'klarna' => 'Klarna' ) ),
-			$this->create_sut( true, 'DE' )->get_currency_payment_methods_map()
-		);
-	}
-
-	/**
-	 * @testdox Should map a domestic-only method to US dollars, not the store country's currency, without an account country.
-	 */
-	public function test_maps_domestic_only_methods_to_us_dollars_without_an_account_country(): void {
-		$this->enable_methods( array( 'card', 'klarna' ) );
-		update_option( 'woocommerce_default_country', 'DE' );
-
-		// The client's domestic currency comes from the account country, else US (client 11.1.0
-		// `includes/class-wc-payment-gateway-wcpay.php:3507-3523`, `includes/class-wc-payments-account.php:2731-2734`).
-		$this->assertSame(
-			array( 'USD' => array( 'klarna' => 'Klarna' ) ),
-			$this->create_sut( true, '' )->get_currency_payment_methods_map()
-		);
-	}
-
-	/**
-	 * @testdox Should title the methods for a US account, as the client does, without an account country.
-	 */
-	public function test_titles_methods_for_a_us_account_without_an_account_country(): void {
-		$this->enable_methods( array( 'card', 'afterpay_clearpay' ) );
-
-		// The client titles each method for the gateway's account country, else US (client 11.1.0
-		// `includes/compat/multi-currency/class-wc-payments-currency-manager.php:82`, `includes/class-wc-payment-gateway-wcpay.php:3604-3613`).
-		$this->assertSame(
-			array( 'USD' => array( 'afterpay_clearpay' => 'Cash App Afterpay' ) ),
-			$this->create_sut( true, '' )->get_currency_payment_methods_map()
-		);
-	}
-
-	/**
-	 * Client 11.1.0 builds the map from the payment method map (`includes/compat/multi-currency/class-wc-payments-currency-manager.php:67-70`),
-	 * which holds Amazon Pay (`includes/payment-methods/Configs/Registry/PaymentMethodDefinitionRegistry.php:102-105`).
-	 *
-	 * @testdox Should map Amazon Pay's currencies when it is in the stored enabled list.
-	 */
-	public function test_maps_amazon_pay(): void {
-		$this->enable_methods( array( 'card', 'ideal', 'amazon_pay' ) );
-
-		$map            = $this->create_sut( true, 'GB' )->get_currency_payment_methods_map();
-		$amazon_pay_map = array_filter(
-			$map,
-			static fn( array $methods ): bool => isset( $methods['amazon_pay'] )
-		);
-
-		$this->assertNotSame( array(), $amazon_pay_map );
-		$this->assertArrayHasKey( 'ideal', $map['EUR'] ?? array(), 'Other enabled methods stay mapped.' );
 	}
 
 	/**

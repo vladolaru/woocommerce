@@ -127,36 +127,44 @@ class PaymentMethodRegistryTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should ignore an availability filter return that is not a list of payment method IDs and use the whole catalog.
-	 * @testWith [null]
-	 *           [false]
-	 *           ["card"]
-	 *           [["card", 3]]
-	 *           [{"first": "card", "second": ["ideal"]}]
+	 * Client 11.1.0 keeps a valid filter return as it is, an empty list included, and uses the whole catalog for any other
+	 * return (`includes/class-wc-payment-gateway-wcpay.php:4864-4879`).
 	 *
-	 * @param mixed $filter_return What the availability filter callback returns.
+	 * @testdox Should offer the whole catalog for an availability filter return that is not a list of payment method IDs, and none for an empty list: $_dataName.
+	 * @dataProvider provide_availability_filter_returns
+	 *
+	 * @param mixed    $filter_return What the availability filter callback returns.
+	 * @param string[] $expected      Expected available payment method IDs.
 	 */
-	public function test_availability_filter_falls_back_to_the_catalog_for_an_invalid_return( $filter_return ): void {
+	public function test_availability_filter_return_decides_the_offered_methods( $filter_return, array $expected ): void {
 		add_filter(
 			'wcpay_upe_available_payment_methods',
 			static fn() => $filter_return
 		);
 
-		$this->assertSame( self::EXPECTED_DEFINITION_IDS, $this->registry->get_available_payment_method_ids_for_account( $this->create_account_service() ) );
+		$this->assertSame( $expected, $this->registry->get_available_payment_method_ids_for_account( $this->create_account_service() ) );
 	}
 
 	/**
-	 * Client 11.1.0 keeps a valid filter return as it is, an empty list included (`includes/class-wc-payment-gateway-wcpay.php:4864-4879`).
+	 * Availability filter returns and the payment method IDs they leave available.
 	 *
-	 * @testdox Should offer no payment method when an availability filter callback returns an empty list.
+	 * @return array<string,array{0:mixed,1:string[]}>
 	 */
-	public function test_availability_filter_empty_list_offers_no_payment_method(): void {
-		add_filter(
-			'wcpay_upe_available_payment_methods',
-			static fn(): array => array()
+	public function provide_availability_filter_returns(): array {
+		return array(
+			'null'                 => array( null, self::EXPECTED_DEFINITION_IDS ),
+			'false'                => array( false, self::EXPECTED_DEFINITION_IDS ),
+			'a string'             => array( 'card', self::EXPECTED_DEFINITION_IDS ),
+			'a list with a number' => array( array( 'card', 3 ), self::EXPECTED_DEFINITION_IDS ),
+			'a keyed array'        => array(
+				array(
+					'first'  => 'card',
+					'second' => array( 'ideal' ),
+				),
+				self::EXPECTED_DEFINITION_IDS,
+			),
+			'an empty list'        => array( array(), array() ),
 		);
-
-		$this->assertSame( array(), $this->registry->get_available_payment_method_ids_for_account( $this->create_account_service() ) );
 	}
 
 	/**
