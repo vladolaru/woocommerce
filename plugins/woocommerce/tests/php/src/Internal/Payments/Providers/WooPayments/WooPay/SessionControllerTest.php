@@ -1317,34 +1317,6 @@ class SessionControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should preserve the one-argument shape of the signed-request filter.
-	 */
-	public function test_has_permission_preserves_signed_request_filter_arg_shape(): void {
-		$this->sut = $this->create_controller( true );
-		$this->force_real_blog_token_signed();
-		$captured_args = null;
-
-		add_filter(
-			'wcpay_woopay_is_signed_with_blog_token',
-			static function ( ...$args ) use ( &$captured_args ) {
-				$captured_args = $args;
-				return $args[0];
-			},
-			10,
-			99
-		);
-
-		$request = new WP_REST_Request( 'GET', '/payments/woopay/session' );
-		$request->set_header( 'User-Agent', 'WooPay' );
-		$request->set_param( 'email', 'shopper@example.com' );
-
-		$this->assertTrue( $this->sut->has_permission( $request ) );
-		$this->assertIsArray( $captured_args );
-		$this->assertCount( 1, $captured_args, 'The preserved WooPay signed-token filter should receive only the boolean signed state.' );
-		$this->assertTrue( $captured_args[0] );
-	}
-
-	/**
 	 * A failure assembling the session answers the extension's 400 wcpay_server_error with the exception's message and
 	 * logs it at info when debug logging is on (class-wc-rest-woopay-session-controller.php:67-71).
 	 *

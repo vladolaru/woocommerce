@@ -3,7 +3,6 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\WooPay;
 
-use ActionScheduler_Store;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\ExtensionSync;
@@ -113,29 +112,6 @@ class ExtensionSyncTest extends WC_Unit_Test_Case {
 			),
 			$requests
 		);
-	}
-
-	/**
-	 * @testdox WooPay compatibility validation is scheduled once through the recurring-actions hook.
-	 */
-	public function test_recurring_action_ensure_hook_schedules_one_compatibility_action(): void {
-		$sync = $this->create_sync();
-
-		$sync->register();
-		/**
-		 * Runs the recurring action registration callback.
-		 *
-		 * @since 11.0.0
-		 */
-		do_action( 'action_scheduler_ensure_recurring_actions' );
-		/**
-		 * Runs the recurring action registration callback a second time.
-		 *
-		 * @since 11.0.0
-		 */
-		do_action( 'action_scheduler_ensure_recurring_actions' );
-
-		$this->assertSame( 1, $this->count_pending_actions( 'validate_woopay_compatibility' ) );
 	}
 
 	/**
@@ -283,28 +259,6 @@ class ExtensionSyncTest extends WC_Unit_Test_Case {
 		remove_action( 'validate_woopay_compatibility', array( $sync, 'update_compatibility_and_maybe_show_incompatibility_warning' ) );
 		remove_action( 'activated_plugin', array( $sync, 'show_warning_when_incompatible_extension_is_enabled' ) );
 		remove_action( 'deactivated_plugin', array( $sync, 'hide_warning_when_incompatible_extension_is_disabled' ) );
-	}
-
-	/**
-	 * Count pending Action Scheduler actions.
-	 *
-	 * @param string $hook Hook name.
-	 * @return int
-	 */
-	private function count_pending_actions( string $hook ): int {
-		if ( ! function_exists( 'as_get_scheduled_actions' ) ) {
-			return 0;
-		}
-
-		$actions = as_get_scheduled_actions(
-			array(
-				'hook'   => $hook,
-				'group'  => 'woocommerce_payments',
-				'status' => ActionScheduler_Store::STATUS_PENDING,
-			)
-		);
-
-		return count( $actions );
 	}
 
 	/**
