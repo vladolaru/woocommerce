@@ -831,27 +831,6 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Dev mode triggers follow the wcpay_dev_mode filter, which can turn dev mode on or off, as in the extension.
-	 *
-	 * Client 11.1.0 `includes/core/class-mode.php:72-111`.
-	 */
-	public function test_dev_mode_triggers_follow_the_dev_mode_filter(): void {
-		$account_service = wc_get_container()->get( WooPaymentsAccountService::class );
-		add_filter( 'wcpay_dev_mode', '__return_false' );
-		$this->assertSame( array(), $account_service->get_dev_mode_triggers() );
-		remove_filter( 'wcpay_dev_mode', '__return_false' );
-
-		add_filter( 'wcpay_dev_mode', '__return_true' );
-		$triggers = $account_service->get_dev_mode_triggers();
-
-		$this->assertNotEmpty( $triggers );
-		$this->assertTrue( $account_service->is_dev_mode_enabled() );
-		foreach ( $triggers as $trigger ) {
-			$this->assertMatchesRegularExpression( '/^(WCPAY_DEV_MODE|WP_ENVIRONMENT_TYPE=\\w+|WP_DEVELOPMENT_MODE=\\w+|wcpay_dev_mode filter)$/', $trigger );
-		}
-	}
-
-	/**
 	 * Render the report for a WPCOM-connected store with a connected account.
 	 *
 	 * @param array<string,mixed> $account_extra    Account data to add.

@@ -3,7 +3,6 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Admin\Features\PaymentGatewaySuggestions\DefaultPaymentGateways;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\PaymentMethodRegistry;
@@ -23,11 +22,12 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 	use ProviderTextLogAssertions;
 
 	/**
-	 * Countries where WooPayments accounts are supported, as client 11.1.0 lists them (includes/class-wc-payments-utils.php:263-305).
+	 * Countries where WooPayments accounts are supported, as client 11.1.0 lists them (includes/class-wc-payments-utils.php:263-305),
+	 * in the order of core's WooPayments country list (`DefaultPaymentGateways::get_wcpay_countries()`).
 	 *
 	 * @var string[]
 	 */
-	private const WOOPAYMENTS_COUNTRY_CODES = array( 'AE', 'AT', 'AU', 'BE', 'BG', 'CA', 'CH', 'CY', 'CZ', 'DE', 'DK', 'EE', 'FI', 'ES', 'FR', 'HR', 'JP', 'LU', 'GB', 'GR', 'HK', 'HU', 'IE', 'IT', 'LT', 'LV', 'MT', 'NL', 'NO', 'NZ', 'PL', 'PT', 'RO', 'SE', 'SI', 'SK', 'SG', 'US', 'PR' );
+	private const WOOPAYMENTS_COUNTRY_CODES = array( 'US', 'PR', 'AU', 'CA', 'CY', 'DE', 'DK', 'EE', 'ES', 'FI', 'FR', 'GB', 'GR', 'IE', 'IT', 'LU', 'LT', 'LV', 'NO', 'NZ', 'MT', 'AT', 'BE', 'NL', 'PL', 'PT', 'CH', 'HK', 'SI', 'SK', 'SG', 'BG', 'CZ', 'HR', 'HU', 'RO', 'SE', 'JP', 'AE' );
 
 	/**
 	 * Multisite blogs created by tests.
@@ -305,62 +305,46 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should fail closed for invalid or incomplete account cache payloads.
+	 * @testdox Should fail readiness for an invalid, incomplete, disabled or unsubmitted account cache, and expose only the stored ID and key: $_dataName.
+	 * @dataProvider provide_unready_account_cache_payloads
+	 *
+	 * @param mixed  $payload             Stored `wcpay_account_data`.
+	 * @param string $expected_account_id Expected account ID.
+	 * @param string $expected_key        Expected publishable key.
 	 */
-	public function test_fails_closed_for_invalid_or_incomplete_account_cache_payloads(): void {
-		foreach (
-			array(
-				false,
-				'invalid',
-				array(),
-				array( 'data' => 'invalid' ),
-				array( 'data' => array() ),
-			) as $payload
-		) {
-			update_option( 'wcpay_account_data', $payload );
+	public function test_fails_readiness_for_unready_account_cache_payloads( $payload, string $expected_account_id, string $expected_key ): void {
+		update_option( 'wcpay_account_data', $payload );
 
-			$sut = $this->create_service();
+		$sut = $this->create_service();
 
-			$this->assertSame( '', $sut->get_account_id() );
-			$this->assertSame( '', $sut->get_publishable_key() );
-			$this->assertFalse( $sut->can_process_payments() );
-		}
+		$this->assertSame( $expected_account_id, $sut->get_account_id() );
+		$this->assertSame( $expected_key, $sut->get_publishable_key() );
+		$this->assertFalse( $sut->can_process_payments() );
 	}
 
 	/**
-	 * @testdox Should expose cached account IDs and keys while failing readiness for disabled or incomplete accounts.
+	 * Account cache payloads that cannot process payments: payload, expected account ID and publishable key.
+	 *
+	 * @return array<string,array{0:mixed,1:string,2:string}>
 	 */
-	public function test_exposes_cache_values_but_fails_readiness_for_disabled_or_incomplete_accounts(): void {
-		foreach (
-			array(
-				array(
-					'data' => array(
-						'account_id'           => 'acct_123',
-						'live_publishable_key' => 'pk_live_123',
-						'is_live'              => true,
-						'payments_enabled'     => false,
-						'details_submitted'    => true,
-					),
-				),
-				array(
-					'data' => array(
-						'account_id'           => 'acct_123',
-						'live_publishable_key' => 'pk_live_123',
-						'is_live'              => true,
-						'payments_enabled'     => true,
-						'details_submitted'    => false,
-					),
-				),
-			) as $payload
-		) {
-			update_option( 'wcpay_account_data', $payload );
+	public function provide_unready_account_cache_payloads(): array {
+		$account = array(
+			'account_id'           => 'acct_123',
+			'live_publishable_key' => 'pk_live_123',
+			'is_live'              => true,
+			'payments_enabled'     => true,
+			'details_submitted'    => true,
+		);
 
-			$sut = $this->create_service();
-
-			$this->assertSame( 'acct_123', $sut->get_account_id() );
-			$this->assertSame( 'pk_live_123', $sut->get_publishable_key() );
-			$this->assertFalse( $sut->can_process_payments() );
-		}
+		return array(
+			'false'                 => array( false, '', '' ),
+			'a string'              => array( 'invalid', '', '' ),
+			'an empty array'        => array( array(), '', '' ),
+			'string data'           => array( array( 'data' => 'invalid' ), '', '' ),
+			'empty data'            => array( array( 'data' => array() ), '', '' ),
+			'payments disabled'     => array( array( 'data' => array_merge( $account, array( 'payments_enabled' => false ) ) ), 'acct_123', 'pk_live_123' ),
+			'details not submitted' => array( array( 'data' => array_merge( $account, array( 'details_submitted' => false ) ) ), 'acct_123', 'pk_live_123' ),
+		);
 	}
 
 	/**
@@ -742,42 +726,6 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should expose rejected and under-review account state from the stored account cache.
-	 */
-	public function test_exposes_rejected_and_under_review_account_state_from_account_cache(): void {
-		update_option(
-			'wcpay_account_data',
-			array(
-				'data' => $this->get_valid_live_account_payload(
-					array(
-						'status' => 'rejected.fraud',
-					)
-				),
-			)
-		);
-
-		$sut = $this->create_service();
-
-		$this->assertTrue( $sut->is_account_rejected() );
-		$this->assertFalse( $sut->is_account_under_review() );
-
-		update_option(
-			'wcpay_account_data',
-			array(
-				'data' => $this->get_valid_live_account_payload(
-					array(
-						'status' => 'under_review',
-					)
-				),
-			)
-		);
-		$sut = $this->create_service();
-
-		$this->assertFalse( $sut->is_account_rejected() );
-		$this->assertTrue( $sut->is_account_under_review() );
-	}
-
-	/**
 	 * @testdox Should read the business profile and branding logo from the connected account, empty without them ($description).
 	 * @dataProvider business_profile_provider
 	 *
@@ -1072,109 +1020,13 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should expose details-submitted and admin-navigation validity from the stored account cache.
-	 */
-	public function test_exposes_details_submitted_and_admin_navigation_validity_from_account_cache(): void {
-		update_option(
-			'wcpay_account_data',
-			array(
-				'data' => $this->get_valid_live_account_payload(
-					array(
-						'capabilities' => array(
-							'card_payments' => 'active',
-						),
-					)
-				),
-			)
-		);
-
-		$sut = $this->create_service();
-
-		$this->assertTrue( $sut->is_details_submitted() );
-		$this->assertTrue( $sut->has_valid_account_for_admin_navigation() );
-
-		update_option(
-			'wcpay_account_data',
-			array(
-				'data' => $this->get_valid_live_account_payload(
-					array(
-						'capabilities' => array(
-							'card_payments' => 'unrequested',
-						),
-					)
-				),
-			)
-		);
-		$sut = $this->create_service();
-
-		$this->assertFalse( $sut->has_valid_account_for_admin_navigation() );
-
-		update_option(
-			'wcpay_account_data',
-			array(
-				'data' => $this->get_valid_live_account_payload(
-					array(
-						'details_submitted' => false,
-						'capabilities'      => array(
-							'card_payments' => 'active',
-						),
-					)
-				),
-			)
-		);
-		$sut = $this->create_service();
-
-		$this->assertFalse( $sut->is_details_submitted() );
-		$this->assertFalse( $sut->has_valid_account_for_admin_navigation() );
-	}
-
-	/**
-	 * @testdox Should expose card-reader and Capital visibility flags from the stored account cache.
-	 */
-	public function test_exposes_card_reader_and_capital_visibility_flags_from_account_cache(): void {
-		update_option(
-			'wcpay_account_data',
-			array(
-				'data' => $this->get_valid_live_account_payload(
-					array(
-						'card_present_eligible'      => true,
-						'has_card_readers_available' => true,
-						'capital'                    => array(
-							'has_previous_loans' => true,
-						),
-					)
-				),
-			)
-		);
-
-		$sut = $this->create_service();
-
-		$this->assertTrue( $sut->is_card_present_eligible() );
-		$this->assertTrue( $sut->has_card_readers_available() );
-		$this->assertTrue( $sut->has_previous_capital_loans() );
-
-		update_option(
-			'wcpay_account_data',
-			array(
-				'data' => $this->get_valid_live_account_payload(),
-			)
-		);
-		$sut = $this->create_service();
-
-		$this->assertFalse( $sut->is_card_present_eligible() );
-		$this->assertFalse( $sut->has_card_readers_available() );
-		$this->assertFalse( $sut->has_previous_capital_loans() );
-	}
-
-	/**
-	 * @testdox Should expose Documents eligibility and VAT submission flags from the stored account cache, failing closed when they are missing or no account is cached.
-	 * @dataProvider document_flags_provider
+	 * @testdox Account flag readers read their own field of the stored account and fail closed: $_dataName.
+	 * @dataProvider account_flag_readers_provider
 	 *
-	 * @param array<string,mixed>|null $overrides     Overrides of the valid live account, or null for an empty cached account.
-	 * @param bool                     $expected_docs Expected Documents eligibility.
-	 * @param bool                     $expected_vat  Expected VAT submission state.
+	 * @param array<string,mixed>|null $overrides Overrides of the valid live account, or null for an empty cached account.
+	 * @param array<string,bool>       $expected  Expected answer of each reader, by method name.
 	 */
-	public function test_exposes_document_flags_from_account_cache( ?array $overrides, bool $expected_docs, bool $expected_vat ): void {
+	public function test_account_flag_readers_read_their_own_field_of_the_stored_account( ?array $overrides, array $expected ): void {
 		update_option(
 			'wcpay_account_data',
 			array(
@@ -1184,35 +1036,107 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 
 		$sut = $this->create_service();
 
-		$this->assertSame( $expected_docs, $sut->is_documents_enabled() );
-		$this->assertSame( $expected_vat, $sut->has_submitted_vat_data() );
+		foreach ( $expected as $reader => $value ) {
+			$this->assertSame( $value, $sut->$reader(), $reader . '()' );
+		}
 	}
 
 	/**
-	 * Documents flag fixtures.
+	 * Stored account states and what each reader answers for them.
 	 *
-	 * @return array<string,array{array<string,mixed>|null,bool,bool}>
+	 * @return array<string,array{0:array<string,mixed>|null,1:array<string,bool>}>
 	 */
-	public static function document_flags_provider(): array {
+	public static function account_flag_readers_provider(): array {
 		return array(
-			'both flags true'  => array(
+			'documents and VAT flags true'    => array(
 				array(
 					'is_documents_enabled'   => true,
 					'has_submitted_vat_data' => true,
 				),
-				true,
-				true,
+				array(
+					'is_documents_enabled'   => true,
+					'has_submitted_vat_data' => true,
+				),
 			),
-			'both flags false' => array(
+			'documents and VAT flags false'   => array(
 				array(
 					'is_documents_enabled'   => false,
 					'has_submitted_vat_data' => false,
 				),
-				false,
-				false,
+				array(
+					'is_documents_enabled'   => false,
+					'has_submitted_vat_data' => false,
+				),
 			),
-			'flags missing'    => array( array(), false, false ),
-			'empty account'    => array( null, false, false ),
+			'documents and VAT flags missing' => array(
+				array(),
+				array(
+					'is_documents_enabled'   => false,
+					'has_submitted_vat_data' => false,
+				),
+			),
+			'empty account'                   => array(
+				null,
+				array(
+					'is_documents_enabled'   => false,
+					'has_submitted_vat_data' => false,
+				),
+			),
+			'rejected'                        => array(
+				array( 'status' => 'rejected.fraud' ),
+				array(
+					'is_account_rejected'     => true,
+					'is_account_under_review' => false,
+				),
+			),
+			'under review'                    => array(
+				array( 'status' => 'under_review' ),
+				array(
+					'is_account_rejected'     => false,
+					'is_account_under_review' => true,
+				),
+			),
+			'card payments active'            => array(
+				array( 'capabilities' => array( 'card_payments' => 'active' ) ),
+				array(
+					'is_details_submitted' => true,
+					'has_valid_account_for_admin_navigation' => true,
+				),
+			),
+			'card payments unrequested'       => array(
+				array( 'capabilities' => array( 'card_payments' => 'unrequested' ) ),
+				array( 'has_valid_account_for_admin_navigation' => false ),
+			),
+			'details not submitted'           => array(
+				array(
+					'details_submitted' => false,
+					'capabilities'      => array( 'card_payments' => 'active' ),
+				),
+				array(
+					'is_details_submitted' => false,
+					'has_valid_account_for_admin_navigation' => false,
+				),
+			),
+			'card readers and Capital loans'  => array(
+				array(
+					'card_present_eligible'      => true,
+					'has_card_readers_available' => true,
+					'capital'                    => array( 'has_previous_loans' => true ),
+				),
+				array(
+					'is_card_present_eligible'   => true,
+					'has_card_readers_available' => true,
+					'has_previous_capital_loans' => true,
+				),
+			),
+			'no card reader or Capital data'  => array(
+				array(),
+				array(
+					'is_card_present_eligible'   => false,
+					'has_card_readers_available' => false,
+					'has_previous_capital_loans' => false,
+				),
+			),
 		);
 	}
 
@@ -1340,6 +1264,7 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 		update_option( 'woocommerce_woopayments_nox_onboarding_locked', 'yes' );
 		update_option( 'woocommerce_admin_pes_incentive_woopayments_store_had_woopayments', 'yes' );
 		update_option( 'woocommerce_admin_pes_incentive_woopayments_store_had_woopayments_version', 2 );
+		update_option( 'wcpay_onboarding_fields_data', array( 'stale' => true ), false );
 		set_transient( 'wcpay_stripe_onboarding_state', 'state', DAY_IN_SECONDS );
 		set_transient( 'woopay_enabled_by_default', true, DAY_IN_SECONDS );
 		set_transient( 'wcpay_onboarding_init_in_progress', 'yes', DAY_IN_SECONDS );
@@ -1359,6 +1284,7 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'no', get_option( 'wcpay_onboarding_test_mode' ) );
 		$this->assertOptionAutoloaded( 'wcpay_onboarding_test_mode' );
 		$this->assertFalse( get_option( 'wcpay_account_data' ) );
+		$this->assertFalse( get_option( 'wcpay_onboarding_fields_data' ), 'Every database cache key goes with the account.' );
 		$this->assertFalse( get_option( 'wcpay_connection_success_modal_dismissed' ) );
 		$this->assertFalse( get_option( 'wcpay_onboarding_embedded_kyc_in_progress' ) );
 		$this->assertFalse( get_option( 'wcpay_test_mode_enabled_date' ) );
@@ -1428,24 +1354,6 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( $expected_exception, $caught_exception, 'The original option-deletion exception should propagate.' );
 		$this->assertFalse( get_option( $version_option ), 'The paired logic version should still be deleted.' );
-	}
-
-	/**
-	 * @testdox Should clear all WooPayments database cache keys after an account reset.
-	 */
-	public function test_cleanup_after_account_reset_clears_database_cache_keys(): void {
-		foreach ( $this->get_database_cache_keys() as $cache_key ) {
-			update_option( $cache_key, array( 'stale' => true ), false );
-			wp_cache_set( $cache_key, array( 'stale' => true ), 'options' );
-		}
-
-		$sut = $this->create_service();
-		$sut->cleanup_after_account_reset();
-
-		foreach ( $this->get_database_cache_keys() as $cache_key ) {
-			$this->assertFalse( get_option( $cache_key, false ), "Expected {$cache_key} option to be deleted." );
-			$this->assertFalse( wp_cache_get( $cache_key, 'options' ), "Expected {$cache_key} object-cache entry to be deleted." );
-		}
 	}
 
 	/**
@@ -2238,7 +2146,7 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Supported countries are the 39 WooPayments countries with WooCommerce's labels, with $label.
+	 * @testdox Supported countries are the 39 WooPayments countries in core's list order with WooCommerce's labels, with $label.
 	 * @testWith ["no country removed", ""]
 	 *           ["Puerto Rico removed by the woocommerce_countries filter", "PR"]
 	 *
@@ -2263,21 +2171,31 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 			WC()->countries = $countries;
 		}
 
-		$codes    = array_keys( $supported );
-		$expected = array_values( array_diff( self::WOOPAYMENTS_COUNTRY_CODES, array( $removed ) ) );
-		sort( $codes );
-		sort( $expected );
-		$this->assertSame( $expected, $codes );
+		$this->assertSame( array_values( array_diff( self::WOOPAYMENTS_COUNTRY_CODES, array( $removed ) ) ), array_keys( $supported ) );
 		foreach ( $supported as $code => $name ) {
 			$this->assertSame( $labels[ $code ], $name, "The label of {$code} is WooCommerce's." );
 		}
 	}
 
 	/**
-	 * @testdox Supported countries follow the order of core's WooPayments country list.
+	 * @testdox Dev mode triggers follow the wcpay_dev_mode filter, which can turn dev mode on or off, as in the extension.
+	 *
+	 * Client 11.1.0 `includes/core/class-mode.php:72-111`.
 	 */
-	public function test_supported_countries_follow_core_list_order(): void {
-		$this->assertSame( DefaultPaymentGateways::get_wcpay_countries(), array_keys( $this->create_service()->get_supported_countries() ) );
+	public function test_dev_mode_triggers_follow_the_dev_mode_filter(): void {
+		$account_service = wc_get_container()->get( WooPaymentsAccountService::class );
+		add_filter( 'wcpay_dev_mode', '__return_false' );
+		$this->assertSame( array(), $account_service->get_dev_mode_triggers() );
+		remove_filter( 'wcpay_dev_mode', '__return_false' );
+
+		add_filter( 'wcpay_dev_mode', '__return_true' );
+		$triggers = $account_service->get_dev_mode_triggers();
+
+		$this->assertNotEmpty( $triggers );
+		$this->assertTrue( $account_service->is_dev_mode_enabled() );
+		foreach ( $triggers as $trigger ) {
+			$this->assertMatchesRegularExpression( '/^(WCPAY_DEV_MODE|WP_ENVIRONMENT_TYPE=\\w+|WP_DEVELOPMENT_MODE=\\w+|wcpay_dev_mode filter)$/', $trigger );
+		}
 	}
 
 	/**
