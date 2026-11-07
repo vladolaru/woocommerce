@@ -247,9 +247,8 @@ class AppearanceStore {
 				continue;
 			}
 
-			$url  = esc_url_raw( $rule['cssSrc'], array( 'https' ) );
-			$host = wp_parse_url( $url, PHP_URL_HOST );
-			if ( is_string( $host ) && in_array( $host, $this->get_allowed_font_domains(), true ) ) {
+			$url = ThemeAppearance::get_allowed_font_url( $rule['cssSrc'] );
+			if ( null !== $url ) {
 				$sanitized[] = array( 'cssSrc' => $url );
 			}
 		}
@@ -401,21 +400,6 @@ class AppearanceStore {
 			'transform',
 			'-webkit-font-smoothing',
 			'-moz-osx-font-smoothing',
-		);
-	}
-
-	/**
-	 * Get allowed WooPay appearance font domains.
-	 *
-	 * @return array<int,string>
-	 */
-	private function get_allowed_font_domains(): array {
-		return array(
-			'fonts.googleapis.com',
-			'fonts.gstatic.com',
-			'use.typekit.net',
-			'fonts.bunny.net',
-			'fonts.wp.com',
 		);
 	}
 }

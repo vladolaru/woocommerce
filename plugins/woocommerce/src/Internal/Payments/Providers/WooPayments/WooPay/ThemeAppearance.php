@@ -181,14 +181,29 @@ class ThemeAppearance {
 			if ( empty( $style->src ) || ! is_string( $style->src ) ) {
 				continue;
 			}
-			$url  = esc_url_raw( $style->src, array( 'https' ) );
-			$host = wp_parse_url( $url, PHP_URL_HOST );
-			if ( is_string( $host ) && in_array( $host, self::ALLOWED_FONT_DOMAINS, true ) ) {
+			$url = self::get_allowed_font_url( $style->src );
+			if ( null !== $url ) {
 				$font_rules[] = array( 'cssSrc' => $url );
 			}
 		}
 
 		return array_slice( $font_rules, 0, 10 );
+	}
+
+	/**
+	 * Get a font stylesheet URL WooPay may load: https, on one of the allowed font CDN hosts.
+	 *
+	 * Both producers of WooPay font rules use this check (the stored rules in AppearanceStore and the theme's registered
+	 * styles here), as the client's two producers share `WC_Payments_Styles_Cache::ALLOWED_FONT_DOMAINS`.
+	 *
+	 * @param string $src Stylesheet URL.
+	 * @return string|null The sanitized URL, or null when WooPay may not load it.
+	 */
+	public static function get_allowed_font_url( string $src ): ?string {
+		$url  = esc_url_raw( $src, array( 'https' ) );
+		$host = wp_parse_url( $url, PHP_URL_HOST );
+
+		return is_string( $host ) && in_array( $host, self::ALLOWED_FONT_DOMAINS, true ) ? $url : null;
 	}
 
 	/**
