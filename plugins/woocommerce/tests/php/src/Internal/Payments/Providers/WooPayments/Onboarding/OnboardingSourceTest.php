@@ -407,9 +407,13 @@ class OnboardingSourceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should read the referer and GET params from the request by default.
+	 * @testdox Should read the referer and GET params from the request by default, and return the unknown source without a referer.
 	 */
 	public function test_get_source_reads_the_request_by_default(): void {
+		unset( $_SERVER['HTTP_REFERER'] );
+
+		$this->assertSame( 'unknown', OnboardingSource::get_source() );
+
 		$_SERVER['HTTP_REFERER'] = admin_url( 'admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Fpayouts' );
 
 		$this->assertSame( 'wcpay-payouts-page', OnboardingSource::get_source() );
@@ -417,14 +421,5 @@ class OnboardingSourceTest extends WC_Unit_Test_Case {
 		$_GET['source'] = 'wcpay-go-live-task';
 
 		$this->assertSame( 'wcpay-go-live-task', OnboardingSource::get_source() );
-	}
-
-	/**
-	 * @testdox Should return the unknown source when the request has no referer.
-	 */
-	public function test_get_source_is_unknown_without_a_referer(): void {
-		unset( $_SERVER['HTTP_REFERER'] );
-
-		$this->assertSame( 'unknown', OnboardingSource::get_source() );
 	}
 }

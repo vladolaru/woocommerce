@@ -80,42 +80,30 @@ class RequestTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Unknown custom parameters set through the compatibility API survive unchanged.
-	 * @dataProvider concrete_request_provider
-	 *
-	 * @param class-string $request_class Request class.
-	 */
-	public function test_unknown_custom_set_param_survives_unchanged( string $request_class ): void {
-		$request = $this->create_request( $request_class );
-		$value   = array(
-			'nested'  => array( 'alpha' => 1 ),
-			'enabled' => false,
-		);
-
-		$result = $request->set( 'extension_custom_param', $value );
-
-		$this->assertSame( $request, $result, 'set() should preserve the oracle fluent return contract.' );
-		$this->assertSame( $value, $request->get_params()['extension_custom_param'], 'Custom parameter values should not be normalized or dropped.' );
-	}
-
-	/**
-	 * @testdox A filter setter the request does not declare sets its parameter unchanged; any other undeclared call does nothing.
-	 * @dataProvider concrete_request_provider
-	 *
 	 * Client 11.1.0 request classes declare setters such as set_type_is() and set_loan_id_is() that native requests do not;
 	 * extensions call them on the objects handed to the wcpay_list_*_request filters.
 	 *
+	 * @testdox Custom parameters set through set() or an undeclared filter setter survive unchanged; set() returns the request and an undeclared getter does nothing.
+	 * @dataProvider concrete_request_provider
+	 *
 	 * @param class-string $request_class Request class.
 	 */
-	public function test_undeclared_filter_setter_sets_its_parameter( string $request_class ): void {
-		$request = $this->create_request( $request_class );
-		$value   = array( 'flxln_1', ' raw ' );
+	public function test_custom_parameters_set_through_the_compatibility_api_survive_unchanged( string $request_class ): void {
+		$request      = $this->create_request( $request_class );
+		$value        = array(
+			'nested'  => array( 'alpha' => 1 ),
+			'enabled' => false,
+		);
+		$filter_value = array( 'flxln_1', ' raw ' );
 
-		call_user_func( array( $request, 'set_extension_filter_is' ), $value );
-		$result = call_user_func( array( $request, 'get_extension_filter_is' ) );
+		$result = $request->set( 'extension_custom_param', $value );
+		call_user_func( array( $request, 'set_extension_filter_is' ), $filter_value );
+		$getter_result = call_user_func( array( $request, 'get_extension_filter_is' ) );
 
-		$this->assertSame( $value, $request->get_params()['extension_filter_is'], 'The setter should store the value under the name after set_, unchanged.' );
-		$this->assertNull( $result, 'Any other undeclared call should return nothing.' );
+		$this->assertSame( $request, $result, 'set() should preserve the oracle fluent return contract.' );
+		$this->assertSame( $value, $request->get_params()['extension_custom_param'], 'Custom parameter values should not be normalized or dropped.' );
+		$this->assertSame( $filter_value, $request->get_params()['extension_filter_is'], 'The setter should store the value under the name after set_, unchanged.' );
+		$this->assertNull( $getter_result, 'Any other undeclared call should return nothing.' );
 		$this->assertArrayNotHasKey( 'get_extension_filter_is', $request->get_params() );
 	}
 
