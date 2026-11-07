@@ -75,10 +75,11 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 		$this->delete_handover_options();
 	}
 
-	/** Clear the WP_CLI override the CLI case sets, and the services and screen a booted request leaves behind. */
+	/** Clear the WP_CLI override the CLI case sets, the subscription globals, and the services and screen a booted request leaves behind. */
 	public function tearDown(): void {
 		remove_action( FeaturesController::FEATURE_ENABLED_CHANGED_ACTION, array( MultiCurrencyFeatureController::class, 'mirror_extension_flag' ), 10 );
 		$this->delete_handover_options();
+		unset( $GLOBALS['wcs_subscription'], $GLOBALS['wcs_subscription_loads'] );
 		Constants::clear_single_constant( 'WP_CLI' );
 		set_current_screen( 'front' );
 		wc_get_container()->reset_all_resolved();
@@ -96,8 +97,6 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 	 * were: nothing more registers and no currency state is built.
 	 *
 	 * @dataProvider subscription_currency_carts
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 *
 	 * @param string              $label     Case label.
 	 * @param array<string,mixed> $options   Options the store holds besides an enabled list without additional currencies.
@@ -199,8 +198,6 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 	 *           [true, false, "admin", false]
 	 *           [true, false, "cron", false]
 	 *           [true, false, "cli", false]
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 *
 	 * @param bool   $subscriptions Whether WooCommerce Subscriptions is active.
 	 * @param bool   $configured    Whether an additional currency is enabled.
@@ -208,10 +205,12 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 	 * @param bool   $watched       Whether carts are watched.
 	 */
 	public function test_watches_carts_only_on_a_single_currency_store_with_subscriptions( bool $subscriptions, bool $configured, string $request, bool $watched ): void {
-		if ( $subscriptions && ! class_exists( 'WC_Subscriptions', false ) ) {
-			eval( 'class WC_Subscriptions {}' ); // phpcs:ignore Squiz.PHP.Eval.Discouraged -- Stub of the extension's class, declared in this process only.
-		}
 		$this->enable_core_multi_currency( $configured );
+		$this->register_legacy_proxy_function_mocks(
+			array(
+				'class_exists' => static fn( string $class_name, bool $autoload = true ): bool => 'WC_Subscriptions' === $class_name ? $subscriptions : class_exists( $class_name, $autoload ),
+			)
+		);
 		$sut = new MultiCurrencyBootstrap( static fn(): array => array() );
 		$this->register_as( $sut, wc_get_container(), $request );
 
@@ -229,8 +228,6 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 	 * `includes/core/class-wcs-cart-renewal.php:370`) or an Undo restore.
 	 * @testWith ["woocommerce_add_to_cart"]
 	 *           ["woocommerce_cart_item_restored"]
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 *
 	 * @param string $hook Hook the renewal item arrives with.
 	 */
@@ -1168,7 +1165,7 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 	/**
 	 * Arrange a store whose only additional currency is disabled, with WooCommerce Subscriptions loaded and a subscription.
 	 *
-	 * Declares the Subscriptions class and `wcs_get_subscription()` in this process (the test must run in its own), stores the
+	 * Answers the Subscriptions class and `wcs_get_subscription()` through the legacy proxy mocks, stores the
 	 * subscription it returns in `$GLOBALS['wcs_subscription']` and counts its calls in `$GLOBALS['wcs_subscription_loads']`,
 	 * logs its customer in, serves the provider root `CachedRateProviderRoot` that installs a provider whose cached rates serve,
 	 * and puts a Subscriptions compatibility controller that counts its cart walks in the container.
@@ -1184,10 +1181,19 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 		foreach ( $options as $name => $value ) {
 			update_option( $name, $value );
 		}
-		if ( ! class_exists( 'WC_Subscriptions', false ) ) {
-			// phpcs:ignore Squiz.PHP.Eval.Discouraged -- Stubs of the extension's class and lookup, declared in this process only.
-			eval( 'class WC_Subscriptions {} function wcs_get_subscription( $id ) { ++$GLOBALS["wcs_subscription_loads"]; return $GLOBALS["wcs_subscription"]; }' );
-		}
+		// The extension's class and lookup, answered through the legacy proxy the module asks.
+		$this->register_legacy_proxy_function_mocks(
+			array(
+				'class_exists'         => static fn( string $class_name, bool $autoload = true ): bool => 'WC_Subscriptions' === $class_name || class_exists( $class_name, $autoload ),
+				'function_exists'      => static fn( string $function_name ): bool => 'wcs_get_subscription' === $function_name || function_exists( $function_name ),
+				'wcs_get_subscription' => static function ( $id ) {
+					unset( $id );
+					++$GLOBALS['wcs_subscription_loads'];
+
+					return $GLOBALS['wcs_subscription'];
+				},
+			)
+		);
 		$customer_id = self::factory()->user->create();
 		wp_set_current_user( $customer_id );
 		// Subscriptions 9.3.0's `WC_Subscription` extends `WC_Order` (`includes/core/class-wc-subscription.php:15`).
@@ -1234,7 +1240,7 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 		};
 		$controller->init(
 			wc_get_container()->get( MultiCurrencyRuntimeArbiter::class ),
-			new LegacyProxy(),
+			wc_get_container()->get( LegacyProxy::class ),
 			wc_get_container()->get( StateBuilderFactory::class ),
 			wc_get_container()->get( ServiceFactory::class ),
 			wc_get_container()->get( RequestContext::class )

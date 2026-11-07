@@ -24,6 +24,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Integrations\WooCommercePreOrd
 use Automattic\WooCommerce\Internal\MultiCurrency\Integrations\WooCommerceProductAddOns;
 use Automattic\WooCommerce\Internal\MultiCurrency\Integrations\WooCommerceSubscriptions;
 use Automattic\WooCommerce\Internal\MultiCurrency\Integrations\WooCommerceUPS;
+use Automattic\WooCommerce\Proxies\LegacyProxy;
 
 /**
  * Starts Multi-Currency for the request: syncs the payments owner and, while WooCommerce runs Multi-Currency, registers
@@ -261,7 +262,7 @@ final class MultiCurrencyBootstrap {
 	 * @internal
 	 */
 	public function listen_for_subscription_currency(): void {
-		if ( ! class_exists( 'WC_Subscriptions' ) ) {
+		if ( ! wc_get_container()->get( LegacyProxy::class )->call_function( 'class_exists', 'WC_Subscriptions' ) ) {
 			return;
 		}
 

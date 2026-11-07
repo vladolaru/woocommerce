@@ -578,7 +578,7 @@ class WooCommerceSubscriptions implements RegisterHooksInterface {
 	 * @return bool
 	 */
 	protected function is_subscriptions_runtime_available(): bool {
-		return class_exists( 'WC_Subscriptions' );
+		return (bool) $this->legacy_proxy->call_function( 'class_exists', 'WC_Subscriptions' );
 	}
 
 	/**
@@ -809,7 +809,7 @@ class WooCommerceSubscriptions implements RegisterHooksInterface {
 	 * @return object|null
 	 */
 	private function get_subscription_by_id( $subscription_id ): ?object {
-		if ( ! function_exists( 'wcs_get_subscription' ) ) {
+		if ( ! $this->legacy_proxy->call_function( 'function_exists', 'wcs_get_subscription' ) ) {
 			return null;
 		}
 
