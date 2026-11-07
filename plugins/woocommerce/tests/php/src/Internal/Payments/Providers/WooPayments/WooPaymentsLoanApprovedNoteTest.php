@@ -46,15 +46,6 @@ class WooPaymentsLoanApprovedNoteTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Registers the account refresh hook when the built-in WooPayments owns the runtime.
-	 */
-	public function test_registers_account_refresh_hook_when_builtin_owns_runtime(): void {
-		$this->sut->register();
-
-		$this->assertSame( 10, has_action( 'woocommerce_payments_account_refreshed', array( $this->sut, 'handle_loan_approved_inbox_note' ) ) );
-	}
-
-	/**
 	 * @testdox Adds the loan note with its name, copy, data and action for an active loan.
 	 */
 	public function test_adds_note_for_active_loan(): void {
@@ -142,7 +133,7 @@ class WooPaymentsLoanApprovedNoteTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Deletes the note when the account has no active loan.
+	 * @testdox Deletes the note when a refreshed account has no active loan.
 	 * @dataProvider provide_accounts_without_active_loan
 	 *
 	 * @param array<string,mixed> $account Account data.
@@ -151,8 +142,11 @@ class WooPaymentsLoanApprovedNoteTest extends WC_Unit_Test_Case {
 		$this->api_client->method( 'get_capital_active_loan_summary' )->willReturn( $this->get_loan_summary( 100000, 1643889167, 'usd' ) );
 		$this->sut->handle_loan_approved_inbox_note( $this->get_active_loan_account() );
 		$this->get_single_note();
+		$this->sut->register();
 
-		$this->sut->handle_loan_approved_inbox_note( $account );
+		// The account service fires this hook after each account refresh (WooPaymentsAccountServiceTest pins that side).
+		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment
+		do_action( 'woocommerce_payments_account_refreshed', $account );
 
 		$this->assertSame( array(), Notes::load_data_store()->get_notes_with_name( WooPaymentsLoanApprovedNote::NOTE_NAME ) );
 	}

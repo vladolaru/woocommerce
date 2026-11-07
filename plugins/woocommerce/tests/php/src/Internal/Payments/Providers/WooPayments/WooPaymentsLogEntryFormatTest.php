@@ -3,9 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogEntryFormat;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use WC_Unit_Test_Case;
 
 /**
@@ -15,19 +13,6 @@ use WC_Unit_Test_Case;
  * sequential entry number, so support can follow one request through a log file.
  */
 class WooPaymentsLogEntryFormatTest extends WC_Unit_Test_Case {
-
-	/**
-	 * @testdox Loads on every request type of a connected or active store, where WooPayments writes log lines.
-	 */
-	public function test_loads_on_every_request_of_a_connected_store(): void {
-		$matrix = WooPaymentsProvider::get_classes_by_setup_tier();
-
-		foreach ( array( WooPaymentsSetupTier::CONNECTED, WooPaymentsSetupTier::ACTIVE ) as $state ) {
-			foreach ( array( 'front', 'admin', 'ajax', 'rest', 'cron', 'cli' ) as $request ) {
-				$this->assertContains( WooPaymentsLogEntryFormat::class, $matrix[ $state ][ $request ], "{$state} {$request}" );
-			}
-		}
-	}
 
 	/**
 	 * @testdox Adds one request id and a running entry number after the level of each WooPayments line, keeping the rest of the line.

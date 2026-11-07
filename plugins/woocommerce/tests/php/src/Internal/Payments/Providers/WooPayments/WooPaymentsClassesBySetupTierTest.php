@@ -17,6 +17,7 @@ use Automattic\WooCommerce\Internal\Payments\ProviderGatewaysController;
 use Automattic\WooCommerce\Internal\Payments\PaymentGatewayProviderInterface;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsConnectionFeatures;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogEntryFormat;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAdminRestRouteRegistrar;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\CutoverController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\DataMigration;
@@ -127,6 +128,8 @@ class WooPaymentsClassesBySetupTierTest extends WC_Unit_Test_Case {
 			'The WooCommerce update listener'       => array( WooPaymentsWooCommerceUpdateListener::class ),
 			// Every WordPress.com request of the store carries the connection's Safe Mode arguments.
 			'The WordPress.com connection features' => array( WooPaymentsConnectionFeatures::class ),
+			// WooPayments writes log lines on any request, each carrying the request id and entry number.
+			'The log entry format'                  => array( WooPaymentsLogEntryFormat::class ),
 		);
 	}
 
