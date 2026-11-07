@@ -1158,7 +1158,7 @@ class SessionServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should persist and clear WooPay phone session data.
+	 * @testdox Should persist and clear WooPay phone session data, and keep a flat phone value from the frontend payload.
 	 */
 	public function test_persists_and_clears_woopay_phone_session_data(): void {
 		$this->original_session = WC()->session;
@@ -1193,32 +1193,16 @@ class SessionServiceTest extends WC_Unit_Test_Case {
 		$sut->clear_woopay_session_data();
 
 		$this->assertNull( WC()->session->get( 'woopay-user-data' ) );
+
+		$sut->set_woopay_phone_session_data( array( 'phone_number' => '+15555550124' ) );
+
+		$this->assertSame( '+15555550124', WC()->session->get( 'woopay-user-data' )['woopay_user_phone_field']['full'], 'A flat phone value lands as the full phone field.' );
 	}
 
 	/**
-	 * @testdox Should keep flat WooPay phone values while accepting the frontend payload shape.
+	 * @testdox Should neither geolocate the shopper nor resolve the available gateways while building the frontend config when WooPay is off.
 	 */
-	public function test_persists_flat_woopay_phone_session_data(): void {
-		$this->original_session = WC()->session;
-		WC()->session           = $this->create_session();
-		$sut                    = $this->create_service();
-
-		$sut->set_woopay_phone_session_data(
-			array(
-				'phone_number' => '+15555550124',
-			)
-		);
-
-		$this->assertSame(
-			'+15555550124',
-			WC()->session->get( 'woopay-user-data' )['woopay_user_phone_field']['full']
-		);
-	}
-
-	/**
-	 * @testdox Should not geolocate the shopper while building the frontend config when WooPay is off.
-	 */
-	public function test_frontend_config_does_not_geolocate_when_woopay_is_off(): void {
+	public function test_frontend_config_skips_geolocation_and_gateway_lookup_when_woopay_is_off(): void {
 		$geolocations = 0;
 		add_filter(
 			'woocommerce_geolocate_ip',
@@ -1227,31 +1211,20 @@ class SessionServiceTest extends WC_Unit_Test_Case {
 				return 'US';
 			}
 		);
+		$resolutions = 0;
+		add_filter(
+			'woocommerce_available_payment_gateways',
+			static function ( $gateways ) use ( &$resolutions ) {
+				++$resolutions;
+				return $gateways;
+			}
+		);
 
 		$config = $this->create_service( array( 'platform_checkout' => 'no' ), array(), null, null, null, false )->get_woopay_frontend_config( 'checkout' );
 
-		$this->assertSame( 0, $geolocations );
+		$this->assertSame( 0, $geolocations, 'No geolocation.' );
+		$this->assertSame( 0, $resolutions, 'No available-gateways resolution.' );
 		$this->assertFalse( $config['woopayIsCountryAvailable'] );
-	}
-
-	/**
-	 * @testdox Should not resolve the available gateways while building the frontend config when WooPay is off.
-	 */
-	public function test_frontend_config_does_not_resolve_available_gateways_when_woopay_is_off(): void {
-		$resolutions      = 0;
-		$count_resolution = static function ( $gateways ) use ( &$resolutions ) {
-			++$resolutions;
-			return $gateways;
-		};
-		add_filter( 'woocommerce_available_payment_gateways', $count_resolution );
-
-		try {
-			$config = $this->create_service( array( 'platform_checkout' => 'no' ) )->get_woopay_frontend_config( 'checkout' );
-		} finally {
-			remove_filter( 'woocommerce_available_payment_gateways', $count_resolution );
-		}
-
-		$this->assertSame( 0, $resolutions );
 		$this->assertFalse( $config['shouldShowWooPayButton'] );
 	}
 
