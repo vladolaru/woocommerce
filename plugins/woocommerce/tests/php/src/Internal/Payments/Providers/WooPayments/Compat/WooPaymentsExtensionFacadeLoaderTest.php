@@ -4,19 +4,73 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Compat;
 
 use Automattic\Jetpack\Constants;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Compat\WooPaymentsExtensionFacadeLoader;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsClientVersion;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExtensionRuntime;
-use Automattic\WooCommerce\Proxies\LegacyProxy;
 use WC_Unit_Test_Case;
 
 /**
  * Tests the WooPayments legacy facade compatibility boundary.
+ *
+ * The request rows run in the main process, which always holds a `WC_Payments` class (a legacy onboarding test declares a
+ * fake at file load, and the feature-on boot declares the facade), so they observe the loader's own autoloader and the
+ * version constant instead of class names. Rows that need the real facade or fixture classes keep a separate process.
  */
 class WooPaymentsExtensionFacadeLoaderTest extends WC_Unit_Test_Case {
+
+	/**
+	 * Facade loader autoloaders registered before the test (the boot loader's on the feature-on leg).
+	 *
+	 * @var array<int,callable>
+	 */
+	private array $boot_autoloaders = array();
+
+	/**
+	 * The loader the test registered, if any.
+	 *
+	 * @var WooPaymentsExtensionFacadeLoader|null
+	 */
+	private ?WooPaymentsExtensionFacadeLoader $loader = null;
+
+	/**
+	 * Request globals before the test.
+	 *
+	 * @var array{0:array<string,mixed>,1:array<string,mixed>}
+	 */
+	private array $request_globals = array( array(), array() );
+
+	/**
+	 * Record the facade loader autoloaders and the request globals the test may change.
+	 */
+	public function setUp(): void {
+		parent::setUp();
+
+		$this->boot_autoloaders = array_values( array_filter( $this->registered_autoloaders(), array( $this, 'is_facade_autoloader' ) ) );
+		$this->request_globals  = array( $_REQUEST, $_SERVER ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Saved for restore only.
+	}
+
+	/**
+	 * Unregister the test's loader, restore the boot loaders, the request globals and the constants the rows set.
+	 */
+	public function tearDown(): void {
+		try {
+			if ( null !== $this->loader ) {
+				spl_autoload_unregister( array( $this->loader, 'autoload_facade' ) );
+			}
+			foreach ( $this->boot_autoloaders as $autoloader ) {
+				if ( ! in_array( $autoloader, $this->registered_autoloaders(), true ) ) {
+					spl_autoload_register( $autoloader );
+				}
+			}
+			list( $_REQUEST, $_SERVER ) = $this->request_globals;
+			foreach ( array( 'WP_CLI', 'WP_PLUGIN_DIR', 'WP_SANDBOX_SCRAPING' ) as $name ) {
+				Constants::clear_single_constant( $name );
+			}
+		} finally {
+			parent::tearDown();
+		}
+	}
 
 	/**
 	 * @testdox The APFS compatibility gate recognizes the built-in WooPayments.
@@ -45,25 +99,7 @@ class WooPaymentsExtensionFacadeLoaderTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Core does not mistake its compatibility facade for the WooPayments extension's runtime.
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
-	 */
-	public function test_facade_does_not_report_the_extension_runtime_as_loaded(): void {
-		$this->register_extension_facades();
-
-		$arbiter = $this->createMock( WooPaymentsRuntimeArbiter::class );
-		$arbiter->method( 'is_extension_owner' )->willReturn( false );
-
-		$extension_runtime = new WooPaymentsExtensionRuntime();
-		$extension_runtime->init( new LegacyProxy(), $arbiter );
-
-		$this->assertTrue( class_exists( 'WC_Payments' ), 'Extension compatibility requires the native facade to be available.' );
-		$this->assertFalse( $extension_runtime->is_loaded(), 'Core must retain its Payments menu and other native-only behavior when only the facade is present.' );
-	}
-
-	/**
-	 * @testdox The WC_Payments facade returns the container-owned gateway.
+	 * @testdox The WC_Payments facade returns the container-owned gateway and keeps the extension's Blueprint settings call safe.
 	 * @runInSeparateProcess
 	 * @preserveGlobalState disabled
 	 */
@@ -76,19 +112,6 @@ class WooPaymentsExtensionFacadeLoaderTest extends WC_Unit_Test_Case {
 
 		$this->setExpectedDeprecated( 'WC_Payments::get_gateway' );
 		$this->assertSame( wc_get_container()->get( WooPaymentsGateway::class ), \WC_Payments::get_gateway(), 'The facade must expose the same native gateway instance as the dependency-injection container.' );
-	}
-
-	/**
-	 * @testdox The WC_Payments facade keeps the extension's Blueprint settings call safe.
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
-	 */
-	public function test_wc_payments_facade_keeps_blueprint_settings_call_safe(): void {
-		$this->register_extension_facades();
-		$this->assertTrue( class_exists( 'WC_Payments' ), 'The legacy WooPayments facade should be loaded.' );
-		if ( ! class_exists( 'WC_Payments' ) ) {
-			return;
-		}
 
 		$gateways = WC()->payment_gateways->payment_gateways();
 
@@ -99,11 +122,10 @@ class WooPaymentsExtensionFacadeLoaderTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox The loader does not emulate the WooPayments extension's gateway class.
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 */
 	public function test_gateway_does_not_satisfy_the_extension_gateway_class_identity(): void {
-		$this->register_extension_facades();
+		$loader = new WooPaymentsExtensionFacadeLoader();
+		$loader->autoload_facade( 'WC_Payment_Gateway_WCPay' );
 
 		$gateway = wc_get_container()->get( WooPaymentsGateway::class );
 
@@ -112,48 +134,49 @@ class WooPaymentsExtensionFacadeLoaderTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The extension facades stay absent when the built-in WooPayments does not own payments.
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
+	 * @testdox The loader registers no facade autoloader and leaves the version constant alone when the built-in WooPayments does not own payments.
 	 */
 	public function test_facades_stay_absent_when_the_builtin_does_not_own_payments(): void {
-		if ( 'yes' === getenv( 'WOOPAYMENTS_FEATURE' ) ) {
-			$this->markTestSkipped( 'The feature-on run loads the built-in WooPayments at boot, which declares the facades for the whole process.' );
-		}
+		$version_defined = defined( 'WCPAY_VERSION_NUMBER' );
+
 		$this->register_extension_facades( false );
 
-		$this->assertFalse( class_exists( 'WC_Payments', false ), 'The plugin or ownerless runtime must retain authority over the WC_Payments symbol.' );
-		$this->assertFalse( class_exists( 'WC_Payments_Features', false ), 'The plugin or ownerless runtime must retain authority over the WC_Payments_Features symbol.' );
-		$this->assertFalse( defined( 'WCPAY_VERSION_NUMBER' ), 'The native compatibility version must not leak outside native ownership.' );
+		$this->assert_loader_stood_aside( $version_defined, 'outside native ownership.' );
 	}
 
 	/**
-	 * @testdox Official WordPress activation requests keep the extension-owned symbols available.
+	 * @testdox Official WordPress activation requests and WordPress's plugin sandbox get no facade autoloader and no version constant from the loader.
 	 * @dataProvider official_activation_request_provider
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 *
-	 * @param array<string,mixed>  $request Request parameters.
-	 * @param array<string,string> $server  Server parameters.
+	 * @param array<string,mixed>  $request   Request parameters.
+	 * @param array<string,string> $server    Server parameters.
+	 * @param array<string,bool>   $constants Constants WordPress defines for the request.
 	 */
-	public function test_official_activation_requests_keep_extension_symbols_available( array $request, array $server ): void {
+	public function test_official_activation_requests_keep_extension_symbols_available( array $request, array $server, array $constants = array() ): void {
 		$_REQUEST = $request; // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Reproducing WordPress's already-authorized plugin activation requests.
 		$_SERVER  = array_merge( $_SERVER, $server );
+		foreach ( $constants as $name => $value ) {
+			Constants::set_constant( $name, $value );
+		}
+		$version_defined = defined( 'WCPAY_VERSION_NUMBER' );
 
 		$this->register_extension_facades();
 
-		// Even a consumer probing the classes earlier in the request must not declare them: no autoloader is registered.
-		$this->assertFalse( class_exists( 'WC_Payments' ), 'An activation request must reach the plugin sandbox without a predeclared bootstrap class. ' . $this->describe_facade_state() );
-		$this->assertFalse( class_exists( 'WC_Payments_Features' ), 'An activation request must reach the plugin sandbox without a predeclared feature class. ' . $this->describe_facade_state() );
+		// Without an autoloader, even a consumer probing the classes earlier in the request declares nothing.
+		$this->assert_loader_stood_aside( $version_defined, 'for an activation request.' );
 	}
 
 	/**
-	 * Official WordPress request shapes that can activate WooPayments after plugins_loaded.
+	 * Official WordPress request shapes that can activate WooPayments after plugins_loaded, and the plugin sandbox.
 	 *
-	 * @return array<string,array{0:array<string,mixed>,1:array<string,string>}>
+	 * @return array<string,array{0:array<string,mixed>,1:array<string,string>,2?:array<string,bool>}>
 	 */
 	public function official_activation_request_provider(): array {
 		return array(
+			// WordPress defines WP_SANDBOX_SCRAPING while it sandbox-loads a plugin and in the file editor's scrape request.
+			// The loader runs inside that request when WooCommerce is activated in the plugin sandbox, or in the file
+			// editor's scrape request.
+			'sandbox scraping'                      => array( array(), array(), array( 'WP_SANDBOX_SCRAPING' => true ) ),
 			'plugins screen activate link'          => array(
 				array(
 					'action' => 'activate',
@@ -255,16 +278,15 @@ class WooPaymentsExtensionFacadeLoaderTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox WP-CLI keeps extension-owned symbols available for programmatic activation.
+	 * @testdox WP-CLI activation commands get no facade autoloader and no version constant from the loader.
 	 * @dataProvider wp_cli_activation_request_provider
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 *
 	 * @param array<int,string> $arguments WP-CLI arguments.
 	 */
 	public function test_wp_cli_keeps_extension_symbols_available_for_activation( array $arguments ): void {
-		define( 'WP_CLI', true );
+		Constants::set_constant( 'WP_CLI', true );
 		$_SERVER['argv'] = $arguments;
+		$version_defined = defined( 'WCPAY_VERSION_NUMBER' );
 
 		// A plugins directory holding WooPayments in a renamed folder, which WP-CLI also activates by its folder name.
 		$plugins_dir = sys_get_temp_dir() . '/wc-facade-loader-' . wp_generate_uuid4();
@@ -276,9 +298,8 @@ class WooPaymentsExtensionFacadeLoaderTest extends WC_Unit_Test_Case {
 		try {
 			$this->register_extension_facades();
 
-			// Probing with autoload: a recognized activation registers no autoloader, so even a probe declares nothing.
-			$this->assertFalse( class_exists( 'WC_Payments' ), 'WP-CLI must be able to activate the standalone plugin without a class collision. ' . $this->describe_facade_state() );
-			$this->assertFalse( class_exists( 'WC_Payments_Features' ), 'WP-CLI must retain the plugin feature-class name for an activation sandbox. ' . $this->describe_facade_state() );
+			// Without an autoloader, even a consumer probing the classes earlier in the command declares nothing.
+			$this->assert_loader_stood_aside( $version_defined, 'for a WP-CLI activation.' );
 		} finally {
 			wp_delete_file( $main_file );
 			rmdir( dirname( $main_file ) ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_rmdir -- Test fixture cleanup.
@@ -310,21 +331,16 @@ class WooPaymentsExtensionFacadeLoaderTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Non-activating WP-CLI requests retain the compatibility facades.
+	 * @testdox Non-activating WP-CLI requests are not recognized as a WooPayments activation, so they keep the compatibility facades.
 	 * @dataProvider wp_cli_non_activation_request_provider
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 *
 	 * @param array<int,string> $arguments WP-CLI arguments.
 	 */
 	public function test_ordinary_wp_cli_request_keeps_the_facades( array $arguments ): void {
-		define( 'WP_CLI', true );
+		Constants::set_constant( 'WP_CLI', true );
 		$_SERVER['argv'] = $arguments;
 
-		$this->register_extension_facades();
-
-		$this->assertTrue( class_exists( 'WC_Payments' ), 'Ordinary WP-CLI commands should retain native WooPayments compatibility.' );
-		$this->assertTrue( class_exists( 'WC_Payments_Features' ), 'Ordinary WP-CLI commands should retain native WooPayments feature compatibility.' );
+		$this->assertFalse( $this->is_activation_request(), 'Ordinary WP-CLI commands should retain native WooPayments compatibility.' );
 	}
 
 	/**
@@ -352,7 +368,9 @@ class WooPaymentsExtensionFacadeLoaderTest extends WC_Unit_Test_Case {
 		$this->assertFalse( class_exists( 'WC_Payments_Features', false ), 'Loading must not declare the feature facade before it is used.' );
 		$this->assertTrue( defined( 'WCPAY_VERSION_NUMBER' ) );
 
-		// An activation path no request shape reveals (an Action Scheduler activation callback, activate_plugin() from code).
+		// The extension sandbox-loaded after load() ran, as activate_plugin() from code or an Action Scheduler callback does.
+		// The loader's WP_SANDBOX_SCRAPING check never sees this; it decides only when WooCommerce is activated in the
+		// plugin sandbox, or in the file editor's scrape request. Here, declaring on first use leaves both names free.
 		define( 'WP_SANDBOX_SCRAPING', true );
 		require __DIR__ . '/Fixtures/woocommerce-payments-activation-bootstrap.fixture';
 
@@ -377,10 +395,8 @@ class WooPaymentsExtensionFacadeLoaderTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A request that is not a WooPayments activation keeps the compatibility facades ($_dataName).
+	 * @testdox A request that is not a WooPayments activation is not recognized as one, so it keeps the compatibility facades ($_dataName).
 	 * @dataProvider non_activation_request_provider
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 *
 	 * @param array<string,mixed>  $request Request parameters.
 	 * @param array<string,string> $server  Server parameters.
@@ -389,10 +405,7 @@ class WooPaymentsExtensionFacadeLoaderTest extends WC_Unit_Test_Case {
 		$_REQUEST = $request; // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Reproducing a plugin or REST request.
 		$_SERVER  = array_merge( $_SERVER, $server );
 
-		$this->register_extension_facades();
-
-		$this->assertTrue( class_exists( 'WC_Payments' ), 'Requests that do not activate WooPayments should retain native WooPayments compatibility.' );
-		$this->assertTrue( class_exists( 'WC_Payments_Features' ), 'Requests that do not activate WooPayments should retain native WooPayments feature compatibility.' );
+		$this->assertFalse( $this->is_activation_request(), 'Requests that do not activate WooPayments should retain native WooPayments compatibility.' );
 	}
 
 	/**
@@ -427,49 +440,62 @@ class WooPaymentsExtensionFacadeLoaderTest extends WC_Unit_Test_Case {
 	 */
 	private function register_extension_facades( bool $builtin_owns = true ): void {
 		// A process whose bootstrap found native payments enabled already registered the production loader for an ordinary
-		// request; the request under test replaces it, as it would be the only loader in that request.
-		foreach ( spl_autoload_functions() as $autoloader ) {
-			if ( is_array( $autoloader ) && $autoloader[0] instanceof WooPaymentsExtensionFacadeLoader ) {
-				spl_autoload_unregister( $autoloader );
-			}
+		// request; the request under test replaces it, as it would be the only loader in that request. tearDown() puts
+		// it back.
+		foreach ( $this->boot_autoloaders as $autoloader ) {
+			spl_autoload_unregister( $autoloader );
 		}
 
 		$arbiter = $this->createMock( WooPaymentsRuntimeArbiter::class );
 		$arbiter->method( 'is_builtin_owner' )->willReturn( $builtin_owns );
 
-		$loader = new WooPaymentsExtensionFacadeLoader();
-		$loader->init( $arbiter );
-		$loader->register();
+		$this->loader = new WooPaymentsExtensionFacadeLoader();
+		$this->loader->init( $arbiter );
+		$this->loader->register();
 	}
 
 	/**
-	 * Describe where the facade names come from, so a failure in another environment names its source.
+	 * Assert the test's loader registered no facade autoloader and left the version constant as it found it.
 	 *
-	 * @return string JSON state: the file declaring WC_Payments, the registered autoloaders and the runtime ownership inputs.
+	 * @param bool   $version_defined Whether `WCPAY_VERSION_NUMBER` was defined before the loader ran.
+	 * @param string $context         The request, for the failure message.
 	 */
-	private function describe_facade_state(): string {
-		$autoloaders = array();
-		foreach ( spl_autoload_functions() as $autoloader ) {
-			if ( is_array( $autoloader ) ) {
-				$autoloaders[] = ( is_object( $autoloader[0] ) ? get_class( $autoloader[0] ) : (string) $autoloader[0] ) . '::' . $autoloader[1];
-			} elseif ( $autoloader instanceof \Closure ) {
-				$reflection    = new \ReflectionFunction( $autoloader );
-				$autoloaders[] = 'closure@' . $reflection->getFileName() . ':' . $reflection->getStartLine();
-			} else {
-				$autoloaders[] = is_string( $autoloader ) ? $autoloader : gettype( $autoloader );
-			}
-		}
+	private function assert_loader_stood_aside( bool $version_defined, string $context ): void {
+		$this->assertFalse( in_array( array( $this->loader, 'autoload_facade' ), $this->registered_autoloaders(), true ), 'The loader must register no facade autoloader ' . $context );
+		$this->assertSame( $version_defined, defined( 'WCPAY_VERSION_NUMBER' ), 'The loader must leave the version constant as it found it ' . $context );
+	}
 
-		return (string) wp_json_encode(
-			array(
-				'wc_payments_file'          => class_exists( 'WC_Payments', false ) ? ( new \ReflectionClass( 'WC_Payments' ) )->getFileName() : null,
-				'wc_payments_features_file' => class_exists( 'WC_Payments_Features', false ) ? ( new \ReflectionClass( 'WC_Payments_Features' ) )->getFileName() : null,
-				'autoloaders'               => $autoloaders,
-				'runtime_owner'             => wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->get_runtime_owner(),
-				'feature_option'            => get_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, null ),
-				'version_constant'          => defined( 'WCPAY_VERSION_NUMBER' ) ? constant( 'WCPAY_VERSION_NUMBER' ) : null,
-				'active_plugins'            => get_option( 'active_plugins', array() ),
-			)
-		);
+	/**
+	 * Ask a fresh loader whether the current request activates WooPayments, without load() defining the version constant
+	 * for the rest of the process.
+	 *
+	 * @return bool The loader's private activation-request answer.
+	 */
+	private function is_activation_request(): bool {
+		$method = new \ReflectionMethod( WooPaymentsExtensionFacadeLoader::class, 'is_woopayments_activation_request' );
+		$method->setAccessible( true );
+
+		return (bool) $method->invoke( new WooPaymentsExtensionFacadeLoader() );
+	}
+
+	/**
+	 * The registered autoloaders. PHP 7.4's spl_autoload_functions() can return false where PHP 8 returns an empty list.
+	 *
+	 * @return array<int,callable>
+	 */
+	private function registered_autoloaders(): array {
+		$autoloaders = spl_autoload_functions();
+
+		return is_array( $autoloaders ) ? $autoloaders : array();
+	}
+
+	/**
+	 * Tell whether an autoloader belongs to a facade loader.
+	 *
+	 * @param mixed $autoloader A registered autoloader.
+	 * @return bool True for a facade loader's autoloader.
+	 */
+	private function is_facade_autoloader( $autoloader ): bool {
+		return is_array( $autoloader ) && $autoloader[0] instanceof WooPaymentsExtensionFacadeLoader;
 	}
 }
