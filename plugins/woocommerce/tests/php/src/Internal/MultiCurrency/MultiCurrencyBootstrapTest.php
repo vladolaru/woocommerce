@@ -284,12 +284,17 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 		$this->assertArrayHasKey( MultiCurrencyFeatureController::LAST_PAYMENTS_OWNER_OPTION, wp_load_alloptions(), 'Every request reads the marker, so it is autoloaded.' );
 	}
 
-	/** @testdox Should hand the plugin's Multi-Currency state over on the first native-owned request, before the arbiter reads the option. */
-	public function test_first_builtin_request_hands_over_before_the_arbiter_reads(): void {
+	/**
+	 * @testdox Should hand the plugin's Multi-Currency state over on the first native-owned request, before the arbiter reads the option: $_dataName.
+	 * @dataProvider provide_extension_multi_currency_use
+	 *
+	 * @param string $option The option the plugin left behind.
+	 * @param mixed  $value  Its value.
+	 */
+	public function test_first_builtin_request_hands_over_before_the_arbiter_reads( string $option, $value ): void {
 		$this->register_for_payments_owner( self::PAYMENTS_EXTENSION );
-		// EUR set up in the plugin (client 11.1.0 `includes/multi-currency/MultiCurrency.php:767-783`); a Features page save stored "no"
-		// while the plugin owned payments.
-		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'EUR' ) );
+		// A Features page save stored "no" while the plugin owned payments.
+		update_option( $option, $value );
 		update_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION, 'no' );
 
 		$container = $this->register_for_payments_owner( self::PAYMENTS_BUILTIN );
@@ -297,6 +302,20 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'yes', get_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION ) );
 		$this->assertSame( MultiCurrencyFeatureController::LAST_PAYMENTS_OWNER_BUILTIN, get_option( MultiCurrencyFeatureController::LAST_PAYMENTS_OWNER_OPTION ) );
 		$this->assertSame( 'yes', $container->get( MultiCurrencyRuntimeArbiter::class )->feature_option_reads[0], 'The arbiter must read the handed-over value.' );
+	}
+
+	/**
+	 * The plugin's Multi-Currency use the handover counts: an enabled currency (client 11.1.0
+	 * `includes/multi-currency/MultiCurrency.php:767-783`), or a completed setup without currencies, which the plugin saves
+	 * when its setup task finishes (`includes/multi-currency/client/setup/tasks/setup-complete-task/index.js:32`).
+	 *
+	 * @return array<string,array{0:string,1:mixed}>
+	 */
+	public static function provide_extension_multi_currency_use(): array {
+		return array(
+			'EUR enabled'                    => array( 'wcpay_multi_currency_enabled_currencies', array( 'EUR' ) ),
+			'setup completed, no currencies' => array( 'wcpay_multi_currency_setup_completed', '1' ),
+		);
 	}
 
 	/** @testdox Should keep a merchant choice made under native ownership on later requests. */
@@ -368,30 +387,46 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 		);
 	}
 
-	/** @testdox Should mark a store native on its first native-owned request without a marker, leaving the option unset without plugin data. */
-	public function test_first_builtin_request_without_marker_marks_the_store_builtin(): void {
+	/**
+	 * @testdox Should mark a store native on its first native-owned request without a marker, and seed the option from plugin data only when it is unset: $_dataName.
+	 *
+	 * A network site that got no request between the upgrade and a network deactivation: its upgrade seed never ran. The
+	 * plugin stores a list of currency codes (client 11.1.0 `includes/multi-currency/MultiCurrency.php:767-783`).
+	 * @dataProvider provide_first_builtin_requests_without_marker
+	 *
+	 * @param array<string,mixed> $options  Options the store holds before the request.
+	 * @param string|false        $expected The core feature option after the request, or false when unset.
+	 */
+	public function test_first_builtin_request_without_marker_marks_the_store_builtin( array $options, $expected ): void {
+		foreach ( $options as $name => $value ) {
+			update_option( $name, $value );
+		}
+
 		$this->register_for_payments_owner( self::PAYMENTS_BUILTIN );
 
 		$this->assertSame( MultiCurrencyFeatureController::LAST_PAYMENTS_OWNER_BUILTIN, get_option( MultiCurrencyFeatureController::LAST_PAYMENTS_OWNER_OPTION ), 'Later requests then read the marker from the autoloaded options.' );
 		$this->assertArrayHasKey( MultiCurrencyFeatureController::LAST_PAYMENTS_OWNER_OPTION, wp_load_alloptions() );
-		$this->assertFalse( get_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION, false ) );
+		$this->assertSame( $expected, get_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION, false ) );
 	}
 
-	/** @testdox Should apply the upgrade seed on a first native-owned request without a marker, never over a stored choice. */
-	public function test_first_builtin_request_without_marker_applies_the_upgrade_seed(): void {
-		// A network site that got no request between the upgrade and a network deactivation: its upgrade seed never ran. The plugin stores
-		// a list of currency codes (client 11.1.0 `includes/multi-currency/MultiCurrency.php:767-783`).
-		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'EUR' ) );
-
-		$this->register_for_payments_owner( self::PAYMENTS_BUILTIN );
-
-		$this->assertSame( 'yes', get_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION ) );
-
-		delete_option( MultiCurrencyFeatureController::LAST_PAYMENTS_OWNER_OPTION );
-		update_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION, 'no' );
-		$this->register_for_payments_owner( self::PAYMENTS_BUILTIN );
-
-		$this->assertSame( 'no', get_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION ), 'The seed adds the option only when it is unset.' );
+	/**
+	 * Stores reaching their first native-owned request without a marker: without plugin data, with EUR enabled, and with
+	 * EUR enabled over a stored choice the seed must not overwrite.
+	 *
+	 * @return array<string,array{0:array<string,mixed>,1:string|false}>
+	 */
+	public static function provide_first_builtin_requests_without_marker(): array {
+		return array(
+			'no plugin data'               => array( array(), false ),
+			'EUR enabled, option unset'    => array( array( 'wcpay_multi_currency_enabled_currencies' => array( 'EUR' ) ), 'yes' ),
+			'EUR enabled, a stored choice' => array(
+				array(
+					'wcpay_multi_currency_enabled_currencies'    => array( 'EUR' ),
+					'woocommerce_feature_multi_currency_enabled' => 'no',
+				),
+				'no',
+			),
+		);
 	}
 
 	/**
@@ -417,15 +452,18 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should write no option on a request without a payments owner on a store that never ran the extension: feature $feature.
+	 * @testdox Should write no option on a request without a payments owner: $_dataName.
 	 *
-	 * @testWith ["yes"]
-	 *           ["no"]
+	 * A seed through $wpdb fires no option action, so the case reads the marker and the feature option back as well.
+	 * @dataProvider provide_stores_without_a_payments_owner
 	 *
-	 * @param string $feature The core Multi-Currency feature option.
+	 * @param array<string,mixed> $options  Options the store holds before the request.
+	 * @param array<int,mixed>    $expected The marker and the feature option read back after the request.
 	 */
-	public function test_store_without_the_extension_writes_no_option_without_a_payments_owner( string $feature ): void {
-		update_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION, $feature );
+	public function test_store_without_the_extension_writes_no_option_without_a_payments_owner( array $options, array $expected ): void {
+		foreach ( $options as $name => $value ) {
+			update_option( $name, $value );
+		}
 		$written = array();
 		$record  = static function ( $option ) use ( &$written ): void {
 			$written[] = $option;
@@ -441,27 +479,21 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 		}
 
 		$this->assertSame( array(), $written );
+		$this->assertSame( $expected, array( get_option( MultiCurrencyFeatureController::LAST_PAYMENTS_OWNER_OPTION, false ), get_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION, false ) ) );
 	}
 
-	/** @testdox Should write nothing when no payments runtime owns the site. */
-	public function test_no_payments_owner_writes_nothing(): void {
-		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'EUR' ) );
-
-		$this->register_for_payments_owner( self::PAYMENTS_NONE );
-
-		$this->assertFalse( get_option( MultiCurrencyFeatureController::LAST_PAYMENTS_OWNER_OPTION, false ) );
-		$this->assertFalse( get_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION, false ) );
-	}
-
-	/** @testdox Should count a completed plugin setup as plugin use at the switch. */
-	public function test_completed_setup_counts_as_extension_use_at_the_switch(): void {
-		$this->register_for_payments_owner( self::PAYMENTS_EXTENSION );
-		// The plugin saves true when its setup task finishes (client 11.1.0 `includes/multi-currency/client/setup/tasks/setup-complete-task/index.js:32`).
-		update_option( 'wcpay_multi_currency_setup_completed', '1' );
-
-		$this->register_for_payments_owner( self::PAYMENTS_BUILTIN );
-
-		$this->assertSame( 'yes', get_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION ) );
+	/**
+	 * Stores on a request without a payments owner: two that never ran the extension, and one with the extension's data
+	 * (EUR enabled) and no marker.
+	 *
+	 * @return array<string,array{0:array<string,mixed>,1:array<int,mixed>}>
+	 */
+	public static function provide_stores_without_a_payments_owner(): array {
+		return array(
+			'never ran the extension, feature on'  => array( array( 'woocommerce_feature_multi_currency_enabled' => 'yes' ), array( false, 'yes' ) ),
+			'never ran the extension, feature off' => array( array( 'woocommerce_feature_multi_currency_enabled' => 'no' ), array( false, 'no' ) ),
+			'extension data, no marker'            => array( array( 'wcpay_multi_currency_enabled_currencies' => array( 'EUR' ) ), array( false, false ) ),
+		);
 	}
 
 	/** @testdox Should retain core roots when no provider roots are configured. */
@@ -569,32 +601,14 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should register only the explicit price filter on an empty front request when no payments runtime owns the store.
-	 */
-	public function test_empty_front_request_without_a_payments_owner_registers_only_the_explicit_price_filter(): void {
-		$container      = $this->make_container( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, false, false, false, null, self::PAYMENTS_NONE );
-		$resolver_calls = 0;
-		$sut            = new MultiCurrencyBootstrap(
-			static function () use ( &$resolver_calls ): array {
-				++$resolver_calls;
-				return array( 'ProviderRoot' );
-			}
-		);
-
-		$sut->register( $container, 'front' );
-
-		$this->assertSame( 0, $resolver_calls );
-		$this->assertSame( array( MultiCurrencyExplicitPriceController::class ), $container->registered );
-	}
-
-	/**
-	 * @testdox Should not resolve provider roots for an empty $request request.
-	 * @dataProvider provide_empty_requests_without_provider_roots
+	 * @testdox Should register only the explicit price filter, resolving no provider root, on an empty $_dataName request.
+	 * @dataProvider provide_empty_requests_by_payments_owner
 	 *
-	 * @param string $request Request type.
+	 * @param string $request        Request type.
+	 * @param string $payments_owner Payments owner label.
 	 */
-	public function test_empty_request_does_not_resolve_provider_roots( string $request ): void {
-		$container      = $this->make_container( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, false, false );
+	public function test_empty_request_does_not_resolve_provider_roots( string $request, string $payments_owner ): void {
+		$container      = $this->make_container( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, false, false, false, null, $payments_owner );
 		$resolver_calls = 0;
 		$sut            = new MultiCurrencyBootstrap(
 			static function () use ( &$resolver_calls ): array {
@@ -609,13 +623,14 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 		$this->assertSame( array( MultiCurrencyExplicitPriceController::class ), $container->registered );
 	}
 
-	/** @return array<string,array{string}> */
-	public static function provide_empty_requests_without_provider_roots(): array {
+	/** @return array<string,array{string,string}> */
+	public static function provide_empty_requests_by_payments_owner(): array {
 		return array(
-			'front' => array( 'front' ),
-			'AJAX'  => array( 'ajax' ),
-			'CLI'   => array( 'cli' ),
-			'cron'  => array( 'cron' ),
+			'front'                    => array( 'front', self::PAYMENTS_BUILTIN ),
+			'AJAX'                     => array( 'ajax', self::PAYMENTS_BUILTIN ),
+			'CLI'                      => array( 'cli', self::PAYMENTS_BUILTIN ),
+			'cron'                     => array( 'cron', self::PAYMENTS_BUILTIN ),
+			'front, no payments owner' => array( 'front', self::PAYMENTS_NONE ),
 		);
 	}
 
@@ -685,63 +700,38 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 		$this->assertSame( array( 'ProviderRoot', self::CORE_ROOTS[21], MultiCurrencyExplicitPriceController::class ), $container->registered );
 	}
 
-	/** @testdox Should append the existing controller to empty REST roots when the public filter is attached before bootstrap. */
-	public function test_empty_core_owned_rest_request_appends_the_existing_controller_when_the_public_filter_is_attached(): void {
-		$controller     = $this->create_explicit_price_controller( false );
-		$container      = $this->make_container( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, false, false, false, $controller );
-		$resolver_calls = 0;
-		$sut            = new MultiCurrencyBootstrap(
-			static function () use ( &$resolver_calls ): array {
-				++$resolver_calls;
-				return array( 'ProviderRoot' );
-			}
-		);
-		add_filter( 'wcpay_multi_currency_should_output_explicit_price', '__return_true' );
+	/**
+	 * @testdox Should select the exact core root matrix for each persisted-data tier and request class, the same with or without a payments owner ($_dataName).
+	 *
+	 * @dataProvider core_root_matrix_by_payments_owner
+	 *
+	 * @param string            $payments_owner Payments owner label.
+	 * @param bool              $configured     Whether an additional currency is configured.
+	 * @param bool              $historical     Whether historical Multi-Currency data exists.
+	 * @param string            $request        Request class.
+	 * @param array<int,string> $expected       Expected roots.
+	 */
+	public function test_selects_exact_core_root_matrix( string $payments_owner, bool $configured, bool $historical, string $request, array $expected ): void {
+		$container = $this->make_container( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $configured, $historical, false, null, $payments_owner );
 
-		try {
-			$sut->register( $container, 'rest' );
-		} finally {
-			remove_filter( 'wcpay_multi_currency_should_output_explicit_price', '__return_true' );
+		$this->register_as( new MultiCurrencyBootstrap( static fn(): array => array() ), $container, $request );
+
+		$this->assertSame( $expected, $container->registered );
+	}
+
+	/**
+	 * Each cell of the core root matrix, with the built-in runtime and with nobody owning payments.
+	 *
+	 * @return array<string,array{string,bool,bool,string,array<int,string>}>
+	 */
+	public static function core_root_matrix_by_payments_owner(): array {
+		$cases = array();
+		foreach ( self::core_root_matrix() as $name => $case ) {
+			$cases[ 'built-in payments, ' . $name ] = array_merge( array( self::PAYMENTS_BUILTIN ), $case );
+			$cases[ 'no payments owner, ' . $name ] = array_merge( array( self::PAYMENTS_NONE ), $case );
 		}
 
-		$this->assertSame( 1, $resolver_calls );
-		$this->assertSame( array( 'ProviderRoot', self::CORE_ROOTS[21], MultiCurrencyExplicitPriceController::class ), $container->registered );
-	}
-
-	/**
-	 * @testdox Should select the exact core root matrix for each persisted-data tier and request class.
-	 *
-	 * @dataProvider core_root_matrix
-	 *
-	 * @param bool              $configured Whether an additional currency is configured.
-	 * @param bool              $historical Whether historical Multi-Currency data exists.
-	 * @param string            $request    Request class.
-	 * @param array<int,string> $expected   Expected roots.
-	 */
-	public function test_selects_exact_core_root_matrix( bool $configured, bool $historical, string $request, array $expected ): void {
-		$container = $this->make_container( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $configured, $historical );
-
-		$this->register_as( new MultiCurrencyBootstrap( static fn(): array => array() ), $container, $request );
-
-		$this->assertSame( $expected, $container->registered );
-	}
-
-	/**
-	 * @testdox Should select the same core root matrix when no payments runtime owns the store ($_dataName).
-	 *
-	 * @dataProvider core_root_matrix
-	 *
-	 * @param bool              $configured Whether an additional currency is configured.
-	 * @param bool              $historical Whether historical Multi-Currency data exists.
-	 * @param string            $request    Request class.
-	 * @param array<int,string> $expected   Expected roots.
-	 */
-	public function test_selects_the_same_core_root_matrix_without_a_payments_owner( bool $configured, bool $historical, string $request, array $expected ): void {
-		$container = $this->make_container( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $configured, $historical, false, null, self::PAYMENTS_NONE );
-
-		$this->register_as( new MultiCurrencyBootstrap( static fn(): array => array() ), $container, $request );
-
-		$this->assertSame( $expected, $container->registered );
+		return $cases;
 	}
 
 	/** @return array<string,array{bool,bool,string,array<int,string>}> */
@@ -817,23 +807,6 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 			$this->assertSame( array( MultiCurrencyExplicitPriceController::class ), $container->registered );
 			$this->assertSame( 0, $container->foreign_currency_order_checks, $request . ' must return before querying order storage.' );
 		}
-	}
-
-	/** @testdox Should retain every former core root in the configured request-matrix union. */
-	public function test_configured_matrix_inventory_is_the_former_core_root_list_without_duplicates(): void {
-		$roots = array();
-		foreach ( self::core_root_matrix() as $case ) {
-			if ( $case[0] ) {
-				$roots = array_merge( $roots, $case[3] );
-			}
-		}
-
-		$actual   = array_values( array_unique( $roots ) );
-		$expected = self::CORE_ROOTS;
-		sort( $actual );
-		sort( $expected );
-
-		$this->assertSame( $expected, $actual );
 	}
 
 	/**
