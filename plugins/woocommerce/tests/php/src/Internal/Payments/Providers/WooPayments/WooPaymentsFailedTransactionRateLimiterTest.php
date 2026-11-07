@@ -101,46 +101,6 @@ class WooPaymentsFailedTransactionRateLimiterTest extends WC_Unit_Test_Case {
 	 * @return \WC_Session
 	 */
 	private function create_session(): \WC_Session {
-		return new class() extends \WC_Session {
-			/**
-			 * Session data.
-			 *
-			 * @var array<string,mixed>
-			 */
-			protected $_data = array(); // phpcs:ignore PSR2.Classes.PropertyDeclaration.Underscore
-
-			/**
-			 * Get a session value.
-			 *
-			 * @param string $key           Session key.
-			 * @param mixed  $default_value Default value.
-			 * @return mixed
-			 */
-			public function get( $key, $default_value = null ) {
-				return $this->_data[ $key ] ?? $default_value;
-			}
-
-			/**
-			 * Set a session value.
-			 *
-			 * @param string $key   Session key.
-			 * @param mixed  $value Session value.
-			 */
-			public function set( $key, $value ) {
-				if ( null === $value ) {
-					unset( $this->_data[ $key ] );
-					return;
-				}
-
-				$this->_data[ $key ] = $value;
-			}
-
-			/**
-			 * Set the customer session cookie.
-			 *
-			 * @param bool $set Whether to set the cookie.
-			 */
-			public function set_customer_session_cookie( bool $set ): void {}
-		};
+		return new \WC_Mock_Session_Handler();
 	}
 }
