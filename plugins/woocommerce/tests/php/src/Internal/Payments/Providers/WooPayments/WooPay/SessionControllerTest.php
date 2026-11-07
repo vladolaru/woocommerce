@@ -9,6 +9,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAc
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCheckoutAssets;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendStylesService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendTrackingController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\PageSurface;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\SessionController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\SessionService;
 use ReflectionClass;
@@ -151,6 +152,7 @@ class SessionControllerTest extends WC_REST_Unit_Test_Case {
 			WC()->session->set( 'customer', $this->original_session_customer );
 		}
 		wc_get_container()->reset_replacement( WooPaymentsCheckoutAssets::class );
+		wc_get_container()->reset_replacement( PageSurface::class );
 		parent::tearDown();
 	}
 
@@ -233,13 +235,9 @@ class SessionControllerTest extends WC_REST_Unit_Test_Case {
 
 	/**
 	 * @testdox Should not load WooPay on an archive whose term ID equals the post ID of a page with a product_page shortcode.
-	 *
-	 * A prior test can permanently define WOOCOMMERCE_CHECKOUT in the parent process.
-	 *
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 */
 	public function test_enqueue_frontend_assets_skips_an_archive_whose_term_id_matches_a_product_page(): void {
+		$this->replace_page_surface( false, false );
 		$service                            = new RecordingWooPaySessionService();
 		$service->woopay_enabled            = true;
 		$service->should_show_woopay_button = true;
@@ -371,12 +369,11 @@ class SessionControllerTest extends WC_REST_Unit_Test_Case {
 	 * and gives only other pages the light common config.
 	 *
 	 * @dataProvider provide_cart_block_pages
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 *
 	 * @param string|null $page_option WooCommerce page option pointing at the page, or null for none.
 	 */
 	public function test_cart_block_page_keeps_the_full_config( ?string $page_option ): void {
+		$this->replace_page_surface( false, null !== $page_option );
 		$service                                      = new RecordingWooPaySessionService();
 		$service->should_show_woopay_button           = false;
 		$service->should_load_woopay_save_user_assets = false;
@@ -401,7 +398,6 @@ class SessionControllerTest extends WC_REST_Unit_Test_Case {
 
 		$this->sut->enqueue_frontend_assets();
 
-		$this->assertSame( null !== $page_option, is_checkout() );
 		$this->assertTrue( wp_script_is( 'wc-woopayments-woopay', 'enqueued' ) );
 		$this->assertSame( 1, $service->frontend_config_calls );
 		$this->assertSame( 0, $service->direct_checkout_config_calls );
@@ -413,12 +409,7 @@ class SessionControllerTest extends WC_REST_Unit_Test_Case {
 	/**
 	 * @testdox Should enqueue the light direct checkout assets for a mini-cart at footer time: $_dataName.
 	 *
-	 * Runs in its own process: WOOCOMMERCE_CART, once an earlier test defines it (WC_Form_Handler::update_cart_action() does),
-	 * makes is_cart() true for the rest of the run, and the Checkout block page must not be a cart page.
-	 *
 	 * @dataProvider light_direct_checkout_surfaces
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 *
 	 * @param string $surface Page and cart surface, as arrange_direct_checkout_surface() builds it.
 	 */
@@ -463,11 +454,9 @@ class SessionControllerTest extends WC_REST_Unit_Test_Case {
 	 *
 	 * Client 11.1.0 geolocates only where its button handler runs (product, cart, checkout); a mini-cart page gets the
 	 * common config (class-wc-payments.php:1797-1835).
-	 *
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 */
 	public function test_mini_cart_page_does_not_geolocate_the_shopper(): void {
+		$this->replace_page_surface( false, false );
 		$geolocations = 0;
 		add_filter(
 			'woocommerce_geolocate_ip',
@@ -556,11 +545,9 @@ class SessionControllerTest extends WC_REST_Unit_Test_Case {
 
 	/**
 	 * @testdox Should not build the WooPay config for a mini-cart page when direct checkout is off.
-	 *
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 */
 	public function test_mini_cart_page_skips_woopay_config_when_direct_checkout_is_off(): void {
+		$this->replace_page_surface( false, false );
 		$service                                      = new RecordingWooPaySessionService();
 		$service->should_show_woopay_button           = false;
 		$service->should_load_woopay_save_user_assets = false;
@@ -605,13 +592,7 @@ class SessionControllerTest extends WC_REST_Unit_Test_Case {
 	/**
 	 * @testdox Should not enqueue direct checkout assets: $_dataName.
 	 *
-	 * Runs in its own process: WOOCOMMERCE_CART, once an earlier test defines it (WC_Form_Handler::update_cart_action() does),
-	 * makes is_cart() true for the rest of the run, and these pages must not be cart pages. A prior checkout test must not
-	 * make the unrelated page appear to be checkout.
-	 *
 	 * @dataProvider no_direct_checkout_surfaces
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 *
 	 * @param string $surface Page and cart surface, as arrange_direct_checkout_surface() builds it.
 	 */
@@ -673,11 +654,6 @@ class SessionControllerTest extends WC_REST_Unit_Test_Case {
 	 * @testdox Should read the raw page content for the Blocks exclusion, the cart and product surfaces and direct checkout: $_dataName.
 	 * @dataProvider provide_pages_whose_content_the_rendered_page_hides
 	 *
-	 * A separate process: WOOCOMMERCE_CART or WOOCOMMERCE_CHECKOUT, once an earlier test defines it, holds for the rest of the run.
-	 *
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
-	 *
 	 * @param string      $content          Page content.
 	 * @param bool        $password         Whether the page is password protected.
 	 * @param string|null $page_option      WooCommerce page option pointing at the page, or null for none.
@@ -686,6 +662,8 @@ class SessionControllerTest extends WC_REST_Unit_Test_Case {
 	 * @param string|null $expected_context Button context the classic script loads with, or null when it does not load.
 	 */
 	public function test_enqueue_frontend_assets_reads_the_raw_page_content( string $content, bool $password, ?string $page_option, bool $direct_checkout, bool $cart_widget, ?string $expected_context ): void {
+		// Only the store cart page is a cart and only the store checkout page is a checkout.
+		$this->replace_page_surface( 'woocommerce_cart_page_id' === $page_option, 'woocommerce_checkout_page_id' === $page_option );
 		$service                                      = new RecordingWooPaySessionService();
 		$service->should_show_woopay_button           = ! $direct_checkout;
 		$service->should_load_woopay_save_user_assets = false;
@@ -709,8 +687,6 @@ class SessionControllerTest extends WC_REST_Unit_Test_Case {
 			wp_enqueue_script( 'wc-cart-fragments' );
 		}
 		$this->assertSame( $password, post_password_required( $page_id ), 'Precondition: the password form renders instead of the content.' );
-		$this->assertSame( 'woocommerce_checkout_page_id' === $page_option, is_checkout(), 'Precondition: only the store checkout page is a checkout.' );
-		$this->assertSame( 'woocommerce_cart_page_id' === $page_option, is_cart(), 'Precondition: only the store cart page is a cart.' );
 
 		$this->sut->enqueue_frontend_assets();
 
@@ -741,17 +717,14 @@ class SessionControllerTest extends WC_REST_Unit_Test_Case {
 	 * @testdox Should read the product shortcode from the visited page only, skipping escaped tags: $_dataName.
 	 * @dataProvider provide_shortcodes_outside_the_visited_page
 	 *
-	 * A separate process: WOOCOMMERCE_CART or WOOCOMMERCE_CHECKOUT, once an earlier test defines it, holds for the rest of the run.
-	 *
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
-	 *
 	 * @param string|null $page_content     Content of the visited page, or null for a search page.
 	 * @param string|null $page_option      WooCommerce page option pointing at the visited page, or null for none.
 	 * @param string|null $loop_content     Content of a post the global loop holds, or null for none.
 	 * @param string|null $expected_context Button context the classic script loads with, or null when it does not load.
 	 */
 	public function test_enqueue_frontend_assets_reads_only_the_visited_page( ?string $page_content, ?string $page_option, ?string $loop_content, ?string $expected_context ): void {
+		// Only the store cart page is a cart; no page here is a checkout.
+		$this->replace_page_surface( null !== $page_option, false );
 		$service                                      = new RecordingWooPaySessionService();
 		$service->should_show_woopay_button           = true;
 		$service->should_load_woopay_save_user_assets = false;
@@ -777,7 +750,6 @@ class SessionControllerTest extends WC_REST_Unit_Test_Case {
 		if ( null !== $loop_content ) {
 			$GLOBALS['post'] = self::factory()->post->create_and_get( array( 'post_content' => $loop_content ) ); // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- The post of the page's loop.
 		}
-		$this->assertSame( null !== $page_option, is_cart(), 'Precondition: only the store cart page is a cart.' );
 
 		$this->sut->enqueue_frontend_assets();
 
@@ -848,13 +820,9 @@ class SessionControllerTest extends WC_REST_Unit_Test_Case {
 
 	/**
 	 * @testdox Should leave the core billing email alone away from the checkout page.
-	 *
-	 * A prior test can permanently define WOOCOMMERCE_CHECKOUT in the parent process.
-	 *
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 */
 	public function test_filter_woocommerce_form_field_woopay_email_keeps_core_field_off_checkout(): void {
+		$this->replace_page_surface( false, false );
 		$this->sut = $this->create_controller( true );
 		$field     = '<p class="form-row"><input type="email" name="billing_email" /></p>';
 
@@ -2322,11 +2290,29 @@ class SessionControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * Arrange the page and the cart surfaces it renders for a direct checkout row.
+	 * Replace PageSurface so the page reads as a cart or a checkout only as the case says; is_checkout_surface() stays real.
+	 *
+	 * Core's is_cart() and is_checkout() stay true for the rest of the process once any code defines WOOCOMMERCE_CART or
+	 * WOOCOMMERCE_CHECKOUT, so a test of a page that is neither cannot ask them. tearDown() resets the replacement.
+	 *
+	 * @param bool $is_cart     Whether the page reads as a cart.
+	 * @param bool $is_checkout Whether the page reads as a checkout.
+	 */
+	private function replace_page_surface( bool $is_cart, bool $is_checkout ): void {
+		$surface = $this->getMockBuilder( PageSurface::class )->onlyMethods( array( 'is_cart', 'is_checkout' ) )->getMock();
+		$surface->method( 'is_cart' )->willReturn( $is_cart );
+		$surface->method( 'is_checkout' )->willReturn( $is_checkout );
+		wc_get_container()->replace( PageSurface::class, $surface );
+	}
+
+	/**
+	 * Arrange the page and the cart surfaces it renders for a direct checkout row. None of these pages is a cart, and only
+	 * the checkout ones are a checkout, whatever cart or checkout constant an earlier test defined.
 	 *
 	 * @param string $surface Surface named by light_direct_checkout_surfaces() or no_direct_checkout_surfaces().
 	 */
 	private function arrange_direct_checkout_surface( string $surface ): void {
+		$this->replace_page_surface( false, in_array( $surface, array( 'block mini-cart on checkout block page', 'classic cart widget on checkout', 'checkout block page' ), true ) );
 		switch ( $surface ) {
 			case 'block mini-cart':
 				$this->sut->register();

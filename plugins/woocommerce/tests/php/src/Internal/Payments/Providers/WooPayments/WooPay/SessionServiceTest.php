@@ -7,6 +7,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsEx
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\AdaptedExtensions;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\PageSurface;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\SessionService;
 use Automattic\WooCommerce\Internal\Utilities\RequestTypeUtil;
 use Automattic\WooCommerce\StoreApi\Schemas\ExtendSchema;
@@ -222,21 +223,22 @@ class SessionServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * Blocks pages, and a classic page holding both shortcodes, with the button context they get, the WooPay cart and
 	 * checkout location settings, and whether client 11.2.0 shows WooPay there (class-wc-payments-woopay-button-handler.php:272-280).
-	 * The classic page is a cart and a checkout through is_cart() and is_checkout() alone, with no block.
+	 * The classic page is a cart and a checkout through is_cart() and is_checkout() alone, with no block; the store's cart and
+	 * checkout pages are one each; a page holding both blocks is neither.
 	 *
-	 * @return array<string,array{0:string,1:string|null,2:string,3:bool,4:bool,5:bool}>
+	 * @return array<string,array{0:string,1:string|null,2:bool,3:bool,4:string,5:bool,6:bool,7:bool}>
 	 */
 	public function provide_woopay_locations_by_blocks_page(): array {
 		$cart     = '<!-- wp:woocommerce/cart --><div class="wp-block-woocommerce-cart"></div><!-- /wp:woocommerce/cart -->';
 		$checkout = '<!-- wp:woocommerce/checkout --><div class="wp-block-woocommerce-checkout"></div><!-- /wp:woocommerce/checkout -->';
 
 		return array(
-			'both blocks, cart on, checkout on'      => array( $cart . $checkout, null, 'cart', true, true, true ),
-			'both blocks, cart on, checkout off'     => array( $cart . $checkout, null, 'cart', true, false, false ),
-			'both blocks, cart off, checkout on'     => array( $cart . $checkout, null, 'cart', false, true, false ),
-			'cart page, cart on, checkout off'       => array( $cart, 'woocommerce_cart_page_id', 'cart', true, false, true ),
-			'checkout page, cart off, checkout on'   => array( $checkout, 'woocommerce_checkout_page_id', 'checkout', false, true, true ),
-			'both shortcodes, cart on, checkout off' => array( '[woocommerce_cart][woocommerce_checkout]', null, 'cart', true, false, false ),
+			'both blocks, cart on, checkout on'      => array( $cart . $checkout, null, false, false, 'cart', true, true, true ),
+			'both blocks, cart on, checkout off'     => array( $cart . $checkout, null, false, false, 'cart', true, false, false ),
+			'both blocks, cart off, checkout on'     => array( $cart . $checkout, null, false, false, 'cart', false, true, false ),
+			'cart page, cart on, checkout off'       => array( $cart, 'woocommerce_cart_page_id', true, false, 'cart', true, false, true ),
+			'checkout page, cart off, checkout on'   => array( $checkout, 'woocommerce_checkout_page_id', false, true, 'checkout', false, true, true ),
+			'both shortcodes, cart on, checkout off' => array( '[woocommerce_cart][woocommerce_checkout]', null, true, true, 'cart', true, false, false ),
 		);
 	}
 
@@ -247,19 +249,17 @@ class SessionServiceTest extends WC_Unit_Test_Case {
 	 * A page holding both blocks has the cart button context, and is also a checkout. The Blocks integration checks the
 	 * handle with should_show_woopay_button() and builds the flag with get_woopay_frontend_config(), both for that context.
 	 *
-	 * A separate process, because an earlier test can define WOOCOMMERCE_CART or WOOCOMMERCE_CHECKOUT for the rest of the run.
-	 *
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
-	 *
 	 * @param string      $content     Page content.
 	 * @param string|null $page_option WooCommerce page option pointing at the page, or null for none.
+	 * @param bool        $is_cart     Whether the page reads as a cart.
+	 * @param bool        $is_checkout Whether the page reads as a checkout.
 	 * @param string      $context     Button context the Blocks integration gives the page.
 	 * @param bool        $cart_on     Whether the cart location lists WooPay.
 	 * @param bool        $checkout_on Whether the checkout location lists WooPay.
 	 * @param bool        $expected    Whether WooPay shows.
 	 */
-	public function test_woopay_needs_every_location_of_the_page( string $content, ?string $page_option, string $context, bool $cart_on, bool $checkout_on, bool $expected ): void {
+	public function test_woopay_needs_every_location_of_the_page( string $content, ?string $page_option, bool $is_cart, bool $is_checkout, string $context, bool $cart_on, bool $checkout_on, bool $expected ): void {
+		$this->replace_page_surface( $is_cart, $is_checkout );
 		update_option( 'woocommerce_enable_guest_checkout', 'yes' );
 		$page_id = self::factory()->post->create(
 			array(
@@ -293,15 +293,15 @@ class SessionServiceTest extends WC_Unit_Test_Case {
 	 * it renders the classic section (client/checkout/woopay/index.js:67-85). The Blocks pages are
 	 * SessionControllerTest::test_enqueue_frontend_assets_reads_the_raw_page_content()'s.
 	 *
-	 * @return array<string,array{0:string,1:bool,2:bool,3:bool}>
+	 * @return array<string,array{0:string,1:bool,2:bool,3:bool,4:bool,5:bool}>
 	 */
 	public function provide_classic_pages_with_a_hidden_woopay_button(): array {
 		$cart_block = '<!-- wp:woocommerce/cart --><div class="wp-block-woocommerce-cart"></div><!-- /wp:woocommerce/cart -->';
 
 		return array(
-			'cart shortcode, cart off, checkout on'     => array( '[woocommerce_cart]', false, true, false ),
-			'checkout shortcode, cart on, checkout off' => array( '[woocommerce_checkout]', true, false, true ),
-			'Cart block and checkout shortcode, cart on, checkout off' => array( $cart_block . '[woocommerce_checkout]', true, false, true ),
+			'cart shortcode, cart off, checkout on'     => array( '[woocommerce_cart]', true, false, false, true, false ),
+			'checkout shortcode, cart on, checkout off' => array( '[woocommerce_checkout]', false, true, true, false, true ),
+			'Cart block and checkout shortcode, cart on, checkout off' => array( $cart_block . '[woocommerce_checkout]', false, true, true, false, true ),
 		);
 	}
 
@@ -309,19 +309,18 @@ class SessionServiceTest extends WC_Unit_Test_Case {
 	 * @testdox Should load the classic WooPay script for the save-user fields on any checkout page where the button hides: $_dataName.
 	 * @dataProvider provide_classic_pages_with_a_hidden_woopay_button
 	 *
-	 * Direct checkout is off, so only the save-user fields can need the script.
-	 *
-	 * A separate process, because an earlier test can define WOOCOMMERCE_CART or WOOCOMMERCE_CHECKOUT for the rest of the run.
-	 *
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
+	 * Direct checkout is off, so only the save-user fields can need the script. WooPayServicesFixture does not dequeue the
+	 * script, so the test does.
 	 *
 	 * @param string $content     Page content.
+	 * @param bool   $is_cart     Whether the page reads as a cart.
+	 * @param bool   $is_checkout Whether the page reads as a checkout.
 	 * @param bool   $cart_on     Whether the cart location lists WooPay.
 	 * @param bool   $checkout_on Whether the checkout location lists WooPay.
 	 * @param bool   $expected    Whether the classic WooPay script loads.
 	 */
-	public function test_classic_checkout_page_keeps_the_save_user_script_when_the_button_hides( string $content, bool $cart_on, bool $checkout_on, bool $expected ): void {
+	public function test_classic_checkout_page_keeps_the_save_user_script_when_the_button_hides( string $content, bool $is_cart, bool $is_checkout, bool $cart_on, bool $checkout_on, bool $expected ): void {
+		$this->replace_page_surface( $is_cart, $is_checkout );
 		update_option( 'woocommerce_enable_guest_checkout', 'yes' );
 		add_filter( 'wcpay_force_network_saved_cards', '__return_true' );
 		$page_id = self::factory()->post->create(
@@ -341,14 +340,22 @@ class SessionServiceTest extends WC_Unit_Test_Case {
 		);
 		$this->assertFalse( $this->woopay_eligibility->should_run_woopay_direct_checkout(), 'Precondition: direct checkout is off.' );
 
-		$this->register_controller( $sut )->enqueue_frontend_assets();
+		try {
+			$this->register_controller( $sut )->enqueue_frontend_assets();
 
-		$this->assertSame( $expected, wp_script_is( 'wc-woopayments-woopay', 'enqueued' ) );
-		if ( $expected ) {
-			$localized = (string) wp_scripts()->get_data( 'wc-woopayments-woopay', 'data' );
-			$this->assertStringContainsString( '"shouldShowWooPayButton":""', $localized, 'The button stays hidden.' );
-			$this->assertStringContainsString( '"PRE_CHECK_SAVE_MY_INFO":', $localized );
-			$this->assertStringContainsString( '"woopayPhoneValidationScriptUrl":', $localized );
+			$this->assertSame( $expected, wp_script_is( 'wc-woopayments-woopay', 'enqueued' ) );
+			if ( $expected ) {
+				$localized = (string) wp_scripts()->get_data( 'wc-woopayments-woopay', 'data' );
+				$this->assertStringContainsString( '"shouldShowWooPayButton":""', $localized, 'The button stays hidden.' );
+				$this->assertStringContainsString( '"PRE_CHECK_SAVE_MY_INFO":', $localized );
+				$this->assertStringContainsString( '"woopayPhoneValidationScriptUrl":', $localized );
+			}
+		} finally {
+			wp_dequeue_script( 'wc-woopayments-woopay' );
+			wp_dequeue_style( 'wc-woopayments-woopay' );
+			wp_deregister_script( 'wc-woopayments-woopay' );
+			wp_deregister_script( 'wc-woopayments-woopay-common' );
+			wp_deregister_style( 'wc-woopayments-woopay' );
 		}
 	}
 
@@ -2058,5 +2065,22 @@ class SessionServiceTest extends WC_Unit_Test_Case {
 		$this->assertIsArray( $request['tracks_user_identity'] );
 		$this->assertSame( 'anon', $request['tracks_user_identity']['_ut'] );
 		$this->assertNotEmpty( $request['tracks_user_identity']['_ui'] );
+	}
+
+	/**
+	 * Replace PageSurface so the page reads as a cart or a checkout only as the case says; is_checkout_surface() stays real.
+	 *
+	 * Core's is_cart() and is_checkout() stay true for the rest of the process once any code defines WOOCOMMERCE_CART or
+	 * WOOCOMMERCE_CHECKOUT, so a test of a page that is neither cannot ask them. The fixture's tearDown() resets the
+	 * replacement.
+	 *
+	 * @param bool $is_cart     Whether the page reads as a cart.
+	 * @param bool $is_checkout Whether the page reads as a checkout.
+	 */
+	private function replace_page_surface( bool $is_cart, bool $is_checkout ): void {
+		$surface = $this->getMockBuilder( PageSurface::class )->onlyMethods( array( 'is_cart', 'is_checkout' ) )->getMock();
+		$surface->method( 'is_cart' )->willReturn( $is_cart );
+		$surface->method( 'is_checkout' )->willReturn( $is_checkout );
+		wc_get_container()->replace( PageSurface::class, $surface );
 	}
 }
