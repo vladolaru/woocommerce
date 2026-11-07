@@ -517,23 +517,36 @@ class VerifiedEmailRestoreServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A feature option write that does not end a built-in owner does not drain: $_dataName.
+	 * @testdox An option write that does not end a built-in owner does not drain: $_dataName.
 	 * @dataProvider no_drain_option_write_provider
+	 *
+	 * For an unrelated option the built-in owner stays warm while the feature signal under it turns off, so only a drain hooked
+	 * on every option write would scan.
 	 *
 	 * @param bool        $extension_active Whether the WooPayments extension is active.
 	 * @param string|null $initial_value    Stored feature option before the write, or null when absent.
+	 * @param string      $option           The option written.
 	 * @param string      $operation        Option write operation: add, update or delete.
 	 * @param string|null $new_value        Value for add and update operations.
 	 */
-	public function test_feature_option_writes_do_not_drain_without_builtin_owner_loss( bool $extension_active, ?string $initial_value, string $operation, ?string $new_value ): void {
+	public function test_feature_option_writes_do_not_drain_without_builtin_owner_loss( bool $extension_active, ?string $initial_value, string $option, string $operation, ?string $new_value ): void {
 		$this->plugin_active = $extension_active;
 		if ( null !== $initial_value ) {
 			update_option( self::FEATURE_OPTION, $initial_value );
 		}
+		$unrelated = self::UNRELATED_OPTION === $option;
+		if ( $unrelated && 'add' !== $operation ) {
+			update_option( $option, 'first' );
+		}
 		$fixture = $this->create_marked_order_for_owner_change();
 		$this->arbiter->invalidate();
 		$this->sut->register();
-		$this->arbiter->get_runtime_owner(); // Resolved at bootstrap, before any option write.
+		$owner = $this->arbiter->get_runtime_owner(); // Resolved at bootstrap, before any option write.
+		if ( $unrelated ) {
+			$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_BUILTIN, $owner, 'The fixture must warm a native owner before the underlying signal changes.' );
+			$this->builtin_enabled_override = false;
+			$this->assertFalse( $this->arbiter->is_builtin_enabled(), 'The signal now reads native enablement as false without changing the warmed owner.' );
+		}
 		$query_count = 0;
 		add_filter(
 			'woocommerce_order_query_args',
@@ -544,11 +557,11 @@ class VerifiedEmailRestoreServiceTest extends WC_Unit_Test_Case {
 		);
 
 		if ( 'add' === $operation ) {
-			add_option( self::FEATURE_OPTION, $new_value );
+			add_option( $option, $new_value );
 		} elseif ( 'update' === $operation ) {
-			update_option( self::FEATURE_OPTION, $new_value );
+			update_option( $option, $new_value );
 		} else {
-			delete_option( self::FEATURE_OPTION );
+			delete_option( $option );
 		}
 
 		$this->assertSame( 0, $query_count, 'A write that ends no built-in owner must not scan orders.' );
@@ -556,17 +569,21 @@ class VerifiedEmailRestoreServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Provide feature option writes that leave no built-in owner to lose.
+	 * Provide option writes that leave no built-in owner to lose: feature option writes, and unrelated option writes under a
+	 * built-in owner.
 	 *
-	 * @return array<string,array{0:bool,1:string|null,2:string,3:string|null}>
+	 * @return array<string,array{0:bool,1:string|null,2:string,3:string,4:string|null}>
 	 */
 	public function no_drain_option_write_provider(): array {
 		return array(
-			'extension store, Features page saves the feature off' => array( true, 'yes', 'update', 'no' ),
-			'extension store, Features page saves it on' => array( true, 'no', 'update', 'yes' ),
-			'no owner, first Features page save writes off' => array( false, null, 'add', 'no' ),
-			'no owner, the option is deleted'            => array( false, 'no', 'delete', null ),
-			'built-in turned on'                         => array( false, 'no', 'update', 'yes' ),
+			'extension store, Features page saves the feature off' => array( true, 'yes', self::FEATURE_OPTION, 'update', 'no' ),
+			'extension store, Features page saves it on'   => array( true, 'no', self::FEATURE_OPTION, 'update', 'yes' ),
+			'no owner, first Features page save writes off' => array( false, null, self::FEATURE_OPTION, 'add', 'no' ),
+			'no owner, the option is deleted'              => array( false, 'no', self::FEATURE_OPTION, 'delete', null ),
+			'built-in turned on'                           => array( false, 'no', self::FEATURE_OPTION, 'update', 'yes' ),
+			'built-in owner, an unrelated option is added' => array( false, 'yes', self::UNRELATED_OPTION, 'add', 'first' ),
+			'built-in owner, an unrelated option is updated' => array( false, 'yes', self::UNRELATED_OPTION, 'update', 'second' ),
+			'built-in owner, an unrelated option is deleted' => array( false, 'yes', self::UNRELATED_OPTION, 'delete', null ),
 		);
 	}
 
@@ -580,36 +597,6 @@ class VerifiedEmailRestoreServiceTest extends WC_Unit_Test_Case {
 		$this->sut->register();
 
 		do_action( self::RESTORE_HOOK, $fixture['order_id'] );
-
-		$this->assert_detached_owner_change_order( $fixture['order_id'], $fixture['customer_id'] );
-	}
-
-	/**
-	 * @testdox Unrelated add, update, and delete option actions do not drain.
-	 */
-	public function test_unrelated_option_actions_do_not_drain(): void {
-		update_option( self::FEATURE_OPTION, 'yes' );
-		$this->arbiter->invalidate();
-		$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_BUILTIN, $this->arbiter->get_runtime_owner(), 'The fixture must warm a native owner before the underlying signal changes.' );
-		$fixture = $this->create_marked_order_for_owner_change();
-		$this->sut->register();
-		$query_count = 0;
-		add_filter(
-			'woocommerce_order_query_args',
-			static function ( array $query_args ) use ( &$query_count ): array {
-				++$query_count;
-				return $query_args;
-			}
-		);
-		$this->builtin_enabled_override = false;
-		$this->assertFalse( $this->arbiter->is_builtin_enabled(), 'The mutable signal must now resolve native enablement to false without changing the warmed owner cache.' );
-
-		add_option( self::UNRELATED_OPTION, 'first' );
-		$this->assertSame( 0, $query_count, 'Adding an unrelated option must not query orders.' );
-		update_option( self::UNRELATED_OPTION, 'second' );
-		$this->assertSame( 0, $query_count, 'Updating an unrelated option must not query orders.' );
-		delete_option( self::UNRELATED_OPTION );
-		$this->assertSame( 0, $query_count, 'Deleting an unrelated option must not query orders.' );
 
 		$this->assert_detached_owner_change_order( $fixture['order_id'], $fixture['customer_id'] );
 	}
@@ -726,16 +713,21 @@ class VerifiedEmailRestoreServiceTest extends WC_Unit_Test_Case {
 	 * @testdox A restore that throws ($throwable_class $where) is logged with the order, whatever the logging setting, and the cron event ends cleanly.
 	 *
 	 * Client 11.1.0 catches nothing in its restore callback (class-woopay-session.php:227-237), so a PHP Error, or an Exception
-	 * outside core's WC_Abstract_Order::save() (which catches only Exception), escapes as a fatal.
+	 * outside core's WC_Abstract_Order::save() (which catches only Exception), escapes as a fatal. An Exception inside the save
+	 * is caught and logged by core under its own source (abstract-wc-order.php:278-309); the fresh read then finds the marker,
+	 * and the restore logs that it did not save, with no exception.
 	 *
-	 * @testWith ["Error", "while the order saves"]
-	 *           ["TypeError", "while the order saves"]
-	 *           ["RuntimeException", "while the marker is read"]
+	 * @testWith ["Error", "while the order saves", "WooPay verified-email restore failed; the order may still be detached from its customer.", "Error"]
+	 *           ["TypeError", "while the order saves", "WooPay verified-email restore failed; the order may still be detached from its customer.", "TypeError"]
+	 *           ["RuntimeException", "while the marker is read", "WooPay verified-email restore failed; the order may still be detached from its customer.", "RuntimeException"]
+	 *           ["Exception", "while the order saves", "WooPay verified-email restore did not save; the order may still be detached from its customer.", null]
 	 *
-	 * @param string $throwable_class Throwable class.
-	 * @param string $where           Where it is thrown.
+	 * @param string      $throwable_class    Throwable class.
+	 * @param string      $where              Where it is thrown.
+	 * @param string      $expected_message   The log line.
+	 * @param string|null $expected_exception The exception class the line names, or null for none.
 	 */
-	public function test_restore_failure_is_always_logged( string $throwable_class, string $where ): void {
+	public function test_restore_failure_is_always_logged( string $throwable_class, string $where, string $expected_message, ?string $expected_exception ): void {
 		$lines = $this->turn_woopayments_logging_off_and_record_lines();
 		$this->sut->register();
 		$customer_id = self::factory()->user->create();
@@ -758,42 +750,11 @@ class VerifiedEmailRestoreServiceTest extends WC_Unit_Test_Case {
 		}
 
 		$this->assert_order_state( $order_id, 0, true, $customer_id );
-		$line = $this->find_log_line( $lines, 'WooPay verified-email restore failed; the order may still be detached from its customer.' );
+		$line = $this->find_log_line( $lines, $expected_message );
 		$this->assertSame( 'error', $line['level'] );
 		$this->assertSame( $order_id, $line['context']['order_id'] ?? null );
 		$this->assertSame( 'while the order saves' === $where ? $customer_id : null, $line['context']['customer_id'] ?? null );
-		$this->assertSame( $throwable_class, $line['context']['exception'] ?? null );
-	}
-
-	/**
-	 * @testdox A restore whose save core swallows is logged whatever the logging setting, and the order keeps its marker.
-	 *
-	 * WC_Abstract_Order::save() catches an Exception from the save and only logs it under its own source
-	 * (abstract-wc-order.php:278-309).
-	 */
-	public function test_restore_that_does_not_save_is_always_logged(): void {
-		$lines = $this->turn_woopayments_logging_off_and_record_lines();
-		$this->sut->register();
-		$customer_id = self::factory()->user->create();
-		$order_id    = $this->create_order( 0, $customer_id, true, false );
-		$throw       = static function ( $order ) use ( $order_id ): void {
-			if ( $order instanceof WC_Order && $order_id === $order->get_id() ) {
-				throw new \Exception( 'Order write failed.' );
-			}
-		};
-		add_action( 'woocommerce_before_order_object_save', $throw );
-
-		try {
-			do_action( self::RESTORE_HOOK, $order_id );
-		} finally {
-			remove_action( 'woocommerce_before_order_object_save', $throw );
-		}
-
-		$this->assert_order_state( $order_id, 0, true, $customer_id );
-		$line = $this->find_log_line( $lines, 'WooPay verified-email restore did not save; the order may still be detached from its customer.' );
-		$this->assertSame( 'error', $line['level'] );
-		$this->assertSame( $order_id, $line['context']['order_id'] ?? null );
-		$this->assertSame( $customer_id, $line['context']['customer_id'] ?? null );
+		$this->assertSame( $expected_exception, $line['context']['exception'] ?? null );
 	}
 
 	/**
