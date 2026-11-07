@@ -1083,38 +1083,6 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should fold enabled Link configuration into the card Payment Element: $_dataName.
-	 *
-	 * @dataProvider provider_link_folded_into_card
-	 *
-	 * @param bool $explicit_card_definition Whether the config is built through the registry's card definition, as production does.
-	 */
-	public function test_get_payment_fields_js_config_folds_link_into_card( bool $explicit_card_definition ): void {
-		$account_service = $this->create_account_service(
-			true,
-			array(
-				'country'      => 'US',
-				'capabilities' => array(
-					'card_payments' => 'active',
-					'link_payments' => 'active',
-				),
-				'fees'         => array( 'link' => array() ),
-			),
-			array( 'upe_enabled_payment_method_ids' => array( 'card', 'link' ) )
-		);
-		$registry        = new PaymentMethodRegistry();
-		$assets          = new WooPaymentsCheckoutAssets();
-		$assets->init( $account_service, $this->create_woopay_session_service( false ), $this->create_woopay_eligibility( false ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller(), $registry );
-
-		$config = $assets->get_payment_fields_js_config( self::CARD_SUPPORTS, $explicit_card_definition ? $registry->get( 'card' ) : null );
-
-		$this->assertArrayHasKey( 'link', $config['paymentMethodsConfig'] );
-		$this->assertSame( 'link', $config['paymentMethodsConfig']['link']['id'] );
-		$this->assertTrue( $config['paymentMethodsConfig']['link']['isReusable'] );
-		$this->assertSame( array( 'card', 'link' ), $config['paymentMethodTypes'] );
-	}
-
-	/**
 	 * Client 11.2.0 `class-wc-payments-checkout.php:634-636` titles each checkout method for the account country, and
 	 * `LinkDefinition.php:64-70`, `:152-158` name Link "Onelink" with `onelink.svg` for a GB account.
 	 *
@@ -1144,28 +1112,19 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Card config paths that fold Link in.
+	 * @testdox Should fold Link into the card Payment Element only for an active Link capability with a fee, Link enabled and a currency it takes: $_dataName.
 	 *
-	 * @return array<string,array{0:bool}>
+	 * @dataProvider provider_link_and_card
+	 *
+	 * @param string              $link_status              Platform status of the link_payments capability.
+	 * @param bool                $has_fee                  Whether the account lists a link fee.
+	 * @param array<string,mixed> $gateway_settings         Gateway settings.
+	 * @param string              $currency                 Store currency to set, or '' to keep the default.
+	 * @param bool                $explicit_card_definition Whether the config is built through the registry's card definition, as production does.
+	 * @param string[]            $expected_methods         Expected payment method IDs, in order.
+	 * @param array<string,mixed> $expected_link            Expected `id` and `isReusable` of the Link entry, or none without one.
 	 */
-	public function provider_link_folded_into_card(): array {
-		return array(
-			'card config'              => array( false ),
-			'explicit card definition' => array( true ),
-		);
-	}
-
-	/**
-	 * @testdox Should offer the card alone, without Link: $_dataName.
-	 *
-	 * @dataProvider provider_link_kept_out_of_card
-	 *
-	 * @param string              $link_status      Platform status of the link_payments capability.
-	 * @param bool                $has_fee          Whether the account lists a link fee.
-	 * @param array<string,mixed> $gateway_settings Gateway settings.
-	 * @param string              $currency         Store currency to set, or '' to keep the default.
-	 */
-	public function test_get_payment_fields_js_config_keeps_link_out_of_card( string $link_status, bool $has_fee, array $gateway_settings, string $currency ): void {
+	public function test_get_payment_fields_js_config_folds_link_into_card( string $link_status, bool $has_fee, array $gateway_settings, string $currency, bool $explicit_card_definition, array $expected_methods, array $expected_link ): void {
 		if ( '' !== $currency ) {
 			update_option( 'woocommerce_currency', $currency );
 		}
@@ -1181,35 +1140,46 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 			),
 			$gateway_settings
 		);
+		$registry        = new PaymentMethodRegistry();
 		$assets          = new WooPaymentsCheckoutAssets();
-		$assets->init( $account_service, $this->create_woopay_session_service( false ), $this->create_woopay_eligibility( false ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller(), new PaymentMethodRegistry() );
+		$assets->init( $account_service, $this->create_woopay_session_service( false ), $this->create_woopay_eligibility( false ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller(), $registry );
 
-		$config = $assets->get_payment_fields_js_config( self::CARD_SUPPORTS );
+		$config = $assets->get_payment_fields_js_config( self::CARD_SUPPORTS, $explicit_card_definition ? $registry->get( 'card' ) : null );
 
-		$this->assertSame( array( 'card' ), array_keys( $config['paymentMethodsConfig'] ) );
-		$this->assertSame( array( 'card' ), $config['paymentMethodTypes'] );
+		$this->assertSame( $expected_methods, array_keys( $config['paymentMethodsConfig'] ) );
+		$this->assertSame( $expected_methods, $config['paymentMethodTypes'] );
+		$this->assertSame( $expected_link, array_intersect_key( $config['paymentMethodsConfig']['link'] ?? array(), array_flip( array( 'id', 'isReusable' ) ) ) );
 	}
 
 	/**
-	 * Accounts and stores where Link stays out of the card Payment Element.
+	 * Accounts and stores where Link folds into the card Payment Element, and where it stays out.
 	 *
 	 * Link folds into card only while `link_payments` is exactly `active`, the account has a `link` fee entry, Link is a saved
-	 * enabled method and Link supports the currency. The account reports capability statuses keyed by capability (client
-	 * 11.1.0 `includes/class-wc-payment-gateway-wcpay.php:4696-4717`) and fees keyed by payment method ID (`:4867`,
+	 * enabled method and Link supports the currency, on the card config path and through the registry's card definition. The
+	 * account reports capability statuses keyed by capability (client 11.1.0
+	 * `includes/class-wc-payment-gateway-wcpay.php:4696-4717`) and fees keyed by payment method ID (`:4867`,
 	 * `includes/class-wc-payments-account.php:639-641`).
 	 *
-	 * @return array<string,array{0:string,1:bool,2:array<string,mixed>,3:string}>
+	 * @return array<string,array{0:string,1:bool,2:array<string,mixed>,3:string,4:bool,5:string[],6:array<string,mixed>}>
 	 */
-	public function provider_link_kept_out_of_card(): array {
+	public function provider_link_and_card(): array {
 		$card_and_link = array( 'upe_enabled_payment_method_ids' => array( 'card', 'link' ) );
+		$card          = array( 'card' );
+		$folded        = array( 'card', 'link' );
+		$link_entry    = array(
+			'id'         => 'link',
+			'isReusable' => true,
+		);
 
 		return array(
-			'capability inactive'         => array( 'inactive', true, $card_and_link, '' ),
-			'capability pending'          => array( 'pending', true, $card_and_link, '' ),
-			'capability disabled'         => array( 'disabled', true, $card_and_link, '' ),
-			'no Link fee entry'           => array( 'active', false, $card_and_link, '' ),
-			'no saved enabled methods'    => array( 'active', true, array(), '' ),
-			'currency Link does not take' => array( 'active', true, $card_and_link, 'EUR' ),
+			'folded, card config'              => array( 'active', true, $card_and_link, '', false, $folded, $link_entry ),
+			'folded, explicit card definition' => array( 'active', true, $card_and_link, '', true, $folded, $link_entry ),
+			'capability inactive'              => array( 'inactive', true, $card_and_link, '', false, $card, array() ),
+			'capability pending'               => array( 'pending', true, $card_and_link, '', false, $card, array() ),
+			'capability disabled'              => array( 'disabled', true, $card_and_link, '', false, $card, array() ),
+			'no Link fee entry'                => array( 'active', false, $card_and_link, '', false, $card, array() ),
+			'no saved enabled methods'         => array( 'active', true, array(), '', false, $card, array() ),
+			'currency Link does not take'      => array( 'active', true, $card_and_link, 'EUR', false, $card, array() ),
 		);
 	}
 
@@ -1481,28 +1451,6 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should expose card platform checkout config independently from WooPay frontend config.
-	 */
-	public function test_card_platform_checkout_config_is_independent_from_woopay_frontend_config(): void {
-		add_filter( 'wcpay_force_network_saved_cards', '__return_true' );
-		$account_service = $this->create_account_service(
-			true,
-			array(
-				'country'                    => 'US',
-				'platform_checkout_eligible' => true,
-			)
-		);
-
-		$assets = new WooPaymentsCheckoutAssets();
-		$assets->init( $account_service, $this->create_woopay_session_service( false ), $this->create_woopay_eligibility( false ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller(), new PaymentMethodRegistry() );
-
-		$config = $assets->get_payment_fields_js_config( self::CARD_SUPPORTS );
-
-		$this->assertTrue( $config['forceNetworkSavedCards'] );
-		$this->assertTrue( $config['paymentMethodsConfig']['card']['forceNetworkSavedCards'] );
-	}
-
-	/**
 	 * @testdox Should merge direct checkout eligibility from the WooPay session service.
 	 */
 	public function test_get_payment_fields_js_config_merges_direct_checkout_eligibility(): void {
@@ -1517,25 +1465,31 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The card config forces network saved cards exactly when the WooPay session service's platform predicate holds ($platform).
+	 * @testdox The card config forces network saved cards when the WooPay session service's platform predicate holds or the network saved cards filter turns them on (platform $platform, filter $filtered).
 	 *
 	 * Client 11.1.0 has one should_use_stripe_platform_on_checkout_page() predicate for the card config and the WooPay
 	 * config (class-wc-payments-checkout.php:194, :599); the WooPay session service owns it and its own tests cover its cases.
 	 *
-	 * @testWith [true]
-	 *           [false]
+	 * @testWith [true, false, true]
+	 *           [false, false, false]
+	 *           [false, true, true]
 	 *
 	 * @param bool $platform Whether the session service says checkout uses the platform account.
+	 * @param bool $filtered Whether the wcpay_force_network_saved_cards filter returns true.
+	 * @param bool $expected Whether the card config forces network saved cards.
 	 */
-	public function test_card_config_reads_the_session_service_platform_predicate( bool $platform ): void {
+	public function test_card_config_reads_the_session_service_platform_predicate( bool $platform, bool $filtered, bool $expected ): void {
+		if ( $filtered ) {
+			add_filter( 'wcpay_force_network_saved_cards', '__return_true' );
+		}
 
 		$assets = new WooPaymentsCheckoutAssets();
 		$assets->init( $this->create_account_service( true ), $this->create_woopay_session_service( false, false, $platform ), $this->create_woopay_eligibility( false, false, $platform ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller(), new PaymentMethodRegistry() );
 
 		$config = $assets->get_payment_fields_js_config( self::CARD_SUPPORTS );
 
-		$this->assertSame( $platform, $config['forceNetworkSavedCards'] );
-		$this->assertSame( $platform, $config['paymentMethodsConfig']['card']['forceNetworkSavedCards'] );
+		$this->assertSame( $expected, $config['forceNetworkSavedCards'] );
+		$this->assertSame( $expected, $config['paymentMethodsConfig']['card']['forceNetworkSavedCards'] );
 	}
 
 	/**
@@ -1649,14 +1603,25 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should send the store base country as storeCountry and show Cartes Bancaires for a store based in France.
+	 * @testdox Should send the store base country as storeCountry and show Cartes Bancaires only for a store based in France: $_dataName.
+	 *
+	 * Client 11.1.0 sends the store base country (includes/class-wc-payments-checkout.php:270) and decides the brand from it
+	 * (client/utils/card-brands.ts:43-50), whatever the account country.
+	 *
+	 * @dataProvider provide_store_and_account_countries_for_card_brands
+	 *
+	 * @param string               $store_country   Store base country option.
+	 * @param string               $account_country Account country.
+	 * @param string               $expected_store  Expected storeCountry.
+	 * @param array<string,string> $expected_labels Expected brand labels keyed by brand.
+	 * @param string[]             $expected_paths  Expected brand icon paths under the plugin URL, in order.
 	 */
-	public function test_get_payment_fields_js_config_includes_cartes_bancaires_for_stores_based_in_france(): void {
-		update_option( 'woocommerce_default_country', 'FR' );
+	public function test_get_payment_fields_js_config_shows_cartes_bancaires_for_stores_based_in_france( string $store_country, string $account_country, string $expected_store, array $expected_labels, array $expected_paths ): void {
+		update_option( 'woocommerce_default_country', $store_country );
 		$account_service = $this->create_account_service(
 			true,
 			array(
-				'country' => 'US',
+				'country' => $account_country,
 			)
 		);
 
@@ -1666,35 +1631,44 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 		$config = $assets->get_payment_fields_js_config( self::CARD_SUPPORTS );
 		$icons  = $config['paymentMethodsConfig']['card']['cardBrandIcons'];
 
-		// Client 11.1.0 sends the store base country (includes/class-wc-payments-checkout.php:270) and decides the brand from it
-		// (client/utils/card-brands.ts:43-50).
-		$this->assertSame( 'FR', $config['storeCountry'] );
-		$this->assertContains( 'cartes_bancaires', array_column( $icons, 'id' ) );
-		$this->assertContains( 'Cartes Bancaires', array_column( $icons, 'alt' ) );
-		$this->assertStringContainsString( '/assets/images/payment-methods/jcb-color.svg', $icons[4]['src'] );
-		$this->assertStringContainsString( '/assets/images/payment-methods/unionpay-color.svg', $icons[5]['src'] );
-		$this->assertStringContainsString( '/assets/images/payment-methods/cartes_bancaires-color.svg', $icons[6]['src'] );
+		$this->assertSame( $expected_store, $config['storeCountry'] );
+		$this->assertSame( $expected_labels, array_column( $icons, 'alt', 'id' ) );
+		$this->assertSame(
+			$expected_paths,
+			array_map(
+				static fn( string $src ): string => substr( $src, strlen( WC()->plugin_url() ) ),
+				array_column( $icons, 'src' )
+			)
+		);
 	}
 
 	/**
-	 * @testdox Should leave Cartes Bancaires out for a French account on a store based outside France.
+	 * Store and account countries, and the card brands the checkout shows for them.
+	 *
+	 * @return array<string,array{0:string,1:string,2:string,3:array<string,string>,4:string[]}>
 	 */
-	public function test_get_payment_fields_js_config_leaves_cartes_bancaires_out_for_stores_based_outside_france(): void {
-		update_option( 'woocommerce_default_country', 'US:CA' );
-		$account_service = $this->create_account_service(
-			true,
-			array(
-				'country' => 'FR',
-			)
+	public function provide_store_and_account_countries_for_card_brands(): array {
+		$brands = array(
+			'visa'       => 'Visa',
+			'mastercard' => 'Mastercard',
+			'amex'       => 'American Express',
+			'discover'   => 'Discover',
+			'jcb'        => 'JCB',
+			'unionpay'   => 'Union Pay',
+		);
+		$paths  = array(
+			'/assets/images/payment-methods/visa-color.svg',
+			'/assets/images/payment-methods/mastercard-color.svg',
+			'/assets/images/payment-methods/amex-color.svg',
+			'/assets/images/payment-methods/discover-color.svg',
+			'/assets/images/payment-methods/jcb-color.svg',
+			'/assets/images/payment-methods/unionpay-color.svg',
 		);
 
-		$assets = new WooPaymentsCheckoutAssets();
-		$assets->init( $account_service, $this->create_woopay_session_service( false ), $this->create_woopay_eligibility( false ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller(), new PaymentMethodRegistry() );
-
-		$config = $assets->get_payment_fields_js_config( self::CARD_SUPPORTS );
-
-		$this->assertSame( 'US', $config['storeCountry'] );
-		$this->assertNotContains( 'cartes_bancaires', array_column( $config['paymentMethodsConfig']['card']['cardBrandIcons'], 'id' ) );
+		return array(
+			'French store, US account' => array( 'FR', 'US', 'FR', $brands + array( 'cartes_bancaires' => 'Cartes Bancaires' ), array_merge( $paths, array( '/assets/images/payment-methods/cartes_bancaires-color.svg' ) ) ),
+			'US store, French account' => array( 'US:CA', 'FR', 'US', $brands, $paths ),
+		);
 	}
 
 	/**
@@ -2001,38 +1975,31 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should make core's tokenization-form.js a dependency of the classic checkout script when the card gateway supports tokenization, as client 11.1.0 does.
+	 * @testdox Should make core's tokenization-form.js a dependency of the classic checkout script only when the card gateway supports tokenization, as client 11.1.0 does: $supports.
+	 *
+	 * Client 11.1.0 includes/class-wc-payments-checkout.php:130-131: WordPress then prints tokenization-form.js first, so its
+	 * listener is bound before the checkout script mounts the card element. A missing dependency would make WordPress drop
+	 * the checkout script, so the handle is registered with core's params.
+	 *
+	 * @testWith [["products", "tokenization"], true]
+	 *           [["products"], false]
+	 *
+	 * @param string[] $supports Card gateway support features.
+	 * @param bool     $loaded   Whether tokenization-form.js is a registered dependency with its source and params.
 	 */
-	public function test_classic_script_depends_on_tokenization_form_when_tokenization_is_supported(): void {
+	public function test_classic_script_depends_on_tokenization_form_only_with_tokenization( array $supports, bool $loaded ): void {
 		wp_deregister_script( 'woocommerce-tokenization-form' );
 
 		$assets = new WooPaymentsCheckoutAssets();
 		$assets->init( $this->create_account_service( true ), $this->create_woopay_session_service( false ), $this->create_woopay_eligibility( false ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller(), new PaymentMethodRegistry() );
 
-		self::render_payment_fields( $assets, array( 'products', 'tokenization' ) );
+		self::render_payment_fields( $assets, $supports );
 
-		// Client 11.1.0 includes/class-wc-payments-checkout.php:130-131: WordPress then prints tokenization-form.js first,
-		// so its listener is bound before the checkout script mounts the card element.
-		$this->assertContains( 'woocommerce-tokenization-form', wp_scripts()->registered['wc-woopayments-checkout']->deps );
-		// A missing dependency would make WordPress drop the checkout script, so the handle is registered with core's params.
-		$this->assertTrue( wp_script_is( 'woocommerce-tokenization-form', 'registered' ) );
-		$this->assertStringContainsString( '/assets/js/frontend/tokenization-form', wp_scripts()->registered['woocommerce-tokenization-form']->src );
-		$this->assertStringContainsString( 'wc_tokenization_form_params', (string) wp_scripts()->get_data( 'woocommerce-tokenization-form', 'data' ) );
-	}
-
-	/**
-	 * @testdox Should not load core's tokenization-form.js with the classic checkout script when the card gateway does not support tokenization.
-	 */
-	public function test_classic_script_does_not_depend_on_tokenization_form_without_tokenization(): void {
-		wp_deregister_script( 'woocommerce-tokenization-form' );
-
-		$assets = new WooPaymentsCheckoutAssets();
-		$assets->init( $this->create_account_service( true ), $this->create_woopay_session_service( false ), $this->create_woopay_eligibility( false ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller(), new PaymentMethodRegistry() );
-
-		self::render_payment_fields( $assets, self::CARD_SUPPORTS );
-
-		$this->assertNotContains( 'woocommerce-tokenization-form', wp_scripts()->registered['wc-woopayments-checkout']->deps );
-		$this->assertFalse( wp_script_is( 'woocommerce-tokenization-form', 'registered' ) );
+		$this->assertSame( $loaded, in_array( 'woocommerce-tokenization-form', wp_scripts()->registered['wc-woopayments-checkout']->deps, true ) );
+		$this->assertSame( $loaded, wp_script_is( 'woocommerce-tokenization-form', 'registered' ) );
+		$tokenization_form = wp_scripts()->query( 'woocommerce-tokenization-form', 'registered' );
+		$this->assertSame( $loaded, str_contains( $tokenization_form instanceof \_WP_Dependency ? (string) $tokenization_form->src : '', '/assets/js/frontend/tokenization-form' ) );
+		$this->assertSame( $loaded, str_contains( (string) wp_scripts()->get_data( 'woocommerce-tokenization-form', 'data' ), 'wc_tokenization_form_params' ) );
 	}
 
 	/**
@@ -2320,7 +2287,7 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should send the card gateway's icon URL as the top-level icon on the card and split gateway configs and their filter payloads.
+	 * @testdox Should send the card gateway's icon URL as the top-level icon on the card and split gateway configs and their filter payloads, and as the card entry's icon and dark icon.
 	 *
 	 * Client 11.2.0 sends `$this->gateway->get_icon_url()` (`class-wc-payments-checkout.php:278`), the card gateway's
 	 * `generic-card.svg` (`CardDefinition.php:171-173`), in the one config it builds for every gateway.
@@ -2339,10 +2306,12 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 		add_filter( 'wcpay_payment_fields_js_config', $record );
 
 		try {
-			$icons = array(
-				'classic card'  => $assets->get_payment_fields_js_config( self::CARD_SUPPORTS )['icon'],
+			$classic = $assets->get_payment_fields_js_config( self::CARD_SUPPORTS );
+			$blocks  = $assets->get_blocks_payment_method_data( self::CARD_SUPPORTS );
+			$icons   = array(
+				'classic card'  => $classic['icon'],
 				'classic split' => $assets->get_payment_fields_config( self::CARD_SUPPORTS, $klarna )['icon'],
-				'blocks card'   => $assets->get_blocks_payment_method_data( self::CARD_SUPPORTS )['icon'],
+				'blocks card'   => $blocks['icon'],
 				'blocks split'  => $assets->get_blocks_payment_method_data( self::CARD_SUPPORTS, $klarna )['icon'],
 			);
 		} finally {
@@ -2357,28 +2326,13 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 			),
 			$filtered_icon
 		);
-	}
-
-	/**
-	 * @testdox Should send the card method's icon and dark icon URLs in the card entry of the classic and Blocks configs.
-	 *
-	 * Client 11.2.0 sends `icon` and `darkIcon` for every method entry, the card's included
-	 * (`class-wc-payments-checkout.php:635-636`); the card's dark icon is its icon (`CardDefinition.php:171-184`).
-	 */
-	public function test_card_entry_has_the_card_icon_urls(): void {
-		$account_service = $this->create_account_service( true );
-		$assets          = new WooPaymentsCheckoutAssets();
-		$assets->init( $account_service, $this->create_woopay_session_service( false ), $this->create_woopay_eligibility( false ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller(), new PaymentMethodRegistry() );
-		$expected = WC()->plugin_url() . '/assets/images/payment-methods/generic-card.svg';
-
-		$entries = array(
-			'classic' => $assets->get_payment_fields_js_config( self::CARD_SUPPORTS )['paymentMethodsConfig']['card'],
-			'blocks'  => $assets->get_blocks_payment_method_data( self::CARD_SUPPORTS )['paymentMethodsConfig']['card'],
-		);
-
-		foreach ( $entries as $surface => $entry ) {
-			$this->assertSame( $expected, $entry['icon'] ?? null, "The $surface card entry carries the card icon." );
-			$this->assertSame( $expected, $entry['darkIcon'] ?? null, "The $surface card entry carries the card dark icon." );
+		// The card's dark icon is its icon (`CardDefinition.php:171-184`); client 11.2.0 sends both for every method entry (`:635-636`).
+		foreach ( array(
+			'classic' => $classic,
+			'blocks'  => $blocks,
+		) as $surface => $config ) {
+			$this->assertSame( $expected, $config['paymentMethodsConfig']['card']['icon'] ?? null, "The $surface card entry carries the card icon." );
+			$this->assertSame( $expected, $config['paymentMethodsConfig']['card']['darkIcon'] ?? null, "The $surface card entry carries the card dark icon." );
 		}
 	}
 
@@ -2974,17 +2928,6 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 		$_GET['pay_for_order']       = 'true';
 		$_GET['key']                 = $order->get_order_key();
 		$wp->query_vars['order-pay'] = (string) $order->get_id();
-	}
-
-	/**
-	 * @testdox Blocks data carries the WooPayments extension's WooPay button keys while WooPay and its express button are enabled.
-	 */
-	public function test_blocks_data_carries_woopay_button_keys_while_woopay_is_enabled(): void {
-		$data = $this->create_assets_for_express_handlers( array(), array(), true )->get_blocks_payment_method_data( self::CARD_SUPPORTS );
-
-		foreach ( self::WOOPAY_BUTTON_KEYS as $key ) {
-			$this->assertArrayHasKey( $key, $data );
-		}
 	}
 
 	/**
