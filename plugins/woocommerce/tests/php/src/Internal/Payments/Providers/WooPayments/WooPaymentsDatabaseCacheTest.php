@@ -87,6 +87,8 @@ class WooPaymentsDatabaseCacheTest extends WC_Unit_Test_Case {
 			'fields, before a week'                => array( $fields, 'front', 'before a week', false, 0, WEEK_IN_SECONDS - 60, false ),
 			'fields, after a week'                 => array( $fields, 'front', 'after a week', false, 0, WEEK_IN_SECONDS + 60, true ),
 			'fields, 1 error, 3 minutes'           => array( $fields, 'front', '1 error, 3 minutes', true, 1, 180, true ),
+			'fields, no error count, 1 minute'     => array( $fields, 'front', 'no error count, 1 minute', true, null, 60, false ),
+			'fields, no error count, 3 min'        => array( $fields, 'front', 'no error count, 3 minutes', true, null, 180, true ),
 			'recommended, before a day'            => array( $methods, 'dashboard', 'before a day', false, 0, DAY_IN_SECONDS - 60, false ),
 			'recommended, after a day'             => array( $methods, 'dashboard', 'after a day', false, 0, DAY_IN_SECONDS + 60, true ),
 			'recommended, 1 error, 1 minute'       => array( $methods, 'dashboard', '1 error, 1 minute', true, 1, 60, false ),

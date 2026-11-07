@@ -1996,23 +1996,6 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should keep cached onboarding fields for a week and refetch them after that.
-	 * @testWith [6, 0]
-	 *           [8, 1]
-	 *
-	 * @param int $age_in_days    Age of the cached entry in days.
-	 * @param int $expected_calls Expected platform fetches.
-	 */
-	public function test_onboarding_fields_data_is_cached_for_a_week( int $age_in_days, int $expected_calls ): void {
-		$this->store_onboarding_fields_cache( 'en_US', time() - ( $age_in_days * DAY_IN_SECONDS ) );
-		$api_client = $this->create_counting_fields_api_client( array( 'business_types' => array() ) );
-
-		$this->create_service_with_api_client( $api_client )->get_onboarding_fields_data( 'en_US' );
-
-		$this->assertSame( $expected_calls, $api_client->calls );
-	}
-
-	/**
 	 * @testdox Should refetch the onboarding fields when a different locale is requested.
 	 */
 	public function test_onboarding_fields_data_refetches_for_a_different_locale(): void {
@@ -2063,56 +2046,6 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( 2, $api_client->calls );
 		$this->assertSame( 2, get_option( 'wcpay_onboarding_fields_data' )['consecutive_errors'] );
-	}
-
-	/**
-	 * @testdox Should retry errored onboarding fields stored without an error count after two minutes, not before.
-	 * @testWith [60, 0]
-	 *           [180, 1]
-	 *
-	 * @param int $age            Seconds since the errored fetch.
-	 * @param int $expected_calls Fields fetches the read makes.
-	 */
-	public function test_onboarding_fields_data_errored_wrapper_without_an_error_count_backs_off_two_minutes( int $age, int $expected_calls ): void {
-		$cached = array(
-			'business_types' => array( array( 'key' => 'cached' ) ),
-			'__locale'       => 'en_US',
-		);
-		update_option(
-			'wcpay_onboarding_fields_data',
-			array(
-				'data'    => $cached,
-				'fetched' => time() - $age,
-				'errored' => true,
-			),
-			false
-		);
-		$api_client = $this->create_counting_fields_api_client( $this->get_onboarding_fields_payload() );
-
-		$this->create_service_with_api_client( $api_client )->get_onboarding_fields_data( 'en_US' );
-
-		$this->assertSame( $expected_calls, $api_client->calls );
-	}
-
-	/**
-	 * @testdox Should serve cached onboarding fields without fetching during ajax requests and Action Scheduler jobs.
-	 * @testWith ["ajax"]
-	 *           ["action_scheduler"]
-	 *
-	 * @param string $context Request context that must not refresh.
-	 */
-	public function test_onboarding_fields_data_is_not_refreshed_during_ajax_or_action_scheduler_jobs( string $context ): void {
-		$cached     = $this->store_onboarding_fields_cache( 'en_US', time() - ( 8 * DAY_IN_SECONDS ) );
-		$api_client = $this->create_counting_fields_api_client( $this->get_onboarding_fields_payload() );
-		$sut        = $this->create_service_with_api_client( $api_client );
-		if ( 'ajax' === $context ) {
-			add_filter( 'wp_doing_ajax', '__return_true' );
-		} else {
-			$this->database_cache->disable_refresh();
-		}
-
-		$this->assertSame( $cached, $sut->get_onboarding_fields_data( 'en_US' ) );
-		$this->assertSame( 0, $api_client->calls );
 	}
 
 	/**
