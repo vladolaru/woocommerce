@@ -29,13 +29,6 @@ class WooPaymentsClientVersionTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should declare the WooPayments version this runtime was verified against; a bump is a deliberate, reviewed change.
-	 */
-	public function test_version_is_the_verified_platform_contract(): void {
-		$this->assertSame( '11.2.0', WooPaymentsClientVersion::VERSION, 'Bumping the declared client version requires reviewing every platform gate between the versions first — see the class docblock before changing this.' );
-	}
-
-	/**
 	 * @testdox Should report the pinned client version followed by the running WooCommerce version: $wc_version.
 	 * @dataProvider woocommerce_version_provider
 	 *
@@ -82,7 +75,7 @@ class WooPaymentsClientVersionTest extends WC_Unit_Test_Case {
 		$matches    = array();
 
 		$this->assertSame( 1, preg_match( self::PLATFORM_CLIENT_VERSION_PATTERN, $user_agent, $matches ), 'The platform must still recognize the client: ' . $user_agent );
-		$this->assertSame( '11.2.0', $matches[1] );
+		$this->assertSame( '11.2.0', $matches[1], 'Bumping the declared client version requires reviewing every platform gate between the versions first — see the class docblock before changing this.' );
 		$this->assertTrue( version_compare( $matches[1], WooPaymentsClientVersion::VERSION, '>=' ), 'is_client_version_at_least( 11.2.0 ) must hold.' );
 		$this->assertFalse( version_compare( $matches[1], '11.2.1', '>=' ), 'The WooCommerce version must not raise the gated client version.' );
 		$this->assertMatchesRegularExpression( '/^[\x21-\x7E ]+$/', $user_agent, 'Only visible ASCII and spaces are valid in an HTTP header value.' );
