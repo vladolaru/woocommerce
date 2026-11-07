@@ -106,21 +106,46 @@ class WooPaymentsFraudOrderTrackingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should skip scheduling when no Sift fraud config is available.
+	 * @testdox Should schedule no Sift order tracking without a Sift fraud config, for a split sub-gateway, another gateway or an order without a provider payment method: $_dataName.
+	 *
+	 * The WooPayments extension trains Sift on the card gateway only, and only with Sift in the fraud services config.
+	 *
+	 * @dataProvider provide_orders_with_no_tracking
+	 *
+	 * @param string               $gateway      Order payment method.
+	 * @param array<string,string> $meta         Order meta.
+	 * @param string               $fraud_config `sift`, `stripe` (Stripe alone) or `none`.
 	 */
-	public function test_skips_scheduling_without_sift_fraud_config(): void {
+	public function test_schedules_no_tracking( string $gateway, array $meta, string $fraud_config ): void {
 		$scheduler = new RecordingActionSchedulerService();
 		$service   = $this->create_service( $scheduler );
-		$order     = $this->create_order(
-			WooPaymentsPersistenceVocabulary::GATEWAY_ID,
-			array(
-				'_payment_method_id' => 'pm_123',
-			)
-		);
+		$order     = $this->create_order( $gateway, $meta );
+		if ( 'sift' === $fraud_config ) {
+			$this->enable_sift_tracking();
+		} elseif ( 'stripe' === $fraud_config ) {
+			$this->fraud_services_config = array( 'stripe' => array() );
+		}
 
 		$service->handle_woocommerce_update_order( $order->get_id(), $order );
 
 		$this->assertSame( array(), $scheduler->scheduled_jobs );
+	}
+
+	/**
+	 * Orders and fraud configs for which nothing is scheduled.
+	 *
+	 * @return array<string,array{0:string,1:array<string,string>,2:string}>
+	 */
+	public function provide_orders_with_no_tracking(): array {
+		$payment_method = array( '_payment_method_id' => 'pm_123' );
+
+		return array(
+			'no Sift fraud config'       => array( WooPaymentsPersistenceVocabulary::GATEWAY_ID, $payment_method, 'none' ),
+			'split sub-gateway'          => array( WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . 'bancontact', $payment_method + array( '_wcpay_mode' => 'test' ), 'sift' ),
+			'cash on delivery'           => array( 'cod', $payment_method, 'sift' ),
+			'no payment method id'       => array( WooPaymentsPersistenceVocabulary::GATEWAY_ID, array(), 'sift' ),
+			'Stripe fraud services only' => array( WooPaymentsPersistenceVocabulary::GATEWAY_ID, $payment_method, 'stripe' ),
+		);
 	}
 
 	/**
@@ -170,82 +195,6 @@ class WooPaymentsFraudOrderTrackingServiceTest extends WC_Unit_Test_Case {
 				'wcpay_track_update_order',
 			),
 		);
-	}
-
-	/**
-	 * @testdox Should not schedule Sift tracking for split sub-gateway orders — the WooPayments extension trains Sift on the card gateway only.
-	 */
-	public function test_does_not_schedule_tracking_for_split_sub_gateway_orders(): void {
-		$scheduler = new RecordingActionSchedulerService();
-		$service   = $this->create_service( $scheduler );
-		$order     = $this->create_order(
-			WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . 'bancontact',
-			array(
-				'_payment_method_id' => 'pm_123',
-				'_wcpay_mode'        => 'test',
-			)
-		);
-
-		$this->enable_sift_tracking();
-
-		$service->handle_woocommerce_update_order( $order->get_id(), $order );
-
-		$this->assertSame( array(), $scheduler->scheduled_jobs );
-	}
-
-	/**
-	 * @testdox Should skip scheduling when the order is not a WooPayments order.
-	 */
-	public function test_skips_scheduling_for_non_woopayments_orders(): void {
-		$scheduler = new RecordingActionSchedulerService();
-		$service   = $this->create_service( $scheduler );
-		$order     = $this->create_order(
-			'cod',
-			array(
-				'_payment_method_id' => 'pm_123',
-			)
-		);
-
-		$this->enable_sift_tracking();
-
-		$service->handle_woocommerce_update_order( $order->get_id(), $order );
-
-		$this->assertSame( array(), $scheduler->scheduled_jobs );
-	}
-
-	/**
-	 * @testdox Should skip scheduling when the provider payment method ID is missing.
-	 */
-	public function test_skips_scheduling_without_payment_method_id(): void {
-		$scheduler = new RecordingActionSchedulerService();
-		$service   = $this->create_service( $scheduler );
-		$order     = $this->create_order( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
-
-		$this->enable_sift_tracking();
-
-		$service->handle_woocommerce_update_order( $order->get_id(), $order );
-
-		$this->assertSame( array(), $scheduler->scheduled_jobs );
-	}
-
-	/**
-	 * @testdox Should skip scheduling when Sift tracking is disabled.
-	 */
-	public function test_skips_scheduling_when_sift_is_disabled(): void {
-		$scheduler = new RecordingActionSchedulerService();
-		$service   = $this->create_service( $scheduler );
-		$order     = $this->create_order(
-			WooPaymentsPersistenceVocabulary::GATEWAY_ID,
-			array(
-				'_payment_method_id' => 'pm_123',
-			)
-		);
-
-		$this->fraud_services_config = array( 'stripe' => array() );
-
-		$service->handle_woocommerce_update_order( $order->get_id(), $order );
-
-		$this->assertSame( array(), $scheduler->scheduled_jobs );
 	}
 
 	/**
@@ -471,19 +420,29 @@ class WooPaymentsFraudOrderTrackingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should skip tracking when the order mode does not match the current WooPayments mode.
+	 * @testdox Should skip tracking an order whose stored mode is not the current WooPayments order mode: $_dataName.
+	 *
+	 * Plugin 11.1.0 treats any value other than the current `Order_Mode` as a mode mismatch
+	 * (class-wc-payments-action-scheduler-service.php:173-179), so a live-mode order stored with the account-mode `live`
+	 * slug is skipped too.
+	 *
+	 * @testWith ["prod", true]
+	 *           ["live", false]
+	 *
+	 * @param string $stored_mode Stored `_wcpay_mode`.
+	 * @param bool   $test_mode   Whether the account is in test mode.
 	 */
-	public function test_track_order_skips_mode_mismatch(): void {
+	public function test_track_order_skips_mode_mismatch( string $stored_mode, bool $test_mode ): void {
 		$order      = $this->create_order(
 			WooPaymentsPersistenceVocabulary::GATEWAY_ID,
 			array(
 				'_payment_method_id' => 'pm_123',
-				'_wcpay_mode'        => 'prod',
+				'_wcpay_mode'        => $stored_mode,
 			)
 		);
 		$api_client = $this->create_api_client();
 		$api_client->expects( $this->never() )->method( 'track_order' );
-		$service = $this->create_service( new RecordingActionSchedulerService(), $api_client, $this->create_account_service( true ) );
+		$service = $this->create_service( new RecordingActionSchedulerService(), $api_client, $this->create_account_service( $test_mode ) );
 
 		$service->handle_wcpay_track_new_order( $order->get_id() );
 	}
@@ -506,26 +465,6 @@ class WooPaymentsFraudOrderTrackingServiceTest extends WC_Unit_Test_Case {
 			->method( 'track_order' )
 			->with( $this->callback( static fn( array $order_data ): bool => 'prod' === $order_data['_wcpay_mode'] ) )
 			->willReturn( array( 'result' => 'success' ) );
-		$service = $this->create_service( new RecordingActionSchedulerService(), $api_client, $this->create_account_service( false ) );
-
-		$service->handle_wcpay_track_new_order( $order->get_id() );
-	}
-
-	/**
-	 * @testdox Should skip a live-mode order stored with the account-mode `live` slug, like the WooPayments extension.
-	 *
-	 * Plugin 11.1.0 treats any value other than the current `Order_Mode` as a mode mismatch (class-wc-payments-action-scheduler-service.php:173-179).
-	 */
-	public function test_track_order_skips_account_mode_live_value(): void {
-		$order      = $this->create_order(
-			WooPaymentsPersistenceVocabulary::GATEWAY_ID,
-			array(
-				'_payment_method_id' => 'pm_123',
-				'_wcpay_mode'        => 'live',
-			)
-		);
-		$api_client = $this->create_api_client();
-		$api_client->expects( $this->never() )->method( 'track_order' );
 		$service = $this->create_service( new RecordingActionSchedulerService(), $api_client, $this->create_account_service( false ) );
 
 		$service->handle_wcpay_track_new_order( $order->get_id() );

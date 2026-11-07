@@ -81,13 +81,19 @@ class WooPaymentsFraudServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should print the Sift page tracker in the footer of a WooCommerce admin page, as the WooPayments extension does.
+	 * @testdox Should print the Sift page tracker in the footer of WooCommerce admin and Payments settings pages, the WooPayments routes included: $_dataName.
 	 *
 	 * Client 11.1.0 `includes/class-wc-payments-fraud-service.php:83`, `:207-243`; the merchant's account id is the Sift user
-	 * id in the admin (`:348-358`).
+	 * id in the admin (`:348-358`). The client's dashboard pages load Sift through their own JS (client 11.1.0
+	 * `client/components/page/index.tsx:36-40`, `client/fraud-scripts/sift.js`), so the client covers them too; native has no
+	 * JS loader and prints the tracker there.
+	 *
+	 * @dataProvider provide_admin_pages_with_the_sift_tracker
+	 *
+	 * @param array<string,string> $query Admin page query.
 	 */
-	public function test_prints_the_sift_tracker_on_a_woocommerce_admin_page(): void {
-		$output = $this->render_admin_footer( array( 'page' => 'wc-admin' ) );
+	public function test_prints_the_sift_tracker_on_woocommerce_admin_pages( array $query ): void {
+		$output = $this->render_admin_footer( $query );
 
 		$this->assertStringContainsString( "var src = 'https://cdn.sift.com/s.js';", $output );
 		$this->assertStringContainsString( '_sift.push( [ \'_setAccount\', "prod_beacon" ] );', $output );
@@ -98,19 +104,27 @@ class WooPaymentsFraudServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should print the Sift page tracker on the Payments settings pages, the WooPayments routes included.
+	 * Admin page queries that print the Sift page tracker.
 	 *
-	 * The client's dashboard pages load Sift through their own JS (client 11.1.0 `client/components/page/index.tsx:36-40`,
-	 * `client/fraud-scripts/sift.js`), so the client covers them too; native has no JS loader and prints the tracker there.
-	 * @testWith [{"page": "wc-settings", "tab": "checkout"}]
-	 *           [{"page": "wc-settings", "tab": "checkout", "path": "/woopayments/overview"}]
-	 *
-	 * @param array<string,string> $query Admin page query.
+	 * @return array<string,array{0:array<string,string>}>
 	 */
-	public function test_prints_the_sift_tracker_on_the_payments_settings_pages( array $query ): void {
-		$output = $this->render_admin_footer( $query );
-
-		$this->assertStringContainsString( '_sift.push( [ \'_setAccount\', "prod_beacon" ] );', $output );
+	public function provide_admin_pages_with_the_sift_tracker(): array {
+		return array(
+			'WooCommerce admin'                     => array( array( 'page' => 'wc-admin' ) ),
+			'Payments settings tab'                 => array(
+				array(
+					'page' => 'wc-settings',
+					'tab'  => 'checkout',
+				),
+			),
+			'WooPayments route in the settings tab' => array(
+				array(
+					'page' => 'wc-settings',
+					'tab'  => 'checkout',
+					'path' => '/woopayments/overview',
+				),
+			),
+		);
 	}
 
 	/**
