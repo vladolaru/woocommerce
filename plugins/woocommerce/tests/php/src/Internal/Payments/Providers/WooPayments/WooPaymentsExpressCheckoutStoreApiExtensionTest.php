@@ -286,11 +286,20 @@ class WooPaymentsExpressCheckoutStoreApiExtensionTest extends WC_Unit_Test_Case 
 	}
 
 	/**
-	 * @testdox Should make the state optional for the WooPayments extension's 26 countries on express checkout Store API requests.
+	 * @testdox Should make the state optional for the WooPayments extension's 26 countries on express checkout Store API requests, also through the rest_route query argument: $request_uri.
+	 *
+	 * @testWith ["/wp-json/wc/store/v1/checkout", ""]
+	 *           ["/?rest_route=/wc/store/v1/checkout", "/wc/store/v1/checkout"]
+	 *
+	 * @param string $request_uri Request URI.
+	 * @param string $rest_route  The rest_route request argument, or '' for none.
 	 */
-	public function test_express_checkout_request_makes_state_optional_for_woopayments_extension_countries(): void {
+	public function test_express_checkout_request_makes_state_optional_for_woopayments_extension_countries( string $request_uri, string $rest_route ): void {
 		$this->sut = $this->create_extension();
-		$this->set_express_checkout_request();
+		$this->set_express_checkout_request( $request_uri );
+		if ( '' !== $rest_route ) {
+			$_REQUEST['rest_route'] = $rest_route;
+		}
 
 		$locales = $this->sut->modify_country_locale_for_express_checkout(
 			array(
@@ -314,19 +323,6 @@ class WooPaymentsExpressCheckoutStoreApiExtensionTest extends WC_Unit_Test_Case 
 		$this->assertSame( 'County', $locales['RO']['state']['label'] );
 		$this->assertTrue( $locales['US']['state']['required'] );
 		$this->assertCount( 27, $locales );
-	}
-
-	/**
-	 * @testdox Should detect express checkout Store API requests made through the rest_route query argument.
-	 */
-	public function test_express_checkout_request_through_rest_route_query_argument(): void {
-		$this->sut = $this->create_extension();
-		$this->set_express_checkout_request( '/?rest_route=/wc/store/v1/checkout' );
-		$_REQUEST['rest_route'] = '/wc/store/v1/checkout';
-
-		$locales = $this->sut->modify_country_locale_for_express_checkout( array() );
-
-		$this->assertFalse( $locales['RO']['state']['required'] );
 	}
 
 	/**

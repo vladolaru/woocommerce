@@ -399,92 +399,57 @@ class WooPaymentsExpressCheckoutControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should render the WooPay button, then the ECE container, then one OR separator in one wrapper on checkout.
+	 * @testdox Should render the express checkout buttons in one wrapper, with the OR separator only on checkout and order-pay pages: $_dataName.
+	 *
+	 * Client 11.1.0 class-wc-payments-express-checkout-button-display-handler.php:112-149: the WooPay button, then the ECE
+	 * container, then one OR separator wherever is_checkout() holds, order-pay included (recorded on a local client 11.1.0
+	 * order-pay page: a centred "— OR —" below the buttons). Without a WooPay button the separator starts hidden for the
+	 * wallet to reveal (:115, :131).
+	 *
+	 * @dataProvider provide_express_checkout_button_pages
+	 *
+	 * @param string   $page            `checkout`, `order-pay` or `product`.
+	 * @param bool     $ece_on          Whether the Express Checkout Element shows.
+	 * @param string   $woopay_button   WooPay button markup.
+	 * @param string   $expected_markup Expected output.
+	 * @param string[] $expected_contexts Contexts the service is asked about.
 	 */
-	public function test_display_express_checkout_buttons_renders_woopay_and_ece_in_one_wrapper(): void {
-		$this->sut = $this->create_controller( true, null, '<div id="wcpay-woopay-button"></div>' );
-		$this->set_checkout_shortcode_page();
+	public function test_display_express_checkout_buttons( string $page, bool $ece_on, string $woopay_button, string $expected_markup, array $expected_contexts ): void {
+		$service   = new RecordingExpressCheckoutService();
+		$this->sut = $this->create_controller( $ece_on, $service, $woopay_button );
+		if ( 'product' === $page ) {
+			$this->set_current_product();
+		} else {
+			$this->set_checkout_shortcode_page();
+			$this->set_order_pay_query_var( 'order-pay' === $page ? 123 : 0 );
+		}
 
 		ob_start();
 		$this->sut->display_express_checkout_buttons();
 		$output = (string) ob_get_clean();
 
-		// Client 11.1.0 class-wc-payments-express-checkout-button-display-handler.php:134-149.
-		$this->assertSame(
-			'<div class="wcpay-express-checkout-wrapper"><div id="wcpay-woopay-button"></div><div id="wcpay-express-checkout-element"></div>' .
-			'<p id="wcpay-express-checkout-button-separator" style="margin-top:1.5em;text-align:center;">&mdash; OR &mdash;</p></div>',
-			$output
+		$this->assertSame( $expected_markup, $output );
+		$this->assertSame( $expected_contexts, $service->contexts );
+	}
+
+	/**
+	 * Pages, the Express Checkout Element and WooPay button states, and the markup the buttons render with.
+	 *
+	 * @return array<string,array{0:string,1:bool,2:string,3:string,4:string[]}>
+	 */
+	public function provide_express_checkout_button_pages(): array {
+		$woopay    = '<div id="wcpay-woopay-button"></div>';
+		$element   = '<div id="wcpay-express-checkout-element"></div>';
+		$separator = '<p id="wcpay-express-checkout-button-separator" style="margin-top:1.5em;text-align:center;">&mdash; OR &mdash;</p>';
+		$hidden    = '<p id="wcpay-express-checkout-button-separator" style="margin-top:1.5em;text-align:center;" hidden>&mdash; OR &mdash;</p>';
+
+		return array(
+			'checkout with WooPay and the element'     => array( 'checkout', true, $woopay, '<div class="wcpay-express-checkout-wrapper">' . $woopay . $element . $separator . '</div>', array( 'checkout' ) ),
+			'checkout with the element only'           => array( 'checkout', true, '', '<div class="wcpay-express-checkout-wrapper">' . $element . $hidden . '</div>', array( 'checkout' ) ),
+			'checkout with WooPay and the element off' => array( 'checkout', false, $woopay, '<div class="wcpay-express-checkout-wrapper">' . $woopay . $separator . '</div>', array( 'checkout' ) ),
+			'order-pay page with the element only'     => array( 'order-pay', true, '', '<div class="wcpay-express-checkout-wrapper">' . $element . $hidden . '</div>', array( 'pay_for_order' ) ),
+			'product page with the element only'       => array( 'product', true, '', '<div class="wcpay-express-checkout-wrapper">' . $element . '</div>', array( 'product' ) ),
 		);
-	}
-
-	/**
-	 * @testdox Should start the OR separator hidden when no WooPay button shows, for the wallet to reveal.
-	 */
-	public function test_display_express_checkout_buttons_starts_separator_hidden_without_woopay(): void {
-		$this->sut = $this->create_controller( true );
-		$this->set_checkout_shortcode_page();
-
-		ob_start();
-		$this->sut->display_express_checkout_buttons();
-		$output = (string) ob_get_clean();
-
-		// Client 11.1.0 class-wc-payments-express-checkout-button-display-handler.php:115, :131.
-		$this->assertStringContainsString( '<p id="wcpay-express-checkout-button-separator" style="margin-top:1.5em;text-align:center;" hidden>', $output );
-		$this->assertSame( 1, substr_count( $output, 'wcpay-express-checkout-button-separator' ) );
-	}
-
-	/**
-	 * @testdox Should render the WooPay button and its separator when the Express Checkout Element is off.
-	 */
-	public function test_display_express_checkout_buttons_renders_woopay_alone_when_ece_is_off(): void {
-		$this->sut = $this->create_controller( false, null, '<div id="wcpay-woopay-button"></div>' );
-		$this->set_checkout_shortcode_page();
-
-		ob_start();
-		$this->sut->display_express_checkout_buttons();
-		$output = (string) ob_get_clean();
-
-		$this->assertStringContainsString( '<div class="wcpay-express-checkout-wrapper"><div id="wcpay-woopay-button"></div><p id="wcpay-express-checkout-button-separator"', $output );
-		$this->assertStringNotContainsString( 'wcpay-express-checkout-element', $output );
-		$this->assertStringNotContainsString( ' hidden>', $output );
-	}
-
-	/**
-	 * @testdox Should render the ECE container and the OR separator with pay-for-order context on order-pay pages.
-	 */
-	public function test_display_express_checkout_buttons_renders_on_order_pay_page(): void {
-		$service   = new RecordingExpressCheckoutService();
-		$this->sut = $this->create_controller( true, $service );
-		$this->set_checkout_shortcode_page();
-		$this->set_order_pay_query_var( 123 );
-
-		ob_start();
-		$this->sut->display_express_checkout_buttons();
-		$output = (string) ob_get_clean();
-
-		$this->assertStringContainsString( 'wcpay-express-checkout-wrapper', $output );
-		// Client 11.1.0 renders it wherever is_checkout() holds, which includes order-pay
-		// (class-wc-payments-express-checkout-button-display-handler.php:112-118; recorded on a local client 11.1.0
-		// order-pay page: a centred "— OR —" below the buttons).
-		$this->assertStringContainsString( '<p id="wcpay-express-checkout-button-separator" style="margin-top:1.5em;text-align:center;" hidden>', $output );
-		$this->assertSame( array( 'pay_for_order' ), $service->contexts );
-	}
-
-	/**
-	 * @testdox Should render the ECE container with product context on product pages.
-	 */
-	public function test_display_express_checkout_buttons_renders_on_product_page(): void {
-		$service   = new RecordingExpressCheckoutService();
-		$this->sut = $this->create_controller( true, $service );
-		$this->set_current_product();
-
-		ob_start();
-		$this->sut->display_express_checkout_buttons();
-		$output = (string) ob_get_clean();
-
-		$this->assertStringContainsString( 'wcpay-express-checkout-wrapper', $output );
-		$this->assertStringNotContainsString( 'wcpay-express-checkout-button-separator', $output );
-		$this->assertSame( array( 'product' ), $service->contexts );
 	}
 
 	/**

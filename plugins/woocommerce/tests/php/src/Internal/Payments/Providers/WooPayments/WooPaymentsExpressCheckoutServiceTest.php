@@ -816,16 +816,20 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should require login confirmation on a subscription product page even with guest checkout enabled.
+	 * @testdox Should require login confirmation on a subscription product page unless the shopper can sign up during checkout: $_dataName.
+	 * @dataProvider provide_subscription_product_page_signup_options
+	 *
+	 * @param array<string,string> $options  Account creation options.
+	 * @param bool                 $required Whether login confirmation is required.
 	 */
-	public function test_login_confirmation_required_for_subscription_product_page(): void {
+	public function test_login_confirmation_on_a_subscription_product_page( array $options, bool $required ): void {
 		WooCommerceSubscriptionsDoubles::load_product();
 		WooCommerceSubscriptionsDoubles::load_cart();
 
 		wp_set_current_user( 0 );
-		update_option( 'woocommerce_enable_guest_checkout', 'yes' );
-		update_option( 'woocommerce_enable_signup_and_login_from_checkout', 'no' );
-		update_option( 'woocommerce_enable_signup_from_checkout_for_subscriptions', 'no' );
+		foreach ( $options as $option => $value ) {
+			update_option( $option, $value );
+		}
 		update_option( 'woocommerce_default_country', 'US:CA' );
 		update_option( 'woocommerce_currency', 'USD' );
 		$product = \WC_Helper_Product::create_simple_product(
@@ -842,39 +846,36 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 
 		$params = $this->create_service()->get_express_checkout_params( 'product' );
 
-		$this->assertIsArray( $params['login_confirmation'] );
+		$this->assertSame( $required, is_array( $params['login_confirmation'] ) );
+		$this->assertSame( $required, false !== $params['login_confirmation'] );
 	}
 
 	/**
-	 * @testdox Should not require login confirmation on a subscription product page when subscription signup is allowed.
+	 * Account creation options on a subscription product page, and whether login confirmation is required.
+	 *
+	 * @return array<string,array{0:array<string,string>,1:bool}>
 	 */
-	public function test_login_confirmation_false_when_subscription_signup_possible(): void {
-		WooCommerceSubscriptionsDoubles::load_product();
-		WooCommerceSubscriptionsDoubles::load_cart();
-
-		wp_set_current_user( 0 );
-		update_option( 'woocommerce_enable_guest_checkout', 'no' );
-		update_option( 'woocommerce_enable_signup_and_login_from_checkout', 'no' );
-		update_option( 'woocommerce_enable_signup_from_checkout_for_subscriptions', 'yes' );
-		update_option( 'woocommerce_registration_generate_username', 'yes' );
-		update_option( 'woocommerce_registration_generate_password', 'yes' );
-		update_option( 'woocommerce_default_country', 'US:CA' );
-		update_option( 'woocommerce_currency', 'USD' );
-		$product = \WC_Helper_Product::create_simple_product(
-			true,
-			array(
-				'name'          => 'Sub Widget',
-				'regular_price' => '10',
-				'virtual'       => true,
-				'price'         => '10',
-			)
+	public function provide_subscription_product_page_signup_options(): array {
+		return array(
+			'guest checkout on, subscription sign-up off' => array(
+				array(
+					'woocommerce_enable_guest_checkout' => 'yes',
+					'woocommerce_enable_signup_and_login_from_checkout' => 'no',
+					'woocommerce_enable_signup_from_checkout_for_subscriptions' => 'no',
+				),
+				true,
+			),
+			'guest checkout off, subscription sign-up and generated credentials on' => array(
+				array(
+					'woocommerce_enable_guest_checkout' => 'no',
+					'woocommerce_enable_signup_and_login_from_checkout' => 'no',
+					'woocommerce_enable_signup_from_checkout_for_subscriptions' => 'yes',
+					'woocommerce_registration_generate_username' => 'yes',
+					'woocommerce_registration_generate_password' => 'yes',
+				),
+				false,
+			),
 		);
-		$GLOBALS[ WooCommerceSubscriptionsDoubles::SUBSCRIPTION_PRODUCT_IDS ] = array( $product->get_id() );
-		$this->set_current_product( $product );
-
-		$params = $this->create_service()->get_express_checkout_params( 'product' );
-
-		$this->assertFalse( $params['login_confirmation'] );
 	}
 
 	/**
@@ -1333,9 +1334,15 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should hide product-page payment request buttons when the product is out of stock.
+	 * @testdox Should show product-page payment request buttons only for a product that can be bought now or on backorder: $_dataName.
+	 *
+	 * @testWith ["out of stock", false]
+	 *           ["managed stock at 0 with backorders allowed", true]
+	 *
+	 * @param string $stock    Stock state of the product.
+	 * @param bool   $expected Whether the buttons show.
 	 */
-	public function test_payment_request_requires_in_stock_product(): void {
+	public function test_payment_request_follows_the_product_stock( string $stock, bool $expected ): void {
 		$product = \WC_Helper_Product::create_simple_product(
 			true,
 			array(
@@ -1344,32 +1351,17 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 				'regular_price' => '12.34',
 			)
 		);
-		$product->set_stock_status( 'outofstock' );
+		if ( 'out of stock' === $stock ) {
+			$product->set_stock_status( 'outofstock' );
+		} else {
+			$product->set_manage_stock( true );
+			$product->set_stock_quantity( 0 );
+			$product->set_backorders( 'yes' );
+		}
 		$product->save();
 		$this->set_current_product( $product );
 
-		$this->assertFalse( $this->create_service()->should_show_payment_request_button( 'product' ) );
-	}
-
-	/**
-	 * @testdox Should show product-page payment request buttons for backordered products.
-	 */
-	public function test_payment_request_allows_backordered_product(): void {
-		$product = \WC_Helper_Product::create_simple_product(
-			true,
-			array(
-				'virtual'       => true,
-				'price'         => '12.34',
-				'regular_price' => '12.34',
-			)
-		);
-		$product->set_manage_stock( true );
-		$product->set_stock_quantity( 0 );
-		$product->set_backorders( 'yes' );
-		$product->save();
-		$this->set_current_product( $product );
-
-		$this->assertTrue( $this->create_service()->should_show_payment_request_button( 'product' ) );
+		$this->assertSame( $expected, $this->create_service()->should_show_payment_request_button( 'product' ) );
 	}
 
 	/**
@@ -1399,33 +1391,39 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should use location-centric payment-request settings while neither Apple Pay nor Google Pay is enabled in its own settings.
+	 * @testdox Should show checkout payment request buttons from the location settings, or from Apple Pay and Google Pay's own settings when the location settings are absent: $_dataName.
+	 * @dataProvider provide_payment_request_settings_sources
+	 *
+	 * @param array<string,mixed> $settings   Gateway settings, without the defaults.
+	 * @param bool                $wallets_on Whether Apple Pay and Google Pay are enabled in their own settings.
 	 */
-	public function test_payment_request_uses_location_settings_without_the_wallet_gateway_settings(): void {
+	public function test_payment_request_reads_the_location_or_the_wallet_gateway_settings( array $settings, bool $wallets_on ): void {
 		$this->set_up_virtual_product_context( 'checkout' );
-		$sut = $this->create_service(
-			array(
-				'express_checkout_product_methods'  => array(),
-				'express_checkout_cart_methods'     => array(),
-				'express_checkout_checkout_methods' => array( 'payment_request' ),
-			),
-			true,
-			array(),
-			false
-		);
+		$sut = $this->create_service( $settings, true, array(), false );
+		if ( $wallets_on ) {
+			$this->set_wallet_gateway_settings( true );
+		}
 
 		$this->assertTrue( $sut->should_show_payment_request_button( 'checkout' ) );
 	}
 
 	/**
-	 * @testdox Should fall back to Apple Pay and Google Pay when per-context settings are absent and one is enabled in its own settings.
+	 * Payment request settings sources.
+	 *
+	 * @return array<string,array{0:array<string,mixed>,1:bool}>
 	 */
-	public function test_payment_request_uses_the_wallet_gateway_settings_when_context_settings_are_absent(): void {
-		$this->set_up_virtual_product_context( 'checkout' );
-		$sut = $this->create_service( array(), true, array(), false );
-		$this->set_wallet_gateway_settings( true );
-
-		$this->assertTrue( $sut->should_show_payment_request_button( 'checkout' ) );
+	public function provide_payment_request_settings_sources(): array {
+		return array(
+			'location settings, wallet settings untouched' => array(
+				array(
+					'express_checkout_product_methods'  => array(),
+					'express_checkout_cart_methods'     => array(),
+					'express_checkout_checkout_methods' => array( 'payment_request' ),
+				),
+				false,
+			),
+			'no location settings, a wallet enabled'       => array( array(), true ),
+		);
 	}
 
 	/**
@@ -2182,20 +2180,6 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should allow a guest to pay for an order without a billing email using its exact key.
-	 */
-	public function test_payment_request_allows_guest_pay_for_order_without_billing_email(): void {
-		$order = wc_create_order();
-		$order->set_total( '24.00' );
-		$order->save();
-		$_GET['pay_for_order'] = 'true';
-		$_GET['key']           = $order->get_order_key();
-		$this->set_order_pay_query_var( $order->get_id() );
-
-		$this->assertTrue( $this->create_service()->should_show_payment_request_button( 'pay_for_order' ) );
-	}
-
-	/**
 	 * @testdox Should offer no order-pay express checkout, and publish no order, for a pay link without the pay_for_order flag.
 	 *
 	 * Core then renders the order receipt, not the pay form (class-wc-shortcode-checkout.php:88, :233). Client 11.1.0 publishes the
@@ -2299,13 +2283,14 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should retain pay-for-order authorization and availability boundaries without a billing email.
+	 * @testdox Should offer pay-for-order express checkout without a billing email to a guest with the exact key, and keep its authorization and availability boundaries: $_dataName.
 	 *
 	 * @dataProvider pay_for_order_ineligible_cases
 	 *
-	 * @param string $scenario Ineligible boundary to exercise.
+	 * @param string $scenario Boundary to exercise.
+	 * @param bool   $allowed  Whether the buttons show.
 	 */
-	public function test_payment_request_keeps_pay_for_order_boundaries_without_billing_email( string $scenario ): void {
+	public function test_payment_request_keeps_pay_for_order_boundaries_without_billing_email( string $scenario, bool $allowed = false ): void {
 		$user_id = self::factory()->user->create();
 		$order   = wc_create_order();
 		$order->set_total( '24.00' );
@@ -2319,6 +2304,11 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 		$settings             = array();
 		$can_process_payments = true;
 		switch ( $scenario ) {
+			case 'guest with its exact key':
+				$order->set_customer_id( 0 );
+				$order->save();
+				wp_set_current_user( 0 );
+				break;
 			case 'missing key':
 				unset( $_GET['key'] );
 				break;
@@ -2343,23 +2333,24 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 				break;
 		}
 
-		$this->assertFalse( $this->create_service( $settings, $can_process_payments )->should_show_payment_request_button( 'pay_for_order' ) );
+		$this->assertSame( $allowed, $this->create_service( $settings, $can_process_payments )->should_show_payment_request_button( 'pay_for_order' ) );
 	}
 
 	/**
-	 * Provide pay-for-order boundaries that must remain closed.
+	 * Provide a guest's pay-for-order request with its exact key, and the pay-for-order boundaries that must remain closed.
 	 *
-	 * @return array<string,array{0:string}>
+	 * @return array<string,array{0:string,1?:bool}>
 	 */
 	public function pay_for_order_ineligible_cases(): array {
 		return array(
-			'missing key'            => array( 'missing key' ),
-			'wrong key'              => array( 'wrong key' ),
-			'wrong user'             => array( 'wrong user' ),
-			'missing order'          => array( 'missing order' ),
-			'nonpayable order'       => array( 'nonpayable order' ),
-			'unavailable provider'   => array( 'unavailable provider' ),
-			'no allowed method type' => array( 'no allowed method' ),
+			'guest with its exact key' => array( 'guest with its exact key', true ),
+			'missing key'              => array( 'missing key' ),
+			'wrong key'                => array( 'wrong key' ),
+			'wrong user'               => array( 'wrong user' ),
+			'missing order'            => array( 'missing order' ),
+			'nonpayable order'         => array( 'nonpayable order' ),
+			'unavailable provider'     => array( 'unavailable provider' ),
+			'no allowed method type'   => array( 'no allowed method' ),
 		);
 	}
 
