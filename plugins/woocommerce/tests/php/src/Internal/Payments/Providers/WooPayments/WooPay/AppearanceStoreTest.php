@@ -163,7 +163,8 @@ class AppearanceStoreTest extends WC_Unit_Test_Case {
 	 * @testdox Font rules keep only https URLs on the allowed font hosts, at most ten: $_dataName.
 	 *
 	 * Client 11.1.0 WooPay_Session::sanitize_font_rules() (includes/woopay/class-woopay-session.php:652-669) with
-	 * WC_Payments_Styles_Cache::ALLOWED_FONT_DOMAINS (includes/class-wc-payments-styles-cache.php:30-36).
+	 * WC_Payments_Styles_Cache::ALLOWED_FONT_DOMAINS (includes/class-wc-payments-styles-cache.php:30-36). The host and URL
+	 * check is ThemeAppearance::get_allowed_font_url(), which the theme's font rules use too.
 	 *
 	 * @dataProvider font_rule_cases
 	 *
@@ -184,6 +185,7 @@ class AppearanceStoreTest extends WC_Unit_Test_Case {
 
 		return array(
 			'an allowed host'                  => array( array( $allowed ), array( $allowed ) ),
+			'another allowed host'             => array( array( array( 'cssSrc' => 'https://fonts.bunny.net/css?family=inter' ) ), array( array( 'cssSrc' => 'https://fonts.bunny.net/css?family=inter' ) ) ),
 			'another host'                     => array( array( array( 'cssSrc' => 'https://fonts.example.com/inter.css' ) ), array() ),
 			'an allowed host name as a path'   => array( array( array( 'cssSrc' => 'https://fonts.example.com/fonts.gstatic.com/a.css' ) ), array() ),
 			'http on an allowed host'          => array( array( array( 'cssSrc' => 'http://use.typekit.net/abc.css' ) ), array() ),

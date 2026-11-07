@@ -21,68 +21,53 @@ class AdaptedExtensionsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should track the affiliate conversion carried on a WooPay order request without forcing its eligibility: $_dataName.
+	 * @testdox Should track the affiliate conversion a WooPay order request carries, without forcing its eligibility, and only then: $_dataName.
 	 *
 	 * Affiliate for WooCommerce applies its own rules, its self-referral setting included, unless the call forces
 	 * is_affiliate_eligible (AFWC 9.17.0 includes/class-afwc-api.php:609-616); client 11.1.0 forces it
 	 * (includes/woopay/class-woopay-adapted-extensions.php:205).
 	 *
+	 * No conversion is tracked when the request carries no affiliate or Affiliate for WooCommerce is not active.
+	 *
 	 * @dataProvider provide_affiliate_parameters
 	 *
-	 * @param string $parameter    The request's affiliate parameter.
-	 * @param int    $affiliate_id The affiliate ID the conversion names.
+	 * @param bool        $extension_active Whether Affiliate for WooCommerce is active.
+	 * @param string|null $parameter        The request's affiliate parameter, or null for none.
+	 * @param int|null    $affiliate_id     The affiliate ID the one conversion names, or null for no conversion.
 	 */
-	public function test_update_order_extension_data_tracks_affiliate_conversion( string $parameter, int $affiliate_id ): void {
-		$this->install_affiliate_for_woocommerce_double();
-		$_GET['affiliate'] = $parameter;
+	public function test_update_order_extension_data_tracks_affiliate_conversion( bool $extension_active, ?string $parameter, ?int $affiliate_id ): void {
+		if ( $extension_active ) {
+			$this->install_affiliate_for_woocommerce_double();
+		}
+		if ( null !== $parameter ) {
+			$_GET['affiliate'] = $parameter;
+		}
 
 		( new AdaptedExtensions() )->update_order_extension_data( 1001 );
 
-		$this->assertSame(
+		$expected = null === $affiliate_id ? array() : array(
 			array(
-				array(
-					'order_id'     => 1001,
-					'affiliate_id' => $affiliate_id,
-					'type'         => '',
-					'params'       => array(),
-				),
+				'order_id'     => 1001,
+				'affiliate_id' => $affiliate_id,
+				'type'         => '',
+				'params'       => array(),
 			),
-			FakeWooPayAffiliateApi::$conversions
 		);
+		$this->assertSame( $expected, FakeWooPayAffiliateApi::$conversions );
 	}
 
 	/**
-	 * Affiliate parameters and the affiliate ID each must pass.
+	 * Whether the extension is active, the request's affiliate parameter, and the affiliate ID the conversion must pass.
 	 *
-	 * @return array<string,array{string,int}>
+	 * @return array<string,array{bool,string|null,int|null}>
 	 */
 	public function provide_affiliate_parameters(): array {
 		return array(
-			'does not force eligibility' => array( '42', 42 ),
-			'still passes the affiliate' => array( ' 7 ', 7 ),
+			'does not force eligibility'  => array( true, '42', 42 ),
+			'still passes the affiliate'  => array( true, ' 7 ', 7 ),
+			'no affiliate on the request' => array( true, null, null ),
+			'extension not active'        => array( false, '42', null ),
 		);
-	}
-
-	/**
-	 * @testdox Should not track a conversion when the request carries no affiliate.
-	 */
-	public function test_update_order_extension_data_ignores_requests_without_affiliate(): void {
-		$this->install_affiliate_for_woocommerce_double();
-
-		( new AdaptedExtensions() )->update_order_extension_data( 1001 );
-
-		$this->assertSame( array(), FakeWooPayAffiliateApi::$conversions );
-	}
-
-	/**
-	 * @testdox Should not track a conversion when Affiliate for WooCommerce is not active.
-	 */
-	public function test_update_order_extension_data_ignores_affiliate_without_extension(): void {
-		$_GET['affiliate'] = '42';
-
-		( new AdaptedExtensions() )->update_order_extension_data( 1001 );
-
-		$this->assertSame( array(), FakeWooPayAffiliateApi::$conversions );
 	}
 
 	/**

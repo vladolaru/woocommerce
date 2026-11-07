@@ -101,9 +101,14 @@ class EligibilityTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should preserve the one-argument WooPay enabled filter and evaluate it once.
+	 * @testdox Should preserve the one-argument WooPay enabled filter and evaluate it once, before rejecting an unsupported context: $context.
+	 *
+	 * @testWith ["cart"]
+	 *           ["order_received"]
+	 *
+	 * @param string $context Button context.
 	 */
-	public function test_woopay_button_applies_enabled_filter_once(): void {
+	public function test_woopay_button_applies_enabled_filter_once( string $context ): void {
 		update_option( 'woocommerce_enable_guest_checkout', 'yes' );
 		$captured_calls = array();
 		add_filter(
@@ -117,7 +122,7 @@ class EligibilityTest extends WC_Unit_Test_Case {
 			99
 		);
 
-		$this->assertFalse( $this->create_eligibility()->should_show_woopay_button( 'cart' ) );
+		$this->assertFalse( $this->create_eligibility()->should_show_woopay_button( $context ) );
 		$this->assertCount( 1, $captured_calls );
 		$this->assertCount( 1, $captured_calls[0], 'The preserved enabled filter should receive only the boolean enabled state.' );
 		$this->assertTrue( $captured_calls[0][0] );
@@ -139,25 +144,6 @@ class EligibilityTest extends WC_Unit_Test_Case {
 
 		$this->assertTrue( $this->create_eligibility()->is_woopay_enabled() );
 		$this->assertSame( 0, $enabled_filter_calls, 'The button filter should not participate in global WooPay capability.' );
-	}
-
-	/**
-	 * @testdox Should evaluate filtered enablement before rejecting an unsupported context.
-	 */
-	public function test_woopay_button_checks_filtered_enablement_before_context(): void {
-		update_option( 'woocommerce_enable_guest_checkout', 'yes' );
-		$enabled_filter_calls = 0;
-		add_filter(
-			'wcpay_woopay_enabled',
-			static function ( bool $enabled ) use ( &$enabled_filter_calls ): bool {
-				++$enabled_filter_calls;
-
-				return $enabled;
-			}
-		);
-
-		$this->assertFalse( $this->create_eligibility()->should_show_woopay_button( 'order_received' ) );
-		$this->assertSame( 1, $enabled_filter_calls );
 	}
 
 	/**

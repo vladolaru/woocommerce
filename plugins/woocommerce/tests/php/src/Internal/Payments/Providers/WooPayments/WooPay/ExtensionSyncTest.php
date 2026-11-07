@@ -129,7 +129,7 @@ class ExtensionSyncTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Compatibility sync preserves WooPay option names and recomputes active incompatible/adapted extensions.
+	 * @testdox Compatibility sync preserves WooPay option names, recomputes active incompatible/adapted extensions, and clears the warning once none is active.
 	 */
 	public function test_update_compatibility_and_maybe_show_incompatibility_warning_updates_options(): void {
 		update_option(
@@ -157,6 +157,11 @@ class ExtensionSyncTest extends WC_Unit_Test_Case {
 		$this->assertSame( array( 'woocommerce-points-and-rewards', 'woocommerce-gift-cards' ), get_option( 'woopay_adapted_extensions' ) );
 		$this->assertSame( array( 'woocommerce-points-and-rewards' ), get_option( 'woopay_enabled_adapted_extensions' ) );
 		$this->assertSame( '["US","BR"]', get_option( 'woocommerce_woocommerce_payments_woopay_available_countries' ) );
+
+		update_option( 'active_plugins', array( 'woocommerce-points-and-rewards/woocommerce-points-and-rewards.php' ) );
+		$sync->update_compatibility_and_maybe_show_incompatibility_warning();
+
+		$this->assertNull( get_option( 'woopay_invalid_extension_found', null ), 'Once no incompatible extension is active, the warning option goes.' );
 	}
 
 	/**
@@ -177,26 +182,6 @@ class ExtensionSyncTest extends WC_Unit_Test_Case {
 		$context = $this->get_logged_context_at_level( $logger, 'error', 'woopayments' );
 		$this->assertSame( array( 404, 'resource_missing' ), array( $context['http_status'], $context['error_code'] ) );
 		$this->assert_log_holds_no_provider_text( $logger );
-	}
-
-	/**
-	 * @testdox Compatibility sync clears the warning option when no active incompatible extension remains.
-	 */
-	public function test_update_compatibility_clears_warning_when_no_incompatible_extension_is_active(): void {
-		update_option( 'active_plugins', array( 'safe-extension/safe-extension.php' ) );
-		update_option( 'woopay_invalid_extension_found', true );
-
-		$sync = $this->create_sync(
-			array(
-				'incompatible_extensions' => array( 'bad-extension' ),
-				'adapted_extensions'      => array(),
-				'available_countries'     => array(),
-			)
-		);
-
-		$sync->update_compatibility_and_maybe_show_incompatibility_warning();
-
-		$this->assertNull( get_option( 'woopay_invalid_extension_found', null ) );
 	}
 
 	/**
