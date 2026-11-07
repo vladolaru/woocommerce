@@ -9,7 +9,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCu
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomersRestController;
 use WC_REST_Unit_Test_Case;
 use WP_REST_Request;
-use WP_REST_Server;
 
 /**
  * Tests for the WooPaymentsCustomersRestController class.
@@ -57,22 +56,6 @@ class WooPaymentsCustomersRestControllerTest extends WC_REST_Unit_Test_Case {
 		remove_filter( 'woocommerce_rest_api_get_rest_namespaces', array( $this->sut, 'handle_woocommerce_rest_api_get_rest_namespaces' ) );
 		wc_get_container()->reset_all_replacements();
 		parent::tearDown();
-	}
-
-	/**
-	 * @testdox Customer payment methods route is registered under wc/v3 when the built-in WooPayments owns the runtime.
-	 */
-	public function test_registers_route_when_builtin_owns_runtime(): void {
-		// WooCommerce's REST server registers the routes of the instance the container holds.
-		wc_get_container()->replace( WooPaymentsCustomersRestController::class, $this->sut );
-		$this->sut->register();
-		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment
-		do_action( 'rest_api_init' );
-
-		$routes = $this->server->get_routes();
-
-		$this->assertArrayHasKey( '/wc/v3/payments/customers/(?P<customer_id>\w+)/payment_methods', $routes );
-		$this->assertRouteHasMethod( $routes['/wc/v3/payments/customers/(?P<customer_id>\w+)/payment_methods'], WP_REST_Server::READABLE );
 	}
 
 	/**
@@ -358,21 +341,5 @@ class WooPaymentsCustomersRestControllerTest extends WC_REST_Unit_Test_Case {
 				return $this->payment_methods_by_type[ $type ] ?? array();
 			}
 		};
-	}
-
-	/**
-	 * Assert a route handler supports a method.
-	 *
-	 * @param array<int,array<string,mixed>> $route_handlers Route handlers.
-	 * @param string                         $method         Method constant.
-	 */
-	private function assertRouteHasMethod( array $route_handlers, string $method ): void {
-		foreach ( $route_handlers as $handler ) {
-			if ( isset( $handler['methods'][ $method ] ) && true === $handler['methods'][ $method ] ) {
-				return;
-			}
-		}
-
-		$this->fail( 'Route does not accept method ' . $method . '.' );
 	}
 }

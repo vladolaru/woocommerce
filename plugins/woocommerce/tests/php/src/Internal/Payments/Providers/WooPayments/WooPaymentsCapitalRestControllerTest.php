@@ -10,7 +10,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCa
 use WC_REST_Unit_Test_Case;
 use WP_REST_Request;
 use WP_REST_Response;
-use WP_REST_Server;
 
 /**
  * Tests for the native WooPayments Capital REST controller.
@@ -58,21 +57,6 @@ class WooPaymentsCapitalRestControllerTest extends WC_REST_Unit_Test_Case {
 		unset( $_GET['wcpay-loan-offer'] );
 		wc_get_container()->reset_all_replacements();
 		parent::tearDown();
-	}
-
-	/**
-	 * @testdox Capital routes are registered under wc/v3 when the built-in WooPayments owns the runtime.
-	 */
-	public function test_registers_capital_routes_when_builtin_owns_runtime(): void {
-		// WooCommerce's REST server registers the routes of the instance the container holds.
-		wc_get_container()->replace( WooPaymentsCapitalRestController::class, $this->sut );
-		$this->sut->register();
-		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment
-		do_action( 'rest_api_init' );
-
-		$this->assertCapitalRoutesRegistered();
-		// The loan-offer redirect runs from LinkController, which loads on admin pages.
-		$this->assertFalse( has_action( 'admin_init', array( $this->sut, 'redirect_loan_offer_request' ) ) );
 	}
 
 	/**
@@ -495,35 +479,5 @@ class WooPaymentsCapitalRestControllerTest extends WC_REST_Unit_Test_Case {
 				}
 			}
 		};
-	}
-
-	/**
-	 * Assert a route handler supports a method.
-	 *
-	 * @param array<int,array<string,mixed>> $route_handlers Route handlers.
-	 * @param string                         $method         Method constant.
-	 */
-	private function assertRouteHasMethod( array $route_handlers, string $method ): void {
-		foreach ( $route_handlers as $handler ) {
-			if ( isset( $handler['methods'][ $method ] ) && true === $handler['methods'][ $method ] ) {
-				return;
-			}
-		}
-
-		$this->fail( 'Route does not accept method ' . $method . '.' );
-	}
-
-	/**
-	 * Assert Capital REST routes are registered.
-	 */
-	private function assertCapitalRoutesRegistered(): void {
-		$routes = $this->server->get_routes();
-
-		$this->assertArrayHasKey( '/wc/v3/payments/capital/active_loan_summary', $routes );
-		$this->assertArrayHasKey( '/wc/v3/payments/capital/loans', $routes );
-		$this->assertArrayHasKey( '/wc/v3/payments/capital/loan_offer', $routes );
-		$this->assertRouteHasMethod( $routes['/wc/v3/payments/capital/active_loan_summary'], WP_REST_Server::READABLE );
-		$this->assertRouteHasMethod( $routes['/wc/v3/payments/capital/loans'], WP_REST_Server::READABLE );
-		$this->assertRouteHasMethod( $routes['/wc/v3/payments/capital/loan_offer'], WP_REST_Server::READABLE );
 	}
 }

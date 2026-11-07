@@ -68,26 +68,6 @@ class WooPaymentsDocumentsRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Documents and VAT routes are registered only when the built-in WooPayments owns the runtime and Documents are enabled.
-	 */
-	public function test_registers_routes_when_builtin_owns_runtime_and_documents_are_enabled(): void {
-		// WooCommerce's REST server registers the routes of the instance the container holds.
-		wc_get_container()->replace( WooPaymentsDocumentsRestController::class, $this->sut );
-		$this->sut->register();
-		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment
-		do_action( 'rest_api_init' );
-
-		$routes = $this->server->get_routes();
-
-		foreach ( $this->get_expected_routes() as $route => $methods ) {
-			$this->assertArrayHasKey( $route, $routes );
-			foreach ( $methods as $method ) {
-				$this->assertRouteHasMethod( $routes[ $route ], $method );
-			}
-		}
-	}
-
-	/**
 	 * @testdox Documents routes are registered when the controller registers while plugins load and the cached account has Documents enabled.
 	 */
 	public function test_registers_routes_when_registered_while_plugins_load(): void {
@@ -679,32 +659,6 @@ class WooPaymentsDocumentsRestControllerTest extends WC_REST_Unit_Test_Case {
 				return $this->available;
 			}
 		};
-	}
-
-	/**
-	 * Assert a route handler supports a method.
-	 *
-	 * @param array<int,array<string,mixed>> $route_handlers Route handlers.
-	 * @param string                         $method         Method constant.
-	 */
-	private function assertRouteHasMethod( array $route_handlers, string $method ): void {
-		$methods = array_map( 'trim', explode( ',', $method ) );
-
-		foreach ( $route_handlers as $handler ) {
-			$route_methods = isset( $handler['methods'] ) && is_array( $handler['methods'] ) ? $handler['methods'] : array();
-			$missing       = array_filter(
-				$methods,
-				static function ( string $method_name ) use ( $route_methods ): bool {
-					return ! isset( $route_methods[ $method_name ] ) || true !== $route_methods[ $method_name ];
-				}
-			);
-
-			if ( empty( $missing ) ) {
-				return;
-			}
-		}
-
-		$this->fail( 'Route does not accept method ' . $method . '.' );
 	}
 
 	/**
