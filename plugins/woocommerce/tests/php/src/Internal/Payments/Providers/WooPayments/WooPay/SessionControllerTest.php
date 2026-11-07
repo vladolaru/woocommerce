@@ -5,6 +5,8 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\W
 
 use Automattic\Jetpack\Connection\Rest_Authentication;
 use Automattic\Jetpack\Constants;
+use Automattic\WooCommerce\Blocks\Assets\AssetDataRegistry;
+use Automattic\WooCommerce\Blocks\Package;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCheckoutAssets;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendStylesService;
@@ -86,6 +88,13 @@ class SessionControllerTest extends WC_REST_Unit_Test_Case {
 	private ?StoreApiRequestHandler $store_api_request_handler = null;
 
 	/**
+	 * The Blocks asset data registry's state before the test, restored in tearDown().
+	 *
+	 * @var array<string,array<string,mixed>>
+	 */
+	private array $asset_data_registry_state = array();
+
+	/**
 	 * Set up test fixtures.
 	 */
 	public function setUp(): void {
@@ -98,6 +107,7 @@ class SessionControllerTest extends WC_REST_Unit_Test_Case {
 			WC()->customer = clone WC()->customer;
 		}
 		$this->reset_frontend_surface_state();
+		$this->asset_data_registry_state = $this->read_asset_data_registry_state();
 	}
 
 	/**
@@ -156,7 +166,40 @@ class SessionControllerTest extends WC_REST_Unit_Test_Case {
 		}
 		wc_get_container()->reset_replacement( WooPaymentsCheckoutAssets::class );
 		wc_get_container()->reset_replacement( WooPaymentsPageSurface::class );
+		$this->write_asset_data_registry_state( $this->asset_data_registry_state );
 		parent::tearDown();
+	}
+
+	/**
+	 * Read the shared Blocks asset data registry's private data. The rows that fire woocommerce_blocks_cart_enqueue_data
+	 * run core's listeners, which add payment method and checkout field data that would otherwise stay for the whole run.
+	 *
+	 * @return array<string,array<string,mixed>> The registry's `data` and `lazy_data` properties.
+	 */
+	private function read_asset_data_registry_state(): array {
+		$registry = Package::container()->get( AssetDataRegistry::class );
+		$state    = array();
+		foreach ( array( 'data', 'lazy_data' ) as $name ) {
+			$property = new \ReflectionProperty( AssetDataRegistry::class, $name );
+			$property->setAccessible( true );
+			$state[ $name ] = $property->getValue( $registry );
+		}
+
+		return $state;
+	}
+
+	/**
+	 * Put the shared Blocks asset data registry's private data back.
+	 *
+	 * @param array<string,array<string,mixed>> $state The properties read_asset_data_registry_state() returned.
+	 */
+	private function write_asset_data_registry_state( array $state ): void {
+		$registry = Package::container()->get( AssetDataRegistry::class );
+		foreach ( $state as $name => $value ) {
+			$property = new \ReflectionProperty( AssetDataRegistry::class, $name );
+			$property->setAccessible( true );
+			$property->setValue( $registry, $value );
+		}
 	}
 
 	/**
