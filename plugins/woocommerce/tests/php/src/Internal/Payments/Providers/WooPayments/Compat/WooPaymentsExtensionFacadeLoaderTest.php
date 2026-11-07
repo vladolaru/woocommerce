@@ -16,8 +16,15 @@ use WC_Unit_Test_Case;
  * The request rows run in the main process, which always holds a `WC_Payments` class (a legacy onboarding test declares a
  * fake at file load, and the feature-on boot declares the facade), so they observe the loader's own autoloader and the
  * version constant instead of class names. Rows that need the real facade or fixture classes keep a separate process.
+ * Each request row sets every input the activation predicate reads, since earlier tests leave request globals behind and
+ * WordPress's activate_plugin() defines `WP_SANDBOX_SCRAPING` for the rest of the process.
  */
 class WooPaymentsExtensionFacadeLoaderTest extends WC_Unit_Test_Case {
+
+	/**
+	 * WooPayments in a renamed folder, under the plugins directory the request rows use.
+	 */
+	private const RENAMED_MAIN_FILE = 'woocommerce-payments-10.5.0/woocommerce-payments.php';
 
 	/**
 	 * Facade loader autoloaders registered before the test (the boot loader's on the feature-on leg).
@@ -34,11 +41,18 @@ class WooPaymentsExtensionFacadeLoaderTest extends WC_Unit_Test_Case {
 	private ?WooPaymentsExtensionFacadeLoader $loader = null;
 
 	/**
-	 * Request globals before the test.
+	 * Request globals before the test: `$_GET`, `$_POST`, `$_REQUEST` and `$_SERVER`.
 	 *
-	 * @var array{0:array<string,mixed>,1:array<string,mixed>}
+	 * @var array{0:array<string,mixed>,1:array<string,mixed>,2:array<string,mixed>,3:array<string,mixed>}
 	 */
-	private array $request_globals = array( array(), array() );
+	private array $request_globals = array( array(), array(), array(), array() );
+
+	/**
+	 * The plugins directory the test created, if any.
+	 *
+	 * @var string
+	 */
+	private string $plugins_dir = '';
 
 	/**
 	 * Record the facade loader autoloaders and the request globals the test may change.
@@ -47,11 +61,12 @@ class WooPaymentsExtensionFacadeLoaderTest extends WC_Unit_Test_Case {
 		parent::setUp();
 
 		$this->boot_autoloaders = array_values( array_filter( $this->registered_autoloaders(), array( $this, 'is_facade_autoloader' ) ) );
-		$this->request_globals  = array( $_REQUEST, $_SERVER ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Saved for restore only.
+		$this->request_globals  = array( $_GET, $_POST, $_REQUEST, $_SERVER ); // phpcs:ignore WordPress.Security.NonceVerification -- Saved for restore only.
 	}
 
 	/**
-	 * Unregister the test's loader, restore the boot loaders, the request globals and the constants the rows set.
+	 * Unregister the test's loader, restore the boot loaders, the request globals and the constants the rows set, and
+	 * remove the plugins directory.
 	 */
 	public function tearDown(): void {
 		try {
@@ -63,9 +78,14 @@ class WooPaymentsExtensionFacadeLoaderTest extends WC_Unit_Test_Case {
 					spl_autoload_register( $autoloader );
 				}
 			}
-			list( $_REQUEST, $_SERVER ) = $this->request_globals;
+			list( $_GET, $_POST, $_REQUEST, $_SERVER ) = $this->request_globals;
 			foreach ( array( 'WP_CLI', 'WP_PLUGIN_DIR', 'WP_SANDBOX_SCRAPING' ) as $name ) {
 				Constants::clear_single_constant( $name );
+			}
+			if ( '' !== $this->plugins_dir ) {
+				wp_delete_file( $this->plugins_dir . '/' . self::RENAMED_MAIN_FILE );
+				rmdir( dirname( $this->plugins_dir . '/' . self::RENAMED_MAIN_FILE ) ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_rmdir -- Test fixture cleanup.
+				rmdir( $this->plugins_dir ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_rmdir -- Test fixture cleanup.
 			}
 		} finally {
 			parent::tearDown();
@@ -137,6 +157,7 @@ class WooPaymentsExtensionFacadeLoaderTest extends WC_Unit_Test_Case {
 	 * @testdox The loader registers no facade autoloader and leaves the version constant alone when the built-in WooPayments does not own payments.
 	 */
 	public function test_facades_stay_absent_when_the_builtin_does_not_own_payments(): void {
+		$this->set_request( array() );
 		$version_defined = defined( 'WCPAY_VERSION_NUMBER' );
 
 		$this->register_extension_facades( false );
@@ -153,11 +174,7 @@ class WooPaymentsExtensionFacadeLoaderTest extends WC_Unit_Test_Case {
 	 * @param array<string,bool>   $constants Constants WordPress defines for the request.
 	 */
 	public function test_official_activation_requests_keep_extension_symbols_available( array $request, array $server, array $constants = array() ): void {
-		$_REQUEST = $request; // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Reproducing WordPress's already-authorized plugin activation requests.
-		$_SERVER  = array_merge( $_SERVER, $server );
-		foreach ( $constants as $name => $value ) {
-			Constants::set_constant( $name, $value );
-		}
+		$this->set_request( $request, $server, null, $constants );
 		$version_defined = defined( 'WCPAY_VERSION_NUMBER' );
 
 		$this->register_extension_facades();
@@ -284,27 +301,13 @@ class WooPaymentsExtensionFacadeLoaderTest extends WC_Unit_Test_Case {
 	 * @param array<int,string> $arguments WP-CLI arguments.
 	 */
 	public function test_wp_cli_keeps_extension_symbols_available_for_activation( array $arguments ): void {
-		Constants::set_constant( 'WP_CLI', true );
-		$_SERVER['argv'] = $arguments;
+		$this->set_request( array(), array(), $arguments );
 		$version_defined = defined( 'WCPAY_VERSION_NUMBER' );
 
-		// A plugins directory holding WooPayments in a renamed folder, which WP-CLI also activates by its folder name.
-		$plugins_dir = sys_get_temp_dir() . '/wc-facade-loader-' . wp_generate_uuid4();
-		$main_file   = $plugins_dir . '/woocommerce-payments-10.5.0/woocommerce-payments.php';
-		wp_mkdir_p( dirname( $main_file ) );
-		file_put_contents( $main_file, "<?php\n" ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- Test fixture file.
-		Constants::set_constant( 'WP_PLUGIN_DIR', $plugins_dir );
+		$this->register_extension_facades();
 
-		try {
-			$this->register_extension_facades();
-
-			// Without an autoloader, even a consumer probing the classes earlier in the command declares nothing.
-			$this->assert_loader_stood_aside( $version_defined, 'for a WP-CLI activation.' );
-		} finally {
-			wp_delete_file( $main_file );
-			rmdir( dirname( $main_file ) ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_rmdir -- Test fixture cleanup.
-			rmdir( $plugins_dir ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_rmdir -- Test fixture cleanup.
-		}
+		// Without an autoloader, even a consumer probing the classes earlier in the command declares nothing.
+		$this->assert_loader_stood_aside( $version_defined, 'for a WP-CLI activation.' );
 	}
 
 	/**
@@ -337,8 +340,7 @@ class WooPaymentsExtensionFacadeLoaderTest extends WC_Unit_Test_Case {
 	 * @param array<int,string> $arguments WP-CLI arguments.
 	 */
 	public function test_ordinary_wp_cli_request_keeps_the_facades( array $arguments ): void {
-		Constants::set_constant( 'WP_CLI', true );
-		$_SERVER['argv'] = $arguments;
+		$this->set_request( array(), array(), $arguments );
 
 		$this->assertFalse( $this->is_activation_request(), 'Ordinary WP-CLI commands should retain native WooPayments compatibility.' );
 	}
@@ -402,8 +404,7 @@ class WooPaymentsExtensionFacadeLoaderTest extends WC_Unit_Test_Case {
 	 * @param array<string,string> $server  Server parameters.
 	 */
 	public function test_non_activation_requests_keep_the_facades( array $request, array $server ): void {
-		$_REQUEST = $request; // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Reproducing a plugin or REST request.
-		$_SERVER  = array_merge( $_SERVER, $server );
+		$this->set_request( $request, $server );
 
 		$this->assertFalse( $this->is_activation_request(), 'Requests that do not activate WooPayments should retain native WooPayments compatibility.' );
 	}
@@ -431,6 +432,39 @@ class WooPaymentsExtensionFacadeLoaderTest extends WC_Unit_Test_Case {
 				array( 'REQUEST_METHOD' => 'POST' ),
 			),
 		);
+	}
+
+	/**
+	 * Give the activation predicate this request and nothing an earlier test left behind: the request parameters, the
+	 * method and URI, the WP-CLI arguments, and the constants it reads, with a plugins directory holding WooPayments in a
+	 * renamed folder. tearDown() restores them.
+	 *
+	 * @param array<string,mixed>    $request   Request parameters.
+	 * @param array<string,string>   $server    `REQUEST_METHOD` and `REQUEST_URI`, when the request has them.
+	 * @param array<int,string>|null $arguments WP-CLI arguments, or null outside WP-CLI.
+	 * @param array<string,bool>     $constants Constants WordPress defines for the request.
+	 */
+	private function set_request( array $request, array $server = array(), ?array $arguments = null, array $constants = array() ): void {
+		$_GET     = array();
+		$_POST    = array();
+		$_REQUEST = $request; // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Reproducing a plugin, REST or WP-CLI request.
+		unset( $_SERVER['REQUEST_METHOD'], $_SERVER['REQUEST_URI'], $_SERVER['argv'] );
+		$_SERVER = array_merge( $_SERVER, $server );
+		if ( null !== $arguments ) {
+			$_SERVER['argv'] = $arguments;
+		}
+
+		$this->plugins_dir = sys_get_temp_dir() . '/wc-facade-loader-' . wp_generate_uuid4();
+		wp_mkdir_p( dirname( $this->plugins_dir . '/' . self::RENAMED_MAIN_FILE ) );
+		file_put_contents( $this->plugins_dir . '/' . self::RENAMED_MAIN_FILE, "<?php\n" ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- Test fixture file.
+
+		// Constants set here win over defined ones, so a WP_SANDBOX_SCRAPING an earlier activate_plugin() defined reads false.
+		Constants::set_constant( 'WP_CLI', null !== $arguments );
+		Constants::set_constant( 'WP_SANDBOX_SCRAPING', false );
+		Constants::set_constant( 'WP_PLUGIN_DIR', $this->plugins_dir );
+		foreach ( $constants as $name => $value ) {
+			Constants::set_constant( $name, $value );
+		}
 	}
 
 	/**
