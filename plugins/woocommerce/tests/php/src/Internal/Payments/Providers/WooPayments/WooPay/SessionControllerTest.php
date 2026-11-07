@@ -797,13 +797,17 @@ class SessionControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should hide the core billing email on checkout while leaving the WooPay one, other email fields and other pages alone.
+	 * @testdox Should hide the core billing email on checkout only, while leaving the WooPay one, other email fields and the pay-for-order page alone.
 	 */
-	public function test_filter_woocommerce_form_field_woopay_email_hides_core_field_on_checkout(): void {
+	public function test_filter_woocommerce_form_field_woopay_email_hides_the_core_field_only_on_checkout(): void {
+		$this->replace_page_surface( false, false );
 		$this->sut = $this->create_controller( true );
 		$field     = '<p class="form-row"><input type="email" name="billing_email" /></p>';
 
+		$this->assertSame( $field, $this->sut->filter_woocommerce_form_field_woopay_email( $field, 'billing_email', array( 'class' => array( 'form-row-wide' ) ), '' ), 'Off checkout the core field stays.' );
+
 		$this->set_checkout_shortcode_page();
+		$this->replace_page_surface( false, true );
 
 		$this->assertSame( '', $this->sut->filter_woocommerce_form_field_woopay_email( $field, 'billing_email', array( 'class' => array( 'form-row-wide' ) ), '' ) );
 		$this->assertSame( $field, $this->sut->filter_woocommerce_form_field_woopay_email( $field, 'billing_email', array( 'class' => array( 'form-row-wide woopay-billing-email' ) ), '' ) );
@@ -814,18 +818,6 @@ class SessionControllerTest extends WC_REST_Unit_Test_Case {
 
 		// The pay-for-order page is a checkout page the relocation must leave alone.
 		$GLOBALS['wp']->query_vars['order-pay'] = 123;
-		$this->assertSame( $field, $this->sut->filter_woocommerce_form_field_woopay_email( $field, 'billing_email', array( 'class' => array( 'form-row-wide' ) ), '' ) );
-		unset( $GLOBALS['wp']->query_vars['order-pay'] );
-	}
-
-	/**
-	 * @testdox Should leave the core billing email alone away from the checkout page.
-	 */
-	public function test_filter_woocommerce_form_field_woopay_email_keeps_core_field_off_checkout(): void {
-		$this->replace_page_surface( false, false );
-		$this->sut = $this->create_controller( true );
-		$field     = '<p class="form-row"><input type="email" name="billing_email" /></p>';
-
 		$this->assertSame( $field, $this->sut->filter_woocommerce_form_field_woopay_email( $field, 'billing_email', array( 'class' => array( 'form-row-wide' ) ), '' ) );
 	}
 
@@ -1238,27 +1230,29 @@ class SessionControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should require WooPay user agent and a signed request.
+	 * @testdox The session route needs WooPay's user agent even when signed, and returns the session data built for a signed WooPay request.
+	 *
+	 * The unsigned denial is test_has_permission_follows_the_signed_request_filter_only_to_restrict()'s.
 	 */
-	public function test_woopay_rest_route_requires_woopay_user_agent_and_signed_request(): void {
-		$this->sut = $this->create_controller( true );
+	public function test_session_route_needs_woopay_user_agent_and_serves_a_signed_request(): void {
+		$service   = new RecordingWooPaySessionService();
+		$this->sut = $this->create_controller( true, $service );
 		$this->sut->register_routes();
+		$this->force_real_blog_token_signed();
 
 		$missing_agent = new WP_REST_Request( 'GET', '/payments/woopay/session' );
 		$missing_agent->set_param( 'email', 'shopper@example.com' );
-		$this->assertSame( rest_authorization_required_code(), $this->server->dispatch( $missing_agent )->get_status() );
+		$this->assertSame( rest_authorization_required_code(), $this->server->dispatch( $missing_agent )->get_status(), 'A signed request without WooPay\'s user agent is refused.' );
 
-		$unsigned = new WP_REST_Request( 'GET', '/payments/woopay/session' );
-		$unsigned->set_header( 'User-Agent', 'WooPay' );
-		$unsigned->set_param( 'email', 'shopper@example.com' );
-		$this->assertSame( rest_authorization_required_code(), $this->server->dispatch( $unsigned )->get_status() );
-
-		$this->force_real_blog_token_signed();
 		$signed = new WP_REST_Request( 'GET', '/payments/woopay/session' );
 		$signed->set_header( 'User-Agent', 'WooPay' );
 		$signed->set_param( 'email', 'shopper@example.com' );
+		$response = $this->server->dispatch( $signed );
 
-		$this->assertSame( 200, $this->server->dispatch( $signed )->get_status() );
+		$this->assertSame( 200, $response->get_status() );
+		$this->assertSame( array( 'session' => 'native' ), $response->get_data() );
+		$this->assertSame( 'shopper@example.com', $service->last_session_email );
+		$this->assertSame( $signed, $service->last_session_request, 'The session data is built for the WooPay request, whose Cart-Token it reads.' );
 	}
 
 	/**
@@ -1385,26 +1379,6 @@ class SessionControllerTest extends WC_REST_Unit_Test_Case {
 		$this->assertSame( 'wcpay_server_error', $result->get_error_code() );
 		$this->assertSame( 'Unexpected server error', $result->get_error_message() );
 		$this->assertSame( 400, $result->get_error_data()['status'] );
-	}
-
-	/**
-	 * @testdox Should return session data for signed WooPay requests.
-	 */
-	public function test_rest_session_route_returns_session_data_for_signed_woopay_request(): void {
-		$service   = new RecordingWooPaySessionService();
-		$this->sut = $this->create_controller( true, $service );
-		$this->sut->register_routes();
-		$this->force_real_blog_token_signed();
-
-		$request = new WP_REST_Request( 'GET', '/payments/woopay/session' );
-		$request->set_header( 'User-Agent', 'WooPay' );
-		$request->set_param( 'email', 'shopper@example.com' );
-		$response = $this->server->dispatch( $request );
-
-		$this->assertSame( 200, $response->get_status() );
-		$this->assertSame( array( 'session' => 'native' ), $response->get_data() );
-		$this->assertSame( 'shopper@example.com', $service->last_session_email );
-		$this->assertSame( $request, $service->last_session_request, 'The session data is built for the WooPay request, whose Cart-Token it reads.' );
 	}
 
 	/**
