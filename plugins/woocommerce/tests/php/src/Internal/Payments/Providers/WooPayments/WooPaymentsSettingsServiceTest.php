@@ -821,23 +821,20 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should report WooCommerce Subscriptions inactive while its class is not loaded.
+	 * @testdox Should report WooCommerce Subscriptions active only while its class is loaded.
+	 * @testWith [false]
+	 *           [true]
+	 *
+	 * @param bool $active Whether the WC_Subscriptions class is loaded.
 	 */
-	public function test_get_settings_reports_woocommerce_subscriptions_inactive(): void {
-		$this->assertFalse( $this->sut->get_settings()['is_subscriptions_plugin_active'] );
-	}
+	public function test_get_settings_reports_whether_woocommerce_subscriptions_is_active( bool $active ): void {
+		$this->register_legacy_proxy_function_mocks(
+			array(
+				'class_exists' => static fn( $class_name, ...$args ) => 'WC_Subscriptions' === $class_name ? $active : class_exists( $class_name, ...$args ),
+			)
+		);
 
-	/**
-	 * @testdox Should report WooCommerce Subscriptions active once its class is loaded.
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
-	 */
-	public function test_get_settings_reports_woocommerce_subscriptions_active(): void {
-		// The global WC_Subscriptions class cannot be unloaded, so this test runs in its own process.
-		require_once __DIR__ . '/Fixtures/LateLoadedSubscriptions.php';
-		class_alias( Fixtures\LateLoadedSubscriptions::class, 'WC_Subscriptions' );
-
-		$this->assertTrue( $this->sut->get_settings()['is_subscriptions_plugin_active'] );
+		$this->assertSame( $active, $this->sut->get_settings()['is_subscriptions_plugin_active'] );
 	}
 
 	/**
