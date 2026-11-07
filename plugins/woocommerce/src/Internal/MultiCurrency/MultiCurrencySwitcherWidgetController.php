@@ -11,6 +11,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Services\ServiceFactory;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\SwitcherRenderer;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\Integrations\IntegrationsController;
+use Automattic\WooCommerce\Proxies\LegacyProxy;
 
 /**
  * Registers the currency switcher widget, and renders it for the wc_get_currency_switcher_markup() template tag.
@@ -56,6 +57,13 @@ class MultiCurrencySwitcherWidgetController implements RegisterHooksInterface {
 	private ServiceFactory $service_factory;
 
 	/**
+	 * Proxy for global function calls.
+	 *
+	 * @var LegacyProxy
+	 */
+	private LegacyProxy $legacy_proxy;
+
+	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
@@ -63,15 +71,18 @@ class MultiCurrencySwitcherWidgetController implements RegisterHooksInterface {
 	 * @param MultiCurrencyRuntimeArbiter $arbiter                  Runtime owner arbiter.
 	 * @param IntegrationsController      $integrations_controller Integrations controller.
 	 * @param ServiceFactory              $service_factory          Multi-Currency service factory.
+	 * @param LegacyProxy                 $legacy_proxy             Proxy for global function calls.
 	 */
 	final public function init(
 		MultiCurrencyRuntimeArbiter $arbiter,
 		IntegrationsController $integrations_controller,
-		ServiceFactory $service_factory
+		ServiceFactory $service_factory,
+		LegacyProxy $legacy_proxy
 	): void {
 		$this->arbiter                 = $arbiter;
 		$this->integrations_controller = $integrations_controller;
 		$this->service_factory         = $service_factory;
+		$this->legacy_proxy            = $legacy_proxy;
 	}
 
 	/**
@@ -117,8 +128,8 @@ class MultiCurrencySwitcherWidgetController implements RegisterHooksInterface {
 	public function get_switcher_widget_markup( array $instance = array(), array $args = array() ): string {
 		global $wp_widget_factory;
 
-		if ( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION === $this->arbiter->get_runtime_owner() && function_exists( 'WC_Payments_Multi_Currency' ) ) {
-			$plugin_multi_currency = \WC_Payments_Multi_Currency(); // phpcs:ignore WordPress.NamingConventions.ValidFunctionName.FunctionNameInvalid -- WooPayments public compatibility facade.
+		if ( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION === $this->arbiter->get_runtime_owner() && $this->legacy_proxy->call_function( 'function_exists', 'WC_Payments_Multi_Currency' ) ) {
+			$plugin_multi_currency = $this->legacy_proxy->call_function( 'WC_Payments_Multi_Currency' );
 			if ( is_object( $plugin_multi_currency ) && is_callable( array( $plugin_multi_currency, 'get_switcher_widget_markup' ) ) ) {
 				return (string) call_user_func( array( $plugin_multi_currency, 'get_switcher_widget_markup' ), $instance, $args );
 			}

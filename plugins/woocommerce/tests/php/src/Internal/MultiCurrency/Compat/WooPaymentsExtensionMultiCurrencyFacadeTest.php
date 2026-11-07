@@ -24,16 +24,87 @@ require_once __DIR__ . '/Fixtures/multi-currency-facade-plugin-callers.inc';
  * Tests the members of the `WCPay\MultiCurrency\MultiCurrency` facade on a store where WooCommerce runs Multi-Currency,
  * through the calls the plugins that use them make.
  *
- * Each case declares the facade, so each runs in its own process.
+ * PHP cannot undeclare the facade classes, so the class declares them once and they stay declared for the rest of the
+ * process, as on a store; the facade's singleton stays too, and reads every service from the container on each call.
  */
 class WooPaymentsExtensionMultiCurrencyFacadeTest extends WC_Unit_Test_Case {
+
+	/**
+	 * The session a case may replace.
+	 *
+	 * @var \WC_Session
+	 */
+	private $session;
+
+	/**
+	 * The widgets registered before a case runs.
+	 *
+	 * @var array<string,object>
+	 */
+	private array $widgets = array();
+
+	/**
+	 * The request cookies before a case runs.
+	 *
+	 * @var array<string,mixed>
+	 */
+	private array $cookies = array();
+
+	/**
+	 * Declare the facade as the loader does at `plugins_loaded` while WooCommerce runs Multi-Currency.
+	 */
+	public static function setUpBeforeClass(): void {
+		parent::setUpBeforeClass();
+
+		$loader = new WooPaymentsExtensionFacadeLoader();
+		$loader->init(
+			new class() extends MultiCurrencyRuntimeArbiter {
+				/**
+				 * WooCommerce runs Multi-Currency.
+				 *
+				 * @return string
+				 */
+				public function get_runtime_owner(): string {
+					return self::OWNER_BUILTIN;
+				}
+			}
+		);
+		$loader->load();
+	}
+
+	/**
+	 * Keep the session, the request cookies and the registered widgets a case may change.
+	 */
+	public function setUp(): void {
+		parent::setUp();
+
+		global $wp_widget_factory;
+		$this->session = WC()->session;
+		$this->cookies = $_COOKIE;
+		$this->widgets = $wp_widget_factory->widgets;
+	}
+
+	/**
+	 * Restore the session, the cookies, the user, the screen, the settings tab, the widgets, the query argument and the services a case changes.
+	 */
+	public function tearDown(): void {
+		global $wp_widget_factory, $current_tab;
+
+		WC()->session               = $this->session;
+		$_COOKIE                    = $this->cookies;
+		$wp_widget_factory->widgets = $this->widgets;
+		$current_tab                = null; // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- Restores the settings tab a case set.
+		unset( $_GET['pay_for_order'] );
+		wp_set_current_user( 0 );
+		set_current_screen( 'front' );
+		wc_get_container()->reset_all_resolved();
+		parent::tearDown();
+	}
 
 	/**
 	 * @testdox The facade's constants hold the WooPayments extension's values.
 	 *
 	 * Values from client 11.1.0 `includes/multi-currency/MultiCurrency.php:29-49`.
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 */
 	public function test_constants_hold_the_extension_values(): void {
 		$this->declare_facade();
@@ -57,8 +128,6 @@ class WooPaymentsExtensionMultiCurrencyFacadeTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Payfast reads the shopper's selected currency through the facade's session and user meta keys.
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 */
 	public function test_payfast_reads_the_selected_currency_through_the_key_constants(): void {
 		$this->declare_facade();
@@ -81,8 +150,6 @@ class WooPaymentsExtensionMultiCurrencyFacadeTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Advanced Dynamic Pricing stops the module's product price conversion through the facade's hook prefix.
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 */
 	public function test_advanced_dynamic_pricing_reaches_the_module_hook_through_the_prefix(): void {
 		$this->declare_facade();
@@ -100,8 +167,6 @@ class WooPaymentsExtensionMultiCurrencyFacadeTest extends WC_Unit_Test_Case {
 	 *
 	 * The calls after FOX's guard; the guard's `WC_Payments_Features::is_customer_multi_currency_enabled()` belongs to the
 	 * `WC_Payments_Features` facade.
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 */
 	public function test_fox_reads_the_enabled_and_store_currencies(): void {
 		$this->declare_facade();
@@ -116,8 +181,6 @@ class WooPaymentsExtensionMultiCurrencyFacadeTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox The facade's currency reads answer with the module's state.
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 */
 	public function test_currency_reads_answer_with_the_module_state(): void {
 		$this->declare_facade();
@@ -190,8 +253,6 @@ class WooPaymentsExtensionMultiCurrencyFacadeTest extends WC_Unit_Test_Case {
 	 * @testdox The facade says Multi-Currency runs and gives the shopper's own selection, or null while nothing is selected.
 	 *
 	 * Client 11.2.0 `includes/multi-currency/MultiCurrency.php:272-278,876-899`.
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 */
 	public function test_answers_whether_multi_currency_runs_and_the_explicit_selection(): void {
 		$this->declare_facade();
@@ -209,8 +270,6 @@ class WooPaymentsExtensionMultiCurrencyFacadeTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox The facade's settings and display reads answer with the module's settings.
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 */
 	public function test_settings_and_display_reads_answer_with_the_module_settings(): void {
 		global $current_tab;
@@ -251,6 +310,9 @@ class WooPaymentsExtensionMultiCurrencyFacadeTest extends WC_Unit_Test_Case {
 		$this->assertTrue( $facade->is_using_storefront_switcher(), 'is_using_storefront_switcher once on' );
 		$this->assertTrue( $facade->get_settings()['wcpay_multi_currency_enable_auto_currency'], 'get_settings follows the stored setting' );
 
+		wp_set_current_user( 0 );
+		unset( $_COOKIE[ 'wp_woocommerce_session_' . COOKIEHASH ] );
+		WC()->session = new \WC_Session_Handler();
 		$this->assertFalse( $facade->has_active_session(), 'has_active_session without a session' );
 		wp_set_current_user( self::factory()->user->create() );
 		WC()->session = new \WC_Session_Handler();
@@ -282,8 +344,6 @@ class WooPaymentsExtensionMultiCurrencyFacadeTest extends WC_Unit_Test_Case {
 	 *
 	 * Client 11.1.0 `includes/multi-currency/MultiCurrency.php:1632-1634` and `:1657-1685`: a 1.00 rounding step ceils
 	 * 10.20 to 11.00, and a -0.01 charm makes it 10.99.
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 */
 	public function test_adjusts_an_amount_for_the_selected_currency(): void {
 		$this->declare_facade();
@@ -304,8 +364,6 @@ class WooPaymentsExtensionMultiCurrencyFacadeTest extends WC_Unit_Test_Case {
 	 *
 	 * Client 11.1.0 `includes/multi-currency/MultiCurrency.php:1152-1156` deletes the notes named
 	 * `wc-payments-notes-multi-currency-available` (`Notes/NoteMultiCurrencyAvailable.php:25`).
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 */
 	public function test_dev_tools_clears_the_multi_currency_note(): void {
 		$this->declare_facade();
@@ -326,8 +384,6 @@ class WooPaymentsExtensionMultiCurrencyFacadeTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Themify Product Filter converts its price range only while currency switching is on and another currency is enabled.
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 */
 	public function test_themify_reads_the_compatibility_predicate_and_converts_its_price_range(): void {
 		$this->declare_facade();
@@ -357,8 +413,6 @@ class WooPaymentsExtensionMultiCurrencyFacadeTest extends WC_Unit_Test_Case {
 	 * @testdox get_compatibility() returns one Compatibility facade whose seven predicates answer by the module's rules.
 	 *
 	 * Client 11.1.0 `includes/multi-currency/Compatibility.php:82-237`: each predicate's default and the filter that changes it.
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 */
 	public function test_compatibility_predicates_answer_by_the_module_rules(): void {
 		$this->declare_facade();
@@ -421,8 +475,6 @@ class WooPaymentsExtensionMultiCurrencyFacadeTest extends WC_Unit_Test_Case {
 	 * @testdox The currencies the facade returns answer every member of the extension's Currency class it reads.
 	 *
 	 * Client 11.1.0 `includes/multi-currency/Currency.php:115-272`; the EUR flag from `CountryFlags.php:87` and `:287-300`.
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 */
 	public function test_returned_currencies_answer_the_extension_currency_members(): void {
 		$this->declare_facade();
@@ -458,8 +510,6 @@ class WooPaymentsExtensionMultiCurrencyFacadeTest extends WC_Unit_Test_Case {
 	 * @testdox The facades declare none of the members the PR's compatibility notes list as not answered.
 	 *
 	 * Calling one is the undefined-method error a caller of the extension's internals gets; the list is the contract.
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 */
 	public function test_facades_leave_the_listed_members_undeclared(): void {
 		$this->declare_facade();
@@ -481,8 +531,6 @@ class WooPaymentsExtensionMultiCurrencyFacadeTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Every facade member's deprecation notice names WooCommerce 11.0.0 and no replacement.
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 */
 	public function test_deprecation_notices_name_no_replacement(): void {
 		$this->declare_facade();

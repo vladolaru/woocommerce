@@ -8,6 +8,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencySwitcherWidget;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencySwitcherWidgetController;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\SwitcherRenderer;
+use Automattic\WooCommerce\Proxies\LegacyProxy;
 use WC_Unit_Test_Case;
 
 /**
@@ -205,11 +206,7 @@ class MultiCurrencySwitcherWidgetControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Should delegate to the client facade only when the plugin owns multi-currency.
 	 */
 	public function test_delegates_to_the_extension_only_when_extension_owns_multi_currency(): void {
-		if ( ! function_exists( 'WC_Payments_Multi_Currency' ) ) {
-			// The function stays defined for later tests; returning null without a client makes the controller treat it as absent.
-			eval( 'function WC_Payments_Multi_Currency() { return $GLOBALS["row_86_multi_currency_client"] ?? null; }' ); // phpcs:ignore Squiz.PHP.Eval.Discouraged -- Fixture for the client-first compatibility function.
-		}
-		$extension_facade                        = new class() {
+		$extension_facade = new class() {
 			/**
 			 * Last client instance settings.
 			 *
@@ -238,18 +235,20 @@ class MultiCurrencySwitcherWidgetControllerTest extends WC_Unit_Test_Case {
 				return '<form>Client switcher</form>';
 			}
 		};
-		$GLOBALS['row_86_multi_currency_client'] = $extension_facade;
-		$instance                                = array( 'title' => 'Client title' );
-		$args                                    = array( 'before_widget' => '<aside>' );
-		$sut                                     = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION );
+		// The extension's global function, answered through the legacy proxy the controller asks.
+		$this->register_legacy_proxy_function_mocks(
+			array(
+				'function_exists'            => static fn( string $function_name ): bool => 'WC_Payments_Multi_Currency' === $function_name || function_exists( $function_name ),
+				'WC_Payments_Multi_Currency' => static fn() => $extension_facade,
+			)
+		);
+		$instance = array( 'title' => 'Client title' );
+		$args     = array( 'before_widget' => '<aside>' );
+		$sut      = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION );
 
-		try {
-			$this->assertSame( '<form>Client switcher</form>', $sut->get_switcher_widget_markup( $instance, $args ) );
-			$this->assertSame( $instance, $extension_facade->received_instance );
-			$this->assertSame( $args, $extension_facade->received_args );
-		} finally {
-			unset( $GLOBALS['row_86_multi_currency_client'] );
-		}
+		$this->assertSame( '<form>Client switcher</form>', $sut->get_switcher_widget_markup( $instance, $args ) );
+		$this->assertSame( $instance, $extension_facade->received_instance );
+		$this->assertSame( $args, $extension_facade->received_args );
 	}
 
 	/**
@@ -401,7 +400,8 @@ class MultiCurrencySwitcherWidgetControllerTest extends WC_Unit_Test_Case {
 		$controller->init(
 			$this->create_arbiter( $owner ),
 			$this->create_integrations_controller(),
-			ServiceFactories::with( $this, array( 'create_switcher_renderer' => $switcher_renderer ?? $this->create_switcher_renderer() ) )
+			ServiceFactories::with( $this, array( 'create_switcher_renderer' => $switcher_renderer ?? $this->create_switcher_renderer() ) ),
+			wc_get_container()->get( LegacyProxy::class )
 		);
 
 		return $controller;

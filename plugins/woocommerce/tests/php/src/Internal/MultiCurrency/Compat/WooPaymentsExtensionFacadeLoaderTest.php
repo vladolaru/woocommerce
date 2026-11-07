@@ -33,8 +33,6 @@ class WooPaymentsExtensionFacadeLoaderTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox The core-owned facade preserves grounded extension calls and converts a price exactly once.
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 */
 	public function test_core_owned_facade_preserves_grounded_extension_calls(): void {
 		$failing_price_converter = $this->createMock( PriceConverter::class );
@@ -138,9 +136,13 @@ class WooPaymentsExtensionFacadeLoaderTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox The facade stays absent outside core-owned MultiCurrency.
+	 *
+	 * Its own process, the one where nothing declared the facade: PHP cannot undeclare a class, and the in-process cases
+	 * of this class and the facade test declare it.
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
 	 */
 	public function test_facade_stays_absent_outside_core_ownership(): void {
-		// The case that declares the facade runs in its own process; an in-process declaration would show here first.
 		$this->assertFalse( class_exists( 'WCPay\\MultiCurrency\\MultiCurrency', false ), 'Precondition: an earlier in-process test declared the facade.' );
 
 		foreach ( array( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION, MultiCurrencyRuntimeArbiter::OWNER_NONE ) as $owner ) {
