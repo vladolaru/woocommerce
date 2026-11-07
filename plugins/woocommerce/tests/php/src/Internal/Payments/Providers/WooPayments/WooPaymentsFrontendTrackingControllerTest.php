@@ -34,8 +34,10 @@ class WooPaymentsFrontendTrackingControllerTest extends WC_Unit_Test_Case {
 		remove_all_filters( 'pre_http_request' );
 		unset( $_COOKIE['tk_opt-out'] );
 		wp_set_current_user( 0 );
-		// Several rows replace WooPay's eligibility in the container with a partial mock; a later test must get the real one.
+		// Several rows replace WooPay's eligibility in the container with a partial mock; a later test must get the real one,
+		// including from consumers the container resolved while the mock was in place.
 		$this->reset_container_replacements();
+		$this->reset_container_resolutions();
 		parent::tearDown();
 	}
 

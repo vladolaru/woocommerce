@@ -197,6 +197,7 @@ class WooPaymentsTokenizedCartSessionControllerTest extends WC_Unit_Test_Case {
 
 		$result = $this->sut->maybe_reject_invalid_tokenized_cart_session( null, null, new WP_REST_Request( $method, $route ) );
 
+		$this->assertSame( null !== $expected_status, $result instanceof \WP_Error );
 		$this->assertSame( $expected_status, $result instanceof \WP_Error ? ( $result->get_error_data()['status'] ?? 'no status' ) : $result );
 	}
 
