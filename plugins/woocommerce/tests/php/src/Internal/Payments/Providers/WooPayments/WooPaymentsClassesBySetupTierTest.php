@@ -99,71 +99,61 @@ class WooPaymentsClassesBySetupTierTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox $_dataName loads on every request of a connected or active store and on none of a store without an account.
+	 * @testdox $_dataName loads on exactly the listed setup tier and request cells, and on no other.
 	 *
-	 * @dataProvider connected_request_roots_provider
+	 * @dataProvider root_cells_provider
 	 *
-	 * @param string $root The root class.
+	 * @param string            $root  The root class.
+	 * @param array<int,string> $cells Every "<tier> <request>" cell that lists the root, sorted.
 	 */
-	public function test_root_loads_on_every_connected_request( string $root ): void {
-		$matrix = WooPaymentsProvider::get_classes_by_setup_tier();
-
-		foreach ( array( WooPaymentsSetupTier::CONNECTED, WooPaymentsSetupTier::ACTIVE ) as $state ) {
-			foreach ( array( 'front', 'admin', 'ajax', 'rest', 'cron', 'cli' ) as $request ) {
-				$this->assertContains( $root, ( $matrix[ $state ][ $request ] ?? array() ), "The $state $request request must load $root." );
+	public function test_root_loads_exactly_on_its_cells( string $root, array $cells ): void {
+		$listed = array();
+		foreach ( WooPaymentsProvider::get_classes_by_setup_tier() as $state => $request_groups ) {
+			foreach ( $request_groups as $request => $roots ) {
+				if ( in_array( $root, $roots, true ) ) {
+					$listed[] = "$state $request";
+				}
 			}
 		}
-		foreach ( array( 'front', 'admin', 'ajax', 'rest', 'cron', 'cli' ) as $request ) {
-			$this->assertNotContains( $root, ( $matrix[ WooPaymentsSetupTier::AVAILABLE ][ $request ] ?? array() ), "A store without an account must not load $root on a $request request." );
-		}
+		sort( $listed );
+
+		$this->assertSame( $cells, $listed );
 	}
 
 	/**
-	 * Roots that act on any request of a store with an account.
+	 * Roots and the cells they load on, read from WooPaymentsProvider::get_classes_by_setup_tier() and written literally.
 	 *
-	 * @return array<string, array{0: string}>
+	 * @return array<string, array{0: string, 1: array<int,string>}>
 	 */
-	public function connected_request_roots_provider(): array {
+	public function root_cells_provider(): array {
+		$set_up = array( 'active admin', 'active ajax', 'active cli', 'active cron', 'active front', 'active rest', 'connected admin', 'connected ajax', 'connected cli', 'connected cron', 'connected front', 'connected rest' );
+
 		return array(
 			// An update finishes on the init of any request.
-			'The WooCommerce update listener'       => array( WooPaymentsWooCommerceUpdateListener::class ),
+			'The WooCommerce update listener'       => array( WooPaymentsWooCommerceUpdateListener::class, $set_up ),
 			// Every WordPress.com request of the store carries the connection's Safe Mode arguments.
-			'The WordPress.com connection features' => array( WooPaymentsConnectionFeatures::class ),
+			'The WordPress.com connection features' => array( WooPaymentsConnectionFeatures::class, $set_up ),
 			// WooPayments writes log lines on any request, each carrying the request id and entry number.
-			'The log entry format'                  => array( WooPaymentsLogEntryFormat::class ),
+			'The log entry format'                  => array( WooPaymentsLogEntryFormat::class, $set_up ),
 			// An order's card details render wherever an order can, as the WooPayments extension registers them everywhere.
-			'The order card info provider'          => array( WooPaymentsOrderCardInfo::class ),
-		);
-	}
-
-	/**
-	 * @testdox $_dataName loads only on connected and active admin and REST requests, never on dormant tiers.
-	 *
-	 * @dataProvider connected_admin_and_rest_roots_provider
-	 *
-	 * @param string $root The root class.
-	 */
-	public function test_root_loads_only_on_connected_and_active_admin_and_rest_requests( string $root ): void {
-		foreach ( WooPaymentsProvider::get_classes_by_setup_tier() as $state => $request_groups ) {
-			foreach ( $request_groups as $request_type => $roots ) {
-				$expected = in_array( $state, array( WooPaymentsSetupTier::CONNECTED, WooPaymentsSetupTier::ACTIVE ), true )
-					&& in_array( $request_type, array( 'admin', 'rest' ), true );
-
-				$this->assertSame( $expected, in_array( $root, $roots, true ), $state . ' ' . $request_type );
-			}
-		}
-		$this->assertArrayHasKey( 'rest', WooPaymentsProvider::get_classes_by_setup_tier()[ WooPaymentsSetupTier::CONNECTED ] );
-	}
-
-	/**
-	 * Roots that serve the merchant's admin pages and their REST reads.
-	 *
-	 * @return array<string, array{0: string}>
-	 */
-	public function connected_admin_and_rest_roots_provider(): array {
-		return array(
-			'The hidden column preferences' => array( UserPreferenceFields::class ),
-			'The Home tasks'                => array( HomeTasks::class ),
+			'The order card info provider'          => array( WooPaymentsOrderCardInfo::class, $set_up ),
+			// The merchant's admin pages and their REST reads.
+			'The hidden column preferences'         => array( UserPreferenceFields::class, array( 'active admin', 'active rest', 'connected admin', 'connected rest' ) ),
+			'The Home tasks'                        => array( HomeTasks::class, array( 'active admin', 'active rest', 'connected admin', 'connected rest' ) ),
+			// The switch runs from admin and cron, with cron's WP-CLI copy; shopper requests do not pay for it.
+			'The cutover reconciliation job'        => array( ReconciliationJob::class, array( 'active admin', 'active cli', 'active cron', 'available admin', 'available cli', 'available cron', 'connected admin', 'connected cli', 'connected cron' ) ),
+			// The blocks and the WooPay session preload the cart on active page, AJAX and REST requests.
+			'The express checkout cart extension'   => array( self::WCPAY . 'WooPaymentsExpressCheckoutStoreApiExtension', array( 'active ajax', 'active front', 'active rest' ) ),
+			// The fraud-prevention token's block render hooks, where the built-in WooPayments takes payments.
+			'The fraud-prevention token'            => array( self::WCPAY . 'WooPaymentsFraudPreventionService', array( 'active front' ) ),
+			// The Cart and Checkout blocks, the block editor's preview of them and the Store API.
+			'The Blocks payment methods'            => array( self::WCPAY . 'WooPaymentsBlocksPaymentMethodsController', array( 'active admin', 'active front', 'active rest' ) ),
+			// The shopper scripts post their Tracks events to this controller's REST route, in a request of their own.
+			'The shopper Tracks controller'         => array( self::WCPAY . 'WooPaymentsFrontendTrackingController', array( 'active ajax', 'active front', 'active rest' ) ),
+			'The WooPay preflight guard'            => array( PreflightGuard::class, array( 'active rest' ) ),
+			// Merchant routes serve REST requests; admin requests defer them to internal REST initialization.
+			'The merchant REST controller'          => array( MerchantRestController::class, array( 'active rest', 'connected rest' ) ),
+			'The admin REST route registrar'        => array( WooPaymentsAdminRestRouteRegistrar::class, array( 'active admin', 'connected admin' ) ),
 		);
 	}
 
@@ -178,20 +168,6 @@ class WooPaymentsClassesBySetupTierTest extends WC_Unit_Test_Case {
 		$this->assertNotContains( DataMigration::class, $active_roots['rest'], 'A REST shopper request must not run cutover normalization.' );
 		$this->assertSame( DataMigration::class, $active_roots['admin'][0], 'Admin cutover normalization must run before bounded native consumers.' );
 		$this->assertSame( DataMigration::class, $active_roots['cron'][0], 'Cron cutover normalization must run before bounded native consumers.' );
-	}
-
-	/** @testdox Cutover reconciliation is registered only on admin and cron roots in every available setup tier. */
-	public function test_provider_matrix_bounds_cutover_reconciliation_to_admin_and_cron_roots(): void {
-		$matrix = WooPaymentsProvider::get_classes_by_setup_tier();
-
-		foreach ( array( WooPaymentsSetupTier::AVAILABLE, WooPaymentsSetupTier::CONNECTED, WooPaymentsSetupTier::ACTIVE ) as $state ) {
-			$this->assertContains( ReconciliationJob::class, $matrix[ $state ]['admin'], $state . ' admin requests must register cutover reconciliation.' );
-			$this->assertContains( ReconciliationJob::class, $matrix[ $state ]['cron'], $state . ' cron requests must register cutover reconciliation.' );
-
-			foreach ( array( 'front', 'ajax', 'rest' ) as $request_type ) {
-				$this->assertNotContains( ReconciliationJob::class, $matrix[ $state ][ $request_type ] ?? array(), $state . ' ' . $request_type . ' requests must not pay cutover reconciliation cost.' );
-			}
-		}
 	}
 
 	/**
@@ -237,86 +213,6 @@ class WooPaymentsClassesBySetupTierTest extends WC_Unit_Test_Case {
 		}
 
 		$this->assertContains( self::WCPAY . 'WooPaymentsFraudOrderTrackingService', $active_front, 'Active shopper order creation must retain tracking hooks.' );
-	}
-
-	/** @testdox Registers the express checkout Store API cart extension on active page, REST and AJAX requests, where the blocks and the WooPay session preload the cart. */
-	public function test_provider_matrix_registers_the_cart_extension_on_active_pages(): void {
-		$matrix = WooPaymentsProvider::get_classes_by_setup_tier();
-
-		$this->assertContains( self::WCPAY . 'WooPaymentsExpressCheckoutStoreApiExtension', $matrix[ WooPaymentsSetupTier::ACTIVE ]['front'] );
-		$this->assertContains( self::WCPAY . 'WooPaymentsExpressCheckoutStoreApiExtension', $matrix[ WooPaymentsSetupTier::ACTIVE ]['rest'] );
-		$this->assertContains( self::WCPAY . 'WooPaymentsExpressCheckoutStoreApiExtension', $matrix[ WooPaymentsSetupTier::ACTIVE ]['ajax'] );
-	}
-
-	/** @testdox Registers the fraud-prevention token's block render hooks only on active front requests, where the built-in WooPayments takes payments. */
-	public function test_provider_matrix_registers_the_fraud_token_render_hooks_only_on_active_pages(): void {
-		foreach ( WooPaymentsProvider::get_classes_by_setup_tier() as $state => $request_groups ) {
-			foreach ( $request_groups as $request => $roots ) {
-				$this->assertSame(
-					WooPaymentsSetupTier::ACTIVE === $state && 'front' === $request,
-					in_array( self::WCPAY . 'WooPaymentsFraudPreventionService', $roots, true ),
-					"$state $request"
-				);
-			}
-		}
-	}
-
-	/** @testdox Registers the Blocks payment methods only on active front, admin and REST requests: the Cart and Checkout blocks, the block editor's preview of them and the Store API. */
-	public function test_provider_matrix_registers_the_blocks_payment_methods_only_on_active_page_admin_and_rest_requests(): void {
-		foreach ( WooPaymentsProvider::get_classes_by_setup_tier() as $state => $request_groups ) {
-			foreach ( $request_groups as $request => $roots ) {
-				$this->assertSame(
-					WooPaymentsSetupTier::ACTIVE === $state && in_array( $request, array( 'front', 'admin', 'rest' ), true ),
-					in_array( self::WCPAY . 'WooPaymentsBlocksPaymentMethodsController', $roots, true ),
-					"$state $request"
-				);
-			}
-		}
-	}
-
-	/**
-	 * The native shopper scripts post their Tracks events to the REST route this controller registers, in a request
-	 * of its own; without the controller among the REST roots the route does not exist there.
-	 *
-	 * @testdox Registers the shopper Tracks controller on active REST requests, where its route is served.
-	 */
-	public function test_provider_matrix_serves_the_shopper_tracks_route_on_active_rest(): void {
-		$matrix = WooPaymentsProvider::get_classes_by_setup_tier();
-
-		$this->assertContains( self::WCPAY . 'WooPaymentsFrontendTrackingController', $matrix[ WooPaymentsSetupTier::ACTIVE ]['rest'] );
-	}
-
-	/** @testdox Registers the WooPay preflight guard only for active REST requests. */
-	public function test_provider_matrix_bounds_woopay_preflight_guard_to_active_rest(): void {
-		$matrix = WooPaymentsProvider::get_classes_by_setup_tier();
-
-		foreach ( $matrix as $state => $request_groups ) {
-			foreach ( $request_groups as $request_type => $roots ) {
-				if ( WooPaymentsSetupTier::ACTIVE === $state && 'rest' === $request_type ) {
-					$this->assertContains( PreflightGuard::class, $roots );
-					continue;
-				}
-
-				$this->assertNotContains( PreflightGuard::class, $roots, $state . ' ' . $request_type . ' must not register the WooPay preflight guard.' );
-			}
-		}
-	}
-
-	/** @testdox Should defer merchant routes on connected and active admin requests until internal REST initialization. */
-	public function test_provider_matrix_tiers_merchant_rest_routes(): void {
-		$matrix = WooPaymentsProvider::get_classes_by_setup_tier();
-
-		$this->assertNotContains( MerchantRestController::class, $matrix[ WooPaymentsSetupTier::AVAILABLE ]['admin'] );
-		$this->assertNotContains( WooPaymentsAdminRestRouteRegistrar::class, $matrix[ WooPaymentsSetupTier::AVAILABLE ]['admin'] );
-		$this->assertNotContains( MerchantRestController::class, $matrix[ WooPaymentsSetupTier::AVAILABLE ]['rest'] ?? array() );
-		$this->assertContains( MerchantRestController::class, $matrix[ WooPaymentsSetupTier::CONNECTED ]['rest'] );
-		$this->assertNotContains( MerchantRestController::class, $matrix[ WooPaymentsSetupTier::CONNECTED ]['admin'] );
-		$this->assertContains( WooPaymentsAdminRestRouteRegistrar::class, $matrix[ WooPaymentsSetupTier::CONNECTED ]['admin'] );
-		$this->assertNotContains( WooPaymentsAdminRestRouteRegistrar::class, $matrix[ WooPaymentsSetupTier::CONNECTED ]['rest'] );
-		$this->assertContains( MerchantRestController::class, $matrix[ WooPaymentsSetupTier::ACTIVE ]['rest'] );
-		$this->assertNotContains( MerchantRestController::class, $matrix[ WooPaymentsSetupTier::ACTIVE ]['admin'] );
-		$this->assertContains( WooPaymentsAdminRestRouteRegistrar::class, $matrix[ WooPaymentsSetupTier::ACTIVE ]['admin'] );
-		$this->assertNotContains( WooPaymentsAdminRestRouteRegistrar::class, $matrix[ WooPaymentsSetupTier::ACTIVE ]['rest'] );
 	}
 
 	/** @testdox The WooPayments admin pages' navigation and shared settings register together on connected and active admin requests only. */
