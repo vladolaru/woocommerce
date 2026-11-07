@@ -113,7 +113,7 @@ class WooPaymentsExtensionFacadeLoader implements RegisterHooksInterface {
 	 * @return bool True when the facade declarations must stay available to the extension.
 	 */
 	private function is_woopayments_activation_request(): bool {
-		if ( defined( 'WP_SANDBOX_SCRAPING' ) && WP_SANDBOX_SCRAPING ) {
+		if ( Constants::is_true( 'WP_SANDBOX_SCRAPING' ) ) {
 			return true;
 		}
 
