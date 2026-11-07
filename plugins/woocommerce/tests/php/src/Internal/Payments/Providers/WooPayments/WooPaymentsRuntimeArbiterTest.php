@@ -200,11 +200,17 @@ class WooPaymentsRuntimeArbiterTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Runtime ownership is computed once for repeated owner and helper calls and kept when the feature option changes, until explicit invalidation recomputes it.
+	 * @testdox Runtime ownership is computed once for repeated owner and helper calls and kept when the feature option changes, until explicit invalidation recomputes it ($_dataName).
+	 * @dataProvider provide_memoized_owner_switches
+	 *
+	 * @param string $first_option  The feature option the first decision reads.
+	 * @param string $first_owner   The owner of the first decision.
+	 * @param string $second_option The feature option after the switch.
+	 * @param string $second_owner  The owner recomputed after invalidation.
 	 */
-	public function test_runtime_ownership_is_computed_once_for_repeated_owner_and_helper_calls(): void {
+	public function test_runtime_ownership_is_computed_once_for_repeated_owner_and_helper_calls( string $first_option, string $first_owner, string $second_option, string $second_owner ): void {
 		$this->fake_plugin();
-		$feature_option = 'yes';
+		$feature_option = $first_option;
 		$feature_reads  = 0;
 		$this->answer_feature_reads(
 			static function () use ( &$feature_reads, &$feature_option ): string {
@@ -213,19 +219,31 @@ class WooPaymentsRuntimeArbiterTest extends WC_Unit_Test_Case {
 			}
 		);
 
-		$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_BUILTIN, $this->sut->get_runtime_owner() );
-		$this->assertTrue( $this->sut->is_builtin_owner() );
+		$this->assertSame( $first_owner, $this->sut->get_runtime_owner() );
+		$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_BUILTIN === $first_owner, $this->sut->is_builtin_owner() );
 		$this->assertFalse( $this->sut->is_extension_owner() );
-		$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_BUILTIN, $this->sut->get_runtime_owner() );
+		$this->assertSame( $first_owner, $this->sut->get_runtime_owner() );
 		$this->assertSame( 1, $feature_reads, 'The owner decision should be resolved once for all repeated owner and helper calls.' );
 
-		$feature_option = 'no';
-		$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_BUILTIN, $this->sut->get_runtime_owner(), 'The current request keeps its first owner decision until explicitly invalidated.' );
+		$feature_option = $second_option;
+		$this->assertSame( $first_owner, $this->sut->get_runtime_owner(), 'The current request keeps its first owner decision until explicitly invalidated.' );
 
 		$this->sut->invalidate();
 
-		$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_NONE, $this->sut->get_runtime_owner() );
+		$this->assertSame( $second_owner, $this->sut->get_runtime_owner() );
 		$this->assertSame( 2, $feature_reads, 'Invalidation recomputes the owner with one more read.' );
+	}
+
+	/**
+	 * The feature switched both ways within one request: the built-in owner and the "no owner" decision are both kept.
+	 *
+	 * @return array<string,array{0:string,1:string,2:string,3:string}>
+	 */
+	public function provide_memoized_owner_switches(): array {
+		return array(
+			'built-in owner kept after the feature turns off' => array( 'yes', WooPaymentsRuntimeArbiter::OWNER_BUILTIN, 'no', WooPaymentsRuntimeArbiter::OWNER_NONE ),
+			'no owner kept after the feature turns on' => array( 'no', WooPaymentsRuntimeArbiter::OWNER_NONE, 'yes', WooPaymentsRuntimeArbiter::OWNER_BUILTIN ),
+		);
 	}
 
 	/**

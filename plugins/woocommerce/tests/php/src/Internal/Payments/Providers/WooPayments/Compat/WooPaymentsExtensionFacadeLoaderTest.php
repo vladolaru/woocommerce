@@ -331,7 +331,7 @@ class WooPaymentsExtensionFacadeLoaderTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Non-activating WP-CLI requests are not recognized as a WooPayments activation, so they keep the compatibility facades.
+	 * @testdox Non-activating WP-CLI requests are not recognized as a WooPayments activation.
 	 * @dataProvider wp_cli_non_activation_request_provider
 	 *
 	 * @param array<int,string> $arguments WP-CLI arguments.
@@ -395,7 +395,7 @@ class WooPaymentsExtensionFacadeLoaderTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A request that is not a WooPayments activation is not recognized as one, so it keeps the compatibility facades ($_dataName).
+	 * @testdox A request that is not a WooPayments activation is not recognized as one ($_dataName).
 	 * @dataProvider non_activation_request_provider
 	 *
 	 * @param array<string,mixed>  $request Request parameters.

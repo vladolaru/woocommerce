@@ -204,8 +204,21 @@ class WooPaymentsPersistedDataContractTest extends WC_Unit_Test_Case {
 	 * the post-KYC email and fee-remediation hooks under the literal `'woocommerce-payments'`
 	 * (`class-wc-payments-post-kyc-activation-email-service.php:113`,
 	 * `class-wc-payments-remediate-canceled-auth-fees.php:570,592`).
+	 *
+	 * The groups are collected into a map keyed by hook name, where a later duplicate entry would overwrite an earlier
+	 * one, so every key/store pair in the fixture must be unique first.
 	 */
 	public function test_preserved_action_scheduler_hooks_use_the_woopayments_extension_groups(): void {
+		// The same string is legitimately reused across stores (for example `wcpay_currency` is
+		// both an order-meta key and a session key), so uniqueness is on the (key, store) pair.
+		$pairs = array_map(
+			static function ( array $entry ): string {
+				return $entry['key'] . '|' . $entry['store'];
+			},
+			self::$fixture['entries']
+		);
+		$this->assertSame( array_unique( $pairs ), array_values( $pairs ), 'Every persisted-data key/store pair must be unique.' );
+
 		$builtin_groups               = array(
 			'wcpay_store_setup_sync'                      => WooPaymentsActionSchedulerService::GROUP_ID,
 			'wcpay_post_kyc_activation_email_send'        => WooPaymentsAccountMilestonesController::POST_KYC_ACTIVATION_EMAIL_GROUP,
