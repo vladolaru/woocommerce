@@ -33,7 +33,9 @@ class WooPaymentsExpressCheckoutCurrencyGuardTest extends WC_Unit_Test_Case {
 	 */
 	public function setUp(): void {
 		parent::setUp();
-		$this->sut = wc_get_container()->get( WooPaymentsExpressCheckoutCurrencyGuard::class );
+		// PHPUnit reuses the test object under --repeat, so the property keeps an earlier run's lines.
+		$this->log_lines = array();
+		$this->sut       = wc_get_container()->get( WooPaymentsExpressCheckoutCurrencyGuard::class );
 		add_filter( 'woocommerce_logger_log_message', array( $this, 'record_log_line' ), 10, 3 );
 	}
 
