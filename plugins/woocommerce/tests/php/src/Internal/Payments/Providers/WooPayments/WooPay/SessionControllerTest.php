@@ -1379,8 +1379,10 @@ class SessionControllerTest extends WC_REST_Unit_Test_Case {
 			$replay['hash'] = substr( $envelope['hash'], 0, 8 ) . ' ' . substr( $envelope['hash'], 8 );
 		}
 		$this->assertSame( 'as sent' === $respelling, $replay['hash'] === $envelope['hash'], 'The spelling under test is what the row says.' );
-		$was_using_ext_object_cache = wp_using_ext_object_cache( $ext_object_cache );
-		$statuses                   = array();
+		global $_wp_using_ext_object_cache;
+		$was_using_ext_object_cache = $_wp_using_ext_object_cache;
+		wp_using_ext_object_cache( $ext_object_cache );
+		$statuses = array();
 
 		try {
 			foreach ( array( $envelope, $replay ) as $sent ) {
@@ -1395,7 +1397,8 @@ class SessionControllerTest extends WC_REST_Unit_Test_Case {
 				$statuses[] = $this->server->dispatch( $request )->get_status();
 			}
 		} finally {
-			wp_using_ext_object_cache( $was_using_ext_object_cache );
+			// wp_using_ext_object_cache( null ) changes nothing, so a flag that started as null is restored directly.
+			$_wp_using_ext_object_cache = $was_using_ext_object_cache; // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited
 		}
 
 		$this->assertSame( array( 200, 401 ), $statuses );
