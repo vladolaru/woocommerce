@@ -523,7 +523,10 @@ class WooPaymentsDocumentsRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox API exceptions become REST errors that keep an HTTP error status and answer 500 for any other: $_dataName.
+	 * The other statuses outside the error range (none, redirects, out of band) follow `ApiException::to_wp_error()`, whose
+	 * bounds `ApiExceptionTest` owns.
+	 *
+	 * @testdox API exceptions become REST errors that keep an HTTP error status and answer 500 for a success status: $_dataName.
 	 * @dataProvider provide_api_exception_statuses
 	 *
 	 * @param int    $http_code       Exception HTTP code.
@@ -549,11 +552,8 @@ class WooPaymentsDocumentsRestControllerTest extends WC_REST_Unit_Test_Case {
 	 */
 	public function provide_api_exception_statuses(): array {
 		return array(
-			'error status 503'       => array( 503, 'provider_unavailable', 'Provider unavailable.', 503 ),
-			'no status'              => array( 0, 'wcpay_server_request_error', 'Transport failed.', 500 ),
-			'success status 200'     => array( 200, 'wcpay_unparseable_or_null_body', 'Malformed response.', 500 ),
-			'redirect status 302'    => array( 302, 'wcpay_unparseable_or_null_body', 'Malformed response.', 500 ),
-			'out-of-band status 700' => array( 700, 'wcpay_unparseable_or_null_body', 'Malformed response.', 500 ),
+			'error status 503'   => array( 503, 'provider_unavailable', 'Provider unavailable.', 503 ),
+			'success status 200' => array( 200, 'wcpay_unparseable_or_null_body', 'Malformed response.', 500 ),
 		);
 	}
 

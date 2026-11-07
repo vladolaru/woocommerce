@@ -256,39 +256,29 @@ class WooPaymentsCapitalRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox API exceptions preserve the Capital REST error envelope and include the upstream HTTP status.
+	 * Faked failures are the shape the API client builds from a platform error body and its HTTP status: an error status
+	 * is kept, and an unreadable body keeps the answer's status, 200 included (wcpay_unparseable_or_null_body), which is
+	 * not an error status and falls back to 500.
+	 *
+	 * @testdox The Capital active loan summary and loans handlers keep the platform error envelope: $handler with platform status $platform_status answers status $expected_status.
+	 * @testWith ["get_active_loan_summary", 503, 503]
+	 *           ["get_loans", 200, 500]
+	 *
+	 * @param string $handler         Capital REST handler.
+	 * @param int    $platform_status Platform HTTP status the exception carries.
+	 * @param int    $expected_status Expected error status.
 	 */
-	public function test_api_exceptions_preserve_error_envelope_with_status(): void {
-		$this->api_client->exception = new ApiException( 'Capital unavailable.', 'capital_unavailable', 503 );
+	public function test_capital_read_handlers_answer_api_exceptions_with_the_envelope_and_status( string $handler, int $platform_status, int $expected_status ): void {
+		$this->api_client->exception = new ApiException( 'Capital unavailable.', 'capital_unavailable', $platform_status );
 
-		$response = $this->sut->get_active_loan_summary( new WP_REST_Request( 'GET', '/wc/v3/payments/capital/active_loan_summary' ) );
+		$response = $this->sut->{$handler}( new WP_REST_Request( 'GET', '/wc/v3/payments/capital/' . substr( $handler, strlen( 'get_' ) ) ) );
 
 		$this->assertSame( 'capital_unavailable', $response->get_error_code() );
 		$this->assertSame( 'Capital unavailable.', $response->get_error_message() );
 
 		$error_data = $response->get_error_data();
 		$this->assertArrayHasKey( 'status', $error_data );
-		$this->assertSame( 503, $error_data['status'] );
-	}
-
-	/**
-	 * Faked failures are the shape the API client builds from a platform error body and its HTTP status: an encode failure
-	 * carries none (0) and an unreadable body keeps the answer's status, 200 included (wcpay_unparseable_or_null_body).
-	 *
-	 * @testdox API exceptions with platform status $platform_status fall back to a 500 server error status.
-	 * @testWith [0]
-	 *           [200]
-	 *
-	 * @param int $platform_status Platform HTTP status.
-	 */
-	public function test_api_exceptions_without_http_code_default_to_server_error_status( int $platform_status ): void {
-		$this->api_client->exception = new ApiException( 'Capital unavailable.', 'capital_unavailable', $platform_status );
-
-		$response = $this->sut->get_loans( new WP_REST_Request( 'GET', '/wc/v3/payments/capital/loans' ) );
-
-		$error_data = $response->get_error_data();
-		$this->assertArrayHasKey( 'status', $error_data );
-		$this->assertSame( 500, $error_data['status'] );
+		$this->assertSame( $expected_status, $error_data['status'] );
 	}
 
 	/**
