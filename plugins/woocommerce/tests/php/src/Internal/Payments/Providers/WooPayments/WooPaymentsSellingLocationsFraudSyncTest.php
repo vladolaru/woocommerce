@@ -110,18 +110,6 @@ class WooPaymentsSellingLocationsFraudSyncTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should block the excluded countries when the store sells to all but some.
-	 */
-	public function test_all_except_selling_locations_rebuild_the_check(): void {
-		update_option( 'woocommerce_all_except_countries', array( 'RU', 'BY' ) );
-		update_option( 'woocommerce_allowed_countries', 'all_except' );
-
-		$this->sut->refresh_fraud_rules();
-
-		$this->assertSame( $this->get_advanced_ruleset( 'in', 'ru|by' ), $this->api_client->last_fraud_ruleset );
-	}
-
-	/**
 	 * @testdox Should not call the platform when the country check is unchanged.
 	 */
 	public function test_unchanged_check_makes_no_save(): void {

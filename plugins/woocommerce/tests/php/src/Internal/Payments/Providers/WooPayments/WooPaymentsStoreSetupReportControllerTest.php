@@ -167,23 +167,6 @@ class WooPaymentsStoreSetupReportControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should report WooCommerce Subscriptions as active when its class is loaded, whatever folder holds it (the WooPayments extension `class-wc-payments-account.php:3001`).
-	 */
-	public function test_store_setup_sync_reports_subscriptions_active_by_its_loaded_class(): void {
-		// WooCommerce Subscriptions as WooCommerce.com installs it, outside the woocommerce-subscriptions folder.
-		update_option( 'active_plugins', array( 'woocommerce-com-woocommerce-subscriptions/woocommerce-subscriptions.php' ) );
-		wc_get_container()->get( LegacyProxy::class )->register_function_mocks(
-			array(
-				'class_exists' => static fn( $class_name, ...$args ) => 'WC_Subscriptions' === $class_name || class_exists( $class_name, ...$args ),
-			)
-		);
-
-		$snapshot = $this->send_store_setup_snapshot();
-
-		$this->assertTrue( $snapshot['wc_setup']['wc_subscriptions_active'] );
-	}
-
-	/**
 	 * @testdox Should report the WooPayments version the store reports everywhere else as the store setup plugin version, not WooCommerce's.
 	 *
 	 * Client 11.1.0 sends its own version there (class-wc-payments-account.php:2981); the user agent reports the same

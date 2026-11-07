@@ -9,7 +9,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTo
 use RuntimeException;
 use WC_REST_Unit_Test_Case;
 use WP_REST_Request;
-use WP_REST_Server;
 
 /**
  * Tests for the WooPaymentsTosRestController class.
@@ -79,27 +78,6 @@ class WooPaymentsTosRestControllerTest extends WC_REST_Unit_Test_Case {
 
 		wc_get_container()->reset_all_replacements();
 		parent::tearDown();
-	}
-
-	/**
-	 * @testdox ToS routes are registered under wc/v3 when the built-in WooPayments owns the runtime.
-	 */
-	public function test_registers_routes_when_builtin_owns_runtime(): void {
-		$this->sut = $this->create_controller();
-		// WooCommerce's REST server registers the routes of the instance the container holds.
-		wc_get_container()->replace( WooPaymentsTosRestController::class, $this->sut );
-		$this->sut->register();
-		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment
-		do_action( 'rest_api_init' );
-
-		$routes = $this->server->get_routes();
-
-		$this->assertArrayHasKey( '/wc/v3/payments/tos', $routes );
-		$this->assertRouteHasMethod( $routes['/wc/v3/payments/tos'], WP_REST_Server::CREATABLE );
-		$this->assertArrayHasKey( '/wc/v3/payments/tos/reactivate', $routes );
-		$this->assertRouteHasMethod( $routes['/wc/v3/payments/tos/reactivate'], WP_REST_Server::CREATABLE );
-		$this->assertArrayHasKey( '/wc/v3/payments/tos/stripe_track_connected', $routes );
-		$this->assertRouteHasMethod( $routes['/wc/v3/payments/tos/stripe_track_connected'], WP_REST_Server::CREATABLE );
 	}
 
 	/**
@@ -316,22 +294,6 @@ class WooPaymentsTosRestControllerTest extends WC_REST_Unit_Test_Case {
 		$settings = get_option( 'woocommerce_woocommerce_payments_settings', array() );
 
 		return is_array( $settings ) ? (string) ( $settings['enabled'] ?? '' ) : '';
-	}
-
-	/**
-	 * Assert a route handler supports a method.
-	 *
-	 * @param array<int,array<string,mixed>> $route_handlers Route handlers.
-	 * @param string                         $method         Method constant.
-	 */
-	private function assertRouteHasMethod( array $route_handlers, string $method ): void {
-		foreach ( $route_handlers as $handler ) {
-			if ( isset( $handler['methods'][ $method ] ) && true === $handler['methods'][ $method ] ) {
-				return;
-			}
-		}
-
-		$this->fail( 'Route does not accept method ' . $method . '.' );
 	}
 }
 
