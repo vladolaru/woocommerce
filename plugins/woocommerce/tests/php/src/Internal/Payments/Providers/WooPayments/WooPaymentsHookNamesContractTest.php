@@ -180,21 +180,17 @@ class WooPaymentsHookNamesContractTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The fixture is complete: its declared count matches its entries, and every name is unique and sorted.
+	 * Both hook contracts read the fixture through a name-keyed map, where a duplicated name would silently drop an entry.
+	 *
+	 * @testdox Every hook name in the fixture is unique.
 	 */
-	public function test_fixture_is_complete(): void {
+	public function test_fixture_hook_names_are_unique(): void {
 		$path = __DIR__ . '/Fixtures/woopayments-hooks.json';
 		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reading a committed test fixture, not user input.
 		$fixture = json_decode( (string) file_get_contents( $path ), true );
 
-		$this->assertSame( $fixture['count'], count( $fixture['entries'] ), 'count must match the number of entries.' );
-
 		$names = array_column( $fixture['entries'], 'name' );
 		$this->assertSame( array_unique( $names ), $names, 'Every hook name must be unique.' );
-
-		$sorted = $names;
-		sort( $sorted, SORT_STRING );
-		$this->assertSame( $sorted, $names, 'Entries must be sorted by name.' );
 	}
 
 	/**

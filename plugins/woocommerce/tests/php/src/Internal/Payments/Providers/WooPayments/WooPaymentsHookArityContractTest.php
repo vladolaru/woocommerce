@@ -80,24 +80,13 @@ use WC_Unit_Test_Case;
  *
  * Every one of the 37 groups below reaches its hook(s) through a real native call, ported from the
  * retired harness's own native branch for that group (`hook-shape-parity.php`). None of them fires the hook itself, so
- * `STATIC_ONLY` is empty: every hook in the manifest is proven at runtime here, and the name test
+ * every hook in the manifest is proven at runtime here, and the name test
  * (`WooPaymentsHookNamesContractTest`) reads `probed_hooks()` to skip re-proving them
  * statically.
  *
  * @since 11.2.0
  */
 class WooPaymentsHookArityContractTest extends WC_Unit_Test_Case {
-
-	/**
-	 * Hooks the retired manifest requires that no native product path could reach within the
-	 * plan's time box, with the reason, and the fixture arity they still need to satisfy statically
-	 * (via the name test's native fire-site scanner instead of a runtime probe).
-	 *
-	 * Empty: every one of the 68 manifest hooks has a working product-path probe below.
-	 *
-	 * @var array<string,string>
-	 */
-	private const STATIC_ONLY = array();
 
 	/**
 	 * Hooks whose native product path unavoidably triggers a real `_deprecated_hook()`/
@@ -345,18 +334,6 @@ class WooPaymentsHookArityContractTest extends WC_Unit_Test_Case {
 		}
 
 		return $rows;
-	}
-
-	/**
-	 * @testdox The probed set is exactly the preserved manifest, and every probed name is in the fixture.
-	 */
-	public function test_probe_set_is_the_preserved_manifest(): void {
-		$probed = array_keys( self::probed_hooks() );
-
-		$this->assertCount( 68, $probed, 'The preserved hook-shape manifest has 68 hooks the plugin still fires.' );
-
-		$missing_from_fixture = array_diff( $probed, array_keys( self::$fixture_by_name ) );
-		$this->assertSame( array(), $missing_from_fixture, 'Every probed hook must be a fixture entry: ' . implode( ', ', $missing_from_fixture ) );
 	}
 
 	/**

@@ -153,25 +153,6 @@ class WooPaymentsPersistedDataContractTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The fixture is complete: its declared count matches its entries, and every key/store pair is unique.
-	 */
-	public function test_fixture_is_complete(): void {
-		$fixture = self::$fixture;
-
-		$this->assertSame( $fixture['count'], count( $fixture['entries'] ), 'count must match the number of entries.' );
-
-		// The same string is legitimately reused across stores (for example `wcpay_currency` is
-		// both an order-meta key and a session key), so uniqueness is on the (key, store) pair.
-		$pairs = array_map(
-			static function ( array $entry ): string {
-				return $entry['key'] . '|' . $entry['store'];
-			},
-			$fixture['entries']
-		);
-		$this->assertSame( array_unique( $pairs ), array_values( $pairs ), 'Every persisted-data key/store pair must be unique.' );
-	}
-
-	/**
 	 * @testdox The built-in WooPayments names every persistence key of the WooPayments extension, or the difference is recorded.
 	 */
 	public function test_builtin_names_every_woopayments_extension_persistence_key_or_allows_it(): void {

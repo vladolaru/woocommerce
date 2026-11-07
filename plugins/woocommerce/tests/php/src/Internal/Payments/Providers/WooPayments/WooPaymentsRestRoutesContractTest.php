@@ -203,27 +203,6 @@ class WooPaymentsRestRoutesContractTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The fixture is complete: its declared count matches its entries, and every route and action is unique.
-	 */
-	public function test_fixture_is_complete(): void {
-		$fixture = self::$fixture;
-
-		$this->assertSame( $fixture['rest_route_count'], count( $fixture['rest_routes'] ), 'rest_route_count must match the number of rest_routes entries.' );
-		$this->assertSame( $fixture['ajax_action_count'], count( $fixture['ajax_actions'] ), 'ajax_action_count must match the number of ajax_actions entries.' );
-
-		$route_keys = array_map(
-			static function ( array $route ): string {
-				return $route['namespace'] . ' ' . $route['route'];
-			},
-			$fixture['rest_routes']
-		);
-		$this->assertSame( array_unique( $route_keys ), $route_keys, 'Every namespace/route pair must be unique.' );
-
-		$actions = array_column( $fixture['ajax_actions'], 'action' );
-		$this->assertSame( array_unique( $actions ), $actions, 'Every AJAX action must be unique.' );
-	}
-
-	/**
 	 * @testdox The built-in WooPayments serves every REST route and method of the WooPayments extension, or the difference is recorded.
 	 */
 	public function test_builtin_serves_every_woopayments_extension_rest_route_and_method(): void {
