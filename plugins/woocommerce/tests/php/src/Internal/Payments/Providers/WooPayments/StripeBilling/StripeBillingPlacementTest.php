@@ -72,7 +72,9 @@ PHP;
 				}
 
 				// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reading local production source for a placement assertion.
-				if ( $this->references_module( (string) file_get_contents( $file->getPathname() ) ) ) {
+				$source = (string) file_get_contents( $file->getPathname() );
+				// The scanner's pattern needs the literal module name, so a file without it is skipped before tokenizing.
+				if ( false !== strpos( $source, 'StripeBilling' ) && $this->references_module( $source ) ) {
 					$violations[] = $path;
 				}
 			}
