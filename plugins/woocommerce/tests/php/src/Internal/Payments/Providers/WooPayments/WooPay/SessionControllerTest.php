@@ -27,11 +27,14 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\Blocks
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendAssets;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\PageSurfaceReplacement;
 
 /**
  * Tests for the SessionController class.
  */
 class SessionControllerTest extends WC_REST_Unit_Test_Case {
+
+	use PageSurfaceReplacement;
 
 	/**
 	 * The System Under Test.
@@ -2093,22 +2096,6 @@ class SessionControllerTest extends WC_REST_Unit_Test_Case {
 		$type = $reflection->getProperty( 'rest_authentication_type' );
 		$type->setAccessible( true );
 		$type->setValue( $instance, null );
-	}
-
-	/**
-	 * Replace WooPaymentsPageSurface so the page reads as a cart or a checkout only as the case says; is_checkout_surface() stays real.
-	 *
-	 * Core's is_cart() and is_checkout() stay true for the rest of the process once any code defines WOOCOMMERCE_CART or
-	 * WOOCOMMERCE_CHECKOUT, so a test of a page that is neither cannot ask them. tearDown() resets the replacement.
-	 *
-	 * @param bool $is_cart     Whether the page reads as a cart.
-	 * @param bool $is_checkout Whether the page reads as a checkout.
-	 */
-	private function replace_page_surface( bool $is_cart, bool $is_checkout ): void {
-		$surface = $this->getMockBuilder( WooPaymentsPageSurface::class )->onlyMethods( array( 'is_cart', 'is_checkout' ) )->getMock();
-		$surface->method( 'is_cart' )->willReturn( $is_cart );
-		$surface->method( 'is_checkout' )->willReturn( $is_checkout );
-		wc_get_container()->replace( WooPaymentsPageSurface::class, $surface );
 	}
 
 	/**

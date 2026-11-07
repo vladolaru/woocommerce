@@ -33,11 +33,14 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\Appear
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\AdaptedExtensions;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\BlocksDataExtractor;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPageSurface;
 
 /**
  * Tests for the WooPaymentsCheckoutAssets class.
  */
 class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
+
+	use PageSurfaceReplacement;
 
 	/**
 	 * Card gateway support features passed to the config builders where the test does not exercise them.
@@ -555,6 +558,7 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 	 * Tear down test fixtures.
 	 */
 	public function tearDown(): void {
+		wc_get_container()->reset_replacement( WooPaymentsPageSurface::class );
 		$this->reset_frontend_surface_state();
 		unset( $_GET['change_payment_method'], $_GET['pay_for_order'], $_GET['key'], $_POST['email'], $GLOBALS[ WooCommerceSubscriptionsDoubles::SUBSCRIPTION_IDS ], $GLOBALS[ WooCommerceSubscriptionsDoubles::CART_CONTAINS_RENEWAL ] );
 		delete_option( '_wcpay_feature_woopay_express_checkout' );
@@ -2660,16 +2664,12 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Blocks data carries the WooPayments extension's express checkout switches for the checkout page's own location settings.
-	 *
-	 * A separate process, because an earlier test can define WOOCOMMERCE_CART or WOOCOMMERCE_CHECKOUT for the rest of the run.
-	 *
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 */
 	public function test_blocks_data_express_switches_follow_the_checkout_location(): void {
-		add_filter( 'woocommerce_is_checkout', '__return_true' );
+		$this->replace_page_surface( false, true );
 
 		$data = $this->create_assets_for_express_handlers()->get_blocks_payment_method_data( self::CARD_SUPPORTS );
+		$this->assertTrue( $data['isCheckout'] );
 		$this->assertTrue( $data['isPaymentRequestEnabled'] );
 		$this->assertTrue( $data['isAmazonPayEnabled'] );
 
@@ -2699,12 +2699,15 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Blocks data outside the product, cart and checkout pages reports the switches without a location, as the WooPayments extension does.
 	 *
-	 * A separate process, because an earlier test can define WOOCOMMERCE_CART or WOOCOMMERCE_CHECKOUT for the rest of the run.
-	 *
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
+	 * Core's is_cart() and is_checkout() answer true here, as after an earlier test defined WOOCOMMERCE_CART and
+	 * WOOCOMMERCE_CHECKOUT, so the page surface alone must decide that the page is neither.
 	 */
 	public function test_blocks_data_express_switches_ignore_locations_without_a_page_context(): void {
+		add_filter( 'woocommerce_is_cart', '__return_true' );
+		add_filter( 'woocommerce_is_checkout', '__return_true' );
+		$this->assertTrue( is_cart() && is_checkout(), 'Precondition: core reads the page as a cart and a checkout.' );
+		$this->replace_page_surface( false, false );
+
 		$data = $this->create_assets_for_express_handlers(
 			array(
 				'express_checkout_checkout_methods' => array(),
@@ -2713,6 +2716,7 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 			)
 		)->get_blocks_payment_method_data( self::CARD_SUPPORTS );
 
+		$this->assertFalse( $data['isCheckout'] );
 		$this->assertTrue( $data['isPaymentRequestEnabled'] );
 		$this->assertTrue( $data['isAmazonPayEnabled'] );
 	}
@@ -2735,11 +2739,6 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 	 * @testdox Blocks data takes the express switches from the visited page's location, counting only unescaped product shortcodes: $_dataName.
 	 * @dataProvider provide_pages_for_the_express_switch_location
 	 *
-	 * A separate process, because an earlier test can define WOOCOMMERCE_CART or WOOCOMMERCE_CHECKOUT for the rest of the run.
-	 *
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
-	 *
 	 * @param string $content          Page content.
 	 * @param bool   $checkout_page    Whether the page is the store checkout page.
 	 * @param bool   $payment_request  Expected Apple Pay/Google Pay switch: on only at checkout.
@@ -2758,7 +2757,8 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 		}
 		$this->reset_cart_checkout_page_cache();
 		$this->go_to( get_permalink( $page_id ) );
-		$this->assertSame( $checkout_page, is_checkout(), 'Precondition: only the store checkout page is a checkout.' );
+		$this->use_visited_page_surface();
+		$this->assertSame( $checkout_page, wc_get_container()->get( WooPaymentsPageSurface::class )->is_checkout(), 'Precondition: only the store checkout page is a checkout.' );
 
 		$data = $this->create_assets_for_express_handlers(
 			array(

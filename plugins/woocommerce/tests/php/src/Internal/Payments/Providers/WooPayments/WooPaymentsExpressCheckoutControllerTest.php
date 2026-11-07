@@ -8,6 +8,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsEx
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExpressCheckoutService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendAssets;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendTrackingController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPageSurface;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\SessionController;
 use WC_Unit_Test_Case;
@@ -16,6 +17,8 @@ use WC_Unit_Test_Case;
  * Tests for the WooPaymentsExpressCheckoutController class.
  */
 class WooPaymentsExpressCheckoutControllerTest extends WC_Unit_Test_Case {
+
+	use PageSurfaceReplacement;
 
 	/**
 	 * The System Under Test.
@@ -43,6 +46,7 @@ class WooPaymentsExpressCheckoutControllerTest extends WC_Unit_Test_Case {
 			remove_filter( 'wcpay_tracks_event_properties', array( $this->sut, 'add_tracking_event_properties' ) );
 		}
 
+		wc_get_container()->reset_replacement( WooPaymentsPageSurface::class );
 		$this->reset_frontend_surface_state();
 		delete_option( 'woocommerce_checkout_page_id' );
 		delete_option( 'woocommerce_cart_page_id' );
@@ -122,11 +126,6 @@ class WooPaymentsExpressCheckoutControllerTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Should enqueue express checkout assets on custom checkout shortcode pages.
-	 *
-	 * A prior test can permanently define WOOCOMMERCE_CHECKOUT in the parent process.
-	 *
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 */
 	public function test_enqueue_frontend_assets_loads_on_checkout_shortcode_page(): void {
 		$this->sut = $this->create_controller( true );
@@ -139,8 +138,8 @@ class WooPaymentsExpressCheckoutControllerTest extends WC_Unit_Test_Case {
 		);
 		$this->reset_cart_checkout_page_cache();
 		$this->go_to( get_permalink( $page_id ) );
+		$this->use_visited_page_surface();
 		$this->assertNotSame( $page_id, wc_get_page_id( 'checkout' ), 'Precondition: not the store checkout page.' );
-		$this->assertFalse( defined( 'WOOCOMMERCE_CHECKOUT' ), 'Precondition: no inherited checkout constant.' );
 
 		$this->sut->enqueue_frontend_assets();
 
@@ -150,11 +149,6 @@ class WooPaymentsExpressCheckoutControllerTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Should not load express checkout on an archive whose term ID equals a checkout page's post ID.
-	 *
-	 * A prior test can permanently define WOOCOMMERCE_CHECKOUT in the parent process.
-	 *
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 */
 	public function test_enqueue_frontend_assets_skips_an_archive_whose_term_id_matches_a_checkout_page(): void {
 		$this->sut = $this->create_controller( true );
@@ -171,6 +165,7 @@ class WooPaymentsExpressCheckoutControllerTest extends WC_Unit_Test_Case {
 		);
 		$this->assertSame( $term_id, $page_id, 'The fixture needs a page whose ID equals the term ID.' );
 		$this->go_to( get_category_link( $term_id ) );
+		$this->use_visited_page_surface();
 
 		$this->sut->enqueue_frontend_assets();
 
@@ -289,11 +284,6 @@ class WooPaymentsExpressCheckoutControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Should read the raw page content for the Blocks exclusion and the shortcode surfaces: $_dataName.
 	 * @dataProvider provide_pages_whose_content_the_rendered_page_hides
 	 *
-	 * A prior test can permanently define WOOCOMMERCE_CHECKOUT in the parent process.
-	 *
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
-	 *
 	 * @param string      $content          Post content.
 	 * @param bool        $password         Whether the post is password protected.
 	 * @param string      $request          `checkout page` or `cart page`: the post is that store page, visited. `page`: a
@@ -320,7 +310,8 @@ class WooPaymentsExpressCheckoutControllerTest extends WC_Unit_Test_Case {
 		}
 		$this->reset_cart_checkout_page_cache();
 		$this->go_to( get_permalink( $post_id ) );
-		$this->assertSame( 'cart page' === $request, is_cart(), 'Precondition: only the store cart page is a cart.' );
+		$this->use_visited_page_surface();
+		$this->assertSame( 'cart page' === $request, wc_get_container()->get( WooPaymentsPageSurface::class )->is_cart(), 'Precondition: only the store cart page is a cart.' );
 		$this->assertSame( $password, post_password_required( $post_id ), 'Precondition: the password form renders instead of the content.' );
 
 		$this->sut->enqueue_frontend_assets();
@@ -349,11 +340,6 @@ class WooPaymentsExpressCheckoutControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should read the checkout and product shortcodes from the visited page only, skipping escaped tags: $_dataName.
 	 * @dataProvider provide_shortcodes_outside_the_visited_page
-	 *
-	 * A prior test can permanently define WOOCOMMERCE_CHECKOUT in the parent process.
-	 *
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 *
 	 * @param string|null $page_content     Content of the visited page, or null for a search page.
 	 * @param string|null $page_option      WooCommerce page option pointing at the visited page, or null for none.
@@ -384,13 +370,32 @@ class WooPaymentsExpressCheckoutControllerTest extends WC_Unit_Test_Case {
 		if ( null !== $loop_content ) {
 			$GLOBALS['post'] = self::factory()->post->create_and_get( array( 'post_content' => $loop_content ) ); // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- The post of the page's loop.
 		}
-		$this->assertSame( null !== $page_option, is_cart(), 'Precondition: only the store cart page is a cart.' );
+		$this->use_visited_page_surface();
+		$this->assertSame( null !== $page_option, wc_get_container()->get( WooPaymentsPageSurface::class )->is_cart(), 'Precondition: only the store cart page is a cart.' );
 
 		$this->sut->enqueue_frontend_assets();
 
 		$this->assertSame( null !== $expected_context, wp_script_is( 'wc-woopayments-express-checkout', 'enqueued' ) );
-		// Joined, because an array comparison failure cannot travel back from the separate process.
-		$this->assertSame( (string) $expected_context, implode( ',', $service->contexts ) );
+		$this->assertSame( null === $expected_context ? array() : array( $expected_context ), $service->contexts );
+	}
+
+	/**
+	 * @testdox Should take the button context from the page surface, which reads a cart that is not a checkout, while core's conditionals read both.
+	 *
+	 * Core's is_cart() and is_checkout() answer true, as after an earlier test defined WOOCOMMERCE_CART and
+	 * WOOCOMMERCE_CHECKOUT, so only a context read through the page surface is the cart's.
+	 */
+	public function test_enqueue_frontend_assets_takes_the_button_context_from_the_page_surface(): void {
+		add_filter( 'woocommerce_is_cart', '__return_true' );
+		add_filter( 'woocommerce_is_checkout', '__return_true' );
+		$this->assertTrue( is_cart() && is_checkout(), 'Precondition: core reads the page as a cart and a checkout.' );
+		$this->replace_page_surface( true, false );
+		$service   = new RecordingExpressCheckoutService();
+		$this->sut = $this->create_controller( true, $service );
+
+		$this->sut->enqueue_frontend_assets();
+
+		$this->assertSame( array( 'cart' ), $service->contexts );
 	}
 
 	/**

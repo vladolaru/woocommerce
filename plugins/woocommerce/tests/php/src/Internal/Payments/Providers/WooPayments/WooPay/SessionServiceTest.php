@@ -8,7 +8,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsEx
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\AdaptedExtensions;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPageSurface;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\SessionService;
 use Automattic\WooCommerce\Internal\Utilities\RequestTypeUtil;
 use Automattic\WooCommerce\StoreApi\Schemas\ExtendSchema;
@@ -16,6 +15,7 @@ use Automattic\WooCommerce\StoreApi\Schemas\V1\CartSchema;
 use Automattic\WooCommerce\StoreApi\StoreApi;
 use Automattic\WooCommerce\StoreApi\Utilities\CartTokenUtils;
 use Automattic\WooCommerce\StoreApi\Utilities\JsonWebToken;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\PageSurfaceReplacement;
 use WC_Unit_Test_Case;
 use WP_REST_Request;
 use WP_REST_Response;
@@ -25,6 +25,7 @@ use WP_REST_Response;
  */
 class SessionServiceTest extends WC_Unit_Test_Case {
 
+	use PageSurfaceReplacement;
 	use WooPayServicesFixture;
 
 	/**
@@ -1947,22 +1948,5 @@ class SessionServiceTest extends WC_Unit_Test_Case {
 			'theme support off withholds both' => array( 'no', array( array( 'src' => 'https://example.com/font.woff2' ) ), null, array() ),
 			'theme support on falls back to the stored appearance' => array( 'yes', array(), array( 'theme' => 'night' ), null ),
 		);
-	}
-
-	/**
-	 * Replace WooPaymentsPageSurface so the page reads as a cart or a checkout only as the case says; is_checkout_surface() stays real.
-	 *
-	 * Core's is_cart() and is_checkout() stay true for the rest of the process once any code defines WOOCOMMERCE_CART or
-	 * WOOCOMMERCE_CHECKOUT, so a test of a page that is neither cannot ask them. The fixture's tearDown() resets the
-	 * replacement.
-	 *
-	 * @param bool $is_cart     Whether the page reads as a cart.
-	 * @param bool $is_checkout Whether the page reads as a checkout.
-	 */
-	private function replace_page_surface( bool $is_cart, bool $is_checkout ): void {
-		$surface = $this->getMockBuilder( WooPaymentsPageSurface::class )->onlyMethods( array( 'is_cart', 'is_checkout' ) )->getMock();
-		$surface->method( 'is_cart' )->willReturn( $is_cart );
-		$surface->method( 'is_checkout' )->willReturn( $is_checkout );
-		wc_get_container()->replace( WooPaymentsPageSurface::class, $surface );
 	}
 }

@@ -7,6 +7,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethod
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendAssets;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendStylesService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPageSurface;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentMethodMessaging;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\WooCommerceSubscriptionsDoubles;
 use WC_Product;
@@ -16,6 +17,8 @@ use WC_Unit_Test_Case;
  * Tests for the WooPaymentsPaymentMethodMessaging class.
  */
 class WooPaymentsPaymentMethodMessagingTest extends WC_Unit_Test_Case {
+
+	use PageSurfaceReplacement;
 
 	private const SCRIPT_HANDLE            = 'wc-woopayments-payment-method-messaging';
 	private const STYLE_HANDLE             = 'wc-woopayments-payment-method-messaging';
@@ -44,6 +47,7 @@ class WooPaymentsPaymentMethodMessagingTest extends WC_Unit_Test_Case {
 	 * Tear down test fixtures.
 	 */
 	public function tearDown(): void {
+		wc_get_container()->reset_replacement( WooPaymentsPageSurface::class );
 		foreach ( $this->registered_controllers as $controller ) {
 			foreach ( $this->get_expected_hooks() as $hook => $method ) {
 				remove_action( $hook, array( $controller, $method ) );
@@ -134,13 +138,9 @@ class WooPaymentsPaymentMethodMessagingTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Should not read eligibility on an unsupported shopper surface.
-	 *
-	 * Runs in its own process because prior cart tests can pin the WOOCOMMERCE_CART constant, making this unsupported surface look supported.
-	 *
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 */
 	public function test_does_not_read_eligibility_on_unsupported_shopper_surface(): void {
+		$this->replace_page_surface( false, false );
 		$account_service = $this->create_account_service( true, array( 'affirm' ), array( 'affirm_payments' => 'active' ), 0 );
 		$controller      = $this->create_controller( true, array( 'affirm' ), array( 'affirm_payments' => 'active' ), $account_service );
 
@@ -371,10 +371,16 @@ class WooPaymentsPaymentMethodMessagingTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Should enqueue the Blocks cart BNPL plugin on the cart-block surface.
+	 *
+	 * The Cart block renders on a page that is not the store cart page, as when a template renders the block, while core's
+	 * is_cart() answers true, as after an earlier test defined WOOCOMMERCE_CART; the config's isCart follows the page surface.
 	 */
 	public function test_enqueues_blocks_cart_bnpl_plugin_on_cart_block_surface(): void {
 		update_option( 'woocommerce_default_country', 'US:CA' );
 		update_option( 'woocommerce_currency', 'USD' );
+		add_filter( 'woocommerce_is_cart', '__return_true' );
+		$this->assertTrue( is_cart(), 'Precondition: core reads the page as a cart.' );
+		$this->replace_page_surface( false, false );
 
 		$controller = $this->create_controller( true, array( 'affirm' ), array( 'affirm_payments' => 'active' ) );
 		$controller->register();
@@ -406,6 +412,7 @@ class WooPaymentsPaymentMethodMessagingTest extends WC_Unit_Test_Case {
 		$script_data = $this->get_localized_script_data( self::CART_BLOCK_SCRIPT_HANDLE );
 
 		$this->assertSame( array( 'affirm' ), $script_data['paymentMethods'] );
+		$this->assertFalse( (bool) $script_data['isCart'] );
 		$this->assertTrue( (bool) $script_data['isCartBlock'] );
 		$this->assertTrue( (bool) $script_data['shouldInitializePMME'] );
 	}
@@ -413,10 +420,6 @@ class WooPaymentsPaymentMethodMessagingTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should enqueue the BNPL stylesheet during wp_enqueue_scripts on product and cart pages only, leaving the script to render time.
 	 *
-	 * A separate process, because prior cart tests can pin the WOOCOMMERCE_CART constant, making the home page look like the cart.
-	 *
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 * @testWith ["product", true]
 	 *           ["cart", true]
 	 *           ["home", false]
@@ -429,9 +432,8 @@ class WooPaymentsPaymentMethodMessagingTest extends WC_Unit_Test_Case {
 			$this->set_current_product( \WC_Helper_Product::create_simple_product( true, array( 'regular_price' => '50.00' ) ) );
 			// The global product is set only once the loop starts, after the head.
 			unset( $GLOBALS['product'] );
-		} elseif ( 'cart' === $surface ) {
-			add_filter( 'woocommerce_is_cart', '__return_true' );
 		}
+		$this->replace_page_surface( 'cart' === $surface, false );
 		$controller = $this->create_controller( true, array( 'affirm' ), array( 'affirm_payments' => 'active' ) );
 		$controller->register();
 		$this->registered_controllers[] = $controller;

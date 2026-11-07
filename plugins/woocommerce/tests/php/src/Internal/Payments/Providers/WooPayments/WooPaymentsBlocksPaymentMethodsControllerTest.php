@@ -18,6 +18,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFr
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendAssets;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffectApplier;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPageSurface;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentOperationService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
@@ -29,10 +30,13 @@ use WC_Unit_Test_Case;
  */
 class WooPaymentsBlocksPaymentMethodsControllerTest extends WC_Unit_Test_Case {
 
+	use PageSurfaceReplacement;
+
 	/**
 	 * Tear down test fixtures.
 	 */
 	public function tearDown(): void {
+		wc_get_container()->reset_replacement( WooPaymentsPageSurface::class );
 		remove_all_filters( 'wcpay_upe_available_payment_methods' );
 		foreach ( array( 'wc-payment-method-woopayments', 'wc-payment-method-woopayments-fraud-scripts', 'wc-payment-method-woopayments-common', 'wc-woopayments-woopay-common', 'wc-woopayments-appearance' ) as $handle ) {
 			wp_dequeue_style( $handle );
@@ -50,18 +54,18 @@ class WooPaymentsBlocksPaymentMethodsControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should publish one Blocks integration instance for each WooPayments gateway.
 	 *
-	 * A separate process, because an earlier test can define WOOCOMMERCE_CART for the rest of the run, which drops the card
-	 * script from the handles.
-	 *
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
+	 * The page reads as neither a cart nor a checkout, whatever constant an earlier test defined, so the card script stays
+	 * in the handles. The checkout data is stubbed: the integration builds it when the asset data registry already holds
+	 * Blocks payment method data, as an earlier test can leave it.
 	 */
 	public function test_registers_one_blocks_payment_method_per_gateway(): void {
+		$this->replace_page_surface( false, false );
 		$assets = $this->getMockBuilder( WooPaymentsCheckoutAssets::class )
 			->disableOriginalConstructor()
-			->onlyMethods( array( 'should_expose_checkout_surface' ) )
+			->onlyMethods( array( 'should_expose_checkout_surface', 'get_blocks_payment_method_data' ) )
 			->getMock();
 		$assets->method( 'should_expose_checkout_surface' )->willReturn( true );
+		$assets->method( 'get_blocks_payment_method_data' )->willReturn( array() );
 
 		$payment_method_registry = new WooPaymentsPaymentMethodRegistry();
 		$card_gateway            = new WooPaymentsGateway( $payment_method_registry->get( 'card' ) );

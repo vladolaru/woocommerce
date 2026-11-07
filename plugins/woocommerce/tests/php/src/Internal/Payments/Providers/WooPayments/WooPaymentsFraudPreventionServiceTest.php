@@ -3,9 +3,9 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Blocks\Utils\CartCheckoutUtils;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFraudPreventionService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPageSurface;
 use WC_Unit_Test_Case;
 
 /**
@@ -13,15 +13,34 @@ use WC_Unit_Test_Case;
  */
 class WooPaymentsFraudPreventionServiceTest extends WC_Unit_Test_Case {
 
+	use PageSurfaceReplacement;
+
+	/**
+	 * The script registry before the test.
+	 *
+	 * @var \WP_Scripts|null
+	 */
+	private $original_wp_scripts;
+
+	/**
+	 * Set up test fixtures.
+	 */
+	public function setUp(): void {
+		parent::setUp();
+		// The script registry is a global the base test case does not reset, and the rows print it: a script an earlier
+		// test left enqueued would print here too.
+		$this->original_wp_scripts = $GLOBALS['wp_scripts'] ?? null;
+		$GLOBALS['wp_scripts']     = new \WP_Scripts(); // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited
+	}
+
 	/**
 	 * Tear down test fixtures.
 	 */
 	public function tearDown(): void {
 		try {
-			// The script registry is a global the base test case does not reset; a printed script also stays marked done.
-			wp_dequeue_script( WooPaymentsFraudPreventionService::TOKEN_NAME );
-			wp_deregister_script( WooPaymentsFraudPreventionService::TOKEN_NAME );
-			wp_scripts()->done = array_values( array_diff( wp_scripts()->done, array( WooPaymentsFraudPreventionService::TOKEN_NAME ) ) );
+			wc_get_container()->reset_replacement( WooPaymentsPageSurface::class );
+			unset( $_GET['pay_for_order'] );
+			$GLOBALS['wp_scripts'] = $this->original_wp_scripts; // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited
 		} finally {
 			parent::tearDown();
 		}
@@ -134,11 +153,6 @@ class WooPaymentsFraudPreventionServiceTest extends WC_Unit_Test_Case {
 	 * The page is not a cart or checkout page and holds no block in its content, as when the block comes from a template
 	 * assigned to it, so the page check does not match. The head prints before the block renders, as in a classic theme.
 	 *
-	 * A separate process, because an earlier test can define WOOCOMMERCE_CART or WOOCOMMERCE_CHECKOUT, which would match the page check.
-	 *
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
-	 *
 	 * @testWith ["woocommerce_blocks_enqueue_checkout_block_scripts_after", true]
 	 *           ["woocommerce_blocks_enqueue_cart_block_scripts_after", true]
 	 *           ["woocommerce_blocks_enqueue_checkout_block_scripts_after", false]
@@ -153,6 +167,7 @@ class WooPaymentsFraudPreventionServiceTest extends WC_Unit_Test_Case {
 		$sut = $this->create_service( $protection_on, $session );
 		$sut->register();
 		$this->go_to_page( '<!-- wp:paragraph --><p>Hello</p><!-- /wp:paragraph -->' );
+		$this->replace_page_surface( false, false );
 
 		$sut->maybe_enqueue_token_script();
 		$this->assertFalse( wp_script_is( WooPaymentsFraudPreventionService::TOKEN_NAME, 'enqueued' ), 'The page check must not match an ordinary page.' );
@@ -220,11 +235,6 @@ class WooPaymentsFraudPreventionServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should expose the token on the add payment method page only while protection is on.
 	 *
-	 * A separate process, because an earlier test can define WOOCOMMERCE_CHECKOUT, which would match the page without its add payment method term.
-	 *
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
-	 *
 	 * @testWith [true]
 	 *           [false]
 	 *
@@ -238,7 +248,7 @@ class WooPaymentsFraudPreventionServiceTest extends WC_Unit_Test_Case {
 		update_option( 'woocommerce_myaccount_page_id', $page_id );
 		$GLOBALS['wp']->query_vars['add-payment-method'] = '';
 		$this->assertTrue( is_add_payment_method_page() );
-		$this->assertFalse( is_checkout() );
+		$this->replace_page_surface( false, false );
 
 		$sut->maybe_enqueue_token_script();
 
@@ -250,7 +260,37 @@ class WooPaymentsFraudPreventionServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Visit a published page with the given content, with WooCommerce's cart and checkout page checks reset.
+	 * @testdox Should leave the token off a page that core's conditionals read as a $page but the page surface does not.
+	 *
+	 * Core's answer stands for an earlier test's WOOCOMMERCE_CART or WOOCOMMERCE_CHECKOUT, which stays defined for the rest
+	 * of the run, so only a page check read through the page surface leaves the token off.
+	 *
+	 * @testWith ["cart", "woocommerce_is_cart"]
+	 *           ["pay for order checkout", "woocommerce_is_checkout"]
+	 *
+	 * @param string $page   Page that core's conditionals read.
+	 * @param string $filter Core filter that makes them read it.
+	 */
+	public function test_page_check_reads_the_page_surface( string $page, string $filter ): void {
+		$session = $this->create_session();
+		$session->set( WooPaymentsFraudPreventionService::TOKEN_NAME, 'known-token' );
+		$sut = $this->create_service( true, $session );
+		add_filter( $filter, '__return_true' );
+		if ( 'cart' === $page ) {
+			$this->assertTrue( is_cart(), 'Precondition: core reads the page as a cart.' );
+		} else {
+			$_GET['pay_for_order'] = 'true';
+			$this->assertTrue( is_checkout(), 'Precondition: core reads the page as a checkout.' );
+		}
+		$this->replace_page_surface( false, false );
+
+		$sut->maybe_enqueue_token_script();
+
+		$this->assertFalse( wp_script_is( WooPaymentsFraudPreventionService::TOKEN_NAME, 'enqueued' ) );
+	}
+
+	/**
+	 * Visit a published page with the given content.
 	 *
 	 * @param string $content Page content.
 	 * @return int Page ID.
@@ -263,11 +303,6 @@ class WooPaymentsFraudPreventionServiceTest extends WC_Unit_Test_Case {
 				'post_content' => $content,
 			)
 		);
-		foreach ( array( 'is_cart_page', 'is_checkout_page' ) as $property_name ) {
-			$property = new \ReflectionProperty( CartCheckoutUtils::class, $property_name );
-			$property->setAccessible( true );
-			$property->setValue( null, null );
-		}
 		$this->go_to( get_permalink( $page_id ) );
 
 		return $page_id;
