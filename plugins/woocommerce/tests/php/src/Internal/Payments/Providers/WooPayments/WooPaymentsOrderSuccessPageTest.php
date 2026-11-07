@@ -17,6 +17,9 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTo
 use WC_Order;
 use WC_Unit_Test_Case;
 
+// Shadows sleep() in the provider namespace so the container-built page's re-check does not wait.
+require_once __DIR__ . '/Fixtures/functions-mock.php';
+
 /**
  * Tests for the WooPaymentsOrderSuccessPage class.
  */
@@ -934,7 +937,7 @@ class WooPaymentsOrderSuccessPageTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox The page the container builds re-checks a still-unpaid redirect-method order and shows the failure copy.
 	 *
-	 * The container-built page keeps the real one-second wait.
+	 * The container-built page keeps its wait, which the namespaced sleep() of Fixtures/functions-mock.php shadows.
 	 */
 	public function test_container_built_page_reports_a_failed_redirect_intent(): void {
 		// Client 11.1.0 shows the failure copy for requires_payment_method with a payment error
