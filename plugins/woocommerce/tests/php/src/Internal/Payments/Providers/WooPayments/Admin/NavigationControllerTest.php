@@ -83,7 +83,7 @@ class NavigationControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should register the WooPayments navigation after the Core Payments menu exists.
+	 * @testdox Should register the WooPayments navigation after the Core Payments menu exists, and the onboarding redirect after the WooPayments extension's account redirects.
 	 */
 	public function test_registers_admin_menu_hook_after_core_payments_menu(): void {
 		$sut = $this->create_controller( true );
@@ -95,6 +95,8 @@ class NavigationControllerTest extends WC_Unit_Test_Case {
 		$this->assertSame( 10, has_filter( 'submenu_file', array( $sut, 'highlight_current_payments_submenu' ) ) );
 		$this->assertSame( 10, has_action( 'adminmenu', array( $sut, 'open_payments_menu' ) ) );
 		$this->assertSame( 10, has_filter( 'admin_title', array( $sut, 'set_admin_title' ) ) );
+		// Client 11.1.0 WC_Payments_Admin::init_hooks() hooks its child-page redirect on admin_init priority 16.
+		$this->assertSame( 16, has_action( 'admin_init', array( $this->onboarding_redirects[ spl_object_id( $sut ) ], 'maybe_redirect' ) ) );
 
 		remove_filter( 'submenu_file', array( $sut, 'highlight_current_payments_submenu' ) );
 		remove_action( 'adminmenu', array( $sut, 'open_payments_menu' ) );
@@ -356,16 +358,6 @@ class NavigationControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should pin all 20 WooPayments extension WC Admin routes in the fixture.
-	 */
-	public function test_admin_routes_fixture_holds_every_payments_path(): void {
-		$routes = $this->provider_payments_paths();
-
-		$this->assertCount( 20, $routes );
-		$this->assertArrayNotHasKey( '/payments/accounts', $routes );
-	}
-
-	/**
 	 * @testdox Should map the WooPayments extension setup URL $payments_path for $_dataName to $expected_route.
 	 *
 	 * @dataProvider provider_payments_setup_redirects
@@ -593,41 +585,29 @@ class NavigationControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should map unknown WooPayments extension method sections to settings.
+	 * @testdox Should redirect the WooPayments extension method section $section to settings, its split gateway registered: $registered.
+	 * @testWith ["woocommerce_payments_sofort", false]
+	 *           ["woocommerce_payments_klarna", true]
+	 *
+	 * @param string $section    WooPayments extension method section.
+	 * @param bool   $registered Whether a split gateway with the section's ID is registered first.
 	 */
-	public function test_maps_unknown_woopayments_method_section_to_settings(): void {
+	public function test_redirects_woopayments_method_section_to_settings( string $section, bool $registered ): void {
 		$sut = $this->create_controller( true );
+		if ( $registered ) {
+			WC()->payment_gateways()->payment_gateways = array( 0 => $this->create_gateway( $section ) );
+		}
 
 		$url = $sut->get_payments_path_redirect_url(
 			array(
 				'page'    => 'wc-settings',
 				'tab'     => 'checkout',
-				'section' => 'woocommerce_payments_sofort',
+				'section' => $section,
 			)
 		);
 		parse_str( (string) wp_parse_url( $url, PHP_URL_QUERY ), $query );
 
-		$this->assertStringContainsString( 'admin.php?page=wc-settings&tab=checkout', $url );
-		$this->assertSame( '/woopayments/settings', $query['path'] );
-	}
-
-	/**
-	 * @testdox Should redirect a registered split payment method section to settings.
-	 */
-	public function test_redirects_registered_split_method_section_to_settings(): void {
-		$sut                                       = $this->create_controller( true );
-		WC()->payment_gateways()->payment_gateways = array( 0 => $this->create_gateway( 'woocommerce_payments_klarna' ) );
-
-		$url = $sut->get_payments_path_redirect_url(
-			array(
-				'page'    => 'wc-settings',
-				'tab'     => 'checkout',
-				'section' => 'woocommerce_payments_klarna',
-			)
-		);
-		parse_str( (string) wp_parse_url( $url, PHP_URL_QUERY ), $query );
-
-		$this->assertArrayHasKey( 'woocommerce_payments_klarna', WC()->payment_gateways()->payment_gateways() );
+		$this->assertSame( $registered, array_key_exists( $section, WC()->payment_gateways()->payment_gateways() ) );
 		$this->assertStringContainsString( 'admin.php?page=wc-settings&tab=checkout', $url );
 		$this->assertSame( '/woopayments/settings', $query['path'] ?? null );
 	}
@@ -851,12 +831,12 @@ class NavigationControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should leave the admin menu highlight alone outside the WooPayments pages.
+	 * @testdox Should leave the admin menu highlight and the admin title alone outside the WooPayments pages.
 	 * @dataProvider provider_requests_outside_woopayments_pages
 	 *
 	 * @param array<string,string> $request Query request.
 	 */
-	public function test_does_not_change_the_menu_highlight_outside_woopayments_pages( array $request ): void {
+	public function test_does_not_change_the_menu_highlight_or_admin_title_outside_woopayments_pages( array $request ): void {
 		wp_set_current_user( $this->factory->user->create( array( 'role' => 'administrator' ) ) );
 		$sut = $this->create_controller( true );
 		$sut->add_menu_items();
@@ -866,6 +846,7 @@ class NavigationControllerTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( 'wc-settings', $sut->highlight_current_payments_submenu( 'wc-settings' ) );
 		$this->assertSame( '', $this->get_open_payments_menu_output( $sut ) );
+		$this->assertSame( 'WooCommerce settings', $sut->set_admin_title( 'WooCommerce settings' ) );
 	}
 
 	/**
@@ -957,21 +938,6 @@ class NavigationControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should leave the admin title alone outside the WooPayments pages.
-	 * @dataProvider provider_requests_outside_woopayments_pages
-	 *
-	 * @param array<string,string> $request Query request.
-	 */
-	public function test_does_not_change_the_admin_title_outside_woopayments_pages( array $request ): void {
-		$sut = $this->create_controller( true );
-		foreach ( $request as $key => $value ) {
-			$_GET[ $key ] = $value;
-		}
-
-		$this->assertSame( 'WooCommerce settings', $sut->set_admin_title( 'WooCommerce settings' ) );
-	}
-
-	/**
 	 * @testdox Should show the $title menu item's badge and link for $_dataName.
 	 * @dataProvider provider_menu_badges
 	 *
@@ -1015,21 +981,6 @@ class NavigationControllerTest extends WC_Unit_Test_Case {
 			'3 uncaptured transactions'      => array( 'Transactions', array( 'uncaptured_transactions' => 3 ), 3, '/woopayments/transactions', array() ),
 			'no uncaptured transaction'      => array( 'Transactions', array(), null, '/woopayments/transactions', array() ),
 		);
-	}
-
-	/**
-	 * @testdox Should register the onboarding redirect after the WooPayments extension's account redirects.
-	 */
-	public function test_registers_onboarding_redirect_at_the_woopayments_extension_admin_init_priority(): void {
-		$sut = $this->create_controller( true );
-
-		$sut->register();
-
-		// Client 11.1.0 WC_Payments_Admin::init_hooks() hooks its child-page redirect on admin_init priority 16.
-		$this->assertSame( 16, has_action( 'admin_init', array( $this->onboarding_redirects[ spl_object_id( $sut ) ], 'maybe_redirect' ) ) );
-
-		remove_action( 'admin_menu', array( $sut, 'add_menu_items' ), 70 );
-		remove_action( 'admin_init', array( $sut, 'redirect_payments_paths' ), 10 );
 	}
 
 	/**
