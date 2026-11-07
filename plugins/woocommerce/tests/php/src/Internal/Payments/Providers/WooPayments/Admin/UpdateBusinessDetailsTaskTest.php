@@ -54,46 +54,42 @@ class UpdateBusinessDetailsTaskTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The task shows only for restricted-soon accounts with a deadline and restricted accounts with overdue requirements.
+	 * @testdox The task shows only to WooCommerce managers, for restricted-soon accounts with a deadline and restricted accounts with overdue requirements: $_dataName.
 	 * @dataProvider provide_visibility_cases
 	 *
 	 * @param array<string,mixed> $account  Cached account data.
 	 * @param bool                $expected Whether the task shows.
+	 * @param string              $role     Current user role.
 	 */
-	public function test_visibility_follows_the_task_conditions( array $account, bool $expected ): void {
+	public function test_visibility_follows_the_task_conditions( array $account, bool $expected, string $role ): void {
+		wp_set_current_user( $this->factory->user->create( array( 'role' => $role ) ) );
+
 		$this->assertSame( $expected, $this->create_task( $account )->can_view() );
 	}
 
 	/**
 	 * Visibility cases.
 	 *
-	 * @return array<string,array{0:array<string,mixed>,1:bool}>
+	 * @return array<string,array{0:array<string,mixed>,1:bool,2:string}>
 	 */
 	public function provide_visibility_cases(): array {
 		return array(
-			'restricted soon with a deadline'            => array( $this->account( 'restricted_soon', array( 'current_deadline' => self::DEADLINE ) ), true ),
-			'restricted soon without a deadline'         => array( $this->account( 'restricted_soon' ), false ),
-			'restricted with overdue requirements'       => array( $this->account( 'restricted', array( 'has_overdue_requirements' => true ) ), true ),
-			'restricted without overdue requirements'    => array( $this->account( 'restricted', array( 'current_deadline' => self::DEADLINE ) ), false ),
-			'complete'                                   => array( $this->account( 'complete', array( 'current_deadline' => self::DEADLINE ) ), false ),
+			'restricted soon with a deadline'            => array( $this->account( 'restricted_soon', array( 'current_deadline' => self::DEADLINE ) ), true, 'administrator' ),
+			'restricted soon without a deadline'         => array( $this->account( 'restricted_soon' ), false, 'administrator' ),
+			'restricted with overdue requirements'       => array( $this->account( 'restricted', array( 'has_overdue_requirements' => true ) ), true, 'administrator' ),
+			'restricted without overdue requirements'    => array( $this->account( 'restricted', array( 'current_deadline' => self::DEADLINE ) ), false, 'administrator' ),
+			'complete'                                   => array( $this->account( 'complete', array( 'current_deadline' => self::DEADLINE ) ), false, 'administrator' ),
 			'status data error without payments_enabled' => array(
 				array(
 					'status'                   => 'restricted',
 					'has_overdue_requirements' => true,
 				),
 				false,
+				'administrator',
 			),
-			'no account'                                 => array( array(), false ),
+			'no account'                                 => array( array(), false, 'administrator' ),
+			'restricted with overdue requirements, customer user' => array( $this->account( 'restricted', array( 'has_overdue_requirements' => true ) ), false, 'customer' ),
 		);
-	}
-
-	/**
-	 * @testdox The task is hidden from users who cannot manage WooCommerce.
-	 */
-	public function test_hidden_without_manage_woocommerce(): void {
-		wp_set_current_user( $this->factory->user->create( array( 'role' => 'customer' ) ) );
-
-		$this->assertFalse( $this->create_task( $this->account( 'restricted', array( 'has_overdue_requirements' => true ) ) )->can_view() );
 	}
 
 	/**
@@ -205,10 +201,10 @@ class UpdateBusinessDetailsTaskTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The Home task hook registers and adds the task to the extended list.
+	 * @testdox The Home task hook registers and adds the update business details task and the go-live task, each with the registrar's account service, to the extended list.
 	 */
-	public function test_registrar_adds_the_task_to_the_extended_list(): void {
-		$account_service = $this->create_account_service( $this->account( 'restricted', array( 'has_overdue_requirements' => true ) ) );
+	public function test_registrar_adds_the_business_details_and_go_live_tasks_to_the_extended_list(): void {
+		$account_service = $this->create_account_service( $this->account( 'restricted', array( 'has_overdue_requirements' => true ) ), true );
 
 		$sut = $this->create_registrar( $account_service );
 		$sut->register();
@@ -221,6 +217,10 @@ class UpdateBusinessDetailsTaskTest extends WC_Unit_Test_Case {
 		$json = $task->get_json();
 		$this->assertTrue( $json['canView'] );
 		$this->assertSame( 'Update WooPayments business details', $json['title'] );
+
+		$go_live = TaskLists::get_list( 'extended' )->get_task( GoLiveTask::ID );
+		$this->assertInstanceOf( GoLiveTask::class, $go_live );
+		$this->assertTrue( $go_live->get_json()['canView'], 'The go-live task reads test-mode onboarding from the registrar\'s account service.' );
 	}
 
 	/**
@@ -255,15 +255,17 @@ class UpdateBusinessDetailsTaskTest extends WC_Unit_Test_Case {
 	/**
 	 * Create an account service double.
 	 *
-	 * @param array<string,mixed> $account Cached account data.
+	 * @param array<string,mixed> $account              Cached account data.
+	 * @param bool                $test_mode_onboarding Whether WooPayments onboards in test mode (read by the go-live task).
 	 * @return WooPaymentsAccountService
 	 */
-	private function create_account_service( array $account ): WooPaymentsAccountService {
+	private function create_account_service( array $account, bool $test_mode_onboarding = false ): WooPaymentsAccountService {
 		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
 			->disableOriginalConstructor()
-			->onlyMethods( array( 'get_stored_account_data' ) )
+			->onlyMethods( array( 'get_stored_account_data', 'is_test_mode_onboarding_enabled' ) )
 			->getMock();
 		$account_service->method( 'get_stored_account_data' )->willReturn( $account );
+		$account_service->method( 'is_test_mode_onboarding_enabled' )->willReturn( $test_mode_onboarding );
 
 		return $account_service;
 	}

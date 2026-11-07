@@ -66,9 +66,9 @@ class CurrencyComplianceNoticeTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should warn managers about ISK stores with non-zero price decimals
+	 * @testdox Should warn managers about ISK stores with non-zero price decimals, and nobody without manage_woocommerce
 	 */
-	public function test_displays_isk_decimal_notice_only_for_misconfigured_isk_stores(): void {
+	public function test_displays_isk_decimal_notice_only_to_managers_of_misconfigured_isk_stores(): void {
 		wp_set_current_user( $this->factory->user->create( array( 'role' => 'administrator' ) ) );
 		update_option( 'woocommerce_currency', 'ISK' );
 		update_option( 'woocommerce_price_num_decimals', 2 );
@@ -88,17 +88,12 @@ class CurrencyComplianceNoticeTest extends WC_Unit_Test_Case {
 		update_option( 'woocommerce_price_num_decimals', 2 );
 
 		$this->assertSame( '', $this->render_notice( $service ), 'Non-ISK currencies never warn.' );
-	}
 
-	/**
-	 * @testdox Should not warn shoppers or users without store management capabilities
-	 */
-	public function test_does_not_display_notice_without_manage_woocommerce(): void {
-		wp_set_current_user( $this->factory->user->create( array( 'role' => 'customer' ) ) );
 		update_option( 'woocommerce_currency', 'ISK' );
 		update_option( 'woocommerce_price_num_decimals', 2 );
+		wp_set_current_user( $this->factory->user->create( array( 'role' => 'customer' ) ) );
 
-		$this->assertSame( '', $this->render_notice( $this->create_service() ) );
+		$this->assertSame( '', $this->render_notice( $service ), 'A misconfigured ISK store never warns a user without manage_woocommerce.' );
 	}
 
 	/**

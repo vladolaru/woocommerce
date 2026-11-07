@@ -4,13 +4,8 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Admin;
 
 use Automattic\WooCommerce\Admin\Features\OnboardingTasks\TaskList;
-use Automattic\WooCommerce\Admin\Features\OnboardingTasks\TaskLists;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAdminMenuBadgeService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\DisputesTask;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\GoLiveTask;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\HomeTasks;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\UpdateBusinessDetailsTask;
 use WC_Unit_Test_Case;
 
 /**
@@ -28,25 +23,6 @@ class GoLiveTaskTest extends WC_Unit_Test_Case {
 		parent::setUp();
 
 		wp_set_current_user( $this->factory->user->create( array( 'role' => 'administrator' ) ) );
-	}
-
-	/**
-	 * Tear down test fixtures.
-	 */
-	public function tearDown(): void {
-		$extended = TaskLists::get_list( 'extended' );
-		if ( null !== $extended ) {
-			$extended->tasks = array_values(
-				array_filter(
-					$extended->tasks,
-					static fn( $task ): bool => ! $task instanceof GoLiveTask
-						&& ! $task instanceof UpdateBusinessDetailsTask
-						&& ! $task instanceof DisputesTask
-				)
-			);
-		}
-
-		parent::tearDown();
 	}
 
 	/**
@@ -107,19 +83,6 @@ class GoLiveTaskTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The Home task registrar adds the go-live task to the extended list.
-	 */
-	public function test_registrar_adds_the_task_to_the_extended_list(): void {
-		$sut = $this->create_registrar( $this->create_account_service( array( 'account_id' => 'acct_test' ), true ) );
-
-		$sut->add_tasks();
-
-		$task = TaskLists::get_list( 'extended' )->get_task( GoLiveTask::ID );
-		$this->assertInstanceOf( GoLiveTask::class, $task );
-		$this->assertTrue( $task->get_json()['canView'] );
-	}
-
-	/**
 	 * Create the task over the given account data.
 	 *
 	 * @param array<string,mixed> $account              Cached account data.
@@ -146,18 +109,5 @@ class GoLiveTaskTest extends WC_Unit_Test_Case {
 		$account_service->method( 'is_test_mode_onboarding_enabled' )->willReturn( $test_mode_onboarding );
 
 		return $account_service;
-	}
-
-	/**
-	 * Create the Home task registrar.
-	 *
-	 * @param WooPaymentsAccountService $account_service Account service.
-	 * @return HomeTasks
-	 */
-	private function create_registrar( WooPaymentsAccountService $account_service ): HomeTasks {
-		$registrar = new HomeTasks();
-		$registrar->init( $account_service, $this->createMock( WooPaymentsAdminMenuBadgeService::class ) );
-
-		return $registrar;
 	}
 }

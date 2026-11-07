@@ -239,13 +239,14 @@ class SharedSettingsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should preload the account's default currency, which the Balance report requests.
+	 * @testdox Should preload the account's default currency, which the Balance report requests, and the REST root the settings page builds file URLs from.
 	 *
 	 * Source: plugin 11.1.0 `class-wc-payments-admin.php:1053` (`accountDefaultCurrency` in `wcpaySettings`), read by
 	 * `client/reports/balance/index.tsx:177`. The cached account's `store_currencies.default` follows the platform account
-	 * payload (wpcom `class-accounts-controller.php:1151-1153`).
+	 * payload (wpcom `class-accounts-controller.php:1151-1153`). `class-wc-payments-admin.php:1048` (`restUrl`, for stores on
+	 * Plain permalinks) is concatenated by `client/settings/express-checkout-settings/woopay-preview.js:428` for the store logo.
 	 */
-	public function test_preloads_account_default_currency_for_the_balance_report(): void {
+	public function test_preloads_account_default_currency_and_rest_url(): void {
 		$_GET['page'] = 'wc-settings';
 		$_GET['tab']  = 'checkout';
 		$sut          = $this->create_shared_settings(
@@ -260,7 +261,10 @@ class SharedSettingsTest extends WC_Unit_Test_Case {
 			)
 		);
 
-		$this->assertSame( 'pln', $sut->preload_shared_settings( array() )['woopaymentsSettings']['accountDefaultCurrency'] );
+		$settings = $sut->preload_shared_settings( array() )['woopaymentsSettings'];
+
+		$this->assertSame( 'pln', $settings['accountDefaultCurrency'] );
+		$this->assertSame( get_rest_url( null, '' ), $settings['restUrl'] );
 	}
 
 	/**
@@ -279,20 +283,6 @@ class SharedSettingsTest extends WC_Unit_Test_Case {
 		wp_set_current_user( self::factory()->user->create( array( 'user_email' => 'merchant@example.test' ) ) );
 
 		$this->assertSame( 'merchant@example.test', $sut->preload_shared_settings( array() )['woopaymentsSettings']['currentUserEmail'] );
-	}
-
-	/**
-	 * @testdox Should preload the REST root the settings page builds file URLs from.
-	 *
-	 * Source: plugin 11.1.0 `class-wc-payments-admin.php:1048` (`restUrl`, for stores on Plain permalinks), which
-	 * `client/settings/express-checkout-settings/woopay-preview.js:428` concatenates for the store logo.
-	 */
-	public function test_preloads_rest_url_for_file_urls(): void {
-		$_GET['page'] = 'wc-settings';
-		$_GET['tab']  = 'checkout';
-		$sut          = $this->create_shared_settings( true );
-
-		$this->assertSame( get_rest_url( null, '' ), $sut->preload_shared_settings( array() )['woopaymentsSettings']['restUrl'] );
 	}
 
 	/**

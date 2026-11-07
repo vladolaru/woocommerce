@@ -51,9 +51,9 @@ class NotesControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Registers the admin_init note hook when the built-in WooPayments owns the runtime.
+	 * @testdox Registers the admin notes on admin_init at priority 10.
 	 */
-	public function test_registers_admin_init_hook_when_builtin_owns_runtime(): void {
+	public function test_registers_the_admin_notes_on_admin_init(): void {
 		$this->sut->register();
 
 		$this->assertSame( 10, has_action( 'admin_init', array( $this->sut, 'add_woo_admin_notes' ) ) );
