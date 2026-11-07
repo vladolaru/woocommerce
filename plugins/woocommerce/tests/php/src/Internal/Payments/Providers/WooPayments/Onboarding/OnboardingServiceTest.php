@@ -252,7 +252,7 @@ class OnboardingServiceTest extends WC_Unit_Test_Case {
 		);
 
 		$this->onboarding_service = new OnboardingService();
-		$this->onboarding_service->init( $this->mockable_proxy, new PaymentMethodRegistry() );
+		$this->onboarding_service->init( $this->mockable_proxy, new PaymentMethodRegistry(), wc_get_container()->get( Client::class ), wc_get_container()->get( WooPaymentsAccountService::class ) );
 
 		$this->sut = new WooPaymentsService();
 		$this->init_sut(
@@ -301,16 +301,7 @@ class OnboardingServiceTest extends WC_Unit_Test_Case {
 		$this->sut->init( $providers, $proxy );
 
 		$onboarding_service = new OnboardingService();
-		$onboarding_service->init( $proxy, new PaymentMethodRegistry() );
-		$onboarding_collaborators = array(
-			'api_client'      => $api_client,
-			'account_service' => $account_service,
-		);
-		foreach ( $onboarding_collaborators as $property => $collaborator ) {
-			$reflection = new \ReflectionProperty( OnboardingService::class, $property );
-			$reflection->setAccessible( true );
-			$reflection->setValue( $onboarding_service, $collaborator );
-		}
+		$onboarding_service->init( $proxy, new PaymentMethodRegistry(), $api_client, $account_service );
 
 		$collaborators = array(
 			'settings_adapter'  => new DelegatingPaymentsSettingsAdapter( $settings_adapter, $api_client, $extension_runtime, $account_service, $onboarding_service ),
@@ -3431,6 +3422,30 @@ class OnboardingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox The onboarding service the container builds asks the platform through the container's API client.
+	 */
+	public function test_container_onboarding_service_asks_the_platform_through_the_container_api_client(): void {
+		$this->seed_recommended_payment_methods_cache( null );
+		$answer = array(
+			array(
+				'id'    => 'card',
+				'title' => 'Cards',
+			),
+		);
+		wc_get_container()->replace( Client::class, $this->create_recommendations_api_client( 1, $answer ) );
+		wc_get_container()->reset_all_resolved();
+
+		try {
+			$result = wc_get_container()->get( OnboardingService::class )->get_recommended_payment_methods( 'GB' );
+		} finally {
+			$this->reset_container_replacements();
+			wc_get_container()->reset_all_resolved();
+		}
+
+		$this->assertSame( array( 'card' ), array_column( $result, 'id' ) );
+	}
+
+	/**
 	 * @testdox A stored answer for the same country and locale is served without asking the platform.
 	 */
 	public function test_recommended_payment_methods_come_from_a_stored_entry(): void {
@@ -3699,15 +3714,7 @@ class OnboardingServiceTest extends WC_Unit_Test_Case {
 	 * @param Client $api_client The API client double.
 	 */
 	private function set_onboarding_collaborators( Client $api_client ): void {
-		$collaborators = array(
-			'api_client'      => $api_client,
-			'account_service' => $this->create_account_service(),
-		);
-		foreach ( $collaborators as $property => $collaborator ) {
-			$reflection = new \ReflectionProperty( OnboardingService::class, $property );
-			$reflection->setAccessible( true );
-			$reflection->setValue( $this->onboarding_service, $collaborator );
-		}
+		$this->onboarding_service->init( $this->mockable_proxy, new PaymentMethodRegistry(), $api_client, $this->create_account_service() );
 	}
 
 	/**

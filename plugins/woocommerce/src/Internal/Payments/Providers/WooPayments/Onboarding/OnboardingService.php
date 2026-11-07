@@ -56,16 +56,16 @@ class OnboardingService {
 	/**
 	 * The WooPayments API client.
 	 *
-	 * @var Client|null
+	 * @var Client
 	 */
-	private ?Client $api_client = null;
+	private Client $api_client;
 
 	/**
 	 * The WooPayments account service.
 	 *
-	 * @var WooPaymentsAccountService|null
+	 * @var WooPaymentsAccountService
 	 */
-	private ?WooPaymentsAccountService $account_service = null;
+	private WooPaymentsAccountService $account_service;
 
 	/**
 	 * The WooPayments payment method registry.
@@ -77,16 +77,18 @@ class OnboardingService {
 	/**
 	 * Initialize the class instance.
 	 *
-	 * The API client and the account service are resolved on first use.
-	 *
 	 * @internal
 	 *
-	 * @param LegacyProxy           $proxy                   The LegacyProxy instance.
-	 * @param PaymentMethodRegistry $payment_method_registry The WooPayments payment method registry.
+	 * @param LegacyProxy               $proxy                   The LegacyProxy instance.
+	 * @param PaymentMethodRegistry     $payment_method_registry The WooPayments payment method registry.
+	 * @param Client                    $api_client              The WooPayments API client.
+	 * @param WooPaymentsAccountService $account_service         The WooPayments account service.
 	 */
-	final public function init( LegacyProxy $proxy, PaymentMethodRegistry $payment_method_registry ): void {
+	final public function init( LegacyProxy $proxy, PaymentMethodRegistry $payment_method_registry, Client $api_client, WooPaymentsAccountService $account_service ): void {
 		$this->proxy                   = $proxy;
 		$this->payment_method_registry = $payment_method_registry;
+		$this->api_client              = $api_client;
+		$this->account_service         = $account_service;
 	}
 
 	/**
@@ -783,28 +785,20 @@ class OnboardingService {
 	}
 
 	/**
-	 * Get the WooPayments API client, resolved on first use.
+	 * Get the WooPayments API client.
 	 *
 	 * @return Client
 	 */
 	private function get_api_client(): Client {
-		if ( null === $this->api_client ) {
-			$this->api_client = wc_get_container()->get( Client::class );
-		}
-
 		return $this->api_client;
 	}
 
 	/**
-	 * Get the WooPayments account service, resolved on first use.
+	 * Get the WooPayments account service.
 	 *
 	 * @return WooPaymentsAccountService
 	 */
 	private function get_account_service(): WooPaymentsAccountService {
-		if ( null === $this->account_service ) {
-			$this->account_service = wc_get_container()->get( WooPaymentsAccountService::class );
-		}
-
 		return $this->account_service;
 	}
 

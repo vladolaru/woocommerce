@@ -277,16 +277,7 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 
 		if ( null === $onboarding_service ) {
 			$onboarding_service = new OnboardingService();
-			$onboarding_service->init( $proxy, new PaymentMethodRegistry() );
-			$onboarding_collaborators = array(
-				'api_client'      => $api_client,
-				'account_service' => $account_service,
-			);
-			foreach ( $onboarding_collaborators as $property => $collaborator ) {
-				$reflection = new \ReflectionProperty( OnboardingService::class, $property );
-				$reflection->setAccessible( true );
-				$reflection->setValue( $onboarding_service, $collaborator );
-			}
+			$onboarding_service->init( $proxy, new PaymentMethodRegistry(), $api_client, $account_service );
 		}
 
 		$collaborators = array(
