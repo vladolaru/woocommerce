@@ -2046,19 +2046,21 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	 *
 	 * @param string      $label        Case.
 	 * @param string      $stored_level Stored protection level before the save.
+	 * @param bool|null   $avs_before   Cached account AVS flag before the save, or null when the account has none.
 	 * @param string|null $cached       Cached ruleset (a level name or "custom"), or null for none.
 	 * @param string|null $platform     Platform ruleset (a level name), or a failure code.
 	 * @param string      $level        Requested protection level.
 	 * @param string      $submitted    Submitted advanced ruleset: "error", "avs", "custom", or "none" for an empty array.
 	 * @param string      $saved        Expected saved ruleset: a level name or "avs".
 	 */
-	public function test_update_settings_saves_the_requested_fraud_ruleset_without_reading_the_platform_first( string $label, string $stored_level, ?string $cached, ?string $platform, string $level, string $submitted, string $saved ): void {
+	public function test_update_settings_saves_the_requested_fraud_ruleset_without_reading_the_platform_first( string $label, string $stored_level, ?bool $avs_before, ?string $cached, ?string $platform, string $level, string $submitted, string $saved ): void {
 		unset( $label );
 		$this->set_connected_account_data();
-		// The cached account starts with the AVS flag on, so a save of a ruleset without the AVS rule must write it off.
-		$account                                      = get_option( 'wcpay_account_data' );
-		$account['data']['fraud_mitigation_settings'] = array( 'avs_check_enabled' => true );
-		update_option( 'wcpay_account_data', $account );
+		if ( null !== $avs_before ) {
+			$account                                      = get_option( 'wcpay_account_data' );
+			$account['data']['fraud_mitigation_settings'] = array( 'avs_check_enabled' => $avs_before );
+			update_option( 'wcpay_account_data', $account );
+		}
 		update_option( 'current_protection_level', $stored_level );
 		if ( null !== $cached ) {
 			set_transient( 'wcpay_fraud_protection_settings', $this->get_fraud_ruleset_case_fixture( $cached ), DAY_IN_SECONDS );
@@ -2087,26 +2089,28 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( $expected, $this->api_client->last_fraud_ruleset );
 		$this->assertSame( $expected, get_transient( 'wcpay_fraud_protection_settings' ) );
 		$this->assertSame( $level, get_option( 'current_protection_level' ) );
-		$this->assertSame( 'avs' === $saved, $cached_account['data']['fraud_mitigation_settings']['avs_check_enabled'], 'A save of a ruleset without the AVS rule must overwrite the cached true.' );
+		$this->assertSame( 'avs' === $saved, $cached_account['data']['fraud_mitigation_settings']['avs_check_enabled'], 'The cached AVS flag must follow the saved ruleset, whatever it was before.' );
 		$this->assertSame( $level, $result['current_protection_level'] );
 	}
 
 	/**
-	 * Fraud ruleset saves: stored level, cached ruleset, platform ruleset, request and the ruleset the platform must receive.
+	 * Fraud ruleset saves: stored level, cached AVS flag, cached ruleset, platform ruleset, request and the ruleset the
+	 * platform must receive. The preset rows start with the AVS flag on, so each proves the save writes it off; the AVS
+	 * row starts with no flag, so it proves the save turns it on.
 	 *
-	 * @return array<string,array{0:string,1:string,2:string|null,3:string|null,4:string,5:string,6:string}>
+	 * @return array<string,array{0:string,1:string,2:bool|null,3:string|null,4:string|null,5:string,6:string,7:string}>
 	 */
 	public function provide_fraud_ruleset_saves(): array {
 		return array(
-			'platform holds another'                  => array( 'no cached ruleset and another one on the platform', 'standard', null, 'standard', 'high', 'none', 'high' ),
-			'platform holds the requested'            => array( 'no cached ruleset and the requested one on the platform', 'standard', null, 'standard', 'standard', 'none', 'standard' ),
-			'platform has none'                       => array( 'no cached ruleset and none on the platform', 'standard', null, 'wcpay_fraud_ruleset_not_found', 'standard', 'none', 'standard' ),
-			'platform read fails'                     => array( 'no cached ruleset and a failing platform read', 'standard', null, 'wcpay_server_error', 'standard', 'none', 'standard' ),
-			'advanced with AVS'                       => array( 'no cached ruleset and an advanced ruleset holding the AVS rule', 'standard', null, 'standard', 'advanced', 'avs', 'avs' ),
-			'cache holds the requested'               => array( 'the requested ruleset already cached', 'standard', 'standard', null, 'standard', 'none', 'standard' ),
-			'error sentinel, unchanged level'         => array( 'the error sentinel and the stored level', 'standard', null, 'wcpay_server_error', 'standard', 'error', 'standard' ),
-			'error sentinel, step-down from advanced' => array( 'the error sentinel, stepping down from advanced', 'advanced', null, 'wcpay_server_error', 'standard', 'error', 'standard' ),
-			'stale advanced rules under a preset'     => array( 'the stale advanced rules submitted, stepping down from advanced', 'advanced', 'custom', null, 'standard', 'custom', 'standard' ),
+			'platform holds another'                  => array( 'no cached ruleset and another one on the platform', 'standard', true, null, 'standard', 'high', 'none', 'high' ),
+			'platform holds the requested'            => array( 'no cached ruleset and the requested one on the platform', 'standard', true, null, 'standard', 'standard', 'none', 'standard' ),
+			'platform has none'                       => array( 'no cached ruleset and none on the platform', 'standard', true, null, 'wcpay_fraud_ruleset_not_found', 'standard', 'none', 'standard' ),
+			'platform read fails'                     => array( 'no cached ruleset and a failing platform read', 'standard', true, null, 'wcpay_server_error', 'standard', 'none', 'standard' ),
+			'advanced with AVS'                       => array( 'no cached ruleset and an advanced ruleset holding the AVS rule', 'standard', null, null, 'standard', 'advanced', 'avs', 'avs' ),
+			'cache holds the requested'               => array( 'the requested ruleset already cached', 'standard', true, 'standard', null, 'standard', 'none', 'standard' ),
+			'error sentinel, unchanged level'         => array( 'the error sentinel and the stored level', 'standard', true, null, 'wcpay_server_error', 'standard', 'error', 'standard' ),
+			'error sentinel, step-down from advanced' => array( 'the error sentinel, stepping down from advanced', 'advanced', true, null, 'wcpay_server_error', 'standard', 'error', 'standard' ),
+			'stale advanced rules under a preset'     => array( 'the stale advanced rules submitted, stepping down from advanced', 'advanced', true, 'custom', null, 'standard', 'custom', 'standard' ),
 		);
 	}
 

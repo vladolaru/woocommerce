@@ -597,7 +597,7 @@ class WooPaymentsStoreSetupReportControllerTest extends WC_Unit_Test_Case {
 	 * which holds Amazon Pay only while its feature is on (`includes/payment-methods/Configs/Registry/PaymentMethodDefinitionRegistry.php:102-105`).
 	 * A domestic-only method requires the account's domestic currency, the currency of the account's country, not the account's default currency (`:71`, `:81`).
 	 *
-	 * @testdox Should auto-enable the currencies a newly enabled payment method requires, and none while the Multi-Currency flag is off: $_dataName.
+	 * @testdox Should auto-enable the currencies a newly enabled payment method requires and keep the listed others disabled, or write no enabled currencies while the Multi-Currency flag is off: $_dataName.
 	 * @dataProvider provider_settings_save_currency_auto_add
 	 *
 	 * @param array<string,string> $feature_flags        Feature flag options to write.
@@ -607,8 +607,9 @@ class WooPaymentsStoreSetupReportControllerTest extends WC_Unit_Test_Case {
 	 * @param string               $method               Payment method enabled beside card.
 	 * @param string[]             $expected_enabled     Currencies that must be enabled after the save.
 	 * @param string[]             $expected_not_enabled Currencies that must not be enabled after the save.
+	 * @param bool                 $writes_currencies    Whether the save writes the enabled-currencies option at all.
 	 */
-	public function test_settings_save_auto_adds_the_currencies_a_method_requires( array $feature_flags, string $country, string $default_currency, array $rates, string $method, array $expected_enabled, array $expected_not_enabled ): void {
+	public function test_settings_save_auto_adds_the_currencies_a_method_requires( array $feature_flags, string $country, string $default_currency, array $rates, string $method, array $expected_enabled, array $expected_not_enabled, bool $writes_currencies ): void {
 		update_option( '_wcpay_feature_customer_multi_currency', '1' );
 		foreach ( $feature_flags as $option => $value ) {
 			update_option( $option, $value );
@@ -639,27 +640,30 @@ class WooPaymentsStoreSetupReportControllerTest extends WC_Unit_Test_Case {
 		);
 		$service         = $this->create_service( new RecordingActionSchedulerService(), null, $account_service );
 		$service->register();
+		$option_before = get_option( 'wcpay_multi_currency_enabled_currencies', null );
 
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'upe_enabled_payment_method_ids' => array( 'card', $method ) ) );
 
-		// A save that needs no currency leaves the option unwritten.
-		$enabled_currencies = get_option( 'wcpay_multi_currency_enabled_currencies', array() );
+		$option_after       = get_option( 'wcpay_multi_currency_enabled_currencies', null );
+		$enabled_currencies = is_array( $option_after ) ? $option_after : array();
+		$this->assertSame( $writes_currencies, $option_before !== $option_after, 'Only a save that enables a required currency writes the enabled-currencies option.' );
 		$this->assertSame( $expected_enabled, array_values( array_intersect( $expected_enabled, $enabled_currencies ) ), 'The method\'s required currencies must be auto-enabled.' );
 		$this->assertSame( array(), array_values( array_intersect( $expected_not_enabled, $enabled_currencies ) ), 'A currency the method does not require must stay disabled.' );
 	}
 
 	/**
-	 * Accounts and newly enabled methods, with the currencies the save should and should not enable.
+	 * Accounts and newly enabled methods, with the currencies the save should and should not enable, and whether it
+	 * writes the enabled-currencies option.
 	 *
-	 * @return array<string,array{array<string,string>,string,string,array<string,float>,string,string[],string[]}>
+	 * @return array<string,array{array<string,string>,string,string,array<string,float>,string,string[],string[],bool}>
 	 */
 	public static function provider_settings_save_currency_auto_add(): array {
 		return array(
-			'iDEAL on a US account'                     => array( array(), 'US', 'usd', array( 'eur' => 0.9 ), 'ideal', array( 'EUR' ), array() ),
+			'iDEAL on a US account'                     => array( array(), 'US', 'usd', array( 'eur' => 0.9 ), 'ideal', array( 'EUR' ), array(), true ),
 			// The extension's Multi-Currency flag off leaves the enabled currencies untouched.
-			'Multi-Currency flag off'                   => array( array( '_wcpay_feature_customer_multi_currency' => '0' ), 'US', 'usd', array( 'eur' => 0.9 ), 'ideal', array(), array( 'EUR' ) ),
+			'Multi-Currency flag off'                   => array( array( '_wcpay_feature_customer_multi_currency' => '0' ), 'US', 'usd', array( 'eur' => 0.9 ), 'ideal', array(), array( 'EUR' ), false ),
 			// Amazon Pay's supported currencies on a GB account include EUR (client 11.1.0 `includes/payment-methods/Configs/Definitions/AmazonPayDefinition.php:106-128`).
-			'Amazon Pay on a GB account'                => array( array(), 'GB', 'gbp', array( 'eur' => 0.9 ), 'amazon_pay', array( 'EUR' ), array() ),
+			'Amazon Pay on a GB account'                => array( array(), 'GB', 'gbp', array( 'eur' => 0.9 ), 'amazon_pay', array( 'EUR' ), array(), true ),
 			'Affirm on a CA account with a EUR default' => array(
 				array(),
 				'CA',
@@ -671,6 +675,7 @@ class WooPaymentsStoreSetupReportControllerTest extends WC_Unit_Test_Case {
 				'affirm',
 				array( 'CAD' ),
 				array( 'EUR' ),
+				true,
 			),
 		);
 	}
