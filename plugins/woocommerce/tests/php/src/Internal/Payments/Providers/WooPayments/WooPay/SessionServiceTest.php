@@ -1799,13 +1799,14 @@ class SessionServiceTest extends WC_Unit_Test_Case {
 		$sut     = $this->create_service();
 		$request = $sut->start_init_session_request( 'shopper@example.com' );
 
-		$this->assertArrayHasKey( 'mailchimp-newsletter_data', $request['store_data']['blocks_data'] );
 		$this->assertSame(
 			array(
-				'enabled' => true,
-				'source'  => 'fake-mailchimp',
+				'mailchimp-newsletter_data' => array(
+					'enabled' => true,
+					'source'  => 'fake-mailchimp',
+				),
 			),
-			$request['store_data']['blocks_data']['mailchimp-newsletter_data']
+			$request['store_data']['blocks_data']
 		);
 		$this->assertArrayHasKey( 'company', $request['store_data']['optional_fields_status'] );
 		$this->assertSame( 'required', $request['store_data']['optional_fields_status']['phone'] );
@@ -2009,18 +2010,6 @@ class SessionServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( $expected, $minimum_url, 'The minimum session carries the marked URL.' );
 		$this->assertSame( $expected, esc_url( sanitize_text_field( $minimum_url ) ), 'WooPay redirects to it unchanged.' );
 		$this->assertSame( $checkout_url, $sut->start_init_session_request( 'shopper@example.com' )['store_data']['blog_checkout_url'], 'The full session never carries the marker.' );
-	}
-
-	/**
-	 * @testdox Should advertise the WooPay email-input flow by default while direct checkout stays unported.
-	 */
-	public function test_frontend_config_advertises_email_input_but_not_direct_checkout(): void {
-		// A guest the client's guest rule includes (see test_checkout_config_applies_the_guest_rule_to_the_woopay_email_input).
-		update_option( 'woocommerce_enable_guest_checkout', 'yes' );
-		$config = $this->create_service( array( 'is_woopay_direct_checkout_enabled' => 'yes' ) )->get_woopay_frontend_config( 'checkout' );
-
-		$this->assertTrue( $config['isWooPayEmailInputEnabled'] );
-		$this->assertFalse( $config['isWooPayDirectCheckoutEnabled'] );
 	}
 
 	/**

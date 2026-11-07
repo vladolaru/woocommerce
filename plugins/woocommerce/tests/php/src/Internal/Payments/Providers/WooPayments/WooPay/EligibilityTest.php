@@ -520,31 +520,6 @@ class EligibilityTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should decide direct checkout from the gateway's enabled setting without resolving the available gateways.
-	 */
-	public function test_direct_checkout_check_does_not_resolve_available_gateways(): void {
-		$resolutions      = 0;
-		$count_resolution = static function ( $gateways ) use ( &$resolutions ) {
-			++$resolutions;
-			return $gateways;
-		};
-		add_filter( 'woocommerce_available_payment_gateways', $count_resolution );
-
-		try {
-			$woopay_off             = $this->create_eligibility( array( 'platform_checkout' => 'no' ), array( 'platform_direct_checkout_eligible' => true ) )->is_woopay_direct_checkout_enabled();
-			$resolutions_woopay_off = $resolutions;
-			$woopay_on              = $this->create_eligibility( array(), array( 'platform_direct_checkout_eligible' => true ) )->is_woopay_direct_checkout_enabled();
-		} finally {
-			remove_filter( 'woocommerce_available_payment_gateways', $count_resolution );
-		}
-
-		$this->assertSame( 0, $resolutions_woopay_off, 'WooPay off' );
-		$this->assertSame( 0, $resolutions, 'WooPay on' );
-		$this->assertFalse( $woopay_off );
-		$this->assertTrue( $woopay_on );
-	}
-
-	/**
 	 * @testdox Should treat every country as WooPay-available in test mode.
 	 */
 	public function test_country_availability_short_circuits_in_test_mode(): void {

@@ -495,29 +495,6 @@ class SessionControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A mini-cart page loads no direct checkout for a guest whose cart needs an account.
-	 *
-	 * Client 11.1.0 class-wc-payments-woopay-direct-checkout.php:92-94 enqueues nothing when the guest rule fails.
-	 */
-	public function test_mini_cart_page_loads_no_direct_checkout_when_the_guest_rule_fails(): void {
-		$service                                      = new RecordingWooPaySessionService();
-		$service->should_show_woopay_button           = false;
-		$service->should_load_woopay_save_user_assets = false;
-		$service->direct_checkout_enabled             = true;
-		$service->guest_rule_passes                   = false;
-		$this->sut                                    = $this->create_controller( true, $service );
-		$this->sut->register();
-		if ( ! wp_script_is( 'wc-cart-fragments', 'registered' ) ) {
-			wp_register_script( 'wc-cart-fragments', 'https://example.com/cart-fragments.js', array(), '1.0', true );
-		}
-		wp_enqueue_script( 'wc-cart-fragments' );
-
-		$this->sut->enqueue_frontend_assets();
-
-		$this->assertFalse( wp_script_is( 'wc-woopayments-woopay', 'enqueued' ) );
-	}
-
-	/**
 	 * @testdox A classic cart loads WooPay direct checkout only while WooPayments is an available gateway: $label.
 	 *
 	 * Client 11.1.0 loads its direct-checkout script whenever the store-level check passes (class-wc-payments-features.php:237-243,

@@ -36,31 +36,6 @@ class BlocksDataExtractorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Blocks data extractor returns data from supported checkout block integrations.
-	 *
-	 * A separate process: the extension class alias lives for the whole PHP process, and later WooPay tests must not see
-	 * the extension as active.
-	 *
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
-	 */
-	public function test_get_data_extracts_supported_checkout_block_script_data(): void {
-		$this->register_fake_mailchimp_blocks_integration();
-
-		$extractor = new BlocksDataExtractor();
-
-		$this->assertSame(
-			array(
-				'mailchimp-newsletter_data' => array(
-					'enabled' => true,
-					'source'  => 'fake-mailchimp',
-				),
-			),
-			$extractor->get_data()
-		);
-	}
-
-	/**
 	 * @testdox Blocks data extractor maps an unmigrated Checkout block's field attributes to WooPay field status through the checkout field settings.
 	 */
 	public function test_get_optional_fields_status_reads_checkout_block_attrs(): void {
@@ -137,14 +112,5 @@ class BlocksDataExtractorTest extends WC_Unit_Test_Case {
 			'company set to Required, block with old attributes' => array( '<!-- wp:woocommerce/checkout {"showCompanyField":true} -->', $settings( 'required', 'optional', 'optional' ), $expected( 'required', 'optional', 'optional' ) ),
 			'address line 2 set to Required' => array( '<!-- wp:woocommerce/checkout -->', $settings( 'hidden', 'required', 'optional' ), $expected( 'hidden', 'required', 'optional' ) ),
 		);
-	}
-
-	/**
-	 * Register fake Mailchimp blocks integration class.
-	 */
-	private function register_fake_mailchimp_blocks_integration(): void {
-		if ( ! class_exists( '\Mailchimp_Woocommerce_Newsletter_Blocks_Integration', false ) ) {
-			class_alias( FakeWooPayMailchimpBlocksIntegration::class, 'Mailchimp_Woocommerce_Newsletter_Blocks_Integration' );
-		}
 	}
 }

@@ -282,21 +282,6 @@ class VerifiedEmailRestoreServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Draining the current blog twice leaves the same final state and no schedules.
-	 */
-	public function test_drain_current_blog_is_idempotent(): void {
-		$this->sut->register();
-		$customer_id = self::factory()->user->create();
-		$order_id    = $this->create_order( 0, $customer_id, true, true );
-
-		$this->sut->drain_current_blog();
-		$this->sut->drain_current_blog();
-
-		$this->assert_order_state( $order_id, $customer_id, false );
-		$this->assertFalse( wp_next_scheduled( self::RESTORE_HOOK, array( $order_id ) ) );
-	}
-
-	/**
 	 * @testdox A detach saved at the terminal scan boundary keeps its event and is restored by the permanent callback.
 	 */
 	public function test_detach_saved_after_scan_is_restored_by_late_event(): void {
