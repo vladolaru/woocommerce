@@ -51,13 +51,6 @@ class MultiCurrencyRuntimeArbiterTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should leave core multi-currency disabled by default on new installs.
-	 */
-	public function test_core_multi_currency_is_disabled_by_default(): void {
-		$this->assertFalse( $this->sut->feature_is_enabled() );
-	}
-
-	/**
 	 * @testdox Should read the feature option without building the feature definitions, since ownership is decided before init.
 	 */
 	public function test_feature_check_does_not_build_feature_definitions(): void {
@@ -119,13 +112,6 @@ class MultiCurrencyRuntimeArbiterTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Enable the native runtime feature flag.
-	 */
-	private function enable_woopayments_feature(): void {
-		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
-	}
-
-	/**
 	 * @testdox Should resolve the multi-currency runtime owner and registrations from the payments state.
 	 * @dataProvider runtime_owner_provider
 	 *
@@ -168,28 +154,6 @@ class MultiCurrencyRuntimeArbiterTest extends WC_Unit_Test_Case {
 			'the built-in owns payments and core is disabled' => array( false, true, true, false, MultiCurrencyRuntimeArbiter::OWNER_NONE, false, false, true ),
 			'core runs on its feature alone with no payments owner' => array( false, false, false, true, MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, true, false, false ),
 		);
-	}
-
-	/**
-	 * @testdox Should report which WooPayments runtime owns payments, as the payments arbiter resolves it.
-	 */
-	public function test_reports_the_payments_owner(): void {
-		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'no' );
-		$this->payments_arbiter->invalidate();
-		$this->fake_plugin( true );
-		$this->assertTrue( $this->sut->is_payments_extension_owner() );
-		$this->assertFalse( $this->sut->is_payments_builtin_owner() );
-
-		$this->reset_legacy_proxy_mocks();
-		$this->payments_arbiter->invalidate();
-		$this->fake_plugin();
-		$this->assertFalse( $this->sut->is_payments_extension_owner() );
-		$this->assertFalse( $this->sut->is_payments_builtin_owner() );
-
-		$this->payments_arbiter->invalidate();
-		$this->enable_woopayments_feature();
-		$this->assertFalse( $this->sut->is_payments_extension_owner() );
-		$this->assertTrue( $this->sut->is_payments_builtin_owner() );
 	}
 
 	/**

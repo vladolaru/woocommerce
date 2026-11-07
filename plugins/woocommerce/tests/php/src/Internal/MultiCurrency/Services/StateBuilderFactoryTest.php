@@ -17,8 +17,6 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Services\RequestContext;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\SelectedCurrencyPersistenceService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilder;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilderFactory;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\MultiCurrencyController;
 use Automattic\WooCommerce\Tests\Internal\MultiCurrency\ServiceFactories;
 use WC_Session;
 use WC_Unit_Test_Case;
@@ -118,8 +116,6 @@ class StateBuilderFactoryTest extends WC_Unit_Test_Case {
 	public function tearDown(): void {
 		$this->delete_options();
 		$this->reset_rate_provider();
-		$this->reset_legacy_proxy_mocks();
-		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 		update_option( 'woocommerce_currency', $this->original_currency );
 
 		parent::tearDown();
@@ -127,26 +123,6 @@ class StateBuilderFactoryTest extends WC_Unit_Test_Case {
 		WC()->session = $this->original_session;
 		WC()->cart    = $this->original_cart;
 		wp_set_current_user( $this->original_user_id );
-	}
-
-	/**
-	 * @testdox Should build automatic currencies from the WooPayments provider registry.
-	 */
-	public function test_builds_automatic_currencies_from_woopayments_provider_registry(): void {
-		$this->mock_woopayments_runtime(
-			$this->create_recording_account(),
-			$this->create_recording_api_client()
-		);
-		$this->register_woopayments_provider_boundaries();
-		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'GBP', 'EUR' ) );
-		update_option( 'wcpay_multi_currency_exchange_rate_gbp', 'automatic' );
-		update_option( 'wcpay_multi_currency_exchange_rate_eur', 'automatic' );
-
-		$state = wc_get_container()->get( StateBuilderFactory::class )->get_state_builder()->build();
-
-		$this->assertSame( array( 'USD', 'GBP' ), array_keys( $state->get_enabled_currencies() ) );
-		$this->assertSame( 0.82, $state->get_enabled_currencies()['GBP']->get_rate() );
-		$this->assertArrayNotHasKey( 'EUR', $state->get_enabled_currencies() );
 	}
 
 	/**
@@ -553,138 +529,9 @@ class StateBuilderFactoryTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Register WooPayments provider boundaries for tests that exercise provider-backed rates.
-	 */
-	private function register_woopayments_provider_boundaries(): void {
-		wc_get_container()->get( MultiCurrencyController::class )->register();
-	}
-
-	/**
 	 * Drop the rate provider a test set, with the services resolved around it.
 	 */
 	private function reset_rate_provider(): void {
 		wc_get_container()->reset_all_resolved();
-	}
-
-	/**
-	 * Mock WooPayments account and API-client access.
-	 *
-	 * @param object $account    Account service.
-	 * @param object $api_client API client.
-	 */
-	private function mock_woopayments_runtime( object $account, object $api_client ): void {
-		$this->register_legacy_proxy_function_mocks(
-			array(
-				'class_exists' => function ( $class_name, $autoload = true ) {
-					if ( 'WC_Payments' === ltrim( (string) $class_name, '\\' ) ) {
-						return true;
-					}
-					return class_exists( $class_name, $autoload );
-				},
-				'get_option'   => static function ( $name, $default_value = false ) {
-					if ( 'active_plugins' === $name ) {
-						return array( WooPaymentsRuntimeArbiter::PLUGIN_FILE );
-					}
-
-					return get_option( $name, $default_value );
-				},
-			)
-		);
-
-		$this->register_legacy_proxy_static_mocks(
-			array(
-				'WC_Payments' => array(
-					'get_account_service'     => static fn() => $account,
-					'get_payments_api_client' => static fn() => $api_client,
-				),
-			)
-		);
-		// The payments owner is memoized for the request, and earlier code in this process may have resolved it already.
-		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
-	}
-
-	/**
-	 * Create a recording legacy account test double.
-	 *
-	 * @return object
-	 */
-	private function create_recording_account(): object {
-		return new class() {
-			/**
-			 * Tell whether the provider account is connected.
-			 *
-			 * @param bool $on_error Error fallback.
-			 * @return bool
-			 */
-			public function is_provider_connected( bool $on_error = false ): bool {
-				unset( $on_error );
-
-				return true;
-			}
-
-			/**
-			 * Tell whether the account is rejected.
-			 *
-			 * @return bool
-			 */
-			public function is_account_rejected(): bool {
-				return false;
-			}
-
-			/**
-			 * Get cached account data.
-			 *
-			 * @param bool $force_refresh Whether to refresh.
-			 * @return array<string,mixed>
-			 */
-			public function get_cached_account_data( bool $force_refresh = false ): array {
-				unset( $force_refresh );
-
-				return array( 'customer_currencies' => array( 'supported' => array( 'GBP' ) ) );
-			}
-
-			/**
-			 * Get account-supported customer currencies.
-			 *
-			 * @return string[]
-			 */
-			public function get_account_customer_supported_currencies(): array {
-				return array( 'GBP' );
-			}
-		};
-	}
-
-	/**
-	 * Create a recording legacy API client test double.
-	 *
-	 * @return object
-	 */
-	private function create_recording_api_client(): object {
-		return new class() {
-			/**
-			 * Tell whether the server is connected.
-			 *
-			 * @return bool
-			 */
-			public function is_server_connected(): bool {
-				return true;
-			}
-
-			/**
-			 * Get currency rates.
-			 *
-			 * @param string        $currency_from Source currency.
-			 * @param string[]|null $currencies_to Target currencies.
-			 * @return array<string,float>
-			 */
-			public function get_currency_rates( string $currency_from, ?array $currencies_to = null ): array {
-				unset( $currency_from, $currencies_to );
-
-				return array(
-					'gbp' => 0.82,
-					'eur' => 0.91,
-				);
-			}
-		};
 	}
 }

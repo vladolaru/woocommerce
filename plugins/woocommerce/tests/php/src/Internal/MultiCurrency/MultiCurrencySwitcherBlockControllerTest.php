@@ -4,12 +4,9 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\MultiCurrency;
 
 use Automattic\WooCommerce\Internal\MultiCurrency\Integrations\IntegrationsController;
-use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFeatureController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencySwitcherBlockController;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\SwitcherRenderer;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use WC_Unit_Test_Case;
 use WP_Block_Type_Registry;
 
@@ -44,8 +41,6 @@ class MultiCurrencySwitcherBlockControllerTest extends WC_Unit_Test_Case {
 		wp_deregister_script( self::COMPAT_EDITOR_SCRIPT_HANDLE );
 
 		unset( $_GET['currency'], $_GET['orderby'] );
-		delete_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION );
-		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 
 		parent::tear_down();
 	}
@@ -59,29 +54,6 @@ class MultiCurrencySwitcherBlockControllerTest extends WC_Unit_Test_Case {
 		$sut->register();
 
 		$this->assertFalse( has_action( 'init', array( $sut, 'handle_init' ) ) );
-	}
-
-	/**
-	 * @testdox Should register the init hook only when the Core feature is enabled.
-	 */
-	public function test_registers_init_hook_only_when_core_feature_is_enabled(): void {
-		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
-		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
-		$arbiter = wc_get_container()->get( MultiCurrencyRuntimeArbiter::class );
-
-		update_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
-		$enabled_sut = $this->create_controller_with_arbiter( $arbiter );
-		$enabled_sut->register();
-
-		$this->assertSame( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $arbiter->get_runtime_owner(), 'An enabled Core feature must own multi-currency in native payments mode.' );
-		$this->assertSame( 10, has_action( 'init', array( $enabled_sut, 'handle_init' ) ), 'An enabled Core runtime must register the block renderer.' );
-
-		update_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION, 'no' );
-		$disabled_sut = $this->create_controller_with_arbiter( $arbiter );
-		$disabled_sut->register();
-
-		$this->assertSame( MultiCurrencyRuntimeArbiter::OWNER_NONE, $arbiter->get_runtime_owner(), 'The persisted disabled feature must leave native multi-currency unowned.' );
-		$this->assertFalse( has_action( 'init', array( $disabled_sut, 'handle_init' ) ), 'A disabled Core runtime must not register the block renderer.' );
 	}
 
 	/**

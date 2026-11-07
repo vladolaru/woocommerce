@@ -37,6 +37,11 @@ use WC_Unit_Test_Case;
 /** Tests for MultiCurrencyBootstrap. */
 class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 
+	/** Test-local payments-owner labels the module-arbiter double answers by: the WooPayments extension, the built-in runtime, nobody. */
+	private const PAYMENTS_EXTENSION = 'extension';
+	private const PAYMENTS_BUILTIN   = 'builtin';
+	private const PAYMENTS_NONE      = 'none';
+
 	/** All roots formerly registered by the core-owned bootstrap. */
 	private const CORE_ROOTS = array(
 		'Automattic\\WooCommerce\\Internal\\MultiCurrency\\MultiCurrencyStoreCurrencyLifecycleController',
@@ -82,6 +87,7 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 		unset( $GLOBALS['wcs_subscription'], $GLOBALS['wcs_subscription_loads'] );
 		Constants::clear_single_constant( 'WP_CLI' );
 		set_current_screen( 'front' );
+		wc_get_container()->reset_all_replacements();
 		wc_get_container()->reset_all_resolved();
 		parent::tearDown();
 	}
@@ -205,7 +211,7 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 	 * @param bool   $watched       Whether carts are watched.
 	 */
 	public function test_watches_carts_only_on_a_single_currency_store_with_subscriptions( bool $subscriptions, bool $configured, string $request, bool $watched ): void {
-		$this->enable_core_multi_currency( $configured );
+		$this->give_multi_currency_to_core( $configured );
 		$this->register_legacy_proxy_function_mocks(
 			array(
 				'class_exists' => static fn( string $class_name, bool $autoload = true ): bool => 'WC_Subscriptions' === $class_name ? $subscriptions : class_exists( $class_name, $autoload ),
@@ -272,7 +278,7 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 
 	/** @testdox Should arm the Multi-Currency handover on a request the WooPayments plugin owns. */
 	public function test_extension_owned_request_arms_the_handover(): void {
-		$this->register_for_payments_owner( WooPaymentsRuntimeArbiter::OWNER_EXTENSION );
+		$this->register_for_payments_owner( self::PAYMENTS_EXTENSION );
 
 		$this->assertSame( MultiCurrencyFeatureController::LAST_PAYMENTS_OWNER_EXTENSION, get_option( MultiCurrencyFeatureController::LAST_PAYMENTS_OWNER_OPTION ) );
 		$this->assertArrayHasKey( MultiCurrencyFeatureController::LAST_PAYMENTS_OWNER_OPTION, wp_load_alloptions(), 'Every request reads the marker, so it is autoloaded.' );
@@ -280,13 +286,13 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 
 	/** @testdox Should hand the plugin's Multi-Currency state over on the first native-owned request, before the arbiter reads the option. */
 	public function test_first_builtin_request_hands_over_before_the_arbiter_reads(): void {
-		$this->register_for_payments_owner( WooPaymentsRuntimeArbiter::OWNER_EXTENSION );
+		$this->register_for_payments_owner( self::PAYMENTS_EXTENSION );
 		// EUR set up in the plugin (client 11.1.0 `includes/multi-currency/MultiCurrency.php:767-783`); a Features page save stored "no"
 		// while the plugin owned payments.
 		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'EUR' ) );
 		update_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION, 'no' );
 
-		$container = $this->register_for_payments_owner( WooPaymentsRuntimeArbiter::OWNER_BUILTIN );
+		$container = $this->register_for_payments_owner( self::PAYMENTS_BUILTIN );
 
 		$this->assertSame( 'yes', get_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION ) );
 		$this->assertSame( MultiCurrencyFeatureController::LAST_PAYMENTS_OWNER_BUILTIN, get_option( MultiCurrencyFeatureController::LAST_PAYMENTS_OWNER_OPTION ) );
@@ -295,27 +301,27 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 
 	/** @testdox Should keep a merchant choice made under native ownership on later requests. */
 	public function test_later_builtin_request_keeps_the_merchant_choice(): void {
-		$this->register_for_payments_owner( WooPaymentsRuntimeArbiter::OWNER_EXTENSION );
+		$this->register_for_payments_owner( self::PAYMENTS_EXTENSION );
 		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'EUR' ) );
-		$this->register_for_payments_owner( WooPaymentsRuntimeArbiter::OWNER_BUILTIN );
+		$this->register_for_payments_owner( self::PAYMENTS_BUILTIN );
 		update_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION, 'no' );
 
-		$this->register_for_payments_owner( WooPaymentsRuntimeArbiter::OWNER_BUILTIN );
+		$this->register_for_payments_owner( self::PAYMENTS_BUILTIN );
 
 		$this->assertSame( 'no', get_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION ) );
 	}
 
 	/** @testdox Should hand over again after the plugin is reactivated and native takes over a second time. */
 	public function test_reactivation_rearms_the_handover(): void {
-		$this->register_for_payments_owner( WooPaymentsRuntimeArbiter::OWNER_EXTENSION );
+		$this->register_for_payments_owner( self::PAYMENTS_EXTENSION );
 		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'EUR' ) );
-		$this->register_for_payments_owner( WooPaymentsRuntimeArbiter::OWNER_BUILTIN );
+		$this->register_for_payments_owner( self::PAYMENTS_BUILTIN );
 		update_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION, 'no' );
 
-		$this->register_for_payments_owner( WooPaymentsRuntimeArbiter::OWNER_EXTENSION );
+		$this->register_for_payments_owner( self::PAYMENTS_EXTENSION );
 		// The disable also turned the extension's flag off; the merchant turns Multi-Currency back on in the extension.
 		update_option( '_wcpay_feature_customer_multi_currency', '1' );
-		$this->register_for_payments_owner( WooPaymentsRuntimeArbiter::OWNER_BUILTIN );
+		$this->register_for_payments_owner( self::PAYMENTS_BUILTIN );
 
 		$this->assertSame( 'yes', get_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION ) );
 	}
@@ -353,18 +359,18 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 	 */
 	public function provide_feature_changes(): array {
 		return array(
-			'disabled on the Features page'         => array( MultiCurrencyFeatureController::FEATURE_ID, 'yes', '1', false, '0', WooPaymentsRuntimeArbiter::OWNER_BUILTIN ),
-			'enabled on the Features page'          => array( MultiCurrencyFeatureController::FEATURE_ID, 'no', '0', true, '1', WooPaymentsRuntimeArbiter::OWNER_BUILTIN ),
-			'another feature changed'               => array( 'cost_of_goods_sold', 'yes', '1', false, '1', WooPaymentsRuntimeArbiter::OWNER_BUILTIN ),
-			'disabled without a payments owner'     => array( MultiCurrencyFeatureController::FEATURE_ID, 'yes', '1', false, '0', WooPaymentsRuntimeArbiter::OWNER_NONE ),
-			'enabled without a payments owner'      => array( MultiCurrencyFeatureController::FEATURE_ID, 'no', '0', true, '1', WooPaymentsRuntimeArbiter::OWNER_NONE ),
-			'not mirrored while the extension owns' => array( MultiCurrencyFeatureController::FEATURE_ID, 'yes', '1', false, '1', WooPaymentsRuntimeArbiter::OWNER_EXTENSION ),
+			'disabled on the Features page'         => array( MultiCurrencyFeatureController::FEATURE_ID, 'yes', '1', false, '0', self::PAYMENTS_BUILTIN ),
+			'enabled on the Features page'          => array( MultiCurrencyFeatureController::FEATURE_ID, 'no', '0', true, '1', self::PAYMENTS_BUILTIN ),
+			'another feature changed'               => array( 'cost_of_goods_sold', 'yes', '1', false, '1', self::PAYMENTS_BUILTIN ),
+			'disabled without a payments owner'     => array( MultiCurrencyFeatureController::FEATURE_ID, 'yes', '1', false, '0', self::PAYMENTS_NONE ),
+			'enabled without a payments owner'      => array( MultiCurrencyFeatureController::FEATURE_ID, 'no', '0', true, '1', self::PAYMENTS_NONE ),
+			'not mirrored while the extension owns' => array( MultiCurrencyFeatureController::FEATURE_ID, 'yes', '1', false, '1', self::PAYMENTS_EXTENSION ),
 		);
 	}
 
 	/** @testdox Should mark a store native on its first native-owned request without a marker, leaving the option unset without plugin data. */
 	public function test_first_builtin_request_without_marker_marks_the_store_builtin(): void {
-		$this->register_for_payments_owner( WooPaymentsRuntimeArbiter::OWNER_BUILTIN );
+		$this->register_for_payments_owner( self::PAYMENTS_BUILTIN );
 
 		$this->assertSame( MultiCurrencyFeatureController::LAST_PAYMENTS_OWNER_BUILTIN, get_option( MultiCurrencyFeatureController::LAST_PAYMENTS_OWNER_OPTION ), 'Later requests then read the marker from the autoloaded options.' );
 		$this->assertArrayHasKey( MultiCurrencyFeatureController::LAST_PAYMENTS_OWNER_OPTION, wp_load_alloptions() );
@@ -377,13 +383,13 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 		// a list of currency codes (client 11.1.0 `includes/multi-currency/MultiCurrency.php:767-783`).
 		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'EUR' ) );
 
-		$this->register_for_payments_owner( WooPaymentsRuntimeArbiter::OWNER_BUILTIN );
+		$this->register_for_payments_owner( self::PAYMENTS_BUILTIN );
 
 		$this->assertSame( 'yes', get_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION ) );
 
 		delete_option( MultiCurrencyFeatureController::LAST_PAYMENTS_OWNER_OPTION );
 		update_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION, 'no' );
-		$this->register_for_payments_owner( WooPaymentsRuntimeArbiter::OWNER_BUILTIN );
+		$this->register_for_payments_owner( self::PAYMENTS_BUILTIN );
 
 		$this->assertSame( 'no', get_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION ), 'The seed adds the option only when it is unset.' );
 	}
@@ -399,12 +405,12 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 	 * @param string $expected The core feature option after the first request without the extension.
 	 */
 	public function test_extension_deactivation_without_a_payments_owner_hands_over( string $flag, string $stored, string $expected ): void {
-		$this->register_for_payments_owner( WooPaymentsRuntimeArbiter::OWNER_EXTENSION );
+		$this->register_for_payments_owner( self::PAYMENTS_EXTENSION );
 		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'EUR' ) );
 		update_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION, $stored );
 		update_option( '_wcpay_feature_customer_multi_currency', $flag );
 
-		$container = $this->register_for_payments_owner( WooPaymentsRuntimeArbiter::OWNER_NONE );
+		$container = $this->register_for_payments_owner( self::PAYMENTS_NONE );
 
 		$this->assertSame( $expected, get_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION ), 'Core Multi-Currency follows the extension\'s last state.' );
 		$this->assertSame( $expected, $container->get( MultiCurrencyRuntimeArbiter::class )->feature_option_reads[0], 'The arbiter must read the handed-over value.' );
@@ -428,7 +434,7 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 		add_action( 'updated_option', $record );
 
 		try {
-			$this->register_for_payments_owner( WooPaymentsRuntimeArbiter::OWNER_NONE );
+			$this->register_for_payments_owner( self::PAYMENTS_NONE );
 		} finally {
 			remove_action( 'added_option', $record );
 			remove_action( 'updated_option', $record );
@@ -441,7 +447,7 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 	public function test_no_payments_owner_writes_nothing(): void {
 		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'EUR' ) );
 
-		$this->register_for_payments_owner( WooPaymentsRuntimeArbiter::OWNER_NONE );
+		$this->register_for_payments_owner( self::PAYMENTS_NONE );
 
 		$this->assertFalse( get_option( MultiCurrencyFeatureController::LAST_PAYMENTS_OWNER_OPTION, false ) );
 		$this->assertFalse( get_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION, false ) );
@@ -449,11 +455,11 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 
 	/** @testdox Should count a completed plugin setup as plugin use at the switch. */
 	public function test_completed_setup_counts_as_extension_use_at_the_switch(): void {
-		$this->register_for_payments_owner( WooPaymentsRuntimeArbiter::OWNER_EXTENSION );
+		$this->register_for_payments_owner( self::PAYMENTS_EXTENSION );
 		// The plugin saves true when its setup task finishes (client 11.1.0 `includes/multi-currency/client/setup/tasks/setup-complete-task/index.js:32`).
 		update_option( 'wcpay_multi_currency_setup_completed', '1' );
 
-		$this->register_for_payments_owner( WooPaymentsRuntimeArbiter::OWNER_BUILTIN );
+		$this->register_for_payments_owner( self::PAYMENTS_BUILTIN );
 
 		$this->assertSame( 'yes', get_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION ) );
 	}
@@ -503,8 +509,8 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 	 */
 	public function provide_payments_owners_without_multi_currency(): array {
 		return array(
-			'no payments owner'          => array( WooPaymentsRuntimeArbiter::OWNER_NONE ),
-			'built-in WooPayments owner' => array( WooPaymentsRuntimeArbiter::OWNER_BUILTIN ),
+			'no payments owner'          => array( self::PAYMENTS_NONE ),
+			'built-in WooPayments owner' => array( self::PAYMENTS_BUILTIN ),
 		);
 	}
 
@@ -566,7 +572,7 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 	 * @testdox Should register only the explicit price filter on an empty front request when no payments runtime owns the store.
 	 */
 	public function test_empty_front_request_without_a_payments_owner_registers_only_the_explicit_price_filter(): void {
-		$container      = $this->make_container( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, false, false, false, null, WooPaymentsRuntimeArbiter::OWNER_NONE );
+		$container      = $this->make_container( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, false, false, false, null, self::PAYMENTS_NONE );
 		$resolver_calls = 0;
 		$sut            = new MultiCurrencyBootstrap(
 			static function () use ( &$resolver_calls ): array {
@@ -731,7 +737,7 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 	 * @param array<int,string> $expected   Expected roots.
 	 */
 	public function test_selects_the_same_core_root_matrix_without_a_payments_owner( bool $configured, bool $historical, string $request, array $expected ): void {
-		$container = $this->make_container( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $configured, $historical, false, null, WooPaymentsRuntimeArbiter::OWNER_NONE );
+		$container = $this->make_container( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $configured, $historical, false, null, self::PAYMENTS_NONE );
 
 		$this->register_as( new MultiCurrencyBootstrap( static fn(): array => array() ), $container, $request );
 
@@ -972,7 +978,7 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 			$order->save();
 			$orders[] = $order;
 		}
-		$this->enable_core_multi_currency( false );
+		$this->give_multi_currency_to_core( false );
 		$sut = new MultiCurrencyBootstrap( static fn(): array => array() );
 
 		// Client 11.1.0 registers this on every request and rereads the list each time (`includes/multi-currency/MultiCurrency.php:384`, `:700-717`, `:1562`).
@@ -1013,7 +1019,7 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 		OrdersScheduler::import( $order_id );
 		$unconverted = $net_total();
 		$this->assertGreaterThan( 0.0, $unconverted, 'The order must have an Analytics row before the case.' );
-		$this->enable_core_multi_currency( true );
+		$this->give_multi_currency_to_core( true );
 
 		// ?wc-ajax=checkout is classified as a front request: WooCommerce defines DOING_AJAX for it only on init.
 		$sut = new MultiCurrencyBootstrap( static fn(): array => array() );
@@ -1093,12 +1099,7 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 		OrdersScheduler::import( $order_id );
 		$unconverted = $net_total();
 		$this->assertGreaterThan( 0.0, $unconverted, 'The order must have an Analytics row before the case.' );
-		update_option( 'wcpay_multi_currency_enabled_currencies', $configured ? array( 'USD', 'EUR' ) : array() );
-		delete_transient( UsageDetector::HAS_MC_ORDERS_TRANSIENT );
-		update_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
-		update_option( 'active_plugins', array_values( array_diff( (array) get_option( 'active_plugins', array() ), array( WooPaymentsRuntimeArbiter::PLUGIN_FILE ) ) ) );
-		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
-		wc_get_container()->reset_all_resolved();
+		$this->give_multi_currency_to_core( $configured );
 		if ( 'admin_run' === $request ) {
 			set_current_screen( 'woocommerce_page_wc-status' );
 		}
@@ -1353,26 +1354,40 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @param string                                    $owner Multi-Currency owner.
-	 * @param bool                                      $configured Whether extra configured currencies exist.
-	 * @param bool                                      $historical Whether historical orders exist.
-	 * @param bool                                      $throw_on_foreign_currency_order_detection Whether historical-order detection throws.
-	 * @param MultiCurrencyExplicitPriceController|null $explicit_price_controller Existing explicit-price controller.
-	 * @param string|null                               $payments_owner Payments owner; defaults to the one the Multi-Currency owner follows.
-	 * @return RuntimeContainer&object{resolved:array<int,string>,registered:array<int,string>,foreign_currency_order_checks:int}
+	 * Hand Multi-Currency to core through a module-arbiter double in the real container: the built-in runtime owns payments
+	 * and Multi-Currency, with the module's feature on.
+	 *
+	 * @param bool $configured Whether an additional currency is configured.
 	 */
-	private function make_container( string $owner, bool $configured, bool $historical, bool $throw_on_foreign_currency_order_detection = false, ?MultiCurrencyExplicitPriceController $explicit_price_controller = null, ?string $payments_owner = null ): RuntimeContainer {
-		$payments_owner = $payments_owner ?? array(
-			MultiCurrencyRuntimeArbiter::OWNER_BUILTIN   => WooPaymentsRuntimeArbiter::OWNER_BUILTIN,
-			MultiCurrencyRuntimeArbiter::OWNER_EXTENSION => WooPaymentsRuntimeArbiter::OWNER_EXTENSION,
-			MultiCurrencyRuntimeArbiter::OWNER_NONE      => WooPaymentsRuntimeArbiter::OWNER_NONE,
-		)[ $owner ];
-		$arbiter        = new class( $owner, $payments_owner ) extends MultiCurrencyRuntimeArbiter {
+	private function give_multi_currency_to_core( bool $configured ): void {
+		update_option( 'wcpay_multi_currency_enabled_currencies', $configured ? array( 'USD', 'EUR' ) : array() );
+		delete_transient( UsageDetector::HAS_MC_ORDERS_TRANSIENT );
+		update_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
+		wc_get_container()->reset_all_resolved();
+		wc_get_container()->replace( MultiCurrencyRuntimeArbiter::class, $this->create_arbiter( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, self::PAYMENTS_BUILTIN, true ) );
+	}
+
+	/**
+	 * Create a module-arbiter double that answers with the given owners.
+	 *
+	 * @param string    $owner           Multi-Currency owner.
+	 * @param string    $payments_owner  Payments owner label.
+	 * @param bool|null $feature_enabled Whether the module's feature is on, or null to read the option.
+	 * @return MultiCurrencyRuntimeArbiter&object{feature_option_reads:array<int,mixed>}
+	 */
+	private function create_arbiter( string $owner, string $payments_owner, ?bool $feature_enabled = null ): MultiCurrencyRuntimeArbiter {
+		return new class( $owner, self::PAYMENTS_EXTENSION === $payments_owner, self::PAYMENTS_BUILTIN === $payments_owner, $feature_enabled ) extends MultiCurrencyRuntimeArbiter {
 			/** @var string */
 			private $owner;
 
-			/** @var string */
-			private $payments_owner;
+			/** @var bool */
+			private $payments_extension;
+
+			/** @var bool */
+			private $payments_builtin;
+
+			/** @var bool|null */
+			private $feature_enabled;
 
 			/** @var array<int,mixed> Feature option values seen when the owner was read. */
 			public array $feature_option_reads = array();
@@ -1380,12 +1395,16 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 			/**
 			 * Initialize the configured owners.
 			 *
-			 * @param string $owner          Configured Multi-Currency owner.
-			 * @param string $payments_owner Configured payments owner.
+			 * @param string    $owner              Configured Multi-Currency owner.
+			 * @param bool      $payments_extension Whether the WooPayments extension owns payments.
+			 * @param bool      $payments_builtin   Whether the built-in runtime owns payments.
+			 * @param bool|null $feature_enabled    Whether the module's feature is on, or null to read the option.
 			 */
-			public function __construct( string $owner, string $payments_owner ) {
-				$this->owner          = $owner;
-				$this->payments_owner = $payments_owner;
+			public function __construct( string $owner, bool $payments_extension, bool $payments_builtin, ?bool $feature_enabled ) {
+				$this->owner              = $owner;
+				$this->payments_extension = $payments_extension;
+				$this->payments_builtin   = $payments_builtin;
+				$this->feature_enabled    = $feature_enabled;
 			}
 
 			/** Return the configured owner, recording the feature option it would read. @return string Configured owner. */
@@ -1396,19 +1415,42 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 
 			/** Tell whether the configured payments owner is the WooPayments extension. @return bool */
 			public function is_payments_extension_owner(): bool {
-				return WooPaymentsRuntimeArbiter::OWNER_EXTENSION === $this->payments_owner;
+				return $this->payments_extension;
 			}
 
 			/** Tell whether the configured payments owner is the built-in WooPayments. @return bool */
 			public function is_payments_builtin_owner(): bool {
-				return WooPaymentsRuntimeArbiter::OWNER_BUILTIN === $this->payments_owner;
+				return $this->payments_builtin;
 			}
 
 			/** Tell whether core may register the configured owner. @return bool Whether core owns the runtime. */
 			public function is_builtin_owner(): bool {
 				return MultiCurrencyRuntimeArbiter::OWNER_BUILTIN === $this->owner;
 			}
+
+			/** Tell whether the module's feature is on, as configured or from the option. @return bool */
+			public function feature_is_enabled(): bool {
+				return $this->feature_enabled ?? parent::feature_is_enabled();
+			}
 		};
+	}
+
+	/**
+	 * @param string                                    $owner Multi-Currency owner.
+	 * @param bool                                      $configured Whether extra configured currencies exist.
+	 * @param bool                                      $historical Whether historical orders exist.
+	 * @param bool                                      $throw_on_foreign_currency_order_detection Whether historical-order detection throws.
+	 * @param MultiCurrencyExplicitPriceController|null $explicit_price_controller Existing explicit-price controller.
+	 * @param string|null                               $payments_owner Payments owner; defaults to the one the Multi-Currency owner follows.
+	 * @return RuntimeContainer&object{resolved:array<int,string>,registered:array<int,string>,foreign_currency_order_checks:int}
+	 */
+	private function make_container( string $owner, bool $configured, bool $historical, bool $throw_on_foreign_currency_order_detection = false, ?MultiCurrencyExplicitPriceController $explicit_price_controller = null, ?string $payments_owner = null ): RuntimeContainer {
+		$payments_owner = $payments_owner ?? array(
+			MultiCurrencyRuntimeArbiter::OWNER_BUILTIN   => self::PAYMENTS_BUILTIN,
+			MultiCurrencyRuntimeArbiter::OWNER_EXTENSION => self::PAYMENTS_EXTENSION,
+			MultiCurrencyRuntimeArbiter::OWNER_NONE      => self::PAYMENTS_NONE,
+		)[ $owner ];
+		$arbiter        = $this->create_arbiter( $owner, $payments_owner );
 
 		return new class( $arbiter, $configured, $historical, $throw_on_foreign_currency_order_detection, $explicit_price_controller ) extends RuntimeContainer {
 			/** @var array<int,string> */
