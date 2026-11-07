@@ -69,7 +69,21 @@ class ThemeAppearanceTest extends WC_Unit_Test_Case {
 			'an allowed https source'                    => array( array( $allowed ), array( $allowed ) ),
 			'a host not on the allowlist'                => array( array( 'https://fonts.example.com/inter.css' ), array() ),
 			'an allowed host over http'                  => array( array( 'http://fonts.googleapis.com/css2?family=Inter' ), array() ),
-			'twelve allowed sources, the first ten kept' => array( $twelve, array_slice( $twelve, 0, 10 ) ),
+			'twelve allowed sources, the first ten kept' => array(
+				$twelve,
+				array(
+					'https://fonts.googleapis.com/css2?family=Font0',
+					'https://fonts.googleapis.com/css2?family=Font1',
+					'https://fonts.googleapis.com/css2?family=Font2',
+					'https://fonts.googleapis.com/css2?family=Font3',
+					'https://fonts.googleapis.com/css2?family=Font4',
+					'https://fonts.googleapis.com/css2?family=Font5',
+					'https://fonts.googleapis.com/css2?family=Font6',
+					'https://fonts.googleapis.com/css2?family=Font7',
+					'https://fonts.googleapis.com/css2?family=Font8',
+					'https://fonts.googleapis.com/css2?family=Font9',
+				),
+			),
 		);
 	}
 

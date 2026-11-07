@@ -464,6 +464,9 @@ class SessionControllerTest extends WC_REST_Unit_Test_Case {
 			$this->assertFalse( wp_script_is( 'wc-woopayments-woopay', 'enqueued' ) );
 			$this->assertFalse( wp_style_is( 'wc-woopayments-woopay', 'enqueued' ) );
 		}
+		if ( ! $direct_checkout ) {
+			$this->assertSame( 0, $service->frontend_config_calls, 'Client 11.1.0 only runs direct checkout when it is enabled.' );
+		}
 		$this->assertSame( 0, $tracking_reads, 'No tracking option read and no tracking filter.' );
 	}
 

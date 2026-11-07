@@ -62,11 +62,11 @@ class BlocksDataExtractorTest extends WC_Unit_Test_Case {
 
 		$status = ( new BlocksDataExtractor() )->get_optional_fields_status();
 
-		$this->assertSame( $expected, array_intersect_key( $status, $expected ) );
+		$this->assertSame( $expected, $status );
 	}
 
 	/**
-	 * Block checkouts with stored field settings: the page content, the settings, the expected status.
+	 * Block checkouts with stored field settings: the page content, the settings, the whole expected status.
 	 *
 	 * @return array<string,array{string,array<string,string>,array<string,mixed>}>
 	 */
@@ -77,16 +77,41 @@ class BlocksDataExtractorTest extends WC_Unit_Test_Case {
 			'woocommerce_checkout_address_2_field' => $address_2,
 			'woocommerce_checkout_phone_field'     => $phone,
 		);
-		$expected = static fn( string $company, string $address_2, string $phone ): array => array(
-			'company'   => $company,
-			'address_2' => $address_2,
-			'phone'     => $phone,
-		);
 
 		return array(
-			'phone set to Required, block without attributes' => array( $page( '<!-- wp:woocommerce/checkout -->' ), $settings( 'hidden', 'optional', 'required' ), $expected( 'hidden', 'optional', 'required' ) ),
-			'company set to Required, block with old attributes' => array( $page( '<!-- wp:woocommerce/checkout {"showCompanyField":true} -->' ), $settings( 'required', 'optional', 'optional' ), $expected( 'required', 'optional', 'optional' ) ),
-			'address line 2 set to Required' => array( $page( '<!-- wp:woocommerce/checkout -->' ), $settings( 'hidden', 'required', 'optional' ), $expected( 'hidden', 'required', 'optional' ) ),
+			'phone set to Required, block without attributes' => array(
+				$page( '<!-- wp:woocommerce/checkout -->' ),
+				$settings( 'hidden', 'optional', 'required' ),
+				array(
+					'company'        => 'hidden',
+					'address_2'      => 'optional',
+					'phone'          => 'required',
+					'terms_checkbox' => false,
+					'custom_terms'   => '',
+				),
+			),
+			'company set to Required, block with old attributes' => array(
+				$page( '<!-- wp:woocommerce/checkout {"showCompanyField":true} -->' ),
+				$settings( 'required', 'optional', 'optional' ),
+				array(
+					'company'        => 'required',
+					'address_2'      => 'optional',
+					'phone'          => 'optional',
+					'terms_checkbox' => false,
+					'custom_terms'   => '',
+				),
+			),
+			'address line 2 set to Required' => array(
+				$page( '<!-- wp:woocommerce/checkout -->' ),
+				$settings( 'hidden', 'required', 'optional' ),
+				array(
+					'company'        => 'hidden',
+					'address_2'      => 'required',
+					'phone'          => 'optional',
+					'terms_checkbox' => false,
+					'custom_terms'   => '',
+				),
+			),
 			'no settings, unmigrated attributes and a terms block' => array(
 				$page(
 					'<!-- wp:woocommerce/checkout {"showCompanyField":true,"requireCompanyField":true,"showApartmentField":false,"showPhoneField":false} -->',

@@ -101,22 +101,23 @@ class EligibilityTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should preserve the one-argument WooPay enabled filter and evaluate it once, before rejecting an unsupported context: $context.
+	 * @testdox Should apply the one-argument WooPay enabled filter once and hide the button when it says no or the context is unsupported: $context.
 	 *
-	 * @testWith ["cart"]
-	 *           ["order_received"]
+	 * @testWith ["cart", false]
+	 *           ["order_received", true]
 	 *
-	 * @param string $context Button context.
+	 * @param string $context       Button context.
+	 * @param bool   $filter_result What the enabled filter returns.
 	 */
-	public function test_woopay_button_applies_enabled_filter_once( string $context ): void {
+	public function test_woopay_button_applies_enabled_filter_once( string $context, bool $filter_result ): void {
 		update_option( 'woocommerce_enable_guest_checkout', 'yes' );
 		$captured_calls = array();
 		add_filter(
 			'wcpay_woopay_enabled',
-			static function ( ...$args ) use ( &$captured_calls ): bool {
+			static function ( ...$args ) use ( &$captured_calls, $filter_result ): bool {
 				$captured_calls[] = $args;
 
-				return false;
+				return $filter_result;
 			},
 			10,
 			99
