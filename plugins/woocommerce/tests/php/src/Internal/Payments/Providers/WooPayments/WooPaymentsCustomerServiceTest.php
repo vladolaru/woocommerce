@@ -99,50 +99,40 @@ class WooPaymentsCustomerServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should not promote a guest customer ID while WooPayments has no account.
+	 * @testdox Account creation should not adopt a guest session customer ID without a WooPayments account, outside a checkout or without one in the session: $_dataName.
+	 * @dataProvider provide_account_creations_that_write_no_customer_id
+	 *
+	 * @param bool        $has_account      Whether WooPayments has an account.
+	 * @param bool        $in_checkout      Whether the account is created during a checkout (the Checkout block's API request).
+	 * @param string|null $session_customer Guest customer ID in the session, or null for none.
 	 */
-	public function test_created_customer_does_not_promote_guest_session_customer_id_without_a_woopayments_account(): void {
-		$user_id = $this->factory->user->create( array( 'user_login' => 'created-without-woopayments-account' ) );
-		WC()->session->set( 'wcpay_customer_id', 'cus_guest' );
+	public function test_created_customer_writes_no_customer_id( bool $has_account, bool $in_checkout, ?string $session_customer ): void {
+		if ( ! $in_checkout ) {
+			// The helper's value wins over a constant an earlier test's checkout defined.
+			Constants::set_constant( 'WOOCOMMERCE_CHECKOUT', false );
+		}
+		$user_id = $this->factory->user->create( array( 'user_login' => 'created-without-a-customer-id' ) );
+		WC()->session->set( 'wcpay_customer_id', $session_customer );
 		$this->fake_wcs_checkout_blocks_api_request();
-		$GLOBALS['wcpay_test_checkout_blocks_api_request'] = true;
+		$GLOBALS['wcpay_test_checkout_blocks_api_request'] = $in_checkout;
 
-		$sut = $this->create_sut( false, $this->create_customer_api_client( array() ), null, false );
+		$sut = $this->create_sut( false, $this->create_customer_api_client( array() ), null, $has_account );
 		$sut->handle_woocommerce_created_customer( $user_id );
 
 		$this->assertFalse( get_user_option( WooPaymentsCustomerService::LIVE_CUSTOMER_ID_OPTION, $user_id ) );
 	}
 
 	/**
-	 * @testdox Account creation outside a checkout should not adopt the session customer ID.
+	 * Account creations that must write no customer ID.
+	 *
+	 * @return array<string,array{0:bool,1:bool,2:string|null}>
 	 */
-	public function test_created_customer_outside_checkout_does_not_promote_session_customer_id(): void {
-		// The helper's value wins over a constant an earlier test's checkout defined.
-		Constants::set_constant( 'WOOCOMMERCE_CHECKOUT', false );
-		$user_id = $this->factory->user->create( array( 'user_login' => 'created-outside-checkout' ) );
-		WC()->session->set( 'wcpay_customer_id', 'cus_guest' );
-		$this->fake_wcs_checkout_blocks_api_request();
-		$GLOBALS['wcpay_test_checkout_blocks_api_request'] = false;
-
-		$sut = $this->create_sut( false, $this->create_customer_api_client( array() ) );
-		$sut->handle_woocommerce_created_customer( $user_id );
-
-		$this->assertFalse( get_user_option( WooPaymentsCustomerService::LIVE_CUSTOMER_ID_OPTION, $user_id ) );
-	}
-
-	/**
-	 * @testdox Checkout account creation without a guest session customer should write nothing.
-	 */
-	public function test_created_customer_without_session_customer_id_writes_nothing(): void {
-		$user_id = $this->factory->user->create( array( 'user_login' => 'created-no-session-customer' ) );
-		WC()->session->set( 'wcpay_customer_id', null );
-		$this->fake_wcs_checkout_blocks_api_request();
-		$GLOBALS['wcpay_test_checkout_blocks_api_request'] = true;
-
-		$sut = $this->create_sut( false, $this->create_customer_api_client( array() ) );
-		$sut->handle_woocommerce_created_customer( $user_id );
-
-		$this->assertFalse( get_user_option( WooPaymentsCustomerService::LIVE_CUSTOMER_ID_OPTION, $user_id ) );
+	public function provide_account_creations_that_write_no_customer_id(): array {
+		return array(
+			'no WooPayments account' => array( false, true, 'cus_guest' ),
+			'outside a checkout'     => array( true, false, 'cus_guest' ),
+			'no session customer'    => array( true, true, null ),
+		);
 	}
 
 	/**
@@ -894,30 +884,34 @@ class WooPaymentsCustomerServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should return no payment methods for an empty customer ID.
+	 * @testdox Should return no payment methods for an empty customer ID, without a request, and for a missing remote customer: $_dataName.
+	 * @dataProvider provide_customers_without_payment_methods
+	 *
+	 * @param string            $customer_id        Customer ID.
+	 * @param ApiException|null $exception          What the client throws, or null for none.
+	 * @param string[]          $expected_requested Customer IDs the client is asked for.
 	 */
-	public function test_get_payment_methods_for_customer_returns_empty_for_missing_customer(): void {
-		$api_client = $this->create_customer_api_client( array() );
-		$sut        = $this->create_sut( false, $api_client );
+	public function test_get_payment_methods_for_customer_returns_empty_without_a_customer( string $customer_id, ?ApiException $exception, array $expected_requested ): void {
+		$api_client                            = $this->create_customer_api_client( array() );
+		$api_client->payment_methods_exception = $exception;
+		$sut                                   = $this->create_sut( false, $api_client );
 
-		$result = $sut->get_payment_methods_for_customer( '', 'card' );
+		$result = $sut->get_payment_methods_for_customer( $customer_id, 'card' );
 
 		$this->assertSame( array(), $result );
-		$this->assertSame( array(), $api_client->payment_methods_requests );
+		$this->assertSame( $expected_requested, array_column( $api_client->payment_methods_requests, 'customer_id' ) );
 	}
 
 	/**
-	 * @testdox Should return no payment methods when the remote customer is missing.
+	 * Customers with no payment methods to return.
+	 *
+	 * @return array<string,array{0:string,1:ApiException|null,2:string[]}>
 	 */
-	public function test_get_payment_methods_for_customer_returns_empty_for_missing_remote_customer(): void {
-		$api_client                            = $this->create_customer_api_client( array() );
-		$api_client->payment_methods_exception = new ApiException( 'Missing customer.', 'resource_missing', 404 );
-		$sut                                   = $this->create_sut( false, $api_client );
-
-		$result = $sut->get_payment_methods_for_customer( 'cus_missing', 'card' );
-
-		$this->assertSame( array(), $result );
-		$this->assertSame( 'cus_missing', $api_client->payment_methods_requests[0]['customer_id'] );
+	public function provide_customers_without_payment_methods(): array {
+		return array(
+			'empty customer ID'       => array( '', null, array() ),
+			'missing remote customer' => array( 'cus_missing', new ApiException( 'Missing customer.', 'resource_missing', 404 ), array( 'cus_missing' ) ),
+		);
 	}
 
 	/**

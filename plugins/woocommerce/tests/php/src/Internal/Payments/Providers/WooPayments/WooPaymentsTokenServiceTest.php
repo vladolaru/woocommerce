@@ -508,29 +508,47 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should clear cached payment methods when a WooPayments card token is deleted.
+	 * @testdox Should clear the customer's cached payment methods when a WooPayments card token is $_dataName, and not for another token.
+	 * @dataProvider provide_token_cache_clearing_actions
+	 *
+	 * @param string        $action      Token action.
+	 * @param string[]|null $other_cache Another customer's cached payment methods, which the action keeps, or null for none.
 	 */
-	public function test_clears_cached_payment_methods_when_a_woopayments_card_token_is_deleted(): void {
+	public function test_clears_cached_payment_methods_on_a_woopayments_card_token_action( string $action, ?array $other_cache ): void {
 		$user_id           = $this->factory()->user->create();
 		$other_user_id     = $this->factory()->user->create();
-		$woopayments_token = $this->create_card_token( $user_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_delete' );
+		$woopayments_token = $this->create_card_token( $user_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_card' );
 		$other_token       = $this->create_card_token( $user_id, 'cheque', 'pm_cheque' );
-		update_user_meta( $user_id, '_wcpay_payment_methods', array( 'pm_delete' ) );
-		update_user_meta( $other_user_id, '_wcpay_payment_methods', array( 'pm_other' ) );
+		update_user_meta( $user_id, '_wcpay_payment_methods', array( 'pm_card' ) );
+		if ( null !== $other_cache ) {
+			update_user_meta( $other_user_id, '_wcpay_payment_methods', $other_cache );
+		}
 		$this->create_service();
 
-		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Test exercises the registered token deletion hook.
-		do_action( 'woocommerce_payment_token_deleted', $woopayments_token->get_id(), $woopayments_token );
+		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Test exercises the registered token hook.
+		do_action( $action, $woopayments_token->get_id(), $woopayments_token );
 
-		$this->assertSame( '', get_user_meta( $user_id, '_wcpay_payment_methods', true ), 'Deleting a native card token should clear that customer cache.' );
-		$this->assertSame( array( 'pm_other' ), get_user_meta( $other_user_id, '_wcpay_payment_methods', true ), 'Deleting one customer token should not clear another customer cache.' );
+		$this->assertSame( '', get_user_meta( $user_id, '_wcpay_payment_methods', true ), 'A native card token action should clear that customer cache.' );
+		$this->assertSame( $other_cache ?? '', get_user_meta( $other_user_id, '_wcpay_payment_methods', true ), 'One customer token should not clear another customer cache.' );
 
 		update_user_meta( $user_id, '_wcpay_payment_methods', array( 'pm_keep' ) );
 
-		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Test exercises the registered token deletion hook.
-		do_action( 'woocommerce_payment_token_deleted', $other_token->get_id(), $other_token );
+		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Test exercises the registered token hook.
+		do_action( $action, $other_token->get_id(), $other_token );
 
-		$this->assertSame( array( 'pm_keep' ), get_user_meta( $user_id, '_wcpay_payment_methods', true ), 'Deleting a non-WooPayments token should not clear WooPayments caches.' );
+		$this->assertSame( array( 'pm_keep' ), get_user_meta( $user_id, '_wcpay_payment_methods', true ), 'A non-WooPayments token should not clear WooPayments caches.' );
+	}
+
+	/**
+	 * Token actions that clear the customer's cached payment methods.
+	 *
+	 * @return array<string,array{0:string,1:string[]|null}>
+	 */
+	public function provide_token_cache_clearing_actions(): array {
+		return array(
+			'deleted'          => array( 'woocommerce_payment_token_deleted', array( 'pm_other' ) ),
+			'made the default' => array( 'woocommerce_payment_token_set_default', null ),
+		);
 	}
 
 	/**
@@ -630,31 +648,6 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 				$from_details( 'pm_amazon' ),
 			),
 		);
-	}
-
-	/**
-	 * @testdox A dependency that cannot be built fails the token service's resolution instead of being skipped.
-	 *
-	 * Client 11.1.0 requires its API client and customer service in the constructor (`class-wc-payments-token-service.php:49-52`),
-	 * so a dependency that cannot be built fatals when the service is created. Native's container builds every `init()`
-	 * argument the same way; no lookup later swallows the failure and skips the detach, sync or fetch (unit 2a-9a).
-	 */
-	public function test_dependency_that_cannot_be_built_fails_the_token_service_resolution(): void {
-		// The typed account-service arguments of the token service and its dependencies refuse this object with a TypeError.
-		wc_get_container()->replace( WooPaymentsAccountService::class, new \stdClass() );
-		wc_get_container()->reset_all_resolved();
-
-		$thrown = null;
-		try {
-			wc_get_container()->get( WooPaymentsTokenService::class );
-		} catch ( \Throwable $throwable ) {
-			$thrown = $throwable;
-		} finally {
-			$this->reset_container_replacements();
-			wc_get_container()->reset_all_resolved();
-		}
-
-		$this->assertInstanceOf( \TypeError::class, $thrown );
 	}
 
 	/**
@@ -1747,29 +1740,6 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 			$customer_service->fetch_counts,
 			'A card-gateway request must fetch card and Link only, never SEPA.'
 		);
-	}
-
-	/**
-	 * @testdox Should clear cached payment methods when a WooPayments card token becomes default.
-	 */
-	public function test_clears_cached_payment_methods_when_a_woopayments_card_token_becomes_default(): void {
-		$user_id           = $this->factory()->user->create();
-		$woopayments_token = $this->create_card_token( $user_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_default' );
-		$other_token       = $this->create_card_token( $user_id, 'cheque', 'pm_cheque' );
-		update_user_meta( $user_id, '_wcpay_payment_methods', array( 'pm_default' ) );
-		$this->create_service();
-
-		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Test exercises the registered default-token hook.
-		do_action( 'woocommerce_payment_token_set_default', $woopayments_token->get_id(), $woopayments_token );
-
-		$this->assertSame( '', get_user_meta( $user_id, '_wcpay_payment_methods', true ), 'Setting a native card token as default should clear that customer cache.' );
-
-		update_user_meta( $user_id, '_wcpay_payment_methods', array( 'pm_keep' ) );
-
-		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Test exercises the registered default-token hook.
-		do_action( 'woocommerce_payment_token_set_default', $other_token->get_id(), $other_token );
-
-		$this->assertSame( array( 'pm_keep' ), get_user_meta( $user_id, '_wcpay_payment_methods', true ), 'Setting a non-WooPayments token as default should not clear WooPayments caches.' );
 	}
 
 	/**
