@@ -9,7 +9,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAc
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCheckoutAssets;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendStylesService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendTrackingController;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\PageSurface;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPageSurface;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\SessionController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\SessionService;
 use ReflectionClass;
@@ -152,7 +152,7 @@ class SessionControllerTest extends WC_REST_Unit_Test_Case {
 			WC()->session->set( 'customer', $this->original_session_customer );
 		}
 		wc_get_container()->reset_replacement( WooPaymentsCheckoutAssets::class );
-		wc_get_container()->reset_replacement( PageSurface::class );
+		wc_get_container()->reset_replacement( WooPaymentsPageSurface::class );
 		parent::tearDown();
 	}
 
@@ -2096,7 +2096,7 @@ class SessionControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * Replace PageSurface so the page reads as a cart or a checkout only as the case says; is_checkout_surface() stays real.
+	 * Replace WooPaymentsPageSurface so the page reads as a cart or a checkout only as the case says; is_checkout_surface() stays real.
 	 *
 	 * Core's is_cart() and is_checkout() stay true for the rest of the process once any code defines WOOCOMMERCE_CART or
 	 * WOOCOMMERCE_CHECKOUT, so a test of a page that is neither cannot ask them. tearDown() resets the replacement.
@@ -2105,10 +2105,10 @@ class SessionControllerTest extends WC_REST_Unit_Test_Case {
 	 * @param bool $is_checkout Whether the page reads as a checkout.
 	 */
 	private function replace_page_surface( bool $is_cart, bool $is_checkout ): void {
-		$surface = $this->getMockBuilder( PageSurface::class )->onlyMethods( array( 'is_cart', 'is_checkout' ) )->getMock();
+		$surface = $this->getMockBuilder( WooPaymentsPageSurface::class )->onlyMethods( array( 'is_cart', 'is_checkout' ) )->getMock();
 		$surface->method( 'is_cart' )->willReturn( $is_cart );
 		$surface->method( 'is_checkout' )->willReturn( $is_checkout );
-		wc_get_container()->replace( PageSurface::class, $surface );
+		wc_get_container()->replace( WooPaymentsPageSurface::class, $surface );
 	}
 
 	/**

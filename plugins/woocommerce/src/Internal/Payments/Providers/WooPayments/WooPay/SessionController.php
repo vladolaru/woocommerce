@@ -19,6 +19,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsEx
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendAssets;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderPayAccess;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPageSurface;
 
 /**
  * Registers WooPay's hooks: the `payments/woopay/session` route WooPay's servers call, the Store API request hooks,
@@ -1066,9 +1067,9 @@ class SessionController implements RegisterHooksInterface {
 	/**
 	 * Get the shopper page resolver from the container on each call, so a replacement reaches every instance.
 	 *
-	 * @return PageSurface
+	 * @return WooPaymentsPageSurface
 	 */
-	private function get_page_surface(): PageSurface {
-		return wc_get_container()->get( PageSurface::class );
+	private function get_page_surface(): WooPaymentsPageSurface {
+		return wc_get_container()->get( WooPaymentsPageSurface::class );
 	}
 }

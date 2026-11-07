@@ -315,9 +315,9 @@ class WooPaymentsExpressCheckoutController implements RegisterHooksInterface {
 		// Client 11.2.0 is_checkout() and is_product() (class-wc-payments-express-checkout-button-helper.php:255-259,
 		// :284-286): core's is_checkout() reads the global post on singular views, as the client's does, and the product
 		// term reads only the main query's page; the client's Checkout block term is the exclusion above.
-		return is_checkout() ||
+		return $this->get_page_surface()->is_checkout() ||
 			WooPaymentsExpressCheckoutService::is_product_page() ||
-			is_cart();
+			$this->get_page_surface()->is_cart();
 	}
 
 	/**
@@ -346,11 +346,11 @@ class WooPaymentsExpressCheckoutController implements RegisterHooksInterface {
 			return 'product';
 		}
 
-		if ( is_checkout() ) {
+		if ( $this->get_page_surface()->is_checkout() ) {
 			return 'checkout';
 		}
 
-		if ( is_cart() ) {
+		if ( $this->get_page_surface()->is_cart() ) {
 			return 'cart';
 		}
 
@@ -366,5 +366,14 @@ class WooPaymentsExpressCheckoutController implements RegisterHooksInterface {
 		global $wp;
 
 		return is_object( $wp ) && ! empty( $wp->query_vars['order-pay'] );
+	}
+
+	/**
+	 * Get the WooPayments shopper page resolver from the container on each call, so a replacement reaches every instance.
+	 *
+	 * @return WooPaymentsPageSurface
+	 */
+	private function get_page_surface(): WooPaymentsPageSurface {
+		return wc_get_container()->get( WooPaymentsPageSurface::class );
 	}
 }

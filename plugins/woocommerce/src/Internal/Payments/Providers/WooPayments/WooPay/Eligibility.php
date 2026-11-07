@@ -9,6 +9,7 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExpressPaymentMethodTypes;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPageSurface;
 
 /**
  * Decides whether WooPay applies to the store, the page and the shopper: whether WooPay is on, whether its express
@@ -603,10 +604,10 @@ class Eligibility {
 	/**
 	 * Get the shopper page resolver from the container on each call, so a replacement reaches every instance.
 	 *
-	 * @return PageSurface
+	 * @return WooPaymentsPageSurface
 	 */
-	private function get_page_surface(): PageSurface {
-		return wc_get_container()->get( PageSurface::class );
+	private function get_page_surface(): WooPaymentsPageSurface {
+		return wc_get_container()->get( WooPaymentsPageSurface::class );
 	}
 
 	/**

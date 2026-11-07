@@ -496,7 +496,7 @@ class WooPaymentsCheckoutAssets implements RegisterHooksInterface {
 			),
 			'fraudServices'                            => $this->get_fraud_services_config(),
 			'features'                                 => array_values( $supports ),
-			'isCheckout'                               => is_checkout(),
+			'isCheckout'                               => $this->get_page_surface()->is_checkout(),
 			'isPreview'                                => is_preview(),
 			'isShortcodeCheckout'                      => $this->is_shortcode_checkout(),
 			'canProcessPayments'                       => $this->should_expose_checkout_surface(),
@@ -873,11 +873,11 @@ class WooPaymentsCheckoutAssets implements RegisterHooksInterface {
 			return 'product';
 		}
 
-		if ( is_cart() || has_block( 'woocommerce/cart' ) ) {
+		if ( $this->get_page_surface()->is_cart_surface() ) {
 			return 'cart';
 		}
 
-		$is_checkout = is_checkout();
+		$is_checkout = $this->get_page_surface()->is_checkout();
 		if ( $is_checkout && isset( $_GET['pay_for_order'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only request flag.
 			return 'pay_for_order';
 		}
@@ -1090,6 +1090,15 @@ class WooPaymentsCheckoutAssets implements RegisterHooksInterface {
 		}
 
 		return $this->fraud_prevention_service;
+	}
+
+	/**
+	 * Get the WooPayments shopper page resolver from the container on each call, so a replacement reaches every instance.
+	 *
+	 * @return WooPaymentsPageSurface
+	 */
+	private function get_page_surface(): WooPaymentsPageSurface {
+		return wc_get_container()->get( WooPaymentsPageSurface::class );
 	}
 
 	/**
@@ -1361,7 +1370,7 @@ class WooPaymentsCheckoutAssets implements RegisterHooksInterface {
 	 * @return bool
 	 */
 	private function is_shortcode_checkout(): bool {
-		if ( ! is_checkout() ) {
+		if ( ! $this->get_page_surface()->is_checkout() ) {
 			return false;
 		}
 

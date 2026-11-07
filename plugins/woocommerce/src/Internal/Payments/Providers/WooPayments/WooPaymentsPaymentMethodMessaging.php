@@ -147,7 +147,7 @@ class WooPaymentsPaymentMethodMessaging implements RegisterHooksInterface {
 			return;
 		}
 
-		$is_cart_block = is_cart() && has_block( 'woocommerce/cart' );
+		$is_cart_block = $this->get_page_surface()->is_cart() && has_block( 'woocommerce/cart' );
 		$this->register_site_messaging_assets( $is_cart_block );
 		wp_enqueue_style( $is_cart_block ? self::CART_BLOCK_STYLE_HANDLE : self::STYLE_HANDLE );
 	}
@@ -271,7 +271,7 @@ class WooPaymentsPaymentMethodMessaging implements RegisterHooksInterface {
 			'publishableKey'       => $this->account_service->get_publishable_key(),
 			'paymentMethods'       => array_values( $payment_methods ),
 			'currencyCode'         => $currency_code,
-			'isCart'               => ! $is_product_surface && is_cart(),
+			'isCart'               => ! $is_product_surface && $this->get_page_surface()->is_cart(),
 			'isCartBlock'          => $is_cart_block,
 			'cartTotal'            => $this->get_cart_total(),
 			'nonce'                => array(
@@ -376,12 +376,21 @@ class WooPaymentsPaymentMethodMessaging implements RegisterHooksInterface {
 	}
 
 	/**
+	 * Get the WooPayments shopper page resolver from the container on each call, so a replacement reaches every instance.
+	 *
+	 * @return WooPaymentsPageSurface
+	 */
+	private function get_page_surface(): WooPaymentsPageSurface {
+		return wc_get_container()->get( WooPaymentsPageSurface::class );
+	}
+
+	/**
 	 * Tell whether the current request can show BNPL messaging.
 	 *
 	 * @return bool
 	 */
 	private function is_supported_surface(): bool {
-		$is_surface = is_product() || is_cart() || $this->is_cart_block_surface();
+		$is_surface = is_product() || $this->get_page_surface()->is_cart() || $this->is_cart_block_surface();
 
 		return $is_surface && ! $this->is_subscription_surface();
 	}
@@ -403,7 +412,7 @@ class WooPaymentsPaymentMethodMessaging implements RegisterHooksInterface {
 			return true;
 		}
 
-		return is_cart()
+		return $this->get_page_surface()->is_cart()
 			&& class_exists( 'WC_Subscriptions_Cart' ) && \WC_Subscriptions_Cart::cart_contains_subscription();
 	}
 

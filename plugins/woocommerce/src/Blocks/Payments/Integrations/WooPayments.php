@@ -10,6 +10,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCh
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExpressCheckoutService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFraudPreventionService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendAssets;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPageSurface;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\Eligibility;
@@ -378,7 +379,7 @@ final class WooPayments extends AbstractPaymentMethodType {
 			return true;
 		}
 
-		return is_cart() || has_block( 'woocommerce/cart' ) || is_checkout() || has_block( 'woocommerce/checkout' );
+		return $this->get_page_surface()->is_cart_surface() || $this->get_page_surface()->is_checkout_surface();
 	}
 
 	/**
@@ -395,8 +396,8 @@ final class WooPayments extends AbstractPaymentMethodType {
 			return false;
 		}
 
-		$is_cart     = is_cart() || has_block( 'woocommerce/cart' );
-		$is_checkout = is_checkout() || has_block( 'woocommerce/checkout' );
+		$is_cart     = $this->get_page_surface()->is_cart_surface();
+		$is_checkout = $this->get_page_surface()->is_checkout_surface();
 
 		return $is_cart && ! $is_checkout;
 	}
@@ -433,6 +434,15 @@ final class WooPayments extends AbstractPaymentMethodType {
 	 * @return string
 	 */
 	private function get_button_context(): string {
-		return is_cart() || has_block( 'woocommerce/cart' ) ? 'cart' : 'checkout';
+		return $this->get_page_surface()->is_cart_surface() ? 'cart' : 'checkout';
+	}
+
+	/**
+	 * Get the WooPayments shopper page resolver from the container on each call, so a replacement reaches every instance.
+	 *
+	 * @return WooPaymentsPageSurface
+	 */
+	private function get_page_surface(): WooPaymentsPageSurface {
+		return wc_get_container()->get( WooPaymentsPageSurface::class );
 	}
 }

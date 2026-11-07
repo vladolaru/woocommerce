@@ -1,14 +1,15 @@
 <?php
 /**
- * PageSurface class file.
+ * WooPaymentsPageSurface class file.
  */
 
 declare( strict_types = 1 );
 
-namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay;
+namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 /**
- * Tells which shopper page the current request is, for the WooPay button, direct checkout and save-user rules.
+ * Tells which shopper page the current request is, for the WooPayments checkout, express checkout, fraud-prevention,
+ * BNPL messaging and WooPay rules.
  *
  * It asks core's page conditionals, as those rules did at each site before. Tests replace it through the container: once
  * `WOOCOMMERCE_CART` or `WOOCOMMERCE_CHECKOUT` is defined, `is_cart()` or `is_checkout()` stays true for the whole process.
@@ -16,7 +17,7 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay;
  * @since 11.2.0
  * @internal
  */
-class PageSurface {
+class WooPaymentsPageSurface {
 
 	/**
 	 * Tell whether the request is the cart, as core's is_cart() answers.
@@ -34,6 +35,16 @@ class PageSurface {
 	 */
 	public function is_checkout(): bool {
 		return is_checkout();
+	}
+
+	/**
+	 * Tell whether the request is the cart or any page holding the Cart block, as client 11.1.0 reads it
+	 * (class-wc-payments-express-checkout-button-helper.php:275-277).
+	 *
+	 * @return bool
+	 */
+	public function is_cart_surface(): bool {
+		return $this->is_cart() || has_block( 'woocommerce/cart' );
 	}
 
 	/**

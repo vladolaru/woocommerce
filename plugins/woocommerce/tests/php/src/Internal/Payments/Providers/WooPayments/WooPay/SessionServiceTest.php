@@ -8,7 +8,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsEx
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\AdaptedExtensions;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\PageSurface;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPageSurface;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\SessionService;
 use Automattic\WooCommerce\Internal\Utilities\RequestTypeUtil;
 use Automattic\WooCommerce\StoreApi\Schemas\ExtendSchema;
@@ -1950,7 +1950,7 @@ class SessionServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Replace PageSurface so the page reads as a cart or a checkout only as the case says; is_checkout_surface() stays real.
+	 * Replace WooPaymentsPageSurface so the page reads as a cart or a checkout only as the case says; is_checkout_surface() stays real.
 	 *
 	 * Core's is_cart() and is_checkout() stay true for the rest of the process once any code defines WOOCOMMERCE_CART or
 	 * WOOCOMMERCE_CHECKOUT, so a test of a page that is neither cannot ask them. The fixture's tearDown() resets the
@@ -1960,9 +1960,9 @@ class SessionServiceTest extends WC_Unit_Test_Case {
 	 * @param bool $is_checkout Whether the page reads as a checkout.
 	 */
 	private function replace_page_surface( bool $is_cart, bool $is_checkout ): void {
-		$surface = $this->getMockBuilder( PageSurface::class )->onlyMethods( array( 'is_cart', 'is_checkout' ) )->getMock();
+		$surface = $this->getMockBuilder( WooPaymentsPageSurface::class )->onlyMethods( array( 'is_cart', 'is_checkout' ) )->getMock();
 		$surface->method( 'is_cart' )->willReturn( $is_cart );
 		$surface->method( 'is_checkout' )->willReturn( $is_checkout );
-		wc_get_container()->replace( PageSurface::class, $surface );
+		wc_get_container()->replace( WooPaymentsPageSurface::class, $surface );
 	}
 }

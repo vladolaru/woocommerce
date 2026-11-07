@@ -169,7 +169,7 @@ class WooPaymentsFraudPreventionService implements RegisterHooksInterface {
 		// Product and cart pages count, as in client 11.2.0's page condition (class-fraud-prevention-service.php:93), because
 		// express buttons pay from them; a product-page payment runs on the tokenized cart session, which never holds this
 		// token, so card-testing protection still refuses it. The add payment method page guards setup intents.
-		if ( $check_page && ! is_checkout() && ! has_block( 'woocommerce/checkout' ) && ! is_cart() && ! has_block( 'woocommerce/cart' ) && ! is_product() && ! $this->is_pay_for_order_page() && ! is_add_payment_method_page() ) {
+		if ( $check_page && ! $this->get_page_surface()->is_checkout_surface() && ! $this->get_page_surface()->is_cart_surface() && ! is_product() && ! $this->is_pay_for_order_page() && ! is_add_payment_method_page() ) {
 			return;
 		}
 
@@ -205,7 +205,7 @@ class WooPaymentsFraudPreventionService implements RegisterHooksInterface {
 	 * @return bool
 	 */
 	private function is_pay_for_order_page(): bool {
-		return is_checkout() && isset( $_GET['pay_for_order'] ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only page check.
+		return $this->get_page_surface()->is_checkout() && isset( $_GET['pay_for_order'] ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only page check.
 	}
 
 	/**
@@ -219,6 +219,15 @@ class WooPaymentsFraudPreventionService implements RegisterHooksInterface {
 		}
 
 		return $this->account_service;
+	}
+
+	/**
+	 * Get the WooPayments shopper page resolver from the container on each call, so a replacement reaches every instance.
+	 *
+	 * @return WooPaymentsPageSurface
+	 */
+	private function get_page_surface(): WooPaymentsPageSurface {
+		return wc_get_container()->get( WooPaymentsPageSurface::class );
 	}
 
 	/**
