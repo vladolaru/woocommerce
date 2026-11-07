@@ -199,23 +199,18 @@ class DisplayServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should enable cache-optimized rendering by default in cache mode.
+	 * @testdox Should enable cache-optimized rendering in cache mode only: $mode.
+	 * @testWith ["cache", true]
+	 *           ["speed", false]
+	 *
+	 * @param string $mode     Stored rendering mode.
+	 * @param bool   $expected Whether cache-optimized rendering is active.
 	 */
-	public function test_enables_cache_optimized_rendering_by_default_in_cache_mode(): void {
-		update_option( 'wcpay_multi_currency_rendering_mode', 'cache' );
+	public function test_enables_cache_optimized_rendering_by_default_in_cache_mode( string $mode, bool $expected ): void {
+		update_option( 'wcpay_multi_currency_rendering_mode', $mode );
 		$sut = $this->create_service( $this->create_state( 'GBP' ) );
 
-		$this->assertTrue( $sut->is_cache_optimized_mode() );
-	}
-
-	/**
-	 * @testdox Should keep cache-optimized rendering inactive outside cache mode.
-	 */
-	public function test_keeps_cache_optimized_rendering_inactive_outside_cache_mode(): void {
-		update_option( 'wcpay_multi_currency_rendering_mode', 'speed' );
-		$sut = $this->create_service( $this->create_state( 'GBP' ) );
-
-		$this->assertFalse( $sut->is_cache_optimized_mode() );
+		$this->assertSame( $expected, $sut->is_cache_optimized_mode() );
 	}
 
 	/**

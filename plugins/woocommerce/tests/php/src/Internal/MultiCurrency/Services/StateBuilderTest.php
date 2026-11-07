@@ -419,22 +419,45 @@ class StateBuilderTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should select compatibility override currency when enabled.
+	 * @testdox Should select a compatibility override currency only when it is enabled, else the default: $_dataName.
+	 * @dataProvider provide_compatibility_overrides
+	 *
+	 * @param string      $override      Currency the compatibility filter asks for.
+	 * @param string|null $user_currency Currency the customer stored, or null for a guest.
+	 * @param string      $expected      Selected currency.
 	 */
-	public function test_selects_compatibility_override_currency_when_enabled(): void {
+	public function test_selects_a_compatibility_override_only_when_it_is_enabled( string $override, ?string $user_currency, string $expected ): void {
+		if ( null !== $user_currency ) {
+			$user_id = self::factory()->user->create();
+			wp_set_current_user( $user_id );
+			update_user_meta( $user_id, 'wcpay_currency', $user_currency );
+		}
 		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'GBP' ) );
 		update_option( 'wcpay_multi_currency_exchange_rate_gbp', 'manual' );
 		update_option( 'wcpay_multi_currency_manual_rate_gbp', '0.8' );
 		add_filter(
 			'wcpay_multi_currency_override_selected_currency',
-			static function () {
-				return 'GBP';
+			static function () use ( $override ) {
+				return $override;
 			}
 		);
 
 		$state = $this->create_builder()->build();
 
-		$this->assertSame( 'GBP', $state->get_selected_currency()->get_code() );
+		$this->assertSame( $expected, $state->get_selected_currency()->get_code() );
+	}
+
+	/**
+	 * Overrides: an enabled currency, and one that is not enabled for a customer who stored an enabled one, which falls
+	 * back to the store default, not the stored code.
+	 *
+	 * @return array<string,array{0:string,1:string|null,2:string}>
+	 */
+	public static function provide_compatibility_overrides(): array {
+		return array(
+			'enabled override'     => array( 'GBP', null, 'GBP' ),
+			'not enabled override' => array( 'EUR', 'GBP', 'USD' ),
+		);
 	}
 
 	/**
@@ -482,28 +505,6 @@ class StateBuilderTest extends WC_Unit_Test_Case {
 
 		remove_filter( 'wcpay_multi_currency_override_selected_currency', $override );
 		$this->assertSame( 'GBP', $state->get_selected_currency()->get_code() );
-	}
-
-	/**
-	 * @testdox Should fall back to default when compatibility override is not enabled.
-	 */
-	public function test_falls_back_to_default_when_compatibility_override_is_not_enabled(): void {
-		$user_id = self::factory()->user->create();
-		wp_set_current_user( $user_id );
-		update_user_meta( $user_id, 'wcpay_currency', 'GBP' );
-		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'GBP' ) );
-		update_option( 'wcpay_multi_currency_exchange_rate_gbp', 'manual' );
-		update_option( 'wcpay_multi_currency_manual_rate_gbp', '0.8' );
-		add_filter(
-			'wcpay_multi_currency_override_selected_currency',
-			static function () {
-				return 'EUR';
-			}
-		);
-
-		$state = $this->create_builder()->build();
-
-		$this->assertSame( 'USD', $state->get_selected_currency()->get_code() );
 	}
 
 	/**
@@ -707,22 +708,6 @@ class StateBuilderTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( $first, $second );
 		$this->assertSame( 1, $cache->get_call_count );
-	}
-
-	/**
-	 * @testdox Should rebuild the state after reset is called.
-	 */
-	public function test_reset_rebuilds_state(): void {
-		$cache    = $this->create_counting_cache();
-		$provider = $this->create_unavailable_rate_provider();
-		$builder  = $this->create_builder( $provider, $cache );
-
-		$first = $builder->build();
-		$builder->reset();
-		$second = $builder->build();
-
-		$this->assertNotSame( $first, $second );
-		$this->assertSame( 2, $cache->get_call_count );
 	}
 
 	/**

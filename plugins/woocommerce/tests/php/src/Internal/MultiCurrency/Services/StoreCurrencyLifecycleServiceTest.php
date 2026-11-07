@@ -103,23 +103,23 @@ class StoreCurrencyLifecycleServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should not mutate lifecycle state when configured currency is missing or empty.
-	 * @dataProvider missing_or_empty_configured_currency_data
+	 * @testdox Should not mutate lifecycle state when the configured currency is missing, empty or unknown: $_dataName.
+	 * @dataProvider missing_empty_or_unknown_configured_currency_data
 	 *
-	 * @param bool $configured_option_exists Whether the configured currency option exists with an empty value.
-	 * @param bool $tracked_option_exists    Whether the tracked store-currency option exists.
+	 * @param string|null $configured            The configured store currency, or null when the option is missing.
+	 * @param bool        $tracked_option_exists Whether the tracked store-currency option exists.
 	 */
-	public function test_does_not_mutate_state_when_configured_currency_is_missing_or_empty(
-		bool $configured_option_exists,
+	public function test_does_not_mutate_state_when_configured_currency_is_missing_empty_or_unknown(
+		?string $configured,
 		bool $tracked_option_exists
 	): void {
 		$cache_value  = $this->get_currencies_cache_fixture();
 		$notice_value = array( 'Pound sterling' );
 
-		if ( $configured_option_exists ) {
-			update_option( 'woocommerce_currency', '' );
-		} else {
+		if ( null === $configured ) {
 			delete_option( 'woocommerce_currency' );
+		} else {
+			update_option( 'woocommerce_currency', $configured );
 		}
 
 		if ( $tracked_option_exists ) {
@@ -143,16 +143,17 @@ class StoreCurrencyLifecycleServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Data provider for missing and empty configured currency states.
+	 * Data provider for missing, empty and unknown configured currency states.
 	 *
-	 * @return array<string, array{bool, bool}>
+	 * @return array<string, array{string|null, bool}>
 	 */
-	public static function missing_or_empty_configured_currency_data(): array {
+	public static function missing_empty_or_unknown_configured_currency_data(): array {
 		return array(
-			'missing configuration and missing tracked state' => array( false, false ),
-			'missing configuration and existing tracked state' => array( false, true ),
-			'empty configuration and missing tracked state'   => array( true, false ),
-			'empty configuration and existing tracked state'  => array( true, true ),
+			'missing configuration and missing tracked state' => array( null, false ),
+			'missing configuration and existing tracked state' => array( null, true ),
+			'empty configuration and missing tracked state' => array( '', false ),
+			'empty configuration and existing tracked state' => array( '', true ),
+			'unknown currency and existing tracked state' => array( 'XYZ', true ),
 		);
 	}
 
@@ -243,23 +244,6 @@ class StoreCurrencyLifecycleServiceTest extends WC_Unit_Test_Case {
 
 		$this->assertTrue( $changed );
 		$this->assertFalse( get_option( self::NOTICE_OPTION, false ) );
-	}
-
-	/**
-	 * @testdox Should skip unknown store currency without mutating state.
-	 */
-	public function test_skips_unknown_store_currency_without_mutating_state(): void {
-		$cache_value = $this->get_currencies_cache_fixture();
-
-		update_option( self::STORE_CURRENCY_OPTION, 'USD' );
-		update_option( 'woocommerce_currency', 'XYZ' );
-		update_option( DatabaseCache::CURRENCIES_KEY, $cache_value, false );
-
-		$changed = $this->create_service()->synchronize_store_currency();
-
-		$this->assertFalse( $changed );
-		$this->assertSame( 'USD', get_option( self::STORE_CURRENCY_OPTION ) );
-		$this->assertSame( $cache_value, get_option( DatabaseCache::CURRENCIES_KEY ) );
 	}
 
 	/**

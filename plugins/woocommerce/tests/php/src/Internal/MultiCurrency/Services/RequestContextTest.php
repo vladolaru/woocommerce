@@ -75,86 +75,76 @@ class RequestContextTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should treat normal requests as frontend requests.
+	 * @testdox Should register frontend hooks and selected-currency writers only on a frontend request: $_dataName.
+	 * @dataProvider provide_frontend_request_shapes
+	 *
+	 * @param bool                $is_admin   Whether the request is admin.
+	 * @param bool                $doing_cron Whether cron is running.
+	 * @param bool                $is_rest    Whether this is a WooCommerce REST request.
+	 * @param array<string,mixed> $server     Server keys the request sets.
+	 * @param bool[]              $expected   Admin REST, frontend request, frontend hooks, selected-currency writers.
 	 */
-	public function test_treats_normal_request_as_frontend_request(): void {
-		$sut = $this->create_context();
+	public function test_registers_frontend_hooks_only_on_a_frontend_request( bool $is_admin, bool $doing_cron, bool $is_rest, array $server, array $expected ): void {
+		foreach ( $server as $key => $value ) {
+			$_SERVER[ $key ] = $value;
+		}
+		$sut = $this->create_context( $is_admin, $doing_cron, $is_rest, false );
 
-		$this->assertTrue( $sut->is_frontend_request(), 'Normal requests should be frontend requests.' );
-		$this->assertTrue( $sut->should_register_frontend_hooks(), 'Frontend hooks should register for normal frontend requests.' );
-		$this->assertTrue( $sut->should_register_selected_currency_entry_hooks(), 'Selected-currency writers should register for normal frontend requests.' );
+		$this->assertSame(
+			$expected,
+			array(
+				$sut->is_admin_api_request(),
+				$sut->is_frontend_request(),
+				$sut->should_register_frontend_hooks(),
+				$sut->should_register_selected_currency_entry_hooks(),
+			)
+		);
 	}
 
 	/**
-	 * @testdox Should block frontend hooks for admin context.
+	 * Request shapes: a normal request, admin, cron, and an admin-originated WooCommerce REST request.
+	 *
+	 * @return array<string,array{0:bool,1:bool,2:bool,3:array<string,mixed>,4:bool[]}>
 	 */
-	public function test_blocks_frontend_hooks_for_admin_context(): void {
-		$sut = $this->create_context( true );
-
-		$this->assertFalse( $sut->is_frontend_request(), 'Admin requests should not be frontend requests.' );
-		$this->assertFalse( $sut->should_register_frontend_hooks(), 'Frontend hooks should not register in admin.' );
-		$this->assertFalse( $sut->should_register_selected_currency_entry_hooks(), 'Selected-currency writers should not register in admin unless this is Store API.' );
+	public function provide_frontend_request_shapes(): array {
+		return array(
+			'normal request' => array( false, false, false, array(), array( false, true, true, true ) ),
+			'admin'          => array( true, false, false, array(), array( false, false, false, false ) ),
+			'cron'           => array( false, true, false, array(), array( false, false, false, false ) ),
+			'admin REST'     => array( false, false, true, array( 'HTTP_REFERER' => admin_url( 'admin.php?page=wc-admin' ) ), array( true, false, false, false ) ),
+		);
 	}
 
 	/**
-	 * @testdox Should block frontend hooks for cron context.
+	 * @testdox Should allow REST request overrides only on a non-Store REST request: $_dataName.
+	 * @dataProvider provide_rest_override_request_shapes
+	 *
+	 * @param bool                $is_rest      Whether this is a WooCommerce REST request.
+	 * @param bool                $is_store_api Whether this is a Store API request.
+	 * @param array<string,mixed> $request      Request keys the request sets.
+	 * @param bool                $expected     Whether REST request overrides register.
 	 */
-	public function test_blocks_frontend_hooks_for_cron_context(): void {
-		$sut = $this->create_context( false, true );
+	public function test_allows_rest_request_overrides_only_in_non_store_rest_context( bool $is_rest, bool $is_store_api, array $request, bool $expected ): void {
+		foreach ( $request as $key => $value ) {
+			$_REQUEST[ $key ] = $value;
+		}
+		$sut = $this->create_context( false, false, $is_rest, $is_store_api );
 
-		$this->assertFalse( $sut->is_frontend_request(), 'Cron requests should not be frontend requests.' );
-		$this->assertFalse( $sut->should_register_frontend_hooks(), 'Frontend hooks should not register during cron.' );
-		$this->assertFalse( $sut->should_register_selected_currency_entry_hooks(), 'Selected-currency writers should not register during cron unless this is Store API.' );
+		$this->assertSame( $expected, $sut->should_register_rest_request_overrides() );
 	}
 
 	/**
-	 * @testdox Should block frontend hooks for admin REST context.
+	 * Request shapes: a non-Store REST request, the Store API, a Store API batch and a non-REST request.
+	 *
+	 * @return array<string,array{0:bool,1:bool,2:array<string,mixed>,3:bool}>
 	 */
-	public function test_blocks_frontend_hooks_for_admin_rest_context(): void {
-		$_SERVER['HTTP_REFERER'] = admin_url( 'admin.php?page=wc-admin' );
-		$sut                     = $this->create_context( false, false, true, false );
-
-		$this->assertTrue( $sut->is_admin_api_request(), 'Admin-originated WooCommerce REST requests should be detected.' );
-		$this->assertFalse( $sut->is_frontend_request(), 'Admin REST requests should not be frontend requests.' );
-		$this->assertFalse( $sut->should_register_frontend_hooks(), 'Frontend hooks should not register for admin REST.' );
-		$this->assertFalse( $sut->should_register_selected_currency_entry_hooks(), 'Selected-currency writers should not register for non-Store admin REST.' );
-	}
-
-	/**
-	 * @testdox Should allow REST request overrides for non-Store REST context.
-	 */
-	public function test_allows_rest_request_overrides_for_non_store_rest_context(): void {
-		$sut = $this->create_context( false, false, true, false );
-
-		$this->assertTrue( $sut->should_register_rest_request_overrides(), 'Non-Store REST requests should register request-local currency overrides.' );
-	}
-
-	/**
-	 * @testdox Should block REST request overrides for Store API context.
-	 */
-	public function test_blocks_rest_request_overrides_for_store_api_context(): void {
-		$sut = $this->create_context( false, false, true, true );
-
-		$this->assertFalse( $sut->should_register_rest_request_overrides(), 'Store API requests should not register non-Store REST overrides.' );
-	}
-
-	/**
-	 * @testdox Should block REST request overrides for Store API batch context.
-	 */
-	public function test_blocks_rest_request_overrides_for_store_api_batch_context(): void {
-		$_REQUEST['rest_route'] = '/wc/store/v1/batch';
-		$sut                    = $this->create_context( false, false, true, false );
-
-		$this->assertFalse( $sut->should_register_rest_request_overrides(), 'Store API batch requests should not register non-Store REST overrides.' );
-	}
-
-	/**
-	 * @testdox Should block REST request overrides for non-REST context.
-	 */
-	public function test_blocks_rest_request_overrides_for_non_rest_context(): void {
-		$sut = $this->create_context();
-
-		$this->assertFalse( $sut->should_register_rest_request_overrides(), 'Non-REST requests should not register REST overrides.' );
+	public static function provide_rest_override_request_shapes(): array {
+		return array(
+			'non-Store REST'  => array( true, false, array(), true ),
+			'Store API'       => array( true, true, array(), false ),
+			'Store API batch' => array( true, false, array( 'rest_route' => '/wc/store/v1/batch' ), false ),
+			'not REST'        => array( false, false, array(), false ),
+		);
 	}
 
 	/**
@@ -168,28 +158,14 @@ class RequestContextTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should detect Store API requests without resolving the WooCommerce singleton.
+	 * @testdox Should detect $_dataName without resolving the WooCommerce singleton.
+	 * @dataProvider provide_rest_detection_requests
+	 *
+	 * @param string      $method      Detection method the case calls.
+	 * @param string      $request_uri Request URI.
+	 * @param string|null $rest_route  The rest_route query argument, or null when absent.
 	 */
-	public function test_detects_store_api_requests_without_resolving_woocommerce_singleton(): void {
-		$sentinel = $this->install_woocommerce_singleton_sentinel();
-
-		$_SERVER['REQUEST_URI'] = '/wp-json/wc/store/v1/cart';
-
-		try {
-			$sut = new RequestContext();
-
-			$this->assertTrue( $sut->is_store_api_request(), 'Store API requests should be detected from the request URI.' );
-		} finally {
-			$this->restore_woocommerce_singleton_sentinel( $sentinel );
-		}
-
-		$this->assertFalse( $sentinel->is_store_api_request_called, 'Request context must not call WC() while WooCommerce is still constructing.' );
-	}
-
-	/**
-	 * @testdox Should detect WooCommerce REST requests without resolving the WooCommerce singleton.
-	 */
-	public function test_detects_rest_requests_without_resolving_woocommerce_singleton(): void {
+	public function test_detects_store_api_and_rest_requests_without_resolving_woocommerce_singleton( string $method, string $request_uri, ?string $rest_route ): void {
 		$sentinel = $this->install_woocommerce_singleton_sentinel();
 		$sut      = new class() extends RequestContext {
 			/**
@@ -202,21 +178,34 @@ class RequestContextTest extends WC_Unit_Test_Case {
 			}
 		};
 
-		$_SERVER['REQUEST_URI'] = '/wp-json/wc/v3/products';
+		$_SERVER['REQUEST_URI'] = $request_uri;
+		if ( null !== $rest_route ) {
+			$_GET['rest_route'] = $rest_route;
+		}
 
 		try {
-			$this->assertTrue( $sut->is_wc_rest_api_request_for_test(), 'WooCommerce REST requests should be detected from the request URI.' );
-
-			// Plain permalinks and Jetpack-signed calls pass the route as a parameter (core `WooCommerce::is_rest_api_request()`).
-			$_SERVER['REQUEST_URI'] = '/index.php?rest_route=/wc/v3/products';
-			$_GET['rest_route']     = '/wc/v3/products';
-			$this->assertTrue( $sut->is_wc_rest_api_request_for_test(), 'A rest_route request is a REST request.' );
+			$this->assertTrue( $sut->$method(), 'The request should be detected from the request URI or the rest_route argument.' );
 		} finally {
 			unset( $_GET['rest_route'] );
 			$this->restore_woocommerce_singleton_sentinel( $sentinel );
 		}
 
+		$this->assertFalse( $sentinel->is_store_api_request_called, 'Request context must not call WC() while WooCommerce is still constructing.' );
 		$this->assertFalse( $sentinel->is_rest_api_request_called, 'Request context must not call WC() while WooCommerce is still constructing.' );
+	}
+
+	/**
+	 * Requests each detection reads: a Store API path, a WooCommerce REST path, and a WooCommerce REST route passed as a
+	 * parameter, as plain permalinks and Jetpack-signed calls pass it (core `WooCommerce::is_rest_api_request()`).
+	 *
+	 * @return array<string,array{0:string,1:string,2:string|null}>
+	 */
+	public static function provide_rest_detection_requests(): array {
+		return array(
+			'a Store API request'                   => array( 'is_store_api_request', '/wp-json/wc/store/v1/cart', null ),
+			'a WooCommerce REST request'            => array( 'is_wc_rest_api_request_for_test', '/wp-json/wc/v3/products', null ),
+			'a WooCommerce REST rest_route request' => array( 'is_wc_rest_api_request_for_test', '/index.php?rest_route=/wc/v3/products', '/wc/v3/products' ),
+		);
 	}
 
 	/**

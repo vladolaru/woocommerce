@@ -34,26 +34,28 @@ class UsageDetectorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should protect normalized scalar configured currencies, including unknown historical codes.
+	 * @testdox Should count normalized scalar configured currencies, including unknown historical codes, and ignore empty and store-currency entries: $_dataName.
+	 * @dataProvider provide_configured_currency_lists
+	 *
+	 * @param array<int,mixed> $enabled  Stored enabled currency list.
+	 * @param bool             $expected Whether an additional currency is configured.
 	 */
-	public function test_has_additional_enabled_currencies_normalizes_scalar_entries(): void {
-		update_option( 'wcpay_multi_currency_enabled_currencies', array( ' eur ', '', 'USD', 'OLD', array( 'GBP' ) ) );
+	public function test_has_additional_enabled_currencies_counts_only_additional_scalar_entries( array $enabled, bool $expected ): void {
+		update_option( 'wcpay_multi_currency_enabled_currencies', $enabled );
 
-		$this->assertTrue(
-			( new UsageDetector() )->has_configured_additional_currencies(),
-			'A non-default scalar currency must protect merchant data even when it is no longer in the currency catalog.'
-		);
+		$this->assertSame( $expected, ( new UsageDetector() )->has_configured_additional_currencies() );
 	}
 
 	/**
-	 * @testdox Should ignore empty and store-currency configured entries.
+	 * Stored lists: a non-default scalar currency protects merchant data even when it is no longer in the currency
+	 * catalog; empty, non-scalar and store-currency entries do not make the feature look used.
+	 *
+	 * @return array<string,array{0:array<int,mixed>,1:bool}>
 	 */
-	public function test_has_additional_enabled_currencies_ignores_empty_and_store_currency_entries(): void {
-		update_option( 'wcpay_multi_currency_enabled_currencies', array( '', ' ', ' usd ', null, array( 'EUR' ) ) );
-
-		$this->assertFalse(
-			( new UsageDetector() )->has_configured_additional_currencies(),
-			'Empty, non-scalar, and store-currency entries must not make the feature look used.'
+	public static function provide_configured_currency_lists(): array {
+		return array(
+			'scalar entries with an unknown code'       => array( array( ' eur ', '', 'USD', 'OLD', array( 'GBP' ) ), true ),
+			'empty, non-scalar and store-currency only' => array( array( '', ' ', ' usd ', null, array( 'EUR' ) ), false ),
 		);
 	}
 
@@ -77,34 +79,22 @@ class UsageDetectorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should query posts order metadata when HPOS is disabled.
+	 * @testdox Should query the order metadata of the order storage in use: $_dataName.
+	 * @testWith ["no", "postmeta"]
+	 *           ["yes", "wc_orders_meta"]
+	 *
+	 * @param string $hpos  The HPOS usage option.
+	 * @param string $table Table the existence query reads.
 	 */
-	public function test_has_multi_currency_orders_queries_posts_table(): void {
+	public function test_has_multi_currency_orders_queries_the_order_storage_in_use( string $hpos, string $table ): void {
 		$queries      = array();
 		$query_filter = $this->add_existence_query_filter( $queries );
 		$detector     = new UsageDetector();
-		add_filter( 'pre_option_' . CustomOrdersTableController::CUSTOM_ORDERS_TABLE_USAGE_ENABLED_OPTION, static fn(): string => 'no' );
+		add_filter( 'pre_option_' . CustomOrdersTableController::CUSTOM_ORDERS_TABLE_USAGE_ENABLED_OPTION, static fn(): string => $hpos );
 
 		try {
 			$this->assertTrue( $detector->has_multi_currency_orders() );
-			$this->assertStringContainsString( 'postmeta', $queries[0] );
-		} finally {
-			remove_filter( 'query', $query_filter );
-		}
-	}
-
-	/**
-	 * @testdox Should query HPOS order metadata when HPOS is enabled.
-	 */
-	public function test_has_multi_currency_orders_queries_hpos_table(): void {
-		$queries      = array();
-		$query_filter = $this->add_existence_query_filter( $queries );
-		$detector     = new UsageDetector();
-		add_filter( 'pre_option_' . CustomOrdersTableController::CUSTOM_ORDERS_TABLE_USAGE_ENABLED_OPTION, static fn(): string => 'yes' );
-
-		try {
-			$this->assertTrue( $detector->has_multi_currency_orders() );
-			$this->assertStringContainsString( 'wc_orders_meta', $queries[0] );
+			$this->assertStringContainsString( $table, $queries[0] );
 		} finally {
 			remove_filter( 'query', $query_filter );
 		}

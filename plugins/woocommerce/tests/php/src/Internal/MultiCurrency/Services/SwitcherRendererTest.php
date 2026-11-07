@@ -58,67 +58,82 @@ class SwitcherRendererTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should project block markup with styles and default accessible label.
+	 * @testdox Should project block markup with its styles, label, symbol and border: $_dataName.
+	 *
+	 * Client 11.1.0 CurrencySwitcherBlock.php:165-178 prefixes the option text with the currency symbol when `with_symbol`
+	 * is true and the symbol differs from the code (USD "$ USD"), and :211 renders a "1px solid" select border when the
+	 * block attribute `border` is true, a "0px solid" one when it is false.
+	 * @dataProvider provide_block_markup_attributes
+	 *
+	 * @param string              $selected   Selected currency.
+	 * @param array<string,mixed> $attributes Block attributes.
+	 * @param array<string,mixed> $query_args Query arguments the form carries.
+	 * @param string[]            $expected   Markup the block must contain.
 	 */
-	public function test_renders_block_markup_with_styles_and_default_accessible_label(): void {
-		$sut = $this->create_service( $this->create_state( 'JPY' ) );
+	public function test_renders_block_markup_with_its_styles_label_symbol_and_border( string $selected, array $attributes, array $query_args, array $expected ): void {
+		$sut = $this->create_service( $this->create_state( $selected ) );
 
-		$markup = $sut->get_block_markup(
-			array(
-				'symbol'          => false,
-				'flag'            => true,
-				'fontSize'        => 18,
-				'fontLineHeight'  => 1.4,
-				'fontColor'       => '#123456',
-				'border'          => false,
-				'borderRadius'    => 6,
-				'borderColor'     => '#654321',
-				'backgroundColor' => 'transparent',
-			),
-			array(
-				'orderby' => 'price',
-			)
-		);
+		$markup = $sut->get_block_markup( $attributes, $query_args );
 
-		$this->assertStringContainsString( '<form>', $markup );
-		$this->assertStringContainsString( 'name="orderby" value="price"', $markup );
-		$this->assertStringContainsString( 'class="currency-switcher-holder"', $markup );
-		$this->assertStringContainsString( 'line-height: 1.4;', $markup );
-		$this->assertStringContainsString( 'class="js-woopayments-currency-switcher"', $markup );
-		$this->assertStringContainsString( 'aria-label="Select your currency"', $markup );
-		$this->assertStringContainsString( 'border: 0px solid;', $markup );
-		$this->assertStringContainsString( 'border-radius: 6px;', $markup );
-		$this->assertStringContainsString( 'border-color: #654321;', $markup );
-		$this->assertStringContainsString( 'font-size: 18px;', $markup );
-		$this->assertStringContainsString( 'color: #123456;', $markup );
-		$this->assertStringContainsString( 'background-color: transparent;', $markup );
-		$this->assertStringContainsString( $this->get_flag( 'JP' ) . ' JPY', $markup );
-		$this->assertStringContainsString( 'value="JPY" selected', $markup );
+		foreach ( $expected as $text ) {
+			$this->assertStringContainsString( $text, $markup );
+		}
 	}
 
 	/**
-	 * @testdox Should project block markup with the currency symbol and a solid border.
+	 * Block attributes: symbol off with a borderless styled select and a carried query argument, and symbol and border on.
 	 *
-	 * Client 11.1.0 CurrencySwitcherBlock.php:165-178 prefixes the option text with the
-	 * currency symbol when `with_symbol` is true and the symbol differs from the code (USD "$ USD"),
-	 * and :211 renders a "1px solid" select border when the block attribute `border` is true.
-	 * `test_renders_block_markup_with_styles_and_default_accessible_label` only exercises the
-	 * symbol-off, border-off combination, so a projection that stopped honoring either "on" branch
-	 * would still pass every other case in this class.
+	 * @return array<string,array{0:string,1:array<string,mixed>,2:array<string,mixed>,3:string[]}>
 	 */
-	public function test_renders_block_markup_with_symbol_and_border_enabled(): void {
-		$sut = $this->create_service( $this->create_state( 'USD' ) );
-
-		$markup = $sut->get_block_markup(
-			array(
-				'symbol' => true,
-				'flag'   => false,
-				'border' => true,
-			)
+	public function provide_block_markup_attributes(): array {
+		return array(
+			'styled, without symbol or border' => array(
+				'JPY',
+				array(
+					'symbol'          => false,
+					'flag'            => true,
+					'fontSize'        => 18,
+					'fontLineHeight'  => 1.4,
+					'fontColor'       => '#123456',
+					'border'          => false,
+					'borderRadius'    => 6,
+					'borderColor'     => '#654321',
+					'backgroundColor' => 'transparent',
+				),
+				array(
+					'orderby' => 'price',
+				),
+				array(
+					'<form>',
+					'name="orderby" value="price"',
+					'class="currency-switcher-holder"',
+					'line-height: 1.4;',
+					'class="js-woopayments-currency-switcher"',
+					'aria-label="Select your currency"',
+					'border: 0px solid;',
+					'border-radius: 6px;',
+					'border-color: #654321;',
+					'font-size: 18px;',
+					'color: #123456;',
+					'background-color: transparent;',
+					$this->get_flag( 'JP' ) . ' JPY',
+					'value="JPY" selected',
+				),
+			),
+			'symbol and border on'             => array(
+				'USD',
+				array(
+					'symbol' => true,
+					'flag'   => false,
+					'border' => true,
+				),
+				array(),
+				array(
+					'border: 1px solid;',
+					'<option value="USD" selected>&#036; USD</option>',
+				),
+			),
 		);
-
-		$this->assertStringContainsString( 'border: 1px solid;', $markup );
-		$this->assertStringContainsString( '<option value="USD" selected>&#036; USD</option>', $markup );
 	}
 
 	/**
@@ -200,23 +215,29 @@ class SwitcherRendererTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should suppress switcher markup when switching is disabled.
+	 * @testdox Should render no switcher markup: $_dataName.
+	 * @dataProvider provide_states_without_a_switcher
+	 *
+	 * @param MultiCurrencyState $state              Multi-currency state.
+	 * @param bool               $switching_disabled Whether currency switching is disabled.
 	 */
-	public function test_suppresses_switcher_when_switching_is_disabled(): void {
-		$sut = $this->create_service( $this->create_state( 'GBP' ) );
+	public function test_renders_no_switcher_when_switching_is_disabled_or_one_currency_is_enabled( MultiCurrencyState $state, bool $switching_disabled ): void {
+		$sut = $this->create_service( $state );
 
-		$this->assertSame( '', $sut->get_widget_markup( array(), array(), array(), true ) );
-		$this->assertSame( '', $sut->get_block_markup( array(), array(), true ) );
+		$this->assertSame( '', $sut->get_widget_markup( array(), array(), array(), $switching_disabled ) );
+		$this->assertSame( '', $sut->get_block_markup( array(), array(), $switching_disabled ) );
 	}
 
 	/**
-	 * @testdox Should return empty markup when only one currency is enabled.
+	 * States without a switcher: switching disabled, and only one currency enabled.
+	 *
+	 * @return array<string,array{0:MultiCurrencyState,1:bool}>
 	 */
-	public function test_returns_empty_markup_when_only_one_currency_is_enabled(): void {
-		$sut = $this->create_service( $this->create_single_currency_state() );
-
-		$this->assertSame( '', $sut->get_widget_markup() );
-		$this->assertSame( '', $sut->get_block_markup() );
+	public function provide_states_without_a_switcher(): array {
+		return array(
+			'switching disabled'        => array( $this->create_state( 'GBP' ), true ),
+			'only one currency enabled' => array( $this->create_single_currency_state(), false ),
+		);
 	}
 
 	/**

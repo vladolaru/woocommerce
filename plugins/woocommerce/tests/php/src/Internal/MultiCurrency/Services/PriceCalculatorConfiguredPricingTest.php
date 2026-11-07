@@ -37,44 +37,47 @@ class PriceCalculatorConfiguredPricingTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should apply configured rate, rounding, and charm to product prices.
+	 * @testdox Should apply configured rate, rounding, and charm to product prices: $_dataName.
 	 *
-	 * @dataProvider configured_pricing_provider
+	 * @dataProvider provide_configured_pricing
 	 *
 	 * @param string $code     Currency code.
 	 * @param float  $rate     Exchange rate.
 	 * @param string $rounding Rounding setting.
 	 * @param float  $charm    Charm setting.
+	 * @param string $amount   Product price in the store currency.
 	 * @param float  $expected Expected converted product price.
 	 */
-	public function test_applies_configured_pricing_to_product_prices( string $code, float $rate, string $rounding, float $charm, float $expected ): void {
+	public function test_applies_configured_pricing_to_product_prices( string $code, float $rate, string $rounding, float $charm, string $amount, float $expected ): void {
 		$currency = new MultiCurrencyCurrency( $this->create_localization(), $code, $rate );
 		$currency->set_rounding( $rounding );
 		$currency->set_charm( $charm );
 
 		$this->assertSame(
 			$expected,
-			$this->sut->get_price( '1234.56', 'product', $currency ),
-			"A {$code} product price with rate {$rate}, rounding {$rounding}, and charm {$charm} should be {$expected}"
+			$this->sut->get_price( $amount, 'product', $currency ),
+			"A {$code} product price of {$amount} with rate {$rate}, rounding {$rounding}, and charm {$charm} should be {$expected}"
 		);
 	}
 
 	/**
 	 * Get configured pricing cases.
 	 *
-	 * @return array<string,array{string,float,string,float,float}>
+	 * @return array<string,array{string,float,string,float,string,float}>
 	 */
-	public function configured_pricing_provider(): array {
+	public function provide_configured_pricing(): array {
 		return array(
-			'manual rate, zero rounding rounds to currency decimals' => array( 'CHF', 1.25, '0', 0.0, 1543.20 ),
-			'charm applies to the unrounded converted price' => array( 'CHF', 1.0, '0', -0.01, 1234.55 ),
-			'ceiling rounding without charm'              => array( 'CHF', 1.20, '0.50', 0.0, 1481.50 ),
-			'zero-decimal currency rounds to whole units' => array( 'JPY', 150.1, '0', 0.0, 185307.0 ),
+			'manual rate, zero rounding rounds to currency decimals' => array( 'CHF', 1.25, '0', 0.0, '1234.56', 1543.20 ),
+			'charm applies to the unrounded converted price' => array( 'CHF', 1.0, '0', -0.01, '1234.56', 1234.55 ),
+			'ceiling rounding without charm'              => array( 'CHF', 1.20, '0.50', 0.0, '1234.56', 1481.50 ),
+			// 10.0 at 0.708099 is 7.08099, ceiled to the 0.50 step (7.50), then the -0.10 charm.
+			'charm applies after the rounding step'       => array( 'GBP', 0.708099, '0.50', -0.10, '10.0', 7.4 ),
+			'zero-decimal currency rounds to whole units' => array( 'JPY', 150.1, '0', 0.0, '1234.56', 185307.0 ),
 			// N-085: client 11.1.0 MultiCurrency.php:1676/:1695-1699 applies a merchant-configured
 			// non-zero rounding step by ceiling, not rounding, the converted price; a zero-decimal
 			// currency with a "round up to the next 1" step must ceil 185307.456 to 185308, which a
 			// round-to-nearest implementation would report as 185307 (the fractional part is < 0.5).
-			'zero-decimal currency ceils to the next rounding step' => array( 'JPY', 150.1, '1', 0.0, 185308.0 ),
+			'zero-decimal currency ceils to the next rounding step' => array( 'JPY', 150.1, '1', 0.0, '1234.56', 185308.0 ),
 		);
 	}
 

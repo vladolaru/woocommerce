@@ -13,22 +13,32 @@ use WC_Unit_Test_Case;
 class MultiCurrencyCurrencyTest extends WC_Unit_Test_Case {
 
 	/**
-	 * @testdox Should normalize currency codes.
+	 * @testdox Should normalize the currency code and keep the default flag the constructor got: $_dataName.
+	 * @dataProvider provide_currency_codes_and_default_flags
+	 *
+	 * @param string $code       Code as given.
+	 * @param bool   $is_default Whether the currency is the store default.
+	 * @param string $expected   Normalized code.
+	 * @param string $id         Expected id.
 	 */
-	public function test_normalizes_currency_codes(): void {
-		$currency = new MultiCurrencyCurrency( $this->create_localization(), 'usd', 1.0 );
+	public function test_normalizes_currency_codes( string $code, bool $is_default, string $expected, string $id ): void {
+		$currency = new MultiCurrencyCurrency( $this->create_localization(), $code, 1.0, $is_default );
 
-		$this->assertSame( 'USD', $currency->get_code() );
-		$this->assertSame( 'usd', $currency->get_id() );
+		$this->assertSame( $expected, $currency->get_code() );
+		$this->assertSame( $id, $currency->get_id() );
+		$this->assertSame( $is_default, $currency->get_is_default() );
 	}
 
 	/**
-	 * @testdox Should use constructor default flag.
+	 * Codes and default flags: a lower-case code that is not the default, and the store default.
+	 *
+	 * @return array<string,array{0:string,1:bool,2:string,3:string}>
 	 */
-	public function test_uses_constructor_default_flag(): void {
-		$currency = new MultiCurrencyCurrency( $this->create_localization(), 'EUR', 1.2, true );
-
-		$this->assertTrue( $currency->get_is_default() );
+	public static function provide_currency_codes_and_default_flags(): array {
+		return array(
+			'lower-case code' => array( 'usd', false, 'USD', 'usd' ),
+			'the default'     => array( 'EUR', true, 'EUR', 'eur' ),
+		);
 	}
 
 	/**

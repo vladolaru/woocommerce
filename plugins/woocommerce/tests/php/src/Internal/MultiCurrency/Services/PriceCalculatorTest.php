@@ -36,16 +36,6 @@ class PriceCalculatorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should apply rounding and charm to product prices.
-	 */
-	public function test_applies_rounding_and_charm_to_product_prices(): void {
-		$calculator = new PriceCalculator( $this->create_localization() );
-		$currency   = $this->create_currency( 'GBP', 0.708099, false, '0.50', -0.10 );
-
-		$this->assertSame( 7.4, $calculator->get_price( '10.0', 'product', $currency ) );
-	}
-
-	/**
 	 * @testdox Should round an amount already in the currency to its decimals and add the charm, for the store currency too.
 	 */
 	public function test_adjusts_an_amount_already_in_the_currency(): void {
@@ -218,39 +208,42 @@ class PriceCalculatorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should throw when raw conversion currencies are missing.
+	 * @testdox Should throw on a raw conversion it cannot make: $_dataName.
+	 * @dataProvider provide_raw_conversions_that_throw
+	 *
+	 * @param string                              $to        Target currency.
+	 * @param array<string,array{0:float,1:bool}> $enabled   Enabled currencies as code => array( rate, is default ).
+	 * @param string                              $exception Expected exception class.
 	 */
-	public function test_throws_when_raw_conversion_currencies_are_missing(): void {
+	public function test_throws_on_a_raw_conversion_it_cannot_make( string $to, array $enabled, string $exception ): void {
 		$calculator = new PriceCalculator( $this->create_localization() );
+		$currencies = array();
+		foreach ( $enabled as $code => $currency ) {
+			$currencies[ $code ] = $this->create_currency( $code, $currency[0], $currency[1] );
+		}
 
-		$this->expectException( InvalidCurrencyException::class );
+		$this->expectException( $exception );
 
-		$calculator->get_raw_conversion(
-			10.0,
-			'EUR',
-			'USD',
-			array(
-				'USD' => $this->create_currency( 'USD', 1.0, true ),
-			)
-		);
+		$calculator->get_raw_conversion( 10.0, $to, 'USD', $currencies );
 	}
 
 	/**
-	 * @testdox Should throw when source rate is invalid.
+	 * Raw conversions from USD that cannot be made: to a currency that is not enabled, and from a source currency
+	 * without a valid rate.
+	 *
+	 * @return array<string,array{0:string,1:array<string,array{0:float,1:bool}>,2:string}>
 	 */
-	public function test_throws_when_source_rate_is_invalid(): void {
-		$calculator = new PriceCalculator( $this->create_localization() );
-
-		$this->expectException( InvalidCurrencyRateException::class );
-
-		$calculator->get_raw_conversion(
-			10.0,
-			'GBP',
-			'USD',
-			array(
-				'USD' => $this->create_currency( 'USD', 0.0, true ),
-				'GBP' => $this->create_currency( 'GBP', 0.708099, false ),
-			)
+	public static function provide_raw_conversions_that_throw(): array {
+		return array(
+			'target currency missing' => array( 'EUR', array( 'USD' => array( 1.0, true ) ), InvalidCurrencyException::class ),
+			'invalid source rate'     => array(
+				'GBP',
+				array(
+					'USD' => array( 0.0, true ),
+					'GBP' => array( 0.708099, false ),
+				),
+				InvalidCurrencyRateException::class,
+			),
 		);
 	}
 

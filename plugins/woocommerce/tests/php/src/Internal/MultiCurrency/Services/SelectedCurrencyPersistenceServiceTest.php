@@ -121,23 +121,18 @@ class SelectedCurrencyPersistenceServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should detect stored guest session currency.
+	 * @testdox Should report a stored guest session currency only when the session holds one: $_dataName.
+	 * @testWith ["GBP", true]
+	 *           [null, false]
+	 *
+	 * @param string|null $session_currency Currency the guest session holds, or null for none.
+	 * @param bool        $expected         Whether a stored currency is reported.
 	 */
-	public function test_detects_stored_guest_session_currency(): void {
-		WC()->session = $this->create_session( 'GBP' );
+	public function test_detects_stored_guest_session_currency( ?string $session_currency, bool $expected ): void {
+		WC()->session = $this->create_session( $session_currency );
 		$sut          = $this->create_service( 'USD' );
 
-		$this->assertTrue( $sut->has_stored_currency_code() );
-	}
-
-	/**
-	 * @testdox Should report no stored currency when user and session are empty.
-	 */
-	public function test_reports_no_stored_currency_when_user_and_session_are_empty(): void {
-		WC()->session = $this->create_session();
-		$sut          = $this->create_service( 'USD' );
-
-		$this->assertFalse( $sut->has_stored_currency_code() );
+		$this->assertSame( $expected, $sut->has_stored_currency_code() );
 	}
 
 	/**

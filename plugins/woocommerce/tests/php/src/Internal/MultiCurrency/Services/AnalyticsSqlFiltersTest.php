@@ -12,65 +12,63 @@ use WC_Unit_Test_Case;
 class AnalyticsSqlFiltersTest extends WC_Unit_Test_Case {
 
 	/**
-	 * @testdox Should project select clauses for legacy order storage.
+	 * @testdox Should project select clauses for each order storage: $_dataName.
+	 * @dataProvider select_clauses_provider
+	 *
+	 * @param string[] $clauses        Select clauses the report passes.
+	 * @param string   $context        Report context.
+	 * @param bool     $hpos           Whether orders are stored in the HPOS tables.
+	 * @param string[] $first_contains Text the first clause must contain.
+	 * @param string[] $expected       Clauses the result must contain.
 	 */
-	public function test_extends_select_clauses_for_posts_order_storage(): void {
+	public function test_extends_select_clauses_for_order_storage( array $clauses, string $context, bool $hpos, array $first_contains, array $expected ): void {
 		$sut = new AnalyticsSqlFilters();
 
-		$result = $sut->extend_select_clauses(
-			array(
-				', SUM(product_net_revenue) AS product_net_revenue',
-				', discount_amount',
-			),
-			'products_stats_total',
-			false
-		);
+		$result = $sut->extend_select_clauses( $clauses, $context, $hpos );
 
-		$this->assertStringContainsString(
-			'CASE WHEN wcpay_multicurrency_default_currency_meta.meta_value IS NOT NULL',
-			$result[0]
-		);
-		$this->assertStringContainsString(
-			'ROUND(product_net_revenue * wcpay_multicurrency_stripe_exchange_rate_meta.meta_value, 2)',
-			$result[0]
-		);
-		$this->assertContains(
-			', wcpay_multicurrency_currency_meta.meta_value AS order_currency',
-			$result
-		);
-		$this->assertContains(
-			', wcpay_multicurrency_default_currency_meta.meta_value AS order_default_currency',
-			$result
-		);
-		$this->assertContains(
-			', wcpay_multicurrency_exchange_rate_meta.meta_value AS exchange_rate',
-			$result
-		);
-		$this->assertContains(
-			', wcpay_multicurrency_stripe_exchange_rate_meta.meta_value AS stripe_exchange_rate',
-			$result
-		);
+		foreach ( $first_contains as $text ) {
+			$this->assertStringContainsString( $text, $result[0] );
+		}
+		foreach ( $expected as $clause ) {
+			$this->assertContains( $clause, $result );
+		}
 	}
 
 	/**
-	 * @testdox Should project select clauses for HPOS order storage.
+	 * Select clauses per order storage: a products report on the posts tables, an orders report on the HPOS tables.
+	 *
+	 * @return array<string,array{0:string[],1:string,2:bool,3:string[],4:string[]}>
 	 */
-	public function test_extends_select_clauses_for_hpos_order_storage(): void {
-		$sut = new AnalyticsSqlFilters();
-
-		$result = $sut->extend_select_clauses(
-			array( ', SUM(discount_amount) AS discount_amount' ),
-			'orders_stats_total',
-			true
-		);
-
-		$this->assertContains(
-			', wcpay_multicurrency_order_currency.currency AS order_currency',
-			$result
-		);
-		$this->assertContains(
-			', wcpay_multicurrency_default_currency_meta.meta_value AS order_default_currency',
-			$result
+	public static function select_clauses_provider(): array {
+		return array(
+			'posts tables' => array(
+				array(
+					', SUM(product_net_revenue) AS product_net_revenue',
+					', discount_amount',
+				),
+				'products_stats_total',
+				false,
+				array(
+					'CASE WHEN wcpay_multicurrency_default_currency_meta.meta_value IS NOT NULL',
+					'ROUND(product_net_revenue * wcpay_multicurrency_stripe_exchange_rate_meta.meta_value, 2)',
+				),
+				array(
+					', wcpay_multicurrency_currency_meta.meta_value AS order_currency',
+					', wcpay_multicurrency_default_currency_meta.meta_value AS order_default_currency',
+					', wcpay_multicurrency_exchange_rate_meta.meta_value AS exchange_rate',
+					', wcpay_multicurrency_stripe_exchange_rate_meta.meta_value AS stripe_exchange_rate',
+				),
+			),
+			'HPOS tables'  => array(
+				array( ', SUM(discount_amount) AS discount_amount' ),
+				'orders_stats_total',
+				true,
+				array(),
+				array(
+					', wcpay_multicurrency_order_currency.currency AS order_currency',
+					', wcpay_multicurrency_default_currency_meta.meta_value AS order_default_currency',
+				),
+			),
 		);
 	}
 

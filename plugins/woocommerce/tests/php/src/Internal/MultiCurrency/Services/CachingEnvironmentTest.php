@@ -52,72 +52,67 @@ class CachingEnvironmentTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should stop at the first matching cache signal.
-	 */
-	public function test_stops_at_the_first_matching_cache_signal(): void {
-		$sut = $this->create_environment(
-			array(
-				'WP_CACHE'     => true,
-				'LSCWP_V'      => '1',
-				'IS_ATOMIC'    => true,
-				'IS_PRESSABLE' => true,
-			),
-			array( '/relocated-content/advanced-cache.php' => true ),
-			array( 'WpFastestCache' )
-		);
-
-		$this->assertTrue( $sut->is_page_caching_active() );
-		$this->assertSame( array( 'WP_CACHE' ), $sut->constant_names );
-		$this->assertSame( array(), $sut->class_names );
-		$this->assertSame( array( '/relocated-content/advanced-cache.php' ), $sut->file_paths );
-
-		$sut = $this->create_environment(
-			array(
-				'LSCWP_V'      => '1',
-				'IS_ATOMIC'    => true,
-				'IS_PRESSABLE' => true,
-			),
-			array(),
-			array( 'WpFastestCache' )
-		);
-
-		$this->assertTrue( $sut->is_page_caching_active() );
-		$this->assertSame( array( 'WP_CACHE', 'LSCWP_V' ), $sut->constant_names );
-		$this->assertSame( array(), $sut->class_names );
-	}
-
-	/**
-	 * @testdox Should preserve managed-host precedence over later signals.
-	 * @dataProvider provider_managed_host_precedence_probe_traces
+	 * @testdox Should stop probing at the first matching cache signal, managed hosts after the cache plugins: $_dataName.
+	 * @dataProvider provide_first_signal_probe_traces
 	 *
-	 * @param array<string,mixed> $constants Defined constants and values.
-	 * @param string[]            $classes Available classes.
+	 * @param array<string,mixed> $constants          Defined constants and values.
+	 * @param array<string,bool>  $files              Files that exist, by path.
+	 * @param string[]            $classes            Available classes.
 	 * @param string[]            $expected_constants Expected constant probe trace.
-	 * @param string[]            $expected_classes Expected class probe trace.
+	 * @param string[]            $expected_classes   Expected class probe trace.
+	 * @param string[]            $expected_files     Expected file probe trace.
 	 */
-	public function test_preserves_managed_host_precedence_over_later_signals( array $constants, array $classes, array $expected_constants, array $expected_classes ): void {
-		$sut = $this->create_environment( $constants, array(), $classes );
+	public function test_preserves_managed_host_precedence_over_later_signals( array $constants, array $files, array $classes, array $expected_constants, array $expected_classes, array $expected_files ): void {
+		$sut = $this->create_environment( $constants, $files, $classes );
 
 		$this->assertTrue( $sut->is_page_caching_active() );
 		$this->assertSame( $expected_constants, $sut->constant_names );
 		$this->assertSame( $expected_classes, $sut->class_names );
+		$this->assertSame( $expected_files, $sut->file_paths );
 	}
 
 	/**
-	 * Provide managed-host precedence probe traces.
+	 * Provide the probe traces up to the first matching signal.
 	 *
-	 * @return array<string,array{array<string,mixed>,string[],string[],string[]}>
+	 * @return array<string,array{array<string,mixed>,array<string,bool>,string[],string[],string[],string[]}>
 	 */
-	public function provider_managed_host_precedence_probe_traces(): array {
+	public function provide_first_signal_probe_traces(): array {
 		return array(
+			'WP_CACHE with its drop-in wins over every later signal' => array(
+				array(
+					'WP_CACHE'     => true,
+					'LSCWP_V'      => '1',
+					'IS_ATOMIC'    => true,
+					'IS_PRESSABLE' => true,
+				),
+				array( '/relocated-content/advanced-cache.php' => true ),
+				array( 'WpFastestCache' ),
+				array( 'WP_CACHE' ),
+				array(),
+				array( '/relocated-content/advanced-cache.php' ),
+			),
+			'LiteSpeed wins over the cache classes and managed hosts' => array(
+				array(
+					'LSCWP_V'      => '1',
+					'IS_ATOMIC'    => true,
+					'IS_PRESSABLE' => true,
+				),
+				array(),
+				array( 'WpFastestCache' ),
+				array( 'WP_CACHE', 'LSCWP_V' ),
+				array(),
+				array(),
+			),
 			'fastest cache wins over Atomic and Pressable' => array(
 				array(
 					'IS_ATOMIC'    => true,
 					'IS_PRESSABLE' => true,
 				),
+				array(),
 				array( 'WpFastestCache' ),
 				array( 'WP_CACHE', 'LSCWP_V' ),
 				array( 'WpFastestCache' ),
+				array(),
 			),
 			'Atomic wins over Pressable'                   => array(
 				array(
@@ -125,8 +120,10 @@ class CachingEnvironmentTest extends WC_Unit_Test_Case {
 					'IS_PRESSABLE' => true,
 				),
 				array(),
+				array(),
 				array( 'WP_CACHE', 'LSCWP_V', 'IS_ATOMIC' ),
 				array( 'WpFastestCache' ),
+				array(),
 			),
 			'Atomic site ID wins over Pressable'           => array(
 				array(
@@ -134,8 +131,10 @@ class CachingEnvironmentTest extends WC_Unit_Test_Case {
 					'IS_PRESSABLE'   => true,
 				),
 				array(),
+				array(),
 				array( 'WP_CACHE', 'LSCWP_V', 'IS_ATOMIC', 'ATOMIC_SITE_ID' ),
 				array( 'WpFastestCache' ),
+				array(),
 			),
 		);
 	}

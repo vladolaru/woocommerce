@@ -111,47 +111,36 @@ class CacheRenderingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should preserve every existing rendering mode value.
-	 * @dataProvider provider_existing_modes
+	 * @testdox Should preserve every existing rendering mode value: $_dataName.
+	 * @dataProvider provide_stored_rendering_modes
 	 *
-	 * @param mixed $mode Existing stored rendering mode.
+	 * @param mixed $mode     Existing stored rendering mode.
+	 * @param bool  $autoload Whether the mode is stored autoloaded.
+	 * @param mixed $expected The mode read back after detection.
 	 */
-	public function test_preserves_every_existing_rendering_mode_value( $mode ): void {
-		$this->assertTrue( add_option( self::MODE_OPTION, $mode ) );
+	public function test_preserves_every_existing_rendering_mode_value( $mode, bool $autoload, $expected ): void {
+		$this->assertTrue( add_option( self::MODE_OPTION, $mode, '', $autoload ) );
 		$environment = $this->create_environment( true );
 
 		$this->create_service( $environment )->maybe_auto_enable_cache_rendering_mode();
 
 		$this->assertSame( 0, $environment->calls );
-		$this->assertSame( $mode, get_option( self::MODE_OPTION ) );
+		$this->assertSame( $expected, get_option( self::MODE_OPTION, true ) );
 		$this->assertSame( 'yes', get_option( self::DONE_OPTION ) );
 	}
 
 	/**
-	 * @testdox Should preserve a non-autoloaded stored false rendering mode.
-	 */
-	public function test_preserves_a_non_autoloaded_stored_false_rendering_mode(): void {
-		$this->assertTrue( add_option( self::MODE_OPTION, false, '', false ) );
-		$environment = $this->create_environment( true );
-
-		$this->create_service( $environment )->maybe_auto_enable_cache_rendering_mode();
-
-		$this->assertSame( 0, $environment->calls );
-		$this->assertSame( '', get_option( self::MODE_OPTION, true ) );
-		$this->assertSame( 'yes', get_option( self::DONE_OPTION ) );
-	}
-
-	/**
-	 * Provide stored rendering-mode values that must be preserved.
+	 * Provide stored rendering-mode values that must be preserved, and how each reads back.
 	 *
-	 * @return array<string,array{mixed}>
+	 * @return array<string,array{mixed,bool,mixed}>
 	 */
-	public function provider_existing_modes(): array {
+	public function provide_stored_rendering_modes(): array {
 		return array(
-			'speed'     => array( 'speed' ),
-			'cache'     => array( 'cache' ),
-			'malformed' => array( 'custom' ),
-			'false'     => array( false ),
+			'speed'                 => array( 'speed', true, 'speed' ),
+			'cache'                 => array( 'cache', true, 'cache' ),
+			'malformed'             => array( 'custom', true, 'custom' ),
+			'false'                 => array( false, true, false ),
+			'false, not autoloaded' => array( false, false, '' ),
 		);
 	}
 
@@ -172,18 +161,18 @@ class CacheRenderingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should recommend cache mode only for active undismissed speed mode.
-	 * @dataProvider provider_recommendation_states
+	 * @testdox Should recommend cache mode only for active undismissed speed mode, a missing mode counting as speed: $_dataName.
+	 * @dataProvider provide_recommendation_states
 	 *
-	 * @param mixed $mode Rendering mode.
-	 * @param mixed $dismissed Dismissal value.
-	 * @param bool  $active Whether caching is active.
-	 * @param bool  $expected Whether recommendation is expected.
-	 * @param int   $calls Expected detector calls.
+	 * @param array<string,mixed> $options  Stored rendering mode and dismissal.
+	 * @param bool                $active   Whether caching is active.
+	 * @param bool                $expected Whether recommendation is expected.
+	 * @param int                 $calls    Expected detector calls.
 	 */
-	public function test_recommends_cache_mode_only_for_active_undismissed_speed_mode( $mode, $dismissed, bool $active, bool $expected, int $calls ): void {
-		update_option( self::MODE_OPTION, $mode );
-		update_option( self::DISMISSED_OPTION, $dismissed );
+	public function test_recommends_cache_mode_only_for_active_undismissed_speed_mode( array $options, bool $active, bool $expected, int $calls ): void {
+		foreach ( $options as $name => $value ) {
+			update_option( $name, $value );
+		}
 		$environment = $this->create_environment( $active );
 
 		$this->assertSame( $expected, $this->create_service( $environment )->should_recommend_cache_mode() );
@@ -191,13 +180,50 @@ class CacheRenderingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should treat a missing rendering mode as speed for recommendation.
+	 * Provide recommendation states.
+	 *
+	 * @return array<string,array{array<string,mixed>,bool,bool,int}>
 	 */
-	public function test_treats_a_missing_rendering_mode_as_speed_for_recommendation(): void {
-		$environment = $this->create_environment( true );
-
-		$this->assertTrue( $this->create_service( $environment )->should_recommend_cache_mode() );
-		$this->assertSame( 1, $environment->calls );
+	public function provide_recommendation_states(): array {
+		return array(
+			'active speed'      => array(
+				array(
+					self::MODE_OPTION      => 'speed',
+					self::DISMISSED_OPTION => 'no',
+				),
+				true,
+				true,
+				1,
+			),
+			'cache mode'        => array(
+				array(
+					self::MODE_OPTION      => 'cache',
+					self::DISMISSED_OPTION => 'no',
+				),
+				true,
+				false,
+				0,
+			),
+			'dismissed'         => array(
+				array(
+					self::MODE_OPTION      => 'speed',
+					self::DISMISSED_OPTION => 'yes',
+				),
+				true,
+				false,
+				0,
+			),
+			'no detected cache' => array(
+				array(
+					self::MODE_OPTION      => 'speed',
+					self::DISMISSED_OPTION => 'no',
+				),
+				false,
+				false,
+				1,
+			),
+			'no stored mode'    => array( array(), true, true, 1 ),
+		);
 	}
 
 	/**
@@ -265,20 +291,6 @@ class CacheRenderingServiceTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( $original_blog_id, get_current_blog_id() );
 		$this->assertFalse( get_option( self::MODE_OPTION, false ) );
-	}
-
-	/**
-	 * Provide recommendation conditions.
-	 *
-	 * @return array<string,array{mixed,mixed,bool,bool,int}>
-	 */
-	public function provider_recommendation_states(): array {
-		return array(
-			'active speed'      => array( 'speed', 'no', true, true, 1 ),
-			'cache mode'        => array( 'cache', 'no', true, false, 0 ),
-			'dismissed'         => array( 'speed', 'yes', true, false, 0 ),
-			'no detected cache' => array( 'speed', 'no', false, false, 1 ),
-		);
 	}
 
 	/**

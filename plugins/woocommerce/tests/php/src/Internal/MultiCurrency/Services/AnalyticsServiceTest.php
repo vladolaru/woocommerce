@@ -68,11 +68,18 @@ class AnalyticsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should prefer Stripe exchange rate for order stats.
+	 * @testdox Should convert order stats at a valid Stripe exchange rate as it is, with or without a valid order rate, and log nothing: $_dataName.
+	 *
+	 * Client 11.2.0 `tests/unit/multi-currency/test-class-analytics.php:285-294`.
+	 * @testWith ["0.5"]
+	 *           ["invalid"]
+	 *
+	 * @param string $order_rate Saved order rate.
 	 */
-	public function test_prefers_stripe_exchange_rate_for_order_stats(): void {
-		$order = $this->create_order( 'GBP', '0.5', 'USD', '1.25' );
-		$sut   = $this->create_service( $this->create_state() );
+	public function test_prefers_stripe_exchange_rate_for_order_stats( string $order_rate ): void {
+		$logger = $this->capture_log();
+		$order  = $this->create_order( 'GBP', $order_rate, 'USD', '1.25' );
+		$sut    = $this->create_service( $this->create_state() );
 
 		$this->assertSame(
 			array(
@@ -83,6 +90,7 @@ class AnalyticsServiceTest extends WC_Unit_Test_Case {
 			),
 			$sut->convert_order_stats_data( $this->create_order_stats_args(), $order )
 		);
+		$this->assertSame( array(), $logger->entries );
 	}
 
 	/**
@@ -154,20 +162,6 @@ class AnalyticsServiceTest extends WC_Unit_Test_Case {
 			array( array( 'error', sprintf( 'Multi-Currency Analytics: order %d has no valid saved exchange rate, its order stats were not converted.', $order->get_id() ), 'multi-currency' ) ),
 			$logger->entries
 		);
-	}
-
-	/**
-	 * @testdox Should use a valid processor rate as it is, without the order rate, and log nothing.
-	 *
-	 * Client 11.2.0 `tests/unit/multi-currency/test-class-analytics.php:285-294`.
-	 */
-	public function test_uses_a_valid_processor_rate_without_the_order_rate(): void {
-		$logger = $this->capture_log();
-
-		$result = $this->create_service( $this->create_state() )->convert_order_stats_data( $this->create_net_total_args( 36.0 ), $this->create_foreign_order( 'invalid', 41.90 / 36 ) );
-
-		$this->assertSame( 41.9, $result['total_sales'] );
-		$this->assertSame( array(), $logger->entries );
 	}
 
 	/**

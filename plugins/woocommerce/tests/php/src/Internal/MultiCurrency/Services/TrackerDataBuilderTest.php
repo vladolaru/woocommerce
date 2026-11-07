@@ -94,38 +94,46 @@ class TrackerDataBuilderTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should mark default rate rounding and charm values.
+	 * @testdox Should mark default rate rounding and charm values, and keep custom ones as they are: $_dataName.
+	 * @dataProvider provide_rounding_and_charm_settings
+	 *
+	 * @param array<string,array<string,mixed>> $settings Per-currency rounding and charm settings.
+	 * @param array<int,mixed>                  $expected GBP rounding, GBP charm and JPY rounding in the payload.
 	 */
-	public function test_marks_default_rate_rounding_and_charm_values(): void {
-		$sut = $this->create_service( $this->create_state() );
+	public function test_marks_default_rounding_and_charm_values_and_keeps_custom_ones( array $settings, array $expected ): void {
+		$sut = $this->create_service( $this->create_state( $settings ) );
 
 		$result  = $sut->build( array(), OrderUtil::custom_orders_table_usage_is_enabled() );
 		$payload = $result[ TrackerDataBuilder::TRACKER_KEY ];
 
-		$this->assertSame( '1.00 (default)', $payload['enabled_currencies']['GBP']['price_rounding'] );
-		$this->assertSame( '100 (default)', $payload['enabled_currencies']['JPY']['price_rounding'] );
-		$this->assertSame( '0.00 (default)', $payload['enabled_currencies']['GBP']['price_charm'] );
+		$this->assertSame(
+			$expected,
+			array(
+				$payload['enabled_currencies']['GBP']['price_rounding'],
+				$payload['enabled_currencies']['GBP']['price_charm'],
+				$payload['enabled_currencies']['JPY']['price_rounding'],
+			)
+		);
 	}
 
 	/**
-	 * @testdox Should preserve custom rounding and charm values.
+	 * Rounding and charm settings: the defaults, and a custom GBP rounding and charm.
+	 *
+	 * @return array<string,array{0:array<string,array<string,mixed>>,1:array<int,mixed>}>
 	 */
-	public function test_preserves_custom_rounding_and_charm_values(): void {
-		$state = $this->create_state(
-			array(
-				'GBP' => array(
-					'rounding' => '0.50',
-					'charm'    => -0.01,
+	public static function provide_rounding_and_charm_settings(): array {
+		return array(
+			'defaults'   => array( array(), array( '1.00 (default)', '0.00 (default)', '100 (default)' ) ),
+			'custom GBP' => array(
+				array(
+					'GBP' => array(
+						'rounding' => '0.50',
+						'charm'    => -0.01,
+					),
 				),
-			)
+				array( '0.50', -0.01, '100 (default)' ),
+			),
 		);
-		$sut   = $this->create_service( $state );
-
-		$result  = $sut->build( array(), OrderUtil::custom_orders_table_usage_is_enabled() );
-		$payload = $result[ TrackerDataBuilder::TRACKER_KEY ];
-
-		$this->assertSame( '0.50', $payload['enabled_currencies']['GBP']['price_rounding'] );
-		$this->assertSame( -0.01, $payload['enabled_currencies']['GBP']['price_charm'] );
 	}
 
 	/**
