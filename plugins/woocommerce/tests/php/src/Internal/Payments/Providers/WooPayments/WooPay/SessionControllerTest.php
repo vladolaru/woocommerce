@@ -186,6 +186,7 @@ class SessionControllerTest extends WC_REST_Unit_Test_Case {
 		}
 		$this->assertSame( 10, has_action( 'wp_footer', array( $this->sut, 'enqueue_frontend_assets' ) ) );
 		$this->assertSame( 20, has_action( 'wp_footer', 'wp_print_footer_scripts' ) );
+		$this->assertSame( 10, has_action( 'woocommerce_checkout_process', array( $this->sut, 'maybe_show_woopay_phone_number_error' ) ) );
 		$this->assertNotFalse( has_filter( 'wcpay_metadata_from_order', array( $this->sut, 'maybe_add_woopay_user_metadata' ) ) );
 	}
 
@@ -822,53 +823,30 @@ class SessionControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should require a phone number when the shopper asks to save their details in WooPay.
+	 * @testdox Should require a phone number only when the shopper asks to save their details in WooPay: $label.
+	 *
+	 * @testWith ["not saving, no phone", {}, 0]
+	 *           ["not saving, checkbox false", {"save_user_in_woopay": "false"}, 0]
+	 *           ["saving without phone field", {"save_user_in_woopay": "true"}, 1]
+	 *           ["saving with empty phone", {"save_user_in_woopay": "true", "woopay_user_phone_field": {"full": ""}}, 1]
+	 *           ["saving with phone", {"save_user_in_woopay": "true", "woopay_user_phone_field": {"full": "+15555550123"}}, 0]
+	 *
+	 * @param string              $label           Case label.
+	 * @param array<string,mixed> $post            Posted checkout fields.
+	 * @param int                 $expected_errors How many error notices the check adds.
 	 */
-	public function test_maybe_show_woopay_phone_number_error_requires_phone_when_saving_user(): void {
+	public function test_maybe_show_woopay_phone_number_error_requires_phone_when_saving_user( string $label, array $post, int $expected_errors ): void {
+		unset( $label );
 		$this->sut = $this->create_controller( true );
-		$this->sut->register();
+		$_POST     = $post;
 
-		$this->assertSame( 10, has_action( 'woocommerce_checkout_process', array( $this->sut, 'maybe_show_woopay_phone_number_error' ) ) );
-
-		$cases = array(
-			'not saving, no phone'       => array( array(), 0 ),
-			'not saving, checkbox false' => array( array( 'save_user_in_woopay' => 'false' ), 0 ),
-			'saving without phone field' => array( array( 'save_user_in_woopay' => 'true' ), 1 ),
-			'saving with empty phone'    => array(
-				array(
-					'save_user_in_woopay'     => 'true',
-					'woopay_user_phone_field' => array( 'full' => '' ),
-				),
-				1,
-			),
-			'saving with phone'          => array(
-				array(
-					'save_user_in_woopay'     => 'true',
-					'woopay_user_phone_field' => array( 'full' => '+15555550123' ),
-				),
-				0,
-			),
-		);
-
-		foreach ( $cases as $label => list( $post, $expected_errors ) ) {
-			wc_clear_notices();
-			$_POST = $post;
-
-			$this->sut->maybe_show_woopay_phone_number_error();
-
-			$this->assertCount( $expected_errors, wc_get_notices( 'error' ), $label );
-		}
-
-		$notice = wc_get_notices( 'error' );
-		$_POST  = array();
-		wc_clear_notices();
-		$this->assertSame( array(), $notice );
-
-		$_POST = array( 'save_user_in_woopay' => 'true' );
 		$this->sut->maybe_show_woopay_phone_number_error();
-		$this->assertStringContainsString( '<strong>Mobile Number</strong> is required to create an WooPay account.', wc_get_notices( 'error' )[0]['notice'] );
-		$_POST = array();
-		wc_clear_notices();
+
+		$errors = wc_get_notices( 'error' );
+		$this->assertCount( $expected_errors, $errors );
+		if ( $expected_errors > 0 ) {
+			$this->assertStringContainsString( '<strong>Mobile Number</strong> is required to create an WooPay account.', $errors[0]['notice'] );
+		}
 	}
 
 	/**

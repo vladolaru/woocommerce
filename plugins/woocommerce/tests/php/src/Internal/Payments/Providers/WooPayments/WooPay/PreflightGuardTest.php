@@ -71,8 +71,21 @@ class PreflightGuardTest extends WC_Unit_Test_Case {
 		}
 	}
 
-	/** @testdox Leaves checkout hooks unchanged for unrelated, malformed, and missing-marker requests. */
-	public function test_non_preflight_requests_leave_checkout_hooks_unchanged(): void {
+	/**
+	 * @testdox Leaves checkout hooks unchanged for a request that is not a WooPay preflight: $label.
+	 *
+	 * @testWith ["wrong route", "/wc/store/v1/cart", [{"key": "is-woopay-preflight-check", "value": true}]]
+	 *           ["malformed payment data", "/wc/store/v1/checkout", "not-an-array"]
+	 *           ["malformed payment data record", "/wc/store/v1/checkout", ["not-an-array-record"]]
+	 *           ["missing exact marker", "/wc/store/v1/checkout", [{"key": "not-is-woopay-preflight-check", "value": true}]]
+	 *           ["exact marker with empty value", "/wc/store/v1/checkout", [{"key": "is-woopay-preflight-check", "value": false}]]
+	 *
+	 * @param string $label        Case label.
+	 * @param string $route        Store API route.
+	 * @param mixed  $payment_data The request's payment_data body parameter.
+	 */
+	public function test_non_preflight_requests_leave_checkout_hooks_unchanged( string $label, string $route, $payment_data ): void {
+		unset( $label );
 		$guard                = $this->create_guard();
 		$action_counts        = array(
 			'meta'      => 0,
@@ -82,38 +95,6 @@ class PreflightGuardTest extends WC_Unit_Test_Case {
 		$registration_calls   = 0;
 		$coupon_limit_calls   = 0;
 		$per_user_limit_calls = 0;
-		$requests             = array(
-			'wrong route'                   => array(
-				'/wc/store/v1/cart',
-				array(
-					array(
-						'key'   => 'is-woopay-preflight-check',
-						'value' => true,
-					),
-				),
-			),
-			'malformed payment data'        => array( '/wc/store/v1/checkout', 'not-an-array' ),
-			'malformed payment data record' => array( '/wc/store/v1/checkout', array( 'not-an-array-record' ) ),
-			'missing exact marker'          => array(
-				'/wc/store/v1/checkout',
-				array(
-					array(
-						'key'   => 'not-is-woopay-preflight-check',
-						'value' => true,
-					),
-				),
-			),
-			'exact marker with empty value' => array(
-				'/wc/store/v1/checkout',
-				array(
-					array(
-						'key'   => 'is-woopay-preflight-check',
-						'value' => false,
-					),
-				),
-			),
-		);
-
 		add_action(
 			'woocommerce_store_api_checkout_update_order_meta',
 			static function () use ( &$action_counts ): void {
@@ -163,34 +144,34 @@ class PreflightGuardTest extends WC_Unit_Test_Case {
 			}
 		);
 		$guard->register();
-		$expected_callback_count = 0;
+		$request  = new WP_REST_Request( 'POST', $route );
+		$response = new \stdClass();
+		$request->set_body_params(
+			array(
+				'payment_method' => 'woocommerce_payments',
+				'payment_data'   => $payment_data,
+			)
+		);
 
-		foreach ( $requests as $label => $request_data ) {
-			++$expected_callback_count;
-			$request  = new WP_REST_Request( 'POST', $request_data[0] );
-			$response = new \stdClass();
-			$request->set_body_params(
-				array(
-					'payment_method' => 'woocommerce_payments',
-					'payment_data'   => $request_data[1],
-				)
-			);
+		$this->assertSame( $response, apply_filters( 'rest_request_before_callbacks', $response, array(), $request ) );
+		do_action( 'woocommerce_store_api_checkout_update_order_meta' );
+		do_action( 'woocommerce_store_api_checkout_order_processed' );
+		do_action( 'woocommerce_order_status_pending' );
 
-			$this->assertSame( $response, apply_filters( 'rest_request_before_callbacks', $response, array(), $request ), $label );
-			do_action( 'woocommerce_store_api_checkout_update_order_meta' );
-			do_action( 'woocommerce_store_api_checkout_order_processed' );
-			do_action( 'woocommerce_order_status_pending' );
-			$this->assertSame( $expected_callback_count, $action_counts['meta'], $label );
-			$this->assertSame( $expected_callback_count, $action_counts['processed'], $label );
-			$this->assertSame( $expected_callback_count, $action_counts['pending'], $label );
-			$this->assertSame( 'sentinel-original', apply_filters( 'woocommerce_checkout_registration_required', 'original' ), $label );
-			$this->assertSame( 6, apply_filters( 'woocommerce_coupon_get_usage_limit', 5, new WC_Coupon() ), $label );
-			$this->assertSame( 2, apply_filters( 'woocommerce_coupon_get_usage_limit_per_user', 1, 123, new WC_Coupon() ), $label );
-		}
-
-		$this->assertSame( $expected_callback_count, $registration_calls );
-		$this->assertSame( $expected_callback_count, $coupon_limit_calls );
-		$this->assertSame( $expected_callback_count, $per_user_limit_calls );
+		$this->assertSame(
+			array(
+				'meta'      => 1,
+				'processed' => 1,
+				'pending'   => 1,
+			),
+			$action_counts
+		);
+		$this->assertSame( 'sentinel-original', apply_filters( 'woocommerce_checkout_registration_required', 'original' ) );
+		$this->assertSame( 6, apply_filters( 'woocommerce_coupon_get_usage_limit', 5, new WC_Coupon() ) );
+		$this->assertSame( 2, apply_filters( 'woocommerce_coupon_get_usage_limit_per_user', 1, 123, new WC_Coupon() ) );
+		$this->assertSame( 1, $registration_calls );
+		$this->assertSame( 1, $coupon_limit_calls );
+		$this->assertSame( 1, $per_user_limit_calls );
 	}
 
 	/** @testdox Suppresses checkout and coupon side effects for a WooPay preflight request WooPay composed, naming the WooPayments gateway. */
