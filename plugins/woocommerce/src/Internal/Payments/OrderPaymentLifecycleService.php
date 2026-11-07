@@ -108,8 +108,9 @@ class OrderPaymentLifecycleService {
 	 *
 	 * The one authoritative re-read for the payments code: another request (a webhook, a redirect return, a checkout of
 	 * the same order) may have written the order since this request loaded it. The read goes into a clone, so changes
-	 * the caller has not yet saved stay on the order it passed. A caller that writes on the strength of the result holds
-	 * the order payment lock.
+	 * the caller has not yet saved stay on the order it passed. The clone still carries a status transition the caller
+	 * recorded, so saving it fires that transition. A caller that writes on the strength of the result holds the order
+	 * payment lock.
 	 *
 	 * @since 11.2.0
 	 *
@@ -127,7 +128,8 @@ class OrderPaymentLifecycleService {
 	 * Read an order again from its data store into the same object, past the post, meta and HPOS order caches.
 	 *
 	 * The same read as get_fresh_order_from_data_store(), for a caller whose later code, and every other holder of the
-	 * object, must see what the read returned. Changes not yet saved on the object are discarded.
+	 * object, must see what the read returned. Changes not yet saved on the object are discarded, except a status
+	 * transition and staged save callbacks the caller recorded: the data store read does not clear them.
 	 *
 	 * @since 11.2.0
 	 *
@@ -415,8 +417,10 @@ class OrderPaymentLifecycleService {
 	 * Bring the persisted status and open disputes onto a caller's order object that a skipped completed event found stale.
 	 *
 	 * A caller whose object matches the persisted order keeps it untouched. A diverging object is read again in place,
-	 * so a later save by the caller cannot write its stale status or dispute meta, and no status transition is recorded
-	 * that the save would fire again (a second status email and note, a moved paid date). Its unsaved changes are discarded.
+	 * so a later save by the caller cannot write its stale status or dispute meta. This method records no status
+	 * transition of its own, so that save sends no second status email or note and moves no paid date. Its unsaved
+	 * changes are discarded, but a status change the caller made itself and has not saved still fires on that save.
+	 * No caller of the lifecycle holds one.
 	 *
 	 * @param WC_Order                               $order                       Caller-owned order object.
 	 * @param WC_Order                               $completed_event_order       Freshly read order used by the completed-event guard.
