@@ -239,8 +239,9 @@ class PaymentsBootstrapTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * The recording container returns disabled for owner-less sites with its own copy of the rule; the real rule is checked by
-	 * WooPaymentsSetupTierTest::test_get_state_returns_disabled_without_overwriting_the_stored_state_when_no_runtime_owns_the_site.
+	 * The recording container returns disabled for owner-less sites with its own copy of the rule. The real rule is checked by
+	 * WooPaymentsSetupTierTest::test_the_effective_tier_reads_disabled_and_lists_no_class for the feature-off half, and by
+	 * WooPaymentsSetupTierTest::test_owner_and_tier_follow_the_switch for an owner-less site with the feature on.
 	 *
 	 * @testdox An owner-less site with a disabled effective tier registers nothing, even with shadow mode enabled.
 	 */
@@ -586,7 +587,11 @@ class PaymentsBootstrapTest extends WC_Unit_Test_Case {
 							return $this->owner;
 						}
 
-						/** A site with an owner has the WooPayments feature on, as these cases assume. */
+						/**
+						 * A site with an owner has the WooPayments feature on, as these cases assume. The stub cannot build an
+						 * owner-less site with the feature on; WooPaymentsSetupTierTest::test_owner_and_tier_follow_the_switch
+						 * holds that shape.
+						 */
 						public function is_builtin_enabled(): bool {
 							return WooPaymentsRuntimeArbiter::OWNER_NONE !== $this->owner;
 						}
