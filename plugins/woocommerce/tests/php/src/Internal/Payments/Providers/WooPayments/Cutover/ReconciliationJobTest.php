@@ -4351,7 +4351,7 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Duplicate and stale callbacks cannot reclaim a generation or advance its attempt.
+	 * @testdox The scheduled attempt claims its generation, passed as positive integer strings too, while duplicate, stale and skipped-ahead callbacks cannot reclaim a generation or advance its attempt.
 	 */
 	public function test_handle_reconcile_ignores_duplicate_and_stale_callbacks(): void {
 		$sut = $this->sut;
@@ -4363,7 +4363,7 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 		$sut->handle_reconcile( 2, 1 );
 		$this->assertSame( $record, $this->state_store->get_record(), 'A callback for another generation must not mutate current state.' );
 
-		$sut->handle_reconcile( 1, 1 );
+		$sut->handle_reconcile( (string) $record['generation'], '1' );
 		$claimed = $this->state_store->get_record();
 		$this->assertIsArray( $claimed );
 		$this->assertSame( StateStore::STATE_DEFERRED, $claimed['state'] );
@@ -4371,25 +4371,10 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 		$sut->handle_reconcile( 1, 1 );
 
 		$this->assertSame( $claimed, $this->state_store->get_record(), 'A duplicate callback must not reclaim an already running attempt.' );
-	}
 
-	/**
-	 * @testdox A callback that skips ahead of the next scheduled attempt cannot claim the generation.
-	 */
-	public function test_handle_reconcile_ignores_a_skipped_ahead_attempt(): void {
-		$sut = $this->sut;
-		$sut->enqueue( 'merchant' );
-		$pending = $this->state_store->get_record();
-		$this->assertIsArray( $pending );
-		$this->scheduler->cancel( $pending['generation'], 1 );
-		$sut->handle_reconcile( $pending['generation'], 1 );
-		$deferred = $this->state_store->get_record();
-		$this->assertIsArray( $deferred );
-		$this->assertSame( StateStore::STATE_DEFERRED, $deferred['state'] );
+		$sut->handle_reconcile( $claimed['generation'], $claimed['attempt'] + 2 );
 
-		$sut->handle_reconcile( $deferred['generation'], $deferred['attempt'] + 2 );
-
-		$this->assertSame( $deferred, $this->state_store->get_record(), 'Only the next attempt may claim the generation.' );
+		$this->assertSame( $claimed, $this->state_store->get_record(), 'Only the next attempt may claim the generation.' );
 	}
 
 	/**
@@ -4430,24 +4415,6 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 		$this->assertNull( $thrown, 'Malformed public hook values must not cause a TypeError.' );
 		$this->assertSame( array(), $lease_events, 'Malformed hook values should be rejected before coordination.' );
 		$this->assertSame( $pending, $this->state_store->get_record() );
-	}
-
-	/**
-	 * @testdox The public callback coerces positive integer strings before claiming the scheduled attempt.
-	 */
-	public function test_handle_reconcile_coerces_positive_integer_strings(): void {
-		$sut = $this->sut;
-		$sut->enqueue( 'merchant' );
-		$pending = $this->state_store->get_record();
-		$this->assertIsArray( $pending );
-		$this->scheduler->cancel( $pending['generation'], 1 );
-
-		$sut->handle_reconcile( (string) $pending['generation'], '1' );
-
-		$claimed = $this->state_store->get_record();
-		$this->assertIsArray( $claimed );
-		$this->assertSame( StateStore::STATE_DEFERRED, $claimed['state'] );
-		$this->assertSame( 1, $claimed['attempt'] );
 	}
 
 	/**
