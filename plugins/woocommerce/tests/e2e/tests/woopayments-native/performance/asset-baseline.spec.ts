@@ -2,12 +2,12 @@
  * Records the payments asset baseline of one store (N-299 Task 6.7): per page, the native script and
  * style tags the document prints, every payments script and style the page loads (lazy admin chunks
  * included) with transferred, decoded and gzip bytes, and FCP, LCP and CLS. Run it once against the
- * native store and once against a WooPayments 11.1.0 store, then compare the attached JSON files:
+ * native store and once against a WooPayments 11.1.0 store, then compare the attached JSON files.
+ * It is a measurement tool, so only the measurement project runs it, on request and never in CI:
  *
  *   BASE_URL=http://localhost:8097 WCPAY_RUNTIME=client pnpm exec playwright test \
  *     --config=tests/e2e/envs/woopayments-native/playwright.config.ts \
- *     --project=woopayments-native-readonly \
- *     tests/e2e/tests/woopayments-native/performance/asset-baseline.spec.ts
+ *     --project=woopayments-native-measurement
  *
  * Optional: ASSET_BASELINE_RUNTIME (native|client admin routes, default WCPAY_RUNTIME), ASSET_BASELINE_OUTPUT (also write the JSON there, with a -shopper/-admin suffix),
  * ASSET_BASELINE_TRIALS (loads per page, default 3: one cold, the rest warm reloads),
@@ -574,7 +574,7 @@ test.describe( 'Payments asset baseline', () => {
 
 	test(
 		'records the payments asset footprint and web vitals of the shopper pages',
-		{ tag: [ tags.WOOPAYMENTS_NATIVE ] },
+		{ tag: [ tags.WOOPAYMENTS_NATIVE, '@woopayments-measurement' ] },
 		async ( { browser, baseURL }, testInfo ) => {
 			const records = await measureShopperPages(
 				browser,
@@ -592,7 +592,7 @@ test.describe( 'Payments asset baseline', () => {
 
 	test(
 		'records the payments asset footprint and web vitals of the admin pages',
-		{ tag: [ tags.WOOPAYMENTS_NATIVE ] },
+		{ tag: [ tags.WOOPAYMENTS_NATIVE, '@woopayments-measurement' ] },
 		async ( { browser, baseURL }, testInfo ) => {
 			const records = await measureAdminPages(
 				browser,

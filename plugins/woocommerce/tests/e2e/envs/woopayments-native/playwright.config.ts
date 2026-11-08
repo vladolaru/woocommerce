@@ -6,6 +6,7 @@ import defaultConfig, {
 const wooPaymentsSpecs = '**/tests/woopayments-native/**/*.spec.ts';
 const serializedProjectWorkerLimit = 1;
 const readonlyProjectName = 'woopayments-native-readonly';
+const measurementProjectName = 'woopayments-native-measurement';
 
 export function requestedProjectNames( argv: string[] ): string[] {
 	const projects: string[] = [];
@@ -23,7 +24,8 @@ export function requestedProjectNames( argv: string[] ): string[] {
 const requestedProjects = requestedProjectNames( process.argv.slice( 2 ) );
 const readonlySetupSelected =
 	requestedProjects.length === 0 ||
-	requestedProjects.includes( readonlyProjectName );
+	requestedProjects.includes( readonlyProjectName ) ||
+	requestedProjects.includes( measurementProjectName );
 
 export default {
 	...defaultConfig,
@@ -40,7 +42,19 @@ export default {
 			testMatch: wooPaymentsSpecs,
 			use: { storageState: ADMIN_STATE_PATH },
 			grepInvert:
-				/@woopayments-provider|@woopayments-transition|@woopayments-extension-compat|@woopayments-multisite/,
+				/@woopayments-provider|@woopayments-transition|@woopayments-extension-compat|@woopayments-multisite|@woopayments-measurement/,
+			metadata: {
+				woopaymentsReadonlySetup: readonlySetupSelected,
+			},
+			retries: 0,
+			workers: serializedProjectWorkerLimit,
+		},
+		{
+			// The payments asset baseline, a measurement tool run on request against a readonly-seeded store, never in CI.
+			name: measurementProjectName,
+			testMatch:
+				'**/tests/woopayments-native/performance/asset-baseline.spec.ts',
+			use: { storageState: ADMIN_STATE_PATH },
 			metadata: {
 				woopaymentsReadonlySetup: readonlySetupSelected,
 			},
