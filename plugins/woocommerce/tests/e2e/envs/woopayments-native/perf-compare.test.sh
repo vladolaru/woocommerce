@@ -69,6 +69,15 @@ fake_pnpm() {
 			[[ "$6" == 'https://github.com/Automattic/woocommerce-payments/releases/download/11.2.0/woocommerce-payments.zip' ]]
 			[[ "$7" == '58ea000906c2fc6f40e9a79d5ea60ec3104ae6d5ddf4ae533c2162b3b5fe5f96' ]]
 			[[ "$8" == 'woocommerce-payments-reference' ]]
+			# The download path passes exactly these arguments; a --reference-zip run adds the mount path of its copy,
+			# which must hold the given zip's bytes while the helper runs.
+			if [[ $# -eq 8 ]]; then
+				printf 'REFERENCE_DOWNLOAD\t%s\n' "$6" >> "$root/events.log"
+			else
+				[[ $# -eq 9 && "$9" == wp-content/plugins/woocommerce/tests/bin/tmp/woopayments-perf-reference.*/woocommerce-payments.zip ]] || exit 66
+				cmp -s "${PERF_FAKE_PLUGIN_ROOT:?}/${9#wp-content/plugins/woocommerce/}" "${PERF_FAKE_REFERENCE_ZIP:?}" || exit 66
+				printf 'REFERENCE_LOCAL\t%s\n' "$9" >> "$root/events.log"
+			fi
 			if [[ "${PERF_FAKE_CASE:-}" == 'reference-integrity' ]]; then exit 66; fi
 			mkdir -p "$root/site/wp-content/plugins/woocommerce-payments-reference"
 			printf 'reference\n' > "$root/site/wp-content/plugins/woocommerce-payments-reference/woocommerce-payments.php"
@@ -284,6 +293,7 @@ if [[ "$(basename "$0")" == 'date' ]]; then fake_date "$@"; exit; fi
 readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 readonly RUNNER="$SCRIPT_DIR/perf-compare.sh"
 readonly PROBE="$SCRIPT_DIR/perf-probe.php"
+readonly PLUGIN_ROOT="$(cd "$SCRIPT_DIR/../../../.." && pwd -P)"
 readonly TEST_ROOT="$(mktemp -d "${TMPDIR:?TMPDIR is required}/perf-compare-test.XXXXXX")"
 trap 'rm -rf "$TEST_ROOT"' EXIT
 
@@ -464,6 +474,82 @@ exit( in_array( "query", $registered_filters, true ) ? 1 : 0 );
 assert_trace_is_rejected disabled baseline_noop
 assert_trace_is_rejected active_native disabled
 
+# install-reference given a local archive (--reference-zip) copies it to the temporary file the download would have
+# written, checks it against the expected SHA-256 and extracts it. download_url() is never called, and the temporary
+# copy is removed whether the check passes or refuses.
+probe_reference_root="$TEST_ROOT/probe-reference"
+probe_reference_zip="$probe_reference_root/mount/woocommerce-payments.zip"
+mkdir -p "$probe_reference_root/wp/wp-admin/includes" "$probe_reference_root/mount"
+printf '<?php\n' > "$probe_reference_root/wp/wp-admin/includes/file.php"
+php -r '
+$zip = new ZipArchive();
+if ( true !== $zip->open( $argv[1], ZipArchive::CREATE ) ) {
+	exit( 1 );
+}
+$zip->addFromString( "woocommerce-payments/woocommerce-payments.php", "<?php\n// Plugin Name: Reference fixture\n" );
+exit( $zip->close() ? 0 : 1 );
+' "$probe_reference_zip" || fail 'Could not build the reference zip fixture.'
+probe_reference_sha="$(php -r 'echo hash_file( "sha256", $argv[1] );' "$probe_reference_zip")"
+
+run_probe_install_reference() {
+	local name="$1" expected_sha="$2" archive="$3" root="$probe_reference_root/$1"
+	mkdir -p "$root/plugins" "$root/tmp"
+	php -r '
+define( "ABSPATH", $argv[1] . "/" );
+define( "WP_PLUGIN_DIR", $argv[2] );
+define( "WP_CLI", true );
+$temp_dir = $argv[3];
+$download_marker = $argv[4];
+function wp_parse_url( $url, $component = -1 ) {
+	return parse_url( $url, $component );
+}
+function wp_tempnam( $filename ) {
+	global $temp_dir;
+	$path = $temp_dir . "/" . basename( $filename, ".zip" ) . "-download.tmp";
+	touch( $path );
+	return $path;
+}
+function wp_delete_file( $file ) {
+	@unlink( $file );
+}
+function is_wp_error( $thing ) {
+	return false;
+}
+function download_url( $url ) {
+	global $download_marker;
+	touch( $download_marker );
+	return $download_marker;
+}
+$args = array( "woocommerce-native-perf-helper", "install-reference", "https://github.com/Automattic/woocommerce-payments/releases/download/11.2.0/woocommerce-payments.zip", $argv[5], "woocommerce-payments-reference", $argv[6] );
+require $argv[7];
+' "$probe_reference_root/wp" "$root/plugins" "$root/tmp" "$root/downloaded" "$expected_sha" "$archive" "$PROBE" > "$root/stdout" 2> "$root/stderr"
+}
+
+assert_probe_reference_tidy() {
+	local root="$probe_reference_root/$1"
+	[[ ! -e "$root/downloaded" ]] || fail "install-reference downloaded the reference although a local archive was given ($1)."
+	[[ -z "$(ls -A "$root/tmp")" ]] || fail "install-reference left its temporary archive copy ($1)."
+	[[ ! -e "$root/plugins/woocommerce-payments-reference-stage" ]] || fail "install-reference left its staging folder ($1)."
+	[[ -f "$probe_reference_zip" ]] || fail "install-reference moved or removed the local archive ($1)."
+}
+
+status=0; run_probe_install_reference local-zip "$probe_reference_sha" "$probe_reference_zip" || status=$?
+[[ "$status" == 0 ]] || fail "install-reference refused a local archive with the expected SHA-256: $(< "$probe_reference_root/local-zip/stderr")"
+[[ "$(< "$probe_reference_root/local-zip/stdout")" == "$probe_reference_sha" ]] || fail 'install-reference did not print the verified SHA-256 of the local archive.'
+[[ -f "$probe_reference_root/local-zip/plugins/woocommerce-payments-reference/woocommerce-payments.php" ]] || fail 'install-reference did not install the local archive under the reference slug.'
+assert_probe_reference_tidy local-zip
+
+status=0; run_probe_install_reference local-zip-integrity '58ea000906c2fc6f40e9a79d5ea60ec3104ae6d5ddf4ae533c2162b3b5fe5f96' "$probe_reference_zip" || status=$?
+[[ "$status" == 1 ]] || fail "install-reference did not refuse a local archive that is not the pinned zip (exit $status)."
+grep -Fxq "reference-zip-integrity: $probe_reference_zip has SHA-256 $probe_reference_sha, not the pinned 58ea000906c2fc6f40e9a79d5ea60ec3104ae6d5ddf4ae533c2162b3b5fe5f96" "$probe_reference_root/local-zip-integrity/stderr" || fail 'The local archive refusal did not name both SHA-256 values.'
+[[ ! -e "$probe_reference_root/local-zip-integrity/plugins/woocommerce-payments-reference" ]] || fail 'install-reference installed a local archive that failed the SHA-256 check.'
+assert_probe_reference_tidy local-zip-integrity
+
+status=0; run_probe_install_reference local-zip-missing "$probe_reference_sha" "$probe_reference_root/mount/missing.zip" || status=$?
+[[ "$status" == 1 ]] && grep -Fxq "reference-zip-missing: $probe_reference_root/mount/missing.zip" "$probe_reference_root/local-zip-missing/stderr" || fail 'install-reference did not refuse a missing local archive.'
+[[ ! -e "$probe_reference_root/local-zip-missing/plugins/woocommerce-payments-reference" ]] || fail 'install-reference installed something without its local archive.'
+assert_probe_reference_tidy local-zip-missing
+
 
 setup_case() {
 	local name="$1" root="$TEST_ROOT/$1"
@@ -477,12 +563,15 @@ setup_case() {
 	ln -s "$SCRIPT_DIR/perf-compare.test.sh" "$root/bin/date"
 }
 
+# The optional fifth argument is a zip the runner gets as --reference-zip.
 run_case() {
-	local name="$1" scenario="$2" expected="$3" mode="$4" root="$TEST_ROOT/$1" status=0 service
+	local name="$1" scenario="$2" expected="$3" mode="$4" reference_zip="${5:-}" root="$TEST_ROOT/$1" status=0 service
+	local extra=()
 	setup_case "$name"
 	service="$([[ "$mode" == local ]] && echo tests-cli || echo cli)"
-	PATH="$root/bin:$PATH" PERF_FAKE_ROOT="$root" PERF_FAKE_CASE="$scenario" PERF_EXPECTED_SERVICE="$service" \
-		"$RUNNER" --mode "$mode" --store-url 'http://native.test:8187' --wp-env-config "$root/wp-env.json" --wp-env-service "$service" --output "$root/output/result.tsv" > "$root/stdout" 2> "$root/stderr" || status=$?
+	if [[ -n "$reference_zip" ]]; then extra=(--reference-zip "$reference_zip"); fi
+	PATH="$root/bin:$PATH" PERF_FAKE_ROOT="$root" PERF_FAKE_CASE="$scenario" PERF_EXPECTED_SERVICE="$service" PERF_FAKE_PLUGIN_ROOT="$PLUGIN_ROOT" PERF_FAKE_REFERENCE_ZIP="$reference_zip" \
+		"$RUNNER" --mode "$mode" --store-url 'http://native.test:8187' --wp-env-config "$root/wp-env.json" --wp-env-service "$service" --output "$root/output/result.tsv" ${extra[@]+"${extra[@]}"} > "$root/stdout" 2> "$root/stderr" || status=$?
 	[[ "$status" == "$expected" ]] || fail "$name expected exit $expected, got $status: $(< "$root/stderr")"
 }
 
@@ -517,6 +606,7 @@ done
 [[ "$(grep -c $'^WOOPAYMENTS_FEATURE\t' "$local_root/events.log")" == "$(grep -c $'^STATE\t' "$local_root/events.log")" ]] || fail 'Every local state preparation must write the WooPayments feature.'
 awk -F'\t' '$1 == "WOOPAYMENTS_FEATURE" { want = ($2 == "baseline_noop" || $2 == "disabled") ? "\"no\"" : "\"yes\""; if ($3 != want) exit 1 }' "$local_root/events.log" || fail 'The WooPayments feature must be "no" for baseline_noop and disabled, and "yes" for every other local state.'
 [[ "$(grep -c $'^REFERENCE_ACTIVATE$' "$local_root/events.log")" == 13 ]] || fail 'The isolated reference was not activated for its thirteen samples.'
+[[ "$(grep -c $'^REFERENCE_DOWNLOAD\t' "$local_root/events.log")" == 1 && "$(grep -c '^REFERENCE_LOCAL' "$local_root/events.log")" == 0 ]] || fail 'Without --reference-zip the reference was not installed through its one download.'
 awk '/^DB_EXPORT/{seen=1} /^DB_IMPORT/ && !seen{exit 1}' "$local_root/events.log" || fail 'Database import preceded the one export.'
 [[ "$(awk '$1 == "SEED" || $1 == "STORE_OPEN" || $1 == "PRODUCT_READY" || $1 == "DB_EXPORT" { printf "%s ", $1 }' "$local_root/events.log" | head -c 40)" == 'SEED STORE_OPEN PRODUCT_READY DB_EXPORT ' ]] || fail 'The open store and product were not ready after seed and before the one database export.'
 awk '/^SEED$/{seed=NR} /^SEED_TIME\t/{seed_time=NR} /^DB_EXPORT\t/{exported=NR} END{exit seed < seed_time && seed_time < exported ? 0 : 1}' "$local_root/events.log" || fail 'The account timestamp was not captured after seed and before export.'
@@ -548,7 +638,20 @@ grep -Fq $'available\tassets:checkout\t0\t0\t0\tNA\tNA\tNA\tNA\tinformational' "
 if grep -q $'^CURL\tasset\t[^\t]*\thttps://js.stripe.com' "$local_root/samples.log"; then fail 'A third-party asset was fetched.'; fi
 assert_cleaned "$local_root"
 
-# T.12: a query count elevated on exactly one of the STATE_SAMPLES attempts (the intermittent
+# --reference-zip: the runner copies the zip into the plugin mount and install-reference reads that copy in place of
+# the download. Nothing is downloaded, the run passes, and the copy is gone afterwards.
+reference_fixture="$TEST_ROOT/reference-fixture.zip"
+printf 'reference zip fixture\n' > "$reference_fixture"
+run_case local-reference-zip pass 0 local "$reference_fixture"
+reference_root="$TEST_ROOT/local-reference-zip"
+[[ "$(grep -c '^REFERENCE_LOCAL' "$reference_root/events.log")" == 1 && "$(grep -c '^REFERENCE_DOWNLOAD' "$reference_root/events.log")" == 0 ]] || fail 'A --reference-zip run downloaded the reference or did not hand install-reference its copy.'
+[[ "$(wc -l < "$reference_root/output/result.tsv" | tr -d ' ')" == 72 ]] || fail 'A --reference-zip run did not emit the complete local matrix.'
+[[ "$(grep -c $'^REFERENCE_ACTIVATE$' "$reference_root/events.log")" == 13 ]] || fail 'A --reference-zip run did not activate the reference for its thirteen samples.'
+if compgen -G "$PLUGIN_ROOT/tests/bin/tmp/woopayments-perf-reference.*" > /dev/null; then fail 'The --reference-zip copy remained in the plugin mount.'; fi
+[[ "$(< "$reference_fixture")" == 'reference zip fixture' ]] || fail 'The --reference-zip source was changed or removed.'
+assert_cleaned "$reference_root"
+
+# T.12:a query count elevated on exactly one of the STATE_SAMPLES attempts (the intermittent
 # component observed in CI) must not fail the run; the minimum across attempts recovers the
 # clean value. A count elevated on every attempt (a genuine regression, not a flake) must still
 # fail, so the minimum-of-N does not mask a real dormancy violation.
@@ -651,7 +754,7 @@ grep -Fq $'DB_IMPORT\t' "$TEST_ROOT/import-failure/events.log" || fail 'Import f
 grep -Fq '58ea000906c2fc6f40e9a79d5ea60ec3104ae6d5ddf4ae533c2162b3b5fe5f96' "$TEST_ROOT/reference-integrity/events.log" || fail 'Reference integrity did not use the pinned digest.'
 grep -Fq 'Cleanup failed' "$TEST_ROOT/reference-remove-failure/stderr" || fail 'Reference cleanup failure did not propagate.'
 
-for arguments in '--mode' '--store-url' '--output' '--wp-env-config' '--wp-env-service' '--mode unsupported --output result.tsv'; do
+for arguments in '--mode' '--store-url' '--output' '--wp-env-config' '--wp-env-service' '--reference-zip' '--mode unsupported --output result.tsv' '--mode ci --reference-zip result.tsv --output result.tsv' '--reference-zip /nonexistent/reference.zip --output result.tsv'; do
 	name="argument-$(printf '%s' "$arguments" | tr ' /' '__')"; setup_case "$name"; root="$TEST_ROOT/$name"; status=0
 	# shellcheck disable=SC2086 -- Deliberately split malformed argument vectors.
 	PATH="$root/bin:$PATH" PERF_FAKE_ROOT="$root" "$RUNNER" $arguments > "$root/stdout" 2> "$root/stderr" || status=$?

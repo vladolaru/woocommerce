@@ -10,6 +10,8 @@ readonly REFERENCE_URL='https://github.com/Automattic/woocommerce-payments/relea
 readonly PROBE_SOURCE='wp-content/plugins/woocommerce/tests/e2e/envs/woopayments-native/perf-probe.php'
 readonly PROBE_TARGET='wp-content/mu-plugins/woopayments-native-perf-probe.php'
 readonly CLI_HELPER_MARKER='woocommerce-native-perf-helper'
+# A --reference-zip copy reaches the store through the plugin mount, in this git-ignored folder, only while it installs.
+readonly REFERENCE_STAGE_PARENT='tests/bin/tmp'
 # Each state is prepared and captured this many independent times; the reported metric per
 # page is the minimum across the attempts. The CI swing this was added for (T.12) was a WP-Cron
 # run, spawned on shutdown once the snapshot's cron lock expired, draining pending Action
@@ -25,6 +27,8 @@ REQUEST_BASE=''
 OUTPUT=''
 WP_ENV_CONFIG='.wp-env.json'
 WP_ENV_SERVICE=''
+REFERENCE_ZIP=''
+REFERENCE_STAGE=''
 TEMP_ROOT=''
 CLEANED=0
 CLEANUP_FAILED=0
@@ -42,7 +46,8 @@ GATE_FAILED=0
 SAMPLE_FAILED=0
 
 usage() {
-	echo 'Usage: perf-compare.sh [--mode local|ci] [--store-url URL] --output FILE [--wp-env-config FILE] [--wp-env-service cli|tests-cli]' >&2
+	echo 'Usage: perf-compare.sh [--mode local|ci] [--store-url URL] --output FILE [--wp-env-config FILE] [--wp-env-service cli|tests-cli] [--reference-zip FILE]' >&2
+	echo '  --reference-zip FILE  local mode only: install the reference plugin from this copy of the pinned release zip instead of downloading it; the store checks it against the same SHA-256 and refuses a mismatch.' >&2
 }
 
 die_usage() {
@@ -97,6 +102,11 @@ parse_arguments() {
 				WP_ENV_SERVICE="$2"
 				shift 2
 				;;
+			--reference-zip)
+				[[ $# -ge 2 ]] || die_usage '--reference-zip requires an operand'
+				REFERENCE_ZIP="$2"
+				shift 2
+				;;
 			*) die_usage "Unsupported argument: $1" ;;
 		esac
 	done
@@ -107,6 +117,10 @@ parse_arguments() {
 	[[ "$WP_ENV_SERVICE" == 'cli' || "$WP_ENV_SERVICE" == 'tests-cli' ]] || die_usage "Unsupported wp-env service: $WP_ENV_SERVICE"
 	[[ -n "$OUTPUT" ]] || die_usage '--output is required'
 	[[ -d "$(dirname "$OUTPUT")" ]] || die_usage 'The --output parent directory must exist'
+	if [[ -n "$REFERENCE_ZIP" ]]; then
+		[[ "$MODE" == local ]] || die_usage '--reference-zip applies only to --mode local'
+		[[ -f "$REFERENCE_ZIP" && -r "$REFERENCE_ZIP" ]] || die_usage "The --reference-zip file is missing or unreadable: $REFERENCE_ZIP"
+	fi
 }
 
 set_option_json() {
@@ -125,9 +139,26 @@ discover_request_base() {
 	[[ "$REQUEST_BASE" =~ ^https?://[^/?#[:space:]]+$ ]]
 }
 
+# Copies --reference-zip into the plugin mount, where install-reference reads it in place of the download, then removes
+# the copy. A failure here never falls back to the download.
+install_local_reference() {
+	local status=0
+	mkdir -p "$PLUGIN_ROOT/$REFERENCE_STAGE_PARENT" || return 1
+	REFERENCE_STAGE="$(mktemp -d "$PLUGIN_ROOT/$REFERENCE_STAGE_PARENT/woopayments-perf-reference.XXXXXX")" || return 1
+	chmod 755 "$REFERENCE_STAGE" || return 1
+	cp "$REFERENCE_ZIP" "$REFERENCE_STAGE/woocommerce-payments.zip" || return 1
+	store_helper install-reference "$REFERENCE_URL" "$REFERENCE_SHA256" "$REFERENCE_DIRECTORY" "wp-content/plugins/woocommerce/${REFERENCE_STAGE#"$PLUGIN_ROOT/"}/woocommerce-payments.zip" > /dev/null || status=$?
+	rm -rf "$REFERENCE_STAGE" || return 1
+	REFERENCE_STAGE=''
+	rmdir "$PLUGIN_ROOT/$REFERENCE_STAGE_PARENT" 2> /dev/null || true
+	return "$status"
+}
+
 install_reference() {
 	local version
-	if ! store_helper install-reference "$REFERENCE_URL" "$REFERENCE_SHA256" "$REFERENCE_DIRECTORY" > /dev/null; then return 1; fi
+	if [[ -n "$REFERENCE_ZIP" ]]; then
+		install_local_reference || return 1
+	elif ! store_helper install-reference "$REFERENCE_URL" "$REFERENCE_SHA256" "$REFERENCE_DIRECTORY" > /dev/null; then return 1; fi
 	if ! version="$(store_wp plugin get woocommerce-payments-reference --field=version)"; then return 1; fi
 	[[ "$version" == '11.2.0' ]] || { echo 'The reference plugin is not WooPayments 11.2.0.' >&2; return 1; }
 }
@@ -143,6 +174,7 @@ cleanup() {
 	if ! store_cli rm -f "$PROBE_TARGET" > /dev/null 2>&1; then echo 'Cleanup failed to remove the MU probe.' >&2; failed=1; fi
 	if ! store_cli rm -rf wp-content/plugins/woocommerce-payments-reference wp-content/plugins/woocommerce-payments-reference-stage > /dev/null 2>&1; then echo 'Cleanup failed to remove the reference plugin.' >&2; failed=1; fi
 	if [[ -n "$DATABASE_SNAPSHOT" ]] && ! store_cli rm -f "$DATABASE_SNAPSHOT" > /dev/null 2>&1; then echo 'Cleanup failed to remove the database snapshot.' >&2; failed=1; fi
+	if [[ -n "$REFERENCE_STAGE" ]] && ! rm -rf "$REFERENCE_STAGE"; then echo 'Cleanup failed to remove the --reference-zip copy.' >&2; failed=1; fi
 	if [[ -n "$TEMP_ROOT" ]] && ! rm -rf "$TEMP_ROOT"; then echo 'Cleanup failed to remove its temporary directory.' >&2; failed=1; fi
 	CLEANUP_FAILED=$failed
 	return "$failed"

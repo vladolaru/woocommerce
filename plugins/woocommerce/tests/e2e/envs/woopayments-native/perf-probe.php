@@ -91,7 +91,8 @@ final class WooCommerce_Native_Payments_Perf_Probe {
 				self::install_reference(
 					self::require_cli_argument( $arguments, 2 ),
 					self::require_cli_argument( $arguments, 3 ),
-					self::require_cli_argument( $arguments, 4 )
+					self::require_cli_argument( $arguments, 4 ),
+					$arguments[5] ?? ''
 				);
 				return;
 			default:
@@ -215,24 +216,34 @@ final class WooCommerce_Native_Payments_Perf_Probe {
 	/**
 	 * Download and stage the pinned reference plugin under an isolated slug.
 	 *
+	 * Given a local archive, a copy of it takes the download's place and nothing is downloaded.
+	 *
 	 * @param string $url Reference archive URL.
 	 * @param string $expected_sha256 Expected archive SHA-256.
 	 * @param string $target_slug Target plugin directory slug.
+	 * @param string $local_archive Optional path to a local copy of the archive.
 	 * @return void
 	 */
-	private static function install_reference( string $url, string $expected_sha256, string $target_slug ): void {
+	private static function install_reference( string $url, string $expected_sha256, string $target_slug, string $local_archive = '' ): void {
 		if ( 'woocommerce-payments-reference' !== $target_slug ) {
 			self::cli_error( 'invalid-reference-target' );
 		}
 
 		require_once ABSPATH . 'wp-admin/includes/file.php';
-		$archive = download_url( $url );
-		if ( is_wp_error( $archive ) ) {
-			self::cli_error( 'reference-download-failed' );
+		if ( '' !== $local_archive ) {
+			$archive = self::copy_local_reference( $url, $local_archive );
+		} else {
+			$archive = download_url( $url );
+			if ( is_wp_error( $archive ) ) {
+				self::cli_error( 'reference-download-failed' );
+			}
 		}
 		$actual_sha256 = hash_file( 'sha256', $archive );
 		if ( false === $actual_sha256 || ! hash_equals( $expected_sha256, $actual_sha256 ) ) {
 			wp_delete_file( $archive );
+			if ( '' !== $local_archive ) {
+				self::cli_error( sprintf( 'reference-zip-integrity: %s has SHA-256 %s, not the pinned %s', $local_archive, (string) $actual_sha256, $expected_sha256 ) );
+			}
 			self::cli_error( 'reference-integrity' );
 		}
 
@@ -257,6 +268,25 @@ final class WooCommerce_Native_Payments_Perf_Probe {
 
 		// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Verified SHA-256 WP-CLI machine output is not HTML.
 		echo $expected_sha256 . "\n";
+	}
+
+	/**
+	 * Copy a local reference archive to the temporary file download_url() would write for the URL.
+	 *
+	 * @param string $url Reference archive URL, which names the temporary file.
+	 * @param string $local_archive Path to the local archive.
+	 * @return string Temporary archive path.
+	 */
+	private static function copy_local_reference( string $url, string $local_archive ): string {
+		if ( ! is_file( $local_archive ) || ! is_readable( $local_archive ) ) {
+			self::cli_error( 'reference-zip-missing: ' . $local_archive );
+		}
+		$archive = wp_tempnam( basename( (string) wp_parse_url( $url, PHP_URL_PATH ) ) );
+		if ( ! copy( $local_archive, $archive ) ) {
+			wp_delete_file( $archive );
+			self::cli_error( 'reference-zip-copy-failed' );
+		}
+		return $archive;
 	}
 
 	/**
