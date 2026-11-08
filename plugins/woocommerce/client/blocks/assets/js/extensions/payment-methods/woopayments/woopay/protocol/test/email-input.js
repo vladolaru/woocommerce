@@ -101,6 +101,22 @@ describe( 'WooPay email check (shared)', () => {
 		document.body.innerHTML = '';
 	} );
 
+	test( 'looks up only the last email typed within 500 ms of the one before', async () => {
+		handleEmailInput( getArgs(), input );
+
+		input.value = 'shopper@example.co';
+		input.dispatchEvent( new window.Event( 'input' ) );
+		await jest.advanceTimersByTimeAsync( 200 );
+		await typeEmail( 'shopper@example.com' );
+
+		expect( window.fetch ).toHaveBeenCalledTimes( 1 );
+		expect(
+			new URL( window.fetch.mock.calls[ 0 ][ 0 ] ).searchParams.get(
+				'email'
+			)
+		).toBe( 'shopper@example.com' );
+	} );
+
 	test.each( [
 		[ '1', 'true' ],
 		[ '', 'false' ],

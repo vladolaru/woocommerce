@@ -6081,8 +6081,11 @@ describe( 'WooPayments checkout', () => {
 		let windowListeners;
 		let originalWindowAddEventListener;
 
+		// The block runs on Jest's fake timers: a tick of 0 ms settles the pending promise chains without waiting.
+		const flushPromises = () => jest.advanceTimersByTimeAsync( 0 );
+
 		function wait( ms ) {
-			return new Promise( ( resolve ) => setTimeout( resolve, ms ) );
+			return jest.advanceTimersByTimeAsync( ms );
 		}
 
 		// jQuery settles XHR callbacks asynchronously; the deferred
@@ -6196,7 +6199,8 @@ describe( 'WooPayments checkout', () => {
 		async function typeEmail( input, email ) {
 			input.value = email;
 			input.dispatchEvent( new window.Event( 'input', { bubbles: true } ) );
-			await wait( 550 );
+			// A fixed 550 ms, not every pending timer: the rows fail when the input debounce grows past it.
+			await jest.advanceTimersByTimeAsync( 550 );
 			await flushPromises();
 		}
 
@@ -6266,6 +6270,8 @@ describe( 'WooPayments checkout', () => {
 			);
 			window.history.replaceState = jest.fn();
 			window.scrollTo = jest.fn();
+			// The file's afterEach restores real timers.
+			jest.useFakeTimers();
 		} );
 
 		afterEach( () => {
