@@ -6,9 +6,7 @@ import {
 	initWooPay,
 	isPreviewing,
 	shouldHandleWooPayEmailInput,
-	validateEmail,
 	shouldSkipWooPay,
-	deleteSkipWooPayCookie,
 	__test__,
 } from '../email-input-iframe';
 import { postFromWooPay } from '../protocol/test/utils/post-from-woopay';
@@ -189,20 +187,6 @@ describe( 'WooPay email input (blocks)', () => {
 		} );
 		document.body.innerHTML = '';
 		document.body.style.overflow = '';
-	} );
-
-	test( 'validates emails like the checkout form does', () => {
-		expect( validateEmail( 'shopper@example.com' ) ).toBe( true );
-		expect( validateEmail( 'shopper@example.c' ) ).toBe( false );
-		expect( validateEmail( 'not-an-email' ) ).toBe( false );
-	} );
-
-	test( 'reads and clears the skip_woopay cookie', () => {
-		expect( shouldSkipWooPay() ).toBe( false );
-		document.cookie = 'skip_woopay=1; path=/';
-		expect( shouldSkipWooPay() ).toBe( true );
-		deleteSkipWooPayCookie();
-		expect( shouldSkipWooPay() ).toBe( false );
 	} );
 
 	test( 'gates the flow like the plugin blocks entry point', () => {

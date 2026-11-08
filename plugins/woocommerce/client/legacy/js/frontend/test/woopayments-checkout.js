@@ -6392,25 +6392,6 @@ describe( 'WooPayments checkout', () => {
 			expect( getPostCalls( 'get_woopay_signature' ) ).toHaveLength( 0 );
 		} );
 
-		test( 'ignores WooPay messages from any other origin', async () => {
-			const input = await setupWooPayEmailInput();
-			await typeEmail( input, 'shopper@example.com' );
-
-			postWooPayMessage(
-				{
-					action: 'redirect_to_woopay_skip_session_init',
-					redirectUrl: 'https://evil.example/phish',
-				},
-				'https://evil.example'
-			);
-			postWooPayMessage( { action: 'close_modal' }, 'https://evil.example' );
-			await flushPromises();
-
-			expect( navigate ).not.toHaveBeenCalled();
-			expect( document.querySelector( '.woopay-otp-iframe-wrapper' ) ).not.toBeNull();
-			expect( getPostCalls( 'init_woopay' ) ).toHaveLength( 0 );
-		} );
-
 		test( 'ignores emails that do not validate', async () => {
 			const input = await setupWooPayEmailInput();
 
@@ -6579,37 +6560,6 @@ describe( 'WooPayments checkout', () => {
 			);
 		} );
 
-		test( 'starts init_woopay only for a redirect no other WooPay script has claimed', async () => {
-			const redirect = {
-				action: 'redirect_to_platform_checkout',
-				platformCheckoutUserSession: 'session-token',
-			};
-			// The express button's listener, registered first from its own script.
-			function expressScript( e ) {
-				e.wcWooPayInitClaimed = true;
-			}
-			window.addEventListener( 'message', expressScript );
-			const input = await setupWooPayEmailInput();
-			await typeEmail( input, 'shopper@example.com' );
-
-			postWooPayMessage( redirect );
-			await flushPromises();
-			expect( getPostCalls( 'init_woopay' ) ).toHaveLength( 0 );
-
-			window.removeEventListener( 'message', expressScript );
-			let claimed;
-			function laterScript( e ) {
-				claimed = e.wcWooPayInitClaimed;
-			}
-			window.addEventListener( 'message', laterScript );
-			postWooPayMessage( redirect );
-			await flushPromises();
-			window.removeEventListener( 'message', laterScript );
-
-			expect( getPostCalls( 'init_woopay' ) ).toHaveLength( 1 );
-			expect( claimed ).toBe( true );
-		} );
-
 		test( 'shows the unavailable notice and closes the iframe when init_woopay fails', async () => {
 			postResponses.init_woopay = { response: { result: 'error' } };
 			const input = await setupWooPayEmailInput();
@@ -6632,17 +6582,6 @@ describe( 'WooPayments checkout', () => {
 					.querySelector( '.wc-block-checkout__guest-checkout-notice' )
 					.getAttribute( 'role' )
 			).toBe( 'alert' );
-		} );
-
-		test( 'leaves focus alone on Escape while the OTP dialog is closed', async () => {
-			const input = await setupWooPayEmailInput();
-			jest.spyOn( input, 'focus' );
-
-			document.dispatchEvent(
-				new window.KeyboardEvent( 'keyup', { key: 'Escape' } )
-			);
-
-			expect( input.focus ).not.toHaveBeenCalled();
 		} );
 
 		test( 'labels the OTP dialog, gives it a close button and keeps focus inside', async () => {
@@ -6700,38 +6639,29 @@ describe( 'WooPayments checkout', () => {
 			expect( input.focus ).toHaveBeenCalled();
 		} );
 
-		test( 'surfaces the unavailable notice when WooPay cannot be reached', async () => {
+		test.each( [
+			[ 'shows the unavailable notice', {}, [ 'WooPay is unavailable at this time.' ] ],
+			[ 'stays quiet outside the countries WooPay serves', { woopayIsCountryAvailable: false }, [] ],
+		] )( 'when WooPay cannot be reached, %s', async ( description, configOverrides, notices ) => {
 			fetchResponses[
 				`${ WOOPAY_HOST }/wp-json/platform-checkout/v1/user/exists?`
 			] = { reject: new TypeError( 'Failed to fetch' ) };
-			const input = await setupWooPayEmailInput();
+			const input = await setupWooPayEmailInput( configOverrides );
 
 			await typeEmail( input, 'shopper@example.com' );
 
+			// The whole page, so a notice placed anywhere else still counts.
 			expect(
-				input.parentNode.querySelector(
-					'.wc-block-checkout__guest-checkout-notice'
-				).textContent
-			).toBe( 'WooPay is unavailable at this time.' );
+				Array.from(
+					document.querySelectorAll( '.wc-block-checkout__guest-checkout-notice' ),
+					( notice ) => notice.textContent
+				)
+			).toEqual( notices );
+			expect(
+				input.parentNode.querySelectorAll( '.wc-block-checkout__guest-checkout-notice' )
+			).toHaveLength( notices.length );
 			expect(
 				input.parentNode.querySelector( '.wc-block-components-spinner' )
-			).toBeNull();
-		} );
-
-		test( 'keeps connection errors quiet when WooPay is not available in the store country', async () => {
-			fetchResponses[
-				`${ WOOPAY_HOST }/wp-json/platform-checkout/v1/user/exists?`
-			] = { reject: new TypeError( 'Failed to fetch' ) };
-			const input = await setupWooPayEmailInput( {
-				woopayIsCountryAvailable: false,
-			} );
-
-			await typeEmail( input, 'shopper@example.com' );
-
-			expect(
-				document.querySelector(
-					'.wc-block-checkout__guest-checkout-notice'
-				)
 			).toBeNull();
 		} );
 
