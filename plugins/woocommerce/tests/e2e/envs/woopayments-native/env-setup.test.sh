@@ -387,15 +387,22 @@ jq -e '
 grep -q 'WooPayments secretless fixture readiness proved for native blog 2 without connected callback topology.' \
 	"$TEST_ROOT/secretless-ci-stdout"
 
-# A failed listing fails closed to full gates.
-run_setup 'native' 'list-broken' \
+# A failed listing cannot show the provider project is unselected, and its
+# pinned count cannot be read, so the run fails before any readiness proof.
+expect_readiness_failure 'native' 'list-broken' \
+	'A failed test listing must fail the run.' \
 	E2E_FAKE_LIST_FAIL=1 \
 	-- --project=woopayments-native-readonly
-grep -q 'WooPayments callback readiness proved for native blog 2.' \
-	"$TEST_ROOT/list-broken-stdout"
-if ! grep -Fq 'wcpay callback probe' "$TEST_ROOT/list-broken-commands.log"; then
-	fail 'A failed test listing must fail closed to full provider gates.'
-fi
+assert_stderr_contains 'list-broken' 'an unreadable number of cases'
+assert_failed_before_callback_proof 'list-broken' 'A failed test listing must fail before callback proof.'
+
+# A run with no arguments selects every project, the provider one included, so
+# a provider project that has lost a case fails the run.
+expect_readiness_failure 'native' 'provider-count-short' \
+	'A provider project below its pinned count must fail the run.' \
+	E2E_FAKE_PROVIDER_CASES=42
+assert_stderr_contains 'provider-count-short' 'collects 42 cases, fewer than the pinned 43'
+assert_failed_before_callback_proof 'provider-count-short' 'A short provider project must fail before callback proof.'
 
 if [[ ${#COMMAND_LOGS[@]} -eq 0 ]]; then
 	fail 'No readiness command logs were captured.'

@@ -53,11 +53,17 @@ readonly PROVIDER_PROJECT_MIN_CASES=43
 # passes its Playwright arguments through, so listing with those arguments
 # describes exactly the collected set. Anything ambiguous — no arguments, a
 # failed listing, unparsable output — fails closed to full provider readiness.
+# The listings resolve workspace sources the way the test run does
+# (run-tests-with-env.sh adds --conditions=wc-source only after this script).
+PLAYWRIGHT_LIST_NODE_OPTIONS="${NODE_OPTIONS:-} --conditions=wc-source"
 PROVIDER_READINESS_REQUIRED=1
+# The provider project counts as selected unless a successful listing of this
+# invocation shows it is not: with no arguments Playwright runs every project.
+provider_project_selected=1
 if [[ $# -gt 0 ]]; then
 	provider_tag_scan=''
 	if provider_list_json="$(
-		CI=1 BASE_URL="${BASE_URL:-http://localhost:8086}" \
+		CI=1 BASE_URL="${BASE_URL:-http://localhost:8086}" NODE_OPTIONS="$PLAYWRIGHT_LIST_NODE_OPTIONS" \
 			pnpm exec playwright test \
 			--config="$PLAYWRIGHT_CONFIG" --list --reporter=json "$@" \
 			2> /dev/null
@@ -75,27 +81,34 @@ if [[ $# -gt 0 ]]; then
 		)" || provider_tag_scan=''
 
 		if printf '%s\n' "$provider_list_json" | jq -e --arg project "$PROVIDER_PROJECT" '
-			any( .. | objects | select( has("specs") ) | .specs[].tests[]?; .projectName == $project )
+			( .suites | type ) == "array"
+			and ( any( .. | objects | select( has("specs") ) | .specs[].tests[]?; .projectName == $project ) | not )
 		' > /dev/null 2>&1; then
-			provider_case_count="$(
-				CI=1 BASE_URL="${BASE_URL:-http://localhost:8086}" \
-					pnpm exec playwright test \
-					--config="$PLAYWRIGHT_CONFIG" --list --reporter=json --project="$PROVIDER_PROJECT" \
-					2> /dev/null |
-					jq --arg project "$PROVIDER_PROJECT" '
-						[ .. | objects | select( has("specs") ) | .specs[].tests[]? | select( .projectName == $project ) ]
-						| length
-					' 2> /dev/null
-			)" || provider_case_count=''
-			if [[ ! "$provider_case_count" =~ ^[0-9]+$ ]] || (( provider_case_count < PROVIDER_PROJECT_MIN_CASES )); then
-				echo "The $PROVIDER_PROJECT project collects ${provider_case_count:-an unreadable number of} cases, fewer than the pinned $PROVIDER_PROJECT_MIN_CASES: a live-platform case has probably lost its @woopayments-provider tag. Restore the tag, or lower PROVIDER_PROJECT_MIN_CASES in env-setup.sh if the case was removed on purpose." >&2
-				exit 1
-			fi
+			provider_project_selected=0
 		fi
 	fi
 
 	if [[ "$provider_tag_scan" == 'false' ]]; then
 		PROVIDER_READINESS_REQUIRED=0
+	fi
+fi
+
+# Whenever the provider project may run, it must still collect its pinned count,
+# and a count that cannot be read fails the run rather than skipping the check.
+if [[ "$provider_project_selected" == 1 ]]; then
+	provider_case_count="$(
+		CI=1 BASE_URL="${BASE_URL:-http://localhost:8086}" NODE_OPTIONS="$PLAYWRIGHT_LIST_NODE_OPTIONS" \
+			pnpm exec playwright test \
+			--config="$PLAYWRIGHT_CONFIG" --list --reporter=json --project="$PROVIDER_PROJECT" \
+			2> /dev/null |
+			jq --arg project "$PROVIDER_PROJECT" '
+				[ .. | objects | select( has("specs") ) | .specs[].tests[]? | select( .projectName == $project ) ]
+				| length
+			' 2> /dev/null
+	)" || provider_case_count=''
+	if [[ ! "$provider_case_count" =~ ^[0-9]+$ ]] || (( provider_case_count < PROVIDER_PROJECT_MIN_CASES )); then
+		echo "The $PROVIDER_PROJECT project collects ${provider_case_count:-an unreadable number of} cases, fewer than the pinned $PROVIDER_PROJECT_MIN_CASES: a live-platform case has probably lost its @woopayments-provider tag. Restore the tag, or lower PROVIDER_PROJECT_MIN_CASES in env-setup.sh if the case was removed on purpose." >&2
+		exit 1
 	fi
 fi
 readonly PROVIDER_READINESS_REQUIRED

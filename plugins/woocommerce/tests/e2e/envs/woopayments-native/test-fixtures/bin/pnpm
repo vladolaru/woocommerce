@@ -59,6 +59,15 @@ if [[ "$*" == *"playwright test"* && "$*" == *"--list"* ]]; then
 	if [[ "${E2E_FAKE_LIST_PROFILE_UNAVAILABLE:-0}" == '1' ]]; then
 		annotations_json='[{"type":"profile-unavailable","description":"RULE 5 fixture"}]'
 	fi
+	# A listing that selects the provider project answers with that project's
+	# cases, E2E_FAKE_PROVIDER_CASES of them (the pinned 43 unless a case sets it).
+	if [[ "$*" == *"--project=woopayments-native-provider"* ]]; then
+		provider_cases="${E2E_FAKE_PROVIDER_CASES:-43}"
+		jq -cn --argjson n "$provider_cases" --argjson tags "$tags_json" '
+			{ config: { projects: [] }, errors: [], suites: [ { title: "fake-provider.spec.ts", specs: [ range( $n ) | { title: "fake provider \(.)", tags: $tags, tests: [ { projectName: "woopayments-native-provider", annotations: [] } ] } ], suites: [] } ] }
+		'
+		exit 0
+	fi
 	printf '{"config":{"projects":[]},"errors":[],"suites":[{"title":"fake.spec.ts","specs":[{"title":"fake","tags":%s,"tests":[{"annotations":%s}]}],"suites":[]}]}\n' "$tags_json" "$annotations_json"
 	exit 0
 fi
