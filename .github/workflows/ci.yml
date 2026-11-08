@@ -585,7 +585,7 @@ jobs:
       - name: 'Run secretless readonly project'
         env:
           E2E_WOOPAYMENTS_DIAGNOSTICS_DIR: '${{ runner.temp }}/woopayments-native-diagnostics'
-        run: pnpm --dir plugins/woocommerce test:e2e:with-env woopayments-native --project=woopayments-native-readonly
+        run: pnpm --dir plugins/woocommerce test:e2e:with-env woopayments-native --project=woopayments-native-readonly --project=woopayments-native-extension-compat
 
       - name: 'Audit secretless provider fixture'
         if: ${{ always() }}
