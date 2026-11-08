@@ -66,8 +66,8 @@ fake_pnpm() {
 			;;
 		install-reference)
 			printf 'REFERENCE_INSTALL\t%s\t%s\n' "$6" "$7" >> "$root/events.log"
-			[[ "$6" == 'https://github.com/Automattic/woocommerce-payments/releases/download/11.1.0/woocommerce-payments.zip' ]]
-			[[ "$7" == 'd655a77f24f638a3a57edbfd192c6d9e1196970b23320d289a48fc443ca7ffb1' ]]
+			[[ "$6" == 'https://github.com/Automattic/woocommerce-payments/releases/download/11.2.0/woocommerce-payments.zip' ]]
+			[[ "$7" == '58ea000906c2fc6f40e9a79d5ea60ec3104ae6d5ddf4ae533c2162b3b5fe5f96' ]]
 			[[ "$8" == 'woocommerce-payments-reference' ]]
 			if [[ "${PERF_FAKE_CASE:-}" == 'reference-integrity' ]]; then exit 66; fi
 			mkdir -p "$root/site/wp-content/plugins/woocommerce-payments-reference"
@@ -132,7 +132,7 @@ fake_pnpm() {
 		is-active:woocommerce-payments) [[ "$(< "$root/canonical-active")" == 'true' ]] ;;
 		get:woocommerce-payments-reference)
 			[[ -f "$root/site/wp-content/plugins/woocommerce-payments-reference/woocommerce-payments.php" ]]
-			if [[ "${PERF_FAKE_CASE:-}" == 'reference-version' ]]; then printf '11.0.0\n'; else printf '11.1.0\n'; fi
+			if [[ "${PERF_FAKE_CASE:-}" == 'reference-version' ]]; then printf '11.0.0\n'; else printf '11.2.0\n'; fi
 			;;
 		activate:woocommerce-payments-reference)
 			[[ -f "$root/site/wp-content/plugins/woocommerce-payments-reference/woocommerce-payments.php" ]]
@@ -648,7 +648,7 @@ for failure in export-failure import-failure reference-integrity reference-versi
 done
 [[ "$(grep -c $'^DB_EXPORT\t' "$TEST_ROOT/export-failure/events.log")" == 1 && "$(grep -c $'^SAMPLE\t' "$TEST_ROOT/export-failure/events.log")" == 0 ]] || fail 'Export failure reached sampling.'
 grep -Fq $'DB_IMPORT\t' "$TEST_ROOT/import-failure/events.log" || fail 'Import failure was not propagated from a reset attempt.'
-grep -Fq 'd655a77f24f638a3a57edbfd192c6d9e1196970b23320d289a48fc443ca7ffb1' "$TEST_ROOT/reference-integrity/events.log" || fail 'Reference integrity did not use the pinned digest.'
+grep -Fq '58ea000906c2fc6f40e9a79d5ea60ec3104ae6d5ddf4ae533c2162b3b5fe5f96' "$TEST_ROOT/reference-integrity/events.log" || fail 'Reference integrity did not use the pinned digest.'
 grep -Fq 'Cleanup failed' "$TEST_ROOT/reference-remove-failure/stderr" || fail 'Reference cleanup failure did not propagate.'
 
 for arguments in '--mode' '--store-url' '--output' '--wp-env-config' '--wp-env-service' '--mode unsupported --output result.tsv'; do
