@@ -81,7 +81,8 @@ class SwitcherRendererTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Block attributes: symbol off with a borderless styled select and a carried query argument, and symbol and border on.
+	 * Block attributes: symbol off with a borderless styled select and a carried query argument, symbol and border on,
+	 * and an opaque background colour.
 	 *
 	 * @return array<string,array{0:string,1:array<string,mixed>,2:array<string,mixed>,3:string[]}>
 	 */
@@ -131,6 +132,16 @@ class SwitcherRendererTest extends WC_Unit_Test_Case {
 				array(
 					'border: 1px solid;',
 					'<option value="USD" selected>&#036; USD</option>',
+				),
+			),
+			'opaque background'                => array(
+				'USD',
+				array(
+					'backgroundColor' => '#00ff00',
+				),
+				array(),
+				array(
+					'background-color: #00ff00;',
 				),
 			),
 		);
