@@ -22,7 +22,7 @@ import { fillBillingCheckoutBlocks } from '@woocommerce/e2e-utils-playwright';
  * Internal dependencies
  */
 import { expect } from '../../fixtures/fixtures';
-import { wpEvalJson } from '../../utils/cli';
+import { wpEvalJson } from '../../utils/woopayments-cli';
 import { random } from '../../utils/helpers';
 import { hasStripeTestKey } from '../../utils/stripe-test-clock';
 import {

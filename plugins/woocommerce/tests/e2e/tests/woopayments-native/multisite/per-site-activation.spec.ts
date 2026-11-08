@@ -2,7 +2,7 @@ import { stripVTControlCharacters } from 'node:util';
 
 import { expect, test, type Page } from '@playwright/test';
 
-import { wpCLI } from '../../../utils/cli';
+import { wpCLI } from '../../../utils/woopayments-cli';
 import { admin } from '../../../test-data/data';
 import { logIn } from '../../../utils/login';
 

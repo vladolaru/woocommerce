@@ -2,7 +2,7 @@ import type { Page } from '@playwright/test';
 import type { ApiClient } from '@woocommerce/e2e-utils-playwright';
 
 import { expect, tags, test } from '../../../fixtures/fixtures';
-import { wpEvalJson } from '../../../utils/cli';
+import { wpEvalJson } from '../../../utils/woopayments-cli';
 import { random } from '../../../utils/helpers';
 import {
 	expectSettledCardPayment,

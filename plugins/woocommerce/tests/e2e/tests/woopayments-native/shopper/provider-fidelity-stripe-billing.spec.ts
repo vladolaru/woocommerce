@@ -1,7 +1,7 @@
 import type { ApiClient } from '@woocommerce/e2e-utils-playwright';
 
 import { expect, tags, test } from '../../../fixtures/fixtures';
-import { wpEvalJson } from '../../../utils/cli';
+import { wpEvalJson } from '../../../utils/woopayments-cli';
 import { getFakeUser } from '../../../utils/data';
 import { logInFromMyAccount } from '../../../utils/login';
 import { createClassicCheckoutPage } from '../../../utils/pages';

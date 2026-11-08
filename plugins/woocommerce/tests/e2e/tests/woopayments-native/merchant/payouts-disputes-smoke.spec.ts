@@ -3,7 +3,7 @@ import type { ApiClient } from '@woocommerce/e2e-utils-playwright';
 
 import { expect, tags, test } from '../../../fixtures/fixtures';
 import { admin } from '../../../test-data/data';
-import { wpCLI } from '../../../utils/cli';
+import { wpCLI } from '../../../utils/woopayments-cli';
 import { logIn } from '../../../utils/login';
 
 // The transactions list contract is deliberately absent: it is claimed and

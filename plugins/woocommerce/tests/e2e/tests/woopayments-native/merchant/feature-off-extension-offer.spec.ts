@@ -1,6 +1,6 @@
 import { expect, tags, test } from '../../../fixtures/fixtures';
 import { ADMIN_STATE_PATH } from '../../../playwright.config';
-import { wpCLI } from '../../../utils/cli';
+import { wpCLI } from '../../../utils/woopayments-cli';
 
 test.use( { storageState: ADMIN_STATE_PATH } );
 

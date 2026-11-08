@@ -3,7 +3,7 @@ import { fillBillingCheckoutBlocks } from '@woocommerce/e2e-utils-playwright';
 import type { Page } from '@playwright/test';
 
 import { expect, tags, test } from '../../../fixtures/fixtures';
-import { wpCLI, wpEvalJson } from '../../../utils/cli';
+import { wpCLI, wpEvalJson } from '../../../utils/woopayments-cli';
 import { admin } from '../../../test-data/data';
 import { logIn } from '../../../utils/login';
 import { random } from '../../../utils/helpers';

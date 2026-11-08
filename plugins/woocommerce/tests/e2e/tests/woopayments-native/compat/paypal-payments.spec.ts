@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-import { wpEvalJson } from '../../../utils/cli';
+import { wpEvalJson } from '../../../utils/woopayments-cli';
 
 const COMMON_PROBE_PHP = String.raw`
 $wcpay_extension_profile = get_option( 'e2e_woopayments_extension_compat_profile', array() );

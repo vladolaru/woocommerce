@@ -15,7 +15,7 @@ import type { ApiClient } from '@woocommerce/e2e-utils-playwright';
  * Internal dependencies
  */
 import { expect, tags, test } from '../../../fixtures/fixtures';
-import { wpEvalJson } from '../../../utils/cli';
+import { wpEvalJson } from '../../../utils/woopayments-cli';
 import { getFakeUser } from '../../../utils/data';
 import { random } from '../../../utils/helpers';
 import { getPaymentIntent, metaValue } from '../../../utils/woopayments';

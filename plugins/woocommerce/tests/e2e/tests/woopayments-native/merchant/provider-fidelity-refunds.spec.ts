@@ -5,7 +5,7 @@ import { fillBillingCheckoutBlocks } from '@woocommerce/e2e-utils-playwright';
 import { expect, tags, test } from '../../../fixtures/fixtures';
 import { admin } from '../../../test-data/data';
 import { random } from '../../../utils/helpers';
-import { wpEvalJson } from '../../../utils/cli';
+import { wpEvalJson } from '../../../utils/woopayments-cli';
 import { logIn } from '../../../utils/login';
 import {
 	expectSettledCardPayment,

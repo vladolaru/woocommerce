@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-import { wpCLI, wpEvalJson } from '../../../utils/cli';
+import { wpCLI, wpEvalJson } from '../../../utils/woopayments-cli';
 
 // The native multi-currency facade this probe requires (`WCPay\MultiCurrency\MultiCurrency`)
 // only declares itself once the store has opted into WooCommerce's independent multi-currency

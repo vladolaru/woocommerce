@@ -3,7 +3,7 @@ import type { ApiClient } from '@woocommerce/e2e-utils-playwright';
 import { fillBillingCheckoutBlocks } from '@woocommerce/e2e-utils-playwright';
 
 import { expect, tags, test } from '../../../fixtures/fixtures';
-import { wpEvalJson } from '../../../utils/cli';
+import { wpEvalJson } from '../../../utils/woopayments-cli';
 import { random } from '../../../utils/helpers';
 import { createClassicCheckoutPage } from '../../../utils/pages';
 import {
