@@ -52,26 +52,30 @@ describe( 'WooPayments Blocks fraud-scripts entry', () => {
 		).toHaveLength( 1 );
 	} );
 
-	it( 'reads another WooPayments gateway when the card gateway is absent', () => {
-		mockGetSetting.mockReturnValue( {
-			cod: { fraudServices: { sift: { beacon_key: 'not_ours' } } },
-			woocommerce_payments_bancontact: {
-				fraudServices: { sift: SIFT_CONFIG },
+	it.each( [
+		[
+			'another WooPayments gateway carries one',
+			{
+				cod: { fraudServices: { sift: { beacon_key: 'not_ours' } } },
+				woocommerce_payments_bancontact: {
+					fraudServices: { sift: SIFT_CONFIG },
+				},
 			},
-		} );
+			{ sift: SIFT_CONFIG },
+		],
+		[
+			'only a gateway outside WooPayments carries one',
+			{ cod: { fraudServices: { sift: SIFT_CONFIG } } },
+			undefined,
+		],
+	] )(
+		'reads the config of another WooPayments gateway, or none, when the card gateway is absent: %s',
+		( description, settings, expected ) => {
+			mockGetSetting.mockReturnValue( settings );
 
-		const { getFraudServicesConfig } = loadEntry();
+			const { getFraudServicesConfig } = loadEntry();
 
-		expect( getFraudServicesConfig() ).toEqual( { sift: SIFT_CONFIG } );
-	} );
-
-	it( 'returns nothing when no WooPayments gateway carries a config', () => {
-		mockGetSetting.mockReturnValue( {
-			cod: { fraudServices: { sift: SIFT_CONFIG } },
-		} );
-
-		const { getFraudServicesConfig } = loadEntry();
-
-		expect( getFraudServicesConfig() ).toBeUndefined();
-	} );
+			expect( getFraudServicesConfig() ).toStrictEqual( expected );
+		}
+	);
 } );

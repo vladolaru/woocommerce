@@ -681,89 +681,52 @@ describe( 'WooPayments express checkout', () => {
 		expect( getTracksRequests() ).toHaveLength( 0 );
 	} );
 
-	test( 'mounts Stripe ECE with Amazon Pay when server config enables it', async () => {
-		window.wcpayExpressCheckoutParams.enabled_methods = [
-			'payment_request',
-			'amazon_pay',
-		];
-		window.wcpayExpressCheckoutParams.payment_method_types = [
-			'card',
-			'amazon_pay',
-		];
+	test.each( [
+		[
+			'with the card wallets when the server config enables both',
+			[ 'payment_request', 'amazon_pay' ],
+			[ 'card', 'amazon_pay' ],
+			[ 'card', 'amazon_pay' ],
+			{ applePay: 'always', googlePay: 'always', amazonPay: 'auto' },
+		],
+		[
+			'alone when the server config enables only Amazon Pay',
+			[ 'amazon_pay' ],
+			[ 'amazon_pay' ],
+			[ 'amazon_pay' ],
+			{ applePay: 'never', googlePay: 'never', amazonPay: 'auto' },
+		],
+		[
+			'never when the Stripe method types exclude it',
+			[ 'payment_request', 'amazon_pay' ],
+			[ 'card' ],
+			[ 'card' ],
+			{ applePay: 'always', googlePay: 'always', amazonPay: 'never' },
+		],
+	] )(
+		'mounts Stripe ECE with Amazon Pay %s',
+		async ( description, enabledMethods, paymentMethodTypes, expectedTypes, expectedWallets ) => {
+			window.wcpayExpressCheckoutParams.enabled_methods = enabledMethods;
+			window.wcpayExpressCheckoutParams.payment_method_types = paymentMethodTypes;
 
-		require( '../woopayments-express-checkout' );
+			require( '../woopayments-express-checkout' );
 
-		await bodyEventHandlers.updated_checkout();
-		await flushPromises();
+			await bodyEventHandlers.updated_checkout();
+			await flushPromises();
 
-		expect( stripe.elements ).toHaveBeenCalledWith(
-			expect.objectContaining( {
-				paymentMethodTypes: [ 'card', 'amazon_pay' ],
-			} )
-		);
-		expect( elements.create ).toHaveBeenCalledWith(
-			'expressCheckout',
-			expect.objectContaining( {
-				paymentMethods: expect.objectContaining( {
-					applePay: 'always',
-					googlePay: 'always',
-					amazonPay: 'auto',
-				} ),
-			} )
-		);
-	} );
-
-	test( 'mounts Stripe ECE when only Amazon Pay is enabled', async () => {
-		window.wcpayExpressCheckoutParams.enabled_methods = [ 'amazon_pay' ];
-		window.wcpayExpressCheckoutParams.payment_method_types = [
-			'amazon_pay',
-		];
-
-		require( '../woopayments-express-checkout' );
-
-		await bodyEventHandlers.updated_checkout();
-		await flushPromises();
-
-		expect( stripe.elements ).toHaveBeenCalledWith(
-			expect.objectContaining( {
-				paymentMethodTypes: [ 'amazon_pay' ],
-			} )
-		);
-		expect( elements.create ).toHaveBeenCalledWith(
-			'expressCheckout',
-			expect.objectContaining( {
-				paymentMethods: expect.objectContaining( {
-					applePay: 'never',
-					googlePay: 'never',
-					amazonPay: 'auto',
-				} ),
-			} )
-		);
-	} );
-
-	test( 'does not mount Amazon Pay when Stripe method types exclude it', async () => {
-		window.wcpayExpressCheckoutParams.enabled_methods = [
-			'payment_request',
-			'amazon_pay',
-		];
-		window.wcpayExpressCheckoutParams.payment_method_types = [ 'card' ];
-
-		require( '../woopayments-express-checkout' );
-
-		await bodyEventHandlers.updated_checkout();
-		await flushPromises();
-
-		expect( elements.create ).toHaveBeenCalledWith(
-			'expressCheckout',
-			expect.objectContaining( {
-				paymentMethods: expect.objectContaining( {
-					applePay: 'always',
-					googlePay: 'always',
-					amazonPay: 'never',
-				} ),
-			} )
-		);
-	} );
+			expect( stripe.elements ).toHaveBeenCalledWith(
+				expect.objectContaining( {
+					paymentMethodTypes: expectedTypes,
+				} )
+			);
+			expect( elements.create ).toHaveBeenCalledWith(
+				'expressCheckout',
+				expect.objectContaining( {
+					paymentMethods: expect.objectContaining( expectedWallets ),
+				} )
+			);
+		}
+	);
 
 	test( 'places the classic checkout order with a confirmation token', async () => {
 		window.wcpayFraudPreventionToken = 'fraud-token-123';
@@ -4437,31 +4400,7 @@ describe( 'WooPayments express checkout', () => {
 			expect( window.wp.apiFetch ).not.toHaveBeenCalled();
 		} );
 
-		test( 'hides the wallet when the re-priced cart is not eligible', async () => {
-			setClassicProductForm( {
-				variable: true,
-				size: 'small',
-				variationId: '124',
-			} );
-			window.wp.apiFetch.mockResolvedValue( getVirtualCart( 0, 1 ) );
-			await mountReadyWallet();
-
-			bodyEventHandlers.woocommerce_variation_has_changed();
-			await flushMicrotasks();
-
-			expect(
-				document
-					.getElementById( 'wcpay-express-checkout-element' )
-					.classList.contains( 'is-ready' )
-			).toBe( false );
-			expect(
-				document.getElementById(
-					'wcpay-express-checkout-button-separator'
-				).hidden
-			).toBe( true );
-		} );
-
-		test( 'shows the wallet again when a later re-priced cart is eligible', async () => {
+		test( 'hides the wallet and separator for an ineligible re-priced cart and shows them for a later eligible one', async () => {
 			const container = () =>
 				document.getElementById( 'wcpay-express-checkout-element' );
 			setClassicProductForm( {
@@ -4477,6 +4416,11 @@ describe( 'WooPayments express checkout', () => {
 			bodyEventHandlers.woocommerce_variation_has_changed();
 			await flushMicrotasks();
 			expect( container().classList.contains( 'is-ready' ) ).toBe( false );
+			expect(
+				document.getElementById(
+					'wcpay-express-checkout-button-separator'
+				).hidden
+			).toBe( true );
 
 			bodyEventHandlers.woocommerce_variation_has_changed();
 			await flushMicrotasks();

@@ -323,54 +323,52 @@ describe( 'ECE WC Subscriptions compatibility', () => {
 			).toBe( mainRates );
 		} );
 
-		it( 'falls back to subscription shipping rates when main cart has none', () => {
-			const subscriptionRates = [
-				{ rate_id: 'flat_rate:1', name: 'Standard', price: '500' },
-			];
-			const cart = buildTrialCart( {
-				subscriptions: [
-					subscriptionWithShipping( subscriptionRates ),
-				],
-			} );
-
-			expect(
-				applyFilters(
-					'wcpay.express-checkout.shipping-rates',
-					[],
-					cart
-				)
-			).toEqual( subscriptionRates );
-		} );
-
-		it( 'falls back to subscription shipping rates for trial with sign-up fee', () => {
-			const subscriptionRates = [
+		it.each( [
+			[
+				'a free trial',
+				{},
+				[ { rate_id: 'flat_rate:1', name: 'Standard', price: '500' } ],
+			],
+			[
+				'a free trial with a sign-up fee',
 				{
-					rate_id: 'free_shipping:1',
-					name: 'Free shipping',
-					price: '0',
+					items: [
+						buildTrialSubscriptionItem( { signUpFees: '200' } ),
+					],
+					totalPrice: '217',
 				},
-				{
-					rate_id: 'flat_rate:5',
-					name: 'Express shipping',
-					price: '1000',
-				},
-			];
-			const cart = buildTrialCart( {
-				items: [ buildTrialSubscriptionItem( { signUpFees: '200' } ) ],
-				totalPrice: '217',
-				subscriptions: [
-					subscriptionWithShipping( subscriptionRates ),
+				[
+					{
+						rate_id: 'free_shipping:1',
+						name: 'Free shipping',
+						price: '0',
+					},
+					{
+						rate_id: 'flat_rate:5',
+						name: 'Express shipping',
+						price: '1000',
+					},
 				],
-			} );
+			],
+		] )(
+			'falls back to every subscription shipping rate when the main cart has none, for %s',
+			( description, cartOverrides, subscriptionRates ) => {
+				const cart = buildTrialCart( {
+					...cartOverrides,
+					subscriptions: [
+						subscriptionWithShipping( subscriptionRates ),
+					],
+				} );
 
-			expect(
-				applyFilters(
-					'wcpay.express-checkout.shipping-rates',
-					[],
-					cart
-				)
-			).toEqual( subscriptionRates );
-		} );
+				expect(
+					applyFilters(
+						'wcpay.express-checkout.shipping-rates',
+						[],
+						cart
+					)
+				).toEqual( subscriptionRates );
+			}
+		);
 	} );
 
 	describe( 'shipping-package-id filter', () => {

@@ -992,45 +992,43 @@ describe( 'woopayments-express-checkout', () => {
 	} );
 
 	describe( 'displayLoginConfirmation', () => {
-		it( 'substitutes the wallet name and redirects on confirmation', () => {
-			const { displayLoginConfirmation, navigate } = loadModule(
-				baseParams( {
-					login_confirmation: {
-						message:
-							'To complete your transaction with **the selected payment method**, you must log in.',
-						redirect_url: 'http://shop.test/login-redirect/',
-					},
-				} )
-			);
-			window.confirm = jest.fn( () => true );
+		it.each( [
+			[
+				'redirects when the shopper confirms',
+				'To complete your transaction with **the selected payment method**, you must log in.',
+				'google_pay',
+				true,
+				'To complete your transaction with Google Pay, you must log in.',
+				[ [ 'http://shop.test/login-redirect/' ] ],
+			],
+			[
+				'stays on the page when the shopper dismisses it',
+				'Log in with **wallet**.',
+				'apple_pay',
+				false,
+				'Log in with Apple Pay.',
+				[],
+			],
+		] )(
+			'asks with the wallet name substituted, and %s',
+			( description, message, paymentType, confirmed, confirmText, navigateCalls ) => {
+				const { displayLoginConfirmation, navigate } = loadModule(
+					baseParams( {
+						login_confirmation: {
+							message,
+							redirect_url: 'http://shop.test/login-redirect/',
+						},
+					} )
+				);
+				window.confirm = jest.fn( () => confirmed );
 
-			displayLoginConfirmation( 'google_pay' );
+				displayLoginConfirmation( paymentType );
 
-			expect( window.confirm ).toHaveBeenCalledWith(
-				'To complete your transaction with Google Pay, you must log in.'
-			);
-			expect( navigate ).toHaveBeenCalledWith(
-				'http://shop.test/login-redirect/'
-			);
-			delete window.confirm;
-		} );
-
-		it( 'stays on the page when the dialog is dismissed', () => {
-			const { displayLoginConfirmation, navigate } = loadModule(
-				baseParams( {
-					login_confirmation: {
-						message: 'Log in with **wallet**.',
-						redirect_url: 'http://shop.test/login-redirect/',
-					},
-				} )
-			);
-			window.confirm = jest.fn( () => false );
-
-			displayLoginConfirmation( 'apple_pay' );
-
-			expect( navigate ).not.toHaveBeenCalled();
-			delete window.confirm;
-		} );
+				expect( window.confirm ).toHaveBeenCalledWith( confirmText );
+				expect( navigate.mock.calls ).toEqual( navigateCalls );
+				delete window.confirm;
+			}
+		);
 	} );
 
 	describe( 'placeOrder', () => {
@@ -1520,43 +1518,39 @@ describe( 'woopayments-express-checkout', () => {
 			);
 		} );
 
-		it( 'sends order attribution data in the extensions payload', async () => {
-			document.body.innerHTML =
+		it.each( [
+			[
+				'with the attribution inputs',
 				'<wc-order-attribution-inputs id="wcpay-express-checkout__order-attribution-inputs">' +
-				'<input type="hidden" name="wc_order_attribution_source_type" value="organic" />' +
-				'<input type="hidden" name="wc_order_attribution_utm_source" value="duckduckgo" />' +
-				'<input type="hidden" name="wc_order_attribution_utm_medium" value="" />' +
-				'</wc-order-attribution-inputs>';
-			const testables = loadModule( baseParams() );
-			apiFetch.mockResolvedValue( { payment_result: {} } );
-
-			await testables.placeOrder( 'ctoken_123', {
-				billingDetails: { name: 'Jane Q Shopper' },
-			} );
-
-			expect(
-				apiFetch.mock.calls[ 0 ][ 0 ].data.extensions
-			).toEqual( {
-				'woocommerce/order-attribution': {
-					source_type: 'organic',
-					utm_source: 'duckduckgo',
+					'<input type="hidden" name="wc_order_attribution_source_type" value="organic" />' +
+					'<input type="hidden" name="wc_order_attribution_utm_source" value="duckduckgo" />' +
+					'<input type="hidden" name="wc_order_attribution_utm_medium" value="" />' +
+					'</wc-order-attribution-inputs>',
+				{
+					'woocommerce/order-attribution': {
+						source_type: 'organic',
+						utm_source: 'duckduckgo',
+					},
 				},
-			} );
-			document.body.innerHTML = '';
-		} );
+			],
+			[ 'without attribution inputs', '', {} ],
+		] )(
+			'sends the order attribution in the extensions payload, or empty extensions without it: %s',
+			async ( description, markup, extensions ) => {
+				document.body.innerHTML = markup;
+				const testables = loadModule( baseParams() );
+				apiFetch.mockResolvedValue( { payment_result: {} } );
 
-		it( 'sends empty extensions without attribution inputs', async () => {
-			const testables = loadModule( baseParams() );
-			apiFetch.mockResolvedValue( { payment_result: {} } );
+				await testables.placeOrder( 'ctoken_123', {
+					billingDetails: { name: 'Jane Q Shopper' },
+				} );
 
-			await testables.placeOrder( 'ctoken_123', {
-				billingDetails: { name: 'Jane Q Shopper' },
-			} );
-
-			expect( apiFetch.mock.calls[ 0 ][ 0 ].data.extensions ).toEqual(
-				{}
-			);
-		} );
+				expect(
+					apiFetch.mock.calls[ 0 ][ 0 ].data.extensions
+				).toEqual( extensions );
+				document.body.innerHTML = '';
+			}
+		);
 
 		it( 'normalizes wallet billing name and phone on confirm', async () => {
 			const testables = loadModule( baseParams() );

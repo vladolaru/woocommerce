@@ -531,44 +531,66 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 		);
 	} );
 
-	it( 'registers Amazon Pay as a separate express method when server config enables it', () => {
-		baseExpressCheckoutParams.enabled_methods = [
-			'payment_request',
-			'amazon_pay',
-		];
-		baseExpressCheckoutParams.payment_method_types = [
-			'card',
-			'amazon_pay',
-		];
+	it.each( [
+		[
+			'include it',
+			[ 'card', 'amazon_pay' ],
+			[
+				{
+					name: 'woocommerce_payments_express_checkout_applePay',
+					gatewayId: 'woocommerce_payments',
+					paymentMethodId: 'woocommerce_payments_express_checkout',
+				},
+				{
+					name: 'woocommerce_payments_express_checkout_googlePay',
+					gatewayId: 'woocommerce_payments',
+					paymentMethodId: 'woocommerce_payments_express_checkout',
+				},
+				{
+					name: 'woocommerce_payments_express_checkout_amazonPay',
+					gatewayId: 'woocommerce_payments',
+					paymentMethodId: 'woocommerce_payments_express_checkout',
+				},
+			],
+		],
+		[
+			'exclude it',
+			[ 'card' ],
+			[
+				{
+					name: 'woocommerce_payments_express_checkout_applePay',
+					gatewayId: 'woocommerce_payments',
+					paymentMethodId: 'woocommerce_payments_express_checkout',
+				},
+				{
+					name: 'woocommerce_payments_express_checkout_googlePay',
+					gatewayId: 'woocommerce_payments',
+					paymentMethodId: 'woocommerce_payments_express_checkout',
+				},
+			],
+		],
+	] )(
+		'registers Amazon Pay as a separate express method only when the Stripe method types include it: they %s',
+		( description, paymentMethodTypes, registrations ) => {
+			baseExpressCheckoutParams.enabled_methods = [
+				'payment_request',
+				'amazon_pay',
+			];
+			baseExpressCheckoutParams.payment_method_types = paymentMethodTypes;
 
-		registerExpressCheckout();
+			registerExpressCheckout();
 
-		expect( registerExpressPaymentMethod ).toHaveBeenCalledWith(
-			expect.objectContaining( {
-				name: 'woocommerce_payments_express_checkout_amazonPay',
-				gatewayId: 'woocommerce_payments',
-				paymentMethodId: 'woocommerce_payments_express_checkout',
-			} )
-		);
-		expect( registerExpressPaymentMethod ).toHaveBeenCalledTimes( 3 );
-	} );
-
-	it( 'does not register Amazon Pay when Stripe method types exclude it', () => {
-		baseExpressCheckoutParams.enabled_methods = [
-			'payment_request',
-			'amazon_pay',
-		];
-		baseExpressCheckoutParams.payment_method_types = [ 'card' ];
-
-		registerExpressCheckout();
-
-		expect( registerExpressPaymentMethod ).not.toHaveBeenCalledWith(
-			expect.objectContaining( {
-				name: 'woocommerce_payments_express_checkout_amazonPay',
-			} )
-		);
-		expect( registerExpressPaymentMethod ).toHaveBeenCalledTimes( 2 );
-	} );
+			expect(
+				registerExpressPaymentMethod.mock.calls.map(
+					( [ { name, gatewayId, paymentMethodId } ] ) => ( {
+						name,
+						gatewayId,
+						paymentMethodId,
+					} )
+				)
+			).toEqual( registrations );
+		}
+	);
 
 	// Core swaps the express buttons for a skeleton while the checkout recalculates
 	// (cart-checkout-shared/payment-methods/express-payment/checkout-express-payment.tsx), which unmounts them; client
