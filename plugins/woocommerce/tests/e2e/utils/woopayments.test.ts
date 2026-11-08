@@ -43,6 +43,11 @@ const CARD_FIELDS_HTML = `
 	<input id="cvc" />
 `;
 
+// No checkout update runs on these pages, so the entry has nothing to settle.
+const NO_SETTLE = { settleMs: 0 };
+// Enough for a click on a loaded page; a failure case need not wait out the specs' timeouts.
+const SHORT_TIMEOUT_MS = 500;
+
 test( 'fillCardDetails enters and keeps a card in a Blocks Payment Element', async ( {
 	page,
 } ) => {
@@ -55,7 +60,7 @@ test( 'fillCardDetails enters and keeps a card in a Blocks Payment Element', asy
 		</div>`
 	);
 
-	await fillCardDetails( page, TEST_CARDS.basic, 'blocks' );
+	await fillCardDetails( page, TEST_CARDS.basic, 'blocks', NO_SETTLE );
 
 	const frame = page.frameLocator(
 		'#woopayments-blocks-payment-element iframe[name^="__privateStripeFrame"]'
@@ -96,7 +101,7 @@ test( 'fillCardDetails clicks each card field before typing into it', async ( {
 		</div>`
 	);
 
-	await fillCardDetails( page, TEST_CARDS.basic, 'blocks' );
+	await fillCardDetails( page, TEST_CARDS.basic, 'blocks', NO_SETTLE );
 
 	expect(
 		await page.evaluate(
@@ -137,7 +142,12 @@ test( 'fillCardDetails replaces a card the fields already hold', async ( {
 		</div>`
 	);
 
-	await fillCardDetails( page, TEST_CARDS.genericDecline, 'blocks' );
+	await fillCardDetails(
+		page,
+		TEST_CARDS.genericDecline,
+		'blocks',
+		NO_SETTLE
+	);
 
 	const frame = page.frameLocator(
 		'#woopayments-blocks-payment-element iframe[name^="__privateStripeFrame"]'
@@ -165,7 +175,7 @@ test( 'fillCardDetails leaves the page scrolled where the entry found it', async
 	);
 	await page.evaluate( () => window.scrollTo( 0, 100 ) );
 
-	await fillCardDetails( page, TEST_CARDS.basic, 'blocks' );
+	await fillCardDetails( page, TEST_CARDS.basic, 'blocks', NO_SETTLE );
 
 	expect( await page.evaluate( () => window.scrollY ) ).toBe( 100 );
 } );
@@ -263,7 +273,12 @@ for ( const clearOrder of [
 			</div>`
 		);
 
-		const entry = fillCardDetails( page, TEST_CARDS.basic, 'blocks' );
+		const entry = fillCardDetails(
+			page,
+			TEST_CARDS.basic,
+			'blocks',
+			NO_SETTLE
+		);
 		entry.catch( () => undefined );
 		for ( const step of clearOrder ) {
 			// Holds each state long enough for an entry that does not wait to have clicked already.
@@ -309,7 +324,9 @@ test( 'fillCardDetails fails at once when the click leaves another element focus
 	);
 
 	await expect(
-		fillCardDetails( page, TEST_CARDS.basic, 'blocks' )
+		fillCardDetails( page, TEST_CARDS.basic, 'blocks', {
+			stepTimeoutMs: SHORT_TIMEOUT_MS,
+		} )
 	).rejects.toThrow( /did not focus/ );
 } );
 
@@ -369,7 +386,9 @@ test( 'completeThreeDSChallenge fails when no challenge is presented', async ( {
 	await buildOuterFrame( page, null );
 
 	await expect(
-		completeThreeDSChallenge( page, 'complete' )
+		completeThreeDSChallenge( page, 'complete', {
+			challengeTimeoutMs: SHORT_TIMEOUT_MS,
+		} )
 	).rejects.toThrow();
 } );
 

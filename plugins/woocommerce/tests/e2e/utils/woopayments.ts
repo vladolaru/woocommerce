@@ -129,17 +129,20 @@ function getCardFields(
  * payment section, which an `update_order_review` answer with a changed
  * payment fragment does. A card the element lost is a shopper-visible
  * defect, so this reports it and never retypes it.
+ *
+ * `stepTimeoutMs` bounds each read-back and defaults to the 5 s the specs use.
  */
 export async function expectCardKept(
 	page: Page,
 	card: ProviderTestCard,
-	surface: CardSurface
+	surface: CardSurface,
+	{ stepTimeoutMs = ENTRY_STEP_TIMEOUT_MS }: { stepTimeoutMs?: number } = {}
 ): Promise< void > {
 	const lost: string[] = [];
 	for ( const field of getCardFields( page, card, surface ) ) {
 		const kept = digitsOnly(
 			await field.locator.inputValue( {
-				timeout: ENTRY_STEP_TIMEOUT_MS,
+				timeout: stepTimeoutMs,
 			} )
 		);
 		if ( kept !== digitsOnly( field.value ) ) {
@@ -166,19 +169,23 @@ export async function expectCardKept(
  *
  * The click must leave the field focused, or the keys would go elsewhere:
  * that is asserted once before typing, so a misrouted click fails naming the
- * field. It is a check, never a retry.
+ * field. It is a check, never a retry. `stepTimeoutMs` bounds the click and
+ * that check, and defaults to the 5 s the specs use.
  */
 export async function typeIntoStripeField(
 	page: Page,
 	field: Locator,
 	value: string,
-	{ replace = false }: { replace?: boolean } = {}
+	{
+		replace = false,
+		stepTimeoutMs = ENTRY_STEP_TIMEOUT_MS,
+	}: { replace?: boolean; stepTimeoutMs?: number } = {}
 ): Promise< void > {
-	await field.click( { timeout: ENTRY_STEP_TIMEOUT_MS } );
+	await field.click( { timeout: stepTimeoutMs } );
 	await expect(
 		field,
 		`The click did not focus ${ field }, so typing would go elsewhere.`
-	).toBeFocused( { timeout: ENTRY_STEP_TIMEOUT_MS } );
+	).toBeFocused( { timeout: stepTimeoutMs } );
 	if ( replace ) {
 		await page.keyboard.press( 'ControlOrMeta+a' );
 	}
@@ -261,22 +268,30 @@ async function waitForCardEntry(
  *
  * The read-back sees only what the element holds at that moment: a checkout
  * update still in flight can land after it and empty the card.
+ *
+ * The optional timings default to what the specs use (1.5 s settle, 5 s per
+ * step); the helper's own unit tests pass shorter ones.
  */
 export async function fillCardDetails(
 	page: Page,
 	card: ProviderTestCard,
-	surface: CardSurface
+	surface: CardSurface,
+	{
+		settleMs = ENTRY_SETTLE_MS,
+		stepTimeoutMs = ENTRY_STEP_TIMEOUT_MS,
+	}: { settleMs?: number; stepTimeoutMs?: number } = {}
 ): Promise< void > {
 	await waitForCardEntry( page, card, surface );
 	await keepingScrollPosition( page, async () => {
 		for ( const field of getCardFields( page, card, surface ) ) {
 			await typeIntoStripeField( page, field.locator, field.value, {
 				replace: true,
+				stepTimeoutMs,
 			} );
 		}
 	} );
-	await new Promise( ( resolve ) => setTimeout( resolve, ENTRY_SETTLE_MS ) );
-	await expectCardKept( page, card, surface );
+	await new Promise( ( resolve ) => setTimeout( resolve, settleMs ) );
+	await expectCardKept( page, card, surface, { stepTimeoutMs } );
 }
 
 const OUTER_FRAME = 'body > div > iframe[name^="__privateStripeFrame"]';
@@ -293,21 +308,27 @@ const CHALLENGE_SETTLE_TIMEOUT_MS = 20_000;
  * would pass whether or not a challenge happened - one of the contracts this
  * suite has previously recorded as unable to fail. Here an expected
  * challenge that never shows is an error, not a frictionless pass.
+ *
+ * `challengeTimeoutMs` bounds the wait for the challenge to appear and
+ * defaults to the 20 s the specs use.
  */
 export async function completeThreeDSChallenge(
 	page: Page,
-	answer: 'complete' | 'fail'
+	answer: 'complete' | 'fail',
+	{
+		challengeTimeoutMs = CHALLENGE_FRAME_TIMEOUT_MS,
+	}: { challengeTimeoutMs?: number } = {}
 ): Promise< void > {
 	await page
 		.locator( OUTER_FRAME )
-		.waitFor( { state: 'visible', timeout: CHALLENGE_FRAME_TIMEOUT_MS } );
+		.waitFor( { state: 'visible', timeout: challengeTimeoutMs } );
 	const outer = page.frameLocator( OUTER_FRAME );
 	const challengeBody = outer
 		.frameLocator( CHALLENGE_FRAME )
 		.locator( 'body' );
 	await challengeBody.waitFor( {
 		state: 'visible',
-		timeout: CHALLENGE_FRAME_TIMEOUT_MS,
+		timeout: challengeTimeoutMs,
 	} );
 	await outer
 		.locator( LOADING_INDICATOR )
