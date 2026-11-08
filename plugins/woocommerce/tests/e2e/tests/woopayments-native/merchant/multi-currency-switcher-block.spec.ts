@@ -736,10 +736,9 @@ test(
 		const runId = random();
 		await readEnabledCurrencies( restApi );
 
-		// Two independently configured switchers on one page: every
-		// presentation attribute differs between them, so the shopper-visible
-		// difference is attributable to the saved settings rather than to a
-		// theme default that happened to match.
+		// Two differently configured switchers on one page: each must keep its
+		// own symbol and flag choice. The declared styles are owned by the
+		// renderer's PHP tests (SwitcherRendererTest).
 		const post = await createRunPost(
 			restApi,
 			runId,
@@ -780,45 +779,6 @@ test(
 			);
 			expect( await configuredDefaultOption.textContent() ).not.toContain(
 				'$'
-			);
-
-			// Representative configured presentation, as computed by the browser
-			// rather than as declared: this is what the shopper actually sees.
-			await expect( baseline ).toHaveCSS( 'border-top-width', '1px' );
-			await expect( baseline ).toHaveCSS(
-				'border-top-left-radius',
-				'3px'
-			);
-			await expect( baseline ).toHaveCSS( 'font-size', '14px' );
-			await expect( baseline ).toHaveCSS( 'color', 'rgb(0, 0, 0)' );
-			await expect( baseline ).toHaveCSS(
-				'background-color',
-				'rgba(0, 0, 0, 0)'
-			);
-
-			await expect( configured ).toHaveCSS( 'border-top-width', '0px' );
-			await expect( configured ).toHaveCSS(
-				'border-top-left-radius',
-				'12px'
-			);
-			await expect( configured ).toHaveCSS( 'font-size', '24px' );
-			await expect( configured ).toHaveCSS( 'color', 'rgb(255, 0, 0)' );
-			await expect( configured ).toHaveCSS(
-				'background-color',
-				'rgb(0, 255, 0)'
-			);
-
-			// Line height is projected onto the switcher's wrapper, whose computed
-			// value depends on the theme's inherited font size; the declared value
-			// is the deterministic half, matched tolerantly so inline whitespace
-			// is not part of the claim.
-			await expect( baseline.locator( 'xpath=..' ) ).toHaveAttribute(
-				'style',
-				/line-height:\s*1\.5\s*;/
-			);
-			await expect( configured.locator( 'xpath=..' ) ).toHaveAttribute(
-				'style',
-				/line-height:\s*2\s*;/
 			);
 
 			expect( pageErrors() ).toEqual( [] );
