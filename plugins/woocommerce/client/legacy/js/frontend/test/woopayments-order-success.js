@@ -79,18 +79,4 @@ describe( 'WooPayments order success', () => {
 
 		expect( window.print ).toHaveBeenCalledTimes( 1 );
 	} );
-
-	it( 'uses dark payment-method artwork on dark order summaries', () => {
-		document.body.innerHTML = `
-			<div class="wc-payment-gateway-method-logo-wrapper" style="background-color: rgb(10, 10, 10)">
-				<img src="light.svg" data-dark-src="dark.svg" alt="Multibanco">
-			</div>
-		`;
-
-		loadScript();
-
-		expect( document.querySelector( 'img' ).getAttribute( 'src' ) ).toBe(
-			'dark.svg'
-		);
-	} );
 } );

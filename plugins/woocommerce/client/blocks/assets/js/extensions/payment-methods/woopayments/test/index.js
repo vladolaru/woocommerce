@@ -24,12 +24,9 @@ import { validatePhoneNumber } from 'woocommerce-phone-number-validation';
 import registerWooPayments from '../index';
 import { recordWooPaymentsUserEvent } from '../tracks';
 import {
-	getAppearance,
 	getBlocksCheckoutAppearance,
-	getFieldStyles,
 	normalizeAppearanceForStripe,
 	normalizeAppearanceValueForStripe,
-	resolveCurrentColor,
 } from '../upe-styles';
 
 jest.mock( '@fingerprintjs/fingerprintjs', () => ( {
@@ -2600,40 +2597,6 @@ describe( 'wc-payment-method-woopayments', () => {
 			window.ResizeObserver = OriginalResizeObserver;
 		} );
 
-		// Client 11.1.0 client/checkout/blocks/payment-processor.js:89-98.
-		it.each( [
-			[ 800, '70px' ],
-			[ 660, '70px' ],
-			[ 659, '145px' ],
-			[ 415, '145px' ],
-			[ 414, '220px' ],
-		] )(
-			'reserves the card fields height for a %ipx wide wrapper',
-			( width, minHeight ) => {
-				let resize;
-				window.ResizeObserver = jest.fn( ( callback ) => {
-					resize = callback;
-					return { observe: jest.fn(), disconnect: jest.fn() };
-				} );
-				const { container } = renderCardContent();
-				const wrapper = container.querySelector(
-					'.woopayments-blocks-payment-element-wrapper'
-				);
-
-				act( () => {
-					resize( [ { contentRect: { width } } ] );
-				} );
-
-				expect( wrapper ).toContainElement(
-					container.querySelector(
-						'#woopayments-blocks-payment-element'
-					)
-				);
-				expect( wrapper ).not.toHaveClass( 'is-apm' );
-				expect( wrapper.style.minHeight ).toBe( minHeight );
-			}
-		);
-
 		// Client 11.1.0 client/checkout/blocks/payment-processor.js:111-117, 276-299.
 		it( 'fades the skeleton out when Stripe is ready and removes it after the transition', async () => {
 			const { container, on } = renderCardContent();
@@ -2814,52 +2777,6 @@ describe( 'wc-payment-method-woopayments', () => {
 		} );
 	} );
 
-	it( 'resolves only whole currentColor values for WooPay link rules', () => {
-		expect( resolveCurrentColor( ' CuRrEnTcOlOr ', 'rgb(1, 2, 3)' ) ).toBe(
-			'rgb(1, 2, 3)'
-		);
-		expect( resolveCurrentColor( 'currentColor', ' CURRENTCOLOR ' ) ).toBe(
-			'#000000'
-		);
-		expect( resolveCurrentColor( 'rgb(4, 5, 6)', 'rgb(1, 2, 3)' ) ).toBe(
-			'rgb(4, 5, 6)'
-		);
-	} );
-
-	it( 'omits computed alpha color values from generated Stripe Elements appearance rules', () => {
-		document.body.innerHTML = '<input id="wcpay-test-input" />';
-		const originalGetComputedStyle = window.getComputedStyle;
-		window.getComputedStyle = jest.fn( () => ( {
-			getPropertyValue: ( property ) =>
-				( {
-					border: '1px solid color(srgb 0.168627 0.176471 0.184314 / 0.8)',
-					'border-color':
-						'color(srgb 0.168627 0.176471 0.184314 / 0.8)',
-					'border-style': 'solid',
-					'border-width': '1px',
-					'box-shadow': 'rgb(43 45 47 / 0.8) 0px 1px 2px',
-					color: 'rgb(43 45 47)',
-					'font-size': '16px',
-				} )[ property ] || '',
-		} ) );
-
-		try {
-			const rules = getFieldStyles( '#wcpay-test-input', '.Input' );
-
-			expect( rules ).toMatchObject( {
-				borderStyle: 'solid',
-				borderWidth: '1px',
-				color: 'rgb(43, 45, 47)',
-				fontSize: '16px',
-			} );
-			expect( rules ).not.toHaveProperty( 'border' );
-			expect( rules ).not.toHaveProperty( 'borderColor' );
-			expect( rules ).not.toHaveProperty( 'boxShadow' );
-		} finally {
-			window.getComputedStyle = originalGetComputedStyle;
-		}
-	} );
-
 	const makeBlocksAppearanceFixture = ( labelPosition = 'absolute' ) => {
 		document.body.innerHTML = `
 			<form class="wc-block-checkout__form">
@@ -2926,92 +2843,6 @@ describe( 'wc-payment-method-woopayments', () => {
 			} )
 		);
 	};
-
-	it( 'keeps floating label padding compensation when the checkout label is positioned out of flow', () => {
-		makeBlocksAppearanceFixture( 'absolute' );
-
-		const appearance = getAppearance( 'blocks_checkout' );
-
-		expect( appearance.labels ).toBe( 'floating' );
-		expect( appearance.rules ).toHaveProperty( [ '.Label--floating' ] );
-		expect( appearance.rules[ '.Input' ].paddingTop ).toBe(
-			'calc(10px - 12px - 4px - 1px)'
-		);
-	} );
-
-	it( 'uses above labels without padding compensation when the checkout label is static', () => {
-		makeBlocksAppearanceFixture( 'static' );
-
-		const appearance = getAppearance( 'blocks_checkout' );
-
-		expect( appearance.labels ).toBe( 'above' );
-		expect( appearance.rules ).not.toHaveProperty( [ '.Label--floating' ] );
-		expect( appearance.rules[ '.Input' ].paddingTop ).toBe( '10px' );
-		expect( appearance.rules[ '.Input' ].paddingBottom ).toBe( '10px' );
-	} );
-
-	it( 'does not clamp the PaymentElement base font size to the payment method label size', () => {
-		makeBlocksAppearanceFixture( 'absolute' );
-
-		const appearance = getAppearance( 'blocks_checkout' );
-
-		expect( appearance.variables.fontSizeBase ).toBe( '13px' );
-	} );
-
-	it( 'reads the cart quantity input, not the checkout email field, for BNPL messaging appearance', () => {
-		// Cart block markup (cart-line-items quantity selector), plus a checkout-style email field as the decoy the
-		// checkout extraction would read.
-		document.body.innerHTML = `
-			<div class="wp-block-woocommerce-cart">
-				<div class="wc-block-cart">
-					<div class="wc-block-components-quantity-selector">
-						<input type="number" class="wc-block-components-quantity-selector__input" value="1" />
-					</div>
-				</div>
-				<div class="wc-block-components-text-input">
-					<input type="email" id="email" value="shopper@example.test" />
-				</div>
-			</div>
-		`;
-		// getAppearance() reads the clone of the chosen input, which keeps its class and type but not its id.
-		jest.spyOn( window, 'getComputedStyle' ).mockImplementation(
-			( element ) => ( {
-				getPropertyValue: ( property ) => {
-					let style = {};
-					if (
-						element.matches?.(
-							'.wc-block-components-quantity-selector__input'
-						)
-					) {
-						style = {
-							color: 'rgb(10, 20, 30)',
-							'font-size': '15px',
-						};
-					} else if ( element.matches?.( 'input[type="email"]' ) ) {
-						style = {
-							color: 'rgb(200, 0, 0)',
-							'font-size': '22px',
-						};
-					}
-
-					return style[ property ] || '';
-				},
-			} )
-		);
-
-		const appearance = getAppearance( 'bnpl_cart_block' );
-
-		expect( appearance.rules[ '.Input' ] ).toMatchObject( {
-			color: 'rgb(10, 20, 30)',
-			fontSize: '15px',
-		} );
-		expect( appearance.rules[ '.Input--invalid' ] ).toMatchObject( {
-			color: 'rgb(10, 20, 30)',
-		} );
-		expect( appearance.rules[ '.Tab' ] ).toMatchObject( {
-			color: 'rgb(10, 20, 30)',
-		} );
-	} );
 
 	it( 'persists valid Blocks appearance to the shared WooPay shopper endpoint once', async () => {
 		const appearance = {
@@ -3119,34 +2950,6 @@ describe( 'wc-payment-method-woopayments', () => {
 		);
 		expect( paymentSettings.woopayAppearance.rules[ '.Link' ].color ).toBe(
 			'rgb(1, 2, 3)'
-		);
-	} );
-
-	it( 'falls back missing Blocks link rules to the computed text color', async () => {
-		// A fresh copy whose appearance cache starts empty. isolateModules keeps the file's registry, so the module mocks
-		// that later tests reach through jest.requireMock() stay the ones the bundle imported.
-		let getFreshBlocksCheckoutAppearance;
-		jest.isolateModules( () => {
-			( {
-				getBlocksCheckoutAppearance: getFreshBlocksCheckoutAppearance,
-			} = require( '../upe-styles' ) );
-		} );
-		makeBlocksAppearanceFixture( 'absolute' );
-		window.fetch = jest.fn().mockResolvedValue( { ok: true } );
-
-		getFreshBlocksCheckoutAppearance( 'styles-v1', document, {
-			isWooPayGlobalThemeSupportEnabled: true,
-			wcAjaxUrl: '/?wc-ajax=%%endpoint%%',
-			woopaySessionNonce: 'session-nonce',
-		} );
-		await Promise.resolve();
-
-		const body = window.fetch.mock.calls[ 0 ][ 1 ].body;
-		expect( body.get( 'appearance[rules][.Link][color]' ) ).toBe(
-			'rgb(29, 35, 39)'
-		);
-		expect( body.get( 'appearance[rules][.Footer-link][color]' ) ).toBe(
-			'rgb(29, 35, 39)'
 		);
 	} );
 

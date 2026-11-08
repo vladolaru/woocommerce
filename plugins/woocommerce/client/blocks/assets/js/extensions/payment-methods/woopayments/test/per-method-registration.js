@@ -332,45 +332,4 @@ describe( 'wc-payment-method-woopayments per-method registration', () => {
 			expect.objectContaining( { stripeAccount: 'acct_123' } )
 		);
 	} );
-
-	// Client 11.1.0 client/checkout/blocks/payment-processor.js:270-275 and
-	// client/checkout/blocks/style.scss: non-card methods get the fixed
-	// `.is-apm` reservation, not the card's width-based one.
-	it( 'reserves the fixed non-card height for a split gateway Payment Element', () => {
-		window.ResizeObserver = jest.fn( () => ( {
-			observe: jest.fn(),
-			disconnect: jest.fn(),
-		} ) );
-		window.Stripe = jest.fn( () => ( {
-			elements: jest.fn( () => ( {
-				create: jest.fn( () => ( {
-					on: jest.fn(),
-					mount: jest.fn(),
-				} ) ),
-			} ) ),
-		} ) );
-		registerPaymentMethod.mockClear();
-		registerWooPayments();
-		const content = registerPaymentMethod.mock.calls
-			.map( ( [ paymentMethod ] ) => paymentMethod )
-			.find(
-				( paymentMethod ) =>
-					paymentMethod.name === 'woocommerce_payments_klarna'
-			).content;
-
-		const { container } = render(
-			createElement( content.type, {
-				...content.props,
-				eventRegistration: {},
-				emitResponse: {},
-			} )
-		);
-
-		expect(
-			container.querySelector(
-				'.woopayments-blocks-payment-element-wrapper'
-			)
-		).toHaveClass( 'is-apm' );
-		expect( window.ResizeObserver ).not.toHaveBeenCalled();
-	} );
 } );

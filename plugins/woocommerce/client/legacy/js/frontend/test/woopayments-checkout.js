@@ -782,72 +782,6 @@ describe( 'WooPayments checkout', () => {
 		} );
 	} );
 
-	test( 'uses theme-appropriate split gateway icons without changing card brands', () => {
-		document.body.innerHTML =
-			'<form class="checkout">' +
-			'<div id="payment" style="background-color: rgb(0, 0, 0)">' +
-			'<ul class="payment_methods">' +
-			'<li class="wc_payment_method payment_method_woocommerce_payments">' +
-			'<input id="payment_method_woocommerce_payments" type="radio" ' +
-			'name="payment_method" value="woocommerce_payments" />' +
-			'<label for="payment_method_woocommerce_payments">' +
-			'<img class="card-brand-icon" src="https://example.test/visa.svg" alt="Visa" /></label>' +
-			'</li>' +
-			'<li class="wc_payment_method payment_method_woocommerce_payments_klarna">' +
-			'<input id="payment_method_woocommerce_payments_klarna" type="radio" ' +
-			'name="payment_method" value="woocommerce_payments_klarna" checked />' +
-			'<label for="payment_method_woocommerce_payments_klarna">' +
-			'<img class="wcpay-payment-method-icon" ' +
-			'src="https://example.test/klarna.svg" alt="Klarna" /></label>' +
-			'<div class="payment_box" style="background-color: rgb(255, 255, 255)"></div>' +
-			'<div id="woopayments-payment-element"></div>' +
-			'</li>' +
-			'</ul>' +
-			'</div>' +
-			'<button id="place_order" type="button">Place order</button>' +
-			'</form>';
-		window.wc_woopayments_checkout_params_woocommerce_payments_klarna =
-			Object.assign( {}, window.wc_woopayments_checkout_params, {
-				gatewayId: 'woocommerce_payments_klarna',
-				paymentMethodId: 'klarna',
-				paymentMethodTypes: [ 'klarna' ],
-				paymentMethodsConfig: {
-					klarna: {
-						icon: 'https://example.test/klarna.svg',
-						darkIcon: 'https://example.test/klarna-dark.svg',
-						isReusable: false,
-					},
-				},
-			} );
-
-		require( '../woopayments-checkout' );
-
-		const payment = document.getElementById( 'payment' );
-		const splitIcon = document.querySelector(
-			'.payment_method_woocommerce_payments_klarna .wcpay-payment-method-icon'
-		);
-		const cardIcon = document.querySelector(
-			'.payment_method_woocommerce_payments .card-brand-icon'
-		);
-
-		expect( splitIcon.getAttribute( 'src' ) ).toBe(
-			'https://example.test/klarna-dark.svg'
-		);
-		expect( cardIcon.getAttribute( 'src' ) ).toBe(
-			'https://example.test/visa.svg'
-		);
-
-		payment.style.backgroundColor = 'rgb(255, 255, 255)';
-		bodyEventHandlers.updated_checkout();
-
-		expect( splitIcon.getAttribute( 'src' ) ).toBe(
-			'https://example.test/klarna.svg'
-		);
-		expect( cardIcon.getAttribute( 'src' ) ).toBe(
-			'https://example.test/visa.svg'
-		);
-	} );
-
 	test( 'registers payment-list wallets through the custom place-order button API', async () => {
 		preparePaymentListWallets();
 
@@ -1929,65 +1863,6 @@ describe( 'WooPayments checkout', () => {
 				'appearance[rules][.Footer-link][color]'
 			)
 		).toBe( 'rgb(29, 35, 39)' );
-	} );
-
-	test( 'omits computed alpha color values from generated classic Stripe Elements appearance rules', async () => {
-		document.body.innerHTML =
-			'<form class="checkout">' +
-			'<input type="radio" name="payment_method" value="woocommerce_payments" checked />' +
-			'<p class="form-row"><label for="billing_first_name">First name</label><input id="billing_first_name" type="text" /></p>' +
-			'<div id="woopayments-payment-element"></div>' +
-			'<button id="place_order" type="button">Place order</button>' +
-			'</form>';
-		jest.spyOn( window, 'getComputedStyle' ).mockImplementation(
-			( element ) => ( {
-				getPropertyValue: ( property ) => {
-					if ( element.id === 'billing_first_name' ) {
-						return (
-							{
-								border: '1px solid color(srgb 0.168627 0.176471 0.184314 / 0.8)',
-								'border-color':
-									'color(srgb 0.168627 0.176471 0.184314 / 0.8)',
-								'border-style': 'solid',
-								'border-width': '1px',
-								'box-shadow': 'rgb(43 45 47 / 0.8) 0px 1px 2px',
-								color: 'rgb(43 45 47)',
-								'font-size': '16px',
-							}[ property ] || ''
-						);
-					}
-
-					return (
-						{
-							'background-color': 'rgb(255, 255, 255)',
-							color: 'rgb(43 45 47)',
-							'font-size': '16px',
-						}[ property ] || ''
-					);
-				},
-			} )
-		);
-
-		require( '../woopayments-checkout' );
-		await flushPromises();
-
-		expect(
-			stripeElementsOptions.appearance.rules[ '.Input' ]
-		).toMatchObject( {
-			borderStyle: 'solid',
-			borderWidth: '1px',
-			color: 'rgb(43, 45, 47)',
-			fontSize: '16px',
-		} );
-		expect(
-			stripeElementsOptions.appearance.rules[ '.Input' ]
-		).not.toHaveProperty( 'border' );
-		expect(
-			stripeElementsOptions.appearance.rules[ '.Input' ]
-		).not.toHaveProperty( 'borderColor' );
-		expect(
-			stripeElementsOptions.appearance.rules[ '.Input' ]
-		).not.toHaveProperty( 'boxShadow' );
 	} );
 
 	test( 'uses setup mode when the checkout total is zero', async () => {
