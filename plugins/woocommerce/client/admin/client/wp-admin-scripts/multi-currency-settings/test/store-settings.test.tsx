@@ -278,7 +278,7 @@ describe( 'StoreLevelSettings', () => {
 			name: 'Save changes',
 		} );
 		// WooPayments 11.1.0 multi-currency-on-boarding.spec.ts:165 supplies
-		// the opt-in capability. DECISIONS.md (2026-08-08) places its native
+		// the opt-in capability. A 2026-08-08 decision places its native
 		// equivalent in these persisted store settings.
 		expect( optIn ).not.toBeChecked();
 		expect( saveButton ).toHaveAttribute( 'aria-disabled', 'true' );

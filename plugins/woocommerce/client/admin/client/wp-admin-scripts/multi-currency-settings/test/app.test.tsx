@@ -446,7 +446,7 @@ describe( 'MultiCurrencySettingsApp', () => {
 		fireEvent.click( removeButton );
 
 		// WooPayments 11.1.0 multi-currency-setup.spec.ts:57 ("can remove a
-		// currency") defines the enabled-set result. DECISIONS.md (2026-08-08)
+		// currency") defines the enabled-set result. A 2026-08-08 decision
 		// places that capability in this native search-filtered management UI.
 		await waitFor( () => {
 			expect( mockApiFetch ).toHaveBeenLastCalledWith( {
@@ -809,7 +809,7 @@ describe( 'MultiCurrencySettingsApp', () => {
 		);
 
 		// WooPayments 11.1.0 multi-currency-setup.spec.ts:53 ("can add a new
-		// currency") defines the enabled-set result. DECISIONS.md (2026-08-08)
+		// currency") defines the enabled-set result. A 2026-08-08 decision
 		// identifies this settings modal as the native equivalent of that flow.
 		await waitFor( () => {
 			expect( mockApiFetch ).toHaveBeenLastCalledWith( {
@@ -869,7 +869,7 @@ describe( 'MultiCurrencySettingsApp', () => {
 		);
 
 		// WooPayments 11.1.0 multi-currency-on-boarding.spec.ts:139 defines
-		// GBP/EUR/CAD/AUD as the submitted selection. DECISIONS.md (2026-08-08)
+		// GBP/EUR/CAD/AUD as the submitted selection. A 2026-08-08 decision
 		// places the native equivalent in this settings modal.
 		await waitFor( () => {
 			expect( mockApiFetch ).toHaveBeenLastCalledWith( {
@@ -932,7 +932,7 @@ describe( 'MultiCurrencySettingsApp', () => {
 
 		// WooPayments 11.1.0 multi-currency-on-boarding.spec.ts:86 ("should
 		// allow multiple currencies to be selected") defines independent,
-		// simultaneous selection. DECISIONS.md (2026-08-08) maps that capability
+		// simultaneous selection. A 2026-08-08 decision maps that capability
 		// to this native search-filtered management modal.
 		expect( canadianDollarCheckbox ).toBeChecked();
 		expect( britishPoundCheckbox ).toBeChecked();
@@ -1043,7 +1043,7 @@ describe( 'MultiCurrencySettingsApp', () => {
 	} );
 
 	it( 'keeps enabled currencies selected in the search-filtered management list', async () => {
-		// DECISIONS.md (2026-08-08) defines this search-filtered management list
+		// A 2026-08-08 decision defines this search-filtered management list
 		// as the native equivalent of WooPayments onboarding rather than a wizard
 		// replica, so its selection and filtering behavior belongs in this suite.
 		render( <MultiCurrencySettingsApp /> );

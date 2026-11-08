@@ -484,7 +484,7 @@ class MultiCurrencyRestControllerTest extends WC_Unit_Test_Case {
 		$builder = $this->create_real_state_builder();
 		$sut     = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $builder );
 		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/multi-currency/update-enabled-currencies' );
-		// WooPayments 11.1.0 multi-currency-on-boarding.spec.ts:139 supplies the GBP/EUR/CAD/AUD selection; DECISIONS.md (2026-08-08) maps it to native settings persistence.
+		// WooPayments 11.1.0 multi-currency-on-boarding.spec.ts:139 supplies the GBP/EUR/CAD/AUD selection; a 2026-08-08 decision maps it to native settings persistence.
 		$request->set_param( 'enabled', array( 'USD', 'GBP', 'EUR', 'CAD', 'AUD' ) );
 
 		$response = $sut->update_enabled_currencies( $request );
