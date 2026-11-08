@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-Split the native WooPayments API client omnibus endpoint tests into independent cases and decode request bodies before asserting.

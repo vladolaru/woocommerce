@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-Use prepared statements for multi-currency analytics where clauses.

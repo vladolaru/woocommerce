@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-Return the same payment intent fields as the WooPayments extension from the REST route that creates a payment intent for an order.

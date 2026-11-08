@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-Place Transaction ID after Order ID by default in the WooPayments Fees report.

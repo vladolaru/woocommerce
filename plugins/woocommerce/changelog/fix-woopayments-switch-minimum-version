@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-Update the WooPayments extension to at least 10.6.0 before the switch to the built-in WooPayments, so a rollback can refund and renew Amazon Pay payments.

@@ -1,4 +1,0 @@
-Significance: patch
-Type: dev
-
-Make the 3D Secure challenge spec run, and record that the failure message is never announced.

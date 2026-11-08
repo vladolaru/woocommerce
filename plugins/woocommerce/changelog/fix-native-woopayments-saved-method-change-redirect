@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-Return shoppers to their subscription after changing its payment method to a saved card, instead of the order received page.

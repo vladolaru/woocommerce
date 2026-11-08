@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-WooPayments instant payout details keep their summary tiles in one row on wide screens and stack them at their content height on narrow ones.

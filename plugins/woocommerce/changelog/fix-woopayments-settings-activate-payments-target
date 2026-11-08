@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-Send the Activate payments button on the WooPayments settings test account notice to onboarding, instead of back to the settings page.

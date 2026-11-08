@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-Sanitize the native WooPayments WooPay custom message before storing it.

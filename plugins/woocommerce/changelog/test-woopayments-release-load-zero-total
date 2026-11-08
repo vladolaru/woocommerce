@@ -1,4 +1,0 @@
-Significance: patch
-Type: dev
-
-Add native release-load and zero-total checkout E2E coverage and close their three contracts.

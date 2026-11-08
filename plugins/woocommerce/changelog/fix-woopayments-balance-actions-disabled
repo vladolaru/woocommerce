@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-Disable Print and Export on the WooPayments Balance report while it loads, after it fails to load, and when the period has no activity.

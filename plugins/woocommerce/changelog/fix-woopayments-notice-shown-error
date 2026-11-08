@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-Stop showing "We could not update this notice." on the Payments settings page when a WooPayments notice only failed to record that it was seen.

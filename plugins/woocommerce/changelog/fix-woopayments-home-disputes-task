@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-Show the WooPayments "Respond to disputes" task on WooCommerce Home when disputes are due within a week, as WooPayments does.

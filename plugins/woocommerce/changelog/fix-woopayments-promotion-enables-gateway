@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-Offer a payment method at checkout as soon as its WooPayments promotion is activated from the Payments settings.

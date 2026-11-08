@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-Mention subscription numbers in the WooPayments transactions search box when WooCommerce Subscriptions is active.

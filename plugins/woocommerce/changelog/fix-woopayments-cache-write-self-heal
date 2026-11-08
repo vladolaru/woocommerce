@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-Retry a WooPayments platform cache write once after a stale object cache entry made it fail, so the store stops fetching its account on every request.

@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-Keep the onboarding origin, taken from the referring page, when a WooPayments account verification return can't be matched, like the WooPayments plugin.

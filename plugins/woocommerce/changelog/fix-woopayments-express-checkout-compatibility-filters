@@ -1,3 +1,0 @@
-Significance: patch
-Type: fix
-Comment: Restore WooPayments express checkout compatibility for Bookings, Square, and Deposits.

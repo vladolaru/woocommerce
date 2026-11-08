@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-Fix native WooPayments webhook effects for closed disputes on refunded orders, sibling dispute holds and failed payment intents.

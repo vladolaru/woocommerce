@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-The built-in WooPayments integration no longer attaches its subscription renewal handlers or shows its test-to-live notice while the WooPayments plugin owns payments.

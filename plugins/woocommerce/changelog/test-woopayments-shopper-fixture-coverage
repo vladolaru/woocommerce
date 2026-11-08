@@ -1,4 +1,0 @@
-Significance: patch
-Type: dev
-
-Cover the shopper fixture provisioning in the environment setup contract tests.

@@ -1,4 +1,0 @@
-Significance: patch
-Type: dev
-
-Record that the multi-currency settings screen is the native equivalent of the WooPayments client onboarding wizard, resolving three ambiguous-decision gates in the contract ledger.

@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-Stop a "translation loading was triggered too early" notice on stores that use native WooPayments.

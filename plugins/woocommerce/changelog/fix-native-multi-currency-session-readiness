@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-Restore persisted guest currencies across classic and Store API requests.

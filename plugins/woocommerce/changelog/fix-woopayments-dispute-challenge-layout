@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-Lay out the WooPayments dispute challenge page as WooPayments did: a collapsible dispute summary, the steps above the form, the outcome notice, and Cancel, Save for later and Next buttons.

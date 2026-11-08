@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-The WooPayments disputes, payouts and blocked transactions lists now show statuses as coloured chips with the WooPayments wording, and the dispute response countdown as a red chip.

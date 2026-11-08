@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-WooPayments no longer offers Amazon Pay at express checkout after the merchant switches it off in the payment settings.

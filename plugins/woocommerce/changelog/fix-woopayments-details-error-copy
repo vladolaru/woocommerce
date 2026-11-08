@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-WooPayments payment details and dispute challenge pages show their own error message instead of the raw server response.

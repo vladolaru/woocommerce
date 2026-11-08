@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-Explain every Stripe requirement error and the update deadline in the WooPayments update-business-details task and modal as WooPayments does, and stop letting merchants dismiss or snooze that task.

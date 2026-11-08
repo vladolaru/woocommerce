@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-Show the WooPayments test-mode notice on transactions, payouts, disputes, documents and test orders.

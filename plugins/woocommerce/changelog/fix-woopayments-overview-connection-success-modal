@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-Show the WooPayments connection-success modal again by reading the payout status from the cached account, as WooPayments does.

@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-Preserve WooPayments manual authorization and capture handling in native payments.

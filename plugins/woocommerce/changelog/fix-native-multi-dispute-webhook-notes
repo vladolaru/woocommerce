@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-Fix multi-dispute webhooks to preserve distinct order notes and refresh dispute caches on replays.

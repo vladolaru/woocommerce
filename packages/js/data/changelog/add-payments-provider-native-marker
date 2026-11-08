@@ -1,4 +1,0 @@
-Significance: patch
-Type: add
-
-Expose the optional built-in WooPayments marker on payments settings providers.

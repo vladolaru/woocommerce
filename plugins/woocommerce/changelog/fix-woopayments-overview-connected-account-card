@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-Remove the connected account card from the built-in WooPayments Overview, which the WooPayments plugin does not show.

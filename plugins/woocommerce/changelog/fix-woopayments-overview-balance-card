@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-The WooPayments Overview balance card now explains each balance behind a help icon and sits above the Payouts card, like WooPayments.

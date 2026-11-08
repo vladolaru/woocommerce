@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-Keep WooPayments in live mode after going live from the Payments list, and stop saving settings edits that were discarded.

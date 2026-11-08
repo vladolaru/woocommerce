@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-Open WooPayments tax documents and invoices from Payments > Documents instead of a "not allowed" error page.

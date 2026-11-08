@@ -1,4 +1,0 @@
-Significance: patch
-Type: dev
-
-Route WooPayments extension version checks through the native payments runtime.

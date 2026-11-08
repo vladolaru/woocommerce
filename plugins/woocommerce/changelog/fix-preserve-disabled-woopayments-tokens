@@ -1,3 +1,0 @@
-Significance: patch
-Type: fix
-Comment: Keep disabled saved payment methods without deleting their tokens.

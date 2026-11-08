@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-Stop showing WooPayments buy now, pay later messaging on subscription products and on carts that contain a subscription.

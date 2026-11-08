@@ -1,4 +1,0 @@
-Significance: patch
-Type: dev
-
-Add a provider-free storefront smoke covering the WooPayments-native shopper currency switcher across shop, product, cart and checkout.

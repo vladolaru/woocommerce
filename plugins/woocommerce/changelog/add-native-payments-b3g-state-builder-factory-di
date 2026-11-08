@@ -1,4 +1,0 @@
-Significance: patch
-Type: dev
-
-Inject native multi-currency state-builder factory dependencies into controllers.

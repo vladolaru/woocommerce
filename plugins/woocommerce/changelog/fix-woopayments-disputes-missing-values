@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-Leave unknown customer details empty in the WooPayments disputes list instead of mixing dashes.

@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-The WooPayments settings pages no longer leave an empty band between the save button and the admin footer.

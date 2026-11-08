@@ -1,4 +1,0 @@
-Significance: minor
-Type: fix
-
-Isolate native WooPayments checkout state across multisite blog switches.

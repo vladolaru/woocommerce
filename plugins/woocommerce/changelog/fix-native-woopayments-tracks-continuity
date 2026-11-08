@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-Preserve WooPayments shopper tracking events for native checkout and WooPay.

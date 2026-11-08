@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-Log native WooPayments webhook failures before returning error envelopes.

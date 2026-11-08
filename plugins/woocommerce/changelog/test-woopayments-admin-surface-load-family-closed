@@ -1,4 +1,0 @@
-Significance: patch
-Type: dev
-
-Close the WooPayments disputes-list and Subscriptions-settings contracts as supported, bound to the reviewed provider-free admin-surface smoke.

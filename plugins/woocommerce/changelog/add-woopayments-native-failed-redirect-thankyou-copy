@@ -1,4 +1,0 @@
-Significance: minor
-Type: add
-
-Tell the shopper when a native WooPayments redirect payment failed on the order-received page and re-check the live intent for still-pending redirect methods.

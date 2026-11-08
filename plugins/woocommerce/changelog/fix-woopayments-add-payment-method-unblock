@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-Unblock the classic Add payment method form when the provider rejects the card, so a declined authentication no longer leaves the form spinning.

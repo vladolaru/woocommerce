@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-Send the WooPayments reconnect link to the Overview when the WordPress.com connection has lost its owner, using the same rule and link as WooPayments.

@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-Show the full WooPayments "Fee details" order note, with tax on fees, refunded fees, capped rates and discounts.

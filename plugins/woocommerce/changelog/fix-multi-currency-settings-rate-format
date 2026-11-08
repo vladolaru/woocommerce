@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-Show multi-currency exchange rates as "1 USD → 0.88 EUR" in the enabled currencies list.

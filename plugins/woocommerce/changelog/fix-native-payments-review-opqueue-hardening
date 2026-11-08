@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-Guard native WooPayments post-KYC email scheduling with an atomic option insert and add correlation context to operational-queue exception logs.

@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-Preserve WooPayments fee note parity for native charge webhooks.

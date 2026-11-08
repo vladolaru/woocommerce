@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-Keep the WooPayments Capital loan list on screen when the active loan summary fails to load, with an error notice for the summary.

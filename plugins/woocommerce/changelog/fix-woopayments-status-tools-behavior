@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-WooPayments repair tools in WooCommerce > Status > Tools report scheduling errors and stay usable during a dry run, and clearing the account cache without a connection no longer records a failed account read.

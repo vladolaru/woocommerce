@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-Refresh native WooPayments subscription capabilities after extensions load.

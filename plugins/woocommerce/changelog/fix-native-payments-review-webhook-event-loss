@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-Keep native WooPayments failed webhook events in the store until they are processed successfully, so a transient failure does not lose the event.

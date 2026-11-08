@@ -1,4 +1,0 @@
-Significance: minor
-Type: add
-
-Add a native WooPayments cutover controller for safe plugin disable flows.

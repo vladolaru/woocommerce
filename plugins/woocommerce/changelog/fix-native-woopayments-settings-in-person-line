@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-Remove a WooPayments settings line about in-person payment methods that the WooPayments plugin does not show.

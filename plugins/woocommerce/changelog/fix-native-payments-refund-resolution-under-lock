@@ -1,3 +1,0 @@
-Significance: patch
-Type: fix
-Comment: Serialize native payment refund-instance resolution under the order lock so concurrent equal refunds no longer collide on the same idempotency key.

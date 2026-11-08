@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-Keep the WooPayments express checkout button border radius between 0 and 30 px when it is typed into the number field.

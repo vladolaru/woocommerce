@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-Stop sending mandate data on off-session native WooPayments renewals and carry the subscription's saved credential and customer IP the way the WooPayments extension does.

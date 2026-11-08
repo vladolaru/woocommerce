@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-Stop the deprecated WooPayments onboarding task from triggering three deprecation notices each time it builds its action link.

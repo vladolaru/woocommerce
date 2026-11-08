@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-Show explicit currency codes on WooPayments admin amounts when Multi-Currency has more than one enabled currency, as the WooPayments plugin does.

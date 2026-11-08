@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-Invalidate native WooPayments dispute caches after dispute webhook side effects.

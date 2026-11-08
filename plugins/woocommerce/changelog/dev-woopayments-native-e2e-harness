@@ -1,4 +1,0 @@
-Significance: patch
-Type: dev
-
-Extend the WooPayments native E2E harness and drivers for the mechanism-parity slices.

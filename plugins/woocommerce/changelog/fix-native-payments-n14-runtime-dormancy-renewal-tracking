@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-Preserve native WooPayments dormancy and renewal order tracking parity.

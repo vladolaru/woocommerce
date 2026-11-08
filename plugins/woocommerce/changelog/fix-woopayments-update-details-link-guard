@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-Open the WooPayments business details link only when one exists, without extra tracking parameters from the details modal.

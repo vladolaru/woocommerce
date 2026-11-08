@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-Distinguish multiple disputes for real provider event types in native WooPayments transaction timelines.

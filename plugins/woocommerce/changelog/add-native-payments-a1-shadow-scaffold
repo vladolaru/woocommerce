@@ -1,4 +1,0 @@
-Significance: minor
-Type: add
-
-Add the A1 native payments skeleton with preserved WooPayments payment-surface constants, read-only order payment projection, metadata-only provider contract, and same-store baseline shadow logging.

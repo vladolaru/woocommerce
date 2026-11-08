@@ -1,4 +1,0 @@
-Significance: patch
-Type: dev
-
-Remove the deprecated WooPayments promotion engine and pseudo-gateway surface from WooCommerce Core.

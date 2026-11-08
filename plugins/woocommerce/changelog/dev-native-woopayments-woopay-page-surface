@@ -1,4 +1,0 @@
-Significance: patch
-Type: dev
-Comment: WooPay reads the shopper page through one container-resolved class; production behaviour is unchanged.
-

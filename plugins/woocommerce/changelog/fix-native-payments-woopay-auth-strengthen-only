@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-Make the native WooPay session authentication filter strengthen-only so it cannot grant access to unsigned requests.

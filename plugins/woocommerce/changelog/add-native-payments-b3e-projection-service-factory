@@ -1,4 +1,0 @@
-Significance: patch
-Type: dev
-
-Centralize native multi-currency projection service construction behind a factory.

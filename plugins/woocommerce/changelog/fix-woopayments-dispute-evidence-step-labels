@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-Label the customer's signature correctly on the Purchase info step when challenging a WooPayments dispute.

@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-Use a numeric order ID route pattern across WooPayments mobile REST routes.

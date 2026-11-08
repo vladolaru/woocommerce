@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-Offer the customer country, customer currency, device type, payment method, risk level, sales channel and loan filters on the WooPayments transactions list, and apply them from the page address.

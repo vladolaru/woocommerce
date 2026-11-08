@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-Sanitize native WooPayments account settings by field type before persisting them.

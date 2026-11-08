@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-Announce the multi-currency empty-selection refusal to assistive technology when the last currency is cleared.

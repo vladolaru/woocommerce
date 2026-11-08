@@ -1,4 +1,0 @@
-Significance: patch
-Type: add
-
-Add native multi-currency Subscriptions compatibility guards for renewal, resubscribe, and switch flows.

@@ -1,4 +1,0 @@
-Significance: patch
-Type: dev
-
-Add an ESLint guard so WooPayments settings optional surfaces (VAT modal, fraud tour, express-checkout sub-settings) can only be reached via lazy dynamic imports, keeping them code-split; replaces the removed source-introspection chunk tests.

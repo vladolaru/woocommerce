@@ -1,3 +1,0 @@
-Significance: patch
-Type: dev
-Comment: Route native WooPayments environment checks through LegacyProxy and Constants so their PHPUnit tests run in-process; no behavior change.

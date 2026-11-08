@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-Fix the native WooPayments express checkout rejecting wallet shipping changes on subscription carts when confirmation tokens are disabled.

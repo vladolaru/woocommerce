@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-The WooPayments transactions list leaves space between the "Show" select and the list.

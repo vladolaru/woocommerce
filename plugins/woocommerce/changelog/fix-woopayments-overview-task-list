@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-The WooPayments Overview task list now uses the WooCommerce task rows WooPayments uses, with the level icon and colour, and no extra heading or boxed rows.

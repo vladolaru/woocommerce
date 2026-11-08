@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-Log native WooPayments Capital loan link failures and include HTTP status in Capital error responses.

@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-The WooPayments Overview shows an error notice when the disputes it needs for its tasks cannot be loaded.

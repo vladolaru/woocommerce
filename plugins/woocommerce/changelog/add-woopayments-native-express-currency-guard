@@ -1,4 +1,0 @@
-Significance: minor
-Type: add
-
-Reject Store API order placement from native WooPayments express checkout when the wallet currency differs from the cart currency.

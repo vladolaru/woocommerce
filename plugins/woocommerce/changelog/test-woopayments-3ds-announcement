@@ -1,4 +1,0 @@
-Significance: patch
-Type: dev
-
-Assert the WooPayments authentication failure is announced to assistive technology.

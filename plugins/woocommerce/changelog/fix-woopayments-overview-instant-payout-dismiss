@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-The WooPayments Overview instant payout offer can be dismissed again; the dismissal is remembered and a help icon beside the payout button keeps the details.

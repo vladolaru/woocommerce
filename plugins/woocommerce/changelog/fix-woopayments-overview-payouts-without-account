@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-Stop the WooPayments Overview from calling an account new when its account data fails to load.

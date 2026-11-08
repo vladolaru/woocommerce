@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-Translate the whole WooPayments notice shown when capturing or canceling a payment fails, instead of leaving its verb in English.

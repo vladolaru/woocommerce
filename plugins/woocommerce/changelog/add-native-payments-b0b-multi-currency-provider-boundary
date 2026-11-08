@@ -1,4 +1,0 @@
-Significance: patch
-Type: dev
-
-Decouple native multi-currency provider boundaries from concrete WooPayments classes.

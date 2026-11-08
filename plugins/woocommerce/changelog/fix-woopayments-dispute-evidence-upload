@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-Show each WooPayments dispute evidence document as its name, description and an upload button, with the uploaded file as a removable chip, as WooPayments did.

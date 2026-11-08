@@ -1,4 +1,0 @@
-Significance: patch
-Type: tweak
-
-Add a filter for shipping extensions to skip multi-currency conversion of shipping amounts.

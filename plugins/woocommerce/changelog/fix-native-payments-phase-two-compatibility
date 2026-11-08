@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-Restore native WooPayments payment-method projection, WooPay lifecycle behavior, localized checkout errors, and cross-locale order-note deduplication.

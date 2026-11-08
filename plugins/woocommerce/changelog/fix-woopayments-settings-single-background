@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-The WooPayments settings page now has the same white background and save bar whether it is opened directly or from the Payments list.

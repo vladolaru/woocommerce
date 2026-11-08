@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-Keep disputed WooPayments orders on hold when a late payment success event arrives.

@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-Restore WooPayments compatibility shims, payment-method filters, checkout analytics, and consistent native hook naming.

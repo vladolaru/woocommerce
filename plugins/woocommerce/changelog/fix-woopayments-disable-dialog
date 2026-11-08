@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-The Disable WooPayments confirmation now opens at the standard dialog size, keeps its close button in the header, and shows the logo of every payment method that needs WooPayments.

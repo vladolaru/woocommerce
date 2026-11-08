@@ -1,3 +1,0 @@
-Significance: patch
-Type: dev
-Comment: Stop native WooPayments tests leaking a guest customer through the shared session; tests only.

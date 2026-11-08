@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-Keep the WooPayments test or sandbox account notice on the settings pages when the settings and account data fail to load.

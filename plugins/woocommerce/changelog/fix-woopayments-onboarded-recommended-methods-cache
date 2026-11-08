@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-Clear the cached WooPayments recommended payment methods once onboarding finishes, so a later onboarding fetches them again.

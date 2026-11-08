@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-Harden native WooPayments cutover preflight, multisite rollout controls, support diagnostics, and workflow ownership checks.

@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-The WooPayments Overview inbox now shows the WooPayments empty-inbox message when there are no notes.

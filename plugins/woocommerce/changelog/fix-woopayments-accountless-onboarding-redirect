@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-Send merchants without a WooPayments account from WooPayments admin pages to onboarding.

@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-Fire the WooPayments order metadata, WooPay request, refund deletion and analytics stats hooks when and as the WooPayments extension fires them.

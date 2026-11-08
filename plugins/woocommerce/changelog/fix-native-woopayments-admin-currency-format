@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-Show WooPayments payment details amounts in the store's currency format, including zero-decimal currencies such as JPY.

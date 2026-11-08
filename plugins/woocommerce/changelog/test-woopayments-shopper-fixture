@@ -1,4 +1,0 @@
-Significance: patch
-Type: dev
-
-Establish the shared test customer during WooPayments provider environment setup.

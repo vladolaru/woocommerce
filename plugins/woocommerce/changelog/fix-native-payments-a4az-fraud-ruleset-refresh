@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-Refresh native WooPayments fraud rulesets from the platform when local cache is missing.

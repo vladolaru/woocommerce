@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-Show the WooPayments "Activate payments" task on WooCommerce Home for connected test-mode stores, and no longer on the Payments Overview, as WooPayments does.

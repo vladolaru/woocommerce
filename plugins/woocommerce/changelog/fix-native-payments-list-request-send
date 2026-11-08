@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-Restore a send() method on native WooPayments list-request filter objects so extensions hooking the preserved request filters keep working.

@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-Show "Completed (paid)" and "Completed (deducted)" payout statuses on the WooPayments payouts list, matching payout details.

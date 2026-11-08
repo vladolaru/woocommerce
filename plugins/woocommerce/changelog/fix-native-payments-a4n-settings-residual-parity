@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-Restore native WooPayments settings parity for account-mode notices, payout bank-account messaging, payout schedule copy, and save busy state.

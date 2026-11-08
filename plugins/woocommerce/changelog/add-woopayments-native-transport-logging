@@ -1,4 +1,0 @@
-Significance: minor
-Type: add
-
-Add redacted request and response logging to the native WooPayments transport, with the extension's field-redaction list.

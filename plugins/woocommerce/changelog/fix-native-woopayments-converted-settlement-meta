@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-Preserve WooPayments converted-currency settlement metadata for native charges and captures.

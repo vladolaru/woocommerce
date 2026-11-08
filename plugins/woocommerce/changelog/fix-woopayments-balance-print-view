@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-Print only the WooPayments Balance report, without the admin menu, toolbar and page header around it.

@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-The WooPayments advanced fraud protection page is white, uses toggles for its filters, and matches the other WooPayments settings pages' header and two-column layout.

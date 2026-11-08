@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-Persist new cards when customers update subscription payment methods with native WooPayments.

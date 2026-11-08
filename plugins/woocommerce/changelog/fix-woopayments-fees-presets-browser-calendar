@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-Resolve the WooPayments Fees report's "Previous month" and "Previous year" on the merchant's own calendar, not on UTC's.

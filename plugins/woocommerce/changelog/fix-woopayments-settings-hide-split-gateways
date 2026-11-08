@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-Settings > Payments now lists WooPayments as one provider, without a separate entry for each of its payment methods.

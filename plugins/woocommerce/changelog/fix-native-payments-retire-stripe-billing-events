@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-Retire legacy WooPayments Stripe Billing invoice events behind a cutover data-safety guard.

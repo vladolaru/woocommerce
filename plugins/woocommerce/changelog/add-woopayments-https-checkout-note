@@ -1,4 +1,0 @@
-Significance: minor
-Type: add
-
-Show the WooPayments "Enable secure checkout" inbox note on stores whose checkout does not use HTTPS.

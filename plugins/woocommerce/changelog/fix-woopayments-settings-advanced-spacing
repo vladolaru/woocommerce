@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-The WooPayments advanced settings options are spaced apart, with the WooPayments plugin's Multi-Currency label and a Debug mode heading.

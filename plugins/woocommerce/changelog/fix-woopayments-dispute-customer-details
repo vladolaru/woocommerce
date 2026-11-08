@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-Show the customer details on the WooPayments dispute challenge page and send the order IP address as the purchase IP, as WooPayments did.

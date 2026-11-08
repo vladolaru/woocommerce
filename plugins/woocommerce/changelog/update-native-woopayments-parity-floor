@@ -1,4 +1,0 @@
-Significance: patch
-Type: dev
-
-Move the native WooPayments parity floor to the reviewed 11.1.0 client contract.

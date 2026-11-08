@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-Show WooPayments dispute amounts on the order screen in the store's format, including zero-decimal currencies like JPY.

@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-Use WooPayments defaults for unsaved payment settings.

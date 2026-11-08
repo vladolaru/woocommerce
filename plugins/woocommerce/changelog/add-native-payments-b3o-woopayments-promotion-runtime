@@ -1,4 +1,0 @@
-Significance: patch
-Type: dev
-
-Route WooPayments promotion active checks through the native payments runtime.

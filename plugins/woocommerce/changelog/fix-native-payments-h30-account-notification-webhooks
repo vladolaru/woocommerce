@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-Preserve native WooPayments account and notification webhook side effects.

@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-Record the WooPayments transaction fee on in-person payments captured from the mobile app, as the WooPayments extension does.

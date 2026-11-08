@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-Restore WooPayments redirect returns, manual-capture workflows, async failure handling, and express checkout fraud checks.

@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-Export WooPayments blocked transaction amounts in the currency's main unit and their status as "Payment blocked".

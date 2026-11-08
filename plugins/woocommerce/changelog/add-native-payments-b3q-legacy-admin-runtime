@@ -1,4 +1,0 @@
-Significance: patch
-Type: dev
-
-Route legacy admin WooPayments runtime probes through the native payments runtime.

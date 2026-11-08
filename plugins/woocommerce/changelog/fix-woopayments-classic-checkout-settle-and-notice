@@ -1,4 +1,0 @@
-Significance: patch
-Type: dev
-
-Settle the classic checkout before Place order and read rejection notices from either notice template in the WooPayments E2E drivers.

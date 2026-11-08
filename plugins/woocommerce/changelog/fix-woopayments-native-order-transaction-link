@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-Link the transaction ID on the admin order page to its payment details when WooPayments runs natively, matching the gateway behaviour merchants had before switching.

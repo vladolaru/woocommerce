@@ -1,4 +1,0 @@
-Significance: patch
-Type: dev
-
-Centralize WooPayments legacy runtime lookup for native provider bridge adapters.

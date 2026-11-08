@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-Keep cards enabled when a WooPayments promotion enables its payment method on a store whose settings never stored the enabled payment methods.

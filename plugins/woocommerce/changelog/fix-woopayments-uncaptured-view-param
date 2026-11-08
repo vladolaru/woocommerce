@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-Read the WooPayments uncaptured transactions view only from the view query argument that native admin URLs carry.

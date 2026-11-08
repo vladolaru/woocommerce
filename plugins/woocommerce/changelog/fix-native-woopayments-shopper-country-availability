@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-Native WooPayments payment methods now follow the shopper billing country instead of the merchant account country.

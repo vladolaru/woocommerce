@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-Show WooPayments error messages with quotes and other special characters as plain text instead of HTML codes such as &#039;.

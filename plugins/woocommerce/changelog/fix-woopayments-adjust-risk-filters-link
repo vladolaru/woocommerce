@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-Point the order screen's "Adjust risk filters" link at the Fraud protection section of the WooPayments settings, like the WooPayments plugin.

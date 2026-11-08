@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-Turn on the built-in WooPayments card gateway when onboarding applies the chosen payment methods, matching the WooPayments extension.

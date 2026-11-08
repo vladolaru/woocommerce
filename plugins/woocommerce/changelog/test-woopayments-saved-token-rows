@@ -1,4 +1,0 @@
-Significance: patch
-Type: dev
-
-Close the seven saved-token contracts and fix the payment-element hydration race the run exposed.

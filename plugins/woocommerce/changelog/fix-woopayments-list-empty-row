@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-Show "No data to display" in a padded, centred row when a WooPayments list is empty.

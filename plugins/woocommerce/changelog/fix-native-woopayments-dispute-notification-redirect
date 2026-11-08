@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-Redirect unresolved native WooPayments dispute notification links to the disputes list.

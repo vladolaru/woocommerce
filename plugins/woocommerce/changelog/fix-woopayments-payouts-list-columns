@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-The WooPayments payout history shows the payout type, bank account and bank reference ID columns.

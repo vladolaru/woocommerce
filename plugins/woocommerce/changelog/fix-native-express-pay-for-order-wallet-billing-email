@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-Allow Express Checkout to pay merchant-created orders without a billing email.

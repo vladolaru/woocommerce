@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-Restore the WooPayments currency switcher block in the editor when native payments owns multi-currency.

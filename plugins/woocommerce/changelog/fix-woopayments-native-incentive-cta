@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-Word the WooPayments incentive button on the built-in WooPayments gateway as "Activate payments" for test accounts and "Get started" otherwise, instead of an install prompt.

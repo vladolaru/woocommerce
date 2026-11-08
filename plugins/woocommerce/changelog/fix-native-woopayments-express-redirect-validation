@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-Validate native WooPayments express-login return URLs before storing or returning them.

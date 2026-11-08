@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-Hide the WooPayments Refund button for a payment with no order once it is partly refunded or charged back, since a full refund would fail.

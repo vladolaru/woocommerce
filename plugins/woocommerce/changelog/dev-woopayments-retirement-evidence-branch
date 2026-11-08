@@ -1,4 +1,0 @@
-Significance: patch
-Type: dev
-
-Add a retirement branch to the WooPayments migration evidence schema so a retired contract names its retained contract instead of manufacturing closure reviews.

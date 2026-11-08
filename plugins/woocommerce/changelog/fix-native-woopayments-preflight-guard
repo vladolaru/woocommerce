@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-Apply fraud and rate-limit checks before WooPay preflight and suppress checkout side effects during the probe.

@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-Prevent zero-total native WooPayments renewals from sending online mandate acceptance during cron.

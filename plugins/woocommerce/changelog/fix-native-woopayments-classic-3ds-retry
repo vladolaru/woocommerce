@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-Allow shoppers to retry native WooPayments after failed 3DS authentication.

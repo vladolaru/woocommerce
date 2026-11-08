@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-Show only the WooPayments onboarding entry when the WordPress.com connection is broken, as the WooPayments plugin does.

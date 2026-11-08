@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-Show the WooPay button preview in the express checkout settings with the WooPay logo and the store's chosen label, theme, size, and corner radius, as shoppers see it.

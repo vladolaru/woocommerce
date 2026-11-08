@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-Fix native WooPayments admin accessibility issues: duplicate screen-reader announcements, an unannounceable placeholder, and a dangling aria-controls reference.

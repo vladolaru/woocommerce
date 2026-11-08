@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-Report a failed native payment as failure rather than fail, so the shopper is told why their payment did not go through.

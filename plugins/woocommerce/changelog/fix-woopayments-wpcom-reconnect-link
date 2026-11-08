@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-Handle the WooPayments WordPress.com reconnect link so a store whose connection owner is gone can reconnect.

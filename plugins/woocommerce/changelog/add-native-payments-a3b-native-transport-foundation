@@ -1,4 +1,0 @@
-Significance: patch
-Type: dev
-
-Add a core-owned WooPayments transport foundation for native refund, capture, and cancel operations.

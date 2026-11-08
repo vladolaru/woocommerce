@@ -1,4 +1,0 @@
-Significance: patch
-Type: dev
-
-Close the WooPayments guest-save family contract as supported, bound to the reviewed provider-free smoke and retained token-service coverage.

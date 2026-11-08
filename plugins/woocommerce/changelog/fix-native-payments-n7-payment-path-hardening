@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-Harden native WooPayments refund, platform payment method, and renewal payment paths.

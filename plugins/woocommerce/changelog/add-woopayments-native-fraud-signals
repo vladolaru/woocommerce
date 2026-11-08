@@ -1,4 +1,0 @@
-Significance: minor
-Type: add
-
-Load the Sift fraud beacon, collect the buyer device fingerprint and attach the buyer-fingerprinting risk metadata on native WooPayments checkout surfaces, matching the WooPayments extension.
