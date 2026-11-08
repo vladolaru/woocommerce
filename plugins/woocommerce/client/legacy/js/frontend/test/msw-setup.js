@@ -15,10 +15,4 @@ afterAll( () => {
 	server.close();
 } );
 
-if ( expect.getState().testPath.endsWith( 'msw-setup.js' ) ) {
-	test( 'configures the local MSW server lifecycle', () => {
-		expect( server ).toBeDefined();
-	} );
-}
-
 module.exports = { server, http, HttpResponse };
