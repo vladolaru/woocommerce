@@ -2371,6 +2371,7 @@ describe( 'wc-payment-method-woopayments-woopay', () => {
 					const close = screen.getByRole( 'button', {
 						name: 'Close',
 					} );
+					expect( close.type ).toBe( 'button' );
 					expect( close ).toHaveFocus();
 					expect( dialog ).toContainElement( close );
 					// Reachable with Tab, right after the iframe.
