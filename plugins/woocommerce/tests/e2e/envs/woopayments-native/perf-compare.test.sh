@@ -754,11 +754,24 @@ grep -Fq $'DB_IMPORT\t' "$TEST_ROOT/import-failure/events.log" || fail 'Import f
 grep -Fq '58ea000906c2fc6f40e9a79d5ea60ec3104ae6d5ddf4ae533c2162b3b5fe5f96' "$TEST_ROOT/reference-integrity/events.log" || fail 'Reference integrity did not use the pinned digest.'
 grep -Fq 'Cleanup failed' "$TEST_ROOT/reference-remove-failure/stderr" || fail 'Reference cleanup failure did not propagate.'
 
-for arguments in '--mode' '--store-url' '--output' '--wp-env-config' '--wp-env-service' '--reference-zip' '--mode unsupported --output result.tsv' '--mode ci --reference-zip result.tsv --output result.tsv' '--reference-zip /nonexistent/reference.zip --output result.tsv'; do
+for arguments in '--mode' '--store-url' '--output' '--wp-env-config' '--wp-env-service' '--reference-zip' '--reference-zip= --output result.tsv' '--mode unsupported --output result.tsv' '--reference-zip /nonexistent/reference.zip --output result.tsv'; do
 	name="argument-$(printf '%s' "$arguments" | tr ' /' '__')"; setup_case "$name"; root="$TEST_ROOT/$name"; status=0
 	# shellcheck disable=SC2086 -- Deliberately split malformed argument vectors.
 	PATH="$root/bin:$PATH" PERF_FAKE_ROOT="$root" "$RUNNER" $arguments > "$root/stdout" 2> "$root/stderr" || status=$?
 	[[ "$status" == 2 && ! -s "$root/commands.log" ]] || fail "Argument contract failed without isolation for: $arguments"
 done
+
+# An empty --reference-zip operand is a usage error in both modes, not the option left out (which downloads).
+for mode in local ci; do
+	name="argument-empty-reference-zip-$mode"; setup_case "$name"; root="$TEST_ROOT/$name"; status=0
+	PATH="$root/bin:$PATH" PERF_FAKE_ROOT="$root" "$RUNNER" --mode "$mode" --reference-zip '' --output result.tsv > "$root/stdout" 2> "$root/stderr" || status=$?
+	[[ "$status" == 2 && ! -s "$root/commands.log" ]] && grep -Fxq -- '--reference-zip requires a non-empty operand' "$root/stderr" || fail "An empty --reference-zip operand was not refused at parsing in $mode mode."
+done
+
+# CI mode refuses --reference-zip for the mode itself: the zip exists, so only the mode check can refuse it.
+[[ -f "$probe_reference_zip" ]] || fail 'The zip fixture for the CI-mode --reference-zip case is missing.'
+name='argument-ci-reference-zip'; setup_case "$name"; root="$TEST_ROOT/$name"; status=0
+PATH="$root/bin:$PATH" PERF_FAKE_ROOT="$root" "$RUNNER" --mode ci --reference-zip "$probe_reference_zip" --output result.tsv > "$root/stdout" 2> "$root/stderr" || status=$?
+[[ "$status" == 2 && ! -s "$root/commands.log" ]] && grep -Fxq -- '--reference-zip applies only to --mode local' "$root/stderr" || fail 'CI mode accepted --reference-zip with an existing zip.'
 
 echo 'perf-compare.sh tests passed.'

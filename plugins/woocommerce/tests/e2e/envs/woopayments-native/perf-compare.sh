@@ -104,6 +104,8 @@ parse_arguments() {
 				;;
 			--reference-zip)
 				[[ $# -ge 2 ]] || die_usage '--reference-zip requires an operand'
+				# Empty would read as the option left out, and the run would download.
+				[[ -n "$2" ]] || die_usage '--reference-zip requires a non-empty operand'
 				REFERENCE_ZIP="$2"
 				shift 2
 				;;
