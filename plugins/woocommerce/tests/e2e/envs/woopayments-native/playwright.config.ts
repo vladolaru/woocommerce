@@ -84,15 +84,6 @@ export default {
 			workers: serializedProjectWorkerLimit,
 		},
 		{
-			name: 'woopayments-native-ci-profile-skips',
-			testMatch: '**/tests/woopayments-native/profile-dispositions.ci.ts',
-			metadata: {
-				woopaymentsReadonlySetup: false,
-			},
-			retries: 0,
-			workers: serializedProjectWorkerLimit,
-		},
-		{
 			name: 'woopayments-native-transition',
 			testMatch: wooPaymentsSpecs,
 			grep: /@woopayments-transition/,

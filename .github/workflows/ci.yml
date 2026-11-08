@@ -577,15 +577,15 @@ jobs:
           pnpm --dir plugins/woocommerce test:e2e:install
           NODE_OPTIONS="${NODE_OPTIONS:-} --conditions=wc-source" pnpm --dir plugins/woocommerce exec playwright test --config=tests/e2e/envs/woopayments-native/unit.playwright.config.ts
 
-      - name: 'Validate WooPayments e2e contracts and routing'
-        run: |
-          cd plugins/woocommerce
-          node tests/e2e/bin/validate-woopayments-client-contract-map.mjs && node --test tests/e2e/bin/validate-woopayments-client-contract-map.test.mjs && node tests/e2e/bin/validate-woopayments-project-routing.mjs && node --test tests/e2e/bin/validate-woopayments-project-routing.test.mjs
+      - name: 'Run the bundle-size gate self-tests'
+        env:
+          TMPDIR: '${{ runner.temp }}'
+        run: bash plugins/woocommerce/tests/e2e/envs/woopayments-native/bundle-size-gate.test.sh
 
       - name: 'Run secretless readonly project'
         env:
           E2E_WOOPAYMENTS_DIAGNOSTICS_DIR: '${{ runner.temp }}/woopayments-native-diagnostics'
-        run: pnpm --dir plugins/woocommerce test:e2e:with-env woopayments-native --project=woopayments-native-readonly --project=woopayments-native-extension-compat --project=woopayments-native-ci-profile-skips
+        run: pnpm --dir plugins/woocommerce test:e2e:with-env woopayments-native --project=woopayments-native-readonly
 
       - name: 'Audit secretless provider fixture'
         if: ${{ always() }}

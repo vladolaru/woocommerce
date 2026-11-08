@@ -39,6 +39,14 @@ readonly SCRIPT_DIR="$(
 	pwd -P
 )"
 readonly PLAYWRIGHT_CONFIG="$SCRIPT_DIR/playwright.config.ts"
+readonly PROVIDER_PROJECT='woopayments-native-provider'
+
+# No CI job runs the provider project, and outside it the live-platform cases skip
+# when the live platform or a Stripe key is missing. A case that loses its
+# @woopayments-provider tag leaves the project without failing anything, so a run
+# of the project first checks that it still collects at least this many cases.
+# Raise it when provider cases are added; lower it only when cases are removed.
+readonly PROVIDER_PROJECT_MIN_CASES=43
 
 # Provider readiness applies exactly when this invocation will run at least one
 # test tagged @woopayments-provider or @woopayments-transition. The runner
@@ -60,16 +68,30 @@ if [[ $# -gt 0 ]]; then
 				  | objects
 				  | select( has("specs") )
 				  | .specs[]
-				  | select(
-				      [ .tests[].annotations[]?.type ]
-				      | index("profile-unavailable")
-				      | not
-				    )
 				  | .tags[]?
 				]
 				| any( . == "woopayments-provider" or . == "woopayments-transition" )
 			' 2> /dev/null
 		)" || provider_tag_scan=''
+
+		if printf '%s\n' "$provider_list_json" | jq -e --arg project "$PROVIDER_PROJECT" '
+			any( .. | objects | select( has("specs") ) | .specs[].tests[]?; .projectName == $project )
+		' > /dev/null 2>&1; then
+			provider_case_count="$(
+				CI=1 BASE_URL="${BASE_URL:-http://localhost:8086}" \
+					pnpm exec playwright test \
+					--config="$PLAYWRIGHT_CONFIG" --list --reporter=json --project="$PROVIDER_PROJECT" \
+					2> /dev/null |
+					jq --arg project "$PROVIDER_PROJECT" '
+						[ .. | objects | select( has("specs") ) | .specs[].tests[]? | select( .projectName == $project ) ]
+						| length
+					' 2> /dev/null
+			)" || provider_case_count=''
+			if [[ ! "$provider_case_count" =~ ^[0-9]+$ ]] || (( provider_case_count < PROVIDER_PROJECT_MIN_CASES )); then
+				echo "The $PROVIDER_PROJECT project collects ${provider_case_count:-an unreadable number of} cases, fewer than the pinned $PROVIDER_PROJECT_MIN_CASES: a live-platform case has probably lost its @woopayments-provider tag. Restore the tag, or lower PROVIDER_PROJECT_MIN_CASES in env-setup.sh if the case was removed on purpose." >&2
+				exit 1
+			fi
+		fi
 	fi
 
 	if [[ "$provider_tag_scan" == 'false' ]]; then

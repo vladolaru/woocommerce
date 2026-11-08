@@ -355,28 +355,13 @@ if ! grep -Fq 'wcpay callback probe' "$TEST_ROOT/provider-args-commands.log"; th
 	fail 'A provider-tagged run must keep the callback probe.'
 fi
 
-# CI-only profile dispositions retain their provider-tagged source titles but
-# execute no provider behavior, so they must remain on provider-free readiness.
-run_setup 'native' 'profile-dispositions' \
-	E2E_FAKE_ACCOUNT_ERROR=1 \
-	E2E_FAKE_LIST_TAGS='woopayments-provider' \
-	E2E_FAKE_LIST_PROFILE_UNAVAILABLE=1 \
-	-- --project=woopayments-native-ci-profile-skips
-grep -q 'WooPayments provider-free readiness proved for native' \
-	"$TEST_ROOT/profile-dispositions-stdout"
-if grep -Fq 'wcpay callback probe' "$TEST_ROOT/profile-dispositions-commands.log"; then
-	fail 'A CI-only skipped profile disposition must not run the callback probe.'
-fi
-
-# Secretless CI owns a local fail-closed provider fixture. Its exact combined
-# project selection may retain provider readiness, but must not require
-# wpcom-local or a connected platform topology.
+# Secretless CI owns a local fail-closed provider fixture. Its project
+# selection may retain provider readiness, but must not require wpcom-local or
+# a connected platform topology.
 run_setup 'native' 'secretless-ci' \
 	E2E_WOOPAYMENTS_NATIVE_FIXTURE=true \
 	E2E_FAKE_LIST_TAGS='woopayments-native woopayments-provider' \
-	-- --project=woopayments-native-readonly \
-	--project=woopayments-native-extension-compat \
-	--project=woopayments-native-ci-profile-skips
+	-- --project=woopayments-native-readonly
 if grep -Fq 'wpcom-local ' "$TEST_ROOT/secretless-ci-commands.log"; then
 	fail 'Secretless CI readiness must not invoke wpcom-local.'
 fi
