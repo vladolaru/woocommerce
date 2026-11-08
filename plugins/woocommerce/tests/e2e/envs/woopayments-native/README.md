@@ -5,7 +5,6 @@ The `woopayments-native-secretless` CI job runs the built-in WooPayments against
 - `ci-provider-fixture.php` is the fixture: the Jetpack identity, the request interception, the account and switch state machine, and the audit route.
 - `ci-provider-fixture-recorded.json` holds real platform responses, keyed by `METHOD route`. The fixture serves them as they are.
 - `install-ci-fixture.sh` copies both files into the store and prepares its state. `assert-ci-fixture-clean.sh` audits the run: no unknown request reached the fixture, the required routes were asked for, and every physical option the fixture touched is back at its original value.
-- `ci-provider-fixture-test.php` and `ci-provider-fixture-test-wp-error.php` test the fixture standalone. Run `php ci-provider-fixture-test.php` from this folder.
 
 ## Rule: recorded shapes, never invented
 
