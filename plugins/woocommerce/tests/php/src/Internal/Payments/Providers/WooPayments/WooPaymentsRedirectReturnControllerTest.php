@@ -569,9 +569,7 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 		$order                      = $this->create_order();
 		$api_client                 = new RedirectReturnApiClientStub();
 		$api_client->payment_intent = $this->successful_payment_intent( $order, 'pi_nonce', 'pm_nonce' );
-		$confirmation_service       = $this->createMock( WooPaymentsIntentConfirmationService::class );
-		$confirmation_service->expects( $this->exactly( $expected_reads ) )->method( 'confirm_fetched_intent_for_order' );
-		$this->sut = $this->create_controller( true, $confirmation_service, $api_client );
+		$this->sut                  = $this->create_controller( true, $this->create_confirmation_service( $api_client ), $api_client );
 		$this->set_payment_intent_return_request( $order, 'pi_nonce' );
 		$_GET['_wpnonce'] = wp_create_nonce( 'wcpay_process_redirect_order_nonce' . ( null === $order_id_offset ? '' : '_' . ( $order->get_id() + $order_id_offset ) ) );
 
@@ -580,7 +578,7 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 
 		$this->assertInstanceOf( WC_Order::class, $reloaded );
 		$this->assertSame( $expected_reads, $api_client->payment_intent_reads );
-		$this->assertSame( 'pending', $reloaded->get_status() );
+		$this->assertSame( 1 === $expected_reads, $reloaded->is_paid(), 'Only the return whose nonce names its order confirms the payment.' );
 	}
 
 	/**
@@ -642,11 +640,9 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 			$api_client->payment_intent['metadata']['order_id'] = $metadata_order_id( $order->get_id() );
 		}
 
-		$confirmation_service = $this->createMock( WooPaymentsIntentConfirmationService::class );
-		$confirmation_service->expects( $this->never() )->method( 'confirm_fetched_intent_for_order' );
 		$logger = new RedirectReturnRecordingLogger();
 		add_filter( 'woocommerce_logging_class', static fn() => $logger );
-		$this->sut = $this->create_controller( true, $confirmation_service, $api_client );
+		$this->sut = $this->create_controller( true, $this->create_confirmation_service( $api_client ), $api_client );
 		if ( $is_setup_intent ) {
 			$this->set_setup_intent_return_request( $order, $intent_id );
 		} else {

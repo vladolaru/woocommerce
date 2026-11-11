@@ -1004,6 +1004,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		$intent_id   = 'payment' === $flow ? 'pi_binding' : 'seti_binding';
 		$order->update_meta_data( '_intent_id', $intent_id );
 		$order->update_meta_data( '_intention_status', 'requires_action' );
+		$order->update_meta_data( '_charge_id', 'ch_earlier' );
 		$order->save();
 		$status_before = $order->get_status();
 		$notes_before  = count( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
@@ -1015,6 +1016,18 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 			'customer'       => 'cus_binding',
 			'payment_method' => 'pm_binding',
 			'metadata'       => str_replace( array( '{order}', '{other}' ), array( (string) $order->get_id(), (string) $other_order->get_id() ), $metadata ),
+			'charges'        => array(
+				'total_count' => 1,
+				'data'        => array(
+					array(
+						'id'                  => 'ch_binding',
+						'amount'              => 5000,
+						'currency'            => 'usd',
+						'payment_method'      => 'pm_binding',
+						'balance_transaction' => array( 'id' => 'txn_binding' ),
+					),
+				),
+			),
 		);
 
 		// The card fields of a Stripe PaymentMethod, so a payment method change can save it (https://docs.stripe.com/api/payment_methods/object#payment_method_object-card).
@@ -1052,7 +1065,8 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		$this->assertArrayHasKey( 'error', $response );
 		$this->assertSame( $status_before, $order->get_status() );
 		$this->assertSame( 'requires_action', $order->get_meta( '_intention_status', true ) );
-		$this->assertSame( '', $order->get_meta( '_charge_id', true ) );
+		$this->assertSame( 'ch_earlier', $order->get_meta( '_charge_id', true ) );
+		$this->assertSame( '', $order->get_meta( '_wcpay_payment_transaction_id', true ) );
 		$this->assertSame( '', $order->get_transaction_id() );
 		$this->assertCount( $notes_before + 1, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
 		$this->assert_order_has_note_containing(
@@ -3392,8 +3406,9 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 	 */
 	public function provider_change_payment_request_flags(): array {
 		return array(
-			'request flag'    => array( 'true' ),
-			'no request flag' => array( null ),
+			'request flag'       => array( 'true' ),
+			'request flag false' => array( 'false' ),
+			'no request flag'    => array( null ),
 		);
 	}
 

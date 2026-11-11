@@ -5159,12 +5159,16 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 * @param int|null $request_offset        Offset of the posted subscription ID from the order ID, or null to post '0'.
 	 * @param int[]    $subscription_offsets  Offsets from the order ID of the IDs registered as subscriptions.
 	 * @param int|null $query_offset          Offset from the order ID of the ID the `change_payment_method` query argument names, or null for none.
+	 * @param string   $intention_status      `_intention_status` the subscription carries from an earlier change.
 	 */
-	public function test_process_payment_refuses_a_subscription_outside_a_validated_change( string $nonce, string $request_key, ?int $request_offset, array $subscription_offsets, ?int $query_offset = null ): void {
+	public function test_process_payment_refuses_a_subscription_outside_a_validated_change( string $nonce, string $request_key, ?int $request_offset, array $subscription_offsets, ?int $query_offset = null, string $intention_status = '' ): void {
 		WooCommerceSubscriptionsDoubles::load_change_payment_gateway();
 		WooCommerceSubscriptionsDoubles::load_subscription_detector();
 		$order = $this->create_order();
 		$order->update_meta_data( '_payment_method_id', 'pm_kept' );
+		if ( '' !== $intention_status ) {
+			$order->update_meta_data( '_intention_status', $intention_status );
+		}
 		$order->save();
 		$service = new RecordingPaymentProcessingService();
 		$gateway = new WooPaymentsGateway();
@@ -5201,7 +5205,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	/**
 	 * Subscription change requests that are not validated changes, for an order that is a subscription.
 	 *
-	 * @return array<string,array{0:string,1:string,2:int|null,3:int[],4?:int|null}>
+	 * @return array<string,array{0:string,1:string,2:int|null,3:int[],4?:int|null,5?:string}>
 	 */
 	public static function provider_invalid_subscription_change_requests(): array {
 		return array(
@@ -5213,6 +5217,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			'query argument, no change nonce'    => array( '', 'woocommerce_change_payment', 0, array( 0 ), 0 ),
 			'query argument, other subscription' => array( 'valid', 'woocommerce_change_payment', 0, array( 0, 1 ), 1 ),
 			'no query argument'                  => array( 'valid', 'woocommerce_change_payment', 0, array( 0 ) ),
+			'earlier change succeeded'           => array( '', 'woocommerce_change_payment', 0, array( 0 ), 0, 'succeeded' ),
 		);
 	}
 
