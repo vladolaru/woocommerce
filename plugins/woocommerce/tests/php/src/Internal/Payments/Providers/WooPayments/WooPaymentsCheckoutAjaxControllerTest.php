@@ -3347,6 +3347,45 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Order-status callback records the status of a payment method change's intent that holds no money, and refuses the change.
+	 *
+	 * Client 11.3.0 records the intent status on a card change (class-wc-payment-gateway-wcpay.php:4766-4772) before it checks
+	 * that the intent is authorized (:4774).
+	 */
+	public function test_update_order_status_records_the_status_of_a_refused_change_intent(): void {
+		$subscription = $this->create_order_for_intent_binding( 'change' );
+		$subscription->update_meta_data( '_intent_id', 'seti_unpaid' );
+		$subscription->update_meta_data( '_intention_status', 'requires_action' );
+		$subscription->save();
+		$intent = array(
+			'id'             => 'seti_unpaid',
+			'status'         => 'requires_payment_method',
+			'customer'       => 'cus_binding',
+			'payment_method' => 'pm_binding',
+			'metadata'       => array( 'order_id' => (string) $subscription->get_id() ),
+		);
+
+		try {
+			$response = $this->create_controller( $this->create_api_client_returning( $intent ) )->confirm_order_payment(
+				array(
+					'_ajax_nonce'         => wp_create_nonce( 'wcpay_update_order_status_nonce_' . $subscription->get_id() ),
+					'order_id'            => $subscription->get_id(),
+					'intent_id'           => 'seti_unpaid',
+					'is_changing_payment' => 'true',
+				)
+			);
+		} finally {
+			unset( $GLOBALS[ WooCommerceSubscriptionsDoubles::SUBSCRIPTION_IDS ] );
+		}
+		$subscription = wc_get_order( $subscription->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $subscription );
+		$this->assertSame( 409, $response['status_code'] );
+		$this->assertSame( 'requires_payment_method', $subscription->get_meta( '_intention_status', true ) );
+		$this->assertSame( 'active', $subscription->get_status() );
+	}
+
+	/**
 	 * Values of the request's `is_changing_payment` flag on a subscription's callback.
 	 *
 	 * @return array<string,array{?string}>
@@ -3378,6 +3417,8 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		$subscription->set_customer_id( $user_id );
 		$subscription->set_status( 'active' );
 		$subscription->update_meta_data( '_intent_id', 'seti_change' );
+		// Checkout recorded the SetupIntent's status when it asked for authentication.
+		$subscription->update_meta_data( '_intention_status', 'requires_action' );
 		$subscription->save();
 		$GLOBALS[ WooCommerceSubscriptionsDoubles::SUBSCRIPTION_IDS ] = array( $subscription->get_id() );
 
@@ -3451,6 +3492,9 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		$this->assertSame( 409, $response['status_code'], 'The change is refused.' );
 		$this->assertSame( 'Unable to save payment method for subscription. Please try again or use a different payment method.', $response['error']['message'] ?? '' );
 		$this->assertSame( array( true ), $token_service->flag_during_save, 'The card save runs inside the change scope.' );
+		$subscription = wc_get_order( $subscription->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $subscription );
+		$this->assertSame( 'requires_action', $subscription->get_meta( '_intention_status', true ), 'A card that cannot be saved leaves the earlier intent status (client 11.3.0 gw:4738, 4769).' );
 		$this->assertSame( array(), \WC_Subscriptions_Change_Payment_Gateway::$updated_payment_methods );
 		$this->assertFalse( \WC_Subscriptions_Change_Payment_Gateway::$is_request_to_change_payment, 'The change request flag gets its earlier value back.' );
 	}

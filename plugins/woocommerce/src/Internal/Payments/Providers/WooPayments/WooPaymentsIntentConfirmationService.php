@@ -117,19 +117,38 @@ class WooPaymentsIntentConfirmationService {
 			return;
 		}
 
-		// Client 11.3.0 gw:4708-4713, 4766-4772: a card change records the payment method and the intent status on the order.
+		// Client 11.3.0 gw:4708-4713: a card change records the intent's payment method on the order first.
 		$payment_method_id = WooPaymentsIntentCodec::result_payment_method_id( $intent );
 		if ( '' !== $payment_method_id ) {
 			$order->update_meta_data( '_payment_method_id', $payment_method_id );
+			$order->save();
 		}
-		$order->update_meta_data( '_intention_status', isset( $intent['status'] ) ? (string) $intent['status'] : '' );
-		$order->save();
+
+		// Client 11.3.0 gw:4738, 4766-4772: the intent status is recorded after the card is saved, and before an intent that holds
+		// no money is refused; a card that cannot be saved leaves the earlier status.
+		$status = isset( $intent['status'] ) ? (string) $intent['status'] : '';
+		if ( ! WooPaymentsIntentCodec::holds_money( $status ) ) {
+			$this->save_intention_status( $order, $status );
+		}
 
 		SubscriptionMethodPolicy::run_as_payment_method_change(
 			function () use ( $order, $intent, $save_payment_method ): void {
 				$this->confirm_fetched_intent_for_order( $order, $intent, $save_payment_method, false, false );
 			}
 		);
+
+		$this->save_intention_status( $order, $status );
+	}
+
+	/**
+	 * Save an intent's status on the order.
+	 *
+	 * @param WC_Order $order  Order the intent belongs to.
+	 * @param string   $status Intent status.
+	 */
+	private function save_intention_status( WC_Order $order, string $status ): void {
+		$order->update_meta_data( '_intention_status', $status );
+		$order->save();
 	}
 	// phpcs:enable Squiz.Commenting.FunctionCommentThrowTag.WrongNumber
 
