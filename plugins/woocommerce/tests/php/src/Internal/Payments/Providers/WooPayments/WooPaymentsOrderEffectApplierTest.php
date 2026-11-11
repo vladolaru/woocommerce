@@ -1250,14 +1250,23 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Succeeded SetupIntent effects persist card identity after token attachment.
+	 * @testdox Succeeded SetupIntent effects persist card identity after token attachment, with the success note on an order and none on a subscription: $_dataName.
+	 *
+	 * Client 11.3.0 skips update_order_status_from_intent() for a card change on a subscription (gw:2497-2500), so the subscription
+	 * gets the card and no success note.
+	 *
+	 * @dataProvider provider_setup_intent_orders
+	 *
+	 * @param bool $is_subscription Whether the order is a WooCommerce Subscriptions subscription changing its card.
 	 */
-	public function test_succeeded_setup_intent_effects_persist_card_identity(): void {
+	public function test_succeeded_setup_intent_effects_persist_card_identity( bool $is_subscription ): void {
 		$user_id = $this->factory()->user->create();
 		$order   = $this->create_woopayments_order( '0.00' );
 		$order->set_customer_id( $user_id );
 		$order->set_payment_method_title( 'Card' );
 		$order->save();
+		WooCommerceSubscriptionsDoubles::load_subscription_detector();
+		$GLOBALS[ WooCommerceSubscriptionsDoubles::SUBSCRIPTION_IDS ] = $is_subscription ? array( $order->get_id() ) : array();
 		$outcome                = new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'seti_card_identity', '', 'pm_card_identity', 'cus_card_identity' );
 		$plan                   = WooPaymentsOrderEffectPlan::for_setup_intent(
 			array(
@@ -1315,14 +1324,18 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 		$token_service          = new WooPaymentsTokenService();
 		$token_service->init( $details_service, wc_get_container()->get( Client::class ), wc_get_container()->get( WooPaymentsCustomerService::class ), wc_get_container()->get( WooPaymentsAccountService::class ), wc_get_container()->get( WooPaymentsOrderDataService::class ), wc_get_container()->get( PaymentMethodRegistry::class ) );
 
-		$result = $this->create_applier( $token_service )->apply( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_card_identity' ), $outcome, $plan );
+		try {
+			$result = $this->create_applier( $token_service )->apply( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_card_identity' ), $outcome, $plan );
+		} finally {
+			unset( $GLOBALS[ WooCommerceSubscriptionsDoubles::SUBSCRIPTION_IDS ] );
+		}
 		$order  = wc_get_order( $order->get_id() );
 		$tokens = \WC_Payment_Tokens::get_customer_tokens( $user_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID );
 
-		// The client's process_payment() ends in mark_payment_completed(), so this path carries the success note too (V615: client
-		// subscription 47 got "A test payment of $0.00 USD ... (seti_...)" after a new-card change, native none).
-		$this->assertSame( PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_SUCCESS, $result->get_data()[ PaymentOutcome::DATA_NOTE_TYPE ] ?? null );
-		$this->assertStringContainsString( 'seti_card_identity', (string) ( $result->get_data()[ PaymentOutcome::DATA_NOTE ] ?? '' ) );
+		// The client's process_payment() ends in update_order_status_from_intent() for an order, so this path carries the success note too.
+		$this->assertSame( $is_subscription ? null : PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_SUCCESS, $result->get_data()[ PaymentOutcome::DATA_NOTE_TYPE ] ?? null );
+		$names_the_intent = false !== strpos( (string) ( $result->get_data()[ PaymentOutcome::DATA_NOTE ] ?? '' ), 'seti_card_identity' );
+		$this->assertSame( ! $is_subscription, $names_the_intent );
 
 		$this->assertInstanceOf( WC_Order::class, $order );
 		$this->assertSame( 'Visa credit card', $order->get_payment_method_title() );
@@ -1333,6 +1346,18 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 		$this->assertCount( 1, $tokens );
 		$this->assertSame( array( reset( $tokens )->get_id() ), array_values( $order->get_payment_tokens() ) );
 		$this->assertSame( 1, $details_service->get_payment_method_details_calls );
+	}
+
+	/**
+	 * Orders a succeeded SetupIntent is confirmed on at checkout.
+	 *
+	 * @return array<string,array{bool}>
+	 */
+	public function provider_setup_intent_orders(): array {
+		return array(
+			'order'        => array( false ),
+			'subscription' => array( true ),
+		);
 	}
 
 	/**

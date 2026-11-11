@@ -149,6 +149,34 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox payment_intent.succeeded on a subscription writes the payment meta and no payment lifecycle.
+	 *
+	 * Client 11.3.0 writes the intent, charge, payment method and currency meta (class-wc-payments-webhook-processing-service.php:643-700)
+	 * and then never completes a subscription from an intent (class-wc-payments-order-service.php:466-472).
+	 */
+	public function test_payment_intent_succeeded_completes_nothing_on_a_subscription(): void {
+		$order = $this->create_woopayments_order();
+		WooCommerceSubscriptionsDoubles::load_subscription_detector();
+		$GLOBALS[ WooCommerceSubscriptionsDoubles::SUBSCRIPTION_IDS ] = array( $order->get_id() );
+		$notes_before = count( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+
+		try {
+			$this->sut->process( $this->create_payment_intent_event( 'payment_intent.succeeded', $order ) );
+		} finally {
+			unset( $GLOBALS[ WooCommerceSubscriptionsDoubles::SUBSCRIPTION_IDS ] );
+		}
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 'pending', $order->get_status() );
+		$this->assertSame( '', $order->get_transaction_id() );
+		$this->assertSame( '', $order->get_meta( '_intention_status', true ) );
+		$this->assertSame( 'pi_123', $order->get_meta( '_intent_id', true ) );
+		$this->assertSame( 'ch_123', $order->get_meta( '_charge_id', true ) );
+		$this->assertCount( $notes_before, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+	}
+
+	/**
 	 * @testdox payment_intent.succeeded completes the order.
 	 */
 	public function test_payment_intent_succeeded_completes_order(): void {

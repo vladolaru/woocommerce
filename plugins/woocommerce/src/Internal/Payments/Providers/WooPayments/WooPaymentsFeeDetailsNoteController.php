@@ -13,6 +13,7 @@ use Automattic\WooCommerce\Internal\Payments\PaymentLifecycleEvent;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\SubscriptionMethodPolicy;
 use Throwable;
 use WC_Order;
 
@@ -207,6 +208,11 @@ class WooPaymentsFeeDetailsNoteController implements RegisterHooksInterface {
 	 * @param PaymentLifecycleEvent $event Lifecycle event.
 	 */
 	public function apply_and_schedule_fee_details( WC_Order $order, PaymentLifecycleEvent $event ): void {
+		// A subscription gets no payment event: no lifecycle, no note, no Fee details job.
+		if ( SubscriptionMethodPolicy::only_saves_the_card( $order ) ) {
+			return;
+		}
+
 		$this->schedule_when_event_added_note( $order, $event, $this->lifecycle_service->apply_under_lock( $order, $event, $this->vocabulary ) );
 	}
 
@@ -220,6 +226,11 @@ class WooPaymentsFeeDetailsNoteController implements RegisterHooksInterface {
 	 *                order payment lock refused it.
 	 */
 	public function apply_and_schedule_fee_details_with_lock( WC_Order $order, PaymentLifecycleEvent $event ): string {
+		// A subscription gets no payment event: no lock claim, no lifecycle, no note, no Fee details job.
+		if ( SubscriptionMethodPolicy::only_saves_the_card( $order ) ) {
+			return OrderPaymentLifecycleService::RESULT_NOTE_NOT_ADDED;
+		}
+
 		$result = $this->lifecycle_service->apply( $order, $event, $this->vocabulary );
 		$this->schedule_when_event_added_note( $order, $event, $result );
 

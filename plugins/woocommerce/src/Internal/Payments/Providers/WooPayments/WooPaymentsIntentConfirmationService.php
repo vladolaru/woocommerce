@@ -117,6 +117,14 @@ class WooPaymentsIntentConfirmationService {
 			return;
 		}
 
+		// Client 11.3.0 gw:4708-4713, 4766-4772: a card change records the payment method and the intent status on the order.
+		$payment_method_id = WooPaymentsIntentCodec::result_payment_method_id( $intent );
+		if ( '' !== $payment_method_id ) {
+			$order->update_meta_data( '_payment_method_id', $payment_method_id );
+		}
+		$order->update_meta_data( '_intention_status', isset( $intent['status'] ) ? (string) $intent['status'] : '' );
+		$order->save();
+
 		// Client 11.1.0 gw:4337-4345: a payment method change does not take stock for the renewal it completes.
 		$confirm = function () use ( $order, $intent, $save_payment_method ): void {
 			SubscriptionMethodPolicy::run_without_stock_reduction(

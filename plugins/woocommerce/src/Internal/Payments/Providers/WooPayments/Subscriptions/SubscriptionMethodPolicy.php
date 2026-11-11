@@ -147,6 +147,27 @@ final class SubscriptionMethodPolicy {
 	}
 
 	/**
+	 * Tell whether an order only saves the card from an intent: a WooCommerce Subscriptions subscription reaches the gateway
+	 * only to change its payment method, so no intent completes it, changes its status or notes a payment on it.
+	 *
+	 * Client 11.3.0 returns early for a subscription in update_order_status_from_intent()
+	 * (includes/class-wc-payments-order-service.php:466-472), which its order-status callback, redirect return, webhook and
+	 * duplicate-payment check reach, and skips the status update on a card change at checkout
+	 * (includes/class-wc-payment-gateway-wcpay.php:2497-2500). Consulted by WooPaymentsFeeDetailsNoteController's two
+	 * appliers (the order-status callback, the redirect return, the duplicate-payment check and the payment_intent.succeeded
+	 * webhook), WooPaymentsOrderEffectApplier for the checkout success note, and WooPaymentsCheckoutAjaxController, which
+	 * treats such an order as a payment method change (gw:4641, 5962-5968).
+	 *
+	 * @since 11.2.0
+	 *
+	 * @param WC_Order $order Order an intent is applied to.
+	 * @return bool
+	 */
+	public static function only_saves_the_card( WC_Order $order ): bool {
+		return function_exists( 'wcs_is_subscription' ) && (bool) wcs_is_subscription( $order );
+	}
+
+	/**
 	 * Tell whether a gateway supports reusable subscription payment methods.
 	 *
 	 * @param string $gateway_id Gateway ID.

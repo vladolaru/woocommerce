@@ -3198,13 +3198,18 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Order-status callback confirms a 3DS payment method change on a subscription with a recurring total through its SetupIntent, leaving its failed switch order unpaid.
+	 * @testdox Order-status callback confirms a 3DS payment method change on a subscription with a recurring total through its SetupIntent, saving the card and completing nothing: $_dataName.
 	 *
 	 * Client 11.1.0 fetches the SetupIntent for any payment method change, whatever the amount (class-wc-payment-gateway-wcpay.php:4217, 4238-4242).
-	 * Completing it must not pay the subscription's newest unpaid order: WooCommerce Subscriptions 9.0.1 skips that only while the
-	 * change request flag is set (includes/core/class-wc-subscription.php:2025-2041).
+	 * Client 11.3.0 counts a subscription as a change whatever the request flag says (gw:4641, 5962-5968) and records only the
+	 * intent status on it, completing nothing (gw:4766-4772): no success note, no status change, and its failed switch order
+	 * stays unpaid.
+	 *
+	 * @dataProvider provider_change_payment_request_flags
+	 *
+	 * @param string|null $is_changing_payment The request's `is_changing_payment` value, or null when the request has none.
 	 */
-	public function test_update_order_status_confirms_change_payment_setup_intent_on_subscription_with_recurring_total(): void {
+	public function test_update_order_status_confirms_change_payment_setup_intent_on_subscription_with_recurring_total( ?string $is_changing_payment ): void {
 		WooCommerceSubscriptionsDoubles::load_change_payment_gateway();
 		\WC_Subscriptions_Change_Payment_Gateway::$will_update_all_payment_methods = false;
 		WooCommerceSubscriptionsDoubles::load();
@@ -3296,16 +3301,18 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		$sut           = $this->create_controller( $this->bind_intents_to_order( $api_client, $subscription ), null, $token_service );
 		\WC_Subscriptions_Change_Payment_Gateway::$is_request_to_change_payment = false;
 
+		$request = array(
+			'_ajax_nonce'                => wp_create_nonce( 'wcpay_update_order_status_nonce_' . $subscription->get_id() ),
+			'order_id'                   => $subscription->get_id(),
+			'intent_id'                  => 'seti_change',
+			'should_save_payment_method' => 'false',
+		);
+		if ( null !== $is_changing_payment ) {
+			$request['is_changing_payment'] = $is_changing_payment;
+		}
+
 		try {
-			$response = $sut->confirm_order_payment(
-				array(
-					'_ajax_nonce'                => wp_create_nonce( 'wcpay_update_order_status_nonce_' . $subscription->get_id() ),
-					'order_id'                   => $subscription->get_id(),
-					'intent_id'                  => 'seti_change',
-					'should_save_payment_method' => 'false',
-					'is_changing_payment'        => 'true',
-				)
-			);
+			$response = $sut->confirm_order_payment( $request );
 		} finally {
 			unset( $GLOBALS[ WooCommerceSubscriptionsDoubles::SUBSCRIPTION_IDS ] );
 		}
@@ -3333,6 +3340,22 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		);
 		$this->assertSame( array( 'Payment method updated.' ), array_column( wc_get_notices( 'success' ), 'notice' ) );
 		$this->assertFalse( \WC_Subscriptions_Change_Payment_Gateway::$is_request_to_change_payment, 'The change request flag gets its earlier value back.' );
+		$this->assertSame( 'active', $subscription->get_status() );
+		$this->assertSame( 'succeeded', $subscription->get_meta( '_intention_status', true ) );
+		$this->assertSame( 'pm_change', $subscription->get_meta( '_payment_method_id', true ) );
+		$this->assert_order_has_no_note_containing( $subscription, 'seti_change' );
+	}
+
+	/**
+	 * Values of the request's `is_changing_payment` flag on a subscription's callback.
+	 *
+	 * @return array<string,array{?string}>
+	 */
+	public function provider_change_payment_request_flags(): array {
+		return array(
+			'request flag'    => array( 'true' ),
+			'no request flag' => array( null ),
+		);
 	}
 
 	/**

@@ -17,6 +17,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOr
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Tests\Internal\Payments\OrderPaymentLockTestTrait;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Fixtures\CapturedEventFeeNotes;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\WooCommerceSubscriptionsDoubles;
 use WC_Order;
 use WC_Unit_Test_Case;
 
@@ -194,6 +195,59 @@ class WooPaymentsFeeDetailsNoteControllerTest extends WC_Unit_Test_Case {
 		$this->sut->apply_and_schedule_fee_details_with_lock( $order, $this->completed_event( 'pi_123', PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_SUCCESS ) );
 
 		$this->assertCount( 1, $this->get_pending_job_args() );
+	}
+
+	/**
+	 * @testdox A subscription gets no payment event from either applier: no lock claim, no note, no status change and no job ($_dataName).
+	 *
+	 * Client 11.3.0 never completes a subscription from an intent (includes/class-wc-payments-order-service.php:466-472). The
+	 * order payment lock is held elsewhere: an applier that claimed it would answer the refusal.
+	 *
+	 * @dataProvider provider_appliers
+	 *
+	 * @param bool $with_lock Whether the applier claims the order payment lock itself.
+	 */
+	public function test_appliers_apply_no_event_to_a_subscription( bool $with_lock ): void {
+		$order      = $this->create_order();
+		$vocabulary = new WooPaymentsPersistenceVocabulary();
+		WooCommerceSubscriptionsDoubles::load_subscription_detector();
+		$GLOBALS[ WooCommerceSubscriptionsDoubles::SUBSCRIPTION_IDS ] = array( $order->get_id() );
+		$this->hold_order_payment_lock( $order, $vocabulary, 'native_charge_operation' );
+		$event  = $this->completed_event( 'pi_123', PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_SUCCESS );
+		$result = null;
+
+		try {
+			if ( $with_lock ) {
+				$result = $this->sut->apply_and_schedule_fee_details_with_lock( $order, $event );
+			} else {
+				$this->sut->apply_and_schedule_fee_details( $order, $event );
+			}
+		} finally {
+			$this->clear_order_payment_lock( $order, $vocabulary );
+			unset( $GLOBALS[ WooCommerceSubscriptionsDoubles::SUBSCRIPTION_IDS ] );
+		}
+		$reloaded = wc_get_order( $order->get_id() );
+
+		if ( $with_lock ) {
+			$this->assertSame( OrderPaymentLifecycleService::RESULT_NOTE_NOT_ADDED, $result, 'No lock claim, so no refusal.' );
+		}
+		$this->assertInstanceOf( WC_Order::class, $reloaded );
+		$this->assertSame( 'pending', $reloaded->get_status() );
+		$this->assertSame( '', $reloaded->get_transaction_id() );
+		$this->assertCount( 0, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+		$this->assertSame( array(), $this->get_pending_job_args() );
+	}
+
+	/**
+	 * The two lifecycle appliers.
+	 *
+	 * @return array<string,array{bool}>
+	 */
+	public function provider_appliers(): array {
+		return array(
+			'under the caller\'s lock' => array( false ),
+			'claiming the lock'        => array( true ),
+		);
 	}
 
 	/**

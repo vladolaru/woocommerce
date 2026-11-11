@@ -13,6 +13,7 @@ use Automattic\WooCommerce\Internal\Payments\PaymentLifecycleEvent;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\PaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\LinkToken;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\SubscriptionMethodPolicy;
 use Throwable;
 use WC_Order;
 use WC_Payment_Token;
@@ -151,6 +152,11 @@ class WooPaymentsOrderEffectApplier {
 						}
 					}
 					$this->apply_setup_intent_payment_method_display_details( $context->get_order(), $payment_method_details );
+
+					// A card change on a subscription completes nothing, so it gets no success note (client 11.3.0 gw:2497-2500).
+					if ( SubscriptionMethodPolicy::only_saves_the_card( $context->get_order() ) ) {
+						return $outcome;
+					}
 
 					// Client 11.1.0's process_payment() also ends in update_order_status_from_intent() (gw:2204), so the success note is written here too.
 					return $this->merge_effect_data_into_outcome(

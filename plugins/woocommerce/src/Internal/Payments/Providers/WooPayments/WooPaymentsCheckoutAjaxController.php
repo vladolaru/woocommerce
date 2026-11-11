@@ -11,6 +11,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\PaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\SubscriptionMethodPolicy;
 use Throwable;
 use WC_Order;
 
@@ -164,7 +165,8 @@ class WooPaymentsCheckoutAjaxController implements RegisterHooksInterface {
 		}
 
 		try {
-			$is_subscription_payment_method_change = $this->is_subscription_change_payment_request( $request );
+			// Client 11.3.0 gw:4641, 5962-5968: a subscription is always a payment method change, whatever the request flag says.
+			$is_subscription_payment_method_change = $this->is_subscription_change_payment_request( $request ) || SubscriptionMethodPolicy::only_saves_the_card( $order );
 			$this->intent_confirmation_service->confirm_intent_for_order(
 				$order,
 				$intent_id,

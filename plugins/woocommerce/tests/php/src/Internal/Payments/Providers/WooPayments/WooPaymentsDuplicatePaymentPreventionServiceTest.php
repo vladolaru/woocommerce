@@ -13,6 +13,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIn
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffectApplier;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\WooCommerceSubscriptionsDoubles;
 use WC_Order;
 use WC_Payment_Gateway;
 use WC_Unit_Test_Case;
@@ -273,6 +274,45 @@ class WooPaymentsDuplicatePaymentPreventionServiceTest extends WC_Unit_Test_Case
 		$this->assertSame( 'ch_existing', $order->get_meta( '_charge_id', true ) );
 		$this->assertSame( 'pm_existing', $order->get_meta( '_payment_method_id', true ) );
 		$this->assertStringContainsString(
+			'successfully charged',
+			implode( ' ', array_map( static fn( object $note ): string => (string) $note->content, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) ) )
+		);
+	}
+
+	/**
+	 * @testdox Should answer a subscription's succeeded attached PaymentIntent without completing the subscription.
+	 *
+	 * Client 11.3.0 never completes a subscription from an intent; its duplicate payment check still answers success
+	 * (class-wc-payments-order-service.php:466-472, class-duplicate-payment-prevention-service.php:149-157).
+	 */
+	public function test_check_payment_intent_attached_to_order_succeeded_completes_nothing_on_a_subscription(): void {
+		$session = $this->create_session();
+		$order   = $this->create_order( 'hash', 'pending' );
+		$order->set_total( '12.00' );
+		$order->update_meta_data( '_intent_id', 'pi_existing' );
+		$order->save();
+		WooCommerceSubscriptionsDoubles::load_subscription_detector();
+		$GLOBALS[ WooCommerceSubscriptionsDoubles::SUBSCRIPTION_IDS ] = array( $order->get_id() );
+
+		$api_client = $this->getMockBuilder( Client::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_payment_intention' ) )
+			->getMock();
+		$api_client->method( 'get_payment_intention' )->willReturn( $this->create_intent_response( $order, 'succeeded', 1200 ) );
+
+		try {
+			$result = $this->create_service( $session, $api_client )->check_payment_intent_attached_to_order_succeeded( $order, $this->create_gateway() );
+		} finally {
+			unset( $GLOBALS[ WooCommerceSubscriptionsDoubles::SUBSCRIPTION_IDS ] );
+		}
+		$order = wc_get_order( $order->get_id() );
+
+		$this->assertIsArray( $result );
+		$this->assertSame( 'success', $result['result'] );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 'pending', $order->get_status() );
+		$this->assertSame( '', $order->get_transaction_id() );
+		$this->assertStringNotContainsString(
 			'successfully charged',
 			implode( ' ', array_map( static fn( object $note ): string => (string) $note->content, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) ) )
 		);
