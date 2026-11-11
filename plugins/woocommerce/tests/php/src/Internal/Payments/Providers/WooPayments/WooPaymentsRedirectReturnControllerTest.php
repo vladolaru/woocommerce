@@ -420,7 +420,7 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 	 * `processing`), and `:1351` (`attach_intent_info_to_order`, which persists `_intent_id` and
 	 * `_charge_id` from the fetched intent and its latest charge).
 	 *
-	 * The `Alipay (REC-RM)` row is T.3 Task 4's RECORD swap (`plan-task-t3.md`): the real recorded
+	 * The `Alipay (REC-RM)` row uses the real recorded
 	 * PaymentIntent REC-RM's Alipay handle-redirect return produced
 	 * (`Fixtures/platform-intention-alipay-redirect.json`, pair `alipay_redirect_return_succeeded`), obtained
 	 * from one API-only GET of the intent a real Playwright run's hosted authorize left behind. That
@@ -568,31 +568,49 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox PaymentIntent metadata naming another order is logged, leaves the order unfailed and returns the shopper to checkout with the mismatch flag and the cart kept: $_dataName.
+	 * @testdox Intent metadata naming another order is logged, leaves the order unchanged and returns the shopper to checkout with the mismatch flag and the cart kept: $_dataName.
 	 *
 	 * Client 11.1.0: validate_order_id_received_vs_intent_meta_order_id() logs and throws the mismatch exception
 	 * (gw:674-692, 2357-2359; a non-numeric order ID reads as 0, gw:675-676); the catch skips mark_payment_failed() for
 	 * it, adds the notice and redirects to the checkout URL with `upe_process_redirect_order_id_mismatched=yes`
-	 * (gw:2428-2456, constant gw:118).
+	 * (gw:2428-2456, constant gw:118). Client 11.3.0 applies the same check to a zero-total order's SetupIntent (gw:2661).
 	 *
 	 * @dataProvider provider_intent_metadata_order_mismatch
 	 *
+	 * @param bool     $is_setup_intent   Whether the return confirms a zero-total order's SetupIntent.
 	 * @param callable $metadata_order_id Maps the order ID to the intent's metadata order ID.
 	 */
-	public function test_handle_wp_rejects_mismatched_payment_intent_metadata( callable $metadata_order_id ): void {
-		$order   = $this->create_order();
-		$product = \WC_Helper_Product::create_simple_product();
+	public function test_handle_wp_rejects_mismatched_intent_metadata( bool $is_setup_intent, callable $metadata_order_id ): void {
+		$order     = $this->create_order( $is_setup_intent ? '0.00' : '50.00' );
+		$product   = \WC_Helper_Product::create_simple_product();
+		$intent_id = $is_setup_intent ? 'seti_mismatch' : 'pi_mismatch';
 		WC()->cart->add_to_cart( $product->get_id() );
-		$api_client                 = new RedirectReturnApiClientStub();
-		$api_client->payment_intent = $this->successful_payment_intent( $order, 'pi_mismatch', 'pm_mismatch' );
-		$api_client->payment_intent['metadata']['order_id'] = $metadata_order_id( $order->get_id() );
+		$api_client = new RedirectReturnApiClientStub();
+		if ( $is_setup_intent ) {
+			$api_client->setup_intent = array(
+				'id'             => $intent_id,
+				'status'         => 'succeeded',
+				'customer'       => 'cus_mismatch',
+				'payment_method' => 'pm_mismatch',
+				'metadata'       => array( 'order_id' => $metadata_order_id( $order->get_id() ) ),
+			);
+		} else {
+			$api_client->payment_intent = $this->successful_payment_intent( $order, $intent_id, 'pm_mismatch' );
+
+			$api_client->payment_intent['metadata']['order_id'] = $metadata_order_id( $order->get_id() );
+		}
 
 		$confirmation_service = $this->createMock( WooPaymentsIntentConfirmationService::class );
 		$confirmation_service->expects( $this->never() )->method( 'confirm_fetched_intent_for_order' );
 		$logger = new RedirectReturnRecordingLogger();
 		add_filter( 'woocommerce_logging_class', static fn() => $logger );
 		$this->sut = $this->create_controller( true, $confirmation_service, $api_client );
-		$this->set_payment_intent_return_request( $order, 'pi_mismatch' );
+		if ( $is_setup_intent ) {
+			$this->set_setup_intent_return_request( $order, $intent_id );
+		} else {
+			$this->set_payment_intent_return_request( $order, $intent_id );
+		}
+		$notes_before = count( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
 
 		$location = $this->handle_wp_expecting_redirect();
 		$reloaded = wc_get_order( $order->get_id() );
@@ -602,7 +620,11 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 		$this->assertSame( 1, WC()->cart->get_cart_contents_count(), 'The cart must survive a rejected redirect return.' );
 		$this->assertInstanceOf( WC_Order::class, $reloaded );
 		$this->assertSame( 'pending', $reloaded->get_status() );
-		$this->assertSame( 'pi_mismatch', $reloaded->get_meta( '_intent_id', true ) );
+		$this->assertSame( $intent_id, $reloaded->get_meta( '_intent_id', true ) );
+		$this->assertSame( '', $reloaded->get_meta( '_intention_status', true ) );
+		$this->assertSame( '', $reloaded->get_meta( '_payment_method_id', true ) );
+		$this->assertSame( '', $reloaded->get_transaction_id() );
+		$this->assertCount( $notes_before, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
 		$this->assertCount( 1, $logger->error_calls );
 		$this->assertSame( 'woopayments', $logger->error_calls[0]['context']['source'] );
 	}
@@ -610,12 +632,14 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * Intent metadata order IDs that do not name the returning order.
 	 *
-	 * @return array<string,array{0:callable}>
+	 * @return array<string,array{0:bool,1:callable}>
 	 */
 	public function provider_intent_metadata_order_mismatch(): array {
 		return array(
-			'another order'        => array( static fn( int $order_id ) => $order_id + 1 ),
-			'non-numeric order ID' => array( static fn( int $order_id ) => $order_id . 'junk' ),
+			'PaymentIntent, another order'        => array( false, static fn( int $order_id ) => $order_id + 1 ),
+			'PaymentIntent, non-numeric order ID' => array( false, static fn( int $order_id ) => $order_id . 'junk' ),
+			'SetupIntent, another order'          => array( true, static fn( int $order_id ) => $order_id + 1 ),
+			'SetupIntent, no order ID'            => array( true, static fn() => '' ),
 		);
 	}
 
@@ -1714,6 +1738,7 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 			'status'         => 'succeeded',
 			'customer'       => 'cus_setup',
 			'payment_method' => 'pm_old',
+			'metadata'       => array( 'order_id' => $order->get_id() ),
 		);
 		$api_client->before_setup_intent_return = static function () use ( $order ): void {
 			$fresh_order = wc_get_order( $order->get_id() );
@@ -1771,6 +1796,7 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 			'status'         => 'succeeded',
 			'customer'       => 'cus_foreign',
 			'payment_method' => 'pm_foreign',
+			'metadata'       => array( 'order_id' => $order->get_id() ),
 		);
 		$logger                   = new RedirectReturnRecordingLogger();
 		add_filter( 'woocommerce_logging_class', static fn() => $logger );
@@ -1829,6 +1855,7 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 					'status'         => 'succeeded',
 					'customer'       => 'cus_foreign',
 					'payment_method' => 'pm_foreign',
+					'metadata'       => array( 'order_id' => $order->get_id() ),
 				)
 			),
 		);
@@ -1890,7 +1917,7 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A zero-total return is confirmed without PaymentIntent metadata when the SetupIntent customer is the order's or is not known: $_dataName.
+	 * @testdox A zero-total return whose SetupIntent metadata names the order is confirmed when the SetupIntent customer is the order's or is not known: $_dataName.
 	 *
 	 * @dataProvider own_setup_intent_customer_provider
 	 *
@@ -1911,6 +1938,7 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 			'status'         => 'succeeded',
 			'customer'       => 'cus_own',
 			'payment_method' => 'pm_own',
+			'metadata'       => array( 'order_id' => $order->get_id() ),
 		);
 		$this->sut                = $this->create_controller( true, $this->create_confirmation_service( $api_client ), $api_client, null, $this->create_customer_service( $user_id, $user_customer ) );
 		$this->set_setup_intent_return_request( $order, 'seti_own' );
@@ -1962,6 +1990,7 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 			'status'           => $status,
 			'customer'         => 'cus_setup',
 			'payment_method'   => 'pm_setup',
+			'metadata'         => array( 'order_id' => $order->get_id() ),
 			'last_setup_error' => array(
 				'type'    => 'invalid_request_error',
 				'code'    => 'setup_intent_authentication_failure',
@@ -2020,6 +2049,7 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 			'status'         => 'canceled',
 			'customer'       => 'cus_setup',
 			'payment_method' => 'pm_setup',
+			'metadata'       => array( 'order_id' => $order->get_id() ),
 		);
 		$confirmation_service     = $this->create_confirmation_service( $api_client );
 		$this->sut                = $this->create_controller( true, $confirmation_service, $api_client );
@@ -2067,6 +2097,7 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 			'status'         => 'succeeded',
 			'customer'       => 'cus_redirect_card',
 			'payment_method' => 'pm_redirect_card',
+			'metadata'       => array( 'order_id' => $order->get_id() ),
 		);
 		$details_reads            = new \ArrayObject( array( 0 ) );
 		$token_service            = $this->create_token_service( array( 'pm_redirect_card' => $details ), $details_reads );

@@ -166,8 +166,7 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 			return;
 		}
 
-		// Client 11.1.0 binds only positive totals (gw:2302-2306, pending woocommerce-payments#6575); this code stores every
-		// SetupIntent in `_intent_id` before the shopper is redirected, so a zero-total order's intent is checked too.
+		// Every return is bound to the intent stored on the order, at any total (client 11.3.0 gw:2602); a zero-total order's is a SetupIntent.
 		$is_payment_intent = 0.0 < (float) $order->get_total();
 		if ( ! $this->order_matches_intent( $order, $intent_id ) ) {
 			$this->log_intent_mismatch( $intent_id, $order );
@@ -219,7 +218,7 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 			return;
 		}
 
-		if ( $is_payment_intent && ! $this->intent_matches_order( $intent, $fresh_order ) ) {
+		if ( ! $this->intent_matches_order( $intent, $fresh_order ) ) {
 			$this->log_intent_mismatch( $intent_id, $fresh_order );
 			$this->redirect_to_checkout_after_order_mismatch();
 			return;
@@ -614,9 +613,9 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Verify that PaymentIntent metadata belongs to the order.
+	 * Verify that a PaymentIntent's or SetupIntent's metadata names the order (client 11.3.0 gw:898-915, 2654, 2661).
 	 *
-	 * @param array<string,mixed> $intent PaymentIntent response.
+	 * @param array<string,mixed> $intent PaymentIntent or SetupIntent response.
 	 * @param WC_Order            $order  Order object.
 	 * @return bool
 	 */
