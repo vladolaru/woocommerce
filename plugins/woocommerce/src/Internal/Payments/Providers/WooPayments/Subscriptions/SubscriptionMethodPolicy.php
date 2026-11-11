@@ -155,8 +155,9 @@ final class SubscriptionMethodPolicy {
 	 * duplicate-payment check reach, and skips the status update on a card change at checkout
 	 * (includes/class-wc-payment-gateway-wcpay.php:2497-2500). Consulted by WooPaymentsFeeDetailsNoteController's two
 	 * appliers (the order-status callback, the redirect return, the duplicate-payment check and the payment_intent.succeeded
-	 * webhook), WooPaymentsOrderEffectApplier for the checkout success note, and WooPaymentsCheckoutAjaxController, which
-	 * treats such an order as a payment method change (gw:4641, 5962-5968).
+	 * webhook), WooPaymentsOrderEffectApplier for the checkout success note, WooPaymentsCheckoutAjaxController, which
+	 * treats such an order as a payment method change (gw:4641, 5962-5968), and WooPaymentsGateway, which refuses a payment
+	 * for such an order outside a validated change (gw:1453-1467).
 	 *
 	 * @since 11.2.0
 	 *

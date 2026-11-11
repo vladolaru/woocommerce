@@ -1480,6 +1480,12 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 		// payment information exists, so it fails the subscription or answers that success (`gw:1283-1304`, `gw:1323-1328`).
 		$refusal_moves_order = ! $is_subscription_payment_method_change;
 
+		// Client 11.3.0 gw:1453-1467: a subscription reaches checkout only to change its payment method, so any other payment
+		// for one is refused first, and the subscription keeps its status.
+		if ( ! $is_subscription_payment_method_change && SubscriptionMethodPolicy::only_saves_the_card( $order ) ) {
+			return $this->refuse_checkout( $order, __( "We're not able to process this payment. Please try again later.", 'woocommerce' ), 'subscription_outside_payment_method_change', false, '', '', false );
+		}
+
 		// Client 11.1.0 refuses these first, before any other check (Invalid_Phone_Number_Exception, `gw:1206`).
 		if ( 20 < strlen( $order->get_billing_phone() ) ) {
 			return $this->refuse_checkout( $order, __( 'Invalid phone number.', 'woocommerce' ), 'invalid_phone_number', $refusal_moves_order, '', '', $refusal_moves_order );

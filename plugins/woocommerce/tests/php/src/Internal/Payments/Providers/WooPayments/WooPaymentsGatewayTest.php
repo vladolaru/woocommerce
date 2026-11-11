@@ -4669,6 +4669,10 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Should hand successful subscription payment-method changes back to WC Subscriptions.
+	 *
+	 * The request is the one WooCommerce Subscriptions 9.4.1's change form posts: the `_wcsnonce` change nonce and the
+	 * `woocommerce_change_payment` subscription ID (`templates/checkout/form-change-payment-method.php:108`, `:129`), on the
+	 * page named by the `change_payment_method` query argument.
 	 */
 	public function test_process_payment_updates_subscription_payment_method_after_successful_new_method_change(): void {
 		WooCommerceSubscriptionsDoubles::load_change_payment_gateway();
@@ -4988,7 +4992,11 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should give a subscription change request new-method change semantics only with a valid nonce and the exact processed subscription: $_dataName.
+	 * @testdox Should refuse a payment for a subscription whose request is not a validated payment method change, leaving it as it is: $_dataName.
+	 *
+	 * Client 11.3.0 `process_payment()` refuses a subscription outside the change flow before anything else: one error log
+	 * line, the notice, a failure result with no redirect, no status change (gw:1453-1467). The change flow here is the
+	 * validated request: Subscriptions' change nonce and the posted subscription ID equal to the processed one.
 	 *
 	 * @dataProvider provider_invalid_subscription_change_requests
 	 *
@@ -4996,11 +5004,14 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 * @param string   $request_key           POST key naming the subscription.
 	 * @param int|null $request_offset        Offset of the posted subscription ID from the order ID, or null to post '0'.
 	 * @param int[]    $subscription_offsets  Offsets from the order ID of the IDs registered as subscriptions.
+	 * @param bool     $in_query              Whether the page's `change_payment_method` query argument names the posted ID too.
 	 */
-	public function test_process_payment_rejects_invalid_subscription_change_requests( string $nonce, string $request_key, ?int $request_offset, array $subscription_offsets ): void {
+	public function test_process_payment_refuses_a_subscription_outside_a_validated_change( string $nonce, string $request_key, ?int $request_offset, array $subscription_offsets, bool $in_query = false ): void {
 		WooCommerceSubscriptionsDoubles::load_change_payment_gateway();
 		WooCommerceSubscriptionsDoubles::load_subscription_detector();
-		$order   = $this->create_order();
+		$order = $this->create_order();
+		$order->update_meta_data( '_payment_method_id', 'pm_kept' );
+		$order->save();
 		$service = new RecordingPaymentProcessingService();
 		$gateway = new WooPaymentsGateway();
 		$gateway->init( $service, new WooPaymentsProvider() );
@@ -5009,7 +5020,62 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		if ( '' !== $nonce ) {
 			$_POST['_wcsnonce'] = 'valid' === $nonce ? wp_create_nonce( 'wcs_change_payment_method' ) : $nonce;
 		}
-		$_POST[ $request_key ] = null === $request_offset ? '0' : (string) ( $order->get_id() + $request_offset );
+		$posted_id             = null === $request_offset ? '0' : (string) ( $order->get_id() + $request_offset );
+		$_POST[ $request_key ] = $posted_id;
+		if ( $in_query ) {
+			$_GET['change_payment_method'] = $posted_id;
+		}
+
+		$_POST[ 'wc-' . WooPaymentsPersistenceVocabulary::GATEWAY_ID . '-payment-token' ] = 'new';
+
+		$_POST['wcpay-payment-method'] = 'pm_card';
+
+		$result   = $gateway->process_payment( $order->get_id() );
+		$reloaded = wc_get_order( $order->get_id() );
+
+		$this->assertSame( 'failure', $result['result'] );
+		$this->assertSame( '', $result['redirect'] );
+		$this->assertNull( $service->last_checkout_context, 'No payment may run for the subscription.' );
+		$this->assertSame( array( "We're not able to process this payment. Please try again later." ), array_column( wc_get_notices( 'error' ), 'notice' ) );
+		$this->assertInstanceOf( WC_Order::class, $reloaded );
+		$this->assertSame( 'pending', $reloaded->get_status() );
+		$this->assertSame( 'pm_kept', $reloaded->get_meta( '_payment_method_id', true ) );
+		$this->assertSame( '', $reloaded->get_meta( '_intent_id', true ) );
+		$this->assertSame( array(), \WC_Subscriptions_Change_Payment_Gateway::$updated_payment_methods );
+	}
+
+	/**
+	 * Subscription change requests that are not validated changes, for an order that is a subscription.
+	 *
+	 * Each row is a pay request for a subscription that is not a validated change; each is refused.
+	 *
+	 * @return array<string,array{0:string,1:string,2:int|null,3:int[],4?:bool}>
+	 */
+	public static function provider_invalid_subscription_change_requests(): array {
+		return array(
+			'zero request ID'                 => array( 'valid', 'change_payment_method', null, array( 0 ) ),
+			'mismatched request ID'           => array( 'valid', 'change_payment_method', 1, array( 0 ) ),
+			'missing nonce'                   => array( '', 'woocommerce_change_payment', 0, array( 0, 0 ) ),
+			'invalid nonce'                   => array( 'invalid-nonce', 'woocommerce_change_payment', 0, array( 0, 0 ) ),
+			'mismatched real subscription'    => array( 'valid', 'woocommerce_change_payment', 1, array( 0, 1 ) ),
+			'query argument, no change nonce' => array( '', 'woocommerce_change_payment', 0, array( 0 ), true ),
+		);
+	}
+
+	/**
+	 * @testdox Should pay an order that is not a subscription without change semantics when the request names it as one.
+	 */
+	public function test_process_payment_pays_an_order_posted_as_a_subscription_change(): void {
+		WooCommerceSubscriptionsDoubles::load_change_payment_gateway();
+		WooCommerceSubscriptionsDoubles::load_subscription_detector();
+		$order   = $this->create_order();
+		$service = new RecordingPaymentProcessingService();
+		$gateway = new WooPaymentsGateway();
+		$gateway->init( $service, new WooPaymentsProvider() );
+
+		$GLOBALS['wcpay_test_subscription_ids'] = array();
+		$_POST['_wcsnonce']                     = wp_create_nonce( 'wcs_change_payment_method' );
+		$_POST['change_payment_method']         = (string) $order->get_id();
 
 		$_POST[ 'wc-' . WooPaymentsPersistenceVocabulary::GATEWAY_ID . '-payment-token' ] = 'new';
 
@@ -5022,25 +5088,6 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$this->assertFalse( $service->last_checkout_context->get_provider_data()['recurring_payment'] ?? false );
 		$this->assertFalse( $service->last_checkout_context->get_provider_data()['subscription_payment_method_change'] ?? false );
 		$this->assertSame( array(), \WC_Subscriptions_Change_Payment_Gateway::$updated_payment_methods );
-	}
-
-	/**
-	 * Subscription change requests that must not get new-method change semantics.
-	 *
-	 * The first three post `change_payment_method` with a valid nonce and identify the wrong subscription; the last three
-	 * post `woocommerce_change_payment` naming a real subscription without the authority to change it.
-	 *
-	 * @return array<string,array{0:string,1:string,2:int|null,3:int[]}>
-	 */
-	public static function provider_invalid_subscription_change_requests(): array {
-		return array(
-			'zero request ID'              => array( 'valid', 'change_payment_method', null, array( 0 ) ),
-			'mismatched request ID'        => array( 'valid', 'change_payment_method', 1, array( 0 ) ),
-			'non-subscription ID'          => array( 'valid', 'change_payment_method', 0, array() ),
-			'missing nonce'                => array( '', 'woocommerce_change_payment', 0, array( 0, 0 ) ),
-			'invalid nonce'                => array( 'invalid-nonce', 'woocommerce_change_payment', 0, array( 0, 0 ) ),
-			'mismatched real subscription' => array( 'valid', 'woocommerce_change_payment', 1, array( 0, 1 ) ),
-		);
 	}
 
 	/**
