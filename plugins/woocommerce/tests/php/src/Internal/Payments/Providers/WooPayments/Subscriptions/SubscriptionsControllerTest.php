@@ -449,6 +449,88 @@ class SubscriptionsControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox WooCommerce Subscriptions copies none of one payment's meta into a $copy_type, and copies the reusable payment method and customer.
+	 *
+	 * Client 11.3.0 `includes/compat/subscriptions/trait-wc-payment-gateway-wcpay-subscriptions.php:321-323`, `:1210-1240`:
+	 * `remove_single_payment_data()` on the data copier's `wc_subscriptions_object_data` filter unsets the intent, its status,
+	 * the charge, the balance transaction, the payment method details, the fee, the net and the two takeover records, and
+	 * passes a non-array through.
+	 *
+	 * @dataProvider provider_subscriptions_copy_types
+	 *
+	 * @param string $copy_type Subscriptions copy type: a parent order to its subscription, or a subscription to its renewal.
+	 */
+	public function test_subscriptions_copies_leave_out_single_payment_meta( string $copy_type ): void {
+		$this->load_subscriptions( true );
+		$this->arrange_ownership( false, true, WooPaymentsSetupTier::ACTIVE );
+		$this->run_payments_bootstrap_and_init();
+		$data = array(
+			'_intent_id'                     => 'pi_parent',
+			'_intention_status'              => 'succeeded',
+			'_charge_id'                     => 'ch_parent',
+			'_wcpay_payment_transaction_id'  => 'txn_parent',
+			'_wcpay_payment_method_details'  => '{"type":"card"}',
+			'_wcpay_transaction_fee'         => '1.23',
+			'_wcpay_net'                     => '48.77',
+			'_wcpay_payment_details_removed' => '1700000000',
+			'_wcpay_superseded_intent_ids'   => array( 'pi_earlier' ),
+			'_payment_method_id'             => 'pm_saved',
+			'_stripe_customer_id'            => 'cus_saved',
+		);
+
+		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Fired as WooCommerce Subscriptions' data copier does.
+		$copied = apply_filters( 'wc_subscriptions_object_data', $data, new WC_Order(), new WC_Order(), $copy_type );
+		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Fired as WooCommerce Subscriptions' data copier does.
+		$passed = apply_filters( 'wc_subscriptions_object_data', 'not an array', new WC_Order(), new WC_Order(), $copy_type );
+
+		$this->assertSame(
+			array(
+				'_payment_method_id'  => 'pm_saved',
+				'_stripe_customer_id' => 'cus_saved',
+			),
+			$copied
+		);
+		$this->assertSame( 'not an array', $passed );
+	}
+
+	/**
+	 * @testdox Subscriptions versions without the data copier copy none of one payment's meta into a $copy_type either.
+	 *
+	 * Client 11.3.0 `includes/compat/subscriptions/trait-wc-payment-gateway-wcpay-subscriptions.php:317-320`, `:1182-1186`:
+	 * `update_renewal_meta_data()` on the subscription and renewal meta queries adds the same keys to the excluded list.
+	 *
+	 * @dataProvider provider_subscriptions_copy_types
+	 *
+	 * @param string $copy_type Subscriptions copy type: a parent order to its subscription, or a subscription to its renewal.
+	 */
+	public function test_subscriptions_without_the_data_copier_leave_out_single_payment_meta( string $copy_type ): void {
+		$this->load_subscriptions();
+		$this->arrange_ownership( false, true, WooPaymentsSetupTier::ACTIVE );
+		$this->run_payments_bootstrap_and_init();
+		$query = 'SELECT `meta_key`, `meta_value` FROM wp_postmeta WHERE `post_id` = 123';
+
+		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Fired as older WooCommerce Subscriptions versions do.
+		$filtered = apply_filters( "wcs_{$copy_type}_meta_query", $query, new WC_Order(), new WC_Order() );
+
+		$this->assertStringStartsWith( $query, $filtered );
+		$this->assertStringContainsString( " AND `meta_key` NOT IN ('_intent_id', '_intention_status', '_charge_id', '_wcpay_payment_transaction_id', '_wcpay_payment_method_details', '_wcpay_transaction_fee', '_wcpay_net', '_wcpay_payment_details_removed', '_wcpay_superseded_intent_ids')", $filtered );
+		$this->assertStringNotContainsString( '_payment_method_id', $filtered );
+		$this->assertStringNotContainsString( '_stripe_customer_id', $filtered );
+	}
+
+	/**
+	 * Subscriptions copy types that carry a payment's meta: a parent order to its subscription, a subscription to its renewal.
+	 *
+	 * @return array<string,array{string}>
+	 */
+	public function provider_subscriptions_copy_types(): array {
+		return array(
+			'subscription'  => array( 'subscription' ),
+			'renewal order' => array( 'renewal_order' ),
+		);
+	}
+
+	/**
 	 * @testdox Should process Amazon Pay scheduled subscription renewals through the renewal handler.
 	 */
 	public function test_amazon_pay_scheduled_subscription_payment_hook_reaches_the_renewal_handler(): void {

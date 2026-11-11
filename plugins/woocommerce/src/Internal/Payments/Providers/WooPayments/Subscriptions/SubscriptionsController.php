@@ -46,6 +46,22 @@ defined( 'ABSPATH' ) || exit;
 class SubscriptionsController implements RegisterHooksInterface {
 
 	/**
+	 * Order meta keys that describe one payment, as the WooPayments extension lists them (client 11.3.0
+	 * `includes/compat/subscriptions/trait-wc-payment-gateway-wcpay-subscriptions.php:1226-1240`).
+	 */
+	private const SINGLE_PAYMENT_META_KEYS = array(
+		'_intent_id',
+		'_intention_status',
+		'_charge_id',
+		'_wcpay_payment_transaction_id',
+		'_wcpay_payment_method_details',
+		'_wcpay_transaction_fee',
+		'_wcpay_net',
+		WooPaymentsPersistenceVocabulary::PAYMENT_DETAILS_REMOVED_META_KEY,
+		WooPaymentsPersistenceVocabulary::SUPERSEDED_INTENT_IDS_META_KEY,
+	);
+
+	/**
 	 * Attach the renewal hooks on `plugins_loaded` priority 11.
 	 *
 	 * That is when the client detects Subscriptions and attaches (client 11.1.0 `woocommerce-payments.php:214`), after
@@ -91,9 +107,14 @@ class SubscriptionsController implements RegisterHooksInterface {
 		// renewal meta (client 11.1.0 `includes/compat/subscriptions/trait-wc-payment-gateway-wcpay-subscriptions.php:315-320`).
 		if ( wc_get_container()->get( LegacyProxy::class )->call_function( 'class_exists', 'WC_Subscriptions_Data_Copier' ) ) {
 			add_filter( 'wc_subscriptions_object_data', array( self::class, 'exclude_charge_idempotency_key' ), 10, 1 );
+			add_filter( 'wc_subscriptions_object_data', array( self::class, 'exclude_single_payment_meta' ), 10, 1 );
 		} else {
 			foreach ( array( 'subscription', 'parent', 'renewal_order', 'resubscribe_order' ) as $copy_type ) {
 				add_filter( "wcs_{$copy_type}_meta_query", array( self::class, 'exclude_charge_idempotency_key_from_meta_query' ), 10, 1 );
+			}
+			// Client 11.3.0 filters these two meta queries only (trait-wc-payment-gateway-wcpay-subscriptions.php:317-320).
+			foreach ( array( 'subscription', 'renewal_order' ) as $copy_type ) {
+				add_filter( "wcs_{$copy_type}_meta_query", array( self::class, 'exclude_single_payment_meta_from_meta_query' ), 10, 1 );
 			}
 		}
 	}
@@ -166,6 +187,47 @@ class SubscriptionsController implements RegisterHooksInterface {
 		}
 
 		return $meta_query . sprintf( " AND `meta_key` NOT IN ('%s', '%s', '%s')", WooPaymentsPaymentOperationService::CHARGE_IDEMPOTENCY_KEY_META, WooPaymentsPaymentOperationService::CHARGE_AMBIGUITY_META, WooPaymentsPaymentOperationService::REFUND_AMBIGUITY_META );
+	}
+
+	/**
+	 * Leave one payment's details out of the data Subscriptions copies from an order or a subscription.
+	 *
+	 * The intent, its status, its charge and balance transaction, the payment method details, the fee and the net belong to
+	 * one payment, and so do the records of a payment another gateway took over; a subscription and its renewals keep only
+	 * the reusable payment method (client 11.3.0
+	 * `includes/compat/subscriptions/trait-wc-payment-gateway-wcpay-subscriptions.php:1210-1240`).
+	 *
+	 * @internal
+	 *
+	 * @param mixed $data Data to copy, keyed by meta key.
+	 * @return mixed
+	 */
+	public static function exclude_single_payment_meta( $data ) {
+		if ( ! is_array( $data ) ) {
+			return $data;
+		}
+
+		foreach ( self::SINGLE_PAYMENT_META_KEYS as $meta_key ) {
+			unset( $data[ $meta_key ] );
+		}
+
+		return $data;
+	}
+
+	/**
+	 * Leave one payment's details out of the meta query older Subscriptions versions copy with.
+	 *
+	 * @internal
+	 *
+	 * @param mixed $meta_query SQL query selecting the meta to copy.
+	 * @return mixed
+	 */
+	public static function exclude_single_payment_meta_from_meta_query( $meta_query ) {
+		if ( ! is_string( $meta_query ) ) {
+			return $meta_query;
+		}
+
+		return $meta_query . " AND `meta_key` NOT IN ('" . implode( "', '", self::SINGLE_PAYMENT_META_KEYS ) . "')";
 	}
 
 	/**

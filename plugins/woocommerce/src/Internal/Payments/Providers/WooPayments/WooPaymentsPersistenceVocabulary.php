@@ -96,6 +96,24 @@ class WooPaymentsPersistenceVocabulary implements ProviderPersistenceVocabularyI
 	public const EARLY_FRAUD_WARNING_META_KEY = '_wcpay_early_fraud_warning';
 
 	/**
+	 * Order meta key holding the time another gateway last took the order over from a WooPayments attempt, whose payment
+	 * details were removed then; the WooPayments extension writes it (client 11.3.0 includes/class-wc-payments-order-service.php:121).
+	 *
+	 * @since 11.2.0
+	 * @var string
+	 */
+	public const PAYMENT_DETAILS_REMOVED_META_KEY = '_wcpay_payment_details_removed';
+
+	/**
+	 * Order meta key listing the intents of WooPayments attempts whose payment details were removed when another gateway
+	 * took the order over; the WooPayments extension writes it (client 11.3.0 includes/class-wc-payments-order-service.php:129).
+	 *
+	 * @since 11.2.0
+	 * @var string
+	 */
+	public const SUPERSEDED_INTENT_IDS_META_KEY = '_wcpay_superseded_intent_ids';
+
+	/**
 	 * Order and refund meta keys that hold WooPayments payment state, returned by get_preserved_payment_meta_keys().
 	 *
 	 * @var string[]
