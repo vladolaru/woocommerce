@@ -302,7 +302,7 @@ class WooPaymentsDuplicatePaymentPreventionService implements RegisterHooksInter
 			return null;
 		}
 
-		if ( ! $this->intent_belongs_to_order( $intent, $order ) ) {
+		if ( ! WooPaymentsIntentCodec::intent_belongs_to_order( $intent, $order ) ) {
 			return null;
 		}
 
@@ -539,25 +539,6 @@ class WooPaymentsDuplicatePaymentPreventionService implements RegisterHooksInter
 		}
 
 		return OrderUtil::remove_status_prefix( (string) $status );
-	}
-
-	/**
-	 * Tell whether intent metadata points to the supplied order.
-	 *
-	 * @param array<string,mixed> $intent Intent response.
-	 * @param WC_Order            $order  Order.
-	 * @return bool
-	 */
-	private function intent_belongs_to_order( array $intent, WC_Order $order ): bool {
-		$metadata                     = is_array( $intent['metadata'] ?? null ) ? $intent['metadata'] : array();
-		$intent_meta_order_id_raw     = $metadata['order_id'] ?? '';
-		$intent_meta_order_id         = is_numeric( $intent_meta_order_id_raw ) ? (int) $intent_meta_order_id_raw : 0;
-		$intent_meta_order_number_raw = $metadata['order_number'] ?? '';
-		$intent_meta_order_number     = is_numeric( $intent_meta_order_number_raw ) ? (int) $intent_meta_order_number_raw : 0;
-		$paid_on_woopay               = filter_var( $metadata['paid_on_woopay'] ?? false, FILTER_VALIDATE_BOOLEAN );
-		$is_woopay_order              = $order->get_id() === $intent_meta_order_number;
-
-		return ( $paid_on_woopay && $is_woopay_order ) || $intent_meta_order_id === $order->get_id();
 	}
 
 	/**

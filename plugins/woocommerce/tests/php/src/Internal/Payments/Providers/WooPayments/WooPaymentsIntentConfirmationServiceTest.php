@@ -29,10 +29,11 @@ class WooPaymentsIntentConfirmationServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Confirming an intent for an order fetches it once and saves its intent and payment method IDs on the order.
 	 *
-	 * T.3 Task 4 (`plan-task-t3.md`): RECORD swap. The intent is now REC-3DS-2's real completed
+	 * The intent is REC-3DS-2's real completed
 	 * challenge (`Fixtures/platform-3ds-challenge-results.json`, pair `classic_checkout_challenge_completed`):
 	 * a classic checkout that finished a hosted 3DS challenge, obtained via one API-only GET of the
-	 * resulting PaymentIntent through native transport after a real Playwright run.
+	 * resulting PaymentIntent through native transport after a real Playwright run. Its metadata names this order, as an
+	 * intent created for the order does.
 	 */
 	public function test_confirm_intent_for_order_fetches_the_intent_once_and_saves_intent_and_payment_method_ids(): void {
 		$order = $this->create_woopayments_order( '10.99' );
@@ -42,7 +43,7 @@ class WooPaymentsIntentConfirmationServiceTest extends WC_Unit_Test_Case {
 		$http_client->response = array(
 			'response' => array( 'code' => 200 ),
 			'headers'  => array( 'content-type' => 'application/json; charset=UTF-8' ),
-			'body'     => wp_json_encode( $recorded['body'] ),
+			'body'     => wp_json_encode( array_merge( $recorded['body'], array( 'metadata' => array( 'order_id' => (string) $order->get_id() ) ) ) ),
 		);
 		$account_service       = $this->create_account_service( false );
 		$api_client            = new Client();
@@ -86,7 +87,7 @@ class WooPaymentsIntentConfirmationServiceTest extends WC_Unit_Test_Case {
 		$http_client->response = array(
 			'response' => array( 'code' => 200 ),
 			'headers'  => array( 'content-type' => 'application/json; charset=UTF-8' ),
-			'body'     => wp_json_encode( $recorded['body'] ),
+			'body'     => wp_json_encode( array_merge( $recorded['body'], array( 'metadata' => array( 'order_id' => (string) $order->get_id() ) ) ) ),
 		);
 		$account_service       = $this->create_account_service( false );
 		$api_client            = new Client();

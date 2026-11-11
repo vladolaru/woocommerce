@@ -154,7 +154,7 @@ class WooPaymentsFeeDetailsJobSchedulingTest extends WC_Unit_Test_Case {
 	 */
 	public function test_order_status_callback_for_a_zero_total_order(): void {
 		$order        = $this->create_zero_total_order( 'seti_callback' );
-		$this->intent = $this->succeeded_setup_intent( 'seti_callback' );
+		$this->intent = $this->succeeded_setup_intent( $order, 'seti_callback' );
 
 		$this->assertSame( 200, $this->send_order_status_callback( $order )['status_code'] ?? null );
 
@@ -187,7 +187,7 @@ class WooPaymentsFeeDetailsJobSchedulingTest extends WC_Unit_Test_Case {
 	 */
 	public function test_redirect_return_for_a_setup_intent(): void {
 		$order        = $this->create_zero_total_order( 'seti_redirect' );
-		$this->intent = $this->succeeded_setup_intent( 'seti_redirect' );
+		$this->intent = $this->succeeded_setup_intent( $order, 'seti_redirect' );
 
 		$this->load_redirect_return( $order );
 
@@ -430,18 +430,21 @@ class WooPaymentsFeeDetailsJobSchedulingTest extends WC_Unit_Test_Case {
 	 *
 	 * Trimmed from the recorded SetupIntent in Fixtures/platform-setup-intent-requires-action.json (pair
 	 * setup_intent_requires_action) to the fields native reads. Changed: `id`, `customer`, `payment_method`, and
-	 * `status` set to succeeded.
+	 * `status` set to succeeded; `metadata` carries the order's ID, as a setup intent created for an order does
+	 * (WooPaymentsIntentRequestBuilder::metadata_from_order()).
 	 *
-	 * @param string $setup_intent_id Setup intent ID.
+	 * @param WC_Order $order           Order the setup intent was created for.
+	 * @param string   $setup_intent_id Setup intent ID.
 	 * @return array<string,mixed>
 	 */
-	private function succeeded_setup_intent( string $setup_intent_id ): array {
+	private function succeeded_setup_intent( WC_Order $order, string $setup_intent_id ): array {
 		return array(
 			'id'             => $setup_intent_id,
 			'object'         => 'setup_intent',
 			'status'         => 'succeeded',
 			'customer'       => 'cus_shopper',
 			'payment_method' => 'pm_card',
+			'metadata'       => array( 'order_id' => (string) $order->get_id() ),
 		);
 	}
 

@@ -86,6 +86,7 @@ class WooPaymentsIntentConfirmationService {
 		$this->order_effect_applier        = $order_effect_applier;
 	}
 
+	// phpcs:disable Squiz.Commenting.FunctionCommentThrowTag.WrongNumber -- The method throws its domain exception and propagates the platform's and downstream Throwables.
 	/**
 	 * Confirm an intent and apply its result to an order.
 	 *
@@ -94,7 +95,7 @@ class WooPaymentsIntentConfirmationService {
 	 * @param bool     $save_payment_method Whether to persist the payment method.
 	 * @param bool     $is_payment_method_change Whether this confirms a subscription payment method change.
 	 * @throws ApiException When intent retrieval fails.
-	 * @throws WooPaymentsIntentConfirmationException When the intent cannot be authorized or a required token cannot be saved.
+	 * @throws WooPaymentsIntentConfirmationException When the intent's metadata does not name the order, the intent cannot be authorized or a required token cannot be saved.
 	 * @throws Throwable When lifecycle, token, or payment-method effects fail.
 	 *
 	 * @since 11.2.0
@@ -104,6 +105,12 @@ class WooPaymentsIntentConfirmationService {
 		$intent = $is_payment_method_change || 0.0 >= (float) $order->get_total()
 			? $this->api_client->get_setup_intention( $intent_id )
 			: $this->api_client->get_payment_intention( $intent_id );
+
+		// Client 11.3.0 gw:4552-4575, 4648, 4670: the fetched intent must name the order before anything is written on it.
+		if ( ! WooPaymentsIntentCodec::intent_belongs_to_order( $intent, $order ) ) {
+			$this->add_intent_mismatch_note( $order, $intent_id );
+			throw new WooPaymentsIntentConfirmationException( esc_html__( "We're not able to process this payment. Please try again later.", 'woocommerce' ), 409 );
+		}
 
 		if ( ! $is_payment_method_change ) {
 			$this->confirm_fetched_intent_for_order( $order, $intent, $save_payment_method, false, true );
@@ -132,6 +139,30 @@ class WooPaymentsIntentConfirmationService {
 		} finally {
 			\WC_Subscriptions_Change_Payment_Gateway::$is_request_to_change_payment = $was_change_request;
 		}
+	}
+	// phpcs:enable Squiz.Commenting.FunctionCommentThrowTag.WrongNumber
+
+	/**
+	 * Note on the order that the order-status callback ignored an intent ID that is not the order's payment.
+	 *
+	 * The wording is the client's for `intent_id_mismatch` and `empty_intent_id` (client 11.3.0 gw:4795-4811).
+	 *
+	 * @since 11.2.0
+	 *
+	 * @param WC_Order $order     Order the callback named.
+	 * @param string   $intent_id Intent ID the callback received, or the translated "unknown".
+	 */
+	public function add_intent_mismatch_note( WC_Order $order, string $intent_id ): void {
+		$order->add_order_note(
+			sprintf(
+				WooPaymentsHtmlUtils::escape_interpolated_html(
+					/* translators: %1: transaction ID of the payment or a translated string indicating an unknown ID. */
+					__( 'A payment with ID <code>%1$s</code> was used in an attempt to pay for this order. This payment intent ID does not match any payments for this order, so it was ignored and the order was not updated.', 'woocommerce' ),
+					array( 'code' => '<code>' )
+				),
+				$intent_id
+			)
+		);
 	}
 
 	// phpcs:disable Squiz.Commenting.FunctionCommentThrowTag.WrongNumber -- The method explicitly throws its domain exception and can propagate downstream Throwables.

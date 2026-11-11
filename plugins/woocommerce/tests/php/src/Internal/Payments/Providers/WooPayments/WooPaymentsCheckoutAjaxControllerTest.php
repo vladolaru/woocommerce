@@ -120,7 +120,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		$account_service       = $this->create_account_service( false );
 		$api_client            = new Client();
 		$api_client->init( $http_client, $account_service, wc_get_container()->get( TransportLog::class ) );
-		$sut      = $this->create_controller( $api_client, null, null, $account_service );
+		$sut      = $this->create_controller( $this->bind_intents_to_order( $api_client, $order ), null, null, $account_service );
 		$response = $sut->confirm_order_payment(
 			array(
 				'_ajax_nonce' => wp_create_nonce( 'wcpay_update_order_status_nonce_' . $order->get_id() ),
@@ -207,7 +207,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		);
 		$token_class_map = new WooPaymentsTokenClassMapController();
 		$token_class_map->register();
-		$sut = $this->create_controller( $api_client, null, $token_service, $account_service );
+		$sut = $this->create_controller( $this->bind_intents_to_order( $api_client, $order ), null, $token_service, $account_service );
 		WooCommerceSubscriptionsDoubles::load_renewal_detector();
 		$GLOBALS['wcpay_test_renewal_order_ids'] = array( $order->get_id() );
 
@@ -297,7 +297,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 				),
 			)
 		);
-		$sut                  = $this->create_controller( $api_client, null, $token_service );
+		$sut                  = $this->create_controller( $this->bind_intents_to_order( $api_client, $order ), null, $token_service );
 		$observed_identity    = array();
 		$record_payment_state = function ( int $order_id ) use ( $order, $subscription, &$observed_identity ): void {
 			if ( $order->get_id() !== $order_id ) {
@@ -384,7 +384,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 				);
 			}
 		};
-		$sut            = $this->create_controller( $api_client, null, $this->create_token_service( array(), null, $details_reads, $throw_details_lookup ) );
+		$sut            = $this->create_controller( $this->bind_intents_to_order( $api_client, $order ), null, $this->create_token_service( array(), null, $details_reads, $throw_details_lookup ) );
 		$lifecycle_runs = 0;
 		$observer       = static function ( int $order_id ) use ( $order, &$lifecycle_runs ): void {
 			if ( $order->get_id() === $order_id ) {
@@ -489,7 +489,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 				);
 			}
 		};
-		$sut            = $this->create_controller( $api_client, null, $this->create_token_service( array( 'pm_callback_replay' => $details ), null, $details_reads ) );
+		$sut            = $this->create_controller( $this->bind_intents_to_order( $api_client, $order ), null, $this->create_token_service( array( 'pm_callback_replay' => $details ), null, $details_reads ) );
 		$lifecycle_runs = 0;
 		$observer       = static function ( int $order_id ) use ( $order, &$lifecycle_runs ): void {
 			if ( $order->get_id() === $order_id ) {
@@ -648,7 +648,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 			->method( 'apply_and_schedule_fee_details_with_lock' )
 			->willThrowException( new \RuntimeException( 'Unrelated lifecycle conflict.', 409 ) );
 
-		$response = $this->create_controller( $api_client, null, null, null, $fee_details_note_controller )
+		$response = $this->create_controller( $this->bind_intents_to_order( $api_client, $order ), null, null, null, $fee_details_note_controller )
 			->confirm_order_payment(
 				array(
 					'_ajax_nonce' => wp_create_nonce( 'wcpay_update_order_status_nonce_' . $order->get_id() ),
@@ -739,7 +739,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 				);
 			}
 		};
-		$sut        = $this->create_controller( $api_client, null, null, $this->create_account_service( true ) );
+		$sut        = $this->create_controller( $this->bind_intents_to_order( $api_client, $order ), null, null, $this->create_account_service( true ) );
 
 		$response = $sut->confirm_order_payment(
 			array(
@@ -824,7 +824,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 				);
 			}
 		};
-		$sut        = $this->create_controller( $api_client );
+		$sut        = $this->create_controller( $this->bind_intents_to_order( $api_client, $order ) );
 
 		$response = $sut->confirm_order_payment(
 			array(
@@ -899,7 +899,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 				);
 			}
 		};
-		$sut        = $this->create_controller( $api_client, null, null, $this->create_account_service( true, 'usd' ) );
+		$sut        = $this->create_controller( $this->bind_intents_to_order( $api_client, $order ), null, null, $this->create_account_service( true, 'usd' ) );
 
 		$response = $sut->confirm_order_payment(
 			array(
@@ -985,6 +985,185 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 			'no intent in request'   => array( null, 'seti_expected', 'unknown' ),
 			'no intent on the order' => array( 'seti_other', '', 'seti_other' ),
 		);
+	}
+
+	/**
+	 * @testdox Order-status callback refuses an intent whose metadata does not name the order before any order write: $_dataName.
+	 *
+	 * Client 11.3.0 `ensure_intent_belongs_to_order()` (gw:4552-4575) runs right after the fetch, for PaymentIntents (gw:4648) and
+	 * SetupIntents (gw:4670), payment method changes included; the catch notes the received intent ID (gw:4795-4811).
+	 *
+	 * @dataProvider provider_intents_whose_metadata_does_not_name_the_order
+	 *
+	 * @param string              $flow     `payment`, `setup` or `change`.
+	 * @param array<string,mixed> $metadata Intent metadata; `{order}` stands for the order ID and `{other}` for another order's.
+	 */
+	public function test_update_order_status_refuses_an_intent_whose_metadata_does_not_name_the_order( string $flow, array $metadata ): void {
+		$order       = $this->create_order_for_intent_binding( $flow );
+		$other_order = $this->create_woopayments_order( '50.00' );
+		$intent_id   = 'payment' === $flow ? 'pi_binding' : 'seti_binding';
+		$order->update_meta_data( '_intent_id', $intent_id );
+		$order->update_meta_data( '_intention_status', 'requires_action' );
+		$order->save();
+		$status_before = $order->get_status();
+		$notes_before  = count( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+		$intent        = array(
+			'id'             => $intent_id,
+			'status'         => 'succeeded',
+			'amount'         => 5000,
+			'currency'       => 'usd',
+			'customer'       => 'cus_binding',
+			'payment_method' => 'pm_binding',
+			'metadata'       => str_replace( array( '{order}', '{other}' ), array( (string) $order->get_id(), (string) $other_order->get_id() ), $metadata ),
+		);
+
+		// The card fields of a Stripe PaymentMethod, so a payment method change can save it (https://docs.stripe.com/api/payment_methods/object#payment_method_object-card).
+		$token_service = $this->create_token_service(
+			array(
+				'pm_binding' => array(
+					'id'   => 'pm_binding',
+					'type' => 'card',
+					'card' => array(
+						'brand'     => 'visa',
+						'last4'     => '4242',
+						'exp_month' => 12,
+						'exp_year'  => 2030,
+					),
+				),
+			)
+		);
+
+		try {
+			$response = $this->create_controller( $this->create_api_client_returning( $intent ), null, $token_service )->confirm_order_payment(
+				array(
+					'_ajax_nonce'         => wp_create_nonce( 'wcpay_update_order_status_nonce_' . $order->get_id() ),
+					'order_id'            => $order->get_id(),
+					'intent_id'           => $intent_id,
+					'is_changing_payment' => 'change' === $flow ? 'true' : 'false',
+				)
+			);
+		} finally {
+			unset( $GLOBALS[ WooCommerceSubscriptionsDoubles::SUBSCRIPTION_IDS ] );
+		}
+		$order = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 409, $response['status_code'] );
+		$this->assertArrayHasKey( 'error', $response );
+		$this->assertSame( $status_before, $order->get_status() );
+		$this->assertSame( 'requires_action', $order->get_meta( '_intention_status', true ) );
+		$this->assertSame( '', $order->get_meta( '_charge_id', true ) );
+		$this->assertSame( '', $order->get_transaction_id() );
+		$this->assertCount( $notes_before + 1, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+		$this->assert_order_has_note_containing(
+			$order,
+			'A payment with ID <code>' . $intent_id . '</code> was used in an attempt to pay for this order. This payment intent ID does not match any payments for this order, so it was ignored and the order was not updated.'
+		);
+	}
+
+	/**
+	 * Intents whose metadata does not name the order, for each flow the callback confirms.
+	 *
+	 * @return array<string,array{string,array<string,string>}>
+	 */
+	public function provider_intents_whose_metadata_does_not_name_the_order(): array {
+		return array(
+			'PaymentIntent, another order ID'            => array( 'payment', array( 'order_id' => '{other}' ) ),
+			'PaymentIntent, no order ID'                 => array( 'payment', array() ),
+			'PaymentIntent, order number without WooPay' => array( 'payment', array( 'order_number' => '{order}' ) ),
+			'SetupIntent, another order ID'              => array( 'setup', array( 'order_id' => '{other}' ) ),
+			'payment method change, another order ID'    => array( 'change', array( 'order_id' => '{other}' ) ),
+			'payment method change, no order ID'         => array( 'change', array() ),
+		);
+	}
+
+	/**
+	 * @testdox Order-status callback confirms an intent whose metadata names the order: $_dataName.
+	 *
+	 * Client 11.3.0 gw:4552-4575: the metadata `order_id` names the order, or a WooPay intent names it by `order_number`.
+	 *
+	 * @dataProvider provider_intents_whose_metadata_names_the_order
+	 *
+	 * @param string              $flow     `payment` or `setup`.
+	 * @param array<string,mixed> $metadata Intent metadata; `{order}` stands for the order ID.
+	 */
+	public function test_update_order_status_confirms_an_intent_whose_metadata_names_the_order( string $flow, array $metadata ): void {
+		$order     = $this->create_order_for_intent_binding( $flow );
+		$intent_id = 'payment' === $flow ? 'pi_binding' : 'seti_binding';
+		$order->update_meta_data( '_intent_id', $intent_id );
+		$order->save();
+		$intent = array(
+			'id'             => $intent_id,
+			'status'         => 'succeeded',
+			'amount'         => 5000,
+			'currency'       => 'usd',
+			'customer'       => 'cus_binding',
+			'payment_method' => 'pm_binding',
+			'metadata'       => str_replace( '{order}', (string) $order->get_id(), $metadata ),
+		);
+
+		$response = $this->create_controller( $this->create_api_client_returning( $intent ) )->confirm_order_payment(
+			array(
+				'_ajax_nonce' => wp_create_nonce( 'wcpay_update_order_status_nonce_' . $order->get_id() ),
+				'order_id'    => $order->get_id(),
+				'intent_id'   => $intent_id,
+			)
+		);
+		$order    = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 200, $response['status_code'] );
+		$this->assertTrue( $order->is_paid() );
+		$this->assertSame( 'succeeded', $order->get_meta( '_intention_status', true ) );
+		$this->assert_order_has_no_note_containing( $order, 'does not match any payments for this order' );
+	}
+
+	/**
+	 * Intents whose metadata names the order.
+	 *
+	 * @return array<string,array{string,array<string,string>}>
+	 */
+	public function provider_intents_whose_metadata_names_the_order(): array {
+		return array(
+			'PaymentIntent, order ID'            => array( 'payment', array( 'order_id' => '{order}' ) ),
+			'PaymentIntent, WooPay order number' => array(
+				'payment',
+				array(
+					'paid_on_woopay' => 'true',
+					'order_number'   => '{order}',
+				),
+			),
+			'SetupIntent, order ID'              => array( 'setup', array( 'order_id' => '{order}' ) ),
+		);
+	}
+
+	/**
+	 * Create the order a binding test confirms: a $50.00 order for a PaymentIntent, a $0.00 order for a SetupIntent, or an active
+	 * subscription for a payment method change.
+	 *
+	 * @param string $flow `payment`, `setup` or `change`.
+	 * @return WC_Order
+	 */
+	private function create_order_for_intent_binding( string $flow ): WC_Order {
+		if ( 'change' !== $flow ) {
+			return $this->create_woopayments_order( 'payment' === $flow ? '50.00' : '0.00' );
+		}
+
+		WooCommerceSubscriptionsDoubles::load_change_payment_gateway();
+		WooCommerceSubscriptionsDoubles::load();
+		WooCommerceSubscriptionsDoubles::load_order_detector();
+		$user_id = $this->factory()->user->create();
+		wp_set_current_user( $user_id );
+		$subscription = new SubscriptionDouble();
+		$subscription->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+		$subscription->set_currency( 'USD' );
+		$subscription->set_total( '10.00' );
+		$subscription->set_customer_id( $user_id );
+		$subscription->set_status( 'active' );
+		$subscription->save();
+		$GLOBALS[ WooCommerceSubscriptionsDoubles::SUBSCRIPTION_IDS ] = array( $subscription->get_id() );
+
+		return $subscription;
 	}
 
 	/**
@@ -1247,7 +1426,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 				);
 			}
 		};
-		$sut        = $this->create_controller( $api_client );
+		$sut        = $this->create_controller( $this->bind_intents_to_order( $api_client, $order ) );
 		$response   = $sut->confirm_order_payment(
 			array(
 				'_ajax_nonce' => wp_create_nonce( 'wcpay_update_order_status_nonce_' . $order->get_id() ),
@@ -1321,7 +1500,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		add_filter( 'woocommerce_get_return_url', $filter );
 
 		try {
-			$response = $this->create_controller( $api_client )->confirm_order_payment(
+			$response = $this->create_controller( $this->bind_intents_to_order( $api_client, $order ) )->confirm_order_payment(
 				array(
 					'_ajax_nonce' => wp_create_nonce( 'wcpay_update_order_status_nonce_' . $order->get_id() ),
 					'order_id'    => $order->get_id(),
@@ -1375,7 +1554,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 				);
 			}
 		};
-		$sut        = $this->create_controller( $api_client, null, null, $this->create_account_service( true ) );
+		$sut        = $this->create_controller( $this->bind_intents_to_order( $api_client, $order ), null, null, $this->create_account_service( true ) );
 		$response   = $sut->confirm_order_payment(
 			array(
 				'_ajax_nonce' => wp_create_nonce( 'wcpay_update_order_status_nonce_' . $order->get_id() ),
@@ -1576,7 +1755,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Run the order-status callback against a fixed PaymentIntent or SetupIntent response.
+	 * Run the order-status callback against a fixed PaymentIntent or SetupIntent response created for the order.
 	 *
 	 * @param WC_Order                                 $order                       Order being confirmed.
 	 * @param array<string,mixed>                      $intent                      PaymentIntent or SetupIntent response.
@@ -1584,7 +1763,25 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 	 * @return array<string,mixed>
 	 */
 	private function get_update_order_status_response_for_intent( WC_Order $order, array $intent, ?WooPaymentsFeeDetailsNoteController $fee_details_note_controller = null ): array {
-		$api_client = new class( $intent ) extends Client {
+		$api_client = $this->create_api_client_returning( $intent );
+
+		return $this->create_controller( $this->bind_intents_to_order( $api_client, $order ), null, null, null, $fee_details_note_controller )->confirm_order_payment(
+			array(
+				'_ajax_nonce' => wp_create_nonce( 'wcpay_update_order_status_nonce_' . $order->get_id() ),
+				'order_id'    => $order->get_id(),
+				'intent_id'   => (string) $intent['id'],
+			)
+		);
+	}
+
+	/**
+	 * Create an API client that returns a fixed PaymentIntent or SetupIntent response.
+	 *
+	 * @param array<string,mixed> $intent PaymentIntent or SetupIntent response.
+	 * @return Client
+	 */
+	private function create_api_client_returning( array $intent ): Client {
+		return new class( $intent ) extends Client {
 			/**
 			 * PaymentIntent response.
 			 *
@@ -1638,14 +1835,6 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 				return $this->intent;
 			}
 		};
-
-		return $this->create_controller( $api_client, null, null, null, $fee_details_note_controller )->confirm_order_payment(
-			array(
-				'_ajax_nonce' => wp_create_nonce( 'wcpay_update_order_status_nonce_' . $order->get_id() ),
-				'order_id'    => $order->get_id(),
-				'intent_id'   => (string) $intent['id'],
-			)
-		);
 	}
 
 	/**
@@ -1695,7 +1884,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		$account_service       = $this->create_account_service( false );
 		$api_client            = new Client();
 		$api_client->init( $http_client, $account_service, wc_get_container()->get( TransportLog::class ) );
-		$sut      = $this->create_controller( $api_client, null, null, $account_service );
+		$sut      = $this->create_controller( $this->bind_intents_to_order( $api_client, $order ), null, null, $account_service );
 		$response = $sut->confirm_order_payment(
 			array(
 				'_ajax_nonce' => wp_create_nonce( 'wcpay_update_order_status_nonce_' . $order->get_id() ),
@@ -2029,7 +2218,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 				),
 			)
 		);
-		$sut                        = $this->create_controller( $api_client, null, $token_service, $account_service );
+		$sut                        = $this->create_controller( $this->bind_intents_to_order( $api_client, $order ), null, $token_service, $account_service );
 
 		$status_at_token_attach          = '';
 		$payment_complete_observations   = array();
@@ -2183,7 +2372,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 				),
 			)
 		);
-		$sut               = $this->create_controller( $api_client, null, $token_service, $account_service );
+		$sut               = $this->create_controller( $this->bind_intents_to_order( $api_client, $order ), null, $token_service, $account_service );
 
 		$response = $sut->confirm_order_payment(
 			array(
@@ -2309,7 +2498,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 				),
 			)
 		);
-		$sut                     = $this->create_controller( $api_client, null, $token_service );
+		$sut                     = $this->create_controller( $this->bind_intents_to_order( $api_client, $order ), null, $token_service );
 		$observed_title          = '';
 		$observer_count          = 0;
 		$record_payment_complete = function ( int $order_id ) use ( $order, &$observed_title, &$observer_count ): void {
@@ -2625,7 +2814,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 			),
 			$account_service
 		);
-		$sut             = $this->create_controller( $api_client, null, $token_service );
+		$sut             = $this->create_controller( $this->bind_intents_to_order( $api_client, $order ), null, $token_service );
 		$token_class_map = new WooPaymentsTokenClassMapController();
 		$token_class_map->register();
 
@@ -2762,7 +2951,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 				),
 			)
 		);
-		$sut                             = $this->create_controller( $api_client, null, $token_service );
+		$sut                             = $this->create_controller( $this->bind_intents_to_order( $api_client, $order ), null, $token_service );
 		$payment_complete_observations   = array();
 		$payment_complete_observer_count = 0;
 		$record_payment_complete         = function ( int $order_id ) use ( $order, $subscription, $token_service, &$payment_complete_observations, &$payment_complete_observer_count ): void {
@@ -2956,7 +3145,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 				),
 			)
 		);
-		$sut           = $this->create_controller( $api_client, null, $token_service );
+		$sut           = $this->create_controller( $this->bind_intents_to_order( $api_client, $order ), null, $token_service );
 
 		$response = $sut->confirm_order_payment(
 			array(
@@ -3104,7 +3293,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 				),
 			)
 		);
-		$sut           = $this->create_controller( $api_client, null, $token_service );
+		$sut           = $this->create_controller( $this->bind_intents_to_order( $api_client, $subscription ), null, $token_service );
 		\WC_Subscriptions_Change_Payment_Gateway::$is_request_to_change_payment = false;
 
 		try {
@@ -3295,7 +3484,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 			}
 			// phpcs:enable Squiz.Commenting.FunctionComment.InvalidNoReturn
 		};
-		$sut           = $this->create_controller( $api_client, null, $token_service );
+		$sut           = $this->create_controller( $this->bind_intents_to_order( $api_client, $order ), null, $token_service );
 
 		WooCommerceSubscriptionsDoubles::load_renewal_detector();
 		$GLOBALS['wcpay_test_renewal_order_ids'] = array( $order->get_id() );
@@ -4126,6 +4315,86 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		);
 
 		return $sut;
+	}
+
+	/**
+	 * Wrap an API client so each intent it returns names the order in its metadata `order_id`, as an intent created for the
+	 * order does (WooPaymentsIntentRequestBuilder::metadata_from_order()); a recorded intent names the recording store's order.
+	 *
+	 * @param Client   $api_client API client returning the fixture intents.
+	 * @param WC_Order $order      Order the intents were created for.
+	 * @return Client
+	 */
+	private function bind_intents_to_order( Client $api_client, WC_Order $order ): Client {
+		return new class( $api_client, $order->get_id() ) extends Client {
+			/**
+			 * API client returning the fixture intents.
+			 *
+			 * @var Client
+			 */
+			private Client $inner;
+
+			/**
+			 * Order ID the intents name.
+			 *
+			 * @var int
+			 */
+			private int $order_id;
+
+			/**
+			 * Constructor.
+			 *
+			 * @param Client $inner    API client returning the fixture intents.
+			 * @param int    $order_id Order ID the intents name.
+			 */
+			public function __construct( Client $inner, int $order_id ) {
+				$this->inner    = $inner;
+				$this->order_id = $order_id;
+			}
+
+			/**
+			 * Tell whether the transport is available.
+			 *
+			 * @return bool
+			 */
+			public function is_available(): bool {
+				return $this->inner->is_available();
+			}
+
+			/**
+			 * Retrieve a PaymentIntent.
+			 *
+			 * @param string $intent_id PaymentIntent ID.
+			 * @return array<string,mixed>
+			 */
+			public function get_payment_intention( string $intent_id ): array {
+				return $this->with_order_id( $this->inner->get_payment_intention( $intent_id ) );
+			}
+
+			/**
+			 * Retrieve a SetupIntent.
+			 *
+			 * @param string $setup_intent_id SetupIntent ID.
+			 * @return array<string,mixed>
+			 */
+			public function get_setup_intention( string $setup_intent_id ): array {
+				return $this->with_order_id( $this->inner->get_setup_intention( $setup_intent_id ) );
+			}
+
+			/**
+			 * Name the order in an intent's metadata.
+			 *
+			 * @param array<string,mixed> $intent Intent response.
+			 * @return array<string,mixed>
+			 */
+			private function with_order_id( array $intent ): array {
+				$metadata             = isset( $intent['metadata'] ) && is_array( $intent['metadata'] ) ? $intent['metadata'] : array();
+				$metadata['order_id'] = (string) $this->order_id;
+				$intent['metadata']   = $metadata;
+
+				return $intent;
+			}
+		};
 	}
 
 	/**
