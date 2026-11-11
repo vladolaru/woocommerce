@@ -719,6 +719,20 @@ class WooPaymentsIntentRequestBuilder {
 	}
 
 	/**
+	 * Get the nonce action of an order's redirect return, which names the order (client 11.3.0 gw:4537).
+	 *
+	 * The return URL is minted with it and the redirect return verifies it.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @param int $order_id Order ID.
+	 * @return string
+	 */
+	public static function redirect_return_nonce_action( int $order_id ): string {
+		return 'wcpay_process_redirect_order_nonce_' . $order_id;
+	}
+
+	/**
 	 * Build the URL a redirect payment method returns the shopper to: the order-received page with the gateway ID, a nonce
 	 * and the save flag.
 	 *
@@ -729,7 +743,7 @@ class WooPaymentsIntentRequestBuilder {
 	private static function redirect_return_url( WC_Order $order, bool $save_payment_method ): string {
 		$query_args = array(
 			'wc_payment_method' => WooPaymentsPersistenceVocabulary::GATEWAY_ID,
-			'_wpnonce'          => wp_create_nonce( 'wcpay_process_redirect_order_nonce' ),
+			'_wpnonce'          => wp_create_nonce( self::redirect_return_nonce_action( $order->get_id() ) ),
 		);
 		if ( $save_payment_method ) {
 			$query_args['save_payment_method'] = 'yes';

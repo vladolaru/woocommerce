@@ -555,6 +555,48 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A redirect return proceeds only with a nonce minted for its own order: $_dataName.
+	 *
+	 * Client 11.3.0 mints and verifies the nonce under `wcpay_process_redirect_order_nonce_<order ID>` (gw:2159, 2564-2570,
+	 * 4537); a return whose nonce does not verify does nothing.
+	 *
+	 * @dataProvider provider_redirect_nonce_orders
+	 *
+	 * @param int|null $order_id_offset Offset from the order ID the nonce names, or null for a nonce that names no order.
+	 * @param int      $expected_reads  Intent fetches, which are also the confirmations.
+	 */
+	public function test_handle_wp_takes_only_the_nonce_minted_for_the_order( ?int $order_id_offset, int $expected_reads ): void {
+		$order                      = $this->create_order();
+		$api_client                 = new RedirectReturnApiClientStub();
+		$api_client->payment_intent = $this->successful_payment_intent( $order, 'pi_nonce', 'pm_nonce' );
+		$confirmation_service       = $this->createMock( WooPaymentsIntentConfirmationService::class );
+		$confirmation_service->expects( $this->exactly( $expected_reads ) )->method( 'confirm_fetched_intent_for_order' );
+		$this->sut = $this->create_controller( true, $confirmation_service, $api_client );
+		$this->set_payment_intent_return_request( $order, 'pi_nonce' );
+		$_GET['_wpnonce'] = wp_create_nonce( 'wcpay_process_redirect_order_nonce' . ( null === $order_id_offset ? '' : '_' . ( $order->get_id() + $order_id_offset ) ) );
+
+		$this->sut->handle_wp();
+		$reloaded = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $reloaded );
+		$this->assertSame( $expected_reads, $api_client->payment_intent_reads );
+		$this->assertSame( 'pending', $reloaded->get_status() );
+	}
+
+	/**
+	 * Orders a redirect return's nonce may name, and the intent fetches each one leads to.
+	 *
+	 * @return array<string,array{0:int|null,1:int}>
+	 */
+	public function provider_redirect_nonce_orders(): array {
+		return array(
+			'its own order' => array( 0, 1 ),
+			'another order' => array( 1, 0 ),
+			'no order'      => array( null, 0 ),
+		);
+	}
+
+	/**
 	 * Redirect returns the controller ignores before any intent fetch.
 	 *
 	 * @return array<string,array{0:string,1:array<string,string>}>
@@ -2578,7 +2620,7 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 		$this->set_order_received_context( $order );
 		$_GET = array(
 			'wc_payment_method'            => WooPaymentsPersistenceVocabulary::GATEWAY_ID,
-			'_wpnonce'                     => wp_create_nonce( 'wcpay_process_redirect_order_nonce' ),
+			'_wpnonce'                     => wp_create_nonce( 'wcpay_process_redirect_order_nonce_' . $order->get_id() ),
 			'payment_intent'               => $intent_id,
 			'payment_intent_client_secret' => $intent_id . '_secret_example',
 			'key'                          => $order->get_order_key(),
@@ -2606,7 +2648,7 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 		$this->set_order_received_context( $order );
 		$_GET = array(
 			'wc_payment_method'          => WooPaymentsPersistenceVocabulary::GATEWAY_ID,
-			'_wpnonce'                   => wp_create_nonce( 'wcpay_process_redirect_order_nonce' ),
+			'_wpnonce'                   => wp_create_nonce( 'wcpay_process_redirect_order_nonce_' . $order->get_id() ),
 			'setup_intent'               => $intent_id,
 			'setup_intent_client_secret' => $intent_id . '_secret_example',
 			'key'                        => $order->get_order_key(),

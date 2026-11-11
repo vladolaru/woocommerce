@@ -384,7 +384,7 @@ class WooPaymentsFeeDetailsJobSchedulingTest extends WC_Unit_Test_Case {
 		$intent_param                         = 'setup_intent' === $this->intent['object'] ? 'setup_intent' : 'payment_intent';
 		$_GET                                 = array(
 			'wc_payment_method'              => WooPaymentsPersistenceVocabulary::GATEWAY_ID,
-			'_wpnonce'                       => wp_create_nonce( 'wcpay_process_redirect_order_nonce' ),
+			'_wpnonce'                       => wp_create_nonce( 'wcpay_process_redirect_order_nonce_' . $order->get_id() ),
 			$intent_param                    => $this->intent['id'],
 			$intent_param . '_client_secret' => $this->intent['id'] . '_secret_example',
 			'key'                            => $order->get_order_key(),

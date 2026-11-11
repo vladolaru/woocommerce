@@ -145,13 +145,14 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 			return;
 		}
 
-		$nonce = $this->get_query_string( '_wpnonce' );
-		if ( '' === $nonce || ! wp_verify_nonce( $nonce, 'wcpay_process_redirect_order_nonce' ) ) {
+		// The nonce names the order it was minted for (client 11.3.0 gw:2564-2570).
+		$order_id = absint( get_query_var( 'order-received' ) );
+		$nonce    = $this->get_query_string( '_wpnonce' );
+		if ( '' === $nonce || ! wp_verify_nonce( $nonce, WooPaymentsIntentRequestBuilder::redirect_return_nonce_action( $order_id ) ) ) {
 			return;
 		}
 
 		$intent_id = $this->get_redirect_intent_id();
-		$order_id  = absint( get_query_var( 'order-received' ) );
 		$order_key = $this->get_query_string( 'key' );
 		if ( '' === $intent_id || 0 >= $order_id || '' === $order_key ) {
 			return;

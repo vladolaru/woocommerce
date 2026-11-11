@@ -3223,7 +3223,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		parse_str( (string) wp_parse_url( (string) $api_client->last_request_data['return_url'], PHP_URL_QUERY ), $query_args );
 
 		$this->assertSame( WooPaymentsPersistenceVocabulary::GATEWAY_ID, $query_args['wc_payment_method'] ?? '' );
-		$this->assertSame( 1, wp_verify_nonce( $query_args['_wpnonce'] ?? '', 'wcpay_process_redirect_order_nonce' ) );
+		$this->assertSame( 1, wp_verify_nonce( $query_args['_wpnonce'] ?? '', 'wcpay_process_redirect_order_nonce_' . $order->get_id() ) );
 
 		$this->assertSame( PaymentOutcome::STATUS_REQUIRES_REDIRECT, $outcome->get_status(), "$method's requires_action intent with a redirect_to_url next action must map to a direct provider redirect." );
 		$this->assertSame( 'https://pm-redirects.stripe.com/authorize/acct_test/pa_nonce', $outcome->get_redirect_url() );

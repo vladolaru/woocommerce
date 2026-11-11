@@ -226,7 +226,7 @@ class WooPaymentsIntentRequestBuilderTest extends WC_Unit_Test_Case {
 		parse_str( (string) wp_parse_url( (string) $request['return_url'], PHP_URL_QUERY ), $query_args );
 
 		$this->assertSame( WooPaymentsPersistenceVocabulary::GATEWAY_ID, $query_args['wc_payment_method'] ?? '' );
-		$this->assertSame( 1, wp_verify_nonce( $query_args['_wpnonce'] ?? '', 'wcpay_process_redirect_order_nonce' ) );
+		$this->assertSame( 1, wp_verify_nonce( $query_args['_wpnonce'] ?? '', 'wcpay_process_redirect_order_nonce_' . $order->get_id() ) );
 		$this->assertArrayNotHasKey( 'save_payment_method', $query_args );
 	}
 
