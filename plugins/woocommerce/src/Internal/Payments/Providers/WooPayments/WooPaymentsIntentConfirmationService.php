@@ -125,28 +125,11 @@ class WooPaymentsIntentConfirmationService {
 		$order->update_meta_data( '_intention_status', isset( $intent['status'] ) ? (string) $intent['status'] : '' );
 		$order->save();
 
-		// Client 11.1.0 gw:4337-4345: a payment method change does not take stock for the renewal it completes.
-		$confirm = function () use ( $order, $intent, $save_payment_method ): void {
-			SubscriptionMethodPolicy::run_without_stock_reduction(
-				function () use ( $order, $intent, $save_payment_method ): void {
-					$this->confirm_fetched_intent_for_order( $order, $intent, $save_payment_method, false, false );
-				}
-			);
-		};
-		if ( ! class_exists( 'WC_Subscriptions_Change_Payment_Gateway' ) ) {
-			$confirm();
-			return;
-		}
-
-		// While this flag is set, WooCommerce Subscriptions does not mark the subscription's last unpaid order paid when the SetupIntent completes it.
-		$was_change_request = \WC_Subscriptions_Change_Payment_Gateway::$is_request_to_change_payment;
-		\WC_Subscriptions_Change_Payment_Gateway::$is_request_to_change_payment = true;
-
-		try {
-			$confirm();
-		} finally {
-			\WC_Subscriptions_Change_Payment_Gateway::$is_request_to_change_payment = $was_change_request;
-		}
+		SubscriptionMethodPolicy::run_as_payment_method_change(
+			function () use ( $order, $intent, $save_payment_method ): void {
+				$this->confirm_fetched_intent_for_order( $order, $intent, $save_payment_method, false, false );
+			}
+		);
 	}
 	// phpcs:enable Squiz.Commenting.FunctionCommentThrowTag.WrongNumber
 

@@ -3571,6 +3571,152 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A validated payment method change saves the card and leaves the subscription's other orders unchanged: $_dataName.
+	 *
+	 * References: WooCommerce Subscriptions 9.4.1 class-wc-subscriptions-change-payment-gateway.php:83-87 and
+	 * class-wc-subscription.php:2059-2079 (SubscriptionDouble follows it); client 11.3.0
+	 * class-wc-payment-gateway-wcpay.php:2497-2500 and 1998-2002, which makes no completion call on a card change.
+	 *
+	 * @dataProvider provider_payment_method_change_paths
+	 *
+	 * @param bool $saved_card Whether the change picks a saved card (no intent) rather than a new card (a SetupIntent).
+	 */
+	public function test_process_payment_change_saves_the_card_and_leaves_other_orders_unchanged( bool $saved_card ): void {
+		list( $subscription, $renewal, $gateway, $payment_method_id ) = $this->arrange_payment_method_change_with_failed_renewal( $saved_card );
+
+		$_GET['change_payment_method'] = (string) $subscription->get_id();
+		\WC_Subscriptions_Change_Payment_Gateway::$is_request_to_change_payment = false;
+
+		$result = $gateway->process_payment( $subscription->get_id() );
+
+		$renewal      = wc_get_order( $renewal->get_id() );
+		$subscription = wc_get_order( $subscription->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $renewal );
+		$this->assertInstanceOf( WC_Order::class, $subscription );
+		$this->assertSame( 'success', $result['result'] ?? '' );
+		$this->assertSame( 'failed', $renewal->get_status() );
+		$this->assertSame( '', $renewal->get_transaction_id() );
+		$this->assertNotContains( 'Payment status marked complete.', array_map( static fn( $note ): string => (string) $note->content, wc_get_order_notes( array( 'order_id' => $subscription->get_id() ) ) ) );
+		$this->assertSame( $payment_method_id, $subscription->get_meta( '_payment_method_id', true ), 'The change saves the card.' );
+		$this->assertFalse( \WC_Subscriptions_Change_Payment_Gateway::$is_request_to_change_payment, 'The flag gets its earlier value back.' );
+	}
+
+	/**
+	 * Payment method change paths at checkout.
+	 *
+	 * @return array<string,array{bool}>
+	 */
+	public function provider_payment_method_change_paths(): array {
+		return array(
+			'new card, SetupIntent'         => array( false ),
+			'saved card, zero amount, none' => array( true ),
+		);
+	}
+
+	/**
+	 * Arrange a validated payment method change on an active subscription whose newest renewal failed, with the real
+	 * processing service and a provider whose charge returns the change's outcome.
+	 *
+	 * The change request carries Subscriptions' change nonce and the subscription ID it posts
+	 * (templates/checkout/form-change-payment-method.php:108, :129 in WooCommerce Subscriptions 9.4.1).
+	 *
+	 * @param bool $saved_card Whether the change picks a saved card (a zero-amount change with no intent) rather than a new card (a succeeded SetupIntent).
+	 * @return array{0:SubscriptionDouble,1:WC_Order,2:WooPaymentsGateway,3:string} The subscription, its renewal, the gateway and the payment method ID the change saves.
+	 */
+	private function arrange_payment_method_change_with_failed_renewal( bool $saved_card ): array {
+		WooCommerceSubscriptionsDoubles::load_change_payment_gateway();
+		WooCommerceSubscriptionsDoubles::load();
+		$user_id = $this->factory()->user->create( array( 'role' => 'customer' ) );
+		wp_set_current_user( $user_id );
+		$subscription = $this->create_subscription( $user_id, '' );
+		// WooCommerce Subscriptions zeroes the subscription's total on the change request.
+		$subscription->set_total( '0.00' );
+		$subscription->set_status( 'active' );
+		$subscription->update_meta_data( '_payment_method_id', 'pm_old' );
+		$subscription->save();
+		$renewal = $this->create_order();
+		$renewal->set_customer_id( $user_id );
+		$renewal->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+		$renewal->set_status( 'failed' );
+		$renewal->save();
+		$GLOBALS[ WooCommerceSubscriptionsDoubles::ORDER_SUBSCRIPTIONS ] = array( $renewal->get_id() => array( 'renewal' => array( $subscription->get_id() ) ) );
+
+		$payment_method_id = $saved_card ? 'pm_saved' : 'pm_new';
+		$token             = $this->create_card_token( $user_id, $payment_method_id );
+		if ( $saved_card ) {
+			$outcome = ( new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, '', '', $payment_method_id, 'cus_change' ) )->with_effect_plan(
+				WooPaymentsOrderEffectPlan::for_zero_amount_without_intent( array( '_wcpay_mode' => 'test' ), $token->get_id() )
+			);
+			$_POST[ 'wc-' . WooPaymentsPersistenceVocabulary::GATEWAY_ID . '-payment-token' ] = (string) $token->get_id();
+		} else {
+			$intent  = array(
+				'id'             => 'seti_change',
+				'status'         => 'succeeded',
+				'customer'       => 'cus_change',
+				'payment_method' => $payment_method_id,
+				'metadata'       => array( 'order_id' => (string) $subscription->get_id() ),
+			);
+			$outcome = WooPaymentsIntentCodec::outcome_from_intention(
+				$intent,
+				new WooPaymentsIntentMappingContext( $subscription->get_checkout_order_received_url(), $payment_method_id, 'cus_change', '', 'si' )
+			)->with_effect_plan( WooPaymentsOrderEffectPlan::for_setup_intent( $intent, true, array( '_wcpay_mode' => 'test' ) ) );
+			$_POST[ 'wc-' . WooPaymentsPersistenceVocabulary::GATEWAY_ID . '-payment-token' ] = 'new';
+			$_POST['wcpay-payment-method'] = $payment_method_id;
+		}
+
+		$token_service = new class( $token ) extends WooPaymentsTokenService {
+			/**
+			 * The card the change saves.
+			 *
+			 * @var WC_Payment_Token
+			 */
+			private WC_Payment_Token $change_token;
+
+			/**
+			 * Constructor.
+			 *
+			 * @param WC_Payment_Token $change_token The card the change saves.
+			 */
+			public function __construct( WC_Payment_Token $change_token ) {
+				$this->change_token = $change_token;
+			}
+
+			/**
+			 * Answer with the saved card, as the token service does once the platform returns the payment method.
+			 *
+			 * @param string $payment_method_id              Provider payment method ID.
+			 * @param int    $user_id                         User ID.
+			 * @param bool   $include_existing_token_details Whether to retrieve details for an existing token.
+			 * @return array{token:WC_Payment_Token|null,payment_method_details:array<string,mixed>}
+			 */
+			public function get_or_create_token_and_details_for_user( string $payment_method_id, int $user_id, bool $include_existing_token_details = false ): array {
+				unset( $payment_method_id, $user_id, $include_existing_token_details );
+
+				return array(
+					'token'                  => $this->change_token,
+					'payment_method_details' => array(),
+				);
+			}
+		};
+		$container     = wc_get_container();
+		$token_service->init(
+			$container->get( WooPaymentsPaymentMethodDetailsService::class ),
+			$container->get( Client::class ),
+			$container->get( WooPaymentsCustomerService::class ),
+			$container->get( WooPaymentsAccountService::class ),
+			$container->get( WooPaymentsOrderDataService::class ),
+			$container->get( PaymentMethodRegistry::class )
+		);
+
+		$gateway = new WooPaymentsGateway();
+		$gateway->init( wc_get_container()->get( PaymentProcessingService::class ), $this->create_provider_charging( $outcome, $token_service ) );
+		$_POST['_wcsnonce']                  = wp_create_nonce( 'wcs_change_payment_method' );
+		$_POST['woocommerce_change_payment'] = (string) $subscription->get_id();
+
+		return array( $subscription, $renewal, $gateway, $payment_method_id );
+	}
+
+	/**
 	 * @testdox A $0 subscription payment-method change whose new card cannot be saved after its SetupIntent succeeded is refused and keeps the subscription's payment method and status.
 	 *
 	 * Nothing is charged on a change, so it is refused as the change confirmed after 3D Secure is (client 11.1.0

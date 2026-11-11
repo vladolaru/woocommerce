@@ -1599,8 +1599,7 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 		);
 		$this->checkout_payment_started = true;
 		$outcome                        = $is_subscription_payment_method_change
-			// Client 11.1.0 gw:2197-2205: a payment method change does not take stock for the renewal it completes.
-			? SubscriptionMethodPolicy::run_without_stock_reduction(
+			? SubscriptionMethodPolicy::run_as_payment_method_change(
 				fn() => $this->get_processing_service()->process_checkout_outcome( $context, $this->get_provider() )
 			)
 			: $this->get_processing_service()->process_checkout_outcome( $context, $this->get_provider() );

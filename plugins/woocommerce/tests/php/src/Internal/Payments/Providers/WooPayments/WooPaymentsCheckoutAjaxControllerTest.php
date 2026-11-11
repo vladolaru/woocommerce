@@ -3359,9 +3359,10 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Order-status callback gives the change request flag its earlier value back when a payment method change confirmation fails.
+	 * @testdox Order-status callback runs a payment method change with the change request flag set and gives it its earlier value back when the change fails.
 	 *
-	 * A subscription with a recurring total whose new card cannot be saved: the confirmation refuses it inside the flag's scope.
+	 * A subscription with a recurring total whose new card cannot be saved: the confirmation refuses it inside the flag's scope
+	 * with the recurring token-save error (client 11.3.0 class-wc-payment-gateway-wcpay.php:4724-4740).
 	 */
 	public function test_update_order_status_restores_the_change_request_flag_when_the_change_fails(): void {
 		WooCommerceSubscriptionsDoubles::load_change_payment_gateway();
@@ -3407,8 +3408,30 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 				);
 			}
 		};
-		// No payment method details for pm_change, so the token cannot be created.
-		$sut = $this->create_controller( $api_client, null, $this->create_token_service() );
+		// The card cannot be saved; the double records the change request flag while the save runs.
+		$token_service = new class() extends WooPaymentsTokenService {
+			/**
+			 * Change request flag values seen while the card was being saved.
+			 *
+			 * @var bool[]
+			 */
+			public array $flag_during_save = array();
+
+			/**
+			 * Answer as a failed card save does, recording the change request flag.
+			 *
+			 * @param string $payment_method_id Provider payment method ID.
+			 * @param int    $user_id           User ID.
+			 * @return WC_Payment_Token|null
+			 */
+			public function get_or_create_token_for_user( string $payment_method_id, int $user_id ): ?WC_Payment_Token {
+				unset( $payment_method_id, $user_id );
+				$this->flag_during_save[] = \WC_Subscriptions_Change_Payment_Gateway::$is_request_to_change_payment;
+
+				return null;
+			}
+		};
+		$sut           = $this->create_controller( $this->bind_intents_to_order( $api_client, $subscription ), null, $token_service );
 		\WC_Subscriptions_Change_Payment_Gateway::$is_request_to_change_payment = false;
 
 		try {
@@ -3425,7 +3448,9 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 			unset( $GLOBALS[ WooCommerceSubscriptionsDoubles::SUBSCRIPTION_IDS ] );
 		}
 
-		$this->assertNotSame( 200, $response['status_code'], 'The change is refused.' );
+		$this->assertSame( 409, $response['status_code'], 'The change is refused.' );
+		$this->assertSame( 'Unable to save payment method for subscription. Please try again or use a different payment method.', $response['error']['message'] ?? '' );
+		$this->assertSame( array( true ), $token_service->flag_during_save, 'The card save runs inside the change scope.' );
 		$this->assertSame( array(), \WC_Subscriptions_Change_Payment_Gateway::$updated_payment_methods );
 		$this->assertFalse( \WC_Subscriptions_Change_Payment_Gateway::$is_request_to_change_payment, 'The change request flag gets its earlier value back.' );
 	}
