@@ -109,6 +109,8 @@ class WooPaymentsFraudOrderTrackingService implements RegisterHooksInterface {
 			add_filter( 'wc_subscriptions_renewal_order_data', array( $this, 'handle_wc_subscriptions_renewal_order_data' ), 10, 3 );
 		} else {
 			add_filter( 'wcs_renewal_order_meta_query', array( $this, 'handle_wcs_renewal_order_meta_query' ), 10, 3 );
+			// Client 11.3.0 leaves the marker out of the subscription query too (trait-wc-payment-gateway-wcpay-subscriptions.php:317-320, 1182-1184).
+			add_filter( 'wcs_subscription_meta_query', array( $this, 'handle_wcs_renewal_order_meta_query' ), 10, 3 );
 		}
 	}
 
@@ -252,7 +254,7 @@ class WooPaymentsFraudOrderTrackingService implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Handle the wcs_renewal_order_meta_query filter.
+	 * Handle the wcs_renewal_order_meta_query and wcs_subscription_meta_query filters: leave the order tracking marker out.
 	 *
 	 * @internal
 	 *

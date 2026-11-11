@@ -93,6 +93,32 @@ class WooPaymentsFraudOrderTrackingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Subscriptions versions without the data copier leave the order tracking marker out of the subscription and renewal meta queries: $copy_type.
+	 *
+	 * Client 11.3.0 registers its exclusion on both legacy queries (trait-wc-payment-gateway-wcpay-subscriptions.php:317-320,
+	 * 1182-1184).
+	 *
+	 * @testWith ["subscription"]
+	 *           ["renewal_order"]
+	 *
+	 * @param string $copy_type Subscriptions copy type.
+	 */
+	public function test_legacy_subscription_meta_queries_leave_out_the_tracking_marker( string $copy_type ): void {
+		if ( class_exists( 'WC_Subscriptions_Data_Copier' ) ) {
+			$this->markTestSkipped( 'The legacy meta queries apply only without the data copier.' );
+		}
+		$service = $this->create_service();
+		$service->register();
+		$query = 'SELECT meta_key, meta_value FROM wp_postmeta WHERE post_id = 123';
+
+		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Fired as older WooCommerce Subscriptions versions do.
+		$filtered = apply_filters( "wcs_{$copy_type}_meta_query", $query, new \WC_Order(), new \WC_Order() );
+
+		$this->assertStringStartsWith( $query, $filtered );
+		$this->assertStringContainsString( "`meta_key` NOT IN ('_new_order_tracking_complete')", $filtered );
+	}
+
+	/**
 	 * @testdox Should remove tracking completion meta from legacy renewal meta queries.
 	 */
 	public function test_removes_tracking_complete_meta_from_legacy_renewal_meta_query(): void {

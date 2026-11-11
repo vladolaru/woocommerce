@@ -513,7 +513,9 @@ class SubscriptionsControllerTest extends WC_Unit_Test_Case {
 		$filtered = apply_filters( "wcs_{$copy_type}_meta_query", $query, new WC_Order(), new WC_Order() );
 
 		$this->assertStringStartsWith( $query, $filtered );
-		$this->assertStringContainsString( " AND `meta_key` NOT IN ('_intent_id', '_intention_status', '_charge_id', '_wcpay_payment_transaction_id', '_wcpay_payment_method_details', '_wcpay_transaction_fee', '_wcpay_net', '_wcpay_payment_details_removed', '_wcpay_superseded_intent_ids')", $filtered );
+		foreach ( array( '_intent_id', '_intention_status', '_charge_id', '_wcpay_payment_transaction_id', '_wcpay_payment_method_details', '_wcpay_transaction_fee', '_wcpay_net', '_wcpay_payment_details_removed', '_wcpay_superseded_intent_ids' ) as $meta_key ) {
+			$this->assertMatchesRegularExpression( "/ AND `meta_key` NOT IN \\([^)]*'" . preg_quote( $meta_key, '/' ) . "'[^)]*\\)/", $filtered, "The $copy_type meta query must leave out $meta_key." );
+		}
 		$this->assertStringNotContainsString( '_payment_method_id', $filtered );
 		$this->assertStringNotContainsString( '_stripe_customer_id', $filtered );
 	}
