@@ -2374,11 +2374,19 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 	/**
 	 * Tell whether the current request is a validated WC Subscriptions payment-method change.
 	 *
+	 * It carries Subscriptions' change nonce, names the processed subscription in the change_payment_method query argument
+	 * (client 11.3.0 class-wc-payment-gateway-wcpay.php:1458, trait-wc-payments-subscriptions-utilities.php:48-50), and
+	 * names it in the request.
+	 *
 	 * @param WC_Order $order Subscription order.
 	 * @return bool
 	 */
 	private function is_subscription_payment_method_change_request( WC_Order $order ): bool {
 		if ( ! isset( $_POST['_wcsnonce'] ) || ! wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['_wcsnonce'] ) ), 'wcs_change_payment_method' ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Missing
+			return false;
+		}
+
+		if ( ! isset( $_GET['change_payment_method'] ) || $order->get_id() !== absint( $_GET['change_payment_method'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended
 			return false;
 		}
 

@@ -2397,6 +2397,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 
 		$_POST['_wcsnonce']                          = wp_create_nonce( 'wcs_change_payment_method' );
 		$_POST['woocommerce_change_payment']         = (string) $order->get_id();
+		$_GET['change_payment_method']               = (string) $order->get_id();
 		$_POST['wcpay-payment-method']               = 'woocommerce_payments_payment_method_error';
 		$_POST['wcpay-payment-method-error-message'] = 'Your card number is invalid.';
 
@@ -3427,6 +3428,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$GLOBALS['wcpay_test_subscription_ids'] = array( $subscription->get_id() );
 		$_POST['_wcsnonce']                     = wp_create_nonce( 'wcs_change_payment_method' );
 		$_POST['woocommerce_change_payment']    = (string) $subscription->get_id();
+		$_GET['change_payment_method']          = (string) $subscription->get_id();
 
 		$_POST[ 'wc-' . WooPaymentsPersistenceVocabulary::GATEWAY_ID . '-payment-token' ] = 'new';
 
@@ -3778,6 +3780,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$GLOBALS['wcpay_test_subscription_ids'] = array( $subscription->get_id() );
 		$_POST['_wcsnonce']                     = wp_create_nonce( 'wcs_change_payment_method' );
 		$_POST['woocommerce_change_payment']    = (string) $subscription->get_id();
+		$_GET['change_payment_method']          = (string) $subscription->get_id();
 		$_POST['wcpay-payment-method']          = (string) $intent['payment_method'];
 
 		$_POST[ 'wc-' . WooPaymentsPersistenceVocabulary::GATEWAY_ID . '-payment-token' ] = 'new';
@@ -4019,6 +4022,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$GLOBALS['wcpay_test_subscription_ids'] = array( $subscription->get_id() );
 		$_POST['_wcsnonce']                     = wp_create_nonce( 'wcs_change_payment_method' );
 		$_POST['woocommerce_change_payment']    = (string) $subscription->get_id();
+		$_GET['change_payment_method']          = (string) $subscription->get_id();
 
 		$_POST[ 'wc-' . WooPaymentsPersistenceVocabulary::GATEWAY_ID . '-payment-token' ] = 'new';
 
@@ -4895,6 +4899,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$GLOBALS['wcpay_test_subscription_ids'] = array( $order->get_id() );
 		$_POST['_wcsnonce']                     = wp_create_nonce( 'wcs_change_payment_method' );
 		$_POST['woocommerce_change_payment']    = (string) $order->get_id();
+		$_GET['change_payment_method']          = (string) $order->get_id();
 
 		$_POST[ 'wc-' . WooPaymentsPersistenceVocabulary::GATEWAY_ID . '-payment-token' ] = 'new';
 
@@ -4946,6 +4951,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$GLOBALS['wcpay_test_subscription_ids'] = array( $order->get_id() );
 		$_POST['_wcsnonce']                     = wp_create_nonce( 'wcs_change_payment_method' );
 		$_POST['woocommerce_change_payment']    = (string) $order->get_id();
+		$_GET['change_payment_method']          = (string) $order->get_id();
 
 		$_POST[ 'wc-' . WooPaymentsPersistenceVocabulary::GATEWAY_ID . '-payment-token' ] = 'new';
 
@@ -4994,6 +5000,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$GLOBALS['wcpay_test_subscription_ids'] = array( $order->get_id() );
 		$_POST['_wcsnonce']                     = wp_create_nonce( 'wcs_change_payment_method' );
 		$_POST['woocommerce_change_payment']    = (string) $order->get_id();
+		$_GET['change_payment_method']          = (string) $order->get_id();
 		$_POST['wcpay-payment-method']          = 'pm_card';
 
 		$_POST[ 'wc-' . WooPaymentsPersistenceVocabulary::GATEWAY_ID . '-payment-token' ] = 'new';
@@ -5100,6 +5107,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$GLOBALS['wcpay_test_subscription_ids'] = array( $order->get_id() );
 		$_POST['_wcsnonce']                     = wp_create_nonce( 'wcs_change_payment_method' );
 		$_POST['woocommerce_change_payment']    = (string) $order->get_id();
+		$_GET['change_payment_method']          = (string) $order->get_id();
 		$_POST['wcpay-payment-method']          = 'pm_card';
 
 		$_POST[ 'wc-' . WooPaymentsPersistenceVocabulary::GATEWAY_ID . '-payment-token' ] = 'new';
@@ -5150,9 +5158,9 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 * @param string   $request_key           POST key naming the subscription.
 	 * @param int|null $request_offset        Offset of the posted subscription ID from the order ID, or null to post '0'.
 	 * @param int[]    $subscription_offsets  Offsets from the order ID of the IDs registered as subscriptions.
-	 * @param bool     $in_query              Whether the page's `change_payment_method` query argument names the posted ID too.
+	 * @param int|null $query_offset          Offset from the order ID of the ID the `change_payment_method` query argument names, or null for none.
 	 */
-	public function test_process_payment_refuses_a_subscription_outside_a_validated_change( string $nonce, string $request_key, ?int $request_offset, array $subscription_offsets, bool $in_query = false ): void {
+	public function test_process_payment_refuses_a_subscription_outside_a_validated_change( string $nonce, string $request_key, ?int $request_offset, array $subscription_offsets, ?int $query_offset = null ): void {
 		WooCommerceSubscriptionsDoubles::load_change_payment_gateway();
 		WooCommerceSubscriptionsDoubles::load_subscription_detector();
 		$order = $this->create_order();
@@ -5168,8 +5176,8 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		}
 		$posted_id             = null === $request_offset ? '0' : (string) ( $order->get_id() + $request_offset );
 		$_POST[ $request_key ] = $posted_id;
-		if ( $in_query ) {
-			$_GET['change_payment_method'] = $posted_id;
+		if ( null !== $query_offset ) {
+			$_GET['change_payment_method'] = (string) ( $order->get_id() + $query_offset );
 		}
 
 		$_POST[ 'wc-' . WooPaymentsPersistenceVocabulary::GATEWAY_ID . '-payment-token' ] = 'new';
@@ -5193,18 +5201,18 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	/**
 	 * Subscription change requests that are not validated changes, for an order that is a subscription.
 	 *
-	 * Each row is a pay request for a subscription that is not a validated change; each is refused.
-	 *
-	 * @return array<string,array{0:string,1:string,2:int|null,3:int[],4?:bool}>
+	 * @return array<string,array{0:string,1:string,2:int|null,3:int[],4?:int|null}>
 	 */
 	public static function provider_invalid_subscription_change_requests(): array {
 		return array(
-			'zero request ID'                 => array( 'valid', 'change_payment_method', null, array( 0 ) ),
-			'mismatched request ID'           => array( 'valid', 'change_payment_method', 1, array( 0 ) ),
-			'missing nonce'                   => array( '', 'woocommerce_change_payment', 0, array( 0, 0 ) ),
-			'invalid nonce'                   => array( 'invalid-nonce', 'woocommerce_change_payment', 0, array( 0, 0 ) ),
-			'mismatched real subscription'    => array( 'valid', 'woocommerce_change_payment', 1, array( 0, 1 ) ),
-			'query argument, no change nonce' => array( '', 'woocommerce_change_payment', 0, array( 0 ), true ),
+			'zero request ID'                    => array( 'valid', 'change_payment_method', null, array( 0 ) ),
+			'mismatched request ID'              => array( 'valid', 'change_payment_method', 1, array( 0 ) ),
+			'missing nonce'                      => array( '', 'woocommerce_change_payment', 0, array( 0, 0 ) ),
+			'invalid nonce'                      => array( 'invalid-nonce', 'woocommerce_change_payment', 0, array( 0, 0 ) ),
+			'mismatched real subscription'       => array( 'valid', 'woocommerce_change_payment', 1, array( 0, 1 ) ),
+			'query argument, no change nonce'    => array( '', 'woocommerce_change_payment', 0, array( 0 ), 0 ),
+			'query argument, other subscription' => array( 'valid', 'woocommerce_change_payment', 0, array( 0, 1 ), 1 ),
+			'no query argument'                  => array( 'valid', 'woocommerce_change_payment', 0, array( 0 ) ),
 		);
 	}
 
@@ -5256,6 +5264,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$GLOBALS['wcpay_test_subscription_ids'] = array( $order->get_id() );
 		$_POST['_wcsnonce']                     = wp_create_nonce( 'wcs_change_payment_method' );
 		$_POST['woocommerce_change_payment']    = (string) $order->get_id();
+		$_GET['change_payment_method']          = (string) $order->get_id();
 		$_POST[ 'wc-' . WooPaymentsPersistenceVocabulary::GATEWAY_ID . '-payment-token' ] = (string) $token->get_id();
 		// WooCommerce Subscriptions points the return URL at My Account during a change request and then sends the shopper to the subscription.
 		$return_url_filter = static function ( string $return_url, WC_Order $filtered_order ) use ( $order ): string {
@@ -5303,6 +5312,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$GLOBALS['wcpay_test_subscription_ids'] = array( $order->get_id() );
 		$_POST['_wcsnonce']                     = wp_create_nonce( 'wcs_change_payment_method' );
 		$_POST['woocommerce_change_payment']    = (string) $order->get_id();
+		$_GET['change_payment_method']          = (string) $order->get_id();
 		$_POST[ 'wc-' . WooPaymentsPersistenceVocabulary::GATEWAY_ID . '-payment-token' ] = (string) $token->get_id();
 
 		try {
@@ -8129,6 +8139,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		wp_set_current_user( $subscription->get_customer_id() );
 		$_POST['_wcsnonce']                             = wp_create_nonce( 'wcs_change_payment_method' );
 		$_POST['woocommerce_change_payment']            = (string) $subscription->get_id();
+		$_GET['change_payment_method']                  = (string) $subscription->get_id();
 		$_POST['wc-woocommerce_payments-payment-token'] = (string) $token->get_id();
 
 		$service                   = $service ?? new RecordingPaymentProcessingService();
