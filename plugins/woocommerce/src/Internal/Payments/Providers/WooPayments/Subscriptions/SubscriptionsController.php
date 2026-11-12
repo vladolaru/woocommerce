@@ -8,6 +8,8 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions;
 
 use Automattic\WooCommerce\Enums\OrderStatus;
+use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
+use Automattic\WooCommerce\Internal\Payments\PaymentLifecycleEvent;
 use Automattic\WooCommerce\Internal\Payments\PaymentOperationContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcomeApplyException;
@@ -371,7 +373,11 @@ class SubscriptionsController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Handle a scheduled renewal that requires customer authentication.
+	 * Handle a scheduled renewal that requires customer authentication: fire the authentication hook, then fail the renewal.
+	 *
+	 * The failure is applied after the checkout's order payment lock is released, under a claim of its own for the intent,
+	 * on the renewal read again under it: nothing is written to a renewal already Failed, to a paid one, or to one that has
+	 * the failure note (client 11.3.0 class-wc-payment-gateway-wcpay.php:2221-2222, class-wc-payments-order-service.php:545-555).
 	 *
 	 * @param WC_Order       $renewal_order Renewal order.
 	 * @param PaymentOutcome $outcome       Provider payment outcome.
@@ -431,14 +437,37 @@ class SubscriptionsController implements RegisterHooksInterface {
 			throw $exception;
 		}
 
-		if ( ! $renewal_order->has_status( OrderStatus::FAILED ) ) {
-			$renewal_order->update_status( OrderStatus::FAILED );
-		}
+		wc_get_container()->get( OrderPaymentLifecycleService::class )->apply_rebuilt_under_claim(
+			$renewal_order,
+			$this->build_customer_action_failure_event( $renewal_order, $outcome, $charge_id ),
+			new WooPaymentsPersistenceVocabulary(),
+			function ( WC_Order $read_order ) use ( $outcome, $charge_id ): ?PaymentLifecycleEvent {
+				return $read_order->has_status( OrderStatus::FAILED ) ? null : $this->build_customer_action_failure_event( $read_order, $outcome, $charge_id );
+			}
+		);
+	}
 
+	/**
+	 * Build the failed event of a renewal that requires customer authentication, with its failure note.
+	 *
+	 * @param WC_Order       $renewal_order Renewal order.
+	 * @param PaymentOutcome $outcome       Provider payment outcome.
+	 * @param string         $charge_id     Provider charge ID.
+	 * @return PaymentLifecycleEvent
+	 */
+	private function build_customer_action_failure_event( WC_Order $renewal_order, PaymentOutcome $outcome, string $charge_id ): PaymentLifecycleEvent {
 		$failure_note = $this->get_subscription_customer_action_failure_note( $renewal_order, $outcome, $charge_id );
-		if ( '' !== $failure_note && ! $this->order_has_note_containing( $renewal_order, $failure_note ) ) {
-			$renewal_order->add_order_note( $failure_note );
-		}
+		$intent_id    = $outcome->get_provider_payment_id();
+
+		return new PaymentLifecycleEvent(
+			PaymentLifecycleEvent::STATUS_FAILED,
+			'' === $intent_id ? null : $intent_id,
+			array(),
+			array(),
+			'' === $failure_note ? null : $failure_note,
+			null,
+			'' === $failure_note ? array() : array( $failure_note )
+		);
 	}
 
 	/**
@@ -464,30 +493,6 @@ class SubscriptionsController implements RegisterHooksInterface {
 				esc_html( $transaction_id )
 			)
 		);
-	}
-
-	/**
-	 * Tell whether an order already has a note containing the expected text.
-	 *
-	 * @param WC_Order $order         Order object.
-	 * @param string   $expected_note Expected note text.
-	 * @return bool
-	 */
-	private function order_has_note_containing( WC_Order $order, string $expected_note ): bool {
-		$notes = wc_get_order_notes(
-			array(
-				'order_id' => $order->get_id(),
-				'type'     => 'any',
-			)
-		);
-
-		foreach ( $notes as $note ) {
-			if ( str_contains( (string) $note->content, $expected_note ) ) {
-				return true;
-			}
-		}
-
-		return false;
 	}
 
 	/**

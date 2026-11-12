@@ -21,6 +21,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\EventIngestor;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCurrencyUtils;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExtensionRuntime;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDataService;
@@ -1215,6 +1216,68 @@ class SubscriptionsControllerTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'pi_renewal_auth', $order->get_transaction_id() );
 		$this->assertSame( 'pi_renewal_auth', $order->get_meta( '_intent_id', true ) );
 		$this->assertSame( 'requires_action', $order->get_meta( '_intention_status', true ) );
+	}
+
+	/**
+	 * @testdox A scheduled renewal that needs authentication fires the hook once, then fails under the client's guards: $_dataName.
+	 *
+	 * Client 11.3.0 fires the hook, then runs its failed writer (class-wc-payment-gateway-wcpay.php:2221-2222), which writes
+	 * nothing to a paid order, nor once its note is on the order or the order is Failed
+	 * (class-wc-payments-order-service.php:545-555, :3403-3416).
+	 *
+	 * @dataProvider provider_renewals_a_listener_changes
+	 *
+	 * @param string $listener_status Status a hook listener saves on the renewal, or '' for none.
+	 * @param bool   $listener_notes  Whether the listener also adds the failure note.
+	 * @param string $expected_status Status the renewal ends in.
+	 * @param int    $expected_notes  Failure notes the renewal ends with.
+	 */
+	public function test_scheduled_renewal_authentication_failure_keeps_the_client_guards( string $listener_status, bool $listener_notes, string $expected_status, int $expected_notes ): void {
+		list( $order, $outcome ) = $this->arrange_renewal_needing_authentication();
+		$failure_note            = wp_kses_post(
+			sprintf(
+				'A payment of %1$s <strong>failed</strong> using WooPayments (<code>pi_renewal_auth</code>).',
+				WooPaymentsCurrencyUtils::format_price_in_currency( 12.0, 'USD' )
+			)
+		);
+		$hook_calls              = 0;
+		add_action(
+			'woocommerce_woocommerce_payments_payment_requires_action',
+			static function ( WC_Order $hook_order ) use ( &$hook_calls, $listener_status, $listener_notes, $failure_note ): void {
+				++$hook_calls;
+				if ( '' === $listener_status ) {
+					return;
+				}
+				$other = wc_get_order( $hook_order->get_id() );
+				$other->set_status( $listener_status );
+				$other->save();
+				if ( $listener_notes ) {
+					$other->add_order_note( $failure_note );
+				}
+			}
+		);
+		$sut = $this->create_sut( wc_get_container()->get( PaymentProcessingService::class ), $this->create_provider_charging( $outcome ) );
+
+		$sut->scheduled_subscription_payment( 12.0, wc_get_order( $order->get_id() ) );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( 1, $hook_calls );
+		$this->assertSame( $expected_status, $order->get_status() );
+		$this->assertCount( $expected_notes, array_filter( wp_list_pluck( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), 'content' ), static fn( string $note ): bool => $note === $failure_note ) );
+	}
+
+	/**
+	 * Renewals a requires-action hook listener changes.
+	 *
+	 * @return array<string,array{string,bool,string,int}>
+	 */
+	public function provider_renewals_a_listener_changes(): array {
+		return array(
+			'Pending'                            => array( '', false, 'failed', 1 ),
+			'Processing, by a listener'          => array( 'processing', false, 'processing', 0 ),
+			'Failed, by a listener'              => array( 'failed', false, 'failed', 0 ),
+			'Cancelled and noted, by a listener' => array( 'cancelled', true, 'cancelled', 1 ),
+		);
 	}
 
 	/**
