@@ -1520,23 +1520,27 @@ class SessionServiceTest extends WC_Unit_Test_Case {
 	 * Client 11.3.0 class-woopay-utilities.php:518-530: the details count only in the session that stored them; details
 	 * with no recorded session, as ones stored before 11.3.0, are not read.
 	 *
-	 * @testWith ["this session", null, false]
-	 *           ["another session", "t_another_session", false]
-	 *           ["another session, opted in on the posted form", "t_another_session", true]
-	 *           ["no recorded session", "", false]
+	 * Client 11.3.0 class-woopay-utilities.php:519-521 also reads nothing unless the shopper already has a session.
 	 *
-	 * @param string      $label     Case label.
-	 * @param string|null $stored_by Session recorded as storing the details, or null for the current one.
-	 * @param bool        $posted    Whether the checkout form posts the opt-in, without the phone.
+	 * @testWith ["this session", null, false, true]
+	 *           ["another session", "t_another_session", false, true]
+	 *           ["another session, opted in on the posted form", "t_another_session", true, true]
+	 *           ["no recorded session", "", false, true]
+	 *           ["this session, the handler reporting no session", null, false, false]
+	 *
+	 * @param string      $label       Case label.
+	 * @param string|null $stored_by   Session recorded as storing the details, or null for the current one.
+	 * @param bool        $posted      Whether the checkout form posts the opt-in, without the phone.
+	 * @param bool        $has_session Whether the session handler reports a shopper session.
 	 */
-	public function test_adds_woopay_session_data_to_order_metadata( string $label, ?string $stored_by, bool $posted ): void {
+	public function test_adds_woopay_session_data_to_order_metadata( string $label, ?string $stored_by, bool $posted, bool $has_session ): void {
 		unset( $label );
 		$original_post = $_POST; // phpcs:ignore WordPress.Security.NonceVerification.Missing
 		if ( $posted ) {
 			$_POST['save_user_in_woopay'] = 'true';
 		}
 		$this->original_session = WC()->session;
-		WC()->session           = $this->create_session();
+		WC()->session           = $this->create_session( $has_session );
 		$details                = array(
 			'save_user_in_woopay'     => true,
 			'woopay_source_url'       => 'https://example.test/checkout',
@@ -1571,7 +1575,7 @@ class SessionServiceTest extends WC_Unit_Test_Case {
 			$_POST = $original_post;
 		}
 
-		if ( null !== $stored_by ) {
+		if ( null !== $stored_by || ! $has_session ) {
 			$this->assertSame( array( 'existing' => 'kept' ), $metadata );
 
 			return;
@@ -1997,7 +2001,9 @@ class SessionServiceTest extends WC_Unit_Test_Case {
 	 * @testdox Should read the WooPay save-user opt-in from the posted field or the WooPay session.
 	 */
 	public function test_should_save_user_in_woopay_reads_posted_and_session_flags(): void {
-		$sut = $this->create_service();
+		$this->original_session = WC()->session;
+		WC()->session           = $this->create_session();
+		$sut                    = $this->create_service();
 
 		$this->assertFalse( $sut->should_save_user_in_woopay() );
 

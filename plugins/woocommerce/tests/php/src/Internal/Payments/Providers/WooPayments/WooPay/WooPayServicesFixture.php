@@ -716,16 +716,42 @@ trait WooPayServicesFixture {
 	/**
 	 * Create a WooCommerce session test double.
 	 *
+	 * @param bool $has_session What the double's has_session() answers: whether the shopper already has a session.
 	 * @return object
 	 */
-	private function create_session(): object {
-		return new class() extends \WC_Session {
+	private function create_session( bool $has_session = true ): object {
+		return new class( $has_session ) extends \WC_Session {
 			/**
 			 * Session data.
 			 *
 			 * @var array<string,mixed>
 			 */
 			protected $_data = array(); // phpcs:ignore PSR2.Classes.PropertyDeclaration.Underscore
+
+			/**
+			 * What has_session() answers.
+			 *
+			 * @var bool
+			 */
+			private bool $has_session;
+
+			/**
+			 * Constructor.
+			 *
+			 * @param bool $has_session What has_session() answers.
+			 */
+			public function __construct( bool $has_session ) {
+				$this->has_session = $has_session;
+			}
+
+			/**
+			 * Tell whether the shopper already has a session.
+			 *
+			 * @return bool
+			 */
+			public function has_session() {
+				return $this->has_session;
+			}
 
 			/**
 			 * Get a session value.

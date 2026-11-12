@@ -727,14 +727,18 @@ class SessionService {
 	}
 
 	/**
-	 * Get the WooPay session data the current WooCommerce session stored, or an empty array.
+	 * Get the WooPay session data the shopper's existing WooCommerce session stored, or an empty array (client 11.3.0
+	 * class-woopay-utilities.php:518-530).
 	 *
 	 * @return array<string,mixed>
 	 */
-	public function get_woopay_session_data(): array {
+	public function get_woopay_session_data() {
 		$session = WooPaymentsSessionService::get_wc_session();
+		if ( null === $session || ! $this->has_shopper_session() ) {
+			return array();
+		}
 
-		return null === $session ? array() : WooPaymentsSessionService::get_owned_record( $session, self::WOOPAY_SESSION_KEY );
+		return WooPaymentsSessionService::get_owned_record( $session, self::WOOPAY_SESSION_KEY );
 	}
 
 	/**
@@ -1045,7 +1049,7 @@ class SessionService {
 		}
 
 		$session_data = $this->get_woopay_session_data();
-		if ( array_key_exists( $key, $session_data ) ) {
+		if ( is_array( $session_data ) && array_key_exists( $key, $session_data ) ) {
 			return $session_data[ $key ];
 		}
 
