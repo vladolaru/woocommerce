@@ -33,6 +33,7 @@ class PreflightGuardTest extends WC_Unit_Test_Case {
 		'woocommerce_checkout_registration_required',
 		'woocommerce_coupon_get_usage_limit',
 		'woocommerce_coupon_get_usage_limit_per_user',
+		'woocommerce_coupon_hold_minutes',
 	);
 
 	/**
@@ -151,6 +152,12 @@ class PreflightGuardTest extends WC_Unit_Test_Case {
 				return 2;
 			}
 		);
+		add_filter(
+			'woocommerce_coupon_hold_minutes',
+			static function (): int {
+				return 7;
+			}
+		);
 		$guard->register();
 		$request  = new WP_REST_Request( 'POST', $route );
 		$response = new \stdClass();
@@ -177,12 +184,18 @@ class PreflightGuardTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'sentinel-original', apply_filters( 'woocommerce_checkout_registration_required', 'original' ) );
 		$this->assertSame( 6, apply_filters( 'woocommerce_coupon_get_usage_limit', 5, new WC_Coupon() ) );
 		$this->assertSame( 2, apply_filters( 'woocommerce_coupon_get_usage_limit_per_user', 1, 123, new WC_Coupon() ) );
+		$this->assertSame( 7, apply_filters( 'woocommerce_coupon_hold_minutes', 60 ) );
 		$this->assertSame( 1, $registration_calls );
 		$this->assertSame( 1, $coupon_limit_calls );
 		$this->assertSame( 1, $per_user_limit_calls );
 	}
 
-	/** @testdox Suppresses checkout and coupon side effects for a WooPay preflight request WooPay composed, naming the WooPayments gateway. */
+	/**
+	 * @testdox Suppresses checkout side effects and coupon holds for a WooPay preflight request WooPay composed, naming the WooPayments gateway, and keeps coupon usage limits.
+	 *
+	 * Client 11.3.0 class-wc-payment-gateway-wcpay.php:954-964: the usage limits stay on, and the coupon hold time is zero
+	 * at PHP_INT_MAX for the request.
+	 */
 	public function test_preflight_request_suppresses_checkout_and_coupon_side_effects(): void {
 		$guard              = $this->create_guard();
 		$order              = $this->create_order();
@@ -241,6 +254,13 @@ class PreflightGuardTest extends WC_Unit_Test_Case {
 				return 2;
 			}
 		);
+		add_filter(
+			'woocommerce_coupon_hold_minutes',
+			static function (): int {
+				return 7;
+			},
+			PHP_INT_MAX - 1
+		);
 		$guard->register();
 
 		$request  = new WP_REST_Request( 'POST', '/wc/store/v1/checkout' );
@@ -290,8 +310,9 @@ class PreflightGuardTest extends WC_Unit_Test_Case {
 		$this->assertSame( 0, $coupon->get_usage_count() );
 		$this->assertSame( 'original', apply_filters( 'woocommerce_checkout_registration_required', 'original' ) );
 		$this->assertSame( 0, $registration_calls );
-		$this->assertNull( apply_filters( 'woocommerce_coupon_get_usage_limit', 5, $coupon ) );
-		$this->assertSame( 0, apply_filters( 'woocommerce_coupon_get_usage_limit_per_user', 1, 123, $coupon ) );
+		$this->assertSame( 6, apply_filters( 'woocommerce_coupon_get_usage_limit', 5, $coupon ) );
+		$this->assertSame( 2, apply_filters( 'woocommerce_coupon_get_usage_limit_per_user', 1, 123, $coupon ) );
+		$this->assertSame( 0, apply_filters( 'woocommerce_coupon_hold_minutes', 60 ) );
 		$this->assertNull( $service->last_checkout_context );
 	}
 
@@ -373,6 +394,13 @@ class PreflightGuardTest extends WC_Unit_Test_Case {
 			5,
 			3
 		);
+		add_filter(
+			'woocommerce_coupon_hold_minutes',
+			static function (): int {
+				return 7;
+			},
+			5
+		);
 		$guard->register();
 
 		$preflight_request  = new WP_REST_Request( 'POST', '/wc/store/v1/checkout' );
@@ -402,8 +430,9 @@ class PreflightGuardTest extends WC_Unit_Test_Case {
 			$action_counts
 		);
 		$this->assertSame( 'original', apply_filters( 'woocommerce_checkout_registration_required', 'original' ) );
-		$this->assertNull( apply_filters( 'woocommerce_coupon_get_usage_limit', 5, $coupon ) );
-		$this->assertSame( 0, apply_filters( 'woocommerce_coupon_get_usage_limit_per_user', 1, 123, $coupon ) );
+		$this->assertSame( 6, apply_filters( 'woocommerce_coupon_get_usage_limit', 5, $coupon ) );
+		$this->assertSame( 2, apply_filters( 'woocommerce_coupon_get_usage_limit_per_user', 1, 123, $coupon ) );
+		$this->assertSame( 0, apply_filters( 'woocommerce_coupon_hold_minutes', 60 ) );
 		$this->assertSame( 0, $registration_calls );
 		$this->assertSame( 1, $coupon_limit_calls );
 		$this->assertSame( 1, $per_user_limit_calls );
@@ -438,6 +467,7 @@ class PreflightGuardTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'sentinel-original', apply_filters( 'woocommerce_checkout_registration_required', 'original' ) );
 		$this->assertSame( 6, apply_filters( 'woocommerce_coupon_get_usage_limit', 5, $coupon ) );
 		$this->assertSame( 2, apply_filters( 'woocommerce_coupon_get_usage_limit_per_user', 1, 123, $coupon ) );
+		$this->assertSame( 7, apply_filters( 'woocommerce_coupon_hold_minutes', 60 ) );
 		$this->assertSame( 1, $registration_calls );
 		$this->assertSame( 2, $coupon_limit_calls );
 		$this->assertSame( 2, $per_user_limit_calls );

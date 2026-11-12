@@ -15,8 +15,8 @@ use WP_REST_Request;
 /**
  * For a Store API checkout, or pay-for-order checkout, that names the WooPayments gateway and carries WooPay's preflight
  * marker: when WooPay proved it composed the request, empties the order meta, order processed, pending status and
- * registration-required hooks and lifts coupon usage limits for that request, then restores them; otherwise refuses it
- * before any route callback runs. The WooPayments gateway answers a proved preflight without charging.
+ * registration-required hooks and holds no coupon use for that request, then restores them; otherwise refuses it before
+ * any route callback runs. Coupon usage limits apply. The WooPayments gateway answers a proved preflight without charging.
  *
  * @since 11.2.0
  * @internal
@@ -38,8 +38,7 @@ class PreflightGuard implements RegisterHooksInterface {
 		'woocommerce_store_api_checkout_order_processed',
 		'woocommerce_order_status_pending',
 		'woocommerce_checkout_registration_required',
-		'woocommerce_coupon_get_usage_limit',
-		'woocommerce_coupon_get_usage_limit_per_user',
+		'woocommerce_coupon_hold_minutes',
 	);
 
 	/**
@@ -116,8 +115,9 @@ class PreflightGuard implements RegisterHooksInterface {
 		remove_all_actions( 'woocommerce_store_api_checkout_order_processed' );
 		remove_all_actions( 'woocommerce_order_status_pending' );
 		remove_all_filters( 'woocommerce_checkout_registration_required' );
-		add_filter( 'woocommerce_coupon_get_usage_limit', '__return_null' );
-		add_filter( 'woocommerce_coupon_get_usage_limit_per_user', '__return_zero' );
+		// Coupon usage limits stay on; a zero hold time keeps the preflight from holding a coupon use, last so no other
+		// callback puts the hold back (client 11.3.0 class-wc-payment-gateway-wcpay.php:962-964).
+		add_filter( 'woocommerce_coupon_hold_minutes', '__return_zero', PHP_INT_MAX );
 
 		return $response;
 	}

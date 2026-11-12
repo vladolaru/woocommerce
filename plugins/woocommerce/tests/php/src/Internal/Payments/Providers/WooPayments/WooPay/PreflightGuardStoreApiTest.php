@@ -27,8 +27,8 @@ class PreflightGuardStoreApiTest extends WC_Unit_Test_Case {
 		tearDown as fixture_tear_down;
 	}
 
-	/** Coupon code at its usage limit. */
-	private const COUPON_CODE = 'woopay-preflight-exhausted';
+	/** Coupon code with a usage limit. */
+	private const COUPON_CODE = 'woopay-preflight-limited';
 
 	/**
 	 * Guard under test.
@@ -101,7 +101,7 @@ class PreflightGuardStoreApiTest extends WC_Unit_Test_Case {
 	private $original_customer = null;
 
 	/**
-	 * Set up the Store API server, the guard and a cart with a coupon at its usage limit.
+	 * Set up the Store API server and the guard.
 	 */
 	public function setUp(): void {
 		$this->fixture_set_up();
@@ -204,23 +204,24 @@ class PreflightGuardStoreApiTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The preflight marker lifts coupon limits and checkout callbacks only for a WooPay request WooPay proved it composed, naming the WooPayments gateway, and is refused without the proof: $_dataName.
+	 * @testdox The preflight marker lifts checkout callbacks only for a WooPay request WooPay proved it composed, naming the WooPayments gateway, keeps coupon usage limits, and is refused without the proof: $_dataName.
 	 *
 	 * WooPay's preflight names woocommerce_payments and posts to checkout, or to checkout/{order_id} to pay an order
 	 * (WooPay WooPayStoreApiHandler.php:574-598), with its vouch bound to the request's Cart-Token, or signed with the
 	 * store's blog token while the platform keeps the store on the signed path (client 11.2.0
 	 * class-woopay-session.php:1284-1366). Without the proof, client 11.3.0 answers 403 `wcpay_invalid_woopay_preflight`
-	 * before any route callback (class-wc-payment-gateway-wcpay.php:928-952).
+	 * before any route callback (class-wc-payment-gateway-wcpay.php:928-952), and keeps coupon usage limits on for a
+	 * proved one (`:954-964`).
 	 *
 	 * @dataProvider provide_preflight_requests
 	 *
 	 * @param string $route          'checkout' or 'checkout-order'.
 	 * @param string $payment_method Gateway the request names.
 	 * @param string $proof          'vouch', 'signature', 'stale vouch' or 'none'.
-	 * @param string $outcome        'lifted', 'refused' or 'ordinary'.
+	 * @param string $outcome        'proved', 'refused' or 'ordinary'.
 	 */
 	public function test_preflight_marker_is_honoured_only_for_a_request_woopay_composed( string $route, string $payment_method, string $proof, string $outcome ): void {
-		$this->create_exhausted_coupon_cart();
+		$this->create_coupon_cart( 2 );
 		$request = 'checkout' === $route ? $this->make_checkout_request( $payment_method ) : $this->make_pay_for_order_request( $payment_method );
 		$this->resolve_current_user( $proof );
 
@@ -241,13 +242,16 @@ class PreflightGuardStoreApiTest extends WC_Unit_Test_Case {
 			return;
 		}
 
+		$this->assertSame( 'proved' === $outcome ? 0 : 1, $callback_runs );
 		if ( 'checkout' === $route ) {
-			$this->assertSame( 'lifted' === $outcome ? 200 : 409, $response->get_status(), 'An exhausted coupon is refused unless the limits are lifted.' );
-		} else {
-			$this->assertSame( 200, $response->get_status() );
+			$this->assertSame( 409, $response->get_status(), 'A coupon at its usage limit is refused, preflight or not.' );
+			$this->assertSame( 'woocommerce_rest_cart_coupon_error', $response->get_data()['code'] ?? null );
+			$this->assertSame( 2, ( new WC_Coupon( self::COUPON_CODE ) )->get_usage_count() );
+
+			return;
 		}
-		$this->assertSame( 'lifted' === $outcome ? 0 : 1, $callback_runs );
-		if ( 'lifted' === $outcome ) {
+		$this->assertSame( 200, $response->get_status() );
+		if ( 'proved' === $outcome ) {
 			$order = wc_get_order( (int) $response->get_data()['order_id'] );
 			$this->assertInstanceOf( WC_Order::class, $order );
 			$this->assertSame( 'pending', $order->get_status(), 'The gateway answers the preflight without charging.' );
@@ -266,10 +270,10 @@ class PreflightGuardStoreApiTest extends WC_Unit_Test_Case {
 			'cart checkout without WooPay proof'         => array( 'checkout', 'woocommerce_payments', 'none', 'refused' ),
 			'pay for order without WooPay proof'         => array( 'checkout-order', 'woocommerce_payments', 'none', 'refused' ),
 			'a WooPay Cart-Token request with a stale vouch' => array( 'checkout', 'woocommerce_payments', 'stale vouch', 'refused' ),
-			'signed WooPay preflight, cart checkout'     => array( 'checkout', 'woocommerce_payments', 'signature', 'lifted' ),
-			'signed WooPay preflight, pay for order'     => array( 'checkout-order', 'woocommerce_payments', 'signature', 'lifted' ),
-			'vouched WooPay preflight, cart checkout'    => array( 'checkout', 'woocommerce_payments', 'vouch', 'lifted' ),
-			'vouched WooPay preflight, pay for order'    => array( 'checkout-order', 'woocommerce_payments', 'vouch', 'lifted' ),
+			'signed WooPay preflight, cart checkout'     => array( 'checkout', 'woocommerce_payments', 'signature', 'proved' ),
+			'signed WooPay preflight, pay for order'     => array( 'checkout-order', 'woocommerce_payments', 'signature', 'proved' ),
+			'vouched WooPay preflight, cart checkout'    => array( 'checkout', 'woocommerce_payments', 'vouch', 'proved' ),
+			'vouched WooPay preflight, pay for order'    => array( 'checkout-order', 'woocommerce_payments', 'vouch', 'proved' ),
 		);
 	}
 
@@ -328,24 +332,58 @@ class PreflightGuardStoreApiTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Put a virtual product and a coupon in the cart, then use the coupon up.
+	 * @testdox A proved WooPay preflight with a coupon below its usage limit holds no coupon use: $_dataName.
+	 *
+	 * Client 11.3.0 class-wc-payment-gateway-wcpay.php:962-964 sets the coupon hold time to zero for the preflight, so
+	 * core's tentative hold returns before writing (class-wc-coupon-data-store-cpt.php:621-625, :721-725).
+	 *
+	 * @testWith ["signature"]
+	 *           ["vouch"]
+	 *
+	 * @param string $proof 'signature' or 'vouch'.
 	 */
-	private function create_exhausted_coupon_cart(): void {
+	public function test_proved_preflight_holds_no_coupon_use( string $proof ): void {
+		$coupon  = $this->create_coupon_cart( 1 );
+		$request = $this->make_checkout_request( 'woocommerce_payments' );
+		$this->resolve_current_user( $proof );
+
+		$response = rest_get_server()->dispatch( $request );
+
+		$this->assertSame( 200, $response->get_status() );
+		$order = wc_get_order( (int) $response->get_data()['order_id'] );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 'pending', $order->get_status() );
+		$this->assertSame( '', $order->get_meta( '_coupon_held_keys' ) );
+		$this->assertSame( '', $order->get_meta( '_coupon_held_keys_for_users' ) );
+		$coupon_meta_keys = array_keys( get_post_meta( $coupon->get_id() ) );
+		$this->assertSame( array(), preg_grep( '/^_(coupon_held_|maybe_used_by_)/', $coupon_meta_keys ), 'No tentative hold is written on the coupon.' );
+		$this->assertSame( 1, ( new WC_Coupon( $coupon->get_id() ) )->get_usage_count() );
+	}
+
+	/**
+	 * Put a virtual product and a coupon limited to two uses in the cart, then record uses of it.
+	 *
+	 * @param int $uses Uses to record; two use the coupon up.
+	 * @return WC_Coupon
+	 */
+	private function create_coupon_cart( int $uses ): WC_Coupon {
 		$product = \WC_Helper_Product::create_simple_product();
 		$product->set_virtual( true );
 		$product->save();
 		$coupon = new WC_Coupon();
 		$coupon->set_code( self::COUPON_CODE );
 		$coupon->set_amount( 1 );
-		$coupon->set_usage_limit( 1 );
+		$coupon->set_usage_limit( 2 );
 		$coupon->save();
 
 		wc_empty_cart();
 		WC()->cart->add_to_cart( $product->get_id(), 1 );
 		WC()->cart->apply_coupon( self::COUPON_CODE );
 
-		$coupon->set_usage_count( 1 );
+		$coupon->set_usage_count( $uses );
 		$coupon->save();
+
+		return $coupon;
 	}
 
 	/**
