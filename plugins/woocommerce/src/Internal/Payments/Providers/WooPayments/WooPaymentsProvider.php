@@ -581,7 +581,7 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 	 * The plan also records whether the order already had the payment's success or capture note, which the
 	 * post-lifecycle effects read. A charge on a subscription payment-method change that took no payment is first marked
 	 * payment-method-only, also when the charge threw, and a charge that threw gets the payment-failed note. A charge that
-	 * completed has its intent recorded on the order last, before the payment lifecycle decides on the order.
+	 * completed or was authorized has its intent recorded on the order last, before the payment lifecycle decides on it.
 	 *
 	 * @param PaymentOperationContext $context   Payment context.
 	 * @param PaymentOutcome          $outcome   Provider outcome.
@@ -600,8 +600,8 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 	}
 
 	/**
-	 * Record a completed charge's intent on the order, read again under the checkout's order payment lock: the transaction
-	 * ID and the intent's meta.
+	 * Record a completed or authorized charge's intent on the order, read again under the checkout's order payment lock:
+	 * the transaction ID and the intent's meta.
 	 *
 	 * Client 11.3.0 attaches them before it updates the order from the intent, which then changes nothing on an order
 	 * already paid (class-wc-payment-gateway-wcpay.php:2444, :2499), and writes nothing once the stored intent status is
@@ -612,7 +612,7 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 	 */
 	private function record_charge_intent( PaymentOperationContext $context, PaymentOutcome $outcome ): void {
 		$intent_id = $outcome->get_provider_payment_id();
-		if ( '' === $intent_id || $outcome->is_payment_method_only() || PaymentLifecycleEvent::STATUS_COMPLETED !== PaymentLifecycleEvent::status_for_outcome( $outcome ) ) {
+		if ( '' === $intent_id || $outcome->is_payment_method_only() || ! in_array( PaymentLifecycleEvent::status_for_outcome( $outcome ), array( PaymentLifecycleEvent::STATUS_COMPLETED, PaymentLifecycleEvent::STATUS_AUTHORIZED ), true ) ) {
 			return;
 		}
 

@@ -746,6 +746,69 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox An authorized event that leaves a paid order holds an order only when it is not flagged or the order is not paid: $label.
+	 *
+	 * Client 11.3.0 updates an order from an intent's status, an authorization included, only while it is not paid
+	 * (class-wc-payments-order-service.php:475, :3398-3410), and puts an unpaid one on hold (:2146-2161).
+	 *
+	 * @testWith ["flagged, processing", true, "processing", false]
+	 *           ["flagged, a paid status a plugin adds", true, "shipped", false]
+	 *           ["flagged, pending", true, "pending", true]
+	 *           ["not flagged, processing", false, "processing", true]
+	 *
+	 * @param string $label            Row label.
+	 * @param bool   $leave_paid_order Whether the event leaves a paid order as it is.
+	 * @param string $status           Order status before the event.
+	 * @param bool   $holds            Whether the event puts the order on hold.
+	 */
+	public function test_authorized_event_flagged_to_leave_a_paid_order( string $label, bool $leave_paid_order, string $status, bool $holds ): void {
+		unset( $label );
+		add_filter( 'wc_order_statuses', static fn( array $statuses ): array => array_merge( $statuses, array( 'wc-shipped' => 'Shipped' ) ) );
+		add_filter( 'woocommerce_order_is_paid_statuses', static fn( array $statuses ): array => array_merge( $statuses, array( 'shipped' ) ) );
+		$order = $this->create_woopayments_order();
+		$order->set_status( $status );
+		$order->save();
+
+		$this->apply_event( $order, $this->authorized_event_leaving_paid_orders( $leave_paid_order ) );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( $holds ? 'on-hold' : $status, $order->get_status() );
+		$this->assertSame( $holds ? 'requires_capture' : '', $order->get_meta( '_intention_status', true ) );
+		$this->assertSame( $holds ? 1 : 0, $this->countOrderNotesMatching( $order, 'Authorized pi_auth.' ) );
+	}
+
+	/**
+	 * @testdox An authorized event that leaves a paid order leaves it when only the caller's order is still paid, the stored one changed in flight.
+	 *
+	 * Client 11.3.0's paid check reads the caller's order and a fresh copy (class-wc-payments-order-service.php:3398-3410).
+	 */
+	public function test_authorized_event_flagged_to_leave_a_paid_order_reads_the_callers_order_too(): void {
+		UncachedOrderWriter::enable_hpos_data_caching();
+		$order = $this->create_woopayments_order();
+		$order->set_status( 'processing' );
+		$order->save();
+		$order = $this->read_order_into_request_caches( $order );
+		UncachedOrderWriter::write( $order->get_id(), array( 'status' => 'failed' ) );
+
+		$this->apply_event( $order, $this->authorized_event_leaving_paid_orders( true ) );
+
+		$this->assertSame( 'wc-failed', $this->get_persisted_order_status( $order->get_id() ) );
+		$this->assertFalse( $this->is_order_meta_persisted( $order->get_id(), '_intention_status' ) );
+		$this->assertSame( 0, $this->countOrderNotesMatching( $order, 'Authorized pi_auth.' ) );
+	}
+
+	/**
+	 * Build an authorized event, flagged or not to leave a paid order as it is.
+	 *
+	 * @param bool $leave_paid_order Whether the event leaves a paid order as it is.
+	 * @return PaymentLifecycleEvent
+	 */
+	private function authorized_event_leaving_paid_orders( bool $leave_paid_order ): PaymentLifecycleEvent {
+		return new PaymentLifecycleEvent( PaymentLifecycleEvent::STATUS_AUTHORIZED, 'pi_auth', array( '_intention_status' => 'requires_capture' ), array(), 'Authorized pi_auth.', PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_AUTHORIZED, array(), false, false, array(), $leave_paid_order );
+	}
+
+	/**
 	 * Build a completed event whose payment counts as applied once its capture note is on the order.
 	 *
 	 * @param string $payment_reference Payment reference.

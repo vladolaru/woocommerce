@@ -199,7 +199,8 @@ class PaymentLifecycleEvent {
 	private array $applied_alternatives;
 
 	/**
-	 * Whether this completed event only reports a payment's status, and so leaves an order already in a paid status as it is.
+	 * Whether this completed or authorized event only reports a payment's status, and so leaves an order already in a
+	 * paid status as it is.
 	 *
 	 * @var bool
 	 */
@@ -221,7 +222,7 @@ class PaymentLifecycleEvent {
 	 * @param bool                $hold_order        Whether a completed event puts the order on hold instead of completing it.
 	 * @param array<int,mixed>    $applied_alternatives Other lifecycle events whose note, when already on the order, counts as
 	 *                                                  this event already applied; entries without a note are dropped.
-	 * @param bool                $leave_paid_order  Whether a completed event only reports a payment's status, and so leaves
+	 * @param bool                $leave_paid_order  Whether a completed or authorized event only reports a payment's status, and so leaves
 	 *                                               an order already in a paid status as it is.
 	 * @throws InvalidArgumentException When an unknown status is supplied, or a hold on an event that is not completed.
 	 */
@@ -403,8 +404,8 @@ class PaymentLifecycleEvent {
 	}
 
 	/**
-	 * Tell whether this completed event only reports a payment's status, and so leaves an order already in a paid status as
-	 * it is.
+	 * Tell whether this completed or authorized event only reports a payment's status, and so leaves an order already in a
+	 * paid status as it is.
 	 *
 	 * @since 11.2.0
 	 *

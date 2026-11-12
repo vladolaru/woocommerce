@@ -927,7 +927,7 @@ class PaymentProcessingService {
 	 *
 	 * A payment-method-only outcome (PaymentOutcome::DATA_PAYMENT_METHOD_ONLY) that did not fail gets its mapped meta and
 	 * no event; a failed one gets the failed event and keeps the order status. A charge this service just made does not
-	 * complete an order that has a paid status by the time it is applied, the twin after the charge of
+	 * complete or hold an order that has a paid status by the time it is applied, the twin after the charge of
 	 * refresh_order_before_charge(), which charges nothing for an order that became paid before it.
 	 *
 	 * @param WC_Order          $order    Order object.
@@ -953,7 +953,7 @@ class PaymentProcessingService {
 	 * @param ProviderInterface $provider              Provider.
 	 * @param bool              $preserve_order_status Whether a failed event must keep the order status, whatever the
 	 *                                                 outcome's own flag says.
-	 * @param bool              $leave_paid_order      Whether a completed event leaves an order already in a paid status as it is.
+	 * @param bool              $leave_paid_order      Whether a completed or authorized event leaves an order already in a paid status as it is.
 	 */
 	private function apply_outcome_lifecycle_event( WC_Order $order, PaymentOutcome $outcome, ProviderInterface $provider, bool $preserve_order_status = false, bool $leave_paid_order = false ): void {
 		$this->lifecycle_service->apply_under_lock(

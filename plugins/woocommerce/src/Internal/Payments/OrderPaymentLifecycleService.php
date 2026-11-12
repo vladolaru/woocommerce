@@ -261,7 +261,7 @@ class OrderPaymentLifecycleService {
 		}
 
 		$note        = $event->get_note();
-		$skip_reason = $this->get_completed_event_skip_reason( $order, $decision_order, $event, $persistence_vocabulary ) ?? $this->get_authorized_event_skip_reason( $decision_order, $event, $persistence_vocabulary );
+		$skip_reason = $this->get_completed_event_skip_reason( $order, $decision_order, $event, $persistence_vocabulary ) ?? $this->get_authorized_event_skip_reason( $order, $decision_order, $event, $persistence_vocabulary );
 		if ( null !== $skip_reason ) {
 			$this->synchronize_skipped_event_order( $order, $decision_order, $skip_reason, $persistence_vocabulary );
 			$this->log_skipped_event( $order, $event, $skip_reason );
@@ -539,13 +539,16 @@ class OrderPaymentLifecycleService {
 	 * An authorized event whose note is already on the order was applied before, so it changes nothing, status and meta
 	 * included; an authorization's own note type also changes nothing on an order already on hold. Client 11.3.0's
 	 * on-hold writers check the same before any write (class-wc-payments-order-service.php:2146-2151, :2171-2175, :2251-2256).
+	 * An event that only reports a payment's status leaves an order in a paid status as it is, whether the caller's order or
+	 * its fresh read has that status, as a completed one does.
 	 *
+	 * @param WC_Order                               $caller_order           Caller-owned order object.
 	 * @param WC_Order                               $order                  Order read again under the order payment lock.
 	 * @param PaymentLifecycleEvent                  $event                  Lifecycle event.
 	 * @param ProviderPersistenceVocabularyInterface $persistence_vocabulary Provider persistence vocabulary.
 	 * @return string|null Skip reason, or null when the event can be applied.
 	 */
-	private function get_authorized_event_skip_reason( WC_Order $order, PaymentLifecycleEvent $event, ProviderPersistenceVocabularyInterface $persistence_vocabulary ): ?string {
+	private function get_authorized_event_skip_reason( WC_Order $caller_order, WC_Order $order, PaymentLifecycleEvent $event, ProviderPersistenceVocabularyInterface $persistence_vocabulary ): ?string {
 		if ( PaymentLifecycleEvent::STATUS_AUTHORIZED !== $event->get_status() ) {
 			return null;
 		}
@@ -557,6 +560,10 @@ class OrderPaymentLifecycleService {
 
 		if ( PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_AUTHORIZED === $event->get_note_type() && $order->has_status( OrderStatus::ON_HOLD ) ) {
 			return 'order_on_hold';
+		}
+
+		if ( $event->should_leave_paid_order() && ( $caller_order->has_status( wc_get_is_paid_statuses() ) || $order->has_status( wc_get_is_paid_statuses() ) ) ) {
+			return 'order_paid';
 		}
 
 		return null;
@@ -617,7 +624,7 @@ class OrderPaymentLifecycleService {
 	private function log_skipped_event( WC_Order $order, PaymentLifecycleEvent $event, string $reason ): void {
 		$messages = array(
 			'open_dispute'              => 'Completed payment event skipped: an open dispute keeps the order on hold.',
-			'order_paid'                => 'Completed payment event skipped: the order is already paid, so the event does not change it.',
+			'order_paid'                => 'Payment event skipped: the order is already paid, so the event does not change it.',
 			'applied_note_exists'       => 'Completed payment event skipped: a note that counts as this payment already applied is on the order.',
 			'authorization_note_exists' => 'Authorized payment event skipped: its note is already on the order.',
 			'order_on_hold'             => 'Authorized payment event skipped: the order is already on hold.',

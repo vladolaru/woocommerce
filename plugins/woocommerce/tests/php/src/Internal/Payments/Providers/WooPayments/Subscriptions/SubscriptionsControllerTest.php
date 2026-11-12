@@ -1115,18 +1115,23 @@ class SubscriptionsControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A scheduled renewal whose order is given a paid status during the charge keeps that status and records only the payment's intent: $status.
+	 * @testdox A scheduled renewal whose order is given a paid status during the charge keeps that status and records only the payment's intent: $status, $outcome_status.
 	 *
 	 * Client 11.3.0's renewal charges through process_payment_for_order(), which attaches the intent to the order, transaction
-	 * ID included, then updates the order from it only while it is not paid (trait-wc-payment-gateway-wcpay-subscriptions.php:402-430,
-	 * class-wc-payment-gateway-wcpay.php:2444, :2499; class-wc-payments-order-service.php:475, :1875-1884, :3398-3410).
+	 * ID included, then updates the order from it only while it is not paid, whatever the intent's status
+	 * (trait-wc-payment-gateway-wcpay-subscriptions.php:402-430, class-wc-payment-gateway-wcpay.php:2444, :2499;
+	 * class-wc-payments-order-service.php:475, :1875-1884, :3398-3410).
 	 *
-	 * @testWith ["completed"]
-	 *           ["shipped"]
+	 * @testWith ["completed", "completed", "succeeded"]
+	 *           ["shipped", "completed", "succeeded"]
+	 *           ["completed", "authorized", "requires_capture"]
+	 *           ["shipped", "authorized", "requires_capture"]
 	 *
-	 * @param string $status Status saved while the charge runs; `shipped` is a paid status a plugin adds.
+	 * @param string $status          Status saved while the charge runs; `shipped` is a paid status a plugin adds.
+	 * @param string $outcome_status  The charge's outcome: a payment, or a manual-capture authorization.
+	 * @param string $intention_status Intent status the order then stores.
 	 */
-	public function test_scheduled_renewal_leaves_an_order_paid_during_the_charge( string $status ): void {
+	public function test_scheduled_renewal_leaves_an_order_paid_during_the_charge( string $status, string $outcome_status, string $intention_status ): void {
 		add_filter( 'wc_order_statuses', static fn( array $statuses ): array => array_merge( $statuses, array( 'wc-shipped' => 'Shipped' ) ) );
 		add_filter( 'woocommerce_order_is_paid_statuses', static fn( array $statuses ): array => array_merge( $statuses, array( 'shipped' ) ) );
 		$user_id = self::factory()->user->create();
@@ -1135,7 +1140,7 @@ class SubscriptionsControllerTest extends WC_Unit_Test_Case {
 		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
 		$order->add_payment_token( $this->create_card_token( $user_id, 'pm_renewal_paid' ) );
 		$order->save();
-		$outcome     = new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_renewal_paid', '', 'pm_renewal_paid', 'cus_renewal_paid', array( 'meta' => array( '_charge_id' => 'ch_renewal_paid' ) ) );
+		$outcome     = new PaymentOutcome( $outcome_status, 'pi_renewal_paid', '', 'pm_renewal_paid', 'cus_renewal_paid', array( 'meta' => array( '_charge_id' => 'ch_renewal_paid' ) ) );
 		$completions = did_action( 'woocommerce_pre_payment_complete' ) + did_action( 'woocommerce_payment_complete' ) + did_action( 'woocommerce_payment_complete_order_status_' . $status );
 		$sut         = $this->create_sut( wc_get_container()->get( PaymentProcessingService::class ), $this->create_provider_charging_while( $outcome, $status ) );
 
@@ -1146,7 +1151,7 @@ class SubscriptionsControllerTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'pi_renewal_paid', $order->get_transaction_id() );
 		$this->assertSame( 'pi_renewal_paid', $order->get_meta( '_intent_id', true ) );
 		$this->assertSame( 'ch_renewal_paid', $order->get_meta( '_charge_id', true ) );
-		$this->assertSame( 'succeeded', $order->get_meta( '_intention_status', true ) );
+		$this->assertSame( $intention_status, $order->get_meta( '_intention_status', true ) );
 		$this->assertSame( $completions, did_action( 'woocommerce_pre_payment_complete' ) + did_action( 'woocommerce_payment_complete' ) + did_action( 'woocommerce_payment_complete_order_status_' . $status ), 'No completion hook fires.' );
 	}
 

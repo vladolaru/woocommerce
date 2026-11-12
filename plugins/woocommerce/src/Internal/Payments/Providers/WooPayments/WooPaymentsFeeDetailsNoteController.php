@@ -378,17 +378,17 @@ class WooPaymentsFeeDetailsNoteController implements RegisterHooksInterface {
 	/**
 	 * Give a payment's success event the capture note of the same intent as an applied alternative, and its capture event
 	 * the success note, so the payment lifecycle completes the payment once, whichever of the two wrote first; and mark a
-	 * completion that leaves an order already in a paid status as it is.
+	 * completion or an authorization that leaves an order already in a paid status as it is.
 	 *
 	 * Client 11.3.0's success writer returns once the capture note is on the order (class-wc-payments-order-service.php:2040-2046).
 	 *
 	 * @param WC_Order              $order            Order the event applies to, read under the order payment lock when the caller holds it.
 	 * @param PaymentLifecycleEvent $event            Lifecycle event.
-	 * @param bool                  $leave_paid_order Whether a completion leaves an order already in a paid status as it is.
+	 * @param bool                  $leave_paid_order Whether a completion or an authorization leaves an order already in a paid status as it is.
 	 * @return PaymentLifecycleEvent The event, with the other note as an applied alternative when it is a success or capture.
 	 */
 	private function with_completion_rules( WC_Order $order, PaymentLifecycleEvent $event, bool $leave_paid_order ): PaymentLifecycleEvent {
-		if ( PaymentLifecycleEvent::STATUS_COMPLETED !== $event->get_status() ) {
+		if ( ! in_array( $event->get_status(), array( PaymentLifecycleEvent::STATUS_COMPLETED, PaymentLifecycleEvent::STATUS_AUTHORIZED ), true ) ) {
 			return $event;
 		}
 

@@ -3635,6 +3635,70 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A manual-capture $flow whose order is given a paid status during the charge keeps that status and records only the authorization's intent; with none it holds the order: $status.
+	 *
+	 * Client 11.3.0 attaches the intent to the order, transaction ID and intent status included, then updates the order from
+	 * it only while it is not paid, whatever the intent's status (class-wc-payment-gateway-wcpay.php:2444, :2499;
+	 * class-wc-payments-order-service.php:475, :1875-1884, :3398-3410); an unpaid order is put on hold with the authorized
+	 * note (:2146-2161).
+	 *
+	 * @testWith ["checkout", "completed"]
+	 *           ["checkout", "shipped"]
+	 *           ["pay-for-order", "completed"]
+	 *           ["pay-for-order", "shipped"]
+	 *           ["checkout", ""]
+	 *
+	 * @param string $flow   `checkout`, or `pay-for-order` on the order-pay page.
+	 * @param string $status Status saved while the charge runs, `shipped` being a paid status a plugin adds, or empty.
+	 */
+	public function test_process_payment_leaves_an_order_paid_during_an_authorization( string $flow, string $status ): void {
+		global $wp;
+		add_filter( 'wc_order_statuses', static fn( array $statuses ): array => array_merge( $statuses, array( 'wc-shipped' => 'Shipped' ) ) );
+		add_filter( 'woocommerce_order_is_paid_statuses', static fn( array $statuses ): array => array_merge( $statuses, array( 'shipped' ) ) );
+		$order = $this->create_order();
+		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+		$order->set_total( '10.99' );
+		$order->save();
+		// The recorded manual-capture authorization (Fixtures/platform-manual-capture.json, pair authorize_manual_capture), 10.99 USD.
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reading a local test fixture.
+		$recording = json_decode( (string) file_get_contents( __DIR__ . '/Fixtures/platform-manual-capture.json' ), true );
+		$intent    = array_values( array_filter( $recording['entries'], static fn( array $entry ) => 'authorize_manual_capture' === $entry['pair'] ) )[0]['response']['body'];
+		$outcome   = WooPaymentsIntentCodec::outcome_from_intention(
+			$intent,
+			new WooPaymentsIntentMappingContext( $order->get_checkout_order_received_url(), (string) $intent['payment_method'], (string) $intent['customer'] )
+		)->with_effect_plan( WooPaymentsOrderEffectPlan::for_payment_intent( $intent, false ) );
+		$pay       = static function ( int $order_id ) use ( $status ): void {
+			if ( '' !== $status ) {
+				$other = wc_get_order( $order_id );
+				$other->set_status( $status );
+				$other->save();
+			}
+		};
+		$gateway   = new WooPaymentsGateway();
+		$gateway->init( wc_get_container()->get( PaymentProcessingService::class ), $this->create_provider_charging( $outcome, wc_get_container()->get( WooPaymentsTokenService::class ), $pay ) );
+		$_POST['wcpay-payment-method'] = (string) $intent['payment_method'];
+		if ( 'pay-for-order' === $flow ) {
+			$wp->query_vars['order-pay'] = $order->get_id();
+		}
+
+		try {
+			$result = $gateway->process_payment( $order->get_id() );
+		} finally {
+			unset( $wp->query_vars['order-pay'] );
+		}
+
+		$this->assertSame( 'success', $result['result'] ?? '' );
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( '' !== $status ? $status : OrderStatus::ON_HOLD, $order->get_status() );
+		$this->assertSame( (string) $intent['id'], $order->get_transaction_id() );
+		$this->assertSame( (string) $intent['id'], $order->get_meta( '_intent_id', true ) );
+		$this->assertSame( (string) $intent['charges']['data'][0]['id'], $order->get_meta( '_charge_id', true ) );
+		$this->assertSame( 'requires_capture', $order->get_meta( '_intention_status', true ) );
+		$authorized_notes = array_filter( wp_list_pluck( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), 'content' ), static fn( string $note ): bool => false !== strpos( $note, 'was <strong>authorized</strong>' ) );
+		$this->assertCount( '' !== $status ? 0 : 1, $authorized_notes );
+	}
+
+	/**
 	 * @testdox A checkout whose differing payment the lifecycle does not apply, the order having an open dispute, adds no hold note and logs no hold.
 	 *
 	 * The hold is logged only once its note is on the order, as client 11.3.0 logs only when it holds the order

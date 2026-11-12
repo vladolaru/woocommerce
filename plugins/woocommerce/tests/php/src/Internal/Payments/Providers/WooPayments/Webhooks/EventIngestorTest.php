@@ -2378,6 +2378,7 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 	 */
 	public function test_authorization_changes_nothing( string $status, string $charge_type, string $intent_status ): void {
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
+		$this->register_custom_paid_status();
 		$order            = $this->create_woopayments_order();
 		$event            = $this->recorded_authorization_event( $order );
 		$intent           = &$event['data']['object'];
@@ -2407,6 +2408,8 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 			'an order already on hold'       => array( OrderStatus::ON_HOLD, 'card', 'requires_capture' ),
 			'a cancelled order'              => array( OrderStatus::CANCELLED, 'card', 'requires_capture' ),
 			'an order already paid'          => array( OrderStatus::PROCESSING, 'card', 'requires_capture' ),
+			'an order already Completed'     => array( OrderStatus::COMPLETED, 'card', 'requires_capture' ),
+			'a paid status a plugin adds'    => array( 'shipped', 'card', 'requires_capture' ),
 			'an in-person card payment'      => array( OrderStatus::PENDING, 'card_present', 'requires_capture' ),
 			'an in-person Interac payment'   => array( OrderStatus::PENDING, 'interac_present', 'requires_capture' ),
 			'an intent not awaiting capture' => array( OrderStatus::PENDING, 'card', 'succeeded' ),

@@ -447,19 +447,24 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A redirect return to an order in a paid status a plugin adds leaves the order as it is.
+	 * @testdox A redirect return to an order in a paid status a plugin adds leaves the order as it is: $intent_status.
 	 *
 	 * The return stops on processing, completed and on-hold first, as client 11.3.0's does (class-wc-payment-gateway-wcpay.php:2621-2628);
-	 * another paid status reaches the order update, which client 11.3.0 makes only while the order is not paid
-	 * (:2707, class-wc-payments-order-service.php:475, :3398-3410).
+	 * another paid status reaches the order update, which client 11.3.0 makes only while the order is not paid, whatever the
+	 * intent's status (:2707, class-wc-payments-order-service.php:475, :3398-3410).
+	 *
+	 * @testWith ["succeeded"]
+	 *           ["requires_capture"]
+	 *
+	 * @param string $intent_status The returned intent's status: a payment, or a manual-capture authorization.
 	 */
-	public function test_handle_wp_leaves_an_order_in_another_paid_status(): void {
+	public function test_handle_wp_leaves_an_order_in_another_paid_status( string $intent_status ): void {
 		add_filter( 'wc_order_statuses', static fn( array $statuses ): array => array_merge( $statuses, array( 'wc-shipped' => 'Shipped' ) ) );
 		add_filter( 'woocommerce_order_is_paid_statuses', static fn( array $statuses ): array => array_merge( $statuses, array( 'shipped' ) ) );
 		$GLOBALS['_SERVER']['REQUEST_METHOD'] = 'GET';
 		$order                                = $this->create_order();
 		$api_client                           = new RedirectReturnApiClientStub();
-		$api_client->payment_intent           = $this->successful_payment_intent( $order, 'pi_return', 'pm_return' );
+		$api_client->payment_intent           = array_merge( $this->successful_payment_intent( $order, 'pi_return', 'pm_return' ), array( 'status' => $intent_status ) );
 		$this->sut                            = $this->create_controller( true, $this->create_confirmation_service( $api_client, $this->create_token_service() ), $api_client );
 		$this->set_payment_intent_return_request( $order, 'pi_return' );
 		$order = wc_get_order( $order->get_id() );
@@ -475,6 +480,7 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 		$this->assertSame( 1, $api_client->payment_intent_reads );
 		$this->assertSame( 'shipped', $order->get_status() );
 		$this->assertSame( $completions, did_action( 'woocommerce_pre_payment_complete' ) + did_action( 'woocommerce_payment_complete' ) + did_action( 'woocommerce_payment_complete_order_status_shipped' ), 'No completion hook fires.' );
+		$this->assertSame( array(), array_filter( wp_list_pluck( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), 'content' ), static fn( string $note ): bool => false !== strpos( $note, 'was <strong>authorized</strong>' ) ) );
 		$this->assertSame( '', $order->get_meta( '_intention_status', true ) );
 		$this->assertCount( $notes, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
 	}
