@@ -127,6 +127,43 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Order meta is normalised the same way through a lifecycle event and through the meta-only write: $_dataName.
+	 *
+	 * Scalars become strings, structured values are JSON-encoded, and a meta key to delete is matched as a string.
+	 *
+	 * @testWith ["lifecycle event"]
+	 *           ["meta only"]
+	 *
+	 * @param string $path Which write runs.
+	 */
+	public function test_event_and_meta_only_write_normalise_meta_alike( string $path ): void {
+		$order = $this->create_woopayments_order();
+		$order->update_meta_data( '42', 'stale' );
+		$order->save();
+		$meta_to_update = array(
+			'_method_count'    => 3,
+			'_method_reusable' => true,
+			'_method_details'  => array(
+				'brand' => 'visa',
+				'last4' => '4242',
+			),
+		);
+
+		if ( 'meta only' === $path ) {
+			$this->sut->apply_meta_under_lock( $order, $meta_to_update, array( 42 ) );
+		} else {
+			$this->apply_event_under_lock( $order, new PaymentLifecycleEvent( PaymentLifecycleEvent::STATUS_STARTED, null, $meta_to_update, array( 42 ) ) );
+		}
+		$order = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( '3', $order->get_meta( '_method_count', true ) );
+		$this->assertSame( '1', $order->get_meta( '_method_reusable', true ) );
+		$this->assertSame( '{"brand":"visa","last4":"4242"}', $order->get_meta( '_method_details', true ) );
+		$this->assertSame( '', $order->get_meta( '42', true ), 'The key to delete is matched as a string.' );
+	}
+
+	/**
 	 * @testdox A normal completed event preserves unsaved changes owned by its caller.
 	 */
 	public function test_under_lock_completed_event_preserves_caller_owned_unsaved_changes(): void {

@@ -3793,7 +3793,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			}
 
 			/**
-			 * Answer a PaymentIntent request with a succeeded PaymentIntent.
+			 * Answer a PaymentIntent request with a succeeded PaymentIntent and its charge.
 			 *
 			 * @param array<string,mixed> $request_data    Request data.
 			 * @param string              $idempotency_key Idempotency key.
@@ -3812,6 +3812,18 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 					'customer'       => (string) ( $request_data['customer'] ?? '' ),
 					'payment_method' => (string) ( $request_data['payment_method'] ?? '' ),
 					'metadata'       => $request_data['metadata'] ?? array(),
+					'charges'        => array(
+						'data' => array(
+							array(
+								'id'                  => 'ch_change',
+								'object'              => 'charge',
+								'amount'              => (int) ( $request_data['amount'] ?? 0 ),
+								'balance_transaction' => 'txn_change',
+								'status'              => 'succeeded',
+								'paid'                => true,
+							),
+						),
+					),
 				);
 			}
 		};
@@ -3828,11 +3840,12 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$this->assertInstanceOf( WC_Order::class, $renewal );
 		$this->assertInstanceOf( WC_Order::class, $subscription );
 		$this->assertSame( 'success', $result['result'] ?? '' );
+		$this->assertSame( '', $subscription->get_meta( '_charge_id', true ), 'Nothing is charged.' );
+		$this->assertSame( '', $subscription->get_meta( '_wcpay_payment_transaction_id', true ), 'Nothing is charged.' );
 		$this->assertSame( array( 'setup' ), $platform->intent_requests, 'One SetupIntent and no PaymentIntent.' );
 		$this->assertSame( 'failed', $renewal->get_status() );
 		$this->assertSame( '', $renewal->get_transaction_id() );
 		$this->assertSame( 'active', $subscription->get_status() );
-		$this->assertSame( '', $subscription->get_meta( '_charge_id', true ), 'Nothing is charged.' );
 		$this->assertSame( $payment_method_id, $subscription->get_meta( '_payment_method_id', true ), 'The change saves the card.' );
 	}
 

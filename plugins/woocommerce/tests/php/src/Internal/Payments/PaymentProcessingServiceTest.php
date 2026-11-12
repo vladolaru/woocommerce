@@ -324,13 +324,24 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	 *
 	 * @dataProvider payment_method_only_outcomes
 	 *
-	 * @param string $status    Outcome status.
-	 * @param string $reference Provider reference.
+	 * @param string $status          Outcome status.
+	 * @param string $reference       Provider reference.
+	 * @param bool   $earlier_payment Whether the order already carries an earlier payment's status, transaction ID, paid date and note.
 	 */
-	public function test_process_checkout_applies_no_lifecycle_to_a_payment_method_only_outcome( string $status, string $reference ): void {
+	public function test_process_checkout_applies_no_lifecycle_to_a_payment_method_only_outcome( string $status, string $reference, bool $earlier_payment ): void {
 		$order = $this->create_woopayments_order( '10.00' );
 		$order->update_meta_data( '_method_stale', 'stale' );
+		if ( $earlier_payment ) {
+			$order->set_status( OrderStatus::PROCESSING );
+			$order->set_transaction_id( 'ref_earlier' );
+			$order->set_date_paid( 1700000000 );
+		}
 		$order->save();
+		if ( $earlier_payment ) {
+			$order->add_order_note( 'Earlier note.' );
+		}
+		$notes_before = array_values( wp_list_pluck( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), 'content' ) );
+		$this->assertSame( $earlier_payment, in_array( 'Earlier note.', $notes_before, true ) );
 
 		$outcome = new PaymentOutcome(
 			$status,
@@ -374,23 +385,25 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'method_saved', $order->get_meta( '_method_id', true ) );
 		$this->assertSame( 'customer_saved', $order->get_meta( '_method_customer', true ) );
 		$this->assertSame( '', $order->get_meta( '_method_stale', true ), 'The outcome deletes the keys it names.' );
-		$this->assertSame( OrderStatus::PENDING, $order->get_status() );
-		$this->assertSame( '', $order->get_transaction_id() );
-		$this->assertNull( $order->get_date_paid() );
-		$this->assertSame( array(), wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+		$this->assertSame( $earlier_payment ? OrderStatus::PROCESSING : OrderStatus::PENDING, $order->get_status() );
+		$this->assertSame( $earlier_payment ? 'ref_earlier' : '', $order->get_transaction_id() );
+		$this->assertSame( $earlier_payment ? 1700000000 : null, $order->get_date_paid() ? $order->get_date_paid()->getTimestamp() : null );
+		$this->assertSame( $notes_before, array_values( wp_list_pluck( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), 'content' ) ), 'The order keeps its notes and gets none.' );
 		$this->assertSame( 0, $payment_complete_calls );
 	}
 
 	/**
-	 * Payment-method-only outcomes that did not fail.
+	 * Payment-method-only outcomes that did not fail, on a new order and on one that carries an earlier payment.
 	 *
-	 * @return array<string,array{string,string}>
+	 * @return array<string,array{string,string,bool}>
 	 */
 	public function payment_method_only_outcomes(): array {
 		return array(
-			'completed'                => array( PaymentOutcome::STATUS_COMPLETED, 'ref_method' ),
-			'requires customer action' => array( PaymentOutcome::STATUS_REQUIRES_CUSTOMER_ACTION, 'ref_method' ),
-			'no external payment'      => array( PaymentOutcome::STATUS_NO_EXTERNAL_PAYMENT, '' ),
+			'completed'                                 => array( PaymentOutcome::STATUS_COMPLETED, 'ref_method', false ),
+			'requires customer action'                  => array( PaymentOutcome::STATUS_REQUIRES_CUSTOMER_ACTION, 'ref_method', false ),
+			'no external payment'                       => array( PaymentOutcome::STATUS_NO_EXTERNAL_PAYMENT, '', false ),
+			'completed, earlier payment'                => array( PaymentOutcome::STATUS_COMPLETED, 'ref_method', true ),
+			'requires customer action, earlier payment' => array( PaymentOutcome::STATUS_REQUIRES_CUSTOMER_ACTION, 'ref_method', true ),
 		);
 	}
 
