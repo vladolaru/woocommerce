@@ -1487,8 +1487,8 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 			return $this->refuse_checkout( $order, __( "We're not able to process this payment. Please try again later.", 'woocommerce' ), 'subscription_outside_payment_method_change', false, '', '', false );
 		}
 
-		// Client 11.3.0 gw:1469-1477: a WooPay preflight is honoured only when WooPay proved it composed the request;
-		// otherwise it is refused before any other check. The proof is read once for the checkout.
+		// Client 11.3.0 gw:1469-1477: a WooPay preflight is honoured only when WooPay proved it composed the request; otherwise
+		// it is refused before the phone, card-testing and rate-limiter checks. The proof is read once for the checkout.
 		$is_request_composed_by_woopay = $this->get_woopay_request_handler()->is_request_composed_by_woopay();
 		$is_woopay_preflight           = PreflightGuard::is_marked_as_preflight( $_POST ); // phpcs:ignore WordPress.Security.NonceVerification.Missing
 		if ( $is_woopay_preflight && ! $is_request_composed_by_woopay ) {

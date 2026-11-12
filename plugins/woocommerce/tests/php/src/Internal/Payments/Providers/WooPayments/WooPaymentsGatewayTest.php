@@ -5951,11 +5951,11 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should refuse a WooPay preflight check before changing the order status: $_dataName.
+	 * @testdox Should refuse a WooPay preflight check before the phone, card-testing and rate-limiter checks, and fail the order: $_dataName.
 	 *
 	 * Client 11.3.0 class-wc-payment-gateway-wcpay.php:1468-1477 refuses a preflight without WooPay's proof first in its
-	 * try, before the phone, card-testing and rate-limiter checks, and its catch fails the order (`:1604-1608`); a proved
-	 * preflight still meets the rate limiter before the preflight answer (`:1504-1523`).
+	 * try, before the phone, card-testing and rate-limiter checks, and its catch fails the order, a pending one included
+	 * (`:1604-1608`); a proved preflight still meets the rate limiter before the preflight answer (`:1504-1523`).
 	 *
 	 * @dataProvider provider_refused_woopay_preflights
 	 *
@@ -5964,12 +5964,16 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 * @param bool   $tampered_token Whether card-testing protection is on and the posted fraud-prevention token is tampered.
 	 * @param bool   $rate_limited   Whether the failed-transaction rate limiter is active.
 	 * @param string $notice         Expected shopper notice.
+	 * @param bool   $long_phone     Whether the billing phone is longer than 20 characters.
 	 */
-	public function test_process_payment_refuses_woopay_preflight_before_status_change( string $proof, string $status, bool $tampered_token, bool $rate_limited, string $notice ): void {
+	public function test_process_payment_refuses_woopay_preflight_before_other_checks( string $proof, string $status, bool $tampered_token, bool $rate_limited, string $notice, bool $long_phone = false ): void {
 		wc_clear_notices();
 		$order   = $this->create_order();
 		$service = new RecordingPaymentProcessingService();
 		$session = $this->create_session();
+		if ( $long_phone ) {
+			$order->set_billing_phone( str_repeat( '1', 21 ) );
+		}
 		$order->update_status( $status );
 		if ( $tampered_token ) {
 			$session->set( WooPaymentsFraudPreventionService::TOKEN_NAME, 'valid-token' );
@@ -6021,12 +6025,13 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	/**
 	 * WooPay preflight refusals: the proof, the order status, the other refusals' conditions and the notice the shopper sees.
 	 *
-	 * @return array<string,array{0:string,1:string,2:bool,3:bool,4:string}>
+	 * @return array<string,array{0:string,1:string,2:bool,3:bool,4:string,5?:bool}>
 	 */
 	public function provider_refused_woopay_preflights(): array {
 		$unverified = "We're not able to verify this WooPay preflight request. Please try again.";
 
 		return array(
+			'marker without proof, billing phone over 20 characters' => array( 'none', 'failed', false, false, $unverified, true ),
 			'marker without proof, failed order'        => array( 'none', 'failed', false, false, $unverified ),
 			'marker without proof, pending order'       => array( 'none', 'pending', false, false, $unverified ),
 			'marker without proof, different token'     => array( 'none', 'failed', true, false, $unverified ),
