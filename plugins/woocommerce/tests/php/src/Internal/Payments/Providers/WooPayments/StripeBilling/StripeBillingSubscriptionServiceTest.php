@@ -1054,6 +1054,53 @@ class StripeBillingSubscriptionServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Paying a failed renewal decides on the renewal read again under the order payment lock: $_dataName.
+	 *
+	 * Another request changes the renewal's total between the first read and the claim. Client 11.3.0 completes it, with the
+	 * notice, only when the charge matches the renewal it completes (class-wc-payments-subscription-service.php:688-697).
+	 *
+	 * @testWith ["50.00", "60.00", false]
+	 *           ["60.00", "50.00", true]
+	 *
+	 * @param string $first_total   Renewal total at the first read.
+	 * @param string $stored_total  Renewal total stored when the order payment lock is claimed.
+	 * @param bool   $expected_paid Whether the renewal is completed, with the notice.
+	 */
+	public function test_a_paid_charge_is_matched_against_the_renewal_read_under_the_lock( string $first_total, string $stored_total, bool $expected_paid ): void {
+		WooCommerceSubscriptionsDoubles::load_change_payment_gateway();
+		$entry                                    = $this->get_entry( 'charge_invoice' );
+		$entry['response']['body']['amount_paid'] = 5000;
+		$this->queue_entry( $entry );
+		$subscription  = $this->create_subscription(
+			array(
+				'_wcpay_subscription_id'    => self::MAIN_SUBSCRIPTION_ID,
+				'_wcpay_pending_invoice_id' => self::MAIN_INVOICE_ID,
+			)
+		);
+		$renewal_order = \WC_Helper_Order::create_order();
+		$renewal_order->update_meta_data( '_wcpay_billing_invoice_id', self::MAIN_INVOICE_ID );
+		$renewal_order->set_status( 'failed' );
+		$renewal_order->set_total( $first_total );
+		$renewal_order->save();
+		$renewal_id = $renewal_order->get_id();
+		add_action(
+			'woocommerce_payment_token_added_to_order',
+			static function ( $order_id ) use ( $renewal_id, $stored_total ): void {
+				if ( $renewal_id === (int) $order_id ) {
+					$other = wc_get_order( $renewal_id );
+					$other->set_total( $stored_total );
+					$other->save();
+				}
+			}
+		);
+
+		$this->sut->maybe_attempt_payment_for_subscription( $subscription, $this->create_token() );
+
+		$this->assertSame( $expected_paid, wc_get_order( $renewal_id )->is_paid() );
+		$this->assertSame( $expected_paid ? 1 : 0, wc_notice_count( 'success' ) );
+	}
+
+	/**
 	 * @testdox No invoice is charged for a subscription without a pending invoice, or one that is not Stripe-billed (client `class-wc-payments-subscription-service.php:664-668`).
 	 * @testWith ["", "sub_1UM1VrBzWlxcwgpP6A3GwGLe"]
 	 *           ["in_1UM1VrBzWlxcwgpPgrIwNSlu", ""]

@@ -7,6 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling;
 
+use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\SubscriptionMethodPolicy;
@@ -725,44 +726,59 @@ class StripeBillingSubscriptionService {
 		// token to the subscription when the renewal is paid by any path (client 11.3.0 class-wc-payments-subscription-service.php:684-686).
 		$order->add_payment_token( $token );
 
-		// Completion needs the charge's amount and currency to match the renewal; invoice.paid holds one that does not (client :688-689).
-		if (
-			! $order->needs_payment()
-			|| ! class_exists( 'WC_Subscriptions_Change_Payment_Gateway' )
-			|| ! $this->invoice_service->does_invoice_payment_match_order_total( $order, $response['amount_paid'] ?? null, $response['currency'] ?? '' )
-		) {
+		if ( ! $order->needs_payment() || ! class_exists( 'WC_Subscriptions_Change_Payment_Gateway' ) ) {
 			return;
 		}
 
 		// Charging the invoice also sends invoice.paid, whose webhook records the payment under the order payment lock.
 		// Completing the order here takes the same lock and reads the order again, so the two cannot both complete it;
-		// when the webhook holds the lock, it completes the order. Client 11.1.0 completes inline with no lock
+		// when the webhook holds the lock, it completes or holds the order. Client 11.1.0 completes inline with no lock
 		// (class-wc-payments-subscription-service.php:677-690).
+		$amount_paid        = $response['amount_paid'] ?? null;
+		$invoice_currency   = $response['currency'] ?? '';
 		$vocabulary         = new WooPaymentsPersistenceVocabulary();
 		$order_payment_lock = wc_get_container()->get( OrderPaymentLock::class );
 		$lock_token         = $order_payment_lock->claim( $order, $vocabulary, $wcpay_invoice_id, 'payment method change payment' );
 		if ( null === $lock_token ) {
 			$order_payment_lock->log_refusal( $order, $vocabulary, 'payment method change payment' );
+			// The notice follows the charge's match with the renewal as read before the claim (client :688-697).
+			$collected = $this->invoice_service->does_invoice_payment_match_order_total( $order, $amount_paid, $invoice_currency );
 		} else {
 			try {
-				$this->complete_renewal_order( $order->get_id() );
+				$collected = $this->complete_renewal_order( $order, $amount_paid, $invoice_currency );
 			} finally {
 				$order_payment_lock->release( $order, $vocabulary, $lock_token );
 			}
 		}
 
-		wc_add_notice( __( "We've successfully collected payment for your subscription using your new payment method.", 'woocommerce' ) );
+		if ( $collected ) {
+			wc_add_notice( __( "We've successfully collected payment for your subscription using your new payment method.", 'woocommerce' ) );
+		}
 	}
 
 	/**
-	 * Complete a renewal order the new payment method paid, if it still needs payment; the new token is already on it.
+	 * Complete a renewal order the new payment method paid, read again under the order payment lock the caller holds: only
+	 * while it still needs payment, and only when the charge's amount and currency match it (client 11.3.0
+	 * class-wc-payments-subscription-service.php:688-689); invoice.paid holds one that does not. The new token is already
+	 * on it.
 	 *
-	 * @param int $order_id Renewal order ID.
+	 * @param WC_Order $order            Renewal order.
+	 * @param mixed    $amount_paid      The charge's `amount_paid`.
+	 * @param mixed    $invoice_currency The charge's currency.
+	 * @return bool False when the charge does not match the renewal read under the lock, so nothing was collected for it here.
 	 */
-	private function complete_renewal_order( int $order_id ): void {
-		$order = wc_get_order( $order_id );
-		if ( ! $order instanceof WC_Order || ! $order->needs_payment() || ! class_exists( 'WC_Subscriptions_Change_Payment_Gateway' ) ) {
-			return;
+	private function complete_renewal_order( WC_Order $order, $amount_paid, $invoice_currency ): bool {
+		wc_get_container()->get( OrderPaymentLifecycleService::class )->reread_order_from_data_store( $order );
+		if ( ! $order->needs_payment() ) {
+			return true;
+		}
+
+		if ( ! $this->invoice_service->does_invoice_payment_match_order_total( $order, $amount_paid, $invoice_currency ) ) {
+			return false;
+		}
+
+		if ( ! class_exists( 'WC_Subscriptions_Change_Payment_Gateway' ) ) {
+			return false;
 		}
 
 		// While this flag is set, WooCommerce Subscriptions does not activate the subscription when the order is paid.
@@ -774,6 +790,8 @@ class StripeBillingSubscriptionService {
 		} finally {
 			\WC_Subscriptions_Change_Payment_Gateway::$is_request_to_change_payment = $is_change_payment_request;
 		}
+
+		return true;
 	}
 
 	/**
