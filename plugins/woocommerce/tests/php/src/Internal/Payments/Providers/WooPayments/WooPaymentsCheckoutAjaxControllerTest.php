@@ -918,6 +918,78 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Order-status callback for a payment already recorded as succeeded keeps its record and writes the fee, net and exchange rate the intent now carries, zero included.
+	 *
+	 * Client 11.3.0's attach writes nothing once the stored intent status is succeeded (class-wc-payments-order-service.php:1820),
+	 * while the exchange rate and the fee and net are written beside it whatever that status (class-wc-payment-gateway-wcpay.php:4662, :4664).
+	 */
+	public function test_update_order_status_records_the_fee_of_a_payment_already_recorded(): void {
+		update_option( 'woocommerce_currency', 'USD' );
+		$order = $this->create_woopayments_order( '40.00' );
+		$order->set_currency( 'GBP' );
+		$order->set_status( OrderStatus::PROCESSING );
+		$order->set_transaction_id( 'pi_settled' );
+		$order->update_meta_data( '_intent_id', 'pi_settled' );
+		$order->update_meta_data( '_intention_status', 'succeeded' );
+		$order->update_meta_data( '_stripe_customer_id', 'cus_stored' );
+		$order->save();
+		$intent = array(
+			'id'             => 'pi_settled',
+			'status'         => 'succeeded',
+			'currency'       => 'gbp',
+			'amount'         => 4000,
+			'customer'       => 'cus_settled',
+			'payment_method' => 'pm_settled',
+			'metadata'       => array( 'order_id' => (string) $order->get_id() ),
+			'charges'        => array(
+				'total_count' => 1,
+				'data'        => array(
+					array(
+						'id'                  => 'ch_settled',
+						'payment_method'      => 'pm_settled',
+						'captured'            => true,
+						'amount'              => 4000,
+						'currency'            => 'gbp',
+						'balance_transaction' => array(
+							'id'            => 'txn_settled',
+							'exchange_rate' => 1.33127,
+						),
+						'fee_breakdown_v1'    => array(
+							'totals' => array(
+								'fee' => array(
+									'amount'   => 0,
+									'currency' => 'gbp',
+								),
+								'net' => array(
+									'amount'   => 4000,
+									'currency' => 'gbp',
+								),
+							),
+						),
+					),
+				),
+			),
+		);
+
+		$this->create_controller( $this->create_api_client_returning( $intent ), null, null, $this->create_account_service( true, 'usd' ) )->confirm_order_payment(
+			array(
+				'_ajax_nonce' => wp_create_nonce( 'wcpay_update_order_status_nonce_' . $order->get_id() ),
+				'order_id'    => $order->get_id(),
+				'intent_id'   => 'pi_settled',
+			)
+		);
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( OrderStatus::PROCESSING, $order->get_status() );
+		$this->assertSame( 'pi_settled', $order->get_transaction_id() );
+		$this->assertSame( 'cus_stored', $order->get_meta( '_stripe_customer_id', true ), "The payment's record is kept." );
+		$this->assertFalse( $order->meta_exists( '_charge_id' ), "The payment's record is kept." );
+		$this->assertSame( '0', $order->get_meta( '_wcpay_transaction_fee', true ), 'A zero fee is recorded.' );
+		$this->assertSame( '40', $order->get_meta( '_wcpay_net', true ) );
+		$this->assertSame( '1.33127', $order->get_meta( '_wcpay_multi_currency_stripe_exchange_rate', true ) );
+	}
+
+	/**
 	 * @testdox Order-status callback should reject mismatched intent IDs before transport reads and note the received ID.
 	 *
 	 * Source: client 11.1.0 `gw:4184-4188` (a missing `intent_id` is the translated "unknown") and `gw:4372-4384`

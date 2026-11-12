@@ -314,11 +314,14 @@ class WooPaymentsOrderEffectApplier {
 
 	/**
 	 * Attach a payment's intent to the order before its status is decided: the transaction ID and the intent's meta, so the
-	 * order keeps the payment's record whatever the decision. Nothing is written once the stored intent status is succeeded.
+	 * order keeps the payment's record whatever the decision. Once the stored intent status is succeeded, the transaction ID
+	 * and the intent's meta are left as they are, and only the caller's other fields are written.
 	 *
 	 * Client 11.3.0 does this in attach_intent_info_to_order() (class-wc-payments-order-service.php:1818-1884), called by its
 	 * checkout, redirect return, order-status callback and terminal capture before they update the order from the intent
-	 * (class-wc-payment-gateway-wcpay.php:2444, :2700, :4663; class-wc-rest-payments-orders-controller.php:215).
+	 * (class-wc-payment-gateway-wcpay.php:2444, :2700, :4663; class-wc-rest-payments-orders-controller.php:215). Its guard
+	 * covers that function only (:1820); the mode, exchange rate, fee and net are written beside it, unguarded
+	 * (class-wc-payment-gateway-wcpay.php:1964, :2445, :2501, :2701, :2708, :4662, :4664).
 	 *
 	 * @param WC_Order             $order       Order read under the order payment lock the caller holds.
 	 * @param string               $intent_id   Intent ID, which becomes the transaction ID.
@@ -327,12 +330,13 @@ class WooPaymentsOrderEffectApplier {
 	 *                                          or CONFIRMATION_META_KEYS, or none for the terminal capture.
 	 */
 	public function attach_intent_info( WC_Order $order, string $intent_id, array $meta, array $beside_keys = array() ): void {
-		if ( 'succeeded' === (string) $order->get_meta( '_intention_status', true ) ) {
-			return;
+		$keys = $beside_keys;
+		if ( 'succeeded' !== (string) $order->get_meta( '_intention_status', true ) ) {
+			$order->set_transaction_id( $intent_id );
+			$keys = array_merge( self::INTENT_INFO_META_KEYS, $beside_keys );
 		}
 
-		$order->set_transaction_id( $intent_id );
-		wc_get_container()->get( OrderPaymentLifecycleService::class )->apply_meta_under_lock( $order, array_intersect_key( $meta, array_flip( array_merge( self::INTENT_INFO_META_KEYS, $beside_keys ) ) ), array() );
+		wc_get_container()->get( OrderPaymentLifecycleService::class )->apply_meta_under_lock( $order, array_intersect_key( $meta, array_flip( $keys ) ), array() );
 	}
 
 	/**
