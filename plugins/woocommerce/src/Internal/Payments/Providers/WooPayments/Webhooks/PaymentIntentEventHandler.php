@@ -374,8 +374,8 @@ class PaymentIntentEventHandler {
 	 *
 	 * Provider code that learns of a succeeded intent outside its webhook, such as a paid Stripe Billing invoice, uses it
 	 * under its own claim. A caller that decided the order is held passes the hold's note: the payment is then recorded and
-	 * the order put on hold instead of completed. The Fee details job is scheduled when the intent's payment note is first
-	 * added.
+	 * the order put on hold instead of completed. An order that stores a requires_capture intent status is completed as a
+	 * capture, with the capture note. The Fee details job is scheduled when the intent's payment note is first added.
 	 *
 	 * @since 11.2.0
 	 *
@@ -496,14 +496,10 @@ class PaymentIntentEventHandler {
 	 * @return PaymentLifecycleEvent
 	 */
 	private function build_succeeded_lifecycle_event( array $event_object, WC_Order $order, ?array $hold_note_candidates ): PaymentLifecycleEvent {
-		$charge          = $this->get_first_charge_from_intent( $event_object );
-		$note_candidates = $this->order_note_service->format_payment_success_note_candidates(
-			$order,
-			$this->get_object_id( $event_object ),
-			$this->get_charge_id_from_intent( $event_object ),
-			WooPaymentsIntentCodec::balance_transaction_id( $charge['balance_transaction'] ?? null )
-		);
-		$meta            = $this->get_succeeded_payment_intent_meta( $event_object, $order );
+		$charge                     = $this->get_first_charge_from_intent( $event_object );
+		$balance_transaction_id     = WooPaymentsIntentCodec::balance_transaction_id( $charge['balance_transaction'] ?? null );
+		$captures_the_authorization = null === $hold_note_candidates && 'requires_capture' === (string) $order->get_meta( '_intention_status', true );
+		$meta                       = $this->get_succeeded_payment_intent_meta( $event_object, $order, $captures_the_authorization );
 
 		if ( null !== $hold_note_candidates ) {
 			return new PaymentLifecycleEvent(
@@ -519,13 +515,19 @@ class PaymentIntentEventHandler {
 			);
 		}
 
+		// Client 11.3.0 completes an order that stores requires_capture with its capture writer, and any other with its
+		// success writer (class-wc-payments-order-service.php:484-489, :2193-2219).
+		$note_candidates = $captures_the_authorization
+			? $this->order_note_service->format_capture_success_note_candidates( $order, $this->get_object_id( $event_object ), $this->get_charge_id_from_intent( $event_object ), $balance_transaction_id )
+			: $this->order_note_service->format_payment_success_note_candidates( $order, $this->get_object_id( $event_object ), $this->get_charge_id_from_intent( $event_object ), $balance_transaction_id );
+
 		return new PaymentLifecycleEvent(
 			PaymentLifecycleEvent::STATUS_COMPLETED,
 			$this->get_object_id( $event_object ),
 			$meta,
 			array(),
 			$note_candidates[0],
-			PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_SUCCESS,
+			$captures_the_authorization ? PaymentLifecycleEvent::NOTE_TYPE_CAPTURE_SUCCESS : PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_SUCCESS,
 			$note_candidates
 		);
 	}
@@ -534,11 +536,16 @@ class PaymentIntentEventHandler {
 	 * Get the order meta of a succeeded payment intent beyond what write_succeeded_payment_intent_meta() saves: the intent
 	 * status, the order mode, the IPP channel and the charge's meta.
 	 *
-	 * @param array<string,mixed> $event_object Provider intent object.
-	 * @param WC_Order            $order        Order object.
+	 * A payment completed as a capture marks a fraud review as allowed when the order's fraud outcome is review, and adds
+	 * the captured charge's fee, as client 11.3.0's capture writer does (class-wc-payments-order-service.php:2207-2215);
+	 * any other payment marks it when the order is on hold.
+	 *
+	 * @param array<string,mixed> $event_object               Provider intent object.
+	 * @param WC_Order            $order                      Order object.
+	 * @param bool                $captures_the_authorization Whether the payment completes the order as a capture.
 	 * @return array<string,string>
 	 */
-	private function get_succeeded_payment_intent_meta( array $event_object, WC_Order $order ): array {
+	private function get_succeeded_payment_intent_meta( array $event_object, WC_Order $order, bool $captures_the_authorization = false ): array {
 		$charge = $this->get_first_charge_from_intent( $event_object );
 		$meta   = $this->without_empty_values(
 			array(
@@ -560,13 +567,14 @@ class PaymentIntentEventHandler {
 					$charge,
 					$settlement_meta,
 					false,
-					$order->has_status( OrderStatus::ON_HOLD )
+					$captures_the_authorization ? 'review' === (string) $order->get_meta( '_wcpay_fraud_outcome_status', true ) : $order->has_status( OrderStatus::ON_HOLD )
 				),
 				WooPaymentsOrderEffects::completed_charge_payment_method_backfill_meta(
 					$charge,
 					$this->order_has_placeholder_payment_method_details( $order ),
 					(string) $order->get_meta( '_wcpay_payment_transaction_id', true )
-				)
+				),
+				$captures_the_authorization ? WooPaymentsOrderEffects::attached_fee_meta( $charge ) : array()
 			);
 		}
 

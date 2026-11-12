@@ -2449,10 +2449,11 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox An order an authorization put on hold completes when its payment is captured for less than was authorized, with the capture note and no hold note.
+	 * @testdox An order an authorization put on hold, captured from the store for less than was authorized, keeps one capture note and gets no success or hold note when the succeeded payment arrives.
 	 *
 	 * Client 11.3.0 completes an order whose stored intent status is requires_capture through its capture, whatever the
-	 * captured amount (class-wc-payments-order-service.php:484-485, :2774).
+	 * captured amount (class-wc-payments-order-service.php:484-485, :2774), and adds no success note once the capture note
+	 * is on the order (:2040-2046).
 	 */
 	public function test_order_held_by_an_authorization_completes_on_a_partial_capture(): void {
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
@@ -2549,7 +2550,64 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 		$order = wc_get_order( $order->get_id() );
 		$this->assertTrue( $order->is_paid() );
 		$this->assertCount( 1, $this->get_order_notes_containing( $order, 'was <strong>successfully captured</strong>' ) );
+		$this->assertSame( array(), $this->get_order_notes_containing( $order, 'was <strong>successfully charged</strong>' ) );
 		$this->assertSame( array(), $this->get_order_notes_containing( $order, 'but the order total is' ) );
+	}
+
+	/**
+	 * @testdox An order an authorization put on hold completes as a capture when the payment succeeds while the order still stores the authorization, for less than the order total, with one capture note and no success or hold note.
+	 *
+	 * The capture was made outside the store, so the succeeded payment is the first the order hears of it. Client 11.3.0
+	 * completes an order whose stored intent status is requires_capture with its capture writer, whatever the captured
+	 * amount: the capture note, the fraud box from the stored fraud outcome, and the Fee details job
+	 * (class-wc-payments-order-service.php:484-485, :2193-2219).
+	 */
+	public function test_order_held_by_an_authorization_completes_as_a_capture_on_a_succeeded_payment(): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
+		$order = $this->create_woopayments_order();
+		$order->set_total( '10.99' );
+		$order->save();
+		$event = $this->recorded_authorization_event( $order );
+		$this->sut->process( $event );
+		$held = wc_get_order( $order->get_id() );
+		$this->assertSame( OrderStatus::ON_HOLD, $held->get_status() );
+		$held->set_total( '8.00' );
+		$held->save();
+
+		$captured                                   = $event['data']['object'];
+		$captured['status']                         = 'succeeded';
+		$captured['amount_capturable']              = 0;
+		$captured['amount_received']                = 800;
+		$captured['charges']['data'][0]['captured'] = true;
+		$captured['charges']['data'][0]['amount_captured'] = 800;
+		$event['id']                                       = 'evt_capture_outside_the_store';
+		$event['type']                                     = 'payment_intent.succeeded';
+		$event['data']['object']                           = $captured;
+		$this->sut->process( $event );
+		$this->sut->process( $event );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertTrue( $order->is_paid() );
+		$this->assertSame( $captured['id'], $order->get_transaction_id() );
+		$this->assertSame( 'succeeded', $order->get_meta( '_intention_status', true ) );
+		$this->assertSame( 'allow', $order->get_meta( '_wcpay_fraud_meta_box_type', true ) );
+		$this->assertCount( 1, $this->get_order_notes_containing( $order, 'was <strong>successfully captured</strong>' ) );
+		$this->assertSame( array(), $this->get_order_notes_containing( $order, 'was <strong>successfully charged</strong>' ) );
+		$this->assertSame( array(), $this->get_order_notes_containing( $order, 'but the order total is' ) );
+		$this->assertCount(
+			1,
+			as_get_scheduled_actions(
+				array(
+					'hook'   => WooPaymentsFeeDetailsNoteController::ADD_FEE_BREAKDOWN_TO_ORDER_NOTES_ACTION,
+					'args'   => array(
+						'order_id'     => $order->get_id(),
+						'intent_id'    => $captured['id'],
+						'is_test_mode' => true,
+					),
+					'status' => \ActionScheduler_Store::STATUS_PENDING,
+				)
+			)
+		);
 	}
 
 	/**
