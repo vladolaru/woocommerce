@@ -588,22 +588,24 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 	}
 
 	/**
-	 * Record a completed or authorized charge's intent on the order, read again under the checkout's order payment lock,
-	 * before the payment lifecycle decides on it (WooPaymentsOrderEffectApplier::attach_intent_info()).
+	 * Record a completed, authorized or started charge's intent on the order, read again under the checkout's order payment
+	 * lock, before the payment lifecycle decides on it (WooPaymentsOrderEffectApplier::attach_intent_info()).
 	 *
-	 * Client 11.3.0 attaches it before it updates the order from the intent, which then changes nothing on an order
-	 * already paid (class-wc-payment-gateway-wcpay.php:2444, :2499).
+	 * Client 11.3.0 attaches it, whatever the intent's status, before it updates the order from the intent, which then
+	 * changes nothing on an order already paid, or for a started payment on an order that is not Pending
+	 * (class-wc-payment-gateway-wcpay.php:2444, :2499). The intent's meta is attached also when the started payment's own
+	 * writes are skipped.
 	 *
 	 * @param PaymentOperationContext $context Payment context.
 	 * @param PaymentOutcome          $outcome Charge outcome, with its effects applied.
 	 */
 	private function record_charge_intent( PaymentOperationContext $context, PaymentOutcome $outcome ): void {
 		$intent_id = $outcome->get_provider_payment_id();
-		if ( '' === $intent_id || $outcome->is_payment_method_only() || ! in_array( PaymentLifecycleEvent::status_for_outcome( $outcome ), array( PaymentLifecycleEvent::STATUS_COMPLETED, PaymentLifecycleEvent::STATUS_AUTHORIZED ), true ) ) {
+		if ( '' === $intent_id || $outcome->is_payment_method_only() || ! in_array( PaymentLifecycleEvent::status_for_outcome( $outcome ), array( PaymentLifecycleEvent::STATUS_COMPLETED, PaymentLifecycleEvent::STATUS_AUTHORIZED, PaymentLifecycleEvent::STATUS_STARTED ), true ) ) {
 			return;
 		}
 
-		$this->order_effect_applier->attach_intent_info( $context->get_order(), $intent_id, $this->get_outcome_meta( $outcome ), WooPaymentsOrderEffectApplier::CHARGE_META_KEYS );
+		$this->order_effect_applier->attach_intent_info( $context->get_order(), $intent_id, ( new WooPaymentsOutcomeMetadataMapper() )->get_intent_meta( $outcome ), WooPaymentsOrderEffectApplier::CHARGE_META_KEYS );
 	}
 
 	/**

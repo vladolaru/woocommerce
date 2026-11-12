@@ -38,6 +38,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIn
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentCodec;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffectApplier;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDataService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderSuccessPage;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeeDetailsNoteController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\PaymentIntentEventHandler;
@@ -3645,6 +3646,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 * it is (:475, :3398-3410).
 	 */
 	public function test_process_payment_keeps_the_record_of_a_payment_that_completed_the_order_during_the_charge(): void {
+		add_filter( 'wcpay_test_mode', '__return_true' );
 		$order = $this->create_order();
 		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
 		$order->set_total( '10.99' );
@@ -3685,6 +3687,108 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		foreach ( $other_payment as $key => $value ) {
 			$this->assertSame( $value, $order->get_meta( $key, true ), "The other payment's $key is kept." );
 		}
+		// The order mode is written beside the record whatever its status, as client 11.3.0 writes it before the charge
+		// (class-wc-payment-gateway-wcpay.php:1964).
+		$this->assertSame( 'test', $order->get_meta( '_wcpay_mode', true ) );
+	}
+
+	/**
+	 * @testdox A checkout whose charge waits for the shopper to authenticate attaches the intent, and writes the started note and fraud box only on a Pending order: $_dataName.
+	 *
+	 * Client 11.3.0 attaches the intent whatever its status (class-wc-payment-gateway-wcpay.php:2444,
+	 * class-wc-payments-order-service.php:1818-1884; nothing once the stored intent status is succeeded, :1820), then its
+	 * started writer returns unless the order is Pending (:2499, class-wc-payments-order-service.php:2229-2241).
+	 *
+	 * @dataProvider provider_orders_a_started_checkout_meets
+	 *
+	 * @param string $when    When the order changes: `before` the request, `during` the charge, or `never`.
+	 * @param string $status  Status the order then has.
+	 * @param bool   $settled Whether another payment's succeeded record is stored with that status.
+	 */
+	public function test_process_payment_attaches_a_started_intent_and_writes_it_only_on_a_pending_order( string $when, string $status, bool $settled ): void {
+		add_filter( 'wc_order_statuses', static fn( array $statuses ): array => array_merge( $statuses, array( 'wc-shipped' => 'Shipped' ) ) );
+		add_filter( 'woocommerce_order_is_paid_statuses', static fn( array $statuses ): array => array_merge( $statuses, array( 'shipped' ) ) );
+		$order = $this->create_order();
+		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+		$order->set_total( '10.99' );
+		// An earlier attempt's intent, which a started charge's attach replaces.
+		$order->set_transaction_id( 'pi_earlier_attempt' );
+		$order->update_meta_data( '_intent_id', 'pi_earlier_attempt' );
+		$order->save();
+		$move = static function ( int $order_id ) use ( $status, $settled ): void {
+			$other = wc_get_order( $order_id );
+			if ( $settled ) {
+				$other->set_transaction_id( 'pi_other_tab' );
+				$other->update_meta_data( '_intent_id', 'pi_other_tab' );
+				$other->update_meta_data( '_intention_status', 'succeeded' );
+				$other->update_meta_data( '_wcpay_payment_transaction_id', 'txn_other_tab' );
+			}
+			$other->set_status( $status );
+			$other->save();
+		};
+		if ( 'before' === $when ) {
+			$move( $order->get_id() );
+		}
+		$intent  = array(
+			'id'                   => 'pi_started_checkout',
+			'status'               => 'requires_action',
+			'amount'               => 1099,
+			'currency'             => 'usd',
+			'customer'             => 'cus_started_checkout',
+			'payment_method'       => 'pm_started_checkout',
+			'payment_method_types' => array( 'card' ),
+			'client_secret'        => 'pi_started_checkout_secret',
+			'next_action'          => array( 'type' => 'use_stripe_sdk' ),
+			'metadata'             => array( 'order_id' => (string) $order->get_id() ),
+		);
+		$outcome = WooPaymentsIntentCodec::outcome_from_intention(
+			$intent,
+			new WooPaymentsIntentMappingContext( $order->get_checkout_order_received_url(), 'pm_started_checkout', 'cus_started_checkout' )
+		)->with_effect_plan( WooPaymentsOrderEffectPlan::for_payment_intent( $intent, false ) );
+		$gateway = new WooPaymentsGateway();
+		$gateway->init( wc_get_container()->get( PaymentProcessingService::class ), $this->create_provider_charging( $outcome, wc_get_container()->get( WooPaymentsTokenService::class ), 'during' === $when ? $move : null ) );
+		$_POST['wcpay-payment-method'] = 'pm_started_checkout';
+		$started                       = wc_get_container()->get( WooPaymentsOrderNoteService::class )->format_payment_started_note_candidates( $order, 'pi_started_checkout' );
+
+		$gateway->process_payment( $order->get_id() );
+
+		$order         = wc_get_order( $order->get_id() );
+		$started_notes = array_filter( wp_list_pluck( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), 'content' ), static fn( string $note ): bool => in_array( $note, $started, true ) );
+		$this->assertSame( 'never' === $when ? OrderStatus::PENDING : $status, $order->get_status() );
+		if ( 'never' === $when ) {
+			$this->assertCount( 1, $started_notes, 'The started note on a Pending order.' );
+			$this->assertSame( 'payment_started', $order->get_meta( '_wcpay_fraud_meta_box_type', true ) );
+		} else {
+			$this->assertCount( 0, $started_notes, 'No started note.' );
+			$this->assertFalse( $order->meta_exists( '_wcpay_fraud_meta_box_type' ), 'No started fraud box.' );
+		}
+		if ( $settled ) {
+			$this->assertSame( 'pi_other_tab', $order->get_transaction_id(), "The settled record's transaction ID is kept." );
+			$this->assertSame( 'pi_other_tab', $order->get_meta( '_intent_id', true ) );
+			$this->assertSame( 'succeeded', $order->get_meta( '_intention_status', true ) );
+			$this->assertSame( 'txn_other_tab', $order->get_meta( '_wcpay_payment_transaction_id', true ) );
+		} else {
+			$this->assertSame( 'pi_started_checkout', $order->get_transaction_id(), "The started intent's attach replaces the earlier attempt's." );
+			$this->assertSame( 'pi_started_checkout', $order->get_meta( '_intent_id', true ) );
+			$this->assertSame( 'requires_action', $order->get_meta( '_intention_status', true ) );
+			$this->assertSame( 'cus_started_checkout', $order->get_meta( '_stripe_customer_id', true ) );
+		}
+	}
+
+	/**
+	 * Orders a started checkout meets: Pending, or moved before the request or during the charge.
+	 *
+	 * @return array<string,array{string,string,bool}>
+	 */
+	public function provider_orders_a_started_checkout_meets(): array {
+		return array(
+			'Pending'                                   => array( 'never', OrderStatus::PENDING, false ),
+			'Failed before the request'                 => array( 'before', OrderStatus::FAILED, false ),
+			'Processing during the charge'              => array( 'during', OrderStatus::PROCESSING, false ),
+			'a plugin\'s paid status during the charge' => array( 'during', 'shipped', false ),
+			'On hold during the charge'                 => array( 'during', OrderStatus::ON_HOLD, false ),
+			"another payment's succeeded record during the charge" => array( 'during', OrderStatus::PROCESSING, true ),
+		);
 	}
 
 	/**
