@@ -1173,9 +1173,8 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 	 * succeeded when authorized and failed when declined; processing, for a payment still settling, is kept too but was not
 	 * observed. Client 11.1.0 fails the order on any fetch failure (class-wc-payment-gateway-wcpay.php:2428-2455), so a
 	 * shopper whose bank confirmed the payment can change the cart and pay again on a new order. Here a succeeded or
-	 * processing return leaves the order for the webhook: no failure, cart emptied, order-received kept. Any other value, a
-	 * SetupIntent return, and any return with manual capture on fail the order as before: a held card has no webhook that
-	 * settles it.
+	 * processing return leaves the order for the webhook, with manual capture on or off: no failure, cart emptied,
+	 * order-received kept. Any other value and a SetupIntent return fail the order as before.
 	 *
 	 * @dataProvider provider_failed_fetch_redirect_statuses
 	 *
@@ -1250,7 +1249,8 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 			'declined at the bank, the order fails'        => array( 'failed', true, false ),
 			'no value, the order fails'                    => array( '', true, false ),
 			'a SetupIntent return, the order fails'        => array( 'succeeded', false, false ),
-			'manual capture on, the order fails'           => array( 'succeeded', true, false, true ),
+			'manual capture on, left for the webhook'      => array( 'succeeded', true, true, true ),
+			'manual capture on, declined, the order fails' => array( 'failed', true, false, true ),
 		);
 	}
 

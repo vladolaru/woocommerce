@@ -276,8 +276,7 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 	 * Client 11.1.0 fails the order on any fetch failure (class-wc-payment-gateway-wcpay.php:2428-2455), so a shopper who
 	 * then changes the cart pays again on a new order. Here the order keeps its status, the cart is emptied and the shopper
 	 * stays on order-received with no notice, as after a confirmation failure on such an intent; the payment_intent webhook
-	 * settles the order. With manual capture on, the return keeps the failure: a held card has no webhook that settles it.
-	 * The value only keeps the shopper's own order pending: nothing is marked paid on it.
+	 * settles the order. The value only keeps the shopper's own order pending: nothing is marked paid on it.
 	 *
 	 * @param WC_Order $order     Order object.
 	 * @param string   $intent_id Requested intent ID.
@@ -286,10 +285,6 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 	private function leave_return_for_webhook_after_failed_fetch( WC_Order $order, string $intent_id ): bool {
 		$redirect_status = $this->get_query_string( 'redirect_status' );
 		if ( ! in_array( $redirect_status, array( 'succeeded', 'processing' ), true ) ) {
-			return false;
-		}
-
-		if ( 'yes' === wc_get_container()->get( WooPaymentsAccountService::class )->get_gateway_setting( 'manual_capture', 'no' ) ) {
 			return false;
 		}
 
