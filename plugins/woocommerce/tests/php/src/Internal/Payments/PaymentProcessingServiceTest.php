@@ -317,7 +317,85 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A failed outcome records its meta and one note, keeps the intent off the transaction ID and releases the lock; it fails the order unless flagged to preserve the status ($_dataName).
+	 * @testdox A payment-method-only outcome that did not fail writes its mapped meta and deletes its keys, and leaves the order's status, transaction ID, paid date and notes as they were ($_dataName).
+	 *
+	 * The runtime half of a checkout operation that takes no payment, such as replacing the payment method of a recurring
+	 * order; client 11.3.0 makes no completion call there (class-wc-payment-gateway-wcpay.php:2497-2500, :1998-2002).
+	 *
+	 * @dataProvider payment_method_only_outcomes
+	 *
+	 * @param string $status    Outcome status.
+	 * @param string $reference Provider reference.
+	 */
+	public function test_process_checkout_applies_no_lifecycle_to_a_payment_method_only_outcome( string $status, string $reference ): void {
+		$order = $this->create_woopayments_order( '10.00' );
+		$order->update_meta_data( '_method_stale', 'stale' );
+		$order->save();
+
+		$outcome = new PaymentOutcome(
+			$status,
+			$reference,
+			'',
+			'method_saved',
+			'customer_saved',
+			array(
+				PaymentOutcome::DATA_PAYMENT_METHOD_ONLY => true,
+				PaymentOutcome::DATA_META_TO_DELETE      => array( '_method_stale' ),
+				PaymentOutcome::DATA_NOTE                => 'Payment note.',
+			)
+		);
+
+		$provider = new class( $outcome ) extends RecordingProvider {
+			/**
+			 * Map the outcome to the order meta a provider keeps for a saved payment method.
+			 *
+			 * @param PaymentOutcome $outcome Provider outcome.
+			 * @return array<string,string>
+			 */
+			public function get_outcome_meta( PaymentOutcome $outcome ): array {
+				return array(
+					'_method_customer' => $outcome->get_customer_id(),
+					'_method_id'       => $outcome->get_payment_method_id(),
+				);
+			}
+		};
+
+		$payment_complete_calls = 0;
+		$observer               = static function () use ( &$payment_complete_calls ): void {
+			++$payment_complete_calls;
+		};
+		add_action( 'woocommerce_payment_complete', $observer );
+
+		$result = $this->sut->process_checkout_outcome( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'method_saved' ), $provider );
+		$order  = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( $status, $result->get_status() );
+		$this->assertSame( 'method_saved', $order->get_meta( '_method_id', true ) );
+		$this->assertSame( 'customer_saved', $order->get_meta( '_method_customer', true ) );
+		$this->assertSame( '', $order->get_meta( '_method_stale', true ), 'The outcome deletes the keys it names.' );
+		$this->assertSame( OrderStatus::PENDING, $order->get_status() );
+		$this->assertSame( '', $order->get_transaction_id() );
+		$this->assertNull( $order->get_date_paid() );
+		$this->assertSame( array(), wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+		$this->assertSame( 0, $payment_complete_calls );
+	}
+
+	/**
+	 * Payment-method-only outcomes that did not fail.
+	 *
+	 * @return array<string,array{string,string}>
+	 */
+	public function payment_method_only_outcomes(): array {
+		return array(
+			'completed'                => array( PaymentOutcome::STATUS_COMPLETED, 'ref_method' ),
+			'requires customer action' => array( PaymentOutcome::STATUS_REQUIRES_CUSTOMER_ACTION, 'ref_method' ),
+			'no external payment'      => array( PaymentOutcome::STATUS_NO_EXTERNAL_PAYMENT, '' ),
+		);
+	}
+
+	/**
+	 * @testdox A failed outcome records its meta and one note, keeps the intent off the transaction ID and releases the lock; it fails the order unless flagged to keep the status or as payment-method-only ($_dataName).
 	 *
 	 * Client 11.1.0 fails a declined order (`class-wc-payment-gateway-wcpay.php:1324-1328`) and keeps the intent ID on it
 	 * (`:1331-1333`) with one failed-payment note (`:1359-1361`); a fraud block leaves the status for the merchant.
@@ -387,6 +465,16 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 					'_wcpay_fraud_meta_box_type' => 'allow',
 					'_charge_id'                 => '',
 				),
+			),
+			'payment-method-only decline'   => array(
+				'seti_declined_test',
+				array(
+					PaymentOutcome::DATA_PAYMENT_METHOD_ONLY => true,
+					PaymentOutcome::DATA_ERROR_CODE => 'card_declined',
+				),
+				'A payment of 10.00 failed to complete.',
+				'pending',
+				array(),
 			),
 		);
 	}
@@ -810,10 +898,11 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	 * @param string               $status        Provider outcome status.
 	 * @param string               $failure_point Where local work throws: 'lifecycle', 'effects', or 'lifecycle after effects replaced the outcome'.
 	 * @param array<string,string> $expected_meta Order meta the saved reconciliation context carries.
+	 * @param array<string,mixed>  $data          Outcome data.
 	 */
-	public function test_process_checkout_outcome_keeps_order_reconcilable_when_apply_throws( string $status, string $failure_point, array $expected_meta ): void {
+	public function test_process_checkout_outcome_keeps_order_reconcilable_when_apply_throws( string $status, string $failure_point, array $expected_meta, array $data = array() ): void {
 		$order   = $this->create_woopayments_order( '10.00' );
-		$outcome = new PaymentOutcome( $status, 'pi_post_charge', PaymentOutcome::STATUS_REQUIRES_CUSTOMER_ACTION === $status ? '#wcpay-confirm-pi:1:secret:nonce' : '', 'pm_post_charge', 'cus_post_charge' );
+		$outcome = new PaymentOutcome( $status, 'pi_post_charge', PaymentOutcome::STATUS_REQUIRES_CUSTOMER_ACTION === $status ? '#wcpay-confirm-pi:1:secret:nonce' : '', 'pm_post_charge', 'cus_post_charge', $data );
 
 		$provider = new class( $outcome, $failure_point ) extends RecordingProvider implements ProviderOperationEffectApplierInterface {
 			/**
@@ -896,10 +985,19 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * Where local work throws after the provider answered, for outcomes the service must keep.
 	 *
-	 * @return array<string,array{string,string,array<string,string>}>
+	 * @return array<string,array{0:string,1:string,2:array<string,string>,3?:array<string,mixed>}>
 	 */
 	public function reconcilable_apply_failures(): array {
 		return array(
+			'meta write throws on a payment-method-only outcome' => array(
+				PaymentOutcome::STATUS_COMPLETED,
+				'lifecycle',
+				array(
+					'_intent_id'         => 'pi_post_charge',
+					'_payment_method_id' => 'pm_post_charge',
+				),
+				array( PaymentOutcome::DATA_PAYMENT_METHOD_ONLY => true ),
+			),
 			'lifecycle throws on a charge'       => array( PaymentOutcome::STATUS_COMPLETED, 'lifecycle', array( '_intention_status' => 'succeeded' ) ),
 			'effects throw on a charge'          => array( PaymentOutcome::STATUS_COMPLETED, 'effects', array( '_intention_status' => 'succeeded' ) ),
 			'effects throw on a customer action' => array(
@@ -5575,6 +5673,19 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 			public function apply_under_lock( WC_Order $order, PaymentLifecycleEvent $event, ProviderPersistenceVocabularyInterface $persistence_vocabulary ): string {
 				// Avoid parameter not used PHPCS errors.
 				unset( $order, $event, $persistence_vocabulary );
+				throw new RuntimeException( PaymentProcessingServiceTest::PROVIDER_FAILURE_TEXT, 9 ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- A test double's fixed text, never output.
+			}
+
+			/**
+			 * Always throw, as apply_under_lock() does here.
+			 *
+			 * @param WC_Order            $order          Order object.
+			 * @param array<string,mixed> $meta_to_update Order meta to update.
+			 * @param array<int,mixed>    $meta_to_delete Order meta keys to delete.
+			 * @throws RuntimeException Always, to drive the post-charge failure path.
+			 */
+			public function apply_meta_under_lock( WC_Order $order, array $meta_to_update, array $meta_to_delete ): void {
+				unset( $order, $meta_to_update, $meta_to_delete );
 				throw new RuntimeException( PaymentProcessingServiceTest::PROVIDER_FAILURE_TEXT, 9 ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- A test double's fixed text, never output.
 			}
 		};

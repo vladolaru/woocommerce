@@ -115,7 +115,7 @@ class PaymentProcessingService {
 
 			try {
 				$outcome = $this->apply_provider_operation_effects( $context, $outcome, $provider, self::OPERATION_CHARGE );
-				$this->apply_outcome_lifecycle_event( $order, $outcome, $provider );
+				$this->apply_checkout_outcome( $order, $outcome, $provider );
 				$this->apply_provider_post_lifecycle_effects( $context, $outcome, $provider, self::OPERATION_CHARGE );
 			} catch ( Throwable $apply_exception ) {
 				if ( ! $this->is_reconcilable_provider_outcome( $provider_outcome ) ) {
@@ -923,13 +923,36 @@ class PaymentProcessingService {
 	}
 
 	/**
-	 * Apply the lifecycle event a provider outcome maps to: every checkout outcome, and captures and cancels that did not fail.
+	 * Apply a checkout outcome to the order: its lifecycle event, or only its meta when the operation took no payment.
+	 *
+	 * A payment-method-only outcome (PaymentOutcome::DATA_PAYMENT_METHOD_ONLY) that did not fail gets its mapped meta and
+	 * no event; a failed one gets the failed event and keeps the order status.
 	 *
 	 * @param WC_Order          $order    Order object.
 	 * @param PaymentOutcome    $outcome  Provider outcome.
 	 * @param ProviderInterface $provider Provider.
 	 */
-	private function apply_outcome_lifecycle_event( WC_Order $order, PaymentOutcome $outcome, ProviderInterface $provider ): void {
+	private function apply_checkout_outcome( WC_Order $order, PaymentOutcome $outcome, ProviderInterface $provider ): void {
+		$payment_method_only = $outcome->is_payment_method_only();
+		if ( $payment_method_only && PaymentOutcome::STATUS_FAILED !== $outcome->get_status() ) {
+			$this->lifecycle_service->apply_meta_under_lock( $order, $this->get_provider_outcome_meta( $outcome, $provider ), $this->get_lifecycle_meta_to_delete( $outcome ) );
+			return;
+		}
+
+		$this->apply_outcome_lifecycle_event( $order, $outcome, $provider, $payment_method_only );
+	}
+
+	/**
+	 * Apply the lifecycle event a provider outcome maps to: every checkout outcome but a payment-method-only one that did not
+	 * fail, and captures and cancels that did not fail.
+	 *
+	 * @param WC_Order          $order                 Order object.
+	 * @param PaymentOutcome    $outcome               Provider outcome.
+	 * @param ProviderInterface $provider              Provider.
+	 * @param bool              $preserve_order_status Whether a failed event must keep the order status, whatever the
+	 *                                                 outcome's own flag says.
+	 */
+	private function apply_outcome_lifecycle_event( WC_Order $order, PaymentOutcome $outcome, ProviderInterface $provider, bool $preserve_order_status = false ): void {
 		$this->lifecycle_service->apply_under_lock(
 			$order,
 			new PaymentLifecycleEvent(
@@ -943,7 +966,7 @@ class PaymentProcessingService {
 				// The event stays a failure so the late-failure guard still
 				// protects already-paid orders; only the status transition is
 				// suppressed when the outcome asked to preserve the status.
-				$this->should_preserve_order_status( $outcome )
+				$preserve_order_status || $this->should_preserve_order_status( $outcome )
 			),
 			$provider->get_persistence_vocabulary()
 		);

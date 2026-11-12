@@ -206,7 +206,7 @@ class OrderPaymentLifecycleService {
 			return self::RESULT_NOTE_NOT_ADDED;
 		}
 
-		$this->apply_meta_changes( $order, $event );
+		$this->apply_meta_changes( $order, $event->get_meta_to_update(), $event->get_meta_to_delete() );
 
 		$should_add_note = null !== $note && '' !== $note && ! $this->should_skip_lifecycle_note( $order, $event );
 
@@ -225,17 +225,40 @@ class OrderPaymentLifecycleService {
 	}
 
 	/**
+	 * Write an outcome's order meta and save the order, with no lifecycle event, while the caller already owns the order
+	 * payment lock.
+	 *
+	 * For an outcome that took no payment: the meta is normalised and written as a lifecycle event's is, and the order's
+	 * status, transaction ID and notes are left as they are.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @param WC_Order            $order          Order object.
+	 * @param array<string,mixed> $meta_to_update Order meta to update.
+	 * @param array<int,mixed>    $meta_to_delete Order meta keys to delete.
+	 */
+	public function apply_meta_under_lock( WC_Order $order, array $meta_to_update, array $meta_to_delete ): void {
+		$this->apply_meta_changes(
+			$order,
+			PaymentLifecycleEvent::normalize_meta_to_update( $meta_to_update ),
+			PaymentLifecycleEvent::normalize_meta_to_delete( $meta_to_delete )
+		);
+		$order->save();
+	}
+
+	/**
 	 * Apply meta updates and deletes.
 	 *
-	 * @param WC_Order              $order Order object.
-	 * @param PaymentLifecycleEvent $event Lifecycle event.
+	 * @param WC_Order             $order          Order object.
+	 * @param array<string,string> $meta_to_update Normalized order meta to update.
+	 * @param string[]             $meta_to_delete Normalized order meta keys to delete.
 	 */
-	private function apply_meta_changes( WC_Order $order, PaymentLifecycleEvent $event ): void {
-		foreach ( $event->get_meta_to_update() as $key => $value ) {
+	private function apply_meta_changes( WC_Order $order, array $meta_to_update, array $meta_to_delete ): void {
+		foreach ( $meta_to_update as $key => $value ) {
 			$order->update_meta_data( $key, $value );
 		}
 
-		foreach ( $event->get_meta_to_delete() as $key ) {
+		foreach ( $meta_to_delete as $key ) {
 			$order->delete_meta_data( $key );
 		}
 	}

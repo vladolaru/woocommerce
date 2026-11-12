@@ -43,6 +43,33 @@ class PaymentOutcomeTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox is_payment_method_only() is true only when the payment-method-only flag is true ($_dataName).
+	 *
+	 * @dataProvider payment_method_only_flags
+	 *
+	 * @param array<string,mixed> $data     Outcome data.
+	 * @param bool                $expected Whether the outcome is payment-method-only.
+	 */
+	public function test_payment_method_only_is_true_only_for_a_true_flag( array $data, bool $expected ): void {
+		$this->assertSame( $expected, ( new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, '', '', '', '', $data ) )->is_payment_method_only() );
+	}
+
+	/**
+	 * Outcome data with and without the payment-method-only flag.
+	 *
+	 * @return array<string,array{array<string,mixed>,bool}>
+	 */
+	public function payment_method_only_flags(): array {
+		return array(
+			'true'   => array( array( PaymentOutcome::DATA_PAYMENT_METHOD_ONLY => true ), true ),
+			'false'  => array( array( PaymentOutcome::DATA_PAYMENT_METHOD_ONLY => false ), false ),
+			'one'    => array( array( PaymentOutcome::DATA_PAYMENT_METHOD_ONLY => 1 ), false ),
+			'string' => array( array( PaymentOutcome::DATA_PAYMENT_METHOD_ONLY => 'yes' ), false ),
+			'absent' => array( array(), false ),
+		);
+	}
+
+	/**
 	 * @testdox with_effect_plan() returns a copy that holds the plan and leaves the original outcome unchanged.
 	 */
 	public function test_with_effect_plan_returns_a_copy_that_holds_the_plan(): void {

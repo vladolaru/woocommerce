@@ -175,6 +175,19 @@ class PaymentOutcome {
 	public const DATA_PRESERVE_ORDER_STATUS = 'preserve_order_status';
 
 	/**
+	 * Checkout outcomes: flags that the operation saved or changed the order's payment method and took no payment, such as
+	 * replacing the payment method of a recurring order.
+	 *
+	 * The runtime trusts the flag: by setting it, the provider guarantees that the operation took no payment. A flagged
+	 * outcome that did not fail gets its mapped meta written and no lifecycle event: no completion, no status change, and no
+	 * transaction ID or note from the lifecycle. A flagged failed outcome gets the failed event and keeps the order status.
+	 *
+	 * @since 11.2.0
+	 * @var string
+	 */
+	public const DATA_PAYMENT_METHOD_ONLY = 'payment_method_only';
+
+	/**
 	 * Failed outcomes: flags that the provider operation threw instead of returning an outcome.
 	 *
 	 * The payment processing service builds such an outcome from the throwable, with its message as the error message, so a
@@ -313,6 +326,18 @@ class PaymentOutcome {
 			),
 			true
 		);
+	}
+
+	/**
+	 * Tell whether the operation only saved or changed the order's payment method and took no payment
+	 * (self::DATA_PAYMENT_METHOD_ONLY).
+	 *
+	 * @since 11.2.0
+	 *
+	 * @return bool
+	 */
+	public function is_payment_method_only(): bool {
+		return true === ( $this->data[ self::DATA_PAYMENT_METHOD_ONLY ] ?? false );
 	}
 
 	/**

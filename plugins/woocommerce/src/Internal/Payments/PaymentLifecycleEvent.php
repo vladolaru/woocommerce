@@ -198,8 +198,8 @@ class PaymentLifecycleEvent {
 
 		$this->status                = $status;
 		$this->payment_reference     = $payment_reference;
-		$this->meta_to_update        = $this->normalize_meta_to_update( $meta_to_update );
-		$this->meta_to_delete        = array_values( array_map( 'strval', $meta_to_delete ) );
+		$this->meta_to_update        = self::normalize_meta_to_update( $meta_to_update );
+		$this->meta_to_delete        = self::normalize_meta_to_delete( $meta_to_delete );
 		$this->note                  = $note;
 		$this->note_type             = null === $note_type || '' === $note_type ? null : $note_type;
 		$this->note_equivalents      = $this->normalize_note_equivalents( $note_equivalents );
@@ -350,14 +350,18 @@ class PaymentLifecycleEvent {
 	 * other values JSON-encoded), sorted by key so an event writes its meta in the same order whatever order the provider
 	 * built it in.
 	 *
+	 * The lifecycle service writes an outcome's meta without an event through the same normalisation.
+	 *
+	 * @since 11.2.0
+	 *
 	 * @param array<string,mixed> $meta_to_update Raw meta updates.
 	 * @return array<string,string>
 	 */
-	private function normalize_meta_to_update( array $meta_to_update ): array {
+	public static function normalize_meta_to_update( array $meta_to_update ): array {
 		$normalized = array();
 
 		foreach ( $meta_to_update as $key => $value ) {
-			$normalized[ $key ] = $this->normalize_meta_value( $value );
+			$normalized[ $key ] = self::normalize_meta_value( $value );
 		}
 
 		ksort( $normalized );
@@ -366,12 +370,24 @@ class PaymentLifecycleEvent {
 	}
 
 	/**
+	 * Turn meta keys to delete into the list of strings get_meta_to_delete() returns.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @param array<int,mixed> $meta_to_delete Raw meta keys to delete.
+	 * @return string[]
+	 */
+	public static function normalize_meta_to_delete( array $meta_to_delete ): array {
+		return array_values( array_map( 'strval', $meta_to_delete ) );
+	}
+
+	/**
 	 * Normalize a meta value to a string.
 	 *
 	 * @param mixed $value Raw value.
 	 * @return string
 	 */
-	private function normalize_meta_value( $value ): string {
+	private static function normalize_meta_value( $value ): string {
 		if ( is_scalar( $value ) || null === $value ) {
 			return (string) $value;
 		}
