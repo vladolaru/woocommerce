@@ -3556,6 +3556,42 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A checkout whose differing payment the lifecycle does not apply, the order having an open dispute, adds no hold note and logs no hold.
+	 *
+	 * The hold is logged only once its note is on the order, as client 11.3.0 logs only when it holds the order
+	 * (class-wc-payments-order-service.php:2117-2131).
+	 */
+	public function test_process_payment_logs_no_hold_the_lifecycle_did_not_apply(): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => 'yes' ) );
+		add_filter( 'wcpay_dev_mode', '__return_false' );
+		$logger = RecordingWcLogger::install();
+
+		$order = $this->create_order();
+		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+		$order->set_total( '12.00' );
+		$order->set_currency( 'USD' );
+		$order->update_meta_data( ( new WooPaymentsPersistenceVocabulary() )->get_open_dispute_ids_meta_key(), array( 'dp_open' ) );
+		$order->save();
+		// The recorded subscription sign-up PaymentIntent (Fixtures/platform-intention-subscription.json, pair signup_initial_setup_future_usage), 10.99 USD.
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reading a local test fixture.
+		$recording = json_decode( (string) file_get_contents( __DIR__ . '/Fixtures/platform-intention-subscription.json' ), true );
+		$intent    = array_values( array_filter( $recording['entries'], static fn( array $entry ) => 'signup_initial_setup_future_usage' === $entry['pair'] ) )[0]['response']['body'];
+		$outcome   = WooPaymentsIntentCodec::outcome_from_intention(
+			$intent,
+			new WooPaymentsIntentMappingContext( $order->get_checkout_order_received_url(), (string) $intent['payment_method'], (string) $intent['customer'] )
+		)->with_effect_plan( WooPaymentsOrderEffectPlan::for_payment_intent( $intent, false ) );
+		$gateway   = new WooPaymentsGateway();
+		$gateway->init( wc_get_container()->get( PaymentProcessingService::class ), $this->create_provider_charging( $outcome, wc_get_container()->get( WooPaymentsTokenService::class ) ) );
+		$_POST['wcpay-payment-method'] = (string) $intent['payment_method'];
+
+		$gateway->process_payment( $order->get_id() );
+
+		$notes = array_map( static fn( $note ): string => (string) $note->content, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+		$this->assertCount( 0, array_filter( $notes, static fn( string $note ): bool => false !== strpos( $note, 'was put <strong>on hold</strong>' ) ) );
+		$this->assertCount( 0, array_filter( array_map( 'strval', array_column( $logger->lines, 1 ) ), static fn( string $line ): bool => false !== strpos( $line, 'put on hold: intent' ) ) );
+	}
+
+	/**
 	 * Orders a 10.99 USD payment differs from.
 	 *
 	 * @return array<string,array{string,string}>
