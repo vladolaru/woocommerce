@@ -343,7 +343,7 @@ class WooPaymentsOrderEffectApplier {
 		$intent_id   = isset( $result['id'] ) ? (string) $result['id'] : '';
 		$charge_id   = isset( $charge['id'] ) ? (string) $charge['id'] : '';
 
-		$hold_note_candidates = 'succeeded' === $status ? wc_get_container()->get( WooPaymentsAmountMismatchHold::class )->get_hold_note_candidates( $order, $result ) : null;
+		$hold_note_candidates = 'succeeded' === $status ? wc_get_container()->get( WooPaymentsAmountMismatchHold::class )->decide_hold( $order, $result ) : null;
 		if ( null !== $hold_note_candidates ) {
 			$effect_data[ PaymentOutcome::DATA_HOLD_ORDER ]       = true;
 			$effect_data[ PaymentOutcome::DATA_NOTE ]             = $hold_note_candidates[0];

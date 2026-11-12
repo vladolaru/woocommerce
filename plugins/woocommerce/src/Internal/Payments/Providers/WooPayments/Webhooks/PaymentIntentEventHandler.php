@@ -472,7 +472,7 @@ class PaymentIntentEventHandler {
 			);
 		}
 
-		$hold_note_candidates = $hold_note_candidates ?? wc_get_container()->get( WooPaymentsAmountMismatchHold::class )->get_hold_note_candidates( $order, $event_object );
+		$hold_note_candidates = $hold_note_candidates ?? wc_get_container()->get( WooPaymentsAmountMismatchHold::class )->decide_hold( $order, $event_object );
 		if ( null !== $hold_note_candidates ) {
 			return new PaymentLifecycleEvent(
 				PaymentLifecycleEvent::STATUS_COMPLETED,

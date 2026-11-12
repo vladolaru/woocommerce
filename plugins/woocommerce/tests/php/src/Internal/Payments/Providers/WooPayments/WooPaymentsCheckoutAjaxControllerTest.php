@@ -1208,6 +1208,41 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Order-status callback writes no hold log line when another operation holds the order payment lock, so no hold is applied.
+	 *
+	 * Client 11.3.0 class-wc-payments-order-service.php:2117-2131 logs only when it holds the order.
+	 */
+	public function test_update_order_status_logs_no_hold_when_the_order_payment_lock_is_refused(): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => 'yes' ) );
+		add_filter( 'wcpay_dev_mode', '__return_false' );
+		$order = $this->create_order_for_intent_binding( 'payment' );
+		$order->update_meta_data( '_intent_id', 'pi_binding' );
+		$order->save();
+		wc_get_container()->get( OrderPaymentLock::class )->claim( $order, new WooPaymentsPersistenceVocabulary(), 'pi_other_operation', 'payment operation' );
+		$logger = RecordingWcLogger::install();
+		$intent = array(
+			'id'             => 'pi_binding',
+			'status'         => 'succeeded',
+			'amount'         => 4000,
+			'currency'       => 'usd',
+			'customer'       => 'cus_binding',
+			'payment_method' => 'pm_binding',
+			'metadata'       => array( 'order_id' => (string) $order->get_id() ),
+		);
+
+		$this->create_controller( $this->create_api_client_returning( $intent ) )->confirm_order_payment(
+			array(
+				'_ajax_nonce' => wp_create_nonce( 'wcpay_update_order_status_nonce_' . $order->get_id() ),
+				'order_id'    => $order->get_id(),
+				'intent_id'   => 'pi_binding',
+			)
+		);
+
+		$this->assertNotSame( 'on-hold', wc_get_order( $order->get_id() )->get_status() );
+		$this->assertSame( array(), array_values( array_filter( array_map( 'strval', array_column( $logger->lines, 1 ) ), static fn( string $line ): bool => false !== strpos( $line, 'put on hold: intent' ) ) ) );
+	}
+
+	/**
 	 * Create the order a binding test confirms: a $50.00 order for a PaymentIntent, a $0.00 order for a SetupIntent, or an active
 	 * subscription for a payment method change.
 	 *

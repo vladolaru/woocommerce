@@ -193,7 +193,9 @@ class PaymentOutcome {
 	 *
 	 * The lifecycle event the outcome maps to (PaymentLifecycleEvent::should_hold_order_for_outcome()) moves the order to
 	 * on-hold with the payment reference as its transaction ID, writes the outcome's meta and note, and leaves a paid order
-	 * as it is. A payment-method-only outcome is never held.
+	 * as it is. A payment-method-only outcome is never held. The runtime never completes a held order on its own for the
+	 * same payment: the merchant releases it by changing the order's status, and a later event that no longer asks for a
+	 * hold completes it.
 	 *
 	 * @since 11.2.0
 	 * @var string

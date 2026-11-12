@@ -3,7 +3,9 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Internal\Payments\PaymentLifecycleEvent;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAmountMismatchHold;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeeDetailsNoteController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService;
 use WC_Order;
 use WC_Unit_Test_Case;
@@ -46,7 +48,7 @@ class WooPaymentsAmountMismatchHoldTest extends WC_Unit_Test_Case {
 	public function test_payment_that_differs_from_the_order_total_holds_the_order( string $order_currency, int $amount, string $intent_currency, float $charged, string $charged_code ): void {
 		$order = $this->create_order( '25.19', $order_currency );
 
-		$notes = $this->sut->get_hold_note_candidates( $order, $this->succeeded_intent( $amount, $intent_currency ) );
+		$notes = $this->sut->decide_hold( $order, $this->succeeded_intent( $amount, $intent_currency ) );
 
 		$transaction_url = wc_get_container()->get( WooPaymentsOrderNoteService::class )->transaction_url( 'pi_mismatch', 'ch_mismatch' );
 		$this->assertIsArray( $notes );
@@ -88,7 +90,7 @@ class WooPaymentsAmountMismatchHoldTest extends WC_Unit_Test_Case {
 			$order->save();
 		}
 
-		$this->assertNull( $this->sut->get_hold_note_candidates( $order, array_merge( $this->succeeded_intent( 2519, 'usd' ), $intent ) ) );
+		$this->assertNull( $this->sut->decide_hold( $order, array_merge( $this->succeeded_intent( 2519, 'usd' ), $intent ) ) );
 	}
 
 	/**
@@ -127,23 +129,63 @@ class WooPaymentsAmountMismatchHoldTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The hold is logged once: not again once the order has its note.
+	 * @testdox A decided hold is logged once its note is on the order, not before, and not for a later delivery.
 	 *
-	 * Client 11.3.0 class-wc-payments-order-service.php:2117-2131 returns before its log line when the note exists.
+	 * Client 11.3.0 class-wc-payments-order-service.php:2117-2131 logs only when it adds the hold note.
 	 */
-	public function test_hold_is_logged_until_the_order_has_its_note(): void {
+	public function test_hold_is_logged_once_its_note_was_added(): void {
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => 'yes' ) );
 		add_filter( 'wcpay_dev_mode', '__return_false' );
 		$logger = RecordingWcLogger::install();
 		$order  = $this->create_order( '25.19', 'USD' );
 		$intent = $this->succeeded_intent( 2267, 'usd' );
 
-		$notes = $this->sut->get_hold_note_candidates( $order, $intent );
+		$notes = $this->sut->decide_hold( $order, $intent );
+		$this->sut->log_applied_hold( $order, 'pi_mismatch' );
+		$before_the_note = $this->get_hold_log_lines( $logger );
 		$order->add_order_note( $notes[0] );
-		$this->sut->get_hold_note_candidates( $order, $intent );
+		$this->sut->log_applied_hold( $order, 'pi_mismatch' );
+		$this->sut->log_applied_hold( $order, 'pi_mismatch' );
+		$this->sut->decide_hold( $order, $intent );
+		$this->sut->log_applied_hold( $order, 'pi_mismatch' );
 
-		$lines = array_values( array_filter( array_column( $logger->lines, 1 ), static fn( $line ): bool => false !== strpos( (string) $line, 'put on hold' ) ) );
-		$this->assertSame( array( 'Order ' . $order->get_id() . ' put on hold: intent pi_mismatch succeeded for 2267 usd, but the order total is 25.19 USD.' ), $lines );
+		$this->assertSame( array(), $before_the_note );
+		$this->assertSame( array( 'Order ' . $order->get_id() . ' put on hold: intent pi_mismatch succeeded for 2267 usd, but the order total is 25.19 USD.' ), $this->get_hold_log_lines( $logger ) );
+	}
+
+	/**
+	 * @testdox A held event the lifecycle skips because another request already held the order writes no second hold log line.
+	 *
+	 * The decision is made before the lifecycle claims the order payment lock (the order-status callback), and another request
+	 * holds the order in between. Client 11.3.0 class-wc-payments-order-service.php:2117-2131 logs only when it holds the order.
+	 */
+	public function test_hold_applied_by_another_request_is_not_logged_again(): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => 'yes' ) );
+		add_filter( 'wcpay_dev_mode', '__return_false' );
+		$logger = RecordingWcLogger::install();
+		$order  = $this->create_order( '25.19', 'USD' );
+		$order->set_payment_method( 'woocommerce_payments' );
+		$order->save();
+
+		$notes = $this->sut->decide_hold( $order, $this->succeeded_intent( 2267, 'usd' ) );
+		$order->add_order_note( $notes[0] );
+		wc_get_container()->get( WooPaymentsFeeDetailsNoteController::class )->apply_and_schedule_fee_details(
+			$order,
+			new PaymentLifecycleEvent( PaymentLifecycleEvent::STATUS_COMPLETED, 'pi_mismatch', array(), array(), $notes[0], PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_HELD, $notes, false, true )
+		);
+
+		$this->assertCount( 1, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+		$this->assertSame( array(), $this->get_hold_log_lines( $logger ) );
+	}
+
+	/**
+	 * Get the hold log lines a recording logger holds.
+	 *
+	 * @param RecordingWcLogger $logger Recording logger.
+	 * @return string[]
+	 */
+	private function get_hold_log_lines( RecordingWcLogger $logger ): array {
+		return array_values( array_filter( array_map( 'strval', array_column( $logger->lines, 1 ) ), static fn( string $line ): bool => false !== strpos( $line, 'put on hold: intent' ) ) );
 	}
 
 	/**

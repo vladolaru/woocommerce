@@ -295,6 +295,10 @@ class WooPaymentsFeeDetailsNoteController implements RegisterHooksInterface {
 		if ( OrderPaymentLifecycleService::RESULT_NOTE_ADDED === $result && $this->is_success_or_capture_event( $event ) ) {
 			$this->schedule( $order, (string) $event->get_payment_reference() );
 		}
+
+		if ( OrderPaymentLifecycleService::RESULT_NOTE_ADDED === $result && $event->should_hold_order() ) {
+			wc_get_container()->get( WooPaymentsAmountMismatchHold::class )->log_applied_hold( $order, (string) $event->get_payment_reference() );
+		}
 	}
 
 	/**

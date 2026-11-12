@@ -644,6 +644,10 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 			$this->get_fee_details_note_controller()->schedule_when_outcome_note_added( $context->get_order(), $outcome );
 		}
 
+		if ( $outcome->should_hold_order() ) {
+			wc_get_container()->get( WooPaymentsAmountMismatchHold::class )->log_applied_hold( $context->get_order(), $outcome->get_provider_payment_id() );
+		}
+
 		if ( PaymentProcessingService::OPERATION_CHARGE === $operation ) {
 			$this->payment_operations->finalize_charge_idempotency_key( $context->get_order(), $outcome );
 		}

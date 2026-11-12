@@ -272,6 +272,63 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A held order whose total was edited to match its payment completes on the next delivery, with one success note.
+	 *
+	 * Client 11.3.0 class-wc-payments-order-service.php:483-491: an on-hold order is not paid, so a succeeded intent for its
+	 * total and currency reaches mark_payment_completed() (:2032-2046) and completes it.
+	 */
+	public function test_payment_intent_succeeded_completes_a_held_order_once_its_total_matches(): void {
+		$order = $this->create_woopayments_order();
+		$event = $this->create_payment_intent_event( 'payment_intent.succeeded', $order, array( 'amount' => 1234 ) );
+		$this->sut->process( $event );
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( 'on-hold', $order->get_status() );
+		$order->set_total( '12.34' );
+		$order->save();
+
+		$this->sut->process( $event );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		// An order with no items to ship goes to completed, as in test_payment_intent_succeeded_completes_order().
+		$this->assertSame( 'completed', $order->get_status() );
+		$this->assertTrue( $order->is_paid() );
+		$this->assertCount( 1, $this->get_order_notes_containing( $order, 'successfully charged' ) );
+		$this->assertCount( 1, $this->get_order_notes_containing( $order, 'was put <strong>on hold</strong>' ) );
+		$this->assertTrue( as_has_scheduled_action( WooPaymentsFeeDetailsNoteController::ADD_FEE_BREAKDOWN_TO_ORDER_NOTES_ACTION, null, 'woocommerce_payments' ) );
+	}
+
+	/**
+	 * @testdox The hold of a payment that differs from the order total is logged only when it is applied: $_dataName.
+	 *
+	 * Client 11.3.0 class-wc-payments-order-service.php:475 (nothing on a paid order) and :2117-2131 (the line once, with
+	 * the note).
+	 *
+	 * @testWith ["pending", 1]
+	 *           ["processing", 0]
+	 *
+	 * @param string $order_status   Order status before the deliveries: an order the hold applies to, or a paid one.
+	 * @param int    $expected_lines Hold log lines after two deliveries.
+	 */
+	public function test_hold_is_logged_only_when_applied( string $order_status, int $expected_lines ): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => 'yes' ) );
+		add_filter( 'wcpay_dev_mode', '__return_false' );
+		$order = $this->create_woopayments_order();
+		$order->set_status( $order_status );
+		$order->set_transaction_id( 'pi_123' );
+		$order->update_meta_data( '_intent_id', 'pi_123' );
+		$order->save();
+		$logger = RecordingWcLogger::install();
+		$event  = $this->create_payment_intent_event( 'payment_intent.succeeded', $order, array( 'amount' => 1234 ) );
+
+		$this->sut->process( $event );
+		$this->sut->process( $event );
+
+		$lines = array_values( array_filter( array_map( 'strval', array_column( $logger->lines, 1 ) ), static fn( string $line ): bool => false !== strpos( $line, 'put on hold: intent' ) ) );
+		$this->assertCount( $expected_lines, $lines );
+	}
+
+	/**
 	 * Payments that differ from the 10.00 USD order.
 	 *
 	 * @return array<string,array{array<string,mixed>}>

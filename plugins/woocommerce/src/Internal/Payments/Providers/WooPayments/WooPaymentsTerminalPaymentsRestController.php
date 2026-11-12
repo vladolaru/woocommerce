@@ -712,7 +712,7 @@ class WooPaymentsTerminalPaymentsRestController extends RestApiControllerBase {
 
 		$meta       = array();
 		$hold_order = false;
-		$hold_notes = $already_captured ? wc_get_container()->get( WooPaymentsAmountMismatchHold::class )->get_hold_note_candidates( $order, $intent ) : null;
+		$hold_notes = $already_captured ? wc_get_container()->get( WooPaymentsAmountMismatchHold::class )->decide_hold( $order, $intent ) : null;
 		if ( PaymentLifecycleEvent::STATUS_AUTHORIZED === $status ) {
 			$note_type  = PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_AUTHORIZED;
 			$candidates = $this->note_service->format_payment_authorized_note_candidates( $order, $intent_id, $charge_id );
