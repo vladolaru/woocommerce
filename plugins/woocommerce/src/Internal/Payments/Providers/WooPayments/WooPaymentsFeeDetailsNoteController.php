@@ -218,7 +218,7 @@ class WooPaymentsFeeDetailsNoteController implements RegisterHooksInterface {
 
 	/**
 	 * Apply a payment lifecycle event built from a payment intent's status, as apply_and_schedule_fee_details() does, except
-	 * that its completion leaves an order already in a paid status as it is.
+	 * that its completion or authorization leaves an order already in a paid status as it is.
 	 *
 	 * Client 11.3.0 updates an order from an intent's status only while the order is not paid
 	 * (class-wc-payments-order-service.php:475, :3287-3289, :3398-3410).
@@ -237,7 +237,7 @@ class WooPaymentsFeeDetailsNoteController implements RegisterHooksInterface {
 	 * @param WC_Order                                   $order            Order object.
 	 * @param PaymentLifecycleEvent                      $event            Lifecycle event.
 	 * @param array{notes:string[],log_line:string}|null $hold             The amount-mismatch hold the event applies.
-	 * @param bool                                       $leave_paid_order Whether a completion leaves an order already in a paid status as it is.
+	 * @param bool                                       $leave_paid_order Whether a completion or an authorization leaves an order already in a paid status as it is.
 	 */
 	private function apply_under_lock_and_schedule( WC_Order $order, PaymentLifecycleEvent $event, ?array $hold, bool $leave_paid_order ): void {
 		// A subscription gets no payment event: no lifecycle, no note, no Fee details job.
@@ -258,7 +258,7 @@ class WooPaymentsFeeDetailsNoteController implements RegisterHooksInterface {
 	 * payment reference, and is the one refused when another operation holds the lock.
 	 *
 	 * Its callers, the order-status callback, the redirect return and the attached-intent check, update the order from an
-	 * intent's status, so a completion leaves an order already in a paid status as it is, as
+	 * intent's status, so a completion or an authorization leaves an order already in a paid status as it is, as
 	 * apply_intent_status_and_schedule_fee_details() does.
 	 *
 	 * @param WC_Order              $order            Order object.
