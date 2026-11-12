@@ -735,7 +735,10 @@ class WooPaymentsTerminalPaymentsRestController extends RestApiControllerBase {
 			$note_type  = PaymentLifecycleEvent::NOTE_TYPE_CAPTURE_SUCCESS;
 			$candidates = $this->note_service->format_capture_success_note_candidates( $order, $intent_id, $charge_id, $balance_transaction_id );
 			// The client's capture attaches the exchange rate and the fee the capture response carries (class-wc-payment-gateway-wcpay.php:4038-4041, class-wc-payments-order-service.php:1681).
+			// The captured status is saved before the completion, as the client's capture writer stores it (:529-532), so a hook
+			// on the completion that moves an order needing no processing to Completed finds the payment captured.
 			$meta = array_merge(
+				array( '_intention_status' => 'succeeded' ),
 				$this->order_data_service->get_settlement_exchange_rate_order_meta( $order, $charge, $this->account_service->get_account_default_currency() ),
 				WooPaymentsOrderEffects::attached_fee_meta( $charge )
 			);

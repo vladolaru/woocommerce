@@ -11,6 +11,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCu
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSessionService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTerminalPaymentsRestController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDataService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderAdminActionsController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeeDetailsNoteController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
@@ -647,6 +648,65 @@ class WooPaymentsTerminalPaymentsRestControllerTest extends WC_REST_Unit_Test_Ca
 		$this->assertSame( 'completed', $order->get_status(), 'The terminal completion runs.' );
 		$this->assertSame( 'succeeded', $order->get_meta( '_intention_status', true ) );
 		$this->assertStringEndsWith( '/payments/readers/receipts/pi_terminal_paid', (string) $order->get_meta( 'receipt_url' ) );
+	}
+
+	/**
+	 * @testdox A terminal capture completes the order once, with no pending capture note or retry, whether or not it needs processing: $_dataName.
+	 *
+	 * Completing an order with no line items moves it to Completed inside the capture, which runs the order's capture on
+	 * completion; the order then already stores the captured status. Client 11.3.0's hook reads the intent there, finds it
+	 * captured and adds nothing (class-wc-payment-gateway-wcpay.php:784, class-wc-payments-order-service.php:2381-2418).
+	 *
+	 * @dataProvider provider_terminal_orders_by_processing
+	 *
+	 * @param bool $with_items Whether the order holds a shippable product.
+	 */
+	public function test_capture_terminal_payment_completes_once_without_a_pending_capture( bool $with_items ): void {
+		wc_get_container()->get( WooPaymentsOrderAdminActionsController::class )->register();
+		if ( $with_items ) {
+			$order = $this->create_order( 12.34, 'USD' );
+		} else {
+			// An in-person sale of a custom amount: no product line items.
+			$order = new \WC_Order();
+			$order->set_currency( 'USD' );
+			$order->set_total( 12.34 );
+			$order->set_status( 'pending' );
+			$order->save();
+		}
+		$intent                                        = array(
+			'id'       => 'pi_terminal_once',
+			'status'   => 'requires_capture',
+			'currency' => 'usd',
+			'metadata' => array( 'order_id' => (string) $order->get_id() ),
+			'charges'  => array( 'data' => array( array( 'id' => 'ch_terminal_once' ) ) ),
+		);
+		$this->api_client->payment_intention_response  = $intent;
+		$this->api_client->captured_intention_response = array_merge( $intent, array( 'status' => 'succeeded' ) );
+
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/orders/' . $order->get_id() . '/capture_terminal_payment' );
+		$request->set_param( 'order_id', $order->get_id() );
+		$request->set_param( 'payment_intent_id', 'pi_terminal_once' );
+		$this->assertInstanceOf( WP_REST_Response::class, $this->sut->capture_terminal_payment( $request ) );
+
+		$order    = wc_get_order( $order->get_id() );
+		$contents = implode( ' ', wp_list_pluck( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), 'content' ) );
+		$this->assertSame( 'completed', $order->get_status() );
+		$this->assertSame( 1, substr_count( $contents, 'successfully captured' ) );
+		$this->assertStringNotContainsString( 'will be retried', $contents, 'No pending capture note.' );
+		$this->assertFalse( as_has_scheduled_action( WooPaymentsOrderAdminActionsController::RETRY_STATUS_CHANGE_OPERATION_ACTION ), 'No capture retry.' );
+		$this->assertSame( array( 'pi_terminal_once' ), array_column( $this->api_client->captures, 'intent_id' ) );
+	}
+
+	/**
+	 * Orders a terminal capture completes: one that needs no processing, and one with a shippable product.
+	 *
+	 * @return array<string,array{bool}>
+	 */
+	public function provider_terminal_orders_by_processing(): array {
+		return array(
+			'no line items'         => array( false ),
+			'a shippable line item' => array( true ),
+		);
 	}
 
 	/**
