@@ -253,9 +253,10 @@ class WooPaymentsFeeDetailsNoteController implements RegisterHooksInterface {
 	 * Apply a payment lifecycle event through the payment lifecycle, which claims the order payment lock for it, and
 	 * schedule the job as apply_and_schedule_fee_details() does.
 	 *
-	 * A caller whose event depends on the order passes a builder: under the claim, the payment lifecycle reads the order
-	 * again and the builder builds the event, with its amount-mismatch hold, from that read. The event passed gives the
-	 * payment reference, and is the one refused when another operation holds the lock.
+	 * A caller whose event depends on the order passes a builder: under the claim, the payment lifecycle reads the caller's
+	 * order again in place and the builder builds the event, with its amount-mismatch hold, on that object, or returns no
+	 * event when there is nothing to apply. The event passed gives the payment reference, and is the one refused when
+	 * another operation holds the lock.
 	 *
 	 * Its callers, the order-status callback, the redirect return and the attached-intent check, update the order from an
 	 * intent's status, so a completion or an authorization leaves an order already in a paid status as it is, as
@@ -263,8 +264,9 @@ class WooPaymentsFeeDetailsNoteController implements RegisterHooksInterface {
 	 *
 	 * @param WC_Order              $order            Order object.
 	 * @param PaymentLifecycleEvent $event            Lifecycle event.
-	 * @param callable|null         $build_under_lock Gets the order read under the claim and returns the event to apply and
-	 *                                                its amount-mismatch hold or null, as array{0:PaymentLifecycleEvent,1:array|null}.
+	 * @param callable|null         $build_under_lock Gets the order read under the claim and returns the event to apply, or null
+	 *                                                when there is nothing to apply, and its amount-mismatch hold or null, as
+	 *                                                array{0:PaymentLifecycleEvent|null,1:array|null}.
 	 * @return string The payment lifecycle's result for the event, OrderPaymentLifecycleService::RESULT_REFUSED when the
 	 *                order payment lock refused it.
 	 */
@@ -283,9 +285,12 @@ class WooPaymentsFeeDetailsNoteController implements RegisterHooksInterface {
 				$order,
 				$event,
 				$this->vocabulary,
-				function ( WC_Order $stored_order ) use ( $build_under_lock, &$event, &$hold ): PaymentLifecycleEvent {
-					list( $event, $hold ) = $build_under_lock( $stored_order );
-					$event                = $this->with_completion_rules( $stored_order, $event, true );
+				function ( WC_Order $stored_order ) use ( $build_under_lock, &$event, &$hold ): ?PaymentLifecycleEvent {
+					list( $built_event, $hold ) = $build_under_lock( $stored_order );
+					if ( null === $built_event ) {
+						return null;
+					}
+					$event = $this->with_completion_rules( $stored_order, $built_event, true );
 
 					return $event;
 				}

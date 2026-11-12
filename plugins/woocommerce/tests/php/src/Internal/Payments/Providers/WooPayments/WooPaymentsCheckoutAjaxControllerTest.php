@@ -1732,6 +1732,129 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Order-status callback reading a started payment, while another payment's settled record with its own transaction ID reaches an order that had none, keeps that record and saves nothing after the attach.
+	 *
+	 * Client 11.3.0's attach writes nothing over a succeeded intent status (class-wc-payments-order-service.php:1820-1822),
+	 * and its started writer returns on an order that is not Pending (:2229-2233).
+	 */
+	public function test_update_order_status_keeps_a_record_settled_during_the_fetch_and_saves_only_the_attach(): void {
+		$order = $this->create_order_for_intent_binding( 'payment' );
+		$order->update_meta_data( '_intent_id', 'pi_started' );
+		$order->save();
+		$saves  = 0;
+		$fetch  = static function () use ( $order, &$saves ): void {
+			$other = wc_get_order( $order->get_id() );
+			$other->set_transaction_id( 'pi_other_settled' );
+			$other->update_meta_data( '_intention_status', 'succeeded' );
+			$other->update_meta_data( '_wcpay_payment_transaction_id', 'txn_other_settled' );
+			$other->set_status( OrderStatus::PROCESSING );
+			$other->save();
+			add_action(
+				'woocommerce_before_order_object_save',
+				static function ( WC_Order $saved ) use ( $order, &$saves ): void {
+					if ( $saved->get_id() === $order->get_id() ) {
+						++$saves;
+					}
+				}
+			);
+		};
+		$intent = array(
+			'id'             => 'pi_started',
+			'status'         => 'requires_action',
+			'amount'         => 5000,
+			'currency'       => 'usd',
+			'customer'       => 'cus_started',
+			'payment_method' => 'pm_started',
+			'metadata'       => array( 'order_id' => (string) $order->get_id() ),
+		);
+
+		$this->create_controller( $this->create_api_client_returning( $intent, $fetch ) )->confirm_order_payment(
+			array(
+				'_ajax_nonce' => wp_create_nonce( 'wcpay_update_order_status_nonce_' . $order->get_id() ),
+				'order_id'    => $order->get_id(),
+				'intent_id'   => 'pi_started',
+			)
+		);
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( 'pi_other_settled', $order->get_transaction_id() );
+		$this->assertSame( 'succeeded', $order->get_meta( '_intention_status', true ) );
+		$this->assertSame( 'txn_other_settled', $order->get_meta( '_wcpay_payment_transaction_id', true ) );
+		$this->assertSame( OrderStatus::PROCESSING, $order->get_status() );
+		$this->assertSame( 1, $saves, 'Only the attach saves the order.' );
+	}
+
+	/**
+	 * @testdox Order-status callback reading a started SetupIntent for a $0 order already paid leaves its empty transaction ID and adds no note, and records the SetupIntent's payment method.
+	 *
+	 * Client 11.3.0's callback records the payment method of a $0 order's SetupIntent whatever it then does
+	 * (class-wc-payment-gateway-wcpay.php:4708-4715), and its started writer returns on an order that is not Pending
+	 * (class-wc-payments-order-service.php:2229-2233).
+	 */
+	public function test_update_order_status_on_a_paid_zero_order_with_a_started_setup_intent_changes_only_the_payment_method(): void {
+		$order = $this->create_order_for_intent_binding( 'setup' );
+		$order->update_meta_data( '_intent_id', 'seti_started' );
+		$order->set_status( OrderStatus::PROCESSING );
+		$order->save();
+		$notes  = count( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+		$intent = array(
+			'id'             => 'seti_started',
+			'object'         => 'setup_intent',
+			'status'         => 'requires_action',
+			'customer'       => 'cus_started',
+			'payment_method' => 'pm_setup_started',
+			'metadata'       => array( 'order_id' => (string) $order->get_id() ),
+		);
+
+		$this->create_controller( $this->create_api_client_returning( $intent ) )->confirm_order_payment(
+			array(
+				'_ajax_nonce' => wp_create_nonce( 'wcpay_update_order_status_nonce_' . $order->get_id() ),
+				'order_id'    => $order->get_id(),
+				'intent_id'   => 'seti_started',
+			)
+		);
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( OrderStatus::PROCESSING, $order->get_status() );
+		$this->assertSame( '', $order->get_transaction_id() );
+		$this->assertSame( 'pm_setup_started', $order->get_meta( '_payment_method_id', true ) );
+		$this->assertCount( $notes, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), 'No note.' );
+	}
+
+	/**
+	 * @testdox A confirmation leaves the caller's order object as stored: status, transaction ID and intent status.
+	 *
+	 * The payment lifecycle reads the caller's object in place under the order payment lock and writes on it.
+	 */
+	public function test_confirmation_leaves_the_caller_object_as_stored(): void {
+		$order = $this->create_order_for_intent_binding( 'payment' );
+		$order->update_meta_data( '_intent_id', 'pi_caller_object' );
+		$order->save();
+		$caller = wc_get_order( $order->get_id() );
+		$other  = wc_get_order( $order->get_id() );
+		$other->update_meta_data( '_wcpay_fraud_outcome_status', 'allow' );
+		$other->save();
+		$intent = array(
+			'id'             => 'pi_caller_object',
+			'status'         => 'requires_capture',
+			'amount'         => 5000,
+			'currency'       => 'usd',
+			'customer'       => 'cus_caller_object',
+			'payment_method' => 'pm_caller_object',
+			'metadata'       => array( 'order_id' => (string) $order->get_id() ),
+		);
+
+		$this->create_intent_confirmation_service( $this->create_api_client_returning( $intent ) )->confirm_fetched_intent_for_order( $caller, $intent, false, true );
+
+		$stored = wc_get_order( $order->get_id() );
+		$this->assertSame( OrderStatus::ON_HOLD, $stored->get_status() );
+		$this->assertSame( $stored->get_status(), $caller->get_status() );
+		$this->assertSame( $stored->get_transaction_id(), $caller->get_transaction_id() );
+		$this->assertSame( $stored->get_meta( '_intention_status', true ), $caller->get_meta( '_intention_status', true ) );
+		$this->assertSame( 'allow', $caller->get_meta( '_wcpay_fraud_outcome_status', true ), "Another writer's meta reaches the caller's object." );
+	}
+
+	/**
 	 * Orders a started payment is not written on: each status set before the request or while it reads the intent.
 	 *
 	 * @return array<string,array{string,bool,bool}>
@@ -3110,17 +3233,17 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Order-status callbacks keep excluded charge card shapes on the established post-lifecycle display path.
+	 * @testdox Order-status callbacks title the order from every charge card shape before the completion, which sees the final title.
 	 * Card-network precedence follows the pinned WooPayments 11.1.0 CardDefinition; a malformed display brand still answers HTTP 200.
+	 * Client 11.3.0 writes the title and card meta before it updates the order from the intent (class-wc-payment-gateway-wcpay.php:4758-4764, :4771).
 	 *
 	 * @dataProvider excluded_charge_card_shapes
 	 *
-	 * @param array<string,mixed>|null $charge                  PaymentIntent charge data, if present.
-	 * @param string                   $expected_observed_title Expected title at the lifecycle boundary.
-	 * @param int                      $expected_status_code    Expected response status code.
-	 * @param string|null              $expected_final_title    Expected final title when the selected brand is unusable.
+	 * @param array<string,mixed>|null $charge               PaymentIntent charge data, if present.
+	 * @param int                      $expected_status_code Expected response status code.
+	 * @param string|null              $expected_final_title Expected final title when the selected brand is unusable.
 	 */
-	public function test_update_order_status_keeps_excluded_charge_card_shapes_on_post_lifecycle_display_path( ?array $charge, string $expected_observed_title, int $expected_status_code, ?string $expected_final_title = null ): void {
+	public function test_update_order_status_titles_every_charge_card_shape_before_the_completion( ?array $charge, int $expected_status_code, ?string $expected_final_title = null ): void {
 		$user_id = $this->factory()->user->create();
 		wp_set_current_user( $user_id );
 
@@ -3232,7 +3355,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		$this->assertInstanceOf( WC_Order::class, $order );
 		$this->assertSame( $expected_status_code, $response['status_code'] );
 		$this->assertSame( 1, $observer_count );
-		$this->assertSame( $expected_observed_title, $observed_title );
+		$this->assertSame( $order->get_payment_method_title(), $observed_title, 'The completion sees the final title.' );
 		if ( 200 === $expected_status_code && null === $expected_final_title ) {
 			$this->assertNotSame( 'WooPayments', $order->get_payment_method_title() );
 		}
@@ -3242,13 +3365,13 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Provide charge card shapes excluded from the pre-lifecycle identity projection.
+	 * Provide charge card shapes without a full card identity.
 	 *
-	 * @return array<string,array{array<string,mixed>|null,string,int}>
+	 * @return array<string,array{array<string,mixed>|null,int}>
 	 */
 	public function excluded_charge_card_shapes(): array {
 		return array(
-			'missing charge details'                  => array( null, 'WooPayments', 200 ),
+			'missing charge details'                  => array( null, 200 ),
 			'partial card details'                    => array(
 				array(
 					'id'                     => 'ch_partial',
@@ -3258,7 +3381,6 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 						'card' => array( 'last4' => '4242' ),
 					),
 				),
-				'WooPayments',
 				200,
 			),
 			'missing card funding'                    => array(
@@ -3274,7 +3396,6 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 						),
 					),
 				),
-				'WooPayments',
 				200,
 			),
 			'link wrapped card'                       => array(
@@ -3292,7 +3413,6 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 						),
 					),
 				),
-				'WooPayments',
 				200,
 			),
 			'card present'                            => array(
@@ -3304,7 +3424,6 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 						'card_present' => array( 'last4' => '4242' ),
 					),
 				),
-				'WooPayments',
 				200,
 				// No payment method is registered for card_present, so the order keeps its title, as client 11.1.0
 				// set_payment_method_title_for_order() returns early (includes/class-wc-payment-gateway-wcpay.php:2694-2697).
@@ -3324,7 +3443,6 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 						),
 					),
 				),
-				'WooPayments',
 				200,
 			),
 			'uppercase card type'                     => array(
@@ -3341,7 +3459,6 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 						),
 					),
 				),
-				'WooPayments',
 				200,
 			),
 			'spaced card type'                        => array(
@@ -3358,7 +3475,6 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 						),
 					),
 				),
-				'WooPayments',
 				200,
 			),
 			'whitespace card type'                    => array(
@@ -3375,7 +3491,6 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 						),
 					),
 				),
-				'WooPayments',
 				200,
 			),
 			'empty display brand shadows network'     => array(
@@ -3393,7 +3508,6 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 						),
 					),
 				),
-				'WooPayments',
 				200,
 				'Credit / Debit Cards',
 			),
@@ -3412,7 +3526,6 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 						),
 					),
 				),
-				'WooPayments',
 				200,
 				'Credit / Debit Cards',
 			),
@@ -3430,7 +3543,6 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 						),
 					),
 				),
-				'WooPayments',
 				200,
 			),
 			'valid available network'                 => array(
@@ -3447,8 +3559,8 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 						),
 					),
 				),
-				'Visa credit card',
 				200,
+				'Visa credit card',
 			),
 		);
 	}

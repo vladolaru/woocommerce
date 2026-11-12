@@ -137,6 +137,43 @@ class WooPaymentsIntentConfirmationService {
 	}
 
 	/**
+	 * Write the payment method's display details an intent that holds money carries: a $0 SetupIntent's card details when
+	 * they could be applied, the charge's details otherwise.
+	 *
+	 * @param WC_Order                 $order                 Order being confirmed.
+	 * @param array<string,mixed>      $intent                Platform intent response.
+	 * @param array<string,mixed>|null $setup_payment_details A $0 SetupIntent's payment method details, or null for any other intent.
+	 */
+	private function apply_display_details( WC_Order $order, array $intent, ?array $setup_payment_details ): void {
+		if ( ! WooPaymentsIntentCodec::holds_money( isset( $intent['status'] ) ? (string) $intent['status'] : '' ) ) {
+			return;
+		}
+
+		if ( null !== $setup_payment_details && $this->order_effect_applier->apply_setup_intent_payment_method_display_details( $order, $setup_payment_details, $this->account_service->get_account_country() ) ) {
+			return;
+		}
+
+		$this->apply_payment_method_display_details( $order, $intent );
+	}
+
+	/**
+	 * Save the payment method a $0 SetupIntent confirmed on the order, whatever its event applies (client 11.3.0
+	 * class-wc-payment-gateway-wcpay.php:4708-4715).
+	 *
+	 * @param WC_Order            $order  Order read under the order payment lock.
+	 * @param array<string,mixed> $intent SetupIntent response.
+	 */
+	private function save_setup_intent_payment_method( WC_Order $order, array $intent ): void {
+		$payment_method_id = WooPaymentsIntentCodec::result_payment_method_id( $intent );
+		if ( '' === $payment_method_id ) {
+			return;
+		}
+
+		$order->update_meta_data( '_payment_method_id', $payment_method_id );
+		$order->save_meta_data();
+	}
+
+	/**
 	 * Save an intent's status on the order.
 	 *
 	 * @param WC_Order $order  Order the intent belongs to.
@@ -188,14 +225,12 @@ class WooPaymentsIntentConfirmationService {
 	 * @since 11.2.0
 	 */
 	public function confirm_fetched_intent_for_order( WC_Order $order, array $intent, bool $save_payment_method, bool $is_redirect_return = false, bool $zero_amount_plain_note = false ): void {
-		$status                                        = isset( $intent['status'] ) ? (string) $intent['status'] : '';
-		$should_apply_display_details_before_lifecycle = false;
-		$payment_method_details                        = array();
-		$previous_payment_method_id                    = (string) $order->get_meta( '_payment_method_id', true );
+		$status                     = isset( $intent['status'] ) ? (string) $intent['status'] : '';
+		$setup_payment_details      = null;
+		$previous_payment_method_id = (string) $order->get_meta( '_payment_method_id', true );
 
 		if ( WooPaymentsIntentCodec::holds_money( $status ) ) {
-			$token_save_result      = $this->maybe_save_payment_method_for_order( $order, $intent, $save_payment_method );
-			$payment_method_details = $token_save_result['payment_method_details'];
+			$token_save_result = $this->maybe_save_payment_method_for_order( $order, $intent, $save_payment_method );
 			// The redirect return logs a token-save error and completes the order; only the order-status callback stops a recurring order (gw:2389-2396, 4309-4321).
 			if ( null !== $token_save_result['error'] && ! $is_redirect_return ) {
 				throw new WooPaymentsIntentConfirmationException(
@@ -204,47 +239,54 @@ class WooPaymentsIntentConfirmationService {
 				);
 			}
 
-			$should_apply_display_details_before_lifecycle = 0.0 < (float) $order->get_total()
-				&& $token_save_result['token'] instanceof \WC_Payment_Token_CC
-				&& $this->has_full_charge_card_identity( $intent );
-			if ( $should_apply_display_details_before_lifecycle ) {
-				$this->apply_payment_method_display_details( $order, $intent );
-			} elseif ( 0.0 >= (float) $order->get_total() && 'succeeded' === $status && 0 === strpos( (string) ( $intent['id'] ?? '' ), 'seti_' ) && $token_save_result['token'] instanceof \WC_Payment_Token ) {
-				if ( empty( $payment_method_details ) ) {
-					$payment_method_details = $this->order_effect_applier->get_same_method_payment_method_details( $order, WooPaymentsIntentCodec::result_payment_method_id( $intent ), $previous_payment_method_id );
-					if ( empty( $payment_method_details ) ) {
-						$payment_method_details = $this->token_service->get_or_create_token_and_details_for_user(
+			// A $0 SetupIntent's card details come from the platform, so they are read before the order payment lock is claimed.
+			if ( 0.0 >= (float) $order->get_total() && 'succeeded' === $status && 0 === strpos( (string) ( $intent['id'] ?? '' ), 'seti_' ) && $token_save_result['token'] instanceof \WC_Payment_Token ) {
+				$setup_payment_details = $token_save_result['payment_method_details'];
+				if ( empty( $setup_payment_details ) ) {
+					$setup_payment_details = $this->order_effect_applier->get_same_method_payment_method_details( $order, WooPaymentsIntentCodec::result_payment_method_id( $intent ), $previous_payment_method_id );
+					if ( empty( $setup_payment_details ) ) {
+						$setup_payment_details = $this->token_service->get_or_create_token_and_details_for_user(
 							WooPaymentsIntentCodec::result_payment_method_id( $intent ),
 							WooPaymentsCustomerService::get_payer_user_id( $order ),
 							true
 						)['payment_method_details'];
 					}
 				}
-				$should_apply_display_details_before_lifecycle = $this->order_effect_applier->apply_setup_intent_payment_method_display_details( $order, $payment_method_details, $this->account_service->get_account_country() );
 			}
 		}
 
-		// Under the order payment lock, the intent is attached to the order read under it; the event is then built again,
-		// and the hold decided, on that order as attached, as client 11.3.0 attaches before it updates the order
-		// (class-wc-payment-gateway-wcpay.php:2700 then :2707, :4663 then :4771; class-wc-payments-order-service.php:484-489).
+		// Under the order payment lock, on the order read under it: the intent is attached, the payment method's display
+		// details written, and the event then built and the hold decided on that order as attached, as client 11.3.0
+		// attaches, titles the order and then updates it (class-wc-payment-gateway-wcpay.php:2700, :2705-2707; :4663,
+		// :4713-4715, :4758-4764, :4771; class-wc-payments-order-service.php:484-489). A started payment the order no longer
+		// waits for is nothing to apply.
 		$attaches_intent = $is_redirect_return || ! $this->is_setup_intent_for_order( $intent, $order );
+		$displayed       = false;
 		list( $event )   = $this->build_lifecycle_event_from_intent( $intent, $order, $zero_amount_plain_note );
 		$result          = $this->fee_details_note_controller->apply_and_schedule_fee_details_with_lock(
 			$order,
 			$event,
-			function ( WC_Order $stored_order ) use ( $intent, $zero_amount_plain_note, $attaches_intent ): array {
+			function ( WC_Order $stored_order ) use ( $intent, $zero_amount_plain_note, $attaches_intent, $setup_payment_details, &$displayed ): array {
 				if ( $attaches_intent ) {
 					$this->attach_intent_before_decision( $intent, $stored_order, $zero_amount_plain_note );
 				}
+				$this->apply_display_details( $stored_order, $intent, $setup_payment_details );
+				$displayed = true;
+				if ( $zero_amount_plain_note && $this->is_setup_intent_for_order( $intent, $stored_order ) ) {
+					$this->save_setup_intent_payment_method( $stored_order, $intent );
+				}
 
-				return $this->build_lifecycle_event_from_intent( $intent, $stored_order, $zero_amount_plain_note );
+				list( $built_event, $hold, , $changes_nothing ) = $this->build_lifecycle_event_and_intent_meta( $intent, $stored_order, $zero_amount_plain_note );
+
+				return array( $changes_nothing ? null : $built_event, $hold );
 			}
 		);
 		if ( OrderPaymentLifecycleService::RESULT_REFUSED === $result ) {
 			$this->attach_charge_details_after_refusal( $order, $event );
 		}
-		if ( WooPaymentsIntentCodec::holds_money( $status ) && ! $should_apply_display_details_before_lifecycle ) {
-			$this->apply_payment_method_display_details( $order, $intent );
+		if ( ! $displayed ) {
+			// A subscription's card change, or a refused claim: no event is applied, and the display details are written as before.
+			$this->apply_display_details( $order, $intent, $setup_payment_details );
 		}
 
 		if ( ! $is_redirect_return && ! WooPaymentsIntentCodec::holds_money( $status ) ) {
@@ -356,7 +398,9 @@ class WooPaymentsIntentConfirmationService {
 	 * @param array<string,mixed> $intent                 Platform intent response.
 	 * @param WC_Order            $order                  Order being updated.
 	 * @param bool                $zero_amount_plain_note Whether a completed $0 SetupIntent gets the order-status callback's plain note.
-	 * @return array{0:PaymentLifecycleEvent,1:array{notes:string[],log_line:string}|null,2:array<string,string>} The event, the hold, and the intent's meta.
+	 * @return array{0:PaymentLifecycleEvent,1:array{notes:string[],log_line:string}|null,2:array<string,string>,3:bool} The event, the hold, the
+	 *                                                                                                               intent's meta, and whether the
+	 *                                                                                                               outcome changes nothing.
 	 */
 	private function build_lifecycle_event_and_intent_meta( array $intent, WC_Order $order, bool $zero_amount_plain_note ): array {
 		$intent_id             = isset( $intent['id'] ) ? (string) $intent['id'] : '';
@@ -409,13 +453,14 @@ class WooPaymentsIntentConfirmationService {
 			$note_type       = PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_FAILED;
 		}
 
-		$intent_meta = ( new WooPaymentsOutcomeMetadataMapper() )->get_intent_meta( $outcome );
+		$intent_meta = ( new WooPaymentsOutcomeMetadataMapper() )->get_outcome_meta( $outcome );
 		if ( ( $intent['status'] ?? '' ) !== $provider_status ) {
 			$intent_meta['_intention_status'] = $provider_status;
 		}
-		$meta = true === ( $outcome->get_data()[ WooPaymentsOutcomeMetadataMapper::STARTED_WRITES_SKIPPED_KEY ] ?? false ) ? array() : $intent_meta;
 
-		return array( $this->lifecycle_event( $outcome, $meta, $note_candidates, $note_type ), $this->get_amount_mismatch_hold( $outcome ), $intent_meta );
+		$changes_nothing = true === ( $outcome->get_data()[ PaymentOutcome::DATA_NO_ORDER_CHANGE ] ?? false );
+
+		return array( $this->lifecycle_event( $outcome, $intent_meta, $note_candidates, $note_type ), $this->get_amount_mismatch_hold( $outcome ), $intent_meta, $changes_nothing );
 	}
 
 	/**
@@ -555,48 +600,6 @@ class WooPaymentsIntentConfirmationService {
 	 */
 	private function apply_payment_method_display_details( WC_Order $order, array $intent ): void {
 		$this->order_effect_applier->apply_payment_method_display_details( $order, $intent, $this->account_service->get_account_country() );
-	}
-
-	/**
-	 * Tell whether a PaymentIntent contains the full non-Link card identity required before lifecycle hooks run.
-	 *
-	 * @param array<string,mixed> $intent Platform PaymentIntent response.
-	 * @return bool
-	 */
-	private function has_full_charge_card_identity( array $intent ): bool {
-		$intent_id = isset( $intent['id'] ) && is_scalar( $intent['id'] ) ? (string) $intent['id'] : '';
-		if ( 0 !== strpos( $intent_id, 'pi_' ) ) {
-			return false;
-		}
-
-		$charge  = WooPaymentsIntentCodec::latest_charge( $intent );
-		$details = $charge['payment_method_details'] ?? null;
-		if ( ! is_array( $details ) || ! isset( $details['type'] ) || ! is_scalar( $details['type'] ) || 'card' !== (string) $details['type'] || ! isset( $details['card'] ) || ! is_array( $details['card'] ) ) {
-			return false;
-		}
-
-		$card        = $details['card'];
-		$wallet_type = isset( $card['wallet']['type'] ) && is_scalar( $card['wallet']['type'] ) ? sanitize_key( (string) $card['wallet']['type'] ) : '';
-		if ( 'link' === $wallet_type || ! $this->has_nonempty_scalar_card_field( $card, 'last4' ) || ! $this->has_nonempty_scalar_card_field( $card, 'brand' ) || ! $this->has_nonempty_scalar_card_field( $card, 'funding' ) ) {
-			return false;
-		}
-
-		$networks  = isset( $card['networks'] ) && is_array( $card['networks'] ) ? $card['networks'] : array();
-		$available = isset( $networks['available'] ) && is_array( $networks['available'] ) ? $networks['available'] : array();
-		$network   = $card['display_brand'] ?? $card['network'] ?? $networks['preferred'] ?? $available[0] ?? null;
-
-		return is_scalar( $network ) && '' !== trim( (string) $network );
-	}
-
-	/**
-	 * Tell whether a card field has a nonempty scalar value.
-	 *
-	 * @param array<string,mixed> $card Card details.
-	 * @param string              $field Card field name.
-	 * @return bool
-	 */
-	private function has_nonempty_scalar_card_field( array $card, string $field ): bool {
-		return isset( $card[ $field ] ) && is_scalar( $card[ $field ] ) && '' !== trim( (string) $card[ $field ] );
 	}
 
 	/**

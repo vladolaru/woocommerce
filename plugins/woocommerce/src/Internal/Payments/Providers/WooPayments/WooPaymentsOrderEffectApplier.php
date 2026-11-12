@@ -433,7 +433,7 @@ class WooPaymentsOrderEffectApplier {
 		$this->attach_intent_info(
 			$context->get_order(),
 			$intent_id,
-			( new WooPaymentsOutcomeMetadataMapper() )->get_intent_meta( $outcome ),
+			( new WooPaymentsOutcomeMetadataMapper() )->get_outcome_meta( $outcome ),
 			self::CHARGE_META_KEYS,
 			! empty( $context->get_provider_data()[ WooPaymentsIntentRequestBuilder::PROVIDER_DATA_SUBSCRIPTION_PAYMENT_METHOD_CHANGE ] )
 		);
@@ -620,7 +620,7 @@ class WooPaymentsOrderEffectApplier {
 	 * note, the fraud box and the intent status, on a Pending order without that note.
 	 *
 	 * Client 11.3.0's started writer returns on any other order, before its fraud box, note and intent status writes
-	 * (class-wc-payments-order-service.php:2229-2241); the writes are then skipped (STARTED_WRITES_SKIPPED_KEY). A scheduled
+	 * (class-wc-payments-order-service.php:2229-2241); the outcome then changes nothing (PaymentOutcome::DATA_NO_ORDER_CHANGE). A scheduled
 	 * renewal's started payment is skipped too: the client's renewal fails the order first (class-wc-payment-gateway-wcpay.php:2208-2222),
 	 * so its started writer then meets an order that is not Pending (:2231-2233).
 	 *
@@ -638,7 +638,7 @@ class WooPaymentsOrderEffectApplier {
 			|| ! $order->has_status( OrderStatus::PENDING )
 			|| 0 < wc_get_container()->get( OrderPaymentNotes::class )->find_by_content( $order, (string) $note_candidates[0], $note_candidates )
 		) ) {
-			return array( WooPaymentsOutcomeMetadataMapper::STARTED_WRITES_SKIPPED_KEY => true );
+			return array( PaymentOutcome::DATA_NO_ORDER_CHANGE => true );
 		}
 
 		$started_meta = WooPaymentsOrderEffects::started_payment_meta( $result, (string) $order->get_currency() );
