@@ -2951,6 +2951,28 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A post-authentication decline whose failed note is already on the order, moved back to Pending, leaves the order as it is.
+	 *
+	 * Client 11.3.0's callback records a failed PaymentIntent with mark_payment_failed() (class-wc-payment-gateway-wcpay.php:4771;
+	 * class-wc-payments-order-service.php:500-504), which returns once its note is on the order (:550-554).
+	 */
+	public function test_post_authentication_decline_with_its_failed_note_leaves_the_order_as_it_is(): void {
+		$intent = $this->load_recorded_manual_3ds_entry( 'blocks_post_authentication_decline' )['body'];
+		$order  = $this->create_woopayments_order( '10.99' );
+		$order->update_meta_data( '_intent_id', $intent['id'] );
+		$order->save();
+		$this->get_update_order_status_response_for_intent( $order, $intent );
+		$moved = wc_get_order( $order->get_id() );
+		$this->assertSame( OrderStatus::FAILED, $moved->get_status() );
+		$moved->update_status( OrderStatus::PENDING );
+
+		$this->get_update_order_status_response_for_intent( $order, $intent );
+
+		$this->assertSame( OrderStatus::PENDING, wc_get_order( $order->get_id() )->get_status() );
+		$this->assertCount( 1, $this->get_failed_payment_notes( $order ) );
+	}
+
+	/**
 	 * @testdox A refused post-authentication decline saves no charge once the order names a newer intent.
 	 *
 	 * A second checkout of the order, in another tab, stores its own intent and its payment_intent.succeeded webhook holds

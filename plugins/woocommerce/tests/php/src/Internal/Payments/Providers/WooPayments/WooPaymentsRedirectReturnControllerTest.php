@@ -1913,11 +1913,12 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A PaymentIntent error whose failure note is already on the order, moved back to Pending, leaves the order as it is.
+	 * @testdox A PaymentIntent error whose failure note is already on the order, moved back to Pending, fails the order again with that one note.
 	 *
-	 * Client 11.3.0's mark_payment_failed() returns once its note is on the order (class-wc-payments-order-service.php:550-554).
+	 * Client 11.3.0's return records an intent's own error with mark_payment_declined() (class-wc-payment-gateway-wcpay.php:2760-2763),
+	 * which stops only on a Failed order and adds the note when it is not there yet (class-wc-payments-order-service.php:577-595).
 	 */
-	public function test_handle_wp_leaves_an_order_with_the_failure_note_as_it_is(): void {
+	public function test_handle_wp_fails_a_payment_intent_error_whatever_notes_the_order_has(): void {
 		$order                      = $this->create_order();
 		$api_client                 = new RedirectReturnApiClientStub();
 		$api_client->payment_intent = array(
@@ -1940,6 +1941,43 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 		$moved = wc_get_order( $order->get_id() );
 		$moved->update_status( 'pending' );
 		$this->set_payment_intent_return_request( $order, 'pi_failed_noted' );
+
+		$this->handle_wp_expecting_redirect();
+
+		$reloaded = wc_get_order( $order->get_id() );
+		$this->assertSame( 'failed', $reloaded->get_status() );
+		$this->assertCount( 1, array_filter( wp_list_pluck( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), 'content' ), static fn( string $note ): bool => false !== strpos( $note, '<strong>failed</strong>' ) ) );
+	}
+
+	/**
+	 * @testdox A failure while confirming a return whose note is already on the order, moved back to Pending, leaves the order as it is.
+	 *
+	 * Client 11.3.0's return records a failure raised with a message with mark_payment_failed() (class-wc-payment-gateway-wcpay.php:2765-2767),
+	 * which returns once its note is on the order (class-wc-payments-order-service.php:550-554).
+	 */
+	public function test_handle_wp_leaves_an_order_with_the_confirmation_failure_note_as_it_is(): void {
+		$order                       = $this->create_order();
+		$api_client                  = new RedirectReturnApiClientStub();
+		$api_client->payment_intent  = array_merge(
+			$this->successful_payment_intent( $order, 'pi_throws_noted', 'pm_throws_noted' ),
+			array(
+				'status'      => 'requires_action',
+				'next_action' => array( 'type' => 'use_stripe_sdk' ),
+				'charges'     => array(
+					'total_count' => 0,
+					'data'        => array(),
+				),
+			)
+		);
+		$fee_details_note_controller = $this->createMock( WooPaymentsFeeDetailsNoteController::class );
+		$fee_details_note_controller->method( 'apply_and_schedule_fee_details_with_lock' )->willThrowException( new \RuntimeException( 'Order payment lifecycle write failed.' ) );
+		$this->sut = $this->create_controller( true, $this->create_confirmation_service( $api_client, null, $fee_details_note_controller ), $api_client );
+		$this->set_payment_intent_return_request( $order, 'pi_throws_noted' );
+		$this->handle_wp_expecting_redirect();
+		$moved = wc_get_order( $order->get_id() );
+		$this->assertSame( 'failed', $moved->get_status() );
+		$moved->update_status( 'pending' );
+		$this->set_payment_intent_return_request( $order, 'pi_throws_noted' );
 
 		$this->handle_wp_expecting_redirect();
 

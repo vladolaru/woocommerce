@@ -420,10 +420,11 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 				return false;
 			}
 
-			// A failure whose note is already on the order changes nothing, as client 11.3.0's mark_payment_failed() returns
-			// then (class-wc-payments-order-service.php:550-554).
+			// A failure raised with a message goes through client 11.3.0's mark_payment_failed(), which changes nothing once the
+			// failure is recorded (class-wc-payment-gateway-wcpay.php:2765-2767; class-wc-payments-order-service.php:550-554).
+			// An intent's own error is a decline, which fails the order whatever notes it has (gw:2760-2763; os:577-595).
 			$failure = $this->build_failure_event( $fresh_order, $intent_id, $exception_message, $intent_status );
-			if ( ! $this->note_service->has_event_note( $fresh_order, $failure ) ) {
+			if ( null === $exception_message || ! $this->note_service->is_failure_recorded( $fresh_order, $failure ) ) {
 				$this->lifecycle_service->apply_under_lock( $fresh_order, $failure, $persistence_vocabulary );
 			}
 		} catch ( Throwable $failure ) {

@@ -7,6 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Enums\OrderStatus;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFeatureController;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\ExplicitPriceFormatter;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilder;
@@ -1827,14 +1828,22 @@ class WooPaymentsOrderNoteService {
 	}
 
 	/**
-	 * Tell whether a payment lifecycle event's note is already on the order, by the event's identity or else by its text.
+	 * Tell whether a payment failure was already recorded on the order: the order is Failed, or the failure's note is on it,
+	 * by the event's identity or else by its text.
 	 *
-	 * @param WC_Order              $order Order object.
-	 * @param PaymentLifecycleEvent $event Lifecycle event.
+	 * This is client 11.3.0's mark_payment_failed() stop (class-wc-payments-order-service.php:550-554), for the four writers
+	 * that mirror its callers: a card payment's payment_intent.payment_failed (class-wc-payments-webhook-processing-service.php:559),
+	 * a renewal that needs authentication (class-wc-payment-gateway-wcpay.php:2222), the redirect return's failure with an
+	 * exception message (:2765-2767), and the order-status callback's failed intent (:4771 → order service :500-504). A
+	 * declined payment fails the order whatever notes it has (:1605-1613, :2760-2763; order service :577-595, :961-968).
+	 *
+	 * @param WC_Order              $order   Order read under the order payment lock.
+	 * @param PaymentLifecycleEvent $failure Failed lifecycle event.
 	 * @return bool
 	 */
-	public function has_event_note( WC_Order $order, PaymentLifecycleEvent $event ): bool {
-		return 0 < $this->find_note( $order, (string) $event->get_note(), $event->get_note_identity(), $event->get_note_equivalents() );
+	public function is_failure_recorded( WC_Order $order, PaymentLifecycleEvent $failure ): bool {
+		return $order->has_status( OrderStatus::FAILED )
+			|| 0 < $this->find_note( $order, (string) $failure->get_note(), $failure->get_note_identity(), $failure->get_note_equivalents() );
 	}
 
 	/**

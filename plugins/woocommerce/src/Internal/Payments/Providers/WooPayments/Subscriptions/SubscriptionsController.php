@@ -517,7 +517,7 @@ class SubscriptionsController implements RegisterHooksInterface {
 			}
 
 			$failure = $this->build_customer_action_failure_event( $renewal_order, $intent_id, $charge_id );
-			if ( $renewal_order->has_status( OrderStatus::FAILED ) || wc_get_container()->get( WooPaymentsOrderNoteService::class )->has_event_note( $renewal_order, $failure ) ) {
+			if ( wc_get_container()->get( WooPaymentsOrderNoteService::class )->is_failure_recorded( $renewal_order, $failure ) ) {
 				$renewal_order->save();
 			} else {
 				$lifecycle_service->apply_under_lock( $renewal_order, $failure, $vocabulary );

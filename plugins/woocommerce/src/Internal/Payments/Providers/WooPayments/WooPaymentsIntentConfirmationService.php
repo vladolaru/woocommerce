@@ -266,7 +266,7 @@ class WooPaymentsIntentConfirmationService {
 		$result          = $this->fee_details_note_controller->apply_and_schedule_fee_details_with_lock(
 			$order,
 			$event,
-			function ( WC_Order $stored_order ) use ( $intent, $zero_amount_plain_note, $attaches_intent, $setup_payment_details, &$displayed ): array {
+			function ( WC_Order $stored_order ) use ( $intent, $is_redirect_return, $zero_amount_plain_note, $attaches_intent, $setup_payment_details, &$displayed ): array {
 				if ( $attaches_intent ) {
 					$this->attach_intent_before_decision( $intent, $stored_order, $zero_amount_plain_note );
 				}
@@ -277,8 +277,12 @@ class WooPaymentsIntentConfirmationService {
 				}
 
 				list( $built_event, $hold, , $changes_nothing ) = $this->build_lifecycle_event_and_intent_meta( $intent, $stored_order, $zero_amount_plain_note );
+				// The callback's failed intent goes through client 11.3.0's mark_payment_failed(), which changes nothing once the
+				// failure is recorded (class-wc-payment-gateway-wcpay.php:4771; class-wc-payments-order-service.php:500-504, :545-559).
+				$recorded_failure = ! $is_redirect_return && PaymentLifecycleEvent::STATUS_FAILED === $built_event->get_status()
+					&& wc_get_container()->get( WooPaymentsOrderNoteService::class )->is_failure_recorded( $stored_order, $built_event );
 
-				return array( $changes_nothing ? null : $built_event, $hold );
+				return array( $changes_nothing || $recorded_failure ? null : $built_event, $hold );
 			}
 		);
 		if ( OrderPaymentLifecycleService::RESULT_REFUSED === $result ) {

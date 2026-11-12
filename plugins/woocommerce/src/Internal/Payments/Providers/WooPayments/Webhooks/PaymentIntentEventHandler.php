@@ -630,13 +630,6 @@ class PaymentIntentEventHandler {
 					return null;
 				}
 
-				// A card payment's failure on an order already failed, such as by the checkout that saw the decline, gets nothing
-				// more, as client 11.1.0's mark_payment_failed() (class-wc-payments-order-service.php:469-473). A terminal decline is
-				// still recorded, as its mark_terminal_payment_failed() records each one (:779-800).
-				if ( 'card_present' !== $payment_method_type && $order->has_status( OrderStatus::FAILED ) ) {
-					return null;
-				}
-
 				$intent_id       = $this->get_object_id( $event_object );
 				$charge_id       = $this->get_charge_id_from_intent( $event_object );
 				$note_candidates = 'card_present' === $payment_method_type
@@ -660,10 +653,11 @@ class PaymentIntentEventHandler {
 					$note_candidates
 				);
 
-				// A card payment's failure whose note is already on the order changes nothing, as client 11.3.0's
-				// mark_payment_failed() returns then (class-wc-payments-order-service.php:550-554). A terminal decline sets the
-				// order Failed before its note check (:961-968), so it is applied.
-				return 'card_present' !== $payment_method_type && $this->order_note_service->has_event_note( $order, $failure ) ? null : $failure;
+				// A card payment's failure on an order already Failed, such as by the checkout that saw the decline, or whose note is
+				// already on the order changes nothing, as client 11.3.0's mark_payment_failed() returns then
+				// (class-wc-payments-order-service.php:550-554). A terminal decline sets the order Failed before its note check
+				// (:961-968), so it is applied, each one recorded.
+				return 'card_present' !== $payment_method_type && $this->order_note_service->is_failure_recorded( $order, $failure ) ? null : $failure;
 
 			case 'charge.expired':
 				$charge_id       = $this->get_object_id( $event_object );
