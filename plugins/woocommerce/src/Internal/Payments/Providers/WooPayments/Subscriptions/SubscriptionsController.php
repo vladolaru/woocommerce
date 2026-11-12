@@ -489,9 +489,9 @@ class SubscriptionsController implements RegisterHooksInterface {
 	/**
 	 * Fail a renewal that requires customer authentication under a claim of its own for the intent.
 	 *
-	 * Nothing is applied to a renewal already Failed or that has the failure note, as client 11.3.0's mark_payment_failed()
-	 * returns then, saving the object it holds (class-wc-payments-order-service.php:550-554, :3448); the payment lifecycle
-	 * leaves a paid renewal as it is (:546, :3403-3416).
+	 * A paid renewal, the object held or a fresh copy, is left as it is with nothing saved, as client 11.3.0's
+	 * mark_payment_failed() checks that first (class-wc-payments-order-service.php:546, :3403-3416). Nothing is then applied
+	 * to a renewal already Failed or that has the failure note, saving the object it holds (:550-554, :3448).
 	 *
 	 * @param WC_Order $renewal_order Renewal order: the hook's object, or one this request loaded.
 	 * @param string   $intent_id     Intent that requires authentication.
@@ -514,6 +514,9 @@ class SubscriptionsController implements RegisterHooksInterface {
 			$lifecycle_service = wc_get_container()->get( OrderPaymentLifecycleService::class );
 			if ( $read ) {
 				$lifecycle_service->reread_order_from_data_store( $renewal_order );
+			}
+			if ( $renewal_order->has_status( wc_get_is_paid_statuses() ) || $lifecycle_service->get_fresh_order_from_data_store( $renewal_order )->has_status( wc_get_is_paid_statuses() ) ) {
+				return true;
 			}
 
 			$failure = $this->build_customer_action_failure_event( $renewal_order, $intent_id, $charge_id );

@@ -1288,6 +1288,61 @@ class SubscriptionsControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A scheduled renewal that needs authentication, stored as paid when it fails, gets nothing saved: $_dataName.
+	 *
+	 * Client 11.3.0's mark_payment_failed() returns on a paid order, the copy it holds or a fresh read, before its note and
+	 * Failed check saves that copy (class-wc-payments-order-service.php:546, :3403-3416; :550-554, :3448).
+	 *
+	 * @testWith ["Failed on the hook object, not saved", true, false]
+	 *           ["the failure note on the order", false, true]
+	 *
+	 * @param string $label             Row label.
+	 * @param bool   $fails_hook_object Whether the listener sets Failed on the hook's object without saving it.
+	 * @param bool   $notes             Whether the listener adds the failure note.
+	 */
+	public function test_scheduled_renewal_authentication_failure_saves_nothing_on_a_paid_renewal( string $label, bool $fails_hook_object, bool $notes ): void {
+		unset( $label );
+		list( $order, $outcome ) = $this->arrange_renewal_needing_authentication();
+		$failure_note            = wp_kses_post(
+			sprintf(
+				'A payment of %1$s <strong>failed</strong> using WooPayments (<code>pi_renewal_auth</code>).',
+				WooPaymentsCurrencyUtils::format_price_in_currency( 12.0, 'USD' )
+			)
+		);
+		$saves                   = 0;
+		add_action(
+			'woocommerce_woocommerce_payments_payment_requires_action',
+			static function ( WC_Order $hook_order ) use ( $fails_hook_object, $notes, $failure_note, &$saves ): void {
+				$other = wc_get_order( $hook_order->get_id() );
+				$other->set_status( 'processing' );
+				$other->save();
+				if ( $notes ) {
+					$other->add_order_note( $failure_note );
+				}
+				if ( $fails_hook_object ) {
+					$hook_order->set_status( 'failed' );
+				}
+				add_action(
+					'woocommerce_before_order_object_save',
+					static function ( WC_Order $saved ) use ( $hook_order, &$saves ): void {
+						if ( $saved->get_id() === $hook_order->get_id() ) {
+							++$saves;
+						}
+					}
+				);
+			}
+		);
+		$sut = $this->create_sut( wc_get_container()->get( PaymentProcessingService::class ), $this->create_provider_charging( $outcome ) );
+
+		$sut->scheduled_subscription_payment( 12.0, wc_get_order( $order->get_id() ) );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( 'processing', $order->get_status() );
+		$this->assertSame( 0, $saves, 'Nothing is saved on a paid renewal.' );
+		$this->assertCount( $notes ? 1 : 0, array_filter( wp_list_pluck( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), 'content' ), static fn( string $note ): bool => $note === $failure_note ) );
+	}
+
+	/**
 	 * @testdox A requires-action listener's unsaved change to the renewal it receives is saved with the failure.
 	 *
 	 * Client 11.3.0 writes the failure on the order it passed to the hook (class-wc-payment-gateway-wcpay.php:2221-2222,
