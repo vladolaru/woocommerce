@@ -9,12 +9,15 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscri
 
 use Automattic\WooCommerce\Enums\OrderStatus;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
+use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
 use Automattic\WooCommerce\Internal\Payments\PaymentLifecycleEvent;
 use Automattic\WooCommerce\Internal\Payments\PaymentOperationContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcomeApplyException;
 use Automattic\WooCommerce\Internal\Payments\PaymentProcessingService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\StripeBillingModule;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WebhookReliabilityService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsActionSchedulerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCurrencyUtils;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
@@ -52,6 +55,13 @@ class SubscriptionsController implements RegisterHooksInterface {
 	 * Order meta keys that describe one payment, as the WooPayments extension lists them (client 11.3.0
 	 * `includes/compat/subscriptions/trait-wc-payment-gateway-wcpay-subscriptions.php:1226-1240`).
 	 */
+	/**
+	 * Action Scheduler hook of a renewal authentication failure the order payment lock refused, applied again later.
+	 *
+	 * @var string
+	 */
+	public const RETRY_AUTHENTICATION_FAILURE_ACTION = 'woocommerce_woopayments_retry_renewal_authentication_failure';
+
 	private const SINGLE_PAYMENT_META_KEYS = array(
 		'_intent_id',
 		'_intention_status',
@@ -94,6 +104,8 @@ class SubscriptionsController implements RegisterHooksInterface {
 		add_filter( 'woocommerce_email_classes', array( self::class, 'add_subscription_emails' ), 20 );
 
 		add_action( 'woocommerce_checkout_subscription_created', array( $this, 'maybe_force_subscription_to_manual' ), 10, 1 );
+
+		add_action( self::RETRY_AUTHENTICATION_FAILURE_ACTION, array( $this, 'handle_retry_authentication_failure' ), 10, 4 );
 
 		foreach ( SubscriptionMethodPolicy::get_reusable_gateway_ids() as $gateway_id ) {
 			add_action( 'woocommerce_scheduled_subscription_payment_' . $gateway_id, array( $this, 'scheduled_subscription_payment' ), 10, 2 );
@@ -377,8 +389,11 @@ class SubscriptionsController implements RegisterHooksInterface {
 	 * Handle a scheduled renewal that requires customer authentication: fire the authentication hook, then fail the renewal.
 	 *
 	 * The failure is applied after the checkout's order payment lock is released, under a claim of its own for the intent,
-	 * on the renewal read again under it: nothing is written to a renewal already Failed, to a paid one, or to one that has
-	 * the failure note (client 11.3.0 class-wc-payment-gateway-wcpay.php:2221-2222, class-wc-payments-order-service.php:545-555).
+	 * to the object the hook received, as client 11.3.0 fails the order it passed to the hook
+	 * (class-wc-payment-gateway-wcpay.php:2221-2222, class-wc-payments-order-service.php:545-559). Nothing is read in
+	 * between, so a listener's unsaved changes are saved with the failure and count for its checks; this is the one caller
+	 * of the payment lifecycle that passes an object it did not read under the claim. A claim another operation holds is
+	 * tried again later (handle_retry_authentication_failure()).
 	 *
 	 * @param WC_Order       $renewal_order Renewal order.
 	 * @param PaymentOutcome $outcome       Provider payment outcome.
@@ -438,32 +453,118 @@ class SubscriptionsController implements RegisterHooksInterface {
 			throw $exception;
 		}
 
-		wc_get_container()->get( OrderPaymentLifecycleService::class )->apply_rebuilt_under_claim(
-			$renewal_order,
-			$this->build_customer_action_failure_event( $renewal_order, $outcome, $charge_id ),
-			new WooPaymentsPersistenceVocabulary(),
-			function ( WC_Order $read_order ) use ( $outcome, $charge_id ): ?PaymentLifecycleEvent {
-				if ( $read_order->has_status( OrderStatus::FAILED ) ) {
-					return null;
-				}
-				$failure = $this->build_customer_action_failure_event( $read_order, $outcome, $charge_id );
+		$intent_id = $outcome->get_provider_payment_id();
+		if ( ! $this->apply_authentication_failure( $renewal_order, $intent_id, $charge_id, false ) ) {
+			$this->schedule_authentication_failure_retry( $renewal_order, $intent_id, $charge_id, 0 );
+		}
+	}
 
-				return wc_get_container()->get( WooPaymentsOrderNoteService::class )->has_event_note( $read_order, $failure ) ? null : $failure;
+	/**
+	 * Apply the failure of a renewal that requires customer authentication again, after the order payment lock refused it.
+	 *
+	 * It claims the lock, reads the renewal again under it and applies the same checks; it never charges, never fires the
+	 * authentication hook and never sends its email. A refused claim is tried again on the status-change retry cadence
+	 * (WebhookReliabilityService::RETRY_DELAYS_SECONDS), then given up; the refusal is logged each time.
+	 *
+	 * @internal
+	 *
+	 * @param mixed $order_id  Renewal order ID.
+	 * @param mixed $intent_id Intent that requires authentication.
+	 * @param mixed $charge_id Its charge, or an empty string.
+	 * @param mixed $retry     Number of this retry, from 1.
+	 */
+	public function handle_retry_authentication_failure( $order_id, $intent_id, $charge_id, $retry ): void {
+		$renewal_order = wc_get_order( absint( $order_id ) );
+		if ( ! $renewal_order instanceof WC_Order ) {
+			return;
+		}
+
+		$intent_id = is_string( $intent_id ) ? $intent_id : '';
+		$charge_id = is_string( $charge_id ) ? $charge_id : '';
+		if ( ! $this->apply_authentication_failure( $renewal_order, $intent_id, $charge_id, true ) ) {
+			$this->schedule_authentication_failure_retry( $renewal_order, $intent_id, $charge_id, absint( $retry ) );
+		}
+	}
+
+	/**
+	 * Fail a renewal that requires customer authentication under a claim of its own for the intent.
+	 *
+	 * Nothing is applied to a renewal already Failed or that has the failure note, as client 11.3.0's mark_payment_failed()
+	 * returns then, saving the object it holds (class-wc-payments-order-service.php:550-554, :3448); the payment lifecycle
+	 * leaves a paid renewal as it is (:546, :3403-3416).
+	 *
+	 * @param WC_Order $renewal_order Renewal order: the hook's object, or one this request loaded.
+	 * @param string   $intent_id     Intent that requires authentication.
+	 * @param string   $charge_id     Its charge, or an empty string.
+	 * @param bool     $read          Whether to read the renewal again under the claim first: a reattempt does, the first
+	 *                                attempt applies the failure to the hook's object as it is.
+	 * @return bool False when the order payment lock refused the claim, and nothing was written.
+	 */
+	private function apply_authentication_failure( WC_Order $renewal_order, string $intent_id, string $charge_id, bool $read ): bool {
+		$vocabulary         = new WooPaymentsPersistenceVocabulary();
+		$order_payment_lock = wc_get_container()->get( OrderPaymentLock::class );
+		$lock_token         = $order_payment_lock->claim( $renewal_order, $vocabulary, '' === $intent_id ? null : $intent_id, 'renewal authentication failure' );
+		if ( null === $lock_token ) {
+			$order_payment_lock->log_refusal( $renewal_order, $vocabulary, 'renewal authentication failure', WooPaymentsLogger::SOURCE );
+
+			return false;
+		}
+
+		try {
+			$lifecycle_service = wc_get_container()->get( OrderPaymentLifecycleService::class );
+			if ( $read ) {
+				$lifecycle_service->reread_order_from_data_store( $renewal_order );
 			}
+
+			$failure = $this->build_customer_action_failure_event( $renewal_order, $intent_id, $charge_id );
+			if ( $renewal_order->has_status( OrderStatus::FAILED ) || wc_get_container()->get( WooPaymentsOrderNoteService::class )->has_event_note( $renewal_order, $failure ) ) {
+				$renewal_order->save();
+			} else {
+				$lifecycle_service->apply_under_lock( $renewal_order, $failure, $vocabulary );
+			}
+		} finally {
+			$order_payment_lock->release( $renewal_order, $vocabulary, $lock_token );
+		}
+
+		return true;
+	}
+
+	/**
+	 * Schedule the next reattempt of a renewal authentication failure the order payment lock refused.
+	 *
+	 * @param WC_Order $renewal_order Renewal order.
+	 * @param string   $intent_id     Intent that requires authentication.
+	 * @param string   $charge_id     Its charge, or an empty string.
+	 * @param int      $retry         Which retry the refused attempt was, 0 for the first attempt.
+	 */
+	private function schedule_authentication_failure_retry( WC_Order $renewal_order, string $intent_id, string $charge_id, int $retry ): void {
+		$delays = WebhookReliabilityService::RETRY_DELAYS_SECONDS;
+		if ( ! isset( $delays[ $retry ] ) ) {
+			return;
+		}
+
+		wc_get_container()->get( WooPaymentsActionSchedulerService::class )->schedule_job(
+			self::RETRY_AUTHENTICATION_FAILURE_ACTION,
+			array(
+				'order_id'  => $renewal_order->get_id(),
+				'intent_id' => $intent_id,
+				'charge_id' => $charge_id,
+				'retry'     => $retry + 1,
+			),
+			time() + $delays[ $retry ]
 		);
 	}
 
 	/**
 	 * Build the failed event of a renewal that requires customer authentication, with its failure note.
 	 *
-	 * @param WC_Order       $renewal_order Renewal order.
-	 * @param PaymentOutcome $outcome       Provider payment outcome.
-	 * @param string         $charge_id     Provider charge ID.
+	 * @param WC_Order $renewal_order Renewal order.
+	 * @param string   $intent_id     Intent that requires authentication.
+	 * @param string   $charge_id     Its charge, or an empty string.
 	 * @return PaymentLifecycleEvent
 	 */
-	private function build_customer_action_failure_event( WC_Order $renewal_order, PaymentOutcome $outcome, string $charge_id ): PaymentLifecycleEvent {
-		$failure_note = $this->get_subscription_customer_action_failure_note( $renewal_order, $outcome, $charge_id );
-		$intent_id    = $outcome->get_provider_payment_id();
+	private function build_customer_action_failure_event( WC_Order $renewal_order, string $intent_id, string $charge_id ): PaymentLifecycleEvent {
+		$failure_note = $this->get_subscription_customer_action_failure_note( $renewal_order, $intent_id, $charge_id );
 
 		return new PaymentLifecycleEvent(
 			PaymentLifecycleEvent::STATUS_FAILED,
@@ -479,13 +580,13 @@ class SubscriptionsController implements RegisterHooksInterface {
 	/**
 	 * Get the failed-renewal note for customer-action-required outcomes.
 	 *
-	 * @param WC_Order       $renewal_order Renewal order.
-	 * @param PaymentOutcome $outcome       Provider payment outcome.
-	 * @param string         $charge_id     Provider charge ID.
+	 * @param WC_Order $renewal_order Renewal order.
+	 * @param string   $intent_id     Provider payment intent ID.
+	 * @param string   $charge_id     Provider charge ID.
 	 * @return string Order note.
 	 */
-	private function get_subscription_customer_action_failure_note( WC_Order $renewal_order, PaymentOutcome $outcome, string $charge_id ): string {
-		$transaction_id = '' !== $charge_id ? $charge_id : $outcome->get_provider_payment_id();
+	private function get_subscription_customer_action_failure_note( WC_Order $renewal_order, string $intent_id, string $charge_id ): string {
+		$transaction_id = '' !== $charge_id ? $charge_id : $intent_id;
 		if ( '' === $transaction_id ) {
 			return '';
 		}

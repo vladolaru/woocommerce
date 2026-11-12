@@ -1221,18 +1221,20 @@ class SubscriptionsControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox A scheduled renewal that needs authentication fires the hook once, then fails under the client's guards: $_dataName.
 	 *
-	 * Client 11.3.0 fires the hook, then runs its failed writer (class-wc-payment-gateway-wcpay.php:2221-2222), which writes
-	 * nothing to a paid order, nor once its note is on the order or the order is Failed
-	 * (class-wc-payments-order-service.php:545-555, :3403-3416).
+	 * Client 11.3.0 fires the hook, then runs its failed writer on the order it passed to the hook
+	 * (class-wc-payment-gateway-wcpay.php:2221-2222): nothing for a paid order, its own copy or a fresh read
+	 * (class-wc-payments-order-service.php:546, :3403-3416); nothing more once its note is on the order or its copy is
+	 * Failed, saving that copy (:550-554, :3448). A listener that saves another copy leaves the hook's copy as it was.
 	 *
 	 * @dataProvider provider_renewals_a_listener_changes
 	 *
-	 * @param string $listener_status Status a hook listener saves on the renewal, or '' for none.
+	 * @param string $listener_status Status a hook listener sets on the renewal, or '' for none.
 	 * @param bool   $listener_notes  Whether the listener also adds the failure note.
+	 * @param bool   $on_hook_object  Whether the listener sets the status on the hook's object without saving it, rather than saving another copy.
 	 * @param string $expected_status Status the renewal ends in.
 	 * @param int    $expected_notes  Failure notes the renewal ends with.
 	 */
-	public function test_scheduled_renewal_authentication_failure_keeps_the_client_guards( string $listener_status, bool $listener_notes, string $expected_status, int $expected_notes ): void {
+	public function test_scheduled_renewal_authentication_failure_keeps_the_client_guards( string $listener_status, bool $listener_notes, bool $on_hook_object, string $expected_status, int $expected_notes ): void {
 		list( $order, $outcome ) = $this->arrange_renewal_needing_authentication();
 		$failure_note            = wp_kses_post(
 			sprintf(
@@ -1243,9 +1245,13 @@ class SubscriptionsControllerTest extends WC_Unit_Test_Case {
 		$hook_calls              = 0;
 		add_action(
 			'woocommerce_woocommerce_payments_payment_requires_action',
-			static function ( WC_Order $hook_order ) use ( &$hook_calls, $listener_status, $listener_notes, $failure_note ): void {
+			static function ( WC_Order $hook_order ) use ( &$hook_calls, $listener_status, $listener_notes, $on_hook_object, $failure_note ): void {
 				++$hook_calls;
 				if ( '' === $listener_status ) {
+					return;
+				}
+				if ( $on_hook_object ) {
+					$hook_order->set_status( $listener_status );
 					return;
 				}
 				$other = wc_get_order( $hook_order->get_id() );
@@ -1269,15 +1275,82 @@ class SubscriptionsControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * Renewals a requires-action hook listener changes.
 	 *
-	 * @return array<string,array{string,bool,string,int}>
+	 * @return array<string,array{string,bool,bool,string,int}>
 	 */
 	public function provider_renewals_a_listener_changes(): array {
 		return array(
-			'Pending'                            => array( '', false, 'failed', 1 ),
-			'Processing, by a listener'          => array( 'processing', false, 'processing', 0 ),
-			'Failed, by a listener'              => array( 'failed', false, 'failed', 0 ),
-			'Cancelled and noted, by a listener' => array( 'cancelled', true, 'cancelled', 1 ),
+			'Pending'                                  => array( '', false, false, 'failed', 1 ),
+			'Processing, saved by a listener'          => array( 'processing', false, false, 'processing', 0 ),
+			'Failed, saved on another copy'            => array( 'failed', false, false, 'failed', 1 ),
+			'Failed on the hook object, not saved'     => array( 'failed', false, true, 'failed', 0 ),
+			'Cancelled and noted, saved by a listener' => array( 'cancelled', true, false, 'cancelled', 1 ),
 		);
+	}
+
+	/**
+	 * @testdox A requires-action listener's unsaved change to the renewal it receives is saved with the failure.
+	 *
+	 * Client 11.3.0 writes the failure on the order it passed to the hook (class-wc-payment-gateway-wcpay.php:2221-2222,
+	 * class-wc-payments-order-service.php:557-559, :3448).
+	 */
+	public function test_scheduled_renewal_authentication_failure_saves_the_listener_change(): void {
+		list( $order, $outcome ) = $this->arrange_renewal_needing_authentication();
+		add_action(
+			'woocommerce_woocommerce_payments_payment_requires_action',
+			static function ( WC_Order $hook_order ): void {
+				$hook_order->update_meta_data( '_listener_marker', 'kept' );
+			}
+		);
+		$sut = $this->create_sut( wc_get_container()->get( PaymentProcessingService::class ), $this->create_provider_charging( $outcome ) );
+
+		$sut->scheduled_subscription_payment( 12.0, wc_get_order( $order->get_id() ) );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( 'failed', $order->get_status() );
+		$this->assertSame( 'kept', $order->get_meta( '_listener_marker', true ) );
+	}
+
+	/**
+	 * @testdox A renewal failure the order payment lock refuses is applied by a later failure-only reattempt, which fires no hook and charges nothing.
+	 *
+	 * An intent left waiting on the customer sends no failure event to the store, so the failure is tried again under a
+	 * claim of its own, on the order read under it, with the same checks.
+	 */
+	public function test_refused_renewal_authentication_failure_is_applied_by_a_reattempt(): void {
+		list( $order, $outcome ) = $this->arrange_renewal_needing_authentication();
+		$vocabulary              = new WooPaymentsPersistenceVocabulary();
+		$holder                  = null;
+		$hook_calls              = 0;
+		add_action(
+			'woocommerce_woocommerce_payments_payment_requires_action',
+			static function ( WC_Order $hook_order ) use ( $vocabulary, &$holder, &$hook_calls ): void {
+				++$hook_calls;
+				$holder = wc_get_container()->get( OrderPaymentLock::class )->claim( wc_get_order( $hook_order->get_id() ), $vocabulary, 'another_operation', 'payment operation' );
+			}
+		);
+		$charges = 0;
+		$sut     = $this->create_sut( wc_get_container()->get( PaymentProcessingService::class ), $this->create_provider_charging( $outcome, $charges ) );
+
+		$sut->scheduled_subscription_payment( 12.0, wc_get_order( $order->get_id() ) );
+
+		$this->assertNotNull( $holder );
+		$this->assertSame( 'pending', wc_get_order( $order->get_id() )->get_status(), 'The refused failure writes nothing.' );
+		$args = array(
+			'order_id'  => $order->get_id(),
+			'intent_id' => 'pi_renewal_auth',
+			'charge_id' => '',
+			'retry'     => 1,
+		);
+		$this->assertTrue( as_has_scheduled_action( SubscriptionsController::RETRY_AUTHENTICATION_FAILURE_ACTION, $args ) );
+		wc_get_container()->get( OrderPaymentLock::class )->release( wc_get_order( $order->get_id() ), $vocabulary, $holder );
+
+		$sut->handle_retry_authentication_failure( $order->get_id(), 'pi_renewal_auth', '', 1 );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( 'failed', $order->get_status() );
+		$this->assertCount( 1, array_filter( wp_list_pluck( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), 'content' ), static fn( string $note ): bool => false !== strpos( $note, '<strong>failed</strong>' ) ) );
+		$this->assertSame( 1, $hook_calls, 'The reattempt fires no hook.' );
+		$this->assertSame( 1, $charges, 'The reattempt charges nothing.' );
 	}
 
 	/**
@@ -1318,10 +1391,11 @@ class SubscriptionsControllerTest extends WC_Unit_Test_Case {
 	 * Create the real WooPayments provider whose charge returns a fixed outcome.
 	 *
 	 * @param PaymentOutcome $outcome Outcome the charge returns.
+	 * @param int            $charges Charges made, counted for the caller.
 	 * @return WooPaymentsProvider
 	 */
-	private function create_provider_charging( PaymentOutcome $outcome ): WooPaymentsProvider {
-		$payment_operations = new class( $outcome ) extends WooPaymentsPaymentOperationService {
+	private function create_provider_charging( PaymentOutcome $outcome, int &$charges = 0 ): WooPaymentsProvider {
+		$payment_operations = new class( $outcome, $charges ) extends WooPaymentsPaymentOperationService {
 			/**
 			 * Outcome the charge returns.
 			 *
@@ -1330,12 +1404,21 @@ class SubscriptionsControllerTest extends WC_Unit_Test_Case {
 			private PaymentOutcome $outcome;
 
 			/**
+			 * Charges made, counted for the caller.
+			 *
+			 * @var int
+			 */
+			private $charges;
+
+			/**
 			 * Constructor.
 			 *
 			 * @param PaymentOutcome $outcome Outcome the charge returns.
+			 * @param int            $charges Charges made, counted for the caller.
 			 */
-			public function __construct( PaymentOutcome $outcome ) {
+			public function __construct( PaymentOutcome $outcome, int &$charges ) {
 				$this->outcome = $outcome;
+				$this->charges = &$charges;
 			}
 
 			/**
@@ -1347,6 +1430,7 @@ class SubscriptionsControllerTest extends WC_Unit_Test_Case {
 			 */
 			public function charge( PaymentOperationContext $context, string $idempotency_key ): PaymentOutcome {
 				unset( $context, $idempotency_key );
+				++$this->charges;
 
 				return $this->outcome;
 			}
