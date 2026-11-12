@@ -30,6 +30,10 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPe
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentOperationService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentCodec;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentMappingContext;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffectApplier;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffectPlan;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
@@ -1186,6 +1190,110 @@ class SubscriptionsControllerTest extends WC_Unit_Test_Case {
 		$order_notes = wp_list_pluck( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), 'content' );
 		$this->assertSame( array(), array_values( array_intersect( $order_notes, $notes ) ), "The charge's note is not added." );
 		$this->assertSame( array(), array_filter( $order_notes, static fn( string $note ): bool => false !== strpos( $note, 'was <strong>authorized</strong>' ) ), 'No authorized note is added.' );
+	}
+
+	/**
+	 * @testdox A scheduled renewal that needs the customer to authenticate gets no started note or started fraud box, and fails with one failure note.
+	 *
+	 * Client 11.3.0 fails a merchant-initiated renewal that needs authentication before it updates the order from the intent
+	 * (class-wc-payment-gateway-wcpay.php:2208-2222, class-wc-payments-order-service.php:545-560), so its started writer then
+	 * meets an order that is not Pending and writes nothing (:2229-2233).
+	 */
+	public function test_scheduled_renewal_needing_authentication_gets_no_started_writes(): void {
+		list( $order, $outcome ) = $this->arrange_renewal_needing_authentication();
+		$sut                     = $this->create_sut( wc_get_container()->get( PaymentProcessingService::class ), $this->create_provider_charging( $outcome ) );
+
+		$sut->scheduled_subscription_payment( 12.0, wc_get_order( $order->get_id() ) );
+
+		$order   = wc_get_order( $order->get_id() );
+		$started = wc_get_container()->get( WooPaymentsOrderNoteService::class )->format_payment_started_note_candidates( $order, 'pi_renewal_auth' );
+		$notes   = wp_list_pluck( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), 'content' );
+		$this->assertSame( 'failed', $order->get_status() );
+		$this->assertSame( array(), array_values( array_intersect( $notes, $started ) ), 'No started note.' );
+		$this->assertSame( '', $order->get_meta( '_wcpay_fraud_meta_box_type', true ), 'No started fraud box.' );
+		$this->assertCount( 1, array_filter( $notes, static fn( string $note ): bool => false !== strpos( $note, '<strong>failed</strong>' ) ), 'One failure note.' );
+		$this->assertSame( 'pi_renewal_auth', $order->get_transaction_id() );
+		$this->assertSame( 'pi_renewal_auth', $order->get_meta( '_intent_id', true ) );
+		$this->assertSame( 'requires_action', $order->get_meta( '_intention_status', true ) );
+	}
+
+	/**
+	 * Arrange a Pending renewal whose off-session charge needs the customer to authenticate.
+	 *
+	 * @return array{0:WC_Order,1:PaymentOutcome} The renewal and the charge's outcome.
+	 */
+	private function arrange_renewal_needing_authentication(): array {
+		$user_id = self::factory()->user->create();
+		$order   = $this->create_order();
+		$order->set_customer_id( $user_id );
+		$order->set_currency( 'USD' );
+		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+		$order->add_payment_token( $this->create_card_token( $user_id, 'pm_renewal_auth' ) );
+		$order->save();
+		$intent  = array(
+			'id'                   => 'pi_renewal_auth',
+			'object'               => 'payment_intent',
+			'status'               => 'requires_action',
+			'amount'               => 1200,
+			'currency'             => 'usd',
+			'customer'             => 'cus_renewal_auth',
+			'payment_method'       => 'pm_renewal_auth',
+			'payment_method_types' => array( 'card' ),
+			'client_secret'        => 'pi_renewal_auth_secret',
+			'next_action'          => array( 'type' => 'use_stripe_sdk' ),
+			'metadata'             => array( 'order_id' => (string) $order->get_id() ),
+		);
+		$outcome = WooPaymentsIntentCodec::outcome_from_intention(
+			$intent,
+			new WooPaymentsIntentMappingContext( $order->get_checkout_order_received_url(), 'pm_renewal_auth', 'cus_renewal_auth' )
+		)->with_effect_plan( WooPaymentsOrderEffectPlan::for_payment_intent( $intent, true ) );
+
+		return array( $order, $outcome );
+	}
+
+	/**
+	 * Create the real WooPayments provider whose charge returns a fixed outcome.
+	 *
+	 * @param PaymentOutcome $outcome Outcome the charge returns.
+	 * @return WooPaymentsProvider
+	 */
+	private function create_provider_charging( PaymentOutcome $outcome ): WooPaymentsProvider {
+		$payment_operations = new class( $outcome ) extends WooPaymentsPaymentOperationService {
+			/**
+			 * Outcome the charge returns.
+			 *
+			 * @var PaymentOutcome
+			 */
+			private PaymentOutcome $outcome;
+
+			/**
+			 * Constructor.
+			 *
+			 * @param PaymentOutcome $outcome Outcome the charge returns.
+			 */
+			public function __construct( PaymentOutcome $outcome ) {
+				$this->outcome = $outcome;
+			}
+
+			/**
+			 * Return the fixed outcome without a platform request.
+			 *
+			 * @param PaymentOperationContext $context         Payment context.
+			 * @param string                  $idempotency_key Charge idempotency key.
+			 * @return PaymentOutcome
+			 */
+			public function charge( PaymentOperationContext $context, string $idempotency_key ): PaymentOutcome {
+				unset( $context, $idempotency_key );
+
+				return $this->outcome;
+			}
+		};
+
+		$container = wc_get_container();
+		$provider  = new WooPaymentsProvider();
+		$provider->init( $payment_operations, $container->get( Client::class ), $container->get( WooPaymentsAccountService::class ), new PaymentMethodRegistry(), $container->get( WooPaymentsOrderEffectApplier::class ) );
+
+		return $provider;
 	}
 
 	/**

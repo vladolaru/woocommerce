@@ -102,8 +102,26 @@ class WooPaymentsProviderTest extends WC_Unit_Test_Case {
 			->getMock();
 		$effect_applier     = $this->getMockBuilder( WooPaymentsOrderEffectApplier::class )
 			->disableOriginalConstructor()
-			->onlyMethods( array( 'apply', 'apply_payment_method_display_details' ) )
+			->onlyMethods( array( 'apply_charge_writes', 'attach_charge_intent', 'apply', 'apply_payment_method_display_details' ) )
 			->getMock();
+		$effect_applier->expects( $this->once() )
+			->method( 'apply_charge_writes' )
+			->with( $context, $outcome, $effect_plan )
+			->willReturnCallback(
+				static function () use ( &$call_sequence, $outcome ): PaymentOutcome {
+					$call_sequence[] = 'apply_charge_writes';
+					return $outcome;
+				}
+			);
+		$effect_applier->expects( $this->once() )
+			->method( 'attach_charge_intent' )
+			->with( $context, $outcome )
+			->willReturnCallback(
+				static function () use ( &$call_sequence, $outcome ): PaymentOutcome {
+					$call_sequence[] = 'attach_charge_intent';
+					return $outcome;
+				}
+			);
 		$effect_applier->expects( $this->once() )
 			->method( 'apply' )
 			->with( $context, $outcome, $effect_plan )
@@ -121,7 +139,7 @@ class WooPaymentsProviderTest extends WC_Unit_Test_Case {
 			->with( $order, $outcome )
 			->willReturnCallback(
 				function () use ( &$call_sequence ): void {
-					$this->assertSame( array( 'apply' ), $call_sequence, 'Charge key finalization must remain after the completed PaymentIntent pre-lifecycle effect.' );
+					$this->assertSame( array( 'apply_charge_writes', 'attach_charge_intent', 'apply' ), $call_sequence, 'Charge key finalization must remain after the completed PaymentIntent pre-lifecycle effect.' );
 				}
 			);
 

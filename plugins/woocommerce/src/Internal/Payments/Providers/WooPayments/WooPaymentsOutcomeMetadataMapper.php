@@ -27,8 +27,9 @@ final class WooPaymentsOutcomeMetadataMapper implements ProviderOutcomeMetadataM
 
 	/**
 	 * Outcome data key, set by WooPaymentsOrderEffectApplier: a started payment whose own writes are skipped, because the
-	 * order is not Pending or already has the payment's started note. Its lifecycle event then carries no meta and no note;
-	 * the intent's record is written by the attach before it (client 11.3.0 class-wc-payments-order-service.php:2229-2241).
+	 * order is not Pending, already has the payment's started note, or is a scheduled renewal's. Its lifecycle event then
+	 * carries no meta and no note; the intent's record is written by the attach before it (client 11.3.0
+	 * class-wc-payments-order-service.php:2229-2241).
 	 *
 	 * @var string
 	 */

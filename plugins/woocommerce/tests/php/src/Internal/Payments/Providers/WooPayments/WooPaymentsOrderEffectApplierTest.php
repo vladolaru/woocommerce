@@ -160,7 +160,7 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 		$plan    = WooPaymentsOrderEffectPlan::for_payment_intent( $result, false );
 
 		$applier         = $this->create_applier();
-		$applied_outcome = $applier->apply( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_display' ), $outcome, $plan );
+		$applied_outcome = $this->apply_charge( $applier, PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_display' ), $outcome, $plan );
 		$order           = wc_get_order( $order->get_id() );
 
 		$this->assertNotSame( $outcome, $applied_outcome );
@@ -193,7 +193,8 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 		$order->set_payment_method_title( 'Card' );
 		$order->save();
 
-		$this->create_applier()->apply(
+		$this->apply_charge(
+			$this->create_applier(),
 			PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_missing_display' ),
 			new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_missing_display', '', 'pm_missing_display' ),
 			WooPaymentsOrderEffectPlan::for_payment_intent(
@@ -228,7 +229,8 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 		// other cases change only the intent status.
 		$intent           = $this->load_recorded_fixture_body( 'platform-manual-capture.json', 'authorize_manual_capture' );
 		$intent['status'] = $intent_status;
-		$this->create_applier()->apply(
+		$this->apply_charge(
+			$this->create_applier(),
 			PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, (string) $intent['payment_method'] ),
 			new PaymentOutcome( $outcome_status, (string) $intent['id'], '', (string) $intent['payment_method'] ),
 			WooPaymentsOrderEffectPlan::for_payment_intent( $intent, false )
@@ -279,7 +281,8 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 		$outcome = new PaymentOutcome( PaymentOutcome::STATUS_AUTHORIZED, 'pi_authorized' );
 		$plan    = WooPaymentsOrderEffectPlan::for_payment_intent( $result, false );
 
-		$applied_outcome = $this->create_applier()->apply(
+		$applied_outcome = $this->apply_charge(
+			$this->create_applier(),
 			PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_authorized' ),
 			$outcome,
 			$plan
@@ -322,7 +325,8 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 			),
 		);
 
-		$applied = $this->create_applier()->apply(
+		$applied = $this->apply_charge(
+			$this->create_applier(),
 			PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_review' ),
 			new PaymentOutcome( PaymentOutcome::STATUS_AUTHORIZED, 'pi_review' ),
 			WooPaymentsOrderEffectPlan::for_payment_intent( $result, false )
@@ -362,7 +366,8 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 				),
 			),
 		);
-		$outcome = $this->create_applier()->apply(
+		$outcome = $this->apply_charge(
+			$this->create_applier(),
 			PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_review_invalid' ),
 			new PaymentOutcome( PaymentOutcome::STATUS_AUTHORIZED, 'pi_review_invalid' ),
 			WooPaymentsOrderEffectPlan::for_payment_intent( $result, false )
@@ -402,7 +407,8 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 			false
 		);
 
-		$result = $this->create_applier()->apply(
+		$result = $this->apply_charge(
+			$this->create_applier(),
 			PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ),
 			$outcome,
 			$plan
@@ -436,7 +442,8 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 		$outcome = new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_neutral', '', 'pm_neutral', 'cus_neutral' );
 		$plan    = WooPaymentsOrderEffectPlan::for_payment_intent( $result, false );
 
-		$applied = $this->create_applier()->apply(
+		$applied = $this->apply_charge(
+			$this->create_applier(),
 			PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_neutral' ),
 			$outcome,
 			$plan
@@ -481,7 +488,8 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 			),
 		);
 
-		$applied = $this->create_applier()->apply(
+		$applied = $this->apply_charge(
+			$this->create_applier(),
 			PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_currency_source' ),
 			new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_currency_source', '', 'pm_currency_source', 'cus_currency_source' ),
 			WooPaymentsOrderEffectPlan::for_payment_intent( $result, false )
@@ -700,8 +708,8 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 		);
 		$applier       = $this->create_applier( $token_service );
 
-		$first_result  = $applier->apply( $context, $outcome, $plan );
-		$second_result = $applier->apply( $context, $first_result, $plan );
+		$first_result  = $this->apply_charge( $applier, $context, $outcome, $plan );
+		$second_result = $this->apply_charge( $applier, $context, $first_result, $plan );
 		$order         = wc_get_order( $order->get_id() );
 		$tokens        = \WC_Payment_Tokens::get_customer_tokens( $user_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID );
 		$token         = reset( $tokens );
@@ -759,7 +767,7 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 		);
 		$outcome           = new PaymentOutcome( PaymentOutcome::STATUS_AUTHORIZED, (string) $intent['id'], '', $payment_method_id, (string) $intent['customer'] );
 
-		$result = $this->create_applier( $token_service )->apply( $context, $outcome, WooPaymentsOrderEffectPlan::for_payment_intent( $intent, false ) );
+		$result = $this->apply_charge( $this->create_applier( $token_service ), $context, $outcome, WooPaymentsOrderEffectPlan::for_payment_intent( $intent, false ) );
 		$order  = wc_get_order( $order->get_id() );
 		$tokens = array_values( \WC_Payment_Tokens::get_customer_tokens( $user_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID ) );
 
@@ -819,7 +827,7 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 			false
 		);
 
-		$result = $this->create_applier( $this->create_token_service() )->apply( $context, $outcome, $plan );
+		$result = $this->apply_charge( $this->create_applier( $this->create_token_service() ), $context, $outcome, $plan );
 		$order  = wc_get_order( $order->get_id() );
 
 		$this->assertSame( PaymentOutcome::STATUS_COMPLETED, $result->get_status() );
@@ -889,7 +897,7 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 		wp_set_current_user( $shopper_id );
 
 		try {
-			$this->create_applier( $token_service )->apply( $context, $outcome, $plan );
+			$this->apply_charge( $this->create_applier( $token_service ), $context, $outcome, $plan );
 		} finally {
 			wp_set_current_user( 0 );
 		}
@@ -964,7 +972,7 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 			true
 		);
 
-		$result       = $this->create_applier( $token_service )->apply( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_recurring' ), $outcome, $plan );
+		$result       = $this->apply_charge( $this->create_applier( $token_service ), PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_recurring' ), $outcome, $plan );
 		$order        = wc_get_order( $order->get_id() );
 		$subscription = wc_get_order( $subscription->get_id() );
 		$unrelated    = wc_get_order( $unrelated->get_id() );
@@ -1030,7 +1038,8 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 			true
 		);
 
-		$result = $this->create_applier( $token_service )->apply(
+		$result = $this->apply_charge(
+			$this->create_applier( $token_service ),
 			PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_submitted' ),
 			$outcome,
 			$plan
@@ -1073,7 +1082,8 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 		$token_service->method( 'get_or_create_token_for_user' )->willThrowException( 'ApiException' === $throwable_class ? self::make_provider_error() : new $throwable_class( 'Token storage failed.' ) );
 		$logger = RecordingWcLogger::install();
 
-		$this->create_applier( $token_service )->apply(
+		$this->apply_charge(
+			$this->create_applier( $token_service ),
 			PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_submitted' ),
 			new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_paid', '', 'pm_paid', 'cus_paid' ),
 			WooPaymentsOrderEffectPlan::for_payment_intent(
@@ -1142,7 +1152,8 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 		);
 
 		try {
-			$this->create_applier( $token_service, null, null, $note_service )->apply(
+			$this->apply_charge(
+				$this->create_applier( $token_service, null, null, $note_service ),
 				PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_ordered' ),
 				$outcome,
 				$plan
@@ -1189,7 +1200,8 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 			true
 		);
 
-		$result = $this->create_applier( $token_service )->apply(
+		$result = $this->apply_charge(
+			$this->create_applier( $token_service ),
 			PaymentOperationContext::for_checkout(
 				$order,
 				WooPaymentsPersistenceVocabulary::GATEWAY_ID,
@@ -1208,7 +1220,10 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox SetupIntent effects persist provider references before customer authentication callbacks.
+	 * @testdox SetupIntent effects persist provider references before customer authentication callbacks, and compose the started payment's note, fraud box and intent status on a Pending order.
+	 *
+	 * Client 11.3.0 attaches the SetupIntent (class-wc-payment-gateway-wcpay.php:2444, class-wc-payments-order-service.php:1875-1884),
+	 * then its started writer writes the fraud box, the note and the intent status on a Pending order without the note (:2229-2241).
 	 */
 	public function test_setup_intent_effects_persist_provider_references(): void {
 		$order   = $this->create_woopayments_order( '0.00' );
@@ -1240,10 +1255,14 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 			)
 		);
 
-		$result = $this->create_applier()->apply( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_effects' ), $outcome, $plan );
+		$result = $this->apply_charge( $this->create_applier(), PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_effects' ), $outcome, $plan );
 		$order  = wc_get_order( $order->get_id() );
 
-		$this->assertSame( $outcome, $result );
+		$started = wc_get_container()->get( WooPaymentsOrderNoteService::class )->format_payment_started_note_candidates( $order, 'seti_effects' );
+		$this->assertSame( $started[0], $result->get_data()[ PaymentOutcome::DATA_NOTE ] ?? null );
+		$this->assertSame( PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_STARTED, $result->get_data()[ PaymentOutcome::DATA_NOTE_TYPE ] ?? null );
+		$this->assertSame( 'not_card', $result->get_data()['meta']['_wcpay_fraud_meta_box_type'] ?? null );
+		$this->assertSame( 'requires_action', $result->get_data()['meta']['_intention_status'] ?? null );
 		$this->assertInstanceOf( WC_Order::class, $order );
 		$this->assertSame( 'seti_effects', $order->get_transaction_id() );
 		$this->assertSame( 'seti_effects', $order->get_meta( '_intent_id', true ) );
@@ -1329,7 +1348,7 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 		$token_service          = new WooPaymentsTokenService();
 		$token_service->init( $details_service, wc_get_container()->get( Client::class ), wc_get_container()->get( WooPaymentsCustomerService::class ), wc_get_container()->get( WooPaymentsAccountService::class ), wc_get_container()->get( WooPaymentsOrderDataService::class ), wc_get_container()->get( PaymentMethodRegistry::class ) );
 
-		$result = $this->create_applier( $token_service )->apply( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_card_identity' ), $outcome, $plan );
+		$result = $this->apply_charge( $this->create_applier( $token_service ), PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_card_identity' ), $outcome, $plan );
 		$order  = wc_get_order( $order->get_id() );
 		$tokens = \WC_Payment_Tokens::get_customer_tokens( $user_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID );
 
@@ -2075,6 +2094,23 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 			$this->assertSame( '', $stored->get_meta( '_wcpay_refund_status', true ), 'No refund status is written before the note renders.' );
 			$this->assertCount( $notes_before, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), 'No note is added.' );
 		}
+	}
+
+	/**
+	 * Run a checkout charge's applier steps in the provider's order: the writes made whatever the decision, the intent's
+	 * attach, then the composition (WooPaymentsProvider::apply_operation_effects()).
+	 *
+	 * @param WooPaymentsOrderEffectApplier $applier Applier.
+	 * @param PaymentOperationContext       $context Payment context.
+	 * @param PaymentOutcome                $outcome Charge outcome.
+	 * @param WooPaymentsOrderEffectPlan    $plan    The charge's effect plan.
+	 * @return PaymentOutcome
+	 */
+	private function apply_charge( WooPaymentsOrderEffectApplier $applier, PaymentOperationContext $context, PaymentOutcome $outcome, WooPaymentsOrderEffectPlan $plan ): PaymentOutcome {
+		$outcome = $applier->attach_charge_intent( $context, $applier->apply_charge_writes( $context, $outcome->with_effect_plan( $plan ), $plan ) );
+		$plan    = $outcome->get_effect_plan();
+
+		return $plan instanceof WooPaymentsOrderEffectPlan ? $applier->apply( $context, $outcome, $plan ) : $outcome;
 	}
 
 	/**

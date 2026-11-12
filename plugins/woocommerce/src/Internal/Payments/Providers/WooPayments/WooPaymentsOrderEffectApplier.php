@@ -138,14 +138,20 @@ class WooPaymentsOrderEffectApplier {
 	}
 
 	/**
-	 * Apply a typed WooPayments effect plan.
+	 * Write what a checkout charge writes whatever the order's payment decision, before the order is read for that decision:
+	 * the token and its subscriptions, a SetupIntent's payment method details, and the payment method title and card meta.
+	 *
+	 * Client 11.3.0 saves the token before it attaches the intent (class-wc-payment-gateway-wcpay.php:2335-2377), and writes
+	 * the title and card meta before it updates the order from the intent (:2462-2495). A $0 order confirmed without an
+	 * intent gets all its writes here, as it gets no payment decision. The returned outcome is the charge's, or the refusal
+	 * of a payment method change whose card could not be saved.
 	 *
 	 * @param PaymentOperationContext    $context Payment context.
-	 * @param PaymentOutcome             $outcome Provider outcome.
-	 * @param WooPaymentsOrderEffectPlan $plan    WooPayments effect plan.
+	 * @param PaymentOutcome             $outcome Charge outcome.
+	 * @param WooPaymentsOrderEffectPlan $plan    The charge's effect plan.
 	 * @return PaymentOutcome
 	 */
-	public function apply( PaymentOperationContext $context, PaymentOutcome $outcome, WooPaymentsOrderEffectPlan $plan ): PaymentOutcome {
+	public function apply_charge_writes( PaymentOperationContext $context, PaymentOutcome $outcome, WooPaymentsOrderEffectPlan $plan ): PaymentOutcome {
 		switch ( $plan->get_type() ) {
 			case WooPaymentsOrderEffectPlan::TYPE_PAYMENT_INTENT:
 				if ( $plan->should_apply_token_effects() ) {
@@ -160,7 +166,7 @@ class WooPaymentsOrderEffectApplier {
 					$this->apply_generic_payment_method_title( $context->get_order() );
 				}
 
-				return $this->enrich_outcome_for_lifecycle( $context, $outcome, $plan );
+				return $outcome;
 
 			case WooPaymentsOrderEffectPlan::TYPE_SETUP_INTENT:
 				$payment_method_details     = array();
@@ -177,7 +183,6 @@ class WooPaymentsOrderEffectApplier {
 						$payment_method_details = array();
 					}
 				}
-				$this->persist_setup_intent_details( $context->get_order(), $outcome, $plan->get_setup_meta() );
 				$provider_result = $plan->get_provider_result();
 				if ( PaymentOutcome::STATUS_COMPLETED === $outcome->get_status() && 'succeeded' === (string) ( $provider_result['status'] ?? '' ) && 0 === strpos( (string) ( $provider_result['id'] ?? '' ), 'seti_' ) ) {
 					if ( empty( $payment_method_details ) && '' !== $outcome->get_payment_method_id() ) {
@@ -191,28 +196,61 @@ class WooPaymentsOrderEffectApplier {
 						}
 					}
 					$this->apply_setup_intent_payment_method_display_details( $context->get_order(), $payment_method_details );
-
-					// An outcome that only saved the payment method completes nothing, so it gets no success note (client 11.3.0 gw:2497-2500).
-					if ( $outcome->is_payment_method_only() ) {
-						return $outcome;
-					}
-
-					// Client 11.1.0's process_payment() also ends in update_order_status_from_intent() (gw:2204), so the success note is written here too.
-					return $this->merge_effect_data_into_outcome(
-						$outcome,
-						$this->compose_setup_intent_note_data( $context->get_order(), $outcome, (string) $provider_result['id'] ),
-						$plan
-					);
 				}
-				$setup_intent_id = (string) ( $provider_result['id'] ?? '' );
-				if ( PaymentLifecycleEvent::STATUS_STARTED === PaymentLifecycleEvent::status_for_outcome( $outcome ) && '' !== $setup_intent_id
-					&& $this->skips_started_writes( $context->get_order(), $this->note_service->format_payment_started_note_candidates( $context->get_order(), $setup_intent_id ) ) ) {
-					return $this->merge_effect_data_into_outcome( $outcome, array( WooPaymentsOutcomeMetadataMapper::STARTED_WRITES_SKIPPED_KEY => true ), $plan );
-				}
+
 				return $outcome;
 
 			case WooPaymentsOrderEffectPlan::TYPE_ZERO_AMOUNT_WITHOUT_INTENT:
 				$this->apply_zero_amount_without_intent( $context->get_order(), $outcome, $plan );
+				return $outcome;
+		}
+
+		return $outcome;
+	}
+
+	/**
+	 * Apply a typed WooPayments effect plan.
+	 *
+	 * For a checkout charge's PaymentIntent or SetupIntent, it composes the outcome the lifecycle applies on the outcome
+	 * attach_charge_intent() returned, on the order as attached (client 11.3.0 class-wc-payment-gateway-wcpay.php:2444,
+	 * then :2499).
+	 *
+	 * @param PaymentOperationContext    $context Payment context.
+	 * @param PaymentOutcome             $outcome Provider outcome.
+	 * @param WooPaymentsOrderEffectPlan $plan    WooPayments effect plan.
+	 * @return PaymentOutcome
+	 */
+	public function apply( PaymentOperationContext $context, PaymentOutcome $outcome, WooPaymentsOrderEffectPlan $plan ): PaymentOutcome {
+		switch ( $plan->get_type() ) {
+			case WooPaymentsOrderEffectPlan::TYPE_PAYMENT_INTENT:
+				return $this->compose_payment_intent_outcome( $context, $outcome, $plan, $this->get_outcome_meta_data( $outcome ), self::is_merchant_initiated( $context ) );
+
+			case WooPaymentsOrderEffectPlan::TYPE_SETUP_INTENT:
+				$order           = $context->get_order();
+				$provider_result = $plan->get_provider_result();
+				$setup_intent_id = (string) ( $provider_result['id'] ?? '' );
+				// An outcome that only saved the payment method completes nothing and starts no payment, so it gets no success or
+				// started writes (client 11.3.0 gw:2497-2500; class-wc-payments-order-service.php:469).
+				if ( $outcome->is_payment_method_only() || '' === $setup_intent_id ) {
+					return $outcome;
+				}
+
+				if ( PaymentOutcome::STATUS_COMPLETED === $outcome->get_status() && 'succeeded' === (string) ( $provider_result['status'] ?? '' ) && 0 === strpos( $setup_intent_id, 'seti_' ) ) {
+					// Client 11.1.0's process_payment() also ends in update_order_status_from_intent() (gw:2204), so the success note is written here too.
+					return $this->merge_effect_data_into_outcome( $outcome, $this->compose_setup_intent_note_data( $order, $outcome, $provider_result ), $plan );
+				}
+
+				if ( PaymentLifecycleEvent::STATUS_STARTED === PaymentLifecycleEvent::status_for_outcome( $outcome ) && self::is_waiting_on_the_shopper( $provider_result ) ) {
+					return $this->merge_effect_data_into_outcome(
+						$outcome,
+						$this->compose_started_effect_data( $order, $provider_result, $this->get_outcome_meta_data( $outcome ), true, self::is_merchant_initiated( $context ) ),
+						$plan
+					);
+				}
+
+				return $outcome;
+
+			case WooPaymentsOrderEffectPlan::TYPE_ZERO_AMOUNT_WITHOUT_INTENT:
 				return $outcome;
 
 			case WooPaymentsOrderEffectPlan::TYPE_CAPTURE:
@@ -290,33 +328,137 @@ class WooPaymentsOrderEffectApplier {
 	public function enrich_outcome_for_lifecycle( PaymentOperationContext $context, PaymentOutcome $outcome, WooPaymentsOrderEffectPlan $plan ): PaymentOutcome {
 		switch ( $plan->get_type() ) {
 			case WooPaymentsOrderEffectPlan::TYPE_PAYMENT_INTENT:
-				$result     = $plan->get_provider_result();
-				$hold       = 'succeeded' === (string) ( $result['status'] ?? '' ) ? wc_get_container()->get( WooPaymentsAmountMismatchHold::class )->decide_hold( $context->get_order(), $result ) : null;
-				$is_started = PaymentLifecycleEvent::STATUS_STARTED === PaymentLifecycleEvent::status_for_outcome( $outcome );
+				$meta = $this->compose_payment_intent_meta( $context->get_order(), $plan->get_provider_result(), $plan->writes_fee_meta() );
 
-				return $this->merge_effect_data_into_outcome(
-					$outcome,
-					$this->compose_payment_intent_effect_data( $context->get_order(), $result, $plan->writes_fee_meta(), $hold, $is_started ),
-					null === $hold ? $plan : $plan->with_amount_mismatch_hold( $hold )
-				);
+				return $this->compose_payment_intent_outcome( $context, $outcome, $plan, $meta, false );
 
 			case WooPaymentsOrderEffectPlan::TYPE_SETUP_INTENT:
-				$data          = $outcome->get_data();
-				$existing_meta = isset( $data[ WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY ] ) && is_array( $data[ WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY ] )
-					? $data[ WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY ]
-					: array();
+				$outcome = $this->with_setup_meta( $outcome, $plan );
 
 				return $this->merge_effect_data_into_outcome(
 					$outcome,
-					array_merge(
-						array( WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY => array_merge( $existing_meta, $plan->get_setup_meta() ) ),
-						$this->compose_setup_intent_note_data( $context->get_order(), $outcome, (string) ( $plan->get_provider_result()['id'] ?? '' ) )
-					),
+					$this->compose_setup_intent_note_data( $context->get_order(), $outcome, $plan->get_provider_result() ),
 					$plan
 				);
 		}
 
 		return $outcome;
+	}
+
+	/**
+	 * Compose a PaymentIntent outcome's hold, note and started writes on the order, from the intent's meta.
+	 *
+	 * The hold is decided on the order as it is now, so a caller that attaches the intent first decides it on the order as
+	 * attached (client 11.3.0 class-wc-payment-gateway-wcpay.php:2444, then class-wc-payments-order-service.php:484-489).
+	 *
+	 * @param PaymentOperationContext    $context              Payment context.
+	 * @param PaymentOutcome             $outcome              Provider outcome.
+	 * @param WooPaymentsOrderEffectPlan $plan                 PaymentIntent effect plan.
+	 * @param array<string,string>       $meta                 The intent's order meta (compose_payment_intent_meta()).
+	 * @param bool                       $is_merchant_initiated Whether the charge is a scheduled renewal's.
+	 * @return PaymentOutcome
+	 */
+	private function compose_payment_intent_outcome( PaymentOperationContext $context, PaymentOutcome $outcome, WooPaymentsOrderEffectPlan $plan, array $meta, bool $is_merchant_initiated ): PaymentOutcome {
+		$result     = $plan->get_provider_result();
+		$hold       = 'succeeded' === (string) ( $result['status'] ?? '' ) ? wc_get_container()->get( WooPaymentsAmountMismatchHold::class )->decide_hold( $context->get_order(), $result ) : null;
+		$is_started = PaymentLifecycleEvent::STATUS_STARTED === PaymentLifecycleEvent::status_for_outcome( $outcome );
+
+		return $this->merge_effect_data_into_outcome(
+			$outcome,
+			$this->compose_payment_intent_effect_data( $context->get_order(), $result, $meta, $hold, $is_started, $is_merchant_initiated ),
+			null === $hold ? $plan : $plan->with_amount_mismatch_hold( $hold )
+		);
+	}
+
+	/**
+	 * Add a SetupIntent plan's setup meta, the order currency and mode, to the outcome's order meta.
+	 *
+	 * @param PaymentOutcome             $outcome SetupIntent outcome.
+	 * @param WooPaymentsOrderEffectPlan $plan    SetupIntent effect plan.
+	 * @return PaymentOutcome
+	 */
+	private function with_setup_meta( PaymentOutcome $outcome, WooPaymentsOrderEffectPlan $plan ): PaymentOutcome {
+		return $this->merge_effect_data_into_outcome(
+			$outcome,
+			array( WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY => array_merge( $this->get_outcome_meta_data( $outcome ), $plan->get_setup_meta() ) ),
+			$plan
+		);
+	}
+
+	/**
+	 * Get the order meta an outcome's effects composed so far.
+	 *
+	 * @param PaymentOutcome $outcome Provider outcome.
+	 * @return array<string,mixed>
+	 */
+	private function get_outcome_meta_data( PaymentOutcome $outcome ): array {
+		$data = $outcome->get_data();
+
+		return isset( $data[ WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY ] ) && is_array( $data[ WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY ] )
+			? $data[ WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY ]
+			: array();
+	}
+
+	/**
+	 * Attach a checkout charge's intent to the order read under the checkout's order payment lock, through
+	 * attach_intent_info(), before its outcome is composed (apply()); and return the outcome with the intent's order meta,
+	 * a PaymentIntent's composed on that order and a SetupIntent's setup meta.
+	 *
+	 * Client 11.3.0 attaches the intent of a payment, an authorization or a started payment, a SetupIntent's included, before
+	 * it updates the order from it; on a subscription payment method change the attach writes the intent's record even once
+	 * the stored intent status is succeeded (class-wc-payment-gateway-wcpay.php:2443-2444). Its other override, a
+	 * subscription in the cart, is not applied here.
+	 *
+	 * @param PaymentOperationContext $context Payment context, its order read under the checkout's order payment lock.
+	 * @param PaymentOutcome          $outcome Charge outcome.
+	 * @return PaymentOutcome
+	 */
+	public function attach_charge_intent( PaymentOperationContext $context, PaymentOutcome $outcome ): PaymentOutcome {
+		$plan = $outcome->get_effect_plan();
+		if ( $plan instanceof WooPaymentsOrderEffectPlan && WooPaymentsOrderEffectPlan::TYPE_PAYMENT_INTENT === $plan->get_type() ) {
+			$outcome = $this->merge_effect_data_into_outcome(
+				$outcome,
+				array( WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY => $this->compose_payment_intent_meta( $context->get_order(), $plan->get_provider_result(), $plan->writes_fee_meta() ) ),
+				$plan
+			);
+		} elseif ( $plan instanceof WooPaymentsOrderEffectPlan && WooPaymentsOrderEffectPlan::TYPE_SETUP_INTENT === $plan->get_type() ) {
+			$outcome = $this->with_setup_meta( $outcome, $plan );
+		}
+
+		$intent_id = $outcome->get_provider_payment_id();
+		if ( '' === $intent_id || ! in_array( PaymentLifecycleEvent::status_for_outcome( $outcome ), array( PaymentLifecycleEvent::STATUS_COMPLETED, PaymentLifecycleEvent::STATUS_AUTHORIZED, PaymentLifecycleEvent::STATUS_STARTED ), true ) ) {
+			return $outcome;
+		}
+
+		$this->attach_intent_info(
+			$context->get_order(),
+			$intent_id,
+			( new WooPaymentsOutcomeMetadataMapper() )->get_intent_meta( $outcome ),
+			self::CHARGE_META_KEYS,
+			! empty( $context->get_provider_data()[ WooPaymentsIntentRequestBuilder::PROVIDER_DATA_SUBSCRIPTION_PAYMENT_METHOD_CHANGE ] )
+		);
+
+		return $outcome;
+	}
+
+	/**
+	 * Tell whether a charge is a scheduled subscription renewal's, which the merchant initiates with the customer absent.
+	 *
+	 * @param PaymentOperationContext $context Payment context.
+	 * @return bool
+	 */
+	private static function is_merchant_initiated( PaymentOperationContext $context ): bool {
+		return true === ( $context->get_provider_data()['scheduled_subscription_payment'] ?? false );
+	}
+
+	/**
+	 * Tell whether an intent waits on the shopper: its status is requires_action or requires_confirmation.
+	 *
+	 * @param array<string,mixed> $result Provider intent response.
+	 * @return bool
+	 */
+	private static function is_waiting_on_the_shopper( array $result ): bool {
+		return in_array( (string) ( $result['status'] ?? '' ), array( 'requires_action', 'requires_confirmation' ), true );
 	}
 
 	/**
@@ -330,15 +472,18 @@ class WooPaymentsOrderEffectApplier {
 	 * covers that function only (:1820); the mode, exchange rate, fee and net are written beside it, unguarded
 	 * (class-wc-payment-gateway-wcpay.php:1964, :2445, :2501, :2701, :2708, :4662, :4664).
 	 *
-	 * @param WC_Order             $order       Order read under the order payment lock the caller holds.
-	 * @param string               $intent_id   Intent ID, which becomes the transaction ID.
-	 * @param array<string,string> $meta        The payment's order meta; only its intent info, and the keys below, are written.
-	 * @param string[]             $beside_keys Meta the caller's client counterpart writes beside the intent's: CHARGE_META_KEYS
-	 *                                          or CONFIRMATION_META_KEYS, or none for the terminal capture.
+	 * @param WC_Order             $order                   Order read under the order payment lock the caller holds.
+	 * @param string               $intent_id               Intent ID, which becomes the transaction ID.
+	 * @param array<string,string> $meta                    The payment's order meta; only its intent info, and the keys below, are written.
+	 * @param string[]             $beside_keys             Meta the caller's client counterpart writes beside the intent's:
+	 *                                                      CHARGE_META_KEYS or CONFIRMATION_META_KEYS, or none for the terminal capture.
+	 * @param bool                 $allow_update_on_success Whether the intent's record is written also once the stored intent status
+	 *                                                      is succeeded, as the client's attach does on a subscription payment method
+	 *                                                      change (class-wc-payment-gateway-wcpay.php:2443).
 	 */
-	public function attach_intent_info( WC_Order $order, string $intent_id, array $meta, array $beside_keys = array() ): void {
+	public function attach_intent_info( WC_Order $order, string $intent_id, array $meta, array $beside_keys = array(), bool $allow_update_on_success = false ): void {
 		$keys = $beside_keys;
-		if ( 'succeeded' !== (string) $order->get_meta( '_intention_status', true ) ) {
+		if ( $allow_update_on_success || 'succeeded' !== (string) $order->get_meta( '_intention_status', true ) ) {
 			$order->set_transaction_id( $intent_id );
 			$keys = array_merge( self::INTENT_INFO_META_KEYS, $beside_keys );
 		}
@@ -353,12 +498,13 @@ class WooPaymentsOrderEffectApplier {
 	 * return's mark_payment_failed() with "UPE payment failed: ..." (gw:2376-2382, 2428-2446; os:2106-2130), and
 	 * mark_payment_capture_cancelled() for a canceled SetupIntent on either path (os:400-402, 1533-1554, 2315-2330).
 	 *
-	 * @param WC_Order       $order     Order object.
-	 * @param PaymentOutcome $outcome   SetupIntent outcome.
-	 * @param string         $intent_id SetupIntent ID.
+	 * @param WC_Order            $order           Order object.
+	 * @param PaymentOutcome      $outcome         SetupIntent outcome, with its order meta.
+	 * @param array<string,mixed> $provider_result SetupIntent response.
 	 * @return array<string,mixed>
 	 */
-	private function compose_setup_intent_note_data( WC_Order $order, PaymentOutcome $outcome, string $intent_id ): array {
+	private function compose_setup_intent_note_data( WC_Order $order, PaymentOutcome $outcome, array $provider_result ): array {
+		$intent_id = (string) ( $provider_result['id'] ?? '' );
 		if ( '' === $intent_id ) {
 			return array();
 		}
@@ -368,11 +514,7 @@ class WooPaymentsOrderEffectApplier {
 			$note_candidates = $this->note_service->format_payment_success_note_candidates( $order, $intent_id, '' );
 			$note_type       = PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_SUCCESS;
 		} elseif ( PaymentOutcome::STATUS_REQUIRES_CUSTOMER_ACTION === $outcome->get_status() ) {
-			$note_candidates = $this->note_service->format_payment_started_note_candidates( $order, $intent_id );
-			$note_type       = PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_STARTED;
-			if ( $this->skips_started_writes( $order, $note_candidates ) ) {
-				return array( WooPaymentsOutcomeMetadataMapper::STARTED_WRITES_SKIPPED_KEY => true );
-			}
+			return $this->compose_started_effect_data( $order, $provider_result, $this->get_outcome_meta_data( $outcome ), true, false );
 		} elseif ( PaymentOutcome::STATUS_FAILED === $outcome->get_status() ) {
 			$note_candidates = $this->note_service->format_redirect_payment_failed_note_candidates( $order, $intent_id );
 			$note_type       = PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_FAILED;
@@ -391,34 +533,47 @@ class WooPaymentsOrderEffectApplier {
 	}
 
 	/**
-	 * Compose PaymentIntent metadata and notes after the provider outcome is retained.
+	 * Compose a PaymentIntent's order meta: the intent's record, the payment's meta and the payment method's display meta.
 	 *
-	 * @param WC_Order                                   $order            Order being charged.
-	 * @param array<string,mixed>                        $result           Provider PaymentIntent response.
-	 * @param bool                                       $include_fee_meta Whether to write the fee meta.
-	 * @param array{notes:string[],log_line:string}|null $hold             The hold decided for the intent, or null when it completes the order.
-	 * @param bool                                       $is_started       Whether the outcome is a started payment, whose own writes skips_started_writes() decides.
-	 * @return array<string,mixed>
+	 * @param WC_Order            $order            Order being charged.
+	 * @param array<string,mixed> $result           Provider PaymentIntent response.
+	 * @param bool                $include_fee_meta Whether to write the fee meta.
+	 * @return array<string,string>
 	 */
-	private function compose_payment_intent_effect_data( WC_Order $order, array $result, bool $include_fee_meta, ?array $hold, bool $is_started = false ): array {
+	private function compose_payment_intent_meta( WC_Order $order, array $result, bool $include_fee_meta ): array {
 		$status          = (string) ( $result['status'] ?? '' );
 		$charge          = WooPaymentsIntentCodec::latest_charge( $result );
 		$settlement_meta = ! empty( $charge ) && WooPaymentsIntentCodec::holds_money( $status )
 			? $this->order_data_service->get_settlement_exchange_rate_order_meta( $order, $charge, $this->account_service->get_account_default_currency() )
 			: array();
 		$display_effects = $this->compose_payment_method_display_details( $order, $result );
-		$order_mode      = $this->account_service->get_order_mode();
 		$meta            = WooPaymentsOrderEffects::payment_intent_meta(
 			$result,
 			(string) $order->get_currency(),
-			$order_mode,
+			$this->account_service->get_order_mode(),
 			$settlement_meta,
 			$order->has_status( OrderStatus::ON_HOLD ) || 'review' === (string) $order->get_meta( '_wcpay_fraud_outcome_status', true ),
 			$include_fee_meta
 		);
-		if ( ! empty( $display_effects ) ) {
-			$meta = array_merge( $meta, $display_effects['meta'] );
-		}
+
+		return empty( $display_effects ) ? $meta : array_merge( $meta, $display_effects['meta'] );
+	}
+
+	/**
+	 * Compose a PaymentIntent's hold, note and started writes after the provider outcome is retained.
+	 *
+	 * @param WC_Order                                   $order                 Order being charged.
+	 * @param array<string,mixed>                        $result                Provider PaymentIntent response.
+	 * @param array<string,string>                       $meta                  The intent's order meta (compose_payment_intent_meta()).
+	 * @param array{notes:string[],log_line:string}|null $hold                  The hold decided for the intent, or null when it completes the order.
+	 * @param bool                                       $is_started            Whether the outcome is a started payment, whose own writes compose_started_effect_data() decides.
+	 * @param bool                                       $is_merchant_initiated Whether the charge is a scheduled renewal's.
+	 * @return array<string,mixed>
+	 */
+	private function compose_payment_intent_effect_data( WC_Order $order, array $result, array $meta, ?array $hold, bool $is_started, bool $is_merchant_initiated ): array {
+		$status     = (string) ( $result['status'] ?? '' );
+		$charge     = WooPaymentsIntentCodec::latest_charge( $result );
+		$order_mode = $this->account_service->get_order_mode();
 
 		$effect_data = array( WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY => $meta );
 		$intent_id   = isset( $result['id'] ) ? (string) $result['id'] : '';
@@ -453,32 +608,53 @@ class WooPaymentsOrderEffectApplier {
 				$effect_data[ PaymentOutcome::DATA_NOTE_TYPE ]        = PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_AUTHORIZED;
 				$effect_data[ PaymentOutcome::DATA_NOTE_EQUIVALENTS ] = $note_candidates;
 			}
-		} elseif ( in_array( $status, array( 'requires_action', 'requires_confirmation' ), true ) && '' !== $intent_id ) {
-			$note_candidates = $this->note_service->format_payment_started_note_candidates( $order, $intent_id );
-			if ( $is_started && $this->skips_started_writes( $order, $note_candidates ) ) {
-				$effect_data[ WooPaymentsOutcomeMetadataMapper::STARTED_WRITES_SKIPPED_KEY ] = true;
-			} else {
-				$effect_data[ PaymentOutcome::DATA_NOTE ]             = $note_candidates[0];
-				$effect_data[ PaymentOutcome::DATA_NOTE_TYPE ]        = PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_STARTED;
-				$effect_data[ PaymentOutcome::DATA_NOTE_EQUIVALENTS ] = $note_candidates;
-			}
+		} elseif ( self::is_waiting_on_the_shopper( $result ) && '' !== $intent_id ) {
+			$effect_data = array_merge( $effect_data, $this->compose_started_effect_data( $order, $result, $meta, $is_started, $is_merchant_initiated ) );
 		}
 
 		return $effect_data;
 	}
 
 	/**
-	 * Tell whether a started payment's own writes, its note and its started meta, are skipped: the order is not Pending, or
-	 * the payment's started note is already on it. Client 11.3.0's started writer returns then, before its fraud box, note
-	 * and intent status writes (class-wc-payments-order-service.php:2229-2241).
+	 * Compose a started payment's own writes, for a PaymentIntent or a SetupIntent that waits on the shopper: the started
+	 * note, the fraud box and the intent status, on a Pending order without that note.
 	 *
-	 * @param WC_Order $order           Order the started outcome is composed on, read under the caller's order payment lock.
-	 * @param string[] $note_candidates The payment's started note in each wording that counts as the same note.
-	 * @return bool
+	 * Client 11.3.0's started writer returns on any other order, before its fraud box, note and intent status writes
+	 * (class-wc-payments-order-service.php:2229-2241); the writes are then skipped (STARTED_WRITES_SKIPPED_KEY). A scheduled
+	 * renewal's started payment is skipped too: the client's renewal fails the order first (class-wc-payment-gateway-wcpay.php:2208-2222),
+	 * so its started writer then meets an order that is not Pending (:2231-2233).
+	 *
+	 * @param WC_Order            $order                 Order the started outcome is composed on, read under the caller's order payment lock.
+	 * @param array<string,mixed> $result                Provider intent response.
+	 * @param array<string,mixed> $meta                  The intent's order meta.
+	 * @param bool                $is_started            Whether the outcome is a started payment; only a started payment's writes are skipped.
+	 * @param bool                $is_merchant_initiated Whether the charge is a scheduled renewal's.
+	 * @return array<string,mixed>
 	 */
-	private function skips_started_writes( WC_Order $order, array $note_candidates ): bool {
-		return ! $order->has_status( OrderStatus::PENDING )
-			|| 0 < wc_get_container()->get( OrderPaymentNotes::class )->find_by_content( $order, (string) $note_candidates[0], $note_candidates );
+	private function compose_started_effect_data( WC_Order $order, array $result, array $meta, bool $is_started, bool $is_merchant_initiated ): array {
+		$note_candidates = $this->note_service->format_payment_started_note_candidates( $order, (string) ( $result['id'] ?? '' ) );
+		if ( $is_started && (
+			$is_merchant_initiated
+			|| ! $order->has_status( OrderStatus::PENDING )
+			|| 0 < wc_get_container()->get( OrderPaymentNotes::class )->find_by_content( $order, (string) $note_candidates[0], $note_candidates )
+		) ) {
+			return array( WooPaymentsOutcomeMetadataMapper::STARTED_WRITES_SKIPPED_KEY => true );
+		}
+
+		$started_meta = WooPaymentsOrderEffects::started_payment_meta( $result, (string) $order->get_currency() );
+
+		return array(
+			WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY => array_merge(
+				$meta,
+				array(
+					'_intention_status'          => $started_meta['_intention_status'],
+					'_wcpay_fraud_meta_box_type' => $started_meta['_wcpay_fraud_meta_box_type'],
+				)
+			),
+			PaymentOutcome::DATA_NOTE             => $note_candidates[0],
+			PaymentOutcome::DATA_NOTE_TYPE        => PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_STARTED,
+			PaymentOutcome::DATA_NOTE_EQUIVALENTS => $note_candidates,
+		);
 	}
 
 	/**
@@ -1103,17 +1279,13 @@ class WooPaymentsOrderEffectApplier {
 	}
 
 	/**
-	 * Persist SetupIntent details needed by customer-authentication callbacks.
+	 * Persist the payment method, customer and mode of a $0 order confirmed without an intent.
 	 *
 	 * @param WC_Order             $order   Order being updated.
-	 * @param PaymentOutcome       $outcome SetupIntent outcome.
-	 * @param array<string,string> $meta    SetupIntent metadata.
+	 * @param PaymentOutcome       $outcome Outcome without a provider reference.
+	 * @param array<string,string> $meta    Setup metadata.
 	 */
-	private function persist_setup_intent_details( WC_Order $order, PaymentOutcome $outcome, array $meta ): void {
-		if ( '' !== $outcome->get_provider_payment_id() ) {
-			$order->set_transaction_id( $outcome->get_provider_payment_id() );
-			$order->update_meta_data( '_intent_id', $outcome->get_provider_payment_id() );
-		}
+	private function persist_zero_amount_details( WC_Order $order, PaymentOutcome $outcome, array $meta ): void {
 		if ( '' !== $outcome->get_payment_method_id() ) {
 			$order->update_meta_data( '_payment_method_id', $outcome->get_payment_method_id() );
 		}
@@ -1139,7 +1311,7 @@ class WooPaymentsOrderEffectApplier {
 	 */
 	private function apply_zero_amount_without_intent( WC_Order $order, PaymentOutcome $outcome, WooPaymentsOrderEffectPlan $plan ): void {
 		$payment_method_id = $outcome->get_payment_method_id();
-		$this->persist_setup_intent_details( $order, $outcome, $plan->get_setup_meta() );
+		$this->persist_zero_amount_details( $order, $outcome, $plan->get_setup_meta() );
 
 		$token_id = (int) ( $plan->get_provider_result()['token_id'] ?? 0 );
 		$token    = 0 < $token_id ? WC_Payment_Tokens::get( $token_id ) : null;
