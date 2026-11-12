@@ -193,6 +193,10 @@ class WooPaymentsPaymentOperationService {
 	/**
 	 * Charge an order through the WooPayments platform API.
 	 *
+	 * A payment method change takes no payment, whatever the order total: it sets up the payment method, as the
+	 * order-status callback confirms a change through a SetupIntent at any total (client 11.3.0
+	 * class-wc-payment-gateway-wcpay.php:4643-4666).
+	 *
 	 * @param PaymentOperationContext $context         Payment context.
 	 * @param string                  $idempotency_key Key minted fresh for this payment attempt. A positive-amount charge keeps its
 	 *                                                 key on the order and sends the kept key on later attempts until a definitive
@@ -203,8 +207,9 @@ class WooPaymentsPaymentOperationService {
 		if ( $this->api_client->is_available() ) {
 			try {
 				$outcome = 0.0 < (float) $context->get_order()->get_total()
+					&& empty( $context->get_provider_data()[ WooPaymentsIntentRequestBuilder::PROVIDER_DATA_SUBSCRIPTION_PAYMENT_METHOD_CHANGE ] )
 					? $this->charge_order_total( $context, $idempotency_key )
-					: $this->set_up_payment_method_for_zero_total( $context, $idempotency_key );
+					: $this->set_up_payment_method( $context, $idempotency_key );
 			} catch ( ApiException $exception ) {
 				$outcome = $this->failed_charge_outcome( $context->get_order(), $exception );
 			}
@@ -1449,14 +1454,15 @@ class WooPaymentsPaymentOperationService {
 	}
 
 	/**
-	 * Create or confirm a zero-amount setup intent through the WooPayments platform API.
+	 * Set up a payment method without a charge, for a $0 order or a payment method change: create or confirm a setup intent
+	 * through the WooPayments platform API, or confirm without an intent.
 	 *
 	 * @param PaymentOperationContext $context         Payment context.
 	 * @param string                  $idempotency_key Key minted fresh for this payment attempt.
 	 * @return PaymentOutcome
 	 * @throws ApiException When creating or replacing the customer, or reading a WooPay intent, fails.
 	 */
-	private function set_up_payment_method_for_zero_total( PaymentOperationContext $context, string $idempotency_key ): PaymentOutcome {
+	private function set_up_payment_method( PaymentOperationContext $context, string $idempotency_key ): PaymentOutcome {
 		$context            = $this->request_builder->with_saved_payment_token_method_type( $context );
 		$order              = $context->get_order();
 		$payment_credential = $this->request_builder->payment_credential_from_context( $context );

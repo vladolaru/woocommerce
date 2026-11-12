@@ -2888,12 +2888,14 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @dataProvider provider_subscription_change_transport_provider
-	 * @testdox Validated subscription changes reuse an existing customer without a provider update for both intent transports.
+	 * @testdox Validated subscription changes reuse an existing customer without a provider update, through a SetupIntent whatever the order total: $_dataName.
 	 *
-	 * @param string $total Order total selecting PaymentIntent or SetupIntent transport.
-	 * @param string $expected_intent Expected intent type.
+	 * A payment method change takes no payment, whatever the order total; the client's order-status callback confirms a
+	 * change through a SetupIntent at any total (class-wc-payment-gateway-wcpay.php:4643-4666).
+	 *
+	 * @param string $total Order total.
 	 */
-	public function test_validated_subscription_change_uses_real_customer_service_without_update( string $total, string $expected_intent ): void {
+	public function test_validated_subscription_change_uses_real_customer_service_without_update( string $total ): void {
 		$order      = $this->create_woopayments_order( $total );
 		$api_client = $this->create_recording_customer_intent_api_client();
 
@@ -2921,7 +2923,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( array(), $api_client->updated_customers );
 		$this->assertSame( array(), $api_client->created_customers );
 		$this->assertCount( 1, $api_client->intent_requests );
-		$this->assertSame( $expected_intent, $api_client->intent_requests[0]['type'] );
+		$this->assertSame( 'setup', $api_client->intent_requests[0]['type'] );
 		$this->assertSame( 'cus_change', $api_client->intent_requests[0]['request_data']['customer'] );
 		$this->assertSame( 'key_change_real', $api_client->intent_requests[0]['idempotency_key'] );
 	}
@@ -3031,25 +3033,24 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Provider cases for native PaymentIntent and SetupIntent subscription-change transport.
+	 * Order totals of a subscription payment method change.
 	 *
-	 * @return array<string,array{string,string}>
+	 * @return array<string,array{string}>
 	 */
 	public function provider_subscription_change_transport_provider(): array {
 		return array(
-			'payment intent' => array( '10.00', 'payment' ),
-			'setup intent'   => array( '0.00', 'setup' ),
+			'positive total' => array( '10.00' ),
+			'zero total'     => array( '0.00' ),
 		);
 	}
 
 	/**
 	 * @dataProvider provider_subscription_change_transport_provider
-	 * @testdox Validated subscription changes recreate a missing remote customer and retry the intent under a derived key.
+	 * @testdox Validated subscription changes recreate a missing remote customer and retry the SetupIntent under a derived key, whatever the order total: $_dataName.
 	 *
-	 * @param string $total Order total selecting PaymentIntent or SetupIntent transport.
-	 * @param string $expected_intent Expected intent type.
+	 * @param string $total Order total.
 	 */
-	public function test_validated_subscription_change_recovers_missing_remote_customer( string $total, string $expected_intent ): void {
+	public function test_validated_subscription_change_recovers_missing_remote_customer( string $total ): void {
 		$order      = $this->create_woopayments_order( $total );
 		$api_client = $this->create_recording_customer_intent_api_client( true );
 		$user_id    = self::factory()->user->create( array( 'role' => 'customer' ) );
@@ -3068,7 +3069,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( array(), $api_client->updated_customers );
 		$this->assertCount( 1, $api_client->created_customers );
 		$this->assertCount( 2, $api_client->intent_requests );
-		$this->assertSame( $expected_intent, $api_client->intent_requests[0]['type'] );
+		$this->assertSame( array( 'setup', 'setup' ), array_column( $api_client->intent_requests, 'type' ) );
 		$this->assertSame( 'cus_missing', $api_client->intent_requests[0]['request_data']['customer'] );
 		$this->assertSame( 'cus_created', $api_client->intent_requests[1]['request_data']['customer'] );
 		$this->assertSame( 'key_recovery_real', $api_client->intent_requests[0]['idempotency_key'] );
@@ -5476,7 +5477,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 * @testdox Zero-total checkout requiring SetupIntent customer action returns the `si` confirmation redirect, not `pi`.
 	 *
 	 * Free-trial subscription signup and other zero-total checkouts create a native SetupIntent
-	 * (`set_up_payment_method_for_zero_total`), not a PaymentIntent. When that SetupIntent comes back
+	 * (`set_up_payment_method`), not a PaymentIntent. When that SetupIntent comes back
 	 * `requires_action` (a 3DS challenge on the new card the free trial saves; a saved card gets no intent at $0, client
 	 * gw:1688), the frontend confirmation hash must read
 	 * `#wcpay-confirm-si:...`, matching client 11.1.0's own `$payment_needed ? 'pi' : 'si'` branch

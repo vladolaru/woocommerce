@@ -3648,10 +3648,11 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 * The change request carries Subscriptions' change nonce and the subscription ID it posts
 	 * (templates/checkout/form-change-payment-method.php:108, :129 in WooCommerce Subscriptions 9.4.1).
 	 *
-	 * @param bool $saved_card Whether the change picks a saved card (a zero-amount change with no intent) rather than a new card (a succeeded SetupIntent).
+	 * @param bool        $saved_card Whether the change picks a saved card (a zero-amount change with no intent) rather than a new card (a succeeded SetupIntent).
+	 * @param Client|null $platform   Platform client the provider's own charge sends its requests to, or null for a charge that returns the change's outcome.
 	 * @return array{0:SubscriptionDouble,1:WC_Order,2:WooPaymentsGateway,3:string} The subscription, its renewal, the gateway and the payment method ID the change saves.
 	 */
-	private function arrange_payment_method_change_with_failed_renewal( bool $saved_card ): array {
+	private function arrange_payment_method_change_with_failed_renewal( bool $saved_card, ?Client $platform = null ): array {
 		WooCommerceSubscriptionsDoubles::load_change_payment_gateway();
 		WooCommerceSubscriptionsDoubles::load();
 		$user_id = $this->factory()->user->create( array( 'role' => 'customer' ) );
@@ -3737,11 +3738,146 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		);
 
 		$gateway = new WooPaymentsGateway();
-		$gateway->init( wc_get_container()->get( PaymentProcessingService::class ), $this->create_provider_charging( $outcome, $token_service ) );
+		$gateway->init(
+			wc_get_container()->get( PaymentProcessingService::class ),
+			null === $platform ? $this->create_provider_charging( $outcome, $token_service ) : $this->create_provider_over_platform( $platform, $token_service )
+		);
 		$_POST['_wcsnonce']                  = wp_create_nonce( 'wcs_change_payment_method' );
 		$_POST['woocommerce_change_payment'] = (string) $subscription->get_id();
 
 		return array( $subscription, $renewal, $gateway, $payment_method_id );
+	}
+
+	/**
+	 * @testdox A payment method change takes no payment, whatever the order total.
+	 *
+	 * The client's order-status callback confirms a change through a SetupIntent at any total
+	 * (class-wc-payment-gateway-wcpay.php:4643-4666), and it makes no completion call on a card change (:2497-2500).
+	 */
+	public function test_process_payment_change_takes_no_payment_whatever_the_order_total(): void {
+		$platform = new class() extends Client {
+			/**
+			 * Intent requests sent, by type.
+			 *
+			 * @var string[]
+			 */
+			public array $intent_requests = array();
+
+			/**
+			 * Tell whether the transport is available.
+			 *
+			 * @return bool
+			 */
+			public function is_available(): bool {
+				return true;
+			}
+
+			/**
+			 * Answer a SetupIntent request with a succeeded SetupIntent naming the request's order.
+			 *
+			 * @param array<string,mixed> $request_data    Request data.
+			 * @param string              $idempotency_key Idempotency key.
+			 * @return array<string,mixed>
+			 */
+			public function create_and_confirm_setup_intention( array $request_data, string $idempotency_key ): array {
+				unset( $idempotency_key );
+				$this->intent_requests[] = 'setup';
+
+				return array(
+					'id'             => 'seti_change',
+					'object'         => 'setup_intent',
+					'status'         => 'succeeded',
+					'customer'       => (string) ( $request_data['customer'] ?? '' ),
+					'payment_method' => (string) ( $request_data['payment_method'] ?? '' ),
+					'metadata'       => $request_data['metadata'] ?? array(),
+				);
+			}
+
+			/**
+			 * Answer a PaymentIntent request with a succeeded PaymentIntent.
+			 *
+			 * @param array<string,mixed> $request_data    Request data.
+			 * @param string              $idempotency_key Idempotency key.
+			 * @return array<string,mixed>
+			 */
+			public function create_and_confirm_payment_intention( array $request_data, string $idempotency_key ): array {
+				unset( $idempotency_key );
+				$this->intent_requests[] = 'payment';
+
+				return array(
+					'id'             => 'pi_change',
+					'object'         => 'payment_intent',
+					'status'         => 'succeeded',
+					'amount'         => (int) ( $request_data['amount'] ?? 0 ),
+					'currency'       => (string) ( $request_data['currency'] ?? 'usd' ),
+					'customer'       => (string) ( $request_data['customer'] ?? '' ),
+					'payment_method' => (string) ( $request_data['payment_method'] ?? '' ),
+					'metadata'       => $request_data['metadata'] ?? array(),
+				);
+			}
+		};
+		list( $subscription, $renewal, $gateway, $payment_method_id ) = $this->arrange_payment_method_change_with_failed_renewal( false, $platform );
+		$subscription->set_total( '10.00' );
+		$subscription->save();
+		$_GET['change_payment_method'] = (string) $subscription->get_id();
+
+		$result = $gateway->process_payment( $subscription->get_id() );
+
+		$renewal      = wc_get_order( $renewal->get_id() );
+		$subscription = wc_get_order( $subscription->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $renewal );
+		$this->assertInstanceOf( WC_Order::class, $subscription );
+		$this->assertSame( 'success', $result['result'] ?? '' );
+		$this->assertSame( array( 'setup' ), $platform->intent_requests, 'One SetupIntent and no PaymentIntent.' );
+		$this->assertSame( 'failed', $renewal->get_status() );
+		$this->assertSame( '', $renewal->get_transaction_id() );
+		$this->assertSame( 'active', $subscription->get_status() );
+		$this->assertSame( '', $subscription->get_meta( '_charge_id', true ), 'Nothing is charged.' );
+		$this->assertSame( $payment_method_id, $subscription->get_meta( '_payment_method_id', true ), 'The change saves the card.' );
+	}
+
+	/**
+	 * Create the WooPayments provider whose own charge sends its requests to the given platform client, with the real
+	 * effect applier on the given token service.
+	 *
+	 * @param Client                  $platform      Platform client.
+	 * @param WooPaymentsTokenService $token_service Token service the effect applier saves tokens with.
+	 * @return WooPaymentsProvider
+	 */
+	private function create_provider_over_platform( Client $platform, WooPaymentsTokenService $token_service ): WooPaymentsProvider {
+		$container        = wc_get_container();
+		$customer_service = $this->getMockBuilder( WooPaymentsCustomerService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_or_create_customer_id_for_order', 'get_or_create_customer_id_for_subscription_payment_method_change' ) )
+			->getMock();
+		$customer_service->method( 'get_or_create_customer_id_for_order' )->willReturn( 'cus_change' );
+		$customer_service->method( 'get_or_create_customer_id_for_subscription_payment_method_change' )->willReturn( 'cus_change' );
+		$payment_operations = new \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentOperationService();
+		$payment_operations->init(
+			$platform,
+			$customer_service,
+			$container->get( WooPaymentsIntentRequestBuilder::class ),
+			$container->get( WooPaymentsAccountService::class ),
+			$container->get( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService::class ),
+			$container->get( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFraudRulesetService::class ),
+			$container->get( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsChargeAmbiguityService::class ),
+			$container->get( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRefundAmbiguityService::class ),
+			$container->get( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger::class ),
+			$container->get( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLevel3Service::class )
+		);
+		$applier = new WooPaymentsOrderEffectApplier();
+		$applier->init(
+			$token_service,
+			$container->get( WooPaymentsOrderDataService::class ),
+			$container->get( WooPaymentsAccountService::class ),
+			$container->get( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService::class ),
+			$container->get( PaymentMethodRegistry::class ),
+			$container->get( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsActionSchedulerService::class )
+		);
+		$provider = new WooPaymentsProvider();
+		$provider->init( $payment_operations, $platform, $container->get( WooPaymentsAccountService::class ), new PaymentMethodRegistry(), $applier );
+
+		return $provider;
 	}
 
 	/**
