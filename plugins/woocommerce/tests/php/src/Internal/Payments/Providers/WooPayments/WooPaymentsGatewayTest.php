@@ -4238,6 +4238,111 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A checkout whose platform returns a PaymentIntent $_dataName writes what the client's status update picks by the intent's error.
+	 *
+	 * Client 11.3.0's status update sends a requires_action or requires_payment_method intent to its failed writer when it has an
+	 * error, to its on-hold writer for an offline method, and to its started writer otherwise (class-wc-payments-order-service.php:500-508,
+	 * :550-559, :2171-2183, :2229-2241), after the attach (class-wc-payment-gateway-wcpay.php:2444, :2499). The checkout's
+	 * response follows the intent's own status, as before.
+	 *
+	 * @dataProvider provider_returned_payment_intents_the_client_switch_dispatches
+	 *
+	 * @param string $intent_status   Status of the returned intent.
+	 * @param bool   $has_error       Whether the intent carries a payment error.
+	 * @param bool   $voucher         Whether the intent is a Multibanco voucher.
+	 * @param bool   $recorded        Whether the failure note is already on the order, moved back to Pending.
+	 * @param string $expected_status Status the order ends in.
+	 * @param int    $failure_notes   The intent's failure notes the order ends with.
+	 * @param int    $started_notes   The intent's started notes the order ends with.
+	 * @param string $fraud_box       The fraud box the order ends with.
+	 * @param string $result          The checkout's result to the shopper.
+	 */
+	public function test_process_payment_dispatches_a_returned_payment_intent_by_its_error( string $intent_status, bool $has_error, bool $voucher, bool $recorded, string $expected_status, int $failure_notes, int $started_notes, string $fraud_box, string $result ): void {
+		$order = $this->create_order();
+		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+		$order->set_total( '10.99' );
+		$order->set_transaction_id( 'pi_earlier_attempt' );
+		$order->update_meta_data( '_intent_id', 'pi_earlier_attempt' );
+		$order->save();
+		$note_service = wc_get_container()->get( WooPaymentsOrderNoteService::class );
+		$failure_note = $note_service->format_order_status_update_payment_failed_note_candidates( $order, 'pi_returned', '', 'Your card has expired.' )[0];
+		if ( $recorded ) {
+			$order->add_order_note( $failure_note );
+		}
+		$notes_before = count( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+		$intent       = array(
+			'id'                   => 'pi_returned',
+			'status'               => $intent_status,
+			'amount'               => 1099,
+			'currency'             => $voucher ? 'eur' : 'usd',
+			'customer'             => 'cus_returned',
+			'payment_method'       => 'pm_returned',
+			'payment_method_types' => array( $voucher ? 'multibanco' : 'card' ),
+			'client_secret'        => 'pi_returned_secret',
+			'metadata'             => array( 'order_id' => (string) $order->get_id() ),
+		);
+		if ( 'requires_action' === $intent_status ) {
+			$intent['next_action'] = $voucher
+				? array(
+					'type'                       => 'multibanco_display_details',
+					'multibanco_display_details' => array(
+						'reference'          => '123 456 789',
+						'entity'             => '12345',
+						'hosted_voucher_url' => 'https://payments.stripe.com/multibanco/voucher/test',
+						'expires_at'         => time() + DAY_IN_SECONDS,
+					),
+				)
+				: array( 'type' => 'use_stripe_sdk' );
+		}
+		if ( $has_error ) {
+			$intent['last_payment_error'] = array(
+				'type'    => 'card_error',
+				'code'    => 'expired_card',
+				'message' => 'Your card has expired.',
+			);
+		}
+		$outcome = WooPaymentsIntentCodec::outcome_from_intention(
+			$intent,
+			new WooPaymentsIntentMappingContext( $order->get_checkout_order_received_url(), 'pm_returned', 'cus_returned' )
+		)->with_effect_plan( WooPaymentsOrderEffectPlan::for_payment_intent( $intent, false ) );
+		$gateway = new WooPaymentsGateway();
+		$gateway->init( wc_get_container()->get( PaymentProcessingService::class ), $this->create_provider_charging( $outcome, wc_get_container()->get( WooPaymentsTokenService::class ) ) );
+		$_POST['wcpay-payment-method'] = 'pm_returned';
+
+		$response = $gateway->process_payment( $order->get_id() );
+
+		$order   = wc_get_order( $order->get_id() );
+		$notes   = wp_list_pluck( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), 'content' );
+		$started = $note_service->format_payment_started_note_candidates( $order, 'pi_returned' );
+		$this->assertSame( $result, $response['result'] ?? '' );
+		$this->assertSame( $expected_status, $order->get_status() );
+		$this->assertSame( 'pi_returned', $order->get_transaction_id(), "The new attempt's record is attached." );
+		$this->assertSame( $intent_status, $order->get_meta( '_intention_status', true ), "The intent's own status is kept." );
+		$this->assertCount( $failure_notes, array_filter( $notes, static fn( string $note ): bool => $note === $failure_note ) );
+		$this->assertCount( $started_notes, array_values( array_intersect( $notes, $started ) ) );
+		$this->assertSame( $fraud_box, $order->get_meta( '_wcpay_fraud_meta_box_type', true ) );
+		if ( $recorded ) {
+			$this->assertCount( $notes_before, $notes, 'Nothing is written beyond the attach.' );
+		}
+	}
+
+	/**
+	 * Returned PaymentIntents the client's status update dispatches by their error, then an offline method.
+	 *
+	 * @return array<string,array{string,bool,bool,bool,string,int,int,string,string}>
+	 */
+	public function provider_returned_payment_intents_the_client_switch_dispatches(): array {
+		return array(
+			'requires_action with an error'           => array( 'requires_action', true, false, false, 'failed', 1, 0, '', 'success' ),
+			'requires_payment_method with no error'   => array( 'requires_payment_method', false, false, false, 'pending', 0, 1, 'payment_started', 'failure' ),
+			'requires_action with an error already recorded' => array( 'requires_action', true, false, true, 'pending', 1, 0, '', 'success' ),
+			'requires_action with no error (control)' => array( 'requires_action', false, false, false, 'pending', 0, 1, 'payment_started', 'success' ),
+			'a Multibanco voucher with no error'      => array( 'requires_action', false, true, false, 'on-hold', 0, 1, 'not_card', 'success' ),
+			'a Multibanco voucher with an error'      => array( 'requires_action', true, true, false, 'failed', 1, 0, '', 'success' ),
+		);
+	}
+
+	/**
 	 * @testdox A checkout decline with no returned intent fails an order moved to Pending whatever failure notes it has.
 	 *
 	 * Client 11.3.0's checkout writes a decline the platform raised directly, with no note check

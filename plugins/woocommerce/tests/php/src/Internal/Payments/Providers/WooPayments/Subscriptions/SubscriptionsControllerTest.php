@@ -1343,6 +1343,38 @@ class SubscriptionsControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A scheduled renewal that needs authentication and carries a payment error fires the hook once and gets only the renewal's failure note.
+	 *
+	 * Client 11.3.0 fails the renewal on its requires-action path (class-wc-payment-gateway-wcpay.php:2208-2222); its status
+	 * update then finds the order Failed and writes nothing more (class-wc-payments-order-service.php:500-504, :550-554).
+	 */
+	public function test_scheduled_renewal_needing_authentication_with_an_error_takes_the_renewal_path(): void {
+		list( $order, $outcome ) = $this->arrange_renewal_needing_authentication( true );
+		$renewal_note            = wp_kses_post(
+			sprintf(
+				'A payment of %1$s <strong>failed</strong> using WooPayments (<code>pi_renewal_auth</code>).',
+				WooPaymentsCurrencyUtils::format_price_in_currency( 12.0, 'USD' )
+			)
+		);
+		$hook_calls              = 0;
+		add_action(
+			'woocommerce_woocommerce_payments_payment_requires_action',
+			static function () use ( &$hook_calls ): void {
+				++$hook_calls;
+			}
+		);
+		$sut = $this->create_sut( wc_get_container()->get( PaymentProcessingService::class ), $this->create_provider_charging( $outcome ) );
+
+		$sut->scheduled_subscription_payment( 12.0, wc_get_order( $order->get_id() ) );
+
+		$order = wc_get_order( $order->get_id() );
+		$notes = array_values( array_filter( wp_list_pluck( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), 'content' ), static fn( string $note ): bool => false !== strpos( $note, '<strong>failed</strong>' ) ) );
+		$this->assertSame( 1, $hook_calls );
+		$this->assertSame( 'failed', $order->get_status() );
+		$this->assertSame( array( $renewal_note ), $notes );
+	}
+
+	/**
 	 * @testdox A requires-action listener's unsaved change to the renewal it receives is saved with the failure.
 	 *
 	 * Client 11.3.0 writes the failure on the order it passed to the hook (class-wc-payment-gateway-wcpay.php:2221-2222,
@@ -1411,9 +1443,10 @@ class SubscriptionsControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * Arrange a Pending renewal whose off-session charge needs the customer to authenticate.
 	 *
+	 * @param bool $with_error Whether the intent also carries a payment error.
 	 * @return array{0:WC_Order,1:PaymentOutcome} The renewal and the charge's outcome.
 	 */
-	private function arrange_renewal_needing_authentication(): array {
+	private function arrange_renewal_needing_authentication( bool $with_error = false ): array {
 		$user_id = self::factory()->user->create();
 		$order   = $this->create_order();
 		$order->set_customer_id( $user_id );
@@ -1421,7 +1454,7 @@ class SubscriptionsControllerTest extends WC_Unit_Test_Case {
 		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
 		$order->add_payment_token( $this->create_card_token( $user_id, 'pm_renewal_auth' ) );
 		$order->save();
-		$intent  = array(
+		$intent = array(
 			'id'                   => 'pi_renewal_auth',
 			'object'               => 'payment_intent',
 			'status'               => 'requires_action',
@@ -1434,6 +1467,13 @@ class SubscriptionsControllerTest extends WC_Unit_Test_Case {
 			'next_action'          => array( 'type' => 'use_stripe_sdk' ),
 			'metadata'             => array( 'order_id' => (string) $order->get_id() ),
 		);
+		if ( $with_error ) {
+			$intent['last_payment_error'] = array(
+				'type'    => 'card_error',
+				'code'    => 'authentication_required',
+				'message' => 'Your card was declined. This transaction requires authentication.',
+			);
+		}
 		$outcome = WooPaymentsIntentCodec::outcome_from_intention(
 			$intent,
 			new WooPaymentsIntentMappingContext( $order->get_checkout_order_received_url(), 'pm_renewal_auth', 'cus_renewal_auth' )

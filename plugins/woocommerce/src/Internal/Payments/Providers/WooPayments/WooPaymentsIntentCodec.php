@@ -122,6 +122,30 @@ class WooPaymentsIntentCodec {
 	}
 
 	/**
+	 * Map `requires_action` and `requires_payment_method` by whether the intent carries an error, for the order's status update.
+	 *
+	 * Client 11.3.0's status update sends either status to its failed writer when the intent has an error, and to its started
+	 * writer, or its on-hold writer for an offline method, otherwise (class-wc-payments-order-service.php:500-508). With an
+	 * error the intent is mapped as `requires_payment_method`, without one as `requires_action`. It reads only
+	 * `last_payment_error`, so a SetupIntent is always started. The caller keeps the provider's own status in `_intention_status`.
+	 *
+	 * @param array<string,mixed> $intent   Platform intent response.
+	 * @param bool                $is_setup Whether the intent is a SetupIntent.
+	 * @return array<string,mixed>
+	 */
+	public static function intent_for_order_status_update( array $intent, bool $is_setup ): array {
+		$status = isset( $intent['status'] ) ? (string) $intent['status'] : '';
+		if ( ! in_array( $status, array( 'requires_action', 'requires_payment_method' ), true ) ) {
+			return $intent;
+		}
+
+		$error            = $is_setup ? null : ( $intent['last_payment_error'] ?? null );
+		$intent['status'] = empty( $error ) ? 'requires_action' : 'requires_payment_method';
+
+		return $intent;
+	}
+
+	/**
 	 * Normalize a capture result.
 	 *
 	 * @param array<string,mixed> $result                       Provider capture result.

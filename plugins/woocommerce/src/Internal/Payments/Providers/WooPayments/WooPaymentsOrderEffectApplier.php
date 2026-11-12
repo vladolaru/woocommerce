@@ -225,9 +225,7 @@ class WooPaymentsOrderEffectApplier {
 			case WooPaymentsOrderEffectPlan::TYPE_PAYMENT_INTENT:
 				$outcome = $this->compose_payment_intent_outcome( $context, $outcome, $plan, $this->get_outcome_meta_data( $outcome ), self::is_merchant_initiated( $context ) );
 
-				return PaymentOutcome::STATUS_FAILED === $outcome->get_status() && ! $outcome->is_payment_method_only()
-					? $this->compose_returned_payment_intent_failure( $context->get_order(), $outcome, $plan )
-					: $outcome;
+				return $outcome->is_payment_method_only() ? $outcome : $this->dispatch_returned_payment_intent( $context, $outcome, $plan );
 
 			case WooPaymentsOrderEffectPlan::TYPE_SETUP_INTENT:
 				$order           = $context->get_order();
@@ -351,11 +349,76 @@ class WooPaymentsOrderEffectApplier {
 	}
 
 	/**
+	 * Pick the writer for a PaymentIntent the checkout's charge returned, as client 11.3.0's status update does, through the
+	 * classifier the confirmation uses (WooPaymentsIntentCodec::intent_for_order_status_update(); class-wc-payments-order-service.php:500-508):
+	 * a `requires_action` or `requires_payment_method` intent with an error gets the failed writer, one without an error the
+	 * started writer. The outcome keeps the intent's own status, so the checkout's response is unchanged; a scheduled renewal
+	 * that needs authentication is left to its own path, which fails it (class-wc-payment-gateway-wcpay.php:2208-2222).
+	 *
+	 * @param PaymentOperationContext    $context Payment context, its order read under the checkout's order payment lock.
+	 * @param PaymentOutcome             $outcome PaymentIntent outcome, composed by its own status.
+	 * @param WooPaymentsOrderEffectPlan $plan    PaymentIntent effect plan.
+	 * @return PaymentOutcome
+	 */
+	private function dispatch_returned_payment_intent( PaymentOperationContext $context, PaymentOutcome $outcome, WooPaymentsOrderEffectPlan $plan ): PaymentOutcome {
+		$result     = $plan->get_provider_result();
+		$status     = (string) ( $result['status'] ?? '' );
+		$classified = (string) ( WooPaymentsIntentCodec::intent_for_order_status_update( $result, false )['status'] ?? '' );
+		if ( 'requires_payment_method' === $classified ) {
+			return 'requires_action' === $status && self::is_merchant_initiated( $context )
+				? $outcome
+				: $this->compose_returned_payment_intent_failure( $context->get_order(), $outcome, $plan );
+		}
+		if ( 'requires_payment_method' === $status ) {
+			return $this->apply_returned_payment_intent_started( $context->get_order(), $outcome, $plan );
+		}
+
+		return PaymentOutcome::STATUS_FAILED === $outcome->get_status() ? $this->compose_returned_payment_intent_failure( $context->get_order(), $outcome, $plan ) : $outcome;
+	}
+
+	/**
+	 * Write the started payment of a `requires_payment_method` PaymentIntent with no error, as client 11.3.0's started writer
+	 * does (class-wc-payments-order-service.php:506-508, :2229-2241): the started note, the fraud box and the intent's own
+	 * status, on a Pending order without that note. Its outcome stays failed for the checkout's response, so the started
+	 * event is applied here, on the order read under the checkout's order payment lock, and the outcome changes nothing more.
+	 * The started writer runs for a scheduled renewal too, as no renewal path takes this status (:2208).
+	 *
+	 * @param WC_Order                   $order   Order read under the checkout's order payment lock, the intent attached.
+	 * @param PaymentOutcome             $outcome Failed PaymentIntent outcome.
+	 * @param WooPaymentsOrderEffectPlan $plan    PaymentIntent effect plan.
+	 * @return PaymentOutcome
+	 */
+	private function apply_returned_payment_intent_started( WC_Order $order, PaymentOutcome $outcome, WooPaymentsOrderEffectPlan $plan ): PaymentOutcome {
+		$effect_data = $this->compose_started_effect_data( $order, $plan->get_provider_result(), $this->get_outcome_meta_data( $outcome ), true, false );
+		if ( true !== ( $effect_data[ PaymentOutcome::DATA_NO_ORDER_CHANGE ] ?? false ) ) {
+			$intent_id = $outcome->get_provider_payment_id();
+			wc_get_container()->get( OrderPaymentLifecycleService::class )->apply_under_lock(
+				$order,
+				new PaymentLifecycleEvent(
+					PaymentLifecycleEvent::STATUS_STARTED,
+					'' === $intent_id ? null : $intent_id,
+					( new WooPaymentsOutcomeMetadataMapper() )->get_outcome_meta( $this->merge_effect_data_into_outcome( $outcome, $effect_data, $plan ) ),
+					array(),
+					$effect_data[ PaymentOutcome::DATA_NOTE ],
+					$effect_data[ PaymentOutcome::DATA_NOTE_TYPE ],
+					$effect_data[ PaymentOutcome::DATA_NOTE_EQUIVALENTS ]
+				),
+				new WooPaymentsPersistenceVocabulary()
+			);
+		}
+
+		return $this->merge_effect_data_into_outcome( $outcome, array( PaymentOutcome::DATA_NO_ORDER_CHANGE => true ), $plan );
+	}
+
+	/**
 	 * Compose the failure of a PaymentIntent the checkout's charge returned, as client 11.3.0's mark_payment_failed() writes it:
 	 * its failure note, after the attach, unless the failure is already recorded on the order, when nothing more is written.
 	 *
 	 * The client does not raise a returned intent that is not authorized; its status update sends it to mark_payment_failed()
 	 * (class-wc-payment-gateway-wcpay.php:2321-2324, :2444, :2499; class-wc-payments-order-service.php:500-504, :550-554).
+	 * A `requires_action` intent with an error keeps its outcome for the checkout's response, so its failure is applied here,
+	 * on the order read under the checkout's order payment lock, and the outcome changes nothing more; the attach already
+	 * wrote the intent's own status, the only meta the client's failed writer adds (:557-559).
 	 *
 	 * @param WC_Order                   $order   Order read under the checkout's order payment lock, the intent attached.
 	 * @param PaymentOutcome             $outcome Failed PaymentIntent outcome.
@@ -375,6 +438,15 @@ class WooPaymentsOrderEffectApplier {
 		);
 		$failure         = new PaymentLifecycleEvent( PaymentLifecycleEvent::STATUS_FAILED, '' === $intent_id ? null : $intent_id, array(), array(), $note_candidates[0], PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_FAILED, $note_candidates );
 		if ( $this->note_service->is_failure_recorded( $order, $failure ) ) {
+			return $this->merge_effect_data_into_outcome( $outcome, array( PaymentOutcome::DATA_NO_ORDER_CHANGE => true ), $plan );
+		}
+		if ( PaymentOutcome::STATUS_FAILED !== $outcome->get_status() ) {
+			wc_get_container()->get( OrderPaymentLifecycleService::class )->apply_under_lock(
+				$order,
+				new PaymentLifecycleEvent( PaymentLifecycleEvent::STATUS_FAILED, '' === $intent_id ? null : $intent_id, array(), array(), $note_candidates[0], PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_FAILED, $note_candidates ),
+				new WooPaymentsPersistenceVocabulary()
+			);
+
 			return $this->merge_effect_data_into_outcome( $outcome, array( PaymentOutcome::DATA_NO_ORDER_CHANGE => true ), $plan );
 		}
 

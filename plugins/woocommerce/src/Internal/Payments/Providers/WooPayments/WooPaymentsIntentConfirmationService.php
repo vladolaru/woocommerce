@@ -413,7 +413,7 @@ class WooPaymentsIntentConfirmationService {
 		$is_setup              = $this->is_setup_intent_for_order( $intent, $order );
 		$provider_redirect_url = esc_url_raw( WooPaymentsIntentCodec::raw_next_action_redirect_url( $intent ) );
 		$provider_status       = isset( $intent['status'] ) ? (string) $intent['status'] : '';
-		$intent                = $this->get_intent_for_status_mapping( $intent, $is_setup );
+		$intent                = WooPaymentsIntentCodec::intent_for_order_status_update( $intent, $is_setup );
 		$plan                  = $is_setup
 			? WooPaymentsOrderEffectPlan::for_setup_intent(
 				$intent,
@@ -572,30 +572,6 @@ class WooPaymentsIntentConfirmationService {
 			false,
 			null === $note_candidates && PaymentLifecycleEvent::should_hold_order_for_outcome( $outcome )
 		);
-	}
-
-	/**
-	 * Map `requires_action` and `requires_payment_method` by whether the intent carries an error.
-	 *
-	 * Client 11.1.0's order service fails the order when either status has an error and marks the payment
-	 * started otherwise (`update_order_status_from_intent()`, class-wc-payments-order-service.php:392). It reads only `last_payment_error`, so a
-	 * SetupIntent is always started here. The redirect return checks both errors itself before confirming
-	 * (`gw:2377-2382`). The caller keeps the provider's real status in `_intention_status`.
-	 *
-	 * @param array<string,mixed> $intent   Platform intent response.
-	 * @param bool                $is_setup Whether the intent is a SetupIntent.
-	 * @return array<string,mixed>
-	 */
-	private function get_intent_for_status_mapping( array $intent, bool $is_setup ): array {
-		$status = isset( $intent['status'] ) ? (string) $intent['status'] : '';
-		if ( ! in_array( $status, array( 'requires_action', 'requires_payment_method' ), true ) ) {
-			return $intent;
-		}
-
-		$error            = $is_setup ? null : ( $intent['last_payment_error'] ?? null );
-		$intent['status'] = empty( $error ) ? 'requires_action' : 'requires_payment_method';
-
-		return $intent;
 	}
 
 	/**
