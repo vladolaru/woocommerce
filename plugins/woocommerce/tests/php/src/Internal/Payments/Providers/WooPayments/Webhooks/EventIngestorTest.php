@@ -2375,26 +2375,36 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox An authorization on an unpaid order of another payment method, which does not wait on it, is recorded with one note and changes nothing else.
+	 * @testdox An authorization on an unpaid order of another payment method is recorded with one note and changes nothing else, whether the order stores the intent: $stores_the_intent.
 	 *
-	 * The order is not the payment's own, so the event is only recorded. Client 11.3.0 puts such an order on hold
-	 * (class-wc-payments-webhook-processing-service.php:477-500).
+	 * An authorization holds only an order paid with WooPayments. Client 11.3.0 leaves an order another payment method
+	 * took over to its superseded-attempt check (class-wc-payments-webhook-processing-service.php:464-471); without a
+	 * stored intent it puts such an order on hold (:477-500).
+	 *
+	 * @testWith [false]
+	 *           [true]
+	 *
+	 * @param bool $stores_the_intent Whether the order stores the authorized intent, from an earlier WooPayments attempt.
 	 */
-	public function test_authorization_on_an_order_of_another_payment_method_is_recorded(): void {
+	public function test_authorization_on_an_order_of_another_payment_method_is_recorded( bool $stores_the_intent ): void {
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
-		$order = $this->create_woopayments_order();
-		$order->set_payment_method( 'bacs' );
-		$order->save();
+		$order  = $this->create_woopayments_order();
 		$event  = $this->recorded_authorization_event( $order );
 		$intent = $event['data']['object'];
+		$order->set_payment_method( 'bacs' );
+		if ( $stores_the_intent ) {
+			$order->update_meta_data( '_intent_id', $intent['id'] );
+		}
+		$order->save();
 
 		$this->sut->process( $event );
 		$this->sut->process( $event );
 
 		$order = wc_get_order( $order->get_id() );
 		$this->assertSame( OrderStatus::PENDING, $order->get_status() );
-		$this->assertSame( '', $order->get_meta( '_intent_id', true ) );
+		$this->assertSame( $stores_the_intent ? $intent['id'] : '', $order->get_meta( '_intent_id', true ) );
 		$this->assertSame( '', $order->get_meta( '_intention_status', true ) );
+		$this->assertSame( '', $order->get_transaction_id() );
 		$notes = $this->get_order_notes_containing( $order, 'that does not pay this order was authorized' );
 		$this->assertCount( 1, $notes, 'The record is added once, however often the event is delivered.' );
 		$this->assertStringContainsString( $intent['id'], (string) $notes[0]->content );
