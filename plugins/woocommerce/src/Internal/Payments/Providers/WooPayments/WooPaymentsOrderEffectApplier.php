@@ -13,7 +13,6 @@ use Automattic\WooCommerce\Internal\Payments\PaymentLifecycleEvent;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\PaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\LinkToken;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\SubscriptionMethodPolicy;
 use Throwable;
 use WC_Order;
 use WC_Payment_Token;
@@ -153,8 +152,8 @@ class WooPaymentsOrderEffectApplier {
 					}
 					$this->apply_setup_intent_payment_method_display_details( $context->get_order(), $payment_method_details );
 
-					// A card change on a subscription completes nothing, so it gets no success note (client 11.3.0 gw:2497-2500).
-					if ( SubscriptionMethodPolicy::only_saves_the_card( $context->get_order() ) ) {
+					// An outcome that only saved the payment method completes nothing, so it gets no success note (client 11.3.0 gw:2497-2500).
+					if ( $outcome->is_payment_method_only() ) {
 						return $outcome;
 					}
 
@@ -956,7 +955,7 @@ class WooPaymentsOrderEffectApplier {
 	/**
 	 * Build the refusal of a payment method change whose new payment method could not be saved.
 	 *
-	 * Nothing was charged. The outcome carries no provider reference or meta and keeps the order's status, so the
+	 * Nothing was charged. The outcome carries no provider reference or meta and is payment-method-only, so the
 	 * subscription keeps its payment method and status, and the shopper sees why.
 	 *
 	 * @return PaymentOutcome
@@ -971,10 +970,10 @@ class WooPaymentsOrderEffectApplier {
 			'',
 			'',
 			array(
-				PaymentOutcome::DATA_ERROR_CODE            => 'wcpay_recurring_token_save_failed',
-				PaymentOutcome::DATA_ERROR_MESSAGE         => $message,
+				PaymentOutcome::DATA_ERROR_CODE          => 'wcpay_recurring_token_save_failed',
+				PaymentOutcome::DATA_ERROR_MESSAGE       => $message,
 				WooPaymentsIntentCodec::SHOPPER_ERROR_MESSAGE_KEY => $message,
-				PaymentOutcome::DATA_PRESERVE_ORDER_STATUS => true,
+				PaymentOutcome::DATA_PAYMENT_METHOD_ONLY => true,
 			)
 		);
 	}

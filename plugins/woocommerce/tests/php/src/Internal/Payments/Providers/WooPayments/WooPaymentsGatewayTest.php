@@ -39,6 +39,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIn
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffectApplier;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDataService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderSuccessPage;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeeDetailsNoteController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\PaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\SubscriptionAdminPaymentMethodHandler;
@@ -3577,7 +3578,8 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 *
 	 * References: WooCommerce Subscriptions 9.4.1 class-wc-subscriptions-change-payment-gateway.php:83-87 and
 	 * class-wc-subscription.php:2059-2079 (SubscriptionDouble follows it); client 11.3.0
-	 * class-wc-payment-gateway-wcpay.php:2497-2500 and 1998-2002, which makes no completion call on a card change.
+	 * class-wc-payment-gateway-wcpay.php:2497-2500 and 1998-2002, which makes no completion call on a card change, and
+	 * :2446-2455, which keeps a succeeded intent's ID in the session.
 	 *
 	 * @dataProvider provider_payment_method_change_paths
 	 *
@@ -3585,6 +3587,15 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 */
 	public function test_process_payment_change_saves_the_card_and_leaves_other_orders_unchanged( bool $saved_card ): void {
 		list( $subscription, $renewal, $gateway, $payment_method_id ) = $this->arrange_payment_method_change_with_failed_renewal( $saved_card );
+		$product = \WC_Helper_Product::create_simple_product();
+		$product->set_manage_stock( true );
+		$product->set_stock_quantity( 10 );
+		$product->save();
+		foreach ( array( $subscription, $renewal ) as $related_order ) {
+			$related_order->add_product( $product, 2 );
+			$related_order->save();
+		}
+		WC()->session->set( WooPaymentsOrderSuccessPage::PAID_INTENT_ID_SESSION_KEY, null );
 
 		$_GET['change_payment_method'] = (string) $subscription->get_id();
 		\WC_Subscriptions_Change_Payment_Gateway::$is_request_to_change_payment = false;
@@ -3598,8 +3609,23 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'success', $result['result'] ?? '' );
 		$this->assertSame( 'failed', $renewal->get_status() );
 		$this->assertSame( '', $renewal->get_transaction_id() );
-		$this->assertNotContains( 'Payment status marked complete.', array_map( static fn( $note ): string => (string) $note->content, wc_get_order_notes( array( 'order_id' => $subscription->get_id() ) ) ) );
+		$this->assertSame( 10, wc_get_product( $product->get_id() )->get_stock_quantity(), 'A payment method change takes no stock.' );
+		$this->assertSame( 'active', $subscription->get_status() );
+		$subscription_notes = array_map( static fn( $note ): string => (string) $note->content, wc_get_order_notes( array( 'order_id' => $subscription->get_id() ) ) );
+		$this->assertNotContains( 'Payment status marked complete.', $subscription_notes );
+		$this->assertSame( array(), array_values( array_filter( $subscription_notes, static fn( string $note ): bool => false !== strpos( $note, 'seti_change' ) ) ), 'No note names the change as a payment.' );
 		$this->assertSame( $payment_method_id, $subscription->get_meta( '_payment_method_id', true ), 'The change saves the card.' );
+		$this->assertSame( $saved_card ? '' : 'succeeded', $subscription->get_meta( '_intention_status', true ) );
+		$this->assertSame( $saved_card ? null : 'seti_change', WC()->session->get( WooPaymentsOrderSuccessPage::PAID_INTENT_ID_SESSION_KEY ) );
+		$this->assertSame(
+			array(),
+			as_get_scheduled_actions(
+				array(
+					'hook'   => WooPaymentsFeeDetailsNoteController::ADD_FEE_BREAKDOWN_TO_ORDER_NOTES_ACTION,
+					'status' => \ActionScheduler_Store::STATUS_PENDING,
+				)
+			)
+		);
 		$this->assertFalse( \WC_Subscriptions_Change_Payment_Gateway::$is_request_to_change_payment, 'The flag gets its earlier value back.' );
 	}
 
@@ -5219,6 +5245,43 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			'no query argument'                  => array( 'valid', 'woocommerce_change_payment', 0, array( 0 ) ),
 			'earlier change succeeded'           => array( '', 'woocommerce_change_payment', 0, array( 0 ), 0, 'succeeded' ),
 		);
+	}
+
+	/**
+	 * @testdox A checkout payment posted with a validated change form carries the payment method change data exactly when the order is a subscription ($label).
+	 *
+	 * The provider marks a change's outcome from this data, while the refusal and the order-status callback key on the
+	 * order being a subscription (SubscriptionMethodPolicy::only_saves_the_card()); a subscription outside a validated
+	 * change is refused before any payment (test_process_payment_refuses_a_subscription_outside_a_validated_change).
+	 *
+	 * @testWith ["subscription", true]
+	 *           ["order", false]
+	 *
+	 * @param string $label           Which order is paid.
+	 * @param bool   $is_subscription Whether the order is a subscription.
+	 */
+	public function test_process_payment_carries_change_data_only_for_a_subscription( string $label, bool $is_subscription ): void {
+		unset( $label );
+		WooCommerceSubscriptionsDoubles::load_change_payment_gateway();
+		WooCommerceSubscriptionsDoubles::load_subscription_detector();
+		$order   = $this->create_order();
+		$service = new RecordingPaymentProcessingService();
+		$gateway = new WooPaymentsGateway();
+		$gateway->init( $service, new WooPaymentsProvider() );
+
+		$GLOBALS['wcpay_test_subscription_ids'] = $is_subscription ? array( $order->get_id() ) : array();
+		$_POST['_wcsnonce']                     = wp_create_nonce( 'wcs_change_payment_method' );
+		$_POST['woocommerce_change_payment']    = (string) $order->get_id();
+		$_GET['change_payment_method']          = (string) $order->get_id();
+
+		$_POST[ 'wc-' . WooPaymentsPersistenceVocabulary::GATEWAY_ID . '-payment-token' ] = 'new';
+
+		$_POST['wcpay-payment-method'] = 'pm_card';
+
+		$gateway->process_payment( $order->get_id() );
+
+		$this->assertInstanceOf( PaymentOperationContext::class, $service->last_checkout_context );
+		$this->assertSame( $is_subscription, ! empty( $service->last_checkout_context->get_provider_data()[ WooPaymentsIntentRequestBuilder::PROVIDER_DATA_SUBSCRIPTION_PAYMENT_METHOD_CHANGE ] ) );
 	}
 
 	/**

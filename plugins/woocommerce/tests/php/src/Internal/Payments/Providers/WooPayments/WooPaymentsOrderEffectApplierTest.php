@@ -1250,24 +1250,22 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Succeeded SetupIntent effects persist card identity after token attachment, with the success note on an order and none on a subscription: $_dataName.
+	 * @testdox Succeeded SetupIntent effects persist card identity after token attachment, with the success note unless the outcome is payment-method-only: $_dataName.
 	 *
 	 * Client 11.3.0 skips update_order_status_from_intent() for a card change on a subscription (gw:2497-2500), so the subscription
-	 * gets the card and no success note.
+	 * gets the card and no success note; the provider marks that outcome payment-method-only.
 	 *
 	 * @dataProvider provider_setup_intent_orders
 	 *
-	 * @param bool $is_subscription Whether the order is a WooCommerce Subscriptions subscription changing its card.
+	 * @param bool $payment_method_only Whether the outcome only saves the payment method.
 	 */
-	public function test_succeeded_setup_intent_effects_persist_card_identity( bool $is_subscription ): void {
+	public function test_succeeded_setup_intent_effects_persist_card_identity( bool $payment_method_only ): void {
 		$user_id = $this->factory()->user->create();
 		$order   = $this->create_woopayments_order( '0.00' );
 		$order->set_customer_id( $user_id );
 		$order->set_payment_method_title( 'Card' );
 		$order->save();
-		WooCommerceSubscriptionsDoubles::load_subscription_detector();
-		$GLOBALS[ WooCommerceSubscriptionsDoubles::SUBSCRIPTION_IDS ] = $is_subscription ? array( $order->get_id() ) : array();
-		$outcome                = new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'seti_card_identity', '', 'pm_card_identity', 'cus_card_identity' );
+		$outcome                = new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'seti_card_identity', '', 'pm_card_identity', 'cus_card_identity', $payment_method_only ? array( PaymentOutcome::DATA_PAYMENT_METHOD_ONLY => true ) : array() );
 		$plan                   = WooPaymentsOrderEffectPlan::for_setup_intent(
 			array(
 				'id'             => 'seti_card_identity',
@@ -1324,18 +1322,14 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 		$token_service          = new WooPaymentsTokenService();
 		$token_service->init( $details_service, wc_get_container()->get( Client::class ), wc_get_container()->get( WooPaymentsCustomerService::class ), wc_get_container()->get( WooPaymentsAccountService::class ), wc_get_container()->get( WooPaymentsOrderDataService::class ), wc_get_container()->get( PaymentMethodRegistry::class ) );
 
-		try {
-			$result = $this->create_applier( $token_service )->apply( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_card_identity' ), $outcome, $plan );
-		} finally {
-			unset( $GLOBALS[ WooCommerceSubscriptionsDoubles::SUBSCRIPTION_IDS ] );
-		}
+		$result = $this->create_applier( $token_service )->apply( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_card_identity' ), $outcome, $plan );
 		$order  = wc_get_order( $order->get_id() );
 		$tokens = \WC_Payment_Tokens::get_customer_tokens( $user_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID );
 
 		// The client's process_payment() ends in update_order_status_from_intent() for an order, so this path carries the success note too.
-		$this->assertSame( $is_subscription ? null : PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_SUCCESS, $result->get_data()[ PaymentOutcome::DATA_NOTE_TYPE ] ?? null );
+		$this->assertSame( $payment_method_only ? null : PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_SUCCESS, $result->get_data()[ PaymentOutcome::DATA_NOTE_TYPE ] ?? null );
 		$names_the_intent = false !== strpos( (string) ( $result->get_data()[ PaymentOutcome::DATA_NOTE ] ?? '' ), 'seti_card_identity' );
-		$this->assertSame( ! $is_subscription, $names_the_intent );
+		$this->assertSame( ! $payment_method_only, $names_the_intent );
 
 		$this->assertInstanceOf( WC_Order::class, $order );
 		$this->assertSame( 'Visa credit card', $order->get_payment_method_title() );
@@ -1349,14 +1343,14 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Orders a succeeded SetupIntent is confirmed on at checkout.
+	 * Succeeded SetupIntent outcomes at checkout: a payment, and one that only saves the payment method.
 	 *
 	 * @return array<string,array{bool}>
 	 */
 	public function provider_setup_intent_orders(): array {
 		return array(
-			'order'        => array( false ),
-			'subscription' => array( true ),
+			'payment'             => array( false ),
+			'payment method only' => array( true ),
 		);
 	}
 

@@ -216,27 +216,31 @@ class WooPaymentsPaymentOperationService {
 	}
 
 	/**
-	 * Keep the subscription's status when its payment-method change fails, such as on a declined card.
+	 * Mark the outcome of a subscription payment-method change as payment-method-only when the change took no payment.
 	 *
-	 * On a WooCommerce Subscriptions payment-method change the order is the subscription itself. Client 11.1.0 notes the
-	 * failure and leaves the status alone (includes/class-wc-payment-gateway-wcpay.php:1326-1328). The provider applies
-	 * this to every charge outcome, including the one the payment processing service builds when the charge throws.
+	 * On a WooCommerce Subscriptions payment-method change the order is the subscription itself, and the change only saves
+	 * the card: client 11.3.0 makes no completion call on it (includes/class-wc-payment-gateway-wcpay.php:2497-2500,
+	 * :1998-2002), and client 11.1.0 notes a failed change and leaves the status alone (:1326-1328). The flag goes only
+	 * on an outcome that took no payment: one that failed, one with a SetupIntent or zero-amount plan, or one with no
+	 * external payment. An outcome with a PaymentIntent plan that did not fail is never marked; a change does not create
+	 * one, so this is the backup check for that rule. The provider applies this to every charge outcome, including the
+	 * one the payment processing service builds when the charge throws.
 	 *
 	 * @param PaymentOperationContext $context Charge context.
 	 * @param PaymentOutcome          $outcome Charge outcome.
 	 * @return PaymentOutcome
 	 */
-	public function keep_status_of_failed_subscription_change( PaymentOperationContext $context, PaymentOutcome $outcome ): PaymentOutcome {
+	public function mark_payment_method_change_outcome( PaymentOperationContext $context, PaymentOutcome $outcome ): PaymentOutcome {
 		if (
-			PaymentOutcome::STATUS_FAILED !== $outcome->get_status()
-			|| empty( $context->get_provider_data()[ WooPaymentsIntentRequestBuilder::PROVIDER_DATA_SUBSCRIPTION_PAYMENT_METHOD_CHANGE ] )
+			empty( $context->get_provider_data()[ WooPaymentsIntentRequestBuilder::PROVIDER_DATA_SUBSCRIPTION_PAYMENT_METHOD_CHANGE ] )
+			|| ! self::took_no_payment( $outcome )
 		) {
 			return $outcome;
 		}
 
 		$data = $outcome->get_data();
-		$data[ PaymentOutcome::DATA_PRESERVE_ORDER_STATUS ] = true;
-		$kept        = new PaymentOutcome(
+		$data[ PaymentOutcome::DATA_PAYMENT_METHOD_ONLY ] = true;
+		$marked      = new PaymentOutcome(
 			$outcome->get_status(),
 			$outcome->get_provider_payment_id(),
 			$outcome->get_redirect_url(),
@@ -246,7 +250,25 @@ class WooPaymentsPaymentOperationService {
 		);
 		$effect_plan = $outcome->get_effect_plan();
 
-		return null === $effect_plan ? $kept : $kept->with_effect_plan( $effect_plan );
+		return null === $effect_plan ? $marked : $marked->with_effect_plan( $effect_plan );
+	}
+
+	/**
+	 * Tell whether a charge outcome took no payment: it failed, it set up a payment method (a SetupIntent or zero-amount
+	 * plan), or no external payment was needed.
+	 *
+	 * @param PaymentOutcome $outcome Charge outcome.
+	 * @return bool
+	 */
+	private static function took_no_payment( PaymentOutcome $outcome ): bool {
+		if ( in_array( $outcome->get_status(), array( PaymentOutcome::STATUS_FAILED, PaymentOutcome::STATUS_NO_EXTERNAL_PAYMENT ), true ) ) {
+			return true;
+		}
+
+		$plan = $outcome->get_effect_plan();
+
+		return $plan instanceof WooPaymentsOrderEffectPlan
+			&& in_array( $plan->get_type(), array( WooPaymentsOrderEffectPlan::TYPE_SETUP_INTENT, WooPaymentsOrderEffectPlan::TYPE_ZERO_AMOUNT_WITHOUT_INTENT ), true );
 	}
 
 	/**

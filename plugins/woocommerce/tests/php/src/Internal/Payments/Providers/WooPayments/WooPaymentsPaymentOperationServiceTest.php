@@ -2954,6 +2954,83 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A charge outcome is marked payment-method-only only on a payment method change and only when it took no payment: $_dataName.
+	 *
+	 * Client 11.3.0 makes no completion call on a card change (class-wc-payment-gateway-wcpay.php:2497-2500, :1998-2002) and
+	 * client 11.1.0 notes a failed change without changing its status (:1326-1328). An outcome with a PaymentIntent plan that
+	 * did not fail keeps the ordinary lifecycle.
+	 *
+	 * @dataProvider provider_payment_method_change_outcomes
+	 *
+	 * @param bool                $is_change Whether the charge is a payment method change.
+	 * @param string              $status    Outcome status.
+	 * @param string              $plan_type Effect plan type, or '' for none.
+	 * @param array<string,mixed> $data      Outcome data.
+	 * @param bool                $expected  Whether the outcome is marked.
+	 */
+	public function test_mark_payment_method_change_outcome( bool $is_change, string $status, string $plan_type, array $data, bool $expected ): void {
+		$order   = $this->create_woopayments_order( '0.00' );
+		$outcome = new PaymentOutcome( $status, 'seti_mark', '', 'pm_mark', 'cus_mark', $data );
+		$intent  = array(
+			'id'     => 'seti_mark',
+			'status' => 'succeeded',
+		);
+		$plans   = array(
+			WooPaymentsOrderEffectPlan::TYPE_SETUP_INTENT => WooPaymentsOrderEffectPlan::for_setup_intent( $intent, true, array() ),
+			WooPaymentsOrderEffectPlan::TYPE_ZERO_AMOUNT_WITHOUT_INTENT => WooPaymentsOrderEffectPlan::for_zero_amount_without_intent( array(), 0 ),
+			WooPaymentsOrderEffectPlan::TYPE_PAYMENT_INTENT => WooPaymentsOrderEffectPlan::for_payment_intent( $intent, true ),
+		);
+		if ( '' !== $plan_type ) {
+			$outcome = $outcome->with_effect_plan( $plans[ $plan_type ] );
+		}
+		$context = PaymentOperationContext::for_checkout(
+			$order,
+			WooPaymentsPersistenceVocabulary::GATEWAY_ID,
+			'pm_mark',
+			array(),
+			$is_change ? array( WooPaymentsIntentRequestBuilder::PROVIDER_DATA_SUBSCRIPTION_PAYMENT_METHOD_CHANGE => true ) : array()
+		);
+
+		$marked = $this->create_operation_service()->mark_payment_method_change_outcome( $context, $outcome );
+
+		$this->assertSame( $expected, $marked->is_payment_method_only() );
+		$this->assertSame( $status, $marked->get_status() );
+		$this->assertSame( $outcome->get_effect_plan(), $marked->get_effect_plan(), 'The effect plan is kept.' );
+		foreach ( $data as $key => $value ) {
+			$this->assertSame( $value, $marked->get_data()[ $key ] ?? null, "The outcome keeps {$key}." );
+		}
+	}
+
+	/**
+	 * Charge outcomes with and without the payment method change data.
+	 *
+	 * @return array<string,array{bool,string,string,array<string,mixed>,bool}>
+	 */
+	public function provider_payment_method_change_outcomes(): array {
+		$setup   = WooPaymentsOrderEffectPlan::TYPE_SETUP_INTENT;
+		$zero    = WooPaymentsOrderEffectPlan::TYPE_ZERO_AMOUNT_WITHOUT_INTENT;
+		$payment = WooPaymentsOrderEffectPlan::TYPE_PAYMENT_INTENT;
+
+		return array(
+			'change, SetupIntent succeeded'           => array( true, PaymentOutcome::STATUS_COMPLETED, $setup, array(), true ),
+			'change, SetupIntent needs action'        => array( true, PaymentOutcome::STATUS_REQUIRES_CUSTOMER_ACTION, $setup, array(), true ),
+			'change, zero amount without an intent'   => array( true, PaymentOutcome::STATUS_COMPLETED, $zero, array(), true ),
+			'change, no external payment'             => array( true, PaymentOutcome::STATUS_NO_EXTERNAL_PAYMENT, '', array(), true ),
+			'change, failed as reported'              => array( true, PaymentOutcome::STATUS_FAILED, '', array( PaymentOutcome::DATA_ERROR_CODE => 'card_declined' ), true ),
+			'change, charge threw'                    => array( true, PaymentOutcome::STATUS_FAILED, '', array( PaymentOutcome::DATA_PROVIDER_THREW => true ), true ),
+			'change, fraud block'                     => array( true, PaymentOutcome::STATUS_FAILED, '', array( PaymentOutcome::DATA_PRESERVE_ORDER_STATUS => true ), true ),
+			'change, failed with a PaymentIntent'     => array( true, PaymentOutcome::STATUS_FAILED, $payment, array(), true ),
+			'change, PaymentIntent succeeded'         => array( true, PaymentOutcome::STATUS_COMPLETED, $payment, array(), false ),
+			'change, PaymentIntent needs action'      => array( true, PaymentOutcome::STATUS_REQUIRES_CUSTOMER_ACTION, $payment, array(), false ),
+			'change, completed without a plan'        => array( true, PaymentOutcome::STATUS_COMPLETED, '', array(), false ),
+			'checkout, SetupIntent succeeded'         => array( false, PaymentOutcome::STATUS_COMPLETED, $setup, array(), false ),
+			'checkout, zero amount without an intent' => array( false, PaymentOutcome::STATUS_COMPLETED, $zero, array(), false ),
+			'checkout, failed'                        => array( false, PaymentOutcome::STATUS_FAILED, '', array(), false ),
+			'checkout, PaymentIntent succeeded'       => array( false, PaymentOutcome::STATUS_COMPLETED, $payment, array(), false ),
+		);
+	}
+
+	/**
 	 * Provider cases for native PaymentIntent and SetupIntent subscription-change transport.
 	 *
 	 * @return array<string,array{string,string}>

@@ -561,8 +561,8 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 	 * Apply a request-scoped WooPayments effect plan.
 	 *
 	 * The plan also records whether the order already had the payment's success or capture note, which the
-	 * post-lifecycle effects read. A failed charge on a subscription payment-method change first keeps the subscription's
-	 * status, also when the charge threw, and a charge that threw gets the payment-failed note.
+	 * post-lifecycle effects read. A charge on a subscription payment-method change that took no payment is first marked
+	 * payment-method-only, also when the charge threw, and a charge that threw gets the payment-failed note.
 	 *
 	 * @param PaymentOperationContext $context   Payment context.
 	 * @param PaymentOutcome          $outcome   Provider outcome.
@@ -571,7 +571,7 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 	 */
 	public function apply_operation_effects( PaymentOperationContext $context, PaymentOutcome $outcome, string $operation ): PaymentOutcome {
 		if ( PaymentProcessingService::OPERATION_CHARGE === $operation ) {
-			$outcome = $this->payment_operations->keep_status_of_failed_subscription_change( $context, $this->with_thrown_charge_note( $context, $outcome ) );
+			$outcome = $this->payment_operations->mark_payment_method_change_outcome( $context, $this->with_thrown_charge_note( $context, $outcome ) );
 		}
 
 		$plan = $outcome->get_effect_plan();
