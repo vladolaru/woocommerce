@@ -4612,11 +4612,12 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A held-for-review checkout on an order carrying the held-for-review note the WooPayments extension wrote adds no second note.
+	 * @testdox A held-for-review checkout on an order carrying the held-for-review note the WooPayments extension wrote adds no second note and leaves the order as it is.
 	 *
 	 * Client 11.1.0 writes the note in generate_fraud_held_for_review_note() (class-wc-payments-order-service.php:2342-2361)
 	 * through generate_fraud_note() (:2408-2441); its link, compose_transaction_url() (class-wc-payments-utils.php:1051-1071),
-	 * adds status_is=review and type_is=order_note.
+	 * adds status_is=review and type_is=order_note. Client 11.3.0's writer returns before any write once the note is on the
+	 * order (class-wc-payments-order-service.php:2251-2256).
 	 */
 	public function test_review_intent_recognises_the_woopayments_extension_held_for_review_note(): void {
 		$order          = $this->create_woopayments_order( '12.00' );
@@ -4649,13 +4650,16 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 				static fn( object $note ): bool => str_contains( (string) $note->content, 'held for review' )
 			)
 		);
-		$this->assertSame( 'on-hold', wc_get_order( $order->get_id() )->get_status() );
+		$this->assertSame( 'pending', wc_get_order( $order->get_id() )->get_status() );
 		$this->assertCount( 1, $held_notes );
 		$this->assertSame( $extension_note, $held_notes[0]->content );
 	}
 
 	/**
-	 * @testdox Replayed held-for-review intents repair rule evidence without duplicating equivalent notes.
+	 * @testdox Held-for-review intents whose equivalent note is on the order change nothing; changed filter evidence adds its own note and evidence.
+	 *
+	 * Client 11.3.0's writer returns before any write once its note is on the order, and writes the ruleset results only
+	 * when it adds the note (class-wc-payments-order-service.php:2251-2265).
 	 */
 	public function test_review_intent_replay_repairs_rule_evidence_and_deduplicates_content_sensitive_notes(): void {
 		$translation_filter = static function ( string $translation, string $text, string $domain ): string {
@@ -4671,11 +4675,10 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		switch_to_locale( 'de_DE' );
 
 		try {
-			$order          = $this->create_woopayments_order( '12.00' );
-			$note_service   = wc_get_container()->get( WooPaymentsOrderNoteService::class );
-			$initial_rules  = array( 'avs_verification' => 'review' );
-			$plugin_note    = $note_service->format_fraud_held_for_review_note_candidates( $order, 'pi_review_replay', 'ch_review_replay', $initial_rules )[1];
-			$initial_result = '{"avs_verification":"review"}';
+			$order         = $this->create_woopayments_order( '12.00' );
+			$note_service  = wc_get_container()->get( WooPaymentsOrderNoteService::class );
+			$initial_rules = array( 'avs_verification' => 'review' );
+			$plugin_note   = $note_service->format_fraud_held_for_review_note_candidates( $order, 'pi_review_replay', 'ch_review_replay', $initial_rules )[1];
 			$order->add_order_note( $plugin_note );
 
 			$this->sut->process_checkout_outcome(
@@ -4685,8 +4688,8 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 			$order = wc_get_order( $order->get_id() );
 
 			$this->assertInstanceOf( WC_Order::class, $order );
-			$this->assertSame( 'on-hold', $order->get_status() );
-			$this->assertSame( $initial_result, $order->get_meta( '_wcpay_fraud_ruleset_results', true ) );
+			$this->assertSame( 'pending', $order->get_status() );
+			$this->assertSame( '', $order->get_meta( '_wcpay_fraud_ruleset_results', true ) );
 			$this->assertCount(
 				1,
 				array_filter(
@@ -4708,7 +4711,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 			$order = wc_get_order( $order->get_id() );
 
 			$this->assertInstanceOf( WC_Order::class, $order );
-			$this->assertSame( $initial_result, $order->get_meta( '_wcpay_fraud_ruleset_results', true ) );
+			$this->assertSame( '', $order->get_meta( '_wcpay_fraud_ruleset_results', true ) );
 			$this->assertCount(
 				1,
 				array_filter(

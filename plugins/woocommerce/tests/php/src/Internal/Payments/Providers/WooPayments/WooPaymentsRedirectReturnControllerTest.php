@@ -375,6 +375,39 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A redirect return that reads an authorization whose note is already on an order its expiry failed leaves the order failed, with no second note.
+	 *
+	 * Client 11.3.0's return sends an authorized intent to its authorization writer, which returns before any write once its
+	 * note is on the order (class-wc-payment-gateway-wcpay.php:2444-2460, class-wc-payments-order-service.php:2146-2151).
+	 */
+	public function test_handle_wp_leaves_an_expired_authorization_failed(): void {
+		$GLOBALS['_SERVER']['REQUEST_METHOD'] = 'GET';
+		$order                                = $this->create_order();
+		$api_client                           = new RedirectReturnApiClientStub();
+		$api_client->payment_intent           = array_merge(
+			$this->successful_payment_intent( $order, 'pi_return', 'pm_return' ),
+			array( 'status' => 'requires_capture' )
+		);
+		$this->sut                            = $this->create_controller( true, $this->create_confirmation_service( $api_client, $this->create_token_service() ), $api_client );
+		$this->set_payment_intent_return_request( $order, 'pi_return' );
+
+		$this->sut->handle_wp();
+		$this->assertSame( 'on-hold', wc_get_order( $order->get_id() )->get_status() );
+		$expired = wc_get_order( $order->get_id() );
+		$expired->update_meta_data( '_intention_status', 'canceled' );
+		$expired->set_status( 'failed' );
+		$expired->save();
+		$this->set_payment_intent_return_request( $order, 'pi_return' );
+		$this->sut->handle_wp();
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( 'failed', $order->get_status() );
+		$this->assertSame( 'canceled', $order->get_meta( '_intention_status', true ) );
+		$notes = array_map( static fn( $note ): string => (string) $note->content, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+		$this->assertCount( 1, array_filter( $notes, static fn( string $note ): bool => false !== strpos( $note, 'was <strong>authorized</strong>' ) ) );
+	}
+
+	/**
 	 * @testdox A redirect return decides the hold on the order read under the order payment lock: $_dataName.
 	 *
 	 * The payment is compared with the order read under the order payment lock its lifecycle event is applied under, and a

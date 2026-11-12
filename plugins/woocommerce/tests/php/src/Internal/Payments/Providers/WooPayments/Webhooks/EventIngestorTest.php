@@ -2326,6 +2326,44 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox An authorization delivered again after its authorization expired leaves the failed order failed, with no second note.
+	 *
+	 * Client 11.3.0's authorization writer returns before any write once its note is on the order
+	 * (class-wc-payments-order-service.php:2146-2151), so the expiry's failed status stands (:699-716).
+	 */
+	public function test_authorization_delivered_again_after_its_expiry_leaves_the_order_failed(): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
+		$order  = $this->create_woopayments_order();
+		$event  = $this->recorded_authorization_event( $order );
+		$intent = $event['data']['object'];
+		$order->update_meta_data( '_intent_id', $intent['id'] );
+		$order->save();
+		$sut = $this->create_charge_expired_ingestor( array( 'status' => 'canceled' ) );
+
+		$sut->process( $event );
+		$this->assertSame( OrderStatus::ON_HOLD, wc_get_order( $order->get_id() )->get_status() );
+		$sut->process(
+			array(
+				'id'   => 'evt_authorization_expired',
+				'type' => 'charge.expired',
+				'data' => array(
+					'object' => array(
+						'id'             => $intent['charges']['data'][0]['id'],
+						'payment_intent' => $intent['id'],
+					),
+				),
+			)
+		);
+		$this->assertSame( OrderStatus::FAILED, wc_get_order( $order->get_id() )->get_status() );
+		$sut->process( $event );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( OrderStatus::FAILED, $order->get_status() );
+		$this->assertSame( 'canceled', $order->get_meta( '_intention_status', true ) );
+		$this->assertCount( 1, $this->get_order_notes_containing( $order, 'was <strong>authorized</strong>' ) );
+	}
+
+	/**
 	 * @testdox An authorization changes nothing on $_dataName, and clears the authorization caches.
 	 *
 	 * Client 11.3.0 returns before any order change for these (class-wc-payments-webhook-processing-service.php:442-451,

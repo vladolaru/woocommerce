@@ -253,18 +253,18 @@ class OrderPaymentLifecycleService {
 	 * @return string
 	 */
 	private function apply_event_under_lock( WC_Order $order, PaymentLifecycleEvent $event, ProviderPersistenceVocabularyInterface $persistence_vocabulary, ?WC_Order $fresh_order ): string {
-		$completed_event_order = PaymentLifecycleEvent::STATUS_COMPLETED === $event->get_status() ? ( $fresh_order ?? $this->get_fresh_order_from_data_store( $order ) ) : $order;
+		$decision_order = in_array( $event->get_status(), array( PaymentLifecycleEvent::STATUS_COMPLETED, PaymentLifecycleEvent::STATUS_AUTHORIZED ), true ) ? ( $fresh_order ?? $this->get_fresh_order_from_data_store( $order ) ) : $order;
 
 		if ( $this->should_skip_late_failure_event( $order, $event, $fresh_order ) ) {
 			$this->record_skipped_late_release( $order, $event, $persistence_vocabulary );
 			return self::RESULT_NOTE_NOT_ADDED;
 		}
 
-		$note                        = $event->get_note();
-		$completed_event_skip_reason = $this->get_completed_event_skip_reason( $order, $completed_event_order, $event, $persistence_vocabulary );
-		if ( null !== $completed_event_skip_reason ) {
-			$this->synchronize_skipped_completed_event_order( $order, $completed_event_order, $completed_event_skip_reason, $persistence_vocabulary );
-			$this->log_skipped_completed_event( $order, $event, $completed_event_skip_reason );
+		$note        = $event->get_note();
+		$skip_reason = $this->get_completed_event_skip_reason( $order, $decision_order, $event, $persistence_vocabulary ) ?? $this->get_authorized_event_skip_reason( $decision_order, $event, $persistence_vocabulary );
+		if ( null !== $skip_reason ) {
+			$this->synchronize_skipped_event_order( $order, $decision_order, $skip_reason, $persistence_vocabulary );
+			$this->log_skipped_event( $order, $event, $skip_reason );
 			return self::RESULT_NOTE_NOT_ADDED;
 		}
 
@@ -521,7 +521,36 @@ class OrderPaymentLifecycleService {
 	}
 
 	/**
-	 * Bring the persisted status and open disputes onto a caller's order object that a skipped completed event found stale.
+	 * Get the reason an authorized lifecycle event must be ignored before it changes the order.
+	 *
+	 * An authorized event whose note is already on the order was applied before, so it changes nothing, status and meta
+	 * included; an authorization's own note type also changes nothing on an order already on hold. Client 11.3.0's
+	 * on-hold writers check the same before any write (class-wc-payments-order-service.php:2146-2151, :2171-2175, :2251-2256).
+	 *
+	 * @param WC_Order                               $order                  Order read again under the order payment lock.
+	 * @param PaymentLifecycleEvent                  $event                  Lifecycle event.
+	 * @param ProviderPersistenceVocabularyInterface $persistence_vocabulary Provider persistence vocabulary.
+	 * @return string|null Skip reason, or null when the event can be applied.
+	 */
+	private function get_authorized_event_skip_reason( WC_Order $order, PaymentLifecycleEvent $event, ProviderPersistenceVocabularyInterface $persistence_vocabulary ): ?string {
+		if ( PaymentLifecycleEvent::STATUS_AUTHORIZED !== $event->get_status() ) {
+			return null;
+		}
+
+		$note = $event->get_note();
+		if ( null !== $note && '' !== $note && 0 < $this->find_lifecycle_note( $order, $event, $persistence_vocabulary ) ) {
+			return 'authorization_note_exists';
+		}
+
+		if ( PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_AUTHORIZED === $event->get_note_type() && $order->has_status( OrderStatus::ON_HOLD ) ) {
+			return 'order_on_hold';
+		}
+
+		return null;
+	}
+
+	/**
+	 * Bring the persisted status and open disputes onto a caller's order object that a skipped event found stale.
 	 *
 	 * A caller whose object matches the persisted order keeps it untouched. A diverging object is read again in place,
 	 * so a later save by the caller cannot write its stale status or dispute meta. This method records no status
@@ -529,17 +558,17 @@ class OrderPaymentLifecycleService {
 	 * changes are discarded, but a status change the caller made itself and has not saved still fires on that save.
 	 * No caller of the lifecycle holds one.
 	 *
-	 * @param WC_Order                               $order                       Caller-owned order object.
-	 * @param WC_Order                               $completed_event_order       Freshly read order used by the completed-event guard.
-	 * @param string                                 $completed_event_skip_reason Completed-event skip reason.
-	 * @param ProviderPersistenceVocabularyInterface $persistence_vocabulary      Provider persistence vocabulary.
+	 * @param WC_Order                               $order                  Caller-owned order object.
+	 * @param WC_Order                               $decision_order         Freshly read order the skip was decided on.
+	 * @param string                                 $skip_reason            Skip reason.
+	 * @param ProviderPersistenceVocabularyInterface $persistence_vocabulary Provider persistence vocabulary.
 	 */
-	private function synchronize_skipped_completed_event_order( WC_Order $order, WC_Order $completed_event_order, string $completed_event_skip_reason, ProviderPersistenceVocabularyInterface $persistence_vocabulary ): void {
-		$is_stale = $order->get_status() !== $completed_event_order->get_status();
+	private function synchronize_skipped_event_order( WC_Order $order, WC_Order $decision_order, string $skip_reason, ProviderPersistenceVocabularyInterface $persistence_vocabulary ): void {
+		$is_stale = $order->get_status() !== $decision_order->get_status();
 
-		if ( ! $is_stale && 'open_dispute' === $completed_event_skip_reason ) {
+		if ( ! $is_stale && 'open_dispute' === $skip_reason ) {
 			$open_dispute_ids_meta_key = $persistence_vocabulary->get_open_dispute_ids_meta_key();
-			$is_stale                  = $order->get_meta( $open_dispute_ids_meta_key, true ) !== $completed_event_order->get_meta( $open_dispute_ids_meta_key, true );
+			$is_stale                  = $order->get_meta( $open_dispute_ids_meta_key, true ) !== $decision_order->get_meta( $open_dispute_ids_meta_key, true );
 		}
 
 		if ( $is_stale ) {
@@ -566,16 +595,18 @@ class OrderPaymentLifecycleService {
 	}
 
 	/**
-	 * Log debug context for a completed lifecycle event that was skipped before mutation.
+	 * Log debug context for a completed or authorized lifecycle event that was skipped before mutation.
 	 *
 	 * @param WC_Order              $order  Order object.
 	 * @param PaymentLifecycleEvent $event  Lifecycle event.
 	 * @param string                $reason Skip reason.
 	 */
-	private function log_skipped_completed_event( WC_Order $order, PaymentLifecycleEvent $event, string $reason ): void {
+	private function log_skipped_event( WC_Order $order, PaymentLifecycleEvent $event, string $reason ): void {
 		$messages = array(
-			'open_dispute' => 'Completed payment event skipped: an open dispute keeps the order on hold.',
-			'order_paid'   => 'Completed payment event skipped: the order is already paid, so it is not put on hold.',
+			'open_dispute'              => 'Completed payment event skipped: an open dispute keeps the order on hold.',
+			'order_paid'                => 'Completed payment event skipped: the order is already paid, so it is not put on hold.',
+			'authorization_note_exists' => 'Authorized payment event skipped: its note is already on the order.',
+			'order_on_hold'             => 'Authorized payment event skipped: the order is already on hold.',
 		);
 		$message  = $messages[ $reason ] ?? 'Completed payment event skipped: the payment note is already on the order.';
 

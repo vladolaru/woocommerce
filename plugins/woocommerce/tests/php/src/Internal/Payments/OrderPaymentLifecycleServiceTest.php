@@ -457,6 +457,71 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox An authorized event on $_dataName is applied: $applies.
+	 *
+	 * Client 11.3.0's on-hold writers return before any write when their note is already on the order, and its authorization
+	 * writer also when the order is already on hold (class-wc-payments-order-service.php:2146-2151, :2171-2175, :2251-2256).
+	 *
+	 * @dataProvider authorized_event_order_states
+	 *
+	 * @param string      $status        Order status before the event.
+	 * @param string|null $note_type     The event's note type.
+	 * @param bool        $note_on_order Whether the order already has the event's note.
+	 * @param bool        $applies       Whether the event changes the order.
+	 */
+	public function test_authorized_event_is_applied_only_without_its_note_or_hold( string $status, ?string $note_type, bool $note_on_order, bool $applies ): void {
+		$order = $this->create_woopayments_order();
+		$order->set_status( $status );
+		$order->update_meta_data( '_intention_status', 'canceled' );
+		$order->save();
+		if ( $note_on_order ) {
+			$order->add_order_note( 'Payment authorized.' );
+		}
+
+		$this->apply_event( $order, new PaymentLifecycleEvent( PaymentLifecycleEvent::STATUS_AUTHORIZED, 'pi_auth', array( '_intention_status' => 'requires_capture' ), array(), 'Payment authorized.', $note_type ) );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( $applies ? 'on-hold' : $status, $order->get_status() );
+		$this->assertSame( $applies ? 'requires_capture' : 'canceled', $order->get_meta( '_intention_status', true ) );
+		$this->assertSame( $applies ? 'pi_auth' : '', $order->get_transaction_id() );
+		$this->assertSame( $applies || $note_on_order ? 1 : 0, $this->countOrderNotesMatching( $order, 'Payment authorized.' ) );
+	}
+
+	/**
+	 * @testdox An authorized event sees an on-hold status another request persisted after this request cached the order.
+	 */
+	public function test_authorized_event_sees_an_on_hold_status_persisted_by_another_request_after_the_order_was_cached(): void {
+		UncachedOrderWriter::enable_hpos_data_caching();
+		$stale_order = $this->read_order_into_request_caches( $this->create_woopayments_order() );
+
+		UncachedOrderWriter::write( $stale_order->get_id(), array( 'status' => 'on-hold' ) );
+
+		$this->sut->apply(
+			$stale_order,
+			new PaymentLifecycleEvent( PaymentLifecycleEvent::STATUS_AUTHORIZED, 'pi_auth', array( '_intention_status' => 'requires_capture' ), array(), 'Payment authorized.', PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_AUTHORIZED ),
+			$this->persistence_vocabulary
+		);
+
+		$this->assertSame( 0, $this->countOrderNotesMatching( $stale_order, 'Payment authorized.' ), 'An authorization on an order already on hold adds no note.' );
+		$this->assertFalse( $this->is_order_meta_persisted( $stale_order->get_id(), '_intention_status' ) );
+	}
+
+	/**
+	 * Order states an authorized event meets, and whether it is applied.
+	 *
+	 * @return array<string,array{string,string|null,bool,bool}>
+	 */
+	public static function authorized_event_order_states(): array {
+		return array(
+			'a failed order with the authorization note' => array( 'failed', PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_AUTHORIZED, true, false ),
+			'a failed order with a note of no type'      => array( 'failed', null, true, false ),
+			'an order on hold, an authorization note'    => array( 'on-hold', PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_AUTHORIZED, false, false ),
+			'an order on hold, a note of no type'        => array( 'on-hold', null, false, true ),
+			'a pending order, an authorization note'     => array( 'pending', PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_AUTHORIZED, false, true ),
+		);
+	}
+
+	/**
 	 * @testdox Replayed completed events preserve the state established after their first application.
 	 */
 	public function test_success_is_applied_once_then_ignored(): void {
