@@ -735,12 +735,16 @@ class WooPaymentsTerminalPaymentsRestController extends RestApiControllerBase {
 			);
 		}
 
-		// The terminal capture holds the order payment lock.
-		wc_get_container()->get( WooPaymentsFeeDetailsNoteController::class )->apply_and_schedule_fee_details(
-			$order,
-			new PaymentLifecycleEvent( $status, $intent_id, $meta, array(), $candidates[0], $note_type, $candidates, false, $hold_order ),
-			$hold
-		);
+		// The terminal capture holds the order payment lock. The client records the authorization, or an intent the reader
+		// captured, from the intent's status (class-wc-rest-payments-orders-controller.php:217), and a capture through its
+		// capture writer (:228).
+		$event                       = new PaymentLifecycleEvent( $status, $intent_id, $meta, array(), $candidates[0], $note_type, $candidates, false, $hold_order );
+		$fee_details_note_controller = wc_get_container()->get( WooPaymentsFeeDetailsNoteController::class );
+		if ( PaymentLifecycleEvent::STATUS_AUTHORIZED === $status || $already_captured ) {
+			$fee_details_note_controller->apply_intent_status_and_schedule_fee_details( $order, $event, $hold );
+		} else {
+			$fee_details_note_controller->apply_and_schedule_fee_details( $order, $event, $hold );
+		}
 	}
 
 	/**

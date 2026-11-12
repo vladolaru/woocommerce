@@ -199,6 +199,13 @@ class PaymentLifecycleEvent {
 	private array $applied_alternatives;
 
 	/**
+	 * Whether this completed event only reports a payment's status, and so leaves an order already in a paid status as it is.
+	 *
+	 * @var bool
+	 */
+	private bool $leave_paid_order;
+
+	/**
 	 * Constructor.
 	 *
 	 * @since 11.0.0
@@ -214,9 +221,11 @@ class PaymentLifecycleEvent {
 	 * @param bool                $hold_order        Whether a completed event puts the order on hold instead of completing it.
 	 * @param array<int,mixed>    $applied_alternatives Other lifecycle events whose note, when already on the order, counts as
 	 *                                                  this event already applied; entries without a note are dropped.
+	 * @param bool                $leave_paid_order  Whether a completed event only reports a payment's status, and so leaves
+	 *                                               an order already in a paid status as it is.
 	 * @throws InvalidArgumentException When an unknown status is supplied, or a hold on an event that is not completed.
 	 */
-	public function __construct( string $status, ?string $payment_reference = null, array $meta_to_update = array(), array $meta_to_delete = array(), ?string $note = null, ?string $note_type = null, array $note_equivalents = array(), bool $preserve_order_status = false, bool $hold_order = false, array $applied_alternatives = array() ) {
+	public function __construct( string $status, ?string $payment_reference = null, array $meta_to_update = array(), array $meta_to_delete = array(), ?string $note = null, ?string $note_type = null, array $note_equivalents = array(), bool $preserve_order_status = false, bool $hold_order = false, array $applied_alternatives = array(), bool $leave_paid_order = false ) {
 		if ( ! in_array( $status, $this->get_allowed_statuses(), true ) ) {
 			throw new InvalidArgumentException( esc_html( sprintf( 'Unknown payment lifecycle status: %s', $status ) ) );
 		}
@@ -240,6 +249,7 @@ class PaymentLifecycleEvent {
 				static fn( $alternative ): bool => $alternative instanceof self && null !== $alternative->get_note() && '' !== $alternative->get_note()
 			)
 		);
+		$this->leave_paid_order      = $leave_paid_order;
 	}
 
 	/**
@@ -390,6 +400,18 @@ class PaymentLifecycleEvent {
 	 */
 	public function get_applied_alternatives(): array {
 		return $this->applied_alternatives;
+	}
+
+	/**
+	 * Tell whether this completed event only reports a payment's status, and so leaves an order already in a paid status as
+	 * it is.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @return bool
+	 */
+	public function should_leave_paid_order(): bool {
+		return $this->leave_paid_order;
 	}
 
 	/**

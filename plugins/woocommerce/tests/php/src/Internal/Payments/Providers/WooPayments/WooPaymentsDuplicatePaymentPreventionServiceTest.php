@@ -316,6 +316,33 @@ class WooPaymentsDuplicatePaymentPreventionServiceTest extends WC_Unit_Test_Case
 	}
 
 	/**
+	 * @testdox An attached PaymentIntent on an order already in a paid status redirects as paid and leaves the order as it is.
+	 *
+	 * Client 11.3.0 applies the attached intent through update_order_status_from_intent() (class-duplicate-payment-prevention-service.php:150),
+	 * which writes nothing on a paid order (class-wc-payments-order-service.php:475, :3398-3410).
+	 */
+	public function test_attached_intent_on_a_paid_order_leaves_the_order(): void {
+		$order = $this->create_order( 'hash', 'processing' );
+		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+		$order->set_transaction_id( 'pi_existing' );
+		$order->update_meta_data( '_intent_id', 'pi_existing' );
+		$order->save();
+		$notes       = count( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+		$completions = did_action( 'woocommerce_pre_payment_complete' ) + did_action( 'woocommerce_payment_complete' ) + did_action( 'woocommerce_payment_complete_order_status_processing' );
+		$sut         = $this->create_service( $this->create_session(), $this->create_api_client_answering( $this->create_intent_response( $order, 'succeeded', 1200 ) ) );
+
+		$result = $sut->check_payment_intent_attached_to_order_succeeded( wc_get_order( $order->get_id() ), $this->create_gateway() );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertIsArray( $result );
+		$this->assertStringContainsString( 'wcpay_previous_successful_intent=yes', $result['redirect'] );
+		$this->assertSame( 'processing', $order->get_status() );
+		$this->assertSame( $completions, did_action( 'woocommerce_pre_payment_complete' ) + did_action( 'woocommerce_payment_complete' ) + did_action( 'woocommerce_payment_complete_order_status_processing' ), 'No completion hook fires.' );
+		$this->assertSame( '', $order->get_meta( '_intention_status', true ) );
+		$this->assertCount( $notes, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+	}
+
+	/**
 	 * @testdox An attached PaymentIntent for the order's amount in another currency passes the amount check and holds the order with the hold note.
 	 *
 	 * Client 11.3.0 class-duplicate-payment-prevention-service.php:126-150 compares the amount only, then

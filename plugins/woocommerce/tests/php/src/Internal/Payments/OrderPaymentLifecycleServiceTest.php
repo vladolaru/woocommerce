@@ -680,6 +680,46 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A completed event that leaves a paid order changes an order in a paid status only when it is not flagged: $label.
+	 *
+	 * Client 11.3.0 updates an order from an intent's status only while it is not paid (class-wc-payments-order-service.php:475,
+	 * :3398-3410); its capture writer has no such check (:529-532).
+	 *
+	 * @testWith ["flagged, processing", true, "processing", false]
+	 *           ["flagged, a paid status a plugin adds", true, "shipped", false]
+	 *           ["flagged, failed", true, "failed", true]
+	 *           ["not flagged, processing", false, "processing", true]
+	 *
+	 * @param string $label            Row label.
+	 * @param bool   $leave_paid_order Whether the event leaves a paid order as it is.
+	 * @param string $status           Order status before the event.
+	 * @param bool   $applies          Whether the event is applied.
+	 */
+	public function test_completed_event_flagged_to_leave_a_paid_order( string $label, bool $leave_paid_order, string $status, bool $applies ): void {
+		unset( $label );
+		add_filter( 'wc_order_statuses', static fn( array $statuses ): array => array_merge( $statuses, array( 'wc-shipped' => 'Shipped' ) ) );
+		add_filter( 'woocommerce_order_is_paid_statuses', static fn( array $statuses ): array => array_merge( $statuses, array( 'shipped' ) ) );
+		$order = $this->create_woopayments_order();
+		$order->set_status( $status );
+		$order->save();
+		$completions = did_action( 'woocommerce_pre_payment_complete' );
+
+		$this->apply_event(
+			$order,
+			new PaymentLifecycleEvent( PaymentLifecycleEvent::STATUS_COMPLETED, 'pi_paid', array( '_intention_status' => 'succeeded' ), array(), 'Paid by pi_paid.', PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_SUCCESS, array(), false, false, array(), $leave_paid_order )
+		);
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( $applies ? 1 : 0, did_action( 'woocommerce_pre_payment_complete' ) - $completions );
+		$this->assertSame( $applies ? 'succeeded' : '', $order->get_meta( '_intention_status', true ) );
+		$this->assertSame( $applies ? 1 : 0, $this->countOrderNotesMatching( $order, 'Paid by pi_paid.' ) );
+		if ( ! $applies ) {
+			$this->assertSame( $status, $order->get_status() );
+		}
+	}
+
+	/**
 	 * Build a completed event whose payment counts as applied once its capture note is on the order.
 	 *
 	 * @param string $payment_reference Payment reference.

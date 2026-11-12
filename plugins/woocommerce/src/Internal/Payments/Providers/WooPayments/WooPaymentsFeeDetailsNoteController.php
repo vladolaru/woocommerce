@@ -205,17 +205,47 @@ class WooPaymentsFeeDetailsNoteController implements RegisterHooksInterface {
 	 * first adds a payment's success or capture note. A payment's success and capture notes each count as the other
 	 * already applied.
 	 *
+	 * For a capture, or a payment the caller records whatever the order's status, as client 11.3.0's capture writer does
+	 * (class-wc-payments-order-service.php:529-532).
+	 *
 	 * @param WC_Order                                   $order Order object.
 	 * @param PaymentLifecycleEvent                      $event Lifecycle event.
 	 * @param array{notes:string[],log_line:string}|null $hold  The amount-mismatch hold the event applies, logged once its note is added.
 	 */
 	public function apply_and_schedule_fee_details( WC_Order $order, PaymentLifecycleEvent $event, ?array $hold = null ): void {
+		$this->apply_under_lock_and_schedule( $order, $event, $hold, false );
+	}
+
+	/**
+	 * Apply a payment lifecycle event built from a payment intent's status, as apply_and_schedule_fee_details() does, except
+	 * that its completion leaves an order already in a paid status as it is.
+	 *
+	 * Client 11.3.0 updates an order from an intent's status only while the order is not paid
+	 * (class-wc-payments-order-service.php:475, :3287-3289, :3398-3410).
+	 *
+	 * @param WC_Order                                   $order Order object.
+	 * @param PaymentLifecycleEvent                      $event Lifecycle event.
+	 * @param array{notes:string[],log_line:string}|null $hold  The amount-mismatch hold the event applies, logged once its note is added.
+	 */
+	public function apply_intent_status_and_schedule_fee_details( WC_Order $order, PaymentLifecycleEvent $event, ?array $hold = null ): void {
+		$this->apply_under_lock_and_schedule( $order, $event, $hold, true );
+	}
+
+	/**
+	 * Apply a payment lifecycle event under the order payment lock the caller holds, and schedule the job.
+	 *
+	 * @param WC_Order                                   $order            Order object.
+	 * @param PaymentLifecycleEvent                      $event            Lifecycle event.
+	 * @param array{notes:string[],log_line:string}|null $hold             The amount-mismatch hold the event applies.
+	 * @param bool                                       $leave_paid_order Whether a completion leaves an order already in a paid status as it is.
+	 */
+	private function apply_under_lock_and_schedule( WC_Order $order, PaymentLifecycleEvent $event, ?array $hold, bool $leave_paid_order ): void {
 		// A subscription gets no payment event: no lifecycle, no note, no Fee details job.
 		if ( SubscriptionMethodPolicy::only_saves_the_card( $order ) ) {
 			return;
 		}
 
-		$event = $this->with_applied_alternatives( $order, $event );
+		$event = $this->with_completion_rules( $order, $event, $leave_paid_order );
 		$this->schedule_when_event_added_note( $order, $event, $this->lifecycle_service->apply_under_lock( $order, $event, $this->vocabulary ), $hold );
 	}
 
@@ -226,6 +256,10 @@ class WooPaymentsFeeDetailsNoteController implements RegisterHooksInterface {
 	 * A caller whose event depends on the order passes a builder: under the claim, the payment lifecycle reads the order
 	 * again and the builder builds the event, with its amount-mismatch hold, from that read. The event passed gives the
 	 * payment reference, and is the one refused when another operation holds the lock.
+	 *
+	 * Its callers, the order-status callback, the redirect return and the attached-intent check, update the order from an
+	 * intent's status, so a completion leaves an order already in a paid status as it is, as
+	 * apply_intent_status_and_schedule_fee_details() does.
 	 *
 	 * @param WC_Order              $order            Order object.
 	 * @param PaymentLifecycleEvent $event            Lifecycle event.
@@ -242,7 +276,7 @@ class WooPaymentsFeeDetailsNoteController implements RegisterHooksInterface {
 
 		$hold = null;
 		if ( null === $build_under_lock ) {
-			$event  = $this->with_applied_alternatives( $order, $event );
+			$event  = $this->with_completion_rules( $order, $event, true );
 			$result = $this->lifecycle_service->apply( $order, $event, $this->vocabulary );
 		} else {
 			$result = $this->lifecycle_service->apply_rebuilt_under_claim(
@@ -251,7 +285,7 @@ class WooPaymentsFeeDetailsNoteController implements RegisterHooksInterface {
 				$this->vocabulary,
 				function ( WC_Order $stored_order ) use ( $build_under_lock, &$event, &$hold ): PaymentLifecycleEvent {
 					list( $event, $hold ) = $build_under_lock( $stored_order );
-					$event                = $this->with_applied_alternatives( $stored_order, $event );
+					$event                = $this->with_completion_rules( $stored_order, $event, true );
 
 					return $event;
 				}
@@ -343,35 +377,25 @@ class WooPaymentsFeeDetailsNoteController implements RegisterHooksInterface {
 
 	/**
 	 * Give a payment's success event the capture note of the same intent as an applied alternative, and its capture event
-	 * the success note, so the payment lifecycle completes the payment once, whichever of the two wrote first.
+	 * the success note, so the payment lifecycle completes the payment once, whichever of the two wrote first; and mark a
+	 * completion that leaves an order already in a paid status as it is.
 	 *
 	 * Client 11.3.0's success writer returns once the capture note is on the order (class-wc-payments-order-service.php:2040-2046).
 	 *
-	 * @param WC_Order              $order Order the event applies to, read under the order payment lock when the caller holds it.
-	 * @param PaymentLifecycleEvent $event Lifecycle event.
+	 * @param WC_Order              $order            Order the event applies to, read under the order payment lock when the caller holds it.
+	 * @param PaymentLifecycleEvent $event            Lifecycle event.
+	 * @param bool                  $leave_paid_order Whether a completion leaves an order already in a paid status as it is.
 	 * @return PaymentLifecycleEvent The event, with the other note as an applied alternative when it is a success or capture.
 	 */
-	private function with_applied_alternatives( WC_Order $order, PaymentLifecycleEvent $event ): PaymentLifecycleEvent {
-		if ( ! $this->is_success_or_capture_event( $event ) ) {
+	private function with_completion_rules( WC_Order $order, PaymentLifecycleEvent $event, bool $leave_paid_order ): PaymentLifecycleEvent {
+		if ( PaymentLifecycleEvent::STATUS_COMPLETED !== $event->get_status() ) {
 			return $event;
 		}
 
-		$intent_id    = (string) $event->get_payment_reference();
-		$charge_id    = $event->get_meta_to_update()['_charge_id'] ?? (string) $order->get_meta( '_charge_id', true );
-		$note_service = wc_get_container()->get( WooPaymentsOrderNoteService::class );
-		$is_success   = PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_SUCCESS === $event->get_note_type();
-		$candidates   = $is_success
-			? $note_service->format_capture_success_note_candidates( $order, $intent_id, $charge_id )
-			: $note_service->format_payment_success_note_candidates( $order, $intent_id, $charge_id );
-		$alternative  = new PaymentLifecycleEvent(
-			PaymentLifecycleEvent::STATUS_COMPLETED,
-			$intent_id,
-			array(),
-			array(),
-			$candidates[0],
-			$is_success ? PaymentLifecycleEvent::NOTE_TYPE_CAPTURE_SUCCESS : PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_SUCCESS,
-			$candidates
-		);
+		$alternatives = $event->get_applied_alternatives();
+		if ( $this->is_success_or_capture_event( $event ) ) {
+			$alternatives[] = $this->get_other_completion_note_event( $order, $event );
+		}
 
 		return new PaymentLifecycleEvent(
 			$event->get_status(),
@@ -383,7 +407,36 @@ class WooPaymentsFeeDetailsNoteController implements RegisterHooksInterface {
 			$event->get_note_equivalents(),
 			$event->should_preserve_order_status(),
 			$event->should_hold_order(),
-			array_merge( $event->get_applied_alternatives(), array( $alternative ) )
+			$alternatives,
+			$leave_paid_order
+		);
+	}
+
+	/**
+	 * Build the event whose note completes the same payment by its other writer: the capture note for a success event, the
+	 * success note for a capture event.
+	 *
+	 * @param WC_Order              $order Order the event applies to.
+	 * @param PaymentLifecycleEvent $event Success or capture event.
+	 * @return PaymentLifecycleEvent
+	 */
+	private function get_other_completion_note_event( WC_Order $order, PaymentLifecycleEvent $event ): PaymentLifecycleEvent {
+		$intent_id    = (string) $event->get_payment_reference();
+		$charge_id    = $event->get_meta_to_update()['_charge_id'] ?? (string) $order->get_meta( '_charge_id', true );
+		$note_service = wc_get_container()->get( WooPaymentsOrderNoteService::class );
+		$is_success   = PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_SUCCESS === $event->get_note_type();
+		$candidates   = $is_success
+			? $note_service->format_capture_success_note_candidates( $order, $intent_id, $charge_id )
+			: $note_service->format_payment_success_note_candidates( $order, $intent_id, $charge_id );
+
+		return new PaymentLifecycleEvent(
+			PaymentLifecycleEvent::STATUS_COMPLETED,
+			$intent_id,
+			array(),
+			array(),
+			$candidates[0],
+			$is_success ? PaymentLifecycleEvent::NOTE_TYPE_CAPTURE_SUCCESS : PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_SUCCESS,
+			$candidates
 		);
 	}
 

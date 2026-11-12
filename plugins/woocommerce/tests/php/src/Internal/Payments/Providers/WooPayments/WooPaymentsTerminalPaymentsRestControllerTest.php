@@ -600,6 +600,51 @@ class WooPaymentsTerminalPaymentsRestControllerTest extends WC_REST_Unit_Test_Ca
 	}
 
 	/**
+	 * @testdox A terminal payment on an order already in a paid status completes a capture but not an intent the reader captured: $intent_status.
+	 *
+	 * The client records an intent the reader captured from its status, which leaves a paid order as it is
+	 * (class-wc-rest-payments-orders-controller.php:217, class-wc-payments-order-service.php:475), and a capture through its
+	 * capture writer, which has no paid check (:228, class-wc-payments-order-service.php:529-532); both then store the
+	 * terminal completion (:281).
+	 *
+	 * @testWith ["succeeded", false]
+	 *           ["requires_capture", true]
+	 *
+	 * @param string $intent_status Status of the intent the app sends.
+	 * @param bool   $completes     Whether the payment lifecycle completes the order.
+	 */
+	public function test_capture_terminal_payment_on_a_paid_order( string $intent_status, bool $completes ): void {
+		$order = $this->create_order( 12.34, 'USD' );
+		$order->set_status( 'processing' );
+		$order->save();
+		$intent                                        = array(
+			'id'       => 'pi_terminal_paid',
+			'status'   => $intent_status,
+			'amount'   => 1234,
+			'currency' => 'usd',
+			'metadata' => array( 'order_id' => (string) $order->get_id() ),
+			'charges'  => array( 'data' => array( array( 'id' => 'ch_terminal_paid' ) ) ),
+		);
+		$this->api_client->payment_intention_response  = $intent;
+		$this->api_client->captured_intention_response = array_merge( $intent, array( 'status' => 'succeeded' ) );
+		$completions                                   = did_action( 'woocommerce_pre_payment_complete' );
+
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/orders/' . $order->get_id() . '/capture_terminal_payment' );
+		$request->set_param( 'order_id', $order->get_id() );
+		$request->set_param( 'payment_intent_id', 'pi_terminal_paid' );
+		$this->assertInstanceOf( WP_REST_Response::class, $this->sut->capture_terminal_payment( $request ) );
+
+		$order    = wc_get_order( $order->get_id() );
+		$contents = implode( ' ', wp_list_pluck( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), 'content' ) );
+		$this->assertSame( $completes ? 1 : 0, did_action( 'woocommerce_pre_payment_complete' ) - $completions );
+		$this->assertSame( $completes ? 1 : 0, substr_count( $contents, 'successfully captured' ) );
+		$this->assertStringNotContainsString( 'successfully charged', $contents );
+		$this->assertSame( 'completed', $order->get_status(), 'The terminal completion runs.' );
+		$this->assertSame( 'succeeded', $order->get_meta( '_intention_status', true ) );
+		$this->assertStringEndsWith( '/payments/readers/receipts/pi_terminal_paid', (string) $order->get_meta( 'receipt_url' ) );
+	}
+
+	/**
 	 * A card-reader capture stores the fee its capture response carries, alone, as the client's capture does; an
 	 * intent the reader already captured stores none (class-wc-rest-payments-orders-controller.php:228,
 	 * class-wc-payments-order-service.php:1681, :1775-1781).

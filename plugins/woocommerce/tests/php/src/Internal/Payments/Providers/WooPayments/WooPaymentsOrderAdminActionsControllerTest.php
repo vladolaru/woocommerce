@@ -851,6 +851,27 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A status change to Completed captures the authorization and records the capture on the order already in that paid status.
+	 *
+	 * Client 11.3.0's status-change capture has no paid check: it captures, notes the capture and saves the status
+	 * (class-wc-payments-order-service.php:2381-2418).
+	 */
+	public function test_status_change_to_completed_records_the_capture_on_the_completed_order(): void {
+		$order     = $this->create_recorded_authorization_order( 'requires_capture', OrderStatus::COMPLETED );
+		$transport = $this->create_operation_transport( 'capture' );
+		$this->sut = $this->create_controller( wc_get_container()->get( PaymentProcessingService::class ), $this->create_provider_over_fake_transport( $transport ), $this->create_platform( null, null, new \ArrayObject() ) );
+		$this->sut->register();
+
+		$this->fire_order_hook( 'woocommerce_order_status_completed', $order );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( array( $this->operation_path( 'capture' ) ), $this->request_paths( $transport ) );
+		$this->assertSame( OrderStatus::COMPLETED, $order->get_status() );
+		$this->assertSame( 'succeeded', $order->get_meta( '_intention_status', true ) );
+		$this->assert_order_has_note_containing( $order, 'was <strong>successfully captured</strong>' );
+	}
+
+	/**
 	 * @testdox The order screen's $operation action on an order storing requires_capture acts on the transaction ID.
 	 *
 	 * Client 11.3.0's capture_charge() and cancel_authorization() act on the order's transaction ID

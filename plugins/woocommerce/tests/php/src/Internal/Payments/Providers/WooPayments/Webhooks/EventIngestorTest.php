@@ -2784,6 +2784,78 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A succeeded payment on an order already paid by it, with neither payment note, writes only the payment meta: $_dataName.
+	 *
+	 * Client 11.3.0's webhook writes the payment meta, then updates the order from the intent only while it is not paid
+	 * (class-wc-payments-webhook-processing-service.php:642-716, class-wc-payments-order-service.php:475, :3398-3410).
+	 *
+	 * @dataProvider provider_paid_orders_a_succeeded_payment_is_delivered_to
+	 *
+	 * @param string $status                  The order's paid status.
+	 * @param bool   $stored_requires_capture Whether the order still stores `requires_capture`, so the capture writer would run.
+	 */
+	public function test_succeeded_payment_on_a_paid_order_writes_only_the_payment_meta( string $status, bool $stored_requires_capture ): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
+		$this->register_custom_paid_status();
+		$order = $this->create_woopayments_order();
+		$order->set_total( '10.99' );
+		$event                                        = $this->recorded_authorization_event( $order );
+		$event['id']                                  = 'evt_paid_order';
+		$event['type']                                = 'payment_intent.succeeded';
+		$event['data']['object']['status']            = 'succeeded';
+		$event['data']['object']['amount_capturable'] = 0;
+		$event['data']['object']['amount_received']   = 1099;
+		$event['data']['object']['charges']['data'][0]['captured'] = true;
+		$intent_id = (string) $event['data']['object']['id'];
+		$order->set_transaction_id( $intent_id );
+		$order->update_meta_data( '_intent_id', $intent_id );
+		if ( $stored_requires_capture ) {
+			$order->update_meta_data( '_intention_status', 'requires_capture' );
+		}
+		$order->set_status( $status );
+		$order->save();
+		$notes       = count( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+		$completions = $this->count_completion_hooks( $status );
+
+		$this->sut->process( $event );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( $status, $order->get_status() );
+		$this->assertSame( $completions, $this->count_completion_hooks( $status ), 'No completion hook fires.' );
+		$this->assertSame( (string) $event['data']['object']['charges']['data'][0]['id'], $order->get_meta( '_charge_id', true ), 'The payment meta is written.' );
+		$this->assertSame( $stored_requires_capture ? 'requires_capture' : '', $order->get_meta( '_intention_status', true ) );
+		$this->assertCount( $notes, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+	}
+
+	/** @return array<string,array{0:string,1:bool}> */
+	public function provider_paid_orders_a_succeeded_payment_is_delivered_to(): array {
+		return array(
+			'processing'                         => array( OrderStatus::PROCESSING, false ),
+			'completed'                          => array( OrderStatus::COMPLETED, false ),
+			'a paid status a plugin adds'        => array( 'shipped', false ),
+			'processing, the capture still open' => array( OrderStatus::PROCESSING, true ),
+		);
+	}
+
+	/**
+	 * Register `shipped` as an order status WooCommerce counts as paid, as an order status plugin does.
+	 */
+	private function register_custom_paid_status(): void {
+		add_filter( 'wc_order_statuses', static fn( array $statuses ): array => array_merge( $statuses, array( 'wc-shipped' => 'Shipped' ) ) );
+		add_filter( 'woocommerce_order_is_paid_statuses', static fn( array $statuses ): array => array_merge( $statuses, array( 'shipped' ) ) );
+	}
+
+	/**
+	 * Count the hooks WooCommerce fires when a payment completes on an order in a status.
+	 *
+	 * @param string $status Order status.
+	 * @return int
+	 */
+	private function count_completion_hooks( string $status ): int {
+		return did_action( 'woocommerce_pre_payment_complete' ) + did_action( 'woocommerce_payment_complete' ) + did_action( 'woocommerce_payment_complete_order_status_' . $status );
+	}
+
+	/**
 	 * Assert the order has no payment success note, in live or test mode wording.
 	 *
 	 * @param WC_Order $order Order.

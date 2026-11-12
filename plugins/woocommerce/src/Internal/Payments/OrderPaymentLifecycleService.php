@@ -492,7 +492,8 @@ class OrderPaymentLifecycleService {
 	 *
 	 * A completed event whose note, or the note of one of its applied alternatives, is already on the order was applied
 	 * before, so it changes nothing, an open dispute keeps the order on hold, and a hold never lands on a paid order: the
-	 * caller's order or its fresh read.
+	 * caller's order or its fresh read. An event that only reports a payment's status leaves an order its fresh read finds
+	 * in a paid status as it is.
 	 *
 	 * @param WC_Order                               $caller_order        Caller-owned order object.
 	 * @param WC_Order                               $order               Freshly read order.
@@ -522,6 +523,10 @@ class OrderPaymentLifecycleService {
 			if ( 0 < $this->find_lifecycle_note( $order, $alternative, $persistence_vocabulary ) ) {
 				return 'applied_note_exists';
 			}
+		}
+
+		if ( $event->should_leave_paid_order() && $order->has_status( wc_get_is_paid_statuses() ) ) {
+			return 'order_paid';
 		}
 
 		return null;
@@ -611,7 +616,7 @@ class OrderPaymentLifecycleService {
 	private function log_skipped_event( WC_Order $order, PaymentLifecycleEvent $event, string $reason ): void {
 		$messages = array(
 			'open_dispute'              => 'Completed payment event skipped: an open dispute keeps the order on hold.',
-			'order_paid'                => 'Completed payment event skipped: the order is already paid, so it is not put on hold.',
+			'order_paid'                => 'Completed payment event skipped: the order is already paid, so the event does not change it.',
 			'applied_note_exists'       => 'Completed payment event skipped: a note that counts as this payment already applied is on the order.',
 			'authorization_note_exists' => 'Authorized payment event skipped: its note is already on the order.',
 			'order_on_hold'             => 'Authorized payment event skipped: the order is already on hold.',

@@ -1409,6 +1409,64 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Order-status callback answers with the return URL and leaves an order already in a paid status as it is: $status, paid while the intent is fetched: $paid_while_fetching.
+	 *
+	 * Client 11.3.0 updates the order from the intent only while it is not paid (class-wc-payment-gateway-wcpay.php:4771,
+	 * class-wc-payments-order-service.php:475, :3398-3410), then answers with the return URL (class-wc-payment-gateway-wcpay.php:4779-4790).
+	 *
+	 * @testWith ["processing", false]
+	 *           ["completed", false]
+	 *           ["shipped", false]
+	 *           ["processing", true]
+	 *
+	 * @param string $status              The order's paid status; `shipped` is one a plugin adds.
+	 * @param bool   $paid_while_fetching Whether the order gets its paid status only while the callback fetches the intent.
+	 */
+	public function test_update_order_status_leaves_a_paid_order( string $status, bool $paid_while_fetching ): void {
+		add_filter( 'wc_order_statuses', static fn( array $statuses ): array => array_merge( $statuses, array( 'wc-shipped' => 'Shipped' ) ) );
+		add_filter( 'woocommerce_order_is_paid_statuses', static fn( array $statuses ): array => array_merge( $statuses, array( 'shipped' ) ) );
+		$order = $this->create_order_for_intent_binding( 'payment' );
+		$order->update_meta_data( '_intent_id', 'pi_paid' );
+		$order->set_transaction_id( 'pi_paid' );
+		$pay = static function () use ( $order, $status, &$notes ): void {
+			$paid = wc_get_order( $order->get_id() );
+			$paid->set_status( $status );
+			$paid->save();
+			$notes = count( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+		};
+		$order->save();
+		if ( ! $paid_while_fetching ) {
+			$pay();
+		}
+		$completions = did_action( 'woocommerce_pre_payment_complete' ) + did_action( 'woocommerce_payment_complete' ) + did_action( 'woocommerce_payment_complete_order_status_' . $status );
+		$intent      = array(
+			'id'             => 'pi_paid',
+			'status'         => 'succeeded',
+			'amount'         => 5000,
+			'currency'       => 'usd',
+			'customer'       => 'cus_paid',
+			'payment_method' => 'pm_paid',
+			'metadata'       => array( 'order_id' => (string) $order->get_id() ),
+		);
+
+		$response = $this->create_controller( $this->create_api_client_returning( $intent, $paid_while_fetching ? $pay : null ) )->confirm_order_payment(
+			array(
+				'_ajax_nonce' => wp_create_nonce( 'wcpay_update_order_status_nonce_' . $order->get_id() ),
+				'order_id'    => $order->get_id(),
+				'intent_id'   => 'pi_paid',
+			)
+		);
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( 200, $response['status_code'] );
+		$this->assertSame( $order->get_checkout_order_received_url(), $response['return_url'] );
+		$this->assertSame( $status, $order->get_status() );
+		$this->assertSame( $completions, did_action( 'woocommerce_pre_payment_complete' ) + did_action( 'woocommerce_payment_complete' ) + did_action( 'woocommerce_payment_complete_order_status_' . $status ), 'No completion hook fires.' );
+		$this->assertSame( '', $order->get_meta( '_intention_status', true ) );
+		$this->assertCount( $notes, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+	}
+
+	/**
 	 * Capture an order's payment as the store's capture does: the completed lifecycle event with the capture note.
 	 *
 	 * @param WC_Order $order     Order.

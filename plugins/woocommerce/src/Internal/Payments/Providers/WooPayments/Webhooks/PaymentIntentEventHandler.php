@@ -279,7 +279,7 @@ class PaymentIntentEventHandler {
 				// 11.3.0 class-wc-payments-webhook-processing-service.php:711-717).
 				$this->write_succeeded_payment_intent_meta( $order, $event_object );
 			} elseif ( 'payment_intent.succeeded' === $event_type ) {
-				$this->apply_succeeded_payment_intent_under_lock( $order, $event_object );
+				$this->apply_succeeded_payment_intent( $order, $event_object, null, true );
 			} elseif ( 'payment_intent.amount_capturable_updated' === $event_type ) {
 				$this->apply_authorization_under_lock( $order, $event_object );
 			} else {
@@ -385,13 +385,34 @@ class PaymentIntentEventHandler {
 	 * @param string[]|null       $hold_note_candidates The caller's hold note, or null to decide the hold from the intent.
 	 */
 	public function apply_succeeded_payment_intent_under_lock( WC_Order $order, array $payment_intent, ?array $hold_note_candidates = null ): void {
+		$this->apply_succeeded_payment_intent( $order, $payment_intent, $hold_note_candidates, false );
+	}
+
+	/**
+	 * Apply a succeeded payment intent to an order read under the order payment lock the caller holds, as
+	 * apply_succeeded_payment_intent_under_lock() describes.
+	 *
+	 * The webhook's own delivery updates the order from the intent's status, so its completion leaves an order already in a
+	 * paid status as it is, after the payment meta is written (client 11.3.0 class-wc-payments-webhook-processing-service.php:642-716,
+	 * class-wc-payments-order-service.php:475).
+	 *
+	 * @param WC_Order            $order                 Order the intent pays, read under the lock.
+	 * @param array<string,mixed> $payment_intent        Provider payment intent object.
+	 * @param string[]|null       $hold_note_candidates  The caller's hold note, or null to decide the hold from the intent.
+	 * @param bool                $reports_intent_status Whether the caller updates the order from the intent's status.
+	 */
+	private function apply_succeeded_payment_intent( WC_Order $order, array $payment_intent, ?array $hold_note_candidates, bool $reports_intent_status ): void {
 		// The order keeps the payment method and title its checkout, redirect return or in-person capture wrote: client 11.1.0's
 		// webhook never sets them (includes/class-wc-payments-webhook-processing-service.php process_webhook_payment_intent_succeeded()).
 		$this->write_succeeded_payment_intent_meta( $order, $payment_intent );
 		$hold            = null === $hold_note_candidates ? wc_get_container()->get( WooPaymentsAmountMismatchHold::class )->decide_hold( $order, $payment_intent ) : null;
 		$lifecycle_event = $this->build_succeeded_lifecycle_event( $payment_intent, $order, $hold_note_candidates ?? ( null === $hold ? null : $hold['notes'] ) );
 		$this->repair_recurring_order_token( $order, $payment_intent );
-		$this->fee_details_note_controller->apply_and_schedule_fee_details( $order, $lifecycle_event, $hold );
+		if ( $reports_intent_status ) {
+			$this->fee_details_note_controller->apply_intent_status_and_schedule_fee_details( $order, $lifecycle_event, $hold );
+		} else {
+			$this->fee_details_note_controller->apply_and_schedule_fee_details( $order, $lifecycle_event, $hold );
+		}
 	}
 
 	/**
