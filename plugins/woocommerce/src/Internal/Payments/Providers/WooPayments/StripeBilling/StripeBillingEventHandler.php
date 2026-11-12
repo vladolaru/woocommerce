@@ -15,6 +15,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\PaymentIntentEventHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use InvalidArgumentException;
 use RuntimeException;
@@ -248,6 +249,10 @@ class StripeBillingEventHandler {
 	/**
 	 * Apply a paid invoice to its renewal order and the subscription.
 	 *
+	 * The renewal completes only when the invoice's amount and currency match its total
+	 * (StripeBillingInvoiceService::does_invoice_payment_match_order_total()); otherwise it is held with its payment recorded.
+	 * An invoice without its amount paid or currency is refused as invalid event data before any renewal is found or created.
+	 *
 	 * @param WC_Order            $subscription     Subscription.
 	 * @param string              $wcpay_invoice_id Invoice ID.
 	 * @param array<string,mixed> $event_object     Invoice from the event.
@@ -259,9 +264,22 @@ class StripeBillingEventHandler {
 			return null;
 		}
 
+		// Client 11.3.0 reads both before it finds or creates the renewal (class-wc-payments-subscriptions-event-handler.php:146-147).
+		$amount_paid      = $this->get_event_property( $event_object, array( 'amount_paid' ) );
+		$invoice_currency = $this->get_event_property( $event_object, array( 'currency' ) );
+
 		$order     = $this->get_or_create_renewal_order( $subscription, $wcpay_invoice_id, __( 'Unable to generate renewal order for subscription on the "invoice.paid" event.', 'woocommerce' ) );
 		$intent_id = isset( $event_object['payment_intent'] ) && is_string( $event_object['payment_intent'] ) ? $event_object['payment_intent'] : '';
 		$intent    = '' !== $intent_id ? $this->get_payment_intent( $intent_id ) : null;
+		// A renewal whose invoice does not match its total is held, and its payment still recorded (client :163-172, :200-203).
+		$hold_note_candidates = $this->invoice_service->does_invoice_payment_match_order_total( $order, $amount_paid, $invoice_currency )
+			? null
+			: wc_get_container()->get( WooPaymentsOrderNoteService::class )->format_invoice_mismatch_hold_note_candidates(
+				$order,
+				$wcpay_invoice_id,
+				is_numeric( $amount_paid ) ? (int) $amount_paid : 0,
+				is_string( $invoice_currency ) ? $invoice_currency : ''
+			);
 
 		$was_succeeded = 'succeeded' === $order->get_meta( '_intention_status', true );
 		if ( null !== $intent ) {
@@ -273,7 +291,14 @@ class StripeBillingEventHandler {
 			$order->save();
 		}
 
-		if ( $order->needs_payment() ) {
+		if ( $order->needs_payment() && null !== $hold_note_candidates ) {
+			// The subscription is left as it is: it is not put on hold or reactivated.
+			if ( null !== $intent ) {
+				$this->payment_intent_event_handler->apply_succeeded_payment_intent( $order, $intent, $hold_note_candidates );
+			} else {
+				$this->hold_order_without_intent( $order, $intent_id, $event_object, $hold_note_candidates[0] );
+			}
+		} elseif ( $order->needs_payment() ) {
 			// Put the subscription on hold first, as a renewal does, so WooCommerce Subscriptions records the payment on it. Stripe already billed it, so neither change reaches Stripe.
 			try {
 				$this->subscription_service->run_without_stripe_sync(
@@ -298,7 +323,8 @@ class StripeBillingEventHandler {
 				throw new RuntimeException( sprintf( 'Renewal order #%1$d is still unpaid after applying invoice %2$s.', $order->get_id(), $wcpay_invoice_id ) );
 			}
 		} elseif ( null !== $intent ) {
-			$this->payment_intent_event_handler->apply_succeeded_payment_intent( $order, $intent );
+			// A held renewal stays held: its hold note is on it, so the held payment adds nothing.
+			$this->payment_intent_event_handler->apply_succeeded_payment_intent( $order, $intent, $hold_note_candidates );
 		} elseif ( '' !== $intent_id ) {
 			$order->add_order_note( __( 'The payment info couldn\'t be added to the order.', 'woocommerce' ) );
 		}
@@ -587,6 +613,30 @@ class StripeBillingEventHandler {
 		}
 		$order->payment_complete( $intent_id );
 		$order->add_order_note( __( 'The payment info couldn\'t be added to the order.', 'woocommerce' ) );
+	}
+
+	/**
+	 * Hold a renewal whose invoice does not match its total when its intent cannot be read: the hold note, the intent and
+	 * charge the event names, and the client's note that the payment info could not be added (client 11.3.0
+	 * class-wc-payments-subscriptions-event-handler.php:163-172, class-wc-payments-invoice-service.php:334-343).
+	 *
+	 * @param WC_Order            $order        Renewal order.
+	 * @param string              $intent_id    Intent ID from the event.
+	 * @param array<string,mixed> $event_object Invoice from the event.
+	 * @param string              $hold_note    The hold note.
+	 */
+	private function hold_order_without_intent( WC_Order $order, string $intent_id, array $event_object, string $hold_note ): void {
+		if ( '' !== $intent_id ) {
+			$order->update_meta_data( '_intent_id', $intent_id );
+			if ( isset( $event_object['charge'] ) && is_string( $event_object['charge'] ) ) {
+				$order->update_meta_data( '_charge_id', $event_object['charge'] );
+			}
+		}
+		$order->update_status( OrderStatus::ON_HOLD );
+		$order->add_order_note( $hold_note );
+		if ( '' !== $intent_id ) {
+			$order->add_order_note( __( 'The payment info couldn\'t be added to the order.', 'woocommerce' ) );
+		}
 	}
 
 	/**

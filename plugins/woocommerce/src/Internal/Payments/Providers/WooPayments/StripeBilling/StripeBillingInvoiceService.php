@@ -7,9 +7,11 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling;
 
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\LocalizationService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\SubscriptionsController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCurrencyUtils;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use WC_Order;
@@ -111,6 +113,50 @@ class StripeBillingInvoiceService {
 	 */
 	public function get_subscription_invoice_id( WC_Order $subscription ): string {
 		return (string) $subscription->get_meta( self::ORDER_INVOICE_ID_KEY, true );
+	}
+
+	/**
+	 * Tell whether the amount an invoice collected matches its order's total: the currency is the order's, whatever the
+	 * case, and the amount is within one store price unit per order line of the order total in minor units (client 11.3.0
+	 * class-wc-payments-invoice-service.php:116-159).
+	 *
+	 * A price unit is 10 to the power of the currency's minor unit less the decimals the store prices it in, and the
+	 * lines are the order's line items, fees, shipping, taxes and coupons.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @param WC_Order $order            Order.
+	 * @param mixed    $amount_paid      The invoice's `amount_paid`, in minor units.
+	 * @param mixed    $invoice_currency The invoice's currency.
+	 * @return bool
+	 */
+	public function does_invoice_payment_match_order_total( WC_Order $order, $amount_paid, $invoice_currency ): bool {
+		if ( ! is_numeric( $amount_paid ) ) {
+			return false;
+		}
+
+		$order_currency = (string) $order->get_currency();
+		$order_total    = WooPaymentsCurrencyUtils::amount_to_minor_units( (float) $order->get_total(), $order_currency );
+		$price_unit     = 10 ** max( 0, WooPaymentsCurrencyUtils::get_stripe_minor_unit_for_currency( $order_currency ) - $this->get_price_decimals( $order_currency ) );
+		$allowance      = $price_unit * count( $order->get_items( array( 'line_item', 'fee', 'shipping', 'tax', 'coupon' ) ) );
+
+		return strtolower( $order_currency ) === strtolower( is_string( $invoice_currency ) ? $invoice_currency : '' )
+			&& abs( (int) $amount_paid - $order_total ) <= $allowance;
+	}
+
+	/**
+	 * Get the number of decimals the store prices a currency in: WooCommerce's for the store currency, the localized
+	 * format's for any other, as Multi-Currency prices it (client 11.3.0 class-wc-payments-invoice-service.php:153-159).
+	 *
+	 * @param string $currency Currency code.
+	 * @return int
+	 */
+	private function get_price_decimals( string $currency ): int {
+		if ( strtoupper( $currency ) === strtoupper( get_woocommerce_currency() ) ) {
+			return wc_get_price_decimals();
+		}
+
+		return (int) ( wc_get_container()->get( LocalizationService::class )->get_currency_format( strtoupper( $currency ) )['num_decimals'] ?? 2 );
 	}
 
 	/**

@@ -687,7 +687,8 @@ class StripeBillingSubscriptionService {
 	/**
 	 * Charge the invoice a Stripe-billed subscription is waiting on, once the customer paid with a new payment method.
 	 *
-	 * When the invoice is paid, its failed renewal order is completed with the new token right away.
+	 * When the invoice is paid, the new token goes on its failed renewal order, and the order is completed right away when
+	 * the charge's amount and currency match it.
 	 *
 	 * @internal
 	 *
@@ -716,7 +717,20 @@ class StripeBillingSubscriptionService {
 		$order_id = $this->invoice_service->get_order_id_by_invoice_id( $wcpay_invoice_id );
 		$order    = $order_id ? wc_get_order( $order_id ) : false;
 
-		if ( ! $order instanceof WC_Order || ! $order->needs_payment() || ! class_exists( 'WC_Subscriptions_Change_Payment_Gateway' ) ) {
+		if ( ! $order instanceof WC_Order ) {
+			return;
+		}
+
+		// The new token goes on the renewal whether or not it completes here: WooCommerce Subscriptions copies the renewal's
+		// token to the subscription when the renewal is paid by any path (client 11.3.0 class-wc-payments-subscription-service.php:684-686).
+		$order->add_payment_token( $token );
+
+		// Completion needs the charge's amount and currency to match the renewal; invoice.paid holds one that does not (client :688-689).
+		if (
+			! $order->needs_payment()
+			|| ! class_exists( 'WC_Subscriptions_Change_Payment_Gateway' )
+			|| ! $this->invoice_service->does_invoice_payment_match_order_total( $order, $response['amount_paid'] ?? null, $response['currency'] ?? '' )
+		) {
 			return;
 		}
 
@@ -731,7 +745,7 @@ class StripeBillingSubscriptionService {
 			$order_payment_lock->log_refusal( $order, $vocabulary, 'payment method change payment' );
 		} else {
 			try {
-				$this->complete_renewal_order_with_token( $order->get_id(), $token );
+				$this->complete_renewal_order( $order->get_id() );
 			} finally {
 				$order_payment_lock->release( $order, $vocabulary, $lock_token );
 			}
@@ -741,12 +755,11 @@ class StripeBillingSubscriptionService {
 	}
 
 	/**
-	 * Complete a renewal order the new payment method paid, if it still needs payment, with that payment method's token.
+	 * Complete a renewal order the new payment method paid, if it still needs payment; the new token is already on it.
 	 *
-	 * @param int              $order_id Renewal order ID.
-	 * @param WC_Payment_Token $token    The new payment token.
+	 * @param int $order_id Renewal order ID.
 	 */
-	private function complete_renewal_order_with_token( int $order_id, WC_Payment_Token $token ): void {
+	private function complete_renewal_order( int $order_id ): void {
 		$order = wc_get_order( $order_id );
 		if ( ! $order instanceof WC_Order || ! $order->needs_payment() || ! class_exists( 'WC_Subscriptions_Change_Payment_Gateway' ) ) {
 			return;
@@ -757,8 +770,6 @@ class StripeBillingSubscriptionService {
 		\WC_Subscriptions_Change_Payment_Gateway::$is_request_to_change_payment = false;
 
 		try {
-			// Without the new token on the order, WooCommerce Subscriptions copies the failing one back to the subscription.
-			$order->add_payment_token( $token );
 			$order->payment_complete();
 		} finally {
 			\WC_Subscriptions_Change_Payment_Gateway::$is_request_to_change_payment = $is_change_payment_request;

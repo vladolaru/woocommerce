@@ -76,6 +76,26 @@ class WooPaymentsOrderNoteService {
 	}
 
 	/**
+	 * Build the note of a Stripe Billing renewal put on hold because its invoice's amount or currency does not match the
+	 * order total, in each wording that counts as the same note (client 11.3.0
+	 * class-wc-payments-subscriptions-event-handler.php:164-171).
+	 *
+	 * @since 11.2.0
+	 *
+	 * @param WC_Order $order            Renewal order.
+	 * @param string   $invoice_id       Invoice ID.
+	 * @param int      $amount_paid      Amount the invoice collected, in the provider's minor units.
+	 * @param string   $invoice_currency Invoice currency.
+	 * @return string[] The note's wordings, WooCommerce's first.
+	 */
+	public function format_invoice_mismatch_hold_note_candidates( WC_Order $order, string $invoice_id, int $amount_paid, string $invoice_currency ): array {
+		return $this->unique_note_candidates(
+			$this->format_invoice_mismatch_hold_note_for_domain( $order, $invoice_id, $amount_paid, $invoice_currency, 'woocommerce' ),
+			...$this->extension_wordings( fn(): string => $this->format_invoice_mismatch_hold_note_for_domain( $order, $invoice_id, $amount_paid, $invoice_currency, 'woocommerce-payments' ) )
+		);
+	}
+
+	/**
 	 * Resolve a payment-success note order mode from the synchronous value or persisted order snapshot.
 	 *
 	 * @param WC_Order $order      Order object.
@@ -731,6 +751,33 @@ class WooPaymentsOrderNoteService {
 			'' !== $intent_id ? $intent_id : $charge_id,
 			wc_price( (float) $order->get_total(), array( 'currency' => $order_currency ) ) . ' ' . $order_currency,
 			$transaction_url
+		);
+	}
+
+	/**
+	 * Build the note of a renewal held for an invoice that does not match its total, from one known catalog.
+	 *
+	 * @param WC_Order $order            Renewal order.
+	 * @param string   $invoice_id       Invoice ID.
+	 * @param int      $amount_paid      Amount the invoice collected, in the provider's minor units.
+	 * @param string   $invoice_currency Invoice currency.
+	 * @param string   $text_domain      Translation catalog to render.
+	 * @return string
+	 */
+	private function format_invoice_mismatch_hold_note_for_domain( WC_Order $order, string $invoice_id, int $amount_paid, string $invoice_currency, string $text_domain ): string {
+		if ( 'woocommerce-payments' === $text_domain ) {
+			/* translators: %1$s: the amount the invoice collected, %2$s: the order total, %3$s: the WooPayments invoice ID */
+			$note_format = __( 'The renewal invoice %3$s collected %1$s, but the order total is %2$s. The order was put <strong>on hold</strong>; review it before fulfilling.', 'woocommerce-payments' );
+		} else {
+			/* translators: %1$s: the amount the invoice collected, %2$s: the order total, %3$s: the WooPayments invoice ID */
+			$note_format = __( 'The renewal invoice %3$s collected %1$s, but the order total is %2$s. The order was put <strong>on hold</strong>; review it before fulfilling.', 'woocommerce' );
+		}
+
+		return sprintf(
+			$note_format,
+			WooPaymentsCurrencyUtils::format_explicit_currency( WooPaymentsCurrencyUtils::amount_from_minor_units( $amount_paid, $invoice_currency ), $invoice_currency ),
+			WooPaymentsCurrencyUtils::format_explicit_currency( (float) $order->get_total(), (string) $order->get_currency() ),
+			$invoice_id
 		);
 	}
 

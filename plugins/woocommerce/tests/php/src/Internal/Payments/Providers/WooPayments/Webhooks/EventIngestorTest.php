@@ -221,6 +221,27 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox payment_intent.succeeded for a Stripe Billing invoice leaves a renewal its invoice held on hold, with no note.
+	 *
+	 * Client 11.3.0 class-wc-payments-webhook-processing-service.php:711-717: the invoice's intent never reaches the status
+	 * update, so a renewal invoice.paid held (class-wc-payments-subscriptions-event-handler.php:163-172) stays held.
+	 */
+	public function test_payment_intent_succeeded_for_an_invoice_leaves_a_held_renewal_held(): void {
+		$order = $this->create_woopayments_order();
+		$order->set_status( 'on-hold' );
+		$order->save();
+		$notes_before = wc_get_order_notes( array( 'order_id' => $order->get_id() ) );
+
+		$this->sut->process( $this->create_payment_intent_event( 'payment_intent.succeeded', $order, array( 'invoice' => 'in_123' ) ) );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 'on-hold', $order->get_status() );
+		$this->assertNull( $order->get_date_paid() );
+		$this->assertEquals( $notes_before, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+	}
+
+	/**
 	 * @testdox payment_intent.succeeded for a payment that differs from the order total holds the order with one note, and its payment stays recorded: $_dataName.
 	 *
 	 * Client 11.3.0 class-wc-payments-webhook-processing-service.php:716 → class-wc-payments-order-service.php:486-487,

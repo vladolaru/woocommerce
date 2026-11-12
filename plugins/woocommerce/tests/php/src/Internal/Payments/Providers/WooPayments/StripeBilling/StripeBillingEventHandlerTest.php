@@ -29,6 +29,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\StripeBillingApi;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\StripeBillingEventHandler;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\StripeBillingException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\StripeBillingInvoiceService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\StripeBillingProductService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\StripeBillingSubscriptionService;
@@ -299,6 +300,96 @@ class StripeBillingEventHandlerTest extends WC_Unit_Test_Case {
 			$this->get_requests(),
 			'Neither the on-hold step nor the reactivation reaches the Stripe subscription.'
 		);
+	}
+
+	/**
+	 * @testdox A paid renewal invoice that does not match its renewal holds the renewal with the invoice note once, records the payment, and leaves the subscription as it is, delivered twice.
+	 *
+	 * Client 11.3.0 class-wc-payments-subscriptions-event-handler.php:163-172 (on hold and the note when the renewal needs
+	 * payment and does not match), :200-203 (the intent attached on every delivery), pinned by its
+	 * test_handle_invoice_paid_holds_order_when_amount_does_not_match_order_total() and
+	 * test_handle_invoice_paid_holds_order_once_when_delivered_twice().
+	 */
+	public function test_paid_renewal_invoice_that_does_not_match_holds_the_renewal_once(): void {
+		$subscription       = $this->create_subscription( self::CLOCK_SUBSCRIPTION_ID, array( '_wcpay_pending_invoice_id' => self::FAILED_INVOICE_ID ) );
+		$transitions        = $this->record_subscription_transitions();
+		$payments_completed = did_action( 'woocommerce_payment_complete' );
+		for ( $delivery = 1; $delivery <= 2; $delivery++ ) {
+			$this->queue_response( 200, $this->get_renewal_intent() );
+			$this->queue_billing( 'update_invoice', 'update_charge', 'get_charge_for_update_transaction', 'update_transaction' );
+		}
+		$event = $this->get_event( 'invoice_paid_renewal', array( 'amount_paid' => 2000 ) );
+
+		$this->sut->handle_event( $event );
+		$this->sut->handle_event( $event );
+
+		$orders = $this->get_renewal_orders( self::RENEWAL_INVOICE_ID );
+		$this->assertCount( 1, $orders );
+		$order = $orders[0];
+		$this->assertSame( 'on-hold', $order->get_status() );
+		$this->assertFalse( $order->is_paid() );
+		$this->assertSame( 0, did_action( 'woocommerce_payment_complete' ) - $payments_completed );
+		$this->assertSame( self::RENEWAL_INTENT_ID, $order->get_transaction_id() );
+		$this->assertSame( self::RENEWAL_INTENT_ID, $order->get_meta( '_intent_id', true ) );
+		$this->assertSame( self::RENEWAL_CHARGE_ID, $order->get_meta( '_charge_id', true ) );
+		$this->assertSame( 'succeeded', $order->get_meta( '_intention_status', true ) );
+		$notes = $this->get_notes_containing( $order, 'The renewal invoice ' . self::RENEWAL_INVOICE_ID . ' collected' );
+		$this->assertCount( 1, $notes );
+		$this->assertSame( 'The renewal invoice ' . self::RENEWAL_INVOICE_ID . ' collected $20.00 USD, but the order total is $24.90 USD. The order was put <strong>on hold</strong>; review it before fulfilling.', $notes[0] );
+		$this->assertCount( 0, $this->get_notes_containing( $order, 'A test payment of' ) );
+		$this->assertSame( 'active', wc_get_order( $subscription->get_id() )->get_status() );
+		$this->assertSame( array(), $transitions->list, 'The subscription is not put on hold or reactivated.' );
+	}
+
+	/**
+	 * @testdox A paid renewal invoice without its $missing is refused before any renewal order is created.
+	 *
+	 * Client 11.3.0 class-wc-payments-subscriptions-event-handler.php:146-147 reads both through get_event_property(),
+	 * which throws (:337-349); pinned by its test_handle_invoice_paid_rejects_missing_payment_data().
+	 *
+	 * @testWith ["amount_paid"]
+	 *           ["currency"]
+	 *
+	 * @param string $missing Missing invoice field.
+	 */
+	public function test_paid_renewal_invoice_without_its_payment_data_is_refused( string $missing ): void {
+		$this->create_subscription( self::CLOCK_SUBSCRIPTION_ID );
+
+		$refusal = null;
+		try {
+			$this->sut->handle_event( $this->get_event( 'invoice_paid_renewal', array( $missing => null ) ) );
+		} catch ( InvalidArgumentException $exception ) {
+			$refusal = $exception->getPrevious();
+		}
+
+		$this->assertInstanceOf( StripeBillingException::class, $refusal, 'An invoice.paid without its payment data must be refused as invalid event data.' );
+		$this->assertSame( StripeBillingException::INVALID_EVENT_DATA, $refusal->get_error_code() );
+
+		$this->assertSame( array(), $this->get_renewal_orders( self::RENEWAL_INVOICE_ID ) );
+		$this->assertSame( array(), $this->get_requests() );
+	}
+
+	/**
+	 * @testdox The invoice of the subscription's first order is ignored even without its payment data.
+	 *
+	 * Client 11.3.0 checks the parent invoice (class-wc-payments-subscriptions-event-handler.php:141-144) before it reads
+	 * the payment data; pinned by its test_handle_invoice_paid_ignores_parent_invoice_without_payment_data().
+	 */
+	public function test_parent_invoice_without_payment_data_is_ignored(): void {
+		$this->create_subscription( self::CLOCK_SUBSCRIPTION_ID );
+
+		$this->sut->handle_event(
+			$this->get_event(
+				'invoice_paid_parent',
+				array(
+					'amount_paid' => null,
+					'currency'    => null,
+				)
+			)
+		);
+
+		$this->assertSame( array(), $this->get_renewal_orders( self::CLOCK_PARENT_INVOICE_ID ) );
+		$this->assertSame( array(), $this->get_requests() );
 	}
 
 	/**

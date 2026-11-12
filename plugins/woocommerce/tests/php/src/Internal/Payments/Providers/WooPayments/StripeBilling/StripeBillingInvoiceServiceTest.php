@@ -682,6 +682,117 @@ class StripeBillingInvoiceServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox An invoice payment matches its order when the currency is the same and the amount is within one store price unit per order line: $_dataName.
+	 *
+	 * Client 11.3.0 WC_Payments_Invoice_Service::does_invoice_payment_match_order_total() (class-wc-payments-invoice-service.php:116-159);
+	 * the rows and expected values are its test_does_invoice_payment_match_order_total() provider, on an order of two lines.
+	 *
+	 * @dataProvider provider_invoice_payments_against_a_two_line_order
+	 *
+	 * @param float  $order_total      Order total.
+	 * @param string $order_currency   Order currency.
+	 * @param mixed  $amount_paid      The invoice's amount_paid.
+	 * @param string $invoice_currency The invoice's currency.
+	 * @param bool   $expected         Whether the invoice matches the order.
+	 */
+	public function test_invoice_payment_matches_its_order_within_a_price_unit_per_line( float $order_total, string $order_currency, $amount_paid, string $invoice_currency, bool $expected ): void {
+		$order = $this->create_order_with_two_lines( $order_total, $order_currency );
+
+		$this->assertSame( $expected, $this->sut->does_invoice_payment_match_order_total( $order, $amount_paid, $invoice_currency ) );
+	}
+
+	/**
+	 * Invoices compared with an order of two lines, in a store priced with two decimals.
+	 *
+	 * @return array<string,array{float,string,mixed,string,bool}>
+	 */
+	public function provider_invoice_payments_against_a_two_line_order(): array {
+		return array(
+			'exact match'                     => array( 50.0, 'USD', 5000, 'usd', true ),
+			'a cent per line below'           => array( 50.0, 'USD', 4998, 'usd', true ),
+			'a cent per line above'           => array( 50.0, 'USD', 5002, 'usd', true ),
+			'beyond a cent per line below'    => array( 50.0, 'USD', 4997, 'usd', false ),
+			'beyond a cent per line above'    => array( 50.0, 'USD', 5003, 'usd', false ),
+			'zero-decimal currency'           => array( 50.0, 'JPY', 50, 'jpy', true ),
+			'zero-decimal currency, in cents' => array( 50.0, 'JPY', 5000, 'jpy', false ),
+			'different currency'              => array( 50.0, 'CAD', 5000, 'usd', false ),
+			'missing currency'                => array( 50.0, 'USD', 5000, '', false ),
+			'missing amount'                  => array( 0.0, 'USD', null, 'usd', false ),
+			'non-numeric amount'              => array( 0.0, 'USD', 'free', 'usd', false ),
+		);
+	}
+
+	/**
+	 * @testdox In a store priced without decimals, an invoice payment matches within one whole unit per order line: $_dataName.
+	 *
+	 * Client 11.3.0 test_does_invoice_payment_match_order_total_without_decimals() (HUF, a store priced with 0 decimals).
+	 *
+	 * @dataProvider provider_invoice_payments_in_a_store_without_decimals
+	 *
+	 * @param float $order_total Order total, in HUF.
+	 * @param int   $amount_paid The invoice's amount_paid, in fillér.
+	 * @param bool  $expected    Whether the invoice matches the order.
+	 */
+	public function test_invoice_payment_matches_within_a_whole_unit_per_line_without_decimals( float $order_total, int $amount_paid, bool $expected ): void {
+		update_option( 'woocommerce_currency', 'HUF' );
+		update_option( 'woocommerce_price_num_decimals', 0 );
+		$order = $this->create_order_with_two_lines( $order_total, 'HUF' );
+
+		$this->assertSame( $expected, $this->sut->does_invoice_payment_match_order_total( $order, $amount_paid, 'huf' ) );
+	}
+
+	/**
+	 * Invoices of a two-line order in a store priced without decimals.
+	 *
+	 * @return array<string,array{float,int,bool}>
+	 */
+	public function provider_invoice_payments_in_a_store_without_decimals(): array {
+		return array(
+			'fractional unit above'        => array( 1000.0, 100040, true ),
+			'fractional unit below'        => array( 1269.0, 126873, true ),
+			'a unit per line'              => array( 1000.0, 100200, true ),
+			'beyond a unit per line'       => array( 1000.0, 100201, false ),
+			'beyond a unit per line below' => array( 1000.0, 99799, false ),
+		);
+	}
+
+	/**
+	 * @testdox An invoice payment in a currency other than the store's matches with the decimals that currency is priced in.
+	 *
+	 * Client 11.3.0 test_does_invoice_payment_match_order_total_uses_multi_currency_decimals().
+	 */
+	public function test_invoice_payment_in_another_currency_uses_its_price_decimals(): void {
+		add_filter(
+			'wcpay_huf_format',
+			static function ( array $currency_format ): array {
+				$currency_format['num_decimals'] = 0;
+				return $currency_format;
+			}
+		);
+		$order = $this->create_order_with_two_lines( 1000.0, 'HUF' );
+
+		$this->assertTrue( $this->sut->does_invoice_payment_match_order_total( $order, 100040, 'huf' ) );
+	}
+
+	/**
+	 * Create an order with a product line and a shipping line, as the client's test helper does.
+	 *
+	 * @param float  $total    Order total.
+	 * @param string $currency Order currency.
+	 * @return WC_Order
+	 */
+	private function create_order_with_two_lines( float $total, string $currency ): WC_Order {
+		$order = new WC_Order();
+		$order->add_item( new \WC_Order_Item_Product() );
+		$order->add_item( new \WC_Order_Item_Shipping() );
+		$order->set_currency( $currency );
+		$order->set_total( (string) $total );
+		$order->save();
+
+		return $order;
+	}
+
+	/**
 	 * Build a JSON transport response.
 	 *
 	 * @param int   $http_status HTTP status.

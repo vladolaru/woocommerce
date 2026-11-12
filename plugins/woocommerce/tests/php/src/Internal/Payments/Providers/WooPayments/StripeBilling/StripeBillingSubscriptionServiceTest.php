@@ -939,6 +939,8 @@ class StripeBillingSubscriptionServiceTest extends WC_Unit_Test_Case {
 
 		$entry                               = $this->get_entry( 'charge_invoice' );
 		$entry['response']['body']['status'] = $invoice_status;
+		// The invoice collected the renewal order's 50.00 USD total (WC_Helper_Order::create_order()).
+		$entry['response']['body']['amount_paid'] = 5000;
 		$this->queue_entry( $entry );
 		$subscription  = $this->create_subscription(
 			array(
@@ -990,7 +992,10 @@ class StripeBillingSubscriptionServiceTest extends WC_Unit_Test_Case {
 	public function test_a_payment_method_change_leaves_a_renewal_locked_by_the_webhook_to_it(): void {
 		WooCommerceSubscriptionsDoubles::load_change_payment_gateway();
 		\WC_Subscriptions_Change_Payment_Gateway::$is_request_to_change_payment = true;
-		$this->queue_entry( $this->get_entry( 'charge_invoice' ) );
+		$entry = $this->get_entry( 'charge_invoice' );
+		// The invoice collected the renewal order's 50.00 USD total (WC_Helper_Order::create_order()).
+		$entry['response']['body']['amount_paid'] = 5000;
+		$this->queue_entry( $entry );
 		$subscription  = $this->create_subscription(
 			array(
 				'_wcpay_subscription_id'    => self::MAIN_SUBSCRIPTION_ID,
@@ -1003,13 +1008,49 @@ class StripeBillingSubscriptionServiceTest extends WC_Unit_Test_Case {
 		$renewal_order->save();
 		wc_get_container()->get( OrderPaymentLock::class )->claim( $renewal_order, new WooPaymentsPersistenceVocabulary(), 'pi_webhookRecordingTheRenewal', 'payment operation' );
 		$payments_completed = did_action( 'woocommerce_payment_complete' );
+		$token              = $this->create_token();
 
-		$this->sut->maybe_attempt_payment_for_subscription( $subscription, $this->create_token() );
+		$this->sut->maybe_attempt_payment_for_subscription( $subscription, $token );
 
 		$this->assertTrue( wc_get_order( $renewal_order->get_id() )->needs_payment(), 'The webhook completes the order, not this request.' );
 		$this->assertSame( 0, did_action( 'woocommerce_payment_complete' ) - $payments_completed );
+		$this->assertSame( array( $token->get_id() ), array_map( 'absint', wc_get_order( $renewal_order->get_id() )->get_payment_tokens() ), 'The new token is on the renewal before the lock is claimed.' );
 		$this->assertSame( 1, wc_notice_count( 'success' ), 'The invoice was paid with the new payment method.' );
 		$this->assertTrue( \WC_Subscriptions_Change_Payment_Gateway::$is_request_to_change_payment, 'The change request flag is untouched.' );
+	}
+
+	/**
+	 * @testdox A paid charge whose invoice does not match the renewal completes nothing and shows no notice, and the new token is on the renewal.
+	 *
+	 * Client 11.3.0 class-wc-payments-subscription-service.php:684-686 adds the token to the renewal once it exists, and
+	 * :688-699 completes it, with the notice, only when the charge response's amount_paid and currency match; pinned by its
+	 * test_maybe_attempt_payment_for_subscription_does_not_complete_order_without_matching_invoice().
+	 */
+	public function test_a_paid_charge_that_does_not_match_the_renewal_completes_nothing(): void {
+		WooCommerceSubscriptionsDoubles::load_change_payment_gateway();
+		$entry                                    = $this->get_entry( 'charge_invoice' );
+		$entry['response']['body']['amount_paid'] = 2000;
+		$this->queue_entry( $entry );
+		$subscription  = $this->create_subscription(
+			array(
+				'_wcpay_subscription_id'    => self::MAIN_SUBSCRIPTION_ID,
+				'_wcpay_pending_invoice_id' => self::MAIN_INVOICE_ID,
+			)
+		);
+		$renewal_order = \WC_Helper_Order::create_order();
+		$renewal_order->update_meta_data( '_wcpay_billing_invoice_id', self::MAIN_INVOICE_ID );
+		$renewal_order->set_status( 'failed' );
+		$renewal_order->save();
+		$token              = $this->create_token();
+		$payments_completed = did_action( 'woocommerce_payment_complete' );
+
+		$this->sut->maybe_attempt_payment_for_subscription( $subscription, $token );
+
+		$saved_order = wc_get_order( $renewal_order->get_id() );
+		$this->assertSame( 'failed', $saved_order->get_status() );
+		$this->assertSame( 0, did_action( 'woocommerce_payment_complete' ) - $payments_completed );
+		$this->assertSame( array( $token->get_id() ), array_map( 'absint', $saved_order->get_payment_tokens() ) );
+		$this->assertSame( 0, wc_notice_count( 'success' ) );
 	}
 
 	/**
