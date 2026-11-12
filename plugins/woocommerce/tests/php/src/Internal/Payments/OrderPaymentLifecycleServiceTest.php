@@ -1330,12 +1330,11 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox A $status event whose own note is already on the order changes nothing: no status, meta, transaction ID or second note.
 	 *
-	 * Client 11.3.0's completed, authorized and failed writers return once their note is on the order
-	 * (class-wc-payments-order-service.php:2033-2038, :2148-2151, :550-554).
+	 * Client 11.3.0's completed and authorized writers return once their note is on the order
+	 * (class-wc-payments-order-service.php:2033-2038, :2148-2151).
 	 *
 	 * @testWith ["completed"]
 	 *           ["authorized"]
-	 *           ["failed"]
 	 *
 	 * @param string $status Lifecycle event status.
 	 */
@@ -1353,6 +1352,25 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( '', $order->get_meta( '_intent_id', true ) );
 		$this->assertSame( '', $order->get_transaction_id() );
 		$this->assertSame( 1, $this->countOrderNotesMatching( $order, 'Own note of pi_own_note.' ) );
+	}
+
+	/**
+	 * @testdox A failed event whose note is already on the order still fails it and writes its meta: the provider decides on a failure's note.
+	 *
+	 * Client 11.3.0's failure writers differ: the checkout and terminal declines fail the order whatever notes it has
+	 * (class-wc-payment-gateway-wcpay.php:1605-1613, class-wc-payments-order-service.php:961-968).
+	 */
+	public function test_failed_event_whose_note_is_on_the_order_still_applies(): void {
+		$order = $this->create_woopayments_order();
+		$order->add_order_note( 'Declined by pi_retry.' );
+		$event = new PaymentLifecycleEvent( PaymentLifecycleEvent::STATUS_FAILED, 'pi_retry', array( '_intent_id' => 'pi_retry' ), array(), 'Declined by pi_retry.' );
+
+		$this->apply_event_under_lock( $order, $event );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( 'failed', $order->get_status() );
+		$this->assertSame( 'pi_retry', $order->get_meta( '_intent_id', true ) );
+		$this->assertSame( 1, $this->countOrderNotesMatching( $order, 'Declined by pi_retry.' ) );
 	}
 
 	/**

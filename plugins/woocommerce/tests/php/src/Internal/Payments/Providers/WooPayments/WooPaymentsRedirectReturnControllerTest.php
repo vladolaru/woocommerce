@@ -1913,6 +1913,42 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A PaymentIntent error whose failure note is already on the order, moved back to Pending, leaves the order as it is.
+	 *
+	 * Client 11.3.0's mark_payment_failed() returns once its note is on the order (class-wc-payments-order-service.php:550-554).
+	 */
+	public function test_handle_wp_leaves_an_order_with_the_failure_note_as_it_is(): void {
+		$order                      = $this->create_order();
+		$api_client                 = new RedirectReturnApiClientStub();
+		$api_client->payment_intent = array(
+			'id'                 => 'pi_failed_noted',
+			'status'             => 'requires_payment_method',
+			'currency'           => 'usd',
+			'amount'             => 5000,
+			'customer'           => 'cus_return',
+			'payment_method'     => null,
+			'metadata'           => array( 'order_id' => $order->get_id() ),
+			'last_payment_error' => array(
+				'type'    => 'card_error',
+				'code'    => 'card_declined',
+				'message' => 'Your card was declined.',
+			),
+		);
+		$this->sut                  = $this->create_controller( true, $this->create_confirmation_service( $api_client ), $api_client );
+		$this->set_payment_intent_return_request( $order, 'pi_failed_noted' );
+		$this->handle_wp_expecting_redirect();
+		$moved = wc_get_order( $order->get_id() );
+		$moved->update_status( 'pending' );
+		$this->set_payment_intent_return_request( $order, 'pi_failed_noted' );
+
+		$this->handle_wp_expecting_redirect();
+
+		$reloaded = wc_get_order( $order->get_id() );
+		$this->assertSame( 'pending', $reloaded->get_status() );
+		$this->assertCount( 1, array_filter( wp_list_pluck( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), 'content' ), static fn( string $note ): bool => false !== strpos( $note, '<strong>failed</strong>' ) ) );
+	}
+
+	/**
 	 * @testdox A PaymentIntent error while another request holds the order payment lock leaves the order alone but still returns to checkout.
 	 *
 	 * Client 11.1.0: mark_payment_failed() skips a locked order (os:463-466, 2747-2758), and the catch still adds the notice

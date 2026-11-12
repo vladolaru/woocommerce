@@ -318,6 +318,47 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A declined checkout whose decline note is identical to an earlier attempt's fails the order and stores the new attempt's record.
+	 *
+	 * Client 11.3.0's checkout decline fails the order, stores the declined intent and adds its note with no note check
+	 * (class-wc-payment-gateway-wcpay.php:1605-1613, :1693).
+	 */
+	public function test_process_checkout_fails_the_order_on_a_decline_identical_to_an_earlier_one(): void {
+		$order = $this->create_woopayments_order( '10.00' );
+		$order->add_order_note( 'Your card was declined.' );
+		$outcome  = new PaymentOutcome(
+			PaymentOutcome::STATUS_FAILED,
+			'pi_second_attempt',
+			'',
+			'pm_second_attempt',
+			'',
+			array( PaymentOutcome::DATA_NOTE => 'Your card was declined.' )
+		);
+		$provider = new class( $outcome ) extends RecordingProvider {
+			/**
+			 * Map the outcome to the attempt's order meta.
+			 *
+			 * @param PaymentOutcome $outcome Provider outcome.
+			 * @return array<string,string>
+			 */
+			public function get_outcome_meta( PaymentOutcome $outcome ): array {
+				return array(
+					'_intent_id'         => $outcome->get_provider_payment_id(),
+					'_payment_method_id' => $outcome->get_payment_method_id(),
+				);
+			}
+		};
+
+		$this->sut->process_checkout_outcome( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_second_attempt' ), $provider );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( OrderStatus::FAILED, $order->get_status() );
+		$this->assertSame( 'pi_second_attempt', $order->get_meta( '_intent_id', true ) );
+		$this->assertSame( 'pm_second_attempt', $order->get_meta( '_payment_method_id', true ) );
+		$this->assertCount( 1, array_filter( wp_list_pluck( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), 'content' ), static fn( string $note ): bool => 'Your card was declined.' === $note ) );
+	}
+
+	/**
 	 * @testdox A checkout outcome the provider flags as changing nothing is returned as it is and leaves the order's status, transaction ID, meta and notes as they were.
 	 */
 	public function test_process_checkout_applies_nothing_for_an_outcome_that_changes_nothing(): void {

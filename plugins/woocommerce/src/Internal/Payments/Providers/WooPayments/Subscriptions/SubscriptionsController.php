@@ -20,6 +20,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCu
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderMode;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOutcomeMetadataMapper;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentOperationService;
@@ -442,7 +443,12 @@ class SubscriptionsController implements RegisterHooksInterface {
 			$this->build_customer_action_failure_event( $renewal_order, $outcome, $charge_id ),
 			new WooPaymentsPersistenceVocabulary(),
 			function ( WC_Order $read_order ) use ( $outcome, $charge_id ): ?PaymentLifecycleEvent {
-				return $read_order->has_status( OrderStatus::FAILED ) ? null : $this->build_customer_action_failure_event( $read_order, $outcome, $charge_id );
+				if ( $read_order->has_status( OrderStatus::FAILED ) ) {
+					return null;
+				}
+				$failure = $this->build_customer_action_failure_event( $read_order, $outcome, $charge_id );
+
+				return wc_get_container()->get( WooPaymentsOrderNoteService::class )->has_event_note( $read_order, $failure ) ? null : $failure;
 			}
 		);
 	}

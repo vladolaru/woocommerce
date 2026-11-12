@@ -11,6 +11,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFeatureController
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\ExplicitPriceFormatter;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilder;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentNotes;
+use Automattic\WooCommerce\Internal\Payments\PaymentLifecycleEvent;
 use WC_Order;
 
 /**
@@ -1823,6 +1824,17 @@ class WooPaymentsOrderNoteService {
 		return 0 < $note_id
 			? $note_id
 			: $order_payment_notes->find_by_content( $order, $note, array_filter( $equivalent_notes, static fn( string $candidate ): bool => '' !== $candidate ) );
+	}
+
+	/**
+	 * Tell whether a payment lifecycle event's note is already on the order, by the event's identity or else by its text.
+	 *
+	 * @param WC_Order              $order Order object.
+	 * @param PaymentLifecycleEvent $event Lifecycle event.
+	 * @return bool
+	 */
+	public function has_event_note( WC_Order $order, PaymentLifecycleEvent $event ): bool {
+		return 0 < $this->find_note( $order, (string) $event->get_note(), $event->get_note_identity(), $event->get_note_equivalents() );
 	}
 
 	/**

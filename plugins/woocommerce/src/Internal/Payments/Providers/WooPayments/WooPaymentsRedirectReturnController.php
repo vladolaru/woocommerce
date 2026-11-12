@@ -420,7 +420,12 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 				return false;
 			}
 
-			$this->lifecycle_service->apply_under_lock( $fresh_order, $this->build_failure_event( $fresh_order, $intent_id, $exception_message, $intent_status ), $persistence_vocabulary );
+			// A failure whose note is already on the order changes nothing, as client 11.3.0's mark_payment_failed() returns
+			// then (class-wc-payments-order-service.php:550-554).
+			$failure = $this->build_failure_event( $fresh_order, $intent_id, $exception_message, $intent_status );
+			if ( ! $this->note_service->has_event_note( $fresh_order, $failure ) ) {
+				$this->lifecycle_service->apply_under_lock( $fresh_order, $failure, $persistence_vocabulary );
+			}
 		} catch ( Throwable $failure ) {
 			// The order should be failed but is not, so support needs this line whatever the logging setting. Client 11.1.0's
 			// mark_payment_failed() in its catch (gw:2440) has no catch of its own, so the same failure is visible there.

@@ -445,13 +445,14 @@ class OrderPaymentLifecycleService {
 	}
 
 	/**
-	 * Get the reason an event whose own note is already on the order changes nothing: a completed, authorized or failed
-	 * event was applied before.
+	 * Get the reason an event whose own note is already on the order changes nothing: a completed or authorized event was
+	 * applied before.
 	 *
-	 * Client 11.3.0's completed, authorized and failed writers return once their note is on the order
-	 * (class-wc-payments-order-service.php:2033-2038, :2148-2151, :550-554). A started event keeps its status and meta
-	 * and adds its note once, and a canceled or capture-expired event keeps its own handling. The search comes first so a
-	 * note found by its text regains its identity.
+	 * Client 11.3.0's completed and authorized writers return once their note is on the order
+	 * (class-wc-payments-order-service.php:2033-2038, :2148-2151). Its failure writers differ, so a failed event's note
+	 * check is its provider's: one writer returns on its note, others fail the order whatever notes it has. A started
+	 * event keeps its status and meta and adds its note once, and a canceled or capture-expired event keeps its own
+	 * handling. The search comes first so a note found by its text regains its identity.
 	 *
 	 * @param WC_Order                               $order                  Order object.
 	 * @param PaymentLifecycleEvent                  $event                  Lifecycle event.
@@ -462,7 +463,6 @@ class OrderPaymentLifecycleService {
 		$reasons = array(
 			PaymentLifecycleEvent::STATUS_COMPLETED  => 'success_note_exists',
 			PaymentLifecycleEvent::STATUS_AUTHORIZED => 'authorization_note_exists',
-			PaymentLifecycleEvent::STATUS_FAILED     => 'failure_note_exists',
 		);
 		$note    = $event->get_note();
 		if ( ! isset( $reasons[ $event->get_status() ] ) || null === $note || '' === $note || 0 >= $this->find_lifecycle_note( $order, $event, $persistence_vocabulary ) ) {
@@ -631,7 +631,6 @@ class OrderPaymentLifecycleService {
 			'order_paid'                => 'Payment event skipped: the order is already paid, so the event does not change it.',
 			'applied_note_exists'       => 'Completed payment event skipped: a note that counts as this payment already applied is on the order.',
 			'authorization_note_exists' => 'Authorized payment event skipped: its note is already on the order.',
-			'failure_note_exists'       => 'Failed payment event skipped: its note is already on the order.',
 			'order_on_hold'             => 'Authorized payment event skipped: the order is already on hold.',
 		);
 		$message  = $messages[ $reason ] ?? 'Completed payment event skipped: the payment note is already on the order.';

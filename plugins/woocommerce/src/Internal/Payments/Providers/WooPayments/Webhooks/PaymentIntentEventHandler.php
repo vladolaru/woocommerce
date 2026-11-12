@@ -643,7 +643,7 @@ class PaymentIntentEventHandler {
 					? $this->order_note_service->format_terminal_payment_failed_note_candidates( $order, $intent_id, $charge_id, $last_payment_error )
 					: $this->order_note_service->format_payment_failed_note_candidates( $order, $intent_id, $charge_id, $last_payment_error );
 
-				return new PaymentLifecycleEvent(
+				$failure = new PaymentLifecycleEvent(
 					PaymentLifecycleEvent::STATUS_FAILED,
 					// A reader retries a declined card on the same intent, so a terminal decline's note is keyed on its charge, as
 					// client 11.1.0 links that note to the charge for uniqueness (class-wc-payments-order-service.php:2139-2141).
@@ -659,6 +659,11 @@ class PaymentIntentEventHandler {
 					PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_FAILED,
 					$note_candidates
 				);
+
+				// A card payment's failure whose note is already on the order changes nothing, as client 11.3.0's
+				// mark_payment_failed() returns then (class-wc-payments-order-service.php:550-554). A terminal decline sets the
+				// order Failed before its note check (:961-968), so it is applied.
+				return 'card_present' !== $payment_method_type && $this->order_note_service->has_event_note( $order, $failure ) ? null : $failure;
 
 			case 'charge.expired':
 				$charge_id       = $this->get_object_id( $event_object );
