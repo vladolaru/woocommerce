@@ -395,7 +395,7 @@ class StripeBillingEventHandlerTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox invoice.paid decides on the renewal read again under the order payment lock: $_dataName.
 	 *
-	 * Another request changes the renewal's total while the intent is read. Client 11.3.0 compares the invoice with the
+	 * The invoice is compared with the renewal read under the order payment lock. Client 11.3.0 compares the invoice with the
 	 * renewal it then updates (class-wc-payments-subscriptions-event-handler.php:162-198).
 	 *
 	 * @testWith ["24.90", "30.00", "on-hold", false]
@@ -463,7 +463,7 @@ class StripeBillingEventHandlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A paid invoice for a renewal that no longer needs payment records the payment and completes nothing: $_dataName.
+	 * @testdox A paid invoice for a renewal that no longer needs payment and is not paid records the payment and completes nothing: $_dataName.
 	 *
 	 * Client 11.3.0 only attaches the intent once the renewal no longer needs payment
 	 * (class-wc-payments-subscriptions-event-handler.php:200-203; class-wc-payments-invoice-service.php:334-346), and its
@@ -515,8 +515,53 @@ class StripeBillingEventHandlerTest extends WC_Unit_Test_Case {
 			'on hold for another reason'         => array( 'on-hold', array() ),
 			'cancelled'                          => array( 'cancelled', array() ),
 			'refunded'                           => array( 'refunded', array() ),
-			'paid by another payment'            => array( 'processing', array() ),
 		);
+	}
+
+	/**
+	 * @testdox A paid invoice for a renewal already in a paid status adds the payment's success note and Fee details job once, and leaves its status: $_dataName.
+	 *
+	 * Delivered twice. The renewal was paid by another payment, such as its new payment method, before its invoice event.
+	 *
+	 * @testWith ["processing"]
+	 *           ["completed"]
+	 *
+	 * @param string $status Paid renewal status.
+	 */
+	public function test_paid_invoice_notes_a_renewal_in_a_paid_status_once( string $status ): void {
+		$order = $this->create_paid_renewal_order( $this->create_subscription( self::CLOCK_SUBSCRIPTION_ID ) );
+		$order->set_status( $status );
+		$order->save();
+		$payments = did_action( 'woocommerce_payment_complete' );
+		$this->queue_response( 200, $this->get_renewal_intent() );
+		$this->queue_billing( 'update_invoice', 'update_charge', 'get_charge_for_update_transaction', 'update_transaction' );
+		$this->queue_response( 200, $this->get_renewal_intent() );
+		$this->queue_billing( 'update_invoice', 'update_charge', 'get_charge_for_update_transaction', 'update_transaction' );
+		$event = $this->get_event( 'invoice_paid_renewal' );
+
+		$this->sut->handle_event( $event );
+		$this->sut->handle_event( $event );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( $status, $order->get_status() );
+		$this->assertSame( 0, did_action( 'woocommerce_payment_complete' ) - $payments );
+		$this->assertCount( 1, $this->get_notes_containing( $order, 'A test payment of' ) );
+		$this->assertCount(
+			1,
+			as_get_scheduled_actions(
+				array(
+					'hook'  => WooPaymentsFeeDetailsNoteController::ADD_FEE_BREAKDOWN_TO_ORDER_NOTES_ACTION,
+					'args'  => array(
+						'order_id'     => $order->get_id(),
+						'intent_id'    => self::RENEWAL_INTENT_ID,
+						'is_test_mode' => true,
+					),
+					'group' => 'woocommerce_payments',
+				),
+				'ids'
+			)
+		);
+		$this->assertSame( self::RENEWAL_INTENT_ID, $order->get_meta( '_intent_id', true ) );
 	}
 
 	/**
@@ -1039,7 +1084,7 @@ class StripeBillingEventHandlerTest extends WC_Unit_Test_Case {
 		$this->assertSame( self::RENEWAL_INTENT_ID, $order->get_meta( '_intent_id', true ) );
 		$this->assertSame( self::RENEWAL_CHARGE_ID, $order->get_meta( '_charge_id', true ) );
 		$this->assertSame( self::RENEWAL_INTENT_ID, $order->get_transaction_id(), 'The client attach sets the transaction id whatever the order status (`class-wc-payments-order-service.php:1408`); live client renewal 28 carries it.' );
-		$this->assertCount( 0, $this->get_notes_containing( $order, 'A test payment of' ), 'The client only attaches the intent to a paid renewal (`class-wc-payments-subscriptions-event-handler.php:200-203`).' );
+		$this->assertCount( 1, $this->get_notes_containing( $order, 'A test payment of' ) );
 		$this->assertSame( 0, did_action( 'woocommerce_payment_complete' ) - $payments );
 		$this->assertSame( array(), $transitions->list, 'A paid renewal does not put the subscription on hold.' );
 		$this->assertCount( 5, $this->get_requests() );

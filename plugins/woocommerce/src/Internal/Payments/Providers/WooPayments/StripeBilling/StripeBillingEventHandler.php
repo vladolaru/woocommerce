@@ -324,7 +324,17 @@ class StripeBillingEventHandler {
 			$order->save();
 		}
 
-		if ( ! $order->needs_payment() ) {
+		if ( ! $order->needs_payment() && null !== $intent && $order->is_paid() ) {
+			// A renewal already paid, such as by its new payment method, gets the payment's success note and its Fee details job
+			// once; its status does not move, and a payment that differs from its total adds no note to a paid order.
+			$this->payment_intent_event_handler->apply_succeeded_payment_intent_under_lock(
+				$order,
+				$intent,
+				$this->invoice_service->does_invoice_payment_match_order_total( $order, $amount_paid, $invoice_currency )
+					? null
+					: $this->get_invoice_hold_note_candidates( $order, $wcpay_invoice_id, $amount_paid, $invoice_currency )
+			);
+		} elseif ( ! $order->needs_payment() ) {
 			// Client 11.3.0 only attaches the payment to a renewal that no longer needs payment
 			// (class-wc-payments-subscriptions-event-handler.php:200-203): its status and notes stay as they are.
 			if ( null !== $intent ) {
@@ -334,12 +344,7 @@ class StripeBillingEventHandler {
 			}
 		} elseif ( ! $this->invoice_service->does_invoice_payment_match_order_total( $order, $amount_paid, $invoice_currency ) ) {
 			// The renewal is held and its payment recorded; the subscription is not put on hold or reactivated (client :163-172).
-			$hold_note_candidates = wc_get_container()->get( WooPaymentsOrderNoteService::class )->format_invoice_mismatch_hold_note_candidates(
-				$order,
-				$wcpay_invoice_id,
-				is_numeric( $amount_paid ) ? (int) $amount_paid : 0,
-				is_string( $invoice_currency ) ? $invoice_currency : ''
-			);
+			$hold_note_candidates = $this->get_invoice_hold_note_candidates( $order, $wcpay_invoice_id, $amount_paid, $invoice_currency );
 			if ( null !== $intent ) {
 				$this->payment_intent_event_handler->apply_succeeded_payment_intent_under_lock( $order, $intent, $hold_note_candidates );
 			} else {
@@ -653,6 +658,24 @@ class StripeBillingEventHandler {
 		}
 		$order->payment_complete( $intent_id );
 		$order->add_order_note( __( 'The payment info couldn\'t be added to the order.', 'woocommerce' ) );
+	}
+
+	/**
+	 * Get the hold note's wordings for a renewal whose paid invoice does not match its total, WooCommerce's first.
+	 *
+	 * @param WC_Order $order            Renewal order.
+	 * @param string   $wcpay_invoice_id Invoice ID.
+	 * @param mixed    $amount_paid      The invoice's `amount_paid`.
+	 * @param mixed    $invoice_currency The invoice's currency.
+	 * @return string[]
+	 */
+	private function get_invoice_hold_note_candidates( WC_Order $order, string $wcpay_invoice_id, $amount_paid, $invoice_currency ): array {
+		return wc_get_container()->get( WooPaymentsOrderNoteService::class )->format_invoice_mismatch_hold_note_candidates(
+			$order,
+			$wcpay_invoice_id,
+			is_numeric( $amount_paid ) ? (int) $amount_paid : 0,
+			is_string( $invoice_currency ) ? $invoice_currency : ''
+		);
 	}
 
 	/**
