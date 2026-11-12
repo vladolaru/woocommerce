@@ -1202,11 +1202,13 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Order-status callback decides the hold on the order read under the order payment lock: $_dataName.
+	 * @testdox Order-status callback decides the hold on the order read under the order payment lock, with the intent attached: $_dataName.
 	 *
-	 * The payment is compared with the order read under the order payment lock its lifecycle event is applied under, and a
-	 * stored `requires_capture` intent status exempts it (client 11.3.0 class-wc-payment-gateway-wcpay.php:4771,
-	 * class-wc-payments-order-service.php:484-491).
+	 * The payment is compared with the order read under the order payment lock its lifecycle event is applied under, after the
+	 * intent is attached to it. Client 11.3.0 attaches the intent, its succeeded status included, before it updates the order
+	 * (class-wc-payment-gateway-wcpay.php:4663 then :4771), so its check for a stored `requires_capture` finds `succeeded` and the
+	 * amount and currency are compared (class-wc-payments-order-service.php:484-489): a differing payment holds the order with
+	 * the amount note, an equal one completes it once.
 	 *
 	 * @dataProvider provider_callback_orders_read_under_the_lock
 	 *
@@ -1227,8 +1229,8 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		}
 		$order->update_meta_data( '_intent_id', 'pi_binding' );
 		$order->save();
-		$order_id   = $order->get_id();
-		$intent     = array(
+		$order_id    = $order->get_id();
+		$intent      = array(
 			'id'             => 'pi_binding',
 			'status'         => 'succeeded',
 			'amount'         => 5000,
@@ -1237,7 +1239,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 			'payment_method' => 'pm_binding',
 			'metadata'       => array( 'order_id' => (string) $order_id ),
 		);
-		$controller = $this->create_controller(
+		$controller  = $this->create_controller(
 			$this->create_api_client_returning(
 				$intent,
 				static function () use ( $order_id, $stored_total, $stored_currency, $stored_capture ): void {
@@ -1245,6 +1247,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 				}
 			)
 		);
+		$completions = did_action( 'woocommerce_pre_payment_complete' );
 
 		$response = $controller->confirm_order_payment(
 			array(
@@ -1258,6 +1261,22 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		$order = wc_get_order( $order_id );
 		$this->assertSame( $expected_held, $order->has_status( 'on-hold' ) );
 		$this->assertSame( ! $expected_held, $order->is_paid() );
+		$this->assertSame( 'succeeded', $order->get_meta( '_intention_status', true ) );
+		$notes = array_map( static fn( $note ): string => (string) $note->content, wc_get_order_notes( array( 'order_id' => $order_id ) ) );
+		$this->assertCount( $expected_held ? 1 : 0, array_filter( $notes, static fn( string $note ): bool => false !== strpos( $note, 'was put <strong>on hold</strong>' ) ), "The client's hold note." );
+		$this->assertCount( $expected_held ? 0 : 1, array_filter( $notes, static fn( string $note ): bool => false !== strpos( $note, 'successfully charged' ) ) );
+		$this->assertSame( $expected_held ? 0 : 1, did_action( 'woocommerce_pre_payment_complete' ) - $completions, 'Completion hooks fire only for a payment that completes the order, once.' );
+		$fee_jobs = array_filter(
+			as_get_scheduled_actions(
+				array(
+					'hook'     => WooPaymentsFeeDetailsNoteController::ADD_FEE_BREAKDOWN_TO_ORDER_NOTES_ACTION,
+					'status'   => \ActionScheduler_Store::STATUS_PENDING,
+					'per_page' => -1,
+				)
+			),
+			static fn( $action ): bool => (int) ( $action->get_args()['order_id'] ?? 0 ) === $order_id
+		);
+		$this->assertCount( $expected_held ? 0 : 1, $fee_jobs, 'A Fee details job only for a completed payment.' );
 	}
 
 	/**
@@ -1272,7 +1291,8 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 			'total differed, matches under the lock'      => array( '40.00', 'USD', false, '50.00', 'USD', false, false ),
 			'currency matched, differs under the lock'    => array( '50.00', 'USD', false, '50.00', 'EUR', false, true ),
 			'currency differed, matches under the lock'   => array( '50.00', 'EUR', false, '50.00', 'USD', false, false ),
-			'requires_capture stored only under the lock' => array( '40.00', 'USD', false, '40.00', 'USD', true, false ),
+			'requires_capture stored only under the lock' => array( '40.00', 'USD', false, '40.00', 'USD', true, true ),
+			'requires_capture stored only under the lock, the same amount' => array( '50.00', 'USD', false, '50.00', 'USD', true, false ),
 			'requires_capture stored only before'         => array( '40.00', 'USD', true, '40.00', 'USD', false, true ),
 		);
 	}

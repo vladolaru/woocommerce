@@ -224,20 +224,20 @@ class WooPaymentsIntentConfirmationService {
 			}
 		}
 
-		// The event is built again, and the hold decided, on the order read under the order payment lock it is applied under;
-		// the intent is then attached to that order before the payment lifecycle decides on the event.
+		// Under the order payment lock, the intent is attached to the order read under it; the event is then built again,
+		// and the hold decided, on that order as attached, as client 11.3.0 attaches before it updates the order
+		// (class-wc-payment-gateway-wcpay.php:2700 then :2707, :4663 then :4771; class-wc-payments-order-service.php:484-489).
 		$attaches_intent = $is_redirect_return || ! $this->is_setup_intent_for_order( $intent, $order );
 		list( $event )   = $this->build_lifecycle_event_from_intent( $intent, $order, $zero_amount_plain_note );
 		$result          = $this->fee_details_note_controller->apply_and_schedule_fee_details_with_lock(
 			$order,
 			$event,
 			function ( WC_Order $stored_order ) use ( $intent, $zero_amount_plain_note, $attaches_intent ): array {
-				$built = $this->build_lifecycle_event_from_intent( $intent, $stored_order, $zero_amount_plain_note );
 				if ( $attaches_intent ) {
-					$this->attach_intent_before_decision( $stored_order, $built[0] );
+					$this->attach_intent_before_decision( $intent, $stored_order, $zero_amount_plain_note );
 				}
 
-				return $built;
+				return $this->build_lifecycle_event_from_intent( $intent, $stored_order, $zero_amount_plain_note );
 			}
 		);
 		if ( OrderPaymentLifecycleService::RESULT_REFUSED === $result ) {
@@ -414,18 +414,21 @@ class WooPaymentsIntentConfirmationService {
 	}
 
 	/**
-	 * Attach a payment or authorization to the order read under the order payment lock, before the payment lifecycle
-	 * decides on its event, so an order the lifecycle leaves as it is, one already paid, keeps the payment's record.
+	 * Attach a payment or authorization to the order read under the order payment lock, before the payment lifecycle's
+	 * event is built and decided on that order, so an order the lifecycle leaves as it is, one already paid, keeps the
+	 * payment's record. The intent's meta is the meta the event built from it carries.
 	 *
 	 * Client 11.3.0's redirect return attaches a PaymentIntent or a SetupIntent, and its order-status callback a PaymentIntent,
 	 * with the exchange rate, fee and net beside it, before updating the order from it (class-wc-payment-gateway-wcpay.php:2700,
 	 * :4663).
 	 *
-	 * @param WC_Order              $order Order read under the order payment lock.
-	 * @param PaymentLifecycleEvent $event The event built from the intent on that order.
+	 * @param array<string,mixed> $intent                 Platform intent response.
+	 * @param WC_Order            $order                  Order read under the order payment lock.
+	 * @param bool                $zero_amount_plain_note Whether a completed $0 SetupIntent gets the order-status callback's plain note.
 	 */
-	private function attach_intent_before_decision( WC_Order $order, PaymentLifecycleEvent $event ): void {
-		$intent_id = (string) $event->get_payment_reference();
+	private function attach_intent_before_decision( array $intent, WC_Order $order, bool $zero_amount_plain_note ): void {
+		list( $event ) = $this->build_lifecycle_event_from_intent( $intent, $order, $zero_amount_plain_note );
+		$intent_id     = (string) $event->get_payment_reference();
 		if ( '' === $intent_id || ! in_array( $event->get_status(), array( PaymentLifecycleEvent::STATUS_COMPLETED, PaymentLifecycleEvent::STATUS_AUTHORIZED ), true ) ) {
 			return;
 		}
