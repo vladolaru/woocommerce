@@ -2612,6 +2612,40 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A capture completed by the succeeded payment writes the captured charge's application fee, zero included.
+	 *
+	 * Client 11.3.0's capture writer attaches the captured charge's fee; with no fee envelope it writes the application
+	 * fee whenever the charge carries one, zero included (class-wc-payments-order-service.php:2215, :2275-2316).
+	 */
+	public function test_capture_by_the_succeeded_payment_writes_a_zero_application_fee(): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
+		$order = $this->create_woopayments_order();
+		$order->set_total( '10.99' );
+		$order->save();
+		$event = $this->recorded_authorization_event( $order );
+		$this->sut->process( $event );
+		$held = wc_get_order( $order->get_id() );
+		$held->update_meta_data( '_wcpay_transaction_fee', '1.23' );
+		$held->save();
+
+		$charge                           = $event['data']['object']['charges']['data'][0];
+		$charge['captured']               = true;
+		$charge['application_fee_amount'] = 0;
+		unset( $charge['fee_breakdown_v1'] );
+		$event['id']                                  = 'evt_capture_with_no_fee';
+		$event['type']                                = 'payment_intent.succeeded';
+		$event['data']['object']['status']            = 'succeeded';
+		$event['data']['object']['amount_capturable'] = 0;
+		$event['data']['object']['amount_received']   = 1099;
+		$event['data']['object']['charges']['data']   = array( $charge );
+		$this->sut->process( $event );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertTrue( $order->is_paid() );
+		$this->assertSame( '0', $order->get_meta( '_wcpay_transaction_fee', true ) );
+	}
+
+	/**
 	 * @testdox A payment captured outside the store and delivered again leaves the order as it is: $_dataName.
 	 *
 	 * Client 11.3.0's success writer returns before any write once the capture note is on the order, so the payment is

@@ -955,6 +955,63 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A status change whose intent no longer awaits capture does not store the status it read once the order changed after the read: $_dataName.
+	 *
+	 * The status read is stored only while the order still stores the intent read and no settled status. Client 11.3.0
+	 * stores the status it read (class-wc-payments-order-service.php:2358, :2417); here another writer changed the order
+	 * between the read and the store.
+	 *
+	 * @dataProvider orders_changed_before_the_status_read_is_stored
+	 *
+	 * @param array $change Meta another writer stores between the read and the store.
+	 */
+	public function test_status_read_is_not_stored_once_the_order_changed( array $change ): void {
+		$order     = $this->create_recorded_authorization_order( 'requires_action', OrderStatus::CANCELLED );
+		$reads     = new \ArrayObject();
+		$transport = $this->create_operation_transport( PaymentProcessingService::OPERATION_CANCEL );
+		$platform  = $this->create_platform(
+			$this->recorded_intent( 'canceled_authorization' ),
+			null,
+			$reads,
+			static function () use ( $order, $change ): void {
+				$changed = wc_get_order( $order->get_id() );
+				foreach ( $change as $key => $value ) {
+					$changed->update_meta_data( $key, $value );
+				}
+				$changed->save_meta_data();
+			}
+		);
+		$this->sut = $this->create_controller( wc_get_container()->get( PaymentProcessingService::class ), $this->create_provider_over_fake_transport( $transport ), $platform );
+		$this->sut->register();
+
+		$this->fire_order_hook( 'woocommerce_order_status_cancelled', $order );
+
+		$this->assertCount( 1, $reads );
+		$this->assertSame( array(), $this->request_paths( $transport ) );
+		$stored = wc_get_order( $order->get_id() );
+		foreach ( $change as $key => $value ) {
+			$this->assertSame( $value, $stored->get_meta( $key, true ), "The status read does not replace {$key} as the other writer stored it." );
+		}
+	}
+
+	/**
+	 * Changes another writer stores between the status change's read and its store of the status read.
+	 *
+	 * @return array<string,array{array<string,string>}>
+	 */
+	public function orders_changed_before_the_status_read_is_stored(): array {
+		return array(
+			'the order stores another intent'   => array(
+				array(
+					'_intent_id'        => 'pi_newer_attempt',
+					'_intention_status' => 'requires_action',
+				),
+			),
+			'the order stores a settled status' => array( array( '_intention_status' => 'succeeded' ) ),
+		);
+	}
+
+	/**
 	 * @testdox A $operation retry of a status change on an intent it read reads again and sends the operation for that intent, not for the transaction ID, even once the order stores the authorization.
 	 *
 	 * @dataProvider status_change_operation_data
