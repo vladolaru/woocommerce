@@ -405,17 +405,20 @@ class WooPaymentsOrderEffectApplier {
 	 * attach_intent_info(), before its outcome is composed (apply()); and return the outcome with the intent's order meta,
 	 * a PaymentIntent's composed on that order and a SetupIntent's setup meta.
 	 *
-	 * Client 11.3.0 attaches the intent of a payment, an authorization or a started payment, a SetupIntent's included, before
-	 * it updates the order from it; on a subscription payment method change the attach writes the intent's record even once
-	 * the stored intent status is succeeded (class-wc-payment-gateway-wcpay.php:2443-2444). Its other override, a
-	 * subscription in the cart, is not applied here.
+	 * Client 11.3.0 attaches every intent its charge returned, a SetupIntent's included, whatever its status, before it
+	 * updates the order from it; an intent that is not authorized is marked failed for that update, not raised
+	 * (class-wc-payment-gateway-wcpay.php:2321-2324, :2443-2444). A failure raised with no returned intent attaches nothing,
+	 * as its exception skips that attach. On a subscription payment method change the attach writes the intent's record
+	 * even once the stored intent status is succeeded (:2443); its other override, a subscription in the cart, is not
+	 * applied here.
 	 *
 	 * @param PaymentOperationContext $context Payment context, its order read under the checkout's order payment lock.
 	 * @param PaymentOutcome          $outcome Charge outcome.
 	 * @return PaymentOutcome
 	 */
 	public function attach_charge_intent( PaymentOperationContext $context, PaymentOutcome $outcome ): PaymentOutcome {
-		$plan = $outcome->get_effect_plan();
+		$plan            = $outcome->get_effect_plan();
+		$returned_intent = $plan instanceof WooPaymentsOrderEffectPlan && in_array( $plan->get_type(), array( WooPaymentsOrderEffectPlan::TYPE_PAYMENT_INTENT, WooPaymentsOrderEffectPlan::TYPE_SETUP_INTENT ), true );
 		if ( $plan instanceof WooPaymentsOrderEffectPlan && WooPaymentsOrderEffectPlan::TYPE_PAYMENT_INTENT === $plan->get_type() ) {
 			$outcome = $this->merge_effect_data_into_outcome(
 				$outcome,
@@ -427,7 +430,8 @@ class WooPaymentsOrderEffectApplier {
 		}
 
 		$intent_id = $outcome->get_provider_payment_id();
-		if ( '' === $intent_id || ! in_array( PaymentLifecycleEvent::status_for_outcome( $outcome ), array( PaymentLifecycleEvent::STATUS_COMPLETED, PaymentLifecycleEvent::STATUS_AUTHORIZED, PaymentLifecycleEvent::STATUS_STARTED ), true ) ) {
+		// An outcome with no returned intent is attached only when it is a payment, an authorization or a started payment.
+		if ( '' === $intent_id || ( ! $returned_intent && ! in_array( PaymentLifecycleEvent::status_for_outcome( $outcome ), array( PaymentLifecycleEvent::STATUS_COMPLETED, PaymentLifecycleEvent::STATUS_AUTHORIZED, PaymentLifecycleEvent::STATUS_STARTED ), true ) ) ) {
 			return $outcome;
 		}
 

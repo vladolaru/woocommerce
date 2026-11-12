@@ -4112,6 +4112,57 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A checkout whose platform returns a $status intent attaches it over the earlier attempt's: transaction ID, intent and status.
+	 *
+	 * Client 11.3.0 marks a returned intent that is not authorized as failed and still attaches it before it updates the
+	 * order (class-wc-payment-gateway-wcpay.php:2321-2324, :2443-2444; class-wc-payments-order-service.php:1875-1884).
+	 *
+	 * @testWith ["requires_payment_method"]
+	 *           ["canceled"]
+	 *
+	 * @param string $status Status of the returned intent.
+	 */
+	public function test_process_payment_attaches_a_returned_intent_whatever_its_status( string $status ): void {
+		$order = $this->create_order();
+		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+		$order->set_total( '10.99' );
+		$order->set_transaction_id( 'pi_earlier_attempt' );
+		$order->update_meta_data( '_intent_id', 'pi_earlier_attempt' );
+		$order->save();
+		$intent = array(
+			'id'                   => 'pi_returned',
+			'status'               => $status,
+			'amount'               => 1099,
+			'currency'             => 'usd',
+			'customer'             => 'cus_returned',
+			'payment_method'       => 'pm_returned',
+			'payment_method_types' => array( 'card' ),
+			'metadata'             => array( 'order_id' => (string) $order->get_id() ),
+		);
+		if ( 'requires_payment_method' === $status ) {
+			$intent['last_payment_error'] = array(
+				'type'    => 'card_error',
+				'code'    => 'card_declined',
+				'message' => 'Your card was declined.',
+			);
+		}
+		$outcome = WooPaymentsIntentCodec::outcome_from_intention(
+			$intent,
+			new WooPaymentsIntentMappingContext( $order->get_checkout_order_received_url(), 'pm_returned', 'cus_returned' )
+		)->with_effect_plan( WooPaymentsOrderEffectPlan::for_payment_intent( $intent, false ) );
+		$gateway = new WooPaymentsGateway();
+		$gateway->init( wc_get_container()->get( PaymentProcessingService::class ), $this->create_provider_charging( $outcome, wc_get_container()->get( WooPaymentsTokenService::class ) ) );
+		$_POST['wcpay-payment-method'] = 'pm_returned';
+
+		$gateway->process_payment( $order->get_id() );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( 'pi_returned', $order->get_transaction_id() );
+		$this->assertSame( 'pi_returned', $order->get_meta( '_intent_id', true ) );
+		$this->assertSame( $status, $order->get_meta( '_intention_status', true ) );
+	}
+
+	/**
 	 * Arrange a recurring checkout of the recorded subscription sign-up PaymentIntent (10.99 USD), whose token work runs.
 	 *
 	 * @param string $total Order total.
