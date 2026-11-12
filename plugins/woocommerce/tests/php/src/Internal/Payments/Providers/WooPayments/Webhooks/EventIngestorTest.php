@@ -4934,6 +4934,37 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox An authorization is decided on the order read under the lock, so an order another payment method took over just before the claim is recorded instead of put on hold.
+	 *
+	 * The other payment method writes straight to the database, leaving this request's caches as they were, so the
+	 * decision must read the order from the data store.
+	 */
+	public function test_authorization_is_decided_on_the_order_read_under_the_lock(): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
+		UncachedOrderWriter::enable_hpos_data_caching();
+		$order = $this->create_woopayments_order();
+		$event = $this->recorded_authorization_event( $order );
+		$order->update_meta_data( '_intent_id', $event['data']['object']['id'] );
+		$order->save();
+		$store = new OrderPaymentLockWithClaimHook(
+			static function ( WC_Order $order ): void {
+				UncachedOrderWriter::write( $order->get_id(), array( 'payment_method' => 'bacs' ) );
+			}
+		);
+		wc_get_container()->replace( OrderPaymentLock::class, $store );
+		$sut = $this->create_ingestor( wc_get_container()->get( OrderPaymentLifecycleService::class ), wc_get_container()->get( Client::class ) );
+
+		$sut->process( $event );
+
+		$this->assertTrue( $store->hook_ran, 'The other payment method must take the order over inside the claim.' );
+		$order = wc_get_container()->get( OrderPaymentLifecycleService::class )->get_fresh_order_from_data_store( $order );
+		$this->assertSame( OrderStatus::PENDING, $order->get_status() );
+		$this->assertSame( '', $order->get_meta( '_intention_status', true ) );
+		$this->assertCount( 0, $this->get_order_notes_containing( $order, 'was <strong>authorized</strong>' ) );
+		$this->assertCount( 1, $this->get_order_notes_containing( $order, 'that does not pay this order was authorized' ) );
+	}
+
+	/**
 	 * @testdox A $event_type delivery refused by a held order payment lock logs one refusal line.
 	 * @dataProvider refusal_line_events
 	 *
