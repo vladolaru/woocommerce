@@ -436,6 +436,19 @@ class WooPaymentsIntentCodec {
 	}
 
 	/**
+	 * Tell whether a PaymentIntent pays a Stripe Billing invoice, so the invoice's own events settle its order (client 11.3.0
+	 * class-wc-payments-webhook-processing-service.php:712).
+	 *
+	 * @since 11.2.0
+	 *
+	 * @param array<string,mixed> $intent A PaymentIntent as the platform returns it.
+	 * @return bool
+	 */
+	public static function is_invoice_intent( array $intent ): bool {
+		return ! empty( $intent['invoice'] );
+	}
+
+	/**
 	 * Get the charges of an intent that are arrays.
 	 *
 	 * @param array<string,mixed> $intent A PaymentIntent as the platform returns it.

@@ -282,6 +282,10 @@ class PaymentIntentEventHandler {
 
 			if ( ! $is_own_payment ) {
 				$this->other_charge_recorder->record( $order, $event_type, $this->get_other_charge_facts( $event_type, $event_object, $intent_id, $charge_id ) );
+			} elseif ( 'payment_intent.succeeded' === $event_type && WooPaymentsIntentCodec::is_invoice_intent( $event_object ) ) {
+				// A Stripe Billing invoice's intent is settled by its invoice: only its payment meta is written here (client
+				// 11.3.0 class-wc-payments-webhook-processing-service.php:711-717).
+				$this->write_succeeded_payment_intent_meta( $order, $event_object );
 			} elseif ( 'payment_intent.succeeded' === $event_type ) {
 				$this->apply_succeeded_payment_intent_under_lock( $order, $event_object );
 			} else {

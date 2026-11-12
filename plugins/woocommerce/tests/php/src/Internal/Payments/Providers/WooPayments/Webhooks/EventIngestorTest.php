@@ -177,6 +177,50 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox payment_intent.succeeded for a Stripe Billing invoice writes the payment meta and leaves the order to its invoice: $_dataName.
+	 *
+	 * Client 11.3.0 writes the intent, charge, payment method and currency meta for every order it resolves
+	 * (class-wc-payments-webhook-processing-service.php:643-700) and, for an intent with an invoice, skips the token repair
+	 * and the status update (:711-717), pinned by its test_payment_intent_successful_for_invoice_does_not_complete_order().
+	 *
+	 * @dataProvider provider_orders_of_an_invoice_intent
+	 *
+	 * @param bool $paid Whether the invoice already paid the order.
+	 */
+	public function test_payment_intent_succeeded_for_an_invoice_leaves_the_order_to_the_invoice( bool $paid ): void {
+		$order = $this->create_woopayments_order();
+		if ( $paid ) {
+			$order->payment_complete( 'pi_123' );
+		}
+		$status_before = $order->get_status();
+		$notes_before  = wc_get_order_notes( array( 'order_id' => $order->get_id() ) );
+
+		$this->sut->process( $this->create_payment_intent_event( 'payment_intent.succeeded', $order, array( 'invoice' => 'in_123' ) ) );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( $status_before, $order->get_status() );
+		$this->assertEquals( $notes_before, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+		$this->assertSame( '', $order->get_meta( '_intention_status', true ) );
+		$this->assertSame( 'pi_123', $order->get_meta( '_intent_id', true ) );
+		$this->assertSame( 'ch_123', $order->get_meta( '_charge_id', true ) );
+		$this->assertSame( 'pm_123', $order->get_meta( '_payment_method_id', true ) );
+		$this->assertSame( 'usd', $order->get_meta( '_wcpay_intent_currency', true ) );
+	}
+
+	/**
+	 * Orders an invoice intent resolves to.
+	 *
+	 * @return array<string,array{0:bool}>
+	 */
+	public function provider_orders_of_an_invoice_intent(): array {
+		return array(
+			'renewal that needs payment' => array( false ),
+			'renewal its invoice paid'   => array( true ),
+		);
+	}
+
+	/**
 	 * @testdox payment_intent.succeeded completes the order.
 	 */
 	public function test_payment_intent_succeeded_completes_order(): void {
