@@ -4355,6 +4355,51 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A failed $operation on an order that is not Pending keeps its failure note and the authorization's status.
+	 *
+	 * A failed capture or cancel is recorded as a started event that keeps the order status, not as a started payment, so
+	 * the started writer's Pending rule does not apply to it. Client 11.3.0 notes both failures whatever the order status
+	 * (class-wc-payments-order-service.php:496-504, class-wc-payment-gateway-wcpay.php:4104-4127).
+	 *
+	 * @testWith ["capture", "completed"]
+	 *           ["cancel", "cancelled"]
+	 *
+	 * @param string $operation Operation that fails: `capture` or `cancel`.
+	 * @param string $status    Status the order has when the operation runs, as a status change starts it.
+	 */
+	public function test_failed_operation_on_an_order_not_pending_keeps_its_note( string $operation, string $status ): void {
+		$order = $this->create_authorized_order_for_failed_operations();
+		$order->update_status( $status );
+		$http_client            = new FakeHttpClient();
+		$http_client->responses = array(
+			'capture' === $operation
+				? $this->declined_capture_response( 'Your card was declined.' )
+				: $this->json_transport_response(
+					429,
+					array(
+						'error' => array(
+							'type'    => 'invalid_request_error',
+							'code'    => 'lock_timeout',
+							'message' => 'This object cannot be accessed right now because another API request or Stripe process is currently accessing it.',
+						),
+					)
+				),
+			$this->still_capturable_intent_response(),
+		);
+		$provider               = $this->timeout_transport_provider( $http_client );
+
+		$outcome = 'capture' === $operation
+			? $this->sut->capture( PaymentOperationContext::for_capture( wc_get_order( $order->get_id() ), WooPaymentsPersistenceVocabulary::GATEWAY_ID ), $provider )
+			: $this->sut->cancel( PaymentOperationContext::for_cancel( wc_get_order( $order->get_id() ), WooPaymentsPersistenceVocabulary::GATEWAY_ID ), $provider );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
+		$this->assertCount( 1, self::failure_note_texts( $order ), 'The failure note is kept.' );
+		$this->assertSame( 'requires_capture', $order->get_meta( '_intention_status', true ) );
+		$this->assertSame( $status, $order->get_status() );
+	}
+
+	/**
 	 * Create an on-hold order whose WooPayments authorization still requires capture.
 	 *
 	 * @return WC_Order
