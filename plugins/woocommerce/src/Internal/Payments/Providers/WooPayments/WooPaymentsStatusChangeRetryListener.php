@@ -49,19 +49,23 @@ class WooPaymentsStatusChangeRetryListener implements RegisterHooksInterface {
 	 * Register the retry hook.
 	 */
 	public function register() {
-		add_action( WooPaymentsOrderAdminActionsController::RETRY_STATUS_CHANGE_OPERATION_ACTION, array( $this, 'handle_retry_status_change_operation' ), 10, 3 );
+		add_action( WooPaymentsOrderAdminActionsController::RETRY_STATUS_CHANGE_OPERATION_ACTION, array( $this, 'handle_retry_status_change_operation' ), 10, 4 );
 	}
 
 	/**
 	 * Note that a retried status-change capture or cancel did not run, unless the order actions controller runs it.
+	 *
+	 * An operation on the stored authorization is noted while the order stores requires_capture; an operation on an
+	 * intent the status change read, while the order still stores that intent and no settled status.
 	 *
 	 * @internal
 	 *
 	 * @param mixed $order_id  Order ID.
 	 * @param mixed $operation Capture or cancel.
 	 * @param mixed $retry     Number of this retry, from 1.
+	 * @param mixed $intent_id Intent the status change read, or empty when it acted on the stored authorization.
 	 */
-	public function handle_retry_status_change_operation( $order_id, $operation = '', $retry = 0 ): void {
+	public function handle_retry_status_change_operation( $order_id, $operation = '', $retry = 0, $intent_id = '' ): void {
 		unset( $retry );
 		if ( in_array( $this->setup_tier->get_effective_tier(), array( WooPaymentsSetupTier::CONNECTED, WooPaymentsSetupTier::ACTIVE ), true ) ) {
 			return;
@@ -80,8 +84,16 @@ class WooPaymentsStatusChangeRetryListener implements RegisterHooksInterface {
 			! $order instanceof WC_Order
 			|| ! $order->has_status( $statuses[ $operation ] )
 			|| ! WooPaymentsPersistenceVocabulary::is_woopayments_gateway_id( (string) $order->get_payment_method() )
-			|| 'requires_capture' !== (string) $order->get_meta( '_intention_status', true )
 		) {
+			return;
+		}
+
+		$stored_status  = (string) $order->get_meta( '_intention_status', true );
+		$read_intent_id = is_string( $intent_id ) ? $intent_id : '';
+		$is_unperformed = '' === $read_intent_id
+			? 'requires_capture' === $stored_status
+			: $read_intent_id === (string) $order->get_meta( '_intent_id', true ) && ! in_array( $stored_status, WooPaymentsPaymentOperationService::SETTLED_INTENT_STATUSES, true );
+		if ( ! $is_unperformed ) {
 			return;
 		}
 

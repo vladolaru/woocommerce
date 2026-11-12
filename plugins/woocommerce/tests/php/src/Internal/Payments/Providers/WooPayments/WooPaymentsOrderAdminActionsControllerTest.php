@@ -1231,6 +1231,61 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A retry of a status change on an intent it read that falls due once the built-in cannot run notes the failure only while the order still waits on that intent: $_dataName.
+	 *
+	 * The retry's order stores the intent the status change read, with a status that is not settled; client 11.1.0 writes
+	 * this note when a status-change capture or cancel fails (class-wc-payments-order-service.php:1827-1831, :1880-1884).
+	 *
+	 * @dataProvider read_intent_retry_after_ownership_loss_data
+	 *
+	 * @param string $ownership     What changed since the retry was queued.
+	 * @param string $operation     Capture or cancel.
+	 * @param string $order_status  Status the order changed to.
+	 * @param string $stored_intent Intent the order stores when the retry runs.
+	 * @param string $stored_status Intent status the order stores when the retry runs.
+	 * @param bool   $notes         Whether the failure note is written.
+	 */
+	public function test_retry_on_a_read_intent_the_built_in_cannot_run_notes_the_failure( string $ownership, string $operation, string $order_status, string $stored_intent, string $stored_status, bool $notes ): void {
+		$this->set_ownership( $ownership );
+		$order = $this->create_recorded_authorization_order( $stored_status, $order_status );
+		$order->update_meta_data( '_intent_id', $stored_intent );
+		$order->save();
+		$http_requests = 0;
+		add_filter(
+			'pre_http_request',
+			static function ( $response ) use ( &$http_requests ) {
+				++$http_requests;
+				return $response;
+			}
+		);
+		$this->register_retry_listener();
+		$action_id = as_schedule_single_action( time() - 1, self::RETRY_HOOK, array_merge( $this->retry_args( $order, $operation, 1 ), array( 'intent_id' => 'pi_3UJhOgBzWlxcwgpP0AOgQE2z' ) ), 'woocommerce_payments' );
+
+		\ActionScheduler::runner()->process_action( $action_id );
+
+		$this->assertSame( \ActionScheduler_Store::STATUS_COMPLETE, \ActionScheduler::store()->get_status( (string) $action_id ) );
+		$this->assertSame( $notes ? 1 : 0, $this->count_notes( $order, $this->failure_note( $operation ) ) );
+		$this->assertSame( $order_status, wc_get_order( $order->get_id() )->get_status() );
+		$this->assertSame( 0, $http_requests, 'No platform call.' );
+	}
+
+	/**
+	 * Retries of a status change on a read intent, where the built-in WooPayments no longer runs them.
+	 *
+	 * @return array<string,array{string,string,string,string,string,bool}>
+	 */
+	public function read_intent_retry_after_ownership_loss_data(): array {
+		$read = 'pi_3UJhOgBzWlxcwgpP0AOgQE2z';
+
+		return array(
+			'the extension is active, capture'          => array( 'extension', PaymentProcessingService::OPERATION_CAPTURE, OrderStatus::COMPLETED, $read, 'requires_action', true ),
+			'the feature is off, cancel'                => array( 'feature_off', PaymentProcessingService::OPERATION_CANCEL, OrderStatus::CANCELLED, $read, '', true ),
+			'the order stores another intent, capture'  => array( 'extension', PaymentProcessingService::OPERATION_CAPTURE, OrderStatus::COMPLETED, 'pi_newer_attempt', 'requires_action', false ),
+			'the order stores a settled status, cancel' => array( 'feature_off', PaymentProcessingService::OPERATION_CANCEL, OrderStatus::CANCELLED, $read, 'canceled', false ),
+		);
+	}
+
+	/**
 	 * Ways the order actions controller stops loading, with each status-change operation.
 	 *
 	 * @return array<string,array{string,string,string}>
