@@ -71,6 +71,14 @@ class WooPaymentsPaymentOperationService {
 	public const PROVIDER_DATA_READ_INTENT_ID = 'read_intent_id';
 
 	/**
+	 * Provider data key carrying the intent a status-change capture or cancel on the stored authorization acts on: the
+	 * order's stored intent, as the status change found it.
+	 *
+	 * @since 11.2.0
+	 */
+	public const PROVIDER_DATA_STORED_INTENT_ID = 'stored_intent_id';
+
+	/**
 	 * Outcome data key set when a status-change capture or cancel sent nothing because the order changed after its intent
 	 * was read: one of the REFUSAL_* values.
 	 *
@@ -1830,15 +1838,24 @@ class WooPaymentsPaymentOperationService {
 	}
 
 	/**
-	 * Get the intent a capture or cancel acts on: the one its status change read, otherwise the one the order retains.
+	 * Get the intent a capture or cancel acts on: the one its status change read, else the order's stored intent its
+	 * status change found, else the one the order retains, its transaction ID first, for the order screen's actions.
+	 *
+	 * A status change acts on the stored intent, as client 11.3.0 does (class-wc-payments-order-service.php:2330,
+	 * :2386); its order screen actions act on the transaction ID (class-wc-payment-gateway-wcpay.php:4341, :4443).
 	 *
 	 * @param PaymentOperationContext $context Capture or cancel context.
 	 * @return string
 	 */
 	private function get_operation_intent_id( PaymentOperationContext $context ): string {
 		$read_intent_id = $this->get_read_intent_id( $context );
+		if ( '' !== $read_intent_id ) {
+			return $read_intent_id;
+		}
 
-		return '' !== $read_intent_id ? $read_intent_id : $this->get_order_intent_id( $context->get_order() );
+		$stored_intent_id = $context->get_provider_data()[ self::PROVIDER_DATA_STORED_INTENT_ID ] ?? '';
+
+		return is_string( $stored_intent_id ) && '' !== $stored_intent_id ? $stored_intent_id : $this->get_order_intent_id( $context->get_order() );
 	}
 
 	/**

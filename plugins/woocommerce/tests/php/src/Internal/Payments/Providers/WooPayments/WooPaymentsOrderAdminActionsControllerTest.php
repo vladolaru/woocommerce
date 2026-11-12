@@ -787,6 +787,96 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A status change to $order_status on an order storing requires_capture sends the $operation for the stored intent, not the transaction ID, retried: $retried.
+	 *
+	 * Client 11.3.0 captures or cancels the order's stored intent on the status change (class-wc-payments-order-service.php:2330,
+	 * :2386). The order screen's actions keep the transaction ID, as its capture_charge() and cancel_authorization() do
+	 * (class-wc-payment-gateway-wcpay.php:4341, :4443).
+	 *
+	 * @dataProvider stored_authorization_status_changes
+	 *
+	 * @param string $operation    Capture or cancel.
+	 * @param string $order_status Status the order changes to.
+	 * @param string $hook         Status hook.
+	 * @param bool   $retried      Whether the order payment lock refuses the status change, so its retry sends the operation.
+	 */
+	public function test_status_change_on_the_stored_authorization_acts_on_the_stored_intent( string $operation, string $order_status, string $hook, bool $retried ): void {
+		$order = $this->create_recorded_authorization_order( 'requires_capture', $order_status );
+		$order->set_transaction_id( 'pi_earlier_attempt' );
+		$order->save();
+		$reads     = new \ArrayObject();
+		$transport = $this->create_operation_transport( $operation );
+		$this->sut = $this->create_controller( wc_get_container()->get( PaymentProcessingService::class ), $this->create_provider_over_fake_transport( $transport ), $this->create_platform( null, null, $reads ) );
+		$this->sut->register();
+
+		if ( $retried ) {
+			$this->while_lock_is_held(
+				$order,
+				function () use ( $hook, $order ): void {
+					$this->fire_order_hook( $hook, $order );
+				}
+			);
+			$this->assertSame( array(), $this->request_paths( $transport ) );
+			$jobs = as_get_scheduled_actions(
+				array(
+					'hook'     => self::RETRY_HOOK,
+					'status'   => \ActionScheduler_Store::STATUS_PENDING,
+					'per_page' => -1,
+				),
+				'ids'
+			);
+			$this->assertCount( 1, $jobs );
+			\ActionScheduler::runner()->process_action( (int) reset( $jobs ) );
+		} else {
+			$this->fire_order_hook( $hook, $order );
+		}
+
+		$this->assertCount( 0, $reads, 'The stored authorization is not read.' );
+		$this->assertSame( array( $this->operation_path( $operation ) ), $this->request_paths( $transport ) );
+	}
+
+	/**
+	 * Status changes on the stored authorization, sent at once or by their retry.
+	 *
+	 * @return array<string,array{string,string,string,bool}>
+	 */
+	public function stored_authorization_status_changes(): array {
+		$rows = array();
+		foreach ( $this->status_change_operation_data() as $name => $row ) {
+			$rows[ $name ]               = array_merge( $row, array( false ) );
+			$rows[ $name . ', retried' ] = array_merge( $row, array( true ) );
+		}
+
+		return $rows;
+	}
+
+	/**
+	 * @testdox The order screen's $operation action on an order storing requires_capture acts on the transaction ID.
+	 *
+	 * Client 11.3.0's capture_charge() and cancel_authorization() act on the order's transaction ID
+	 * (class-wc-payment-gateway-wcpay.php:4341, :4443).
+	 *
+	 * @testWith ["capture", "woocommerce_order_action_capture_charge"]
+	 *           ["cancel", "woocommerce_order_action_cancel_authorization"]
+	 *
+	 * @param string $operation Capture or cancel.
+	 * @param string $action    Order action hook.
+	 */
+	public function test_order_screen_action_acts_on_the_transaction_id( string $operation, string $action ): void {
+		$order = $this->create_recorded_authorization_order( 'requires_capture', OrderStatus::ON_HOLD );
+		$order->set_transaction_id( 'pi_earlier_attempt' );
+		$order->save();
+		$transport = $this->create_operation_transport( $operation );
+		$this->sut = $this->create_controller( wc_get_container()->get( PaymentProcessingService::class ), $this->create_provider_over_fake_transport( $transport ), $this->create_platform( null, null, new \ArrayObject() ) );
+		$this->sut->register();
+
+		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Exercising the public WooCommerce order action hook.
+		do_action( $action, wc_get_order( $order->get_id() ) );
+
+		$this->assertSame( array( 'intentions/pi_earlier_attempt/' . $operation ), $this->request_paths( $transport ) );
+	}
+
+	/**
 	 * @testdox A $operation on the status change is checked against the order read under its own lock: $_dataName.
 	 *
 	 * Client 11.3.0 acts on the intent it read (class-wc-payments-order-service.php:2327-2350, :2381-2418). Here the order

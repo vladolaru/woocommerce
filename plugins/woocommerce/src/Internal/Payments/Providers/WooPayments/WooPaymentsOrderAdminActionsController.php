@@ -419,7 +419,8 @@ class WooPaymentsOrderAdminActionsController implements RegisterHooksInterface {
 	 *
 	 * An operation on an intent the status change read acts on that intent; the provider refuses it, sending nothing, when
 	 * the order read under the operation's lock no longer stores that intent (it is retried, with a new read) or stores a
-	 * settled status (nothing is left to do).
+	 * settled status (nothing is left to do). A status change on the stored authorization acts on the order's stored
+	 * intent; the order screen's actions act on the transaction ID.
 	 *
 	 * @param WC_Order $order            Order.
 	 * @param string   $operation        Capture or cancel.
@@ -428,7 +429,12 @@ class WooPaymentsOrderAdminActionsController implements RegisterHooksInterface {
 	 * @param string   $read_intent_id   Intent the status change read, or empty for the stored authorization.
 	 */
 	private function run_operation( WC_Order $order, string $operation, bool $on_status_change = false, int $retry = 0, string $read_intent_id = '' ): void {
-		$provider_data = '' === $read_intent_id ? array() : array( WooPaymentsPaymentOperationService::PROVIDER_DATA_READ_INTENT_ID => $read_intent_id );
+		$provider_data = array();
+		if ( '' !== $read_intent_id ) {
+			$provider_data[ WooPaymentsPaymentOperationService::PROVIDER_DATA_READ_INTENT_ID ] = $read_intent_id;
+		} elseif ( $on_status_change ) {
+			$provider_data[ WooPaymentsPaymentOperationService::PROVIDER_DATA_STORED_INTENT_ID ] = (string) $order->get_meta( '_intent_id', true );
+		}
 		try {
 			$outcome = PaymentProcessingService::OPERATION_CAPTURE === $operation
 				? $this->processing_service->capture(
