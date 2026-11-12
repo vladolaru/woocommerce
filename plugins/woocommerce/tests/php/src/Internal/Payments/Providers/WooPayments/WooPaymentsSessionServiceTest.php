@@ -98,11 +98,40 @@ class WooPaymentsSessionServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A stored record is read only in the session that stored it, which it carries in session_customer_id.
+	 *
+	 * Client 11.3.0 class-woopay-session.php:1043 and class-woopay-utilities.php:518-530.
+	 */
+	public function test_record_is_read_only_in_the_session_that_stored_it(): void {
+		$session = $this->create_session( 't_shopper' );
+
+		WooPaymentsSessionService::set_owned_record( $session, 'woopay-user-data', array( 'save_user_in_woopay' => true ) );
+
+		$this->assertSame(
+			array(
+				'save_user_in_woopay' => true,
+				'session_customer_id' => 't_shopper',
+			),
+			WooPaymentsSessionService::get_owned_record( $session, 'woopay-user-data' )
+		);
+		$session->set(
+			'woopay-user-data',
+			array(
+				'save_user_in_woopay' => true,
+				'session_customer_id' => 't_another_session',
+			)
+		);
+		$this->assertSame( array(), WooPaymentsSessionService::get_owned_record( $session, 'woopay-user-data' ) );
+		$session->set( 'woopay-user-data', array( 'save_user_in_woopay' => true ) );
+		$this->assertSame( array(), WooPaymentsSessionService::get_owned_record( $session, 'woopay-user-data' ) );
+	}
+
+	/**
 	 * @testdox The values a guest session stored stay readable when WooCommerce moves the session to the shopper's account, and a value another session stored stays ignored.
 	 *
 	 * Core moves the session inside the request that logs the shopper in or creates their account
-	 * (WC_Session_Handler::init_session_cookie()); client 11.3.0 class-wc-payments-session-service.php:43-75 moves each
-	 * owner the guest session holds.
+	 * (WC_Session_Handler::init_session_cookie()); client 11.3.0 class-wc-payments-session-service.php:43-75 and
+	 * class-woopay-session.php:1059-1075 move each owner the guest session holds.
 	 */
 	public function test_guest_session_values_follow_the_shopper_into_their_account_session(): void {
 		global $wpdb;
@@ -121,6 +150,12 @@ class WooPaymentsSessionServiceTest extends WC_Unit_Test_Case {
 						'wcpay_processing_order_session' => $guest_id,
 						'wcpay_paid_intent_id'           => 'pi_elsewhere',
 						'wcpay_paid_intent_id_session'   => 't_another_session',
+						'woopay-user-data'               => maybe_serialize(
+							array(
+								'save_user_in_woopay' => true,
+								'session_customer_id' => $guest_id,
+							)
+						),
 					)
 				),
 				'session_expiry' => $expiry,
@@ -138,6 +173,7 @@ class WooPaymentsSessionServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( (string) $user_id, $handler->get_customer_id(), 'Core moved the session to the account.' );
 		$this->assertSame( 'cus_guest', WooPaymentsSessionService::get_owned_value( $handler, 'wcpay_customer_id' ) );
 		$this->assertSame( 123, WooPaymentsSessionService::get_owned_value( $handler, 'wcpay_processing_order' ) );
+		$this->assertTrue( WooPaymentsSessionService::get_owned_record( $handler, 'woopay-user-data' )['save_user_in_woopay'] ?? false );
 		$this->assertNull( WooPaymentsSessionService::get_owned_value( $handler, 'wcpay_paid_intent_id' ) );
 		$this->assertSame( 't_another_session', $handler->get( 'wcpay_paid_intent_id_session' ) );
 	}

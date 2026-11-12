@@ -107,6 +107,7 @@ const wooPayData = {
 	isWooPayEnabled: true,
 	forceNetworkSavedCards: true,
 	woopaySessionNonce: 'session-nonce',
+	woopaySaveUserNonce: 'save-user-nonce',
 	initWooPayNonce: 'init-nonce',
 	woopayHost: 'https://pay.woo.test',
 	PRE_CHECK_SAVE_MY_INFO: true,

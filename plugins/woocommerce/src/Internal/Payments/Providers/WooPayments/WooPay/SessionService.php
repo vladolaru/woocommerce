@@ -34,7 +34,16 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsEx
  */
 class SessionService {
 
-	private const WOOPAY_SESSION_KEY = 'woopay-user-data';
+	/**
+	 * Session key of the shopper's WooPay save-user details, the WooPayments extension's (class-woopay-session.php:36).
+	 */
+	public const WOOPAY_SESSION_KEY = 'woopay-user-data';
+
+	/**
+	 * Nonce action of the save-user request. The `woocommerce` prefix makes WooCommerce bind the nonce to the shopper's
+	 * session; the WooPayments extension's name (client 11.3.0 class-woopay-session.php:38-44).
+	 */
+	public const SAVE_USER_NONCE_ACTION = 'woocommerce_payments_woopay_save_user';
 
 	/**
 	 * Fragment on the checkout URL hosted WooPay redirects a shopper back to; the WooPay common script reads it.
@@ -666,7 +675,20 @@ class SessionService {
 	}
 
 	/**
-	 * Persist WooPay phone/session data in the WooCommerce session.
+	 * Tell whether the shopper already has a WooCommerce session, which the save-user request records into and never starts
+	 * (client 11.3.0 class-woopay-session.php:1025-1032).
+	 *
+	 * @return bool
+	 */
+	public function has_shopper_session(): bool {
+		$session = WooPaymentsSessionService::get_wc_session();
+
+		// The session class is swappable (woocommerce_session_handler); one that cannot tell has no session to record into.
+		return null !== $session && method_exists( $session, 'has_session' ) && $session->has_session();
+	}
+
+	/**
+	 * Persist WooPay phone/session data in the current WooCommerce session, for that session only.
 	 *
 	 * @param array<string,mixed> $request Request data.
 	 */
@@ -676,15 +698,11 @@ class SessionService {
 			return;
 		}
 
-		// The session class is swappable (woocommerce_session_handler), and not every handler sets a customer cookie.
-		if ( method_exists( $session, 'set_customer_session_cookie' ) ) {
-			$session->set_customer_session_cookie( true );
-		}
-
 		$phone_field = is_array( $request['woopay_user_phone_field'] ?? null ) ? $request['woopay_user_phone_field'] : array();
 		$phone_full  = is_scalar( $phone_field['full'] ?? null ) ? $phone_field['full'] : ( $request['phone_number'] ?? '' );
 
-		$session->set(
+		WooPaymentsSessionService::set_owned_record(
+			$session,
 			self::WOOPAY_SESSION_KEY,
 			array(
 				'save_user_in_woopay'     => filter_var( $request['save_user_in_woopay'] ?? false, FILTER_VALIDATE_BOOLEAN ),
@@ -709,14 +727,14 @@ class SessionService {
 	}
 
 	/**
-	 * Get WooPay session data from the WooCommerce session.
+	 * Get the WooPay session data the current WooCommerce session stored, or an empty array.
 	 *
-	 * @return mixed
+	 * @return array<string,mixed>
 	 */
-	public function get_woopay_session_data() {
+	public function get_woopay_session_data(): array {
 		$session = WooPaymentsSessionService::get_wc_session();
 
-		return null === $session ? null : $session->get( self::WOOPAY_SESSION_KEY );
+		return null === $session ? array() : WooPaymentsSessionService::get_owned_record( $session, self::WOOPAY_SESSION_KEY );
 	}
 
 	/**
@@ -758,6 +776,7 @@ class SessionService {
 			'woopayMerchantId'                  => $this->get_store_blog_id(),
 			'initWooPayNonce'                   => wp_create_nonce( 'wcpay_init_woopay_nonce' ),
 			'woopaySessionNonce'                => wp_create_nonce( 'woopay_session_nonce' ),
+			'woopaySaveUserNonce'               => wp_create_nonce( self::SAVE_USER_NONCE_ACTION ),
 			'woopaySignatureNonce'              => wp_create_nonce( 'woopay_signature_nonce' ),
 			'woopayMinimumSessionData'          => $woopay_minimum_session,
 			'woopayButton'                      => $this->get_woopay_button_settings( $context ),
@@ -1026,7 +1045,7 @@ class SessionService {
 		}
 
 		$session_data = $this->get_woopay_session_data();
-		if ( is_array( $session_data ) && array_key_exists( $key, $session_data ) ) {
+		if ( array_key_exists( $key, $session_data ) ) {
 			return $session_data[ $key ];
 		}
 

@@ -696,11 +696,12 @@ const getWooPayInitialPhone = () =>
 	getFieldValue( '#shipping-phone' ) ||
 	'';
 
+// The section needs the save-user nonce its request sends (client 11.3.0 checkout-page-save-user.js:136).
 const shouldRenderWooPaySaveUser = ( paymentSettings = defaultSettings ) => {
 	return Boolean(
 		paymentSettings.isWooPayEnabled &&
 		paymentSettings.forceNetworkSavedCards &&
-		paymentSettings.woopaySessionNonce
+		paymentSettings.woopaySaveUserNonce
 	);
 };
 
@@ -716,12 +717,12 @@ const persistWooPaySaveUser = async (
 	phone,
 	shouldClear = false
 ) => {
-	if ( ! paymentSettings.woopaySessionNonce || ! window.fetch ) {
+	if ( ! paymentSettings.woopaySaveUserNonce || ! window.fetch ) {
 		return false;
 	}
 
 	const body = new window.URLSearchParams();
-	body.append( '_wpnonce', paymentSettings.woopaySessionNonce );
+	body.append( '_wpnonce', paymentSettings.woopaySaveUserNonce );
 	if ( shouldClear ) {
 		body.append( 'empty', '1' );
 	} else {

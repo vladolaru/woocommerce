@@ -2422,6 +2422,7 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 		'wcpayVersionNumber',
 		'woopaySignatureNonce',
 		'woopaySessionNonce',
+		'woopaySaveUserNonce',             // Client 11.3.0 class-wc-payments-checkout.php:277.
 		'woopayMerchantId',
 		'icon',
 		'woopayMinimumSessionData',

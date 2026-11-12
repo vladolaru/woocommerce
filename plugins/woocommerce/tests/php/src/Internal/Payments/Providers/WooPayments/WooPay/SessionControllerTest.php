@@ -95,6 +95,13 @@ class SessionControllerTest extends WC_REST_Unit_Test_Case {
 	private array $asset_data_registry_state = array();
 
 	/**
+	 * Request method dispatch_ajax_hook() sends.
+	 *
+	 * @var string
+	 */
+	private string $request_method = 'POST';
+
+	/**
 	 * Set up test fixtures.
 	 */
 	public function setUp(): void {
@@ -1590,7 +1597,7 @@ class SessionControllerTest extends WC_REST_Unit_Test_Case {
 		$this->assertSame( $fields, array_intersect_key( $service->last_init_request, $fields ), 'The init request is unslashed.' );
 		$this->assertSame( array( 'encrypted' => 'session' ), $this->dispatch_ajax_hook_with_nonce( 'wc_ajax_wcpay_get_woopay_session', 'woopay_session_nonce', wp_slash( $fields ) ) );
 		$this->assertSame( $fields, array_intersect_key( $service->last_encrypted_session_request, $fields ), 'The session request is unslashed.' );
-		$this->assertSame( array( 'result' => 'success' ), $this->dispatch_ajax_hook_with_nonce( 'wc_ajax_wcpay_set_woopay_phone_number', 'woopay_session_nonce', array( 'phone_number' => '+15555550123' ) ) );
+		$this->assertSame( array( 'result' => 'success' ), $this->dispatch_ajax_hook_with_nonce( 'wc_ajax_wcpay_set_woopay_phone_number', 'woocommerce_payments_woopay_save_user', array( 'phone_number' => '+15555550123' ) ) );
 		$this->assertSame(
 			array(
 				'success' => true,
@@ -1643,10 +1650,133 @@ class SessionControllerTest extends WC_REST_Unit_Test_Case {
 		// The session key the WooPayments extension stores the shopper's WooPay data under (class-woopay-session.php:36).
 		WC()->session->set( 'woopay-user-data', array( 'save_user_in_woopay' => true ) );
 
-		$response = $this->dispatch_ajax_hook_with_nonce( 'wc_ajax_wcpay_set_woopay_phone_number', 'woopay_session_nonce', array( 'empty' => '1' ) );
+		$response = $this->dispatch_ajax_hook_with_nonce( 'wc_ajax_wcpay_set_woopay_phone_number', 'woocommerce_payments_woopay_save_user', array( 'empty' => '1' ) );
 
 		$this->assertSame( array( 'result' => 'success' ), $response );
-		$this->assertNull( $service->get_woopay_session_data() );
+		$this->assertNull( WC()->session->get( 'woopay-user-data' ) );
+		$this->assertSame( array(), $service->last_phone_request );
+	}
+
+	/**
+	 * @testdox The $action action accepts only a POST from the store's own pages, before reading the nonce or the session: $_dataName.
+	 *
+	 * Client 11.3.0 class-woopay-session.php:830-885, called first by the three actions (:936, :986, :1014). The three
+	 * actions apply the same-origin POST rule before accessing session data.
+	 *
+	 * @dataProvider provide_session_action_requests
+	 *
+	 * @param string      $action         The action's AJAX hook.
+	 * @param string      $method         Request method.
+	 * @param string|null $fetch_site     Sec-Fetch-Site header, or null for none.
+	 * @param string|null $origin         Origin header, or null for none.
+	 * @param string|null $allowed_origin Origin a callback adds to the allowed list, or null for none.
+	 * @param bool        $accepted       Whether the action runs.
+	 */
+	public function test_session_actions_accept_only_same_origin_posts( string $action, string $method, ?string $fetch_site, ?string $origin, ?string $allowed_origin, bool $accepted ): void {
+		$service   = new RecordingWooPaySessionService();
+		$this->sut = $this->create_controller( true, $service );
+		$this->sut->register();
+		$nonce_actions        = array(
+			'wc_ajax_wcpay_init_woopay'             => 'wcpay_init_woopay_nonce',
+			'wc_ajax_wcpay_get_woopay_session'      => 'woopay_session_nonce',
+			'wc_ajax_wcpay_set_woopay_phone_number' => 'woocommerce_payments_woopay_save_user',
+		);
+		$this->request_method = $method;
+		foreach ( array(
+			'HTTP_SEC_FETCH_SITE' => $fetch_site,
+			'HTTP_ORIGIN'         => $origin,
+		) as $header => $value ) {
+			if ( null === $value ) {
+				unset( $_SERVER[ $header ] );
+			} else {
+				$_SERVER[ $header ] = $value;
+			}
+		}
+		if ( null !== $allowed_origin ) {
+			add_filter(
+				'wcpay_woopay_session_allowed_origins',
+				static function ( $origins ) use ( $allowed_origin ) {
+					return array_merge( (array) $origins, array( $allowed_origin ) );
+				}
+			);
+		}
+
+		try {
+			$response = $this->dispatch_ajax_hook_with_nonce( $action, $nonce_actions[ $action ], array( 'phone_number' => '+15555550123' ) );
+		} finally {
+			unset( $_SERVER['HTTP_SEC_FETCH_SITE'], $_SERVER['HTTP_ORIGIN'] );
+			remove_all_filters( 'wcpay_woopay_session_allowed_origins' );
+		}
+
+		$recorded = array( $service->last_init_request, $service->last_encrypted_session_request, $service->last_phone_request );
+		if ( $accepted ) {
+			$this->assertNotSame( array( array(), array(), array() ), $recorded, 'The action ran.' );
+
+			return;
+		}
+		$this->assertSame(
+			array(
+				'success' => false,
+				'data'    => 'You aren’t authorized to do that.',
+			),
+			$response
+		);
+		$this->assertSame( array( array(), array(), array() ), $recorded, 'Nothing was read or written.' );
+	}
+
+	/**
+	 * The three WooPay session actions, with a request's method, Sec-Fetch-Site and Origin, an origin a filter adds, and
+	 * whether the action runs.
+	 *
+	 * @return array<string,array{0:string,1:string,2:string|null,3:string|null,4:string|null,5:bool}>
+	 */
+	public function provide_session_action_requests(): array {
+		$init    = 'wc_ajax_wcpay_init_woopay';
+		$session = 'wc_ajax_wcpay_get_woopay_session';
+		$phone   = 'wc_ajax_wcpay_set_woopay_phone_number';
+		$home    = home_url();
+		$parts   = (array) wp_parse_url( $home );
+		$other   = 'https://elsewhere.example';
+		// The store's origin written with its port, the scheme's default when the store URL names none.
+		$home_with_port = $parts['scheme'] . '://' . $parts['host'] . ':' . ( $parts['port'] ?? ( 'https' === $parts['scheme'] ? 443 : 80 ) );
+
+		return array(
+			'init, a GET'                                 => array( $init, 'GET', 'same-origin', null, null, false ),
+			'init, a POST from an origin not in the list' => array( $init, 'POST', 'cross-site', $other, null, false ),
+			'init, a same-origin POST'                    => array( $init, 'POST', 'same-origin', $other, null, true ),
+			'init, a POST with no Origin'                 => array( $init, 'POST', null, null, null, true ),
+			'init, a POST from the store origin'          => array( $init, 'POST', 'cross-site', $home, null, true ),
+			'init, the store origin with its port'        => array( $init, 'POST', null, $home_with_port, null, true ),
+			'init, a POST from an origin the filter adds' => array( $init, 'POST', 'cross-site', $other, $other . '/', true ),
+			'session, a GET'                              => array( $session, 'GET', 'same-origin', null, null, false ),
+			'session, a POST from an origin not in the list' => array( $session, 'POST', 'cross-site', $other, null, false ),
+			'session, a same-origin POST'                 => array( $session, 'POST', 'same-origin', null, null, true ),
+			'save-user, a GET'                            => array( $phone, 'GET', 'same-origin', null, null, false ),
+			'save-user, a POST from an origin not in the list' => array( $phone, 'POST', 'cross-site', $other, null, false ),
+			'save-user, a same-origin POST'               => array( $phone, 'POST', 'same-origin', null, null, true ),
+		);
+	}
+
+	/**
+	 * @testdox Save-user records nothing and starts no session when the shopper has none.
+	 *
+	 * Client 11.3.0 class-woopay-session.php:1025-1032.
+	 */
+	public function test_save_user_refuses_without_a_shopper_session(): void {
+		$service                  = new RecordingWooPaySessionService();
+		$service->shopper_session = false;
+		$this->sut                = $this->create_controller( true, $service );
+		$this->sut->register();
+
+		$response = $this->dispatch_ajax_hook_with_nonce( 'wc_ajax_wcpay_set_woopay_phone_number', 'woocommerce_payments_woopay_save_user', array( 'phone_number' => '+15555550123' ) );
+
+		$this->assertSame(
+			array(
+				'success' => false,
+				'data'    => 'Could not find the shopper session.',
+			),
+			$response
+		);
 		$this->assertSame( array(), $service->last_phone_request );
 	}
 
@@ -1720,6 +1850,8 @@ class SessionControllerTest extends WC_REST_Unit_Test_Case {
 			'init WooPay'                 => array( 'init WooPay', 'wc_ajax_wcpay_init_woopay', 'customer', null, array( 'email' => 'shopper@example.com' ), $failure, null ),
 			'WooPay session'              => array( 'WooPay session', 'wc_ajax_wcpay_get_woopay_session', 'customer', null, array( 'email' => 'shopper@example.com' ), $failure, null ),
 			'WooPay phone'                => array( 'WooPay phone', 'wc_ajax_wcpay_set_woopay_phone_number', 'customer', null, array( 'phone_number' => '+15555550123' ), $failure, null ),
+			// Client 11.3.0 class-woopay-session.php:1016: save-user checks its own nonce, not the WooPay session's.
+			'WooPay phone, session nonce' => array( 'WooPay phone, session nonce', 'wc_ajax_wcpay_set_woopay_phone_number', 'customer', 'woopay_session_nonce', array( 'phone_number' => '+15555550123' ), $failure, null ),
 			'WooPay signature'            => array( 'WooPay signature', 'wc_ajax_wcpay_get_woopay_signature', 'customer', null, array(), $error, null ),
 			'admin appearance, no nonce'  => array( 'admin appearance, no nonce', 'wp_ajax_wcpay_admin_set_woopay_appearance', 'administrator', null, $appearance, $error, null ),
 			'admin appearance, a shopper' => array( 'admin appearance, a shopper', 'wp_ajax_wcpay_admin_set_woopay_appearance', 'customer', 'wcpay_admin_woopay_appearance_nonce', $appearance, $error, null ),
@@ -2239,9 +2371,12 @@ class SessionControllerTest extends WC_REST_Unit_Test_Case {
 	 * @return array{status:int|null,body:mixed}
 	 */
 	private function dispatch_ajax_hook( string $hook ): array {
-		$status      = null;
-		$message     = '';
-		$die_handler = static function () use ( &$status ) {
+		// The store's own scripts POST these actions; a test that sends another method or origin sets it first.
+		$original_method           = $_SERVER['REQUEST_METHOD'] ?? null; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput -- Saved as is, to be put back as is.
+		$_SERVER['REQUEST_METHOD'] = $this->request_method;
+		$status                    = null;
+		$message                   = '';
+		$die_handler               = static function () use ( &$status ) {
 			return static function ( $die_message, $title = '', $args = array() ) use ( &$status ): void {
 				unset( $title );
 				if ( is_array( $args ) && ! empty( $args['response'] ) ) {
@@ -2262,6 +2397,11 @@ class SessionControllerTest extends WC_REST_Unit_Test_Case {
 			$body = (string) ob_get_clean();
 			remove_filter( 'wp_doing_ajax', '__return_true' );
 			remove_filter( 'wp_die_ajax_handler', $die_handler );
+			if ( null === $original_method ) {
+				unset( $_SERVER['REQUEST_METHOD'] );
+			} else {
+				$_SERVER['REQUEST_METHOD'] = $original_method;
+			}
 		}
 
 		$decoded = json_decode( $body, true );

@@ -82,6 +82,7 @@ jest.mock( '@woocommerce/settings', () => {
 			},
 		],
 		woopaySessionNonce: 'session-nonce',
+		woopaySaveUserNonce: 'save-user-nonce',
 		PRE_CHECK_SAVE_MY_INFO: true,
 		paymentMethodsConfig: {
 			card: {
@@ -940,6 +941,8 @@ describe( 'wc-payment-method-woopayments', () => {
 			expect( body.get( 'woopay_source_url' ) ).toBe(
 				'https://example.test/checkout/'
 			);
+			// Client 11.3.0 checkout-page-save-user.js:136 sends the save-user nonce, not the WooPay session's.
+			expect( body.get( '_wpnonce' ) ).toBe( 'save-user-nonce' );
 		} );
 	} );
 
@@ -981,6 +984,28 @@ describe( 'wc-payment-method-woopayments', () => {
 				String( url ).includes( 'set_woopay_phone_number' )
 			)
 			.map( ( [ , options ] ) => options.body );
+
+	it( 'renders no WooPay save my info section without the save-user nonce', async () => {
+		const settings = jest.requireMock( '@woocommerce/settings' );
+		const defaultData = settings.getPaymentMethodData();
+		settings.getPaymentMethodData.mockImplementation( () => ( {
+			...defaultData,
+			woopaySaveUserNonce: '',
+		} ) );
+		try {
+			renderSaveUserSection();
+			await act( async () => {
+				await Promise.resolve();
+			} );
+
+			expect( document.querySelector( '#remember-me' ) ).toBeNull();
+			expect( getSaveUserRequests() ).toEqual( [] );
+		} finally {
+			settings.getPaymentMethodData.mockImplementation(
+				() => defaultData
+			);
+		}
+	} );
 
 	it( 'hides WooPay save my info while another payment method is selected', async () => {
 		activePaymentMethod = 'woocommerce_payments_klarna';

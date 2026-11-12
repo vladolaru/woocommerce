@@ -3,6 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\WooPay;
 
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSessionService;
 use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExpressCheckoutStoreApiExtension;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
@@ -1192,6 +1193,8 @@ class SessionServiceTest extends WC_Unit_Test_Case {
 				'woopay_user_phone_field' => array(
 					'full' => '+15555550123',
 				),
+				// Client 11.3.0 class-woopay-session.php:1043 stores the session that wrote it.
+				'session_customer_id'     => (string) WC()->session->get_customer_id(),
 			),
 			WC()->session->get( 'woopay-user-data' )
 		);
@@ -1203,6 +1206,93 @@ class SessionServiceTest extends WC_Unit_Test_Case {
 		$sut->set_woopay_phone_session_data( array( 'phone_number' => '+15555550124' ) );
 
 		$this->assertSame( '+15555550124', WC()->session->get( 'woopay-user-data' )['woopay_user_phone_field']['full'], 'A flat phone value lands as the full phone field.' );
+	}
+
+	/**
+	 * @testdox Storing the WooPay save-user details starts no session.
+	 *
+	 * Client 11.3.0 class-woopay-session.php:1025-1032 records the choice only into a session the shopper already has.
+	 */
+	public function test_storing_woopay_save_user_details_starts_no_session(): void {
+		$this->original_session = WC()->session;
+		$cookie_calls           = 0;
+		WC()->session           = new class( $cookie_calls ) extends \WC_Session {
+			/**
+			 * Calls that set the session cookie.
+			 *
+			 * @var int
+			 */
+			private int $cookie_calls;
+
+			/**
+			 * Constructor.
+			 *
+			 * @param int $cookie_calls Counter of calls that set the session cookie.
+			 */
+			public function __construct( int &$cookie_calls ) {
+				$this->cookie_calls = &$cookie_calls;
+			}
+
+			/**
+			 * Count a call that sets the session cookie.
+			 *
+			 * @param bool $set Whether to set the cookie.
+			 */
+			public function set_customer_session_cookie( bool $set ): void {
+				unset( $set );
+				++$this->cookie_calls;
+			}
+		};
+
+		$this->create_service()->set_woopay_phone_session_data( array( 'phone_number' => '+15555550124' ) );
+
+		$this->assertSame( 0, $cookie_calls );
+	}
+
+	/**
+	 * @testdox The shopper has a session to record into only when the session handler reports one: $_dataName.
+	 *
+	 * @testWith ["a handler with a session", true, true]
+	 *           ["a handler without a session", true, false]
+	 *           ["a handler that cannot tell", false, false]
+	 *
+	 * @param string $label        Case label.
+	 * @param bool   $can_tell     Whether the handler has has_session().
+	 * @param bool   $has_session  What has_session() answers.
+	 */
+	public function test_has_shopper_session_follows_the_session_handler( string $label, bool $can_tell, bool $has_session ): void {
+		unset( $label );
+		$this->original_session = WC()->session;
+		WC()->session           = $can_tell
+			? new class( $has_session ) extends \WC_Session {
+				/**
+				 * What has_session() answers.
+				 *
+				 * @var bool
+				 */
+				private bool $answer;
+
+				/**
+				 * Constructor.
+				 *
+				 * @param bool $answer What has_session() answers.
+				 */
+				public function __construct( bool $answer ) {
+					$this->answer = $answer;
+				}
+
+				/**
+				 * Tell whether the shopper has a session.
+				 *
+				 * @return bool
+				 */
+				public function has_session() {
+					return $this->answer;
+				}
+			}
+			: new class() extends \WC_Session {};
+
+		$this->assertSame( $can_tell && $has_session, $this->create_service()->has_shopper_session() );
 	}
 
 	/**
@@ -1425,23 +1515,44 @@ class SessionServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should add WooPay save-user session data to order metadata.
+	 * @testdox Should add the WooPay save-user details the current session stored to order metadata, and none another session stored: $_dataName.
+	 *
+	 * Client 11.3.0 class-woopay-utilities.php:518-530: the details count only in the session that stored them; details
+	 * with no recorded session, as ones stored before 11.3.0, are not read.
+	 *
+	 * @testWith ["this session", null, false]
+	 *           ["another session", "t_another_session", false]
+	 *           ["another session, opted in on the posted form", "t_another_session", true]
+	 *           ["no recorded session", "", false]
+	 *
+	 * @param string      $label     Case label.
+	 * @param string|null $stored_by Session recorded as storing the details, or null for the current one.
+	 * @param bool        $posted    Whether the checkout form posts the opt-in, without the phone.
 	 */
-	public function test_adds_woopay_session_data_to_order_metadata(): void {
+	public function test_adds_woopay_session_data_to_order_metadata( string $label, ?string $stored_by, bool $posted ): void {
+		unset( $label );
+		$original_post = $_POST; // phpcs:ignore WordPress.Security.NonceVerification.Missing
+		if ( $posted ) {
+			$_POST['save_user_in_woopay'] = 'true';
+		}
 		$this->original_session = WC()->session;
 		WC()->session           = $this->create_session();
-		WC()->session->set(
-			'woopay-user-data',
-			array(
-				'save_user_in_woopay'     => true,
-				'woopay_source_url'       => 'https://example.test/checkout',
-				'woopay_is_blocks'        => true,
-				'woopay_viewport'         => 'desktop',
-				'woopay_user_phone_field' => array(
-					'full' => '+15555550123',
-				),
-			)
+		$details                = array(
+			'save_user_in_woopay'     => true,
+			'woopay_source_url'       => 'https://example.test/checkout',
+			'woopay_is_blocks'        => true,
+			'woopay_viewport'         => 'desktop',
+			'woopay_user_phone_field' => array(
+				'full' => '+15555550123',
+			),
+			'session_customer_id'     => (string) WC()->session->get_customer_id(),
 		);
+		if ( '' === $stored_by ) {
+			unset( $details['session_customer_id'] );
+		} elseif ( null !== $stored_by ) {
+			$details['session_customer_id'] = $stored_by;
+		}
+		WC()->session->set( 'woopay-user-data', $details );
 
 		$order = \WC_Helper_Order::create_order();
 		$order->set_billing_first_name( 'Ada' );
@@ -1453,9 +1564,18 @@ class SessionServiceTest extends WC_Unit_Test_Case {
 		$order->set_shipping_phone( '+15555550001' );
 		$order->set_shipping_company( 'Compilers Inc' );
 
-		$sut      = $this->create_service();
-		$metadata = $sut->maybe_add_woopay_user_metadata( array( 'existing' => 'kept' ), $order );
+		$sut = $this->create_service();
+		try {
+			$metadata = $sut->maybe_add_woopay_user_metadata( array( 'existing' => 'kept' ), $order );
+		} finally {
+			$_POST = $original_post;
+		}
 
+		if ( null !== $stored_by ) {
+			$this->assertSame( array( 'existing' => 'kept' ), $metadata );
+
+			return;
+		}
 		$this->assertSame( 'kept', $metadata['existing'] );
 		$this->assertSame( 'Ada', $metadata['platform_checkout_primary_first_name'] );
 		$this->assertSame( 'Lovelace', $metadata['platform_checkout_primary_last_name'] );
@@ -1885,8 +2005,10 @@ class SessionServiceTest extends WC_Unit_Test_Case {
 		$this->assertTrue( $sut->should_save_user_in_woopay() );
 		unset( $_POST['save_user_in_woopay'] );
 
-		WC()->session->set( 'woopay-user-data', array( 'save_user_in_woopay' => 'true' ) );
+		WooPaymentsSessionService::set_owned_record( WC()->session, 'woopay-user-data', array( 'save_user_in_woopay' => 'true' ) );
 		$this->assertTrue( $sut->should_save_user_in_woopay() );
+		WC()->session->set( 'woopay-user-data', array( 'save_user_in_woopay' => 'true' ) );
+		$this->assertFalse( $sut->should_save_user_in_woopay(), 'Details with no recorded session are not read.' );
 		WC()->session->set( 'woopay-user-data', null );
 	}
 

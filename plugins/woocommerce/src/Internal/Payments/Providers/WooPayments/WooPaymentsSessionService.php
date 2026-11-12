@@ -37,6 +37,17 @@ class WooPaymentsSessionService implements RegisterHooksInterface {
 	);
 
 	/**
+	 * Session values stored as one record that carries the ID of the session that stored it, under RECORD_OWNER_FIELD
+	 * (client 11.3.0 class-woopay-session.php:1043).
+	 */
+	private const OWNED_RECORD_KEYS = array( WooPay\SessionService::WOOPAY_SESSION_KEY );
+
+	/**
+	 * Record field holding the ID of the session that stored the record, the WooPayments extension's name.
+	 */
+	private const RECORD_OWNER_FIELD = 'session_customer_id';
+
+	/**
 	 * Option holding the persisted random store ID used to derive Sift session IDs.
 	 *
 	 * Client 11.1.0's option name (class-wc-payments-session-service.php:19): a
@@ -98,8 +109,38 @@ class WooPaymentsSessionService implements RegisterHooksInterface {
 	}
 
 	/**
+	 * Store a record with the ID of the session that stores it.
+	 *
+	 * @param \WC_Session         $session Session to store the record in.
+	 * @param string              $key     A key of OWNED_RECORD_KEYS.
+	 * @param array<string,mixed> $record  Record to store.
+	 */
+	public static function set_owned_record( \WC_Session $session, string $key, array $record ): void {
+		$record[ self::RECORD_OWNER_FIELD ] = (string) $session->get_customer_id();
+		$session->set( $key, $record );
+	}
+
+	/**
+	 * Read a record only when the current session stored it; otherwise an empty one (client 11.3.0
+	 * class-woopay-utilities.php:518-530).
+	 *
+	 * @param \WC_Session $session Session to read the record from.
+	 * @param string      $key     A key of OWNED_RECORD_KEYS.
+	 * @return array<string,mixed>
+	 */
+	public static function get_owned_record( \WC_Session $session, string $key ): array {
+		$record = $session->get( $key );
+		if ( ! is_array( $record ) || ! isset( $record[ self::RECORD_OWNER_FIELD ] ) || (string) $session->get_customer_id() !== $record[ self::RECORD_OWNER_FIELD ] ) {
+			return array();
+		}
+
+		return $record;
+	}
+
+	/**
 	 * When WooCommerce moves a guest session to the shopper's account, record the account's session as the owner of each
-	 * value the guest session stored (client 11.3.0 class-wc-payments-session-service.php:43-75).
+	 * value and record the guest session stored (client 11.3.0 class-wc-payments-session-service.php:43-75,
+	 * class-woopay-session.php:1059-1075).
 	 *
 	 * @internal
 	 *
@@ -120,6 +161,14 @@ class WooPaymentsSessionService implements RegisterHooksInterface {
 		foreach ( self::OWNER_KEYS as $owner_key ) {
 			if ( $session->get( $owner_key ) === $guest_session_id ) {
 				$session->set( $owner_key, $user_session_id );
+			}
+		}
+
+		foreach ( self::OWNED_RECORD_KEYS as $key ) {
+			$record = $session->get( $key );
+			if ( is_array( $record ) && ( $record[ self::RECORD_OWNER_FIELD ] ?? null ) === $guest_session_id ) {
+				$record[ self::RECORD_OWNER_FIELD ] = $user_session_id;
+				$session->set( $key, $record );
 			}
 		}
 	}

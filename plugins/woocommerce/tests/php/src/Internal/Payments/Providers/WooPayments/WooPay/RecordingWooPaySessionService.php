@@ -288,6 +288,22 @@ class RecordingWooPaySessionService extends SessionService {
 	}
 
 	/**
+	 * Whether the shopper already has a WooCommerce session.
+	 *
+	 * @var bool
+	 */
+	public bool $shopper_session = true;
+
+	/**
+	 * Tell whether the shopper already has a WooCommerce session.
+	 *
+	 * @return bool
+	 */
+	public function has_shopper_session(): bool {
+		return $this->shopper_session;
+	}
+
+	/**
 	 * Store WooPay phone data.
 	 *
 	 * @param array<string,mixed> $request Request data.

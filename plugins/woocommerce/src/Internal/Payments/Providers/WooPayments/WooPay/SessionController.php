@@ -374,6 +374,8 @@ class SessionController implements RegisterHooksInterface {
 	 * Handle WooPay init AJAX.
 	 */
 	public function handle_init_woopay(): void {
+		$this->refuse_request_from_another_origin();
+
 		if ( ! $this->is_ajax_nonce_valid( 'wcpay_init_woopay_nonce' ) ) {
 			wp_send_json( array( 'result' => 'failure' ), 403 );
 		}
@@ -385,6 +387,8 @@ class SessionController implements RegisterHooksInterface {
 	 * Handle encrypted WooPay session AJAX.
 	 */
 	public function handle_get_woopay_session(): void {
+		$this->refuse_request_from_another_origin();
+
 		if ( ! $this->is_ajax_nonce_valid( 'woopay_session_nonce' ) ) {
 			wp_send_json( array( 'result' => 'failure' ), 403 );
 		}
@@ -399,11 +403,18 @@ class SessionController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Handle WooPay phone-number session AJAX.
+	 * Handle WooPay phone-number session AJAX: the save-user choice, under its own nonce, recorded only into a session the
+	 * shopper already has (client 11.3.0 class-woopay-session.php:1013-1057).
 	 */
 	public function handle_set_woopay_phone_number(): void {
-		if ( ! $this->is_ajax_nonce_valid( 'woopay_session_nonce' ) ) {
+		$this->refuse_request_from_another_origin();
+
+		if ( ! $this->is_ajax_nonce_valid( SessionService::SAVE_USER_NONCE_ACTION ) ) {
 			wp_send_json( array( 'result' => 'failure' ), 403 );
+		}
+
+		if ( ! $this->session_service->has_shopper_session() ) {
+			wp_send_json_error( __( 'Could not find the shopper session.', 'woocommerce' ), 403 );
 		}
 
 		$request = wp_unslash( $_POST ); // phpcs:ignore WordPress.Security.NonceVerification.Missing
@@ -765,6 +776,93 @@ class SessionController implements RegisterHooksInterface {
 	 */
 	private function is_ajax_nonce_valid( string $action ): bool {
 		return (bool) check_ajax_referer( $action, false, false );
+	}
+
+	/**
+	 * Answer a WooPay session request with a 403 unless it is a POST from the store's own pages.
+	 */
+	private function refuse_request_from_another_origin(): void {
+		if ( ! $this->is_same_origin_post() ) {
+			wp_send_json_error( __( 'You aren’t authorized to do that.', 'woocommerce' ), 403 );
+		}
+	}
+
+	/**
+	 * Tell whether the current request is a POST from the store's own pages: the browser marks it same-origin, it carries no
+	 * `Origin`, or its `Origin` matches the store's scheme, host and port, or an origin the filter adds (client 11.3.0
+	 * class-woopay-session.php:830-885).
+	 *
+	 * @return bool
+	 */
+	private function is_same_origin_post(): bool {
+		$method = isset( $_SERVER['REQUEST_METHOD'] ) ? strtoupper( sanitize_text_field( wp_unslash( $_SERVER['REQUEST_METHOD'] ) ) ) : '';
+		if ( 'POST' !== $method ) {
+			return false;
+		}
+
+		$fetch_site = isset( $_SERVER['HTTP_SEC_FETCH_SITE'] ) ? sanitize_text_field( wp_unslash( $_SERVER['HTTP_SEC_FETCH_SITE'] ) ) : '';
+		if ( 'same-origin' === $fetch_site ) {
+			return true;
+		}
+
+		$origin_header = isset( $_SERVER['HTTP_ORIGIN'] ) ? sanitize_text_field( wp_unslash( $_SERVER['HTTP_ORIGIN'] ) ) : '';
+		if ( '' === $origin_header ) {
+			return true;
+		}
+
+		$origin = $this->normalize_origin( $origin_header );
+		if ( '' === $origin ) {
+			return false;
+		}
+
+		/**
+		 * Filters the origins allowed to call the WooPay session AJAX actions.
+		 *
+		 * For checkouts also served from another domain, such as a translation proxy. List full origins: scheme, host and
+		 * any non-default port.
+		 *
+		 * @since 11.3.0
+		 *
+		 * @param string[] $allowed_origins The origins of `home_url()` and `admin_url()`.
+		 */
+		$allowed_origins = apply_filters( 'wcpay_woopay_session_allowed_origins', array( home_url(), admin_url() ) );
+
+		foreach ( (array) $allowed_origins as $allowed_origin ) {
+			if ( $this->normalize_origin( $allowed_origin ) === $origin ) {
+				return true;
+			}
+		}
+
+		wc_get_container()->get( WooPaymentsLogger::class )->log( 'WooPay session request rejected: origin ' . $origin . ' is not allowed. See the wcpay_woopay_session_allowed_origins filter.' );
+
+		return false;
+	}
+
+	/**
+	 * Reduce a URL to a lowercase `scheme://host:port`, filling in the default port (client 11.3.0
+	 * class-woopay-session.php:887-913).
+	 *
+	 * @param mixed $url The URL or origin; a filter callback can return anything.
+	 * @return string The origin, or '' when there is no http(s) origin.
+	 */
+	private function normalize_origin( $url ): string {
+		if ( ! is_string( $url ) ) {
+			return '';
+		}
+
+		$default_ports = array(
+			'http'  => 80,
+			'https' => 443,
+		);
+		$parts         = wp_parse_url( $url );
+		$scheme        = is_array( $parts ) && isset( $parts['scheme'] ) ? strtolower( $parts['scheme'] ) : '';
+		if ( ! isset( $default_ports[ $scheme ] ) || empty( $parts['host'] ) ) {
+			return '';
+		}
+
+		$port = isset( $parts['port'] ) ? (int) $parts['port'] : $default_ports[ $scheme ];
+
+		return $scheme . '://' . strtolower( $parts['host'] ) . ':' . $port;
 	}
 
 	/**
