@@ -524,7 +524,7 @@ class PaymentIntentEventHandler {
 	private function build_succeeded_lifecycle_event( array $event_object, WC_Order $order, ?array $hold_note_candidates ): PaymentLifecycleEvent {
 		$charge                     = $this->get_first_charge_from_intent( $event_object );
 		$balance_transaction_id     = WooPaymentsIntentCodec::balance_transaction_id( $charge['balance_transaction'] ?? null );
-		$captures_the_authorization = null === $hold_note_candidates && 'requires_capture' === (string) $order->get_meta( '_intention_status', true );
+		$captures_the_authorization = null === $hold_note_candidates && WooPaymentsOrderEffects::captures_the_authorization( $order, $event_object );
 		$meta                       = $this->get_succeeded_payment_intent_meta( $event_object, $order, $captures_the_authorization );
 
 		if ( null !== $hold_note_candidates ) {

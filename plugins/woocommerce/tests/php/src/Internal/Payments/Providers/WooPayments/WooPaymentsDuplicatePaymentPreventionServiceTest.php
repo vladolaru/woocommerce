@@ -313,6 +313,92 @@ class WooPaymentsDuplicatePaymentPreventionServiceTest extends WC_Unit_Test_Case
 	}
 
 	/**
+	 * @testdox An attached PaymentIntent that succeeded while the order still stores its authorization completes the order as a capture, once.
+	 *
+	 * Client 11.3.0 applies the attached intent through update_order_status_from_intent() with no attach
+	 * (class-duplicate-payment-prevention-service.php:150), whose status writer completes an order storing requires_capture
+	 * with its capture writer: the capture note and the captured charge's fee
+	 * (class-wc-payments-order-service.php:484-485, :2193-2219).
+	 */
+	public function test_attached_intent_succeeded_over_a_stored_authorization_completes_as_a_capture(): void {
+		$order = $this->create_order( 'hash', 'on-hold' );
+		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+		$order->update_meta_data( '_intent_id', 'pi_existing' );
+		$order->update_meta_data( '_intention_status', 'requires_capture' );
+		$order->update_meta_data( '_wcpay_fraud_outcome_status', 'allow' );
+		$order->save();
+		$intent                       = $this->create_intent_response( $order, 'succeeded', 1200 );
+		$charge                       = array(
+			'captured'               => true,
+			'application_fee_amount' => 35,
+			'currency'               => 'usd',
+			'payment_method_details' => array(
+				'type' => 'card',
+				'card' => array(
+					'brand' => 'visa',
+					'last4' => '4242',
+				),
+			),
+		);
+		$intent['charges']['data'][0] = array_merge( $intent['charges']['data'][0], $charge );
+		$completions                  = did_action( 'woocommerce_pre_payment_complete' );
+		$sut                          = $this->create_service( $this->create_session(), $this->create_api_client_answering( $intent ) );
+
+		$sut->check_payment_intent_attached_to_order_succeeded( wc_get_order( $order->get_id() ), $this->create_gateway() );
+		$sut->check_payment_intent_attached_to_order_succeeded( wc_get_order( $order->get_id() ), $this->create_gateway() );
+
+		$order        = wc_get_order( $order->get_id() );
+		$note_service = wc_get_container()->get( WooPaymentsOrderNoteService::class );
+		$captured     = $note_service->format_capture_success_note_candidates( $order, 'pi_existing', 'ch_existing' );
+		$charged      = $note_service->format_payment_success_note_candidates( $order, 'pi_existing', 'ch_existing' );
+		$notes        = wp_list_pluck( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), 'content' );
+		$this->assertTrue( $order->is_paid() );
+		$this->assertSame( 1, did_action( 'woocommerce_pre_payment_complete' ) - $completions, 'One completion.' );
+		$this->assertCount( 1, array_intersect( $notes, $captured ), 'One capture note.' );
+		$this->assertCount( 0, array_intersect( $notes, $charged ), 'No success note.' );
+		$this->assertSame( '0.35', $order->get_meta( '_wcpay_transaction_fee', true ) );
+		$this->assertSame( 'succeeded', $order->get_meta( '_intention_status', true ) );
+	}
+
+	/**
+	 * @testdox An attached PaymentIntent whose order is paid between the intent read and the claim leaves the order as it is.
+	 *
+	 * Client 11.3.0's status writer changes nothing on a paid order, its caller's copy or a fresh read
+	 * (class-wc-payments-order-service.php:475, :3403-3416).
+	 */
+	public function test_attached_intent_leaves_an_order_paid_after_the_intent_read(): void {
+		$order = $this->create_order( 'hash', 'pending' );
+		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+		$order->update_meta_data( '_intent_id', 'pi_existing' );
+		$order->save();
+		$api_client = $this->getMockBuilder( Client::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_payment_intention' ) )
+			->getMock();
+		$intent     = $this->create_intent_response( $order, 'succeeded', 1200 );
+		$api_client->method( 'get_payment_intention' )->willReturnCallback(
+			static function () use ( $order, $intent ): array {
+				$other = wc_get_order( $order->get_id() );
+				$other->set_status( 'completed' );
+				$other->save();
+
+				return $intent;
+			}
+		);
+		$completions = did_action( 'woocommerce_pre_payment_complete' );
+		$caller      = wc_get_order( $order->get_id() );
+
+		$this->create_service( $this->create_session(), $api_client )->check_payment_intent_attached_to_order_succeeded( $caller, $this->create_gateway() );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( 'completed', $order->get_status() );
+		$this->assertSame( $completions, did_action( 'woocommerce_pre_payment_complete' ), 'No completion.' );
+		$this->assertSame( '', $order->get_meta( '_intention_status', true ) );
+		$this->assertSame( array(), array_values( array_filter( wp_list_pluck( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), 'content' ), static fn( string $note ): bool => false !== strpos( $note, 'pi_existing' ) ) ), 'No note of the payment.' );
+		$this->assertSame( 'completed', $caller->get_status(), "The caller's object is the order as stored." );
+	}
+
+	/**
 	 * @testdox An attached PaymentIntent the store captured before the order was moved to Failed redirects as paid and leaves the order as it is.
 	 *
 	 * Client 11.3.0 applies the attached intent through update_order_status_from_intent() (class-duplicate-payment-prevention-service.php:150),

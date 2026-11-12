@@ -8,6 +8,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
+use WC_Order;
 
 /**
  * Computes the order meta values a platform intent implies, without writing them.
@@ -433,6 +434,19 @@ class WooPaymentsOrderEffects {
 		$ruleset_results = json_decode( $encoded, true );
 
 		return is_array( $ruleset_results ) && array() !== $ruleset_results ? $ruleset_results : array();
+	}
+
+	/**
+	 * Tell whether a succeeded intent completes the order as a capture: the order still stores the authorization's
+	 * requires_capture intent status, with no intent attached since. Client 11.3.0 then completes it with its capture
+	 * writer, not its success writer (class-wc-payments-order-service.php:484-485, :2193-2219).
+	 *
+	 * @param WC_Order            $order  Order the intent pays, read under the order payment lock.
+	 * @param array<string,mixed> $intent Provider intent response.
+	 * @return bool
+	 */
+	public static function captures_the_authorization( WC_Order $order, array $intent ): bool {
+		return 'succeeded' === (string) ( $intent['status'] ?? '' ) && 'requires_capture' === (string) $order->get_meta( '_intention_status', true );
 	}
 
 	/**

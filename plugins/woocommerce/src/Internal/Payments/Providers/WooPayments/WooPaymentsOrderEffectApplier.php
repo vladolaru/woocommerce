@@ -328,7 +328,8 @@ class WooPaymentsOrderEffectApplier {
 	public function enrich_outcome_for_lifecycle( PaymentOperationContext $context, PaymentOutcome $outcome, WooPaymentsOrderEffectPlan $plan ): PaymentOutcome {
 		switch ( $plan->get_type() ) {
 			case WooPaymentsOrderEffectPlan::TYPE_PAYMENT_INTENT:
-				$meta = $this->compose_payment_intent_meta( $context->get_order(), $plan->get_provider_result(), $plan->writes_fee_meta() );
+				$captures = WooPaymentsOrderEffects::captures_the_authorization( $context->get_order(), $plan->get_provider_result() );
+				$meta     = $this->compose_payment_intent_meta( $context->get_order(), $plan->get_provider_result(), $plan->writes_fee_meta(), $captures );
 
 				return $this->compose_payment_intent_outcome( $context, $outcome, $plan, $meta, false );
 
@@ -418,7 +419,7 @@ class WooPaymentsOrderEffectApplier {
 		if ( $plan instanceof WooPaymentsOrderEffectPlan && WooPaymentsOrderEffectPlan::TYPE_PAYMENT_INTENT === $plan->get_type() ) {
 			$outcome = $this->merge_effect_data_into_outcome(
 				$outcome,
-				array( WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY => $this->compose_payment_intent_meta( $context->get_order(), $plan->get_provider_result(), $plan->writes_fee_meta() ) ),
+				array( WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY => $this->compose_payment_intent_meta( $context->get_order(), $plan->get_provider_result(), $plan->writes_fee_meta(), false ) ),
 				$plan
 			);
 		} elseif ( $plan instanceof WooPaymentsOrderEffectPlan && WooPaymentsOrderEffectPlan::TYPE_SETUP_INTENT === $plan->get_type() ) {
@@ -535,12 +536,17 @@ class WooPaymentsOrderEffectApplier {
 	/**
 	 * Compose a PaymentIntent's order meta: the intent's record, the payment's meta and the payment method's display meta.
 	 *
+	 * A completion as a capture (WooPaymentsOrderEffects::captures_the_authorization()) marks a fraud review as allowed only
+	 * when the order's fraud outcome is review, and writes the captured charge's fee, as client 11.3.0's capture writer does
+	 * (class-wc-payments-order-service.php:2207-2215).
+	 *
 	 * @param WC_Order            $order            Order being charged.
 	 * @param array<string,mixed> $result           Provider PaymentIntent response.
 	 * @param bool                $include_fee_meta Whether to write the fee meta.
+	 * @param bool                $captures         Whether the payment completes the order as a capture.
 	 * @return array<string,string>
 	 */
-	private function compose_payment_intent_meta( WC_Order $order, array $result, bool $include_fee_meta ): array {
+	private function compose_payment_intent_meta( WC_Order $order, array $result, bool $include_fee_meta, bool $captures ): array {
 		$status          = (string) ( $result['status'] ?? '' );
 		$charge          = WooPaymentsIntentCodec::latest_charge( $result );
 		$settlement_meta = ! empty( $charge ) && WooPaymentsIntentCodec::holds_money( $status )
@@ -552,8 +558,8 @@ class WooPaymentsOrderEffectApplier {
 			(string) $order->get_currency(),
 			$this->account_service->get_order_mode(),
 			$settlement_meta,
-			$order->has_status( OrderStatus::ON_HOLD ) || 'review' === (string) $order->get_meta( '_wcpay_fraud_outcome_status', true ),
-			$include_fee_meta
+			( ! $captures && $order->has_status( OrderStatus::ON_HOLD ) ) || 'review' === (string) $order->get_meta( '_wcpay_fraud_outcome_status', true ),
+			$include_fee_meta || $captures
 		);
 
 		return empty( $display_effects ) ? $meta : array_merge( $meta, $display_effects['meta'] );
@@ -584,6 +590,18 @@ class WooPaymentsOrderEffectApplier {
 			$effect_data[ PaymentOutcome::DATA_NOTE ]             = $hold['notes'][0];
 			$effect_data[ PaymentOutcome::DATA_NOTE_TYPE ]        = PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_HELD;
 			$effect_data[ PaymentOutcome::DATA_NOTE_EQUIVALENTS ] = $hold['notes'];
+		} elseif ( 'succeeded' === $status && WooPaymentsOrderEffects::captures_the_authorization( $order, $result ) ) {
+			// No intent was attached since the authorization, so the payment completes the order as a capture (client 11.3.0
+			// class-wc-payments-order-service.php:484-485, :2193-2219), as the payment_intent.succeeded webhook does.
+			$note_candidates                                      = $this->note_service->format_capture_success_note_candidates(
+				$order,
+				$intent_id,
+				$charge_id,
+				WooPaymentsIntentCodec::balance_transaction_id( $charge['balance_transaction'] ?? null )
+			);
+			$effect_data[ PaymentOutcome::DATA_NOTE ]             = $note_candidates[0];
+			$effect_data[ PaymentOutcome::DATA_NOTE_TYPE ]        = PaymentLifecycleEvent::NOTE_TYPE_CAPTURE_SUCCESS;
+			$effect_data[ PaymentOutcome::DATA_NOTE_EQUIVALENTS ] = $note_candidates;
 		} elseif ( 'succeeded' === $status ) {
 			$note_candidates                                      = $this->note_service->format_payment_success_note_candidates(
 				$order,
