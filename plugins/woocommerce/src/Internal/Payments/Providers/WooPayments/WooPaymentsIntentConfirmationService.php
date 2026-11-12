@@ -224,8 +224,14 @@ class WooPaymentsIntentConfirmationService {
 			}
 		}
 
-		list( $event, $hold ) = $this->build_lifecycle_event_from_intent( $intent, $order, $zero_amount_plain_note );
-		if ( OrderPaymentLifecycleService::RESULT_REFUSED === $this->fee_details_note_controller->apply_and_schedule_fee_details_with_lock( $order, $event, $hold ) ) {
+		// The event is built again, and the hold decided, on the order read under the order payment lock it is applied under.
+		list( $event ) = $this->build_lifecycle_event_from_intent( $intent, $order, $zero_amount_plain_note );
+		$result        = $this->fee_details_note_controller->apply_and_schedule_fee_details_with_lock(
+			$order,
+			$event,
+			fn( WC_Order $stored_order ): array => $this->build_lifecycle_event_from_intent( $intent, $stored_order, $zero_amount_plain_note )
+		);
+		if ( OrderPaymentLifecycleService::RESULT_REFUSED === $result ) {
 			$this->attach_charge_details_after_refusal( $order, $event );
 		}
 		if ( WooPaymentsIntentCodec::holds_money( $status ) && ! $should_apply_display_details_before_lifecycle ) {
@@ -278,6 +284,23 @@ class WooPaymentsIntentConfirmationService {
 	 * @param array<string,mixed> $intent PaymentIntent response.
 	 */
 	public function apply_attached_payment_intent( WC_Order $order, array $intent ): void {
+		// The event is built again, and the hold decided, on the order read under the order payment lock it is applied under.
+		list( $event ) = $this->build_attached_lifecycle_event( $order, $intent );
+		$this->fee_details_note_controller->apply_and_schedule_fee_details_with_lock(
+			$order,
+			$event,
+			fn( WC_Order $stored_order ): array => $this->build_attached_lifecycle_event( $stored_order, $intent )
+		);
+	}
+
+	/**
+	 * Build the payment lifecycle event for a PaymentIntent an earlier checkout request attached to the order.
+	 *
+	 * @param WC_Order            $order  Order the intent pays.
+	 * @param array<string,mixed> $intent PaymentIntent response.
+	 * @return array{0:PaymentLifecycleEvent,1:array{notes:string[],log_line:string}|null} The event, and the amount-mismatch hold decided for the intent.
+	 */
+	private function build_attached_lifecycle_event( WC_Order $order, array $intent ): array {
 		$provider_redirect_url = esc_url_raw( WooPaymentsIntentCodec::raw_next_action_redirect_url( $intent ) );
 		$outcome               = $this->enrich_outcome_for_lifecycle(
 			$order,
@@ -293,11 +316,7 @@ class WooPaymentsIntentConfirmationService {
 			WooPaymentsOrderEffectPlan::for_payment_intent( $intent, false )->without_fee_meta()
 		);
 
-		$this->fee_details_note_controller->apply_and_schedule_fee_details_with_lock(
-			$order,
-			$this->lifecycle_event( $outcome, ( new WooPaymentsOutcomeMetadataMapper() )->get_outcome_meta( $outcome ) ),
-			$this->get_amount_mismatch_hold( $outcome )
-		);
+		return array( $this->lifecycle_event( $outcome, ( new WooPaymentsOutcomeMetadataMapper() )->get_outcome_meta( $outcome ) ), $this->get_amount_mismatch_hold( $outcome ) );
 	}
 
 	/**

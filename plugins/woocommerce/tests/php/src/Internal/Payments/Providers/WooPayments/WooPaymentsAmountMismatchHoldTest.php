@@ -146,16 +146,15 @@ class WooPaymentsAmountMismatchHoldTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A held event is logged only when the lifecycle adds its note, not when another request already held the order: $_dataName.
+	 * @testdox A held event is logged only when the lifecycle adds its note, not when the order already has it: $_dataName.
 	 *
-	 * The decision is made before the lifecycle claims the order payment lock (the order-status callback), and another request
-	 * may hold the order in between. Client 11.3.0 class-wc-payments-order-service.php:2117-2131 logs only when it holds the order.
+	 * Client 11.3.0 class-wc-payments-order-service.php:2117-2131 logs only when it holds the order.
 	 *
 	 * @testWith ["the lifecycle adds the note", false, 1]
-	 *           ["another request added the note", true, 0]
+	 *           ["the order already has the note", true, 0]
 	 *
 	 * @param string $case_name      Case name.
-	 * @param bool   $already_noted  Whether another request added the hold note after the decision.
+	 * @param bool   $already_noted  Whether the order already has the hold note.
 	 * @param int    $expected_lines Hold log lines expected.
 	 */
 	public function test_held_event_is_logged_only_when_the_lifecycle_adds_its_note( string $case_name, bool $already_noted, int $expected_lines ): void {

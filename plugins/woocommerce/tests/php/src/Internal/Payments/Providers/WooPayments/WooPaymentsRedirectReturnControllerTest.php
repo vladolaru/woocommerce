@@ -375,6 +375,97 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A redirect return decides the hold on the order read under the order payment lock: $_dataName.
+	 *
+	 * The payment is compared with the order read under the order payment lock its lifecycle event is applied under, and a
+	 * stored `requires_capture` intent status exempts it (client 11.3.0 class-wc-payment-gateway-wcpay.php:2707,
+	 * class-wc-payments-order-service.php:484-491).
+	 *
+	 * @dataProvider provider_returned_orders_read_under_the_lock
+	 *
+	 * @param string $first_total     Order total when the request reads the order.
+	 * @param string $first_currency  Order currency then.
+	 * @param bool   $first_capture   Whether the stored intent status was `requires_capture` then.
+	 * @param string $stored_total    Order total stored when the order payment lock is claimed.
+	 * @param string $stored_currency Order currency stored then.
+	 * @param bool   $stored_capture  Whether the stored intent status is `requires_capture` then.
+	 * @param bool   $expected_held   Whether the order is held rather than paid.
+	 */
+	public function test_handle_wp_decides_the_hold_on_the_order_read_under_the_lock( string $first_total, string $first_currency, bool $first_capture, string $stored_total, string $stored_currency, bool $stored_capture, bool $expected_held ): void {
+		$GLOBALS['_SERVER']['REQUEST_METHOD'] = 'GET';
+		$order                                = $this->create_order( $first_total );
+		$order->set_total( $first_total );
+		$order->set_currency( $first_currency );
+		if ( $first_capture ) {
+			$order->update_meta_data( '_intention_status', 'requires_capture' );
+		}
+		$order->save();
+		$order_id                                 = $order->get_id();
+		$store_on_next_total_read                 = false;
+		$api_client                               = new RedirectReturnApiClientStub();
+		$api_client->payment_intent               = $this->successful_payment_intent( $order, 'pi_return', 'pm_return' );
+		$api_client->before_payment_intent_return = static function () use ( &$store_on_next_total_read ): void {
+			$store_on_next_total_read = true;
+		};
+		add_filter(
+			'woocommerce_order_get_total',
+			static function ( $total ) use ( &$store_on_next_total_read, $order_id, $stored_total, $stored_currency, $stored_capture ) {
+				if ( $store_on_next_total_read ) {
+					$store_on_next_total_read = false;
+					self::store_order_values( $order_id, $stored_total, $stored_currency, $stored_capture );
+				}
+
+				return $total;
+			}
+		);
+		$this->sut = $this->create_controller( true, $this->create_confirmation_service( $api_client, $this->create_token_service() ), $api_client );
+		$this->set_payment_intent_return_request( $order, 'pi_return' );
+
+		$this->sut->handle_wp();
+
+		$order = wc_get_order( $order_id );
+		$this->assertSame( $expected_held, $order->has_status( 'on-hold' ) );
+		$this->assertSame( ! $expected_held, $order->is_paid() );
+	}
+
+	/**
+	 * Orders as the request reads them and as they are stored when the order payment lock is claimed, for a payment of
+	 * 50.00 USD.
+	 *
+	 * @return array<string,array{string,string,bool,string,string,bool,bool}>
+	 */
+	public function provider_returned_orders_read_under_the_lock(): array {
+		return array(
+			'total matched, differs under the lock'       => array( '50.00', 'USD', false, '40.00', 'USD', false, true ),
+			'total differed, matches under the lock'      => array( '40.00', 'USD', false, '50.00', 'USD', false, false ),
+			'currency matched, differs under the lock'    => array( '50.00', 'USD', false, '50.00', 'EUR', false, true ),
+			'currency differed, matches under the lock'   => array( '50.00', 'EUR', false, '50.00', 'USD', false, false ),
+			'requires_capture stored only under the lock' => array( '40.00', 'USD', false, '40.00', 'USD', true, false ),
+			'requires_capture stored only before'         => array( '40.00', 'USD', true, '40.00', 'USD', false, true ),
+		);
+	}
+
+	/**
+	 * Store order values through another order object, then save it.
+	 *
+	 * @param int    $order_id         Order ID.
+	 * @param string $total            Order total.
+	 * @param string $currency         Order currency.
+	 * @param bool   $requires_capture Whether the stored intent status is `requires_capture`.
+	 */
+	private static function store_order_values( int $order_id, string $total, string $currency, bool $requires_capture ): void {
+		$stored = wc_get_order( $order_id );
+		$stored->set_total( $total );
+		$stored->set_currency( $currency );
+		if ( $requires_capture ) {
+			$stored->update_meta_data( '_intention_status', 'requires_capture' );
+		} else {
+			$stored->delete_meta_data( '_intention_status' );
+		}
+		$stored->save();
+	}
+
+	/**
 	 * Payments that differ from the $50.00 USD order.
 	 *
 	 * @return array<string,array{array<string,mixed>}>

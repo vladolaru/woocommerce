@@ -315,6 +315,92 @@ class WooPaymentsDuplicatePaymentPreventionServiceTest extends WC_Unit_Test_Case
 	}
 
 	/**
+	 * @testdox An attached PaymentIntent decides the hold on the order read under the order payment lock: $_dataName.
+	 *
+	 * The payment is compared with the order read under the order payment lock its lifecycle event is applied under, and a
+	 * stored `requires_capture` intent status exempts it (client 11.3.0 class-duplicate-payment-prevention-service.php:126-150,
+	 * class-wc-payments-order-service.php:484-491).
+	 *
+	 * @dataProvider provider_attached_orders_read_under_the_lock
+	 *
+	 * @param string $first_total     Order total when the request reads the order.
+	 * @param string $first_currency  Order currency then.
+	 * @param bool   $first_capture   Whether the stored intent status was `requires_capture` then.
+	 * @param string $stored_total    Order total stored when the order payment lock is claimed.
+	 * @param string $stored_currency Order currency stored then.
+	 * @param bool   $stored_capture  Whether the stored intent status is `requires_capture` then.
+	 * @param bool   $expected_held   Whether the order is held rather than paid.
+	 */
+	public function test_attached_intent_decides_the_hold_on_the_order_read_under_the_lock( string $first_total, string $first_currency, bool $first_capture, string $stored_total, string $stored_currency, bool $stored_capture, bool $expected_held ): void {
+		$session = $this->create_session();
+		$order   = $this->create_order( 'hash', 'pending' );
+		$order->set_total( $first_total );
+		$order->set_currency( $first_currency );
+		if ( $first_capture ) {
+			$order->update_meta_data( '_intention_status', 'requires_capture' );
+		}
+		$order->update_meta_data( '_intent_id', 'pi_existing' );
+		$order->save();
+		$order_id   = $order->get_id();
+		$intent     = array_merge( $this->create_intent_response( $order, 'succeeded', 1200 ), array( 'currency' => 'usd' ) );
+		$api_client = $this->getMockBuilder( Client::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_payment_intention' ) )
+			->getMock();
+		$api_client->method( 'get_payment_intention' )->willReturnCallback(
+			static function () use ( $order_id, $stored_total, $stored_currency, $stored_capture, $intent ): array {
+				self::store_order_values( $order_id, $stored_total, $stored_currency, $stored_capture );
+
+				return $intent;
+			}
+		);
+
+		$this->create_service( $session, $api_client )->check_payment_intent_attached_to_order_succeeded( $order, $this->create_gateway() );
+
+		$order = wc_get_order( $order_id );
+		$this->assertSame( $expected_held, $order->has_status( 'on-hold' ) );
+		$this->assertSame( ! $expected_held, $order->is_paid() );
+	}
+
+	/**
+	 * Orders as the request reads them and as they are stored when the order payment lock is claimed, for a payment of
+	 * 12.00 USD. The duplicate check compares the amount with the order as the request reads it first, and passes no other
+	 * total (client 11.3.0 class-duplicate-payment-prevention-service.php:126-150), so the currency differs where the
+	 * stored `requires_capture` status is to exempt the payment.
+	 *
+	 * @return array<string,array{string,string,bool,string,string,bool,bool}>
+	 */
+	public function provider_attached_orders_read_under_the_lock(): array {
+		return array(
+			'total matched, differs under the lock'       => array( '12.00', 'USD', false, '10.00', 'USD', false, true ),
+			'currency matched, differs under the lock'    => array( '12.00', 'USD', false, '12.00', 'EUR', false, true ),
+			'currency differed, matches under the lock'   => array( '12.00', 'EUR', false, '12.00', 'USD', false, false ),
+			'requires_capture stored only under the lock' => array( '12.00', 'EUR', false, '12.00', 'EUR', true, false ),
+			'requires_capture stored only before'         => array( '12.00', 'EUR', true, '12.00', 'EUR', false, true ),
+		);
+	}
+
+	/**
+	 * Store order values through another order object, then save it.
+	 *
+	 * @param int    $order_id         Order ID.
+	 * @param string $total            Order total.
+	 * @param string $currency         Order currency.
+	 * @param bool   $requires_capture Whether the stored intent status is `requires_capture`.
+	 */
+	private static function store_order_values( int $order_id, string $total, string $currency, bool $requires_capture ): void {
+		$stored = wc_get_order( $order_id );
+		$stored->set_total( $total );
+		$stored->set_currency( $currency );
+		if ( $requires_capture ) {
+			$stored->update_meta_data( '_intention_status', 'requires_capture' );
+		} else {
+			$stored->delete_meta_data( '_intention_status' );
+		}
+		$stored->save();
+	}
+
+	/**
 	 * @testdox Should answer a subscription's succeeded attached PaymentIntent without completing the subscription.
 	 *
 	 * Client 11.3.0 never completes a subscription from an intent; its duplicate payment check still answers success

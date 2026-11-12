@@ -198,6 +198,67 @@ class WooPaymentsFeeDetailsNoteControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A refused locked apply answers and logs as the payment lifecycle's own refused apply, and builds and writes nothing.
+	 */
+	public function test_refused_apply_with_lock_answers_and_logs_as_the_lifecycle(): void {
+		$order      = $this->create_order();
+		$vocabulary = new WooPaymentsPersistenceVocabulary();
+		$event      = $this->completed_event( 'pi_123', PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_SUCCESS );
+		$builds     = 0;
+		$this->hold_order_payment_lock( $order, $vocabulary, 'native_charge_operation' );
+		$logger = RecordingWcLogger::install();
+
+		try {
+			$result           = $this->sut->apply_and_schedule_fee_details_with_lock(
+				$order,
+				$event,
+				static function () use ( &$builds, $event ): array {
+					++$builds;
+
+					return array( $event, null );
+				}
+			);
+			$lifecycle_result = wc_get_container()->get( OrderPaymentLifecycleService::class )->apply( $order, $event, $vocabulary );
+		} finally {
+			$this->clear_order_payment_lock( $order, $vocabulary );
+		}
+
+		$this->assertSame( OrderPaymentLifecycleService::RESULT_REFUSED, $result );
+		$this->assertSame( $lifecycle_result, $result );
+		$this->assertSame( 0, $builds );
+		$this->assertCount( 2, $logger->lines );
+		$this->assertSame( $logger->lines[1], $logger->lines[0] );
+		$this->assertSame( $logger->contexts[1], $logger->contexts[0] );
+		$this->assertCount( 0, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+		$this->assertSame( array(), $this->get_pending_job_args() );
+	}
+
+	/**
+	 * @testdox A locked apply builds its event under the order payment lock, held as the payment lifecycle holds it.
+	 */
+	public function test_apply_with_lock_builds_under_the_lifecycle_claim(): void {
+		$order      = $this->create_order();
+		$vocabulary = new WooPaymentsPersistenceVocabulary();
+		$event      = $this->completed_event( 'pi_123', PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_SUCCESS );
+		$logger     = RecordingWcLogger::install();
+
+		$this->sut->apply_and_schedule_fee_details_with_lock(
+			$order,
+			$event,
+			static function ( WC_Order $stored_order ) use ( $event, $vocabulary ): array {
+				wc_get_container()->get( OrderPaymentLifecycleService::class )->apply( $stored_order, $event, $vocabulary );
+
+				return array( $event, null );
+			}
+		);
+
+		$refusals = array_values( array_filter( array_column( $logger->lines, 1 ), static fn( string $line ): bool => false !== strpos( $line, ', refused ' ) ) );
+		$this->assertCount( 1, $refusals );
+		$this->assertStringContainsString( 'refused payment status update, held by payment status update', $refusals[0] );
+		$this->assertCount( 1, $this->get_pending_job_args() );
+	}
+
+	/**
 	 * @testdox A subscription gets no payment event from either applier: no lock claim, no note, no status change and no job ($_dataName).
 	 *
 	 * Client 11.3.0 never completes a subscription from an intent (includes/class-wc-payments-order-service.php:466-472). The

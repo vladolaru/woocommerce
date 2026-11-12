@@ -8,6 +8,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
+use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentNotes;
 use Automattic\WooCommerce\Internal\Payments\PaymentLifecycleEvent;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
@@ -218,25 +219,63 @@ class WooPaymentsFeeDetailsNoteController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Apply a payment lifecycle event through the payment lifecycle, which claims the order payment lock for it, and
-	 * schedule the job as apply_and_schedule_fee_details() does.
+	 * Apply a payment lifecycle event under the order payment lock this claims for its payment reference, as the payment
+	 * lifecycle claims it, and schedule the job as apply_and_schedule_fee_details() does.
 	 *
-	 * @param WC_Order                                   $order Order object.
-	 * @param PaymentLifecycleEvent                      $event Lifecycle event.
-	 * @param array{notes:string[],log_line:string}|null $hold  The amount-mismatch hold the event applies, logged once its note is added.
+	 * A caller whose event depends on the order passes a builder: under the claim, it builds the event again, with its
+	 * amount-mismatch hold, from the order read again from its data store, and that event is applied. The event passed
+	 * gives the payment reference, and is the one refused when another operation holds the lock.
+	 *
+	 * @param WC_Order              $order            Order object.
+	 * @param PaymentLifecycleEvent $event            Lifecycle event.
+	 * @param callable|null         $build_under_lock Gets the order read under the claim and returns the event to apply and
+	 *                                                its amount-mismatch hold or null, as array{0:PaymentLifecycleEvent,1:array|null}.
 	 * @return string The payment lifecycle's result for the event, OrderPaymentLifecycleService::RESULT_REFUSED when the
 	 *                order payment lock refused it.
 	 */
-	public function apply_and_schedule_fee_details_with_lock( WC_Order $order, PaymentLifecycleEvent $event, ?array $hold = null ): string {
+	public function apply_and_schedule_fee_details_with_lock( WC_Order $order, PaymentLifecycleEvent $event, ?callable $build_under_lock = null ): string {
 		// A subscription gets no payment event: no lock claim, no lifecycle, no note, no Fee details job.
 		if ( SubscriptionMethodPolicy::only_saves_the_card( $order ) ) {
 			return OrderPaymentLifecycleService::RESULT_NOTE_NOT_ADDED;
 		}
 
-		$result = $this->lifecycle_service->apply( $order, $event, $this->vocabulary );
-		$this->schedule_when_event_added_note( $order, $event, $result, $hold );
+		$payment_reference  = $event->get_payment_reference();
+		$order_payment_lock = wc_get_container()->get( OrderPaymentLock::class );
+		$lock_token         = null;
+		if ( null !== $payment_reference ) {
+			$lock_token = $order_payment_lock->claim( $order, $this->vocabulary, $payment_reference, 'payment status update' );
+			if ( null === $lock_token ) {
+				// The line OrderPaymentLifecycleService::apply() writes for a refused event.
+				$order_payment_lock->log_refusal(
+					$order,
+					$this->vocabulary,
+					'payment status update',
+					null,
+					array(
+						'payment_reference' => $payment_reference,
+						'event_type'        => $event->get_status(),
+						'reason'            => 'order_locked',
+					)
+				);
+				return OrderPaymentLifecycleService::RESULT_REFUSED;
+			}
+		}
 
-		return $result;
+		try {
+			$hold = null;
+			if ( null !== $build_under_lock ) {
+				list( $event, $hold ) = $build_under_lock( $this->lifecycle_service->get_fresh_order_from_data_store( $order ) );
+			}
+
+			$result = $this->lifecycle_service->apply_under_lock( $order, $event, $this->vocabulary );
+			$this->schedule_when_event_added_note( $order, $event, $result, $hold );
+
+			return $result;
+		} finally {
+			if ( null !== $lock_token ) {
+				$order_payment_lock->release( $order, $this->vocabulary, $lock_token );
+			}
+		}
 	}
 
 	/**
