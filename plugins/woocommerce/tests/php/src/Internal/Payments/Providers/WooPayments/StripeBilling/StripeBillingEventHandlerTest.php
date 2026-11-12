@@ -482,7 +482,7 @@ class StripeBillingEventHandlerTest extends WC_Unit_Test_Case {
 		}
 		$renewal->set_status( $status );
 		$renewal->save();
-		$notes_before = $this->get_notes_containing( $renewal, '' );
+		$notes_before = $this->get_note_contents( $renewal );
 		$payments     = did_action( 'woocommerce_payment_complete' );
 		$this->queue_response( 200, $this->get_renewal_intent() );
 		$this->queue_billing( 'update_invoice', 'update_charge', 'get_charge_for_update_transaction', 'update_transaction' );
@@ -492,7 +492,7 @@ class StripeBillingEventHandlerTest extends WC_Unit_Test_Case {
 		$renewal = wc_get_order( $renewal->get_id() );
 		$this->assertSame( $status, $renewal->get_status() );
 		$this->assertSame( 0, did_action( 'woocommerce_payment_complete' ) - $payments );
-		$this->assertSame( $notes_before, $this->get_notes_containing( $renewal, '' ) );
+		$this->assertSame( $notes_before, $this->get_note_contents( $renewal ) );
 		$this->assertSame( self::RENEWAL_INTENT_ID, $renewal->get_meta( '_intent_id', true ) );
 		$this->assertSame( self::RENEWAL_CHARGE_ID, $renewal->get_meta( '_charge_id', true ) );
 	}
@@ -1697,15 +1697,23 @@ class StripeBillingEventHandlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * Get the contents of every note of an order or subscription.
+	 *
+	 * @param WC_Order $order Order or subscription.
+	 * @return array<int,string>
+	 */
+	private function get_note_contents( WC_Order $order ): array {
+		return array_map( static fn( $note ) => (string) $note->content, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+	}
+
+	/**
 	 * Get the notes of an order or subscription that contain a text.
 	 *
 	 * @param WC_Order $order Order or subscription.
-	 * @param string   $text  Text the notes contain.
+	 * @param string   $text  Text the notes contain; never empty.
 	 * @return array<int,string>
 	 */
 	private function get_notes_containing( WC_Order $order, string $text ): array {
-		$notes = array_map( static fn( $note ) => (string) $note->content, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
-
-		return array_values( array_filter( $notes, static fn( string $note ) => false !== strpos( $note, $text ) ) );
+		return array_values( array_filter( $this->get_note_contents( $order ), static fn( string $note ) => false !== strpos( $note, $text ) ) );
 	}
 }
