@@ -26,6 +26,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\SubscriptionsController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\LinkToken;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\Eligibility;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\PreflightGuard;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\SessionService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\StoreApiRequestHandler;
 use Automattic\WooCommerce\Internal\Payments\RefundRowCapture;
@@ -1486,12 +1487,21 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 			return $this->refuse_checkout( $order, __( "We're not able to process this payment. Please try again later.", 'woocommerce' ), 'subscription_outside_payment_method_change', false, '', '', false );
 		}
 
+		// Client 11.3.0 gw:1469-1477: a WooPay preflight is honoured only when WooPay proved it composed the request;
+		// otherwise it is refused before any other check. The proof is read once for the checkout.
+		$is_request_composed_by_woopay = $this->get_woopay_request_handler()->is_request_composed_by_woopay();
+		$is_woopay_preflight           = PreflightGuard::is_marked_as_preflight( $_POST ); // phpcs:ignore WordPress.Security.NonceVerification.Missing
+		if ( $is_woopay_preflight && ! $is_request_composed_by_woopay ) {
+			return $this->refuse_checkout( $order, __( "We're not able to verify this WooPay preflight request. Please try again.", 'woocommerce' ), PreflightGuard::INVALID_PREFLIGHT_ERROR_CODE, $refusal_moves_order, '', '', $refusal_moves_order );
+		}
+
 		// Client 11.1.0 refuses these first, before any other check (Invalid_Phone_Number_Exception, `gw:1206`).
 		if ( 20 < strlen( $order->get_billing_phone() ) ) {
 			return $this->refuse_checkout( $order, __( 'Invalid phone number.', 'woocommerce' ), 'invalid_phone_number', $refusal_moves_order, '', '', $refusal_moves_order );
 		}
 
-		$fraud_prevention_error = $this->get_fraud_prevention_error_message( true );
+		// A checkout WooPay proved it composed skips the card-testing token check (client 11.3.0 gw:1488-1502).
+		$fraud_prevention_error = $is_request_composed_by_woopay ? '' : $this->get_fraud_prevention_error_message( true );
 		if ( '' !== $fraud_prevention_error ) {
 			return $this->refuse_checkout( $order, $fraud_prevention_error, 'fraud_prevention_enabled', $refusal_moves_order, '', '', $refusal_moves_order );
 		}
@@ -1509,7 +1519,7 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 			);
 		}
 
-		if ( ! empty( $_POST['is-woopay-preflight-check'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Missing
+		if ( $is_woopay_preflight ) {
 			$order->update_status( OrderStatus::PENDING );
 
 			return array(
@@ -2129,12 +2139,6 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 	private function get_fraud_prevention_error_message( bool $is_checkout ): string {
 		$fraud_prevention_service = $this->get_fraud_prevention_service();
 		if ( ! $fraud_prevention_service->has_session() ) {
-			return '';
-		}
-
-		// A checkout WooPay proved it composed (its vouch, or the signature on the signed path) skips the card-testing token
-		// check; a header or user agent any visitor can send does not (client 11.2.0 class-wc-payment-gateway-wcpay.php:1212-1233).
-		if ( $is_checkout && $this->get_woopay_request_handler()->is_request_composed_by_woopay() ) {
 			return '';
 		}
 

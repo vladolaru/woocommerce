@@ -38,6 +38,20 @@ class PreflightGuardStoreApiTest extends WC_Unit_Test_Case {
 	private PreflightGuard $guard;
 
 	/**
+	 * The registered WooPayments gateway.
+	 *
+	 * @var WooPaymentsGateway
+	 */
+	private WooPaymentsGateway $gateway;
+
+	/**
+	 * The order a pay-for-order request pays.
+	 *
+	 * @var int
+	 */
+	private int $pay_for_order_id = 0;
+
+	/**
 	 * Callback runs on the guarded hooks, by hook.
 	 *
 	 * @var array<string,int>
@@ -109,7 +123,8 @@ class PreflightGuardStoreApiTest extends WC_Unit_Test_Case {
 
 		// The checkout schema lists the registered gateways when its route registers, so the gateway is registered first.
 		$this->gateways_before = WC()->payment_gateways()->payment_gateways;
-		WC()->payment_gateways()->payment_gateways['woocommerce_payments'] = $this->create_woopayments_gateway();
+		$this->gateway         = $this->create_woopayments_gateway();
+		WC()->payment_gateways()->payment_gateways['woocommerce_payments'] = $this->gateway;
 		$this->initialize_store_api_server();
 		$this->guard = new PreflightGuard();
 		$this->guard->register();
@@ -189,35 +204,50 @@ class PreflightGuardStoreApiTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The preflight marker lifts coupon limits and checkout callbacks only for a WooPay request WooPay proved it composed, naming the WooPayments gateway: $_dataName.
+	 * @testdox The preflight marker lifts coupon limits and checkout callbacks only for a WooPay request WooPay proved it composed, naming the WooPayments gateway, and is refused without the proof: $_dataName.
 	 *
 	 * WooPay's preflight names woocommerce_payments and posts to checkout, or to checkout/{order_id} to pay an order
 	 * (WooPay WooPayStoreApiHandler.php:574-598), with its vouch bound to the request's Cart-Token, or signed with the
 	 * store's blog token while the platform keeps the store on the signed path (client 11.2.0
-	 * class-wc-payment-gateway-wcpay.php:1212-1233, class-woopay-session.php:1284-1366).
+	 * class-woopay-session.php:1284-1366). Without the proof, client 11.3.0 answers 403 `wcpay_invalid_woopay_preflight`
+	 * before any route callback (class-wc-payment-gateway-wcpay.php:928-952).
 	 *
 	 * @dataProvider provide_preflight_requests
 	 *
 	 * @param string $route          'checkout' or 'checkout-order'.
 	 * @param string $payment_method Gateway the request names.
 	 * @param string $proof          'vouch', 'signature', 'stale vouch' or 'none'.
-	 * @param bool   $lifted         Whether the limits and callbacks are lifted for it.
+	 * @param string $outcome        'lifted', 'refused' or 'ordinary'.
 	 */
-	public function test_preflight_marker_is_honoured_only_for_a_request_woopay_composed( string $route, string $payment_method, string $proof, bool $lifted ): void {
+	public function test_preflight_marker_is_honoured_only_for_a_request_woopay_composed( string $route, string $payment_method, string $proof, string $outcome ): void {
 		$this->create_exhausted_coupon_cart();
 		$request = 'checkout' === $route ? $this->make_checkout_request( $payment_method ) : $this->make_pay_for_order_request( $payment_method );
 		$this->resolve_current_user( $proof );
 
 		$response = rest_get_server()->dispatch( $request );
 
+		$callback_runs = 'checkout' === $route ? $this->callback_runs['woocommerce_checkout_registration_required'] : $this->callback_runs['woocommerce_store_api_checkout_order_processed'];
+		if ( 'refused' === $outcome ) {
+			$this->assertSame( 403, $response->get_status() );
+			$this->assertSame( 'wcpay_invalid_woopay_preflight', $response->get_data()['code'] ?? null );
+			$this->assertSame( 0, $callback_runs, 'No route callback runs.' );
+			if ( 'checkout-order' === $route ) {
+				$order = wc_get_order( $this->pay_for_order_id );
+				$this->assertInstanceOf( WC_Order::class, $order );
+				$this->assertSame( 'pending', $order->get_status() );
+				$this->assertNotSame( 'woocommerce_payments', $order->get_payment_method() );
+			}
+
+			return;
+		}
+
 		if ( 'checkout' === $route ) {
-			$this->assertSame( $lifted ? 200 : 409, $response->get_status(), 'An exhausted coupon is refused unless the limits are lifted.' );
-			$this->assertSame( $lifted ? 0 : 1, $this->callback_runs['woocommerce_checkout_registration_required'] );
+			$this->assertSame( 'lifted' === $outcome ? 200 : 409, $response->get_status(), 'An exhausted coupon is refused unless the limits are lifted.' );
 		} else {
 			$this->assertSame( 200, $response->get_status() );
-			$this->assertSame( $lifted ? 0 : 1, $this->callback_runs['woocommerce_store_api_checkout_order_processed'] );
 		}
-		if ( $lifted ) {
+		$this->assertSame( 'lifted' === $outcome ? 0 : 1, $callback_runs );
+		if ( 'lifted' === $outcome ) {
 			$order = wc_get_order( (int) $response->get_data()['order_id'] );
 			$this->assertInstanceOf( WC_Order::class, $order );
 			$this->assertSame( 'pending', $order->get_status(), 'The gateway answers the preflight without charging.' );
@@ -225,19 +255,21 @@ class PreflightGuardStoreApiTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Preflight requests: route, gateway named, WooPay's proof, lifted.
+	 * Preflight requests: route, gateway named, WooPay's proof, outcome.
 	 *
-	 * @return array<string,array{0:string,1:string,2:string,3:bool}>
+	 * @return array<string,array{0:string,1:string,2:string,3:string}>
 	 */
 	public function provide_preflight_requests(): array {
 		return array(
-			'Cash on delivery with the marker, signed' => array( 'checkout', 'cod', 'signature', false ),
-			'a request without WooPay proof naming the gateway' => array( 'checkout', 'woocommerce_payments', 'none', false ),
-			'a WooPay Cart-Token request with a stale vouch' => array( 'checkout', 'woocommerce_payments', 'stale vouch', false ),
-			'signed WooPay preflight, cart checkout'   => array( 'checkout', 'woocommerce_payments', 'signature', true ),
-			'signed WooPay preflight, pay for order'   => array( 'checkout-order', 'woocommerce_payments', 'signature', true ),
-			'vouched WooPay preflight, cart checkout'  => array( 'checkout', 'woocommerce_payments', 'vouch', true ),
-			'vouched WooPay preflight, pay for order'  => array( 'checkout-order', 'woocommerce_payments', 'vouch', true ),
+			'Cash on delivery with the marker, signed'   => array( 'checkout', 'cod', 'signature', 'ordinary' ),
+			'Cash on delivery with the marker, no proof' => array( 'checkout', 'cod', 'none', 'ordinary' ),
+			'cart checkout without WooPay proof'         => array( 'checkout', 'woocommerce_payments', 'none', 'refused' ),
+			'pay for order without WooPay proof'         => array( 'checkout-order', 'woocommerce_payments', 'none', 'refused' ),
+			'a WooPay Cart-Token request with a stale vouch' => array( 'checkout', 'woocommerce_payments', 'stale vouch', 'refused' ),
+			'signed WooPay preflight, cart checkout'     => array( 'checkout', 'woocommerce_payments', 'signature', 'lifted' ),
+			'signed WooPay preflight, pay for order'     => array( 'checkout-order', 'woocommerce_payments', 'signature', 'lifted' ),
+			'vouched WooPay preflight, cart checkout'    => array( 'checkout', 'woocommerce_payments', 'vouch', 'lifted' ),
+			'vouched WooPay preflight, pay for order'    => array( 'checkout-order', 'woocommerce_payments', 'vouch', 'lifted' ),
 		);
 	}
 
@@ -258,7 +290,7 @@ class PreflightGuardStoreApiTest extends WC_Unit_Test_Case {
 
 	/**
 	 * Resolve the current user as WordPress does before any REST route runs (WP::init()), for a WooPay request carrying
-	 * the given proof, and give the guard the same handler.
+	 * the given proof, and give the guard and the gateway the same handler.
 	 *
 	 * The vouch rows carry the Cart-Token in the request globals only, which is where the handler reads it; the Store API
 	 * route keeps the test's own session, so the cart under test is the one it checks out.
@@ -273,6 +305,8 @@ class PreflightGuardStoreApiTest extends WC_Unit_Test_Case {
 		unset( $_COOKIE[ LOGGED_IN_COOKIE ], $_COOKIE[ AUTH_COOKIE ], $_COOKIE[ SECURE_AUTH_COOKIE ] );
 		$handler = $this->create_handler();
 		$this->guard->init( $handler );
+		// The gateway asks the same handler, as both resolve it from the container in production.
+		$this->gateway->init( new RecordingPaymentProcessingService(), new WooPaymentsProvider(), null, null, null, null, null, null, null, null, null, $handler );
 		if ( 'none' !== $proof ) {
 			$_SERVER['HTTP_USER_AGENT'] = 'WooPay';
 		}
@@ -340,6 +374,7 @@ class PreflightGuardStoreApiTest extends WC_Unit_Test_Case {
 		$order = \WC_Helper_Order::create_order( 0 );
 		$order->set_status( 'pending' );
 		$order->save();
+		$this->pay_for_order_id = $order->get_id();
 
 		$request = new WP_REST_Request( 'POST', '/wc/store/v1/checkout/' . $order->get_id() );
 		$request->set_query_params(

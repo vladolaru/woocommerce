@@ -373,6 +373,22 @@ class StoreApiRequestHandler {
 	}
 
 	/**
+	 * Log which of WooPay's proofs a preflight request lacked: the vouch, and the signature on the signed path (client
+	 * 11.3.0 class-wc-payment-gateway-wcpay.php:938-946). A vouch that did not open logs its own reason first.
+	 *
+	 * @since 11.2.0
+	 */
+	public function log_preflight_without_proof(): void {
+		$this->logger->log(
+			sprintf(
+				'WooPay preflight rejected: %s, and %s.',
+				isset( $_SERVER[ self::VOUCH_HEADER ] ) ? 'the vouch did not verify' : 'no vouch was sent',
+				$this->woopay_eligibility->is_woopay_force_signed_requests_enabled() ? 'the request is not signed with the blog token' : 'this store does not accept a blog token signature'
+			)
+		);
+	}
+
+	/**
 	 * Record on a WooPay checkout's order the address the shopper checked out from, as WooPay sealed it in the request's
 	 * vouch; WC_Geolocation would give WooPay's server. An address that does not parse leaves the order's own, with a log
 	 * line; without a vouch nothing changes (client 11.2.0 `WooPay_Session::set_woopay_order_customer_ip()`,

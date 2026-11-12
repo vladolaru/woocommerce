@@ -164,6 +164,36 @@ class StoreApiRequestHandlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A preflight without WooPay's proof logs which proofs it lacked, in the client's words: $_dataName.
+	 *
+	 * Client 11.3.0 class-wc-payment-gateway-wcpay.php:938-946.
+	 *
+	 * @testWith ["no vouch header, off the signed path", false, false, "WooPay preflight rejected: no vouch was sent, and this store does not accept a blog token signature."]
+	 *           ["no vouch header, on the signed path", false, true, "WooPay preflight rejected: no vouch was sent, and the request is not signed with the blog token."]
+	 *           ["a vouch header, off the signed path", true, false, "WooPay preflight rejected: the vouch did not verify, and this store does not accept a blog token signature."]
+	 *           ["a vouch header, on the signed path", true, true, "WooPay preflight rejected: the vouch did not verify, and the request is not signed with the blog token."]
+	 *
+	 * @param string $label       Case label.
+	 * @param bool   $vouch       Whether the request carries a vouch header.
+	 * @param bool   $signed_path Whether the stored account keeps the store on the signed path.
+	 * @param string $expected    The log line.
+	 */
+	public function test_preflight_without_proof_logs_the_missing_proofs( string $label, bool $vouch, bool $signed_path, string $expected ): void {
+		unset( $label );
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => 'yes' ) );
+		$lines = $this->record_woopayments_log_lines();
+		if ( $vouch ) {
+			$_SERVER['HTTP_X_WOOPAY_ATTESTATION'] = 'e30=';
+		}
+		$sut = $this->create_handler( array(), array( 'platform_woopay_force_signed_requests' => $signed_path ) );
+
+		$sut->log_preflight_without_proof();
+
+		$messages = array_values( array_unique( array_column( $lines->getArrayCopy(), 1 ) ) );
+		$this->assertSame( array( $expected ), $messages );
+	}
+
+	/**
 	 * @testdox Should die with a 401 when a WooPay request carries neither a Cart-Token nor a signature: $_dataName.
 	 * @dataProvider unsigned_request_provider
 	 *

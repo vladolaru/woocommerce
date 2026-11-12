@@ -5950,18 +5950,24 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should refuse a WooPay preflight check before changing the order status: $_dataName.
 	 *
+	 * Client 11.3.0 class-wc-payment-gateway-wcpay.php:1468-1477 refuses a preflight without WooPay's proof first in its
+	 * try, before the phone, card-testing and rate-limiter checks, and its catch fails the order (`:1604-1608`); a proved
+	 * preflight still meets the rate limiter before the preflight answer (`:1504-1523`).
+	 *
 	 * @dataProvider provider_refused_woopay_preflights
 	 *
+	 * @param string $proof          'none' or 'signature'.
+	 * @param string $status         Order status before checkout.
 	 * @param bool   $tampered_token Whether card-testing protection is on and the posted fraud-prevention token is tampered.
 	 * @param bool   $rate_limited   Whether the failed-transaction rate limiter is active.
 	 * @param string $notice         Expected shopper notice.
 	 */
-	public function test_process_payment_refuses_woopay_preflight_before_status_change( bool $tampered_token, bool $rate_limited, string $notice ): void {
+	public function test_process_payment_refuses_woopay_preflight_before_status_change( string $proof, string $status, bool $tampered_token, bool $rate_limited, string $notice ): void {
 		wc_clear_notices();
 		$order   = $this->create_order();
 		$service = new RecordingPaymentProcessingService();
 		$session = $this->create_session();
-		$order->update_status( 'failed' );
+		$order->update_status( $status );
 		if ( $tampered_token ) {
 			$session->set( WooPaymentsFraudPreventionService::TOKEN_NAME, 'valid-token' );
 			$_POST[ WooPaymentsFraudPreventionService::TOKEN_NAME ] = 'tampered-token';
@@ -5981,11 +5987,19 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			null,
 			null,
 			$this->create_fraud_prevention_service( $tampered_token, $session ),
-			$rate_limited ? new WooPaymentsFailedTransactionRateLimiter( $session ) : null
+			$rate_limited ? new WooPaymentsFailedTransactionRateLimiter( $session ) : null,
+			null,
+			null,
+			$this->create_woopay_request_handler( true )
 		);
 
-		$result = $gateway->process_payment( $order->get_id() );
-		$order  = wc_get_order( $order->get_id() );
+		$this->set_blog_token_signature( 'signature' === $proof );
+		try {
+			$result = $gateway->process_payment( $order->get_id() );
+		} finally {
+			$this->set_blog_token_signature( null );
+		}
+		$order = wc_get_order( $order->get_id() );
 
 		$this->assertSame(
 			array(
@@ -6002,31 +6016,71 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * WooPay preflight refusals and the notice the shopper sees.
+	 * WooPay preflight refusals: the proof, the order status, the other refusals' conditions and the notice the shopper sees.
 	 *
-	 * @return array<string,array{0:bool,1:bool,2:string}>
+	 * @return array<string,array{0:string,1:string,2:bool,3:bool,4:string}>
 	 */
 	public function provider_refused_woopay_preflights(): array {
+		$unverified = "We're not able to verify this WooPay preflight request. Please try again.";
+
 		return array(
-			'tampered fraud-prevention token' => array( true, false, "We're not able to process this payment. Please refresh the page and try again." ),
-			'rate limiter active'             => array( false, true, 'Your payment was not processed.' ),
+			'marker without proof, failed order'        => array( 'none', 'failed', false, false, $unverified ),
+			'marker without proof, pending order'       => array( 'none', 'pending', false, false, $unverified ),
+			'marker without proof, different token'     => array( 'none', 'failed', true, false, $unverified ),
+			'marker without proof, rate limiter active' => array( 'none', 'failed', false, true, $unverified ),
+			'signed preflight, rate limiter active'     => array( 'signature', 'failed', false, true, 'Your payment was not processed.' ),
 		);
 	}
 
 	/**
-	 * @testdox Should short-circuit WooPay preflight checks before charging an order.
+	 * @testdox Should short-circuit WooPay preflight checks WooPay proved it composed before charging an order: $_dataName.
+	 *
+	 * Client 11.3.0 class-wc-payment-gateway-wcpay.php:1513-1523, :1488-1502. A proved WooPay preflight returns the
+	 * preflight result without starting payment processing.
+	 *
+	 * @testWith ["signature"]
+	 *           ["vouch"]
+	 *
+	 * @param string $proof 'signature' or 'vouch'.
 	 */
-	public function test_process_payment_short_circuits_woopay_preflight_checks(): void {
-		$order = $this->create_order();
+	public function test_process_payment_short_circuits_woopay_preflight_checks( string $proof ): void {
+		$order   = $this->create_order();
+		$session = $this->create_session();
 		$order->update_status( 'failed' );
+		$session->set( WooPaymentsFraudPreventionService::TOKEN_NAME, 'valid-token' );
+		$_POST[ WooPaymentsFraudPreventionService::TOKEN_NAME ] = 'posted-token';
+		\Jetpack_Options::update_option( 'blog_token', WooPayEnvelopes::BLOG_TOKEN );
+		$_SERVER['HTTP_CART_TOKEN'] = 'the.cart.token';
+		if ( 'vouch' === $proof ) {
+			$_SERVER['HTTP_X_WOOPAY_ATTESTATION'] = WooPayEnvelopes::vouch_header( 'the.cart.token' );
+		}
 
 		$service = new RecordingPaymentProcessingService();
 		$gateway = new WooPaymentsGateway();
-		$gateway->init( $service, new WooPaymentsProvider() );
+		$gateway->init(
+			$service,
+			new WooPaymentsProvider(),
+			null,
+			null,
+			null,
+			null,
+			null,
+			$this->create_fraud_prevention_service( true, $session ),
+			null,
+			null,
+			null,
+			$this->create_woopay_request_handler( true )
+		);
 		$_POST['is-woopay-preflight-check'] = '1';
 
-		$result = $gateway->process_payment( $order->get_id() );
-		$order  = wc_get_order( $order->get_id() );
+		$this->set_blog_token_signature( 'signature' === $proof );
+		try {
+			$result = $gateway->process_payment( $order->get_id() );
+		} finally {
+			$this->set_blog_token_signature( null );
+			unset( $_SERVER['HTTP_CART_TOKEN'], $_SERVER['HTTP_X_WOOPAY_ATTESTATION'] );
+		}
+		$order = wc_get_order( $order->get_id() );
 
 		$this->assertSame(
 			array(

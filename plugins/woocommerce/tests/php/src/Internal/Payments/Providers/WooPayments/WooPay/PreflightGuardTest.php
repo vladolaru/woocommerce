@@ -15,6 +15,7 @@ use Automattic\WooCommerce\Tests\Internal\Payments\RecordingPaymentProcessingSer
 use WC_Coupon;
 use WC_Order;
 use WC_Unit_Test_Case;
+use WP_Error;
 use WP_REST_Request;
 
 /**
@@ -40,6 +41,13 @@ class PreflightGuardTest extends WC_Unit_Test_Case {
 	 * @var array<string,\WP_Hook|null>
 	 */
 	private array $hook_snapshots = array();
+
+	/**
+	 * Refusal log lines the handler wrote in this test.
+	 *
+	 * @var int
+	 */
+	private int $logged_refusals = 0;
 
 	/**
 	 * POST data from before each test.
@@ -256,7 +264,7 @@ class PreflightGuardTest extends WC_Unit_Test_Case {
 		$_POST['is-woopay-preflight-check'] = '1'; // phpcs:ignore WordPress.Security.NonceVerification.Missing -- This simulates the gateway's exact preflight marker.
 		$service                            = new RecordingPaymentProcessingService();
 		$gateway                            = new WooPaymentsGateway();
-		$gateway->init( $service, new WooPaymentsProvider() );
+		$gateway->init( $service, new WooPaymentsProvider(), null, null, null, null, null, null, null, null, null, $this->create_handler( true ) );
 
 		$result = $gateway->process_payment( $order->get_id() );
 		$order  = wc_get_order( $order->get_id() );
@@ -437,27 +445,191 @@ class PreflightGuardTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Create the guard for requests WooPay proved it composed; each request in these tests fails on one other condition.
-	 * PreflightGuardStoreApiTest proves the marker against a real vouch and a real signature.
+	 * @testdox Refuses a preflight without WooPay's proof only on a Store API checkout naming the WooPayments gateway, before any hook changes: $_dataName.
 	 *
-	 * @return PreflightGuard
+	 * Client 11.3.0 class-wc-payment-gateway-wcpay.php:928-952 answers the marker without proof with a 403
+	 * `wcpay_invalid_woopay_preflight` and one log line. Here the refusal covers the requests whose suppression it
+	 * guards: the checkout routes naming the WooPayments gateway. The marker is read with its key sanitized as the
+	 * Store API sanitizes it for the gateway.
+	 *
+	 * @testWith ["/wc/store/v1/checkout", "woocommerce_payments", "is-woopay-preflight-check", true, true]
+	 *           ["/wc/store/v1/checkout/123", "woocommerce_payments", "is-woopay-preflight-check", true, true]
+	 *           ["/wc/store/checkout", "woocommerce_payments", "Is-WooPay-Preflight-Check", true, true]
+	 *           ["/wc/store/v1/checkout", "woocommerce_payments", "is-woopay-preflight-check", false, false]
+	 *           ["/wc/store/v1/checkout", "cod", "is-woopay-preflight-check", true, false]
+	 *           ["/wc/store/v1/cart", "woocommerce_payments", "is-woopay-preflight-check", true, false]
+	 *
+	 * @param string $route          Store API route.
+	 * @param string $payment_method Gateway the request names.
+	 * @param string $key            Payment data record key.
+	 * @param bool   $value          Payment data record value.
+	 * @param bool   $refused        Whether the request is refused.
 	 */
-	private function create_guard(): PreflightGuard {
-		$guard = new PreflightGuard();
-		$guard->init(
-			new class() extends StoreApiRequestHandler {
-				/**
-				 * Every request is one WooPay composed.
-				 *
-				 * @return bool
-				 */
-				public function is_request_composed_by_woopay(): bool {
-					return true;
-				}
+	public function test_preflight_without_proof_is_refused_before_any_hook_changes( string $route, string $payment_method, string $key, bool $value, bool $refused ): void {
+		$guard         = $this->create_guard( false );
+		$pending_calls = 0;
+		$coupon_calls  = 0;
+		add_action(
+			'woocommerce_order_status_pending',
+			static function () use ( &$pending_calls ): void {
+				++$pending_calls;
+			},
+			10,
+			0
+		);
+		add_filter(
+			'woocommerce_coupon_get_usage_limit',
+			static function () use ( &$coupon_calls ) {
+				++$coupon_calls;
+
+				return 6;
 			}
 		);
+		$guard->register();
+		$request  = new WP_REST_Request( 'POST', $route );
+		$response = new \stdClass();
+		$request->set_body_params(
+			array(
+				'payment_method' => $payment_method,
+				'payment_data'   => array(
+					array(
+						'key'   => $key,
+						'value' => $value,
+					),
+				),
+			)
+		);
+
+		$result = apply_filters( 'rest_request_before_callbacks', $response, array(), $request );
+		do_action( 'woocommerce_order_status_pending' );
+
+		if ( $refused ) {
+			$this->assertInstanceOf( WP_Error::class, $result );
+			$this->assertSame( 'wcpay_invalid_woopay_preflight', $result->get_error_code() );
+			$this->assertSame( "We're not able to verify this WooPay preflight request. Please try again.", $result->get_error_message() );
+			$this->assertSame( array( 'status' => 403 ), $result->get_error_data() );
+		} else {
+			$this->assertSame( $response, $result );
+		}
+		$this->assertSame( $refused ? 1 : 0, $this->logged_refusals, 'Each refusal logs one line.' );
+		$this->assertSame( 1, $pending_calls );
+		$this->assertSame( 6, apply_filters( 'woocommerce_coupon_get_usage_limit', 5, new WC_Coupon() ) );
+		$this->assertSame( 1, $coupon_calls );
+		$this->assertSame( $response, apply_filters( 'rest_request_after_callbacks', $response, array(), $request ) );
+	}
+
+	/**
+	 * @testdox Passes an earlier error through unchanged and changes no hook for it, with or without WooPay's proof: $_dataName.
+	 *
+	 * Client 11.3.0 class-wc-payment-gateway-wcpay.php:929-931.
+	 *
+	 * @testWith ["proved", true]
+	 *           ["not proved", false]
+	 *
+	 * @param string $label  Case label.
+	 * @param bool   $proved Whether WooPay proved it composed the request.
+	 */
+	public function test_earlier_error_passes_through_unchanged( string $label, bool $proved ): void {
+		unset( $label );
+		$guard         = $this->create_guard( $proved );
+		$pending_calls = 0;
+		add_action(
+			'woocommerce_order_status_pending',
+			static function () use ( &$pending_calls ): void {
+				++$pending_calls;
+			},
+			10,
+			0
+		);
+		$guard->register();
+		$request = new WP_REST_Request( 'POST', '/wc/store/v1/checkout' );
+		$error   = new WP_Error( 'rest_invalid_param', 'Invalid parameter(s).', array( 'status' => 400 ) );
+		$request->set_body_params(
+			array(
+				'payment_method' => 'woocommerce_payments',
+				'payment_data'   => array(
+					array(
+						'key'   => 'is-woopay-preflight-check',
+						'value' => true,
+					),
+				),
+			)
+		);
+
+		$this->assertSame( $error, apply_filters( 'rest_request_before_callbacks', $error, array(), $request ) );
+		do_action( 'woocommerce_order_status_pending' );
+
+		$this->assertSame( 1, $pending_calls );
+		$this->assertSame( 0, $this->logged_refusals );
+	}
+
+	/**
+	 * Create the guard over a handler that answers whether WooPay composed every request the same way, and counts the refusal
+	 * log lines. Each test request fails on at most one other condition; PreflightGuardStoreApiTest proves the marker
+	 * against a real vouch and a real signature.
+	 *
+	 * @param bool $proved Whether WooPay proved it composed every request.
+	 * @return PreflightGuard
+	 */
+	private function create_guard( bool $proved = true ): PreflightGuard {
+		$guard = new PreflightGuard();
+		$guard->init( $this->create_handler( $proved ) );
 
 		return $guard;
+	}
+
+	/**
+	 * Create a handler of WooPay's Store API requests that answers whether WooPay composed every request the same way, and
+	 * counts the refusal log lines in $this->logged_refusals.
+	 *
+	 * @param bool $proved Whether WooPay proved it composed every request.
+	 * @return StoreApiRequestHandler
+	 */
+	private function create_handler( bool $proved ): StoreApiRequestHandler {
+		$logged_refusals = &$this->logged_refusals;
+
+		return new class( $proved, $logged_refusals ) extends StoreApiRequestHandler {
+			/**
+			 * Whether WooPay proved it composed every request.
+			 *
+			 * @var bool
+			 */
+			private bool $proved;
+
+			/**
+			 * Refusal log lines written.
+			 *
+			 * @var int
+			 */
+			private int $logged;
+
+			/**
+			 * Constructor.
+			 *
+			 * @param bool $proved Whether WooPay proved it composed every request.
+			 * @param int  $logged Refusal log line counter.
+			 */
+			public function __construct( bool $proved, int &$logged ) {
+				$this->proved = $proved;
+				$this->logged = &$logged;
+			}
+
+			/**
+			 * Answer the fixed proof.
+			 *
+			 * @return bool
+			 */
+			public function is_request_composed_by_woopay(): bool {
+				return $this->proved;
+			}
+
+			/**
+			 * Count a refusal log line.
+			 */
+			public function log_preflight_without_proof(): void {
+				++$this->logged;
+			}
+		};
 	}
 
 	/**

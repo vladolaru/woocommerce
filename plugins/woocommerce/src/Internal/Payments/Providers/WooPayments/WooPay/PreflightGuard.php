@@ -9,12 +9,14 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
+use WP_Error;
 use WP_REST_Request;
 
 /**
- * For a WooPay Store API checkout, or pay-for-order checkout, that WooPay proved it composed, names the WooPayments gateway
- * and carries WooPay's preflight marker, empties the order meta, order processed, pending status and registration-required
- * hooks and lifts coupon usage limits for that request, then restores them. The WooPayments gateway answers such a request without charging.
+ * For a Store API checkout, or pay-for-order checkout, that names the WooPayments gateway and carries WooPay's preflight
+ * marker: when WooPay proved it composed the request, empties the order meta, order processed, pending status and
+ * registration-required hooks and lifts coupon usage limits for that request, then restores them; otherwise refuses it
+ * before any route callback runs. The WooPayments gateway answers a proved preflight without charging.
  *
  * @since 11.2.0
  * @internal
@@ -26,6 +28,9 @@ class PreflightGuard implements RegisterHooksInterface {
 
 	/** WooPay payment-data marker. */
 	private const PREFLIGHT_PAYMENT_DATA_KEY = 'is-woopay-preflight-check';
+
+	/** Error code of a refused preflight, the WooPayments extension's (client 11.3.0 class-wc-payment-gateway-wcpay.php:948). */
+	public const INVALID_PREFLIGHT_ERROR_CODE = 'wcpay_invalid_woopay_preflight';
 
 	/** Checkout hooks whose callbacks are temporarily changed during a preflight request. */
 	private const CHECKOUT_SIDE_EFFECT_HOOKS = array(
@@ -76,7 +81,10 @@ class PreflightGuard implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Suppress checkout side effects for a WooPay preflight request.
+	 * Suppress checkout side effects for a WooPay preflight request WooPay proved it composed, and refuse one it did not.
+	 *
+	 * An earlier error passes through unchanged. A refused request gets a 403 before its permission and route callbacks
+	 * run, and leaves the hooks as they are (client 11.3.0 class-wc-payment-gateway-wcpay.php:928-958).
 	 *
 	 * @since 11.2.0
 	 *
@@ -84,13 +92,23 @@ class PreflightGuard implements RegisterHooksInterface {
 	 * @param mixed           $handler The REST route handler.
 	 * @param WP_REST_Request $request The REST request.
 	 * @phpstan-param WP_REST_Request<array<string, mixed>> $request
-	 * @return mixed The unchanged response object.
+	 * @return mixed The unchanged response object, or the refusal.
 	 */
 	public function suppress_checkout_side_effects( $response, $handler, WP_REST_Request $request ) {
 		unset( $handler );
 
-		if ( 1 !== preg_match( self::STORE_API_CHECKOUT_ROUTE_PATTERN, $request->get_route() ) || ! $this->is_woopay_preflight_request( $request ) ) {
+		if ( is_wp_error( $response ) || ! $this->is_woopayments_preflight_checkout( $request ) ) {
 			return $response;
+		}
+
+		if ( ! $this->store_api_request_handler->is_request_composed_by_woopay() ) {
+			$this->store_api_request_handler->log_preflight_without_proof();
+
+			return new WP_Error(
+				self::INVALID_PREFLIGHT_ERROR_CODE,
+				__( "We're not able to verify this WooPay preflight request. Please try again.", 'woocommerce' ),
+				array( 'status' => 403 )
+			);
 		}
 
 		$this->snapshot_checkout_side_effect_hooks( $request );
@@ -102,6 +120,19 @@ class PreflightGuard implements RegisterHooksInterface {
 		add_filter( 'woocommerce_coupon_get_usage_limit_per_user', '__return_zero' );
 
 		return $response;
+	}
+
+	/**
+	 * Tell whether checkout payment data carries WooPay's preflight marker.
+	 *
+	 * The one reading of the marker: the REST guard passes the request's payment data keyed as the Store API keys it, and
+	 * the gateway passes the posted fields, which the Store API fills from that same keyed data (StoreApi\Legacy).
+	 *
+	 * @param array<mixed> $payment_data Payment data keyed by field name.
+	 * @return bool
+	 */
+	public static function is_marked_as_preflight( array $payment_data ): bool {
+		return ! empty( $payment_data[ self::PREFLIGHT_PAYMENT_DATA_KEY ] );
 	}
 
 	/**
@@ -174,32 +205,41 @@ class PreflightGuard implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Check whether a Store API request is WooPay's preflight: it carries the exact marker, names the WooPayments gateway and
-	 * WooPay proved it composed it, by the vouch bound to its Cart-Token or by the signature on the signed path.
+	 * Check whether a request is a Store API checkout or pay-for-order checkout that names the WooPayments gateway and
+	 * carries WooPay's preflight marker.
 	 *
 	 * @param WP_REST_Request $request The REST request.
 	 * @phpstan-param WP_REST_Request<array<string, mixed>> $request
-	 * @return bool Whether the request is a WooPay preflight request.
+	 * @return bool
 	 */
-	private function is_woopay_preflight_request( WP_REST_Request $request ): bool {
+	private function is_woopayments_preflight_checkout( WP_REST_Request $request ): bool {
+		return 1 === preg_match( self::STORE_API_CHECKOUT_ROUTE_PATTERN, $request->get_route() )
+			&& WooPaymentsPersistenceVocabulary::GATEWAY_ID === $request->get_param( 'payment_method' )
+			&& self::is_marked_as_preflight( $this->get_keyed_payment_data( $request ) );
+	}
+
+	/**
+	 * Get a request's payment data keyed by field name, sanitized as the Store API sanitizes it before the gateway reads it
+	 * (CheckoutTrait::get_request_payment_data()).
+	 *
+	 * @param WP_REST_Request $request The REST request.
+	 * @phpstan-param WP_REST_Request<array<string, mixed>> $request
+	 * @return array<string,mixed>
+	 */
+	private function get_keyed_payment_data( WP_REST_Request $request ): array {
 		$payment_data = $request->get_param( 'payment_data' );
+		$keyed        = array();
 
 		if ( ! is_array( $payment_data ) ) {
-			return false;
+			return $keyed;
 		}
 
-		$has_marker = false;
-		foreach ( $payment_data as $payment_data_record ) {
-			if ( is_array( $payment_data_record ) && self::PREFLIGHT_PAYMENT_DATA_KEY === ( $payment_data_record['key'] ?? null ) && ! empty( $payment_data_record['value'] ) ) {
-				$has_marker = true;
-				break;
+		foreach ( $payment_data as $record ) {
+			if ( is_array( $record ) && isset( $record['key'] ) && is_string( $record['key'] ) ) {
+				$keyed[ sanitize_key( $record['key'] ) ] = wc_clean( $record['value'] ?? '' );
 			}
 		}
 
-		if ( ! $has_marker || WooPaymentsPersistenceVocabulary::GATEWAY_ID !== $request->get_param( 'payment_method' ) ) {
-			return false;
-		}
-
-		return $this->store_api_request_handler->is_request_composed_by_woopay();
+		return $keyed;
 	}
 }
