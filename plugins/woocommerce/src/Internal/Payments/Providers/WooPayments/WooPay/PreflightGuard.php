@@ -115,8 +115,8 @@ class PreflightGuard implements RegisterHooksInterface {
 		remove_all_actions( 'woocommerce_store_api_checkout_order_processed' );
 		remove_all_actions( 'woocommerce_order_status_pending' );
 		remove_all_filters( 'woocommerce_checkout_registration_required' );
-		// Coupon usage limits stay on; a zero hold time keeps the preflight from holding a coupon use, last so no other
-		// callback puts the hold back (client 11.3.0 class-wc-payment-gateway-wcpay.php:962-964).
+		// Coupon usage limits stay on, and the preflight sets the coupon hold minutes to zero at PHP_INT_MAX (client 11.3.0
+		// class-wc-payment-gateway-wcpay.php:962-964).
 		add_filter( 'woocommerce_coupon_hold_minutes', '__return_zero', PHP_INT_MAX );
 
 		return $response;
