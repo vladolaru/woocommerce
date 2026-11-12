@@ -4237,6 +4237,8 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 * (`:1425`) and the failure return (`:1436-1439`) are the same.
 	 */
 	public function test_process_payment_exception_before_payment_fails_order_without_failure_note(): void {
+		// Core notes every transactional email it sends on the order, the failed-order email included.
+		add_filter( 'woocommerce_email_log_add_order_note', '__return_false' );
 		$order      = $this->create_order();
 		$session    = $this->create_session();
 		$note_count = count( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );

@@ -19,26 +19,10 @@ use WP_REST_Request;
 class PaginatedListRequestTest extends WC_Unit_Test_Case {
 
 	/**
-	 * The original API client registered in the container.
-	 *
-	 * @var Client
-	 */
-	private Client $original_api_client;
-
-	/**
-	 * Set up test fixtures.
-	 */
-	public function setUp(): void {
-		parent::setUp();
-
-		$this->original_api_client = wc_get_container()->get( Client::class );
-	}
-
-	/**
 	 * Tear down test fixtures.
 	 */
 	public function tearDown(): void {
-		wc_get_container()->replace( Client::class, $this->original_api_client );
+		wc_get_container()->reset_replacement( Client::class );
 
 		parent::tearDown();
 	}

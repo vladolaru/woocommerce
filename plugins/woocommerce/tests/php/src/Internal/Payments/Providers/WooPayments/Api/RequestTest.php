@@ -28,13 +28,6 @@ use WC_Unit_Test_Case;
 class RequestTest extends WC_Unit_Test_Case {
 
 	/**
-	 * The original API client registered in the container.
-	 *
-	 * @var Client
-	 */
-	private Client $original_api_client;
-
-	/**
 	 * Fake provider transport.
 	 *
 	 * @var FakeHttpClient
@@ -47,7 +40,6 @@ class RequestTest extends WC_Unit_Test_Case {
 	public function setUp(): void {
 		parent::setUp();
 
-		$this->original_api_client   = wc_get_container()->get( Client::class );
 		$this->http_client           = new FakeHttpClient();
 		$this->http_client->blog_id  = 123;
 		$this->http_client->response = array(
@@ -74,7 +66,7 @@ class RequestTest extends WC_Unit_Test_Case {
 			remove_all_filters( $hook );
 		}
 
-		wc_get_container()->replace( Client::class, $this->original_api_client );
+		wc_get_container()->reset_replacement( Client::class );
 
 		parent::tearDown();
 	}
