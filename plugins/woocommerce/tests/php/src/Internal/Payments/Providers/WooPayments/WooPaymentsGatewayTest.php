@@ -4766,9 +4766,16 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should redirect duplicate checkout attempts to a paid matching session order before charging.
+	 * @testdox Should redirect duplicate checkout attempts to a paid matching session order before charging: $current_status.
+	 *
+	 * A checkout draft is checked as the pending order it becomes first (client 11.3.0 class-wc-payment-gateway-wcpay.php:1527-1531).
+	 *
+	 * @testWith ["pending"]
+	 *           ["checkout-draft"]
+	 *
+	 * @param string $current_status Status of the order being paid.
 	 */
-	public function test_process_payment_redirects_duplicate_checkout_to_paid_session_order_before_processing(): void {
+	public function test_process_payment_redirects_duplicate_checkout_to_paid_session_order_before_processing( string $current_status ): void {
 		$customer_id = self::factory()->user->create();
 		$cart_hash   = 'same-cart-hash';
 		$session     = $this->create_session();
@@ -4783,7 +4790,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$current_order = $this->create_order();
 		$current_order->set_cart_hash( $cart_hash );
 		$current_order->set_customer_id( $customer_id );
-		$current_order->update_status( 'pending' );
+		$current_order->set_status( $current_status );
 		$current_order->save();
 
 		$session->set( WooPaymentsDuplicatePaymentPreventionService::SESSION_KEY_PROCESSING_ORDER, $paid_order->get_id() );
@@ -5633,6 +5640,106 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$this->assertNull( WC()->session->get( WooPaymentsOrderSuccessPage::PAID_INTENT_ID_SESSION_KEY ) );
 		$this->assertInstanceOf( WC_Order::class, $order );
 		$this->assertSame( 'pending', $order->get_status() );
+	}
+
+	/**
+	 * @testdox A checkout draft is pending when its payment starts, and other statuses are kept: $_dataName.
+	 *
+	 * Client 11.3.0 class-wc-payment-gateway-wcpay.php:1527-1529, pinned by its
+	 * test_checkout_draft_order_is_pending_before_its_intent_is_created().
+	 *
+	 * @dataProvider provider_status_when_payment_starts
+	 *
+	 * @param string $status   Order status before checkout.
+	 * @param string $expected Order status when the payment starts.
+	 */
+	public function test_process_payment_starts_the_payment_of_a_draft_as_pending( string $status, string $expected ): void {
+		$order = $this->create_order();
+		$order->set_status( $status );
+		$order->save();
+		$service = new class() extends RecordingPaymentProcessingService {
+			/**
+			 * Stored order status when the payment starts.
+			 *
+			 * @var string
+			 */
+			public string $status_when_payment_started = '';
+
+			/**
+			 * Record the stored order status, then answer as the recording service does.
+			 *
+			 * @param PaymentOperationContext $context  Payment context.
+			 * @param ProviderInterface       $provider Provider.
+			 * @return PaymentOutcome
+			 */
+			public function process_checkout_outcome( PaymentOperationContext $context, ProviderInterface $provider ): PaymentOutcome {
+				$this->status_when_payment_started = wc_get_order( $context->get_order()->get_id() )->get_status();
+
+				return parent::process_checkout_outcome( $context, $provider );
+			}
+		};
+		$gateway = new WooPaymentsGateway();
+		$gateway->init( $service, new WooPaymentsProvider() );
+		$_POST['wcpay-payment-method'] = 'pm_card';
+
+		$gateway->process_payment( $order->get_id() );
+
+		$this->assertSame( $expected, $service->status_when_payment_started );
+	}
+
+	/**
+	 * Order statuses before checkout and when the payment starts.
+	 *
+	 * @return array<string,array{0:string,1:string}>
+	 */
+	public function provider_status_when_payment_starts(): array {
+		return array(
+			'checkout draft' => array( 'checkout-draft', 'pending' ),
+			'pending'        => array( 'pending', 'pending' ),
+			'failed'         => array( 'failed', 'failed' ),
+		);
+	}
+
+	/**
+	 * @testdox A checkout draft refused before its payment starts never becomes pending.
+	 *
+	 * Client 11.3.0 moves the draft after the refusals of class-wc-payment-gateway-wcpay.php:1406-1510; its catch fails the
+	 * refused order (:1600-1607).
+	 */
+	public function test_process_payment_refusal_before_the_payment_never_moves_a_draft_to_pending(): void {
+		$order = $this->create_order();
+		$order->set_status( 'checkout-draft' );
+		$order->save();
+		$transitions = array();
+		add_action(
+			'woocommerce_order_status_changed',
+			static function ( $order_id, $from, $to ) use ( &$transitions ): void {
+				unset( $order_id );
+				$transitions[] = $from . '>' . $to;
+			},
+			10,
+			3
+		);
+		$session = $this->create_session();
+		$session->set( WooPaymentsFailedTransactionRateLimiter::SESSION_KEY, array_fill( 0, 5, time() ) );
+		$service = new RecordingPaymentProcessingService();
+		$gateway = new WooPaymentsGateway();
+		$gateway->init(
+			$service,
+			new WooPaymentsProvider(),
+			null,
+			null,
+			null,
+			null,
+			null,
+			$this->create_fraud_prevention_service( false, $session ),
+			new WooPaymentsFailedTransactionRateLimiter( $session )
+		);
+
+		$gateway->process_payment( $order->get_id() );
+
+		$this->assertNull( $service->last_checkout_context );
+		$this->assertSame( array( 'checkout-draft>failed' ), $transitions );
 	}
 
 	/**

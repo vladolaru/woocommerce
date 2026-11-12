@@ -1518,6 +1518,11 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 			);
 		}
 
+		// A checkout draft becomes pending before its payment starts (client 11.3.0 gw:1527-1529).
+		if ( $order->has_status( OrderStatus::CHECKOUT_DRAFT ) ) {
+			$order->update_status( OrderStatus::PENDING );
+		}
+
 		$duplicate_order_result = $this->get_duplicate_payment_prevention_service()->delete_duplicate_of_paid_session_order( $order, $this );
 		if ( is_array( $duplicate_order_result ) ) {
 			return $duplicate_order_result;
