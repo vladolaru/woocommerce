@@ -1409,25 +1409,31 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Order-status callback answers with the return URL and leaves an order already in a paid status as it is: $status, paid while the intent is fetched: $paid_while_fetching.
+	 * @testdox Order-status callback answers with the return URL, records the intent and leaves an order already in a paid status as it is: $status, paid while the intent is fetched: $paid_while_fetching, $intent_status.
 	 *
-	 * Client 11.3.0 updates the order from the intent only while it is not paid (class-wc-payment-gateway-wcpay.php:4771,
+	 * Client 11.3.0 attaches the intent to the order (class-wc-payment-gateway-wcpay.php:4663, class-wc-payments-order-service.php:1818-1884),
+	 * then updates the order from it only while it is not paid (class-wc-payment-gateway-wcpay.php:4771,
 	 * class-wc-payments-order-service.php:475, :3398-3410), then answers with the return URL (class-wc-payment-gateway-wcpay.php:4779-4790).
 	 *
-	 * @testWith ["processing", false]
-	 *           ["completed", false]
-	 *           ["shipped", false]
-	 *           ["processing", true]
+	 * @testWith ["processing", false, "succeeded"]
+	 *           ["completed", false, "succeeded"]
+	 *           ["shipped", false, "succeeded"]
+	 *           ["processing", true, "succeeded"]
+	 *           ["shipped", false, "requires_capture"]
 	 *
 	 * @param string $status              The order's paid status; `shipped` is one a plugin adds.
 	 * @param bool   $paid_while_fetching Whether the order gets its paid status only while the callback fetches the intent.
+	 * @param string $intent_status       The intent's status: a payment, or an authorization whose authentication the order recorded.
 	 */
-	public function test_update_order_status_leaves_a_paid_order( string $status, bool $paid_while_fetching ): void {
+	public function test_update_order_status_leaves_a_paid_order( string $status, bool $paid_while_fetching, string $intent_status ): void {
 		add_filter( 'wc_order_statuses', static fn( array $statuses ): array => array_merge( $statuses, array( 'wc-shipped' => 'Shipped' ) ) );
 		add_filter( 'woocommerce_order_is_paid_statuses', static fn( array $statuses ): array => array_merge( $statuses, array( 'shipped' ) ) );
 		$order = $this->create_order_for_intent_binding( 'payment' );
 		$order->update_meta_data( '_intent_id', 'pi_paid' );
 		$order->set_transaction_id( 'pi_paid' );
+		if ( 'requires_capture' === $intent_status ) {
+			$order->update_meta_data( '_intention_status', 'requires_action' );
+		}
 		$pay = static function () use ( $order, $status, &$notes ): void {
 			$paid = wc_get_order( $order->get_id() );
 			$paid->set_status( $status );
@@ -1441,13 +1447,14 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		$completions = did_action( 'woocommerce_pre_payment_complete' ) + did_action( 'woocommerce_payment_complete' ) + did_action( 'woocommerce_payment_complete_order_status_' . $status );
 		$intent      = array(
 			'id'             => 'pi_paid',
-			'status'         => 'succeeded',
+			'status'         => $intent_status,
 			'amount'         => 5000,
 			'currency'       => 'usd',
 			'customer'       => 'cus_paid',
 			'payment_method' => 'pm_paid',
 			'metadata'       => array( 'order_id' => (string) $order->get_id() ),
 		);
+		$holds       = did_action( 'woocommerce_order_status_on-hold' );
 
 		$response = $this->create_controller( $this->create_api_client_returning( $intent, $paid_while_fetching ? $pay : null ) )->confirm_order_payment(
 			array(
@@ -1462,7 +1469,11 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		$this->assertSame( $order->get_checkout_order_received_url(), $response['return_url'] );
 		$this->assertSame( $status, $order->get_status() );
 		$this->assertSame( $completions, did_action( 'woocommerce_pre_payment_complete' ) + did_action( 'woocommerce_payment_complete' ) + did_action( 'woocommerce_payment_complete_order_status_' . $status ), 'No completion hook fires.' );
-		$this->assertSame( '', $order->get_meta( '_intention_status', true ) );
+		$this->assertSame( $holds, did_action( 'woocommerce_order_status_on-hold' ), 'The order is not held.' );
+		$this->assertSame( $intent_status, $order->get_meta( '_intention_status', true ), 'The intent is recorded with the status it reports.' );
+		$this->assertSame( 'pi_paid', $order->get_transaction_id() );
+		$this->assertSame( 'pm_paid', $order->get_meta( '_payment_method_id', true ) );
+		$this->assertSame( 'cus_paid', $order->get_meta( '_stripe_customer_id', true ) );
 		$this->assertCount( $notes, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
 	}
 

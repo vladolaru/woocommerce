@@ -378,8 +378,9 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox A redirect return that reads an authorization whose note is already on an order its expiry failed leaves the order failed, with no second note.
 	 *
-	 * Client 11.3.0's return sends an authorized intent to its authorization writer, which returns before any write once its
-	 * note is on the order (class-wc-payment-gateway-wcpay.php:2444-2460, class-wc-payments-order-service.php:2146-2151).
+	 * Client 11.3.0's return attaches the intent with the status it reports (class-wc-payment-gateway-wcpay.php:2700,
+	 * class-wc-payments-order-service.php:1818-1884), then sends an authorized intent to its authorization writer, which
+	 * returns before any other write once its note is on the order (:2707, class-wc-payments-order-service.php:2146-2151).
 	 */
 	public function test_handle_wp_leaves_an_expired_authorization_failed(): void {
 		$GLOBALS['_SERVER']['REQUEST_METHOD'] = 'GET';
@@ -403,7 +404,7 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 
 		$order = wc_get_order( $order->get_id() );
 		$this->assertSame( 'failed', $order->get_status() );
-		$this->assertSame( 'canceled', $order->get_meta( '_intention_status', true ) );
+		$this->assertSame( 'requires_capture', $order->get_meta( '_intention_status', true ), 'The status the platform reports is recorded.' );
 		$notes = array_map( static fn( $note ): string => (string) $note->content, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
 		$this->assertCount( 1, array_filter( $notes, static fn( string $note ): bool => false !== strpos( $note, 'was <strong>authorized</strong>' ) ) );
 	}
@@ -447,18 +448,21 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A redirect return to an order in a paid status a plugin adds leaves the order as it is: $intent_status.
+	 * @testdox A redirect return to an order in a paid status a plugin adds records the intent and leaves the order as it is: $intent_status, recorded before: $stored_status.
 	 *
 	 * The return stops on processing, completed and on-hold first, as client 11.3.0's does (class-wc-payment-gateway-wcpay.php:2621-2628);
-	 * another paid status reaches the order update, which client 11.3.0 makes only while the order is not paid, whatever the
-	 * intent's status (:2707, class-wc-payments-order-service.php:475, :3398-3410).
+	 * another paid status reaches the intent attach (:2700, class-wc-payments-order-service.php:1818-1884) and then the order
+	 * update, which client 11.3.0 makes only while the order is not paid, whatever the intent's status (:2707,
+	 * class-wc-payments-order-service.php:475, :3398-3410).
 	 *
-	 * @testWith ["succeeded"]
-	 *           ["requires_capture"]
+	 * @testWith ["succeeded", ""]
+	 *           ["requires_capture", ""]
+	 *           ["requires_capture", "requires_action"]
 	 *
 	 * @param string $intent_status The returned intent's status: a payment, or a manual-capture authorization.
+	 * @param string $stored_status The intent status the order recorded before the return, such as the authentication it started.
 	 */
-	public function test_handle_wp_leaves_an_order_in_another_paid_status( string $intent_status ): void {
+	public function test_handle_wp_leaves_an_order_in_another_paid_status( string $intent_status, string $stored_status ): void {
 		add_filter( 'wc_order_statuses', static fn( array $statuses ): array => array_merge( $statuses, array( 'wc-shipped' => 'Shipped' ) ) );
 		add_filter( 'woocommerce_order_is_paid_statuses', static fn( array $statuses ): array => array_merge( $statuses, array( 'shipped' ) ) );
 		$GLOBALS['_SERVER']['REQUEST_METHOD'] = 'GET';
@@ -470,9 +474,13 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 		$order = wc_get_order( $order->get_id() );
 		$order->set_transaction_id( 'pi_return' );
 		$order->set_status( 'shipped' );
+		if ( '' !== $stored_status ) {
+			$order->update_meta_data( '_intention_status', $stored_status );
+		}
 		$order->save();
 		$notes       = count( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
 		$completions = did_action( 'woocommerce_pre_payment_complete' ) + did_action( 'woocommerce_payment_complete' ) + did_action( 'woocommerce_payment_complete_order_status_shipped' );
+		$holds       = did_action( 'woocommerce_order_status_on-hold' );
 
 		$this->sut->handle_wp();
 
@@ -481,7 +489,11 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'shipped', $order->get_status() );
 		$this->assertSame( $completions, did_action( 'woocommerce_pre_payment_complete' ) + did_action( 'woocommerce_payment_complete' ) + did_action( 'woocommerce_payment_complete_order_status_shipped' ), 'No completion hook fires.' );
 		$this->assertSame( array(), array_filter( wp_list_pluck( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), 'content' ), static fn( string $note ): bool => false !== strpos( $note, 'was <strong>authorized</strong>' ) ) );
-		$this->assertSame( '', $order->get_meta( '_intention_status', true ) );
+		$this->assertSame( $holds, did_action( 'woocommerce_order_status_on-hold' ), 'The order is not held.' );
+		$this->assertSame( $intent_status, $order->get_meta( '_intention_status', true ), 'The intent is recorded with the status it reports.' );
+		$this->assertSame( 'ch_return', $order->get_meta( '_charge_id', true ) );
+		$this->assertSame( 'cus_return', $order->get_meta( '_stripe_customer_id', true ) );
+		$this->assertSame( 'pi_return', $order->get_transaction_id() );
 		$this->assertCount( $notes, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
 	}
 

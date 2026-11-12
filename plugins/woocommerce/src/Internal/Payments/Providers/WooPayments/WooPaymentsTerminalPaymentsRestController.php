@@ -465,12 +465,13 @@ class WooPaymentsTerminalPaymentsRestController extends RestApiControllerBase {
 			if ( '' !== $ipp_channel ) {
 				$order->update_meta_data( '_wcpay_ipp_channel', $ipp_channel );
 			}
-			// The intent is stored before the capture, so a capture of another intent for this order is refused once this one
-			// was tried, whatever happens to it; a retry of this intent still passes and completes the order. Client 11.1.0
-			// stores it there for the same check (includes/admin/class-wc-rest-payments-orders-controller.php:187-194, :215;
-			// the write is includes/class-wc-payments-order-service.php:1409).
-			$order->update_meta_data( '_intent_id', $intent_id );
 			$order->save();
+			// The intent is attached, transaction ID included, before the authorization is recorded and the payment captured,
+			// as client 11.3.0 attaches it (class-wc-rest-payments-orders-controller.php:215). A capture of another intent for
+			// this order is then refused once this one was tried, whatever happens to it, while a retry of this intent still
+			// passes (:187-194); and when a later step fails, the payment's own webhook still finds the order its payment.
+			list( $intent_event ) = wc_get_container()->get( WooPaymentsIntentConfirmationService::class )->build_lifecycle_event_from_intent( $intent, $order );
+			wc_get_container()->get( WooPaymentsOrderEffectApplier::class )->attach_intent_info( $order, $intent_id, $intent_event->get_meta_to_update() );
 
 			if ( 'succeeded' !== $status ) {
 				WooPaymentsTracks::record_wcadmin_event( 'wcpay_merchant_captured_auth' );

@@ -3638,6 +3638,56 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A checkout whose order another payment completes during the charge keeps that payment's record.
+	 *
+	 * Client 11.3.0 attaches a charge's intent to the order only while the stored intent status is not succeeded
+	 * (class-wc-payment-gateway-wcpay.php:2444, class-wc-payments-order-service.php:1818-1822), then leaves the paid order as
+	 * it is (:475, :3398-3410).
+	 */
+	public function test_process_payment_keeps_the_record_of_a_payment_that_completed_the_order_during_the_charge(): void {
+		$order = $this->create_order();
+		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+		$order->set_total( '10.99' );
+		$order->save();
+		// The recorded subscription sign-up PaymentIntent (Fixtures/platform-intention-subscription.json, pair signup_initial_setup_future_usage), 10.99 USD.
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reading a local test fixture.
+		$recording = json_decode( (string) file_get_contents( __DIR__ . '/Fixtures/platform-intention-subscription.json' ), true );
+		$intent    = array_values( array_filter( $recording['entries'], static fn( array $entry ) => 'signup_initial_setup_future_usage' === $entry['pair'] ) )[0]['response']['body'];
+		$outcome   = WooPaymentsIntentCodec::outcome_from_intention(
+			$intent,
+			new WooPaymentsIntentMappingContext( $order->get_checkout_order_received_url(), (string) $intent['payment_method'], (string) $intent['customer'] )
+		)->with_effect_plan( WooPaymentsOrderEffectPlan::for_payment_intent( $intent, false ) );
+		// Another request's payment completes the order while this charge runs, as a second browser tab's would.
+		$other_payment = array(
+			'_intent_id'        => 'pi_other_tab',
+			'_charge_id'        => 'ch_other_tab',
+			'_intention_status' => 'succeeded',
+		);
+		$pay           = static function ( int $order_id ) use ( $other_payment ): void {
+			$other = wc_get_order( $order_id );
+			$other->set_transaction_id( 'pi_other_tab' );
+			foreach ( $other_payment as $key => $value ) {
+				$other->update_meta_data( $key, $value );
+			}
+			$other->set_status( OrderStatus::PROCESSING );
+			$other->save();
+		};
+		$gateway       = new WooPaymentsGateway();
+		$gateway->init( wc_get_container()->get( PaymentProcessingService::class ), $this->create_provider_charging( $outcome, wc_get_container()->get( WooPaymentsTokenService::class ), $pay ) );
+		$_POST['wcpay-payment-method'] = (string) $intent['payment_method'];
+
+		$result = $gateway->process_payment( $order->get_id() );
+
+		$this->assertSame( 'success', $result['result'] ?? '' );
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( OrderStatus::PROCESSING, $order->get_status() );
+		$this->assertSame( 'pi_other_tab', $order->get_transaction_id(), "The other payment's transaction ID is kept." );
+		foreach ( $other_payment as $key => $value ) {
+			$this->assertSame( $value, $order->get_meta( $key, true ), "The other payment's $key is kept." );
+		}
+	}
+
+	/**
 	 * @testdox A manual-capture $flow whose order is given a paid status during the charge keeps that status and records only the authorization's intent; with none it holds the order: $status.
 	 *
 	 * Client 11.3.0 attaches the intent to the order, transaction ID and intent status included, then updates the order from

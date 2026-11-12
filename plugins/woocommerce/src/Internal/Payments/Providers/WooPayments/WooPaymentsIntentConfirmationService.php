@@ -224,12 +224,21 @@ class WooPaymentsIntentConfirmationService {
 			}
 		}
 
-		// The event is built again, and the hold decided, on the order read under the order payment lock it is applied under.
-		list( $event ) = $this->build_lifecycle_event_from_intent( $intent, $order, $zero_amount_plain_note );
-		$result        = $this->fee_details_note_controller->apply_and_schedule_fee_details_with_lock(
+		// The event is built again, and the hold decided, on the order read under the order payment lock it is applied under;
+		// the intent is then attached to that order before the payment lifecycle decides on the event.
+		$attaches_intent = $is_redirect_return || ! $this->is_setup_intent_for_order( $intent, $order );
+		list( $event )   = $this->build_lifecycle_event_from_intent( $intent, $order, $zero_amount_plain_note );
+		$result          = $this->fee_details_note_controller->apply_and_schedule_fee_details_with_lock(
 			$order,
 			$event,
-			fn( WC_Order $stored_order ): array => $this->build_lifecycle_event_from_intent( $intent, $stored_order, $zero_amount_plain_note )
+			function ( WC_Order $stored_order ) use ( $intent, $zero_amount_plain_note, $attaches_intent ): array {
+				$built = $this->build_lifecycle_event_from_intent( $intent, $stored_order, $zero_amount_plain_note );
+				if ( $attaches_intent ) {
+					$this->attach_intent_before_decision( $stored_order, $built[0] );
+				}
+
+				return $built;
+			}
 		);
 		if ( OrderPaymentLifecycleService::RESULT_REFUSED === $result ) {
 			$this->attach_charge_details_after_refusal( $order, $event );
@@ -323,8 +332,9 @@ class WooPaymentsIntentConfirmationService {
 	 * Build a payment lifecycle event from a platform intent response.
 	 *
 	 * The order-status callback, the redirect return and the authorization webhook build their event here, as client
-	 * 11.3.0 sends all three through update_order_status_from_intent() (class-wc-payments-order-service.php:466-500).
-	 * It writes nothing: the caller applies the event under the order payment lock, on the order it read under it.
+	 * 11.3.0 sends all three through update_order_status_from_intent() (class-wc-payments-order-service.php:466-500); the
+	 * terminal capture takes the intent's meta from it to attach the intent. It writes nothing: the caller applies the
+	 * event under the order payment lock, on the order it read under it.
 	 *
 	 * @since 11.2.0
 	 *
@@ -335,7 +345,7 @@ class WooPaymentsIntentConfirmationService {
 	 */
 	public function build_lifecycle_event_from_intent( array $intent, WC_Order $order, bool $zero_amount_plain_note = false ): array {
 		$intent_id             = isset( $intent['id'] ) ? (string) $intent['id'] : '';
-		$is_setup              = 0.0 >= (float) $order->get_total() || 0 === strpos( $intent_id, 'seti_' );
+		$is_setup              = $this->is_setup_intent_for_order( $intent, $order );
 		$provider_redirect_url = esc_url_raw( WooPaymentsIntentCodec::raw_next_action_redirect_url( $intent ) );
 		$provider_status       = isset( $intent['status'] ) ? (string) $intent['status'] : '';
 		$intent                = $this->get_intent_for_status_mapping( $intent, $is_setup );
@@ -390,6 +400,37 @@ class WooPaymentsIntentConfirmationService {
 		}
 
 		return array( $this->lifecycle_event( $outcome, $meta, $note_candidates, $note_type ), $this->get_amount_mismatch_hold( $outcome ) );
+	}
+
+	/**
+	 * Tell whether a confirmed intent is a SetupIntent: the intent of a $0 order, or one whose ID says so.
+	 *
+	 * @param array<string,mixed> $intent Platform intent response.
+	 * @param WC_Order            $order  Order being confirmed.
+	 * @return bool
+	 */
+	private function is_setup_intent_for_order( array $intent, WC_Order $order ): bool {
+		return 0.0 >= (float) $order->get_total() || 0 === strpos( isset( $intent['id'] ) ? (string) $intent['id'] : '', 'seti_' );
+	}
+
+	/**
+	 * Attach a payment or authorization to the order read under the order payment lock, before the payment lifecycle
+	 * decides on its event, so an order the lifecycle leaves as it is, one already paid, keeps the payment's record.
+	 *
+	 * Client 11.3.0's redirect return attaches a PaymentIntent or a SetupIntent, and its order-status callback a PaymentIntent,
+	 * with the exchange rate, fee and net beside it, before updating the order from it (class-wc-payment-gateway-wcpay.php:2700,
+	 * :4663).
+	 *
+	 * @param WC_Order              $order Order read under the order payment lock.
+	 * @param PaymentLifecycleEvent $event The event built from the intent on that order.
+	 */
+	private function attach_intent_before_decision( WC_Order $order, PaymentLifecycleEvent $event ): void {
+		$intent_id = (string) $event->get_payment_reference();
+		if ( '' === $intent_id || ! in_array( $event->get_status(), array( PaymentLifecycleEvent::STATUS_COMPLETED, PaymentLifecycleEvent::STATUS_AUTHORIZED ), true ) ) {
+			return;
+		}
+
+		$this->order_effect_applier->attach_intent_info( $order, $intent_id, $event->get_meta_to_update(), WooPaymentsOrderEffectApplier::CONFIRMATION_META_KEYS );
 	}
 
 	/**

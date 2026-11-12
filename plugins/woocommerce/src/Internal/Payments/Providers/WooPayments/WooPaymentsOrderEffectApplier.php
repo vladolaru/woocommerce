@@ -8,6 +8,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Enums\OrderStatus;
+use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\PaymentOperationContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentLifecycleEvent;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
@@ -26,6 +27,44 @@ use WC_Payment_Tokens;
  * @internal
  */
 class WooPaymentsOrderEffectApplier {
+
+	/**
+	 * Order meta of a payment's intent that client 11.3.0's attach_intent_info_to_order() writes, with the transaction ID
+	 * (class-wc-payments-order-service.php:1818-1845, :1875-1884).
+	 */
+	private const INTENT_INFO_META_KEYS = array(
+		'_intent_id',
+		'_payment_method_id',
+		'_charge_id',
+		'_intention_status',
+		'_stripe_customer_id',
+		'_wcpay_intent_currency',
+		'_wcpay_payment_transaction_id',
+		'_charge_risk_level',
+		'_wcpay_payment_method_details',
+	);
+
+	/**
+	 * Order meta client 11.3.0's checkout charge also writes beside the intent's, whether or not it then updates the order:
+	 * the order mode before the charge, the settlement exchange rate, and the fee and net (class-wc-payment-gateway-wcpay.php:1964,
+	 * :2445, :2501; class-wc-payments-order-service.php:2275-2300).
+	 */
+	public const CHARGE_META_KEYS = array(
+		'_wcpay_mode',
+		'_wcpay_multi_currency_stripe_exchange_rate',
+		'_wcpay_transaction_fee',
+		'_wcpay_net',
+	);
+
+	/**
+	 * Order meta client 11.3.0's redirect return and order-status callback also write beside the intent's: the settlement
+	 * exchange rate, and the fee and net (class-wc-payment-gateway-wcpay.php:2701, :2708, :4662, :4664).
+	 */
+	public const CONFIRMATION_META_KEYS = array(
+		'_wcpay_multi_currency_stripe_exchange_rate',
+		'_wcpay_transaction_fee',
+		'_wcpay_net',
+	);
 
 	/**
 	 * WooPayments token service.
@@ -271,6 +310,29 @@ class WooPaymentsOrderEffectApplier {
 		}
 
 		return $outcome;
+	}
+
+	/**
+	 * Attach a payment's intent to the order before its status is decided: the transaction ID and the intent's meta, so the
+	 * order keeps the payment's record whatever the decision. Nothing is written once the stored intent status is succeeded.
+	 *
+	 * Client 11.3.0 does this in attach_intent_info_to_order() (class-wc-payments-order-service.php:1818-1884), called by its
+	 * checkout, redirect return, order-status callback and terminal capture before they update the order from the intent
+	 * (class-wc-payment-gateway-wcpay.php:2444, :2700, :4663; class-wc-rest-payments-orders-controller.php:215).
+	 *
+	 * @param WC_Order             $order       Order read under the order payment lock the caller holds.
+	 * @param string               $intent_id   Intent ID, which becomes the transaction ID.
+	 * @param array<string,string> $meta        The payment's order meta; only its intent info, and the keys below, are written.
+	 * @param string[]             $beside_keys Meta the caller's client counterpart writes beside the intent's: CHARGE_META_KEYS
+	 *                                          or CONFIRMATION_META_KEYS, or none for the terminal capture.
+	 */
+	public function attach_intent_info( WC_Order $order, string $intent_id, array $meta, array $beside_keys = array() ): void {
+		if ( 'succeeded' === (string) $order->get_meta( '_intention_status', true ) ) {
+			return;
+		}
+
+		$order->set_transaction_id( $intent_id );
+		wc_get_container()->get( OrderPaymentLifecycleService::class )->apply_meta_under_lock( $order, array_intersect_key( $meta, array_flip( array_merge( self::INTENT_INFO_META_KEYS, $beside_keys ) ) ), array() );
 	}
 
 	/**

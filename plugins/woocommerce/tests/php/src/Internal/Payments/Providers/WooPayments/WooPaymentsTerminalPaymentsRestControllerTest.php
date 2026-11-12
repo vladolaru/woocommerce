@@ -5,6 +5,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\EventOrderResolver;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSessionService;
@@ -507,7 +508,8 @@ class WooPaymentsTerminalPaymentsRestControllerTest extends WC_REST_Unit_Test_Ca
 		$this->assertSame( 'pi_terminal', $order->get_meta( '_intent_id', true ) );
 		$this->assertSame( 'ch_terminal', $order->get_meta( '_charge_id', true ) );
 		$this->assertSame( 'succeeded', $order->get_meta( '_intention_status', true ) );
-		$this->assertSame( $order->get_meta( '_wcpay_payment_method_details', true ), $order->get_meta( '_wcpay_raw_payment_method_details', true ) );
+		// The intent's charge details, attached before the capture (class-wc-payments-order-service.php:1839-1845).
+		$this->assertSame( '{"type":"card_present","card_present":{"brand":"visa","last4":"4242"}}', $order->get_meta( '_wcpay_payment_method_details', true ) );
 		$this->assertStringContainsString( '/wc/v3/payments/readers/receipts/pi_terminal', (string) $order->get_meta( 'receipt_url', true ) );
 		$this->assertSame( 'test', $order->get_meta( '_wcpay_mode', true ) );
 		// Plugin 11.1.0 stores the intent model's uppercased currency (class-wc-rest-payments-orders-controller.php:215, class-wc-payments-api-payment-intention.php:93).
@@ -628,6 +630,7 @@ class WooPaymentsTerminalPaymentsRestControllerTest extends WC_REST_Unit_Test_Ca
 		$this->api_client->payment_intention_response  = $intent;
 		$this->api_client->captured_intention_response = array_merge( $intent, array( 'status' => 'succeeded' ) );
 		$completions                                   = did_action( 'woocommerce_pre_payment_complete' );
+		$holds = did_action( 'woocommerce_order_status_on-hold' );
 
 		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/orders/' . $order->get_id() . '/capture_terminal_payment' );
 		$request->set_param( 'order_id', $order->get_id() );
@@ -639,6 +642,8 @@ class WooPaymentsTerminalPaymentsRestControllerTest extends WC_REST_Unit_Test_Ca
 		$this->assertSame( $completes ? 1 : 0, did_action( 'woocommerce_pre_payment_complete' ) - $completions );
 		$this->assertSame( $completes ? 1 : 0, substr_count( $contents, 'successfully captured' ) );
 		$this->assertStringNotContainsString( 'successfully charged', $contents );
+		$this->assertStringNotContainsString( 'was <strong>authorized</strong>', $contents, 'The authorization is not recorded on the paid order.' );
+		$this->assertSame( $holds, did_action( 'woocommerce_order_status_on-hold' ), 'The paid order is not held.' );
 		$this->assertSame( 'completed', $order->get_status(), 'The terminal completion runs.' );
 		$this->assertSame( 'succeeded', $order->get_meta( '_intention_status', true ) );
 		$this->assertStringEndsWith( '/payments/readers/receipts/pi_terminal_paid', (string) $order->get_meta( 'receipt_url' ) );
@@ -1798,6 +1803,85 @@ class WooPaymentsTerminalPaymentsRestControllerTest extends WC_REST_Unit_Test_Ca
 			$notes = implode( ' ', wp_list_pluck( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), 'content' ) );
 			$this->assertSame( 1, substr_count( $notes, 'successfully captured' ) );
 			$this->assertSame( 0, substr_count( $notes, 'successfully charged' ) );
+			$this->assertSame( array( 'pi_terminal' ), array_column( $this->api_client->captures, 'intent_id' ), 'The retry captures nothing again.' );
+		} finally {
+			$this->reset_subscription_doubles();
+		}
+	}
+
+	/**
+	 * @testdox A terminal capture attaches the intent before it holds the order for the authorization, so the hold's status hooks find the payment.
+	 *
+	 * Client 11.3.0 attaches the intent to the order before it updates the order from it (class-wc-rest-payments-orders-controller.php:215-217,
+	 * class-wc-payments-order-service.php:1818-1884, :2146-2161).
+	 */
+	public function test_capture_terminal_payment_attaches_the_intent_before_the_hold(): void {
+		$order                                        = $this->create_order( 12.34, 'USD' );
+		$intent                                       = array(
+			'id'       => 'pi_terminal_hold',
+			'status'   => 'requires_capture',
+			'currency' => 'usd',
+			'metadata' => array( 'order_id' => (string) $order->get_id() ),
+			'charges'  => array( 'data' => array( array( 'id' => 'ch_terminal_hold' ) ) ),
+		);
+		$this->api_client->payment_intention_response = $intent;
+		$this->api_client->captured_intention_response = array_merge( $intent, array( 'status' => 'succeeded' ) );
+		$seen_on_hold                                  = array();
+		add_action(
+			'woocommerce_order_status_on-hold',
+			static function ( $order_id ) use ( &$seen_on_hold ): void {
+				$held           = wc_get_order( $order_id );
+				$seen_on_hold[] = array( $held->get_transaction_id(), $held->get_meta( '_charge_id', true ), $held->get_meta( '_intention_status', true ) );
+			}
+		);
+
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/orders/' . $order->get_id() . '/capture_terminal_payment' );
+		$request->set_param( 'order_id', $order->get_id() );
+		$request->set_param( 'payment_intent_id', 'pi_terminal_hold' );
+		$this->assertInstanceOf( WP_REST_Response::class, $this->sut->capture_terminal_payment( $request ) );
+
+		$this->assertSame( array( array( 'pi_terminal_hold', 'ch_terminal_hold', 'requires_capture' ) ), $seen_on_hold, 'The order is held once, with the intent already attached.' );
+		$this->assertSame( 'completed', wc_get_order( $order->get_id() )->get_status() );
+	}
+
+	/**
+	 * @testdox A terminal capture on an order already in a paid status whose generated card cannot be saved keeps the payment's identity: a retry is refused and the payment's webhook finds the order its own.
+	 *
+	 * Client 11.3.0 attaches the intent, transaction ID included, before its status update and capture
+	 * (class-wc-rest-payments-orders-controller.php:215, class-wc-payments-order-service.php:1875-1884); the update leaves a paid
+	 * order as it is (:217, class-wc-payments-order-service.php:475), and a paid order's payment is the one its transaction ID names.
+	 */
+	public function test_capture_on_a_paid_order_whose_card_cannot_be_saved_keeps_the_payment_identity(): void {
+		global $wp_rest_server;
+
+		list( $order, , $user_id ) = $this->set_up_in_person_subscription_purchase();
+		$paid                      = wc_get_order( $order->get_id() );
+		$paid->set_status( 'processing' );
+		$paid->save();
+		$this->assertSame( '', $paid->get_transaction_id() );
+		$wp_rest_server = new WP_REST_Server();
+		$this->sut->register_routes();
+
+		try {
+			// The token service answers null when it cannot read the payment method's details.
+			$this->replace_token_service( $this->once(), null );
+			$first = $wp_rest_server->dispatch( $this->make_route_capture_request( $order, 'pi_terminal' ) );
+			$this->assertSame( 500, $first->get_status() );
+
+			$failed = wc_get_order( $order->get_id() );
+			$this->assertSame( 'processing', $failed->get_status() );
+			$this->assertSame( 'pi_terminal', $failed->get_transaction_id(), 'The transaction ID names the payment.' );
+			$this->assertSame( 'pi_terminal', $failed->get_meta( '_intent_id', true ) );
+			$this->assertSame( 'ch_terminal', $failed->get_meta( '_charge_id', true ) );
+			$this->assertSame( 'succeeded', $failed->get_meta( '_intention_status', true ) );
+			$this->assertTrue( ( new EventOrderResolver() )->is_own_payment( $failed, 'pi_terminal', 'ch_terminal' ), "The payment's webhook finds the order its own." );
+
+			// The app retries the same intent, which the platform now reads as captured.
+			$this->api_client->payment_intention_response['status'] = 'succeeded';
+			$this->replace_token_service( $this->never(), $this->create_card_token( $user_id ) );
+			$retry = $wp_rest_server->dispatch( $this->make_route_capture_request( $order, 'pi_terminal' ) );
+			$this->assertSame( 409, $retry->get_status() );
+			$this->assertSame( 'wcpay_payment_uncapturable', $retry->get_data()['code'] );
 			$this->assertSame( array( 'pi_terminal' ), array_column( $this->api_client->captures, 'intent_id' ), 'The retry captures nothing again.' );
 		} finally {
 			$this->reset_subscription_doubles();

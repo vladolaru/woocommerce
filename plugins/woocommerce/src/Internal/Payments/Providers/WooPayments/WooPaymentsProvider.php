@@ -53,28 +53,6 @@ use Automattic\WooCommerce\Internal\Utilities\RequestTypeUtil;
 class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectApplierInterface, ProviderOutcomeMetadataMapperInterface, ProviderPostLifecycleEffectApplierInterface {
 
 	/**
-	 * Order meta of a charge's intent that client 11.3.0 writes whether or not it then updates the order: its intent info
-	 * with the transaction ID (class-wc-payments-order-service.php:1818-1845, :1875-1884), the order mode before the
-	 * charge (class-wc-payment-gateway-wcpay.php:1964), the settlement exchange rate (:2445, :3133-3162), and the fee and
-	 * net after the update (:2501, class-wc-payments-order-service.php:2275-2300).
-	 */
-	private const CHARGE_INTENT_META_KEYS = array(
-		'_intent_id',
-		'_payment_method_id',
-		'_charge_id',
-		'_intention_status',
-		'_stripe_customer_id',
-		'_wcpay_intent_currency',
-		'_wcpay_payment_transaction_id',
-		'_charge_risk_level',
-		'_wcpay_payment_method_details',
-		'_wcpay_mode',
-		'_wcpay_multi_currency_stripe_exchange_rate',
-		'_wcpay_transaction_fee',
-		'_wcpay_net',
-	);
-
-	/**
 	 * WooPayments payment operation service.
 	 *
 	 * @var WooPaymentsPaymentOperationService
@@ -606,12 +584,11 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 	}
 
 	/**
-	 * Record a completed or authorized charge's intent on the order, read again under the checkout's order payment lock:
-	 * the transaction ID and the intent's meta.
+	 * Record a completed or authorized charge's intent on the order, read again under the checkout's order payment lock,
+	 * before the payment lifecycle decides on it (WooPaymentsOrderEffectApplier::attach_intent_info()).
 	 *
-	 * Client 11.3.0 attaches them before it updates the order from the intent, which then changes nothing on an order
-	 * already paid (class-wc-payment-gateway-wcpay.php:2444, :2499), and writes nothing once the stored intent status is
-	 * succeeded (class-wc-payments-order-service.php:1818-1822).
+	 * Client 11.3.0 attaches it before it updates the order from the intent, which then changes nothing on an order
+	 * already paid (class-wc-payment-gateway-wcpay.php:2444, :2499).
 	 *
 	 * @param PaymentOperationContext $context Payment context.
 	 * @param PaymentOutcome          $outcome Charge outcome, with its effects applied.
@@ -622,15 +599,9 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 			return;
 		}
 
-		$order             = $context->get_order();
-		$lifecycle_service = wc_get_container()->get( OrderPaymentLifecycleService::class );
-		$lifecycle_service->reread_order_from_data_store( $order );
-		if ( 'succeeded' === (string) $order->get_meta( '_intention_status', true ) ) {
-			return;
-		}
-
-		$order->set_transaction_id( $intent_id );
-		$lifecycle_service->apply_meta_under_lock( $order, array_intersect_key( $this->get_outcome_meta( $outcome ), array_flip( self::CHARGE_INTENT_META_KEYS ) ), array() );
+		$order = $context->get_order();
+		wc_get_container()->get( OrderPaymentLifecycleService::class )->reread_order_from_data_store( $order );
+		$this->order_effect_applier->attach_intent_info( $order, $intent_id, $this->get_outcome_meta( $outcome ), WooPaymentsOrderEffectApplier::CHARGE_META_KEYS );
 	}
 
 	/**
