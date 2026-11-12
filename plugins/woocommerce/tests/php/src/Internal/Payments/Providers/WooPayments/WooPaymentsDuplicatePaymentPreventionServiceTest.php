@@ -5,12 +5,14 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
+use Automattic\WooCommerce\Internal\Payments\PaymentLifecycleEvent;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDuplicatePaymentPreventionService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeeDetailsNoteController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentConfirmationService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffectApplier;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\WooCommerceSubscriptionsDoubles;
@@ -277,6 +279,40 @@ class WooPaymentsDuplicatePaymentPreventionServiceTest extends WC_Unit_Test_Case
 			'successfully charged',
 			implode( ' ', array_map( static fn( object $note ): string => (string) $note->content, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) ) )
 		);
+	}
+
+	/**
+	 * @testdox An attached PaymentIntent the store captured before the order was moved to Failed redirects as paid and leaves the order as it is.
+	 *
+	 * Client 11.3.0 applies the attached intent through update_order_status_from_intent() (class-duplicate-payment-prevention-service.php:150),
+	 * whose success writer returns before any write once the capture note is on the order (class-wc-payments-order-service.php:2040-2046).
+	 */
+	public function test_attached_intent_captured_before_the_order_failed_leaves_the_order(): void {
+		$order = $this->create_order( 'hash', 'pending' );
+		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+		$order->update_meta_data( '_intent_id', 'pi_existing' );
+		$order->save();
+		$candidates = wc_get_container()->get( WooPaymentsOrderNoteService::class )->format_capture_success_note_candidates( $order, 'pi_existing', 'ch_existing' );
+		wc_get_container()->get( OrderPaymentLifecycleService::class )->apply(
+			wc_get_order( $order->get_id() ),
+			new PaymentLifecycleEvent( PaymentLifecycleEvent::STATUS_COMPLETED, 'pi_existing', array( '_intention_status' => 'succeeded' ), array(), $candidates[0], PaymentLifecycleEvent::NOTE_TYPE_CAPTURE_SUCCESS, $candidates ),
+			new WooPaymentsPersistenceVocabulary()
+		);
+		wc_get_order( $order->get_id() )->update_status( 'failed' );
+		$completions = did_action( 'woocommerce_pre_payment_complete' );
+		$sut         = $this->create_service( $this->create_session(), $this->create_api_client_answering( $this->create_intent_response( $order, 'succeeded', 1200 ) ) );
+
+		$result = $sut->check_payment_intent_attached_to_order_succeeded( wc_get_order( $order->get_id() ), $this->create_gateway() );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertIsArray( $result );
+		$this->assertSame( 'success', $result['result'] );
+		$this->assertStringContainsString( 'wcpay_previous_successful_intent=yes', $result['redirect'] );
+		$this->assertSame( 'failed', $order->get_status() );
+		$this->assertSame( $completions, did_action( 'woocommerce_pre_payment_complete' ), 'The payment is not completed again.' );
+		$notes = array_map( static fn( object $note ): string => (string) $note->content, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+		$this->assertCount( 1, array_filter( $notes, static fn( string $note ): bool => false !== strpos( $note, 'successfully captured' ) ) );
+		$this->assertCount( 0, array_filter( $notes, static fn( string $note ): bool => false !== strpos( $note, 'successfully charged' ) ) );
 	}
 
 	/**

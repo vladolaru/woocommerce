@@ -606,6 +606,111 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A completed event whose applied alternative's note is on the order changes nothing: $_dataName.
+	 *
+	 * Client 11.3.0's success writer returns before any write when the capture note of the same intent is on the order
+	 * (class-wc-payments-order-service.php:2040-2046); the alternative carries that other note for any provider.
+	 *
+	 * @dataProvider applied_alternative_note_states
+	 *
+	 * @param string $alternative_note How the order carries the alternative's note.
+	 * @param bool   $applies          Whether the event completes the order.
+	 */
+	public function test_completed_event_counts_an_applied_alternative_note_as_applied( string $alternative_note, bool $applies ): void {
+		$order = $this->create_woopayments_order();
+		$order->set_status( 'failed' );
+		$order->save();
+		$event = $this->event_with_an_applied_alternative( 'pi_alternative' );
+		if ( 'identity' === $alternative_note ) {
+			wc_get_container()->get( OrderPaymentNotes::class )->add( $order, 'An earlier wording of the capture.', $event->get_applied_alternatives()[0]->get_note_identity(), $this->persistence_vocabulary );
+		} elseif ( 'text' === $alternative_note ) {
+			$order->add_order_note( 'Captured pi_alternative.' );
+		} elseif ( 'other text' === $alternative_note ) {
+			$order->add_order_note( 'Erfasst pi_alternative.' );
+		}
+		$completions = did_action( 'woocommerce_pre_payment_complete' );
+
+		$this->apply_event( $order, $event );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( $applies ? 'completed' : 'failed', $order->get_status() );
+		$this->assertSame( $applies ? 'succeeded' : '', $order->get_meta( '_intention_status', true ) );
+		$this->assertSame( $applies ? 1 : 0, $this->countOrderNotesMatching( $order, 'Paid by pi_alternative.' ) );
+		$this->assertSame( $applies ? 1 : 0, did_action( 'woocommerce_pre_payment_complete' ) - $completions );
+		if ( ! $applies ) {
+			$this->assertLogged(
+				'debug',
+				'a note that counts as this payment already applied is on the order',
+				array(
+					'source'     => 'order-payments',
+					'order_id'   => $order->get_id(),
+					'event_type' => PaymentLifecycleEvent::STATUS_COMPLETED,
+					'reason'     => 'applied_note_exists',
+				)
+			);
+		}
+	}
+
+	/** @return array<string,array{0:string,1:bool}> */
+	public function applied_alternative_note_states(): array {
+		return array(
+			'the alternative note, found by its identity' => array( 'identity', false ),
+			'the alternative note, found by its text'     => array( 'text', false ),
+			'the alternative note, found by another text' => array( 'other text', false ),
+			'no note of the alternative'                  => array( 'none', true ),
+		);
+	}
+
+	/**
+	 * @testdox An applied alternative's note found by its text gets the alternative's own identity, not the event's.
+	 */
+	public function test_applied_alternative_note_found_by_its_text_gets_its_own_identity(): void {
+		$order = $this->create_woopayments_order();
+		$order->set_status( 'failed' );
+		$order->save();
+		$note_id = (int) $order->add_order_note( 'Captured pi_alternative.' );
+		$event   = $this->event_with_an_applied_alternative( 'pi_alternative' );
+
+		$this->apply_event( $order, $event );
+
+		$identities = get_comment_meta( $note_id, $this->persistence_vocabulary->get_note_identity_meta_key(), false );
+		$this->assertSame( array( hash( 'sha256', $event->get_applied_alternatives()[0]->get_note_identity() ) ), $identities );
+		$this->assertNotContains( hash( 'sha256', $event->get_note_identity() ), $identities );
+	}
+
+	/**
+	 * Build a completed event whose payment counts as applied once its capture note is on the order.
+	 *
+	 * @param string $payment_reference Payment reference.
+	 * @return PaymentLifecycleEvent
+	 */
+	private function event_with_an_applied_alternative( string $payment_reference ): PaymentLifecycleEvent {
+		return new PaymentLifecycleEvent(
+			PaymentLifecycleEvent::STATUS_COMPLETED,
+			$payment_reference,
+			array( '_intention_status' => 'succeeded' ),
+			array(),
+			'Paid by ' . $payment_reference . '.',
+			PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_SUCCESS,
+			array(),
+			false,
+			false,
+			array(
+				new PaymentLifecycleEvent(
+					PaymentLifecycleEvent::STATUS_COMPLETED,
+					$payment_reference,
+					array(),
+					array(),
+					'Captured ' . $payment_reference . '.',
+					PaymentLifecycleEvent::NOTE_TYPE_CAPTURE_SUCCESS,
+					array( 'Erfasst ' . $payment_reference . '.' )
+				),
+			)
+		);
+	}
+
+	/**
 	 * @testdox Completed events update paid orders without adding duplicate generic completion notes.
 	 */
 	public function test_completed_event_updates_paid_order_without_generic_completion_note(): void {

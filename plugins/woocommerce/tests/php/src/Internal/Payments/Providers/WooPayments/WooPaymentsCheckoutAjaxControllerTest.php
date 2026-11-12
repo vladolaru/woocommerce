@@ -4,7 +4,9 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Enums\OrderStatus;
+use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
+use Automattic\WooCommerce\Internal\Payments\PaymentLifecycleEvent;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\EventIngestor;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Fixtures\RecordedPlatformEvents;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\TransportLog;
@@ -1340,6 +1342,85 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 
 		$this->assertNotSame( 'on-hold', wc_get_order( $order->get_id() )->get_status() );
 		$this->assertSame( array(), array_values( array_filter( array_map( 'strval', array_column( $logger->lines, 1 ) ), static fn( string $line ): bool => false !== strpos( $line, 'put on hold: intent' ) ) ) );
+	}
+
+	/**
+	 * @testdox Order-status callback leaves the order of a captured payment as it is: $_dataName.
+	 *
+	 * Client 11.3.0 confirms through update_order_status_from_intent() (class-wc-payment-gateway-wcpay.php:4771), whose
+	 * success writer returns before any write once the capture note is on the order (class-wc-payments-order-service.php:2040-2046).
+	 *
+	 * @dataProvider provider_orders_a_captured_payment_is_confirmed_again_on
+	 *
+	 * @param string $status_after_capture    Status the order is moved to after the capture, or empty to leave it.
+	 * @param bool   $captured_while_fetching Whether the capture lands while the callback fetches the intent.
+	 */
+	public function test_update_order_status_leaves_the_order_of_a_captured_payment( string $status_after_capture, bool $captured_while_fetching ): void {
+		$order = $this->create_order_for_intent_binding( 'payment' );
+		$order->update_meta_data( '_intent_id', 'pi_captured' );
+		$order->save();
+		$completions = did_action( 'woocommerce_pre_payment_complete' );
+		$capture     = function () use ( $order, $status_after_capture ): void {
+			$this->capture_through_the_store( $order, 'pi_captured' );
+			if ( '' !== $status_after_capture ) {
+				wc_get_order( $order->get_id() )->update_status( $status_after_capture );
+			}
+		};
+		if ( ! $captured_while_fetching ) {
+			$capture();
+		}
+		$intent     = array(
+			'id'             => 'pi_captured',
+			'status'         => 'succeeded',
+			'amount'         => 5000,
+			'currency'       => 'usd',
+			'customer'       => 'cus_captured',
+			'payment_method' => 'pm_captured',
+			'metadata'       => array( 'order_id' => (string) $order->get_id() ),
+		);
+		$controller = $this->create_controller( $this->create_api_client_returning( $intent, $captured_while_fetching ? $capture : null ) );
+
+		$response = $controller->confirm_order_payment(
+			array(
+				'_ajax_nonce' => wp_create_nonce( 'wcpay_update_order_status_nonce_' . $order->get_id() ),
+				'order_id'    => $order->get_id(),
+				'intent_id'   => 'pi_captured',
+			)
+		);
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( 200, $response['status_code'] );
+		$this->assertSame( $order->get_checkout_order_received_url(), $response['return_url'] );
+		$this->assertSame( '' !== $status_after_capture ? $status_after_capture : OrderStatus::COMPLETED, $order->get_status() );
+		$this->assertSame( 1, did_action( 'woocommerce_pre_payment_complete' ) - $completions, 'Only the capture completed the payment.' );
+		$notes = array_map( static fn( $note ): string => (string) $note->content, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+		$this->assertCount( 1, array_filter( $notes, static fn( string $note ): bool => false !== strpos( $note, 'successfully captured' ) ) );
+		$this->assertCount( 0, array_filter( $notes, static fn( string $note ): bool => false !== strpos( $note, 'successfully charged' ) ) );
+	}
+
+	/** @return array<string,array{0:string,1:bool}> */
+	public function provider_orders_a_captured_payment_is_confirmed_again_on(): array {
+		return array(
+			'the order is left as it is'      => array( '', false ),
+			'the order is moved to Failed'    => array( OrderStatus::FAILED, false ),
+			'the order is moved to Cancelled' => array( OrderStatus::CANCELLED, false ),
+			'captured and moved to Failed while the intent is fetched' => array( OrderStatus::FAILED, true ),
+		);
+	}
+
+	/**
+	 * Capture an order's payment as the store's capture does: the completed lifecycle event with the capture note.
+	 *
+	 * @param WC_Order $order     Order.
+	 * @param string   $intent_id Captured intent ID.
+	 */
+	private function capture_through_the_store( WC_Order $order, string $intent_id ): void {
+		$candidates = wc_get_container()->get( WooPaymentsOrderNoteService::class )->format_capture_success_note_candidates( $order, $intent_id, 'ch_captured' );
+		wc_get_container()->get( OrderPaymentLifecycleService::class )->apply(
+			wc_get_order( $order->get_id() ),
+			new PaymentLifecycleEvent( PaymentLifecycleEvent::STATUS_COMPLETED, $intent_id, array( '_intention_status' => 'succeeded' ), array(), $candidates[0], PaymentLifecycleEvent::NOTE_TYPE_CAPTURE_SUCCESS, $candidates ),
+			new WooPaymentsPersistenceVocabulary()
+		);
 	}
 
 	/**

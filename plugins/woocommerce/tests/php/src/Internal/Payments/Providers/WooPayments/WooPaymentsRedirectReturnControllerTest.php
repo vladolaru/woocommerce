@@ -12,6 +12,7 @@ use Automattic\WooCommerce\Internal\DataStores\Orders\CustomOrdersTableControlle
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
+use Automattic\WooCommerce\Internal\Payments\PaymentLifecycleEvent;
 use Automattic\WooCommerce\Internal\Payments\TransientRowLock;
 use Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabularyInterface;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
@@ -405,6 +406,44 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'canceled', $order->get_meta( '_intention_status', true ) );
 		$notes = array_map( static fn( $note ): string => (string) $note->content, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
 		$this->assertCount( 1, array_filter( $notes, static fn( string $note ): bool => false !== strpos( $note, 'was <strong>authorized</strong>' ) ) );
+	}
+
+	/**
+	 * @testdox A redirect return for a captured payment leaves the order the merchant moved to $status as it is.
+	 *
+	 * Client 11.3.0's return confirms through update_order_status_from_intent() (class-wc-payment-gateway-wcpay.php:2707),
+	 * whose success writer returns before any write once the capture note is on the order (class-wc-payments-order-service.php:2040-2046).
+	 *
+	 * @testWith ["failed"]
+	 *           ["cancelled"]
+	 *
+	 * @param string $status Status the order is moved to after the capture.
+	 */
+	public function test_handle_wp_leaves_the_order_of_a_captured_payment( string $status ): void {
+		$GLOBALS['_SERVER']['REQUEST_METHOD'] = 'GET';
+		$order                                = $this->create_order();
+		$api_client                           = new RedirectReturnApiClientStub();
+		$api_client->payment_intent           = $this->successful_payment_intent( $order, 'pi_return', 'pm_return' );
+		$this->sut                            = $this->create_controller( true, $this->create_confirmation_service( $api_client, $this->create_token_service() ), $api_client );
+		$this->set_payment_intent_return_request( $order, 'pi_return' );
+		$candidates = wc_get_container()->get( WooPaymentsOrderNoteService::class )->format_capture_success_note_candidates( $order, 'pi_return', 'ch_return' );
+		wc_get_container()->get( OrderPaymentLifecycleService::class )->apply(
+			wc_get_order( $order->get_id() ),
+			new PaymentLifecycleEvent( PaymentLifecycleEvent::STATUS_COMPLETED, 'pi_return', array( '_intention_status' => 'succeeded' ), array(), $candidates[0], PaymentLifecycleEvent::NOTE_TYPE_CAPTURE_SUCCESS, $candidates ),
+			new WooPaymentsPersistenceVocabulary()
+		);
+		wc_get_order( $order->get_id() )->update_status( $status );
+		$completions = did_action( 'woocommerce_pre_payment_complete' );
+
+		$this->sut->handle_wp();
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( 1, $api_client->payment_intent_reads );
+		$this->assertSame( $status, $order->get_status() );
+		$this->assertSame( $completions, did_action( 'woocommerce_pre_payment_complete' ), 'The payment is not completed again.' );
+		$notes = array_map( static fn( $note ): string => (string) $note->content, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+		$this->assertCount( 1, array_filter( $notes, static fn( string $note ): bool => false !== strpos( $note, 'successfully captured' ) ) );
+		$this->assertCount( 0, array_filter( $notes, static fn( string $note ): bool => false !== strpos( $note, 'successfully charged' ) ) );
 	}
 
 	/**

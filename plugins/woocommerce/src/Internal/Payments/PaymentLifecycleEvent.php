@@ -192,6 +192,13 @@ class PaymentLifecycleEvent {
 	private bool $hold_order;
 
 	/**
+	 * Other lifecycle events whose note, when already on the order, counts as this event already applied.
+	 *
+	 * @var PaymentLifecycleEvent[]
+	 */
+	private array $applied_alternatives;
+
+	/**
 	 * Constructor.
 	 *
 	 * @since 11.0.0
@@ -205,9 +212,11 @@ class PaymentLifecycleEvent {
 	 * @param array<int,mixed>    $note_equivalents  Other texts of the same note.
 	 * @param bool                $preserve_order_status Whether the order status must stay untouched.
 	 * @param bool                $hold_order        Whether a completed event puts the order on hold instead of completing it.
+	 * @param array<int,mixed>    $applied_alternatives Other lifecycle events whose note, when already on the order, counts as
+	 *                                                  this event already applied; entries without a note are dropped.
 	 * @throws InvalidArgumentException When an unknown status is supplied, or a hold on an event that is not completed.
 	 */
-	public function __construct( string $status, ?string $payment_reference = null, array $meta_to_update = array(), array $meta_to_delete = array(), ?string $note = null, ?string $note_type = null, array $note_equivalents = array(), bool $preserve_order_status = false, bool $hold_order = false ) {
+	public function __construct( string $status, ?string $payment_reference = null, array $meta_to_update = array(), array $meta_to_delete = array(), ?string $note = null, ?string $note_type = null, array $note_equivalents = array(), bool $preserve_order_status = false, bool $hold_order = false, array $applied_alternatives = array() ) {
 		if ( ! in_array( $status, $this->get_allowed_statuses(), true ) ) {
 			throw new InvalidArgumentException( esc_html( sprintf( 'Unknown payment lifecycle status: %s', $status ) ) );
 		}
@@ -225,6 +234,12 @@ class PaymentLifecycleEvent {
 		$this->note_equivalents      = $this->normalize_note_equivalents( $note_equivalents );
 		$this->preserve_order_status = $preserve_order_status;
 		$this->hold_order            = $hold_order;
+		$this->applied_alternatives  = array_values(
+			array_filter(
+				$applied_alternatives,
+				static fn( $alternative ): bool => $alternative instanceof self && null !== $alternative->get_note() && '' !== $alternative->get_note()
+			)
+		);
 	}
 
 	/**
@@ -362,6 +377,19 @@ class PaymentLifecycleEvent {
 	 */
 	public function get_note_equivalents(): array {
 		return $this->note_equivalents;
+	}
+
+	/**
+	 * Get the other lifecycle events whose note, when already on the order, counts as this event already applied.
+	 *
+	 * Each brings its own note identity, text and other texts, so a note found for it is its own, not this event's.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @return PaymentLifecycleEvent[]
+	 */
+	public function get_applied_alternatives(): array {
+		return $this->applied_alternatives;
 	}
 
 	/**

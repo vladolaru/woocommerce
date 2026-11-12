@@ -202,7 +202,8 @@ class WooPaymentsFeeDetailsNoteController implements RegisterHooksInterface {
 
 	/**
 	 * Apply a payment lifecycle event under the order payment lock the caller holds, and schedule the job when the event
-	 * first adds a payment's success or capture note.
+	 * first adds a payment's success or capture note. A payment's success and capture notes each count as the other
+	 * already applied.
 	 *
 	 * @param WC_Order                                   $order Order object.
 	 * @param PaymentLifecycleEvent                      $event Lifecycle event.
@@ -214,6 +215,7 @@ class WooPaymentsFeeDetailsNoteController implements RegisterHooksInterface {
 			return;
 		}
 
+		$event = $this->with_applied_alternatives( $order, $event );
 		$this->schedule_when_event_added_note( $order, $event, $this->lifecycle_service->apply_under_lock( $order, $event, $this->vocabulary ), $hold );
 	}
 
@@ -240,14 +242,16 @@ class WooPaymentsFeeDetailsNoteController implements RegisterHooksInterface {
 
 		$hold = null;
 		if ( null === $build_under_lock ) {
+			$event  = $this->with_applied_alternatives( $order, $event );
 			$result = $this->lifecycle_service->apply( $order, $event, $this->vocabulary );
 		} else {
 			$result = $this->lifecycle_service->apply_rebuilt_under_claim(
 				$order,
 				$event,
 				$this->vocabulary,
-				static function ( WC_Order $stored_order ) use ( $build_under_lock, &$event, &$hold ): PaymentLifecycleEvent {
+				function ( WC_Order $stored_order ) use ( $build_under_lock, &$event, &$hold ): PaymentLifecycleEvent {
 					list( $event, $hold ) = $build_under_lock( $stored_order );
+					$event                = $this->with_applied_alternatives( $stored_order, $event );
 
 					return $event;
 				}
@@ -335,6 +339,52 @@ class WooPaymentsFeeDetailsNoteController implements RegisterHooksInterface {
 	private function has_note( WC_Order $order, PaymentLifecycleEvent $event ): bool {
 		return 0 < $this->order_payment_notes->find_by_identity( $order, $event->get_note_identity(), $this->vocabulary )
 			|| 0 < $this->order_payment_notes->find_by_content( $order, (string) $event->get_note(), $event->get_note_equivalents() );
+	}
+
+	/**
+	 * Give a payment's success event the capture note of the same intent as an applied alternative, and its capture event
+	 * the success note, so the payment lifecycle completes the payment once, whichever of the two wrote first.
+	 *
+	 * Client 11.3.0's success writer returns once the capture note is on the order (class-wc-payments-order-service.php:2040-2046).
+	 *
+	 * @param WC_Order              $order Order the event applies to, read under the order payment lock when the caller holds it.
+	 * @param PaymentLifecycleEvent $event Lifecycle event.
+	 * @return PaymentLifecycleEvent The event, with the other note as an applied alternative when it is a success or capture.
+	 */
+	private function with_applied_alternatives( WC_Order $order, PaymentLifecycleEvent $event ): PaymentLifecycleEvent {
+		if ( ! $this->is_success_or_capture_event( $event ) ) {
+			return $event;
+		}
+
+		$intent_id    = (string) $event->get_payment_reference();
+		$charge_id    = $event->get_meta_to_update()['_charge_id'] ?? (string) $order->get_meta( '_charge_id', true );
+		$note_service = wc_get_container()->get( WooPaymentsOrderNoteService::class );
+		$is_success   = PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_SUCCESS === $event->get_note_type();
+		$candidates   = $is_success
+			? $note_service->format_capture_success_note_candidates( $order, $intent_id, $charge_id )
+			: $note_service->format_payment_success_note_candidates( $order, $intent_id, $charge_id );
+		$alternative  = new PaymentLifecycleEvent(
+			PaymentLifecycleEvent::STATUS_COMPLETED,
+			$intent_id,
+			array(),
+			array(),
+			$candidates[0],
+			$is_success ? PaymentLifecycleEvent::NOTE_TYPE_CAPTURE_SUCCESS : PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_SUCCESS,
+			$candidates
+		);
+
+		return new PaymentLifecycleEvent(
+			$event->get_status(),
+			$event->get_payment_reference(),
+			$event->get_meta_to_update(),
+			$event->get_meta_to_delete(),
+			$event->get_note(),
+			$event->get_note_type(),
+			$event->get_note_equivalents(),
+			$event->should_preserve_order_status(),
+			$event->should_hold_order(),
+			array_merge( $event->get_applied_alternatives(), array( $alternative ) )
+		);
 	}
 
 	/**

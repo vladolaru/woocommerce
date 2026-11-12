@@ -490,8 +490,9 @@ class OrderPaymentLifecycleService {
 	/**
 	 * Get the reason a completed lifecycle event must be ignored before it changes the order.
 	 *
-	 * A completed event whose note is already on the order was applied before, so it changes nothing, an open dispute
-	 * keeps the order on hold, and a hold never lands on a paid order: the caller's order or its fresh read.
+	 * A completed event whose note, or the note of one of its applied alternatives, is already on the order was applied
+	 * before, so it changes nothing, an open dispute keeps the order on hold, and a hold never lands on a paid order: the
+	 * caller's order or its fresh read.
 	 *
 	 * @param WC_Order                               $caller_order        Caller-owned order object.
 	 * @param WC_Order                               $order               Freshly read order.
@@ -513,11 +514,17 @@ class OrderPaymentLifecycleService {
 		}
 
 		$note = $event->get_note();
-		if ( null === $note || '' === $note || 0 === $this->find_lifecycle_note( $order, $event, $persistence_vocabulary ) ) {
-			return null;
+		if ( null !== $note && '' !== $note && 0 < $this->find_lifecycle_note( $order, $event, $persistence_vocabulary ) ) {
+			return 'success_note_exists';
 		}
 
-		return 'success_note_exists';
+		foreach ( $event->get_applied_alternatives() as $alternative ) {
+			if ( 0 < $this->find_lifecycle_note( $order, $alternative, $persistence_vocabulary ) ) {
+				return 'applied_note_exists';
+			}
+		}
+
+		return null;
 	}
 
 	/**
@@ -605,6 +612,7 @@ class OrderPaymentLifecycleService {
 		$messages = array(
 			'open_dispute'              => 'Completed payment event skipped: an open dispute keeps the order on hold.',
 			'order_paid'                => 'Completed payment event skipped: the order is already paid, so it is not put on hold.',
+			'applied_note_exists'       => 'Completed payment event skipped: a note that counts as this payment already applied is on the order.',
 			'authorization_note_exists' => 'Authorized payment event skipped: its note is already on the order.',
 			'order_on_hold'             => 'Authorized payment event skipped: the order is already on hold.',
 		);

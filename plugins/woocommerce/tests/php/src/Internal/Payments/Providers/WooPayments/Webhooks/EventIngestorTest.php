@@ -2747,6 +2747,43 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A succeeded payment delivered to an order held again after its payment note leaves the order as it is.
+	 *
+	 * The payment's success note counts as its capture already applied, so an order that stores `requires_capture` again
+	 * after it was paid is not completed a second time. Client 11.3.0's capture writer checks only its own note
+	 * (class-wc-payments-order-service.php:2197-2199).
+	 */
+	public function test_succeeded_payment_on_an_order_held_again_after_its_payment_leaves_the_order(): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
+		$order = $this->create_woopayments_order();
+		$order->set_total( '10.99' );
+		$order->save();
+		$event                                        = $this->recorded_authorization_event( $order );
+		$event['id']                                  = 'evt_paid_before_its_capture';
+		$event['type']                                = 'payment_intent.succeeded';
+		$event['data']['object']['status']            = 'succeeded';
+		$event['data']['object']['amount_capturable'] = 0;
+		$event['data']['object']['amount_received']   = 1099;
+		$event['data']['object']['charges']['data'][0]['captured'] = true;
+		$this->sut->process( $event );
+		$held = wc_get_order( $order->get_id() );
+		$this->assertTrue( $held->is_paid() );
+		$held->update_meta_data( '_intention_status', 'requires_capture' );
+		$held->set_status( OrderStatus::ON_HOLD );
+		$held->save();
+		$completions = did_action( 'woocommerce_pre_payment_complete' );
+		$event['id'] = 'evt_paid_again';
+
+		$this->sut->process( $event );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( OrderStatus::ON_HOLD, $order->get_status() );
+		$this->assertSame( $completions, did_action( 'woocommerce_pre_payment_complete' ), 'The payment is not completed again.' );
+		$this->assertSame( array(), $this->get_order_notes_containing( $order, 'was <strong>successfully captured</strong>' ) );
+		$this->assertCount( 1, array_merge( $this->get_order_notes_containing( $order, 'was <strong>successfully charged</strong>' ), $this->get_order_notes_containing( $order, 'A test payment of' ) ) );
+	}
+
+	/**
 	 * Assert the order has no payment success note, in live or test mode wording.
 	 *
 	 * @param WC_Order $order Order.

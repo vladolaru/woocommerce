@@ -391,33 +391,7 @@ class PaymentIntentEventHandler {
 		$hold            = null === $hold_note_candidates ? wc_get_container()->get( WooPaymentsAmountMismatchHold::class )->decide_hold( $order, $payment_intent ) : null;
 		$lifecycle_event = $this->build_succeeded_lifecycle_event( $payment_intent, $order, $hold_note_candidates ?? ( null === $hold ? null : $hold['notes'] ) );
 		$this->repair_recurring_order_token( $order, $payment_intent );
-		// Client 11.3.0's success writer returns before any write once the capture note is on the order
-		// (class-wc-payments-order-service.php:2040-2046).
-		if ( PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_SUCCESS === $lifecycle_event->get_note_type() && $this->has_capture_note( $order, $payment_intent ) ) {
-			return;
-		}
 		$this->fee_details_note_controller->apply_and_schedule_fee_details( $order, $lifecycle_event, $hold );
-	}
-
-	/**
-	 * Tell whether the order has the capture note of a payment intent, by the capture's note identity or by its text in
-	 * either wording.
-	 *
-	 * @param WC_Order            $order          Order read under the order payment lock.
-	 * @param array<string,mixed> $payment_intent Provider payment intent object.
-	 * @return bool
-	 */
-	private function has_capture_note( WC_Order $order, array $payment_intent ): bool {
-		$charge        = $this->get_first_charge_from_intent( $payment_intent );
-		$candidates    = $this->order_note_service->format_capture_success_note_candidates(
-			$order,
-			$this->get_object_id( $payment_intent ),
-			$this->get_charge_id_from_intent( $payment_intent ),
-			WooPaymentsIntentCodec::balance_transaction_id( $charge['balance_transaction'] ?? null )
-		);
-		$capture_event = new PaymentLifecycleEvent( PaymentLifecycleEvent::STATUS_COMPLETED, $this->get_object_id( $payment_intent ), array(), array(), $candidates[0], PaymentLifecycleEvent::NOTE_TYPE_CAPTURE_SUCCESS, $candidates );
-
-		return 0 < $this->order_note_service->find_note( $order, $candidates[0], $capture_event->get_note_identity(), $candidates );
 	}
 
 	/**
