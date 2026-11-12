@@ -1056,8 +1056,8 @@ class StripeBillingSubscriptionServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Paying a failed renewal decides on the renewal read again under the order payment lock: $_dataName.
 	 *
-	 * Another request changes the renewal's total between the first read and the claim. Client 11.3.0 completes it, with the
-	 * notice, only when the charge matches the renewal it completes (class-wc-payments-subscription-service.php:688-697).
+	 * The charge is compared with the renewal read under the order payment lock. Client 11.3.0 completes it, with the notice,
+	 * only when the charge matches the renewal it completes (class-wc-payments-subscription-service.php:688-697).
 	 *
 	 * @testWith ["50.00", "60.00", false]
 	 *           ["60.00", "50.00", true]
@@ -1098,6 +1098,59 @@ class StripeBillingSubscriptionServiceTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( $expected_paid, wc_get_order( $renewal_id )->is_paid() );
 		$this->assertSame( $expected_paid ? 1 : 0, wc_notice_count( 'success' ) );
+	}
+
+	/**
+	 * @testdox Paying a failed renewal its invoice settled before the claim shows the notice only when the charge matches it: $_dataName.
+	 *
+	 * The paid invoice's webhook takes the order payment lock first: it pays a renewal the charge matches and holds one it
+	 * does not. Client 11.3.0 shows the notice only when the charge matches (class-wc-payments-subscription-service.php:688-697).
+	 *
+	 * @testWith ["held by its invoice", "on-hold", "60.00", 0]
+	 *           ["paid by its invoice", "processing", "50.00", 1]
+	 *
+	 * @param string $case_name        Case name.
+	 * @param string $settled_status   Renewal status its invoice left before the claim.
+	 * @param string $settled_total    Renewal total then.
+	 * @param int    $expected_notices Success notices expected.
+	 */
+	public function test_a_renewal_its_invoice_settled_before_the_claim_shows_the_notice_only_on_a_match( string $case_name, string $settled_status, string $settled_total, int $expected_notices ): void {
+		unset( $case_name );
+		WooCommerceSubscriptionsDoubles::load_change_payment_gateway();
+		$entry                                    = $this->get_entry( 'charge_invoice' );
+		$entry['response']['body']['amount_paid'] = 5000;
+		$this->queue_entry( $entry );
+		$subscription  = $this->create_subscription(
+			array(
+				'_wcpay_subscription_id'    => self::MAIN_SUBSCRIPTION_ID,
+				'_wcpay_pending_invoice_id' => self::MAIN_INVOICE_ID,
+			)
+		);
+		$renewal_order = \WC_Helper_Order::create_order();
+		$renewal_order->update_meta_data( '_wcpay_billing_invoice_id', self::MAIN_INVOICE_ID );
+		$renewal_order->set_status( 'failed' );
+		$renewal_order->set_total( '50.00' );
+		$renewal_order->save();
+		$renewal_id = $renewal_order->get_id();
+		add_action(
+			'woocommerce_payment_token_added_to_order',
+			static function ( $order_id ) use ( $renewal_id, $settled_status, $settled_total ): void {
+				if ( $renewal_id === (int) $order_id ) {
+					$other = wc_get_order( $renewal_id );
+					$other->set_total( $settled_total );
+					$other->set_status( $settled_status );
+					$other->save();
+				}
+			}
+		);
+		$token = $this->create_token();
+
+		$this->sut->maybe_attempt_payment_for_subscription( $subscription, $token );
+
+		$renewal = wc_get_order( $renewal_id );
+		$this->assertSame( $settled_status, $renewal->get_status() );
+		$this->assertSame( $expected_notices, wc_notice_count( 'success' ) );
+		$this->assertContains( $token->get_id(), $renewal->get_payment_tokens() );
 	}
 
 	/**

@@ -765,12 +765,13 @@ class StripeBillingSubscriptionService {
 	 * @param WC_Order $order            Renewal order.
 	 * @param mixed    $amount_paid      The charge's `amount_paid`.
 	 * @param mixed    $invoice_currency The charge's currency.
-	 * @return bool False when the charge does not match the renewal read under the lock, so nothing was collected for it here.
+	 * @return bool Whether the charge matches the renewal read under the lock, the only case the shopper is told it was collected.
 	 */
 	private function complete_renewal_order( WC_Order $order, $amount_paid, $invoice_currency ): bool {
 		wc_get_container()->get( OrderPaymentLifecycleService::class )->reread_order_from_data_store( $order );
 		if ( ! $order->needs_payment() ) {
-			return true;
+			// invoice.paid settled it first: it paid a renewal the charge matches and held one it does not.
+			return $this->invoice_service->does_invoice_payment_match_order_total( $order, $amount_paid, $invoice_currency );
 		}
 
 		if ( ! $this->invoice_service->does_invoice_payment_match_order_total( $order, $amount_paid, $invoice_currency ) ) {
