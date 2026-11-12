@@ -737,57 +737,176 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A status change to $order_status on an order storing "$stored_status" reads the intent once and runs the $operation, with the status read stored first.
+	 * @testdox A status change to $order_status on an order storing "$stored_status" reads the intent once and sends the $operation for the intent it read, whose transaction ID is "$transaction_id".
 	 *
-	 * Client 11.3.0 reads the intent whenever the stored status is neither succeeded nor canceled, and captures or cancels
-	 * an authorization that awaits capture with an uncaptured succeeded charge (class-wc-payments-order-service.php:2327-2350,
-	 * :2381-2418). The live intent is the platform's recorded manual-capture authorization (Fixtures/platform-manual-capture.json).
+	 * Client 11.3.0 reads the order's stored intent whenever the stored status is neither succeeded nor canceled, and
+	 * captures or cancels that intent when it awaits capture with an uncaptured succeeded charge
+	 * (class-wc-payments-order-service.php:2327-2350, :2381-2418). The live intent and the capture answer are the
+	 * platform's recorded manual-capture authorization and capture (Fixtures/platform-manual-capture.json).
 	 *
 	 * @dataProvider status_changes_on_an_order_whose_stored_status_is_not_settled
 	 *
-	 * @param string $operation     Capture or cancel.
-	 * @param string $order_status  Status the order changes to.
-	 * @param string $hook          Status hook.
-	 * @param string $stored_status Intent status the order stores.
+	 * @param string $operation      Capture or cancel.
+	 * @param string $order_status   Status the order changes to.
+	 * @param string $hook           Status hook.
+	 * @param string $stored_status  Intent status the order stores.
+	 * @param string $transaction_id Transaction ID the order stores.
 	 */
-	public function test_status_change_reads_the_intent_and_runs_the_operation( string $operation, string $order_status, string $hook, string $stored_status ): void {
-		$order          = $this->create_recorded_authorization_order( $stored_status, $order_status );
-		$reads          = new \ArrayObject();
-		$status_at_call = new \ArrayObject();
-		$processing     = $this->createMock( PaymentProcessingService::class );
-		$processing->expects( $this->once() )
-			->method( $operation )
-			->willReturnCallback(
-				static function ( PaymentOperationContext $context ) use ( $status_at_call, $operation ): PaymentOutcome {
-					$status_at_call[] = wc_get_order( $context->get_order_id() )->get_meta( '_intention_status', true );
-
-					return new PaymentOutcome( PaymentProcessingService::OPERATION_CAPTURE === $operation ? PaymentOutcome::STATUS_COMPLETED : PaymentOutcome::STATUS_CANCELED, 'pi_3UJhOgBzWlxcwgpP0AOgQE2z' );
-				}
-			);
-		$this->sut = $this->create_controller( $processing, null, $this->create_platform( $this->recorded_intent( 'authorize_manual_capture' ), null, $reads ) );
+	public function test_status_change_sends_the_operation_for_the_intent_it_read( string $operation, string $order_status, string $hook, string $stored_status, string $transaction_id ): void {
+		$order = $this->create_recorded_authorization_order( $stored_status, $order_status );
+		$order->set_transaction_id( $transaction_id );
+		$order->save();
+		$reads     = new \ArrayObject();
+		$transport = $this->create_operation_transport( $operation );
+		$this->sut = $this->create_controller( wc_get_container()->get( PaymentProcessingService::class ), $this->create_provider_over_fake_transport( $transport ), $this->create_platform( $this->recorded_intent( 'authorize_manual_capture' ), null, $reads ) );
 		$this->sut->register();
 
 		$this->fire_order_hook( $hook, $order );
 
 		$this->assertSame( array( 'pi_3UJhOgBzWlxcwgpP0AOgQE2z' ), $reads->getArrayCopy(), 'One read of the stored intent.' );
-		$this->assertSame( array( 'requires_capture' ), $status_at_call->getArrayCopy(), 'The status read is stored before the operation runs.' );
+		$this->assertSame( array( $this->operation_path( $operation ) ), $this->request_paths( $transport ), 'The operation is sent once, for the intent read.' );
+		$this->assertSame( PaymentProcessingService::OPERATION_CAPTURE === $operation ? 'succeeded' : 'canceled', wc_get_order( $order->get_id() )->get_meta( '_intention_status', true ) );
 		$this->assertSame( 0, $this->count_notes( $order, $this->failure_note( $operation ) ) );
 	}
 
 	/**
 	 * Status changes on an order whose stored intent status is empty or not yet settled.
 	 *
-	 * @return array<string,array{string,string,string,string}>
+	 * @return array<string,array{string,string,string,string,string}>
 	 */
 	public function status_changes_on_an_order_whose_stored_status_is_not_settled(): array {
 		$rows = array();
 		foreach ( $this->status_change_operation_data() as $name => $row ) {
 			foreach ( array( '', 'requires_action', 'processing' ) as $stored_status ) {
-				$rows[ $name . ', stored "' . $stored_status . '"' ] = array_merge( $row, array( $stored_status ) );
+				$rows[ $name . ', stored "' . $stored_status . '"' ] = array_merge( $row, array( $stored_status, 'pi_3UJhOgBzWlxcwgpP0AOgQE2z' ) );
 			}
+			$rows[ $name . ', the transaction ID names an earlier attempt' ] = array_merge( $row, array( 'requires_action', 'pi_earlier_attempt' ) );
 		}
 
 		return $rows;
+	}
+
+	/**
+	 * @testdox A $operation on the status change is checked against the order read under its own lock: $_dataName.
+	 *
+	 * Client 11.3.0 acts on the intent it read (class-wc-payments-order-service.php:2327-2350, :2381-2418). Here the order
+	 * changes after the read and before the operation's lock: the operation is refused when the order no longer stores the
+	 * intent read (and retried, with a new read) or stores a settled status, and otherwise acts on the read.
+	 *
+	 * @dataProvider orders_changed_between_the_read_and_the_lock
+	 *
+	 * @param string $operation    Capture or cancel.
+	 * @param string $order_status Status the order changes to.
+	 * @param string $hook         Status hook.
+	 * @param array  $change       Meta another writer stores between the read and the lock.
+	 * @param bool   $sends        Whether the operation is sent.
+	 * @param bool   $retries      Whether a retry is scheduled.
+	 */
+	public function test_status_change_operation_is_checked_against_the_order_under_its_lock( string $operation, string $order_status, string $hook, array $change, bool $sends, bool $retries ): void {
+		$order     = $this->create_recorded_authorization_order( 'requires_action', $order_status );
+		$reads     = new \ArrayObject();
+		$transport = $this->create_operation_transport( $operation );
+		$platform  = $this->create_platform(
+			$this->recorded_intent( 'authorize_manual_capture' ),
+			null,
+			$reads,
+			static function () use ( $order, $change ): void {
+				$changed = wc_get_order( $order->get_id() );
+				foreach ( $change as $key => $value ) {
+					$changed->update_meta_data( $key, $value );
+				}
+				$changed->save_meta_data();
+			}
+		);
+		$this->sut = $this->create_controller( wc_get_container()->get( PaymentProcessingService::class ), $this->create_provider_over_fake_transport( $transport ), $platform );
+		$this->sut->register();
+
+		$this->fire_order_hook( $hook, $order );
+
+		$this->assertCount( 1, $reads );
+		$this->assertSame( $sends ? array( $this->operation_path( $operation ) ) : array(), $this->request_paths( $transport ) );
+		$this->assertSame( $retries ? array( 1 ) : array(), $this->get_pending_retries( $order ) );
+		$this->assertSame( $retries ? 1 : 0, $this->count_notes( $order, $this->pending_note( $operation ) ) );
+		$this->assertSame( 0, $this->count_notes( $order, $this->failure_note( $operation ) ) );
+		if ( ! $sends ) {
+			$stored = wc_get_order( $order->get_id() );
+			foreach ( $change as $key => $value ) {
+				$this->assertSame( $value, $stored->get_meta( $key, true ), "A refused operation leaves {$key} as the other writer stored it." );
+			}
+		}
+	}
+
+	/**
+	 * Changes another writer stores between the status change's read and the operation's lock.
+	 *
+	 * @return array<string,array{string,string,string,array<string,string>,bool,bool}>
+	 */
+	public function orders_changed_between_the_read_and_the_lock(): array {
+		$rows = array();
+		foreach ( $this->status_change_operation_data() as $name => $row ) {
+			$settled = PaymentProcessingService::OPERATION_CAPTURE === $row[0] ? 'succeeded' : 'canceled';
+			$rows[ $name . ', the order stores another intent' ]           = array_merge(
+				$row,
+				array(
+					array(
+						'_intent_id'        => 'pi_newer_attempt',
+						'_intention_status' => 'requires_action',
+					),
+					false,
+					true,
+				)
+			);
+			$rows[ $name . ', the order stores a settled status' ]         = array_merge( $row, array( array( '_intention_status' => $settled ), false, false ) );
+			$rows[ $name . ', the order stores another unsettled status' ] = array_merge( $row, array( array( '_intention_status' => 'processing' ), true, false ) );
+			$rows[ $name . ', the order stores the authorization' ]        = array_merge( $row, array( array( '_intention_status' => 'requires_capture' ), true, false ) );
+		}
+
+		return $rows;
+	}
+
+	/**
+	 * @testdox A $operation retry of a status change on an intent it read reads again and sends the operation for that intent, not for the transaction ID, even once the order stores the authorization.
+	 *
+	 * @dataProvider status_change_operation_data
+	 *
+	 * @param string $operation    Capture or cancel.
+	 * @param string $order_status Status the order changes to.
+	 * @param string $hook         Status hook.
+	 */
+	public function test_retry_of_a_status_change_on_a_read_intent_never_acts_on_the_transaction_id( string $operation, string $order_status, string $hook ): void {
+		$order = $this->create_recorded_authorization_order( 'requires_action', $order_status );
+		$order->set_transaction_id( 'pi_earlier_attempt' );
+		$order->save();
+		$reads     = new \ArrayObject();
+		$transport = $this->create_operation_transport( $operation );
+		$this->sut = $this->create_controller( wc_get_container()->get( PaymentProcessingService::class ), $this->create_provider_over_fake_transport( $transport ), $this->create_platform( $this->recorded_intent( 'authorize_manual_capture' ), null, $reads ) );
+		$this->sut->register();
+
+		$this->while_lock_is_held(
+			$order,
+			function () use ( $hook, $order ): void {
+				$this->fire_order_hook( $hook, $order );
+			}
+		);
+		$this->assertSame( array(), $this->request_paths( $transport ) );
+		$this->assertSame( array( 1 ), $this->get_pending_retries( $order ) );
+		$stored = wc_get_order( $order->get_id() );
+		$stored->update_meta_data( '_intention_status', 'requires_capture' );
+		$stored->save();
+
+		$jobs = as_get_scheduled_actions(
+			array(
+				'hook'     => self::RETRY_HOOK,
+				'status'   => \ActionScheduler_Store::STATUS_PENDING,
+				'per_page' => -1,
+			),
+			'ids'
+		);
+		$this->assertCount( 1, $jobs );
+		\ActionScheduler::runner()->process_action( (int) reset( $jobs ) );
+
+		$this->assertCount( 2, $reads, 'The status change and its retry each read the intent once.' );
+		$this->assertSame( array( $this->operation_path( $operation ) ), $this->request_paths( $transport ) );
 	}
 
 	/**
@@ -1460,13 +1579,17 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 	 * @param array<string,mixed>|null $intent  Intent the read answers.
 	 * @param \Throwable|null          $failure Throwable the read throws instead.
 	 * @param \ArrayObject             $reads   Records the ID of each read.
+	 * @param callable|null            $on_read Runs during each read, as another request writing the order then would.
 	 * @return Client
 	 */
-	private function create_platform( ?array $intent, ?\Throwable $failure, \ArrayObject $reads ): Client {
+	private function create_platform( ?array $intent, ?\Throwable $failure, \ArrayObject $reads, ?callable $on_read = null ): Client {
 		$client = $this->createMock( Client::class );
 		$client->method( 'get_payment_intention' )->willReturnCallback(
-			static function ( string $intent_id ) use ( $intent, $failure, $reads ): array {
+			static function ( string $intent_id ) use ( $intent, $failure, $reads, $on_read ): array {
 				$reads[] = $intent_id;
+				if ( null !== $on_read ) {
+					$on_read();
+				}
 				if ( null !== $failure ) {
 					throw $failure;
 				}
@@ -1476,6 +1599,52 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 		);
 
 		return $client;
+	}
+
+	/**
+	 * Create a fake platform transport that answers one capture or cancel of the recorded authorization: the recorded
+	 * capture (Fixtures/platform-manual-capture.json), or the recorded canceled authorization the platform forwarded
+	 * (Fixtures/platform-payment-intent-events.json, in_person_canceled) for this intent.
+	 *
+	 * @param string $operation Capture or cancel.
+	 * @return FakeHttpClient
+	 */
+	private function create_operation_transport( string $operation ): FakeHttpClient {
+		$body = PaymentProcessingService::OPERATION_CAPTURE === $operation
+			? $this->load_recorded_manual_capture_entry( 'capture_full_amount' )['body']
+			: array_merge( $this->recorded_intent( 'canceled_authorization' ), array( 'id' => 'pi_3UJhOgBzWlxcwgpP0AOgQE2z' ) );
+
+		$transport           = new FakeHttpClient();
+		$transport->response = array(
+			'response' => array( 'code' => 200 ),
+			'headers'  => array( 'content-type' => 'application/json' ),
+			'body'     => wp_json_encode( $body ),
+		);
+
+		return $transport;
+	}
+
+	/**
+	 * The platform path of a capture or cancel of the recorded authorization.
+	 *
+	 * @param string $operation Capture or cancel.
+	 * @return string
+	 */
+	private function operation_path( string $operation ): string {
+		return 'intentions/pi_3UJhOgBzWlxcwgpP0AOgQE2z/' . ( PaymentProcessingService::OPERATION_CAPTURE === $operation ? 'capture' : 'cancel' );
+	}
+
+	/**
+	 * The paths of the requests a fake transport received, each from its `intentions/` segment.
+	 *
+	 * @param FakeHttpClient $transport Fake transport.
+	 * @return string[]
+	 */
+	private function request_paths( FakeHttpClient $transport ): array {
+		return array_map(
+			static fn( array $request ): string => (string) strstr( (string) $request['path'], 'intentions/' ),
+			$transport->requests
+		);
 	}
 
 	/**

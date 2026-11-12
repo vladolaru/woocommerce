@@ -7,6 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\PaymentOperationContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentLifecycleEvent;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
@@ -59,6 +60,45 @@ class WooPaymentsPaymentOperationService {
 	 * Provider data key set when a capture runs because the order status changed to completed.
 	 */
 	public const PROVIDER_DATA_CAPTURE_ON_STATUS_CHANGE = 'capture_on_status_change';
+
+	/**
+	 * Provider data key carrying the intent a status-change capture or cancel read from the platform, for an order whose
+	 * stored intent status was not settled. The operation acts on this intent, after checking it against the order read
+	 * under the operation's order payment lock.
+	 *
+	 * @since 11.2.0
+	 */
+	public const PROVIDER_DATA_READ_INTENT_ID = 'read_intent_id';
+
+	/**
+	 * Outcome data key set when a status-change capture or cancel sent nothing because the order changed after its intent
+	 * was read: one of the REFUSAL_* values.
+	 *
+	 * @since 11.2.0
+	 */
+	public const DATA_STATUS_CHANGE_REFUSAL = 'status_change_refusal';
+
+	/**
+	 * Refusal: the order no longer stores the intent that was read. The operation is tried again with a new read.
+	 *
+	 * @since 11.2.0
+	 */
+	public const REFUSAL_INTENT_CHANGED = 'intent_changed';
+
+	/**
+	 * Refusal: the order now stores a settled intent status. Nothing is left to capture or cancel.
+	 *
+	 * @since 11.2.0
+	 */
+	public const REFUSAL_INTENT_SETTLED = 'intent_settled';
+
+	/**
+	 * Intent statuses a payment intent never leaves, so an order storing one has no authorization to capture or cancel
+	 * (client 11.3.0 class-wc-payments-order-service.php:89-92).
+	 *
+	 * @since 11.2.0
+	 */
+	public const SETTLED_INTENT_STATUSES = array( 'succeeded', 'canceled' );
 
 	/**
 	 * Outcome data key marking a definitive charge failure.
@@ -472,7 +512,12 @@ class WooPaymentsPaymentOperationService {
 
 		$order = $context->get_order();
 		if ( $this->api_client->is_available() ) {
-			$intent_id = $this->get_order_intent_id( $order );
+			$refusal = $this->refuse_status_change_on_a_changed_order( $context, 'capture' );
+			if ( null !== $refusal ) {
+				return $refusal;
+			}
+
+			$intent_id = $this->get_operation_intent_id( $context );
 			if ( '' !== $intent_id ) {
 				$amount_to_capture = WooPaymentsCurrencyUtils::amount_to_minor_units( $context->get_amount() ?? (float) $order->get_total(), (string) $order->get_currency() );
 				// Client 11.1.0 always captures the order total (`class-wc-payment-gateway-wcpay.php:3966, 3981`) and sends the
@@ -527,9 +572,13 @@ class WooPaymentsPaymentOperationService {
 		// Each cancel request carries its own key, as for capture.
 		unset( $idempotency_key );
 
-		$order = $context->get_order();
 		if ( $this->api_client->is_available() ) {
-			$intent_id = $this->get_order_intent_id( $order );
+			$refusal = $this->refuse_status_change_on_a_changed_order( $context, 'cancel' );
+			if ( null !== $refusal ) {
+				return $refusal;
+			}
+
+			$intent_id = $this->get_operation_intent_id( $context );
 			if ( '' !== $intent_id ) {
 				try {
 					$result  = $this->api_client->cancel_intention( $intent_id );
@@ -1691,6 +1740,105 @@ class WooPaymentsPaymentOperationService {
 			$intent_type,
 			$provider_redirect_url
 		);
+	}
+
+	/**
+	 * Tell why a status-change capture or cancel must not act on the intent it read, given the order read under its order
+	 * payment lock.
+	 *
+	 * The operation is refused when the order no longer stores the intent that was read, or now stores a settled intent
+	 * status. Any other stored status is older than the platform's read, which the operation acts on, as client 11.3.0
+	 * acts on its read (class-wc-payments-order-service.php:2327-2350, :2381-2418).
+	 *
+	 * @since 11.2.0
+	 *
+	 * @param WC_Order $order          Order read again under the order payment lock.
+	 * @param string   $read_intent_id Intent the status change read.
+	 * @return string One of the REFUSAL_* values, or an empty string when the operation may act on the read intent.
+	 */
+	public static function get_status_change_refusal( WC_Order $order, string $read_intent_id ): string {
+		if ( (string) $order->get_meta( '_intent_id', true ) !== $read_intent_id ) {
+			return self::REFUSAL_INTENT_CHANGED;
+		}
+
+		return in_array( (string) $order->get_meta( '_intention_status', true ), self::SETTLED_INTENT_STATUSES, true ) ? self::REFUSAL_INTENT_SETTLED : '';
+	}
+
+	/**
+	 * Refuse a status-change capture or cancel, before any platform request, when the order read under the operation's
+	 * order payment lock no longer matches the intent the status change read.
+	 *
+	 * The refusal carries the intent status the order stores, so the failed operation's meta write leaves it as it is.
+	 * The order payment lifecycle is read from the container where it is used, as the duplicate payment prevention
+	 * service is (see init()).
+	 *
+	 * @param PaymentOperationContext $context   Capture or cancel context.
+	 * @param string                  $operation `capture` or `cancel`.
+	 * @return PaymentOutcome|null The refusal, or null when the operation goes on.
+	 */
+	private function refuse_status_change_on_a_changed_order( PaymentOperationContext $context, string $operation ): ?PaymentOutcome {
+		$read_intent_id = $this->get_read_intent_id( $context );
+		if ( '' === $read_intent_id ) {
+			return null;
+		}
+
+		$order       = $context->get_order();
+		$fresh_order = wc_get_container()->get( OrderPaymentLifecycleService::class )->get_fresh_order_from_data_store( $order );
+		$refusal     = self::get_status_change_refusal( $fresh_order, $read_intent_id );
+		if ( '' === $refusal ) {
+			return null;
+		}
+
+		$this->logger->log_always(
+			sprintf(
+				'The %1$s of order #%2$d on its status change was not sent: %3$s.',
+				$operation,
+				$order->get_id(),
+				self::REFUSAL_INTENT_CHANGED === $refusal ? 'the order stores another intent than the one read' : 'the order stores a settled intent status'
+			),
+			'warning',
+			array(
+				'order_id'  => $order->get_id(),
+				'intent_id' => $read_intent_id,
+				'refusal'   => $refusal,
+			)
+		);
+
+		return new PaymentOutcome(
+			PaymentOutcome::STATUS_FAILED,
+			'',
+			'',
+			'',
+			'',
+			array(
+				self::DATA_STATUS_CHANGE_REFUSAL => $refusal,
+				WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY => array( '_intention_status' => (string) $fresh_order->get_meta( '_intention_status', true ) ),
+			)
+		);
+	}
+
+	/**
+	 * Get the intent a status-change capture or cancel read from the platform, if any.
+	 *
+	 * @param PaymentOperationContext $context Capture or cancel context.
+	 * @return string
+	 */
+	private function get_read_intent_id( PaymentOperationContext $context ): string {
+		$read_intent_id = $context->get_provider_data()[ self::PROVIDER_DATA_READ_INTENT_ID ] ?? '';
+
+		return is_string( $read_intent_id ) ? $read_intent_id : '';
+	}
+
+	/**
+	 * Get the intent a capture or cancel acts on: the one its status change read, otherwise the one the order retains.
+	 *
+	 * @param PaymentOperationContext $context Capture or cancel context.
+	 * @return string
+	 */
+	private function get_operation_intent_id( PaymentOperationContext $context ): string {
+		$read_intent_id = $this->get_read_intent_id( $context );
+
+		return '' !== $read_intent_id ? $read_intent_id : $this->get_order_intent_id( $context->get_order() );
 	}
 
 	/**
