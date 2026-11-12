@@ -1740,16 +1740,26 @@ class WooPaymentsTerminalPaymentsRestControllerTest extends WC_REST_Unit_Test_Ca
 	}
 
 	/**
-	 * @testdox After a capture whose card cannot be saved fails the request, a capture of another intent for the order is refused and a retry of the same intent completes it.
+	 * @testdox After a capture whose card cannot be saved fails the request, another intent and a retry of the same intent are refused, and the payment completes once: $label.
 	 *
-	 * Client 11.1.0 refuses a capture when the order holds another intent (includes/admin/class-wc-rest-payments-orders-controller.php:187-194,
-	 * tests/unit/admin/test-class-wc-rest-payments-orders-controller.php:1860-1902), and it stores the intent before its capture (:215), so a
-	 * failure after the capture cannot let a second intent charge the order again.
+	 * Client 11.3.0 refuses a capture when the order holds another intent or a captured status (includes/admin/class-wc-rest-payments-orders-controller.php:187-194,
+	 * tests/unit/admin/test-class-wc-rest-payments-orders-controller.php:1860-1902). It stores the intent before its capture (:215) and the
+	 * captured status before the generated card (:228, :256-277; class-wc-payments-order-service.php:529-532, :3443-3448), so a failure
+	 * after the capture neither lets a second intent charge the order nor lets the retry complete it again.
+	 *
+	 * @testWith ["the order is left as it is", ""]
+	 *           ["the order is moved to Failed", "failed"]
+	 *           ["the order is moved to Cancelled", "cancelled"]
+	 *
+	 * @param string $label                Row label.
+	 * @param string $status_after_failure Status the merchant moves the order to after the failed request, or empty.
 	 */
-	public function test_capture_after_a_failed_recording_refuses_another_intent_and_completes_on_a_retry(): void {
+	public function test_capture_after_a_failed_recording_is_refused_on_a_retry( string $label, string $status_after_failure ): void {
 		global $wp_rest_server;
 
+		unset( $label );
 		list( $order, , $user_id ) = $this->set_up_in_person_subscription_purchase();
+		$completions               = did_action( 'woocommerce_pre_payment_complete' );
 		$wp_rest_server            = new WP_REST_Server();
 		$this->sut->register_routes();
 		$capture = function ( \WC_Order $order, string $intent_id ) use ( &$wp_rest_server ) {
@@ -1769,15 +1779,25 @@ class WooPaymentsTerminalPaymentsRestControllerTest extends WC_REST_Unit_Test_Ca
 			$this->assertSame( 'wcpay_payment_uncapturable', $second->get_data()['code'] );
 			$this->assertSame( array( 'pi_terminal' ), array_column( $this->api_client->captures, 'intent_id' ), 'The other intent is never captured.' );
 
+			$failed = wc_get_order( $order->get_id() );
+			$this->assertSame( 'succeeded', $failed->get_meta( '_intention_status' ), 'The captured status is stored before the card.' );
+			if ( '' !== $status_after_failure ) {
+				$failed->update_status( $status_after_failure );
+			}
+			$status = wc_get_order( $order->get_id() )->get_status();
+
 			// The app retries the same intent, which the platform now reads as captured.
 			$this->api_client->payment_intention_response['status'] = 'succeeded';
-			$this->replace_token_service( $this->once(), $this->create_card_token( $user_id ) );
+			$this->replace_token_service( $this->never(), $this->create_card_token( $user_id ) );
 			$retry = $capture( $order, 'pi_terminal' );
-			$this->assertSame( 200, $retry->get_status() );
+			$this->assertSame( 409, $retry->get_status() );
+			$this->assertSame( 'wcpay_payment_uncapturable', $retry->get_data()['code'] );
 			$order = wc_get_order( $order->get_id() );
-			$this->assertSame( 'completed', $order->get_status() );
-			$this->assertSame( 'succeeded', $order->get_meta( '_intention_status' ) );
-			$this->assertStringEndsWith( '/payments/readers/receipts/pi_terminal', (string) $order->get_meta( 'receipt_url' ) );
+			$this->assertSame( $status, $order->get_status() );
+			$this->assertSame( 1, did_action( 'woocommerce_pre_payment_complete' ) - $completions, 'The payment completes once.' );
+			$notes = implode( ' ', wp_list_pluck( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), 'content' ) );
+			$this->assertSame( 1, substr_count( $notes, 'successfully captured' ) );
+			$this->assertSame( 0, substr_count( $notes, 'successfully charged' ) );
 			$this->assertSame( array( 'pi_terminal' ), array_column( $this->api_client->captures, 'intent_id' ), 'The retry captures nothing again.' );
 		} finally {
 			$this->reset_subscription_doubles();

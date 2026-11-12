@@ -503,6 +503,11 @@ class WooPaymentsTerminalPaymentsRestController extends RestApiControllerBase {
 
 			// The capture note, or the payment note for an intent the reader already captured (Interac), completes the payment as on the client (class-wc-payments-order-service.php:1582, :1659-1685); writing it schedules the Fee details job.
 			$this->apply_terminal_lifecycle_event( $order, $result, $intent_id, PaymentLifecycleEvent::STATUS_COMPLETED, 'succeeded' === $status );
+			// The captured status is stored before the generated card is saved, as the client's capture stores it
+			// (class-wc-payments-order-service.php:529-532, :3443-3448), so when a later step fails, the app's retry finds the
+			// payment captured and is refused (class-wc-rest-payments-orders-controller.php:187-194).
+			$order->update_meta_data( '_intention_status', 'succeeded' );
+			$order->save_meta_data();
 			$this->save_generated_card_for_subscriptions( $order, $intent );
 			$this->mark_terminal_payment_completed( $order, $result, $intent_id );
 
