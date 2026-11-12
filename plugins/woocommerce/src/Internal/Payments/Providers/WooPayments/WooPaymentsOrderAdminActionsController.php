@@ -317,6 +317,7 @@ class WooPaymentsOrderAdminActionsController implements RegisterHooksInterface {
 	 * Get what an order moved to Completed or Cancelled has to capture or cancel: its stored authorization, an intent read
 	 * from the platform, or nothing.
 	 *
+	 * An order that stores no intent ID has nothing to do (client 11.3.0 class-wc-payments-order-service.php:2331, :2387).
 	 * A stored requires_capture is the stored authorization, with no platform read, and a stored succeeded or canceled is
 	 * nothing. Any other stored status, empty included, is read from the platform once, before any order payment lock:
 	 * the operation acts on the read intent only when it awaits capture with an uncaptured succeeded charge, and is checked
@@ -337,10 +338,13 @@ class WooPaymentsOrderAdminActionsController implements RegisterHooksInterface {
 
 		$stored_status = (string) $order->get_meta( '_intention_status', true );
 		$intent_id     = (string) $order->get_meta( '_intent_id', true );
+		if ( '' === $intent_id ) {
+			return null;
+		}
 		if ( ! $read_required && 'requires_capture' === $stored_status ) {
 			return '';
 		}
-		if ( '' === $intent_id || in_array( $stored_status, WooPaymentsPaymentOperationService::SETTLED_INTENT_STATUSES, true ) ) {
+		if ( in_array( $stored_status, WooPaymentsPaymentOperationService::SETTLED_INTENT_STATUSES, true ) ) {
 			return null;
 		}
 

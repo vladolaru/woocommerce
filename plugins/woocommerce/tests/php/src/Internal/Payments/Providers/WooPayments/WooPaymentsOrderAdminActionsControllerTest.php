@@ -851,6 +851,42 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A status change to $order_status on an order storing requires_capture but no intent ID sends no $operation, retried: $retried.
+	 *
+	 * Client 11.3.0 captures or cancels on the status change only the order's stored intent, and does nothing without one
+	 * (class-wc-payments-order-service.php:2330-2331, :2386-2387).
+	 *
+	 * @dataProvider stored_authorization_status_changes
+	 *
+	 * @param string $operation    Capture or cancel.
+	 * @param string $order_status Status the order changes to.
+	 * @param string $hook         Status hook.
+	 * @param bool   $retried      Whether a retry of the status change runs instead of the status change.
+	 */
+	public function test_status_change_without_a_stored_intent_sends_nothing( string $operation, string $order_status, string $hook, bool $retried ): void {
+		$order = $this->create_recorded_authorization_order( 'requires_capture', $order_status );
+		$order->delete_meta_data( '_intent_id' );
+		$order->save();
+		$reads     = new \ArrayObject();
+		$transport = $this->create_operation_transport( $operation );
+		$this->sut = $this->create_controller( wc_get_container()->get( PaymentProcessingService::class ), $this->create_provider_over_fake_transport( $transport ), $this->create_platform( null, null, $reads ) );
+		$this->sut->register();
+
+		if ( $retried ) {
+			do_action( self::RETRY_HOOK, $order->get_id(), $operation, 1 );
+		} else {
+			$this->fire_order_hook( $hook, $order );
+		}
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( array(), $this->request_paths( $transport ) );
+		$this->assertCount( 0, $reads );
+		$this->assertSame( array(), $this->get_pending_retries( $order ) );
+		$this->assertSame( 'requires_capture', $order->get_meta( '_intention_status', true ) );
+		$this->assertSame( $order_status, $order->get_status() );
+	}
+
+	/**
 	 * @testdox A status change to Completed captures the authorization and records the capture on the order already in that paid status.
 	 *
 	 * Client 11.3.0's status-change capture has no paid check: it captures, notes the capture and saves the status
