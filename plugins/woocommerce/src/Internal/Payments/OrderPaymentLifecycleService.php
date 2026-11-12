@@ -492,8 +492,9 @@ class OrderPaymentLifecycleService {
 	 *
 	 * A completed event whose note, or the note of one of its applied alternatives, is already on the order was applied
 	 * before, so it changes nothing, an open dispute keeps the order on hold, and a hold never lands on a paid order: the
-	 * caller's order or its fresh read. An event that only reports a payment's status leaves an order its fresh read finds
-	 * in a paid status as it is.
+	 * caller's order or its fresh read. An event that only reports a payment's status leaves an order in a paid status as
+	 * it is, whether the caller's order or its fresh read has that status. The note searches come before that paid check
+	 * so a matching note regains its identity and the caller's order is synchronised; every reason skips the whole event.
 	 *
 	 * @param WC_Order                               $caller_order        Caller-owned order object.
 	 * @param WC_Order                               $order               Freshly read order.
@@ -525,7 +526,7 @@ class OrderPaymentLifecycleService {
 			}
 		}
 
-		if ( $event->should_leave_paid_order() && $order->has_status( wc_get_is_paid_statuses() ) ) {
+		if ( $event->should_leave_paid_order() && ( $caller_order->has_status( wc_get_is_paid_statuses() ) || $order->has_status( wc_get_is_paid_statuses() ) ) ) {
 			return 'order_paid';
 		}
 

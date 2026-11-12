@@ -720,6 +720,32 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A completed event that leaves a paid order leaves it when only the caller's order is still paid, the stored one changed in flight.
+	 *
+	 * Client 11.3.0's paid check reads the caller's order and a fresh copy, and either being paid skips the update
+	 * (class-wc-payments-order-service.php:3398-3410).
+	 */
+	public function test_completed_event_flagged_to_leave_a_paid_order_reads_the_callers_order_too(): void {
+		UncachedOrderWriter::enable_hpos_data_caching();
+		$order = $this->create_woopayments_order();
+		$order->set_status( 'processing' );
+		$order->save();
+		$order = $this->read_order_into_request_caches( $order );
+		UncachedOrderWriter::write( $order->get_id(), array( 'status' => 'failed' ) );
+		$completions = did_action( 'woocommerce_pre_payment_complete' );
+
+		$this->apply_event(
+			$order,
+			new PaymentLifecycleEvent( PaymentLifecycleEvent::STATUS_COMPLETED, 'pi_paid', array( '_intention_status' => 'succeeded' ), array(), 'Paid by pi_paid.', PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_SUCCESS, array(), false, false, array(), true )
+		);
+
+		$this->assertSame( 0, did_action( 'woocommerce_pre_payment_complete' ) - $completions );
+		$this->assertSame( 'wc-failed', $this->get_persisted_order_status( $order->get_id() ) );
+		$this->assertFalse( $this->is_order_meta_persisted( $order->get_id(), '_intention_status' ) );
+		$this->assertSame( 0, $this->countOrderNotesMatching( $order, 'Paid by pi_paid.' ) );
+	}
+
+	/**
 	 * Build a completed event whose payment counts as applied once its capture note is on the order.
 	 *
 	 * @param string $payment_reference Payment reference.
