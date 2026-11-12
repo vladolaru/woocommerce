@@ -223,7 +223,11 @@ class WooPaymentsOrderEffectApplier {
 	public function apply( PaymentOperationContext $context, PaymentOutcome $outcome, WooPaymentsOrderEffectPlan $plan ): PaymentOutcome {
 		switch ( $plan->get_type() ) {
 			case WooPaymentsOrderEffectPlan::TYPE_PAYMENT_INTENT:
-				return $this->compose_payment_intent_outcome( $context, $outcome, $plan, $this->get_outcome_meta_data( $outcome ), self::is_merchant_initiated( $context ) );
+				$outcome = $this->compose_payment_intent_outcome( $context, $outcome, $plan, $this->get_outcome_meta_data( $outcome ), self::is_merchant_initiated( $context ) );
+
+				return PaymentOutcome::STATUS_FAILED === $outcome->get_status() && ! $outcome->is_payment_method_only()
+					? $this->compose_returned_payment_intent_failure( $context->get_order(), $outcome, $plan )
+					: $outcome;
 
 			case WooPaymentsOrderEffectPlan::TYPE_SETUP_INTENT:
 				$order           = $context->get_order();
@@ -344,6 +348,45 @@ class WooPaymentsOrderEffectApplier {
 		}
 
 		return $outcome;
+	}
+
+	/**
+	 * Compose the failure of a PaymentIntent the checkout's charge returned, as client 11.3.0's mark_payment_failed() writes it:
+	 * its failure note, after the attach, unless the failure is already recorded on the order, when nothing more is written.
+	 *
+	 * The client does not raise a returned intent that is not authorized; its status update sends it to mark_payment_failed()
+	 * (class-wc-payment-gateway-wcpay.php:2321-2324, :2444, :2499; class-wc-payments-order-service.php:500-504, :550-554).
+	 *
+	 * @param WC_Order                   $order   Order read under the checkout's order payment lock, the intent attached.
+	 * @param PaymentOutcome             $outcome Failed PaymentIntent outcome.
+	 * @param WooPaymentsOrderEffectPlan $plan    PaymentIntent effect plan.
+	 * @return PaymentOutcome
+	 */
+	private function compose_returned_payment_intent_failure( WC_Order $order, PaymentOutcome $outcome, WooPaymentsOrderEffectPlan $plan ): PaymentOutcome {
+		$result          = $plan->get_provider_result();
+		$charge          = WooPaymentsIntentCodec::latest_charge( $result );
+		$intent_id       = $outcome->get_provider_payment_id();
+		$message         = $result['last_payment_error']['message'] ?? '';
+		$note_candidates = $this->note_service->format_order_status_update_payment_failed_note_candidates(
+			$order,
+			$intent_id,
+			isset( $charge['id'] ) ? (string) $charge['id'] : '',
+			is_scalar( $message ) ? (string) $message : ''
+		);
+		$failure         = new PaymentLifecycleEvent( PaymentLifecycleEvent::STATUS_FAILED, '' === $intent_id ? null : $intent_id, array(), array(), $note_candidates[0], PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_FAILED, $note_candidates );
+		if ( $this->note_service->is_failure_recorded( $order, $failure ) ) {
+			return $this->merge_effect_data_into_outcome( $outcome, array( PaymentOutcome::DATA_NO_ORDER_CHANGE => true ), $plan );
+		}
+
+		return $this->merge_effect_data_into_outcome(
+			$outcome,
+			array(
+				PaymentOutcome::DATA_NOTE             => $note_candidates[0],
+				PaymentOutcome::DATA_NOTE_TYPE        => PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_FAILED,
+				PaymentOutcome::DATA_NOTE_EQUIVALENTS => $note_candidates,
+			),
+			$plan
+		);
 	}
 
 	/**

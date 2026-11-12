@@ -4163,6 +4163,113 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A checkout whose platform returns a failed PaymentIntent, on $_dataName, fails the order as the client's failed writer does.
+	 *
+	 * Client 11.3.0 attaches a returned intent that is not authorized, then its status update sends it to mark_payment_failed()
+	 * (class-wc-payment-gateway-wcpay.php:2321-2324, :2444, :2499; class-wc-payments-order-service.php:500-504), which returns
+	 * when the order is Failed or has the failure note (:550-554), and otherwise fails the order with that note.
+	 *
+	 * @dataProvider provider_orders_a_returned_payment_intent_failure_meets
+	 *
+	 * @param string $status          Order status before the checkout.
+	 * @param bool   $noted           Whether the failure's note is already on the order.
+	 * @param string $expected_status Status the order ends in.
+	 */
+	public function test_process_payment_applies_a_returned_payment_intent_failure_unless_recorded( string $status, bool $noted, string $expected_status ): void {
+		$order = $this->create_order();
+		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+		$order->set_total( '10.99' );
+		$order->set_status( $status );
+		$order->set_transaction_id( 'pi_earlier_attempt' );
+		$order->update_meta_data( '_intent_id', 'pi_earlier_attempt' );
+		$order->save();
+		$note_service = wc_get_container()->get( WooPaymentsOrderNoteService::class );
+		if ( $noted ) {
+			$order->add_order_note( $note_service->format_order_status_update_payment_failed_note_candidates( $order, 'pi_returned', '', 'Your card has expired.' )[0] );
+		}
+		$notes_before = count( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+		$intent       = array(
+			'id'                   => 'pi_returned',
+			'status'               => 'requires_payment_method',
+			'amount'               => 1099,
+			'currency'             => 'usd',
+			'customer'             => 'cus_returned',
+			'payment_method'       => 'pm_returned',
+			'payment_method_types' => array( 'card' ),
+			'metadata'             => array( 'order_id' => (string) $order->get_id() ),
+			'last_payment_error'   => array(
+				'type'    => 'card_error',
+				'code'    => 'expired_card',
+				'message' => 'Your card has expired.',
+			),
+		);
+		$outcome      = WooPaymentsIntentCodec::outcome_from_intention(
+			$intent,
+			new WooPaymentsIntentMappingContext( $order->get_checkout_order_received_url(), 'pm_returned', 'cus_returned' )
+		)->with_effect_plan( WooPaymentsOrderEffectPlan::for_payment_intent( $intent, false ) );
+		$gateway      = new WooPaymentsGateway();
+		$gateway->init( wc_get_container()->get( PaymentProcessingService::class ), $this->create_provider_charging( $outcome, wc_get_container()->get( WooPaymentsTokenService::class ) ) );
+		$_POST['wcpay-payment-method'] = 'pm_returned';
+
+		$gateway->process_payment( $order->get_id() );
+
+		$order = wc_get_order( $order->get_id() );
+		$notes = wp_list_pluck( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), 'content' );
+		$this->assertSame( $expected_status, $order->get_status() );
+		$this->assertSame( 'pi_returned', $order->get_transaction_id(), "The new attempt's record is attached." );
+		$this->assertSame( 'requires_payment_method', $order->get_meta( '_intention_status', true ) );
+		$this->assertCount( $noted || 'pending' === $status ? 1 : 0, array_filter( $notes, static fn( string $note ): bool => false !== strpos( $note, '<strong>failed</strong>' ) && false !== strpos( $note, 'pi_returned' ) ) );
+		if ( 'pending' !== $status || $noted ) {
+			$this->assertCount( $notes_before, $notes, 'Nothing is written beyond the attach.' );
+		}
+	}
+
+	/**
+	 * Orders a returned PaymentIntent failure meets.
+	 *
+	 * @return array<string,array{string,bool,string}>
+	 */
+	public function provider_orders_a_returned_payment_intent_failure_meets(): array {
+		return array(
+			'a Pending order'                         => array( 'pending', false, 'failed' ),
+			'an order moved to Pending with the note' => array( 'pending', true, 'pending' ),
+			'an order already Failed'                 => array( 'failed', false, 'failed' ),
+		);
+	}
+
+	/**
+	 * @testdox A checkout decline with no returned intent fails an order moved to Pending whatever failure notes it has.
+	 *
+	 * Client 11.3.0's checkout writes a decline the platform raised directly, with no note check
+	 * (class-wc-payment-gateway-wcpay.php:1605-1613, :1693).
+	 */
+	public function test_process_payment_fails_a_thrown_decline_whatever_notes_the_order_has(): void {
+		$order = $this->create_order();
+		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+		$order->set_total( '10.99' );
+		$order->save();
+		$order->add_order_note( wc_get_container()->get( WooPaymentsOrderNoteService::class )->format_order_status_update_payment_failed_note_candidates( $order, 'pi_returned', '', 'Your card has expired.' )[0] );
+		$outcome = new PaymentOutcome(
+			PaymentOutcome::STATUS_FAILED,
+			'pi_returned',
+			'',
+			'pm_returned',
+			'cus_returned',
+			array(
+				PaymentOutcome::DATA_ERROR_CODE    => 'expired_card',
+				PaymentOutcome::DATA_ERROR_MESSAGE => 'Your card has expired.',
+			)
+		);
+		$gateway = new WooPaymentsGateway();
+		$gateway->init( wc_get_container()->get( PaymentProcessingService::class ), $this->create_provider_charging( $outcome, wc_get_container()->get( WooPaymentsTokenService::class ) ) );
+		$_POST['wcpay-payment-method'] = 'pm_returned';
+
+		$gateway->process_payment( $order->get_id() );
+
+		$this->assertSame( 'failed', wc_get_order( $order->get_id() )->get_status() );
+	}
+
+	/**
 	 * Arrange a recurring checkout of the recorded subscription sign-up PaymentIntent (10.99 USD), whose token work runs.
 	 *
 	 * @param string $total Order total.

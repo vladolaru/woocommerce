@@ -1831,11 +1831,12 @@ class WooPaymentsOrderNoteService {
 	 * Tell whether a payment failure was already recorded on the order: the order is Failed, or the failure's note is on it,
 	 * by the event's identity or else by its text.
 	 *
-	 * This is client 11.3.0's mark_payment_failed() stop (class-wc-payments-order-service.php:550-554), for the four writers
+	 * This is client 11.3.0's mark_payment_failed() stop (class-wc-payments-order-service.php:550-554), for the five writers
 	 * that mirror its callers: a card payment's payment_intent.payment_failed (class-wc-payments-webhook-processing-service.php:559),
 	 * a renewal that needs authentication (class-wc-payment-gateway-wcpay.php:2222), the redirect return's failure with an
-	 * exception message (:2765-2767), and the order-status callback's failed intent (:4771 → order service :500-504). A
-	 * declined payment fails the order whatever notes it has (:1605-1613, :2760-2763; order service :577-595, :961-968).
+	 * exception message (:2765-2767), and the failed intent of the order-status callback (:4771) and of a checkout charge that
+	 * returned it (:2499), both through order service :500-504. A declined payment fails the order whatever notes it has
+	 * (:1605-1613, :2760-2763; order service :577-595, :961-968).
 	 *
 	 * @param WC_Order              $order   Order read under the order payment lock.
 	 * @param PaymentLifecycleEvent $failure Failed lifecycle event.
