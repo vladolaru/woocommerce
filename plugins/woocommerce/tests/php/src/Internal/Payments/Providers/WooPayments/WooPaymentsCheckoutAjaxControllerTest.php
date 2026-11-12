@@ -1623,11 +1623,8 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		if ( $paid ) {
 			$this->assertSame( OrderStatus::PROCESSING, $order->get_status() );
 			$this->assertSame( $hooks, did_action( 'woocommerce_pre_payment_complete' ) + did_action( 'woocommerce_payment_complete' ) + did_action( 'woocommerce_order_status_on-hold' ) + did_action( 'woocommerce_order_status_failed' ) + did_action( 'woocommerce_order_status_cancelled' ), 'No completion or status hook fires.' );
-			// A released authorization on a paid order gets the payment lifecycle's own release note; a started payment's note
-			// is not counted here.
-			if ( 'requires_action' !== $intent_status ) {
-				$this->assertCount( $notes + ( 'canceled' === $intent_status ? 1 : 0 ), wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
-			}
+			// A released authorization on a paid order gets the payment lifecycle's own release note.
+			$this->assertCount( $notes + ( 'canceled' === $intent_status ? 1 : 0 ), wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
 		}
 	}
 
@@ -1662,6 +1659,140 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		$this->assertSame( OrderStatus::PROCESSING, $order->get_status() );
 		$this->assertSame( '', $order->get_transaction_id(), 'No transaction ID is attached.' );
 		$this->assertFalse( $order->meta_exists( '_intention_status' ), 'No intent status is attached.' );
+	}
+
+	/**
+	 * @testdox Order-status callback reading a started payment writes no started note or started meta on an order that is not Pending, and still attaches the intent: $_dataName.
+	 *
+	 * Client 11.3.0 attaches the intent (class-wc-payment-gateway-wcpay.php:4663, class-wc-payments-order-service.php:1818-1884),
+	 * then its started writer returns unless the order is Pending, before its fraud box, note and intent status writes
+	 * (class-wc-payments-order-service.php:2229-2241). The order has that status before the request, or gets it while the
+	 * intent is read.
+	 *
+	 * @dataProvider provider_orders_a_started_payment_is_not_written_on
+	 *
+	 * @param string $status          The order's status.
+	 * @param bool   $during          Whether the order gets it only while the callback reads the intent.
+	 * @param bool   $settled_record  Whether the order stores another payment's succeeded record.
+	 */
+	public function test_update_order_status_writes_no_started_payment_on_an_order_not_pending( string $status, bool $during, bool $settled_record ): void {
+		add_filter( 'wc_order_statuses', static fn( array $statuses ): array => array_merge( $statuses, array( 'wc-shipped' => 'Shipped' ) ) );
+		add_filter( 'woocommerce_order_is_paid_statuses', static fn( array $statuses ): array => array_merge( $statuses, array( 'shipped' ) ) );
+		$order = $this->create_order_for_intent_binding( 'payment' );
+		$order->update_meta_data( '_intent_id', 'pi_started' );
+		$order->update_meta_data( '_wcpay_fraud_meta_box_type', 'allow' );
+		if ( $settled_record ) {
+			$order->set_transaction_id( 'pi_started' );
+			$order->update_meta_data( '_intention_status', 'succeeded' );
+			$order->update_meta_data( '_stripe_customer_id', 'cus_settled' );
+			$order->update_meta_data( '_wcpay_payment_transaction_id', 'txn_settled' );
+		}
+		$order->save();
+		$notes = 0;
+		$set   = static function () use ( $order, $status, &$notes ): void {
+			$moved = wc_get_order( $order->get_id() );
+			$moved->set_status( $status );
+			$moved->save();
+			$notes = count( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+		};
+		if ( ! $during ) {
+			$set();
+		}
+		$intent = array(
+			'id'             => 'pi_started',
+			'status'         => 'requires_action',
+			'amount'         => 5000,
+			'currency'       => 'usd',
+			'customer'       => 'cus_started',
+			'payment_method' => 'pm_started',
+			'metadata'       => array( 'order_id' => (string) $order->get_id() ),
+		);
+
+		$this->create_controller( $this->create_api_client_returning( $intent, $during ? $set : null ) )->confirm_order_payment(
+			array(
+				'_ajax_nonce' => wp_create_nonce( 'wcpay_update_order_status_nonce_' . $order->get_id() ),
+				'order_id'    => $order->get_id(),
+				'intent_id'   => 'pi_started',
+			)
+		);
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( $status, $order->get_status() );
+		$this->assertCount( $notes, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), 'No started note.' );
+		$this->assertSame( 'allow', $order->get_meta( '_wcpay_fraud_meta_box_type', true ), 'No started fraud box.' );
+		if ( $settled_record ) {
+			$this->assertSame( 'succeeded', $order->get_meta( '_intention_status', true ), "The settled record's status is kept." );
+			$this->assertSame( 'cus_settled', $order->get_meta( '_stripe_customer_id', true ) );
+			$this->assertSame( 'txn_settled', $order->get_meta( '_wcpay_payment_transaction_id', true ) );
+		} else {
+			$this->assertSame( 'requires_action', $order->get_meta( '_intention_status', true ), 'The intent is attached.' );
+			$this->assertSame( 'cus_started', $order->get_meta( '_stripe_customer_id', true ) );
+		}
+		$this->assertSame( 'pi_started', $order->get_transaction_id() );
+	}
+
+	/**
+	 * Orders a started payment is not written on: each status set before the request or while it reads the intent.
+	 *
+	 * @return array<string,array{string,bool,bool}>
+	 */
+	public function provider_orders_a_started_payment_is_not_written_on(): array {
+		$rows = array();
+		foreach ( array( 'processing', 'shipped', 'failed', 'on-hold', 'cancelled' ) as $status ) {
+			$rows[ $status . ', before the request' ] = array( $status, false, false );
+			$rows[ $status . ', during the request' ] = array( $status, true, false );
+		}
+		$rows['a succeeded record, before the request'] = array( 'processing', false, true );
+		$rows['a succeeded record, during the request'] = array( 'processing', true, true );
+
+		return $rows;
+	}
+
+	/**
+	 * @testdox Order-status callback reading a started payment on a Pending order writes its started note and fraud box once: $_dataName.
+	 *
+	 * Client 11.3.0's started writer writes on a Pending order without the note (class-wc-payments-order-service.php:2229-2241).
+	 *
+	 * @testWith ["no started note yet", false]
+	 *           ["the started note already on the order", true]
+	 *
+	 * @param string $label     Row label.
+	 * @param bool   $note_sent Whether the payment's started note is already on the order.
+	 */
+	public function test_update_order_status_writes_a_started_payment_on_a_pending_order_once( string $label, bool $note_sent ): void {
+		unset( $label );
+		$order = $this->create_order_for_intent_binding( 'payment' );
+		$order->update_meta_data( '_intent_id', 'pi_started' );
+		$order->update_meta_data( '_wcpay_fraud_meta_box_type', 'allow' );
+		$order->save();
+		$started = wc_get_container()->get( WooPaymentsOrderNoteService::class )->format_payment_started_note_candidates( $order, 'pi_started' );
+		if ( $note_sent ) {
+			$order->add_order_note( $started[0] );
+		}
+		$intent = array(
+			'id'                   => 'pi_started',
+			'status'               => 'requires_action',
+			'amount'               => 5000,
+			'currency'             => 'usd',
+			'customer'             => 'cus_started',
+			'payment_method'       => 'pm_started',
+			'payment_method_types' => array( 'card' ),
+			'metadata'             => array( 'order_id' => (string) $order->get_id() ),
+		);
+
+		$this->create_controller( $this->create_api_client_returning( $intent ) )->confirm_order_payment(
+			array(
+				'_ajax_nonce' => wp_create_nonce( 'wcpay_update_order_status_nonce_' . $order->get_id() ),
+				'order_id'    => $order->get_id(),
+				'intent_id'   => 'pi_started',
+			)
+		);
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( OrderStatus::PENDING, $order->get_status() );
+		$this->assertCount( 1, array_filter( wp_list_pluck( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), 'content' ), static fn( string $note ): bool => in_array( $note, $started, true ) ), 'One started note.' );
+		$this->assertSame( $note_sent ? 'allow' : 'payment_started', $order->get_meta( '_wcpay_fraud_meta_box_type', true ) );
+		$this->assertSame( 'requires_action', $order->get_meta( '_intention_status', true ) );
 	}
 
 	/**

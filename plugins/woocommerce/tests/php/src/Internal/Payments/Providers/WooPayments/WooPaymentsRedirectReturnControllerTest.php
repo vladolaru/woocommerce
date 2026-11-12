@@ -498,6 +498,37 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A redirect return reading a started payment on an order in a paid status a plugin adds attaches the intent and writes no started note or fraud box.
+	 *
+	 * Client 11.3.0 attaches the intent (class-wc-payment-gateway-wcpay.php:2700), then its started writer returns unless the
+	 * order is Pending (class-wc-payments-order-service.php:2229-2241).
+	 */
+	public function test_handle_wp_writes_no_started_payment_on_an_order_in_another_paid_status(): void {
+		add_filter( 'wc_order_statuses', static fn( array $statuses ): array => array_merge( $statuses, array( 'wc-shipped' => 'Shipped' ) ) );
+		add_filter( 'woocommerce_order_is_paid_statuses', static fn( array $statuses ): array => array_merge( $statuses, array( 'shipped' ) ) );
+		$GLOBALS['_SERVER']['REQUEST_METHOD'] = 'GET';
+		$order                                = $this->create_order();
+		$api_client                           = new RedirectReturnApiClientStub();
+		$api_client->payment_intent           = array_merge( $this->successful_payment_intent( $order, 'pi_return', 'pm_return' ), array( 'status' => 'requires_action' ) );
+		$this->sut                            = $this->create_controller( true, $this->create_confirmation_service( $api_client, $this->create_token_service() ), $api_client );
+		$this->set_payment_intent_return_request( $order, 'pi_return' );
+		$order = wc_get_order( $order->get_id() );
+		$order->set_status( 'shipped' );
+		$order->update_meta_data( '_wcpay_fraud_meta_box_type', 'allow' );
+		$order->save();
+		$notes = count( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+
+		$this->sut->handle_wp();
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( 'shipped', $order->get_status() );
+		$this->assertCount( $notes, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), 'No started note.' );
+		$this->assertSame( 'allow', $order->get_meta( '_wcpay_fraud_meta_box_type', true ), 'No started fraud box.' );
+		$this->assertSame( 'requires_action', $order->get_meta( '_intention_status', true ), 'The intent is attached.' );
+		$this->assertSame( 'pi_return', $order->get_transaction_id() );
+	}
+
+	/**
 	 * @testdox A redirect return decides the hold on the order read under the order payment lock, with the intent attached: $_dataName.
 	 *
 	 * The payment is compared with the order read under the order payment lock its lifecycle event is applied under, after the

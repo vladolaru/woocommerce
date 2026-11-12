@@ -577,7 +577,11 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 			return $this->apply_effect_plan( $context, $outcome );
 		}
 
-		$outcome = $this->apply_effect_plan( $context, $this->payment_operations->mark_payment_method_change_outcome( $context, $this->with_thrown_charge_note( $context, $outcome ) ) );
+		$outcome = $this->payment_operations->mark_payment_method_change_outcome( $context, $this->with_thrown_charge_note( $context, $outcome ) );
+		// The order is read again in place under the checkout's order payment lock, after the charge, so the effect plan
+		// composes the outcome, a started payment's own writes included, on the order as it is now.
+		wc_get_container()->get( OrderPaymentLifecycleService::class )->reread_order_from_data_store( $context->get_order() );
+		$outcome = $this->apply_effect_plan( $context, $outcome );
 		$this->record_charge_intent( $context, $outcome );
 
 		return $outcome;
@@ -599,9 +603,7 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 			return;
 		}
 
-		$order = $context->get_order();
-		wc_get_container()->get( OrderPaymentLifecycleService::class )->reread_order_from_data_store( $order );
-		$this->order_effect_applier->attach_intent_info( $order, $intent_id, $this->get_outcome_meta( $outcome ), WooPaymentsOrderEffectApplier::CHARGE_META_KEYS );
+		$this->order_effect_applier->attach_intent_info( $context->get_order(), $intent_id, $this->get_outcome_meta( $outcome ), WooPaymentsOrderEffectApplier::CHARGE_META_KEYS );
 	}
 
 	/**

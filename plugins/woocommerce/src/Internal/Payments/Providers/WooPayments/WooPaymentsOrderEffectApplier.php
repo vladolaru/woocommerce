@@ -9,6 +9,7 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Enums\OrderStatus;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
+use Automattic\WooCommerce\Internal\Payments\OrderPaymentNotes;
 use Automattic\WooCommerce\Internal\Payments\PaymentOperationContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentLifecycleEvent;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
@@ -203,6 +204,11 @@ class WooPaymentsOrderEffectApplier {
 						$plan
 					);
 				}
+				$setup_intent_id = (string) ( $provider_result['id'] ?? '' );
+				if ( PaymentLifecycleEvent::STATUS_STARTED === PaymentLifecycleEvent::status_for_outcome( $outcome ) && '' !== $setup_intent_id
+					&& $this->skips_started_writes( $context->get_order(), $this->note_service->format_payment_started_note_candidates( $context->get_order(), $setup_intent_id ) ) ) {
+					return $this->merge_effect_data_into_outcome( $outcome, array( WooPaymentsOutcomeMetadataMapper::STARTED_WRITES_SKIPPED_KEY => true ), $plan );
+				}
 				return $outcome;
 
 			case WooPaymentsOrderEffectPlan::TYPE_ZERO_AMOUNT_WITHOUT_INTENT:
@@ -284,12 +290,13 @@ class WooPaymentsOrderEffectApplier {
 	public function enrich_outcome_for_lifecycle( PaymentOperationContext $context, PaymentOutcome $outcome, WooPaymentsOrderEffectPlan $plan ): PaymentOutcome {
 		switch ( $plan->get_type() ) {
 			case WooPaymentsOrderEffectPlan::TYPE_PAYMENT_INTENT:
-				$result = $plan->get_provider_result();
-				$hold   = 'succeeded' === (string) ( $result['status'] ?? '' ) ? wc_get_container()->get( WooPaymentsAmountMismatchHold::class )->decide_hold( $context->get_order(), $result ) : null;
+				$result     = $plan->get_provider_result();
+				$hold       = 'succeeded' === (string) ( $result['status'] ?? '' ) ? wc_get_container()->get( WooPaymentsAmountMismatchHold::class )->decide_hold( $context->get_order(), $result ) : null;
+				$is_started = PaymentLifecycleEvent::STATUS_STARTED === PaymentLifecycleEvent::status_for_outcome( $outcome );
 
 				return $this->merge_effect_data_into_outcome(
 					$outcome,
-					$this->compose_payment_intent_effect_data( $context->get_order(), $result, $plan->writes_fee_meta(), $hold ),
+					$this->compose_payment_intent_effect_data( $context->get_order(), $result, $plan->writes_fee_meta(), $hold, $is_started ),
 					null === $hold ? $plan : $plan->with_amount_mismatch_hold( $hold )
 				);
 
@@ -363,6 +370,9 @@ class WooPaymentsOrderEffectApplier {
 		} elseif ( PaymentOutcome::STATUS_REQUIRES_CUSTOMER_ACTION === $outcome->get_status() ) {
 			$note_candidates = $this->note_service->format_payment_started_note_candidates( $order, $intent_id );
 			$note_type       = PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_STARTED;
+			if ( $this->skips_started_writes( $order, $note_candidates ) ) {
+				return array( WooPaymentsOutcomeMetadataMapper::STARTED_WRITES_SKIPPED_KEY => true );
+			}
 		} elseif ( PaymentOutcome::STATUS_FAILED === $outcome->get_status() ) {
 			$note_candidates = $this->note_service->format_redirect_payment_failed_note_candidates( $order, $intent_id );
 			$note_type       = PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_FAILED;
@@ -387,9 +397,10 @@ class WooPaymentsOrderEffectApplier {
 	 * @param array<string,mixed>                        $result           Provider PaymentIntent response.
 	 * @param bool                                       $include_fee_meta Whether to write the fee meta.
 	 * @param array{notes:string[],log_line:string}|null $hold             The hold decided for the intent, or null when it completes the order.
+	 * @param bool                                       $is_started       Whether the outcome is a started payment, whose own writes skips_started_writes() decides.
 	 * @return array<string,mixed>
 	 */
-	private function compose_payment_intent_effect_data( WC_Order $order, array $result, bool $include_fee_meta, ?array $hold ): array {
+	private function compose_payment_intent_effect_data( WC_Order $order, array $result, bool $include_fee_meta, ?array $hold, bool $is_started = false ): array {
 		$status          = (string) ( $result['status'] ?? '' );
 		$charge          = WooPaymentsIntentCodec::latest_charge( $result );
 		$settlement_meta = ! empty( $charge ) && WooPaymentsIntentCodec::holds_money( $status )
@@ -443,13 +454,31 @@ class WooPaymentsOrderEffectApplier {
 				$effect_data[ PaymentOutcome::DATA_NOTE_EQUIVALENTS ] = $note_candidates;
 			}
 		} elseif ( in_array( $status, array( 'requires_action', 'requires_confirmation' ), true ) && '' !== $intent_id ) {
-			$note_candidates                                      = $this->note_service->format_payment_started_note_candidates( $order, $intent_id );
-			$effect_data[ PaymentOutcome::DATA_NOTE ]             = $note_candidates[0];
-			$effect_data[ PaymentOutcome::DATA_NOTE_TYPE ]        = PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_STARTED;
-			$effect_data[ PaymentOutcome::DATA_NOTE_EQUIVALENTS ] = $note_candidates;
+			$note_candidates = $this->note_service->format_payment_started_note_candidates( $order, $intent_id );
+			if ( $is_started && $this->skips_started_writes( $order, $note_candidates ) ) {
+				$effect_data[ WooPaymentsOutcomeMetadataMapper::STARTED_WRITES_SKIPPED_KEY ] = true;
+			} else {
+				$effect_data[ PaymentOutcome::DATA_NOTE ]             = $note_candidates[0];
+				$effect_data[ PaymentOutcome::DATA_NOTE_TYPE ]        = PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_STARTED;
+				$effect_data[ PaymentOutcome::DATA_NOTE_EQUIVALENTS ] = $note_candidates;
+			}
 		}
 
 		return $effect_data;
+	}
+
+	/**
+	 * Tell whether a started payment's own writes, its note and its started meta, are skipped: the order is not Pending, or
+	 * the payment's started note is already on it. Client 11.3.0's started writer returns then, before its fraud box, note
+	 * and intent status writes (class-wc-payments-order-service.php:2229-2241).
+	 *
+	 * @param WC_Order $order           Order the started outcome is composed on, read under the caller's order payment lock.
+	 * @param string[] $note_candidates The payment's started note in each wording that counts as the same note.
+	 * @return bool
+	 */
+	private function skips_started_writes( WC_Order $order, array $note_candidates ): bool {
+		return ! $order->has_status( OrderStatus::PENDING )
+			|| 0 < wc_get_container()->get( OrderPaymentNotes::class )->find_by_content( $order, (string) $note_candidates[0], $note_candidates );
 	}
 
 	/**

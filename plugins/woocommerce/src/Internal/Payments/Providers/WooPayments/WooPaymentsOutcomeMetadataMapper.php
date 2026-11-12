@@ -26,12 +26,33 @@ final class WooPaymentsOutcomeMetadataMapper implements ProviderOutcomeMetadataM
 	public const OUTCOME_META_KEY = 'meta';
 
 	/**
-	 * Map a payment outcome to WooPayments order meta.
+	 * Outcome data key, set by WooPaymentsOrderEffectApplier: a started payment whose own writes are skipped, because the
+	 * order is not Pending or already has the payment's started note. Its lifecycle event then carries no meta and no note;
+	 * the intent's record is written by the attach before it (client 11.3.0 class-wc-payments-order-service.php:2229-2241).
+	 *
+	 * @var string
+	 */
+	public const STARTED_WRITES_SKIPPED_KEY = 'woopayments_started_writes_skipped';
+
+	/**
+	 * Map a payment outcome to the WooPayments order meta its lifecycle event writes: none for a started payment whose own
+	 * writes are skipped (STARTED_WRITES_SKIPPED_KEY), the intent's meta otherwise.
 	 *
 	 * @param PaymentOutcome $outcome Provider outcome.
 	 * @return array<string,string>
 	 */
 	public function get_outcome_meta( PaymentOutcome $outcome ): array {
+		return true === ( $outcome->get_data()[ self::STARTED_WRITES_SKIPPED_KEY ] ?? false ) ? array() : $this->get_intent_meta( $outcome );
+	}
+
+	/**
+	 * Map a payment outcome to WooPayments order meta, the intent's record included, whatever its event writes: what the
+	 * intent attach takes its fields from.
+	 *
+	 * @param PaymentOutcome $outcome Provider outcome.
+	 * @return array<string,string>
+	 */
+	public function get_intent_meta( PaymentOutcome $outcome ): array {
 		$data = $outcome->get_data();
 		$meta = array();
 

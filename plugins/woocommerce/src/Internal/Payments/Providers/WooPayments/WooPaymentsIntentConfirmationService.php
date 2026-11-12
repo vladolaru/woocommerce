@@ -344,6 +344,21 @@ class WooPaymentsIntentConfirmationService {
 	 * @return array{0:PaymentLifecycleEvent,1:array{notes:string[],log_line:string}|null} The event, and the amount-mismatch hold decided for the intent.
 	 */
 	public function build_lifecycle_event_from_intent( array $intent, WC_Order $order, bool $zero_amount_plain_note = false ): array {
+		list( $event, $hold ) = $this->build_lifecycle_event_and_intent_meta( $intent, $order, $zero_amount_plain_note );
+
+		return array( $event, $hold );
+	}
+
+	/**
+	 * Build a payment lifecycle event from a platform intent response, as build_lifecycle_event_from_intent() does, with the
+	 * intent's meta the attach writes, which a started payment whose own writes are skipped leaves out of its event.
+	 *
+	 * @param array<string,mixed> $intent                 Platform intent response.
+	 * @param WC_Order            $order                  Order being updated.
+	 * @param bool                $zero_amount_plain_note Whether a completed $0 SetupIntent gets the order-status callback's plain note.
+	 * @return array{0:PaymentLifecycleEvent,1:array{notes:string[],log_line:string}|null,2:array<string,string>} The event, the hold, and the intent's meta.
+	 */
+	private function build_lifecycle_event_and_intent_meta( array $intent, WC_Order $order, bool $zero_amount_plain_note ): array {
 		$intent_id             = isset( $intent['id'] ) ? (string) $intent['id'] : '';
 		$is_setup              = $this->is_setup_intent_for_order( $intent, $order );
 		$provider_redirect_url = esc_url_raw( WooPaymentsIntentCodec::raw_next_action_redirect_url( $intent ) );
@@ -394,12 +409,13 @@ class WooPaymentsIntentConfirmationService {
 			$note_type       = PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_FAILED;
 		}
 
-		$meta = ( new WooPaymentsOutcomeMetadataMapper() )->get_outcome_meta( $outcome );
+		$intent_meta = ( new WooPaymentsOutcomeMetadataMapper() )->get_intent_meta( $outcome );
 		if ( ( $intent['status'] ?? '' ) !== $provider_status ) {
-			$meta['_intention_status'] = $provider_status;
+			$intent_meta['_intention_status'] = $provider_status;
 		}
+		$meta = true === ( $outcome->get_data()[ WooPaymentsOutcomeMetadataMapper::STARTED_WRITES_SKIPPED_KEY ] ?? false ) ? array() : $intent_meta;
 
-		return array( $this->lifecycle_event( $outcome, $meta, $note_candidates, $note_type ), $this->get_amount_mismatch_hold( $outcome ) );
+		return array( $this->lifecycle_event( $outcome, $meta, $note_candidates, $note_type ), $this->get_amount_mismatch_hold( $outcome ), $intent_meta );
 	}
 
 	/**
@@ -416,7 +432,8 @@ class WooPaymentsIntentConfirmationService {
 	/**
 	 * Attach an intent, whatever its status, to the order read under the order payment lock, before the payment lifecycle's
 	 * event is built and decided on that order, so an order the lifecycle leaves as it is, one already paid, keeps the
-	 * intent's record. The intent's meta is the meta the event built from it carries.
+	 * intent's record. The intent's meta is the meta the event built from it carries, a started payment's included when its
+	 * own writes are skipped.
 	 *
 	 * Client 11.3.0's redirect return attaches a PaymentIntent or a SetupIntent, and its order-status callback a PaymentIntent,
 	 * with the exchange rate, fee and net beside it, before updating the order from it, whatever the intent's status
@@ -427,13 +444,13 @@ class WooPaymentsIntentConfirmationService {
 	 * @param bool                $zero_amount_plain_note Whether a completed $0 SetupIntent gets the order-status callback's plain note.
 	 */
 	private function attach_intent_before_decision( array $intent, WC_Order $order, bool $zero_amount_plain_note ): void {
-		list( $event ) = $this->build_lifecycle_event_from_intent( $intent, $order, $zero_amount_plain_note );
-		$intent_id     = (string) $event->get_payment_reference();
+		list( $event, , $intent_meta ) = $this->build_lifecycle_event_and_intent_meta( $intent, $order, $zero_amount_plain_note );
+		$intent_id                     = (string) $event->get_payment_reference();
 		if ( '' === $intent_id ) {
 			return;
 		}
 
-		$this->order_effect_applier->attach_intent_info( $order, $intent_id, $event->get_meta_to_update(), WooPaymentsOrderEffectApplier::CONFIRMATION_META_KEYS );
+		$this->order_effect_applier->attach_intent_info( $order, $intent_id, $intent_meta, WooPaymentsOrderEffectApplier::CONFIRMATION_META_KEYS );
 	}
 
 	/**
