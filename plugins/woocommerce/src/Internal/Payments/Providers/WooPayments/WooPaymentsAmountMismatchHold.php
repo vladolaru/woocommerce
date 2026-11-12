@@ -47,14 +47,6 @@ class WooPaymentsAmountMismatchHold {
 	private WooPaymentsLogger $logger;
 
 	/**
-	 * Log lines of the holds this request decided while the order did not have the hold note yet, by order and intent ID,
-	 * written once the payment lifecycle has added the note.
-	 *
-	 * @var array<string,array{line:string,notes:string[]}>
-	 */
-	private array $undelivered_hold_logs = array();
-
-	/**
 	 * Initialize dependencies.
 	 *
 	 * @internal
@@ -72,15 +64,15 @@ class WooPaymentsAmountMismatchHold {
 	/**
 	 * Decide whether a succeeded PaymentIntent holds its order because its amount or currency differs from the order total.
 	 *
-	 * Returns the hold's note wordings when the order is held; null when the payment completes it: a PaymentIntent for the
-	 * order's total and currency, any intent that has not succeeded, a SetupIntent (client :486), an order whose stored
-	 * intent status is `requires_capture`, whose capture completes it (:484-485), and a Stripe Billing invoice's intent,
-	 * which its invoice settles. The client's error line (:2117-2131) is written by log_applied_hold(), once the payment
-	 * lifecycle has added the hold note.
+	 * Returns the hold when the order is held; null when the payment completes it: a PaymentIntent for the order's total
+	 * and currency, any intent that has not succeeded, a SetupIntent (client :486), an order whose stored intent status is
+	 * `requires_capture`, whose capture completes it (:484-485), and a Stripe Billing invoice's intent, which its invoice
+	 * settles. Whoever applies the hold passes it to log_hold() once the payment lifecycle has added the hold note.
 	 *
 	 * @param WC_Order            $order  Order the intent pays.
 	 * @param array<string,mixed> $intent Intent as the platform returns it.
-	 * @return string[]|null The hold note's wordings, WooCommerce's first; null when the payment completes the order.
+	 * @return array{notes:string[],log_line:string}|null The hold note's wordings, WooCommerce's first, and the client's
+	 *                                                    error line (:2117-2131); null when the payment completes the order.
 	 */
 	public function decide_hold( WC_Order $order, array $intent ): ?array {
 		$intent_id = isset( $intent['id'] ) && is_scalar( $intent['id'] ) ? (string) $intent['id'] : '';
@@ -98,54 +90,44 @@ class WooPaymentsAmountMismatchHold {
 		$charge           = WooPaymentsIntentCodec::latest_charge( $intent );
 		$charged_amount   = is_numeric( $intent['amount'] ?? null ) ? (int) $intent['amount'] : 0;
 		$charged_currency = isset( $intent['currency'] ) && is_string( $intent['currency'] ) ? $intent['currency'] : '';
-		$note_candidates  = $this->note_service->format_amount_mismatch_hold_note_candidates(
-			$order,
-			$intent_id,
-			isset( $charge['id'] ) && is_scalar( $charge['id'] ) ? (string) $charge['id'] : '',
-			$charged_amount,
-			$charged_currency
+
+		return array(
+			'notes'    => $this->note_service->format_amount_mismatch_hold_note_candidates(
+				$order,
+				$intent_id,
+				isset( $charge['id'] ) && is_scalar( $charge['id'] ) ? (string) $charge['id'] : '',
+				$charged_amount,
+				$charged_currency
+			),
+			'log_line' => sprintf(
+				'Order %1$d put on hold: intent %2$s succeeded for %3$d %4$s, but the order total is %5$s %6$s.',
+				$order->get_id(),
+				$intent_id,
+				$charged_amount,
+				$charged_currency,
+				$order->get_total(),
+				$order->get_currency()
+			),
 		);
-
-		$key = $order->get_id() . '|' . $intent_id;
-		unset( $this->undelivered_hold_logs[ $key ] );
-		if ( 0 === $this->order_payment_notes->find_by_content( $order, $note_candidates[0], $note_candidates ) ) {
-			$this->undelivered_hold_logs[ $key ] = array(
-				'line'  => sprintf(
-					'Order %1$d put on hold: intent %2$s succeeded for %3$d %4$s, but the order total is %5$s %6$s.',
-					$order->get_id(),
-					$intent_id,
-					$charged_amount,
-					$charged_currency,
-					$order->get_total(),
-					$order->get_currency()
-				),
-				'notes' => $note_candidates,
-			);
-		}
-
-		return $note_candidates;
 	}
 
 	/**
-	 * Write the client's error line for a hold this request decided, once the payment lifecycle has added the hold note:
-	 * nothing when the hold was not applied, such as on a paid order or when another operation held the order payment lock,
-	 * and nothing on a later delivery of a hold already noted.
+	 * Tell whether the order has a hold's note.
 	 *
-	 * @param WC_Order $order     Order the hold was decided for.
-	 * @param string   $intent_id PaymentIntent ID.
+	 * @param WC_Order                              $order Order object.
+	 * @param array{notes:string[],log_line:string} $hold  Hold decide_hold() returned.
+	 * @return bool
 	 */
-	public function log_applied_hold( WC_Order $order, string $intent_id ): void {
-		$key = $order->get_id() . '|' . $intent_id;
-		if ( ! isset( $this->undelivered_hold_logs[ $key ] ) ) {
-			return;
-		}
+	public function has_hold_note( WC_Order $order, array $hold ): bool {
+		return 0 < $this->order_payment_notes->find_by_content( $order, $hold['notes'][0], $hold['notes'] );
+	}
 
-		$hold = $this->undelivered_hold_logs[ $key ];
-		if ( 0 === $this->order_payment_notes->find_by_content( $order, $hold['notes'][0], $hold['notes'] ) ) {
-			return;
-		}
-
-		unset( $this->undelivered_hold_logs[ $key ] );
-		$this->logger->error( $hold['line'] );
+	/**
+	 * Write the client's error line for a hold the payment lifecycle applied, with its note added.
+	 *
+	 * @param array{notes:string[],log_line:string} $hold Hold decide_hold() returned.
+	 */
+	public function log_hold( array $hold ): void {
+		$this->logger->error( $hold['log_line'] );
 	}
 }

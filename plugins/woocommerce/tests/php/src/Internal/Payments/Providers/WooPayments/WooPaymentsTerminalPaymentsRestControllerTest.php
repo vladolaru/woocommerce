@@ -673,6 +673,9 @@ class WooPaymentsTerminalPaymentsRestControllerTest extends WC_REST_Unit_Test_Ca
 	 * mark_terminal_payment_completed() sets the filtered completed status (class-wc-payments-order-service.php:929-942).
 	 */
 	public function test_capture_terminal_payment_notes_the_hold_of_a_reader_payment_for_another_amount_and_completes_the_order(): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => 'yes' ) );
+		add_filter( 'wcpay_dev_mode', '__return_false' );
+		$logger                                       = RecordingWcLogger::install();
 		$order                                        = $this->create_order( 12.34, 'USD' );
 		$this->api_client->payment_intention_response = array(
 			'id'       => 'pi_terminal_other_amount',
@@ -695,6 +698,7 @@ class WooPaymentsTerminalPaymentsRestControllerTest extends WC_REST_Unit_Test_Ca
 		$this->assertSame( 'pi_terminal_other_amount', $order->get_transaction_id() );
 		$this->assertCount( 1, array_filter( $notes, static fn( string $note ): bool => false !== strpos( $note, 'was put <strong>on hold</strong>' ) ) );
 		$this->assertCount( 0, array_filter( $notes, static fn( string $note ): bool => false !== strpos( $note, 'successfully charged' ) ) );
+		$this->assertCount( 1, array_filter( array_map( 'strval', array_column( $logger->lines, 1 ) ), static fn( string $line ): bool => false !== strpos( $line, 'put on hold: intent' ) ) );
 	}
 
 	/**

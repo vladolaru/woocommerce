@@ -1162,7 +1162,10 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 	 * @param string $currency Intent currency.
 	 */
 	public function test_update_order_status_holds_the_order_when_the_payment_differs_from_its_total( int $amount, string $currency ): void {
-		$order = $this->create_order_for_intent_binding( 'payment' );
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => 'yes' ) );
+		add_filter( 'wcpay_dev_mode', '__return_false' );
+		$logger = RecordingWcLogger::install();
+		$order  = $this->create_order_for_intent_binding( 'payment' );
 		$order->update_meta_data( '_intent_id', 'pi_binding' );
 		$order->save();
 		$intent     = array(
@@ -1193,6 +1196,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		$notes = array_map( static fn( $note ): string => (string) $note->content, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
 		$this->assertCount( 1, array_filter( $notes, static fn( string $note ): bool => false !== strpos( $note, 'was put <strong>on hold</strong>' ) ) );
 		$this->assertCount( 0, array_filter( $notes, static fn( string $note ): bool => false !== strpos( $note, 'successfully charged' ) ) );
+		$this->assertCount( 1, array_filter( array_map( 'strval', array_column( $logger->lines, 1 ) ), static fn( string $line ): bool => false !== strpos( $line, 'put on hold: intent' ) ) );
 	}
 
 	/**

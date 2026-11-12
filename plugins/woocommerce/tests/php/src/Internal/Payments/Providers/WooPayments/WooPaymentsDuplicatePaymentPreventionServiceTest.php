@@ -286,6 +286,9 @@ class WooPaymentsDuplicatePaymentPreventionServiceTest extends WC_Unit_Test_Case
 	 * update_order_status_from_intent() compares the currency too (class-wc-payments-order-service.php:486-487, :2095-2139).
 	 */
 	public function test_attached_intent_in_another_currency_holds_the_order(): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => 'yes' ) );
+		add_filter( 'wcpay_dev_mode', '__return_false' );
+		$logger  = RecordingWcLogger::install();
 		$session = $this->create_session();
 		$order   = $this->create_order( 'hash', 'pending' );
 		$order->set_total( '12.00' );
@@ -308,6 +311,7 @@ class WooPaymentsDuplicatePaymentPreventionServiceTest extends WC_Unit_Test_Case
 		$notes = implode( ' ', array_map( static fn( object $note ): string => (string) $note->content, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) ) );
 		$this->assertStringContainsString( 'was put <strong>on hold</strong>', $notes );
 		$this->assertStringNotContainsString( 'successfully charged', $notes );
+		$this->assertCount( 1, array_filter( array_map( 'strval', array_column( $logger->lines, 1 ) ), static fn( string $line ): bool => false !== strpos( $line, 'put on hold: intent' ) ) );
 	}
 
 	/**

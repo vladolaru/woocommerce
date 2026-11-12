@@ -582,12 +582,25 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 		$outcome      = $this->order_effect_applier->apply( $context, $outcome, $plan );
 		$note_existed = $this->get_fee_details_note_controller()->has_outcome_note( $context->get_order(), $outcome );
 		$plan         = $outcome->get_effect_plan();
-		if ( null === $note_existed || ! $plan instanceof WooPaymentsOrderEffectPlan ) {
+		if ( ! $plan instanceof WooPaymentsOrderEffectPlan ) {
 			return $outcome;
 		}
 
-		// The runtime applies the payment lifecycle next; the post-lifecycle effects schedule the Fee details job when it added the note.
-		return $outcome->with_effect_plan( $plan->with_success_or_capture_note_existed( $note_existed ) );
+		$hold = $plan->get_amount_mismatch_hold();
+		if ( null === $note_existed && null === $hold ) {
+			return $outcome;
+		}
+
+		// The runtime applies the payment lifecycle next; the post-lifecycle effects schedule the Fee details job, or log the
+		// hold, when it added the note.
+		if ( null !== $note_existed ) {
+			$plan = $plan->with_success_or_capture_note_existed( $note_existed );
+		}
+		if ( null !== $hold ) {
+			$plan = $plan->with_hold_note_existed( wc_get_container()->get( WooPaymentsAmountMismatchHold::class )->has_hold_note( $context->get_order(), $hold ) );
+		}
+
+		return $outcome->with_effect_plan( $plan );
 	}
 
 	/**
@@ -644,8 +657,13 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 			$this->get_fee_details_note_controller()->schedule_when_outcome_note_added( $context->get_order(), $outcome );
 		}
 
-		if ( $outcome->should_hold_order() ) {
-			wc_get_container()->get( WooPaymentsAmountMismatchHold::class )->log_applied_hold( $context->get_order(), $outcome->get_provider_payment_id() );
+		$hold = $plan instanceof WooPaymentsOrderEffectPlan ? $plan->get_amount_mismatch_hold() : null;
+		if ( null !== $hold && false === $plan->hold_note_existed() && $outcome->should_hold_order() ) {
+			// The note was absent before the runtime applied the outcome under its checkout claim, so a note found now is the hold's.
+			$hold_service = wc_get_container()->get( WooPaymentsAmountMismatchHold::class );
+			if ( $hold_service->has_hold_note( $context->get_order(), $hold ) ) {
+				$hold_service->log_hold( $hold );
+			}
 		}
 
 		if ( PaymentProcessingService::OPERATION_CHARGE === $operation ) {

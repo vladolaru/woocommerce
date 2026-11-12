@@ -712,15 +712,15 @@ class WooPaymentsTerminalPaymentsRestController extends RestApiControllerBase {
 
 		$meta       = array();
 		$hold_order = false;
-		$hold_notes = $already_captured ? wc_get_container()->get( WooPaymentsAmountMismatchHold::class )->decide_hold( $order, $intent ) : null;
+		$hold       = $already_captured ? wc_get_container()->get( WooPaymentsAmountMismatchHold::class )->decide_hold( $order, $intent ) : null;
 		if ( PaymentLifecycleEvent::STATUS_AUTHORIZED === $status ) {
 			$note_type  = PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_AUTHORIZED;
 			$candidates = $this->note_service->format_payment_authorized_note_candidates( $order, $intent_id, $charge_id );
-		} elseif ( null !== $hold_notes ) {
+		} elseif ( null !== $hold ) {
 			// The client holds the order here and completes it right after (class-wc-rest-payments-orders-controller.php:217,
 			// :281); mark_terminal_payment_completed() does the same.
 			$note_type  = PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_HELD;
-			$candidates = $hold_notes;
+			$candidates = $hold['notes'];
 			$hold_order = true;
 		} elseif ( $already_captured ) {
 			$note_type  = PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_SUCCESS;
@@ -738,7 +738,8 @@ class WooPaymentsTerminalPaymentsRestController extends RestApiControllerBase {
 		// The terminal capture holds the order payment lock.
 		wc_get_container()->get( WooPaymentsFeeDetailsNoteController::class )->apply_and_schedule_fee_details(
 			$order,
-			new PaymentLifecycleEvent( $status, $intent_id, $meta, array(), $candidates[0], $note_type, $candidates, false, $hold_order )
+			new PaymentLifecycleEvent( $status, $intent_id, $meta, array(), $candidates[0], $note_type, $candidates, false, $hold_order ),
+			$hold
 		);
 	}
 

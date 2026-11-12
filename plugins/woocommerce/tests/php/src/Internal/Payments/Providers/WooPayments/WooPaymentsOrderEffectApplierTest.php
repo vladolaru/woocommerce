@@ -123,6 +123,7 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 		$result  = array(
 			'id'       => 'pi_display',
 			'status'   => 'succeeded',
+			'amount'   => 1000,
 			'currency' => 'usd',
 			'charges'  => array(
 				'data' => array(

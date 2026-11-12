@@ -224,8 +224,8 @@ class WooPaymentsIntentConfirmationService {
 			}
 		}
 
-		$event = $this->build_lifecycle_event_from_intent( $intent, $order, $zero_amount_plain_note );
-		if ( OrderPaymentLifecycleService::RESULT_REFUSED === $this->fee_details_note_controller->apply_and_schedule_fee_details_with_lock( $order, $event ) ) {
+		list( $event, $hold ) = $this->build_lifecycle_event_from_intent( $intent, $order, $zero_amount_plain_note );
+		if ( OrderPaymentLifecycleService::RESULT_REFUSED === $this->fee_details_note_controller->apply_and_schedule_fee_details_with_lock( $order, $event, $hold ) ) {
 			$this->attach_charge_details_after_refusal( $order, $event );
 		}
 		if ( WooPaymentsIntentCodec::holds_money( $status ) && ! $should_apply_display_details_before_lifecycle ) {
@@ -295,7 +295,8 @@ class WooPaymentsIntentConfirmationService {
 
 		$this->fee_details_note_controller->apply_and_schedule_fee_details_with_lock(
 			$order,
-			$this->lifecycle_event( $outcome, ( new WooPaymentsOutcomeMetadataMapper() )->get_outcome_meta( $outcome ) )
+			$this->lifecycle_event( $outcome, ( new WooPaymentsOutcomeMetadataMapper() )->get_outcome_meta( $outcome ) ),
+			$this->get_amount_mismatch_hold( $outcome )
 		);
 	}
 
@@ -305,9 +306,9 @@ class WooPaymentsIntentConfirmationService {
 	 * @param array<string,mixed> $intent                     Platform intent response.
 	 * @param WC_Order            $order                      Order being updated.
 	 * @param bool                $zero_amount_plain_note     Whether a completed $0 SetupIntent gets the order-status callback's plain note.
-	 * @return PaymentLifecycleEvent
+	 * @return array{0:PaymentLifecycleEvent,1:array{notes:string[],log_line:string}|null} The event, and the amount-mismatch hold decided for the intent.
 	 */
-	private function build_lifecycle_event_from_intent( array $intent, WC_Order $order, bool $zero_amount_plain_note = false ): PaymentLifecycleEvent {
+	private function build_lifecycle_event_from_intent( array $intent, WC_Order $order, bool $zero_amount_plain_note = false ): array {
 		$intent_id             = isset( $intent['id'] ) ? (string) $intent['id'] : '';
 		$is_setup              = 0.0 >= (float) $order->get_total() || 0 === strpos( $intent_id, 'seti_' );
 		$provider_redirect_url = esc_url_raw( WooPaymentsIntentCodec::raw_next_action_redirect_url( $intent ) );
@@ -363,7 +364,19 @@ class WooPaymentsIntentConfirmationService {
 			$meta['_intention_status'] = $provider_status;
 		}
 
-		return $this->lifecycle_event( $outcome, $meta, $note_candidates, $note_type );
+		return array( $this->lifecycle_event( $outcome, $meta, $note_candidates, $note_type ), $this->get_amount_mismatch_hold( $outcome ) );
+	}
+
+	/**
+	 * Get the amount-mismatch hold an enriched outcome's effect plan carries.
+	 *
+	 * @param PaymentOutcome $outcome Enriched provider outcome.
+	 * @return array{notes:string[],log_line:string}|null Null when the payment completes the order.
+	 */
+	private function get_amount_mismatch_hold( PaymentOutcome $outcome ): ?array {
+		$plan = $outcome->get_effect_plan();
+
+		return $plan instanceof WooPaymentsOrderEffectPlan ? $plan->get_amount_mismatch_hold() : null;
 	}
 
 	/**

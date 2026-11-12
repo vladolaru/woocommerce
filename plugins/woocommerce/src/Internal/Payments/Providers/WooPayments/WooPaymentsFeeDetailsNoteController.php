@@ -204,35 +204,37 @@ class WooPaymentsFeeDetailsNoteController implements RegisterHooksInterface {
 	 * Apply a payment lifecycle event under the order payment lock the caller holds, and schedule the job when the event
 	 * first adds a payment's success or capture note.
 	 *
-	 * @param WC_Order              $order Order object.
-	 * @param PaymentLifecycleEvent $event Lifecycle event.
+	 * @param WC_Order                                   $order Order object.
+	 * @param PaymentLifecycleEvent                      $event Lifecycle event.
+	 * @param array{notes:string[],log_line:string}|null $hold  The amount-mismatch hold the event applies, logged once its note is added.
 	 */
-	public function apply_and_schedule_fee_details( WC_Order $order, PaymentLifecycleEvent $event ): void {
+	public function apply_and_schedule_fee_details( WC_Order $order, PaymentLifecycleEvent $event, ?array $hold = null ): void {
 		// A subscription gets no payment event: no lifecycle, no note, no Fee details job.
 		if ( SubscriptionMethodPolicy::only_saves_the_card( $order ) ) {
 			return;
 		}
 
-		$this->schedule_when_event_added_note( $order, $event, $this->lifecycle_service->apply_under_lock( $order, $event, $this->vocabulary ) );
+		$this->schedule_when_event_added_note( $order, $event, $this->lifecycle_service->apply_under_lock( $order, $event, $this->vocabulary ), $hold );
 	}
 
 	/**
 	 * Apply a payment lifecycle event through the payment lifecycle, which claims the order payment lock for it, and
 	 * schedule the job as apply_and_schedule_fee_details() does.
 	 *
-	 * @param WC_Order              $order Order object.
-	 * @param PaymentLifecycleEvent $event Lifecycle event.
+	 * @param WC_Order                                   $order Order object.
+	 * @param PaymentLifecycleEvent                      $event Lifecycle event.
+	 * @param array{notes:string[],log_line:string}|null $hold  The amount-mismatch hold the event applies, logged once its note is added.
 	 * @return string The payment lifecycle's result for the event, OrderPaymentLifecycleService::RESULT_REFUSED when the
 	 *                order payment lock refused it.
 	 */
-	public function apply_and_schedule_fee_details_with_lock( WC_Order $order, PaymentLifecycleEvent $event ): string {
+	public function apply_and_schedule_fee_details_with_lock( WC_Order $order, PaymentLifecycleEvent $event, ?array $hold = null ): string {
 		// A subscription gets no payment event: no lock claim, no lifecycle, no note, no Fee details job.
 		if ( SubscriptionMethodPolicy::only_saves_the_card( $order ) ) {
 			return OrderPaymentLifecycleService::RESULT_NOTE_NOT_ADDED;
 		}
 
 		$result = $this->lifecycle_service->apply( $order, $event, $this->vocabulary );
-		$this->schedule_when_event_added_note( $order, $event, $result );
+		$this->schedule_when_event_added_note( $order, $event, $result, $hold );
 
 		return $result;
 	}
@@ -285,19 +287,21 @@ class WooPaymentsFeeDetailsNoteController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Schedule the job when the payment lifecycle first added an event's success or capture note.
+	 * Schedule the job when the payment lifecycle first added an event's success or capture note, and log an
+	 * amount-mismatch hold when it first added the hold's note.
 	 *
-	 * @param WC_Order              $order  Order object.
-	 * @param PaymentLifecycleEvent $event  Applied lifecycle event.
-	 * @param string                $result The payment lifecycle's result for the event.
+	 * @param WC_Order                                   $order  Order object.
+	 * @param PaymentLifecycleEvent                      $event  Applied lifecycle event.
+	 * @param string                                     $result The payment lifecycle's result for the event.
+	 * @param array{notes:string[],log_line:string}|null $hold   The amount-mismatch hold the event applies.
 	 */
-	private function schedule_when_event_added_note( WC_Order $order, PaymentLifecycleEvent $event, string $result ): void {
+	private function schedule_when_event_added_note( WC_Order $order, PaymentLifecycleEvent $event, string $result, ?array $hold ): void {
 		if ( OrderPaymentLifecycleService::RESULT_NOTE_ADDED === $result && $this->is_success_or_capture_event( $event ) ) {
 			$this->schedule( $order, (string) $event->get_payment_reference() );
 		}
 
-		if ( OrderPaymentLifecycleService::RESULT_NOTE_ADDED === $result && $event->should_hold_order() ) {
-			wc_get_container()->get( WooPaymentsAmountMismatchHold::class )->log_applied_hold( $order, (string) $event->get_payment_reference() );
+		if ( null !== $hold && OrderPaymentLifecycleService::RESULT_NOTE_ADDED === $result && $event->should_hold_order() ) {
+			wc_get_container()->get( WooPaymentsAmountMismatchHold::class )->log_hold( $hold );
 		}
 	}
 

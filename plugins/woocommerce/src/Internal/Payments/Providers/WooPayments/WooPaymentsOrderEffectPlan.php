@@ -117,6 +117,20 @@ class WooPaymentsOrderEffectPlan {
 	private ?bool $success_or_capture_note_existed = null;
 
 	/**
+	 * The hold WooPaymentsAmountMismatchHold decided for the intent, or null when the payment completes the order.
+	 *
+	 * @var array{notes:string[],log_line:string}|null
+	 */
+	private ?array $amount_mismatch_hold = null;
+
+	/**
+	 * Whether the order had the hold's note before the payment lifecycle applied, or null when nothing holds the order.
+	 *
+	 * @var bool|null
+	 */
+	private ?bool $hold_note_existed = null;
+
+	/**
 	 * Constructor.
 	 *
 	 * @param string               $type                Effect plan type.
@@ -245,6 +259,58 @@ class WooPaymentsOrderEffectPlan {
 	 */
 	public function success_or_capture_note_existed(): ?bool {
 		return $this->success_or_capture_note_existed;
+	}
+
+	/**
+	 * Get a copy of this plan that carries the hold decided for its intent.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @param array{notes:string[],log_line:string} $hold Hold WooPaymentsAmountMismatchHold::decide_hold() returned.
+	 * @return self
+	 */
+	public function with_amount_mismatch_hold( array $hold ): self {
+		$plan                       = clone $this;
+		$plan->amount_mismatch_hold = $hold;
+
+		return $plan;
+	}
+
+	/**
+	 * Get the hold decided for this plan's intent.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @return array{notes:string[],log_line:string}|null Null when the payment completes the order.
+	 */
+	public function get_amount_mismatch_hold(): ?array {
+		return $this->amount_mismatch_hold;
+	}
+
+	/**
+	 * Get a copy of this plan that records whether the order had the hold's note before the payment lifecycle applied.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @param bool $existed Whether the order had the note.
+	 * @return self
+	 */
+	public function with_hold_note_existed( bool $existed ): self {
+		$plan                    = clone $this;
+		$plan->hold_note_existed = $existed;
+
+		return $plan;
+	}
+
+	/**
+	 * Tell whether the order had the hold's note before the payment lifecycle applied.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @return bool|null Null when nothing holds the order.
+	 */
+	public function hold_note_existed(): ?bool {
+		return $this->hold_note_existed;
 	}
 
 	/**

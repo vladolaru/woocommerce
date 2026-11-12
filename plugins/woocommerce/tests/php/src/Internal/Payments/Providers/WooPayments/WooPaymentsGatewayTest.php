@@ -3519,6 +3519,10 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 * @param string $currency Order currency.
 	 */
 	public function test_process_payment_holds_the_order_when_the_payment_differs_from_its_total( string $total, string $currency ): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => 'yes' ) );
+		add_filter( 'wcpay_dev_mode', '__return_false' );
+		$logger = RecordingWcLogger::install();
+
 		$order = $this->create_order();
 		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
 		$order->set_total( $total );
@@ -3548,6 +3552,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$notes = array_map( static fn( $note ): string => (string) $note->content, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
 		$this->assertCount( 1, array_filter( $notes, static fn( string $note ): bool => false !== strpos( $note, 'was put <strong>on hold</strong>' ) ) );
 		$this->assertCount( 0, array_filter( $notes, static fn( string $note ): bool => false !== strpos( $note, 'successfully charged' ) ) );
+		$this->assertCount( 1, array_filter( array_map( 'strval', array_column( $logger->lines, 1 ) ), static fn( string $line ): bool => false !== strpos( $line, 'put on hold: intent' ) ) );
 	}
 
 	/**

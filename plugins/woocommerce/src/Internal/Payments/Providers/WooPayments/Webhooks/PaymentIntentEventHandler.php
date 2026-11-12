@@ -357,9 +357,10 @@ class PaymentIntentEventHandler {
 		// The order keeps the payment method and title its checkout, redirect return or in-person capture wrote: client 11.1.0's
 		// webhook never sets them (includes/class-wc-payments-webhook-processing-service.php process_webhook_payment_intent_succeeded()).
 		$this->write_succeeded_payment_intent_meta( $order, $payment_intent );
-		$lifecycle_event = $this->build_succeeded_lifecycle_event( $payment_intent, $order, $hold_note_candidates );
+		$hold            = null === $hold_note_candidates ? wc_get_container()->get( WooPaymentsAmountMismatchHold::class )->decide_hold( $order, $payment_intent ) : null;
+		$lifecycle_event = $this->build_succeeded_lifecycle_event( $payment_intent, $order, $hold_note_candidates ?? ( null === $hold ? null : $hold['notes'] ) );
 		$this->repair_recurring_order_token( $order, $payment_intent );
-		$this->fee_details_note_controller->apply_and_schedule_fee_details( $order, $lifecycle_event );
+		$this->fee_details_note_controller->apply_and_schedule_fee_details( $order, $lifecycle_event, $hold );
 	}
 
 	/**
@@ -419,10 +420,10 @@ class PaymentIntentEventHandler {
 	 *
 	 * @param array<string,mixed> $event_object         Provider intent object.
 	 * @param WC_Order            $order                Order object.
-	 * @param string[]|null       $hold_note_candidates The caller's hold note, or null to decide the hold from the intent.
+	 * @param string[]|null       $hold_note_candidates The hold's note when the order is held, or null when the intent completes it.
 	 * @return PaymentLifecycleEvent
 	 */
-	private function build_succeeded_lifecycle_event( array $event_object, WC_Order $order, ?array $hold_note_candidates = null ): PaymentLifecycleEvent {
+	private function build_succeeded_lifecycle_event( array $event_object, WC_Order $order, ?array $hold_note_candidates ): PaymentLifecycleEvent {
 		$charge          = $this->get_first_charge_from_intent( $event_object );
 		$note_candidates = $this->order_note_service->format_payment_success_note_candidates(
 			$order,
@@ -432,7 +433,6 @@ class PaymentIntentEventHandler {
 		);
 		$meta            = $this->get_succeeded_payment_intent_meta( $event_object, $order );
 
-		$hold_note_candidates = $hold_note_candidates ?? wc_get_container()->get( WooPaymentsAmountMismatchHold::class )->decide_hold( $order, $event_object );
 		if ( null !== $hold_note_candidates ) {
 			return new PaymentLifecycleEvent(
 				PaymentLifecycleEvent::STATUS_COMPLETED,

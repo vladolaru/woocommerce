@@ -245,10 +245,13 @@ class WooPaymentsOrderEffectApplier {
 	public function enrich_outcome_for_lifecycle( PaymentOperationContext $context, PaymentOutcome $outcome, WooPaymentsOrderEffectPlan $plan ): PaymentOutcome {
 		switch ( $plan->get_type() ) {
 			case WooPaymentsOrderEffectPlan::TYPE_PAYMENT_INTENT:
+				$result = $plan->get_provider_result();
+				$hold   = 'succeeded' === (string) ( $result['status'] ?? '' ) ? wc_get_container()->get( WooPaymentsAmountMismatchHold::class )->decide_hold( $context->get_order(), $result ) : null;
+
 				return $this->merge_effect_data_into_outcome(
 					$outcome,
-					$this->compose_payment_intent_effect_data( $context->get_order(), $plan->get_provider_result(), $plan->writes_fee_meta() ),
-					$plan
+					$this->compose_payment_intent_effect_data( $context->get_order(), $result, $plan->writes_fee_meta(), $hold ),
+					null === $hold ? $plan : $plan->with_amount_mismatch_hold( $hold )
 				);
 
 			case WooPaymentsOrderEffectPlan::TYPE_SETUP_INTENT:
@@ -314,12 +317,13 @@ class WooPaymentsOrderEffectApplier {
 	/**
 	 * Compose PaymentIntent metadata and notes after the provider outcome is retained.
 	 *
-	 * @param WC_Order            $order            Order being charged.
-	 * @param array<string,mixed> $result           Provider PaymentIntent response.
-	 * @param bool                $include_fee_meta Whether to write the fee meta.
+	 * @param WC_Order                                   $order            Order being charged.
+	 * @param array<string,mixed>                        $result           Provider PaymentIntent response.
+	 * @param bool                                       $include_fee_meta Whether to write the fee meta.
+	 * @param array{notes:string[],log_line:string}|null $hold             The hold decided for the intent, or null when it completes the order.
 	 * @return array<string,mixed>
 	 */
-	private function compose_payment_intent_effect_data( WC_Order $order, array $result, bool $include_fee_meta ): array {
+	private function compose_payment_intent_effect_data( WC_Order $order, array $result, bool $include_fee_meta, ?array $hold ): array {
 		$status          = (string) ( $result['status'] ?? '' );
 		$charge          = WooPaymentsIntentCodec::latest_charge( $result );
 		$settlement_meta = ! empty( $charge ) && WooPaymentsIntentCodec::holds_money( $status )
@@ -343,12 +347,11 @@ class WooPaymentsOrderEffectApplier {
 		$intent_id   = isset( $result['id'] ) ? (string) $result['id'] : '';
 		$charge_id   = isset( $charge['id'] ) ? (string) $charge['id'] : '';
 
-		$hold_note_candidates = 'succeeded' === $status ? wc_get_container()->get( WooPaymentsAmountMismatchHold::class )->decide_hold( $order, $result ) : null;
-		if ( null !== $hold_note_candidates ) {
+		if ( null !== $hold ) {
 			$effect_data[ PaymentOutcome::DATA_HOLD_ORDER ]       = true;
-			$effect_data[ PaymentOutcome::DATA_NOTE ]             = $hold_note_candidates[0];
+			$effect_data[ PaymentOutcome::DATA_NOTE ]             = $hold['notes'][0];
 			$effect_data[ PaymentOutcome::DATA_NOTE_TYPE ]        = PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_HELD;
-			$effect_data[ PaymentOutcome::DATA_NOTE_EQUIVALENTS ] = $hold_note_candidates;
+			$effect_data[ PaymentOutcome::DATA_NOTE_EQUIVALENTS ] = $hold['notes'];
 		} elseif ( 'succeeded' === $status ) {
 			$note_candidates                                      = $this->note_service->format_payment_success_note_candidates(
 				$order,
