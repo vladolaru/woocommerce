@@ -157,13 +157,13 @@ class WooPaymentsIntentConfirmationService {
 	}
 
 	/**
-	 * Save the payment method a $0 SetupIntent confirmed on the order, whatever its event applies (client 11.3.0
-	 * class-wc-payment-gateway-wcpay.php:4708-4715).
+	 * Save the payment method the order-status callback's intent confirmed on the order, a PaymentIntent's or a SetupIntent's,
+	 * whatever its attach and its event write (client 11.3.0 class-wc-payment-gateway-wcpay.php:4708-4715).
 	 *
 	 * @param WC_Order            $order  Order read under the order payment lock.
-	 * @param array<string,mixed> $intent SetupIntent response.
+	 * @param array<string,mixed> $intent Intent response.
 	 */
-	private function save_setup_intent_payment_method( WC_Order $order, array $intent ): void {
+	private function save_intent_payment_method( WC_Order $order, array $intent ): void {
 		$payment_method_id = WooPaymentsIntentCodec::result_payment_method_id( $intent );
 		if ( '' === $payment_method_id ) {
 			return;
@@ -272,8 +272,8 @@ class WooPaymentsIntentConfirmationService {
 				}
 				$this->apply_display_details( $stored_order, $intent, $setup_payment_details );
 				$displayed = true;
-				if ( $zero_amount_plain_note && $this->is_setup_intent_for_order( $intent, $stored_order ) ) {
-					$this->save_setup_intent_payment_method( $stored_order, $intent );
+				if ( $zero_amount_plain_note ) {
+					$this->save_intent_payment_method( $stored_order, $intent );
 				}
 
 				list( $built_event, $hold, , $changes_nothing ) = $this->build_lifecycle_event_and_intent_meta( $intent, $stored_order, $zero_amount_plain_note );
@@ -326,8 +326,9 @@ class WooPaymentsIntentConfirmationService {
 	/**
 	 * Apply the PaymentIntent an earlier checkout request attached to the order, once the duplicate-payment check found it holds the money.
 	 *
-	 * Unlike a confirmation, it saves no token, applies no display details and writes no fee meta. An intent that carries
-	 * no payment method or customer falls back to the ones stored on the order.
+	 * Unlike a confirmation, it saves no token and applies no display details, and it writes fee meta only for a payment
+	 * that completes a stored authorization as a capture. An intent that carries no payment method or customer falls back
+	 * to the ones stored on the order.
 	 *
 	 * @since 11.2.0
 	 *
@@ -393,7 +394,8 @@ class WooPaymentsIntentConfirmationService {
 
 	/**
 	 * Build a payment lifecycle event from a platform intent response, as build_lifecycle_event_from_intent() does, with the
-	 * intent's meta the attach writes, which a started payment whose own writes are skipped leaves out of its event.
+	 * intent's meta the attach writes, and whether the outcome changes nothing (PaymentOutcome::DATA_NO_ORDER_CHANGE), as a
+	 * started payment the order no longer waits for does; the confirmation then applies no event.
 	 *
 	 * @param array<string,mixed> $intent                 Platform intent response.
 	 * @param WC_Order            $order                  Order being updated.

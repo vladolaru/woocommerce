@@ -1918,6 +1918,44 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Order-status callback reading a PaymentIntent records its payment method when the attach keeps another payment's settled record and the event changes nothing.
+	 *
+	 * Client 11.3.0's callback writes the intent's payment method after its attach, whatever that attach and the status
+	 * update write (class-wc-payment-gateway-wcpay.php:4663, :4708-4715; class-wc-payments-order-service.php:1820-1822, :475).
+	 */
+	public function test_update_order_status_records_the_payment_intent_payment_method_over_a_guarded_attach(): void {
+		$order = $this->create_order_for_intent_binding( 'payment' );
+		$order->update_meta_data( '_intent_id', 'pi_guarded' );
+		$order->update_meta_data( '_intention_status', 'succeeded' );
+		$order->update_meta_data( '_payment_method_id', 'pm_settled' );
+		$order->set_transaction_id( 'pi_guarded' );
+		$order->set_status( OrderStatus::PROCESSING );
+		$order->save();
+		$intent = array(
+			'id'             => 'pi_guarded',
+			'status'         => 'succeeded',
+			'amount'         => 5000,
+			'currency'       => 'usd',
+			'customer'       => 'cus_guarded',
+			'payment_method' => 'pm_confirmed',
+			'metadata'       => array( 'order_id' => (string) $order->get_id() ),
+		);
+
+		$this->create_controller( $this->create_api_client_returning( $intent ) )->confirm_order_payment(
+			array(
+				'_ajax_nonce' => wp_create_nonce( 'wcpay_update_order_status_nonce_' . $order->get_id() ),
+				'order_id'    => $order->get_id(),
+				'intent_id'   => 'pi_guarded',
+			)
+		);
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( OrderStatus::PROCESSING, $order->get_status() );
+		$this->assertSame( 'pm_confirmed', $order->get_meta( '_payment_method_id', true ) );
+		$this->assertSame( 'pi_guarded', $order->get_transaction_id() );
+	}
+
+	/**
 	 * Orders a started payment is not written on: each status set before the request or while it reads the intent.
 	 *
 	 * @return array<string,array{string,bool,bool}>
