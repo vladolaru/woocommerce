@@ -53,8 +53,10 @@ use Automattic\WooCommerce\Internal\Utilities\RequestTypeUtil;
 class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectApplierInterface, ProviderOutcomeMetadataMapperInterface, ProviderPostLifecycleEffectApplierInterface {
 
 	/**
-	 * Order meta of a charge's intent that client 11.3.0 attaches with the transaction ID before it updates the order
-	 * (class-wc-payments-order-service.php:1818-1845, :1875-1884).
+	 * Order meta of a charge's intent that client 11.3.0 writes whether or not it then updates the order: its intent info
+	 * with the transaction ID (class-wc-payments-order-service.php:1818-1845, :1875-1884), the order mode before the
+	 * charge (class-wc-payment-gateway-wcpay.php:1964), the settlement exchange rate (:2445, :3133-3162), and the fee and
+	 * net after the update (:2501, class-wc-payments-order-service.php:2275-2300).
 	 */
 	private const CHARGE_INTENT_META_KEYS = array(
 		'_intent_id',
@@ -66,6 +68,10 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 		'_wcpay_payment_transaction_id',
 		'_charge_risk_level',
 		'_wcpay_payment_method_details',
+		'_wcpay_mode',
+		'_wcpay_multi_currency_stripe_exchange_rate',
+		'_wcpay_transaction_fee',
+		'_wcpay_net',
 	);
 
 	/**

@@ -1120,7 +1120,8 @@ class SubscriptionsControllerTest extends WC_Unit_Test_Case {
 	 * Client 11.3.0's renewal charges through process_payment_for_order(), which attaches the intent to the order, transaction
 	 * ID included, then updates the order from it only while it is not paid, whatever the intent's status
 	 * (trait-wc-payment-gateway-wcpay-subscriptions.php:402-430, class-wc-payment-gateway-wcpay.php:2444, :2499;
-	 * class-wc-payments-order-service.php:475, :1875-1884, :3398-3410).
+	 * class-wc-payments-order-service.php:475, :1875-1884, :3398-3410), and writes the order mode, the settlement exchange
+	 * rate, the fee and the net whether or not it updates the order (class-wc-payment-gateway-wcpay.php:1964, :2445, :2501).
 	 *
 	 * @testWith ["completed", "completed", "succeeded"]
 	 *           ["shipped", "completed", "succeeded"]
@@ -1140,7 +1141,14 @@ class SubscriptionsControllerTest extends WC_Unit_Test_Case {
 		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
 		$order->add_payment_token( $this->create_card_token( $user_id, 'pm_renewal_paid' ) );
 		$order->save();
-		$outcome     = new PaymentOutcome( $outcome_status, 'pi_renewal_paid', '', 'pm_renewal_paid', 'cus_renewal_paid', array( 'meta' => array( '_charge_id' => 'ch_renewal_paid' ) ) );
+		$charge_meta = array(
+			'_charge_id'                                 => 'ch_renewal_paid',
+			'_wcpay_mode'                                => 'test',
+			'_wcpay_multi_currency_stripe_exchange_rate' => '0.91',
+			'_wcpay_transaction_fee'                     => '0.65',
+			'_wcpay_net'                                 => '11.35',
+		);
+		$outcome     = new PaymentOutcome( $outcome_status, 'pi_renewal_paid', '', 'pm_renewal_paid', 'cus_renewal_paid', array( 'meta' => $charge_meta ) );
 		$completions = did_action( 'woocommerce_pre_payment_complete' ) + did_action( 'woocommerce_payment_complete' ) + did_action( 'woocommerce_payment_complete_order_status_' . $status );
 		$sut         = $this->create_sut( wc_get_container()->get( PaymentProcessingService::class ), $this->create_provider_charging_while( $outcome, $status ) );
 
@@ -1150,7 +1158,9 @@ class SubscriptionsControllerTest extends WC_Unit_Test_Case {
 		$this->assertSame( $status, $order->get_status() );
 		$this->assertSame( 'pi_renewal_paid', $order->get_transaction_id() );
 		$this->assertSame( 'pi_renewal_paid', $order->get_meta( '_intent_id', true ) );
-		$this->assertSame( 'ch_renewal_paid', $order->get_meta( '_charge_id', true ) );
+		foreach ( $charge_meta as $key => $value ) {
+			$this->assertSame( $value, $order->get_meta( $key, true ), "The charge's $key is recorded." );
+		}
 		$this->assertSame( $intention_status, $order->get_meta( '_intention_status', true ) );
 		$this->assertSame( $completions, did_action( 'woocommerce_pre_payment_complete' ) + did_action( 'woocommerce_payment_complete' ) + did_action( 'woocommerce_payment_complete_order_status_' . $status ), 'No completion hook fires.' );
 	}
