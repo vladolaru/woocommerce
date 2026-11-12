@@ -40,6 +40,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOr
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDataService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderSuccessPage;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeeDetailsNoteController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\PaymentIntentEventHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\PaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\SubscriptionAdminPaymentMethodHandler;
@@ -3553,6 +3554,84 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$this->assertCount( 1, array_filter( $notes, static fn( string $note ): bool => false !== strpos( $note, 'was put <strong>on hold</strong>' ) ) );
 		$this->assertCount( 0, array_filter( $notes, static fn( string $note ): bool => false !== strpos( $note, 'successfully charged' ) ) );
 		$this->assertCount( 1, array_filter( array_map( 'strval', array_column( $logger->lines, 1 ) ), static fn( string $line ): bool => false !== strpos( $line, 'put on hold: intent' ) ) );
+	}
+
+	/**
+	 * @testdox A checkout whose order is given a paid status during the charge keeps that status and records only the payment's intent, and its webhook then changes nothing: $status.
+	 *
+	 * Client 11.3.0 attaches the intent to the order, transaction ID included, then updates the order from it only while it
+	 * is not paid (class-wc-payment-gateway-wcpay.php:2444, :2499; class-wc-payments-order-service.php:475, :1875-1884,
+	 * :3398-3410). Its payment_intent.succeeded on the order then finds a paid order and writes the payment meta only
+	 * (class-wc-payments-webhook-processing-service.php:642-716).
+	 *
+	 * @testWith ["completed"]
+	 *           ["shipped"]
+	 *
+	 * @param string $status Status saved while the charge runs; `shipped` is a paid status a plugin adds.
+	 */
+	public function test_process_payment_leaves_an_order_paid_during_the_charge( string $status ): void {
+		add_filter( 'wc_order_statuses', static fn( array $statuses ): array => array_merge( $statuses, array( 'wc-shipped' => 'Shipped' ) ) );
+		add_filter( 'woocommerce_order_is_paid_statuses', static fn( array $statuses ): array => array_merge( $statuses, array( 'shipped' ) ) );
+		$order = $this->create_order();
+		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+		$order->set_total( '10.99' );
+		$order->save();
+		// The recorded subscription sign-up PaymentIntent (Fixtures/platform-intention-subscription.json, pair signup_initial_setup_future_usage), 10.99 USD.
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reading a local test fixture.
+		$recording = json_decode( (string) file_get_contents( __DIR__ . '/Fixtures/platform-intention-subscription.json' ), true );
+		$intent    = array_values( array_filter( $recording['entries'], static fn( array $entry ) => 'signup_initial_setup_future_usage' === $entry['pair'] ) )[0]['response']['body'];
+		$outcome   = WooPaymentsIntentCodec::outcome_from_intention(
+			$intent,
+			new WooPaymentsIntentMappingContext( $order->get_checkout_order_received_url(), (string) $intent['payment_method'], (string) $intent['customer'] )
+		)->with_effect_plan( WooPaymentsOrderEffectPlan::for_payment_intent( $intent, false ) );
+		$pay       = static function ( int $order_id ) use ( $status ): void {
+			$other = wc_get_order( $order_id );
+			$other->set_status( $status );
+			$other->save();
+		};
+		$gateway   = new WooPaymentsGateway();
+		$gateway->init( wc_get_container()->get( PaymentProcessingService::class ), $this->create_provider_charging( $outcome, wc_get_container()->get( WooPaymentsTokenService::class ), $pay ) );
+		$_POST['wcpay-payment-method'] = (string) $intent['payment_method'];
+		$completions                   = did_action( 'woocommerce_pre_payment_complete' ) + did_action( 'woocommerce_payment_complete' ) + did_action( 'woocommerce_payment_complete_order_status_' . $status );
+		$lock_key                      = ( new WooPaymentsPersistenceVocabulary() )->get_order_lock_key( $order );
+		$recorded_under_lock           = null;
+		add_action(
+			'woocommerce_update_order',
+			static function ( $order_id, $updated ) use ( $intent, $lock_key, &$recorded_under_lock ): void {
+				unset( $order_id );
+				if ( null === $recorded_under_lock && $updated instanceof WC_Order && (string) $intent['id'] === $updated->get_transaction_id() ) {
+					$recorded_under_lock = false !== get_transient( $lock_key );
+				}
+			},
+			10,
+			2
+		);
+
+		$result = $gateway->process_payment( $order->get_id() );
+
+		$this->assertSame( 'success', $result['result'] ?? '' );
+		$this->assertTrue( $recorded_under_lock, 'The intent is recorded while the order payment lock is held.' );
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( $status, $order->get_status() );
+		$this->assertSame( (string) $intent['id'], $order->get_transaction_id() );
+		$this->assertSame( (string) $intent['id'], $order->get_meta( '_intent_id', true ) );
+		$this->assertSame( (string) $intent['charges']['data'][0]['id'], $order->get_meta( '_charge_id', true ) );
+		$this->assertSame( 'succeeded', $order->get_meta( '_intention_status', true ) );
+		$notes = wc_get_order_notes( array( 'order_id' => $order->get_id() ) );
+		$this->assertSame( array(), array_filter( wp_list_pluck( $notes, 'content' ), static fn( string $note ): bool => false !== strpos( $note, 'successfully charged' ) || false !== strpos( $note, 'A test payment of' ) ) );
+		$this->assertSame( $completions, did_action( 'woocommerce_pre_payment_complete' ) + did_action( 'woocommerce_payment_complete' ) + did_action( 'woocommerce_payment_complete_order_status_' . $status ), 'No completion hook fires.' );
+		$fee_jobs = array(
+			'hook'   => WooPaymentsFeeDetailsNoteController::ADD_FEE_BREAKDOWN_TO_ORDER_NOTES_ACTION,
+			'status' => \ActionScheduler_Store::STATUS_PENDING,
+		);
+		$this->assertSame( array(), as_get_scheduled_actions( $fee_jobs, 'ids' ), 'No Fee details job is scheduled.' );
+
+		wc_get_container()->get( PaymentIntentEventHandler::class )->process( 'payment_intent.succeeded', $intent );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( $status, $order->get_status() );
+		$this->assertCount( count( $notes ), wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), 'The webhook adds no note, an other-charge note included.' );
+		$this->assertSame( $completions, did_action( 'woocommerce_pre_payment_complete' ) + did_action( 'woocommerce_payment_complete' ) + did_action( 'woocommerce_payment_complete_order_status_' . $status ) );
 	}
 
 	/**
@@ -7183,12 +7262,13 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	/**
 	 * Create the real WooPayments provider whose charge returns a fixed outcome, with the real effect applier on the given token service.
 	 *
-	 * @param PaymentOutcome          $outcome       Outcome the charge returns.
-	 * @param WooPaymentsTokenService $token_service Token service the effect applier saves tokens with.
+	 * @param PaymentOutcome          $outcome        Outcome the charge returns.
+	 * @param WooPaymentsTokenService $token_service  Token service the effect applier saves tokens with.
+	 * @param callable|null           $while_charging Called with the order ID while the charge runs.
 	 * @return WooPaymentsProvider
 	 */
-	private function create_provider_charging( PaymentOutcome $outcome, WooPaymentsTokenService $token_service ): WooPaymentsProvider {
-		$payment_operations = new class( $outcome ) extends \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentOperationService {
+	private function create_provider_charging( PaymentOutcome $outcome, WooPaymentsTokenService $token_service, ?callable $while_charging = null ): WooPaymentsProvider {
+		$payment_operations = new class( $outcome, $while_charging ) extends \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentOperationService {
 			/**
 			 * Outcome the charge returns.
 			 *
@@ -7197,12 +7277,21 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			private PaymentOutcome $outcome;
 
 			/**
+			 * Called with the order ID while the charge runs.
+			 *
+			 * @var callable|null
+			 */
+			private $while_charging;
+
+			/**
 			 * Constructor.
 			 *
-			 * @param PaymentOutcome $outcome Outcome the charge returns.
+			 * @param PaymentOutcome $outcome        Outcome the charge returns.
+			 * @param callable|null  $while_charging Called with the order ID while the charge runs.
 			 */
-			public function __construct( PaymentOutcome $outcome ) {
-				$this->outcome = $outcome;
+			public function __construct( PaymentOutcome $outcome, ?callable $while_charging ) {
+				$this->outcome        = $outcome;
+				$this->while_charging = $while_charging;
 			}
 
 			/**
@@ -7213,7 +7302,10 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			 * @return PaymentOutcome
 			 */
 			public function charge( PaymentOperationContext $context, string $idempotency_key ): PaymentOutcome {
-				unset( $context, $idempotency_key );
+				unset( $idempotency_key );
+				if ( null !== $this->while_charging ) {
+					( $this->while_charging )( $context->get_order_id() );
+				}
 
 				return $this->outcome;
 			}

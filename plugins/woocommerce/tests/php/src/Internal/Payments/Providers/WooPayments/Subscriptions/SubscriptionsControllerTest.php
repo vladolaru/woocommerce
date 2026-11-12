@@ -1115,6 +1115,100 @@ class SubscriptionsControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A scheduled renewal whose order is given a paid status during the charge keeps that status and records only the payment's intent: $status.
+	 *
+	 * Client 11.3.0's renewal charges through process_payment_for_order(), which attaches the intent to the order, transaction
+	 * ID included, then updates the order from it only while it is not paid (trait-wc-payment-gateway-wcpay-subscriptions.php:402-430,
+	 * class-wc-payment-gateway-wcpay.php:2444, :2499; class-wc-payments-order-service.php:475, :1875-1884, :3398-3410).
+	 *
+	 * @testWith ["completed"]
+	 *           ["shipped"]
+	 *
+	 * @param string $status Status saved while the charge runs; `shipped` is a paid status a plugin adds.
+	 */
+	public function test_scheduled_renewal_leaves_an_order_paid_during_the_charge( string $status ): void {
+		add_filter( 'wc_order_statuses', static fn( array $statuses ): array => array_merge( $statuses, array( 'wc-shipped' => 'Shipped' ) ) );
+		add_filter( 'woocommerce_order_is_paid_statuses', static fn( array $statuses ): array => array_merge( $statuses, array( 'shipped' ) ) );
+		$user_id = self::factory()->user->create();
+		$order   = $this->create_order();
+		$order->set_customer_id( $user_id );
+		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+		$order->add_payment_token( $this->create_card_token( $user_id, 'pm_renewal_paid' ) );
+		$order->save();
+		$outcome     = new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_renewal_paid', '', 'pm_renewal_paid', 'cus_renewal_paid', array( 'meta' => array( '_charge_id' => 'ch_renewal_paid' ) ) );
+		$completions = did_action( 'woocommerce_pre_payment_complete' ) + did_action( 'woocommerce_payment_complete' ) + did_action( 'woocommerce_payment_complete_order_status_' . $status );
+		$sut         = $this->create_sut( wc_get_container()->get( PaymentProcessingService::class ), $this->create_provider_charging_while( $outcome, $status ) );
+
+		$sut->scheduled_subscription_payment( 12.0, wc_get_order( $order->get_id() ) );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( $status, $order->get_status() );
+		$this->assertSame( 'pi_renewal_paid', $order->get_transaction_id() );
+		$this->assertSame( 'pi_renewal_paid', $order->get_meta( '_intent_id', true ) );
+		$this->assertSame( 'ch_renewal_paid', $order->get_meta( '_charge_id', true ) );
+		$this->assertSame( 'succeeded', $order->get_meta( '_intention_status', true ) );
+		$this->assertSame( $completions, did_action( 'woocommerce_pre_payment_complete' ) + did_action( 'woocommerce_payment_complete' ) + did_action( 'woocommerce_payment_complete_order_status_' . $status ), 'No completion hook fires.' );
+	}
+
+	/**
+	 * Create the real WooPayments provider whose charge saves a status on the order from another object, then returns a fixed outcome.
+	 *
+	 * @param PaymentOutcome $outcome Outcome the charge returns.
+	 * @param string         $status  Status saved while the charge runs.
+	 * @return WooPaymentsProvider
+	 */
+	private function create_provider_charging_while( PaymentOutcome $outcome, string $status ): WooPaymentsProvider {
+		$payment_operations = new class( $outcome, $status ) extends WooPaymentsPaymentOperationService {
+			/**
+			 * Outcome the charge returns.
+			 *
+			 * @var PaymentOutcome
+			 */
+			private PaymentOutcome $outcome;
+
+			/**
+			 * Status saved while the charge runs.
+			 *
+			 * @var string
+			 */
+			private string $status;
+
+			/**
+			 * Constructor.
+			 *
+			 * @param PaymentOutcome $outcome Outcome the charge returns.
+			 * @param string         $status  Status saved while the charge runs.
+			 */
+			public function __construct( PaymentOutcome $outcome, string $status ) {
+				$this->outcome = $outcome;
+				$this->status  = $status;
+			}
+
+			/**
+			 * Save the status from another order object, then return the fixed outcome.
+			 *
+			 * @param PaymentOperationContext $context         Payment context.
+			 * @param string                  $idempotency_key Charge idempotency key.
+			 * @return PaymentOutcome
+			 */
+			public function charge( PaymentOperationContext $context, string $idempotency_key ): PaymentOutcome {
+				unset( $idempotency_key );
+				$other = wc_get_order( $context->get_order_id() );
+				$other->set_status( $this->status );
+				$other->save();
+
+				return $this->outcome;
+			}
+		};
+
+		$container = wc_get_container();
+		$provider  = new WooPaymentsProvider();
+		$provider->init( $payment_operations, $container->get( Client::class ), $container->get( WooPaymentsAccountService::class ), new PaymentMethodRegistry(), $container->get( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffectApplier::class ) );
+
+		return $provider;
+	}
+
+	/**
 	 * @testdox A PHP error applying a $outcome_status renewal outcome is rethrown: $rethrown; the renewal ends $expected_status.
 	 *
 	 * Client 11.1.0 catches only API_Exception around the renewal payment (`trait-wc-payment-gateway-wcpay-subscriptions.php:426`),

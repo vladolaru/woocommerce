@@ -16,6 +16,8 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\NavigationController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\NoticesPassthrough;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\SharedSettings;
+use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
+use Automattic\WooCommerce\Internal\Payments\PaymentLifecycleEvent;
 use Automattic\WooCommerce\Internal\Payments\PaymentOperationContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\PaymentProcessingService;
@@ -49,6 +51,22 @@ use Automattic\WooCommerce\Internal\Utilities\RequestTypeUtil;
  * @internal
  */
 class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectApplierInterface, ProviderOutcomeMetadataMapperInterface, ProviderPostLifecycleEffectApplierInterface {
+
+	/**
+	 * Order meta of a charge's intent that client 11.3.0 attaches with the transaction ID before it updates the order
+	 * (class-wc-payments-order-service.php:1818-1845, :1875-1884).
+	 */
+	private const CHARGE_INTENT_META_KEYS = array(
+		'_intent_id',
+		'_payment_method_id',
+		'_charge_id',
+		'_intention_status',
+		'_stripe_customer_id',
+		'_wcpay_intent_currency',
+		'_wcpay_payment_transaction_id',
+		'_charge_risk_level',
+		'_wcpay_payment_method_details',
+	);
 
 	/**
 	 * WooPayments payment operation service.
@@ -562,7 +580,8 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 	 *
 	 * The plan also records whether the order already had the payment's success or capture note, which the
 	 * post-lifecycle effects read. A charge on a subscription payment-method change that took no payment is first marked
-	 * payment-method-only, also when the charge threw, and a charge that threw gets the payment-failed note.
+	 * payment-method-only, also when the charge threw, and a charge that threw gets the payment-failed note. A charge that
+	 * completed has its intent recorded on the order last, before the payment lifecycle decides on the order.
 	 *
 	 * @param PaymentOperationContext $context   Payment context.
 	 * @param PaymentOutcome          $outcome   Provider outcome.
@@ -570,10 +589,52 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 	 * @return PaymentOutcome
 	 */
 	public function apply_operation_effects( PaymentOperationContext $context, PaymentOutcome $outcome, string $operation ): PaymentOutcome {
-		if ( PaymentProcessingService::OPERATION_CHARGE === $operation ) {
-			$outcome = $this->payment_operations->mark_payment_method_change_outcome( $context, $this->with_thrown_charge_note( $context, $outcome ) );
+		if ( PaymentProcessingService::OPERATION_CHARGE !== $operation ) {
+			return $this->apply_effect_plan( $context, $outcome );
 		}
 
+		$outcome = $this->apply_effect_plan( $context, $this->payment_operations->mark_payment_method_change_outcome( $context, $this->with_thrown_charge_note( $context, $outcome ) ) );
+		$this->record_charge_intent( $context, $outcome );
+
+		return $outcome;
+	}
+
+	/**
+	 * Record a completed charge's intent on the order, read again under the checkout's order payment lock: the transaction
+	 * ID and the intent's meta.
+	 *
+	 * Client 11.3.0 attaches them before it updates the order from the intent, which then changes nothing on an order
+	 * already paid (class-wc-payment-gateway-wcpay.php:2444, :2499), and writes nothing once the stored intent status is
+	 * succeeded (class-wc-payments-order-service.php:1818-1822).
+	 *
+	 * @param PaymentOperationContext $context Payment context.
+	 * @param PaymentOutcome          $outcome Charge outcome, with its effects applied.
+	 */
+	private function record_charge_intent( PaymentOperationContext $context, PaymentOutcome $outcome ): void {
+		$intent_id = $outcome->get_provider_payment_id();
+		if ( '' === $intent_id || $outcome->is_payment_method_only() || PaymentLifecycleEvent::STATUS_COMPLETED !== PaymentLifecycleEvent::status_for_outcome( $outcome ) ) {
+			return;
+		}
+
+		$order             = $context->get_order();
+		$lifecycle_service = wc_get_container()->get( OrderPaymentLifecycleService::class );
+		$lifecycle_service->reread_order_from_data_store( $order );
+		if ( 'succeeded' === (string) $order->get_meta( '_intention_status', true ) ) {
+			return;
+		}
+
+		$order->set_transaction_id( $intent_id );
+		$lifecycle_service->apply_meta_under_lock( $order, array_intersect_key( $this->get_outcome_meta( $outcome ), array_flip( self::CHARGE_INTENT_META_KEYS ) ), array() );
+	}
+
+	/**
+	 * Apply the outcome's WooPayments effect plan, as apply_operation_effects() describes.
+	 *
+	 * @param PaymentOperationContext $context Payment context.
+	 * @param PaymentOutcome          $outcome Provider outcome.
+	 * @return PaymentOutcome
+	 */
+	private function apply_effect_plan( PaymentOperationContext $context, PaymentOutcome $outcome ): PaymentOutcome {
 		$plan = $outcome->get_effect_plan();
 		if ( ! $plan instanceof WooPaymentsOrderEffectPlan ) {
 			return $outcome;

@@ -3230,6 +3230,94 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A checkout charge completes the order only when it has no paid status by then; status saved during the charge: $status_during_charge.
+	 *
+	 * Client 11.3.0 updates the order from the charged intent only while it is not paid (class-wc-payment-gateway-wcpay.php:2499,
+	 * class-wc-payments-order-service.php:475, :3398-3410), as the refusal before the charge does for an order paid earlier.
+	 *
+	 * @testWith ["completed"]
+	 *           ["shipped"]
+	 *           [""]
+	 *
+	 * @param string $status_during_charge Status another request saves while the charge runs, `shipped` being a paid status a plugin adds, or empty.
+	 */
+	public function test_process_checkout_leaves_an_order_paid_during_the_charge( string $status_during_charge ): void {
+		add_filter( 'wc_order_statuses', static fn( array $statuses ): array => array_merge( $statuses, array( 'wc-shipped' => 'Shipped' ) ) );
+		add_filter( 'woocommerce_order_is_paid_statuses', static fn( array $statuses ): array => array_merge( $statuses, array( 'shipped' ) ) );
+		$order       = $this->create_woopayments_order( '10.00' );
+		$completions = did_action( 'woocommerce_pre_payment_complete' );
+		$provider    = new class( new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_during', '', '', '', array( PaymentOutcome::DATA_NOTE => 'Paid by pi_during.' ) ), $status_during_charge ) extends RecordingProvider {
+			/**
+			 * Status saved while the charge runs.
+			 *
+			 * @var string
+			 */
+			private string $status_during_charge;
+
+			/**
+			 * Constructor.
+			 *
+			 * @param PaymentOutcome $outcome              Outcome the charge returns.
+			 * @param string         $status_during_charge Status saved while the charge runs.
+			 */
+			public function __construct( PaymentOutcome $outcome, string $status_during_charge ) {
+				parent::__construct( $outcome );
+				$this->status_during_charge = $status_during_charge;
+			}
+
+			/**
+			 * Save the status from another order object, then charge.
+			 *
+			 * @param PaymentOperationContext $context         Payment context.
+			 * @param string                  $idempotency_key Idempotency key.
+			 * @return PaymentOutcome
+			 */
+			public function charge( PaymentOperationContext $context, string $idempotency_key ): PaymentOutcome {
+				if ( '' !== $this->status_during_charge ) {
+					$other = wc_get_order( $context->get_order_id() );
+					$other->set_status( $this->status_during_charge );
+					$other->save();
+				}
+
+				return parent::charge( $context, $idempotency_key );
+			}
+		};
+
+		$outcome = $this->sut->process_checkout_outcome( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_during' ), $provider );
+
+		$stored = wc_get_order( $order->get_id() );
+		$this->assertSame( PaymentOutcome::STATUS_COMPLETED, $outcome->get_status() );
+		$this->assertSame( 1, $provider->charge_calls );
+		$this->assertSame( '' !== $status_during_charge ? $status_during_charge : 'completed', $stored->get_status() );
+		$this->assertSame( '' !== $status_during_charge ? 0 : 1, did_action( 'woocommerce_pre_payment_complete' ) - $completions );
+		$this->assertSame( '' !== $status_during_charge ? '' : 'succeeded', $stored->get_meta( '_intention_status', true ) );
+		$this->assertSame( '' === $status_during_charge, in_array( 'Paid by pi_during.', wp_list_pluck( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), 'content' ), true ) );
+	}
+
+	/**
+	 * @testdox A capture of an authorization on an order already Completed still completes the payment and records it.
+	 *
+	 * Client 11.3.0's capture writers have no paid check (class-wc-payments-order-service.php:529-532, :2381-2418).
+	 */
+	public function test_capture_on_a_completed_order_still_completes(): void {
+		$order = $this->create_woopayments_order( '10.00' );
+		$order->update_meta_data( '_intent_id', 'pi_held' );
+		$order->update_meta_data( '_intention_status', 'requires_capture' );
+		$order->set_status( 'completed' );
+		$order->save();
+		$completions = did_action( 'woocommerce_pre_payment_complete' );
+		$provider    = new RecordingProvider( new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_held', '', '', '', array( PaymentOutcome::DATA_NOTE => 'Captured pi_held.' ) ) );
+
+		$this->sut->capture( PaymentOperationContext::for_capture( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ), $provider );
+
+		$stored = wc_get_order( $order->get_id() );
+		$this->assertSame( 1, $provider->capture_calls );
+		$this->assertSame( 1, did_action( 'woocommerce_pre_payment_complete' ) - $completions );
+		$this->assertSame( 'succeeded', $stored->get_meta( '_intention_status', true ) );
+		$this->assertContains( 'Captured pi_held.', wp_list_pluck( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), 'content' ) );
+	}
+
+	/**
 	 * @testdox Should complete zero-total checkout without calling the provider.
 	 */
 	public function test_process_checkout_completes_zero_total_without_provider_call(): void {

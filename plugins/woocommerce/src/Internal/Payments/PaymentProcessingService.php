@@ -926,7 +926,9 @@ class PaymentProcessingService {
 	 * Apply a checkout outcome to the order: its lifecycle event, or only its meta when the operation took no payment.
 	 *
 	 * A payment-method-only outcome (PaymentOutcome::DATA_PAYMENT_METHOD_ONLY) that did not fail gets its mapped meta and
-	 * no event; a failed one gets the failed event and keeps the order status.
+	 * no event; a failed one gets the failed event and keeps the order status. A charge this service just made does not
+	 * complete an order that has a paid status by the time it is applied, the twin after the charge of
+	 * refresh_order_before_charge(), which charges nothing for an order that became paid before it.
 	 *
 	 * @param WC_Order          $order    Order object.
 	 * @param PaymentOutcome    $outcome  Provider outcome.
@@ -939,7 +941,7 @@ class PaymentProcessingService {
 			return;
 		}
 
-		$this->apply_outcome_lifecycle_event( $order, $outcome, $provider, $payment_method_only );
+		$this->apply_outcome_lifecycle_event( $order, $outcome, $provider, $payment_method_only, true );
 	}
 
 	/**
@@ -951,8 +953,9 @@ class PaymentProcessingService {
 	 * @param ProviderInterface $provider              Provider.
 	 * @param bool              $preserve_order_status Whether a failed event must keep the order status, whatever the
 	 *                                                 outcome's own flag says.
+	 * @param bool              $leave_paid_order      Whether a completed event leaves an order already in a paid status as it is.
 	 */
-	private function apply_outcome_lifecycle_event( WC_Order $order, PaymentOutcome $outcome, ProviderInterface $provider, bool $preserve_order_status = false ): void {
+	private function apply_outcome_lifecycle_event( WC_Order $order, PaymentOutcome $outcome, ProviderInterface $provider, bool $preserve_order_status = false, bool $leave_paid_order = false ): void {
 		$this->lifecycle_service->apply_under_lock(
 			$order,
 			new PaymentLifecycleEvent(
@@ -967,7 +970,9 @@ class PaymentProcessingService {
 				// protects already-paid orders; only the status transition is
 				// suppressed when the outcome asked to preserve the status.
 				$preserve_order_status || $this->should_preserve_order_status( $outcome ),
-				PaymentLifecycleEvent::should_hold_order_for_outcome( $outcome )
+				PaymentLifecycleEvent::should_hold_order_for_outcome( $outcome ),
+				array(),
+				$leave_paid_order
 			),
 			$provider->get_persistence_vocabulary()
 		);
