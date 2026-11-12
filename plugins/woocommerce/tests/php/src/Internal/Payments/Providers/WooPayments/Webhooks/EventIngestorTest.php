@@ -2612,6 +2612,117 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A payment captured outside the store and delivered again leaves the order as it is: $_dataName.
+	 *
+	 * Client 11.3.0's success writer returns before any write once the capture note is on the order, so the payment is
+	 * not completed again (class-wc-payments-order-service.php:2040-2046); its capture writer did the completion
+	 * (:484-485, :2193-2219).
+	 *
+	 * @dataProvider provider_orders_a_captured_payment_is_delivered_again_to
+	 *
+	 * @param string $status_after_capture          Status the order is moved to after the capture, or empty to leave it.
+	 * @param bool   $capture_note_in_other_wording Whether the store's language changed after the capture note was written.
+	 */
+	public function test_succeeded_payment_delivered_again_after_its_capture_leaves_the_order( string $status_after_capture, bool $capture_note_in_other_wording = false ): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
+		if ( $capture_note_in_other_wording ) {
+			$this->install_test_translations_for_domain(
+				'woocommerce',
+				array( 'A payment of %1$s was <strong>successfully captured</strong> using %2$s (<a>%3$s</a>).' => 'Eine Zahlung von %1$s wurde mit %2$s <strong>erfolgreich erfasst</strong> (<a>%3$s</a>).' )
+			);
+		}
+		$order = $this->create_woopayments_order();
+		$order->set_total( '10.99' );
+		$order->save();
+		$event = $this->recorded_authorization_event( $order );
+		$this->sut->process( $event );
+		$event['id']                                  = 'evt_capture_outside_the_store';
+		$event['type']                                = 'payment_intent.succeeded';
+		$event['data']['object']['status']            = 'succeeded';
+		$event['data']['object']['amount_capturable'] = 0;
+		$event['data']['object']['amount_received']   = 1099;
+		$event['data']['object']['charges']['data'][0]['captured'] = true;
+		$this->sut->process( $event );
+		$captured = wc_get_order( $order->get_id() );
+		$this->assertTrue( $captured->is_paid() );
+		$this->gettext_domain_replacements = array();
+		if ( '' !== $status_after_capture ) {
+			$captured->update_status( $status_after_capture );
+		}
+		$status      = wc_get_order( $order->get_id() )->get_status();
+		$notes       = count( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+		$completions = did_action( 'woocommerce_payment_complete' ) + did_action( 'woocommerce_payment_complete_order_status_' . $status );
+
+		$this->sut->process( $event );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( $status, $order->get_status() );
+		$this->assertSame( $completions, did_action( 'woocommerce_payment_complete' ) + did_action( 'woocommerce_payment_complete_order_status_' . $status ), 'The payment is not completed again.' );
+		$this->assertCount( $notes, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+		$this->assertCount( 1, $this->get_order_notes_containing( $order, $capture_note_in_other_wording ? '<strong>erfolgreich erfasst</strong>' : 'was <strong>successfully captured</strong>' ) );
+		$this->assert_no_payment_success_note( $order );
+	}
+
+	/** @return array<string,array{0:string,1?:bool}> */
+	public function provider_orders_a_captured_payment_is_delivered_again_to(): array {
+		return array(
+			'the order is left as it is'      => array( '' ),
+			'the order is moved to Failed'    => array( OrderStatus::FAILED ),
+			'the order is moved to Cancelled' => array( OrderStatus::CANCELLED ),
+			'the order is moved to Failed, its capture note in another language' => array( OrderStatus::FAILED, true ),
+		);
+	}
+
+	/**
+	 * @testdox A succeeded payment on a failed order whose capture note the WooPayments extension wrote in its own wording leaves the order as it is.
+	 *
+	 * Client 11.3.0's success writer returns before any write once the capture note is on the order, in either text
+	 * domain's wording (class-wc-payments-order-service.php:2040-2046).
+	 */
+	public function test_succeeded_payment_leaves_an_order_with_the_extensions_capture_note(): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
+		$this->install_test_translations_for_domain(
+			'woocommerce-payments',
+			array( 'A payment of %1$s was <strong>successfully captured</strong> using %2$s (<a>%3$s</a>).' => 'Eine Zahlung von %1$s wurde mit %2$s <strong>erfolgreich erfasst</strong> (<a>%3$s</a>).' )
+		);
+		$order = $this->create_woopayments_order();
+		$order->set_total( '10.99' );
+		$order->save();
+		$event                                    = $this->recorded_authorization_event( $order );
+		$intent                                   = $event['data']['object'];
+		$intent['status']                         = 'succeeded';
+		$intent['charges']['data'][0]['captured'] = true;
+		$event['type']                            = 'payment_intent.succeeded';
+		$event['data']['object']                  = $intent;
+		$extension_note                           = wc_get_container()->get( WooPaymentsOrderNoteService::class )->format_capture_success_note_candidates( $order, $intent['id'], $intent['charges']['data'][0]['id'], 'txn_3URpVCBzWlxcwgpP1SQjpoe4' );
+		$this->assertCount( 2, $extension_note, 'The extension wording differs from WooCommerce\'s.' );
+		$order->set_transaction_id( $intent['id'] );
+		$order->update_meta_data( '_intent_id', $intent['id'] );
+		$order->update_meta_data( '_intention_status', 'succeeded' );
+		$order->set_status( OrderStatus::FAILED );
+		$order->save();
+		$order->add_order_note( $extension_note[1] );
+		$completions = did_action( 'woocommerce_payment_complete' );
+
+		$this->sut->process( $event );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( OrderStatus::FAILED, $order->get_status() );
+		$this->assertSame( $completions, did_action( 'woocommerce_payment_complete' ) );
+		$this->assert_no_payment_success_note( $order );
+	}
+
+	/**
+	 * Assert the order has no payment success note, in live or test mode wording.
+	 *
+	 * @param WC_Order $order Order.
+	 */
+	private function assert_no_payment_success_note( WC_Order $order ): void {
+		$this->assertSame( array(), $this->get_order_notes_containing( $order, 'was <strong>successfully charged</strong>' ) );
+		$this->assertSame( array(), $this->get_order_notes_containing( $order, 'A test payment of' ) );
+	}
+
+	/**
 	 * The authorization the platform forwarded for a manual-capture card checkout (Fixtures/platform-payment-intent-events.json).
 	 *
 	 * The run's order is gone and the logged order key was redacted, so the order ID and key are the test's. The recorded
