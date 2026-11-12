@@ -1085,6 +1085,30 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A rebuilt failed event is checked for a paid order on the same read the builder got under the claim, not on a later one.
+	 */
+	public function test_rebuilt_failed_event_is_checked_on_the_read_the_builder_got(): void {
+		$order    = $this->create_woopayments_order();
+		$order_id = $order->get_id();
+
+		$result = $this->sut->apply_rebuilt_under_claim(
+			$order,
+			new PaymentLifecycleEvent( PaymentLifecycleEvent::STATUS_FAILED, 'pi_one_read' ),
+			$this->persistence_vocabulary,
+			static function ( WC_Order $read_order ) use ( $order_id ): PaymentLifecycleEvent {
+				$stored = wc_get_order( $order_id );
+				$stored->set_status( 'processing' );
+				$stored->save();
+
+				return new PaymentLifecycleEvent( PaymentLifecycleEvent::STATUS_FAILED, 'pi_one_read', array(), array(), 'Payment failed while ' . $read_order->get_status() . '.' );
+			}
+		);
+
+		$this->assertSame( OrderPaymentLifecycleService::RESULT_NOTE_ADDED, $result );
+		$this->assertSame( 1, $this->countOrderNotesMatching( wc_get_order( $order_id ), 'Payment failed while pending.' ) );
+	}
+
+	/**
 	 * @testdox A rebuilt event for another payment reference is refused, nothing is written, and the lock is released.
 	 */
 	public function test_rebuilt_event_for_another_payment_reference_is_refused(): void {

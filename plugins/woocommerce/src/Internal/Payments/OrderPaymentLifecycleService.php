@@ -255,7 +255,7 @@ class OrderPaymentLifecycleService {
 	private function apply_event_under_lock( WC_Order $order, PaymentLifecycleEvent $event, ProviderPersistenceVocabularyInterface $persistence_vocabulary, ?WC_Order $fresh_order ): string {
 		$completed_event_order = PaymentLifecycleEvent::STATUS_COMPLETED === $event->get_status() ? ( $fresh_order ?? $this->get_fresh_order_from_data_store( $order ) ) : $order;
 
-		if ( $this->should_skip_late_failure_event( $order, $event ) ) {
+		if ( $this->should_skip_late_failure_event( $order, $event, $fresh_order ) ) {
 			$this->record_skipped_late_release( $order, $event, $persistence_vocabulary );
 			return self::RESULT_NOTE_NOT_ADDED;
 		}
@@ -399,11 +399,12 @@ class OrderPaymentLifecycleService {
 	/**
 	 * Tell whether a late failure event should be ignored for an already-paid order.
 	 *
-	 * @param WC_Order              $order Order object.
-	 * @param PaymentLifecycleEvent $event Lifecycle event.
+	 * @param WC_Order              $order       Order object.
+	 * @param PaymentLifecycleEvent $event       Lifecycle event.
+	 * @param WC_Order|null         $fresh_order Order read again under the lock, or null to read it here.
 	 * @return bool
 	 */
-	private function should_skip_late_failure_event( WC_Order $order, PaymentLifecycleEvent $event ): bool {
+	private function should_skip_late_failure_event( WC_Order $order, PaymentLifecycleEvent $event, ?WC_Order $fresh_order = null ): bool {
 		if (
 			! in_array(
 				$event->get_status(),
@@ -418,7 +419,7 @@ class OrderPaymentLifecycleService {
 			return false;
 		}
 
-		$fresh_order = $this->get_fresh_order_from_data_store( $order );
+		$fresh_order = $fresh_order ?? $this->get_fresh_order_from_data_store( $order );
 
 		return $order->has_status( wc_get_is_paid_statuses() )
 			|| $fresh_order->has_status( wc_get_is_paid_statuses() );
