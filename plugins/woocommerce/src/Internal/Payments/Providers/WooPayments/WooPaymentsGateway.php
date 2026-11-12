@@ -1598,11 +1598,7 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 			$this->get_checkout_provider_data( $is_subscription_change, $is_subscription_payment_method_change )
 		);
 		$this->checkout_payment_started = true;
-		$outcome                        = $is_subscription_payment_method_change
-			? SubscriptionMethodPolicy::run_as_payment_method_change(
-				fn() => $this->get_processing_service()->process_checkout_outcome( $context, $this->get_provider() )
-			)
-			: $this->get_processing_service()->process_checkout_outcome( $context, $this->get_provider() );
+		$outcome                        = $this->get_processing_service()->process_checkout_outcome( $context, $this->get_provider() );
 		if ( true === ( $outcome->get_data()[ PaymentOutcome::DATA_ORDER_PAID_BY_ANOTHER_REQUEST ] ?? false ) ) {
 			// Another submission paid the order after this one passed the already-paid check above.
 			return $this->get_duplicate_payment_prevention_service()->prevent_payment_for_paid_order( $order, $this );

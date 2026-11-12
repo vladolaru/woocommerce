@@ -131,11 +131,7 @@ class WooPaymentsIntentConfirmationService {
 			$this->save_intention_status( $order, $status );
 		}
 
-		SubscriptionMethodPolicy::run_as_payment_method_change(
-			function () use ( $order, $intent, $save_payment_method ): void {
-				$this->confirm_fetched_intent_for_order( $order, $intent, $save_payment_method, false, false );
-			}
-		);
+		$this->confirm_fetched_intent_for_order( $order, $intent, $save_payment_method, false, false );
 
 		$this->save_intention_status( $order, $status );
 	}

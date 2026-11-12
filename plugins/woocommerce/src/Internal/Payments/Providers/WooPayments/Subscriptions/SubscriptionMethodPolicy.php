@@ -117,48 +117,6 @@ final class SubscriptionMethodPolicy {
 	}
 
 	/**
-	 * Run a subscription payment method change with WooCommerce Subscriptions' change flag set and WooCommerce's
-	 * payment-complete stock reduction turned off, then restore both.
-	 *
-	 * The gateway and the order-status callback run every change through it. The stock filter is client 11.1.0's
-	 * with_stock_reduction_disabled() (class-wc-payment-gateway-wcpay.php:5483-5499), at PHP_INT_MAX - 1 and only if it
-	 * is not already there.
-	 *
-	 * @param callable $callback Callback to run.
-	 * @return mixed The callback's return value.
-	 *
-	 * @since 11.2.0
-	 */
-	public static function run_as_payment_method_change( callable $callback ) {
-		$filter           = 'woocommerce_payment_complete_reduce_order_stock';
-		$priority         = PHP_INT_MAX - 1;
-		$already_filtered = false !== has_filter( $filter, '__return_false' );
-
-		if ( ! $already_filtered ) {
-			add_filter( $filter, '__return_false', $priority );
-		}
-
-		try {
-			if ( ! class_exists( 'WC_Subscriptions_Change_Payment_Gateway' ) ) {
-				return $callback();
-			}
-
-			$was_change = \WC_Subscriptions_Change_Payment_Gateway::$is_request_to_change_payment;
-			\WC_Subscriptions_Change_Payment_Gateway::$is_request_to_change_payment = true;
-
-			try {
-				return $callback();
-			} finally {
-				\WC_Subscriptions_Change_Payment_Gateway::$is_request_to_change_payment = $was_change;
-			}
-		} finally {
-			if ( ! $already_filtered ) {
-				remove_filter( $filter, '__return_false', $priority );
-			}
-		}
-	}
-
-	/**
 	 * Tell whether an order only saves the card from an intent: a WooCommerce Subscriptions subscription reaches the gateway
 	 * only to change its payment method, so no intent completes it, changes its status or notes a payment on it.
 	 *

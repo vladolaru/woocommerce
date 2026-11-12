@@ -138,8 +138,9 @@ class SubscriptionDouble extends \WC_Order {
 	 * Complete a payment on the subscription as WooCommerce Subscriptions does: nothing during a payment method change request,
 	 * otherwise the last parent, renewal or switch order that needs payment is paid and the subscription is marked paid.
 	 *
-	 * WooCommerce Subscriptions 9.0.1 `WC_Subscription::payment_complete()` and `payment_complete_for_order()`
-	 * (includes/core/class-wc-subscription.php:2025-2077); the role update and renewal-only meta and hook are left out.
+	 * WooCommerce Subscriptions 9.4.1 `WC_Subscription::payment_complete()` and `payment_complete_for_order()`
+	 * (includes/core/class-wc-subscription.php:2059-2080); the payment count cache reset, the role update and the
+	 * renewal-only meta and hook are left out.
 	 *
 	 * @param string $transaction_id Transaction ID stored on the paid order.
 	 * @return bool
@@ -162,8 +163,8 @@ class SubscriptionDouble extends \WC_Order {
 	/**
 	 * Mark a related order's payment complete on the subscription: reset the suspension count, note it, make it active.
 	 *
-	 * WooCommerce Subscriptions 9.3.0 `WC_Subscription::payment_complete_for_order()` (includes/core/class-wc-subscription.php:2087-2117);
-	 * the role update and renewal-only meta and hook are left out.
+	 * WooCommerce Subscriptions 9.4.1 `WC_Subscription::payment_complete_for_order()` (includes/core/class-wc-subscription.php:2087-2118);
+	 * the payment count cache reset, the role update and the renewal-only meta and hook are left out.
 	 *
 	 * @param \WC_Order|false $last_order Related order that was paid.
 	 */

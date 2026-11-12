@@ -3626,7 +3626,6 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 				)
 			)
 		);
-		$this->assertFalse( \WC_Subscriptions_Change_Payment_Gateway::$is_request_to_change_payment, 'The flag gets its earlier value back.' );
 	}
 
 	/**
@@ -3820,6 +3819,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$subscription->set_total( '10.00' );
 		$subscription->save();
 		$_GET['change_payment_method'] = (string) $subscription->get_id();
+		\WC_Subscriptions_Change_Payment_Gateway::$is_request_to_change_payment = false;
 
 		$result = $gateway->process_payment( $subscription->get_id() );
 
@@ -8008,41 +8008,6 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$this->assertSame( $subscription->get_id(), $calls[0][0]->get_id() );
 		$this->assertInstanceOf( WC_Payment_Token::class, $calls[0][1] );
 		$this->assertSame( $token->get_id(), $calls[0][1]->get_id() );
-	}
-
-	/**
-	 * @testdox A change to a saved payment method runs the payment with WooCommerce's payment-complete stock reduction off, and turns it back on after (client `class-wc-payment-gateway-wcpay.php:2197-2205`).
-	 */
-	public function test_a_saved_method_change_runs_the_payment_without_stock_reduction(): void {
-		WooCommerceSubscriptionsDoubles::load();
-		$user_id      = self::factory()->user->create();
-		$subscription = $this->create_subscription( $user_id, '' );
-		$token        = $this->create_recorded_card_token( $user_id );
-		$service      = new class() extends RecordingPaymentProcessingService {
-			/**
-			 * What WooCommerce would decide about reducing stock while the payment runs.
-			 *
-			 * @var bool|null
-			 */
-			public $reduces_stock = null;
-
-			/**
-			 * Record the stock decision, then answer as the recording service does.
-			 *
-			 * @param PaymentOperationContext $context  Payment context.
-			 * @param ProviderInterface       $provider Provider.
-			 * @return PaymentOutcome
-			 */
-			public function process_checkout_outcome( PaymentOperationContext $context, ProviderInterface $provider ): PaymentOutcome {
-				$this->reduces_stock = (bool) apply_filters( 'woocommerce_payment_complete_reduce_order_stock', true, $context->get_order_id() ); // phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment
-				return parent::process_checkout_outcome( $context, $provider );
-			}
-		};
-
-		$this->process_saved_method_change( $subscription, $token, 'completed', $service );
-
-		$this->assertFalse( $service->reduces_stock, 'The payment of a payment method change does not take stock.' );
-		$this->assertTrue( (bool) apply_filters( 'woocommerce_payment_complete_reduce_order_stock', true, $subscription->get_id() ), 'Stock reduction is back on after the change.' ); // phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment
 	}
 
 	/**

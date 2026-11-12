@@ -61,18 +61,12 @@ class WooPaymentsIntentConfirmationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Confirming the intent leaves stock alone for a subscription payment method change and reduces it otherwise ($_dataName).
+	 * @testdox Confirming a paid intent for an order reduces its stock once.
 	 *
-	 * Client 11.1.0 applies a payment method change's order status inside with_stock_reduction_disabled()
-	 * (class-wc-payment-gateway-wcpay.php:4337-4345, helper :5483-5499), so completing the subscription's failed renewal
-	 * through the change does not take stock twice. The intent is the same recording as the test above.
-	 *
-	 * @dataProvider stock_reduction_cases
-	 *
-	 * @param bool $is_payment_method_change Whether the confirm is a subscription payment method change.
-	 * @param int  $expected_stock           Stock left after the confirm.
+	 * Client 11.3.0 leaves stock reduction to WooCommerce core on the order-status callback
+	 * (class-wc-payment-gateway-wcpay.php:4775, :2520-2523). The intent is the same recording as the test above.
 	 */
-	public function test_confirm_intent_for_order_keeps_stock_for_a_payment_method_change( bool $is_payment_method_change, int $expected_stock ): void {
+	public function test_confirm_intent_for_order_reduces_stock_once(): void {
 		$product = \WC_Helper_Product::create_simple_product();
 		$product->set_manage_stock( true );
 		$product->set_stock_quantity( 10 );
@@ -94,11 +88,10 @@ class WooPaymentsIntentConfirmationServiceTest extends WC_Unit_Test_Case {
 		$api_client->init( $http_client, $account_service, wc_get_container()->get( TransportLog::class ) );
 		$sut = $this->create_intent_confirmation_service( $api_client, null, $account_service );
 
-		$sut->confirm_intent_for_order( $order, (string) $recorded['body']['id'], false, $is_payment_method_change );
+		$sut->confirm_intent_for_order( $order, (string) $recorded['body']['id'], false );
 
 		$this->assertSame( $recorded['body']['id'], wc_get_order( $order->get_id() )->get_meta( '_intent_id', true ), 'The confirm applied the intent.' );
-		$this->assertSame( $expected_stock, wc_get_product( $product->get_id() )->get_stock_quantity() );
-		$this->assertFalse( has_filter( 'woocommerce_payment_complete_reduce_order_stock', '__return_false' ), 'Stock reduction is back on after the confirm.' );
+		$this->assertSame( 7, wc_get_product( $product->get_id() )->get_stock_quantity() );
 	}
 
 	/**
@@ -123,14 +116,6 @@ class WooPaymentsIntentConfirmationServiceTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( 'cus_saved', wc_get_order( $subscription->get_id() )->get_meta( '_stripe_customer_id', true ) );
 		$this->assertSame( 'cus_saved', wc_get_order( $order->get_id() )->get_meta( '_stripe_customer_id', true ) );
-	}
-
-	/** @return array<string,array{bool,int}> */
-	public static function stock_reduction_cases(): array {
-		return array(
-			'payment method change' => array( true, 10 ),
-			'regular confirm'       => array( false, 7 ),
-		);
 	}
 
 	/**
