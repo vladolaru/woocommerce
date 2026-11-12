@@ -937,10 +937,8 @@ class StripeBillingSubscriptionServiceTest extends WC_Unit_Test_Case {
 		WooCommerceSubscriptionsDoubles::load_change_payment_gateway();
 		\WC_Subscriptions_Change_Payment_Gateway::$is_request_to_change_payment = true;
 
-		$entry                               = $this->get_entry( 'charge_invoice' );
+		$entry                               = $this->get_entry( 'charge_invoice_charging' );
 		$entry['response']['body']['status'] = $invoice_status;
-		// The invoice collected the renewal order's 50.00 USD total (WC_Helper_Order::create_order()).
-		$entry['response']['body']['amount_paid'] = 5000;
 		$this->queue_entry( $entry );
 		$subscription  = $this->create_subscription(
 			array(
@@ -951,6 +949,8 @@ class StripeBillingSubscriptionServiceTest extends WC_Unit_Test_Case {
 		$renewal_order = \WC_Helper_Order::create_order();
 		$renewal_order->update_meta_data( '_wcpay_billing_invoice_id', self::MAIN_INVOICE_ID );
 		$renewal_order->set_status( 'failed' );
+		// The recorded charge collected 10.00 USD.
+		$renewal_order->set_total( '10.00' );
 		$renewal_order->save();
 		$token = $this->create_token();
 
@@ -992,10 +992,7 @@ class StripeBillingSubscriptionServiceTest extends WC_Unit_Test_Case {
 	public function test_a_payment_method_change_leaves_a_renewal_locked_by_the_webhook_to_it(): void {
 		WooCommerceSubscriptionsDoubles::load_change_payment_gateway();
 		\WC_Subscriptions_Change_Payment_Gateway::$is_request_to_change_payment = true;
-		$entry = $this->get_entry( 'charge_invoice' );
-		// The invoice collected the renewal order's 50.00 USD total (WC_Helper_Order::create_order()).
-		$entry['response']['body']['amount_paid'] = 5000;
-		$this->queue_entry( $entry );
+		$this->queue_entry( $this->get_entry( 'charge_invoice_charging' ) );
 		$subscription  = $this->create_subscription(
 			array(
 				'_wcpay_subscription_id'    => self::MAIN_SUBSCRIPTION_ID,
@@ -1005,6 +1002,8 @@ class StripeBillingSubscriptionServiceTest extends WC_Unit_Test_Case {
 		$renewal_order = \WC_Helper_Order::create_order();
 		$renewal_order->update_meta_data( '_wcpay_billing_invoice_id', self::MAIN_INVOICE_ID );
 		$renewal_order->set_status( 'failed' );
+		// The recorded charge collected 10.00 USD.
+		$renewal_order->set_total( '10.00' );
 		$renewal_order->save();
 		wc_get_container()->get( OrderPaymentLock::class )->claim( $renewal_order, new WooPaymentsPersistenceVocabulary(), 'pi_webhookRecordingTheRenewal', 'payment operation' );
 		$payments_completed = did_action( 'woocommerce_payment_complete' );
@@ -1028,9 +1027,7 @@ class StripeBillingSubscriptionServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_a_paid_charge_that_does_not_match_the_renewal_completes_nothing(): void {
 		WooCommerceSubscriptionsDoubles::load_change_payment_gateway();
-		$entry                                    = $this->get_entry( 'charge_invoice' );
-		$entry['response']['body']['amount_paid'] = 2000;
-		$this->queue_entry( $entry );
+		$this->queue_entry( $this->get_entry( 'charge_invoice_charging' ) );
 		$subscription  = $this->create_subscription(
 			array(
 				'_wcpay_subscription_id'    => self::MAIN_SUBSCRIPTION_ID,
@@ -1059,8 +1056,8 @@ class StripeBillingSubscriptionServiceTest extends WC_Unit_Test_Case {
 	 * The charge is compared with the renewal read under the order payment lock. Client 11.3.0 completes it, with the notice,
 	 * only when the charge matches the renewal it completes (class-wc-payments-subscription-service.php:688-697).
 	 *
-	 * @testWith ["50.00", "60.00", false]
-	 *           ["60.00", "50.00", true]
+	 * @testWith ["10.00", "12.00", false]
+	 *           ["12.00", "10.00", true]
 	 *
 	 * @param string $first_total   Renewal total at the first read.
 	 * @param string $stored_total  Renewal total stored when the order payment lock is claimed.
@@ -1068,9 +1065,7 @@ class StripeBillingSubscriptionServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_a_paid_charge_is_matched_against_the_renewal_read_under_the_lock( string $first_total, string $stored_total, bool $expected_paid ): void {
 		WooCommerceSubscriptionsDoubles::load_change_payment_gateway();
-		$entry                                    = $this->get_entry( 'charge_invoice' );
-		$entry['response']['body']['amount_paid'] = 5000;
-		$this->queue_entry( $entry );
+		$this->queue_entry( $this->get_entry( 'charge_invoice_charging' ) );
 		$subscription  = $this->create_subscription(
 			array(
 				'_wcpay_subscription_id'    => self::MAIN_SUBSCRIPTION_ID,
@@ -1106,8 +1101,8 @@ class StripeBillingSubscriptionServiceTest extends WC_Unit_Test_Case {
 	 * The paid invoice's webhook takes the order payment lock first: it pays a renewal the charge matches and holds one it
 	 * does not. Client 11.3.0 shows the notice only when the charge matches (class-wc-payments-subscription-service.php:688-697).
 	 *
-	 * @testWith ["held by its invoice", "on-hold", "60.00", 0]
-	 *           ["paid by its invoice", "processing", "50.00", 1]
+	 * @testWith ["held by its invoice", "on-hold", "12.00", 0]
+	 *           ["paid by its invoice", "processing", "10.00", 1]
 	 *
 	 * @param string $case_name        Case name.
 	 * @param string $settled_status   Renewal status its invoice left before the claim.
@@ -1117,9 +1112,7 @@ class StripeBillingSubscriptionServiceTest extends WC_Unit_Test_Case {
 	public function test_a_renewal_its_invoice_settled_before_the_claim_shows_the_notice_only_on_a_match( string $case_name, string $settled_status, string $settled_total, int $expected_notices ): void {
 		unset( $case_name );
 		WooCommerceSubscriptionsDoubles::load_change_payment_gateway();
-		$entry                                    = $this->get_entry( 'charge_invoice' );
-		$entry['response']['body']['amount_paid'] = 5000;
-		$this->queue_entry( $entry );
+		$this->queue_entry( $this->get_entry( 'charge_invoice_charging' ) );
 		$subscription  = $this->create_subscription(
 			array(
 				'_wcpay_subscription_id'    => self::MAIN_SUBSCRIPTION_ID,
@@ -1129,7 +1122,7 @@ class StripeBillingSubscriptionServiceTest extends WC_Unit_Test_Case {
 		$renewal_order = \WC_Helper_Order::create_order();
 		$renewal_order->update_meta_data( '_wcpay_billing_invoice_id', self::MAIN_INVOICE_ID );
 		$renewal_order->set_status( 'failed' );
-		$renewal_order->set_total( '50.00' );
+		$renewal_order->set_total( '10.00' );
 		$renewal_order->save();
 		$renewal_id = $renewal_order->get_id();
 		add_action(

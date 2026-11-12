@@ -8232,12 +8232,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 */
 	public function test_a_saved_method_change_charges_the_pending_stripe_billing_invoice(): void {
 		$this->load_stripe_billing_module( '0' );
-		$http_client = $this->use_recorded_platform( 'charge_invoice' );
-
-		// The invoice collected the renewal order's 50.00 USD total (WC_Helper_Order::create_order()).
-		$charge                            = json_decode( (string) $http_client->responses[0]['body'], true );
-		$charge['amount_paid']             = 5000;
-		$http_client->responses[0]['body'] = wp_json_encode( $charge );
+		$http_client = $this->use_recorded_platform( 'charge_invoice_charging' );
 
 		$user_id      = self::factory()->user->create();
 		$subscription = $this->create_subscription( $user_id, 'sub_1UM1VrBzWlxcwgpP6A3GwGLe' );
@@ -8246,6 +8241,8 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$renewal = \WC_Helper_Order::create_order( $user_id );
 		$renewal->update_meta_data( '_wcpay_billing_invoice_id', 'in_1UM1VrBzWlxcwgpPgrIwNSlu' );
 		$renewal->set_status( 'failed' );
+		// The recorded charge collected 10.00 USD.
+		$renewal->set_total( '10.00' );
 		$renewal->save();
 		$token = $this->create_recorded_card_token( $user_id );
 
