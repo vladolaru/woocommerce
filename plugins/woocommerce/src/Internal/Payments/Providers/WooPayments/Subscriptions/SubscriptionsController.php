@@ -52,16 +52,16 @@ defined( 'ABSPATH' ) || exit;
 class SubscriptionsController implements RegisterHooksInterface {
 
 	/**
-	 * Order meta keys that describe one payment, as the WooPayments extension lists them (client 11.3.0
-	 * `includes/compat/subscriptions/trait-wc-payment-gateway-wcpay-subscriptions.php:1226-1240`).
-	 */
-	/**
 	 * Action Scheduler hook of a renewal authentication failure the order payment lock refused, applied again later.
 	 *
 	 * @var string
 	 */
 	public const RETRY_AUTHENTICATION_FAILURE_ACTION = 'woocommerce_woopayments_retry_renewal_authentication_failure';
 
+	/**
+	 * Order meta keys that describe one payment, as the WooPayments extension lists them (client 11.3.0
+	 * `includes/compat/subscriptions/trait-wc-payment-gateway-wcpay-subscriptions.php:1226-1240`).
+	 */
 	private const SINGLE_PAYMENT_META_KEYS = array(
 		'_intent_id',
 		'_intention_status',
