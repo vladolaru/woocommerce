@@ -12,7 +12,9 @@ namespace Automattic\WooCommerce\Internal\Payments;
  *
  * PaymentProcessingService calls it under the order payment lock for checkout, refund, capture and cancel. It may
  * write provider data to the order and returns the outcome to apply, unchanged or replaced; without it, the provider
- * outcome is applied as returned.
+ * outcome is applied as returned. The payment lifecycle then decides and writes on the context's order object as it
+ * is, so an implementation reads that object again in place after the provider call and its own last platform call
+ * (OrderPaymentLifecycleService::reread_order_from_data_store()), and composes the outcome on it.
  *
  * @since 11.0.0
  * @internal

@@ -318,6 +318,45 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A checkout outcome the provider flags as changing nothing is returned as it is and leaves the order's status, transaction ID, meta and notes as they were.
+	 */
+	public function test_process_checkout_applies_nothing_for_an_outcome_that_changes_nothing(): void {
+		$order    = $this->create_woopayments_order( '10.00' );
+		$outcome  = new PaymentOutcome(
+			PaymentOutcome::STATUS_REQUIRES_CUSTOMER_ACTION,
+			'ref_no_change',
+			'',
+			'method_no_change',
+			'customer_no_change',
+			array(
+				PaymentOutcome::DATA_NO_ORDER_CHANGE => true,
+				PaymentOutcome::DATA_NOTE            => 'Payment started.',
+			)
+		);
+		$provider = new class( $outcome ) extends RecordingProvider {
+			/**
+			 * Map the outcome to the order meta the provider keeps.
+			 *
+			 * @param PaymentOutcome $outcome Provider outcome.
+			 * @return array<string,string>
+			 */
+			public function get_outcome_meta( PaymentOutcome $outcome ): array {
+				return array( '_no_change_method' => $outcome->get_payment_method_id() );
+			}
+		};
+
+		$result = $this->sut->process_checkout_outcome( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'method_no_change' ), $provider );
+		$order  = wc_get_order( $order->get_id() );
+
+		$this->assertSame( PaymentOutcome::STATUS_REQUIRES_CUSTOMER_ACTION, $result->get_status() );
+		$this->assertSame( 'ref_no_change', $result->get_provider_payment_id() );
+		$this->assertSame( OrderStatus::PENDING, $order->get_status() );
+		$this->assertSame( '', $order->get_transaction_id() );
+		$this->assertSame( '', $order->get_meta( '_no_change_method', true ) );
+		$this->assertSame( array(), wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+	}
+
+	/**
 	 * @testdox A payment-method-only outcome that did not fail writes its mapped meta and deletes its keys, and leaves the order's status, transaction ID, paid date and notes as they were ($_dataName).
 	 *
 	 * The runtime half of a checkout operation that takes no payment, such as replacing the payment method of a recurring

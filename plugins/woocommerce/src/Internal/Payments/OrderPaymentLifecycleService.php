@@ -72,8 +72,9 @@ class OrderPaymentLifecycleService {
 	 *
 	 * An event with a payment reference runs under the order payment lock. When another operation holds the lock,
 	 * the event is skipped with a warning and nothing is written; a caller that can deliver the event again uses the
-	 * return value to retry it. The result also tells whether this call first added the event's note, decided under
-	 * the lock.
+	 * return value to retry it. Under the lock the order is read again in place, so the event is decided and written on
+	 * the caller's object as stored; changes the caller had not saved are discarded. The result also tells whether this
+	 * call first added the event's note, decided under the lock.
 	 *
 	 * @since 11.0.0
 	 *
@@ -91,8 +92,9 @@ class OrderPaymentLifecycleService {
 	 * Apply a payment lifecycle event built again from the order read under the order payment lock.
 	 *
 	 * The lock is claimed, and a refusal handled, as apply() does, for the payment reference of the event passed. Under the
-	 * claim, the order is read again from its data store once, the callable builds the event to apply from that read, and
-	 * the built event is applied as apply_under_lock() does.
+	 * claim, the caller's order is read again in place, the callable builds the event to apply on that object, and the
+	 * built event is decided and written on the same object. A callable that finds nothing to apply returns null, and
+	 * nothing is written.
 	 *
 	 * @since 11.2.0
 	 *
@@ -101,9 +103,10 @@ class OrderPaymentLifecycleService {
 	 *                                                                       event refused when another operation holds the lock.
 	 * @param ProviderPersistenceVocabularyInterface $persistence_vocabulary Provider persistence vocabulary.
 	 * @param callable                               $rebuild                Gets the order read under the claim and returns the
-	 *                                                                       PaymentLifecycleEvent to apply, for the same payment reference.
-	 * @return string self::RESULT_REFUSED when the order payment lock refused the event, otherwise the result of
-	 *                apply_under_lock() for the built event.
+	 *                                                                       PaymentLifecycleEvent to apply, for the same payment reference,
+	 *                                                                       or null when there is nothing to apply.
+	 * @return string self::RESULT_REFUSED when the order payment lock refused the event, self::RESULT_NOTE_NOT_ADDED when
+	 *                the callable returned null, otherwise the result of applying the built event.
 	 * @throws InvalidArgumentException When the built event is not for the payment reference the lock was claimed for.
 	 */
 	public function apply_rebuilt_under_claim( WC_Order $order, PaymentLifecycleEvent $event, ProviderPersistenceVocabularyInterface $persistence_vocabulary, callable $rebuild ): string {
@@ -111,13 +114,15 @@ class OrderPaymentLifecycleService {
 	}
 
 	/**
-	 * Claim the order payment lock for an event's payment reference, apply the event, or the one the callable builds from
-	 * the order read under the claim, and release the lock.
+	 * Claim the order payment lock for an event's payment reference, read the caller's order again in place, apply the
+	 * event, or the one the callable builds on that order, and release the lock.
+	 *
+	 * Whether the caller's copy had a paid status is noted before the read, for the paid rule (is_order_paid()).
 	 *
 	 * @param WC_Order                               $order                  Order object.
 	 * @param PaymentLifecycleEvent                  $event                  Lifecycle event.
 	 * @param ProviderPersistenceVocabularyInterface $persistence_vocabulary Provider persistence vocabulary.
-	 * @param callable|null                          $rebuild                Builds the event to apply from the order read under the claim.
+	 * @param callable|null                          $rebuild                Builds the event to apply on the order read under the claim, or null.
 	 * @return string
 	 * @throws InvalidArgumentException When the built event is not for the claimed payment reference.
 	 */
@@ -134,17 +139,20 @@ class OrderPaymentLifecycleService {
 		}
 
 		try {
-			if ( null === $rebuild ) {
-				return $this->apply_under_lock( $order, $event, $persistence_vocabulary );
+			$caller_copy_was_paid = $order->has_status( wc_get_is_paid_statuses() );
+			$this->reread_order_from_data_store( $order );
+
+			if ( null !== $rebuild ) {
+				$event = $rebuild( $order );
+				if ( null === $event ) {
+					return self::RESULT_NOTE_NOT_ADDED;
+				}
+				if ( ! $event instanceof PaymentLifecycleEvent || $event->get_payment_reference() !== $payment_reference ) {
+					throw new InvalidArgumentException( esc_html( 'The rebuilt payment lifecycle event must be for the payment reference the order payment lock was claimed for.' ) );
+				}
 			}
 
-			$fresh_order   = $this->get_fresh_order_from_data_store( $order );
-			$rebuilt_event = $rebuild( $fresh_order );
-			if ( ! $rebuilt_event instanceof PaymentLifecycleEvent || $rebuilt_event->get_payment_reference() !== $payment_reference ) {
-				throw new InvalidArgumentException( esc_html( 'The rebuilt payment lifecycle event must be for the payment reference the order payment lock was claimed for.' ) );
-			}
-
-			return $this->apply_event_under_lock( $order, $rebuilt_event, $persistence_vocabulary, $fresh_order );
+			return $this->apply_event_under_lock( $order, $event, $persistence_vocabulary, $caller_copy_was_paid, true );
 		} finally {
 			if ( null !== $lock_token ) {
 				$this->order_payment_lock->release( $order, $persistence_vocabulary, $lock_token );
@@ -231,6 +239,9 @@ class OrderPaymentLifecycleService {
 	/**
 	 * Apply a payment lifecycle event while the caller already owns the order payment lock.
 	 *
+	 * The event is decided and written on the object passed, so the caller reads it under the lock after its last
+	 * platform call before this one.
+	 *
 	 * @since 11.0.0
 	 *
 	 * @param WC_Order                               $order               Order object.
@@ -240,30 +251,30 @@ class OrderPaymentLifecycleService {
 	 *                otherwise.
 	 */
 	public function apply_under_lock( WC_Order $order, PaymentLifecycleEvent $event, ProviderPersistenceVocabularyInterface $persistence_vocabulary ): string {
-		return $this->apply_event_under_lock( $order, $event, $persistence_vocabulary, null );
+		return $this->apply_event_under_lock( $order, $event, $persistence_vocabulary, $order->has_status( wc_get_is_paid_statuses() ), false );
 	}
 
 	/**
-	 * Apply a payment lifecycle event under the order payment lock, with the order already read again under it, if any.
+	 * Decide and write a payment lifecycle event on one order object, under the order payment lock.
 	 *
-	 * @param WC_Order                               $order                  Order object.
+	 * @param WC_Order                               $order                  Order object the event is decided and written on.
 	 * @param PaymentLifecycleEvent                  $event                  Lifecycle event.
 	 * @param ProviderPersistenceVocabularyInterface $persistence_vocabulary Provider persistence vocabulary.
-	 * @param WC_Order|null                          $fresh_order            Order read again under the lock, or null to read it here.
+	 * @param bool                                   $caller_copy_was_paid   Whether the caller's copy had a paid status.
+	 * @param bool                                   $order_was_read         Whether the order was just read again from its data store.
 	 * @return string
 	 */
-	private function apply_event_under_lock( WC_Order $order, PaymentLifecycleEvent $event, ProviderPersistenceVocabularyInterface $persistence_vocabulary, ?WC_Order $fresh_order ): string {
-		$decision_order = in_array( $event->get_status(), array( PaymentLifecycleEvent::STATUS_COMPLETED, PaymentLifecycleEvent::STATUS_AUTHORIZED ), true ) ? ( $fresh_order ?? $this->get_fresh_order_from_data_store( $order ) ) : $order;
-
-		if ( $this->should_skip_late_failure_event( $order, $event, $fresh_order ) ) {
+	private function apply_event_under_lock( WC_Order $order, PaymentLifecycleEvent $event, ProviderPersistenceVocabularyInterface $persistence_vocabulary, bool $caller_copy_was_paid, bool $order_was_read ): string {
+		if ( $this->is_late_failure_event( $event ) && $this->is_order_paid( $order, $caller_copy_was_paid, $order_was_read ) ) {
 			$this->record_skipped_late_release( $order, $event, $persistence_vocabulary );
 			return self::RESULT_NOTE_NOT_ADDED;
 		}
 
 		$note        = $event->get_note();
-		$skip_reason = $this->get_completed_event_skip_reason( $order, $decision_order, $event, $persistence_vocabulary ) ?? $this->get_authorized_event_skip_reason( $order, $decision_order, $event, $persistence_vocabulary );
+		$skip_reason = $this->get_own_note_skip_reason( $order, $event, $persistence_vocabulary )
+			?? $this->get_completed_event_skip_reason( $order, $event, $persistence_vocabulary, $caller_copy_was_paid, $order_was_read )
+			?? $this->get_authorized_event_skip_reason( $order, $event, $caller_copy_was_paid, $order_was_read );
 		if ( null !== $skip_reason ) {
-			$this->synchronize_skipped_event_order( $order, $decision_order, $skip_reason, $persistence_vocabulary );
 			$this->log_skipped_event( $order, $event, $skip_reason );
 			return self::RESULT_NOTE_NOT_ADDED;
 		}
@@ -397,32 +408,68 @@ class OrderPaymentLifecycleService {
 	}
 
 	/**
-	 * Tell whether a late failure event should be ignored for an already-paid order.
+	 * Tell whether an event is a late failure, which an already-paid order ignores: failed, capture expired or canceled.
 	 *
-	 * @param WC_Order              $order       Order object.
-	 * @param PaymentLifecycleEvent $event       Lifecycle event.
-	 * @param WC_Order|null         $fresh_order Order read again under the lock, or null to read it here.
+	 * @param PaymentLifecycleEvent $event Lifecycle event.
 	 * @return bool
 	 */
-	private function should_skip_late_failure_event( WC_Order $order, PaymentLifecycleEvent $event, ?WC_Order $fresh_order = null ): bool {
-		if (
-			! in_array(
-				$event->get_status(),
-				array(
-					PaymentLifecycleEvent::STATUS_FAILED,
-					PaymentLifecycleEvent::STATUS_CAPTURE_EXPIRED,
-					PaymentLifecycleEvent::STATUS_CANCELED,
-				),
-				true
-			)
-		) {
-			return false;
+	private function is_late_failure_event( PaymentLifecycleEvent $event ): bool {
+		return in_array(
+			$event->get_status(),
+			array(
+				PaymentLifecycleEvent::STATUS_FAILED,
+				PaymentLifecycleEvent::STATUS_CAPTURE_EXPIRED,
+				PaymentLifecycleEvent::STATUS_CANCELED,
+			),
+			true
+		);
+	}
+
+	/**
+	 * Tell whether the order counts as paid for an event: the caller's copy had a paid status, or the order as stored has one.
+	 *
+	 * The stored order is the object itself when it was just read again under the lock, and a fresh copy otherwise, so the
+	 * check only skips: client 11.3.0 counts the caller's copy or a fresh read (class-wc-payments-order-service.php:3403-3416).
+	 *
+	 * @param WC_Order $order                Order object the event is decided on.
+	 * @param bool     $caller_copy_was_paid Whether the caller's copy had a paid status.
+	 * @param bool     $order_was_read       Whether the order was just read again from its data store.
+	 * @return bool
+	 */
+	private function is_order_paid( WC_Order $order, bool $caller_copy_was_paid, bool $order_was_read ): bool {
+		if ( $caller_copy_was_paid ) {
+			return true;
 		}
 
-		$fresh_order = $fresh_order ?? $this->get_fresh_order_from_data_store( $order );
+		return ( $order_was_read ? $order : $this->get_fresh_order_from_data_store( $order ) )->has_status( wc_get_is_paid_statuses() );
+	}
 
-		return $order->has_status( wc_get_is_paid_statuses() )
-			|| $fresh_order->has_status( wc_get_is_paid_statuses() );
+	/**
+	 * Get the reason an event whose own note is already on the order changes nothing: a completed, authorized or failed
+	 * event was applied before.
+	 *
+	 * Client 11.3.0's completed, authorized and failed writers return once their note is on the order
+	 * (class-wc-payments-order-service.php:2033-2038, :2148-2151, :550-554). A started event keeps its status and meta
+	 * and adds its note once, and a canceled or capture-expired event keeps its own handling. The search comes first so a
+	 * note found by its text regains its identity.
+	 *
+	 * @param WC_Order                               $order                  Order object.
+	 * @param PaymentLifecycleEvent                  $event                  Lifecycle event.
+	 * @param ProviderPersistenceVocabularyInterface $persistence_vocabulary Provider persistence vocabulary.
+	 * @return string|null Skip reason, or null when the rule does not skip the event.
+	 */
+	private function get_own_note_skip_reason( WC_Order $order, PaymentLifecycleEvent $event, ProviderPersistenceVocabularyInterface $persistence_vocabulary ): ?string {
+		$reasons = array(
+			PaymentLifecycleEvent::STATUS_COMPLETED  => 'success_note_exists',
+			PaymentLifecycleEvent::STATUS_AUTHORIZED => 'authorization_note_exists',
+			PaymentLifecycleEvent::STATUS_FAILED     => 'failure_note_exists',
+		);
+		$note    = $event->get_note();
+		if ( ! isset( $reasons[ $event->get_status() ] ) || null === $note || '' === $note || 0 >= $this->find_lifecycle_note( $order, $event, $persistence_vocabulary ) ) {
+			return null;
+		}
+
+		return $reasons[ $event->get_status() ];
 	}
 
 	/**
@@ -490,19 +537,19 @@ class OrderPaymentLifecycleService {
 	/**
 	 * Get the reason a completed lifecycle event must be ignored before it changes the order.
 	 *
-	 * A completed event whose note, or the note of one of its applied alternatives, is already on the order was applied
-	 * before, so it changes nothing, an open dispute keeps the order on hold, and a hold never lands on a paid order: the
-	 * caller's order or its fresh read. An event that only reports a payment's status leaves an order in a paid status as
-	 * it is, whether the caller's order or its fresh read has that status. The note searches come before that paid check
-	 * so a matching note regains its identity; every reason skips the whole event.
+	 * An open dispute keeps the order on hold. A completed event the note of one of its applied alternatives is already
+	 * on was applied before, so it changes nothing. A hold never lands on a paid order, and an event that only reports a
+	 * payment's status leaves a paid order as it is (is_order_paid()). The note search comes before the paid check so a
+	 * note found by its text regains its identity; every reason skips the whole event.
 	 *
-	 * @param WC_Order                               $caller_order        Caller-owned order object.
-	 * @param WC_Order                               $order               Freshly read order.
-	 * @param PaymentLifecycleEvent                  $event               Lifecycle event.
+	 * @param WC_Order                               $order                  Order object the event is decided on.
+	 * @param PaymentLifecycleEvent                  $event                  Lifecycle event.
 	 * @param ProviderPersistenceVocabularyInterface $persistence_vocabulary Provider persistence vocabulary.
+	 * @param bool                                   $caller_copy_was_paid   Whether the caller's copy had a paid status.
+	 * @param bool                                   $order_was_read         Whether the order was just read again from its data store.
 	 * @return string|null Skip reason, or null when the event can be applied.
 	 */
-	private function get_completed_event_skip_reason( WC_Order $caller_order, WC_Order $order, PaymentLifecycleEvent $event, ProviderPersistenceVocabularyInterface $persistence_vocabulary ): ?string {
+	private function get_completed_event_skip_reason( WC_Order $order, PaymentLifecycleEvent $event, ProviderPersistenceVocabularyInterface $persistence_vocabulary, bool $caller_copy_was_paid, bool $order_was_read ): ?string {
 		if ( PaymentLifecycleEvent::STATUS_COMPLETED !== $event->get_status() ) {
 			return null;
 		}
@@ -511,22 +558,13 @@ class OrderPaymentLifecycleService {
 			return 'open_dispute';
 		}
 
-		if ( $event->should_hold_order() && ( $caller_order->has_status( wc_get_is_paid_statuses() ) || $order->has_status( wc_get_is_paid_statuses() ) ) ) {
-			return 'order_paid';
-		}
-
-		$note = $event->get_note();
-		if ( null !== $note && '' !== $note && 0 < $this->find_lifecycle_note( $order, $event, $persistence_vocabulary ) ) {
-			return 'success_note_exists';
-		}
-
 		foreach ( $event->get_applied_alternatives() as $alternative ) {
 			if ( 0 < $this->find_lifecycle_note( $order, $alternative, $persistence_vocabulary ) ) {
 				return 'applied_note_exists';
 			}
 		}
 
-		if ( $event->should_leave_paid_order() && ( $caller_order->has_status( wc_get_is_paid_statuses() ) || $order->has_status( wc_get_is_paid_statuses() ) ) ) {
+		if ( ( $event->should_hold_order() || $event->should_leave_paid_order() ) && $this->is_order_paid( $order, $caller_copy_was_paid, $order_was_read ) ) {
 			return 'order_paid';
 		}
 
@@ -536,64 +574,30 @@ class OrderPaymentLifecycleService {
 	/**
 	 * Get the reason an authorized lifecycle event must be ignored before it changes the order.
 	 *
-	 * An authorized event whose note is already on the order was applied before, so it changes nothing, status and meta
-	 * included; an authorization's own note type also changes nothing on an order already on hold. Client 11.3.0's
-	 * on-hold writers check the same before any write (class-wc-payments-order-service.php:2146-2151, :2171-2175, :2251-2256).
-	 * An event that only reports a payment's status leaves an order in a paid status as it is, whether the caller's order or
-	 * its fresh read has that status, as a completed one does.
+	 * An authorization's own note type changes nothing on an order already on hold. Client 11.3.0's on-hold writers check
+	 * the same before any write (class-wc-payments-order-service.php:2146-2151, :2171-2175, :2251-2256). An event that only
+	 * reports a payment's status leaves a paid order as it is (is_order_paid()), as a completed one does.
 	 *
-	 * @param WC_Order                               $caller_order           Caller-owned order object.
-	 * @param WC_Order                               $order                  Order read again under the order payment lock.
-	 * @param PaymentLifecycleEvent                  $event                  Lifecycle event.
-	 * @param ProviderPersistenceVocabularyInterface $persistence_vocabulary Provider persistence vocabulary.
+	 * @param WC_Order              $order                Order object the event is decided on.
+	 * @param PaymentLifecycleEvent $event                Lifecycle event.
+	 * @param bool                  $caller_copy_was_paid Whether the caller's copy had a paid status.
+	 * @param bool                  $order_was_read       Whether the order was just read again from its data store.
 	 * @return string|null Skip reason, or null when the event can be applied.
 	 */
-	private function get_authorized_event_skip_reason( WC_Order $caller_order, WC_Order $order, PaymentLifecycleEvent $event, ProviderPersistenceVocabularyInterface $persistence_vocabulary ): ?string {
+	private function get_authorized_event_skip_reason( WC_Order $order, PaymentLifecycleEvent $event, bool $caller_copy_was_paid, bool $order_was_read ): ?string {
 		if ( PaymentLifecycleEvent::STATUS_AUTHORIZED !== $event->get_status() ) {
 			return null;
-		}
-
-		$note = $event->get_note();
-		if ( null !== $note && '' !== $note && 0 < $this->find_lifecycle_note( $order, $event, $persistence_vocabulary ) ) {
-			return 'authorization_note_exists';
 		}
 
 		if ( PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_AUTHORIZED === $event->get_note_type() && $order->has_status( OrderStatus::ON_HOLD ) ) {
 			return 'order_on_hold';
 		}
 
-		if ( $event->should_leave_paid_order() && ( $caller_order->has_status( wc_get_is_paid_statuses() ) || $order->has_status( wc_get_is_paid_statuses() ) ) ) {
+		if ( $event->should_leave_paid_order() && $this->is_order_paid( $order, $caller_copy_was_paid, $order_was_read ) ) {
 			return 'order_paid';
 		}
 
 		return null;
-	}
-
-	/**
-	 * Bring the persisted status and open disputes onto a caller's order object that a skipped event found stale.
-	 *
-	 * A caller whose object matches the persisted order keeps it untouched. A diverging object is read again in place,
-	 * so a later save by the caller cannot write its stale status or dispute meta. This method records no status
-	 * transition of its own, so that save sends no second status email or note and moves no paid date. Its unsaved
-	 * changes are discarded, but a status change the caller made itself and has not saved still fires on that save.
-	 * No caller of the lifecycle holds one.
-	 *
-	 * @param WC_Order                               $order                  Caller-owned order object.
-	 * @param WC_Order                               $decision_order         Freshly read order the skip was decided on.
-	 * @param string                                 $skip_reason            Skip reason.
-	 * @param ProviderPersistenceVocabularyInterface $persistence_vocabulary Provider persistence vocabulary.
-	 */
-	private function synchronize_skipped_event_order( WC_Order $order, WC_Order $decision_order, string $skip_reason, ProviderPersistenceVocabularyInterface $persistence_vocabulary ): void {
-		$is_stale = $order->get_status() !== $decision_order->get_status();
-
-		if ( ! $is_stale && 'open_dispute' === $skip_reason ) {
-			$open_dispute_ids_meta_key = $persistence_vocabulary->get_open_dispute_ids_meta_key();
-			$is_stale                  = $order->get_meta( $open_dispute_ids_meta_key, true ) !== $decision_order->get_meta( $open_dispute_ids_meta_key, true );
-		}
-
-		if ( $is_stale ) {
-			$this->reread_order_from_data_store( $order );
-		}
 	}
 
 	/**
@@ -615,7 +619,7 @@ class OrderPaymentLifecycleService {
 	}
 
 	/**
-	 * Log debug context for a completed or authorized lifecycle event that was skipped before mutation.
+	 * Log debug context for a lifecycle event that was skipped before mutation.
 	 *
 	 * @param WC_Order              $order  Order object.
 	 * @param PaymentLifecycleEvent $event  Lifecycle event.
@@ -627,6 +631,7 @@ class OrderPaymentLifecycleService {
 			'order_paid'                => 'Payment event skipped: the order is already paid, so the event does not change it.',
 			'applied_note_exists'       => 'Completed payment event skipped: a note that counts as this payment already applied is on the order.',
 			'authorization_note_exists' => 'Authorized payment event skipped: its note is already on the order.',
+			'failure_note_exists'       => 'Failed payment event skipped: its note is already on the order.',
 			'order_on_hold'             => 'Authorized payment event skipped: the order is already on hold.',
 		);
 		$message  = $messages[ $reason ] ?? 'Completed payment event skipped: the payment note is already on the order.';

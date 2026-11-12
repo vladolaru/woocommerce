@@ -225,7 +225,7 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A completed-event skip brings the dispute persisted under $dispute_key onto a stale caller ($caller_state), whose save then keeps the dispute and the hold.
+	 * @testdox A completed event applied under its own claim decides on the stale caller's object read in place ($caller_state): the dispute persisted under $dispute_key skips it, and the caller's save keeps the dispute and the hold.
 	 * @testWith ["_wcpay_open_dispute_ids", "sets processing"]
 	 *           ["_provider_open_dispute_ids", "sets processing"]
 	 *           ["_wcpay_open_dispute_ids", "still pending"]
@@ -236,7 +236,7 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 	 *                             status it loaded, or the on-hold status of an authorization, which matches the stored
 	 *                             order so only its dispute IDs differ.
 	 */
-	public function test_under_lock_success_skip_prevents_a_stale_caller_save_from_overwriting_a_dispute( string $dispute_key, string $caller_state ): void {
+	public function test_claimed_success_skip_reads_a_stale_caller_in_place_and_keeps_a_dispute( string $dispute_key, string $caller_state ): void {
 		$stale_order = $this->create_woopayments_order();
 		if ( 'already on hold' === $caller_state ) {
 			$stale_order->update_status( 'on-hold' );
@@ -254,15 +254,10 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 		}
 		// A dispute-closed handler that clears an ID on its copy and then applies a completion.
 		$stale_order->update_meta_data( $dispute_key, array() );
-		$this->assertNotNull( $this->order_payment_lock->claim( $stale_order, $vocabulary, 'pi_stale_save', 'payment operation' ) );
-		try {
-			$this->sut->apply_under_lock( $stale_order, $this->completed_event( 'pi_stale_save' ), $vocabulary );
-			$on_hold_transitions_before = did_action( 'woocommerce_order_status_pending_to_on-hold' );
-			$status_changed_before      = did_action( 'woocommerce_order_status_changed' );
-			$stale_order->save();
-		} finally {
-			$this->clear_order_payment_lock( $stale_order, $vocabulary );
-		}
+		$this->sut->apply( $stale_order, $this->completed_event( 'pi_stale_save' ), $vocabulary );
+		$on_hold_transitions_before = did_action( 'woocommerce_order_status_pending_to_on-hold' );
+		$status_changed_before      = did_action( 'woocommerce_order_status_changed' );
+		$stale_order->save();
 
 		$order = wc_get_order( $stale_order->get_id() );
 
@@ -1164,22 +1159,20 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Applying an event should release the order payment lock when applying the outcome throws.
+	 * @testdox Applying an event should release the order payment lock when reading or applying it under the lock throws.
 	 */
 	public function test_apply_releases_the_lock_when_applying_the_outcome_throws(): void {
 		$order = $this->create_woopayments_order();
 		$sut   = new class() extends OrderPaymentLifecycleService {
 			// phpcs:disable Squiz.Commenting.FunctionComment.InvalidNoReturn -- This test double always throws.
 			/**
-			 * Fail every outcome application.
+			 * Fail every read under the lock.
 			 *
-			 * @param WC_Order                                                                         $order               Order object.
-			 * @param PaymentLifecycleEvent                                                            $event               Lifecycle event.
-			 * @param \Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabularyInterface $persistence_vocabulary Provider persistence vocabulary.
+			 * @param WC_Order $order Order object.
 			 * @throws \RuntimeException Always.
 			 */
-			public function apply_under_lock( WC_Order $order, PaymentLifecycleEvent $event, \Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabularyInterface $persistence_vocabulary ): string {
-				unset( $order, $event, $persistence_vocabulary );
+			public function reread_order_from_data_store( WC_Order $order ): void {
+				unset( $order );
 				throw new \RuntimeException( 'Simulated lifecycle failure.' );
 			}
 			// phpcs:enable Squiz.Commenting.FunctionComment.InvalidNoReturn
@@ -1278,7 +1271,92 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A rebuilt event is built from the order read under the claim for its payment reference, applied under it, and the lock released.
+	 * @testdox A builder that finds nothing to apply leaves the order unsaved and unchanged, and the lock is released.
+	 */
+	public function test_rebuilt_event_null_writes_nothing(): void {
+		$order   = $this->create_woopayments_order();
+		$updates = did_action( 'woocommerce_update_order' );
+
+		$result = $this->sut->apply_rebuilt_under_claim(
+			$order,
+			$this->completed_event( 'pi_nothing_to_apply' ),
+			$this->persistence_vocabulary,
+			static function ( WC_Order $read_order ): ?PaymentLifecycleEvent {
+				unset( $read_order );
+
+				return null;
+			}
+		);
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( OrderPaymentLifecycleService::RESULT_NOTE_NOT_ADDED, $result );
+		$this->assertSame( $updates, did_action( 'woocommerce_update_order' ), 'The order is not saved.' );
+		$this->assertSame( 'pending', $order->get_status() );
+		$this->assertSame( '', $order->get_transaction_id() );
+		$this->assertSame( '', $order->get_meta( '_intent_id', true ) );
+		$this->assertSame( 0, $this->countOrderNotesMatching( $order, 'Payment complete.' ) );
+		$this->assertFalse( $this->is_order_payment_lock_held_for( $order, $this->persistence_vocabulary, 'pi_nothing_to_apply' ) );
+	}
+
+	/**
+	 * @testdox An event that leaves a paid order, applied under its own claim, counts the paid status of the caller's copy noted before the read, or of the order as stored: $_dataName.
+	 *
+	 * Client 11.3.0 counts the caller's copy or a fresh read (class-wc-payments-order-service.php:3403-3416).
+	 *
+	 * @testWith ["the caller's copy is paid, the stored order is not", "processing", "pending"]
+	 *           ["the stored order is paid, the caller's copy is not", "pending", "processing"]
+	 *
+	 * @param string $label         Case.
+	 * @param string $caller_status Status of the caller's copy, not saved.
+	 * @param string $stored_status Status of the stored order.
+	 */
+	public function test_claimed_event_counts_the_caller_copy_noted_before_the_read( string $label, string $caller_status, string $stored_status ): void {
+		unset( $label );
+		$order  = $this->create_woopayments_order();
+		$stored = wc_get_order( $order->get_id() );
+		$stored->set_status( $stored_status );
+		$stored->save();
+		$order->set_status( $caller_status );
+		$event = new PaymentLifecycleEvent( PaymentLifecycleEvent::STATUS_COMPLETED, 'pi_caller_copy', array( '_intent_id' => 'pi_caller_copy' ), array(), 'Payment complete.', PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_COMPLETE, array(), false, false, array(), true );
+
+		$this->sut->apply( $order, $event, $this->persistence_vocabulary );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( $stored_status, $order->get_status() );
+		$this->assertSame( '', $order->get_meta( '_intent_id', true ) );
+		$this->assertSame( 0, $this->countOrderNotesMatching( $order, 'Payment complete.' ) );
+	}
+
+	/**
+	 * @testdox A $status event whose own note is already on the order changes nothing: no status, meta, transaction ID or second note.
+	 *
+	 * Client 11.3.0's completed, authorized and failed writers return once their note is on the order
+	 * (class-wc-payments-order-service.php:2033-2038, :2148-2151, :550-554).
+	 *
+	 * @testWith ["completed"]
+	 *           ["authorized"]
+	 *           ["failed"]
+	 *
+	 * @param string $status Lifecycle event status.
+	 */
+	public function test_event_whose_own_note_is_on_the_order_changes_nothing( string $status ): void {
+		$order = $this->create_woopayments_order();
+		$order->add_order_note( 'Own note of pi_own_note.' );
+		$order->set_status( 'cancelled' );
+		$order->save();
+		$event = new PaymentLifecycleEvent( $status, 'pi_own_note', array( '_intent_id' => 'pi_own_note' ), array(), 'Own note of pi_own_note.' );
+
+		$this->apply_event_under_lock( $order, $event );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( 'cancelled', $order->get_status() );
+		$this->assertSame( '', $order->get_meta( '_intent_id', true ) );
+		$this->assertSame( '', $order->get_transaction_id() );
+		$this->assertSame( 1, $this->countOrderNotesMatching( $order, 'Own note of pi_own_note.' ) );
+	}
+
+	/**
+	 * @testdox A rebuilt event is built on the caller's order read in place under the claim for its payment reference, applied under it, and the lock released.
 	 */
 	public function test_rebuilt_event_is_built_from_the_order_read_under_the_claim_and_applied(): void {
 		$order  = $this->create_woopayments_order();
@@ -1293,9 +1371,9 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 			$this->persistence_vocabulary,
 			function ( WC_Order $read_order ) use ( $order, &$seen ): PaymentLifecycleEvent {
 				$seen = array(
-					'other_object' => $read_order !== $order,
-					'marker'       => $read_order->get_meta( '_stored_marker', true ),
-					'locked'       => $this->is_order_payment_lock_held_for( $order, $this->persistence_vocabulary, 'pi_rebuilt' ),
+					'caller_object' => $read_order === $order,
+					'marker'        => $read_order->get_meta( '_stored_marker', true ),
+					'locked'        => $this->is_order_payment_lock_held_for( $order, $this->persistence_vocabulary, 'pi_rebuilt' ),
 				);
 
 				return new PaymentLifecycleEvent( PaymentLifecycleEvent::STATUS_COMPLETED, 'pi_rebuilt', array( '_intent_id' => 'pi_rebuilt' ), array(), 'Rebuilt payment complete.' );
@@ -1306,9 +1384,9 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( OrderPaymentLifecycleService::RESULT_NOTE_ADDED, $result );
 		$this->assertSame(
 			array(
-				'other_object' => true,
-				'marker'       => 'stored',
-				'locked'       => true,
+				'caller_object' => true,
+				'marker'        => 'stored',
+				'locked'        => true,
 			),
 			$seen
 		);

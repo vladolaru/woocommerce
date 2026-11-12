@@ -236,6 +236,18 @@ class PaymentOutcome {
 	public const DATA_ORDER_PAYMENT_LOCK_REFUSED = 'order_payment_lock_refused';
 
 	/**
+	 * Checkout outcomes: flags that the provider found nothing to apply to the order, such as a payment still waiting for
+	 * the customer on an order that no longer waits for it.
+	 *
+	 * The runtime applies no lifecycle event and no meta for the outcome: the order's status, meta, transaction ID and
+	 * notes are left as the provider's own effects left them. The checkout's result for the customer is the outcome's.
+	 *
+	 * @since 11.2.0
+	 * @var string
+	 */
+	public const DATA_NO_ORDER_CHANGE = 'no_order_change';
+
+	/**
 	 * Outcome status.
 	 *
 	 * @var string

@@ -1968,7 +1968,9 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox payment_intent.payment_failed adopts the exact German WooPayments extension catalog note.
+	 * @testdox payment_intent.payment_failed adopts the exact German WooPayments extension catalog note, and changes nothing more once that note is on the order.
+	 *
+	 * Client 11.3.0's failed writer returns once its note is on the order (class-wc-payments-order-service.php:550-554).
 	 */
 	public function test_payment_intent_failed_deduplicates_german_woopayments_extension_note(): void {
 		$this->install_test_translations_for_domain(
@@ -2022,15 +2024,16 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 
 		$order = wc_get_order( $order->get_id() );
 		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertSame( 'failed', $order->get_status() );
-		$this->assertSame( 'pi_standard_failure', $order->get_meta( '_intent_id', true ) );
-		$this->assertSame( 'requires_payment_method', $order->get_meta( '_intention_status', true ) );
+		$this->assertSame( 'pending', $order->get_status() );
+		$this->assertSame( '', $order->get_meta( '_intention_status', true ) );
 		$this->assertSame( 1, $this->count_order_notes_matching( $order, $plugin_note ) );
 		$this->assertOrderLacksNoteContaining( $order, array( 'Core-Zahlung' ) );
 	}
 
 	/**
-	 * @testdox payment_intent.payment_failed adopts the exact German WooPayments extension terminal note with a mapped suffix.
+	 * @testdox payment_intent.payment_failed adopts the exact German WooPayments extension terminal note with a mapped suffix, and changes nothing more once that note is on the order.
+	 *
+	 * Client 11.3.0's failed writer returns once its note is on the order (class-wc-payments-order-service.php:550-554).
 	 */
 	public function test_terminal_payment_intent_failed_deduplicates_german_woopayments_extension_note(): void {
 		$this->install_test_translations_for_domain(
@@ -2080,9 +2083,8 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 
 		$order = wc_get_order( $order->get_id() );
 		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertSame( 'failed', $order->get_status() );
-		$this->assertSame( 'pi_terminal_failure', $order->get_meta( '_intent_id', true ) );
-		$this->assertSame( 'requires_payment_method', $order->get_meta( '_intention_status', true ) );
+		$this->assertSame( 'pending', $order->get_status() );
+		$this->assertSame( '', $order->get_meta( '_intention_status', true ) );
 		$this->assertSame( 1, $this->count_order_notes_matching( $order, $plugin_note ) );
 		$this->assertOrderLacksNoteContaining( $order, array( 'Core-Terminalzahlung' ) );
 	}

@@ -925,7 +925,8 @@ class PaymentProcessingService {
 	/**
 	 * Apply a checkout outcome to the order: its lifecycle event, or only its meta when the operation took no payment.
 	 *
-	 * A payment-method-only outcome (PaymentOutcome::DATA_PAYMENT_METHOD_ONLY) that did not fail gets its mapped meta and
+	 * An outcome the provider flagged as changing nothing (PaymentOutcome::DATA_NO_ORDER_CHANGE) is not applied. A
+	 * payment-method-only outcome (PaymentOutcome::DATA_PAYMENT_METHOD_ONLY) that did not fail gets its mapped meta and
 	 * no event; a failed one gets the failed event and keeps the order status. A charge this service just made does not
 	 * complete or hold an order that has a paid status by the time it is applied, the twin after the charge of
 	 * refresh_order_before_charge(), which charges nothing for an order that became paid before it.
@@ -935,6 +936,10 @@ class PaymentProcessingService {
 	 * @param ProviderInterface $provider Provider.
 	 */
 	private function apply_checkout_outcome( WC_Order $order, PaymentOutcome $outcome, ProviderInterface $provider ): void {
+		if ( true === ( $outcome->get_data()[ PaymentOutcome::DATA_NO_ORDER_CHANGE ] ?? false ) ) {
+			return;
+		}
+
 		$payment_method_only = $outcome->is_payment_method_only();
 		if ( $payment_method_only && PaymentOutcome::STATUS_FAILED !== $outcome->get_status() ) {
 			$this->lifecycle_service->apply_meta_under_lock( $order, $this->get_provider_outcome_meta( $outcome, $provider ), $this->get_lifecycle_meta_to_delete( $outcome ) );
