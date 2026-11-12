@@ -125,12 +125,43 @@ class WooPaymentsCustomerService implements RegisterHooksInterface {
 			return;
 		}
 
-		$customer_id = WC()->session ? WC()->session->get( self::CUSTOMER_ID_SESSION_KEY ) : null;
-		if ( ! is_string( $customer_id ) || '' === $customer_id ) {
+		$user_id     = absint( $user_id );
+		$customer_id = $this->get_session_customer_id();
+		if ( null === $customer_id || $this->is_customer_id_held_by_another_user( $customer_id, $user_id ) ) {
 			return;
 		}
 
-		$this->persist_customer_id( absint( $user_id ), $customer_id );
+		$this->persist_customer_id( $user_id, $customer_id );
+	}
+
+	/**
+	 * Tell whether a user other than the given one stores the customer ID, under the current or the deprecated user option,
+	 * site-scoped or network-wide (client 11.3.0 class-wc-payments-customer-service.php:517-538).
+	 *
+	 * @param string $customer_id WooPayments customer ID.
+	 * @param int    $user_id     WordPress user ID left out of the check.
+	 * @return bool
+	 */
+	private function is_customer_id_held_by_another_user( string $customer_id, int $user_id ): bool {
+		global $wpdb;
+
+		$prefix     = $wpdb->get_blog_prefix();
+		$option     = $this->get_customer_id_option();
+		$deprecated = self::DEPRECATED_CUSTOMER_ID_OPTION;
+
+		$other_user_id = $wpdb->get_var(
+			$wpdb->prepare(
+				"SELECT user_id FROM {$wpdb->usermeta} WHERE meta_key IN ( %s, %s, %s, %s ) AND meta_value = %s AND user_id <> %d LIMIT 1",
+				$prefix . $option,
+				$option,
+				$prefix . $deprecated,
+				$deprecated,
+				$customer_id,
+				$user_id
+			)
+		);
+
+		return null !== $other_user_id;
 	}
 
 	/**
@@ -647,8 +678,7 @@ class WooPaymentsCustomerService implements RegisterHooksInterface {
 	 */
 	public function migrate_and_get_customer_id( ?int $user_id ): ?string {
 		if ( null === $user_id || 0 === $user_id ) {
-			$customer_id = WC()->session ? WC()->session->get( self::CUSTOMER_ID_SESSION_KEY ) : null;
-			return is_string( $customer_id ) && '' !== $customer_id ? $customer_id : null;
+			return $this->get_session_customer_id();
 		}
 
 		$customer_id = get_user_option( $this->get_customer_id_option(), $user_id );
@@ -670,8 +700,7 @@ class WooPaymentsCustomerService implements RegisterHooksInterface {
 	 */
 	public function get_persisted_customer_id_by_user_id( ?int $user_id ): ?string {
 		if ( null === $user_id || 0 === $user_id ) {
-			$customer_id = WC()->session ? WC()->session->get( self::CUSTOMER_ID_SESSION_KEY ) : null;
-			return is_string( $customer_id ) && '' !== $customer_id ? $customer_id : null;
+			return $this->get_session_customer_id();
 		}
 
 		$customer_id = get_user_option( $this->get_customer_id_option(), $user_id );
@@ -683,7 +712,21 @@ class WooPaymentsCustomerService implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Persist a WooPayments customer ID for a user or guest session.
+	 * Get the guest customer ID the current session stored.
+	 *
+	 * @return string|null
+	 */
+	private function get_session_customer_id(): ?string {
+		$session     = WooPaymentsSessionService::get_wc_session();
+		$customer_id = null === $session ? null : WooPaymentsSessionService::get_owned_value( $session, self::CUSTOMER_ID_SESSION_KEY );
+
+		return is_string( $customer_id ) && '' !== $customer_id ? $customer_id : null;
+	}
+
+	/**
+	 * Persist a WooPayments customer ID on a user, or for a guest in the current session.
+	 *
+	 * A user's customer ID lives only in their user option (client 11.3.0 class-wc-payments-customer-service.php:158-165).
 	 *
 	 * @param int|null $user_id     WordPress user ID or null for guests.
 	 * @param string   $customer_id WooPayments customer ID.
@@ -697,15 +740,18 @@ class WooPaymentsCustomerService implements RegisterHooksInterface {
 			if ( ! $updated && get_user_option( $this->get_customer_id_option(), $user_id ) !== $customer_id ) {
 				wc_get_container()->get( WooPaymentsLogger::class )->error( 'Failed to update the WooPayments customer ID for user ' . $user_id . '.' );
 			}
+
+			return;
 		}
 
-		if ( WC()->session ) {
-			WC()->session->set( self::CUSTOMER_ID_SESSION_KEY, $customer_id );
+		$session = WooPaymentsSessionService::get_wc_session();
+		if ( null !== $session ) {
+			WooPaymentsSessionService::set_owned_value( $session, self::CUSTOMER_ID_SESSION_KEY, $customer_id );
 		}
 	}
 
 	/**
-	 * Delete a persisted customer ID for a user or guest session.
+	 * Delete a persisted customer ID of a user, or of a guest in the current session.
 	 *
 	 * @param int|null $user_id WordPress user ID or null for guests.
 	 */
@@ -713,10 +759,13 @@ class WooPaymentsCustomerService implements RegisterHooksInterface {
 		if ( null !== $user_id && 0 !== $user_id ) {
 			delete_user_option( $user_id, $this->get_customer_id_option() );
 			delete_user_option( $user_id, self::DEPRECATED_CUSTOMER_ID_OPTION );
+
+			return;
 		}
 
-		if ( WC()->session ) {
-			WC()->session->set( self::CUSTOMER_ID_SESSION_KEY, null );
+		$session = WooPaymentsSessionService::get_wc_session();
+		if ( null !== $session ) {
+			WooPaymentsSessionService::set_owned_value( $session, self::CUSTOMER_ID_SESSION_KEY, null );
 		}
 	}
 

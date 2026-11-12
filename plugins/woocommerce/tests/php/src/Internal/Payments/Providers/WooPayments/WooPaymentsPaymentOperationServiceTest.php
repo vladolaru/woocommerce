@@ -140,7 +140,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		unset( $GLOBALS['wcpay_test_renewal_order_ids'], $GLOBALS['wcpay_test_subscription_ids'], $GLOBALS[ WooCommerceSubscriptionsDoubles::ORDER_SUBSCRIPTIONS ] );
 		// Guest customer creation stores the customer in the shared session; leave none for later classes.
 		if ( WC()->session ) {
-			WC()->session->set( 'wcpay_customer_id', null );
+			WooPaymentsSessionService::set_owned_value( WC()->session, 'wcpay_customer_id', null );
 		}
 		wp_set_current_user( 0 );
 		parent::tearDown();
@@ -2901,7 +2901,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 
 		$order->update_meta_data( '_stripe_customer_id', 'cus_on_the_subscription' );
 		$order->save();
-		WC()->session->set( WooPaymentsCustomerService::CUSTOMER_ID_SESSION_KEY, 'cus_change' );
+		WooPaymentsSessionService::set_owned_value( WC()->session, WooPaymentsCustomerService::CUSTOMER_ID_SESSION_KEY, 'cus_change' );
 
 		$sut     = $this->create_operation_service(
 			$api_client,
@@ -2937,7 +2937,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 
 		$order->set_billing_email( 'subject@example.com' );
 		$order->save();
-		WC()->session->set( WooPaymentsCustomerService::CUSTOMER_ID_SESSION_KEY, 'cus_ordinary' );
+		WooPaymentsSessionService::set_owned_value( WC()->session, WooPaymentsCustomerService::CUSTOMER_ID_SESSION_KEY, 'cus_ordinary' );
 		$customer_service = $this->create_real_customer_service( $api_client );
 
 		$outcome = $this->create_operation_service( $api_client, $customer_service )->charge(

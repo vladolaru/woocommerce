@@ -3,6 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments;
 
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSessionService;
 use Automattic\WooCommerce\Enums\OrderStatus;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
@@ -2058,7 +2059,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$order->set_billing_first_name( 'Ada' );
 		$order->set_billing_last_name( 'Lovelace' );
 		$order->save();
-		WC()->session->set( WooPaymentsCustomerService::CUSTOMER_ID_SESSION_KEY, 'cus_session' );
+		WooPaymentsSessionService::set_owned_value( WC()->session, WooPaymentsCustomerService::CUSTOMER_ID_SESSION_KEY, 'cus_session' );
 		$expected_payment_method = $with_saved_card ? 'pm_shopper_saved' : 'pm_card_visa';
 		$http_client             = new FakeHttpClient();
 		// Shape: the platform's own failure as a WordPress REST error (code, message, data.status; WP_REST_Server::error_to_response()). Any request after the expected ones gets it.
@@ -2113,7 +2114,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 			$this->assertSame( 'cus_shopper', get_user_option( WooPaymentsCustomerService::TEST_CUSTOMER_ID_OPTION, $shopper_id ) );
 		} finally {
 			wp_set_current_user( 0 );
-			WC()->session->set( WooPaymentsCustomerService::CUSTOMER_ID_SESSION_KEY, null );
+			WooPaymentsSessionService::set_owned_value( WC()->session, WooPaymentsCustomerService::CUSTOMER_ID_SESSION_KEY, null );
 			$_POST = array();
 		}
 	}
@@ -2283,7 +2284,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 			$this->assertTrue( wc_get_order( $order->get_id() )->is_paid() );
 		} finally {
 			wp_set_current_user( 0 );
-			WC()->session->set( WooPaymentsCustomerService::CUSTOMER_ID_SESSION_KEY, null );
+			WooPaymentsSessionService::set_owned_value( WC()->session, WooPaymentsCustomerService::CUSTOMER_ID_SESSION_KEY, null );
 			$_POST = array();
 		}
 	}

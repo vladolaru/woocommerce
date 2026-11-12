@@ -241,7 +241,7 @@ class WooPaymentsDuplicatePaymentPreventionService implements RegisterHooksInter
 	public function maybe_update_session_processing_order( int $order_id ): void {
 		$session = $this->get_session();
 		if ( $session instanceof \WC_Session ) {
-			$session->set( self::SESSION_KEY_PROCESSING_ORDER, $order_id );
+			WooPaymentsSessionService::set_owned_value( $session, self::SESSION_KEY_PROCESSING_ORDER, $order_id );
 		}
 	}
 
@@ -255,7 +255,7 @@ class WooPaymentsDuplicatePaymentPreventionService implements RegisterHooksInter
 		$session_order_id = $this->get_session_processing_order();
 		$session          = $this->get_session();
 		if ( $order_id === $session_order_id && $session instanceof \WC_Session ) {
-			$session->set( self::SESSION_KEY_PROCESSING_ORDER, null );
+			WooPaymentsSessionService::set_owned_value( $session, self::SESSION_KEY_PROCESSING_ORDER, null );
 		}
 	}
 
@@ -592,7 +592,8 @@ class WooPaymentsDuplicatePaymentPreventionService implements RegisterHooksInter
 	}
 
 	/**
-	 * Get the processing order ID for the current session.
+	 * Get the processing order ID the current session stored (client 11.3.0
+	 * class-duplicate-payment-prevention-service.php:330-337).
 	 *
 	 * @return int|null
 	 */
@@ -602,7 +603,7 @@ class WooPaymentsDuplicatePaymentPreventionService implements RegisterHooksInter
 			return null;
 		}
 
-		$value = $session->get( self::SESSION_KEY_PROCESSING_ORDER );
+		$value = WooPaymentsSessionService::get_owned_value( $session, self::SESSION_KEY_PROCESSING_ORDER );
 
 		return null === $value ? null : absint( $value );
 	}

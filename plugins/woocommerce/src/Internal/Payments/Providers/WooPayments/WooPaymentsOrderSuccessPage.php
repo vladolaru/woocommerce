@@ -197,7 +197,8 @@ class WooPaymentsOrderSuccessPage implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Skip order-received email verification only for the session that paid the order's WooPayments intent.
+	 * Skip order-received email verification only for the session that paid the order's WooPayments intent and stored it
+	 * (client 11.3.0 class-wc-payments-order-success-page.php:579-582).
 	 *
 	 * @param mixed $required Whether email verification is required.
 	 * @param mixed $order Order being displayed.
@@ -210,13 +211,17 @@ class WooPaymentsOrderSuccessPage implements RegisterHooksInterface {
 			|| 'order-received' !== $context
 			|| ! $order instanceof WC_Order
 			|| WooPaymentsPersistenceVocabulary::GATEWAY_ID !== $order->get_payment_method()
-			|| ! WC()->session
 		) {
 			return $required;
 		}
 
+		$session = WooPaymentsSessionService::get_wc_session();
+		if ( null === $session ) {
+			return $required;
+		}
+
 		$intent_id         = (string) $order->get_meta( '_intent_id', true );
-		$session_intent_id = (string) WC()->session->get( self::PAID_INTENT_ID_SESSION_KEY, '' );
+		$session_intent_id = (string) WooPaymentsSessionService::get_owned_value( $session, self::PAID_INTENT_ID_SESSION_KEY );
 		if ( '' === $intent_id || '' === $session_intent_id || ! hash_equals( $intent_id, $session_intent_id ) ) {
 			return $required;
 		}

@@ -3,6 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSessionService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
@@ -53,7 +54,7 @@ class WooPaymentsOrderSuccessPageTest extends WC_Unit_Test_Case {
 			remove_action( 'wp_footer', array( $page, 'output_footer_scripts' ) );
 		}
 		if ( WC() && WC()->session ) {
-			WC()->session->set( 'wcpay_paid_intent_id', null );
+			WooPaymentsSessionService::set_owned_value( WC()->session, 'wcpay_paid_intent_id', null );
 		}
 		wp_dequeue_script( 'wc-woopayments-order-success' );
 		wp_deregister_script( 'wc-woopayments-order-success' );
@@ -676,7 +677,7 @@ class WooPaymentsOrderSuccessPageTest extends WC_Unit_Test_Case {
 	public function test_skips_email_verification_for_matching_session_paid_intent(): void {
 		$page  = $this->create_page();
 		$order = $this->create_thankyou_order( 'processing', WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pi_mock' );
-		WC()->session->set( WooPaymentsOrderSuccessPage::PAID_INTENT_ID_SESSION_KEY, 'pi_mock' );
+		WooPaymentsSessionService::set_owned_value( WC()->session, WooPaymentsOrderSuccessPage::PAID_INTENT_ID_SESSION_KEY, 'pi_mock' );
 		$page->register();
 		$this->registered_pages[] = $page;
 
@@ -696,14 +697,18 @@ class WooPaymentsOrderSuccessPageTest extends WC_Unit_Test_Case {
 	 * @param string $order_intent_id Order PaymentIntent ID.
 	 * @param bool   $has_session Whether a WC session is available.
 	 * @param string $session_intent_id Session PaymentIntent ID.
+	 * @param string $stored_by Session recorded as storing the intent: 'this session', another session's ID, or '' for none.
 	 */
-	public function test_keeps_email_verification_requirement_without_exact_paid_intent_match( $required, string $context, bool $pass_order, string $payment_method, string $order_intent_id, bool $has_session, string $session_intent_id ): void {
+	public function test_keeps_email_verification_requirement_without_exact_paid_intent_match( $required, string $context, bool $pass_order, string $payment_method, string $order_intent_id, bool $has_session, string $session_intent_id, string $stored_by = 'this session' ): void {
 		$page             = $this->create_page();
 		$order            = $this->create_thankyou_order( 'processing', $payment_method, $order_intent_id );
 		$original_session = WC()->session;
 
 		if ( $has_session ) {
-			WC()->session->set( WooPaymentsOrderSuccessPage::PAID_INTENT_ID_SESSION_KEY, $session_intent_id );
+			WooPaymentsSessionService::set_owned_value( WC()->session, WooPaymentsOrderSuccessPage::PAID_INTENT_ID_SESSION_KEY, $session_intent_id );
+			if ( 'this session' !== $stored_by ) {
+				WC()->session->set( 'wcpay_paid_intent_id_session', '' === $stored_by ? null : $stored_by );
+			}
 		} else {
 			WC()->session = null;
 		}
@@ -720,20 +725,23 @@ class WooPaymentsOrderSuccessPageTest extends WC_Unit_Test_Case {
 	/**
 	 * Provide contexts that must not waive email verification.
 	 *
-	 * @return array<string,array{0:mixed,1:string,2:bool,3:string,4:string,5:bool,6:string}>
+	 * @return array<string,array{0:mixed,1:string,2:bool,3:string,4:string,5:bool,6:string,7?:string}>
 	 */
 	public function email_verification_exception_negative_cases(): array {
 		return array(
-			'false input'              => array( false, 'order-received', true, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pi_mock', true, 'pi_mock' ),
-			'nonboolean input'         => array( 'required', 'order-received', true, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pi_mock', true, 'pi_mock' ),
-			'wrong context'            => array( true, 'checkout', true, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pi_mock', true, 'pi_mock' ),
-			'non-order input'          => array( true, 'order-received', false, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pi_mock', true, 'pi_mock' ),
-			'provider-suffixed method' => array( true, 'order-received', true, WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . 'wechat_pay', 'pi_mock', true, 'pi_mock' ),
-			'other method'             => array( true, 'order-received', true, 'cod', 'pi_mock', true, 'pi_mock' ),
-			'absent session'           => array( true, 'order-received', true, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pi_mock', false, 'pi_mock' ),
-			'empty session intent'     => array( true, 'order-received', true, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pi_mock', true, '' ),
-			'empty order intent'       => array( true, 'order-received', true, WooPaymentsPersistenceVocabulary::GATEWAY_ID, '', true, 'pi_mock' ),
-			'mismatching intent'       => array( true, 'order-received', true, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pi_order', true, 'pi_session' ),
+			'false input'                     => array( false, 'order-received', true, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pi_mock', true, 'pi_mock' ),
+			'nonboolean input'                => array( 'required', 'order-received', true, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pi_mock', true, 'pi_mock' ),
+			'wrong context'                   => array( true, 'checkout', true, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pi_mock', true, 'pi_mock' ),
+			'non-order input'                 => array( true, 'order-received', false, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pi_mock', true, 'pi_mock' ),
+			'provider-suffixed method'        => array( true, 'order-received', true, WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . 'wechat_pay', 'pi_mock', true, 'pi_mock' ),
+			'other method'                    => array( true, 'order-received', true, 'cod', 'pi_mock', true, 'pi_mock' ),
+			'absent session'                  => array( true, 'order-received', true, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pi_mock', false, 'pi_mock' ),
+			'empty session intent'            => array( true, 'order-received', true, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pi_mock', true, '' ),
+			'empty order intent'              => array( true, 'order-received', true, WooPaymentsPersistenceVocabulary::GATEWAY_ID, '', true, 'pi_mock' ),
+			'mismatching intent'              => array( true, 'order-received', true, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pi_order', true, 'pi_session' ),
+			// Client 11.3.0 class-wc-payments-order-success-page.php:579-582; no recorded session is an intent stored before 11.3.0.
+			'intent another session stored'   => array( true, 'order-received', true, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pi_mock', true, 'pi_mock', 't_another_session' ),
+			'intent with no recorded session' => array( true, 'order-received', true, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pi_mock', true, 'pi_mock', '' ),
 		);
 	}
 

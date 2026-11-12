@@ -1654,12 +1654,15 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 		if (
 			PaymentOutcome::STATUS_COMPLETED !== $outcome->get_status()
 			|| '' === $intent_id
-			|| ! WC()->session
 		) {
 			return;
 		}
 
-		WC()->session->set( WooPaymentsOrderSuccessPage::PAID_INTENT_ID_SESSION_KEY, $intent_id );
+		$session = WooPaymentsSessionService::get_wc_session();
+		if ( null !== $session ) {
+			// Stored with the session that paid it (client 11.3.0 gw:2451-2455).
+			WooPaymentsSessionService::set_owned_value( $session, WooPaymentsOrderSuccessPage::PAID_INTENT_ID_SESSION_KEY, $intent_id );
+		}
 	}
 
 	/**

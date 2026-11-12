@@ -151,6 +151,8 @@ class WooPaymentsClassesBySetupTierTest extends WC_Unit_Test_Case {
 			// The shopper scripts post their Tracks events to this controller's REST route, in a request of their own.
 			'The shopper Tracks controller'         => array( self::WCPAY . 'WooPaymentsFrontendTrackingController', array( 'active ajax', 'active front', 'active rest' ) ),
 			'The WooPay preflight guard'            => array( PreflightGuard::class, array( 'active rest' ) ),
+			// A guest session becomes the shopper's account session on a page, AJAX or Store API request.
+			'The session payment values'            => array( self::WCPAY . 'WooPaymentsSessionService', array( 'active ajax', 'active front', 'active rest' ) ),
 			// Merchant routes serve REST requests; admin requests defer them to internal REST initialization.
 			'The merchant REST controller'          => array( MerchantRestController::class, array( 'active rest', 'connected rest' ) ),
 			'The admin REST route registrar'        => array( WooPaymentsAdminRestRouteRegistrar::class, array( 'active admin', 'connected admin' ) ),

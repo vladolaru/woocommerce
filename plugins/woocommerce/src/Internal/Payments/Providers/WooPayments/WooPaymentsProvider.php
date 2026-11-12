@@ -252,6 +252,7 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 						WebhookReliabilityService::class,
 						WooPaymentsAddressProvider::class,
 						WooPaymentsCustomerService::class,
+						WooPaymentsSessionService::class,
 						WooPaymentsDuplicatePaymentPreventionService::class,
 						WooPaymentsRedirectReturnController::class,
 						WooPaymentsOrderAdminActionsController::class,
@@ -288,6 +289,7 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 					$connected_ajax,
 					array(
 						WooPaymentsAddressProvider::class,
+						WooPaymentsSessionService::class,
 						WooPaymentsDuplicatePaymentPreventionService::class,
 						WooPaymentsCheckoutAjaxController::class,
 						WooPaymentsTokenizedCartSessionController::class,
@@ -306,6 +308,7 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 					array(
 						PreflightGuard::class,
 						WooPaymentsAddressProvider::class,
+						WooPaymentsSessionService::class,
 						WooPaymentsDuplicatePaymentPreventionService::class,
 						WooPaymentsTokenizedCartSessionController::class,
 						WooPaymentsCheckoutAssets::class,

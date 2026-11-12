@@ -3,6 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSessionService;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
 use Automattic\WooCommerce\Internal\Payments\PaymentLifecycleEvent;
@@ -39,7 +40,7 @@ class WooPaymentsDuplicatePaymentPreventionServiceTest extends WC_Unit_Test_Case
 		$session_order  = $this->create_order( $same_cart_hash, 'completed', $customer_id );
 		$current_order  = $this->create_order( $same_cart_hash, 'pending', $customer_id );
 		$current_id     = $current_order->get_id();
-		$session->set( WooPaymentsDuplicatePaymentPreventionService::SESSION_KEY_PROCESSING_ORDER, $session_order->get_id() );
+		WooPaymentsSessionService::set_owned_value( $session, WooPaymentsDuplicatePaymentPreventionService::SESSION_KEY_PROCESSING_ORDER, $session_order->get_id() );
 
 		$result = $sut->delete_duplicate_of_paid_session_order( $current_order, $this->create_gateway() );
 
@@ -55,6 +56,36 @@ class WooPaymentsDuplicatePaymentPreventionServiceTest extends WC_Unit_Test_Case
 		$deleted_order = wc_get_order( $current_id );
 		$this->assertInstanceOf( WC_Order::class, $deleted_order );
 		$this->assertSame( 'trash', $deleted_order->get_status() );
+	}
+
+	/**
+	 * @testdox A processing order is read only in the session that stored it: $_dataName.
+	 *
+	 * Client 11.3.0 class-duplicate-payment-prevention-service.php:330-337; a processing order with no recorded session,
+	 * as one stored before client 11.3.0, reads as absent.
+	 *
+	 * @testWith ["another session", "t_another_session"]
+	 *           ["no recorded session", null]
+	 *
+	 * @param string      $label     Case label.
+	 * @param string|null $stored_by Session recorded as storing the processing order.
+	 */
+	public function test_processing_order_another_session_stored_is_ignored( string $label, ?string $stored_by ): void {
+		unset( $label );
+		$session       = $this->create_session();
+		$sut           = $this->create_service( $session );
+		$customer_id   = self::factory()->user->create();
+		$session_order = $this->create_order( 'same-cart-hash', 'completed', $customer_id );
+		$current_order = $this->create_order( 'same-cart-hash', 'pending', $customer_id );
+		$sut->maybe_update_session_processing_order( $session_order->get_id() );
+		$session->set( 'wcpay_processing_order_session', $stored_by );
+
+		$result = $sut->delete_duplicate_of_paid_session_order( $current_order, $this->create_gateway() );
+		$sut->remove_session_processing_order( $session_order->get_id() );
+
+		$this->assertNull( $result );
+		$this->assertSame( 'pending', wc_get_order( $current_order->get_id() )->get_status() );
+		$this->assertSame( $session_order->get_id(), $session->get( WooPaymentsDuplicatePaymentPreventionService::SESSION_KEY_PROCESSING_ORDER ) );
 	}
 
 	/**
@@ -76,7 +107,7 @@ class WooPaymentsDuplicatePaymentPreventionServiceTest extends WC_Unit_Test_Case
 		$customer_id   = self::factory()->user->create();
 		$session_order = $this->create_order( 'same-cart-hash', 'completed', $customer_id );
 		$other_order   = $this->create_order( 'other-cart-hash', 'completed', $customer_id );
-		$session->set( WooPaymentsDuplicatePaymentPreventionService::SESSION_KEY_PROCESSING_ORDER, $session_order->get_id() );
+		WooPaymentsSessionService::set_owned_value( $session, WooPaymentsDuplicatePaymentPreventionService::SESSION_KEY_PROCESSING_ORDER, $session_order->get_id() );
 		add_filter( 'woocommerce_is_order_received_page', '__return_true' );
 		$wp->query_vars['order-received'] = (string) ( 'the processing order' === $page ? $session_order->get_id() : $other_order->get_id() );
 
@@ -109,7 +140,7 @@ class WooPaymentsDuplicatePaymentPreventionServiceTest extends WC_Unit_Test_Case
 		$customer_id   = self::factory()->user->create();
 		$session_order = $this->create_order( $session_cart_hash, $session_status, $customer_id );
 		$current_order = $this->create_order( $current_cart_hash, $current_status, $same_customer ? $customer_id : self::factory()->user->create() );
-		$session->set( WooPaymentsDuplicatePaymentPreventionService::SESSION_KEY_PROCESSING_ORDER, $session_order->get_id() );
+		WooPaymentsSessionService::set_owned_value( $session, WooPaymentsDuplicatePaymentPreventionService::SESSION_KEY_PROCESSING_ORDER, $session_order->get_id() );
 
 		$result = $sut->delete_duplicate_of_paid_session_order( $current_order, $this->create_gateway() );
 
@@ -130,7 +161,7 @@ class WooPaymentsDuplicatePaymentPreventionServiceTest extends WC_Unit_Test_Case
 		$paid_copy     = wc_get_order( $current_order->get_id() );
 		$paid_copy->set_status( 'processing' );
 		$paid_copy->save();
-		$session->set( WooPaymentsDuplicatePaymentPreventionService::SESSION_KEY_PROCESSING_ORDER, $current_order->get_id() );
+		WooPaymentsSessionService::set_owned_value( $session, WooPaymentsDuplicatePaymentPreventionService::SESSION_KEY_PROCESSING_ORDER, $current_order->get_id() );
 
 		$result = $sut->delete_duplicate_of_paid_session_order( $current_order, $this->create_gateway() );
 
@@ -183,7 +214,7 @@ class WooPaymentsDuplicatePaymentPreventionServiceTest extends WC_Unit_Test_Case
 		$session = $this->create_session();
 		$sut     = $this->create_service( $session );
 		$order   = $this->create_order();
-		$session->set( WooPaymentsDuplicatePaymentPreventionService::SESSION_KEY_PROCESSING_ORDER, $order->get_id() );
+		WooPaymentsSessionService::set_owned_value( $session, WooPaymentsDuplicatePaymentPreventionService::SESSION_KEY_PROCESSING_ORDER, $order->get_id() );
 
 		try {
 			$sut->register();
@@ -249,7 +280,7 @@ class WooPaymentsDuplicatePaymentPreventionServiceTest extends WC_Unit_Test_Case
 		$order->set_total( '12.00' );
 		$order->update_meta_data( '_intent_id', 'pi_existing' );
 		$order->save();
-		$session->set( WooPaymentsDuplicatePaymentPreventionService::SESSION_KEY_PROCESSING_ORDER, $order->get_id() );
+		WooPaymentsSessionService::set_owned_value( $session, WooPaymentsDuplicatePaymentPreventionService::SESSION_KEY_PROCESSING_ORDER, $order->get_id() );
 
 		$api_client = $this->getMockBuilder( Client::class )
 			->disableOriginalConstructor()
@@ -995,7 +1026,7 @@ class WooPaymentsDuplicatePaymentPreventionServiceTest extends WC_Unit_Test_Case
 		$session = $this->create_session();
 		$sut     = $this->create_service( $session );
 		$order   = $this->create_order( 'hash', 'processing' );
-		$session->set( WooPaymentsDuplicatePaymentPreventionService::SESSION_KEY_PROCESSING_ORDER, $order->get_id() );
+		WooPaymentsSessionService::set_owned_value( $session, WooPaymentsDuplicatePaymentPreventionService::SESSION_KEY_PROCESSING_ORDER, $order->get_id() );
 
 		$result = $sut->check_order_already_paid( $order, $this->create_gateway() );
 

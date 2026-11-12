@@ -35,7 +35,7 @@ class WooPaymentsCustomerServiceTest extends WC_Unit_Test_Case {
 		parent::setUp();
 		$this->original_session = WC()->session;
 		if ( WC()->session ) {
-			WC()->session->set( 'wcpay_customer_id', null );
+			WooPaymentsSessionService::set_owned_value( WC()->session, 'wcpay_customer_id', null );
 		}
 	}
 
@@ -46,7 +46,7 @@ class WooPaymentsCustomerServiceTest extends WC_Unit_Test_Case {
 		delete_option( 'wcpay_session_store_id' );
 		unset( $_GET['change_payment_method'], $GLOBALS['wcpay_test_subscription_ids'], $GLOBALS['wcpay_test_checkout_blocks_api_request'] );
 		if ( WC()->session ) {
-			WC()->session->set( 'wcpay_customer_id', null );
+			WooPaymentsSessionService::set_owned_value( WC()->session, 'wcpay_customer_id', null );
 		}
 		// A test that initializes the session gets the base class's mock handler; put the earlier session back.
 		WC()->session = $this->original_session;
@@ -75,7 +75,7 @@ class WooPaymentsCustomerServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_created_customer_promotes_guest_session_customer_id_during_checkout( bool $test_mode, string $customer_option, bool $classic_checkout ): void {
 		$user_id = $this->factory->user->create( array( 'user_login' => 'created-during-checkout' ) );
-		WC()->session->set( 'wcpay_customer_id', 'cus_guest' );
+		WooPaymentsSessionService::set_owned_value( WC()->session, 'wcpay_customer_id', 'cus_guest' );
 		$this->fake_wcs_checkout_blocks_api_request();
 		Constants::set_constant( 'WOOCOMMERCE_CHECKOUT', $classic_checkout );
 		$GLOBALS['wcpay_test_checkout_blocks_api_request'] = ! $classic_checkout;
@@ -99,20 +99,27 @@ class WooPaymentsCustomerServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Account creation should not adopt a guest session customer ID without a WooPayments account, outside a checkout or without one in the session: $_dataName.
+	 * @testdox Account creation should not adopt a guest session customer ID without a WooPayments account, outside a checkout or without one this session stored: $_dataName.
+	 *
+	 * Client 11.3.0 class-wc-payments-customer-service.php:488-505 adopts only the customer the current session stored.
+	 *
 	 * @dataProvider provide_account_creations_that_write_no_customer_id
 	 *
 	 * @param bool        $has_account      Whether WooPayments has an account.
 	 * @param bool        $in_checkout      Whether the account is created during a checkout (the Checkout block's API request).
 	 * @param string|null $session_customer Guest customer ID in the session, or null for none.
+	 * @param string|null $stored_by        Session recorded as storing it, or null to keep the current one.
 	 */
-	public function test_created_customer_writes_no_customer_id( bool $has_account, bool $in_checkout, ?string $session_customer ): void {
+	public function test_created_customer_writes_no_customer_id( bool $has_account, bool $in_checkout, ?string $session_customer, ?string $stored_by = null ): void {
 		if ( ! $in_checkout ) {
 			// The helper's value wins over a constant an earlier test's checkout defined.
 			Constants::set_constant( 'WOOCOMMERCE_CHECKOUT', false );
 		}
 		$user_id = $this->factory->user->create( array( 'user_login' => 'created-without-a-customer-id' ) );
-		WC()->session->set( 'wcpay_customer_id', $session_customer );
+		WooPaymentsSessionService::set_owned_value( WC()->session, 'wcpay_customer_id', $session_customer );
+		if ( null !== $stored_by ) {
+			WC()->session->set( 'wcpay_customer_id_session', '' === $stored_by ? null : $stored_by );
+		}
 		$this->fake_wcs_checkout_blocks_api_request();
 		$GLOBALS['wcpay_test_checkout_blocks_api_request'] = $in_checkout;
 
@@ -125,14 +132,120 @@ class WooPaymentsCustomerServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * Account creations that must write no customer ID.
 	 *
-	 * @return array<string,array{0:bool,1:bool,2:string|null}>
+	 * @return array<string,array{0:bool,1:bool,2:string|null,3?:string}>
 	 */
 	public function provide_account_creations_that_write_no_customer_id(): array {
 		return array(
-			'no WooPayments account' => array( false, true, 'cus_guest' ),
-			'outside a checkout'     => array( true, false, 'cus_guest' ),
-			'no session customer'    => array( true, true, null ),
+			'no WooPayments account'            => array( false, true, 'cus_guest' ),
+			'outside a checkout'                => array( true, false, 'cus_guest' ),
+			'no session customer'               => array( true, true, null ),
+			'customer another session stored'   => array( true, true, 'cus_guest', 't_another_session' ),
+			'customer with no recorded session' => array( true, true, 'cus_guest', '' ),
 		);
+	}
+
+	/**
+	 * @testdox Account creation adopts the session's customer only when no other user stores it under the current or deprecated option, site-scoped or network-wide: $_dataName.
+	 *
+	 * Client 11.3.0 class-wc-payments-customer-service.php:503-538.
+	 *
+	 * @testWith ["current option, site-scoped", "_wcpay_customer_id_live", true, "cus_guest", false]
+	 *           ["current option, network-wide", "_wcpay_customer_id_live", false, "cus_guest", false]
+	 *           ["deprecated option, site-scoped", "_wcpay_customer_id", true, "cus_guest", false]
+	 *           ["deprecated option, network-wide", "_wcpay_customer_id", false, "cus_guest", false]
+	 *           ["another customer on another user", "_wcpay_customer_id_live", true, "cus_other", true]
+	 *           ["the other mode's option", "_wcpay_customer_id_test", true, "cus_guest", true]
+	 *
+	 * @param string $label       Case label.
+	 * @param string $option      User option another user stores a customer under.
+	 * @param bool   $site_scoped Whether that option carries the site's prefix.
+	 * @param string $other_value Customer the other user stores.
+	 * @param bool   $adopted     Whether the new account adopts the session's customer.
+	 */
+	public function test_created_customer_does_not_adopt_a_customer_another_user_stores( string $label, string $option, bool $site_scoped, string $other_value, bool $adopted ): void {
+		global $wpdb;
+		unset( $label );
+		$other_user_id = $this->factory->user->create( array( 'user_login' => 'stores-a-customer' ) );
+		update_user_meta( $other_user_id, ( $site_scoped ? $wpdb->get_blog_prefix() : '' ) . $option, $other_value );
+		$user_id = $this->factory->user->create( array( 'user_login' => 'created-during-checkout' ) );
+		WooPaymentsSessionService::set_owned_value( WC()->session, 'wcpay_customer_id', 'cus_guest' );
+		Constants::set_constant( 'WOOCOMMERCE_CHECKOUT', true );
+
+		$sut = $this->create_sut( false, $this->create_customer_api_client( array() ) );
+		$sut->handle_woocommerce_created_customer( $user_id );
+
+		$this->assertSame( $adopted ? 'cus_guest' : false, get_user_option( WooPaymentsCustomerService::LIVE_CUSTOMER_ID_OPTION, $user_id ) );
+	}
+
+	/**
+	 * @testdox A user's customer ID stays in their user option and leaves the session's guest customer as it is: $_dataName.
+	 *
+	 * Client 11.3.0 class-wc-payments-customer-service.php:158-165 writes the session only for a guest, and its recreate path
+	 * deletes only the user option (:377-386).
+	 *
+	 * @testWith ["created for the user"]
+	 *           ["replaced for the user"]
+	 *           ["adopted at account creation"]
+	 *
+	 * @param string $writer The customer service step that stores the user's customer.
+	 */
+	public function test_users_customer_id_is_not_written_to_the_session( string $writer ): void {
+		$user_id = $this->factory->user->create( array( 'user_login' => 'customer-in-user-option' ) );
+		$order   = $this->create_checkout_order( $user_id );
+		WooPaymentsSessionService::set_owned_value( WC()->session, 'wcpay_customer_id', 'cus_guest_session' );
+		$sut = $this->create_sut( false, $this->create_customer_api_client( array( 'cus_user' ) ) );
+
+		if ( 'created for the user' === $writer ) {
+			$this->assertSame( 'cus_user', $sut->get_or_create_customer_id_for_order( $order ) );
+		} elseif ( 'replaced for the user' === $writer ) {
+			update_user_option( $user_id, WooPaymentsCustomerService::LIVE_CUSTOMER_ID_OPTION, 'cus_old' );
+			$this->assertSame( 'cus_user', $sut->replace_missing_customer_for_order( $order, 'cus_old' ) );
+		} else {
+			Constants::set_constant( 'WOOCOMMERCE_CHECKOUT', true );
+			$sut->handle_woocommerce_created_customer( $user_id );
+		}
+
+		$this->assertNotFalse( get_user_option( WooPaymentsCustomerService::LIVE_CUSTOMER_ID_OPTION, $user_id ) );
+		$this->assertSame( 'cus_guest_session', WC()->session->get( 'wcpay_customer_id' ) );
+		$this->assertSame( (string) WC()->session->get_customer_id(), WC()->session->get( 'wcpay_customer_id_session' ) );
+	}
+
+	/**
+	 * @testdox A guest payment uses the guest customer only when the current session stored it, and creates one otherwise: $_dataName.
+	 *
+	 * Client 11.3.0 class-wc-payments-customer-service.php:124-127 and :396-405; a customer with no recorded session, as one
+	 * stored before client 11.3.0, reads as absent.
+	 *
+	 * @testWith ["this session", null, "cus_guest"]
+	 *           ["another session", "t_another_session", "cus_new"]
+	 *           ["no recorded session", "", "cus_new"]
+	 *
+	 * @param string      $label     Case label.
+	 * @param string|null $stored_by Session recorded as storing the customer, or null to keep the current one.
+	 * @param string      $expected  Customer the payment uses.
+	 */
+	public function test_guest_payment_uses_only_the_customer_its_session_stored( string $label, ?string $stored_by, string $expected ): void {
+		unset( $label );
+		$order      = $this->create_checkout_order();
+		$api_client = $this->create_customer_api_client( array( 'cus_new' ) );
+		WooPaymentsSessionService::set_owned_value( WC()->session, 'wcpay_customer_id', 'cus_guest' );
+		if ( null !== $stored_by ) {
+			WC()->session->set( 'wcpay_customer_id_session', '' === $stored_by ? null : $stored_by );
+		}
+
+		$this->assertSame( $expected, $this->create_sut( false, $api_client )->get_or_create_customer_id_for_order( $order ) );
+	}
+
+	/**
+	 * @testdox A logged-in shopper's second payment reuses the customer their first one created.
+	 */
+	public function test_logged_in_shoppers_second_payment_reuses_their_customer(): void {
+		$user_id    = $this->factory->user->create( array( 'user_login' => 'pays-twice' ) );
+		$api_client = $this->create_customer_api_client( array( 'cus_user' ) );
+		$sut        = $this->create_sut( false, $api_client );
+
+		$this->assertSame( 'cus_user', $sut->get_or_create_customer_id_for_order( $this->create_checkout_order( $user_id ) ) );
+		$this->assertSame( 'cus_user', $sut->get_or_create_customer_id_for_order( $this->create_checkout_order( $user_id ) ) );
 	}
 
 	/**
@@ -508,7 +621,7 @@ class WooPaymentsCustomerServiceTest extends WC_Unit_Test_Case {
 			'guest session' => array(
 				false,
 				static function (): void {
-					WC()->session->set( 'wcpay_customer_id', 'cus_guest' );
+					WooPaymentsSessionService::set_owned_value( WC()->session, 'wcpay_customer_id', 'cus_guest' );
 				},
 				'cus_guest',
 			),
@@ -587,7 +700,7 @@ class WooPaymentsCustomerServiceTest extends WC_Unit_Test_Case {
 		$api_client = $this->create_customer_api_client( array( 'cus_new' ) );
 		$sut        = $this->create_sut( false, $api_client );
 		update_user_option( $payer_id, '_wcpay_customer_id_live', 'cus_payer' );
-		WC()->session->set( 'wcpay_customer_id', 'cus_session' );
+		WooPaymentsSessionService::set_owned_value( WC()->session, 'wcpay_customer_id', 'cus_session' );
 		wp_set_current_user( $payer_id );
 
 		$this->assertSame( 'cus_payer', $sut->get_or_create_customer_id_for_order( $order ) );

@@ -3,6 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSessionService;
 use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Enums\OrderStatus;
 use Automattic\WooCommerce\Enums\PaymentGatewayFeature;
@@ -161,7 +162,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		unset( $GLOBALS[ WooCommerceSubscriptionsDoubles::ORDER_SUBSCRIPTIONS ] );
 		delete_option( 'woocommerce_default_country' );
 		if ( WC() && WC()->session ) {
-			WC()->session->set( 'wcpay_paid_intent_id', null );
+			WooPaymentsSessionService::set_owned_value( WC()->session, 'wcpay_paid_intent_id', null );
 		}
 		if ( class_exists( 'WC_Subscriptions_Change_Payment_Gateway', false ) && method_exists( 'WC_Subscriptions_Change_Payment_Gateway', 'reset' ) ) {
 			\WC_Subscriptions_Change_Payment_Gateway::reset();
@@ -2448,6 +2449,8 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$this->assertSame( WooPaymentsPersistenceVocabulary::GATEWAY_ID, $service->last_checkout_context->get_gateway_id() );
 		$this->assertFalse( $service->last_checkout_context->get_provider_data()['is_platform_payment_method'] );
 		$this->assertSame( 'pi_mock', WC()->session->get( WooPaymentsOrderSuccessPage::PAID_INTENT_ID_SESSION_KEY ) );
+		// Client 11.3.0 class-wc-payment-gateway-wcpay.php:2451-2455 stores the session that paid it beside the intent.
+		$this->assertSame( (string) WC()->session->get_customer_id(), WC()->session->get( 'wcpay_paid_intent_id_session' ) );
 	}
 
 	/**
@@ -5192,7 +5195,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$current_order->set_status( $current_status );
 		$current_order->save();
 
-		$session->set( WooPaymentsDuplicatePaymentPreventionService::SESSION_KEY_PROCESSING_ORDER, $paid_order->get_id() );
+		WooPaymentsSessionService::set_owned_value( $session, WooPaymentsDuplicatePaymentPreventionService::SESSION_KEY_PROCESSING_ORDER, $paid_order->get_id() );
 
 		$gateway = new WooPaymentsGateway();
 		$gateway->init(
@@ -5361,7 +5364,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$service = new RecordingPaymentProcessingService();
 		$order->update_meta_data( '_intent_id', 'pi_existing' );
 		$order->save();
-		$session->set( WooPaymentsDuplicatePaymentPreventionService::SESSION_KEY_PROCESSING_ORDER, $order->get_id() );
+		WooPaymentsSessionService::set_owned_value( $session, WooPaymentsDuplicatePaymentPreventionService::SESSION_KEY_PROCESSING_ORDER, $order->get_id() );
 
 		$api_client = $this->getMockBuilder( Client::class )
 			->disableOriginalConstructor()
