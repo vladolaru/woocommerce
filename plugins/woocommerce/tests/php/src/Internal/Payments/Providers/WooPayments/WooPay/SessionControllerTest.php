@@ -1658,10 +1658,11 @@ class SessionControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The $action action accepts only a POST from the store's own pages, before reading the nonce or the session: $_dataName.
+	 * @testdox The $action action answers a request outside the same-origin POST rule with the refusal body and leaves the session service unused: $_dataName.
 	 *
 	 * Client 11.3.0 class-woopay-session.php:830-885, called first by the three actions (:936, :986, :1014). The three
-	 * actions apply the same-origin POST rule before accessing session data.
+	 * actions apply the same-origin POST rule before accessing session data. These rows read the response body and the
+	 * session service's calls; the HTTP status is read in the live rows.
 	 *
 	 * @dataProvider provide_session_action_requests
 	 *

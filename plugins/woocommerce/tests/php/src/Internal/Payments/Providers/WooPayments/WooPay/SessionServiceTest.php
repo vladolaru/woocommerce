@@ -161,6 +161,17 @@ class SessionServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox The checkout config carries a nonce for the save-user action, valid in the current session.
+	 *
+	 * Client 11.3.0 class-wc-payments-checkout.php:277.
+	 */
+	public function test_checkout_config_carries_the_save_user_nonce(): void {
+		$config = $this->create_service()->get_woopay_frontend_config( 'checkout' );
+
+		$this->assertSame( 1, wp_verify_nonce( $config['woopaySaveUserNonce'] ?? '', 'woocommerce_payments_woopay_save_user' ) );
+	}
+
+	/**
 	 * @testdox Should evaluate the button filter once while keeping frontend capability fields internally consistent.
 	 */
 	public function test_woopay_frontend_config_applies_button_filter_once(): void {

@@ -79,6 +79,7 @@ class WooPaymentsSessionServiceTest extends WC_Unit_Test_Case {
 		$session->set( $owner_key, null );
 		$this->assertNull( WooPaymentsSessionService::get_owned_value( $session, $key ), 'A value with no recorded session is ignored.' );
 
+		WooPaymentsSessionService::set_owned_value( $session, $key, $value );
 		WooPaymentsSessionService::set_owned_value( $session, $key, null );
 		$this->assertNull( $session->get( $key ) );
 		$this->assertNull( $session->get( $owner_key ) );
