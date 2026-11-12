@@ -571,7 +571,8 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 	 * After a charge, the writes made whatever the payment decision come first: the token, a SetupIntent's payment method
 	 * details, the payment method title and card meta (WooPaymentsOrderEffectApplier::apply_charge_writes()). The order is
 	 * then read again in place, under the checkout's order payment lock and after the last platform call, and the intent is
-	 * attached and the outcome composed on that order.
+	 * attached and the outcome composed on that order. A completed capture's effects start with the same read, after the
+	 * capture call.
 	 *
 	 * @param PaymentOperationContext $context   Payment context.
 	 * @param PaymentOutcome          $outcome   Provider outcome.
@@ -580,6 +581,11 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 	 */
 	public function apply_operation_effects( PaymentOperationContext $context, PaymentOutcome $outcome, string $operation ): PaymentOutcome {
 		if ( PaymentProcessingService::OPERATION_CHARGE !== $operation ) {
+			if ( PaymentProcessingService::OPERATION_CAPTURE === $operation && PaymentOutcome::STATUS_COMPLETED === $outcome->get_status() ) {
+				// A completed capture's event is decided on the order, so it is read again in place after the capture call.
+				wc_get_container()->get( OrderPaymentLifecycleService::class )->reread_order_from_data_store( $context->get_order() );
+			}
+
 			return $this->apply_effect_plan( $context, $outcome );
 		}
 

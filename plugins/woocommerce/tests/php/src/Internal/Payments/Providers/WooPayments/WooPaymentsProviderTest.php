@@ -9,6 +9,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPe
 use Automattic\WooCommerce\Internal\Payments\PaymentLifecycleEvent;
 use Automattic\WooCommerce\Internal\Payments\PaymentOperationContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
+use Automattic\WooCommerce\Internal\Payments\PaymentProcessingService;
 use Automattic\WooCommerce\Internal\Payments\ProviderOperationEffectApplierInterface;
 use Automattic\WooCommerce\Internal\Payments\ProviderPostLifecycleEffectApplierInterface;
 use Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabularyInterface;
@@ -79,6 +80,26 @@ class WooPaymentsProviderTest extends WC_Unit_Test_Case {
 
 		$this->assertInstanceOf( ProviderPersistenceVocabularyInterface::class, $vocabulary );
 		$this->assertSame( WooPaymentsPersistenceVocabulary::GATEWAY_ID, $this->sut->get_id() );
+	}
+
+	/**
+	 * @testdox A completed capture's effects read the order again in place, so the payment lifecycle decides on the order as stored after the capture call.
+	 */
+	public function test_completed_capture_effects_read_the_order_again(): void {
+		$order = wc_create_order();
+		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+		$order->save();
+		$other = wc_get_order( $order->get_id() );
+		$other->update_meta_data( '_written_during_the_capture', 'stored' );
+		$other->save();
+
+		$this->sut->apply_operation_effects(
+			PaymentOperationContext::for_capture( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ),
+			new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_capture_read' ),
+			PaymentProcessingService::OPERATION_CAPTURE
+		);
+
+		$this->assertSame( 'stored', $order->get_meta( '_written_during_the_capture', true ) );
 	}
 
 	/**

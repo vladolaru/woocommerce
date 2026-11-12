@@ -16,6 +16,8 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOr
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeeDetailsNoteController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\DisputeEventHandler;
+use Automattic\WooCommerce\Enums\OrderStatus;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\SubscriptionDouble;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\WooCommerceSubscriptionsDoubles;
 use WC_Helper_Order;
@@ -515,6 +517,64 @@ class WooPaymentsTerminalPaymentsRestControllerTest extends WC_REST_Unit_Test_Ca
 		$this->assertSame( 'test', $order->get_meta( '_wcpay_mode', true ) );
 		// Plugin 11.1.0 stores the intent model's uppercased currency (class-wc-rest-payments-orders-controller.php:215, class-wc-payments-api-payment-intention.php:93).
 		$this->assertSame( 'USD', $order->get_meta( '_wcpay_intent_currency', true ) );
+	}
+
+	/**
+	 * @testdox A terminal capture decides each payment lifecycle application on the order read after the platform call before it: $_dataName.
+	 *
+	 * The capture holds the order payment lock throughout; the authorization is decided after the intent read and the
+	 * completion after the capture call (client 11.3.0 class-wc-rest-payments-orders-controller.php:197-217, :228). An order
+	 * already on hold gets no authorization (class-wc-payments-order-service.php:2148-2151), and an open dispute keeps a
+	 * completion from changing the order.
+	 *
+	 * @testWith ["on hold during the intent read", "fetch"]
+	 *           ["an open dispute during the capture call", "capture"]
+	 *
+	 * @param string $label When the order changes.
+	 * @param string $when  The platform call it changes during: `fetch` or `capture`.
+	 */
+	public function test_capture_terminal_payment_decides_on_the_order_read_after_each_platform_call( string $label, string $when ): void {
+		unset( $label );
+		$order                                        = $this->create_order( 12.34, 'USD' );
+		$this->api_client->payment_intention_response = array(
+			'id'       => 'pi_terminal_read',
+			'status'   => 'requires_capture',
+			'currency' => 'usd',
+			'metadata' => array( 'order_id' => (string) $order->get_id() ),
+			'charges'  => array( 'data' => array( array( 'id' => 'ch_terminal_read' ) ) ),
+		);
+		$this->api_client->captured_intention_response = array(
+			'id'       => 'pi_terminal_read',
+			'status'   => 'succeeded',
+			'currency' => 'usd',
+			'charges'  => array( 'data' => array( array( 'id' => 'ch_terminal_read' ) ) ),
+		);
+		$change                                        = static function () use ( $order, $when ): void {
+			$other = wc_get_order( $order->get_id() );
+			if ( 'fetch' === $when ) {
+				$other->set_status( OrderStatus::ON_HOLD );
+			} else {
+				$other->update_meta_data( DisputeEventHandler::OPEN_DISPUTE_IDS_META_KEY, array( 'dp_terminal_read' ) );
+			}
+			$other->save();
+		};
+		if ( 'fetch' === $when ) {
+			$this->api_client->on_get_payment_intention = $change;
+		} else {
+			$this->api_client->on_capture = $change;
+		}
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/orders/' . $order->get_id() . '/capture_terminal_payment' );
+		$request->set_param( 'order_id', $order->get_id() );
+		$request->set_param( 'payment_intent_id', 'pi_terminal_read' );
+
+		$this->sut->capture_terminal_payment( $request );
+
+		$order = wc_get_order( $order->get_id() );
+		if ( 'fetch' === $when ) {
+			$this->assertSame( '', $this->get_order_note_containing( $order, 'was authorized' ), 'No authorization on an order already on hold.' );
+		} else {
+			$this->assertSame( '', $this->get_order_note_containing( $order, 'successfully captured' ), 'No completion while a dispute is open.' );
+		}
 	}
 
 	/**

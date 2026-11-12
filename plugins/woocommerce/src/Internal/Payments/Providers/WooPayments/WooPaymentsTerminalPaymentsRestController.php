@@ -466,6 +466,8 @@ class WooPaymentsTerminalPaymentsRestController extends RestApiControllerBase {
 				$order->update_meta_data( '_wcpay_ipp_channel', $ipp_channel );
 			}
 			$order->save();
+			// The order is read again in place after the intent read, so the attach and the authorization decide on it as it is now.
+			$this->get_lifecycle_service()->reread_order_from_data_store( $order );
 			// The intent is attached, transaction ID included, before the authorization is recorded and the payment captured,
 			// as client 11.3.0 attaches it (class-wc-rest-payments-orders-controller.php:215). A capture of another intent for
 			// this order is then refused once this one was tried, whatever happens to it, while a retry of this intent still
@@ -501,6 +503,8 @@ class WooPaymentsTerminalPaymentsRestController extends RestApiControllerBase {
 				return $this->get_terminal_capture_error( $result );
 			}
 			$payment_captured = true;
+			// The order is read again in place after the capture, so the completion decides on it as it is now.
+			$this->get_lifecycle_service()->reread_order_from_data_store( $order );
 
 			// The capture note, or the payment note for an intent the reader already captured (Interac), completes the payment as on the client (class-wc-payments-order-service.php:1582, :1659-1685); writing it schedules the Fee details job.
 			$this->apply_terminal_lifecycle_event( $order, $result, $intent_id, PaymentLifecycleEvent::STATUS_COMPLETED, 'succeeded' === $status );
@@ -735,8 +739,8 @@ class WooPaymentsTerminalPaymentsRestController extends RestApiControllerBase {
 			$note_type  = PaymentLifecycleEvent::NOTE_TYPE_CAPTURE_SUCCESS;
 			$candidates = $this->note_service->format_capture_success_note_candidates( $order, $intent_id, $charge_id, $balance_transaction_id );
 			// The client's capture attaches the exchange rate and the fee the capture response carries (class-wc-payment-gateway-wcpay.php:4038-4041, class-wc-payments-order-service.php:1681).
-			// The captured status is saved before the completion, as the client's capture writer stores it (:529-532), so a hook
-			// on the completion that moves an order needing no processing to Completed finds the payment captured.
+			// The captured status is saved before the completion, so a hook on the completion that moves an order needing no
+			// processing to Completed finds the payment captured: the end state the client's hook reaches by reading the intent.
 			$meta = array_merge(
 				array( '_intention_status' => 'succeeded' ),
 				$this->order_data_service->get_settlement_exchange_rate_order_meta( $order, $charge, $this->account_service->get_account_default_currency() ),

@@ -17,6 +17,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\Even
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\EventOrderResolver;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIppReceiptEmail;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\DisputeEventHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsNotificationEventHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\RefundEventHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
@@ -709,6 +710,60 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 
 		$order = wc_get_order( $order->get_id() );
 		$this->assertContains( $token->get_id(), array_map( 'absint', $order->get_payment_tokens() ), 'The webhook must restore the token so the next scheduled renewal can charge.' );
+	}
+
+	/**
+	 * @testdox payment_intent.succeeded decides on the order read after the token repair, and still writes the payment meta: $_dataName.
+	 *
+	 * Client 11.3.0 writes the payment meta, then repairs the token, then updates the order from the intent
+	 * (class-wc-payments-webhook-processing-service.php:642-701, :715, :716). The token repair can call the platform, so the
+	 * order is read again after it: a payment that leaves the order paid changes nothing (class-wc-payments-order-service.php:475),
+	 * and an open dispute keeps the completion from changing the order.
+	 *
+	 * @testWith ["paid during the token repair", "paid"]
+	 *           ["an open dispute during the token repair", "dispute"]
+	 *
+	 * @param string $label  What happens during the token repair.
+	 * @param string $change `paid` or `dispute`.
+	 */
+	public function test_payment_intent_succeeded_decides_on_the_order_read_after_the_token_repair( string $label, string $change ): void {
+		unset( $label );
+		WooCommerceSubscriptionsDoubles::load_renewal_detector();
+		$customer_id = self::factory()->user->create();
+		$order       = $this->create_woopayments_order();
+		$order->set_customer_id( $customer_id );
+		$order->save();
+		$token_service = $this->getMockBuilder( WooPaymentsTokenService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_active_token_for_order', 'get_or_create_token_for_user' ) )
+			->getMock();
+		$token_service->method( 'get_or_create_token_for_user' )->willReturnCallback(
+			static function () use ( $order, $change ): ?\WC_Payment_Token {
+				$other = wc_get_order( $order->get_id() );
+				if ( 'paid' === $change ) {
+					$other->set_status( OrderStatus::PROCESSING );
+				} else {
+					$other->update_meta_data( DisputeEventHandler::OPEN_DISPUTE_IDS_META_KEY, array( 'dp_token_repair' ) );
+				}
+				$other->save();
+
+				return null;
+			}
+		);
+		wc_get_container()->replace( WooPaymentsTokenService::class, $token_service );
+		$event = $this->create_payment_intent_event( 'payment_intent.succeeded', $order );
+
+		$GLOBALS['wcpay_test_renewal_order_ids'] = array( $order->get_id() );
+		try {
+			$this->sut->process( $event );
+		} finally {
+			unset( $GLOBALS['wcpay_test_renewal_order_ids'] );
+		}
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( 'paid' === $change ? OrderStatus::PROCESSING : OrderStatus::PENDING, $order->get_status() );
+		$this->assertSame( array(), $this->get_order_notes_containing( $order, 'was <strong>successfully charged</strong>' ), 'No success note.' );
+		$this->assertSame( (string) $event['data']['object']['id'], $order->get_meta( '_intent_id', true ), 'The payment meta is written.' );
 	}
 
 	/**

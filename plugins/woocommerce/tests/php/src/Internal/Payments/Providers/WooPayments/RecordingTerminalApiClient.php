@@ -193,6 +193,13 @@ class RecordingTerminalApiClient extends Client {
 	public $on_capture = null;
 
 	/**
+	 * Callback run inside get_payment_intention, before it answers.
+	 *
+	 * @var callable|null
+	 */
+	public $on_get_payment_intention = null;
+
+	/**
 	 * Intent ids passed to get_payment_intention, in call order.
 	 *
 	 * @var string[]
@@ -515,6 +522,9 @@ class RecordingTerminalApiClient extends Client {
 	 */
 	public function get_payment_intention( string $intent_id ): array {
 		$this->payment_intention_requests[] = $intent_id;
+		if ( null !== $this->on_get_payment_intention ) {
+			( $this->on_get_payment_intention )();
+		}
 
 		if ( null !== $this->payment_intention_exception ) {
 			throw $this->payment_intention_exception;
