@@ -2237,7 +2237,8 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 	 * (Fixtures/platform-payment-intent-events.json). Client 11.3.0 attaches the intent and holds a pending or failed order
 	 * whose stored intent is empty or the event's (class-wc-payments-webhook-processing-service.php:473-500): the
 	 * authorized note, or the held-for-review note on a review outcome (class-wc-payments-order-service.php:492-498,
-	 * :2719, :2897).
+	 * :2719, :2897). The recorded authorization carries allow; the review row's outcome is set by the test, not recorded,
+	 * to reach the client's held-for-review branch (:492-498).
 	 *
 	 * @dataProvider provider_orders_an_authorization_holds
 	 *
