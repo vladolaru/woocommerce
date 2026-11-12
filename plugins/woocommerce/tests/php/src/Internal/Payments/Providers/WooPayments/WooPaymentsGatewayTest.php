@@ -3572,6 +3572,8 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	public function test_process_payment_leaves_an_order_paid_during_the_charge( string $status ): void {
 		add_filter( 'wc_order_statuses', static fn( array $statuses ): array => array_merge( $statuses, array( 'wc-shipped' => 'Shipped' ) ) );
 		add_filter( 'woocommerce_order_is_paid_statuses', static fn( array $statuses ): array => array_merge( $statuses, array( 'shipped' ) ) );
+		// The store takes test payments, as the recorded intent is one.
+		add_filter( 'wcpay_test_mode', '__return_true' );
 		$order = $this->create_order();
 		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
 		$order->set_total( '10.99' );
@@ -3617,7 +3619,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$this->assertSame( (string) $intent['id'], $order->get_meta( '_intent_id', true ) );
 		$this->assertSame( (string) $intent['charges']['data'][0]['id'], $order->get_meta( '_charge_id', true ) );
 		$this->assertSame( 'succeeded', $order->get_meta( '_intention_status', true ) );
-		$this->assertContains( $order->get_meta( '_wcpay_mode', true ), array( 'test', 'prod' ), 'The order mode is recorded.' );
+		$this->assertSame( 'test', $order->get_meta( '_wcpay_mode', true ), "The store's order mode is recorded." );
 		$notes = wc_get_order_notes( array( 'order_id' => $order->get_id() ) );
 		$this->assertSame( array(), array_filter( wp_list_pluck( $notes, 'content' ), static fn( string $note ): bool => false !== strpos( $note, 'successfully charged' ) || false !== strpos( $note, 'A test payment of' ) ) );
 		$this->assertSame( $completions, did_action( 'woocommerce_pre_payment_complete' ) + did_action( 'woocommerce_payment_complete' ) + did_action( 'woocommerce_payment_complete_order_status_' . $status ), 'No completion hook fires.' );

@@ -5,6 +5,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\S
 
 use Automattic\WooCommerce\Internal\DependencyManagement\RuntimeContainer;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
+use Automattic\WooCommerce\Internal\Payments\PaymentLifecycleEvent;
 use Automattic\WooCommerce\Internal\Payments\PaymentOperationContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\PaymentProcessingService;
@@ -23,6 +24,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCu
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExtensionRuntime;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDataService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentMethodDetailsService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
@@ -1148,9 +1150,27 @@ class SubscriptionsControllerTest extends WC_Unit_Test_Case {
 			'_wcpay_transaction_fee'                     => '0.65',
 			'_wcpay_net'                                 => '11.35',
 		);
-		$outcome     = new PaymentOutcome( $outcome_status, 'pi_renewal_paid', '', 'pm_renewal_paid', 'cus_renewal_paid', array( 'meta' => $charge_meta ) );
-		$completions = did_action( 'woocommerce_pre_payment_complete' ) + did_action( 'woocommerce_payment_complete' ) + did_action( 'woocommerce_payment_complete_order_status_' . $status );
-		$sut         = $this->create_sut( wc_get_container()->get( PaymentProcessingService::class ), $this->create_provider_charging_while( $outcome, $status ) );
+		// The charge's own note, as WooPayments composes it: the authorized note for an authorization, the payment note otherwise.
+		$note_service  = wc_get_container()->get( WooPaymentsOrderNoteService::class );
+		$is_authorized = PaymentOutcome::STATUS_AUTHORIZED === $outcome_status;
+		$notes         = $is_authorized
+			? $note_service->format_payment_authorized_note_candidates( $order, 'pi_renewal_paid', 'ch_renewal_paid' )
+			: $note_service->format_payment_success_note_candidates( $order, 'pi_renewal_paid', 'ch_renewal_paid' );
+		$outcome       = new PaymentOutcome(
+			$outcome_status,
+			'pi_renewal_paid',
+			'',
+			'pm_renewal_paid',
+			'cus_renewal_paid',
+			array(
+				'meta'                                => $charge_meta,
+				PaymentOutcome::DATA_NOTE             => $notes[0],
+				PaymentOutcome::DATA_NOTE_TYPE        => $is_authorized ? PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_AUTHORIZED : PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_SUCCESS,
+				PaymentOutcome::DATA_NOTE_EQUIVALENTS => $notes,
+			)
+		);
+		$completions   = did_action( 'woocommerce_pre_payment_complete' ) + did_action( 'woocommerce_payment_complete' ) + did_action( 'woocommerce_payment_complete_order_status_' . $status );
+		$sut           = $this->create_sut( wc_get_container()->get( PaymentProcessingService::class ), $this->create_provider_charging_while( $outcome, $status ) );
 
 		$sut->scheduled_subscription_payment( 12.0, wc_get_order( $order->get_id() ) );
 
@@ -1163,6 +1183,9 @@ class SubscriptionsControllerTest extends WC_Unit_Test_Case {
 		}
 		$this->assertSame( $intention_status, $order->get_meta( '_intention_status', true ) );
 		$this->assertSame( $completions, did_action( 'woocommerce_pre_payment_complete' ) + did_action( 'woocommerce_payment_complete' ) + did_action( 'woocommerce_payment_complete_order_status_' . $status ), 'No completion hook fires.' );
+		$order_notes = wp_list_pluck( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), 'content' );
+		$this->assertSame( array(), array_values( array_intersect( $order_notes, $notes ) ), "The charge's note is not added." );
+		$this->assertSame( array(), array_filter( $order_notes, static fn( string $note ): bool => false !== strpos( $note, 'was <strong>authorized</strong>' ) ), 'No authorized note is added.' );
 	}
 
 	/**
