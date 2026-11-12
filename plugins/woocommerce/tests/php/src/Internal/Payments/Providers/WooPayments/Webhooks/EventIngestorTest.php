@@ -2551,12 +2551,12 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 		$order = wc_get_order( $order->get_id() );
 		$this->assertTrue( $order->is_paid() );
 		$this->assertCount( 1, $this->get_order_notes_containing( $order, 'was <strong>successfully captured</strong>' ) );
-		$this->assertSame( array(), $this->get_order_notes_containing( $order, 'was <strong>successfully charged</strong>' ) );
+		$this->assert_no_payment_success_note( $order );
 		$this->assertSame( array(), $this->get_order_notes_containing( $order, 'but the order total is' ) );
 	}
 
 	/**
-	 * @testdox An order an authorization put on hold completes as a capture when the payment succeeds while the order still stores the authorization, for less than the order total, with one capture note and no success or hold note.
+	 * @testdox An order an authorization put on hold completes as a capture when the payment succeeds while the order still stores the authorization, captured for less than was authorized, with one capture note and no success or hold note.
 	 *
 	 * The capture was made outside the store, so the succeeded payment is the first the order hears of it. Client 11.3.0
 	 * completes an order whose stored intent status is requires_capture with its capture writer, whatever the captured
@@ -2593,7 +2593,7 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'succeeded', $order->get_meta( '_intention_status', true ) );
 		$this->assertSame( 'allow', $order->get_meta( '_wcpay_fraud_meta_box_type', true ) );
 		$this->assertCount( 1, $this->get_order_notes_containing( $order, 'was <strong>successfully captured</strong>' ) );
-		$this->assertSame( array(), $this->get_order_notes_containing( $order, 'was <strong>successfully charged</strong>' ) );
+		$this->assert_no_payment_success_note( $order );
 		$this->assertSame( array(), $this->get_order_notes_containing( $order, 'but the order total is' ) );
 		$this->assertCount(
 			1,
