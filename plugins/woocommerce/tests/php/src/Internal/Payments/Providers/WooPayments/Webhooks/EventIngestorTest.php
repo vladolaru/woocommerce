@@ -4,7 +4,6 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Webhooks;
 
 use Automattic\WooCommerce\Enums\OrderStatus;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\PaymentIntentEventHandler;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLockRefusedException;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
@@ -4603,35 +4602,6 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 			'payment failed' => array( 'payment_intent.payment_failed', 'pi_123', 'failed', 'order_locked' ),
 			'charge expired' => array( 'charge.expired', 'ch_123', 'capture_expired', 'order_locked' ),
 		);
-	}
-
-	/**
-	 * Client 11.1.0 reads the order again before deciding it is unpaid (class-wc-payments-order-service.php:2863-2879), and
-	 * another gateway's status change never takes the order payment lock.
-	 *
-	 * @testdox Applying a succeeded intent reads the order under the lock, so an order another gateway just marked paid is not paid again.
-	 */
-	public function test_succeeded_intent_reads_the_order_again_under_the_lock(): void {
-		$order = $this->create_woopayments_order();
-		$order->set_payment_method( 'bacs' );
-		$order->set_status( 'on-hold' );
-		$order->save();
-		$stale = wc_get_order( $order->get_id() );
-		$this->assertInstanceOf( WC_Order::class, $stale );
-		// The merchant confirms the bank transfer after the event resolved the order.
-		$confirmed = wc_get_order( $order->get_id() );
-		$confirmed->set_status( 'processing' );
-		$confirmed->save();
-		$payment_completions = did_action( 'woocommerce_payment_complete' );
-		$event               = $this->create_payment_intent_event( 'payment_intent.succeeded', $order, $this->get_card_charge_overrides() );
-
-		wc_get_container()->get( PaymentIntentEventHandler::class )->apply_succeeded_payment_intent( $stale, $event['data']['object'] );
-
-		$order = wc_get_order( $order->get_id() );
-		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertSame( 'processing', $order->get_status() );
-		$this->assertSame( '', $order->get_transaction_id(), 'An order paid in the meantime must not be marked paid again.' );
-		$this->assertSame( $payment_completions, did_action( 'woocommerce_payment_complete' ) );
 	}
 
 	/**

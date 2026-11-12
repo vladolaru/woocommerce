@@ -393,6 +393,133 @@ class StripeBillingEventHandlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox invoice.paid decides on the renewal read again under the order payment lock: $_dataName.
+	 *
+	 * Another request changes the renewal's total while the intent is read. Client 11.3.0 compares the invoice with the
+	 * renewal it then updates (class-wc-payments-subscriptions-event-handler.php:162-198).
+	 *
+	 * @testWith ["24.90", "30.00", "on-hold", false]
+	 *           ["30.00", "24.90", "processing", true]
+	 *
+	 * @param string $first_total    Renewal total when the event reads it.
+	 * @param string $stored_total   Renewal total stored when the order payment lock is claimed.
+	 * @param string $expected       Renewal status after the event.
+	 * @param bool   $expected_paid  Whether the renewal is paid.
+	 */
+	public function test_paid_invoice_decides_on_the_renewal_read_under_the_lock( string $first_total, string $stored_total, string $expected, bool $expected_paid ): void {
+		$subscription = $this->create_subscription( self::CLOCK_SUBSCRIPTION_ID );
+		$renewal      = $this->create_unpaid_renewal_order( $subscription, $first_total );
+		$this->change_the_renewal_while_the_intent_is_read( $renewal->get_id(), static fn( WC_Order $other ) => $other->set_total( $stored_total ) );
+		$this->queue_response( 200, $this->get_renewal_intent() );
+		$this->queue_billing( 'update_invoice', 'update_charge', 'get_charge_for_update_transaction', 'update_transaction' );
+
+		$this->sut->handle_event( $this->get_event( 'invoice_paid_renewal' ) );
+
+		$renewal = wc_get_order( $renewal->get_id() );
+		$this->assertSame( $expected, $renewal->get_status() );
+		$this->assertSame( $expected_paid, $renewal->is_paid() );
+		$this->assertCount( $expected_paid ? 0 : 1, $this->get_notes_containing( $renewal, 'collected $24.90 USD, but the order total is $30.00 USD' ) );
+	}
+
+	/**
+	 * @testdox A renewal whose invoice does not match and whose intent cannot be read is held through the payment lifecycle: $_dataName.
+	 *
+	 * Client 11.3.0 holds it with the note (class-wc-payments-subscriptions-event-handler.php:163-172) and notes that the
+	 * payment info could not be added (class-wc-payments-invoice-service.php:334-343). The hold is the lifecycle's: the
+	 * transaction ID, one hold note however often the invoice arrives, and nothing on a renewal another request paid.
+	 *
+	 * @testWith ["unpaid", "on-hold", 1, 2]
+	 *           ["paid by another request while the intent is read", "processing", 0, 2]
+	 *
+	 * @param string $renewal_state  Renewal state when the intent is read.
+	 * @param string $expected       Renewal status after two deliveries.
+	 * @param int    $expected_holds Hold notes.
+	 * @param int    $expected_info  Payment-info notes.
+	 */
+	public function test_paid_invoice_with_an_unreadable_intent_holds_a_mismatched_renewal_through_the_lifecycle( string $renewal_state, string $expected, int $expected_holds, int $expected_info ): void {
+		$subscription = $this->create_subscription( self::CLOCK_SUBSCRIPTION_ID );
+		$renewal      = $this->create_unpaid_renewal_order( $subscription, '30.00' );
+		if ( 'unpaid' !== $renewal_state ) {
+			$this->change_the_renewal_while_the_intent_is_read( $renewal->get_id(), static fn( WC_Order $other ) => $other->payment_complete( 'pi_other_payment' ) );
+		}
+		$this->queue_platform_error();
+		$this->queue_billing( 'update_invoice', 'update_charge', 'get_charge_for_update_transaction', 'update_transaction' );
+		$this->queue_platform_error();
+		$this->queue_billing( 'update_invoice', 'update_charge', 'get_charge_for_update_transaction', 'update_transaction' );
+		$event = $this->get_event( 'invoice_paid_renewal', array( 'charge' => self::RENEWAL_CHARGE_ID ) );
+
+		$this->sut->handle_event( $event );
+		$this->sut->handle_event( $event );
+
+		$renewal = wc_get_order( $renewal->get_id() );
+		$this->assertSame( $expected, $renewal->get_status() );
+		$this->assertCount( $expected_holds, $this->get_notes_containing( $renewal, 'collected $24.90 USD, but the order total is $30.00 USD' ) );
+		$this->assertCount( $expected_info, $this->get_notes_containing( $renewal, "The payment info couldn't be added to the order." ) );
+		if ( 'unpaid' === $renewal_state ) {
+			$this->assertSame( self::RENEWAL_INTENT_ID, $renewal->get_transaction_id() );
+			$this->assertSame( self::RENEWAL_INTENT_ID, $renewal->get_meta( '_intent_id', true ) );
+			$this->assertSame( self::RENEWAL_CHARGE_ID, $renewal->get_meta( '_charge_id', true ) );
+		}
+	}
+
+	/**
+	 * @testdox A paid invoice for a renewal that no longer needs payment records the payment and completes nothing: $_dataName.
+	 *
+	 * Client 11.3.0 only attaches the intent once the renewal no longer needs payment
+	 * (class-wc-payments-subscriptions-event-handler.php:200-203; class-wc-payments-invoice-service.php:334-346), and its
+	 * attach writes nothing once the stored intent status is succeeded (class-wc-payments-order-service.php:1818-1822).
+	 *
+	 * @dataProvider provider_renewals_that_no_longer_need_payment
+	 *
+	 * @param string              $status Renewal status.
+	 * @param array<string,mixed> $meta   Renewal meta.
+	 */
+	public function test_paid_invoice_records_a_renewal_that_no_longer_needs_payment_and_completes_nothing( string $status, array $meta ): void {
+		$subscription = $this->create_subscription( self::CLOCK_SUBSCRIPTION_ID );
+		$renewal      = $this->create_unpaid_renewal_order( $subscription, '24.90' );
+		foreach ( $meta as $key => $value ) {
+			$renewal->update_meta_data( $key, $value );
+		}
+		$renewal->set_status( $status );
+		$renewal->save();
+		$notes_before = $this->get_notes_containing( $renewal, '' );
+		$payments     = did_action( 'woocommerce_payment_complete' );
+		$this->queue_response( 200, $this->get_renewal_intent() );
+		$this->queue_billing( 'update_invoice', 'update_charge', 'get_charge_for_update_transaction', 'update_transaction' );
+
+		$this->sut->handle_event( $this->get_event( 'invoice_paid_renewal' ) );
+
+		$renewal = wc_get_order( $renewal->get_id() );
+		$this->assertSame( $status, $renewal->get_status() );
+		$this->assertSame( 0, did_action( 'woocommerce_payment_complete' ) - $payments );
+		$this->assertSame( $notes_before, $this->get_notes_containing( $renewal, '' ) );
+		$this->assertSame( self::RENEWAL_INTENT_ID, $renewal->get_meta( '_intent_id', true ) );
+		$this->assertSame( self::RENEWAL_CHARGE_ID, $renewal->get_meta( '_charge_id', true ) );
+	}
+
+	/**
+	 * Renewals that no longer need payment when their invoice is paid.
+	 *
+	 * @return array<string,array{string,array<string,mixed>}>
+	 */
+	public function provider_renewals_that_no_longer_need_payment(): array {
+		return array(
+			'held for its invoice, now matching' => array(
+				'on-hold',
+				array(
+					'_intention_status' => 'succeeded',
+					'_intent_id'        => self::RENEWAL_INTENT_ID,
+					'_charge_id'        => self::RENEWAL_CHARGE_ID,
+				),
+			),
+			'on hold for another reason'         => array( 'on-hold', array() ),
+			'cancelled'                          => array( 'cancelled', array() ),
+			'refunded'                           => array( 'refunded', array() ),
+			'paid by another payment'            => array( 'processing', array() ),
+		);
+	}
+
+	/**
 	 * @testdox A paid renewal invoice records its intent without comparing the intent's amount with the order total.
 	 *
 	 * Client 11.3.0 never runs the intent comparison on an invoice payment: invoice.paid completes the renewal itself
@@ -912,7 +1039,7 @@ class StripeBillingEventHandlerTest extends WC_Unit_Test_Case {
 		$this->assertSame( self::RENEWAL_INTENT_ID, $order->get_meta( '_intent_id', true ) );
 		$this->assertSame( self::RENEWAL_CHARGE_ID, $order->get_meta( '_charge_id', true ) );
 		$this->assertSame( self::RENEWAL_INTENT_ID, $order->get_transaction_id(), 'The client attach sets the transaction id whatever the order status (`class-wc-payments-order-service.php:1408`); live client renewal 28 carries it.' );
-		$this->assertCount( 1, $this->get_notes_containing( $order, 'A test payment of' ) );
+		$this->assertCount( 0, $this->get_notes_containing( $order, 'A test payment of' ), 'The client only attaches the intent to a paid renewal (`class-wc-payments-subscriptions-event-handler.php:200-203`).' );
 		$this->assertSame( 0, did_action( 'woocommerce_payment_complete' ) - $payments );
 		$this->assertSame( array(), $transitions->list, 'A paid renewal does not put the subscription on hold.' );
 		$this->assertCount( 5, $this->get_requests() );
@@ -955,7 +1082,7 @@ class StripeBillingEventHandlerTest extends WC_Unit_Test_Case {
 		}
 
 		$this->assertTrue( wc_get_order( $order->get_id() )->needs_payment() );
-		$this->assertSame( 'on-hold', wc_get_order( $subscription->get_id() )->get_status(), 'An unpaid renewal leaves the subscription on hold.' );
+		$this->assertSame( 'active', wc_get_order( $subscription->get_id() )->get_status(), 'A refused delivery changes nothing, the subscription included; the retry applies it.' );
 		$this->assertCount( 1, $this->get_requests(), 'Nothing is reported to the platform for an unpaid renewal.' );
 	}
 
@@ -1325,6 +1452,47 @@ class StripeBillingEventHandlerTest extends WC_Unit_Test_Case {
 		$order->payment_complete();
 
 		return $order;
+	}
+
+	/**
+	 * Create the unpaid renewal order of the recorded renewal invoice.
+	 *
+	 * @param SubscriptionDouble $subscription Subscription.
+	 * @param string             $total        Renewal total.
+	 * @return WC_Order
+	 */
+	private function create_unpaid_renewal_order( SubscriptionDouble $subscription, string $total ): WC_Order {
+		$order = WooCommerceSubscriptionsDoubles::create_renewal_order( $subscription );
+		$order->set_payment_method( 'woocommerce_payments' );
+		$order->set_total( $total );
+		$order->update_meta_data( '_wcpay_billing_invoice_id', self::RENEWAL_INVOICE_ID );
+		$order->save();
+
+		return $order;
+	}
+
+	/**
+	 * Change the renewal through another order object, as another request would, while the event reads its intent.
+	 *
+	 * @param int      $order_id Renewal order ID.
+	 * @param callable $change   Change applied to the other object, which is then saved.
+	 */
+	private function change_the_renewal_while_the_intent_is_read( int $order_id, callable $change ): void {
+		$changed = false;
+		add_filter(
+			'wcpay_api_request_params',
+			static function ( $params, $api ) use ( $order_id, $change, &$changed ) {
+				if ( ! $changed && false !== strpos( (string) $api, 'intentions/' ) ) {
+					$changed = true;
+					$other   = wc_get_order( $order_id );
+					$change( $other );
+					$other->save();
+				}
+				return $params;
+			},
+			10,
+			2
+		);
 	}
 
 	/**

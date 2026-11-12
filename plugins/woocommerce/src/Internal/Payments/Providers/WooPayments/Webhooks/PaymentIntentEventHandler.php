@@ -214,44 +214,6 @@ class PaymentIntentEventHandler {
 	}
 
 	/**
-	 * Apply a succeeded payment intent that pays its order: payment meta, status and notes.
-	 *
-	 * Provider code that learns of a succeeded intent outside its webhook, such as a paid Stripe Billing invoice, uses it.
-	 * A caller that decided the order is held passes the hold's note: the payment is then recorded and the order put on
-	 * hold instead of completed.
-	 *
-	 * @since 11.2.0
-	 *
-	 * @param WC_Order            $order                Order the intent pays, whatever its payment method.
-	 * @param array<string,mixed> $payment_intent       Provider payment intent object.
-	 * @param string[]|null       $hold_note_candidates The hold note's wordings, WooCommerce's first; null to apply the payment as any
-	 *                                                  succeeded intent.
-	 * @throws OrderPaymentLockRefusedException When another operation holds the order payment lock; nothing is applied.
-	 */
-	public function apply_succeeded_payment_intent( WC_Order $order, array $payment_intent, ?array $hold_note_candidates = null ): void {
-		// One claim covers the payment meta, the token repair and the status update, so a refusal leaves the order untouched.
-		$lock_token = $this->order_payment_lock->claim( $order, $this->persistence_vocabulary, $this->get_object_id( $payment_intent ), 'payment status update' );
-		if ( null === $lock_token ) {
-			$this->order_payment_lock->log_refusal( $order, $this->persistence_vocabulary, 'payment status update' );
-			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- The message is built in the exception from an order ID and a fixed operation name, not HTML output.
-			throw new OrderPaymentLockRefusedException( $order->get_id(), 'payment status update' );
-		}
-
-		try {
-			// Decide on what the order is now: another gateway marks an order paid without taking this lock.
-			$this->lifecycle_service->reread_order_from_data_store( $order );
-			$this->apply_succeeded_payment_intent_under_lock( $order, $payment_intent, $hold_note_candidates );
-		} finally {
-			$this->order_payment_lock->release( $order, $this->persistence_vocabulary, $lock_token );
-		}
-
-		$this->maybe_send_ipp_receipt_email( $order, $payment_intent );
-
-		// Captures change what the uncaptured-transactions badge counts, so its caches are cleared once the order is updated.
-		$this->admin_menu_badge_service->invalidate_authorization_summary_caches();
-	}
-
-	/**
 	 * Apply a payment intent or charge expiry event to its order, or record it when it is on another charge.
 	 *
 	 * The event is the order's own payment or another charge on it, decided on the order read again under the order
@@ -377,21 +339,48 @@ class PaymentIntentEventHandler {
 	}
 
 	/**
-	 * Apply a succeeded payment intent to an order read under the order payment lock the caller holds.
+	 * Apply a succeeded payment intent to an order read under the order payment lock the caller holds: payment meta, status
+	 * and notes.
 	 *
-	 * The Fee details job is scheduled when the intent's payment note is first added.
+	 * Provider code that learns of a succeeded intent outside its webhook, such as a paid Stripe Billing invoice, uses it
+	 * under its own claim. A caller that decided the order is held passes the hold's note: the payment is then recorded and
+	 * the order put on hold instead of completed. The Fee details job is scheduled when the intent's payment note is first
+	 * added.
+	 *
+	 * @since 11.2.0
 	 *
 	 * @param WC_Order            $order                Order the intent pays, read under the lock.
 	 * @param array<string,mixed> $payment_intent       Provider payment intent object.
 	 * @param string[]|null       $hold_note_candidates The caller's hold note, or null to decide the hold from the intent.
 	 */
-	private function apply_succeeded_payment_intent_under_lock( WC_Order $order, array $payment_intent, ?array $hold_note_candidates = null ): void {
+	public function apply_succeeded_payment_intent_under_lock( WC_Order $order, array $payment_intent, ?array $hold_note_candidates = null ): void {
 		// The order keeps the payment method and title its checkout, redirect return or in-person capture wrote: client 11.1.0's
 		// webhook never sets them (includes/class-wc-payments-webhook-processing-service.php process_webhook_payment_intent_succeeded()).
 		$this->write_succeeded_payment_intent_meta( $order, $payment_intent );
 		$lifecycle_event = $this->build_succeeded_lifecycle_event( $payment_intent, $order, $hold_note_candidates );
 		$this->repair_recurring_order_token( $order, $payment_intent );
 		$this->fee_details_note_controller->apply_and_schedule_fee_details( $order, $lifecycle_event );
+	}
+
+	/**
+	 * Record a succeeded payment intent on an order read under the order payment lock the caller holds, without changing
+	 * its status or adding a note: the payment meta, the intent status and the charge's meta.
+	 *
+	 * Nothing is written once the order's stored intent status is succeeded, as client 11.3.0
+	 * attach_intent_info_to_order() writes nothing then (class-wc-payments-order-service.php:1818-1822).
+	 *
+	 * @since 11.2.0
+	 *
+	 * @param WC_Order            $order          Order the intent paid, read under the lock.
+	 * @param array<string,mixed> $payment_intent Provider payment intent object.
+	 */
+	public function record_succeeded_payment_intent_under_lock( WC_Order $order, array $payment_intent ): void {
+		if ( 'succeeded' === (string) $order->get_meta( '_intention_status', true ) ) {
+			return;
+		}
+
+		$this->write_succeeded_payment_intent_meta( $order, $payment_intent );
+		$this->lifecycle_service->apply_meta_under_lock( $order, $this->get_succeeded_payment_intent_meta( $payment_intent, $order ), array() );
 	}
 
 	/**
@@ -441,8 +430,45 @@ class PaymentIntentEventHandler {
 			$this->get_charge_id_from_intent( $event_object ),
 			WooPaymentsIntentCodec::balance_transaction_id( $charge['balance_transaction'] ?? null )
 		);
-		// write_succeeded_payment_intent_meta() has already saved the intent, charge, payment method, currency and mandate.
-		$meta = $this->without_empty_values(
+		$meta            = $this->get_succeeded_payment_intent_meta( $event_object, $order );
+
+		$hold_note_candidates = $hold_note_candidates ?? wc_get_container()->get( WooPaymentsAmountMismatchHold::class )->decide_hold( $order, $event_object );
+		if ( null !== $hold_note_candidates ) {
+			return new PaymentLifecycleEvent(
+				PaymentLifecycleEvent::STATUS_COMPLETED,
+				$this->get_object_id( $event_object ),
+				$meta,
+				array(),
+				$hold_note_candidates[0],
+				PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_HELD,
+				$hold_note_candidates,
+				false,
+				true
+			);
+		}
+
+		return new PaymentLifecycleEvent(
+			PaymentLifecycleEvent::STATUS_COMPLETED,
+			$this->get_object_id( $event_object ),
+			$meta,
+			array(),
+			$note_candidates[0],
+			PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_SUCCESS,
+			$note_candidates
+		);
+	}
+
+	/**
+	 * Get the order meta of a succeeded payment intent beyond what write_succeeded_payment_intent_meta() saves: the intent
+	 * status, the order mode, the IPP channel and the charge's meta.
+	 *
+	 * @param array<string,mixed> $event_object Provider intent object.
+	 * @param WC_Order            $order        Order object.
+	 * @return array<string,string>
+	 */
+	private function get_succeeded_payment_intent_meta( array $event_object, WC_Order $order ): array {
+		$charge = $this->get_first_charge_from_intent( $event_object );
+		$meta   = $this->without_empty_values(
 			array(
 				'_intention_status'  => isset( $event_object['status'] ) ? (string) $event_object['status'] : '',
 				'_wcpay_mode'        => $this->account_service->get_order_mode(),
@@ -472,30 +498,7 @@ class PaymentIntentEventHandler {
 			);
 		}
 
-		$hold_note_candidates = $hold_note_candidates ?? wc_get_container()->get( WooPaymentsAmountMismatchHold::class )->decide_hold( $order, $event_object );
-		if ( null !== $hold_note_candidates ) {
-			return new PaymentLifecycleEvent(
-				PaymentLifecycleEvent::STATUS_COMPLETED,
-				$this->get_object_id( $event_object ),
-				$meta,
-				array(),
-				$hold_note_candidates[0],
-				PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_HELD,
-				$hold_note_candidates,
-				false,
-				true
-			);
-		}
-
-		return new PaymentLifecycleEvent(
-			PaymentLifecycleEvent::STATUS_COMPLETED,
-			$this->get_object_id( $event_object ),
-			$meta,
-			array(),
-			$note_candidates[0],
-			PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_SUCCESS,
-			$note_candidates
-		);
+		return $meta;
 	}
 
 	/**
