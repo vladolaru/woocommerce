@@ -8,6 +8,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments;
 
 use Automattic\WooCommerce\Enums\OrderStatus;
+use InvalidArgumentException;
 use WC_Order;
 
 /**
@@ -83,6 +84,44 @@ class OrderPaymentLifecycleService {
 	 *                apply_under_lock().
 	 */
 	public function apply( WC_Order $order, PaymentLifecycleEvent $event, ProviderPersistenceVocabularyInterface $persistence_vocabulary ): string {
+		return $this->apply_with_claim( $order, $event, $persistence_vocabulary, null );
+	}
+
+	/**
+	 * Apply a payment lifecycle event built again from the order read under the order payment lock.
+	 *
+	 * The lock is claimed, and a refusal handled, as apply() does, for the payment reference of the event passed. Under the
+	 * claim, the order is read again from its data store once, the callable builds the event to apply from that read, and
+	 * the built event is applied as apply_under_lock() does.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @param WC_Order                               $order                  Order object.
+	 * @param PaymentLifecycleEvent                  $event                  Lifecycle event that gives the payment reference, and the
+	 *                                                                       event refused when another operation holds the lock.
+	 * @param ProviderPersistenceVocabularyInterface $persistence_vocabulary Provider persistence vocabulary.
+	 * @param callable                               $rebuild                Gets the order read under the claim and returns the
+	 *                                                                       PaymentLifecycleEvent to apply, for the same payment reference.
+	 * @return string self::RESULT_REFUSED when the order payment lock refused the event, otherwise the result of
+	 *                apply_under_lock() for the built event.
+	 * @throws InvalidArgumentException When the built event is not for the payment reference the lock was claimed for.
+	 */
+	public function apply_rebuilt_under_claim( WC_Order $order, PaymentLifecycleEvent $event, ProviderPersistenceVocabularyInterface $persistence_vocabulary, callable $rebuild ): string {
+		return $this->apply_with_claim( $order, $event, $persistence_vocabulary, $rebuild );
+	}
+
+	/**
+	 * Claim the order payment lock for an event's payment reference, apply the event, or the one the callable builds from
+	 * the order read under the claim, and release the lock.
+	 *
+	 * @param WC_Order                               $order                  Order object.
+	 * @param PaymentLifecycleEvent                  $event                  Lifecycle event.
+	 * @param ProviderPersistenceVocabularyInterface $persistence_vocabulary Provider persistence vocabulary.
+	 * @param callable|null                          $rebuild                Builds the event to apply from the order read under the claim.
+	 * @return string
+	 * @throws InvalidArgumentException When the built event is not for the claimed payment reference.
+	 */
+	private function apply_with_claim( WC_Order $order, PaymentLifecycleEvent $event, ProviderPersistenceVocabularyInterface $persistence_vocabulary, ?callable $rebuild ): string {
 		$payment_reference = $event->get_payment_reference();
 		$lock_token        = null;
 
@@ -95,7 +134,17 @@ class OrderPaymentLifecycleService {
 		}
 
 		try {
-			return $this->apply_under_lock( $order, $event, $persistence_vocabulary );
+			if ( null === $rebuild ) {
+				return $this->apply_under_lock( $order, $event, $persistence_vocabulary );
+			}
+
+			$fresh_order   = $this->get_fresh_order_from_data_store( $order );
+			$rebuilt_event = $rebuild( $fresh_order );
+			if ( ! $rebuilt_event instanceof PaymentLifecycleEvent || $rebuilt_event->get_payment_reference() !== $payment_reference ) {
+				throw new InvalidArgumentException( esc_html( 'The rebuilt payment lifecycle event must be for the payment reference the order payment lock was claimed for.' ) );
+			}
+
+			return $this->apply_event_under_lock( $order, $rebuilt_event, $persistence_vocabulary, $fresh_order );
 		} finally {
 			if ( null !== $lock_token ) {
 				$this->order_payment_lock->release( $order, $persistence_vocabulary, $lock_token );
@@ -191,7 +240,20 @@ class OrderPaymentLifecycleService {
 	 *                otherwise.
 	 */
 	public function apply_under_lock( WC_Order $order, PaymentLifecycleEvent $event, ProviderPersistenceVocabularyInterface $persistence_vocabulary ): string {
-		$completed_event_order = PaymentLifecycleEvent::STATUS_COMPLETED === $event->get_status() ? $this->get_fresh_order_from_data_store( $order ) : $order;
+		return $this->apply_event_under_lock( $order, $event, $persistence_vocabulary, null );
+	}
+
+	/**
+	 * Apply a payment lifecycle event under the order payment lock, with the order already read again under it, if any.
+	 *
+	 * @param WC_Order                               $order                  Order object.
+	 * @param PaymentLifecycleEvent                  $event                  Lifecycle event.
+	 * @param ProviderPersistenceVocabularyInterface $persistence_vocabulary Provider persistence vocabulary.
+	 * @param WC_Order|null                          $fresh_order            Order read again under the lock, or null to read it here.
+	 * @return string
+	 */
+	private function apply_event_under_lock( WC_Order $order, PaymentLifecycleEvent $event, ProviderPersistenceVocabularyInterface $persistence_vocabulary, ?WC_Order $fresh_order ): string {
+		$completed_event_order = PaymentLifecycleEvent::STATUS_COMPLETED === $event->get_status() ? ( $fresh_order ?? $this->get_fresh_order_from_data_store( $order ) ) : $order;
 
 		if ( $this->should_skip_late_failure_event( $order, $event ) ) {
 			$this->record_skipped_late_release( $order, $event, $persistence_vocabulary );

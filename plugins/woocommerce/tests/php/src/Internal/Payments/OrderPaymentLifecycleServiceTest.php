@@ -979,6 +979,137 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A rebuilt event is built from the order read under the claim for its payment reference, applied under it, and the lock released.
+	 */
+	public function test_rebuilt_event_is_built_from_the_order_read_under_the_claim_and_applied(): void {
+		$order  = $this->create_woopayments_order();
+		$stored = wc_get_order( $order->get_id() );
+		$stored->update_meta_data( '_stored_marker', 'stored' );
+		$stored->save();
+		$seen = array();
+
+		$result = $this->sut->apply_rebuilt_under_claim(
+			$order,
+			$this->completed_event( 'pi_rebuilt' ),
+			$this->persistence_vocabulary,
+			function ( WC_Order $read_order ) use ( $order, &$seen ): PaymentLifecycleEvent {
+				$seen = array(
+					'other_object' => $read_order !== $order,
+					'marker'       => $read_order->get_meta( '_stored_marker', true ),
+					'locked'       => $this->is_order_payment_lock_held_for( $order, $this->persistence_vocabulary, 'pi_rebuilt' ),
+				);
+
+				return new PaymentLifecycleEvent( PaymentLifecycleEvent::STATUS_COMPLETED, 'pi_rebuilt', array( '_intent_id' => 'pi_rebuilt' ), array(), 'Rebuilt payment complete.' );
+			}
+		);
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( OrderPaymentLifecycleService::RESULT_NOTE_ADDED, $result );
+		$this->assertSame(
+			array(
+				'other_object' => true,
+				'marker'       => 'stored',
+				'locked'       => true,
+			),
+			$seen
+		);
+		$this->assertTrue( $order->is_paid() );
+		$this->assertSame( 1, $this->countOrderNotesMatching( $order, 'Rebuilt payment complete.' ) );
+		$this->assertSame( '', $order->get_meta( '_wcpay_transaction_fee', true ), 'The event passed is not applied.' );
+		$this->assertFalse( $this->is_order_payment_lock_held_for( $order, $this->persistence_vocabulary, 'pi_rebuilt' ) );
+	}
+
+	/**
+	 * @testdox A rebuilt event refused by a held lock is refused and logged as apply() refuses it, and nothing is built or written.
+	 */
+	public function test_rebuilt_event_refused_by_a_held_lock_builds_and_writes_nothing(): void {
+		$order  = $this->create_woopayments_order();
+		$builds = 0;
+		$this->assertNotNull( $this->order_payment_lock->claim( $order, $this->persistence_vocabulary, 'native_charge_operation', 'payment operation' ) );
+
+		try {
+			$result = $this->sut->apply_rebuilt_under_claim(
+				$order,
+				$this->completed_event( 'pi_webhook' ),
+				$this->persistence_vocabulary,
+				static function () use ( &$builds ): PaymentLifecycleEvent {
+					++$builds;
+
+					return new PaymentLifecycleEvent( PaymentLifecycleEvent::STATUS_COMPLETED, 'pi_webhook' );
+				}
+			);
+			$this->assertTrue( $this->is_order_payment_lock_held_for( $order, $this->persistence_vocabulary, 'native_charge_operation' ), 'The holder keeps its lock.' );
+		} finally {
+			$this->clear_order_payment_lock( $order, $this->persistence_vocabulary );
+		}
+
+		$this->assertSame( OrderPaymentLifecycleService::RESULT_REFUSED, $result );
+		$this->assertSame( 0, $builds );
+		$this->assertFalse( wc_get_order( $order->get_id() )->is_paid() );
+		$this->assertLogged(
+			'warning',
+			'order payment lock refused: order ',
+			array(
+				'source'            => 'order-payments',
+				'order_id'          => $order->get_id(),
+				'payment_reference' => 'pi_webhook',
+				'event_type'        => PaymentLifecycleEvent::STATUS_COMPLETED,
+				'reason'            => 'order_locked',
+				'refused_operation' => 'payment status update',
+			)
+		);
+	}
+
+	/**
+	 * @testdox An event without a payment reference is rebuilt and applied without the order payment lock, even while another operation holds it.
+	 */
+	public function test_rebuilt_event_without_a_payment_reference_takes_no_claim(): void {
+		$order = $this->create_woopayments_order();
+		$this->assertNotNull( $this->order_payment_lock->claim( $order, $this->persistence_vocabulary, 'native_charge_operation', 'payment operation' ) );
+
+		try {
+			$result = $this->sut->apply_rebuilt_under_claim(
+				$order,
+				new PaymentLifecycleEvent( PaymentLifecycleEvent::STATUS_STARTED, null ),
+				$this->persistence_vocabulary,
+				static fn( WC_Order $read_order ): PaymentLifecycleEvent => new PaymentLifecycleEvent( PaymentLifecycleEvent::STATUS_STARTED, null, array(), array(), 'Payment started for ' . $read_order->get_total() . '.' )
+			);
+
+			$this->assertSame( OrderPaymentLifecycleService::RESULT_NOTE_ADDED, $result );
+			$this->assertTrue( $this->is_order_payment_lock_held_for( $order, $this->persistence_vocabulary, 'native_charge_operation' ), 'The holder keeps its lock.' );
+		} finally {
+			$this->clear_order_payment_lock( $order, $this->persistence_vocabulary );
+		}
+
+		$this->assertSame( 1, $this->countOrderNotesMatching( wc_get_order( $order->get_id() ), 'Payment started for 10.00.' ) );
+	}
+
+	/**
+	 * @testdox A rebuilt event for another payment reference is refused, nothing is written, and the lock is released.
+	 */
+	public function test_rebuilt_event_for_another_payment_reference_is_refused(): void {
+		$order  = $this->create_woopayments_order();
+		$thrown = null;
+
+		try {
+			$this->sut->apply_rebuilt_under_claim(
+				$order,
+				$this->completed_event( 'pi_claimed' ),
+				$this->persistence_vocabulary,
+				static fn(): PaymentLifecycleEvent => new PaymentLifecycleEvent( PaymentLifecycleEvent::STATUS_COMPLETED, 'pi_other', array(), array(), 'Other payment complete.' )
+			);
+		} catch ( \InvalidArgumentException $exception ) {
+			$thrown = $exception;
+		}
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( \InvalidArgumentException::class, $thrown );
+		$this->assertFalse( $order->is_paid() );
+		$this->assertSame( 0, $this->countOrderNotesMatching( $order, 'Other payment complete.' ) );
+		$this->assertFalse( $this->is_order_payment_lock_held_for( $order, $this->persistence_vocabulary, 'pi_claimed' ) );
+	}
+
+	/**
 	 * Apply a lifecycle event with the WooPayments vocabulary unless a test supplies another one.
 	 *
 	 * @param WC_Order                                    $order               Order object.
