@@ -47,15 +47,17 @@ class EventIngestor {
 	 * update that failed once is lost. A late refund or dispute event does not undo a newer one: a created dispute
 	 * retried after its close changes nothing, a charge.refunded retried after its refund failed or was canceled records
 	 * nothing, a refund row is found by the refund or dispute ID it carries from its first save, and charge.dispute.updated
-	 * only adds a note written once. invoice.paid is retried while the Stripe Billing module is loaded
-	 * ({@see self::is_retried_event()}). Other types get one attempt: running the fraud warning handlers again can apply an
-	 * older event over a newer one.
+	 * only adds a note written once. An authorization moves only a pending or failed order still waiting on its intent, so
+	 * a late one changes nothing on an order already held, paid or cancelled. invoice.paid is retried while the Stripe
+	 * Billing module is loaded ({@see self::is_retried_event()}). Other types get one attempt: running the fraud warning
+	 * handlers again can apply an older event over a newer one.
 	 *
 	 * @var string[]
 	 */
 	private const RETRIED_EVENT_TYPES = array(
 		'payment_intent.succeeded',
 		'payment_intent.payment_failed',
+		'payment_intent.amount_capturable_updated',
 		'charge.refunded',
 		'charge.refund.updated',
 		'charge.dispute.created',

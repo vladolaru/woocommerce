@@ -322,12 +322,18 @@ class WooPaymentsIntentConfirmationService {
 	/**
 	 * Build a payment lifecycle event from a platform intent response.
 	 *
+	 * The order-status callback, the redirect return and the authorization webhook build their event here, as client
+	 * 11.3.0 sends all three through update_order_status_from_intent() (class-wc-payments-order-service.php:466-500).
+	 * It writes nothing: the caller applies the event under the order payment lock, on the order it read under it.
+	 *
+	 * @since 11.2.0
+	 *
 	 * @param array<string,mixed> $intent                     Platform intent response.
 	 * @param WC_Order            $order                      Order being updated.
 	 * @param bool                $zero_amount_plain_note     Whether a completed $0 SetupIntent gets the order-status callback's plain note.
 	 * @return array{0:PaymentLifecycleEvent,1:array{notes:string[],log_line:string}|null} The event, and the amount-mismatch hold decided for the intent.
 	 */
-	private function build_lifecycle_event_from_intent( array $intent, WC_Order $order, bool $zero_amount_plain_note = false ): array {
+	public function build_lifecycle_event_from_intent( array $intent, WC_Order $order, bool $zero_amount_plain_note = false ): array {
 		$intent_id             = isset( $intent['id'] ) ? (string) $intent['id'] : '';
 		$is_setup              = 0.0 >= (float) $order->get_total() || 0 === strpos( $intent_id, 'seti_' );
 		$provider_redirect_url = esc_url_raw( WooPaymentsIntentCodec::raw_next_action_redirect_url( $intent ) );

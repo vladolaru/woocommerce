@@ -20,6 +20,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAm
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCurrencyUtils;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeeDetailsNoteController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentCodec;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentConfirmationService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIppReceiptEmail;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDataService;
@@ -118,23 +119,31 @@ class PaymentIntentEventHandler {
 	private WooPaymentsPersistenceVocabulary $persistence_vocabulary;
 
 	/**
+	 * Intent confirmation service, which builds the lifecycle event of an authorized intent.
+	 *
+	 * @var WooPaymentsIntentConfirmationService
+	 */
+	private WooPaymentsIntentConfirmationService $intent_confirmation_service;
+
+	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
 	 *
-	 * @param OrderPaymentLifecycleService        $lifecycle_service           Order lifecycle service.
-	 * @param Client                              $api_client                  WooPayments API client.
-	 * @param WooPaymentsOrderDataService         $order_data_service          WooPayments order data service.
-	 * @param WooPaymentsAccountService           $account_service             WooPayments account service.
-	 * @param WooPaymentsOrderNoteService         $order_note_service          WooPayments order note service.
-	 * @param WooPaymentsAdminMenuBadgeService    $admin_menu_badge_service    WooPayments admin menu badge service.
-	 * @param EventOrderResolver                  $event_order_resolver        Webhook event order resolver.
-	 * @param OtherChargeRecorder                 $other_charge_recorder       Recorder of events on a charge that does not pay the order.
-	 * @param WooPaymentsFeeDetailsNoteController $fee_details_note_controller Fee details note controller.
-	 * @param OrderPaymentLock                    $order_payment_lock          Order payment lock.
-	 * @param WooPaymentsPersistenceVocabulary    $persistence_vocabulary      WooPayments persistence vocabulary.
+	 * @param OrderPaymentLifecycleService         $lifecycle_service           Order lifecycle service.
+	 * @param Client                               $api_client                  WooPayments API client.
+	 * @param WooPaymentsOrderDataService          $order_data_service          WooPayments order data service.
+	 * @param WooPaymentsAccountService            $account_service             WooPayments account service.
+	 * @param WooPaymentsOrderNoteService          $order_note_service          WooPayments order note service.
+	 * @param WooPaymentsAdminMenuBadgeService     $admin_menu_badge_service    WooPayments admin menu badge service.
+	 * @param EventOrderResolver                   $event_order_resolver        Webhook event order resolver.
+	 * @param OtherChargeRecorder                  $other_charge_recorder       Recorder of events on a charge that does not pay the order.
+	 * @param WooPaymentsFeeDetailsNoteController  $fee_details_note_controller Fee details note controller.
+	 * @param OrderPaymentLock                     $order_payment_lock          Order payment lock.
+	 * @param WooPaymentsPersistenceVocabulary     $persistence_vocabulary      WooPayments persistence vocabulary.
+	 * @param WooPaymentsIntentConfirmationService $intent_confirmation_service Intent confirmation service.
 	 */
-	final public function init( OrderPaymentLifecycleService $lifecycle_service, Client $api_client, WooPaymentsOrderDataService $order_data_service, WooPaymentsAccountService $account_service, WooPaymentsOrderNoteService $order_note_service, WooPaymentsAdminMenuBadgeService $admin_menu_badge_service, EventOrderResolver $event_order_resolver, OtherChargeRecorder $other_charge_recorder, WooPaymentsFeeDetailsNoteController $fee_details_note_controller, OrderPaymentLock $order_payment_lock, WooPaymentsPersistenceVocabulary $persistence_vocabulary ): void {
+	final public function init( OrderPaymentLifecycleService $lifecycle_service, Client $api_client, WooPaymentsOrderDataService $order_data_service, WooPaymentsAccountService $account_service, WooPaymentsOrderNoteService $order_note_service, WooPaymentsAdminMenuBadgeService $admin_menu_badge_service, EventOrderResolver $event_order_resolver, OtherChargeRecorder $other_charge_recorder, WooPaymentsFeeDetailsNoteController $fee_details_note_controller, OrderPaymentLock $order_payment_lock, WooPaymentsPersistenceVocabulary $persistence_vocabulary, WooPaymentsIntentConfirmationService $intent_confirmation_service ): void {
 		$this->lifecycle_service           = $lifecycle_service;
 		$this->api_client                  = $api_client;
 		$this->order_data_service          = $order_data_service;
@@ -146,6 +155,7 @@ class PaymentIntentEventHandler {
 		$this->fee_details_note_controller = $fee_details_note_controller;
 		$this->order_payment_lock          = $order_payment_lock;
 		$this->persistence_vocabulary      = $persistence_vocabulary;
+		$this->intent_confirmation_service = $intent_confirmation_service;
 	}
 
 	/**
@@ -171,20 +181,29 @@ class PaymentIntentEventHandler {
 	/**
 	 * Process a payment intent or charge expiry event.
 	 *
-	 * A canceled or capturable-amount intent only invalidates the authorization caches. Otherwise the event's order is
-	 * found and the event applied to it or recorded on it; an event that resolves no order, or a payment failure that
-	 * is not actionable, changes nothing.
+	 * A canceled intent only invalidates the authorization caches. An authorization invalidates them first, and goes on
+	 * only for an online payment that awaits capture. Otherwise the event's order is found and the event applied to it or
+	 * recorded on it; an event that resolves no order, or a payment failure that is not actionable, changes nothing.
 	 *
 	 * @param string              $event_type   Event type.
 	 * @param array<string,mixed> $event_object Payment intent or charge object.
 	 * @throws OrderPaymentLockRefusedException When another operation holds the order payment lock; nothing is written.
 	 */
 	public function process( string $event_type, array $event_object ): void {
-		// Client 11.1.0 only clears the authorization summary caches on these two events and resolves no order
-		// (class-wc-payments-webhook-processing-service.php:417-434).
-		if ( in_array( $event_type, array( 'payment_intent.canceled', 'payment_intent.amount_capturable_updated' ), true ) ) {
+		// Client 11.3.0 only clears the authorization summary caches on a canceled intent and resolves no order
+		// (class-wc-payments-webhook-processing-service.php:416-420).
+		if ( 'payment_intent.canceled' === $event_type ) {
 			$this->admin_menu_badge_service->invalidate_authorization_summary_caches();
 			return;
+		}
+
+		// Client 11.3.0 clears the caches for every authorization, then leaves in-person payments, which their own flow
+		// updates, and any intent not awaiting capture (class-wc-payments-webhook-processing-service.php:437-451).
+		if ( 'payment_intent.amount_capturable_updated' === $event_type ) {
+			$this->admin_menu_badge_service->invalidate_authorization_summary_caches();
+			if ( ! $this->is_online_authorization( $event_object ) ) {
+				return;
+			}
 		}
 
 		$record_only = false;
@@ -208,7 +227,7 @@ class PaymentIntentEventHandler {
 		$this->process_order_payment_event( $order, $event_type, $event_object, $record_only );
 
 		// Captures and expiries change what the uncaptured-transactions badge counts, so its caches are cleared once the order is updated.
-		if ( 'payment_intent.payment_failed' !== $event_type ) {
+		if ( ! in_array( $event_type, array( 'payment_intent.payment_failed', 'payment_intent.amount_capturable_updated' ), true ) ) {
 			$this->admin_menu_badge_service->invalidate_authorization_summary_caches();
 		}
 	}
@@ -221,7 +240,8 @@ class PaymentIntentEventHandler {
 	 * for intent events, the charge for `charge.expired`.
 	 *
 	 * @param WC_Order            $order        Order the event resolved to.
-	 * @param string              $event_type   `payment_intent.succeeded`, `payment_intent.payment_failed` or `charge.expired`.
+	 * @param string              $event_type   `payment_intent.succeeded`, `payment_intent.payment_failed`,
+	 *                                          `payment_intent.amount_capturable_updated` or `charge.expired`.
 	 * @param array<string,mixed> $event_object Payment intent or charge object.
 	 * @param bool                $record_only  Whether the order was found only by the charge's metadata, so the event is recorded while the order still does not hold the charge.
 	 * @throws OrderPaymentLockRefusedException When another operation holds the order payment lock; nothing is written.
@@ -255,6 +275,8 @@ class PaymentIntentEventHandler {
 				$this->write_succeeded_payment_intent_meta( $order, $event_object );
 			} elseif ( 'payment_intent.succeeded' === $event_type ) {
 				$this->apply_succeeded_payment_intent_under_lock( $order, $event_object );
+			} elseif ( 'payment_intent.amount_capturable_updated' === $event_type ) {
+				$this->apply_authorization_under_lock( $order, $event_object );
 			} else {
 				$lifecycle_event = $this->build_lifecycle_event( $event_type, $event_object, $order );
 				if ( null !== $lifecycle_event ) {
@@ -287,8 +309,8 @@ class PaymentIntentEventHandler {
 	/**
 	 * Log the refusal of a payment intent or charge expiry event by the order payment lock.
 	 *
-	 * A failed payment or an expiry logs the lifecycle refusal line, with its payment reference and status; a succeeded
-	 * intent logs the plain refusal line.
+	 * A failed payment, an authorization or an expiry logs the lifecycle refusal line, with its payment reference and
+	 * status; a succeeded intent logs the plain refusal line.
 	 *
 	 * @param WC_Order $order      Order the event resolved to.
 	 * @param string   $event_type Event type.
@@ -307,7 +329,10 @@ class PaymentIntentEventHandler {
 			null,
 			array(
 				'payment_reference' => $lock_value,
-				'event_type'        => 'charge.expired' === $event_type ? PaymentLifecycleEvent::STATUS_CAPTURE_EXPIRED : PaymentLifecycleEvent::STATUS_FAILED,
+				'event_type'        => array(
+					'charge.expired' => PaymentLifecycleEvent::STATUS_CAPTURE_EXPIRED,
+					'payment_intent.amount_capturable_updated' => PaymentLifecycleEvent::STATUS_AUTHORIZED,
+				)[ $event_type ] ?? PaymentLifecycleEvent::STATUS_FAILED,
 				'reason'            => 'order_locked',
 			)
 		);
@@ -413,6 +438,48 @@ class PaymentIntentEventHandler {
 		}
 
 		$order->save();
+	}
+
+	/**
+	 * Put an order on hold for its authorized payment, on the order read under the order payment lock the caller holds.
+	 *
+	 * An authorization moves a pending or failed order on hold only when it is the payment the order waits on: the intent
+	 * the order stores, or any intent while it stores none. An order waiting on another payment gets a note naming both,
+	 * once, and is not changed. The event is the one the order-status callback and the redirect return build for an
+	 * authorized intent. Client 11.3.0 class-wc-payments-webhook-processing-service.php:473-500.
+	 *
+	 * @param WC_Order            $order          Order the authorization belongs to, read under the lock.
+	 * @param array<string,mixed> $payment_intent Provider payment intent object, awaiting capture.
+	 */
+	private function apply_authorization_under_lock( WC_Order $order, array $payment_intent ): void {
+		if ( ! $order->has_status( array( OrderStatus::PENDING, OrderStatus::FAILED ) ) ) {
+			return;
+		}
+
+		$intent_id         = $this->get_object_id( $payment_intent );
+		$awaited_intent_id = (string) $order->get_meta( '_intent_id', true );
+		if ( '' !== $awaited_intent_id && $awaited_intent_id !== $intent_id ) {
+			$note_candidates = $this->order_note_service->format_authorization_of_another_payment_note_candidates( $intent_id, $awaited_intent_id );
+			$this->order_note_service->add_note_once( $order, $note_candidates[0], implode( '|', array( 'authorization_of_another_payment', $intent_id, $awaited_intent_id ) ), $note_candidates );
+			return;
+		}
+
+		list( $lifecycle_event ) = $this->intent_confirmation_service->build_lifecycle_event_from_intent( $payment_intent, $order );
+		$this->lifecycle_service->apply_under_lock( $order, $lifecycle_event, $this->persistence_vocabulary );
+	}
+
+	/**
+	 * Tell whether an authorization is an online payment that awaits capture.
+	 *
+	 * In-person payments are captured by their own flow, which updates the order.
+	 *
+	 * @param array<string,mixed> $payment_intent Provider payment intent object.
+	 * @return bool
+	 */
+	private function is_online_authorization( array $payment_intent ): bool {
+		$charge_type = $this->get_first_charge_from_intent( $payment_intent )['payment_method_details']['type'] ?? '';
+
+		return 'requires_capture' === ( $payment_intent['status'] ?? null ) && ! in_array( $charge_type, array( 'card_present', 'interac_present' ), true );
 	}
 
 	/**

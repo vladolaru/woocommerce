@@ -468,6 +468,25 @@ class WooPaymentsOrderNoteService {
 	}
 
 	/**
+	 * Build the note for an authorization of another payment than the one the order waits on, in each wording that counts
+	 * as the same note.
+	 *
+	 * The wording is client 11.3.0's (class-wc-payments-webhook-processing-service.php:483-496).
+	 *
+	 * @param string $authorized_intent_id ID of the authorized payment intent.
+	 * @param string $awaited_intent_id    ID of the payment intent the order waits on.
+	 * @return string[] The note's wordings, WooCommerce's first.
+	 *
+	 * @since 11.2.0
+	 */
+	public function format_authorization_of_another_payment_note_candidates( string $authorized_intent_id, string $awaited_intent_id ): array {
+		return $this->unique_note_candidates(
+			$this->format_authorization_of_another_payment_note_for_domain( $authorized_intent_id, $awaited_intent_id, 'woocommerce' ),
+			...$this->extension_wordings( fn(): string => $this->format_authorization_of_another_payment_note_for_domain( $authorized_intent_id, $awaited_intent_id, 'woocommerce-payments' ) )
+		);
+	}
+
+	/**
 	 * Build the note for an event on a WooPayments charge that does not pay the order.
 	 *
 	 * @since 11.2.0
@@ -503,6 +522,11 @@ class WooPaymentsOrderNoteService {
 			case 'payment_intent.payment_failed':
 				/* translators: %1$s: WooPayments payment intent ID, %2$s: transaction URL. */
 				$format = __( 'A WooPayments payment attempt (<a>%1$s</a>) that does not pay this order failed.', 'woocommerce' );
+				return sprintf( WooPaymentsHtmlUtils::escape_interpolated_html( $format, $link( '%2$s' ) ), esc_html( $intent_id ), $transaction_url );
+
+			case 'payment_intent.amount_capturable_updated':
+				/* translators: %1$s: WooPayments payment intent ID, %2$s: transaction URL. */
+				$format = __( 'A WooPayments payment (<a>%1$s</a>) that does not pay this order was authorized, so the order was not updated. The authorization was not captured and expires on its own.', 'woocommerce' );
 				return sprintf( WooPaymentsHtmlUtils::escape_interpolated_html( $format, $link( '%2$s' ) ), esc_html( $intent_id ), $transaction_url );
 
 			case 'charge.expired':
@@ -1370,6 +1394,30 @@ class WooPaymentsOrderNoteService {
 			),
 			$transaction_id,
 			$transaction_url
+		);
+	}
+
+	/**
+	 * Build a rendering of the note for an authorization of another payment than the order waits on, from one known catalog.
+	 *
+	 * @param string $authorized_intent_id ID of the authorized payment intent.
+	 * @param string $awaited_intent_id    ID of the payment intent the order waits on.
+	 * @param string $text_domain          Translation catalog to render.
+	 * @return string
+	 */
+	private function format_authorization_of_another_payment_note_for_domain( string $authorized_intent_id, string $awaited_intent_id, string $text_domain ): string {
+		if ( 'woocommerce-payments' === $text_domain ) {
+			/* translators: %1: the ID of the authorized WooPayments payment, %2: the ID of the payment the order is waiting on. */
+			$note_format = __( 'A WooPayments payment <code>%1$s</code> was authorized, but this order is waiting on payment <code>%2$s</code>, so the order was not updated. Unless the order is later updated with payment <code>%1$s</code>, its authorization is not captured and expires on its own.', 'woocommerce-payments' );
+		} else {
+			/* translators: %1$s: the ID of the authorized WooPayments payment, %2$s: the ID of the payment the order is waiting on. */
+			$note_format = __( 'A WooPayments payment <code>%1$s</code> was authorized, but this order is waiting on payment <code>%2$s</code>, so the order was not updated. Unless the order is later updated with payment <code>%1$s</code>, its authorization is not captured and expires on its own.', 'woocommerce' );
+		}
+
+		return sprintf(
+			WooPaymentsHtmlUtils::escape_interpolated_html( $note_format, array( 'code' => '<code>' ) ),
+			esc_html( $authorized_intent_id ),
+			esc_html( $awaited_intent_id )
 		);
 	}
 

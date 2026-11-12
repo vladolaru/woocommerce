@@ -3,7 +3,7 @@
 		"recording": "C0s, the first full live lane run (2026-10-18)",
 		"source": "Local WPCOM (wpcom-local) Transact platform, blog 4, account acct_1TrY2nBzWlxcwgpP (US, default currency USD, test mode): Stripe events the platform forwarded to the store (Event::get_body_for_forwarding(true)), WPCOM at 8c43425a763.",
 		"store": "native WooCommerce :8889 (woocommerce-develop-2, exp/core-native-payments at 75488974986), test mode.",
-		"captured_via": "The store's WooPayments log, WEBHOOK RECEIVED lines, during the lane run. The store logger redacts emails, names, URLs and some metadata. Each redacted field the payment intent handler decides on is restored as the entry's restored list says. Two redacted fields it reads stay as logged: the charge's payment_method_details card country and description, which the order effects copy opaquely into _wcpay_payment_method_details (WooPaymentsOrderEffects.php:299-303) and no test asserts. The other redacted fields (billing details, receipt email and URL, descriptions, client secret, and metadata the handler does not read for that event type, such as fraud_outcome on payment_failed, amount_capturable_updated and canceled) are not read."
+		"captured_via": "The store's WooPayments log, WEBHOOK RECEIVED lines, during the lane run. The store logger redacts emails, names, URLs and some metadata. Each redacted field the payment intent handler decides on is restored as the entry's restored list says. Two redacted fields it reads stay as logged: the charge's payment_method_details card country and description, which the order effects copy opaquely into _wcpay_payment_method_details (WooPaymentsOrderEffects.php:299-303) and no test asserts. The other redacted fields (billing details, receipt email and URL, descriptions, client secret, and metadata the handler does not read for that event type, such as fraud_outcome on payment_failed and canceled) are not read."
 	},
 	"entries": [
 		{
@@ -1053,7 +1053,8 @@
 			"context": "An online card checkout authorized for manual capture (order 5869), now requires_capture.",
 			"logged_at": "2026-10-18T08:44:06+00:00",
 			"restored": {
-				"metadata.order_id and order_key": "Each test points them at its own order, or removes them for an intent of no order (order_key was redacted)."
+				"metadata.order_id and order_key": "Each test points them at its own order, or removes them for an intent of no order (order_key was redacted).",
+				"data.object.metadata.fraud_outcome and charges.data[0].metadata.fraud_outcome": "allow: the platform writes the rule engine outcome into the intent metadata (WPCOM wcpay class-intentions-controller.php:1486-1494). It turns every executed review outcome into block (service/class-fraud-ruleset-service.php:377-380), and a block throws before the intent is charged (class-intentions-controller.php:1468-1472), so an intent that was charged carries allow."
 			},
 			"body": {
 				"account": "acct_1TrY2nBzWlxcwgpP",
@@ -1134,7 +1135,7 @@
 										"client_version": "(redacted)",
 										"customer_email": "(redacted)",
 										"customer_name": "(redacted)",
-										"fraud_outcome": "(redacted)",
+										"fraud_outcome": "allow",
 										"fraud_prevention_data_available": "(redacted)",
 										"fraud_prevention_data_cart_contents": "(redacted)",
 										"fraud_prevention_data_ip_country": "(redacted)",
@@ -1279,7 +1280,7 @@
 							"client_version": "(redacted)",
 							"customer_email": "(redacted)",
 							"customer_name": "(redacted)",
-							"fraud_outcome": "(redacted)",
+							"fraud_outcome": "allow",
 							"fraud_prevention_data_available": "(redacted)",
 							"fraud_prevention_data_cart_contents": "(redacted)",
 							"fraud_prevention_data_ip_country": "(redacted)",

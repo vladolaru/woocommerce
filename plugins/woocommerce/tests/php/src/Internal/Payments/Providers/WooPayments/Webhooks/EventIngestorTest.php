@@ -21,6 +21,8 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsNo
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\RefundEventHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeeDetailsNoteController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderAdminActionsController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService;
 use Automattic\WooCommerce\Tests\Internal\Payments\OrderPaymentLockWithClaimHook;
 use Automattic\WooCommerce\Tests\Internal\Payments\OrderPaymentLockTestTrait;
@@ -368,7 +370,7 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox A $event_type delivery refused by a held order payment lock fails, and a later delivery applies it once the lock is free.
-	 * The events are the ones the platform forwarded for a card checkout and a card decline (Fixtures/platform-payment-intent-events.json).
+	 * The events are the ones the platform forwarded for a card checkout, a card decline and a manual-capture authorization (Fixtures/platform-payment-intent-events.json).
 	 *
 	 * @dataProvider lock_refused_lifecycle_events
 	 *
@@ -415,6 +417,7 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 		return array(
 			'succeeded'      => array( 'card_checkout_succeeded', 'completed' ),
 			'payment failed' => array( 'card_declined_failed', 'failed' ),
+			'authorized'     => array( 'manual_capture_amount_capturable_updated', 'on-hold' ),
 		);
 	}
 
@@ -2228,6 +2231,297 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox An authorization puts a $_dataName order on hold once, with its payment recorded.
+	 *
+	 * The event is the authorization the platform forwarded for a manual-capture card checkout
+	 * (Fixtures/platform-payment-intent-events.json). Client 11.3.0 attaches the intent and holds a pending or failed order
+	 * whose stored intent is empty or the event's (class-wc-payments-webhook-processing-service.php:473-500): the
+	 * authorized note, or the held-for-review note on a review outcome (class-wc-payments-order-service.php:492-498,
+	 * :2719, :2897).
+	 *
+	 * @dataProvider provider_orders_an_authorization_holds
+	 *
+	 * @param string $status            Order status when the authorization arrives.
+	 * @param bool   $stores_the_intent Whether the order already stores the authorized intent.
+	 * @param string $fraud_outcome     Fraud outcome the intent carries.
+	 * @param string $note_fragment     Text of the note the hold adds.
+	 */
+	public function test_authorization_holds_the_order_it_pays( string $status, bool $stores_the_intent, string $fraud_outcome, string $note_fragment ): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
+		$order  = $this->create_woopayments_order();
+		$event  = $this->recorded_authorization_event( $order, $fraud_outcome );
+		$intent = $event['data']['object'];
+		$order->set_status( $status );
+		if ( $stores_the_intent ) {
+			$order->update_meta_data( '_intent_id', $intent['id'] );
+		}
+		$order->save();
+		$this->seed_authorization_summary_caches();
+
+		$this->sut->process( $event );
+		$this->assertAuthorizationSummaryCachesCleared( 'payment_intent.amount_capturable_updated' );
+		$this->sut->process( $event );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( OrderStatus::ON_HOLD, $order->get_status() );
+		$this->assertSame( $intent['id'], $order->get_transaction_id() );
+		$this->assertSame( $intent['id'], $order->get_meta( '_intent_id', true ) );
+		$this->assertSame( $intent['charges']['data'][0]['id'], $order->get_meta( '_charge_id', true ) );
+		$this->assertSame( 'requires_capture', $order->get_meta( '_intention_status', true ) );
+		$this->assertSame( $fraud_outcome, $order->get_meta( '_wcpay_fraud_outcome_status', true ) );
+		$this->assertCount( 1, $this->get_order_notes_containing( $order, $note_fragment ), 'A second delivery adds no second note.' );
+	}
+
+	/** @return array<string,array{string,bool,string,string}> */
+	public function provider_orders_an_authorization_holds(): array {
+		return array(
+			'pending, waiting on this payment' => array( OrderStatus::PENDING, true, 'allow', 'was <strong>authorized</strong>' ),
+			'failed, waiting on this payment'  => array( OrderStatus::FAILED, true, 'allow', 'was <strong>authorized</strong>' ),
+			'pending, no payment stored yet'   => array( OrderStatus::PENDING, false, 'allow', 'was <strong>authorized</strong>' ),
+			'pending, held for a fraud review' => array( OrderStatus::PENDING, true, 'review', 'was <strong>held for review</strong>' ),
+		);
+	}
+
+	/**
+	 * @testdox An authorization of another payment than the $status order waits on adds one note naming both, and changes nothing else.
+	 *
+	 * Client 11.3.0 adds this note and leaves the order (class-wc-payments-webhook-processing-service.php:477-496).
+	 *
+	 * @testWith ["pending"]
+	 *           ["failed"]
+	 *
+	 * @param string $status Order status when the authorization arrives.
+	 */
+	public function test_authorization_of_another_payment_leaves_the_order_waiting( string $status ): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
+		$order  = $this->create_woopayments_order();
+		$event  = $this->recorded_authorization_event( $order );
+		$intent = $event['data']['object'];
+		$order->set_status( $status );
+		$order->update_meta_data( '_intent_id', 'pi_current_attempt' );
+		$order->update_meta_data( '_intention_status', 'requires_action' );
+		$order->save();
+
+		$this->sut->process( $event );
+		$this->sut->process( $event );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( $status, $order->get_status() );
+		$this->assertSame( 'pi_current_attempt', $order->get_meta( '_intent_id', true ) );
+		$this->assertSame( 'requires_action', $order->get_meta( '_intention_status', true ) );
+		$this->assertSame( '', $order->get_meta( '_charge_id', true ) );
+		$this->assertSame( '', $order->get_transaction_id() );
+		$this->assertSame(
+			1,
+			$this->count_order_notes_matching(
+				$order,
+				sprintf(
+					'A WooPayments payment <code>%1$s</code> was authorized, but this order is waiting on payment <code>%2$s</code>, so the order was not updated. Unless the order is later updated with payment <code>%1$s</code>, its authorization is not captured and expires on its own.',
+					$intent['id'],
+					'pi_current_attempt'
+				)
+			),
+			'The note is added once, however often the event is delivered.'
+		);
+	}
+
+	/**
+	 * @testdox An authorization changes nothing on $_dataName, and clears the authorization caches.
+	 *
+	 * Client 11.3.0 returns before any order change for these (class-wc-payments-webhook-processing-service.php:442-451,
+	 * :473-475).
+	 *
+	 * @dataProvider provider_authorizations_that_change_nothing
+	 *
+	 * @param string $status        Order status when the authorization arrives.
+	 * @param string $charge_type   The charge's payment method type.
+	 * @param string $intent_status The intent's status.
+	 */
+	public function test_authorization_changes_nothing( string $status, string $charge_type, string $intent_status ): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
+		$order            = $this->create_woopayments_order();
+		$event            = $this->recorded_authorization_event( $order );
+		$intent           = &$event['data']['object'];
+		$intent['status'] = $intent_status;
+		$intent['charges']['data'][0]['payment_method_details']['type'] = $charge_type;
+		// The checkout that created the intent stored it as the order's payment and transaction ID.
+		$order->set_status( $status );
+		$order->set_transaction_id( $intent['id'] );
+		$order->update_meta_data( '_intent_id', $intent['id'] );
+		$order->save();
+		$notes_before = count( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+		$this->seed_authorization_summary_caches();
+
+		$this->sut->process( $event );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertAuthorizationSummaryCachesCleared( 'payment_intent.amount_capturable_updated' );
+		$this->assertSame( $status, $order->get_status() );
+		$this->assertSame( '', $order->get_meta( '_charge_id', true ) );
+		$this->assertSame( '', $order->get_meta( '_intention_status', true ) );
+		$this->assertCount( $notes_before, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+	}
+
+	/** @return array<string,array{string,string,string}> */
+	public function provider_authorizations_that_change_nothing(): array {
+		return array(
+			'an order already on hold'       => array( OrderStatus::ON_HOLD, 'card', 'requires_capture' ),
+			'a cancelled order'              => array( OrderStatus::CANCELLED, 'card', 'requires_capture' ),
+			'an order already paid'          => array( OrderStatus::PROCESSING, 'card', 'requires_capture' ),
+			'an in-person card payment'      => array( OrderStatus::PENDING, 'card_present', 'requires_capture' ),
+			'an in-person Interac payment'   => array( OrderStatus::PENDING, 'interac_present', 'requires_capture' ),
+			'an intent not awaiting capture' => array( OrderStatus::PENDING, 'card', 'succeeded' ),
+		);
+	}
+
+	/**
+	 * @testdox An authorization on an unpaid order of another payment method, which does not wait on it, is recorded with one note and changes nothing else.
+	 *
+	 * The order is not the payment's own, so the event is only recorded. Client 11.3.0 puts such an order on hold
+	 * (class-wc-payments-webhook-processing-service.php:477-500).
+	 */
+	public function test_authorization_on_an_order_of_another_payment_method_is_recorded(): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
+		$order = $this->create_woopayments_order();
+		$order->set_payment_method( 'bacs' );
+		$order->save();
+		$event  = $this->recorded_authorization_event( $order );
+		$intent = $event['data']['object'];
+
+		$this->sut->process( $event );
+		$this->sut->process( $event );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( OrderStatus::PENDING, $order->get_status() );
+		$this->assertSame( '', $order->get_meta( '_intent_id', true ) );
+		$this->assertSame( '', $order->get_meta( '_intention_status', true ) );
+		$notes = $this->get_order_notes_containing( $order, 'that does not pay this order was authorized' );
+		$this->assertCount( 1, $notes, 'The record is added once, however often the event is delivered.' );
+		$this->assertStringContainsString( $intent['id'], (string) $notes[0]->content );
+	}
+
+	/**
+	 * @testdox An order an authorization put on hold completes when its payment is captured for less than was authorized, with the capture note and no hold note.
+	 *
+	 * Client 11.3.0 completes an order whose stored intent status is requires_capture through its capture, whatever the
+	 * captured amount (class-wc-payments-order-service.php:484-485, :2774).
+	 */
+	public function test_order_held_by_an_authorization_completes_on_a_partial_capture(): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
+		$order = $this->create_woopayments_order();
+		$order->set_total( '10.99' );
+		$order->save();
+		$event = $this->recorded_authorization_event( $order );
+		$this->sut->process( $event );
+		$this->assertSame( OrderStatus::ON_HOLD, wc_get_order( $order->get_id() )->get_status() );
+
+		$captured                                   = $event['data']['object'];
+		$captured['status']                         = 'succeeded';
+		$captured['amount_capturable']              = 0;
+		$captured['amount_received']                = 800;
+		$captured['charges']['data'][0]['captured'] = true;
+		$captured['charges']['data'][0]['amount_captured'] = 800;
+		$platform = new class( $event['data']['object'], $captured ) extends Client {
+			/**
+			 * Intent before the capture.
+			 *
+			 * @var array<string,mixed>
+			 */
+			private array $authorized;
+
+			/**
+			 * Intent after the capture.
+			 *
+			 * @var array<string,mixed>
+			 */
+			private array $captured;
+
+			/**
+			 * Constructor.
+			 *
+			 * @param array<string,mixed> $authorized Intent before the capture.
+			 * @param array<string,mixed> $captured   Intent after the capture.
+			 */
+			public function __construct( array $authorized, array $captured ) {
+				$this->authorized = $authorized;
+				$this->captured   = $captured;
+			}
+
+			/**
+			 * Report the platform as reachable.
+			 *
+			 * @return bool
+			 */
+			public function is_available(): bool {
+				return true;
+			}
+
+			/**
+			 * Answer an intent read with the authorized intent.
+			 *
+			 * @param string $intent_id Intent ID.
+			 * @return array<string,mixed>
+			 */
+			public function get_payment_intention( string $intent_id ): array {
+				unset( $intent_id );
+				return $this->authorized;
+			}
+
+			/**
+			 * Answer a capture with the captured intent.
+			 *
+			 * @param string              $intent_id         Intent ID.
+			 * @param int                 $amount_to_capture Amount.
+			 * @param array<string,mixed> $metadata          Metadata.
+			 * @param array<string,mixed> $level3            Level 3 data.
+			 * @return array<string,mixed>
+			 */
+			public function capture_intention( string $intent_id, int $amount_to_capture, array $metadata = array(), array $level3 = array() ): array {
+				unset( $intent_id, $amount_to_capture, $metadata, $level3 );
+				return $this->captured;
+			}
+		};
+		$held     = wc_get_order( $order->get_id() );
+		$held->set_total( '8.00' );
+		$held->save();
+		wc_get_container()->replace( Client::class, $platform );
+		$this->reset_container_resolutions();
+		try {
+			wc_get_container()->get( WooPaymentsOrderAdminActionsController::class )->handle_woocommerce_order_action_capture_charge( wc_get_order( $order->get_id() ) );
+			$event['id']             = 'evt_partial_capture_succeeded';
+			$event['type']           = 'payment_intent.succeeded';
+			$event['data']['object'] = $captured;
+			wc_get_container()->get( EventIngestor::class )->process( $event );
+		} finally {
+			$this->reset_container_replacements();
+			$this->reset_container_resolutions();
+		}
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertTrue( $order->is_paid() );
+		$this->assertCount( 1, $this->get_order_notes_containing( $order, 'was <strong>successfully captured</strong>' ) );
+		$this->assertSame( array(), $this->get_order_notes_containing( $order, 'but the order total is' ) );
+	}
+
+	/**
+	 * The authorization the platform forwarded for a manual-capture card checkout (Fixtures/platform-payment-intent-events.json).
+	 *
+	 * The run's order is gone and the logged order key was redacted, so the order ID and key are the test's. The recorded
+	 * fraud outcome is allow; review is the outcome client 11.3.0 holds for review (class-wc-payments-order-service.php:492-498).
+	 *
+	 * @param WC_Order $order         Order the event names.
+	 * @param string   $fraud_outcome Fraud outcome the intent carries.
+	 * @return array<string,mixed>
+	 */
+	private function recorded_authorization_event( WC_Order $order, string $fraud_outcome = 'allow' ): array {
+		$event = $this->recorded_payment_intent_event( 'manual_capture_amount_capturable_updated', $order );
+		$event['data']['object']['metadata']['fraud_outcome'] = $fraud_outcome;
+
+		return $event;
+	}
+
+	/**
 	 * @testdox Authorization-summary caches are invalidated by the four capture-affecting webhook events.
 	 */
 	public function test_webhook_events_invalidate_authorization_summary_caches(): void {
@@ -3502,7 +3796,7 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Succeeded and failed intents, refund and dispute events, and invoice.paid while Stripe Billing is loaded, are retried after a failure.
+	 * @testdox Succeeded, failed and authorized intents, refund and dispute events, and invoice.paid while Stripe Billing is loaded, are retried after a failure.
 	 */
 	public function test_retried_event_types(): void {
 		$module = $this->getMockBuilder( StripeBillingModule::class )
@@ -3519,7 +3813,7 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 
 		$retried = fn( string $type ): bool => $this->sut->is_retried_event( array( 'type' => $type ) );
 
-		foreach ( array( 'payment_intent.succeeded', 'payment_intent.payment_failed', 'charge.refunded', 'charge.refund.updated', 'charge.dispute.created', 'charge.dispute.updated', 'charge.dispute.closed' ) as $type ) {
+		foreach ( array( 'payment_intent.succeeded', 'payment_intent.payment_failed', 'payment_intent.amount_capturable_updated', 'charge.refunded', 'charge.refund.updated', 'charge.dispute.created', 'charge.dispute.updated', 'charge.dispute.closed' ) as $type ) {
 			$this->assertTrue( $retried( $type ), "$type must be retried." );
 		}
 		foreach ( array( 'charge.expired', 'radar.early_fraud_warning.created', 'invoice.paid' ) as $type ) {
