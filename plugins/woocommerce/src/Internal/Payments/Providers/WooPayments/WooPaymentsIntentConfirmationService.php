@@ -414,13 +414,13 @@ class WooPaymentsIntentConfirmationService {
 	}
 
 	/**
-	 * Attach a payment or authorization to the order read under the order payment lock, before the payment lifecycle's
+	 * Attach an intent, whatever its status, to the order read under the order payment lock, before the payment lifecycle's
 	 * event is built and decided on that order, so an order the lifecycle leaves as it is, one already paid, keeps the
-	 * payment's record. The intent's meta is the meta the event built from it carries.
+	 * intent's record. The intent's meta is the meta the event built from it carries.
 	 *
 	 * Client 11.3.0's redirect return attaches a PaymentIntent or a SetupIntent, and its order-status callback a PaymentIntent,
-	 * with the exchange rate, fee and net beside it, before updating the order from it (class-wc-payment-gateway-wcpay.php:2700,
-	 * :4663).
+	 * with the exchange rate, fee and net beside it, before updating the order from it, whatever the intent's status
+	 * (class-wc-payment-gateway-wcpay.php:2700, :4663); the caller decides which intents by the path and the intent type.
 	 *
 	 * @param array<string,mixed> $intent                 Platform intent response.
 	 * @param WC_Order            $order                  Order read under the order payment lock.
@@ -429,7 +429,7 @@ class WooPaymentsIntentConfirmationService {
 	private function attach_intent_before_decision( array $intent, WC_Order $order, bool $zero_amount_plain_note ): void {
 		list( $event ) = $this->build_lifecycle_event_from_intent( $intent, $order, $zero_amount_plain_note );
 		$intent_id     = (string) $event->get_payment_reference();
-		if ( '' === $intent_id || ! in_array( $event->get_status(), array( PaymentLifecycleEvent::STATUS_COMPLETED, PaymentLifecycleEvent::STATUS_AUTHORIZED ), true ) ) {
+		if ( '' === $intent_id ) {
 			return;
 		}
 

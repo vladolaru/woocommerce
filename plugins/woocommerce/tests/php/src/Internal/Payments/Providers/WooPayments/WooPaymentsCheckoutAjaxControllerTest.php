@@ -1498,6 +1498,116 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Order-status callback records the intent whatever its status, and leaves a paid order's status, notes and hooks as they are: $intent_status, paid: $paid.
+	 *
+	 * Client 11.3.0 attaches a PaymentIntent to the order whatever its status (class-wc-payment-gateway-wcpay.php:4663,
+	 * class-wc-payments-order-service.php:1818-1884), then updates the order from it only while it is not paid (:4771,
+	 * class-wc-payments-order-service.php:475, :3398-3410). The order started an authentication before the callback.
+	 *
+	 * @dataProvider provider_callback_intent_statuses
+	 *
+	 * @param string $intent_status The intent's status the callback reads.
+	 * @param bool   $paid          Whether the order already has a paid status.
+	 */
+	public function test_update_order_status_records_the_intent_whatever_its_status( string $intent_status, bool $paid ): void {
+		$order = $this->create_order_for_intent_binding( 'payment' );
+		$order->update_meta_data( '_intent_id', 'pi_status' );
+		$order->update_meta_data( '_intention_status', 'requires_action' );
+		if ( $paid ) {
+			$order->set_status( OrderStatus::PROCESSING );
+		}
+		$order->save();
+		$intent = array(
+			'id'             => 'pi_status',
+			'status'         => $intent_status,
+			'amount'         => 5000,
+			'currency'       => 'usd',
+			'customer'       => 'cus_status',
+			'payment_method' => 'pm_status',
+			'metadata'       => array( 'order_id' => (string) $order->get_id() ),
+			'charges'        => array( 'data' => array( array( 'id' => 'ch_status' ) ) ),
+		);
+		if ( 'requires_payment_method' === $intent_status ) {
+			$intent['last_payment_error'] = array(
+				'code'    => 'card_declined',
+				'message' => 'Your card was declined.',
+			);
+		}
+		$notes = count( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+		$hooks = did_action( 'woocommerce_pre_payment_complete' ) + did_action( 'woocommerce_payment_complete' ) + did_action( 'woocommerce_order_status_on-hold' ) + did_action( 'woocommerce_order_status_failed' ) + did_action( 'woocommerce_order_status_cancelled' );
+
+		$this->create_controller( $this->create_api_client_returning( $intent ) )->confirm_order_payment(
+			array(
+				'_ajax_nonce' => wp_create_nonce( 'wcpay_update_order_status_nonce_' . $order->get_id() ),
+				'order_id'    => $order->get_id(),
+				'intent_id'   => 'pi_status',
+			)
+		);
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( $intent_status, $order->get_meta( '_intention_status', true ), 'The intent is recorded with the status it reports.' );
+		$this->assertSame( 'pi_status', $order->get_transaction_id() );
+		$this->assertSame( 'ch_status', $order->get_meta( '_charge_id', true ) );
+		if ( $paid ) {
+			$this->assertSame( OrderStatus::PROCESSING, $order->get_status() );
+			$this->assertSame( $hooks, did_action( 'woocommerce_pre_payment_complete' ) + did_action( 'woocommerce_payment_complete' ) + did_action( 'woocommerce_order_status_on-hold' ) + did_action( 'woocommerce_order_status_failed' ) + did_action( 'woocommerce_order_status_cancelled' ), 'No completion or status hook fires.' );
+			// A released authorization on a paid order gets the payment lifecycle's own release note; a started payment's note
+			// is not counted here.
+			if ( 'requires_action' !== $intent_status ) {
+				$this->assertCount( $notes + ( 'canceled' === $intent_status ? 1 : 0 ), wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+			}
+		}
+	}
+
+	/**
+	 * @testdox Order-status callback for a $0 order's SetupIntent attaches no intent record to an order already paid.
+	 *
+	 * Client 11.3.0's callback attaches a PaymentIntent only; its $0 branch fetches the SetupIntent and completes the order
+	 * itself only while it is not paid (class-wc-payment-gateway-wcpay.php:4643-4664, :4665-4700).
+	 */
+	public function test_update_order_status_attaches_no_setup_intent_to_a_paid_order(): void {
+		$order = $this->create_order_for_intent_binding( 'setup' );
+		$order->update_meta_data( '_intent_id', 'seti_paid' );
+		$order->set_status( OrderStatus::PROCESSING );
+		$order->save();
+		$intent = array(
+			'id'             => 'seti_paid',
+			'status'         => 'succeeded',
+			'customer'       => 'cus_setup',
+			'payment_method' => 'pm_setup',
+			'metadata'       => array( 'order_id' => (string) $order->get_id() ),
+		);
+
+		$this->create_controller( $this->create_api_client_returning( $intent ) )->confirm_order_payment(
+			array(
+				'_ajax_nonce' => wp_create_nonce( 'wcpay_update_order_status_nonce_' . $order->get_id() ),
+				'order_id'    => $order->get_id(),
+				'intent_id'   => 'seti_paid',
+			)
+		);
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( OrderStatus::PROCESSING, $order->get_status() );
+		$this->assertSame( '', $order->get_transaction_id(), 'No transaction ID is attached.' );
+		$this->assertFalse( $order->meta_exists( '_intention_status' ), 'No intent status is attached.' );
+	}
+
+	/**
+	 * Intent statuses the order-status callback can read, on a paid and on an unpaid order.
+	 *
+	 * @return array<string,array{string,bool}>
+	 */
+	public function provider_callback_intent_statuses(): array {
+		$rows = array();
+		foreach ( array( 'succeeded', 'requires_capture', 'processing', 'requires_action', 'requires_payment_method', 'canceled' ) as $status ) {
+			$rows[ $status . ', paid' ]   = array( $status, true );
+			$rows[ $status . ', unpaid' ] = array( $status, false );
+		}
+
+		return $rows;
+	}
+
+	/**
 	 * Capture an order's payment as the store's capture does: the completed lifecycle event with the capture note.
 	 *
 	 * @param WC_Order $order     Order.
