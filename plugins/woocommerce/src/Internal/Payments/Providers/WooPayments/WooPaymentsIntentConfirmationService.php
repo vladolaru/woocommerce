@@ -418,7 +418,9 @@ class WooPaymentsIntentConfirmationService {
 			array(),
 			$note,
 			$event_note_type,
-			$note_equivalents
+			$note_equivalents,
+			false,
+			null === $note_candidates && PaymentLifecycleEvent::should_hold_order_for_outcome( $outcome )
 		);
 	}
 

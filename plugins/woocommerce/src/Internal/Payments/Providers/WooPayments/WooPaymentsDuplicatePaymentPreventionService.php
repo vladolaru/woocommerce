@@ -556,13 +556,12 @@ class WooPaymentsDuplicatePaymentPreventionService implements RegisterHooksInter
 	 * @return WP_Error|null
 	 */
 	public function get_amount_mismatch_error( array $intent, WC_Order $order, bool $compare_currency = false ): ?WP_Error {
-		$charged_amount       = isset( $intent['amount'] ) && is_numeric( $intent['amount'] ) ? (int) $intent['amount'] : 0;
-		$order_total_in_cents = WooPaymentsCurrencyUtils::amount_to_minor_units( (float) $order->get_total(), (string) $order->get_currency() );
-		$charged_currency     = (string) $order->get_currency();
-		$intent_currency      = isset( $intent['currency'] ) && is_string( $intent['currency'] ) ? strtoupper( $intent['currency'] ) : '';
+		$charged_amount   = isset( $intent['amount'] ) && is_numeric( $intent['amount'] ) ? (int) $intent['amount'] : 0;
+		$charged_currency = (string) $order->get_currency();
+		$intent_currency  = isset( $intent['currency'] ) && is_string( $intent['currency'] ) ? strtoupper( $intent['currency'] ) : '';
 		if ( $compare_currency && strtoupper( $charged_currency ) !== $intent_currency ) {
 			$charged_currency = $intent_currency;
-		} elseif ( $order_total_in_cents === $charged_amount ) {
+		} elseif ( WooPaymentsCurrencyUtils::is_order_total_in_minor_units( $charged_amount, $order ) ) {
 			return null;
 		}
 

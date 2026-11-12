@@ -188,6 +188,19 @@ class PaymentOutcome {
 	public const DATA_PAYMENT_METHOD_ONLY = 'payment_method_only';
 
 	/**
+	 * Completed outcomes: flags that the payment succeeded at the provider but the order is put on hold instead of being
+	 * completed, with the outcome's note, such as a payment whose amount or currency differs from the order total.
+	 *
+	 * The lifecycle event the outcome maps to (PaymentLifecycleEvent::should_hold_order_for_outcome()) moves the order to
+	 * on-hold with the payment reference as its transaction ID, writes the outcome's meta and note, and leaves a paid order
+	 * as it is. A payment-method-only outcome is never held.
+	 *
+	 * @since 11.2.0
+	 * @var string
+	 */
+	public const DATA_HOLD_ORDER = 'hold_order';
+
+	/**
 	 * Failed outcomes: flags that the provider operation threw instead of returning an outcome.
 	 *
 	 * The payment processing service builds such an outcome from the throwable, with its message as the error message, so a
@@ -338,6 +351,17 @@ class PaymentOutcome {
 	 */
 	public function is_payment_method_only(): bool {
 		return true === ( $this->data[ self::DATA_PAYMENT_METHOD_ONLY ] ?? false );
+	}
+
+	/**
+	 * Tell whether the provider asked to put the order on hold instead of completing it (self::DATA_HOLD_ORDER).
+	 *
+	 * @since 11.2.0
+	 *
+	 * @return bool
+	 */
+	public function should_hold_order(): bool {
+		return true === ( $this->data[ self::DATA_HOLD_ORDER ] ?? false );
 	}
 
 	/**

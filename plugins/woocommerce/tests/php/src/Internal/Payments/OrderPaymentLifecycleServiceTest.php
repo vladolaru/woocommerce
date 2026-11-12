@@ -402,6 +402,61 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A held completed event puts the order on hold with its transaction ID, meta and note, completes nothing, and a redelivery changes nothing.
+	 */
+	public function test_held_completed_event_puts_the_order_on_hold_and_a_redelivery_changes_nothing(): void {
+		$order        = $this->create_woopayments_order();
+		$completions  = 0;
+		$count_paying = static function () use ( &$completions ): void {
+			++$completions;
+		};
+		add_action( 'woocommerce_payment_complete', $count_paying );
+		$event = $this->held_event( 'pi_held' );
+
+		$this->apply_event( $order, $event );
+		$order = wc_get_order( $order->get_id() );
+		$order->update_meta_data( '_wcpay_transaction_fee', '2.34' );
+		$order->save();
+		$this->apply_event( $order, $event );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 'on-hold', $order->get_status() );
+		$this->assertSame( 'pi_held', $order->get_transaction_id() );
+		$this->assertNull( $order->get_date_paid() );
+		$this->assertSame( 'succeeded', $order->get_meta( '_intention_status', true ) );
+		$this->assertSame( '2.34', $order->get_meta( '_wcpay_transaction_fee', true ), 'A redelivery writes no meta.' );
+		$this->assertSame( 1, $this->countOrderNotesMatching( $order, 'Payment held.' ) );
+		$this->assertSame( 0, $completions );
+	}
+
+	/**
+	 * @testdox A held completed event leaves a paid order as it is when $paid_where.
+	 *
+	 * @testWith ["the caller's order is paid"]
+	 *           ["only the stored order is paid"]
+	 *
+	 * @param string $paid_where Which copy of the order is paid.
+	 */
+	public function test_held_completed_event_leaves_a_paid_order( string $paid_where ): void {
+		if ( "the caller's order is paid" === $paid_where ) {
+			$order = $this->create_woopayments_order();
+			$order->set_status( 'processing' );
+			$order->save();
+		} else {
+			UncachedOrderWriter::enable_hpos_data_caching();
+			$order = $this->read_order_into_request_caches( $this->create_woopayments_order() );
+			UncachedOrderWriter::write( $order->get_id(), array( 'status' => 'processing' ) );
+		}
+
+		$this->apply_event( $order, $this->held_event( 'pi_held' ) );
+
+		$this->assertSame( 'wc-processing', $this->get_persisted_order_status( $order->get_id() ) );
+		$this->assertSame( 0, $this->countOrderNotesMatching( $order, 'Payment held.' ) );
+		$this->assertFalse( $this->is_order_meta_persisted( $order->get_id(), '_intention_status' ) );
+	}
+
+	/**
 	 * @testdox Replayed completed events preserve the state established after their first application.
 	 */
 	public function test_success_is_applied_once_then_ignored(): void {
@@ -983,6 +1038,29 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 			array(),
 			'Payment complete.',
 			PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_COMPLETE
+		);
+	}
+
+	/**
+	 * Create a completed lifecycle event that holds the order.
+	 *
+	 * @param string $payment_reference Provider payment reference.
+	 * @return PaymentLifecycleEvent
+	 */
+	private function held_event( string $payment_reference ): PaymentLifecycleEvent {
+		return new PaymentLifecycleEvent(
+			PaymentLifecycleEvent::STATUS_COMPLETED,
+			$payment_reference,
+			array(
+				'_intention_status'      => 'succeeded',
+				'_wcpay_transaction_fee' => '1.23',
+			),
+			array(),
+			'Payment held.',
+			PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_HELD,
+			array(),
+			false,
+			true
 		);
 	}
 

@@ -120,6 +120,14 @@ class PaymentLifecycleEvent {
 	public const NOTE_TYPE_CAPTURE_EXPIRED = 'capture_expired';
 
 	/**
+	 * Note type: a payment that succeeded but put the order on hold instead of completing it.
+	 *
+	 * @since 11.2.0
+	 * @var string
+	 */
+	public const NOTE_TYPE_PAYMENT_HELD = 'payment_held';
+
+	/**
 	 * Lifecycle status.
 	 *
 	 * @var string
@@ -177,6 +185,13 @@ class PaymentLifecycleEvent {
 	private bool $preserve_order_status;
 
 	/**
+	 * Whether this completed event puts the order on hold instead of completing it.
+	 *
+	 * @var bool
+	 */
+	private bool $hold_order;
+
+	/**
 	 * Constructor.
 	 *
 	 * @since 11.0.0
@@ -189,11 +204,16 @@ class PaymentLifecycleEvent {
 	 * @param string|null         $note_type         Stable note type.
 	 * @param array<int,mixed>    $note_equivalents  Other texts of the same note.
 	 * @param bool                $preserve_order_status Whether the order status must stay untouched.
-	 * @throws InvalidArgumentException When an unknown status is supplied.
+	 * @param bool                $hold_order        Whether a completed event puts the order on hold instead of completing it.
+	 * @throws InvalidArgumentException When an unknown status is supplied, or a hold on an event that is not completed.
 	 */
-	public function __construct( string $status, ?string $payment_reference = null, array $meta_to_update = array(), array $meta_to_delete = array(), ?string $note = null, ?string $note_type = null, array $note_equivalents = array(), bool $preserve_order_status = false ) {
+	public function __construct( string $status, ?string $payment_reference = null, array $meta_to_update = array(), array $meta_to_delete = array(), ?string $note = null, ?string $note_type = null, array $note_equivalents = array(), bool $preserve_order_status = false, bool $hold_order = false ) {
 		if ( ! in_array( $status, $this->get_allowed_statuses(), true ) ) {
 			throw new InvalidArgumentException( esc_html( sprintf( 'Unknown payment lifecycle status: %s', $status ) ) );
+		}
+
+		if ( $hold_order && self::STATUS_COMPLETED !== $status ) {
+			throw new InvalidArgumentException( esc_html( sprintf( 'Only a completed payment lifecycle event can hold the order, not a %s one.', $status ) ) );
 		}
 
 		$this->status                = $status;
@@ -204,6 +224,35 @@ class PaymentLifecycleEvent {
 		$this->note_type             = null === $note_type || '' === $note_type ? null : $note_type;
 		$this->note_equivalents      = $this->normalize_note_equivalents( $note_equivalents );
 		$this->preserve_order_status = $preserve_order_status;
+		$this->hold_order            = $hold_order;
+	}
+
+	/**
+	 * Tell whether the lifecycle event a provider outcome maps to puts the order on hold: a completed outcome the provider
+	 * asked to hold (PaymentOutcome::DATA_HOLD_ORDER), never one that only saved the payment method.
+	 *
+	 * Every builder of an event from an outcome reads the hold here.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @param PaymentOutcome $outcome Provider outcome.
+	 * @return bool
+	 */
+	public static function should_hold_order_for_outcome( PaymentOutcome $outcome ): bool {
+		return self::STATUS_COMPLETED === self::status_for_outcome( $outcome )
+			&& $outcome->should_hold_order()
+			&& ! $outcome->is_payment_method_only();
+	}
+
+	/**
+	 * Tell whether this completed event puts the order on hold instead of completing it.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @return bool
+	 */
+	public function should_hold_order(): bool {
+		return $this->hold_order;
 	}
 
 	/**

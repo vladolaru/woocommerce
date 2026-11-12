@@ -302,6 +302,25 @@ class StripeBillingEventHandlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A paid renewal invoice records its intent without comparing the intent's amount with the order total.
+	 *
+	 * Client 11.3.0 never runs the intent comparison on an invoice payment: invoice.paid completes the renewal itself
+	 * (class-wc-payments-subscriptions-event-handler.php:188) and payment_intent.succeeded leaves invoice intents alone
+	 * (class-wc-payments-webhook-processing-service.php:711-717).
+	 */
+	public function test_paid_renewal_invoice_does_not_compare_its_intent_with_the_order_total(): void {
+		$this->create_subscription( self::CLOCK_SUBSCRIPTION_ID, array( '_wcpay_pending_invoice_id' => self::FAILED_INVOICE_ID ) );
+		$this->queue_response( 200, array_merge( $this->get_renewal_intent(), array( 'amount' => 1 ) ) );
+		$this->queue_billing( 'update_invoice', 'update_charge', 'get_charge_for_update_transaction', 'update_transaction' );
+
+		$this->sut->handle_event( $this->get_event( 'invoice_paid_renewal' ) );
+
+		$order = $this->get_renewal_orders( self::RENEWAL_INVOICE_ID )[0];
+		$this->assertSame( 'processing', $order->get_status() );
+		$this->assertCount( 0, $this->get_notes_containing( $order, 'was put <strong>on hold</strong>' ) );
+	}
+
+	/**
 	 * @testdox The renewal's test-payment note shows the amount in the order's currency format when the webhook runs as a user who selected another currency.
 	 *
 	 * The platform's webhook request runs as the connection owner. At R2 that user had selected EUR, and the note read "24,90 $ USD".

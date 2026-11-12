@@ -419,6 +419,7 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 		$result  = array(
 			'id'       => 'pi_neutral',
 			'status'   => 'succeeded',
+			'amount'   => 2500,
 			'currency' => 'usd',
 			'charges'  => array(
 				'data' => array(
@@ -496,6 +497,7 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 		$result          = array(
 			'id'       => 'pi_test_mode',
 			'status'   => 'succeeded',
+			'amount'   => 2500,
 			'currency' => 'usd',
 			'charges'  => array(
 				'data' => array(
@@ -1020,6 +1022,8 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 			array(
 				'id'             => 'pi_paid',
 				'status'         => 'succeeded',
+				'amount'         => 1000,
+				'currency'       => 'usd',
 				'payment_method' => 'pm_paid',
 			),
 			true
@@ -1129,6 +1133,8 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 			array(
 				'id'             => 'pi_ordered',
 				'status'         => 'succeeded',
+				'amount'         => 1000,
+				'currency'       => 'usd',
 				'payment_method' => 'pm_ordered',
 			),
 			true

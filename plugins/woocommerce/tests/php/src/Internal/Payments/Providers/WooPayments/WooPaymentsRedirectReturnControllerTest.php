@@ -346,6 +346,47 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A redirect return whose succeeded payment differs from the order total holds the order with the hold note: $_dataName.
+	 *
+	 * Client 11.3.0 class-wc-payment-gateway-wcpay.php:2707 → class-wc-payments-order-service.php:486-487, :2095-2139.
+	 *
+	 * @dataProvider provider_returned_payments_that_differ_from_the_order
+	 *
+	 * @param array<string,mixed> $overrides Intent overrides.
+	 */
+	public function test_handle_wp_holds_the_order_when_the_payment_differs_from_its_total( array $overrides ): void {
+		$GLOBALS['_SERVER']['REQUEST_METHOD'] = 'GET';
+		$order                                = $this->create_order( '50.00' );
+		$api_client                           = new RedirectReturnApiClientStub();
+		$api_client->payment_intent           = array_merge( $this->successful_payment_intent( $order, 'pi_return', 'pm_return' ), $overrides );
+		$this->sut                            = $this->create_controller( true, $this->create_confirmation_service( $api_client, $this->create_token_service() ), $api_client );
+		$this->set_payment_intent_return_request( $order, 'pi_return' );
+
+		$this->sut->handle_wp();
+		$reloaded = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $reloaded );
+		$this->assertSame( 'on-hold', $reloaded->get_status() );
+		$this->assertSame( 'pi_return', $reloaded->get_transaction_id() );
+		$this->assertSame( 'ch_return', $reloaded->get_meta( '_charge_id', true ) );
+		$notes = array_map( static fn( $note ): string => (string) $note->content, wc_get_order_notes( array( 'order_id' => $reloaded->get_id() ) ) );
+		$this->assertCount( 1, array_filter( $notes, static fn( string $note ): bool => false !== strpos( $note, 'was put <strong>on hold</strong>' ) ) );
+		$this->assertCount( 0, array_filter( $notes, static fn( string $note ): bool => false !== strpos( $note, 'successfully charged' ) ) );
+	}
+
+	/**
+	 * Payments that differ from the $50.00 USD order.
+	 *
+	 * @return array<string,array{array<string,mixed>}>
+	 */
+	public function provider_returned_payments_that_differ_from_the_order(): array {
+		return array(
+			'another amount'   => array( array( 'amount' => 4000 ) ),
+			'another currency' => array( array( 'currency' => 'eur' ) ),
+		);
+	}
+
+	/**
 	 * @testdox A token-save error on the redirect return is logged and the order still completes, even for a recurring order.
 	 *
 	 * Client 11.1.0 process_redirect_payment() catches the token-save exception, logs "Error when saving payment method: ..."

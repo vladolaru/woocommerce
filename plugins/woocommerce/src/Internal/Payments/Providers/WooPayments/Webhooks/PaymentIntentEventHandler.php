@@ -16,6 +16,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\SubscriptionMethodPolicy;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAdminMenuBadgeService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAmountMismatchHold;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCurrencyUtils;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeeDetailsNoteController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentCodec;
@@ -462,6 +463,21 @@ class PaymentIntentEventHandler {
 					$this->order_has_placeholder_payment_method_details( $order ),
 					(string) $order->get_meta( '_wcpay_payment_transaction_id', true )
 				)
+			);
+		}
+
+		$hold_note_candidates = wc_get_container()->get( WooPaymentsAmountMismatchHold::class )->get_hold_note_candidates( $order, $event_object );
+		if ( null !== $hold_note_candidates ) {
+			return new PaymentLifecycleEvent(
+				PaymentLifecycleEvent::STATUS_COMPLETED,
+				$this->get_object_id( $event_object ),
+				$meta,
+				array(),
+				$hold_note_candidates[0],
+				PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_HELD,
+				$hold_note_candidates,
+				false,
+				true
 			);
 		}
 

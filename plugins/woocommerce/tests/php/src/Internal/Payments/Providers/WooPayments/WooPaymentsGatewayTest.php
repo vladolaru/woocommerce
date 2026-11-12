@@ -3460,8 +3460,9 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$order   = $this->create_order();
 		$order->set_customer_id( $user_id );
 		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+		$order->set_total( '10.99' );
 		$order->save();
-		// The recorded subscription sign-up PaymentIntent (Fixtures/platform-intention-subscription.json, pair signup_initial_setup_future_usage).
+		// The recorded subscription sign-up PaymentIntent (Fixtures/platform-intention-subscription.json, pair signup_initial_setup_future_usage), for the order's 10.99 USD.
 		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reading a local test fixture.
 		$recording = json_decode( (string) file_get_contents( __DIR__ . '/Fixtures/platform-intention-subscription.json' ), true );
 		$intent    = array_values( array_filter( $recording['entries'], static fn( array $entry ) => 'signup_initial_setup_future_usage' === $entry['pair'] ) )[0]['response']['body'];
@@ -3504,6 +3505,61 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$this->assertSame( (string) $intent['id'], $order->get_transaction_id() );
 		$this->assertSame( array(), $order->get_payment_tokens(), 'No token is attached when it could not be saved.' );
 		$this->assertContains( 'Error when saving payment method.', array_column( $logger->lines, 1 ), 'The token-save failure is logged.' );
+	}
+
+	/**
+	 * @testdox A checkout whose succeeded payment differs from the order total answers success and puts the order on hold with the hold note: $_dataName.
+	 *
+	 * Client 11.3.0 class-wc-payment-gateway-wcpay.php:2499 → class-wc-payments-order-service.php:486-487, :2095-2139: the
+	 * payment succeeded, so the shopper reaches the order-received page, and the order is held for the merchant.
+	 *
+	 * @dataProvider provider_checkout_payments_that_differ_from_the_order
+	 *
+	 * @param string $total    Order total.
+	 * @param string $currency Order currency.
+	 */
+	public function test_process_payment_holds_the_order_when_the_payment_differs_from_its_total( string $total, string $currency ): void {
+		$order = $this->create_order();
+		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+		$order->set_total( $total );
+		$order->set_currency( $currency );
+		$order->save();
+		// The recorded subscription sign-up PaymentIntent (Fixtures/platform-intention-subscription.json, pair signup_initial_setup_future_usage), 10.99 USD.
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reading a local test fixture.
+		$recording = json_decode( (string) file_get_contents( __DIR__ . '/Fixtures/platform-intention-subscription.json' ), true );
+		$intent    = array_values( array_filter( $recording['entries'], static fn( array $entry ) => 'signup_initial_setup_future_usage' === $entry['pair'] ) )[0]['response']['body'];
+		$outcome   = WooPaymentsIntentCodec::outcome_from_intention(
+			$intent,
+			new WooPaymentsIntentMappingContext( $order->get_checkout_order_received_url(), (string) $intent['payment_method'], (string) $intent['customer'] )
+		)->with_effect_plan( WooPaymentsOrderEffectPlan::for_payment_intent( $intent, false ) );
+		$gateway   = new WooPaymentsGateway();
+		$gateway->init( wc_get_container()->get( PaymentProcessingService::class ), $this->create_provider_charging( $outcome, wc_get_container()->get( WooPaymentsTokenService::class ) ) );
+		$_POST['wcpay-payment-method'] = (string) $intent['payment_method'];
+
+		$result = $gateway->process_payment( $order->get_id() );
+
+		$this->assertSame( 'success', $result['result'] ?? '' );
+		$this->assertSame( $order->get_checkout_order_received_url(), $result['redirect'] ?? '' );
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 'on-hold', $order->get_status() );
+		$this->assertSame( (string) $intent['id'], $order->get_transaction_id() );
+		$this->assertSame( 'succeeded', $order->get_meta( '_intention_status', true ) );
+		$notes = array_map( static fn( $note ): string => (string) $note->content, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+		$this->assertCount( 1, array_filter( $notes, static fn( string $note ): bool => false !== strpos( $note, 'was put <strong>on hold</strong>' ) ) );
+		$this->assertCount( 0, array_filter( $notes, static fn( string $note ): bool => false !== strpos( $note, 'successfully charged' ) ) );
+	}
+
+	/**
+	 * Orders a 10.99 USD payment differs from.
+	 *
+	 * @return array<string,array{string,string}>
+	 */
+	public function provider_checkout_payments_that_differ_from_the_order(): array {
+		return array(
+			'another total'    => array( '12.00', 'USD' ),
+			'another currency' => array( '10.99', 'EUR' ),
+		);
 	}
 
 	/**

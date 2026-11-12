@@ -342,7 +342,14 @@ class WooPaymentsOrderEffectApplier {
 		$effect_data = array( WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY => $meta );
 		$intent_id   = isset( $result['id'] ) ? (string) $result['id'] : '';
 		$charge_id   = isset( $charge['id'] ) ? (string) $charge['id'] : '';
-		if ( 'succeeded' === $status ) {
+
+		$hold_note_candidates = 'succeeded' === $status ? wc_get_container()->get( WooPaymentsAmountMismatchHold::class )->get_hold_note_candidates( $order, $result ) : null;
+		if ( null !== $hold_note_candidates ) {
+			$effect_data[ PaymentOutcome::DATA_HOLD_ORDER ]       = true;
+			$effect_data[ PaymentOutcome::DATA_NOTE ]             = $hold_note_candidates[0];
+			$effect_data[ PaymentOutcome::DATA_NOTE_TYPE ]        = PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_HELD;
+			$effect_data[ PaymentOutcome::DATA_NOTE_EQUIVALENTS ] = $hold_note_candidates;
+		} elseif ( 'succeeded' === $status ) {
 			$note_candidates                                      = $this->note_service->format_payment_success_note_candidates(
 				$order,
 				$intent_id,

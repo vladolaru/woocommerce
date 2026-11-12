@@ -221,6 +221,48 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox payment_intent.succeeded for a payment that differs from the order total holds the order with one note, and its payment stays recorded: $_dataName.
+	 *
+	 * Client 11.3.0 class-wc-payments-webhook-processing-service.php:716 → class-wc-payments-order-service.php:486-487,
+	 * :2095-2139: on-hold, the note once, the intent status stored, no completion; the transaction and charge stay on the
+	 * order, so it can be refunded.
+	 *
+	 * @dataProvider provider_payments_that_differ_from_the_order
+	 *
+	 * @param array<string,mixed> $overrides Intent overrides.
+	 */
+	public function test_payment_intent_succeeded_that_differs_from_the_order_total_holds_the_order( array $overrides ): void {
+		$order = $this->create_woopayments_order();
+		$event = $this->create_payment_intent_event( 'payment_intent.succeeded', $order, $overrides );
+
+		$this->sut->process( $event );
+		$this->sut->process( $event );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 'on-hold', $order->get_status() );
+		$this->assertNull( $order->get_date_paid() );
+		$this->assertSame( 'pi_123', $order->get_transaction_id() );
+		$this->assertSame( 'ch_123', $order->get_meta( '_charge_id', true ) );
+		$this->assertSame( 'succeeded', $order->get_meta( '_intention_status', true ) );
+		$this->assertCount( 1, $this->get_order_notes_containing( $order, 'was put <strong>on hold</strong>' ) );
+		$this->assertCount( 0, $this->get_order_notes_containing( $order, 'successfully charged' ) );
+		$this->assertFalse( as_has_scheduled_action( WooPaymentsFeeDetailsNoteController::ADD_FEE_BREAKDOWN_TO_ORDER_NOTES_ACTION, null, 'woocommerce_payments' ) );
+	}
+
+	/**
+	 * Payments that differ from the 10.00 USD order.
+	 *
+	 * @return array<string,array{array<string,mixed>}>
+	 */
+	public function provider_payments_that_differ_from_the_order(): array {
+		return array(
+			'another amount'   => array( array( 'amount' => 1234 ) ),
+			'another currency' => array( array( 'currency' => 'eur' ) ),
+		);
+	}
+
+	/**
 	 * @testdox payment_intent.succeeded completes the order.
 	 */
 	public function test_payment_intent_succeeded_completes_order(): void {
@@ -243,7 +285,7 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'prod', $order->get_meta( '_wcpay_mode', true ) );
 		$this->assertSame( 'mandate_123', $order->get_meta( '_stripe_mandate_id', true ) );
 		$this->assertSame( '1.23', $order->get_meta( '_wcpay_transaction_fee', true ) );
-		$this->assertSame( '11.11', $order->get_meta( '_wcpay_net', true ) );
+		$this->assertSame( '8.77', $order->get_meta( '_wcpay_net', true ) );
 		$this->assertSame( 'mobile_pos', $order->get_meta( '_wcpay_ipp_channel', true ) );
 	}
 
@@ -262,8 +304,10 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 		$order  = $this->create_woopayments_order();
 		$event  = $this->recorded_payment_intent_event( $pair, $order );
 		$intent = $event['data']['object'];
-		// The order's payment method is the one the checkout used: the succeeded intent's, or the declined card's.
+		// The order's payment method is the one the checkout used: the succeeded intent's, or the declined card's; its total
+		// is the recorded checkout's.
 		$order->update_meta_data( '_payment_method_id', (string) ( $intent['last_payment_error']['payment_method']['id'] ?? $intent['payment_method'] ) );
+		$order->set_total( '10.99' );
 		$order->save();
 		$vocabulary = new WooPaymentsPersistenceVocabulary();
 		// A checkout that died after the platform captured keeps the lock until its TTL runs out.
@@ -1269,6 +1313,7 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 		$order->set_billing_country( 'US' );
 		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . 'afterpay_clearpay' );
 		$order->set_payment_method_title( 'Afterpay' );
+		$order->set_total( '65.00' );
 		$order->update_meta_data(
 			'_wcpay_payment_method_details',
 			wp_json_encode(
@@ -4140,7 +4185,7 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 		$record_notes = $this->get_order_notes_containing( $order, 'does not pay this order' );
 		$this->assertCount( 1, $record_notes );
 		$this->assertStringContainsString( 'ch_123', $record_notes[0]->content );
-		$this->assertStringContainsString( '12.34', $record_notes[0]->content );
+		$this->assertStringContainsString( '10.00', $record_notes[0]->content );
 		$record_lines = array_keys(
 			array_filter(
 				$logger->lines,
@@ -5515,7 +5560,8 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 	 * class-wc-payments-webhook-processing-service.php:145-160 (envelope), :494-519 (id, currency, amount,
 	 * payment_method, charges.data[0] with its payment_method_details.card.mandate), :542 (application_fee_amount),
 	 * :574-577 (metadata.ipp_channel) and :968-1002 (metadata.order_id and order_key for the order lookup); status is
-	 * the PaymentIntent's own field (Stripe API PaymentIntent object).
+	 * the PaymentIntent's own field (Stripe API PaymentIntent object). The amount is the order total of
+	 * create_woopayments_order(), 10.00 USD.
 	 *
 	 * @param string              $type      Event type.
 	 * @param WC_Order            $order     Order object.
@@ -5529,7 +5575,7 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 				'id'             => 'pi_123',
 				'status'         => 'succeeded',
 				'currency'       => 'usd',
-				'amount'         => 1234,
+				'amount'         => 1000,
 				'payment_method' => 'pm_123',
 				'metadata'       => array(
 					'order_id'    => (string) $order->get_id(),

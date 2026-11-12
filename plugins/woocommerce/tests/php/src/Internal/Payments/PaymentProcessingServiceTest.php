@@ -393,6 +393,60 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A completed checkout outcome the provider holds puts the order on hold with its note and completes nothing, unless it only saved the payment method ($_dataName).
+	 *
+	 * @dataProvider held_checkout_outcomes
+	 *
+	 * @param bool   $payment_method_only Whether the outcome only saved the payment method.
+	 * @param string $expected_status     Order status after the checkout.
+	 * @param string $expected_txn_id     Transaction ID after the checkout.
+	 * @param int    $expected_notes      Number of hold notes on the order.
+	 */
+	public function test_process_checkout_holds_the_order_for_a_held_outcome( bool $payment_method_only, string $expected_status, string $expected_txn_id, int $expected_notes ): void {
+		$order                  = $this->create_woopayments_order( '10.00' );
+		$outcome                = new PaymentOutcome(
+			PaymentOutcome::STATUS_COMPLETED,
+			'ref_held',
+			'',
+			'method_held',
+			'customer_held',
+			array(
+				PaymentOutcome::DATA_HOLD_ORDER          => true,
+				PaymentOutcome::DATA_PAYMENT_METHOD_ONLY => $payment_method_only,
+				PaymentOutcome::DATA_NOTE                => 'Payment held.',
+				PaymentOutcome::DATA_NOTE_TYPE           => PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_HELD,
+			)
+		);
+		$payment_complete_calls = 0;
+		$observer               = static function () use ( &$payment_complete_calls ): void {
+			++$payment_complete_calls;
+		};
+		add_action( 'woocommerce_payment_complete', $observer );
+
+		$result = $this->sut->process_checkout_outcome( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'method_held' ), new RecordingProvider( $outcome ) );
+		$order  = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( PaymentOutcome::STATUS_COMPLETED, $result->get_status(), 'The shopper sees a successful payment.' );
+		$this->assertSame( $expected_status, $order->get_status() );
+		$this->assertSame( $expected_txn_id, $order->get_transaction_id() );
+		$this->assertSame( $expected_notes, count( array_filter( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), static fn( $note ): bool => 'Payment held.' === $note->content ) ) );
+		$this->assertSame( 0, $payment_complete_calls );
+	}
+
+	/**
+	 * Held checkout outcomes, and one that only saved the payment method.
+	 *
+	 * @return array<string,array{bool,string,string,int}>
+	 */
+	public function held_checkout_outcomes(): array {
+		return array(
+			'held payment'              => array( false, OrderStatus::ON_HOLD, 'ref_held', 1 ),
+			'held, payment method only' => array( true, OrderStatus::PENDING, '', 0 ),
+		);
+	}
+
+	/**
 	 * Payment-method-only outcomes that did not fail, on a new order and on one that carries an earlier payment.
 	 *
 	 * @return array<string,array{string,string,bool}>
@@ -5479,6 +5533,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		return array(
 			'id'       => 'pi_lifecycle_title',
 			'status'   => 'succeeded',
+			'amount'   => 1000,
 			'currency' => 'usd',
 			'charges'  => array(
 				'data' => array(
@@ -5517,6 +5572,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		return array(
 			'id'       => 'pi_lifecycle_title',
 			'status'   => 'succeeded',
+			'amount'   => 1000,
 			'currency' => 'usd',
 			'charges'  => array(
 				'data' => array(

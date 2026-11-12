@@ -966,7 +966,8 @@ class PaymentProcessingService {
 				// The event stays a failure so the late-failure guard still
 				// protects already-paid orders; only the status transition is
 				// suppressed when the outcome asked to preserve the status.
-				$preserve_order_status || $this->should_preserve_order_status( $outcome )
+				$preserve_order_status || $this->should_preserve_order_status( $outcome ),
+				PaymentLifecycleEvent::should_hold_order_for_outcome( $outcome )
 			),
 			$provider->get_persistence_vocabulary()
 		);

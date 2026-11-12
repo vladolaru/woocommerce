@@ -54,6 +54,28 @@ class WooPaymentsOrderNoteService {
 	}
 
 	/**
+	 * Build the note of a succeeded payment that put the order on hold because its amount or currency differs from the
+	 * order total, in each wording that counts as the same note (client 11.3.0 class-wc-payments-order-service.php:2095-2116).
+	 *
+	 * Both amounts always carry their currency code.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @param WC_Order $order            Order object.
+	 * @param string   $intent_id        Payment intent ID.
+	 * @param string   $charge_id        Charge ID.
+	 * @param int      $charged_amount   Charged amount, in the provider's minor units.
+	 * @param string   $charged_currency Charged currency.
+	 * @return string[] The note's wordings, WooCommerce's first.
+	 */
+	public function format_amount_mismatch_hold_note_candidates( WC_Order $order, string $intent_id, string $charge_id, int $charged_amount, string $charged_currency ): array {
+		return $this->unique_note_candidates(
+			$this->format_amount_mismatch_hold_note_for_domain( $order, $intent_id, $charge_id, $charged_amount, $charged_currency, 'woocommerce' ),
+			...$this->extension_wordings( fn(): string => $this->format_amount_mismatch_hold_note_for_domain( $order, $intent_id, $charge_id, $charged_amount, $charged_currency, 'woocommerce-payments' ) )
+		);
+	}
+
+	/**
 	 * Resolve a payment-success note order mode from the synchronous value or persisted order snapshot.
 	 *
 	 * @param WC_Order $order      Order object.
@@ -669,6 +691,45 @@ class WooPaymentsOrderNoteService {
 			$formatted_amount ?? $this->format_order_amount( $order ),
 			'WooPayments',
 			$transaction_id,
+			$transaction_url
+		);
+	}
+
+	/**
+	 * Build the note of a payment held for an amount or currency that differs from the order total, from one known catalog.
+	 *
+	 * @param WC_Order $order            Order object.
+	 * @param string   $intent_id        Payment intent ID.
+	 * @param string   $charge_id        Charge ID.
+	 * @param int      $charged_amount   Charged amount, in the provider's minor units.
+	 * @param string   $charged_currency Charged currency.
+	 * @param string   $text_domain      Translation catalog to render.
+	 * @return string
+	 */
+	private function format_amount_mismatch_hold_note_for_domain( WC_Order $order, string $intent_id, string $charge_id, int $charged_amount, string $charged_currency, string $text_domain ): string {
+		$charged_currency = strtoupper( $charged_currency );
+		$order_currency   = strtoupper( (string) $order->get_currency() );
+		$transaction_url  = $this->transaction_url( $intent_id, $charge_id );
+		if ( 'woocommerce-payments' === $text_domain ) {
+			/* translators: %1: the charged amount, %2: WooPayments, %3: transaction ID of the payment, %4: the order total, %5: transaction details URL */
+			$note_format = __( 'A payment of %1$s was charged using %2$s (<a>%3$s</a>), but the order total is %4$s. The order was put <strong>on hold</strong>; review it before fulfilling.', 'woocommerce-payments' );
+		} else {
+			/* translators: %1: the charged amount, %2: WooPayments, %3: transaction ID of the payment, %4: the order total, %5: transaction details URL */
+			$note_format = __( 'A payment of %1$s was charged using %2$s (<a>%3$s</a>), but the order total is %4$s. The order was put <strong>on hold</strong>; review it before fulfilling.', 'woocommerce' );
+		}
+
+		return sprintf(
+			WooPaymentsHtmlUtils::escape_interpolated_html(
+				$note_format,
+				array(
+					'strong' => '<strong>',
+					'a'      => '' !== $transaction_url ? '<a href="%5$s" target="_blank" rel="noopener noreferrer">' : '<code>',
+				)
+			),
+			wc_price( WooPaymentsCurrencyUtils::amount_from_minor_units( $charged_amount, $charged_currency ), array( 'currency' => $charged_currency ) ) . ' ' . $charged_currency,
+			'WooPayments',
+			'' !== $intent_id ? $intent_id : $charge_id,
+			wc_price( (float) $order->get_total(), array( 'currency' => $order_currency ) ) . ' ' . $order_currency,
 			$transaction_url
 		);
 	}

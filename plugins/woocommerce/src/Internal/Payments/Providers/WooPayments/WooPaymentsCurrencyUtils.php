@@ -94,6 +94,35 @@ final class WooPaymentsCurrencyUtils {
 	}
 
 	/**
+	 * Tell whether a PaymentIntent is for the order's total: its currency equals the order's, whatever the case, and its
+	 * amount equals the order total in minor units (client 11.3.0 class-wc-payments-order-service.php:2081-2084).
+	 *
+	 * @since 11.2.0
+	 *
+	 * @param array<string,mixed> $intent A PaymentIntent as the platform returns it.
+	 * @param WC_Order            $order  Order object.
+	 * @return bool
+	 */
+	public static function intent_matches_order_total( array $intent, WC_Order $order ): bool {
+		return strtolower( isset( $intent['currency'] ) && is_string( $intent['currency'] ) ? $intent['currency'] : '' ) === strtolower( (string) $order->get_currency() )
+			&& is_numeric( $intent['amount'] ?? null )
+			&& self::is_order_total_in_minor_units( (int) $intent['amount'], $order );
+	}
+
+	/**
+	 * Tell whether an amount in minor units equals the order total in the order's currency.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @param int      $amount Amount in minor units.
+	 * @param WC_Order $order  Order object.
+	 * @return bool
+	 */
+	public static function is_order_total_in_minor_units( int $amount, WC_Order $order ): bool {
+		return self::amount_to_minor_units( (float) $order->get_total(), (string) $order->get_currency() ) === $amount;
+	}
+
+	/**
 	 * Convert a decimal amount to provider minor units.
 	 *
 	 * @since 11.0.0

@@ -280,6 +280,37 @@ class WooPaymentsDuplicatePaymentPreventionServiceTest extends WC_Unit_Test_Case
 	}
 
 	/**
+	 * @testdox An attached PaymentIntent for the order's amount in another currency passes the amount check and holds the order with the hold note.
+	 *
+	 * Client 11.3.0 class-duplicate-payment-prevention-service.php:126-150 compares the amount only, then
+	 * update_order_status_from_intent() compares the currency too (class-wc-payments-order-service.php:486-487, :2095-2139).
+	 */
+	public function test_attached_intent_in_another_currency_holds_the_order(): void {
+		$session = $this->create_session();
+		$order   = $this->create_order( 'hash', 'pending' );
+		$order->set_total( '12.00' );
+		$order->update_meta_data( '_intent_id', 'pi_existing' );
+		$order->save();
+		$api_client = $this->getMockBuilder( Client::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_payment_intention' ) )
+			->getMock();
+		$api_client->method( 'get_payment_intention' )->willReturn( array_merge( $this->create_intent_response( $order, 'succeeded', 1200 ), array( 'currency' => 'eur' ) ) );
+
+		$result = $this->create_service( $session, $api_client )->check_payment_intent_attached_to_order_succeeded( $order, $this->create_gateway() );
+		$order  = wc_get_order( $order->get_id() );
+
+		$this->assertIsArray( $result );
+		$this->assertSame( 'success', $result['result'] );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 'on-hold', $order->get_status() );
+		$this->assertSame( 'pi_existing', $order->get_transaction_id() );
+		$notes = implode( ' ', array_map( static fn( object $note ): string => (string) $note->content, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) ) );
+		$this->assertStringContainsString( 'was put <strong>on hold</strong>', $notes );
+		$this->assertStringNotContainsString( 'successfully charged', $notes );
+	}
+
+	/**
 	 * @testdox Should answer a subscription's succeeded attached PaymentIntent without completing the subscription.
 	 *
 	 * Client 11.3.0 never completes a subscription from an intent; its duplicate payment check still answers success

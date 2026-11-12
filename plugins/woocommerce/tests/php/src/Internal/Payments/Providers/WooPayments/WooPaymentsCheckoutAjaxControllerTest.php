@@ -1152,6 +1152,62 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Order-status callback holds the order when the succeeded payment differs from the order total: $_dataName.
+	 *
+	 * Client 11.3.0 class-wc-payment-gateway-wcpay.php:4771 → class-wc-payments-order-service.php:486-487, :2095-2139.
+	 *
+	 * @dataProvider provider_callback_payments_that_differ_from_the_order
+	 *
+	 * @param int    $amount   Intent amount, in minor units.
+	 * @param string $currency Intent currency.
+	 */
+	public function test_update_order_status_holds_the_order_when_the_payment_differs_from_its_total( int $amount, string $currency ): void {
+		$order = $this->create_order_for_intent_binding( 'payment' );
+		$order->update_meta_data( '_intent_id', 'pi_binding' );
+		$order->save();
+		$intent     = array(
+			'id'             => 'pi_binding',
+			'status'         => 'succeeded',
+			'amount'         => $amount,
+			'currency'       => $currency,
+			'customer'       => 'cus_binding',
+			'payment_method' => 'pm_binding',
+			'metadata'       => array( 'order_id' => (string) $order->get_id() ),
+		);
+		$controller = $this->create_controller( $this->create_api_client_returning( $intent ) );
+		$request    = array(
+			'_ajax_nonce' => wp_create_nonce( 'wcpay_update_order_status_nonce_' . $order->get_id() ),
+			'order_id'    => $order->get_id(),
+			'intent_id'   => 'pi_binding',
+		);
+
+		$response = $controller->confirm_order_payment( $request );
+		$controller->confirm_order_payment( $request );
+		$order = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 200, $response['status_code'] );
+		$this->assertSame( 'on-hold', $order->get_status() );
+		$this->assertSame( 'pi_binding', $order->get_transaction_id() );
+		$this->assertSame( 'succeeded', $order->get_meta( '_intention_status', true ) );
+		$notes = array_map( static fn( $note ): string => (string) $note->content, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+		$this->assertCount( 1, array_filter( $notes, static fn( string $note ): bool => false !== strpos( $note, 'was put <strong>on hold</strong>' ) ) );
+		$this->assertCount( 0, array_filter( $notes, static fn( string $note ): bool => false !== strpos( $note, 'successfully charged' ) ) );
+	}
+
+	/**
+	 * Payments that differ from the $50.00 USD order.
+	 *
+	 * @return array<string,array{int,string}>
+	 */
+	public function provider_callback_payments_that_differ_from_the_order(): array {
+		return array(
+			'another amount'   => array( 4000, 'usd' ),
+			'another currency' => array( 5000, 'eur' ),
+		);
+	}
+
+	/**
 	 * Create the order a binding test confirms: a $50.00 order for a PaymentIntent, a $0.00 order for a SetupIntent, or an active
 	 * subscription for a payment method change.
 	 *
@@ -2483,6 +2539,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 				$intent = array(
 					'id'                   => 'pi_excluded_shape',
 					'status'               => 'succeeded',
+					'amount'               => 1000,
 					'currency'             => 'usd',
 					'customer'             => 'cus_native',
 					'payment_method'       => 'pm_native',
@@ -2927,6 +2984,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 				return array(
 					'id'             => 'pi_native',
 					'status'         => 'succeeded',
+					'amount'         => 1000,
 					'currency'       => 'usd',
 					'customer'       => 'cus_native',
 					'payment_method' => 'pm_native',

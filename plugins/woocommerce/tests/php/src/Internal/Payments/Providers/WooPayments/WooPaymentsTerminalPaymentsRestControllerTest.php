@@ -562,6 +562,7 @@ class WooPaymentsTerminalPaymentsRestControllerTest extends WC_REST_Unit_Test_Ca
 		$intent                                       = array(
 			'id'       => 'pi_terminal_notes',
 			'status'   => $intent_status,
+			'amount'   => 1234,
 			'currency' => 'usd',
 			'metadata' => array( 'order_id' => (string) $order->get_id() ),
 			'charges'  => array( 'data' => array( array( 'id' => 'ch_terminal_notes' ) ) ),
@@ -662,6 +663,38 @@ class WooPaymentsTerminalPaymentsRestControllerTest extends WC_REST_Unit_Test_Ca
 			'card reader authorization, captured by the store' => array( 'requires_capture', array( 'authorized', 'captured' ) ),
 			'Interac, captured by the reader' => array( 'succeeded', array( 'paid' ) ),
 		);
+	}
+
+	/**
+	 * @testdox A payment the reader captured for another amount than the order total writes the hold note, then completes the order as the terminal capture does.
+	 *
+	 * Client 11.3.0 includes/admin/class-wc-rest-payments-orders-controller.php:215-217 holds the order through
+	 * update_order_status_from_intent() (class-wc-payments-order-service.php:486-487, :2095-2139), then :281
+	 * mark_terminal_payment_completed() sets the filtered completed status (class-wc-payments-order-service.php:929-942).
+	 */
+	public function test_capture_terminal_payment_notes_the_hold_of_a_reader_payment_for_another_amount_and_completes_the_order(): void {
+		$order                                        = $this->create_order( 12.34, 'USD' );
+		$this->api_client->payment_intention_response = array(
+			'id'       => 'pi_terminal_other_amount',
+			'status'   => 'succeeded',
+			'amount'   => 1000,
+			'currency' => 'usd',
+			'metadata' => array( 'order_id' => (string) $order->get_id() ),
+			'charges'  => array( 'data' => array( array( 'id' => 'ch_terminal_other_amount' ) ) ),
+		);
+
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/orders/' . $order->get_id() . '/capture_terminal_payment' );
+		$request->set_param( 'order_id', $order->get_id() );
+		$request->set_param( 'payment_intent_id', 'pi_terminal_other_amount' );
+
+		$this->assertInstanceOf( WP_REST_Response::class, $this->sut->capture_terminal_payment( $request ) );
+
+		$order = wc_get_order( $order->get_id() );
+		$notes = array_map( static fn( $note ): string => (string) $note->content, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+		$this->assertSame( 'completed', $order->get_status() );
+		$this->assertSame( 'pi_terminal_other_amount', $order->get_transaction_id() );
+		$this->assertCount( 1, array_filter( $notes, static fn( string $note ): bool => false !== strpos( $note, 'was put <strong>on hold</strong>' ) ) );
+		$this->assertCount( 0, array_filter( $notes, static fn( string $note ): bool => false !== strpos( $note, 'successfully charged' ) ) );
 	}
 
 	/**

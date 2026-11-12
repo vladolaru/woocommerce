@@ -199,7 +199,7 @@ class OrderPaymentLifecycleService {
 		}
 
 		$note                        = $event->get_note();
-		$completed_event_skip_reason = $this->get_completed_event_skip_reason( $completed_event_order, $event, $persistence_vocabulary );
+		$completed_event_skip_reason = $this->get_completed_event_skip_reason( $order, $completed_event_order, $event, $persistence_vocabulary );
 		if ( null !== $completed_event_skip_reason ) {
 			$this->synchronize_skipped_completed_event_order( $order, $completed_event_order, $completed_event_skip_reason, $persistence_vocabulary );
 			$this->log_skipped_completed_event( $order, $event, $completed_event_skip_reason );
@@ -286,13 +286,15 @@ class OrderPaymentLifecycleService {
 	private function apply_status_transition( WC_Order $order, PaymentLifecycleEvent $event ): bool {
 		switch ( $event->get_status() ) {
 			case PaymentLifecycleEvent::STATUS_COMPLETED:
+				if ( $event->should_hold_order() ) {
+					$this->put_order_on_hold( $order, $event );
+					return true;
+				}
+
 				return (bool) $order->payment_complete( (string) $event->get_payment_reference() );
 
 			case PaymentLifecycleEvent::STATUS_AUTHORIZED:
-				if ( null !== $event->get_payment_reference() && '' !== $event->get_payment_reference() ) {
-					$order->set_transaction_id( $event->get_payment_reference() );
-				}
-				$order->update_status( OrderStatus::ON_HOLD );
+				$this->put_order_on_hold( $order, $event );
 				return true;
 
 			case PaymentLifecycleEvent::STATUS_FAILED:
@@ -316,6 +318,20 @@ class OrderPaymentLifecycleService {
 		}
 
 		return false;
+	}
+
+	/**
+	 * Put the order on hold with the event's payment reference as its transaction ID: an authorized payment, or a completed
+	 * one the event holds.
+	 *
+	 * @param WC_Order              $order Order object.
+	 * @param PaymentLifecycleEvent $event Lifecycle event.
+	 */
+	private function put_order_on_hold( WC_Order $order, PaymentLifecycleEvent $event ): void {
+		if ( null !== $event->get_payment_reference() && '' !== $event->get_payment_reference() ) {
+			$order->set_transaction_id( $event->get_payment_reference() );
+		}
+		$order->update_status( OrderStatus::ON_HOLD );
 	}
 
 	/**
@@ -411,21 +427,26 @@ class OrderPaymentLifecycleService {
 	/**
 	 * Get the reason a completed lifecycle event must be ignored before it changes the order.
 	 *
-	 * A completed event whose note is already on the order was applied before, so it changes nothing, and an open
-	 * dispute keeps the order on hold.
+	 * A completed event whose note is already on the order was applied before, so it changes nothing, an open dispute
+	 * keeps the order on hold, and a hold never lands on a paid order: the caller's order or its fresh read.
 	 *
-	 * @param WC_Order                               $order               Order object.
+	 * @param WC_Order                               $caller_order        Caller-owned order object.
+	 * @param WC_Order                               $order               Freshly read order.
 	 * @param PaymentLifecycleEvent                  $event               Lifecycle event.
 	 * @param ProviderPersistenceVocabularyInterface $persistence_vocabulary Provider persistence vocabulary.
 	 * @return string|null Skip reason, or null when the event can be applied.
 	 */
-	private function get_completed_event_skip_reason( WC_Order $order, PaymentLifecycleEvent $event, ProviderPersistenceVocabularyInterface $persistence_vocabulary ): ?string {
+	private function get_completed_event_skip_reason( WC_Order $caller_order, WC_Order $order, PaymentLifecycleEvent $event, ProviderPersistenceVocabularyInterface $persistence_vocabulary ): ?string {
 		if ( PaymentLifecycleEvent::STATUS_COMPLETED !== $event->get_status() ) {
 			return null;
 		}
 
 		if ( $this->has_open_dispute( $order, $persistence_vocabulary ) ) {
 			return 'open_dispute';
+		}
+
+		if ( $event->should_hold_order() && ( $caller_order->has_status( wc_get_is_paid_statuses() ) || $order->has_status( wc_get_is_paid_statuses() ) ) ) {
+			return 'order_paid';
 		}
 
 		$note = $event->get_note();
@@ -489,9 +510,11 @@ class OrderPaymentLifecycleService {
 	 * @param string                $reason Skip reason.
 	 */
 	private function log_skipped_completed_event( WC_Order $order, PaymentLifecycleEvent $event, string $reason ): void {
-		$message = 'open_dispute' === $reason
-			? 'Completed payment event skipped: an open dispute keeps the order on hold.'
-			: 'Completed payment event skipped: the payment note is already on the order.';
+		$messages = array(
+			'open_dispute' => 'Completed payment event skipped: an open dispute keeps the order on hold.',
+			'order_paid'   => 'Completed payment event skipped: the order is already paid, so it is not put on hold.',
+		);
+		$message  = $messages[ $reason ] ?? 'Completed payment event skipped: the payment note is already on the order.';
 
 		wc_get_logger()->debug(
 			$message,
