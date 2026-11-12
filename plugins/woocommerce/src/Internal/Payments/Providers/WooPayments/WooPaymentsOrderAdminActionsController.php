@@ -8,9 +8,12 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Enums\OrderStatus;
+use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
+use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
 use Automattic\WooCommerce\Internal\Payments\PaymentOperationContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\PaymentProcessingService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WebhookReliabilityService;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Throwable;
@@ -62,6 +65,34 @@ class WooPaymentsOrderAdminActionsController implements RegisterHooksInterface {
 	private WooPaymentsActionSchedulerService $scheduler;
 
 	/**
+	 * WooPayments API client, which reads an intent whose stored status is not known to be settled.
+	 *
+	 * @var Client
+	 */
+	private Client $api_client;
+
+	/**
+	 * Order payment lock.
+	 *
+	 * @var OrderPaymentLock
+	 */
+	private OrderPaymentLock $order_payment_lock;
+
+	/**
+	 * Order payment lifecycle service, which writes the intent status read on a status change.
+	 *
+	 * @var OrderPaymentLifecycleService
+	 */
+	private OrderPaymentLifecycleService $lifecycle_service;
+
+	/**
+	 * WooPayments logger.
+	 *
+	 * @var WooPaymentsLogger
+	 */
+	private WooPaymentsLogger $logger;
+
+	/**
 	 * Initialize the controller.
 	 *
 	 * @internal
@@ -70,12 +101,20 @@ class WooPaymentsOrderAdminActionsController implements RegisterHooksInterface {
 	 * @param WooPaymentsProvider                 $provider                    WooPayments provider.
 	 * @param WooPaymentsFeeDetailsNoteController $fee_details_note_controller Fee details note controller.
 	 * @param WooPaymentsActionSchedulerService   $scheduler                   Action Scheduler service.
+	 * @param Client                              $api_client                  WooPayments API client.
+	 * @param OrderPaymentLock                    $order_payment_lock          Order payment lock.
+	 * @param OrderPaymentLifecycleService        $lifecycle_service           Order payment lifecycle service.
+	 * @param WooPaymentsLogger                   $logger                      WooPayments logger.
 	 */
-	final public function init( PaymentProcessingService $processing_service, WooPaymentsProvider $provider, WooPaymentsFeeDetailsNoteController $fee_details_note_controller, WooPaymentsActionSchedulerService $scheduler ): void {
+	final public function init( PaymentProcessingService $processing_service, WooPaymentsProvider $provider, WooPaymentsFeeDetailsNoteController $fee_details_note_controller, WooPaymentsActionSchedulerService $scheduler, Client $api_client, OrderPaymentLock $order_payment_lock, OrderPaymentLifecycleService $lifecycle_service, WooPaymentsLogger $logger ): void {
 		$this->processing_service          = $processing_service;
 		$this->provider                    = $provider;
 		$this->fee_details_note_controller = $fee_details_note_controller;
 		$this->scheduler                   = $scheduler;
+		$this->api_client                  = $api_client;
+		$this->order_payment_lock          = $order_payment_lock;
+		$this->lifecycle_service           = $lifecycle_service;
+		$this->logger                      = $logger;
 	}
 
 	/**
@@ -151,7 +190,7 @@ class WooPaymentsOrderAdminActionsController implements RegisterHooksInterface {
 
 		global $theorder;
 
-		if ( ! $theorder instanceof WC_Order || ! $this->is_authorized_woopayments_order( $theorder, true ) ) {
+		if ( ! $theorder instanceof WC_Order || ! $this->is_authorized_woopayments_order( $theorder ) ) {
 			return $actions;
 		}
 
@@ -172,7 +211,7 @@ class WooPaymentsOrderAdminActionsController implements RegisterHooksInterface {
 	 * @param mixed $order Order being captured.
 	 */
 	public function handle_woocommerce_order_action_capture_charge( $order ): void {
-		if ( $order instanceof WC_Order && $this->is_authorized_woopayments_order( $order, true ) ) {
+		if ( $order instanceof WC_Order && $this->is_authorized_woopayments_order( $order ) ) {
 			$this->run_operation( $order, PaymentProcessingService::OPERATION_CAPTURE );
 		}
 	}
@@ -185,7 +224,7 @@ class WooPaymentsOrderAdminActionsController implements RegisterHooksInterface {
 	 * @param mixed $order Order whose authorization is being cancelled.
 	 */
 	public function handle_woocommerce_order_action_cancel_authorization( $order ): void {
-		if ( $order instanceof WC_Order && $this->is_authorized_woopayments_order( $order, true ) ) {
+		if ( $order instanceof WC_Order && $this->is_authorized_woopayments_order( $order ) ) {
 			$this->run_operation( $order, PaymentProcessingService::OPERATION_CANCEL );
 		}
 	}
@@ -203,7 +242,7 @@ class WooPaymentsOrderAdminActionsController implements RegisterHooksInterface {
 		unset( $status_transition );
 		$order = $this->resolve_status_order( absint( $order_id ), $order instanceof WC_Order ? $order : null );
 
-		if ( $order instanceof WC_Order && $this->is_authorized_woopayments_order( $order, false ) ) {
+		if ( $order instanceof WC_Order && $this->holds_authorization_on_status_change( $order, PaymentProcessingService::OPERATION_CAPTURE ) ) {
 			$this->run_operation( $order, PaymentProcessingService::OPERATION_CAPTURE, true );
 		}
 	}
@@ -221,7 +260,7 @@ class WooPaymentsOrderAdminActionsController implements RegisterHooksInterface {
 		unset( $status_transition );
 		$order = $this->resolve_status_order( absint( $order_id ), $order instanceof WC_Order ? $order : null );
 
-		if ( $order instanceof WC_Order && $this->is_authorized_woopayments_order( $order, false ) ) {
+		if ( $order instanceof WC_Order && $this->holds_authorization_on_status_change( $order, PaymentProcessingService::OPERATION_CANCEL ) ) {
 			$this->run_operation( $order, PaymentProcessingService::OPERATION_CANCEL, true );
 		}
 	}
@@ -245,7 +284,7 @@ class WooPaymentsOrderAdminActionsController implements RegisterHooksInterface {
 		}
 
 		$order = wc_get_order( absint( $order_id ) );
-		if ( $order instanceof WC_Order && $order->has_status( $statuses[ $operation ] ) && $this->is_authorized_woopayments_order( $order, false ) ) {
+		if ( $order instanceof WC_Order && $order->has_status( $statuses[ $operation ] ) && $this->holds_authorization_on_status_change( $order, $operation ) ) {
 			$this->run_operation( $order, $operation, true, absint( $retry ) );
 		}
 	}
@@ -268,18 +307,94 @@ class WooPaymentsOrderAdminActionsController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Tell whether an order carries a capturable WooPayments authorization.
+	 * Tell whether an order moved to Completed or Cancelled holds a WooPayments authorization to capture or cancel.
 	 *
-	 * @param WC_Order $order          Order.
-	 * @param bool     $require_unpaid Whether paid statuses are ineligible.
+	 * A stored requires_capture says so with no platform read, and a stored succeeded or canceled says no. Any other stored
+	 * status, empty included, is read from the platform once, before the operation's order payment lock: the operation
+	 * runs only when the live intent awaits capture with an uncaptured succeeded charge. The status read is stored, under
+	 * the lock, while the order still stores the status it had. A failed read leaves the order in its new status with
+	 * the operation's failure note. Client 11.3.0 class-wc-payments-order-service.php:2327-2370, :2381-2429.
+	 *
+	 * @param WC_Order $order     Order whose status changed.
+	 * @param string   $operation Capture or cancel.
 	 * @return bool
 	 */
-	private function is_authorized_woopayments_order( WC_Order $order, bool $require_unpaid ): bool {
+	private function holds_authorization_on_status_change( WC_Order $order, string $operation ): bool {
+		if ( ! WooPaymentsPersistenceVocabulary::is_woopayments_gateway_id( (string) $order->get_payment_method() ) ) {
+			return false;
+		}
+
+		$stored_status = (string) $order->get_meta( '_intention_status', true );
+		$intent_id     = (string) $order->get_meta( '_intent_id', true );
+		if ( 'requires_capture' === $stored_status ) {
+			return true;
+		}
+		if ( '' === $intent_id || in_array( $stored_status, array( 'succeeded', 'canceled' ), true ) ) {
+			return false;
+		}
+
+		try {
+			$intent = $this->api_client->get_payment_intention( $intent_id );
+		} catch ( Throwable $exception ) {
+			$this->logger->log_throwable( sprintf( 'The intent of order #%d could not be read on its status change.', $order->get_id() ), $exception, array( 'order_id' => $order->get_id() ) );
+			self::add_operation_failure_note( $order, $operation );
+			return false;
+		}
+
+		$live_status = isset( $intent['status'] ) && is_string( $intent['status'] ) ? $intent['status'] : '';
+		$charge      = WooPaymentsIntentCodec::latest_charge( $intent );
+		$awaits      = 'requires_capture' === $live_status && ! empty( $charge ) && empty( $charge['captured'] ) && 'succeeded' === ( $charge['status'] ?? '' );
+
+		return $this->store_intent_status_read( $order, $stored_status, $live_status ) && $awaits;
+	}
+
+	/**
+	 * Store the intent status read on a status change, under the order payment lock, while the order still stores the
+	 * status it had before the read.
+	 *
+	 * @param WC_Order $order         Order whose status changed.
+	 * @param string   $stored_status Status the order stored before the read.
+	 * @param string   $live_status   Status the platform reported.
+	 * @return bool Whether the operation may run on the status read: false when the order stores another status by then,
+	 *              unless that is requires_capture. When the lock is held nothing is stored and the operation goes on, so
+	 *              the lock refuses it too and it is retried.
+	 */
+	private function store_intent_status_read( WC_Order $order, string $stored_status, string $live_status ): bool {
+		$vocabulary = $this->provider->get_persistence_vocabulary();
+		$lock_token = $this->order_payment_lock->claim( $order, $vocabulary, (string) $order->get_meta( '_intent_id', true ), 'payment status update' );
+		if ( null === $lock_token ) {
+			$this->order_payment_lock->log_refusal( $order, $vocabulary, 'payment status update' );
+			return true;
+		}
+
+		try {
+			$fresh_status = (string) $this->lifecycle_service->get_fresh_order_from_data_store( $order )->get_meta( '_intention_status', true );
+			if ( $fresh_status !== $stored_status ) {
+				return 'requires_capture' === $fresh_status;
+			}
+
+			if ( '' !== $live_status ) {
+				$this->lifecycle_service->apply_meta_under_lock( $order, array( '_intention_status' => $live_status ), array() );
+			}
+
+			return true;
+		} finally {
+			$this->order_payment_lock->release( $order, $vocabulary, $lock_token );
+		}
+	}
+
+	/**
+	 * Tell whether an unpaid order carries a capturable WooPayments authorization, for the order screen's actions.
+	 *
+	 * @param WC_Order $order Order.
+	 * @return bool
+	 */
+	private function is_authorized_woopayments_order( WC_Order $order ): bool {
 		if ( ! WooPaymentsPersistenceVocabulary::is_woopayments_gateway_id( (string) $order->get_payment_method() ) || 'requires_capture' !== (string) $order->get_meta( '_intention_status', true ) ) {
 			return false;
 		}
 
-		return ! $require_unpaid || ! in_array( $order->get_status(), wc_get_is_paid_statuses(), true );
+		return ! in_array( $order->get_status(), wc_get_is_paid_statuses(), true );
 	}
 
 	/**

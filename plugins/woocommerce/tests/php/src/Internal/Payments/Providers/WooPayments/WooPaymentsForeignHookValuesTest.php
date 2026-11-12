@@ -8,6 +8,9 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethod
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsActionSchedulerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeeDetailsNoteController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
+use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
+use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\SubscriptionAdminPaymentMethodHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\SubscriptionsController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
@@ -132,7 +135,7 @@ class WooPaymentsForeignHookValuesTest extends WC_Unit_Test_Case {
 				break;
 			case 'woocommerce_order_actions':
 				$controller = new WooPaymentsOrderAdminActionsController();
-				$controller->init( $container->get( PaymentProcessingService::class ), $container->get( WooPaymentsProvider::class ), $container->get( WooPaymentsFeeDetailsNoteController::class ), $container->get( WooPaymentsActionSchedulerService::class ) );
+				$controller->init( $container->get( PaymentProcessingService::class ), $container->get( WooPaymentsProvider::class ), $container->get( WooPaymentsFeeDetailsNoteController::class ), $container->get( WooPaymentsActionSchedulerService::class ), $container->get( Client::class ), $container->get( OrderPaymentLock::class ), $container->get( OrderPaymentLifecycleService::class ), $container->get( WooPaymentsLogger::class ) );
 				$controller->register();
 				break;
 			case 'wp_privacy_personal_data_erasers':
