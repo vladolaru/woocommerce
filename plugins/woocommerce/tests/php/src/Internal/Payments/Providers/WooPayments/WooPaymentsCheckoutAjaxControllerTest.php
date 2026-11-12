@@ -1855,6 +1855,69 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Order-status callback reading a SetupIntent that sends the shopper to a redirect writes the started note and fraud box only on a Pending order without that note: $_dataName.
+	 *
+	 * Client 11.3.0's switch reads the intent's own status, whatever its redirect form (class-wc-payments-order-service.php:500-508),
+	 * and its started writer returns unless the order is Pending and lacks the note (:2229-2241).
+	 *
+	 * @dataProvider provider_orders_a_redirecting_setup_intent_meets
+	 *
+	 * @param string $status Order status before the callback.
+	 * @param bool   $noted  Whether the started note is already on the order.
+	 * @param bool   $writes Whether the started writes are expected.
+	 */
+	public function test_update_order_status_writes_a_redirecting_setup_intent_only_on_a_pending_order( string $status, bool $noted, bool $writes ): void {
+		$order = $this->create_order_for_intent_binding( 'setup' );
+		$order->update_meta_data( '_intent_id', 'seti_redirecting' );
+		$order->set_status( $status );
+		$order->save();
+		$started = wc_get_container()->get( WooPaymentsOrderNoteService::class )->format_payment_started_note_candidates( $order, 'seti_redirecting' );
+		if ( $noted ) {
+			$order->add_order_note( $started[0] );
+		}
+		$intent = array(
+			'id'                   => 'seti_redirecting',
+			'object'               => 'setup_intent',
+			'status'               => 'requires_action',
+			'customer'             => 'cus_redirecting',
+			'payment_method'       => 'pm_redirecting',
+			'payment_method_types' => array( 'card' ),
+			'next_action'          => array(
+				'type'            => 'redirect_to_url',
+				'redirect_to_url' => array( 'url' => 'https://hooks.stripe.test/redirect/seti_redirecting' ),
+			),
+			'metadata'             => array( 'order_id' => (string) $order->get_id() ),
+		);
+
+		$this->create_controller( $this->create_api_client_returning( $intent ) )->confirm_order_payment(
+			array(
+				'_ajax_nonce' => wp_create_nonce( 'wcpay_update_order_status_nonce_' . $order->get_id() ),
+				'order_id'    => $order->get_id(),
+				'intent_id'   => 'seti_redirecting',
+			)
+		);
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( $status, $order->get_status() );
+		$this->assertCount( $writes || $noted ? 1 : 0, array_filter( wp_list_pluck( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), 'content' ), static fn( string $note ): bool => in_array( $note, $started, true ) ) );
+		$this->assertSame( $writes ? 'payment_started' : '', $order->get_meta( '_wcpay_fraud_meta_box_type', true ) );
+		$this->assertSame( $writes ? 'seti_redirecting' : '', $order->get_transaction_id(), 'A skipped started payment fills no transaction ID.' );
+	}
+
+	/**
+	 * Orders a redirecting SetupIntent meets.
+	 *
+	 * @return array<string,array{string,bool,bool}>
+	 */
+	public function provider_orders_a_redirecting_setup_intent_meets(): array {
+		return array(
+			'Pending'                => array( 'pending', false, true ),
+			'Processing'             => array( 'processing', false, false ),
+			'Pending, already noted' => array( 'pending', true, false ),
+		);
+	}
+
+	/**
 	 * Orders a started payment is not written on: each status set before the request or while it reads the intent.
 	 *
 	 * @return array<string,array{string,bool,bool}>

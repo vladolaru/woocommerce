@@ -4071,6 +4071,47 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A checkout whose PaymentIntent still requires confirmation attaches it and writes no started note or fraud box.
+	 *
+	 * Client 11.3.0's switch has no branch for requires_confirmation, so it writes nothing beyond the attach
+	 * (class-wc-payment-gateway-wcpay.php:2444; class-wc-payments-order-service.php:479-514).
+	 */
+	public function test_process_payment_writes_nothing_beyond_the_attach_for_an_intent_requiring_confirmation(): void {
+		$order = $this->create_order();
+		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+		$order->set_total( '10.99' );
+		$order->save();
+		$intent  = array(
+			'id'                   => 'pi_requires_confirmation',
+			'status'               => 'requires_confirmation',
+			'amount'               => 1099,
+			'currency'             => 'usd',
+			'customer'             => 'cus_requires_confirmation',
+			'payment_method'       => 'pm_requires_confirmation',
+			'payment_method_types' => array( 'card' ),
+			'client_secret'        => 'pi_requires_confirmation_secret',
+			'metadata'             => array( 'order_id' => (string) $order->get_id() ),
+		);
+		$outcome = WooPaymentsIntentCodec::outcome_from_intention(
+			$intent,
+			new WooPaymentsIntentMappingContext( $order->get_checkout_order_received_url(), 'pm_requires_confirmation', 'cus_requires_confirmation' )
+		)->with_effect_plan( WooPaymentsOrderEffectPlan::for_payment_intent( $intent, false ) );
+		$gateway = new WooPaymentsGateway();
+		$gateway->init( wc_get_container()->get( PaymentProcessingService::class ), $this->create_provider_charging( $outcome, wc_get_container()->get( WooPaymentsTokenService::class ) ) );
+		$_POST['wcpay-payment-method'] = 'pm_requires_confirmation';
+		$started                       = wc_get_container()->get( WooPaymentsOrderNoteService::class )->format_payment_started_note_candidates( $order, 'pi_requires_confirmation' );
+
+		$gateway->process_payment( $order->get_id() );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( OrderStatus::PENDING, $order->get_status() );
+		$this->assertSame( array(), array_values( array_intersect( wp_list_pluck( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), 'content' ), $started ) ), 'No started note.' );
+		$this->assertSame( '', $order->get_meta( '_wcpay_fraud_meta_box_type', true ), 'No started fraud box.' );
+		$this->assertSame( 'pi_requires_confirmation', $order->get_meta( '_intent_id', true ), 'The intent is attached.' );
+		$this->assertSame( 'requires_confirmation', $order->get_meta( '_intention_status', true ) );
+	}
+
+	/**
 	 * Arrange a recurring checkout of the recorded subscription sign-up PaymentIntent (10.99 USD), whose token work runs.
 	 *
 	 * @param string $total Order total.

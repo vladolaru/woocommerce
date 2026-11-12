@@ -240,10 +240,10 @@ class WooPaymentsOrderEffectApplier {
 					return $this->merge_effect_data_into_outcome( $outcome, $this->compose_setup_intent_note_data( $order, $outcome, $provider_result ), $plan );
 				}
 
-				if ( PaymentLifecycleEvent::STATUS_STARTED === PaymentLifecycleEvent::status_for_outcome( $outcome ) && self::is_waiting_on_the_shopper( $provider_result ) ) {
+				if ( PaymentLifecycleEvent::STATUS_STARTED === PaymentLifecycleEvent::status_for_outcome( $outcome ) ) {
 					return $this->merge_effect_data_into_outcome(
 						$outcome,
-						$this->compose_started_effect_data( $order, $provider_result, $this->get_outcome_meta_data( $outcome ), true, self::is_merchant_initiated( $context ) ),
+						$this->compose_waiting_effect_data( $order, $provider_result, $this->get_outcome_meta_data( $outcome ), true, self::is_merchant_initiated( $context ) ),
 						$plan
 					);
 				}
@@ -453,13 +453,26 @@ class WooPaymentsOrderEffectApplier {
 	}
 
 	/**
-	 * Tell whether an intent waits on the shopper: its status is requires_action or requires_confirmation.
+	 * Compose the effects of an intent that is neither paid, authorized, failed nor canceled, by its own status, as client
+	 * 11.3.0's switch does whatever the redirect form (class-wc-payments-order-service.php:479-514): requires_action is a
+	 * started payment (compose_started_effect_data()); requires_confirmation has no branch there, so it changes nothing.
 	 *
-	 * @param array<string,mixed> $result Provider intent response.
-	 * @return bool
+	 * @param WC_Order            $order                 Order the outcome is composed on, read under the caller's order payment lock.
+	 * @param array<string,mixed> $result                Provider intent response.
+	 * @param array<string,mixed> $meta                  The intent's order meta.
+	 * @param bool                $is_started            Whether the outcome is a started payment; only a started payment's writes are skipped.
+	 * @param bool                $is_merchant_initiated Whether the charge is a scheduled renewal's.
+	 * @return array<string,mixed>
 	 */
-	private static function is_waiting_on_the_shopper( array $result ): bool {
-		return in_array( (string) ( $result['status'] ?? '' ), array( 'requires_action', 'requires_confirmation' ), true );
+	private function compose_waiting_effect_data( WC_Order $order, array $result, array $meta, bool $is_started, bool $is_merchant_initiated ): array {
+		switch ( (string) ( $result['status'] ?? '' ) ) {
+			case 'requires_action':
+				return $this->compose_started_effect_data( $order, $result, $meta, $is_started, $is_merchant_initiated );
+			case 'requires_confirmation':
+				return array( PaymentOutcome::DATA_NO_ORDER_CHANGE => true );
+		}
+
+		return array();
 	}
 
 	/**
@@ -514,8 +527,8 @@ class WooPaymentsOrderEffectApplier {
 			// Client mark_payment_completed() (os:1565-1600) writes the success note for a succeeded SetupIntent too, with no transaction link.
 			$note_candidates = $this->note_service->format_payment_success_note_candidates( $order, $intent_id, '' );
 			$note_type       = PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_SUCCESS;
-		} elseif ( PaymentOutcome::STATUS_REQUIRES_CUSTOMER_ACTION === $outcome->get_status() ) {
-			return $this->compose_started_effect_data( $order, $provider_result, $this->get_outcome_meta_data( $outcome ), true, false );
+		} elseif ( PaymentLifecycleEvent::STATUS_STARTED === PaymentLifecycleEvent::status_for_outcome( $outcome ) ) {
+			return $this->compose_waiting_effect_data( $order, $provider_result, $this->get_outcome_meta_data( $outcome ), true, false );
 		} elseif ( PaymentOutcome::STATUS_FAILED === $outcome->get_status() ) {
 			$note_candidates = $this->note_service->format_redirect_payment_failed_note_candidates( $order, $intent_id );
 			$note_type       = PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_FAILED;
@@ -626,8 +639,8 @@ class WooPaymentsOrderEffectApplier {
 				$effect_data[ PaymentOutcome::DATA_NOTE_TYPE ]        = PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_AUTHORIZED;
 				$effect_data[ PaymentOutcome::DATA_NOTE_EQUIVALENTS ] = $note_candidates;
 			}
-		} elseif ( self::is_waiting_on_the_shopper( $result ) && '' !== $intent_id ) {
-			$effect_data = array_merge( $effect_data, $this->compose_started_effect_data( $order, $result, $meta, $is_started, $is_merchant_initiated ) );
+		} elseif ( '' !== $intent_id ) {
+			$effect_data = array_merge( $effect_data, $this->compose_waiting_effect_data( $order, $result, $meta, $is_started, $is_merchant_initiated ) );
 		}
 
 		return $effect_data;
