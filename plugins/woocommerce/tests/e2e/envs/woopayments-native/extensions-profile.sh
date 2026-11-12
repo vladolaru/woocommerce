@@ -50,7 +50,7 @@ readonly -a EXTENSION_SLUGS=(
 	'woocommerce-paypal-payments'
 )
 readonly -a EXTENSION_OLDEST_PINS=( 7.5.0 3.5.3 2.2.9 4.7.4 2.9.6 )
-readonly -a EXTENSION_LATEST_PINS=( 9.2.0 3.10.0 2.4.7 5.5.0 4.1.3 )
+readonly -a EXTENSION_LATEST_PINS=( 9.4.1 3.10.0 2.4.7 5.5.0 4.1.3 )
 readonly -a EXTENSION_MAIN_FILES=(
 	'woocommerce-subscriptions.php'
 	'woocommerce-bookings.php'

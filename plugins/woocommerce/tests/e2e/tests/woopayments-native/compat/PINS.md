@@ -4,11 +4,11 @@ The WooPayments extension compatibility matrix is an opt-in local profile. It in
 
 ## Pin matrix
 
-These pins were last derived from the extension repositories on 2026-09-10.
+These pins were last derived from the extension repositories on 2026-09-10. The WooCommerce Subscriptions latest pin moved to `9.4.1` on 2026-11-12, after the complete oldest and latest matrix ran.
 
 | Extension | Dependency origin | Oldest executable pin | Latest pin | Covered contract |
 | --- | --- | --- | --- | --- |
-| WooCommerce Subscriptions | `7.5.0` | `7.5.0` | `9.2.0` | Native gateway supports, renewal payment method, payment-method changes, and APFS integration where available |
+| WooCommerce Subscriptions | `7.5.0` | `7.5.0` | `9.4.1` | Native gateway supports, renewal payment method, payment-method changes, and APFS integration where available |
 | WooCommerce Bookings | `2.0.9` | `3.5.3` | `3.10.0` | Native express methods stay unavailable for bookable products and carts |
 | WooCommerce Deposits | `2.2.9` | `2.2.9` | `2.4.7` | The product-page express payload drops its line items (and keeps its total) while the cart holds a deposit, and keeps them when the deposit is declined; a fixed deposit added through the cart is converted to the shopper's currency once, on the cart line and in the cart total |
 | WooCommerce Square | `4.7.4` | `4.7.4` | `5.5.0` | Native express methods stay unavailable for Square gift-card products and carts |

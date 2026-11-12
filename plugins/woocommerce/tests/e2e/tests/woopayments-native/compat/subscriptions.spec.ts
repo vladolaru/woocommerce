@@ -47,7 +47,7 @@ test.skip(
 
 test( '@woopayments-extension-compat Subscriptions renews and changes payment method through the native gateway', async () => {
 	const result = await runExtensionCompatProbe< {
-		version: string;
+		pinSet: string;
 		gatewayId: string;
 		missingSupports: string[];
 		renewalPaymentMethod: string;
@@ -63,7 +63,7 @@ if ( ! class_exists( 'WC_Subscriptions' ) || ! function_exists( 'wcs_create_subs
 	throw new RuntimeException( 'WooCommerce Subscriptions is not active.' );
 }
 
-$version      = $wcpay_extension_version( 'subscriptions' );
+$wcpay_extension_version( 'subscriptions' ); // The profile must record the Subscriptions version it installed.
 $gateway      = wc_get_container()->get( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGateway::class );
 $required     = array(
 	'products',
@@ -171,7 +171,7 @@ try {
 	}
 
 	return array(
-		'version'                       => $version,
+		'pinSet'                        => (string) $wcpay_extension_profile['pin_set'],
 		'gatewayId'                     => $gateway->id,
 		'missingSupports'               => $missing,
 		'renewalPaymentMethod'          => $renewal->get_payment_method(),
@@ -196,7 +196,7 @@ try {
 }
 ` );
 
-	expect( [ '7.5.0', '9.2.0' ] ).toContain( result.version );
+	expect( [ 'oldest', 'latest' ] ).toContain( result.pinSet );
 	expect( result.gatewayId ).toBe( 'woocommerce_payments' );
 	expect( result.missingSupports ).toEqual( [] );
 	expect( result ).toMatchObject( {
@@ -206,21 +206,23 @@ try {
 	} );
 	expect( result.renewalPaymentMethod ).toBe( 'woocommerce_payments' );
 	expect( result.changedPaymentMethod ).toBe( 'woocommerce_payments' );
-	const expectedApfsByVersion = {
-		'7.5.0': {
+	// Keyed by the profile's pin set, so a pin move in extensions-profile.sh needs no edit here; APFS's WooPayments
+	// integration registers these callbacks from Subscriptions 9.2.0 on (unchanged through 9.4.1).
+	const expectedApfsByPinSet = {
+		oldest: {
 			paymentRequestCallbacks: 0,
 			wooPayCallbacks: 0,
 			quickPaySupported: null,
 		},
-		'9.2.0': {
+		latest: {
 			paymentRequestCallbacks: 1,
 			wooPayCallbacks: 1,
 			quickPaySupported: false,
 		},
 	} as const;
 	const expectedApfs =
-		expectedApfsByVersion[
-			result.version as keyof typeof expectedApfsByVersion
+		expectedApfsByPinSet[
+			result.pinSet as keyof typeof expectedApfsByPinSet
 		];
 	expect( {
 		paymentRequestCallbacks: result.apfsPaymentRequestCallbacks,
