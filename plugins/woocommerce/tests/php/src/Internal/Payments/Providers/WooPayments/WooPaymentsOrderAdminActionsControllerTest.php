@@ -1121,6 +1121,104 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A cancel stores the canceled intent's fraud outcome as blocked after review only from the order screen: $_dataName.
+	 *
+	 * The cancel answers the recorded canceled authorization (Fixtures/platform-payment-intent-events.json,
+	 * in_person_canceled) with the row's fraud outcome in its metadata; a re-read row first answers Stripe's error for an
+	 * intent that is already canceled (https://docs.stripe.com/error-codes#payment-intent-unexpected-state), then the
+	 * canceled intent. The order holds what the client's authorized or held-for-review writer leaves
+	 * (class-wc-payments-order-service.php:2153-2156, :2262-2264), nothing for a block. Client 11.3.0's order screen cancel
+	 * reaches its cancelled-authorization writer, with the cancel answer or the re-read intent, which stores a block or
+	 * review outcome of that intent with the review_blocked box (class-wc-payment-gateway-wcpay.php:4436-4468;
+	 * class-wc-payments-order-service.php:480-481, :2009-2014). Its status-change cancel writes no fraud meta (:2327-2369).
+	 *
+	 * @dataProvider provider_cancels_and_their_fraud_box
+	 *
+	 * @param string $trigger             Cancel path: `order_screen` or `status_change`.
+	 * @param string $payment_method_type Payment method type of the authorization.
+	 * @param string $intent_outcome      Fraud outcome in the canceled intent's metadata.
+	 * @param bool   $re_read             Whether the cancel is refused and the re-read intent answers it.
+	 * @param string $expected_outcome    Fraud outcome status after the cancel.
+	 * @param string $expected_box        Fraud meta box type after the cancel.
+	 */
+	public function test_cancel_stores_the_fraud_box_of_a_blocked_authorization( string $trigger, string $payment_method_type, string $intent_outcome, bool $re_read, string $expected_outcome, string $expected_box ): void {
+		$order = $this->create_recorded_authorization_order( 'requires_capture', OrderStatus::ON_HOLD );
+		if ( 'block' !== $intent_outcome ) {
+			$order->update_meta_data( '_wcpay_fraud_outcome_status', $intent_outcome );
+			$order->update_meta_data( '_wcpay_fraud_meta_box_type', $intent_outcome );
+		}
+		$canceled                              = array_merge( $this->recorded_intent( 'canceled_authorization' ), array( 'id' => 'pi_3UJhOgBzWlxcwgpP0AOgQE2z' ) );
+		$canceled['metadata']['fraud_outcome'] = $intent_outcome;
+		$canceled['payment_method_types']      = array( $payment_method_type );
+		if ( 'amazon_pay' === $payment_method_type ) {
+			$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . 'amazon_pay' );
+		}
+		$order->save();
+		$answer    = array(
+			'response' => array( 'code' => 200 ),
+			'headers'  => array( 'content-type' => 'application/json' ),
+			'body'     => wp_json_encode( $canceled ),
+		);
+		$transport = new FakeHttpClient();
+		if ( $re_read ) {
+			$transport->responses = array(
+				array(
+					'response' => array( 'code' => 400 ),
+					'headers'  => array( 'content-type' => 'application/json' ),
+					'body'     => wp_json_encode(
+						array(
+							'error' => array(
+								'type'    => 'invalid_request_error',
+								'code'    => 'payment_intent_unexpected_state',
+								'message' => 'You cannot cancel this PaymentIntent because it has a status of canceled.',
+							),
+						)
+					),
+				),
+				$answer,
+			);
+		} else {
+			$transport->response = $answer;
+		}
+		$this->sut = $this->create_controller( wc_get_container()->get( PaymentProcessingService::class ), $this->create_provider_over_fake_transport( $transport ), $this->create_platform( null, null, new \ArrayObject() ) );
+		$this->sut->register();
+
+		if ( 'status_change' === $trigger ) {
+			$order->update_status( OrderStatus::CANCELLED );
+		} else {
+			$this->fire_order_hook( 'woocommerce_order_action_cancel_authorization', $order );
+		}
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( $this->operation_path( PaymentProcessingService::OPERATION_CANCEL ), $this->request_paths( $transport )[0] ?? '' );
+		$this->assertCount( $re_read ? 2 : 1, $transport->requests );
+		$this->assertSame( OrderStatus::CANCELLED, $order->get_status() );
+		$this->assertSame( 'canceled', $order->get_meta( '_intention_status', true ) );
+		$this->assertSame( $expected_outcome, $order->get_meta( '_wcpay_fraud_outcome_status', true ) );
+		$this->assertSame( $expected_box, $order->get_meta( '_wcpay_fraud_meta_box_type', true ) );
+	}
+
+	/**
+	 * Cancels, the payment method and the intent's outcome, and the fraud outcome and box each leaves.
+	 *
+	 * @return array<string,array{string,string,string,bool,string,string}>
+	 */
+	public function provider_cancels_and_their_fraud_box(): array {
+		return array(
+			'order screen, card, held for review'          => array( 'order_screen', 'card', 'review', false, 'review', 'review_blocked' ),
+			'order screen, card, blocked'                  => array( 'order_screen', 'card', 'block', false, 'block', 'review_blocked' ),
+			'order screen, card, allowed'                  => array( 'order_screen', 'card', 'allow', false, 'allow', 'allow' ),
+			'order screen, Amazon Pay, held for review'    => array( 'order_screen', 'amazon_pay', 'review', false, 'review', 'review_blocked' ),
+			'order screen, Amazon Pay, allowed'            => array( 'order_screen', 'amazon_pay', 'allow', false, 'allow', 'allow' ),
+			'order screen, card, held for review, re-read' => array( 'order_screen', 'card', 'review', true, 'review', 'review_blocked' ),
+			'status change, card, held for review'         => array( 'status_change', 'card', 'review', false, 'review', 'review' ),
+			'status change, Amazon Pay, held for review'   => array( 'status_change', 'amazon_pay', 'review', false, 'review', 'review' ),
+			'status change, card, allowed'                 => array( 'status_change', 'card', 'allow', false, 'allow', 'allow' ),
+			'status change, card, held for review, re-read' => array( 'status_change', 'card', 'review', true, 'review', 'review' ),
+		);
+	}
+
+	/**
 	 * @testdox The order screen's $operation action on an order storing requires_capture acts on the transaction ID.
 	 *
 	 * Client 11.3.0's capture_charge() and cancel_authorization() act on the order's transaction ID

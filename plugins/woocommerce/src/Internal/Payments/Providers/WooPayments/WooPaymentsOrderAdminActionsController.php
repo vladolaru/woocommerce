@@ -451,7 +451,11 @@ class WooPaymentsOrderAdminActionsController implements RegisterHooksInterface {
 					$this->provider
 				)
 				: $this->processing_service->cancel(
-					PaymentOperationContext::for_cancel( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, $provider_data ),
+					PaymentOperationContext::for_cancel(
+						$order,
+						WooPaymentsPersistenceVocabulary::GATEWAY_ID,
+						$on_status_change ? array_merge( $provider_data, array( WooPaymentsPaymentOperationService::PROVIDER_DATA_CANCEL_ON_STATUS_CHANGE => true ) ) : $provider_data
+					),
 					$this->provider
 				);
 

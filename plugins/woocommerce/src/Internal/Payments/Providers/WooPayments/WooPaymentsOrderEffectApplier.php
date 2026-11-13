@@ -285,7 +285,7 @@ class WooPaymentsOrderEffectApplier {
 			case WooPaymentsOrderEffectPlan::TYPE_CANCEL:
 				return $this->merge_effect_data_into_outcome(
 					$outcome,
-					$this->compose_cancel_effect_data( $context->get_order(), $outcome, $plan->get_provider_result() ),
+					$this->compose_cancel_effect_data( $context->get_order(), $outcome, $plan->get_provider_result(), $plan->writes_fraud_meta() ),
 					$plan
 				);
 
@@ -978,14 +978,16 @@ class WooPaymentsOrderEffectApplier {
 	}
 
 	/**
-	 * Compose authorization cancellation metadata cleanup and note.
+	 * Compose authorization cancellation metadata cleanup and note, and, when the plan writes fraud meta, the canceled
+	 * intent's fraud outcome as blocked after review (WooPaymentsOrderEffects::cancelled_authorization_fraud_meta()).
 	 *
-	 * @param WC_Order            $order   Order whose authorization is being canceled.
-	 * @param PaymentOutcome      $outcome Provider cancellation outcome.
-	 * @param array<string,mixed> $result  Provider cancellation response.
+	 * @param WC_Order            $order             Order whose authorization is being canceled.
+	 * @param PaymentOutcome      $outcome           Provider cancellation outcome.
+	 * @param array<string,mixed> $result            Provider cancellation response.
+	 * @param bool                $writes_fraud_meta Whether the cancel writes the fraud outcome and fraud meta box meta.
 	 * @return array<string,mixed>
 	 */
-	private function compose_cancel_effect_data( WC_Order $order, PaymentOutcome $outcome, array $result ): array {
+	private function compose_cancel_effect_data( WC_Order $order, PaymentOutcome $outcome, array $result, bool $writes_fraud_meta ): array {
 		$provider_status = (string) ( $result['status'] ?? '' );
 		if ( PaymentOutcome::STATUS_FAILED === $outcome->get_status() && '' !== $provider_status && 'canceled' !== $provider_status ) {
 			// The cancel failed but the intent was re-read: record the status the
@@ -1011,13 +1013,18 @@ class WooPaymentsOrderEffectApplier {
 		$intent_id       = '' !== $outcome->get_provider_payment_id() ? $outcome->get_provider_payment_id() : (string) ( $result['id'] ?? '' );
 		$charge_id       = isset( $charge['id'] ) ? (string) $charge['id'] : (string) $order->get_meta( '_charge_id', true );
 		$note_candidates = $this->note_service->format_capture_cancelled_note_candidates( $intent_id, $charge_id );
-
-		return array(
+		$effect_data     = array(
 			PaymentOutcome::DATA_META_TO_DELETE   => array( '_wcpay_transaction_fee', '_wcpay_net' ),
 			PaymentOutcome::DATA_NOTE             => $note_candidates[0],
 			PaymentOutcome::DATA_NOTE_TYPE        => PaymentLifecycleEvent::NOTE_TYPE_CAPTURE_CANCELED,
 			PaymentOutcome::DATA_NOTE_EQUIVALENTS => $note_candidates,
 		);
+		$fraud_meta      = $writes_fraud_meta ? WooPaymentsOrderEffects::cancelled_authorization_fraud_meta( $result ) : array();
+		if ( array() !== $fraud_meta ) {
+			$effect_data[ WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY ] = $fraud_meta;
+		}
+
+		return $effect_data;
 	}
 
 	/**

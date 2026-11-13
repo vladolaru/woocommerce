@@ -9,8 +9,23 @@ use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\PaymentProcessingService;
 use Automattic\WooCommerce\Internal\Payments\ProviderInterface;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\AuthorizationsListRequest;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\PaymentMethodRegistry;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAuthorizationsRestController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsChargeAmbiguityService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFraudRulesetService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentRequestBuilder;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLevel3Service;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffectApplier;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentOperationService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRefundAmbiguityService;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Fixtures\RecordedPlatformEvents;
 use WC_Order;
 use WC_REST_Unit_Test_Case;
 use WP_REST_Request;
@@ -1082,6 +1097,90 @@ class WooPaymentsAuthorizationsRestControllerTest extends WC_REST_Unit_Test_Case
 		$this->assertSame( 200, $response->get_status() );
 		$this->assertCount( 1, $processing_service->capture_contexts );
 		$this->assertNull( $processing_service->capture_contexts[0]->get_amount(), 'No amount on the context: the capture takes the order total.' );
+	}
+
+	/**
+	 * @testdox A cancel through the REST route stores the canceled intent's fraud outcome as blocked after review for a review outcome only: $payment_method_type, $intent_outcome.
+	 *
+	 * The cancel answers the recorded canceled authorization (Fixtures/platform-payment-intent-events.json,
+	 * in_person_canceled) with the row's fraud outcome in its metadata. The order holds what the client's authorized or
+	 * held-for-review writer leaves (class-wc-payments-order-service.php:2153-2156, :2262-2264). Client 11.3.0's route
+	 * cancels through the gateway's cancel_authorization() (class-wc-rest-payments-orders-controller.php:645), whose
+	 * cancelled-authorization writer stores a block or review outcome of the intent with the review_blocked box
+	 * (class-wc-payment-gateway-wcpay.php:4467-4468; class-wc-payments-order-service.php:480-481, :2009-2014).
+	 *
+	 * @testWith ["card", "review", "review_blocked"]
+	 *           ["card", "allow", "allow"]
+	 *           ["amazon_pay", "review", "review_blocked"]
+	 *           ["amazon_pay", "allow", "allow"]
+	 *
+	 * @param string $payment_method_type Payment method type of the authorization.
+	 * @param string $intent_outcome      Fraud outcome the order stores and the canceled intent's metadata carries.
+	 * @param string $expected_box        Fraud meta box type after the cancel.
+	 */
+	public function test_cancel_route_stores_the_fraud_box_of_a_blocked_authorization( string $payment_method_type, string $intent_outcome, string $expected_box ): void {
+		$order = $this->create_authorized_order( 'pi_auth' );
+		$order->set_payment_method( 'card' === $payment_method_type ? WooPaymentsPersistenceVocabulary::GATEWAY_ID : WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . $payment_method_type );
+		$order->update_meta_data( '_wcpay_fraud_outcome_status', $intent_outcome );
+		$order->update_meta_data( '_wcpay_fraud_meta_box_type', $intent_outcome );
+		$order->save();
+		$canceled                              = array_merge(
+			RecordedPlatformEvents::body( 'platform-payment-intent-events.json', 'in_person_canceled' )['data']['object'],
+			array(
+				'id'                   => 'pi_auth',
+				'payment_method_types' => array( $payment_method_type ),
+			)
+		);
+		$canceled['metadata']['order_id']      = (string) $order->get_id();
+		$canceled['metadata']['fraud_outcome'] = $intent_outcome;
+		$api_client                            = $this->getMockBuilder( Client::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'is_available', 'get_payment_intention', 'cancel_intention' ) )
+			->getMock();
+		$api_client->method( 'is_available' )->willReturn( true );
+		$api_client->method( 'get_payment_intention' )->willReturn( array_merge( $canceled, array( 'status' => 'requires_capture' ) ) );
+		$api_client->expects( $this->once() )->method( 'cancel_intention' )->with( 'pi_auth' )->willReturn( $canceled );
+		$controller = new WooPaymentsAuthorizationsRestController();
+		$controller->init( $api_client, wc_get_container()->get( PaymentProcessingService::class ), $this->create_provider_over_api_client( $api_client ) );
+		$controller->register_routes();
+
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/orders/' . $order->get_id() . '/cancel_authorization' );
+		$request->set_body_params( array( 'payment_intent_id' => 'pi_auth' ) );
+		$response = $this->server->dispatch( $request );
+
+		$this->assertSame( 200, $response->get_status() );
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( 'cancelled', $order->get_status() );
+		$this->assertSame( 'canceled', $order->get_meta( '_intention_status', true ) );
+		$this->assertSame( $intent_outcome, $order->get_meta( '_wcpay_fraud_outcome_status', true ) );
+		$this->assertSame( $expected_box, $order->get_meta( '_wcpay_fraud_meta_box_type', true ) );
+	}
+
+	/**
+	 * Build a WooPayments provider whose payment operations call the given platform client.
+	 *
+	 * @param Client $api_client Platform client.
+	 * @return WooPaymentsProvider
+	 */
+	private function create_provider_over_api_client( Client $api_client ): WooPaymentsProvider {
+		$account_service    = $this->createMock( WooPaymentsAccountService::class );
+		$payment_operations = new WooPaymentsPaymentOperationService();
+		$payment_operations->init(
+			$api_client,
+			$this->createMock( WooPaymentsCustomerService::class ),
+			$this->createMock( WooPaymentsIntentRequestBuilder::class ),
+			$account_service,
+			wc_get_container()->get( WooPaymentsOrderNoteService::class ),
+			$this->createMock( WooPaymentsFraudRulesetService::class ),
+			$this->createMock( WooPaymentsChargeAmbiguityService::class ),
+			$this->createMock( WooPaymentsRefundAmbiguityService::class ),
+			wc_get_container()->get( WooPaymentsLogger::class ),
+			wc_get_container()->get( WooPaymentsLevel3Service::class )
+		);
+		$provider = new WooPaymentsProvider();
+		$provider->init( $payment_operations, $api_client, $account_service, new PaymentMethodRegistry(), wc_get_container()->get( WooPaymentsOrderEffectApplier::class ) );
+
+		return $provider;
 	}
 
 	/**

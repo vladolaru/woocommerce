@@ -430,6 +430,29 @@ class WooPaymentsOrderEffects {
 	}
 
 	/**
+	 * Get the fraud meta of an authorization the merchant cancelled from the order screen or the REST route: a block or
+	 * review outcome in the canceled intent's metadata is stored with the review_blocked box, and any other outcome stores
+	 * nothing (class-wc-payments-order-service.php:2009-2014).
+	 *
+	 * @since 11.4.0
+	 *
+	 * @param array<string,mixed> $intent Canceled PaymentIntent response.
+	 * @return array<string,string>
+	 */
+	public static function cancelled_authorization_fraud_meta( array $intent ): array {
+		$metadata      = isset( $intent['metadata'] ) && is_array( $intent['metadata'] ) ? $intent['metadata'] : array();
+		$fraud_outcome = isset( $metadata['fraud_outcome'] ) && is_string( $metadata['fraud_outcome'] ) ? $metadata['fraud_outcome'] : '';
+		if ( ! in_array( $fraud_outcome, array( 'block', 'review' ), true ) ) {
+			return array();
+		}
+
+		return array(
+			'_wcpay_fraud_outcome_status' => $fraud_outcome,
+			'_wcpay_fraud_meta_box_type'  => 'review_blocked',
+		);
+	}
+
+	/**
 	 * Get the fired fraud ruleset results from a PaymentIntent response.
 	 *
 	 * @since 11.2.0

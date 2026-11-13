@@ -109,6 +109,13 @@ class WooPaymentsOrderEffectPlan {
 	private bool $writes_fee_meta = true;
 
 	/**
+	 * Whether the effects write the fraud outcome and fraud meta box meta.
+	 *
+	 * @var bool
+	 */
+	private bool $writes_fraud_meta = true;
+
+	/**
 	 * Whether the order had the payment's success or capture note before the payment lifecycle applied, or null when
 	 * the outcome brings no such note.
 	 *
@@ -223,6 +230,20 @@ class WooPaymentsOrderEffectPlan {
 	public function without_fee_meta(): self {
 		$plan                  = clone $this;
 		$plan->writes_fee_meta = false;
+
+		return $plan;
+	}
+
+	/**
+	 * Get a copy of this plan whose effects write no fraud outcome or fraud meta box meta.
+	 *
+	 * @since 11.4.0
+	 *
+	 * @return self
+	 */
+	public function without_fraud_meta(): self {
+		$plan                    = clone $this;
+		$plan->writes_fraud_meta = false;
 
 		return $plan;
 	}
@@ -352,6 +373,17 @@ class WooPaymentsOrderEffectPlan {
 	 */
 	public function writes_fee_meta(): bool {
 		return $this->writes_fee_meta;
+	}
+
+	/**
+	 * Tell whether the effects write the fraud outcome and fraud meta box meta.
+	 *
+	 * @since 11.4.0
+	 *
+	 * @return bool
+	 */
+	public function writes_fraud_meta(): bool {
+		return $this->writes_fraud_meta;
 	}
 
 	/**

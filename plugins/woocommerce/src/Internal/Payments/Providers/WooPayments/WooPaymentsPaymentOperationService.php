@@ -62,6 +62,13 @@ class WooPaymentsPaymentOperationService {
 	public const PROVIDER_DATA_CAPTURE_ON_STATUS_CHANGE = 'capture_on_status_change';
 
 	/**
+	 * Provider data key set when a cancel runs because the order status changed to cancelled.
+	 *
+	 * @since 11.4.0
+	 */
+	public const PROVIDER_DATA_CANCEL_ON_STATUS_CHANGE = 'cancel_on_status_change';
+
+	/**
 	 * Provider data key carrying the intent a status-change capture or cancel read from the platform, for an order whose
 	 * stored intent status was not settled. The operation acts on this intent, after checking it against the order read
 	 * under the operation's order payment lock.
@@ -620,7 +627,7 @@ class WooPaymentsPaymentOperationService {
 					$result  = $this->api_client->cancel_intention( $intent_id );
 					$outcome = WooPaymentsIntentCodec::outcome_from_cancel_result( $result );
 
-					return $outcome->with_effect_plan( WooPaymentsOrderEffectPlan::for_cancel( $result ) );
+					return $outcome->with_effect_plan( $this->cancel_plan( $context, $result ) );
 				} catch ( ApiException $exception ) {
 					// The provider may have canceled the intent already (an expired authorization
 					// whose charge.expired webhook was missed, or a cancel that completed despite
@@ -629,7 +636,7 @@ class WooPaymentsPaymentOperationService {
 					$intent = $this->refetch_intent_after_failure( $intent_id );
 					if ( null !== $intent && 'canceled' === (string) ( $intent['status'] ?? '' ) ) {
 						return WooPaymentsIntentCodec::outcome_from_cancel_result( $intent )
-							->with_effect_plan( WooPaymentsOrderEffectPlan::for_cancel( $intent ) );
+							->with_effect_plan( $this->cancel_plan( $context, $intent ) );
 					}
 
 					$outcome = WooPaymentsIntentCodec::failed_transport_outcome( 'cancel', $exception, $intent_id );
@@ -638,13 +645,28 @@ class WooPaymentsPaymentOperationService {
 					// the applier records it with the failure note, as client 11.1.0 does
 					// (class-wc-payment-gateway-wcpay.php:4104-4110).
 					return null !== $intent
-						? $outcome->with_effect_plan( WooPaymentsOrderEffectPlan::for_cancel( $intent ) )
+						? $outcome->with_effect_plan( $this->cancel_plan( $context, $intent ) )
 						: $outcome;
 				}
 			}
 		}
 
 		return $this->unavailable_outcome( 'cancel' );
+	}
+
+	/**
+	 * Build a cancel's effect plan. A cancel the order's change to Cancelled ran writes no fraud meta, as client 11.3.0's
+	 * status-change cancel writes none (class-wc-payments-order-service.php:2327-2369); the order screen's and the REST
+	 * route's cancels reach its cancelled-authorization writer, which does (:480-481, :2009-2014).
+	 *
+	 * @param PaymentOperationContext $context Cancel context.
+	 * @param array<string,mixed>     $result  Provider cancellation response, or the intent read after a failed cancel.
+	 * @return WooPaymentsOrderEffectPlan
+	 */
+	private function cancel_plan( PaymentOperationContext $context, array $result ): WooPaymentsOrderEffectPlan {
+		$plan = WooPaymentsOrderEffectPlan::for_cancel( $result );
+
+		return empty( $context->get_provider_data()[ self::PROVIDER_DATA_CANCEL_ON_STATUS_CHANGE ] ) ? $plan : $plan->without_fraud_meta();
 	}
 
 	/**
