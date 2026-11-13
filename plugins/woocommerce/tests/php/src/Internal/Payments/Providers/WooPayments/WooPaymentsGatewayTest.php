@@ -4843,6 +4843,145 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A checkout whose platform returns a failed PaymentIntent, on an unpaid order holding a succeeded record, writes only the intent status, payment method, customer and failure note, and the next checkout's payment replaces that record.
+	 *
+	 * Client 11.3.0's attach leaves a succeeded record's intent info as it is (class-wc-payments-order-service.php:1820-1822),
+	 * its checkout writes the payment method and customer before the charge (class-wc-payment-gateway-wcpay.php:1969-1973),
+	 * and its failed writer stores the failure note and the incoming intent status only (:545-560, :3443-3448). Once the
+	 * stored status is no longer succeeded, the next attach writes the new payment's record (:1818-1837, :1875-1884). The
+	 * second charge is the recorded card payment (Fixtures/platform-intention-basic-card.json, basic_card_usd_create_and_confirm),
+	 * its metadata set to the order's.
+	 */
+	public function test_process_payment_keeps_a_succeeded_record_when_a_returned_failure_meets_it(): void {
+		$order = $this->create_order_holding_a_succeeded_record();
+		$order->set_total( '10.99' );
+		$order->save();
+
+		$failed = array(
+			'id'                   => 'pi_returned',
+			'status'               => 'requires_payment_method',
+			'amount'               => 1099,
+			'currency'             => 'usd',
+			'customer'             => 'cus_returned',
+			'payment_method'       => 'pm_returned',
+			'payment_method_types' => array( 'card' ),
+			'metadata'             => array( 'order_id' => (string) $order->get_id() ),
+			'charges'              => array(
+				'data' => array(
+					array(
+						'id'                  => 'ch_returned',
+						'status'              => 'failed',
+						'balance_transaction' => 'txn_returned',
+						'outcome'             => array( 'risk_level' => 'normal' ),
+					),
+				),
+			),
+			'last_payment_error'   => array(
+				'type'    => 'card_error',
+				'code'    => 'card_declined',
+				'message' => 'Your card was declined.',
+			),
+		);
+
+		$outcome = WooPaymentsIntentCodec::outcome_from_intention(
+			$failed,
+			new WooPaymentsIntentMappingContext( $order->get_checkout_order_received_url(), 'pm_returned', 'cus_returned' )
+		)->with_effect_plan( WooPaymentsOrderEffectPlan::for_payment_intent( $failed, false ) );
+
+		$_POST['wcpay-payment-method'] = 'pm_returned';
+
+		$this->create_gateway_charging_past_a_record_for_another_order( $outcome, wc_get_container()->get( WooPaymentsTokenService::class ) )->process_payment( $order->get_id() );
+
+		$order        = wc_get_order( $order->get_id() );
+		$failure_note = wc_get_container()->get( WooPaymentsOrderNoteService::class )->format_order_status_update_payment_failed_note_candidates( $order, 'pi_returned', 'ch_returned', 'Your card was declined.' )[0];
+		$this->assertSame( OrderStatus::FAILED, $order->get_status() );
+		$this->assertSame(
+			array(
+				'transaction_id'                => 'pi_settled',
+				'_intent_id'                    => 'pi_settled',
+				'_charge_id'                    => 'ch_settled',
+				'_wcpay_payment_transaction_id' => 'txn_settled',
+				'_charge_risk_level'            => '',
+				'_intention_status'             => 'requires_payment_method',
+				'_payment_method_id'            => 'pm_returned',
+				'_stripe_customer_id'           => 'cus_returned',
+			),
+			$this->get_payment_record( $order ),
+			"The earlier payment's record is kept; only the intent status, payment method and customer are written."
+		);
+		$this->assertCount( 1, array_filter( wp_list_pluck( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), 'content' ), static fn( string $note ): bool => $note === $failure_note ) );
+
+		$order->update_status( OrderStatus::PENDING );
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reading a local test fixture.
+		$recording        = json_decode( (string) file_get_contents( __DIR__ . '/Fixtures/platform-intention-basic-card.json' ), true );
+		$paid             = $recording['entries'][0]['response']['body'];
+		$paid['metadata'] = array( 'order_id' => (string) $order->get_id() );
+		$outcome          = WooPaymentsIntentCodec::outcome_from_intention(
+			$paid,
+			new WooPaymentsIntentMappingContext( $order->get_checkout_order_received_url(), (string) $paid['payment_method'], (string) $paid['customer'] )
+		)->with_effect_plan( WooPaymentsOrderEffectPlan::for_payment_intent( $paid, false ) );
+
+		$_POST['wcpay-payment-method'] = (string) $paid['payment_method'];
+
+		$this->create_gateway_charging_past_a_record_for_another_order( $outcome, wc_get_container()->get( WooPaymentsTokenService::class ) )->process_payment( $order->get_id() );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( OrderStatus::COMPLETED, $order->get_status(), 'The payment completes an order with no item that needs processing.' );
+		$this->assertSame( $paid['id'], $order->get_transaction_id() );
+		$this->assertSame( $paid['id'], $order->get_meta( '_intent_id', true ) );
+		$this->assertSame( $paid['charges']['data'][0]['id'], $order->get_meta( '_charge_id', true ) );
+		$this->assertCount( 1, array_filter( wp_list_pluck( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), 'content' ), static fn( string $note ): bool => false !== strpos( $note, 'successfully charged' ) ) );
+	}
+
+	/**
+	 * @testdox A checkout whose platform returns an authorized PaymentIntent, on an unpaid order holding a succeeded record, holds the order on the new payment, its transaction ID and intent alike.
+	 *
+	 * Only a failure leaves the earlier record's intent in place. An authorization over a kept record is recorded as the
+	 * new payment's, a recorded departure from client 11.3.0, whose attach keeps the earlier record
+	 * (class-wc-payments-order-service.php:1820-1822): the hold sets the transaction ID, and the intent names the same
+	 * payment. The authorization is the recorded manual-capture one (Fixtures/platform-manual-capture.json,
+	 * authorize_manual_capture), its metadata set to the order's.
+	 */
+	public function test_process_payment_records_an_authorization_over_a_succeeded_record_as_the_new_payment(): void {
+		$order = $this->create_order_holding_a_succeeded_record();
+		$order->set_total( '10.99' );
+		$order->save();
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reading a local test fixture.
+		$recording = json_decode( (string) file_get_contents( __DIR__ . '/Fixtures/platform-manual-capture.json' ), true );
+		$intent    = array_values( array_filter( $recording['entries'], static fn( array $entry ): bool => 'authorize_manual_capture' === $entry['pair'] ) )[0]['response']['body'];
+
+		$intent['metadata'] = array( 'order_id' => (string) $order->get_id() );
+
+		$outcome = WooPaymentsIntentCodec::outcome_from_intention(
+			$intent,
+			new WooPaymentsIntentMappingContext( $order->get_checkout_order_received_url(), (string) $intent['payment_method'], (string) $intent['customer'] )
+		)->with_effect_plan( WooPaymentsOrderEffectPlan::for_payment_intent( $intent, false ) );
+
+		$_POST['wcpay-payment-method'] = (string) $intent['payment_method'];
+
+		$this->create_gateway_charging_past_a_record_for_another_order( $outcome, wc_get_container()->get( WooPaymentsTokenService::class ) )->process_payment( $order->get_id() );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( OrderStatus::ON_HOLD, $order->get_status() );
+		$this->assertSame( array( $intent['id'], $intent['id'], 'requires_capture' ), array( $order->get_transaction_id(), $order->get_meta( '_intent_id', true ), $order->get_meta( '_intention_status', true ) ) );
+	}
+
+	/**
+	 * Get an order's transaction ID and the payment record keys an attach writes.
+	 *
+	 * @param WC_Order $order Order.
+	 * @return array<string,string>
+	 */
+	private function get_payment_record( WC_Order $order ): array {
+		$record = array( 'transaction_id' => $order->get_transaction_id() );
+		foreach ( array( '_intent_id', '_charge_id', '_wcpay_payment_transaction_id', '_charge_risk_level', '_intention_status', '_payment_method_id', '_stripe_customer_id' ) as $key ) {
+			$record[ $key ] = (string) $order->get_meta( $key, true );
+		}
+
+		return $record;
+	}
+
+	/**
 	 * @testdox A checkout whose platform returns an offline PaymentIntent with no error, on $_dataName, writes what the client's on-hold writer would.
 	 *
 	 * Client 11.3.0's status update returns on a paid order before any writer (class-wc-payments-order-service.php:475,

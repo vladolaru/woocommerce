@@ -26,7 +26,8 @@ final class WooPaymentsOutcomeMetadataMapper implements ProviderOutcomeMetadataM
 	public const OUTCOME_META_KEY = 'meta';
 
 	/**
-	 * Map a payment outcome to WooPayments order meta, the intent's record included.
+	 * Map a payment outcome to WooPayments order meta, the intent's record included, except the intent of a failed outcome
+	 * whose attach kept an earlier payment's record.
 	 *
 	 * @param PaymentOutcome $outcome Provider outcome.
 	 * @return array<string,string>
@@ -41,7 +42,11 @@ final class WooPaymentsOutcomeMetadataMapper implements ProviderOutcomeMetadataM
 			}
 		}
 
-		if ( '' !== $outcome->get_provider_payment_id() ) {
+		// A failed payment whose attach kept an earlier payment's record leaves that record's intent: client 11.3.0's failed
+		// writer stores no intent (class-wc-payments-order-service.php:545-560).
+		$plan             = $outcome->get_effect_plan();
+		$keeps_the_intent = PaymentOutcome::STATUS_FAILED === $outcome->get_status() && $plan instanceof WooPaymentsOrderEffectPlan && $plan->keeps_earlier_record();
+		if ( '' !== $outcome->get_provider_payment_id() && ! $keeps_the_intent ) {
 			$meta['_intent_id'] = $outcome->get_provider_payment_id();
 		}
 
@@ -54,7 +59,6 @@ final class WooPaymentsOutcomeMetadataMapper implements ProviderOutcomeMetadataM
 		}
 
 		// A $0 order confirmed without an intent has no intention status; client 11.1.0 writes none there (gw:1673-1771).
-		$plan = $outcome->get_effect_plan();
 		if ( ! isset( $meta['_intention_status'] ) && ! ( $plan instanceof WooPaymentsOrderEffectPlan && WooPaymentsOrderEffectPlan::TYPE_ZERO_AMOUNT_WITHOUT_INTENT === $plan->get_type() ) ) {
 			$meta['_intention_status'] = $this->get_default_intention_status( $outcome );
 		}

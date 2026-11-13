@@ -467,7 +467,8 @@ class WooPaymentsOrderEffectApplier {
 	 * A `requires_action` intent with an error keeps its outcome for the checkout's response, so its failure is applied here,
 	 * on the order read under the checkout's order payment lock, and the outcome changes nothing more. That event carries the
 	 * intent's own status, which the client's failed writer stores apart from the attach (:559, :3443-3448), so an order the
-	 * attach left with an earlier payment's record still gets it.
+	 * attach left with an earlier payment's record still gets it. A failed outcome over such a record keeps only that status of
+	 * the intent's meta, so the earlier payment's record and transaction ID stay.
 	 *
 	 * @param WC_Order                   $order   Order read under the checkout's order payment lock, the intent attached.
 	 * @param PaymentOutcome             $outcome Failed PaymentIntent outcome.
@@ -499,15 +500,19 @@ class WooPaymentsOrderEffectApplier {
 			return $this->merge_effect_data_into_outcome( $outcome, array( PaymentOutcome::DATA_NO_ORDER_CHANGE => true ), $plan );
 		}
 
-		return $this->merge_effect_data_into_outcome(
-			$outcome,
-			array(
-				PaymentOutcome::DATA_NOTE             => $note_candidates[0],
-				PaymentOutcome::DATA_NOTE_TYPE        => PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_FAILED,
-				PaymentOutcome::DATA_NOTE_EQUIVALENTS => $note_candidates,
-			),
-			$plan
+		$effect_data = array(
+			PaymentOutcome::DATA_NOTE             => $note_candidates[0],
+			PaymentOutcome::DATA_NOTE_TYPE        => PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_FAILED,
+			PaymentOutcome::DATA_NOTE_EQUIVALENTS => $note_candidates,
 		);
+		if ( $plan->keeps_earlier_record() ) {
+			// The attach kept an earlier payment's record, so the failure writes only the intent status beside its note; the
+			// outcome's payment method and customer are written as the client writes them before the charge
+			// (class-wc-payment-gateway-wcpay.php:1969-1973).
+			$effect_data[ WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY ] = array_intersect_key( $this->get_outcome_meta_data( $outcome ), array_flip( array( '_intention_status' ) ) );
+		}
+
+		return $this->merge_effect_data_into_outcome( $outcome, $effect_data, $plan );
 	}
 
 	/**
