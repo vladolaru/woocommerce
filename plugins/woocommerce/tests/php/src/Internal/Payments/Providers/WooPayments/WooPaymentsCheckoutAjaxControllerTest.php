@@ -2258,6 +2258,88 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Order-status callback, refused the order payment lock, saves the charge and display details only while the order is still paid with WooPayments: $_dataName.
+	 *
+	 * Client 11.3.0 stores the intent's charge and the card's details before its order lock (class-wc-payments-order-service.php:1351-1418,
+	 * class-wc-payment-gateway-wcpay.php:4758-4764), and has no payment method check (:4611-4648). An order another payment
+	 * method takes during the fetch is read again once the lock is refused, and left as it is.
+	 *
+	 * @dataProvider provider_lock_refused_callbacks
+	 *
+	 * @param string $pair            Recorded intent pair: a decline with its failed charge, or a completed challenge.
+	 * @param bool   $taken           Whether bank transfer takes the order during the fetch.
+	 * @param int    $expected_status Response status the callback answers.
+	 * @param bool   $writes          Whether the charge and display details are written.
+	 */
+	public function test_update_order_status_refused_the_lock_writes_details_only_on_a_woopayments_order( string $pair, bool $taken, int $expected_status, bool $writes ): void {
+		$intent = $this->load_recorded_manual_3ds_entry( $pair )['body'];
+		$order  = $this->create_woopayments_order( '10.99' );
+		$order->set_payment_method_title( 'Card' );
+		$order->set_transaction_id( $intent['id'] );
+		$order->update_meta_data( '_intent_id', $intent['id'] );
+		$order->update_meta_data( '_intention_status', 'requires_action' );
+		$order->save();
+		$lock       = wc_get_container()->get( OrderPaymentLock::class );
+		$vocabulary = new WooPaymentsPersistenceVocabulary();
+		$lock_token = null;
+		$hold       = static function () use ( $order, $taken, $lock, $vocabulary, $intent, &$lock_token, &$notes ): void {
+			$held = wc_get_order( $order->get_id() );
+			if ( $taken ) {
+				$held->set_payment_method( 'bacs' );
+				$held->set_payment_method_title( 'Direct bank transfer' );
+				$held->set_status( OrderStatus::ON_HOLD );
+				$held->save();
+			}
+			$lock_token = $lock->claim( $held, $vocabulary, (string) $intent['id'], 'payment status update' );
+			$notes      = count( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+		};
+		$logger     = RecordingWcLogger::install();
+
+		try {
+			$response = $this->create_controller( $this->bind_intents_to_order( $this->create_api_client_returning( $intent, $hold ), $order ) )->confirm_order_payment(
+				array(
+					'_ajax_nonce' => wp_create_nonce( 'wcpay_update_order_status_nonce_' . $order->get_id() ),
+					'order_id'    => $order->get_id(),
+					'intent_id'   => (string) $intent['id'],
+				)
+			);
+		} finally {
+			$this->assertNotNull( $lock_token, 'Another operation holds the lock.' );
+			$lock->release( $order, $vocabulary, $lock_token );
+		}
+
+		$order  = wc_get_order( $order->get_id() );
+		$charge = $intent['charges']['data'][0];
+		$this->assertSame( $taken ? OrderStatus::ON_HOLD : OrderStatus::PENDING, $order->get_status() );
+		$this->assertSame( $intent['id'], $order->get_transaction_id() );
+		$this->assertSame( $intent['id'], $order->get_meta( '_intent_id', true ) );
+		$this->assertSame( 'requires_action', $order->get_meta( '_intention_status', true ) );
+		$this->assertSame( $writes ? $charge['id'] : '', $order->get_meta( '_charge_id', true ) );
+		$this->assertSame( $writes ? 'normal' : '', $order->get_meta( '_charge_risk_level', true ) );
+		$this->assertSame( $writes ? $charge['payment_method_details'] : null, json_decode( (string) $order->get_meta( '_wcpay_payment_method_details', true ), true ) );
+		if ( ! $writes ) {
+			$this->assertSame( 'Direct bank transfer', $order->get_payment_method_title() );
+		}
+		$this->assertCount( $notes, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+		$this->assertSame( $expected_status, $response['status_code'] );
+		$this->assertSame( $taken ? 1 : 0, $this->count_callback_refusal_lines( $logger, $order ), 'One warning line for a refused request.' );
+	}
+
+	/**
+	 * Callbacks refused the order payment lock.
+	 *
+	 * @return array<string,array{string,bool,int,bool}>
+	 */
+	public function provider_lock_refused_callbacks(): array {
+		return array(
+			'a decline, bank transfer took the order'  => array( 'blocks_post_authentication_decline', true, 409, false ),
+			'a completed challenge, bank transfer took the order' => array( 'classic_checkout_challenge_completed', true, 409, false ),
+			'a decline, still WooPayments'             => array( 'blocks_post_authentication_decline', false, 409, true ),
+			'a completed challenge, still WooPayments' => array( 'classic_checkout_challenge_completed', false, 200, true ),
+		);
+	}
+
+	/**
 	 * Count the warning lines the order-status callback logs when it refuses an order another payment method holds.
 	 *
 	 * @param RecordingWcLogger $logger Recording logger.

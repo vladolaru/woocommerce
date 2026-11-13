@@ -979,6 +979,72 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A redirect return confirms nothing on an order another payment method takes after the intent is read, whoever holds the order payment lock: $_dataName.
+	 *
+	 * Client 11.3.0's return has no payment method check (class-wc-payment-gateway-wcpay.php:2564-2628, :2700, :2707). The
+	 * confirmation reads the payment method again on the order read under the lock, or on a fresh read when another operation
+	 * holds it, and writes nothing on another payment method's order; the return then ends without an error.
+	 *
+	 * @testWith [false]
+	 *           [true]
+	 *
+	 * @param bool $lock_held Whether another operation holds the order payment lock when the confirmation claims it.
+	 */
+	public function test_handle_wp_confirms_nothing_on_an_order_another_payment_method_takes_after_the_read( bool $lock_held ): void {
+		$user_id = $this->factory()->user->create();
+		$order   = $this->create_order( '50.00', $user_id );
+		$order->set_payment_method_title( 'Card' );
+		$order->update_meta_data( '_intention_status', 'requires_action' );
+		$order->save();
+		$api_client                 = new RedirectReturnApiClientStub();
+		$api_client->payment_intent = $this->successful_payment_intent( $order, 'pi_after_read', 'pm_after_read' );
+		$lock                       = wc_get_container()->get( OrderPaymentLock::class );
+		$vocabulary                 = new WooPaymentsPersistenceVocabulary();
+		$lock_token                 = null;
+		$token_service              = $this->createMock( WooPaymentsTokenService::class );
+		$token_service->method( 'get_or_create_token_for_user' )->willReturnCallback(
+			static function () use ( $order, $lock_held, $lock, $vocabulary, &$lock_token ) {
+				$taken = wc_get_order( $order->get_id() );
+				$taken->set_payment_method( 'bacs' );
+				$taken->set_payment_method_title( 'Direct bank transfer' );
+				$taken->save();
+				if ( $lock_held ) {
+					$lock_token = $lock->claim( $taken, $vocabulary, 'pi_after_read', 'payment status update' );
+				}
+
+				return null;
+			}
+		);
+		$this->sut = $this->create_controller( true, $this->create_confirmation_service( $api_client, $token_service ), $api_client, $token_service );
+		$this->set_payment_intent_return_request( $order, 'pi_after_read', true );
+		$notes  = count( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+		$logger = RecordingWcLogger::install();
+
+		try {
+			$this->sut->handle_wp();
+		} finally {
+			if ( null !== $lock_token ) {
+				$lock->release( $order, $vocabulary, $lock_token );
+			}
+		}
+
+		$reloaded = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $reloaded );
+		$this->assertSame( $lock_held, null !== $lock_token );
+		$this->assertSame( 'pending', $reloaded->get_status() );
+		$this->assertSame( 'Direct bank transfer', $reloaded->get_payment_method_title() );
+		$this->assertSame( '', $reloaded->get_transaction_id() );
+		$this->assertSame( 'pi_after_read', $reloaded->get_meta( '_intent_id', true ) );
+		$this->assertSame( 'requires_action', $reloaded->get_meta( '_intention_status', true ) );
+		$this->assertSame( '', $reloaded->get_meta( '_charge_id', true ) );
+		$this->assertSame( '', $reloaded->get_meta( '_wcpay_payment_method_details', true ) );
+		$this->assertCount( $notes, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+		$this->assertSame( array(), wc_get_notices( 'error' ) );
+		$this->assertSame( array(), $logger->get_errors(), 'The refusal is not a confirmation failure.' );
+		$this->assertSame( 1, $this->count_return_refusal_lines( $logger, $order ), 'One warning line for a refused request.' );
+	}
+
+	/**
 	 * Count the warning lines the redirect return logs when it refuses an order another payment method holds.
 	 *
 	 * @param RecordingWcLogger $logger Recording logger.

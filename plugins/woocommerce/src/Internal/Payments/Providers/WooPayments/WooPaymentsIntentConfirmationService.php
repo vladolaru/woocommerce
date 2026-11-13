@@ -259,7 +259,8 @@ class WooPaymentsIntentConfirmationService {
 	 *                                                        authorized does not throw (os:399-432 maps it without an exception).
 	 * @param bool                $zero_amount_plain_note     Whether a $0 SetupIntent completes with the order-status callback's plain note (not on a payment method change).
 	 * @throws WooPaymentsIntentConfirmationException When the order-status callback's intent cannot be authorized, its order's payment method is
-	 *                                                another gateway's, or a required token cannot be saved.
+	 *                                                another gateway's (the redirect return then ends without one), or a
+	 *                                                required token cannot be saved.
 	 * @throws Throwable When confirmation is rejected or lifecycle, token, or payment-method effects fail.
 	 *
 	 * @since 11.2.0
@@ -299,16 +300,15 @@ class WooPaymentsIntentConfirmationService {
 		// details written, and the event then built and the hold decided on that order as attached, as client 11.3.0
 		// attaches, titles the order and then updates it (class-wc-payment-gateway-wcpay.php:2700, :2705-2707; :4663,
 		// :4713-4715, :4758-4764, :4771; class-wc-payments-order-service.php:484-489). A started payment the order no longer
-		// waits for is nothing to apply. The order-status callback writes nothing on an order whose payment method became
-		// another gateway's. The account the build reads is settled before the claim.
+		// waits for is nothing to apply. Nothing is written on an order whose payment method became another gateway's, read
+		// under the lock or, when another operation holds it, read fresh. The account the build reads is settled before the claim.
 		$attaches_intent = $is_redirect_return || ! $this->is_setup_intent_for_order( $intent, $order );
 		$displayed       = false;
-		$refused         = false;
+		$refusing_order  = null;
 		list( $event )   = $this->build_lifecycle_event_from_intent( $intent, $order, $zero_amount_plain_note );
-		$build           = function ( WC_Order $stored_order ) use ( $intent, $is_redirect_return, $zero_amount_plain_note, $attaches_intent, $setup_payment_details, &$displayed, &$refused ): array {
-			if ( ! $is_redirect_return && $this->is_order_of_another_payment_method( $stored_order ) ) {
-				$this->log_refusal_of_another_payment_method( $stored_order, (string) ( $intent['id'] ?? '' ), 'order-status callback' );
-				$refused = true;
+		$build           = function ( WC_Order $stored_order ) use ( $intent, $is_redirect_return, $zero_amount_plain_note, $attaches_intent, $setup_payment_details, &$displayed, &$refusing_order ): array {
+			if ( $this->is_order_of_another_payment_method( $stored_order ) ) {
+				$refusing_order = $stored_order;
 				return array( null, null );
 			}
 			if ( $attaches_intent ) {
@@ -331,11 +331,21 @@ class WooPaymentsIntentConfirmationService {
 		$result          = wc_get_container()->get( WooPaymentsCompositionDataSettler::class )->run_settled(
 			fn(): string => $this->fee_details_note_controller->apply_and_schedule_fee_details_with_lock( $order, $event, $build )
 		);
-		if ( $refused ) {
-			throw new WooPaymentsIntentConfirmationException( esc_html__( "We're not able to process this payment. Please try again later.", 'woocommerce' ), 409 );
-		}
 		if ( OrderPaymentLifecycleService::RESULT_REFUSED === $result ) {
-			$this->attach_charge_details_after_refusal( $order, $event );
+			$stored_order = wc_get_container()->get( OrderPaymentLifecycleService::class )->get_fresh_order_from_data_store( $order );
+			if ( $this->is_order_of_another_payment_method( $stored_order ) ) {
+				$refusing_order = $stored_order;
+			} else {
+				$this->attach_charge_details_after_refusal( $stored_order, $event );
+			}
+		}
+		if ( null !== $refusing_order ) {
+			$this->log_refusal_of_another_payment_method( $refusing_order, (string) ( $intent['id'] ?? '' ), $is_redirect_return ? 'redirect return' : 'order-status callback' );
+			// The redirect return ends without an error, as its own payment method checks do.
+			if ( $is_redirect_return ) {
+				return;
+			}
+			throw new WooPaymentsIntentConfirmationException( esc_html__( "We're not able to process this payment. Please try again later.", 'woocommerce' ), 409 );
 		}
 		if ( ! $displayed ) {
 			// A subscription's card change, or a refused claim: no event is applied, and the display details are written as before.
@@ -356,11 +366,10 @@ class WooPaymentsIntentConfirmationService {
 	 * and its payment method details are saved here. Only meta is saved; the holder of the lock writes the status and note.
 	 * Like the client (:1353), nothing is saved once the stored intent status is succeeded; nor once the order names another intent.
 	 *
-	 * @param WC_Order              $order Order being confirmed.
-	 * @param PaymentLifecycleEvent $event Refused lifecycle event.
+	 * @param WC_Order              $stored_order Order being confirmed, read fresh after the refusal.
+	 * @param PaymentLifecycleEvent $event        Refused lifecycle event.
 	 */
-	private function attach_charge_details_after_refusal( WC_Order $order, PaymentLifecycleEvent $event ): void {
-		$stored_order = wc_get_container()->get( OrderPaymentLifecycleService::class )->get_fresh_order_from_data_store( $order );
+	private function attach_charge_details_after_refusal( WC_Order $stored_order, PaymentLifecycleEvent $event ): void {
 		if ( 'succeeded' === (string) $stored_order->get_meta( '_intention_status', true ) || (string) $stored_order->get_meta( '_intent_id', true ) !== (string) $event->get_payment_reference() ) {
 			return;
 		}
