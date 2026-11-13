@@ -46,15 +46,6 @@ class WooPaymentsIntentRequestBuilder {
 	public const PROVIDER_DATA_SUBSCRIPTION_PAYMENT_METHOD_CHANGE = 'subscription_payment_method_change';
 
 	/**
-	 * Provider-data key for the order's fully refunded intent, which the checkout's new charge replaces.
-	 *
-	 * @since 11.4.0
-	 *
-	 * @var string
-	 */
-	public const PROVIDER_DATA_REFUNDED_INTENT_ID = 'refunded_intent_id';
-
-	/**
 	 * Provider-data key for the intent WooPay already confirmed for this order.
 	 *
 	 * @since 11.2.0

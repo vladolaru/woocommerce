@@ -613,26 +613,14 @@ class WooPaymentsOrderEffectApplier {
 	/**
 	 * Tell whether a checkout charge's attach writes the intent's record past its guard: on a subscription payment method
 	 * change, or with a subscription or a renewal in the cart, as client 11.3.0 does (class-wc-payment-gateway-wcpay.php:2443).
-	 * No cart is loaded in a scheduled renewal, so there the cart reads as holding neither. It also writes past the guard
-	 * when the charge replaces the order's stored intent, which the duplicate check found fully refunded: that intent is no
-	 * payment of the order, so the new one becomes its record. Both the stored intent and the transaction ID must still be
-	 * the refunded one's, since another gateway that pays the order meanwhile changes only the transaction ID.
+	 * No cart is loaded in a scheduled renewal, so there the cart reads as holding neither.
 	 *
-	 * @param PaymentOperationContext $context Payment context, its order read under the checkout's order payment lock.
+	 * @param PaymentOperationContext $context Payment context.
 	 * @return bool
 	 */
 	private static function overrides_attach_guard( PaymentOperationContext $context ): bool {
-		$provider_data = $context->get_provider_data();
-		if ( ! empty( $provider_data[ WooPaymentsIntentRequestBuilder::PROVIDER_DATA_SUBSCRIPTION_PAYMENT_METHOD_CHANGE ] ) || SubscriptionMethodPolicy::cart_contains_subscription_or_renewal() ) {
-			return true;
-		}
-
-		$refunded_intent_id = $provider_data[ WooPaymentsIntentRequestBuilder::PROVIDER_DATA_REFUNDED_INTENT_ID ] ?? '';
-		$order              = $context->get_order();
-
-		return is_string( $refunded_intent_id ) && '' !== $refunded_intent_id
-			&& $refunded_intent_id === (string) $order->get_meta( '_intent_id', true )
-			&& $refunded_intent_id === (string) $order->get_transaction_id();
+		return ! empty( $context->get_provider_data()[ WooPaymentsIntentRequestBuilder::PROVIDER_DATA_SUBSCRIPTION_PAYMENT_METHOD_CHANGE ] )
+			|| SubscriptionMethodPolicy::cart_contains_subscription_or_renewal();
 	}
 
 	/**
