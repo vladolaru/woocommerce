@@ -99,7 +99,7 @@ class WooPaymentsDatabaseCache {
 	private array $contents = array();
 
 	/**
-	 * Whether refreshes are disabled for this request.
+	 * Whether refreshes are disabled: for the rest of the request, or while run_without_refresh() runs.
 	 *
 	 * @var bool
 	 */
@@ -360,6 +360,27 @@ class WooPaymentsDatabaseCache {
 	 */
 	public function disable_refresh(): void {
 		$this->refresh_disabled = true;
+	}
+
+	/**
+	 * Run a callback with refreshes stopped, then restore the refresh state found before it, also when it throws.
+	 *
+	 * Calls nest: an inner call restores what it found, so refreshes stay stopped until the outermost call ends, and stay
+	 * stopped after it when they were stopped before it, as during an Action Scheduler job.
+	 *
+	 * @internal
+	 *
+	 * @param callable $callback Code to run.
+	 * @return mixed What the callback returns.
+	 */
+	public function run_without_refresh( callable $callback ) {
+		$refresh_disabled       = $this->refresh_disabled;
+		$this->refresh_disabled = true;
+		try {
+			return $callback();
+		} finally {
+			$this->refresh_disabled = $refresh_disabled;
+		}
 	}
 
 	/**

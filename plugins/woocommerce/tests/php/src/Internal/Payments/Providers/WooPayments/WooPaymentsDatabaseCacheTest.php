@@ -416,4 +416,105 @@ class WooPaymentsDatabaseCacheTest extends WC_Unit_Test_Case {
 		}
 		$this->assertFalse( $this->sut->get_contents( WooPaymentsDatabaseCache::ACCOUNT_KEY ) );
 	}
+
+	/**
+	 * @testdox Should stop refreshes while a scope runs and restore what it found after it $ending: $description.
+	 * @dataProvider provide_refresh_scopes
+	 *
+	 * @param string $description     What the row checks.
+	 * @param bool   $disabled_before Whether refreshes were stopped before the scope, as in an Action Scheduler job.
+	 * @param string $ending          How the scope ends: returns or throws.
+	 */
+	public function test_run_without_refresh_restores_the_refresh_state_it_found( string $description, bool $disabled_before, string $ending ): void {
+		unset( $description );
+		set_current_screen( 'front' );
+		$expired = $this->expired_account_contents();
+		if ( $disabled_before ) {
+			$this->sut->disable_refresh();
+		}
+
+		$inside = null;
+		$result = null;
+		$thrown = null;
+		try {
+			$result = $this->sut->run_without_refresh(
+				function () use ( $expired, $ending, &$inside ) {
+					$inside = $this->sut->should_refresh( WooPaymentsDatabaseCache::ACCOUNT_KEY, $expired, 'is_array', false );
+					if ( 'throws' === $ending ) {
+						throw new RuntimeException( 'Segment failed.' );
+					}
+
+					return 'segment result';
+				}
+			);
+		} catch ( RuntimeException $exception ) {
+			$thrown = $exception;
+		}
+
+		$this->assertFalse( $inside, 'An expired entry is not refreshed inside the scope.' );
+		if ( 'throws' === $ending ) {
+			$this->assertInstanceOf( RuntimeException::class, $thrown, 'The exception leaves the scope.' );
+		} else {
+			$this->assertSame( 'segment result', $result );
+		}
+		$this->assertSame( ! $disabled_before, $this->sut->should_refresh( WooPaymentsDatabaseCache::ACCOUNT_KEY, $expired, 'is_array', false ) );
+	}
+
+	/**
+	 * Provide refresh scope rows: case, refreshes stopped before, ending.
+	 *
+	 * @return array<string,array{0:string,1:bool,2:string}>
+	 */
+	public function provide_refresh_scopes(): array {
+		return array(
+			'allowed before, returns'          => array( 'an expired entry refreshes again', false, 'returns' ),
+			'allowed before, throws'           => array( 'an expired entry refreshes again', false, 'throws' ),
+			'stopped for the request, returns' => array( 'refreshes stay stopped', true, 'returns' ),
+			'stopped for the request, throws'  => array( 'refreshes stay stopped', true, 'throws' ),
+		);
+	}
+
+	/**
+	 * @testdox Should keep refreshes stopped until the outermost of nested scopes ends.
+	 */
+	public function test_run_without_refresh_nests(): void {
+		set_current_screen( 'front' );
+		$expired = $this->expired_account_contents();
+		$seen    = array();
+
+		$this->sut->run_without_refresh(
+			function () use ( $expired, &$seen ): void {
+				$this->sut->run_without_refresh(
+					function () use ( $expired, &$seen ): void {
+						$seen['inner'] = $this->sut->should_refresh( WooPaymentsDatabaseCache::ACCOUNT_KEY, $expired, 'is_array', false );
+					}
+				);
+				$seen['outer after inner'] = $this->sut->should_refresh( WooPaymentsDatabaseCache::ACCOUNT_KEY, $expired, 'is_array', false );
+			}
+		);
+		$seen['after outer'] = $this->sut->should_refresh( WooPaymentsDatabaseCache::ACCOUNT_KEY, $expired, 'is_array', false );
+
+		$this->assertSame(
+			array(
+				'inner'             => false,
+				'outer after inner' => false,
+				'after outer'       => true,
+			),
+			$seen
+		);
+	}
+
+	/**
+	 * Account cache contents fetched a minute past the front-end TTL.
+	 *
+	 * @return array<string,mixed>
+	 */
+	private function expired_account_contents(): array {
+		return array(
+			'data'               => array( 'cached' => true ),
+			'fetched'            => time() - DAY_IN_SECONDS - 60,
+			'errored'            => false,
+			'consecutive_errors' => 0,
+		);
+	}
 }
