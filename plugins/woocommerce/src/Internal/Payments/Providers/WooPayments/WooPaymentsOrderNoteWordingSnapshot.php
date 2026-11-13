@@ -137,6 +137,8 @@ class WooPaymentsOrderNoteWordingSnapshot {
 		'The customer\'s bank could not send pre-debit notification for the payment.',
 		'For recurring payment greater than mandate amount or INR 15000, payment was not approved by the card holder.',
 		'With the following message: <code>%s</code>',
+		'With the following message: <code>%1$s</code>. Decline code: <code>%2$s</code>.',
+		'<a href="%1$s" target="_blank" rel="noopener noreferrer">More information</a>',
 		'is pending',
 		'was successfully processed',
 		'A refund of %1$s %4$s using %2$s (<code>%3$s</code>).',

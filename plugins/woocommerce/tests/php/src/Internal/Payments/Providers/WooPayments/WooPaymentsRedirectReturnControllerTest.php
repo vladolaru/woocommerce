@@ -1741,9 +1741,10 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 	 * @testdox A positive-total return whose PaymentIntent carries a payment error fails the order, adds the WooPayments extension's notice and redirects to checkout with the cart kept.
 	 *
 	 * Client 11.1.0 process_redirect_payment(): a non-empty last_payment_error (gw:2351, 2376-2382) throws "We're not
-	 * able to process this payment. Please try again later."; the catch (gw:2428-2456) calls mark_payment_failed() with
-	 * the "UPE payment failed: ..." message (os:463-478, 2106-2127), adds the message as an error notice and redirects to
-	 * wc_get_checkout_url() and exits, before core's template_redirect cart clearing.
+	 * able to process this payment. Please try again later."; the catch (gw:2428-2456) fails the order, adds the message as
+	 * an error notice and redirects to wc_get_checkout_url() and exits, before core's template_redirect cart clearing.
+	 * Client 11.3.0's catch fails it with mark_payment_declined()'s note, which carries the provider's decline message and
+	 * code (class-wc-payment-gateway-wcpay.php:2760-2763; class-wc-payments-order-service.php:577-595, :620-656).
 	 */
 	public function test_handle_wp_redirects_failed_payment_intent_return_to_checkout(): void {
 		$order   = $this->create_order();
@@ -1786,7 +1787,7 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 		$this->assertSame( 1, WC()->cart->get_cart_contents_count(), 'The cart must survive a failed redirect return.' );
 		$this->assertInstanceOf( WC_Order::class, $reloaded );
 		$this->assertSame( 'failed', $reloaded->get_status() );
-		$this->assert_failed_note_with_message( $reloaded, 'pi_return_failed', "UPE payment failed: We're not able to process this payment. Please try again later." );
+		$this->assert_failed_note_with_message( $reloaded, 'pi_return_failed', 'With the following message: <code>Your card was declined.</code>. Decline code: <code>generic_decline</code>.' );
 	}
 
 	/**
@@ -1844,7 +1845,8 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 	 * @testdox A canceled PaymentIntent that carries a payment error fails the order without cancelling it first.
 	 *
 	 * Client 11.1.0 process_redirect_payment() throws on any last_payment_error before reading the status (gw:2376-2382),
-	 * so mark_payment_failed() moves the order from pending straight to failed (gw:2428-2446, os:463-478).
+	 * so the catch moves the order from pending straight to failed (gw:2428-2446), in client 11.3.0 with
+	 * mark_payment_declined()'s note (class-wc-payment-gateway-wcpay.php:2760-2763; class-wc-payments-order-service.php:577-595).
 	 */
 	public function test_handle_wp_fails_canceled_payment_intent_with_error_without_cancelling(): void {
 		$order                      = $this->create_order();
@@ -1878,7 +1880,7 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 		$this->assertSame( wc_get_checkout_url(), $location );
 		$reloaded = wc_get_order( $order->get_id() );
 		$this->assertSame( 'failed', $reloaded->get_status() );
-		$this->assert_failed_note_with_message( $reloaded, 'pi_canceled_with_error', "UPE payment failed: We're not able to process this payment. Please try again later." );
+		$this->assert_failed_note_with_message( $reloaded, 'pi_canceled_with_error', 'With the following message: <code>Your card was declined.</code>' );
 		$this->assertSame( 0, $cancellations, 'The order must not pass through cancelled.' );
 	}
 
@@ -2058,8 +2060,9 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox A PaymentIntent error fails the order once, with only the WooPayments extension's note and none of the intent's details.
 	 *
-	 * Client 11.1.0 throws on the intent error before any order write (gw:2377-2382), so mark_payment_failed() is the
-	 * only write: failed status, the note and `_intention_status` (gw:2444, os:463-478, 2889-2895).
+	 * Client 11.1.0 throws on the intent error before any order write (gw:2377-2382), so the catch's failure writer is the
+	 * only write: failed status, the note and `_intention_status` (gw:2444, os:463-478, 2889-2895). In client 11.3.0 that
+	 * writer is mark_payment_declined() (class-wc-payment-gateway-wcpay.php:2760-2763; class-wc-payments-order-service.php:577-595).
 	 */
 	public function test_handle_wp_fails_payment_intent_error_once(): void {
 		$order                      = $this->create_order();
@@ -2101,10 +2104,175 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( 1, $failed_transitions );
 		$this->assertCount( 1, $failure_notes, implode( ' | ', $failure_notes ) );
-		$this->assert_failed_note_with_message( $reloaded, 'pi_failed_once', "UPE payment failed: We're not able to process this payment. Please try again later." );
+		$this->assert_failed_note_with_message( $reloaded, 'pi_failed_once', 'With the following message: <code>Your card was declined.</code>' );
 		$this->assertSame( 'requires_payment_method', $reloaded->get_meta( '_intention_status', true ) );
 		// The client throws before attach_intent_info_to_order() (gw:2399), so nothing from the intent but its status is written.
 		$this->assertSame( array( '_intent_id', '_intention_status' ), array_values( array_filter( array_column( array_map( static fn( $meta ) => $meta->get_data(), $reloaded->get_meta_data() ), 'key' ), static fn( string $key ): bool => '_' === $key[0] && ! str_ends_with( $key, '_address_index' ) ) ) );
+	}
+
+	/**
+	 * @testdox A failed return writes the WooPayments extension's failure note once and keeps the order's transaction ID and intent: $_dataName.
+	 *
+	 * Client 11.3.0's return catch (class-wc-payment-gateway-wcpay.php:2759-2767): an intent's own error goes through
+	 * mark_payment_declined(), whose note carries get_provider_decline_message() (class-wc-payments-order-service.php:577-595,
+	 * :620-656); any other exception goes through mark_payment_failed() with "UPE payment failed: <message>". The note opens
+	 * with generate_payment_failure_note() (:2646-2667), linked by compose_transaction_url() (class-wc-payments-utils.php:1099-1118).
+	 *
+	 * @dataProvider provider_return_failure_notes
+	 *
+	 * @param array<string,mixed>|null $intent_error The PaymentIntent's last_payment_error, or null when the fetch throws.
+	 * @param string                   $message      Expected text after the note's opening sentence.
+	 */
+	public function test_handle_wp_writes_the_failure_note_of_the_return( ?array $intent_error, string $message ): void {
+		$order = $this->create_order();
+		$order->set_transaction_id( 'pi_note_earlier' );
+		$order->save();
+		$api_client = new RedirectReturnApiClientStub();
+		if ( null === $intent_error ) {
+			$api_client->exception = new ApiException( 'Transport unavailable.', 'wcpay_http_request_failed', 503 );
+		} else {
+			$api_client->payment_intent = array(
+				'id'                 => 'pi_note',
+				'status'             => 'requires_payment_method',
+				'currency'           => 'usd',
+				'amount'             => 5000,
+				'customer'           => 'cus_return',
+				'payment_method'     => null,
+				'metadata'           => array( 'order_id' => $order->get_id() ),
+				'last_payment_error' => $intent_error,
+			);
+		}
+		$this->sut = $this->create_controller( true, $this->create_confirmation_service( $api_client ), $api_client );
+		$this->set_payment_intent_return_request( $order, 'pi_note' );
+
+		$this->assertSame( wc_get_checkout_url(), $this->handle_wp_expecting_redirect() );
+
+		$reloaded        = wc_get_order( $order->get_id() );
+		$transaction_url = add_query_arg(
+			array(
+				'page' => 'wc-admin',
+				'path' => rawurlencode( '/payments/transactions/details' ),
+				'id'   => 'pi_note',
+			),
+			admin_url( 'admin.php' )
+		);
+		$failure_notes   = array_values(
+			array_filter(
+				wp_list_pluck( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), 'content' ),
+				static fn( string $note ): bool => false !== strpos( $note, '<strong>failed</strong>' )
+			)
+		);
+		$this->assertSame( 'failed', $reloaded->get_status() );
+		$this->assertSame(
+			array( 'A payment of ' . wc_price( 50, array( 'currency' => 'USD' ) ) . ' <strong>failed</strong> using WooPayments (<a href="' . $transaction_url . '" target="_blank" rel="noopener noreferrer">pi_note</a>). ' . $message ),
+			$failure_notes
+		);
+		$this->assertSame( 'pi_note_earlier', $reloaded->get_transaction_id() );
+		$this->assertSame( 'pi_note', $reloaded->get_meta( '_intent_id', true ) );
+	}
+
+	/**
+	 * @testdox A PaymentIntent error on a Pending order that carries the declined-payment note the WooPayments extension wrote fails the order and adds no second note.
+	 *
+	 * Client 11.3.0's mark_payment_declined() fails an order that is not Failed and adds its note only when the same text is
+	 * not on the order yet (class-wc-payments-order-service.php:577-595, order_note_exists() :987-1001).
+	 */
+	public function test_handle_wp_recognises_the_woopayments_extension_declined_note(): void {
+		$order           = $this->create_order();
+		$transaction_url = add_query_arg(
+			array(
+				'page' => 'wc-admin',
+				'path' => rawurlencode( '/payments/transactions/details' ),
+				'id'   => 'pi_declined_before',
+			),
+			admin_url( 'admin.php' )
+		);
+		$extension_note  = 'A payment of ' . wc_price( 50, array( 'currency' => 'USD' ) ) . ' <strong>failed</strong> using WooPayments (<a href="' . $transaction_url . '" target="_blank" rel="noopener noreferrer">pi_declined_before</a>). With the following message: <code>Your card was declined.</code>. Decline code: <code>generic_decline</code>.';
+		$order->add_order_note( $extension_note );
+		$api_client                 = new RedirectReturnApiClientStub();
+		$api_client->payment_intent = array(
+			'id'                 => 'pi_declined_before',
+			'status'             => 'requires_payment_method',
+			'currency'           => 'usd',
+			'amount'             => 5000,
+			'customer'           => 'cus_return',
+			'payment_method'     => null,
+			'metadata'           => array( 'order_id' => $order->get_id() ),
+			'last_payment_error' => array(
+				'type'         => 'card_error',
+				'code'         => 'card_declined',
+				'decline_code' => 'generic_decline',
+				'message'      => 'Your card was declined.',
+			),
+		);
+		$this->sut                  = $this->create_controller( true, $this->create_confirmation_service( $api_client ), $api_client );
+		$this->set_payment_intent_return_request( $order, 'pi_declined_before' );
+
+		$this->assertSame( wc_get_checkout_url(), $this->handle_wp_expecting_redirect() );
+
+		$failure_notes = array_values(
+			array_filter(
+				wp_list_pluck( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), 'content' ),
+				static fn( string $note ): bool => false !== strpos( $note, '<strong>failed</strong>' )
+			)
+		);
+		$this->assertSame( 'failed', wc_get_order( $order->get_id() )->get_status() );
+		$this->assertSame( array( $extension_note ), $failure_notes );
+	}
+
+	/**
+	 * Intent errors as Stripe's PaymentIntent object carries them, each with the decline message client 11.3.0's
+	 * get_provider_decline_message() builds from it (class-wc-payments-order-service.php:620-656), and a failed fetch.
+	 *
+	 * @return array<string,array{0:array<string,mixed>|null,1:string}>
+	 */
+	public function provider_return_failure_notes(): array {
+		return array(
+			'decline with code and documentation link' => array(
+				array(
+					'type'         => 'card_error',
+					'code'         => 'card_declined',
+					'decline_code' => 'generic_decline',
+					'doc_url'      => 'https://stripe.com/docs/error-codes/card-declined',
+					'message'      => 'Your card was declined.',
+				),
+				'With the following message: <code>Your card was declined.</code>. Decline code: <code>generic_decline</code>. <a href="https://stripe.com/docs/error-codes/card-declined" target="_blank" rel="noopener noreferrer">More information</a>',
+			),
+			'decline with a message only'              => array(
+				array(
+					'type'    => 'card_error',
+					'code'    => 'card_declined',
+					'message' => 'Your card was declined.',
+				),
+				'With the following message: <code>Your card was declined.</code>',
+			),
+			'decline with a code and no message'       => array(
+				array(
+					'type' => 'card_error',
+					'code' => 'card_declined',
+				),
+				'With the following message: <code>card_declined</code>',
+			),
+			'error with no message or code'            => array(
+				array( 'type' => 'api_error' ),
+				'With the following message: <code>We&#039;re not able to process this payment. Please try again later.</code>',
+			),
+			'message with markup characters'           => array(
+				array(
+					'code'    => 'payment_intent_payment_attempt_failed',
+					'message' => 'The <bank> & the issuer refused.',
+				),
+				'With the following message: <code>The &lt;bank&gt; &amp; the issuer refused.</code>',
+			),
+			'message over the length limit'            => array(
+				array(
+					'code'    => 'payment_intent_payment_attempt_failed',
+					'message' => str_repeat( 'a', 1001 ),
+				),
+				'With the following message: <code>' . str_repeat( 'a', 1000 ) . '…</code>',
+			),
+			'fetch failure'                            => array( null, 'UPE payment failed: Transport unavailable.' ),
+		);
 	}
 
 	/**
@@ -2589,7 +2757,8 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 	 * (`gw:2361-2374`) and throws `upe_payment_intent_error` (`gw:2376-2382`). The catch calls
 	 * `mark_payment_failed()` with the intent's status and an empty charge ID (`gw:2428-2446`), which fails the
 	 * order and stores the status (`os:463-478`, `os:2889-2895`). The AJAX path keeps the same intent pending.
-	 * `mark_payment_failed()` writes the failed note (`os:2106-2130`) ending "UPE payment failed: <exception message>".
+	 * Client 11.3.0's catch passes the setup error to `mark_payment_declined()`, whose note ends with the provider's
+	 * decline message (`class-wc-payment-gateway-wcpay.php:2672`, `:2760-2763`; `class-wc-payments-order-service.php:577-595`, `:620-656`).
 	 *
 	 * @dataProvider setup_error_status_provider
 	 *
@@ -2628,7 +2797,7 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 			wc_get_order_notes( array( 'order_id' => $reloaded->get_id() ) )
 		);
 		$this->assertContains(
-			'A payment of ' . wc_price( 0, array( 'currency' => $reloaded->get_currency() ) ) . " <strong>failed</strong> using WooPayments (<code>seti_return_error</code>). UPE payment failed: We're not able to process this payment. Please try again later.",
+			'A payment of ' . wc_price( 0, array( 'currency' => $reloaded->get_currency() ) ) . ' <strong>failed</strong> using WooPayments (<code>seti_return_error</code>). With the following message: <code>We are unable to authenticate your payment method.</code>',
 			$notes
 		);
 	}

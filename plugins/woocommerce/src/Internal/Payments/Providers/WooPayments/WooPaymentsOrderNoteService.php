@@ -35,6 +35,11 @@ class WooPaymentsOrderNoteService {
 	private const FROD_UNSUPPORTED_COUNTRIES = array( 'HK', 'SG', 'AE' );
 
 	/**
+	 * Longest provider error text a decline note quotes, so the note stays well within the comment size limit and is saved.
+	 */
+	private const MAX_PROVIDER_ERROR_LENGTH = 1000;
+
+	/**
 	 * Build the payment-success note in each wording that counts as the same note.
 	 *
 	 * @param WC_Order $order                  Order object.
@@ -432,6 +437,24 @@ class WooPaymentsOrderNoteService {
 
 				return $this->format_payment_failed_note_for_domain( $order, $intent_id, '', array(), $text_domain, $formatted_amount, $message );
 			}
+		);
+	}
+
+	/**
+	 * Build the declined-payment note in each wording that counts as the same note: the payment-failure note with the
+	 * provider's decline message, as client 11.3.0's mark_payment_declined() writes it (class-wc-payments-order-service.php:577-595, :620-656).
+	 *
+	 * @param WC_Order            $order     Order object.
+	 * @param string              $intent_id Intent ID.
+	 * @param array<string,mixed> $error     The intent's last payment or setup error.
+	 * @return string[] The note's wordings, WooCommerce's first.
+	 *
+	 * @since 11.4.0
+	 */
+	public function format_declined_payment_note_candidates( WC_Order $order, string $intent_id, array $error ): array {
+		return $this->format_amount_note_candidates(
+			$order,
+			fn( string $text_domain, string $formatted_amount ): string => $this->format_payment_failed_note_for_domain( $order, $intent_id, '', array(), $text_domain, $formatted_amount, $this->format_provider_decline_message_for_domain( $error, $text_domain ) )
 		);
 	}
 
@@ -1494,6 +1517,57 @@ class WooPaymentsOrderNoteService {
 		// rendering above stays as client 11.1.0 wrote it, so a note written before the switch still matches.
 		/* translators: %s: provider error message. */
 		return sprintf( __( 'With the following message: <code>%s</code>', 'woocommerce' ), esc_html( $message ) );
+	}
+
+	/**
+	 * Build the provider's decline message from one known catalog, as client 11.3.0's get_provider_decline_message() does
+	 * (class-wc-payments-order-service.php:620-656): the error's message, else its code, else the generic message, escaped
+	 * and cut to 1,000 characters, with the decline code and the documentation link when the error has them.
+	 *
+	 * @param array<string,mixed> $error       The intent's last payment or setup error.
+	 * @param string              $text_domain Translation catalog to render.
+	 * @return string
+	 */
+	private function format_provider_decline_message_for_domain( array $error, string $text_domain ): string {
+		if ( 'woocommerce-payments' === $text_domain ) {
+			$generic_message = __( "We're not able to process this payment. Please try again later.", 'woocommerce-payments' );
+			/* translators: %1$s: the payment provider's error message, %2$s: the decline code returned by the payment provider. */
+			$decline_format = __( 'With the following message: <code>%1$s</code>. Decline code: <code>%2$s</code>.', 'woocommerce-payments' );
+			/* translators: %s: provider error message. */
+			$message_format = __( 'With the following message: <code>%s</code>', 'woocommerce-payments' );
+			/* translators: %1$s: a URL with more information about the declined payment. */
+			$link_format = __( '<a href="%1$s" target="_blank" rel="noopener noreferrer">More information</a>', 'woocommerce-payments' );
+		} else {
+			$generic_message = __( "We're not able to process this payment. Please try again later.", 'woocommerce' );
+			/* translators: %1$s: the payment provider's error message, %2$s: the decline code returned by the payment provider. */
+			$decline_format = __( 'With the following message: <code>%1$s</code>. Decline code: <code>%2$s</code>.', 'woocommerce' );
+			/* translators: %s: provider error message. */
+			$message_format = __( 'With the following message: <code>%s</code>', 'woocommerce' );
+			/* translators: %1$s: a URL with more information about the declined payment. */
+			$link_format = __( '<a href="%1$s" target="_blank" rel="noopener noreferrer">More information</a>', 'woocommerce' );
+		}
+
+		$decline_code   = isset( $error['decline_code'] ) && is_scalar( $error['decline_code'] ) ? (string) $error['decline_code'] : '';
+		$provider_error = isset( $error['message'] ) && is_scalar( $error['message'] ) ? (string) $error['message'] : '';
+		if ( '' === $provider_error ) {
+			$provider_error = isset( $error['code'] ) && is_scalar( $error['code'] ) ? (string) $error['code'] : '';
+		}
+		if ( '' === $provider_error ) {
+			$provider_error = $generic_message;
+		}
+		if ( mb_strlen( $provider_error ) > self::MAX_PROVIDER_ERROR_LENGTH ) {
+			$provider_error = mb_substr( $provider_error, 0, self::MAX_PROVIDER_ERROR_LENGTH ) . '…';
+		}
+
+		$message = ! empty( $decline_code )
+			? sprintf( $decline_format, esc_html( $provider_error ), esc_html( $decline_code ) )
+			: sprintf( $message_format, esc_html( $provider_error ) );
+
+		if ( ! empty( $error['doc_url'] ) && is_string( $error['doc_url'] ) ) {
+			$message .= ' ' . sprintf( $link_format, esc_url( $error['doc_url'] ) );
+		}
+
+		return $message;
 	}
 	// phpcs:enable WordPress.WP.I18n.TextDomainMismatch
 
