@@ -3795,6 +3795,52 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A checkout whose $kind waits for the shopper, on a Pending order holding a succeeded record, writes only the started note, fraud box and intent status, and keeps that record.
+	 *
+	 * Client 11.3.0's attach writes nothing once the stored intent status is succeeded (class-wc-payments-order-service.php:1818-1822),
+	 * and its started writer writes only the fraud box, the note and the intent status (:2229-2241).
+	 *
+	 * @testWith ["PaymentIntent", "pi_started_charge"]
+	 *           ["SetupIntent", "seti_started_charge"]
+	 *
+	 * @param string $kind      Kind of intent the charge returns.
+	 * @param string $intent_id ID of the intent the charge returns.
+	 */
+	public function test_process_payment_keeps_a_succeeded_record_when_a_started_charge_meets_it( string $kind, string $intent_id ): void {
+		$is_setup = 'SetupIntent' === $kind;
+		$order    = $this->create_order_holding_a_succeeded_record();
+		if ( $is_setup ) {
+			$order->set_customer_id( $this->factory()->user->create() );
+			$order->set_total( '0.00' );
+			$order->save();
+		}
+		$intent  = $this->create_started_intent( $order, $intent_id );
+		$outcome = WooPaymentsIntentCodec::outcome_from_intention(
+			$intent,
+			new WooPaymentsIntentMappingContext( $order->get_checkout_order_received_url(), (string) $intent['payment_method'], (string) $intent['customer'], '', $is_setup ? 'si' : 'pi' )
+		)->with_effect_plan(
+			$is_setup
+				? WooPaymentsOrderEffectPlan::for_setup_intent( $intent, false, array( '_wcpay_intent_currency' => 'USD' ) )
+				: WooPaymentsOrderEffectPlan::for_payment_intent( $intent, false )
+		);
+		$gateway = new WooPaymentsGateway();
+		$gateway->init( wc_get_container()->get( PaymentProcessingService::class ), $this->create_provider_charging( $outcome, $this->create_unhooked_token_service() ) );
+		$_POST['wcpay-payment-method'] = (string) $intent['payment_method'];
+
+		$gateway->process_payment( $order->get_id() );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( OrderStatus::PENDING, $order->get_status() );
+		$this->assertSame( 'pi_settled', $order->get_transaction_id(), "The settled record's transaction ID is kept." );
+		$this->assertSame( 'pi_settled', $order->get_meta( '_intent_id', true ), 'The transaction ID names the recorded intent.' );
+		$this->assertSame( 'ch_settled', $order->get_meta( '_charge_id', true ) );
+		$this->assertSame( 'txn_settled', $order->get_meta( '_wcpay_payment_transaction_id', true ) );
+		$this->assertSame( 'requires_action', $order->get_meta( '_intention_status', true ) );
+		$this->assertSame( 'payment_started', $order->get_meta( '_wcpay_fraud_meta_box_type', true ) );
+		$this->assertSame( 1, $this->count_started_notes( $order, $intent_id ) );
+	}
+
+	/**
 	 * @testdox A checkout with $cart in the cart attaches its started intent over a succeeded record, so the transaction ID and the record name that intent.
 	 *
 	 * Client 11.3.0's attach writes past its guard when a subscription or a renewal is in the cart
@@ -4058,7 +4104,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 * Create an intent that waits for the shopper to authenticate, for the order's total.
 	 *
 	 * @param WC_Order $order     Order the intent pays.
-	 * @param string   $intent_id Intent ID.
+	 * @param string   $intent_id Intent ID; a `seti_` ID makes a SetupIntent.
 	 * @return array<string,mixed>
 	 */
 	private function create_started_intent( WC_Order $order, string $intent_id ): array {
@@ -4077,6 +4123,10 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 				'order_key' => $order->get_order_key(),
 			),
 		);
+		if ( 0 === strpos( $intent_id, 'seti_' ) ) {
+			return array_merge( $intent, array( 'object' => 'setup_intent' ) );
+		}
+
 		return array_merge(
 			$intent,
 			array(

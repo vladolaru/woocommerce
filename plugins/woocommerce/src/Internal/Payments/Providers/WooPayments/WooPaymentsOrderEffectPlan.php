@@ -131,6 +131,13 @@ class WooPaymentsOrderEffectPlan {
 	private ?bool $hold_note_existed = null;
 
 	/**
+	 * Whether the attach left an earlier payment's record and transaction ID on the order.
+	 *
+	 * @var bool
+	 */
+	private bool $earlier_record_kept = false;
+
+	/**
 	 * Constructor.
 	 *
 	 * @param string               $type                Effect plan type.
@@ -311,6 +318,31 @@ class WooPaymentsOrderEffectPlan {
 	 */
 	public function hold_note_existed(): ?bool {
 		return $this->hold_note_existed;
+	}
+
+	/**
+	 * Get a copy of this plan that records that the attach left an earlier payment's record and transaction ID on the order.
+	 *
+	 * @since 11.4.0
+	 *
+	 * @return self
+	 */
+	public function with_earlier_record_kept(): self {
+		$plan                      = clone $this;
+		$plan->earlier_record_kept = true;
+
+		return $plan;
+	}
+
+	/**
+	 * Tell whether the attach left an earlier payment's record and transaction ID on the order.
+	 *
+	 * @since 11.4.0
+	 *
+	 * @return bool
+	 */
+	public function keeps_earlier_record(): bool {
+		return $this->earlier_record_kept;
 	}
 
 	/**

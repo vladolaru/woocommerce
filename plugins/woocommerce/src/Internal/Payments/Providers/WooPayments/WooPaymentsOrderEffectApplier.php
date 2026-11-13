@@ -254,11 +254,12 @@ class WooPaymentsOrderEffectApplier {
 				}
 
 				if ( PaymentLifecycleEvent::STATUS_STARTED === PaymentLifecycleEvent::status_for_outcome( $outcome ) ) {
-					return $this->merge_effect_data_into_outcome(
-						$outcome,
-						$this->compose_waiting_effect_data( $order, $provider_result, $this->get_outcome_meta_data( $outcome ), true, self::is_merchant_initiated( $context ) ),
-						$plan
-					);
+					$effect_data = $this->compose_waiting_effect_data( $order, $provider_result, $this->get_outcome_meta_data( $outcome ), true, self::is_merchant_initiated( $context ) );
+					if ( $plan->keeps_earlier_record() && true !== ( $effect_data[ PaymentOutcome::DATA_NO_ORDER_CHANGE ] ?? false ) ) {
+						return $this->apply_returned_intent_waiting( $order, $outcome, $plan, false );
+					}
+
+					return $this->merge_effect_data_into_outcome( $outcome, $effect_data, $plan );
 				}
 
 				return $outcome;
@@ -388,7 +389,7 @@ class WooPaymentsOrderEffectApplier {
 			return $this->compose_returned_payment_intent_failure( $context->get_order(), $outcome, $plan );
 		}
 
-		return $this->apply_returned_payment_intent_waiting( $context->get_order(), $outcome, $plan, self::is_offline_payment_method_intent( $result ) );
+		return $this->apply_returned_intent_waiting( $context->get_order(), $outcome, $plan, self::is_offline_payment_method_intent( $result ) );
 	}
 
 	/**
@@ -405,29 +406,30 @@ class WooPaymentsOrderEffectApplier {
 	}
 
 	/**
-	 * Write a waiting PaymentIntent with no error as client 11.3.0's on-hold writer does for an offline method (the started
+	 * Write a waiting intent with no error as client 11.3.0's on-hold writer does for an offline method (the started
 	 * note, the fraud box, On hold, the intent's own status, unless the note is on the order; class-wc-payments-order-service.php:505-506,
 	 * :2171-2183), or as its started writer does otherwise (the same writes without the status change, on a Pending order
 	 * without the note; :507-508, :2229-2241).
 	 *
 	 * The outcome keeps the intent's own status for the checkout's response. When its event is not the one the client picks
 	 * (a `requires_payment_method` intent, whose outcome is failed, or an offline `requires_action` intent the outcome does
-	 * not already hold as a voucher), that event is applied here, on the order read under the checkout's order payment lock,
-	 * and the outcome changes nothing more. Only the client's writes are made: the attach keeps any earlier payment's record.
+	 * not already hold as a voucher), or the attach kept an earlier payment's record, that event is applied here, on the
+	 * order read under the checkout's order payment lock, and the outcome changes nothing more. Only the client's writes are
+	 * made, so the intent's record and the transaction ID stay with the attach (:1818-1822, :1875-1876).
 	 * The on-hold event names no payment, so it writes no transaction ID, and it leaves a paid order as it is, as the client
 	 * returns on one before any writer (class-wc-payments-order-service.php:475, :3398-3410). It has no note type either, so
 	 * its note is found by its text, which names the intent, as the client's check is (:2172-2175).
 	 *
 	 * @param WC_Order                   $order   Order read under the checkout's order payment lock, the intent attached.
-	 * @param PaymentOutcome             $outcome PaymentIntent outcome.
-	 * @param WooPaymentsOrderEffectPlan $plan    PaymentIntent effect plan.
+	 * @param PaymentOutcome             $outcome PaymentIntent or SetupIntent outcome.
+	 * @param WooPaymentsOrderEffectPlan $plan    The intent's effect plan.
 	 * @param bool                       $offline Whether the intent is for an offline payment method.
 	 * @return PaymentOutcome
 	 */
-	private function apply_returned_payment_intent_waiting( WC_Order $order, PaymentOutcome $outcome, WooPaymentsOrderEffectPlan $plan, bool $offline ): PaymentOutcome {
+	private function apply_returned_intent_waiting( WC_Order $order, PaymentOutcome $outcome, WooPaymentsOrderEffectPlan $plan, bool $offline ): PaymentOutcome {
 		$event_status   = $offline ? PaymentLifecycleEvent::STATUS_AUTHORIZED : PaymentLifecycleEvent::STATUS_STARTED;
 		$outcome_status = PaymentLifecycleEvent::status_for_outcome( $outcome );
-		if ( $event_status === $outcome_status || PaymentLifecycleEvent::STATUS_AUTHORIZED === $outcome_status ) {
+		if ( ( $event_status === $outcome_status && ! $plan->keeps_earlier_record() ) || PaymentLifecycleEvent::STATUS_AUTHORIZED === $outcome_status ) {
 			return $outcome;
 		}
 
@@ -571,7 +573,8 @@ class WooPaymentsOrderEffectApplier {
 	 * updates the order from it; an intent that is not authorized is marked failed for that update, not raised
 	 * (class-wc-payment-gateway-wcpay.php:2321-2324, :2443-2444). A failure raised with no returned intent attaches nothing,
 	 * as its exception skips that attach. The attach writes the intent's record even once the stored intent status is
-	 * succeeded when overrides_attach_guard() says so.
+	 * succeeded when overrides_attach_guard() says so. When it keeps an earlier payment's record, the plan says so, and the
+	 * started event writes only what the client's started writer writes (apply_returned_intent_waiting()).
 	 *
 	 * @param PaymentOperationContext $context Payment context, its order read under the checkout's order payment lock.
 	 * @param PaymentOutcome          $outcome Charge outcome.
@@ -596,7 +599,7 @@ class WooPaymentsOrderEffectApplier {
 			return $outcome;
 		}
 
-		$this->attach_intent_info(
+		$recorded = $this->attach_intent_info(
 			$context->get_order(),
 			$intent_id,
 			( new WooPaymentsOutcomeMetadataMapper() )->get_outcome_meta( $outcome ),
@@ -604,7 +607,7 @@ class WooPaymentsOrderEffectApplier {
 			self::overrides_attach_guard( $context )
 		);
 
-		return $outcome;
+		return ! $recorded && $plan instanceof WooPaymentsOrderEffectPlan ? $outcome->with_effect_plan( $plan->with_earlier_record_kept() ) : $outcome;
 	}
 
 	/**
@@ -678,16 +681,20 @@ class WooPaymentsOrderEffectApplier {
 	 * @param string[]             $beside_keys             Meta the caller's client counterpart writes beside the intent's:
 	 *                                                      CHARGE_META_KEYS or CONFIRMATION_META_KEYS, or none for the terminal capture.
 	 * @param bool                 $allow_update_on_success Whether the intent's record is written also once the stored intent status
-	 *                                                      is succeeded (overrides_attach_guard()).
+	 *                                                      is succeeded, as a checkout charge's is when overrides_attach_guard() says so.
+	 * @return bool Whether the intent's record and the transaction ID were written.
 	 */
-	public function attach_intent_info( WC_Order $order, string $intent_id, array $meta, array $beside_keys = array(), bool $allow_update_on_success = false ): void {
-		$keys = $beside_keys;
-		if ( $allow_update_on_success || 'succeeded' !== (string) $order->get_meta( '_intention_status', true ) ) {
+	public function attach_intent_info( WC_Order $order, string $intent_id, array $meta, array $beside_keys = array(), bool $allow_update_on_success = false ): bool {
+		$keys    = $beside_keys;
+		$records = $allow_update_on_success || 'succeeded' !== (string) $order->get_meta( '_intention_status', true );
+		if ( $records ) {
 			$order->set_transaction_id( $intent_id );
 			$keys = array_merge( self::INTENT_INFO_META_KEYS, $beside_keys );
 		}
 
 		$this->lifecycle_service->apply_meta_under_lock( $order, array_intersect_key( $meta, array_flip( $keys ) ), array() );
+
+		return $records;
 	}
 
 	/**
