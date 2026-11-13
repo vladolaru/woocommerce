@@ -248,6 +248,15 @@ class PaymentOutcome {
 	public const DATA_NO_ORDER_CHANGE = 'no_order_change';
 
 	/**
+	 * Flags that the outcome's note is added for each occurrence: it is not checked against the notes already on the order,
+	 * so an identical note from an earlier outcome does not stop it.
+	 *
+	 * @since 11.4.0
+	 * @var string
+	 */
+	public const DATA_NOTE_PER_OCCURRENCE = 'note_per_occurrence';
+
+	/**
 	 * Outcome status.
 	 *
 	 * @var string

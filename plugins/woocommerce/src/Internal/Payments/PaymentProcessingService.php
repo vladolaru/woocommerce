@@ -977,7 +977,8 @@ class PaymentProcessingService {
 				$preserve_order_status || $this->should_preserve_order_status( $outcome ),
 				PaymentLifecycleEvent::should_hold_order_for_outcome( $outcome ),
 				array(),
-				$leave_paid_order
+				$leave_paid_order,
+				$this->should_add_note_per_occurrence( $outcome )
 			),
 			$provider->get_persistence_vocabulary()
 		);
@@ -991,6 +992,16 @@ class PaymentProcessingService {
 	 */
 	private function should_preserve_order_status( PaymentOutcome $outcome ): bool {
 		return true === ( $outcome->get_data()[ PaymentOutcome::DATA_PRESERVE_ORDER_STATUS ] ?? false );
+	}
+
+	/**
+	 * Tell whether an outcome's note is added for each occurrence (PaymentOutcome::DATA_NOTE_PER_OCCURRENCE).
+	 *
+	 * @param PaymentOutcome $outcome Provider outcome.
+	 * @return bool
+	 */
+	private function should_add_note_per_occurrence( PaymentOutcome $outcome ): bool {
+		return true === ( $outcome->get_data()[ PaymentOutcome::DATA_NOTE_PER_OCCURRENCE ] ?? false );
 	}
 
 	/**

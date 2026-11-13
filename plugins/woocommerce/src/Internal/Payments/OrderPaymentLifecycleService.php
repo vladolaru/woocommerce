@@ -700,7 +700,7 @@ class OrderPaymentLifecycleService {
 	 * @return bool Whether the note was added.
 	 */
 	private function add_lifecycle_note( WC_Order $order, PaymentLifecycleEvent $event, ProviderPersistenceVocabularyInterface $persistence_vocabulary ): bool {
-		if ( 0 < $this->find_lifecycle_note( $order, $event, $persistence_vocabulary ) ) {
+		if ( ! $event->adds_note_per_occurrence() && 0 < $this->find_lifecycle_note( $order, $event, $persistence_vocabulary ) ) {
 			return false;
 		}
 

@@ -665,8 +665,10 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 			''
 		);
 
-		$data[ PaymentOutcome::DATA_NOTE ]             = $note_candidates[0];
-		$data[ PaymentOutcome::DATA_NOTE_EQUIVALENTS ] = $note_candidates;
+		// Added for each occurrence, as the client adds it on every exception (class-wc-payment-gateway-wcpay.php:1690-1691).
+		$data[ PaymentOutcome::DATA_NOTE ]                = $note_candidates[0];
+		$data[ PaymentOutcome::DATA_NOTE_EQUIVALENTS ]    = $note_candidates;
+		$data[ PaymentOutcome::DATA_NOTE_PER_OCCURRENCE ] = true;
 
 		return new PaymentOutcome(
 			$outcome->get_status(),

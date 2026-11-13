@@ -207,6 +207,13 @@ class PaymentLifecycleEvent {
 	private bool $leave_paid_order;
 
 	/**
+	 * Whether this event's note is added for each occurrence, without checking the notes already on the order.
+	 *
+	 * @var bool
+	 */
+	private bool $note_per_occurrence;
+
+	/**
 	 * Constructor.
 	 *
 	 * @since 11.0.0
@@ -224,9 +231,11 @@ class PaymentLifecycleEvent {
 	 *                                                  this event already applied; entries without a note are dropped.
 	 * @param bool                $leave_paid_order  Whether a completed or authorized event only reports a payment's status, and so leaves
 	 *                                               an order already in a paid status as it is.
+	 * @param bool                $note_per_occurrence Whether the event's note is added for each occurrence, without checking the notes
+	 *                                                 already on the order (since 11.4.0).
 	 * @throws InvalidArgumentException When an unknown status is supplied, or a hold on an event that is not completed.
 	 */
-	public function __construct( string $status, ?string $payment_reference = null, array $meta_to_update = array(), array $meta_to_delete = array(), ?string $note = null, ?string $note_type = null, array $note_equivalents = array(), bool $preserve_order_status = false, bool $hold_order = false, array $applied_alternatives = array(), bool $leave_paid_order = false ) {
+	public function __construct( string $status, ?string $payment_reference = null, array $meta_to_update = array(), array $meta_to_delete = array(), ?string $note = null, ?string $note_type = null, array $note_equivalents = array(), bool $preserve_order_status = false, bool $hold_order = false, array $applied_alternatives = array(), bool $leave_paid_order = false, bool $note_per_occurrence = false ) {
 		if ( ! in_array( $status, $this->get_allowed_statuses(), true ) ) {
 			throw new InvalidArgumentException( esc_html( sprintf( 'Unknown payment lifecycle status: %s', $status ) ) );
 		}
@@ -251,6 +260,7 @@ class PaymentLifecycleEvent {
 			)
 		);
 		$this->leave_paid_order      = $leave_paid_order;
+		$this->note_per_occurrence   = $note_per_occurrence;
 	}
 
 	/**
@@ -413,6 +423,18 @@ class PaymentLifecycleEvent {
 	 */
 	public function should_leave_paid_order(): bool {
 		return $this->leave_paid_order;
+	}
+
+	/**
+	 * Tell whether this event's note is added for each occurrence: it is not checked against the notes already on the
+	 * order, so an identical note an earlier event added does not stop it. The note keeps its identity.
+	 *
+	 * @since 11.4.0
+	 *
+	 * @return bool
+	 */
+	public function adds_note_per_occurrence(): bool {
+		return $this->note_per_occurrence;
 	}
 
 	/**

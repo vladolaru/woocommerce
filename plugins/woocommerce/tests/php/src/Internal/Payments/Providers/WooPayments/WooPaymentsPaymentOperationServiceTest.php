@@ -4802,6 +4802,72 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Two identical card declines at checkout on one order, $_dataName, leave two decline notes.
+	 *
+	 * Client 11.3.0 adds the decline note in process_payment()'s catch on every decline, with no check for one already on the
+	 * order (class-wc-payment-gateway-wcpay.php:1690-1691). Each attempt is REC-1's recorded generic_decline envelope
+	 * (Fixtures/platform-intention-declines.json), the second with another intent or, for the second row, both without one;
+	 * the order is moved back to Pending between them, as WooCommerce does before a new payment.
+	 *
+	 * @testWith ["each with its own intent", true]
+	 *           ["with no intent in the error", false]
+	 *
+	 * @param string $label        Row label.
+	 * @param bool   $with_intents Whether each decline's error carries its intent.
+	 */
+	public function test_two_identical_checkout_declines_leave_two_notes( string $label, bool $with_intents ): void {
+		unset( $label );
+		$order           = $this->create_woopayments_order( '10.00' );
+		$account_service = $this->create_account_service( false );
+		$recorded        = $this->load_recorded_decline_entry( 'generic_decline' );
+		$declines        = array();
+		foreach ( array( 'pi_first_decline', 'pi_second_decline' ) as $intent_id ) {
+			$error = $recorded['error'];
+			if ( $with_intents ) {
+				$error['payment_intent']['id'] = $intent_id;
+			} else {
+				unset( $error['payment_intent'] );
+			}
+			$declines[] = array(
+				'response' => array( 'code' => $recorded['http_status'] ),
+				'headers'  => array( 'content-type' => 'application/json; charset=UTF-8' ),
+				'body'     => wp_json_encode( array( 'error' => $error ) ),
+			);
+		}
+		$http_client            = new FakeHttpClient();
+		$http_client->responses = $declines;
+		$customer_service       = $this->getMockBuilder( WooPaymentsCustomerService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_or_create_customer_id_for_order' ) )
+			->getMock();
+		$customer_service->method( 'get_or_create_customer_id_for_order' )->willReturn( 'cus_rec1_checkout' );
+		$provider = $this->create_provider_over_fake_transport( $http_client, $account_service, $customer_service );
+		$checkout = static function () use ( $order, $provider ): void {
+			wc_get_container()->get( PaymentProcessingService::class )->process_checkout_outcome(
+				PaymentOperationContext::for_checkout( wc_get_order( $order->get_id() ), WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_rec1_checkout' ),
+				$provider
+			);
+		};
+
+		$checkout();
+		wc_get_order( $order->get_id() )->update_status( OrderStatus::PENDING );
+		$checkout();
+
+		$order        = wc_get_order( $order->get_id() );
+		$failed_notes = array_filter(
+			wp_list_pluck( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), 'content' ),
+			static fn( string $note ): bool => str_contains( $note, '<strong>failed</strong> to complete with the following message:' )
+		);
+		$this->assertSame( 2, $http_client->request_count );
+		$this->assertSame( OrderStatus::FAILED, $order->get_status() );
+		$this->assertCount( 2, $failed_notes, 'Each decline adds its note.' );
+		$this->assertSame( 1, count( array_unique( $failed_notes ) ), 'The two notes read the same.' );
+		if ( $with_intents ) {
+			$this->assertSame( 'pi_second_decline', $order->get_meta( '_intent_id', true ) );
+		}
+	}
+
+	/**
 	 * @testdox The payment_intent.payment_failed webhook for a card declined at checkout leaves the failed order with its one failure note.
 	 *
 	 * Client 11.1.0's mark_payment_failed() adds nothing to an order that is already failed (class-wc-payments-order-service.php:469-473).

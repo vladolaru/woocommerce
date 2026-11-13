@@ -318,12 +318,21 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A declined checkout whose decline note is identical to an earlier attempt's fails the order and stores the new attempt's record.
+	 * @testdox A declined checkout whose decline note is identical to an earlier attempt's fails the order, stores the new attempt's record and adds its note $_dataName.
 	 *
 	 * Client 11.3.0's checkout decline fails the order, stores the declined intent and adds its note with no note check
-	 * (class-wc-payment-gateway-wcpay.php:1605-1613, :1693).
+	 * (class-wc-payment-gateway-wcpay.php:1605-1613, :1690-1691). A note flagged per occurrence is added whatever is on the
+	 * order; an unflagged one is still checked against the notes already there.
+	 *
+	 * @testWith ["once more, flagged per occurrence", true, 2]
+	 *           ["not again, without the flag", false, 1]
+	 *
+	 * @param string $label               Row label.
+	 * @param bool   $note_per_occurrence Whether the outcome flags its note per occurrence.
+	 * @param int    $expected_notes      Decline notes the order ends with.
 	 */
-	public function test_process_checkout_fails_the_order_on_a_decline_identical_to_an_earlier_one(): void {
+	public function test_process_checkout_fails_the_order_on_a_decline_identical_to_an_earlier_one( string $label, bool $note_per_occurrence, int $expected_notes ): void {
+		unset( $label );
 		$order = $this->create_woopayments_order( '10.00' );
 		$order->add_order_note( 'Your card was declined.' );
 		$outcome  = new PaymentOutcome(
@@ -332,7 +341,10 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 			'',
 			'pm_second_attempt',
 			'',
-			array( PaymentOutcome::DATA_NOTE => 'Your card was declined.' )
+			array(
+				PaymentOutcome::DATA_NOTE                => 'Your card was declined.',
+				PaymentOutcome::DATA_NOTE_PER_OCCURRENCE => $note_per_occurrence,
+			)
 		);
 		$provider = new class( $outcome ) extends RecordingProvider {
 			/**
@@ -355,7 +367,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( OrderStatus::FAILED, $order->get_status() );
 		$this->assertSame( 'pi_second_attempt', $order->get_meta( '_intent_id', true ) );
 		$this->assertSame( 'pm_second_attempt', $order->get_meta( '_payment_method_id', true ) );
-		$this->assertCount( 1, array_filter( wp_list_pluck( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), 'content' ), static fn( string $note ): bool => 'Your card was declined.' === $note ) );
+		$this->assertCount( $expected_notes, array_filter( wp_list_pluck( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), 'content' ), static fn( string $note ): bool => 'Your card was declined.' === $note ) );
 	}
 
 	/**
@@ -1474,12 +1486,12 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A charge that throws on an order already carrying the WooPayments extension's payment-failed note, in another wording, adds no second failure note.
+	 * @testdox A charge that throws on an order already carrying the WooPayments extension's payment-failed note, in another wording, adds its own failure note beside it.
 	 *
-	 * The note the provider adds for a thrown charge carries every wording of the same note, so the lifecycle recognises the
-	 * one the extension wrote in its own text domain (client 11.1.0 class-wc-payment-gateway-wcpay.php:1354-1400).
+	 * Client 11.3.0 adds the failure note on every exception its checkout catches, with no check for one already on the order
+	 * (class-wc-payment-gateway-wcpay.php:1690-1691), so a later attempt's note is added whatever wording an earlier one used.
 	 */
-	public function test_thrown_charge_recognises_the_woopayments_extension_failure_note(): void {
+	public function test_thrown_charge_adds_its_note_beside_the_woopayments_extension_failure_note(): void {
 		// The German string is synthetic test input; it only has to differ from WooCommerce's own wording.
 		$translation_filter = static function ( string $translation, string $text, string $domain ): string {
 			if ( 'woocommerce-payments' !== $domain ) {
@@ -1524,8 +1536,8 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 					static fn( $note ): bool => false !== strpos( wp_strip_all_tags( (string) $note->content ), 'An extension failed' )
 				)
 			);
-			$this->assertCount( 1, $failure_notes, 'The extension\'s note is the only failure note.' );
-			$this->assertSame( $extension_note, $failure_notes[0]->content );
+			$this->assertCount( 2, $failure_notes, 'The extension\'s note and this attempt\'s.' );
+			$this->assertSame( array( $extension_note, $candidates[0] ), array_values( array_intersect( array( $extension_note, $candidates[0] ), wp_list_pluck( $failure_notes, 'content' ) ) ) );
 		} finally {
 			remove_filter( 'gettext', $translation_filter, 10 );
 		}

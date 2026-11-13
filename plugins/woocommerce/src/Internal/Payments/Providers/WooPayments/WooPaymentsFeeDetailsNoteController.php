@@ -413,7 +413,8 @@ class WooPaymentsFeeDetailsNoteController implements RegisterHooksInterface {
 			$event->should_preserve_order_status(),
 			$event->should_hold_order(),
 			$alternatives,
-			$leave_paid_order
+			$leave_paid_order,
+			$event->adds_note_per_occurrence()
 		);
 	}
 

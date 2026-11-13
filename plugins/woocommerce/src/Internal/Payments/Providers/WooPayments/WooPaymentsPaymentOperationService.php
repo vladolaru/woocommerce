@@ -1239,8 +1239,11 @@ class WooPaymentsPaymentOperationService {
 			$exception->get_error_code()
 		);
 		if ( array() !== $note_candidates ) {
-			$data[ PaymentOutcome::DATA_NOTE ]             = $note_candidates[0];
-			$data[ PaymentOutcome::DATA_NOTE_EQUIVALENTS ] = $note_candidates;
+			// Client 11.3.0 adds this note on every decline, with no check for one already on the order
+			// (class-wc-payment-gateway-wcpay.php:1690-1691); its text names no payment, so it is added for each occurrence.
+			$data[ PaymentOutcome::DATA_NOTE ]                = $note_candidates[0];
+			$data[ PaymentOutcome::DATA_NOTE_EQUIVALENTS ]    = $note_candidates;
+			$data[ PaymentOutcome::DATA_NOTE_PER_OCCURRENCE ] = true;
 		}
 
 		if ( 'card_error' === $exception->get_error_type() ) {
