@@ -262,6 +262,7 @@ describe( 'WooPayments payout details admin surface', () => {
 	} );
 
 	afterEach( () => {
+		jest.useRealTimers();
 		anchorClickSpy.mockRestore();
 		Object.defineProperty( navigator, 'clipboard', {
 			configurable: true,
@@ -395,6 +396,7 @@ describe( 'WooPayments payout details admin surface', () => {
 		const exportButton = await screen.findByRole( 'button', {
 			name: 'Export',
 		} );
+		jest.useFakeTimers();
 		await act( async () => {
 			await userEvent.click( exportButton );
 		} );
@@ -407,12 +409,9 @@ describe( 'WooPayments payout details admin surface', () => {
 			} )
 		);
 		// Client 11.1.0 `hooks/use-report-export.ts:91-95`: the first check runs a second after the request.
-		await waitFor(
-			() =>
-				expect( mockGetDepositsExportUrl ).toHaveBeenCalledWith(
-					'export_test'
-				),
-			{ timeout: 2000 }
+		await act( () => jest.advanceTimersByTimeAsync( 1000 ) );
+		expect( mockGetDepositsExportUrl ).toHaveBeenCalledWith(
+			'export_test'
 		);
 	} );
 
@@ -650,6 +649,7 @@ describe( 'WooPayments payout details admin surface', () => {
 		const exportButton = await screen.findByRole( 'button', {
 			name: 'Export',
 		} );
+		jest.useFakeTimers();
 		await act( async () => {
 			await userEvent.click( exportButton );
 		} );
@@ -665,12 +665,11 @@ describe( 'WooPayments payout details admin surface', () => {
 				exported_row_count: 3,
 			}
 		);
-		await waitFor(
-			() =>
-				expect( mockGetTransactionsExportUrl ).toHaveBeenCalledWith(
-					'export_payout'
-				),
-			{ timeout: 2000 }
+		// Client 11.1.0 `hooks/use-report-export.ts:91-95`: the first check runs a second after the request.
+		await act( () => jest.advanceTimersByTimeAsync( 1000 ) );
+		jest.useRealTimers();
+		expect( mockGetTransactionsExportUrl ).toHaveBeenCalledWith(
+			'export_payout'
 		);
 
 		await userEvent.click(

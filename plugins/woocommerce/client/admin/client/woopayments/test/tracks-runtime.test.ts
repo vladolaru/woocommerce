@@ -167,7 +167,8 @@ describe( 'payments_runtime on admin Tracks events', () => {
 		} );
 
 		// The payments settings main page preloads the cached tracking info; its Manage button then opens the WooPayments
-		// settings without a reload, so the settings page module loads into the same window.
+		// settings without a reload, so the settings page module loads into the same window. Loading the whole page
+		// into a fresh module registry takes 1.4 to 4.1 s on CI, hence the test's own timeout.
 		it( 'adds the hosting provider the main page preloaded after opening the WooPayments settings without a reload', async () => {
 			settingsWindow.wcSettings = {
 				admin: {
@@ -187,7 +188,7 @@ describe( 'payments_runtime on admin Tracks events', () => {
 					payments_runtime: 'woocommerce_core',
 				}
 			);
-		} );
+		}, 30000 );
 
 		it( 'marks the same event on a store the built-in WooPayments owns, where core preloads the WooPayments settings', async () => {
 			settingsWindow.wcSettings = { admin: { woopaymentsSettings: {} } };

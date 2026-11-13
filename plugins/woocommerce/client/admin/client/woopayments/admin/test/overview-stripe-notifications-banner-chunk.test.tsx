@@ -47,6 +47,12 @@ jest.mock( '@woocommerce/tracks', () => ( { recordEvent: jest.fn() } ) );
 describe( 'WooPayments Overview Stripe notifications banner chunk failure', () => {
 	let consoleErrorSpy: jest.SpyInstance;
 
+	// The page also lazy-loads the inbox notifications. A cold import is synchronous module loading that can take
+	// seconds on a loaded CI runner, so load it once here; the render then resolves it from the module registry.
+	beforeAll( async () => {
+		await import( '../overview/components/inbox-notifications' );
+	}, 60000 );
+
 	beforeEach( () => {
 		// React logs the caught error; keep the output clean.
 		consoleErrorSpy = jest

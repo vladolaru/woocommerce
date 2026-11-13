@@ -2098,6 +2098,7 @@ describe( 'WooPayments money movement pages', () => {
 		const exportButton = await screen.findByRole( 'button', {
 			name: 'Export',
 		} );
+		jest.useFakeTimers();
 		await act( async () => {
 			await userEvent.click( exportButton );
 		} );
@@ -2109,12 +2110,9 @@ describe( 'WooPayments money movement pages', () => {
 			} )
 		);
 		// Client 11.1.0 `hooks/use-report-export.ts:91-95`: the first check runs a second after the request.
-		await waitFor(
-			() =>
-				expect( mockGetTransactionsExportUrl ).toHaveBeenCalledWith(
-					'export_test'
-				),
-			{ timeout: 2000 }
+		await act( () => jest.advanceTimersByTimeAsync( 1000 ) );
+		expect( mockGetTransactionsExportUrl ).toHaveBeenCalledWith(
+			'export_test'
 		);
 	} );
 
@@ -3516,6 +3514,7 @@ describe( 'WooPayments money movement pages', () => {
 		const exportButton = await screen.findByRole( 'button', {
 			name: 'Export',
 		} );
+		jest.useFakeTimers();
 		await act( async () => {
 			await userEvent.click( exportButton );
 		} );
@@ -3525,12 +3524,10 @@ describe( 'WooPayments money movement pages', () => {
 				status_is: 'needs_response',
 			} )
 		);
-		await waitFor(
-			() =>
-				expect( mockGetDisputesExportUrl ).toHaveBeenCalledWith(
-					'export_test'
-				),
-			{ timeout: 2000 }
+		// Client 11.1.0 `hooks/use-report-export.ts:91-95`: the first check runs a second after the request.
+		await act( () => jest.advanceTimersByTimeAsync( 1000 ) );
+		expect( mockGetDisputesExportUrl ).toHaveBeenCalledWith(
+			'export_test'
 		);
 	} );
 

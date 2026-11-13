@@ -512,6 +512,7 @@ describe( 'WooPaymentsReportsPage', () => {
 	} );
 
 	afterEach( () => {
+		jest.useRealTimers();
 		printSpy.mockRestore();
 	} );
 
@@ -1509,6 +1510,7 @@ describe( 'WooPaymentsReportsPage', () => {
 			}
 		);
 
+		jest.useFakeTimers();
 		await userEvent.click(
 			screen.getByRole( 'button', { name: 'Export' } )
 		);
@@ -1520,9 +1522,8 @@ describe( 'WooPaymentsReportsPage', () => {
 			} )
 		);
 		// Client 11.1.0 `hooks/use-report-export.ts:91-95`: the first check runs a second after the request.
-		await waitFor( () => expect( clickSpy ).toHaveBeenCalledTimes( 1 ), {
-			timeout: 2000,
-		} );
+		await act( () => jest.advanceTimersByTimeAsync( 1000 ) );
+		expect( clickSpy ).toHaveBeenCalledTimes( 1 );
 		expect( mockGetFeesExportUrl ).toHaveBeenCalledWith( 'export_123' );
 		expect( recordEvent ).toHaveBeenCalledWith( 'wcpay_csv_export_click', {
 			row_type: 'fees',
