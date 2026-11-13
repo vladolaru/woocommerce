@@ -881,7 +881,7 @@ class WooPaymentsDuplicatePaymentPreventionServiceTest extends WC_Unit_Test_Case
 			$this->assertSame( WooPaymentsDuplicatePaymentPreventionService::ERROR_DISPUTED_INTENT, $result->get_error_code() );
 			$this->assertNotSame( '', $result->get_error_message() );
 		} else {
-			$this->assertNull( $result );
+			$this->assertSame( 'pi_existing', $result, "The refunded intent's ID, for the new charge's record to replace." );
 		}
 		$this->assertSame( '', $order->get_transaction_id() );
 		$this->assertSame( 'pending', $order->get_status() );

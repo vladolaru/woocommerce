@@ -262,11 +262,12 @@ class WooPaymentsDuplicatePaymentPreventionService implements RegisterHooksInter
 	/**
 	 * Redirect when the current order already has an authorized PaymentIntent attached.
 	 *
-	 * A failed intent fetch lets checkout go on, except for a PHP Error, which refuses checkout.
+	 * A failed intent fetch lets checkout go on, except for a PHP Error, which refuses checkout. A fully refunded attached
+	 * intent lets checkout go on too, and its ID is returned so the new charge's record can replace it.
 	 *
 	 * @param WC_Order           $order   Current order.
 	 * @param WC_Payment_Gateway $gateway Gateway used to build the return URL.
-	 * @return array<string,string>|WP_Error|null
+	 * @return array<string,string>|WP_Error|string|null The answer, the refusal, the fully refunded intent's ID, or null to go on.
 	 */
 	public function check_payment_intent_attached_to_order_succeeded( WC_Order $order, WC_Payment_Gateway $gateway ) {
 		$intent_id = (string) $order->get_meta( '_intent_id', true );
@@ -310,7 +311,7 @@ class WooPaymentsDuplicatePaymentPreventionService implements RegisterHooksInter
 		// (class-duplicate-payment-prevention-service.php:105-107) and completes the order from it. A fully refunded intent is
 		// no payment of the order, so checkout charges again. A disputed one is refused: the money may still come back.
 		if ( WooPaymentsIntentCodec::is_fully_refunded( $intent ) ) {
-			return null;
+			return $intent_id;
 		}
 
 		if ( WooPaymentsIntentCodec::is_disputed( $intent ) ) {

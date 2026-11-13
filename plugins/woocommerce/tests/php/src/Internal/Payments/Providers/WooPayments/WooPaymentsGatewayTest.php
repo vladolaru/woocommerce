@@ -3841,6 +3841,202 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A checkout on a Pending order whose attached payment is $_dataName $expected, and the transaction ID names the recorded intent after each attempt.
+	 *
+	 * A fully refunded attached intent is no payment of the order, so checkout charges again and that charge's record
+	 * replaces the refunded one's; a disputed one refuses the submit; a partly refunded one still pays the order. Client
+	 * 11.3.0 reads only the status and charges nothing for any of them (class-duplicate-payment-prevention-service.php:105-157).
+	 *
+	 * @dataProvider provider_attached_payments_given_back
+	 *
+	 * @param array<string,mixed> $charge_fields Fields of the attached intent's charge.
+	 * @param string              $expected      What the checkout does: "charges again", "refuses the submit" or "is answered as paid".
+	 */
+	public function test_process_payment_after_the_attached_payment_was_given_back( array $charge_fields, string $expected ): void {
+		// The store takes test payments, as the webhook's intent is one.
+		add_filter( 'wcpay_test_mode', '__return_true' );
+		$order       = $this->create_order_paid_once_and_set_back_to_pending();
+		$intent      = $this->create_started_intent( $order, 'pi_second_payment' );
+		$completions = did_action( 'woocommerce_payment_complete' );
+		$charges     = 0;
+		$gateway     = $this->create_gateway_over_a_given_back_payment(
+			$order,
+			$charge_fields,
+			$intent,
+			static function () use ( &$charges ): void {
+				++$charges;
+			}
+		);
+
+		$result = $gateway->process_payment( $order->get_id() );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( $order->get_meta( '_intent_id', true ), $order->get_transaction_id(), 'The transaction ID names the recorded intent after the checkout.' );
+		$this->assertSame( 'charges again' === $expected ? 1 : 0, $charges );
+		if ( 'charges again' !== $expected ) {
+			$this->assertSame( 'refuses the submit' === $expected ? 'failure' : 'success', $result['result'] ?? '' );
+			$this->assertSame( 'pi_existing', $order->get_transaction_id() );
+			$this->assertSame( 0, $this->count_started_notes( $order, 'pi_second_payment' ) );
+			return;
+		}
+		$this->assertSame( 'pi_second_payment', $order->get_transaction_id(), "The new charge's record replaces the refunded one's." );
+		$this->assertSame( 'requires_action', $order->get_meta( '_intention_status', true ) );
+		$this->assertSame( OrderStatus::PENDING, $order->get_status() );
+		$this->assertSame( 1, $this->count_started_notes( $order, 'pi_second_payment' ) );
+
+		$succeeded = array_merge(
+			$intent,
+			array(
+				'status'  => 'succeeded',
+				'charges' => array(
+					'data' => array(
+						array(
+							'id'             => 'ch_second_payment',
+							'amount'         => 1200,
+							'paid'           => true,
+							'captured'       => true,
+							'payment_method' => 'pm_second_payment',
+							'payment_intent' => 'pi_second_payment',
+						),
+					),
+				),
+			)
+		);
+		unset( $succeeded['next_action'] );
+		wc_get_container()->get( PaymentIntentEventHandler::class )->process( 'payment_intent.succeeded', $succeeded );
+
+		$order = wc_get_order( $order->get_id() );
+		$notes = wp_list_pluck( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), 'content' );
+		$this->assertTrue( $order->is_paid(), 'The webhook completes the order.' );
+		$this->assertSame( 'pi_second_payment', $order->get_transaction_id() );
+		$this->assertSame( 'pi_second_payment', $order->get_meta( '_intent_id', true ), 'The transaction ID names the recorded intent after the webhook.' );
+		$this->assertSame( 'ch_second_payment', $order->get_meta( '_charge_id', true ) );
+		$this->assertSame( $completions + 1, did_action( 'woocommerce_payment_complete' ), 'The order completes once.' );
+		$this->assertSame( 1, $this->count_started_notes( $order, 'pi_second_payment' ) );
+		$this->assertCount( 0, array_filter( $notes, static fn( string $note ): bool => false !== strpos( $note, 'does not pay this order' ) ), 'No other-charge note.' );
+	}
+
+	/**
+	 * Charges of the attached succeeded intent, and what a checkout on the order then does.
+	 *
+	 * @return array<string,array{0:array<string,mixed>,1:string}>
+	 */
+	public function provider_attached_payments_given_back(): array {
+		return array(
+			'fully refunded'  => array(
+				array(
+					'refunded'        => true,
+					'amount_refunded' => 1200,
+					'disputed'        => false,
+				),
+				'charges again',
+			),
+			'disputed'        => array(
+				array(
+					'refunded'        => false,
+					'amount_refunded' => 0,
+					'disputed'        => true,
+				),
+				'refuses the submit',
+			),
+			'partly refunded' => array(
+				array(
+					'refunded'        => false,
+					'amount_refunded' => 500,
+					'disputed'        => false,
+				),
+				'is answered as paid',
+			),
+		);
+	}
+
+	/**
+	 * @testdox A charge that replaces a fully refunded intent keeps the record of another payment that completed the order during the charge.
+	 *
+	 * The new charge's attach writes past its guard only while the order's stored intent is still the refunded one; another
+	 * payment's succeeded record keeps the guard, as client 11.3.0's attach does (class-wc-payments-order-service.php:1818-1822).
+	 */
+	public function test_process_payment_keeps_another_payment_recorded_while_replacing_a_refunded_intent(): void {
+		$order   = $this->create_order_paid_once_and_set_back_to_pending();
+		$pay     = static function ( int $order_id ): void {
+			$other = wc_get_order( $order_id );
+			$other->set_transaction_id( 'pi_other_tab' );
+			$other->update_meta_data( '_intent_id', 'pi_other_tab' );
+			$other->update_meta_data( '_intention_status', 'succeeded' );
+			$other->set_status( OrderStatus::PROCESSING );
+			$other->save();
+		};
+		$gateway = $this->create_gateway_over_a_given_back_payment( $order, array( 'refunded' => true ), $this->create_started_intent( $order, 'pi_second_payment' ), $pay );
+
+		$gateway->process_payment( $order->get_id() );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( OrderStatus::PROCESSING, $order->get_status() );
+		$this->assertSame( 'pi_other_tab', $order->get_transaction_id(), "The other payment's transaction ID is kept." );
+		$this->assertSame( 'pi_other_tab', $order->get_meta( '_intent_id', true ), 'The transaction ID names the recorded intent.' );
+		$this->assertSame( 'succeeded', $order->get_meta( '_intention_status', true ) );
+		$this->assertSame( 0, $this->count_started_notes( $order, 'pi_second_payment' ) );
+	}
+
+	/**
+	 * Create a Pending WooPayments order once paid with `pi_existing`, whose stored intent status is still succeeded.
+	 *
+	 * @return WC_Order
+	 */
+	private function create_order_paid_once_and_set_back_to_pending(): WC_Order {
+		$order = $this->create_order();
+		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+		$order->set_transaction_id( 'pi_existing' );
+		$order->update_meta_data( '_intent_id', 'pi_existing' );
+		$order->update_meta_data( '_charge_id', 'ch_existing' );
+		$order->update_meta_data( '_intention_status', 'succeeded' );
+		$order->set_date_paid( time() );
+		$order->save();
+
+		return $order;
+	}
+
+	/**
+	 * Create a gateway whose duplicate check reads the order's attached `pi_existing` with the given charge fields, and whose
+	 * charge returns the given intent.
+	 *
+	 * @param WC_Order            $order          Order being paid.
+	 * @param array<string,mixed> $charge_fields  Fields of the attached intent's charge.
+	 * @param array<string,mixed> $intent         Intent the charge returns.
+	 * @param callable            $while_charging Called with the order ID while the charge runs.
+	 * @return WooPaymentsGateway
+	 */
+	private function create_gateway_over_a_given_back_payment( WC_Order $order, array $charge_fields, array $intent, callable $while_charging ): WooPaymentsGateway {
+		$attached                       = $this->create_intent_response( $order, 'succeeded', 1200 );
+		$attached['charges']['data'][0] = array_merge( $attached['charges']['data'][0], array( 'amount' => 1200 ), $charge_fields );
+		$api_client                     = $this->getMockBuilder( Client::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_payment_intention' ) )
+			->getMock();
+		$api_client->method( 'get_payment_intention' )->with( 'pi_existing' )->willReturn( $attached );
+		$outcome = WooPaymentsIntentCodec::outcome_from_intention(
+			$intent,
+			new WooPaymentsIntentMappingContext( $order->get_checkout_order_received_url(), (string) $intent['payment_method'], (string) $intent['customer'] )
+		)->with_effect_plan( WooPaymentsOrderEffectPlan::for_payment_intent( $intent, false ) );
+		$gateway = new WooPaymentsGateway();
+		$gateway->init(
+			wc_get_container()->get( PaymentProcessingService::class ),
+			$this->create_provider_charging( $outcome, $this->create_unhooked_token_service(), $while_charging ),
+			null,
+			null,
+			null,
+			null,
+			null,
+			null,
+			null,
+			$this->create_duplicate_payment_prevention_service( $this->create_session(), $api_client )
+		);
+		$_POST['wcpay-payment-method'] = (string) $intent['payment_method'];
+
+		return $gateway;
+	}
+
+	/**
 	 * Create a Pending WooPayments order whose stored record is an earlier payment's succeeded intent.
 	 *
 	 * @return WC_Order
