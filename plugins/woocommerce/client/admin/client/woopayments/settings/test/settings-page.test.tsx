@@ -4014,18 +4014,21 @@ describe( 'WooPaymentsSettingsPage', () => {
 		const dialog = screen.getByRole( 'dialog', {
 			name: 'Activate payments on your store',
 		} );
+		// The modal closes after its exit animation, which jsdom never runs, so a 240 ms timer ends it; run that timer.
+		jest.useFakeTimers();
 		await userEvent.click(
 			within( dialog ).getByRole( 'button', { name: 'Close' } )
 		);
+		await act( async () => {
+			jest.runOnlyPendingTimers();
+		} );
 
-		await waitFor( () =>
-			expect( mockRecordEvent ).toHaveBeenCalledWith(
-				'wcpay_setup_live_payments_modal_exit',
-				{
-					from: 'WCPAY_SETTINGS',
-					source: 'wcadmin-settings-page',
-				}
-			)
+		expect( mockRecordEvent ).toHaveBeenCalledWith(
+			'wcpay_setup_live_payments_modal_exit',
+			{
+				from: 'WCPAY_SETTINGS',
+				source: 'wcadmin-settings-page',
+			}
 		);
 	} );
 

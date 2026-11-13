@@ -1,7 +1,7 @@
 /**
  * External dependencies
  */
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import apiFetch from '@wordpress/api-fetch';
 import { recordEvent } from '@woocommerce/tracks';
@@ -542,17 +542,24 @@ describe( 'AccountDetailsCard', () => {
 			await userEvent.click(
 				screen.getByRole( 'button', { name: 'Reset account' } )
 			);
-			await userEvent.click(
-				screen.getByRole( 'button', { name: 'Close' } )
-			);
+			// The modal closes after its exit animation, which jsdom never runs, so a 240 ms timer ends it; run that timer.
+			jest.useFakeTimers();
+			try {
+				await userEvent.click(
+					screen.getByRole( 'button', { name: 'Close' } )
+				);
+				await act( async () => {
+					jest.runOnlyPendingTimers();
+				} );
+			} finally {
+				jest.useRealTimers();
+			}
 
-			await waitFor( () =>
-				expect(
-					screen.queryByRole( 'dialog', {
-						name: 'Reset your test account',
-					} )
-				).not.toBeInTheDocument()
-			);
+			expect(
+				screen.queryByRole( 'dialog', {
+					name: 'Reset your test account',
+				} )
+			).not.toBeInTheDocument();
 			expect( mockApiFetch ).not.toHaveBeenCalled();
 			expect( mockAssign ).not.toHaveBeenCalled();
 		} );

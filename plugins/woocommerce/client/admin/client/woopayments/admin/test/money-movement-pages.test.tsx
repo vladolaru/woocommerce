@@ -5232,17 +5232,28 @@ describe( 'WooPayments money movement pages', () => {
 			)
 		).not.toBeInTheDocument();
 		mockRecordEvent.mockClear();
+		// The modal closes after its exit animation, which jsdom never runs, so a 240 ms timer ends it; run that timer.
+		jest.useFakeTimers();
 		await userEvent.click(
 			within( dialog ).getByRole( 'button', { name: 'Cancel' } )
 		);
-		await waitFor( () => expect( issueRefundButton ).toHaveFocus() );
+		await act( async () => {
+			jest.runOnlyPendingTimers();
+		} );
+		jest.useRealTimers();
+		expect( issueRefundButton ).toHaveFocus();
 
 		await userEvent.click( issueRefundButton );
 		dialog = await screen.findByRole( 'dialog', {
 			name: 'Refund transaction',
 		} );
+		jest.useFakeTimers();
 		await userEvent.keyboard( '{Escape}' );
-		await waitFor( () => expect( issueRefundButton ).toHaveFocus() );
+		await act( async () => {
+			jest.runOnlyPendingTimers();
+		} );
+		jest.useRealTimers();
+		expect( issueRefundButton ).toHaveFocus();
 
 		mockRecordEvent.mockClear();
 		await userEvent.click( issueRefundButton );

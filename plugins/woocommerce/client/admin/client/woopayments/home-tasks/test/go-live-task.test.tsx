@@ -1,13 +1,7 @@
 /**
  * External dependencies
  */
-import {
-	render,
-	screen,
-	waitFor,
-	waitForElementToBeRemoved,
-	within,
-} from '@testing-library/react';
+import { act, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { SlotFillProvider } from '@wordpress/components';
 import { PluginArea } from '@wordpress/plugins';
@@ -40,6 +34,20 @@ const renderTaskSlot = ( id: string ) =>
 		</SlotFillProvider>
 	);
 
+// The modal closes after its exit animation, which jsdom never runs, so a 240 ms timer ends it; the fill then
+// unmounts the modal's root on a zero-delay timer. Closing runs both timers instead of waiting them out.
+const closeModal = async ( dialog: ReturnType< typeof screen.getByRole > ) => {
+	jest.useFakeTimers();
+	try {
+		await userEvent.click(
+			within( dialog ).getByRole( 'button', { name: 'Close' } )
+		);
+		await act( () => jest.runAllTimersAsync() );
+	} finally {
+		jest.useRealTimers();
+	}
+};
+
 // Client 11.1.0 `overview/task-list/tasks/go-live-task.tsx:29-44`: a click records the task click and opens the
 // live payments modal on its own root; `components/sandbox-mode-switch-to-live-notice/modal/index.tsx` is the modal.
 describe( 'WooPayments go-live WC Home task', () => {
@@ -54,12 +62,7 @@ describe( 'WooPayments go-live WC Home task', () => {
 	afterEach( async () => {
 		const dialog = screen.queryByRole( 'dialog' );
 		if ( dialog ) {
-			await userEvent.click(
-				within( dialog ).getByRole( 'button', { name: 'Close' } )
-			);
-			await waitForElementToBeRemoved( () =>
-				screen.queryByRole( 'dialog' )
-			);
+			await closeModal( dialog );
 		}
 	} );
 
@@ -123,22 +126,16 @@ describe( 'WooPayments go-live WC Home task', () => {
 		const dialog = await screen.findByRole( 'dialog', {
 			name: 'Activate payments on your store',
 		} );
-		await userEvent.click(
-			within( dialog ).getByRole( 'button', { name: 'Close' } )
-		);
+		await closeModal( dialog );
 
 		// The modal reports the close after its exit animation.
-		await waitFor( () =>
-			expect( recordEvent ).toHaveBeenCalledWith(
-				'wcpay_setup_live_payments_modal_exit',
-				{ from: 'WCPAY_GO_LIVE_TASK', source: 'wcpay-go-live-task' }
-			)
+		expect( recordEvent ).toHaveBeenCalledWith(
+			'wcpay_setup_live_payments_modal_exit',
+			{ from: 'WCPAY_GO_LIVE_TASK', source: 'wcpay-go-live-task' }
 		);
-		await waitFor( () =>
-			expect(
-				document.getElementById( 'wcpay-golivemodal-container' )
-			).toBeNull()
-		);
+		expect(
+			document.getElementById( 'wcpay-golivemodal-container' )
+		).toBeNull();
 		expect(
 			screen.queryByRole( 'dialog', {
 				name: 'Activate payments on your store',
