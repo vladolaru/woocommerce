@@ -3795,6 +3795,115 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A checkout with $cart in the cart attaches its started intent over a succeeded record, so the transaction ID and the record name that intent.
+	 *
+	 * Client 11.3.0's attach writes past its guard when a subscription or a renewal is in the cart
+	 * (class-wc-payment-gateway-wcpay.php:2443; trait-wc-payments-subscriptions-utilities.php:105-110).
+	 *
+	 * @testWith ["a subscription"]
+	 *           ["a renewal"]
+	 *
+	 * @param string $cart What the cart holds.
+	 */
+	public function test_process_payment_attaches_a_started_intent_over_a_succeeded_record_for_a_subscription_cart( string $cart ): void {
+		// WooCommerce Subscriptions loads its core library with its cart; the mock is reset after every test.
+		$this->register_legacy_proxy_function_mocks(
+			array(
+				'class_exists' => static fn( $class_name, ...$args ) => 'WC_Subscriptions_Core_Plugin' === $class_name || class_exists( $class_name, ...$args ),
+			)
+		);
+		WooCommerceSubscriptionsDoubles::load_cart();
+		$GLOBALS[ WooCommerceSubscriptionsDoubles::CART_CONTAINS_SUBSCRIPTION ] = 'a subscription' === $cart;
+		$GLOBALS[ WooCommerceSubscriptionsDoubles::CART_CONTAINS_RENEWAL ]      = 'a renewal' === $cart ? array( 'subscription_renewal' => array() ) : false;
+		$order   = $this->create_order_holding_a_succeeded_record();
+		$intent  = $this->create_started_intent( $order, 'pi_subscription_cart' );
+		$outcome = WooPaymentsIntentCodec::outcome_from_intention(
+			$intent,
+			new WooPaymentsIntentMappingContext( $order->get_checkout_order_received_url(), (string) $intent['payment_method'], (string) $intent['customer'] )
+		)->with_effect_plan( WooPaymentsOrderEffectPlan::for_payment_intent( $intent, false ) );
+		$gateway = new WooPaymentsGateway();
+		$gateway->init( wc_get_container()->get( PaymentProcessingService::class ), $this->create_provider_charging( $outcome, $this->create_unhooked_token_service() ) );
+		$_POST['wcpay-payment-method'] = (string) $intent['payment_method'];
+
+		try {
+			$gateway->process_payment( $order->get_id() );
+		} finally {
+			unset( $GLOBALS[ WooCommerceSubscriptionsDoubles::CART_CONTAINS_RENEWAL ] );
+		}
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( OrderStatus::PENDING, $order->get_status() );
+		$this->assertSame( 'pi_subscription_cart', $order->get_transaction_id() );
+		$this->assertSame( 'pi_subscription_cart', $order->get_meta( '_intent_id', true ), 'The transaction ID names the recorded intent.' );
+		$this->assertSame( 'requires_action', $order->get_meta( '_intention_status', true ) );
+		$this->assertSame( 'payment_started', $order->get_meta( '_wcpay_fraud_meta_box_type', true ) );
+		$this->assertSame( 1, $this->count_started_notes( $order, 'pi_subscription_cart' ) );
+	}
+
+	/**
+	 * Create a Pending WooPayments order whose stored record is an earlier payment's succeeded intent.
+	 *
+	 * @return WC_Order
+	 */
+	private function create_order_holding_a_succeeded_record(): WC_Order {
+		$order = $this->create_order();
+		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+		$order->set_transaction_id( 'pi_settled' );
+		$order->update_meta_data( '_intent_id', 'pi_settled' );
+		$order->update_meta_data( '_charge_id', 'ch_settled' );
+		$order->update_meta_data( '_wcpay_payment_transaction_id', 'txn_settled' );
+		$order->update_meta_data( '_intention_status', 'succeeded' );
+		$order->save();
+
+		return $order;
+	}
+
+	/**
+	 * Create an intent that waits for the shopper to authenticate, for the order's total.
+	 *
+	 * @param WC_Order $order     Order the intent pays.
+	 * @param string   $intent_id Intent ID.
+	 * @return array<string,mixed>
+	 */
+	private function create_started_intent( WC_Order $order, string $intent_id ): array {
+		$suffix = substr( $intent_id, strpos( $intent_id, '_' ) + 1 );
+		$intent = array(
+			'id'                   => $intent_id,
+			'status'               => 'requires_action',
+			'customer'             => 'cus_' . $suffix,
+			'payment_method'       => 'pm_' . $suffix,
+			'payment_method_types' => array( 'card' ),
+			'client_secret'        => $intent_id . '_secret',
+			'next_action'          => array( 'type' => 'use_stripe_sdk' ),
+			'livemode'             => false,
+			'metadata'             => array(
+				'order_id'  => (string) $order->get_id(),
+				'order_key' => $order->get_order_key(),
+			),
+		);
+		return array_merge(
+			$intent,
+			array(
+				'amount'   => (int) round( (float) $order->get_total() * 100 ),
+				'currency' => strtolower( $order->get_currency() ),
+			)
+		);
+	}
+
+	/**
+	 * Count the order's started notes for an intent.
+	 *
+	 * @param WC_Order $order     Order.
+	 * @param string   $intent_id Intent ID.
+	 * @return int
+	 */
+	private function count_started_notes( WC_Order $order, string $intent_id ): int {
+		$started = wc_get_container()->get( WooPaymentsOrderNoteService::class )->format_payment_started_note_candidates( $order, $intent_id );
+
+		return count( array_filter( wp_list_pluck( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), 'content' ), static fn( string $note ): bool => in_array( $note, $started, true ) ) );
+	}
+
+	/**
 	 * @testdox A checkout whose order gets another payment's settled record and a paid status during its token work keeps that record and status: $status.
 	 *
 	 * Client 11.3.0 saves the token before it attaches the intent (class-wc-payment-gateway-wcpay.php:2335-2377, :2444). The

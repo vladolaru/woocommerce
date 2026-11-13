@@ -14,6 +14,7 @@ use Automattic\WooCommerce\Internal\Payments\PaymentOperationContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentLifecycleEvent;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\PaymentMethodRegistry;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\SubscriptionMethodPolicy;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\LinkToken;
 use Throwable;
 use WC_Order;
@@ -569,9 +570,8 @@ class WooPaymentsOrderEffectApplier {
 	 * Client 11.3.0 attaches every intent its charge returned, a SetupIntent's included, whatever its status, before it
 	 * updates the order from it; an intent that is not authorized is marked failed for that update, not raised
 	 * (class-wc-payment-gateway-wcpay.php:2321-2324, :2443-2444). A failure raised with no returned intent attaches nothing,
-	 * as its exception skips that attach. On a subscription payment method change the attach writes the intent's record
-	 * even once the stored intent status is succeeded (:2443); its other override, a subscription in the cart, is not
-	 * applied here.
+	 * as its exception skips that attach. The attach writes the intent's record even once the stored intent status is
+	 * succeeded when overrides_attach_guard() says so.
 	 *
 	 * @param PaymentOperationContext $context Payment context, its order read under the checkout's order payment lock.
 	 * @param PaymentOutcome          $outcome Charge outcome.
@@ -601,10 +601,23 @@ class WooPaymentsOrderEffectApplier {
 			$intent_id,
 			( new WooPaymentsOutcomeMetadataMapper() )->get_outcome_meta( $outcome ),
 			self::CHARGE_META_KEYS,
-			! empty( $context->get_provider_data()[ WooPaymentsIntentRequestBuilder::PROVIDER_DATA_SUBSCRIPTION_PAYMENT_METHOD_CHANGE ] )
+			self::overrides_attach_guard( $context )
 		);
 
 		return $outcome;
+	}
+
+	/**
+	 * Tell whether a checkout charge's attach writes the intent's record past its guard: on a subscription payment method
+	 * change, or with a subscription or a renewal in the cart, as client 11.3.0 does (class-wc-payment-gateway-wcpay.php:2443).
+	 * No cart is loaded in a scheduled renewal, so there the cart reads as holding neither.
+	 *
+	 * @param PaymentOperationContext $context Payment context.
+	 * @return bool
+	 */
+	private static function overrides_attach_guard( PaymentOperationContext $context ): bool {
+		return ! empty( $context->get_provider_data()[ WooPaymentsIntentRequestBuilder::PROVIDER_DATA_SUBSCRIPTION_PAYMENT_METHOD_CHANGE ] )
+			|| SubscriptionMethodPolicy::cart_contains_subscription_or_renewal();
 	}
 
 	/**
@@ -657,8 +670,7 @@ class WooPaymentsOrderEffectApplier {
 	 * @param string[]             $beside_keys             Meta the caller's client counterpart writes beside the intent's:
 	 *                                                      CHARGE_META_KEYS or CONFIRMATION_META_KEYS, or none for the terminal capture.
 	 * @param bool                 $allow_update_on_success Whether the intent's record is written also once the stored intent status
-	 *                                                      is succeeded, as the client's attach does on a subscription payment method
-	 *                                                      change (class-wc-payment-gateway-wcpay.php:2443).
+	 *                                                      is succeeded (overrides_attach_guard()).
 	 */
 	public function attach_intent_info( WC_Order $order, string $intent_id, array $meta, array $beside_keys = array(), bool $allow_update_on_success = false ): void {
 		$keys = $beside_keys;
