@@ -2524,6 +2524,118 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A payment failure of the attempt an order of another payment method stores is recorded with one note and leaves the order as it is: $_dataName.
+	 *
+	 * Classic order-pay saves the gateway the shopper picks as the order's payment method (plugins/woocommerce/includes/class-wc-form-handler.php:794-795)
+	 * and leaves the abandoned WooPayments attempt stored on the order. Client 11.3.0's failed handler checks only the
+	 * failed payment method (class-wc-payments-webhook-processing-service.php:548) and fails such an order unless it is
+	 * Processing or Completed (class-wc-payments-order-service.php:545-560). Here it is recorded as a payment that does not
+	 * pay the order, as an authorization on such an order is.
+	 *
+	 * @dataProvider provider_orders_another_payment_method_holds
+	 *
+	 * @param string $gateway        The order's payment method.
+	 * @param string $status         The order's status after that payment method took it.
+	 * @param string $transaction_id The order's transaction ID: the attempt's own from its checkout, or none.
+	 */
+	public function test_failure_of_the_attempt_an_order_of_another_payment_method_stores_is_recorded( string $gateway, string $status, string $transaction_id ): void {
+		$order = $this->create_woopayments_order();
+		$order->set_payment_method( $gateway );
+		$order->set_status( $status );
+		$order->set_transaction_id( $transaction_id );
+		$order->update_meta_data( '_intent_id', 'pi_123' );
+		$order->update_meta_data( '_intention_status', 'requires_action' );
+		$order->update_meta_data( '_payment_method_id', 'pm_123' );
+		$order->save();
+		$notes  = count( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+		$logger = RecordingWcLogger::install();
+		$event  = $this->create_payment_intent_event( 'payment_intent.payment_failed', $order, $this->get_card_failure_overrides() );
+
+		$this->sut->process( $event );
+		$this->sut->process( $event );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( $status, $order->get_status() );
+		$this->assertSame( $gateway, $order->get_payment_method() );
+		$this->assertSame( $transaction_id, $order->get_transaction_id() );
+		$this->assertSame( 'pi_123', $order->get_meta( '_intent_id', true ) );
+		$this->assertSame( 'requires_action', $order->get_meta( '_intention_status', true ) );
+		$this->assertCount( $notes + 1, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), 'The record note only, once however often the event is delivered.' );
+		$record_notes = $this->get_order_notes_containing( $order, 'that does not pay this order failed' );
+		$this->assertCount( 1, $record_notes );
+		$this->assertStringContainsString( 'pi_123', $record_notes[0]->content );
+		$this->assertCount( 2, array_filter( $logger->lines, static fn( array $line ): bool => 'warning' === $line[0] && 0 === strpos( $line[1], 'other charge recorded: order ' . $order->get_id() . ', payment_intent.payment_failed' ) ), 'One warning line per delivery.' );
+	}
+
+	/**
+	 * Orders another payment method holds while they store an abandoned WooPayments attempt.
+	 *
+	 * @return array<string,array{string,string,string}>
+	 */
+	public function provider_orders_another_payment_method_holds(): array {
+		return array(
+			'bank transfer holds it On hold'             => array( 'bacs', OrderStatus::ON_HOLD, 'pi_123' ),
+			'a cheque holds it On hold'                  => array( 'cheque', OrderStatus::ON_HOLD, 'pi_123' ),
+			'cash on delivery made it Processing'        => array( 'cod', OrderStatus::PROCESSING, 'pi_123' ),
+			'another gateway still waits on its payment' => array( 'stripe', OrderStatus::PENDING, '' ),
+		);
+	}
+
+	/**
+	 * @testdox A payment failure of the attempt an order still paid with a WooPayments gateway stores fails the order once, as before: $gateway.
+	 *
+	 * Client 11.3.0 fails the order with one failure note (class-wc-payments-webhook-processing-service.php:556-559,
+	 * class-wc-payments-order-service.php:545-560); a split gateway's ID names the payment method after the card gateway's
+	 * (class-wc-payment-gateway-wcpay.php:3071-3077).
+	 *
+	 * @testWith ["woocommerce_payments"]
+	 *           ["woocommerce_payments_link"]
+	 *
+	 * @param string $gateway The order's WooPayments gateway.
+	 */
+	public function test_failure_of_the_attempt_an_order_still_paid_with_woopayments_stores_fails_it( string $gateway ): void {
+		$order = $this->create_woopayments_order();
+		$order->set_payment_method( $gateway );
+		$order->update_meta_data( '_intent_id', 'pi_123' );
+		$order->update_meta_data( '_intention_status', 'requires_action' );
+		$order->update_meta_data( '_payment_method_id', 'pm_123' );
+		$order->save();
+		$notes = count( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+		$event = $this->create_payment_intent_event( 'payment_intent.payment_failed', $order, $this->get_card_failure_overrides() );
+
+		$this->sut->process( $event );
+		$this->sut->process( $event );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( OrderStatus::FAILED, $order->get_status() );
+		$this->assertSame( '', $order->get_transaction_id() );
+		$this->assertSame( 'pi_123', $order->get_meta( '_intent_id', true ) );
+		$this->assertSame( 'requires_payment_method', $order->get_meta( '_intention_status', true ) );
+		$this->assertCount( $notes + 2, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), 'The failure note and the status change note, once.' );
+		$this->assertCount( 1, $this->get_order_notes_containing( $order, '<strong>failed</strong> using WooPayments' ) );
+		$this->assertCount( 0, $this->get_order_notes_containing( $order, 'does not pay this order' ) );
+	}
+
+	/**
+	 * Intent overrides for a card payment's failure, as payment_intent.payment_failed carries it.
+	 *
+	 * @return array<string,mixed>
+	 */
+	private function get_card_failure_overrides(): array {
+		return array(
+			'status'             => 'requires_payment_method',
+			'last_payment_error' => array(
+				'code'           => 'card_declined',
+				'message'        => 'Your card was declined.',
+				'payment_method' => array(
+					'id'   => 'pm_123',
+					'type' => 'card',
+				),
+			),
+		);
+	}
+
+	/**
 	 * @testdox An order an authorization put on hold, captured from the store for less than was authorized, keeps one capture note and gets no success or hold note when the succeeded payment arrives.
 	 *
 	 * Client 11.3.0 completes an order whose stored intent status is requires_capture through its capture, whatever the

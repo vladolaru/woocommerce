@@ -312,9 +312,11 @@ class PaymentIntentEventHandler {
 		// saved it before this claim is decided like any order found by its charge.
 		$record_only    = $record_only && $charge_id !== (string) $order->get_meta( '_charge_id', true );
 		$is_own_payment = ! $record_only && $this->event_order_resolver->is_own_payment( $order, $intent_id, $charge_id );
-		// An authorization holds only an order paid with WooPayments. This check stands for client 11.3.0's
-		// superseded-attempt skip, which leaves an order paid another way (class-wc-payments-webhook-processing-service.php:464-471).
-		if ( 'payment_intent.amount_capturable_updated' === $event_type && ! WooPaymentsPersistenceVocabulary::is_woopayments_gateway_id( (string) $order->get_payment_method() ) ) {
+		// An authorization or a payment failure changes only an order paid with WooPayments, so a stored attempt that another
+		// payment method replaced cannot hold or fail the order. For an authorization this check stands for client 11.3.0's
+		// superseded-attempt skip, which leaves an order paid another way (class-wc-payments-webhook-processing-service.php:464-471);
+		// the client's failed handler has no such check (:511-560).
+		if ( in_array( $event_type, array( 'payment_intent.amount_capturable_updated', 'payment_intent.payment_failed' ), true ) && ! WooPaymentsPersistenceVocabulary::is_woopayments_gateway_id( (string) $order->get_payment_method() ) ) {
 			$is_own_payment = false;
 		}
 
