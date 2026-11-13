@@ -4855,6 +4855,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	public function test_process_payment_keeps_a_succeeded_record_when_a_returned_failure_meets_it(): void {
 		$order = $this->create_order_holding_a_succeeded_record();
 		$order->set_total( '10.99' );
+		$order->update_meta_data( '_wcpay_intent_currency', 'EUR' );
 		$order->save();
 
 		$failed = array(
@@ -4902,6 +4903,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 				'_charge_id'                    => 'ch_settled',
 				'_wcpay_payment_transaction_id' => 'txn_settled',
 				'_charge_risk_level'            => '',
+				'_wcpay_intent_currency'        => 'EUR',
 				'_intention_status'             => 'requires_payment_method',
 				'_payment_method_id'            => 'pm_returned',
 				'_stripe_customer_id'           => 'cus_returned',
@@ -4936,8 +4938,8 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox A checkout whose platform returns an authorized PaymentIntent, on an unpaid order holding a succeeded record, holds the order on the new payment, its transaction ID and intent alike.
 	 *
-	 * Only a failure leaves the earlier record's intent in place. An authorization over a kept record is recorded as the
-	 * new payment's, a recorded departure from client 11.3.0, whose attach keeps the earlier record
+	 * Over a kept record a failed outcome leaves the earlier record's intent in place, while an authorized or paid outcome
+	 * is recorded as the new payment's, a recorded departure from client 11.3.0, whose attach keeps the earlier record
 	 * (class-wc-payments-order-service.php:1820-1822): the hold sets the transaction ID, and the intent names the same
 	 * payment. The authorization is the recorded manual-capture one (Fixtures/platform-manual-capture.json,
 	 * authorize_manual_capture), its metadata set to the order's.
@@ -4974,7 +4976,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 */
 	private function get_payment_record( WC_Order $order ): array {
 		$record = array( 'transaction_id' => $order->get_transaction_id() );
-		foreach ( array( '_intent_id', '_charge_id', '_wcpay_payment_transaction_id', '_charge_risk_level', '_intention_status', '_payment_method_id', '_stripe_customer_id' ) as $key ) {
+		foreach ( array( '_intent_id', '_charge_id', '_wcpay_payment_transaction_id', '_charge_risk_level', '_wcpay_intent_currency', '_intention_status', '_payment_method_id', '_stripe_customer_id' ) as $key ) {
 			$record[ $key ] = (string) $order->get_meta( $key, true );
 		}
 

@@ -48,9 +48,12 @@ class EventIngestor {
 	 * retried after its close changes nothing, a charge.refunded retried after its refund failed or was canceled records
 	 * nothing, a refund row is found by the refund or dispute ID it carries from its first save, and charge.dispute.updated
 	 * only adds a note written once. An authorization moves only a pending or failed order still waiting on its intent, so
-	 * a late one changes nothing on an order already held, paid or cancelled. A payment failure other than a terminal
-	 * decline changes the order only while the order stores no intent or the failed one: a late failure of an earlier
-	 * attempt changes nothing once a newer attempt's intent is stored, and still fails an unpaid order that stores none.
+	 * a late one changes nothing on an order already held, paid or cancelled. A payment failure reaches the order's status
+	 * only as the order's own payment (EventOrderResolver::is_own_payment()), and only when it names a payment method of
+	 * an actionable type, that method is the stored one, the failure is not yet recorded on the order, and the order
+	 * stores no intent or the failed one; a terminal decline skips the last three checks. So a late failure of an earlier
+	 * attempt does not change the status of an order that stores another intent. A failure that is not the order's own
+	 * payment goes to the other-charge recorder, which can add its record note.
 	 * invoice.paid is retried while the Stripe Billing module is loaded ({@see self::is_retried_event()}). Other types get
 	 * one attempt: running the fraud warning handlers again can apply an older event over a newer one.
 	 *

@@ -679,10 +679,11 @@ class PaymentIntentEventHandler {
 				}
 
 				$intent_id = $this->get_object_id( $event_object );
-				// A failure of another intent than the one the order waits on changes nothing either, as an authorization of
-				// another intent does (apply_authorization_under_lock()): the order has moved on to a newer attempt, and the
-				// earlier attempt's decline note is already on it. Two failures are applied as before: a terminal decline,
-				// whose intent the reader creates and the order does not store, and a failure on an order that stores no intent.
+				// A failure of another intent than the one the order stores changes nothing and adds no note, by the check the
+				// authorization of another intent makes (apply_authorization_under_lock()). The stored intent is a newer
+				// attempt's, or, where an attach kept an earlier payment's record, that record's: there the failure of the
+				// attempt that started after it is left too. Two failures are applied as before: a terminal decline, whose
+				// intent the reader creates and the order does not store, and a failure on an order that stores no intent.
 				$awaited_intent_id = 'card_present' === $payment_method_type ? '' : $this->get_other_awaited_intent_id( $order, $intent_id );
 				if ( '' !== $awaited_intent_id ) {
 					wc_get_logger()->warning(
