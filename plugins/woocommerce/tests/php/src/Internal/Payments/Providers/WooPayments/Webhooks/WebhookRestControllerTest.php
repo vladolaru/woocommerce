@@ -19,6 +19,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\Even
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WebhookRestController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WebhookReliabilityService;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
+use Automattic\WooCommerce\Tests\Internal\Payments\OrderPaymentLockWithClaimHook;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Fixtures\RecordedPlatformEvents;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\ProviderTextLogAssertions;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\RecordingActionSchedulerService;
@@ -523,17 +524,20 @@ class WebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A charge.refund.updated push whose charge no order holds ends with a 200 and one info line only when the order storing its payment intent stores it as canceled ($quiet); otherwise it is answered 500 and retried.
+	 * @testdox A charge.refund.updated push whose charge no order holds ends with a 200 and one info line only when it is succeeded and the order storing its payment intent stores it as canceled ($quiet); otherwise it is answered 500 and retried.
 	 *
-	 * A canceled payment intent takes no money, so no order will ever hold the refund's charge and a retry cannot apply the
-	 * event. Client 11.3.0 answers every refund update whose charge no order holds with one 500 and keeps nothing
-	 * (class-wc-payments-webhook-processing-service.php:316-325). Nothing is written to the order either way.
+	 * A payment intent that was really canceled took no money, so no order will hold the refund's charge. A stored canceled
+	 * status can sit beside an earlier attempt that is still live, so only a succeeded update ends quietly: it writes only on
+	 * a refund row the order already links. A failed or canceled update keeps its retry, since its note stops a later
+	 * charge.refunded from creating the refund row. Client 11.3.0 answers every refund update whose charge no order holds
+	 * with one 500 and keeps nothing (class-wc-payments-webhook-processing-service.php:316-325). Either way the order is not
+	 * locked, saved or given a refund row.
 	 *
 	 * @dataProvider provider_refund_updates_on_an_intent_no_charge_records
 	 *
 	 * @param string              $order_status   Order status.
 	 * @param array<string,mixed> $order_meta     Order meta; no `_charge_id`.
-	 * @param array<string,mixed> $refund_changes Changes to the refund object, which names pi_never and ch_never.
+	 * @param array<string,mixed> $refund_changes Changes to the succeeded refund object, which names pi_never and ch_never.
 	 * @param bool                $quiet          Whether the push ends quietly.
 	 */
 	public function test_refund_update_on_an_intent_no_charge_records_through_the_webhook_route( string $order_status, array $order_meta, array $refund_changes, bool $quiet ): void {
@@ -544,13 +548,33 @@ class WebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 			$order->update_meta_data( $key, $value );
 		}
 		$order->save();
-		$before     = self::order_state( $order->get_id() );
-		$logger     = new RecordingWcLogger();
-		$controller = $this->create_controller_with_ingestor( wc_get_container()->get( EventIngestor::class ), $logger );
-		$event      = self::refund_update_event( 'evt_never', $refund_changes );
+		$order_id = $order->get_id();
+		$before   = self::order_state( $order_id );
+		$saves    = 0;
+		add_action(
+			'woocommerce_before_order_object_save',
+			static function ( $saved ) use ( $order_id, &$saves ): void {
+				if ( $saved instanceof WC_Order && $order_id === $saved->get_id() ) {
+					++$saves;
+				}
+			}
+		);
+		$lock = new OrderPaymentLockWithClaimHook( static fn() => null );
+		wc_get_container()->replace( OrderPaymentLock::class, $lock );
+		wc_get_container()->reset_all_resolved();
+		$logger = new RecordingWcLogger();
+		$event  = self::refund_update_event( 'evt_never', $refund_changes );
 
-		$response = $controller->handle_webhook( $this->create_post_request( $event ) );
+		try {
+			$controller = $this->create_controller_with_ingestor( wc_get_container()->get( EventIngestor::class ), $logger );
+			$response   = $controller->handle_webhook( $this->create_post_request( $event ) );
+		} finally {
+			wc_get_container()->reset_all_replacements();
+			wc_get_container()->reset_all_resolved();
+		}
 
+		$this->assertFalse( $lock->hook_ran, 'No order payment lock is claimed.' );
+		$this->assertSame( 0, $saves, 'The order is not saved.' );
 		$this->assertSame( $quiet ? 200 : 500, $response->get_status() );
 		$this->assertSame( array( 'result' => $quiet ? 'success' : 'error' ), $response->get_data() );
 		$this->assertSame( $quiet ? null : $event, ( new FailedEventTransients() )->get_event( 'evt_never' ) );
@@ -563,7 +587,7 @@ class WebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 			),
 			$this->scheduler->scheduled_jobs
 		);
-		$this->assertSame( $before, self::order_state( $order->get_id() ), 'The order is not written.' );
+		$this->assertSame( $before, self::order_state( $order_id ), 'The order is not written and its refund rows are unchanged.' );
 		$this->assertSame(
 			$quiet ? array( sprintf( 'charge.refund.updated event for refund re_never on charge ch_never: no order holds the charge, and order %d stores its payment intent pi_never as canceled; nothing to record.', $order->get_id() ) ) : array(),
 			self::woopayments_info_lines( $logger )
@@ -583,9 +607,18 @@ class WebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 		);
 
 		return array(
-			'cancelled before its authorization was recorded, failed' => array( OrderStatus::CANCELLED, $cancelled, array(), true ),
-			'cancelled before its authorization was recorded, canceled' => array( OrderStatus::CANCELLED, $cancelled, array( 'status' => 'canceled' ), true ),
-			'cancelled before its authorization was recorded, succeeded' => array( OrderStatus::CANCELLED, $cancelled, array( 'status' => 'succeeded' ), true ),
+			'cancelled before its authorization was recorded' => array( OrderStatus::CANCELLED, $cancelled, array(), true ),
+			'cancelled before its authorization was recorded, failed' => array(
+				OrderStatus::CANCELLED,
+				$cancelled,
+				array(
+					'status'         => 'failed',
+					'failure_reason' => 'expired_or_canceled_card',
+				),
+				false,
+			),
+			'cancelled before its authorization was recorded, canceled' => array( OrderStatus::CANCELLED, $cancelled, array( 'status' => 'canceled' ), false ),
+			'cancelled, a status the store does not handle' => array( OrderStatus::CANCELLED, $cancelled, array( 'status' => 'requires_action' ), false ),
 			'cancelled, the intent expanded'          => array(
 				OrderStatus::CANCELLED,
 				$cancelled,
@@ -599,7 +632,7 @@ class WebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 				true,
 			),
 			// A fraud block stores canceled without reading an intent, so the earlier attempt stays in _intent_id.
-			'canceled from a fraud block over an earlier attempt' => array( OrderStatus::PENDING, $cancelled, array(), true ),
+			'succeeded, canceled from a fraud block over an earlier attempt' => array( OrderStatus::PENDING, $cancelled, array(), true ),
 			'awaiting authentication'                 => array( OrderStatus::PENDING, array_merge( $cancelled, array( '_intention_status' => 'requires_action' ) ), array(), false ),
 			'authorized, not yet recorded'            => array( OrderStatus::PENDING, array_merge( $cancelled, array( '_intention_status' => 'requires_capture' ) ), array(), false ),
 			'cancelled order awaiting authentication' => array( OrderStatus::CANCELLED, array_merge( $cancelled, array( '_intention_status' => 'requires_action' ) ), array(), false ),
@@ -626,7 +659,17 @@ class WebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 		$logger     = new RecordingWcLogger();
 		$controller = $this->create_controller_with_ingestor( wc_get_container()->get( EventIngestor::class ), $logger );
 
-		$response = $controller->handle_webhook( $this->create_post_request( self::refund_update_event( 'evt_not_yet', array() ) ) );
+		$response = $controller->handle_webhook(
+			$this->create_post_request(
+				self::refund_update_event(
+					'evt_not_yet',
+					array(
+						'status'         => 'failed',
+						'failure_reason' => 'expired_or_canceled_card',
+					)
+				)
+			)
+		);
 
 		$this->assertSame( 500, $response->get_status() );
 		$this->assertCount( 1, $this->scheduler->scheduled_jobs );
@@ -647,7 +690,7 @@ class WebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A refund update retried while its authorization was awaiting capture ends quietly on the job that runs after the intent was stored as canceled.
+	 * @testdox A succeeded refund update retried while its authorization was awaiting capture ends quietly on the job that runs after the intent was stored as canceled.
 	 *
 	 * The cancel holds the order payment lock during its platform call, so the first delivery can read the status before
 	 * the cancel saves it. The status only moves toward canceled, so a later attempt reads it and ends the event.
@@ -680,7 +723,83 @@ class WebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * Build a charge.refund.updated event for refund re_never on charge ch_never of payment intent pi_never.
+	 * @testdox A failed refund update on a stored canceled status is kept, so after the order records its charge and a delayed charge.refunded creates the refund row, the retry deletes the row and the order ends Failed.
+	 *
+	 * The stored canceled status came from a fraud block and the earlier attempt in _intent_id was still live. Its refund
+	 * failed before the store recorded its charge, and the charge.refunded snapshot of the same refund was delayed past
+	 * that recording.
+	 */
+	public function test_failed_refund_update_on_a_stored_canceled_status_undoes_a_delayed_refund_row(): void {
+		$order = wc_create_order();
+		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+		$order->set_currency( 'USD' );
+		$order->set_total( '10.00' );
+		$order->update_meta_data( '_intent_id', 'pi_never' );
+		$order->update_meta_data( '_intention_status', 'canceled' );
+		$order->save();
+		$controller = $this->create_controller_with_ingestor( wc_get_container()->get( EventIngestor::class ), new RecordingWcLogger() );
+
+		$failed_update = $controller->handle_webhook(
+			$this->create_post_request(
+				self::refund_update_event(
+					'evt_failed_refund',
+					array(
+						'amount'         => 1000,
+						'status'         => 'failed',
+						'failure_reason' => 'expired_or_canceled_card',
+					)
+				)
+			)
+		);
+
+		$order = wc_get_order( $order->get_id() );
+		$order->set_transaction_id( 'pi_never' );
+		$order->set_date_paid( time() );
+		$order->set_status( OrderStatus::PROCESSING );
+		$order->update_meta_data( '_charge_id', 'ch_never' );
+		$order->update_meta_data( '_intention_status', 'succeeded' );
+		$order->save();
+
+		$charge_refunded = $controller->handle_webhook(
+			$this->create_post_request(
+				array(
+					'id'   => 'evt_delayed_charge_refunded',
+					'type' => 'charge.refunded',
+					'data' => array(
+						'object' => array(
+							'id'             => 'ch_never',
+							'object'         => 'charge',
+							'payment_intent' => 'pi_never',
+							'status'         => 'succeeded',
+							'captured'       => true,
+							'amount'         => 1000,
+							'currency'       => 'usd',
+							'refunds'        => array(
+								'data' => array(
+									array(
+										'id'     => 're_never',
+										'amount' => 1000,
+										'status' => 'succeeded',
+									),
+								),
+							),
+						),
+					),
+				)
+			)
+		);
+		$this->reliability_service->process_event( 'evt_failed_refund' );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( array(), $order->get_refunds(), 'The refund that failed leaves no refund row.' );
+		$this->assertSame( OrderStatus::FAILED, $order->get_status() );
+		$this->assertSame( 'failed', $order->get_meta( '_wcpay_refund_status', true ) );
+		$this->assertSame( 500, $failed_update->get_status(), 'The failed update is kept for its retry.' );
+		$this->assertSame( 200, $charge_refunded->get_status() );
+	}
+
+	/**
+	 * Build a succeeded charge.refund.updated event for refund re_never on charge ch_never of payment intent pi_never.
 	 *
 	 * @param string              $event_id Event ID.
 	 * @param array<string,mixed> $changes  Changes to the refund object; a null value removes the field.
@@ -696,8 +815,7 @@ class WebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 					'payment_intent' => 'pi_never',
 					'amount'         => 400,
 					'currency'       => 'usd',
-					'status'         => 'failed',
-					'failure_reason' => 'expired_or_canceled_card',
+					'status'         => 'succeeded',
 				),
 				$changes
 			),
@@ -712,7 +830,7 @@ class WebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * Read an order's status, meta and note count from the database.
+	 * Read an order's status, meta, note count and refund rows from the database.
 	 *
 	 * @param int $order_id Order ID.
 	 * @return array<string,mixed>
@@ -725,12 +843,17 @@ class WebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 			$meta[ $item->key ] = $item->value;
 		}
 		ksort( $meta );
+		$refunds = array();
+		foreach ( $order->get_refunds() as $refund ) {
+			$refunds[ $refund->get_id() ] = array( $refund->get_amount(), $refund->get_meta( '_wcpay_refund_id', true ) );
+		}
 
 		return array(
 			'status'         => $order->get_status(),
 			'transaction_id' => $order->get_transaction_id(),
 			'meta'           => $meta,
 			'notes'          => count( wc_get_order_notes( array( 'order_id' => $order_id ) ) ),
+			'refunds'        => $refunds,
 		);
 	}
 

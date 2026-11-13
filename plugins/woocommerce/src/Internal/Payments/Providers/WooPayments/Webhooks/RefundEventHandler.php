@@ -37,8 +37,8 @@ use WC_Order_Refund;
  * the wrong type and a negative refund amount are refused here only, stricter than client 11.1.0. A charge no order
  * holds is a failure that is retried, as client 11.1.0 answers it with 500 (same file, :317, :1111); a charge whose metadata
  * names an order that no longer exists is logged and answered as handled, since no retry can find that order; so is a
- * refund update whose charge no order holds on a payment intent its order stores as canceled, since a canceled intent
- * takes no money and a retry is not expected to find its charge on an order.
+ * succeeded refund update whose charge no order holds on a payment intent its order stores as canceled, since a succeeded
+ * update creates or deletes no refund row and does not change the order's status.
  *
  * @since 11.0.0
  * @internal
@@ -246,7 +246,7 @@ class RefundEventHandler {
 		$currency       = $this->get_required_string( $refund, 'currency' );
 		$status         = $this->get_required_string( $refund, 'status' );
 		$balance_txn_id = WooPaymentsIntentCodec::balance_transaction_id( $refund['balance_transaction'] ?? null );
-		$order          = $this->get_order_for_charge_id( $charge_id, $refund_id, $refund );
+		$order          = $this->get_order_for_charge_id( $charge_id, $refund_id, $status, $refund );
 		if ( ! $order instanceof WC_Order ) {
 			return;
 		}
@@ -516,23 +516,25 @@ class RefundEventHandler {
 	 * Resolve the order of a refund update's charge ID, whatever its payment method, as client 11.1.0 does (webhook processing
 	 * service :1108-1119).
 	 *
-	 * When no order holds the charge and the order storing the refund's payment intent stores it as canceled, a retry is not
-	 * expected to find the charge on an order, since a canceled intent takes no money: that is logged, and that order is
-	 * neither locked nor written.
+	 * When no order holds the charge, a succeeded update whose payment intent its order stores as canceled is logged and
+	 * nothing more: that order is neither locked nor written. A succeeded update writes only on a refund row the order already
+	 * links, and a canceled intent takes no money. A failed or canceled update fails as any other does, whatever the stored
+	 * status, so its retry can still stop or undo a refund row that a delayed charge.refunded creates.
 	 *
 	 * @param string              $charge_id Charge ID.
 	 * @param string              $refund_id Provider refund ID.
+	 * @param string              $status    Provider refund status.
 	 * @param array<string,mixed> $refund    Refund object.
-	 * @return WC_Order|null The order, or null when the refund's payment intent is stored as canceled; that is logged.
+	 * @return WC_Order|null The order, or null for a succeeded update on a payment intent stored as canceled; that is logged.
 	 * @throws RuntimeException When the charge resolves to no order otherwise.
 	 */
-	private function get_order_for_charge_id( string $charge_id, string $refund_id, array $refund ): ?WC_Order {
+	private function get_order_for_charge_id( string $charge_id, string $refund_id, string $status, array $refund ): ?WC_Order {
 		$order = $this->event_order_resolver->find_order_by_charge_id( $charge_id );
 		if ( $order instanceof WC_Order ) {
 			return $order;
 		}
 
-		$intent_order = $this->event_order_resolver->find_order_by_event_intent( $refund );
+		$intent_order = 'succeeded' === $status ? $this->event_order_resolver->find_order_by_event_intent( $refund ) : null;
 		if ( $intent_order instanceof WC_Order && 'canceled' === (string) $intent_order->get_meta( '_intention_status', true ) ) {
 			$this->log_cancelled_intent_order( $refund_id, $charge_id, $this->event_order_resolver->get_event_intent_id( $refund, $intent_order ), $intent_order->get_id() );
 			return null;
@@ -874,7 +876,7 @@ class RefundEventHandler {
 	}
 
 	/**
-	 * Log a charge.refund.updated event whose charge no order holds, on a payment intent its order stores as canceled.
+	 * Log a succeeded charge.refund.updated event whose charge no order holds, on a payment intent its order stores as canceled.
 	 *
 	 * @param string $refund_id Provider refund ID.
 	 * @param string $charge_id Charge ID.
