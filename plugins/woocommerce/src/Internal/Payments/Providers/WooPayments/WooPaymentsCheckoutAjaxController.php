@@ -165,7 +165,8 @@ class WooPaymentsCheckoutAjaxController implements RegisterHooksInterface {
 		}
 
 		// Before the intent is fetched and its card saved.
-		if ( $this->intent_confirmation_service->refuses_order_of_another_payment_method( $order, $intent_id ) ) {
+		if ( $this->intent_confirmation_service->is_order_of_another_payment_method( $order ) ) {
+			$this->intent_confirmation_service->log_refusal_of_another_payment_method( $order, $intent_id, 'order-status callback' );
 			return $this->error_response( __( "We're not able to process this payment. Please try again later.", 'woocommerce' ), 409 );
 		}
 

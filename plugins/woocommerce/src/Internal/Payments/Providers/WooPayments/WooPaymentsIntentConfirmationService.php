@@ -186,28 +186,35 @@ class WooPaymentsIntentConfirmationService {
 	// phpcs:enable Squiz.Commenting.FunctionCommentThrowTag.WrongNumber
 
 	/**
-	 * Tell whether the order-status callback refuses an order whose payment method is not a WooPayments gateway, and log
-	 * one warning line when it does.
+	 * Tell whether an order's payment method is another gateway's, so a confirmation of a WooPayments intent leaves it.
 	 *
 	 * Classic order-pay saves the gateway the shopper picks on the order and leaves an abandoned WooPayments attempt stored
-	 * on it; that attempt's callback must not record it over the other payment or move the order. A subscription is exempt:
-	 * a card change may replace its payment method, which becomes WooPayments only after the confirmation. Client 11.3.0's
-	 * callback has no such check (class-wc-payment-gateway-wcpay.php:4611-4648, :4663, :4771).
+	 * on it; that attempt's confirmation must not record it over the other payment or move the order. A subscription is
+	 * exempt: a card change may replace its payment method, which becomes WooPayments only after the confirmation. Client
+	 * 11.3.0 has no such check (class-wc-payment-gateway-wcpay.php:2564-2628, :4611-4648).
 	 *
 	 * @since 11.4.0
 	 *
-	 * @param WC_Order $order     Order the callback named, or the order read under the order payment lock.
-	 * @param string   $intent_id Intent ID the callback received.
+	 * @param WC_Order $order Order read for the decision.
 	 * @return bool
 	 */
-	public function refuses_order_of_another_payment_method( WC_Order $order, string $intent_id ): bool {
-		$payment_method = (string) $order->get_payment_method();
-		if ( WooPaymentsPersistenceVocabulary::is_woopayments_gateway_id( $payment_method ) || SubscriptionMethodPolicy::only_saves_the_card( $order ) ) {
-			return false;
-		}
+	public function is_order_of_another_payment_method( WC_Order $order ): bool {
+		return ! WooPaymentsPersistenceVocabulary::is_woopayments_gateway_id( (string) $order->get_payment_method() ) && ! SubscriptionMethodPolicy::only_saves_the_card( $order );
+	}
 
+	/**
+	 * Log the one warning line of a request refused because its order's payment method is another gateway's.
+	 *
+	 * @since 11.4.0
+	 *
+	 * @param WC_Order $order       Order read for the decision.
+	 * @param string   $intent_id   Intent ID the request named.
+	 * @param string   $entry_point `order-status callback` or `redirect return`.
+	 */
+	public function log_refusal_of_another_payment_method( WC_Order $order, string $intent_id, string $entry_point ): void {
+		$payment_method = (string) $order->get_payment_method();
 		wc_get_logger()->warning(
-			sprintf( 'order-status callback refused: order %1$d has payment method "%2$s", so payment %3$s was not applied', $order->get_id(), $payment_method, $intent_id ),
+			sprintf( '%1$s refused: order %2$d has payment method "%3$s", so payment %4$s was not applied', $entry_point, $order->get_id(), $payment_method, $intent_id ),
 			array(
 				'source'         => WooPaymentsLogger::SOURCE,
 				'order_id'       => $order->get_id(),
@@ -215,8 +222,6 @@ class WooPaymentsIntentConfirmationService {
 				'payment_method' => $payment_method,
 			)
 		);
-
-		return true;
 	}
 
 	/**
@@ -301,7 +306,8 @@ class WooPaymentsIntentConfirmationService {
 		$refused         = false;
 		list( $event )   = $this->build_lifecycle_event_from_intent( $intent, $order, $zero_amount_plain_note );
 		$build           = function ( WC_Order $stored_order ) use ( $intent, $is_redirect_return, $zero_amount_plain_note, $attaches_intent, $setup_payment_details, &$displayed, &$refused ): array {
-			if ( ! $is_redirect_return && $this->refuses_order_of_another_payment_method( $stored_order, (string) ( $intent['id'] ?? '' ) ) ) {
+			if ( ! $is_redirect_return && $this->is_order_of_another_payment_method( $stored_order ) ) {
+				$this->log_refusal_of_another_payment_method( $stored_order, (string) ( $intent['id'] ?? '' ), 'order-status callback' );
 				$refused = true;
 				return array( null, null );
 			}
