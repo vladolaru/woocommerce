@@ -41,16 +41,18 @@ class EventIngestor {
 
 	/**
 	 * Event types retried after a processing failure or an order payment lock refusal, whose handlers are safe to run
-	 * again and to run late.
+	 * again, and to run late under the conditions below.
 	 *
 	 * The platform counts the store's error reply as delivered and never sends the event again, so without a retry an
 	 * update that failed once is lost. A late refund or dispute event does not undo a newer one: a created dispute
 	 * retried after its close changes nothing, a charge.refunded retried after its refund failed or was canceled records
 	 * nothing, a refund row is found by the refund or dispute ID it carries from its first save, and charge.dispute.updated
 	 * only adds a note written once. An authorization moves only a pending or failed order still waiting on its intent, so
-	 * a late one changes nothing on an order already held, paid or cancelled. invoice.paid is retried while the Stripe
-	 * Billing module is loaded ({@see self::is_retried_event()}). Other types get one attempt: running the fraud warning
-	 * handlers again can apply an older event over a newer one.
+	 * a late one changes nothing on an order already held, paid or cancelled. A payment failure other than a terminal
+	 * decline changes the order only while the order stores no intent or the failed one: a late failure of an earlier
+	 * attempt changes nothing once a newer attempt's intent is stored, and still fails an unpaid order that stores none.
+	 * invoice.paid is retried while the Stripe Billing module is loaded ({@see self::is_retried_event()}). Other types get
+	 * one attempt: running the fraud warning handlers again can apply an older event over a newer one.
 	 *
 	 * @var string[]
 	 */

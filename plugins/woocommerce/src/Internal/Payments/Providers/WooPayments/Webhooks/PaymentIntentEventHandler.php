@@ -522,8 +522,8 @@ class PaymentIntentEventHandler {
 		}
 
 		$intent_id         = $this->get_object_id( $payment_intent );
-		$awaited_intent_id = (string) $order->get_meta( '_intent_id', true );
-		if ( '' !== $awaited_intent_id && $awaited_intent_id !== $intent_id ) {
+		$awaited_intent_id = $this->get_other_awaited_intent_id( $order, $intent_id );
+		if ( '' !== $awaited_intent_id ) {
 			$note_candidates = $this->order_note_service->format_authorization_of_another_payment_note_candidates( $intent_id, $awaited_intent_id );
 			$this->order_note_service->add_note_once( $order, $note_candidates[0], implode( '|', array( 'authorization_of_another_payment', $intent_id, $awaited_intent_id ) ), $note_candidates );
 			return;
@@ -531,6 +531,20 @@ class PaymentIntentEventHandler {
 
 		list( $lifecycle_event ) = $this->intent_confirmation_service->build_lifecycle_event_from_intent( $payment_intent, $order );
 		$this->lifecycle_service->apply_under_lock( $order, $lifecycle_event, $this->persistence_vocabulary );
+	}
+
+	/**
+	 * Get the payment the order waits on when it is not the given intent: the intent the order stores, when it stores one
+	 * and it differs.
+	 *
+	 * @param WC_Order $order     Order read under the order payment lock.
+	 * @param string   $intent_id The event's intent.
+	 * @return string The other intent the order waits on, or '' when it waits on this intent or stores none.
+	 */
+	private function get_other_awaited_intent_id( WC_Order $order, string $intent_id ): string {
+		$awaited_intent_id = (string) $order->get_meta( '_intent_id', true );
+
+		return $awaited_intent_id !== $intent_id ? $awaited_intent_id : '';
 	}
 
 	/**
@@ -664,7 +678,25 @@ class PaymentIntentEventHandler {
 					return null;
 				}
 
-				$intent_id       = $this->get_object_id( $event_object );
+				$intent_id = $this->get_object_id( $event_object );
+				// A failure of another intent than the one the order waits on changes nothing either, as an authorization of
+				// another intent does (apply_authorization_under_lock()): the order has moved on to a newer attempt, and the
+				// earlier attempt's decline note is already on it. Two failures are applied as before: a terminal decline,
+				// whose intent the reader creates and the order does not store, and a failure on an order that stores no intent.
+				$awaited_intent_id = 'card_present' === $payment_method_type ? '' : $this->get_other_awaited_intent_id( $order, $intent_id );
+				if ( '' !== $awaited_intent_id ) {
+					wc_get_logger()->warning(
+						sprintf( 'payment failure not applied: order %d waits on payment %s, not on the failed payment %s', $order->get_id(), $awaited_intent_id, $intent_id ),
+						array(
+							'source'            => WooPaymentsLogger::SOURCE,
+							'order_id'          => $order->get_id(),
+							'intent_id'         => $intent_id,
+							'awaited_intent_id' => $awaited_intent_id,
+						)
+					);
+					return null;
+				}
+
 				$charge_id       = $this->get_charge_id_from_intent( $event_object );
 				$note_candidates = 'card_present' === $payment_method_type
 					? $this->order_note_service->format_terminal_payment_failed_note_candidates( $order, $intent_id, $charge_id, $last_payment_error )
