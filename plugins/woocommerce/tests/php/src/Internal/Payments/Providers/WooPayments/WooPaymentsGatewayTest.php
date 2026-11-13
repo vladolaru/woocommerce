@@ -37,6 +37,8 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIn
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffectPlan;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentMappingContext;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentCodec;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentConfirmationService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRedirectReturnController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffectApplier;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDataService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService;
@@ -3896,7 +3898,8 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 * @dataProvider provider_attached_payments_given_back
 	 *
 	 * @param array<string,mixed> $charge_fields Fields of the attached intent's charge.
-	 * @param string              $expected      What the checkout does: "charges again", "refuses the submit" or "is answered as paid".
+	 * @param string              $expected      What the checkout does: "charges again" (then completed by the webhook or by the
+	 *                                           redirect return), "refuses the submit" or "is answered as paid".
 	 */
 	public function test_process_payment_after_the_attached_payment_was_given_back( array $charge_fields, string $expected ): void {
 		// The store takes test payments, as the webhook's intent is one.
@@ -3916,10 +3919,11 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 
 		$result = $gateway->process_payment( $order->get_id() );
 
-		$order = wc_get_order( $order->get_id() );
+		$order         = wc_get_order( $order->get_id() );
+		$charges_again = 0 === strpos( $expected, 'charges again' );
 		$this->assertSame( $order->get_meta( '_intent_id', true ), $order->get_transaction_id(), 'The transaction ID names the recorded intent after the checkout.' );
-		$this->assertSame( 'charges again' === $expected ? 1 : 0, $charges );
-		if ( 'charges again' !== $expected ) {
+		$this->assertSame( $charges_again ? 1 : 0, $charges );
+		if ( ! $charges_again ) {
 			$this->assertSame( 'refuses the submit' === $expected ? 'failure' : 'success', $result['result'] ?? '' );
 			$this->assertSame( 'pi_existing', $order->get_transaction_id() );
 			$this->assertSame( 0, $this->count_started_notes( $order, 'pi_second_payment' ) );
@@ -3949,13 +3953,17 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			)
 		);
 		unset( $succeeded['next_action'] );
-		wc_get_container()->get( PaymentIntentEventHandler::class )->process( 'payment_intent.succeeded', $succeeded );
+		if ( false !== strpos( $expected, 'webhook' ) ) {
+			wc_get_container()->get( PaymentIntentEventHandler::class )->process( 'payment_intent.succeeded', $succeeded );
+		} else {
+			$this->return_from_the_redirect( $order, $succeeded );
+		}
 
 		$order = wc_get_order( $order->get_id() );
 		$notes = wp_list_pluck( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), 'content' );
-		$this->assertTrue( $order->is_paid(), 'The webhook completes the order.' );
+		$this->assertTrue( $order->is_paid(), 'The new payment completes the order.' );
 		$this->assertSame( 'pi_second_payment', $order->get_transaction_id() );
-		$this->assertSame( 'pi_second_payment', $order->get_meta( '_intent_id', true ), 'The transaction ID names the recorded intent after the webhook.' );
+		$this->assertSame( 'pi_second_payment', $order->get_meta( '_intent_id', true ), 'The transaction ID names the recorded intent after the payment completes.' );
 		$this->assertSame( 'ch_second_payment', $order->get_meta( '_charge_id', true ) );
 		$this->assertSame( $completions + 1, did_action( 'woocommerce_payment_complete' ), 'The order completes once.' );
 		$this->assertSame( 1, $this->count_started_notes( $order, 'pi_second_payment' ) );
@@ -3969,15 +3977,23 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 */
 	public function provider_attached_payments_given_back(): array {
 		return array(
-			'fully refunded'  => array(
+			'fully refunded, the webhook first' => array(
 				array(
 					'refunded'        => true,
 					'amount_refunded' => 1200,
 					'disputed'        => false,
 				),
-				'charges again',
+				'charges again, completed by the webhook',
 			),
-			'disputed'        => array(
+			'fully refunded, the return first'  => array(
+				array(
+					'refunded'        => true,
+					'amount_refunded' => 1200,
+					'disputed'        => false,
+				),
+				'charges again, completed by the redirect return',
+			),
+			'disputed'                          => array(
 				array(
 					'refunded'        => false,
 					'amount_refunded' => 0,
@@ -3985,7 +4001,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 				),
 				'refuses the submit',
 			),
-			'partly refunded' => array(
+			'partly refunded'                   => array(
 				array(
 					'refunded'        => false,
 					'amount_refunded' => 500,
@@ -4111,6 +4127,69 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'pi_settled', $order->get_meta( '_intent_id', true ), 'The transaction ID names the recorded intent.' );
 		$this->assertSame( 'charges' === $expected ? 'requires_action' : 'succeeded', $order->get_meta( '_intention_status', true ) );
 		$this->assertSame( 'charges' === $expected ? 1 : 0, $this->count_started_notes( $order, 'pi_after_the_read' ) );
+	}
+
+	/**
+	 * Return to the order-received page from the shopper's redirect, as the platform sends them back, and let the redirect
+	 * return controller confirm the intent the platform now answers.
+	 *
+	 * @param WC_Order            $order  Order paid.
+	 * @param array<string,mixed> $intent Intent the platform answers for the return.
+	 */
+	private function return_from_the_redirect( WC_Order $order, array $intent ): void {
+		$api_client = $this->getMockBuilder( Client::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_payment_intention' ) )
+			->getMock();
+		$api_client->method( 'get_payment_intention' )->with( (string) $intent['id'] )->willReturn( $intent );
+		$container    = wc_get_container();
+		$confirmation = new WooPaymentsIntentConfirmationService();
+		$confirmation->init(
+			$api_client,
+			$container->get( WooPaymentsFeeDetailsNoteController::class ),
+			$this->create_unhooked_token_service(),
+			$container->get( WooPaymentsAccountService::class ),
+			$container->get( WooPaymentsOrderEffectApplier::class )
+		);
+		$arbiter = $this->createMock( WooPaymentsRuntimeArbiter::class );
+		$arbiter->method( 'is_builtin_owner' )->willReturn( true );
+		$controller = new WooPaymentsRedirectReturnController();
+		$controller->init( $arbiter, $confirmation, $api_client, $this->create_unhooked_token_service(), $container->get( WooPaymentsCustomerService::class ), $container->get( OrderPaymentLifecycleService::class ), $container->get( WooPaymentsOrderNoteService::class ) );
+
+		global $wp;
+		$get                              = $_GET; // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Restored below.
+		$request_method                   = $GLOBALS['_SERVER']['REQUEST_METHOD'] ?? null;
+		$wp->query_vars['order-received'] = $order->get_id();
+		set_query_var( 'order-received', $order->get_id() );
+		add_filter( 'woocommerce_is_order_received_page', '__return_true' );
+		// A redirect would exit the test run, so one fails the test instead.
+		add_filter(
+			'wp_redirect',
+			static function ( $location ) {
+				throw new \RuntimeException( 'Unexpected redirect: ' . esc_url_raw( (string) $location ) ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Test failure message, never output.
+			}
+		);
+		$_SERVER['REQUEST_METHOD'] = 'GET';
+		$_GET                      = array(
+			'wc_payment_method'            => WooPaymentsPersistenceVocabulary::GATEWAY_ID,
+			'_wpnonce'                     => wp_create_nonce( WooPaymentsIntentRequestBuilder::redirect_return_nonce_action( $order->get_id() ) ),
+			'payment_intent'               => (string) $intent['id'],
+			'payment_intent_client_secret' => (string) $intent['client_secret'],
+			'key'                          => $order->get_order_key(),
+		);
+
+		try {
+			$controller->handle_wp();
+		} finally {
+			$_GET = $get;
+			if ( null === $request_method ) {
+				unset( $_SERVER['REQUEST_METHOD'] );
+			} else {
+				$_SERVER['REQUEST_METHOD'] = $request_method;
+			}
+			unset( $wp->query_vars['order-received'] );
+			set_query_var( 'order-received', '' );
+		}
 	}
 
 	/**
