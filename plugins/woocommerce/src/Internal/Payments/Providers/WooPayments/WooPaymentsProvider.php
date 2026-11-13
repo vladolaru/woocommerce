@@ -574,6 +574,11 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 	 * attached and the outcome composed on that order. A completed capture's effects start with the same read, after the
 	 * capture call.
 	 *
+	 * The order's event is applied here, not by the runtime, at exactly two writers, both for a returned PaymentIntent whose
+	 * outcome keeps the intent's own status for the shopper's response: the failed writer for a waiting intent with an error,
+	 * and the waiting writer for a started or offline payment the outcome does not carry
+	 * (WooPaymentsOrderEffectApplier::compose_returned_payment_intent_failure() and apply_returned_payment_intent_waiting()).
+	 *
 	 * @param PaymentOperationContext $context   Payment context.
 	 * @param PaymentOutcome          $outcome   Provider outcome.
 	 * @param string                  $operation Operation name.

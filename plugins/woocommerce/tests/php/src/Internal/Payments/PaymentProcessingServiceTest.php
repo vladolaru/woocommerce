@@ -5346,7 +5346,8 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 			$account_service,
 			wc_get_container()->get( WooPaymentsOrderNoteService::class ),
 			new PaymentMethodRegistry(),
-			wc_get_container()->get( WooPaymentsActionSchedulerService::class )
+			wc_get_container()->get( WooPaymentsActionSchedulerService::class ),
+			wc_get_container()->get( \Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService::class )
 		);
 		$api_client       = new class() extends \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client {
 			/**

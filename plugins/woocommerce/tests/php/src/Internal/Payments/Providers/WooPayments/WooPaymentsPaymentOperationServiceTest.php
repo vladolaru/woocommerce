@@ -8943,7 +8943,8 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 			$account_service,
 			wc_get_container()->get( WooPaymentsOrderNoteService::class ),
 			new PaymentMethodRegistry(),
-			wc_get_container()->get( WooPaymentsActionSchedulerService::class )
+			wc_get_container()->get( WooPaymentsActionSchedulerService::class ),
+			wc_get_container()->get( \Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService::class )
 		);
 		$provider = $this->create_provider_over_fake_transport( $http_client, $account_service, $customer_service, $token_service, $order_effect_applier );
 

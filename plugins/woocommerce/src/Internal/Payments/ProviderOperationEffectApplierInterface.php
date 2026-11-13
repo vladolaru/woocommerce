@@ -16,6 +16,11 @@ namespace Automattic\WooCommerce\Internal\Payments;
  * is, so an implementation reads that object again in place after the provider call and its own last platform call
  * (OrderPaymentLifecycleService::reread_order_from_data_store()), and composes the outcome on it.
  *
+ * When the order's event must differ from the outcome's status, which also drives the response to the shopper, an
+ * implementation may apply that event to the context's order itself, under the caller's lock
+ * (OrderPaymentLifecycleService::apply_under_lock()), and return the outcome marked as changing nothing
+ * (PaymentOutcome::DATA_NO_ORDER_CHANGE). The provider's implementation names each place that does so.
+ *
  * @since 11.0.0
  * @internal
  */
