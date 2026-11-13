@@ -896,6 +896,100 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A redirect return's failure leaves a Pending order another payment method takes before the failure is written, and fails one still paid with WooPayments: $_dataName.
+	 *
+	 * Client 11.3.0 fails the order on these paths whatever its payment method (class-wc-payment-gateway-wcpay.php:2564-2628,
+	 * :2737-2767). The failure is decided on the order read under the order payment lock; another payment method there
+	 * leaves the order as it is, as the return's earlier checks do.
+	 *
+	 * @dataProvider provider_return_failure_paths
+	 *
+	 * @param string $path  `fetch failure`, `intent error` or `confirmation exception`.
+	 * @param bool   $taken Whether bank transfer takes the order just before the failure claims the lock.
+	 */
+	public function test_handle_wp_failure_leaves_an_order_another_payment_method_takes( string $path, bool $taken ): void {
+		$order = $this->create_order();
+		$order->update_meta_data( '_intention_status', 'requires_action' );
+		$order->save();
+		$api_client = new RedirectReturnApiClientStub();
+		$intent     = $this->successful_payment_intent( $order, 'pi_window', 'pm_window' );
+		if ( 'fetch failure' === $path ) {
+			$api_client->exception = new ApiException( 'Request timed out.', 'wcpay_http_request_failed', 504 );
+		} elseif ( 'intent error' === $path ) {
+			$intent['status']             = 'requires_payment_method';
+			$intent['last_payment_error'] = array(
+				'code'    => 'card_declined',
+				'message' => 'Your card was declined.',
+			);
+		} else {
+			$intent['status'] = 'requires_action';
+		}
+		$api_client->payment_intent = $intent;
+		$confirmation_service       = $this->getMockBuilder( WooPaymentsIntentConfirmationService::class )->onlyMethods( array( 'confirm_fetched_intent_for_order' ) )->getMock();
+		$confirmation_service->method( 'confirm_fetched_intent_for_order' )->willThrowException( new \RuntimeException( 'Confirmation failed.' ) );
+		$lock = new RedirectReturnTakeoverOrderPaymentLock();
+		$lock->init( new TransientRowLock() );
+		if ( $taken ) {
+			$lock->before_first_claim = static function () use ( $order ): void {
+				$taken_order = wc_get_order( $order->get_id() );
+				$taken_order->set_payment_method( 'bacs' );
+				$taken_order->save();
+			};
+		}
+		$container = wc_get_container();
+		$container->replace( OrderPaymentLock::class, $lock );
+		$this->sut = $this->create_controller( true, $confirmation_service, $api_client );
+		$this->set_payment_intent_return_request( $order, 'pi_window' );
+		$notes      = count( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+		$logger     = RecordingWcLogger::install();
+		$redirected = false;
+
+		try {
+			$this->sut->handle_wp();
+		} catch ( RedirectReturnRedirectIntercepted $redirect ) {
+			$redirected = true;
+		} finally {
+			$container->reset_replacement( OrderPaymentLock::class );
+		}
+
+		$reloaded = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $reloaded );
+		$this->assertSame( $taken ? 'pending' : 'failed', $reloaded->get_status() );
+		$this->assertSame( '', $reloaded->get_transaction_id() );
+		$this->assertSame( 'pi_window', $reloaded->get_meta( '_intent_id', true ) );
+		$this->assertCount( $notes + ( $taken ? 0 : 2 ), wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), 'The failure note and the status change note, only on a WooPayments order.' );
+		$this->assertSame( ! $taken || 'intent error' === $path, $redirected, 'An intent error returns to checkout either way; otherwise only a written failure does.' );
+		$this->assertSame( $taken ? 1 : 0, $this->count_return_refusal_lines( $logger, $order ), 'One warning line for a refused request.' );
+	}
+
+	/**
+	 * The redirect return's three failure paths, with and without a payment method change just before the failure.
+	 *
+	 * @return array<string,array{string,bool}>
+	 */
+	public function provider_return_failure_paths(): array {
+		return array(
+			'fetch failure, taken'                      => array( 'fetch failure', true ),
+			'intent error, taken'                       => array( 'intent error', true ),
+			'confirmation exception, taken'             => array( 'confirmation exception', true ),
+			'fetch failure, still WooPayments'          => array( 'fetch failure', false ),
+			'intent error, still WooPayments'           => array( 'intent error', false ),
+			'confirmation exception, still WooPayments' => array( 'confirmation exception', false ),
+		);
+	}
+
+	/**
+	 * Count the warning lines the redirect return logs when it refuses an order another payment method holds.
+	 *
+	 * @param RecordingWcLogger $logger Recording logger.
+	 * @param WC_Order          $order  Order the return named.
+	 * @return int
+	 */
+	private function count_return_refusal_lines( RecordingWcLogger $logger, WC_Order $order ): int {
+		return count( array_filter( $logger->lines, static fn( array $line ): bool => 'warning' === $line[0] && 0 === strpos( $line[1], 'redirect return refused: order ' . $order->get_id() . ' ' ) ) );
+	}
+
+	/**
 	 * @testdox A redirect return proceeds only with a nonce minted for its own order: $_dataName.
 	 *
 	 * Client 11.3.0 mints and verifies the nonce under `wcpay_process_redirect_order_nonce_<order ID>` (gw:2159, 2564-2570,
@@ -3312,6 +3406,34 @@ class RedirectReturnRecordingLogger implements \WC_Logger_Interface {
 			'message' => $message,
 			'context' => $context,
 		);
+	}
+}
+
+/**
+ * Order payment lock that runs a change on the order once, just before the first claim, as another request taking the order
+ * over would.
+ */
+class RedirectReturnTakeoverOrderPaymentLock extends OrderPaymentLock {
+	/** @var callable|null */
+	public $before_first_claim = null;
+
+	/**
+	 * Run the change once, then claim the lock for the caller.
+	 *
+	 * @param WC_Order                               $order                  Order object.
+	 * @param ProviderPersistenceVocabularyInterface $persistence_vocabulary Provider persistence vocabulary.
+	 * @param string|null                            $payment_reference      Payment reference.
+	 * @param string                                 $operation              Operation claiming the lock.
+	 * @return string|null
+	 */
+	public function claim( WC_Order $order, ProviderPersistenceVocabularyInterface $persistence_vocabulary, ?string $payment_reference, string $operation ): ?string {
+		if ( is_callable( $this->before_first_claim ) ) {
+			$change                   = $this->before_first_claim;
+			$this->before_first_claim = null;
+			$change();
+		}
+
+		return parent::claim( $order, $persistence_vocabulary, $payment_reference, $operation );
 	}
 }
 

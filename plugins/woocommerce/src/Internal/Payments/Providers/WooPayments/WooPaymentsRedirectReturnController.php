@@ -355,7 +355,7 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 	 * Fail the order unless it is settled or locked, then send the shopper back to checkout with the notice.
 	 *
 	 * The shopper stays on order-received when the failure write was skipped (the order is settled, bound to another
-	 * intent, or locked by another holder) and the payment may have gone through, so a resubmit cannot pay a second time.
+	 * intent, paid with another payment method, or locked by another holder) and the payment may have gone through, so a resubmit cannot pay a second time.
 	 * A failure write that throws still sends the shopper to checkout, with an always-on error line: no money moved on
 	 * these paths. An intent error proves this payment failed, so that return always goes back to checkout, as client
 	 * 11.1.0's catch does (gw:2447-2454) even when its own write was skipped.
@@ -392,8 +392,8 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 	 * @param string      $intent_id         Requested intent ID.
 	 * @param string|null $exception_message Message of the failure, or null for client 11.1.0's intent-error message.
 	 * @param string      $intent_status     Fetched intent status, or '' when the fetch failed.
-	 * @return bool Whether the shopper goes back to checkout; false when the order is settled, bound to another intent or
-	 *              locked by another holder.
+	 * @return bool Whether the shopper goes back to checkout; false when the order is settled, bound to another intent, paid
+	 *              with another payment method or locked by another holder.
 	 */
 	private function fail_order_unless_settled( WC_Order $order, string $intent_id, ?string $exception_message, string $intent_status ): bool {
 		$persistence_vocabulary = new WooPaymentsPersistenceVocabulary();
@@ -417,6 +417,12 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 		try {
 			$fresh_order = $this->lifecycle_service->get_fresh_order_from_data_store( $order );
 			if ( $fresh_order->has_status( array( OrderStatus::PROCESSING, OrderStatus::COMPLETED, OrderStatus::ON_HOLD ) ) || ! $this->order_matches_intent( $fresh_order, $intent_id ) ) {
+				return false;
+			}
+			// The return's own payment method check, as before the fetch and after it: no subscription exemption, since only an
+			// order already paid with WooPayments got this far.
+			if ( ! WooPaymentsPersistenceVocabulary::is_woopayments_gateway_id( (string) $fresh_order->get_payment_method() ) ) {
+				$this->intent_confirmation_service->log_refusal_of_another_payment_method( $fresh_order, $intent_id, 'redirect return' );
 				return false;
 			}
 
