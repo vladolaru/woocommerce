@@ -127,7 +127,7 @@ class PaymentIntentEventHandler {
 	private WooPaymentsIntentConfirmationService $intent_confirmation_service;
 
 	/**
-	 * Settles the account and Multi-Currency state before the order is read under the claim.
+	 * Settles the account before the order is read under the claim.
 	 *
 	 * @var WooPaymentsCompositionDataSettler
 	 */
@@ -150,7 +150,7 @@ class PaymentIntentEventHandler {
 	 * @param OrderPaymentLock                     $order_payment_lock          Order payment lock.
 	 * @param WooPaymentsPersistenceVocabulary     $persistence_vocabulary      WooPayments persistence vocabulary.
 	 * @param WooPaymentsIntentConfirmationService $intent_confirmation_service Intent confirmation service.
-	 * @param WooPaymentsCompositionDataSettler    $composition_data_settler    Settles the account and Multi-Currency state before the read.
+	 * @param WooPaymentsCompositionDataSettler    $composition_data_settler    Settles the account before the read.
 	 */
 	final public function init( OrderPaymentLifecycleService $lifecycle_service, Client $api_client, WooPaymentsOrderDataService $order_data_service, WooPaymentsAccountService $account_service, WooPaymentsOrderNoteService $order_note_service, WooPaymentsAdminMenuBadgeService $admin_menu_badge_service, EventOrderResolver $event_order_resolver, OtherChargeRecorder $other_charge_recorder, WooPaymentsFeeDetailsNoteController $fee_details_note_controller, OrderPaymentLock $order_payment_lock, WooPaymentsPersistenceVocabulary $persistence_vocabulary, WooPaymentsIntentConfirmationService $intent_confirmation_service, WooPaymentsCompositionDataSettler $composition_data_settler ): void {
 		$this->lifecycle_service           = $lifecycle_service;
@@ -249,8 +249,8 @@ class PaymentIntentEventHandler {
 	 * payment lock; the same claim covers what either branch writes. The lock value is the event object's ID: the intent
 	 * for intent events, the charge for `charge.expired`.
 	 *
-	 * The account and Multi-Currency state the event's composition reads are settled before that read, and refreshes stay
-	 * stopped until the event is applied (WooPaymentsCompositionDataSettler).
+	 * The account the event's composition reads is settled before that read, and platform cache refreshes stay stopped
+	 * until the event is applied (WooPaymentsCompositionDataSettler).
 	 *
 	 * @param WC_Order            $order        Order the event resolved to.
 	 * @param string              $event_type   `payment_intent.succeeded`, `payment_intent.payment_failed`,

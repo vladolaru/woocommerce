@@ -778,7 +778,7 @@ class WooPaymentsTerminalPaymentsRestController extends RestApiControllerBase {
 	}
 
 	/**
-	 * Get the collaborator that settles the account and Multi-Currency state before each read the lifecycle decides on.
+	 * Get the collaborator that settles the account before each read the lifecycle decides on.
 	 *
 	 * @return WooPaymentsCompositionDataSettler
 	 */

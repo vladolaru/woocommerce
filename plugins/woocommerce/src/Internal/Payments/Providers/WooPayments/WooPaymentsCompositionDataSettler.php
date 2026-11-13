@@ -8,13 +8,13 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 /**
- * Settles the cached data an order's payment effects are composed from, then runs the order's read and the composition
- * with cache refreshes stopped.
+ * Settles the account before an order is read under its claim, then runs the read, the composition of the payment's
+ * effects and their write with platform cache refreshes stopped.
  *
- * Composition reads the account, its default currency and country, and order notes format amounts from the
- * Multi-Currency state. Both are cached and can be refreshed from the platform when due. Settling them before the order
- * is read under its claim moves any such refresh ahead of the read, so the payment is decided on the order as it is
- * after the last platform call.
+ * Inside the segment, no read through WooPaymentsDatabaseCache refreshes from the platform: the account, its default
+ * currency and country included, is served as settled. Multi-Currency's own cache, which holds the currency rates, is
+ * not covered. At checkout and on a completed capture the segment ends when the composed outcome is returned; the
+ * payment lifecycle's write after it makes no cache-backed platform read.
  *
  * @since 11.4.0
  * @internal
@@ -49,8 +49,7 @@ class WooPaymentsCompositionDataSettler {
 	}
 
 	/**
-	 * Read the account, refreshing it when due, and build the Multi-Currency state, then run the segment that reads the
-	 * order and composes and writes its effects with cache refreshes stopped.
+	 * Read the account, refreshing it when due, then run the segment with platform cache refreshes stopped.
 	 *
 	 * @since 11.4.0
 	 *
@@ -59,7 +58,6 @@ class WooPaymentsCompositionDataSettler {
 	 */
 	public function run_settled( callable $segment ) {
 		$this->account_service->get_cached_account_data();
-		WooPaymentsCurrencyUtils::prepare_explicit_order_price();
 
 		return $this->database_cache->run_without_refresh( $segment );
 	}

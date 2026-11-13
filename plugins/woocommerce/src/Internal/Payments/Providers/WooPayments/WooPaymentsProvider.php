@@ -572,8 +572,8 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 	 * details, the payment method title and card meta (WooPaymentsOrderEffectApplier::apply_charge_writes()). The order is
 	 * then read again in place, under the checkout's order payment lock and after the last platform call, and the intent is
 	 * attached and the outcome composed on that order. A completed capture's effects start with the same read, after the
-	 * capture call. The cached account and Multi-Currency state the composition reads are settled before that read, and
-	 * refreshes stay stopped until the composition ends (WooPaymentsCompositionDataSettler).
+	 * capture call. The account is settled before that read, and platform cache refreshes stay stopped until the composed
+	 * outcome is returned (WooPaymentsCompositionDataSettler).
 	 *
 	 * The order's event is applied here, not by the runtime, at exactly two writers, both for a returned intent whose
 	 * outcome keeps the intent's own status for the shopper's response: the failed writer for a waiting intent with an error,

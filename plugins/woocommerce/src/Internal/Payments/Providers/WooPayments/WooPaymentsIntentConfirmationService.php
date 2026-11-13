@@ -259,7 +259,7 @@ class WooPaymentsIntentConfirmationService {
 		// details written, and the event then built and the hold decided on that order as attached, as client 11.3.0
 		// attaches, titles the order and then updates it (class-wc-payment-gateway-wcpay.php:2700, :2705-2707; :4663,
 		// :4713-4715, :4758-4764, :4771; class-wc-payments-order-service.php:484-489). A started payment the order no longer
-		// waits for is nothing to apply. The account and Multi-Currency state the build reads are settled before the claim.
+		// waits for is nothing to apply. The account the build reads is settled before the claim.
 		$attaches_intent = $is_redirect_return || ! $this->is_setup_intent_for_order( $intent, $order );
 		$displayed       = false;
 		list( $event )   = $this->build_lifecycle_event_from_intent( $intent, $order, $zero_amount_plain_note );

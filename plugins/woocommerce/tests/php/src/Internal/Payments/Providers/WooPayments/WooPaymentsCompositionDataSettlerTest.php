@@ -3,27 +3,17 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\DatabaseCache as MultiCurrencyDatabaseCache;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\RateService;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilder;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilderFactory;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateInvalidator;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\PaymentOperationContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
+use Automattic\WooCommerce\Internal\Payments\PaymentProcessingService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\CurrencyRateProvider;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsNativeAccountAdapter;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsNativeApiClientAdapter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\PaymentIntentEventHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCompositionDataSettler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDatabaseCache;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeeDetailsNoteController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentConfirmationService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffectPlan;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOutcomeMetadataMapper;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTerminalPaymentsRestController;
@@ -39,9 +29,8 @@ use WP_REST_Request;
  * Tests for WooPaymentsCompositionDataSettler and the places that read an order again before composing its payment effects.
  *
  * Each place reads the order under its claim after its last platform call, then composes and writes the payment's
- * effects. Composition reads the account, and amounts in notes read the Multi-Currency state; both are cached and can
- * be refreshed from the platform. The rows check, on the platform client double, that no such refresh starts between
- * the read and the write.
+ * effects. Composition reads the account, which is cached and can be refreshed from the platform. The rows check, on
+ * the platform client double, that no platform call starts between the read and the write.
  */
 class WooPaymentsCompositionDataSettlerTest extends WC_Unit_Test_Case {
 
@@ -128,14 +117,14 @@ class WooPaymentsCompositionDataSettlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox No account fetch starts after the authoritative read ($_dataName).
+	 * @testdox No platform call starts between the authoritative read and the write ($_dataName).
 	 * @dataProvider provide_sites
 	 *
 	 * @param string $site   Place that reads the order again.
-	 * @param int    $window Which read-to-write window of the run belongs to the site.
+	 * @param int    $window Which read-to-write window of the run belongs to the site, or -1 for the last read to the end of the run.
 	 */
-	public function test_no_account_fetch_starts_after_the_authoritative_read( string $site, int $window ): void {
-		// Every account read that may refresh does, so a read in the window would reach the platform.
+	public function test_no_platform_call_starts_between_the_authoritative_read_and_the_write( string $site, int $window ): void {
+		// Every account read that may refresh does, so an account read in the window would reach the platform.
 		add_filter(
 			'wcpay_database_cache_ttl',
 			static fn( $ttl, $key ) => WooPaymentsDatabaseCache::ACCOUNT_KEY === $key ? -1 : $ttl,
@@ -145,9 +134,9 @@ class WooPaymentsCompositionDataSettlerTest extends WC_Unit_Test_Case {
 
 		$this->run_site( $site );
 
-		$windows = $this->read_to_write_windows();
-		$this->assertArrayHasKey( $window, $windows, 'The run reads the order again before it writes: ' . implode( ', ', $this->log ) );
-		$this->assertNotContains( 'get_account', $windows[ $window ], 'No account fetch between the read and the write: ' . implode( ', ', $this->log ) );
+		$calls = -1 === $window ? $this->calls_from_the_last_read_to_the_end() : ( $this->read_to_write_windows()[ $window ] ?? null );
+		$this->assertIsArray( $calls, 'The run reads the order again before it writes: ' . implode( ', ', $this->log ) );
+		$this->assertSame( array(), $calls, 'No platform call between the read and the write: ' . implode( ', ', $this->log ) );
 		$this->assertContains( 'get_account', $this->log, 'The account was fetched in the run, before the read.' );
 	}
 
@@ -158,8 +147,8 @@ class WooPaymentsCompositionDataSettlerTest extends WC_Unit_Test_Case {
 	 */
 	public function provide_sites(): array {
 		return array(
-			'checkout charge'                 => array( 'checkout charge', 0 ),
-			'completed capture'               => array( 'completed capture', 0 ),
+			'checkout charge'                 => array( 'checkout charge', -1 ),
+			'completed capture'               => array( 'completed capture', -1 ),
 			'redirect return'                 => array( 'redirect return', 0 ),
 			'attached-intent recovery'        => array( 'attached-intent recovery', 0 ),
 			'terminal authorization'          => array( 'terminal capture', 0 ),
@@ -171,9 +160,14 @@ class WooPaymentsCompositionDataSettlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A completed capture whose account entry passes its TTL between the read and the composition fetches no account.
+	 * @testdox A completed capture whose account entry passes its TTL between the read and the composition fetches no account, and writes the rate the settled account gives.
+	 *
+	 * The settled account's default currency is EUR (the recorded account with only that value changed) on an EUR store,
+	 * and the order is in USD, so the rate is written only from the settled account: the empty-account default, USD, matches
+	 * the order and writes none (WooPaymentsOrderDataService::get_settlement_exchange_rate_order_meta()).
 	 */
 	public function test_an_account_entry_expiring_after_the_read_is_not_fetched(): void {
+		$this->use_eur_account_and_store();
 		$now = time();
 		$this->register_legacy_proxy_function_mocks(
 			array(
@@ -185,7 +179,7 @@ class WooPaymentsCompositionDataSettlerTest extends WC_Unit_Test_Case {
 		update_option(
 			WooPaymentsDatabaseCache::ACCOUNT_KEY,
 			array(
-				'data'               => $this->load_recorded_account(),
+				'data'               => $this->platform->account,
 				'fetched'            => $now,
 				'errored'            => false,
 				'consecutive_errors' => 0,
@@ -196,56 +190,33 @@ class WooPaymentsCompositionDataSettlerTest extends WC_Unit_Test_Case {
 			$now += DAY_IN_SECONDS + 60;
 		};
 
-		$applied = $this->run_completed_capture();
+		$order = $this->run_completed_capture( 'USD' );
 
 		$this->assertNotContains( 'get_account', $this->log, 'The account entry was fresh until the read, and is not refreshed after it.' );
-		$this->assertSame( '1.13905', $applied->get_data()[ WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY ]['_wcpay_multi_currency_stripe_exchange_rate'] ?? null );
+		$this->assertSame( '1.13905', wc_get_order( $order->get_id() )->get_meta( '_wcpay_multi_currency_stripe_exchange_rate', true ) );
 	}
 
 	/**
-	 * @testdox A completed capture on a store whose account entry was deleted fetches the account once, before the read, and writes the exchange rate.
+	 * @testdox A completed capture on a store whose account entry was deleted fetches the account once, before the read, and writes the rate the fetched account gives.
 	 *
-	 * An account update deletes the entry (WooPaymentsAccountService::clear_cache()). The charge is REC-3's recorded 12.34
-	 * EUR charge on a USD account (`Fixtures/platform-eur-charge.json`), whose settlement rate is 1.13905.
+	 * An account update deletes the entry (WooPaymentsAccountService::clear_cache()). The charge is REC-3's recorded charge
+	 * (`Fixtures/platform-eur-charge.json`), whose settlement rate is 1.13905; the account and store are as in the row above.
 	 */
 	public function test_a_deleted_account_entry_is_fetched_before_the_read(): void {
-		$applied = $this->run_completed_capture();
+		$this->use_eur_account_and_store();
+
+		$order = $this->run_completed_capture( 'USD' );
 
 		$this->assertSame( array( 'get_account', 'read' ), array_values( array_intersect( $this->log, array( 'get_account', 'read' ) ) ) );
-		$this->assertSame( '1.13905', $applied->get_data()[ WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY ]['_wcpay_multi_currency_stripe_exchange_rate'] ?? null );
+		$this->assertSame( '1.13905', wc_get_order( $order->get_id() )->get_meta( '_wcpay_multi_currency_stripe_exchange_rate', true ) );
 	}
 
 	/**
-	 * @testdox A completed capture on a store running Multi-Currency with an extra currency fetches due currency rates before the read, not after.
+	 * Serve a settled account whose default currency is EUR, on a store whose currency is EUR.
 	 */
-	public function test_due_currency_rates_are_fetched_before_the_read(): void {
-		$this->assertSame( 0, did_action( 'action_scheduler_before_execute' ), 'Rates refresh outside Action Scheduler jobs only.' );
-		$this->use_multi_currency_owner( true );
-		update_option( StateBuilder::ENABLED_CURRENCIES_OPTION, array( 'USD', 'EUR' ) );
-		delete_option( MultiCurrencyDatabaseCache::CURRENCIES_KEY );
-
-		$this->run_completed_capture();
-
-		$this->assertSame( array( 'get_currency_rates', 'read' ), array_values( array_intersect( $this->log, array( 'get_currency_rates', 'read' ) ) ) );
-	}
-
-	/**
-	 * @testdox On a store where WooCommerce does not run Multi-Currency, settling builds no Multi-Currency state, asks for no rates and runs no explicit price filter.
-	 */
-	public function test_settling_makes_no_multi_currency_call_without_multi_currency_ownership(): void {
-		$this->use_multi_currency_owner( false );
-		update_option( StateBuilder::ENABLED_CURRENCIES_OPTION, array( 'USD', 'EUR' ) );
-		delete_option( MultiCurrencyDatabaseCache::CURRENCIES_KEY );
-		$factory = $this->getMockBuilder( StateBuilderFactory::class )->disableOriginalConstructor()->onlyMethods( array( 'get_state_builder' ) )->getMock();
-		$factory->expects( $this->never() )->method( 'get_state_builder' );
-		wc_get_container()->replace( StateBuilderFactory::class, $factory );
-		$filter_runs = did_filter( 'wcpay_multi_currency_should_output_explicit_price' );
-
-		$result = wc_get_container()->get( WooPaymentsCompositionDataSettler::class )->run_settled( static fn(): string => 'segment result' );
-
-		$this->assertSame( 'segment result', $result );
-		$this->assertSame( $filter_runs, did_filter( 'wcpay_multi_currency_should_output_explicit_price' ) );
-		$this->assertNotContains( 'get_currency_rates', $this->log );
+	private function use_eur_account_and_store(): void {
+		$this->platform->account['store_currencies']['default'] = 'eur';
+		update_option( 'woocommerce_currency', 'EUR' );
 	}
 
 	/**
@@ -258,10 +229,9 @@ class WooPaymentsCompositionDataSettlerTest extends WC_Unit_Test_Case {
 			case 'checkout charge':
 				$intent = $this->load_recorded_eur_charge();
 				$order  = $this->create_order( 'EUR', '12.34' );
-				wc_get_container()->get( WooPaymentsProvider::class )->apply_operation_effects(
+				$this->init_from_container( new PaymentProcessingService() )->process_checkout_outcome(
 					PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, (string) $intent['payment_method'] ),
-					( new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, (string) $intent['id'] ) )->with_effect_plan( WooPaymentsOrderEffectPlan::for_payment_intent( $intent, false ) ),
-					'charge'
+					$this->create_provider_returning( ( new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, (string) $intent['id'] ) )->with_effect_plan( WooPaymentsOrderEffectPlan::for_payment_intent( $intent, false ) ) )
 				);
 				return;
 			case 'completed capture':
@@ -302,21 +272,89 @@ class WooPaymentsCompositionDataSettlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Apply a completed capture of REC-3's EUR charge through the provider's operation effects.
+	 * Capture REC-3's EUR charge through the payments runtime, from the provider's capture to the lifecycle's write.
 	 *
-	 * @return PaymentOutcome The applied outcome.
+	 * @param string $currency Order currency.
+	 * @return WC_Order The captured order.
 	 */
-	private function run_completed_capture(): PaymentOutcome {
+	private function run_completed_capture( string $currency = 'EUR' ): WC_Order {
 		$intent = $this->load_recorded_eur_charge();
-		$order  = $this->create_order( 'EUR', '12.34' );
+		$order  = $this->create_order( $currency, '12.34' );
 		$order->update_meta_data( '_intent_id', (string) $intent['id'] );
+		$order->update_meta_data( '_intention_status', 'requires_capture' );
 		$order->save();
 
-		return wc_get_container()->get( WooPaymentsProvider::class )->apply_operation_effects(
+		$this->init_from_container( new PaymentProcessingService() )->capture(
 			PaymentOperationContext::for_capture( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ),
-			( new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, (string) $intent['id'] ) )->with_effect_plan( WooPaymentsOrderEffectPlan::for_capture( $intent ) ),
-			'capture'
+			$this->create_provider_returning( ( new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, (string) $intent['id'] ) )->with_effect_plan( WooPaymentsOrderEffectPlan::for_capture( $intent ) ) )
 		);
+
+		return $order;
+	}
+
+	/**
+	 * Create a WooPayments provider whose charge and capture return the given outcome, as the platform's answer.
+	 *
+	 * @param PaymentOutcome $outcome Outcome the platform call returns.
+	 * @return WooPaymentsProvider
+	 */
+	private function create_provider_returning( PaymentOutcome $outcome ): WooPaymentsProvider {
+		$provider = new class( $this->log, $outcome ) extends WooPaymentsProvider {
+			/**
+			 * Shared log.
+			 *
+			 * @var string[]
+			 */
+			private array $log;
+
+			/**
+			 * Outcome the platform call returns.
+			 *
+			 * @var PaymentOutcome
+			 */
+			private PaymentOutcome $outcome;
+
+			/**
+			 * Constructor.
+			 *
+			 * @param string[]       $log     Shared log.
+			 * @param PaymentOutcome $outcome Outcome the platform call returns.
+			 */
+			public function __construct( array &$log, PaymentOutcome $outcome ) {
+				$this->log     = &$log;
+				$this->outcome = $outcome;
+			}
+
+			/**
+			 * Return the outcome, as the platform's charge.
+			 *
+			 * @param PaymentOperationContext $context         Payment context.
+			 * @param string                  $idempotency_key Idempotency key.
+			 * @return PaymentOutcome
+			 */
+			public function charge( PaymentOperationContext $context, string $idempotency_key ): PaymentOutcome {
+				unset( $context, $idempotency_key );
+				$this->log[] = 'create_and_confirm_intention';
+
+				return $this->outcome;
+			}
+
+			/**
+			 * Return the outcome, as the platform's capture.
+			 *
+			 * @param PaymentOperationContext $context         Payment context.
+			 * @param string                  $idempotency_key Idempotency key.
+			 * @return PaymentOutcome
+			 */
+			public function capture( PaymentOperationContext $context, string $idempotency_key ): PaymentOutcome {
+				unset( $context, $idempotency_key );
+				$this->log[] = 'capture_intention';
+
+				return $this->outcome;
+			}
+		};
+
+		return $this->init_from_container( $provider );
 	}
 
 	/**
@@ -399,27 +437,21 @@ class WooPaymentsCompositionDataSettlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Make the container's Multi-Currency owner answer, and give a fresh state builder a WooPayments rate provider over the platform double.
+	 * Get the platform calls made from the last read in place to the end of the run, when a note was written after that read.
 	 *
-	 * @param bool $builtin_owner Whether WooCommerce runs Multi-Currency.
+	 * @return string[]|null Null when the run did not read the order or wrote no note after its last read.
 	 */
-	private function use_multi_currency_owner( bool $builtin_owner ): void {
-		$arbiter = $this->getMockBuilder( MultiCurrencyRuntimeArbiter::class )->disableOriginalConstructor()->onlyMethods( array( 'is_builtin_owner' ) )->getMock();
-		$this->init_from_container( $arbiter );
-		$arbiter->method( 'is_builtin_owner' )->willReturn( $builtin_owner );
-		wc_get_container()->replace( MultiCurrencyRuntimeArbiter::class, $arbiter );
+	private function calls_from_the_last_read_to_the_end(): ?array {
+		$last_read = array_search( 'read', array_reverse( $this->log, true ), true );
+		if ( false === $last_read ) {
+			return null;
+		}
+		$after = array_slice( $this->log, (int) $last_read + 1 );
+		if ( ! in_array( 'note', $after, true ) ) {
+			return null;
+		}
 
-		$account_adapter = new WooPaymentsNativeAccountAdapter();
-		$account_adapter->init( wc_get_container()->get( WooPaymentsAccountService::class ) );
-		$api_client_adapter = new WooPaymentsNativeApiClientAdapter();
-		$api_client_adapter->init( $this->platform );
-		$rate_service = new RateService();
-		$rate_service->init( wc_get_container()->get( StateInvalidator::class ) );
-		$rate_service->set_provider( new CurrencyRateProvider( $account_adapter, $api_client_adapter ) );
-		$factory = new StateBuilderFactory();
-		$factory->init( $rate_service, wc_get_container()->get( StateInvalidator::class ) );
-		wc_get_container()->replace( RateService::class, $rate_service );
-		wc_get_container()->replace( StateBuilderFactory::class, $factory );
+		return array_values( array_diff( $after, array( 'note' ) ) );
 	}
 
 	/**
@@ -479,7 +511,7 @@ class WooPaymentsCompositionDataSettlerTest extends WC_Unit_Test_Case {
 			 *
 			 * @var array<string,mixed>
 			 */
-			private array $account;
+			public array $account;
 
 			/**
 			 * Intents by ID.
@@ -526,20 +558,6 @@ class WooPaymentsCompositionDataSettlerTest extends WC_Unit_Test_Case {
 				$this->log[] = 'get_account';
 
 				return $this->account;
-			}
-
-			/**
-			 * Return a rate for each requested currency.
-			 *
-			 * @param string        $currency_from Base currency.
-			 * @param string[]|null $currencies_to Requested currencies.
-			 * @return array<string,float>
-			 */
-			public function get_currency_rates( string $currency_from, ?array $currencies_to = null ): array {
-				unset( $currency_from, $currencies_to );
-				$this->log[] = 'get_currency_rates';
-
-				return array( 'eur' => 0.86 );
 			}
 
 			/**
