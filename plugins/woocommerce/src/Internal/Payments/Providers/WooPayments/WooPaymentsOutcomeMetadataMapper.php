@@ -29,6 +29,10 @@ final class WooPaymentsOutcomeMetadataMapper implements ProviderOutcomeMetadataM
 	 * Map a payment outcome to WooPayments order meta, the intent's record included, except the intent of a failed outcome
 	 * whose attach kept an earlier payment's record.
 	 *
+	 * The status is written only with the intent it describes: a failed outcome that names no intent and composes no status
+	 * writes no intention status, so the order keeps the intent and status it stores. Client 11.3.0's checkout catch writes
+	 * no intent status (class-wc-payment-gateway-wcpay.php:1604-1614).
+	 *
 	 * @param PaymentOutcome $outcome Provider outcome.
 	 * @return array<string,string>
 	 */
@@ -58,8 +62,9 @@ final class WooPaymentsOutcomeMetadataMapper implements ProviderOutcomeMetadataM
 			$meta['_stripe_customer_id'] = $outcome->get_customer_id();
 		}
 
+		$names_no_intent = PaymentOutcome::STATUS_FAILED === $outcome->get_status() && '' === $outcome->get_provider_payment_id() && ! isset( $meta['_intent_id'] );
 		// A $0 order confirmed without an intent has no intention status; client 11.1.0 writes none there (gw:1673-1771).
-		if ( ! isset( $meta['_intention_status'] ) && ! ( $plan instanceof WooPaymentsOrderEffectPlan && WooPaymentsOrderEffectPlan::TYPE_ZERO_AMOUNT_WITHOUT_INTENT === $plan->get_type() ) ) {
+		if ( ! isset( $meta['_intention_status'] ) && ! $names_no_intent && ! ( $plan instanceof WooPaymentsOrderEffectPlan && WooPaymentsOrderEffectPlan::TYPE_ZERO_AMOUNT_WITHOUT_INTENT === $plan->get_type() ) ) {
 			$meta['_intention_status'] = $this->get_default_intention_status( $outcome );
 		}
 

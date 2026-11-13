@@ -1353,21 +1353,27 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	 * for it here). Client 11.1.0 notes the decline and leaves the subscription's status alone
 	 * (includes/class-wc-payment-gateway-wcpay.php:1326-1328); failing it moves an active subscription to pending, which
 	 * stops its renewals. On a change the subscription also keeps its own payment method and customer; a checkout order
-	 * keeps the request's, which client 11.1.0 writes before the request (:1672-1677). The decline is the platform's
+	 * keeps the request's, which client 11.1.0 writes before the request (:1672-1677). A SetupIntent decline names no
+	 * intent, so it writes no intent status: the subscription keeps its earlier SetupIntent and its succeeded status, and a
+	 * checkout order stores none, as client 11.3.0's catch writes none (:1604-1614). The decline is the platform's
 	 * recorded answer for test card 4000 0000 0000 0002 (Fixtures/platform-setup-intent-declines.json, generic_decline).
 	 *
 	 * @dataProvider provider_declined_setup_intent_requests
 	 *
-	 * @param array<string,bool> $provider_data           Checkout provider data, as the gateway builds it.
-	 * @param string             $expected_status         Order status after the decline.
-	 * @param string             $expected_payment_method Order's _payment_method_id after the decline.
-	 * @param string             $expected_customer       Order's _stripe_customer_id after the decline.
+	 * @param array<string,bool>   $provider_data           Checkout provider data, as the gateway builds it.
+	 * @param string               $expected_status         Order status after the decline.
+	 * @param string               $expected_payment_method Order's _payment_method_id after the decline.
+	 * @param string               $expected_customer       Order's _stripe_customer_id after the decline.
+	 * @param array<string,string> $intent_meta             The intent and intent status the order stores before and after the decline.
 	 */
-	public function test_declined_setup_intent_keeps_the_status_of_a_subscription_being_changed( array $provider_data, string $expected_status, string $expected_payment_method, string $expected_customer ): void {
+	public function test_declined_setup_intent_keeps_the_status_of_a_subscription_being_changed( array $provider_data, string $expected_status, string $expected_payment_method, string $expected_customer, array $intent_meta ): void {
 		$order = $this->create_woopayments_order( '0.00' );
 		$order->set_status( 'on-hold' );
 		$order->update_meta_data( '_payment_method_id', 'pm_subscription_card' );
 		$order->update_meta_data( '_stripe_customer_id', 'cus_subscription' );
+		foreach ( $intent_meta as $key => $value ) {
+			$order->update_meta_data( $key, $value );
+		}
 		$order->save();
 		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads a local test fixture.
 		$recording              = json_decode( (string) file_get_contents( __DIR__ . '/Providers/WooPayments/Fixtures/platform-setup-intent-declines.json' ), true );
@@ -1395,6 +1401,16 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( array( 'POST /sites/123/wcpay/setup_intents' ), array_map( static fn( array $request ): string => $request['method'] . ' ' . $request['path'], $http_client->requests ) );
 		$this->assertSame( $expected_status, $order->get_status() );
 		$this->assertSame( array( $expected_payment_method, $expected_customer ), array( $order->get_meta( '_payment_method_id', true ), $order->get_meta( '_stripe_customer_id', true ) ) );
+		$this->assertSame(
+			$intent_meta,
+			array_filter(
+				array(
+					'_intent_id'        => $order->get_meta( '_intent_id', true ),
+					'_intention_status' => $order->get_meta( '_intention_status', true ),
+				)
+			),
+			'The decline writes no intent status.'
+		);
 		$this->assertCount(
 			1,
 			array_filter(
@@ -1408,7 +1424,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * A $0 request that saves a new card, as a subscription payment-method change and as a checkout.
 	 *
-	 * @return array<string,array{array<string,bool>,string,string,string}>
+	 * @return array<string,array{array<string,bool>,string,string,string,array<string,string>}>
 	 */
 	public function provider_declined_setup_intent_requests(): array {
 		return array(
@@ -1420,8 +1436,12 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 				'on-hold',
 				'pm_subscription_card',
 				'cus_subscription',
+				array(
+					'_intent_id'        => 'seti_subscription',
+					'_intention_status' => 'succeeded',
+				),
 			),
-			'checkout'              => array( array(), 'failed', 'pm_card_visa_chargeDeclined', 'cus_timeout' ),
+			'checkout'              => array( array(), 'failed', 'pm_card_visa_chargeDeclined', 'cus_timeout', array() ),
 		);
 	}
 
