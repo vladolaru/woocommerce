@@ -413,6 +413,8 @@ class WooPaymentsOrderEffectApplier {
 	 * (a `requires_payment_method` intent, whose outcome is failed, or an offline `requires_action` intent the outcome does
 	 * not already hold as a voucher), that event is applied here, on the order read under the checkout's order payment lock,
 	 * and the outcome changes nothing more. Only the client's writes are made: the attach keeps any earlier payment's record.
+	 * The on-hold event names no payment, so it writes no transaction ID, and it leaves a paid order as it is, as the client
+	 * returns on one before any writer (class-wc-payments-order-service.php:475, :3398-3410).
 	 *
 	 * @param WC_Order                   $order   Order read under the checkout's order payment lock, the intent attached.
 	 * @param PaymentOutcome             $outcome PaymentIntent outcome.
@@ -434,12 +436,16 @@ class WooPaymentsOrderEffectApplier {
 				$order,
 				new PaymentLifecycleEvent(
 					$event_status,
-					'' === $intent_id ? null : $intent_id,
+					$offline || '' === $intent_id ? null : $intent_id,
 					array_intersect_key( $effect_data[ WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY ], array_flip( array( '_intention_status', '_wcpay_fraud_meta_box_type' ) ) ),
 					array(),
 					$effect_data[ PaymentOutcome::DATA_NOTE ],
 					$effect_data[ PaymentOutcome::DATA_NOTE_TYPE ],
-					$effect_data[ PaymentOutcome::DATA_NOTE_EQUIVALENTS ]
+					$effect_data[ PaymentOutcome::DATA_NOTE_EQUIVALENTS ],
+					false,
+					false,
+					array(),
+					$offline
 				),
 				new WooPaymentsPersistenceVocabulary()
 			);

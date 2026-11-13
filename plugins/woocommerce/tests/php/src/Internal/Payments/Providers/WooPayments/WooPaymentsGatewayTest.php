@@ -4407,6 +4407,72 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A checkout whose platform returns an offline PaymentIntent with no error, on $_dataName, writes what the client's on-hold writer would.
+	 *
+	 * Client 11.3.0's status update returns on a paid order before any writer (class-wc-payments-order-service.php:475,
+	 * :3398-3410), and its on-hold writer writes the started note, the fraud box, On hold and the intent status, never a
+	 * transaction ID (:2171-2183); its attach keeps a succeeded record (:1820-1822).
+	 *
+	 * @testWith ["an order paid while the charge ran", true, "processing", 0]
+	 *           ["an unpaid order holding an earlier succeeded record", false, "on-hold", 1]
+	 *
+	 * @param string $label           Row label.
+	 * @param bool   $paid_meanwhile  Whether another request pays the order while the charge runs.
+	 * @param string $expected_status Status the order ends in.
+	 * @param int    $started_notes   The intent's started notes the order ends with.
+	 */
+	public function test_process_payment_holds_an_offline_returned_intent_only_on_an_unpaid_order( string $label, bool $paid_meanwhile, string $expected_status, int $started_notes ): void {
+		unset( $label );
+		$order = $this->create_order();
+		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+		$order->set_total( '10.99' );
+		$order->set_transaction_id( 'pi_settled' );
+		$order->update_meta_data( '_intent_id', 'pi_settled' );
+		$order->update_meta_data( '_intention_status', 'succeeded' );
+		$order->save();
+		$intent         = array(
+			'id'                     => 'pi_returned',
+			'status'                 => 'requires_payment_method',
+			'amount'                 => 1099,
+			'currency'               => 'eur',
+			'customer'               => 'cus_returned',
+			'payment_method'         => 'pm_returned',
+			'payment_method_types'   => array( 'multibanco' ),
+			'payment_method_options' => array( 'multibanco' => array() ),
+			'client_secret'          => 'pi_returned_secret',
+			'metadata'               => array( 'order_id' => (string) $order->get_id() ),
+		);
+		$outcome        = WooPaymentsIntentCodec::outcome_from_intention(
+			$intent,
+			new WooPaymentsIntentMappingContext( $order->get_checkout_order_received_url(), 'pm_returned', 'cus_returned' )
+		)->with_effect_plan( WooPaymentsOrderEffectPlan::for_payment_intent( $intent, false ) );
+		$notes_before   = 0;
+		$while_charging = static function () use ( $order, $paid_meanwhile, &$notes_before ): void {
+			if ( $paid_meanwhile ) {
+				$other = wc_get_order( $order->get_id() );
+				$other->set_status( OrderStatus::PROCESSING );
+				$other->save();
+			}
+			$notes_before = count( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+		};
+		$gateway        = new WooPaymentsGateway();
+		$gateway->init( wc_get_container()->get( PaymentProcessingService::class ), $this->create_provider_charging( $outcome, wc_get_container()->get( WooPaymentsTokenService::class ), $while_charging ) );
+		$_POST['wcpay-payment-method'] = 'pm_returned';
+
+		$gateway->process_payment( $order->get_id() );
+
+		$order   = wc_get_order( $order->get_id() );
+		$notes   = wp_list_pluck( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), 'content' );
+		$started = wc_get_container()->get( WooPaymentsOrderNoteService::class )->format_payment_started_note_candidates( $order, 'pi_returned' );
+		$this->assertSame( $expected_status, $order->get_status() );
+		$this->assertSame( 'pi_settled', $order->get_transaction_id(), "The earlier payment's transaction ID is kept." );
+		$this->assertCount( $started_notes, array_values( array_intersect( $notes, $started ) ) );
+		if ( $paid_meanwhile ) {
+			$this->assertCount( $notes_before, $notes, 'A paid order gets no note.' );
+		}
+	}
+
+	/**
 	 * @testdox A checkout decline with no returned intent fails an order moved to Pending whatever failure notes it has.
 	 *
 	 * Client 11.3.0's checkout writes a decline the platform raised directly, with no note check
