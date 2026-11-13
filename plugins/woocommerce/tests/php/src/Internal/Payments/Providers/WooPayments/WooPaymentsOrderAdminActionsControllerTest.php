@@ -1044,8 +1044,9 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 	 * client's authorized or held-for-review writer leaves (class-wc-payments-order-service.php:2153-2156, :2262-2264).
 	 * Client 11.3.0's order screen capture reaches its capture writer, which stamps `review_allowed` when the stored outcome
 	 * is review and `allow` otherwise, for every payment method (class-wc-payment-gateway-wcpay.php:4408;
-	 * class-wc-payments-order-service.php:529-530, :2209-2213). Its status-change capture writes no fraud box
-	 * (:2381-2429), so the allowed authorization's `allow` stays.
+	 * class-wc-payments-order-service.php:529-530, :2209-2213). The status-change capture writes the same record as that
+	 * writer; the client's status-change capture writes no fraud box (:2381-2429), so there an allowed authorization keeps
+	 * `allow` and one held for review keeps `review`.
 	 *
 	 * @dataProvider provider_captures_and_their_fraud_box
 	 *
@@ -1108,12 +1109,14 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 	 */
 	public function provider_captures_and_their_fraud_box(): array {
 		return array(
-			'order screen, card, allowed'               => array( 'order_screen', 'card', 'allow', 'allow' ),
-			'order screen, card, held for review'       => array( 'order_screen', 'card', 'review', 'review_allowed' ),
-			'order screen, Amazon Pay, allowed'         => array( 'order_screen', 'amazon_pay', 'allow', 'allow' ),
-			'order screen, Amazon Pay, held for review' => array( 'order_screen', 'amazon_pay', 'review', 'review_allowed' ),
-			'status change, card, allowed'              => array( 'status_change', 'card', 'allow', 'allow' ),
-			'status change, Amazon Pay, allowed'        => array( 'status_change', 'amazon_pay', 'allow', 'allow' ),
+			'order screen, card, allowed'                => array( 'order_screen', 'card', 'allow', 'allow' ),
+			'order screen, card, held for review'        => array( 'order_screen', 'card', 'review', 'review_allowed' ),
+			'order screen, Amazon Pay, allowed'          => array( 'order_screen', 'amazon_pay', 'allow', 'allow' ),
+			'order screen, Amazon Pay, held for review'  => array( 'order_screen', 'amazon_pay', 'review', 'review_allowed' ),
+			'status change, card, allowed'               => array( 'status_change', 'card', 'allow', 'allow' ),
+			'status change, Amazon Pay, allowed'         => array( 'status_change', 'amazon_pay', 'allow', 'allow' ),
+			'status change, card, held for review'       => array( 'status_change', 'card', 'review', 'review_allowed' ),
+			'status change, Amazon Pay, held for review' => array( 'status_change', 'amazon_pay', 'review', 'review_allowed' ),
 		);
 	}
 

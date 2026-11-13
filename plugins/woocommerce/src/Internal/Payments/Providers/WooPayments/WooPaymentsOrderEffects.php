@@ -277,16 +277,16 @@ class WooPaymentsOrderEffects {
 	 * @param array<string,mixed>  $charge               Platform Charge response.
 	 * @param array<string,string> $settlement_meta      Precomputed settlement metadata.
 	 * @param bool                 $was_held_for_review  Whether the order was held for fraud review before completing.
-	 * @param bool                 $entering_review_hold Whether a review outcome is placing the order in fraud review right now.
+	 * @param bool                 $is_authorization     Whether the intent is an authorization (`requires_capture` or `processing`).
 	 * @return array<string,string>
 	 */
-	private static function authorized_charge_meta( array $intent, array $charge, array $settlement_meta = array(), bool $was_held_for_review = false, bool $entering_review_hold = false ): array {
+	private static function authorized_charge_meta( array $intent, array $charge, array $settlement_meta = array(), bool $was_held_for_review = false, bool $is_authorization = false ): array {
 		$meta = $settlement_meta;
 		if ( isset( $charge['outcome']['risk_level'] ) ) {
 			$meta['_charge_risk_level'] = (string) $charge['outcome']['risk_level'];
 		}
 
-		return array_merge( $meta, self::fraud_outcome_meta( $intent, $was_held_for_review, $entering_review_hold ) );
+		return array_merge( $meta, self::fraud_outcome_meta( $intent, $was_held_for_review, $is_authorization ) );
 	}
 
 	/**
@@ -387,23 +387,25 @@ class WooPaymentsOrderEffects {
 	 * approved the payment rather than the risk filters alone. The stamp is
 	 * the same for every payment method; with no fraud outcome nothing is
 	 * stamped (class-wc-payments-order-service.php:2153-2156, :2209-2213).
+	 * An authorization stamps only an allow or a review outcome (:2153,
+	 * :2262-2264).
 	 *
-	 * @param array<string,mixed> $intent               Platform PaymentIntent response.
-	 * @param bool                $was_held_for_review  Whether the order was held for fraud review before completing.
-	 * @param bool                $entering_review_hold Whether a review outcome is placing the order in fraud review right now.
+	 * @param array<string,mixed> $intent              Platform PaymentIntent response.
+	 * @param bool                $was_held_for_review Whether the order was held for fraud review before completing.
+	 * @param bool                $is_authorization    Whether the intent is an authorization (`requires_capture` or `processing`).
 	 * @return array<string,string>
 	 */
-	private static function fraud_outcome_meta( array $intent, bool $was_held_for_review = false, bool $entering_review_hold = false ): array {
+	private static function fraud_outcome_meta( array $intent, bool $was_held_for_review = false, bool $is_authorization = false ): array {
 		$metadata      = isset( $intent['metadata'] ) && is_array( $intent['metadata'] ) ? $intent['metadata'] : array();
 		$fraud_outcome = isset( $metadata['fraud_outcome'] ) ? (string) $metadata['fraud_outcome'] : '';
 
-		if ( in_array( $fraud_outcome, array( 'allow', 'block', 'review' ), true ) ) {
+		if ( in_array( $fraud_outcome, $is_authorization ? array( 'allow', 'review' ) : array( 'allow', 'block', 'review' ), true ) ) {
 			// A review outcome on a pre-capture intent is client 11.1.0's
 			// mark_order_held_for_review_for_fraud() stamp (class-wc-payments-order-service.php:1717): the meta box must show the
 			// held-for-review panel until the merchant decides. On completion the
 			// outcome value no longer drives the box; the held-for-review history does.
-			if ( 'review' === $fraud_outcome && $entering_review_hold ) {
-				$box_type = 'review';
+			if ( $is_authorization ) {
+				$box_type = $fraud_outcome;
 			} else {
 				$box_type = $was_held_for_review ? 'review_allowed' : 'allow';
 			}
@@ -413,7 +415,7 @@ class WooPaymentsOrderEffects {
 				'_wcpay_fraud_meta_box_type'  => $box_type,
 			);
 
-			if ( 'review' === $fraud_outcome && $entering_review_hold ) {
+			if ( 'review' === $fraud_outcome && $is_authorization ) {
 				$ruleset_results = self::get_fraud_ruleset_results( $intent );
 				$encoded_results = wp_json_encode( $ruleset_results );
 				if ( array() !== $ruleset_results && is_string( $encoded_results ) ) {
