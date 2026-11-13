@@ -203,6 +203,23 @@ final class WooPaymentsCurrencyUtils {
 	}
 
 	/**
+	 * Build the Multi-Currency state that format_explicit_order_price() reads, when WooCommerce runs Multi-Currency.
+	 *
+	 * The state is built under the explicit price's own condition, an additional currency configured, and once per
+	 * request; its first build can refresh the account and the currency rates from the platform. Amounts formatted after
+	 * this call read the built state.
+	 *
+	 * @since 11.4.0
+	 *
+	 * @return void
+	 */
+	public static function prepare_explicit_order_price(): void {
+		if ( wc_get_container()->get( MultiCurrencyRuntimeArbiter::class )->is_builtin_owner() ) {
+			ExplicitPriceFormatter::should_output_explicit_admin_price();
+		}
+	}
+
+	/**
 	 * Interpret a Stripe exchange rate between a presentment and a base currency when one of them has no decimals.
 	 *
 	 * Stripe expresses the rate in minor units, so a zero-decimal presentment currency against a decimal base divides it

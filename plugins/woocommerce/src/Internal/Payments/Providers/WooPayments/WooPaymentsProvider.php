@@ -572,7 +572,8 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 	 * details, the payment method title and card meta (WooPaymentsOrderEffectApplier::apply_charge_writes()). The order is
 	 * then read again in place, under the checkout's order payment lock and after the last platform call, and the intent is
 	 * attached and the outcome composed on that order. A completed capture's effects start with the same read, after the
-	 * capture call.
+	 * capture call. The cached account and Multi-Currency state the composition reads are settled before that read, and
+	 * refreshes stay stopped until the composition ends (WooPaymentsCompositionDataSettler).
 	 *
 	 * The order's event is applied here, not by the runtime, at exactly two writers, both for a returned intent whose
 	 * outcome keeps the intent's own status for the shopper's response: the failed writer for a waiting intent with an error,
@@ -588,7 +589,13 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 		if ( PaymentProcessingService::OPERATION_CHARGE !== $operation ) {
 			if ( PaymentProcessingService::OPERATION_CAPTURE === $operation && PaymentOutcome::STATUS_COMPLETED === $outcome->get_status() ) {
 				// A completed capture's event is decided on the order, so it is read again in place after the capture call.
-				wc_get_container()->get( OrderPaymentLifecycleService::class )->reread_order_from_data_store( $context->get_order() );
+				return wc_get_container()->get( WooPaymentsCompositionDataSettler::class )->run_settled(
+					function () use ( $context, $outcome ): PaymentOutcome {
+						wc_get_container()->get( OrderPaymentLifecycleService::class )->reread_order_from_data_store( $context->get_order() );
+
+						return $this->apply_effect_plan( $context, $outcome );
+					}
+				);
 			}
 
 			return $this->apply_effect_plan( $context, $outcome );
@@ -599,9 +606,14 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 		if ( $plan instanceof WooPaymentsOrderEffectPlan ) {
 			$outcome = $this->order_effect_applier->apply_charge_writes( $context, $outcome, $plan );
 		}
-		wc_get_container()->get( OrderPaymentLifecycleService::class )->reread_order_from_data_store( $context->get_order() );
 
-		return $this->apply_effect_plan( $context, $this->order_effect_applier->attach_charge_intent( $context, $outcome ) );
+		return wc_get_container()->get( WooPaymentsCompositionDataSettler::class )->run_settled(
+			function () use ( $context, $outcome ): PaymentOutcome {
+				wc_get_container()->get( OrderPaymentLifecycleService::class )->reread_order_from_data_store( $context->get_order() );
+
+				return $this->apply_effect_plan( $context, $this->order_effect_applier->attach_charge_intent( $context, $outcome ) );
+			}
+		);
 	}
 
 	/**

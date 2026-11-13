@@ -16,6 +16,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\Refu
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountEventHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAdminMenuBadgeService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCompositionDataSettler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDatabaseCache;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeeDetailsNoteController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentConfirmationService;
@@ -97,7 +98,8 @@ trait WooPaymentsEventHandlerTestTrait {
 			$container->get( WooPaymentsFeeDetailsNoteController::class ),
 			$container->get( OrderPaymentLock::class ),
 			$container->get( WooPaymentsPersistenceVocabulary::class ),
-			$container->get( WooPaymentsIntentConfirmationService::class )
+			$container->get( WooPaymentsIntentConfirmationService::class ),
+			$container->get( WooPaymentsCompositionDataSettler::class )
 		);
 		$ingestor = new EventIngestor();
 		$ingestor->init(

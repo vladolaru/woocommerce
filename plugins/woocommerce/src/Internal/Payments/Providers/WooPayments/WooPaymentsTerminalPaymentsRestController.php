@@ -466,20 +466,24 @@ class WooPaymentsTerminalPaymentsRestController extends RestApiControllerBase {
 				$order->update_meta_data( '_wcpay_ipp_channel', $ipp_channel );
 			}
 			$order->save();
-			// The order is read again in place after the intent read, so the attach and the authorization decide on it as it is now.
-			$this->get_lifecycle_service()->reread_order_from_data_store( $order );
-			// The intent is attached, transaction ID included, before the authorization is recorded and the payment captured,
-			// as client 11.3.0 attaches it (class-wc-rest-payments-orders-controller.php:215). A capture of another intent for
-			// this order is then refused once this one was tried, whatever happens to it, while a retry of this intent still
-			// passes (:187-194); and when a later step fails, the payment's own webhook still finds the order its payment.
-			list( $intent_event ) = wc_get_container()->get( WooPaymentsIntentConfirmationService::class )->build_lifecycle_event_from_intent( $intent, $order );
-			wc_get_container()->get( WooPaymentsOrderEffectApplier::class )->attach_intent_info( $order, $intent_id, $intent_event->get_meta_to_update() );
+			$this->get_composition_data_settler()->run_settled(
+				function () use ( $order, $intent, $intent_id, $status ): void {
+					// The order is read again in place after the intent read, so the attach and the authorization decide on it as it is now.
+					$this->get_lifecycle_service()->reread_order_from_data_store( $order );
+					// The intent is attached, transaction ID included, before the authorization is recorded and the payment captured,
+					// as client 11.3.0 attaches it (class-wc-rest-payments-orders-controller.php:215). A capture of another intent for
+					// this order is then refused once this one was tried, whatever happens to it, while a retry of this intent still
+					// passes (:187-194); and when a later step fails, the payment's own webhook still finds the order its payment.
+					list( $intent_event ) = wc_get_container()->get( WooPaymentsIntentConfirmationService::class )->build_lifecycle_event_from_intent( $intent, $order );
+					wc_get_container()->get( WooPaymentsOrderEffectApplier::class )->attach_intent_info( $order, $intent_id, $intent_event->get_meta_to_update() );
 
-			if ( 'succeeded' !== $status ) {
-				WooPaymentsTracks::record_wcadmin_event( 'wcpay_merchant_captured_auth' );
-				// The client first records the authorization: on hold, with the authorized note (class-wc-rest-payments-orders-controller.php:217, class-wc-payments-order-service.php:1612-1628).
-				$this->apply_terminal_lifecycle_event( $order, $intent, $intent_id, PaymentLifecycleEvent::STATUS_AUTHORIZED );
-			}
+					if ( 'succeeded' !== $status ) {
+						WooPaymentsTracks::record_wcadmin_event( 'wcpay_merchant_captured_auth' );
+						// The client first records the authorization: on hold, with the authorized note (class-wc-rest-payments-orders-controller.php:217, class-wc-payments-order-service.php:1612-1628).
+						$this->apply_terminal_lifecycle_event( $order, $intent, $intent_id, PaymentLifecycleEvent::STATUS_AUTHORIZED );
+					}
+				}
+			);
 			try {
 				$result = 'succeeded' === $status
 					? $intent
@@ -503,11 +507,15 @@ class WooPaymentsTerminalPaymentsRestController extends RestApiControllerBase {
 				return $this->get_terminal_capture_error( $result );
 			}
 			$payment_captured = true;
-			// The order is read again in place after the capture, so the completion decides on it as it is now.
-			$this->get_lifecycle_service()->reread_order_from_data_store( $order );
+			$this->get_composition_data_settler()->run_settled(
+				function () use ( $order, $result, $intent_id, $status ): void {
+					// The order is read again in place after the capture, so the completion decides on it as it is now.
+					$this->get_lifecycle_service()->reread_order_from_data_store( $order );
 
-			// The capture note, or the payment note for an intent the reader already captured (Interac), completes the payment as on the client (class-wc-payments-order-service.php:1582, :1659-1685); writing it schedules the Fee details job.
-			$this->apply_terminal_lifecycle_event( $order, $result, $intent_id, PaymentLifecycleEvent::STATUS_COMPLETED, 'succeeded' === $status );
+					// The capture note, or the payment note for an intent the reader already captured (Interac), completes the payment as on the client (class-wc-payments-order-service.php:1582, :1659-1685); writing it schedules the Fee details job.
+					$this->apply_terminal_lifecycle_event( $order, $result, $intent_id, PaymentLifecycleEvent::STATUS_COMPLETED, 'succeeded' === $status );
+				}
+			);
 			// The captured status is stored before the generated card is saved, as the client's capture stores it
 			// (class-wc-payments-order-service.php:529-532, :3443-3448), so when a later step fails, the app's retry finds the
 			// payment captured and is refused (class-wc-rest-payments-orders-controller.php:187-194).
@@ -767,6 +775,15 @@ class WooPaymentsTerminalPaymentsRestController extends RestApiControllerBase {
 	 */
 	private function get_lifecycle_service(): OrderPaymentLifecycleService {
 		return wc_get_container()->get( OrderPaymentLifecycleService::class );
+	}
+
+	/**
+	 * Get the collaborator that settles the account and Multi-Currency state before each read the lifecycle decides on.
+	 *
+	 * @return WooPaymentsCompositionDataSettler
+	 */
+	private function get_composition_data_settler(): WooPaymentsCompositionDataSettler {
+		return wc_get_container()->get( WooPaymentsCompositionDataSettler::class );
 	}
 
 	/**

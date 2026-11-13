@@ -259,31 +259,30 @@ class WooPaymentsIntentConfirmationService {
 		// details written, and the event then built and the hold decided on that order as attached, as client 11.3.0
 		// attaches, titles the order and then updates it (class-wc-payment-gateway-wcpay.php:2700, :2705-2707; :4663,
 		// :4713-4715, :4758-4764, :4771; class-wc-payments-order-service.php:484-489). A started payment the order no longer
-		// waits for is nothing to apply.
+		// waits for is nothing to apply. The account and Multi-Currency state the build reads are settled before the claim.
 		$attaches_intent = $is_redirect_return || ! $this->is_setup_intent_for_order( $intent, $order );
 		$displayed       = false;
 		list( $event )   = $this->build_lifecycle_event_from_intent( $intent, $order, $zero_amount_plain_note );
-		$result          = $this->fee_details_note_controller->apply_and_schedule_fee_details_with_lock(
-			$order,
-			$event,
-			function ( WC_Order $stored_order ) use ( $intent, $is_redirect_return, $zero_amount_plain_note, $attaches_intent, $setup_payment_details, &$displayed ): array {
-				if ( $attaches_intent ) {
-					$this->attach_intent_before_decision( $intent, $stored_order, $zero_amount_plain_note );
-				}
-				$this->apply_display_details( $stored_order, $intent, $setup_payment_details );
-				$displayed = true;
-				if ( $zero_amount_plain_note ) {
-					$this->save_intent_payment_method( $stored_order, $intent );
-				}
-
-				list( $built_event, $hold, , $changes_nothing ) = $this->build_lifecycle_event_and_intent_meta( $intent, $stored_order, $zero_amount_plain_note );
-				// The callback's failed intent goes through client 11.3.0's mark_payment_failed(), which changes nothing once the
-				// failure is recorded (class-wc-payment-gateway-wcpay.php:4771; class-wc-payments-order-service.php:500-504, :545-559).
-				$recorded_failure = ! $is_redirect_return && PaymentLifecycleEvent::STATUS_FAILED === $built_event->get_status()
-					&& wc_get_container()->get( WooPaymentsOrderNoteService::class )->is_failure_recorded( $stored_order, $built_event );
-
-				return array( $changes_nothing || $recorded_failure ? null : $built_event, $hold );
+		$build           = function ( WC_Order $stored_order ) use ( $intent, $is_redirect_return, $zero_amount_plain_note, $attaches_intent, $setup_payment_details, &$displayed ): array {
+			if ( $attaches_intent ) {
+				$this->attach_intent_before_decision( $intent, $stored_order, $zero_amount_plain_note );
 			}
+			$this->apply_display_details( $stored_order, $intent, $setup_payment_details );
+			$displayed = true;
+			if ( $zero_amount_plain_note ) {
+				$this->save_intent_payment_method( $stored_order, $intent );
+			}
+
+			list( $built_event, $hold, , $changes_nothing ) = $this->build_lifecycle_event_and_intent_meta( $intent, $stored_order, $zero_amount_plain_note );
+			// The callback's failed intent goes through client 11.3.0's mark_payment_failed(), which changes nothing once the
+			// failure is recorded (class-wc-payment-gateway-wcpay.php:4771; class-wc-payments-order-service.php:500-504, :545-559).
+			$recorded_failure = ! $is_redirect_return && PaymentLifecycleEvent::STATUS_FAILED === $built_event->get_status()
+				&& wc_get_container()->get( WooPaymentsOrderNoteService::class )->is_failure_recorded( $stored_order, $built_event );
+
+			return array( $changes_nothing || $recorded_failure ? null : $built_event, $hold );
+		};
+		$result          = wc_get_container()->get( WooPaymentsCompositionDataSettler::class )->run_settled(
+			fn(): string => $this->fee_details_note_controller->apply_and_schedule_fee_details_with_lock( $order, $event, $build )
 		);
 		if ( OrderPaymentLifecycleService::RESULT_REFUSED === $result ) {
 			$this->attach_charge_details_after_refusal( $order, $event );
@@ -342,10 +341,12 @@ class WooPaymentsIntentConfirmationService {
 	public function apply_attached_payment_intent( WC_Order $order, array $intent ): void {
 		// The event is built again, and the hold decided, on the order read under the order payment lock it is applied under.
 		list( $event ) = $this->build_attached_lifecycle_event( $order, $intent );
-		$this->fee_details_note_controller->apply_and_schedule_fee_details_with_lock(
-			$order,
-			$event,
-			fn( WC_Order $stored_order ): array => $this->build_attached_lifecycle_event( $stored_order, $intent )
+		wc_get_container()->get( WooPaymentsCompositionDataSettler::class )->run_settled(
+			fn(): string => $this->fee_details_note_controller->apply_and_schedule_fee_details_with_lock(
+				$order,
+				$event,
+				fn( WC_Order $stored_order ): array => $this->build_attached_lifecycle_event( $stored_order, $intent )
+			)
 		);
 	}
 
