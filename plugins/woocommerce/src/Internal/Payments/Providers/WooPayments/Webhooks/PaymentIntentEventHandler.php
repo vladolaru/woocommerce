@@ -657,9 +657,9 @@ class PaymentIntentEventHandler {
 				$payment_method      = $last_payment_error['payment_method'];
 				$payment_method_type = (string) $payment_method['type'];
 
-				// A failure from a superseded attempt (the shopper re-paid with another method) must not flip the order to
-				// failed or overwrite its payment meta with the stale intent. Terminal (card_present) intents are exempt:
-				// their payment method is created at the reader and is never the one stored on the order.
+				// A failure of another payment method, from an attempt the shopper replaced by paying another way, changes
+				// nothing (client 11.3.0 class-wc-payments-webhook-processing-service.php:548). Terminal (card_present)
+				// intents are exempt: their payment method is created at the reader and is never the one stored on the order.
 				if ( 'card_present' !== $payment_method_type && (string) $payment_method['id'] !== (string) $order->get_meta( '_payment_method_id', true ) ) {
 					return null;
 				}
@@ -675,9 +675,10 @@ class PaymentIntentEventHandler {
 					// A reader retries a declined card on the same intent, so a terminal decline's note is keyed on its charge, as
 					// client 11.1.0 links that note to the charge for uniqueness (class-wc-payments-order-service.php:2139-2141).
 					'card_present' === $payment_method_type && '' !== $charge_id ? $charge_id : $intent_id,
+					// The status, the note and the intent status, as client 11.3.0's failed writers store them; the order keeps
+					// the intent it stores (class-wc-payments-order-service.php:545-560, :956-976).
 					$this->without_empty_values(
 						array(
-							'_intent_id'        => $intent_id,
 							'_intention_status' => isset( $event_object['status'] ) ? (string) $event_object['status'] : '',
 						)
 					),

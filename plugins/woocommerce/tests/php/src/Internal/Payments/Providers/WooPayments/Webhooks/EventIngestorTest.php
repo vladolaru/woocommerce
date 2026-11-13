@@ -1829,11 +1829,14 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox payment_intent.payment_failed with a failed $payment_method_type payment method fails the order and records the intent.
+	 * @testdox payment_intent.payment_failed for $_dataName fails the order once, with one note, and leaves its transaction ID and stored intent as they are.
 	 *
-	 * The card row is the event the platform forwarded for a declined card checkout (Fixtures/platform-payment-intent-events.json,
-	 * card_declined_failed), whose last_payment_error carries the full PaymentMethod. No AU BECS or terminal decline was
-	 * delivered locally, so those rows keep the fields the handler reads.
+	 * Client 11.3.0's failed writers store the status, the note and the intent status, never the intent ID
+	 * (class-wc-payments-order-service.php:545-560, :956-976), and a redelivered failure adds nothing once its note is on the
+	 * order (:550-554); a terminal decline's note is linked to its charge (:2139-2141). The card row is the event the platform
+	 * forwarded for a declined card checkout (Fixtures/platform-payment-intent-events.json, card_declined_failed), whose
+	 * last_payment_error carries the full PaymentMethod. No AU BECS or terminal decline was delivered locally, so those rows
+	 * keep the fields the handler reads.
 	 *
 	 * @dataProvider provider_actionable_payment_failures
 	 *
@@ -1841,8 +1844,9 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 	 * @param string $payment_method_id       Failed payment method ID in the event.
 	 * @param string $payment_method_type     Failed payment method type in the event.
 	 * @param string $pair                    Recorded event, or '' for a built one.
+	 * @param string $stored_intent           `_intent_id` and transaction ID on the order before the event: '', the event's intent (`event`), or another intent.
 	 */
-	public function test_payment_intent_failed_marks_order_failed( string $order_payment_method_id, string $payment_method_id, string $payment_method_type, string $pair = '' ): void {
+	public function test_payment_intent_failed_marks_order_failed( string $order_payment_method_id, string $payment_method_id, string $payment_method_type, string $pair, string $stored_intent ): void {
 		// The recorded events are test-mode deliveries (livemode false), so the store runs in test mode, as the recording account did.
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
 		$order = $this->create_woopayments_order();
@@ -1862,28 +1866,37 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 				)
 			);
 		$order->update_meta_data( '_payment_method_id', '' !== $order_payment_method_id ? $order_payment_method_id : (string) $event['data']['object']['last_payment_error']['payment_method']['id'] );
+		$stored_intent = 'event' === $stored_intent ? (string) $event['data']['object']['id'] : $stored_intent;
+		$order->set_transaction_id( $stored_intent );
+		$order->update_meta_data( '_intent_id', $stored_intent );
 		$order->save();
 
-		$this->sut->process( $event );
+		foreach ( array( 'delivery', 'redelivery' ) as $delivery ) {
+			$event['id'] = "evt_payment_failed_{$delivery}";
+			$this->sut->process( $event );
 
-		$order = wc_get_order( $order->get_id() );
-
-		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertSame( 'failed', $order->get_status() );
-		$this->assertSame( $event['data']['object']['id'], $order->get_meta( '_intent_id', true ) );
-		$this->assertSame( 'requires_payment_method', $order->get_meta( '_intention_status', true ) );
+			$order = wc_get_order( $order->get_id() );
+			$this->assertInstanceOf( WC_Order::class, $order );
+			$this->assertSame(
+				array( 'failed', $stored_intent, $stored_intent, 'requires_payment_method', 1 ),
+				array( $order->get_status(), $order->get_transaction_id(), $order->get_meta( '_intent_id', true ), $order->get_meta( '_intention_status', true ), count( $this->get_order_notes_containing( $order, '<strong>failed</strong>' ) ) ),
+				"Status, transaction ID, stored intent, intent status and failure notes after the $delivery."
+			);
+		}
 	}
 
 	/**
 	 * Failures the order is failed for.
 	 *
-	 * @return array<string,array{0:string,1:string,2:string,3?:string}>
+	 * @return array<string,array{string,string,string,string,string}>
 	 */
 	public function provider_actionable_payment_failures(): array {
 		return array(
-			'card'                                 => array( '', '', 'card', 'card_declined_failed' ),
-			'AU BECS debit'                        => array( 'pm_123', 'pm_123', 'au_becs_debit' ),
-			'card present, another payment method' => array( 'pm_current', 'pm_terminal', 'card_present' ),
+			'a card, no payment stored'              => array( '', '', 'card', 'card_declined_failed', '' ),
+			'a card, the payment the order waits on' => array( '', '', 'card', 'card_declined_failed', 'event' ),
+			'AU BECS debit, no payment stored'       => array( 'pm_123', 'pm_123', 'au_becs_debit', '', '' ),
+			'a terminal, another payment method'     => array( 'pm_current', 'pm_terminal', 'card_present', '', '' ),
+			'a terminal, while an earlier online payment is stored' => array( 'pm_current', 'pm_terminal', 'card_present', '', 'pi_online_attempt' ),
 		);
 	}
 
@@ -2084,7 +2097,7 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 		$order = wc_get_order( $order->get_id() );
 		$this->assertInstanceOf( WC_Order::class, $order );
 		$this->assertSame( 'failed', $order->get_status() );
-		$this->assertSame( 'pi_terminal_failure', $order->get_meta( '_intent_id', true ) );
+		$this->assertSame( '', $order->get_meta( '_intent_id', true ) );
 		$this->assertSame( 'requires_payment_method', $order->get_meta( '_intention_status', true ) );
 		$this->assertSame( 1, $this->count_order_notes_matching( $order, $plugin_note ) );
 		$this->assertOrderLacksNoteContaining( $order, array( 'Core-Terminalzahlung' ) );
@@ -2147,7 +2160,7 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 		$order = wc_get_order( $order->get_id() );
 		$this->assertInstanceOf( WC_Order::class, $order );
 		$this->assertSame( OrderStatus::FAILED, $order->get_status() );
-		$this->assertSame( array( $second_intent, 'requires_payment_method' ), array( $order->get_meta( '_intent_id', true ), $order->get_meta( '_intention_status', true ) ) );
+		$this->assertSame( array( '', 'requires_payment_method' ), array( $order->get_meta( '_intent_id', true ), $order->get_meta( '_intention_status', true ) ) );
 		foreach ( array_keys( $declines ) as $charge_id ) {
 			$notes = array_filter(
 				wc_get_order_notes( array( 'order_id' => $order->get_id() ) ),
