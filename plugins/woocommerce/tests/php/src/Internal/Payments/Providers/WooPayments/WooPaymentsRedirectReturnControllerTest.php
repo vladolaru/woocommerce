@@ -861,6 +861,41 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A redirect return confirms nothing on an order another payment method takes while the intent is fetched.
+	 *
+	 * Client 11.3.0's return has no payment method check (class-wc-payment-gateway-wcpay.php:2564-2628) and confirms a Pending
+	 * order (:2700, :2707); the order is read again after the fetch and left once another payment method holds it.
+	 */
+	public function test_handle_wp_confirms_nothing_on_an_order_another_payment_method_takes_during_the_fetch(): void {
+		$order = $this->create_order();
+		$order->update_meta_data( '_intention_status', 'requires_action' );
+		$order->save();
+		$api_client                               = new RedirectReturnApiClientStub();
+		$api_client->payment_intent               = $this->successful_payment_intent( $order, 'pi_taken', 'pm_taken' );
+		$api_client->before_payment_intent_return = static function () use ( $order ): void {
+			$taken = wc_get_order( $order->get_id() );
+			$taken->set_payment_method( 'stripe' );
+			$taken->save();
+		};
+
+		$confirmation_service = $this->createMock( WooPaymentsIntentConfirmationService::class );
+		$confirmation_service->expects( $this->never() )->method( 'confirm_fetched_intent_for_order' );
+		$this->sut = $this->create_controller( true, $confirmation_service, $api_client );
+		$this->set_payment_intent_return_request( $order, 'pi_taken' );
+		$notes = count( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+
+		$this->sut->handle_wp();
+		$reloaded = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $reloaded );
+		$this->assertSame( 1, $api_client->payment_intent_reads );
+		$this->assertSame( 'pending', $reloaded->get_status() );
+		$this->assertSame( '', $reloaded->get_transaction_id() );
+		$this->assertSame( 'requires_action', $reloaded->get_meta( '_intention_status', true ) );
+		$this->assertCount( $notes, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+	}
+
+	/**
 	 * @testdox A redirect return proceeds only with a nonce minted for its own order: $_dataName.
 	 *
 	 * Client 11.3.0 mints and verifies the nonce under `wcpay_process_redirect_order_nonce_<order ID>` (gw:2159, 2564-2570,
