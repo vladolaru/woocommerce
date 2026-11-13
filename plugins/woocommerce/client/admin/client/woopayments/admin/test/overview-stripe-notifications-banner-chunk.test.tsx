@@ -1,7 +1,7 @@
 /**
  * External dependencies
  */
-import { render, screen } from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
 import { useSelect } from '@wordpress/data';
 
 /**
@@ -46,12 +46,6 @@ jest.mock( '@woocommerce/tracks', () => ( { recordEvent: jest.fn() } ) );
 
 describe( 'WooPayments Overview Stripe notifications banner chunk failure', () => {
 	let consoleErrorSpy: jest.SpyInstance;
-
-	// The page also lazy-loads the inbox notifications. A cold import is synchronous module loading that can take
-	// seconds on a loaded CI runner, so load it once here; the render then resolves it from the module registry.
-	beforeAll( async () => {
-		await import( '../overview/components/inbox-notifications' );
-	}, 60000 );
 
 	beforeEach( () => {
 		// React logs the caught error; keep the output clean.
@@ -104,9 +98,20 @@ describe( 'WooPayments Overview Stripe notifications banner chunk failure', () =
 
 	it( 'keeps the Overview and shows the update-details task', async () => {
 		render( <WooPaymentsOverviewPage /> );
+		// Await each step inside act(), as the sibling banner test does, so no assertion races a wall-clock wait: the
+		// shell resolves, then the banner import rejects and the error boundary takes over.
+		await act( async () => {
+			await ( getWooPaymentsOverviewShell as jest.Mock ).mock.results[ 0 ]
+				.value;
+		} );
+		await act( async () => {
+			await import( '../overview/components/stripe-notifications-banner' ).catch(
+				() => {}
+			);
+		} );
 
 		expect(
-			await screen.findByText( 'Finish setting up WooPayments' )
+			screen.getByText( 'Finish setting up WooPayments' )
 		).toBeInTheDocument();
 		expect(
 			screen.getByRole( 'heading', { level: 1, name: 'Overview' } )
