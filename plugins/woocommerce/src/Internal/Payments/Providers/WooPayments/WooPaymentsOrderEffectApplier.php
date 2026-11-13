@@ -414,7 +414,8 @@ class WooPaymentsOrderEffectApplier {
 	 * not already hold as a voucher), that event is applied here, on the order read under the checkout's order payment lock,
 	 * and the outcome changes nothing more. Only the client's writes are made: the attach keeps any earlier payment's record.
 	 * The on-hold event names no payment, so it writes no transaction ID, and it leaves a paid order as it is, as the client
-	 * returns on one before any writer (class-wc-payments-order-service.php:475, :3398-3410).
+	 * returns on one before any writer (class-wc-payments-order-service.php:475, :3398-3410). It has no note type either, so
+	 * its note is found by its text, which names the intent, as the client's check is (:2172-2175).
 	 *
 	 * @param WC_Order                   $order   Order read under the checkout's order payment lock, the intent attached.
 	 * @param PaymentOutcome             $outcome PaymentIntent outcome.
@@ -440,7 +441,7 @@ class WooPaymentsOrderEffectApplier {
 					array_intersect_key( $effect_data[ WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY ], array_flip( array( '_intention_status', '_wcpay_fraud_meta_box_type' ) ) ),
 					array(),
 					$effect_data[ PaymentOutcome::DATA_NOTE ],
-					$effect_data[ PaymentOutcome::DATA_NOTE_TYPE ],
+					$offline ? null : $effect_data[ PaymentOutcome::DATA_NOTE_TYPE ],
 					$effect_data[ PaymentOutcome::DATA_NOTE_EQUIVALENTS ],
 					false,
 					false,

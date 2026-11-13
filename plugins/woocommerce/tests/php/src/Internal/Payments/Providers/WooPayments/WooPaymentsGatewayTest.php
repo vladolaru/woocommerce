@@ -4473,6 +4473,74 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A second checkout of an order moved back to Pending, whose platform returns an offline $intent_status PaymentIntent with no error, holds it again only for another intent: $_dataName.
+	 *
+	 * Client 11.3.0's on-hold writer returns only when its own note, which names the intent, is on the order
+	 * (class-wc-payments-order-service.php:2171-2183).
+	 *
+	 * @testWith ["requires_action, another intent", "requires_action", "pi_second", "on-hold", 2]
+	 *           ["requires_action, the same intent", "requires_action", "pi_first", "pending", 1]
+	 *           ["requires_payment_method, another intent", "requires_payment_method", "pi_second", "on-hold", 2]
+	 *           ["requires_payment_method, the same intent", "requires_payment_method", "pi_first", "pending", 1]
+	 *
+	 * @param string $label           Row label.
+	 * @param string $intent_status   Status of both returned intents.
+	 * @param string $second_intent   The intent the second checkout returns.
+	 * @param string $expected_status Status the order ends in.
+	 * @param int    $started_notes   Started notes the order ends with, one per intent held.
+	 */
+	public function test_process_payment_holds_each_offline_returned_intent_once( string $label, string $intent_status, string $second_intent, string $expected_status, int $started_notes ): void {
+		unset( $label );
+		$order = $this->create_order();
+		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+		$order->set_total( '10.99' );
+		$order->save();
+		$checkout = function ( string $intent_id ) use ( $order, $intent_status ): void {
+			$intent = array(
+				'id'                     => $intent_id,
+				'status'                 => $intent_status,
+				'amount'                 => 1099,
+				'currency'               => 'eur',
+				'customer'               => 'cus_returned',
+				'payment_method'         => 'pm_returned',
+				'payment_method_types'   => array( 'multibanco' ),
+				'payment_method_options' => array( 'multibanco' => array() ),
+				'client_secret'          => $intent_id . '_secret',
+				'metadata'               => array( 'order_id' => (string) $order->get_id() ),
+			);
+			if ( 'requires_action' === $intent_status ) {
+				$intent['next_action'] = array( 'type' => 'use_stripe_sdk' );
+			}
+			$outcome = WooPaymentsIntentCodec::outcome_from_intention(
+				$intent,
+				new WooPaymentsIntentMappingContext( $order->get_checkout_order_received_url(), 'pm_returned', 'cus_returned', WooPaymentsIntentCodec::confirmation_redirect_for( $order->get_id(), $intent_id . '_secret', 'nonce' ) )
+			)->with_effect_plan( WooPaymentsOrderEffectPlan::for_payment_intent( $intent, false ) );
+			$gateway = new WooPaymentsGateway();
+			$gateway->init( wc_get_container()->get( PaymentProcessingService::class ), $this->create_provider_charging( $outcome, wc_get_container()->get( WooPaymentsTokenService::class ) ) );
+			$_POST['wcpay-payment-method'] = 'pm_returned';
+			$gateway->process_payment( $order->get_id() );
+		};
+		$checkout( 'pi_first' );
+		$held = wc_get_order( $order->get_id() );
+		$this->assertSame( 'on-hold', $held->get_status() );
+		$held->update_status( 'pending' );
+		$notes_before = count( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+
+		$checkout( $second_intent );
+
+		$order        = wc_get_order( $order->get_id() );
+		$notes        = wp_list_pluck( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), 'content' );
+		$note_service = wc_get_container()->get( WooPaymentsOrderNoteService::class );
+		$started      = array_merge( $note_service->format_payment_started_note_candidates( $order, 'pi_first' ), $note_service->format_payment_started_note_candidates( $order, 'pi_second' ) );
+		$this->assertSame( $expected_status, $order->get_status() );
+		$this->assertCount( $started_notes, array_values( array_intersect( $notes, $started ) ) );
+		$this->assertCount( 'pi_second' === $second_intent ? 1 : 0, array_values( array_intersect( $notes, $note_service->format_payment_started_note_candidates( $order, 'pi_second' ) ) ) );
+		if ( 'pi_first' === $second_intent ) {
+			$this->assertCount( $notes_before, $notes, 'A replay of the same intent writes nothing.' );
+		}
+	}
+
+	/**
 	 * @testdox A checkout decline with no returned intent fails an order moved to Pending whatever failure notes it has.
 	 *
 	 * Client 11.3.0's checkout writes a decline the platform raised directly, with no note check
