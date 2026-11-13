@@ -275,6 +275,29 @@ describe( 'WooPayments WooPay checkout', () => {
 			document.body.innerHTML = '';
 		} );
 
+	// Each test's copy of the script leaves real timers running, such as Connect's 5 s preferred-card deadline, after which
+	// a copy with a cached card renders the WooPay button again. One that fires in a later test acts on that test's page,
+	// so they end with their test, after the afterEach above has put real timers back.
+	let realTimers;
+	let setTimeoutSpy;
+
+	beforeEach( () => {
+		realTimers = [];
+		const nativeSetTimeout = window.setTimeout.bind( window );
+		setTimeoutSpy = jest
+			.spyOn( window, 'setTimeout' )
+			.mockImplementation( ( ...args ) => {
+				const id = nativeSetTimeout( ...args );
+				realTimers.push( id );
+				return id;
+			} );
+	} );
+
+	afterEach( () => {
+		realTimers.forEach( ( id ) => window.clearTimeout( id ) );
+		setTimeoutSpy.mockRestore();
+	} );
+
 	test( 'renders a branded WooPay express button and opens the OTP iframe on click', async () => {
 		require( '../woopayments-woopay' );
 
