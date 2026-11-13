@@ -904,7 +904,11 @@ class NativePaymentsShadowModeTest extends WC_Unit_Test_Case {
 		$order->update_meta_data( '_charge_id', 'ch_shadow' );
 		$order->update_meta_data( '_stripe_customer_id', 'cus_shadow' );
 		$order->update_meta_data( '_intention_status', $intention_status );
-		$order->update_meta_data( '_wcpay_fraud_meta_box_type', 'not_card' );
+		// The charge names no card, so the started and success writers stamp not_card; an authorization with no fraud
+		// outcome stamps nothing (client 11.3.0 class-wc-payments-order-service.php:2062-2064, :2153-2156, :2236).
+		if ( 'requires_capture' !== $intention_status ) {
+			$order->update_meta_data( '_wcpay_fraud_meta_box_type', 'not_card' );
+		}
 		$order->update_meta_data( '_wcpay_intent_currency', 'USD' );
 		$order->update_meta_data( '_wcpay_mode', 'test' );
 		$order->update_meta_data( '_wcpay_payment_transaction_id', 'txn_shadow' );

@@ -1037,6 +1037,87 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A capture stamps the fraud box from the stored outcome for every payment method: $_dataName.
+	 *
+	 * The capture answers the recorded capture (Fixtures/platform-manual-capture.json) with the authorization's fraud
+	 * outcome; the Amazon Pay rows give its charge Stripe's `amazon_pay` payment method details. The order holds what the
+	 * client's authorized or held-for-review writer leaves (class-wc-payments-order-service.php:2153-2156, :2262-2264).
+	 * Client 11.3.0's order screen capture reaches its capture writer, which stamps `review_allowed` when the stored outcome
+	 * is review and `allow` otherwise, for every payment method (class-wc-payment-gateway-wcpay.php:4408;
+	 * class-wc-payments-order-service.php:529-530, :2209-2213). Its status-change capture writes no fraud box
+	 * (:2381-2429), so the allowed authorization's `allow` stays.
+	 *
+	 * @dataProvider provider_captures_and_their_fraud_box
+	 *
+	 * @param string $trigger             Capture path: `order_screen` or `status_change`.
+	 * @param string $payment_method_type Payment method type of the charge.
+	 * @param string $stored_outcome      Fraud outcome the authorization stored.
+	 * @param string $expected_box        Fraud meta box type after the capture.
+	 */
+	public function test_capture_stamps_the_fraud_box_from_the_stored_outcome( string $trigger, string $payment_method_type, string $stored_outcome, string $expected_box ): void {
+		$order = $this->create_recorded_authorization_order( 'requires_capture', OrderStatus::ON_HOLD );
+		$order->update_meta_data( '_wcpay_fraud_outcome_status', $stored_outcome );
+		$order->update_meta_data( '_wcpay_fraud_meta_box_type', $stored_outcome );
+		$captured                              = $this->load_recorded_manual_capture_entry( 'capture_full_amount' )['body'];
+		$captured['metadata']['fraud_outcome'] = $stored_outcome;
+		if ( 'amazon_pay' === $payment_method_type ) {
+			$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . 'amazon_pay' );
+			$captured['payment_method_types']                         = array( 'amazon_pay' );
+			$captured['payment_method_options']                       = array( 'amazon_pay' => array() );
+			$captured['charges']['data'][0]['payment_method_details'] = array(
+				'type'       => 'amazon_pay',
+				'amazon_pay' => array(
+					'funding' => array(
+						'type' => 'card',
+						'card' => array(
+							'brand'   => 'visa',
+							'country' => 'US',
+							'funding' => 'credit',
+							'last4'   => '4242',
+						),
+					),
+				),
+			);
+		}
+		$order->save();
+		$transport           = new FakeHttpClient();
+		$transport->response = array(
+			'response' => array( 'code' => 200 ),
+			'headers'  => array( 'content-type' => 'application/json' ),
+			'body'     => wp_json_encode( $captured ),
+		);
+		$this->sut           = $this->create_controller( wc_get_container()->get( PaymentProcessingService::class ), $this->create_provider_over_fake_transport( $transport ), $this->create_platform( null, null, new \ArrayObject() ) );
+		$this->sut->register();
+
+		if ( 'status_change' === $trigger ) {
+			$order->update_status( OrderStatus::COMPLETED );
+		} else {
+			$this->fire_order_hook( 'woocommerce_order_action_capture_charge', $order );
+		}
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( array( $this->operation_path( PaymentProcessingService::OPERATION_CAPTURE ) ), $this->request_paths( $transport ) );
+		$this->assertSame( 'succeeded', $order->get_meta( '_intention_status', true ) );
+		$this->assertSame( $expected_box, $order->get_meta( '_wcpay_fraud_meta_box_type', true ) );
+	}
+
+	/**
+	 * Captures, the payment method and stored outcome, and the fraud box each leaves.
+	 *
+	 * @return array<string,array{string,string,string,string}>
+	 */
+	public function provider_captures_and_their_fraud_box(): array {
+		return array(
+			'order screen, card, allowed'               => array( 'order_screen', 'card', 'allow', 'allow' ),
+			'order screen, card, held for review'       => array( 'order_screen', 'card', 'review', 'review_allowed' ),
+			'order screen, Amazon Pay, allowed'         => array( 'order_screen', 'amazon_pay', 'allow', 'allow' ),
+			'order screen, Amazon Pay, held for review' => array( 'order_screen', 'amazon_pay', 'review', 'review_allowed' ),
+			'status change, card, allowed'              => array( 'status_change', 'card', 'allow', 'allow' ),
+			'status change, Amazon Pay, allowed'        => array( 'status_change', 'amazon_pay', 'allow', 'allow' ),
+		);
+	}
+
+	/**
 	 * @testdox The order screen's $operation action on an order storing requires_capture acts on the transaction ID.
 	 *
 	 * Client 11.3.0's capture_charge() and cancel_authorization() act on the order's transaction ID

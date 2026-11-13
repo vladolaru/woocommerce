@@ -612,9 +612,10 @@ class PaymentIntentEventHandler {
 	 * Get the order meta of a succeeded payment intent beyond what write_succeeded_payment_intent_meta() saves: the intent
 	 * status, the order mode, the IPP channel and the charge's meta.
 	 *
-	 * A payment completed as a capture marks a fraud review as allowed when the order's fraud outcome is review, and adds
-	 * the captured charge's fee, as client 11.3.0's capture writer does (class-wc-payments-order-service.php:2207-2215);
-	 * any other payment marks it when the order is on hold.
+	 * A payment completed as a capture marks a fraud review as allowed when the order's fraud outcome is review, stamps a
+	 * non-card charge as it stamps a card, and adds the captured charge's fee, as client 11.3.0's capture writer does
+	 * (class-wc-payments-order-service.php:2207-2215); any other payment marks it when the order is on hold, and a non-card
+	 * charge not_card (:2056-2064).
 	 *
 	 * @param array<string,mixed> $event_object               Provider intent object.
 	 * @param WC_Order            $order                      Order object.
@@ -643,7 +644,8 @@ class PaymentIntentEventHandler {
 					$charge,
 					$settlement_meta,
 					false,
-					$captures_the_authorization ? 'review' === (string) $order->get_meta( '_wcpay_fraud_outcome_status', true ) : $order->has_status( OrderStatus::ON_HOLD )
+					$captures_the_authorization ? 'review' === (string) $order->get_meta( '_wcpay_fraud_outcome_status', true ) : $order->has_status( OrderStatus::ON_HOLD ),
+					$captures_the_authorization
 				),
 				WooPaymentsOrderEffects::completed_charge_payment_method_backfill_meta(
 					$charge,

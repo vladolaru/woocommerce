@@ -1722,6 +1722,70 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A succeeded payment that completes an authorization as a capture stamps the fraud box from the stored outcome: $_dataName.
+	 *
+	 * The order stores the authorization, so client 11.3.0 completes it with its capture writer
+	 * (class-wc-payments-order-service.php:484-485), which stamps `review_allowed` when the stored outcome is review and
+	 * `allow` otherwise, for every payment method (:2209-2213). The Amazon Pay rows give the charge Stripe's `amazon_pay`
+	 * payment method details.
+	 *
+	 * @testWith ["card", "allow", "allow"]
+	 *           ["card", "review", "review_allowed"]
+	 *           ["amazon_pay", "allow", "allow"]
+	 *           ["amazon_pay", "review", "review_allowed"]
+	 *
+	 * @param string $payment_method_type Payment method type of the charge.
+	 * @param string $stored_outcome      Fraud outcome the authorization stored.
+	 * @param string $expected_box        Fraud meta box type the capture stamps.
+	 */
+	public function test_payment_intent_effects_of_a_capture_stamp_the_fraud_box_from_the_stored_outcome( string $payment_method_type, string $stored_outcome, string $expected_box ): void {
+		$order = $this->create_woopayments_order();
+		$order->set_status( 'on-hold' );
+		$order->update_meta_data( '_intention_status', 'requires_capture' );
+		$order->update_meta_data( '_wcpay_fraud_outcome_status', $stored_outcome );
+		$order->save();
+
+		$details = 'card' === $payment_method_type
+			? array( 'type' => 'card' )
+			: array(
+				'type'       => 'amazon_pay',
+				'amazon_pay' => array(
+					'funding' => array(
+						'type' => 'card',
+						'card' => array(
+							'brand'   => 'visa',
+							'country' => 'US',
+							'funding' => 'credit',
+							'last4'   => '4242',
+						),
+					),
+				),
+			);
+		$result  = array(
+			'id'       => 'pi_capture_confirm',
+			'status'   => 'succeeded',
+			'currency' => 'usd',
+			'metadata' => array( 'fraud_outcome' => $stored_outcome ),
+			'charges'  => array(
+				'data' => array(
+					array(
+						'id'                     => 'ch_capture_confirm',
+						'currency'               => 'usd',
+						'payment_method_details' => $details,
+					),
+				),
+			),
+		);
+
+		$outcome  = new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_capture_confirm' );
+		$plan     = WooPaymentsOrderEffectPlan::for_payment_intent( $result, false );
+		$enriched = $this->create_applier()->enrich_outcome_for_lifecycle( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_capture_confirm' ), $outcome, $plan );
+
+		$this->assertSame( PaymentLifecycleEvent::NOTE_TYPE_CAPTURE_SUCCESS, $enriched->get_data()[ PaymentOutcome::DATA_NOTE_TYPE ] ?? null );
+		$this->assertSame( $expected_box, $enriched->get_data()[ WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY ]['_wcpay_fraud_meta_box_type'] ?? null );
+	}
+
+	/**
 	 * @testdox Capture effects stamp review_allowed when the order's stored fraud outcome is review.
 	 */
 	public function test_capture_effects_stamp_review_allowed_for_reviewed_order(): void {

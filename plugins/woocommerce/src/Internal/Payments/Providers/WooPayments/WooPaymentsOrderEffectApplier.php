@@ -739,8 +739,8 @@ class WooPaymentsOrderEffectApplier {
 	 * Compose a PaymentIntent's order meta: the intent's record, the payment's meta and the payment method's display meta.
 	 *
 	 * A completion as a capture (WooPaymentsOrderEffects::captures_the_authorization()) marks a fraud review as allowed only
-	 * when the order's fraud outcome is review, and writes the captured charge's fee, as client 11.3.0's capture writer does
-	 * (class-wc-payments-order-service.php:2207-2215).
+	 * when the order's fraud outcome is review, stamps a non-card charge as it stamps a card, and writes the captured
+	 * charge's fee, as client 11.3.0's capture writer does (class-wc-payments-order-service.php:2207-2215).
 	 *
 	 * @param WC_Order            $order            Order being charged.
 	 * @param array<string,mixed> $result           Provider PaymentIntent response.
@@ -761,7 +761,8 @@ class WooPaymentsOrderEffectApplier {
 			$this->account_service->get_order_mode(),
 			$settlement_meta,
 			( ! $captures && $order->has_status( OrderStatus::ON_HOLD ) ) || 'review' === (string) $order->get_meta( '_wcpay_fraud_outcome_status', true ),
-			$include_fee_meta || $captures
+			$include_fee_meta || $captures,
+			$captures
 		);
 
 		return empty( $display_effects ) ? $meta : array_merge( $meta, $display_effects['meta'] );

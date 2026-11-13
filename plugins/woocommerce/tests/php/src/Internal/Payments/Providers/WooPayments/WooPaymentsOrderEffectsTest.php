@@ -267,38 +267,109 @@ class WooPaymentsOrderEffectsTest extends WC_Unit_Test_Case {
 	/**
 	 * Fraud review histories and the meta box and outcome each one stamps.
 	 *
+	 * Client 11.3.0 stamps a non-card payment `not_card` only in its success writer (class-wc-payments-order-service.php:2062-2064);
+	 * its authorized, held-for-review and capture writers stamp from the fraud outcome for every payment method (:2153-2156,
+	 * :2264, :2209-2213). The Amazon Pay charge has the shape of Stripe's `amazon_pay` payment method details.
+	 *
 	 * @return array<string,array{string,array<int,mixed>,string,string}>
 	 */
 	public function provider_fraud_meta_box_type(): array {
-		$card_charge = array(
+		$card_charge   = array(
 			'id'                     => 'ch_fraud',
 			'currency'               => 'usd',
 			'payment_method_details' => array( 'type' => 'card' ),
 		);
-		$sepa_charge = array(
+		$sepa_charge   = array(
 			'currency'               => 'usd',
 			'payment_method_details' => array( 'type' => 'sepa_debit' ),
 		);
-		$intent      = static function ( string $status, string $fraud_outcome ) use ( $card_charge ): array {
+		$amazon_charge = self::amazon_pay_charge();
+		$intent        = static function ( string $status, string $fraud_outcome, array $charge = array() ) use ( $card_charge ): array {
 			return array(
 				'status'   => $status,
 				'currency' => 'usd',
 				'metadata' => array( 'fraud_outcome' => $fraud_outcome ),
-				'charges'  => array( 'data' => array( $card_charge ) ),
+				'charges'  => array( 'data' => array( array() === $charge ? $card_charge : $charge ) ),
 			);
 		};
-		$allowed     = $intent( 'succeeded', 'allow' );
-		$production  = WooPaymentsOrderMode::PRODUCTION;
+		$allowed       = $intent( 'succeeded', 'allow' );
+		$amazon        = $intent( 'succeeded', 'allow', $amazon_charge );
+		$production    = WooPaymentsOrderMode::PRODUCTION;
 
 		return array(
-			'completed charge held for review'  => array( 'completed_charge_meta', array( $allowed, $card_charge, array(), true, true ), 'review_allowed', 'allow' ),
-			'completed charge not held'         => array( 'completed_charge_meta', array( $allowed, $card_charge ), 'allow', 'allow' ),
-			'completed capture held for review' => array( 'completed_capture_meta', array( $allowed, 'USD', $production, array(), true ), 'review_allowed', 'allow' ),
-			'completed capture not held'        => array( 'completed_capture_meta', array( $allowed, 'USD', $production ), 'allow', 'allow' ),
-			'authorization under review'        => array( 'payment_intent_meta', array( $intent( 'requires_capture', 'review' ), 'USD', $production ), 'review', 'review' ),
-			'authorization allowed'             => array( 'payment_intent_meta', array( $intent( 'requires_capture', 'allow' ), 'USD', $production ), 'allow', 'allow' ),
-			'succeeded after review'            => array( 'payment_intent_meta', array( $intent( 'succeeded', 'review' ), 'USD', $production ), 'allow', 'review' ),
-			'held non-card charge'              => array( 'completed_charge_meta', array( $allowed, $sepa_charge, array(), true, true ), 'not_card', 'allow' ),
+			'completed charge held for review'      => array( 'completed_charge_meta', array( $allowed, $card_charge, array(), true, true ), 'review_allowed', 'allow' ),
+			'completed charge not held'             => array( 'completed_charge_meta', array( $allowed, $card_charge ), 'allow', 'allow' ),
+			'completed capture held for review'     => array( 'completed_capture_meta', array( $allowed, 'USD', $production, array(), true ), 'review_allowed', 'allow' ),
+			'completed capture not held'            => array( 'completed_capture_meta', array( $allowed, 'USD', $production ), 'allow', 'allow' ),
+			'authorization under review'            => array( 'payment_intent_meta', array( $intent( 'requires_capture', 'review' ), 'USD', $production ), 'review', 'review' ),
+			'authorization allowed'                 => array( 'payment_intent_meta', array( $intent( 'requires_capture', 'allow' ), 'USD', $production ), 'allow', 'allow' ),
+			'succeeded after review'                => array( 'payment_intent_meta', array( $intent( 'succeeded', 'review' ), 'USD', $production ), 'allow', 'review' ),
+			'held non-card charge'                  => array( 'completed_charge_meta', array( $allowed, $sepa_charge, array(), true, true ), 'not_card', 'allow' ),
+			'Amazon Pay authorization allowed'      => array( 'payment_intent_meta', array( $intent( 'requires_capture', 'allow', $amazon_charge ), 'USD', $production ), 'allow', 'allow' ),
+			'Amazon Pay authorization under review' => array( 'payment_intent_meta', array( $intent( 'requires_capture', 'review', $amazon_charge ), 'USD', $production ), 'review', 'review' ),
+			'SEPA debit processing allowed'         => array( 'payment_intent_meta', array( $intent( 'processing', 'allow', $sepa_charge ), 'USD', $production ), 'allow', 'allow' ),
+			'Amazon Pay capture not held'           => array( 'completed_capture_meta', array( $amazon, 'USD', $production ), 'allow', 'allow' ),
+			'Amazon Pay capture held for review'    => array( 'completed_capture_meta', array( $amazon, 'USD', $production, array(), true ), 'review_allowed', 'allow' ),
+			'Amazon Pay charge captured'            => array( 'completed_charge_meta', array( $amazon, $amazon_charge, array(), false, false, true ), 'allow', 'allow' ),
+			'Amazon Pay intent captured'            => array( 'payment_intent_meta', array( $amazon, 'USD', $production, array(), true, true, true ), 'review_allowed', 'allow' ),
+			'Amazon Pay payment completed'          => array( 'payment_intent_meta', array( $amazon, 'USD', $production ), 'not_card', 'allow' ),
+		);
+	}
+
+	/**
+	 * @testdox An Amazon Pay $_dataName with no fraud outcome stamps the fraud box only when the payment completes.
+	 *
+	 * Client 11.3.0's authorized and capture writers write the box only for a fraud outcome
+	 * (class-wc-payments-order-service.php:2153-2156, :2209-2213); its success writer marks a non-card payment `not_card`
+	 * whatever the outcome (:2062-2064).
+	 *
+	 * @testWith ["authorization", "requires_capture", false, null]
+	 *           ["capture", "succeeded", true, null]
+	 *           ["payment", "succeeded", false, "not_card"]
+	 *
+	 * @param string      $label        Row label.
+	 * @param string      $status       Intent status.
+	 * @param bool        $is_capture   Whether the payment completes the order as a capture.
+	 * @param string|null $expected_box Expected fraud meta box type, or null when none is written.
+	 */
+	public function test_amazon_pay_without_a_fraud_outcome_stamps_the_box_only_on_success( string $label, string $status, bool $is_capture, ?string $expected_box ): void {
+		unset( $label );
+		$intent = array(
+			'status'   => $status,
+			'currency' => 'usd',
+			'metadata' => array(),
+			'charges'  => array( 'data' => array( self::amazon_pay_charge() ) ),
+		);
+
+		$meta = WooPaymentsOrderEffects::payment_intent_meta( $intent, 'USD', WooPaymentsOrderMode::PRODUCTION, array(), false, true, $is_capture );
+
+		$this->assertSame( $expected_box, $meta['_wcpay_fraud_meta_box_type'] ?? null );
+		$this->assertArrayNotHasKey( '_wcpay_fraud_outcome_status', $meta );
+	}
+
+	/**
+	 * An Amazon Pay charge, funded by a card, in the shape of Stripe's `amazon_pay` payment method details.
+	 *
+	 * @return array<string,mixed>
+	 */
+	private static function amazon_pay_charge(): array {
+		return array(
+			'id'                     => 'ch_amazon_pay',
+			'currency'               => 'usd',
+			'payment_method_details' => array(
+				'type'       => 'amazon_pay',
+				'amazon_pay' => array(
+					'funding' => array(
+						'type' => 'card',
+						'card' => array(
+							'brand'   => 'visa',
+							'country' => 'US',
+							'funding' => 'credit',
+							'last4'   => '4242',
+						),
+					),
+				),
+			),
 		);
 	}
 

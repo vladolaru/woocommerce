@@ -2798,6 +2798,78 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox An authorization and its capture by the succeeded payment stamp the fraud box from the outcome: $_dataName.
+	 *
+	 * The events are the authorization the platform forwarded for a manual-capture card checkout
+	 * (Fixtures/platform-payment-intent-events.json) and its capture; the Amazon Pay rows give the charge Stripe's
+	 * `amazon_pay` payment method details and the review rows set the outcome, which no recording carries. Client 11.3.0
+	 * stamps `allow` for an allowed authorization and `review` for one held for review (class-wc-payments-order-service.php:2153-2156,
+	 * :2264), then `review_allowed` on the capture when the stored outcome is review and `allow` otherwise (:2209-2213),
+	 * for every payment method.
+	 *
+	 * @dataProvider provider_fraud_box_of_an_authorization_and_its_capture
+	 *
+	 * @param string $payment_method_type Payment method type of the charge.
+	 * @param string $fraud_outcome       Fraud outcome the intent carries.
+	 * @param string $authorized_box      Fraud meta box type after the authorization.
+	 * @param string $captured_box        Fraud meta box type after the capture.
+	 */
+	public function test_authorization_and_its_capture_stamp_the_fraud_box_from_the_outcome( string $payment_method_type, string $fraud_outcome, string $authorized_box, string $captured_box ): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
+		$order = $this->create_woopayments_order();
+		$event = $this->recorded_authorization_event( $order, $fraud_outcome );
+		if ( 'amazon_pay' === $payment_method_type ) {
+			$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . 'amazon_pay' );
+			$order->save();
+			$event['data']['object']['payment_method_types']                         = array( 'amazon_pay' );
+			$event['data']['object']['payment_method_options']                       = array( 'amazon_pay' => array() );
+			$event['data']['object']['charges']['data'][0]['payment_method_details'] = array(
+				'type'       => 'amazon_pay',
+				'amazon_pay' => array(
+					'funding' => array(
+						'type' => 'card',
+						'card' => array(
+							'brand'   => 'visa',
+							'country' => 'US',
+							'funding' => 'credit',
+							'last4'   => '4242',
+						),
+					),
+				),
+			);
+		}
+
+		$this->sut->process( $event );
+		$held = wc_get_order( $order->get_id() );
+		$this->assertSame( OrderStatus::ON_HOLD, $held->get_status() );
+		$this->assertSame( $authorized_box, $held->get_meta( '_wcpay_fraud_meta_box_type', true ), 'After the authorization.' );
+
+		$event['id']                                  = 'evt_capture_of_the_authorization';
+		$event['type']                                = 'payment_intent.succeeded';
+		$event['data']['object']['status']            = 'succeeded';
+		$event['data']['object']['amount_capturable'] = 0;
+		$event['data']['object']['amount_received']   = $event['data']['object']['amount'];
+		$event['data']['object']['charges']['data'][0]['captured'] = true;
+		$this->sut->process( $event );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertTrue( $order->is_paid() );
+		$this->assertCount( 1, $this->get_order_notes_containing( $order, 'was <strong>successfully captured</strong>' ) );
+		$this->assertSame( $captured_box, $order->get_meta( '_wcpay_fraud_meta_box_type', true ), 'After the capture.' );
+		$this->assertSame( $fraud_outcome, $order->get_meta( '_wcpay_fraud_outcome_status', true ) );
+	}
+
+	/** @return array<string,array{string,string,string,string}> */
+	public function provider_fraud_box_of_an_authorization_and_its_capture(): array {
+		return array(
+			'card, allowed'               => array( 'card', 'allow', 'allow', 'allow' ),
+			'card, held for review'       => array( 'card', 'review', 'review', 'review_allowed' ),
+			'Amazon Pay, allowed'         => array( 'amazon_pay', 'allow', 'allow', 'allow' ),
+			'Amazon Pay, held for review' => array( 'amazon_pay', 'review', 'review', 'review_allowed' ),
+		);
+	}
+
+	/**
 	 * @testdox A capture completed by the succeeded payment writes the captured charge's application fee, zero included.
 	 *
 	 * Client 11.3.0's capture writer attaches the captured charge's fee; with no fee envelope it writes the application
