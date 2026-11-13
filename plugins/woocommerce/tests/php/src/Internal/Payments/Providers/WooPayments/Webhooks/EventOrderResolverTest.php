@@ -49,27 +49,37 @@ class EventOrderResolverTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A charge lookup given an event object whose metadata order key is $key_case returns the order: $expected.
-	 * @testWith ["the order's key", true]
-	 *           ["another key", false]
-	 *           ["empty", true]
+	 * @testdox A $lookup lookup given an event object whose metadata order key is $key_case returns the order: $expected.
+	 * @testWith ["charge", "the order's key", true]
+	 *           ["charge", "another key", false]
+	 *           ["charge", "empty", true]
+	 *           ["event intent", "the order's key", true]
+	 *           ["event intent", "another key", false]
+	 *           ["event intent", "empty", true]
 	 *
+	 * @param string $lookup   Lookup: by the charge ID, or by the event object's payment intent.
 	 * @param string $key_case Which order key the event metadata carries.
 	 * @param bool   $expected Whether the order is found.
 	 */
-	public function test_charge_lookup_checks_the_event_order_key( string $key_case, bool $expected ): void {
-		$order        = $this->create_order( array( '_charge_id' => 'ch_keyed' ) );
+	public function test_charge_and_event_intent_lookups_check_the_event_order_key( string $lookup, string $key_case, bool $expected ): void {
+		$order        = $this->create_order(
+			array(
+				'_charge_id' => 'ch_keyed',
+				'_intent_id' => 'pi_keyed',
+			)
+		);
 		$keys         = array(
 			"the order's key" => $order->get_order_key(),
 			'another key'     => 'wc_order_another',
 			'empty'           => '',
 		);
 		$event_object = array(
-			'id'       => 'ch_keyed',
-			'metadata' => array( 'order_key' => $keys[ $key_case ] ),
+			'id'             => 'ch_keyed',
+			'payment_intent' => 'pi_keyed',
+			'metadata'       => array( 'order_key' => $keys[ $key_case ] ),
 		);
 
-		$found = $this->sut->find_order_by_charge_id( 'ch_keyed', $event_object );
+		$found = 'charge' === $lookup ? $this->sut->find_order_by_charge_id( 'ch_keyed', $event_object ) : $this->sut->find_order_by_event_intent( $event_object );
 
 		$this->assertSame( $expected ? $order->get_id() : null, $found instanceof WC_Order ? $found->get_id() : null );
 	}

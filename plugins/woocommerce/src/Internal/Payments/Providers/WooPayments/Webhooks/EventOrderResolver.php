@@ -58,6 +58,23 @@ class EventOrderResolver {
 	}
 
 	/**
+	 * Find the order whose `_intent_id` is the payment intent a charge or refund event object names.
+	 *
+	 * Only the object's own `payment_intent` field is read, as an ID or an expanded object; an object without one finds
+	 * no order.
+	 *
+	 * @since 11.4.0
+	 *
+	 * @param array<string,mixed> $event_object Charge or refund object.
+	 * @return WC_Order|null
+	 */
+	public function find_order_by_event_intent( array $event_object ): ?WC_Order {
+		$order = $this->find_order_by_payment_meta( '_intent_id', $this->get_payment_intent_field( $event_object ) );
+
+		return $order instanceof WC_Order && $this->does_order_key_match_event_object( $order, $event_object ) ? $order : null;
+	}
+
+	/**
 	 * Find the order a charge's metadata names, for a charge no order holds as its `_charge_id`.
 	 *
 	 * Such a charge is not yet an order's own payment, such as a second charge on an order already paid. The caller records
@@ -99,15 +116,24 @@ class EventOrderResolver {
 	 * @return string Payment intent ID, or an empty string when neither names one.
 	 */
 	public function get_event_intent_id( array $event_object, WC_Order $order ): string {
+		$intent_id = $this->get_payment_intent_field( $event_object );
+
+		return '' !== $intent_id ? $intent_id : (string) $order->get_meta( '_intent_id', true );
+	}
+
+	/**
+	 * Read an event object's `payment_intent` field, an ID or an expanded object.
+	 *
+	 * @param array<string,mixed> $event_object Charge, refund, dispute or early fraud warning object.
+	 * @return string Payment intent ID, or an empty string when the field names none.
+	 */
+	private function get_payment_intent_field( array $event_object ): string {
 		$payment_intent = $event_object['payment_intent'] ?? null;
 		if ( is_array( $payment_intent ) ) {
 			$payment_intent = $payment_intent['id'] ?? null;
 		}
-		if ( is_string( $payment_intent ) && '' !== $payment_intent ) {
-			return $payment_intent;
-		}
 
-		return (string) $order->get_meta( '_intent_id', true );
+		return is_string( $payment_intent ) ? $payment_intent : '';
 	}
 
 	/**

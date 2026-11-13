@@ -36,7 +36,9 @@ use WC_Order_Refund;
  * unknown status that way (class-wc-payments-webhook-processing-service.php:361, :933, :1131). An empty field, a field of
  * the wrong type and a negative refund amount are refused here only, stricter than client 11.1.0. A charge no order
  * holds is a failure that is retried, as client 11.1.0 answers it with 500 (same file, :317, :1111); a charge whose metadata
- * names an order that no longer exists is logged and answered as handled, since no retry can find that order.
+ * names an order that no longer exists is logged and answered as handled, since no retry can find that order; so is a
+ * refund update whose charge no order holds on a payment intent its order stores as canceled, since a canceled intent
+ * takes no money and a retry is not expected to find its charge on an order.
  *
  * @since 11.0.0
  * @internal
@@ -244,7 +246,10 @@ class RefundEventHandler {
 		$currency       = $this->get_required_string( $refund, 'currency' );
 		$status         = $this->get_required_string( $refund, 'status' );
 		$balance_txn_id = WooPaymentsIntentCodec::balance_transaction_id( $refund['balance_transaction'] ?? null );
-		$order          = $this->get_order_for_charge_id( $charge_id );
+		$order          = $this->get_order_for_charge_id( $charge_id, $refund_id, $refund );
+		if ( ! $order instanceof WC_Order ) {
+			return;
+		}
 
 		// Each branch decides, and looks the local refund up again, on the order read under the lock, as charge.refunded
 		// does: a WP Admin refund of the same platform refund links its row while it holds the lock.
@@ -508,19 +513,32 @@ class RefundEventHandler {
 	}
 
 	/**
-	 * Resolve the order of a charge ID, whatever its payment method, as client 11.1.0 does (webhook processing service :1108-1119).
+	 * Resolve the order of a refund update's charge ID, whatever its payment method, as client 11.1.0 does (webhook processing
+	 * service :1108-1119).
 	 *
-	 * @param string $charge_id Charge ID.
-	 * @return WC_Order
-	 * @throws RuntimeException When the charge resolves to no order.
+	 * When no order holds the charge and the order storing the refund's payment intent stores it as canceled, a retry is not
+	 * expected to find the charge on an order, since a canceled intent takes no money: that is logged, and that order is
+	 * neither locked nor written.
+	 *
+	 * @param string              $charge_id Charge ID.
+	 * @param string              $refund_id Provider refund ID.
+	 * @param array<string,mixed> $refund    Refund object.
+	 * @return WC_Order|null The order, or null when the refund's payment intent is stored as canceled; that is logged.
+	 * @throws RuntimeException When the charge resolves to no order otherwise.
 	 */
-	private function get_order_for_charge_id( string $charge_id ): WC_Order {
+	private function get_order_for_charge_id( string $charge_id, string $refund_id, array $refund ): ?WC_Order {
 		$order = $this->event_order_resolver->find_order_by_charge_id( $charge_id );
-		if ( ! $order instanceof WC_Order ) {
-			throw new RuntimeException( esc_html( sprintf( 'Could not find WooPayments order via charge ID: %s', $charge_id ) ) );
+		if ( $order instanceof WC_Order ) {
+			return $order;
 		}
 
-		return $order;
+		$intent_order = $this->event_order_resolver->find_order_by_event_intent( $refund );
+		if ( $intent_order instanceof WC_Order && 'canceled' === (string) $intent_order->get_meta( '_intention_status', true ) ) {
+			$this->log_cancelled_intent_order( $refund_id, $charge_id, $this->event_order_resolver->get_event_intent_id( $refund, $intent_order ), $intent_order->get_id() );
+			return null;
+		}
+
+		throw new RuntimeException( esc_html( sprintf( 'Could not find WooPayments order via charge ID: %s', $charge_id ) ) );
 	}
 
 	/**
@@ -848,6 +866,24 @@ class RefundEventHandler {
 	private function log_deleted_order( string $charge_id, int $order_id ): void {
 		wc_get_logger()->info(
 			sprintf( 'charge.refunded event for charge %1$s names order %2$d, which no longer exists; nothing to record.', $charge_id, $order_id ),
+			array(
+				'source'   => WooPaymentsLogger::SOURCE,
+				'order_id' => $order_id,
+			)
+		);
+	}
+
+	/**
+	 * Log a charge.refund.updated event whose charge no order holds, on a payment intent its order stores as canceled.
+	 *
+	 * @param string $refund_id Provider refund ID.
+	 * @param string $charge_id Charge ID.
+	 * @param string $intent_id Payment intent ID.
+	 * @param int    $order_id  ID of the order storing the intent.
+	 */
+	private function log_cancelled_intent_order( string $refund_id, string $charge_id, string $intent_id, int $order_id ): void {
+		wc_get_logger()->info(
+			sprintf( 'charge.refund.updated event for refund %1$s on charge %2$s: no order holds the charge, and order %3$d stores its payment intent %4$s as canceled; nothing to record.', $refund_id, $charge_id, $order_id, $intent_id ),
 			array(
 				'source'   => WooPaymentsLogger::SOURCE,
 				'order_id' => $order_id,
