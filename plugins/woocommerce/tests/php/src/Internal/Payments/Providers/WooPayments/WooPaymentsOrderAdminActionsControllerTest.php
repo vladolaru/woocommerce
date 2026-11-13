@@ -889,8 +889,8 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox A status change to Completed captures the authorization and records the capture on the order already in that paid status.
 	 *
-	 * Client 11.3.0's status-change capture has no paid check: it captures, notes the capture and saves the status
-	 * (class-wc-payments-order-service.php:2381-2418).
+	 * Client 11.3.0's status-change capture has no paid check: it captures, adds the capture note and stores the intent
+	 * status, and does not complete the payment (class-wc-payments-order-service.php:2381-2429).
 	 */
 	public function test_status_change_to_completed_records_the_capture_on_the_completed_order(): void {
 		$order     = $this->create_recorded_authorization_order( 'requires_capture', OrderStatus::COMPLETED );
@@ -905,6 +905,135 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 		$this->assertSame( OrderStatus::COMPLETED, $order->get_status() );
 		$this->assertSame( 'succeeded', $order->get_meta( '_intention_status', true ) );
 		$this->assert_order_has_note_containing( $order, 'was <strong>successfully captured</strong>' );
+	}
+
+	/**
+	 * @testdox A status change to Completed captures once and leaves the payment uncompleted, with one capture note, one Fee details job and the date paid the change set: $_dataName.
+	 *
+	 * Client 11.3.0's status-change capture captures, adds its capture note once, schedules the Fee details job and stores
+	 * the intent status; it never completes the payment, so the order status and the date paid are the merchant's change
+	 * (class-wc-payments-order-service.php:2381-2429). The writer that completes a capture (:2193-2219, :2216) is not on
+	 * this path.
+	 *
+	 * @dataProvider status_changes_to_completed_that_capture
+	 *
+	 * @param string $from_status   Order status before the change.
+	 * @param string $stored_status Intent status the order stores.
+	 * @param bool   $retried       Whether the order payment lock refuses the change, so its retry captures.
+	 */
+	public function test_status_change_to_completed_captures_without_completing_the_payment( string $from_status, string $stored_status, bool $retried ): void {
+		$order     = $this->create_recorded_authorization_order( $stored_status, $from_status );
+		$transport = $this->create_operation_transport( PaymentProcessingService::OPERATION_CAPTURE );
+		$this->sut = $this->create_controller( wc_get_container()->get( PaymentProcessingService::class ), $this->create_provider_over_fake_transport( $transport ), $this->create_platform( $this->recorded_intent( 'authorize_manual_capture' ), null, new \ArrayObject() ) );
+		$this->sut->register();
+		$hooks = $this->count_payment_completion_hooks();
+
+		if ( $retried ) {
+			$this->while_lock_is_held(
+				$order,
+				static function () use ( $order ): void {
+					$order->update_status( OrderStatus::COMPLETED );
+				}
+			);
+			$this->assertSame( array(), $this->request_paths( $transport ), 'The refused change sends nothing.' );
+			$jobs = as_get_scheduled_actions(
+				array(
+					'hook'     => self::RETRY_HOOK,
+					'status'   => \ActionScheduler_Store::STATUS_PENDING,
+					'per_page' => -1,
+				),
+				'ids'
+			);
+			$this->assertCount( 1, $jobs );
+			\ActionScheduler::runner()->process_action( (int) reset( $jobs ) );
+		} else {
+			$order->update_status( OrderStatus::COMPLETED );
+		}
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame(
+			array(
+				'woocommerce_pre_payment_complete' => 0,
+				'woocommerce_payment_complete_order_status_completed' => 0,
+				'woocommerce_payment_complete'     => 0,
+			),
+			$this->payment_completion_hook_fires_since( $hooks ),
+			'The status-change capture fires no payment completion hook.'
+		);
+		$this->assertSame( array( $this->operation_path( PaymentProcessingService::OPERATION_CAPTURE ) ), $this->request_paths( $transport ) );
+		$this->assertSame( OrderStatus::COMPLETED, $order->get_status() );
+		$this->assertSame( 'succeeded', $order->get_meta( '_intention_status', true ) );
+		$this->assertNotNull( $order->get_date_paid(), 'The status change sets the date paid.' );
+		$this->assertSame( 1, $this->count_notes_containing( $order, 'was <strong>successfully captured</strong>' ) );
+		$this->assertSame( 1, $this->count_notes_containing( $order, 'to Completed.' ), 'One status change note.' );
+		$this->assertSame( 0, $this->count_payment_complete_notes( $order ) );
+		$this->assertSame( $retried ? 1 : 0, $this->count_notes( $order, $this->pending_note( PaymentProcessingService::OPERATION_CAPTURE ) ) );
+		$this->assertSame( 1, $this->count_pending_fee_details_jobs( $order ) );
+	}
+
+	/**
+	 * Status changes to Completed that capture: the stored authorization, at once or by its retry, and an order whose
+	 * stored status is not settled, whose intent is read.
+	 *
+	 * @return array<string,array{string,string,bool}>
+	 */
+	public function status_changes_to_completed_that_capture(): array {
+		return array(
+			'on hold, stored authorization'          => array( OrderStatus::ON_HOLD, 'requires_capture', false ),
+			'on hold, stored authorization, retried' => array( OrderStatus::ON_HOLD, 'requires_capture', true ),
+			'pending, the intent is read'            => array( OrderStatus::PENDING, 'requires_action', false ),
+			'pending, the intent is read, retried'   => array( OrderStatus::PENDING, 'requires_action', true ),
+		);
+	}
+
+	/**
+	 * @testdox A capture outside the status change completes the payment as before: $label.
+	 *
+	 * Client 11.3.0's capture writer completes the payment (class-wc-payments-order-service.php:2193-2219, :2216). The
+	 * REST authorization capture reaches it on any order status (admin/class-wc-rest-payments-orders-controller.php:368-406),
+	 * and the order screen's capture on an On-hold order (class-wc-payment-gateway-wcpay.php:4408).
+	 *
+	 * @testWith ["REST capture of a Completed order", "rest", "completed", 1, 1, 0, 0]
+	 *           ["order screen capture of an On-hold order", "order_screen", "on-hold", 1, 0, 1, 1]
+	 *
+	 * @param string $label                   Row label.
+	 * @param string $trigger                 Capture path: `rest` or `order_screen`.
+	 * @param string $from_status             Order status before the capture.
+	 * @param int    $pre_payment_complete    Expected woocommerce_pre_payment_complete fires.
+	 * @param int    $completed_status_action Expected woocommerce_payment_complete_order_status_completed fires.
+	 * @param int    $payment_complete        Expected woocommerce_payment_complete fires.
+	 * @param int    $payment_note            Expected payment complete notes.
+	 */
+	public function test_capture_outside_the_status_change_completes_the_payment( string $label, string $trigger, string $from_status, int $pre_payment_complete, int $completed_status_action, int $payment_complete, int $payment_note ): void {
+		unset( $label );
+		$order     = $this->create_recorded_authorization_order( 'requires_capture', $from_status );
+		$transport = $this->create_operation_transport( PaymentProcessingService::OPERATION_CAPTURE );
+		$provider  = $this->create_provider_over_fake_transport( $transport );
+		$this->sut = $this->create_controller( wc_get_container()->get( PaymentProcessingService::class ), $provider, $this->create_platform( null, null, new \ArrayObject() ) );
+		$this->sut->register();
+		$hooks = $this->count_payment_completion_hooks();
+
+		if ( 'rest' === $trigger ) {
+			// The REST authorization capture's call (WooPaymentsAuthorizationsRestController::handle_authorization_action()).
+			wc_get_container()->get( PaymentProcessingService::class )->capture( PaymentOperationContext::for_capture( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ), $provider );
+		} else {
+			$this->fire_order_hook( 'woocommerce_order_action_capture_charge', $order );
+		}
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame(
+			array(
+				'woocommerce_pre_payment_complete' => $pre_payment_complete,
+				'woocommerce_payment_complete_order_status_completed' => $completed_status_action,
+				'woocommerce_payment_complete'     => $payment_complete,
+			),
+			$this->payment_completion_hook_fires_since( $hooks )
+		);
+		$this->assertSame( array( $this->operation_path( PaymentProcessingService::OPERATION_CAPTURE ) ), $this->request_paths( $transport ) );
+		$this->assertSame( OrderStatus::COMPLETED, $order->get_status(), 'An order with nothing to process completes.' );
+		$this->assertNotNull( $order->get_date_paid() );
+		$this->assertSame( 1, $this->count_notes_containing( $order, 'was <strong>successfully captured</strong>' ) );
+		$this->assertSame( $payment_note, $this->count_payment_complete_notes( $order ) );
 	}
 
 	/**
@@ -1722,6 +1851,79 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 	 */
 	private function count_notes( WC_Order $order, string $content ): int {
 		return count( array_filter( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), static fn( $note ): bool => $content === $note->content ) );
+	}
+
+	/**
+	 * Count the order's notes that contain this text.
+	 *
+	 * @param WC_Order $order Order.
+	 * @param string   $text Text the note contains.
+	 * @return int
+	 */
+	private function count_notes_containing( WC_Order $order, string $text ): int {
+		return count( array_filter( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), static fn( $note ): bool => str_contains( (string) $note->content, $text ) ) );
+	}
+
+	/**
+	 * Count the order's payment complete notes, the ones WC_Order::payment_complete() adds.
+	 *
+	 * @param WC_Order $order Order.
+	 * @return int
+	 */
+	private function count_payment_complete_notes( WC_Order $order ): int {
+		return count(
+			array_filter(
+				wc_get_order_notes( array( 'order_id' => $order->get_id() ) ),
+				static fn( $note ): bool => 'Payment complete.' === $note->content || 0 === strpos( (string) $note->content, 'Payment via ' )
+			)
+		);
+	}
+
+	/**
+	 * How many times each payment completion hook has fired so far.
+	 *
+	 * @return array<string,int>
+	 */
+	private function count_payment_completion_hooks(): array {
+		$counts = array();
+		foreach ( array( 'woocommerce_pre_payment_complete', 'woocommerce_payment_complete_order_status_completed', 'woocommerce_payment_complete' ) as $hook ) {
+			$counts[ $hook ] = did_action( $hook );
+		}
+
+		return $counts;
+	}
+
+	/**
+	 * How many times each payment completion hook fired since the counts given.
+	 *
+	 * @param array<string,int> $before Counts from count_payment_completion_hooks().
+	 * @return array<string,int>
+	 */
+	private function payment_completion_hook_fires_since( array $before ): array {
+		$fires = array();
+		foreach ( $this->count_payment_completion_hooks() as $hook => $count ) {
+			$fires[ $hook ] = $count - $before[ $hook ];
+		}
+
+		return $fires;
+	}
+
+	/**
+	 * Count the order's pending Fee details jobs.
+	 *
+	 * @param WC_Order $order Order.
+	 * @return int
+	 */
+	private function count_pending_fee_details_jobs( WC_Order $order ): int {
+		$jobs = as_get_scheduled_actions(
+			array(
+				'hook'     => WooPaymentsFeeDetailsNoteController::ADD_FEE_BREAKDOWN_TO_ORDER_NOTES_ACTION,
+				'status'   => \ActionScheduler_Store::STATUS_PENDING,
+				'per_page' => -1,
+			)
+		);
+
+		return count( array_filter( $jobs, static fn( $job ): bool => $order->get_id() === ( $job->get_args()['order_id'] ?? null ) ) );
 	}
 
 	/**

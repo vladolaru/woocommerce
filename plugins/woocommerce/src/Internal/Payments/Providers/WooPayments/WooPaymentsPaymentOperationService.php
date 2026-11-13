@@ -541,8 +541,15 @@ class WooPaymentsPaymentOperationService {
 					);
 					$outcome = WooPaymentsIntentCodec::outcome_from_capture_result( $result, $intent_id );
 					$plan    = WooPaymentsOrderEffectPlan::for_capture( $result );
+					if ( empty( $context->get_provider_data()[ self::PROVIDER_DATA_CAPTURE_ON_STATUS_CHANGE ] ) ) {
+						return $outcome->with_effect_plan( $plan );
+					}
 
-					return $outcome->with_effect_plan( empty( $context->get_provider_data()[ self::PROVIDER_DATA_CAPTURE_ON_STATUS_CHANGE ] ) ? $plan : $plan->without_fee_meta() );
+					// Client 11.3.0's status-change capture adds the capture note, schedules the Fee details job and stores
+					// the intent status, with no fee meta and no payment completion: the merchant's change set the order
+					// status (class-wc-payments-order-service.php:2381-2429). Its capture writer, which other captures
+					// reach, completes the payment (:2193-2219, :2216).
+					return self::leaving_order_status_when_completed( $outcome )->with_effect_plan( $plan->without_fee_meta() );
 				} catch ( ApiException $exception ) {
 					$outcome = WooPaymentsIntentCodec::failed_transport_outcome( 'capture', $exception, $intent_id );
 
@@ -567,6 +574,27 @@ class WooPaymentsPaymentOperationService {
 		}
 
 		return $this->unavailable_outcome( 'capture' );
+	}
+
+	/**
+	 * Mark a completed capture outcome to leave the order status untouched; return any other outcome as it is.
+	 *
+	 * @param PaymentOutcome $outcome Capture outcome.
+	 * @return PaymentOutcome
+	 */
+	private static function leaving_order_status_when_completed( PaymentOutcome $outcome ): PaymentOutcome {
+		if ( PaymentOutcome::STATUS_COMPLETED !== $outcome->get_status() ) {
+			return $outcome;
+		}
+
+		return new PaymentOutcome(
+			$outcome->get_status(),
+			$outcome->get_provider_payment_id(),
+			$outcome->get_redirect_url(),
+			$outcome->get_payment_method_id(),
+			$outcome->get_customer_id(),
+			array_merge( $outcome->get_data(), array( PaymentOutcome::DATA_PRESERVE_ORDER_STATUS => true ) )
+		);
 	}
 
 	/**

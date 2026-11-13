@@ -9394,15 +9394,20 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * A capture made because the order status changed to completed writes no fee meta, as on the client
-	 * (class-wc-payments-order-service.php:1847-1886); other captures do (:1681).
+	 * @testdox Only the status-change capture drops the fee meta, and only its completed capture leaves the order status untouched: $_dataName.
+	 *
+	 * A capture made because the order status changed to completed writes no fee meta and does not complete the payment,
+	 * as client 11.3.0's status-change capture (class-wc-payments-order-service.php:2381-2429); the other captures write
+	 * both through the capture writer (:2193-2219, :2215-2216).
 	 *
 	 * @dataProvider capture_fee_meta_cases
 	 *
-	 * @param array<string,mixed> $provider_data   Capture context provider data.
-	 * @param bool                $writes_fee_meta Whether the capture plan writes fee meta.
+	 * @param array<string,mixed> $provider_data       Capture context provider data.
+	 * @param string              $capture_status      Intent status the capture answers.
+	 * @param bool                $writes_fee_meta     Whether the capture plan writes fee meta.
+	 * @param bool                $leaves_order_status Whether the outcome asks to leave the order status untouched.
 	 */
-	public function test_capture_plan_writes_fee_meta_unless_the_status_change_captured( array $provider_data, bool $writes_fee_meta ): void {
+	public function test_status_change_capture_drops_the_fee_meta_and_leaves_the_order_status( array $provider_data, string $capture_status, bool $writes_fee_meta, bool $leaves_order_status ): void {
 		$order      = $this->create_woopayments_order();
 		$api_client = $this->getMockBuilder( Client::class )
 			->disableOriginalConstructor()
@@ -9414,7 +9419,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		$api_client->method( 'capture_intention' )->willReturn(
 			array(
 				'id'     => 'pi_capture_fee',
-				'status' => 'succeeded',
+				'status' => $capture_status,
 			)
 		);
 
@@ -9424,17 +9429,22 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		$plan = $outcome->get_effect_plan();
 		$this->assertInstanceOf( WooPaymentsOrderEffectPlan::class, $plan );
 		$this->assertSame( $writes_fee_meta, $plan->writes_fee_meta() );
+		$this->assertSame( $leaves_order_status, $outcome->get_data()[ PaymentOutcome::DATA_PRESERVE_ORDER_STATUS ] ?? false );
 	}
 
 	/**
-	 * Capture contexts and whether their plan writes fee meta.
+	 * Capture contexts, the status the capture answers, whether the plan writes fee meta and whether the outcome leaves the
+	 * order status untouched.
 	 *
-	 * @return array<string,array{array<string,mixed>,bool}>
+	 * @return array<string,array{array<string,mixed>,string,bool,bool}>
 	 */
 	public function capture_fee_meta_cases(): array {
+		$status_change = array( WooPaymentsPaymentOperationService::PROVIDER_DATA_CAPTURE_ON_STATUS_CHANGE => true );
+
 		return array(
-			'order action or REST capture'          => array( array(), true ),
-			'capture on status change to completed' => array( array( WooPaymentsPaymentOperationService::PROVIDER_DATA_CAPTURE_ON_STATUS_CHANGE => true ), false ),
+			'order action or REST capture'          => array( array(), 'succeeded', true, false ),
+			'capture on status change to completed' => array( $status_change, 'succeeded', false, true ),
+			'capture on status change, still awaiting capture' => array( $status_change, 'requires_capture', false, false ),
 		);
 	}
 
