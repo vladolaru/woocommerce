@@ -7,6 +7,7 @@ use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\TransportLog;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\PaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\EarlyFraudWarningEventHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\EventIngestor;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\EventOrderResolver;
@@ -99,7 +100,8 @@ trait WooPaymentsEventHandlerTestTrait {
 			$container->get( OrderPaymentLock::class ),
 			$container->get( WooPaymentsPersistenceVocabulary::class ),
 			$container->get( WooPaymentsIntentConfirmationService::class ),
-			$container->get( WooPaymentsCompositionDataSettler::class )
+			$container->get( WooPaymentsCompositionDataSettler::class ),
+			$container->get( PaymentMethodRegistry::class )
 		);
 		$ingestor = new EventIngestor();
 		$ingestor->init(

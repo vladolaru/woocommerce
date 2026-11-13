@@ -4897,6 +4897,118 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A Klarna checkout that leaves for Klarna stores the attempt's payment method, so the payment_intent.payment_failed webhook of the abandoned attempt adds the declined-payment note and leaves the order Pending.
+	 *
+	 * Client 11.3.0 stores the intent and its payment method when the started payment is written (attach_intent_info_to_order(),
+	 * class-wc-payments-order-service.php:1818-1877), and its webhook notes a buy now, pay later failure only for the order's
+	 * stored payment method, without changing the status (class-wc-payments-webhook-processing-service.php:577-606). The
+	 * checkout answer is a requires_action intent with a redirect_to_url next action (Stripe API PaymentIntent object); the
+	 * failure's error is the one Stripe returned when a shopper closed Klarna's test page.
+	 */
+	public function test_klarna_checkout_stores_the_payment_method_its_abandoned_attempt_failure_is_noted_for(): void {
+		$order = $this->create_woopayments_order( '100.00' );
+		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . 'klarna' );
+		$order->set_currency( 'USD' );
+		$order->save();
+		$http_client           = new FakeHttpClient();
+		$http_client->response = array(
+			'response' => array( 'code' => 200 ),
+			'headers'  => array( 'content-type' => 'application/json; charset=UTF-8' ),
+			'body'     => wp_json_encode(
+				array(
+					'id'                   => 'pi_klarna_attempt',
+					'object'               => 'payment_intent',
+					'status'               => 'requires_action',
+					'amount'               => 10000,
+					'currency'             => 'usd',
+					'customer'             => 'cus_klarna',
+					'client_secret'        => 'pi_klarna_attempt_secret_example',
+					'payment_method'       => 'pm_klarna_attempt',
+					'payment_method_types' => array( 'klarna' ),
+					'metadata'             => array( 'order_id' => (string) $order->get_id() ),
+					'next_action'          => array(
+						'type'            => 'redirect_to_url',
+						'redirect_to_url' => array( 'url' => 'https://pm-redirects.stripe.com/authorize/acct_test/pa_nonce' ),
+					),
+					'charges'              => array(
+						'total_count' => 0,
+						'data'        => array(),
+					),
+				)
+			),
+		);
+		$customer_service      = $this->getMockBuilder( WooPaymentsCustomerService::class )->disableOriginalConstructor()->onlyMethods( array( 'get_or_create_customer_id_for_order' ) )->getMock();
+		$customer_service->method( 'get_or_create_customer_id_for_order' )->willReturn( 'cus_klarna' );
+		$provider = $this->create_provider_over_fake_transport( $http_client, $this->create_account_service( false ), $customer_service );
+
+		$outcome = wc_get_container()->get( PaymentProcessingService::class )->process_checkout_outcome(
+			PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . 'klarna', 'pm_klarna_attempt' ),
+			$provider
+		);
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( PaymentOutcome::STATUS_REQUIRES_REDIRECT, $outcome->get_status() );
+		$this->assertSame(
+			array( OrderStatus::PENDING, 'pi_klarna_attempt', 'pm_klarna_attempt', 'requires_action' ),
+			array( $order->get_status(), $order->get_meta( '_intent_id', true ), $order->get_meta( '_payment_method_id', true ), $order->get_meta( '_intention_status', true ) ),
+			'The started payment stores the attempt before the shopper leaves for Klarna.'
+		);
+		$transaction_id = $order->get_transaction_id();
+		$notes_before   = wp_list_pluck( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), 'content' );
+
+		wc_get_container()->get( PaymentIntentEventHandler::class )->process(
+			'payment_intent.payment_failed',
+			array(
+				'id'                 => 'pi_klarna_attempt',
+				'status'             => 'requires_payment_method',
+				'amount'             => 10000,
+				'currency'           => 'usd',
+				'metadata'           => array(
+					'order_id'  => (string) $order->get_id(),
+					'order_key' => $order->get_order_key(),
+				),
+				'last_payment_error' => array(
+					'code'           => 'payment_intent_authentication_failure',
+					'decline_code'   => 'klarna_payment_declined',
+					'doc_url'        => 'https://stripe.com/docs/error-codes/payment-method-customer-decline',
+					'message'        => 'Customer cancelled checkout on Klarna',
+					'payment_method' => array(
+						'id'   => 'pm_klarna_attempt',
+						'type' => 'klarna',
+					),
+				),
+			)
+		);
+
+		$order           = wc_get_order( $order->get_id() );
+		$transaction_url = add_query_arg(
+			array(
+				'page' => 'wc-admin',
+				'path' => rawurlencode( '/payments/transactions/details' ),
+				'id'   => 'pi_klarna_attempt',
+			),
+			admin_url( 'admin.php' )
+		);
+		$this->assertSame(
+			array(
+				OrderStatus::PENDING,
+				'pi_klarna_attempt',
+				'requires_action',
+				$transaction_id,
+				array( 'A payment of ' . wc_price( 100, array( 'currency' => 'USD' ) ) . ' <strong>failed</strong> using WooPayments (<a href="' . $transaction_url . '" target="_blank" rel="noopener noreferrer">pi_klarna_attempt</a>). With the following message: <code>Customer cancelled checkout on Klarna</code>. Decline code: <code>klarna_payment_declined</code>. <a href="https://stripe.com/docs/error-codes/payment-method-customer-decline" target="_blank" rel="noopener noreferrer">More information</a>' ),
+			),
+			array(
+				$order->get_status(),
+				$order->get_meta( '_intent_id', true ),
+				$order->get_meta( '_intention_status', true ),
+				$order->get_transaction_id(),
+				array_values( array_diff( wp_list_pluck( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), 'content' ), $notes_before ) ),
+			),
+			'Status, stored intent, intent status, transaction ID and the added note after the failure.'
+		);
+	}
+
+	/**
 	 * Build the real provider over a transport that answers a recorded REC-1 decline, for a payer whose customer is cus_rec1_checkout.
 	 *
 	 * @param array{http_status:int,error:array<string,mixed>} $recorded               Recorded decline entry.

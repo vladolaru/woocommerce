@@ -2239,12 +2239,13 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 					'last_payment_error' => array(
 						'payment_method' => array(
 							'id'   => 'pm_123',
-							'type' => 'klarna',
+							'type' => 'ideal',
 						),
 					),
 				),
 				'',
 			),
+			'Klarna, no payment method ID'         => array( array(), array( 'last_payment_error' => array( 'payment_method' => array( 'type' => 'klarna' ) ) ), '' ),
 			'BACS debit'                           => array(
 				array(),
 				array(
@@ -2275,6 +2276,288 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 				'pi_current',
 			),
 		);
+	}
+
+	/**
+	 * @testdox payment_intent.payment_failed for a buy now, pay later payment method adds the declined-payment note once and changes nothing else: $_dataName.
+	 *
+	 * Client 11.3.0 adds the declined-payment note, and writes nothing else, when the failed payment method is an Affirm,
+	 * Afterpay or Klarna one, is the order's stored payment method, and the order is not in a paid status; Failed orders are
+	 * noted too, and the same text already on the order stops it (class-wc-payments-webhook-processing-service.php:532-534,
+	 * :577-606; class-wc-payments-order-service.php:609-611, :620-656, :987-1000). Each row uses the error Stripe returned
+	 * for a Klarna checkout cancelled on Klarna's test page.
+	 *
+	 * @dataProvider provider_buy_now_pay_later_failures
+	 *
+	 * @param string $payment_method_type   Failed payment method type in the event.
+	 * @param string $status                Order status before the event.
+	 * @param string $stored_payment_method `_payment_method_id` on the order.
+	 * @param bool   $noted                 Whether the failure is noted.
+	 */
+	public function test_buy_now_pay_later_failure_is_noted_once_without_other_changes( string $payment_method_type, string $status, string $stored_payment_method, bool $noted ): void {
+		$order          = $this->create_buy_now_pay_later_order( $payment_method_type, $stored_payment_method );
+		$transaction_id = in_array( $status, wc_get_is_paid_statuses(), true ) ? 'pi_bnpl_attempt' : '';
+		$order->set_transaction_id( $transaction_id );
+		$order->set_status( $status );
+		$order->save();
+		$notes_before = $this->get_order_note_contents( $order );
+		$event        = $this->create_buy_now_pay_later_failure_event( $order, $payment_method_type );
+
+		foreach ( array( 'delivery', 'redelivery' ) as $delivery ) {
+			$event['id']   = "evt_bnpl_failed_{$delivery}";
+			$notifications = $this->count_failed_order_notifications( fn() => $this->sut->process( $event ) );
+
+			$order = wc_get_order( $order->get_id() );
+			$this->assertInstanceOf( WC_Order::class, $order );
+			$this->assertSame(
+				array( $status, $transaction_id, 'pi_bnpl_attempt', 'requires_action', $noted ? array( $this->get_buy_now_pay_later_declined_note( $order ) ) : array(), array( 0, 0 ) ),
+				array( $order->get_status(), $order->get_transaction_id(), $order->get_meta( '_intent_id', true ), $order->get_meta( '_intention_status', true ), $this->get_notes_added_since( $order, $notes_before ), $notifications ),
+				"Status, transaction ID, stored intent, intent status, added notes and failed-order notifications after the $delivery."
+			);
+		}
+	}
+
+	/**
+	 * Buy now, pay later failures, the order they reach and whether they are noted.
+	 *
+	 * @return array<string,array{string,string,string,bool}>
+	 */
+	public function provider_buy_now_pay_later_failures(): array {
+		return array(
+			'Affirm, Pending'                          => array( 'affirm', OrderStatus::PENDING, 'pm_bnpl_attempt', true ),
+			'Afterpay, Pending'                        => array( 'afterpay_clearpay', OrderStatus::PENDING, 'pm_bnpl_attempt', true ),
+			'Klarna, Pending'                          => array( 'klarna', OrderStatus::PENDING, 'pm_bnpl_attempt', true ),
+			'Klarna, Failed'                           => array( 'klarna', OrderStatus::FAILED, 'pm_bnpl_attempt', true ),
+			'Klarna, On hold'                          => array( 'klarna', OrderStatus::ON_HOLD, 'pm_bnpl_attempt', true ),
+			'Klarna, Processing, paid by this payment' => array( 'klarna', OrderStatus::PROCESSING, 'pm_bnpl_attempt', false ),
+			'Klarna, Completed, paid by this payment'  => array( 'klarna', OrderStatus::COMPLETED, 'pm_bnpl_attempt', false ),
+			'Klarna, another payment method stored'    => array( 'klarna', OrderStatus::PENDING, 'pm_newer_attempt', false ),
+			'Klarna, no payment method stored'         => array( 'klarna', OrderStatus::PENDING, '', false ),
+		);
+	}
+
+	/**
+	 * @testdox A buy now, pay later failure on an order whose payment is another one is recorded with one note and changes nothing else: $_dataName.
+	 *
+	 * An event on a payment that is not the order's is recorded only, and a failure on an order another payment method
+	 * holds is not the order's payment. Client 11.3.0 writes nothing on a paid order, and notes an unpaid one held by
+	 * another payment method (class-wc-payments-webhook-processing-service.php:585-606).
+	 *
+	 * @dataProvider provider_buy_now_pay_later_failures_of_another_payment
+	 *
+	 * @param string $gateway        The order's payment method.
+	 * @param string $status         The order's status.
+	 * @param string $transaction_id The order's transaction ID.
+	 */
+	public function test_buy_now_pay_later_failure_of_another_payment_is_recorded( string $gateway, string $status, string $transaction_id ): void {
+		$order = $this->create_buy_now_pay_later_order( 'klarna', 'pm_bnpl_attempt' );
+		$order->set_payment_method( $gateway );
+		$order->set_transaction_id( $transaction_id );
+		$order->set_status( $status );
+		$order->save();
+		$notes_before = $this->get_order_note_contents( $order );
+		$event        = $this->create_buy_now_pay_later_failure_event( $order, 'klarna' );
+		$record_note  = 'A WooPayments payment attempt (<a href="' . esc_url( $this->get_transaction_details_url( 'pi_bnpl_attempt' ) ) . '" target="_blank" rel="noopener noreferrer">pi_bnpl_attempt</a>) that does not pay this order failed.';
+
+		$this->sut->process( $event );
+		$this->sut->process( $event );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame(
+			array( $status, $transaction_id, 'pi_bnpl_attempt', 'requires_action', array( $record_note ) ),
+			array( $order->get_status(), $order->get_transaction_id(), $order->get_meta( '_intent_id', true ), $order->get_meta( '_intention_status', true ), $this->get_notes_added_since( $order, $notes_before ) )
+		);
+	}
+
+	/**
+	 * Orders whose payment is not the failed attempt.
+	 *
+	 * @return array<string,array{string,string,string}>
+	 */
+	public function provider_buy_now_pay_later_failures_of_another_payment(): array {
+		return array(
+			'paid by card after the attempt'   => array( WooPaymentsPersistenceVocabulary::GATEWAY_ID, OrderStatus::PROCESSING, 'pi_card_payment' ),
+			'a bank transfer holds it On hold' => array( 'bacs', OrderStatus::ON_HOLD, '' ),
+		);
+	}
+
+	/**
+	 * @testdox A buy now, pay later failure refused by a held order payment lock fails the delivery and adds its note on a later delivery.
+	 */
+	public function test_buy_now_pay_later_failure_refused_by_the_order_payment_lock_is_noted_later(): void {
+		$order        = $this->create_buy_now_pay_later_order( 'klarna', 'pm_bnpl_attempt' );
+		$notes_before = $this->get_order_note_contents( $order );
+		$event        = $this->create_buy_now_pay_later_failure_event( $order, 'klarna' );
+		$vocabulary   = new WooPaymentsPersistenceVocabulary();
+		// The shopper's return from Klarna holds the lock while it fails the order.
+		$this->hold_order_payment_lock( $order, $vocabulary, 'pi_bnpl_attempt' );
+
+		$refusal = null;
+		try {
+			$this->sut->process( $event );
+		} catch ( OrderPaymentLockRefusedException $exception ) {
+			$refusal = $exception;
+		} finally {
+			$this->clear_order_payment_lock( $order, $vocabulary );
+		}
+
+		$this->assertInstanceOf( OrderPaymentLockRefusedException::class, $refusal, 'A refused delivery must fail, so the store retries it instead of acknowledging it.' );
+		$this->assertSame( array(), $this->get_notes_added_since( $order, $notes_before ), 'A refused delivery adds no note.' );
+
+		$this->sut->process( $event );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( OrderStatus::PENDING, $order->get_status() );
+		$this->assertSame( array( $this->get_buy_now_pay_later_declined_note( $order ) ), $this->get_notes_added_since( $order, $notes_before ), 'A later delivery adds the note.' );
+	}
+
+	/**
+	 * @testdox A buy now, pay later failure whose declined-payment note the WooPayments extension wrote in German adds no second note.
+	 *
+	 * Client 11.3.0 adds the note only when the same text is not on the order (class-wc-payments-webhook-processing-service.php:601-603).
+	 */
+	public function test_buy_now_pay_later_failure_recognises_the_german_woopayments_extension_note(): void {
+		$translations = array(
+			'A payment of %1$s <strong>failed</strong> using %2$s (<a>%3$s</a>).' => '%1$s-Zahlung ist mit %2$s <strong>fehlgeschlagen</strong> (<a>%3$s</a>).',
+			'With the following message: <code>%1$s</code>. Decline code: <code>%2$s</code>.' => 'Meldung: <code>%1$s</code>. Ablehnungscode: <code>%2$s</code>.',
+			'<a href="%1$s" target="_blank" rel="noopener noreferrer">More information</a>' => '<a href="%1$s" target="_blank" rel="noopener noreferrer">Mehr erfahren</a>',
+		);
+		$this->install_test_translations_for_domain( 'woocommerce', array_map( static fn( string $text ): string => 'Core-' . $text, $translations ) );
+		$this->install_test_translations_for_domain( 'woocommerce-payments', array_map( static fn( string $text ): string => 'Plugin-' . $text, $translations ) );
+		switch_to_locale( 'de_DE' );
+		update_option( '_wcpay_feature_customer_multi_currency', '0' );
+		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'EUR' ) );
+
+		$order       = $this->create_buy_now_pay_later_order( 'klarna', 'pm_bnpl_attempt' );
+		$plugin_note = 'Plugin-' . wc_price( 10.00, array( 'currency' => $order->get_currency() ) ) . '-Zahlung ist mit WooPayments <strong>fehlgeschlagen</strong> (<a href="' . $this->get_transaction_details_url( 'pi_bnpl_attempt' ) . '" target="_blank" rel="noopener noreferrer">pi_bnpl_attempt</a>). Plugin-Meldung: <code>Customer cancelled checkout on Klarna</code>. Ablehnungscode: <code>klarna_payment_declined</code>. Plugin-<a href="https://stripe.com/docs/error-codes/payment-method-customer-decline" target="_blank" rel="noopener noreferrer">Mehr erfahren</a>';
+		$order->add_order_note( $plugin_note );
+		$notes_before = $this->get_order_note_contents( $order );
+
+		$this->sut->process( $this->create_buy_now_pay_later_failure_event( $order, 'klarna' ) );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( OrderStatus::PENDING, $order->get_status() );
+		$this->assertSame( 1, $this->count_order_notes_matching( $order, $plugin_note ) );
+		$this->assertSame( array(), $this->get_notes_added_since( $order, $notes_before ) );
+	}
+
+	/**
+	 * Create a WooPayments order a buy now, pay later checkout started: its split gateway, the attempt's intent and payment
+	 * method, and the intent status the started payment stores.
+	 *
+	 * @param string $payment_method_type   Buy now, pay later payment method type.
+	 * @param string $stored_payment_method `_payment_method_id` on the order.
+	 * @return WC_Order
+	 */
+	private function create_buy_now_pay_later_order( string $payment_method_type, string $stored_payment_method ): WC_Order {
+		$order = $this->create_woopayments_order();
+		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . $payment_method_type );
+		$order->update_meta_data( '_payment_method_id', $stored_payment_method );
+		$order->update_meta_data( '_intent_id', 'pi_bnpl_attempt' );
+		$order->update_meta_data( '_intention_status', 'requires_action' );
+		$order->save();
+
+		return $order;
+	}
+
+	/**
+	 * Create the payment_intent.payment_failed event of a buy now, pay later attempt.
+	 *
+	 * The error is the one Stripe returned when a shopper closed Klarna's test page: its code, decline code, message and
+	 * documentation link, on the attempt's payment method.
+	 *
+	 * @param WC_Order $order               Order of the attempt.
+	 * @param string   $payment_method_type Failed payment method type.
+	 * @return array<string,mixed>
+	 */
+	private function create_buy_now_pay_later_failure_event( WC_Order $order, string $payment_method_type ): array {
+		return $this->create_payment_intent_event(
+			'payment_intent.payment_failed',
+			$order,
+			array(
+				'id'                 => 'pi_bnpl_attempt',
+				'status'             => 'requires_payment_method',
+				'last_payment_error' => array(
+					'code'           => 'payment_intent_authentication_failure',
+					'decline_code'   => 'klarna_payment_declined',
+					'doc_url'        => 'https://stripe.com/docs/error-codes/payment-method-customer-decline',
+					'message'        => 'Customer cancelled checkout on Klarna',
+					'payment_method' => array(
+						'id'   => 'pm_bnpl_attempt',
+						'type' => $payment_method_type,
+					),
+				),
+			),
+			array( 'id' => 'evt_bnpl_failed' )
+		);
+	}
+
+	/**
+	 * The declined-payment note client 11.3.0 writes for the buy now, pay later failure event, on the order's total
+	 * (class-wc-payments-order-service.php:609-611, :620-656, :2646-2667).
+	 *
+	 * @param WC_Order $order Order of the attempt.
+	 * @return string
+	 */
+	private function get_buy_now_pay_later_declined_note( WC_Order $order ): string {
+		return 'A payment of ' . wc_price( 10.00, array( 'currency' => $order->get_currency() ) ) . ' <strong>failed</strong> using WooPayments (<a href="' . $this->get_transaction_details_url( 'pi_bnpl_attempt' ) . '" target="_blank" rel="noopener noreferrer">pi_bnpl_attempt</a>). With the following message: <code>Customer cancelled checkout on Klarna</code>. Decline code: <code>klarna_payment_declined</code>. <a href="https://stripe.com/docs/error-codes/payment-method-customer-decline" target="_blank" rel="noopener noreferrer">More information</a>';
+	}
+
+	/**
+	 * The WooPayments transaction details URL of a payment.
+	 *
+	 * @param string $payment_id Payment intent or charge ID.
+	 * @return string
+	 */
+	private function get_transaction_details_url( string $payment_id ): string {
+		return add_query_arg(
+			array(
+				'page' => 'wc-admin',
+				'path' => rawurlencode( '/payments/transactions/details' ),
+				'id'   => $payment_id,
+			),
+			admin_url( 'admin.php' )
+		);
+	}
+
+	/**
+	 * Get the contents of every note on the order.
+	 *
+	 * @param WC_Order $order Order object.
+	 * @return string[]
+	 */
+	private function get_order_note_contents( WC_Order $order ): array {
+		return array_map(
+			static fn( $note ): string => (string) $note->content,
+			wc_get_order_notes(
+				array(
+					'order_id' => $order->get_id(),
+					'type'     => 'any',
+				)
+			)
+		);
+	}
+
+	/**
+	 * Get the contents of the notes added to the order since an earlier read of its notes.
+	 *
+	 * @param WC_Order $order  Order object.
+	 * @param string[] $before Note contents read earlier.
+	 * @return string[]
+	 */
+	private function get_notes_added_since( WC_Order $order, array $before ): array {
+		$added = $this->get_order_note_contents( $order );
+		foreach ( $before as $content ) {
+			$index = array_search( $content, $added, true );
+			if ( false !== $index ) {
+				unset( $added[ $index ] );
+			}
+		}
+
+		return array_values( $added );
 	}
 
 	/**

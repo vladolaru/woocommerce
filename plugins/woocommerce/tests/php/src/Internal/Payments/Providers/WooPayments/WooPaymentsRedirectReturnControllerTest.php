@@ -32,6 +32,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPe
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentMethodDetailsService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRedirectReturnController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\PaymentIntentEventHandler;
 use Automattic\WooCommerce\Utilities\OrderUtil;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Api\FakeHttpClient;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\WooCommerceSubscriptionsDoubles;
@@ -2283,6 +2284,129 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 				'With the following message: <code>' . str_repeat( 'a', 1000 ) . '…</code>',
 			),
 			'fetch failure'                            => array( null, 'UPE payment failed: Transport unavailable.' ),
+		);
+	}
+
+	/**
+	 * @testdox A Klarna failure's return and its payment_intent.payment_failed webhook leave the client's notes in either order: $_dataName.
+	 *
+	 * Client 11.3.0's webhook adds the declined-payment note for a buy now, pay later failure unless the same text is on the
+	 * order, and changes no status (class-wc-payments-webhook-processing-service.php:577-606). Its return writes the same text
+	 * for an intent error and fails the order whatever notes it has (class-wc-payment-gateway-wcpay.php:2760-2763;
+	 * class-wc-payments-order-service.php:577-595), and writes "UPE payment failed: <message>" for a failed fetch, stopped
+	 * only by that text or a Failed order (gw:2765-2767; os:545-560). The error is the one Stripe returned when a shopper
+	 * closed Klarna's test page.
+	 *
+	 * @dataProvider provider_klarna_failure_arrivals
+	 *
+	 * @param array<int,array{0:string,1:string,2:string[]}> $steps Each arrival ('return', 'failed fetch' or 'webhook'), with the status and the failure notes after it ('D' the declined note, 'U' the failed-fetch note).
+	 */
+	public function test_klarna_failure_return_and_webhook_in_either_order( array $steps ): void {
+		$order = $this->create_order();
+		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . 'klarna' );
+		$order->update_meta_data( '_intent_id', 'pi_klarna_return' );
+		$order->update_meta_data( '_payment_method_id', 'pm_klarna_return' );
+		$order->update_meta_data( '_intention_status', 'requires_action' );
+		$order->save();
+		$error           = array(
+			'type'           => 'invalid_request_error',
+			'code'           => 'payment_intent_authentication_failure',
+			'decline_code'   => 'klarna_payment_declined',
+			'doc_url'        => 'https://stripe.com/docs/error-codes/payment-method-customer-decline',
+			'message'        => 'Customer cancelled checkout on Klarna',
+			'payment_method' => array(
+				'id'   => 'pm_klarna_return',
+				'type' => 'klarna',
+			),
+		);
+		$transaction_url = add_query_arg(
+			array(
+				'page' => 'wc-admin',
+				'path' => rawurlencode( '/payments/transactions/details' ),
+				'id'   => 'pi_klarna_return',
+			),
+			admin_url( 'admin.php' )
+		);
+		$note_start      = 'A payment of ' . wc_price( 50, array( 'currency' => 'USD' ) ) . ' <strong>failed</strong> using WooPayments (<a href="' . $transaction_url . '" target="_blank" rel="noopener noreferrer">pi_klarna_return</a>). ';
+		$notes           = array(
+			'D' => $note_start . 'With the following message: <code>Customer cancelled checkout on Klarna</code>. Decline code: <code>klarna_payment_declined</code>. <a href="https://stripe.com/docs/error-codes/payment-method-customer-decline" target="_blank" rel="noopener noreferrer">More information</a>',
+			'U' => $note_start . 'UPE payment failed: Request timed out.',
+		);
+		$intent          = array(
+			'id'                 => 'pi_klarna_return',
+			'status'             => 'requires_payment_method',
+			'currency'           => 'usd',
+			'amount'             => 5000,
+			'customer'           => 'cus_return',
+			'payment_method'     => null,
+			'metadata'           => array(
+				'order_id'  => (string) $order->get_id(),
+				'order_key' => $order->get_order_key(),
+			),
+			'last_payment_error' => $error,
+		);
+
+		foreach ( $steps as list( $arrival, $expected_status, $expected_notes ) ) {
+			if ( 'webhook' === $arrival ) {
+				wc_get_container()->get( PaymentIntentEventHandler::class )->process( 'payment_intent.payment_failed', $intent );
+			} else {
+				$api_client = new RedirectReturnApiClientStub();
+				if ( 'failed fetch' === $arrival ) {
+					$api_client->exception = new ApiException( 'Request timed out.', 'wcpay_http_request_failed', 504 );
+				} else {
+					$api_client->payment_intent = $intent;
+				}
+				$this->sut = $this->create_controller( true, $this->create_confirmation_service( $api_client ), $api_client );
+				$this->set_payment_intent_return_request( wc_get_order( $order->get_id() ), 'pi_klarna_return' );
+				if ( 'failed fetch' === $arrival ) {
+					$_GET['redirect_status'] = 'failed';
+				}
+				$this->assertSame( wc_get_checkout_url(), $this->handle_wp_expecting_redirect(), "The $arrival sends the shopper back to checkout." );
+			}
+
+			$reloaded       = wc_get_order( $order->get_id() );
+			$failure_notes  = array_values(
+				array_filter(
+					wp_list_pluck( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), 'content' ),
+					static fn( string $note ): bool => false !== strpos( $note, '<strong>failed</strong>' )
+				)
+			);
+			$expected_texts = array_map( static fn( string $key ): string => $notes[ $key ], $expected_notes );
+			sort( $failure_notes );
+			sort( $expected_texts );
+			$this->assertSame(
+				array( $expected_status, $expected_texts, 'pi_klarna_return', '' ),
+				array( $reloaded->get_status(), $failure_notes, $reloaded->get_meta( '_intent_id', true ), $reloaded->get_transaction_id() ),
+				"Status, failure notes, stored intent and transaction ID after the $arrival."
+			);
+		}
+	}
+
+	/**
+	 * The arrival orders of a Klarna failure's return and webhook.
+	 *
+	 * @return array<string,array{0:array<int,array{0:string,1:string,2:string[]}>}>
+	 */
+	public function provider_klarna_failure_arrivals(): array {
+		return array(
+			'the return, then the webhook'     => array(
+				array(
+					array( 'return', OrderStatus::FAILED, array( 'D' ) ),
+					array( 'webhook', OrderStatus::FAILED, array( 'D' ) ),
+				),
+			),
+			'the webhook, then the return'     => array(
+				array(
+					array( 'webhook', OrderStatus::PENDING, array( 'D' ) ),
+					array( 'return', OrderStatus::FAILED, array( 'D' ) ),
+				),
+			),
+			'the webhook, then a failed fetch' => array(
+				array(
+					array( 'webhook', OrderStatus::PENDING, array( 'D' ) ),
+					array( 'failed fetch', OrderStatus::FAILED, array( 'D', 'U' ) ),
+				),
+			),
 		);
 	}
 

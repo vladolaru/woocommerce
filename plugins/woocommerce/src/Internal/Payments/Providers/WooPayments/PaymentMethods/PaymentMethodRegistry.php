@@ -30,7 +30,12 @@ class PaymentMethodRegistry {
 	 */
 	public const CAPTURE_LATER = 'capture_later';
 
-	private const BUY_NOW_PAY_LATER = 'buy_now_pay_later';
+	/**
+	 * Capability marking a buy now, pay later method.
+	 *
+	 * Public so the payment failure webhook notes a failure of these methods without changing the order.
+	 */
+	public const BUY_NOW_PAY_LATER = 'buy_now_pay_later';
 
 	/**
 	 * Capability marking a method as restricted to the account's domestic currency.

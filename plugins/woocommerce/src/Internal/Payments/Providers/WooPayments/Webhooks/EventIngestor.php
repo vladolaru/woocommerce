@@ -51,9 +51,11 @@ class EventIngestor {
 	 * a late one changes nothing on an order already held, paid or cancelled. A payment failure reaches the order's status
 	 * only as the order's own payment (EventOrderResolver::is_own_payment()), and only when it names a payment method of
 	 * an actionable type, that method is the stored one, the failure is not yet recorded on the order, and the order
-	 * stores no intent or the failed one; a terminal decline skips the last three checks. So a late failure of an earlier
-	 * attempt does not change the status of an order that stores another intent. A failure that is not the order's own
-	 * payment goes to the other-charge recorder, which can add its record note.
+	 * stores no intent or the failed one; a terminal decline skips the last three checks. So a late non-terminal failure of
+	 * an earlier attempt does not change the status of an order that stores another intent. A buy now, pay later failure
+	 * changes no status: it adds its declined-payment note only while the failed payment method is the stored one and the
+	 * order is not in a paid status, and adds nothing once that text is on the order. An actionable or buy now, pay later
+	 * failure that is not the order's own payment goes to the other-charge recorder, which can add its record note.
 	 * invoice.paid is retried while the Stripe Billing module is loaded ({@see self::is_retried_event()}). Other types get
 	 * one attempt: running the fraud warning handlers again can apply an older event over a newer one.
 	 *

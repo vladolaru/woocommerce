@@ -13,6 +13,7 @@ use Automattic\WooCommerce\Internal\Payments\OrderPaymentLockRefusedException;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
 use Automattic\WooCommerce\Internal\Payments\PaymentLifecycleEvent;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\PaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\SubscriptionMethodPolicy;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAdminMenuBadgeService;
@@ -134,6 +135,13 @@ class PaymentIntentEventHandler {
 	private WooPaymentsCompositionDataSettler $composition_data_settler;
 
 	/**
+	 * Payment method definitions, which mark the buy now, pay later methods.
+	 *
+	 * @var PaymentMethodRegistry
+	 */
+	private PaymentMethodRegistry $payment_method_registry;
+
+	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
@@ -151,8 +159,9 @@ class PaymentIntentEventHandler {
 	 * @param WooPaymentsPersistenceVocabulary     $persistence_vocabulary      WooPayments persistence vocabulary.
 	 * @param WooPaymentsIntentConfirmationService $intent_confirmation_service Intent confirmation service.
 	 * @param WooPaymentsCompositionDataSettler    $composition_data_settler    Settles the account before the read.
+	 * @param PaymentMethodRegistry                $payment_method_registry     Payment method definitions.
 	 */
-	final public function init( OrderPaymentLifecycleService $lifecycle_service, Client $api_client, WooPaymentsOrderDataService $order_data_service, WooPaymentsAccountService $account_service, WooPaymentsOrderNoteService $order_note_service, WooPaymentsAdminMenuBadgeService $admin_menu_badge_service, EventOrderResolver $event_order_resolver, OtherChargeRecorder $other_charge_recorder, WooPaymentsFeeDetailsNoteController $fee_details_note_controller, OrderPaymentLock $order_payment_lock, WooPaymentsPersistenceVocabulary $persistence_vocabulary, WooPaymentsIntentConfirmationService $intent_confirmation_service, WooPaymentsCompositionDataSettler $composition_data_settler ): void {
+	final public function init( OrderPaymentLifecycleService $lifecycle_service, Client $api_client, WooPaymentsOrderDataService $order_data_service, WooPaymentsAccountService $account_service, WooPaymentsOrderNoteService $order_note_service, WooPaymentsAdminMenuBadgeService $admin_menu_badge_service, EventOrderResolver $event_order_resolver, OtherChargeRecorder $other_charge_recorder, WooPaymentsFeeDetailsNoteController $fee_details_note_controller, OrderPaymentLock $order_payment_lock, WooPaymentsPersistenceVocabulary $persistence_vocabulary, WooPaymentsIntentConfirmationService $intent_confirmation_service, WooPaymentsCompositionDataSettler $composition_data_settler, PaymentMethodRegistry $payment_method_registry ): void {
 		$this->lifecycle_service           = $lifecycle_service;
 		$this->api_client                  = $api_client;
 		$this->order_data_service          = $order_data_service;
@@ -166,6 +175,7 @@ class PaymentIntentEventHandler {
 		$this->persistence_vocabulary      = $persistence_vocabulary;
 		$this->intent_confirmation_service = $intent_confirmation_service;
 		$this->composition_data_settler    = $composition_data_settler;
+		$this->payment_method_registry     = $payment_method_registry;
 	}
 
 	/**
@@ -193,7 +203,9 @@ class PaymentIntentEventHandler {
 	 *
 	 * A canceled intent only invalidates the authorization caches. An authorization invalidates them first, and goes on
 	 * only for an online payment that awaits capture. Otherwise the event's order is found and the event applied to it or
-	 * recorded on it; an event that resolves no order, or a payment failure that is not actionable, changes nothing.
+	 * recorded on it; an event that resolves no order, or a payment failure that is not actionable, changes nothing. A
+	 * buy now, pay later failure of the order's own payment changes no status: it can add its declined-payment note, under
+	 * the same claim (apply_order_payment_event_under_lock()).
 	 *
 	 * @param string              $event_type   Event type.
 	 * @param array<string,mixed> $event_object Payment intent or charge object.
@@ -230,7 +242,7 @@ class PaymentIntentEventHandler {
 			return;
 		}
 
-		if ( 'payment_intent.payment_failed' === $event_type && ! $this->is_actionable_payment_failure( $event_object ) ) {
+		if ( 'payment_intent.payment_failed' === $event_type && ! $this->is_actionable_payment_failure( $event_object ) && ! $this->is_buy_now_pay_later_failure( $event_object ) ) {
 			return;
 		}
 
@@ -330,6 +342,8 @@ class PaymentIntentEventHandler {
 			$this->apply_succeeded_payment_intent( $order, $event_object, null, true );
 		} elseif ( 'payment_intent.amount_capturable_updated' === $event_type ) {
 			$this->apply_authorization_under_lock( $order, $event_object );
+		} elseif ( 'payment_intent.payment_failed' === $event_type && $this->is_buy_now_pay_later_failure( $event_object ) ) {
+			$this->add_buy_now_pay_later_failure_note( $order, $event_object );
 		} else {
 			$lifecycle_event = $this->build_lifecycle_event( $event_type, $event_object, $order );
 			if ( null !== $lifecycle_event ) {
@@ -796,6 +810,52 @@ class PaymentIntentEventHandler {
 		$payment_method_id = is_array( $payment_method ) && isset( $payment_method['id'] ) && is_string( $payment_method['id'] ) ? $payment_method['id'] : '';
 
 		return '' !== $payment_method_id;
+	}
+
+	/**
+	 * Tell whether a payment_intent.payment_failed event names a failed buy now, pay later payment method.
+	 *
+	 * Client 11.3.0 lists Affirm, Afterpay and Klarna (Payment_Method::BNPL_PAYMENT_METHODS,
+	 * includes/constants/class-payment-method.php:55-59); their definitions carry the buy now, pay later capability.
+	 *
+	 * @param array<string,mixed> $event_object PaymentIntent object.
+	 * @return bool
+	 */
+	private function is_buy_now_pay_later_failure( array $event_object ): bool {
+		$last_payment_error  = $event_object['last_payment_error'] ?? null;
+		$payment_method      = is_array( $last_payment_error ) ? ( $last_payment_error['payment_method'] ?? null ) : null;
+		$payment_method_type = is_array( $payment_method ) && isset( $payment_method['type'] ) && is_string( $payment_method['type'] ) ? $payment_method['type'] : '';
+		$payment_method_id   = is_array( $payment_method ) && isset( $payment_method['id'] ) && is_string( $payment_method['id'] ) ? $payment_method['id'] : '';
+		$definition          = '' !== $payment_method_type ? $this->payment_method_registry->get( $payment_method_type ) : null;
+
+		return '' !== $payment_method_id
+			&& null !== $definition
+			&& in_array( PaymentMethodRegistry::BUY_NOW_PAY_LATER, $definition->get_capabilities(), true );
+	}
+
+	/**
+	 * Add the declined-payment note of a buy now, pay later failure to the order read under the claim, and change nothing else.
+	 *
+	 * The shopper's return from the provider's page fails the order and writes the same note, but a shopper who abandons
+	 * the payment never returns, so this note is the only record of that failure. It is written only for the order's
+	 * stored payment method on an order not in a paid status, Failed orders included, and is found by its text only, as
+	 * client 11.3.0 does (class-wc-payments-webhook-processing-service.php:577-606; class-wc-payments-order-service.php:987-1000).
+	 * Unlike a card failure, it does not check which intent the order waits on: the note is true of the failed attempt and
+	 * changes no status.
+	 *
+	 * @param WC_Order            $order        Order read under the order payment lock.
+	 * @param array<string,mixed> $event_object PaymentIntent object; is_buy_now_pay_later_failure() holds for it.
+	 */
+	private function add_buy_now_pay_later_failure_note( WC_Order $order, array $event_object ): void {
+		$last_payment_error = (array) $event_object['last_payment_error'];
+		$payment_method_id  = (string) $last_payment_error['payment_method']['id'];
+		if ( $payment_method_id !== (string) $order->get_meta( '_payment_method_id', true ) || $order->has_status( wc_get_is_paid_statuses() ) ) {
+			return;
+		}
+
+		$note_candidates = $this->order_note_service->format_declined_payment_note_candidates( $order, $this->get_object_id( $event_object ), $last_payment_error );
+		// No identity: under the failure's identity this note would stop the return from failing the order, so only the same text counts as this note.
+		$this->order_note_service->add_note_once( $order, $note_candidates[0], '', $note_candidates );
 	}
 
 	/**
