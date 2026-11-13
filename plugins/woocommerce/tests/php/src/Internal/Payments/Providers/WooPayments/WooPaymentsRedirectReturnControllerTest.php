@@ -836,28 +836,33 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 	 *
 	 * @param string               $payment_method Order payment method.
 	 * @param array<string,string> $query_override Query values that replace the valid redirect request's.
+	 * @param string               $status         Order status.
+	 * @param int                  $refusal_lines  Expected gateway-refusal warning lines.
 	 */
-	public function test_handle_wp_ignores_redirect_return_before_fetch( string $payment_method, array $query_override ): void {
+	public function test_handle_wp_ignores_redirect_return_before_fetch( string $payment_method, array $query_override, string $status, int $refusal_lines ): void {
 		$order = $this->create_order();
 		$order->set_payment_method( $payment_method );
+		$order->set_status( $status );
 		$order->save();
 
 		$api_client                 = new RedirectReturnApiClientStub();
 		$api_client->payment_intent = $this->successful_payment_intent( $order, 'pi_ignored', 'pm_ignored' );
-		$confirmation_service       = $this->createMock( WooPaymentsIntentConfirmationService::class );
+		$confirmation_service       = $this->getMockBuilder( WooPaymentsIntentConfirmationService::class )->onlyMethods( array( 'confirm_fetched_intent_for_order' ) )->getMock();
 		$confirmation_service->expects( $this->never() )->method( 'confirm_fetched_intent_for_order' );
 		$this->sut = $this->create_controller( true, $confirmation_service, $api_client );
 		$this->set_payment_intent_return_request( $order, 'pi_ignored' );
 		foreach ( $query_override as $name => $value ) {
 			$_GET[ $name ] = $value;
 		}
+		$logger = RecordingWcLogger::install();
 
 		$this->sut->handle_wp();
 		$reloaded = wc_get_order( $order->get_id() );
 
 		$this->assertInstanceOf( WC_Order::class, $reloaded );
 		$this->assertSame( 0, $api_client->payment_intent_reads );
-		$this->assertSame( 'pending', $reloaded->get_status() );
+		$this->assertSame( $status, $reloaded->get_status() );
+		$this->assertSame( $refusal_lines, $this->count_return_refusal_lines( $logger, $order ), 'One warning line only when the return refuses another payment method\'s order the client would process.' );
 	}
 
 	/**
@@ -878,11 +883,12 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 			$taken->save();
 		};
 
-		$confirmation_service = $this->createMock( WooPaymentsIntentConfirmationService::class );
+		$confirmation_service = $this->getMockBuilder( WooPaymentsIntentConfirmationService::class )->onlyMethods( array( 'confirm_fetched_intent_for_order' ) )->getMock();
 		$confirmation_service->expects( $this->never() )->method( 'confirm_fetched_intent_for_order' );
 		$this->sut = $this->create_controller( true, $confirmation_service, $api_client );
 		$this->set_payment_intent_return_request( $order, 'pi_taken' );
-		$notes = count( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+		$notes  = count( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+		$logger = RecordingWcLogger::install();
 
 		$this->sut->handle_wp();
 		$reloaded = wc_get_order( $order->get_id() );
@@ -893,6 +899,7 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 		$this->assertSame( '', $reloaded->get_transaction_id() );
 		$this->assertSame( 'requires_action', $reloaded->get_meta( '_intention_status', true ) );
 		$this->assertCount( $notes, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+		$this->assertSame( 1, $this->count_return_refusal_lines( $logger, $order ), 'One warning line for a refused request.' );
 	}
 
 	/**
@@ -1096,15 +1103,19 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Redirect returns the controller ignores before any intent fetch.
+	 * Redirect returns the controller ignores before any intent fetch. Client 11.3.0's return also leaves a processing,
+	 * completed or on-hold order (class-wc-payment-gateway-wcpay.php:2621-2629), so only a Pending order of another
+	 * payment method is a refusal the client does not make.
 	 *
-	 * @return array<string,array{0:string,1:array<string,string>}>
+	 * @return array<string,array{0:string,1:array<string,string>,2:string,3:int}>
 	 */
 	public function provider_ignored_redirect_requests(): array {
 		return array(
-			'invalid nonce'                   => array( WooPaymentsPersistenceVocabulary::GATEWAY_ID, array( '_wpnonce' => 'invalid' ) ),
-			'wrong order key'                 => array( WooPaymentsPersistenceVocabulary::GATEWAY_ID, array( 'key' => 'wc_order_wrong' ) ),
-			'order not paid with WooPayments' => array( 'bacs', array() ),
+			'invalid nonce'                              => array( WooPaymentsPersistenceVocabulary::GATEWAY_ID, array( '_wpnonce' => 'invalid' ), 'pending', 0 ),
+			'wrong order key'                            => array( WooPaymentsPersistenceVocabulary::GATEWAY_ID, array( 'key' => 'wc_order_wrong' ), 'pending', 0 ),
+			'order not paid with WooPayments'            => array( 'bacs', array(), 'pending', 1 ),
+			'processing order not paid with WooPayments' => array( 'bacs', array(), 'processing', 0 ),
+			'processing order paid with WooPayments'     => array( WooPaymentsPersistenceVocabulary::GATEWAY_ID, array(), 'processing', 0 ),
 		);
 	}
 

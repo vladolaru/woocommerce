@@ -163,7 +163,12 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 			return;
 		}
 
-		if ( ! WooPaymentsPersistenceVocabulary::is_woopayments_gateway_id( (string) $order->get_payment_method() ) || $order->has_status( array( OrderStatus::PROCESSING, OrderStatus::COMPLETED, OrderStatus::ON_HOLD ) ) ) {
+		if ( $order->has_status( array( OrderStatus::PROCESSING, OrderStatus::COMPLETED, OrderStatus::ON_HOLD ) ) ) {
+			return;
+		}
+
+		if ( ! WooPaymentsPersistenceVocabulary::is_woopayments_gateway_id( (string) $order->get_payment_method() ) ) {
+			$this->intent_confirmation_service->log_refusal_of_another_payment_method( $order, $intent_id, 'redirect return' );
 			return;
 		}
 
@@ -207,6 +212,7 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 		$fresh_order = $this->lifecycle_service->get_fresh_order_from_data_store( $order );
 
 		if ( ! WooPaymentsPersistenceVocabulary::is_woopayments_gateway_id( (string) $fresh_order->get_payment_method() ) ) {
+			$this->intent_confirmation_service->log_refusal_of_another_payment_method( $fresh_order, $intent_id, 'redirect return' );
 			return;
 		}
 
