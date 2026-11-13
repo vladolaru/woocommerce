@@ -164,11 +164,14 @@ class PaymentOutcome {
 	public const DATA_CHECKOUT_REDIRECT = 'checkout_redirect';
 
 	/**
-	 * Failed outcomes: flags that the outcome must not change the order status.
+	 * Failed and completed outcomes: flags that the outcome must not change the order status.
 	 *
-	 * A payment refused before processing (for example by fraud screening) records
-	 * its meta and note effects while leaving the order status for the merchant to
-	 * decide; the checkout result is still a failure for the shopper.
+	 * The outcome's meta and note effects are still recorded. A failed outcome does not
+	 * fail the order: a payment refused before processing (for example by fraud
+	 * screening) leaves the status for the merchant to decide, and the checkout result
+	 * is still a failure for the shopper. A completed outcome neither completes the
+	 * payment nor holds the order: the payment is recorded on an order whose status
+	 * was already set. Outcomes of other statuses do not read the flag.
 	 *
 	 * @var string
 	 */

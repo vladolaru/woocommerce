@@ -741,6 +741,41 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A completed event that leaves the order status untouched writes its meta and note, and neither completes the payment nor holds the order: $label.
+	 *
+	 * Client 11.3.0's status-change capture records a capture on an order whose status the merchant just set, and does
+	 * not complete the payment (class-wc-payments-order-service.php:2381-2429).
+	 *
+	 * @testWith ["on hold", "on-hold", false]
+	 *           ["completed", "completed", false]
+	 *           ["pending, with a hold", "pending", true]
+	 *
+	 * @param string $label  Row label.
+	 * @param string $status Order status before the event.
+	 * @param bool   $hold   Whether the event also asks to hold the order.
+	 */
+	public function test_completed_event_that_leaves_the_order_status_records_the_payment_only( string $label, string $status, bool $hold ): void {
+		unset( $label );
+		$order = $this->create_woopayments_order();
+		$order->set_status( $status );
+		$order->save();
+		$completions = did_action( 'woocommerce_pre_payment_complete' );
+
+		$this->apply_event(
+			$order,
+			new PaymentLifecycleEvent( PaymentLifecycleEvent::STATUS_COMPLETED, 'pi_recorded', array( '_intention_status' => 'succeeded' ), array(), 'Captured pi_recorded.', PaymentLifecycleEvent::NOTE_TYPE_CAPTURE_SUCCESS, array(), true, $hold )
+		);
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 0, did_action( 'woocommerce_pre_payment_complete' ) - $completions, 'The payment is not completed.' );
+		$this->assertSame( $status, $order->get_status() );
+		$this->assertSame( '', $order->get_transaction_id() );
+		$this->assertSame( 'succeeded', $order->get_meta( '_intention_status', true ) );
+		$this->assertSame( 1, $this->countOrderNotesMatching( $order, 'Captured pi_recorded.' ) );
+	}
+
+	/**
 	 * @testdox An authorized event that leaves a paid order holds an order only when it is not flagged or the order is not paid: $label.
 	 *
 	 * Client 11.3.0 updates an order from an intent's status, an authorization included, only while it is not paid

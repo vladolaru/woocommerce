@@ -971,7 +971,7 @@ class PaymentProcessingService {
 				$this->get_lifecycle_note( $outcome ),
 				$this->get_lifecycle_note_type( $outcome ),
 				$this->get_lifecycle_note_equivalents( $outcome ),
-				// The event stays a failure so the late-failure guard still
+				// The event keeps its status, so the late-failure guard still
 				// protects already-paid orders; only the status transition is
 				// suppressed when the outcome asked to preserve the status.
 				$preserve_order_status || $this->should_preserve_order_status( $outcome ),
@@ -985,7 +985,7 @@ class PaymentProcessingService {
 	}
 
 	/**
-	 * Tell whether a failed outcome asked to preserve the current order status.
+	 * Tell whether an outcome asked to preserve the current order status (PaymentOutcome::DATA_PRESERVE_ORDER_STATUS).
 	 *
 	 * @param PaymentOutcome $outcome Provider outcome.
 	 * @return bool

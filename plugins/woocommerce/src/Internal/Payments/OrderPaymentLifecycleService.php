@@ -359,6 +359,10 @@ class OrderPaymentLifecycleService {
 	private function apply_status_transition( WC_Order $order, PaymentLifecycleEvent $event ): bool {
 		switch ( $event->get_status() ) {
 			case PaymentLifecycleEvent::STATUS_COMPLETED:
+				if ( $event->should_preserve_order_status() ) {
+					return false;
+				}
+
 				if ( $event->should_hold_order() ) {
 					$this->put_order_on_hold( $order, $event );
 					return true;

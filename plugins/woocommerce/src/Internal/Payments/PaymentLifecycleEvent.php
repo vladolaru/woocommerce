@@ -326,8 +326,10 @@ class PaymentLifecycleEvent {
 	/**
 	 * Tell whether this event must leave the order status untouched.
 	 *
-	 * A payment refused before processing (for example by fraud screening)
-	 * records its meta and note effects while the merchant decides the status.
+	 * The event's meta and note are still written. A failed or capture-expired event does not fail the order, for example
+	 * a payment refused before processing, whose status the merchant decides. A completed event neither completes the
+	 * payment nor holds the order, for example a payment recorded on an order whose status was already set. Other
+	 * statuses do not read the flag.
 	 *
 	 * @return bool
 	 */
