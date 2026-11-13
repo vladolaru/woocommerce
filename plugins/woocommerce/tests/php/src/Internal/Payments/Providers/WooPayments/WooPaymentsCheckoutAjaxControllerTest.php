@@ -2056,6 +2056,219 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Order-status callback refuses an order another payment method holds, before fetching the intent, and leaves the order as it is: $_dataName.
+	 *
+	 * Classic order-pay saves the gateway the shopper picks as the order's payment method before calling it
+	 * (plugins/woocommerce/includes/class-wc-form-handler.php:794-795, :801), and leaves the abandoned WooPayments attempt
+	 * stored on the order. Client 11.3.0's callback checks only the stored intent and the intent's metadata
+	 * (class-wc-payment-gateway-wcpay.php:4611-4648), then attaches the attempt over the other payment (:4663) and updates
+	 * the order from it (:4771). Here the order is refused with the callback's mismatch answer, without the mismatch note,
+	 * since the posted intent is the stored one.
+	 *
+	 * @dataProvider provider_orders_another_payment_method_holds
+	 *
+	 * @param string $gateway             The order's payment method.
+	 * @param string $status              The order's status after that payment method took it.
+	 * @param string $transaction_id      The order's transaction ID: the other payment's, or the attempt's own from its checkout.
+	 * @param string $intent_status       The abandoned attempt's status when its callback arrives.
+	 * @param bool   $is_changing_payment Whether the request says it changes a payment method.
+	 */
+	public function test_update_order_status_refuses_an_order_another_payment_method_holds( string $gateway, string $status, string $transaction_id, string $intent_status, bool $is_changing_payment ): void {
+		$order = $this->create_woopayments_order( '50.00' );
+		$order->set_payment_method( $gateway );
+		$order->set_payment_method_title( 'Other payment' );
+		$order->set_status( $status );
+		$order->set_transaction_id( $transaction_id );
+		$order->update_meta_data( '_intent_id', 'pi_abandoned' );
+		$order->update_meta_data( '_intention_status', 'requires_action' );
+		$order->save();
+		$intent = array(
+			'id'             => 'pi_abandoned',
+			'status'         => $intent_status,
+			'amount'         => 5000,
+			'currency'       => 'usd',
+			'customer'       => 'cus_abandoned',
+			'payment_method' => 'pm_abandoned',
+			'metadata'       => array( 'order_id' => (string) $order->get_id() ),
+			'charges'        => array( 'data' => array( array( 'id' => 'ch_abandoned' ) ) ),
+		);
+		if ( 'requires_payment_method' === $intent_status ) {
+			$intent['last_payment_error'] = array(
+				'code'    => 'card_declined',
+				'message' => 'Your card was declined.',
+			);
+		}
+		$notes   = count( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+		$fetches = 0;
+		$logger  = RecordingWcLogger::install();
+		$request = array(
+			'_ajax_nonce' => wp_create_nonce( 'wcpay_update_order_status_nonce_' . $order->get_id() ),
+			'order_id'    => $order->get_id(),
+			'intent_id'   => 'pi_abandoned',
+		);
+		if ( $is_changing_payment ) {
+			$request['is_changing_payment'] = 'true';
+		}
+
+		$response = $this->create_controller(
+			$this->create_api_client_returning(
+				$intent,
+				static function () use ( &$fetches ): void {
+					++$fetches;
+				}
+			)
+		)->confirm_order_payment( $request );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( $status, $order->get_status() );
+		$this->assertSame( $gateway, $order->get_payment_method() );
+		$this->assertSame( 'Other payment', $order->get_payment_method_title() );
+		$this->assertSame( $transaction_id, $order->get_transaction_id() );
+		$this->assertSame( 'pi_abandoned', $order->get_meta( '_intent_id', true ) );
+		$this->assertSame( 'requires_action', $order->get_meta( '_intention_status', true ) );
+		$this->assertSame( '', $order->get_meta( '_charge_id', true ) );
+		$this->assertCount( $notes, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), 'No note, the mismatch note included.' );
+		$this->assertSame( 0, $fetches, 'The intent is not fetched, so no card is saved from it.' );
+		$this->assertSame( 409, $response['status_code'] );
+		$this->assertSame( "We're not able to process this payment. Please try again later.", $response['error']['message'] ?? null );
+		$this->assertArrayNotHasKey( 'return_url', $response );
+		$this->assertSame( 1, $this->count_callback_refusal_lines( $logger, $order ) );
+	}
+
+	/**
+	 * Orders another payment method holds while they store an abandoned WooPayments attempt.
+	 *
+	 * @return array<string,array{string,string,string,string,bool}>
+	 */
+	public function provider_orders_another_payment_method_holds(): array {
+		return array(
+			'an online gateway paid it, the attempt then succeeded' => array( 'stripe', OrderStatus::PROCESSING, 'ch_other_payment', 'succeeded', false ),
+			'bank transfer holds it, the attempt then failed'       => array( 'bacs', OrderStatus::ON_HOLD, 'pi_abandoned', 'requires_payment_method', false ),
+			'bank transfer holds it, the attempt then authorized'   => array( 'bacs', OrderStatus::ON_HOLD, 'pi_abandoned', 'requires_capture', false ),
+			'a cheque holds it, the attempt then succeeded'         => array( 'cheque', OrderStatus::ON_HOLD, 'pi_abandoned', 'succeeded', false ),
+			'bank transfer holds it, the request says it changes a payment method' => array( 'bacs', OrderStatus::ON_HOLD, 'pi_abandoned', 'succeeded', true ),
+		);
+	}
+
+	/**
+	 * @testdox Order-status callback refuses an order another payment method takes while the intent is fetched, attaching nothing and applying nothing.
+	 *
+	 * The payment method is read again on the order read under the order payment lock, where the attach and the event
+	 * are decided. Client 11.3.0 has no payment method check (class-wc-payment-gateway-wcpay.php:4611-4648, :4663, :4771).
+	 */
+	public function test_update_order_status_refuses_an_order_another_payment_method_takes_during_the_fetch(): void {
+		$order = $this->create_woopayments_order( '50.00' );
+		$order->set_payment_method_title( 'Card' );
+		$order->set_transaction_id( 'pi_raced' );
+		$order->update_meta_data( '_intent_id', 'pi_raced' );
+		$order->update_meta_data( '_intention_status', 'requires_action' );
+		$order->save();
+		$intent = array(
+			'id'             => 'pi_raced',
+			'status'         => 'succeeded',
+			'amount'         => 5000,
+			'currency'       => 'usd',
+			'customer'       => 'cus_raced',
+			'payment_method' => 'pm_raced',
+			'metadata'       => array( 'order_id' => (string) $order->get_id() ),
+			'charges'        => array( 'data' => array( array( 'id' => 'ch_raced' ) ) ),
+		);
+		$take   = static function () use ( $order, &$notes ): void {
+			$taken = wc_get_order( $order->get_id() );
+			$taken->set_payment_method( 'bacs' );
+			$taken->set_payment_method_title( 'Direct bank transfer' );
+			$taken->set_status( OrderStatus::ON_HOLD );
+			$taken->save();
+			$notes = count( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+		};
+		$hooks  = did_action( 'woocommerce_pre_payment_complete' ) + did_action( 'woocommerce_payment_complete' ) + did_action( 'woocommerce_order_status_failed' );
+		$logger = RecordingWcLogger::install();
+
+		$response = $this->create_controller( $this->create_api_client_returning( $intent, $take ) )->confirm_order_payment(
+			array(
+				'_ajax_nonce' => wp_create_nonce( 'wcpay_update_order_status_nonce_' . $order->get_id() ),
+				'order_id'    => $order->get_id(),
+				'intent_id'   => 'pi_raced',
+			)
+		);
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( OrderStatus::ON_HOLD, $order->get_status() );
+		$this->assertSame( 'Direct bank transfer', $order->get_payment_method_title() );
+		$this->assertSame( 'pi_raced', $order->get_transaction_id() );
+		$this->assertSame( 'pi_raced', $order->get_meta( '_intent_id', true ) );
+		$this->assertSame( 'requires_action', $order->get_meta( '_intention_status', true ) );
+		$this->assertSame( '', $order->get_meta( '_charge_id', true ) );
+		$this->assertCount( $notes, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+		$this->assertSame( $hooks, did_action( 'woocommerce_pre_payment_complete' ) + did_action( 'woocommerce_payment_complete' ) + did_action( 'woocommerce_order_status_failed' ), 'No payment event is applied.' );
+		$this->assertSame( 409, $response['status_code'] );
+		$this->assertArrayNotHasKey( 'return_url', $response );
+		$this->assertSame( 1, $this->count_callback_refusal_lines( $logger, $order ) );
+	}
+
+	/**
+	 * @testdox Order-status callback completes an order still paid with a WooPayments gateway, as before: $gateway.
+	 *
+	 * Client 11.3.0 attaches the intent and completes the order (class-wc-payment-gateway-wcpay.php:4663, :4771); a split
+	 * gateway's ID names the payment method after the card gateway's (:3071-3077).
+	 *
+	 * @testWith ["woocommerce_payments"]
+	 *           ["woocommerce_payments_link"]
+	 *
+	 * @param string $gateway The order's WooPayments gateway.
+	 */
+	public function test_update_order_status_completes_an_order_still_paid_with_woopayments( string $gateway ): void {
+		$order = $this->create_woopayments_order( '50.00' );
+		$order->set_payment_method( $gateway );
+		$order->update_meta_data( '_intent_id', 'pi_own' );
+		$order->update_meta_data( '_intention_status', 'requires_action' );
+		$order->save();
+		$intent = array(
+			'id'             => 'pi_own',
+			'status'         => 'succeeded',
+			'amount'         => 5000,
+			'currency'       => 'usd',
+			'customer'       => 'cus_own',
+			'payment_method' => 'pm_own',
+			'metadata'       => array( 'order_id' => (string) $order->get_id() ),
+			'charges'        => array( 'data' => array( array( 'id' => 'ch_own' ) ) ),
+		);
+		$notes  = count( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+		$logger = RecordingWcLogger::install();
+
+		$response = $this->create_controller( $this->create_api_client_returning( $intent ) )->confirm_order_payment(
+			array(
+				'_ajax_nonce' => wp_create_nonce( 'wcpay_update_order_status_nonce_' . $order->get_id() ),
+				'order_id'    => $order->get_id(),
+				'intent_id'   => 'pi_own',
+			)
+		);
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( 200, $response['status_code'] );
+		$this->assertSame( $order->get_checkout_order_received_url(), $response['return_url'] );
+		$this->assertSame( OrderStatus::COMPLETED, $order->get_status(), 'An order with nothing to ship completes.' );
+		$this->assertSame( 'pi_own', $order->get_transaction_id() );
+		$this->assertSame( 'pi_own', $order->get_meta( '_intent_id', true ) );
+		$this->assertSame( 'succeeded', $order->get_meta( '_intention_status', true ) );
+		$this->assertSame( 'ch_own', $order->get_meta( '_charge_id', true ) );
+		$this->assertCount( $notes + 2, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), 'The success note and the status change note.' );
+		$this->assert_order_has_note_containing( $order, 'successfully charged' );
+		$this->assertSame( 0, $this->count_callback_refusal_lines( $logger, $order ) );
+	}
+
+	/**
+	 * Count the warning lines the order-status callback logs when it refuses an order another payment method holds.
+	 *
+	 * @param RecordingWcLogger $logger Recording logger.
+	 * @param WC_Order          $order  Order the callback named.
+	 * @return int
+	 */
+	private function count_callback_refusal_lines( RecordingWcLogger $logger, WC_Order $order ): int {
+		return count( array_filter( $logger->lines, static fn( array $line ): bool => 'warning' === $line[0] && 0 === strpos( $line[1], 'order-status callback refused: order ' . $order->get_id() . ' ' ) ) );
+	}
+
+	/**
 	 * Create the order a binding test confirms: a $50.00 order for a PaymentIntent, a $0.00 order for a SetupIntent, or an active
 	 * subscription for a payment method change.
 	 *
@@ -2696,7 +2909,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 	 * Create an API client that returns a fixed PaymentIntent or SetupIntent response.
 	 *
 	 * @param array<string,mixed> $intent         PaymentIntent or SetupIntent response.
-	 * @param callable|null       $while_fetching Called each time the PaymentIntent is fetched, before it is returned.
+	 * @param callable|null       $while_fetching Called each time the intent is fetched, before it is returned.
 	 * @return Client
 	 */
 	private function create_api_client_returning( array $intent, ?callable $while_fetching = null ): Client {
@@ -2709,7 +2922,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 			private array $intent;
 
 			/**
-			 * Called each time the PaymentIntent is fetched.
+			 * Called each time the intent is fetched.
 			 *
 			 * @var callable|null
 			 */
@@ -2719,7 +2932,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 			 * Constructor.
 			 *
 			 * @param array<string,mixed> $intent         PaymentIntent response.
-			 * @param callable|null       $while_fetching Called each time the PaymentIntent is fetched.
+			 * @param callable|null       $while_fetching Called each time the intent is fetched.
 			 */
 			public function __construct( array $intent, ?callable $while_fetching ) {
 				$this->intent         = $intent;
@@ -2761,6 +2974,9 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 			public function get_setup_intention( string $setup_intent_id ): array {
 				if ( $this->intent['id'] !== $setup_intent_id ) {
 					throw new \RuntimeException( 'Unexpected setup intent ID.' );
+				}
+				if ( null !== $this->while_fetching ) {
+					( $this->while_fetching )();
 				}
 
 				return $this->intent;
@@ -4147,13 +4363,15 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 	 * Client 11.1.0 fetches the SetupIntent for any payment method change, whatever the amount (class-wc-payment-gateway-wcpay.php:4217, 4238-4242).
 	 * Client 11.3.0 counts a subscription as a change whatever the request flag says (gw:4641, 5962-5968) and records only the
 	 * intent status on it, completing nothing (gw:4766-4772): no success note, no status change, and its failed switch order
-	 * stays unpaid.
+	 * stays unpaid. A subscription whose payment method is the one the change replaces is confirmed the same way: it moves to
+	 * WooPayments only once the change is confirmed.
 	 *
 	 * @dataProvider provider_change_payment_request_flags
 	 *
 	 * @param string|null $is_changing_payment The request's `is_changing_payment` value, or null when the request has none.
+	 * @param string      $replaced_gateway    The subscription's payment method before the change.
 	 */
-	public function test_update_order_status_confirms_change_payment_setup_intent_on_subscription_with_recurring_total( ?string $is_changing_payment ): void {
+	public function test_update_order_status_confirms_change_payment_setup_intent_on_subscription_with_recurring_total( ?string $is_changing_payment, string $replaced_gateway = WooPaymentsPersistenceVocabulary::GATEWAY_ID ): void {
 		WooCommerceSubscriptionsDoubles::load_change_payment_gateway();
 		\WC_Subscriptions_Change_Payment_Gateway::$will_update_all_payment_methods = false;
 		WooCommerceSubscriptionsDoubles::load();
@@ -4162,7 +4380,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		wp_set_current_user( $user_id );
 
 		$subscription = new SubscriptionDouble();
-		$subscription->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+		$subscription->set_payment_method( $replaced_gateway );
 		$subscription->set_currency( 'USD' );
 		$subscription->set_total( '10.00' );
 		$subscription->set_customer_id( $user_id );
@@ -4329,15 +4547,17 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Values of the request's `is_changing_payment` flag on a subscription's callback.
+	 * Values of the request's `is_changing_payment` flag on a subscription's callback, and the payment method the change replaces.
 	 *
-	 * @return array<string,array{?string}>
+	 * @return array<string,array{0:?string,1?:string}>
 	 */
 	public function provider_change_payment_request_flags(): array {
 		return array(
-			'request flag'       => array( 'true' ),
-			'request flag false' => array( 'false' ),
-			'no request flag'    => array( null ),
+			'request flag'                               => array( 'true' ),
+			'request flag false'                         => array( 'false' ),
+			'no request flag'                            => array( null ),
+			'request flag, replacing another gateway'    => array( 'true', 'stripe' ),
+			'no request flag, replacing manual renewals' => array( null, '' ),
 		);
 	}
 

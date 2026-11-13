@@ -164,6 +164,11 @@ class WooPaymentsCheckoutAjaxController implements RegisterHooksInterface {
 			return $this->error_response( __( "We're not able to process this payment. Please try again later.", 'woocommerce' ), 409 );
 		}
 
+		// Before the intent is fetched and its card saved.
+		if ( $this->intent_confirmation_service->refuses_order_of_another_payment_method( $order, $intent_id ) ) {
+			return $this->error_response( __( "We're not able to process this payment. Please try again later.", 'woocommerce' ), 409 );
+		}
+
 		try {
 			// Client 11.3.0 gw:4641, 5962-5968: a subscription is always a payment method change, whatever the request flag says.
 			$is_subscription_payment_method_change = $this->is_subscription_change_payment_request( $request ) || SubscriptionMethodPolicy::only_saves_the_card( $order );
