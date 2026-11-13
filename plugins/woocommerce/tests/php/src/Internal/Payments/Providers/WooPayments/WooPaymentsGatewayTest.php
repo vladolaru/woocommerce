@@ -3997,18 +3997,30 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A charge that replaces a fully refunded intent keeps the record of another payment that completed the order during the charge.
+	 * @testdox A charge that replaces a fully refunded intent keeps $payer's payment that completed the order during the charge.
 	 *
-	 * The new charge's attach writes past its guard only while the order's stored intent is still the refunded one; another
-	 * payment's succeeded record keeps the guard, as client 11.3.0's attach does (class-wc-payments-order-service.php:1818-1822).
+	 * The new charge's attach writes past its guard only while the order's stored intent and transaction ID are still the
+	 * refunded one's. Another WooPayments payment changes both; another gateway's payment changes only the transaction ID.
+	 * Either keeps the guard, as client 11.3.0's attach does (class-wc-payments-order-service.php:1818-1822).
+	 *
+	 * @testWith ["another WooPayments", "pi_other_tab", "pi_other_tab"]
+	 *           ["another gateway", "other_gateway_txn", "pi_existing"]
+	 *
+	 * @param string $payer          Who pays the order during the charge.
+	 * @param string $transaction_id Transaction ID that payment records.
+	 * @param string $intent_id      `_intent_id` the order keeps.
 	 */
-	public function test_process_payment_keeps_another_payment_recorded_while_replacing_a_refunded_intent(): void {
+	public function test_process_payment_keeps_another_payment_recorded_while_replacing_a_refunded_intent( string $payer, string $transaction_id, string $intent_id ): void {
 		$order   = $this->create_order_paid_once_and_set_back_to_pending();
-		$pay     = static function ( int $order_id ): void {
+		$pay     = static function ( int $order_id ) use ( $payer, $transaction_id ): void {
 			$other = wc_get_order( $order_id );
-			$other->set_transaction_id( 'pi_other_tab' );
-			$other->update_meta_data( '_intent_id', 'pi_other_tab' );
-			$other->update_meta_data( '_intention_status', 'succeeded' );
+			$other->set_transaction_id( $transaction_id );
+			if ( 'another WooPayments' === $payer ) {
+				$other->update_meta_data( '_intent_id', $transaction_id );
+				$other->update_meta_data( '_intention_status', 'succeeded' );
+			} else {
+				$other->set_payment_method( 'cheque' );
+			}
 			$other->set_status( OrderStatus::PROCESSING );
 			$other->save();
 		};
@@ -4018,8 +4030,8 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 
 		$order = wc_get_order( $order->get_id() );
 		$this->assertSame( OrderStatus::PROCESSING, $order->get_status() );
-		$this->assertSame( 'pi_other_tab', $order->get_transaction_id(), "The other payment's transaction ID is kept." );
-		$this->assertSame( 'pi_other_tab', $order->get_meta( '_intent_id', true ), 'The transaction ID names the recorded intent.' );
+		$this->assertSame( $transaction_id, $order->get_transaction_id(), "The other payment's transaction ID is kept." );
+		$this->assertSame( $intent_id, $order->get_meta( '_intent_id', true ), 'No record is written for the new charge.' );
 		$this->assertSame( 'succeeded', $order->get_meta( '_intention_status', true ) );
 		$this->assertSame( 0, $this->count_started_notes( $order, 'pi_second_payment' ) );
 	}
