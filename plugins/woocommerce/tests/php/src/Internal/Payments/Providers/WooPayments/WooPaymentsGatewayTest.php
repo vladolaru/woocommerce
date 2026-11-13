@@ -3823,8 +3823,8 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 				? WooPaymentsOrderEffectPlan::for_setup_intent( $intent, false, array( '_wcpay_intent_currency' => 'USD' ) )
 				: WooPaymentsOrderEffectPlan::for_payment_intent( $intent, false )
 		);
-		$gateway = new WooPaymentsGateway();
-		$gateway->init( wc_get_container()->get( PaymentProcessingService::class ), $this->create_provider_charging( $outcome, $this->create_unhooked_token_service() ) );
+		$gateway = $this->create_gateway_charging_past_a_record_for_another_order( $outcome, $this->create_unhooked_token_service() );
+
 		$_POST['wcpay-payment-method'] = (string) $intent['payment_method'];
 
 		$gateway->process_payment( $order->get_id() );
@@ -3867,8 +3867,8 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			$intent,
 			new WooPaymentsIntentMappingContext( $order->get_checkout_order_received_url(), (string) $intent['payment_method'], (string) $intent['customer'] )
 		)->with_effect_plan( WooPaymentsOrderEffectPlan::for_payment_intent( $intent, false ) );
-		$gateway = new WooPaymentsGateway();
-		$gateway->init( wc_get_container()->get( PaymentProcessingService::class ), $this->create_provider_charging( $outcome, $this->create_unhooked_token_service() ) );
+		$gateway = $this->create_gateway_charging_past_a_record_for_another_order( $outcome, $this->create_unhooked_token_service() );
+
 		$_POST['wcpay-payment-method'] = (string) $intent['payment_method'];
 
 		try {
@@ -4037,6 +4037,83 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A checkout on a Pending order whose record says succeeded $expected when the duplicate check's read of the stored intent $read.
+	 *
+	 * The check decides whether the order is already paid; without the read, a new charge would guess, so the submit is
+	 * refused with the notice and the order is left as it is. Client 11.3.0 goes on after an exception there
+	 * (class-duplicate-payment-prevention-service.php:101-109) and fatals on a PHP error.
+	 *
+	 * @testWith ["throws an exception", "refuses"]
+	 *           ["raises a PHP error", "refuses"]
+	 *           ["succeeds", "charges"]
+	 *
+	 * @param string $read     How the read ends; a read that succeeds names another order.
+	 * @param string $expected What the checkout does.
+	 */
+	public function test_process_payment_on_a_succeeded_record_charges_only_after_reading_the_stored_intent( string $read, string $expected ): void {
+		$order      = $this->create_order_holding_a_succeeded_record();
+		$api_client = $this->getMockBuilder( Client::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_payment_intention' ) )
+			->getMock();
+		if ( 'throws an exception' === $read ) {
+			$api_client->method( 'get_payment_intention' )->willThrowException( new \Exception( 'The platform did not answer.' ) );
+		} elseif ( 'raises a PHP error' === $read ) {
+			$api_client->method( 'get_payment_intention' )->willThrowException( new \Error( 'Undefined index: status' ) );
+		} else {
+			$api_client->method( 'get_payment_intention' )->willReturn(
+				array(
+					'id'       => 'pi_settled',
+					'status'   => 'succeeded',
+					'metadata' => array( 'order_id' => '999999' ),
+				)
+			);
+		}
+		$intent  = $this->create_started_intent( $order, 'pi_after_the_read' );
+		$outcome = WooPaymentsIntentCodec::outcome_from_intention(
+			$intent,
+			new WooPaymentsIntentMappingContext( $order->get_checkout_order_received_url(), (string) $intent['payment_method'], (string) $intent['customer'] )
+		)->with_effect_plan( WooPaymentsOrderEffectPlan::for_payment_intent( $intent, false ) );
+		$charges = 0;
+		$gateway = new WooPaymentsGateway();
+		$gateway->init(
+			wc_get_container()->get( PaymentProcessingService::class ),
+			$this->create_provider_charging(
+				$outcome,
+				$this->create_unhooked_token_service(),
+				static function () use ( &$charges ): void {
+					++$charges;
+				}
+			),
+			null,
+			null,
+			null,
+			null,
+			null,
+			null,
+			null,
+			$this->create_duplicate_payment_prevention_service( $this->create_session(), $api_client )
+		);
+		$_POST['wcpay-payment-method'] = (string) $intent['payment_method'];
+
+		$result = $gateway->process_payment( $order->get_id() );
+
+		$order = wc_get_order( $order->get_id() );
+		$notes = wp_list_pluck( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), 'content' );
+		$this->assertSame( 'charges' === $expected ? 1 : 0, $charges );
+		if ( 'refuses' === $expected ) {
+			$this->assertSame( 'failure', $result['result'] ?? '' );
+			$this->assertSame( array( "We're not able to process this payment. Please try again later." ), array_column( wc_get_notices( 'error' ), 'notice' ) );
+			$this->assertCount( 0, array_filter( $notes, static fn( string $note ): bool => false !== strpos( $note, 'Payment succeeded' ) ), 'The order is not answered as paid.' );
+		}
+		$this->assertSame( OrderStatus::PENDING, $order->get_status() );
+		$this->assertSame( 'pi_settled', $order->get_transaction_id() );
+		$this->assertSame( 'pi_settled', $order->get_meta( '_intent_id', true ), 'The transaction ID names the recorded intent.' );
+		$this->assertSame( 'charges' === $expected ? 'requires_action' : 'succeeded', $order->get_meta( '_intention_status', true ) );
+		$this->assertSame( 'charges' === $expected ? 1 : 0, $this->count_started_notes( $order, 'pi_after_the_read' ) );
+	}
+
+	/**
 	 * Create a Pending WooPayments order once paid with `pi_existing`, whose stored intent status is still succeeded.
 	 *
 	 * @return WC_Order
@@ -4090,6 +4167,44 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			$this->create_duplicate_payment_prevention_service( $this->create_session(), $api_client )
 		);
 		$_POST['wcpay-payment-method'] = (string) $intent['payment_method'];
+
+		return $gateway;
+	}
+
+	/**
+	 * Create a gateway whose charge returns a fixed outcome, and whose duplicate check reads the stored `pi_settled` as a
+	 * succeeded intent of another order, so the charge runs over the kept record.
+	 *
+	 * @param PaymentOutcome          $outcome        Outcome the charge returns.
+	 * @param WooPaymentsTokenService $token_service  Token service the effect applier saves tokens with.
+	 * @param callable|null           $while_charging Called with the order ID while the charge runs.
+	 * @return WooPaymentsGateway
+	 */
+	private function create_gateway_charging_past_a_record_for_another_order( PaymentOutcome $outcome, WooPaymentsTokenService $token_service, ?callable $while_charging = null ): WooPaymentsGateway {
+		$api_client = $this->getMockBuilder( Client::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_payment_intention' ) )
+			->getMock();
+		$api_client->method( 'get_payment_intention' )->with( 'pi_settled' )->willReturn(
+			array(
+				'id'       => 'pi_settled',
+				'status'   => 'succeeded',
+				'metadata' => array( 'order_id' => '999999' ),
+			)
+		);
+		$gateway = new WooPaymentsGateway();
+		$gateway->init(
+			wc_get_container()->get( PaymentProcessingService::class ),
+			$this->create_provider_charging( $outcome, $token_service, $while_charging ),
+			null,
+			null,
+			null,
+			null,
+			null,
+			null,
+			null,
+			$this->create_duplicate_payment_prevention_service( $this->create_session(), $api_client )
+		);
 
 		return $gateway;
 	}
@@ -4758,8 +4873,8 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			$intent,
 			new WooPaymentsIntentMappingContext( $order->get_checkout_order_received_url(), 'pm_returned', 'cus_returned', WooPaymentsIntentCodec::confirmation_redirect_for( $order->get_id(), 'pi_returned_secret', 'nonce' ) )
 		)->with_effect_plan( WooPaymentsOrderEffectPlan::for_payment_intent( $intent, false ) );
-		$gateway = new WooPaymentsGateway();
-		$gateway->init( wc_get_container()->get( PaymentProcessingService::class ), $this->create_provider_charging( $outcome, wc_get_container()->get( WooPaymentsTokenService::class ) ) );
+		$gateway = $this->create_gateway_charging_past_a_record_for_another_order( $outcome, wc_get_container()->get( WooPaymentsTokenService::class ) );
+
 		$_POST['wcpay-payment-method'] = 'pm_returned';
 
 		$gateway->process_payment( $order->get_id() );
@@ -4822,8 +4937,8 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			}
 			$notes_before = count( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
 		};
-		$gateway        = new WooPaymentsGateway();
-		$gateway->init( wc_get_container()->get( PaymentProcessingService::class ), $this->create_provider_charging( $outcome, wc_get_container()->get( WooPaymentsTokenService::class ), $while_charging ) );
+		$gateway        = $this->create_gateway_charging_past_a_record_for_another_order( $outcome, wc_get_container()->get( WooPaymentsTokenService::class ), $while_charging );
+
 		$_POST['wcpay-payment-method'] = 'pm_returned';
 
 		$gateway->process_payment( $order->get_id() );

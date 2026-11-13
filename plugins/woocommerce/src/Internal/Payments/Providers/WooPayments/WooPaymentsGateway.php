@@ -1544,9 +1544,9 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 		if ( is_wp_error( $existing_intent_result ) ) {
 			// Client 11.1.0 fails the order with the mismatch as the note (`gw:1324-1325`). An amount mismatch on an order whose
 			// stored intent status is succeeded is kept and answered as paid, as client 11.1.0 keeps any refusal on such an
-			// order (`gw:1283-1304`). A guard lookup that failed on a PHP Error leaves the order pending, as client 11.1.0's
-			// fatal does. A disputed attached payment leaves the order as it is; the guard has written its note. Its refusal
-			// reaches the shopper even when the order's intent status says succeeded: no payment succeeded in this request.
+			// order (`gw:1283-1304`). A failed guard lookup leaves the order as it is, as client 11.1.0's fatal on a PHP Error
+			// does. A disputed attached payment leaves the order as it is; the guard has written its note. Those two refusals
+			// reach the shopper even when the order's intent status says succeeded: no payment succeeded in this request.
 			$is_amount_mismatch = 'duplicate_payment_amount_mismatch' === $existing_intent_result->get_error_code();
 
 			return $this->refuse_checkout(
@@ -1556,7 +1556,7 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 				$is_amount_mismatch,
 				'',
 				$is_amount_mismatch ? $existing_intent_result->get_error_message() : '',
-				WooPaymentsDuplicatePaymentPreventionService::ERROR_DISPUTED_INTENT !== $existing_intent_result->get_error_code()
+				! in_array( $existing_intent_result->get_error_code(), array( WooPaymentsDuplicatePaymentPreventionService::ERROR_DISPUTED_INTENT, WooPaymentsDuplicatePaymentPreventionService::ERROR_CHECK_FAILED ), true )
 			);
 		}
 

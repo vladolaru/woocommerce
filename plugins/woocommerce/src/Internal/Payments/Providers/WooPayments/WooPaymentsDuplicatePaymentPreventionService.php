@@ -50,6 +50,13 @@ class WooPaymentsDuplicatePaymentPreventionService implements RegisterHooksInter
 	public const ERROR_DISPUTED_INTENT = 'duplicate_payment_disputed';
 
 	/**
+	 * Error code of the refusal when the order's attached intent could not be read.
+	 *
+	 * @since 11.4.0
+	 */
+	public const ERROR_CHECK_FAILED = 'duplicate_payment_check_failed';
+
+	/**
 	 * Order meta holding the attached PaymentIntent the dispute note was written for.
 	 *
 	 * Keyed by the intent, so a copy of the meta on another order (Subscriptions copies order meta) never hides that order's
@@ -262,7 +269,8 @@ class WooPaymentsDuplicatePaymentPreventionService implements RegisterHooksInter
 	/**
 	 * Redirect when the current order already has an authorized PaymentIntent attached.
 	 *
-	 * A failed intent fetch lets checkout go on, except for a PHP Error, which refuses checkout. A fully refunded attached
+	 * A failed intent fetch lets checkout go on, except for a PHP Error or an order whose stored intent status is
+	 * succeeded, which refuse checkout. A fully refunded attached
 	 * intent lets checkout go on too, and its ID is returned so the new charge's record can replace it.
 	 *
 	 * @param WC_Order           $order   Current order.
@@ -290,9 +298,10 @@ class WooPaymentsDuplicatePaymentPreventionService implements RegisterHooksInter
 			);
 
 			// Client 11.1.0 dpps:100 catches only Exception, so a PHP Error fatals there and nothing is charged. This keeps
-			// that outcome without the fatal, rather than charging again.
-			if ( ! $exception instanceof Exception ) {
-				return new WP_Error( 'duplicate_payment_check_failed', __( "We're not able to process this payment. Please try again later.", 'woocommerce' ) );
+			// that outcome without the fatal, rather than charging again. An order whose record says its payment succeeded is
+			// refused on any failure: without the read, a new charge would only guess whether the order is already paid.
+			if ( ! $exception instanceof Exception || 'succeeded' === (string) $order->get_meta( '_intention_status', true ) ) {
+				return new WP_Error( self::ERROR_CHECK_FAILED, __( "We're not able to process this payment. Please try again later.", 'woocommerce' ) );
 			}
 
 			return null;
