@@ -37,8 +37,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIn
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffectPlan;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentMappingContext;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentCodec;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentConfirmationService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRedirectReturnController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffectApplier;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDataService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService;
@@ -3889,167 +3887,107 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A checkout on a Pending order whose attached payment is $_dataName $expected, and the transaction ID names the recorded intent after each attempt.
+	 * @testdox A $page submit, made twice, on a Pending order whose attached payment is $_dataName $expected, and charges nothing.
 	 *
-	 * A fully refunded attached intent is no payment of the order, so checkout charges again and that charge's record
-	 * replaces the refunded one's; a disputed one refuses the submit; a partly refunded one still pays the order. Client
-	 * 11.3.0 reads only the status and charges nothing for any of them (class-duplicate-payment-prevention-service.php:105-157).
+	 * A refund or a dispute leaves the intent `succeeded`. A fully refunded order is not paid again: each submit is refused
+	 * with a notice, the order gets one note for the intent, and its status and record are kept. A disputed payment is
+	 * refused the same way; a partly refunded one is still the order's payment. Client 11.3.0 reads only the status and
+	 * answers each as paid (class-duplicate-payment-prevention-service.php:105-157).
 	 *
 	 * @dataProvider provider_attached_payments_given_back
 	 *
 	 * @param array<string,mixed> $charge_fields Fields of the attached intent's charge.
-	 * @param string              $expected      What the checkout does: "charges again" (then completed by the webhook or by the
-	 *                                           redirect return), "refuses the submit" or "is answered as paid".
+	 * @param string              $page          The page submitted: "checkout", "pay page, logged in" or "pay page, guest".
+	 * @param string              $expected      What each submit does: "refuses as refunded", "refuses as disputed" or "is answered as paid".
 	 */
-	public function test_process_payment_after_the_attached_payment_was_given_back( array $charge_fields, string $expected ): void {
-		// The store takes test payments, as the webhook's intent is one.
-		add_filter( 'wcpay_test_mode', '__return_true' );
-		$order       = $this->create_order_paid_once_and_set_back_to_pending();
-		$intent      = $this->create_started_intent( $order, 'pi_second_payment' );
-		$completions = did_action( 'woocommerce_payment_complete' );
-		$charges     = 0;
-		$gateway     = $this->create_gateway_over_a_given_back_payment(
+	public function test_process_payment_after_the_attached_payment_was_given_back( array $charge_fields, string $page, string $expected ): void {
+		$order = $this->create_order_paid_once_and_set_back_to_pending();
+		if ( 'checkout' !== $page ) {
+			$_POST['woocommerce_pay'] = '1';
+		}
+		if ( 'pay page, logged in' === $page ) {
+			$customer_id = $this->factory()->user->create( array( 'role' => 'customer' ) );
+			$order->set_customer_id( $customer_id );
+			$order->save();
+			wp_set_current_user( $customer_id );
+		}
+		$charges = 0;
+		$gateway = $this->create_gateway_over_a_given_back_payment(
 			$order,
 			$charge_fields,
-			$intent,
+			$this->create_started_intent( $order, 'pi_refused_charge' ),
 			static function () use ( &$charges ): void {
 				++$charges;
 			}
 		);
 
-		$result = $gateway->process_payment( $order->get_id() );
-
-		$order         = wc_get_order( $order->get_id() );
-		$charges_again = 0 === strpos( $expected, 'charges again' );
-		$this->assertSame( $order->get_meta( '_intent_id', true ), $order->get_transaction_id(), 'The transaction ID names the recorded intent after the checkout.' );
-		$this->assertSame( $charges_again ? 1 : 0, $charges );
-		if ( ! $charges_again ) {
-			$this->assertSame( 'refuses the submit' === $expected ? 'failure' : 'success', $result['result'] ?? '' );
-			$this->assertSame( 'pi_existing', $order->get_transaction_id() );
-			$this->assertSame( 0, $this->count_started_notes( $order, 'pi_second_payment' ) );
-			return;
-		}
-		$this->assertSame( 'pi_second_payment', $order->get_transaction_id(), "The new charge's record replaces the refunded one's." );
-		$this->assertSame( 'requires_action', $order->get_meta( '_intention_status', true ) );
-		$this->assertSame( OrderStatus::PENDING, $order->get_status() );
-		$this->assertSame( 1, $this->count_started_notes( $order, 'pi_second_payment' ) );
-
-		$succeeded = array_merge(
-			$intent,
-			array(
-				'status'  => 'succeeded',
-				'charges' => array(
-					'data' => array(
-						array(
-							'id'             => 'ch_second_payment',
-							'amount'         => 1200,
-							'paid'           => true,
-							'captured'       => true,
-							'payment_method' => 'pm_second_payment',
-							'payment_intent' => 'pi_second_payment',
-						),
-					),
-				),
-			)
-		);
-		unset( $succeeded['next_action'] );
-		if ( false !== strpos( $expected, 'webhook' ) ) {
-			wc_get_container()->get( PaymentIntentEventHandler::class )->process( 'payment_intent.succeeded', $succeeded );
-		} else {
-			$this->return_from_the_redirect( $order, $succeeded );
-		}
+		$results = array( $gateway->process_payment( $order->get_id() ), $gateway->process_payment( $order->get_id() ) );
 
 		$order = wc_get_order( $order->get_id() );
 		$notes = wp_list_pluck( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), 'content' );
-		$this->assertTrue( $order->is_paid(), 'The new payment completes the order.' );
-		$this->assertSame( 'pi_second_payment', $order->get_transaction_id() );
-		$this->assertSame( 'pi_second_payment', $order->get_meta( '_intent_id', true ), 'The transaction ID names the recorded intent after the payment completes.' );
-		$this->assertSame( 'ch_second_payment', $order->get_meta( '_charge_id', true ) );
-		$this->assertSame( $completions + 1, did_action( 'woocommerce_payment_complete' ), 'The order completes once.' );
-		$this->assertSame( 1, $this->count_started_notes( $order, 'pi_second_payment' ) );
-		$this->assertCount( 0, array_filter( $notes, static fn( string $note ): bool => false !== strpos( $note, 'does not pay this order' ) ), 'No other-charge note.' );
+		$this->assertSame( 0, $charges, 'Nothing is charged.' );
+		$this->assertSame( 'pi_existing', $order->get_transaction_id() );
+		$this->assertSame( 'pi_existing', $order->get_meta( '_intent_id', true ), 'The transaction ID names the recorded intent.' );
+		$this->assertSame( 'succeeded', $order->get_meta( '_intention_status', true ) );
+		$this->assertCount( 0, array_filter( $notes, static fn( string $note ): bool => false !== strpos( $note, 'Payment succeeded' ) ), 'The order is not answered as paid by the gateway.' );
+		if ( 'is answered as paid' === $expected ) {
+			$this->assertSame( array( 'success', 'success' ), array_column( $results, 'result' ) );
+			return;
+		}
+
+		$refunded = 'refuses as refunded' === $expected;
+		$notice   = $refunded ? "This order's payment was refunded, so it can't be paid again. Please place a new order." : "This order's payment is under review. Please contact the store.";
+		$noted    = $refunded ? 'was refunded in full' : 'is disputed';
+		$this->assertSame( array( 'failure', 'failure' ), array_column( $results, 'result' ) );
+		$this->assertSame( OrderStatus::PENDING, $order->get_status() );
+		$this->assertSame( array( $notice ), array_values( array_unique( array_column( wc_get_notices( 'error' ), 'notice' ) ) ) );
+		$this->assertCount( 1, array_filter( $notes, static fn( string $note ): bool => false !== strpos( $note, 'pi_existing' ) && false !== strpos( $note, $noted ) ), 'One note for the intent across both submits.' );
 	}
 
 	/**
-	 * Charges of the attached succeeded intent, and what a checkout on the order then does.
+	 * Charges of the attached succeeded intent, the page submitted, and what each submit does.
 	 *
-	 * @return array<string,array{0:array<string,mixed>,1:string}>
+	 * @return array<string,array{0:array<string,mixed>,1:string,2:string}>
 	 */
 	public function provider_attached_payments_given_back(): array {
+		$fully_refunded = array(
+			'refunded'        => true,
+			'amount_refunded' => 1200,
+			'disputed'        => false,
+		);
+
 		return array(
-			'fully refunded, the webhook first' => array(
+			'fully refunded'                       => array( $fully_refunded, 'checkout', 'refuses as refunded' ),
+			'refunded up to its amount'            => array(
 				array(
-					'refunded'        => true,
+					'refunded'        => false,
 					'amount_refunded' => 1200,
 					'disputed'        => false,
 				),
-				'charges again, completed by the webhook',
+				'checkout',
+				'refuses as refunded',
 			),
-			'fully refunded, the return first'  => array(
-				array(
-					'refunded'        => true,
-					'amount_refunded' => 1200,
-					'disputed'        => false,
-				),
-				'charges again, completed by the redirect return',
-			),
-			'disputed'                          => array(
+			'fully refunded, a logged-in pay page' => array( $fully_refunded, 'pay page, logged in', 'refuses as refunded' ),
+			'fully refunded, a guest pay page'     => array( $fully_refunded, 'pay page, guest', 'refuses as refunded' ),
+			'disputed'                             => array(
 				array(
 					'refunded'        => false,
 					'amount_refunded' => 0,
 					'disputed'        => true,
 				),
-				'refuses the submit',
+				'checkout',
+				'refuses as disputed',
 			),
-			'partly refunded'                   => array(
+			'partly refunded'                      => array(
 				array(
 					'refunded'        => false,
 					'amount_refunded' => 500,
 					'disputed'        => false,
 				),
+				'checkout',
 				'is answered as paid',
 			),
 		);
-	}
-
-	/**
-	 * @testdox A charge that replaces a fully refunded intent keeps $payer's payment that completed the order during the charge.
-	 *
-	 * The new charge's attach writes past its guard only while the order's stored intent and transaction ID are still the
-	 * refunded one's. Another WooPayments payment changes both; another gateway's payment changes only the transaction ID.
-	 * Either keeps the guard, as client 11.3.0's attach does (class-wc-payments-order-service.php:1818-1822).
-	 *
-	 * @testWith ["another WooPayments", "pi_other_tab", "pi_other_tab"]
-	 *           ["another gateway", "other_gateway_txn", "pi_existing"]
-	 *
-	 * @param string $payer          Who pays the order during the charge.
-	 * @param string $transaction_id Transaction ID that payment records.
-	 * @param string $intent_id      `_intent_id` the order keeps.
-	 */
-	public function test_process_payment_keeps_another_payment_recorded_while_replacing_a_refunded_intent( string $payer, string $transaction_id, string $intent_id ): void {
-		$order   = $this->create_order_paid_once_and_set_back_to_pending();
-		$pay     = static function ( int $order_id ) use ( $payer, $transaction_id ): void {
-			$other = wc_get_order( $order_id );
-			$other->set_transaction_id( $transaction_id );
-			if ( 'another WooPayments' === $payer ) {
-				$other->update_meta_data( '_intent_id', $transaction_id );
-				$other->update_meta_data( '_intention_status', 'succeeded' );
-			} else {
-				$other->set_payment_method( 'cheque' );
-			}
-			$other->set_status( OrderStatus::PROCESSING );
-			$other->save();
-		};
-		$gateway = $this->create_gateway_over_a_given_back_payment( $order, array( 'refunded' => true ), $this->create_started_intent( $order, 'pi_second_payment' ), $pay );
-
-		$gateway->process_payment( $order->get_id() );
-
-		$order = wc_get_order( $order->get_id() );
-		$this->assertSame( OrderStatus::PROCESSING, $order->get_status() );
-		$this->assertSame( $transaction_id, $order->get_transaction_id(), "The other payment's transaction ID is kept." );
-		$this->assertSame( $intent_id, $order->get_meta( '_intent_id', true ), 'No record is written for the new charge.' );
-		$this->assertSame( 'succeeded', $order->get_meta( '_intention_status', true ) );
-		$this->assertSame( 0, $this->count_started_notes( $order, 'pi_second_payment' ) );
 	}
 
 	/**
@@ -4127,69 +4065,6 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'pi_settled', $order->get_meta( '_intent_id', true ), 'The transaction ID names the recorded intent.' );
 		$this->assertSame( 'charges' === $expected ? 'requires_action' : 'succeeded', $order->get_meta( '_intention_status', true ) );
 		$this->assertSame( 'charges' === $expected ? 1 : 0, $this->count_started_notes( $order, 'pi_after_the_read' ) );
-	}
-
-	/**
-	 * Return to the order-received page from the shopper's redirect, as the platform sends them back, and let the redirect
-	 * return controller confirm the intent the platform now answers.
-	 *
-	 * @param WC_Order            $order  Order paid.
-	 * @param array<string,mixed> $intent Intent the platform answers for the return.
-	 */
-	private function return_from_the_redirect( WC_Order $order, array $intent ): void {
-		$api_client = $this->getMockBuilder( Client::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'get_payment_intention' ) )
-			->getMock();
-		$api_client->method( 'get_payment_intention' )->with( (string) $intent['id'] )->willReturn( $intent );
-		$container    = wc_get_container();
-		$confirmation = new WooPaymentsIntentConfirmationService();
-		$confirmation->init(
-			$api_client,
-			$container->get( WooPaymentsFeeDetailsNoteController::class ),
-			$this->create_unhooked_token_service(),
-			$container->get( WooPaymentsAccountService::class ),
-			$container->get( WooPaymentsOrderEffectApplier::class )
-		);
-		$arbiter = $this->createMock( WooPaymentsRuntimeArbiter::class );
-		$arbiter->method( 'is_builtin_owner' )->willReturn( true );
-		$controller = new WooPaymentsRedirectReturnController();
-		$controller->init( $arbiter, $confirmation, $api_client, $this->create_unhooked_token_service(), $container->get( WooPaymentsCustomerService::class ), $container->get( OrderPaymentLifecycleService::class ), $container->get( WooPaymentsOrderNoteService::class ) );
-
-		global $wp;
-		$get                              = $_GET; // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Restored below.
-		$request_method                   = $GLOBALS['_SERVER']['REQUEST_METHOD'] ?? null;
-		$wp->query_vars['order-received'] = $order->get_id();
-		set_query_var( 'order-received', $order->get_id() );
-		add_filter( 'woocommerce_is_order_received_page', '__return_true' );
-		// A redirect would exit the test run, so one fails the test instead.
-		add_filter(
-			'wp_redirect',
-			static function ( $location ) {
-				throw new \RuntimeException( 'Unexpected redirect: ' . esc_url_raw( (string) $location ) ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Test failure message, never output.
-			}
-		);
-		$_SERVER['REQUEST_METHOD'] = 'GET';
-		$_GET                      = array(
-			'wc_payment_method'            => WooPaymentsPersistenceVocabulary::GATEWAY_ID,
-			'_wpnonce'                     => wp_create_nonce( WooPaymentsIntentRequestBuilder::redirect_return_nonce_action( $order->get_id() ) ),
-			'payment_intent'               => (string) $intent['id'],
-			'payment_intent_client_secret' => (string) $intent['client_secret'],
-			'key'                          => $order->get_order_key(),
-		);
-
-		try {
-			$controller->handle_wp();
-		} finally {
-			$_GET = $get;
-			if ( null === $request_method ) {
-				unset( $_SERVER['REQUEST_METHOD'] );
-			} else {
-				$_SERVER['REQUEST_METHOD'] = $request_method;
-			}
-			unset( $wp->query_vars['order-received'] );
-			set_query_var( 'order-received', '' );
-		}
 	}
 
 	/**

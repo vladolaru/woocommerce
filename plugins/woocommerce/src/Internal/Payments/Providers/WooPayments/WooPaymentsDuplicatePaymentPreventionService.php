@@ -57,12 +57,24 @@ class WooPaymentsDuplicatePaymentPreventionService implements RegisterHooksInter
 	public const ERROR_CHECK_FAILED = 'duplicate_payment_check_failed';
 
 	/**
+	 * Error code of the refusal for an order whose attached payment was fully refunded.
+	 *
+	 * @since 11.4.0
+	 */
+	public const ERROR_REFUNDED_INTENT = 'duplicate_payment_refunded';
+
+	/**
 	 * Order meta holding the attached PaymentIntent the dispute note was written for.
 	 *
 	 * Keyed by the intent, so a copy of the meta on another order (Subscriptions copies order meta) never hides that order's
 	 * note: its attached intent differs.
 	 */
 	private const DISPUTED_INTENT_NOTED_META = '_wcpay_disputed_intent_noted';
+
+	/**
+	 * Order meta holding the attached PaymentIntent the full-refund note was written for, keyed as the dispute note's is.
+	 */
+	private const REFUNDED_INTENT_NOTED_META = '_wcpay_refunded_intent_noted';
 
 	/**
 	 * Payment methods paid offline after checkout, through a voucher.
@@ -270,12 +282,11 @@ class WooPaymentsDuplicatePaymentPreventionService implements RegisterHooksInter
 	 * Redirect when the current order already has an authorized PaymentIntent attached.
 	 *
 	 * A failed intent fetch lets checkout go on, except for a PHP Error or an order whose stored intent status is
-	 * succeeded, which refuse checkout. A fully refunded attached
-	 * intent lets checkout go on too, and its ID is returned so the new charge's record can replace it.
+	 * succeeded, which refuse checkout.
 	 *
 	 * @param WC_Order           $order   Current order.
 	 * @param WC_Payment_Gateway $gateway Gateway used to build the return URL.
-	 * @return array<string,string>|WP_Error|string|null The answer, the refusal, the fully refunded intent's ID, or null to go on.
+	 * @return array<string,string>|WP_Error|null
 	 */
 	public function check_payment_intent_attached_to_order_succeeded( WC_Order $order, WC_Payment_Gateway $gateway ) {
 		$intent_id = (string) $order->get_meta( '_intent_id', true );
@@ -317,10 +328,13 @@ class WooPaymentsDuplicatePaymentPreventionService implements RegisterHooksInter
 		}
 
 		// A full refund or a dispute leaves the intent `succeeded`; client 11.1.0 reads only the status
-		// (class-duplicate-payment-prevention-service.php:105-107) and completes the order from it. A fully refunded intent is
-		// no payment of the order, so checkout charges again. A disputed one is refused: the money may still come back.
+		// (class-duplicate-payment-prevention-service.php:105-107) and answers the order as paid from it. Both are refused
+		// here instead, with a notice and a note: a fully refunded order is not paid again, a new order is; a disputed
+		// payment may still come back.
 		if ( WooPaymentsIntentCodec::is_fully_refunded( $intent ) ) {
-			return $intent_id;
+			$this->add_refunded_intent_note_once( $order, $intent_id );
+
+			return new WP_Error( self::ERROR_REFUNDED_INTENT, __( "This order's payment was refunded, so it can't be paid again. Please place a new order.", 'woocommerce' ) );
 		}
 
 		if ( WooPaymentsIntentCodec::is_disputed( $intent ) ) {
@@ -357,11 +371,34 @@ class WooPaymentsDuplicatePaymentPreventionService implements RegisterHooksInter
 	 * @param bool     $lock_held Whether the caller holds the order payment lock and read the order under it.
 	 */
 	public function add_disputed_intent_note_once( WC_Order $order, string $intent_id, bool $lock_held = false ): void {
+		$this->add_intent_note_once( 'disputed', $order, $intent_id, $lock_held );
+	}
+
+	/**
+	 * Tell the merchant, once for each intent, that the order's payment was fully refunded, without failing the refusal, as
+	 * add_disputed_intent_note_once() does for a dispute.
+	 *
+	 * @param WC_Order $order     Order being paid.
+	 * @param string   $intent_id The fully refunded PaymentIntent.
+	 */
+	private function add_refunded_intent_note_once( WC_Order $order, string $intent_id ): void {
+		$this->add_intent_note_once( 'refunded', $order, $intent_id, false );
+	}
+
+	/**
+	 * Write a refusal's note once for each intent, logging a failure instead of raising it.
+	 *
+	 * @param string   $kind      `disputed` or `refunded`.
+	 * @param WC_Order $order     Order being paid.
+	 * @param string   $intent_id The attached PaymentIntent.
+	 * @param bool     $lock_held Whether the caller holds the order payment lock and read the order under it.
+	 */
+	private function add_intent_note_once( string $kind, WC_Order $order, string $intent_id, bool $lock_held ): void {
 		try {
-			$this->write_disputed_intent_note_once( $order, $intent_id, $lock_held );
+			$this->write_intent_note_once( $kind, $order, $intent_id, $lock_held );
 		} catch ( Throwable $failure ) {
 			wc_get_container()->get( WooPaymentsLogger::class )->log_throwable(
-				'Failed to note the disputed payment attached to the order.',
+				sprintf( 'Failed to note the %s payment attached to the order.', $kind ),
 				$failure,
 				array(
 					'order_id'  => $order->get_id(),
@@ -372,61 +409,69 @@ class WooPaymentsDuplicatePaymentPreventionService implements RegisterHooksInter
 	}
 
 	/**
-	 * Write the disputed payment note once for each intent.
+	 * Write a refusal's note once for each intent.
 	 *
-	 * Every submit for the order is refused while the dispute stands. Overlapping submits each loaded the order before this
-	 * runs, so the marker is read again from storage under the order payment lock, as the dispute webhook does for its note
-	 * (DisputeEventHandler::process_dispute_created()). While another operation holds the lock, the next submit
-	 * writes the note. A caller that already holds the lock and read the order under it writes on that order.
+	 * Every submit for the order is refused while the dispute stands or the refund holds. Overlapping submits each loaded the
+	 * order before this runs, so the marker is read again from storage under the order payment lock, as the dispute webhook
+	 * does for its note (DisputeEventHandler::process_dispute_created()). While another operation holds the lock, the next
+	 * submit writes the note. A caller that already holds the lock and read the order under it writes on that order.
 	 *
+	 * @param string   $kind      `disputed` or `refunded`.
 	 * @param WC_Order $order     Order being paid.
-	 * @param string   $intent_id The disputed PaymentIntent.
+	 * @param string   $intent_id The attached PaymentIntent.
 	 * @param bool     $lock_held Whether the caller holds the order payment lock and read the order under it.
 	 */
-	private function write_disputed_intent_note_once( WC_Order $order, string $intent_id, bool $lock_held ): void {
+	private function write_intent_note_once( string $kind, WC_Order $order, string $intent_id, bool $lock_held ): void {
 		if ( $lock_held ) {
-			$this->write_disputed_intent_note_unless_noted( $order, $intent_id );
+			$this->write_intent_note_unless_noted( $kind, $order, $intent_id );
 			return;
 		}
 
 		$order_payment_lock = wc_get_container()->get( OrderPaymentLock::class );
 		$vocabulary         = wc_get_container()->get( WooPaymentsPersistenceVocabulary::class );
-		$lock_token         = $order_payment_lock->claim( $order, $vocabulary, 'disputed_intent_note_' . $intent_id, 'disputed intent note' );
+		$lock_token         = $order_payment_lock->claim( $order, $vocabulary, $kind . '_intent_note_' . $intent_id, $kind . ' intent note' );
 		if ( null === $lock_token ) {
-			$order_payment_lock->log_refusal( $order, $vocabulary, 'disputed intent note' );
+			$order_payment_lock->log_refusal( $order, $vocabulary, $kind . ' intent note' );
 			return;
 		}
 
 		try {
-			$this->write_disputed_intent_note_unless_noted( $this->get_lifecycle_service()->get_fresh_order_from_data_store( $order ), $intent_id );
+			$this->write_intent_note_unless_noted( $kind, $this->get_lifecycle_service()->get_fresh_order_from_data_store( $order ), $intent_id );
 		} finally {
 			$order_payment_lock->release( $order, $vocabulary, $lock_token );
 		}
 	}
 
 	/**
-	 * Write the disputed payment note on an order read under the order payment lock, unless it names this intent already.
+	 * Write a refusal's note on an order read under the order payment lock, unless its marker names this intent already.
 	 *
+	 * @param string   $kind      `disputed` or `refunded`.
 	 * @param WC_Order $order     Order read under the order payment lock.
-	 * @param string   $intent_id The disputed PaymentIntent.
+	 * @param string   $intent_id The attached PaymentIntent.
 	 */
-	private function write_disputed_intent_note_unless_noted( WC_Order $order, string $intent_id ): void {
-		if ( $intent_id === (string) $order->get_meta( self::DISPUTED_INTENT_NOTED_META, true ) ) {
+	private function write_intent_note_unless_noted( string $kind, WC_Order $order, string $intent_id ): void {
+		$noted_meta = 'refunded' === $kind ? self::REFUNDED_INTENT_NOTED_META : self::DISPUTED_INTENT_NOTED_META;
+		if ( $intent_id === (string) $order->get_meta( $noted_meta, true ) ) {
 			return;
 		}
 
-		$note_id = $order->add_order_note(
-			sprintf(
+		$note = 'refunded' === $kind
+			? sprintf(
+				/* translators: %s: PaymentIntent ID. */
+				__( 'The payment attached to this order (%s) was refunded in full, so the customer was not charged again and was asked to place a new order.', 'woocommerce' ),
+				$intent_id
+			)
+			: sprintf(
 				/* translators: %s: PaymentIntent ID. */
 				__( 'The payment attached to this order (%s) is disputed, so the customer was not charged again. Check the dispute in WooPayments before the customer pays for this order.', 'woocommerce' ),
 				$intent_id
-			)
-		);
+			);
+		$note_id = $order->add_order_note( $note );
 		if ( 0 >= (int) $note_id ) {
 			return;
 		}
 
-		$order->update_meta_data( self::DISPUTED_INTENT_NOTED_META, $intent_id );
+		$order->update_meta_data( $noted_meta, $intent_id );
 		$order->save_meta_data();
 	}
 

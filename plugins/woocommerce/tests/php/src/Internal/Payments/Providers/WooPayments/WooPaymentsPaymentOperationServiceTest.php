@@ -1305,9 +1305,9 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 * A refunded PaymentIntent keeps its `succeeded` status, so a payment of the order that was given back (a refund and a
 	 * reopened order, for example) must not complete the order again (review 44 F4). Under the platform's pinned
 	 * Stripe-Version 2020-08-27 (wpcom `wcpay/utils/class-config.php:414-425`) a listed intent carries its charges with
-	 * `refunded`, `amount_refunded` and `disputed`. An intent that was fully refunded counts as one without money, so the
-	 * new card is charged, whether or not it was disputed first, as on the attached-intent guard; a partly refunded one
-	 * still holds money and pays the order.
+	 * `refunded`, `amount_refunded` and `disputed`. An earlier attempt that was fully refunded counts as one without money,
+	 * so the new card is charged, whether or not it was disputed first; a partly refunded one still holds money and pays the
+	 * order. The attached-intent guard refuses instead when the fully refunded intent is the order's own record.
 	 *
 	 * @dataProvider provide_given_back_charges
 	 *
@@ -5097,14 +5097,12 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A checkout of a payable order whose attached payment was fully refunded charges the shopper again and pays the order with the new intent.
+	 * @testdox A checkout of a payable order whose attached payment was fully refunded is refused with the notice, and nothing is charged.
 	 *
-	 * The old intent keeps `succeeded` after the refund. The new create-and-confirm is answered with the recorded successful
-	 * card payment (`Fixtures/platform-intention-basic-card.json`, pair `basic_card_usd_create_and_confirm`, POST intentions).
+	 * The old intent keeps `succeeded` after the refund. The order is not paid again: only the attached intent is read.
 	 */
-	public function test_checkout_of_a_payable_order_whose_attached_payment_was_refunded_charges_again(): void {
+	public function test_checkout_of_a_payable_order_whose_attached_payment_was_refunded_is_refused(): void {
 		$order           = $this->create_order_left_by_a_completed_challenge();
-		$new_charge      = $this->load_recorded_intent_entry( 'platform-intention-basic-card.json', 'basic_card_usd_create_and_confirm' );
 		$refunded_charge = array(
 			'refunded'        => true,
 			'amount_refunded' => 1099,
@@ -5112,7 +5110,6 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 
 		$http_client              = new FakeHttpClient();
 		$http_client->responses[] = self::http_json( 200, $this->attached_intent_given_back( $order, $refunded_charge ) );
-		$http_client->responses[] = self::http_json( $new_charge['http_status'], $new_charge['body'] );
 		$gateway                  = $this->create_gateway_with_real_duplicate_guard( $http_client );
 
 		$_POST['wcpay-payment-method'] = 'pm_card_visa';
@@ -5125,11 +5122,11 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 
 		$order = wc_get_order( $order->get_id() );
 		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertSame( 'success', $result['result'] ?? '' );
-		$this->assertSame( array( 'GET intentions/' . self::CHALLENGE_COMPLETED_INTENT_ID, 'POST intentions' ), self::platform_calls( $http_client ), 'The refunded payment must be followed by one new charge.' );
-		$this->assertSame( 'processing', $order->get_status() );
-		$this->assertSame( 'pi_3UJhO2BzWlxcwgpP1BndTguC', $order->get_meta( '_intent_id', true ), 'The order must be paid by the new intent.' );
-		$this->assertSame( array(), array_column( wc_get_notices( 'error' ), 'notice' ) );
+		$this->assertSame( 'failure', $result['result'] ?? '' );
+		$this->assertSame( array( 'GET intentions/' . self::CHALLENGE_COMPLETED_INTENT_ID ), self::platform_calls( $http_client ), 'Only the attached intent may be read; nothing may be charged.' );
+		$this->assertSame( 'pending', $order->get_status() );
+		$this->assertSame( self::CHALLENGE_COMPLETED_INTENT_ID, $order->get_meta( '_intent_id', true ), 'The order keeps its record.' );
+		$this->assertSame( array( "This order's payment was refunded, so it can't be paid again. Please place a new order." ), array_column( wc_get_notices( 'error' ), 'notice' ) );
 	}
 
 	/**

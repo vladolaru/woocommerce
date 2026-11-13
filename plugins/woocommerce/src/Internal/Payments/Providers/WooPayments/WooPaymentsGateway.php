@@ -1545,9 +1545,15 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 			// Client 11.1.0 fails the order with the mismatch as the note (`gw:1324-1325`). An amount mismatch on an order whose
 			// stored intent status is succeeded is kept and answered as paid, as client 11.1.0 keeps any refusal on such an
 			// order (`gw:1283-1304`). A failed guard lookup leaves the order as it is, as client 11.1.0's fatal on a PHP Error
-			// does. A disputed attached payment leaves the order as it is; the guard has written its note. Those two refusals
-			// reach the shopper even when the order's intent status says succeeded: no payment succeeded in this request.
+			// does. A disputed or fully refunded attached payment leaves the order as it is; the guard has written its note.
+			// Those three refusals reach the shopper even when the order's intent status says succeeded: no payment succeeded
+			// in this request.
 			$is_amount_mismatch = 'duplicate_payment_amount_mismatch' === $existing_intent_result->get_error_code();
+			$reaches_shopper    = array(
+				WooPaymentsDuplicatePaymentPreventionService::ERROR_DISPUTED_INTENT,
+				WooPaymentsDuplicatePaymentPreventionService::ERROR_REFUNDED_INTENT,
+				WooPaymentsDuplicatePaymentPreventionService::ERROR_CHECK_FAILED,
+			);
 
 			return $this->refuse_checkout(
 				$order,
@@ -1556,14 +1562,13 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 				$is_amount_mismatch,
 				'',
 				$is_amount_mismatch ? $existing_intent_result->get_error_message() : '',
-				! in_array( $existing_intent_result->get_error_code(), array( WooPaymentsDuplicatePaymentPreventionService::ERROR_DISPUTED_INTENT, WooPaymentsDuplicatePaymentPreventionService::ERROR_CHECK_FAILED ), true )
+				! in_array( $existing_intent_result->get_error_code(), $reaches_shopper, true )
 			);
 		}
 
 		if ( is_array( $existing_intent_result ) ) {
 			return $existing_intent_result;
 		}
-		$refunded_intent_id = is_string( $existing_intent_result ) ? $existing_intent_result : '';
 
 		// Runs after the intent check so that a reachable intent still produces the richer
 		// response, including the amount-mismatch message. This catches the same-order
@@ -1611,7 +1616,7 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 			$this->id,
 			$this->get_request_payment_method_id(),
 			$this->get_checkout_payment_data( $is_subscription_change ),
-			$this->get_checkout_provider_data( $is_subscription_change, $is_subscription_payment_method_change, $refunded_intent_id )
+			$this->get_checkout_provider_data( $is_subscription_change, $is_subscription_payment_method_change )
 		);
 		$this->checkout_payment_started = true;
 		$outcome                        = $this->get_processing_service()->process_checkout_outcome( $context, $this->get_provider() );
@@ -2935,12 +2940,11 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 	/**
 	 * Get WooPayments-scoped checkout provider data.
 	 *
-	 * @param bool   $is_subscription_change                Whether this is a validated new-method subscription change.
-	 * @param bool   $is_subscription_payment_method_change Whether this is a validated subscription payment-method change.
-	 * @param string $refunded_intent_id                    The order's fully refunded intent the charge replaces, or ''.
+	 * @param bool $is_subscription_change                Whether this is a validated new-method subscription change.
+	 * @param bool $is_subscription_payment_method_change Whether this is a validated subscription payment-method change.
 	 * @return array<string,mixed>
 	 */
-	private function get_checkout_provider_data( bool $is_subscription_change = false, bool $is_subscription_payment_method_change = false, string $refunded_intent_id = '' ): array {
+	private function get_checkout_provider_data( bool $is_subscription_change = false, bool $is_subscription_payment_method_change = false ): array {
 		$cvc_key = 'wc-' . $this->id . '-payment-cvc-confirmation';
 
 		$save_user_in_woopay = $this->get_woopay_session_service()->should_save_user_in_woopay();
@@ -2986,10 +2990,6 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 
 		if ( $is_subscription_payment_method_change ) {
 			$provider_data[ WooPaymentsIntentRequestBuilder::PROVIDER_DATA_SUBSCRIPTION_PAYMENT_METHOD_CHANGE ] = true;
-		}
-
-		if ( '' !== $refunded_intent_id ) {
-			$provider_data[ WooPaymentsIntentRequestBuilder::PROVIDER_DATA_REFUNDED_INTENT_ID ] = $refunded_intent_id;
 		}
 
 		return $provider_data;

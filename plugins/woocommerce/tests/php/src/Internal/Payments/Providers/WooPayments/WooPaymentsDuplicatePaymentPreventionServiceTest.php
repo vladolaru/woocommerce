@@ -858,7 +858,7 @@ class WooPaymentsDuplicatePaymentPreventionServiceTest extends WC_Unit_Test_Case
 	 * @dataProvider attached_intent_charges
 	 *
 	 * @param array<string,mixed> $charge_fields Fields of the intent's charge.
-	 * @param string              $expected      What the guard does: "charges again", "refuses the submit" or "pays the order".
+	 * @param string              $expected      What the guard does: "refuses as refunded", "refuses as disputed" or "pays the order".
 	 */
 	public function test_attached_intent_with_money_given_back_or_disputed( array $charge_fields, string $expected ): void {
 		$order = $this->create_order( 'hash', 'pending' );
@@ -876,13 +876,9 @@ class WooPaymentsDuplicatePaymentPreventionServiceTest extends WC_Unit_Test_Case
 			return;
 		}
 
-		if ( 'refuses the submit' === $expected ) {
-			$this->assertInstanceOf( WP_Error::class, $result );
-			$this->assertSame( WooPaymentsDuplicatePaymentPreventionService::ERROR_DISPUTED_INTENT, $result->get_error_code() );
-			$this->assertNotSame( '', $result->get_error_message() );
-		} else {
-			$this->assertSame( 'pi_existing', $result, "The refunded intent's ID, for the new charge's record to replace." );
-		}
+		$this->assertInstanceOf( WP_Error::class, $result );
+		$this->assertSame( 'refuses as refunded' === $expected ? WooPaymentsDuplicatePaymentPreventionService::ERROR_REFUNDED_INTENT : WooPaymentsDuplicatePaymentPreventionService::ERROR_DISPUTED_INTENT, $result->get_error_code() );
+		$this->assertNotSame( '', $result->get_error_message() );
 		$this->assertSame( '', $order->get_transaction_id() );
 		$this->assertSame( 'pending', $order->get_status() );
 	}
@@ -900,7 +896,7 @@ class WooPaymentsDuplicatePaymentPreventionServiceTest extends WC_Unit_Test_Case
 					'amount_refunded' => 1200,
 					'disputed'        => false,
 				),
-				'charges again',
+				'refuses as refunded',
 			),
 			'refunded up to its amount' => array(
 				array(
@@ -908,7 +904,7 @@ class WooPaymentsDuplicatePaymentPreventionServiceTest extends WC_Unit_Test_Case
 					'amount_refunded' => 1200,
 					'disputed'        => false,
 				),
-				'charges again',
+				'refuses as refunded',
 			),
 			'disputed'                  => array(
 				array(
@@ -916,7 +912,7 @@ class WooPaymentsDuplicatePaymentPreventionServiceTest extends WC_Unit_Test_Case
 					'amount_refunded' => 0,
 					'disputed'        => true,
 				),
-				'refuses the submit',
+				'refuses as disputed',
 			),
 			'partly refunded'           => array(
 				array(
@@ -959,6 +955,39 @@ class WooPaymentsDuplicatePaymentPreventionServiceTest extends WC_Unit_Test_Case
 			static fn( object $note ): bool => false !== strpos( (string) $note->content, 'pi_existing' ) && false !== strpos( (string) $note->content, 'disputed' )
 		);
 		$this->assertCount( 1, $notes );
+	}
+
+	/**
+	 * @testdox A fully refunded attached payment notes the order once, naming the intent, also after a dispute note for that intent.
+	 */
+	public function test_refunded_attached_intent_notes_the_order_once_after_its_dispute_note(): void {
+		$order = $this->create_order( 'hash', 'pending' );
+		$order->update_meta_data( '_intent_id', 'pi_existing' );
+		$order->save();
+		$disputed = $this->create_service( $this->create_session(), $this->create_api_client_answering( $this->create_charged_intent( $order, array( 'disputed' => true ) ) ) );
+		$refunded = $this->create_service(
+			$this->create_session(),
+			$this->create_api_client_answering(
+				$this->create_charged_intent(
+					$order,
+					array(
+						'refunded'        => true,
+						'amount_refunded' => 1200,
+					)
+				)
+			)
+		);
+
+		$disputed->check_payment_intent_attached_to_order_succeeded( wc_get_order( $order->get_id() ), $this->create_gateway() );
+		foreach ( array( 1, 2 ) as $attempt ) {
+			$result = $refunded->check_payment_intent_attached_to_order_succeeded( wc_get_order( $order->get_id() ), $this->create_gateway() );
+			$this->assertSame( WooPaymentsDuplicatePaymentPreventionService::ERROR_REFUNDED_INTENT, $result instanceof WP_Error ? $result->get_error_code() : '', "Attempt $attempt" );
+		}
+
+		$notes = wp_list_pluck( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), 'content' );
+		foreach ( array( 'is disputed', 'was refunded in full' ) as $noted ) {
+			$this->assertCount( 1, array_filter( $notes, static fn( string $note ): bool => false !== strpos( $note, 'pi_existing' ) && false !== strpos( $note, $noted ) ), $noted );
+		}
 	}
 
 	/**
