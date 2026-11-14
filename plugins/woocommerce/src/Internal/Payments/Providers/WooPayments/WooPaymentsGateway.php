@@ -1262,19 +1262,13 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 	}
 
 	/**
-	 * Get the current order-pay order.
+	 * Get the order-pay order the availability checks read: only the order whose pay link the current user may use, else
+	 * none, and the checks follow the cart. As client 11.3.0 (class-upe-payment-method.php:223-252, :499-504).
 	 *
 	 * @return WC_Order|null
 	 */
 	private function get_order_pay_order(): ?WC_Order {
-		$order_id = absint( get_query_var( 'order-pay' ) );
-		if ( 0 === $order_id ) {
-			return null;
-		}
-
-		$order = wc_get_order( $order_id );
-
-		return $order instanceof WC_Order ? $order : null;
+		return WooPaymentsOrderPayAccess::get_authorized_order_from_payment_link();
 	}
 
 	/**
@@ -1387,6 +1381,8 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 	/**
 	 * Tell whether the current checkout total is inside the definition's amount limits.
 	 * With no cart (admin, REST outside the Store API, cron, WP-CLI without a cart) there is no total to check, so the limits pass.
+	 * The total is the order-pay order's when get_order_pay_order() returns one, else the cart's, as client 11.3.0
+	 * (class-upe-payment-method.php:236-252).
 	 *
 	 * @param string $currency        Checkout currency.
 	 * @param string $account_country Merchant account country.
@@ -1402,7 +1398,8 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 			return true;
 		}
 
-		$total = $this->get_order_total();
+		$order = $this->get_order_pay_order();
+		$total = $order instanceof WC_Order ? (float) $order->get_total() : (float) WC()->cart->get_total( 'edit' );
 		if ( 0.0 >= $total ) {
 			return true;
 		}

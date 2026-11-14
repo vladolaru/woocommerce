@@ -1456,6 +1456,9 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$order->set_currency( 'USD' );
 		$order->set_total( '100.00' );
 		$order->save();
+		global $wp;
+		$wp->query_vars['order-pay'] = $order->get_id();
+		$_GET['key']                 = $order->get_order_key();
 		set_query_var( 'order-pay', $order->get_id() );
 
 		$settings_filter = static function (): array {
@@ -1507,11 +1510,104 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			$this->assertTrue( $afterpay->is_available() );
 		} finally {
 			set_query_var( 'order-pay', 0 );
+			unset( $wp->query_vars['order-pay'], $_GET['key'] );
 			remove_filter( 'pre_option_woocommerce_woocommerce_payments_affirm_settings', $settings_filter );
 			remove_filter( 'pre_option_woocommerce_woocommerce_payments_afterpay_clearpay_settings', $settings_filter );
 			remove_filter( 'pre_option_woocommerce_currency', $currency_filter );
 			$order->delete( true );
 		}
+	}
+
+	/**
+	 * @testdox The order-pay order is read for method choice only when the pay link carries its key and the visitor may pay it: $_dataName.
+	 *
+	 * Client 11.3.0 reads the order-pay order for the currency, the renewal context, the BNPL address check and the amount
+	 * limits only through WC_Payments_Utils::get_authorized_order_from_payment_link() (class-wc-payments-utils.php:1440-1461;
+	 * class-upe-payment-method.php:223-252, :499-504; class-wc-payment-gateway-wcpay.php:1178-1190), else the store currency
+	 * and the cart's total. Each order differs from the cart in one way that hides Affirm when the order is read.
+	 *
+	 * @dataProvider provider_order_pay_order_reads
+	 *
+	 * @param string $order_shape How the order differs from the cart: currency, renewal, address, total, or a refund in the slot.
+	 * @param string $link        The pay link: the order's key with its customer, no key, or the key with another user.
+	 * @param bool   $expected    Whether Affirm is offered.
+	 */
+	public function test_order_pay_order_is_read_only_with_a_usable_pay_link( string $order_shape, string $link, bool $expected ): void {
+		$this->activate_builtin_tier();
+		WooCommerceSubscriptionsDoubles::load_renewal_detector();
+		$definition = ( new PaymentMethodRegistry() )->get( 'affirm' );
+		$this->assertNotNull( $definition );
+		add_filter( 'pre_option_woocommerce_woocommerce_payments_affirm_settings', static fn(): array => array( 'enabled' => 'yes' ) );
+		add_filter( 'pre_option_woocommerce_currency', static fn(): string => 'USD' );
+		WC()->cart = new \WC_Cart();
+		WC()->cart->set_total( 'refund' === $order_shape ? '30000.01' : '100.00' );
+
+		$customer_id = self::factory()->user->create( array( 'role' => 'customer' ) );
+		$order       = wc_create_order( array( 'customer_id' => $customer_id ) );
+		$order->set_currency( 'currency' === $order_shape ? 'EUR' : 'USD' );
+		$order->set_total( 'total' === $order_shape ? '30000.01' : '100.00' );
+		if ( 'address' !== $order_shape ) {
+			$order->set_billing_first_name( 'Test' );
+			$order->set_billing_last_name( 'Shopper' );
+			$order->set_billing_country( 'US' );
+			$order->set_billing_state( 'CA' );
+			$order->set_billing_city( 'San Francisco' );
+			$order->set_billing_postcode( '94107' );
+			$order->set_billing_address_1( '123 Market St' );
+		}
+		$order->save();
+		$order_pay_id = $order->get_id();
+		if ( 'refund' === $order_shape ) {
+			$order_pay_id = wc_create_refund(
+				array(
+					'order_id' => $order->get_id(),
+					'amount'   => '10.00',
+				)
+			)->get_id();
+		}
+		$GLOBALS['wcpay_test_renewal_order_ids'] = 'renewal' === $order_shape ? array( $order->get_id() ) : array();
+
+		wp_set_current_user( 'another user' === $link ? self::factory()->user->create( array( 'role' => 'customer' ) ) : $customer_id );
+		// A routed order-pay request sets the ID on both the request and the main query.
+		global $wp;
+		$wp->query_vars['order-pay'] = $order_pay_id;
+		set_query_var( 'order-pay', $order_pay_id );
+		if ( 'no key' !== $link ) {
+			$_GET['key'] = $order->get_order_key();
+		}
+
+		try {
+			$gateway = new WooPaymentsGateway( $definition );
+			$gateway->init( new RecordingPaymentProcessingService(), $this->create_processing_ready_provider(), null, null, $this->create_account_service_for_country( 'US', 'affirm_payments' ) );
+
+			$this->assertSame( $expected, $gateway->is_available() );
+		} finally {
+			set_query_var( 'order-pay', '' );
+			unset( $wp->query_vars['order-pay'], $_GET['key'], $GLOBALS['wcpay_test_renewal_order_ids'] );
+		}
+	}
+
+	/**
+	 * Orders that hide Affirm when read, against a USD cart of 100.00 that Affirm accepts, and the pay link of each request.
+	 *
+	 * @return array<string,array{0:string,1:string,2:bool}>
+	 */
+	public function provider_order_pay_order_reads(): array {
+		return array(
+			'EUR order, its key and customer'             => array( 'currency', 'valid', false ),
+			'EUR order, no key'                           => array( 'currency', 'no key', true ),
+			'EUR order, its key and another user'         => array( 'currency', 'another user', true ),
+			'renewal order, its key and customer'         => array( 'renewal', 'valid', false ),
+			'renewal order, no key'                       => array( 'renewal', 'no key', true ),
+			'renewal order, its key and another user'     => array( 'renewal', 'another user', true ),
+			'no order address, its key and customer'      => array( 'address', 'valid', false ),
+			'no order address, no key'                    => array( 'address', 'no key', true ),
+			'no order address, its key and another user'  => array( 'address', 'another user', true ),
+			'total above the limit, its key and customer' => array( 'total', 'valid', false ),
+			'total above the limit, no key'               => array( 'total', 'no key', true ),
+			'total above the limit, its key and another user' => array( 'total', 'another user', true ),
+			'refund ID in the slot, cart above the limit' => array( 'refund', 'valid', false ),
+		);
 	}
 
 	/**
