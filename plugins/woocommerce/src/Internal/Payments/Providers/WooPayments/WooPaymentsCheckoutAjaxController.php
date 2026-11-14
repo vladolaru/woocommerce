@@ -225,12 +225,15 @@ class WooPaymentsCheckoutAjaxController implements RegisterHooksInterface {
 			return $this->json_error_response( __( "We're not able to add this payment method. Please refresh the page and try again.", 'woocommerce' ), 400 );
 		}
 
-		// The My Account form posting here is offered by the enabled card gateway only while its saved cards setting is on
-		// (WooPaymentsGateway::init_supported_features()), so the action reads the same gateway's two settings. Client 11.3.0 create_setup_intent_ajax() checks, in order: nonce,
+		// The My Account form posting here is offered by a WooPayments gateway whose own saved cards setting is on
+		// (WooPaymentsGateway::init_supported_features()); the action reads the card gateway's two settings, as the client's
+		// action runs on the card gateway. Client 11.3.0 create_setup_intent_ajax() checks, in order: nonce,
 		// gateway enabled, saved cards on, the card-testing check with the session loaded, and the rate limit, all
 		// before the SetupIntent is created (class-wc-payment-gateway-wcpay.php:5004-5044).
 		$card_gateway = wc_get_container()->get( WooPaymentsGateway::class );
-		if ( 'yes' !== $card_gateway->enabled || ! $card_gateway->is_saved_cards_enabled() ) {
+		// get_option() reloads the settings when the current blog differs from the one the shared gateway last read, as
+		// the client's is_enabled() reads the same option (class-wc-payment-gateway-wcpay.php:5109-5111).
+		if ( 'yes' !== $card_gateway->get_option( 'enabled' ) || ! $card_gateway->is_saved_cards_enabled() ) {
 			return $this->json_error_response( __( "We're not able to add this payment method. Please try again later.", 'woocommerce' ), 400 );
 		}
 

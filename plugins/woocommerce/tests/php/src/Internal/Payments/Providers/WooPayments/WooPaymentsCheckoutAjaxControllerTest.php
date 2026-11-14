@@ -5666,6 +5666,96 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Adding a card from My Account follows the current site's gateway settings when the shared card gateway last read another site's: $_dataName.
+	 *
+	 * The container shares one card gateway, which reloads its settings in get_option() when the current blog differs from
+	 * the one it last read (WooPaymentsGateway::ensure_current_blog_context()). Client 11.3.0 reads both settings through
+	 * get_option() (class-wc-payment-gateway-wcpay.php:5012-5024, :5109-5111, :1239-1241).
+	 *
+	 * @testWith ["no", "yes", "yes", "yes", true]
+	 *           ["yes", "yes", "no", "yes", false]
+	 *           ["yes", "no", "yes", "yes", true]
+	 *           ["yes", "yes", "yes", "no", false]
+	 *
+	 * @param string $cached_enabled      Enabled setting of the site the gateway last read.
+	 * @param string $cached_saved_cards  Saved cards setting of that site.
+	 * @param string $current_enabled     Enabled setting of the current site.
+	 * @param string $current_saved_cards Saved cards setting of the current site.
+	 * @param bool   $accepted            Whether the request reaches the platform.
+	 */
+	public function test_create_setup_intent_reads_the_current_sites_gateway_settings( string $cached_enabled, string $cached_saved_cards, string $current_enabled, string $current_saved_cards, bool $accepted ): void {
+		wp_set_current_user( $this->factory()->user->create() );
+		update_option(
+			'woocommerce_woocommerce_payments_settings',
+			array(
+				'enabled'     => $cached_enabled,
+				'saved_cards' => $cached_saved_cards,
+			)
+		);
+		$card_gateway = new WooPaymentsGateway();
+		update_option(
+			'woocommerce_woocommerce_payments_settings',
+			array(
+				'enabled'     => $current_enabled,
+				'saved_cards' => $current_saved_cards,
+			)
+		);
+		// The gateway last read another site's settings, as after a switch_to_blog() on a network.
+		$blog_id = new \ReflectionProperty( WooPaymentsGateway::class, 'settings_blog_id' );
+		$blog_id->setAccessible( true );
+		$blog_id->setValue( $card_gateway, get_current_blog_id() + 1 );
+		wc_get_container()->replace( WooPaymentsGateway::class, $card_gateway );
+
+		$api_client       = new class() extends Client {
+			/**
+			 * SetupIntent creation requests this fake received.
+			 *
+			 * @var array<int,array<string,mixed>>
+			 */
+			public array $created_setup_intents = array();
+
+			/**
+			 * Tell whether the transport is available.
+			 *
+			 * @return bool
+			 */
+			public function is_available(): bool {
+				return true;
+			}
+
+			/**
+			 * Create and confirm a SetupIntent.
+			 *
+			 * @param array<string,mixed> $request_data    Request data.
+			 * @param string              $idempotency_key Idempotency key.
+			 * @return array<string,mixed>
+			 */
+			public function create_and_confirm_setup_intention( array $request_data, string $idempotency_key ): array {
+				unset( $idempotency_key );
+				$this->created_setup_intents[] = $request_data;
+
+				return array(
+					'id'     => 'seti_test',
+					'status' => 'succeeded',
+				);
+			}
+		};
+		$customer_service = $this->createMock( WooPaymentsCustomerService::class );
+		$customer_service->method( 'get_or_create_customer_id_for_user' )->willReturn( 'cus_test' );
+		$sut = $this->create_controller( $api_client, $customer_service );
+
+		$response = $sut->create_setup_intent_for_request(
+			array(
+				'_ajax_nonce'          => wp_create_nonce( 'wcpay_create_setup_intent_nonce' ),
+				'wcpay-payment-method' => 'pm_card',
+			)
+		);
+
+		$this->assertSame( $accepted, $response['success'] );
+		$this->assertCount( $accepted ? 1 : 0, $api_client->created_setup_intents );
+	}
+
+	/**
 	 * Card gateway settings, nonce, session and rate-limit states that refuse the request, with the message each refusal
 	 * shows. A setting's refusal comes before the rate limit, as client 11.3.0 orders them (gw:5011-5042).
 	 *
