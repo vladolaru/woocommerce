@@ -5729,13 +5729,18 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 
 		$sut = $this->create_controller( $api_client, $customer_service );
 		$this->use_card_gateway_settings( 'yes', 'yes' );
-		$response = $sut->create_setup_intent_for_request(
-			array(
-				'_ajax_nonce'          => wp_create_nonce( 'wcpay_create_setup_intent_nonce' ),
-				'wcpay-payment-method' => 'pm_card',
-				'wcpay-fingerprint'    => 'device_fp_addpm',
-			)
-		);
+		WC()->cart->add_to_cart( \WC_Helper_Product::create_simple_product()->get_id(), 2 );
+		try {
+			$response = $sut->create_setup_intent_for_request(
+				array(
+					'_ajax_nonce'          => wp_create_nonce( 'wcpay_create_setup_intent_nonce' ),
+					'wcpay-payment-method' => 'pm_card',
+					'wcpay-fingerprint'    => 'device_fp_addpm',
+				)
+			);
+		} finally {
+			WC()->cart->empty_cart();
+		}
 
 		$this->assertTrue( $response['success'] );
 		$this->assertCount( 1, $api_client->captured );
@@ -5743,6 +5748,8 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'device_fp_addpm', $metadata['fraud_prevention_data_shopper_ua_hash'] );
 		$this->assertSame( hash( 'sha512', \WC_Geolocation::get_ip_address() ), $metadata['fraud_prevention_data_shopper_ip_hash'] );
 		$this->assertTrue( $metadata['fraud_prevention_data_available'] );
+		// Client 11.3.0 sends no purchase size when no order is paid (class-wc-payment-gateway-wcpay.php:4993).
+		$this->assertArrayNotHasKey( 'fraud_prevention_data_cart_contents', $metadata );
 
 		wp_set_current_user( 0 );
 	}

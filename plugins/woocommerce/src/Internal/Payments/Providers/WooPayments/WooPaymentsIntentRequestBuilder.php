@@ -452,9 +452,7 @@ class WooPaymentsIntentRequestBuilder {
 	 * (fraud-prevention/class-buyer-fingerprinting-service.php:64-90, core/server/request/trait-intention.php:25): sha512 of
 	 * the shopper IP, the browser-computed device fingerprint as the UA hash, the geolocated IP country, and the purchase
 	 * size, with empty values dropped and the availability flag always set, so the platform's risk rules keyed on these
-	 * fields see the same values.
-	 * The purchase size prefers the live cart and falls back to the order's
-	 * item count, which covers pay-for-order and off-session renewals.
+	 * fields see the same values. The purchase size is the item count of the order being paid.
 	 *
 	 * @param PaymentOperationContext $context Payment context.
 	 * @return array<string,mixed>
@@ -471,18 +469,15 @@ class WooPaymentsIntentRequestBuilder {
 	/**
 	 * Build the buyer-fingerprinting risk metadata from a raw device fingerprint.
 	 *
-	 * Order-less callers (the add-payment-method setup intent) get the cart
-	 * count only when a live cart exists, as in client 11.1.0 (class-buyer-fingerprinting-service.php:66).
+	 * The purchase size is the item count of the order passed in, and an order-less caller (the add-payment-method setup
+	 * intent) sends none, as client 11.3.0 (class-buyer-fingerprinting-service.php:65-75).
 	 *
 	 * @param string        $fingerprint Browser-computed device fingerprint.
-	 * @param WC_Order|null $order       Order to fall back to for the purchase size.
+	 * @param WC_Order|null $order       Order being paid, or null when no order is paid.
 	 * @return array<string,mixed>
 	 */
 	public static function fingerprint_metadata_from_value( string $fingerprint, ?WC_Order $order = null ): array {
-		$cart_contents = null !== WC()->cart ? intval( WC()->cart->get_cart_contents_count() ) : null;
-		if ( ! $cart_contents && null !== $order ) {
-			$cart_contents = $order->get_item_count();
-		}
+		$cart_contents = null !== $order ? $order->get_item_count() : null;
 
 		$metadata = array_filter(
 			array(

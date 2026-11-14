@@ -446,6 +446,42 @@ class WooPaymentsIntentRequestBuilderTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Fraud metadata counts the items of the order being paid, whatever the live cart holds: $_dataName.
+	 *
+	 * Client 11.3.0 takes `fraud_prevention_data_cart_contents` from the order passed in
+	 * (class-buyer-fingerprinting-service.php:65-75; callers class-wc-payment-gateway-wcpay.php:2169, :2291).
+	 *
+	 * @testWith ["a live cart with one item", true]
+	 *           ["no cart", false]
+	 *
+	 * @param string $label     Case name.
+	 * @param bool   $with_cart Whether a live cart with one item exists.
+	 */
+	public function test_charge_request_counts_the_items_of_the_paid_order( string $label, bool $with_cart ): void {
+		unset( $label );
+		$product = \WC_Helper_Product::create_simple_product();
+		$order   = wc_create_order();
+		$order->add_product( $product, 3 );
+		$order->set_currency( 'USD' );
+		$order->set_total( '30.00' );
+		$order->save();
+		$cart_before = WC()->cart;
+		WC()->cart   = null;
+		if ( $with_cart ) {
+			WC()->cart = new \WC_Cart();
+			WC()->cart->add_to_cart( $product->get_id(), 1 );
+		}
+
+		try {
+			$request = $this->build_charge_request_for_fingerprint( $order, array( 'fingerprint' => 'device_fp_123' ) );
+		} finally {
+			WC()->cart = $cart_before;
+		}
+
+		$this->assertSame( 3, $request['metadata']['fraud_prevention_data_cart_contents'] );
+	}
+
+	/**
 	 * @testdox Charge requests omit the device-fingerprint hash when the browser supplied none, but stay flagged available.
 	 */
 	public function test_charge_request_omits_ua_hash_without_fingerprint(): void {
