@@ -28,11 +28,6 @@ class MultiCurrencySelectedCurrencyController implements RegisterHooksInterface 
 	private const FILTER_OVERRIDE_NOTICE_COUNTRY       = 'wcpay_multi_currency_override_notice_country';
 	private const FILTER_OVERRIDE_NOTICE_CURRENCY_NAME = 'wcpay_multi_currency_override_notice_currency_name';
 
-	/**
-	 * The settings preview's query parameter, under the extension's name so its preview links keep working.
-	 */
-	private const SIMULATION_FLAG = 'is_mc_onboarding_simulation';
-
 	private const ACCOUNT_CURRENCY_FIELD = 'wcpay_selected_currency';
 
 	/**
@@ -285,7 +280,7 @@ class MultiCurrencySelectedCurrencyController implements RegisterHooksInterface 
 	 * @internal
 	 */
 	public function handle_simulation_init(): void {
-		$this->simulation_params = $this->get_simulation_params();
+		$this->simulation_params = RequestContext::get_settings_preview_params();
 		if ( empty( $this->simulation_params ) ) {
 			return;
 		}
@@ -498,36 +493,6 @@ document.addEventListener( 'DOMContentLoaded', () => {
 		}
 
 		return $this->geolocation_service;
-	}
-
-	/**
-	 * Get the Preview simulation parameters from the query string, or from the referring page.
-	 *
-	 * Client 11.1.0 MultiCurrency::get_multi_currency_onboarding_simulation_variables().
-	 *
-	 * @return array<string,bool> Empty when the request is not a simulation.
-	 */
-	private function get_simulation_params(): array {
-		$parameters = wc_clean( wp_unslash( $_GET ) ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended
-		$parameters = is_array( $parameters ) ? $parameters : array();
-
-		if ( ! wp_validate_boolean( $parameters[ self::SIMULATION_FLAG ] ?? false ) ) {
-			$referer = isset( $_SERVER['HTTP_REFERER'] ) ? esc_url_raw( wp_unslash( $_SERVER['HTTP_REFERER'] ) ) : '';
-			if ( false === strpos( $referer, self::SIMULATION_FLAG ) ) {
-				return array();
-			}
-
-			$parameters = array();
-			wp_parse_str( (string) wp_parse_url( $referer, PHP_URL_QUERY ), $parameters );
-			if ( ! wp_validate_boolean( $parameters[ self::SIMULATION_FLAG ] ?? false ) ) {
-				return array();
-			}
-		}
-
-		return array(
-			'enable_storefront_switcher' => wp_validate_boolean( $parameters['enable_storefront_switcher'] ?? false ),
-			'enable_auto_currency'       => wp_validate_boolean( $parameters['enable_auto_currency'] ?? false ),
-		);
 	}
 
 	/**

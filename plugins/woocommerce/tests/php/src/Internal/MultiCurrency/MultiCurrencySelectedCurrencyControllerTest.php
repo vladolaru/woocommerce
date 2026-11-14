@@ -760,6 +760,7 @@ class MultiCurrencySelectedCurrencyControllerTest extends WC_Unit_Test_Case {
 	 * @param string[]             $markup            Text the notice renders.
 	 */
 	public function test_simulation_shows_the_auto_switch_notice_only_with_its_flag_and_auto_currency( array $query, $simulation_footer, $notice_footer, array $markup ): void {
+		wp_set_current_user( self::factory()->user->create( array( 'role' => 'shop_manager' ) ) );
 		update_option( 'woocommerce_currency', 'USD' );
 		foreach ( $query as $name => $value ) {
 			$_GET[ $name ] = $value;
@@ -817,6 +818,7 @@ class MultiCurrencySelectedCurrencyControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Should simulate a United States visitor for a store that does not sell in USD.
 	 */
 	public function test_simulation_uses_usd_for_non_usd_store(): void {
+		wp_set_current_user( self::factory()->user->create( array( 'role' => 'shop_manager' ) ) );
 		update_option( 'woocommerce_currency', 'EUR' );
 		$_GET['is_mc_onboarding_simulation'] = '1';
 		$_GET['enable_auto_currency']        = 'true';
@@ -837,6 +839,7 @@ class MultiCurrencySelectedCurrencyControllerTest extends WC_Unit_Test_Case {
 	 * Client 11.1.0 MultiCurrency.php:2020-2051.
 	 */
 	public function test_simulation_prints_link_script(): void {
+		wp_set_current_user( self::factory()->user->create( array( 'role' => 'shop_manager' ) ) );
 		$_GET['is_mc_onboarding_simulation'] = '1';
 		$_GET['enable_auto_currency']        = 'true';
 		$sut                                 = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $this->create_persistence_service() );
@@ -862,12 +865,56 @@ class MultiCurrencySelectedCurrencyControllerTest extends WC_Unit_Test_Case {
 	 * Client 11.1.0 MultiCurrency.php:1491-1505.
 	 */
 	public function test_simulation_reads_referer(): void {
+		wp_set_current_user( self::factory()->user->create( array( 'role' => 'shop_manager' ) ) );
 		$_SERVER['HTTP_REFERER'] = 'http://example.org/shop/?is_mc_onboarding_simulation=1&enable_auto_currency=true';
 		$sut                     = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $this->create_persistence_service( true, 'USD' ) );
 
 		$sut->handle_simulation_init();
 
 		$this->assertSame( 10, has_action( 'wp_footer', array( $sut, 'handle_wp_footer' ) ) );
+	}
+
+	/**
+	 * @testdox Preview settings are read only for a user who manages the store: $_dataName.
+	 *
+	 * Client 11.3.0 MultiCurrency::get_multi_currency_onboarding_simulation_variables() returns nothing unless the user can
+	 * `manage_woocommerce` (MultiCurrency.php:2049-2052), so the request renders as an ordinary visit.
+	 *
+	 * @dataProvider provide_preview_requests_without_the_capability
+	 *
+	 * @param string $role   Role of the current user, or an empty string for a visitor who is not logged in.
+	 * @param string $source Where the request carries the preview: `query` or `referer`.
+	 */
+	public function test_simulation_reads_no_preview_settings_without_the_capability( string $role, string $source ): void {
+		update_option( 'woocommerce_currency', 'USD' );
+		wp_set_current_user( '' === $role ? 0 : self::factory()->user->create( array( 'role' => $role ) ) );
+		if ( 'query' === $source ) {
+			$_GET['is_mc_onboarding_simulation'] = '1';
+			$_GET['enable_auto_currency']        = 'true';
+		} else {
+			$_SERVER['HTTP_REFERER'] = 'http://example.org/shop/?is_mc_onboarding_simulation=1&enable_auto_currency=true';
+		}
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $this->create_persistence_service( true, 'USD' ), null, $this->create_geolocation_service( 'USD', 'US' ) );
+
+		$sut->handle_simulation_init();
+
+		$this->assertFalse( has_action( 'wp_footer', array( $sut, 'handle_simulation_wp_footer' ) ) );
+		$this->assertFalse( has_action( 'wp_footer', array( $sut, 'handle_wp_footer' ) ) );
+		$this->assertFalse( has_filter( 'wcpay_multi_currency_override_notice_country' ) );
+		$this->assertFalse( has_filter( 'wcpay_multi_currency_override_notice_currency_name' ) );
+	}
+
+	/**
+	 * Users without `manage_woocommerce` and where their request carries the preview.
+	 *
+	 * @return array<string,array{string,string}>
+	 */
+	public static function provide_preview_requests_without_the_capability(): array {
+		return array(
+			'a customer, preview in the query'           => array( 'customer', 'query' ),
+			'a customer, preview in the referer'         => array( 'customer', 'referer' ),
+			'a logged-out visitor, preview in the query' => array( '', 'query' ),
+		);
 	}
 
 	/**

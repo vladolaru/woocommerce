@@ -245,18 +245,14 @@ class MultiCurrencyStorefrontIntegrationController implements RegisterHooksInter
 	}
 
 	/**
-	 * Get the settings preview's Storefront switcher choice from the query string.
+	 * Get the settings preview's Storefront switcher choice, as client 11.3.0 StorefrontIntegration reads it
+	 * (StorefrontIntegration.php:114-126).
 	 *
-	 * @return bool|null The previewed choice, or null outside a preview that sets one.
+	 * @return bool|null The previewed choice, or null outside a preview.
 	 */
 	private function get_simulated_storefront_switcher_choice(): ?bool {
-		$query_args    = RequestContext::get_current_query_args();
-		$is_simulation = filter_var( $query_args['is_mc_onboarding_simulation'] ?? false, FILTER_VALIDATE_BOOLEAN );
+		$preview = RequestContext::get_settings_preview_params();
 
-		if ( ! $is_simulation || ! array_key_exists( 'enable_storefront_switcher', $query_args ) ) {
-			return null;
-		}
-
-		return filter_var( $query_args['enable_storefront_switcher'], FILTER_VALIDATE_BOOLEAN );
+		return empty( $preview ) ? null : $preview['enable_storefront_switcher'];
 	}
 }

@@ -185,11 +185,70 @@ class MultiCurrencyStorefrontIntegrationControllerTest extends WC_Unit_Test_Case
 	private function prepare_storefront_decision( string $stylesheet, string $template, int $currencies, string $setting, ?string $preview ): MultiCurrencyStorefrontIntegrationController {
 		update_option( 'wcpay_multi_currency_enable_storefront_switcher', $setting );
 		if ( null !== $preview ) {
+			wp_set_current_user( self::factory()->user->create( array( 'role' => 'shop_manager' ) ) );
 			$_GET['is_mc_onboarding_simulation'] = 'true';
 			$_GET['enable_storefront_switcher']  = $preview;
 		}
 
 		return $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $currencies, $stylesheet, $template );
+	}
+
+	/**
+	 * @testdox The settings preview's switcher choice applies only for a user who manages the store, read as client 11.3.0 reads it: $_dataName.
+	 *
+	 * Client 11.3.0 StorefrontIntegration reads MultiCurrency::get_multi_currency_onboarding_simulation_variables()
+	 * (StorefrontIntegration.php:114-126): nothing for a user without `manage_woocommerce` (MultiCurrency.php:2049-2052), the
+	 * preview from the query or else the referring page (:2054-2068), and a choice the preview leaves out as false (:2072-2087).
+	 *
+	 * @dataProvider provide_preview_switcher_choices
+	 *
+	 * @param string               $role       Role of the current user.
+	 * @param string               $setting    The saved Storefront switcher setting.
+	 * @param array<string,string> $query      Query arguments of the request.
+	 * @param string               $referer    Referring page, or an empty string.
+	 * @param bool                 $registered Whether the switcher hooks register.
+	 */
+	public function test_preview_switcher_choice_applies_only_for_a_store_manager( string $role, string $setting, array $query, string $referer, bool $registered ): void {
+		update_option( 'wcpay_multi_currency_enable_storefront_switcher', $setting );
+		wp_set_current_user( self::factory()->user->create( array( 'role' => $role ) ) );
+		foreach ( $query as $name => $value ) {
+			$_GET[ $name ] = $value;
+		}
+		if ( '' !== $referer ) {
+			$_SERVER['HTTP_REFERER'] = $referer;
+		}
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, 2, 'storefront', 'storefront' );
+
+		try {
+			$sut->handle_init();
+		} finally {
+			unset( $_SERVER['HTTP_REFERER'] );
+		}
+
+		$this->assertSame( $registered ? 9999 : false, has_filter( 'woocommerce_breadcrumb_defaults', array( $sut, 'handle_woocommerce_breadcrumb_defaults' ) ) );
+	}
+
+	/**
+	 * Users, saved settings and preview requests, and whether the switcher shows.
+	 *
+	 * @return array<string,array{0:string,1:string,2:array<string,string>,3:string,4:bool}>
+	 */
+	public static function provide_preview_switcher_choices(): array {
+		$shows = array(
+			'is_mc_onboarding_simulation' => 'true',
+			'enable_storefront_switcher'  => 'true',
+		);
+		$hides = array(
+			'is_mc_onboarding_simulation' => 'true',
+			'enable_storefront_switcher'  => 'false',
+		);
+
+		return array(
+			'a customer, a preview that shows it, the setting off' => array( 'customer', 'no', $shows, '', false ),
+			'a customer, a preview that hides it, the setting on'  => array( 'customer', 'yes', $hides, '', true ),
+			'a store manager, a preview in the referer that hides it, the setting on' => array( 'shop_manager', 'yes', array(), 'http://example.org/shop/?is_mc_onboarding_simulation=1&enable_storefront_switcher=false', false ),
+			'a store manager, a preview without a switcher choice, the setting on' => array( 'shop_manager', 'yes', array( 'is_mc_onboarding_simulation' => 'true' ), '', false ),
+		);
 	}
 
 	/**

@@ -16,6 +16,11 @@ namespace Automattic\WooCommerce\Internal\MultiCurrency\Services;
 class RequestContext {
 
 	/**
+	 * The settings preview's query parameter, under the extension's name so its preview links keep working.
+	 */
+	private const SETTINGS_PREVIEW_FLAG = 'is_mc_onboarding_simulation';
+
+	/**
 	 * Tell whether the current request is a frontend request.
 	 *
 	 * @return bool True when frontend multi-currency hooks may register.
@@ -177,6 +182,43 @@ class RequestContext {
 	 */
 	public static function get_current_query_args(): array {
 		return (array) wc_clean( wp_unslash( $_GET ) ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only query preservation for switcher form inputs.
+	}
+
+	/**
+	 * Get the settings preview's choices from the query string, or from the referring page, for a user who manages the store.
+	 *
+	 * As client 11.3.0 MultiCurrency::get_multi_currency_onboarding_simulation_variables() (MultiCurrency.php:2049-2075):
+	 * nothing is read for a user without `manage_woocommerce`, and a choice the preview leaves out reads as false.
+	 *
+	 * @since 11.0.0
+	 *
+	 * @return array<string,bool> The `enable_storefront_switcher` and `enable_auto_currency` choices; empty outside a preview.
+	 */
+	public static function get_settings_preview_params(): array {
+		if ( ! current_user_can( 'manage_woocommerce' ) ) {
+			return array();
+		}
+
+		$parameters = wc_clean( wp_unslash( $_GET ) ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+		$parameters = is_array( $parameters ) ? $parameters : array();
+
+		if ( ! wp_validate_boolean( $parameters[ self::SETTINGS_PREVIEW_FLAG ] ?? false ) ) {
+			$referer = isset( $_SERVER['HTTP_REFERER'] ) ? esc_url_raw( wp_unslash( $_SERVER['HTTP_REFERER'] ) ) : '';
+			if ( false === strpos( $referer, self::SETTINGS_PREVIEW_FLAG ) ) {
+				return array();
+			}
+
+			$parameters = array();
+			wp_parse_str( (string) wp_parse_url( $referer, PHP_URL_QUERY ), $parameters );
+			if ( ! wp_validate_boolean( $parameters[ self::SETTINGS_PREVIEW_FLAG ] ?? false ) ) {
+				return array();
+			}
+		}
+
+		return array(
+			'enable_storefront_switcher' => wp_validate_boolean( $parameters['enable_storefront_switcher'] ?? false ),
+			'enable_auto_currency'       => wp_validate_boolean( $parameters['enable_auto_currency'] ?? false ),
+		);
 	}
 
 	/**
