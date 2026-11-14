@@ -1803,8 +1803,9 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 *
 	 * The recovery would send the new card under `K:customer-recovery`, a key Stripe never saw, with no lookup of what the
 	 * earlier request under K did (review 44 F2). The answer is the platform's own: its fraud-rule check reads the customer
-	 * before the Stripe charge (wpcom `wcpay/class-intentions-controller.php:1322-1328`) and turns Stripe's missing-customer
-	 * error into a REST error with a top-level code (`stripe/class-stripe-client.php:878-908`, `:920-940`).
+	 * before the Stripe charge (wpcom `wcpay/class-intentions-controller.php:1430-1436`) and turns Stripe's missing-customer
+	 * error into a REST error with a top-level code whose message is Stripe's own, escaped (`stripe/class-stripe-client.php:878-906`;
+	 * `core/exceptions/class-rest-exception.php:54-64`, `class-base-wcpay-exception.php:60-66`).
 	 */
 	public function test_missing_customer_under_the_unresolved_key_is_not_recreated_while_the_record_exists(): void {
 		$order                  = $this->create_woopayments_order();
@@ -1815,7 +1816,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 				404,
 				array(
 					'code'    => 'resource_missing',
-					'message' => 'Invalid request error: resource_missing (customer id)',
+					'message' => 'No such customer: &#039;cus_sent&#039;',
 					'data'    => array( 'status' => 404 ),
 				)
 			),
@@ -3075,6 +3076,68 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'key_recovery_real', $api_client->intent_requests[0]['idempotency_key'] );
 		$this->assertSame( 'key_recovery_real:customer-recovery', $api_client->intent_requests[1]['idempotency_key'], 'The retry sends another customer, so it needs its own key (area 2a #15).' );
 		$this->assertSame( 'cus_created', get_user_option( '_wcpay_customer_id_live', $user_id ), "The user's own missing customer is replaced." );
+	}
+
+	/**
+	 * @testdox The customer is recreated only when the platform reports the customer itself as missing: $_dataName.
+	 *
+	 * Client 11.3.0 recovers only when the error is resource_missing and the object named after "No such" is the customer
+	 * (class-wc-payment-gateway-wcpay.php:5918-5931); any other resource_missing answer is the request's failure, with no new
+	 * customer and no retry (:5878-5884). Rows cover the charge of a new card and the SetupIntent of a payment method change.
+	 *
+	 * @dataProvider provide_resource_missing_answers
+	 *
+	 * @param string $flow     `charge` (a new card at checkout) or `setup` (a subscription payment method change).
+	 * @param string $message  Message of the answer to the first request.
+	 * @param bool   $recovers Whether a customer is created and the request sent again.
+	 * @param string $code     Error code of that answer.
+	 */
+	public function test_customer_recovery_starts_only_for_a_customer_named_missing( string $flow, string $message, bool $recovers, string $code = 'resource_missing' ): void {
+		$order      = $this->create_woopayments_order( '10.00' );
+		$api_client = $this->create_recording_customer_intent_api_client( true, $message, $code );
+		$user_id    = self::factory()->user->create( array( 'role' => 'customer' ) );
+		update_user_option( $user_id, '_wcpay_customer_id_live', 'cus_missing' );
+		$order->set_customer_id( $user_id );
+		$order->save();
+		$provider_data = 'setup' === $flow ? array( WooPaymentsIntentRequestBuilder::PROVIDER_DATA_SUBSCRIPTION_PAYMENT_METHOD_CHANGE => true ) : array();
+
+		$outcome = $this->create_operation_service( $api_client, $this->create_real_customer_service( $api_client ) )->charge(
+			PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_card', array(), $provider_data ),
+			'key_flow'
+		);
+		$fresh   = wc_get_order( $order->get_id() );
+
+		$this->assertSame( $recovers ? PaymentOutcome::STATUS_COMPLETED : PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
+		$this->assertCount( $recovers ? 1 : 0, $api_client->created_customers );
+		$this->assertSame( $recovers ? array( 'key_flow', 'key_flow:customer-recovery' ) : array( 'key_flow' ), array_column( $api_client->intent_requests, 'idempotency_key' ) );
+		$this->assertSame( $recovers ? 'cus_created' : 'cus_missing', get_user_option( '_wcpay_customer_id_live', $user_id ), "The user's stored customer." );
+		if ( 'charge' === $flow && ! $recovers ) {
+			$this->assertSame( '', $fresh->get_meta( WooPaymentsPaymentOperationService::CHARGE_IDEMPOTENCY_KEY_META, true ), 'A definitive failure retires the key; no recovery key is kept.' );
+			$this->assertNotSame( 'cus_created', $fresh->get_meta( '_stripe_customer_id', true ) );
+		}
+	}
+
+	/**
+	 * Resource-missing answers for each flow, and whether each starts the customer recovery.
+	 *
+	 * Shape: Stripe's resource_missing message, "No such <object>: '<id>'" (https://docs.stripe.com/error-codes/resource-missing),
+	 * as the platform passes it on (stripe_no_such_customer()).
+	 *
+	 * @return array<string,array{0:string,1:string,2:bool,3?:string}>
+	 */
+	public static function provide_resource_missing_answers(): array {
+		$customer_missing = "No such customer: 'cus_missing'";
+		$other_missing    = "No such PaymentMethod: 'pm_card' for this customer";
+
+		return array(
+			'charge, the customer named missing'   => array( 'charge', $customer_missing, true ),
+			'charge, the customer named missing in title case' => array( 'charge', "No such Customer: 'cus_missing'", true ),
+			'charge, another object named missing' => array( 'charge', $other_missing, false ),
+			'charge, no object named'              => array( 'charge', 'The customer resource is missing.', false ),
+			'setup, the customer named missing'    => array( 'setup', $customer_missing, true ),
+			'setup, another object named missing'  => array( 'setup', $other_missing, false ),
+			'charge, the customer named with another error code' => array( 'charge', $customer_missing, false, 'invalid_request_error' ),
+		);
 	}
 
 	/**
@@ -10611,11 +10674,13 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * Create a native API client that records customer and intent operations.
 	 *
-	 * @param bool $missing_customer_on_first_intent Whether the first intent should report a missing customer.
+	 * @param bool   $missing_customer_on_first_intent Whether the first intent should report a missing resource.
+	 * @param string $missing_message                  Message of that answer.
+	 * @param string $missing_code                     Error code of that answer.
 	 * @return Client
 	 */
-	private function create_recording_customer_intent_api_client( bool $missing_customer_on_first_intent = false ): Client {
-		return new class( $missing_customer_on_first_intent ) extends Client {
+	private function create_recording_customer_intent_api_client( bool $missing_customer_on_first_intent = false, string $missing_message = 'No such customer.', string $missing_code = 'resource_missing' ): Client {
+		return new class( $missing_customer_on_first_intent, $missing_message, $missing_code ) extends Client {
 			/** @var array<int,array{customer_id:string,customer_data:array<string,mixed>}> */
 			public array $updated_customers = array();
 
@@ -10628,11 +10693,21 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 			/** @var bool */
 			private bool $missing_customer_on_first_intent;
 
+			/** @var string */
+			private string $missing_message;
+
+			/** @var string */
+			private string $missing_code;
+
 			/**
-			 * @param bool $missing_customer_on_first_intent Whether the first intent should report a missing customer.
+			 * @param bool   $missing_customer_on_first_intent Whether the first intent should report a missing resource.
+			 * @param string $missing_message                  Message of that answer.
+			 * @param string $missing_code                     Error code of that answer.
 			 */
-			public function __construct( bool $missing_customer_on_first_intent ) {
+			public function __construct( bool $missing_customer_on_first_intent, string $missing_message, string $missing_code ) {
 				$this->missing_customer_on_first_intent = $missing_customer_on_first_intent;
+				$this->missing_message                  = $missing_message;
+				$this->missing_code                     = $missing_code;
 			}
 
 			/**
@@ -10683,7 +10758,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 					'idempotency_key' => $idempotency_key,
 				);
 				if ( $this->missing_customer_on_first_intent && 1 === count( $this->intent_requests ) ) {
-					throw new ApiException( 'No such customer.', 'resource_missing', 404 );
+					throw new ApiException( $this->missing_message, $this->missing_code, 404 ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Test double; the message is a fixture.
 				}
 
 				return array(
@@ -10713,7 +10788,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 					'idempotency_key' => $idempotency_key,
 				);
 				if ( $this->missing_customer_on_first_intent && 1 === count( $this->intent_requests ) ) {
-					throw new ApiException( 'No such customer.', 'resource_missing', 404 );
+					throw new ApiException( $this->missing_message, $this->missing_code, 404 ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Test double; the message is a fixture.
 				}
 
 				return array(

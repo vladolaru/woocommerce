@@ -1924,14 +1924,17 @@ class WooPaymentsPaymentOperationService {
 	}
 
 	/**
-	 * Tell whether an API exception reports a missing customer.
+	 * Tell whether an API exception reports the customer itself as missing: `resource_missing`, with the customer as the
+	 * object the message names after "No such", as client 11.3.0 is_missing_customer_error()
+	 * (class-wc-payment-gateway-wcpay.php:5918-5931).
 	 *
 	 * @param ApiException $exception API exception.
 	 * @return bool
 	 */
 	private function is_missing_customer_exception( ApiException $exception ): bool {
 		return 'resource_missing' === $exception->get_error_code()
-			&& false !== strpos( strtolower( $exception->getMessage() ), 'customer' );
+			&& 1 === preg_match( '/No such (\w+)/', $exception->getMessage(), $missing )
+			&& 'customer' === strtolower( $missing[1] );
 	}
 
 	/**
