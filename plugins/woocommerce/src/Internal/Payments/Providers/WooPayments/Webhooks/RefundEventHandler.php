@@ -21,7 +21,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLo
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Utilities\CurrencyUtil;
-use Automattic\WooCommerce\Proxies\LegacyProxy;
 use InvalidArgumentException;
 use RuntimeException;
 use WC_Order;
@@ -36,12 +35,10 @@ use WC_Order_Refund;
  * retried. Client 11.1.0 refuses a field that is not set, a negative charge amount, a refund above the order total and an
  * unknown status that way (class-wc-payments-webhook-processing-service.php:361, :933, :1131). An empty field, a field of
  * the wrong type and a negative refund amount are refused here only, stricter than client 11.1.0. A charge no order
- * holds is a failure that is retried, as client 11.1.0 answers it with 500 (same file, :317, :1111). So is a refunded
- * charge that is the own payment of the unpaid order its metadata names, while the charge is younger than the retry window;
- * after that it is recorded on that order as another charge. A charge whose metadata names an order that no longer exists
- * is logged and answered as handled, since no retry can find that order; so is a succeeded refund update whose charge no
- * order holds on a payment intent its order stores as canceled, since a succeeded update creates or deletes no refund row
- * and does not change the order's status.
+ * holds is a failure that is retried, as client 11.1.0 answers it with 500 (same file, :317, :1111); a charge whose metadata
+ * names an order that no longer exists is logged and answered as handled, since no retry can find that order; so is a
+ * succeeded refund update whose charge no order holds on a payment intent its order stores as canceled, since a succeeded
+ * update creates or deletes no refund row and does not change the order's status.
  *
  * @since 11.0.0
  * @internal
@@ -149,7 +146,6 @@ class RefundEventHandler {
 	 *
 	 * @param array<string,mixed> $charge Charge object.
 	 * @throws InvalidArgumentException When the event is malformed or its refund amount is not valid.
-	 * @throws RuntimeException When no order holds the charge and its metadata order is not found, or is still waiting for it.
 	 */
 	private function process_charge_refunded( array $charge ): void {
 		if ( 'succeeded' !== $this->get_required_string( $charge, 'status' ) ) {
@@ -175,8 +171,7 @@ class RefundEventHandler {
 		$order             = $this->event_order_resolver->find_order_by_charge_id( $charge_id, $charge );
 		$record_only       = false;
 		if ( ! $order instanceof WC_Order ) {
-			// A second charge on an order already paid is held by no order, nor is an unpaid order's own charge it has not
-			// recorded yet; the charge's metadata still names the order.
+			// A second charge on an order already paid is held by no order; its metadata still names the order.
 			$order       = $this->get_order_for_charge_metadata( $charge_id, $charge );
 			$record_only = true;
 			if ( ! $order instanceof WC_Order ) {
@@ -193,14 +188,9 @@ class RefundEventHandler {
 			// Read the order again under the lock: a WP Admin refund of the same platform refund links its local row while
 			// it holds the lock, and a lookup made before the claim would miss it and create a second refund.
 			$order = $this->get_fresh_order( $order );
-			// An order found by the charge's metadata waits for the charge or records the event only while it still does not
-			// hold the charge: one that saved it before this claim is decided like any order found by its charge.
+			// An order found by the charge's metadata is recorded only while it still does not hold the charge: one that
+			// saved it before this claim is decided like any order found by its charge.
 			$record_only = $record_only && $charge_id !== (string) $order->get_meta( '_charge_id', true );
-			if ( $record_only && $this->is_waiting_for_its_charge( $order, $charge, $charge_id ) ) {
-				// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- The message is built from a charge ID and an order ID, not HTML output.
-				throw new RuntimeException( sprintf( 'Charge %1$s is not yet recorded on order %2$d; its refund is applied once it is.', $charge_id, $order->get_id() ) );
-			}
-
 			if ( $record_only || ! $this->is_own_payment( $order, $charge, $charge_id ) ) {
 				$this->record_other_charge_refund( $order, 'charge.refunded', $charge, $charge_id, $refund_id, $refund_status, $refunded_amount, $currency );
 				return;
@@ -588,29 +578,6 @@ class RefundEventHandler {
 		$resolver = $this->event_order_resolver;
 
 		return $resolver->is_own_payment( $order, $resolver->get_event_intent_id( $event_object, $order ), $charge_id );
-	}
-
-	/**
-	 * Tell whether an order that does not hold a refunded charge is still waiting for it as its own payment.
-	 *
-	 * The order is not paid, the charge is its own payment, and the charge is younger than the store's retry window for
-	 * failed events, so a retry can still find the order holding it. The platform forwards charge.refunded 60 seconds after
-	 * the refund, so the last retry runs after the window and records the event as another charge.
-	 *
-	 * @param WC_Order            $order     Order read under the order payment lock.
-	 * @param array<string,mixed> $charge    Charge object.
-	 * @param string              $charge_id The event's charge ID.
-	 * @return bool
-	 * @throws InvalidArgumentException When the charge has no valid created time.
-	 */
-	private function is_waiting_for_its_charge( WC_Order $order, array $charge, string $charge_id ): bool {
-		if ( $this->event_order_resolver->is_paid_order( $order ) || ! $this->is_own_payment( $order, $charge, $charge_id ) ) {
-			return false;
-		}
-
-		$age_seconds = (int) wc_get_container()->get( LegacyProxy::class )->call_function( 'time' ) - $this->get_required_int( $charge, 'created' );
-
-		return $age_seconds < array_sum( WebhookReliabilityService::RETRY_DELAYS_SECONDS );
 	}
 
 	/**
