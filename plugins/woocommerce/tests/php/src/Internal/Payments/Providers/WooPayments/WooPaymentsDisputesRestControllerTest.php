@@ -514,6 +514,45 @@ class WooPaymentsDisputesRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A dispute's order info gives the stored order IP only when it is a valid IP address: $_dataName.
+	 *
+	 * Client 11.3.0 sends `(string) rest_is_ip_address()` of the stored IP (class-wc-payments-api-client.php:2373).
+	 *
+	 * @dataProvider provide_stored_order_ips
+	 *
+	 * @param string $stored_ip   Stored customer IP.
+	 * @param string $expected_ip Order info IP.
+	 */
+	public function test_dispute_order_info_gives_only_a_valid_ip_address( string $stored_ip, string $expected_ip ): void {
+		$order = $this->create_order_with_charge( 'ch_ip', 'pi_ip' );
+		$order->set_customer_ip_address( $stored_ip );
+		$order->save();
+
+		$dispute = $this->create_order_service()->enrich_dispute_response(
+			array(
+				'id'     => 'dp_ip',
+				'charge' => array( 'id' => 'ch_ip' ),
+			)
+		);
+
+		$this->assertSame( $order->get_id(), $dispute['order']['id'] );
+		$this->assertSame( $expected_ip, $dispute['order']['ip_address'] );
+	}
+
+	/**
+	 * Stored order IPs and the IP the order info gives.
+	 *
+	 * @return array<string,array{string,string}>
+	 */
+	public static function provide_stored_order_ips(): array {
+		return array(
+			'not an IP address' => array( 'not an IP address', '' ),
+			'IPv4'              => array( '203.0.113.7', '203.0.113.7' ),
+			'IPv6'              => array( '2001:db8::1', '2001:db8::1' ),
+		);
+	}
+
+	/**
 	 * @testdox Dispute detail adds the WooPayments extension's detail order context and formatted charge addresses.
 	 */
 	public function test_dispute_detail_enriches_order_and_charge_address(): void {
