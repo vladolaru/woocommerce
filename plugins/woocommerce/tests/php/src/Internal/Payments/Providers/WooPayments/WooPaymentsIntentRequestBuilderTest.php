@@ -538,6 +538,20 @@ class WooPaymentsIntentRequestBuilderTest extends WC_Unit_Test_Case {
 		$this->assertSame( (string) $order->get_id(), $request['level3']['merchant_reference'] );
 		$this->assertSame( 1200, $request['level3']['line_items'][0]->unit_cost );
 
+		// An order whose total is not its line items, as a deposit, gets no Level 3 data: client 11.3.0 drops it
+		// (src/Internal/Service/Level3Service.php:258-260) and Create_Intention::set_level3() skips the empty array.
+		$deposit_order = wc_create_order();
+		$deposit_order->add_product( $product, 1 );
+		$deposit_order->set_total( '3.60' );
+		$deposit_order->save();
+		$deposit_request = $request_builder->charge_request_data(
+			PaymentOperationContext::for_checkout( $deposit_order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_card' ),
+			'pm_card',
+			'cus_native',
+			false
+		);
+		$this->assertArrayNotHasKey( 'level3', $deposit_request );
+
 		$domain = str_replace( array( 'https://', 'http://' ), '', get_site_url() );
 		$this->assertStringStartsWith(
 			sprintf( 'Online Payment for Order #%s for %s', $order->get_order_number(), $domain ),

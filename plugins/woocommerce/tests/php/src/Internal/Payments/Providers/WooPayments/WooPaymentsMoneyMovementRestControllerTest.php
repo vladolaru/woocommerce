@@ -407,6 +407,8 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 	public function test_payment_detail_create_intent_route_sends_level3_data_for_us_accounts( string $country, bool $sent ): void {
 		$order = $this->create_order_for_generated_charge();
 		$order->add_product( \WC_Helper_Product::create_simple_product(), 2 );
+		// Level 3 data is sent only when its lines add up to the order total: two units at 10.00.
+		$order->set_total( '20.00' );
 		$order->save();
 		// The platform's create route answers with Stripe's PaymentIntent (wpcom `wcpay/class-intentions-controller.php:389-487`, :481,
 		// proxied through `wcpay/class-base-controller.php:476-491`); the route reads only id, amount and charges, so the
