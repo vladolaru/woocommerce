@@ -118,7 +118,7 @@
     },
     {
       "namespace": "wc/v3",
-      "route": "/payments/deposits/download/(?P<export_id>.*)",
+      "route": "/payments/deposits/download/(?P<export_id>[^/\\\\%]+)",
       "sample_path": "/wc/v3/payments/deposits/download/sample",
       "methods": [
         "GET"

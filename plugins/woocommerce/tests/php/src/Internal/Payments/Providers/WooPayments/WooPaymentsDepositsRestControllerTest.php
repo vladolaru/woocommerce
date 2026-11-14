@@ -339,6 +339,40 @@ class WooPaymentsDepositsRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A payout export ID that is not one path segment gets no route and no platform request: $_dataName.
+	 *
+	 * Client 11.3.0 registers the export URL route with the pattern its sibling export routes use
+	 * (includes/admin/class-wc-rest-payments-deposits-controller.php:58), so such an ID answers 404 rest_no_route.
+	 *
+	 * @dataProvider provide_export_ids_outside_one_segment
+	 *
+	 * @param string $export_id Export ID.
+	 */
+	public function test_export_url_route_matches_only_one_path_segment( string $export_id ): void {
+		$this->sut->register_routes();
+		$this->api_client->payouts_export_url_response = array( 'url' => 'https://example.com/export.csv' );
+
+		$response = $this->server->dispatch( new WP_REST_Request( 'GET', '/wc/v3/payments/deposits/download/' . $export_id ) );
+
+		$this->assertSame( 404, $response->get_status() );
+		$this->assertSame( 'rest_no_route', $response->get_data()['code'] );
+		$this->assertNull( $this->api_client->last_export_id );
+	}
+
+	/**
+	 * Export IDs that cannot stand as one path segment.
+	 *
+	 * @return array<string,array{string}>
+	 */
+	public static function provide_export_ids_outside_one_segment(): array {
+		return array(
+			'two path segments' => array( 'export/part' ),
+			'a backslash'       => array( 'export\\part' ),
+			'a percent sign'    => array( 'export%part' ),
+		);
+	}
+
+	/**
 	 * Payout routes that carry a resource ID.
 	 *
 	 * @return array<string,array{string,string,array<string,mixed>,string,string}>
@@ -580,7 +614,7 @@ class WooPaymentsDepositsRestControllerTest extends WC_REST_Unit_Test_Case {
 			'/wc/v3/payments/deposits/summary'      => array( WP_REST_Server::READABLE ),
 			'/wc/v3/payments/deposits/overview-all' => array( WP_REST_Server::READABLE ),
 			'/wc/v3/payments/deposits/download'     => array( WP_REST_Server::CREATABLE ),
-			'/wc/v3/payments/deposits/download/(?P<export_id>.*)' => array( WP_REST_Server::READABLE ),
+			'/wc/v3/payments/deposits/download/(?P<export_id>[^/\\\\%]+)' => array( WP_REST_Server::READABLE ),
 			'/wc/v3/payments/deposits/(?P<deposit_id>[\w]+)' => array( WP_REST_Server::READABLE ),
 		);
 	}

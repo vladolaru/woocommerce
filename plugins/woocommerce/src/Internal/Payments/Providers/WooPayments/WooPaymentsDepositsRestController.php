@@ -99,7 +99,7 @@ class WooPaymentsDepositsRestController extends RestApiControllerBase {
 
 		register_rest_route(
 			$this->route_namespace,
-			'/payments/deposits/download/(?P<export_id>.*)',
+			'/payments/deposits/download/(?P<export_id>[^/\\\\%]+)',
 			array(
 				'methods'             => WP_REST_Server::READABLE,
 				'callback'            => array( $this, 'get_export_url' ),
