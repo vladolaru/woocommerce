@@ -22,6 +22,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAc
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCheckoutAjaxController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeeDetailsNoteController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentConfirmationService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDataService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffectApplier;
@@ -4923,7 +4924,8 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 			->with( $user_id )
 			->willReturn( $customer_id );
 
-		$sut      = $this->create_controller( $api_client, $customer_service );
+		$sut = $this->create_controller( $api_client, $customer_service );
+		$this->use_card_gateway_settings( 'yes', 'yes' );
 		$response = $sut->create_setup_intent_for_request(
 			array(
 				'_ajax_nonce'          => wp_create_nonce( 'wcpay_create_setup_intent_nonce' ),
@@ -5008,7 +5010,8 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 				}
 			);
 
-		$sut      = $this->create_controller( $api_client, $customer_service, null, $account_service );
+		$sut = $this->create_controller( $api_client, $customer_service, null, $account_service );
+		$this->use_card_gateway_settings( 'yes', 'yes' );
 		$response = $sut->create_setup_intent_for_request(
 			array(
 				'_ajax_nonce'          => wp_create_nonce( 'wcpay_create_setup_intent_nonce' ),
@@ -5182,7 +5185,8 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 			->getMock();
 		$customer_service->expects( $this->never() )->method( 'get_or_create_customer_id_for_user' );
 
-		$sut      = $this->create_controller( $api_client, $customer_service );
+		$sut = $this->create_controller( $api_client, $customer_service );
+		$this->use_card_gateway_settings( 'yes', 'yes' );
 		$response = $sut->create_setup_intent_for_request(
 			array(
 				'_ajax_nonce'          => wp_create_nonce( 'wcpay_create_setup_intent_nonce' ),
@@ -5286,7 +5290,8 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		$api_client->method( 'is_available' )->willReturn( true );
 		$api_client->expects( $this->never() )->method( 'create_and_confirm_setup_intention' );
 
-		$sut      = $this->create_controller( $api_client );
+		$sut = $this->create_controller( $api_client );
+		$this->use_card_gateway_settings( 'yes', 'yes' );
 		$response = $sut->create_setup_intent_for_request(
 			array(
 				'_ajax_nonce'          => 'invalid',
@@ -5316,7 +5321,8 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		$api_client = $this->createMock( Client::class );
 		$api_client->method( 'is_available' )->willReturn( true );
 
-		$sut      = $this->create_controller( $api_client, $customer_service );
+		$sut = $this->create_controller( $api_client, $customer_service );
+		$this->use_card_gateway_settings( 'yes', 'yes' );
 		$response = $sut->create_setup_intent_for_request(
 			array(
 				'_ajax_nonce'          => wp_create_nonce( 'wcpay_create_setup_intent_nonce' ),
@@ -5383,6 +5389,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 
 		$sut = $this->create_controller( $api_client, $customer_service );
 
+		$this->use_card_gateway_settings( 'yes', 'yes' );
 		$sut->create_setup_intent_for_request(
 			array(
 				'_ajax_nonce'          => wp_create_nonce( 'wcpay_create_setup_intent_nonce' ),
@@ -5453,6 +5460,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 
 		$sut = $this->create_controller( $api_client, $customer_service );
 
+		$this->use_card_gateway_settings( 'yes', 'yes' );
 		return $sut->create_setup_intent_for_request(
 			array(
 				'_ajax_nonce'          => wp_create_nonce( 'wcpay_create_setup_intent_nonce' ),
@@ -5524,7 +5532,8 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		$this->assertTrue( $fraud_prevention_service->has_session(), 'Precondition: the fraud service must see the WooCommerce session.' );
 		$this->assertTrue( $fraud_prevention_service->is_enabled(), 'Precondition: card-testing protection must read as eligible.' );
 
-		$sut      = $this->create_controller( $api_client );
+		$sut = $this->create_controller( $api_client );
+		$this->use_card_gateway_settings( 'yes', 'yes' );
 		$response = $sut->create_setup_intent_for_request(
 			array(
 				'_ajax_nonce'                  => wp_create_nonce( 'wcpay_create_setup_intent_nonce' ),
@@ -5548,6 +5557,124 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		);
 		delete_option( 'wcpay_account_data' );
 		wp_set_current_user( 0 );
+	}
+
+	/**
+	 * @testdox Adding a card from My Account is refused before any platform request while the gateway or saved cards is off, and the card-testing check runs with the session loaded: $_dataName.
+	 *
+	 * Client 11.3.0 create_setup_intent_ajax() checks the nonce, the gateway, saved cards, then loads the session and runs the
+	 * card-testing check whenever the protection is on, then the rate limit (class-wc-payment-gateway-wcpay.php:5004-5044),
+	 * each refusal with "We're not able to add this payment method. Please try again later." or, for the nonce and the
+	 * card-testing check, "... Please refresh the page and try again.", answered 400.
+	 *
+	 * @dataProvider provider_setup_intent_refusals
+	 *
+	 * @param string $enabled          Stored card gateway `enabled`.
+	 * @param string $saved_cards      Stored card gateway `saved_cards`.
+	 * @param bool   $valid_nonce      Whether the request carries a valid nonce.
+	 * @param bool   $no_session       Whether the request starts with no WooCommerce session loaded, card-testing protection on.
+	 * @param string $expected_message Expected refusal message.
+	 */
+	public function test_create_setup_intent_refuses_before_any_platform_request( string $enabled, string $saved_cards, bool $valid_nonce, bool $no_session, string $expected_message ): void {
+		wp_set_current_user( $this->factory()->user->create() );
+		$session_before = WC()->session;
+		if ( $no_session ) {
+			wc_get_container()->reset_all_resolved();
+			$connected_api_client = $this->createMock( Client::class );
+			$connected_api_client->method( 'is_available' )->willReturn( true );
+			wc_get_container()->replace( Client::class, $connected_api_client );
+			wc_get_container()->get( WooPaymentsAccountService::class )->cache_account_data(
+				array(
+					'account_id'                       => 'acct_fraud_check',
+					'is_live'                          => true,
+					'card_testing_protection_eligible' => true,
+				)
+			);
+			WC()->session = null;
+		}
+
+		$api_client       = new class() extends Client {
+			/**
+			 * SetupIntent creation requests this fake received.
+			 *
+			 * @var array<int,array<string,mixed>>
+			 */
+			public array $created_setup_intents = array();
+
+			/**
+			 * Tell whether the transport is available.
+			 *
+			 * @return bool
+			 */
+			public function is_available(): bool {
+				return true;
+			}
+
+			/**
+			 * Create and confirm a SetupIntent.
+			 *
+			 * @param array<string,mixed> $request_data    Request data.
+			 * @param string              $idempotency_key Idempotency key.
+			 * @return array<string,mixed>
+			 */
+			public function create_and_confirm_setup_intention( array $request_data, string $idempotency_key ): array {
+				unset( $idempotency_key );
+				$this->created_setup_intents[] = $request_data;
+
+				return array(
+					'id'     => 'seti_test',
+					'status' => 'succeeded',
+				);
+			}
+		};
+		$customer_service = $this->createMock( WooPaymentsCustomerService::class );
+		$customer_service->method( 'get_or_create_customer_id_for_user' )->willReturn( 'cus_test' );
+
+		$this->use_card_gateway_settings( $enabled, $saved_cards );
+		$sut = $this->create_controller( $api_client, $customer_service );
+
+		try {
+			$response = $sut->create_setup_intent_for_request(
+				array(
+					'_ajax_nonce'                  => $valid_nonce ? wp_create_nonce( 'wcpay_create_setup_intent_nonce' ) : 'not-a-nonce',
+					'wcpay-payment-method'         => 'pm_card',
+					'wcpay-fraud-prevention-token' => 'not-the-session-token',
+				)
+			);
+		} finally {
+			WC()->session = $session_before;
+			if ( $no_session ) {
+				wc_get_container()->get( WooPaymentsAccountService::class )->cache_account_data(
+					array(
+						'account_id' => 'acct_fraud_check',
+						'is_live'    => true,
+					)
+				);
+				delete_option( 'wcpay_account_data' );
+			}
+		}
+
+		$this->assertFalse( $response['success'] );
+		$this->assertSame( 400, $response['status_code'] );
+		$this->assertSame( $expected_message, $response['data']['error']['message'] );
+		$this->assertSame( array(), $api_client->created_setup_intents );
+	}
+
+	/**
+	 * Card gateway settings, nonce and session states that refuse the request, with the message each refusal shows.
+	 *
+	 * @return array<string,array{0:string,1:string,2:bool,3:bool,4:string}>
+	 */
+	public function provider_setup_intent_refusals(): array {
+		$try_later = "We're not able to add this payment method. Please try again later.";
+		$refresh   = "We're not able to add this payment method. Please refresh the page and try again.";
+
+		return array(
+			'gateway off'                       => array( 'no', 'yes', true, false, $try_later ),
+			'saved cards off'                   => array( 'yes', 'no', true, false, $try_later ),
+			'no session loaded, card-testing protection on' => array( 'yes', 'yes', true, true, $refresh ),
+			'gateway off with an invalid nonce' => array( 'no', 'no', false, false, $refresh ),
+		);
 	}
 
 	/**
@@ -5600,7 +5727,8 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 			->getMock();
 		$customer_service->method( 'get_or_create_customer_id_for_user' )->willReturn( 'cus_fp' );
 
-		$sut      = $this->create_controller( $api_client, $customer_service );
+		$sut = $this->create_controller( $api_client, $customer_service );
+		$this->use_card_gateway_settings( 'yes', 'yes' );
 		$response = $sut->create_setup_intent_for_request(
 			array(
 				'_ajax_nonce'          => wp_create_nonce( 'wcpay_create_setup_intent_nonce' ),
@@ -5617,6 +5745,21 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		$this->assertTrue( $metadata['fraud_prevention_data_available'] );
 
 		wp_set_current_user( 0 );
+	}
+
+	/**
+	 * Store the card gateway's enabled and saved cards settings and give the container a card gateway built from them, as a
+	 * request builds it from the stored settings.
+	 *
+	 * @param string $enabled     Stored `enabled` value.
+	 * @param string $saved_cards Stored `saved_cards` value.
+	 */
+	private function use_card_gateway_settings( string $enabled, string $saved_cards ): void {
+		$settings                = (array) get_option( 'woocommerce_woocommerce_payments_settings', array() );
+		$settings['enabled']     = $enabled;
+		$settings['saved_cards'] = $saved_cards;
+		update_option( 'woocommerce_woocommerce_payments_settings', $settings );
+		wc_get_container()->replace( WooPaymentsGateway::class, new WooPaymentsGateway() );
 	}
 
 	/**

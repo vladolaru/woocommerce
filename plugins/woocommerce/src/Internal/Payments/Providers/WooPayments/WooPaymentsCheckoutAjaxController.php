@@ -225,16 +225,20 @@ class WooPaymentsCheckoutAjaxController implements RegisterHooksInterface {
 			return $this->json_error_response( __( "We're not able to add this payment method. Please refresh the page and try again.", 'woocommerce' ), 400 );
 		}
 
-		// The card-testing prevention check must run BEFORE the SetupIntent is
-		// created: a fraud-failed attempt that has already created and
-		// confirmed a SetupIntent leaves the payment method attached to the
-		// customer server-side with nothing to detach it. Client 11.1.0's
-		// create_setup_intent_ajax() uses the same order: nonce, fraud check,
-		// rate limit (class-wc-payment-gateway-wcpay.php:4571-4594).
+		// The My Account form posting here is offered by the enabled card gateway only while its saved cards setting is on
+		// (WooPaymentsGateway::init_supported_features()), so the action reads the same gateway's two settings. Client 11.3.0 create_setup_intent_ajax() checks, in order: nonce,
+		// gateway enabled, saved cards on, the card-testing check with the session loaded, and the rate limit, all
+		// before the SetupIntent is created (class-wc-payment-gateway-wcpay.php:5004-5044).
+		$card_gateway = wc_get_container()->get( WooPaymentsGateway::class );
+		if ( 'yes' !== $card_gateway->enabled || ! $card_gateway->is_saved_cards_enabled() ) {
+			return $this->json_error_response( __( "We're not able to add this payment method. Please try again later.", 'woocommerce' ), 400 );
+		}
+
+		// The card-testing token lives in the session, which a request may not have loaded yet.
+		WC()->initialize_session();
 		$fraud_prevention_service = $this->get_fraud_prevention_service();
 		if (
-			$fraud_prevention_service->has_session()
-			&& $fraud_prevention_service->is_enabled()
+			$fraud_prevention_service->is_enabled()
 			&& ! $fraud_prevention_service->verify_token( $this->get_request_string( $request, WooPaymentsFraudPreventionService::TOKEN_NAME ) )
 		) {
 			return $this->json_error_response( __( "We're not able to add this payment method. Please refresh the page and try again.", 'woocommerce' ), 400 );

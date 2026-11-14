@@ -940,8 +940,7 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 				return $this->add_payment_method_error( __( 'Failed to add the provided payment method. Please try again later.', 'woocommerce' ) );
 			}
 
-			// Save only an intent made for this user's customer, so a posted SetupIntent id of another shopper cannot
-			// attach their payment method here. The client checks only that the user has a customer (gw:4434-4454).
+			// Save only an intent made for this user's customer, as client 11.3.0 does (gw:4879-4885).
 			if ( ! hash_equals( $user_customer, $this->get_setup_intent_customer_id( $setup_intent ) ) ) {
 				return $this->add_payment_method_error( __( 'Failed to add the provided payment method. Please try again later.', 'woocommerce' ) );
 			}
