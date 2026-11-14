@@ -108,6 +108,12 @@ class WooPaymentsPaymentOperationService {
 	public const REFUSAL_INTENT_SETTLED = 'intent_settled';
 
 	/**
+	 * Log reason of a capture or cancel on an order that stores requires_capture while its transaction ID and stored intent
+	 * name two different intents.
+	 */
+	private const REASON_OPERATION_ON_AN_ORDER_NAMING_TWO_INTENTS = 'operation_on_an_order_naming_two_intents';
+
+	/**
 	 * Intent statuses a payment intent never leaves, so an order storing one has no authorization to capture or cancel
 	 * (client 11.3.0 class-wc-payments-order-service.php:89-92).
 	 *
@@ -532,7 +538,7 @@ class WooPaymentsPaymentOperationService {
 				return $refusal;
 			}
 
-			$intent_id = $this->get_operation_intent_id( $context );
+			$intent_id = $this->get_operation_intent_id( $context, 'capture' );
 			if ( '' !== $intent_id ) {
 				$amount_to_capture = WooPaymentsCurrencyUtils::amount_to_minor_units( $context->get_amount() ?? (float) $order->get_total(), (string) $order->get_currency() );
 				// Client 11.1.0 always captures the order total (`class-wc-payment-gateway-wcpay.php:3966, 3981`) and sends the
@@ -621,7 +627,7 @@ class WooPaymentsPaymentOperationService {
 				return $refusal;
 			}
 
-			$intent_id = $this->get_operation_intent_id( $context );
+			$intent_id = $this->get_operation_intent_id( $context, 'cancel' );
 			if ( '' !== $intent_id ) {
 				try {
 					$result  = $this->api_client->cancel_intention( $intent_id );
@@ -1897,18 +1903,58 @@ class WooPaymentsPaymentOperationService {
 	 * A status change acts on the stored intent, as client 11.3.0 does (class-wc-payments-order-service.php:2330,
 	 * :2386); its order screen actions act on the transaction ID (class-wc-payment-gateway-wcpay.php:4341, :4443).
 	 *
-	 * @param PaymentOperationContext $context Capture or cancel context.
+	 * @param PaymentOperationContext $context   Capture or cancel context.
+	 * @param string                  $operation 'capture' or 'cancel', named in the log.
 	 * @return string
 	 */
-	private function get_operation_intent_id( PaymentOperationContext $context ): string {
+	private function get_operation_intent_id( PaymentOperationContext $context, string $operation ): string {
 		$read_intent_id = $this->get_read_intent_id( $context );
 		if ( '' !== $read_intent_id ) {
 			return $read_intent_id;
 		}
 
 		$stored_intent_id = $context->get_provider_data()[ self::PROVIDER_DATA_STORED_INTENT_ID ] ?? '';
+		$intent_id        = is_string( $stored_intent_id ) && '' !== $stored_intent_id ? $stored_intent_id : $this->get_order_intent_id( $context->get_order() );
+		$this->log_operation_on_an_order_naming_two_intents( $context->get_order(), $operation, $intent_id );
 
-		return is_string( $stored_intent_id ) && '' !== $stored_intent_id ? $stored_intent_id : $this->get_order_intent_id( $context->get_order() );
+		return $intent_id;
+	}
+
+	/**
+	 * Log a capture or cancel that no platform read targeted, on an order that stores requires_capture while its transaction
+	 * ID and stored intent name two different intents, whatever the logging setting: one of the two is not the authorization
+	 * the operation acts on. A value that is not a WooPayments intent is printed as fixed text.
+	 *
+	 * @param WC_Order $order     Order the operation acts on.
+	 * @param string   $operation 'capture' or 'cancel'.
+	 * @param string   $intent_id The intent the operation acts on.
+	 */
+	private function log_operation_on_an_order_naming_two_intents( WC_Order $order, string $operation, string $intent_id ): void {
+		$transaction_id   = (string) $order->get_transaction_id();
+		$stored_intent_id = (string) $order->get_meta( '_intent_id', true );
+		if ( '' === $transaction_id || '' === $stored_intent_id || $transaction_id === $stored_intent_id || 'requires_capture' !== (string) $order->get_meta( '_intention_status', true ) ) {
+			return;
+		}
+
+		$target = WooPaymentsLogger::get_loggable_intent_id( $intent_id );
+		$this->logger->log_always(
+			sprintf(
+				'The %1$s of order #%2$d acts on intent %3$s, while the order stores requires_capture with transaction ID %4$s and stored intent %5$s.',
+				$operation,
+				$order->get_id(),
+				$target,
+				WooPaymentsLogger::get_loggable_intent_id( $transaction_id ),
+				WooPaymentsLogger::get_loggable_intent_id( $stored_intent_id )
+			),
+			'warning',
+			array(
+				'order_id'        => $order->get_id(),
+				'intent_id'       => $target,
+				'other_intent_id' => WooPaymentsLogger::get_loggable_intent_id( $intent_id === $transaction_id ? $stored_intent_id : $transaction_id ),
+				'operation'       => $operation,
+				'reason'          => self::REASON_OPERATION_ON_AN_ORDER_NAMING_TWO_INTENTS,
+			)
+		);
 	}
 
 	/**

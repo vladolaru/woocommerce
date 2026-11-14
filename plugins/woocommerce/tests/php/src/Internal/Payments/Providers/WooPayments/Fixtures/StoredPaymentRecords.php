@@ -158,6 +158,32 @@ final class StoredPaymentRecords {
 
 
 	/**
+	 * A payment beside a later declined retry: the transaction ID names the payment and its charge, the stored intent the
+	 * declined retry, with the declined status.
+	 *
+	 * A declined retry's failed outcome writes its intent and the default requires_payment_method status
+	 * (WooPaymentsOutcomeMetadataMapper::get_outcome_meta()) and leaves the transaction ID on the payment; in the
+	 * WooPayments extension a declined request writes the intent only (client 11.3.0
+	 * class-wc-payment-gateway-wcpay.php:1610-1614).
+	 *
+	 * @param string $transaction_id The payment's intent.
+	 * @param string $intent_id      The declined retry's intent, the stored intent.
+	 * @param string $charge_id      The payment's charge.
+	 * @return WC_Order
+	 */
+	public static function payment_beside_a_declined_retry( string $transaction_id = 'pi_A', string $intent_id = 'pi_B', string $charge_id = 'ch_A' ): WC_Order {
+		return self::create_order(
+			OrderStatus::PROCESSING,
+			$transaction_id,
+			array(
+				'_intent_id'        => $intent_id,
+				'_intention_status' => 'requires_payment_method',
+				'_charge_id'        => $charge_id,
+			)
+		);
+	}
+
+	/**
 	 * Create and save a WooPayments order with the given status, transaction ID and stored values.
 	 *
 	 * @param string               $status         Order status; a paid status gets a paid date.
