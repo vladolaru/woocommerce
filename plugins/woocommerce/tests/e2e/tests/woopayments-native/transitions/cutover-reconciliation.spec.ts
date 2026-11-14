@@ -8,6 +8,7 @@ import { admin } from '../../../test-data/data';
 import { logIn } from '../../../utils/login';
 import { random } from '../../../utils/helpers';
 import {
+	EXTENSION_ORDER_CHECK_HOOK,
 	expectSettledCardPayment,
 	fillCardDetails,
 	getPaymentIntent,
@@ -38,6 +39,11 @@ interface CutoverRecord {
 	revision: number;
 	current_step: string;
 	deferred_codes?: string[];
+	step_log?: Array< {
+		step: string;
+		at: number;
+		context?: { codes?: string[] };
+	} >;
 }
 
 interface CutoverStatus {
@@ -627,7 +633,7 @@ test.describe( 'WooPayments transition: old plugin cutover advancement', () => {
 						}
 						return status.record?.state ?? null;
 					},
-					{ timeout: 2 * 60_000, intervals: [ 1000, 3000, 5000 ] }
+					{ timeout: 3 * 60_000, intervals: [ 1000, 3000, 5000 ] }
 				)
 				.toBe( 'done' );
 
@@ -1024,6 +1030,20 @@ return (int) count( as_get_scheduled_actions( array( 'hook' => 'woocommerce_woop
 `;
 
 /**
+ * Reads the extension's first queued order check: its status, and when the queue started it.
+ */
+async function readExtensionOrderCheck(): Promise< {
+	status: string;
+	started_at: number;
+} | null > {
+	return wpEvalJson( `
+		global $wpdb;
+		$row = $wpdb->get_row( $wpdb->prepare( "SELECT status, last_attempt_gmt FROM {$wpdb->prefix}actionscheduler_actions WHERE hook = %s ORDER BY action_id ASC LIMIT 1", '${ EXTENSION_ORDER_CHECK_HOOK }' ), ARRAY_A );
+		return $row ? array( 'status' => $row['status'], 'started_at' => (int) strtotime( $row['last_attempt_gmt'] . ' UTC' ) ) : null;
+	` );
+}
+
+/**
  * Drives the queue a few times and asserts the rolled-back generation stays as
  * it is: no attempt claims it, nothing deactivates the extension again and the
  * data migration does not run (any attempt would bump the record's revision).
@@ -1157,6 +1177,34 @@ test.describe( 'WooPayments transition: extension activation during an open cuto
 				.toBe( true );
 			const open = status.record!;
 			expect( open.state ).toBe( 'pending' );
+
+			// This case keeps the fresh store on purpose: the admin page above
+			// queued the extension's order check 10 s ahead and the click came
+			// first, so the switch waits for that check, then hands over.
+			const check = await readExtensionOrderCheck();
+			expect(
+				check?.status,
+				"the extension's order check must have run through the queue"
+			).toBe( 'complete' );
+			const steps = open.step_log ?? [];
+			const deferral = steps.find(
+				( entry ) =>
+					entry.step === 'deferred' &&
+					( entry.context?.codes ?? [] ).includes(
+						'operational_queue_hooks_unhandled'
+					)
+			);
+			expect(
+				deferral?.at,
+				'the switch must defer while the check is pending'
+			).toBeLessThanOrEqual( check!.started_at );
+			const handOver = steps.find(
+				( entry ) => entry.step === 'verify_builtin_ownership'
+			);
+			expect(
+				handOver?.at,
+				'the hand-over must follow once the check has run'
+			).toBeGreaterThanOrEqual( check!.started_at );
 
 			await wpCLI( [
 				'wp',

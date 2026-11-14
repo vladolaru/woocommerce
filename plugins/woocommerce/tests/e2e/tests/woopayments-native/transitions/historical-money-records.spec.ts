@@ -16,6 +16,7 @@ import {
 	getCharge,
 	requireTestModeAccount,
 	keepingScrollPosition,
+	openAdminAfterExtensionChecks,
 	TEST_CARDS,
 	typeIntoStripeField,
 	type ProviderTestCard,
@@ -282,7 +283,7 @@ async function runHistoricalMoneyRecords(
 		// Cutover: admin one click, wait for native.
 		await page.goto( 'wp-login.php' );
 		await logIn( page, admin.username, admin.password, false );
-		await page.goto( 'wp-admin/' );
+		await openAdminAfterExtensionChecks( page );
 		await page
 			.getByRole( 'link', { name: 'Start the switch', exact: true } )
 			.click( { timeout: 30_000 } );

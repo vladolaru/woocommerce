@@ -35,6 +35,8 @@
 import type { ApiClient } from '@woocommerce/e2e-utils-playwright';
 import { expect, type Locator, type Page } from '@playwright/test';
 
+import { wpCLI, wpEvalJson } from './woopayments-cli';
+
 export interface ProviderTestCard {
 	number: string;
 	expiry: string;
@@ -373,6 +375,48 @@ export async function clickExtensionStripeSubmit(
 	const secondPost = stripePost();
 	await button.click();
 	await secondPost;
+}
+
+/**
+ * The extension's affected-orders check. Its admin pages queue it once, 10 s
+ * ahead, while its result option is absent, and the queue writes the result.
+ */
+export const EXTENSION_ORDER_CHECK_HOOK =
+	'wcpay_check_affected_auth_fee_orders';
+
+/**
+ * Loads wp-admin, ready for the merchant's click, on a store whose extension
+ * has run the check its admin pages queue. A supported store ran this check
+ * long ago; the fresh seed has not, so its first admin page queues it here and
+ * the queue runs it before the page the merchant clicks from loads.
+ */
+export async function openAdminAfterExtensionChecks(
+	page: Page
+): Promise< void > {
+	await page.goto( 'wp-admin/' );
+	await expect
+		.poll(
+			async () => {
+				await wpCLI( [
+					'wp',
+					'action-scheduler',
+					'run',
+					`--hooks=${ EXTENSION_ORDER_CHECK_HOOK }`,
+				] );
+				return wpEvalJson< string >( `
+					return as_has_scheduled_action( '${ EXTENSION_ORDER_CHECK_HOOK }' )
+						? 'queued'
+						: (string) get_option( 'wcpay_has_affected_auth_fee_orders', 'absent' );
+				` );
+			},
+			{
+				message: "the extension's queued order check must run",
+				timeout: 60_000,
+				intervals: [ 2_000 ],
+			}
+		)
+		.toMatch( /^(no|has)_affected_orders$/ );
+	await page.goto( 'wp-admin/' );
 }
 
 const ACCOUNTS_ROUTE = 'wc/v3/payments/accounts';

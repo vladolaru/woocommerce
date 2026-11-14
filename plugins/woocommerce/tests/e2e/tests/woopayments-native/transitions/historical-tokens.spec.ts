@@ -12,6 +12,7 @@ import {
 	expectSettledCardPayment,
 	requireTestModeAccount,
 	keepingScrollPosition,
+	openAdminAfterExtensionChecks,
 	TEST_CARDS,
 	typeIntoStripeField,
 	type ProviderTestCard,
@@ -391,7 +392,7 @@ test.describe( 'WooPayments transition: historical tokens', () => {
 			await page.context().clearCookies();
 			await page.goto( 'wp-login.php' );
 			await logIn( page, admin.username, admin.password, false );
-			await page.goto( 'wp-admin/' );
+			await openAdminAfterExtensionChecks( page );
 			await page
 				.getByRole( 'link', { name: 'Start the switch', exact: true } )
 				.click( { timeout: 30_000 } );
