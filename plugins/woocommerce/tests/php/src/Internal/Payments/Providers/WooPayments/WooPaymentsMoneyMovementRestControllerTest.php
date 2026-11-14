@@ -137,6 +137,28 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 	}
 
 	/**
+	 * @testdox The charge detail's order says whether its payment method is WooPayments: $expected for $payment_method.
+	 * @testWith ["bacs", false]
+	 *           ["woocommerce_payments", true]
+	 *           ["woocommerce_payments_sepa_debit", true]
+	 *
+	 * @param string $payment_method Order payment method.
+	 * @param bool   $expected       Expected field value.
+	 */
+	public function test_payment_detail_order_says_whether_its_payment_method_is_woopayments( string $payment_method, bool $expected ): void {
+		$order = $this->create_order_with_charge( 'ch_test', 'pi_test' );
+		$order->set_payment_method( $payment_method );
+		$order->save();
+		$this->api_client->response = array( 'id' => 'ch_test' );
+		$this->create_payment_details_controller()->register_routes();
+
+		$data = $this->server->dispatch( new WP_REST_Request( 'GET', '/wc/v3/payments/charges/ch_test' ) )->get_data();
+
+		$this->assertSame( $order->get_id(), $data['order']['id'] );
+		$this->assertSame( $expected, $data['order']['has_woopayments_payment_method'] );
+	}
+
+	/**
 	 * @testdox Payment detail charge-from-order route requires manage_woocommerce.
 	 */
 	public function test_payment_detail_charge_from_order_route_requires_manage_woocommerce(): void {
@@ -1769,7 +1791,7 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 
 		$order->set_total( $total );
 		$order->set_currency( 'USD' );
-		$order->set_payment_method( 'native_test_refund_gateway' );
+		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
 		$order->update_meta_data( '_charge_id', $charge_id );
 		$order->update_meta_data( '_intent_id', 'pi_order' );
 		$order->save();
@@ -1778,7 +1800,7 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 	}
 
 	/**
-	 * Register a local refundable gateway for refund route tests.
+	 * Register a local refundable gateway, standing in for the WooPayments gateway, for refund route tests.
 	 *
 	 * @param bool|\WP_Error $refund_result Gateway refund result.
 	 * @return \WC_Payment_Gateway&object{refund_calls: array<int,array<string,mixed>>}
@@ -1805,7 +1827,7 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 			 * @param bool|\WP_Error $refund_result Refund result.
 			 */
 			public function __construct( $refund_result ) {
-				$this->id            = 'native_test_refund_gateway';
+				$this->id            = WooPaymentsPersistenceVocabulary::GATEWAY_ID;
 				$this->method_title  = 'Native test refund gateway';
 				$this->title         = 'Native test refund gateway';
 				$this->supports      = array( 'refunds' );

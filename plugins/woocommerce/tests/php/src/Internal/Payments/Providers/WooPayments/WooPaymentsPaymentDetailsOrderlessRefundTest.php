@@ -137,6 +137,48 @@ class WooPaymentsPaymentDetailsOrderlessRefundTest extends WC_REST_Unit_Test_Cas
 	}
 
 	/**
+	 * @testdox Refund with an order of another payment method that $stores refunds the charge at the platform and writes nothing locally.
+	 * @testWith ["stores the charge", "ch_3UJZZBBzWlxcwgpP0BZvfjOj"]
+	 *           ["stores no charge", ""]
+	 *
+	 * Such an order's own gateway cannot refund a WooPayments charge, so the charge is refunded as one with no order is.
+	 * Client 11.3.0 refunds the order through its gateway whatever charge_id says
+	 * (includes/admin/class-wc-rest-payments-refunds-controller.php:46-77).
+	 *
+	 * @param string $stores           What the order stores.
+	 * @param string $stored_charge_id The order's stored charge ID.
+	 */
+	public function test_refund_with_an_order_of_another_payment_method_refunds_the_charge( string $stores, string $stored_charge_id ): void {
+		unset( $stores );
+		$order = wc_create_order();
+		$order->set_payment_method( 'bacs' );
+		$order->set_currency( 'USD' );
+		$order->set_total( '10.99' );
+		$order->update_meta_data( '_charge_id', $stored_charge_id );
+		$order->save();
+		$orders_before = $this->count_local_orders_and_refunds();
+
+		$response = $this->server->dispatch(
+			$this->create_refund_request(
+				array(
+					'charge_id' => 'ch_3UJZZBBzWlxcwgpP0BZvfjOj',
+					'amount'    => 1099,
+					'order_id'  => $order->get_id(),
+				)
+			)
+		);
+		$body     = json_decode( (string) $this->http_client->last_body, true );
+
+		$this->assertSame( 200, $response->get_status() );
+		$this->assertSame( 1, $this->http_client->request_count );
+		$this->assertSame( '/sites/4/wcpay/refunds', $this->http_client->last_path );
+		$this->assertSame( 'ch_3UJZZBBzWlxcwgpP0BZvfjOj', $body['charge'] ?? null );
+		$this->assertSame( 'transaction_details_no_order', $body['metadata']['refund_source'] ?? null );
+		$this->assertSame( $orders_before, $this->count_local_orders_and_refunds(), 'No refund row is created.' );
+		$this->assertCount( 0, wc_get_order( $order->get_id() )->get_refunds() );
+	}
+
+	/**
 	 * @testdox Refund without an order refuses charge IDs and amounts the client's request refuses, before any platform call.
 	 * @testWith ["", 1099, "wcpay_core_invalid_request_parameter_stripe_id"]
 	 *           [null, 1099, "wcpay_core_invalid_request_parameter_stripe_id"]

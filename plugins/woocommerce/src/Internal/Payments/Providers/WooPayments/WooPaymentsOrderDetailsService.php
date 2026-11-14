@@ -516,23 +516,26 @@ class WooPaymentsOrderDetailsService {
 	}
 
 	/**
-	 * Build the order info of a detail answer, with the customer, the fraud box type and the suggested product type.
+	 * Build the order info of a detail answer, with the customer, the fraud box type, the suggested product type, and
+	 * whether the order's payment method is a WooPayments gateway, which the transaction page's refund through the order
+	 * needs.
 	 *
 	 * @param WC_Order $order Order.
 	 * @return array<string,mixed>
 	 */
 	private function build_detail_order_info( WC_Order $order ): array {
 		$order_info = array(
-			'id'                     => $order->get_id(),
-			'number'                 => $order->get_order_number(),
-			'url'                    => $order->get_edit_order_url(),
-			'customer_url'           => $this->get_customer_url( $order ),
-			'customer_name'          => trim( $order->get_formatted_billing_full_name() ),
-			'customer_email'         => $order->get_billing_email(),
-			'fraud_meta_box_type'    => $order->get_meta( '_wcpay_fraud_meta_box_type' ),
+			'id'                             => $order->get_id(),
+			'number'                         => $order->get_order_number(),
+			'url'                            => $order->get_edit_order_url(),
+			'customer_url'                   => $this->get_customer_url( $order ),
+			'customer_name'                  => trim( $order->get_formatted_billing_full_name() ),
+			'customer_email'                 => $order->get_billing_email(),
+			'fraud_meta_box_type'            => $order->get_meta( '_wcpay_fraud_meta_box_type' ),
 			// As client 11.3.0 (class-wc-payments-api-client.php:2373), a stored value that is not an IP address is empty.
-			'ip_address'             => (string) rest_is_ip_address( $order->get_customer_ip_address() ),
-			'suggested_product_type' => $this->determine_suggested_product_type( $order ),
+			'ip_address'                     => (string) rest_is_ip_address( $order->get_customer_ip_address() ),
+			'suggested_product_type'         => $this->determine_suggested_product_type( $order ),
+			'has_woopayments_payment_method' => WooPaymentsPersistenceVocabulary::is_woopayments_gateway_id( (string) $order->get_payment_method() ),
 		);
 
 		return $this->add_subscription_info( $order_info, $order );

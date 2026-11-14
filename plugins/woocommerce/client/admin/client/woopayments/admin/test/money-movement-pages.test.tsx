@@ -4530,6 +4530,7 @@ describe( 'WooPayments money movement pages', () => {
 					id: 123,
 					number: '123',
 					url: 'http://example.com/wp-admin/post.php?post=123&action=edit',
+					has_woopayments_payment_method: true,
 				},
 			},
 		};
@@ -4649,6 +4650,7 @@ describe( 'WooPayments money movement pages', () => {
 					id: 123,
 					number: '123',
 					url: 'http://example.com/wp-admin/post.php?post=123&action=edit',
+					has_woopayments_payment_method: true,
 				},
 			},
 		} );
@@ -8189,8 +8191,7 @@ describe( 'WooPayments money movement pages', () => {
 	}
 
 	/**
-	 * REC-5a R-b (`data/rec-5a-refunds.md`, `data/t1-provider-family-audit.md`
-	 * §4 Batch 5): the exact, unmodified timeline body the platform returned
+	 * REC-5a R-b: the exact, unmodified timeline body the platform returned
 	 * for a USD 10.99 refund with a free-text merchant reason. Only the
 	 * lines that match client 11.1.0's own rendering (`map-events.js`) are
 	 * asserted: the refund status change, payout and main items with the

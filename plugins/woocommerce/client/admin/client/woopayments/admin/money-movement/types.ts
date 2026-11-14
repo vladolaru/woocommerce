@@ -267,6 +267,7 @@ export interface WooPaymentsPaymentOrder {
 	fraud_meta_box_type?: string;
 	ip_address?: string;
 	suggested_product_type?: string;
+	has_woopayments_payment_method?: boolean;
 	subscriptions?: WooPaymentsPaymentOrder[];
 	[ key: string ]: unknown;
 }

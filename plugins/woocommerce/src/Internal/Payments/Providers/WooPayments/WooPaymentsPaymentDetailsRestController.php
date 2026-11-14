@@ -235,8 +235,10 @@ class WooPaymentsPaymentDetailsRestController extends RestApiControllerBase {
 	/**
 	 * Process a payment detail refund.
 	 *
-	 * Like client 11.1.0 `WC_REST_Payments_Refunds_Controller::process_refund()`, an order that exists
-	 * is refunded through WooCommerce; a missing or unknown order refunds the charge directly.
+	 * An order whose payment method is a WooPayments gateway is refunded through WooCommerce, as client 11.3.0
+	 * `WC_REST_Payments_Refunds_Controller::process_refund()` refunds any order that exists
+	 * (includes/admin/class-wc-rest-payments-refunds-controller.php:46-77). For a missing order, or an order of
+	 * another payment method, whose own gateway cannot refund a WooPayments charge, the charge is refunded directly.
 	 *
 	 * @param WP_REST_Request $request Request.
 	 * @phpstan-param WP_REST_Request<array<string,mixed>> $request
@@ -245,7 +247,7 @@ class WooPaymentsPaymentDetailsRestController extends RestApiControllerBase {
 	public function process_refund( WP_REST_Request $request ) {
 		$order_id = absint( $request->get_param( 'order_id' ) );
 		$order    = $order_id > 0 ? wc_get_order( $order_id ) : false;
-		if ( ! $order instanceof WC_Order ) {
+		if ( ! $order instanceof WC_Order || ! WooPaymentsPersistenceVocabulary::is_woopayments_gateway_id( (string) $order->get_payment_method() ) ) {
 			return $this->process_charge_refund( $request );
 		}
 

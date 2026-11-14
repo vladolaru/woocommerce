@@ -433,4 +433,54 @@ describe( 'WooPayments refund of a payment without an order', () => {
 			}
 		);
 	} );
+	// The order screen refunds through the order's own payment method, so the page sends the merchant there only for an
+	// order whose method is WooPayments (the detail answer's has_woopayments_payment_method field).
+	describe( 'refund through the order', () => {
+		it.each( [
+			[ 'true', 'offers', true ],
+			[ 'false', 'does not offer', false ],
+			[ 'absent', 'does not offer', undefined ],
+		] )(
+			'with the payment method field %s, %s the partial refund and the modal order link, and keeps the header order link',
+			async ( _label, offers, field ) => {
+				const offered = offers === 'offers';
+				renderPaymentDetails( {
+					...getOrderlessCharge(),
+					order: {
+						id: 123,
+						number: 123,
+						url: 'http://example.com/wp-admin/admin.php?page=wc-orders&action=edit&id=123',
+						...( field === undefined
+							? {}
+							: { has_woopayments_payment_method: field } ),
+					},
+				} );
+
+				expect(
+					await screen.findByRole( 'link', { name: '123' } )
+				).toHaveAttribute(
+					'href',
+					'http://example.com/wp-admin/admin.php?page=wc-orders&action=edit&id=123'
+				);
+				await openActionsMenu();
+				expect(
+					screen.queryByRole( 'menuitem', {
+						name: 'Partial refund',
+					} ) !== null
+				).toBe( offered );
+
+				await userEvent.click(
+					screen.getByRole( 'menuitem', { name: 'Refund in full' } )
+				);
+				const dialog = await screen.findByRole( 'dialog', {
+					name: 'Refund transaction',
+				} );
+				expect(
+					within( dialog ).queryByRole( 'link', {
+						name: 'Go to the order',
+					} ) !== null
+				).toBe( offered );
+			}
+		);
+	} );
 } );

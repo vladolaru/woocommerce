@@ -219,6 +219,15 @@ const getTransactionOrderId = ( transaction: WooPaymentsTransaction ) => {
 const getTransactionOrderUrl = ( transaction: WooPaymentsTransaction ) =>
 	typeof transaction.order?.url === 'string' ? transaction.order.url : '';
 
+/**
+ * The order screen refunds through the order's own payment method, so the page sends the merchant there to refund
+ * only when that method is WooPayments; an answer without the field sends nobody.
+ *
+ * @param transaction The payment shown on the page.
+ */
+const isRefundableThroughOrder = ( transaction?: WooPaymentsTransaction ) =>
+	transaction?.order?.has_woopayments_payment_method === true;
+
 const isTransactionPartiallyRefunded = (
 	transaction: WooPaymentsTransaction
 ) =>
@@ -846,9 +855,10 @@ export const WooPaymentsTransactionDetailsPage = () => {
 	const refundOrderId = transaction
 		? getTransactionOrderId( transaction )
 		: 0;
-	const refundOrderUrl = transaction
-		? getTransactionOrderUrl( transaction )
-		: '';
+	const refundOrderUrl =
+		transaction && isRefundableThroughOrder( transaction )
+			? getTransactionOrderUrl( transaction )
+			: '';
 	const disputes = transaction ? getChargeDisputes( transaction ) : [];
 	const disputeOrder = transaction
 		? getDisputeOrdinals( transaction )
@@ -885,7 +895,9 @@ export const WooPaymentsTransactionDetailsPage = () => {
 	// Client 11.1.0 `payment-details/summary/index.tsx:376-378`: partial refunds happen on the order
 	// page, so they need an order number.
 	const showPartialRefundAction =
-		isRefundEligible && !! transaction?.order?.number;
+		isRefundEligible &&
+		!! transaction?.order?.number &&
+		isRefundableThroughOrder( transaction );
 	const showRefundActions = showFullRefundAction || showPartialRefundAction;
 	const pendingAction =
 		pendingAuthorizationAction?.routeKey === routeKey &&
