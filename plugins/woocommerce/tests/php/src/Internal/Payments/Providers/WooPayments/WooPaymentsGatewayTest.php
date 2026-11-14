@@ -18,6 +18,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGa
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\PaymentOperationContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
+use Automattic\WooCommerce\Internal\Payments\PaymentOutcomeApplyException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOutcomeMetadataMapper;
 use Automattic\WooCommerce\Internal\Payments\PaymentProcessingService;
 use Automattic\WooCommerce\Internal\Payments\ProviderInterface;
@@ -59,6 +60,7 @@ use Automattic\WooCommerce\StoreApi\Legacy as StoreApiLegacy;
 use Automattic\WooCommerce\StoreApi\Payments\PaymentContext as StoreApiPaymentContext;
 use Automattic\WooCommerce\StoreApi\Payments\PaymentResult as StoreApiPaymentResult;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Fixtures\RecordedPublicFraudServices;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Fixtures\StoredPaymentRecords;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\WooCommerceSubscriptionsDoubles;
 use WC_Order;
 use WC_Payment_Token_CC;
@@ -2677,7 +2679,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$result = $gateway->process_payment( $order->get_id() );
 
 		$this->assertNull( $service->last_checkout_context, 'A refused checkout must not reach the provider.' );
-		$this->assert_succeeded_intent_defense( $order->get_id(), $result, $return_url, $note_count, 'Your card number is invalid.', 'payment_method_error', $logger, 'pending' );
+		$this->assert_succeeded_intent_defense( $order->get_id(), $result, $return_url, $note_count, 'Your card number is invalid.', 'payment_method_error', $logger, 'pending', 'none' );
 	}
 
 	/**
@@ -3662,7 +3664,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$result = $gateway->process_payment( $order->get_id() );
 
 		$this->assertNull( $service->last_checkout_context, 'A refused checkout must not reach the provider.' );
-		$this->assert_succeeded_intent_defense( $order->get_id(), $result, $return_url, $note_count, $message, $label, $logger );
+		$this->assert_succeeded_intent_defense( $order->get_id(), $result, $return_url, $note_count, $message, $label, $logger, 'processing', 'amount_mismatch' === $refusal ? '' : 'none' );
 	}
 
 	/**
@@ -3705,7 +3707,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$result = $gateway->process_payment( $order->get_id() );
 
 		$this->assertInstanceOf( PaymentOperationContext::class, $service->last_checkout_context, 'The payment must have run before the downstream failure.' );
-		$this->assert_succeeded_intent_defense( $order->get_id(), $result, $return_url, $note_count, 'Auth credentials missing', 'Exception', $logger, 'pending' );
+		$this->assert_succeeded_intent_defense( $order->get_id(), $result, $return_url, $note_count, 'Auth credentials missing', 'Exception', $logger, 'pending', 'none' );
 	}
 
 	/**
@@ -3744,7 +3746,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 
 		$this->assertInstanceOf( PaymentOperationContext::class, $service->last_checkout_context );
 		$this->assertTrue( $service->last_checkout_context->get_provider_data()['subscription_payment_method_change'] ?? false, 'The request must run as a validated subscription payment-method change.' );
-		$this->assert_succeeded_intent_defense( $subscription->get_id(), $result, $return_url, $note_count, 'Subscription hook failed', 'RuntimeException', $logger, 'pending' );
+		$this->assert_succeeded_intent_defense( $subscription->get_id(), $result, $return_url, $note_count, 'Subscription hook failed', 'RuntimeException', $logger, 'pending', 'none' );
 	}
 
 	/**
@@ -6121,6 +6123,94 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'on-hold', $subscription->get_status() );
 		$this->assertSame( 'pm_old', $subscription->get_meta( '_payment_method_id', true ) );
 		$this->assertSame( '', $subscription->get_transaction_id() );
+	}
+
+	/**
+	 * @testdox A checkout on $_dataName keeps the order as paid, with the stored-success line: $logged.
+	 *
+	 * Client 11.3.0 keeps an order whose stored intent status is succeeded when its checkout fails or is refused, whatever
+	 * the stored intent, and its warning does not name the stored intent (class-wc-payment-gateway-wcpay.php:1563-1584).
+	 * The built-in store keeps it the same way and writes one more warning, whatever the logging setting, when the kept
+	 * order's stored intent is not a payment intent and no payment in this checkout succeeded.
+	 *
+	 * @dataProvider provider_checkouts_kept_on_a_stored_success
+	 *
+	 * @param string $stored  The stored success: 'setup intent' or 'payment'.
+	 * @param string $failure What the checkout meets: 'a failure', 'a failure after a payment that succeeded' or 'a refusal'.
+	 * @param bool   $logging Whether WooPayments logging is on.
+	 * @param string $logged  The stored intent the line names, or '' for no line.
+	 */
+	public function test_checkout_kept_on_a_stored_success_logs_a_stored_intent_that_is_not_a_payment( string $stored, string $failure, bool $logging, string $logged ): void {
+		if ( $logging ) {
+			self::enable_woopayments_debug_logging();
+		} else {
+			add_filter( 'wcpay_dev_mode', '__return_false' );
+		}
+		$order      = 'payment' === $stored ? StoredPaymentRecords::payment( OrderStatus::PENDING ) : StoredPaymentRecords::setup_intent_record();
+		$return_url = $this->filter_return_url( $order );
+		$service    = new RecordingPaymentProcessingService();
+		$session    = $this->create_session();
+		$message    = 'Invalid phone number.';
+		if ( 'a refusal' === $failure ) {
+			$order->set_billing_phone( str_repeat( '1', 21 ) );
+			$order->save();
+		} else {
+			$message                     = 'Downstream step failed';
+			$service->checkout_exception = 'a failure' === $failure
+				? new \RuntimeException( $message )
+				: new PaymentOutcomeApplyException( new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_thrown', '', 'pm_card_visa' ), new \RuntimeException( $message ), false );
+		}
+		// The duplicate check reads a stored payment intent; it answers that the intent pays another order, so the checkout runs.
+		$api_client = $this->getMockBuilder( Client::class )->disableOriginalConstructor()->onlyMethods( array( 'get_payment_intention' ) )->getMock();
+		$api_client->method( 'get_payment_intention' )->willReturn(
+			array(
+				'id'       => 'pi_A',
+				'status'   => 'succeeded',
+				'metadata' => array( 'order_id' => '999999' ),
+			)
+		);
+		$gateway = new WooPaymentsGateway();
+		$gateway->init( $service, new WooPaymentsProvider(), null, null, null, null, null, $this->create_fraud_prevention_service( false, $session ), null, $this->create_duplicate_payment_prevention_service( $session, $api_client ) );
+		$_POST['wcpay-payment-method'] = 'pm_card_visa';
+		$logger                        = RecordingWcLogger::install();
+
+		$result = $gateway->process_payment( $order->get_id() );
+
+		$this->assertSame( array( 'success', $return_url ), array( $result['result'] ?? '', $result['redirect'] ?? '' ) );
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( OrderStatus::PENDING, $order->get_status() );
+		$this->assertContains( 'Payment succeeded, but a downstream error occurred during post-payment processing: ' . $message . '. Order status preserved.', wp_list_pluck( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), 'content' ) );
+		$warnings = array_values( array_map( static fn( array $line ): string => $line[1], array_filter( $logger->lines, static fn( array $line ): bool => 'warning' === $line[0] ) ) );
+		$this->assertStringStartsWith( 'Payment intent already succeeded; downstream ', $warnings[0] ?? '', 'The keep warning is written first.' );
+		if ( '' === $logged ) {
+			$this->assertCount( 1, $warnings, 'Only the keep warning is written.' );
+			return;
+		}
+		$this->assertCount( 2, $warnings );
+		$context = $this->get_logged_context( $logger, sprintf( 'Order #%1$d was kept as paid on a stored succeeded status whose stored intent is not a payment intent (%2$s).', $order->get_id(), $logged ) );
+		$this->assertSame(
+			array(
+				'order_id'         => $order->get_id(),
+				'stored_intent_id' => $logged,
+				'reason'           => 'kept_on_a_stored_success_that_is_not_a_payment',
+			),
+			array_intersect_key( $context, array_flip( array( 'order_id', 'stored_intent_id', 'reason' ) ) )
+		);
+	}
+
+	/**
+	 * Stored successes on a Pending order, what the checkout meets, and the logging setting.
+	 *
+	 * @return array<string,array{0:string,1:string,2:bool,3:string}>
+	 */
+	public function provider_checkouts_kept_on_a_stored_success(): array {
+		return array(
+			'a stored setup intent that meets a failure' => array( 'setup intent', 'a failure', true, 'seti_S' ),
+			'a stored setup intent that meets a failure, with logging off' => array( 'setup intent', 'a failure', false, 'seti_S' ),
+			'a stored setup intent that meets a refusal' => array( 'setup intent', 'a refusal', true, 'seti_S' ),
+			'a stored setup intent that meets a failure after a payment' => array( 'setup intent', 'a failure after a payment that succeeded', true, '' ),
+			'a stored payment that meets a failure'      => array( 'payment', 'a failure', true, '' ),
+		);
 	}
 
 	/**
@@ -9238,8 +9328,10 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 * @param string               $label      What the warning names as the downstream failure.
 	 * @param object               $logger     Logger from capture_logs().
 	 * @param string               $status     Order status that must be preserved.
+	 * @param string               $stored     The stored intent the second warning names when the keep rests on a stored
+	 *                                         succeeded status whose stored intent is not a payment intent, or '' for none.
 	 */
-	private function assert_succeeded_intent_defense( int $order_id, array $result, string $return_url, int $note_count, string $message, string $label, object $logger, string $status = 'processing' ): void {
+	private function assert_succeeded_intent_defense( int $order_id, array $result, string $return_url, int $note_count, string $message, string $label, object $logger, string $status = 'processing', string $stored = '' ): void {
 		$this->assertSame( 'success', $result['result'] ?? '' );
 		$this->assertSame( $return_url, $result['redirect'] ?? '' );
 
@@ -9251,10 +9343,11 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$this->assertCount( $note_count + 1, $notes, 'Only the downstream-error note may be added.' );
 		$this->assertContains( 'Payment succeeded, but a downstream error occurred during post-payment processing: ' . esc_html( $message ) . '. Order status preserved.', $notes );
 
-		$this->assertSame(
-			array( sprintf( 'Payment intent already succeeded; downstream %s on order #%d suppressed to preserve order status.', $label, $order_id ) ),
-			$logger->warning_messages()
-		);
+		$warnings = array( sprintf( 'Payment intent already succeeded; downstream %s on order #%d suppressed to preserve order status.', $label, $order_id ) );
+		if ( '' !== $stored ) {
+			$warnings[] = sprintf( 'Order #%1$d was kept as paid on a stored succeeded status whose stored intent is not a payment intent (%2$s).', $order_id, $stored );
+		}
+		$this->assertSame( $warnings, $logger->warning_messages() );
 		$this->assertSame( 0, wc_notice_count( 'error' ), 'The shopper must not see an error notice.' );
 	}
 

@@ -135,6 +135,29 @@ final class StoredPaymentRecords {
 	}
 
 	/**
+	 * A setup intent as the stored record: a Pending order with a total above zero whose transaction ID and stored intent
+	 * name a card setup that succeeded, with no charge.
+	 *
+	 * The confirmation paths attach a $0 checkout's setup intent with its succeeded status
+	 * (WooPaymentsIntentConfirmationService, the setup intent's attach); the order then stores no payment once a merchant
+	 * raises its total and moves it back to Pending.
+	 *
+	 * @param string $intent_id Setup intent, also the transaction ID.
+	 * @return WC_Order
+	 */
+	public static function setup_intent_record( string $intent_id = 'seti_S' ): WC_Order {
+		return self::create_order(
+			OrderStatus::PENDING,
+			$intent_id,
+			array(
+				'_intent_id'        => $intent_id,
+				'_intention_status' => 'succeeded',
+			)
+		);
+	}
+
+
+	/**
 	 * Create and save a WooPayments order with the given status, transaction ID and stored values.
 	 *
 	 * @param string               $status         Order status; a paid status gets a paid date.
