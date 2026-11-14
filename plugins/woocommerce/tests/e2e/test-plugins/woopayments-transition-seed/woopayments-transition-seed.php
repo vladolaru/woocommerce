@@ -48,6 +48,7 @@ final class WooPayments_Transition_Seed_CLI {
 	 * Resets the store to a bare, plugin-inactive baseline. A full DB reset
 	 * replaces undoing options one by one: the cutover deletes plugin options
 	 * and deactivates the plugin, so only a reset reliably undoes a profile.
+	 * It also turns HPOS on while the store has no orders, as a new shop would.
 	 */
 	public function reset(): void {
 		WP_CLI::runcommand( 'db reset --yes' );
@@ -55,6 +56,7 @@ final class WooPayments_Transition_Seed_CLI {
 		// "master" is the Basic-Auth plugin's wp-env-derived slug (the GitHub
 		// archive URL's basename), needed for the shared restApi fixture.
 		WP_CLI::runcommand( 'plugin activate woocommerce woopayments-transition-seed master woocommerce-e2e-test-helper' );
+		WP_CLI::runcommand( 'wc hpos enable' );
 		// Pretty permalinks are required for the shared restApi fixture's
 		// /wp-json/ paths; a plain-permalink install serves ?rest_route= only.
 		file_put_contents( ABSPATH . 'wp-cli.yml', "apache_modules:\n  - mod_rewrite\n" ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents
