@@ -9,6 +9,7 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Enums\OrderInternalStatus;
 use Automattic\WooCommerce\Enums\OrderStatus;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\StateStore;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Automattic\WooCommerce\Utilities\OrderUtil;
 use Exception;
@@ -18,7 +19,8 @@ use WC_Order_Refund;
 /**
  * Removes the transaction fee meta and refund rows WooPayments wrote on canceled authorizations between April 2023 and
  * November 2025, in batches through Action Scheduler. Orders are matched by the shape that defect left, from its start
- * date on, with no end date.
+ * date on: a canceled WooPayments authorization that was never paid, Refunded, or Cancelled with the fee recorded. Orders
+ * created after the cutover record was last written are left out (get_created_before_bound()).
  *
  * Its hooks, options and Action Scheduler group are the WooPayments extension's, so a remediation the extension queued
  * goes on here after the switch. A new run starts only from the merchant's Tools action (Admin\DebugTools), as in client
@@ -617,16 +619,23 @@ class WooPaymentsCanceledAuthorizationFeeRemediationService implements RegisterH
 	private function get_affected_orders_hpos( int $limit ): array {
 		global $wpdb;
 
-		$last_order_id = $this->get_last_order_id();
-		$orders_table  = $wpdb->prefix . 'wc_orders';
-		$meta_table    = $wpdb->prefix . 'wc_orders_meta';
+		$last_order_id     = $this->get_last_order_id();
+		$orders_table      = $wpdb->prefix . 'wc_orders';
+		$meta_table        = $wpdb->prefix . 'wc_orders_meta';
+		$operational_table = $wpdb->prefix . 'wc_order_operational_data';
 
+		// Never paid: the order has no paid date (stored as NULL, or as a zero date, which the data store reads as none), a
+		// WooPayments payment method, and the stored intent as its transaction ID.
 		$sql = "SELECT orders.id
 			FROM {$orders_table} orders
 			INNER JOIN {$meta_table} status_meta ON orders.id = status_meta.order_id AND status_meta.meta_key = '_intention_status' AND status_meta.meta_value = %s
+			INNER JOIN {$meta_table} intent_meta ON orders.id = intent_meta.order_id AND intent_meta.meta_key = '_intent_id' AND intent_meta.meta_value <> '' AND intent_meta.meta_value = orders.transaction_id
+			LEFT JOIN {$operational_table} operational ON orders.id = operational.order_id
 			LEFT JOIN {$meta_table} fees_meta ON orders.id = fees_meta.order_id AND fees_meta.meta_key = '_wcpay_transaction_fee'
 			WHERE orders.type = 'shop_order'
 				AND orders.date_created_gmt >= %s
+				AND ( operational.date_paid_gmt IS NULL OR operational.date_paid_gmt = '0000-00-00 00:00:00' )
+				AND ( orders.payment_method = %s OR orders.payment_method LIKE %s )
 				AND (
 					orders.status = %s
 					OR (
@@ -635,7 +644,20 @@ class WooPaymentsCanceledAuthorizationFeeRemediationService implements RegisterH
 					)
 				)";
 
-		$params = array( self::CANCELED_INTENT_STATUS, self::BUG_START_DATE, OrderInternalStatus::REFUNDED, OrderInternalStatus::CANCELLED );
+		$params = array(
+			self::CANCELED_INTENT_STATUS,
+			self::BUG_START_DATE,
+			WooPaymentsPersistenceVocabulary::GATEWAY_ID,
+			$wpdb->esc_like( WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX ) . '%',
+			OrderInternalStatus::REFUNDED,
+			OrderInternalStatus::CANCELLED,
+		);
+
+		$created_before = $this->get_created_before_bound();
+		if ( null !== $created_before ) {
+			$sql     .= ' AND orders.date_created_gmt < %s';
+			$params[] = $created_before;
+		}
 
 		if ( $last_order_id > 0 ) {
 			$sql     .= ' AND orders.id > %d';
@@ -662,12 +684,22 @@ class WooPaymentsCanceledAuthorizationFeeRemediationService implements RegisterH
 
 		$last_order_id = $this->get_last_order_id();
 
+		// Never paid: the order has no paid date (the data store reads _date_paid, then the legacy _paid_date, and takes an
+		// empty or zero value as none), a WooPayments payment method, and the stored intent as its transaction ID.
 		$sql = "SELECT orders.ID
 			FROM {$wpdb->posts} orders
 			INNER JOIN {$wpdb->postmeta} status_meta ON orders.ID = status_meta.post_id AND status_meta.meta_key = '_intention_status' AND status_meta.meta_value = %s
+			INNER JOIN {$wpdb->postmeta} intent_meta ON orders.ID = intent_meta.post_id AND intent_meta.meta_key = '_intent_id' AND intent_meta.meta_value <> ''
+			INNER JOIN {$wpdb->postmeta} transaction_meta ON orders.ID = transaction_meta.post_id AND transaction_meta.meta_key = '_transaction_id' AND transaction_meta.meta_value = intent_meta.meta_value
+			INNER JOIN {$wpdb->postmeta} method_meta ON orders.ID = method_meta.post_id AND method_meta.meta_key = '_payment_method'
+			LEFT JOIN {$wpdb->postmeta} date_paid_meta ON orders.ID = date_paid_meta.post_id AND date_paid_meta.meta_key = '_date_paid' AND date_paid_meta.meta_value NOT IN ( '', '0' )
+			LEFT JOIN {$wpdb->postmeta} paid_date_meta ON orders.ID = paid_date_meta.post_id AND paid_date_meta.meta_key = '_paid_date' AND paid_date_meta.meta_value NOT IN ( '', '0000-00-00 00:00:00' )
 			LEFT JOIN {$wpdb->postmeta} fees_meta ON orders.ID = fees_meta.post_id AND fees_meta.meta_key = '_wcpay_transaction_fee'
 			WHERE orders.post_type IN ('shop_order', 'shop_order_placeholder')
 				AND orders.post_date >= %s
+				AND date_paid_meta.post_id IS NULL
+				AND paid_date_meta.post_id IS NULL
+				AND ( method_meta.meta_value = %s OR method_meta.meta_value LIKE %s )
 				AND (
 					orders.post_status = %s
 					OR (
@@ -676,7 +708,20 @@ class WooPaymentsCanceledAuthorizationFeeRemediationService implements RegisterH
 					)
 				)";
 
-		$params = array( self::CANCELED_INTENT_STATUS, self::BUG_START_DATE, OrderInternalStatus::REFUNDED, OrderInternalStatus::CANCELLED );
+		$params = array(
+			self::CANCELED_INTENT_STATUS,
+			self::BUG_START_DATE,
+			WooPaymentsPersistenceVocabulary::GATEWAY_ID,
+			$wpdb->esc_like( WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX ) . '%',
+			OrderInternalStatus::REFUNDED,
+			OrderInternalStatus::CANCELLED,
+		);
+
+		$created_before = $this->get_created_before_bound();
+		if ( null !== $created_before ) {
+			$sql     .= ' AND orders.post_date_gmt < %s';
+			$params[] = $created_before;
+		}
 
 		if ( $last_order_id > 0 ) {
 			$sql     .= ' AND orders.ID > %d';
@@ -695,6 +740,24 @@ class WooPaymentsCanceledAuthorizationFeeRemediationService implements RegisterH
 		}
 
 		return $this->convert_ids_to_orders( $order_ids );
+	}
+
+	/**
+	 * Get the upper bound on an affected order's creation time: an order counts only when created before the cutover record
+	 * was last written, and only when that record makes the built-in WooPayments the owner (done, or carrying the finalize
+	 * token, as WooPaymentsRuntimeArbiter reads it). That write is at the switch or shortly after, and any later write moves
+	 * it later. A later order comes from the built-in WooPayments or from an extension at or above
+	 * PreflightService::MINIMUM_CUTOVER_PLUGIN_VERSION, and neither writes the defect, which the extension fixed in 10.3.0.
+	 *
+	 * @return string|null GMT datetime, or null when no record makes the built-in WooPayments the owner.
+	 */
+	private function get_created_before_bound(): ?string {
+		$record = wc_get_container()->get( StateStore::class )->get_record();
+		if ( null === $record || ( StateStore::STATE_DONE !== $record['state'] && null === ( $record['request_origin_token'] ?? null ) ) ) {
+			return null;
+		}
+
+		return gmdate( 'Y-m-d H:i:s', $record['updated_at'] );
 	}
 
 	/**

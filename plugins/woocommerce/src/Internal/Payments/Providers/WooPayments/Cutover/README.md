@@ -26,6 +26,7 @@ Deleting the folder alone breaks the code that reads it. Make these edits in the
 - `NoticesPassthrough`: `KEPT_NOTICE_CLASSES` and the branch that keeps the cutover controller's notices on the Payments tab.
 - `WooPaymentsRuntimeArbiter::has_switched_from_extension()`, which reads the record's `done` state and finalize token for the ownership rule. Without it the rule becomes "the WooPayments feature is on and the extension is not active", and `resolve_runtime_owner()` and the readers of `is_awaiting_switch()` (`WooPaymentsSetupTier`, `WooPaymentsPaymentsSettingsAdapter`, `PaymentsProviders` and the status report) simplify with it.
 - `includes/class-wc-install.php`: the install seed of the record marker, `woocommerce_woopayments_cutover_state`.
+- `WooPaymentsCanceledAuthorizationFeeRemediationService::get_created_before_bound()` and the clause each order selection adds from it, which read the record: without them the selection has no upper bound on an order's creation time.
 - `StripeBilling/README.md`: the seam row for `BundledSubscriptionsGuard` and the seam count, and its path in `StripeBillingPlacementTest`.
 - The tests in `tests/php/src/Internal/Payments/Providers/WooPayments/Cutover/`, and any test that names a class of this folder (`git grep -n 'WooPayments\\Cutover\\' -- tests`).
 

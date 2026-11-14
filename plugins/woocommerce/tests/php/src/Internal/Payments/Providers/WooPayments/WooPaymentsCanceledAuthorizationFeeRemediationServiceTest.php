@@ -3,7 +3,11 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Internal\DataStores\Orders\DataSynchronizer;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\StateStore;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCanceledAuthorizationFeeRemediationService;
+use Automattic\WooCommerce\RestApi\UnitTests\Helpers\OrderHelper;
+use Automattic\WooCommerce\Utilities\OrderUtil;
 use WC_Helper_Order;
 use WC_Order;
 use WC_Order_Refund;
@@ -51,36 +55,60 @@ class WooPaymentsCanceledAuthorizationFeeRemediationServiceTest extends WC_Unit_
 	}
 
 	/**
-	 * The lookup follows the reference migration's canceled-intent query, not the exact payment method metadata.
+	 * Client 11.3.0's query matches the canceled intent status, the order type, the creation date and the order status
+	 * (includes/migrations/class-wc-payments-remediate-canceled-auth-fees.php:314-341 and :364-391). The built-in
+	 * selection also requires an order that was never paid: no paid date, a WooPayments payment method, and the stored
+	 * intent as the transaction ID; and, once a cutover record makes the built-in WooPayments the owner, an order created
+	 * before that record was last written.
 	 *
-	 * @testdox Affected-order lookup finds orders with a canceled intent created after the bug date: $_dataName.
+	 * @testdox Affected-order lookup: $_dataName.
 	 * @dataProvider provider_affected_order_fixtures
 	 *
 	 * @param array<string,mixed> $fixture  Order fixture arguments.
 	 * @param bool                $affected Whether the order is affected.
+	 * @param bool                $hpos     Whether orders are stored in the HPOS tables.
 	 */
-	public function test_affected_order_lookup( array $fixture, bool $affected ): void {
-		$order = $this->create_order_fixture( $fixture );
+	public function test_affected_order_lookup( array $fixture, bool $affected, bool $hpos ): void {
+		// Keep both order stores in step, so switching the authoritative store back afterwards is allowed.
+		add_filter( 'pre_option_' . DataSynchronizer::ORDERS_DATA_SYNC_ENABLED_OPTION, static fn(): string => 'yes' );
+		$hpos_was_enabled = OrderUtil::custom_orders_table_usage_is_enabled();
+		$record_before    = get_option( StateStore::OPTION_NAME, null );
+		OrderHelper::toggle_cot_feature_and_usage( $hpos );
+		try {
+			if ( isset( $fixture['cutover_record'] ) ) {
+				update_option( StateStore::OPTION_NAME, $fixture['cutover_record'] );
+			}
+			$order = $this->create_order_fixture( $fixture );
 
-		$order_ids = array_map(
-			static function ( WC_Order $affected_order ): int {
-				return $affected_order->get_id();
-			},
-			$this->sut->get_affected_orders( 10 )
-		);
+			$order_ids = array_map(
+				static function ( WC_Order $affected_order ): int {
+					return $affected_order->get_id();
+				},
+				$this->sut->get_affected_orders( 10 )
+			);
 
-		$this->assertSame( $affected ? array( $order->get_id() ) : array(), $order_ids );
-		$this->assertSame( $affected, $this->sut->has_affected_orders() );
+			$this->assertSame( $affected ? array( $order->get_id() ) : array(), $order_ids );
+			$this->assertSame( $affected, $this->sut->has_affected_orders() );
+		} finally {
+			OrderHelper::toggle_cot_feature_and_usage( $hpos_was_enabled );
+			if ( null === $record_before ) {
+				delete_option( StateStore::OPTION_NAME );
+			} else {
+				update_option( StateStore::OPTION_NAME, $record_before );
+			}
+		}
 	}
 
 	/**
-	 * Order fixtures and whether each is affected.
+	 * Order fixtures, whether each is affected, and the order storage, each on both storages unless named.
 	 *
-	 * @return array<string,array{array<string,mixed>,bool}>
+	 * @return array<string,array{array<string,mixed>,bool,bool}>
 	 */
 	public function provider_affected_order_fixtures(): array {
-		return array(
-			'refunded without fee metadata' => array(
+		$before_order = strtotime( '2023-04-15 00:00:00 UTC' );
+		$after_order  = strtotime( '2023-06-01 00:00:00 UTC' );
+		$both         = array(
+			'a Refunded canceled authorization without fee metadata' => array(
 				array(
 					'status'           => 'refunded',
 					'with_fee_meta'    => false,
@@ -88,9 +116,19 @@ class WooPaymentsCanceledAuthorizationFeeRemediationServiceTest extends WC_Unit_
 				),
 				true,
 			),
-			'cancelled with fee metadata'   => array( array( 'status' => 'cancelled' ), true ),
-			'nonstandard payment method'    => array( array( 'payment_method' => 'woocommerce_payments_card' ), true ),
-			'clean order without an intent' => array(
+			'a Cancelled canceled authorization with fee metadata' => array( array( 'status' => 'cancelled' ), true ),
+			'a per-method WooPayments gateway'       => array( array( 'payment_method' => 'woocommerce_payments_sepa_debit' ), true ),
+			'a paid order'                           => array( array( 'date_paid' => '2023-05-01 12:00:00' ), false ),
+			'another gateway'                        => array( array( 'payment_method' => 'bacs' ), false ),
+			'a transaction ID other than the stored intent' => array( array( 'transaction_id' => 'pi_other' ), false ),
+			'no transaction ID and no stored intent' => array(
+				array(
+					'transaction_id' => '',
+					'intent_id'      => '',
+				),
+				false,
+			),
+			'a clean order without an intent'        => array(
 				array(
 					'status'           => 'processing',
 					'intent_status'    => null,
@@ -99,9 +137,41 @@ class WooPaymentsCanceledAuthorizationFeeRemediationServiceTest extends WC_Unit_
 				),
 				false,
 			),
-			'intent not canceled'           => array( array( 'intent_status' => 'requires_capture' ), false ),
-			'created before the bug date'   => array( array( 'date_created' => '2023-03-31' ), false ),
+			'an intent that is not canceled'         => array( array( 'intent_status' => 'requires_capture' ), false ),
+			'created before the bug date'            => array( array( 'date_created' => '2023-03-31' ), false ),
+			'no cutover record'                      => array( array( 'cutover_record' => StateStore::ABSENT_RECORD ), true ),
+			'a done switch last written before the order was created, started after it' => array(
+				array( 'cutover_record' => $this->build_cutover_record( StateStore::STATE_DONE, $after_order, $before_order ) ),
+				false,
+			),
+			'a done switch last written after the order was created' => array(
+				array( 'cutover_record' => $this->build_cutover_record( StateStore::STATE_DONE, $before_order, $after_order ) ),
+				true,
+			),
+			'a switch before finalize last written before the order was created' => array(
+				array( 'cutover_record' => $this->build_cutover_record( StateStore::STATE_PENDING, $before_order, $before_order ) ),
+				true,
+			),
 		);
+
+		$rows = array();
+		foreach ( $both as $name => $row ) {
+			$rows[ $name . ', HPOS' ]  = array( $row[0], $row[1], true );
+			$rows[ $name . ', posts' ] = array( $row[0], $row[1], false );
+		}
+		$rows['an empty _date_paid with a legacy _paid_date, posts']            = array( array( 'legacy_paid_date' => '2023-05-01 12:00:00' ), false, false );
+		$rows['an empty _transaction_id row and an empty stored intent, posts'] = array(
+			array(
+				'transaction_id'         => '',
+				'intent_id'              => '',
+				'empty_transaction_meta' => true,
+			),
+			false,
+			false,
+		);
+		$rows['a zero paid date, HPOS'] = array( array( 'zero_paid_date' => true ), true, true );
+
+		return $rows;
 	}
 
 	/**
@@ -359,19 +429,31 @@ class WooPaymentsCanceledAuthorizationFeeRemediationServiceTest extends WC_Unit_
 		$args = wp_parse_args(
 			$args,
 			array(
-				'date_created'     => '2023-05-01',
-				'intent_status'    => 'canceled',
-				'payment_method'   => 'woocommerce_payments',
-				'status'           => 'cancelled',
-				'with_fee_meta'    => true,
-				'with_refund_meta' => true,
+				'date_created'           => '2023-05-01',
+				'date_paid'              => null,
+				'empty_transaction_meta' => false,
+				'intent_id'              => 'pi_defect',
+				'intent_status'          => 'canceled',
+				'legacy_paid_date'       => null,
+				'payment_method'         => 'woocommerce_payments',
+				'status'                 => 'cancelled',
+				'transaction_id'         => 'pi_defect',
+				'with_fee_meta'          => true,
+				'with_refund_meta'       => true,
+				'zero_paid_date'         => false,
 			)
 		);
 
 		$order = WC_Helper_Order::create_order();
 		$order->set_date_created( (string) $args['date_created'] );
 		$order->set_payment_method( (string) $args['payment_method'] );
+		$order->set_transaction_id( (string) $args['transaction_id'] );
 		$order->set_status( (string) $args['status'] );
+		$order->update_meta_data( '_intent_id', (string) $args['intent_id'] );
+
+		if ( null !== $args['date_paid'] ) {
+			$order->set_date_paid( (string) $args['date_paid'] );
+		}
 
 		if ( null !== $args['intent_status'] ) {
 			$order->update_meta_data( '_intention_status', (string) $args['intent_status'] );
@@ -389,7 +471,49 @@ class WooPaymentsCanceledAuthorizationFeeRemediationServiceTest extends WC_Unit_
 
 		$order->save();
 
+		// Stored forms that current order saves do not write (the posts store deletes a meta row whose value is empty), as
+		// an older save or an import can leave them.
+		if ( (bool) $args['empty_transaction_meta'] ) {
+			update_post_meta( $order->get_id(), '_transaction_id', '' );
+		}
+		if ( null !== $args['legacy_paid_date'] ) {
+			update_post_meta( $order->get_id(), '_paid_date', (string) $args['legacy_paid_date'] );
+		}
+		if ( (bool) $args['zero_paid_date'] ) {
+			global $wpdb;
+			$wpdb->update( $wpdb->prefix . 'wc_order_operational_data', array( 'date_paid_gmt' => '0000-00-00 00:00:00' ), array( 'order_id' => $order->get_id() ) );
+		}
+
 		return $order;
+	}
+
+	/**
+	 * Build a valid cutover record.
+	 *
+	 * @param string $state      Record state.
+	 * @param int    $started_at When the switch started.
+	 * @param int    $updated_at When the record was last written.
+	 * @return array<string,mixed>
+	 */
+	private function build_cutover_record( string $state, int $started_at, int $updated_at ): array {
+		return array(
+			'schema_version'         => StateStore::SCHEMA_VERSION,
+			'generation'             => 1,
+			'revision'               => 2,
+			'state'                  => $state,
+			'started_at'             => $started_at,
+			'updated_at'             => $updated_at,
+			'attempt'                => 1,
+			'action_id'              => 0,
+			'current_step'           => StateStore::STATE_DONE === $state ? 'done' : 'awaiting_merchant_start',
+			'step_log'               => array(),
+			'deferred_codes'         => array(),
+			'informational_outcomes' => array(),
+			'next_attempt_at'        => null,
+			'lease_token'            => null,
+			'lease_expires_at'       => null,
+			'request_origin_token'   => null,
+		);
 	}
 
 	/**
