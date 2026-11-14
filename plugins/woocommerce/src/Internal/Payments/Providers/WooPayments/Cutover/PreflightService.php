@@ -90,7 +90,7 @@ class PreflightService {
 		WooPaymentsFraudOrderTrackingService::TRACK_UPDATE_ORDER_ACTION,
 		WooPaymentsCanceledAuthorizationFeeRemediationService::ACTION_HOOK,
 		WooPaymentsCanceledAuthorizationFeeRemediationService::DRY_RUN_ACTION_HOOK,
-		WooPaymentsCanceledAuthorizationFeeRemediationService::CHECK_AFFECTED_ORDERS_HOOK,
+		WooPaymentsCanceledAuthorizationFeeRemediationService::BUILTIN_CHECK_HOOK,
 		WebhookReliabilityService::WEBHOOK_FETCH_EVENTS_ACTION,
 		WebhookReliabilityService::WEBHOOK_PROCESS_EVENT_ACTION,
 		// Stripe Billing migration off Stripe, continued by the built-in WooPayments' migrator after the switch.
@@ -502,11 +502,13 @@ class PreflightService {
 	}
 
 	/**
-	 * Get the queued WooPayments hooks the built-in WooPayments does not handle.
+	 * Get the queued WooPayments hooks the built-in WooPayments does not handle, without running the other checks.
+	 *
+	 * The reconciliation job asks again just before finalize, for an extension action queued since the preflight ran.
 	 *
 	 * @return string[]
 	 */
-	private function get_unhandled_queue_hooks(): array {
+	public function get_unhandled_queue_hooks(): array {
 		$actions = $this->get_queued_operational_actions();
 		$hooks   = self::normalize_string_list( array_column( $actions, 'hook' ) );
 		if ( in_array( self::IDENTIFIER_PLACEHOLDERS_UNAVAILABLE_HOOK, $hooks, true ) ) {

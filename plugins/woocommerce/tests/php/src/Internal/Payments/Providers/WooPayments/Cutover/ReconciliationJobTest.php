@@ -36,6 +36,20 @@ use WC_Unit_Test_Case;
 class ReconciliationJobTest extends WC_Unit_Test_Case {
 
 	/**
+	 * The extension's own cached affected-orders check, which the built-in never reads, writes or deletes.
+	 *
+	 * @var string
+	 */
+	private const EXTENSION_CHECK_STATE_OPTION = 'wcpay_has_affected_auth_fee_orders';
+
+	/**
+	 * The extension's own affected-orders check hook, which the built-in does not handle.
+	 *
+	 * @var string
+	 */
+	private const EXTENSION_CHECK_HOOK = 'wcpay_check_affected_auth_fee_orders';
+
+	/**
 	 * The System Under Test.
 	 *
 	 * @var ReconciliationJob|null
@@ -1970,14 +1984,16 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 	 * Client 11.3.0 starts the canceled-authorization fix only from the merchant's Tools action
 	 * (includes/class-wc-payments-status.php:221-256). The live run row is queued through the service, which writes the
 	 * extension's own options, hook and group (includes/migrations/class-wc-payments-remediate-canceled-auth-fees.php:851-869).
-	 * Every row carries progress values, so a transition that resets them fails.
+	 * Every row carries progress values, so a transition that resets them fails. The note's cached check is each runtime's
+	 * own: no transition writes or deletes the extension's, and none writes the built-in's.
 	 *
-	 * @testdox Finalize, the ownership check and a rollback leave the canceled-authorization fix as the merchant left it: $_dataName.
+	 * @testdox Finalize, the ownership check and every replacement leave the canceled-authorization fix and both cached checks as they were: $_dataName.
 	 * @dataProvider provide_canceled_authorization_fix_states
 	 *
-	 * @param string $state What the merchant left before the switch.
+	 * @param string      $state           What the merchant left before the switch.
+	 * @param string|null $extension_check The extension's cached check, or null when absent.
 	 */
-	public function test_ownership_check_leaves_the_canceled_authorization_fix_as_the_merchant_left_it( string $state ): void {
+	public function test_ownership_check_leaves_the_canceled_authorization_fix_as_the_merchant_left_it( string $state, ?string $extension_check ): void {
 		$remediation = wc_get_container()->get( WooPaymentsCanceledAuthorizationFeeRemediationService::class );
 		try {
 			$this->create_canceled_authorization_defect_order();
@@ -1999,8 +2015,11 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 					'errors'     => 0,
 				)
 			);
-			update_option( WooPaymentsCanceledAuthorizationFeeRemediationService::CHECK_STATE_OPTION_KEY, 'has_affected_orders', true );
+			if ( null !== $extension_check ) {
+				update_option( self::EXTENSION_CHECK_STATE_OPTION, $extension_check, true );
+			}
 			$before    = $this->read_canceled_authorization_fix_state();
+			$extension = $this->read_option_row( self::EXTENSION_CHECK_STATE_OPTION );
 			$preflight = $this->create_all_clear_site_preflight();
 			$sut       = $this->create_job( true, $preflight, null, false, $this->create_noop_normalization() );
 			$this->assertTrue( $sut->enqueue( 'merchant' ) );
@@ -2012,10 +2031,7 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 			$this->assertIsArray( $verification );
 			$this->assertSame( 'verify_builtin_ownership', $verification['current_step'] );
 			$this->scheduler->cancel( $verification['generation'], 2 );
-			$this->assertSame( $before, $this->read_canceled_authorization_fix_state(), 'Finalize queues, converts, cancels or resets nothing.' );
-			$this->assertFalse( get_option( WooPaymentsCanceledAuthorizationFeeRemediationService::CHECK_STATE_OPTION_KEY ), 'Finalize clears the extension-era check, so the note checks again.' );
-			// The extension's check, run in a request that loaded it before the deactivation, writes its answer back.
-			update_option( WooPaymentsCanceledAuthorizationFeeRemediationService::CHECK_STATE_OPTION_KEY, 'has_affected_orders', true );
+			$this->assert_canceled_authorization_checks_left_alone( $before, $extension, 'finalize' );
 
 			$this->start_fresh_request();
 			$this->create_job( true, $preflight, null, false, $this->create_noop_normalization() )->handle_reconcile( $verification['generation'], 2 );
@@ -2023,73 +2039,81 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 			$done = $this->state_store->get_record();
 			$this->assertIsArray( $done );
 			$this->assertSame( StateStore::STATE_DONE, $done['state'], 'The first ownership check finishes the switch.' );
-			$this->assertSame( $before, $this->read_canceled_authorization_fix_state(), 'No run is queued, converted, cancelled or reset.' );
-			$this->assertFalse( get_option( WooPaymentsCanceledAuthorizationFeeRemediationService::CHECK_STATE_OPTION_KEY ), 'Done clears a value written back after finalize.' );
+			$this->assert_canceled_authorization_checks_left_alone( $before, $extension, 'done' );
 
-			$this->assertTrue( $this->create_job( true, $preflight, null, true )->record_plugin_activation() );
-			$this->assertSame( $before, $this->read_canceled_authorization_fix_state(), 'The rollback queues, converts, cancels or resets nothing.' );
+			// Each replacement runs while the extension owns payments again.
+			$owner_back = $this->create_job( true, $preflight, null, true );
+			$this->assertTrue( $owner_back->record_plugin_activation() );
+			$this->assert_replaced_leaving_checks_alone( $done, $before, $extension, 'a reported rollback from done' );
+
+			$open = $this->open_generation_for_canceled_authorization_rows( $owner_back, 'finalize-token' );
+			$this->assertTrue( $owner_back->record_plugin_activation() );
+			$this->assert_replaced_leaving_checks_alone( $open, $before, $extension, 'a rollback of a record carrying the finalize token' );
+
+			$done = $this->mark_done_for_canceled_authorization_rows( $this->open_generation_for_canceled_authorization_rows( $owner_back, null ) );
+			$owner_back->refresh_notice_record();
+			$this->assert_replaced_leaving_checks_alone( $done, $before, $extension, 'a rollback found from an admin page read' );
+
+			$done = $this->mark_done_for_canceled_authorization_rows( $this->open_generation_for_canceled_authorization_rows( $owner_back, null ) );
+			$this->assertTrue( $owner_back->enqueue( ReconciliationJob::SOURCE_MERCHANT ) );
+			$this->assert_replaced_leaving_checks_alone( $done, $before, $extension, 'a pending generation started over done' );
+
+			$open = $this->state_store->get_record();
+			$this->assertIsArray( $open );
+			$this->assertNull( $open['request_origin_token'] ?? null );
+			$this->assertTrue( $owner_back->record_plugin_activation() );
+			$this->assert_replaced_leaving_checks_alone( $open, $before, $extension, 'a rollback of an open record with no token' );
 		} finally {
 			$this->cleanup_canceled_authorization_fix_state();
 		}
 	}
 
 	/**
-	 * What the merchant left of the canceled-authorization fix before the switch.
+	 * What the merchant left of the canceled-authorization fix before the switch, with each value of the extension's
+	 * cached check.
 	 *
-	 * @return array<string,array{0:string}>
+	 * @return array<string,array{0:string,1:string|null}>
 	 */
 	public function provide_canceled_authorization_fix_states(): array {
-		return array(
-			'never run'                       => array( 'never run' ),
-			'a pending dry run'               => array( 'a pending dry run' ),
-			'a live run the extension queued' => array( 'a live run the extension queued' ),
-			'completed'                       => array( 'completed' ),
-		);
+		$rows = array();
+		foreach ( array( 'never run', 'a pending dry run', 'a live run the extension queued', 'completed' ) as $state ) {
+			foreach ( array( 'has_affected_orders', 'no_affected_orders', 'scheduled', null ) as $extension_check ) {
+				$rows[ $state . ', extension check ' . ( $extension_check ?? 'absent' ) ] = array( $state, $extension_check );
+			}
+		}
+
+		return $rows;
 	}
 
 	/**
-	 * Client 11.3.0 checks again only when the option is absent (includes/notes/class-wc-payments-notes-canceled-auth-
-	 * remediation.php:100-114). A record in which the built-in WooPayments had become the owner is replaced, whatever
-	 * reported it, so the extension decides with its own selection. A check the built-in queued before then does nothing.
+	 * Client 11.3.0's note reads its own option and checks again only when it is absent
+	 * (includes/notes/class-wc-payments-notes-canceled-auth-remediation.php:100-114). The built-in keeps its answer in an
+	 * option of its own, so a rollback leaves the extension's answer as the extension left it.
 	 *
-	 * @testdox Replacing a done record ($_dataName) clears the built-in's cached check, and a late built-in check then reads no order and writes nothing.
-	 * @dataProvider provide_done_record_replacements
-	 *
-	 * @param string $replacement How the done record is replaced while the extension owns payments.
+	 * @testdox A rollback from done leaves each runtime's cached check as it was, and a late built-in check reads no order and writes nothing.
 	 */
-	public function test_replacing_a_done_record_hands_the_cached_check_to_the_extension( string $replacement ): void {
+	public function test_a_rollback_leaves_each_runtimes_cached_check_alone(): void {
 		$remediation = wc_get_container()->get( WooPaymentsCanceledAuthorizationFeeRemediationService::class );
 		$sut         = $this->create_job( true, $this->create_preflight_with_failures( array() ), null, true );
 		try {
-			$this->assertTrue( $sut->enqueue( 'merchant' ) );
-			$pending = $this->state_store->get_record();
-			$this->assertIsArray( $pending );
-			$this->scheduler->cancel( $pending['generation'], 1 );
-			$done                    = $pending;
-			$done['revision']        = $pending['revision'] + 1;
-			$done['state']           = StateStore::STATE_DONE;
-			$done['action_id']       = 0;
-			$done['current_step']    = 'done';
-			$done['next_attempt_at'] = null;
-			$this->assertTrue( $this->state_store->compare_and_set_record( $pending, $done ) );
+			$done = $this->mark_done_for_canceled_authorization_rows( $this->open_generation_for_canceled_authorization_rows( $sut, null ) );
 			// A paid canceled authorization: the extension's selection matches it, the built-in's does not.
 			$this->create_canceled_authorization_defect_order( true );
 			wc_get_container()->replace( WooPaymentsRuntimeArbiter::class, new StaticWooPaymentsRuntimeArbiter( true ) );
 			$remediation->check_and_cache_affected_orders();
-			$this->assertSame( 'no_affected_orders', get_option( WooPaymentsCanceledAuthorizationFeeRemediationService::CHECK_STATE_OPTION_KEY ), "The built-in's negative answer." );
+			$this->assertSame( 'no_affected_orders', get_option( WooPaymentsCanceledAuthorizationFeeRemediationService::BUILTIN_CHECK_STATE_OPTION_KEY ), "The built-in's own answer." );
+			update_option( self::EXTENSION_CHECK_STATE_OPTION, 'has_affected_orders', true );
 
-			if ( 'a reported rollback' === $replacement ) {
-				$this->assertTrue( $sut->record_plugin_activation() );
-			} elseif ( 'a rollback found from an admin page read' === $replacement ) {
-				$sut->refresh_notice_record();
-			} else {
-				$this->assertTrue( $sut->enqueue( ReconciliationJob::SOURCE_MERCHANT ) );
-			}
+			$this->assertTrue( $sut->record_plugin_activation() );
+
 			$record = $this->state_store->get_record();
 			$this->assertIsArray( $record );
 			$this->assertSame( $done['generation'] + 1, $record['generation'], 'A new generation replaced the done record.' );
-			$this->assertFalse( get_option( WooPaymentsCanceledAuthorizationFeeRemediationService::CHECK_STATE_OPTION_KEY ), 'The extension checks again.' );
+			$this->assertSame( 'has_affected_orders', get_option( self::EXTENSION_CHECK_STATE_OPTION ), 'The extension reads the answer it left.' );
+			$this->assertSame( 'no_affected_orders', get_option( WooPaymentsCanceledAuthorizationFeeRemediationService::BUILTIN_CHECK_STATE_OPTION_KEY ), "The built-in's answer stays its own." );
 
+			// A built-in check left pending at the rollback.
+			update_option( WooPaymentsCanceledAuthorizationFeeRemediationService::BUILTIN_CHECK_STATE_OPTION_KEY, 'scheduled', true );
 			wc_get_container()->replace( WooPaymentsRuntimeArbiter::class, new StaticWooPaymentsRuntimeArbiter( false ) );
 			$order_queries = 0;
 			$count_queries = static function ( $query ) use ( &$order_queries ) {
@@ -2104,8 +2128,9 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 			} finally {
 				remove_filter( 'query', $count_queries );
 			}
-			$this->assertFalse( get_option( WooPaymentsCanceledAuthorizationFeeRemediationService::CHECK_STATE_OPTION_KEY ), 'A late built-in check writes nothing.' );
+			$this->assertSame( 'scheduled', get_option( WooPaymentsCanceledAuthorizationFeeRemediationService::BUILTIN_CHECK_STATE_OPTION_KEY ), 'A late built-in check writes nothing.' );
 			$this->assertSame( 0, $order_queries, 'A late built-in check reads no order.' );
+			$this->assertSame( 'has_affected_orders', get_option( self::EXTENSION_CHECK_STATE_OPTION ) );
 		} finally {
 			$this->reset_container_replacements();
 			$this->cleanup_canceled_authorization_fix_state();
@@ -2113,54 +2138,119 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Each path that replaces a done record while the extension owns payments.
+	 * The extension's affected-orders check writes only the extension's own option, and the built-in does not handle its
+	 * hook, so the switch waits under the preflight's rule for queued extension actions until the extension has run it.
 	 *
-	 * @return array<string,array{0:string}>
+	 * @testdox An extension affected-orders check pending at the merchant's start defers the switch, runs under the extension, and the switch then finishes with the extension's answer kept.
 	 */
-	public function provide_done_record_replacements(): array {
-		return array(
-			'a reported rollback'                      => array( 'a reported rollback' ),
-			'a rollback found from an admin page read' => array( 'a rollback found from an admin page read' ),
-			'a pending generation started over it'     => array( 'a pending generation started over it' ),
-		);
-	}
-
-	/**
-	 * @testdox Rolling back an open switch ($_dataName) clears the cached check only when the built-in WooPayments had become the owner.
-	 * @testWith ["with the finalize token", true]
-	 *           ["without the finalize token", false]
-	 *
-	 * @param string $label      Case label.
-	 * @param bool   $with_token Whether the open record carries the finalize token.
-	 */
-	public function test_rolling_back_an_open_switch_clears_the_check_only_past_finalize( string $label, bool $with_token ): void {
-		unset( $label );
-		$sut = $this->create_job( true, $this->create_preflight_with_failures( array() ), null, true );
+	public function test_an_extension_check_pending_at_the_start_defers_until_the_extension_ran_it(): void {
+		$plugin_active = true;
+		$deactivations = 0;
+		$preflight     = $this->create_queue_scanning_preflight( $plugin_active, $deactivations );
+		update_option( self::EXTENSION_CHECK_STATE_OPTION, 'scheduled', true );
+		$action_id = as_schedule_single_action( time() + 10, self::EXTENSION_CHECK_HOOK, array(), 'woocommerce-payments' );
+		$this->assertIsInt( $action_id );
 		try {
+			$sut = $this->create_job( true, $preflight, null, true, $this->create_noop_normalization() );
 			$this->assertTrue( $sut->enqueue( 'merchant' ) );
 			$pending = $this->state_store->get_record();
 			$this->assertIsArray( $pending );
 			$this->scheduler->cancel( $pending['generation'], 1 );
-			if ( $with_token ) {
-				$fenced                         = $pending;
-				$fenced['revision']             = $pending['revision'] + 1;
-				$fenced['current_step']         = 'verify_builtin_ownership';
-				$fenced['request_origin_token'] = 'finalize-token';
-				$this->assertTrue( $this->state_store->compare_and_set_record( $pending, $fenced ) );
-			}
-			update_option( WooPaymentsCanceledAuthorizationFeeRemediationService::CHECK_STATE_OPTION_KEY, 'has_affected_orders', true );
+			$sut->handle_reconcile( $pending['generation'], 1 );
 
-			$this->assertTrue( $sut->record_plugin_activation() );
+			$deferred = $this->state_store->get_record();
+			$this->assertIsArray( $deferred );
+			$this->assertSame( StateStore::STATE_DEFERRED, $deferred['state'] );
+			$this->assertSame( array( PreflightService::FAILURE_QUEUE_HOOKS_UNHANDLED ), $deferred['deferred_codes'] );
+			$this->assertNull( $deferred['request_origin_token'] ?? null, 'The fence was not reached.' );
+			$this->assertSame( 0, $deactivations );
+			$this->assertSame( 'scheduled', get_option( self::EXTENSION_CHECK_STATE_OPTION ) );
 
-			$record = $this->state_store->get_record();
-			$this->assertIsArray( $record );
-			$this->assertTrue( $sut->is_awaiting_start( $record ), 'The switch was rolled back.' );
-			$this->assertSame(
-				$with_token ? false : 'has_affected_orders',
-				get_option( WooPaymentsCanceledAuthorizationFeeRemediationService::CHECK_STATE_OPTION_KEY ),
-				$with_token ? "The built-in's answer is cleared." : "The extension's own answer stays."
-			);
+			$this->run_extension_check_action( $action_id, 'has_affected_orders' );
+
+			$sut->handle_reconcile( $deferred['generation'], 2 );
+			$verification = $this->state_store->get_record();
+			$this->assertIsArray( $verification );
+			$this->assertSame( 'verify_builtin_ownership', $verification['current_step'] );
+			$this->assertSame( 1, $deactivations );
+			$this->scheduler->cancel( $verification['generation'], 3 );
+
+			$this->start_fresh_request();
+			$this->create_job( true, $preflight, null, false, $this->create_noop_normalization() )->handle_reconcile( $verification['generation'], 3 );
+
+			$done = $this->state_store->get_record();
+			$this->assertIsArray( $done );
+			$this->assertSame( StateStore::STATE_DONE, $done['state'] );
+			$this->assertSame( 'has_affected_orders', get_option( self::EXTENSION_CHECK_STATE_OPTION ), "The extension's answer is kept." );
+			$this->assertNull( $this->read_option_row( WooPaymentsCanceledAuthorizationFeeRemediationService::BUILTIN_CHECK_STATE_OPTION_KEY ) );
 		} finally {
+			$this->cleanup_canceled_authorization_fix_state();
+		}
+	}
+
+	/**
+	 * The order note wordings capture can take seconds, and an extension admin page can queue its check meanwhile. Finalize
+	 * asks for unhandled queue hooks again before the fence: a deferral after the fence would leave the request token on a
+	 * record whose extension is still active, which the next attempt reads as the merchant's rollback.
+	 *
+	 * @testdox An extension check queued while finalize captures the note wordings defers before the fence, and the next attempt finalizes.
+	 */
+	public function test_an_extension_check_queued_during_finalize_defers_before_the_fence(): void {
+		$plugin_active = true;
+		$deactivations = 0;
+		$preflight     = $this->create_queue_scanning_preflight( $plugin_active, $deactivations );
+		$queued        = array();
+		wc_get_container()->replace(
+			WooPaymentsOrderNoteWordingSnapshot::class,
+			new class( $queued ) extends WooPaymentsOrderNoteWordingSnapshot {
+				/** @var array<int,int> */
+				private array $queued;
+
+				/**
+				 * @param array<int,int> $queued Actions this capture queued.
+				 */
+				public function __construct( array &$queued ) {
+					$this->queued =& $queued;
+				}
+
+				/** Stand in for an extension admin page that queues the extension's check while the capture runs. */
+				public function capture(): void {
+					if ( array() === $this->queued ) {
+						update_option( 'wcpay_has_affected_auth_fee_orders', 'scheduled', true );
+						$this->queued[] = (int) as_schedule_single_action( time() + 10, 'wcpay_check_affected_auth_fee_orders', array(), 'woocommerce-payments' );
+					}
+				}
+			}
+		);
+		try {
+			$sut = $this->create_job( true, $preflight, null, true, $this->create_noop_normalization() );
+			$this->assertTrue( $sut->enqueue( 'merchant' ) );
+			$pending = $this->state_store->get_record();
+			$this->assertIsArray( $pending );
+			$this->scheduler->cancel( $pending['generation'], 1 );
+			$sut->handle_reconcile( $pending['generation'], 1 );
+
+			$deferred = $this->state_store->get_record();
+			$this->assertIsArray( $deferred );
+			$this->assertCount( 1, $queued, 'The capture queued the extension check.' );
+			$this->assertSame( StateStore::STATE_DEFERRED, $deferred['state'] );
+			$this->assertSame( array( PreflightService::FAILURE_QUEUE_HOOKS_UNHANDLED ), $deferred['deferred_codes'] );
+			$this->assertNull( $deferred['request_origin_token'] ?? null, 'The deferral comes before the fence.' );
+			$this->assertTrue( $plugin_active, 'The extension stays active.' );
+			$this->assertSame( 0, $deactivations );
+			$this->assertSame( 'scheduled', get_option( self::EXTENSION_CHECK_STATE_OPTION ) );
+
+			$this->run_extension_check_action( $queued[0], 'no_affected_orders' );
+
+			$sut->handle_reconcile( $deferred['generation'], 2 );
+			$verification = $this->state_store->get_record();
+			$this->assertIsArray( $verification );
+			$this->assertSame( StateStore::STATE_PENDING, $verification['state'], 'The next attempt finalizes; it does not roll back.' );
+			$this->assertSame( 'verify_builtin_ownership', $verification['current_step'] );
+			$this->assertSame( 1, $deactivations );
+			$this->assertSame( 'no_affected_orders', get_option( self::EXTENSION_CHECK_STATE_OPTION ) );
+		} finally {
+			wc_get_container()->reset_all_replacements();
 			$this->cleanup_canceled_authorization_fix_state();
 		}
 	}
@@ -2278,14 +2368,8 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 		$pending = $this->state_store->get_record();
 		$this->assertIsArray( $pending );
 		$this->scheduler->cancel( $pending['generation'], 1 );
-		update_option( WooPaymentsCanceledAuthorizationFeeRemediationService::CHECK_STATE_OPTION_KEY, 'has_affected_orders', true );
 
-		try {
-			$sut->handle_reconcile( $pending['generation'], 1 );
-			$this->assertSame( 'has_affected_orders', get_option( WooPaymentsCanceledAuthorizationFeeRemediationService::CHECK_STATE_OPTION_KEY ), 'The extension still owns payments, so its cached check stays.' );
-		} finally {
-			delete_option( WooPaymentsCanceledAuthorizationFeeRemediationService::CHECK_STATE_OPTION_KEY );
-		}
+		$sut->handle_reconcile( $pending['generation'], 1 );
 
 		$deferred = $this->state_store->get_record();
 		$this->assertIsArray( $deferred );
@@ -2427,7 +2511,8 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 			WooPaymentsCanceledAuthorizationFeeRemediationService::BATCH_SIZE_OPTION_KEY,
 			WooPaymentsCanceledAuthorizationFeeRemediationService::STATS_OPTION_KEY,
 			WooPaymentsCanceledAuthorizationFeeRemediationService::DRY_RUN_OPTION_KEY,
-			WooPaymentsCanceledAuthorizationFeeRemediationService::CHECK_STATE_OPTION_KEY,
+			WooPaymentsCanceledAuthorizationFeeRemediationService::BUILTIN_CHECK_STATE_OPTION_KEY,
+			self::EXTENSION_CHECK_STATE_OPTION,
 		);
 		foreach ( $options as $option ) {
 			delete_option( $option );
@@ -2443,8 +2528,165 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 		return array(
 			WooPaymentsCanceledAuthorizationFeeRemediationService::ACTION_HOOK,
 			WooPaymentsCanceledAuthorizationFeeRemediationService::DRY_RUN_ACTION_HOOK,
-			WooPaymentsCanceledAuthorizationFeeRemediationService::CHECK_AFFECTED_ORDERS_HOOK,
+			WooPaymentsCanceledAuthorizationFeeRemediationService::BUILTIN_CHECK_HOOK,
+			self::EXTENSION_CHECK_HOOK,
 		);
+	}
+
+	/**
+	 * Read one option's stored value and autoload flag straight from the table, or null when it is absent.
+	 *
+	 * @param string $option Option name.
+	 * @return array<string,string>|null
+	 */
+	private function read_option_row( string $option ): ?array {
+		global $wpdb;
+
+		$row = $wpdb->get_row( $wpdb->prepare( "SELECT option_value, autoload FROM {$wpdb->options} WHERE option_name = %s", $option ), ARRAY_A );
+
+		return is_array( $row ) ? $row : null;
+	}
+
+	/**
+	 * Assert that a transition left the fix, the extension's cached check and the built-in's cached check alone.
+	 *
+	 * @param array<string,mixed>       $fix_before       The fix's actions and progress values before the switch.
+	 * @param array<string,string>|null $extension_before The extension's cached check row before the switch.
+	 * @param string                    $after            The transition.
+	 */
+	private function assert_canceled_authorization_checks_left_alone( array $fix_before, ?array $extension_before, string $after ): void {
+		$this->assertSame( $fix_before, $this->read_canceled_authorization_fix_state(), "After $after: no run is queued, converted, cancelled or reset." );
+		$this->assertSame( $extension_before, $this->read_option_row( self::EXTENSION_CHECK_STATE_OPTION ), "After $after: the extension's cached check is unchanged." );
+		$this->assertNull( $this->read_option_row( WooPaymentsCanceledAuthorizationFeeRemediationService::BUILTIN_CHECK_STATE_OPTION_KEY ), "After $after: the switch writes no built-in cached check." );
+	}
+
+	/**
+	 * Assert that a new generation replaced a record and left both cached checks and the fix alone.
+	 *
+	 * @param array<string,mixed>       $replaced         The record the transition replaced.
+	 * @param array<string,mixed>       $fix_before       The fix's actions and progress values before the switch.
+	 * @param array<string,string>|null $extension_before The extension's cached check row before the switch.
+	 * @param string                    $after            The transition.
+	 */
+	private function assert_replaced_leaving_checks_alone( array $replaced, array $fix_before, ?array $extension_before, string $after ): void {
+		$record = $this->state_store->get_record();
+		$this->assertIsArray( $record );
+		$this->assertSame( $replaced['generation'] + 1, $record['generation'], "After $after: a new generation replaced the record." );
+		$this->assert_canceled_authorization_checks_left_alone( $fix_before, $extension_before, $after );
+	}
+
+	/**
+	 * Start a generation from the merchant with its first attempt unscheduled, fenced with a finalize token when one is given.
+	 *
+	 * @param ReconciliationJob $sut   Job whose arbiter reports the extension as the owner.
+	 * @param string|null       $token Finalize token to store, or null for an open record without one.
+	 * @return array<string,mixed> The stored record.
+	 */
+	private function open_generation_for_canceled_authorization_rows( ReconciliationJob $sut, ?string $token ): array {
+		$this->assertTrue( $sut->enqueue( 'merchant' ) );
+		$pending = $this->state_store->get_record();
+		$this->assertIsArray( $pending );
+		$this->scheduler->cancel( $pending['generation'], 1 );
+		if ( null === $token ) {
+			return $pending;
+		}
+		$fenced                         = $pending;
+		$fenced['revision']             = $pending['revision'] + 1;
+		$fenced['current_step']         = 'verify_builtin_ownership';
+		$fenced['request_origin_token'] = $token;
+		$this->assertTrue( $this->state_store->compare_and_set_record( $pending, $fenced ) );
+
+		return $fenced;
+	}
+
+	/**
+	 * Record a stored generation as done.
+	 *
+	 * @param array<string,mixed> $record The stored record.
+	 * @return array<string,mixed> The done record.
+	 */
+	private function mark_done_for_canceled_authorization_rows( array $record ): array {
+		$done                    = $record;
+		$done['revision']        = $record['revision'] + 1;
+		$done['state']           = StateStore::STATE_DONE;
+		$done['action_id']       = 0;
+		$done['current_step']    = 'done';
+		$done['next_attempt_at'] = null;
+		$this->assertTrue( $this->state_store->compare_and_set_record( $record, $done ) );
+
+		return $done;
+	}
+
+	/**
+	 * Create a preflight whose only check is the real queue scan: it fails with the unhandled-hook code while a queued
+	 * WooPayments action has no built-in handler. The extension is active on the site until the job deactivates it.
+	 *
+	 * @param bool $plugin_active Whether the extension is active.
+	 * @param int  $deactivations Deactivation calls.
+	 * @return PreflightService
+	 */
+	private function create_queue_scanning_preflight( bool &$plugin_active, int &$deactivations ): PreflightService {
+		return new class( $plugin_active, $deactivations ) extends PreflightService {
+			/** @var bool */
+			private bool $plugin_active;
+
+			/** @var int */
+			private int $deactivations;
+
+			/**
+			 * @param bool $plugin_active Whether the extension is active.
+			 * @param int  $deactivations Deactivation calls.
+			 */
+			public function __construct( bool &$plugin_active, int &$deactivations ) {
+				$this->plugin_active =& $plugin_active;
+				$this->deactivations =& $deactivations;
+			}
+
+			/** @return string[] */
+			public function get_failures(): array {
+				return array() === $this->get_unhandled_queue_hooks() ? array() : array( self::FAILURE_QUEUE_HOOKS_UNHANDLED );
+			}
+
+			/** Invalidate controlled facts. */
+			public function invalidate_current_blog_memoization(): void {
+			}
+
+			/** Deactivate the controlled extension. */
+			public function deactivate_woopayments_plugin(): bool {
+				++$this->deactivations;
+				$this->plugin_active = false;
+				return true;
+			}
+
+			/** Site-local scenario. */
+			public function is_woopayments_network_active(): bool {
+				return false;
+			}
+
+			/** Active on the site until the job deactivates it. */
+			public function is_woopayments_site_active(): bool {
+				return $this->plugin_active;
+			}
+		};
+	}
+
+	/**
+	 * Run a queued extension check under a stand-in for the extension's handler, which caches its answer.
+	 *
+	 * @param int    $action_id Queued action.
+	 * @param string $answer    The answer the extension caches.
+	 */
+	private function run_extension_check_action( int $action_id, string $answer ): void {
+		$handler = static function () use ( $answer ): void {
+			update_option( self::EXTENSION_CHECK_STATE_OPTION, $answer, true );
+		};
+		add_action( self::EXTENSION_CHECK_HOOK, $handler );
+		try {
+			ActionScheduler::runner()->process_action( $action_id, 'WP Cron' );
+		} finally {
+			remove_action( self::EXTENSION_CHECK_HOOK, $handler );
+		}
+		$this->assertSame( ActionScheduler_Store::STATUS_COMPLETE, ActionScheduler::store()->get_status( $action_id ) );
 	}
 
 	/**

@@ -81,6 +81,8 @@ class WooPaymentsPersistedDataContractTest extends WC_Unit_Test_Case {
 		'wcpay_should_redirect_to_onboarding'     => 'data/consumer-map/consumer-map.md:67 (cosmetic options are changelog items).',
 		'wcpay_survey_payment_overview_submitted' => 'data/consumer-map/consumer-map.md:67 (cosmetic options are changelog items).',
 		'wcpay_error_message'                     => 'plan.md T.7 Step 6 (d): superseded by the NOX wcpay-connection-error query arg.',
+		'wcpay_has_affected_auth_fee_orders'      => "N-1334, owner storage exception N-1340: the built-in keeps the canceled-authorization note's check in its own option and never reads, writes or deletes the extension's.",
+		'wcpay_check_affected_auth_fee_orders'    => "N-1334, owner storage exception N-1340: the built-in runs that check on its own hook and does not handle the extension's.",
 	);
 
 	/**

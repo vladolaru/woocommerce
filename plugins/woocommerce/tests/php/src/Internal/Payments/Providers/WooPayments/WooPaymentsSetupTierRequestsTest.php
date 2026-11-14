@@ -401,8 +401,8 @@ class WooPaymentsSetupTierRequestsTest extends WC_Unit_Test_Case {
 	 */
 	public function test_scheduled_action_run_inside_a_page_request_reaches_the_handler( string $label, string $tier, string $request ): void {
 		unset( $label );
-		$hook = WooPaymentsCanceledAuthorizationFeeRemediationService::CHECK_AFFECTED_ORDERS_HOOK;
-		delete_option( WooPaymentsCanceledAuthorizationFeeRemediationService::CHECK_STATE_OPTION_KEY );
+		$hook = WooPaymentsCanceledAuthorizationFeeRemediationService::BUILTIN_CHECK_HOOK;
+		delete_option( WooPaymentsCanceledAuthorizationFeeRemediationService::BUILTIN_CHECK_STATE_OPTION_KEY );
 		$this->arrange_builtin_owner( $tier );
 		if ( 'admin_run' === $request ) {
 			set_current_screen( 'woocommerce_page_wc-status' );
@@ -425,7 +425,7 @@ class WooPaymentsSetupTierRequestsTest extends WC_Unit_Test_Case {
 
 		$this->assertTrue( $handler_attached, 'The handler must be attached before Action Scheduler runs the action.' );
 		$this->assertSame( ActionScheduler_Store::STATUS_COMPLETE, ActionScheduler::store()->get_status( $action_id ) );
-		$this->assertSame( 'no_affected_orders', get_option( WooPaymentsCanceledAuthorizationFeeRemediationService::CHECK_STATE_OPTION_KEY ), 'The handler must have run.' );
+		$this->assertSame( 'no_affected_orders', get_option( WooPaymentsCanceledAuthorizationFeeRemediationService::BUILTIN_CHECK_STATE_OPTION_KEY ), 'The handler must have run.' );
 	}
 
 	/**

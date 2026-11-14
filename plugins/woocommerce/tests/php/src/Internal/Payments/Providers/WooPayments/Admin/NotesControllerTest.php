@@ -42,7 +42,7 @@ class NotesControllerTest extends WC_Unit_Test_Case {
 		$this->delete_notes( SetUpLinkNote::NOTE_NAME );
 		$this->delete_notes( CanceledAuthRemediationNote::NOTE_NAME );
 		delete_option( WooPaymentsCanceledAuthorizationFeeRemediationService::STATUS_OPTION_KEY );
-		update_option( WooPaymentsCanceledAuthorizationFeeRemediationService::CHECK_STATE_OPTION_KEY, 'no_affected_orders', true );
+		update_option( WooPaymentsCanceledAuthorizationFeeRemediationService::BUILTIN_CHECK_STATE_OPTION_KEY, 'no_affected_orders', true );
 		update_option( 'woocommerce_currency', 'USD' );
 		add_filter( 'pre_option_home', array( $this, 'get_http_home_url' ) );
 		delete_option( 'woocommerce_force_ssl_checkout' );
@@ -160,7 +160,7 @@ class NotesControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Adds the Link note and the remediation note only once over two admin page loads.
 	 */
 	public function test_adds_link_and_remediation_notes_once(): void {
-		update_option( WooPaymentsCanceledAuthorizationFeeRemediationService::CHECK_STATE_OPTION_KEY, 'has_affected_orders', true );
+		update_option( WooPaymentsCanceledAuthorizationFeeRemediationService::BUILTIN_CHECK_STATE_OPTION_KEY, 'has_affected_orders', true );
 		$sut = $this->create_sut( $this->get_link_account_data(), array( 'card' ) );
 
 		$sut->add_woo_admin_notes();
@@ -233,7 +233,7 @@ class NotesControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Adds the remediation note with its name, copy and action once the check found affected orders.
 	 */
 	public function test_adds_canceled_auth_note_when_check_found_affected_orders(): void {
-		update_option( WooPaymentsCanceledAuthorizationFeeRemediationService::CHECK_STATE_OPTION_KEY, 'has_affected_orders', true );
+		update_option( WooPaymentsCanceledAuthorizationFeeRemediationService::BUILTIN_CHECK_STATE_OPTION_KEY, 'has_affected_orders', true );
 
 		$this->sut->add_woo_admin_notes();
 
@@ -255,13 +255,66 @@ class NotesControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Schedules the affected-orders check on the first admin page load instead of adding the note.
 	 */
 	public function test_schedules_affected_orders_check_before_adding_canceled_auth_note(): void {
-		delete_option( WooPaymentsCanceledAuthorizationFeeRemediationService::CHECK_STATE_OPTION_KEY );
+		delete_option( WooPaymentsCanceledAuthorizationFeeRemediationService::BUILTIN_CHECK_STATE_OPTION_KEY );
 
 		$this->sut->add_woo_admin_notes();
 
 		$this->assertSame( array(), Notes::load_data_store()->get_notes_with_name( CanceledAuthRemediationNote::NOTE_NAME ) );
-		$this->assertSame( 'scheduled', get_option( WooPaymentsCanceledAuthorizationFeeRemediationService::CHECK_STATE_OPTION_KEY ) );
-		$this->assertTrue( as_has_scheduled_action( WooPaymentsCanceledAuthorizationFeeRemediationService::CHECK_AFFECTED_ORDERS_HOOK, array(), 'woocommerce-payments' ) );
+		$this->assertSame( 'scheduled', get_option( WooPaymentsCanceledAuthorizationFeeRemediationService::BUILTIN_CHECK_STATE_OPTION_KEY ) );
+		$this->assertTrue( as_has_scheduled_action( WooPaymentsCanceledAuthorizationFeeRemediationService::BUILTIN_CHECK_HOOK, array(), 'woocommerce-payments' ) );
+	}
+
+	/**
+	 * Client 11.3.0 treats a scheduled state as final (includes/notes/class-wc-payments-notes-canceled-auth-remediation.php:
+	 * 108-113). The built-in's check fails with no handler when payments go back to the extension before it runs, so a
+	 * scheduled state with no built-in check pending counts as absent.
+	 *
+	 * @testdox A scheduled check state with no built-in check pending schedules the check again (pending: $pending).
+	 * @testWith [false]
+	 *           [true]
+	 *
+	 * @param bool $pending Whether a built-in check is already pending.
+	 */
+	public function test_scheduled_check_state_without_a_pending_check_schedules_it_again( bool $pending ): void {
+		update_option( WooPaymentsCanceledAuthorizationFeeRemediationService::BUILTIN_CHECK_STATE_OPTION_KEY, 'scheduled', true );
+		if ( $pending ) {
+			as_schedule_single_action( time() + 10, WooPaymentsCanceledAuthorizationFeeRemediationService::BUILTIN_CHECK_HOOK, array(), 'woocommerce-payments' );
+		}
+
+		$this->sut->add_woo_admin_notes();
+
+		$this->assertSame( array(), Notes::load_data_store()->get_notes_with_name( CanceledAuthRemediationNote::NOTE_NAME ) );
+		$this->assertSame( 'scheduled', get_option( WooPaymentsCanceledAuthorizationFeeRemediationService::BUILTIN_CHECK_STATE_OPTION_KEY ) );
+		$this->assertCount(
+			1,
+			as_get_scheduled_actions(
+				array(
+					'hook'   => WooPaymentsCanceledAuthorizationFeeRemediationService::BUILTIN_CHECK_HOOK,
+					'group'  => 'woocommerce-payments',
+					'status' => \ActionScheduler_Store::STATUS_PENDING,
+				),
+				'ids'
+			),
+			$pending ? 'A pending check is not queued twice.' : 'The lost check is queued again.'
+		);
+	}
+
+	/**
+	 * @testdox The note reads only the built-in's check state: the extension's cached answer adds no note.
+	 */
+	public function test_the_extension_check_state_adds_no_note(): void {
+		delete_option( WooPaymentsCanceledAuthorizationFeeRemediationService::BUILTIN_CHECK_STATE_OPTION_KEY );
+		update_option( 'wcpay_has_affected_auth_fee_orders', 'has_affected_orders', true );
+
+		try {
+			$this->sut->add_woo_admin_notes();
+
+			$this->assertSame( array(), Notes::load_data_store()->get_notes_with_name( CanceledAuthRemediationNote::NOTE_NAME ) );
+			$this->assertTrue( as_has_scheduled_action( WooPaymentsCanceledAuthorizationFeeRemediationService::BUILTIN_CHECK_HOOK, array(), 'woocommerce-payments' ), 'The built-in checks with its own selection.' );
+			$this->assertSame( 'has_affected_orders', get_option( 'wcpay_has_affected_auth_fee_orders' ) );
+		} finally {
+			delete_option( 'wcpay_has_affected_auth_fee_orders' );
+		}
 	}
 
 	/**
@@ -273,7 +326,7 @@ class NotesControllerTest extends WC_Unit_Test_Case {
 	 * @param bool   $running           Whether a live remediation batch is scheduled.
 	 */
 	public function test_does_not_add_canceled_auth_note_when_the_woopayments_extension_rules_it_out( string $check_state, string $remediation_state, bool $running ): void {
-		update_option( WooPaymentsCanceledAuthorizationFeeRemediationService::CHECK_STATE_OPTION_KEY, $check_state, true );
+		update_option( WooPaymentsCanceledAuthorizationFeeRemediationService::BUILTIN_CHECK_STATE_OPTION_KEY, $check_state, true );
 		update_option( WooPaymentsCanceledAuthorizationFeeRemediationService::STATUS_OPTION_KEY, $remediation_state );
 		if ( $running ) {
 			as_schedule_single_action( time() + HOUR_IN_SECONDS, WooPaymentsCanceledAuthorizationFeeRemediationService::ACTION_HOOK, array(), 'woocommerce-payments' );
@@ -282,7 +335,7 @@ class NotesControllerTest extends WC_Unit_Test_Case {
 		$this->sut->add_woo_admin_notes();
 
 		$this->assertSame( array(), Notes::load_data_store()->get_notes_with_name( CanceledAuthRemediationNote::NOTE_NAME ) );
-		$this->assertFalse( as_has_scheduled_action( WooPaymentsCanceledAuthorizationFeeRemediationService::CHECK_AFFECTED_ORDERS_HOOK ), 'A recorded check state must not schedule another check.' );
+		$this->assertFalse( as_has_scheduled_action( WooPaymentsCanceledAuthorizationFeeRemediationService::BUILTIN_CHECK_HOOK ), 'A recorded check state must not schedule another check.' );
 	}
 
 	/**
@@ -294,7 +347,6 @@ class NotesControllerTest extends WC_Unit_Test_Case {
 		return array(
 			'remediation completed' => array( 'has_affected_orders', 'completed', false ),
 			'remediation running'   => array( 'has_affected_orders', 'running', true ),
-			'check still scheduled' => array( 'scheduled', '', false ),
 			'no affected orders'    => array( 'no_affected_orders', '', false ),
 		);
 	}

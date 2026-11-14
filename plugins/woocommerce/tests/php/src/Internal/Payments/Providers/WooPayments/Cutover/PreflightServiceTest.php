@@ -529,6 +529,13 @@ class PreflightServiceTest extends WC_Unit_Test_Case {
 					$test->schedule_queue_action( 'wcpay_synthetic_cutover_probe' );
 				},
 			),
+			// The extension's check writes only the extension's own option, so the switch waits until the extension has run it.
+			'an extension affected-order check is pending' => array(
+				'operational_queue_hooks_unhandled',
+				static function ( self $test ): void {
+					$test->schedule_queue_action( 'wcpay_check_affected_auth_fee_orders' );
+				},
+			),
 			'a Stripe-billed subscription marker exists'   => array(
 				'bundled_stripe_billing_subscriptions_present',
 				static function ( self $test ): void {
@@ -636,7 +643,7 @@ class PreflightServiceTest extends WC_Unit_Test_Case {
 			'updated-order tracking'                => array( 'wcpay_track_update_order' ),
 			'authorization-fee remediation'         => array( 'wcpay_remediate_canceled_authorization_fees' ),
 			'authorization-fee dry run'             => array( 'wcpay_remediate_canceled_authorization_fees_dry_run' ),
-			'authorization-fee affected-order scan' => array( 'wcpay_check_affected_auth_fee_orders' ),
+			'built-in authorization-fee order scan' => array( 'woocommerce_woopayments_check_canceled_auth_orders' ),
 			'failed webhook fetch'                  => array( 'wcpay_webhook_fetch_events' ),
 			'failed webhook processing'             => array( 'wcpay_webhook_process_event' ),
 			'Stripe Billing migration scheduling'   => array( 'wcpay_schedule_subscription_migrations' ),

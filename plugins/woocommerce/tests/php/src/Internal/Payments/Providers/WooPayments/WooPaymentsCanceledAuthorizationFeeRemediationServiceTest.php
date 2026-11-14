@@ -49,14 +49,20 @@ class WooPaymentsCanceledAuthorizationFeeRemediationServiceTest extends WC_Unit_
 	}
 
 	/**
-	 * @testdox Preserved remediation hooks are registered when the built-in WooPayments owns the runtime.
+	 * The run hooks are the extension's, so a run it queued goes on after the switch. The check hook is the built-in's own:
+	 * handling the extension's check hook would consume a check the extension queued before the switch, and leave the
+	 * extension's own option at scheduled, which its note treats as final
+	 * (includes/notes/class-wc-payments-notes-canceled-auth-remediation.php:100-114).
+	 *
+	 * @testdox The run hooks are the extension's and the affected-orders check runs on the built-in's own hook, not the extension's.
 	 */
 	public function test_registers_preserved_actions_when_builtin_owns_runtime(): void {
 		$this->sut->register();
 
 		$this->assertSame( 10, has_action( WooPaymentsCanceledAuthorizationFeeRemediationService::ACTION_HOOK, array( $this->sut, 'process_batch' ) ) );
 		$this->assertSame( 10, has_action( WooPaymentsCanceledAuthorizationFeeRemediationService::DRY_RUN_ACTION_HOOK, array( $this->sut, 'process_batch_dry_run' ) ) );
-		$this->assertSame( 10, has_action( WooPaymentsCanceledAuthorizationFeeRemediationService::CHECK_AFFECTED_ORDERS_HOOK, array( $this->sut, 'check_and_cache_affected_orders' ) ) );
+		$this->assertSame( 10, has_action( WooPaymentsCanceledAuthorizationFeeRemediationService::BUILTIN_CHECK_HOOK, array( $this->sut, 'check_and_cache_affected_orders' ) ) );
+		$this->assertFalse( has_action( 'wcpay_check_affected_auth_fee_orders', array( $this->sut, 'check_and_cache_affected_orders' ) ), "The built-in does not handle the extension's check." );
 	}
 
 	/**
@@ -415,7 +421,7 @@ class WooPaymentsCanceledAuthorizationFeeRemediationServiceTest extends WC_Unit_
 
 		$this->sut->check_and_cache_affected_orders();
 
-		$this->assertSame( 'has_affected_orders', get_option( WooPaymentsCanceledAuthorizationFeeRemediationService::CHECK_STATE_OPTION_KEY ) );
+		$this->assertSame( 'has_affected_orders', get_option( WooPaymentsCanceledAuthorizationFeeRemediationService::BUILTIN_CHECK_STATE_OPTION_KEY ) );
 	}
 
 	/**
@@ -424,7 +430,7 @@ class WooPaymentsCanceledAuthorizationFeeRemediationServiceTest extends WC_Unit_
 	public function test_check_and_cache_affected_orders_updates_state_option_for_clean_store(): void {
 		$this->sut->check_and_cache_affected_orders();
 
-		$this->assertSame( 'no_affected_orders', get_option( WooPaymentsCanceledAuthorizationFeeRemediationService::CHECK_STATE_OPTION_KEY ) );
+		$this->assertSame( 'no_affected_orders', get_option( WooPaymentsCanceledAuthorizationFeeRemediationService::BUILTIN_CHECK_STATE_OPTION_KEY ) );
 	}
 
 	/**
@@ -445,14 +451,14 @@ class WooPaymentsCanceledAuthorizationFeeRemediationServiceTest extends WC_Unit_
 				$this->sut->schedule_dry_run();
 				$this->sut->process_batch_dry_run();
 				$this->assertSame( $order->get_id(), $this->sut->get_last_order_id(), 'The dry run has passed the only match.' );
-				delete_option( WooPaymentsCanceledAuthorizationFeeRemediationService::CHECK_STATE_OPTION_KEY );
+				delete_option( WooPaymentsCanceledAuthorizationFeeRemediationService::BUILTIN_CHECK_STATE_OPTION_KEY );
 
 				$this->sut->check_and_cache_affected_orders();
-				$this->assertSame( 'has_affected_orders', get_option( WooPaymentsCanceledAuthorizationFeeRemediationService::CHECK_STATE_OPTION_KEY ) );
+				$this->assertSame( 'has_affected_orders', get_option( WooPaymentsCanceledAuthorizationFeeRemediationService::BUILTIN_CHECK_STATE_OPTION_KEY ) );
 
 				$this->sut->process_batch_dry_run();
 				$this->assertSame( 0, $this->sut->get_last_order_id(), 'The dry run cleaned up.' );
-				$this->assertSame( 'has_affected_orders', get_option( WooPaymentsCanceledAuthorizationFeeRemediationService::CHECK_STATE_OPTION_KEY ) );
+				$this->assertSame( 'has_affected_orders', get_option( WooPaymentsCanceledAuthorizationFeeRemediationService::BUILTIN_CHECK_STATE_OPTION_KEY ) );
 			}
 		);
 	}
@@ -718,7 +724,7 @@ class WooPaymentsCanceledAuthorizationFeeRemediationServiceTest extends WC_Unit_
 	private function remove_hooks( WooPaymentsCanceledAuthorizationFeeRemediationService $service ): void {
 		remove_action( WooPaymentsCanceledAuthorizationFeeRemediationService::ACTION_HOOK, array( $service, 'process_batch' ) );
 		remove_action( WooPaymentsCanceledAuthorizationFeeRemediationService::DRY_RUN_ACTION_HOOK, array( $service, 'process_batch_dry_run' ) );
-		remove_action( WooPaymentsCanceledAuthorizationFeeRemediationService::CHECK_AFFECTED_ORDERS_HOOK, array( $service, 'check_and_cache_affected_orders' ) );
+		remove_action( WooPaymentsCanceledAuthorizationFeeRemediationService::BUILTIN_CHECK_HOOK, array( $service, 'check_and_cache_affected_orders' ) );
 	}
 
 	/**
@@ -730,12 +736,12 @@ class WooPaymentsCanceledAuthorizationFeeRemediationServiceTest extends WC_Unit_
 		delete_option( WooPaymentsCanceledAuthorizationFeeRemediationService::BATCH_SIZE_OPTION_KEY );
 		delete_option( WooPaymentsCanceledAuthorizationFeeRemediationService::STATS_OPTION_KEY );
 		delete_option( WooPaymentsCanceledAuthorizationFeeRemediationService::DRY_RUN_OPTION_KEY );
-		delete_option( WooPaymentsCanceledAuthorizationFeeRemediationService::CHECK_STATE_OPTION_KEY );
+		delete_option( WooPaymentsCanceledAuthorizationFeeRemediationService::BUILTIN_CHECK_STATE_OPTION_KEY );
 
 		if ( function_exists( 'as_unschedule_all_actions' ) ) {
 			as_unschedule_all_actions( WooPaymentsCanceledAuthorizationFeeRemediationService::ACTION_HOOK, null, WooPaymentsCanceledAuthorizationFeeRemediationService::ACTION_SCHEDULER_GROUP_ID );
 			as_unschedule_all_actions( WooPaymentsCanceledAuthorizationFeeRemediationService::DRY_RUN_ACTION_HOOK, null, WooPaymentsCanceledAuthorizationFeeRemediationService::ACTION_SCHEDULER_GROUP_ID );
-			as_unschedule_all_actions( WooPaymentsCanceledAuthorizationFeeRemediationService::CHECK_AFFECTED_ORDERS_HOOK, null, WooPaymentsCanceledAuthorizationFeeRemediationService::ACTION_SCHEDULER_GROUP_ID );
+			as_unschedule_all_actions( WooPaymentsCanceledAuthorizationFeeRemediationService::BUILTIN_CHECK_HOOK, null, WooPaymentsCanceledAuthorizationFeeRemediationService::ACTION_SCHEDULER_GROUP_ID );
 		}
 	}
 }

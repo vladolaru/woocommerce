@@ -59,7 +59,10 @@ class CanceledAuthRemediationNote {
 	 * Add the note when the background check found affected orders and remediation has not run.
 	 *
 	 * The first call schedules the background check and adds nothing; a later admin page load adds the note once the
-	 * check has recorded its result.
+	 * check has recorded its result. It reads only the built-in's own check state. Unlike client 11.3.0, which treats a
+	 * scheduled state as final (includes/notes/class-wc-payments-notes-canceled-auth-remediation.php:108-113), a scheduled
+	 * state with no built-in check pending counts as absent and schedules the check again: a check left pending when
+	 * payments went back to the extension fails with no handler.
 	 *
 	 * @return void
 	 */
@@ -69,7 +72,10 @@ class CanceledAuthRemediationNote {
 		}
 
 		// Reading the state first skips the Action Scheduler query for the states that can never add a note.
-		$state = get_option( WooPaymentsCanceledAuthorizationFeeRemediationService::CHECK_STATE_OPTION_KEY );
+		$state = get_option( WooPaymentsCanceledAuthorizationFeeRemediationService::BUILTIN_CHECK_STATE_OPTION_KEY );
+		if ( 'scheduled' === $state && ! $this->is_check_pending() ) {
+			$state = false;
+		}
 		if ( false !== $state && 'has_affected_orders' !== $state ) {
 			return;
 		}
@@ -94,6 +100,19 @@ class CanceledAuthRemediationNote {
 		}
 
 		$this->get_note()->save();
+	}
+
+	/**
+	 * Tell whether the built-in's affected-orders check is pending or running.
+	 *
+	 * @return bool
+	 */
+	private function is_check_pending(): bool {
+		return as_has_scheduled_action(
+			WooPaymentsCanceledAuthorizationFeeRemediationService::BUILTIN_CHECK_HOOK,
+			array(),
+			WooPaymentsCanceledAuthorizationFeeRemediationService::ACTION_SCHEDULER_GROUP_ID
+		);
 	}
 
 	/**

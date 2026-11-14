@@ -22,8 +22,10 @@ use WC_Order_Refund;
  * date on: a canceled WooPayments authorization that was never paid, Refunded, or Cancelled with the fee recorded. Orders
  * created after the cutover record was last written are left out (get_created_before_bound()).
  *
- * Its hooks, options and Action Scheduler group are the WooPayments extension's, so a remediation the extension queued
- * goes on here after the switch. A new run starts only from the merchant's Tools action (Admin\DebugTools), as in client
+ * Its run hooks, run options and Action Scheduler group are the WooPayments extension's, so a remediation the extension
+ * queued goes on here after the switch. The admin note's cached check is the built-in's own:
+ * BUILTIN_CHECK_STATE_OPTION_KEY, filled on BUILTIN_CHECK_HOOK. The two runtimes select orders differently, so neither
+ * reads the other's answer. A new run starts only from the merchant's Tools action (Admin\DebugTools), as in client
  * 11.3.0 (includes/class-wc-payments-status.php:221-256); the switch starts none.
  *
  * @since 11.0.0
@@ -74,18 +76,20 @@ class WooPaymentsCanceledAuthorizationFeeRemediationService implements RegisterH
 	const DRY_RUN_ACTION_HOOK = 'wcpay_remediate_canceled_authorization_fees_dry_run';
 
 	/**
-	 * Action Scheduler hook of the affected-orders check.
+	 * Action Scheduler hook of the built-in's affected-orders check. The extension's check has its own hook, which the
+	 * built-in does not handle.
 	 *
 	 * @var string
 	 */
-	const CHECK_AFFECTED_ORDERS_HOOK = 'wcpay_check_affected_auth_fee_orders';
+	const BUILTIN_CHECK_HOOK = 'woocommerce_woopayments_check_canceled_auth_orders';
 
 	/**
-	 * Option key for tracking the affected-orders check state.
+	 * Option key of the built-in's affected-orders check state: scheduled, has_affected_orders or no_affected_orders. The
+	 * extension keeps its own answer in its own option, which the built-in never reads, writes or deletes.
 	 *
 	 * @var string
 	 */
-	const CHECK_STATE_OPTION_KEY = 'wcpay_has_affected_auth_fee_orders';
+	const BUILTIN_CHECK_STATE_OPTION_KEY = 'woocommerce_woopayments_canceled_auth_check';
 
 	/**
 	 * Option key for tracking dry-run mode.
@@ -156,7 +160,7 @@ class WooPaymentsCanceledAuthorizationFeeRemediationService implements RegisterH
 	public function register() {
 		add_action( self::ACTION_HOOK, array( $this, 'process_batch' ) );
 		add_action( self::DRY_RUN_ACTION_HOOK, array( $this, 'process_batch_dry_run' ) );
-		add_action( self::CHECK_AFFECTED_ORDERS_HOOK, array( $this, 'check_and_cache_affected_orders' ) );
+		add_action( self::BUILTIN_CHECK_HOOK, array( $this, 'check_and_cache_affected_orders' ) );
 	}
 
 	/**
@@ -551,13 +555,13 @@ class WooPaymentsCanceledAuthorizationFeeRemediationService implements RegisterH
 	 * @since 11.2.0
 	 */
 	public function schedule_affected_orders_check(): void {
-		update_option( self::CHECK_STATE_OPTION_KEY, 'scheduled', true );
-		as_schedule_single_action( time() + 10, self::CHECK_AFFECTED_ORDERS_HOOK, array(), self::ACTION_SCHEDULER_GROUP_ID );
+		update_option( self::BUILTIN_CHECK_STATE_OPTION_KEY, 'scheduled', true );
+		as_schedule_single_action( time() + 10, self::BUILTIN_CHECK_HOOK, array(), self::ACTION_SCHEDULER_GROUP_ID );
 	}
 
 	/**
-	 * Run the affected-orders query and cache the result, only while the built-in WooPayments owns payments. A check queued
-	 * before payments went back to the extension reads no order and writes nothing, so the extension decides.
+	 * Run the affected-orders query and cache the result in the built-in's option, only while the built-in WooPayments owns
+	 * payments. A check that runs after payments went back to the extension reads no order and writes nothing.
 	 */
 	public function check_and_cache_affected_orders(): void {
 		if ( ! wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->is_builtin_owner() ) {
@@ -565,7 +569,7 @@ class WooPaymentsCanceledAuthorizationFeeRemediationService implements RegisterH
 		}
 
 		update_option(
-			self::CHECK_STATE_OPTION_KEY,
+			self::BUILTIN_CHECK_STATE_OPTION_KEY,
 			$this->has_affected_orders() ? 'has_affected_orders' : 'no_affected_orders',
 			true
 		);
