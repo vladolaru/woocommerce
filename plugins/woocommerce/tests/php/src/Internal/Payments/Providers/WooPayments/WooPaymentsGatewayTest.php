@@ -3724,9 +3724,25 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$subscription = $this->create_order();
 		$subscription->update_meta_data( '_intention_status', 'succeeded' );
 		$subscription->save();
-		$note_count = count( wc_get_order_notes( array( 'order_id' => $subscription->get_id() ) ) );
-		$logger     = $this->capture_logs();
-		$return_url = $this->filter_return_url( $subscription );
+		// The order is read back as an order that reports the subscription type, as a WC_Subscription does.
+		$subscription_class = get_class(
+			new class() extends WC_Order {
+				/**
+				 * Get the order type a subscription reports.
+				 *
+				 * @return string
+				 */
+				public function get_type() {
+					return 'shop_subscription';
+				}
+			}
+		);
+		$subscription_id    = $subscription->get_id();
+		add_filter( 'woocommerce_order_class', static fn( $classname, $order_type, $order_id ) => $subscription_id === (int) $order_id ? $subscription_class : $classname, 10, 3 );
+		$subscription = wc_get_order( $subscription_id );
+		$note_count   = count( wc_get_order_notes( array( 'order_id' => $subscription->get_id() ) ) );
+		$logger       = $this->capture_logs();
+		$return_url   = $this->filter_return_url( $subscription );
 
 		$GLOBALS['wcpay_test_subscription_ids'] = array( $subscription->get_id() );
 		$_POST['_wcsnonce']                     = wp_create_nonce( 'wcs_change_payment_method' );
@@ -3747,6 +3763,8 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$this->assertInstanceOf( PaymentOperationContext::class, $service->last_checkout_context );
 		$this->assertTrue( $service->last_checkout_context->get_provider_data()['subscription_payment_method_change'] ?? false, 'The request must run as a validated subscription payment-method change.' );
 		$this->assert_succeeded_intent_defense( $subscription->get_id(), $result, $return_url, $note_count, 'Subscription hook failed', 'RuntimeException', $logger, 'pending', 'none' );
+		$stored_success_lines = array_values( array_filter( $logger->entries, static fn( array $entry ): bool => 'kept_on_a_stored_success_that_is_not_a_payment' === ( $entry['context']['reason'] ?? '' ) ) );
+		$this->assertSame( 'shop_subscription', $stored_success_lines[0]['context']['order_type'] ?? null, 'The stored-success line names the type of what was kept.' );
 	}
 
 	/**
@@ -6191,10 +6209,11 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$this->assertSame(
 			array(
 				'order_id'         => $order->get_id(),
+				'order_type'       => 'shop_order',
 				'stored_intent_id' => $logged,
 				'reason'           => 'kept_on_a_stored_success_that_is_not_a_payment',
 			),
-			array_intersect_key( $context, array_flip( array( 'order_id', 'stored_intent_id', 'reason' ) ) )
+			array_intersect_key( $context, array_flip( array( 'order_id', 'order_type', 'stored_intent_id', 'reason' ) ) )
 		);
 	}
 
@@ -9585,7 +9604,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			/**
 			 * Logged entries.
 			 *
-			 * @var array<int,array{level:string,message:string}>
+			 * @var array<int,array{level:string,message:string,context:array<string,mixed>}>
 			 */
 			public array $entries = array();
 
@@ -9620,10 +9639,10 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			 * @param array<string,mixed> $context Log context.
 			 */
 			public function log( $level, $message, $context = array() ) {
-				unset( $context );
 				$this->entries[] = array(
 					'level'   => (string) $level,
 					'message' => (string) $message,
+					'context' => is_array( $context ) ? $context : array(),
 				);
 			}
 

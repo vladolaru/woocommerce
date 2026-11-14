@@ -44,8 +44,8 @@ use WC_Payment_Token;
 class PaymentIntentEventHandler {
 
 	/**
-	 * Log reason of a succeeded payment that completes an order as a capture of a stored authorization status whose
-	 * stored intent was another one.
+	 * Log reason of a succeeded payment treated as the capture of an order's stored authorization status whose stored
+	 * intent was another one.
 	 */
 	private const REASON_CAPTURE_OVER_ANOTHER_INTENTS_AUTHORIZATION = 'capture_over_another_intents_authorization';
 
@@ -481,9 +481,10 @@ class PaymentIntentEventHandler {
 	}
 
 	/**
-	 * Log a succeeded payment that completes the order as a capture of its stored requires_capture status while the order
-	 * stored another intent before the event, whatever the logging setting. The capture choice reads the stored status
-	 * only (client 11.3.0 class-wc-payments-order-service.php:484-489), which can be another attempt's.
+	 * Log a succeeded payment treated as the capture of the order's stored requires_capture status while the order stored
+	 * another intent before the event, whatever the logging setting. The capture choice reads the stored status only
+	 * (client 11.3.0 class-wc-payments-order-service.php:484-489), which can be another attempt's. The line records the
+	 * choice; the lifecycle can still skip the event, for example on an order already in a paid status.
 	 *
 	 * @param WC_Order            $order            Order read under the lock, after the payment meta was written.
 	 * @param array<string,mixed> $payment_intent   Provider payment intent object.
@@ -497,7 +498,7 @@ class PaymentIntentEventHandler {
 
 		$stored = WooPaymentsLogger::get_loggable_intent_id( $stored_intent_id );
 		wc_get_container()->get( WooPaymentsLogger::class )->log_always(
-			sprintf( 'Payment %1$s completes order #%2$d as a capture, but the requires_capture status the order stores is beside intent %3$s.', $intent_id, $order->get_id(), $stored ),
+			sprintf( 'Payment %1$s on order #%2$d is treated as the capture of an authorization, but the requires_capture status the order stores is beside intent %3$s.', $intent_id, $order->get_id(), $stored ),
 			'warning',
 			array(
 				'order_id'         => $order->get_id(),

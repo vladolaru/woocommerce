@@ -2620,6 +2620,7 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 				'warning',
 				array(
 					'order_id'         => $order->get_id(),
+					'order_type'       => $order->get_type(),
 					'stored_intent_id' => $stored,
 					'reason'           => self::REASON_KEPT_ON_A_STORED_SUCCESS_THAT_IS_NOT_A_PAYMENT,
 				)

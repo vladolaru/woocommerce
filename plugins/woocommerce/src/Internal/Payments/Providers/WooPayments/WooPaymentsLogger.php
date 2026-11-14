@@ -314,8 +314,9 @@ class WooPaymentsLogger {
 	}
 
 	/**
-	 * Get a stored intent or transaction ID as a log line may carry it: a WooPayments payment or setup intent ID as it is,
-	 * `none` for an empty one, `another value` for anything else, such as a transaction ID a merchant typed.
+	 * Get a stored intent or transaction ID as a log line may carry it: a value that is wholly a payment or setup intent ID
+	 * (`pi_` or `seti_`, then only letters, digits and underscores) as it is, `none` for an empty one, `another value` for
+	 * anything else, such as a transaction ID a merchant typed. The lines that use it are written whatever the logging setting.
 	 *
 	 * @param string $id Stored intent or transaction ID.
 	 * @return string
@@ -325,7 +326,7 @@ class WooPaymentsLogger {
 			return 'none';
 		}
 
-		return 0 === strpos( $id, 'pi_' ) || 0 === strpos( $id, 'seti_' ) ? $id : 'another value';
+		return 1 === preg_match( '/\A(?:pi|seti)_[A-Za-z0-9_]+\z/', $id ) ? $id : 'another value';
 	}
 
 	/**

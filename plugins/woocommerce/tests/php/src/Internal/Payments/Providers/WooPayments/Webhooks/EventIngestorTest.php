@@ -3122,13 +3122,14 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'succeeded', $order->get_meta( '_intention_status', true ) );
 		$this->assertCount( 1, $this->get_order_notes_containing( $order, 'was <strong>successfully captured</strong>' ) );
 		$this->assert_no_payment_success_note( $order );
-		$lines = array_values( array_filter( $logger->lines, static fn( array $line ): bool => false !== strpos( $line[1], 'as a capture, but the requires_capture status' ) ) );
+		$lines = array_values( array_filter( $logger->lines, static fn( array $line ): bool => false !== strpos( $line[1], 'the capture of an authorization, but the requires_capture status' ) ) );
 		if ( '' === $logged ) {
 			$this->assertSame( array(), $lines );
 			return;
 		}
-		$message = sprintf( 'Payment %1$s completes order #%2$d as a capture, but the requires_capture status the order stores is beside intent %3$s.', $intent_id, $order->get_id(), $logged );
+		$message = sprintf( 'Payment %1$s on order #%2$d is treated as the capture of an authorization, but the requires_capture status the order stores is beside intent %3$s.', $intent_id, $order->get_id(), $logged );
 		$context = $this->get_logged_context( $logger, $message );
+		$this->assertCount( 1, $lines );
 		$this->assertSame( array( 'warning', 'woopayments' ), array( $lines[0][0], $lines[0][2] ) );
 		$this->assertSame(
 			array(
@@ -3156,6 +3157,45 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A succeeded payment on an order already paid, storing another intent's authorization status, leaves the order as it is, with the capture-choice line.
+	 *
+	 * The order's transaction ID names the arriving payment, so the event is the order's own; the capture is chosen on the
+	 * stored requires_capture status and the lifecycle then skips it, since the webhook leaves a paid order as it is
+	 * (client 11.3.0 class-wc-payments-webhook-processing-service.php:642-716, class-wc-payments-order-service.php:475).
+	 * The line records the choice, so it is written once all the same.
+	 */
+	public function test_capture_choice_on_an_already_paid_order_logs_the_line_and_leaves_the_order(): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
+		add_filter( 'wcpay_dev_mode', '__return_false' );
+		$event      = RecordedPlatformEvents::body( 'platform-payment-intent-events.json', 'manual_capture_amount_capturable_updated' );
+		$intent_id  = (string) $event['data']['object']['id'];
+		$order      = StoredPaymentRecords::authorization_status_beside_another_intent( OrderStatus::PROCESSING, $intent_id, 'pi_another_attempt' );
+		$date_paid  = $order->get_date_paid();
+		$notes      = array(
+			'order_id' => $order->get_id(),
+			'type'     => 'any',
+		);
+		$note_count = count( wc_get_order_notes( $notes ) );
+		$event      = $this->recorded_capture_event( $order );
+		$logger     = RecordingWcLogger::install();
+
+		$this->sut->process( $event );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( OrderStatus::PROCESSING, $order->get_status() );
+		$this->assertSame( $date_paid ? $date_paid->getTimestamp() : null, $order->get_date_paid() ? $order->get_date_paid()->getTimestamp() : null );
+		$this->assertSame( $intent_id, $order->get_transaction_id() );
+		$this->assertCount( $note_count, wc_get_order_notes( $notes ), 'The skipped event adds no note.' );
+		$this->assertSame( 'order_paid', $this->get_logged_context( $logger, 'Payment event skipped: the order is already paid, so the event does not change it.' )['reason'] ?? '' );
+		$lines = array_values( array_filter( $logger->lines, static fn( array $line ): bool => false !== strpos( $line[1], 'the capture of an authorization, but the requires_capture status' ) ) );
+		$this->assertCount( 1, $lines );
+		$this->assertSame(
+			array( 'warning', sprintf( 'Payment %1$s on order #%2$d is treated as the capture of an authorization, but the requires_capture status the order stores is beside intent pi_another_attempt.', $intent_id, $order->get_id() ), 'woopayments' ),
+			$lines[0]
+		);
+	}
+
+	/**
 	 * @testdox A succeeded payment its caller holds, on an order storing another intent's authorization status, is held without the capture-choice line.
 	 *
 	 * Stripe Billing's paid invoice passes its hold note when the invoice does not match the renewal; the hold is decided
@@ -3176,7 +3216,7 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 		$this->assertSame( OrderStatus::ON_HOLD, $order->get_status() );
 		$this->assertCount( 1, $this->get_order_notes_containing( $order, 'The invoice was paid with a different amount.' ) );
 		$this->assertSame( array(), $this->get_order_notes_containing( $order, 'was <strong>successfully captured</strong>' ) );
-		$this->assertSame( array(), array_filter( $logger->lines, static fn( array $line ): bool => false !== strpos( $line[1], 'as a capture, but the requires_capture status' ) ) );
+		$this->assertSame( array(), array_filter( $logger->lines, static fn( array $line ): bool => false !== strpos( $line[1], 'the capture of an authorization, but the requires_capture status' ) ) );
 	}
 
 	/**
