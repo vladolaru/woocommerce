@@ -6,6 +6,7 @@ import apiFetch from '@wordpress/api-fetch';
 /**
  * Internal dependencies
  */
+import { encodePathSegment } from '../../path-segment';
 import type {
 	WooPaymentsDeposit,
 	WooPaymentsDepositsListResponse,
@@ -110,7 +111,7 @@ export const getWooPaymentsDepositsExportUrl = async (
 	exportId: string
 ): Promise< Record< string, unknown > > =>
 	apiFetch< Record< string, unknown > >( {
-		path: `${ DEPOSITS_PATH }/download/${ encodeURIComponent( exportId ) }`,
+		path: `${ DEPOSITS_PATH }/download/${ encodePathSegment( exportId ) }`,
 		method: 'GET',
 	} );
 
@@ -118,7 +119,7 @@ export const getWooPaymentsDeposit = async (
 	depositId: string
 ): Promise< WooPaymentsDeposit > =>
 	apiFetch< WooPaymentsDeposit >( {
-		path: `${ DEPOSITS_PATH }/${ encodeURIComponent( depositId ) }`,
+		path: `${ DEPOSITS_PATH }/${ encodePathSegment( depositId ) }`,
 		method: 'GET',
 	} );
 

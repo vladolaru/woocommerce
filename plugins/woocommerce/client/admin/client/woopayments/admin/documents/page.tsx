@@ -38,6 +38,7 @@ import type {
 	WooPaymentsVatDetails,
 } from './types';
 import { WooPaymentsVatModal } from './vat-modal';
+import { encodePathSegment } from '../../path-segment';
 import { formatSiteDateTime, getErrorMessage } from '../money-movement/utils';
 import { navigateToSettingsPaymentsProviderRoute } from '../utils';
 import { usePersistedHiddenFields } from '../money-movement/view-preferences';
@@ -136,6 +137,17 @@ const getSummaryCount = (
 	return totalCount;
 };
 
+// A document requested through the page URL is ignored unless its ID can stand as one path segment, as client 11.3.0
+// `client/documents/list/index.tsx:97-115`.
+const isRequestableDocumentId = ( documentId: string ): boolean => {
+	try {
+		encodePathSegment( documentId );
+		return true;
+	} catch {
+		return false;
+	}
+};
+
 const getDirectDownloadDocument = (
 	search: string
 ): WooPaymentsDocument | null => {
@@ -143,7 +155,11 @@ const getDirectDownloadDocument = (
 	const documentId = params.get( 'document_id' );
 	const documentType = params.get( 'document_type' );
 
-	if ( ! documentId || ! documentType ) {
+	if (
+		! documentId ||
+		! documentType ||
+		! isRequestableDocumentId( documentId )
+	) {
 		return null;
 	}
 

@@ -629,6 +629,17 @@ describe( 'WooPaymentsDocumentsPage', () => {
 		);
 	} );
 
+	// Client 11.3.0 `client/documents/list/index.tsx:97-115`, `:196`.
+	it( 'ignores a deep-link download whose document ID cannot stand as one path segment', async () => {
+		renderDocumentsPage( [
+			'/woopayments/documents?document_id=.&document_type=vat_invoice',
+		] );
+
+		await screen.findByRole( 'heading', { name: 'Documents' } );
+		await waitFor( () => expect( mockGetDocuments ).toHaveBeenCalled() );
+		expect( openSpy ).not.toHaveBeenCalled();
+	} );
+
 	// Client 11.1.0 documents/index.tsx:17.
 	it.each( [ true, false ] )(
 		'shows the documents test-mode notice only in test mode (test mode: %s)',

@@ -8,6 +8,7 @@ import { __ } from '@wordpress/i18n';
 /**
  * Internal dependencies
  */
+import { encodePathSegment } from '../../path-segment';
 import ACTION_TYPES from './action-types';
 import { NAMESPACE } from './constants';
 import { STORE_NAME } from './store-name';
@@ -29,7 +30,7 @@ export function* activatePmPromotion(
 ): Generator< unknown, boolean, PmPromotionActionResponse > {
 	try {
 		const response = yield apiFetch( {
-			path: `${ NAMESPACE }/pm-promotions/${ encodeURIComponent(
+			path: `${ NAMESPACE }/pm-promotions/${ encodePathSegment(
 				id
 			) }/activate`,
 			method: 'POST',
@@ -69,7 +70,7 @@ export function* dismissPmPromotion(
 ): Generator< unknown, boolean, PmPromotionActionResponse > {
 	try {
 		const response = yield apiFetch( {
-			path: `${ NAMESPACE }/pm-promotions/${ encodeURIComponent(
+			path: `${ NAMESPACE }/pm-promotions/${ encodePathSegment(
 				id
 			) }/dismiss`,
 			method: 'POST',

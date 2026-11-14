@@ -6,6 +6,7 @@ import apiFetch from '@wordpress/api-fetch';
 /**
  * Internal dependencies
  */
+import { encodePathSegment } from '../../path-segment';
 import {
 	serializeReportsBalanceQuery,
 	serializeReportsFeesExportQuery,
@@ -73,11 +74,11 @@ export const requestWooPaymentsReportsFeesExport = (
 		method: 'POST',
 	} );
 
-export const getWooPaymentsReportsFeesExportUrl = (
+export const getWooPaymentsReportsFeesExportUrl = async (
 	exportId: string
 ): Promise< Record< string, unknown > > =>
 	apiFetch< Record< string, unknown > >( {
-		path: `${ REPORTS_PATH }/fees/download/${ encodeURIComponent(
+		path: `${ REPORTS_PATH }/fees/download/${ encodePathSegment(
 			exportId
 		) }`,
 		method: 'GET',

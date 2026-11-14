@@ -6,6 +6,7 @@ import apiFetch from '@wordpress/api-fetch';
 /**
  * Internal dependencies
  */
+import { encodePathSegment } from '../../path-segment';
 import type {
 	WooPaymentsAuthorization,
 	WooPaymentsAuthorizationActionResponse,
@@ -64,50 +65,50 @@ export const getWooPaymentsTransactionsSummary = (
 		method: 'GET',
 	} );
 
-export const getWooPaymentsTransaction = (
+export const getWooPaymentsTransaction = async (
 	transactionId: string
 ): Promise< WooPaymentsTransaction > =>
 	apiFetch< WooPaymentsTransaction >( {
-		path: `${ PAYMENTS_PATH }/transactions/${ encodeURIComponent(
+		path: `${ PAYMENTS_PATH }/transactions/${ encodePathSegment(
 			transactionId
 		) }`,
 		method: 'GET',
 	} );
 
-export const getWooPaymentsCharge = (
+export const getWooPaymentsCharge = async (
 	chargeId: string
 ): Promise< WooPaymentsCharge > =>
 	apiFetch< WooPaymentsCharge >( {
-		path: `${ PAYMENTS_PATH }/charges/${ encodeURIComponent( chargeId ) }`,
+		path: `${ PAYMENTS_PATH }/charges/${ encodePathSegment( chargeId ) }`,
 		method: 'GET',
 	} );
 
-export const getWooPaymentsPaymentIntent = (
+export const getWooPaymentsPaymentIntent = async (
 	paymentIntentId: string
 ): Promise< WooPaymentsPaymentIntent > =>
 	apiFetch< WooPaymentsPaymentIntent >( {
-		path: `${ PAYMENTS_PATH }/payment_intents/${ encodeURIComponent(
+		path: `${ PAYMENTS_PATH }/payment_intents/${ encodePathSegment(
 			paymentIntentId
 		) }`,
 		method: 'GET',
 	} );
 
-export const getWooPaymentsTimeline = (
+export const getWooPaymentsTimeline = async (
 	timelineId: string
 ): Promise< WooPaymentsTimelineResponse > =>
 	apiFetch< WooPaymentsTimelineResponse >( {
-		path: `${ PAYMENTS_PATH }/timeline/${ encodeURIComponent(
+		path: `${ PAYMENTS_PATH }/timeline/${ encodePathSegment(
 			timelineId
 		) }`,
 		method: 'GET',
 	} );
 
-export const getWooPaymentsReaderChargeSummary = (
+export const getWooPaymentsReaderChargeSummary = async (
 	transactionId: string,
 	options: { signal?: AbortSignal } = {}
 ): Promise< WooPaymentsReaderChargeSummaryResponse > =>
 	apiFetch< WooPaymentsReaderChargeSummaryResponse >( {
-		path: `${ PAYMENTS_PATH }/readers/charges/${ encodeURIComponent(
+		path: `${ PAYMENTS_PATH }/readers/charges/${ encodePathSegment(
 			transactionId
 		) }`,
 		method: 'GET',
@@ -135,11 +136,11 @@ export const requestWooPaymentsTransactionsExport = (
 		method: 'POST',
 	} );
 
-export const getWooPaymentsTransactionsExportUrl = (
+export const getWooPaymentsTransactionsExportUrl = async (
 	exportId: string
 ): Promise< Record< string, unknown > > =>
 	apiFetch< Record< string, unknown > >( {
-		path: `${ PAYMENTS_PATH }/transactions/download/${ encodeURIComponent(
+		path: `${ PAYMENTS_PATH }/transactions/download/${ encodePathSegment(
 			exportId
 		) }`,
 		method: 'GET',
@@ -167,22 +168,22 @@ export const getWooPaymentsAuthorizationsSummary = (
 		method: 'GET',
 	} );
 
-export const getWooPaymentsAuthorization = (
+export const getWooPaymentsAuthorization = async (
 	paymentIntentId: string
 ): Promise< WooPaymentsAuthorization > =>
 	apiFetch< WooPaymentsAuthorization >( {
-		path: `${ PAYMENTS_PATH }/authorizations/${ encodeURIComponent(
+		path: `${ PAYMENTS_PATH }/authorizations/${ encodePathSegment(
 			paymentIntentId
 		) }`,
 		method: 'GET',
 	} );
 
-export const captureWooPaymentsAuthorization = (
+export const captureWooPaymentsAuthorization = async (
 	orderId: number | string,
 	paymentIntentId: string
 ): Promise< WooPaymentsAuthorizationActionResponse > =>
 	apiFetch< WooPaymentsAuthorizationActionResponse >( {
-		path: `${ PAYMENTS_PATH }/orders/${ encodeURIComponent(
+		path: `${ PAYMENTS_PATH }/orders/${ encodePathSegment(
 			String( orderId )
 		) }/capture_authorization`,
 		method: 'POST',
@@ -191,12 +192,12 @@ export const captureWooPaymentsAuthorization = (
 		},
 	} );
 
-export const cancelWooPaymentsAuthorization = (
+export const cancelWooPaymentsAuthorization = async (
 	orderId: number | string,
 	paymentIntentId: string
 ): Promise< WooPaymentsAuthorizationActionResponse > =>
 	apiFetch< WooPaymentsAuthorizationActionResponse >( {
-		path: `${ PAYMENTS_PATH }/orders/${ encodeURIComponent(
+		path: `${ PAYMENTS_PATH }/orders/${ encodePathSegment(
 			String( orderId )
 		) }/cancel_authorization`,
 		method: 'POST',
@@ -289,13 +290,11 @@ export const getWooPaymentsDisputesSummary = (
 		method: 'GET',
 	} );
 
-export const getWooPaymentsDispute = (
+export const getWooPaymentsDispute = async (
 	disputeId: string
 ): Promise< WooPaymentsDispute > =>
 	apiFetch< WooPaymentsDispute >( {
-		path: `${ PAYMENTS_PATH }/disputes/${ encodeURIComponent(
-			disputeId
-		) }`,
+		path: `${ PAYMENTS_PATH }/disputes/${ encodePathSegment( disputeId ) }`,
 		method: 'GET',
 	} );
 
@@ -310,17 +309,17 @@ export const requestWooPaymentsDisputesExport = (
 		method: 'POST',
 	} );
 
-export const getWooPaymentsDisputesExportUrl = (
+export const getWooPaymentsDisputesExportUrl = async (
 	exportId: string
 ): Promise< Record< string, unknown > > =>
 	apiFetch< Record< string, unknown > >( {
-		path: `${ PAYMENTS_PATH }/disputes/download/${ encodeURIComponent(
+		path: `${ PAYMENTS_PATH }/disputes/download/${ encodePathSegment(
 			exportId
 		) }`,
 		method: 'GET',
 	} );
 
-export const updateWooPaymentsDispute = (
+export const updateWooPaymentsDispute = async (
 	disputeId: string,
 	data: {
 		evidence: Record< string, unknown >;
@@ -329,9 +328,7 @@ export const updateWooPaymentsDispute = (
 	}
 ): Promise< WooPaymentsDispute > =>
 	apiFetch< WooPaymentsDispute >( {
-		path: `${ PAYMENTS_PATH }/disputes/${ encodeURIComponent(
-			disputeId
-		) }`,
+		path: `${ PAYMENTS_PATH }/disputes/${ encodePathSegment( disputeId ) }`,
 		method: 'POST',
 		data,
 	} );
@@ -345,21 +342,21 @@ export const uploadWooPaymentsDisputeFile = (
 		body,
 	} );
 
-export const getWooPaymentsDisputeFileDetails = (
+export const getWooPaymentsDisputeFileDetails = async (
 	fileId: string
 ): Promise< WooPaymentsDisputeFile > =>
 	apiFetch< WooPaymentsDisputeFile >( {
-		path: `${ PAYMENTS_PATH }/file/${ encodeURIComponent(
+		path: `${ PAYMENTS_PATH }/file/${ encodePathSegment(
 			fileId
 		) }/details`,
 		method: 'GET',
 	} );
 
-export const closeWooPaymentsDispute = (
+export const closeWooPaymentsDispute = async (
 	disputeId: string
 ): Promise< WooPaymentsDispute > =>
 	apiFetch< WooPaymentsDispute >( {
-		path: `${ PAYMENTS_PATH }/disputes/${ encodeURIComponent(
+		path: `${ PAYMENTS_PATH }/disputes/${ encodePathSegment(
 			disputeId
 		) }/close`,
 		method: 'POST',

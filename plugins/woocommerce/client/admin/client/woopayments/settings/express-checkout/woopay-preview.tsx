@@ -15,6 +15,7 @@ import VisaIconImage from './assets/woopay-preview-visa.svg';
 import WoopayLogoImage from './assets/woopay-preview-logo.svg';
 import { getCardBorderColor } from './color-utils';
 import { getWooPaymentsSettingsBootstrap } from '../bootstrap';
+import { encodePathSegment } from '../../path-segment';
 
 type AppearanceRule = Record< string, string | undefined >;
 type WooPayAppearance = {
@@ -97,13 +98,22 @@ const getFontRules = ( value: unknown ): FontRule[] =>
 				.map( ( item ) => ( { cssSrc: getString( item.cssSrc ) } ) )
 		: [];
 
-// Client 11.1.0 `woopay-preview.js:428` concatenates the preloaded REST root, which also works on Plain permalinks.
+// Client 11.1.0 `woopay-preview.js:428` concatenates the preloaded REST root, which also works on Plain permalinks. A
+// stored ID that cannot stand as one path segment builds no URL, so the header shows the site logo or the store name.
 const getFileUrl = ( fileId: string ) => {
 	const restUrl = getString( getWooPaymentsSettingsBootstrap().restUrl );
+	if ( ! restUrl ) {
+		return '';
+	}
 
-	return restUrl
-		? `${ restUrl.replace( /\/$/, '' ) }/wc/v3/payments/file/${ fileId }`
-		: '';
+	try {
+		return `${ restUrl.replace(
+			/\/$/,
+			''
+		) }/wc/v3/payments/file/${ encodePathSegment( fileId ) }`;
+	} catch {
+		return '';
+	}
 };
 
 const getThemedStyles = ( appearance?: WooPayAppearance ): ThemedStyles => {

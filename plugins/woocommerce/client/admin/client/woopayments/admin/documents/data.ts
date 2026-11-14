@@ -6,6 +6,7 @@ import apiFetch from '@wordpress/api-fetch';
 /**
  * Internal dependencies
  */
+import { encodePathSegment } from '../../path-segment';
 import { getWooPaymentsSettingsBootstrap } from '../../settings/bootstrap';
 import { normalizeDateFiltersForApi } from '../money-movement/query';
 import type { WooPaymentsMoneyMovementQuery } from '../money-movement/types';
@@ -108,7 +109,7 @@ export const buildWooPaymentsDocumentUrl = ( documentId: string ) => {
 		`${ root.replace(
 			/\/$/,
 			''
-		) }${ DOCUMENTS_PATH }/${ encodeURIComponent( documentId ) }`
+		) }${ DOCUMENTS_PATH }/${ encodePathSegment( documentId ) }`
 	);
 
 	if ( apiSettings?.nonce ) {
@@ -118,11 +119,11 @@ export const buildWooPaymentsDocumentUrl = ( documentId: string ) => {
 	return url.toString();
 };
 
-export const validateWooPaymentsVatNumber = (
+export const validateWooPaymentsVatNumber = async (
 	vatNumber: string
 ): Promise< WooPaymentsVatValidationResponse > =>
 	apiFetch< WooPaymentsVatValidationResponse >( {
-		path: `${ VAT_PATH }/${ encodeURIComponent( vatNumber ) }`,
+		path: `${ VAT_PATH }/${ encodePathSegment( vatNumber ) }`,
 		method: 'GET',
 	} );
 

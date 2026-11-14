@@ -62,6 +62,30 @@ describe( 'WooPayPreview store logo', () => {
 		);
 	} );
 
+	it( 'shows the store name when the stored logo ID cannot stand as one path segment', () => {
+		window.wcSettings = {
+			admin: {
+				woopaymentsSettings: {
+					restUrl: 'https://example.test/shop/?rest_route=/',
+				},
+			},
+		} as typeof window.wcSettings;
+
+		render(
+			<WooPayPreview
+				customMessage=""
+				siteLogoUrl=""
+				storeLogo="."
+				storeName="Example store"
+			/>
+		);
+
+		expect(
+			screen.queryByRole( 'img', { name: 'Store logo' } )
+		).not.toBeInTheDocument();
+		expect( screen.getByText( 'Example store' ) ).toBeInTheDocument();
+	} );
+
 	it( 'shows the store name when no REST root and no site logo exist', () => {
 		render(
 			<WooPayPreview
