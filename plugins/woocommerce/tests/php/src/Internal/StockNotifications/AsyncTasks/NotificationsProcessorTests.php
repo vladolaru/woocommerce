@@ -52,14 +52,7 @@ class NotificationsProcessorTests extends \WC_Unit_Test_Case {
 		$this->wp_mail_result = true;
 		add_filter( 'pre_wp_mail', array( $this, 'short_circuit_wp_mail' ) );
 
-		$eligibility_service = new EligibilityService();
-		$eligibility_service->init( new StockManagementHelper() );
-		$job_manager         = new JobManager();
-		$cycle_state_service = new CycleStateService();
-		$email_manager       = new EmailManager();
-		$email_manager->init();
-		$this->sut = new NotificationsProcessor();
-		$this->sut->init( $eligibility_service, $job_manager, $cycle_state_service, $email_manager );
+		$this->sut = $this->create_processor();
 
 		// Rebuild the `WC_Emails` singleton so the BIS email registered above is part of it.
 		$this->reset_email_singleton();
@@ -580,6 +573,7 @@ class NotificationsProcessorTests extends \WC_Unit_Test_Case {
 			$notification->set_status( NotificationStatus::ACTIVE );
 			$ids[] = $notification->save();
 		}
+		$this->sut = $this->create_processor();
 
 		$this->sut->process_batch( $product->get_id() );
 
@@ -842,6 +836,7 @@ class NotificationsProcessorTests extends \WC_Unit_Test_Case {
 		$product = WC_Helper_Product::create_simple_product();
 		$product->set_stock_status( ProductStockStatus::OUT_OF_STOCK );
 		$product->save();
+		$this->sut = $this->create_processor();
 
 		$this->sut->process_batch( $product->get_id() );
 
@@ -853,6 +848,8 @@ class NotificationsProcessorTests extends \WC_Unit_Test_Case {
 	 * Test process_batch logs a missing product at error level.
 	 */
 	public function test_process_batch_logs_missing_product_at_error_level() {
+		$this->sut = $this->create_processor();
+
 		$this->sut->process_batch( 123 );
 
 		$this->assertLogged( 'error', 'Product 123 not found' );
@@ -870,10 +867,30 @@ class NotificationsProcessorTests extends \WC_Unit_Test_Case {
 				throw new \RuntimeException( 'Callback failed.' );
 			}
 		);
+		$this->sut = $this->create_processor();
 
 		$this->sut->process_batch( $product->get_id() );
 
 		$this->assertLogged( 'error', 'Callback failed.' );
+	}
+
+	/**
+	 * Create the processor under test.
+	 *
+	 * The processor reads the logger when it is built, and LoggerSpyTrait hooks its spy only after setUp(), so a test
+	 * that asserts on logs builds the processor again in its body.
+	 *
+	 * @return NotificationsProcessor
+	 */
+	private function create_processor(): NotificationsProcessor {
+		$eligibility_service = new EligibilityService();
+		$eligibility_service->init( new StockManagementHelper() );
+		$email_manager = new EmailManager();
+		$email_manager->init();
+		$processor = new NotificationsProcessor();
+		$processor->init( $eligibility_service, new JobManager(), new CycleStateService(), $email_manager );
+
+		return $processor;
 	}
 
 	/**

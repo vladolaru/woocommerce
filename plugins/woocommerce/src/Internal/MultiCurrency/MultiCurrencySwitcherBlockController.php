@@ -1,0 +1,254 @@
+<?php
+/**
+ * MultiCurrencySwitcherBlockController class file.
+ */
+
+declare( strict_types = 1 );
+
+namespace Automattic\WooCommerce\Internal\MultiCurrency;
+
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\ServiceFactory;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\SwitcherRenderer;
+use Automattic\WooCommerce\Internal\RegisterHooksInterface;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\RequestContext;
+use Automattic\WooCommerce\Internal\MultiCurrency\Integrations\IntegrationsController;
+
+/**
+ * Registers the `woocommerce-payments/multi-currency-switcher` block, with its editor script and the server-side render
+ * of the switcher.
+ *
+ * @since 11.0.0
+ * @internal
+ */
+class MultiCurrencySwitcherBlockController implements RegisterHooksInterface {
+
+	private const BLOCK_NAME                  = 'woocommerce-payments/multi-currency-switcher';
+	private const EDITOR_SCRIPT_HANDLE        = 'wc-multi-currency-switcher';
+	private const COMPAT_EDITOR_SCRIPT_HANDLE = self::BLOCK_NAME;
+	private const EDITOR_SCRIPT_PATH          = 'assets/client/blocks/multi-currency-switcher.js';
+	private const EDITOR_SCRIPT_ASSET_PATH    = 'assets/client/blocks/multi-currency-switcher.asset.php';
+	private const EDITOR_SCRIPT_DEPENDENCIES  = array(
+		'react-jsx-runtime',
+		'wp-block-editor',
+		'wp-blocks',
+		'wp-components',
+		'wp-i18n',
+		'wp-polyfill',
+		'wp-server-side-render',
+	);
+
+	/**
+	 * Runtime owner arbiter.
+	 *
+	 * @var MultiCurrencyRuntimeArbiter
+	 */
+	private MultiCurrencyRuntimeArbiter $arbiter;
+
+	/**
+	 * Integrations controller.
+	 *
+	 * @var IntegrationsController
+	 */
+	private IntegrationsController $integrations_controller;
+
+	/**
+	 * Multi-Currency service factory.
+	 *
+	 * @var ServiceFactory
+	 */
+	private ServiceFactory $service_factory;
+
+	/**
+	 * Switcher renderer, built on first use.
+	 *
+	 * @var SwitcherRenderer|null
+	 */
+	private ?SwitcherRenderer $switcher_renderer = null;
+
+	/**
+	 * Initialize the class instance.
+	 *
+	 * @internal
+	 *
+	 * @param MultiCurrencyRuntimeArbiter $arbiter                  Runtime owner arbiter.
+	 * @param IntegrationsController      $integrations_controller Integrations controller.
+	 * @param ServiceFactory              $service_factory          Multi-Currency service factory.
+	 */
+	final public function init(
+		MultiCurrencyRuntimeArbiter $arbiter,
+		IntegrationsController $integrations_controller,
+		ServiceFactory $service_factory
+	): void {
+		$this->arbiter                 = $arbiter;
+		$this->integrations_controller = $integrations_controller;
+		$this->service_factory         = $service_factory;
+	}
+
+	/**
+	 * Register switcher block hooks.
+	 */
+	public function register() {
+		if ( ! $this->arbiter->is_builtin_owner() ) {
+			return;
+		}
+
+		add_action( 'init', array( $this, 'handle_init' ) );
+	}
+
+	/**
+	 * Register the currency switcher block type, unless a block of that name is registered already.
+	 *
+	 * @internal
+	 */
+	public function handle_init(): void {
+		if ( \WP_Block_Type_Registry::get_instance()->is_registered( self::BLOCK_NAME ) ) {
+			return;
+		}
+
+		$this->register_editor_script();
+
+		register_block_type(
+			self::BLOCK_NAME,
+			// @phpstan-ignore-next-line argument.type (WordPress accepts integer api_version values and stores them unchanged at runtime.)
+			array(
+				'api_version'     => 3,
+				'editor_script'   => self::EDITOR_SCRIPT_HANDLE,
+				'render_callback' => array( $this, 'render_block_widget' ),
+				'attributes'      => self::get_block_attributes(),
+			)
+		);
+	}
+
+	/**
+	 * Register the editor-only switcher block script.
+	 */
+	private function register_editor_script(): void {
+		if ( ! wp_script_is( self::EDITOR_SCRIPT_HANDLE, 'registered' ) ) {
+			$asset_data_path = WC()->plugin_path() . '/' . self::EDITOR_SCRIPT_ASSET_PATH;
+			$asset_data      = array();
+
+			if ( file_exists( $asset_data_path ) ) {
+				$loaded_asset_data = require $asset_data_path;
+
+				if ( is_array( $loaded_asset_data ) ) {
+					$asset_data = $loaded_asset_data;
+				}
+			}
+
+			$asset_dependencies = $asset_data['dependencies'] ?? null;
+			$dependencies       = self::resolve_editor_script_dependencies( $asset_dependencies );
+			$version            = isset( $asset_data['version'] ) && is_string( $asset_data['version'] ) && '' !== $asset_data['version']
+				? $asset_data['version']
+				: WC_VERSION;
+
+			wp_register_script(
+				self::EDITOR_SCRIPT_HANDLE,
+				WC()->plugin_url() . '/' . self::EDITOR_SCRIPT_PATH,
+				$dependencies,
+				$version,
+				true
+			);
+			wp_set_script_translations( self::EDITOR_SCRIPT_HANDLE, 'woocommerce' );
+		}
+
+		wp_register_script( self::COMPAT_EDITOR_SCRIPT_HANDLE, false, array( self::EDITOR_SCRIPT_HANDLE ), WC_VERSION, true );
+	}
+
+	/**
+	 * Resolve build-derived editor dependencies with a complete runtime fallback.
+	 *
+	 * @param mixed $asset_dependencies Dependencies from generated asset metadata.
+	 * @return string[]
+	 */
+	private static function resolve_editor_script_dependencies( $asset_dependencies ): array {
+		$metadata_dependencies = is_array( $asset_dependencies )
+			? array_values(
+				array_filter(
+					$asset_dependencies,
+					static function ( $dependency ): bool {
+						return is_string( $dependency ) && '' !== $dependency;
+					}
+				)
+			)
+			: array();
+
+		return array_values(
+			array_unique( array_merge( self::EDITOR_SCRIPT_DEPENDENCIES, $metadata_dependencies ) )
+		);
+	}
+
+	/**
+	 * Render the currency switcher block.
+	 *
+	 * @param mixed $block_attributes Block attributes.
+	 * @return string
+	 */
+	public function render_block_widget( $block_attributes ): string {
+		return $this->get_switcher_renderer()->get_block_markup(
+			is_array( $block_attributes ) ? $block_attributes : array(),
+			RequestContext::get_current_query_args(),
+			$this->integrations_controller->should_disable_currency_switching()
+		);
+	}
+
+	/**
+	 * Get the switcher block attributes and their defaults.
+	 *
+	 * Saved blocks store only attributes that differ from these defaults, so they stay as the extension registered them, styling included; dropping one changes how existing blocks render.
+	 *
+	 * @return array<string,array<string,mixed>>
+	 */
+	private static function get_block_attributes(): array {
+		return array(
+			'symbol'          => array(
+				'type'    => 'boolean',
+				'default' => true,
+			),
+			'flag'            => array(
+				'type'    => 'boolean',
+				'default' => false,
+			),
+			'fontSize'        => array(
+				'type'    => 'integer',
+				'default' => 14,
+			),
+			'fontLineHeight'  => array(
+				'type'    => 'number',
+				'default' => 1.5,
+			),
+			'fontColor'       => array(
+				'type'    => 'string',
+				'default' => '#000000',
+			),
+			'border'          => array(
+				'type'    => 'boolean',
+				'default' => true,
+			),
+			'borderRadius'    => array(
+				'type'    => 'integer',
+				'default' => 3,
+			),
+			'borderColor'     => array(
+				'type'    => 'string',
+				'default' => '#000000',
+			),
+			'backgroundColor' => array(
+				'type'    => 'string',
+				'default' => 'transparent',
+			),
+		);
+	}
+
+	/**
+	 * Get the switcher renderer.
+	 *
+	 * @return SwitcherRenderer
+	 */
+	private function get_switcher_renderer(): SwitcherRenderer {
+		if ( null === $this->switcher_renderer ) {
+			$this->switcher_renderer = $this->service_factory->create_switcher_renderer();
+		}
+
+		return $this->switcher_renderer;
+	}
+}

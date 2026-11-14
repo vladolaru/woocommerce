@@ -1,0 +1,1518 @@
+<?php
+declare( strict_types = 1 );
+
+namespace Automattic\WooCommerce\Tests\Internal\MultiCurrency;
+
+use Automattic\WooCommerce\Internal\MultiCurrency\Integrations\IntegrationsController;
+use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
+use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencySelectedCurrencyController;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\GeolocationService;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\RequestContext;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\ServiceFactory;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\SelectedCurrencyPersistenceService;
+use WC_Session;
+use WC_Unit_Test_Case;
+
+// phpcs:disable Generic.Files.OneObjectStructurePerFile.MultipleFound,Squiz.Classes.ClassFileName.NoMatch,SlevomatCodingStandard.Files.TypeNameMatchesFileName.NoMatchBetweenTypeNameAndFileName
+
+/**
+ * In-memory cookie-style session handler for selected-currency readiness tests.
+ */
+class MultiCurrencySelectedCurrencyCookieSessionTestDouble extends WC_Session {
+
+	/**
+	 * Initialize the session without persistence.
+	 *
+	 * @internal
+	 */
+	final public function init(): void {
+		$this->set( 'wcpay_currency', 'GBP' );
+	}
+}
+
+/**
+ * In-memory token-style session handler for selected-currency readiness tests.
+ *
+ * This is an identity-only stand-in for a token-selected handler; it intentionally
+ * reuses the in-memory behavior above and does not model token semantics.
+ */
+class MultiCurrencySelectedCurrencyTokenSessionTestDouble extends MultiCurrencySelectedCurrencyCookieSessionTestDouble {}
+
+/**
+ * Tests for the MultiCurrencySelectedCurrencyController class.
+ */
+class MultiCurrencySelectedCurrencyControllerTest extends WC_Unit_Test_Case {
+
+	/**
+	 * Hooks touched by the selected currency controller.
+	 *
+	 * @var string[]
+	 */
+	private array $hooks = array(
+		'init',
+		'rest_pre_dispatch',
+		'wp_footer',
+		'woocommerce_created_customer',
+		'woocommerce_edit_account_form',
+		'woocommerce_init',
+		'woocommerce_load_cart_from_session',
+		'woocommerce_rest_prepare_customer',
+		'woocommerce_save_account_details',
+	);
+
+	/**
+	 * Original WooCommerce session.
+	 *
+	 * @var mixed
+	 */
+	private $original_session;
+
+	/**
+	 * Original WooCommerce cart.
+	 *
+	 * @var mixed
+	 */
+	private $original_cart;
+
+	/**
+	 * Set up test fixtures.
+	 */
+	public function set_up(): void {
+		parent::set_up();
+
+		$this->original_session = WC()->session;
+		$this->original_cart    = WC()->cart;
+	}
+
+	/**
+	 * Tear down test fixtures.
+	 */
+	public function tear_down(): void {
+		foreach ( $this->hooks as $hook ) {
+			remove_all_filters( $hook );
+		}
+
+		unset(
+			$_GET['currency'],
+			$_GET['min_price'],
+			$_GET['max_price'],
+			$_GET['rest_route'],
+			$_GET['pay_for_order'],
+			$_GET['is_mc_onboarding_simulation'],
+			$_GET['enable_auto_currency'],
+			$_GET['enable_storefront_switcher'],
+			$_SERVER['HTTP_REFERER'],
+			$_POST['wcpay_selected_currency'],
+			$_COOKIE[ 'wp_woocommerce_session_' . COOKIEHASH ]
+		);
+		remove_all_filters( 'wcpay_multi_currency_override_notice_country' );
+		remove_all_filters( 'wcpay_multi_currency_override_notice_currency_name' );
+		update_option( 'woocommerce_currency', 'USD' );
+		delete_option( 'wcpay_multi_currency_enable_auto_currency' );
+		delete_option( 'wcpay_multi_currency_rendering_mode' );
+		WC()->session = $this->original_session;
+		WC()->cart    = $this->original_cart;
+
+		parent::tear_down();
+	}
+
+	/**
+	 * @testdox Should register exactly the selected currency hooks the owner allows, once: $_dataName.
+	 * @dataProvider provide_selected_currency_hooks_owners
+	 *
+	 * @param string                            $owner    Runtime owner.
+	 * @param array<string,array<string,int[]>> $expected Every hook the controller registers.
+	 */
+	public function test_registers_the_selected_currency_hooks_its_owner_allows( string $owner, array $expected ): void {
+		$sut = $this->create_controller( $owner, $this->create_persistence_service(), $this->create_request_context( true, false ) );
+
+		$sut->register();
+		$sut->register();
+
+		$this->assertSame( $expected, RegisteredHooks::of( $sut ) );
+	}
+
+	/**
+	 * Owners and the hooks each registers in a frontend context: the entry, account and geolocation hooks under core, nothing under the extension.
+	 *
+	 * @return array<string,array<int,mixed>>
+	 */
+	public function provide_selected_currency_hooks_owners(): array {
+		return array(
+			'core owns'          => array(
+				MultiCurrencyRuntimeArbiter::OWNER_BUILTIN,
+				array(
+					'init'                               => array(
+						'handle_geolocation_init' => array( 12, 1 ),
+						'handle_init'             => array( 11, 1 ),
+						'handle_simulation_init'  => array( 13, 1 ),
+					),
+					'woocommerce_created_customer'       => array( 'handle_woocommerce_created_customer' => array( 10, 1 ) ),
+					'woocommerce_edit_account_form'      => array( 'handle_woocommerce_edit_account_form' => array( 10, 1 ) ),
+					'woocommerce_load_cart_from_session' => array( 'handle_woocommerce_load_cart_from_session' => array( 10, 0 ) ),
+					'woocommerce_rest_prepare_customer'  => array( 'handle_woocommerce_rest_prepare_customer' => array( 10, 3 ) ),
+					'woocommerce_save_account_details'   => array( 'handle_woocommerce_save_account_details' => array( 10, 1 ) ),
+				),
+			),
+			'the extension owns' => array( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION, array() ),
+		);
+	}
+
+	/**
+	 * @testdox Should register only account hooks in blocked request context.
+	 */
+	public function test_registers_only_account_hooks_in_blocked_request_context(): void {
+		$service = $this->create_persistence_service();
+		$sut     = $this->create_controller(
+			MultiCurrencyRuntimeArbiter::OWNER_BUILTIN,
+			$service,
+			$this->create_request_context( false )
+		);
+
+		$sut->register();
+
+		$this->assertFalse( has_action( 'init', array( $sut, 'handle_init' ) ) );
+		$this->assertFalse( has_action( 'init', array( $sut, 'handle_geolocation_init' ) ) );
+		$this->assertFalse( has_action( 'woocommerce_load_cart_from_session', array( $sut, 'handle_woocommerce_load_cart_from_session' ) ) );
+		$this->assertFalse( has_filter( 'rest_pre_dispatch', array( $sut, 'handle_store_api_rest_pre_dispatch' ) ) );
+		$this->assertFalse( has_action( 'woocommerce_init', array( $sut, 'handle_woocommerce_init' ) ) );
+		$this->assertFalse( has_action( 'woocommerce_created_customer', array( $sut, 'handle_woocommerce_created_customer' ) ) );
+		$this->assertSame( 10, has_action( 'woocommerce_edit_account_form', array( $sut, 'handle_woocommerce_edit_account_form' ) ) );
+		$this->assertSame( 10, has_action( 'woocommerce_save_account_details', array( $sut, 'handle_woocommerce_save_account_details' ) ) );
+	}
+
+	/**
+	 * @testdox Should register writer hooks in Store API request context.
+	 */
+	public function test_registers_writer_hooks_for_store_api_context(): void {
+		$service = $this->create_persistence_service();
+		$sut     = $this->create_controller(
+			MultiCurrencyRuntimeArbiter::OWNER_BUILTIN,
+			$service,
+			$this->create_request_context( true, true )
+		);
+
+		$sut->register();
+
+		$this->assertSame( 10, has_filter( 'rest_pre_dispatch', array( $sut, 'handle_store_api_rest_pre_dispatch' ) ) );
+		$this->assertFalse( has_action( 'woocommerce_load_cart_from_session', array( $sut, 'handle_woocommerce_load_cart_from_session' ) ) );
+		$this->assertFalse( has_action( 'woocommerce_init', array( $sut, 'handle_woocommerce_init' ) ) );
+		$this->assertSame( 11, has_action( 'init', array( $sut, 'handle_init' ) ) );
+		$this->assertSame( 12, has_action( 'init', array( $sut, 'handle_geolocation_init' ) ) );
+		$this->assertSame( 10, has_action( 'woocommerce_created_customer', array( $sut, 'handle_woocommerce_created_customer' ) ) );
+	}
+
+	/**
+	 * @testdox Should keep a guest's selected currency on the account created at checkout when no payments provider is connected.
+	 *
+	 * Client 11.1.0 copies the session currency to the new customer unconditionally (includes/multi-currency/MultiCurrency.php:269,
+	 * :1123-1128), and Multi-Currency runs on manual rates without a provider. Without the copy, the checkout's login leaves the new
+	 * customer with no stored currency and the order is placed in the store currency.
+	 */
+	public function test_keeps_a_guest_selected_currency_on_the_account_created_at_checkout(): void {
+		update_option( 'woocommerce_currency', 'USD' );
+		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'EUR' ) );
+		update_option( 'wcpay_multi_currency_exchange_rate_eur', 'manual' );
+		update_option( 'wcpay_multi_currency_manual_rate_eur', '0.9' );
+		WC()->session = new \WC_Mock_Session_Handler();
+		WC()->session->set( 'wcpay_currency', 'EUR' );
+		$customer_id = self::factory()->user->create( array( 'role' => 'customer' ) );
+		$service     = wc_get_container()->get( ServiceFactory::class )->create_selected_currency_persistence_service();
+		$sut         = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $service, $this->create_request_context( true, false ) );
+
+		$sut->handle_woocommerce_created_customer( $customer_id );
+
+		$this->assertSame( 'EUR', get_user_meta( $customer_id, 'wcpay_currency', true ) );
+	}
+
+	/**
+	 * @testdox Should not expose selected-currency provider meta in customer REST responses.
+	 */
+	public function test_does_not_expose_selected_currency_provider_meta_in_customer_rest_responses(): void {
+		$user_id = self::factory()->user->create();
+		update_user_meta( $user_id, 'wcpay_currency', 'GBP' );
+		wp_set_current_user( 1 );
+		$service = $this->create_persistence_service();
+		$sut     = $this->create_controller(
+			MultiCurrencyRuntimeArbiter::OWNER_BUILTIN,
+			$service,
+			$this->create_request_context( true, false )
+		);
+		$sut->register();
+
+		$request  = new \WP_REST_Request( 'GET', '/wc/v2/customers/' . $user_id );
+		$response = ( new \WC_REST_Customers_V2_Controller() )->prepare_item_for_response( get_user_by( 'id', $user_id ), $request );
+		$meta     = $response->get_data()['meta_data'];
+
+		$this->assertNotContains( 'wcpay_currency', wp_list_pluck( $meta, 'key' ) );
+	}
+
+	/**
+	 * @testdox Should remove array-shaped provider meta and preserve non-response filter values.
+	 */
+	public function test_removes_array_shaped_selected_currency_provider_meta_from_customer_rest_responses(): void {
+		$service  = $this->create_persistence_service();
+		$sut      = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $service );
+		$user     = self::factory()->user->create_and_get();
+		$request  = new \WP_REST_Request( 'GET', '/wc/v2/customers/' . $user->ID );
+		$response = new \WP_REST_Response(
+			array(
+				'meta_data' => array(
+					array(
+						'id'    => 1,
+						'key'   => 'wcpay_currency',
+						'value' => 'GBP',
+					),
+					array(
+						'id'    => 2,
+						'key'   => 'custom_meta',
+						'value' => 'preserve',
+					),
+				),
+				'sentinel'  => 'preserve',
+			),
+			207
+		);
+		$response->header( 'X-Task-0-12', 'preserve' );
+		$response->add_link( 'self', 'https://example.test/customers/' . $user->ID );
+
+		$filtered = $sut->handle_woocommerce_rest_prepare_customer( $response, $user, $request );
+
+		$this->assertSame(
+			array(
+				array(
+					'id'    => 2,
+					'key'   => 'custom_meta',
+					'value' => 'preserve',
+				),
+			),
+			$filtered->get_data()['meta_data']
+		);
+		$this->assertSame( 'preserve', $filtered->get_data()['sentinel'] );
+		$this->assertSame( 207, $filtered->get_status() );
+		$this->assertSame( 'preserve', $filtered->get_headers()['X-Task-0-12'] );
+		$this->assertArrayHasKey( 'self', $filtered->get_links() );
+		$this->assertSame( 'unexpected filter value', $sut->handle_woocommerce_rest_prepare_customer( 'unexpected filter value', $user, $request ) );
+	}
+
+	/**
+	 * @testdox Should reset selected-currency state once when the classic cart session is ready.
+	 */
+	public function test_classic_session_readiness_resets_selected_currency_state_once(): void {
+		$service = $this->create_persistence_service();
+		$sut     = $this->create_controller(
+			MultiCurrencyRuntimeArbiter::OWNER_BUILTIN,
+			$service,
+			$this->create_request_context( true, false )
+		);
+		$session = new MultiCurrencySelectedCurrencyCookieSessionTestDouble();
+		$session->init();
+
+		WC()->session = $session;
+
+		$sut->handle_woocommerce_load_cart_from_session();
+		$sut->handle_woocommerce_load_cart_from_session();
+
+		$this->assertSame( $session, WC()->session, 'Classic readiness should preserve the initialized session.' );
+		$this->assertSame( 'GBP', WC()->session->get( 'wcpay_currency' ), 'Classic readiness should preserve the session currency.' );
+		$this->assertSame( 1, $service->state_reset_calls, 'Classic readiness should reset selected-currency state once per request.' );
+	}
+
+	/**
+	 * @testdox Should initialize the selected Store API session handler and reset state once without constructing a cart.
+	 * @dataProvider store_api_session_handler_data
+	 *
+	 * @param string $session_handler_class Session handler class.
+	 * @phpstan-param class-string<WC_Session> $session_handler_class
+	 */
+	public function test_store_api_pre_dispatch_initializes_session_and_resets_state_once( string $session_handler_class ): void {
+		$service           = $this->create_persistence_service();
+		$sut               = $this->create_controller(
+			MultiCurrencyRuntimeArbiter::OWNER_BUILTIN,
+			$service,
+			$this->create_request_context( true, true )
+		);
+		$result            = new \WP_REST_Response( array( 'sentinel' => true ) );
+		$request           = new \WP_REST_Request( 'GET', '/wc/store/v1/products' );
+		$duplicate_request = new \WP_REST_Request( 'GET', '/wc/store/v1/products' );
+		$server            = rest_get_server();
+		$cart              = new \stdClass();
+
+		$session_handler_filter = static function ( $current_session_handler ) use ( $session_handler_class ) {
+			unset( $current_session_handler );
+
+			return $session_handler_class;
+		};
+
+		add_filter( 'woocommerce_session_handler', $session_handler_filter, 10, 1 );
+		WC()->session = null;
+		WC()->cart    = $cart;
+
+		try {
+			$first_result        = $sut->handle_store_api_rest_pre_dispatch( $result, $server, $request );
+			$initialized_session = WC()->session;
+			$second_result       = $sut->handle_store_api_rest_pre_dispatch( $result, $server, $duplicate_request );
+
+			$this->assertSame( $result, $first_result, 'Store API readiness should return the incoming result unchanged.' );
+			$this->assertSame( $result, $second_result, 'Duplicate Store API dispatch should return the incoming result unchanged.' );
+			$this->assertSame( $session_handler_class, get_class( WC()->session ), 'WooCommerce should initialize the exact selected session handler.' );
+			$this->assertSame( $initialized_session, WC()->session, 'Duplicate Store API dispatch should preserve the initialized session identity.' );
+			$this->assertSame( 'GBP', WC()->session->get( 'wcpay_currency' ), 'Store API readiness should expose the initialized session currency.' );
+			$this->assertSame( 1, $service->state_reset_calls, 'Store API readiness should reset selected-currency state once per request.' );
+			$this->assertSame( $cart, WC()->cart, 'Store API readiness should not initialize or replace the cart.' );
+		} finally {
+			remove_filter( 'woocommerce_session_handler', $session_handler_filter, 10 );
+			WC()->session = $this->original_session;
+			WC()->cart    = $this->original_cart;
+		}
+	}
+
+	/**
+	 * @testdox Should pass through non-Store REST requests without initializing session state.
+	 */
+	public function test_store_api_pre_dispatch_ignores_non_store_request(): void {
+		$service = $this->create_persistence_service();
+		$sut     = $this->create_controller(
+			MultiCurrencyRuntimeArbiter::OWNER_BUILTIN,
+			$service,
+			$this->create_request_context( true, true )
+		);
+		$result  = new \WP_REST_Response( array( 'sentinel' => true ) );
+		$request = new \WP_REST_Request( 'GET', '/wp/v2/posts' );
+		$cart    = new \stdClass();
+
+		WC()->session = null;
+		WC()->cart    = $cart;
+
+		try {
+			$actual_result = $sut->handle_store_api_rest_pre_dispatch( $result, rest_get_server(), $request );
+
+			$this->assertSame( $result, $actual_result, 'Non-Store REST requests should pass through unchanged.' );
+			$this->assertNull( WC()->session, 'Non-Store REST requests should not initialize a WooCommerce session.' );
+			$this->assertSame( 0, $service->state_reset_calls, 'Non-Store REST requests should not reset selected-currency state.' );
+			$this->assertSame( $cart, WC()->cart, 'Non-Store REST requests should not initialize or replace the cart.' );
+		} finally {
+			WC()->session = $this->original_session;
+			WC()->cart    = $this->original_cart;
+		}
+	}
+
+	/**
+	 * Provide cookie-style and token-style in-memory Store API session handlers.
+	 *
+	 * @return array<string,array{class-string<WC_Session>}>
+	 */
+	public static function store_api_session_handler_data(): array {
+		return array(
+			'cookie-style handler' => array( MultiCurrencySelectedCurrencyCookieSessionTestDouble::class ),
+			'token-style handler'  => array( MultiCurrencySelectedCurrencyTokenSessionTestDouble::class ),
+		);
+	}
+
+	/**
+	 * @testdox Should update currency from URL parameter.
+	 */
+	public function test_updates_currency_from_url_parameter(): void {
+		$service          = $this->create_persistence_service();
+		$sut              = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $service );
+		$_GET['currency'] = ' gbp ';
+
+		$sut->handle_init();
+
+		$this->assertSame( array( 'GBP' ), $service->updated_currencies );
+	}
+
+	/**
+	 * @testdox Should leave the selected currency unchanged when a sanitizer filter returns false for the currency argument.
+	 */
+	public function test_leaves_selected_currency_unchanged_when_the_sanitizer_returns_false(): void {
+		$service          = $this->create_persistence_service();
+		$sut              = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $service );
+		$_GET['currency'] = 'gbp';
+		add_filter(
+			'sanitize_text_field',
+			static function ( $filtered, $str ) {
+				return 'gbp' === $str ? false : $filtered;
+			},
+			10,
+			2
+		);
+
+		$sut->handle_init();
+
+		$this->assertSame( array(), $service->updated_currencies );
+	}
+
+	/**
+	 * @testdox Should update currency from geolocation when automatic switching is enabled.
+	 */
+	public function test_updates_currency_from_geolocation_when_auto_currency_is_enabled(): void {
+		update_option( 'wcpay_multi_currency_enable_auto_currency', 'yes' );
+		$service = $this->create_persistence_service();
+		$sut     = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $service, null, $this->create_geolocation_service( 'CAD' ) );
+
+		$sut->handle_geolocation_init();
+
+		$this->assertSame( array( 'CAD' ), $service->updated_currencies );
+		$this->assertSame( array( false ), $service->persist_flags );
+	}
+
+	/**
+	 * @testdox Should not update the geolocation currency: $_dataName.
+	 * @dataProvider provide_geolocation_update_blockers
+	 *
+	 * @param array<string,string> $options Options the store holds.
+	 * @param array<string,string> $query   Query arguments of the request.
+	 */
+	public function test_does_not_update_geolocation_currency_while_blocked( array $options, array $query ): void {
+		foreach ( $options as $name => $value ) {
+			update_option( $name, $value );
+		}
+		$service = $this->create_persistence_service();
+		$sut     = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $service, null, $this->create_geolocation_service( 'CAD' ) );
+		foreach ( $query as $name => $value ) {
+			$_GET[ $name ] = $value;
+		}
+
+		$sut->handle_geolocation_init();
+
+		$this->assertSame( array(), $service->updated_currencies );
+	}
+
+	/**
+	 * Blockers of the geolocation update: automatic switching off, and switching disabled on the order-pay page.
+	 *
+	 * @return array<string,array{0:array<string,string>,1:array<string,string>}>
+	 */
+	public static function provide_geolocation_update_blockers(): array {
+		return array(
+			'automatic switching off' => array( array(), array() ),
+			'switching disabled'      => array( array( 'wcpay_multi_currency_enable_auto_currency' => 'yes' ), array( 'pay_for_order' => '1' ) ),
+		);
+	}
+
+	/**
+	 * @testdox Should switch currency by geolocation on the order-pay page when a callback turns the switching decision off.
+	 *
+	 * Client 11.1.0 seeds the decision with true on the order-pay page and returns the filter's answer
+	 * (`includes/multi-currency/Compatibility.php:109-146`), read before the geolocation switch (`MultiCurrency.php:888`).
+	 */
+	public function test_order_pay_page_geolocation_switch_follows_the_switching_decision_filter(): void {
+		update_option( 'wcpay_multi_currency_enable_auto_currency', 'yes' );
+		$_GET['pay_for_order'] = 'true';
+		$service               = $this->create_persistence_service();
+		$sut                   = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $service, null, $this->create_geolocation_service( 'CAD' ) );
+		$seen                  = array();
+		add_filter(
+			'wcpay_multi_currency_should_disable_currency_switching',
+			static function ( $should_disable ) use ( &$seen ) {
+				$seen[] = $should_disable;
+				return false;
+			}
+		);
+
+		$sut->handle_geolocation_init();
+
+		$this->assertSame( array( true ), $seen );
+		$this->assertSame( array( 'CAD' ), $service->updated_currencies );
+	}
+
+	/**
+	 * @testdox Should not overwrite stored currency with geolocation currency.
+	 */
+	public function test_does_not_overwrite_stored_currency_with_geolocation_currency(): void {
+		update_option( 'wcpay_multi_currency_enable_auto_currency', 'yes' );
+		$service = $this->create_persistence_service( true, 'GBP', true );
+		$sut     = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $service, null, $this->create_geolocation_service( 'CAD' ) );
+
+		$sut->handle_geolocation_init();
+
+		$this->assertSame( array(), $service->updated_currencies );
+	}
+
+	/**
+	 * @testdox Should skip geolocation persistence in cache mode without an active session.
+	 */
+	public function test_skips_geolocation_persistence_in_cache_mode_without_active_session(): void {
+		update_option( 'wcpay_multi_currency_enable_auto_currency', 'yes' );
+		update_option( 'wcpay_multi_currency_rendering_mode', 'cache' );
+		WC()->session = $this->create_session( false );
+		$service      = $this->create_persistence_service();
+		$sut          = $this->create_controller(
+			MultiCurrencyRuntimeArbiter::OWNER_BUILTIN,
+			$service,
+			$this->create_request_context( true, false ),
+			$this->create_geolocation_service( 'CAD' )
+		);
+
+		$sut->handle_geolocation_init();
+
+		$this->assertSame( array(), $service->updated_currencies );
+	}
+
+	/**
+	 * @testdox Should persist geolocation currency in cache mode for Store API requests.
+	 */
+	public function test_persists_geolocation_currency_in_cache_mode_for_store_api_requests(): void {
+		update_option( 'wcpay_multi_currency_enable_auto_currency', 'yes' );
+		update_option( 'wcpay_multi_currency_rendering_mode', 'cache' );
+		WC()->session = $this->create_session( false );
+		$service      = $this->create_persistence_service();
+		$sut          = $this->create_controller(
+			MultiCurrencyRuntimeArbiter::OWNER_BUILTIN,
+			$service,
+			$this->create_request_context( true, true ),
+			$this->create_geolocation_service( 'CAD' )
+		);
+
+		$sut->handle_geolocation_init();
+
+		$this->assertSame( array( 'CAD' ), $service->updated_currencies );
+		$this->assertSame( array( false ), $service->persist_flags );
+	}
+
+	/**
+	 * @testdox Should keep a guest's chosen currency against geolocation when $scenario.
+	 *
+	 * A guest picks EUR on a shop page; the session row holds it and the browser sends its cookie back. WooCommerce loads
+	 * no session at init on a Store API request, so geolocation runs (init 12) before the route loads the session. Client
+	 * 11.1.0 reads the stored choice through `get_stored_currency_code()`, which loads the session first
+	 * (includes/multi-currency/MultiCurrency.php:888-911, :1813-1824), and keeps EUR.
+	 *
+	 * @dataProvider provider_guest_session_state_at_geolocation
+	 *
+	 * @param string $scenario       Scenario label.
+	 * @param bool   $session_loaded Whether the session is loaded before geolocation runs.
+	 */
+	public function test_keeps_a_guest_chosen_currency_against_geolocation( string $scenario, bool $session_loaded ): void {
+		unset( $scenario );
+		update_option( 'woocommerce_currency', 'USD' );
+		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'EUR', 'CAD' ) );
+		update_option( 'wcpay_multi_currency_exchange_rate_eur', 'manual' );
+		update_option( 'wcpay_multi_currency_manual_rate_eur', '0.9' );
+		update_option( 'wcpay_multi_currency_exchange_rate_cad', 'manual' );
+		update_option( 'wcpay_multi_currency_manual_rate_cad', '1.37' );
+		update_option( 'wcpay_multi_currency_enable_auto_currency', 'yes' );
+		wp_set_current_user( 0 );
+		// The real cookie-backed handler, as a store runs it.
+		remove_filter( 'woocommerce_session_handler', array( $this, 'set_mock_session_handler' ) );
+		$cookie = array();
+		add_filter(
+			'woocommerce_set_cookie_enabled',
+			static function ( $enabled, $name, $value ) use ( &$cookie ) {
+				unset( $enabled );
+				$cookie = array( $name => $value );
+
+				return false;
+			},
+			10,
+			3
+		);
+		$shop_page_session = new \WC_Session_Handler();
+		$shop_page_session->init();
+		$shop_page_session->set( 'wcpay_currency', 'EUR' );
+		$shop_page_session->set_customer_session_cookie( true );
+		$shop_page_session->save_data();
+		$_COOKIE      = array_merge( $_COOKIE, $cookie );
+		WC()->session = null;
+		if ( $session_loaded ) {
+			WC()->initialize_session();
+		}
+		$service = wc_get_container()->get( ServiceFactory::class )->create_selected_currency_persistence_service();
+		$sut     = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $service, $this->create_request_context( true, true ), $this->create_geolocation_service( 'CAD' ) );
+
+		$sut->handle_init();
+		$sut->handle_geolocation_init();
+		$sut->handle_store_api_rest_pre_dispatch( null, null, new \WP_REST_Request( 'POST', '/wc/store/v1/cart/add-item' ) );
+
+		$this->assertSame( 'EUR', WC()->session->get( 'wcpay_currency' ), 'The session must keep the chosen EUR.' );
+		$this->assertSame( 'EUR', $service->get_selected_currency_code(), 'The Store API request must price in the chosen EUR.' );
+	}
+
+	/**
+	 * Session states at geolocation time.
+	 *
+	 * @return array<string,array{0:string,1:bool}>
+	 */
+	public function provider_guest_session_state_at_geolocation(): array {
+		return array(
+			'the Store API request has not loaded the session yet' => array( 'the Store API request has not loaded the session yet', false ),
+			'a classic page request has loaded the session'        => array( 'a classic page request has loaded the session', true ),
+		);
+	}
+
+	/**
+	 * @testdox Should register the geolocation notice once while automatic switching passes its guards, and not while switching is disabled: $_dataName.
+	 * @dataProvider provide_geolocation_notice_requests
+	 *
+	 * @param array<string,string> $query    Query arguments of the request.
+	 * @param int|false            $expected The notice's priority on wp_footer, or false when it is not registered.
+	 */
+	public function test_registers_geolocation_notice_only_when_switching_passes_its_guards( array $query, $expected ): void {
+		update_option( 'wcpay_multi_currency_enable_auto_currency', 'yes' );
+		$service = $this->create_persistence_service();
+		$sut     = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $service, null, $this->create_geolocation_service( 'CAD', 'CA' ) );
+		foreach ( $query as $name => $value ) {
+			$_GET[ $name ] = $value;
+		}
+
+		$sut->handle_geolocation_init();
+		$sut->handle_geolocation_init();
+
+		$this->assertSame( $expected, has_action( 'wp_footer', array( $sut, 'handle_wp_footer' ) ) );
+	}
+
+	/**
+	 * Requests for the geolocation notice: one that passes the guards, and the order-pay page, where switching is disabled.
+	 *
+	 * @return array<string,array{0:array<string,string>,1:int|false}>
+	 */
+	public static function provide_geolocation_notice_requests(): array {
+		return array(
+			'guards pass'        => array( array(), 10 ),
+			'switching disabled' => array( array( 'pay_for_order' => '1' ), false ),
+		);
+	}
+
+	/**
+	 * @testdox Should render geolocation currency update notice.
+	 */
+	public function test_renders_geolocation_currency_update_notice(): void {
+		$service = $this->create_persistence_service( true, 'CAD' );
+		$sut     = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $service, null, $this->create_geolocation_service( 'CAD', 'CA' ) );
+
+		ob_start();
+		$sut->handle_wp_footer();
+		$markup = (string) ob_get_clean();
+
+		$store_currency = get_woocommerce_currency();
+		$currencies     = get_woocommerce_currencies();
+
+		$this->assertStringContainsString( 'woocommerce-store-notice demo_store', $markup );
+		$this->assertStringContainsString( 'visiting from Canada', $markup );
+		$this->assertStringContainsString( '?currency=' . $store_currency, $markup );
+		$this->assertStringContainsString( 'Use ' . $currencies[ $store_currency ] . ' instead.', $markup );
+		$this->assertStringContainsString( 'woocommerce-store-notice__dismiss-link', $markup );
+	}
+
+	/**
+	 * @testdox Should name the store's own currency in the geolocation notice while prices are converted.
+	 *
+	 * Client 11.1.0 MultiCurrency.php:1064 reads the store currency from the woocommerce_currency option; on the
+	 * storefront get_woocommerce_currency() returns the visitor's converted currency, which hid the notice.
+	 */
+	public function test_renders_geolocation_notice_with_store_currency_while_prices_are_converted(): void {
+		update_option( 'woocommerce_currency', 'USD' );
+		$converted_currency = static function () {
+			return 'CAD';
+		};
+		add_filter( 'woocommerce_currency', $converted_currency, 900 );
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $this->create_persistence_service( true, 'CAD' ), null, $this->create_geolocation_service( 'CAD', 'CA' ) );
+
+		ob_start();
+		$sut->handle_wp_footer();
+		$markup = (string) ob_get_clean();
+		remove_filter( 'woocommerce_currency', $converted_currency, 900 );
+
+		$this->assertStringContainsString( 'visiting from Canada', $markup );
+		$this->assertStringContainsString( '?currency=USD', $markup );
+		$this->assertStringContainsString( 'Use United States (US) dollar instead.', $markup );
+	}
+
+	/**
+	 * @testdox Should not render the geolocation notice: $_dataName.
+	 * @dataProvider provide_selections_without_a_geolocation_notice
+	 *
+	 * @param string $selected            Selected currency.
+	 * @param string $geolocated_currency Currency of the shopper's location.
+	 * @param string $country             The shopper's country.
+	 */
+	public function test_does_not_render_geolocation_notice_without_a_geolocated_selection( string $selected, string $geolocated_currency, string $country ): void {
+		$service = $this->create_persistence_service( true, $selected );
+		$sut     = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $service, null, $this->create_geolocation_service( $geolocated_currency, $country ) );
+
+		ob_start();
+		$sut->handle_wp_footer();
+		$markup = (string) ob_get_clean();
+
+		$this->assertSame( '', $markup );
+	}
+
+	/**
+	 * Selections without a notice: the store default currency (USD), and a selected currency other than the geolocated one.
+	 *
+	 * @return array<string,array{0:string,1:string,2:string}>
+	 */
+	public static function provide_selections_without_a_geolocation_notice(): array {
+		return array(
+			'the store default currency' => array( 'USD', 'USD', 'US' ),
+			'another selected currency'  => array( 'CAD', 'EUR', 'FR' ),
+		);
+	}
+
+	/**
+	 * @testdox Should show the simulated automatic-switch notice only with the simulation flag and automatic switching on: $_dataName.
+	 * @dataProvider provide_simulation_requests
+	 *
+	 * @param array<string,string> $query            Query arguments of the request.
+	 * @param int|false            $simulation_footer Priority of the simulation banner on wp_footer, or false.
+	 * @param int|false            $notice_footer     Priority of the geolocation notice on wp_footer, or false.
+	 * @param string[]             $markup            Text the notice renders.
+	 */
+	public function test_simulation_shows_the_auto_switch_notice_only_with_its_flag_and_auto_currency( array $query, $simulation_footer, $notice_footer, array $markup ): void {
+		wp_set_current_user( self::factory()->user->create( array( 'role' => 'shop_manager' ) ) );
+		update_option( 'woocommerce_currency', 'USD' );
+		foreach ( $query as $name => $value ) {
+			$_GET[ $name ] = $value;
+		}
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $this->create_persistence_service( true, 'USD' ), null, $this->create_geolocation_service( 'USD', 'US' ) );
+
+		$sut->handle_simulation_init();
+
+		$this->assertSame( $simulation_footer, has_action( 'wp_footer', array( $sut, 'handle_simulation_wp_footer' ) ) );
+		$this->assertSame( $notice_footer, has_action( 'wp_footer', array( $sut, 'handle_wp_footer' ) ) );
+
+		ob_start();
+		$sut->handle_wp_footer();
+		$rendered = (string) ob_get_clean();
+
+		foreach ( $markup as $text ) {
+			$this->assertStringContainsString( $text, $rendered );
+		}
+	}
+
+	/**
+	 * Simulation requests: the flag with automatic switching on, no flag, and the flag with automatic switching off.
+	 *
+	 * @return array<string,array{0:array<string,string>,1:int|false,2:int|false,3:string[]}>
+	 */
+	public static function provide_simulation_requests(): array {
+		return array(
+			'flag and automatic switching on' => array(
+				array(
+					'is_mc_onboarding_simulation' => '1',
+					'enable_storefront_switcher'  => 'false',
+					'enable_auto_currency'        => 'true',
+				),
+				10,
+				10,
+				array(
+					"We noticed you're visiting from United Kingdom (UK). We've updated our prices to Pound sterling for your shopping convenience.",
+					'Use United States (US) dollar instead.',
+				),
+			),
+			'no flag'                         => array( array(), false, false, array() ),
+			'automatic switching off'         => array(
+				array(
+					'is_mc_onboarding_simulation' => '1',
+					'enable_auto_currency'        => 'false',
+				),
+				10,
+				false,
+				array(),
+			),
+		);
+	}
+
+	/**
+	 * @testdox Should simulate a United States visitor for a store that does not sell in USD.
+	 */
+	public function test_simulation_uses_usd_for_non_usd_store(): void {
+		wp_set_current_user( self::factory()->user->create( array( 'role' => 'shop_manager' ) ) );
+		update_option( 'woocommerce_currency', 'EUR' );
+		$_GET['is_mc_onboarding_simulation'] = '1';
+		$_GET['enable_auto_currency']        = 'true';
+		$sut                                 = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $this->create_persistence_service( true, 'EUR' ), null, $this->create_geolocation_service( 'EUR', 'FR' ) );
+
+		$sut->handle_simulation_init();
+		ob_start();
+		$sut->handle_wp_footer();
+		$markup = (string) ob_get_clean();
+
+		$this->assertStringContainsString( 'visiting from United States (US).', $markup );
+		$this->assertStringContainsString( 'updated our prices to United States (US) dollar', $markup );
+	}
+
+	/**
+	 * @testdox Should carry the simulation through links and reshow the store notice.
+	 *
+	 * Client 11.1.0 MultiCurrency.php:2020-2051.
+	 */
+	public function test_simulation_prints_link_script(): void {
+		wp_set_current_user( self::factory()->user->create( array( 'role' => 'shop_manager' ) ) );
+		$_GET['is_mc_onboarding_simulation'] = '1';
+		$_GET['enable_auto_currency']        = 'true';
+		$sut                                 = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $this->create_persistence_service() );
+
+		$sut->handle_simulation_init();
+
+		$this->assertSame( 10, has_action( 'wp_footer', array( $sut, 'handle_simulation_wp_footer' ) ) );
+
+		ob_start();
+		$sut->handle_simulation_wp_footer();
+		$markup = (string) ob_get_clean();
+
+		$this->assertStringContainsString( 'id="wcpay_multi_currency-simulation-script"', $markup );
+		$this->assertStringContainsString( "searchParams.set( 'is_mc_onboarding_simulation', true )", $markup );
+		$this->assertStringContainsString( "searchParams.set( 'enable_auto_currency', true )", $markup );
+		$this->assertStringContainsString( "searchParams.set( 'enable_storefront_switcher', false )", $markup );
+		$this->assertStringContainsString( "'store_notice' + ", $markup );
+	}
+
+	/**
+	 * @testdox Should read the simulation from the referring page when the query has none.
+	 *
+	 * Client 11.1.0 MultiCurrency.php:1491-1505.
+	 */
+	public function test_simulation_reads_referer(): void {
+		wp_set_current_user( self::factory()->user->create( array( 'role' => 'shop_manager' ) ) );
+		$_SERVER['HTTP_REFERER'] = 'http://example.org/shop/?is_mc_onboarding_simulation=1&enable_auto_currency=true';
+		$sut                     = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $this->create_persistence_service( true, 'USD' ) );
+
+		$sut->handle_simulation_init();
+
+		$this->assertSame( 10, has_action( 'wp_footer', array( $sut, 'handle_wp_footer' ) ) );
+	}
+
+	/**
+	 * @testdox Preview settings are read only for a user who manages the store: $_dataName.
+	 *
+	 * Client 11.3.0 MultiCurrency::get_multi_currency_onboarding_simulation_variables() returns nothing unless the user can
+	 * `manage_woocommerce` (MultiCurrency.php:2049-2052), so the request renders as an ordinary visit.
+	 *
+	 * @dataProvider provide_preview_requests_without_the_capability
+	 *
+	 * @param string $role   Role of the current user, or an empty string for a visitor who is not logged in.
+	 * @param string $source Where the request carries the preview: `query` or `referer`.
+	 */
+	public function test_simulation_reads_no_preview_settings_without_the_capability( string $role, string $source ): void {
+		update_option( 'woocommerce_currency', 'USD' );
+		wp_set_current_user( '' === $role ? 0 : self::factory()->user->create( array( 'role' => $role ) ) );
+		if ( 'query' === $source ) {
+			$_GET['is_mc_onboarding_simulation'] = '1';
+			$_GET['enable_auto_currency']        = 'true';
+		} else {
+			$_SERVER['HTTP_REFERER'] = 'http://example.org/shop/?is_mc_onboarding_simulation=1&enable_auto_currency=true';
+		}
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $this->create_persistence_service( true, 'USD' ), null, $this->create_geolocation_service( 'USD', 'US' ) );
+
+		$sut->handle_simulation_init();
+
+		$this->assertFalse( has_action( 'wp_footer', array( $sut, 'handle_simulation_wp_footer' ) ) );
+		$this->assertFalse( has_action( 'wp_footer', array( $sut, 'handle_wp_footer' ) ) );
+		$this->assertFalse( has_filter( 'wcpay_multi_currency_override_notice_country' ) );
+		$this->assertFalse( has_filter( 'wcpay_multi_currency_override_notice_currency_name' ) );
+	}
+
+	/**
+	 * Users without `manage_woocommerce` and where their request carries the preview.
+	 *
+	 * @return array<string,array{string,string}>
+	 */
+	public static function provide_preview_requests_without_the_capability(): array {
+		return array(
+			'a customer, preview in the query'           => array( 'customer', 'query' ),
+			'a customer, preview in the referer'         => array( 'customer', 'referer' ),
+			'a logged-out visitor, preview in the query' => array( '', 'query' ),
+		);
+	}
+
+	/**
+	 * @testdox Should register the simulation on frontend requests after geolocation.
+	 */
+	public function test_registers_simulation_hook(): void {
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $this->create_persistence_service(), $this->create_request_context( true, false ) );
+
+		$sut->register();
+
+		$this->assertSame( 13, has_action( 'init', array( $sut, 'handle_simulation_init' ) ) );
+	}
+
+	/**
+	 * @testdox Should redirect browser currency switches to strip stale price filters.
+	 */
+	public function test_redirects_browser_currency_switch_to_strip_stale_price_filters(): void {
+		$service                = $this->create_persistence_service();
+		$sut                    = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $service );
+		$_GET['currency']       = 'eur';
+		$_GET['min_price']      = '10';
+		$_GET['max_price']      = '50';
+		$original_request_uri   = $_SERVER['REQUEST_URI'] ?? null; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.MissingUnslash,WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+		$_SERVER['REQUEST_URI'] = '/shop/?currency=EUR&min_price=10&max_price=50';
+		$captured_url           = null;
+
+		add_filter(
+			'wp_redirect',
+			static function ( $location ) use ( &$captured_url ) {
+				$captured_url = $location;
+				throw new \Exception( 'redirect captured' );
+			}
+		);
+
+		try {
+			$sut->handle_init();
+			$this->fail( 'Expected handle_init() to redirect on a browser currency switch with stale price filters.' );
+		} catch ( \Exception $e ) {
+			$this->assertSame( 'redirect captured', $e->getMessage(), 'Unexpected exception thrown.' );
+			$this->assertSame( array( 'EUR' ), $service->updated_currencies );
+			$this->assertIsString( $captured_url, 'Expected a redirect URL to be captured.' );
+			$this->assertStringNotContainsString( 'min_price', $captured_url, 'min_price should have been stripped.' );
+			$this->assertStringNotContainsString( 'max_price', $captured_url, 'max_price should have been stripped.' );
+		} finally {
+			remove_all_filters( 'wp_redirect' );
+			if ( null === $original_request_uri ) {
+				unset( $_SERVER['REQUEST_URI'] );
+			} else {
+				$_SERVER['REQUEST_URI'] = $original_request_uri;
+			}
+		}
+	}
+
+	/**
+	 * @testdox Should switch the currency without a redirect on a Store API request with price filters: $_dataName.
+	 * @dataProvider provide_store_api_currency_switches
+	 *
+	 * @param array<string,string> $query       Query arguments of the request.
+	 * @param string               $request_uri Request URI.
+	 */
+	public function test_does_not_redirect_store_api_currency_switch_with_price_filters( array $query, string $request_uri ): void {
+		$service = $this->create_persistence_service();
+		$sut     = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $service );
+		foreach ( $query as $name => $value ) {
+			$_GET[ $name ] = $value;
+		}
+		$original_request_uri   = $_SERVER['REQUEST_URI'] ?? null; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.MissingUnslash,WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+		$_SERVER['REQUEST_URI'] = $request_uri;
+
+		add_filter(
+			'wp_redirect',
+			static function () {
+				throw new \Exception( 'Unexpected redirect during a Store API request.' );
+			}
+		);
+
+		try {
+			$sut->handle_init();
+
+			$this->assertSame( array( 'EUR' ), $service->updated_currencies );
+		} finally {
+			remove_all_filters( 'wp_redirect' );
+			if ( null === $original_request_uri ) {
+				unset( $_SERVER['REQUEST_URI'] );
+			} else {
+				$_SERVER['REQUEST_URI'] = $original_request_uri;
+			}
+		}
+	}
+
+	/**
+	 * Store API currency switches with price filters: through the REST path, and through the rest_route argument.
+	 *
+	 * @return array<string,array{0:array<string,string>,1:string}>
+	 */
+	public static function provide_store_api_currency_switches(): array {
+		$filters = array(
+			'currency'  => 'eur',
+			'min_price' => '10',
+			'max_price' => '50',
+		);
+
+		return array(
+			'REST path'  => array( $filters, '/wp-json/wc/store/v1/products?currency=EUR&min_price=10&max_price=50' ),
+			'rest_route' => array( $filters + array( 'rest_route' => '/wc/store/v1/products' ), '/?rest_route=/wc/store/v1/products&currency=EUR&min_price=10&max_price=50' ),
+		);
+	}
+
+	/**
+	 * @testdox Should render account currency field when multiple currencies are enabled.
+	 */
+	public function test_renders_account_currency_field_when_multiple_currencies_are_enabled(): void {
+		$service = $this->create_persistence_service( true, 'GBP' );
+		$sut     = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $service );
+
+		ob_start();
+		$sut->handle_woocommerce_edit_account_form();
+		$markup = (string) ob_get_clean();
+
+		$this->assertSame(
+			'<p class="woocommerce-form-row woocommerce-form-row--first form-row form-row-first">'
+				. '<label for="wcpay_selected_currency">Default currency</label>'
+				. '<select name="wcpay_selected_currency" id="wcpay_selected_currency">'
+				. '<option value="USD">' . wp_kses_post( get_woocommerce_currency_symbol( 'USD' ) . ' USD' ) . '</option>'
+				. '<option value="GBP" selected>' . wp_kses_post( get_woocommerce_currency_symbol( 'GBP' ) . ' GBP' ) . '</option>'
+				. '<option value="JPY">' . wp_kses_post( get_woocommerce_currency_symbol( 'JPY' ) . ' JPY' ) . '</option>'
+				. '</select>'
+				. '<span><em>Select your preferred currency for shopping and payments.</em></span>'
+				. '</p>'
+				. '<div class="clear"></div>',
+			$markup
+		);
+	}
+
+	/**
+	 * @testdox Should save account currency field from posted data.
+	 */
+	public function test_saves_account_currency_field_from_posted_data(): void {
+		$service                          = $this->create_persistence_service();
+		$sut                              = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $service );
+		$_POST['wcpay_selected_currency'] = ' jpy ';
+
+		$sut->handle_woocommerce_save_account_details();
+
+		$this->assertSame( array( 'jpy' ), $service->requested_currencies );
+		$this->assertSame( array( 'JPY' ), $service->updated_currencies );
+	}
+
+	/**
+	 * @testdox Should not save the account currency field when the posted value is $label.
+	 * @dataProvider unusable_account_currency_provider
+	 *
+	 * @param string     $label  Readable case name.
+	 * @param mixed|null $posted The posted field value, or null for none.
+	 */
+	public function test_does_not_save_an_unusable_account_currency_field( string $label, $posted ): void {
+		unset( $label );
+		$service = $this->create_persistence_service();
+		$sut     = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $service );
+		if ( null !== $posted ) {
+			$_POST['wcpay_selected_currency'] = $posted;
+		}
+
+		$sut->handle_woocommerce_save_account_details();
+
+		$this->assertSame( array(), $service->requested_currencies );
+	}
+
+	/**
+	 * Posted account currency values that save nothing.
+	 *
+	 * @return array<string,array{0:string,1:mixed}>
+	 */
+	public function unusable_account_currency_provider(): array {
+		return array(
+			'absent'      => array( 'absent', null ),
+			'empty'       => array( 'empty', '' ),
+			'an array'    => array( 'an array', array( 'GBP' ) ),
+			'only markup' => array( 'only markup', '<script>GBP</script>' ),
+		);
+	}
+
+	/**
+	 * Create a selected currency controller with a static runtime owner.
+	 *
+	 * @param string                             $owner           Runtime owner.
+	 * @param SelectedCurrencyPersistenceService $service Persistence service.
+	 * @param RequestContext|null                $request_context Request context.
+	 * @param GeolocationService|null            $geolocation Geolocation service; the factory's by default.
+	 * @return MultiCurrencySelectedCurrencyController
+	 */
+	private function create_controller(
+		string $owner,
+		SelectedCurrencyPersistenceService $service,
+		?RequestContext $request_context = null,
+		?GeolocationService $geolocation = null
+	): MultiCurrencySelectedCurrencyController {
+		$controller = new MultiCurrencySelectedCurrencyController();
+		$controller->init(
+			$this->create_arbiter( $owner ),
+			ServiceFactories::with(
+				$this,
+				array(
+					'create_selected_currency_persistence_service' => $service,
+					'create_geolocation_service' => $geolocation,
+				)
+			),
+			wc_get_container()->get( IntegrationsController::class ),
+			$request_context ?? wc_get_container()->get( RequestContext::class )
+		);
+
+		return $controller;
+	}
+
+	/**
+	 * Create a static multi-currency runtime arbiter.
+	 *
+	 * @param string $owner Runtime owner.
+	 * @return MultiCurrencyRuntimeArbiter
+	 */
+	private function create_arbiter( string $owner ): MultiCurrencyRuntimeArbiter {
+		return new class( $owner ) extends MultiCurrencyRuntimeArbiter {
+			/**
+			 * Runtime owner.
+			 *
+			 * @var string
+			 */
+			private string $owner;
+
+			/**
+			 * Constructor.
+			 *
+			 * @param string $owner Runtime owner.
+			 */
+			public function __construct( string $owner ) {
+				$this->owner = $owner;
+			}
+
+			/**
+			 * Get the multi-currency runtime owner for the current site.
+			 *
+			 * @return string
+			 */
+			public function get_runtime_owner(): string {
+				return $this->owner;
+			}
+
+			/**
+			 * Tell whether core multi-currency may register hooks.
+			 *
+			 * @return bool
+			 */
+			public function is_builtin_owner(): bool {
+				return MultiCurrencyRuntimeArbiter::OWNER_BUILTIN === $this->owner;
+			}
+		};
+	}
+
+	/**
+	 * Create a persistence service test double.
+	 *
+	 * @param bool     $has_additional_currencies Whether multiple currencies are enabled.
+	 * @param string   $selected_code             Selected currency code.
+	 * @param bool     $has_stored_currency       Whether a stored currency exists.
+	 * @param string[] $enabled_currency_codes    Enabled currency codes.
+	 * @return SelectedCurrencyPersistenceService&object{updated_currencies: string[], persist_flags: bool[], new_customer_ids: int[], state_reset_calls: int}
+	 */
+	private function create_persistence_service(
+		bool $has_additional_currencies = true,
+		string $selected_code = 'USD',
+		bool $has_stored_currency = false,
+		array $enabled_currency_codes = array( 'USD', 'GBP', 'JPY', 'EUR', 'CAD' )
+	): SelectedCurrencyPersistenceService {
+		return new class( $has_additional_currencies, $selected_code, $has_stored_currency, $enabled_currency_codes ) extends SelectedCurrencyPersistenceService {
+			/**
+			 * Updated currencies.
+			 *
+			 * @var string[]
+			 */
+			public array $updated_currencies = array();
+
+			/**
+			 * Every code passed to update_selected_currency(), accepted or not.
+			 *
+			 * @var string[]
+			 */
+			public array $requested_currencies = array();
+
+			/**
+			 * Persist-change flags.
+			 *
+			 * @var bool[]
+			 */
+			public array $persist_flags = array();
+
+			/**
+			 * New customer IDs.
+			 *
+			 * @var int[]
+			 */
+			public array $new_customer_ids = array();
+
+			/**
+			 * Selected-currency state reset count.
+			 *
+			 * @var int
+			 */
+			public int $state_reset_calls = 0;
+
+			/**
+			 * Whether multiple currencies are enabled.
+			 *
+			 * @var bool
+			 */
+			private bool $has_additional_currencies;
+
+			/**
+			 * Selected currency code.
+			 *
+			 * @var string
+			 */
+			private string $selected_code;
+
+			/**
+			 * Whether a stored currency exists.
+			 *
+			 * @var bool
+			 */
+			private bool $has_stored_currency;
+
+			/**
+			 * Enabled currency lookup.
+			 *
+			 * @var array<string,bool>
+			 */
+			private array $enabled_currency_lookup;
+
+			/**
+			 * Constructor.
+			 *
+			 * @param bool     $has_additional_currencies Whether multiple currencies are enabled.
+			 * @param string   $selected_code             Selected currency code.
+			 * @param bool     $has_stored_currency       Whether a stored currency exists.
+			 * @param string[] $enabled_currency_codes   Enabled currency codes.
+			 */
+			public function __construct(
+				bool $has_additional_currencies,
+				string $selected_code,
+				bool $has_stored_currency,
+				array $enabled_currency_codes
+			) {
+				$this->has_additional_currencies = $has_additional_currencies;
+				$this->selected_code             = $selected_code;
+				$this->has_stored_currency       = $has_stored_currency;
+				$this->enabled_currency_lookup   = array_fill_keys( array_map( 'strtoupper', $enabled_currency_codes ), true );
+			}
+
+			/**
+			 * Persist the selected currency.
+			 *
+			 * @param string $currency_code  Currency code.
+			 * @param bool   $persist_change Whether the change persists.
+			 * @return bool
+			 */
+			public function update_selected_currency( string $currency_code, bool $persist_change = true ): bool {
+				$this->requested_currencies[] = $currency_code;
+				$currency_code                = strtoupper( trim( $currency_code ) );
+
+				if ( ! isset( $this->enabled_currency_lookup[ $currency_code ] ) ) {
+					return false;
+				}
+
+				$this->updated_currencies[] = $currency_code;
+				$this->persist_flags[]      = $persist_change;
+
+				return true;
+			}
+
+			/**
+			 * Persist a new customer's selected currency.
+			 *
+			 * @param int $customer_id Customer ID.
+			 * @return bool
+			 */
+			public function set_new_customer_currency_meta( int $customer_id ): bool {
+				$this->new_customer_ids[] = $customer_id;
+
+				return true;
+			}
+
+			/**
+			 * Reset request-local selected-currency state.
+			 */
+			public function reset_selected_currency_state(): void {
+				++$this->state_reset_calls;
+			}
+
+			/**
+			 * Tell whether more than one currency is enabled.
+			 *
+			 * @return bool
+			 */
+			public function has_additional_currencies_enabled(): bool {
+				return $this->has_additional_currencies;
+			}
+
+			/**
+			 * Get enabled currency options.
+			 *
+			 * @return array<int,array{code:string,symbol:string}>
+			 */
+			public function get_enabled_currency_options(): array {
+				return array(
+					array(
+						'code'   => 'USD',
+						'symbol' => get_woocommerce_currency_symbol( 'USD' ),
+					),
+					array(
+						'code'   => 'GBP',
+						'symbol' => get_woocommerce_currency_symbol( 'GBP' ),
+					),
+					array(
+						'code'   => 'JPY',
+						'symbol' => get_woocommerce_currency_symbol( 'JPY' ),
+					),
+				);
+			}
+
+			/**
+			 * Get selected currency code.
+			 *
+			 * @return string
+			 */
+			public function get_selected_currency_code(): string {
+				return $this->selected_code;
+			}
+
+			/**
+			 * Tell whether a stored selected currency exists.
+			 *
+			 * @return bool
+			 */
+			public function has_stored_currency_code(): bool {
+				return $this->has_stored_currency;
+			}
+		};
+	}
+
+	/**
+	 * Create a deterministic geolocation service.
+	 *
+	 * @param string|null $currency_code Currency code to return.
+	 * @param string      $country_code  Country code to return.
+	 * @return GeolocationService
+	 */
+	private function create_geolocation_service( ?string $currency_code, string $country_code = 'CA' ): GeolocationService {
+		return new class( $currency_code, $country_code ) extends GeolocationService {
+			/**
+			 * Currency code to return.
+			 *
+			 * @var string|null
+			 */
+			private ?string $currency_code;
+
+			/**
+			 * Country code to return.
+			 *
+			 * @var string
+			 */
+			private string $country_code;
+
+			/**
+			 * Constructor.
+			 *
+			 * @param string|null $currency_code Currency code to return.
+			 * @param string      $country_code  Country code to return.
+			 */
+			public function __construct( ?string $currency_code, string $country_code ) {
+				$this->currency_code = $currency_code;
+				$this->country_code  = $country_code;
+			}
+
+			/**
+			 * Get the customer's currency based on location.
+			 *
+			 * @return string|null
+			 */
+			public function get_currency_by_customer_location(): ?string {
+				return $this->currency_code;
+			}
+
+			/**
+			 * Get the customer's country based on location.
+			 *
+			 * @return string
+			 */
+			public function get_country_by_customer_location(): string {
+				return $this->country_code;
+			}
+		};
+	}
+
+	/**
+	 * Create a session test double.
+	 *
+	 * @param bool $has_session Whether an active session exists.
+	 * @return object
+	 */
+	private function create_session( bool $has_session ): object {
+		return new class( $has_session ) {
+			/**
+			 * Whether an active session exists.
+			 *
+			 * @var bool
+			 */
+			private bool $has_session;
+
+			/**
+			 * Constructor.
+			 *
+			 * @param bool $has_session Whether an active session exists.
+			 */
+			public function __construct( bool $has_session ) {
+				$this->has_session = $has_session;
+			}
+
+			/**
+			 * Tell whether a cookie-backed session exists.
+			 *
+			 * @return bool
+			 */
+			public function has_session(): bool {
+				return $this->has_session;
+			}
+
+			/**
+			 * Accept session writes made by WooCommerce cart teardown.
+			 *
+			 * @param string $key Session key.
+			 * @param mixed  $value Session value.
+			 */
+			public function set( string $key, $value ): void {
+				unset( $key, $value );
+			}
+		};
+	}
+
+	/**
+	 * Create a request context test double.
+	 *
+	 * @param bool $should_register_entry_hooks Whether selected-currency entry hooks should register.
+	 * @param bool $is_store_api_request        Whether this is a Store API request.
+	 * @return RequestContext
+	 */
+	private function create_request_context( bool $should_register_entry_hooks, bool $is_store_api_request = false ): RequestContext {
+		return new class( $should_register_entry_hooks, $is_store_api_request ) extends RequestContext {
+			/**
+			 * Whether selected-currency entry hooks should register.
+			 *
+			 * @var bool
+			 */
+			private bool $should_register_entry_hooks;
+
+			/**
+			 * Whether this is a Store API request.
+			 *
+			 * @var bool
+			 */
+			private bool $is_store_api_request;
+
+			/**
+			 * Constructor.
+			 *
+			 * @param bool $should_register_entry_hooks Whether selected-currency entry hooks should register.
+			 * @param bool $is_store_api_request        Whether this is a Store API request.
+			 */
+			public function __construct( bool $should_register_entry_hooks, bool $is_store_api_request ) {
+				$this->should_register_entry_hooks = $should_register_entry_hooks;
+				$this->is_store_api_request        = $is_store_api_request;
+			}
+
+			/**
+			 * Tell whether selected-currency entry hooks should register.
+			 *
+			 * @return bool
+			 */
+			public function should_register_selected_currency_entry_hooks(): bool {
+				return $this->should_register_entry_hooks;
+			}
+
+			/**
+			 * Tell whether this is a Store API request.
+			 *
+			 * @return bool
+			 */
+			public function is_store_api_request(): bool {
+				return $this->is_store_api_request;
+			}
+		};
+	}
+}

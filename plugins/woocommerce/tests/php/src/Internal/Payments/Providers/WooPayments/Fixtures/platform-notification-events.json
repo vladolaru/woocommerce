@@ -1,0 +1,78 @@
+{
+	"_meta": {
+		"recording": "C0s, the first full live lane run (2026-10-18)",
+		"source": "Local WPCOM (wpcom-local) Transact platform, blog 4, account acct_1TrY2nBzWlxcwgpP (US, test mode). The platform sends wcpay.notification from its own code, with no event id: promotion notes from Promotion_Service::send_note() (WPCOM wcpay service/class-promotion-service.php:697-705) and the dispute deadline note from Charge_Event_Handler::send_approaching_deadline_inbox_note() (event-handler/class-charge-event-handler.php:1019-1083), WPCOM at 8c43425a763.",
+		"store": "native WooCommerce :8889 (woocommerce-develop-2, exp/core-native-payments at 75488974986), test mode.",
+		"captured_via": "The store's WooPayments log, WEBHOOK RECEIVED lines, during the lane run. The store logger redacts emails, names, note names and URLs, so each redacted field the note handler reads is restored from the sender code, as each entry's restored list says. Nothing else is edited."
+	},
+	"entries": [
+		{
+			"pair": "promotion_start_note",
+			"context": "The US action incentive start note, sent by the lane spec promotion-note.spec.ts (2026-10-18 09:33:22 UTC delivery).",
+			"logged_at": "2026-10-18T09:33:22+00:00",
+			"restored": {
+				"data.name": "The fee structure id plus \"-welcome\" (service/class-incentive-service.php:522); the US action incentive fee structure is wcpay-promo-2023-incentive-10off3m-us (:118-121), the one the spec sends."
+			},
+			"body": {
+				"data": {
+					"actions": [
+						{
+							"label": "View Settings",
+							"primary": true,
+							"status": "unactioned",
+							"url": "wcpay_settings"
+						}
+					],
+					"content": "Congratulations! Your WooPayments fees have now been reduced by 10% for your first three months. That’s only {{EFFECTIVE_CARD_FEES}} per card transaction!<br/><br/>Keep track of your progress under Payments &gt; Transactions.",
+					"name": "wcpay-promo-2023-incentive-10off3m-us-welcome",
+					"title": "You’re in – welcome to WooPayments"
+				},
+				"livemode": false,
+				"type": "wcpay.notification"
+			}
+		},
+		{
+			"pair": "dispute_deadline_note",
+			"context": "The approaching deadline note for dispute du_1URpwBBzWlxcwgpPfEsuvYVv, created in the same run (charge.dispute.created at 08:59:35 UTC), delivered 08:59:53 UTC.",
+			"logged_at": "2026-10-18T08:59:53+00:00",
+			"restored": {
+				"data.name": "\"approaching-dispute-deadline-\" plus the dispute id (event-handler/class-charge-event-handler.php:1062).",
+				"data.actions[0].url": "The disputes list URL (utils/class-dispute-utils.php:91): the sender links the transaction details page only when it has the payment intent and transaction IDs (:99-105), and the run sent this note without a transaction ID.",
+				"data.content": "The guide link (event-handler/class-charge-event-handler.php:1055)."
+			},
+			"body": {
+				"data": {
+					"actions": [
+						{
+							"label": "View dispute",
+							"primary": true,
+							"status": "actioned",
+							"url": "admin.php?page=wc-admin&path=%2Fpayments%2Fdisputes",
+							"url_is_admin": true
+						}
+					],
+					"content": "The deadline to respond to your disputed payment is October 26, 2026 / 11:59pm. We’re here to help, so we’ve made <a href=\"https://woocommerce.com/document/woopayments/fraud-and-disputes/managing-disputes/\">a guide to walk you through the process</a>. Keep in mind that if you don’t respond by the deadline, the dispute will be marked Lost after that date.",
+					"name": "approaching-dispute-deadline-du_1URpwBBzWlxcwgpPfEsuvYVv",
+					"title": "Reminder: Your dispute deadline is approaching"
+				},
+				"livemode": false,
+				"type": "wcpay.notification"
+			}
+		},
+		{
+			"pair": "promotion_end_note",
+			"context": "Not delivered in the lane run. Built from the sender: the default incentive end note, which the action incentive leaves in place (service/class-incentive-service.php:543-556, :1064-1066), sent by Promotion_Service::send_note() (service/class-promotion-service.php:697-705) with livemode false for a test account.",
+			"logged_at": null,
+			"restored": {},
+			"body": {
+				"type": "wcpay.notification",
+				"data": {
+					"name": "wcpay-promo-2023-incentive-10off3m-us-end",
+					"title": "You’ve saved on fees with WooPayments!",
+					"content": "The reduced fee promotion for WooPayments has ended. Your fees have been adjusted to match <a href=\"https://woocommerce.com/document/woopayments/fees-and-debits/fees/\" target=\"_blank\">our normal low-cost rates</a>."
+				},
+				"livemode": false
+			}
+		}
+	]
+}

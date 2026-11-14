@@ -1,0 +1,66 @@
+{
+	"_meta": {
+		"recording": "GET wp-json/wc/v3/payments/deposits/overview-all on the native :8889 store (Transact platform via wpcom-local, Stripe test mode), 2026-09-30",
+		"sanitized": "no customer data present; response verbatim (Stripe test bank account)",
+		"notes": "account carries only deposits_enabled, deposits_blocked, deposits_schedule, default_currency and default_external_accounts; the waiting period, minimum payout amounts, restriction and account link come from the Overview shell account_status"
+	},
+	"response": {
+		"deposit": {
+			"last_paid": [
+				{
+					"id": "po_1ULCCABzWlxcwgpPC17qpmnl",
+					"date": 1790726400000,
+					"type": "deposit",
+					"amount": 41511,
+					"status": "paid",
+					"bankAccount": "STRIPE TEST BANK •••• 6789 (USD)",
+					"currency": "usd",
+					"automatic": true,
+					"fee": 0,
+					"fee_percentage": 0,
+					"created": 1790726400,
+					"bank_reference_key": "7UF6L35gC4Tj4LS8997Ds6ch6t65LP3HD7YO7Hq1k",
+					"failure_code": null,
+					"failure_message": null
+				}
+			],
+			"last_manual_deposits": []
+		},
+		"balance": {
+			"pending": [
+				{
+					"amount": 4702,
+					"currency": "usd",
+					"source_types": {
+						"card": 4702
+					}
+				}
+			],
+			"available": [
+				{
+					"amount": 0,
+					"currency": "usd",
+					"source_types": {
+						"card": 0
+					}
+				}
+			],
+			"instant": []
+		},
+		"account": {
+			"deposits_enabled": true,
+			"deposits_blocked": false,
+			"deposits_schedule": {
+				"delay_days": 2,
+				"interval": "daily"
+			},
+			"default_currency": "usd",
+			"default_external_accounts": [
+				{
+					"currency": "usd",
+					"status": "new"
+				}
+			]
+		}
+	}
+}

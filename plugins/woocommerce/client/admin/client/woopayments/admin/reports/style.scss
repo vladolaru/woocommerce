@@ -1,0 +1,219 @@
+@import "../../_tokens.scss";
+
+// The header and Reports content mount in separate roots.
+// prettier-ignore
+body.woocommerce_page_wc-settings.woocommerce-settings-payments-tab:has(.woocommerce-woopayments-reports) {
+	.woocommerce-layout__header {
+		background: $white;
+	}
+}
+
+.woocommerce-woopayments-reports {
+	max-width: $woopayments-wide-page-max-width;
+
+	&__header {
+		display: flex;
+		align-items: flex-start;
+		justify-content: space-between;
+		gap: $gap;
+	}
+
+	&__intro {
+		margin: 0 0 $gap;
+		color: $studio-gray-60;
+	}
+
+	&__header-actions {
+		display: flex;
+		gap: $gap-smaller;
+	}
+
+	&__tabs {
+		display: flex;
+		gap: $gap-smallest;
+		margin-bottom: $gap-large;
+		border-bottom: 1px solid $studio-gray-5;
+
+		[role="tab"] {
+			margin: 0;
+			// stylelint-disable-next-line declaration-property-value-disallowed-list -- the tab padding; no token at 10px or 14px.
+			padding: 10px 14px;
+			border: 0;
+			border-bottom: 3px solid transparent;
+			background: transparent;
+			color: $studio-gray-80;
+			cursor: pointer;
+
+			&[aria-selected="true"] {
+				border-bottom-color: var(--wp-admin-theme-color);
+				color: $studio-gray-90;
+				font-weight: 600;
+			}
+
+			&:focus-visible {
+				outline: var(--wp-admin-border-width-focus) solid var(--wp-admin-theme-color);
+				outline-offset: 2px;
+			}
+		}
+	}
+
+	&__toolbar {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: $gap;
+		margin-bottom: $gap;
+
+		h2 {
+			margin: 0;
+			font-size: $font-size-x-large;
+			line-height: $font-line-height-large;
+		}
+	}
+
+	&__actions {
+		display: flex;
+		gap: $gap-smaller;
+	}
+}
+
+// Client 11.2.0 `reports/balance/style.scss:385-445`: rows step in and soften by depth; counts sit in a pill.
+.woocommerce-woopayments-reports-balance {
+	&__label {
+		display: inline-flex;
+		align-items: center;
+		gap: $gap-small;
+		font-weight: 500;
+		color: $gray-800;
+
+		&--depth-1 {
+			padding-inline-start: $grid-unit-30;
+		}
+
+		&--depth-2 {
+			padding-inline-start: $grid-unit-60;
+			font-weight: 400;
+			color: $gray-700;
+		}
+	}
+
+	&__amount {
+		flex-grow: 1;
+		text-align: end;
+		font-variant-numeric: tabular-nums;
+		font-weight: 500;
+		color: $gray-800;
+
+		&--depth-1,
+		&--depth-2 {
+			font-weight: 400;
+		}
+
+		&--depth-2 {
+			color: $gray-700;
+		}
+	}
+
+	// Client 11.2.0 `reports/balance/style.scss:360-368`: the toggle's row is a flex row, as DataViews' own, so the filter
+	// count badge sits on the toggle rather than at the row's far end.
+	.dataviews__view-actions {
+		display: flex;
+	}
+
+	// Client 11.2.0 `reports/balance/style.scss:447-452`: with Date the only filter, the trailing "Add filter" button
+	// would only repeat the filters toggle.
+	.dataviews-filters-button {
+		display: none;
+	}
+
+	// Client 11.2.0 `reports/balance/style.scss:458-474`: a fixed summary shows no column headers; screen readers keep them.
+	.dataviews-view-table thead {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		margin: -1px;
+		padding: 0;
+		border: 0;
+		overflow: hidden;
+		clip-path: inset( 50% );
+	}
+
+	&__count {
+		display: inline-flex;
+		min-width: $woopayments-badge-min-height;
+		height: $woopayments-badge-min-height;
+		align-items: center;
+		justify-content: center;
+		padding: 0 ($grid-unit-10 * 0.75);
+		border-radius: $radius-full;
+		background: $gray-100;
+		color: $gray-700;
+		font-size: $font-size-x-small;
+		font-weight: 500;
+		line-height: $woopayments-badge-min-height;
+
+		@media ( forced-colors: active ) {
+			border: 1px solid currentcolor;
+		}
+	}
+}
+
+.woocommerce-woopayments-reports-state {
+	// stylelint-disable-next-line declaration-property-value-disallowed-list -- the empty and error state's measure; no upstream token.
+	max-width: 560px;
+	padding: $gap-large;
+	border: 1px solid $studio-gray-5;
+	background: $white;
+
+	h2 {
+		margin-top: 0;
+		font-size: $font-size-x-large;
+		line-height: $font-line-height-large;
+	}
+
+	&__description {
+		color: $studio-gray-60;
+	}
+
+	&__action {
+		margin-top: $gap;
+	}
+}
+
+// Client 11.2.0 `reports/balance/style.scss:161-235`: while a loaded Balance report is on screen (the class is on
+// `<html>`), printing leaves out the admin screen around it, its notices and the report's own controls. The ids in `:is()` give every
+// rule an id's weight, so they win over the admin layout without `!important`.
+@media print {
+	html.wp-toolbar.woocommerce-woopayments-reports-balance-print {
+		padding-block-start: 0;
+	}
+
+	html.woocommerce-woopayments-reports-balance-print {
+		:is(
+			#adminmenumain,
+			#wpadminbar,
+			#wpfooter,
+			#screen-meta,
+			#screen-meta-links,
+			.woocommerce-layout__header,
+			.woocommerce-layout__activity-panel-wrapper,
+			.woocommerce-layout__notice-list,
+			.notice,
+			div.updated,
+			div.error,
+			.update-nag,
+			.nav-tab-wrapper,
+			.woocommerce-woopayments-reports__header,
+			.woocommerce-woopayments-reports__tabs,
+			.woocommerce-woopayments-reports__actions,
+			.dataviews__view-actions
+		) {
+			display: none;
+		}
+
+		:is(#wpcontent, #wpbody, #wpbody-content, #mainform) {
+			margin: 0;
+			padding: 0;
+		}
+	}
+}

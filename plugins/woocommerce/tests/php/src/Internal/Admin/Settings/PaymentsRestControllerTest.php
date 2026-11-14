@@ -419,6 +419,163 @@ class PaymentsRestControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * Test the providers response keeps the native WooPayments marker and adds none to other providers.
+	 */
+	public function test_get_payment_providers_keeps_builtin_marker() {
+		// Arrange.
+		$this->mock_service
+			->expects( $this->once() )
+			->method( 'get_payment_providers' )
+			->willReturn(
+				array(
+					array(
+						'id'                   => 'woocommerce_payments',
+						'_order'               => 0,
+						'_type'                => PaymentsProviders::TYPE_GATEWAY,
+						'_woopayments_builtin' => true,
+					),
+					array(
+						'id'     => WC_Gateway_Paypal::ID,
+						'_order' => 1,
+						'_type'  => PaymentsProviders::TYPE_GATEWAY,
+					),
+				)
+			);
+		$this->mock_extension_suggestions_categories();
+
+		// Act.
+		$request = new WP_REST_Request( 'POST', self::ENDPOINT . '/providers' );
+		$request->set_param( 'location', 'US' );
+		$response = $this->server->dispatch( $request );
+
+		// Assert.
+		$this->assertSame( 200, $response->get_status() );
+		$data = $response->get_data();
+		$this->assertTrue( $data['providers'][0]['_woopayments_builtin'] );
+		$this->assertArrayNotHasKey( '_woopayments_builtin', $data['providers'][1] );
+	}
+
+	/**
+	 * Data provider for the suggestions response shape.
+	 *
+	 * @return array[] The suggestion the service returns and the suggestion the response holds.
+	 */
+	public function data_provider_suggestions_response_shape(): array {
+		$suggestion = array(
+			'id'          => 'stripe',
+			'_priority'   => 2,
+			'_type'       => 'psp',
+			'title'       => 'Stripe',
+			'description' => 'Stripe',
+			'plugin'      => array(
+				'_type'  => 'wporg',
+				'slug'   => 'woocommerce-gateway-stripe',
+				'file'   => '',
+				'status' => 'not_installed',
+			),
+			'image'       => 'https://example.com/image.png',
+			'icon'        => 'https://example.com/icon.png',
+			'links'       => array(
+				array(
+					'_type' => 'about',
+					'url'   => 'https://woocommerce.com/stripe',
+				),
+			),
+			'onboarding'  => array( 'type' => 'external' ),
+			'tags'        => array(),
+			'category'    => 'psp',
+		);
+		// The response drops keys outside the suggestion schema and adds the attach and hide links.
+		$shaped = function ( array $item ): array {
+			unset( $item['plugin']['file'], $item['_woopayments_builtin'] );
+			$item['_links'] = array(
+				'attach' => array( 'href' => rest_url( '/wc-admin/settings/payments/suggestion/' . $item['id'] . '/attach' ) ),
+				'hide'   => array( 'href' => rest_url( '/wc-admin/settings/payments/suggestion/' . $item['id'] . '/hide' ) ),
+			);
+			return $item;
+		};
+
+		$woopayments_onboarding = array(
+			'type'   => 'native_in_context',
+			'state'  => array(
+				'wpcom_has_working_connection' => true,
+				'wpcom_is_store_connected'     => true,
+				'wpcom_has_connected_owner'    => true,
+				'wpcom_is_connection_owner'    => false,
+			),
+			'_links' => array( 'preload' => array( 'href' => 'https://example.com/wp-json/preload' ) ),
+		);
+		$builtin                = array_merge(
+			$suggestion,
+			array(
+				'id'                   => 'woopayments',
+				'title'                => 'WooPayments',
+				'plugin'               => array(
+					'_type'  => 'wporg',
+					'file'   => '',
+					'status' => 'not_installed',
+				),
+				'onboarding'           => $woopayments_onboarding,
+				'_woopayments_builtin' => true,
+			)
+		);
+		$extension              = array_merge(
+			$builtin,
+			array(
+				'plugin' => array(
+					'_type'  => 'wporg',
+					'slug'   => 'woocommerce-payments',
+					'file'   => '',
+					'status' => 'not_installed',
+				),
+			)
+		);
+		unset( $extension['_woopayments_builtin'] );
+
+		return array(
+			'built-in WooPayments keeps onboarding' => array( $builtin, $shaped( $builtin ) ),
+			'WooPayments extension has none'        => array( $extension, $shaped( array_diff_key( $extension, array( 'onboarding' => true ) ) ) ),
+			'another extension has none'            => array( $suggestion, $shaped( array_diff_key( $suggestion, array( 'onboarding' => true ) ) ) ),
+		);
+	}
+
+	/**
+	 * @testdox Should list a suggestion's onboarding details only for the built-in WooPayments suggestion.
+	 *
+	 * @dataProvider data_provider_suggestions_response_shape
+	 *
+	 * @param array $suggestion The suggestion the service returns.
+	 * @param array $expected   The suggestion the response holds.
+	 */
+	public function test_get_payment_providers_suggestions_response_shape( array $suggestion, array $expected ): void {
+		// Arrange.
+		$this->mock_service
+			->expects( $this->once() )
+			->method( 'get_payment_providers' )
+			->willReturn( array() );
+		$this->mock_service
+			->expects( $this->once() )
+			->method( 'get_payment_extension_suggestions' )
+			->willReturn(
+				array(
+					'preferred' => array(),
+					'other'     => array( $suggestion ),
+				)
+			);
+		$this->mock_extension_suggestions_categories();
+		add_filter( 'user_has_cap', fn( $caps ) => array_merge( $caps, array( 'install_plugins' => true ) ) );
+
+		// Act.
+		$request = new WP_REST_Request( 'POST', self::ENDPOINT . '/providers' );
+		$request->set_param( 'location', 'US' );
+		$response = $this->server->dispatch( $request );
+
+		// Assert.
+		$this->assertSame( 200, $response->get_status() );
+		$this->assertSame( array( $expected ), $response->get_data()['suggestions'] );
+	}
+
+	/**
 	 * Test getting payment providers with no registered payment gateways (regular or offline PM).
 	 */
 	public function test_get_payment_providers_without_any_pgs() {

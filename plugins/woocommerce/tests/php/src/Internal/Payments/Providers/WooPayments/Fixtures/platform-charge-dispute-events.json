@@ -1,0 +1,561 @@
+{
+	"_meta": {
+		"recording": "C0s, the first full live lane run (2026-10-18)",
+		"source": "Local WPCOM (wpcom-local) Transact platform, blog 4, account acct_1TrY2nBzWlxcwgpP (US, test mode): Stripe events the platform forwarded to the store, WPCOM at 8c43425a763. charge.refunded is forwarded 60 s late (WPCOM wcpay event-handler/class-charge-event-handler.php:336-339).",
+		"store": "native WooCommerce :8889 (woocommerce-develop-2, exp/core-native-payments at 75488974986), test mode.",
+		"captured_via": "The store's WooPayments log, WEBHOOK RECEIVED lines, during the lane run. The store logger redacts emails, names, URLs, descriptions and some metadata, and the whole dispute evidence and issuer_evidence objects; none of these is read by the refund or dispute handlers, so they are left as logged. The order linkage each test sets is listed per entry.",
+		"not_recorded": "charge.expired and charge.dispute.funds_reinstated were not delivered during the run."
+	},
+	"entries": [
+		{
+			"pair": "card_charge_refunded_in_full",
+			"context": "A card charge of 10.99 USD (order 5840) refunded in full from WP Admin: one succeeded refund, reason requested_by_customer, its balance transaction an ID string.",
+			"logged_at": "2026-10-18T08:35:48+00:00",
+			"restored": {
+				"id, payment_intent, metadata.order_id and order_key": "Each test points the charge, its intent and its order metadata at its own order (the run's orders are gone; order_key was redacted)."
+			},
+			"body": {
+				"account": "acct_1TrY2nBzWlxcwgpP",
+				"data": {
+					"object": {
+						"amount": 1099,
+						"amount_captured": 1099,
+						"amount_refunded": 1099,
+						"application": "ca_HrWs5SEMnkgOWmbL7lL6OmWI048fypU2",
+						"application_fee": "fee_1URpY1BzWlxcwgpP57JSKke1",
+						"application_fee_amount": 62,
+						"balance_transaction": "txn_3URpY0BzWlxcwgpP1Oq3Ur8x",
+						"billing_details": {
+							"address": {
+								"city": "(redacted)",
+								"country": "(redacted)",
+								"line1": "(redacted)",
+								"line2": "(redacted)",
+								"postal_code": "(redacted)",
+								"state": "(redacted)"
+							},
+							"email": "(redacted)",
+							"name": "(redacted)",
+							"phone": "(redacted)",
+							"tax_id": null
+						},
+						"calculated_statement_descriptor": "WOOCOMMERCE",
+						"captured": true,
+						"created": 1792312469,
+						"currency": "usd",
+						"customer": "cus_VSl4d4ah88HbH8",
+						"description": "(redacted)",
+						"destination": null,
+						"dispute": null,
+						"disputed": false,
+						"failure_balance_transaction": null,
+						"failure_code": null,
+						"failure_message": null,
+						"fraud_details": [],
+						"id": "ch_3URpY0BzWlxcwgpP1SUxzwXd",
+						"invoice": null,
+						"level3": {
+							"customer_reference": "5840",
+							"line_items": [
+								{
+									"discount_amount": 0,
+									"product_code": "5839",
+									"product_description": "WooPayments refund fidelit",
+									"quantity": 1,
+									"tax_amount": 0,
+									"unit_cost": 1099
+								}
+							],
+							"merchant_reference": "5840",
+							"shipping_address_zip": "94107",
+							"shipping_amount": 0,
+							"shipping_from_zip": "94107"
+						},
+						"livemode": false,
+						"metadata": {
+							"checkout_type": "(redacted)",
+							"client_version": "(redacted)",
+							"customer_email": "(redacted)",
+							"customer_name": "(redacted)",
+							"fraud_outcome": "(redacted)",
+							"fraud_prevention_data_available": "(redacted)",
+							"fraud_prevention_data_cart_contents": "(redacted)",
+							"fraud_prevention_data_ip_country": "(redacted)",
+							"fraud_prevention_data_shopper_ip_hash": "(redacted)",
+							"fraud_prevention_data_shopper_ua_hash": "(redacted)",
+							"order_id": "5840",
+							"order_key": "(redacted)",
+							"order_number": "5840",
+							"payment_type": "single",
+							"site_url": "(redacted)",
+							"subscription_payment": "(redacted)"
+						},
+						"object": "charge",
+						"on_behalf_of": null,
+						"order": null,
+						"outcome": {
+							"advice_code": null,
+							"network_advice_code": null,
+							"network_decline_code": null,
+							"network_status": "approved_by_network",
+							"reason": null,
+							"risk_level": "normal",
+							"risk_score": 64,
+							"seller_message": "Payment complete.",
+							"type": "authorized"
+						},
+						"paid": true,
+						"payment_intent": "pi_3URpY0BzWlxcwgpP1rS64UpA",
+						"payment_method": "pm_1URpY0BzWlxcwgpP10Cx8ZYa",
+						"payment_method_details": {
+							"card": {
+								"amount_authorized": 1099,
+								"authorization_code": "889172",
+								"brand": "visa",
+								"checks": {
+									"address_line1_check": "pass",
+									"address_postal_code_check": "pass",
+									"cvc_check": "pass"
+								},
+								"country": "(redacted)",
+								"description": "(redacted)",
+								"electronic_commerce_indicator": "07",
+								"exp_month": 2,
+								"exp_year": 2045,
+								"extended_authorization": {
+									"status": "disabled"
+								},
+								"fingerprint": "GPNBuIQZKl9E7Sku",
+								"funding": "credit",
+								"iin": "424242",
+								"incremental_authorization": {
+									"status": "unavailable"
+								},
+								"installments": null,
+								"issuer": "Stripe Payments UK Limited",
+								"last4": "4242",
+								"mandate": null,
+								"moto": null,
+								"multicapture": {
+									"status": "unavailable"
+								},
+								"network": "visa",
+								"network_token": {
+									"used": false
+								},
+								"network_transaction_id": "119727611598658",
+								"overcapture": {
+									"maximum_amount_capturable": 1099,
+									"status": "unavailable"
+								},
+								"regulated_status": "unregulated",
+								"three_d_secure": null,
+								"transaction_link_id": null,
+								"wallet": null
+							},
+							"type": "card"
+						},
+						"radar_options": [],
+						"receipt_email": "(redacted)",
+						"receipt_number": null,
+						"receipt_url": "https://pay.stripe.com/(redacted)",
+						"refunded": true,
+						"refunds": {
+							"data": [
+								{
+									"amount": 1099,
+									"balance_transaction": "txn_3URpY0BzWlxcwgpP1UqaLXEH",
+									"charge": "ch_3URpY0BzWlxcwgpP1SUxzwXd",
+									"created": 1792312486,
+									"currency": "usd",
+									"customer": "cus_VSl4d4ah88HbH8",
+									"customer_account": null,
+									"destination_details": {
+										"card": {
+											"reference_status": "pending",
+											"reference_type": "acquirer_reference_number",
+											"type": "refund"
+										},
+										"type": "card"
+									},
+									"id": "re_3URpY0BzWlxcwgpP1T8e7HhY",
+									"metadata": {
+										"merchant_refund_reason": "(redacted)",
+										"refund_attempt": "(redacted)",
+										"refund_source": "(redacted)"
+									},
+									"object": "refund",
+									"payment_intent": "pi_3URpY0BzWlxcwgpP1rS64UpA",
+									"payment_method": "pm_1URpY0BzWlxcwgpP10Cx8ZYa",
+									"payment_method_details": {
+										"card": {
+											"acquirer_reference_number": null,
+											"acquirer_reference_number_status": "pending"
+										},
+										"type": "card"
+									},
+									"reason": "requested_by_customer",
+									"receipt_number": null,
+									"source_transfer_reversal": null,
+									"status": "succeeded",
+									"transfer_reversal": null
+								}
+							],
+							"has_more": false,
+							"object": "list",
+							"total_count": 1,
+							"url": "/v1/charges/ch_3URpY0BzWlxcwgpP1SUxzwXd/refunds"
+						},
+						"review": null,
+						"shipping": null,
+						"source": null,
+						"source_transfer": null,
+						"statement_descriptor": null,
+						"statement_descriptor_suffix": null,
+						"status": "succeeded",
+						"transfer_data": null,
+						"transfer_group": null
+					}
+				},
+				"id": "evt_3URpY0BzWlxcwgpP1aQ3HBOd",
+				"livemode": false,
+				"type": "charge.refunded"
+			}
+		},
+		{
+			"pair": "in_person_authorization_refunded",
+			"context": "An in-person authorization of 20.00 USD (order 5881) canceled before capture: Stripe reports the release as a refunded, uncaptured charge with a refund that has no reason and no balance transaction.",
+			"logged_at": "2026-10-18T08:49:56+00:00",
+			"restored": {
+				"id, payment_intent, metadata.order_id and order_key": "Each test points the charge, its intent and its order metadata at its own order (the run's orders are gone; order_key was redacted)."
+			},
+			"body": {
+				"account": "acct_1TrY2nBzWlxcwgpP",
+				"data": {
+					"object": {
+						"amount": 2000,
+						"amount_captured": 0,
+						"amount_refunded": 2000,
+						"application": "ca_HrWs5SEMnkgOWmbL7lL6OmWI048fypU2",
+						"application_fee": null,
+						"application_fee_amount": 88,
+						"authorization_code": "947342",
+						"balance_transaction": null,
+						"billing_details": {
+							"address": {
+								"city": "(redacted)",
+								"country": "(redacted)",
+								"line1": "(redacted)",
+								"line2": "(redacted)",
+								"postal_code": "(redacted)",
+								"state": "(redacted)"
+							},
+							"email": "(redacted)",
+							"name": "(redacted)",
+							"phone": "(redacted)",
+							"tax_id": null
+						},
+						"calculated_statement_descriptor": "WOOCOMMERCE",
+						"captured": false,
+						"created": 1792313328,
+						"currency": "usd",
+						"customer": "cus_VSlHAx5V86QpMS",
+						"description": "(redacted)",
+						"destination": null,
+						"dispute": null,
+						"disputed": false,
+						"failure_balance_transaction": null,
+						"failure_code": null,
+						"failure_message": null,
+						"fraud_details": [],
+						"id": "ch_3URploBzWlxcwgpP1tscJIFG",
+						"invoice": null,
+						"livemode": false,
+						"metadata": {
+							"fraud_outcome": "(redacted)",
+							"order_id": "5881",
+							"order_number": "5881"
+						},
+						"object": "charge",
+						"on_behalf_of": null,
+						"order": null,
+						"outcome": {
+							"advice_code": null,
+							"network_advice_code": null,
+							"network_decline_code": null,
+							"network_status": "approved_by_network",
+							"reason": null,
+							"risk_level": "not_assessed",
+							"seller_message": "Payment complete.",
+							"type": "authorized"
+						},
+						"paid": true,
+						"payment_intent": "pi_3URploBzWlxcwgpP1CRE0s4i",
+						"payment_method": "pm_1URplqBzWlxcwgpPklfWV1x8",
+						"payment_method_details": {
+							"card_present": {
+								"amount_authorized": 2000,
+								"brand": "visa",
+								"brand_product": "A",
+								"capture_before": 1792745328,
+								"cardholder_name": null,
+								"country": "(redacted)",
+								"description": "(redacted)",
+								"emv_auth_data": "8A023030",
+								"exp_month": 12,
+								"exp_year": 2027,
+								"fingerprint": "GPNBuIQZKl9E7Sku",
+								"funding": "credit",
+								"generated_card": null,
+								"iin": "424242",
+								"incremental_authorization_supported": false,
+								"issuer": "Stripe Payments UK Limited",
+								"last4": "4242",
+								"location": "tml_Gr2QlAAxKHEwQW",
+								"network": "visa",
+								"network_transaction_id": "119727611598658",
+								"offline": {
+									"stored_at": null,
+									"type": null
+								},
+								"overcapture_supported": false,
+								"preferred_locales": [],
+								"read_method": "contact_emv",
+								"reader": "tmr_GtFLSwemaKtHIU",
+								"receipt": {
+									"account_type": "credit",
+									"application_cryptogram": null,
+									"application_preferred_name": null,
+									"authorization_code": "947342",
+									"authorization_response_code": "3030",
+									"cardholder_verification_method": null,
+									"dedicated_file_name": null,
+									"terminal_verification_results": null,
+									"transaction_status_information": null
+								}
+							},
+							"type": "card_present"
+						},
+						"radar_options": [],
+						"receipt_email": "(redacted)",
+						"receipt_number": null,
+						"receipt_url": "https://pay.stripe.com/(redacted)",
+						"refunded": true,
+						"refunds": {
+							"data": [
+								{
+									"amount": 2000,
+									"balance_transaction": null,
+									"charge": "ch_3URploBzWlxcwgpP1tscJIFG",
+									"created": 1792313332,
+									"currency": "usd",
+									"customer": "cus_VSlHAx5V86QpMS",
+									"customer_account": null,
+									"destination_details": {
+										"card": {
+											"type": "pending"
+										},
+										"type": "card"
+									},
+									"id": "re_3URploBzWlxcwgpP1mJEkkqb",
+									"metadata": [],
+									"object": "refund",
+									"payment_intent": "pi_3URploBzWlxcwgpP1CRE0s4i",
+									"payment_method": "card_1URplqBzWlxcwgpPDPzO8zXR",
+									"payment_method_details": {
+										"card": {
+											"acquirer_reference_number": null,
+											"acquirer_reference_number_status": "unavailable"
+										},
+										"type": "card"
+									},
+									"reason": null,
+									"receipt_number": null,
+									"source_transfer_reversal": null,
+									"status": "succeeded",
+									"transfer_reversal": null
+								}
+							],
+							"has_more": false,
+							"object": "list",
+							"total_count": 1,
+							"url": "/v1/charges/ch_3URploBzWlxcwgpP1tscJIFG/refunds"
+						},
+						"review": null,
+						"shipping": null,
+						"source": null,
+						"source_transfer": null,
+						"statement_descriptor": null,
+						"statement_descriptor_suffix": null,
+						"status": "succeeded",
+						"transfer_data": null,
+						"transfer_group": null
+					}
+				},
+				"id": "evt_3URploBzWlxcwgpP1KdVqE2O",
+				"livemode": false,
+				"type": "charge.refunded"
+			}
+		},
+		{
+			"pair": "dispute_funds_withdrawn",
+			"context": "Funds withdrawn for dispute du_1URpwBBzWlxcwgpPfEsuvYVv (10.99 USD, fraudulent, needs_response) on charge ch_3URpw8BzWlxcwgpP1WeHKIqo.",
+			"logged_at": "2026-10-18T08:59:37+00:00",
+			"restored": {
+				"charge and payment_intent": "Tests that need the dispute on their own charge point them at it."
+			},
+			"body": {
+				"account": "acct_1TrY2nBzWlxcwgpP",
+				"data": {
+					"object": {
+						"amount": 1099,
+						"balance_transaction": "txn_1URpwCBzWlxcwgpPjUe4gGdI",
+						"balance_transactions": [
+							{
+								"amount": -1099,
+								"available_on": 1792540800,
+								"balance_type": "payments",
+								"created": 1792313967,
+								"currency": "usd",
+								"description": "(redacted)",
+								"exchange_rate": null,
+								"fee": 1500,
+								"fee_details": [
+									{
+										"amount": 1500,
+										"application": null,
+										"currency": "usd",
+										"description": "(redacted)",
+										"type": "stripe_fee"
+									}
+								],
+								"id": "txn_1URpwCBzWlxcwgpPjUe4gGdI",
+								"net": -2599,
+								"object": "balance_transaction",
+								"reporting_category": "dispute",
+								"source": "du_1URpwBBzWlxcwgpPfEsuvYVv",
+								"status": "pending",
+								"type": "adjustment"
+							}
+						],
+						"charge": "ch_3URpw8BzWlxcwgpP1WeHKIqo",
+						"created": 1792313967,
+						"currency": "usd",
+						"enhanced_eligibility_types": [],
+						"evidence": "(redacted)",
+						"evidence_details": {
+							"due_by": 1793059199,
+							"enhanced_eligibility": [],
+							"has_evidence": false,
+							"past_due": false,
+							"submission_count": 0,
+							"submission_method": "not_submitted"
+						},
+						"id": "du_1URpwBBzWlxcwgpPfEsuvYVv",
+						"intended_submission_method": "prefer_manual",
+						"is_charge_refundable": false,
+						"issuer_evidence": "(redacted)",
+						"livemode": false,
+						"metadata": [],
+						"object": "dispute",
+						"payment_intent": "pi_3URpw8BzWlxcwgpP13TqZdOr",
+						"payment_method_details": {
+							"card": {
+								"brand": "visa",
+								"case_type": "chargeback",
+								"network": "visa",
+								"network_reason_code": "10.4"
+							},
+							"type": "card"
+						},
+						"reason": "fraudulent",
+						"status": "needs_response"
+					}
+				},
+				"id": "evt_1URpwCBzWlxcwgpPxKq5JSKG",
+				"livemode": false,
+				"type": "charge.dispute.funds_withdrawn"
+			}
+		},
+		{
+			"pair": "second_dispute_funds_withdrawn",
+			"context": "Funds withdrawn for another dispute, du_1URq95BzWlxcwgpPK2lRYxbI (50.00 USD, fraudulent, needs_response).",
+			"logged_at": "2026-10-18T09:12:54+00:00",
+			"restored": {
+				"charge and payment_intent": "As above."
+			},
+			"body": {
+				"account": "acct_1TrY2nBzWlxcwgpP",
+				"data": {
+					"object": {
+						"amount": 5000,
+						"balance_transaction": "txn_1URq96BzWlxcwgpPJKe8bniY",
+						"balance_transactions": [
+							{
+								"amount": -5000,
+								"available_on": 1792540800,
+								"balance_type": "payments",
+								"created": 1792314767,
+								"currency": "usd",
+								"description": "(redacted)",
+								"exchange_rate": null,
+								"fee": 1500,
+								"fee_details": [
+									{
+										"amount": 1500,
+										"application": null,
+										"currency": "usd",
+										"description": "(redacted)",
+										"type": "stripe_fee"
+									}
+								],
+								"id": "txn_1URq96BzWlxcwgpPJKe8bniY",
+								"net": -6500,
+								"object": "balance_transaction",
+								"reporting_category": "dispute",
+								"source": "du_1URq95BzWlxcwgpPK2lRYxbI",
+								"status": "pending",
+								"type": "adjustment"
+							}
+						],
+						"charge": "ch_3URq93BzWlxcwgpP028Tjg3V",
+						"created": 1792314767,
+						"currency": "usd",
+						"enhanced_eligibility_types": [],
+						"evidence": "(redacted)",
+						"evidence_details": {
+							"due_by": 1793059199,
+							"enhanced_eligibility": [],
+							"has_evidence": false,
+							"past_due": false,
+							"submission_count": 0,
+							"submission_method": "not_submitted"
+						},
+						"id": "du_1URq95BzWlxcwgpPK2lRYxbI",
+						"intended_submission_method": "prefer_manual",
+						"is_charge_refundable": false,
+						"issuer_evidence": "(redacted)",
+						"livemode": false,
+						"metadata": [],
+						"object": "dispute",
+						"payment_intent": "pi_3URq93BzWlxcwgpP0jtgJoVk",
+						"payment_method_details": {
+							"card": {
+								"brand": "visa",
+								"case_type": "chargeback",
+								"network": "visa",
+								"network_reason_code": "10.4"
+							},
+							"type": "card"
+						},
+						"reason": "fraudulent",
+						"status": "needs_response"
+					}
+				},
+				"id": "evt_1URq97BzWlxcwgpPWDMHxtP0",
+				"livemode": false,
+				"type": "charge.dispute.funds_withdrawn"
+			}
+		}
+	]
+}

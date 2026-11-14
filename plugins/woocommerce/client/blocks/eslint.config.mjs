@@ -130,6 +130,8 @@ const restrictedImports = [
 ];
 
 const coreModules = [
+	// Core's phone validation, aliased by bin/webpack-configs.js (getPaymentsConfig) and tests/js/jest.config.js.
+	'woocommerce-phone-number-validation',
 	'@woocommerce/base-context',
 	'@woocommerce/base-components',
 	'@woocommerce/base-components/cart-checkout',

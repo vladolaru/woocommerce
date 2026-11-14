@@ -16,7 +16,7 @@ import { paymentSettingsStore } from '@woocommerce/data';
  * Internal dependencies
  */
 import { Action } from '../Action';
-import { connectWcpay } from './utils';
+import { connectWcpay, openWooPaymentsOnboarding } from './utils';
 import './suggestion.scss';
 
 interface PaymentGateway {
@@ -24,11 +24,12 @@ interface PaymentGateway {
 	needsSetup: boolean;
 	installed: boolean;
 	enabled: boolean;
+	plugins?: string[];
 }
 
 interface SuggestionProps {
 	paymentGateway: PaymentGateway;
-	onSetupCallback?: ( () => void ) | null;
+	onSetupCallback?: ( ( resolve?: () => void ) => void ) | null;
 }
 
 export const Suggestion = ( {
@@ -42,6 +43,8 @@ export const Suggestion = ( {
 		enabled: isEnabled,
 		installed: isInstalled,
 	} = paymentGateway;
+	// The suggestion names the extension to install only while the WooPayments feature is off.
+	const hasPlugins = !! paymentGateway.plugins?.length;
 
 	const isWooPayEligible = useSelect( ( select ) => {
 		const store = select( paymentSettingsStore );
@@ -54,11 +57,22 @@ export const Suggestion = ( {
 	// when the user clicks on the "Finish setup" button.
 	// WCPay doesn't need to be configured in WCA.
 	// It should be configured in its onboarding flow.
-	if ( installed && onSetupCallback === null ) {
+	if ( hasPlugins && installed && onSetupCallback === null ) {
 		onSetupCallback = () => {
 			connectWcpay( createNotice );
 		};
 	}
+
+	if ( ! hasPlugins && onSetupCallback === null ) {
+		onSetupCallback = ( resolve?: () => void ) => {
+			openWooPaymentsOnboarding();
+			resolve?.();
+		};
+	}
+
+	const setupButtonText: string = isInstalled
+		? __( 'Finish setup', 'woocommerce' )
+		: __( 'Get started', 'woocommerce' );
 
 	return (
 		<div className="woocommerce-wcpay-suggestion">
@@ -70,14 +84,11 @@ export const Suggestion = ( {
 							id={ id }
 							hasSetup={ true }
 							needsSetup={ needsSetup }
-							isEnabled={ isEnabled }
+							isEnabled={ isEnabled && ! needsSetup }
 							isRecommended={ true }
 							isInstalled={ isInstalled }
-							hasPlugins={ true }
-							setupButtonText={ __(
-								'Get started',
-								'woocommerce'
-							) }
+							hasPlugins={ hasPlugins }
+							setupButtonText={ setupButtonText }
 							onSetupCallback={ onSetupCallback }
 						/>
 					}

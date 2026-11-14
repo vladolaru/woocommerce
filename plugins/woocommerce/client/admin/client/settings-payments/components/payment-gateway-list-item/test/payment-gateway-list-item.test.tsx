@@ -99,8 +99,16 @@ jest.mock( '~/settings-payments/components/incentive-status-badge', () => ( {
 } ) );
 
 jest.mock( '~/settings-payments/components/official-badge', () => ( {
-	OfficialBadge: ( { suggestionId }: { suggestionId: string } ) => (
-		<div data-testid="official-badge">Official-{ suggestionId }</div>
+	OfficialBadge: ( {
+		suggestionId,
+		label = 'Official',
+	}: {
+		suggestionId: string;
+		label?: string;
+	} ) => (
+		<div data-testid="official-badge">
+			{ label }-{ suggestionId }
+		</div>
 	),
 } ) );
 
@@ -782,6 +790,39 @@ describe( 'PaymentGatewayListItem', () => {
 			expect( officialBadge ).toHaveTextContent(
 				'Official-test-suggestion'
 			);
+		} );
+
+		it( "shows Built in on the built-in WooPayments row and Official on the extension's row", () => {
+			const builtin = render(
+				<PaymentGatewayListItem
+					gateway={ createMockGateway( {
+						id: 'woocommerce_payments',
+						_suggestion_id: 'woopayments',
+						_woopayments_builtin: true,
+					} ) }
+					{ ...defaultProps }
+				/>
+			);
+			expect( builtin.getByTestId( 'official-badge' ) ).toHaveTextContent(
+				'Built in-woopayments'
+			);
+			builtin.unmount();
+
+			const extension = render(
+				<PaymentGatewayListItem
+					gateway={ createMockGateway( {
+						id: 'woocommerce_payments',
+						_suggestion_id: 'woopayments',
+					} ) }
+					{ ...defaultProps }
+				/>
+			);
+			expect(
+				extension.getByTestId( 'official-badge' )
+			).toHaveTextContent( 'Official-woopayments' );
+			expect(
+				extension.queryByText( /Built in/ )
+			).not.toBeInTheDocument();
 		} );
 
 		it( 'does not show OfficialBadge when _suggestion_id does not exist', () => {

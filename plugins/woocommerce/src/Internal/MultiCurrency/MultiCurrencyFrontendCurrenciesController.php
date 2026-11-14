@@ -1,0 +1,422 @@
+<?php
+/**
+ * MultiCurrencyFrontendCurrenciesController class file.
+ */
+
+declare( strict_types = 1 );
+
+namespace Automattic\WooCommerce\Internal\MultiCurrency;
+
+use Automattic\Jetpack\Constants;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\DisplayService;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\OrderContextService;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\ServiceFactory;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\RequestContext;
+use Automattic\WooCommerce\Internal\RegisterHooksInterface;
+
+/**
+ * Answers the currency and its format on storefront requests: the selected currency, or an order's on the order pages.
+ *
+ * @since 11.0.0
+ * @internal
+ */
+class MultiCurrencyFrontendCurrenciesController implements RegisterHooksInterface {
+
+	/**
+	 * Runtime owner arbiter.
+	 *
+	 * @var MultiCurrencyRuntimeArbiter
+	 */
+	private MultiCurrencyRuntimeArbiter $arbiter;
+
+	/**
+	 * Multi-Currency service factory.
+	 *
+	 * @var ServiceFactory
+	 */
+	private ServiceFactory $service_factory;
+
+	/**
+	 * Display service, built on first use.
+	 *
+	 * @var DisplayService|null
+	 */
+	private ?DisplayService $display_service = null;
+
+	/**
+	 * Request context.
+	 *
+	 * @var RequestContext
+	 */
+	private RequestContext $request_context;
+
+	/**
+	 * Order context service.
+	 *
+	 * @var OrderContextService
+	 */
+	private OrderContextService $order_context_service;
+
+	/**
+	 * Order currency override for order-context formatting.
+	 *
+	 * @var string|null
+	 */
+	private ?string $order_currency = null;
+
+	/**
+	 * Whether the WooCommerce currency filter is running, so a nested read gets the stored currency.
+	 *
+	 * @var bool
+	 */
+	private bool $is_converting_woocommerce_currency = false;
+
+	/**
+	 * Initialize the class instance.
+	 *
+	 * @internal
+	 *
+	 * @param MultiCurrencyRuntimeArbiter $arbiter               Runtime owner arbiter.
+	 * @param ServiceFactory              $service_factory       Multi-Currency service factory.
+	 * @param RequestContext              $request_context       Request context.
+	 * @param OrderContextService         $order_context_service Order context service.
+	 */
+	final public function init(
+		MultiCurrencyRuntimeArbiter $arbiter,
+		ServiceFactory $service_factory,
+		RequestContext $request_context,
+		OrderContextService $order_context_service
+	): void {
+		$this->arbiter               = $arbiter;
+		$this->service_factory       = $service_factory;
+		$this->request_context       = $request_context;
+		$this->order_context_service = $order_context_service;
+	}
+
+	/**
+	 * Register frontend currency hooks.
+	 */
+	public function register() {
+		if ( ! $this->arbiter->is_builtin_owner() ) {
+			return;
+		}
+
+		if ( $this->request_context->should_register_frontend_hooks() ) {
+			add_filter( 'woocommerce_currency', array( $this, 'get_woocommerce_currency' ), 900 );
+			add_filter( 'wc_get_price_decimals', array( $this, 'get_price_decimals' ), 900 );
+			add_filter( 'wc_get_price_decimal_separator', array( $this, 'get_price_decimal_separator' ), 900 );
+			add_filter( 'wc_get_price_thousand_separator', array( $this, 'get_price_thousand_separator' ), 900 );
+			add_filter( 'woocommerce_price_format', array( $this, 'get_woocommerce_price_format' ), 900 );
+			add_filter( 'option_woocommerce_currency_pos', array( $this, 'get_woocommerce_currency_pos' ), 900 );
+			add_filter( 'woocommerce_order_get_total', array( $this, 'maybe_init_order_currency_from_order_total_prop' ), 900, 2 );
+			add_filter( 'woocommerce_get_formatted_order_total', array( $this, 'maybe_clear_order_currency_after_formatted_order_total' ), 900, 4 );
+
+			add_action( 'before_woocommerce_pay', array( $this, 'init_order_currency_from_query_vars' ) );
+			add_action( 'woocommerce_blocks_enqueue_cart_block_scripts_after', array( $this, 'enqueue_blocks_totals_script' ) );
+			add_action( 'woocommerce_blocks_enqueue_checkout_block_scripts_after', array( $this, 'enqueue_blocks_totals_script' ) );
+		}
+
+		add_filter( 'woocommerce_thankyou_order_id', array( $this, 'init_order_currency' ) );
+		// @phpstan-ignore return.void (the same method is the woocommerce_thankyou_order_id filter's callback; the action discards its return)
+		add_action( 'woocommerce_account_view-order_endpoint', array( $this, 'init_order_currency' ), 9 );
+		add_filter( 'woocommerce_cart_hash', array( $this, 'add_currency_to_cart_hash' ), 900 );
+		add_filter( 'woocommerce_shipping_method_add_rate_args', array( $this, 'fix_price_decimals_for_shipping_rates' ), 900, 2 );
+	}
+
+	/**
+	 * Load the script that shows the currency code after the Cart and Checkout block totals.
+	 *
+	 * The client registers the same totals filter from its Blocks checkout script (client 11.1.0 `client/checkout/blocks/index.js:159-175`).
+	 *
+	 * @internal
+	 */
+	public function enqueue_blocks_totals_script(): void {
+		$suffix = Constants::is_true( 'SCRIPT_DEBUG' ) ? '' : '.min';
+		wp_enqueue_script(
+			'wc-multi-currency-blocks-totals',
+			plugins_url( 'assets/js/frontend/multi-currency-blocks-totals' . $suffix . '.js', WC_PLUGIN_FILE ),
+			array( 'wc-blocks-checkout' ),
+			Constants::get_constant( 'WC_VERSION' ),
+			array( 'in_footer' => true )
+		);
+	}
+
+	/**
+	 * Get the currency code for this request: the order's or the selected currency, else the code earlier filters gave.
+	 *
+	 * @param mixed $currency Existing currency.
+	 * @return string
+	 */
+	public function get_woocommerce_currency( $currency = null ): string {
+		if ( $this->is_converting_woocommerce_currency ) {
+			return is_scalar( $currency ) && '' !== (string) $currency ? (string) $currency : (string) get_option( 'woocommerce_currency' );
+		}
+
+		$this->is_converting_woocommerce_currency = true;
+
+		try {
+			return $this->get_display_service()->get_woocommerce_currency( $this->order_currency, is_string( $currency ) ? $currency : null );
+		} finally {
+			$this->is_converting_woocommerce_currency = false;
+		}
+	}
+
+	/**
+	 * Get the price decimal count of this request's currency.
+	 *
+	 * @param mixed $decimals Existing decimal count.
+	 * @return int
+	 */
+	public function get_price_decimals( $decimals ): int {
+		// The Analytics import rounds amounts converted to the store currency, which keep the store's decimals.
+		if ( doing_filter( 'woocommerce_analytics_update_order_stats_data' ) ) {
+			return absint( $decimals );
+		}
+
+		$currency_decimals = $this->get_display_service()->get_price_decimals( absint( $decimals ), $this->order_currency );
+
+		// A flat-rate percent fee in store units keeps the store's decimals, or the shopper's currency's when it has more.
+		if ( MultiCurrencyFrontendPricesController::is_computing_store_currency_fee() ) {
+			return max( absint( $decimals ), $currency_decimals );
+		}
+
+		return $currency_decimals;
+	}
+
+	/**
+	 * Get the price decimal separator of this request's currency.
+	 *
+	 * @param mixed $separator Existing decimal separator.
+	 * @return string
+	 */
+	public function get_price_decimal_separator( $separator ): string {
+		return $this->get_display_service()->get_price_decimal_separator( (string) $separator, $this->order_currency );
+	}
+
+	/**
+	 * Get the price thousand separator of this request's currency.
+	 *
+	 * @param mixed $separator Existing thousand separator.
+	 * @return string
+	 */
+	public function get_price_thousand_separator( $separator ): string {
+		return $this->get_display_service()->get_price_thousand_separator( (string) $separator, $this->order_currency );
+	}
+
+	/**
+	 * Get the price format of this request's currency.
+	 *
+	 * @param mixed $format Existing price format.
+	 * @return string
+	 */
+	public function get_woocommerce_price_format( $format ): string {
+		return $this->get_display_service()->get_woocommerce_price_format( (string) $format, $this->order_currency );
+	}
+
+	/**
+	 * Get the currency symbol position of this request's currency.
+	 *
+	 * @param mixed $position Existing currency position.
+	 * @return string
+	 */
+	public function get_woocommerce_currency_pos( $position ): string {
+		return $this->get_display_service()->get_woocommerce_currency_pos( (string) $position, $this->order_currency );
+	}
+
+	/**
+	 * Vary the cart hash by the selected currency and its rate.
+	 *
+	 * @param mixed $hash Existing cart hash.
+	 * @return string
+	 */
+	public function add_currency_to_cart_hash( $hash ): string {
+		return $this->get_display_service()->add_currency_to_cart_hash( (string) $hash );
+	}
+
+	/**
+	 * Initialize order-context currency from WooCommerce order query vars.
+	 */
+	public function init_order_currency_from_query_vars(): void {
+		global $wp;
+
+		if ( ! $wp instanceof \WP ) {
+			return;
+		}
+
+		foreach ( array( 'order-pay', 'order-received', 'view-order' ) as $query_var ) {
+			if ( ! empty( $wp->query_vars[ $query_var ] ) ) {
+				$this->init_order_currency( $wp->query_vars[ $query_var ] );
+				return;
+			}
+		}
+	}
+
+	/**
+	 * Switch formatting to the order's currency when the order context asks for it; the total is returned unchanged.
+	 *
+	 * @param mixed $total Order total.
+	 * @param mixed $order Order object.
+	 * @return mixed
+	 */
+	public function maybe_init_order_currency_from_order_total_prop( $total, $order ) {
+		if ( $this->order_context_service->should_use_order_currency() ) {
+			$this->init_order_currency( $order );
+		}
+
+		return $total;
+	}
+
+	/**
+	 * Clear order-context currency after formatted order totals.
+	 *
+	 * @param mixed $formatted_total  Formatted total.
+	 * @param mixed $order            Order object.
+	 * @param mixed $tax_display      Tax display.
+	 * @param mixed $display_refunded Whether refunded values are displayed.
+	 * @return mixed
+	 */
+	public function maybe_clear_order_currency_after_formatted_order_total( $formatted_total, $order, $tax_display, $display_refunded ) {
+		unset( $order, $tax_display, $display_refunded );
+
+		if ( null !== $this->order_currency && $this->order_context_service->should_use_order_currency() ) {
+			$this->order_currency = null;
+		}
+
+		return $formatted_total;
+	}
+
+	/**
+	 * Initialize order-context currency from an order object or ID.
+	 *
+	 * @param mixed $order_id Order object or ID.
+	 * @return mixed
+	 */
+	public function init_order_currency( $order_id ) {
+		if ( null !== $this->order_currency ) {
+			return $order_id;
+		}
+
+		$removed_filters = $this->remove_frontend_currency_format_filters();
+		try {
+			$order = $order_id instanceof \WC_Order ? $order_id : wc_get_order( $order_id );
+		} finally {
+			$this->restore_frontend_currency_format_filters( $removed_filters );
+		}
+
+		if ( $order ) {
+			$this->order_currency = $order->get_currency();
+
+			return $order->get_id();
+		}
+
+		$this->order_currency = $this->get_display_service()->get_woocommerce_currency();
+
+		return $order_id;
+	}
+
+	/**
+	 * Run a callback with prices formatted in an order's currency instead of the visitor's selected one.
+	 *
+	 * Background and webhook requests can run as a user whose selection differs from the order's currency.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @param string   $currency Order currency code.
+	 * @param callable $callback Callback that formats prices.
+	 * @phpstan-param callable(): string $callback
+	 * @return string The callback's result.
+	 */
+	public function format_in_order_currency( string $currency, callable $callback ): string {
+		$previous             = $this->order_currency;
+		$this->order_currency = strtoupper( $currency );
+		try {
+			return $callback();
+		} finally {
+			$this->order_currency = $previous;
+		}
+	}
+
+	/**
+	 * Round shipping rates to the decimals of the currency their cost is in.
+	 *
+	 * Core rounds the rate cost with `price_decimals` after computing its taxes. On storefront requests the cost is in the
+	 * selected currency, whose decimals `wc_get_price_decimals()` returns there; elsewhere it returns the store's.
+	 *
+	 * @param mixed $args   Shipping rate args.
+	 * @param mixed $method Shipping method.
+	 * @return mixed
+	 */
+	public function fix_price_decimals_for_shipping_rates( $args, $method ) {
+		unset( $method );
+
+		if ( ! is_array( $args ) ) {
+			return $args;
+		}
+
+		$args['price_decimals'] = wc_get_price_decimals();
+
+		return $args;
+	}
+
+	/**
+	 * Get the display service.
+	 *
+	 * @return DisplayService
+	 */
+	private function get_display_service(): DisplayService {
+		if ( null === $this->display_service ) {
+			$this->display_service = $this->service_factory->create_display_service();
+		}
+
+		return $this->display_service;
+	}
+
+	/**
+	 * Remove frontend currency format filters during order lookup.
+	 *
+	 * @return array<string,int|false> Removed filter priorities keyed by hook.
+	 */
+	private function remove_frontend_currency_format_filters(): array {
+		$removed_filters = array();
+
+		foreach ( $this->get_frontend_currency_format_filters() as $hook => $callback ) {
+			$priority                 = has_filter( $hook, $callback );
+			$removed_filters[ $hook ] = $priority;
+
+			if ( false !== $priority ) {
+				remove_filter( $hook, $callback, $priority );
+			}
+		}
+
+		return $removed_filters;
+	}
+
+	/**
+	 * Restore frontend currency format filters removed during order lookup.
+	 *
+	 * @param array<string,int|false> $removed_filters Removed filter priorities keyed by hook.
+	 */
+	private function restore_frontend_currency_format_filters( array $removed_filters ): void {
+		foreach ( $this->get_frontend_currency_format_filters() as $hook => $callback ) {
+			$priority = $removed_filters[ $hook ] ?? false;
+
+			if ( false !== $priority ) {
+				add_filter( $hook, $callback, $priority );
+			}
+		}
+	}
+
+	/**
+	 * Get frontend currency format callbacks.
+	 *
+	 * @return array<string,callable>
+	 */
+	private function get_frontend_currency_format_filters(): array {
+		return array(
+			'woocommerce_price_format'        => array( $this, 'get_woocommerce_price_format' ),
+			'wc_get_price_thousand_separator' => array( $this, 'get_price_thousand_separator' ),
+			'wc_get_price_decimal_separator'  => array( $this, 'get_price_decimal_separator' ),
+			'wc_get_price_decimals'           => array( $this, 'get_price_decimals' ),
+		);
+	}
+}

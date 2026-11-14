@@ -8,6 +8,7 @@ declare( strict_types=1 );
 namespace Automattic\WooCommerce\Internal\Admin\RemoteFreeExtensions;
 
 use Automattic\WooCommerce\Admin\Features\PaymentGatewaySuggestions\DefaultPaymentGateways;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 
 defined( 'ABSPATH' ) || exit;
 
@@ -32,15 +33,18 @@ class DefaultFreeExtensions {
 	 * @return array Default specs.
 	 */
 	public static function get_all() {
-		$bundles = array(
+		$woopayments_plugin = wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->is_builtin_enabled() ? array() : array( self::get_plugin( 'woocommerce-payments' ) );
+		$bundles            = array(
 			array(
 				'key'     => 'obw/basics',
 				'title'   => __( 'Get the basics', 'woocommerce' ),
-				'plugins' => array(
-					self::get_plugin( 'woocommerce-payments' ),
-					self::get_plugin( 'woocommerce-shipping' ),
-					self::get_plugin( 'woocommerce-services:tax' ),
-					self::get_plugin( 'jetpack' ),
+				'plugins' => array_merge(
+					$woopayments_plugin,
+					array(
+						self::get_plugin( 'woocommerce-shipping' ),
+						self::get_plugin( 'woocommerce-services:tax' ),
+						self::get_plugin( 'jetpack' ),
+					)
 				),
 			),
 			array(
@@ -78,20 +82,22 @@ class DefaultFreeExtensions {
 				'key'     => 'obw/core-profiler',
 				'title'   => __( 'Grow your store', 'woocommerce' ),
 				'plugins' => self::with_core_profiler_fields(
-					array(
-						self::get_plugin( 'woocommerce-payments' ),
-						self::get_plugin( 'woocommerce-shipping' ),
-						self::get_plugin( 'woocommerce-shipstation-integration' ),
-						self::get_plugin( 'packlink-pro-shipping' ),
-						self::get_plugin( 'jetpack' ),
-						self::get_plugin( 'pinterest-for-woocommerce' ),
-						self::get_plugin( 'mailpoet' ),
-						self::get_plugin( 'klaviyo' ),
-						self::get_plugin( 'google-listings-and-ads' ),
-						self::get_plugin( 'woocommerce-services:tax' ),
-						self::get_plugin( 'tiktok-for-business' ),
-						self::get_plugin( 'snapchat-for-woocommerce' ),
-						self::get_plugin( 'reddit-for-woocommerce' ),
+					array_merge(
+						$woopayments_plugin,
+						array(
+							self::get_plugin( 'woocommerce-shipping' ),
+							self::get_plugin( 'woocommerce-shipstation-integration' ),
+							self::get_plugin( 'packlink-pro-shipping' ),
+							self::get_plugin( 'jetpack' ),
+							self::get_plugin( 'pinterest-for-woocommerce' ),
+							self::get_plugin( 'mailpoet' ),
+							self::get_plugin( 'klaviyo' ),
+							self::get_plugin( 'google-listings-and-ads' ),
+							self::get_plugin( 'woocommerce-services:tax' ),
+							self::get_plugin( 'tiktok-for-business' ),
+							self::get_plugin( 'snapchat-for-woocommerce' ),
+							self::get_plugin( 'reddit-for-woocommerce' ),
+						)
 					)
 				),
 			),

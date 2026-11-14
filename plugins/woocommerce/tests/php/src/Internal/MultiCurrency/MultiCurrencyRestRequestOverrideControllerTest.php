@@ -1,0 +1,262 @@
+<?php
+declare( strict_types = 1 );
+
+namespace Automattic\WooCommerce\Tests\Internal\MultiCurrency;
+
+use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRestRequestOverrideController;
+use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\RequestContext;
+use WC_Unit_Test_Case;
+
+/**
+ * Tests for the MultiCurrencyRestRequestOverrideController class.
+ */
+class MultiCurrencyRestRequestOverrideControllerTest extends WC_Unit_Test_Case {
+
+	private const FILTER_OVERRIDE_SELECTED_CURRENCY   = 'wcpay_multi_currency_override_selected_currency';
+	private const FILTER_SHOULD_RETURN_STORE_CURRENCY = 'wcpay_multi_currency_should_return_store_currency';
+	private const FILTER_SHOULD_CONVERT_PRODUCT_PRICE = 'wcpay_multi_currency_should_convert_product_price';
+
+	/**
+	 * Original store currency.
+	 *
+	 * @var string
+	 */
+	private string $original_currency;
+
+	/**
+	 * Set up test state.
+	 */
+	public function set_up(): void {
+		parent::set_up();
+
+		$this->original_currency = get_option( 'woocommerce_currency', 'USD' );
+		update_option( 'woocommerce_currency', 'USD' );
+	}
+
+	/**
+	 * Tear down test fixtures.
+	 */
+	public function tear_down(): void {
+		remove_all_filters( self::FILTER_OVERRIDE_SELECTED_CURRENCY );
+		remove_all_filters( self::FILTER_SHOULD_RETURN_STORE_CURRENCY );
+		remove_all_filters( self::FILTER_SHOULD_CONVERT_PRODUCT_PRICE );
+		unset( $_GET['currency'] );
+		update_option( 'woocommerce_currency', $this->original_currency );
+
+		parent::tear_down();
+	}
+
+	/**
+	 * @testdox Should register exactly the currency override the request allows, and no store-currency guard, once: $_dataName.
+	 * @dataProvider provide_query_currency_override_requests
+	 *
+	 * @param string                            $owner          Runtime owner.
+	 * @param bool                              $rest_overrides Whether the request is a non-Store REST request.
+	 * @param bool                              $with_currency  Whether the request has a currency query argument.
+	 * @param string|false                      $override       The selected currency override the filter then gives.
+	 * @param array<string,array<string,int[]>> $expected       Every hook the controller registers.
+	 */
+	public function test_registers_the_query_currency_override_the_request_allows( string $owner, bool $rest_overrides, bool $with_currency, $override, array $expected ): void {
+		if ( $with_currency ) {
+			$_GET['currency'] = ' gbp ';
+		} else {
+			unset( $_GET['currency'] );
+		}
+		$sut = $this->create_controller( $owner, $rest_overrides );
+
+		$sut->register();
+		$sut->register();
+
+		$this->assertSame( $expected, RegisteredHooks::of( $sut ) );
+		// RegisteredHooks::of() sees only the controller's own methods, so the global store-currency guards are checked by name.
+		$this->assertFalse( has_filter( self::FILTER_SHOULD_RETURN_STORE_CURRENCY, '__return_true' ) );
+		$this->assertFalse( has_filter( self::FILTER_SHOULD_CONVERT_PRODUCT_PRICE, '__return_false' ) );
+		/**
+		 * Apply the request-local selected currency override filter registered by the controller.
+		 *
+		 * @since 11.0.0
+		 */
+		$this->assertSame( $override, apply_filters( self::FILTER_OVERRIDE_SELECTED_CURRENCY, false ) );
+	}
+
+	/**
+	 * Requests and the hooks each registers: the query override on a non-Store REST request with a currency under core, nothing when the extension owns or outside non-Store REST, with or without a currency.
+	 *
+	 * @return array<string,array<int,mixed>>
+	 */
+	public function provide_query_currency_override_requests(): array {
+		return array(
+			'a non-Store REST request with a currency' => array(
+				MultiCurrencyRuntimeArbiter::OWNER_BUILTIN,
+				true,
+				true,
+				'GBP',
+				array(
+					'wcpay_multi_currency_override_selected_currency' => array( 'get_currency_from_query_param' => array( 10, 1 ) ),
+				),
+			),
+			'the extension owns, with a currency'      => array( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION, true, true, false, array() ),
+			'outside non-Store REST, with a currency'  => array( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, false, true, false, array() ),
+			'the extension owns, no currency'          => array( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION, true, false, false, array() ),
+			'outside non-Store REST, no currency'      => array( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, false, false, false, array() ),
+		);
+	}
+
+	/**
+	 * @testdox Should force store currency without query currency for non-Store REST request.
+	 */
+	public function test_forces_store_currency_without_query_currency_for_non_store_rest_request(): void {
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, true );
+
+		$sut->register();
+		$sut->register();
+
+		$this->assertSame( 10, has_filter( self::FILTER_OVERRIDE_SELECTED_CURRENCY, array( $sut, 'get_store_currency_code' ) ) );
+		$this->assertSame( 10, has_filter( self::FILTER_SHOULD_RETURN_STORE_CURRENCY, '__return_true' ) );
+		$this->assertSame( 10, has_filter( self::FILTER_SHOULD_CONVERT_PRODUCT_PRICE, '__return_false' ) );
+		/**
+		 * Apply the request-local selected currency override filter registered by the controller.
+		 *
+		 * @since 11.0.0
+		 */
+		$this->assertSame( 'USD', apply_filters( self::FILTER_OVERRIDE_SELECTED_CURRENCY, false ) );
+		/**
+		 * Apply the request-local store-currency guard filter registered by the controller.
+		 *
+		 * @since 11.0.0
+		 */
+		$this->assertTrue( apply_filters( self::FILTER_SHOULD_RETURN_STORE_CURRENCY, false ) );
+		/**
+		 * Apply the request-local product price conversion guard filter registered by the controller.
+		 *
+		 * @since 11.0.0
+		 */
+		$this->assertFalse( apply_filters( self::FILTER_SHOULD_CONVERT_PRODUCT_PRICE, true, new \stdClass() ) );
+	}
+
+	/**
+	 * @testdox Should add the store-currency guards when another plugin already added the same callbacks at another priority.
+	 *
+	 * Client 11.1.0 adds both callbacks with a plain add_filter() (`includes/multi-currency/MultiCurrency.php:281-282`), so
+	 * its entries run at priority 10 whatever other plugins added before.
+	 */
+	public function test_adds_store_currency_guards_beside_the_same_callbacks_at_another_priority(): void {
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, true );
+		add_filter( self::FILTER_SHOULD_RETURN_STORE_CURRENCY, '__return_true', 5 );
+		add_filter( self::FILTER_SHOULD_RETURN_STORE_CURRENCY, '__return_false', 7 );
+		add_filter( self::FILTER_SHOULD_CONVERT_PRODUCT_PRICE, '__return_false', 5 );
+		add_filter( self::FILTER_SHOULD_CONVERT_PRODUCT_PRICE, '__return_true', 7 );
+
+		$sut->register();
+
+		/**
+		 * Apply the request-local store-currency guard filter registered by the controller.
+		 *
+		 * @since 11.0.0
+		 */
+		$this->assertTrue( apply_filters( self::FILTER_SHOULD_RETURN_STORE_CURRENCY, false ) );
+		/**
+		 * Apply the request-local product price conversion guard filter registered by the controller.
+		 *
+		 * @since 11.0.0
+		 */
+		$this->assertFalse( apply_filters( self::FILTER_SHOULD_CONVERT_PRODUCT_PRICE, true, new \stdClass() ) );
+	}
+
+	/**
+	 * Create a REST request override controller with a static runtime owner.
+	 *
+	 * @param string $owner                             Runtime owner.
+	 * @param bool   $should_register_request_overrides Whether REST overrides should register.
+	 * @return MultiCurrencyRestRequestOverrideController
+	 */
+	private function create_controller( string $owner, bool $should_register_request_overrides ): MultiCurrencyRestRequestOverrideController {
+		$controller = new MultiCurrencyRestRequestOverrideController();
+		$controller->init(
+			$this->create_arbiter( $owner ),
+			$this->create_request_context( $should_register_request_overrides )
+		);
+
+		return $controller;
+	}
+
+	/**
+	 * Create a static multi-currency runtime arbiter.
+	 *
+	 * @param string $owner Runtime owner.
+	 * @return MultiCurrencyRuntimeArbiter
+	 */
+	private function create_arbiter( string $owner ): MultiCurrencyRuntimeArbiter {
+		return new class( $owner ) extends MultiCurrencyRuntimeArbiter {
+			/**
+			 * Runtime owner.
+			 *
+			 * @var string
+			 */
+			private string $owner;
+
+			/**
+			 * Constructor.
+			 *
+			 * @param string $owner Runtime owner.
+			 */
+			public function __construct( string $owner ) {
+				$this->owner = $owner;
+			}
+
+			/**
+			 * Get the multi-currency runtime owner for the current site.
+			 *
+			 * @return string
+			 */
+			public function get_runtime_owner(): string {
+				return $this->owner;
+			}
+
+			/**
+			 * Tell whether core multi-currency may register hooks.
+			 *
+			 * @return bool
+			 */
+			public function is_builtin_owner(): bool {
+				return MultiCurrencyRuntimeArbiter::OWNER_BUILTIN === $this->owner;
+			}
+		};
+	}
+
+	/**
+	 * Create a request context test double.
+	 *
+	 * @param bool $should_register_request_overrides Whether REST overrides should register.
+	 * @return RequestContext
+	 */
+	private function create_request_context( bool $should_register_request_overrides ): RequestContext {
+		return new class( $should_register_request_overrides ) extends RequestContext {
+			/**
+			 * Whether REST overrides should register.
+			 *
+			 * @var bool
+			 */
+			private bool $should_register_request_overrides;
+
+			/**
+			 * Constructor.
+			 *
+			 * @param bool $should_register_request_overrides Whether REST overrides should register.
+			 */
+			public function __construct( bool $should_register_request_overrides ) {
+				$this->should_register_request_overrides = $should_register_request_overrides;
+			}
+
+			/**
+			 * Tell whether REST request override filters should register.
+			 *
+			 * @return bool
+			 */
+			public function should_register_rest_request_overrides(): bool {
+				return $this->should_register_request_overrides;
+			}
+		};
+	}
+}

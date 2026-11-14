@@ -1,0 +1,1104 @@
+<?php
+/**
+ * PaymentIntentEventHandler class file.
+ */
+
+declare( strict_types = 1 );
+
+namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks;
+
+use Automattic\WooCommerce\Enums\OrderStatus;
+use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
+use Automattic\WooCommerce\Internal\Payments\OrderPaymentLockRefusedException;
+use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
+use Automattic\WooCommerce\Internal\Payments\PaymentLifecycleEvent;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\PaymentMethodRegistry;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\SubscriptionMethodPolicy;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAdminMenuBadgeService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAmountMismatchHold;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCompositionDataSettler;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCurrencyUtils;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeeDetailsNoteController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentCodec;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentConfirmationService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIppReceiptEmail;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDataService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffects;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
+use Throwable;
+use WC_Order;
+use WC_Payment_Token;
+
+/**
+ * Applies WooPayments payment intent and charge expiry webhook events to their orders, or records them when they are on
+ * another charge than the order's payment.
+ *
+ * @since 11.2.0
+ * @internal
+ */
+class PaymentIntentEventHandler {
+
+	/**
+	 * Order lifecycle service.
+	 *
+	 * @var OrderPaymentLifecycleService
+	 */
+	private OrderPaymentLifecycleService $lifecycle_service;
+
+	/**
+	 * WooPayments API client.
+	 *
+	 * @var Client
+	 */
+	private Client $api_client;
+
+	/**
+	 * WooPayments order data service.
+	 *
+	 * @var WooPaymentsOrderDataService
+	 */
+	private WooPaymentsOrderDataService $order_data_service;
+
+	/**
+	 * WooPayments account service.
+	 *
+	 * @var WooPaymentsAccountService
+	 */
+	private WooPaymentsAccountService $account_service;
+
+	/**
+	 * WooPayments order note service.
+	 *
+	 * @var WooPaymentsOrderNoteService
+	 */
+	private WooPaymentsOrderNoteService $order_note_service;
+
+	/**
+	 * WooPayments admin menu badge service.
+	 *
+	 * @var WooPaymentsAdminMenuBadgeService
+	 */
+	private WooPaymentsAdminMenuBadgeService $admin_menu_badge_service;
+
+	/**
+	 * Webhook event order resolver.
+	 *
+	 * @var EventOrderResolver
+	 */
+	private EventOrderResolver $event_order_resolver;
+
+	/**
+	 * Recorder of events on a charge that does not pay the order.
+	 *
+	 * @var OtherChargeRecorder
+	 */
+	private OtherChargeRecorder $other_charge_recorder;
+
+	/**
+	 * Fee details note controller.
+	 *
+	 * @var WooPaymentsFeeDetailsNoteController
+	 */
+	private WooPaymentsFeeDetailsNoteController $fee_details_note_controller;
+
+	/**
+	 * Order payment lock.
+	 *
+	 * @var OrderPaymentLock
+	 */
+	private OrderPaymentLock $order_payment_lock;
+
+	/**
+	 * WooPayments persistence vocabulary.
+	 *
+	 * @var WooPaymentsPersistenceVocabulary
+	 */
+	private WooPaymentsPersistenceVocabulary $persistence_vocabulary;
+
+	/**
+	 * Intent confirmation service, which builds the lifecycle event of an authorized intent.
+	 *
+	 * @var WooPaymentsIntentConfirmationService
+	 */
+	private WooPaymentsIntentConfirmationService $intent_confirmation_service;
+
+	/**
+	 * Settles the account before the order is read under the claim.
+	 *
+	 * @var WooPaymentsCompositionDataSettler
+	 */
+	private WooPaymentsCompositionDataSettler $composition_data_settler;
+
+	/**
+	 * Payment method definitions, which mark the buy now, pay later methods.
+	 *
+	 * @var PaymentMethodRegistry
+	 */
+	private PaymentMethodRegistry $payment_method_registry;
+
+	/**
+	 * Initialize the class instance.
+	 *
+	 * @internal
+	 *
+	 * @param OrderPaymentLifecycleService         $lifecycle_service           Order lifecycle service.
+	 * @param Client                               $api_client                  WooPayments API client.
+	 * @param WooPaymentsOrderDataService          $order_data_service          WooPayments order data service.
+	 * @param WooPaymentsAccountService            $account_service             WooPayments account service.
+	 * @param WooPaymentsOrderNoteService          $order_note_service          WooPayments order note service.
+	 * @param WooPaymentsAdminMenuBadgeService     $admin_menu_badge_service    WooPayments admin menu badge service.
+	 * @param EventOrderResolver                   $event_order_resolver        Webhook event order resolver.
+	 * @param OtherChargeRecorder                  $other_charge_recorder       Recorder of events on a charge that does not pay the order.
+	 * @param WooPaymentsFeeDetailsNoteController  $fee_details_note_controller Fee details note controller.
+	 * @param OrderPaymentLock                     $order_payment_lock          Order payment lock.
+	 * @param WooPaymentsPersistenceVocabulary     $persistence_vocabulary      WooPayments persistence vocabulary.
+	 * @param WooPaymentsIntentConfirmationService $intent_confirmation_service Intent confirmation service.
+	 * @param WooPaymentsCompositionDataSettler    $composition_data_settler    Settles the account before the read.
+	 * @param PaymentMethodRegistry                $payment_method_registry     Payment method definitions.
+	 */
+	final public function init( OrderPaymentLifecycleService $lifecycle_service, Client $api_client, WooPaymentsOrderDataService $order_data_service, WooPaymentsAccountService $account_service, WooPaymentsOrderNoteService $order_note_service, WooPaymentsAdminMenuBadgeService $admin_menu_badge_service, EventOrderResolver $event_order_resolver, OtherChargeRecorder $other_charge_recorder, WooPaymentsFeeDetailsNoteController $fee_details_note_controller, OrderPaymentLock $order_payment_lock, WooPaymentsPersistenceVocabulary $persistence_vocabulary, WooPaymentsIntentConfirmationService $intent_confirmation_service, WooPaymentsCompositionDataSettler $composition_data_settler, PaymentMethodRegistry $payment_method_registry ): void {
+		$this->lifecycle_service           = $lifecycle_service;
+		$this->api_client                  = $api_client;
+		$this->order_data_service          = $order_data_service;
+		$this->account_service             = $account_service;
+		$this->order_note_service          = $order_note_service;
+		$this->admin_menu_badge_service    = $admin_menu_badge_service;
+		$this->event_order_resolver        = $event_order_resolver;
+		$this->other_charge_recorder       = $other_charge_recorder;
+		$this->fee_details_note_controller = $fee_details_note_controller;
+		$this->order_payment_lock          = $order_payment_lock;
+		$this->persistence_vocabulary      = $persistence_vocabulary;
+		$this->intent_confirmation_service = $intent_confirmation_service;
+		$this->composition_data_settler    = $composition_data_settler;
+		$this->payment_method_registry     = $payment_method_registry;
+	}
+
+	/**
+	 * Tell whether the handler processes this event type.
+	 *
+	 * @param string $event_type Event type.
+	 * @return bool
+	 */
+	public function is_supported_event( string $event_type ): bool {
+		return in_array(
+			$event_type,
+			array(
+				'payment_intent.succeeded',
+				'payment_intent.payment_failed',
+				'payment_intent.canceled',
+				'payment_intent.amount_capturable_updated',
+				'charge.expired',
+			),
+			true
+		);
+	}
+
+	/**
+	 * Process a payment intent or charge expiry event.
+	 *
+	 * A canceled intent only invalidates the authorization caches. An authorization invalidates them first, and goes on
+	 * only for an online payment that awaits capture. Otherwise the event's order is found and the event applied to it or
+	 * recorded on it; an event that resolves no order, or a payment failure that is not actionable, changes nothing. A
+	 * buy now, pay later failure of the order's own payment changes no status: it can add its declined-payment note, under
+	 * the same claim (apply_order_payment_event_under_lock()).
+	 *
+	 * @param string              $event_type   Event type.
+	 * @param array<string,mixed> $event_object Payment intent or charge object.
+	 * @throws OrderPaymentLockRefusedException When another operation holds the order payment lock; nothing is written.
+	 */
+	public function process( string $event_type, array $event_object ): void {
+		// Client 11.3.0 only clears the authorization summary caches on a canceled intent and resolves no order
+		// (class-wc-payments-webhook-processing-service.php:416-420).
+		if ( 'payment_intent.canceled' === $event_type ) {
+			$this->admin_menu_badge_service->invalidate_authorization_summary_caches();
+			return;
+		}
+
+		// Client 11.3.0 clears the caches for every authorization, then leaves in-person payments, which their own flow
+		// updates, and any intent not awaiting capture (class-wc-payments-webhook-processing-service.php:437-451).
+		if ( 'payment_intent.amount_capturable_updated' === $event_type ) {
+			$this->admin_menu_badge_service->invalidate_authorization_summary_caches();
+			if ( ! $this->is_online_authorization( $event_object ) ) {
+				return;
+			}
+		}
+
+		$record_only = false;
+		if ( 'charge.expired' === $event_type ) {
+			$order = $this->event_order_resolver->find_order_by_charge_id( $this->get_object_id( $event_object ) );
+			if ( ! $order instanceof WC_Order ) {
+				$order       = $this->event_order_resolver->find_order_from_charge_metadata( $event_object );
+				$record_only = true;
+			}
+		} else {
+			$order = $this->event_order_resolver->find_order_for_intent_event( $event_object );
+		}
+		if ( ! $order instanceof WC_Order ) {
+			return;
+		}
+
+		if ( 'payment_intent.payment_failed' === $event_type && ! $this->is_actionable_payment_failure( $event_object ) && ! $this->is_buy_now_pay_later_failure( $event_object ) ) {
+			return;
+		}
+
+		$this->process_order_payment_event( $order, $event_type, $event_object, $record_only );
+
+		// Captures and expiries change what the uncaptured-transactions badge counts, so its caches are cleared once the order is updated.
+		if ( ! in_array( $event_type, array( 'payment_intent.payment_failed', 'payment_intent.amount_capturable_updated' ), true ) ) {
+			$this->admin_menu_badge_service->invalidate_authorization_summary_caches();
+		}
+	}
+
+	/**
+	 * Apply a payment intent or charge expiry event to its order, or record it when it is on another charge.
+	 *
+	 * The event is the order's own payment or another charge on it, decided on the order read again under the order
+	 * payment lock; the same claim covers what either branch writes. The lock value is the event object's ID: the intent
+	 * for intent events, the charge for `charge.expired`.
+	 *
+	 * The account the event's composition reads is settled before that read, and platform cache refreshes stay stopped
+	 * until the event is applied (WooPaymentsCompositionDataSettler).
+	 *
+	 * @param WC_Order            $order        Order the event resolved to.
+	 * @param string              $event_type   `payment_intent.succeeded`, `payment_intent.payment_failed`,
+	 *                                          `payment_intent.amount_capturable_updated` or `charge.expired`.
+	 * @param array<string,mixed> $event_object Payment intent or charge object.
+	 * @param bool                $record_only  Whether the order was found only by the charge's metadata, so the event is recorded while the order still does not hold the charge.
+	 * @throws OrderPaymentLockRefusedException When another operation holds the order payment lock; nothing is written.
+	 */
+	private function process_order_payment_event( WC_Order $order, string $event_type, array $event_object, bool $record_only = false ): void {
+		$lock_value = $this->get_object_id( $event_object );
+		$lock_token = $this->order_payment_lock->claim( $order, $this->persistence_vocabulary, $lock_value, 'payment status update' );
+		if ( null === $lock_token ) {
+			$this->log_payment_event_refusal( $order, $event_type, $lock_value );
+			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- The message is built in the exception from an order ID and a fixed operation name, not HTML output.
+			throw new OrderPaymentLockRefusedException( $order->get_id(), 'payment status update' );
+		}
+
+		try {
+			list( $is_own_payment, $notify_repeated_terminal_failure ) = $this->composition_data_settler->run_settled(
+				fn(): array => $this->apply_order_payment_event_under_lock( $order, $event_type, $event_object, $record_only )
+			);
+		} finally {
+			$this->order_payment_lock->release( $order, $this->persistence_vocabulary, $lock_token );
+		}
+
+		// The status did not change, so WooCommerce sends no failed-order e-mail; client 11.1.0 fires both so the merchant hears
+		// of every terminal decline (class-wc-payments-order-service.php:795-799).
+		if ( $notify_repeated_terminal_failure ) {
+			// phpcs:disable WooCommerce.Commenting.CommentHooks.MissingSinceComment
+			/** This action is documented in includes/class-wc-emails.php */
+			do_action( 'woocommerce_order_status_pending_to_failed_notification', $order->get_id(), $order );
+			/** This action is documented in includes/class-wc-emails.php */
+			do_action( 'woocommerce_order_status_failed_notification', $order->get_id(), $order );
+			// phpcs:enable WooCommerce.Commenting.CommentHooks.MissingSinceComment
+		}
+
+		if ( $is_own_payment && 'payment_intent.succeeded' === $event_type ) {
+			$this->maybe_send_ipp_receipt_email( $order, $event_object );
+		}
+	}
+
+	/**
+	 * Apply a payment intent or charge expiry event to its order, under the order payment lock the caller holds, as
+	 * process_order_payment_event() describes.
+	 *
+	 * @param WC_Order            $order        Order the event resolved to.
+	 * @param string              $event_type   Event type.
+	 * @param array<string,mixed> $event_object Payment intent or charge object.
+	 * @param bool                $record_only  Whether the order was found only by the charge's metadata.
+	 * @return array{0:bool,1:bool} Whether the event is the order's own payment, and whether a repeated terminal decline was recorded.
+	 */
+	private function apply_order_payment_event_under_lock( WC_Order $order, string $event_type, array $event_object, bool $record_only ): array {
+		$notify_repeated_terminal_failure = false;
+		$this->lifecycle_service->reread_order_from_data_store( $order );
+		$is_charge_event = 'charge.expired' === $event_type;
+		$charge_id       = $is_charge_event ? $this->get_object_id( $event_object ) : $this->get_charge_id_from_intent( $event_object );
+		$intent_id       = $is_charge_event ? $this->event_order_resolver->get_event_intent_id( $event_object, $order ) : $this->get_object_id( $event_object );
+		// An order found by the charge's metadata is recorded only while it still does not hold the charge: one that
+		// saved it before this claim is decided like any order found by its charge.
+		$record_only    = $record_only && $charge_id !== (string) $order->get_meta( '_charge_id', true );
+		$is_own_payment = ! $record_only && $this->event_order_resolver->is_own_payment( $order, $intent_id, $charge_id );
+		// An authorization or a payment failure changes only an order paid with WooPayments, so a stored attempt that another
+		// payment method replaced cannot hold or fail the order. For an authorization this check stands for client 11.3.0's
+		// superseded-attempt skip, which leaves an order paid another way (class-wc-payments-webhook-processing-service.php:464-471);
+		// the client's failed handler has no such check (:511-560).
+		if ( in_array( $event_type, array( 'payment_intent.amount_capturable_updated', 'payment_intent.payment_failed' ), true ) && ! WooPaymentsPersistenceVocabulary::is_woopayments_gateway_id( (string) $order->get_payment_method() ) ) {
+			$is_own_payment = false;
+		}
+
+		if ( ! $is_own_payment ) {
+			$this->other_charge_recorder->record( $order, $event_type, $this->get_other_charge_facts( $event_type, $event_object, $intent_id, $charge_id ) );
+		} elseif ( 'payment_intent.succeeded' === $event_type && WooPaymentsIntentCodec::is_invoice_intent( $event_object ) ) {
+			// A Stripe Billing invoice's intent is settled by its invoice: only its payment meta is written here (client
+			// 11.3.0 class-wc-payments-webhook-processing-service.php:711-717).
+			$this->write_succeeded_payment_intent_meta( $order, $event_object );
+		} elseif ( 'payment_intent.succeeded' === $event_type ) {
+			$this->apply_succeeded_payment_intent( $order, $event_object, null, true );
+		} elseif ( 'payment_intent.amount_capturable_updated' === $event_type ) {
+			$this->apply_authorization_under_lock( $order, $event_object );
+		} elseif ( 'payment_intent.payment_failed' === $event_type && $this->is_buy_now_pay_later_failure( $event_object ) ) {
+			$this->add_buy_now_pay_later_failure_note( $order, $event_object );
+		} else {
+			$lifecycle_event = $this->build_lifecycle_event( $event_type, $event_object, $order );
+			if ( null !== $lifecycle_event ) {
+				// Only a terminal decline reaches the lifecycle on a failed order; see build_lifecycle_event().
+				$was_failed                       = 'payment_intent.payment_failed' === $event_type && $order->has_status( OrderStatus::FAILED );
+				$result                           = $this->lifecycle_service->apply_under_lock( $order, $lifecycle_event, $this->persistence_vocabulary );
+				$notify_repeated_terminal_failure = $was_failed && OrderPaymentLifecycleService::RESULT_NOTE_ADDED === $result;
+			}
+		}
+
+		return array( $is_own_payment, $notify_repeated_terminal_failure );
+	}
+
+	/**
+	 * Log the refusal of a payment intent or charge expiry event by the order payment lock.
+	 *
+	 * A failed payment, an authorization or an expiry logs the lifecycle refusal line, with its payment reference and
+	 * status; a succeeded intent logs the plain refusal line.
+	 *
+	 * @param WC_Order $order      Order the event resolved to.
+	 * @param string   $event_type Event type.
+	 * @param string   $lock_value Lock value the event claimed with.
+	 */
+	private function log_payment_event_refusal( WC_Order $order, string $event_type, string $lock_value ): void {
+		if ( 'payment_intent.succeeded' === $event_type ) {
+			$this->order_payment_lock->log_refusal( $order, $this->persistence_vocabulary, 'payment status update' );
+			return;
+		}
+
+		$this->order_payment_lock->log_refusal(
+			$order,
+			$this->persistence_vocabulary,
+			'payment status update',
+			null,
+			array(
+				'payment_reference' => $lock_value,
+				'event_type'        => array(
+					'charge.expired' => PaymentLifecycleEvent::STATUS_CAPTURE_EXPIRED,
+					'payment_intent.amount_capturable_updated' => PaymentLifecycleEvent::STATUS_AUTHORIZED,
+				)[ $event_type ] ?? PaymentLifecycleEvent::STATUS_FAILED,
+				'reason'            => 'order_locked',
+			)
+		);
+	}
+
+	/**
+	 * Get the facts the other-charge record of a payment intent or charge expiry event is written from.
+	 *
+	 * @param string              $event_type   Event type.
+	 * @param array<string,mixed> $event_object Payment intent or charge object.
+	 * @param string              $intent_id    The event's payment intent ID.
+	 * @param string              $charge_id    The event's charge ID.
+	 * @return array{object_id:string,status:string,intent_id:string,charge_id:string,amount?:float,currency?:string}
+	 */
+	private function get_other_charge_facts( string $event_type, array $event_object, string $intent_id, string $charge_id ): array {
+		$facts = array(
+			'object_id' => $this->get_object_id( $event_object ),
+			'status'    => isset( $event_object['status'] ) && is_scalar( $event_object['status'] ) ? (string) $event_object['status'] : '',
+			'intent_id' => $intent_id,
+			'charge_id' => $charge_id,
+		);
+		if ( 'payment_intent.succeeded' === $event_type ) {
+			$currency          = isset( $event_object['currency'] ) && is_string( $event_object['currency'] ) ? $event_object['currency'] : '';
+			$facts['amount']   = WooPaymentsCurrencyUtils::amount_from_minor_units( (int) ( $event_object['amount'] ?? 0 ), $currency );
+			$facts['currency'] = $currency;
+		}
+
+		return $facts;
+	}
+
+	/**
+	 * Apply a succeeded payment intent to an order read under the order payment lock the caller holds: payment meta, status
+	 * and notes.
+	 *
+	 * Provider code that learns of a succeeded intent outside its webhook, such as a paid Stripe Billing invoice, uses it
+	 * under its own claim. A caller that decided the order is held passes the hold's note: the payment is then recorded and
+	 * the order put on hold instead of completed. An order that stores a requires_capture intent status is completed as a
+	 * capture, with the capture note. Once the order has this intent's capture note, the payment is not completed again:
+	 * only the payment meta is written. The Fee details job is scheduled when the intent's payment note is first added.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @param WC_Order            $order                Order the intent pays, read under the lock.
+	 * @param array<string,mixed> $payment_intent       Provider payment intent object.
+	 * @param string[]|null       $hold_note_candidates The caller's hold note, or null to decide the hold from the intent.
+	 */
+	public function apply_succeeded_payment_intent_under_lock( WC_Order $order, array $payment_intent, ?array $hold_note_candidates = null ): void {
+		$this->apply_succeeded_payment_intent( $order, $payment_intent, $hold_note_candidates, false );
+	}
+
+	/**
+	 * Apply a succeeded payment intent to an order read under the order payment lock the caller holds, as
+	 * apply_succeeded_payment_intent_under_lock() describes.
+	 *
+	 * The webhook's own delivery updates the order from the intent's status, so its completion leaves an order already in a
+	 * paid status as it is, after the payment meta is written (client 11.3.0 class-wc-payments-webhook-processing-service.php:642-716,
+	 * class-wc-payments-order-service.php:475).
+	 *
+	 * The payment meta is written and the token repaired first, in the client's order (:715, then :716); the token repair can
+	 * call the platform, so the order is then read again in place and the hold and the event are decided on that read.
+	 *
+	 * @param WC_Order            $order                 Order the intent pays, read under the lock.
+	 * @param array<string,mixed> $payment_intent        Provider payment intent object.
+	 * @param string[]|null       $hold_note_candidates  The caller's hold note, or null to decide the hold from the intent.
+	 * @param bool                $reports_intent_status Whether the caller updates the order from the intent's status.
+	 */
+	private function apply_succeeded_payment_intent( WC_Order $order, array $payment_intent, ?array $hold_note_candidates, bool $reports_intent_status ): void {
+		// The order keeps the payment method and title its checkout, redirect return or in-person capture wrote: client 11.1.0's
+		// webhook never sets them (includes/class-wc-payments-webhook-processing-service.php process_webhook_payment_intent_succeeded()).
+		$this->write_succeeded_payment_intent_meta( $order, $payment_intent );
+		$this->repair_recurring_order_token( $order, $payment_intent );
+		$this->composition_data_settler->run_settled(
+			function () use ( $order, $payment_intent, $hold_note_candidates, $reports_intent_status ): void {
+				$this->lifecycle_service->reread_order_from_data_store( $order );
+				$hold            = null === $hold_note_candidates ? wc_get_container()->get( WooPaymentsAmountMismatchHold::class )->decide_hold( $order, $payment_intent ) : null;
+				$lifecycle_event = $this->build_succeeded_lifecycle_event( $payment_intent, $order, $hold_note_candidates ?? ( null === $hold ? null : $hold['notes'] ) );
+				if ( $reports_intent_status ) {
+					$this->fee_details_note_controller->apply_intent_status_and_schedule_fee_details( $order, $lifecycle_event, $hold );
+				} else {
+					$this->fee_details_note_controller->apply_and_schedule_fee_details( $order, $lifecycle_event, $hold );
+				}
+			}
+		);
+	}
+
+	/**
+	 * Record a succeeded payment intent on an order read under the order payment lock the caller holds, without changing
+	 * its status or adding a note: the payment meta, the intent status and the charge's meta.
+	 *
+	 * Nothing is written once the order's stored intent status is succeeded, as client 11.3.0
+	 * attach_intent_info_to_order() writes nothing then (class-wc-payments-order-service.php:1818-1822).
+	 *
+	 * @since 11.2.0
+	 *
+	 * @param WC_Order            $order          Order the intent paid, read under the lock.
+	 * @param array<string,mixed> $payment_intent Provider payment intent object.
+	 */
+	public function record_succeeded_payment_intent_under_lock( WC_Order $order, array $payment_intent ): void {
+		if ( 'succeeded' === (string) $order->get_meta( '_intention_status', true ) ) {
+			return;
+		}
+
+		$this->write_succeeded_payment_intent_meta( $order, $payment_intent );
+		$this->lifecycle_service->apply_meta_under_lock( $order, $this->get_succeeded_payment_intent_meta( $payment_intent, $order ), array() );
+	}
+
+	/**
+	 * Write the meta client 11.1.0 writes on every succeeded payment intent event, whatever the order's status.
+	 *
+	 * Intent, charge and payment method IDs, the event's currency and the mandate are written when set; the fee and net
+	 * are written whenever the event yields them, zero included.
+	 *
+	 * @param WC_Order            $order          Order the intent belongs to.
+	 * @param array<string,mixed> $payment_intent Provider payment intent object.
+	 */
+	private function write_succeeded_payment_intent_meta( WC_Order $order, array $payment_intent ): void {
+		$values = array(
+			'_intent_id'             => $this->get_object_id( $payment_intent ),
+			'_charge_id'             => $this->get_charge_id_from_intent( $payment_intent ),
+			'_payment_method_id'     => $this->get_payment_method_id_from_intent( $payment_intent ),
+			// Client 11.1.0 stores the event's raw, lowercase currency (class-wc-payments-webhook-processing-service.php:498,515).
+			'_wcpay_intent_currency' => isset( $payment_intent['currency'] ) ? (string) $payment_intent['currency'] : '',
+			'_stripe_mandate_id'     => $this->get_mandate_id_from_intent( $payment_intent ),
+		);
+		foreach ( $values as $key => $value ) {
+			if ( '' !== $value && '0' !== $value ) {
+				$order->update_meta_data( $key, $value );
+			}
+		}
+
+		foreach ( WooPaymentsOrderEffects::webhook_fee_meta( $payment_intent, $this->get_first_charge_from_intent( $payment_intent ) ) as $key => $value ) {
+			$order->update_meta_data( $key, $value );
+		}
+
+		$order->save();
+	}
+
+	/**
+	 * Put an order on hold for its authorized payment, on the order read under the order payment lock the caller holds.
+	 *
+	 * An authorization moves a pending or failed order on hold only when it is the payment the order waits on: the intent
+	 * the order stores, or any intent while it stores none. An order waiting on another payment gets a note naming both,
+	 * once, and is not changed. The event is the one the order-status callback and the redirect return build for an
+	 * authorized intent. Client 11.3.0 class-wc-payments-webhook-processing-service.php:473-500.
+	 *
+	 * @param WC_Order            $order          Order the authorization belongs to, read under the lock.
+	 * @param array<string,mixed> $payment_intent Provider payment intent object, awaiting capture.
+	 */
+	private function apply_authorization_under_lock( WC_Order $order, array $payment_intent ): void {
+		if ( ! $order->has_status( array( OrderStatus::PENDING, OrderStatus::FAILED ) ) ) {
+			return;
+		}
+
+		$intent_id         = $this->get_object_id( $payment_intent );
+		$awaited_intent_id = $this->get_other_awaited_intent_id( $order, $intent_id );
+		if ( '' !== $awaited_intent_id ) {
+			$note_candidates = $this->order_note_service->format_authorization_of_another_payment_note_candidates( $intent_id, $awaited_intent_id );
+			$this->order_note_service->add_note_once( $order, $note_candidates[0], implode( '|', array( 'authorization_of_another_payment', $intent_id, $awaited_intent_id ) ), $note_candidates );
+			return;
+		}
+
+		list( $lifecycle_event ) = $this->intent_confirmation_service->build_lifecycle_event_from_intent( $payment_intent, $order );
+		$this->lifecycle_service->apply_under_lock( $order, $lifecycle_event, $this->persistence_vocabulary );
+	}
+
+	/**
+	 * Get the payment the order waits on when it is not the given intent: the intent the order stores, when it stores one
+	 * and it differs.
+	 *
+	 * @param WC_Order $order     Order read under the order payment lock.
+	 * @param string   $intent_id The event's intent.
+	 * @return string The other intent the order waits on, or '' when it waits on this intent or stores none.
+	 */
+	private function get_other_awaited_intent_id( WC_Order $order, string $intent_id ): string {
+		$awaited_intent_id = (string) $order->get_meta( '_intent_id', true );
+
+		return $awaited_intent_id !== $intent_id ? $awaited_intent_id : '';
+	}
+
+	/**
+	 * Tell whether an authorization is an online payment that awaits capture.
+	 *
+	 * In-person payments are captured by their own flow, which updates the order.
+	 *
+	 * @param array<string,mixed> $payment_intent Provider payment intent object.
+	 * @return bool
+	 */
+	private function is_online_authorization( array $payment_intent ): bool {
+		$charge_type = $this->get_first_charge_from_intent( $payment_intent )['payment_method_details']['type'] ?? '';
+
+		return 'requires_capture' === ( $payment_intent['status'] ?? null ) && ! in_array( $charge_type, array( 'card_present', 'interac_present' ), true );
+	}
+
+	/**
+	 * Build the payment lifecycle event for a succeeded payment intent.
+	 *
+	 * @param array<string,mixed> $event_object         Provider intent object.
+	 * @param WC_Order            $order                Order object.
+	 * @param string[]|null       $hold_note_candidates The hold's note when the order is held, or null when the intent completes it.
+	 * @return PaymentLifecycleEvent
+	 */
+	private function build_succeeded_lifecycle_event( array $event_object, WC_Order $order, ?array $hold_note_candidates ): PaymentLifecycleEvent {
+		$charge                     = $this->get_first_charge_from_intent( $event_object );
+		$balance_transaction_id     = WooPaymentsIntentCodec::balance_transaction_id( $charge['balance_transaction'] ?? null );
+		$captures_the_authorization = null === $hold_note_candidates && WooPaymentsOrderEffects::captures_the_authorization( $order, $event_object );
+		$meta                       = $this->get_succeeded_payment_intent_meta( $event_object, $order, $captures_the_authorization );
+
+		if ( null !== $hold_note_candidates ) {
+			return new PaymentLifecycleEvent(
+				PaymentLifecycleEvent::STATUS_COMPLETED,
+				$this->get_object_id( $event_object ),
+				$meta,
+				array(),
+				$hold_note_candidates[0],
+				PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_HELD,
+				$hold_note_candidates,
+				false,
+				true
+			);
+		}
+
+		// Client 11.3.0 completes an order that stores requires_capture with its capture writer, and any other with its
+		// success writer (class-wc-payments-order-service.php:484-489, :2193-2219).
+		$note_candidates = $captures_the_authorization
+			? $this->order_note_service->format_capture_success_note_candidates( $order, $this->get_object_id( $event_object ), $this->get_charge_id_from_intent( $event_object ), $balance_transaction_id )
+			: $this->order_note_service->format_payment_success_note_candidates( $order, $this->get_object_id( $event_object ), $this->get_charge_id_from_intent( $event_object ), $balance_transaction_id );
+
+		return new PaymentLifecycleEvent(
+			PaymentLifecycleEvent::STATUS_COMPLETED,
+			$this->get_object_id( $event_object ),
+			$meta,
+			array(),
+			$note_candidates[0],
+			$captures_the_authorization ? PaymentLifecycleEvent::NOTE_TYPE_CAPTURE_SUCCESS : PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_SUCCESS,
+			$note_candidates
+		);
+	}
+
+	/**
+	 * Get the order meta of a succeeded payment intent beyond what write_succeeded_payment_intent_meta() saves: the intent
+	 * status, the order mode, the IPP channel and the charge's meta.
+	 *
+	 * A payment completed as a capture marks a fraud review as allowed when the order's fraud outcome is review, stamps a
+	 * non-card charge as it stamps a card, and adds the captured charge's fee, as client 11.3.0's capture writer does
+	 * (class-wc-payments-order-service.php:2207-2215); any other payment marks it when the order is on hold, and a non-card
+	 * charge not_card (:2056-2064).
+	 *
+	 * @param array<string,mixed> $event_object               Provider intent object.
+	 * @param WC_Order            $order                      Order object.
+	 * @param bool                $captures_the_authorization Whether the payment completes the order as a capture.
+	 * @return array<string,string>
+	 */
+	private function get_succeeded_payment_intent_meta( array $event_object, WC_Order $order, bool $captures_the_authorization = false ): array {
+		$charge = $this->get_first_charge_from_intent( $event_object );
+		$meta   = $this->without_empty_values(
+			array(
+				'_intention_status'  => isset( $event_object['status'] ) ? (string) $event_object['status'] : '',
+				'_wcpay_mode'        => $this->account_service->get_order_mode(),
+				'_wcpay_ipp_channel' => $this->get_ipp_channel_from_intent( $event_object ),
+			)
+		);
+		if ( ! empty( $charge ) ) {
+			$settlement_meta = $this->order_data_service->get_settlement_exchange_rate_order_meta(
+				$order,
+				$charge,
+				$this->account_service->get_account_default_currency()
+			);
+			$meta            = array_merge(
+				$meta,
+				WooPaymentsOrderEffects::completed_charge_meta(
+					$event_object,
+					$charge,
+					$settlement_meta,
+					false,
+					$captures_the_authorization ? 'review' === (string) $order->get_meta( '_wcpay_fraud_outcome_status', true ) : $order->has_status( OrderStatus::ON_HOLD ),
+					$captures_the_authorization
+				),
+				WooPaymentsOrderEffects::completed_charge_payment_method_backfill_meta(
+					$charge,
+					$this->order_has_placeholder_payment_method_details( $order ),
+					(string) $order->get_meta( '_wcpay_payment_transaction_id', true )
+				),
+				$captures_the_authorization ? WooPaymentsOrderEffects::attached_fee_meta( $charge ) : array()
+			);
+		}
+
+		return $meta;
+	}
+
+	/**
+	 * Build a payment lifecycle event for a supported WooPayments webhook type.
+	 *
+	 * @param string              $event_type Event type.
+	 * @param array<string,mixed> $event_object Provider object.
+	 * @param WC_Order            $order Order object.
+	 * @return PaymentLifecycleEvent|null
+	 */
+	private function build_lifecycle_event( string $event_type, array $event_object, WC_Order $order ): ?PaymentLifecycleEvent {
+		switch ( $event_type ) {
+			case 'payment_intent.payment_failed':
+				// process() lets through only a failure that names a payment method of an actionable type.
+				$last_payment_error  = $event_object['last_payment_error'];
+				$payment_method      = $last_payment_error['payment_method'];
+				$payment_method_type = (string) $payment_method['type'];
+
+				// A failure of another payment method, from an attempt the shopper replaced by paying another way, changes
+				// nothing (client 11.3.0 class-wc-payments-webhook-processing-service.php:548). Terminal (card_present)
+				// intents are exempt: their payment method is created at the reader and is never the one stored on the order.
+				if ( 'card_present' !== $payment_method_type && (string) $payment_method['id'] !== (string) $order->get_meta( '_payment_method_id', true ) ) {
+					return null;
+				}
+
+				$intent_id = $this->get_object_id( $event_object );
+				// A failure of another intent than the one the order stores changes nothing and adds no note, by the check the
+				// authorization of another intent makes (apply_authorization_under_lock()). The stored intent is a newer
+				// attempt's, or, where an attach kept an earlier payment's record, that record's: there the failure of the
+				// attempt that started after it is left too. Two failures are applied as before: a terminal decline, whose
+				// intent the reader creates and the order does not store, and a failure on an order that stores no intent.
+				$awaited_intent_id = 'card_present' === $payment_method_type ? '' : $this->get_other_awaited_intent_id( $order, $intent_id );
+				if ( '' !== $awaited_intent_id ) {
+					wc_get_logger()->warning(
+						sprintf( 'payment failure not applied: order %d waits on payment %s, not on the failed payment %s', $order->get_id(), $awaited_intent_id, $intent_id ),
+						array(
+							'source'            => WooPaymentsLogger::SOURCE,
+							'order_id'          => $order->get_id(),
+							'intent_id'         => $intent_id,
+							'awaited_intent_id' => $awaited_intent_id,
+						)
+					);
+					return null;
+				}
+
+				$charge_id       = $this->get_charge_id_from_intent( $event_object );
+				$note_candidates = 'card_present' === $payment_method_type
+					? $this->order_note_service->format_terminal_payment_failed_note_candidates( $order, $intent_id, $charge_id, $last_payment_error )
+					: $this->order_note_service->format_payment_failed_note_candidates( $order, $intent_id, $charge_id, $last_payment_error );
+
+				$failure = new PaymentLifecycleEvent(
+					PaymentLifecycleEvent::STATUS_FAILED,
+					// A reader retries a declined card on the same intent, so a terminal decline's note is keyed on its charge, as
+					// client 11.1.0 links that note to the charge for uniqueness (class-wc-payments-order-service.php:2139-2141).
+					'card_present' === $payment_method_type && '' !== $charge_id ? $charge_id : $intent_id,
+					// The status, the note and the intent status, as client 11.3.0's failed writers store them; the order keeps
+					// the intent it stores (class-wc-payments-order-service.php:545-560, :956-976).
+					$this->without_empty_values(
+						array(
+							'_intention_status' => isset( $event_object['status'] ) ? (string) $event_object['status'] : '',
+						)
+					),
+					array(),
+					$note_candidates[0],
+					PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_FAILED,
+					$note_candidates
+				);
+
+				// A card payment's failure on an order already Failed, such as by the checkout that saw the decline, or whose note is
+				// already on the order changes nothing, as client 11.3.0's mark_payment_failed() returns then
+				// (class-wc-payments-order-service.php:550-554). A terminal decline sets the order Failed before its note check
+				// (:961-968), so it is applied, each one recorded.
+				return 'card_present' !== $payment_method_type && $this->order_note_service->is_failure_recorded( $order, $failure ) ? null : $failure;
+
+			case 'charge.expired':
+				$charge_id       = $this->get_object_id( $event_object );
+				$intent_id       = isset( $event_object['payment_intent'] ) && is_string( $event_object['payment_intent'] )
+					? $event_object['payment_intent']
+					: (string) $order->get_meta( '_intent_id', true );
+				$note_candidates = $this->order_note_service->format_capture_expired_note_candidates( $intent_id, $charge_id );
+
+				// The stored intention status still says requires_capture; only the live intent knows its status after
+				// expiry (canceled), and a stale value keeps capture and cancel actions offered against a dead intent.
+				// A failed fetch fails the delivery, as client 11.1.0 does (class-wc-payments-webhook-processing-service.php:396-398),
+				// and charge.expired gets no retry after such a failure.
+				$expired_intent = $this->api_client->get_payment_intention( $intent_id );
+
+				$meta = array(
+					'_charge_id'        => $charge_id,
+					'_intention_status' => isset( $expired_intent['status'] ) ? (string) $expired_intent['status'] : '',
+				);
+				if ( 'review' === (string) $order->get_meta( '_wcpay_fraud_outcome_status', true ) ) {
+					$meta['_wcpay_fraud_meta_box_type'] = 'review_expired';
+				}
+
+				return new PaymentLifecycleEvent(
+					PaymentLifecycleEvent::STATUS_CAPTURE_EXPIRED,
+					$charge_id,
+					$this->without_empty_values( $meta ),
+					array(),
+					$note_candidates[0],
+					PaymentLifecycleEvent::NOTE_TYPE_CAPTURE_EXPIRED,
+					$note_candidates
+				);
+		}
+
+		return null;
+	}
+
+	/**
+	 * Tell whether a payment_intent.payment_failed event names a failed payment method of a type the order is failed for.
+	 *
+	 * A failure that names no payment method changes nothing, on the order's own payment or on another charge.
+	 *
+	 * @param array<string,mixed> $event_object PaymentIntent object.
+	 * @return bool
+	 */
+	private function is_actionable_payment_failure( array $event_object ): bool {
+		$last_payment_error  = $event_object['last_payment_error'] ?? null;
+		$payment_method      = is_array( $last_payment_error ) ? ( $last_payment_error['payment_method'] ?? null ) : null;
+		$payment_method_type = is_array( $payment_method ) && isset( $payment_method['type'] ) && is_string( $payment_method['type'] ) ? $payment_method['type'] : '';
+
+		if ( ! in_array(
+			$payment_method_type,
+			array(
+				'card',
+				'card_present',
+				'us_bank_account',
+				'au_becs_debit',
+				'wechat_pay',
+			),
+			true
+		) ) {
+			return false;
+		}
+
+		$payment_method_id = is_array( $payment_method ) && isset( $payment_method['id'] ) && is_string( $payment_method['id'] ) ? $payment_method['id'] : '';
+
+		return '' !== $payment_method_id;
+	}
+
+	/**
+	 * Tell whether a payment_intent.payment_failed event names a failed buy now, pay later payment method.
+	 *
+	 * Client 11.3.0 lists Affirm, Afterpay and Klarna (Payment_Method::BNPL_PAYMENT_METHODS,
+	 * includes/constants/class-payment-method.php:55-59); their definitions carry the buy now, pay later capability.
+	 *
+	 * @param array<string,mixed> $event_object PaymentIntent object.
+	 * @return bool
+	 */
+	private function is_buy_now_pay_later_failure( array $event_object ): bool {
+		$last_payment_error  = $event_object['last_payment_error'] ?? null;
+		$payment_method      = is_array( $last_payment_error ) ? ( $last_payment_error['payment_method'] ?? null ) : null;
+		$payment_method_type = is_array( $payment_method ) && isset( $payment_method['type'] ) && is_string( $payment_method['type'] ) ? $payment_method['type'] : '';
+		$payment_method_id   = is_array( $payment_method ) && isset( $payment_method['id'] ) && is_string( $payment_method['id'] ) ? $payment_method['id'] : '';
+		$definition          = '' !== $payment_method_type ? $this->payment_method_registry->get( $payment_method_type ) : null;
+
+		return '' !== $payment_method_id
+			&& null !== $definition
+			&& in_array( PaymentMethodRegistry::BUY_NOW_PAY_LATER, $definition->get_capabilities(), true );
+	}
+
+	/**
+	 * Add the declined-payment note of a buy now, pay later failure to the order read under the claim, and change nothing else.
+	 *
+	 * The shopper's return from the provider's page fails the order and writes the same note, but a shopper who abandons
+	 * the payment never returns, so this note is the only record of that failure. It is written only for the order's
+	 * stored payment method on an order not in a paid status, Failed orders included, and is found by its text only, as
+	 * client 11.3.0 does (class-wc-payments-webhook-processing-service.php:577-606; class-wc-payments-order-service.php:987-1000).
+	 * Unlike a card failure, it does not check which intent the order waits on: the note is true of the failed attempt and
+	 * changes no status.
+	 *
+	 * @param WC_Order            $order        Order read under the order payment lock.
+	 * @param array<string,mixed> $event_object PaymentIntent object; is_buy_now_pay_later_failure() holds for it.
+	 */
+	private function add_buy_now_pay_later_failure_note( WC_Order $order, array $event_object ): void {
+		$last_payment_error = (array) $event_object['last_payment_error'];
+		$payment_method_id  = (string) $last_payment_error['payment_method']['id'];
+		if ( $payment_method_id !== (string) $order->get_meta( '_payment_method_id', true ) || $order->has_status( wc_get_is_paid_statuses() ) ) {
+			return;
+		}
+
+		$note_candidates = $this->order_note_service->format_declined_payment_note_candidates( $order, $this->get_object_id( $event_object ), $last_payment_error );
+		// No identity: under the failure's identity this note would stop the return from failing the order, so only the same text counts as this note.
+		$this->order_note_service->add_note_once( $order, $note_candidates[0], '', $note_candidates );
+	}
+
+	/**
+	 * Get a provider object's ID.
+	 *
+	 * @param array<string,mixed> $event_object Provider object.
+	 * @return string
+	 */
+	private function get_object_id( array $event_object ): string {
+		return isset( $event_object['id'] ) ? (string) $event_object['id'] : '';
+	}
+
+	/**
+	 * Get the first charge ID from a PaymentIntent object.
+	 *
+	 * @param array<string,mixed> $event_object PaymentIntent object.
+	 * @return string
+	 */
+	private function get_charge_id_from_intent( array $event_object ): string {
+		$charge_id = $event_object['charges']['data'][0]['id'] ?? '';
+
+		return is_string( $charge_id ) ? $charge_id : '';
+	}
+
+	/**
+	 * Get the payment method ID from a PaymentIntent object.
+	 *
+	 * @param array<string,mixed> $event_object PaymentIntent object.
+	 * @return string
+	 */
+	private function get_payment_method_id_from_intent( array $event_object ): string {
+		$payment_method_id = $event_object['charges']['data'][0]['payment_method'] ?? $event_object['payment_method'] ?? '';
+
+		// An event created with an expanded payment_method carries the whole object.
+		if ( is_array( $payment_method_id ) ) {
+			$payment_method_id = $payment_method_id['id'] ?? '';
+		}
+
+		return is_string( $payment_method_id ) ? $payment_method_id : '';
+	}
+
+	/**
+	 * Get the mandate ID from a PaymentIntent object.
+	 *
+	 * @param array<string,mixed> $event_object PaymentIntent object.
+	 * @return string
+	 */
+	private function get_mandate_id_from_intent( array $event_object ): string {
+		$mandate_id = $event_object['charges']['data'][0]['payment_method_details']['card']['mandate'] ?? '';
+
+		return is_string( $mandate_id ) ? $mandate_id : '';
+	}
+
+	/**
+	 * Get the IPP channel from a PaymentIntent object.
+	 *
+	 * @param array<string,mixed> $event_object PaymentIntent object.
+	 * @return string
+	 */
+	private function get_ipp_channel_from_intent( array $event_object ): string {
+		$ipp_channel      = $event_object['metadata']['ipp_channel'] ?? '';
+		$allowed_channels = array( 'mobile_pos', 'mobile_store_management' );
+
+		return is_string( $ipp_channel ) && in_array( $ipp_channel, $allowed_channels, true ) ? $ipp_channel : '';
+	}
+
+	/**
+	 * Tell whether payment method details are still an empty placeholder.
+	 *
+	 * @param WC_Order $order Order object.
+	 * @return bool
+	 */
+	private function order_has_placeholder_payment_method_details( WC_Order $order ): bool {
+		$details = $order->get_meta( '_wcpay_payment_method_details', true );
+		if ( '' === $details || null === $details || array() === $details ) {
+			return true;
+		}
+
+		return is_string( $details ) && array() === json_decode( $details, true );
+	}
+
+	/**
+	 * Remove empty string meta values.
+	 *
+	 * @param array<string,string> $values Raw values.
+	 * @return array<string,string>
+	 */
+	private function without_empty_values( array $values ): array {
+		return array_filter(
+			$values,
+			static function ( string $value ): bool {
+				return '' !== $value;
+			}
+		);
+	}
+
+	/**
+	 * Send the IPP customer receipt email for card-present successful payments.
+	 *
+	 * @param WC_Order            $order        Order object.
+	 * @param array<string,mixed> $event_object PaymentIntent object.
+	 * @return void
+	 */
+	private function maybe_send_ipp_receipt_email( WC_Order $order, array $event_object ): void {
+		$charge = $this->get_first_charge_from_intent( $event_object );
+		if ( ! $this->is_ipp_receipt_charge( $charge ) ) {
+			return;
+		}
+
+		$email = $this->get_ipp_receipt_email();
+		if ( ! $email instanceof WooPaymentsIppReceiptEmail ) {
+			return;
+		}
+
+		$email->trigger( $order, $this->get_ipp_receipt_merchant_settings(), $charge );
+	}
+
+	/**
+	 * Get the first charge from a PaymentIntent object.
+	 *
+	 * @param array<string,mixed> $event_object PaymentIntent object.
+	 * @return array<string,mixed>
+	 */
+	private function get_first_charge_from_intent( array $event_object ): array {
+		$charge = $event_object['charges']['data'][0] ?? array();
+
+		return is_array( $charge ) ? $charge : array();
+	}
+
+	/**
+	 * Tell whether a charge should send an IPP receipt email.
+	 *
+	 * @param array<string,mixed> $charge Charge payload.
+	 * @return bool
+	 */
+	private function is_ipp_receipt_charge( array $charge ): bool {
+		$type = $charge['payment_method_details']['type'] ?? '';
+
+		return in_array( $type, array( 'card_present', 'interac_present' ), true );
+	}
+
+	/**
+	 * Get the IPP receipt email from the WooCommerce mailer.
+	 *
+	 * @return WooPaymentsIppReceiptEmail|null
+	 */
+	private function get_ipp_receipt_email(): ?WooPaymentsIppReceiptEmail {
+		$emails = WC()->mailer()->get_emails();
+		$email  = $emails[ WooPaymentsIppReceiptEmail::EMAIL_CLASS_KEY ] ?? null;
+
+		return $email instanceof WooPaymentsIppReceiptEmail ? $email : null;
+	}
+
+	/**
+	 * Get the merchant details the IPP receipt email shows, from the connected account's business profile.
+	 *
+	 * @return array<string,mixed>
+	 */
+	private function get_ipp_receipt_merchant_settings(): array {
+		return array(
+			'business_name' => $this->account_service->get_business_name(),
+			'support_info'  => array(
+				'address' => $this->account_service->get_business_support_address(),
+				'phone'   => $this->account_service->get_business_support_phone(),
+				'email'   => $this->account_service->get_business_support_email(),
+			),
+		);
+	}
+
+	/**
+	 * Repair the payment token on an unpaid recurring order paid through a webhook.
+	 *
+	 * A recurring order can reach `payment_intent.succeeded` without a usable local token — WooPay checkouts and
+	 * platform-side charges save the method at the provider, not locally. Without the repair, the next scheduled
+	 * renewal finds no token and fails. Runs before the lifecycle apply on purpose: once this same event marks the
+	 * order paid, the redelivery guard below would skip the repair.
+	 *
+	 * @param WC_Order            $order        Order the event resolved to.
+	 * @param array<string,mixed> $event_object Provider intent object.
+	 */
+	private function repair_recurring_order_token( WC_Order $order, array $event_object ): void {
+		$payment_method_id = $this->get_payment_method_id_from_intent( $event_object );
+		$intent_status     = isset( $event_object['status'] ) ? (string) $event_object['status'] : '';
+		if ( '' === $payment_method_id || ! WooPaymentsIntentCodec::holds_money( $intent_status ) ) {
+			return;
+		}
+
+		if ( ! SubscriptionMethodPolicy::is_recurring_order( $order ) ) {
+			return;
+		}
+
+		// A paid order already had its token saved at checkout, so this is a
+		// redelivered event. Saving again could re-point sibling subscriptions to a
+		// card the customer has since replaced.
+		if ( $order->is_paid() ) {
+			return;
+		}
+
+		$token_service  = wc_get_container()->get( WooPaymentsTokenService::class );
+		$previous_token = $token_service->get_active_token_for_order( $order );
+
+		try {
+			$token = $token_service->get_or_create_token_for_user( $payment_method_id, (int) $order->get_customer_id() );
+			if ( ! $token instanceof WC_Payment_Token ) {
+				return;
+			}
+
+			$token_service->attach_token_to_order( $order, $token );
+
+			// Write the restored token through to every related subscription: WCS
+			// copies the subscription's tokens into each new renewal order, so a
+			// subscription left pointing at the replaced card would charge it on
+			// the next renewal.
+			$token_service->sync_related_subscriptions_payment_token(
+				$order,
+				$token,
+				$payment_method_id,
+				(string) $order->get_meta( '_stripe_customer_id', true )
+			);
+
+			if ( $previous_token instanceof WC_Payment_Token && $previous_token->get_id() !== $token->get_id() ) {
+				$note = sprintf(
+					/* translators: 1: Previous payment token ID, 2: New payment token ID. */
+					__( 'WooPayments updated the subscription payment method token from token #%1$d to #%2$d after receiving a successful renewal payment webhook.', 'woocommerce' ),
+					$previous_token->get_id(),
+					$token->get_id()
+				);
+				wc_get_logger()->info( $note, array( 'source' => WooPaymentsLogger::SOURCE ) );
+				$order->add_order_note( $note );
+			}
+		} catch ( Throwable $exception ) {
+			// The token save fetches the payment method from the platform; its error's message is the platform's text.
+			wc_get_logger()->error(
+				'Error when saving payment method from webhook.',
+				array_merge(
+					WooPaymentsLogger::get_failure_context( $exception ),
+					array(
+						'source'   => WooPaymentsLogger::SOURCE,
+						'order_id' => $order->get_id(),
+					)
+				)
+			);
+			$order->add_order_note( __( 'Unable to save payment method for subscription. Please try again or use a different payment method.', 'woocommerce' ) );
+		}
+	}
+}

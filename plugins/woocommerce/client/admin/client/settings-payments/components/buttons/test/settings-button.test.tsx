@@ -16,41 +16,67 @@ import {
  */
 import { SettingsButton } from '..';
 
+const mockNavigate = jest.fn();
+const currentPageHref =
+	'http://localhost/wp-admin/admin.php?page=wc-settings&tab=checkout';
+
 jest.mock( '@woocommerce/tracks', () => ( {
 	recordEvent: jest.fn(),
 } ) );
 
+jest.mock( 'react-router-dom', () => ( {
+	...jest.requireActual( 'react-router-dom' ),
+	useNavigate: () => mockNavigate,
+} ) );
+
 describe( 'SettingsButton', () => {
+	const gatewayProvider = {
+		id: 'test-gateway',
+		state: {
+			enabled: true,
+			account_connected: false,
+			needs_setup: true,
+			test_mode: false,
+			dev_mode: false,
+		} as PaymentsProviderState,
+		onboarding: {
+			state: {
+				started: true,
+				completed: false,
+				test_mode: false,
+			} as PaymentsProviderOnboardingState,
+		},
+		plugin: {
+			slug: 'test-plugin',
+			file: 'test-file',
+			status: 'installed',
+		} as PluginData,
+		_suggestion_id: 'test-suggestion',
+		_type: 'gateway',
+	} as PaymentGatewayProvider;
+
+	const originalLocation = window.location;
+
+	beforeEach( () => {
+		Object.defineProperty( window, 'location', {
+			configurable: true,
+			value: { href: currentPageHref },
+		} );
+	} );
+
+	afterEach( () => {
+		Object.defineProperty( window, 'location', {
+			configurable: true,
+			value: originalLocation,
+		} );
+		jest.clearAllMocks();
+	} );
+
 	it( 'should record settings_payments_provider_manage_click event on click of the button', () => {
 		const { getByRole } = render(
 			<Router>
 				<SettingsButton
-					gatewayProvider={
-						{
-							id: 'test-gateway',
-							state: {
-								enabled: true,
-								account_connected: false,
-								needs_setup: true,
-								test_mode: false,
-								dev_mode: false,
-							} as PaymentsProviderState,
-							onboarding: {
-								state: {
-									started: true,
-									completed: false,
-									test_mode: false,
-								} as PaymentsProviderOnboardingState,
-							},
-							plugin: {
-								slug: 'test-plugin',
-								file: 'test-file',
-								status: 'installed',
-							} as PluginData,
-							_suggestion_id: 'test-suggestion',
-							_type: 'gateway',
-						} as PaymentGatewayProvider
-					}
+					gatewayProvider={ gatewayProvider }
 					settingsHref={ '' }
 				/>
 			</Router>
@@ -63,5 +89,64 @@ describe( 'SettingsButton', () => {
 				provider_id: 'test-gateway',
 			} )
 		);
+	} );
+
+	it( 'routes provider settings URLs with a path query through React Router', () => {
+		const { getByRole } = render(
+			<Router>
+				<SettingsButton
+					gatewayProvider={ gatewayProvider }
+					settingsHref={
+						'https://example.com/wp-admin/admin.php?page=wc-settings&tab=checkout&path=%2Fthird-party%2Fsettings&from=settings-payments'
+					}
+				/>
+			</Router>
+		);
+
+		fireEvent.click( getByRole( 'button', { name: 'Manage' } ) );
+
+		expect( mockNavigate ).toHaveBeenCalledWith(
+			'/wp-admin/admin.php?page=wc-settings&tab=checkout&path=%2Fthird-party%2Fsettings&from=settings-payments'
+		);
+		expect( window.location.href ).toBe( currentPageHref );
+	} );
+
+	it( 'routes WooPayments settings paths through React Router', () => {
+		const { getByRole } = render(
+			<Router>
+				<SettingsButton
+					gatewayProvider={ gatewayProvider }
+					settingsHref={
+						'https://example.com/wp-admin/admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Fsettings%2Fexpress-checkout%2Fwoopay&from=settings-payments'
+					}
+				/>
+			</Router>
+		);
+
+		fireEvent.click( getByRole( 'button', { name: 'Manage' } ) );
+
+		expect( mockNavigate ).toHaveBeenCalledWith(
+			'/wp-admin/admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Fsettings%2Fexpress-checkout%2Fwoopay&from=settings-payments'
+		);
+		expect( window.location.href ).toBe( currentPageHref );
+	} );
+
+	it( 'leaves non-Reactified provider settings URLs on full-page navigation', () => {
+		const sectionSettingsHref =
+			'http://localhost/wp-admin/admin.php?page=wc-settings&tab=checkout&section=third_party&from=settings-payments';
+
+		const { getByRole } = render(
+			<Router>
+				<SettingsButton
+					gatewayProvider={ gatewayProvider }
+					settingsHref={ sectionSettingsHref }
+				/>
+			</Router>
+		);
+
+		fireEvent.click( getByRole( 'button', { name: 'Manage' } ) );
+
+		expect( mockNavigate ).not.toHaveBeenCalled();
+		expect( window.location.href ).toBe( sectionSettingsHref );
 	} );
 } );

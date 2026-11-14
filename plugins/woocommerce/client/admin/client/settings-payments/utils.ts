@@ -2,6 +2,7 @@
  * External dependencies
  */
 import {
+	PaymentsEntity,
 	PaymentsProvider,
 	PaymentsProviderIncentive,
 	RecommendedPaymentMethod,
@@ -112,6 +113,24 @@ export const isWooPayments = ( id: string ) => {
 };
 
 /**
+ * Whether setting up this entity opens the onboarding of the WooPayments built into WooCommerce instead of installing a
+ * plugin: a WooPayments entity with no plugin slug. It reads no flag, so it holds in every list that carries the entity.
+ *
+ * @param entity The payments provider or suggested extension.
+ */
+export const isBuiltinWooPaymentsSuggestion = ( entity: PaymentsEntity ) =>
+	isWooPayments( entity.id ) && ! entity.plugin?.slug;
+
+/**
+ * Whether a payments provider is the WooPayments gateway or suggestion built into WooCommerce, as the providers
+ * list marks it.
+ *
+ * @param provider The payments provider.
+ */
+export const isBuiltinWooPayments = ( provider: PaymentsProvider ) =>
+	provider._woopayments_builtin === true;
+
+/**
  * Checks whether a provider is WooPayments and that it is eligible for WooPay.
  */
 export const isWooPayEligible = ( provider: PaymentsProvider ) => {
@@ -157,7 +176,10 @@ export const providersContainWooPaymentsNeedsSetup = (
 	providers: PaymentsProvider[]
 ): boolean => {
 	const wooPayments = providers.find( ( obj ) => isWooPayments( obj.id ) );
-	return wooPayments?.state?.needs_setup || false;
+	return (
+		wooPayments?.state?.needs_setup === true ||
+		( !! wooPayments && isBuiltinWooPaymentsSuggestion( wooPayments ) )
+	);
 };
 
 /**

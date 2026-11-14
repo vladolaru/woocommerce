@@ -58,6 +58,9 @@ module.exports = {
 		'@wordpress/core-data/build/(.*)$':
 			'<rootDir>/node_modules/@wordpress/core-data/build/$1',
 
+		// Core's phone validation, aliased by the payments webpack config (bin/webpack-configs.js getPaymentsConfig).
+		'^woocommerce-phone-number-validation$':
+			'<rootDir>/../../../../packages/js/components/src/phone-number-input/validation.ts',
 		'@woocommerce/product-elements':
 			'assets/js/blocks/product-elements-blocks',
 		'@woocommerce/icons': 'assets/js/icons',
