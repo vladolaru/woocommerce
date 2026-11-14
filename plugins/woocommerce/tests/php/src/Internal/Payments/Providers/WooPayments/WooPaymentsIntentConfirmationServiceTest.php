@@ -3,6 +3,8 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Internal\Payments\PaymentOperationContext;
+use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\TransportLog;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\PaymentMethodRegistry;
@@ -11,8 +13,10 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAc
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeeDetailsNoteController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentConfirmationService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentRequestBuilder;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDataService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffectApplier;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffectPlan;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentMethodDetailsService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
@@ -119,6 +123,120 @@ class WooPaymentsIntentConfirmationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox The $caller attach leaves the stored charge $expected_charge and the risk level $expected_risk_level.
+	 *
+	 * The order stores an earlier attempt pi_earlier with its declined charge ch_earlier and that charge's risk level. Client
+	 * 11.3.0's attach sets the charge to the attached intent's latest charge, null for an intent with none, which deletes it
+	 * (class-wc-payments-order-service.php:1829-1830, :1873-1884, :1137-1141), and skips a null risk level
+	 * (:1833-1834, :1168-1171); a stored succeeded status without the override returns before any write (:1818-1822). The
+	 * intents are recorded platform responses: REC-3DS-1's new-card requires_action
+	 * (Fixtures/platform-intention-3ds-requires-action.json) and REC-3DS-2's failed and completed challenges and the My
+	 * Account SetupIntent (Fixtures/platform-3ds-challenge-results.json).
+	 *
+	 * @dataProvider provider_attaches_and_the_stored_charge
+	 *
+	 * @param string   $caller              The attach's caller.
+	 * @param string   $stored_status       Stored intent status of the earlier attempt.
+	 * @param callable $attach              Attaches the recorded intent to the order through the caller.
+	 * @param string   $expected_charge     Stored charge after the attach; 'removed' for none.
+	 * @param string   $expected_intent     Stored intent after the attach: 'attached' or 'earlier'.
+	 * @param string   $expected_risk_level Stored risk level after the attach.
+	 */
+	public function test_an_attach_keeps_only_the_attached_attempts_charge( string $caller, string $stored_status, callable $attach, string $expected_charge, string $expected_intent, string $expected_risk_level ): void {
+		unset( $caller );
+		$order = $this->create_woopayments_order( '10.99' );
+		$order->set_transaction_id( 'pi_earlier' );
+		$order->update_meta_data( '_intent_id', 'pi_earlier' );
+		$order->update_meta_data( '_intention_status', $stored_status );
+		$order->update_meta_data( '_charge_id', 'ch_earlier' );
+		$order->update_meta_data( '_charge_risk_level', 'elevated' );
+		$order->save();
+
+		$intent_id = $attach( $this, $order );
+		$reloaded  = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $reloaded );
+		$this->assertSame( 'removed' === $expected_charge ? '' : $expected_charge, $reloaded->get_meta( '_charge_id', true ) );
+		$this->assertSame( 'attached' === $expected_intent ? $intent_id : 'pi_earlier', $reloaded->get_meta( '_intent_id', true ) );
+		$this->assertSame( 'attached' === $expected_intent ? $intent_id : 'pi_earlier', $reloaded->get_transaction_id() );
+		$this->assertSame( $expected_risk_level, $reloaded->get_meta( '_charge_risk_level', true ) );
+	}
+
+	/**
+	 * Attaches of a recorded intent through each caller, onto an order storing an earlier attempt's charge.
+	 *
+	 * @return array<string,array{0:string,1:string,2:callable,3:string,4:string,5:string}>
+	 */
+	public function provider_attaches_and_the_stored_charge(): array {
+		$checkout        = static function ( string $fixture, string $pair, string $outcome_status, bool $payment_method_change ): callable {
+			return static function ( self $test, WC_Order $order ) use ( $fixture, $pair, $outcome_status, $payment_method_change ): string {
+				$intent  = $test->load_recorded_intent( $fixture, $pair );
+				$plan    = 0 === strpos( (string) $intent['id'], 'seti_' )
+					? WooPaymentsOrderEffectPlan::for_setup_intent( $intent, false, array( '_wcpay_intent_currency' => 'USD' ) )
+					: WooPaymentsOrderEffectPlan::for_payment_intent( $intent, false );
+				$context = PaymentOperationContext::for_checkout(
+					$order,
+					WooPaymentsPersistenceVocabulary::GATEWAY_ID,
+					(string) $intent['payment_method'],
+					array(),
+					$payment_method_change ? array( WooPaymentsIntentRequestBuilder::PROVIDER_DATA_SUBSCRIPTION_PAYMENT_METHOD_CHANGE => true ) : array()
+				);
+				$test->create_effect_applier( $test->create_account_service( true ) )->attach_charge_intent(
+					$context,
+					( new PaymentOutcome( $outcome_status, (string) $intent['id'], '', (string) $intent['payment_method'] ) )->with_effect_plan( $plan )
+				);
+
+				return (string) $intent['id'];
+			};
+		};
+		$redirect_return = static function ( self $test, WC_Order $order ): string {
+			$intent             = $test->load_recorded_intent( 'platform-3ds-challenge-results.json', 'blocks_challenge_failed' );
+			$intent['metadata'] = array( 'order_id' => (string) $order->get_id() );
+			$account_service    = $test->create_account_service( true );
+			$test->create_intent_confirmation_service( wc_get_container()->get( Client::class ), null, $account_service )
+				->confirm_fetched_intent_for_order( $order, $intent, false, true );
+
+			return (string) $intent['id'];
+		};
+
+		return array(
+			'checkout of a 3DS attempt'                  => array(
+				'checkout',
+				'requires_payment_method',
+				$checkout( 'platform-intention-3ds-requires-action.json', 'new_card_requires_action', PaymentOutcome::STATUS_REQUIRES_CUSTOMER_ACTION, false ),
+				'removed',
+				'attached',
+				'elevated',
+			),
+			'redirect return of a failed 3DS challenge'  => array( 'redirect return', 'requires_payment_method', $redirect_return, 'removed', 'attached', 'elevated' ),
+			'checkout over a stored success'             => array(
+				'checkout',
+				'succeeded',
+				$checkout( 'platform-intention-3ds-requires-action.json', 'new_card_requires_action', PaymentOutcome::STATUS_REQUIRES_CUSTOMER_ACTION, false ),
+				'ch_earlier',
+				'earlier',
+				'elevated',
+			),
+			'payment method change with a SetupIntent'   => array(
+				'subscription payment method change',
+				'succeeded',
+				$checkout( 'platform-3ds-challenge-results.json', 'my_account_setup_intent_challenge_completed', PaymentOutcome::STATUS_COMPLETED, true ),
+				'removed',
+				'attached',
+				'elevated',
+			),
+			'checkout of an attempt that has its charge' => array(
+				'checkout',
+				'requires_payment_method',
+				$checkout( 'platform-3ds-challenge-results.json', 'classic_checkout_challenge_completed', PaymentOutcome::STATUS_COMPLETED, false ),
+				'ch_3UJjK4BzWlxcwgpP0EgZv2kl',
+				'attached',
+				'normal',
+			),
+		);
+	}
+
+	/**
 	 * Create the intent confirmation service with real collaborators over the given API client.
 	 *
 	 * @param Client                       $api_client      API client.
@@ -127,10 +245,31 @@ class WooPaymentsIntentConfirmationServiceTest extends WC_Unit_Test_Case {
 	 * @return WooPaymentsIntentConfirmationService
 	 */
 	private function create_intent_confirmation_service( Client $api_client, ?WooPaymentsTokenService $token_service, WooPaymentsAccountService $account_service ): WooPaymentsIntentConfirmationService {
-		$token_service  = $token_service ?? $this->create_token_service();
+		$token_service = $token_service ?? $this->create_token_service();
+
+		$service = new WooPaymentsIntentConfirmationService();
+		$service->init(
+			$api_client,
+			wc_get_container()->get( WooPaymentsFeeDetailsNoteController::class ),
+			$token_service,
+			$account_service,
+			$this->create_effect_applier( $account_service, $token_service )
+		);
+
+		return $service;
+	}
+
+	/**
+	 * Create the order effect applier with real collaborators.
+	 *
+	 * @param WooPaymentsAccountService    $account_service Account service.
+	 * @param WooPaymentsTokenService|null $token_service   Token service, or null for one whose details lookup finds nothing.
+	 * @return WooPaymentsOrderEffectApplier
+	 */
+	private function create_effect_applier( WooPaymentsAccountService $account_service, ?WooPaymentsTokenService $token_service = null ): WooPaymentsOrderEffectApplier {
 		$effect_applier = new WooPaymentsOrderEffectApplier();
 		$effect_applier->init(
-			$token_service,
+			$token_service ?? $this->create_token_service(),
 			new WooPaymentsOrderDataService(),
 			$account_service,
 			wc_get_container()->get( WooPaymentsOrderNoteService::class ),
@@ -139,16 +278,7 @@ class WooPaymentsIntentConfirmationServiceTest extends WC_Unit_Test_Case {
 			wc_get_container()->get( \Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService::class )
 		);
 
-		$service = new WooPaymentsIntentConfirmationService();
-		$service->init(
-			$api_client,
-			wc_get_container()->get( WooPaymentsFeeDetailsNoteController::class ),
-			$token_service,
-			$account_service,
-			$effect_applier
-		);
-
-		return $service;
+		return $effect_applier;
 	}
 
 	/**
@@ -256,25 +386,34 @@ class WooPaymentsIntentConfirmationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * Load one recorded intent response body by fixture and pair key.
+	 *
+	 * @param string $fixture Fixture file name.
+	 * @param string $pair    Fixture pair key.
+	 * @return array<string,mixed>
+	 */
+	private function load_recorded_intent( string $fixture, string $pair ): array {
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads a local immutable test fixture.
+		$decoded = json_decode( (string) file_get_contents( __DIR__ . '/Fixtures/' . $fixture ), true );
+		$this->assertIsArray( $decoded );
+
+		foreach ( $decoded['entries'] as $entry ) {
+			if ( is_array( $entry ) && ( $entry['pair'] ?? '' ) === $pair ) {
+				return $entry['response']['body'];
+			}
+		}
+
+		$this->fail( "Fixture '$fixture' has no entry for pair '$pair'." );
+	}
+
+	/**
 	 * Load one recorded 3DS challenge entry's response body by pair key.
 	 *
 	 * @param string $pair Fixture pair key.
 	 * @return array{body:array<string,mixed>}
 	 */
 	private function load_recorded_manual_3ds_entry( string $pair ): array {
-		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads a local immutable test fixture.
-		$contents = file_get_contents( __DIR__ . '/Fixtures/platform-3ds-challenge-results.json' );
-		$this->assertIsString( $contents );
-		$decoded = json_decode( $contents, true );
-		$this->assertIsArray( $decoded );
-
-		foreach ( $decoded['entries'] as $entry ) {
-			if ( is_array( $entry ) && ( $entry['pair'] ?? '' ) === $pair ) {
-				return array( 'body' => $entry['response']['body'] );
-			}
-		}
-
-		$this->fail( "The 3DS challenge fixture has no entry for pair '$pair'." );
+		return array( 'body' => $this->load_recorded_intent( 'platform-3ds-challenge-results.json', $pair ) );
 	}
 
 	/**
