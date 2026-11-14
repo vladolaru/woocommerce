@@ -15,7 +15,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRu
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsNativeAccountAdapter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsNativeApiClientAdapter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\BundledSubscriptionsGuard;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCanceledAuthorizationFeeRemediationService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\CutoverActionScheduler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\PreflightService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\StateStore;
@@ -38,12 +37,6 @@ class PreflightServiceTest extends WC_Unit_Test_Case {
 
 	/** @var string[] */
 	private array $platform_failures = array();
-
-	/** @var bool */
-	private bool $fee_remediation_ready = true;
-
-	/** @var string */
-	private string $fee_remediation_status = 'scheduled';
 
 	/** @var bool */
 	private bool $rate_api_client_connected = true;
@@ -97,8 +90,6 @@ class PreflightServiceTest extends WC_Unit_Test_Case {
 		parent::setUp();
 		$this->provider_ready            = true;
 		$this->platform_failures         = array();
-		$this->fee_remediation_ready     = true;
-		$this->fee_remediation_status    = 'scheduled';
 		$this->rate_api_client_connected = true;
 		update_option( 'woocommerce_woocommerce_payments_version', '10.6.0' );
 		update_option( WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION, array( 'upe_enabled_payment_method_ids' => array( 'card' ) ) );
@@ -249,16 +240,15 @@ class PreflightServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The induced reconciliation vocabulary is exactly the 11 conditions a store can reach.
+	 * @testdox The induced reconciliation vocabulary is exactly the 10 conditions a store can reach.
 	 */
-	public function test_induced_reconciliation_vocabulary_is_exactly_the_eleven_reachable_conditions(): void {
+	public function test_induced_reconciliation_vocabulary_is_exactly_the_ten_reachable_conditions(): void {
 		$codes = array();
 		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'no' );
 		$codes = array_merge( $codes, $this->create_sut()->get_failures() );
 		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
 		$this->provider_ready            = false;
 		$this->platform_failures         = array( 'wpcom_connection_unavailable', 'wpcom_blog_id_unavailable', 'wpcom_connection_owner_unavailable' );
-		$this->fee_remediation_ready     = false;
 		$this->rate_api_client_connected = false;
 		update_option( 'woocommerce_woocommerce_payments_version', '10.5.2' );
 		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'GBP' ) );
@@ -269,8 +259,8 @@ class PreflightServiceTest extends WC_Unit_Test_Case {
 
 		$unique_codes = array_values( array_unique( $codes ) );
 
-		$this->assertSame( array( 'builtin_runtime_disabled', 'woopayments_plugin_version_unsupported', 'builtin_transport_unavailable', 'wpcom_connection_unavailable', 'wpcom_blog_id_unavailable', 'wpcom_connection_owner_unavailable', 'multi_currency_rates_unavailable', 'operational_queue_hooks_unhandled', 'financial_migrations_unavailable', 'bundled_stripe_billing_subscriptions_present', 'extension_renewal_plugin_active' ), $unique_codes );
-		$this->assertCount( 11, $unique_codes );
+		$this->assertSame( array( 'builtin_runtime_disabled', 'woopayments_plugin_version_unsupported', 'builtin_transport_unavailable', 'wpcom_connection_unavailable', 'wpcom_blog_id_unavailable', 'wpcom_connection_owner_unavailable', 'multi_currency_rates_unavailable', 'operational_queue_hooks_unhandled', 'bundled_stripe_billing_subscriptions_present', 'extension_renewal_plugin_active' ), $unique_codes );
+		$this->assertCount( 10, $unique_codes );
 	}
 
 	/**
@@ -485,20 +475,6 @@ class PreflightServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Fee remediation scheduling reports failure only when the remediation job cannot be scheduled.
-	 */
-	public function test_fee_remediation_scheduling_reports_unavailable(): void {
-		$sut = $this->create_sut();
-		$this->assertTrue( $sut->ensure_fee_remediation_scheduled() );
-
-		$this->fee_remediation_status = 'not_needed';
-		$this->assertTrue( $sut->ensure_fee_remediation_scheduled() );
-
-		$this->fee_remediation_status = 'unavailable';
-		$this->assertFalse( $sut->ensure_fee_remediation_scheduled() );
-	}
-
-	/**
 	 * @testdox The preflight reports the failure the store causes: $code ($_dataName).
 	 * @dataProvider reported_failure_provider
 	 *
@@ -551,12 +527,6 @@ class PreflightServiceTest extends WC_Unit_Test_Case {
 				'operational_queue_hooks_unhandled',
 				static function ( self $test ): void {
 					$test->schedule_queue_action( 'wcpay_synthetic_cutover_probe' );
-				},
-			),
-			'financial migrations cannot be scheduled'     => array(
-				'financial_migrations_unavailable',
-				static function ( self $test ): void {
-					$test->fee_remediation_ready = false;
 				},
 			),
 			'a Stripe-billed subscription marker exists'   => array(
@@ -688,17 +658,6 @@ class PreflightServiceTest extends WC_Unit_Test_Case {
 				return $this->provider_ready;
 			}
 		);
-		$fee_remediation = $this->getMockBuilder( WooPaymentsCanceledAuthorizationFeeRemediationService::class )->disableOriginalConstructor()->onlyMethods( array( 'can_schedule_cutover_remediation', 'ensure_scheduled' ) )->getMock();
-		$fee_remediation->method( 'can_schedule_cutover_remediation' )->willReturnCallback(
-			function (): bool {
-				return $this->fee_remediation_ready;
-			}
-		);
-		$fee_remediation->method( 'ensure_scheduled' )->willReturnCallback(
-			function (): string {
-				return $this->fee_remediation_status;
-			}
-		);
 		$platform_connection = $this->getMockBuilder( PlatformConnectionService::class )->disableOriginalConstructor()->onlyMethods( array( 'get_preflight_failures' ) )->getMock();
 		$platform_connection->method( 'get_preflight_failures' )->willReturnCallback(
 			function (): array {
@@ -740,7 +699,7 @@ class PreflightServiceTest extends WC_Unit_Test_Case {
 				return $this->database;
 			}
 		};
-		$this->init_preflight_service( $sut, wc_get_container()->get( WooPaymentsRuntimeArbiter::class ), wc_get_container()->get( LegacyProxy::class ), $provider, new BundledSubscriptionsGuard(), $fee_remediation, $platform_connection, $rate_account, $rate_api_client );
+		$this->init_preflight_service( $sut, wc_get_container()->get( WooPaymentsRuntimeArbiter::class ), wc_get_container()->get( LegacyProxy::class ), $provider, new BundledSubscriptionsGuard(), $platform_connection, $rate_account, $rate_api_client );
 		return $sut;
 	}
 
@@ -941,23 +900,21 @@ class PreflightServiceTest extends WC_Unit_Test_Case {
 	 *
 	 * The service resolves them when a preflight runs, so the test doubles are set on the instance after init.
 	 *
-	 * @param PreflightService                                      $service                     The preflight service.
-	 * @param WooPaymentsRuntimeArbiter                             $arbiter                     The runtime arbiter.
-	 * @param LegacyProxy                                           $legacy_proxy                The legacy proxy.
-	 * @param WooPaymentsProvider                                   $provider                    The native provider.
-	 * @param BundledSubscriptionsGuard                             $bundled_subscriptions_guard  The bundled subscriptions guard.
-	 * @param WooPaymentsCanceledAuthorizationFeeRemediationService $fee_remediation_service     The fee remediation owner.
-	 * @param PlatformConnectionService                             $platform_connection_service The platform connection readiness service.
-	 * @param WooPaymentsNativeAccountAdapter                       $rate_account         The rate account boundary.
-	 * @param WooPaymentsNativeApiClientAdapter                     $rate_api_client      The rate API client boundary.
+	 * @param PreflightService                  $service                     The preflight service.
+	 * @param WooPaymentsRuntimeArbiter         $arbiter                     The runtime arbiter.
+	 * @param LegacyProxy                       $legacy_proxy                The legacy proxy.
+	 * @param WooPaymentsProvider               $provider                    The native provider.
+	 * @param BundledSubscriptionsGuard         $bundled_subscriptions_guard  The bundled subscriptions guard.
+	 * @param PlatformConnectionService         $platform_connection_service The platform connection readiness service.
+	 * @param WooPaymentsNativeAccountAdapter   $rate_account         The rate account boundary.
+	 * @param WooPaymentsNativeApiClientAdapter $rate_api_client      The rate API client boundary.
 	 */
-	private function init_preflight_service( PreflightService $service, WooPaymentsRuntimeArbiter $arbiter, LegacyProxy $legacy_proxy, WooPaymentsProvider $provider, BundledSubscriptionsGuard $bundled_subscriptions_guard, WooPaymentsCanceledAuthorizationFeeRemediationService $fee_remediation_service, PlatformConnectionService $platform_connection_service, WooPaymentsNativeAccountAdapter $rate_account, WooPaymentsNativeApiClientAdapter $rate_api_client ): void {
+	private function init_preflight_service( PreflightService $service, WooPaymentsRuntimeArbiter $arbiter, LegacyProxy $legacy_proxy, WooPaymentsProvider $provider, BundledSubscriptionsGuard $bundled_subscriptions_guard, PlatformConnectionService $platform_connection_service, WooPaymentsNativeAccountAdapter $rate_account, WooPaymentsNativeApiClientAdapter $rate_api_client ): void {
 		$service->init( $arbiter, $legacy_proxy );
 
 		$collaborators = array(
 			'provider'                    => $provider,
 			'bundled_subscriptions_guard' => $bundled_subscriptions_guard,
-			'fee_remediation_service'     => $fee_remediation_service,
 			'platform_connection_service' => $platform_connection_service,
 			'rate_account'                => $rate_account,
 			'rate_api_client'             => $rate_api_client,

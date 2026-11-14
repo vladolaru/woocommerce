@@ -916,7 +916,7 @@ class ReconciliationJob implements RegisterHooksInterface {
 
 	/**
 	 * Complete one verification claim once a fresh request shows that the built-in WooPayments owns the site: fence the claim,
-	 * sync the setup tier, schedule the fee remediation and record the switch as done.
+	 * sync the setup tier and record the switch as done.
 	 *
 	 * An extension that still owns the site defers the claim.
 	 *
@@ -934,18 +934,6 @@ class ReconciliationJob implements RegisterHooksInterface {
 		$this->account_service->sync_setup_tier_from_options( false );
 		// Resumes a capture that ran out of time before the deactivation.
 		$this->capture_note_wordings();
-		// Every finalized claim reaches this step once the built-in WooPayments owns its site.
-		try {
-			$remediation_scheduled = $this->preflight_service->ensure_fee_remediation_scheduled();
-		} catch ( \Throwable $error ) {
-			$this->log_error( 'WooPayments cutover could not schedule the canceled-authorization fee remediation.', array( 'error' => $error->getMessage() ) );
-			$remediation_scheduled = false;
-		}
-		if ( ! $remediation_scheduled ) {
-			$this->defer( $claimed, array( PreflightService::FAILURE_FEE_REMEDIATION_UNAVAILABLE ) );
-			return;
-		}
-
 		$now = time();
 		$this->with_write_lock(
 			$now,
@@ -969,6 +957,10 @@ class ReconciliationJob implements RegisterHooksInterface {
 				$done                                     = $this->append_step( $done, self::STEP_DONE, $now );
 				if ( $this->state_store->compare_and_set_record( $record, $done ) ) {
 					delete_option( self::START_NOTICE_SNOOZED_UNTIL_OPTION );
+					// The extension cached this check with its own order selection. Without it, the canceled-authorization note
+					// (Admin\CanceledAuthRemediationNote) runs the check again with the built-in selection, as the extension's
+					// note does after a rollback.
+					delete_option( WooPaymentsCanceledAuthorizationFeeRemediationService::CHECK_STATE_OPTION_KEY );
 				}
 			}
 		);

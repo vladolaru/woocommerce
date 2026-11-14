@@ -21,7 +21,8 @@ use WC_Order_Refund;
  * date on, with no end date.
  *
  * Its hooks, options and Action Scheduler group are the WooPayments extension's, so a remediation the extension queued
- * goes on here after the switch.
+ * goes on here after the switch. A new run starts only from the merchant's Tools action (Admin\DebugTools), as in client
+ * 11.3.0 (includes/class-wc-payments-status.php:221-256); the switch starts none.
  *
  * @since 11.0.0
  * @internal
@@ -522,62 +523,6 @@ class WooPaymentsCanceledAuthorizationFeeRemediationService implements RegisterH
 	}
 
 	/**
-	 * Tell whether the switch can hand off the remediation: nothing is affected, or Action Scheduler can run it.
-	 *
-	 * @return bool True when there is no affected data or Action Scheduler can run the migration.
-	 */
-	public function can_schedule_cutover_remediation(): bool {
-		if ( $this->is_complete() || ! $this->has_affected_orders() ) {
-			return true;
-		}
-
-		return $this->is_action_scheduler_available();
-	}
-
-	/**
-	 * Make sure a live remediation job is scheduled after the switch from the WooPayments extension.
-	 *
-	 * @return string Scheduling status: completed, not_needed, unavailable, already_scheduled, or scheduled.
-	 */
-	public function ensure_scheduled(): string {
-		if ( $this->is_complete() ) {
-			return 'completed';
-		}
-
-		if ( $this->is_dry_run() || $this->has_scheduled_job( self::DRY_RUN_ACTION_HOOK ) ) {
-			$this->cancel_scheduled_jobs( self::DRY_RUN_ACTION_HOOK );
-			$this->reset_live_processing_state();
-		}
-
-		if ( ! $this->has_affected_orders() ) {
-			update_option( self::CHECK_STATE_OPTION_KEY, 'no_affected_orders', true );
-			return 'not_needed';
-		}
-
-		update_option( self::CHECK_STATE_OPTION_KEY, 'has_affected_orders', true );
-
-		if ( ! $this->is_action_scheduler_available() ) {
-			wc_get_logger()->error(
-				'WooPayments canceled-authorization fee remediation is required after cutover, but Action Scheduler is unavailable.',
-				array( 'source' => 'wcpay-fee-remediation' )
-			);
-			return 'unavailable';
-		}
-
-		if ( $this->has_scheduled_job( self::ACTION_HOOK ) ) {
-			return 'already_scheduled';
-		}
-
-		$this->disable_dry_run();
-		if ( ! $this->schedule_job( self::ACTION_HOOK, time() + 10 ) ) {
-			return 'unavailable';
-		}
-
-		$this->mark_running();
-		return 'scheduled';
-	}
-
-	/**
 	 * Tell whether a live remediation batch is scheduled.
 	 *
 	 * Client 11.1.0 `WC_Payments_Notes_Canceled_Auth_Remediation::is_remediation_running()` checks the live hook in
@@ -852,35 +797,6 @@ class WooPaymentsCanceledAuthorizationFeeRemediationService implements RegisterH
 	 */
 	protected function is_action_scheduler_available(): bool {
 		return did_action( 'action_scheduler_init' ) > 0;
-	}
-
-	/**
-	 * Tell whether a remediation action is already scheduled.
-	 *
-	 * @param string $hook Hook name.
-	 * @return bool True when an action is already scheduled.
-	 */
-	private function has_scheduled_job( string $hook ): bool {
-		return false !== as_has_scheduled_action( $hook, array(), self::ACTION_SCHEDULER_GROUP_ID );
-	}
-
-	/**
-	 * Cancel scheduled remediation jobs for a hook.
-	 *
-	 * @param string $hook Hook name.
-	 */
-	private function cancel_scheduled_jobs( string $hook ): void {
-		as_unschedule_all_actions( $hook, array(), self::ACTION_SCHEDULER_GROUP_ID );
-	}
-
-	/**
-	 * Reset dry-run processing state before the switch starts live remediation.
-	 */
-	private function reset_live_processing_state(): void {
-		delete_option( self::LAST_ORDER_ID_OPTION_KEY );
-		delete_option( self::BATCH_SIZE_OPTION_KEY );
-		delete_option( self::STATS_OPTION_KEY );
-		delete_option( self::DRY_RUN_OPTION_KEY );
 	}
 
 	/**

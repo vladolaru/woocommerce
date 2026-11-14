@@ -19,7 +19,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRu
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsNativeAccountAdapter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsNativeApiClientAdapter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\BundledSubscriptionsGuard;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCanceledAuthorizationFeeRemediationService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\CutoverController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\PreflightService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\ReconciliationJob;
@@ -54,13 +53,6 @@ class CutoverControllerTest extends WC_Unit_Test_Case {
 	 * @var WooPaymentsProvider&\PHPUnit\Framework\MockObject\MockObject
 	 */
 	private WooPaymentsProvider $provider;
-
-	/**
-	 * Canceled-authorization fee remediation service mock.
-	 *
-	 * @var WooPaymentsCanceledAuthorizationFeeRemediationService&\PHPUnit\Framework\MockObject\MockObject
-	 */
-	private WooPaymentsCanceledAuthorizationFeeRemediationService $fee_remediation_service;
 
 	/**
 	 * Platform connection readiness service mock.
@@ -98,32 +90,11 @@ class CutoverControllerTest extends WC_Unit_Test_Case {
 	private int $builtin_provider_readiness_calls = 0;
 
 	/**
-	 * Number of times the fee remediation preflight was checked.
-	 *
-	 * @var int
-	 */
-	private int $fee_remediation_preflight_calls = 0;
-
-	/**
 	 * Number of times the platform connection preflight was checked.
 	 *
 	 * @var int
 	 */
 	private int $platform_connection_preflight_calls = 0;
-
-	/**
-	 * Whether canceled-authorization fee remediation scheduling succeeds after deactivation.
-	 *
-	 * @var string
-	 */
-	private string $fee_remediation_schedule_result = 'scheduled';
-
-	/**
-	 * Number of times the cutover asked the remediation service to adopt the queue.
-	 *
-	 * @var int
-	 */
-	private int $fee_remediation_schedule_calls = 0;
 
 	/**
 	 * Whether the WooPayments plugin should appear active.
@@ -186,27 +157,6 @@ class CutoverControllerTest extends WC_Unit_Test_Case {
 				function (): bool {
 					++$this->builtin_provider_readiness_calls;
 					return $this->builtin_provider_ready;
-				}
-			);
-
-		$this->fee_remediation_service = $this->getMockBuilder( WooPaymentsCanceledAuthorizationFeeRemediationService::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'can_schedule_cutover_remediation', 'ensure_scheduled' ) )
-			->getMock();
-		$this->fee_remediation_service
-			->method( 'can_schedule_cutover_remediation' )
-			->willReturnCallback(
-				function (): bool {
-					++$this->fee_remediation_preflight_calls;
-					return true;
-				}
-			);
-		$this->fee_remediation_service
-			->method( 'ensure_scheduled' )
-			->willReturnCallback(
-				function (): string {
-					++$this->fee_remediation_schedule_calls;
-					return $this->fee_remediation_schedule_result;
 				}
 			);
 
@@ -1624,7 +1574,6 @@ class CutoverControllerTest extends WC_Unit_Test_Case {
 		$this->assertSame( array( 'builtin_runtime_disabled' ), $failures, 'Disabled native runtime should be the only preflight result.' );
 		$this->assertSame( 0, $this->builtin_provider_readiness_calls, 'Native transport readiness should not be checked while native runtime is disabled.' );
 		$this->assertSame( 0, $this->platform_connection_preflight_calls, 'Platform connection preflight should not run while native runtime is disabled.' );
-		$this->assertSame( 0, $this->fee_remediation_preflight_calls, 'Financial migration preflight should not run while native runtime is disabled.' );
 	}
 
 	/**
@@ -1641,7 +1590,6 @@ class CutoverControllerTest extends WC_Unit_Test_Case {
 			wc_get_container()->get( LegacyProxy::class ),
 			$this->provider,
 			new BundledSubscriptionsGuard(),
-			$this->fee_remediation_service,
 			$this->platform_connection_service,
 			$this->rate_account,
 			$this->rate_api_client
@@ -2108,23 +2056,21 @@ class CutoverControllerTest extends WC_Unit_Test_Case {
 	 *
 	 * The service resolves them when a preflight runs, so the test doubles are set on the instance after init.
 	 *
-	 * @param PreflightService                                      $service                     The preflight service.
-	 * @param WooPaymentsRuntimeArbiter                             $arbiter                     The runtime arbiter.
-	 * @param LegacyProxy                                           $legacy_proxy                The legacy proxy.
-	 * @param WooPaymentsProvider                                   $provider                    The native provider.
-	 * @param BundledSubscriptionsGuard                             $bundled_subscriptions_guard  The bundled subscriptions guard.
-	 * @param WooPaymentsCanceledAuthorizationFeeRemediationService $fee_remediation_service     The fee remediation owner.
-	 * @param PlatformConnectionService                             $platform_connection_service The platform connection readiness service.
-	 * @param WooPaymentsNativeAccountAdapter                       $rate_account         The rate account boundary.
-	 * @param WooPaymentsNativeApiClientAdapter                     $rate_api_client      The rate API client boundary.
+	 * @param PreflightService                  $service                     The preflight service.
+	 * @param WooPaymentsRuntimeArbiter         $arbiter                     The runtime arbiter.
+	 * @param LegacyProxy                       $legacy_proxy                The legacy proxy.
+	 * @param WooPaymentsProvider               $provider                    The native provider.
+	 * @param BundledSubscriptionsGuard         $bundled_subscriptions_guard  The bundled subscriptions guard.
+	 * @param PlatformConnectionService         $platform_connection_service The platform connection readiness service.
+	 * @param WooPaymentsNativeAccountAdapter   $rate_account         The rate account boundary.
+	 * @param WooPaymentsNativeApiClientAdapter $rate_api_client      The rate API client boundary.
 	 */
-	private function init_preflight_service( PreflightService $service, WooPaymentsRuntimeArbiter $arbiter, LegacyProxy $legacy_proxy, WooPaymentsProvider $provider, BundledSubscriptionsGuard $bundled_subscriptions_guard, WooPaymentsCanceledAuthorizationFeeRemediationService $fee_remediation_service, PlatformConnectionService $platform_connection_service, WooPaymentsNativeAccountAdapter $rate_account, WooPaymentsNativeApiClientAdapter $rate_api_client ): void {
+	private function init_preflight_service( PreflightService $service, WooPaymentsRuntimeArbiter $arbiter, LegacyProxy $legacy_proxy, WooPaymentsProvider $provider, BundledSubscriptionsGuard $bundled_subscriptions_guard, PlatformConnectionService $platform_connection_service, WooPaymentsNativeAccountAdapter $rate_account, WooPaymentsNativeApiClientAdapter $rate_api_client ): void {
 		$service->init( $arbiter, $legacy_proxy );
 
 		$collaborators = array(
 			'provider'                    => $provider,
 			'bundled_subscriptions_guard' => $bundled_subscriptions_guard,
-			'fee_remediation_service'     => $fee_remediation_service,
 			'platform_connection_service' => $platform_connection_service,
 			'rate_account'                => $rate_account,
 			'rate_api_client'             => $rate_api_client,

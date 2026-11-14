@@ -28,8 +28,7 @@ defined( 'ABSPATH' ) || exit;
 /**
  * Evaluates the conditions that block the cutover on a site.
  *
- * It also finds and deactivates the active WooPayments extension, reads the extension version the store last ran, and
- * schedules the fee remediation after the switch.
+ * It also finds and deactivates the active WooPayments extension, and reads the extension version the store last ran.
  *
  * @since 11.2.0
  * @internal
@@ -61,9 +60,6 @@ class PreflightService {
 
 	/** A queued WooPayments action has no built-in handler. */
 	public const FAILURE_QUEUE_HOOKS_UNHANDLED = 'operational_queue_hooks_unhandled';
-
-	/** The canceled-authorization fee remediation cannot be scheduled; the stored code keeps its first name. */
-	public const FAILURE_FEE_REMEDIATION_UNAVAILABLE = 'financial_migrations_unavailable';
 
 	/** The store bills subscriptions through the WooPayments extension's bundled subscriptions; such a store is excluded. */
 	public const FAILURE_BUNDLED_SUBSCRIPTIONS = 'bundled_stripe_billing_subscriptions_present';
@@ -137,13 +133,6 @@ class PreflightService {
 	 * @var BundledSubscriptionsGuard|null
 	 */
 	private ?BundledSubscriptionsGuard $bundled_subscriptions_guard = null;
-
-	/**
-	 * Fee remediation owner.
-	 *
-	 * @var WooPaymentsCanceledAuthorizationFeeRemediationService|null
-	 */
-	private ?WooPaymentsCanceledAuthorizationFeeRemediationService $fee_remediation_service = null;
 
 	/**
 	 * Platform connection readiness service.
@@ -240,9 +229,6 @@ class PreflightService {
 		}
 		if ( array() !== $this->get_unhandled_queue_hooks() ) {
 			$failures[] = self::FAILURE_QUEUE_HOOKS_UNHANDLED;
-		}
-		if ( ! $this->get_fee_remediation_service()->can_schedule_cutover_remediation() ) {
-			$failures[] = self::FAILURE_FEE_REMEDIATION_UNAVAILABLE;
 		}
 		if ( $this->get_bundled_subscriptions_guard()->is_bundled_subscriptions_store() ) {
 			$failures[] = self::FAILURE_BUNDLED_SUBSCRIPTIONS;
@@ -386,22 +372,6 @@ class PreflightService {
 		}
 		$this->legacy_proxy->call_function( 'deactivate_plugins', $plugin_file, false, false );
 		return ! $this->is_woopayments_site_active() && ! $this->is_woopayments_network_active();
-	}
-
-	/**
-	 * Make sure the built-in WooPayments runs the canceled-authorization fee remediation the extension left behind on this site.
-	 *
-	 * Called once the built-in WooPayments owns the site, so the remediation's Action Scheduler callback is registered when it runs.
-	 *
-	 * @return bool False when the remediation is needed but cannot be scheduled.
-	 */
-	public function ensure_fee_remediation_scheduled(): bool {
-		if ( 'unavailable' === $this->get_fee_remediation_service()->ensure_scheduled() ) {
-			wc_get_logger()->error( 'WooPayments could not schedule the canceled-authorization fee remediation after the cutover.', array( 'source' => 'woopayments-cutover' ) );
-			return false;
-		}
-
-		return true;
 	}
 
 	/**
@@ -652,19 +622,6 @@ class PreflightService {
 		}
 
 		return $this->bundled_subscriptions_guard;
-	}
-
-	/**
-	 * Get the fee remediation owner, resolving it on first use.
-	 *
-	 * @return WooPaymentsCanceledAuthorizationFeeRemediationService
-	 */
-	private function get_fee_remediation_service(): WooPaymentsCanceledAuthorizationFeeRemediationService {
-		if ( null === $this->fee_remediation_service ) {
-			$this->fee_remediation_service = wc_get_container()->get( WooPaymentsCanceledAuthorizationFeeRemediationService::class );
-		}
-
-		return $this->fee_remediation_service;
 	}
 
 	/**

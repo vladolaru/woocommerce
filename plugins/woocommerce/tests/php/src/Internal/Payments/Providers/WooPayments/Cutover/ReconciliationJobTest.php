@@ -755,27 +755,21 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 	public function test_extension_activation_on_an_open_cutover_is_the_rollback( string $shape, bool $supersedes ): void {
 		$this->arrange_extension_era_store();
 		$failures           = array();
-		$schedulable        = true;
 		$deactivations      = 0;
 		$migration_runs     = 0;
-		$preflight          = new class( $failures, $schedulable, $deactivations ) extends PreflightService {
+		$preflight          = new class( $failures, $deactivations ) extends PreflightService {
 			/** @var string[] */
 			private array $failures;
-
-			/** @var bool */
-			private bool $schedulable;
 
 			/** @var int */
 			private int $deactivations;
 
 			/**
 			 * @param string[] $failures      Controlled failure codes.
-			 * @param bool     $schedulable   Whether the fee remediation can be scheduled.
 			 * @param int      $deactivations Count of extension deactivations.
 			 */
-			public function __construct( array &$failures, bool &$schedulable, int &$deactivations ) {
+			public function __construct( array &$failures, int &$deactivations ) {
 				$this->failures      =& $failures;
-				$this->schedulable   =& $schedulable;
 				$this->deactivations =& $deactivations;
 			}
 
@@ -797,11 +791,6 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 			public function deactivate_woopayments_plugin(): bool {
 				++$this->deactivations;
 				return true;
-			}
-
-			/** Control the fee remediation scheduling. */
-			public function ensure_fee_remediation_scheduled(): bool {
-				return $this->schedulable;
 			}
 
 			/** The extension the activation just turned on, in its canonical folder. */
@@ -856,19 +845,14 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 		$this->assertTrue( $make_job( true )->enqueue( 'merchant' ) );
 		$record = $this->state_store->get_record();
 		$this->assertIsArray( $record );
-		if ( in_array( $shape, array( 'an ownership check deferred while the extension still read as active', 'an ownership check deferred on financial_migrations_unavailable', 'a stale running claim recovered after finalize', "the job's own plugin lifecycle change" ), true ) ) {
+		if ( in_array( $shape, array( 'an ownership check deferred while the extension still read as active', 'a stale running claim recovered after finalize', "the job's own plugin lifecycle change" ), true ) ) {
 			$record = $run_attempt( $record, true );
 			$this->assertSame( 'verify_builtin_ownership', $record['current_step'] );
 			$this->assertSame( 1, $deactivations, 'The job deactivated the extension when it finalized.' );
 		}
-		if ( 'an ownership check deferred while the extension still read as active' === $shape ) {
+		if ( in_array( $shape, array( 'an ownership check deferred while the extension still read as active', "the job's own plugin lifecycle change" ), true ) ) {
 			$record = $run_attempt( $record, true );
 			$this->assertSame( array( 'builtin_ownership_unverified' ), $record['deferred_codes'] );
-		} elseif ( in_array( $shape, array( 'an ownership check deferred on financial_migrations_unavailable', "the job's own plugin lifecycle change" ), true ) ) {
-			$schedulable = false;
-			$record      = $run_attempt( $record, false );
-			$schedulable = true;
-			$this->assertSame( array( 'financial_migrations_unavailable' ), $record['deferred_codes'] );
 			$this->assertSame( 'deferred', $record['current_step'] );
 		} elseif ( 'a stale running claim recovered after finalize' === $shape ) {
 			$this->scheduler->cancel( $record['generation'], $record['attempt'] + 1 );
@@ -938,7 +922,6 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 	public function open_cutover_activation_provider(): array {
 		return array(
 			'an ownership check deferred while the extension still read as active' => array( 'an ownership check deferred while the extension still read as active', true ),
-			'an ownership check deferred on financial_migrations_unavailable' => array( 'an ownership check deferred on financial_migrations_unavailable', true ),
 			'a stale running claim recovered after finalize' => array( 'a stale running claim recovered after finalize', true ),
 			'a merchant start reinstalled before finalize' => array( 'a merchant start reinstalled before finalize', true ),
 			'a claim running in another request'           => array( 'a claim running in another request', true ),
@@ -958,30 +941,24 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 	public function test_switch_rolls_back_when_the_extension_came_back( string $shape, int $expected_deactivations ): void {
 		$this->arrange_extension_era_store();
 		$deactivations     = 0;
-		$schedulable       = true;
 		$migration_runs    = 0;
 		$preflight_reads   = 0;
 		$extension_owner   = true;
 		$during_run        = null;
 		$during_owner_read = null;
-		$preflight         = new class( $deactivations, $schedulable, $preflight_reads ) extends PreflightService {
+		$preflight         = new class( $deactivations, $preflight_reads ) extends PreflightService {
 			/** @var int */
 			private int $deactivations;
-
-			/** @var bool */
-			private bool $schedulable;
 
 			/** @var int */
 			private int $reads;
 
 			/**
-			 * @param int  $deactivations Count of extension deactivations.
-			 * @param bool $schedulable   Whether the fee remediation can be scheduled.
-			 * @param int  $reads         Count of preflight reads.
+			 * @param int $deactivations Count of extension deactivations.
+			 * @param int $reads         Count of preflight reads.
 			 */
-			public function __construct( int &$deactivations, bool &$schedulable, int &$reads ) {
+			public function __construct( int &$deactivations, int &$reads ) {
 				$this->deactivations =& $deactivations;
-				$this->schedulable   =& $schedulable;
 				$this->reads         =& $reads;
 			}
 
@@ -1004,11 +981,6 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 			public function deactivate_woopayments_plugin(): bool {
 				++$this->deactivations;
 				return true;
-			}
-
-			/** Control the fee remediation scheduling. */
-			public function ensure_fee_remediation_scheduled(): bool {
-				return $this->schedulable;
 			}
 
 			/** The extension in its canonical folder. */
@@ -1119,13 +1091,12 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 		// The first finalize: the job deactivates the extension and schedules the ownership check.
 		$record = $run_attempt( $record );
 		$this->assertSame( 'verify_builtin_ownership', $record['current_step'] );
-		$extension_owner = false;
 		if ( in_array( $shape, array( 'an activation during the attempt after a deferred ownership check', 'a retry finalize whose activation lost the write lock' ), true ) ) {
-			$schedulable = false;
-			$record      = $run_attempt( $record );
-			$schedulable = true;
-			$this->assertSame( array( 'financial_migrations_unavailable' ), $record['deferred_codes'] );
+			// The ownership check still reads the extension as active, so it defers past finalize.
+			$record = $run_attempt( $record );
+			$this->assertSame( array( 'builtin_ownership_unverified' ), $record['deferred_codes'] );
 		}
+		$extension_owner = false;
 		// The extension comes back before or during the attempt under test.
 		if ( 'an activation during the attempt after a deferred ownership check' === $shape ) {
 			$during_run = $activation;
@@ -1908,7 +1879,7 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 		$queued = $this->state_store->get_record();
 		$this->assertIsArray( $queued );
 		$this->scheduler->cancel( $queued['generation'], 1 );
-		// The ownership check deferred after finalize (fee remediation unavailable), so the next attempt re-runs the reconcile.
+		// The ownership check deferred after finalize (the extension still read as active), so the next attempt re-runs the reconcile.
 		$deferred                         = $queued;
 		$deferred['revision']             = $queued['revision'] + 1;
 		$deferred['state']                = StateStore::STATE_DEFERRED;
@@ -1995,77 +1966,74 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The ownership check schedules the canceled-authorization fee remediation once the built-in WooPayments owns the site; while it cannot be scheduled, or its scheduling throws, the check defers and finishes once it can: $_dataName.
-	 * @dataProvider provide_fee_remediation_scheduling
+	 * Client 11.3.0 starts the canceled-authorization fix only from the merchant's Tools action
+	 * (includes/class-wc-payments-status.php:221-256). The live run row is queued through the service, which writes the
+	 * extension's own options, hook and group (includes/migrations/class-wc-payments-remediate-canceled-auth-fees.php:851-869).
 	 *
-	 * @param bool     $schedulable Whether scheduling succeeds at the first ownership check.
-	 * @param bool     $throws      Whether scheduling throws at the first ownership check.
-	 * @param string   $first_state The record state after the first ownership check.
-	 * @param string[] $first_codes The condition codes after the first ownership check.
-	 * @param int      $total_calls Scheduling calls once the switch is done.
+	 * @testdox The ownership check finishes the switch and leaves the canceled-authorization fix as the merchant left it: $_dataName.
+	 * @dataProvider provide_canceled_authorization_fix_states
+	 *
+	 * @param string $state What the merchant left before the switch.
 	 */
-	public function test_ownership_verification_finishes_once_the_fee_remediation_is_scheduled( bool $schedulable, bool $throws, string $first_state, array $first_codes, int $total_calls ): void {
-		$scheduling_calls = 0;
-		$preflight        = $this->create_preflight_with_fee_remediation( $scheduling_calls, $schedulable, $throws );
-		$sut              = $this->create_job( true, $preflight, null, false, $this->create_noop_normalization() );
+	public function test_ownership_check_leaves_the_canceled_authorization_fix_as_the_merchant_left_it( string $state ): void {
+		$remediation = wc_get_container()->get( WooPaymentsCanceledAuthorizationFeeRemediationService::class );
+		try {
+			$this->create_canceled_authorization_defect_order();
+			$this->assertTrue( $remediation->has_affected_orders(), 'The store has an order the fix would change.' );
+			if ( 'a pending dry run' === $state ) {
+				$remediation->schedule_dry_run();
+			} elseif ( 'a live run the extension queued' === $state ) {
+				$remediation->schedule_remediation();
+			} elseif ( 'completed' === $state ) {
+				update_option( WooPaymentsCanceledAuthorizationFeeRemediationService::STATUS_OPTION_KEY, 'completed' );
+			}
+			update_option( WooPaymentsCanceledAuthorizationFeeRemediationService::CHECK_STATE_OPTION_KEY, 'has_affected_orders', true );
+			$before    = $this->read_canceled_authorization_fix_state();
+			$preflight = $this->create_all_clear_site_preflight();
+			$sut       = $this->create_job( true, $preflight, null, false, $this->create_noop_normalization() );
+			$this->assertTrue( $sut->enqueue( 'merchant' ) );
+			$pending = $this->state_store->get_record();
+			$this->assertIsArray( $pending );
+			$this->scheduler->cancel( $pending['generation'], 1 );
+			$sut->handle_reconcile( $pending['generation'], 1 );
+			$verification = $this->state_store->get_record();
+			$this->assertIsArray( $verification );
+			$this->assertSame( 'verify_builtin_ownership', $verification['current_step'] );
+			$this->scheduler->cancel( $verification['generation'], 2 );
 
-		$this->assertTrue( $sut->enqueue( 'merchant' ) );
-		$pending = $this->state_store->get_record();
-		$this->assertIsArray( $pending );
-		$this->scheduler->cancel( $pending['generation'], 1 );
-		$sut->handle_reconcile( $pending['generation'], 1 );
-		$verification = $this->state_store->get_record();
-		$this->assertIsArray( $verification );
-		$this->assertSame( 'verify_builtin_ownership', $verification['current_step'] );
-		$this->assertSame( 0, $scheduling_calls, 'Remediation waits until a fresh request sees native ownership.' );
-
-		$this->scheduler->cancel( $verification['generation'], 2 );
-		$this->start_fresh_request();
-		$this->create_job( true, $preflight, null, false, $this->create_noop_normalization() )->handle_reconcile( $verification['generation'], 2 );
-
-		$record = $this->state_store->get_record();
-		$this->assertIsArray( $record );
-		$this->assertSame( $first_state, $record['state'] );
-		$this->assertSame( $first_codes, $record['deferred_codes'] );
-		$this->assertSame( 1, $scheduling_calls );
-
-		// Scheduling works again: the retries finish the switch without another merchant action.
-		$schedulable = true;
-		$throws      = false;
-		for ( $step = 0; $step < 4 && StateStore::STATE_DONE !== $record['state']; ++$step ) {
-			$next_attempt = $record['attempt'] + 1;
-			$this->scheduler->cancel( $record['generation'], $next_attempt );
 			$this->start_fresh_request();
-			$this->create_job( true, $preflight, null, false, $this->create_noop_normalization() )->handle_reconcile( $record['generation'], $next_attempt );
-			$record = $this->state_store->get_record();
-			$this->assertIsArray( $record );
+			$this->create_job( true, $preflight, null, false, $this->create_noop_normalization() )->handle_reconcile( $verification['generation'], 2 );
+
+			$done = $this->state_store->get_record();
+			$this->assertIsArray( $done );
+			$this->assertSame( StateStore::STATE_DONE, $done['state'], 'The first ownership check finishes the switch.' );
+			$this->assertSame( $before, $this->read_canceled_authorization_fix_state(), 'No run is queued, converted, cancelled or reset.' );
+			$this->assertFalse( get_option( WooPaymentsCanceledAuthorizationFeeRemediationService::CHECK_STATE_OPTION_KEY ), 'The extension-era check is cleared, so the note checks again.' );
+		} finally {
+			$this->cleanup_canceled_authorization_fix_state();
 		}
-		$this->assertSame( StateStore::STATE_DONE, $record['state'] );
-		$this->assertSame( $total_calls, $scheduling_calls, 'The remediation is scheduled once more, by the verification that finishes.' );
 	}
 
 	/**
-	 * Fee remediation scheduling at the first ownership check, and what that check leaves.
+	 * What the merchant left of the canceled-authorization fix before the switch.
 	 *
-	 * @return array<string,array{0:bool,1:bool,2:string,3:string[],4:int}>
+	 * @return array<string,array{0:string}>
 	 */
-	public function provide_fee_remediation_scheduling(): array {
+	public function provide_canceled_authorization_fix_states(): array {
 		return array(
-			'scheduled at the first verification' => array( true, false, StateStore::STATE_DONE, array(), 1 ),
-			'unavailable at first'                => array( false, false, StateStore::STATE_DEFERRED, array( 'financial_migrations_unavailable' ), 2 ),
-			'throwing at first'                   => array( false, true, StateStore::STATE_DEFERRED, array( 'financial_migrations_unavailable' ), 2 ),
+			'never run'                       => array( 'never run' ),
+			'a pending dry run'               => array( 'a pending dry run' ),
+			'a live run the extension queued' => array( 'a live run the extension queued' ),
+			'completed'                       => array( 'completed' ),
 		);
 	}
 
 	/**
-	 * @testdox Ownership verification from a fresh request defers while the extension still owns the runtime, without finishing or scheduling the fee remediation.
+	 * @testdox Ownership verification from a fresh request defers while the extension still owns the runtime, without finishing.
 	 */
 	public function test_ownership_verification_defers_while_the_extension_still_runs(): void {
-		$scheduling_calls = 0;
-		$schedulable      = true;
-		$throws           = false;
-		$preflight        = $this->create_preflight_with_fee_remediation( $scheduling_calls, $schedulable, $throws );
-		$origin           = $this->create_job( true, $preflight );
+		$preflight = $this->create_all_clear_site_preflight();
+		$origin    = $this->create_job( true, $preflight );
 		$this->assertTrue( $origin->enqueue( 'merchant' ) );
 		$queued = $this->state_store->get_record();
 		$this->assertIsArray( $queued );
@@ -2086,7 +2054,6 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 		$this->assertIsArray( $deferred );
 		$this->assertSame( StateStore::STATE_DEFERRED, $deferred['state'] );
 		$this->assertSame( array( 'builtin_ownership_unverified' ), $deferred['deferred_codes'] );
-		$this->assertSame( 0, $scheduling_calls, 'The fee remediation waits until native owns the site.' );
 	}
 
 	/**
@@ -2212,35 +2179,12 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Create an all-clear site-local preflight whose fee remediation scheduling is controlled.
+	 * Create an all-clear site-local preflight on a store whose extension is already inactive.
 	 *
-	 * @param int  $scheduling_calls Counter of fee remediation scheduling calls.
-	 * @param bool $schedulable      Whether scheduling succeeds.
-	 * @param bool $throws           Whether scheduling throws.
 	 * @return PreflightService
 	 */
-	private function create_preflight_with_fee_remediation( int &$scheduling_calls, bool &$schedulable, bool &$throws ): PreflightService {
-		return new class( $scheduling_calls, $schedulable, $throws ) extends PreflightService {
-			/** @var int */
-			private int $scheduling_calls;
-
-			/** @var bool */
-			private bool $schedulable;
-
-			/** @var bool */
-			private bool $throws;
-
-			/**
-			 * @param int  $scheduling_calls Counter of fee remediation scheduling calls.
-			 * @param bool $schedulable      Whether scheduling succeeds.
-			 * @param bool $throws           Whether scheduling throws.
-			 */
-			public function __construct( int &$scheduling_calls, bool &$schedulable, bool &$throws ) {
-				$this->scheduling_calls =& $scheduling_calls;
-				$this->schedulable      =& $schedulable;
-				$this->throws           =& $throws;
-			}
-
+	private function create_all_clear_site_preflight(): PreflightService {
+		return new class() extends PreflightService {
 			/** @return string[] */
 			public function get_failures(): array {
 				return array();
@@ -2260,15 +2204,6 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 				return true;
 			}
 
-			/** Count and control the fee remediation scheduling. */
-			public function ensure_fee_remediation_scheduled(): bool {
-				++$this->scheduling_calls;
-				if ( $this->throws ) {
-					throw new \RuntimeException( 'Controlled scheduling failure.' );
-				}
-				return $this->schedulable;
-			}
-
 			/** Site-local scenario. */
 			public function is_woopayments_network_active(): bool {
 				return false;
@@ -2279,6 +2214,89 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 				return false;
 			}
 		};
+	}
+
+	/**
+	 * Create an order with the shape the canceled-authorization fix changes: a canceled WooPayments authorization that
+	 * was never paid, with the transaction fee recorded.
+	 */
+	private function create_canceled_authorization_defect_order(): void {
+		$order = \WC_Helper_Order::create_order();
+		$order->set_date_created( '2023-05-01' );
+		$order->set_payment_method( 'woocommerce_payments' );
+		$order->set_transaction_id( 'pi_canceled_authorization' );
+		$order->set_status( 'cancelled' );
+		$order->update_meta_data( '_intent_id', 'pi_canceled_authorization' );
+		$order->update_meta_data( '_intention_status', 'canceled' );
+		$order->update_meta_data( '_wcpay_transaction_fee', '1.50' );
+		$order->update_meta_data( '_wcpay_net', '48.50' );
+		$order->save();
+	}
+
+	/**
+	 * Read the canceled-authorization fix's pending actions and the stored values of its processing options.
+	 *
+	 * @return array<string,mixed>
+	 */
+	private function read_canceled_authorization_fix_state(): array {
+		global $wpdb;
+
+		$state = array();
+		foreach ( $this->get_canceled_authorization_fix_hooks() as $hook ) {
+			$state[ $hook ] = as_get_scheduled_actions(
+				array(
+					'hook'     => $hook,
+					'status'   => ActionScheduler_Store::STATUS_PENDING,
+					'per_page' => -1,
+				),
+				'ids'
+			);
+		}
+		$options = array(
+			WooPaymentsCanceledAuthorizationFeeRemediationService::STATUS_OPTION_KEY,
+			WooPaymentsCanceledAuthorizationFeeRemediationService::LAST_ORDER_ID_OPTION_KEY,
+			WooPaymentsCanceledAuthorizationFeeRemediationService::BATCH_SIZE_OPTION_KEY,
+			WooPaymentsCanceledAuthorizationFeeRemediationService::STATS_OPTION_KEY,
+			WooPaymentsCanceledAuthorizationFeeRemediationService::DRY_RUN_OPTION_KEY,
+		);
+		foreach ( $options as $option ) {
+			$state[ $option ] = $wpdb->get_var( $wpdb->prepare( "SELECT option_value FROM {$wpdb->options} WHERE option_name = %s", $option ) );
+		}
+
+		return $state;
+	}
+
+	/**
+	 * Clear the canceled-authorization fix's actions and options.
+	 */
+	private function cleanup_canceled_authorization_fix_state(): void {
+		foreach ( $this->get_canceled_authorization_fix_hooks() as $hook ) {
+			as_unschedule_all_actions( $hook );
+		}
+		$options = array(
+			WooPaymentsCanceledAuthorizationFeeRemediationService::STATUS_OPTION_KEY,
+			WooPaymentsCanceledAuthorizationFeeRemediationService::LAST_ORDER_ID_OPTION_KEY,
+			WooPaymentsCanceledAuthorizationFeeRemediationService::BATCH_SIZE_OPTION_KEY,
+			WooPaymentsCanceledAuthorizationFeeRemediationService::STATS_OPTION_KEY,
+			WooPaymentsCanceledAuthorizationFeeRemediationService::DRY_RUN_OPTION_KEY,
+			WooPaymentsCanceledAuthorizationFeeRemediationService::CHECK_STATE_OPTION_KEY,
+		);
+		foreach ( $options as $option ) {
+			delete_option( $option );
+		}
+	}
+
+	/**
+	 * The canceled-authorization fix's Action Scheduler hooks.
+	 *
+	 * @return string[]
+	 */
+	private function get_canceled_authorization_fix_hooks(): array {
+		return array(
+			WooPaymentsCanceledAuthorizationFeeRemediationService::ACTION_HOOK,
+			WooPaymentsCanceledAuthorizationFeeRemediationService::DRY_RUN_ACTION_HOOK,
+			WooPaymentsCanceledAuthorizationFeeRemediationService::CHECK_AFFECTED_ORDERS_HOOK,
+		);
 	}
 
 	/**
@@ -2615,7 +2633,6 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 			'bundled Stripe Billing subscriptions'       => array( 'bundled_stripe_billing_subscriptions_present', StateStore::STATE_EXCLUDED ),
 			'built-in transport unavailable'             => array( 'builtin_transport_unavailable', StateStore::STATE_DEFERRED ),
 			'multi-currency rates unavailable'           => array( 'multi_currency_rates_unavailable', StateStore::STATE_DEFERRED ),
-			'financial migrations unavailable'           => array( 'financial_migrations_unavailable', StateStore::STATE_DEFERRED ),
 			'WordPress.com blog ID unavailable'          => array( 'wpcom_blog_id_unavailable', StateStore::STATE_DEFERRED ),
 			'WordPress.com connection unavailable'       => array( 'wpcom_connection_unavailable', StateStore::STATE_DEFERRED ),
 			'WordPress.com connection owner unavailable' => array( 'wpcom_connection_owner_unavailable', StateStore::STATE_DEFERRED ),
@@ -3341,11 +3358,8 @@ class ReconciliationJobTest extends WC_Unit_Test_Case {
 	 * @testdox A completed switch clears "Not now" on the switch notice.
 	 */
 	public function test_completed_switch_clears_the_start_notice_snooze(): void {
-		$scheduling_calls = 0;
-		$schedulable      = true;
-		$throws           = false;
-		$preflight        = $this->create_preflight_with_fee_remediation( $scheduling_calls, $schedulable, $throws );
-		$sut              = $this->create_job( true, $preflight, null, false, $this->create_noop_normalization() );
+		$preflight = $this->create_all_clear_site_preflight();
+		$sut       = $this->create_job( true, $preflight, null, false, $this->create_noop_normalization() );
 		update_option( ReconciliationJob::START_NOTICE_SNOOZED_UNTIL_OPTION, time() + DAY_IN_SECONDS );
 		$this->assertTrue( $sut->enqueue( 'merchant' ) );
 		$pending = $this->state_store->get_record();
