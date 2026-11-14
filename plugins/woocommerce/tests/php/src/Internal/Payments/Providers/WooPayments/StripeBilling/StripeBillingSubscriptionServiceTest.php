@@ -280,6 +280,20 @@ class StripeBillingSubscriptionServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A subscription item with no units stays in the Stripe data at a unit amount of 0.
+	 *
+	 * Client 11.3.0 test "zero quantity item is kept with a zero unit amount"
+	 * (includes/subscriptions/class-wc-payments-subscription-service.php:880-887): an invoice repair then prices the
+	 * Stripe item at 0 instead of leaving the old amount billed.
+	 */
+	public function test_zero_quantity_item_is_kept_with_a_zero_unit_amount(): void {
+		$items = $this->sut->get_recurring_item_data_for_subscription( $this->create_subscription( array(), 0 ) );
+
+		$this->assertSame( 0, $items[0]['quantity'] );
+		$this->assertSame( 0.0, $items[0]['price_data']['unit_amount_decimal'] );
+	}
+
+	/**
 	 * Item subtotals and the unit amounts client 11.1.0 sends for them.
 	 *
 	 * @return array<string,array{string,string,float}>

@@ -1005,13 +1005,17 @@ class StripeBillingSubscriptionService {
 				// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 			}
 
-			$data[] = array(
+			// A line with no units has no unit price. It stays in the data so an invoice repair prices its Stripe item at 0;
+			// leaving it out would keep Stripe billing the old amount. As client 11.3.0
+			// (includes/subscriptions/class-wc-payments-subscription-service.php:880-887).
+			$unit_amount = $item->get_quantity() ? (float) $item->get_subtotal() / $item->get_quantity() : 0.0;
+			$data[]      = array(
 				'metadata'   => $this->get_item_metadata( $item ),
 				'quantity'   => $item->get_quantity(),
 				'price_data' => $this->format_item_price_data(
 					$currency,
 					$this->product_service->get_or_create_wcpay_product_id( $product ),
-					(float) $item->get_subtotal() / $item->get_quantity(),
+					$unit_amount,
 					$billing_period,
 					$interval
 				),
