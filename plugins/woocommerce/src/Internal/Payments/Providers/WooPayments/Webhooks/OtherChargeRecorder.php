@@ -13,11 +13,10 @@ use RuntimeException;
 use WC_Order;
 
 /**
- * Records an event on a WooPayments charge that does not pay the order: one note and one warning line, and for a
- * succeeded payment intent the charge ID when the order has none.
+ * Records an event on a WooPayments charge that does not pay the order: one note and one warning line.
  *
- * Nothing else on the order changes: no status, payment, refund or dispute data. The order's `_intent_id` is never
- * written, because it names the intent that pays the order. The caller holds the order payment lock.
+ * Nothing else on the order changes: no status, payment, refund or dispute data. The order's `_intent_id` and
+ * `_charge_id` are never written, because they name the order's own payment. The caller holds the order payment lock.
  *
  * @since 11.2.0
  * @internal
@@ -55,15 +54,8 @@ class OtherChargeRecorder {
 	 */
 	public function record( WC_Order $order, string $event_type, array $facts ): void {
 		$charge_id = $facts['charge_id'] ?? '';
-		if ( 'payment_intent.succeeded' === $event_type && '' !== $charge_id && '' === (string) $order->get_meta( '_charge_id', true ) ) {
-			// The transactions and disputes lists find a charge's order by `_charge_id`. Only a charge that took money is
-			// linked: a later event on it then finds this order, and is still recorded because it is not the order's payment.
-			$order->update_meta_data( '_charge_id', $charge_id );
-			$order->save();
-		}
-
-		$note     = $this->note_service->format_other_charge_note( $event_type, $facts );
-		$identity = implode( '|', array( 'other_charge', $event_type, $facts['object_id'], $facts['status'] ?? '' ) );
+		$note      = $this->note_service->format_other_charge_note( $event_type, $facts );
+		$identity  = implode( '|', array( 'other_charge', $event_type, $facts['object_id'], $facts['status'] ?? '' ) );
 		if ( ! $this->note_service->add_note_once( $order, $note, $identity ) && 0 === $this->note_service->find_note( $order, $note, $identity ) ) {
 			// The note is the record: an event whose note was not saved fails, so the event is retried or refused, not acknowledged.
 			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- The message is built from an event type, an object ID and an order ID, not HTML output.

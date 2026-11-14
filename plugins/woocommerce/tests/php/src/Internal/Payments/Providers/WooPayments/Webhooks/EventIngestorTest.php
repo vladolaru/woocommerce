@@ -5419,18 +5419,19 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 		$this->assertNull( $order->get_date_paid() );
 		$this->assertSame( '', $order->get_transaction_id() );
 		$this->assertSame( '', $order->get_meta( '_intent_id', true ) );
-		$this->assertSame( 'ch_123', $order->get_meta( '_charge_id', true ) );
+		$this->assertSame( '', $order->get_meta( '_charge_id', true ), 'A charge that is not the order\'s payment is not stored on it.' );
 		$this->assertSame( 'Direct bank transfer', $order->get_payment_method_title() );
 		$this->assertCount( 0, $this->get_order_notes_containing( $order, 'successfully charged' ) );
 		$this->assertCount( 1, $this->get_order_notes_containing( $order, 'does not pay this order' ) );
 	}
 
 	/**
-	 * @testdox payment_intent.succeeded on an order already paid by another gateway is recorded once, writes only the charge ID, and logs one line.
+	 * @testdox payment_intent.succeeded on an order already paid by another gateway is recorded once, writes no payment meta, and logs one line.
 	 *
 	 * Client 11.1.0 writes the intent meta on any resolved order (class-wc-payments-webhook-processing-service.php:510-569)
 	 * and then skips paid orders (class-wc-payments-order-service.php:2747-2764, :2863-2879). Here the order records the
-	 * charge with one note, so the merchant can find and refund it, and keeps its payment data.
+	 * charge in one note, which links the charge's transaction page, and keeps its payment data: the stored charge stays the
+	 * order's own payment's.
 	 */
 	public function test_succeeded_intent_on_an_order_paid_by_another_gateway_is_recorded_once_without_paying_it_again(): void {
 		$order = $this->create_woopayments_order();
@@ -5451,7 +5452,7 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'bacs', $order->get_payment_method() );
 		$this->assertSame( 'Direct bank transfer', $order->get_payment_method_title() );
 		$this->assertSame( '', $order->get_meta( '_intent_id', true ), 'A recorded intent must not become the order\'s intent.' );
-		$this->assertSame( 'ch_123', $order->get_meta( '_charge_id', true ) );
+		$this->assertSame( '', $order->get_meta( '_charge_id', true ), 'A recorded charge must not become the order\'s charge.' );
 		$this->assertSame( '', $order->get_meta( '_wcpay_transaction_fee', true ) );
 		$this->assertSame( '', $order->get_meta( '_wcpay_net', true ) );
 		$this->assertCount( 0, $this->get_order_notes_containing( $order, 'successfully charged' ) );
