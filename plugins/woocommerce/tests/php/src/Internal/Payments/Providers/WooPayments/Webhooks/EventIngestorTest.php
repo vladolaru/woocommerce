@@ -3941,11 +3941,13 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 	 *
 	 * @dataProvider provider_refused_dispute_events
 	 *
-	 * @param string   $order_case       The order the dispute meets.
-	 * @param callable $prepare          Creates the order and returns it with the cleanup to run after the dispute.
-	 * @param string   $expected_refusal Exception class the dispute is refused with.
+	 * @param string              $order_case       The order the dispute meets.
+	 * @param callable            $prepare          Creates the order and returns it with the cleanup to run after the dispute.
+	 * @param string              $expected_refusal Exception class the dispute is refused with.
+	 * @param array<string,mixed> $dispute          Fields that replace the dispute object's own.
+	 * @param string              $expected_message Text the refusal's message contains, when given.
 	 */
-	public function test_a_refused_dispute_event_deletes_the_dispute_caches( string $order_case, callable $prepare, string $expected_refusal ): void {
+	public function test_a_refused_dispute_event_deletes_the_dispute_caches( string $order_case, callable $prepare, string $expected_refusal, array $dispute = array(), string $expected_message = '' ): void {
 		unset( $order_case );
 		$this->seed_dispute_cache_options();
 		list( $order, $cleanup ) = $prepare( $this );
@@ -3956,7 +3958,7 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 
 		$refusal = null;
 		try {
-			$this->sut->process( $this->create_dispute_event( 'charge.dispute.created', 'needs_response' ) );
+			$this->sut->process( $this->create_dispute_event( 'charge.dispute.created', 'needs_response', $dispute ) );
 		} catch ( \Throwable $exception ) {
 			$refusal = $exception;
 		} finally {
@@ -3964,6 +3966,9 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 		}
 
 		$this->assertInstanceOf( $expected_refusal, $refusal );
+		if ( '' !== $expected_message ) {
+			$this->assertStringContainsString( $expected_message, $refusal->getMessage() );
+		}
 		$this->assert_dispute_cache_options_deleted();
 		$order = wc_get_order( $order->get_id() );
 		$this->assertSame( $status, $order->get_status() );
@@ -3975,7 +3980,7 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 	/**
 	 * Dispute events refused before they change the order.
 	 *
-	 * @return array<string,array{0:string,1:callable,2:string}>
+	 * @return array<string,array{0:string,1:callable,2:string,3?:array<string,mixed>,4?:string}>
 	 */
 	public function provider_refused_dispute_events(): array {
 		return array(
@@ -3992,6 +3997,8 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 					return array( $order, static function (): void {} );
 				},
 				InvalidArgumentException::class,
+				array(),
+				'Could not find WooPayments order via disputed charge ID',
 			),
 			'found: its processing refused by a held order payment lock' => array(
 				'found but refused',
@@ -4008,6 +4015,59 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 					);
 				},
 				OrderPaymentLockRefusedException::class,
+			),
+			'not named, by a malformed charge field: refused by the field check' => array(
+				'not named, by a malformed charge field',
+				static function ( self $test ): array {
+					return array( $test->create_paid_woopayments_order( 'ch_123', 'pi_123' ), static function (): void {} );
+				},
+				InvalidArgumentException::class,
+				array( 'charge' => array( 'not-scalar' ) ),
+				'Expected scalar dispute webhook property: charge',
+			),
+			'not found, with a malformed later field: refused as not found' => array(
+				'not found, with a malformed field',
+				static function ( self $test ): array {
+					$order = $test->create_paid_woopayments_order( 'ch_other', 'pi_other' );
+
+					return array( $order, static function (): void {} );
+				},
+				InvalidArgumentException::class,
+				array( 'id' => array( 'not-scalar' ) ),
+				'Could not find WooPayments order via disputed charge ID',
+			),
+			'looked up by a query that throws: the lookup failure is kept' => array(
+				'looked up by a query that throws',
+				static function ( self $test ): array {
+					$order       = $test->create_paid_woopayments_order( 'ch_123', 'pi_123' );
+					$break_query = static function ( array $args ): array {
+						if ( '_charge_id' === ( $args['meta_key'] ?? null ) ) {
+							throw new RuntimeException( 'Order query failed.' );
+						}
+
+						return $args;
+					};
+					add_filter( 'woocommerce_order_query_args', $break_query );
+
+					return array(
+						$order,
+						static function () use ( $break_query ): void {
+							remove_filter( 'woocommerce_order_query_args', $break_query );
+						},
+					);
+				},
+				RuntimeException::class,
+				array(),
+				'Order query failed.',
+			),
+			'found, with a malformed later field: refused by the field check' => array(
+				'found, with a malformed field',
+				static function ( self $test ): array {
+					return array( $test->create_paid_woopayments_order( 'ch_123', 'pi_123' ), static function (): void {} );
+				},
+				InvalidArgumentException::class,
+				array( 'id' => array( 'not-scalar' ) ),
+				'Expected scalar dispute webhook property: id',
 			),
 		);
 	}
@@ -4074,40 +4134,6 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 		$this->assertOrderLacksNoteContaining( $order, array( 'Payment has been disputed for', 'Dispute ID' ) );
 		$this->assertSame( '', $order->get_meta( '_wcpay_open_dispute_ids', true ) );
 		$this->assert_dispute_cache_options_deleted();
-	}
-
-	/**
-	 * @testdox A created dispute with a non-scalar ID fails before order or cache effects.
-	 */
-	public function test_dispute_created_with_non_scalar_id_fails_closed(): void {
-		$order = $this->create_woopayments_order();
-		$order->set_status( 'processing' );
-		$order->update_meta_data( '_charge_id', 'ch_123' );
-		$order->save();
-
-		$event       = $this->create_dispute_event( 'charge.dispute.created', 'needs_response', array( 'id' => array( 'not-scalar' ) ) );
-		$event['id'] = 'evt_row_39_non_scalar_id';
-		$this->seed_dispute_cache_options();
-
-		$exception = null;
-		try {
-			$this->sut->process( $event );
-		} catch ( InvalidArgumentException $caught ) {
-			$exception = $caught;
-		}
-
-		$this->assertInstanceOf( InvalidArgumentException::class, $exception );
-		$this->assertStringContainsString( 'Expected scalar dispute webhook property: id', $exception->getMessage() );
-
-		$order = wc_get_order( $order->get_id() );
-		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertSame( 'processing', $order->get_status() );
-		$this->assertSame( '', $order->get_meta( '_wcpay_open_dispute_ids', true ) );
-		$this->assertOrderLacksNoteContaining( $order, array( 'Payment has been disputed' ) );
-		$this->assertOrderLacksNoteContaining( $order, array( 'A payment inquiry has been raised' ) );
-		foreach ( $this->get_dispute_cache_option_keys() as $key ) {
-			$this->assertSame( array( 'stale' => true ), get_option( $key, false ), "Expected dispute cache option {$key} to remain after failed validation." );
-		}
 	}
 
 	/**
@@ -5311,9 +5337,9 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 	 * The recorded dispute close, with only its dispute ID replaced by one the handler refuses, makes the handler throw after
 	 * the order is found.
 	 *
-	 * @testdox An event whose handler refuses a malformed field fires the before-delivery hook only and keeps the dispute caches.
+	 * @testdox An event whose handler refuses a malformed field fires the before-delivery hook only and deletes the dispute caches.
 	 */
-	public function test_event_whose_handler_throws_skips_the_after_delivery_hook_and_the_dispute_cache_purge(): void {
+	public function test_event_whose_handler_throws_skips_the_after_delivery_hook_and_deletes_the_dispute_caches(): void {
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
 		$event                         = $this->load_recorded_dispute_closed_event( 'accept_closed_lost' );
 		$event['data']['object']['id'] = array( 'not-scalar' );
@@ -5344,9 +5370,7 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 
 		$this->assertInstanceOf( InvalidArgumentException::class, $exception );
 		$this->assertSame( array( array( 'before', 'charge.dispute.closed' ) ), $hook_calls );
-		foreach ( $this->get_dispute_cache_option_keys() as $key ) {
-			$this->assertSame( array( 'stale' => true ), get_option( $key, false ), "Expected dispute cache option {$key} to remain after the handler threw." );
-		}
+		$this->assert_dispute_cache_options_deleted();
 	}
 
 	/**

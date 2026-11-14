@@ -517,10 +517,10 @@ class RefundEventHandler {
 	 * service :1108-1119).
 	 *
 	 * When no order holds the charge, a succeeded update is logged and nothing more when no order stores its payment intent
-	 * either, or when the order storing it stores it as canceled: no order is locked or written. A succeeded update writes
-	 * no refund row and moves no status: a note and metadata on a refund row the order already links, or an other-charge
-	 * note on an order whose payment it is not; with no order by charge or intent there is nothing for a retry to write,
-	 * and a canceled intent takes no money. When an order
+	 * either, or when the order storing it stores it as canceled: no order is locked or written. A succeeded update creates
+	 * or deletes no refund row and does not change the order status. It writes a note, the order's refund status and
+	 * metadata on a refund row the order already links, or an other-charge note on an order whose payment it is not; with
+	 * no order by charge or intent there is nothing for a retry to write, and a canceled intent takes no money. When an order
 	 * stores the intent with another status, the update fails, so a retry can find the order once it records its own charge.
 	 * A failed or canceled update fails as any other does, whatever the stored status, so its retry can still stop or undo
 	 * a refund row that a delayed charge.refunded creates. Client 11.3.0 answers each update it finds no order for with one
