@@ -15,6 +15,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\Earl
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\StripeBillingModule;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\EventIngestor;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\EventOrderResolver;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\PaymentIntentEventHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIppReceiptEmail;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\DisputeEventHandler;
@@ -28,6 +29,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOr
 use Automattic\WooCommerce\Tests\Internal\Payments\OrderPaymentLockWithClaimHook;
 use Automattic\WooCommerce\Tests\Internal\Payments\OrderPaymentLockTestTrait;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Fixtures\RecordedPlatformEvents;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Fixtures\StoredPaymentRecords;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\ProviderTextLogAssertions;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\RecordingWcLogger;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\WooCommerceSubscriptionsDoubles;
@@ -3078,6 +3080,123 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 				)
 			)
 		);
+	}
+
+	/**
+	 * @testdox A succeeded payment on $_dataName completes the order as a capture, with the capture-choice line: $logged.
+	 *
+	 * Client 11.3.0 completes an order that stores requires_capture with its capture writer, whatever intent the order
+	 * stores (class-wc-payments-order-service.php:484-489, :2193-2219), and logs nothing about it. The built-in store makes
+	 * the same choice and writes one warning, whatever the logging setting, when the intent the order stored before the
+	 * event is not the arriving one. The event is the recorded authorization (Fixtures/platform-payment-intent-events.json)
+	 * captured in full.
+	 *
+	 * @dataProvider provider_capture_choices_over_a_stored_authorization
+	 *
+	 * @param string $stored_intent The intent the order stores before the event: '' for none, 'arriving' for the event's.
+	 * @param bool   $logging       Whether WooPayments logging is on.
+	 * @param string $logged        The stored intent the line names, or '' for no line.
+	 */
+	public function test_capture_choice_over_a_stored_authorization_logs_another_intents_status( string $stored_intent, bool $logging, string $logged ): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
+		if ( $logging ) {
+			self::enable_woopayments_debug_logging();
+		} else {
+			add_filter( 'wcpay_dev_mode', '__return_false' );
+		}
+		$event     = RecordedPlatformEvents::body( 'platform-payment-intent-events.json', 'manual_capture_amount_capturable_updated' );
+		$intent_id = (string) $event['data']['object']['id'];
+		$charge_id = (string) $event['data']['object']['charges']['data'][0]['id'];
+		$order     = 'arriving' === $stored_intent
+			? StoredPaymentRecords::authorization( $intent_id, $charge_id )
+			: StoredPaymentRecords::authorization_status_beside_another_intent( OrderStatus::ON_HOLD, $intent_id, $stored_intent );
+		$event     = $this->recorded_capture_event( $order );
+		$logger    = RecordingWcLogger::install();
+
+		$this->sut->process( $event );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertTrue( $order->is_paid() );
+		$this->assertSame( $intent_id, $order->get_transaction_id() );
+		$this->assertSame( $intent_id, $order->get_meta( '_intent_id', true ) );
+		$this->assertSame( 'succeeded', $order->get_meta( '_intention_status', true ) );
+		$this->assertCount( 1, $this->get_order_notes_containing( $order, 'was <strong>successfully captured</strong>' ) );
+		$this->assert_no_payment_success_note( $order );
+		$lines = array_values( array_filter( $logger->lines, static fn( array $line ): bool => false !== strpos( $line[1], 'as a capture, but the requires_capture status' ) ) );
+		if ( '' === $logged ) {
+			$this->assertSame( array(), $lines );
+			return;
+		}
+		$message = sprintf( 'Payment %1$s completes order #%2$d as a capture, but the requires_capture status the order stores is beside intent %3$s.', $intent_id, $order->get_id(), $logged );
+		$context = $this->get_logged_context( $logger, $message );
+		$this->assertSame( array( 'warning', 'woopayments' ), array( $lines[0][0], $lines[0][2] ) );
+		$this->assertSame(
+			array(
+				'order_id'         => $order->get_id(),
+				'intent_id'        => $intent_id,
+				'stored_intent_id' => $logged,
+				'reason'           => 'capture_over_another_intents_authorization',
+			),
+			array_intersect_key( $context, array_flip( array( 'order_id', 'intent_id', 'stored_intent_id', 'reason' ) ) )
+		);
+	}
+
+	/**
+	 * Stored intents beside a stored authorization, and the logging setting.
+	 *
+	 * @return array<string,array{0:string,1:bool,2:string}>
+	 */
+	public function provider_capture_choices_over_a_stored_authorization(): array {
+		return array(
+			'an order storing another intent'      => array( 'pi_another_attempt', true, 'pi_another_attempt' ),
+			'an order storing another intent, with logging off' => array( 'pi_another_attempt', false, 'pi_another_attempt' ),
+			'an order storing no intent'           => array( '', true, 'none' ),
+			'an order storing the arriving intent' => array( 'arriving', true, '' ),
+		);
+	}
+
+	/**
+	 * @testdox A succeeded payment its caller holds, on an order storing another intent's authorization status, is held without the capture-choice line.
+	 *
+	 * Stripe Billing's paid invoice passes its hold note when the invoice does not match the renewal; the hold is decided
+	 * there, so no capture choice is made.
+	 */
+	public function test_succeeded_payment_held_by_its_caller_logs_no_capture_choice(): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
+		self::enable_woopayments_debug_logging();
+		$event     = RecordedPlatformEvents::body( 'platform-payment-intent-events.json', 'manual_capture_amount_capturable_updated' );
+		$intent_id = (string) $event['data']['object']['id'];
+		$order     = StoredPaymentRecords::authorization_status_beside_another_intent( OrderStatus::PENDING, $intent_id, 'pi_another_attempt' );
+		$intent    = $this->recorded_capture_event( $order )['data']['object'];
+		$logger    = RecordingWcLogger::install();
+
+		wc_get_container()->get( PaymentIntentEventHandler::class )->apply_succeeded_payment_intent_under_lock( $order, $intent, array( 'The invoice was paid with a different amount.' ) );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( OrderStatus::ON_HOLD, $order->get_status() );
+		$this->assertCount( 1, $this->get_order_notes_containing( $order, 'The invoice was paid with a different amount.' ) );
+		$this->assertSame( array(), $this->get_order_notes_containing( $order, 'was <strong>successfully captured</strong>' ) );
+		$this->assertSame( array(), array_filter( $logger->lines, static fn( array $line ): bool => false !== strpos( $line[1], 'as a capture, but the requires_capture status' ) ) );
+	}
+
+	/**
+	 * The recorded authorization (Fixtures/platform-payment-intent-events.json) as its payment_intent.succeeded once
+	 * captured in full.
+	 *
+	 * @param WC_Order $order Order the event names.
+	 * @return array<string,mixed>
+	 */
+	private function recorded_capture_event( WC_Order $order ): array {
+		$event                                        = $this->recorded_authorization_event( $order );
+		$event['id']                                  = 'evt_capture_of_the_authorization';
+		$event['type']                                = 'payment_intent.succeeded';
+		$event['data']['object']['status']            = 'succeeded';
+		$event['data']['object']['amount_capturable'] = 0;
+		$event['data']['object']['amount_received']   = 1099;
+		$event['data']['object']['charges']['data'][0]['captured']        = true;
+		$event['data']['object']['charges']['data'][0]['amount_captured'] = 1099;
+
+		return $event;
 	}
 
 	/**

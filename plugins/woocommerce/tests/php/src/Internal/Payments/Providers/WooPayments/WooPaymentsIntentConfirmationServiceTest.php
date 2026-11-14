@@ -3,6 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Enums\OrderStatus;
 use Automattic\WooCommerce\Internal\Payments\PaymentOperationContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
@@ -22,6 +23,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPa
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Api\FakeHttpClient;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Fixtures\StoredPaymentRecords;
 use WC_Order;
 use WC_Unit_Test_Case;
 
@@ -125,7 +127,8 @@ class WooPaymentsIntentConfirmationServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox The $caller attach leaves the stored charge $expected_charge and the risk level $expected_risk_level.
 	 *
-	 * The order stores an earlier attempt pi_earlier with its declined charge ch_earlier and that charge's risk level. Client
+	 * The order stores an earlier attempt pi_earlier, declined or succeeded, with its charge ch_earlier and that charge's risk
+	 * level. Client
 	 * 11.3.0's attach sets the charge to the attached intent's latest charge, null for an intent with none, which deletes it
 	 * (class-wc-payments-order-service.php:1829-1830, :1873-1884, :1137-1141), and skips a null risk level
 	 * (:1833-1834, :1168-1171); a stored succeeded status without the override returns before any write (:1818-1822). The
@@ -136,7 +139,7 @@ class WooPaymentsIntentConfirmationServiceTest extends WC_Unit_Test_Case {
 	 * @dataProvider provider_attaches_and_the_stored_charge
 	 *
 	 * @param string   $caller              The attach's caller.
-	 * @param string   $stored_status       Stored intent status of the earlier attempt.
+	 * @param string   $stored_status       Stored intent status of the earlier attempt: requires_payment_method or succeeded.
 	 * @param callable $attach              Attaches the recorded intent to the order through the caller.
 	 * @param string   $expected_charge     Stored charge after the attach; 'removed' for none.
 	 * @param string   $expected_intent     Stored intent after the attach: 'attached' or 'earlier'.
@@ -144,13 +147,9 @@ class WooPaymentsIntentConfirmationServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_an_attach_keeps_only_the_attached_attempts_charge( string $caller, string $stored_status, callable $attach, string $expected_charge, string $expected_intent, string $expected_risk_level ): void {
 		unset( $caller );
-		$order = $this->create_woopayments_order( '10.99' );
-		$order->set_transaction_id( 'pi_earlier' );
-		$order->update_meta_data( '_intent_id', 'pi_earlier' );
-		$order->update_meta_data( '_intention_status', $stored_status );
-		$order->update_meta_data( '_charge_id', 'ch_earlier' );
-		$order->update_meta_data( '_charge_risk_level', 'elevated' );
-		$order->save();
+		$order = 'succeeded' === $stored_status
+			? StoredPaymentRecords::payment( OrderStatus::PENDING, 'pi_earlier', 'ch_earlier', 'elevated' )
+			: StoredPaymentRecords::declined_attempt_with_charge( 'elevated' );
 
 		$intent_id = $attach( $this, $order );
 		$reloaded  = wc_get_order( $order->get_id() );

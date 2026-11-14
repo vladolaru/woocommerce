@@ -314,6 +314,21 @@ class WooPaymentsLogger {
 	}
 
 	/**
+	 * Get a stored intent or transaction ID as a log line may carry it: a WooPayments payment or setup intent ID as it is,
+	 * `none` for an empty one, `another value` for anything else, such as a transaction ID a merchant typed.
+	 *
+	 * @param string $id Stored intent or transaction ID.
+	 * @return string
+	 */
+	public static function get_loggable_intent_id( string $id ): string {
+		if ( '' === $id ) {
+			return 'none';
+		}
+
+		return 0 === strpos( $id, 'pi_' ) || 0 === strpos( $id, 'seti_' ) ? $id : 'another value';
+	}
+
+	/**
 	 * Get a throwable's class, code and first stack frames, without its message or call arguments.
 	 *
 	 * Public for a line that logs a call trace with no failure (a Stripe Billing subscription put on hold).
