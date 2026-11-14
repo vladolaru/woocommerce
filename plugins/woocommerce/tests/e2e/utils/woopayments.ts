@@ -397,12 +397,27 @@ export async function openAdminAfterExtensionChecks(
 	await expect
 		.poll(
 			async () => {
-				await wpCLI( [
-					'wp',
-					'action-scheduler',
-					'run',
-					`--hooks=${ EXTENSION_ORDER_CHECK_HOOK }`,
-				] );
+				try {
+					await wpCLI( [
+						'wp',
+						'action-scheduler',
+						'run',
+						`--hooks=${ EXTENSION_ORDER_CHECK_HOOK }`,
+					] );
+				} catch ( error ) {
+					// A batch the admin page load started can hold the queue for a moment.
+					const { message, stdout, stderr } = error as Record<
+						string,
+						unknown
+					>;
+					if (
+						! /too many concurrent batches/i.test(
+							`${ message }\n${ stdout }\n${ stderr }`
+						)
+					) {
+						throw error;
+					}
+				}
 				return wpEvalJson< string >( `
 					return as_has_scheduled_action( '${ EXTENSION_ORDER_CHECK_HOOK }' )
 						? 'queued'
