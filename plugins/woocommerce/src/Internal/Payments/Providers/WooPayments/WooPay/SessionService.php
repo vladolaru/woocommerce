@@ -1150,7 +1150,7 @@ class SessionService {
 			$shop_url = home_url( '/' );
 		}
 
-		$manual_capture = 'yes' === $this->account_service->get_gateway_setting( 'manual_capture' );
+		$manual_capture = $this->account_service->is_manual_capture_enabled();
 		$order          = $order_id ? wc_get_order( $order_id ) : false;
 		$checkout_url   = wc_get_checkout_url();
 		$custom_message = (string) $this->account_service->get_gateway_setting( 'platform_checkout_custom_message' );

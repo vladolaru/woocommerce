@@ -516,7 +516,7 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 			'Auth and Capture',
 			__( 'Auth and Capture', 'woocommerce' ),
 			__( 'Whether the store has the Auth & Capture feature enabled or not.', 'woocommerce' ),
-			$this->format_enabled( 'yes' === $account_service->get_gateway_setting( 'manual_capture' ) )
+			$this->format_enabled( $account_service->is_manual_capture_enabled() )
 		);
 		$rows[] = $this->status_row(
 			'Support Phone',

@@ -139,7 +139,7 @@ class WooPaymentsIntentRequestBuilder {
 		$payment_method_types = $this->payment_method_types_for_request( $context, (string) $order->get_currency() );
 		$request_data         = array(
 			'amount'               => WooPaymentsCurrencyUtils::amount_to_minor_units( (float) $order->get_total(), (string) $order->get_currency() ),
-			'capture_method'       => ! $is_scheduled_renewal && 'yes' === $this->account_service->get_gateway_setting( 'manual_capture', 'no' ) && $this->can_capture_later( $payment_method_types ) ? 'manual' : 'automatic',
+			'capture_method'       => ! $is_scheduled_renewal && $this->account_service->is_manual_capture_enabled() && $this->can_capture_later( $payment_method_types ) ? 'manual' : 'automatic',
 			'currency'             => strtolower( (string) $order->get_currency() ),
 			'customer'             => $customer_id,
 			'description'          => self::intent_description( $order->get_order_number() ),
@@ -670,9 +670,10 @@ class WooPaymentsIntentRequestBuilder {
 	 * Tell whether every payment method type the intent declares can be captured later: it has the capture-later capability,
 	 * or it is Link, which follows the card's capture.
 	 *
-	 * Client 11.1.0 keeps a method enabled under manual capture only when it allows manual capture or is Link
-	 * (class-wc-rest-payments-settings-controller.php:704-720), and charges any other method through its own gateway,
-	 * whose manual_capture setting no writer stores, so it captures automatically (class-wc-payment-gateway-wcpay.php:3122-3124, :3229-3231).
+	 * Under manual capture, client 11.3.0 offers a method at checkout only when it allows manual capture or is Link
+	 * (class-wc-payment-gateway-wcpay.php:5211-5239), as WooPaymentsGateway::is_available() does. A method that cannot capture
+	 * later and still reaches the charge captures automatically here, where the client asks for manual capture for every
+	 * method (:3586-3600).
 	 *
 	 * @param array<int,string> $payment_method_types Stripe payment method types.
 	 * @return bool

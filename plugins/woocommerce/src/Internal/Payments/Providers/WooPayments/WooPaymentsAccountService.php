@@ -1192,6 +1192,21 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	}
 
 	/**
+	 * Tell whether payments are authorized at checkout and captured later.
+	 *
+	 * The setting applies to the whole store and only the card gateway saves it, so every payment method reads it here, as
+	 * client 11.3.0's is_manual_capture_enabled() (includes/class-wc-payment-gateway-wcpay.php:3589-3600). Only a stored
+	 * `yes` turns it on, so the methods offered at checkout and the capture the charge asks for agree on every stored value.
+	 *
+	 * @since 11.4.0
+	 *
+	 * @return bool
+	 */
+	public function is_manual_capture_enabled(): bool {
+		return 'yes' === $this->get_gateway_setting( 'manual_capture', 'no' );
+	}
+
+	/**
 	 * Get the gateway settings, a key never saved reading as its form default.
 	 *
 	 * A store onboarded through the built-in WooPayments stores only the keys onboarding writes until the settings page is

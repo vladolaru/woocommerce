@@ -594,6 +594,12 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 		if ( WooPaymentsSetupTier::ACTIVE !== wc_get_container()->get( WooPaymentsSetupTier::class )->get_effective_tier() ) {
 			return false;
 		}
+		// With manual capture on, only methods that can be captured later are offered, in admin too, as client 11.3.0
+		// (includes/class-wc-payment-gateway-wcpay.php:5211-5239): the setting and the method's capability are the ones the charge
+		// reads for its capture method.
+		if ( $this->get_account_service()->is_manual_capture_enabled() && ! $this->payment_method_supports( PaymentMethodRegistry::CAPTURE_LATER ) ) {
+			return false;
+		}
 		if ( 'card' !== $this->get_payment_method_id() && ! $this->get_account_service()->is_gateway_enabled() ) {
 			return false;
 		}

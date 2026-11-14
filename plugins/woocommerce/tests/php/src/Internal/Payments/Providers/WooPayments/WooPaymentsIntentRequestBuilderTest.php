@@ -1136,11 +1136,10 @@ class WooPaymentsIntentRequestBuilderTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Client 11.1.0 asks for manual capture only on its card gateway, for card and Link (`includes/admin/class-wc-rest-payments-settings-controller.php:704-720`
-	 * keeps a method under manual capture only when it allows manual capture or is Link); any other method charges through its own
-	 * gateway, whose `manual_capture` no writer stores, so it captures automatically (`includes/class-wc-payment-gateway-wcpay.php:3122-3124`, `:3229-3231`).
+	 * Under manual capture, client 11.3.0 offers a method at checkout only when it allows manual capture or is Link
+	 * (`includes/class-wc-payment-gateway-wcpay.php:5211-5239`), reading the card gateway's setting for every method (`:3586-3600`).
 	 * Its definitions give the capture-later capability to card, Apple Pay, Google Pay and Amazon Pay only
-	 * (`includes/payment-methods/Configs/Definitions/`).
+	 * (`includes/payment-methods/Configs/Definitions/`). A method without it that still reaches the charge captures automatically.
 	 *
 	 * @testdox The charge asks for $expected_capture capture for $_dataName.
 	 * @dataProvider capture_method_data

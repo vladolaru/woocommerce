@@ -43,6 +43,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOr
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderSuccessPage;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeeDetailsNoteController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\PaymentIntentEventHandler;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\PaymentMethodDefinition;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\PaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\SubscriptionAdminPaymentMethodHandler;
@@ -358,7 +359,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 
 		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
 			->disableOriginalConstructor()
-			->onlyMethods( array( 'get_cached_account_data', 'is_gateway_enabled', 'is_test_mode_enabled' ) )
+			->onlyMethods( array( 'get_cached_account_data', 'is_gateway_enabled', 'is_test_mode_enabled', 'is_manual_capture_enabled' ) )
 			->getMock();
 		$account_service->method( 'get_cached_account_data' )->willReturn( $account_data );
 		$account_service->method( 'is_gateway_enabled' )->willReturn( true );
@@ -410,7 +411,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 
 		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
 			->disableOriginalConstructor()
-			->onlyMethods( array( 'get_cached_account_data', 'is_gateway_enabled', 'is_test_mode_enabled' ) )
+			->onlyMethods( array( 'get_cached_account_data', 'is_gateway_enabled', 'is_test_mode_enabled', 'is_manual_capture_enabled' ) )
 			->getMock();
 		$account_service->method( 'get_cached_account_data' )->willReturn(
 			array(
@@ -1339,6 +1340,204 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * Client 11.3.0 offers a method under manual capture only when its definition allows manual capture (card, Apple Pay, Google
+	 * Pay and Amazon Pay) or it is Link, with no admin exception, reading the card gateway's `manual_capture` as `'yes' ===`
+	 * (`includes/class-wc-payment-gateway-wcpay.php:1130-1193`, `:3586-3600`, `:5211-5239`); its test keeps card, Link and Amazon
+	 * Pay and drops Klarna (`tests/unit/test-class-wc-payment-gateway-wcpay.php:5096-5113`). The enabled list here is that set
+	 * plus the row's own method. No cart is set, so the amount limits pass.
+	 *
+	 * @testdox With manual capture $manual_capture, $payment_method_id is offered: $expected ($_dataName).
+	 * @dataProvider provider_manual_capture_availability
+	 *
+	 * @param string $payment_method_id    Payment method ID.
+	 * @param string $currency             Store currency.
+	 * @param string $manual_capture       Stored manual capture setting.
+	 * @param bool   $admin                Whether the request is an admin one.
+	 * @param bool   $capture_later_double Whether the gateway's definition is a double that declares the capture-later capability.
+	 * @param bool   $expected             Whether the method is offered.
+	 */
+	public function test_manual_capture_offers_only_methods_that_can_capture_later( string $payment_method_id, string $currency, string $manual_capture, bool $admin, bool $capture_later_double, bool $expected ): void {
+		$this->activate_builtin_tier();
+		$definition = ( new PaymentMethodRegistry() )->get( $payment_method_id );
+		$this->assertNotNull( $definition );
+		if ( $capture_later_double ) {
+			$definition = new PaymentMethodDefinition(
+				array(
+					'id'                         => 'ideal',
+					'stripe_id'                  => 'ideal_payments',
+					'stripe_payment_method_type' => 'ideal',
+					'title'                      => 'iDEAL | Wero',
+					'currencies'                 => array( 'EUR' ),
+					'countries'                  => array( 'NL' ),
+					'capabilities'               => array_merge( $definition->get_capabilities(), array( PaymentMethodRegistry::CAPTURE_LATER ) ),
+				)
+			);
+		}
+
+		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_cached_account_data', 'is_gateway_enabled', 'is_test_mode_enabled' ) )
+			->getMock();
+		$account_service->init( wc_get_container()->get( LegacyProxy::class ), wc_get_container()->get( WooPaymentsDatabaseCache::class ) );
+		$account_service->method( 'get_cached_account_data' )->willReturn(
+			array(
+				'country'          => 'US',
+				'capabilities'     => array( $definition->get_account_capability_key() => 'active' ),
+				'store_currencies' => array( 'default' => 'usd' ),
+			)
+		);
+		$account_service->method( 'is_gateway_enabled' )->willReturn( true );
+		$account_service->method( 'is_test_mode_enabled' )->willReturn( true );
+
+		// The card gateway's row holds the store-wide settings every method reads.
+		$card_settings   = static fn(): array => array(
+			'enabled'                             => 'yes',
+			'manual_capture'                      => $manual_capture,
+			'express_checkout_in_payment_methods' => 'yes',
+			'upe_enabled_payment_method_ids'      => array_values( array_unique( array( 'card', 'link', 'klarna', 'amazon_pay', $payment_method_id ) ) ),
+		);
+		$enabled         = static fn(): array => array( 'enabled' => 'yes' );
+		$currency_filter = static fn(): string => $currency;
+		$feature_filter  = static fn(): string => '1';
+		$own_settings    = "pre_option_woocommerce_woocommerce_payments_{$payment_method_id}_settings";
+		add_filter( 'pre_option_woocommerce_woocommerce_payments_settings', $card_settings );
+		add_filter( $own_settings, $enabled );
+		add_filter( 'pre_option_woocommerce_currency', $currency_filter );
+		add_filter( 'pre_option__wcpay_feature_dynamic_checkout_place_order_button', $feature_filter );
+		WC()->cart = null;
+		if ( $admin ) {
+			set_current_screen( 'edit-shop_order' );
+		}
+
+		try {
+			$gateway = new WooPaymentsGateway( 'card' === $payment_method_id ? null : $definition );
+			$gateway->init( new RecordingPaymentProcessingService(), $this->create_processing_ready_provider(), null, null, $account_service );
+
+			$this->assertSame( $admin, is_admin() );
+			$this->assertSame( $expected, $gateway->is_available() );
+		} finally {
+			set_current_screen( 'front' );
+			remove_filter( 'pre_option_woocommerce_woocommerce_payments_settings', $card_settings );
+			remove_filter( $own_settings, $enabled );
+			remove_filter( 'pre_option_woocommerce_currency', $currency_filter );
+			remove_filter( 'pre_option__wcpay_feature_dynamic_checkout_place_order_button', $feature_filter );
+		}
+	}
+
+	/**
+	 * Methods, currencies, manual capture settings and request types, and whether the method is offered.
+	 *
+	 * @return array<string,array{0:string,1:string,2:string,3:bool,4:bool,5:bool}>
+	 */
+	public function provider_manual_capture_availability(): array {
+		return array(
+			'card can capture later'                      => array( 'card', 'USD', 'yes', false, false, true ),
+			'Apple Pay can capture later'                 => array( 'apple_pay', 'USD', 'yes', false, false, true ),
+			'Google Pay can capture later'                => array( 'google_pay', 'USD', 'yes', false, false, true ),
+			'Amazon Pay can capture later'                => array( 'amazon_pay', 'USD', 'yes', false, false, true ),
+			'Klarna cannot'                               => array( 'klarna', 'USD', 'yes', false, false, false ),
+			'Affirm cannot'                               => array( 'affirm', 'USD', 'yes', false, false, false ),
+			'Afterpay cannot'                             => array( 'afterpay_clearpay', 'USD', 'yes', false, false, false ),
+			'iDEAL cannot'                                => array( 'ideal', 'EUR', 'yes', false, false, false ),
+			'Klarna cannot, in admin too'                 => array( 'klarna', 'USD', 'yes', true, false, false ),
+			'an iDEAL definition declaring capture later' => array( 'ideal', 'EUR', 'yes', false, true, true ),
+			'Klarna, manual capture off'                  => array( 'klarna', 'USD', 'no', false, false, true ),
+			'iDEAL, manual capture off'                   => array( 'ideal', 'EUR', 'no', false, false, true ),
+			'Klarna, a stored 1 the charge reads as off'  => array( 'klarna', 'USD', '1', false, false, true ),
+		);
+	}
+
+	/**
+	 * A manual subscription's renewal is paid through its pay link, which WooCommerce Subscriptions turns into a renewal cart at
+	 * checkout; with manual renewals accepted, every enabled method passes the subscription rule. With manual capture on, client
+	 * 11.3.0 drops the methods that cannot capture later from that list (`includes/class-wc-payment-gateway-wcpay.php:5211-5239`)
+	 * while card stays, so a renewal first paid by SEPA Direct Debit is paid by card instead.
+	 *
+	 * @testdox On a manual subscription's renewal pay link, with manual capture $manual_capture, the offered methods are $_dataName.
+	 * @testWith ["no", ["woocommerce_payments", "woocommerce_payments_sepa_debit"]]
+	 *           ["yes", ["woocommerce_payments"]]
+	 *
+	 * @param string            $manual_capture Stored manual capture setting.
+	 * @param array<int,string> $expected       Gateway IDs offered, in order.
+	 */
+	public function test_manual_renewal_pay_link_offers_card_and_not_a_bank_method_with_manual_capture_on( string $manual_capture, array $expected ): void {
+		global $wp;
+
+		$this->activate_builtin_tier();
+		$this->register_legacy_proxy_function_mocks(
+			array(
+				'class_exists' => static fn( $class_name, ...$args ) => 'WC_Subscriptions_Core_Plugin' === $class_name || class_exists( $class_name, ...$args ),
+			)
+		);
+		WooCommerceSubscriptionsDoubles::load_cart();
+		$GLOBALS[ WooCommerceSubscriptionsDoubles::CART_CONTAINS_SUBSCRIPTION ] = false;
+		$GLOBALS[ WooCommerceSubscriptionsDoubles::CART_CONTAINS_RENEWAL ]      = array( 'subscription_renewal' => array() );
+		$this->ensure_wcs_manual_renewal_double();
+		$GLOBALS['wcpay_test_manual_renewal_enabled'] = true;
+
+		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_cached_account_data', 'is_gateway_enabled', 'is_test_mode_enabled' ) )
+			->getMock();
+		$account_service->init( wc_get_container()->get( LegacyProxy::class ), wc_get_container()->get( WooPaymentsDatabaseCache::class ) );
+		$account_service->method( 'get_cached_account_data' )->willReturn(
+			array(
+				'country'          => 'NL',
+				'capabilities'     => array(
+					'card_payments'       => 'active',
+					'sepa_debit_payments' => 'active',
+				),
+				'store_currencies' => array( 'default' => 'eur' ),
+			)
+		);
+		$account_service->method( 'is_gateway_enabled' )->willReturn( true );
+		$account_service->method( 'is_test_mode_enabled' )->willReturn( true );
+		$card_settings   = static fn(): array => array(
+			'enabled'                        => 'yes',
+			'manual_capture'                 => $manual_capture,
+			'upe_enabled_payment_method_ids' => array( 'card', 'sepa_debit' ),
+		);
+		$enabled         = static fn(): array => array( 'enabled' => 'yes' );
+		$currency_filter = static fn(): string => 'EUR';
+		add_filter( 'pre_option_woocommerce_woocommerce_payments_settings', $card_settings );
+		add_filter( 'pre_option_woocommerce_woocommerce_payments_sepa_debit_settings', $enabled );
+		add_filter( 'pre_option_woocommerce_currency', $currency_filter );
+
+		$customer_id = self::factory()->user->create( array( 'role' => 'customer' ) );
+		wp_set_current_user( $customer_id );
+		$renewal = wc_create_order( array( 'customer_id' => $customer_id ) );
+		$renewal->set_currency( 'EUR' );
+		$renewal->set_total( '20.00' );
+		$renewal->save();
+		$_GET['pay_for_order']       = 'true';
+		$_GET['key']                 = $renewal->get_order_key();
+		$wp->query_vars['order-pay'] = (string) $renewal->get_id();
+		WC()->cart                   = null;
+
+		try {
+			$provider     = $this->create_processing_ready_provider();
+			$card_gateway = new WooPaymentsGateway();
+			$card_gateway->init( new RecordingPaymentProcessingService(), $provider, null, null, $account_service );
+			$sepa_gateway = new WooPaymentsGateway( ( new PaymentMethodRegistry() )->get( 'sepa_debit' ) );
+			$sepa_gateway->init( new RecordingPaymentProcessingService(), $provider, null, null, $account_service );
+			WC()->payment_gateways()->payment_gateways = array(
+				$card_gateway->id => $card_gateway,
+				$sepa_gateway->id => $sepa_gateway,
+			);
+
+			$this->assertTrue( is_wc_endpoint_url( 'order-pay' ) );
+			$this->assertSame( $expected, array_keys( WC()->payment_gateways()->get_available_payment_gateways() ) );
+		} finally {
+			unset( $wp->query_vars['order-pay'], $_GET['pay_for_order'], $_GET['key'], $GLOBALS['wcpay_test_manual_renewal_enabled'] );
+			remove_filter( 'pre_option_woocommerce_woocommerce_payments_settings', $card_settings );
+			remove_filter( 'pre_option_woocommerce_woocommerce_payments_sepa_debit_settings', $enabled );
+			remove_filter( 'pre_option_woocommerce_currency', $currency_filter );
+			WC()->payment_gateways()->payment_gateways = array();
+			WC()->payment_gateways()->init();
+		}
+	}
+
+	/**
 	 * @testdox Should apply definition amount limits to split gateway availability only when there is a cart: $_dataName.
 	 *
 	 * Client 11.2.0 `class-upe-payment-method.php:251-256` checks the limits only while a cart is set. A request with no cart
@@ -1393,7 +1592,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$is_test_mode    = false;
 		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
 			->disableOriginalConstructor()
-			->onlyMethods( array( 'get_cached_account_data', 'is_gateway_enabled', 'is_test_mode_enabled' ) )
+			->onlyMethods( array( 'get_cached_account_data', 'is_gateway_enabled', 'is_test_mode_enabled', 'is_manual_capture_enabled' ) )
 			->getMock();
 		$account_service->method( 'get_cached_account_data' )->willReturn(
 			array(
@@ -8906,7 +9105,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	private function create_account_service_for_country( string $country, string $capability_key = 'card_payments', bool $test_mode = true, string $default_currency = 'usd' ): WooPaymentsAccountService {
 		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
 			->disableOriginalConstructor()
-			->onlyMethods( array( 'get_cached_account_data', 'is_gateway_enabled', 'is_test_mode_enabled' ) )
+			->onlyMethods( array( 'get_cached_account_data', 'is_gateway_enabled', 'is_test_mode_enabled', 'is_manual_capture_enabled' ) )
 			->getMock();
 		$account_service->method( 'get_cached_account_data' )->willReturn(
 			array(

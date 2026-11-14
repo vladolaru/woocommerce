@@ -151,7 +151,7 @@ class WooPaymentsAdminMenuBadgeService {
 	 * @return bool
 	 */
 	public function is_manual_capture_enabled(): bool {
-		return 'yes' === (string) $this->account_service->get_gateway_setting( 'manual_capture', 'no' );
+		return $this->account_service->is_manual_capture_enabled();
 	}
 
 	/**

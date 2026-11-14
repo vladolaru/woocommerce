@@ -198,7 +198,7 @@ class WooPaymentsPaymentDetailsRestController extends RestApiControllerBase {
 					$order,
 					(string) $request->get_param( 'customer' ),
 					(string) $request->get_param( 'payment_method' ),
-					$this->is_manual_capture_enabled()
+					$this->account_service->is_manual_capture_enabled()
 				),
 				// No caller key: the transport mints one per request, so a new attempt for the same order is not a replay
 				// (client 11.1.0 sets none either, includes/wc-payment-api/class-wc-payments-api-client.php:2660-2690).
@@ -742,15 +742,6 @@ class WooPaymentsPaymentDetailsRestController extends RestApiControllerBase {
 
 			),
 		);
-	}
-
-	/**
-	 * Tell whether manual capture is enabled for WooPayments.
-	 *
-	 * @return bool
-	 */
-	private function is_manual_capture_enabled(): bool {
-		return 'yes' === (string) $this->account_service->get_gateway_setting( 'manual_capture', 'no' );
 	}
 
 	/**
