@@ -6,7 +6,9 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 use Automattic\WooCommerce\Internal\DataStores\Orders\DataSynchronizer;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\StateStore;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCanceledAuthorizationFeeRemediationService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\RestApi\UnitTests\Helpers\OrderHelper;
+use Automattic\WooCommerce\Tests\Internal\Payments\StaticWooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Utilities\OrderUtil;
 use WC_Helper_Order;
 use WC_Order;
@@ -31,6 +33,8 @@ class WooPaymentsCanceledAuthorizationFeeRemediationServiceTest extends WC_Unit_
 	public function setUp(): void {
 		parent::setUp();
 		$this->cleanup_state();
+		// The affected-orders check runs only while the built-in WooPayments owns payments.
+		wc_get_container()->replace( WooPaymentsRuntimeArbiter::class, new StaticWooPaymentsRuntimeArbiter( true ) );
 		$this->sut = $this->create_service();
 	}
 
@@ -40,6 +44,7 @@ class WooPaymentsCanceledAuthorizationFeeRemediationServiceTest extends WC_Unit_
 	public function tearDown(): void {
 		$this->remove_hooks( $this->sut );
 		$this->cleanup_state();
+		$this->reset_container_replacements();
 		parent::tearDown();
 	}
 
@@ -152,6 +157,10 @@ class WooPaymentsCanceledAuthorizationFeeRemediationServiceTest extends WC_Unit_
 				array( 'cutover_record' => $this->build_cutover_record( StateStore::STATE_PENDING, $before_order, $before_order ) ),
 				true,
 			),
+			'a switch past finalize, not done, last written before the order was created' => array(
+				array( 'cutover_record' => $this->build_cutover_record( StateStore::STATE_DEFERRED, $before_order, $before_order, 'finalize-token' ) ),
+				false,
+			),
 		);
 
 		$rows = array();
@@ -160,6 +169,14 @@ class WooPaymentsCanceledAuthorizationFeeRemediationServiceTest extends WC_Unit_
 			$rows[ $name . ', posts' ] = array( $row[0], $row[1], false );
 		}
 		$rows['an empty _date_paid with a legacy _paid_date, posts']            = array( array( 'legacy_paid_date' => '2023-05-01 12:00:00' ), false, false );
+		$rows['a paid date in _date_paid with no legacy _paid_date, posts']     = array(
+			array(
+				'date_paid'             => '2023-05-01 12:00:00',
+				'drop_legacy_paid_date' => true,
+			),
+			false,
+			false,
+		);
 		$rows['an empty _transaction_id row and an empty stored intent, posts'] = array(
 			array(
 				'transaction_id'         => '',
@@ -411,6 +428,85 @@ class WooPaymentsCanceledAuthorizationFeeRemediationServiceTest extends WC_Unit_
 	}
 
 	/**
+	 * Client 11.3.0's note asks its check while a dry run is in flight, since its running guard reads only the live hook
+	 * (includes/notes/class-wc-payments-notes-canceled-auth-remediation.php:141-147). The check asks whether any order
+	 * matches, so a dry run whose cursor has passed the last match does not cache "nothing to fix".
+	 *
+	 * @testdox The affected-orders check finds an order a dry run has passed, and the answer survives the dry run's cleanup ($_dataName).
+	 * @dataProvider provider_order_storages
+	 *
+	 * @param bool $hpos Whether orders are stored in the HPOS tables.
+	 */
+	public function test_check_during_a_dry_run_ignores_its_cursor( bool $hpos ): void {
+		$this->run_on_order_storage(
+			$hpos,
+			function (): void {
+				$order = $this->create_order_fixture();
+				$this->sut->schedule_dry_run();
+				$this->sut->process_batch_dry_run();
+				$this->assertSame( $order->get_id(), $this->sut->get_last_order_id(), 'The dry run has passed the only match.' );
+				delete_option( WooPaymentsCanceledAuthorizationFeeRemediationService::CHECK_STATE_OPTION_KEY );
+
+				$this->sut->check_and_cache_affected_orders();
+				$this->assertSame( 'has_affected_orders', get_option( WooPaymentsCanceledAuthorizationFeeRemediationService::CHECK_STATE_OPTION_KEY ) );
+
+				$this->sut->process_batch_dry_run();
+				$this->assertSame( 0, $this->sut->get_last_order_id(), 'The dry run cleaned up.' );
+				$this->assertSame( 'has_affected_orders', get_option( WooPaymentsCanceledAuthorizationFeeRemediationService::CHECK_STATE_OPTION_KEY ) );
+			}
+		);
+	}
+
+	/**
+	 * @testdox A batch lookup during a dry run still starts after the run's cursor ($_dataName).
+	 * @dataProvider provider_order_storages
+	 *
+	 * @param bool $hpos Whether orders are stored in the HPOS tables.
+	 */
+	public function test_batch_lookup_during_a_dry_run_starts_after_its_cursor( bool $hpos ): void {
+		$this->run_on_order_storage(
+			$hpos,
+			function (): void {
+				$this->create_order_fixture();
+				$this->sut->schedule_dry_run();
+				$this->sut->process_batch_dry_run();
+
+				$this->assertSame( array(), $this->sut->get_affected_orders( 10 ) );
+			}
+		);
+	}
+
+	/**
+	 * Both order storages.
+	 *
+	 * @return array<string,array{0:bool}>
+	 */
+	public function provider_order_storages(): array {
+		return array(
+			'HPOS'  => array( true ),
+			'posts' => array( false ),
+		);
+	}
+
+	/**
+	 * Run a test body with orders stored in the HPOS tables or in posts, then put the store back.
+	 *
+	 * @param bool     $hpos Whether orders are stored in the HPOS tables.
+	 * @param callable $body Test body.
+	 */
+	private function run_on_order_storage( bool $hpos, callable $body ): void {
+		// Keep both order stores in step, so switching the authoritative store back afterwards is allowed.
+		add_filter( 'pre_option_' . DataSynchronizer::ORDERS_DATA_SYNC_ENABLED_OPTION, static fn(): string => 'yes' );
+		$hpos_was_enabled = OrderUtil::custom_orders_table_usage_is_enabled();
+		OrderHelper::toggle_cot_feature_and_usage( $hpos );
+		try {
+			$body();
+		} finally {
+			OrderHelper::toggle_cot_feature_and_usage( $hpos_was_enabled );
+		}
+	}
+
+	/**
 	 * Create a remediation service.
 	 *
 	 * @return WooPaymentsCanceledAuthorizationFeeRemediationService
@@ -431,6 +527,7 @@ class WooPaymentsCanceledAuthorizationFeeRemediationServiceTest extends WC_Unit_
 			array(
 				'date_created'           => '2023-05-01',
 				'date_paid'              => null,
+				'drop_legacy_paid_date'  => false,
 				'empty_transaction_meta' => false,
 				'intent_id'              => 'pi_defect',
 				'intent_status'          => 'canceled',
@@ -479,6 +576,9 @@ class WooPaymentsCanceledAuthorizationFeeRemediationServiceTest extends WC_Unit_
 		if ( null !== $args['legacy_paid_date'] ) {
 			update_post_meta( $order->get_id(), '_paid_date', (string) $args['legacy_paid_date'] );
 		}
+		if ( (bool) $args['drop_legacy_paid_date'] ) {
+			delete_post_meta( $order->get_id(), '_paid_date' );
+		}
 		if ( (bool) $args['zero_paid_date'] ) {
 			global $wpdb;
 			$wpdb->update( $wpdb->prefix . 'wc_order_operational_data', array( 'date_paid_gmt' => '0000-00-00 00:00:00' ), array( 'order_id' => $order->get_id() ) );
@@ -490,12 +590,13 @@ class WooPaymentsCanceledAuthorizationFeeRemediationServiceTest extends WC_Unit_
 	/**
 	 * Build a valid cutover record.
 	 *
-	 * @param string $state      Record state.
-	 * @param int    $started_at When the switch started.
-	 * @param int    $updated_at When the record was last written.
+	 * @param string      $state      Record state.
+	 * @param int         $started_at When the switch started.
+	 * @param int         $updated_at When the record was last written.
+	 * @param string|null $token      The finalize token, once finalize has run.
 	 * @return array<string,mixed>
 	 */
-	private function build_cutover_record( string $state, int $started_at, int $updated_at ): array {
+	private function build_cutover_record( string $state, int $started_at, int $updated_at, ?string $token = null ): array {
 		return array(
 			'schema_version'         => StateStore::SCHEMA_VERSION,
 			'generation'             => 1,
@@ -509,10 +610,10 @@ class WooPaymentsCanceledAuthorizationFeeRemediationServiceTest extends WC_Unit_
 			'step_log'               => array(),
 			'deferred_codes'         => array(),
 			'informational_outcomes' => array(),
-			'next_attempt_at'        => null,
+			'next_attempt_at'        => StateStore::STATE_DEFERRED === $state ? $updated_at + 900 : null,
 			'lease_token'            => null,
 			'lease_expires_at'       => null,
-			'request_origin_token'   => null,
+			'request_origin_token'   => $token,
 		);
 	}
 

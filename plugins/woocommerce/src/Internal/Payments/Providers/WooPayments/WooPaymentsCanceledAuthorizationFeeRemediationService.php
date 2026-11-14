@@ -518,10 +518,14 @@ class WooPaymentsCanceledAuthorizationFeeRemediationService implements RegisterH
 	/**
 	 * Check if there are any orders that need remediation.
 	 *
+	 * It asks whether any order matches, however far a dry or live run has gone, so it does not start from the run's cursor.
+	 *
 	 * @return bool True if there are affected orders.
 	 */
 	public function has_affected_orders(): bool {
-		return ! empty( $this->get_affected_orders( 1 ) );
+		$orders = $this->is_hpos_enabled() ? $this->get_affected_orders_hpos( 1, false ) : $this->get_affected_orders_cpt( 1, false );
+
+		return ! empty( $orders );
 	}
 
 	/**
@@ -552,9 +556,14 @@ class WooPaymentsCanceledAuthorizationFeeRemediationService implements RegisterH
 	}
 
 	/**
-	 * Run the affected-orders query and cache the result.
+	 * Run the affected-orders query and cache the result, only while the built-in WooPayments owns payments. A check queued
+	 * before payments went back to the extension reads no order and writes nothing, so the extension decides.
 	 */
 	public function check_and_cache_affected_orders(): void {
+		if ( ! wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->is_builtin_owner() ) {
+			return;
+		}
+
 		update_option(
 			self::CHECK_STATE_OPTION_KEY,
 			$this->has_affected_orders() ? 'has_affected_orders' : 'no_affected_orders',
@@ -613,13 +622,14 @@ class WooPaymentsCanceledAuthorizationFeeRemediationService implements RegisterH
 	/**
 	 * Get affected orders using HPOS tables.
 	 *
-	 * @param int $limit Number of orders to retrieve.
+	 * @param int  $limit       Number of orders to retrieve.
+	 * @param bool $from_cursor Whether to start after the run's last processed order, as batches do.
 	 * @return WC_Order[] Array of order objects.
 	 */
-	private function get_affected_orders_hpos( int $limit ): array {
+	private function get_affected_orders_hpos( int $limit, bool $from_cursor = true ): array {
 		global $wpdb;
 
-		$last_order_id     = $this->get_last_order_id();
+		$last_order_id     = $from_cursor ? $this->get_last_order_id() : 0;
 		$orders_table      = $wpdb->prefix . 'wc_orders';
 		$meta_table        = $wpdb->prefix . 'wc_orders_meta';
 		$operational_table = $wpdb->prefix . 'wc_order_operational_data';
@@ -676,13 +686,14 @@ class WooPaymentsCanceledAuthorizationFeeRemediationService implements RegisterH
 	/**
 	 * Get affected orders using CPT tables.
 	 *
-	 * @param int $limit Number of orders to retrieve.
+	 * @param int  $limit       Number of orders to retrieve.
+	 * @param bool $from_cursor Whether to start after the run's last processed order, as batches do.
 	 * @return WC_Order[] Array of order objects.
 	 */
-	private function get_affected_orders_cpt( int $limit ): array {
+	private function get_affected_orders_cpt( int $limit, bool $from_cursor = true ): array {
 		global $wpdb;
 
-		$last_order_id = $this->get_last_order_id();
+		$last_order_id = $from_cursor ? $this->get_last_order_id() : 0;
 
 		// Never paid: the order has no paid date (the data store reads _date_paid, then the legacy _paid_date, and takes an
 		// empty or zero value as none), a WooPayments payment method, and the stored intent as its transaction ID.

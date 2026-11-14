@@ -796,6 +796,9 @@ class ReconciliationJob implements RegisterHooksInterface {
 			$this->defer( $claimed, array( 'plugin_deactivation_failed' ), $outcomes );
 			return;
 		}
+		// The extension cached the canceled-authorization note's check with its own order selection. Now that the built-in
+		// WooPayments owns payments, its note (Admin\CanceledAuthRemediationNote) checks again with the built-in selection.
+		delete_option( WooPaymentsCanceledAuthorizationFeeRemediationService::CHECK_STATE_OPTION_KEY );
 		// The tier follows now; this write takes no lock. A rollback made since is unharmed: the effective tier reads
 		// available while the extension owns payments (WooPaymentsSetupTier::get_effective_tier()).
 		$this->account_service->sync_setup_tier_from_options( false );
@@ -957,9 +960,9 @@ class ReconciliationJob implements RegisterHooksInterface {
 				$done                                     = $this->append_step( $done, self::STEP_DONE, $now );
 				if ( $this->state_store->compare_and_set_record( $record, $done ) ) {
 					delete_option( self::START_NOTICE_SNOOZED_UNTIL_OPTION );
-					// The extension cached this check with its own order selection. Without it, the canceled-authorization note
-					// (Admin\CanceledAuthRemediationNote) runs the check again with the built-in selection, as the extension's
-					// note does after a rollback.
+					// Finalize deleted the canceled-authorization note's cached check. Deleting it again clears a value the
+					// extension wrote back while finalize ran, and a "scheduled" value whose check was lost, which would stay:
+					// the note queues a check only when the option is absent (Admin\CanceledAuthRemediationNote).
 					delete_option( WooPaymentsCanceledAuthorizationFeeRemediationService::CHECK_STATE_OPTION_KEY );
 				}
 			}
@@ -1412,6 +1415,7 @@ class ReconciliationJob implements RegisterHooksInterface {
 		if ( ! $this->state_store->compare_and_set_record( $record, $replacement ) ) {
 			return false;
 		}
+		$this->forget_canceled_authorization_check( $record );
 
 		return $this->ensure_record_scheduled( $replacement, $now );
 	}
@@ -1430,12 +1434,26 @@ class ReconciliationJob implements RegisterHooksInterface {
 		if ( ! $this->state_store->compare_and_set_record( $record, $replacement ) ) {
 			return false;
 		}
+		$this->forget_canceled_authorization_check( $record );
 		// A rollback offers the switch again at once, on every admin page.
 		if ( self::SOURCE_ROLLBACK === $source ) {
 			delete_option( self::START_NOTICE_SNOOZED_UNTIL_OPTION );
 		}
 
 		return true;
+	}
+
+	/**
+	 * Delete the canceled-authorization note's cached check when the replaced record had made the built-in WooPayments the
+	 * owner of payments: done, or carrying the finalize token, the test WooPaymentsRuntimeArbiter applies. The cache then
+	 * holds the built-in's answer, so the extension, which owns payments again, checks again with its own order selection.
+	 *
+	 * @param array<string,mixed> $replaced The record a new generation replaced.
+	 */
+	private function forget_canceled_authorization_check( array $replaced ): void {
+		if ( StateStore::STATE_DONE === $replaced['state'] || null !== ( $replaced['request_origin_token'] ?? null ) ) {
+			delete_option( WooPaymentsCanceledAuthorizationFeeRemediationService::CHECK_STATE_OPTION_KEY );
+		}
 	}
 
 	/**
