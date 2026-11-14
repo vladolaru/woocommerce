@@ -135,6 +135,22 @@ class DebugToolsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox The remediation tool shows its backup advice in the description, which core renders, not in a confirm text, which core ignores.
+	 */
+	public function test_remediation_tool_shows_backup_advice_in_its_description(): void {
+		$this->fake_plugin( false );
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
+		update_option( WooPaymentsSetupTier::OPTION_NAME, WooPaymentsSetupTier::CONNECTED, true );
+		wc_get_container()->get( WooPaymentsSetupTier::class )->invalidate();
+		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
+
+		$tools = $this->get_sut()->add_debug_tools( array() );
+
+		$this->assertStringContainsString( 'Make sure you have a recent backup before running it.', $tools['remediate_canceled_auth_fees']['desc'], 'The Tools page shows the description, so the backup advice has to be in it.' );
+		$this->assertArrayNotHasKey( 'confirm', $tools['remediate_canceled_auth_fees'], 'Core never renders a tool\'s confirm text.' );
+	}
+
+	/**
 	 * @testdox The remediation tools report the extension's error message when scheduling throws.
 	 *
 	 * Client 11.1.0 wraps the scheduling in try/catch and returns "Error scheduling remediation: %s" or

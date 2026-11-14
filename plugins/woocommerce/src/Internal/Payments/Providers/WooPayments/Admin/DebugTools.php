@@ -131,7 +131,6 @@ class DebugTools {
 				'name'     => __( 'Fix canceled authorization analytics', 'woocommerce' ),
 				'button'   => $this->get_remediation_button_text(),
 				'desc'     => $this->get_remediation_description(),
-				'confirm'  => __( 'This will update order metadata and delete incorrect refund records for affected orders. This fixes negative values in WooCommerce Analytics. Make sure you have a recent backup before proceeding. Continue?', 'woocommerce' ),
 				'callback' => array( $this, 'schedule_canceled_auth_remediation' ),
 				'disabled' => $this->is_remediation_running_or_complete(),
 			);
@@ -336,7 +335,7 @@ class DebugTools {
 	 * @return string
 	 */
 	private function get_remediation_description(): string {
-		$base_desc = __( 'This tool removes incorrect refund records and fee data from orders where payment authorization was canceled (not captured). This fixes negative values appearing in WooCommerce Analytics for stores using manual capture.', 'woocommerce' );
+		$base_desc = __( 'This tool removes incorrect refund records and fee data from orders where payment authorization was canceled (not captured). This fixes negative values appearing in WooCommerce Analytics for stores using manual capture. Make sure you have a recent backup before running it.', 'woocommerce' );
 		$stats     = $this->get_fee_remediation_service()->get_stats();
 
 		if ( $this->get_fee_remediation_service()->is_complete() ) {
