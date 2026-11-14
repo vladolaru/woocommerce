@@ -5574,9 +5574,14 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 	 * @param bool   $valid_nonce      Whether the request carries a valid nonce.
 	 * @param bool   $no_session       Whether the request starts with no WooCommerce session loaded, card-testing protection on.
 	 * @param string $expected_message Expected refusal message.
+	 * @param bool   $rate_limited     Whether the user is inside the add-payment-method rate limit.
 	 */
-	public function test_create_setup_intent_refuses_before_any_platform_request( string $enabled, string $saved_cards, bool $valid_nonce, bool $no_session, string $expected_message ): void {
-		wp_set_current_user( $this->factory()->user->create() );
+	public function test_create_setup_intent_refuses_before_any_platform_request( string $enabled, string $saved_cards, bool $valid_nonce, bool $no_session, string $expected_message, bool $rate_limited = false ): void {
+		$user_id = $this->factory()->user->create();
+		wp_set_current_user( $user_id );
+		if ( $rate_limited ) {
+			\WC_Rate_Limiter::set_rate_limit( 'add_payment_method_' . $user_id, 20 );
+		}
 		$session_before = WC()->session;
 		if ( $no_session ) {
 			wc_get_container()->reset_all_resolved();
@@ -5661,19 +5666,22 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Card gateway settings, nonce and session states that refuse the request, with the message each refusal shows.
+	 * Card gateway settings, nonce, session and rate-limit states that refuse the request, with the message each refusal
+	 * shows. A setting's refusal comes before the rate limit, as client 11.3.0 orders them (gw:5011-5042).
 	 *
-	 * @return array<string,array{0:string,1:string,2:bool,3:bool,4:string}>
+	 * @return array<string,array{0:string,1:string,2:bool,3:bool,4:string,5?:bool}>
 	 */
 	public function provider_setup_intent_refusals(): array {
 		$try_later = "We're not able to add this payment method. Please try again later.";
 		$refresh   = "We're not able to add this payment method. Please refresh the page and try again.";
 
 		return array(
-			'gateway off'                       => array( 'no', 'yes', true, false, $try_later ),
-			'saved cards off'                   => array( 'yes', 'no', true, false, $try_later ),
+			'gateway off'                            => array( 'no', 'yes', true, false, $try_later ),
+			'saved cards off'                        => array( 'yes', 'no', true, false, $try_later ),
 			'no session loaded, card-testing protection on' => array( 'yes', 'yes', true, true, $refresh ),
-			'gateway off with an invalid nonce' => array( 'no', 'no', false, false, $refresh ),
+			'gateway off with an invalid nonce'      => array( 'no', 'no', false, false, $refresh ),
+			'gateway off, inside the rate limit'     => array( 'no', 'yes', true, false, $try_later, true ),
+			'saved cards off, inside the rate limit' => array( 'yes', 'no', true, false, $try_later, true ),
 		);
 	}
 
