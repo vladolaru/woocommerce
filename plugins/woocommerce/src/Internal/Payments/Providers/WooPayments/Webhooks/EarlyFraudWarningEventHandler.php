@@ -106,7 +106,8 @@ class EarlyFraudWarningEventHandler {
 	 *
 	 * @param string              $event_type   Provider event type.
 	 * @param array<string,mixed> $event_object Provider early fraud warning object.
-	 * @throws InvalidArgumentException|RuntimeException When the provider object is malformed or the matching order cannot be updated safely.
+	 * @throws InvalidArgumentException When the provider object is malformed, or no order stores its charge.
+	 * @throws RuntimeException When the matching order cannot be updated safely.
 	 * @throws OrderPaymentLockRefusedException When another operation holds the order payment lock; nothing has been written.
 	 */
 	public function process( string $event_type, array $event_object ): void {
@@ -117,7 +118,9 @@ class EarlyFraudWarningEventHandler {
 		$warning = $this->get_warning_data( $event_object );
 		$order   = $this->event_order_resolver->find_order_by_charge_id( $warning['charge'] );
 		if ( ! $order instanceof WC_Order ) {
-			throw new RuntimeException( esc_html( sprintf( 'Could not find a WooPayments order for early fraud warning charge ID: %s', $warning['charge'] ) ) );
+			// Refused with its reason, as a dispute on such a charge is, and as client 11.3.0 refuses it
+			// (class-wc-payments-webhook-processing-service.php:1018-1025).
+			throw new InvalidArgumentException( esc_html( sprintf( 'Could not find a WooPayments order for early fraud warning charge ID: %s', $warning['charge'] ) ) );
 		}
 
 		$lock_token = $this->order_payment_lock->claim( $order, $this->persistence_vocabulary, 'early_fraud_warning_' . $warning['id'], 'early fraud warning webhook' );

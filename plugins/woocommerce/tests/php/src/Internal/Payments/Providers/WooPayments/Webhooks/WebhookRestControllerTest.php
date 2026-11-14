@@ -352,7 +352,9 @@ class WebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * Refund and dispute events that fail, one per refusal site of the handlers, and a refund whose charge no order holds.
+	 * Refund and dispute events that fail, one per refusal site of the handlers, a refund whose charge no order holds, and a
+	 * fraud warning whose charge no order holds, which client 11.3.0 refuses as invalid data
+	 * (class-wc-payments-webhook-processing-service.php:1018-1025).
 	 *
 	 * @return array<string,array{0:string,1:array<string,mixed>,2:int,3:bool,4:string}>
 	 */
@@ -391,21 +393,21 @@ class WebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 		unset( $no_amount['amount'] );
 
 		return array(
-			'dispute amount not a number'         => array(
+			'dispute amount not a number'              => array(
 				'charge.dispute.created',
 				array_merge( $dispute, array( 'amount' => 'lots' ) ),
 				400,
 				false,
 				'Failed processing event evt_route. Reason: Expected numeric dispute webhook property: amount',
 			),
-			'dispute evidence details not a list' => array(
+			'dispute evidence details not a list'      => array(
 				'charge.dispute.created',
 				array_merge( $dispute, array( 'evidence_details' => 'soon' ) ),
 				400,
 				false,
 				'Failed processing event evt_route. Reason: Expected array dispute webhook property: evidence_details',
 			),
-			'dispute on a charge no order holds'  => array(
+			'dispute on a charge no order holds'       => array(
 				'charge.dispute.closed',
 				array_merge(
 					$dispute,
@@ -418,33 +420,45 @@ class WebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 				false,
 				'Failed processing event evt_route. Reason: Could not find WooPayments order via disputed charge ID: ch_no_order',
 			),
-			'refund update without an amount'     => array(
+			'refund update without an amount'          => array(
 				'charge.refund.updated',
 				$no_amount,
 				400,
 				false,
 				'Failed processing event evt_route. Reason: WooPayments refund event is missing required field: amount',
 			),
-			'refund with a negative amount'       => array(
+			'refund with a negative amount'            => array(
 				'charge.refunded',
 				$refunded,
 				400,
 				false,
 				'Failed processing event evt_route. Reason: The refund amount is not valid for charge ID: ch_route',
 			),
-			'refund update with another status'   => array(
+			'refund update with another status'        => array(
 				'charge.refund.updated',
 				array_merge( $refund_update, array( 'status' => 'requires_action' ) ),
 				400,
 				false,
 				'Failed processing event evt_route. Reason: Invalid refund update status: requires_action',
 			),
-			'refund on a charge no order holds'   => array(
+			'refund on a charge no order holds'        => array(
 				'charge.refund.updated',
 				array_merge( $refund_update, array( 'charge' => 'ch_no_order' ) ),
 				500,
 				true,
 				'Failed processing a WooPayments webhook event.',
+			),
+			'fraud warning on a charge no order holds' => array(
+				'radar.early_fraud_warning.created',
+				array(
+					'id'         => 'issfr_route',
+					'charge'     => 'ch_no_order',
+					'actionable' => true,
+					'created'    => 1782864000,
+				),
+				400,
+				false,
+				'Failed processing event evt_route. Reason: Could not find a WooPayments order for early fraud warning charge ID: ch_no_order',
 			),
 		);
 	}

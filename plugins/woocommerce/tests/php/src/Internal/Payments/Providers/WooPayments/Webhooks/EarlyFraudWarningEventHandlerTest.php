@@ -279,12 +279,15 @@ class EarlyFraudWarningEventHandlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should reject a warning whose charge matches no order as a retryable failure.
+	 * @testdox Should refuse a warning whose charge matches no order, with the reason.
+	 *
+	 * Client 11.3.0 throws Invalid_Webhook_Data_Exception with the charge ID (class-wc-payments-webhook-processing-service.php:1018-1025).
 	 */
 	public function test_rejects_unmatched_orders(): void {
 		$handler = $this->create_handler();
 
-		$this->expectException( \RuntimeException::class );
+		$this->expectException( \InvalidArgumentException::class );
+		$this->expectExceptionMessage( 'Could not find a WooPayments order for early fraud warning charge ID: ch_unknown' );
 		$handler->process(
 			'radar.early_fraud_warning.created',
 			array(
