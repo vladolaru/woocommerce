@@ -43,6 +43,21 @@ class WebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 	use WooPaymentsEventHandlerTestTrait;
 
 	/**
+	 * Payment intent of the recorded charge.refunded delivery (card_charge_refunded_in_full).
+	 */
+	private const RECORDED_INTENT_ID = 'pi_3URpY0BzWlxcwgpP1rS64UpA';
+
+	/**
+	 * Charge of the recorded charge.refunded delivery.
+	 */
+	private const RECORDED_CHARGE_ID = 'ch_3URpY0BzWlxcwgpP1SUxzwXd';
+
+	/**
+	 * Refund of the recorded charge.refunded delivery.
+	 */
+	private const RECORDED_REFUND_ID = 're_3URpY0BzWlxcwgpP1T8e7HhY';
+
+	/**
 	 * Scheduler the controller's reliability service schedules retries on.
 	 *
 	 * @var RecordingActionSchedulerService
@@ -796,6 +811,321 @@ class WebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 		$this->assertSame( 'failed', $order->get_meta( '_wcpay_refund_status', true ) );
 		$this->assertSame( 500, $failed_update->get_status(), 'The failed update is kept for its retry.' );
 		$this->assertSame( 200, $charge_refunded->get_status() );
+	}
+
+	/**
+	 * @testdox A charge.refunded push whose charge's metadata names $scenario, with the charge $age_seconds seconds old, waits for a retry ($deferred) or is recorded at once.
+	 *
+	 * The event is the platform's recorded delivery (card_charge_refunded_in_full) with its metadata, created time and refund
+	 * changed; no order holds the charge. Only an order that is not paid and whose own payment the charge is waits for the
+	 * charge to be recorded, while the charge is younger than the reliability service's retry window (60, 600 and 3,600
+	 * seconds). Any other order the metadata names gets the other-charge note at once, with no refund row.
+	 *
+	 * @dataProvider provider_orders_not_holding_a_refunded_charge
+	 *
+	 * @param string   $scenario     What the metadata names.
+	 * @param callable $create_order Creates the order the metadata names.
+	 * @param int      $age_seconds  The charge's age at the delivery.
+	 * @param bool     $deferred     Whether the delivery waits for a retry.
+	 */
+	public function test_charge_refunded_on_an_order_not_holding_the_charge_through_the_webhook_route( string $scenario, callable $create_order, int $age_seconds, bool $deferred ): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
+		$now = time();
+		$this->register_legacy_proxy_function_mocks( array( 'time' => static fn(): int => $now ) );
+		$order      = $create_order();
+		$status     = $order->get_status();
+		$event      = self::charge_refunded_event( 'evt_unrecorded', $order, $now - $age_seconds, 1099 );
+		$logger     = new RecordingWcLogger();
+		$controller = $this->create_controller_with_ingestor( wc_get_container()->get( EventIngestor::class ), $logger );
+
+		$response = $controller->handle_webhook( $this->create_post_request( $event ) );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( $deferred ? 500 : 200, $response->get_status(), $scenario );
+		$this->assertSame( $deferred ? $event : null, ( new FailedEventTransients() )->get_event( 'evt_unrecorded' ) );
+		$this->assertSame(
+			$deferred ? array(
+				array(
+					'hook' => WebhookReliabilityService::WEBHOOK_PROCESS_EVENT_ACTION,
+					'args' => array( 'event_id' => 'evt_unrecorded' ),
+				),
+			) : array(),
+			$this->scheduler->scheduled_jobs
+		);
+		$this->assertCount( $deferred ? 0 : 1, self::order_notes_containing( $order, 'No refund was added to the order.' ) );
+		$this->assertCount( $deferred ? 0 : 1, self::other_charge_warning_lines( $logger ) );
+		$this->assertSame( array(), $order->get_refunds() );
+		$this->assertSame( $status, $order->get_status() );
+		$this->assertSame( $deferred ? array( 'Failed processing a WooPayments webhook event.' ) : array(), array_column( $logger->get_errors(), 1 ) );
+	}
+
+	/**
+	 * Orders a refunded charge's metadata can name while no order holds the charge.
+	 *
+	 * @return array<string,array{0:string,1:callable,2:int,3:bool}>
+	 */
+	public function provider_orders_not_holding_a_refunded_charge(): array {
+		$gateway_id   = WooPaymentsPersistenceVocabulary::GATEWAY_ID;
+		$own_intent   = array( '_intent_id' => self::RECORDED_INTENT_ID );
+		$own_unpaid   = static fn(): WC_Order => self::create_order_for_charge( $gateway_id, OrderStatus::PENDING, $own_intent );
+		$window       = 4260;
+		$other_intent = array( '_intent_id' => 'pi_other' );
+
+		return array(
+			'an unpaid order storing its intent' => array( 'an unpaid order storing its intent', $own_unpaid, 0, true ),
+			'an unpaid order storing no intent'  => array( 'an unpaid order storing no intent', static fn(): WC_Order => self::create_order_for_charge( $gateway_id, OrderStatus::PENDING, array() ), 0, true ),
+			'an order cancelled unpaid'          => array( 'an order cancelled unpaid', static fn(): WC_Order => self::create_order_for_charge( $gateway_id, OrderStatus::CANCELLED, $own_intent ), 0, true ),
+			'an unpaid bank transfer order storing its intent' => array( 'an unpaid bank transfer order storing its intent', static fn(): WC_Order => self::create_order_for_charge( 'bacs', OrderStatus::ON_HOLD, $own_intent ), 0, true ),
+			'one second inside the window'       => array( 'an unpaid order storing its intent', $own_unpaid, $window - 1, true ),
+			'at the window'                      => array( 'an unpaid order storing its intent', $own_unpaid, $window, false ),
+			'two hours after the charge'         => array( 'an unpaid order storing its intent', $own_unpaid, 2 * HOUR_IN_SECONDS, false ),
+			'an unpaid bank transfer order storing another intent' => array( 'an unpaid bank transfer order storing another intent', static fn(): WC_Order => self::create_order_for_charge( 'bacs', OrderStatus::ON_HOLD, $other_intent ), 0, false ),
+			'an unpaid bank transfer order storing no intent' => array( 'an unpaid bank transfer order storing no intent', static fn(): WC_Order => self::create_order_for_charge( 'bacs', OrderStatus::ON_HOLD, array() ), 0, false ),
+			'an order paid by another gateway'   => array( 'an order paid by another gateway', static fn(): WC_Order => self::create_order_for_charge( 'cod', OrderStatus::PROCESSING, array(), 'cod_payment' ), 0, false ),
+			'an order paid by another intent'    => array( 'an order paid by another intent', static fn(): WC_Order => self::create_order_for_charge( $gateway_id, OrderStatus::PROCESSING, array_merge( $other_intent, array( '_charge_id' => 'ch_other' ) ), 'pi_other' ), 0, false ),
+			'a paid order naming the charge\'s intent as its transaction, storing no charge' => array( 'a paid order naming the charge\'s intent as its transaction, storing no charge', static fn(): WC_Order => self::create_order_for_charge( $gateway_id, OrderStatus::PROCESSING, $own_intent, self::RECORDED_INTENT_ID ), 0, false ),
+		);
+	}
+
+	/**
+	 * @testdox A charge.refunded push that waits for its charge to be recorded is decided by the retry job on the order as it then is: $scenario.
+	 *
+	 * The charge is 4,259 seconds old at the delivery, one second inside the retry window. A manual refund row added during
+	 * the wait cannot be matched to the platform refund, so the job adds a second row; no money moves (register line 577
+	 * records the same second row for a WP Admin refund whose request died).
+	 *
+	 * @dataProvider provider_changes_while_a_refund_waits
+	 *
+	 * @param string                              $scenario        What happens before the job runs.
+	 * @param int                                 $refund_amount   Refund amount in cents; the charge is 1,099.
+	 * @param callable                            $change          Changes the order, or the time, before the job runs.
+	 * @param array<int,array{0:string,1:string}> $expected_rows   Refund rows after the job, as amount and linked refund ID.
+	 * @param string                              $expected_status Order status after the job.
+	 * @param int                                 $other_notes     Other-charge notes after the job.
+	 */
+	public function test_waiting_charge_refunded_is_decided_by_the_retry_job( string $scenario, int $refund_amount, callable $change, array $expected_rows, string $expected_status, int $other_notes ): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
+		$now = time();
+		$this->register_legacy_proxy_function_mocks(
+			array(
+				'time' => static function () use ( &$now ): int {
+					return $now;
+				},
+			)
+		);
+		$order      = self::create_order_for_charge( WooPaymentsPersistenceVocabulary::GATEWAY_ID, OrderStatus::PENDING, array( '_intent_id' => self::RECORDED_INTENT_ID ) );
+		$logger     = new RecordingWcLogger();
+		$controller = $this->create_controller_with_ingestor( wc_get_container()->get( EventIngestor::class ), $logger );
+
+		$response = $controller->handle_webhook( $this->create_post_request( self::charge_refunded_event( 'evt_waiting', $order, $now - 4259, $refund_amount ) ) );
+
+		$this->assertSame( 500, $response->get_status() );
+		$this->assertCount( 1, $this->scheduler->scheduled_jobs );
+		$change( $order->get_id(), $now );
+		$this->reliability_service->process_event( 'evt_waiting' );
+
+		$order = wc_get_order( $order->get_id() );
+		$rows  = array_map( static fn( $refund ): array => array( $refund->get_amount(), (string) $refund->get_meta( '_wcpay_refund_id', true ) ), $order->get_refunds() );
+		sort( $rows );
+		$this->assertSame( $expected_rows, $rows, $scenario );
+		$this->assertSame( $expected_status, $order->get_status() );
+		$this->assertCount( $other_notes, self::order_notes_containing( $order, 'No refund was added to the order.' ) );
+		$this->assertCount( $other_notes, self::other_charge_warning_lines( $logger ) );
+		$this->assertCount( 1, self::order_notes_containing( $order, self::RECORDED_REFUND_ID ), 'One note names the refund: its created note or its other-charge note.' );
+		$this->assertSame( 0 === $other_notes ? 'successful' : '', $order->get_meta( '_wcpay_refund_status', true ) );
+		$this->assertNull( ( new FailedEventTransients() )->get_event( 'evt_waiting' ) );
+		$this->assertCount( 1, $this->scheduler->scheduled_jobs, 'The job that decides schedules no other.' );
+		$this->assertSame( array( 'Failed processing a WooPayments webhook event.' ), array_column( $logger->get_errors(), 1 ), 'Only the first delivery logs an error; nothing is dropped.' );
+	}
+
+	/**
+	 * What can happen to the order, or the clock, while a charge.refunded waits for its charge to be recorded.
+	 *
+	 * @return array<string,array{0:string,1:int,2:callable,3:array<int,array{0:string,1:string}>,4:string,5:int}>
+	 */
+	public function provider_changes_while_a_refund_waits(): array {
+		$record_charge = static function ( int $order_id ): void {
+			self::pay_order( $order_id, self::RECORDED_INTENT_ID, self::RECORDED_CHARGE_ID );
+		};
+		$refund_id     = self::RECORDED_REFUND_ID;
+
+		return array(
+			'the order records the charge, full refund'    => array( 'the order records the charge, full refund', 1099, $record_charge, array( array( '10.99', $refund_id ) ), OrderStatus::REFUNDED, 0 ),
+			'the order records the charge, partial refund' => array( 'the order records the charge, partial refund', 400, $record_charge, array( array( '4.00', $refund_id ) ), OrderStatus::PROCESSING, 0 ),
+			'the charge passes the window unrecorded'      => array(
+				'the charge passes the window unrecorded',
+				1099,
+				static function ( int $order_id, int &$now ): void {
+					unset( $order_id ); // Avoid parameter not used PHPCS errors.
+					$now += 2;
+				},
+				array(),
+				OrderStatus::PENDING,
+				1,
+			),
+			'the order is paid by another intent'          => array(
+				'the order is paid by another intent',
+				1099,
+				static function ( int $order_id ): void {
+					self::pay_order( $order_id, 'pi_newer', 'ch_newer' );
+				},
+				array(),
+				OrderStatus::PROCESSING,
+				1,
+			),
+			'a manual refund row is added after the order records the charge' => array(
+				'a manual refund row is added after the order records the charge',
+				400,
+				static function ( int $order_id ): void {
+					self::pay_order( $order_id, self::RECORDED_INTENT_ID, self::RECORDED_CHARGE_ID );
+					wc_create_refund(
+						array(
+							'amount'   => '4.00',
+							'order_id' => $order_id,
+						)
+					);
+				},
+				array( array( '4.00', '' ), array( '4.00', $refund_id ) ),
+				OrderStatus::PROCESSING,
+				0,
+			),
+			'a WP Admin refund of the remainder links its row' => array(
+				'a WP Admin refund of the remainder links its row',
+				400,
+				static function ( int $order_id ): void {
+					self::pay_order( $order_id, self::RECORDED_INTENT_ID, self::RECORDED_CHARGE_ID );
+					$admin_refund = wc_create_refund(
+						array(
+							'amount'   => '6.99',
+							'order_id' => $order_id,
+						)
+					);
+					$admin_refund->update_meta_data( '_wcpay_refund_id', 're_admin' );
+					$admin_refund->save_meta_data();
+				},
+				array( array( '4.00', $refund_id ), array( '6.99', 're_admin' ) ),
+				OrderStatus::REFUNDED,
+				0,
+			),
+		);
+	}
+
+	/**
+	 * @testdox A charge.refunded push on an unpaid order that already holds the charge, such as an order held on-hold after its payment, gets its refund row at once.
+	 *
+	 * Only an order found by the charge's metadata waits for the charge: one found by its `_charge_id` is decided by the
+	 * ownership rule on the first delivery, however young the charge.
+	 */
+	public function test_charge_refunded_on_an_unpaid_order_holding_the_charge_is_applied_at_once(): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
+		$order      = self::create_order_for_charge(
+			WooPaymentsPersistenceVocabulary::GATEWAY_ID,
+			OrderStatus::ON_HOLD,
+			array(
+				'_intent_id' => self::RECORDED_INTENT_ID,
+				'_charge_id' => self::RECORDED_CHARGE_ID,
+			)
+		);
+		$logger     = new RecordingWcLogger();
+		$controller = $this->create_controller_with_ingestor( wc_get_container()->get( EventIngestor::class ), $logger );
+
+		$response = $controller->handle_webhook( $this->create_post_request( self::charge_refunded_event( 'evt_held', $order, time(), 400 ) ) );
+
+		$order   = wc_get_order( $order->get_id() );
+		$refunds = $order->get_refunds();
+		$this->assertSame( 200, $response->get_status() );
+		$this->assertNull( ( new FailedEventTransients() )->get_event( 'evt_held' ) );
+		$this->assertSame( array(), $this->scheduler->scheduled_jobs );
+		$this->assertCount( 1, $refunds );
+		$this->assertSame( self::RECORDED_REFUND_ID, $refunds[0]->get_meta( '_wcpay_refund_id', true ) );
+		$this->assertCount( 0, self::order_notes_containing( $order, 'No refund was added to the order.' ) );
+		$this->assertSame( array(), array_column( $logger->get_errors(), 1 ) );
+	}
+
+	/**
+	 * Build a charge.refunded event from the platform's recorded delivery (card_charge_refunded_in_full), with its metadata
+	 * naming an order, its created time and its latest refund's amount changed.
+	 *
+	 * @param string   $event_id      Event ID.
+	 * @param WC_Order $order         Order the charge's metadata names.
+	 * @param int      $created       The charge's created time.
+	 * @param int      $refund_amount The refund's amount in cents; the charge is 1,099.
+	 * @return array<string,mixed>
+	 */
+	private static function charge_refunded_event( string $event_id, WC_Order $order, int $created, int $refund_amount ): array {
+		$event  = RecordedPlatformEvents::body( 'platform-charge-dispute-events.json', 'card_charge_refunded_in_full' );
+		$charge = $event['data']['object'];
+
+		$charge['created']                      = $created;
+		$charge['metadata']['order_id']         = (string) $order->get_id();
+		$charge['metadata']['order_key']        = $order->get_order_key();
+		$charge['amount_refunded']              = $refund_amount;
+		$charge['refunded']                     = $refund_amount === $charge['amount'];
+		$charge['refunds']['data'][0]['amount'] = $refund_amount;
+		$event['id']                            = $event_id;
+		$event['data']['object']                = $charge;
+
+		return $event;
+	}
+
+	/**
+	 * Create a $10.99 USD order, paid when a transaction ID is given.
+	 *
+	 * @param string              $payment_method      Payment method ID.
+	 * @param string              $status              Order status.
+	 * @param array<string,mixed> $meta                Order meta.
+	 * @param string              $paid_transaction_id Transaction ID of a paid order, with a paid date; empty for an unpaid one.
+	 * @return WC_Order
+	 */
+	private static function create_order_for_charge( string $payment_method, string $status, array $meta, string $paid_transaction_id = '' ): WC_Order {
+		$order = wc_create_order();
+		$order->set_payment_method( $payment_method );
+		$order->set_currency( 'USD' );
+		$order->set_total( '10.99' );
+		$order->set_status( $status );
+		foreach ( $meta as $key => $value ) {
+			$order->update_meta_data( $key, $value );
+		}
+		if ( '' !== $paid_transaction_id ) {
+			$order->set_transaction_id( $paid_transaction_id );
+			$order->set_date_paid( time() );
+		}
+		$order->save();
+
+		return $order;
+	}
+
+	/**
+	 * Record a WooPayments payment on an order: processing, paid, with its intent and charge.
+	 *
+	 * @param int    $order_id  Order ID.
+	 * @param string $intent_id Payment intent ID, also the transaction ID.
+	 * @param string $charge_id Charge ID.
+	 */
+	private static function pay_order( int $order_id, string $intent_id, string $charge_id ): void {
+		$order = wc_get_order( $order_id );
+		$order->set_transaction_id( $intent_id );
+		$order->set_date_paid( time() );
+		$order->set_status( OrderStatus::PROCESSING );
+		$order->update_meta_data( '_intent_id', $intent_id );
+		$order->update_meta_data( '_charge_id', $charge_id );
+		$order->update_meta_data( '_intention_status', 'succeeded' );
+		$order->save();
+	}
+
+	/**
+	 * Get the other-charge warning lines logged under the woopayments source.
+	 *
+	 * @param RecordingWcLogger $logger Logger.
+	 * @return string[]
+	 */
+	private static function other_charge_warning_lines( RecordingWcLogger $logger ): array {
+		return array_values(
+			array_map(
+				static fn( array $line ): string => $line[1],
+				array_filter( $logger->lines, static fn( array $line ): bool => 'warning' === $line[0] && 'woopayments' === $line[2] && str_contains( $line[1], 'other charge recorded' ) )
+			)
+		);
 	}
 
 	/**

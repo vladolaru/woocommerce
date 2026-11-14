@@ -77,9 +77,9 @@ class EventOrderResolver {
 	/**
 	 * Find the order a charge's metadata names, for a charge no order holds as its `_charge_id`.
 	 *
-	 * Such a charge is not yet an order's own payment, such as a second charge on an order already paid. The caller records
-	 * its event while the order read under the lock still does not hold the charge; once it does, the ownership rule
-	 * decides. The metadata's order key must match the order's.
+	 * Such a charge is a second charge on an order already paid, for example, or an unpaid order's own charge that the order
+	 * has not recorded yet. The caller decides its event on the order read under the lock: once the order holds the charge,
+	 * the ownership rule decides. The metadata's order key must match the order's.
 	 *
 	 * @param array<string,mixed> $charge Charge object.
 	 * @return WC_Order|null
@@ -149,7 +149,7 @@ class EventOrderResolver {
 	 * @return bool
 	 */
 	public function is_own_payment( WC_Order $order, string $intent_id, string $charge_id ): bool {
-		if ( $order->is_paid() || null !== $order->get_date_paid() ) {
+		if ( $this->is_paid_order( $order ) ) {
 			$transaction_id = (string) $order->get_transaction_id();
 
 			return '' !== $transaction_id && ( $transaction_id === $intent_id || $transaction_id === $charge_id );
@@ -160,6 +160,18 @@ class EventOrderResolver {
 		}
 
 		return WooPaymentsPersistenceVocabulary::is_woopayments_gateway_id( (string) $order->get_payment_method() );
+	}
+
+	/**
+	 * Tell whether an order counts as paid for the ownership rule: a paid status or a paid date.
+	 *
+	 * @since 11.4.0
+	 *
+	 * @param WC_Order $order Order object.
+	 * @return bool
+	 */
+	public function is_paid_order( WC_Order $order ): bool {
+		return $order->is_paid() || null !== $order->get_date_paid();
 	}
 
 	/**
