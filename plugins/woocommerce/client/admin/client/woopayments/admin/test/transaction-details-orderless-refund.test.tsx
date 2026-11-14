@@ -204,6 +204,7 @@ describe( 'WooPayments refund of a payment without an order', () => {
 				order: {
 					id: 123,
 					url: 'http://example.com/wp-admin/admin.php?page=wc-orders&action=edit&id=123',
+					has_woopayments_payment_method: true,
 				},
 			} );
 

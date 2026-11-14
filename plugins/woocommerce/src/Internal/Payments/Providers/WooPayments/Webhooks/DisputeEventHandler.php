@@ -159,26 +159,41 @@ class DisputeEventHandler {
 	/**
 	 * Process a provider dispute event.
 	 *
+	 * The dispute caches mirror the platform's dispute list, which the event reports a change to whatever the store does
+	 * with it: every event deletes them unless a field check refuses it, whether its order is found, is not found, or its
+	 * processing throws. An event refused for a missing or malformed field leaves them. Client 11.3.0 deletes them only
+	 * after the event is processed (class-wc-payments-webhook-processing-service.php:872-873, :918-919, :986-988).
+	 *
 	 * @param string              $event_type   Event type.
 	 * @param array<string,mixed> $event_object Dispute object.
 	 * @throws InvalidArgumentException When a field is missing or malformed, or the disputed charge resolves to no order.
+	 * @throws Throwable When processing the order fails otherwise, such as a refused order payment lock.
 	 */
 	public function process( string $event_type, array $event_object ): void {
 		$charge_id = $this->get_required_string( $event_object, 'charge' );
 		$order     = $this->event_order_resolver->find_order_by_charge_id( $charge_id );
-		if ( ! $order instanceof WC_Order ) {
-			throw new InvalidArgumentException( esc_html( sprintf( 'Could not find WooPayments order via disputed charge ID: %s', $charge_id ) ) );
-		}
-
-		if ( 'charge.dispute.created' === $event_type ) {
-			$this->process_dispute_created( $order, $event_object, $charge_id );
-		} elseif ( 'charge.dispute.closed' === $event_type ) {
-			$this->process_dispute_closed( $order, $event_object, $charge_id );
-		} else {
-			$this->process_dispute_updated( $order, $event_object, $event_type, $charge_id );
+		try {
+			if ( $order instanceof WC_Order ) {
+				if ( 'charge.dispute.created' === $event_type ) {
+					$this->process_dispute_created( $order, $event_object, $charge_id );
+				} elseif ( 'charge.dispute.closed' === $event_type ) {
+					$this->process_dispute_closed( $order, $event_object, $charge_id );
+				} else {
+					$this->process_dispute_updated( $order, $event_object, $event_type, $charge_id );
+				}
+			}
+		} catch ( InvalidArgumentException $malformed ) {
+			// A field check refused the event: the caches stay.
+			throw $malformed;
+		} catch ( Throwable $failure ) {
+			$this->database_cache->delete_dispute_caches();
+			throw $failure;
 		}
 
 		$this->database_cache->delete_dispute_caches();
+		if ( ! $order instanceof WC_Order ) {
+			throw new InvalidArgumentException( esc_html( sprintf( 'Could not find WooPayments order via disputed charge ID: %s', $charge_id ) ) );
+		}
 	}
 
 	/**

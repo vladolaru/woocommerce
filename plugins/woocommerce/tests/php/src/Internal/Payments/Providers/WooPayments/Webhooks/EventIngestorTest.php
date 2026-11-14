@@ -3933,6 +3933,86 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A dispute event whose order is $order_case deletes the dispute caches, keeps its refusal and leaves the order unchanged.
+	 *
+	 * The caches mirror the platform's dispute list, which the event reports a change to whatever the store does with it.
+	 * Client 11.3.0 deletes them only after the event is processed (class-wc-payments-webhook-processing-service.php:872-873, :918-919, :986-988),
+	 * so there a dispute with no order leaves the dispute badge and the response-deadline task stale for up to a day.
+	 *
+	 * @dataProvider provider_refused_dispute_events
+	 *
+	 * @param string   $order_case       The order the dispute meets.
+	 * @param callable $prepare          Creates the order and returns it with the cleanup to run after the dispute.
+	 * @param string   $expected_refusal Exception class the dispute is refused with.
+	 */
+	public function test_a_refused_dispute_event_deletes_the_dispute_caches( string $order_case, callable $prepare, string $expected_refusal ): void {
+		unset( $order_case );
+		$this->seed_dispute_cache_options();
+		list( $order, $cleanup ) = $prepare( $this );
+		$order                   = wc_get_order( $order->get_id() );
+		$status                  = $order->get_status();
+		$charge_id               = (string) $order->get_meta( '_charge_id', true );
+		$notes                   = count( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+
+		$refusal = null;
+		try {
+			$this->sut->process( $this->create_dispute_event( 'charge.dispute.created', 'needs_response' ) );
+		} catch ( \Throwable $exception ) {
+			$refusal = $exception;
+		} finally {
+			$cleanup();
+		}
+
+		$this->assertInstanceOf( $expected_refusal, $refusal );
+		$this->assert_dispute_cache_options_deleted();
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( $status, $order->get_status() );
+		$this->assertSame( $charge_id, $order->get_meta( '_charge_id', true ) );
+		$this->assertSame( '', $order->get_meta( '_wcpay_open_dispute_ids', true ) );
+		$this->assertCount( $notes, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+	}
+
+	/**
+	 * Dispute events refused before they change the order.
+	 *
+	 * @return array<string,array{0:string,1:callable,2:string}>
+	 */
+	public function provider_refused_dispute_events(): array {
+		return array(
+			'not found: another method paid it and the disputed charge is a late WooPayments success' => array(
+				'not found',
+				static function ( self $test ): array {
+					$order = $test->create_woopayments_order();
+					$order->set_payment_method( 'bacs' );
+					$order->set_payment_method_title( 'Direct bank transfer' );
+					$order->set_status( 'processing' );
+					$order->save();
+					$test->sut->process( $test->create_payment_intent_event( 'payment_intent.succeeded', $order, $test->get_card_charge_overrides() ) );
+
+					return array( $order, static function (): void {} );
+				},
+				InvalidArgumentException::class,
+			),
+			'found: its processing refused by a held order payment lock' => array(
+				'found but refused',
+				static function ( self $test ): array {
+					$order      = $test->create_paid_woopayments_order( 'ch_123', 'pi_123' );
+					$vocabulary = new WooPaymentsPersistenceVocabulary();
+					$test->hold_order_payment_lock( $order, $vocabulary, 'pi_lock_holder' );
+
+					return array(
+						$order,
+						static function () use ( $test, $order, $vocabulary ): void {
+							$test->clear_order_payment_lock( $order, $vocabulary );
+						},
+					);
+				},
+				OrderPaymentLockRefusedException::class,
+			),
+		);
+	}
+
+	/**
 	 * Dispute events that clear the dispute caches.
 	 *
 	 * @return array<string,array{0:string,1:string}>
@@ -5231,7 +5311,7 @@ class EventIngestorTest extends WC_Unit_Test_Case {
 	 * The recorded dispute close, with only its dispute ID replaced by one the handler refuses, makes the handler throw after
 	 * the order is found.
 	 *
-	 * @testdox An event whose handler throws fires the before-delivery hook only and keeps the dispute caches.
+	 * @testdox An event whose handler refuses a malformed field fires the before-delivery hook only and keeps the dispute caches.
 	 */
 	public function test_event_whose_handler_throws_skips_the_after_delivery_hook_and_the_dispute_cache_purge(): void {
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
