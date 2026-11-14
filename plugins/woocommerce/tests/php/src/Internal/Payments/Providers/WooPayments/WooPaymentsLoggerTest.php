@@ -215,8 +215,9 @@ class WooPaymentsLoggerTest extends WC_Unit_Test_Case {
 	 */
 	public function test_lines_carry_the_request_context_without_order_keys(): void {
 		self::enable_woopayments_debug_logging();
-		$server = $_SERVER;
-		wp_set_current_user( self::factory()->user->create( array( 'user_login' => 'shop_manager_one' ) ) );
+		$server  = $_SERVER;
+		$user_id = self::factory()->user->create( array( 'user_login' => 'shop_manager_one' ) );
+		wp_set_current_user( $user_id );
 		$_SERVER['REQUEST_URI']     = '/checkout/order-pay/12/?pay_for_order=true&key=wc_order_abc123';
 		$_SERVER['HTTP_REFERER']    = 'https://store.test/checkout/order-pay/12/?key=wc_order_abc123';
 		$_SERVER['HTTP_USER_AGENT'] = 'Merchant browser';
@@ -237,7 +238,8 @@ class WooPaymentsLoggerTest extends WC_Unit_Test_Case {
 
 		foreach ( array( 'Charged the order.', 'Held the order.' ) as $message ) {
 			$context = $this->get_logged_context( $logger, $message );
-			$this->assertSame( 'shop_manager_one', $context['WP_USER'] );
+			$this->assertSame( '#' . $user_id, $context['WP_USER'] );
+			$this->assertStringNotContainsString( 'shop_manager_one', (string) wp_json_encode( $context ) );
 			$this->assertSame( 'Merchant browser', $context['HTTP_USER_AGENT'] );
 			$this->assertSame( '/checkout/order-pay/12/', $context['REQUEST_URI'] );
 			$this->assertSame( '', $context['DOING_AJAX'] );
@@ -247,6 +249,33 @@ class WooPaymentsLoggerTest extends WC_Unit_Test_Case {
 			$this->assertStringNotContainsString( 'wc_order_abc123', (string) wp_json_encode( $context ) );
 		}
 		$this->assertSame( 'caller value', $this->get_logged_context( $logger, 'Charged the order.' )['WP_CLI'], 'The caller\'s context wins, as in the client.' );
+	}
+
+	/**
+	 * @testdox Log lines name the user by ID: $_dataName.
+	 *
+	 * Client 11.3.0 `src/Internal/LoggerContext.php:162`: `#<user ID>` for a logged-in user, else "Guest (non logged-in user)".
+	 *
+	 * @testWith [true]
+	 *           [false]
+	 *
+	 * @param bool $logged_in Whether a user is logged in.
+	 */
+	public function test_lines_name_the_user_by_id( bool $logged_in ): void {
+		self::enable_woopayments_debug_logging();
+		$user_id = $logged_in ? self::factory()->user->create( array( 'user_login' => 'shop_manager_three' ) ) : 0;
+		wp_set_current_user( $user_id );
+		$account_service = new WooPaymentsAccountService();
+		$database_cache  = new WooPaymentsDatabaseCache();
+		$database_cache->init( wc_get_container()->get( LegacyProxy::class ) );
+		$account_service->init( wc_get_container()->get( LegacyProxy::class ), $database_cache );
+		$sut = new WooPaymentsLogger();
+		$sut->init( $account_service );
+		$logger = RecordingWcLogger::install();
+
+		$sut->log( 'Charged the order.' );
+
+		$this->assertSame( $logged_in ? '#' . $user_id : 'Guest (non logged-in user)', $this->get_logged_context( $logger, 'Charged the order.' )['WP_USER'] );
 	}
 
 	/**

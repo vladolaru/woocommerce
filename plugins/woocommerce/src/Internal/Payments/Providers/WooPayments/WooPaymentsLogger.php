@@ -238,7 +238,8 @@ class WooPaymentsLogger {
 	 * Get the request context the client adds to every line (client 11.1.0 `src/Internal/LoggerContext.php:140-164`).
 	 *
 	 * The referrer and the request's query string are left out: on order-pay pages they carry the order key. The user is
-	 * read only after `init`, when WordPress has loaded and settled it.
+	 * read only after `init`, when WordPress has loaded and settled it, and named by ID, as client 11.3.0
+	 * `src/Internal/LoggerContext.php:162` does.
 	 *
 	 * @return array<string,string>
 	 */
@@ -250,7 +251,7 @@ class WooPaymentsLogger {
 		// phpcs:enable WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
 
 		return array(
-			'WP_USER'          => null === $user ? '--' : ( $user->exists() ? $user->user_login : 'Guest (non logged-in user)' ),
+			'WP_USER'          => null === $user ? '--' : ( $user->exists() ? '#' . $user->ID : 'Guest (non logged-in user)' ),
 			'HTTP_USER_AGENT'  => $user_agent,
 			'REQUEST_URI'      => is_string( $request_uri ) ? $request_uri : '--',
 			'DOING_AJAX'       => wp_doing_ajax() ? '1' : '',
